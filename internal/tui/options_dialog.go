@@ -21,6 +21,7 @@ type OptionsDialog struct {
 	fMaxCellLen    *widgets.InputField
 	fMaxTextLen    *widgets.InputField
 	fIndentWidth   *widgets.InputField
+	fXECapacity    *widgets.InputField
 	cbIntelliSense *widgets.CheckBox
 
 	// drag owns the text-selection gesture a press in one of the input
@@ -42,7 +43,7 @@ type OptionsDialog struct {
 // NewOptionsDialog creates the Options dialog.
 func NewOptionsDialog(app *App) *OptionsDialog {
 	d := &OptionsDialog{app: app}
-	d.InitModal(app.screen, "Options", 60, 19)
+	d.InitModal(app.screen, "Options", 60, 21)
 
 	styles := config.AllIconStyles()
 	labels := make([]string, len(styles))
@@ -54,8 +55,9 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	d.fMaxCellLen = widgets.NewInputField("Max default cell length:", 5, false)
 	d.fMaxTextLen = widgets.NewInputField("Max characters per column (text):", 5, false)
 	d.fIndentWidth = widgets.NewInputField("Indent size (spaces):", 5, false)
+	d.fXECapacity = widgets.NewInputField("Extended Events viewer holds (events):", 9, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
-	d.focusable = []focusable{d.rbIconStyle, d.fMaxCellLen, d.fMaxTextLen, d.fIndentWidth, d.cbIntelliSense}
+	d.focusable = []focusable{d.rbIconStyle, d.fMaxCellLen, d.fMaxTextLen, d.fIndentWidth, d.fXECapacity, d.cbIntelliSense}
 	return d
 }
 
@@ -72,6 +74,7 @@ func (d *OptionsDialog) Show() {
 	d.fMaxCellLen.SetValue(strconv.Itoa(d.app.cfg.MaxCellLength))
 	d.fMaxTextLen.SetValue(strconv.Itoa(d.app.cfg.MaxTextColumnLength))
 	d.fIndentWidth.SetValue(strconv.Itoa(d.app.cfg.IndentWidth))
+	d.fXECapacity.SetValue(strconv.Itoa(config.ClampXEventStoreCapacity(d.app.cfg.XEventStoreCapacity)))
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
 	d.setFocus(0)
 	d.ModalDialog.Show()
@@ -110,7 +113,10 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 	d.fIndentWidth.SetBounds(inner.X+1, inner.Y+10)
 	d.fIndentWidth.Draw(s)
 
-	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+12)
+	d.fXECapacity.SetBounds(inner.X+1, inner.Y+12)
+	d.fXECapacity.Draw(s)
+
+	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+14)
 	d.cbIntelliSense.Draw(s)
 
 	d.DrawSeparator(s)
@@ -263,8 +269,9 @@ func (d *OptionsDialog) doButton() {
 // dialogs, since which sheets host a writable EditorRow changes with the pages.
 type editorIndentHost interface{ SetEditorIndentWidth(n int) }
 
-// apply commits all five settings — icon style, max cell length, max text
-// column length, indent size and whether IntelliSense is enabled — to the config, persists it, and
+// apply commits all six settings — icon style, max cell length, max text
+// column length, indent size, the Extended Events viewer's event limit and
+// whether IntelliSense is enabled — to the config, persists it, and
 // rebuilds the Object Explorer so the icon change is visible immediately.
 //
 // The indent size needs one step the others don't: MaxCellLength,
@@ -307,6 +314,9 @@ func (d *OptionsDialog) apply() {
 			h.SetEditorIndentWidth(n)
 		}
 	}
+	// A viewer takes the capacity when it opens; open ones keep theirs.
+	xeCap, _ := strconv.Atoi(d.fXECapacity.Value())
+	d.app.cfg.XEventStoreCapacity = config.ClampXEventStoreCapacity(xeCap)
 	d.app.cfg.IntelliSenseDisabled = !d.cbIntelliSense.Checked()
 	if err := d.app.cfg.Save(); err != nil {
 		d.app.logStatus("save config: %v", err)

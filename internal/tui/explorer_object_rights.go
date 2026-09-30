@@ -45,13 +45,18 @@ func objectOpRights(t NodeType) []gate.Right {
 }
 
 // objectDataRights is objectOpRights for one node rather than its type, and
-// differs from it for the one family whose right depends on the object: an
-// OBJECT-scoped plan guide is controlled under ALTER on the routine it is
+// differs from it for the two families whose right depends on the object: an
+// event session in a database rather than on the server, and an OBJECT-scoped
+// plan guide is controlled under ALTER on the routine it is
 // bound to, where a SQL or TEMPLATE guide needs the database's own ALTER —
 // see planGuideRights, which the guide's Enable/Disable and Properties share.
 func objectDataRights(n nodeData) []gate.Right {
 	if n.Type == NodePlanGuide {
 		return planGuideRights(n.ScopeName)
+	}
+	// An Azure SQL Database's session is the database's, and so is its right.
+	if n.Type == NodeEventSession && n.DBName != "" {
+		return []gate.Right{gate.DatabaseEventSession}
 	}
 	return objectOpRights(n.Type)
 }
@@ -292,6 +297,7 @@ var serverScopedOpRights = map[NodeType][]gate.Right{
 	NodeServerAuditSpecification: {gate.AlterAnyAudit},
 	NodeBackupDevice:             {gate.DiskAdmin},
 	NodeEndpoint:                 {gate.AlterAnyEndpoint},
+	NodeEventSession:             {gate.EventSessionDrop},
 	// There is no ALTER ANY SERVER DDL TRIGGER; CONTROL SERVER is what SQL
 	// Server checks for a server-scoped DDL trigger.
 	NodeServerTrigger: {gate.ControlServer},

@@ -187,6 +187,13 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 				a.toggleWordWrap()
 				return false
 			}
+			// Alt+P is the XEvent Profiler's Standard session, on the
+			// connection Object Explorer has selected — SSMS has no default
+			// key for it; P for Profiler.
+			if r := core.EvRune(ev); r == 'p' || r == 'P' {
+				a.launchXEventProfilerActive(xeProfilerKinds[0])
+				return false
+			}
 		}
 		// Ctrl+0..9 jumps to panel N from the left (Object Explorer Details is
 		// 0), only while a panel has focus.

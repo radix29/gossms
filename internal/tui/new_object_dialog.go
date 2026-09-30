@@ -100,6 +100,11 @@ type newObjectDialog[P any] struct {
 	objectName func() string
 	preflight  func() error
 
+	// afterCreate, when build sets it, runs on the UI goroutine once a real
+	// Apply or OK has created the object, after the dialog has closed on OK —
+	// New Session opening Watch Live Data on the session it started.
+	afterCreate func()
+
 	// created is set once the pipeline has run through successfully. Apply leaves
 	// the dialog open, so without this a second Apply, or an Apply then OK,
 	// re-issues the same CREATE and comes back with "already exists".
@@ -181,6 +186,7 @@ func (d *newObjectDialog[P]) show(sc *db.ServerConn) {
 	d.applyFns = make([]propApply, len(d.pages))
 	d.objectName = nil
 	d.preflight = nil
+	d.afterCreate = nil
 	d.created = false
 	d.fetching = false
 	d.waiting = nil
@@ -394,6 +400,9 @@ func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {
 		d.refresh(d.sc)
 		if hideOnSuccess {
 			d.Dismiss()
+		}
+		if d.afterCreate != nil {
+			d.afterCreate()
 		}
 	})
 }

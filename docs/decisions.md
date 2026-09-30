@@ -282,6 +282,21 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   `internal/tui/gate/names_test.go` checks object rights against
   `ProbedDatabasePermissions`, not `ProbedObjectPermissions`, so a new one would
   silently gate nothing.
+- **A read-only Properties page's grids browse; nothing else on it takes
+  focus.** A grid is how a page shows *which* row its detail rows describe, so
+  a gated page whose grids refuse focus shows only the first event, target or
+  role. `propsheet.Browsable` rows (`GridRow`, `ToggleGridRow`) keep focus and
+  clicks on a read-only form, and `Form.SetReadOnly` makes their grids
+  browse-only (`controls.DataGrid.SetBrowseOnly`): arrows, PgUp/PgDn,
+  Home/End, click, wheel, Copy and Show Value work and `OnSelectRow` fires;
+  Enter, Space, a cell click never reach `OnActivateCell`, and the host's
+  `OnMenuItems` are left off the menu (the grid can't tell which edit). The
+  gate is the grid's, not a key filter in `GridRow` — the grid knows which of
+  its keys edit. A read-only form is **never** `Dirty()`, whatever its rows
+  say: a browsing grid runs pages' commit-the-detail-back `OnSelectRow`
+  handlers, and a lossy round trip there must not turn a look into a write.
+  Text, check and select rows stay unfocusable — their values are already on
+  screen. `docs/plan-xevents-followups.md` W3.
 - **A schema *node* is excluded from the schema-scoped gate** — `objectOpRights`
   names `rightAlterOnSchema` beside the three database-wide rights, but ALTER
   on a schema doesn't permit dropping or renaming the schema itself.
@@ -775,6 +790,217 @@ String). Not to be reopened without asking the author:
   Reset under the connection string, Name/Color custom-property rows. The
   connection string stays a live masked preview. The "Server Type" line is
   dropped (one fixed value).
+
+## Extended Events: what the design settled — do not re-raise
+
+Roadmap item 23. gosmo holds the model, DDL, scripter and readers
+(`EventSession`, `ReadEventFile`, `ReadRingBuffer`, `DecodeEventXML`).
+
+- **Live data is polled from a target, never read from the XE stream.**
+  SSMS's Watch Live Data uses `sys.fn_MSxe_read_event_stream`, undocumented
+  and returning an undocumented binary format — reverse engineering with no
+  spec and no version guarantee. An `event_file` is read incrementally with
+  `fn_xe_file_target_read_file`'s (file, offset) cursor; a `ring_buffer` is
+  re-read whole and deduped on the `package0.event_sequence` action. The cost
+  is 1–3 s of lag against SSMS, accepted.
+- **Event timestamps come from the event XML**, never
+  `fn_xe_file_target_read_file`'s `timestamp_utc` column, which 2016 lacks.
+- **`Alter` stops a running session around option changes.** Every WITH
+  option but `STARTUP_STATE` is refused on a running session (Msg 25707,
+  verified on 17), so gosmo stops, applies and restarts — on the failure path
+  too, as the audit's disable window does. The price is that a `ring_buffer`
+  loses its contents; a caller doing it by hand would get the failure path
+  wrong instead.
+- **`XEObjects` carries `OPTION (HASH JOIN)`.** The `sys.dm_xe_*` DMVs have no
+  indexes; the plan the optimizer picks unhinted took 7 s for the event list,
+  the hinted one 0.4 s (17 and 13).
+- **A session verb's right is the wide name with the 2022 granular one as
+  `Alt`** (`gate.EventSessionStart`/`Stop`/`Drop`), and a server-scope `Alt`
+  counts only when *granted* (`Has`), never when unknown. 2016–2019 answer
+  NULL for the granular names; read with `Allows`, that unknown offered every
+  verb to a login the wide name had refused. The same change stops
+  `gate.ViewServerState`'s two 2022 alternates failing open on 2016–2019.
+- **SQL Server's own sessions (`system_health`, `AlwaysOn_health`,
+  `telemetry_xevents`) are listed, started, stopped and scripted like any
+  other, and Delete asks for the name to be typed** (`objectOp.typedFor`)
+  rather than a second Yes: the typed confirmation is the tree's existing
+  "more than one click" idiom, and it keeps them out of a batch delete.
+  SSMS deletes them on one click.
+- **A session's state is the glyph alone** (hollow when stopped), as SSMS
+  shows it — no "(Stopped)" label suffix, since most sessions on a server are
+  stopped. The Sessions folder's Details grid has a State column.
+- **Watch Live Data on an `event_file` starts at the file the session is
+  writing now** (`dm_xe_session_targets`' current file), read whole, then
+  follows the cursor across rollovers. Not the oldest file — `system_health`
+  keeps hundreds of MB, and a live view that replays days first is not live —
+  and not empty either: the current file's minutes are the context the view
+  was opened for. SSMS's stream shows only events after opening.
+- **Pause freezes the grid; the reader keeps reading into the store.** Stop
+  Data Feed ends the reader but keeps its cursor, so Start resumes where it
+  stopped (an `event_file` loses nothing across a stop). Both, like the
+  reader itself, run on the viewer's own `goSSMS - XEvent Profiler`
+  connection and are listed in Background Tasks.
+- **The viewer's filter is one line of text, not SSMS's Filters grid** —
+  `column op value` terms joined by AND/OR (AND binding tighter, no
+  parentheses), anything else free text. An event without the column is NULL
+  to every operator but IS NULL, `<>` included. Filter by This Value ANDs its
+  term onto every OR branch rather than needing parentheses.
+- **Filter by This Group filters by the group's whole path** — one term per
+  enclosing group plus its own (`xevent.Group.Terms`, walking `Group.Parent`),
+  `is null` for a "(no value)" group, ANDed onto every OR branch like Filter
+  by This Value — so the grid shows exactly the group's events, and the text
+  shows every term to edit. A field sharing its name with an action is
+  written `field:x`: the bare name reaches the action on an event lacking the
+  field, which grouping put under "(no value)".
+- **Choose Columns saves the *hidden* columns per session name**
+  (`config.XEventHiddenColumns`), not the shown ones: a field the session
+  starts collecting later still gets a column.
+- **The XEvent Profiler's sessions are gossms's own** (`gossms_QuickSessionStandard`
+  / `_TSQL`), SSMS's events, actions and predicate plus a target — an
+  `event_file` of four 20 MB files, a `ring_buffer` on a Managed Instance —
+  and a 3 s dispatch latency. SSMS creates `QuickSession*` with no target (it
+  reads the stream), so reusing SSMS's copies would leave nothing to read, and
+  altering them would change a session that isn't ours. An existing gossms copy
+  is reused as it is. Launch is gated on creating **and** starting a session
+  (on 2022+ `CREATE ANY EVENT SESSION` alone created it and was refused the
+  START, live), though a running one needs no right: which case applies is known only after asking the server,
+  and a login that can only watch has Watch Live Data on the session itself.
+- **Closing the Profiler's viewer asks whether to stop the session, No
+  focused**, and Escape answers No — SSMS leaves the session running, and the
+  next launch picks it up. Quitting doesn't ask. Other viewers never ask.
+- **XEvent Profiler sits under Extended Events, beside Sessions**, not off the
+  server node as in SSMS — beside the sessions it creates.
+- **View Target Data reads an `event_file` set newest file first** when the
+  files can be listed (`gosmo.Server.EventFiles`), going back until the store's
+  capacity is covered, and says how many older files it didn't read. Measured
+  on 2016's `system_health`: counting events per file first costs ~60 s of the
+  102 s full read (the server parses every buffer to count), and a byte offset
+  can't be guessed (Msg 25722), so whole files by exact path it is. Where the
+  listing is empty (2016 non-sysadmin, a blob URL) it reads oldest-first as
+  before.
+- **A live `event_file` whose file rollover deleted carries on from the oldest
+  file left** (`gosmo.ErrEventFileGone`) and says events may be missing,
+  rather than stopping.
+- **Session Properties' pages each ALTER on their own.** A page reads the
+  session afresh, replaces its own part (events, targets, options) and hands
+  the whole definition to gosmo's `Alter`, which writes only the difference —
+  so the parts a page did not touch diff to nothing, pages stay independent
+  like every other Properties dialog, and Script Changes is the minimal ALTER.
+  The price: General's causality and Advanced's options both changed on a
+  running session are two stop/start windows, not one. New Session writes one
+  CREATE from all four pages, since the statement takes everything at once.
+- **An event's filter is text, as the catalog stores it; the clause builder
+  only appends to it.** SSMS's Filter grid can't hold parentheses or a
+  pred_compare it doesn't list, and a grid ↔ text round trip would rewrite a
+  predicate the user never touched (the diff compares predicate text). The
+  builder quotes by the field's XE type — N'…' for a string, (n) otherwise —
+  and offers the two sqlserver LIKE comparators by name.
+- **New Session's templates are gosmo's, reconstructed rather than SSMS's
+  files** (`gosmo.XESessionTemplates`): the two Profiler sessions plus
+  Connection Tracking, Count Query Locks, Deadlocks, Query Batch/Detail
+  Tracking and Query Wait Statistics, each created and read back unchanged on
+  majors 13, 14 and 17. Applying one drops what the server's catalog lacks and
+  says so, rather than failing the CREATE.
+- **The Events and Data Storage pages are editable with either granular half
+  on 2022+** (`gate.EventSessionEvents`: ADD EVENT or DROP EVENT;
+  `EventSessionTargets` likewise) — each lets the page do part of its work,
+  and the server refuses the half a login lacks. A page right can't say "both".
+- **"Start the session after creation" and "Watch live data" are read-only
+  for a login that may create but not start** (2022's CREATE ANY EVENT SESSION
+  alone), so the dialog never creates a session and then fails its START.
+  Watching counts only with starting; a session created without a target gets
+  the viewer's offer of one.
+- **Grouping is a regroup of the filtered events on every read, not an
+  incremental update**, and the selection is kept by identity (a group's Key,
+  an event's ID) rather than by row index: a new event can land in any group,
+  and a group opening above the cursor moves every row below it. Regrouping
+  100 000 events is milliseconds; MIN and MAX are not decrementable, so an
+  incremental tree would still rebuild whenever events aged out.
+- **Group rows are a tuikit `RowKindSource` capability (`RowGroup`), with
+  expand/collapse the host's rebuild** — the grid draws the label from the
+  left edge, unscrolled, spilling across the empty cells to the first
+  non-empty one, leaves the label (not the other cells) out of width
+  sampling, and knows nothing of trees. Groups
+  open collapsed, sort by value (numbers numerically), with the events lacking
+  the column last as "(no value)".
+- **Aggregates show on group rows only, as in SSMS, under their columns**:
+  Aggregation is inert until the events are grouped. A group row's cells are
+  `[label, "", …, agg, …]`; several aggregates on one column share its cell
+  (`SUM 275068 · MAX 44955`). The label spills across the empty cells as a
+  spreadsheet's text does and is clipped with `…` at the first non-empty cell
+  on screen. The rule for which aggregates get a cell is fixed, not measured:
+  **an aggregate stays in the label (`SUM(duration) = 125`) when its column is
+  hidden or is the first column** (whose cell the label is), and goes under
+  its column otherwise — even when that clips the label. A width-measured
+  rule (keep it in the label when it would clip the label below its value and
+  count) was rejected: the host doesn't know the widths, and an aggregate
+  would jump between the label and its cell as columns resized or scrolled.
+  Accepted cost: scrolled so an aggregate's column comes first on screen, the
+  label has no room and the rows show only the aggregates — scroll back to
+  see which group is which. This reverses the earlier "text in the label only" call
+  (`plan-xevents-followups.md` W4).
+- **Find and bookmarks walk events in grid order, collapsed groups
+  included, and open the group holding a hit** — a Find that skipped
+  collapsed groups would say "not found" of an event the grid holds. Ctrl+F /
+  F3 reach the viewer through the Edit menu's routing (`activeXEventViewer`),
+  so the query editor's Find keeps its keys. Bookmarks go with their events
+  when they age out, and with Clear Data.
+- **Saved display settings are named entries in config
+  (`XEventViewSettings`), not `.viewsetting` files**: hidden columns, filter,
+  grouping and aggregates, applied to any viewer. Columns and aggregates are
+  saved by key (`field:duration`, `SUM:field:duration`), and an entry this
+  build can't read is left out and named rather than failing the apply.
+- **Export to Table is a script, not a write**: a CREATE TABLE (types
+  inferred — bigint/float where every value is a plain number, datetime2 for
+  the local-time timestamp, nvarchar sized to the longest value) and INSERTs
+  of 1 000 rows, to a file or a new query window (≤ 10 000 events), run where
+  the user chooses. SSMS writes the table itself; a script leaves the database
+  and the table name to the user, and needs no write right in the viewer.
+- **Merge Extended Event Files reads server-side files matching a wildcard
+  pattern**, never a local `.xel` (no public decoder), lists them
+  (`EventFiles`), reads each whole and posts all events once sorted by
+  timestamp — files of different sessions interleave in time. Past twice the
+  store's capacity the oldest are dropped as it goes and counted, so memory
+  stays bounded. No right is gated: reading needs VIEW SERVER STATE, which the
+  server enforces.
+- **Azure SQL Database's sessions hang off each database, not Management.**
+  They are database-scoped (`ON DATABASE`, `sys.database_event_sessions`) and
+  the server has none, so on EngineEdition 5 Management loses Extended Events
+  and every database gains one holding Sessions alone — where SSMS files
+  them. The same node types serve both scopes; a node's `DBName` is the scope
+  (`xeScope`: empty = server), which picks the gosmo handle, the ON clause
+  and the right. Every verb there needs `ALTER ANY DATABASE EVENT SESSION`
+  (`gate.DatabaseEventSession`), the one right SQL Database has — no
+  per-verb split. Not run live: no Azure SQL Database is available.
+- **No XEvent Profiler on Azure SQL Database.** Its sessions are
+  server-scoped; the Tools items and Alt+P say so rather than create one in a
+  database the user did not pick.
+- **An Azure event_file is a blob URL, checked before sending.** A Managed
+  Instance (and SQL Database) refuses a path with Msg 40538 — also for an
+  `https://` URL whose storage account does not resolve (verified on
+  t-qmi-01). CREATE with a real account succeeds without a usable credential;
+  START then fails 25602 "Access is denied", so the dialog cannot know a
+  session will start and does not try. Data Storage offers the credentials
+  whose names are container URLs (server credentials on MI, database-scoped
+  on SQL Database) as `account/container` — the URLs differ at their ends,
+  past any control's width — and fills `<container>/<session>.xel`. A target
+  the session already had is exempt: MI's `system_health` writes a local
+  file, which the server may and a user may not.
+- **The Profiler and the add-a-target offer use a ring_buffer on Azure, not
+  an event_file** (D2 revised): a blob needs a container and a credential
+  gossms cannot assume.
+- **On Azure a local event file is read only by its session's wildcard**
+  (`xeReadsOnlyByPattern`, `xevent_viewer_feed.go`). MI's
+  `fn_xe_file_target_read_file` accepts `system_health*.xel` and nothing else
+  local — a full path, a bare file name, `system_health_0*.xel`, `*.xel`,
+  `AlwaysOn_health*.xel` are all Msg 40538, sysadmin or not (probed on
+  t-qmi-01, 2026-09-30); a cursor naming the file by full path is accepted
+  beside the wildcard. So on Azure Watch Live Data does not start at the
+  current file (it reads the wildcard from the start — MI's system_health is
+  one file), View Target Data and Merge do not list and read file by file,
+  and Merge's prompt starts on `system_health*.xel` (supersedes "Merge keeps
+  its `*.xel` default there", which was never tried: that pattern lists 149
+  internal files and refuses the first). A URL is read as given.
 
 ## By design — not issues, do not re-raise
 

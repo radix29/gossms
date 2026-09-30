@@ -244,6 +244,13 @@ type PropDialog struct {
 
 	// run is the OK/Apply/Script pipeline in flight, if any.
 	run applyRun
+
+	// onSaved, when set, runs on the UI goroutine after a write has reached
+	// the server — a full Apply, or a failed one some page of which landed —
+	// for a dialog whose writes change what the tree shows under its object
+	// (Session Properties' targets). Never after Script Changes. Reset by
+	// every show, so one dialog's hook never runs for the next.
+	onSaved func()
 }
 
 // NewPropDialog creates the properties dialog and wires its callbacks.
@@ -286,6 +293,7 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 	d.stopPageRuns()
 	d.sc = sc
 	d.database = database
+	d.onSaved = nil
 	d.detailNode = nil
 	if d.app.detailBrowser != nil {
 		d.detailNode = d.app.detailBrowser.currentNode
@@ -594,7 +602,7 @@ func (d *PropDialog) applyFailed(runCtx context.Context, runErr error, progress 
 		return
 	}
 	if !gosmo.Scripting(runCtx) {
-		d.staleDetails()
+		d.saved()
 	}
 }
 
@@ -660,9 +668,18 @@ func (d *PropDialog) applyNow(hideOnSuccess bool) {
 	d.runPipeline(d.ctx, hide, func() {
 		d.app.setStatus("Properties saved")
 		d.InvalidateAll()
-		d.staleDetails()
+		d.saved()
 		hide()
 	})
+}
+
+// saved is what follows a write that reached the server: the Details pane's
+// stale view goes, and the dialog's own onSaved hook runs.
+func (d *PropDialog) saved() {
+	d.staleDetails()
+	if d.onSaved != nil {
+		d.onSaved()
+	}
 }
 
 // staleDetails drops the Details pane's cached view of what this dialog just

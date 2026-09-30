@@ -104,7 +104,11 @@ implemented; `layout.Disposable` (`Close()`) is called by the host before
 **Row data behind an interface.** `controls.DataGrid` takes a `RowSource`
 (`Len()`, `Row(i)`); `SetData` wraps `SetSource` with a `SliceRowSource`.
 Column widths sample only the first `colWidthSampleRows`, so large or streamed
-sources scale.
+sources scale. A source may also implement `RowKindSource` to mark rows as
+group headers (`RowGroup` — cell 0 a label from the left edge, unscrolled and
+not sampled for widths, spilling across empty cells up to the first non-empty
+one, which draws in its column like an ordinary cell; expanding one is the
+host's rebuild) or marked rows (`RowMarked`, bookmarks).
 
 **Display width, not bytes or runes.** `core.DisplayWidth(s)` (via
 `clipperhouse/displaywidth`) is the one answer to "how many columns", handling
@@ -128,7 +132,10 @@ no locking. Rows share a small `Row` interface plus optional capabilities
 (`Editable`, `Copyable`, `KeyHandler`, … — `propsheet/common.go`), so a new
 row kind never touches `Form`. **A row that draws a control also implements
 `ReadOnlyDrawer`**: under `Form.SetReadOnly`, a row still drawing `[value]` or
-`[ ]` looks like a field refusing input.
+`[ ]` looks like a field refusing input. **A read-only form still lets its
+`Browsable` rows (grids) take focus and clicks** — they go browse-only
+(`DataGrid.SetBrowseOnly`: select, scroll, copy, never `OnActivateCell`), so
+detail rows that follow a selection stay readable; the form is never `Dirty()`.
 
 **Overlays are drawn last and get first refusal of input.** A widget whose open
 state floats outside its rect — `DropDown`'s list, `DataGrid`'s menu/"Show

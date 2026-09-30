@@ -411,3 +411,104 @@ func TestThePagesGateAndTheFormsGateAreIndependent(t *testing.T) {
 		t.Error("clearing the page's gate let a row focus on a read-only form")
 	}
 }
+
+// TestAReadOnlyFormsGridsCanBeBrowsed. A page whose detail rows follow a grid's
+// selection is unreadable past the first row if the grid cannot take focus —
+// a view-only login on Session Properties ▸ Events saw only the first event's
+// fields. The grids take focus and move, OnSelectRow fires, and still nothing
+// can be toggled, activated or made dirty.
+func TestAReadOnlyFormsGridsCanBeBrowsed(t *testing.T) {
+	toggles := newTestToggleGrid()
+	plain := controls.NewDataGrid()
+	plain.SetCellCursor(true)
+	plain.SetData([]string{"Event"}, [][]string{{"a"}, {"b"}, {"c"}})
+	activations := 0
+	plain.OnActivateCell = func(int, int) { activations++ }
+	var selected []int
+	plain.OnSelectRow = func(row int) { selected = append(selected, row) }
+	plainRow := NewGridRow(plain, 6)
+	text := Text("Name", "srv01", 20)
+
+	f := NewForm(Section("Events"), plainRow, text, toggles)
+	f.SetBounds(0, 0, 60, 30)
+	f.SetReadOnly(true)
+	f.Draw(&fakeScreen{w: 60, h: 30})
+	f.Focus(true)
+
+	if f.Focused() != Row(plainRow) {
+		t.Fatalf("focused row = %T, want the first grid", f.Focused())
+	}
+	f.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	if got := plain.SelectedRow(); got != 1 || len(selected) != 1 || selected[0] != 1 {
+		t.Errorf("after Down: selected row %d, OnSelectRow calls %v; want 1, [1]", got, selected)
+	}
+	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
+	f.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+
+	// Tab skips the text row and lands on the next grid, then leaves the form
+	// — the keyboard-trap rule still holds.
+	if !f.HandleKey(key(tcell.KeyTab, tcell.ModNone)) || f.Focused() != Row(toggles) {
+		t.Fatalf("Tab went to %T, want the toggle grid", f.Focused())
+	}
+	// Onto a toggle column: Space and Enter on the text column toggle nothing
+	// even on an editable grid.
+	f.HandleKey(key(tcell.KeyRight, tcell.ModNone))
+	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
+	f.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	f.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	if f.HandleKey(key(tcell.KeyTab, tcell.ModNone)) {
+		t.Error("Tab from the last grid was claimed, trapping focus on the form")
+	}
+
+	// A click on the first grid's third row selects it and focuses the grid;
+	// a click on the text row is claimed and focuses nothing.
+	f.Draw(&fakeScreen{w: 60, h: 30})
+	gy := f.bands[1].y
+	press := func(x, y int) {
+		f.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+		f.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+	}
+	press(1, gy+2+2)
+	if f.Focused() != Row(plainRow) || plain.SelectedRow() != 2 {
+		t.Errorf("click on the grid: focused %T, selected row %d; want the grid, row 2", f.Focused(), plain.SelectedRow())
+	}
+	press(2, f.bands[2].y)
+	if f.Focused() == Row(text) {
+		t.Error("a click focused the text row of a read-only form")
+	}
+
+	if activations != 0 {
+		t.Errorf("OnActivateCell fired %d times on a read-only form", activations)
+	}
+	if toggles.Dirty() || f.Dirty() {
+		t.Error("browsing a read-only form's grids made it dirty")
+	}
+	if got := toggles.Grid.Row(1); got[1] != "✓" || got[2] != "✗" {
+		t.Errorf("toggle cells = %v after browsing, want them untouched", got[1:])
+	}
+
+	// Clearing the gate gives the grids their editing back.
+	f.SetReadOnly(false)
+	f.FocusFirst()
+	f.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	if activations != 1 {
+		t.Errorf("OnActivateCell fired %d times after clearing read-only, want 1", activations)
+	}
+}
+
+// TestAReadOnlyFormIsNeverDirty. A browsing grid's OnSelectRow can run a
+// page's commit-the-detail-rows-back handler, and a lossy round trip there (a
+// size shown in MB and stored in KB) would make a page the user only looked at
+// report a change — and Script Changes would script it.
+func TestAReadOnlyFormIsNeverDirty(t *testing.T) {
+	g := NewGridRow(controls.NewDataGrid(), 6)
+	g.DirtyFn = func() bool { return true }
+	f := NewForm(g)
+	if !f.Dirty() {
+		t.Fatal("the grid's DirtyFn is not consulted — the case proves nothing")
+	}
+	f.SetReadOnly(true)
+	if f.Dirty() {
+		t.Error("a read-only form reported itself dirty")
+	}
+}

@@ -38,6 +38,11 @@ type objectOp struct {
 	// whose blast radius is bigger than one object. A typed confirmation asks
 	// for one name, so it implies solo.
 	typed bool
+	// typedFor is typed for some objects of the type only — decided per
+	// object, where typed is per type. It implies solo for those objects, and
+	// typedWarning is appended to their confirmation after warning.
+	typedFor     func(n nodeData) bool
+	typedWarning string
 	// solo keeps the type out of a multi-object delete: it is deleted one at a
 	// time, from either surface. It marks the principals and the database —
 	// objects whose drop is a server-wide or database-wide act with
@@ -614,6 +619,20 @@ var objectOps = map[NodeType]objectOp{
 		// No rename: ALTER ENDPOINT has no WITH NAME, and sp_rename has no
 		// class for one.
 	},
+	NodeEventSession: {
+		noun: "Event Session",
+		// A running session needs no stopping first; DROP stops it.
+		warning: "A running session stops collecting. Files an event_file target wrote stay on the server's disk.",
+		// SQL Server's own sessions are listed like any other and SSMS deletes
+		// them on one click; here the name is typed, since nothing in goSSMS
+		// can put system_health back — see builtInEventSessions.
+		typedFor:     func(n nodeData) bool { return isBuiltInEventSession(n.Name) },
+		typedWarning: "SQL Server created this session for its own diagnostics — Script Session as CREATE first to keep a way back.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return xeScopeOf(n).ref(sc, n.Name).Drop(ctx)
+		},
+		// No rename: ALTER EVENT SESSION has no WITH NAME.
+	},
 	NodeServerRole: {
 		noun: "Server Role",
 		solo: true,
@@ -783,10 +802,15 @@ func objectOpFor(t NodeType) *objectOp {
 	return nil
 }
 
-// deletedAlone reports whether a type refuses to be deleted as part of a
-// selection. typed implies it: the confirmation asks for one object's name.
-func deletedAlone(op *objectOp) bool {
-	return op.typed || op.solo
+// typedDelete reports whether deleting n asks for its name to be typed.
+func typedDelete(op *objectOp, n nodeData) bool {
+	return op.typed || (op.typedFor != nil && op.typedFor(n))
+}
+
+// deletedAlone reports whether n refuses to be deleted as part of a
+// selection. A typed confirmation implies it: it asks for one object's name.
+func deletedAlone(op *objectOp, n nodeData) bool {
+	return typedDelete(op, n) || op.solo
 }
 
 // soloDeleteReason is what to tell the user about a type that has to be deleted

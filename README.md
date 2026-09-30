@@ -237,6 +237,39 @@ connected SQL Server version or engine edition are hidden or disabled.
 - **Monitoring** through Activity Monitor, blocking chains, sessions, and SQL
   Server and SQL Agent logs — several log files, from either or both, can be
   merged into one date-sorted view.
+- **Extended Events sessions** under Management: each session with its
+  targets, running or stopped at a glance, a details view of what it collects
+  and where, Start/Stop, scripting and delete. **New Session** and **Session
+  Properties** edit one on four pages: a template (the Profiler's, query and
+  connection tracking, lock counts, deadlocks, wait statistics), the event
+  library with search and category/channel filters, per event its global
+  fields, filter (typed, or built a clause at a time) and event fields, the
+  targets with their parameters, and the buffer options; Script Changes shows
+  the CREATE or the minimal ALTER. SQL Server's own sessions
+  (`system_health` and its siblings) ask for the name to be typed before a
+  delete. **Watch Live Data** on a running session and **View Target Data** on
+  an `event_file` or `ring_buffer` target open an event grid over a details
+  pane: pause, clear, a filter expression (`duration > 1000000 and
+  database_name = 'app'`), columns chosen per session, grouping by one or more
+  columns into collapsible groups with COUNT/SUM/AVG/MIN/MAX per group under
+  their columns (Filter by This Group narrows to one, nested groups included),
+  find,
+  bookmarks, named display settings, export to CSV, tab-separated text or a
+  CREATE TABLE + INSERT script, and from any event its SQL in a query window,
+  its plan, or its deadlock XML. A session with nothing to read is offered a
+  target; View Target Data reads a large `event_file` set from its newest
+  files, and the viewer's event limit is in Options. **Merge Extended Event
+  Files** (File menu, or the Extended Events folder) shows every server-side
+  `.xel` file matching a pattern in one time-ordered view. On Azure an
+  `event_file` is a blob: New Session and Session Properties offer the
+  credentials named after a blob container and refuse a plain path, and Merge
+  takes a blob URL pattern; of a Managed Instance's own files only
+  `system_health*.xel` can be read. On Azure SQL Database the sessions are the
+  database's own, under each database's Extended Events folder.
+- **XEvent Profiler**: Alt+P (or Tools > XEvent Profiler, or the XEvent
+  Profiler folder under Extended Events) starts a Standard or TSQL trace — its
+  own `gossms_QuickSession*` session, created on first use — and opens it live.
+  On a Managed Instance the session keeps its events in a `ring_buffer`.
 - **Azure SQL Managed Instance** support, including an Activity Monitor
   Instance tab showing CPU, storage, I/O and the resource governor's limits.
 - **Least-privilege operation**: unavailable actions are disabled and missing
@@ -256,7 +289,9 @@ Server permission it would require in another client.
 
 When a permission is missing, goSSMS disables the affected action, opens an
 editable page as read-only, displays inaccessible values as `N/A`, or reports the
-required permission where possible.
+required permission where possible. A read-only page's grids can still be moved
+through, so the details of every row — each event of a session, each role of a
+login — can be read; nothing on the page can be changed.
 
 ### `VIEW SERVER STATE`
 

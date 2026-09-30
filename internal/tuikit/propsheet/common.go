@@ -112,3 +112,14 @@ type OverlayActiver interface {
 type ReadOnlyDrawer interface {
 	SetDrawReadOnly(v bool)
 }
+
+// Browsable is implemented by a row that may still take focus on a read-only
+// form, to be looked at rather than edited — GridRow and ToggleGridRow, whose
+// selection drives the detail rows beside them. Form.SetReadOnly leaves every
+// other row unfocusable and unclickable; a Browsable row keeps both, and is
+// trusted to have made itself inert through ReadOnlyDrawer (a grid goes
+// browse-only: it navigates, selects and copies, but activates no cell), so
+// the form can still never become dirty.
+type Browsable interface {
+	Browsable() bool
+}

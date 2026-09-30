@@ -24,14 +24,19 @@ func loadServerObjectsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 	}, nil
 }
 
-// loadManagementChildren returns the Management folder's children: SQL
-// Server Logs. SSMS hangs a good deal more here (Policy Management, Data
-// Collection, Maintenance Plans, Database Mail, …); this folder exists for
-// the parts goSSMS implements.
+// loadManagementChildren returns the Management folder's children: Extended
+// Events and SQL Server Logs, in SSMS's order. SSMS hangs a good deal more
+// here (Policy Management, Data Collection, Maintenance Plans, Database Mail,
+// …); this folder exists for the parts goSSMS implements.
+//
+// Azure SQL Database has no server-scoped event sessions, so Extended Events
+// is under each database there instead (loadDatabaseChildren).
 func loadManagementChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return []*explorerNode{
-		l.node("SQL Server Logs", NodeSQLServerLogs, "", "", ""),
-	}, nil
+	logs := l.node("SQL Server Logs", NodeSQLServerLogs, "", "", "")
+	if databaseScopedXEvents(l.sc) {
+		return []*explorerNode{logs}, nil
+	}
+	return []*explorerNode{l.node("Extended Events", NodeExtendedEvents, "", "", ""), logs}, nil
 }
 
 // loadSQLServerLogsChildren lists the instance's error log files, current

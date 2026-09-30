@@ -28,6 +28,34 @@ type SliceRowSource [][]string
 func (s SliceRowSource) Len() int           { return len(s) }
 func (s SliceRowSource) Row(i int) []string { return s[i] }
 
+// RowKind says how the grid draws one row.
+type RowKind int
+
+const (
+	// RowNormal is an ordinary row of cells.
+	RowNormal RowKind = iota
+	// RowGroup is a group header, in the header style: its first cell is a
+	// label drawn from the grid's left edge whatever the horizontal scroll,
+	// spilling across the empty cells to its right and clipped at the first
+	// non-empty one on screen; the cells from there on (a host's aggregates)
+	// draw as an ordinary row's, scrolled with their columns. The label is
+	// left out of column-width sampling — a label sized to the row would
+	// otherwise widen the first column to the cap — the other cells are
+	// sampled like any. The row is highlighted whole when selected. What
+	// expanding or collapsing it does is the host's: it rebuilds its rows.
+	RowGroup
+	// RowMarked is an ordinary row the host has marked (a bookmark), drawn
+	// in the warning colour.
+	RowMarked
+)
+
+// RowKindSource is an optional RowSource capability: a source implementing
+// it sets rows apart as group headers or marked rows. A source without it is
+// all RowNormal.
+type RowKindSource interface {
+	RowKind(i int) RowKind
+}
+
 // colWidthSampleRows caps how many rows computeColWidths inspects, so sizing
 // columns never scans a million-row source.
 const colWidthSampleRows = 200
@@ -183,6 +211,12 @@ type DataGrid struct {
 	// otherwise land on the grid underneath as fresh cell clicks.
 	viewDismissing bool
 
+	// browseOnly makes an editable grid behave as a read-only one for the
+	// moment: OnActivateCell is never called, and the grid gets the read-only
+	// grid's block selection and Copy / Show Value menu instead. See
+	// SetBrowseOnly.
+	browseOnly bool
+
 	// OnSelectRow fires whenever the selected row changes (keyboard or click).
 	// OnActivateCell fires on Enter/Space, or a cell click, while cell-cursor
 	// mode is enabled. Leave it nil for a read-only grid — right-click then
@@ -214,6 +248,27 @@ type DataGrid struct {
 func NewDataGrid() *DataGrid {
 	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil), lastSepPressCol: -1})
 }
+
+// SetBrowseOnly lets the grid be looked at but not edited: navigation,
+// selection, OnSelectRow, Copy and Show Value all still work, but Enter, Space
+// and a cell click no longer reach OnActivateCell, and the host's OnMenuItems
+// entries are left off the menu — the grid cannot tell which of them edit.
+// Paste and Cut never edit a grid. A property page gated read-only uses it
+// (propsheet.GridRow) so its grids can be browsed while the page can still
+// never become dirty.
+func (g *DataGrid) SetBrowseOnly(v bool) {
+	g.browseOnly = v
+	g.mouseDragging = false
+}
+
+// BrowseOnly reports whether SetBrowseOnly is in force.
+func (g *DataGrid) BrowseOnly() bool { return g.browseOnly }
+
+// editable reports whether the grid's cells can be activated right now: it
+// has an OnActivateCell and is not browse-only. Every path that chooses
+// between editing a cell and selecting one asks this, never OnActivateCell
+// directly, so the browse-only gate has one place to hold.
+func (g *DataGrid) editable() bool { return g.OnActivateCell != nil && !g.browseOnly }
 
 // SetBounds positions the grid and recomputes column widths, so a
 // fillLastColumn grid's last column tracks the new width. Content-based widths
@@ -266,10 +321,17 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 // the zero SetSource left behind it drags the selected row to the viewport
 // edge.
 func (g *DataGrid) SetDataPreservingView(columns []string, rows [][]string) {
+	g.SetSourcePreservingView(columns, SliceRowSource(rows))
+}
+
+// SetSourcePreservingView is SetDataPreservingView for a RowSource — a live
+// view whose rows grow in place and whose column set changes as new ones
+// appear.
+func (g *DataGrid) SetSourcePreservingView(columns []string, rows RowSource) {
 	selRow, selCol := g.SelectedCell()
 	scrollRow, scrollCol := g.scrollRow, g.scrollCol
 	widths := g.ColumnWidthOverrides()
-	g.SetData(columns, rows)
+	g.SetSource(columns, rows)
 	g.restoreOverrideWidths(widths)
 	g.SetScroll(scrollRow, scrollCol)
 	g.SetSelectedCell(selRow, selCol)
@@ -514,6 +576,16 @@ func (g *DataGrid) Row(i int) []string {
 	return g.rows.Row(i)
 }
 
+// RowKindAt is row i's kind: what the source says when it implements
+// RowKindSource, RowNormal otherwise or when i is out of range.
+func (g *DataGrid) RowKindAt(i int) RowKind {
+	ks, ok := g.rows.(RowKindSource)
+	if !ok || i < 0 || i >= g.rows.Len() {
+		return RowNormal
+	}
+	return ks.RowKind(i)
+}
+
 // ColumnIndex returns the position of the column named name, or -1 if the grid
 // has no such column. For a host that has to address a cell by column name
 // rather than by position — the grids here are built from whatever a loader
@@ -540,9 +612,15 @@ func (g *DataGrid) computeColWidths() {
 	cellLimit := max(maxW, 6) - 2
 	n := min(g.rows.Len(), colWidthSampleRows)
 	for r := 0; r < n; r++ {
+		// A group row's label (cell 0) spills across the row; its other
+		// cells are ordinary.
+		first := 0
+		if g.RowKindAt(r) == RowGroup {
+			first = 1
+		}
 		row := g.rows.Row(r)
 		for i, cell := range row {
-			if i < len(g.colWidths) {
+			if i >= first && i < len(g.colWidths) {
 				if w := core.DisplayWidthAtMost(cell, cellLimit) + 2; w > g.colWidths[i] {
 					g.colWidths[i] = w
 				}

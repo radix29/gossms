@@ -57,6 +57,12 @@ behind the mouse and async rules.
   `newCellToggleGrid` for "activate a cell to change the row"; `staticBlock`
   for a read-only detail block — its `set()` clears every row not given, so a
   missed row can't keep describing the previous selection.
+- **A read-only page's grids browse, so their `OnSelectRow` runs there too.**
+  `Form.SetReadOnly` leaves grids focusable and browse-only; everything else is
+  inert, and the form reports clean whatever its rows say. An `OnSelectRow`
+  may fill detail rows (with `SetValue`, never `Edit`) and commit the previous
+  row's unchanged values back — but must never open, write or dirty anything
+  else on the strength of a selection.
 - **Don't rely on a mouse modifier — Shift especially.** VTE terminals
   (xfce4-terminal, GNOME Terminal) take Shift+mouse for their own selection and
   forward nothing. So a Shift+mouse gesture needs a second modifier

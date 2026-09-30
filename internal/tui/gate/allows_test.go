@@ -84,6 +84,18 @@ func TestRightsAllow(t *testing.T) {
 			server: probedServer(map[string]gosmo.CapabilityState{
 				"VIEW SERVER STATE": denied, "VIEW SERVER PERFORMANCE STATE": granted}),
 			dbCaps: unprobedDB, rights: []Right{ViewServerState}, want: true},
+		// 2016–2019 answer NULL for a name 2022 split out: an unknown
+		// alternate must not stand in for the wide name the server refused.
+		{name: "an unknown alternate does not answer for a denied right",
+			server: probedServer(map[string]gosmo.CapabilityState{"ALTER ANY EVENT SESSION": denied}),
+			dbCaps: unprobedDB, rights: []Right{EventSessionStart}, want: false},
+		{name: "a granted granular alternate answers for a denied wide right",
+			server: probedServer(map[string]gosmo.CapabilityState{
+				"ALTER ANY EVENT SESSION": denied, "ALTER ANY EVENT SESSION ENABLE": granted}),
+			dbCaps: unprobedDB, rights: []Right{EventSessionStart}, want: true},
+		{name: "an unanswered wide right still fails open",
+			server: probedServer(map[string]gosmo.CapabilityState{}),
+			dbCaps: unprobedDB, rights: []Right{EventSessionDrop}, want: true},
 		{name: "every alternate denied withholds",
 			server: probedServer(map[string]gosmo.CapabilityState{
 				"VIEW SERVER STATE": denied, "VIEW SERVER PERFORMANCE STATE": denied, "VIEW SERVER SECURITY STATE": denied}),

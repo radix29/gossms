@@ -39,7 +39,8 @@ type ToggleGridRow struct {
 // SetDrawReadOnly implements ReadOnlyDrawer: the toggle columns render their
 // state the way a read-only CheckRow does, so the one thing left on a gated
 // page that still looked like a control stops doing so. The cells are already
-// inert — Form routes no press into a read-only row.
+// inert: GridRow.SetDrawReadOnly, called first, makes the grid browse-only, so
+// Space, Enter and a click select a cell and toggle nothing.
 //
 // render, not renderPreservingView: Form calls this from SetReadOnly, which a
 // page runs before the sheet has ever laid the grid out, and preserving the
@@ -47,6 +48,7 @@ type ToggleGridRow struct {
 // scrolling past every row — the affinity grid drew four blank lines under its
 // header, live.
 func (t *ToggleGridRow) SetDrawReadOnly(v bool) {
+	t.GridRow.SetDrawReadOnly(v)
 	if t.drawReadOnly == v {
 		return
 	}

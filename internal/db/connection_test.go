@@ -307,7 +307,7 @@ func TestMissingCredentialNamesTheDialogsField(t *testing.T) {
 // gosmo's stdout print.
 func TestEntraConnectionsShareOneSignIn(t *testing.T) {
 	for _, m := range config.AllAuthMethods() {
-		for _, role := range []Role{RoleExplorer, RoleQuery, RoleActivityMonitor} {
+		for _, role := range []Role{RoleExplorer, RoleQuery, RoleActivityMonitor, RoleXEventProfiler} {
 			co, err := toGosmoOptions(config.Connection{Server: "s", AuthMethod: m, User: "u", Password: "p", ClientID: "c"}, role)
 			if err != nil {
 				t.Fatalf("%s: %v", config.AuthMethodName(m), err)
@@ -323,7 +323,7 @@ func TestEntraConnectionsShareOneSignIn(t *testing.T) {
 
 func TestRoleSetsTheApplicationName(t *testing.T) {
 	for role, want := range map[Role]string{
-		RoleExplorer: "goSSMS", RoleQuery: "goSSMS - Query", RoleActivityMonitor: "goSSMS - Activity Monitor",
+		RoleExplorer: "goSSMS", RoleQuery: "goSSMS - Query", RoleActivityMonitor: "goSSMS - Activity Monitor", RoleXEventProfiler: "goSSMS - XEvent Profiler",
 	} {
 		co, err := toGosmoOptions(config.Connection{Server: "s"}, role)
 		if err != nil {

@@ -218,6 +218,9 @@ var (
 	scriptEndpoint serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptEndpoint(ctx, n.Name)
 	}
+	scriptEventSession serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptEventSession(ctx, n.Name)
+	}
 )
 
 // scriptables is the per-type table. Verb order follows SSMS: CREATE, ALTER,
@@ -327,6 +330,9 @@ var scriptables = map[NodeType]scriptable{
 	NodeBackupDevice:             {"Backup Device", serverDDLVerbs(scriptBackupDevice)},
 	NodeServerTrigger:            {"Server Trigger", serverDDLVerbs(scriptServerTrigger)},
 	NodeEndpoint:                 {"Endpoint", serverDDLVerbs(scriptEndpoint)},
+	// "Session", as SSMS words it. The running state is not scripted — see
+	// gosmo's buildEventSessionScript.
+	NodeEventSession: {"Session", eventSessionScriptVerbs()},
 }
 
 // indexMaintenanceVerbs are the three maintenance statements an index
@@ -422,6 +428,25 @@ func serverDDLVerbs(f serverScriptFn) []scriptVerb {
 		{"DROP To", serverDDL(gosmo.ScriptDrop, f)},
 		{"DROP And CREATE To", serverDDL(gosmo.ScriptDropAndCreate, f)},
 	}
+}
+
+// eventSessionScriptVerbs is serverDDLVerbs for an event session, which is
+// the server's or — on Azure SQL Database — a database's (xeScope): the
+// node's DBName picks the scripter.
+func eventSessionScriptVerbs() []scriptVerb {
+	verbs := serverDDLVerbs(scriptEventSession)
+	for i, v := range []gosmo.ScriptVerb{gosmo.ScriptCreate, gosmo.ScriptDrop, gosmo.ScriptDropAndCreate} {
+		server, database := verbs[i].gen, ddl(v, func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+			return s.ScriptEventSession(ctx, n.Name)
+		})
+		verbs[i].gen = func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
+			if n.DBName != "" {
+				return database(ctx, sc, n)
+			}
+			return server(ctx, sc, n)
+		}
+	}
+	return verbs
 }
 
 // ddl binds a Scripter method to one verb.

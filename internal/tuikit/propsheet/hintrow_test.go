@@ -57,3 +57,19 @@ func TestHintRowIsNotFocusable(t *testing.T) {
 		t.Error("HintRow.Focusable() = true, want false")
 	}
 }
+
+// A DynamicNote re-wraps what SetText gives it: the height the form lays it
+// out at follows the new text, not the one it was built with.
+func TestDynamicNoteHeightFollowsSetText(t *testing.T) {
+	r := DynamicNote("short")
+	if h := r.Height(20); h != 1 {
+		t.Fatalf("one word takes %d lines", h)
+	}
+	r.SetText("a description long enough to need three lines at this width")
+	if h := r.Height(20); h < 3 {
+		t.Errorf("after SetText the note takes %d lines", h)
+	}
+	if r.Text() != "a description long enough to need three lines at this width" {
+		t.Errorf("Text = %q", r.Text())
+	}
+}

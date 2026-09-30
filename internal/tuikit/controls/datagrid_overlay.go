@@ -78,7 +78,8 @@ func (g *DataGrid) requestCopy(text string) {
 // Value" for a single cell — neither a block selection nor a Ctrl+click
 // selection of several rows has one cell's full content to show, so that item
 // is omitted unless the selection is a single row and not a block — then
-// whatever the host contributes through OnMenuItems.
+// whatever the host contributes through OnMenuItems, unless the grid is
+// browse-only (see SetBrowseOnly).
 func (g *DataGrid) cellContextMenuItems() []MenuItem {
 	var items []MenuItem
 	if g.OnCopyRequest != nil {
@@ -87,7 +88,7 @@ func (g *DataGrid) cellContextMenuItems() []MenuItem {
 	if !g.blockSelecting && len(g.selectedRows()) <= 1 {
 		items = append(items, MenuItem{Label: showValueMenuItem, Action: g.openViewer})
 	}
-	if g.OnMenuItems != nil {
+	if g.OnMenuItems != nil && !g.browseOnly {
 		if host := g.OnMenuItems(); len(host) > 0 {
 			if len(items) > 0 {
 				items = append(items, MenuItem{Divider: true})

@@ -40,6 +40,9 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Save Execution Plan As...", Action: func() { a.saveExecutionPlanAs() },
 				Enabled: func() bool { return a.activePlan() != nil }},
 			{Divider: true},
+			{Label: "Merge Extended Event Files...", Action: func() { a.promptMergeXEventFilesActive() },
+				Enabled: func() bool { return a.activeServerConn() != nil }, Note: "not connected"},
+			{Divider: true},
 			{Label: "Exit", Shortcut: "Ctrl+Q", Action: func() { a.requestQuit() }},
 		}},
 		{Label: "Edit", Items: []controls.MenuItem{
@@ -59,7 +62,7 @@ func (a *App) buildMenus() []controls.Menu {
 				Enabled: func() bool { return a.activeClipboardTarget() != nil }},
 			{Divider: true},
 			{Label: "Find...", Shortcut: "Ctrl+F", Action: func() { a.findDialog.ShowFind() },
-				Enabled: func() bool { return a.activeQueryPanel() != nil }},
+				Enabled: func() bool { return a.activeQueryPanel() != nil || a.activeXEventViewer() != nil }},
 			{Label: "Replace...", Action: func() { a.findDialog.ShowReplace() },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: "Find Next", Shortcut: "F3", Action: func() { a.findNextInEditor(1) },
@@ -139,6 +142,7 @@ func (a *App) buildMenus() []controls.Menu {
 					return len(a.connections) > 0 &&
 						gate.Allows(a.activeServerConn(), "", gate.ViewServerState)
 				}},
+			a.xeProfilerMenu(),
 			{Label: "Query List", Action: func() { a.showQueryList() }},
 			{Label: "Background Tasks", Action: func() { a.tasksDialog.Show() }},
 			{Divider: true},

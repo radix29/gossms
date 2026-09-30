@@ -76,7 +76,7 @@ func (a *App) detailMenuItems(db *DetailBrowser) []controls.MenuItem {
 	// too; this is the half that says so before the click.
 	if len(objs) > 1 {
 		for _, n := range objs {
-			if op := objectOpFor(n.Type); deletedAlone(op) {
+			if op := objectOpFor(n.Type); deletedAlone(op, n) {
 				return []controls.MenuItem{{
 					Label:   deleteItemLabel(objs),
 					Enabled: func() bool { return false },

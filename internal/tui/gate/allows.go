@@ -124,8 +124,13 @@ func RightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			if server.Allows(r.Name) {
 				return true
 			}
+			// Has, not Allows: an alternate is a name SQL Server 2022 split out
+			// of r.Name, and 2016–2019 answer NULL for it — CapabilityUnknown.
+			// Allows would read that as "not denied" and offer the action to
+			// every login the wide name has just refused. The wide name above
+			// is what fails open for a probe that never ran.
 			for _, n := range r.Alt {
-				if server.Allows(n) {
+				if server.Has(n) {
 					return true
 				}
 			}

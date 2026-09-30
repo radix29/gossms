@@ -41,6 +41,10 @@ const (
 	RoleQuery
 	// RoleActivityMonitor is the Activity Monitor's collectors.
 	RoleActivityMonitor
+	// RoleXEventProfiler is an Extended Events viewer's reads (Watch Live
+	// Data, View Target Data) — SSMS's own name for its XEvent Profiler
+	// connection.
+	RoleXEventProfiler
 )
 
 // ApplicationName returns the program_name a connection in role r reports.
@@ -50,6 +54,8 @@ func (r Role) ApplicationName() string {
 		return "goSSMS - Query"
 	case RoleActivityMonitor:
 		return "goSSMS - Activity Monitor"
+	case RoleXEventProfiler:
+		return "goSSMS - XEvent Profiler"
 	default:
 		return "goSSMS"
 	}

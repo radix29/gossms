@@ -163,6 +163,8 @@ func optionsFocusName(d *OptionsDialog) string {
 		return "text"
 	case d.fIndentWidth:
 		return "indent"
+	case d.fXECapacity:
+		return "xecap"
 	case d.cbIntelliSense:
 		return "intellisense"
 	}
@@ -186,7 +188,7 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 		k tcell.Key
 	}{
 		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
-		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
+		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
 		{"Right", tcell.KeyRight}, {"Left", tcell.KeyLeft}, {"Left", tcell.KeyLeft},
 		{"Tab", tcell.KeyTab}, {"Up", tcell.KeyUp},
 		{"Backtab", tcell.KeyBacktab}, {"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab},
@@ -203,16 +205,16 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 		ok := d.HandleKey(tcell.NewEventKey(k.k, "", tcell.ModNone))
 		fmt.Fprintf(&b, " %s>%s(%v,%v)", k.n, optionsFocusName(d), ok, d.FocusedClipboardTarget() != nil)
 	}
-	const want = "icons Tab>cell(true,true) Tab>text(true,true) Tab>indent(true,true) " +
+	const want = "icons Tab>cell(true,true) Tab>text(true,true) Tab>indent(true,true) Tab>xecap(true,true) " +
 		"Tab>intellisense(true,false) Tab>button0(true,false) Tab>button1(true,false) " +
 		"Tab>button0(true,false) Right>button1(true,false) Left>button0(true,false) " +
 		"Left>intellisense(true,false) Tab>button0(true,false) Up>intellisense(true,false) " +
-		"Backtab>indent(true,true) Up>text(true,true) Backtab>cell(true,true) Up>icons(true,false) " +
-		"Backtab>icons(true,false) Down>icons(true,false) Up>icons(true,false) Down>icons(true,false) " +
-		"Down>icons(true,false) Down>icons(true,false) Down>cell(true,true) Down>text(true,true) " +
-		"F5>text(false,true) Up>cell(true,true) F5>cell(false,true) Up>icons(true,false) " +
-		"F5>icons(true,false) Up>icons(true,false) Up>icons(true,false) Up>icons(true,false) " +
-		"F5>icons(true,false)"
+		"Backtab>xecap(true,true) Up>indent(true,true) Backtab>text(true,true) Up>cell(true,true) " +
+		"Backtab>icons(true,false) Down>icons(true,false) Up>icons(true,false) " +
+		"Down>icons(true,false) Down>icons(true,false) Down>icons(true,false) Down>cell(true,true) " +
+		"Down>text(true,true) F5>text(false,true) Up>cell(true,true) F5>cell(false,true) " +
+		"Up>icons(true,false) F5>icons(true,false) Up>icons(true,false) Up>icons(true,false) " +
+		"Up>icons(true,false) F5>icons(true,false)"
 	if got := b.String(); got != want {
 		t.Errorf("keyboard walk:\n got %s\nwant %s", got, want)
 	}

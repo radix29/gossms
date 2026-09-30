@@ -94,6 +94,14 @@ func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func(bool))
 	})
 }
 
+// ShowConfirmDefaultNo is ShowConfirm opening with No focused, for a question
+// whose Yes the user should have to choose rather than reach by pressing
+// Enter through it — Escape still answers No.
+func (d *ConfirmDialog) ShowConfirmDefaultNo(title, message string, onConfirm func(bool)) {
+	d.ShowConfirm(title, message, onConfirm)
+	d.btnFocus = 1
+}
+
 // ShowConfirmOption is ShowConfirm with one checkbox above the buttons, whose
 // state is reported alongside the answer. It exists for a question that has a
 // single modifier rather than a second question — SSMS's own Delete Object

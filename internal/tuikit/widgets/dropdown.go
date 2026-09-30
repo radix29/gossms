@@ -62,6 +62,11 @@ func (d *DropDown) SetSelected(i int) {
 		d.selected = i
 	}
 }
+
+// SetWidth changes the value area's width — for a host that sizes the control
+// to its items rather than at construction (propsheet.SelectRow.SetFitItems).
+func (d *DropDown) SetWidth(w int) { d.rect.W = w }
+
 func (d *DropDown) Focus(v bool) {
 	d.focused = v
 	if !v {

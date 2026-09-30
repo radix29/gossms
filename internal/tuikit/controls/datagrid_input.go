@@ -54,10 +54,10 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 		return true
 	}
 	// Ctrl+Space is the keyboard equivalent of right-clicking the selected cell.
-	// An editable grid (OnActivateCell != nil) has no context menu there either,
+	// An editable grid (see editable) has no context menu there either,
 	// so it falls through to the default case below.
 	if ev.Modifiers()&tcell.ModCtrl != 0 && core.EvRune(ev) == ' ' &&
-		g.cellCursor && g.rows.Len() > 0 && g.OnActivateCell == nil {
+		g.cellCursor && g.rows.Len() > 0 && !g.editable() {
 		x, y := g.selectionScreenPos()
 		g.ctxMenu.Show(x, y, g.cellContextMenuItems())
 		return true
@@ -66,7 +66,7 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 	// before this key, the anchor staying fixed across repeats; a plain arrow
 	// collapses back to one cell. Read-only cell-cursor grids only — see
 	// blockSelecting.
-	canBlockSelect := g.cellCursor && g.OnActivateCell == nil
+	canBlockSelect := g.cellCursor && !g.editable()
 	shiftHeld := ev.Modifiers()&tcell.ModShift != 0
 	isArrowKey := false
 	switch ev.Key() {
@@ -157,9 +157,7 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 		}
 	default:
 		if g.cellCursor && g.rows.Len() > 0 && core.EvRune(ev) == ' ' {
-			if g.OnActivateCell != nil {
-				g.OnActivateCell(g.selRow, g.selCol)
-			}
+			g.activateCell()
 			return true
 		}
 		return false
@@ -233,7 +231,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	canBlockSelect := g.cellCursor && g.OnActivateCell == nil
+	canBlockSelect := g.cellCursor && !g.editable()
 	switch ev.Buttons() {
 	case tcell.Button1:
 		// rowAtY is -1 outside the data rows. rect covers the header, its
@@ -339,7 +337,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 					g.blockSelecting = false
 					g.ClearMarkedRows()
 				}
-				if g.OnActivateCell == nil {
+				if !g.editable() {
 					g.ctxMenu.Show(mx, my, g.cellContextMenuItems())
 				}
 			}
@@ -566,9 +564,10 @@ func (g *DataGrid) ensureVisibleCol() {
 
 // activateCell fires OnActivateCell for grids with editable cells (toggle grids,
 // permission-state cycling). A grid leaving it nil does nothing here;
-// right-click's "Show Value" is how those open the full-content viewer.
+// right-click's "Show Value" is how those open the full-content viewer. A
+// browse-only grid does nothing here either — see SetBrowseOnly.
 func (g *DataGrid) activateCell() {
-	if g.OnActivateCell != nil {
+	if g.editable() {
 		g.OnActivateCell(g.selRow, g.selCol)
 	}
 }

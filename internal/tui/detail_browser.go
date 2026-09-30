@@ -758,6 +758,13 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeEndpoint:
 		return endpointDetail(ctx, sc, node)
 
+	case NodeEventSessions:
+		return eventSessionsFolderDetail(ctx, sc, node, objs)
+	case NodeEventSession:
+		return eventSessionDetail(ctx, sc, node)
+	case NodeEventTarget:
+		return eventTargetDetail(ctx, sc, node)
+
 	case NodeStoredProcedure, NodeFunction, NodeTrigger:
 		return moduleDetail(ctx, sc, node)
 

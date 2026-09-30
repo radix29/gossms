@@ -193,6 +193,12 @@ const (
 	NodeColumnMasterKey
 	NodeColumnEncryptionKeys
 	NodeColumnEncryptionKey
+	NodeExtendedEvents
+	NodeEventSessions
+	NodeEventSession
+	NodeEventTarget
+	NodeXEventProfiler
+	NodeXEventProfilerSession
 	NodeLoading
 	NodeError
 
@@ -227,7 +233,22 @@ func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	if d.Type == NodeDatabase && d.IsOffline {
 		return offlineDatabaseIcon(style)
 	}
+	if d.Type == NodeEventSession && !d.IsEnabled {
+		return stoppedEventSessionIcon(style)
+	}
 	return objectIcon(d.Type, style)
+}
+
+// stoppedEventSessionIcon returns the glyph substituted for a NodeEventSession
+// that is not running — the hollow twin of the running one, the same idiom as
+// offlineDatabaseIcon. The label says nothing about the state, as SSMS's
+// doesn't: a session list is mostly stopped sessions, and a suffix on each
+// would crowd out the names.
+func stoppedEventSessionIcon(style config.IconStyle) rune {
+	if style == config.IconStyleEmoji {
+		return '⏹'
+	}
+	return '✧'
 }
 
 // offlineDatabaseIcon returns the glyph substituted for a NodeDatabase
@@ -286,7 +307,8 @@ func isContainerNode(t NodeType) bool {
 		NodeAgentSchedules, NodeAgentAlerts, NodeAgentEventAlerts,
 		NodeAgentOperators, NodeAgentAdmin,
 		NodeAlwaysOn, NodeAvailabilityGroups, NodeAvailabilityReplicas,
-		NodeAvailabilityDatabases, NodeAGListeners:
+		NodeAvailabilityDatabases, NodeAGListeners,
+		NodeExtendedEvents, NodeEventSessions, NodeXEventProfiler:
 		return true
 	}
 	return false
@@ -453,6 +475,12 @@ func objectIconEmoji(t NodeType) rune {
 		return '🔐'
 	case NodeColumnMasterKey, NodeColumnEncryptionKey:
 		return '🔑'
+	case NodeEventSession:
+		return '🎬'
+	case NodeEventTarget:
+		return '🎯'
+	case NodeXEventProfilerSession:
+		return '🔭'
 	case NodeLoading:
 		return '⏳'
 	case NodeError:
@@ -598,6 +626,12 @@ func objectIconSymbols(t NodeType) rune {
 		return '⚿'
 	case NodeColumnMasterKey, NodeColumnEncryptionKey:
 		return '⚿'
+	case NodeEventSession:
+		return '✦'
+	case NodeEventTarget:
+		return '◎'
+	case NodeXEventProfilerSession:
+		return '⌁'
 	case NodeLoading:
 		return '…'
 	case NodeError:
@@ -727,6 +761,12 @@ func nodeTypeName(t NodeType) string {
 		return "External File Format"
 	case NodeExternalLibrary:
 		return "External Library"
+	case NodeEventSession:
+		return "Event Session"
+	case NodeEventTarget:
+		return "Event Session Target"
+	case NodeXEventProfilerSession:
+		return "XEvent Profiler Session"
 	default:
 		return "Object"
 	}
@@ -757,6 +797,7 @@ func hasChildren(t NodeType) bool {
 		NodeAvailabilityReplica, NodeAvailabilityDatabase, NodeAGListener,
 		NodePartitionFunction, NodePartitionScheme, NodeSecurityPolicy,
 		NodeColumnMasterKey, NodeColumnEncryptionKey,
+		NodeEventTarget, NodeXEventProfilerSession,
 		NodeLoading, NodeError:
 		return false
 	}
@@ -795,8 +836,9 @@ type nodeData struct {
 	IsSystem bool
 	// IsEnabled mirrors the object's own enabled flag — a SQL Server Agent
 	// job, schedule, alert or operator, a server trigger, a server audit or
-	// audit specification, a security policy, and an endpoint, where it means
-	// STARTED. Set at load time so the context menu can offer a single
+	// audit specification, a security policy, an endpoint, where it means
+	// STARTED, and an event session, where it means running (nodeIcon draws
+	// a stopped one hollow). Set at load time so the context menu can offer a single
 	// "Enable"/"Disable" toggle (see nodeIcon's IsOffline for the same
 	// one-flag-drives-the-presentation idiom).
 	IsEnabled bool
@@ -870,6 +912,11 @@ type nodeData struct {
 	// neither can be recovered from the label, which is a rendered date.
 	LogType   gosmo.ErrorLogType
 	LogNumber int
+
+	// XESession is the event session a NodeEventTarget belongs to. Name on
+	// the leaf is the target's own name (event_file), which is unique only
+	// within its session — the TableName idiom, one level up.
+	XESession string
 
 	conn *db.ServerConn
 }

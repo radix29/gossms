@@ -1,6 +1,5 @@
 
 **Phase 5 — the big ones (L, open-ended)**
-23. Extended Events + XEvent Profiler viewer
 24. Database Mail, Resource Governor
 25. Live Query Statistics; Compare Showplan
 26. Replication (read-only)

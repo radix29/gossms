@@ -164,6 +164,33 @@ var (
 	AlterAnyEndpoint = Right{Name: "ALTER ANY ENDPOINT", Role: "sysadmin",
 		DeniedOnServer: "ALTER", ServerSecurable: gosmo.ServerSecurableEndpoint}
 	AlterAnyAudit = Right{Name: "ALTER ANY SERVER AUDIT", Role: "sysadmin"}
+	// The event-session rights, one per verb. SQL Server 2022 split ALTER ANY
+	// EVENT SESSION into nine granular names, each covered by it; the wide name
+	// is Name and the verb's own granular one its Alt, so either permits the
+	// verb. On 2016–2019 the granular names read CapabilityUnknown, which an
+	// Alt never counts as a grant — the wide name alone decides there.
+	EventSessionStart = Right{Name: "ALTER ANY EVENT SESSION", Role: "sysadmin",
+		Alt: []string{"ALTER ANY EVENT SESSION ENABLE"}}
+	EventSessionStop = Right{Name: "ALTER ANY EVENT SESSION", Role: "sysadmin",
+		Alt: []string{"ALTER ANY EVENT SESSION DISABLE"}}
+	EventSessionDrop = Right{Name: "ALTER ANY EVENT SESSION", Role: "sysadmin",
+		Alt: []string{"DROP ANY EVENT SESSION"}}
+	EventSessionCreate = Right{Name: "ALTER ANY EVENT SESSION", Role: "sysadmin",
+		Alt: []string{"CREATE ANY EVENT SESSION"}}
+	EventSessionAddTarget = Right{Name: "ALTER ANY EVENT SESSION", Role: "sysadmin",
+		Alt: []string{"ALTER ANY EVENT SESSION ADD TARGET"}}
+	// Session Properties' Events and Data Storage pages add and drop, and
+	// either granular half lets them do part of it, so either is an Alt; the
+	// server refuses the half a login lacks.
+	EventSessionEvents = Right{Name: "ALTER ANY EVENT SESSION", Role: "sysadmin",
+		Alt: []string{"ALTER ANY EVENT SESSION ADD EVENT", "ALTER ANY EVENT SESSION DROP EVENT"}}
+	EventSessionTargets = Right{Name: "ALTER ANY EVENT SESSION", Role: "sysadmin",
+		Alt: []string{"ALTER ANY EVENT SESSION ADD TARGET", "ALTER ANY EVENT SESSION DROP TARGET"}}
+	EventSessionOption = Right{Name: "ALTER ANY EVENT SESSION", Role: "sysadmin",
+		Alt: []string{"ALTER ANY EVENT SESSION OPTION"}}
+	// DatabaseEventSession is every verb on a database-scoped session (Azure
+	// SQL Database): one right, not split per verb as the server's was.
+	DatabaseEventSession = Right{Name: "ALTER ANY DATABASE EVENT SESSION", Role: "db_owner", DB: true}
 	// The availability group's class-108 DENY is all-or-nothing: probed live on
 	// the two-node cluster, DENY ALTER ON AVAILABILITY GROUP::g withholds every
 	// ALTER AVAILABILITY GROUP there is — options SET, ADD/REMOVE DATABASE,

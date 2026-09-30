@@ -1,0 +1,61 @@
+Extended Events viewer — aggregates under their columns (plan-xevents-followups.md W4)
+
+Captured from the built binary, win10cli (17), a throwaway session's event_file:
+grouped by name then database_name, SUM and MAX of duration. Every number
+matches the server's own GROUP BY over the same file.
+
+Rule chosen: an aggregate goes under its column unless that column is hidden
+or is the first column (then it stays in the label, "SUM(duration) = 125").
+The label spills across empty cells and is clipped with "…" at the first
+non-empty cell on screen.
+
+== 200 columns, Object Explorer open, scrolled to duration (grid area only) ==
+
+ error_number| severity| state| user_defined| category| destination| is_intercepted| message| nsp | cpu_time| duration            | page_…
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▾ name: error_reported  (52 events)                                                                        | SUM — · MAX —       |
+   ▸ database_name: HealthClinic  (13 events)                                                               | SUM — · MAX —       |
+   ▸ database_name: master  (13 events)                                                                     | SUM — · MAX —       |
+   ▸ database_name: msdb  (13 events)                                                                       | SUM — · MAX —       |
+   ▸ database_name: tempdb  (13 events)                                                                     | SUM — · MAX —       |
+ ▾ name: sql_batch_completed  (72 events)                                                                   | SUM 82015 · MAX 5433|
+   ▸ database_name: HealthClinic  (18 events)                                                               | SUM 18876 · MAX 3476|
+   ▸ database_name: master  (18 events)                                                                     | SUM 18874 · MAX 4052|
+   ▸ database_name: msdb  (18 events)                                                                       | SUM 25637 · MAX 5433|
+   ▸ database_name: tempdb  (18 events)                                                                     | SUM 18628 · MAX 3493|
+
+== 200 columns, unscrolled: duration is off screen, the label spans the row ==
+
+ name               | timestamp               | error_number| severity| state| user_defined| category| destination| is_intercepted| messa…
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▾ name: error_reported  (52 events)
+   ▸ database_name: HealthClinic  (13 events)
+ ▾ name: sql_batch_completed  (72 events)
+   ▾ database_name: tempdb  (18 events)
+ sql_batch_completed| 2026-09-30 20:20:04.098…|             |         |      |             |         |            |               |
+
+== 120 columns, scrolled to duration ==
+
+ destination| is_intercepted| message| nsp | cpu_time| duration            | page…
+───────────────────────────────────────────────────────────────────────────────────
+ ▾ name: error_reported  (52 events)                 | SUM — · MAX —       |
+   ▸ database_name: HealthClinic  (13 events)        | SUM — · MAX —       |
+ ▾ name: sql_batch_completed  (72 events)            | SUM 82015 · MAX 5433|
+   ▸ database_name: HealthClinic  (18 events)        | SUM 18876 · MAX 3476|
+   ▾ database_name: tempdb  (18 events)              | SUM 18628 · MAX 3493|
+            |               |        |     | 0       | 215                 | 0
+
+== 120 columns, scrolled one column further: the label clips at the cell ==
+
+ cpu_time| duration            | page_server_reads| physical_reads| logical_reads|
+───────────────────────────────────────────────────────────────────────────────────
+ ▾ name:…| SUM — · MAX —       |                  |               |              |
+   ▸ dat…| SUM — · MAX —       |                  |               |              |
+ ▾ name:…| SUM 82015 · MAX 5433|                  |               |              |
+
+== 120 columns, scrolled so duration comes first: no room for the label ==
+
+ duration            | page_server_reads| physical_reads| logical_reads| writes| …
+───────────────────────────────────────────────────────────────────────────────────
+ SUM — · MAX —       |                  |               |              |       |
+ SUM 82015 · MAX 5433|                  |               |              |       |

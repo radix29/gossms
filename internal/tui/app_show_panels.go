@@ -7,8 +7,9 @@ import (
 )
 
 // app_show_panels.go opens the non-query panels — Object Explorer Details, the
-// query list, Activity Monitor, the Log Viewer and Query Store — each reusing
-// an already-open panel for the same target rather than adding a second one.
+// query list, Activity Monitor, the Log Viewer, Query Store and the Extended
+// Events viewer — each reusing an already-open panel for the same target
+// rather than adding a second one.
 // The property dialogs are in app_show_properties.go.
 
 // showObjectExplorerDetails runs View > Object Explorer Details, reopening the
@@ -115,6 +116,41 @@ func (a *App) showQueryStorePanelFor(sc *db.ServerConn, dbName, title string) {
 		// already open: Open Query Store... on the folder would throw away the
 		// view the user was reading and re-run it as Regressed Queries.
 		a.panels.PanelAt(idx).(*QueryStorePanel).ShowReport(title)
+	}
+	a.panels.SetActive(idx)
+	a.focusPanels()
+}
+
+// showXEventViewerFor opens the Extended Events viewer on one session of sc:
+// Watch Live Data when live, otherwise View Target Data on target. One panel
+// per (server, session, mode, target) — asking again raises it rather than
+// opening a second feed on the same session.
+func (a *App) showXEventViewerFor(sc *db.ServerConn, scope xeScope, session, target string, live bool) {
+	a.openXEventViewer(sc, scope, session, target, live, false)
+}
+
+// openXEventViewer is showXEventViewerFor with the XEvent Profiler's mark:
+// profiler makes closing the panel offer to stop the session (see
+// requestClosePanel). A viewer already open on the session keeps a mark it
+// has, and gains one it lacks — the Profiler launched on a session the user
+// was already watching.
+func (a *App) openXEventViewer(sc *db.ServerConn, scope xeScope, session, target string, live, profiler bool) {
+	if !a.requireConn(sc) {
+		return
+	}
+	idx := a.panels.FindIndex(func(p layout.Panel) bool {
+		v, ok := p.(*XEventViewer)
+		return ok && v.host == sc && v.scope == scope && v.session == session && v.live == live && v.target == target
+	})
+	if idx < 0 {
+		v := NewXEventViewer(a, sc, session, target, live)
+		v.scope = scope
+		v.profiler = profiler
+		idx = a.panels.AddPanel(v)
+		// After AddPanel: the connect callback checks panelHosted.
+		a.connectXEventViewer(v)
+	} else if profiler {
+		a.panels.PanelAt(idx).(*XEventViewer).profiler = true
 	}
 	a.panels.SetActive(idx)
 	a.focusPanels()

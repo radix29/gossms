@@ -75,11 +75,41 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
-None outstanding.
+- **B8 — Message dialogs fold line breaks.** `ModalDialog.fitMessage`
+  (`internal/tuikit/dialogs/common.go`) wraps through `core.WrapText`, which
+  splits on `strings.Fields`, so every `\n` in an Alert, Confirm,
+  TypedConfirm or Prompt message becomes a space — `cycleLogMessage`'s
+  paragraph break has never been drawn. Found in the Extended Events live run
+  (2026-09-29), where the filter prompt's syntax lines ran together; that help
+  text was rewritten as prose instead. Fix: wrap per paragraph (as
+  `splitLogLines` + `WrapText` do in the Log Viewer's details pane) and keep
+  `WrapTextLimit`'s cap across the joined result.
 
 ### Verification gaps
 
-None outstanding.
+- **V2 — Azure Extended Events not run end to end.** Phase G of
+  `docs/xevents-plan.md`. Azure SQL Database's database-scoped sessions
+  (`xeScope`) are pinned by fake-driver tests only — no Azure SQL Database is
+  available. On the Managed Instance a blob `event_file` was created and
+  refused its START (fake SAS, 25602), and a blob URL pattern merged to zero
+  events; writing, watching and reading a blob with a real storage account
+  and SAS, and whether the wildcard pattern gosmo builds lists a container's
+  rollover blobs, are unrun.
+- **V3 — Managed Instance low-privilege run unfinished**
+  (`docs/plan-xevents-followups.md` W6; t-qmi-01 refused every login, `testgo` too, Msg 40532, from
+  2026-09-30 ~21:00). Done: as a `VIEW SERVER STATE` login, Sessions listed,
+  New/Start/Stop/Delete greyed "needs ALTER ANY EVENT SESSION"; MI answers all
+  nine granular event-session names through `HAS_PERMS_BY_NAME` (not NULL as
+  on 13–16), so the `gate.EventSession*` `Alt`s decide there. Found: Watch
+  Live Data on `system_health` failed Msg 40538 (reading the current file by
+  path) — fixed by `xeReadsOnlyByPattern`, tests only. **Still to run:** the
+  fix live (Watch Live Data, View Target Data, Merge on `system_health`);
+  Properties read-only and browsable; the Profiler refused; then
+  `gossms_w6_alt` (Profiler creates and watches, Properties editable) and
+  `gossms_w6_gran` (granular CREATE/ENABLE/DISABLE only: Profiler allowed,
+  Delete and Properties' Events greyed). **Left on t-qmi-01 to drop:** logins
+  `gossms_w6_vss`, `gossms_w6_alt`, `gossms_w6_gran` (password
+  `W6-inSecure123!`), session `gossms_test_xe_w6`.
 
 ### Nice to have
 
@@ -93,6 +123,13 @@ None outstanding.
   database). Deliberate limits of what shipped: a temp-table binding doesn't
   survive `GO` (the table does), and `PIVOT` columns are untyped (aggregates
   aren't modelled). Each is its own pass if asked.
+- **N5 — Other Properties dialogs leave the tree stale after Apply.**
+  `PropDialog.onSaved` (`internal/tui/prop_dialog.go`) runs after a write
+  lands; only Session Properties sets it (`refreshXESession` reloads the
+  session's target leaves). A dialog whose Apply changes a node's tree
+  children — Table Properties' columns, a database's files — still needs a
+  Refresh of the node. Each is its own call: wire `onSaved` to reload the
+  object's node where the tree shows it.
 - **N3 — `BatchEndOffset`'s forward scan is O(script).** `sqlparse.PrefixCache`
   made the prefix scan incremental, but `sqlparse.BatchEndOffset`
   (`internal/tui/sqlparse/token.go`) still lexes from the cursor to the next

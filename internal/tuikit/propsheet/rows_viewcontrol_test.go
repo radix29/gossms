@@ -211,3 +211,30 @@ func TestRadioRowRevertFiresOnChange(t *testing.T) {
 		t.Errorf("onChange saw %v, want the revert back to 0", seen)
 	}
 }
+
+// SetFitItems widens the control to its widest item, within the row, and
+// never below the fixed width the other selects share.
+func TestSelectRowFitItems(t *testing.T) {
+	long := "https://account.blob.core.windows.net/container" // 47 columns
+	r := Select("Blob container", []string{"short", long}, 0)
+	r.SetFitItems(true)
+	r.Layout(0, 0, 120)
+	if got := r.dd.Width(); got != len(long)+1 {
+		t.Errorf("width in a wide row = %d, want %d (the item and the arrow)", got, len(long)+1)
+	}
+	r.Layout(0, 0, LabelWidth+3+30)
+	if got := r.dd.Width(); got != 30 {
+		t.Errorf("width in a narrow row = %d, want the row's room, 30", got)
+	}
+	short := Select("Kind", []string{"a", "b"}, 0)
+	short.SetFitItems(true)
+	short.Layout(0, 0, 120)
+	if got := short.dd.Width(); got != selectControlWidth {
+		t.Errorf("short items: width %d, want the fixed %d", got, selectControlWidth)
+	}
+	fixed := Select("Blob container", []string{long}, 0)
+	fixed.Layout(0, 0, 120)
+	if got := fixed.dd.Width(); got != selectControlWidth {
+		t.Errorf("without SetFitItems: width %d, want the fixed %d", got, selectControlWidth)
+	}
+}

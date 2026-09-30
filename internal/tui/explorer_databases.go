@@ -178,7 +178,7 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		return []*explorerNode{l.node(accessDeniedLabel+"CONNECT permission on this database is required.",
 			NodeError, "", "", dbName)}, nil
 	}
-	return []*explorerNode{
+	folders := []*explorerNode{
 		l.node("Tables", NodeTables, "", "", dbName),
 		l.node("Views", NodeViews, "", "", dbName),
 		l.node("External Resources", NodeExternalResources, "", "", dbName),
@@ -187,7 +187,13 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		l.node("Service Broker", NodeServiceBroker, "", "", dbName),
 		l.node("Security", NodeDatabaseSecurity, "", "", dbName),
 		l.node("Storage", NodeStorage, "", "", dbName),
-	}, nil
+	}
+	// Azure SQL Database's event sessions are the database's own, and SSMS
+	// files them here — see explorer_xevents.go.
+	if databaseScopedXEvents(l.sc) {
+		folders = append(folders, l.node("Extended Events", NodeExtendedEvents, "", "", dbName))
+	}
+	return folders, nil
 }
 
 // loadProgrammabilityChildren returns the module families SSMS files under

@@ -56,7 +56,9 @@ func (r *SectionRow) Draw(s tcell.Screen, focused bool) {
 // Note — non-focusable, word-wrapped dim text
 // ---------------------------------------------------------------------------
 
-type noteRow struct {
+// NoteRow is the row Note returns. It is exported for DynamicNote, the one
+// kind of note a page rewrites after building it.
+type NoteRow struct {
 	text       string
 	lines      []string
 	x, y, w    int
@@ -64,19 +66,27 @@ type noteRow struct {
 }
 
 // Note returns a non-focusable row of word-wrapped, dimmed text.
-func Note(text string) Row { return &noteRow{text: text, drawHeight: -1} }
+func Note(text string) Row { return &NoteRow{text: text, drawHeight: -1} }
+
+// DynamicNote returns a Note whose text the page replaces with SetText — a
+// description that follows a picker, too long for a HintRow's one line. The
+// form re-wraps it on the next frame, since Height is asked every layout.
+func DynamicNote(text string) *NoteRow { return &NoteRow{text: text, drawHeight: -1} }
+
+// SetText replaces the note's text.
+func (r *NoteRow) SetText(text string) { r.text = text }
 
 // Text returns the note's text. Notes are the only rows on a sheet with no
 // label to address them by, so this is how a caller reads one back.
-func (r *noteRow) Text() string { return r.text }
+func (r *NoteRow) Text() string { return r.text }
 
-func (r *noteRow) Height(w int) int { return len(core.WrapText(r.text, w)) }
-func (r *noteRow) Layout(x, y, w int) {
+func (r *NoteRow) Height(w int) int { return len(core.WrapText(r.text, w)) }
+func (r *NoteRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w
 	r.lines = core.WrapText(r.text, w)
 }
-func (r *noteRow) Focusable() bool { return false }
-func (r *noteRow) Draw(s tcell.Screen, focused bool) {
+func (r *NoteRow) Focusable() bool { return false }
+func (r *NoteRow) Draw(s tcell.Screen, focused bool) {
 	p := theme.Active()
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
 	lines := r.lines
@@ -90,8 +100,8 @@ func (r *noteRow) Draw(s tcell.Screen, focused bool) {
 
 // MinDrawHeight and SetDrawHeight implement Shrinkable: a note drops its
 // trailing wrapped lines rather than running past the form's bottom edge.
-func (r *noteRow) MinDrawHeight() int  { return 1 }
-func (r *noteRow) SetDrawHeight(h int) { r.drawHeight = h }
+func (r *NoteRow) MinDrawHeight() int  { return 1 }
+func (r *NoteRow) SetDrawHeight(h int) { r.drawHeight = h }
 
 // ---------------------------------------------------------------------------
 // HintRow — non-focusable one-line message a handler sets at runtime
@@ -291,6 +301,11 @@ func (r *TextRow) SetValue(v string) {
 	r.field.SetValue(v)
 	r.orig = v
 }
+
+// ShowFromStart scrolls the field back to its first column — for a value set
+// programmatically that is read from its start, which SetValue otherwise
+// shows by its tail (see widgets.InputField.ShowFromStart).
+func (r *TextRow) ShowFromStart() { r.field.ShowFromStart() }
 
 // Edit sets the value the way a keystroke does: the value changes, the row goes
 // dirty, and OnChange fires. SetValue is the counterpart, the post-load setter
@@ -572,7 +587,9 @@ type SelectRow struct {
 	// TextRow.SetReadOnly.
 	drawReadOnly bool
 	pageReadOnly bool
-	x, y, w      int
+	// fitItems widens the control to its widest item — see SetFitItems.
+	fitItems bool
+	x, y, w  int
 }
 
 // Select returns an editable dropdown row.
@@ -637,10 +654,25 @@ func (r *SelectRow) SetItems(items []string) {
 	r.orig = r.dd.Selected()
 }
 
+// SetFitItems makes the control as wide as its widest item, up to the row's
+// width, instead of the fixed width every other select shares — for items too
+// long to tell apart when cut there, such as URLs that differ only at the end.
+// Never narrower than the fixed width, so short items still line up.
+func (r *SelectRow) SetFitItems(v bool) { r.fitItems = v }
+
 func (r *SelectRow) Height(w int) int { return 1 }
 func (r *SelectRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w
 	r.dd.SetBounds(x, y)
+	if r.fitItems {
+		need := 0
+		for _, it := range r.dd.Items() {
+			need = max(need, core.DisplayWidth(it)+1) // +1: the arrow's cell
+		}
+		// The label, a space and the two brackets take the rest of the row.
+		room := w - core.DisplayWidth(r.dd.Label()) - 3
+		r.dd.SetWidth(max(selectControlWidth, min(need, room)))
+	}
 }
 func (r *SelectRow) Focusable() bool { return !r.pageReadOnly }
 

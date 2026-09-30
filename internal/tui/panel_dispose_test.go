@@ -75,6 +75,7 @@ var panelsWithClose = []string{
 	"LogViewer",
 	"QueryPanel",
 	"QueryStorePanel",
+	"XEventViewer",
 }
 
 // TestEveryPanelCloseIsDisposable holds closePanelAt's single interface check
@@ -173,5 +174,6 @@ var (
 	_ layout.Disposable = (*ActivityMonitor)(nil)
 	_ layout.Disposable = (*LogViewer)(nil)
 	_ layout.Disposable = (*QueryPanel)(nil)
+	_ layout.Disposable = (*XEventViewer)(nil)
 	_ layout.Disposable = (*QueryStorePanel)(nil)
 )

@@ -99,7 +99,10 @@ func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after fun
 			msg += " " + op.warning
 		}
 		title := "Delete " + op.noun
-		if op.typed {
+		if typedDelete(op, n) {
+			if op.typedWarning != "" {
+				msg += " " + op.typedWarning
+			}
 			a.confirmTypedDialog.ShowTypedConfirmScript(title, msg, n.Name, func(ans dialogs.ConfirmAnswer) {
 				answered(ans, false)
 			})
@@ -117,7 +120,7 @@ func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after fun
 	// and a principal or a database is dropped with a deliberation the batch
 	// confirmation's one shared warning cannot carry.
 	for i, op := range ops {
-		if deletedAlone(op) {
+		if deletedAlone(op, objs[i]) {
 			a.setStatus(soloDeleteReason(op, objs[i]))
 			return
 		}

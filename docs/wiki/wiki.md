@@ -193,6 +193,29 @@ single date-sorted grid, each row naming the file it came from.
 
 *(Screenshots for this section are not captured yet.)*
 
+### Extended Events
+
+**XEvent Profiler and Watch Live Data** — Alt+P starts the Standard trace (its
+own `gossms_QuickSession*` session, created on first use) and opens it live;
+the same viewer serves **Watch Live Data** on any running session and **View
+Target Data** on an `event_file` or `ring_buffer` target. The events stream
+into a grid over a details pane showing every field of the selected event,
+the batch text included. Columns are chosen per session, events group by one
+or more columns into collapsible groups with COUNT/SUM/AVG/MIN/MAX shown under
+their columns, and the feed can be paused, filtered (`duration > 1000000 and
+database_name = 'app'`), searched, bookmarked and exported. Here a Standard
+trace is grouped by event name, with the average and maximum duration and the
+total logical reads per group.
+
+![xevent profiler](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/15_xevent_profiler.png)
+
+**Sessions in Object Explorer** — Under Management ▸ Extended Events, each
+session with its targets, running or stopped at a glance; Start/Stop,
+scripting and delete. **New Session** and **Session Properties** edit a
+session on four pages — a template, the event library with its fields and
+filters, the targets, and the buffer options — and Script Changes shows the
+CREATE or the minimal ALTER.
+
 ### Always On
 
 **Availability Group configuration** — Create or manage Always On Availability

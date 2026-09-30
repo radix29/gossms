@@ -42,6 +42,10 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 		if dataIdx%2 == 1 {
 			style = theme.StyleGridRowAlt()
 		}
+		kind := g.RowKindAt(dataIdx)
+		if kind == RowMarked {
+			style = style.Foreground(theme.Active().Warning)
+		}
 		if dataIdx == g.selRow && !g.cellCursor {
 			style = theme.StyleGridSelected()
 		}
@@ -49,6 +53,11 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 			g.drawGutterCell(s, y, strconv.Itoa(dataIdx+1), style)
 		}
 		cells := g.rows.Row(dataIdx)
+		if kind == RowGroup {
+			g.drawGroupRow(s, y, cells, gw, dataIdx == g.selRow || g.rowMarked(dataIdx) ||
+				(g.cellCursor && dataIdx >= r0 && dataIdx <= r1))
+			continue
+		}
 		g.drawRow(s, y, cells, style, gw)
 		// A Ctrl+click-marked row is highlighted whole: the marked set is rows,
 		// not cells, so a rectangle's column range says nothing about it.
@@ -164,6 +173,64 @@ func (g *DataGrid) drawRow(s tcell.Screen, y int, cells []string, style tcell.St
 		core.DrawTextClipped(s, col+1, y, avail-2, cellStyle, core.Truncate(cell, avail-2))
 		if col+cw-1 < g.rect.Right() {
 			s.SetContent(col+cw-1, y, '|', nil, style.Foreground(p.GridBorder))
+		}
+		col += cw
+	}
+}
+
+// drawGroupRow renders a RowGroup row at y: its first cell a label, not
+// scrolled with the columns, spilling across the empty cells to its right as a
+// spreadsheet's text does. It stops at the first non-empty cell on screen,
+// clipped with "…"; from that cell on the cells draw as an ordinary row's,
+// scrolled with their columns. selected highlights the row whole, dimmed like
+// a cell selection while the grid is unfocused.
+func (g *DataGrid) drawGroupRow(s tcell.Screen, y int, cells []string, xOffset int, selected bool) {
+	st := theme.StyleGridHeader()
+	if selected {
+		st = theme.StyleGridSelected()
+		if !g.active {
+			p := theme.Active()
+			st = tcell.StyleDefault.Background(p.GridRowAlt).Foreground(p.TextHighlight)
+		}
+	}
+	r := core.Rect{X: g.rect.X + xOffset, Y: y, W: g.rect.W - xOffset, H: 1}
+	core.FillRect(s, r, ' ', st)
+	// The first non-empty cell on screen, and its x. The label is cell 0,
+	// never a cell here: scrolled or not, it is drawn from the left edge.
+	stop, stopX := -1, r.Right()
+	col := r.X
+	for i := g.scrollCol; i < len(g.colWidths) && col < r.Right(); i++ {
+		if i > 0 && i < len(cells) && cells[i] != "" {
+			stop, stopX = i, col
+			break
+		}
+		col += g.colWidths[i]
+	}
+	if len(cells) > 0 {
+		// A cell's separator sits in the column before it: the label ends one
+		// short of that, as a cell's text ends one short of its own.
+		w := stopX - r.X - 2
+		if stop < 0 {
+			w = r.W - 2
+		}
+		core.DrawTextClipped(s, r.X+1, y, w, st, core.Truncate(cells[0], w))
+	}
+	if stop < 0 {
+		return
+	}
+	sep := st.Foreground(theme.Active().GridBorder)
+	if stopX > r.X {
+		s.SetContent(stopX-1, y, '|', nil, sep)
+	}
+	col = stopX
+	for i := stop; i < len(g.colWidths) && col < r.Right(); i++ {
+		cw := g.colWidths[i]
+		if i < len(cells) {
+			avail := min(cw, r.Right()-col)
+			core.DrawTextClipped(s, col+1, y, avail-2, st, core.Truncate(cells[i], avail-2))
+		}
+		if col+cw-1 < r.Right() {
+			s.SetContent(col+cw-1, y, '|', nil, sep)
 		}
 		col += cw
 	}

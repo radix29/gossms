@@ -45,6 +45,17 @@ func (r *GridRow) Layout(x, y, w int) {
 func (r *GridRow) MinDrawHeight() int  { return 4 }
 func (r *GridRow) SetDrawHeight(h int) { r.drawHeight = h }
 func (r *GridRow) Focusable() bool     { return true }
+
+// Browsable implements Browsable: on a read-only form the grid can still be
+// focused and moved through, so a page whose detail rows follow the selection
+// can be read past its first row.
+func (r *GridRow) Browsable() bool { return true }
+
+// SetDrawReadOnly implements ReadOnlyDrawer by putting the grid in browse-only
+// mode (controls.DataGrid.SetBrowseOnly) — the half of read-only that keeps a
+// focusable grid from editing. The gate is the grid's, not a key filter here:
+// the grid is what knows which of its keys and clicks activate a cell.
+func (r *GridRow) SetDrawReadOnly(v bool) { r.Grid.SetBrowseOnly(v) }
 func (r *GridRow) Draw(s tcell.Screen, focused bool) {
 	r.Grid.Focus(focused)
 	r.Grid.Draw(s)

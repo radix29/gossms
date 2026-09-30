@@ -74,6 +74,7 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"External File Format":         externalFileFormatPropPages(sc, "HealthClinic", "CsvFormat"),
 		"External Library":             externalLibraryPropPages(sc, "HealthClinic", "ggplot2"),
 		"Database Snapshot":            databaseSnapshotPropPages(sc, "HealthClinic_snapshot"),
+		"Event Session":                eventSessionPropPages(d, sc, xeScope{}, "gossms_trace"),
 	}
 }
 
@@ -246,6 +247,7 @@ var propPageConstructors = []string{
 	"externalLibraryPropPages",
 	"databaseSnapshotPropPages",
 	"certificatePropPages", "asymmetricKeyPropPages", "symmetricKeyPropPages", "masterKeyPropPages",
+	"eventSessionPropPages",
 }
 
 func TestEveryPropPagesConstructorIsListed(t *testing.T) {

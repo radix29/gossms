@@ -78,6 +78,10 @@ func (a *App) requestClosePanel(i int) {
 	if !layout.PanelClosable(a.panels.PanelAt(i)) {
 		return
 	}
+	if v, ok := a.panels.PanelAt(i).(*XEventViewer); ok {
+		a.requestCloseXEventViewer(v)
+		return
+	}
 	qp, ok := a.panels.PanelAt(i).(*QueryPanel)
 	if !ok {
 		a.closePanelAt(i)
@@ -233,6 +237,13 @@ func (a *App) activeQueryPanel() *QueryPanel {
 		}
 	}
 	return nil
+}
+
+// activeXEventViewer returns the active panel if it is an Extended Events
+// viewer, nil otherwise — Find and Find Next go to it instead of an editor.
+func (a *App) activeXEventViewer() *XEventViewer {
+	v, _ := a.panels.ActivePanel().(*XEventViewer)
+	return v
 }
 
 // withQueryPanel runs fn on the active query panel, or says there isn't one.

@@ -323,6 +323,22 @@ type Config struct {
 	// auto-indent use. Zero, or anything outside 1..MaxIndentWidth, means
 	// DefaultIndentWidth.
 	IndentWidth int `json:"indent_width"`
+	// XEventStoreCapacity is how many events an Extended Events viewer holds
+	// before the oldest are dropped. Anything outside
+	// MinXEventStoreCapacity..MaxXEventStoreCapacity means
+	// DefaultXEventStoreCapacity.
+	XEventStoreCapacity int `json:"xevent_store_capacity"`
+	// XEventHiddenColumns is, per event session name, the columns the Extended
+	// Events viewer's Choose Columns has hidden ("name", "timestamp",
+	// "field:<name>", "action:<name>"). Hidden rather than shown, so a field
+	// the session starts collecting later still gets a column. Replace the map
+	// rather than writing into it: base shares the map with this Config, so an
+	// in-place write would compare equal to itself and Save would skip it.
+	XEventHiddenColumns map[string][]string `json:"xevent_hidden_columns,omitempty"`
+	// XEventViewSettings are the Extended Events viewer's saved display
+	// settings, by the name they were saved as — SSMS's .viewsetting files.
+	// Replace the map rather than writing into it, as XEventHiddenColumns.
+	XEventViewSettings map[string]XEventViewSetting `json:"xevent_view_settings,omitempty"`
 
 	// unreadable is the error Load hit reading an existing config.json. It
 	// write-protects this Config (see Save): the file's contents are missing,
@@ -361,6 +377,37 @@ const DefaultMaxCellLength = 24
 // Text. It is the only cap there: a text column is as wide as its widest value,
 // so without one a single megabyte cell padded every row to a megabyte.
 const DefaultMaxTextColumnLength = 256
+
+// XEventViewSetting is one saved Extended Events viewer layout: the hidden
+// columns, the filter expression, the grouping columns in nesting order and
+// the aggregates. Columns are named as XEventHiddenColumns names them;
+// aggregates as FUNC:column ("SUM:field:duration").
+type XEventViewSetting struct {
+	Hidden     []string `json:"hidden,omitempty"`
+	Filter     string   `json:"filter,omitempty"`
+	GroupBy    []string `json:"group_by,omitempty"`
+	Aggregates []string `json:"aggregates,omitempty"`
+}
+
+// DefaultXEventStoreCapacity is the Extended Events viewer's event limit absent
+// an Options override (D4 in docs/xevents-plan.md); it must agree with
+// xevent.DefaultCapacity, which config must not import —
+// TestXEventStoreCapacityComesFromOptions in internal/tui holds them together.
+// The bounds keep a typo from making a viewer that holds nothing or one that
+// takes the machine's memory.
+const (
+	DefaultXEventStoreCapacity = 100_000
+	MinXEventStoreCapacity     = 1_000
+	MaxXEventStoreCapacity     = 10_000_000
+)
+
+// ClampXEventStoreCapacity returns n, or the default when n is out of bounds.
+func ClampXEventStoreCapacity(n int) int {
+	if n < MinXEventStoreCapacity || n > MaxXEventStoreCapacity {
+		return DefaultXEventStoreCapacity
+	}
+	return n
+}
 
 // DefaultIndentWidth is how many spaces the query editor indents by absent an
 // Options override, and MaxIndentWidth the sanity ceiling Load and the Options
@@ -475,6 +522,7 @@ func defaultConfig() *Config {
 	cfg.MaxCellLength = DefaultMaxCellLength
 	cfg.MaxTextColumnLength = DefaultMaxTextColumnLength
 	cfg.IndentWidth = DefaultIndentWidth
+	cfg.XEventStoreCapacity = DefaultXEventStoreCapacity
 	return cfg
 }
 
@@ -499,6 +547,7 @@ func parseConfig(path string, data []byte) *Config {
 	if cfg.IndentWidth < 1 || cfg.IndentWidth > MaxIndentWidth {
 		cfg.IndentWidth = DefaultIndentWidth
 	}
+	cfg.XEventStoreCapacity = ClampXEventStoreCapacity(cfg.XEventStoreCapacity)
 	return cfg
 }
 

@@ -245,3 +245,38 @@ func TestNewObjectScriptFailureIsNotCreated(t *testing.T) {
 			d.created, *refreshes, d.Message())
 	}
 }
+
+// onSaved follows the server, not the outcome: a failed Apply that landed a
+// page has changed what the tree shows and runs it; a failure before any
+// write, and a failed Script Changes, changed nothing and do not.
+func TestOnSavedRunsOnlyWhenAWriteLanded(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		script bool
+		first  string
+		want   int
+	}{
+		{"a failed Apply that landed a page", false, "a", 1},
+		{"a failed Apply that wrote nothing", false, "refused", 0},
+		{"a failed Script Changes", true, "a", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := partialApplyConn(t)
+			d := partialDialog(t, map[int]propApply{
+				0: dropLogins(sc, tc.first),
+				1: func(context.Context) error { return errRefused },
+			})
+			var saved int
+			d.onSaved = func() { saved++ }
+
+			if tc.script {
+				runAndWait(t, d, d.runScript)
+			} else {
+				runAndWait(t, d, func() { d.runApply(false) })
+			}
+			if saved != tc.want {
+				t.Errorf("onSaved ran %d times, want %d", saved, tc.want)
+			}
+		})
+	}
+}

@@ -186,12 +186,12 @@ func TestOnlySchemaScopedObjectsAreDeletedAsASelection(t *testing.T) {
 		NodeSequence, NodeSynonym, NodeIndex, NodeTrigger}
 
 	for _, tp := range solo {
-		if op := objectOpFor(tp); !deletedAlone(op) {
+		if op := objectOpFor(tp); !deletedAlone(op, nodeData{Type: tp, Name: "x"}) {
 			t.Errorf("%s takes part in a multi-object delete, want it deleted on its own", op.noun)
 		}
 	}
 	for _, tp := range batch {
-		if op := objectOpFor(tp); deletedAlone(op) {
+		if op := objectOpFor(tp); deletedAlone(op, nodeData{Type: tp, Name: "x"}) {
 			t.Errorf("%s is refused in a selection, want it deletable as a set", op.noun)
 		}
 	}
@@ -439,6 +439,7 @@ func TestEveryObjectOpNounPluralises(t *testing.T) {
 		"Sequence":                     "Sequences",
 		"Server Role":                  "Server Roles",
 		"Endpoint":                     "Endpoints",
+		"Event Session":                "Event Sessions",
 		"Server Trigger":               "Server Triggers",
 		"Audit":                        "Audits",
 		"Server Audit Specification":   "Server Audit Specifications",

@@ -153,6 +153,7 @@ gossms/
 │   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan). No TUI/DB deps
+│   ├── xevent/              # Extended Events viewer's event store: bounded ring, column registry, ring_buffer dedupe, the client-side filter expression, grouping and aggregation. No TUI/DB deps
 │   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export; WithLock: the lock file around config.json's and tracked_queries.json's read-merge-write
 │   │                        #   keeps an existing file's narrower mode (perm is a ceiling) and writes through a symlink, dangling or not
 │   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X
@@ -198,6 +199,7 @@ gossms/
 │       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles, Credentials, Audits, Server Audit Specifications
 │       ├── explorer_storage.go   # loaders: a database's Storage folder — Partition Functions, Partition Schemes
 │       ├── explorer_management.go # loaders: Server Objects folder (Backup Devices, Endpoints, Linked Servers, Server Triggers), Management folder, SQL Server Logs / Agent Error Logs file lists
+│       ├── explorer_xevents.go   # loaders + menus: Management > Extended Events > Sessions (a database's own folder on Azure SQL Database — xeScope), one node per event session (running/stopped glyph) and its targets; Start/Stop Session; Watch Live Data / View Target Data
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_programmability.go # loaders: Programmability > Types (five sub-folders), Assemblies, Rules, Defaults, Plan Guides
 │       ├── explorer_external.go  # loaders: External Resources — External Data Sources, File Formats, Libraries (Libraries omitted before 2017)
@@ -261,6 +263,23 @@ gossms/
 │       ├── log_viewer_files.go        # choosing files: the family menu, the file menu, the multi-file checklist, Export, and the App-level recycle/refresh entry points
 │       ├── log_viewer_draw.go         # toolbar row, entry grid, splitter, selected-entry details pane
 │       ├── log_viewer_input.go        # HandleKey/HandleMouse: filter/grid focus, details scroll, gesture zones
+│       ├── xevent_session_dialog.go   # New Session / Session Properties: what the four pages share (catalog, edited events and targets, async column reads, alterXESession), the page set, New Session's create
+│       ├── xevent_session_general.go  # their General page: name, New Session's template (gosmo.XESessionTemplates), startup, start/watch after create, causality
+│       ├── xevent_session_events.go   # their Events page: event library (search, category, channel), selected events, Configure — global fields, filter text + clause builder, event fields
+│       ├── xevent_session_storage.go  # their Data Storage page: targets, each target's parameters (defaults, required), Add/Remove; on Azure the blob container picker
+│       ├── xevent_session_advanced.go # their Advanced page: retention, dispatch latency, memory, partition mode, 2025's maximum duration
+│       ├── xevent_profiler.go         # XEvent Profiler: the Standard/TSQL templates (gossms_QuickSession* with a target), the OE folder's leaves, Launch Session (create if missing, start, Watch Live Data), Tools submenu / Alt+P, and the stop-session question on closing its viewer
+│       ├── xevent_viewer.go           # XEventViewer (Watch Live Data / View Target Data) state, construction and layout; implements layout.Panel
+│       ├── xevent_viewer_toolbar.go   # the toolbar cells per mode, the Filter prompt, the Choose Columns checklist (saved per session)
+│       ├── xevent_viewer_feed.go      # the panel's own connection and the reader: event_file cursor / ring_buffer dedupe, poll backoff, latest + postAndWake, Background Tasks entry
+│       ├── xevent_viewer_rows.go      # store → grid rows (a live RowSource), a batch applied, the summary line, Show Value and the cell menu (Open in Query Window, Show Plan, XML)
+│       ├── xevent_viewer_draw.go      # toolbar row, event grid, splitter, details pane (fields and actions)
+│       ├── xevent_viewer_input.go     # HandleKey/HandleMouse: F5–F8, F2 bookmarks, group rows (Enter/Space/Left/Right, glyph click), details scroll, gesture zones
+│       ├── xevent_viewer_group.go     # Grouping and Aggregation: xevent.GroupEvents as collapsible tuikit RowGroup rows, the expanded set, selection kept by group/event across regroupings, both menus
+│       ├── xevent_viewer_find.go      # Find (Ctrl+F, F3, Shift+F3 via the Edit menu's routing) and bookmarks (Ctrl+F2, F2, Shift+F2), over events in grid order, opening collapsed groups
+│       ├── xevent_viewer_export.go    # Export menu: CSV, tab-separated, a CREATE TABLE + INSERT script to a file or a new query window
+│       ├── xevent_viewer_settings.go  # Settings menu: the display (hidden columns, filter, grouping, aggregates) saved by name in config.XEventViewSettings, applied or deleted
+│       ├── xevent_merge.go            # Merge Extended Event Files: the prompt (Extended Events folder, File menu), the session-less viewer, the reader merging server .xel files by timestamp
 │       ├── log_search_dialog.go       # Log File Viewer search: a query the server runs across the archives, not a filter over what was read
 │       │
 │       │  ── Query Store ──
@@ -287,6 +306,7 @@ gossms/
 │       ├── detail_browser_external.go   # External Resources: external data sources, file formats, libraries
 │       ├── detail_browser_snapshots.go  # Database Snapshots folder and one snapshot
 │       ├── detail_browser_service_broker.go # the seven Service Broker families: each folder and its leaves, each leaf reusing its Properties page's finder
+│       ├── detail_browser_xevents.go    # Extended Events: the Sessions folder (state, startup, events, targets, dropped), one session's events + targets, one target's settings + runtime counters
 │       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
 │       │

@@ -85,6 +85,12 @@ func (d *FindReplaceDialog) ShowFind()    { d.show(false) }
 func (d *FindReplaceDialog) ShowReplace() { d.show(true) }
 
 func (d *FindReplaceDialog) show(replace bool) {
+	// An Extended Events viewer finds events, with a Find of its own
+	// (xevent_viewer_find.go); it has nothing to replace.
+	if v := d.app.activeXEventViewer(); v != nil && !replace {
+		v.showFind()
+		return
+	}
 	qp := d.app.activeQueryPanel()
 	if qp == nil {
 		d.app.setStatus(noActiveQueryPanelMessage)
@@ -497,6 +503,10 @@ func (d *FindReplaceDialog) focusWidget(w focusable) {
 // with the dialog closed — F3 (dir 1) and Shift+F3 (dir -1). With no search set
 // it opens the dialog rather than doing nothing.
 func (a *App) findNextInEditor(dir int) {
+	if v := a.activeXEventViewer(); v != nil {
+		v.findNext(dir)
+		return
+	}
 	qp := a.activeQueryPanel()
 	if qp == nil {
 		a.setStatus(noActiveQueryPanelMessage)
@@ -559,6 +569,9 @@ func (d *FindReplaceDialog) adoptSearch(opts controls.SearchOptions) {
 // hasEditorSearch reports whether Find Next/Previous have a search to repeat —
 // the Enabled gate on both menu items.
 func (a *App) hasEditorSearch() bool {
+	if v := a.activeXEventViewer(); v != nil {
+		return v.find != ""
+	}
 	qp := a.activeQueryPanel()
 	return qp != nil && qp.editor.HasSearch()
 }

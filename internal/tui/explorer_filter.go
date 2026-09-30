@@ -162,10 +162,11 @@ func filterProps(t NodeType) []filterProp {
 	// creation date.
 	case NodeSymmetricKeys:
 		return []filterProp{name, created}
-	case NodeBackupDevices, NodeEndpoints, NodeCertificates, NodeAsymmetricKeys:
+	case NodeBackupDevices, NodeEndpoints, NodeCertificates, NodeAsymmetricKeys,
+		NodeEventSessions:
 		// No Creation Date: none of sys.backup_devices, sys.endpoints,
-		// sys.certificates or sys.asymmetric_keys records one, so the
-		// criterion would reject every row.
+		// sys.certificates, sys.asymmetric_keys or sys.server_event_sessions
+		// records one, so the criterion would reject every row.
 		return []filterProp{name}
 	}
 	return nil

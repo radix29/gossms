@@ -33,9 +33,9 @@ type Form struct {
 	rect        core.Rect
 	bands       []band
 
-	// readOnly makes every row unfocusable and refuses to route a click into
-	// one, so the form can be read and scrolled but not edited. See
-	// SetReadOnly.
+	// readOnly makes every row but a Browsable one unfocusable and refuses to
+	// route a click into one, so the form can be read and scrolled but not
+	// edited. See SetReadOnly.
 	readOnly bool
 
 	// sbDragging is true while the form's own scrollbar thumb is being dragged.
@@ -74,16 +74,21 @@ func (f *Form) Prepend(rows ...Row) {
 	f.applyReadOnlyDraw(rows)
 }
 
-// SetReadOnly makes the form unfocusable and unclickable: no row can take
-// focus, and a press is not routed into one, so nothing on it can be edited.
-// Wheel scrolling and PgUp/PgDn still work — the page is meant to be read.
-// Every row implementing ReadOnlyDrawer also switches to its flat rendering,
-// so the page stops offering controls it will not accept input into.
+// SetReadOnly makes the form uneditable: no row can take focus and a press is
+// not routed into one — except a Browsable row (a grid), which keeps both so
+// it can be moved through, and which ReadOnlyDrawer has made inert (a grid
+// goes browse-only). Wheel scrolling and PgUp/PgDn still work — the page is
+// meant to be read. Every row implementing ReadOnlyDrawer also switches to its
+// flat rendering, so the page stops offering controls it will not accept
+// input into.
 //
 // This is how a Properties page whose reads succeed but whose writes would be
 // refused is presented. Nothing can become dirty, so Apply and Script Changes
 // have nothing to send, which is the property that makes it safe rather than
-// merely discouraging.
+// merely discouraging. Dirty enforces it outright: a browsing grid's
+// OnSelectRow may run a page's commit-the-detail-rows-back handler, and a
+// lossy round trip there (a size shown in MB, stored in KB) must not turn a
+// look into a write.
 func (f *Form) SetReadOnly(v bool) {
 	f.readOnly = v
 	if v {
@@ -107,8 +112,16 @@ func (f *Form) applyReadOnlyDraw(rows []Row) {
 func (f *Form) ReadOnly() bool { return f.readOnly }
 
 // focusableAt reports whether row i can take focus right now — its own answer,
-// unless the whole form is read-only.
-func (f *Form) focusableAt(i int) bool { return f.rows[i].Focusable() && !f.readOnly }
+// unless the whole form is read-only, when only a Browsable row can.
+func (f *Form) focusableAt(i int) bool {
+	return f.rows[i].Focusable() && (!f.readOnly || browsable(f.rows[i]))
+}
+
+// browsable reports whether row may be focused and clicked on a read-only form.
+func browsable(row Row) bool {
+	b, ok := row.(Browsable)
+	return ok && b.Browsable()
+}
 
 // Rows returns the form's rows in order, for a caller that needs to find one
 // after the form is built.
@@ -449,19 +462,19 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 		if my < b.y || my >= b.y+b.h {
 			continue
 		}
-		if f.readOnly {
+		row := f.rows[b.row]
+		if f.readOnly && !browsable(row) {
 			// Claimed, not routed: the press landed on the form, and letting it
 			// fall through would put it wherever the sheet draws underneath.
 			return true
 		}
-		row := f.rows[b.row]
 		if mh, ok := row.(MouseHandler); ok && mh.HandleMouse(ev) {
-			if row.Focusable() {
+			if f.focusableAt(b.row) {
 				f.setFocus(b.row)
 			}
 			return true
 		}
-		if row.Focusable() {
+		if f.focusableAt(b.row) {
 			f.setFocus(b.row)
 			return true
 		}
@@ -506,8 +519,12 @@ func (f *Form) rowAt(ev *tcell.EventMouse) (Row, bool) {
 	return nil, false
 }
 
-// Dirty reports whether any row's value differs from its loaded baseline.
+// Dirty reports whether any row's value differs from its loaded baseline. A
+// read-only form is never dirty, whatever its rows say — see SetReadOnly.
 func (f *Form) Dirty() bool {
+	if f.readOnly {
+		return false
+	}
 	for _, row := range f.rows {
 		if e, ok := row.(Editable); ok && e.Dirty() {
 			return true

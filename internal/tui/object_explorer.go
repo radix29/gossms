@@ -544,6 +544,20 @@ func (oe *ObjectExplorer) handleActivate(id controls.TreeNodeID) bool {
 		}
 		oe.app.showQueryStorePanelFor(sc, n.data.DBName, n.data.Name)
 		return true
+	case NodeEventTarget:
+		sc := resolveConn(n)
+		if sc == nil {
+			return false
+		}
+		oe.app.showXEventTargetData(sc, n)
+		return true
+	case NodeXEventProfilerSession:
+		sc := resolveConn(n)
+		if sc == nil {
+			return false
+		}
+		oe.app.launchXEventProfilerNamed(sc, n.data.Name)
+		return true
 	}
 	return false
 }
