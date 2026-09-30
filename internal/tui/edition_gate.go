@@ -110,3 +110,34 @@ func gateAzure(item controls.MenuItem, sc *db.ServerConn) controls.MenuItem {
 func entraPrincipalsOffered(info *gosmo.ServerInfo) bool {
 	return info == nil || info.IsAzure() || info.VersionMajor >= 16
 }
+
+// resourceGovernorHidden reports whether Management leaves out the Resource
+// Governor node altogether: on Azure SQL Database (EngineEdition 5) the
+// platform governs and nothing is configurable. A Managed Instance keeps it,
+// shown and unverified (plan-phase5 D5) — which is why this reads the engine
+// edition and not serverIsAzure, which is true of both.
+func resourceGovernorHidden(info *gosmo.ServerInfo) bool {
+	return info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
+}
+
+// resourceGovernorSupported reports whether the edition implements Resource
+// Governor's DDL: Enterprise and Developer (EngineEdition 3) on every major,
+// Standard from SQL Server 2025 (major 17), and a Managed Instance. Express
+// and pre-2025 Standard refuse it, and the node there expands to a single
+// row saying so rather than to folders every read and write of would fail.
+//
+// From documentation only: every instance in the test estate is Developer,
+// so no refusal was driven live (W1). No server info answers yes, per
+// gate.AllowsOn's fail-open rule.
+func resourceGovernorSupported(info *gosmo.ServerInfo) bool {
+	if info == nil {
+		return true
+	}
+	switch gosmo.EngineEdition(info.EngineEdition) {
+	case gosmo.EngineEnterprise, gosmo.EngineAzureManagedInst:
+		return true
+	case gosmo.EngineStandard:
+		return info.VersionMajor >= int(gosmo.SQLServer2025)
+	}
+	return false
+}

@@ -4,8 +4,11 @@ Scope: the two **Management**-folder features SSMS has and goSSMS lacks —
 **Resource Governor** (pools, workload groups, external pools, classifier) and
 **Database Mail** (accounts, profiles, profile security, system parameters,
 test mail, mail log). Estimate **4–5 weeks**, two independent halves:
-Resource Governor ≈ 2 weeks, Database Mail ≈ 2.5 weeks. Neither has any
-object model in gosmo today — `grep -i 'sysmail\|resource_governor'` over
+Resource Governor ≈ 2 weeks, Database Mail ≈ 2.5 weeks. Neither has an
+object model in gosmo today — **except** that `server_config.go` already has
+`MailProfile`, `Server.MailProfiles` and `Server.SendMail` (found 2026-09-30,
+after this was written; the grep below missed them). W9/W10 extend those
+rather than add a second `MailProfile` — `grep -i 'sysmail\|resource_governor'` over
 gosmo finds only the `Database Mail XPs` row in `server_config.go`'s callers
 and the Azure-only `sys.dm_instance_resource_governance` reader in
 `azure_resources.go`, which is a different thing (the *platform's* governor,
@@ -183,6 +186,138 @@ login per right):
   disabled, the flag means only "changed since the last DISABLE", and the label
   stays "(Disabled)".
 
+## W2 results — gosmo reads (2026-09-30)
+
+Shipped in gosmo `resource_governor.go`; the Stage A1 table below is the
+design, this is what it became.
+
+- **Stored vs in force are separate calls**, the `ServerAudit.Status` split:
+  `Server.ResourceGovernor(ctx)` (catalog: enabled, classifier id +
+  schema/name resolved in master, stored max outstanding I/O) and
+  `Server.ResourceGovernorStatus(ctx)` (DMV: `IsReconfigurationPending`,
+  effective classifier and I/O). Live pool/group counters are
+  `Server.ResourcePoolStats(ctx)` / `Server.WorkloadGroupStats(ctx)`, one
+  server-wide round trip each, keyed by pool/group id. The catalog reads work
+  without VIEW SERVER STATE; the four DMV reads fail without it — the Detail
+  Browser's "degrade to blank" is the caller ignoring that error.
+- **Not visible**: `ResourceGovernor` returns `ErrNotFound`; the pool and
+  external-pool listings return empty (live-tested with a no-rights login).
+  `WorkloadGroups` likewise — callers treat empty as "not visible".
+- Finders: `ResourcePoolByName`, `WorkloadGroupByName` (names are unique
+  server-wide), `ExternalResourcePoolByName`; `ResourcePool.WorkloadGroups`.
+  `IsSystem()` on all three (id ≤ 2). No `Ref` handles yet — they land with
+  the writes in W3.
+- Affinity is read on both pool kinds (`Affinity` slices, empty = AUTO) from
+  the `*_affinity` catalog views, grouped in Go.
+- Gates: `request_max_memory_grant_percent_numeric` at 2019 (documented; 15/16
+  unverifiable, falls back to the int column cast to float),
+  `group_max_tempdb_data_percent`/`_mb` at 2025 (`*float64`, nil = unset).
+  Inventory, golden file and arity test added. `max_outstanding_io_per_volume`
+  and the IOPS columns are ungated (all on 13).
+- Verified: `TestLiveResourceGovernorReads` (disposable pool with affinity,
+  group, external pool; DISABLE teardown, governor left 0/0) and
+  `TestLiveResourceGovernorInvisibleToALoginWithoutRights` pass on 13, 14,
+  17; `TestLiveGatedColumnsMatchTheCatalog` agrees on all three;
+  `TestLiveVersionSweep` calls all eleven RG reads clean on all three. Its one
+  failure, `Database.EventSessions`, is pre-existing and unrelated (the view is
+  Azure-only; it fails Msg 208 on-prem) — recorded in gosmo's open threads.
+- Linux (ubusql1) and MI not run for W2.
+
+## W3 results — gosmo writes + scripter (2026-09-30)
+
+Shipped in gosmo `resource_governor_write.go` and
+`scripter_resource_governor.go`.
+
+- **API.** `CreateResourcePool` / `CreateWorkloadGroup` /
+  `CreateExternalResourcePool(ctx, req)`; `.Alter(ctx, …Options)` and
+  `.Drop(ctx)` on each; `ResourcePoolRef` / `WorkloadGroupRef` /
+  `ExternalResourcePoolRef` / `ResourceGovernorRef()` handles. The singleton
+  has `SetClassifier(schema, name)` (empty name = NULL),
+  `SetMaxOutstandingIOPerVolume(n)` (0 = DEFAULT), `Reconfigure`, `Enable`
+  (the same statement), `Disable`, `ResetStatistics`. The *Options structs use
+  pointer fields (nil = leave out). Group tempdb limits clear through
+  `ClearGroupMaxTempdbData{Percent,MB}`, which sends NULL. The workload
+  group's `Pool` / `ExternalPool` is the USING clause, and on Alter it moves
+  the group. `ClassifierFunctionCandidates(ctx)` is the picker's list for W5:
+  schema-bound, parameterless `FN`s in master that return sysname.
+- **No write reconfigures.** The caller (the W5 Apply) runs the DDL, then
+  `Reconfigure`, then `Disable` when Enabled is off.
+- **Probed on 17 and 13:**
+  - `ALTER RESOURCE GOVERNOR WITH` takes **one option per statement**
+    (Msg 102 for two).
+  - `MAX_OUTSTANDING_IO_PER_VOLUME = 0` is Msg 1040. `DEFAULT` resets it.
+  - The classifier's two-part name resolves in master from any database.
+  - ALTER with no WITH, or with `WITH ()`, is a syntax error, so an empty Alter
+    issues nothing.
+  - None of the three DROPs has IF EXISTS.
+  - A fractional grant % is a syntax error on 13. gosmo refuses it below 2019,
+    and refuses tempdb options below 2025, with `ErrUnsupportedVersion`.
+  - Dropping an external pool a group uses is Msg 10916, the same as for a
+    pool.
+  - `DROP FUNCTION` takes no database prefix (Msg 166).
+- **Scripts** write only non-default options.
+  - A per-object script ends in a comment, not RECONFIGURE, because
+    RECONFIGURE enables the governor.
+  - `ScriptResourceGovernor` emits the classifier, the I/O setting, then
+    RECONFIGURE or DISABLE.
+  - Built-in objects script as ALTER of their non-default options. Their DROP
+    returns `ErrUnsupported`.
+  - Affinity outside processor group 0 returns `ErrUnsupported` (gosmo
+    OPEN-THREADS).
+- **Verified:** `TestLiveResourceGovernorWrites` covers every write, the
+  server refusals, and the scripts run back, recreating identical rows. It
+  passes on 13, 14, 17 and ubusql1 (Linux 17). All four instances were left at
+  0/0/0/not pending with only the built-in objects.
+  - The version sweep calls `ClassifierFunctionCandidates` clean on 13, 14 and
+    17. It stays at its one pre-existing failure (`Database.EventSessions`).
+  - Found on the way: the sweep's reflective half called the new
+    `ResourcePool.Drop` on internal/default. The server refused both. It is now
+    in `sweepSkip`.
+- gosmo is still **uncommitted** (W2 + W3 together).
+
+## W4 results — RG tree + Detail Browser (2026-09-30)
+
+Shipped in `explorer_resource_governor.go` and
+`detail_browser_resource_governor.go`; the edition rule is
+`resourceGovernorSupported` / `resourceGovernorHidden` in `edition_gate.go`.
+`tree_node.go` passed 900 lines and its glyph tables moved to
+`tree_node_icons.go`.
+
+- **State label is read by the Management loader**, not by an async
+  follow-up like the Agent's: Management already loads off the UI goroutine,
+  and a failed read leaves the label bare. So a state change shows after a
+  Refresh of **Management**, not of the Resource Governor node. W6's
+  Enable/Disable/Reconfigure must reload Management (the node's parent).
+  `IsEnabled` on the node carries the governor's enabled flag for W6.
+- **Detail split, a deviation from Stage C1's wording**: the Resource Governor
+  node shows the configuration, stored beside in force (enabled, classifier,
+  I/O per volume, pending, statistics start); the pools grid with live
+  counters is the **Resource Pools** folder's view. One grid cannot hold
+  both shapes.
+- Live columns: Active/Queued are summed from the group DMV (the pool DMV
+  counts memory grants, not requests); Grant waits, CPU ms, Used KB from the
+  pool DMV. Blank without VIEW SERVER STATE, and blank for a pool or group
+  created but not yet applied. External pools have no live columns (gosmo
+  reads no external-pool DMV).
+- Each half of the RG node's view degrades alone: VIEW SERVER STATE without
+  VIEW ANY DEFINITION shows the in-force rows; pending while disabled reads
+  "Yes — applied when enabled".
+- Not visible (empty catalog) is a single ⚠ row in each folder, and an
+  error in the folder's Details view. Unsupported edition: the node is still
+  listed and expands to "Resource Governor is not supported on this edition".
+- Name filter on Resource Pools, Workload Groups and External Resource Pools;
+  `filterKey` gained `pool` so one pool's group filter doesn't restore onto
+  another's.
+- Menus are the default New Query + Refresh until W6; the Details pane's
+  Delete is withheld (no `objs`) until W6 wires drop.
+- **Verified live** on win10cli (17, Developer) under the tmux harness:
+  tree, all seven views, 12.5 % grant, tempdb rows on 2025, "(Disabled)" →
+  bare → "(Reconfiguration pending)" through RECONFIGURE and an ALTER, and a
+  VIEW SERVER STATE-only login (not-visible rows, in-force half shown).
+  Fixtures dropped and the governor left disabled, no classifier, not
+  pending. Not run on 13/14 or Linux (the reads are gosmo's, swept there in
+  W2); the Standard/Express gate is fake-driver only (W1).
+
 ## Part 1 — Resource Governor
 
 ### Stage A1 — gosmo reads and writes (≈5 days, critical path)
@@ -191,8 +326,8 @@ New file `resource_governor.go`, hanging off `*Server`:
 
 | Type | Catalog / DMV | Notes |
 |---|---|---|
-| `ResourceGovernor` (singleton) | `sys.resource_governor_configuration` + `sys.dm_resource_governor_configuration` | `IsEnabled`, `ClassifierFunction` (schema-qualified name in master, resolved from `classifier_function_id`), `MaxOutstandingIOPerVolume` (major ≥ 12), `IsReconfigurationPending` (DMV) |
-| `ResourcePool` | `sys.resource_governor_resource_pools` (+ `sys.dm_resource_governor_resource_pools` for live stats) | min/max CPU %, cap CPU %, min/max memory %, min/max IOPS per volume (≥ 12), affinity (`sys.dm_resource_governor_resource_pool_affinity` — SCHEDULER vs NUMANODE; read, script, **not edited** this pass) |
+| `ResourceGovernor` (singleton) | `sys.resource_governor_configuration` + `sys.dm_resource_governor_configuration` | `IsEnabled`, `ClassifierFunction` (schema-qualified name in master, resolved from `classifier_function_id`), `MaxOutstandingIOPerVolume`, `IsReconfigurationPending` (DMV) |
+| `ResourcePool` | `sys.resource_governor_resource_pools` (+ `sys.dm_resource_governor_resource_pools` for live stats) | min/max CPU %, cap CPU %, min/max memory %, min/max IOPS per volume, affinity (`sys.dm_resource_governor_resource_pool_affinity` — SCHEDULER vs NUMANODE; read, script, **not edited** this pass) |
 | `WorkloadGroup` | `sys.resource_governor_workload_groups` (+ DMV) | importance, request max memory grant % (and the `_numeric` column where present — probe the major), request max CPU time sec, memory grant timeout sec, MAXDOP, group max requests, pool, external pool (≥ 13); **2025: `GROUP_MAX_TEMPDB_DATA_MB` / `_PERCENT`** — version-gate on the column, not the major, and probe on win10cli (major 17) |
 | `ExternalResourcePool` | `sys.resource_governor_external_resource_pools` | major ≥ 13; max CPU %, max memory %, max processes, affinity |
 
@@ -436,18 +571,22 @@ boundary (two where it spans gosmo and gossms; gosmo lands first, built and
 tested there — the `dev-with-local-gosmo` skill). Step IDs are permanent: a
 step added later takes the next unused number and is inserted by position.
 
+**Status (2026-09-30): 4 of 15 done. Next: W5.**
+
 - [x] **W1 — Stage 0 probes, Resource Governor.** Edition/major presence
   (incl. 2025 Standard), rights for catalog, DMVs and DDL; the
   `_numeric` and tempdb-governance columns by major. Record results in this
-  plan. *Blocks W2.* — done 2026-09-30, § W1 results.
-- [ ] **W2 — gosmo RG reads** (Stage A1): the four types, version sweep on
-  13/14/17.
-- [ ] **W3 — gosmo RG writes + scripter** (Stage A1): create/alter/drop,
+  plan. *Blocks W2.* — done 2026-09-30, gossms 394a094 (§ W1 results; no
+  code).
+- [x] **W2 — gosmo RG reads** (Stage A1): the four types, version sweep on
+  13/14/17. — done 2026-09-30, gosmo uncommitted (§ W2 results).
+- [x] **W3 — gosmo RG writes + scripter** (Stage A1): create/alter/drop,
   classifier, enable/disable/reconfigure; `live_resource_governor_test.go`
-  with state-restoring teardown.
-- [ ] **W4 — RG tree + Detail Browser** (Stages B1, C1 first half): node
+  with state-restoring teardown. — done 2026-09-30, gosmo uncommitted
+  (§ W3 results).
+- [x] **W4 — RG tree + Detail Browser** (Stages B1, C1 first half): node
   types, wiring test, loaders, state label, live pool grid; `ARCHITECTURE.md`
-  package-map rows.
+  package-map rows. — done 2026-09-30, gossms uncommitted (§ W4 results).
 - [ ] **W5 — RG Properties dialog** (Stage C1): General / Pools / Groups /
   External pools pages (Groups by pool dropdown), classifier picker +
   New classifier… template window, one batch + RECONFIGURE on Apply, leaf

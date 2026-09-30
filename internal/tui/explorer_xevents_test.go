@@ -89,10 +89,10 @@ func TestExtendedEventsHangsUnderManagement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := labelsOfNodes(children); !slices.Equal(got, []string{"Extended Events", "SQL Server Logs"}) {
-		t.Errorf("Management's children are %v, want Extended Events before SQL Server Logs (SSMS's order)", got)
+	if got := labelsOfNodes(children); !slices.Equal(got, []string{"Resource Governor", "Extended Events", "SQL Server Logs"}) {
+		t.Errorf("Management's children are %v, want Resource Governor, Extended Events, SQL Server Logs (SSMS's order)", got)
 	}
-	sub, _ := loadExtendedEventsChildren(loaderCtx{}, children[0])
+	sub, _ := loadExtendedEventsChildren(loaderCtx{}, children[1])
 	if len(sub) != 2 || sub[0].data.Type != NodeEventSessions || sub[0].label != "Sessions" ||
 		sub[1].data.Type != NodeXEventProfiler || sub[1].label != "XEvent Profiler" {
 		t.Errorf("Extended Events' children are %v", labelsOfNodes(sub))

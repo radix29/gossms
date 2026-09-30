@@ -233,6 +233,13 @@ var nodeTypeWiring = map[NodeType]nodeWiring{
 	NodeColumnMasterKey:             {class: classObject},
 	NodeColumnEncryptionKeys:        {class: classFolder, filterable: true},
 	NodeColumnEncryptionKey:         {class: classObject},
+	NodeResourceGovernor:            {class: classObject, expandable: true},
+	NodeResourcePools:               {class: classFolder, filterable: true},
+	NodeResourcePool:                {class: classObject, expandable: true},
+	NodeWorkloadGroups:              {class: classFolder, filterable: true},
+	NodeWorkloadGroup:               {class: classObject},
+	NodeExternalResourcePools:       {class: classFolder, filterable: true},
+	NodeExternalResourcePool:        {class: classObject},
 	NodeLoading:                     {class: classInternal},
 	NodeError:                       {class: classInternal},
 }

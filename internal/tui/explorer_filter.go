@@ -163,10 +163,12 @@ func filterProps(t NodeType) []filterProp {
 	case NodeSymmetricKeys:
 		return []filterProp{name, created}
 	case NodeBackupDevices, NodeEndpoints, NodeCertificates, NodeAsymmetricKeys,
-		NodeEventSessions:
+		NodeEventSessions,
+		NodeResourcePools, NodeWorkloadGroups, NodeExternalResourcePools:
 		// No Creation Date: none of sys.backup_devices, sys.endpoints,
-		// sys.certificates, sys.asymmetric_keys or sys.server_event_sessions
-		// records one, so the criterion would reject every row.
+		// sys.certificates, sys.asymmetric_keys, sys.server_event_sessions
+		// or the resource_governor catalogs records one, so the criterion
+		// would reject every row.
 		return []filterProp{name}
 	}
 	return nil
@@ -354,12 +356,14 @@ func filterObjects[T any](f *nodeFilter, items []T, key func(T) nodeData) []T {
 // filterKey identifies a filterable folder by what it is rather than by the
 // *explorerNode holding it, since disconnecting drops the subtree and
 // reconnecting builds fresh nodes. Schema and table keep a table-scoped folder
-// apart from the database-scoped folder of the same type.
+// apart from the database-scoped folder of the same type, and pool one resource
+// pool's Workload Groups folder apart from another's.
 type filterKey struct {
 	conn   string
 	dbName string
 	schema string
 	table  string
+	pool   string
 	typ    NodeType
 }
 
@@ -369,6 +373,7 @@ func newFilterKey(sc *dbconn.ServerConn, d nodeData) filterKey {
 		dbName: d.DBName,
 		schema: d.Schema,
 		table:  d.TableName,
+		pool:   d.RGPool,
 		typ:    d.Type,
 	}
 }

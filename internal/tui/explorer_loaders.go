@@ -139,6 +139,12 @@ var childLoaders = map[NodeType]childLoader{
 	NodeEventSession:   loadEventSessionChildren,
 	NodeXEventProfiler: loadXEventProfilerChildren,
 
+	NodeResourceGovernor:      loadResourceGovernorChildren,
+	NodeResourcePools:         loadResourcePoolsChildren,
+	NodeResourcePool:          loadResourcePoolChildren,
+	NodeWorkloadGroups:        loadWorkloadGroupsChildren,
+	NodeExternalResourcePools: loadExternalResourcePoolsChildren,
+
 	NodeAlwaysOn:              loadAlwaysOnChildren,
 	NodeAvailabilityGroups:    loadAvailabilityGroupsChildren,
 	NodeAvailabilityGroup:     loadAvailabilityGroupChildren,

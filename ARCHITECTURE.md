@@ -191,7 +191,8 @@ gossms/
 │       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help), context-gated via each MenuItem's Enabled predicate, + About dialog
 │       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row, same Enabled-predicate gating
-│       ├── tree_node.go          # NodeType enum + style-aware icon lookup (Emoji/Symbols/Portable/None) + name lookup
+│       ├── tree_node.go          # NodeType enum, nodeData, isContainerNode, hasChildren, name lookup
+│       ├── tree_node_icons.go    # style-aware icon lookup (Emoji/Symbols/Portable/None): nodeIcon and the per-style glyph tables
 │       ├── object_explorer.go    # owns the SQL Server tree model; drives controls.TreeView
 │       ├── explorer_loaders.go   # childLoader and nodeMenus registries (NodeType → fetch func, NodeType → menu builder) + shared loader helpers
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
@@ -199,6 +200,7 @@ gossms/
 │       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles, Credentials, Audits, Server Audit Specifications
 │       ├── explorer_storage.go   # loaders: a database's Storage folder — Partition Functions, Partition Schemes
 │       ├── explorer_management.go # loaders: Server Objects folder (Backup Devices, Endpoints, Linked Servers, Server Triggers), Management folder, SQL Server Logs / Agent Error Logs file lists
+│       ├── explorer_resource_governor.go # loaders: Management > Resource Governor (state in the label), Resource Pools > pool > Workload Groups, External Resource Pools; the unsupported-edition and not-visible rows
 │       ├── explorer_xevents.go   # loaders + menus: Management > Extended Events > Sessions (a database's own folder on Azure SQL Database — xeScope), one node per event session (running/stopped glyph) and its targets; Start/Stop Session; Watch Live Data / View Target Data
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_programmability.go # loaders: Programmability > Types (five sub-folders), Assemblies, Rules, Defaults, Plan Guides
@@ -306,6 +308,7 @@ gossms/
 │       ├── detail_browser_external.go   # External Resources: external data sources, file formats, libraries
 │       ├── detail_browser_snapshots.go  # Database Snapshots folder and one snapshot
 │       ├── detail_browser_service_broker.go # the seven Service Broker families: each folder and its leaves, each leaf reusing its Properties page's finder
+│       ├── detail_browser_resource_governor.go # Resource Governor: stored vs in-force configuration, pool and group grids with live DMV counters (blank without VIEW SERVER STATE), one pool / group / external pool
 │       ├── detail_browser_xevents.go    # Extended Events: the Sessions folder (state, startup, events, targets, dropped), one session's events + targets, one target's settings + runtime counters
 │       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
@@ -515,8 +518,9 @@ the name as a `*string` shared across pages, or later pages use the stale one.
 
 ### Adding an Object Explorer node type
 
-Add the `NodeType` and icon/name in `tree_node.go`; register a `childLoader` in
-`explorer_loaders.go`'s `childLoaders` (it gets a `loaderCtx` and the node, runs
+Add the `NodeType` and name in `tree_node.go` and its icons in
+`tree_node_icons.go`; register a `childLoader` in `explorer_loaders.go`'s
+`childLoaders` (it gets a `loaderCtx` and the node, runs
 off the UI goroutine) and put the loader with its peers (`explorer_*.go`). Its
 context menu is a `menuBuilder` in the same file's `nodeMenus`, written beside
 the loader; no entry gives New Query + Refresh, and a Properties-only leaf uses

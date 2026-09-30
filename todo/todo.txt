@@ -1,6 +1,5 @@
 
 **Phase 5 — the big ones (L, open-ended)**
-24. Database Mail, Resource Governor
 25. Live Query Statistics; Compare Showplan
 26. Replication (read-only)
 27. Full-Text; Maintenance-as-Agent-jobs; Data Collection (read-only)

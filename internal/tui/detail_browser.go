@@ -765,6 +765,21 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeEventTarget:
 		return eventTargetDetail(ctx, sc, node)
 
+	case NodeResourceGovernor:
+		return resourceGovernorDetail(ctx, sc)
+	case NodeResourcePools:
+		return resourcePoolsFolderDetail(ctx, sc, node)
+	case NodeResourcePool:
+		return resourcePoolDetail(ctx, sc, node)
+	case NodeWorkloadGroups:
+		return workloadGroupsFolderDetail(ctx, sc, node)
+	case NodeWorkloadGroup:
+		return workloadGroupDetail(ctx, sc, node)
+	case NodeExternalResourcePools:
+		return externalResourcePoolsFolderDetail(ctx, sc, node)
+	case NodeExternalResourcePool:
+		return externalResourcePoolDetail(ctx, sc, node)
+
 	case NodeStoredProcedure, NodeFunction, NodeTrigger:
 		return moduleDetail(ctx, sc, node)
 
