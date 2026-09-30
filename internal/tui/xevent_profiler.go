@@ -20,10 +20,10 @@ import (
 // Management ▸ Extended Events (its leaves' menu and Enter), Tools ▸ XEvent
 // Profiler, and Alt+P.
 //
-// The sessions are gossms's own copies of SSMS's (D2 in
-// docs/xevents-plan.md): named gossms_QuickSession*, not QuickSession*, and
+// The sessions are gossms's own copies of SSMS's (docs/decisions.md
+// § Extended Events): named gossms_QuickSession*, not QuickSession*, and
 // with a target. SSMS creates its copies with no target — it reads the live
-// stream, which goSSMS does not (D1) — so reusing them would leave nothing to
+// stream, which goSSMS does not — so reusing them would leave nothing to
 // read on any server where SSMS's Profiler has run, and altering them would
 // change a session that is not ours. An existing gossms copy is reused as it
 // is: whatever the user changed in it stays changed.

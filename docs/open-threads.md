@@ -87,8 +87,7 @@ work; close an item by deleting it when fixed.
 
 ### Verification gaps
 
-- **V2 — Azure Extended Events not run end to end.** Phase G of
-  `docs/xevents-plan.md`. Azure SQL Database's database-scoped sessions
+- **V2 — Azure Extended Events not run end to end.** Azure SQL Database's database-scoped sessions
   (`xeScope`) are pinned by fake-driver tests only — no Azure SQL Database is
   available. On the Managed Instance a blob `event_file` was created and
   refused its START (fake SAS, 25602), and a blob URL pattern merged to zero
@@ -96,8 +95,8 @@ work; close an item by deleting it when fixed.
   and SAS, and whether the wildcard pattern gosmo builds lists a container's
   rollover blobs, are unrun.
 - **V3 — Managed Instance low-privilege run unfinished**
-  (`docs/plan-xevents-followups.md` W6; t-qmi-01 refused every login, `testgo` too, Msg 40532, from
-  2026-09-30 ~21:00). Done: as a `VIEW SERVER STATE` login, Sessions listed,
+  (t-qmi-01 refused every login, `testgo` too, Msg 40532, from 2026-09-30
+  ~21:00). Done: as a `VIEW SERVER STATE` login, Sessions listed,
   New/Start/Stop/Delete greyed "needs ALTER ANY EVENT SESSION"; MI answers all
   nine granular event-session names through `HAS_PERMS_BY_NAME` (not NULL as
   on 13–16), so the `gate.EventSession*` `Alt`s decide there. Found: Watch
@@ -111,6 +110,14 @@ work; close an item by deleting it when fixed.
   `gossms_w6_vss`, `gossms_w6_alt`, `gossms_w6_gran` (password
   `W6-inSecure123!`), session `gossms_test_xe_w6`.
 
+- **V4 — Resource Governor and Database Mail unverified on Managed
+  Instance** (Phase 5 item 24; t-qmi-01 unavailable since 2026-09-30). Both
+  ship shown and ungated on EngineEdition 8, pinned by fake-driver tests only.
+  To run when MI is back: RG catalog/DMV reads and `CREATE RESOURCE POOL` /
+  `ALTER RESOURCE GOVERNOR` rights; Database Mail `sysmail_*` reads, writes and
+  a test send; the gosmo version sweep of every new read; the tmux live pass
+  for both. If MI refuses RG DDL, add an `edition_gate.go` entry.
+
 ### Nice to have
 
 - **N1 — IntelliSense query-tree shapes deliberately left out.**
@@ -123,6 +130,15 @@ work; close an item by deleting it when fixed.
   database). Deliberate limits of what shipped: a temp-table binding doesn't
   survive `GO` (the table does), and `PIVOT` columns are untyped (aggregates
   aren't modelled). Each is its own pass if asked.
+- **N6 — Resource pool affinity is read-only.** `AFFINITY SCHEDULER` /
+  `NUMANODE` on resource and external pools is read and scripted but not
+  edited (Phase 5 item 24, decision D3): editing needs a scheduler/NUMA picker
+  nothing else in gossms has.
+- **N7 — No SQL Server Agent Properties ▸ Alert System.** Agent's mail
+  profile (`sp_set_sqlagent_properties @databasemail_profile`) can't be set
+  from gossms — there is no Agent Properties dialog at all. Out of scope of
+  Phase 5 item 24 (Database Mail); until then operator/job notification mail
+  needs it set by T-SQL.
 - **N5 — Other Properties dialogs leave the tree stale after Apply.**
   `PropDialog.onSaved` (`internal/tui/prop_dialog.go`) runs after a write
   lands; only Session Properties sets it (`refreshXESession` reloads the

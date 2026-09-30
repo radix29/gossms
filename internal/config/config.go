@@ -390,7 +390,7 @@ type XEventViewSetting struct {
 }
 
 // DefaultXEventStoreCapacity is the Extended Events viewer's event limit absent
-// an Options override (D4 in docs/xevents-plan.md); it must agree with
+// an Options override; it must agree with
 // xevent.DefaultCapacity, which config must not import —
 // TestXEventStoreCapacityComesFromOptions in internal/tui holds them together.
 // The bounds keep a typo from making a viewer that holds nothing or one that

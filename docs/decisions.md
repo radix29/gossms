@@ -296,7 +296,7 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   say: a browsing grid runs pages' commit-the-detail-back `OnSelectRow`
   handlers, and a lossy round trip there must not turn a look into a write.
   Text, check and select rows stay unfocusable — their values are already on
-  screen. `docs/plan-xevents-followups.md` W3.
+  screen.
 - **A schema *node* is excluded from the schema-scoped gate** — `objectOpRights`
   names `rightAlterOnSchema` beside the three database-wide rights, but ALTER
   on a schema doesn't permit dropping or renaming the schema itself.
@@ -937,8 +937,8 @@ Roadmap item 23. gosmo holds the model, DDL, scripter and readers
   would jump between the label and its cell as columns resized or scrolled.
   Accepted cost: scrolled so an aggregate's column comes first on screen, the
   label has no room and the rows show only the aggregates — scroll back to
-  see which group is which. This reverses the earlier "text in the label only" call
-  (`plan-xevents-followups.md` W4).
+  see which group is which. This reverses the earlier "text in the label
+  only" call.
 - **Find and bookmarks walk events in grid order, collapsed groups
   included, and open the group holding a hit** — a Find that skipped
   collapsed groups would say "not found" of an event the grid holds. Ctrl+F /

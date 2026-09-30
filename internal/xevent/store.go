@@ -1,7 +1,7 @@
 package xevent
 
-// DefaultCapacity is how many events a Store holds before the oldest go: D4
-// in docs/xevents-plan.md. A busy TSQL trace fills it in minutes; the point is
+// DefaultCapacity is how many events a Store holds before the oldest go. A
+// busy TSQL trace fills it in minutes; the point is
 // that it fills and stops rather than taking the machine's memory.
 const DefaultCapacity = 100_000
 

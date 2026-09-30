@@ -20,8 +20,7 @@ import (
 // input in xevent_viewer_input.go. The event store itself is internal/xevent.
 //
 // Live data is polled from the session's event_file (or ring_buffer) target
-// rather than streamed — D1 in docs/xevents-plan.md, recorded in
-// docs/decisions.md § Extended Events.
+// rather than streamed — docs/decisions.md § Extended Events.
 
 // XEventViewer is one Extended Events viewer panel.
 //

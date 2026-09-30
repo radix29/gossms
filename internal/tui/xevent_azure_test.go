@@ -13,7 +13,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// Phase G of docs/xevents-plan.md: Azure. Azure SQL Database's event sessions
+// Azure. Azure SQL Database's event sessions
 // are the database's own (ON DATABASE, sys.database_event_sessions), filed
 // under each database; on every Azure edition an event_file is a blob URL
 // written with the credential named after its container.

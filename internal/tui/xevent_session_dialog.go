@@ -13,10 +13,10 @@ import (
 )
 
 // xevent_session_dialog.go is New Session and Session Properties for an
-// Extended Events session — Phase E of docs/xevents-plan.md. Both are four
-// pages, one file each: General (xevent_session_general.go), Events
-// (xevent_session_events.go), Data Storage (xevent_session_storage.go) and
-// Advanced (xevent_session_advanced.go). This file holds what they share —
+// Extended Events session. Both are four pages, one file each: General
+// (xevent_session_general.go), Events (xevent_session_events.go), Data
+// Storage (xevent_session_storage.go) and Advanced
+// (xevent_session_advanced.go). This file holds what they share —
 // the catalog they offer, the edited definition, the async column reads — and
 // the two dialogs' assembly.
 //
