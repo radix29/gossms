@@ -27,19 +27,6 @@ nothing if a read was never reached — log the `call` labels to confirm.
 The per-column gate table is gosmo's (`~/go/gosmo/OPEN-THREADS.md` § Version
 support); this section covers only the environment.
 
-## Release workflow: what is still open
-
-**Tag v0.0.13, then re-activate the `replace`.** gosmo v0.0.15 is tagged and
-pushed, `go.mod` requires it and the `replace` is commented out, so a clean
-build resolves. Delete this paragraph once the tag is pushed.
-
-**The homebrew job's Verify step hasn't run in CI.** The formula lost its
-`version` line on 2026-09-24 and Verify now checks the archive URLs' tag.
-Dry-run locally against a fake remote: passes a correct formula, fails
-missing/stale/half-old ones; `brew audit --strict --online` clean on staged
-v0.0.12, `brew info` scans `0.0.12`. Check that job's log on the next tag, then
-delete this entry. The settled shape: `docs/decisions.md` § Release workflow.
-
 ## Environment: what the instances can and cannot do
 
 - **win10cli can never be an availability replica.** `IsHadrEnabled` and
