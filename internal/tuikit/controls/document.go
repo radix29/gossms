@@ -75,7 +75,25 @@ type Document struct {
 	// (every same-size undo), and rescanning only dirtyFrom would then keep
 	// stale entries for the rest of the span.
 	dirtyTo int
+
+	// splices records the reach of the most recent mutations, one slot per
+	// version (slot version%len), for changedSince. It is the dirty range a
+	// cache *more* than one version behind needs: Enter with auto-indent is a
+	// split plus a setLine per space, all before the wrap cache next looks.
+	splices [spliceLogLen]splice
 }
+
+// spliceLogLen bounds how far behind a cache can fall and still catch up
+// through changedSince rather than rebuilding. A paste is one mutation per
+// rune, so it outruns this and rebuilds once — the cost of any edit before
+// the log existed.
+const spliceLogLen = 64
+
+// splice describes one mutation: lines [row, row+old) of the previous buffer
+// became lines [row, row+new) of this one, and every other line is the same
+// line — those after the span shifted by new-old. old < 0 means unknown: the
+// mutation could have moved any line anywhere (edit, setLines).
+type splice struct{ row, old, new int }
 
 // newDocument returns a Document holding a single empty line — the same
 // non-empty invariant Editor relies on everywhere (len(lines) >= 1, so
@@ -115,6 +133,7 @@ func (d *Document) setLine(i int, line []rune) {
 	d.version++
 	d.maxWidthValid = false
 	d.dirtyFrom, d.dirtyTo = i, i+1
+	d.logSplice(splice{row: i, old: 1, new: 1})
 }
 
 // setLines replaces the whole buffer and bumps the version.
@@ -150,7 +169,10 @@ func (d *Document) edit(fn func(lines [][]rune) [][]rune) {
 // the Document takes ownership of. It is the general splice undo and redo are
 // applied through: a step covers one contiguous span, and restoring it in a
 // single mutation is what keeps the version counter moving once per undo
-// rather than once per line.
+// rather than once per line. Editor's line-count-changing keystrokes (Enter,
+// a joining Backspace or Delete, deleting a multi-line selection) go through
+// it too rather than edit, so the caches resume at the span instead of
+// starting over: in wrap mode, edit re-segments the whole document per Enter.
 func (d *Document) replaceRange(row, n int, with [][]rune) {
 	// slices.Replace, not a fresh buffer built by hand: an undo whose span is
 	// the same length it replaces — the common one, since most edits don't
@@ -162,6 +184,7 @@ func (d *Document) replaceRange(row, n int, with [][]rune) {
 	// so undoing a one-line edit in a 20,000-line script would re-measure every
 	// rune in the buffer on the next Draw.
 	d.touch(row)
+	d.logSplice(splice{row: row, old: n, new: len(with)})
 }
 
 // touch invalidates every version-keyed cache from line `from` down. Called
@@ -183,6 +206,46 @@ func (d *Document) touch(from int) {
 		d.lineW = d.lineW[:from]
 	}
 	d.dirtyFrom, d.dirtyTo = from, -1
+	d.logSplice(splice{old: -1})
+}
+
+// logSplice records the current version's mutation for changedSince. touch
+// logs "unknown" first and replaceRange overwrites it with its exact span.
+func (d *Document) logSplice(s splice) {
+	d.splices[d.version%spliceLogLen] = s
+}
+
+// changedSince returns one span covering every mutation after version v, in
+// splice's terms: lines [row, row+oldN) of the buffer at v are lines
+// [row, row+newN) now, and every line outside them is unchanged (shifted by
+// newN-oldN past the span). ok is false when that can't be known — v is more
+// than spliceLogLen mutations old, or one of them was an edit or setLines —
+// and the caller rebuilds from scratch. v == Version() is an empty span.
+//
+// Successive spans merge into their union, so two edits far apart report
+// everything between them as changed: correct, merely wider than needed.
+func (d *Document) changedSince(v uint64) (row, oldN, newN int, ok bool) {
+	if v > d.version || d.version-v > spliceLogLen {
+		return 0, 0, 0, false
+	}
+	for ver := v + 1; ver <= d.version; ver++ {
+		s := d.splices[ver%spliceLogLen]
+		if s.old < 0 {
+			return 0, 0, 0, false
+		}
+		if ver == v+1 {
+			row, oldN, newN = s.row, s.old, s.new
+			continue
+		}
+		// Union of the span so far ([row, row+newN) in current lines) and
+		// s's ([s.row, s.row+s.old)), taken before s applies. Its end is at
+		// or past the span's, where lines sit (newN-oldN) below their
+		// position at v, which maps it back to v's numbering.
+		lo := min(row, s.row)
+		hi := max(row+newN, s.row+s.old)
+		row, oldN, newN = lo, hi-(newN-oldN)-lo, hi+(s.new-s.old)-lo
+	}
+	return row, oldN, newN, true
 }
 
 // maxDisplayWidth returns the display width of the widest line, measured

@@ -40,7 +40,7 @@ func (a *App) showOperatorProperties(sc *db.ServerConn, operatorName string) {
 func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: operatorName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			o, err := findAgentOperator(ctx, sc, *operatorName)
 			if err != nil {

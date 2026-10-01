@@ -38,7 +38,7 @@ func loadServerObjectsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 //
 // Unlike loadServerChildren this loader reads: the Resource Governor and
 // Database Mail nodes' labels carry their state (resourceGovernorState,
-// databaseMailState), a failed read of which leaves the label bare rather
+// databaseMailState), a failed read of which marks or bares the label rather
 // than failing the folder.
 func loadManagementChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	var info *gosmo.ServerInfo

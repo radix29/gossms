@@ -26,12 +26,20 @@ import (
 // so a cursor inside a CTE body completes against that body; temp tables (#t,
 // ##t) and table variables (@t), resolved from their declaration — CREATE
 // TABLE, DECLARE ... TABLE, SELECT ... INTO — found by scanning the cursor's
-// GO-delimited batch, with PIVOT/UNPIVOT reshaping the reference it follows
-// (see sqlparse.ScanBindings and sqlparse.Pivot).
+// GO-delimited batch, and temp tables also from the batches above it until a
+// DROP TABLE; with PIVOT/UNPIVOT reshaping the reference it follows; and
+// OPENJSON/OPENROWSET/OPENXML resolved from their WITH column list, or
+// OPENJSON's fixed key/value/type shape without one (see sqlparse.ScanBindings,
+// sqlparse.CarryTempBindings, sqlparse.Pivot and sqlparse.Rowset).
+//
+// Table-valued functions resolve to their catalog result columns where they
+// are called, and a three-part name ("Sales.dbo.Orders", "Sales..Orders")
+// against that database's own inventory, loaded on first use (see
+// completion_crossdb.go); so do the qualifier chains that type one ("Sales.",
+// "Sales.dbo.").
 //
 // Out of scope, answered with nothing rather than a plausible wrong list:
-// keyword completion, table-valued function result shapes, OPENJSON/OPENROWSET
-// WITH column lists, and cross-database chains.
+// keyword completion, and a linked server's four-part names.
 // ---------------------------------------------------------------------------
 
 // newCompletionProvider builds the controls.CompletionProvider installed on
@@ -77,15 +85,18 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 	var qualifier, prefix string
 	var replaceFrom int
 	var hasQualifier bool
+	var chain []string
 	switch state {
 	case sqlparse.LexNormal:
 		qualifier, prefix, replaceFrom, hasQualifier = sqlparse.TokenContext(tokens, upTo)
+		chain = sqlparse.QualifierChain(tokens, upTo)
 	case sqlparse.LexBracket:
 		// An unterminated bracket identifier ("FROM [Cus|") is the one
 		// non-normal lexer state completion still works in: everything after
 		// the '[' is the prefix, and the whole "[..." span is replaced on
 		// commit (bracketIfNeeded re-quotes only when needed).
 		qualifier, _, _, hasQualifier = sqlparse.TokenContext(tokens, quoteStart)
+		chain = sqlparse.QualifierChain(tokens, quoteStart)
 		prefix = string(buf[quoteStart+1 : upTo])
 		replaceFrom = quoteStart
 	default:
@@ -127,19 +138,14 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 			forwardFrom++
 		}
 	}
-	batchEnd := sqlparse.StatementEndOffset(lines, buf, row, forwardFrom)
-	forwardTokens, _, _, _ := sqlparse.TokenizeRange(buf, forwardFrom, batchEnd, false)
-
-	// Statements stacked with no ';' between them still parse as one
-	// ';'/GO-delimited batch above; narrow to the DML statement holding the
-	// cursor so a bare column context doesn't pick up FROM refs from an
-	// unrelated statement above or below it (see sqlparse.NarrowToDMLStatement).
-	combined := append(append([]sqlparse.Token{}, tokens...), forwardTokens...)
-	stmtStart, stmtEnd := sqlparse.NarrowToDMLStatement(combined, batchStart, batchEnd, upTo)
+	// Statements stacked with no ';' between them still lex as one
+	// ';'/GO-delimited span; narrow to the DML statement holding the cursor so
+	// a bare column context doesn't pick up FROM refs from an unrelated
+	// statement above or below it. The forward lex stops at the next statement
+	// rather than running to the next ';' or GO (see
+	// sqlparse.NarrowStatementForward).
+	stmtStart, _, forwardTokens := sqlparse.NarrowStatementForward(lines, buf, row, batchStart, forwardFrom, upTo, tokens)
 	tokens = sqlparse.TokensFrom(tokens, stmtStart)
-	if stmtEnd < batchEnd {
-		forwardTokens, _, _, _ = sqlparse.TokenizeRange(buf, forwardFrom, stmtEnd, false)
-	}
 	stmtTokens := append(append([]sqlparse.Token{}, tokens...), forwardTokens...)
 
 	// The query tree, not the flat scan: the cursor's innermost SELECT, the
@@ -154,21 +160,42 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 
 	// Temp tables and table variables are declared in a different statement
 	// from the one using them, so their shapes come from a scan of the whole
-	// GO-delimited batch — the one piece of cross-statement work a keystroke
-	// does. bindingsWanted keeps it off the path of scripts that name none, and
-	// p.completionBatch re-lexes only what changed since the last one.
+	// GO-delimited batch, plus the temp tables the batches above it carry in —
+	// the one piece of cross-statement work a keystroke does. bindingsWanted
+	// keeps it off the path of scripts that name none, and p.completionBatch
+	// re-lexes only what changed since the last one. The sigil test starts at
+	// the top, not the batch: a temp table outlives GO.
 	var bindings []sqlparse.Binding
 	if bindingsWanted(clause, scope.Query, refs, scope.CTEs, qualifier, prefix) &&
-		sqlparse.ContainsSigil(buf, pre.GoStart) {
+		sqlparse.ContainsSigil(buf, 0) {
 		bindings = p.completionBatch.Bindings(lines, buf, row)
 	}
-	rels := resolveRefs(newResolveCtx(inv, sysInv, scope.CTEs, bindings), refs)
+	// A three-part ref whose database's inventory is still loading leaves
+	// pending set: the column answer would be missing its columns, so the
+	// loading row stands in until refreshSysCompletionPopups re-asks.
+	var pending bool
+	rc := newResolveCtx(inv, sysInv, scope.CTEs, bindings)
+	rc.otherDB = func(name string) (*completionInventory, bool) { return p.databaseInventory(inv, name) }
+	rc.pending = &pending
+	rels := resolveRefs(rc, refs)
+	loadingOr := func(items []controls.CompletionItem, wait bool) []controls.CompletionItem {
+		if len(items) == 0 && wait {
+			return []controls.CompletionItem{loadingCompletionItem}
+		}
+		return items
+	}
 
 	switch {
+	case len(chain) >= 2:
+		items, wait := p.chainCandidates(inv, sysInv, chain, prefix)
+		return loadingOr(items, wait), replaceFrom
 	case hasQualifier:
-		return p.memberCandidates(inv, sysInv, rels, qualifier, prefix), replaceFrom
+		items, wait := p.memberCandidates(inv, sysInv, rels, qualifier, prefix)
+		return loadingOr(items, wait || pending), replaceFrom
 	case clause == sqlparse.ClauseTable:
 		return p.tableCandidates(inv, sysInv, scope.CTEs, bindings, prefix), replaceFrom
+	case pending:
+		return []controls.CompletionItem{loadingCompletionItem}, replaceFrom
 	case len(rels) == 0:
 		// Column context but nothing resolvable FROM'd yet: no columns to
 		// pull, so fall back to the object list.

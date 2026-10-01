@@ -183,12 +183,13 @@ func (d *SendTestMailDialog) build(pf *sendTestMailPrefetch) *propsheet.Form {
 	if info := d.sc.Server.Info(); info != nil && info.Name != "" {
 		server = info.Name
 	}
-	// 46 columns keeps the field inside the form at the sheet's full width
-	// (50 drew over its border). The body is longer and, pre-filled, reads
-	// from its start.
+	// 46 columns fills the form at the sheet's full width (50 drew over its
+	// border there); a narrower sheet narrows them (TextRow.Layout). Subject
+	// and Body are pre-filled, and read from their start.
 	to := propsheet.Text("To", "", 46)
 	subject := propsheet.Text("Subject", "Database Mail Test", 46)
 	body := propsheet.Text("Body", "This is a test e-mail sent from Database Mail on "+server+".", 46)
+	subject.ShowFromStart()
 	body.ShowFromStart()
 	rows = append(rows, to, subject, body,
 		propsheet.Note("Apply sends and waits up to 30 seconds for the outcome; OK sends and reports it on the status bar. Separate several recipients with semicolons. Every attempt is in the Database Mail log."),

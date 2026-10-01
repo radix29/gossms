@@ -1,6 +1,9 @@
 package propsheet
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestHintRowStartsBlank(t *testing.T) {
 	r := Hint()
@@ -47,6 +50,54 @@ func TestHintRowReservesItsLineWhenBlank(t *testing.T) {
 	r.Set("something")
 	if got := r.Height(40); got != 1 {
 		t.Errorf("populated Height(40) = %d, want 1", got)
+	}
+}
+
+// A hint wider than its row wraps to a second line rather than losing its
+// second half (N10: Accounts' delete hint at 80 columns), and one too long for
+// two lines ends in an ellipsis, so a clipped hint never reads as complete.
+func TestHintRowWrapsToTwoLines(t *testing.T) {
+	const w = 30
+	cases := []struct {
+		name      string
+		text      string
+		wantLines []string
+	}{
+		{"fits", "short hint", []string{"short hint"}},
+		{"wraps", "Mailer is deleted on Apply, and leaves every profile that uses it.",
+			[]string{"Mailer is deleted on Apply,", "and leaves every profile that"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := Hint()
+			r.Set(c.text)
+			if got := r.Height(w); got != len(c.wantLines) {
+				t.Fatalf("Height(%d) = %d, want %d", w, got, len(c.wantLines))
+			}
+			r.Layout(0, 0, w)
+			s := newCellScreen(w, 3)
+			r.Draw(s, false)
+			for i, want := range c.wantLines {
+				if got := strings.TrimRight(s.row(i), " "); !strings.HasPrefix(got, want) {
+					t.Errorf("line %d = %q, want it to start %q", i, got, want)
+				}
+			}
+			if got := strings.TrimSpace(s.row(len(c.wantLines))); got != "" {
+				t.Errorf("line %d = %q, want blank", len(c.wantLines), got)
+			}
+		})
+	}
+
+	r := Hint()
+	r.Set(strings.Repeat("word ", 30))
+	if got := r.Height(w); got != 2 {
+		t.Fatalf("a hint needing many lines has Height %d, want the cap of 2", got)
+	}
+	r.Layout(0, 0, w)
+	s := newCellScreen(w, 3)
+	r.Draw(s, false)
+	if got := strings.TrimRight(s.row(1), " "); !strings.HasSuffix(got, "…") {
+		t.Errorf("second line = %q, want it to end in an ellipsis", got)
 	}
 }
 

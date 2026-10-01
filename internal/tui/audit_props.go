@@ -87,7 +87,7 @@ var auditFileCountItems = []string{"Unlimited rollover files", "Rollover files",
 func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: auditName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			a, err := sc.Server.ServerAuditByName(ctx, *auditName)
 			if err != nil {

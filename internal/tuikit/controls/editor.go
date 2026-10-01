@@ -103,8 +103,10 @@ type Editor struct {
 	// vlScratch and segScratch are buildVisualLines' buffers. vlScratch also
 	// *is* its cache: the flattening it holds stays valid until the document
 	// or the wrap width changes, which the three fields below detect.
+	// vlSplice is rewrapSpan's buffer for the re-segmented lines of an edit.
 	vlScratch  []visualLine
 	segScratch []wrapSegment
+	vlSplice   []visualLine
 
 	vlCacheVersion uint64
 	vlCacheWidth   int
@@ -455,23 +457,19 @@ func (e *Editor) insertRune(r rune) {
 	e.cursorCol++
 }
 
+// insertNewline splits the cursor's line in two. It, and the joins in
+// backspace and deleteChar, splice through replaceRange rather than edit so
+// the document's caches resume at the cursor's line — see replaceRange.
 func (e *Editor) insertNewline() {
-	e.doc.edit(func(lines [][]rune) [][]rune {
-		if e.cursorRow >= len(lines) {
-			lines = append(lines, []rune{})
-		}
-		line := lines[e.cursorRow]
-		before := make([]rune, e.cursorCol)
-		copy(before, line[:e.cursorCol])
-		after := make([]rune, len(line)-e.cursorCol)
-		copy(after, line[e.cursorCol:])
-		lines[e.cursorRow] = before
-		nl := make([][]rune, len(lines)+1)
-		copy(nl, lines[:e.cursorRow+1])
-		nl[e.cursorRow+1] = after
-		copy(nl[e.cursorRow+2:], lines[e.cursorRow+1:])
-		return nl
-	})
+	if e.cursorRow >= e.doc.Len() {
+		e.doc.edit(func(lines [][]rune) [][]rune { return append(lines, []rune{}) })
+	}
+	line := e.doc.Line(e.cursorRow)
+	before := make([]rune, e.cursorCol)
+	copy(before, line[:e.cursorCol])
+	after := make([]rune, len(line)-e.cursorCol)
+	copy(after, line[e.cursorCol:])
+	e.doc.replaceRange(e.cursorRow, 1, [][]rune{before, after})
 	e.cursorRow++
 	e.cursorCol = 0
 }
@@ -486,11 +484,9 @@ func (e *Editor) backspace() {
 		e.cursorCol--
 		return
 	}
-	e.cursorCol = len(e.doc.Line(e.cursorRow - 1))
-	e.doc.edit(func(lines [][]rune) [][]rune {
-		lines[e.cursorRow-1] = append(lines[e.cursorRow-1], lines[e.cursorRow]...)
-		return append(lines[:e.cursorRow], lines[e.cursorRow+1:]...)
-	})
+	prev := e.doc.Line(e.cursorRow - 1)
+	e.cursorCol = len(prev)
+	e.doc.replaceRange(e.cursorRow-1, 2, [][]rune{append(prev, e.doc.Line(e.cursorRow)...)})
 	e.cursorRow--
 }
 
@@ -504,9 +500,6 @@ func (e *Editor) deleteChar() {
 		return
 	}
 	if e.cursorRow < e.doc.Len()-1 {
-		e.doc.edit(func(lines [][]rune) [][]rune {
-			lines[e.cursorRow] = append(lines[e.cursorRow], lines[e.cursorRow+1]...)
-			return append(lines[:e.cursorRow+1], lines[e.cursorRow+2:]...)
-		})
+		e.doc.replaceRange(e.cursorRow, 2, [][]rune{append(line, e.doc.Line(e.cursorRow+1)...)})
 	}
 }

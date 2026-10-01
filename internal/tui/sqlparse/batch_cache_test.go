@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,25 @@ func referenceBatch(lines [][]rune, buf []rune, row int) (from, to int, rowIsMar
 	return from, to, rowIsMark
 }
 
+// referenceCarried is BatchCache.carryTo from scratch: CarryTempBindings
+// folded over every batch above from, each tokenized on its own.
+func referenceCarried(buf []rune, from int) []Binding {
+	var carried []Binding
+	start := 0
+	lexSQL(buf, 0, len(buf), false, LexNormal, nil, allLines(buf), nil, func(lineStart, goNext int) bool {
+		if lineStart >= from {
+			return true
+		}
+		if goNext >= 0 {
+			tokens, _, _, _ := TokenizeRange(buf, start, lineStart, false)
+			carried = CarryTempBindings(carried, tokens)
+			start = goNext
+		}
+		return false
+	})
+	return carried
+}
+
 // checkBatch asserts the cache answers the batch holding row exactly as a
 // from-scratch scan does: its bounds, its tokens, and the bindings — and that
 // the bounds are the ones PrefixScan.GoStart and BatchEndOffset found.
@@ -68,7 +88,7 @@ func checkBatch(t *testing.T, c *BatchCache, lines [][]rune, buf []rune, row int
 	if got := c.tokensIn(from, to); !reflect.DeepEqual(got, wantTokens) && (len(got) > 0 || len(wantTokens) > 0) {
 		fail("tokens differ:\n got %v\nwant %v", got, wantTokens)
 	}
-	if want := ScanBindings(wantTokens); !reflect.DeepEqual(gotBindings, want) {
+	if want := slices.Concat(referenceCarried(fresh, from), ScanBindings(wantTokens)); !reflect.DeepEqual(gotBindings, want) {
 		fail("bindings %+v, want %+v", gotBindings, want)
 	}
 	if goStart := ScanPrefix(lines, fresh, row, OffsetForCursor(lines, row, len(lines[row]))).GoStart; goStart != from {
@@ -248,5 +268,22 @@ func TestBatchCacheStaysLazyAfterAnEdit(t *testing.T) {
 	checkBatch(t, c, lines, buf, 0, []string{"opened a /* on line 1"})
 	if c.lexedTo > len(buf)/2 {
 		t.Errorf("lexed to %d of %d after the edit; the batch ends near the top", c.lexedTo, len(buf))
+	}
+}
+
+// TestBatchCacheRecarriesAfterAnEditAbove: an edit above the cursor's batch
+// that leaves its start where it was must still redo what that batch carries
+// in. The random sweep rarely makes one: its edits change lengths.
+func TestBatchCacheRecarriesAfterAnEditAbove(t *testing.T) {
+	lines := splitRunes("CREATE TABLE #t (a int)\nGO\nSELECT * FROM #t")
+	buf := flattenFresh(lines)
+	c := &BatchCache{}
+	checkBatch(t, c, lines, buf, 2, []string{"cold"})
+
+	lines[0][17] = 'b' // "(a int)" -> "(b int)": same length
+	buf = FlattenLinesInto(buf, lines)
+	checkBatch(t, c, lines, buf, 2, []string{"renamed column a to b above the GO"})
+	if got := c.Bindings(lines, buf, 2); len(got) != 1 || got[0].Columns[0].Name != "b" {
+		t.Errorf("carried %+v, want #t with column b", got)
 	}
 }

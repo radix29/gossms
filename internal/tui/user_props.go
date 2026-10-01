@@ -67,7 +67,7 @@ func findUser(ctx context.Context, sc *db.ServerConn, dbName, userName string) (
 func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPage {
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: userName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {

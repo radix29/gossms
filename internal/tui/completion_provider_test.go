@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -39,7 +40,7 @@ func linesAndCursor(t *testing.T, s string) (lines [][]rune, row, col int) {
 // newTestQueryPanelWithInventory builds a QueryPanel wired to a fake open
 // connection and a hand-filled, already-loaded completionInventory — no
 // database, no goroutine, matching every other pure-function test here.
-func newTestQueryPanelWithInventory(t *testing.T, database string, objects []gosmo.CatalogObject) *QueryPanel {
+func newTestQueryPanelWithInventory(t testing.TB, database string, objects []gosmo.CatalogObject) *QueryPanel {
 	t.Helper()
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -66,6 +67,12 @@ func newTestQueryPanelWithInventory(t *testing.T, database string, objects []gos
 	// fake connection's nil gosmo.Server, which would panic.
 	sysKey := sysCompletionInventoryKey(sc.Opts)
 	a.sysCompletionInventories = map[string]*completionInventory{sysKey: newCompletionInventory(&gosmo.Catalog{})}
+	// And an already-loaded database directory listing only this database,
+	// for the same reason: an unresolved qualifier asks it whether the name
+	// is a database.
+	a.completionDirectories = map[string]*completionDirectory{sysKey: {
+		byName: map[string]directoryEntry{strings.ToLower(database): {name: database, state: "ONLINE"}},
+	}}
 	return qp
 }
 
@@ -680,6 +687,80 @@ func TestSQLCompletionSysSchemaListedButObjectsNotUnqualified(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Table-valued functions: a called name resolves to its result columns.
+// ---------------------------------------------------------------------------
+
+// newTestQueryPanelWithFunctions is newTestQueryPanelWithInventory plus
+// table-valued functions in the database's catalog and the sys one's.
+func newTestQueryPanelWithFunctions(t *testing.T) *QueryPanel {
+	t.Helper()
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	key := completionInventoryKey(qp.conn.Opts, "testdb")
+	cat := qp.app.completionInventories[key].catalog
+	cat.Functions = []gosmo.CatalogObject{{
+		ObjectID: 10, Schema: "dbo", Name: "fnOrdersFor", Type: gosmo.CatalogFunction,
+		Columns: []gosmo.CatalogColumn{
+			{Name: "OrderId", DataType: "int"},
+			{Name: "Amount", DataType: "decimal", Precision: 18, Scale: 2},
+		},
+	}}
+	qp.app.completionInventories[key] = newCompletionInventory(cat)
+
+	sys := sysCatalogFixture()
+	sys.Functions = []gosmo.CatalogObject{{
+		ObjectID: 110, Schema: "sys", Name: "dm_exec_sql_text", Type: gosmo.CatalogFunction,
+		Columns: []gosmo.CatalogColumn{{Name: "dbid", DataType: "smallint"}, {Name: "text", DataType: "nvarchar", MaxLength: -1}},
+	}}
+	qp.app.sysCompletionInventories[sysCompletionInventoryKey(qp.conn.Opts)] = newCompletionInventory(sys)
+	return qp
+}
+
+func TestSQLCompletionTableValuedFunctionColumns(t *testing.T) {
+	qp := newTestQueryPanelWithFunctions(t)
+	for _, sql := range []string{
+		"SELECT f.| FROM dbo.fnOrdersFor(1) AS f",
+		"SELECT f.| FROM fnOrdersFor(@id) f",
+		"SELECT * FROM dbo.Customers c CROSS APPLY dbo.fnOrdersFor(c.Id) f WHERE f.|",
+	} {
+		lines, row, col := linesAndCursor(t, sql)
+		items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if got, want := labels(items), []string{"Amount", "OrderId"}; !slices.Equal(got, want) {
+			t.Errorf("%q: labels = %v, want %v", sql, got, want)
+		}
+	}
+}
+
+func TestSQLCompletionSystemTableValuedFunctionColumns(t *testing.T) {
+	qp := newTestQueryPanelWithFunctions(t)
+	lines, row, col := linesAndCursor(t, "SELECT s.| FROM dbo.Orders o CROSS APPLY sys.dm_exec_sql_text(o.Id) s")
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if got, want := labels(items), []string{"dbid", "text"}; !slices.Equal(got, want) {
+		t.Errorf("labels = %v, want %v", got, want)
+	}
+}
+
+// A function named without its argument list is not a call, and T-SQL has no
+// other way to use one in FROM — answering nothing beats offering its columns
+// on what is really a typo for a table.
+func TestSQLCompletionUncalledFunctionResolvesToNothing(t *testing.T) {
+	qp := newTestQueryPanelWithFunctions(t)
+	lines, row, col := linesAndCursor(t, "SELECT f.| FROM dbo.fnOrdersFor f")
+	if items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col)); len(items) != 0 {
+		t.Errorf("items = %v, want none", labels(items))
+	}
+}
+
+// "t (NOLOCK)" parses exactly like a call; the table must still win.
+func TestSQLCompletionLegacyHintStillResolvesTable(t *testing.T) {
+	qp := newTestQueryPanelWithFunctions(t)
+	lines, row, col := linesAndCursor(t, "SELECT o.| FROM dbo.Orders (NOLOCK) o")
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if got, want := labels(items), []string{"CustomerId", "Id", "Total"}; !slices.Equal(got, want) {
+		t.Errorf("labels = %v, want %v", got, want)
+	}
+}
+
 func TestSQLCompletionSysSchemaLoadingShowsPlaceholder(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	sysKey := sysCompletionInventoryKey(qp.conn.Opts)
@@ -1013,20 +1094,56 @@ func TestSQLCompletionTempTableMemberLookup(t *testing.T) {
 	}
 }
 
-// A declaration in an earlier GO batch is out of scope, and an undeclared
-// name resolves to nothing rather than to the catalog table that shares it
-// without the sigil.
-func TestSQLCompletionTempTableScopedToItsBatch(t *testing.T) {
+// A temp table outlives GO, so a declaration in an earlier batch still
+// answers (N1a) — and #Orders never resolves to the catalog table that shares
+// its name without the sigil.
+func TestSQLCompletionTempTableCarriedAcrossGo(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t,
 		"CREATE TABLE #Orders (Ref int)\nGO\nSELECT | FROM #Orders")
 
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
-	if containsLabel(items, "Ref") {
-		t.Errorf("items %v offer a column from the previous batch's declaration", labels(items))
+	if !containsLabel(items, "Ref") {
+		t.Errorf("items %v miss the column of the previous batch's #Orders", labels(items))
 	}
 	if containsLabel(items, "CustomerId") {
 		t.Errorf("items %v resolved #Orders to the catalog table Orders", labels(items))
+	}
+}
+
+// The table clause lists a carried temp table before its sigil is typed —
+// which needs the sigil gate to look above the cursor's batch.
+func TestSQLCompletionCarriedTempTableInTableList(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t,
+		"CREATE TABLE #Orders (Ref int)\nGO\nSELECT * FROM |")
+
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if !containsLabel(items, "#Orders") {
+		t.Errorf("items %v miss the carried #Orders", labels(items))
+	}
+}
+
+// What does not carry answers nothing: a table variable dies at GO, a dropped
+// temp table is gone, and a procedure's temp table is the procedure's.
+func TestSQLCompletionNotCarriedAcrossGo(t *testing.T) {
+	cases := map[string]string{
+		"table variable":  "DECLARE @Orders TABLE (Ref int)\nGO\nSELECT | FROM @Orders",
+		"dropped":         "CREATE TABLE #Orders (Ref int)\nGO\nDROP TABLE #Orders\nGO\nSELECT | FROM #Orders",
+		"procedure local": "CREATE PROCEDURE dbo.p AS\nCREATE TABLE #Orders (Ref int)\nGO\nSELECT | FROM #Orders",
+	}
+	for name, script := range cases {
+		t.Run(name, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			lines, row, col := linesAndCursor(t, script)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if containsLabel(items, "Ref") {
+				t.Errorf("items %v offer a column that does not carry across GO", labels(items))
+			}
+			if containsLabel(items, "CustomerId") {
+				t.Errorf("items %v resolved the name to the catalog table Orders", labels(items))
+			}
+		})
 	}
 }
 
@@ -1045,6 +1162,72 @@ func TestSQLCompletionPivotOutputColumns(t *testing.T) {
 		if containsLabel(items, unwanted) {
 			t.Errorf("items %v still offer %q, which the pivot consumed", labels(items), unwanted)
 		}
+	}
+}
+
+// An OPENJSON WITH list is the alias's column list, typed as declared — with
+// the cursor above the list, in the select list, as well as below it.
+func TestSQLCompletionOpenJSONWithColumns(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	for _, sql := range []string{
+		"SELECT j.| FROM OPENJSON(@j) WITH (Id int '$.id', Name nvarchar(50) '$.name') AS j",
+		"SELECT * FROM OPENJSON(@j) WITH (Id int '$.id', Name nvarchar(50) '$.name') AS j WHERE j.|",
+		"SELECT * FROM dbo.Orders o CROSS APPLY OPENJSON(@j) WITH (Id int, Name nvarchar(50)) j WHERE j.|",
+	} {
+		lines, row, col := linesAndCursor(t, sql)
+		items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if got, want := itemDetail(items, "Id"), "int"; got != want {
+			t.Errorf("%q: Id detail = %q, want %q (items %v)", sql, got, want, labels(items))
+		}
+		if got, want := itemDetail(items, "Name"), "nvarchar(50)"; got != want {
+			t.Errorf("%q: Name detail = %q, want %q (items %v)", sql, got, want, labels(items))
+		}
+		if containsLabel(items, "CustomerId") {
+			t.Errorf("%q: items %v leaked Orders' columns into j", sql, labels(items))
+		}
+	}
+}
+
+// With no WITH list OPENJSON has a fixed shape; KEY is reserved, so it commits
+// bracketed.
+func TestSQLCompletionOpenJSONDefaultColumns(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "SELECT j.| FROM OPENJSON(@j) j")
+
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	want := map[string]string{"key": "nvarchar(4000), not null", "value": "nvarchar(MAX)", "type": "tinyint, not null"}
+	for name, detail := range want {
+		if got := itemDetail(items, name); got != detail {
+			t.Errorf("%s detail = %q, want %q (items %v)", name, got, detail, labels(items))
+		}
+	}
+	for _, it := range items {
+		if it.Label == "key" && it.Text != "[key]" {
+			t.Errorf("key commits as %q, want [key]", it.Text)
+		}
+	}
+}
+
+// A list that does not parse answers nothing, not OPENJSON's default shape.
+func TestSQLCompletionOpenJSONHalfTypedListOffersNothing(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "SELECT j.| FROM OPENJSON(@j) WITH (Id int, Name")
+
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if len(items) != 0 {
+		t.Errorf("items = %v, want none", labels(items))
+	}
+}
+
+// A table hint's WITH no longer starts a new statement, so the WHERE after it
+// still sees the FROM before it.
+func TestSQLCompletionAfterTableHint(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.Customers c WITH (NOLOCK) WHERE c.|")
+
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if !containsLabel(items, "Email") {
+		t.Errorf("items %v missing Customers' Email", labels(items))
 	}
 }
 
@@ -1170,4 +1353,24 @@ func newCompletionInventory(cat *gosmo.Catalog) *completionInventory {
 	inv := &completionInventory{}
 	inv.applyCatalog(cat)
 	return inv
+}
+
+// BenchmarkCompletion20kNoSemicolon is one keystroke of the popup on a
+// 20 k-line script that ends no statement with ';', cursor on line 2 (B11):
+// 200–250 ms and 53 MB when the forward scan ran to the end of the script.
+func BenchmarkCompletion20kNoSemicolon(b *testing.B) {
+	qp := newTestQueryPanelWithInventory(b, "TestDB", testCustomersOrders())
+	lines := make([][]rune, 20000)
+	for i := range lines {
+		lines[i] = []rune(fmt.Sprintf("SELECT c.Name, c.Email FROM dbo.Customers c WHERE c.Id = %d", i))
+	}
+	lines[1] = []rune("SELECT c. FROM dbo.Customers c")
+	req := completionReq(lines, 1, len("SELECT c."))
+	if items, _ := qp.sqlCompletionCandidates(req); !containsLabel(items, "Email") {
+		b.Fatalf("no Email column offered: %v", labels(items))
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		qp.sqlCompletionCandidates(req)
+	}
 }

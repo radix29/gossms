@@ -6,8 +6,10 @@ behind the mouse and async rules.
 
 ## Editor, widgets and grids
 
-- **Seed `QueryPanel.savedText` from `qp.editor.Text()`, never from the string
-  passed to `SetText`.** `SetText` normalizes (tabs, CRLF, invalid UTF-8 →
+- **Seed `QueryPanel.savedText` through `qp.markSaved()`, never from the string
+  passed to `SetText` and never by assigning it** — `markSaved` reads
+  `editor.Text()` and drops `Dirty`'s per-version cache, which a direct
+  assignment leaves answering for the old baseline. `SetText` normalizes (tabs, CRLF, invalid UTF-8 →
   U+FFFD), so seeding from the source marks the panel dirty on open and the
   prompted save rewrites the file — `File > Open` once turned a UTF-16 script
   into U+FFFD-laden UTF-8. Text files go through `decodeTextFile`/

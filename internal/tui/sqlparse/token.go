@@ -105,7 +105,7 @@ func OffsetForCursor(lines [][]rune, row, col int) int {
 //     ';' up to upTo, and the third return is the offset right after the LAST
 //     one — one of the two boundaries ScanPrefix combines with GO-line
 //     detection to scope analysis to the current statement.
-//   - true (StatementEndOffset): scanning stops at the FIRST top-level ';',
+//   - true (NarrowStatementForward): scanning stops at the FIRST top-level ';',
 //     and the third return is that ';'s offset, or upTo if none.
 //
 // The fourth return is the offset of the opening '[' or '"' when the final
@@ -404,28 +404,6 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 	return lexResult{state, semiStart, quoteStart, firstGo, lastGo}
 }
 
-// StatementEndOffset finds where the statement containing the cursor ends: the
-// next top-level ';' at or after upTo, the start of the next bare "GO" line
-// after cursorRow, or len(buf), whichever comes first. With ScanPrefix's batch
-// start, FROM-scope and clause analysis see the whole statement wherever in it
-// the cursor sits — a table named in "SELECT | FROM Customers c" resolves the
-// same as one typed above the cursor.
-//
-// Both boundaries come out of one lexer pass, so a ';' or "GO" inside a comment
-// or a literal ends nothing.
-func StatementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
-	// The forward scan resumes at the cursor, which callers do only after
-	// confirming the lexer is in LexNormal there. Only rows strictly below the
-	// cursor's own can end its statement.
-	r := lexSQL(buf, upTo, len(buf), true, LexNormal, nil,
-		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil, nil)
-	end := r.boundary
-	if r.firstGo >= 0 && r.firstGo < end {
-		end = r.firstGo
-	}
-	return end
-}
-
 // PrefixScan is everything the query editor's completion provider needs to
 // know about the text before the cursor.
 type PrefixScan struct {
@@ -437,9 +415,9 @@ type PrefixScan struct {
 
 	// GoStart is where the cursor's GO-delimited batch begins: the line after
 	// the last real "GO" above it, or 0. BatchStart is at or after it, being
-	// the later of this and the last top-level ';'. The completion provider
-	// reads it only to gate the batch scan for temp-table and table-variable
-	// declarations (see BatchCache), which finds the same boundary itself.
+	// the later of this and the last top-level ';'. Nothing outside the tests
+	// reads it since temp tables carry across GO (the sigil gate now starts at
+	// the top); BatchCache's tests check its batch start against it.
 	GoStart int
 }
 

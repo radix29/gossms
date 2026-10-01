@@ -140,7 +140,9 @@ func TestResourceGovernorLabelCarriesItsState(t *testing.T) {
 		{"enabled, status unreadable", []fakeResponse{rgConfig(true),
 			{match: rgStatusRead, err: errors.New("Msg 300, VIEW SERVER STATE permission was denied")}}, "Resource Governor", true},
 		// No VIEW ANY DEFINITION: zero rows, no error — gosmo's not-found.
-		{"catalog not visible", []fakeResponse{{match: rgConfigRead, cols: 5}}, "Resource Governor", true},
+		// A bare label would read as enabled.
+		{"catalog not visible", []fakeResponse{{match: rgConfigRead, cols: 5}}, "Resource Governor (unknown)", true},
+		{"configuration read fails", []fakeResponse{{match: rgConfigRead, err: errors.New("Msg 229, permission denied")}}, "Resource Governor (unknown)", true},
 	} {
 		sc := newFakeConnEdition(t, 3, "16.0.4085.2", tc.responses...)
 		n := resourceGovernorNode(loaderCtx{ctx: ctx, sc: sc})

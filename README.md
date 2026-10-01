@@ -222,7 +222,9 @@ connected SQL Server version or engine edition are hidden or disabled.
   the indent/dedent commands shift by the Options indent size (4 spaces by
   default). Pasted text keeps the indentation it came with. IntelliSense
   completes columns from CTEs, derived tables, sub-SELECTs and `PIVOT`, and
-  from temp tables and table variables declared in the batch. It matches
+  from table variables declared in the batch and temp tables declared in it
+  or in an earlier batch (until a `DROP TABLE`), and names in the server's
+  other databases (`Sales.dbo.`, `Sales..Orders`) the login can open. It matches
   what you type anywhere in a name (`ord` finds `CustomerOrders`), listing
   names that start with it first; Ctrl+Space opens it on demand. Edit > Word
   Wrap (Alt+Z) soft-wraps long lines in every query tab — display only, with

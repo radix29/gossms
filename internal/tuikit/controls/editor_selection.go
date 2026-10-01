@@ -193,16 +193,11 @@ func (e *Editor) deleteSelection() {
 		line := e.doc.Line(sr)
 		e.doc.setLine(sr, append(line[:sc], line[ec:]...))
 	} else {
-		e.doc.edit(func(lines [][]rune) [][]rune {
-			first, last := lines[sr], lines[er]
-			merged := make([]rune, 0, sc+(len(last)-ec))
-			merged = append(merged, first[:sc]...)
-			merged = append(merged, last[ec:]...)
-			newLines := make([][]rune, 0, len(lines)-(er-sr))
-			newLines = append(newLines, lines[:sr]...)
-			newLines = append(newLines, merged)
-			return append(newLines, lines[er+1:]...)
-		})
+		first, last := e.doc.Line(sr), e.doc.Line(er)
+		merged := make([]rune, 0, sc+(len(last)-ec))
+		merged = append(merged, first[:sc]...)
+		merged = append(merged, last[ec:]...)
+		e.doc.replaceRange(sr, er-sr+1, [][]rune{merged})
 	}
 	e.cursorRow, e.cursorCol = sr, sc
 	e.selecting = false

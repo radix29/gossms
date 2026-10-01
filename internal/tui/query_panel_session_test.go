@@ -106,7 +106,7 @@ func TestFailedCommitKeepsThePanelOpen(t *testing.T) {
 func TestCloseWithoutOpenTransactionDoesNotAsk(t *testing.T) {
 	a := newTestApp()
 	qp, _ := hostedSessionPanel(t, a, 0)
-	qp.savedText = qp.editor.Text()
+	qp.markSaved()
 
 	a.requestClosePanel(0)
 	if a.confirmDialog.Visible() || a.panelHosted(qp) {
@@ -119,7 +119,7 @@ func TestCloseWithoutOpenTransactionDoesNotAsk(t *testing.T) {
 func TestQuitAsksAboutOpenTransactions(t *testing.T) {
 	a := newTestApp()
 	qp, inst := hostedSessionPanel(t, a, 1)
-	qp.savedText = qp.editor.Text()
+	qp.markSaved()
 
 	if a.requestQuit() {
 		t.Fatal("quit without asking about an open transaction")

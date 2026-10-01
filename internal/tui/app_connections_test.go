@@ -25,6 +25,8 @@ func newTestApp() *App {
 	a.progressDialog = dialogs.NewProgressDialog(nil)
 	// As App.buildUI does; a nil one crashes instead of failing the assertion.
 	a.contextMenu = new(controls.ContextMenu{})
+	// An Execute with no connection opens it (QueryPanel.runRefused).
+	a.connectDialog = NewConnectDialog(a)
 	return a
 }
 

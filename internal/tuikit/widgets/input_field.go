@@ -62,8 +62,23 @@ func (f *InputField) RectY() int { return f.rect.Y }
 func (f *InputField) InputX() int { return f.inputX() }
 
 // Width returns the input box's visible width (excluding label and
-// brackets), as passed to NewInputField.
+// brackets), as passed to NewInputField or SetWidth.
 func (f *InputField) Width() int { return f.rect.W }
+
+// SetWidth changes the input box's visible width (excluding label and
+// brackets). It doesn't chase the caret, as an edit does: a layout pass
+// calling it on every frame would undo ShowFromStart. A widened box only
+// stops scrolling past the value's end.
+func (f *InputField) SetWidth(w int) {
+	if w = max(1, w); w == f.rect.W {
+		return
+	}
+	f.rect.W = w
+	runes := f.displayRunes()
+	if last := core.ColumnOfRune(runes, len(runes)) - f.rect.W + 1; f.scroll > last {
+		f.scroll = max(0, last)
+	}
+}
 
 // HitTest reports whether (mx,my) falls within the input box (including
 // brackets), useful for click-to-focus handling.

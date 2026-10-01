@@ -1,6 +1,9 @@
 package controls
 
 import (
+	"slices"
+	"sort"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -94,6 +97,13 @@ type visualLine struct {
 // is thousands of segments behind a ~15-row window. That viewer is read-only,
 // so its version never moves and it segments exactly once.
 //
+// An edit doesn't start over either: Document.changedSince names the lines
+// the edits since the memo touched, and only those are re-segmented and
+// spliced in (rewrapSpan). Rebuilding per keystroke cost 7.9 ms on a
+// 20,000-line script (BenchmarkEditorTypeWrapped20k), against 0.45 ms
+// unwrapped. A width change, or an edit changedSince can't describe, still
+// rebuilds everything.
+//
 // Correctness rests entirely on Document.Version() being impossible to leave
 // stale — see Document. A mutation that bypassed setLine/edit would leave
 // this returning segments for the previous text, which renders as the old
@@ -103,8 +113,15 @@ type visualLine struct {
 // the width changes. Every caller uses it within one Draw or HandleMouse
 // anyway; none may retain it across an edit.
 func (e *Editor) buildVisualLines(w int) []visualLine {
-	if e.vlCacheValid && e.vlCacheWidth == w && e.vlCacheVersion == e.doc.Version() {
-		return e.vlScratch
+	if e.vlCacheValid && e.vlCacheWidth == w {
+		if e.vlCacheVersion == e.doc.Version() {
+			return e.vlScratch
+		}
+		if row, oldN, newN, ok := e.doc.changedSince(e.vlCacheVersion); ok {
+			e.rewrapSpan(w, row, oldN, newN)
+			e.vlCacheVersion = e.doc.Version()
+			return e.vlScratch
+		}
 	}
 	e.vlScratch = e.vlScratch[:0]
 	for li, line := range e.doc.all() {
@@ -117,17 +134,47 @@ func (e *Editor) buildVisualLines(w int) []visualLine {
 	return e.vlScratch
 }
 
+// rewrapSpan updates vlScratch in place for a change in changedSince's terms:
+// the visual rows of the cached lines [row, row+oldN) are replaced by fresh
+// segments of the current lines [row, row+newN), and every later row is
+// renumbered by the change in line count.
+func (e *Editor) rewrapSpan(w, row, oldN, newN int) {
+	i0 := firstVisualOfRow(e.vlScratch, row)
+	i1 := firstVisualOfRow(e.vlScratch, row+oldN)
+	e.vlSplice = e.vlSplice[:0]
+	for li := row; li < row+newN; li++ {
+		e.segScratch = wrapSegments(e.segScratch[:0], e.doc.Line(li), w)
+		for _, seg := range e.segScratch {
+			e.vlSplice = append(e.vlSplice, visualLine{row: li, start: seg.start, end: seg.end})
+		}
+	}
+	e.vlScratch = slices.Replace(e.vlScratch, i0, i1, e.vlSplice...)
+	if d := newN - oldN; d != 0 {
+		for i := i0 + len(e.vlSplice); i < len(e.vlScratch); i++ {
+			e.vlScratch[i].row += d
+		}
+	}
+}
+
+// firstVisualOfRow returns the index of logical line row's first visual row
+// in vls, or len(vls) when row is past the last line. vls is in row order.
+func firstVisualOfRow(vls []visualLine, row int) int {
+	return sort.Search(len(vls), func(i int) bool { return vls[i].row >= row })
+}
+
 // visualIndexForCursor returns the index into vls (from buildVisualLines)
 // of the visual row containing the cursor. A cursor sitting exactly at a
 // wrap boundary is placed at the start of the next visual row — matching
 // where a user would expect to see it appear after typing past the wrap
 // point — except at the true end of a logical line, where there's no
 // next row, so it stays at the end of the last one.
+//
+// The cursor's line is found by binary search, not a walk from the top: the
+// walk cost a pass over every visual row per Draw with the caret near the
+// bottom of a large script.
 func visualIndexForCursor(vls []visualLine, row, col int) int {
-	for i, vl := range vls {
-		if vl.row != row {
-			continue
-		}
+	for i := firstVisualOfRow(vls, row); i < len(vls) && vls[i].row == row; i++ {
+		vl := vls[i]
 		lastOfLine := i == len(vls)-1 || vls[i+1].row != row
 		if col >= vl.start && (col < vl.end || (lastOfLine && col == vl.end)) {
 			return i

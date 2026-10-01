@@ -50,7 +50,7 @@ func findAgentJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.J
 func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: jobName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			j, err := findAgentJob(ctx, sc, *jobName)
 			if err != nil {

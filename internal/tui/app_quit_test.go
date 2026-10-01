@@ -121,7 +121,7 @@ func TestQuitPromptSkipsSavedAndNonQueryPanels(t *testing.T) {
 	a := newTestApp()
 	d1 := dirtyPanel(a, "Query 1", "SELECT 1")
 	clean := dirtyPanel(a, "Query 2", "SELECT 2")
-	clean.savedText = clean.editor.Text() // as if it had just been saved
+	clean.markSaved() // as if it had just been saved
 	d2 := dirtyPanel(a, "Query 3", "SELECT 3")
 	a.panels.AddPanel(NewDetailBrowser("Object Explorer Details"))
 

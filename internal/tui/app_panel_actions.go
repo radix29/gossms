@@ -88,7 +88,7 @@ func (a *App) openQueryFile() {
 		// seeding savedText from the source marks a file with one tab in it
 		// dirty the moment it opens, and closing it then prompts to save,
 		// rewriting a file the user never touched.
-		qp.savedText = qp.editor.Text()
+		qp.markSaved()
 		qp.filePath = path
 		qp.fileEnc, qp.fileCRLF = enc, crlf
 		if strings.EqualFold(filepath.Ext(path), ".xml") {

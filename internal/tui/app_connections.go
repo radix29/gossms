@@ -77,22 +77,26 @@ func (a *App) connectServer(ctx context.Context, opts config.Connection, phase f
 			info := sc.Server.Info()
 			a.setStatus(fmt.Sprintf("Connected to %s  |  %s %s", opts.Server, info.Edition, info.ProductVersion))
 			a.ensureSysCompletionInventory(sc)
-
-			// Save the successful connection (auto-named, most recent first,
-			// capped at config.MaxSavedConnections) for the Connect dialog's
-			// History pane.
-			a.cfg.AddOrUpdate(opts)
-			// Also remembered as how to reach that instance from others:
-			// connecting to a replica once gives Peer its credentials.
-			a.rememberPeerCredentials(opts)
-			// A successful direct connect proves the instance is up,
-			// contradicting other connections' negative peer caches.
-			a.forgetPeerFailure(db.ConnectionAddress(opts))
-			if err := a.cfg.Save(); err != nil {
-				a.logStatus("save config: %v", err)
-			}
+			a.ensureCompletionDirectory(sc)
+			a.rememberConnection(opts)
 		})
 	})
+}
+
+// rememberConnection records a connection the Connect dialog just made.
+func (a *App) rememberConnection(opts config.Connection) {
+	// Save the successful connection (auto-named, most recent first, capped at
+	// config.MaxSavedConnections) for the Connect dialog's History pane.
+	a.cfg.AddOrUpdate(opts)
+	// Also remembered as how to reach that instance from others: connecting to
+	// a replica once gives Peer its credentials.
+	a.rememberPeerCredentials(opts)
+	// A successful direct connect proves the instance is up, contradicting
+	// other connections' negative peer caches.
+	a.forgetPeerFailure(db.ConnectionAddress(opts))
+	if err := a.cfg.Save(); err != nil {
+		a.logStatus("save config: %v", err)
+	}
 }
 
 // signInPhase runs db.SignIn before the dial for sign-in methods, showing it on
@@ -164,19 +168,48 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	if database != "" {
 		opts.Database = database
 	}
-	qp.database = opts.Database
-	qp.connectingTo = opts.Server
-	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
-
 	// The dial is scoped to the connection it is cloned from, per
 	// ARCHITECTURE.md § Threading model: disconnecting the Object Explorer
 	// node aborts a reconnect still in flight instead of leaving it to the
 	// 15 s connect timeout. Only the attempt is scoped — ConnectContext roots
 	// the new connection's own context at Background, so the panel's
 	// connection still outlives sc once the dial has returned.
+	//
+	// Except when sc is already closed: Reconnect hands in the panel's own
+	// connection, which it has just closed, and a dial scoped to that failed
+	// at once with "context canceled" — the panel was dropped and never
+	// redialled. Nothing else can abort that dial, so it has only the
+	// connect timeout.
 	parent := sc.Context()
+	if parent.Err() != nil {
+		parent = context.Background()
+	}
+	a.dialQueryPanel(parent, qp, opts, nil, nil, onConnected)
+}
+
+// dialQueryPanel is connectForQueryPanel's dial, and the Connect dialog's when
+// it was opened for a query window (ConnectDialog.ShowForQueryPanel): opts as
+// given, qp's previous connection, if any, replaced once the new one is up.
+//
+// phase and done are the dialog's, as for connectServer: phase (nil from
+// connectForQueryPanel) also runs the sign-in phase first; done reports
+// whether the caller still wants the attempt, and a failure it still wants
+// gets an alert as well as the status bar.
+func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Connection,
+	phase func(label string), done func(err error) bool, onConnected func()) {
+	qp.database = opts.Database
+	qp.connectingTo = opts.Server
+	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
+
 	a.safego("connecting the query panel", func() {
-		newConn, err := db.ConnectContext(parent, opts, db.RoleQuery)
+		var err error
+		if phase != nil {
+			err = a.signInPhase(ctx, opts, phase)
+		}
+		var newConn *db.ServerConn
+		if err == nil {
+			newConn, err = db.ConnectContext(ctx, opts, db.RoleQuery)
+		}
 		var sess *query.Session
 		var state query.SessionState
 		if err == nil {
@@ -190,16 +223,30 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 		}
 		a.postAndWake(func() {
 			qp.connectingTo = ""
+			wanted := true
+			if done != nil {
+				wanted = done(err)
+			}
 			if err != nil {
 				a.setStatus("Connection failed: " + firstErrorLine(err.Error()))
+				if done != nil && wanted {
+					a.alertDialog.ShowAlert("Connection Error",
+						fmt.Sprintf("Could not connect to %s: %s", opts.Server, tidyErrorText(err.Error())))
+				}
 				return
 			}
-			if !a.panelHosted(qp) {
-				// qp closed while connecting; nothing else references it, so
-				// close it here.
+			if !wanted || !a.panelHosted(qp) {
+				// Cancelled, or qp closed while connecting; nothing else
+				// references either, so close them here.
 				sess.Close()
 				newConn.Close()
+				if !wanted {
+					a.setStatus(fmt.Sprintf("Cancelled connecting to %s", opts.Server))
+				}
 				return
+			}
+			if qp.conn != nil {
+				qp.closeConnection()
 			}
 			newConn.SetPeerCredentials(a.peerCredentialsFor)
 			qp.conn = newConn
@@ -208,6 +255,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 			qp.database = state.Database
 			a.setStatus(fmt.Sprintf("Connected to %s (SPID %d)", opts.Server, sess.SPID()))
 			a.ensureSysCompletionInventory(newConn)
+			a.ensureCompletionDirectory(newConn)
 			if onConnected != nil {
 				onConnected()
 			}

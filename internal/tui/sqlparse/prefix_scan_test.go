@@ -149,6 +149,10 @@ var diffCorpus = map[string]string{
 
 	"semicolons": "SELECT 1 FROM A; SELECT 2 FROM B; SELECT 3 FROM C",
 
+	// A WITH followed by '(' — a hint, a rowset's column list — continues its
+	// statement; one naming a CTE starts the next.
+	"with hint and rowset": "SELECT a FROM T WITH (NOLOCK)\nSELECT j.a FROM OPENJSON(@j) WITH (a int) j\nWITH c AS (SELECT 1 x) SELECT x FROM c",
+
 	// A GO line inside a block comment is not a real batch separator, so
 	// nothing here starts a new batch.
 	"go inside block comment": "SELECT 1\n/*\nGO\n*/\nFROM T",
@@ -514,8 +518,12 @@ func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
 	// leaves nothing open past it.
 	batchStart := max(r.boundary, r.lastGo)
 	tokens, _, _, _ := TokenizeRangeFrom(buf, batchStart, upTo, false, LexNormal)
+	// Statements stacked with no ';' between them: only the last one's
+	// tokens, from its DML leader — what NarrowToDMLStatement would make of
+	// the prefix.
+	stmtStart, _ := NarrowToDMLStatement(tokens, batchStart, upTo+1, upTo)
 	return PrefixScan{
-		Tokens:     tokens,
+		Tokens:     TokensFrom(tokens, stmtStart),
 		State:      r.state,
 		BatchStart: batchStart,
 		QuoteStart: r.quoteStart,

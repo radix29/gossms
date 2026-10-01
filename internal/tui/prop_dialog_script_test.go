@@ -85,7 +85,7 @@ func newSheetDialog(t *testing.T, pages []propPage, applies map[int]propApply, r
 // generated script runs.
 func TestDirtyApplyFnsRunsRenamingPageLast(t *testing.T) {
 	pages := []propPage{
-		{title: "General", renames: true},
+		{title: "General", renames: new(string)},
 		{title: "Server Roles"},
 		{title: "Securables"},
 	}
@@ -148,7 +148,7 @@ func TestScriptedRenameLeavesSiblingPagesResolvable(t *testing.T) {
 	}
 
 	pages := []propPage{
-		{title: "General", renames: true},
+		{title: "General", renames: &boxed},
 		{title: "Server Roles"},
 	}
 	applies := map[int]propApply{

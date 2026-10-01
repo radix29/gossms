@@ -27,7 +27,7 @@ func (p *QueryPanel) ShowEstimatedPlan() {
 // takes one statement at a time and would otherwise reject any multi-batch
 // script with a syntax error on "GO" itself.
 func (p *QueryPanel) runEstimatedPlan(queryText string) {
-	if p.runRefused(queryText) {
+	if p.runRefused(queryText, func() { p.runEstimatedPlan(queryText) }) {
 		return
 	}
 	// No rows are scanned by an estimated plan, so the status line's row

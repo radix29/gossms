@@ -41,7 +41,7 @@ func (a *App) showAlertProperties(sc *db.ServerConn, alertName string) {
 func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: alertName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			al, err := findAgentAlert(ctx, sc, *alertName)
 			if err != nil {

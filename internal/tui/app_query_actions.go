@@ -154,7 +154,7 @@ func (a *App) writeQueryFile(qp *QueryPanel, path string) bool {
 		return false
 	}
 	qp.filePath = path
-	qp.savedText = qp.editor.Text()
+	qp.markSaved()
 	a.setStatus("Saved to " + path)
 	return true
 }

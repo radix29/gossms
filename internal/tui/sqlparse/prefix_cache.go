@@ -84,7 +84,23 @@ type PrefixCache struct {
 	// filtered at read time, so moving the cursor within a statement costs no
 	// rescan.
 	bounds []boundary
+
+	// starts is every DML statement start (DMLStatementStarts) in
+	// [startsFrom, startsTo), ascending, where startsFrom is the batch start
+	// the splitter that found them began at. They bound the work in a batch
+	// with no ';': without them the boundary pass resumed at offset 0 and the
+	// whole prefix was tokenized again on every keystroke (B11's backward
+	// half). A start is a LexNormal position at paren depth 0, and the
+	// splitter's state just past it depends on its keyword alone, so both
+	// passes can resume there exactly; see stmtStart.
+	starts               []stmtStart
+	startsFrom, startsTo int
 }
+
+// stmtStart is a DML leader keyword's offset and the offset just past it.
+// It stays true while the text up to and including the rune at end is
+// unchanged: that rune ending the word is what made the keyword whole.
+type stmtStart struct{ off, end int }
 
 // Scan is ScanPrefix, answered from the cache where it can be.
 //
@@ -104,12 +120,20 @@ func (c *PrefixCache) Scan(lines [][]rune, buf []rune, cursorRow, upTo int, rev 
 	// dropping it keeps bounds ascending and complete over [0, scannedTo)
 	// rather than a merge of two scans' offsets.
 	c.bounds = c.bounds[:keep]
+	// A start survives only with the rune past its keyword lexed and
+	// unchanged — the same rule, one rune stricter.
+	known := min(c.startsTo, validTo)
+	c.starts = c.starts[:sort.Search(len(c.starts), func(i int) bool { return c.starts[i].end >= known })]
+	c.startsTo = known
 	if validTo < upTo {
-		// Resume at the last surviving boundary — a LexNormal position — and
-		// record what the walk crosses.
+		// Resume at the last surviving boundary or statement start — both
+		// LexNormal positions — and record what the walk crosses.
 		resume := 0
 		if keep > 0 {
 			resume = c.bounds[keep-1].off
+		}
+		if n := len(c.starts); n > 0 {
+			resume = max(resume, c.starts[n-1].off)
 		}
 		lexSQL(buf, resume, upTo, false, LexNormal, nil, goScan{lo: 0, hi: rowStart},
 			func(off int, isGo bool) { c.bounds = append(c.bounds, boundary{off: off, isGo: isGo}) }, nil)
@@ -135,15 +159,48 @@ func (c *PrefixCache) Scan(lines [][]rune, buf []rune, cursorRow, upTo int, rev 
 		}
 	}
 
-	// The statement starts at whichever boundary is later. The scan resumes in
-	// LexNormal unconditionally because both are normal-state positions, and
-	// it is also where State and QuoteStart come from: a prefix scan from
-	// offset 0 reaches batchStart in LexNormal too, so the two agree on the
-	// state at upTo, and a quote still open there was opened after batchStart.
+	// The batch starts at whichever boundary is later, and the statement at
+	// the last DML start after that — ScanPrefix's answer. The token pass
+	// resumes in LexNormal unconditionally because all three are normal-state
+	// positions, and it is also where State and QuoteStart come from: a scan
+	// from offset 0 reaches any of them in LexNormal too, so the two agree on
+	// the state at upTo, and a quote still open there was opened after it.
 	batchStart := max(lastSemi, lastGo)
-	tokens, state, _, quoteStart := TokenizeRangeFrom(buf, batchStart, upTo, false, LexNormal)
+	if c.startsFrom != batchStart {
+		c.starts, c.startsFrom, c.startsTo = c.starts[:0], batchStart, batchStart
+	}
+	from := batchStart
+	for _, st := range c.starts {
+		if st.end > upTo {
+			break
+		}
+		if st.off > batchStart {
+			from = st.off
+		}
+	}
+	tokens, state, _, quoteStart := TokenizeRangeFrom(buf, from, upTo, false, LexNormal)
+	if upTo > c.startsTo {
+		// Below startsTo every start is known; past it, find them. A start
+		// at from is found again, so it is dropped first.
+		c.starts = c.starts[:sort.Search(len(c.starts), func(i int) bool { return c.starts[i].off >= from })]
+		var sp dmlSplitter
+		for _, t := range tokens {
+			if st, ok := sp.feed(t); ok {
+				c.starts = append(c.starts, stmtStart{off: st.Start, end: st.Start + len(st.Text)})
+			}
+		}
+		c.startsTo = upTo
+	}
+	for _, st := range c.starts {
+		if st.end > upTo {
+			break
+		}
+		if st.off > from {
+			from = st.off
+		}
+	}
 	return PrefixScan{
-		Tokens:     tokens,
+		Tokens:     TokensFrom(tokens, from),
 		State:      state,
 		BatchStart: batchStart,
 		QuoteStart: quoteStart,

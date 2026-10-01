@@ -87,7 +87,10 @@ func BenchmarkCompletionPrefixScan_1000Stmts(b *testing.B) { benchmarkPrefixScan
 // and which the cache does not touch: what is left after the cached numbers
 // drop is mostly that copy, not lexing.
 func benchmarkPrefixScanTyping(b *testing.B, stmts, editRow int, cached bool) {
-	lines := benchScript(stmts)
+	benchmarkPrefixScanTypingLines(b, benchScript(stmts), editRow, cached)
+}
+
+func benchmarkPrefixScanTypingLines(b *testing.B, lines [][]rune, editRow int, cached bool) {
 	row := len(lines) - 2
 	if editRow < 0 {
 		editRow = row
@@ -131,6 +134,34 @@ func BenchmarkCompletionPrefixScanTypingCursorLine_1000Stmts(b *testing.B) {
 
 func BenchmarkCompletionPrefixScanTypingFirstLine_1000Stmts(b *testing.B) {
 	benchmarkPrefixScanTyping(b, 1000, 0, true)
+}
+
+// benchScriptNoSemicolon is benchScript's statements with no ';' and no GO:
+// one 20 k-line batch, the shape B11 measured. Before PrefixCache kept
+// statement starts, its boundary pass resumed at offset 0 and the whole prefix
+// was tokenized on every keystroke here — the Uncached figure.
+func benchScriptNoSemicolon(n int) [][]rune {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "SELECT c.CustomerID, c.Name, o.OrderDate, o.Total\n")
+		fmt.Fprintf(&b, "FROM   dbo.Customers AS c\n")
+		fmt.Fprintf(&b, "JOIN   dbo.Orders    AS o ON o.CustomerID = c.CustomerID\n")
+		fmt.Fprintf(&b, "WHERE  c.Region = N'north-%d' AND o.Total > %d\n", i, i*10)
+	}
+	lines := strings.Split(b.String(), "\n")
+	out := make([][]rune, len(lines))
+	for i, ln := range lines {
+		out[i] = []rune(ln)
+	}
+	return out
+}
+
+func BenchmarkCompletionPrefixScanTypingCursorLineUncached_NoSemicolon20k(b *testing.B) {
+	benchmarkPrefixScanTypingLines(b, benchScriptNoSemicolon(5000), -1, false)
+}
+
+func BenchmarkCompletionPrefixScanTypingCursorLine_NoSemicolon20k(b *testing.B) {
+	benchmarkPrefixScanTypingLines(b, benchScriptNoSemicolon(5000), -1, true)
 }
 
 // benchmarkPrefixScanReference measures the approach ScanPrefix replaced —
@@ -288,3 +319,33 @@ func BenchmarkBatchBindingsTypingFirstLineReference20k(b *testing.B) {
 }
 
 func BenchmarkBatchBindingsTypingFirstLine20k(b *testing.B) { benchmarkBatchBindings(b, true) }
+
+// BenchmarkBatchBindingsTypingLastBatch20k types in the last batch of a
+// 20,000-line script of short GO batches, every one of which declares a temp
+// table it carries down. The fold over the batches above is paid once, on the
+// first call; an edit below where it stops reuses it, so a keystroke costs the
+// diff and its own batch, not 1,000 batches of CarryTempBindings.
+func BenchmarkBatchBindingsTypingLastBatch20k(b *testing.B) {
+	lines := benchScript(4000)
+	for i, ln := range lines {
+		if string(ln) == "GO" {
+			lines[i-1] = append(lines[i-1], []rune(fmt.Sprintf(" CREATE TABLE #t%d (a int)", i))...)
+		}
+	}
+	last := len(lines) - 1
+	buf := FlattenLinesInto(nil, lines)
+	var c BatchCache
+	if n := len(c.Bindings(lines, buf, last)); n < 100 {
+		b.Fatalf("only %d bindings carried; the benchmark measures nothing", n)
+	}
+	b.ReportAllocs()
+	for i := 0; b.Loop(); i++ {
+		if i%2 == 0 {
+			lines[last] = append(lines[last], 'x')
+		} else {
+			lines[last] = lines[last][:len(lines[last])-1]
+		}
+		buf = FlattenLinesInto(buf, lines)
+		c.Bindings(lines, buf, last)
+	}
+}

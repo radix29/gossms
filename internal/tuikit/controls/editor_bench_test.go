@@ -161,12 +161,13 @@ func BenchmarkEditorUndoRedo20k(b *testing.B) {
 	}
 }
 
-// BenchmarkEditorTypeWrapped20k is open-threads N4's measurement: one
-// keystroke through HandleKey plus the Draw that follows it, in wrap mode, on
-// a 20,000-line script. Every edit bumps the document version that
-// buildVisualLines memoises on, so each keystroke re-segments the whole
-// document, and visualIndexForCursor then walks every visual row to find the
-// caret — the caret sits near the bottom, the far end of that walk.
+// BenchmarkEditorTypeWrapped20k measures one keystroke through HandleKey plus
+// the Draw that follows it, in wrap mode, on a 20,000-line script. Every edit
+// bumps the document version that buildVisualLines memoises on; before it
+// re-segmented only the edited lines (rewrapSpan) and visualIndexForCursor
+// found the caret's line by binary search, each keystroke re-segmented the
+// whole document and walked every visual row to the caret near the bottom —
+// 7.9 ms against 0.45 ms unwrapped. Now the two are within ~20%.
 //
 // Typing alternates a rune and a Backspace so the line neither grows without
 // bound nor stops changing. Unwrapped, the same loop is the baseline the

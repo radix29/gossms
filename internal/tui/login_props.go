@@ -91,7 +91,7 @@ func loginAuthLabel(loginType string) string {
 func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: loginName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			l, err := findLogin(ctx, sc, *loginName)
 			if err != nil {

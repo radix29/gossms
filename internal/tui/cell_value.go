@@ -156,7 +156,7 @@ func (a *App) openValuePanel(column, suffix string, highlighter controls.Highlig
 	// folds CRLF, so seeding from value leaves an XML or JSON cell containing
 	// either one born dirty — and with no filePath, closing it pushes the user
 	// into Save As for a value they only wanted to look at.
-	qp.savedText = qp.editor.Text()
+	qp.markSaved()
 	qp.editor.SetHighlighter(highlighter)
 	a.panels.SetActive(a.panels.AddPanel(qp))
 	a.focusPanels()

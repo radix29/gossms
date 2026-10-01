@@ -201,6 +201,11 @@ type App struct {
 	// connect time, not lazily.
 	sysCompletionInventories map[string]*completionInventory
 
+	// completionDirectories caches each server+login's database list, keyed
+	// like sysCompletionInventories, for resolving the database part of a
+	// cross-database name (completion_crossdb.go).
+	completionDirectories map[string]*completionDirectory
+
 	// focus is which half of the window has the keyboard.
 	focus appFocus
 

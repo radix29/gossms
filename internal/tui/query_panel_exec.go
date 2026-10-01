@@ -184,7 +184,7 @@ func (p *QueryPanel) clearResults() {
 // In Results To File mode it asks for the destination first, then runs through
 // query.Session.ExecuteToSink, streaming rows to the file as they are scanned.
 func (p *QueryPanel) runQuery(queryText string) {
-	if p.runRefused(queryText) {
+	if p.runRefused(queryText, func() { p.runQuery(queryText) }) {
 		return
 	}
 	// Snapshotted here rather than read inside the closures below, since the
@@ -219,14 +219,21 @@ func (p *QueryPanel) runQuery(queryText string) {
 // runRefused applies the checks every run entry point opens with — something
 // to run, a connection to run it on, no run already in flight — reporting the
 // first that fails and whether one did.
-func (p *QueryPanel) runRefused(queryText string) bool {
+//
+// With no connection (and none on the way) it opens the Connect dialog for
+// this window, pre-filled with the connection it had, and calls retry once
+// that connects — the run the user asked for, not a re-read of the editor. The
+// dialog stands between a lost session and the new one, so nothing ever runs
+// on a fresh session the user didn't connect.
+func (p *QueryPanel) runRefused(queryText string, retry func()) bool {
 	switch {
 	case queryText == "":
 		p.resultsNotice = "No query to execute"
 	case !p.connected():
 		p.resultsNotice = p.notConnectedMessage()
-		if p.connectingTo == "" {
+		if p.connectingTo == "" && !p.executing {
 			p.results.SetData([]string{"Message"}, [][]string{{"No active connection"}})
+			p.app.connectDialog.ShowForQueryPanel(p, retry)
 		}
 	case p.executing:
 		p.app.setStatus("A query is already executing in this panel")

@@ -65,33 +65,64 @@ func findCatalogObjectByName(inv, sysInv *completionInventory, name string) *gos
 	return nil
 }
 
-// memberCandidates resolves "qualifier.prefix": qualifier is tried first as
-// a FROM-scope alias/table/CTE/derived table (-> that relation's columns),
-// then as a schema name in the connected database (-> every table/view in
-// it), then as a schema name in the sys-schema inventory ("sys" being the
-// only one that ever matters there). Nothing matching returns nil, closing
-// the popup rather than showing something wrong.
-func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []relation, qualifier, prefix string) []controls.CompletionItem {
-	if r, ok := resolveQualifierToRelation(inv, sysInv, rels, qualifier); ok {
-		return p.columnItemsFor(r.columns(), prefix)
-	}
-	if objs, ok := inv.bySchema[strings.ToLower(qualifier)]; ok {
-		return p.objectItems(objs, prefix)
-	}
-	if sysInv != nil {
-		if objs, ok := sysInv.bySchema[strings.ToLower(qualifier)]; ok {
-			return p.objectItems(objs, prefix)
+// findCatalogFunction is findCatalogObject over table-valued functions: the
+// user database first, then the sys schema's (sys.dm_exec_sql_text and the
+// like). An unqualified name matches in any schema, as an unqualified table
+// does.
+func findCatalogFunction(inv, sysInv *completionInventory, schema, name string) *gosmo.CatalogObject {
+	for _, in := range []*completionInventory{inv, sysInv} {
+		if in == nil || in.catalog == nil {
+			continue
 		}
-		if sysInv.loading && strings.EqualFold(qualifier, "sys") {
-			return []controls.CompletionItem{loadingCompletionItem}
+		if schema != "" {
+			if fn, ok := in.fnByQualifiedName[strings.ToLower(schema)+"."+strings.ToLower(name)]; ok {
+				return fn
+			}
+			continue
+		}
+		for i := range in.catalog.Functions {
+			if strings.EqualFold(in.catalog.Functions[i].Name, name) {
+				return &in.catalog.Functions[i]
+			}
 		}
 	}
 	return nil
 }
 
+// memberCandidates resolves "qualifier.prefix": qualifier is tried first as
+// a FROM-scope alias/table/CTE/derived table (-> that relation's columns),
+// then as a schema name in the connected database (-> every table/view in
+// it), then as a schema name in the sys-schema inventory ("sys" being the
+// only one that ever matters there), and last as a database name (-> that
+// database's schemas, see databaseInventory). Nothing matching returns nil,
+// closing the popup rather than showing something wrong; wait reports that
+// the database answer is still loading.
+func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []relation, qualifier, prefix string) (items []controls.CompletionItem, wait bool) {
+	if r, ok := resolveQualifierToRelation(inv, sysInv, rels, qualifier); ok {
+		return p.columnItemsFor(r.columns(), prefix), false
+	}
+	if objs, ok := inv.bySchema[strings.ToLower(qualifier)]; ok {
+		return p.objectItems(objs, prefix), false
+	}
+	if sysInv != nil {
+		if objs, ok := sysInv.bySchema[strings.ToLower(qualifier)]; ok {
+			return p.objectItems(objs, prefix), false
+		}
+		if sysInv.loading && strings.EqualFold(qualifier, "sys") {
+			return []controls.CompletionItem{loadingCompletionItem}, false
+		}
+	}
+	other, pending := p.databaseInventory(inv, qualifier)
+	if other == nil {
+		return nil, pending
+	}
+	return p.databaseSchemaItems(other, sysInv, prefix), false
+}
+
 // tableCandidates offers every schema (the connected database's own, plus
 // "sys" once its inventory has loaded), every table/view, every visible CTE
-// name and every temp table/table variable the batch declares whose name
+// name, every temp table/table variable the batch declares and every ONLINE
+// database on the server (the start of a three-part name) whose name
 // contains prefix — the FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
 // context, and the fallback when a column context has no FROM-scope yet
 // (which passes no CTEs: a CTE name is a relation, not a column).
@@ -161,6 +192,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 			items = append(items, p.objectItem(obj, partial))
 		}
 	}
+	items = append(items, p.databaseItems(pl)...)
 	sortCompletionItems(items)
 	return items
 }

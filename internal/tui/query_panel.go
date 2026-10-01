@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"time"
+	"unicode/utf8"
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
@@ -69,8 +70,14 @@ type QueryPanel struct {
 	tranCount int
 
 	filePath    string      // last path used by Save; "" if never saved
-	savedText   string      // editor text as of the last save/load; compared by Dirty
+	savedText   string      // editor text as of the last save/load; compared by Dirty; set only by markSaved
 	resultsMode ResultsMode // Grid/Text/File — set via Query menu
+
+	// dirty caches Dirty's answer for document version dirtyVer; dirtyValid
+	// false forces a recompute (markSaved clears it).
+	dirty      bool
+	dirtyVer   uint64
+	dirtyValid bool
 
 	// fileEnc and fileCRLF are how the opened file was encoded on disk, so Save
 	// writes it back in the same shape rather than converting to LF-separated
@@ -246,7 +253,54 @@ func (p *QueryPanel) FilePath() string { return p.filePath }
 // Dirty reports whether the editor holds changes not yet saved to filePath, or
 // any content at all for a panel never saved — layout.Dirty, so the tab bar can
 // show a "*".
-func (p *QueryPanel) Dirty() bool { return p.editor.Text() != p.savedText }
+//
+// The tab bar asks this from both tabSegments and Draw, every frame, and
+// Text() materialises the whole script: a 20 k-line script spent ~90 ms per
+// keystroke here (B10). So the answer is cached per document version, and a
+// recompute walks the document's lines against savedText rather than building
+// Text(). It still compares text rather than versions, because undoing back to
+// the saved text must read as clean and the version never repeats.
+func (p *QueryPanel) Dirty() bool {
+	doc := p.editor.Document()
+	if v := doc.Version(); !p.dirtyValid || v != p.dirtyVer {
+		p.dirty = !docEquals(doc, p.savedText)
+		p.dirtyVer, p.dirtyValid = v, true
+	}
+	return p.dirty
+}
+
+// markSaved records the editor's current text as the saved state. Every write
+// of savedText goes through here, so the Dirty cache is never left answering
+// for the old baseline.
+func (p *QueryPanel) markSaved() {
+	p.savedText = p.editor.Text()
+	p.dirtyValid = false
+}
+
+// docEquals reports whether doc's text is s — doc's lines joined by '\n', as
+// Editor.Text builds it — without building that string.
+func docEquals(doc *controls.Document, s string) bool {
+	pos := 0
+	for i := range doc.Len() {
+		if i > 0 {
+			if pos >= len(s) || s[pos] != '\n' {
+				return false
+			}
+			pos++
+		}
+		for _, r := range doc.Line(i) {
+			if !utf8.ValidRune(r) {
+				r = utf8.RuneError // what string(line) writes for it
+			}
+			c, n := utf8.DecodeRuneInString(s[pos:])
+			if n == 0 || c != r {
+				return false
+			}
+			pos += n
+		}
+	}
+	return pos == len(s)
+}
 
 // SetResultsMode changes how results render; the active tab re-renders at once,
 // so Grid/Text applies to the result already on screen.

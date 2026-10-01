@@ -54,10 +54,12 @@ func (st rgState) applyTo(n *explorerNode) {
 // effect, since RECONFIGURE would enable the governor as well as apply it
 // (W1). So a disabled governor says "(Disabled)" and nothing else.
 //
-// Any failed read leaves the label bare: the stored configuration is
-// invisible without VIEW ANY DEFINITION and the pending flag without VIEW
-// SERVER STATE, and neither is a reason to fail the Management folder. An
-// unreadable configuration reports enabled, so nothing is withheld on a guess.
+// A failed read is not a reason to fail the Management folder: the stored
+// configuration is invisible without VIEW ANY DEFINITION and the pending flag
+// without VIEW SERVER STATE. An unreadable configuration says "(unknown)" —
+// a bare label would read as enabled — and reports enabled, so nothing is
+// withheld on a guess. An unreadable pending flag leaves the label bare: the
+// governor is known to be enabled, and pending is only a qualifier.
 func resourceGovernorState(ctx context.Context, sc *db.ServerConn) rgState {
 	bare := rgState{label: resourceGovernorRootLabel, enabled: true}
 	if sc == nil || sc.Server == nil || !resourceGovernorSupported(sc.Server.Info()) {
@@ -65,7 +67,7 @@ func resourceGovernorState(ctx context.Context, sc *db.ServerConn) rgState {
 	}
 	rg, err := sc.Server.ResourceGovernor(ctx)
 	if err != nil {
-		return bare
+		return rgState{label: resourceGovernorRootLabel + " (unknown)", enabled: true}
 	}
 	if !rg.IsEnabled {
 		return rgState{label: resourceGovernorRootLabel + " (Disabled)"}

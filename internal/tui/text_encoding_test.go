@@ -169,7 +169,7 @@ func TestOpenedFileIsNotBornDirty(t *testing.T) {
 	for _, text := range []string{"SELECT 1;\n", "\tSELECT 1;\n", "SELECT 1;\r\nGO\r\n"} {
 		qp := new(QueryPanel{editor: controls.NewEditor(nil)})
 		qp.editor.SetText(text)
-		qp.savedText = qp.editor.Text()
+		qp.markSaved()
 		if qp.Dirty() {
 			t.Errorf("panel opened with %q is dirty", text)
 		}

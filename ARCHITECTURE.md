@@ -173,7 +173,7 @@ gossms/
 │       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView/TempDBView/InstanceView with tuikit/charts; no App, no connection
 │       ├── gate/                 # the permission gate: gate.RightsAllow — the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
-│       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT) and ScanBindings' batch-wide temp-table/table-variable declarations. Functions over runes; no App, no connection — pure but for its two caches, PrefixCache (prefix_cache.go: the completion prefix scan) and BatchCache (batch_cache.go: the batch-wide binding scan), each making a per-keystroke scan incremental and owned by the QueryPanel that calls it
+│       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT, rowset functions' WITH lists) and ScanBindings' batch-wide temp-table/table-variable declarations, with CarryTempBindings handing temp tables on across GO. Functions over runes; no App, no connection — pure but for its two caches, PrefixCache (prefix_cache.go: the completion prefix scan) and BatchCache (batch_cache.go: the batch-wide binding scan and the temp tables carried into it), each making a per-keystroke scan incremental and owned by the QueryPanel that calls it
 │       │
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
@@ -245,6 +245,7 @@ gossms/
 │       ├── completion_inventory.go  # per-database + per-server(sys schema) catalog cache for IntelliSense, async load
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
 │       ├── completion_relations.go  # resolves FROM-scope refs (CTEs, derived tables) to columns, with depth/cycle guards
+│       ├── completion_crossdb.go    # cross-database names: the per-server database directory, HAS_DBACCESS-gated loads of another database's inventory, "db.schema." chains
 │       │
 │       │  ── Activity Monitor ──
 │       ├── activity_monitor.go        # ActivityMonitor state: tabs, toolbar, per-tab scroll, teardown; implements layout.Panel

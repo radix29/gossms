@@ -294,7 +294,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					hint.Clear()
 				} else {
 					e.removing = true
-					hint.Set(e.origName + " is deleted on Apply, with its grants; mail still queued for it is marked failed.")
+					hint.Set(e.origName + " is deleted on Apply with its grants; its queued mail is marked failed.")
 				}
 				reselect(min(i, len(visible())-1))
 			})

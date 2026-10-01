@@ -42,7 +42,10 @@ type propPage struct {
 	// This matters most for Script Changes, where the rename is recorded rather
 	// than executed: the sibling pages' statements would otherwise sit *below* a
 	// rename in the script and name an object that no longer exists.
-	renames bool
+	//
+	// The pointer is the boxed name commitRename updates; the header reads it
+	// again after a save, so a rename shows there too (PropDialog.headerName).
+	renames *string
 
 	// requires are the rights this page's *writes* need — any one of them is
 	// enough. When the server has denied every one, the page still loads and
@@ -358,6 +361,14 @@ type PropDialog struct {
 	// planned, when set, makes this showing's Apply a planned run — see
 	// applyPlan. Set by showPlanned, cleared by every show.
 	planned func(ctx context.Context, plan *applyPlan) error
+
+	// headerName is the renaming page's boxed name (propPage.renames), and
+	// headerPrefix/headerRight the rest of the header around it. saved()
+	// redraws the header from them, so after a rename it stops naming the old
+	// object. nil when no page renames — the header is then fixed.
+	headerName   *string
+	headerPrefix string
+	headerRight  string
 }
 
 // NewPropDialog creates the properties dialog and wires its callbacks.
@@ -441,9 +452,26 @@ func (d *PropDialog) showWith(sc *db.ServerConn, database, title, headerLeft, he
 	}
 	d.SetTitle(title)
 	d.SetHeader(headerLeft, headerRight)
+	d.trackHeaderName(headerLeft, headerRight)
 	d.SetPages(titles)
 	d.Show()
 	return true
+}
+
+// trackHeaderName finds the page that can rename the object and, when
+// headerLeft ends with the name it boxes ("Login: " + name), remembers the
+// prefix so saved() can redraw the header under the new name.
+func (d *PropDialog) trackHeaderName(headerLeft, headerRight string) {
+	d.headerName, d.headerPrefix, d.headerRight = nil, "", headerRight
+	for _, p := range d.pages {
+		if p.renames == nil {
+			continue
+		}
+		if prefix, ok := strings.CutSuffix(headerLeft, *p.renames); ok {
+			d.headerName, d.headerPrefix = p.renames, prefix
+		}
+		return
+	}
 }
 
 func (d *PropDialog) onClose() {
@@ -658,7 +686,7 @@ func (d *PropDialog) dirtyApplyFns() (pages []int, fns []propApply) {
 		if fn == nil {
 			continue
 		}
-		if page < len(d.pages) && d.pages[page].renames {
+		if page < len(d.pages) && d.pages[page].renames != nil {
 			lastPages, last = append(lastPages, page), append(last, fn)
 			continue
 		}
@@ -818,6 +846,9 @@ func (d *PropDialog) applyNow(hideOnSuccess bool) {
 // stale view goes, and the dialog's own onSaved hook runs.
 func (d *PropDialog) saved() {
 	d.staleDetails()
+	if d.headerName != nil {
+		d.SetHeader(d.headerPrefix+*d.headerName, d.headerRight)
+	}
 	if d.onSaved != nil {
 		d.onSaved()
 	}

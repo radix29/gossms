@@ -1,6 +1,9 @@
 package sqlparse
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // ---------------------------------------------------------------------------
 // Cursor context: what's being typed, and whether it's already dot-qualified
@@ -47,6 +50,44 @@ func TokenContext(tokens []Token, upTo int) (qualifier, prefix string, replaceFr
 	return
 }
 
+// QualifierChain is TokenContext's qualifier with every part before it: the
+// dotted parts ahead of the word being typed (or of the cursor, right after a
+// dot), outermost first. "db.dbo.Or|" gives [db dbo], "db..|" gives [db ""]
+// (the default schema), "c.|" gives [c], and an unqualified word gives nil.
+// TokenContext's qualifier is the chain's last part when that part is an
+// identifier.
+//
+// A chain that starts with an empty part ("x = ..a") names nothing, and gives
+// nil too.
+func QualifierChain(tokens []Token, upTo int) []string {
+	n := len(tokens)
+	if n == 0 {
+		return nil
+	}
+	i := n - 1
+	if last := tokens[i]; (last.Kind == TokenIdent || last.Kind == TokenKeyword) && last.Start+len([]rune(last.Text)) == upTo {
+		i--
+	}
+	var parts []string
+	for i >= 1 && tokens[i].Kind == TokenDot {
+		switch tokens[i-1].Kind {
+		case TokenIdent:
+			parts = append(parts, tokens[i-1].Text)
+			i -= 2
+		case TokenDot:
+			parts = append(parts, "")
+			i--
+		default:
+			return nil
+		}
+	}
+	if len(parts) == 0 || parts[len(parts)-1] == "" {
+		return nil
+	}
+	slices.Reverse(parts)
+	return parts
+}
+
 // ---------------------------------------------------------------------------
 // FROM-scope: which tables/views/aliases are in play for the statement the
 // cursor is currently in
@@ -57,6 +98,12 @@ func TokenContext(tokens []Token, upTo int) (qualifier, prefix string, replaceFr
 type FromRef struct {
 	Schema, Name, Alias string
 
+	// Database is the first part of a three-part name ("db.schema.t", or
+	// "db..t" with Schema empty for the default schema). Server is the first
+	// part of a four-part, linked-server name, which nothing resolves: its
+	// catalog is another instance's.
+	Database, Server string
+
 	// Derived is the query behind "( ... ) [AS] alias", with Schema and Name
 	// empty. Only the tree parser below sets it; ParseFromScope never does.
 	Derived *Query
@@ -66,6 +113,19 @@ type FromRef struct {
 	// name — the source's own alias is not addressable past the clause, so it
 	// is not kept. Only the tree parser sets it.
 	Pivot *Pivot
+
+	// Rowset is set when Name is a rowset function — OPENJSON, OPENROWSET,
+	// OPENXML — whose columns come from its own WITH clause rather than the
+	// catalog (see rowset.go). Only the tree parser sets it.
+	Rowset *Rowset
+
+	// Call is set when the name is followed by a parenthesised group: a
+	// table-valued function's argument list, or a legacy "t (NOLOCK)" hint.
+	// The parser can't tell the two apart; the catalog can, since a table and
+	// a function never share a name in one schema. A ref without it is never
+	// a function — one can't be named without its argument list. Only the
+	// tree parser sets it.
+	Call bool
 }
 
 // ParseFromScope walks tokens looking for table references introduced by
@@ -103,13 +163,8 @@ func ParseFromScope(tokens []Token) []FromRef {
 			continue
 		}
 		if expectRef && t.Kind == TokenIdent {
-			ref := FromRef{Name: t.Text}
-			j := i + 1
-			if j+1 < len(tokens) && tokens[j].Kind == TokenDot && tokens[j+1].Kind == TokenIdent {
-				ref.Schema = t.Text
-				ref.Name = tokens[j+1].Text
-				j += 2
-			}
+			parts, j := multipartName(tokens, i)
+			ref := refFromParts(parts)
 			if j < len(tokens) && tokens[j].Kind == TokenKeyword && tokens[j].Text == "AS" {
 				j++
 			}
@@ -140,59 +195,116 @@ var dmlStatementLeaders = map[string]bool{
 //   - a SELECT chained onto the previous top-level clause by
 //     UNION[ ALL]/EXCEPT/INTERSECT is the same statement, not a new one
 //   - the first top-level SELECT after WITH or after an INSERT with no
-//     intervening VALUES is that statement's own main query/source
+//     intervening VALUES or EXEC is that statement's own main query/source
 //     (CTE's SELECT, INSERT ... SELECT), not a new one — only WITH/INSERT
 //     itself is the boundary; an INSERT ... VALUES has no such SELECT to
 //     suppress, so a later, genuinely separate SELECT stacked right after
 //     it with no ';' is (rarely) missed — a known limitation
+//   - a WITH directly followed by '(' is a table hint ("t WITH (NOLOCK)") or
+//     a rowset function's column list ("OPENJSON(@j) WITH (a int)"), never a
+//     CTE, which names itself first; a WITH that is the last token is not
+//     decided either way, and is not reported
 //
-// Combined with the ';'/GO boundaries ScanPrefix/
-// StatementEndOffset already apply, this narrows FROM-scope/clause
+// Combined with the ';'/GO boundaries PrefixCache and
+// NarrowStatementForward already apply, this narrows FROM-scope/clause
 // analysis to the actual statement under the cursor even when the editor
 // holds several statements back to back with no ';' between them.
 func DMLStatementStarts(tokens []Token) []int {
 	var starts []int
-	depth := 0
-	prevKeyword, prevPrevKeyword := "", ""
-	pendingMainSelect := false
+	var s dmlSplitter
 	for _, t := range tokens {
-		switch t.Kind {
-		case TokenParenOpen:
-			depth++
-			continue
-		case TokenParenClose:
-			if depth > 0 {
-				depth--
-			}
-			continue
+		if st, ok := s.feed(t); ok {
+			starts = append(starts, st.Start)
 		}
-		if depth != 0 || t.Kind != TokenKeyword {
-			continue
-		}
-		switch {
-		case t.Text == "VALUES":
-			pendingMainSelect = false
-		case dmlStatementLeaders[t.Text]:
-			continuesUnion := prevKeyword == "UNION" || prevKeyword == "EXCEPT" || prevKeyword == "INTERSECT" ||
-				(prevKeyword == "ALL" && prevPrevKeyword == "UNION")
-			switch {
-			case t.Text == "SELECT" && pendingMainSelect:
-				pendingMainSelect = false
-			case t.Text == "SELECT" && continuesUnion:
-				// UNION-chain continuation of the same statement.
-			default:
-				starts = append(starts, t.Start)
-				pendingMainSelect = t.Text == "WITH" || t.Text == "INSERT"
-			}
-		}
-		prevPrevKeyword = prevKeyword
-		prevKeyword = t.Text
 	}
 	return starts
 }
 
+// dmlSplitter is DMLStatementStarts' state machine, fed one token at a time so
+// a forward scan can stop at the first statement start instead of tokenizing
+// everything after the cursor (see NarrowStatementForward).
+type dmlSplitter struct {
+	depth                   int
+	prevKeyword, prevPrevKw string
+	pendingMainSelect       bool
+
+	// with is a top-level WITH whose role the token after it decides: a '('
+	// makes it a hint or a WITH column list, anything else a CTE clause.
+	with        Token
+	withPending bool
+}
+
+// feed advances the splitter past t and reports the token that begins a new
+// statement, if one does. That is usually t itself, but a WITH is reported
+// one token late, when the token after it shows what it is. A token that would
+// itself start a statement right after a WITH reported that way — no valid
+// script has one — continues the WITH's statement.
+func (s *dmlSplitter) feed(t Token) (Token, bool) {
+	if s.withPending {
+		s.withPending = false
+		if t.Kind != TokenParenOpen {
+			s.pendingMainSelect = true
+			s.advance(t)
+			return s.with, true
+		}
+	}
+	if s.advance(t) {
+		return t, true
+	}
+	return Token{}, false
+}
+
+// advance is feed for every token but the one after a pending WITH's verdict.
+func (s *dmlSplitter) advance(t Token) bool {
+	switch t.Kind {
+	case TokenParenOpen:
+		s.depth++
+		return false
+	case TokenParenClose:
+		if s.depth > 0 {
+			s.depth--
+		}
+		return false
+	}
+	if s.depth != 0 || t.Kind != TokenKeyword {
+		return false
+	}
+	starts := false
+	switch {
+	case t.Text == "VALUES", t.Text == "EXEC", t.Text == "EXECUTE":
+		// INSERT ... VALUES and INSERT ... EXEC have no main SELECT to
+		// wait for, so the next top-level SELECT is a statement of its own.
+		s.pendingMainSelect = false
+	case t.Text == "WITH":
+		s.with, s.withPending = t, true
+	case dmlStatementLeaders[t.Text]:
+		continuesUnion := s.prevKeyword == "UNION" || s.prevKeyword == "EXCEPT" || s.prevKeyword == "INTERSECT" ||
+			(s.prevKeyword == "ALL" && s.prevPrevKw == "UNION")
+		switch {
+		case t.Text == "SELECT" && s.pendingMainSelect:
+			s.pendingMainSelect = false
+		case t.Text == "SELECT" && continuesUnion:
+			// UNION-chain continuation of the same statement.
+		default:
+			starts = true
+			s.pendingMainSelect = t.Text == "INSERT"
+		}
+	}
+	s.prevPrevKw = s.prevKeyword
+	s.prevKeyword = t.Text
+	return starts
+}
+
+// forwardStatementEnders are top-level keywords that cannot occur inside a DML
+// statement, so one after the cursor ends the cursor's statement even though
+// DMLStatementStarts does not split on it. EXEC is not one: INSERT ... EXEC
+// continues the INSERT.
+var forwardStatementEnders = map[string]bool{
+	"DECLARE": true, "CREATE": true, "ALTER": true, "DROP": true, "TRUNCATE": true,
+}
+
 // NarrowToDMLStatement tightens [batchStart, batchEnd) — the ';'/GO-
-// delimited boundaries ScanPrefix/StatementEndOffset already
+// delimited boundaries ScanPrefix/statementEndOffset already
 // computed — to the actual DML statement containing upTo, using
 // DMLStatementStarts on tokens (which must already span the same
 // [batchStart, batchEnd) range so its depth tracking starts at 0).
@@ -207,6 +319,71 @@ func NarrowToDMLStatement(tokens []Token, batchStart, batchEnd, upTo int) (start
 		}
 	}
 	return start, end
+}
+
+// NarrowStatementForward does what a ';'/GO end scan, TokenizeRange and
+// NarrowToDMLStatement did in three passes (the reference composition in
+// statement_forward_test.go), in one bounded pass. prefix holds the tokens of
+// [batchStart, upTo) as ScanPrefix returns them; the forward half is lexed from
+// from (upTo, or just past a bracket identifier the cursor sits in) and stops at
+// the first top-level ';', the next "GO" line below cursorRow, or the first
+// keyword after upTo that starts a new statement — whichever comes first. It
+// returns the cursor's statement bounds and the forward tokens in [from, end).
+//
+// Stopping at the next statement is the point: in a script that ends no
+// statement with ';', the old ';'/GO scan lexed everything below the cursor —
+// 200–250 ms and 53 MB per keystroke on a 20 k-line script (B11). The leader
+// test is DMLStatementStarts' own, seeded with the prefix, so a SELECT that
+// continues an INSERT, a WITH or a UNION before the cursor still continues it.
+func NarrowStatementForward(lines [][]rune, buf []rune, cursorRow, batchStart, from, upTo int, prefix []Token) (start, end int, tail []Token) {
+	start, end = batchStart, len(buf)
+	var s dmlSplitter
+	for _, t := range prefix {
+		if st, ok := s.feed(t); ok && st.Start <= upTo && st.Start > start {
+			start = st.Start
+		}
+	}
+	tail = make([]Token, 0, 64)
+	seen := 0
+	found := false
+	// scan feeds the tokens lexed since the last call, stopping at the first
+	// one that ends the cursor's statement.
+	scan := func() {
+		for ; seen < len(tail) && !found; seen++ {
+			t := tail[seen]
+			st, leader := s.feed(t)
+			switch {
+			case leader && st.Start <= upTo:
+				if st.Start > start {
+					start = st.Start
+				}
+			case leader:
+				end, found = st.Start, true
+			case t.Start > upTo && s.depth == 0 && t.Kind == TokenKeyword && forwardStatementEnders[t.Text]:
+				end, found = t.Start, true
+			}
+		}
+	}
+	r := lexSQL(buf, from, len(buf), true, LexNormal, &tail,
+		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil,
+		func(_, goNext int) bool {
+			scan()
+			return found || goNext >= 0
+		})
+	scan()
+	if !found {
+		end = r.boundary
+		if r.firstGo >= 0 && r.firstGo < end {
+			end = r.firstGo
+		}
+	}
+	for i, t := range tail {
+		if t.Start >= end {
+			tail = tail[:i]
+			break
+		}
+	}
+	return start, end, tail
 }
 
 // Clause is the coarse "what kind of name is expected here" state
@@ -730,20 +907,61 @@ func (p *queryParser) parseRef(q *Query) bool {
 	if t.Kind != TokenIdent {
 		return false
 	}
-	ref := FromRef{Name: t.Text}
-	p.i++
-	if p.at(TokenDot) && p.i+1 < len(p.toks) && p.toks[p.i+1].Kind == TokenIdent {
-		ref.Schema, ref.Name = t.Text, p.toks[p.i+1].Text
-		p.i += 2
-	}
+	parts, next := multipartName(p.toks, p.i)
+	ref := refFromParts(parts)
+	p.i = next
 	if p.at(TokenParenOpen) {
 		// A table-valued function's argument list, or a legacy "t (NOLOCK)"
-		// hint. Either way the alias, if any, follows the group.
+		// hint. Either way the alias, if any, follows the group — and, for a
+		// rowset function, its WITH column list.
 		p.skipParenGroup()
+		ref.Call = true
+		ref.Rowset = p.parseRowset(ref)
 	}
 	p.parseRefTail(&ref)
 	q.From = append(q.From, ref)
 	return true
+}
+
+// multipartName reads the dotted name starting at the identifier tokens[i] —
+// "t", "s.t", "db.s.t", "db..t", "srv.db.s.t" — and returns its parts, an
+// empty one for each "..", and the index just past it. A trailing dot is left
+// unconsumed: "FROM dbo." is a name being typed, and the dot is the
+// qualifier the cursor completes after.
+func multipartName(tokens []Token, i int) ([]string, int) {
+	parts := []string{tokens[i].Text}
+	j := i + 1
+	for j < len(tokens) && tokens[j].Kind == TokenDot {
+		switch {
+		case j+1 < len(tokens) && tokens[j+1].Kind == TokenIdent:
+			parts = append(parts, tokens[j+1].Text)
+			j += 2
+		case j+2 < len(tokens) && tokens[j+1].Kind == TokenDot && tokens[j+2].Kind == TokenIdent:
+			parts = append(parts, "", tokens[j+2].Text)
+			j += 3
+		default:
+			return parts, j
+		}
+	}
+	return parts, j
+}
+
+// refFromParts names a reference from multipartName's parts, last part first.
+// More than four parts is no name SQL Server accepts; it is kept as a
+// linked-server ref, so it resolves to nothing rather than to a guess.
+func refFromParts(parts []string) FromRef {
+	n := len(parts)
+	ref := FromRef{Name: parts[n-1]}
+	if n >= 2 {
+		ref.Schema = parts[n-2]
+	}
+	if n >= 3 {
+		ref.Database = parts[n-3]
+	}
+	if n >= 4 {
+		ref.Server = strings.Join(parts[:n-3], ".")
+	}
+	return ref
 }
 
 // parseRefTail consumes what can follow a table reference's name: an optional

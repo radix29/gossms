@@ -316,3 +316,139 @@ func TestScopeAtTerminatesOnPathologicalInput(t *testing.T) {
 		t.Run(sql, func(t *testing.T) { scopeAtCursor(t, sql) })
 	}
 }
+
+// TestScopeAtMarksCalls pins FromRef.Call: set for a name followed by a
+// parenthesised group — a table-valued function or a legacy "t (NOLOCK)" hint,
+// which the catalog tells apart — and never for a bare name or a "WITH (...)"
+// hint, so a function is only ever resolved where it was called.
+func TestScopeAtMarksCalls(t *testing.T) {
+	cases := []struct {
+		name, sql, want string
+	}{
+		{"bare table", "SELECT * FROM dbo.t x WHERE |", "dbo.t x"},
+		{"qualified TVF", "SELECT * FROM dbo.fn(1, 'a') AS f WHERE |", "dbo.fn() f"},
+		{"unqualified TVF", "SELECT * FROM fn(@id) f WHERE |", "fn() f"},
+		{"APPLY", "SELECT * FROM t CROSS APPLY sys.dm_exec_sql_text(t.h) s WHERE |", "t, sys.dm_exec_sql_text() s"},
+		{"legacy hint", "SELECT * FROM t (NOLOCK) x WHERE |", "t() x"},
+		{"WITH hint", "SELECT * FROM t x WITH (NOLOCK) WHERE |", "t x"},
+		{"nested args", "SELECT * FROM fn((SELECT 1), g(2)) f WHERE |", "fn() f"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			q := scopeAtCursor(t, c.sql).Query
+			if q == nil {
+				t.Fatal("no query parsed")
+			}
+			parts := make([]string, 0, len(q.From))
+			for _, r := range q.From {
+				s := r.Name
+				if r.Schema != "" {
+					s = r.Schema + "." + s
+				}
+				if r.Call {
+					s += "()"
+				}
+				if r.Alias != "" {
+					s += " " + r.Alias
+				}
+				parts = append(parts, s)
+			}
+			if got := strings.Join(parts, ", "); got != c.want {
+				t.Errorf("refs = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestScopeAtMultipartNames pins how three- and four-part names split: the
+// database and linked server land in their own fields, "db..t" leaves Schema
+// empty for the default schema, and the alias after the name is still found —
+// before multipart names were read, "db.dbo.t" parsed as schema db, table dbo
+// and lost its alias to the stray ".t".
+func TestScopeAtMultipartNames(t *testing.T) {
+	cases := []struct {
+		name, sql, want string
+	}{
+		{"three-part", "SELECT * FROM Sales.dbo.Orders o WHERE |", "[Sales] dbo.Orders o"},
+		{"default schema", "SELECT * FROM Sales..Orders AS o WHERE |", "[Sales] .Orders o"},
+		{"bracketed", "SELECT * FROM [My Db].[dbo].[T 1] t WHERE |", "[My Db] dbo.T 1 t"},
+		{"four-part", "SELECT * FROM srv.Sales.dbo.Orders o WHERE |", "srv:[Sales] dbo.Orders o"},
+		{"join after", "SELECT * FROM a.dbo.t x JOIN dbo.u y ON |", "[a] dbo.t x, dbo.u y"},
+		{"three-part TVF", "SELECT * FROM a.dbo.fn(1) f WHERE |", "[a] dbo.fn() f"},
+		{"temp in tempdb", "SELECT * FROM tempdb..#t x WHERE |", "[tempdb] .#t x"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			q := scopeAtCursor(t, c.sql).Query
+			if q == nil {
+				t.Fatal("no query parsed")
+			}
+			parts := make([]string, 0, len(q.From))
+			for _, r := range q.From {
+				s := r.Schema + "." + r.Name
+				if r.Schema == "" && r.Database == "" {
+					s = r.Name
+				}
+				if r.Database != "" {
+					s = "[" + r.Database + "] " + s
+				}
+				if r.Server != "" {
+					s = r.Server + ":" + s
+				}
+				if r.Call {
+					s += "()"
+				}
+				if r.Alias != "" {
+					s += " " + r.Alias
+				}
+				parts = append(parts, s)
+			}
+			if got := strings.Join(parts, ", "); got != c.want {
+				t.Errorf("refs = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestParseFromScopeMultipartNames is the flat fallback's half of the same.
+func TestParseFromScopeMultipartNames(t *testing.T) {
+	buf := []rune("UPDATE Sales.dbo.Orders SET x = 1 FROM Sales..Lines l")
+	tokens, _, _, _ := TokenizeRange(buf, 0, len(buf), false)
+	refs := ParseFromScope(tokens)
+	want := []FromRef{
+		{Database: "Sales", Schema: "dbo", Name: "Orders"},
+		{Database: "Sales", Name: "Lines", Alias: "l"},
+	}
+	if fmt.Sprint(refs) != fmt.Sprint(want) {
+		t.Errorf("refs = %+v, want %+v", refs, want)
+	}
+}
+
+// TestQualifierChain pins the parts ahead of the word being typed.
+func TestQualifierChain(t *testing.T) {
+	cases := []struct {
+		sql  string
+		want []string
+	}{
+		{"SELECT * FROM Or|", nil},
+		{"SELECT * FROM dbo.|", []string{"dbo"}},
+		{"SELECT * FROM dbo.Or|", []string{"dbo"}},
+		{"SELECT * FROM Sales.dbo.|", []string{"Sales", "dbo"}},
+		{"SELECT * FROM Sales.dbo.Or|", []string{"Sales", "dbo"}},
+		{"SELECT * FROM Sales..|", []string{"Sales", ""}},
+		{"SELECT * FROM Sales..Or|", []string{"Sales", ""}},
+		{"SELECT * FROM [My Db].[dbo].|", []string{"My Db", "dbo"}},
+		{"SELECT * FROM srv.Sales.dbo.|", []string{"srv", "Sales", "dbo"}},
+		{"SELECT ..|", nil},
+		{"SELECT .|", nil},
+	}
+	for _, c := range cases {
+		cursor := strings.Index(c.sql, "|")
+		buf := []rune(strings.Replace(c.sql, "|", "", 1))
+		tokens, _, _, _ := TokenizeRange(buf, 0, cursor, false)
+		got := QualifierChain(tokens, cursor)
+		if fmt.Sprint(got) != fmt.Sprint(c.want) || (got == nil) != (c.want == nil) {
+			t.Errorf("%q: chain = %q, want %q", c.sql, got, c.want)
+		}
+	}
+}

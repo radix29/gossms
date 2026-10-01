@@ -14,7 +14,8 @@ type lineMark struct {
 }
 
 // BatchCache answers ScanBindings for the cursor's GO-delimited batch without
-// re-lexing the batch on every keystroke.
+// re-lexing the batch on every keystroke, preceded by the temp tables the
+// batches above it carry in (CarryTempBindings).
 //
 // The batch scan runs only when a temp-table or table-variable sigil is in
 // play, but when it does it covered the whole batch, both directions from the
@@ -83,21 +84,52 @@ type BatchCache struct {
 	bindFrom, bindTo int
 	bindOK           bool
 
+	// carried is CarryTempBindings folded over every batch in [0, carriedTo),
+	// a batch start. sync clears carriedOK when an edit lands above carriedTo;
+	// a cursor moving down folds on from there, one moving up starts over.
+	carried   []Binding
+	carriedTo int
+	carriedOK bool
+
 	// scratch holds the re-lexed window while sync decides where it goes.
 	scratchTokens []Token
 	scratchMarks  []lineMark
 }
 
-// Bindings is ScanBindings over the GO-delimited batch holding cursorRow, for
-// the text lines and buf (FlattenLinesInto's output for lines) hold.
+// Bindings is the temp tables carried into the GO-delimited batch holding
+// cursorRow, followed by ScanBindings over that batch, for the text lines and
+// buf (FlattenLinesInto's output for lines) hold.
 func (c *BatchCache) Bindings(lines [][]rune, buf []rune, cursorRow int) []Binding {
 	changed := c.sync(buf)
 	from, to := c.batch(lines, buf, cursorRow)
 	if changed || !c.bindOK || from != c.bindFrom || to != c.bindTo {
-		c.bindings = ScanBindings(c.tokensIn(from, to))
+		c.carryTo(from)
+		c.bindings = slices.Concat(c.carried, ScanBindings(c.tokensIn(from, to)))
 		c.bindFrom, c.bindTo, c.bindOK = from, to, true
 	}
 	return c.bindings
+}
+
+// carryTo brings carried up to the batch starting at from. Every mark above
+// from is known: batch lexed past the cursor's row to find it.
+func (c *BatchCache) carryTo(from int) {
+	if c.carriedOK && c.carriedTo == from {
+		return
+	}
+	start := c.carriedTo
+	if !c.carriedOK || from < c.carriedTo {
+		c.carried, start = nil, 0
+	}
+	for _, m := range c.marks[c.markAtOrAfter(start):] {
+		if m.start >= from {
+			break
+		}
+		if m.goNext >= 0 {
+			c.carried = CarryTempBindings(c.carried, c.tokensIn(start, m.start))
+			start = m.goNext
+		}
+	}
+	c.carriedTo, c.carriedOK = from, true
 }
 
 // batch returns the bounds of the batch holding cursorRow — the line after
@@ -164,6 +196,7 @@ func (c *BatchCache) sync(buf []rune) bool {
 	if !c.known {
 		c.text = append(c.text[:0], buf...)
 		c.tokens, c.marks, c.lexedTo, c.known = c.tokens[:0], c.marks[:0], 0, true
+		c.carriedOK = false
 		return true
 	}
 	old := c.text
@@ -174,6 +207,9 @@ func (c *BatchCache) sync(buf []rune) bool {
 	}
 	if p == len(old) && p == len(buf) {
 		return false
+	}
+	if p < c.carriedTo {
+		c.carriedOK = false
 	}
 	s := 0
 	for s < n-p && old[len(old)-1-s] == buf[len(buf)-1-s] {

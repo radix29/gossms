@@ -69,7 +69,7 @@ type NoteRow struct {
 func Note(text string) Row { return &NoteRow{text: text, drawHeight: -1} }
 
 // DynamicNote returns a Note whose text the page replaces with SetText — a
-// description that follows a picker, too long for a HintRow's one line. The
+// description that follows a picker, too long for a HintRow's two lines. The
 // form re-wraps it on the next frame, since Height is asked every layout.
 func DynamicNote(text string) *NoteRow { return &NoteRow{text: text, drawHeight: -1} }
 
@@ -104,10 +104,10 @@ func (r *NoteRow) MinDrawHeight() int  { return 1 }
 func (r *NoteRow) SetDrawHeight(h int) { r.drawHeight = h }
 
 // ---------------------------------------------------------------------------
-// HintRow — non-focusable one-line message a handler sets at runtime
+// HintRow — non-focusable message a handler sets at runtime
 // ---------------------------------------------------------------------------
 
-// HintRow is a single line a page's button handlers write to, telling the user
+// HintRow is a short message a page's button handlers write to, telling the user
 // why an action did nothing: an empty name, a duplicate entry, nothing selected
 // in the grid. Blank and invisible until something sets it.
 //
@@ -118,6 +118,10 @@ func (r *NoteRow) SetDrawHeight(h int) { r.drawHeight = h }
 //
 // Not focusable, so it takes no Tab stop, and it reserves its line whether or
 // not it has text — an appearing hint must not reflow the rows around it.
+// Text wider than the row wraps to a second line, the rest clipped with an
+// ellipsis (N10: at 80 columns Accounts' "… is deleted on Apply, and leaves
+// every profile that uses it." lost its second half). That second line pushes
+// down only the rows below the hint, never the button above it that set it.
 //
 // Set and SetError also ask the form to scroll the row into view (Revealer):
 // a hint usually sits below the button that set it, and on a long page that
@@ -126,8 +130,12 @@ type HintRow struct {
 	text    string
 	isError bool
 	reveal  bool
+	lines   []string
 	x, y, w int
 }
+
+// hintMaxLines caps a hint's height: one line reserved, one more on demand.
+const hintMaxLines = 2
 
 // Hint returns an empty HintRow.
 func Hint() *HintRow { return &HintRow{} }
@@ -153,9 +161,12 @@ func (r *HintRow) TakeReveal() bool {
 	return v
 }
 
-func (r *HintRow) Height(w int) int   { return 1 }
-func (r *HintRow) Layout(x, y, w int) { r.x, r.y, r.w = x, y, w }
-func (r *HintRow) Focusable() bool    { return false }
+func (r *HintRow) Height(w int) int { return max(1, len(core.WrapTextLimit(r.text, w, hintMaxLines))) }
+func (r *HintRow) Layout(x, y, w int) {
+	r.x, r.y, r.w = x, y, w
+	r.lines = core.WrapTextLimit(r.text, w, hintMaxLines)
+}
+func (r *HintRow) Focusable() bool { return false }
 func (r *HintRow) Draw(s tcell.Screen, focused bool) {
 	if r.text == "" {
 		return
@@ -166,7 +177,9 @@ func (r *HintRow) Draw(s tcell.Screen, focused bool) {
 		fg = p.Error
 	}
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(fg)
-	core.DrawTextClipped(s, r.x, r.y, r.w, st, r.text)
+	for i, line := range r.lines {
+		core.DrawTextClipped(s, r.x, r.y+i, r.w, st, line)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -257,14 +270,18 @@ type TextRow struct {
 	// SetReadOnly.
 	drawReadOnly bool
 	pageReadOnly bool
-	x, y, w      int
+	// width is the field's width as asked for; Layout narrows the field to
+	// what the row has room for, so a sheet on an 80-column terminal doesn't
+	// draw it over the form's right border, and widens it back when it can.
+	width   int
+	x, y, w int
 }
 
 // Text returns a plain editable text row, width columns wide.
 func Text(label, value string, width int) *TextRow {
 	f := widgets.NewInputField(core.PadRight(label, LabelWidth), width, false)
 	f.SetValue(value)
-	return &TextRow{field: f, orig: value, enabled: true}
+	return &TextRow{field: f, orig: value, enabled: true, width: width}
 }
 
 // Password returns a masked password row. An empty value means "leave
@@ -272,7 +289,7 @@ func Text(label, value string, width int) *TextRow {
 // baseline gives for free.
 func Password(label string, width int) *TextRow {
 	f := widgets.NewInputField(core.PadRight(label, LabelWidth), width, true)
-	return &TextRow{field: f, orig: "", enabled: true}
+	return &TextRow{field: f, orig: "", enabled: true, width: width}
 }
 
 // Int returns an editable integer row constrained to [min, max], with an
@@ -281,7 +298,7 @@ func Int(label string, value, min, max int64, unit string) *TextRow {
 	f := widgets.NewInputField(core.PadRight(label, LabelWidth), 12, false)
 	v := strconv.FormatInt(value, 10)
 	f.SetValue(v)
-	r := &TextRow{field: f, orig: v, unit: unit, enabled: true}
+	r := &TextRow{field: f, orig: v, unit: unit, enabled: true, width: 12}
 	r.validate = func(s string) error {
 		n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 		if err != nil {
@@ -352,6 +369,13 @@ func (r *TextRow) Height(w int) int { return 1 }
 func (r *TextRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w
 	r.field.SetBounds(x, y)
+	// The label, a space and the two brackets take the rest of the row, and
+	// a unit a space before it.
+	room := w - core.DisplayWidth(r.field.Label()) - 3
+	if r.unit != "" {
+		room -= core.DisplayWidth(r.unit) + 1
+	}
+	r.field.SetWidth(min(r.width, room))
 }
 func (r *TextRow) Focusable() bool { return r.enabled && !r.pageReadOnly }
 

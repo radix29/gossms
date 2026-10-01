@@ -15,8 +15,8 @@ import (
 
 // compareCachedScans is compareScans plus GoStart: "field for field", which
 // compareScans alone is not. compareScans formats a scan the way one golden
-// line does, and GoStart is not in it — yet the completion provider reads it
-// (ContainsSigil and the batch-wide tokenize both start there). The cache
+// line does, and GoStart is not in it — yet BatchCache's tests check their
+// batch start against it. The cache
 // derives it from its own boundary list, independently of BatchStart, so a
 // "GO" boundary recorded as a ';' yields the right batch start and a GoStart
 // of 0, and any comparison stopping at the golden format would pass.

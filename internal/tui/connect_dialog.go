@@ -156,6 +156,13 @@ type ConnectDialog struct {
 	// "Connecting...".
 	connectLabel string
 
+	// target is the query window this showing connects, set by
+	// ShowForQueryPanel and cleared by Hide: Connect then dials that window's
+	// own connection instead of adding a server to Object Explorer, and
+	// targetThen runs once it is up.
+	target     *QueryPanel
+	targetThen func()
+
 	// drag is the text-selection gesture a click in one of the dialog's text
 	// fields starts — see dialogs.FieldGesture for the ordering its three calls
 	// depend on.
@@ -547,6 +554,30 @@ func (d *ConnectDialog) Show() {
 	d.setFocus(0)
 }
 
+// ShowForQueryPanel opens the dialog to connect qp — an Execute in a window
+// with no connection opens it — then runs then (nil for nothing) on success.
+// A window that had a connection pre-fills the form with it, in the database
+// it was last in.
+func (d *ConnectDialog) ShowForQueryPanel(qp *QueryPanel, then func()) {
+	if qp.conn != nil {
+		opts := qp.conn.Opts
+		if qp.database != "" {
+			opts.Database = qp.database
+		}
+		d.PreFill(&opts)
+		// PreFill ticks Remember Password for any password, as a History
+		// entry wants; this one's was in memory only unless asked for.
+		d.cbRemember.SetChecked(opts.RememberPassword)
+	}
+	d.Show()
+	// Onto the form, not History: Enter there re-fills the form from the
+	// highlighted row — which carries no database and, unremembered, no
+	// password — and connects with that instead. From the form, Enter connects
+	// with what was pre-filled.
+	d.setFocus(indexOfFocusable(d.focusable, d.fServer))
+	d.target, d.targetThen = qp, then
+}
+
 func (d *ConnectDialog) setFocus(i int) {
 	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
 	// Every focus change blurs whatever was focused — the point to refresh the
@@ -698,7 +729,7 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 			d.connectLabel = label
 		}
 	}
-	d.app.connectServer(ctx, opts, phase, func(err error) bool {
+	done := func(err error) bool {
 		if d.connectAttempt != attempt {
 			// Cancelled, or superseded by a later attempt — this one no
 			// longer owns the dialog, and connectServer winds it back.
@@ -715,7 +746,18 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 		// the failed attempt deliberately kept open.
 		d.btnFocus = connectBtnConnect
 		return true
-	})
+	}
+	if qp := d.target; qp != nil {
+		then := d.targetThen
+		d.app.dialQueryPanel(ctx, qp, opts, phase, done, func() {
+			d.app.rememberConnection(opts)
+			if then != nil {
+				then()
+			}
+		})
+		return
+	}
+	d.app.connectServer(ctx, opts, phase, done)
 }
 
 // stopConnecting leaves the connecting state, stopping the spinner goroutine
@@ -737,6 +779,7 @@ func (d *ConnectDialog) stopConnecting() {
 // mid-attempt doesn't reopen with a spinner running and its fields inert.
 func (d *ConnectDialog) Hide() {
 	d.stopConnecting()
+	d.target, d.targetThen = nil, nil
 	d.ModalDialog.Hide()
 }
 

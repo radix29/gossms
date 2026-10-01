@@ -1,6 +1,9 @@
 package controls
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // docOf wraps lines in a Document so a test can drive a Highlighter without
 // an Editor. Each call returns a *fresh* Document, which matters: the
@@ -189,5 +192,88 @@ func TestMaxDisplayWidthAfterReplaceRange(t *testing.T) {
 				t.Errorf("%d cached widths for %d lines", len(d.lineW), d.Len())
 			}
 		})
+	}
+}
+
+// TestDocumentChangedSince checks the span changedSince merges from several
+// mutations against what actually changed: every line outside it must be the
+// same line, at its old index before the span and shifted by the line-count
+// change after it.
+func TestDocumentChangedSince(t *testing.T) {
+	lines := func(n int) [][]rune {
+		out := make([][]rune, n)
+		for i := range out {
+			out[i] = []rune{rune('a' + i)}
+		}
+		return out
+	}
+	type op func(d *Document)
+	set := func(i int) op { return func(d *Document) { d.setLine(i, []rune("set")) } }
+	rep := func(row, n, k int) op {
+		return func(d *Document) { d.replaceRange(row, n, lines(k)) }
+	}
+	cases := map[string]struct {
+		ops             []op
+		row, oldN, newN int
+	}{
+		"nothing":               {nil, 0, 0, 0},
+		"one setLine":           {[]op{set(3)}, 3, 1, 1},
+		"split a line":          {[]op{rep(2, 1, 2)}, 2, 1, 2},
+		"split then type below": {[]op{rep(2, 1, 2), set(3), set(3)}, 2, 1, 2},
+		"join":                  {[]op{rep(4, 2, 1)}, 4, 2, 1},
+		"two apart":             {[]op{set(1), rep(6, 1, 3)}, 1, 6, 8},
+		"later edit above":      {[]op{rep(6, 1, 3), set(1)}, 1, 6, 8},
+	}
+	for name, c := range cases {
+		d := docOf(lines(10))
+		v := d.Version()
+		before := slices.Clone(d.all())
+		for _, o := range c.ops {
+			o(d)
+		}
+		row, oldN, newN, ok := d.changedSince(v)
+		if !ok || row != c.row || oldN != c.oldN || newN != c.newN {
+			t.Errorf("%s: changedSince = (%d, %d, %d, %v), want (%d, %d, %d, true)",
+				name, row, oldN, newN, ok, c.row, c.oldN, c.newN)
+			continue
+		}
+		after := d.all()
+		if len(after)-len(before) != newN-oldN {
+			t.Errorf("%s: line count moved by %d, span says %d", name, len(after)-len(before), newN-oldN)
+		}
+		for i := 0; i < row; i++ {
+			if &after[i][0] != &before[i][0] {
+				t.Errorf("%s: line %d above the span changed", name, i)
+			}
+		}
+		for i := row + oldN; i < len(before); i++ {
+			if &after[i+newN-oldN][0] != &before[i][0] {
+				t.Errorf("%s: line %d below the span changed", name, i)
+			}
+		}
+	}
+}
+
+// TestDocumentChangedSinceGivesUp: an edit or setLines can move any line, and
+// a version older than the log can't be accounted for, so either must send
+// the caller back to a rebuild rather than report a span.
+func TestDocumentChangedSinceGivesUp(t *testing.T) {
+	d := docOf([][]rune{[]rune("a"), []rune("b")})
+	v := d.Version()
+	d.setLine(0, []rune("x"))
+	d.edit(func(l [][]rune) [][]rune { return l })
+	d.setLine(1, []rune("y"))
+	if _, _, _, ok := d.changedSince(v); ok {
+		t.Error("changedSince across an edit reported a span")
+	}
+	v = d.Version()
+	for range spliceLogLen + 1 {
+		d.setLine(0, []rune("z"))
+	}
+	if _, _, _, ok := d.changedSince(v); ok {
+		t.Error("changedSince older than the log reported a span")
+	}
+	if _, _, _, ok := d.changedSince(d.Version() - spliceLogLen); !ok {
+		t.Error("changedSince exactly spliceLogLen behind gave up")
 	}
 }

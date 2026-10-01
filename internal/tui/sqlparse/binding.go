@@ -1,6 +1,9 @@
 package sqlparse
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // ---------------------------------------------------------------------------
 // Batch bindings: temp tables and table variables
@@ -12,11 +15,10 @@ import "strings"
 // state the package keeps, and the caller pays for it only when a sigil is
 // actually in play — see HasSigil.
 //
-// Scoped to the batch, not the whole script: a table variable dies at GO, and
-// a batch is the largest span a declaration is certainly still in scope over.
-// A temp table does outlive GO, so a "CREATE TABLE #t" in one batch and a
-// "SELECT ... FROM #t" in the next answers with nothing rather than with the
-// columns — the package's usual trade, an empty popup over a wrong one.
+// ScanBindings is scoped to the batch: a table variable dies at GO. A temp
+// table does not — it lives until the session drops it — so CarryTempBindings
+// walks the batches above the cursor's in script order and hands their temp
+// tables on (see there for what it deliberately leaves behind).
 // ---------------------------------------------------------------------------
 
 // Binding is one name a declaration puts in scope for the rest of the batch:
@@ -327,4 +329,147 @@ func typeArgs(item []Token, i int) ([]string, int) {
 		}
 	}
 	return nil, i
+}
+
+// ---------------------------------------------------------------------------
+// Temp tables across GO
+// ---------------------------------------------------------------------------
+
+// maxCarryDepth bounds the walk of a carried SELECT ... INTO's query tree,
+// the same order of nesting relation resolution gives up at.
+const maxCarryDepth = 16
+
+// CarryTempBindings returns the temp tables still declared after batch, given
+// the ones carried into it: batch's own temp-table declarations and
+// "DROP TABLE #t"s applied in script order, a redeclared name replacing the
+// earlier entry. carried is not modified. Called once per batch above the
+// cursor's, top down, it yields what the session holds when the cursor's batch
+// starts; the caller puts that before the cursor's own batch's bindings, so a
+// local declaration shadows a carried one (findBinding takes the last).
+//
+// Left behind, so the name answers nothing rather than a wrong list:
+//
+//   - table variables, which die at GO;
+//   - every declaration in a batch that defines a procedure, function or
+//     trigger: a temp table created in a module body is the module's, gone
+//     when it returns;
+//   - a SELECT ... INTO whose query reads a table variable: its shape would be
+//     resolved against the cursor's batch, where that @name is someone else
+//     or no one.
+//
+// A DROP in the cursor's own batch is not applied to what is carried in: the
+// batch's own declarations are not ordered against the cursor either.
+func CarryTempBindings(carried []Binding, batch []Token) []Binding {
+	if definesModule(batch) {
+		return carried
+	}
+	out := slices.Clone(carried)
+	remove := func(name string) {
+		out = slices.DeleteFunc(out, func(b Binding) bool { return strings.EqualFold(b.Name, name) })
+	}
+	bindings := ScanBindings(batch)
+	drops := scanTempDrops(batch)
+	for len(bindings) > 0 || len(drops) > 0 {
+		if len(drops) == 0 || (len(bindings) > 0 && bindings[0].Start < drops[0].Start) {
+			b := bindings[0]
+			bindings = bindings[1:]
+			if !strings.HasPrefix(b.Name, "#") || queryReadsVariable(b.Query, 0) {
+				continue
+			}
+			remove(b.Name)
+			out = append(out, b)
+			continue
+		}
+		remove(drops[0].Text)
+		drops = drops[1:]
+	}
+	return out
+}
+
+// definesModule reports whether batch opens with CREATE [OR ALTER] or ALTER of
+// a procedure, function or trigger — which T-SQL requires to be the batch's
+// first statement, so the first tokens are the whole test.
+func definesModule(batch []Token) bool {
+	i := 0
+	switch {
+	case len(batch) > 3 && isKeyword(batch[0], "CREATE") && isKeyword(batch[1], "OR") && isKeyword(batch[2], "ALTER"):
+		i = 3
+	case len(batch) > 1 && (isKeyword(batch[0], "CREATE") || isKeyword(batch[0], "ALTER")):
+		i = 1
+	default:
+		return false
+	}
+	switch strings.ToUpper(batch[i].Text) {
+	case "PROC", "PROCEDURE", "FUNCTION", "TRIGGER":
+		return true
+	}
+	return false
+}
+
+func isKeyword(t Token, text string) bool { return t.Kind == TokenKeyword && t.Text == text }
+
+// scanTempDrops returns the temp-table names of every "DROP TABLE [IF EXISTS]
+// a, b, ..." in tokens, each as the token naming it. A qualified name keeps
+// only its last part, which is where a temp table's sigil is ("tempdb..#t").
+func scanTempDrops(tokens []Token) []Token {
+	var out []Token
+	for i := 0; i+2 < len(tokens); i++ {
+		if !isKeyword(tokens[i], "DROP") || !isKeyword(tokens[i+1], "TABLE") {
+			continue
+		}
+		j := i + 2
+		if j+1 < len(tokens) && tokens[j].Kind == TokenIdent && strings.EqualFold(tokens[j].Text, "IF") &&
+			isKeyword(tokens[j+1], "EXISTS") {
+			j += 2
+		}
+		for j < len(tokens) && tokens[j].Kind == TokenIdent {
+			last := tokens[j]
+			// "a.b.c" and "tempdb..#t": dots, each followed by a part or not.
+			for j++; j < len(tokens) && tokens[j].Kind == TokenDot; j++ {
+				if j+1 < len(tokens) && tokens[j+1].Kind == TokenIdent {
+					j++
+					last = tokens[j]
+				}
+			}
+			if strings.HasPrefix(last.Text, "#") {
+				out = append(out, last)
+			}
+			if j >= len(tokens) || tokens[j].Kind != TokenComma {
+				break
+			}
+			j++
+		}
+		i = j - 1
+	}
+	return out
+}
+
+// queryReadsVariable reports whether q, or any query nested in it, reads a
+// table variable.
+func queryReadsVariable(q *Query, depth int) bool {
+	if q == nil {
+		return false
+	}
+	if depth >= maxCarryDepth {
+		return true // too deep to vouch for: carry nothing
+	}
+	for _, r := range q.From {
+		if r.Derived == nil && r.Schema == "" && strings.HasPrefix(r.Name, "@") {
+			return true
+		}
+		if queryReadsVariable(r.Derived, depth+1) {
+			return true
+		}
+	}
+	for _, sub := range q.Subqueries {
+		if queryReadsVariable(sub, depth+1) {
+			return true
+		}
+	}
+	for _, cte := range q.CTEs {
+		if queryReadsVariable(cte.Body, depth+1) {
+			return true
+		}
+	}
+	return false
 }

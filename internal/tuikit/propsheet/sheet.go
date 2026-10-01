@@ -176,6 +176,9 @@ func (p *PropertySheet) SetPages(titles []string) {
 // list/content split (e.g. "Instance: SQLMI-PROD" / "Connected: yes").
 func (p *PropertySheet) SetHeader(left, right string) { p.headerLeft, p.headerRight = left, right }
 
+// Header returns the text SetHeader last set.
+func (p *PropertySheet) Header() (left, right string) { return p.headerLeft, p.headerRight }
+
 // SetHints overrides the default footer key-hint line.
 func (p *PropertySheet) SetHints(hints string) { p.hints = hints }
 

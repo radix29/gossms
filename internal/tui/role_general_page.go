@@ -77,7 +77,7 @@ func roleGeneralPage(roleName *string,
 
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: roleName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			r, err := load(ctx)
 			if err != nil {

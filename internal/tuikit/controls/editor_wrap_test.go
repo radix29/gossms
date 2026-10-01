@@ -1,9 +1,12 @@
 package controls
 
 import (
+	"math/rand/v2"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/gdamore/tcell/v3"
 )
 
 // referenceVisualLines is buildVisualLines' pre-optimisation form: everything
@@ -118,6 +121,110 @@ func TestBuildVisualLinesReusesItsBuffer(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		if got := cap(e.buildVisualLines(40)); got != firstCap {
 			t.Fatalf("call %d reallocated: cap = %d, want the first call's %d", i+2, got, firstCap)
+		}
+	}
+}
+
+// TestBuildVisualLinesTracksEditsIncrementally drives random edits through the
+// paths that reach the document — typing, Enter (with its auto-indent, several
+// mutations before the next look), joining Backspace and Delete, deleting a
+// multi-line selection, multi-line paste, undo and redo, and an edit-based
+// line operation that forces a rebuild — and checks the wrap cache against a
+// from-scratch flattening every few steps. The incremental splice
+// (rewrapSpan) going wrong shows up here as a row numbered for the old line
+// count or a stale segment of an edited line.
+func TestBuildVisualLinesTracksEditsIncrementally(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	e := NewEditor(nil)
+	e.SetWrapMode(true)
+	e.SetGutterVisible(false)
+	e.SetBounds(0, 0, 12, 6)
+	e.SetText("select a, b, c from t\n    where x = 1\n\nand the rest of a long line here\nend")
+	const w = 12
+	words := []string{"x", "go ", "alpha beta gamma", "\n", "a\nbb\nccc ddd eee\n", "    "}
+
+	for step := range 3000 {
+		e.cursorRow = rng.IntN(e.doc.Len())
+		e.cursorCol = rng.IntN(len(e.doc.Line(e.cursorRow)) + 1)
+		e.selecting = false
+		switch rng.IntN(10) {
+		case 0, 1:
+			e.HandleKey(runeKey(rune('a'+rng.IntN(26)), tcell.ModNone))
+		case 2:
+			e.HandleKey(runeKey(' ', tcell.ModNone))
+		case 3:
+			e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+		case 4:
+			e.HandleKey(key(tcell.KeyBackspace2, tcell.ModNone))
+		case 5:
+			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+		case 6:
+			e.Paste(words[rng.IntN(len(words))])
+		case 7:
+			e.selecting = true
+			e.selAnchorRow = rng.IntN(e.doc.Len())
+			e.selAnchorCol = rng.IntN(len(e.doc.Line(e.selAnchorRow)) + 1)
+			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+		case 8:
+			if rng.IntN(2) == 0 {
+				e.undo()
+			} else {
+				e.redo()
+			}
+		case 9:
+			if rng.IntN(4) == 0 {
+				e.DuplicateLines()
+			} else {
+				e.HandleKey(runeKey('y', tcell.ModNone))
+			}
+		}
+		if rng.IntN(3) > 0 {
+			continue // let several edits pile up between looks
+		}
+		got := e.buildVisualLines(w)
+		if want := referenceVisualLines(e.doc.all(), w); !reflect.DeepEqual(got, want) {
+			t.Fatalf("step %d: buildVisualLines = %v, want %v", step, got, want)
+		}
+	}
+}
+
+// TestBuildVisualLinesLineCountEdits pins the cases the plan named: inserting
+// and deleting lines (so every later visual row is renumbered) and a
+// multi-line paste, each checked right after the edit with the cache warm
+// from before it.
+func TestBuildVisualLinesLineCountEdits(t *testing.T) {
+	const w = 10
+	edits := map[string]func(e *Editor){
+		"enter mid-line":  func(e *Editor) { e.cursorRow, e.cursorCol = 1, 4; e.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) },
+		"backspace joins": func(e *Editor) { e.cursorRow, e.cursorCol = 2, 0; e.HandleKey(key(tcell.KeyBackspace2, tcell.ModNone)) },
+		"delete joins": func(e *Editor) {
+			e.cursorRow, e.cursorCol = 0, len(e.doc.Line(0))
+			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+		},
+		"multi-line paste": func(e *Editor) {
+			e.cursorRow, e.cursorCol = 1, 2
+			e.Paste("one two three\nfour\n\nfive six seven eight")
+		},
+		"delete a selection": func(e *Editor) {
+			e.selecting, e.selAnchorRow, e.selAnchorCol, e.cursorRow, e.cursorCol = true, 0, 3, 2, 1
+			e.deleteSelection()
+		},
+		"undo a line insert": func(e *Editor) {
+			e.cursorRow, e.cursorCol = 1, 0
+			e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+			e.buildVisualLines(w)
+			e.undo()
+		},
+		"edit at the last line": func(e *Editor) { e.cursorRow, e.cursorCol = 3, 1; e.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) },
+	}
+	for name, edit := range edits {
+		e := NewEditor(nil)
+		e.SetText("first line of text\nsecond line wraps here\nthird\nlast one wraps too")
+		e.buildVisualLines(w)
+		edit(e)
+		got := e.buildVisualLines(w)
+		if want := referenceVisualLines(e.doc.all(), w); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: buildVisualLines = %v, want %v", name, got, want)
 		}
 	}
 }

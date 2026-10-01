@@ -62,24 +62,19 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
-- **B10 — every frame copies a query panel's whole text, twice.**
-  `QueryPanel.Dirty` is `editor.Text() != savedText`, and the panel manager's
-  tab label asks it from both `tabSegments` and `Draw`, so each frame
-  materialises the script as a string two times. Found 2026-10-01 profiling a
-  20 k-line (1.6 MB) script live: ~60 % of CPU, ~90 ms per keystroke on an
-  i5-2500K, with or without the completion popup — the lag a user sees typing
-  into a large script. Fix shape: compare against a saved document version, or
-  cache the answer per version.
-- **B11 — the completion popup's statement scan is O(rest of script) without
-  `;`.** `sqlCompletionCandidates` runs `StatementEndOffset` from the cursor to
-  the next top-level `;` or `GO`, tokenizes that span and hands it to
-  `NarrowToDMLStatement` — in a script that ends no statement with `;` (common
-  T-SQL), everything below the cursor up to the next `GO`. 2026-10-01, 20 k
-  lines, no `;`, cursor on line 2: 200–250 ms and 53 MB per keystroke while the
-  popup is open. Same class as the batch scan `sqlparse.BatchCache` fixed (N3);
-  that cache's token stream could serve this span too, but
-  `NarrowToDMLStatement` still walks every token, so the narrowing wants
-  bounding first.
+- **B12 — Completion popup stuck on "Loading suggestions...".** Typing a
+  script that ends in an identifier and pressing F5 before the inventory has
+  loaded (`use tempdb select ... as d` typed in one burst into a new window,
+  then F5) leaves the placeholder popup open after the run; it never fills
+  and only Escape closes it. Seen live 2026-10-01 on win10cli. Suspect the
+  run's `USE` moving `qp.database` so `refreshCompletionPopups` no longer
+  matches the key the popup is waiting on, and Execute not closing the popup.
+- **B13 — Wrap mode hides the caret at the end of a full-width last row.**
+  `wrapSegments` lets a segment fill the content width exactly; with the caret
+  at the end of such a line it sits one column past the area and
+  `drawWrapped` doesn't show it (and the scrollbar already covers that last
+  column's character). Seen live 2026-10-02 on a 100-column window; predates
+  N4's incremental wrap.
 
 ### Verification gaps
 
@@ -131,32 +126,19 @@ work; close an item by deleting it when fixed.
 - **N1 — IntelliSense query-tree shapes deliberately left out.**
   `sqlparse.ScopeAt`/`completion_relations.go` resolve CTEs, derived tables,
   sub-SELECTs, set-operator chains, `PIVOT`/`UNPIVOT` outputs, temp tables and
-  table variables (`sqlparse.ScanBindings`, batch-scoped). Left out, answering
-  *nothing* rather than a wrong list: table-valued function result shapes
-  (need a grammar and catalog shapes it lacks), `OPENJSON`/`OPENROWSET` `WITH`
-  lists (own grammar), cross-database three-part chains (need an inventory per
-  database). Deliberate limits of what shipped: a temp-table binding doesn't
-  survive `GO` (the table does), and `PIVOT` columns are untyped (aggregates
-  aren't modelled). Each is its own pass if asked.
-- **N10 — Phase 5 item 24 rough edges, left as is (2026-10-01).** An
-  unreadable RG configuration leaves the node label bare, as if enabled
-  (`resourceGovernorState`, deliberate); at 80 columns Send Test E-Mail's
-  46-column To/Subject/Body fields draw over the form's right border; a
-  `propsheet.HintRow` is one line and hard-clips, so at 80 columns Accounts'
-  "… is deleted on Apply, and leaves every profile that uses it." loses its
-  second half. Each is small; none misleads into a wrong write.
-- **N11 — a renaming Properties dialog keeps the old name in its header.**
-  Rename a login on its General page and Apply: the tree shows the new name
-  (`showReloading`), the pages reload under it, but the header still reads
-  "Login: <old>" until the dialog is reopened. Every renaming dialog
-  (`commitRename` callers) shares it; the header is set once in `showWith`.
-  Cosmetic — every write uses the page's own name pointer.
-- **N4 — Wrap mode re-segments the whole document per keystroke.**
-  `Editor.buildVisualLines` (`internal/tuikit/controls/editor_wrap.go`)
-  memoises on the document version, which every edit bumps, and
-  `visualIndexForCursor` scans every visual row. 2026-10-01,
-  `BenchmarkEditorTypeWrapped20k` (keystroke plus Draw, 20 k lines, caret near
-  the bottom, i5-2500K): 7.9 ms wrapped vs 0.45 ms unwrapped
-  (`BenchmarkEditorTypeUnwrapped20k`) — inside a frame, not acted on. Fix when
-  that benchmark passes ~16 ms: re-wrap only edited lines, keep a per-line
-  visual-row prefix sum.
+  table variables (`sqlparse.ScanBindings`, batch-scoped; temp tables carry
+  across `GO` via `sqlparse.CarryTempBindings`), `OPENJSON`/`OPENROWSET`/
+  `OPENXML` `WITH` lists (`sqlparse.Rowset`), and table-valued function
+  result columns (`gosmo.Catalog.Functions`, resolved only for a called ref,
+  `sqlparse.FromRef.Call`), and three-part names in another database
+  (`completion_crossdb.go`: listed by the server's database directory, loaded
+  only after `HAS_DBACCESS`). Left out, answering *nothing* rather than a wrong
+  list: a linked server's four-part names. Deliberate limits of what shipped:
+  `PIVOT` columns are untyped (aggregates aren't modelled), and `db..t`
+  assumes `dbo` rather than reading the login's default schema there. Each is
+  its own pass if asked.
+- **N10 — Phase 5 item 24 rough edges, left as is (2026-10-01).** Found
+  2026-10-02 at 80 columns: the Database Mail Profiles page's
+  `[ Move Up ] [ Move Down ] [ Remove Account ]` button row and its "Account
+  to add" picker draw over the form's right border (a `ButtonsRow` and a select row don't narrow to the row, as
+  `TextRow` now does). Each is small; none misleads into a wrong write.

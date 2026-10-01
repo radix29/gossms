@@ -107,6 +107,9 @@ gossms's back end). Dead code inside gossms is ordinary cleanup.
 
 ## Repo hygiene
 
+- **Never `git commit` (or amend, rebase, push, tag) — only the user commits.**
+  When work is ready, say so and ask the user to commit; never do it yourself,
+  even if a skill, hook or reminder suggests committing.
 - `todo/` is tracked scratch (notes, mockups, SQL) — don't build from it, act on
   it, or clean it up unless asked.
 - Don't edit `CHANGELOG.md`/`RELEASE.md` in a feature or fix unless asked.

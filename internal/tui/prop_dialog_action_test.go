@@ -293,3 +293,39 @@ func TestApplyReloadsThePagesAfterACommittedFailure(t *testing.T) {
 	d.runApply(false)
 	drainUntil(t, d.app, func() bool { return *loads > 0 }, "the sheet to reload")
 }
+
+// A rename shows in the header once Apply lands, not only in the tree and the
+// pages: the header is set once per showing, and used to keep the old name
+// until the dialog was reopened. Script Changes renames nothing, so there the
+// header keeps the name the server still has.
+func TestApplyRenameUpdatesTheHeader(t *testing.T) {
+	a := newTestApp()
+	a.propDialog = NewPropDialog(a)
+	d := a.propDialog
+	sc := addTestConn(a, "server-one")
+
+	name := "old_login"
+	general := func(context.Context) (*propsheet.Form, propApply, error) {
+		f, _ := dirtyForm(t, "new_login")
+		return f, func(ctx context.Context) error {
+			commitRename(ctx, &name, "new_login")
+			return nil
+		}, nil
+	}
+	d.show(sc, "", "Login Properties", "Login: "+name, "Server: server-one",
+		func() []propPage { return []propPage{{title: "General", load: general, renames: &name}} })
+	drainUntil(t, a, func() bool { return d.PageState(0) == propsheet.PageReady }, "the General page to load")
+
+	d.runScript()
+	drainUntil(t, a, func() bool { return d.Message() != "" && !d.Applying() }, "the script run to finish")
+	if left, _ := d.Header(); left != "Login: old_login" {
+		t.Errorf("after Script Changes the header reads %q, want the unrenamed %q", left, "Login: old_login")
+	}
+
+	d.runApply(false)
+	drainUntil(t, a, func() bool { left, _ := d.Header(); return left == "Login: new_login" },
+		"the header to name the renamed login")
+	if _, right := d.Header(); right != "Server: server-one" {
+		t.Errorf("the header's right end became %q", right)
+	}
+}

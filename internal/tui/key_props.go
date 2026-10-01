@@ -51,7 +51,7 @@ func keyTypeName(isPrimaryKey bool) string {
 func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *string) propPage {
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: name,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
 			if err != nil {

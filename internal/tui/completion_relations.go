@@ -51,7 +51,9 @@ const maxRelationDepth = 8
 // resolveCtx carries what name resolution needs down the tree: the two
 // inventories, the CTE bindings visible at this point (innermost first), the
 // remaining recursion budget, and the set of CTE names currently being
-// expanded.
+// expanded. otherDB, when set, finds another database's inventory for a
+// three-part name (QueryPanel.databaseInventory), and pending records that one
+// was still loading.
 //
 // It is passed by value — depth is per-branch — but expanding is a shared map,
 // deliberately: a recursive CTE (WITH r AS (SELECT * FROM r), legal T-SQL) is
@@ -63,6 +65,21 @@ type resolveCtx struct {
 	bindings    []sqlparse.Binding
 	depth       int
 	expanding   map[string]bool
+	otherDB     func(name string) (inv *completionInventory, pending bool)
+	pending     *bool
+}
+
+// database returns the loaded inventory a three-part name's database part
+// names, or false — noting a load still in flight in rc.pending.
+func (rc resolveCtx) database(name string) (*completionInventory, bool) {
+	if rc.otherDB == nil {
+		return nil, false
+	}
+	inv, pending := rc.otherDB(name)
+	if pending && rc.pending != nil {
+		*rc.pending = true
+	}
+	return inv, inv != nil
 }
 
 func newResolveCtx(inv, sysInv *completionInventory, ctes []sqlparse.CTE, bindings []sqlparse.Binding) resolveCtx {
@@ -93,14 +110,25 @@ func resolveRefs(rc resolveCtx, refs []sqlparse.FromRef) []relation {
 
 // resolveRef resolves one FROM/JOIN/APPLY ref: a derived table to its body's
 // columns, a bare name matching a visible CTE to that CTE's, and anything else
-// to a catalog object. A schema-qualified ref is never a CTE — "dbo.t1" names a
-// real object even when a CTE t1 is in scope.
+// to a catalog object — in another database's catalog for a three-part name.
+// A schema- or database-qualified ref is never a CTE — "dbo.t1" names a real
+// object even when a CTE t1 is in scope — and a linked server's four-part
+// name resolves to nothing, its catalog being another instance's.
 func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
+	if ref.Server != "" {
+		return relation{}, false
+	}
 	if ref.Pivot != nil {
 		return resolvePivotRef(rc, ref)
 	}
 	if ref.Derived != nil {
 		cols := queryColumns(rc, ref.Derived)
+		return relation{name: ref.Alias, aliased: true, cols: cols}, len(cols) > 0
+	}
+	if ref.Rowset != nil {
+		// A rowset function names no catalog object, so an unaliased one is
+		// as unqualifiable as an unaliased derived table.
+		cols := declaredColumns(ref.Rowset.Columns)
 		return relation{name: ref.Alias, aliased: true, cols: cols}, len(cols) > 0
 	}
 	name, aliased := ref.Alias, true
@@ -113,7 +141,8 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 			// so a name the batch bound nothing to resolves to nothing rather
 			// than falling through to an object sharing the name without its
 			// sigil — which is what "FROM #Orders" did before the tokenizer
-			// kept the '#'.
+			// kept the '#'. A database part is ignored, as the server ignores
+			// it: "tempdb..#t" and "x..#t" both name the session's #t.
 			b, ok := findBinding(rc.bindings, ref.Name)
 			if !ok {
 				return relation{}, false
@@ -121,13 +150,29 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 			cols := bindingColumns(rc, b)
 			return relation{name: name, aliased: aliased, cols: cols}, len(cols) > 0
 		}
-		if cte, ok := findCTE(rc.ctes, ref.Name); ok {
+		if cte, ok := findCTE(rc.ctes, ref.Name); ok && ref.Database == "" {
 			cols := cteColumns(rc, cte)
 			return relation{name: name, aliased: aliased, cols: cols}, len(cols) > 0
 		}
 	}
-	if obj := findCatalogObject(rc.inv, rc.sysInv, ref.Schema, ref.Name); obj != nil {
+	inv, schema := rc.inv, ref.Schema
+	if ref.Database != "" {
+		other, ok := rc.database(ref.Database)
+		if !ok {
+			return relation{}, false
+		}
+		inv, schema = other, defaultSchema(ref.Schema)
+	}
+	if obj := findCatalogObject(inv, rc.sysInv, schema, ref.Name); obj != nil {
 		return relation{name: name, aliased: aliased, obj: obj}, true
+	}
+	if ref.Call {
+		// A table-valued function: its result columns, as the catalog
+		// records them. Tried after the tables, which is what a
+		// "t (NOLOCK)" hint also parses as.
+		if fn := findCatalogFunction(inv, rc.sysInv, schema, ref.Name); fn != nil {
+			return relation{name: name, aliased: aliased, obj: fn}, true
+		}
 	}
 	return relation{}, false
 }
@@ -221,11 +266,7 @@ func findBinding(bindings []sqlparse.Binding, name string) (sqlparse.Binding, bo
 // either, and this runs on every keystroke of one.
 func bindingColumns(rc resolveCtx, b sqlparse.Binding) []gosmo.CatalogColumn {
 	if b.Columns != nil {
-		cols := make([]gosmo.CatalogColumn, 0, len(b.Columns))
-		for _, c := range b.Columns {
-			cols = append(cols, bindingColumn(c))
-		}
-		return cols
+		return declaredColumns(b.Columns)
 	}
 	if b.Query == nil {
 		return nil
@@ -237,6 +278,19 @@ func bindingColumns(rc resolveCtx, b sqlparse.Binding) []gosmo.CatalogColumn {
 	rc.expanding[key] = true
 	defer delete(rc.expanding, key)
 	return queryColumns(rc, b.Query)
+}
+
+// declaredColumns turns a declared column list — a temp table's, a table
+// variable's, a rowset function's WITH list — into catalog columns.
+func declaredColumns(decl []sqlparse.BindingColumn) []gosmo.CatalogColumn {
+	if decl == nil {
+		return nil
+	}
+	cols := make([]gosmo.CatalogColumn, 0, len(decl))
+	for _, c := range decl {
+		cols = append(cols, bindingColumn(c))
+	}
+	return cols
 }
 
 // bindingColumn turns one declared column into the catalog shape the rest of

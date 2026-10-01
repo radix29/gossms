@@ -41,7 +41,7 @@ func (a *App) showScheduleProperties(sc *db.ServerConn, scheduleName string) {
 func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 	return propPage{
 		title:   "General",
-		renames: true,
+		renames: scheduleName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			sch, err := findAgentSchedule(ctx, sc, *scheduleName)
 			if err != nil {

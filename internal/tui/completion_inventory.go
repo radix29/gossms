@@ -35,8 +35,21 @@ type completionInventory struct {
 	// bySchema groups catalog.Objects by lowercase schema name, for
 	// offering every table/view in a schema after "schema.".
 	bySchema map[string][]*gosmo.CatalogObject
+	// fnByQualifiedName indexes catalog.Functions — table-valued functions —
+	// the way byQualifiedName indexes tables and views. Kept apart so a
+	// function only ever resolves where it is called (sqlparse.FromRef.Call).
+	fnByQualifiedName map[string]*gosmo.CatalogObject
 
 	load latest
+
+	// gated is set on an inventory a query panel only names, in a
+	// cross-database chain (completion_crossdb.go): its load asks HAS_DBACCESS
+	// first, so a database the login can't open is answered without a USE
+	// that would fail.
+	gated bool
+	// database is the name a gated entry was loaded for, so Ctrl+R can
+	// reload it without a panel connected there.
+	database string
 
 	// serverKey is the sysCompletionInventoryKey of the server+login this entry
 	// belongs to. Recorded at creation so purgeCompletionInventories can find
@@ -91,6 +104,11 @@ func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog) {
 		inv.byQualifiedName[key] = obj
 		schemaKey := strings.ToLower(obj.Schema)
 		inv.bySchema[schemaKey] = append(inv.bySchema[schemaKey], obj)
+	}
+	inv.fnByQualifiedName = make(map[string]*gosmo.CatalogObject, len(cat.Functions))
+	for i := range cat.Functions {
+		fn := &cat.Functions[i]
+		inv.fnByQualifiedName[strings.ToLower(fn.Schema)+"."+strings.ToLower(fn.Name)] = fn
 	}
 }
 
@@ -160,11 +178,17 @@ func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 		inv.load.Abandon()
 		delete(a.sysCompletionInventories, serverKey)
 	}
+	if d, ok := a.completionDirectories[serverKey]; ok {
+		d.load.Abandon()
+		delete(a.completionDirectories, serverKey)
+	}
 }
 
 // refreshCompletionCache is Ctrl+R with the SQL editor focused, and Query >
-// Refresh IntelliSense Cache: drops and reloads this panel's inventory. A no-op
-// with a status message for a panel with no connection.
+// Refresh IntelliSense Cache: reloads this panel's inventory, the server's
+// database list, and every other database's inventory the server's panels
+// have loaded through a cross-database name. A no-op with a status message for
+// a panel with no connection.
 func (p *QueryPanel) refreshCompletionCache() {
 	if p.app.cfg.IntelliSenseDisabled {
 		p.app.setStatus("IntelliSense is disabled — enable it in Tools > Options")
@@ -176,6 +200,8 @@ func (p *QueryPanel) refreshCompletionCache() {
 	}
 	p.app.refreshCompletionInventory(p.conn, p.database)
 	p.app.retrySysCompletionInventory(p.conn)
+	p.app.refreshCompletionDirectory(p.conn)
+	p.app.refreshCrossDatabaseInventories(p.conn)
 	p.app.setStatus(fmt.Sprintf("Refreshing autocomplete inventory for %s...", p.database))
 }
 
@@ -189,7 +215,13 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 	a.safegoRepair("loading the autocomplete catalog", func() {
 		loadPanicked(a.completionInventories, key, inv, seq)
 	}, func() {
-		cat, err := srv.DatabaseRef(database).Catalog(ctx)
+		var cat *gosmo.Catalog
+		var err error
+		if inv.gated && !sc.DatabaseCapabilities(ctx, database).Accessible {
+			err = errNoDatabaseAccess
+		} else {
+			cat, err = srv.DatabaseRef(database).Catalog(ctx)
+		}
 		a.postAndWake(func() {
 			if !inv.load.Done(seq) {
 				return // superseded by a newer load for this key
@@ -215,25 +247,12 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 				inv.applyCatalog(cat)
 				a.setStatus(fmt.Sprintf("Autocomplete ready for %s (%d tables/views)", database, len(cat.Objects)))
 			}
-			a.refreshCompletionPopups(key)
+			// Every panel on the server, not only those connected to this
+			// database: another may be waiting on it through a cross-database
+			// name.
+			a.refreshSysCompletionPopups(inv.serverKey)
 		})
 	})
-}
-
-// refreshCompletionPopups re-queries the completion provider of every query
-// panel connected to key's server+database, so a load landing while one shows
-// the "Loading suggestions..." placeholder fills in live.
-// Editor.RefreshCompletion is a no-op unless that panel's popup is open.
-func (a *App) refreshCompletionPopups(key string) {
-	for i := 0; i < a.panels.Count(); i++ {
-		qp, ok := a.panels.PanelAt(i).(*QueryPanel)
-		if !ok || qp.conn == nil {
-			continue
-		}
-		if completionInventoryKey(qp.conn.Opts, qp.database) == key {
-			qp.editor.RefreshCompletion()
-		}
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -320,8 +339,10 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 	})
 }
 
-// refreshSysCompletionPopups is refreshCompletionPopups' sys-schema
-// counterpart: every query panel on key's server, whatever database it is in.
+// refreshSysCompletionPopups re-queries the completion provider of every query
+// panel on key's server, whatever database it is in, so a load landing while
+// one shows the "Loading suggestions..." placeholder fills in live.
+// Editor.RefreshCompletion is a no-op unless that panel's popup is open.
 func (a *App) refreshSysCompletionPopups(key string) {
 	for i := 0; i < a.panels.Count(); i++ {
 		qp, ok := a.panels.PanelAt(i).(*QueryPanel)

@@ -769,6 +769,46 @@ func TestNotConnectedMessageDistinguishesNeverConnected(t *testing.T) {
 	}
 }
 
+// TestExecuteDisconnectedOpensConnectDialog: F5 in a window whose connection
+// dropped used to say "use Query > Reconnect" and stop. It now opens the
+// Connect dialog for that window, pre-filled with the connection it had in the
+// database it was last in, and nothing else — no run, no Object Explorer root.
+// Cancelling lets the dialog go back to connecting Object Explorer.
+func TestExecuteDisconnectedOpensConnectDialog(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.editor.SetText("SELECT 1")
+	sc := &db.ServerConn{Opts: config.Connection{Server: "fake-server", User: "sa", Database: "master"}}
+	sc.Close()
+	qp.conn = sc
+	qp.database = "tempdb"
+
+	qp.Execute()
+
+	d := a.connectDialog
+	if !d.Visible() || d.target != qp || d.targetThen == nil {
+		t.Fatalf("visible=%v target=%p then=%v, want the dialog open for qp with a retry",
+			d.Visible(), d.target, d.targetThen != nil)
+	}
+	if got := d.fServer.Value(); got != "fake-server" {
+		t.Errorf("server = %q, want fake-server", got)
+	}
+	if got := d.fDatabase.Value(); got != "tempdb" {
+		t.Errorf("database = %q, want the window's current tempdb", got)
+	}
+	if d.focusedWidget() != d.fServer {
+		t.Error("focus not on Server Name: Enter in History would replace the pre-filled form")
+	}
+	if qp.executing || len(a.connections) != 0 {
+		t.Error("Execute without a connection started a run or added a connection")
+	}
+
+	d.Hide()
+	if d.target != nil || d.targetThen != nil {
+		t.Error("Hide left the dialog targeting the query window")
+	}
+}
+
 // TestExecuteWhileConnectingSaysConnecting: an F5 in the seconds a new
 // window's connect is still in flight (an Entra token fetch makes them
 // noticeable) used to report "No active connection — use File > Connect",
@@ -971,5 +1011,60 @@ func TestClearResultsEmptiesPreviousRun(t *testing.T) {
 	}
 	if qp.tabCount() != 0 {
 		t.Errorf("tabCount() = %d, want 0 (tab bar gone)", qp.tabCount())
+	}
+}
+
+// Dirty is cached per document version (B10), so it must still answer right
+// through typing, undo back to the saved text, and a save — and must not
+// re-read the text while the version stands still.
+func TestQueryPanelDirtyCachesPerVersion(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.editor.SetText("select 1")
+	qp.markSaved()
+	if qp.Dirty() {
+		t.Fatal("Dirty after markSaved")
+	}
+
+	qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone))
+	if !qp.Dirty() {
+		t.Fatal("not Dirty after typing")
+	}
+
+	// The cache answers while the version stands still: moving the baseline
+	// behind markSaved's back must not change the answer.
+	qp.savedText = qp.editor.Text()
+	if !qp.Dirty() {
+		t.Error("Dirty recomputed at an unchanged version; the cache isn't used")
+	}
+	qp.savedText = "select 1"
+
+	qp.editor.Undo()
+	if qp.Dirty() {
+		t.Error("Dirty after undoing back to the saved text")
+	}
+
+	qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, "y", tcell.ModNone))
+	if !qp.Dirty() {
+		t.Fatal("not Dirty after typing again")
+	}
+	qp.markSaved()
+	if qp.Dirty() {
+		t.Error("Dirty after a save at the same version; markSaved didn't clear the cache")
+	}
+}
+
+// docEquals stands in for Text() == s, so it must agree with it on line
+// breaks, multi-byte runes, and a difference in length either way.
+func TestDocEqualsMatchesText(t *testing.T) {
+	e := controls.NewEditor(nil)
+	for _, text := range []string{"", "a", "a\nb", "\n", "héllo\n€ 1\n", "x\n\ny"} {
+		e.SetText(text)
+		doc := e.Document()
+		for _, s := range []string{"", "a", "a\n", "a\nb", "a\nb\n", "\n", "héllo\n€ 1\n", "héllo\n€ 1", "x\n\ny", "x\ny", text} {
+			if got, want := docEquals(doc, s), e.Text() == s; got != want {
+				t.Errorf("docEquals(%q, %q) = %v, want %v", e.Text(), s, got, want)
+			}
+		}
 	}
 }
