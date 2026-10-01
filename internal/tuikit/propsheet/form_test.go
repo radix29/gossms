@@ -398,3 +398,50 @@ func TestGridRowDirtyDelegatesToHooks(t *testing.T) {
 		t.Fatal("Revert() did not call RevertFn")
 	}
 }
+
+// TestFormClickReachesRowWhereAScrolledOutGridWas: a focused grid scrolled out
+// of view keeps the rect it was last drawn at, and must not claim a press on
+// the row now drawn there (W14: the Database Mail Accounts grid swallowed
+// every click on the Authentication radio below it).
+func TestFormClickReachesRowWhereAScrolledOutGridWas(t *testing.T) {
+	g := controls.NewDataGrid()
+	g.SetData([]string{"Name"}, [][]string{{"a"}, {"b"}})
+	g.SetCellCursor(true)
+	rows := []Row{NewGridRow(g, 5), Static("Label", "value"), Static("Label", "value"), Static("Label", "value")}
+	check := Check("Enabled", false)
+	rows = append(rows, check)
+	for range 12 {
+		rows = append(rows, Static("Label", "value"))
+	}
+	f := NewForm(rows...)
+	f.SetBounds(0, 0, 60, 10)
+	scr := &fakeScreen{w: 60, h: 30}
+	f.Draw(scr)
+	press := func(x, y int) {
+		f.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+		f.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+		f.Draw(scr)
+	}
+	press(3, f.bands[0].y+2)
+	if _, ok := f.Focused().(*GridRow); !ok {
+		t.Fatalf("focused %T after a click on the grid, want the grid", f.Focused())
+	}
+	f.HandleMouse(tcell.NewEventMouse(5, 5, tcell.WheelDown, tcell.ModNone))
+	f.Draw(scr)
+	y := -1
+	for _, b := range f.bands {
+		switch b.row {
+		case 0:
+			t.Fatal("the grid is still on screen; the test needs it scrolled out")
+		case 4:
+			y = b.y
+		}
+	}
+	if y < 0 || y >= 5 {
+		t.Fatalf("checkbox at y=%d, want it inside the grid's old band 0..4", y)
+	}
+	press(2, y)
+	if !check.Checked() {
+		t.Errorf("the click went to the scrolled-out grid (focused %T), not the checkbox", f.Focused())
+	}
+}

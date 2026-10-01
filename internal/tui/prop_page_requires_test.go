@@ -46,6 +46,8 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"Column Master Key":            columnMasterKeyPropPages(sc, "HealthClinic", "CMK1"),
 		"Column Encryption Key":        columnEncryptionKeyPropPages(sc, "HealthClinic", "CEK1"),
 		"Availability Group":           agPropPages(sc, "ag1"),
+		"Resource Governor":            rgPropPages(d, sc, rgFocus{}),
+		"Database Mail":                databaseMailPropPages(d, sc),
 		"AG Listener":                  agListenerPropPages(sc, "ag1", "listener"),
 		"Job":                          jobPropPages(d, sc, "nightly"),
 		"Alert":                        alertPropPages(sc, "alert1"),
@@ -224,7 +226,7 @@ func TestAnObjectScopedPageNamesItsSecurable(t *testing.T) {
 // checked by neither test above, which is the silent failure this file exists
 // to prevent.
 var propPageConstructors = []string{
-	"agListenerPropPages", "agPropPages", "alertPropPages",
+	"agListenerPropPages", "agPropPages", "rgPropPages", "databaseMailPropPages", "alertPropPages",
 	"columnEncryptionKeyPropPages", "columnMasterKeyPropPages",
 	"databasePropPages", "fkPropPages", "indexPropPages", "jobPropPages",
 	"keyPropPages", "loginPropPages", "operatorPropPages",

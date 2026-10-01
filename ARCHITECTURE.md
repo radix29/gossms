@@ -201,6 +201,7 @@ gossms/
 │       ├── explorer_storage.go   # loaders: a database's Storage folder — Partition Functions, Partition Schemes
 │       ├── explorer_management.go # loaders: Server Objects folder (Backup Devices, Endpoints, Linked Servers, Server Triggers), Management folder, SQL Server Logs / Agent Error Logs file lists
 │       ├── explorer_resource_governor.go # loaders: Management > Resource Governor (state in the label), Resource Pools > pool > Workload Groups, External Resource Pools; the unsupported-edition and not-visible rows
+│       ├── explorer_database_mail.go # Management > Database Mail: the leaf (state in the label, re-read in place on Refresh), its menu and Start/Stop; hidden on Azure SQL Database
 │       ├── explorer_xevents.go   # loaders + menus: Management > Extended Events > Sessions (a database's own folder on Azure SQL Database — xeScope), one node per event session (running/stopped glyph) and its targets; Start/Stop Session; Watch Live Data / View Target Data
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_programmability.go # loaders: Programmability > Types (five sub-folders), Assemblies, Rules, Defaults, Plan Guides
@@ -309,6 +310,7 @@ gossms/
 │       ├── detail_browser_snapshots.go  # Database Snapshots folder and one snapshot
 │       ├── detail_browser_service_broker.go # the seven Service Broker families: each folder and its leaves, each leaf reusing its Properties page's finder
 │       ├── detail_browser_resource_governor.go # Resource Governor: stored vs in-force configuration, pool and group grids with live DMV counters (blank without VIEW SERVER STATE), one pool / group / external pool
+│       ├── detail_browser_database_mail.go # Database Mail: status, queues, profiles, accounts, latest failed items — each section "not visible" alone when its right is missing
 │       ├── detail_browser_xevents.go    # Extended Events: the Sessions folder (state, startup, events, targets, dropped), one session's events + targets, one target's settings + runtime counters
 │       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
@@ -353,7 +355,7 @@ gossms/
 │       ├── properties_dialog.go  # About + Object Dependencies (wraps dialogs.PropertiesDialog, the flat viewer)
 │       │
 │       │  ── Properties dialogs (propsheet-based) ──
-│       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet on an existing object (lazy per-page loads, dirty-diff Apply)
+│       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet on an existing object (lazy per-page loads, dirty-diff Apply; applyPlan, for a dialog whose pages' writes are ordered across pages)
 │       ├── new_object_dialog.go  # newObjectDialog — the shell behind the New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── name_set.go           # nameSet: the New-object dialogs' "already exists" check, folding case only when the scope's collation (server, database or msdb) does
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm)
@@ -374,6 +376,12 @@ gossms/
 │       ├── server_props_database_settings.go # Server Properties > Database Settings page
 │       ├── server_props_advanced.go     # Server Properties > Advanced page
 │       ├── server_props_permissions.go  # Server Properties > Permissions page
+│       ├── resource_governor_props.go   # Resource Governor Properties: page set, General, Resource Pools and External Resource Pools pages; the planned Apply (phase order, then one RECONFIGURE or DISABLE)
+│       ├── resource_governor_props_groups.go # Resource Governor Properties > Workload Groups page (pool dropdown, the pool's groups, the selected group)
+│       ├── database_mail_props.go       # Database Mail Properties: page set, the planned Apply's phases, mailModel (names shared across pages before Apply), General and System Parameters pages
+│       ├── database_mail_props_accounts.go # Database Mail Properties > Accounts page (SMTP settings; blank password = keep the credential)
+│       ├── database_mail_props_profiles.go # Database Mail Properties > Profiles (accounts in failover order) and Profile Security (public/private grants, one default per principal)
+│       ├── send_test_mail_dialog.go     # Database Mail > Send Test E-Mail: sp_send_dbmail, then follows the item and its error rows (Apply waits in the dialog, OK reports on the status bar)
 │       ├── ag_dashboard.go                  # Always On dashboard panel: refresh loop, estimated data loss / recovery time, replica issues
 │       ├── ag_dashboard_draw.go             # Always On dashboard: layout and drawing
 │       ├── ag_dashboard_all.go              # Always On dashboard's all-groups view (the Always On root's Show Dashboard): per-group rollup and its issues column

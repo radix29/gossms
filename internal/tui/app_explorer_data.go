@@ -147,8 +147,9 @@ func (a *App) primeDatabaseCapabilities(node *explorerNode) {
 	sc, dbName := resolveConn(node), node.data.DBName
 	// Agent nodes have no DBName, but their New-X actions need msdb roles, so
 	// their menu asks about msdb; otherwise the Agent gates read an unprobed
-	// msdb and fail open.
-	if isAgentNode(node.data.Type) {
+	// msdb and fail open. Database Mail's rights are msdb roles too (W8), and
+	// the Log Viewer's mail log Delete reads the same cache.
+	if isAgentNode(node.data.Type) || node.data.Type == NodeDatabaseMail {
 		dbName = "msdb"
 	}
 	// Already cached (the common case): no goroutine.

@@ -87,8 +87,12 @@ var readTimeoutSites = map[string]int{
 	"detail_browser_logins.go":    1,
 	"detail_browser_server.go":    1,
 	"detail_browser_tables.go":    1,
-	"explorer_object_actions.go":  1,
-	"properties_dialog.go":        1,
+	// The Database Mail node's label, re-read on a Refresh of the node.
+	"explorer_database_mail.go":  1,
+	"explorer_object_actions.go": 1,
+	// The Resource Governor node's label, re-read after its Properties saved.
+	"explorer_resource_governor.go": 1,
+	"properties_dialog.go":          1,
 	// The default data and log directories — RestoreDialog.loadDefaultPaths.
 	"restore_dialog_files.go": 1,
 	"restore_dialog_ops.go":   6,

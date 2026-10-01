@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -24,7 +26,7 @@ func (lv *LogViewer) ShowLog(logType gosmo.ErrorLogType, logNum int) {
 }
 
 // ShowLogs points the panel at a set of files and reads them. The set may span
-// both families; logType is what the selectors fall back to when it does.
+// several families; logType is what the selectors fall back to when it does.
 // An empty set is the current log of logType: a selection the user emptied
 // would otherwise leave the grid with nothing to describe and no way back.
 func (lv *LogViewer) ShowLogs(logType gosmo.ErrorLogType, refs []logFileRef) {
@@ -51,7 +53,7 @@ func (lv *LogViewer) ShowLogs(logType gosmo.ErrorLogType, refs []logFileRef) {
 	lv.Load()
 }
 
-// Refresh re-reads the current file and re-enumerates both families (F5 or the
+// Refresh re-reads the current file and re-enumerates every family (F5 or the
 // toolbar). The enumeration is dropped rather than refreshed: a cycled log
 // renumbers every archive, so only a fresh read corrects the cached list.
 func (lv *LogViewer) Refresh() {
@@ -92,12 +94,12 @@ func (lv *LogViewer) Load() {
 	// whole toolbar on it — Refresh, Export and both selectors would sit inert
 	// until the panel was closed.
 	lv.app.safegoRepair("reading an error log", func() { lv.readPanicked(seq) }, func() {
-		// Both families, not only the one on screen: the file checklist offers
-		// a cross-family selection, so it needs the other family's archive
+		// Every family, not only the one on screen: the file checklist offers
+		// a cross-family selection, so it needs the other families' archive
 		// numbering before the user opens it — and fetching that lazily would
 		// put a round trip behind a menu keypress. A family that cannot be
-		// enumerated (an instance with no Agent) is simply left out of the
-		// checklist, exactly as it is today.
+		// enumerated (an instance with no Agent, a login with no msdb access)
+		// is simply left out of the checklist.
 		//
 		// The enumeration runs alongside the reads rather than ahead of them:
 		// nothing in the read depends on it, and the two families cost ~50 ms
@@ -294,6 +296,107 @@ func (lv *LogViewer) reanchorAfterCycle(logType gosmo.ErrorLogType) {
 func (lv *LogViewer) recyclePanicked() {
 	lv.busy = false
 	lv.setStatus("Recycle stopped unexpectedly — see the log for details")
+}
+
+// mailLogDeleteAll is what the Delete prompt takes for "every entry": the
+// prompt refuses an empty value, and an empty field is too easy to accept by
+// accident to mean the whole log.
+const mailLogDeleteAll = "all"
+
+// deleteMailLog purges Database Mail log entries logged before a time the
+// user gives, or all of them — the Recycle cell's action on that family, which
+// has no archives to cycle into. The prompt is pre-filled with the selected
+// row's time, so "everything older than this" is two keystrokes; a time is
+// server-local, the clock every row's Date is on. Nothing is latched until
+// the confirmation, since the prompt has no cancel callback to release it.
+func (lv *LogViewer) deleteMailLog() {
+	if !lv.app.requireConn(lv.conn) {
+		return
+	}
+	initial := ""
+	if r, ok := lv.selectedLogRow(); ok && !r.entry.Date.IsZero() {
+		initial = formatLogSearchTime(r.entry.Date)
+	}
+	lv.app.promptDialog.ShowPrompt("Delete Database Mail Log",
+		"Delete the entries logged before this server time (yyyy-mm-dd [hh:mm[:ss]]), "+
+			"or type "+mailLogDeleteAll+" to delete every entry. Mail items are kept.",
+		"Before:", initial, func(v string) {
+			before, _ := parseMailLogCutoff(v)
+			lv.confirmDeleteMailLog(before)
+		})
+	lv.app.promptDialog.Validate = func(v string) error {
+		_, err := parseMailLogCutoff(v)
+		return err
+	}
+}
+
+// parseMailLogCutoff reads the Delete prompt's value: a time, or
+// mailLogDeleteAll for the zero time, which DeleteMailLog takes as "no bound".
+func parseMailLogCutoff(v string) (time.Time, error) {
+	if strings.EqualFold(strings.TrimSpace(v), mailLogDeleteAll) {
+		return time.Time{}, nil
+	}
+	t, err := parseLogSearchTime(v)
+	if err != nil || t.IsZero() {
+		return time.Time{}, fmt.Errorf("Enter yyyy-mm-dd [hh:mm[:ss]], or %s.", mailLogDeleteAll)
+	}
+	return t, nil
+}
+
+// confirmDeleteMailLog asks before purging, then runs the purge and reloads.
+// busy is latched before the question for recycle's reason: the confirm
+// dialog does not stop F5 reaching the panel.
+func (lv *LogViewer) confirmDeleteMailLog(before time.Time) {
+	sc := lv.conn
+	what := "every Database Mail log entry"
+	if !before.IsZero() {
+		what = "the Database Mail log entries logged before " + formatLogSearchTime(before)
+	}
+	warn := "This cannot be undone."
+	if mailItemsOwnOnly(sc) {
+		// The purge is of the table, not of the filtered view this login
+		// reads (W14).
+		warn = "You see only the entries of your own mail items; this deletes the others too. It cannot be undone."
+	}
+	lv.busy = true
+	lv.app.confirmDialog.ShowConfirm("Delete Database Mail Log",
+		fmt.Sprintf("Delete %s on %s?\n\n%s", what, sc.Opts.Server, warn), func(confirmed bool) {
+			if !confirmed {
+				lv.busy = false
+				return
+			}
+			lv.app.runWithProgress(progressJob{
+				title:   "Delete Database Mail Log",
+				message: "Deleting " + what + "...",
+				what:    "deleting the Database Mail log",
+				sc:      sc,
+				timeout: logReadTimeout,
+				repair:  lv.deletePanicked,
+			}, func(ctx context.Context, _ progressReport) error {
+				return sc.Server.DeleteMailLog(ctx, before, "")
+			}, func(err error, cancelled bool) {
+				lv.busy = false
+				switch {
+				case cancelled:
+					// Reloaded anyway: the delete may have landed before the
+					// cancel reached the server.
+					lv.app.setStatus("Deleting the Database Mail log cancelled")
+				case err != nil:
+					lv.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
+					return
+				default:
+					lv.app.setStatus("Deleted " + what)
+				}
+				lv.Refresh()
+			})
+		})
+}
+
+// deletePanicked releases the busy latch after a panic on the purge goroutine
+// — recyclePanicked's twin.
+func (lv *LogViewer) deletePanicked() {
+	lv.busy = false
+	lv.setStatus("Delete stopped unexpectedly — see the log for details")
 }
 
 // cycleLogMessage is the confirmation question for recycling a log, shared by

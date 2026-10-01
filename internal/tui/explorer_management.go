@@ -25,27 +25,38 @@ func loadServerObjectsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 }
 
 // loadManagementChildren returns the Management folder's children: Resource
-// Governor, Extended Events and SQL Server Logs, in SSMS's order. SSMS hangs a
-// good deal more here (Policy Management, Data Collection, Maintenance Plans,
-// Database Mail, …); this folder exists for the parts goSSMS implements.
+// Governor, Extended Events, SQL Server Logs and Database Mail, in SSMS's
+// relative order. SSMS hangs a good deal more here (Policy Management, Data
+// Collection, Maintenance Plans, …); this folder exists for the parts goSSMS
+// implements.
 //
 // Azure SQL Database has no server-scoped event sessions, so Extended Events
 // is under each database there instead (loadDatabaseChildren); nor anything
-// of Resource Governor's to configure, so that node is left out
-// (resourceGovernorHidden).
+// of Resource Governor's to configure, nor an msdb to keep Database Mail in,
+// so those two nodes are left out (resourceGovernorHidden,
+// databaseMailHidden).
 //
-// Unlike loadServerChildren this loader reads: the Resource Governor node's
-// label carries the governor's state (resourceGovernorState), a failed read
-// of which leaves the label bare rather than failing the folder.
+// Unlike loadServerChildren this loader reads: the Resource Governor and
+// Database Mail nodes' labels carry their state (resourceGovernorState,
+// databaseMailState), a failed read of which leaves the label bare rather
+// than failing the folder.
 func loadManagementChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	var info *gosmo.ServerInfo
+	if l.sc != nil && l.sc.Server != nil {
+		info = l.sc.Server.Info()
+	}
 	var out []*explorerNode
-	if l.sc == nil || l.sc.Server == nil || !resourceGovernorHidden(l.sc.Server.Info()) {
+	if !resourceGovernorHidden(info) {
 		out = append(out, resourceGovernorNode(l))
 	}
 	if !databaseScopedXEvents(l.sc) {
 		out = append(out, l.node("Extended Events", NodeExtendedEvents, "", "", ""))
 	}
-	return append(out, l.node("SQL Server Logs", NodeSQLServerLogs, "", "", "")), nil
+	out = append(out, l.node("SQL Server Logs", NodeSQLServerLogs, "", "", ""))
+	if !databaseMailHidden(info) {
+		out = append(out, databaseMailNode(l))
+	}
+	return out, nil
 }
 
 // loadSQLServerLogsChildren lists the instance's error log files, current

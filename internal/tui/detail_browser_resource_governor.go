@@ -145,7 +145,10 @@ func (ls liveStats) poolRequests(poolID int) (active, queued int, ok bool) {
 // resourcePoolsFolderDetail is every pool's limits beside its live load — the
 // one place to answer "which pool is starved": queued requests and memory
 // grant waiters are the starvation, CPU and memory the consumption.
-func resourcePoolsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+//
+// Each row's object goes to objs, built-ins included, so the pane's Delete
+// covers the rows and withholds itself, naming the row, on a built-in.
+func resourcePoolsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	pools, err := sc.Server.ResourcePools(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -174,6 +177,7 @@ func resourcePoolsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 			row[10] = strconv.FormatInt(st.UsedMemoryKB, 10)
 		}
 		rows = append(rows, row)
+		*objs = append(*objs, nodeData{Type: NodeResourcePool, Name: p.Name, IsSystem: p.IsSystem()})
 	}
 	return []string{"Name", "Min CPU %", "Max CPU %", "Cap CPU %", "Min mem %", "Max mem %",
 		"Active", "Queued", "Grant waits", "CPU ms", "Used KB"}, rows, nil
@@ -223,7 +227,7 @@ func resourcePoolDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 
 // workloadGroupsFolderDetail is one pool's groups, their limits beside their
 // live load.
-func workloadGroupsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+func workloadGroupsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	all, err := sc.Server.WorkloadGroups(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -257,6 +261,7 @@ func workloadGroupsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node
 			row[9] = strconv.FormatInt(st.TotalCPUUsageMS, 10)
 		}
 		rows = append(rows, row)
+		*objs = append(*objs, nodeData{Type: NodeWorkloadGroup, Name: g.Name, IsSystem: g.IsSystem(), RGPool: g.PoolName})
 	}
 	return []string{"Name", "Importance", "Max grant %", "Max CPU sec", "MAXDOP", "Max requests",
 		"Active", "Queued", "Requests", "CPU ms"}, rows, nil
@@ -320,7 +325,7 @@ func optionalFloatText(v *float64) string {
 // externalResourcePoolsFolderDetail is every external pool's limits. The
 // DMV behind external pools is not read by gosmo, so there are no live
 // columns here.
-func externalResourcePoolsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+func externalResourcePoolsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	pools, err := sc.Server.ExternalResourcePools(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -338,6 +343,7 @@ func externalResourcePoolsFolderDetail(ctx context.Context, sc *dbconn.ServerCon
 			strconv.Itoa(p.MaxCPUPercent), strconv.Itoa(p.MaxMemoryPercent),
 			zeroAs(p.MaxProcesses, "Unlimited"), externalPoolAffinityText(p.Affinity),
 		})
+		*objs = append(*objs, nodeData{Type: NodeExternalResourcePool, Name: p.Name, IsSystem: p.IsSystem()})
 	}
 	return []string{"Name", "Max CPU %", "Max mem %", "Max processes", "CPU affinity"}, rows, nil
 }

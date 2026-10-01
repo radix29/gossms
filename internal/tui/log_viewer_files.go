@@ -104,7 +104,7 @@ func (lv *LogViewer) enumeratedFamilies() []gosmo.ErrorLogType {
 // toggles edit pending, so dismissing the menu leaves the grid describing the
 // files it actually holds.
 //
-// The set may span both families. Archive numbers are not comparable across
+// The set may span families. Archive numbers are not comparable across
 // them, which is why the family selector, the file list and Recycle each still
 // mean exactly one family — but a merged read is per-ref and a row carries its
 // own logFileRef, so a mixed set costs only the family in the labels. Reading

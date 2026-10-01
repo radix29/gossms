@@ -234,9 +234,9 @@ connected SQL Server version or engine edition are hidden or disabled.
 - **Administration tools** for properties, permissions, backup and restore
   (to disk or Azure Storage), attach and detach, indexes, statistics, and
   multi-object delete.
-- **Monitoring** through Activity Monitor, blocking chains, sessions, and SQL
-  Server and SQL Agent logs — several log files, from either or both, can be
-  merged into one date-sorted view.
+- **Monitoring** through Activity Monitor, blocking chains, sessions, and the
+  SQL Server, SQL Agent and Database Mail logs — several log files, from any
+  of them, can be merged into one date-sorted view.
 - **Extended Events sessions** under Management: each session with its
   targets, running or stopped at a glance, a details view of what it collects
   and where, Start/Stop, scripting and delete. **New Session** and **Session
@@ -270,6 +270,26 @@ connected SQL Server version or engine edition are hidden or disabled.
   Profiler folder under Extended Events) starts a Standard or TSQL trace — its
   own `gossms_QuickSession*` session, created on first use — and opens it live.
   On a Managed Instance the session keeps its events in a `ring_buffer`.
+- **Resource Governor** under Management: resource pools with their workload
+  groups nested under them, and external resource pools; pools and groups
+  show live counters beside their limits; the node's label says whether the governor is
+  disabled or has a reconfiguration pending. **Resource Governor Properties**
+  edits the enabled state, the classifier (pick a function in master, or
+  start one from a template), the I/O limit, and every pool and group on its
+  own page; Apply runs the changes in dependency order and then puts them in
+  force — or keeps a disabled governor disabled. Enable, Disable,
+  Reconfigure, Reset Statistics, Delete and Script as from the tree. Pool
+  affinity is shown and scripted, not edited.
+- **Database Mail** under Management: status, queues, profiles, accounts and
+  recent failed items at a glance. **Database Mail Properties** replaces
+  SSMS's wizard — 'Database Mail XPs', SMTP accounts (a blank password keeps
+  the stored one), profiles with their accounts in failover order, public and
+  private profile security, and the system parameters — in one Apply.
+  **Send Test E-Mail** waits for the outcome and shows the SMTP error when
+  delivery fails; Start/Stop, scripting, and the Database Mail log with
+  Delete... for old rows. Configuring needs `db_owner` in msdb or CONTROL
+  SERVER, not sysadmin (a Basic-auth account also needs ALTER ANY
+  CREDENTIAL); members of `DatabaseMailUserRole` can send test mail.
 - **Azure SQL Managed Instance** support, including an Activity Monitor
   Instance tab showing CPU, storage, I/O and the resource governor's limits.
 - **Least-privilege operation**: unavailable actions are disabled and missing

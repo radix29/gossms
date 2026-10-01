@@ -318,6 +318,17 @@ func isPropertyValueColumns(cols []string) bool {
 	return len(cols) == 2 && cols[0] == "Property" && cols[1] == "Value"
 }
 
+// Retitle re-reads the title from node's label when node is the one shown.
+// A label re-read in place (the Resource Governor and Database Mail nodes'
+// state) lands after the Refresh that re-fetched the grid, which titled the
+// pane with the old label. Nil-safe like Invalidate.
+func (db *DetailBrowser) Retitle(node *explorerNode) {
+	if db == nil || node == nil || db.currentNode != node {
+		return
+	}
+	db.title = fmt.Sprintf("Object Explorer Details — %s", node.label)
+}
+
 // Invalidate drops any cached detail data for node, so every Refresh action
 // reaches the Detail Browser and not just the tree. A node on screen is
 // refetched at once rather than on reselect. Nil-safe.
@@ -768,17 +779,20 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeResourceGovernor:
 		return resourceGovernorDetail(ctx, sc)
 	case NodeResourcePools:
-		return resourcePoolsFolderDetail(ctx, sc, node)
+		return resourcePoolsFolderDetail(ctx, sc, node, objs)
 	case NodeResourcePool:
 		return resourcePoolDetail(ctx, sc, node)
 	case NodeWorkloadGroups:
-		return workloadGroupsFolderDetail(ctx, sc, node)
+		return workloadGroupsFolderDetail(ctx, sc, node, objs)
 	case NodeWorkloadGroup:
 		return workloadGroupDetail(ctx, sc, node)
 	case NodeExternalResourcePools:
-		return externalResourcePoolsFolderDetail(ctx, sc, node)
+		return externalResourcePoolsFolderDetail(ctx, sc, node, objs)
 	case NodeExternalResourcePool:
 		return externalResourcePoolDetail(ctx, sc, node)
+
+	case NodeDatabaseMail:
+		return databaseMailDetail(ctx, sc)
 
 	case NodeStoredProcedure, NodeFunction, NodeTrigger:
 		return moduleDetail(ctx, sc, node)

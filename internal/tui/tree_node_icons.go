@@ -245,6 +245,8 @@ func objectIconEmoji(t NodeType) rune {
 		return '👥'
 	case NodeExternalResourcePool:
 		return '🧪'
+	case NodeDatabaseMail:
+		return '📮'
 	case NodeLoading:
 		return '⏳'
 	case NodeError:
@@ -404,6 +406,8 @@ func objectIconSymbols(t NodeType) rune {
 		return '⁂'
 	case NodeExternalResourcePool:
 		return '◓'
+	case NodeDatabaseMail:
+		return '✆'
 	case NodeLoading:
 		return '…'
 	case NodeError:

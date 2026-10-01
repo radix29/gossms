@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 
@@ -221,6 +222,21 @@ var (
 	scriptEventSession serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptEventSession(ctx, n.Name)
 	}
+	scriptResourceGovernor serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptResourceGovernor(ctx)
+	}
+	scriptResourcePool serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptResourcePool(ctx, n.Name)
+	}
+	scriptWorkloadGroup serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptWorkloadGroup(ctx, n.Name)
+	}
+	scriptExternalResourcePool serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptExternalResourcePool(ctx, n.Name)
+	}
+	scriptDatabaseMail serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptDatabaseMail(ctx)
+	}
 )
 
 // scriptables is the per-type table. Verb order follows SSMS: CREATE, ALTER,
@@ -333,6 +349,24 @@ var scriptables = map[NodeType]scriptable{
 	// "Session", as SSMS words it. The running state is not scripted — see
 	// gosmo's buildEventSessionScript.
 	NodeEventSession: {"Session", eventSessionScriptVerbs()},
+
+	// The configuration scripts as ALTER only: it always exists, and DROP
+	// means nothing for it. Its script ends in RECONFIGURE or DISABLE, per
+	// the stored state — see gosmo's ScriptResourceGovernor.
+	NodeResourceGovernor: {"Resource Governor", []scriptVerb{{"ALTER To", serverDDL(gosmo.ScriptAlter, scriptResourceGovernor)}}},
+	// A pool's or group's script ends in a comment, not RECONFIGURE, which
+	// would also enable a disabled governor for whoever runs it. The
+	// built-ins, which gosmo scripts as an ALTER and refuses to DROP, offer
+	// no Script item: scriptMenuItems withholds it from every system node.
+	NodeResourcePool:         {"Resource Pool", serverDDLVerbs(scriptResourcePool)},
+	NodeWorkloadGroup:        {"Workload Group", serverDDLVerbs(scriptWorkloadGroup)},
+	NodeExternalResourcePool: {"External Resource Pool", serverDDLVerbs(scriptExternalResourcePool)},
+
+	// The whole configuration — accounts, profiles with their accounts and
+	// grants, system parameters — as CREATE only: gosmo refuses DROP, since
+	// no one statement removes a configuration. Passwords are placeholders.
+	// 'Database Mail XPs' is not in it; it is a server option.
+	NodeDatabaseMail: {"Database Mail", []scriptVerb{{"CREATE To", serverDDL(gosmo.ScriptCreate, scriptDatabaseMail)}}},
 }
 
 // indexMaintenanceVerbs are the three maintenance statements an index
@@ -526,7 +560,7 @@ func (a *App) generateScript(sc *db.ServerConn, n nodeData, v scriptVerb, then f
 	if !a.requireConn(sc) {
 		return
 	}
-	a.setStatus("Scripting " + n.Name + "...")
+	a.setStatus("Scripting " + cmp.Or(n.Name, scriptables[n.Type].noun) + "...")
 	// safegoRepair, not safego: the status line is latched to "Scripting..."
 	// before the goroutine starts and only the posted callback clears it, so a
 	// panic would leave the app claiming to still be working.
@@ -560,9 +594,15 @@ func (a *App) saveScriptAs(n nodeData, text string) {
 
 // scriptFileName is the name the save prompt starts on — the object's, the
 // way SSMS proposes one.
+//
+// A singleton node has no name — Resource Governor, Database Mail — and is
+// proposed under its noun, rather than as ".sql".
 func scriptFileName(n nodeData) string {
-	if n.Schema != "" {
+	switch {
+	case n.Schema != "":
 		return n.Schema + "." + n.Name + ".sql"
+	case n.Name == "":
+		return scriptables[n.Type].noun + ".sql"
 	}
 	return n.Name + ".sql"
 }

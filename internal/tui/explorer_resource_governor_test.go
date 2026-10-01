@@ -225,7 +225,7 @@ func TestEmptyResourceGovernorCatalogIsNotVisibleNotEmpty(t *testing.T) {
 			t.Errorf("%s with an empty catalog = %v, want the one not-visible row", name, labelsOfNodes(children))
 		}
 	}
-	if _, _, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{}); !errors.Is(err, errResourceGovernorNotVisible) {
+	if _, _, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{}, new([]nodeData)); !errors.Is(err, errResourceGovernorNotVisible) {
 		t.Errorf("pools Details with an empty catalog: err %v, want errResourceGovernorNotVisible", err)
 	}
 }
@@ -297,7 +297,7 @@ func cell(t *testing.T, cols []string, rows [][]string, name, col string) string
 func TestResourcePoolsDetailShowsLiveLoadPerPool(t *testing.T) {
 	ctx := context.Background()
 	sc := newFakeConnEdition(t, 3, "16.0.4085.2", append(append(rgPools(), rgStats()...), rgGroups())...)
-	cols, rows, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{data: nodeData{Type: NodeResourcePools}})
+	cols, rows, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{data: nodeData{Type: NodeResourcePools}}, new([]nodeData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestResourcePoolsDetailWithoutViewServerStateLeavesLiveColumnsBlank(t *test
 	sc := newFakeConnEdition(t, 3, "16.0.4085.2", append(rgPools(),
 		fakeResponse{match: rgPoolStatsRead, err: denied},
 		fakeResponse{match: rgGrpStatsRead, err: denied})...)
-	cols, rows, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{data: nodeData{Type: NodeResourcePools}})
+	cols, rows, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{data: nodeData{Type: NodeResourcePools}}, new([]nodeData))
 	if err != nil {
 		t.Fatalf("the view failed instead of degrading: %v", err)
 	}

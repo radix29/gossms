@@ -64,6 +64,14 @@ type objectOp struct {
 	// renameWarning is a question asked between the new-name prompt and the
 	// rename itself, for a rename that costs more than the name change.
 	renameWarning string
+	// settle runs once after a delete's drops, when any landed, for a family
+	// whose DROP is stored but not in force until a further statement —
+	// Resource Governor's RECONFIGURE. It runs under Script too, so the
+	// script shows it. A delete comes from one folder, so one family's
+	// settle serves the batch. settled then refreshes whatever beyond the
+	// deleted node's folder shows that state, settle failing or not.
+	settle  func(ctx context.Context, sc *db.ServerConn) error
+	settled func(a *App, sc *db.ServerConn)
 }
 
 // dbOf is the database a node's object lives in.
@@ -633,6 +641,24 @@ var objectOps = map[NodeType]objectOp{
 		},
 		// No rename: ALTER EVENT SESSION has no WITH NAME.
 	},
+	// Resource Governor. A drop is stored and then applied at once — see
+	// applyResourceGovernor — so the tree and what is in force agree, as
+	// they do after a Properties Apply. The built-ins are IsSystem, which
+	// withholds Delete. No rename: T-SQL has none for any of the three.
+	NodeResourcePool: rgObjectOp("Resource Pool",
+		"The drop is refused while a workload group uses it — move or delete its groups first. "+rgDropApplied,
+		func(s *gosmo.Server, name string) rgDroppable { return s.ResourcePoolRef(name) }),
+	// The drop itself is accepted with sessions in the group, and applying it
+	// is what is refused (Msg 10904), so the warning names that. A disabled
+	// governor ends in DISABLE, which applies nothing, so there the refusal
+	// waits for the next Enable — verified live in W7.
+	NodeWorkloadGroup: rgObjectOp("Workload Group",
+		"Applying the drop is refused while a session is in the group: those sessions must end first (on a disabled governor, enabling it is refused until they do). "+rgDropApplied,
+		func(s *gosmo.Server, name string) rgDroppable { return s.WorkloadGroupRef(name) }),
+	NodeExternalResourcePool: rgObjectOp("External Resource Pool",
+		"The drop is refused while a workload group uses it. "+rgDropApplied,
+		func(s *gosmo.Server, name string) rgDroppable { return s.ExternalResourcePoolRef(name) }),
+
 	NodeServerRole: {
 		noun: "Server Role",
 		solo: true,
@@ -729,6 +755,28 @@ var objectOps = map[NodeType]objectOp{
 			return o.Rename(ctx, newName)
 		},
 	},
+}
+
+// rgDropApplied ends every Resource Governor delete's warning.
+const rgDropApplied = "Resource Governor is then reconfigured, so the drop takes effect at once; a disabled governor stays disabled."
+
+// rgDroppable is a gosmo Resource Governor handle — pool, group or external
+// pool.
+type rgDroppable interface{ Drop(context.Context) error }
+
+// rgObjectOp is the op the three Resource Governor families share: a
+// lookup-free handle's Drop, settled by applyResourceGovernor and the node's
+// label re-read.
+func rgObjectOp(noun, warning string, ref func(*gosmo.Server, string) rgDroppable) objectOp {
+	return objectOp{
+		noun:    noun,
+		warning: warning,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return ref(sc.Server, n.Name).Drop(ctx)
+		},
+		settle:  applyResourceGovernor,
+		settled: (*App).refreshResourceGovernorLabel,
+	}
 }
 
 // schemaObjectHandle is a gosmo handle for a schema-scoped object that can be

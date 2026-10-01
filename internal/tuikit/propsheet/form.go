@@ -438,7 +438,13 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 	if f.sbDragging && f.handleScrollbarDrag(ev, f.contentWidth()) {
 		return true
 	}
-	if row := f.Focused(); row != nil {
+	// A press goes to the focused row first only while that row is on screen
+	// or has its overlay open. Scrolled out of view, it keeps the rect it was
+	// last drawn at, and a DataGrid claims any press inside that: with an
+	// account picked in Database Mail ▸ Accounts and the page scrolled down to
+	// its Authentication radio, the grid swallowed every click on the radio
+	// (W14). Releases and motion still go to it, so a latch it holds is let go.
+	if row := f.Focused(); row != nil && (ev.Buttons() == tcell.ButtonNone || f.OverlayActive() || f.onScreen(f.focus)) {
 		if mh, ok := row.(MouseHandler); ok && mh.HandleMouse(ev) {
 			return true
 		}
@@ -502,6 +508,12 @@ func (f *Form) handleScrollbarDrag(ev *tcell.EventMouse, w int) bool {
 	line := core.ScrollOffsetForDrag(my-f.rect.Y, f.rect.H, total, f.rect.H)
 	f.scroll = min(f.rowAtLine(line, w), f.maxScroll(w))
 	return true
+}
+
+// onScreen reports whether row i has a band — some of it drawn — in the last
+// Draw.
+func (f *Form) onScreen(i int) bool {
+	return slices.ContainsFunc(f.bands, func(b band) bool { return b.row == i })
 }
 
 // rowAt returns the row whose band contains ev's position, if any.

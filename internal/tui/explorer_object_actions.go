@@ -163,6 +163,9 @@ func (a *App) scriptDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp,
 				break
 			}
 		}
+		if s := settlingOp(ops); err == nil && s != nil {
+			err = s.settle(scriptCtx, sc)
+		}
 		text := script.String()
 		// The database the first object lives in: a selection comes from one
 		// folder, and a server-level principal's is "", which opens the panel on
@@ -240,6 +243,10 @@ func sharedDeleteWarning(ops []*objectOp) string {
 func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, option bool, after func()) {
 	done := 0
 	var failed nodeData
+	// settleErr is the settle step's failure, kept apart from the drops':
+	// those stand either way, and the count still leads the status line.
+	var settleErr error
+	settling := settlingOp(ops)
 	job := progressJob{
 		title:   "Delete Objects",
 		message: fmt.Sprintf("Deleting %d objects...", len(objs)),
@@ -267,12 +274,21 @@ func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, op
 			}
 			if err != nil {
 				failed = n
+				if done > 0 && settling != nil && ctx.Err() == nil {
+					settleErr = settling.settle(ctx, sc)
+				}
 				return err
 			}
 			done++
 		}
+		if settling != nil {
+			settleErr = settling.settle(ctx, sc)
+		}
 		return nil
 	}, func(failedErr error, cancelled bool) {
+		if settling != nil && settling.settled != nil {
+			defer settling.settled(a, sc)
+		}
 		switch {
 		case cancelled && len(objs) == 1:
 			a.setStatus(fmt.Sprintf("Delete of %s %q cancelled", strings.ToLower(ops[0].noun), objectDataName(objs[0])))
@@ -285,6 +301,11 @@ func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, op
 			// landed is what the user has to know before retrying.
 			a.setStatus(fmt.Sprintf("Deleted %d of %d — %s failed: %v",
 				done, len(objs), objectDataName(failed), withPermissionAdvice(failedErr)))
+		case settleErr != nil && len(objs) == 1:
+			a.setStatus(fmt.Sprintf("%s %q deleted, but applying the change failed: %v",
+				ops[0].noun, objectDataName(objs[0]), withPermissionAdvice(settleErr)))
+		case settleErr != nil:
+			a.setStatus(fmt.Sprintf("Deleted %d objects, but applying the change failed: %v", done, withPermissionAdvice(settleErr)))
 		case len(objs) == 1:
 			a.setStatus(fmt.Sprintf("%s %q deleted", ops[0].noun, objectDataName(objs[0])))
 		default:
@@ -298,6 +319,17 @@ func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, op
 			after()
 		}
 	})
+}
+
+// settlingOp is the op whose settle a delete of ops runs, or nil when none
+// has one.
+func settlingOp(ops []*objectOp) *objectOp {
+	for _, op := range ops {
+		if op.settle != nil {
+			return op
+		}
+	}
+	return nil
 }
 
 // renameObject prompts for a new name and applies it. The new name is a

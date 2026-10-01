@@ -158,3 +158,20 @@ func ClassOneTransferRights() []Right {
 func AgentWriteRights() []Right {
 	return []Right{SQLAgentUser, MsdbOwner, ControlServer}
 }
+
+// DatabaseMailConfigRights are what permits configuring Database Mail —
+// accounts, profiles, grants, parameters, Start/Stop, purging the log. Any
+// one of them: no sysmail_* procedure checks sysadmin, so access is ordinary
+// msdb permission, and CONTROL SERVER without sysadmin configures as well
+// (probed on 13 and 17; docs/decisions.md).
+func DatabaseMailConfigRights() []Right {
+	return []Right{MsdbOwner, ControlServer}
+}
+
+// DatabaseMailSendRights are what permits sending through sp_send_dbmail —
+// Send Test E-Mail. DatabaseMailUserRole leads, as the narrowest right that
+// is enough (see AgentWriteRights on the order); a member sends through the
+// profiles granted to them, the other two through any (W8).
+func DatabaseMailSendRights() []Right {
+	return []Right{DatabaseMailUser, MsdbOwner, ControlServer}
+}

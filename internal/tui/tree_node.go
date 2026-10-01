@@ -205,6 +205,7 @@ const (
 	NodeWorkloadGroup
 	NodeExternalResourcePools
 	NodeExternalResourcePool
+	NodeDatabaseMail
 	NodeLoading
 	NodeError
 
@@ -383,6 +384,8 @@ func nodeTypeName(t NodeType) string {
 		return "Workload Group"
 	case NodeExternalResourcePool:
 		return "External Resource Pool"
+	case NodeDatabaseMail:
+		return "Database Mail"
 	default:
 		return "Object"
 	}
@@ -414,7 +417,7 @@ func hasChildren(t NodeType) bool {
 		NodePartitionFunction, NodePartitionScheme, NodeSecurityPolicy,
 		NodeColumnMasterKey, NodeColumnEncryptionKey,
 		NodeEventTarget, NodeXEventProfilerSession,
-		NodeWorkloadGroup, NodeExternalResourcePool,
+		NodeWorkloadGroup, NodeExternalResourcePool, NodeDatabaseMail,
 		NodeLoading, NodeError:
 		return false
 	}
@@ -539,6 +542,18 @@ type nodeData struct {
 	// groups of. The folder's label is the fixed "Workload Groups", and its
 	// Name is left empty as every folder's is.
 	RGPool string
+	// RGPending is the Resource Governor node's "(Reconfiguration pending)":
+	// stored changes waiting for RECONFIGURE on an enabled governor. Its
+	// Reconfigure item is offered only then.
+	RGPending bool
+	// MailState is the Database Mail node's state, as its label shows it, and
+	// MailStateKnown whether it could be read. Start or Stop is offered by
+	// it, and Start, Stop and Send Test E-Mail are withheld while 'Database
+	// Mail XPs' is off, where the server refuses all three (Msg 15281).
+	// MailDisabled is the zero value, so an unread state must not be taken
+	// for it: unknown withholds nothing.
+	MailState      gosmo.MailState
+	MailStateKnown bool
 
 	conn *db.ServerConn
 }

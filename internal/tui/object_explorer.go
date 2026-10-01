@@ -279,6 +279,12 @@ func (oe *ObjectExplorer) RefreshSelected() {
 //     re-primed); the server-scope set is re-probed off the UI goroutine.
 //   - in the Always On subtree, the cached peer connect failures are dropped
 //     (see forgetPeerFailuresForRefresh).
+//
+// And two node-level ones: the Resource Governor and Database Mail nodes'
+// labels carry their state, which Management's loader reads, so a Refresh of
+// the node itself re-reads it in place (refreshResourceGovernorLabel,
+// refreshDatabaseMailLabel) — or a change made from a query window would show
+// only after a Refresh of Management.
 func (oe *ObjectExplorer) Reload(n *explorerNode) {
 	if n == nil || n.retired {
 		return
@@ -294,6 +300,12 @@ func (oe *ObjectExplorer) Reload(n *explorerNode) {
 		}
 	}
 	forgetPeerFailuresForRefresh(sc, n)
+	if n.data.Type == NodeResourceGovernor && sc != nil {
+		oe.app.refreshResourceGovernorLabel(sc)
+	}
+	if n.data.Type == NodeDatabaseMail && sc != nil {
+		oe.app.refreshDatabaseMailLabel(sc)
+	}
 	oe.dropChildren(n)
 	n.data.Loaded = false
 	if n.expanded {

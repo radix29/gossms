@@ -85,6 +85,16 @@ work; close an item by deleting it when fixed.
   `splitLogLines` + `WrapText` do in the Log Viewer's details pane) and keep
   `WrapTextLimit`'s cap across the joined result.
 
+- **B9 — Property-sheet page titles clip silently past 22 columns.** The
+  page list is `pageListWidth` (24, `internal/tuikit/propsheet/sheet.go`)
+  less the `▸ ` marker, with no ellipsis, so "External Resource Pools"
+  (Resource Governor Properties) renders as "External Resource Pool" and
+  "Database Scoped Configurations" (Database Properties) loses its tail. Found
+  in the Resource Governor live run (2026-10-01). Fix: a guard like
+  `TestNoPropertySheetLabelIsTruncated` over `propPage.title` literals, then
+  shorten the offenders — or widen the list, which costs every dialog form
+  width.
+
 ### Verification gaps
 
 - **V2 — Azure Extended Events not run end to end.** Azure SQL Database's database-scoped sessions
@@ -112,11 +122,19 @@ work; close an item by deleting it when fixed.
 
 - **V4 — Resource Governor and Database Mail unverified on Managed
   Instance** (Phase 5 item 24; t-qmi-01 unavailable since 2026-09-30). Both
-  ship shown and ungated on EngineEdition 8, pinned by fake-driver tests only.
+  shipped shown and ungated on EngineEdition 8, pinned by fake-driver tests
+  only (`resourceGovernorHidden`, `databaseMailHidden` in `edition_gate.go`).
   To run when MI is back: RG catalog/DMV reads and `CREATE RESOURCE POOL` /
   `ALTER RESOURCE GOVERNOR` rights; Database Mail `sysmail_*` reads, writes and
   a test send; the gosmo version sweep of every new read; the tmux live pass
   for both. If MI refuses RG DDL, add an `edition_gate.go` entry.
+- **V5 — Edition gates of Phase 5 item 24 never met a real refusal.** Every
+  instance in the estate is Developer, so Resource Governor's rule
+  (Enterprise/Developer on 13–16, plus Standard on 17 —
+  `resourceGovernorSupported`) ships from documentation, pinned by fake-driver
+  tests; Database Mail on Express (procs present, no `DatabaseMail.exe`, so a
+  test mail should sit `unsent` until the dialog's 30 s wait gives up) is
+  unprobed. Run both when a Standard or Express instance is available.
 
 ### Nice to have
 
@@ -132,13 +150,39 @@ work; close an item by deleting it when fixed.
   aren't modelled). Each is its own pass if asked.
 - **N6 — Resource pool affinity is read-only.** `AFFINITY SCHEDULER` /
   `NUMANODE` on resource and external pools is read and scripted but not
-  edited (Phase 5 item 24, decision D3): editing needs a scheduler/NUMA picker
+  edited (Phase 5 item 24; `docs/decisions.md` § Resource Governor and
+  Database Mail): editing needs a scheduler/NUMA picker
   nothing else in gossms has.
 - **N7 — No SQL Server Agent Properties ▸ Alert System.** Agent's mail
   profile (`sp_set_sqlagent_properties @databasemail_profile`) can't be set
   from gossms — there is no Agent Properties dialog at all. Out of scope of
   Phase 5 item 24 (Database Mail); until then operator/job notification mail
   needs it set by T-SQL.
+- **N8 — Database Mail items and log are own-only below sysadmin.**
+  `sysmail_allitems` and `sysmail_event_log` filter on
+  `IS_SRVROLEMEMBER('sysadmin')`, so CONTROL SERVER and msdb db_owner — who
+  configure everything — see only their own items and those items' events,
+  as SSMS's viewer does. Details says "Your failed items" and the log's
+  Delete... warns that it purges unseen rows; the Log Viewer itself says
+  nothing. Reading the base tables (`sysmail_mailitems`, `sysmail_log`),
+  which both may SELECT, would show everything — a gosmo change, relying on
+  undocumented tables. Found in the Phase 5 W14 live run (2026-10-01).
+- **N9 — Resource Governor Properties offers a new pool to Workload Groups
+  only after Apply.** RG's pages load independently with no page-shown hook,
+  so a pool added on Resource Pools is missing from the Workload Groups pool
+  dropdown until Apply. Database Mail solved the same problem with a model
+  shared across pages (`mailModel`, `database_mail_props.go`); RG would need
+  the same. Found in Phase 5 W5 (2026-10-01).
+- **N10 — Phase 5 item 24 rough edges, left as is (2026-10-01).** Send Test
+  E-Mail's status row shows the raw gosmo/mssql error ("gosmo: send test
+  mail: mssql: profile name is not valid (14607)"); View Database Mail Log is
+  offered to a login with no msdb access and opens on "Access denied"; a hint
+  row below the fold (Accounts' "is deleted on Apply") is not scrolled into
+  view; Script Resource Governor as is offered to a VIEW SERVER STATE-only
+  login and fails "not visible" in the status line; an unreadable RG
+  configuration leaves the node label bare, as if enabled
+  (`resourceGovernorState`, deliberate). Each is small; none misleads into a
+  wrong write.
 - **N5 — Other Properties dialogs leave the tree stale after Apply.**
   `PropDialog.onSaved` (`internal/tui/prop_dialog.go`) runs after a write
   lands; only Session Properties sets it (`refreshXESession` reloads the

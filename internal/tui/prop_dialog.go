@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -204,6 +205,107 @@ func runApplySteps(ctx context.Context, fns []propApply) (applyProgress, error) 
 	return p, nil
 }
 
+// applyPlan is what a planned dialog's pages write into instead of the server:
+// steps tagged with a phase, carried out afterwards in phase order. A dialog
+// is planned when its pages edit one configuration whose statements must be
+// ordered across pages and finished once — Resource Governor Properties,
+// where a workload group's pool has to exist before the group moves into it,
+// and the pool cannot be dropped until no group uses it, whichever pages hold
+// those edits; and every Apply ends in one ALTER RESOURCE GOVERNOR
+// RECONFIGURE, wherever the edits were. Page order cannot express either.
+//
+// A planned page's apply is called with a context carrying the plan
+// (applyPlanFrom) and only adds steps; the dialog's run function (showPlanned)
+// then decides how they are carried out. Steps are apply closures in every
+// respect — they run on the pipeline goroutine, under Script Changes too, and
+// never write page state.
+type applyPlan struct {
+	steps []plannedStep
+	// values carries what a page decided for the run function, by key — a
+	// setting the finishing step needs and only that page can say (Resource
+	// Governor's Enabled box). Absent when the page was not dirty.
+	values map[string]any
+}
+
+type plannedStep struct {
+	phase int
+	fn    propApply
+}
+
+type applyPlanKey struct{}
+
+// applyPlanFrom returns the plan a planned page's apply adds its steps to, or
+// nil when the page is applied any other way — which is a wiring bug the
+// page reports rather than writing directly and out of order.
+func applyPlanFrom(ctx context.Context) *applyPlan {
+	p, _ := ctx.Value(applyPlanKey{}).(*applyPlan)
+	return p
+}
+
+// errNotPlanned is a planned page's apply called without a plan.
+var errNotPlanned = errors.New("internal error: this page's changes can only be applied with the rest of the dialog")
+
+// add queues fn to run in phase; steps of one phase run in the order added.
+func (p *applyPlan) add(phase int, fn propApply) {
+	p.steps = append(p.steps, plannedStep{phase: phase, fn: fn})
+}
+
+// set records a value for the run function under key.
+func (p *applyPlan) set(key string, v any) {
+	if p.values == nil {
+		p.values = map[string]any{}
+	}
+	p.values[key] = v
+}
+
+// value is what set recorded under key, if anything.
+func (p *applyPlan) value(key string) (any, bool) {
+	v, ok := p.values[key]
+	return v, ok
+}
+
+// run carries out every step in phase order, stopping at the first error.
+func (p *applyPlan) run(ctx context.Context) error {
+	steps := slices.Clone(p.steps)
+	slices.SortStableFunc(steps, func(a, b plannedStep) int { return a.phase - b.phase })
+	for _, st := range steps {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := st.fn(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// plannedApply folds a planned dialog's dirty pages into one pipeline step:
+// each page's apply plans against a fresh plan, then run carries it out.
+//
+// The step reports a failure that came after a statement had already reached
+// the server as committed, which reloads every page: the plan interleaves the
+// pages' statements, so there is no telling which page's edits landed.
+func plannedApply(fns []propApply, run func(ctx context.Context, plan *applyPlan) error) propApply {
+	return func(ctx context.Context) error {
+		plan := &applyPlan{}
+		planCtx := context.WithValue(ctx, applyPlanKey{}, plan)
+		for _, fn := range fns {
+			if err := fn(planCtx); err != nil {
+				return err
+			}
+		}
+		var wrote atomic.Bool
+		runCtx := gosmo.WithStatementObserver(ctx, func(gosmo.ScriptEntry) { wrote.Store(true) })
+		if err := run(runCtx, plan); err != nil {
+			if wrote.Load() {
+				return applyCommitted(err)
+			}
+			return err
+		}
+		return nil
+	}
+}
+
 // PropDialog is the app-layer orchestrator for propsheet.PropertySheet: it owns
 // the goroutines that load pages and apply edits, translating between the
 // framework's page-index/seq contract and SQL Server calls. One instance is
@@ -251,6 +353,10 @@ type PropDialog struct {
 	// (Session Properties' targets). Never after Script Changes. Reset by
 	// every show, so one dialog's hook never runs for the next.
 	onSaved func()
+
+	// planned, when set, makes this showing's Apply a planned run — see
+	// applyPlan. Set by showPlanned, cleared by every show.
+	planned func(ctx context.Context, plan *applyPlan) error
 }
 
 // NewPropDialog creates the properties dialog and wires its callbacks.
@@ -283,8 +389,21 @@ func NewPropDialog(app *App) *PropDialog {
 // pages is a builder rather than a page set so that it stays behind the guard;
 // evaluated at the call site it would run against a closed connection.
 func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages func() []propPage) {
+	d.showWith(sc, database, title, headerLeft, headerRight, pages, nil)
+}
+
+// showPlanned is show for a dialog whose pages plan their writes rather than
+// make them, and run decides how the plan is carried out — see applyPlan.
+// Reports whether the dialog opened, so a caller can go on to select a page.
+func (d *PropDialog) showPlanned(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages func() []propPage,
+	run func(ctx context.Context, plan *applyPlan) error) bool {
+	return d.showWith(sc, database, title, headerLeft, headerRight, pages, run)
+}
+
+func (d *PropDialog) showWith(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages func() []propPage,
+	planned func(ctx context.Context, plan *applyPlan) error) bool {
 	if !d.app.requireConn(sc) {
-		return
+		return false
 	}
 	if d.cancel != nil {
 		d.cancel()
@@ -294,6 +413,7 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 	d.sc = sc
 	d.database = database
 	d.onSaved = nil
+	d.planned = planned
 	d.detailNode = nil
 	if d.app.detailBrowser != nil {
 		d.detailNode = d.app.detailBrowser.currentNode
@@ -309,6 +429,7 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 	d.SetHeader(headerLeft, headerRight)
 	d.SetPages(titles)
 	d.Show()
+	return true
 }
 
 func (d *PropDialog) onClose() {
@@ -547,6 +668,12 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 	if len(fns) == 0 {
 		noChanges()
 		return
+	}
+	if d.planned != nil {
+		// One step for every dirty page: it either reached the server or it
+		// did not, and a step that did reports itself committed, which
+		// reloads the whole sheet.
+		fns, pages = []propApply{plannedApply(fns, d.planned)}, pages[:1]
 	}
 
 	d.StartApplying(pipelineLabel(runCtx))

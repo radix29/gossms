@@ -45,14 +45,23 @@ type logFileRef struct {
 // across, in the order a mixed selection is merged and labelled in. The order
 // is what breaks a timestamp tie between two families deterministically — see
 // ShowLogs and sortLogRowsDesc.
-var logFamilies = []gosmo.ErrorLogType{gosmo.ErrorLogSQLServer, gosmo.ErrorLogAgent}
+//
+// The Database Mail log is gosmo's own family, read from
+// msdb.dbo.sysmail_event_log rather than a file: one "file", number 0, which
+// cannot be cycled (the Recycle cell purges it instead — deleteMailLog). A
+// login without msdb access fails its enumeration, which leaves it out of the
+// checklist as an instance without an Agent is left out.
+var logFamilies = []gosmo.ErrorLogType{gosmo.ErrorLogSQLServer, gosmo.ErrorLogAgent, gosmo.ErrorLogDatabaseMail}
 
 // logFamilyShortName names a family for a label that already carries other
 // text. gosmo spells the Agent family "SQL Server Agent", which is right on its
 // own and repeats the instance's name in every row of a merged grid.
 func logFamilyShortName(t gosmo.ErrorLogType) string {
-	if t == gosmo.ErrorLogAgent {
+	switch t {
+	case gosmo.ErrorLogAgent:
 		return "Agent"
+	case gosmo.ErrorLogDatabaseMail:
+		return "Mail"
 	}
 	return t.String()
 }
@@ -89,7 +98,7 @@ type LogViewer struct {
 
 	// logType is the family the two selectors address: the one whose files the
 	// file selector lists and the one Recycle acts on. It is *not* a constraint
-	// on sel, which may span both families — it is what the panel means by "the
+	// on sel, which may span families — it is what the panel means by "the
 	// family on screen" for the actions that can only mean one. A selection
 	// entirely of one family sets it; a mixed one leaves it where it was.
 	// Switching it always lands on that family's current log.

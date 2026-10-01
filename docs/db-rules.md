@@ -58,6 +58,14 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   permissions.** A script that grants CONTROL to several users then transfers
   once finds every later grantee refused, which looks like "CONTROL is not
   enough" (a wrong answer on 2026-09-16). Recreate or re-grant between cases.
+- **Probing trap: a procedure that reads a visibility-filtered catalog
+  succeeds and does the wrong thing.** As msdb db_owner,
+  `sysmail_update_account_sp` (even with `@no_credential_change = 1`) and
+  `sysmail_delete_account_sp` return cleanly, but `sys.credentials` is empty
+  to them, so the account's credential is unlinked or orphaned (W14). A probe
+  that checks only "did it error" misses this — check the side effects as sa.
+  Likewise the `sysmail_allitems`/`sysmail_event_log` views filter on
+  `IS_SRVROLEMEMBER('sysadmin')`: CONTROL SERVER sees only its own rows.
 - **Move to Schema is not the Rename/Delete set.** `TRANSFER` needs CONTROL on
   the securable; ALTER on the database, db_ddladmin, ALTER ANY SCHEMA and
   ALTER on the source schema all permit drop and are refused the move (Msg

@@ -240,6 +240,7 @@ var nodeTypeWiring = map[NodeType]nodeWiring{
 	NodeWorkloadGroup:               {class: classObject},
 	NodeExternalResourcePools:       {class: classFolder, filterable: true},
 	NodeExternalResourcePool:        {class: classObject},
+	NodeDatabaseMail:                {class: classObject},
 	NodeLoading:                     {class: classInternal},
 	NodeError:                       {class: classInternal},
 }

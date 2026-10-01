@@ -1002,6 +1002,71 @@ Roadmap item 23. gosmo holds the model, DDL, scripter and readers
   its `*.xel` default there", which was never tried: that pattern lists 149
   internal files and refuses the first). A URL is read as given.
 
+## Resource Governor and Database Mail: what the design settled — do not re-raise
+
+Phase 5 item 24. gosmo holds the model, writes and scripter
+(`resource_governor*.go`, `database_mail*.go`, `ErrorLogDatabaseMail`).
+Unverified on Managed Instance and on non-Enterprise editions:
+`docs/open-threads.md` V4, V5.
+
+- **Database Mail is one leaf with a Properties dialog**, not folders of
+  Accounts / Profiles. SSMS has no tree below it either, and the parts are not
+  independent objects: a profile is an ordered list of accounts, its security
+  a (principal, profile, default) triple. Folders would need cross-node
+  refresh for every edit. The dialog replaces SSMS's Configure Database Mail
+  wizard; its pages see each other's unapplied edits (`mailModel`), so
+  account + profile + grant from nothing is one Apply.
+- **Resource Governor nests workload groups under their pool**, as SSMS does,
+  and lists External Resource Pools on every supported major (≥ 13) with no
+  ML Services probe. The Workload Groups page picks its pool from a dropdown,
+  not from the Pools page's selection.
+- **Pool affinity is read and scripted, not edited** — it needs a
+  scheduler/NUMA picker nothing else in gossms has (`docs/open-threads.md` N6).
+- **The classifier is a picker of schema-bound, parameterless functions in
+  master plus New classifier...**, which closes the dialog (confirming when
+  dirty) and opens a template — every dialog is modal, so a query window
+  opened behind one cannot be used (`docs/ui-rules.md`).
+- **Gate presence on `EngineEdition`, never `serverIsAzure`**: 5 (Azure SQL
+  Database) hides both nodes; 8 (Managed Instance) behaves like on-prem,
+  shown and ungated. RG's edition rule — Enterprise/Developer on 13–16, plus
+  Standard on 17 — is a presence gate (the node expands to "not supported on
+  this edition"), not a greyed menu. MI's
+  `AzureManagedInstance_dbmail_profile` is a Note, not a rule.
+- **Resource Governor writes are applied at once, and disabled stays
+  disabled.** RECONFIGURE on a disabled governor *enables* it, so every
+  Properties Apply and every tree Delete ends in RECONFIGURE when enabled and
+  DISABLE when disabled — never RECONFIGURE + DISABLE, which would classify
+  logins for a moment. gosmo's writes never reconfigure; the caller does.
+  A per-object script ends in a comment, not RECONFIGURE, for the same reason.
+- **A Resource Governor or Database Mail Apply is a phase-ordered plan, not
+  one transaction** (`PropDialog.applyPlan`). Page order cannot express the
+  dependencies (a pool is dropped after its groups move on another page), and
+  gosmo issues each write on its own pooled connection. A failure part-way
+  leaves earlier statements stored (for RG, not in force — RECONFIGURE is
+  last) and every page reloads. Revisit only if gosmo gains a
+  batch/transaction write API.
+- **Nothing in Database Mail is sysadmin-only.** Configuration is
+  `gate.DatabaseMailConfigRights()` = {msdb `db_owner`, CONTROL SERVER};
+  sending is `DatabaseMailSendRights()`, adding `DatabaseMailUserRole`. A
+  Basic-auth account also needs ALTER ANY CREDENTIAL — without it the procs
+  silently unlink or orphan the credential (`docs/db-rules.md`), so an
+  existing Basic account is refused on Apply and on Remove, not merely its
+  password fields.
+- **A blank account password means "keep the credential"**
+  (`@no_credential_change = 1`) only while the user name is unchanged; a new
+  user name needs the password again, and Anonymous/Windows drop the
+  credential. `sysmail_update_account_sp`'s `@username` has no NULL
+  fallback, so the obvious "send only what changed" call would silently turn
+  Basic into anonymous.
+- **Send Test E-Mail is withheld while Database Mail is stopped**: a stopped
+  Database Mail refuses mail (Msg 14641), it does not queue it. The dialog
+  follows the item's *event log*, not only `sent_status` — Windows logs the
+  SMTP error while the item still reads `retrying`, and a 30 s wait for
+  `failed` would never report one.
+- **The Database Mail log is a third Log Viewer family**, with **Delete...**
+  (rows older than a date) in place of Recycle — the log has no files to
+  cycle.
+
 ## By design — not issues, do not re-raise
 
 - **A query window's session is SSMS-like, with three deliberate

@@ -114,10 +114,31 @@ func entraPrincipalsOffered(info *gosmo.ServerInfo) bool {
 // resourceGovernorHidden reports whether Management leaves out the Resource
 // Governor node altogether: on Azure SQL Database (EngineEdition 5) the
 // platform governs and nothing is configurable. A Managed Instance keeps it,
-// shown and unverified (plan-phase5 D5) — which is why this reads the engine
+// shown and unverified (docs/open-threads.md V4) — which is why this reads the engine
 // edition and not serverIsAzure, which is true of both.
 func resourceGovernorHidden(info *gosmo.ServerInfo) bool {
 	return info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
+}
+
+// databaseMailHidden reports whether Management leaves out the Database Mail
+// node: Azure SQL Database (EngineEdition 5) has no msdb and no Database
+// Mail. A Managed Instance keeps it, shown and unverified (V4).
+func databaseMailHidden(info *gosmo.ServerInfo) bool {
+	return info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
+}
+
+// gateResourceGovernorEdition withholds a Resource Governor node's item on an
+// edition without Resource Governor (resourceGovernorSupported), where every
+// read and write behind it would be refused. Applied outside gate, as
+// gateAzure is.
+func gateResourceGovernorEdition(item controls.MenuItem, sc *db.ServerConn) controls.MenuItem {
+	if sc == nil || sc.Server == nil || resourceGovernorSupported(sc.Server.Info()) {
+		return item
+	}
+	item.Enabled = func() bool { return false }
+	item.Note = "N/A"
+	item.NoteWhen = func() bool { return true }
+	return item
 }
 
 // resourceGovernorSupported reports whether the edition implements Resource

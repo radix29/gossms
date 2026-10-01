@@ -332,6 +332,10 @@ var (
 	// permission probe can ask about. See AgentWriteRights.
 	SQLAgentUser = Right{Name: "SQLAgentUserRole", Membership: true, InDB: "msdb"}
 	MsdbOwner    = Right{Name: "db_owner", Membership: true, InDB: "msdb"}
+	// DatabaseMailUser is msdb's DatabaseMailUserRole, whose grants are
+	// EXECUTE on sp_send_dbmail and two more procedures — a membership for
+	// SQLAgentUser's reason. See DatabaseMailSendRights.
+	DatabaseMailUser = Right{Name: "DatabaseMailUserRole", Membership: true, InDB: "msdb"}
 
 	// AlterOnObject is the grant made directly on one object, which no wider
 	// scope reflects: a principal granted ALTER on one table reads 0 for every

@@ -36,7 +36,7 @@ func (lv *LogViewer) buildTools() {
 		{action: lv.showLogFileMenu},
 		{label: "Refresh", action: lv.Refresh},
 		{label: "Search...", action: lv.showSearch},
-		{label: "Recycle...", action: lv.recycle},
+		{label: "Recycle...", action: lv.recycleOrDelete},
 		{label: "Export...", action: lv.export},
 	}
 	lv.refreshToolLabels()
@@ -48,7 +48,8 @@ func (lv *LogViewer) buildTools() {
 // One cell can also be withheld on its own; see toolDisabled.
 func (lv *LogViewer) toolsEnabled() bool { return !lv.busy }
 
-// recycleDenied reports whether the connected login may not cycle a log.
+// recycleDenied reports whether the connected login may not cycle a log —
+// or, on the Database Mail log, purge it (recycleRights).
 //
 // Recycle is the one write on this toolbar, and the Object Explorer's Recycle
 // item is gated on the same right. Gating only there left one action answering
@@ -61,7 +62,33 @@ func (lv *LogViewer) toolsEnabled() bool { return !lv.busy }
 // been refreshed by the time of a click would depend on a draw having
 // happened first.
 func (lv *LogViewer) recycleDenied() bool {
-	return !gate.Allows(lv.conn, "", gate.ControlServer)
+	return !gate.Allows(lv.conn, "", lv.recycleRights()...)
+}
+
+// recycleRights are the alternatives the Recycle cell's write needs for the
+// family on screen. Cycling an error log is CONTROL SERVER;
+// sysmail_delete_log_sp is plain msdb permission, which db_owner in msdb has
+// without any server right (W8).
+func (lv *LogViewer) recycleRights() []gate.Right {
+	if lv.logType == gosmo.ErrorLogDatabaseMail {
+		return mailLogDeleteRights
+	}
+	return []gate.Right{gate.ControlServer}
+}
+
+// mailLogDeleteRights are the alternatives that may purge the Database Mail
+// log.
+var mailLogDeleteRights = gate.DatabaseMailConfigRights()
+
+// recycleOrDelete is the Recycle cell's action. The Database Mail log is a
+// table with no archives to cycle into, so there the cell purges old rows
+// instead (deleteMailLog) — the one way that log is ever trimmed.
+func (lv *LogViewer) recycleOrDelete() {
+	if lv.logType == gosmo.ErrorLogDatabaseMail {
+		lv.deleteMailLog()
+		return
+	}
+	lv.recycle()
 }
 
 // toolDisabled reports whether cell i is inert right now: the whole toolbar is,
@@ -79,7 +106,7 @@ func (lv *LogViewer) toolReason(i int) string {
 		return ""
 	}
 	if i == logToolRecycle && lv.recycleDenied() {
-		return gate.RequiresText(gate.ControlServer)
+		return gate.RequiresText(lv.recycleRights()...)
 	}
 	return ""
 }
@@ -107,7 +134,7 @@ func (lv *LogViewer) runTool(i int) bool {
 		return false
 	}
 	if i == logToolRecycle && lv.recycleDenied() {
-		lv.setStatus(gate.RequiresText(gate.ControlServer))
+		lv.setStatus(gate.RequiresText(lv.recycleRights()...))
 		return false
 	}
 	lv.tools[i].action()
@@ -115,10 +142,14 @@ func (lv *LogViewer) runTool(i int) bool {
 }
 
 // refreshToolLabels updates the two selectors' labels from the current
-// selection.
+// selection, and the Recycle cell's from the family it acts on.
 func (lv *LogViewer) refreshToolLabels() {
 	lv.tools[logToolLogType].label = "Log: " + lv.logType.String() + " ▾"
 	lv.tools[logToolFile].label = "File: " + lv.selectionLabel() + " ▾"
+	lv.tools[logToolRecycle].label = "Recycle..."
+	if lv.logType == gosmo.ErrorLogDatabaseMail {
+		lv.tools[logToolRecycle].label = "Delete..."
+	}
 }
 
 // fileLabel names one log file: from the cached enumeration when there is one,
@@ -181,7 +212,7 @@ func (lv *LogViewer) currentRef() logFileRef {
 // exactly as it was.
 func (lv *LogViewer) multiFile() bool { return len(lv.sel) > 1 }
 
-// multiFamily reports whether the selection spans both log families — what
+// multiFamily reports whether the selection spans more than one log family — what
 // puts the family into every file label. Nothing else turns on it: the read
 // fan-out, the merge and the filter were already per-ref.
 func (lv *LogViewer) multiFamily() bool {

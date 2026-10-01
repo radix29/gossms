@@ -301,6 +301,11 @@ var serverScopedOpRights = map[NodeType][]gate.Right{
 	// There is no ALTER ANY SERVER DDL TRIGGER; CONTROL SERVER is what SQL
 	// Server checks for a server-scoped DDL trigger.
 	NodeServerTrigger: {gate.ControlServer},
+	// Every Resource Governor statement needs CONTROL SERVER: ALTER SETTINGS
+	// and every narrower right were refused (W1, majors 13 and 17).
+	NodeResourcePool:         {gate.ControlServer},
+	NodeWorkloadGroup:        {gate.ControlServer},
+	NodeExternalResourcePool: {gate.ControlServer},
 	// The Agent objects live in msdb, and the msdb role memberships are what
 	// permit them — the same set the Agent menus use.
 	NodeAgentJob:      gate.AgentWriteRights(),

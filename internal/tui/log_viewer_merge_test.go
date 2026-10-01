@@ -429,7 +429,9 @@ func TestLogViewerChecklistOffersBothFamilies(t *testing.T) {
 // cycled family no longer name the files they were chosen from, so a mixed
 // selection is re-anchored whichever family was cycled.
 func TestLogViewerReanchorsAMixedSelectionAfterEitherFamilyIsCycled(t *testing.T) {
-	for _, cycled := range logFamilies {
+	// The two families mixedFiles draws from; the Database Mail log cannot be
+	// cycled (its Recycle cell purges instead).
+	for _, cycled := range []gosmo.ErrorLogType{gosmo.ErrorLogSQLServer, gosmo.ErrorLogAgent} {
 		lv := newTestLogViewer()
 		lv.sel = mixedFiles()
 		lv.reanchorAfterCycle(cycled)

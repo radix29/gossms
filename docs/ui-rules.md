@@ -122,6 +122,12 @@ behind the mouse and async rules.
   reintroduced fall-through. A dialog reacting to edits implements
   `core.ClipboardEditHandler` and checks the target it's handed. `App.pasteInto`
   drops text unless its target is still current (reads are async).
+- **Every dialog is modal: a query window opened from one is unreachable
+  until it closes.** `topDialog()` takes all input, so a button that hands the
+  user T-SQL to edit and run (not Script Changes, which needs no edit) closes
+  the dialog first, confirming when it is `Dirty()`. Resource Governor's New
+  classifier... shipped leaving it open with "create it, then F5 here" —
+  impossible (`rgNewClassifier`).
 - **A tabbed dialog rebuilds its focus ring per tab** rather than skipping
   hidden controls in draw — hidden controls left in the ring take invisible
   keystrokes. Connect's `rebuildFocusable` does this per tab and per
@@ -234,6 +240,10 @@ behind the mouse and async rules.
   may land after commit). `uninterruptible` for statements worse half-stopped
   (Restore from Snapshot, failovers). Batches check `ctx.Err()` per item and
   report via `progressReport`.
+- **A node label re-read in place also re-titles the Details pane** —
+  `DetailBrowser.Retitle(node)` after the label lands. The Refresh that
+  re-fetched the grid titled it first, with the old label (Resource Governor
+  and Database Mail both shipped a "(Disabled)" title over a started view).
 - **An operation that latches UI state before starting uses
   `App.safegoRepair`**, not `safego` — a panic skips the posted release and the
   latch lives forever (inert Log Viewer toolbar, Activity Monitor tab stuck at
