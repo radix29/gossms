@@ -470,9 +470,11 @@ func (d *NewXESessionDialog) buildPages(pf *nxeSessionPrefetch) {
 		case pf.existing.Has(name):
 			return fmt.Errorf("an event session named %q already exists", name)
 		case len(m.events) == 0:
+			//lint:ignore ST1005 the capital is the "Events" page's title
 			return fmt.Errorf("Events: a session needs at least one event — add one from the event library")
 		}
 		if err := storage.validate(); err != nil {
+			//lint:ignore ST1005 the capital is the "Data Storage" page's title
 			return fmt.Errorf("Data Storage: %w", err)
 		}
 		return adv.validate()

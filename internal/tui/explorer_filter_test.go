@@ -125,7 +125,6 @@ func TestNodeFilterMatchesAllCriteria(t *testing.T) {
 // "System Views" child and a failed expand would look like an empty one.
 func TestFilterChildrenKeepsFoldersAndErrors(t *testing.T) {
 	node := &explorerNode{
-		label: "Views",
 		data: nodeData{
 			Type:   NodeViews,
 			Filter: &nodeFilter{criteria: []filterCriterion{{prop: nameProp(), op: opContains, value: "cust"}}},

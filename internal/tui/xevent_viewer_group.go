@@ -51,7 +51,9 @@ func (v *XEventViewer) groupLabel(g *xevent.Group) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat("  ", g.Level))
 	b.WriteString(glyph)
-	b.WriteString(xevent.Header(g.Column, all) + ": " + xeCellText(value))
+	b.WriteString(xevent.Header(g.Column, all))
+	b.WriteString(": ")
+	b.WriteString(xeCellText(value))
 	noun := "events"
 	if g.Count == 1 {
 		noun = "event"
@@ -59,7 +61,10 @@ func (v *XEventViewer) groupLabel(g *xevent.Group) string {
 	fmt.Fprintf(&b, "  (%d %s)", g.Count, noun)
 	for i, a := range v.aggs {
 		if i < len(g.Aggregates) && v.aggColumn(a) < 0 {
-			b.WriteString("  " + a.Label(all) + " = " + aggText(g.Aggregates[i]))
+			b.WriteString("  ")
+			b.WriteString(a.Label(all))
+			b.WriteString(" = ")
+			b.WriteString(aggText(g.Aggregates[i]))
 		}
 	}
 	return b.String()
@@ -206,16 +211,6 @@ func (v *XEventViewer) groupAt(row int) (*xevent.Group, bool) {
 		return nil, false
 	}
 	return v.display[row].group, true
-}
-
-// toggleGroup expands or collapses the group at grid row row.
-func (v *XEventViewer) toggleGroup(row int) bool {
-	g, ok := v.groupAt(row)
-	if !ok {
-		return false
-	}
-	v.setExpanded(g, !v.expanded[g.Key])
-	return true
 }
 
 // setExpanded opens or closes g, leaving the cursor on it.

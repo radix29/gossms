@@ -270,7 +270,7 @@ func (d *newObjectDialog[P]) applyPanicked() {
 	d.SetMessage("Create stopped unexpectedly — see the log for details.", true)
 }
 
-func (d *newObjectDialog[P]) onConfirmDiscard(page int, proceed func()) {
+func (d *newObjectDialog[P]) onConfirmDiscard(_ int, proceed func()) {
 	d.app.confirmDiscardChanges(proceed)
 }
 

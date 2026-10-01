@@ -200,6 +200,7 @@ func (d *SendTestMailDialog) build(pf *sendTestMailPrefetch) *propsheet.Form {
 		}
 		r := mailTestRequest{profile: p, to: strings.TrimSpace(to.Value()), subject: subject.Value(), body: body.Value()}
 		if r.to == "" {
+			//lint:ignore ST1005 the capital is the "To" field's label
 			return mailTestRequest{}, errors.New("To is required")
 		}
 		return r, nil

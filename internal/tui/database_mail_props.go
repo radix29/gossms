@@ -178,7 +178,7 @@ func (a *App) showDatabaseMailPropertiesFor(sc *db.ServerConn, page int) {
 // permission — db_owner there, or CONTROL SERVER — not sysadmin (W8);
 // 'Database Mail XPs' is sp_configure, ALTER SETTINGS. The Accounts page
 // asks ALTER ANY CREDENTIAL itself, for the credential fields alone.
-func databaseMailPropPages(d *PropDialog, sc *db.ServerConn) []propPage {
+func databaseMailPropPages(_ *PropDialog, sc *db.ServerConn) []propPage {
 	model := &mailModel{}
 	configure := gate.DatabaseMailConfigRights()
 	return []propPage{
@@ -343,6 +343,7 @@ func pageMailParameters(sc *db.ServerConn) propPage {
 					// not one to write back.
 					i := logging.Selected()
 					if i < 0 || i >= len(mailLoggingItems) {
+						//lint:ignore ST1005 the capital is the "Logging level" field's label
 						return errors.New("Logging level: choose Normal, Extended or Verbose")
 					}
 					o.LoggingLevel = new(gosmo.MailLoggingLevel(i + 1))

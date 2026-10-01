@@ -86,7 +86,7 @@ func credentialKind(c *gosmo.Credential) string {
 // The folder declares no filter properties (explorer_filter.go), so there is
 // no filterObjects call here — adding one without adding the folder there
 // would filter the pane by a criterion the tree cannot express.
-func cryptographicProvidersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+func cryptographicProvidersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, _ *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	providers, err := sc.Server.CryptographicProviders(ctx)
 	if err != nil {
 		return nil, nil, err

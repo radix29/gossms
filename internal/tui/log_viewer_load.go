@@ -338,7 +338,7 @@ func parseMailLogCutoff(v string) (time.Time, error) {
 	}
 	t, err := parseLogSearchTime(v)
 	if err != nil || t.IsZero() {
-		return time.Time{}, fmt.Errorf("Enter yyyy-mm-dd [hh:mm[:ss]], or %s.", mailLogDeleteAll)
+		return time.Time{}, fmt.Errorf("enter yyyy-mm-dd [hh:mm[:ss]], or %s", mailLogDeleteAll)
 	}
 	return t, nil
 }

@@ -245,7 +245,9 @@ func (v *XEventViewer) insertScript() string {
 	fmt.Fprintf(&b, "-- %d events from %s, exported by goSSMS %s.\n", len(v.shown), source,
 		time.Now().Format("2006-01-02 15:04:05"))
 	b.WriteString("-- timestamp is in the exporting machine's local time.\n")
-	b.WriteString("CREATE TABLE " + table + " (\n")
+	b.WriteString("CREATE TABLE ")
+	b.WriteString(table)
+	b.WriteString(" (\n")
 	cols := make([]string, len(headers))
 	for i, h := range headers {
 		cols[i] = gosmo.QuoteName(h)
@@ -262,7 +264,11 @@ func (v *XEventViewer) insertScript() string {
 			if i > 0 {
 				b.WriteString(";\n")
 			}
-			b.WriteString("INSERT INTO " + table + " (" + colList + ") VALUES\n")
+			b.WriteString("INSERT INTO ")
+			b.WriteString(table)
+			b.WriteString(" (")
+			b.WriteString(colList)
+			b.WriteString(") VALUES\n")
 		} else {
 			b.WriteString(",\n")
 		}
@@ -278,9 +284,13 @@ func (v *XEventViewer) insertScript() string {
 			case types[j] == "bigint" || types[j] == "float":
 				b.WriteString(val.Display())
 			case types[j] == "datetime2(6)":
-				b.WriteString("'" + val.Display() + "'")
+				b.WriteString("'")
+				b.WriteString(val.Display())
+				b.WriteString("'")
 			default:
-				b.WriteString("N'" + strings.ReplaceAll(val.Display(), "'", "''") + "'")
+				b.WriteString("N'")
+				b.WriteString(strings.ReplaceAll(val.Display(), "'", "''"))
+				b.WriteString("'")
 			}
 		}
 		b.WriteString(")")

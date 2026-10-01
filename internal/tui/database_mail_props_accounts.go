@@ -77,10 +77,12 @@ func (e *mailAccountEdit) credentials() (*gosmo.MailCredentials, error) {
 func (e *mailAccountEdit) checkBasic() error {
 	switch {
 	case e.cur.user == "":
+		//lint:ignore ST1005 "Basic" is the Authentication field's option label
 		return errors.New("Basic authentication needs a user name")
 	case e.password == "" && !e.isNew && e.cur.user != e.orig.user:
 		return errors.New("a changed user name needs the password typed again — the stored one cannot be read back")
 	case e.password == "":
+		//lint:ignore ST1005 "Basic" is the Authentication field's option label
 		return errors.New("Basic authentication needs a password")
 	case e.password != e.confirm:
 		return errors.New("the password and its confirmation differ")
