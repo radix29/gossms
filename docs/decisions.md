@@ -1019,9 +1019,19 @@ Unverified on Managed Instance and on non-Enterprise editions:
 - **Resource Governor nests workload groups under their pool**, as SSMS does,
   and lists External Resource Pools on every supported major (≥ 13) with no
   ML Services probe. The Workload Groups page picks its pool from a dropdown,
-  not from the Pools page's selection.
-- **Pool affinity is read and scripted, not edited** — it needs a
-  scheduler/NUMA picker nothing else in gossms has (`docs/open-threads.md` N6).
+  not from the Pools page's selection; the dropdown offers the pool pages'
+  unapplied pools (`rgModel`), so pool + group in it is one Apply.
+- **Pool affinity is an Automatic box and a tick per scheduler** (CPU for an
+  external pool), listed from `Server.Schedulers` with each one's NUMA node —
+  no separate NUMA picker: AFFINITY NUMANODE is stored as the node's
+  schedulers and would read back as ticks anyway, so a node is chosen by
+  ticking its schedulers. Writes are always AFFINITY SCHEDULER/CPU by id.
+  **Processor group 0 only**: the catalog's per-group masks map to ids only
+  there (gosmo's scripter limit), so a pool pinned beyond it, or to a
+  scheduler no longer listed, is shown and not edited rather than having
+  the unshown part dropped on Apply. Unchecking Automatic with nothing
+  ticked is refused on Apply. Without VIEW SERVER STATE the list is
+  unreadable and affinity read-only, with a note. (Phase 5 N6, 2026-10-01.)
 - **The classifier is a picker of schema-bound, parameterless functions in
   master plus New classifier...**, which closes the dialog (confirming when
   dirty) and opens a template — every dialog is modal, so a query window
@@ -1063,9 +1073,39 @@ Unverified on Managed Instance and on non-Enterprise editions:
   follows the item's *event log*, not only `sent_status` — Windows logs the
   SMTP error while the item still reads `retrying`, and a 30 s wait for
   `failed` would never report one.
+- **Mail items and the mail log are read from the base tables below
+  sysadmin.** The documented views, `sysmail_allitems` and
+  `sysmail_event_log`, filter on `IS_SRVROLEMEMBER('sysadmin')`, so CONTROL
+  SERVER and msdb db_owner — who configure everything — would see only their
+  own items and those items' events, not even the log's start/stop rows.
+  gosmo reads the undocumented `sysmail_mailitems`/`sysmail_log` when the
+  caller is not sysadmin and `HAS_PERMS_BY_NAME` grants SELECT on them
+  (msdb db_owner or db_datareader, CONTROL SERVER), the views otherwise, in
+  one server-side `IF … ELSE` batch; the tables are unchanged 13 through 17
+  (live there, 2026-10-01). A DatabaseMailUserRole member still reads its
+  own items only, and Details ("Your failed items") and the Log Viewer's
+  status line ("only your mail items' entries") say so from
+  `Server.MailVisibility`, the same test the reads branch on — not from role
+  probes, which a DENY on the table would contradict.
 - **The Database Mail log is a third Log Viewer family**, with **Delete...**
   (rows older than a date) in place of Recycle — the log has no files to
   cycle.
+- **Agent's mail profile is gated sysadmin or msdb `db_owner`, not
+  CONTROL SERVER** (`gate.AgentPropertiesRights()`). `sp_set_sqlagent_properties`
+  is granted to nobody; under CONTROL SERVER alone it writes the registry and
+  then `sp_sqlagent_notify` refuses Msg 14260 — the change stored, the dialog
+  reporting failure, a running Agent not told. SQLAgent* roles and public get
+  Msg 229. Probed on 17, 2026-10-01. The read (`xp_instance_regread`) works for
+  public, so every login sees the settings.
+- **SQL Server Agent Properties is one page, Alert System's mail profile.**
+  `@email_profile`/`@email_save_in_sent_folder` are the obsolete SQL Mail
+  settings and are not offered. Enabling with no profile is refused on Apply.
+  On Linux the page is a note naming `mssql-conf set
+  sqlagent.databasemailprofile`: the emulated registry accepts the write and
+  keeps nothing, so gosmo refuses both halves there
+  (`ErrAgentSettingsInMssqlConf`). General/Advanced/Job System/Connection/
+  History pages and fail-safe operator/token replacement are later work, not
+  defects.
 
 ## By design — not issues, do not re-raise
 

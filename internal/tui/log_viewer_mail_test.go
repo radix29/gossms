@@ -49,6 +49,39 @@ func newMailLogTestViewer(t *testing.T) (*App, *LogViewer, *fakeInstance) {
 	return a, lv, inst
 }
 
+// A login gosmo reads the views for sees only its own items' events, and the
+// status line says so — an almost empty log otherwise reads as a quiet server
+// (docs/decisions.md). A login reading the whole log, and one whose visibility could not be
+// read, get no note.
+func TestLogViewerSaysWhenTheMailLogIsOwnOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		vis  []fakeResponse
+		note bool
+	}{
+		{"role member", []fakeResponse{mailVisibilityAnswer(false, false)}, true},
+		{"base-table reader", []fakeResponse{mailVisibilityAnswer(true, true)}, false},
+		{"visibility unread", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestApp()
+			sc, _ := newFakeConn(t, append(tc.vis, mailLogResponses()...)...)
+			a.connections = append(a.connections, sc)
+			lv := newTestLogViewer()
+			lv.app, lv.conn = a, sc
+			lv.ShowLog(gosmo.ErrorLogDatabaseMail, 0)
+			drainUntil(t, a, func() bool { return !lv.busy }, "the mail log to load")
+			status := lv.grid.Status()
+			if got := strings.Contains(status, "only your mail items' entries"); got != tc.note {
+				t.Errorf("status %q: own-only note = %v, want %v", status, got, tc.note)
+			}
+			if !strings.Contains(status, "3 entries") {
+				t.Errorf("status %q: want the entry count kept", status)
+			}
+		})
+	}
+}
+
 func TestLogViewerOffersDeleteInsteadOfRecycleOnTheMailLog(t *testing.T) {
 	lv := newTestLogViewer()
 	if got := lv.tools[logToolRecycle].label; got != "Recycle..." {

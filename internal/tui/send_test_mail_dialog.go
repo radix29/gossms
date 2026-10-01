@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -252,7 +253,7 @@ func (d *SendTestMailDialog) send(closeOnQueued bool) {
 				case err != nil && d.run.cancelled:
 					d.SetMessage("Send cancelled. It may have been queued already — see the Database Mail log.", false)
 				case err != nil:
-					d.SetMessage(withPermissionAdvice(err).Error(), true)
+					d.SetMessage(mailSendErrorText(err, req.profile), true)
 				default:
 					d.Dismiss()
 					d.app.followTestMail(sc, id)
@@ -269,6 +270,43 @@ func (d *SendTestMailDialog) send(closeOnQueued bool) {
 			d.app.testMailSettled(sc)
 		})
 	})
+}
+
+// The errors sp_send_dbmail refuses a message with, each captured live on
+// 17 (2026-10-01). Their text is the procedure's own — "profile name is not
+// valid" — behind gosmo's and the driver's prefixes, which said nothing the
+// user could act on (N10).
+const (
+	errMailProfileInvalid = 14607 // no such profile, or not granted to the sender
+	errMailNoDefault      = 14636 // no profile named and no default to fall back on
+	errMailStopped        = 14641 // Database Mail stopped; nothing is queued
+	errMailXPsOff         = 15281 // 'Database Mail XPs' is off
+)
+
+// mailSendErrorText is a refused send as the message line shows it: a plain
+// sentence for the errors sp_send_dbmail is known to raise, the raw error —
+// with any permission advice — otherwise. A mapped error's raw text goes to
+// the log, so nothing the server said is lost. The message line hard-clips,
+// so each sentence is kept short enough for an 80-column dialog.
+func mailSendErrorText(err error, profile string) string {
+	var text string
+	if se, ok := gosmo.AsSQLError(err); ok {
+		switch se.Number {
+		case errMailProfileInvalid:
+			text = fmt.Sprintf("Profile %q does not exist or is not granted to you.", profile)
+		case errMailNoDefault:
+			text = "No default profile for this login — type a profile name."
+		case errMailStopped:
+			text = "Database Mail is stopped and queued nothing — start it first."
+		case errMailXPsOff:
+			text = "Database Mail XPs is off — enable it in Configure Database Mail."
+		}
+	}
+	if text == "" {
+		return withPermissionAdvice(err).Error()
+	}
+	log.Printf("Send Test E-Mail: %v", err)
+	return text
 }
 
 // followTestMail follows a test message sent from a dialog that has since

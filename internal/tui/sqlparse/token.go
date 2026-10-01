@@ -123,7 +123,7 @@ func TokenizeRangeFrom(buf []rune, from, upTo int, stopAtSemicolon bool, initial
 	// Estimate: roughly one token per 8 runes of SQL, so the append loop stops
 	// re-copying a large script's token stream on every keystroke.
 	tokens := make([]Token, 0, (upTo-from)/8+16)
-	r := lexSQL(buf, from, upTo, stopAtSemicolon, initial, &tokens, goScan{}, nil)
+	r := lexSQL(buf, from, upTo, stopAtSemicolon, initial, &tokens, goScan{}, nil, nil)
 	return tokens, r.state, r.boundary, r.quoteStart
 }
 
@@ -174,7 +174,15 @@ type lexResult struct {
 // the sink is how PrefixCache collects the rest, so it can restart a later scan
 // from the last boundary below an edit. One call per statement, so it costs
 // nothing measurable.
-func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, tokens *[]Token, gs goScan, onBoundary func(off int, isGo bool)) lexResult {
+//
+// onLine, when non-nil, is called at every line start reached in LexNormal —
+// from itself included, when it begins a line — with goNext the start of the
+// line after it when it is a "GO" separator inside gs, or -1. These are the
+// positions BatchCache can resume a scan at, or resynchronise one with a
+// previous pass, without saving any lexer state. Returning true stops the walk
+// right there, before the line is lexed: the result then describes [from,
+// start) and the state is LexNormal.
+func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, tokens *[]Token, gs goScan, onBoundary func(off int, isGo bool), onLine func(start, goNext int) bool) lexResult {
 	state := initial
 	// depth is the block-comment nesting level: T-SQL nests them, so
 	// "/* /* */ GO */" is one comment and its GO no separator. Every caller
@@ -189,19 +197,23 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 	// Called at every offset that both begins a line and is reached in
 	// LexNormal state — the only positions a separator can occupy.
 	noteGoLine := func(start int) {
-		if !gs.enabled() || !gs.covers(start) {
-			return
+		goNext := -1
+		if gs.enabled() && gs.covers(start) {
+			if next, _, ok := sqltext.GoSeparatorAt(buf, start, upTo); ok {
+				goNext = next
+				if firstGo < 0 {
+					firstGo = start
+				}
+				lastGo = next
+				if onBoundary != nil {
+					onBoundary(next, true)
+				}
+			}
 		}
-		next, _, ok := sqltext.GoSeparatorAt(buf, start, upTo)
-		if !ok {
-			return
-		}
-		if firstGo < 0 {
-			firstGo = start
-		}
-		lastGo = next
-		if onBoundary != nil {
-			onBoundary(next, true)
+		// Every call site advances i to start straight after this, so
+		// pulling upTo back to it ends the loop at the next test.
+		if onLine != nil && onLine(start, goNext) {
+			upTo = start
 		}
 	}
 	if from == 0 || (from > 0 && buf[from-1] == '\n') {
@@ -406,7 +418,7 @@ func StatementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
 	// confirming the lexer is in LexNormal there. Only rows strictly below the
 	// cursor's own can end its statement.
 	r := lexSQL(buf, upTo, len(buf), true, LexNormal, nil,
-		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil)
+		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil, nil)
 	end := r.boundary
 	if r.firstGo >= 0 && r.firstGo < end {
 		end = r.firstGo
@@ -425,25 +437,10 @@ type PrefixScan struct {
 
 	// GoStart is where the cursor's GO-delimited batch begins: the line after
 	// the last real "GO" above it, or 0. BatchStart is at or after it, being
-	// the later of this and the last top-level ';'. Only the batch scan for
-	// temp-table and table-variable declarations reads it (see ScanBindings) —
-	// a declaration is a different statement from the one using it, so the
-	// ';' half of BatchStart is the boundary it must not stop at.
+	// the later of this and the last top-level ';'. The completion provider
+	// reads it only to gate the batch scan for temp-table and table-variable
+	// declarations (see BatchCache), which finds the same boundary itself.
 	GoStart int
-}
-
-// BatchEndOffset is where the cursor's GO-delimited batch ends: the start of
-// the next bare "GO" line below the cursor's own row, or len(buf).
-// StatementEndOffset's counterpart for the wider span ScanBindings needs, and
-// deliberately not stopped by a ';' — a temp table's declaration is a statement
-// of its own, and every later statement in the batch still sees the name.
-func BatchEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
-	r := lexSQL(buf, upTo, len(buf), false, LexNormal, nil,
-		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil)
-	if r.firstGo >= 0 {
-		return r.firstGo
-	}
-	return len(buf)
 }
 
 // TokensFrom returns the suffix of tokens (already in ascending start order)

@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -109,6 +110,129 @@ func calleeName(fun ast.Expr) string {
 		if pkg, ok := f.X.(*ast.Ident); ok {
 			return pkg.Name + "." + f.Sel.Name
 		}
+	}
+	return ""
+}
+
+// TestNoPropertySheetPageTitleIsTruncated is LabelWidth's ratchet for the page
+// list. A title wider than propsheet.PageTitleWidth is clipped the same way,
+// with no ellipsis: "External Resource Pools" rendered as "External Resource
+// Pool" (B9, 2026-10-01).
+//
+// Titles reach the sheet two ways, both checked: a propPage's title field, and
+// a create dialog's pages slice of string literals.
+func TestNoPropertySheetPageTitleIsTruncated(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	fset := token.NewFileSet()
+	checked := 0
+	check := func(e ast.Expr) {
+		lit, ok := e.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return
+		}
+		title, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return
+		}
+		checked++
+		if w := core.DisplayWidth(title); w > propsheet.PageTitleWidth {
+			t.Errorf("%s: page title %q is %d columns, and the page list cuts it to %d — it will render as %q",
+				fset.Position(lit.Pos()), title, w, propsheet.PageTitleWidth,
+				core.PadRight(title, propsheet.PageTitleWidth))
+		}
+	}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		file, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			kv, ok := n.(*ast.KeyValueExpr)
+			if !ok {
+				return true
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			switch key.Name {
+			case "title":
+				// Only a page's title: a dialog's own title is drawn in its
+				// frame, not the page list.
+				if isPageTitleField(file, kv) {
+					check(kv.Value)
+				}
+			case "pages":
+				if cl, ok := kv.Value.(*ast.CompositeLit); ok {
+					for _, e := range cl.Elts {
+						check(e)
+					}
+				}
+			}
+			return true
+		})
+	}
+	if checked < 100 {
+		t.Fatalf("only %d page titles were checked; the propPage/pages shapes have probably changed", checked)
+	}
+}
+
+// pageTitleTypes are the struct types whose title field is a page title:
+// propPage itself, and the specs whose builder copies title into one.
+var pageTitleTypes = map[string]bool{
+	"propPage":      true,
+	"rgIntPageSpec": true, // rgIntPage: title: spec.title
+}
+
+// isPageTitleField reports whether kv is an element of a pageTitleTypes
+// composite literal, written as T{…}, T[X]{…}, or elided inside []T{{…}}.
+func isPageTitleField(file *ast.File, kv *ast.KeyValueExpr) bool {
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		cl, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		if pageTitleTypes[litTypeName(cl.Type)] && slices.Contains(cl.Elts, ast.Expr(kv)) {
+			found = true
+			return false
+		}
+		if at, ok := cl.Type.(*ast.ArrayType); ok && pageTitleTypes[litTypeName(at.Elt)] {
+			for _, e := range cl.Elts {
+				if inner, ok := e.(*ast.CompositeLit); ok && inner.Type == nil && slices.Contains(inner.Elts, ast.Expr(kv)) {
+					found = true
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// litTypeName is a composite literal type's bare name, generic arguments
+// dropped: rgIntPageSpec[O] is "rgIntPageSpec".
+func litTypeName(e ast.Expr) string {
+	switch t := e.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.IndexExpr:
+		return litTypeName(t.X)
+	case *ast.IndexListExpr:
+		return litTypeName(t.X)
 	}
 	return ""
 }

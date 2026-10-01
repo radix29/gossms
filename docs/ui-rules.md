@@ -227,6 +227,12 @@ behind the mouse and async rules.
   `WithoutCancel`) keep the observer. Unseeable case: a gosmo disable window
   whose re-enable is refused — re-read and mark `applyCommitted` (Audit
   Properties).
+- **A Properties dialog that can rename its object, or change a state its tree
+  label or icon carries, opens with `showReloading`** and the matcher of the
+  folder listing it (`folderOf`). The folder, not the node: its loader builds
+  the label, and a renamed node keeps the old name every later menu action
+  uses. `TestPropertiesApplyReloadsTheFolderListingTheObject` lists them; a new
+  one joins it. Details staleness is `staleDetails`, already generic.
 - **A load a newer one replaces uses `latest` (`latest.go`)**, never a
   hand-rolled token or cancel. `Begin`/`BeginTimeout` supersede and cancel;
   `Done` checks and releases; `Cancel` stops without superseding; `Abandon`

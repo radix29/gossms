@@ -20,6 +20,11 @@ import (
 // independent). The page holds every group on the server; the dropdown only
 // chooses which pool's are listed, so a group moved to another pool leaves the
 // grid and turns up under that pool, unsaved, until Apply.
+//
+// The pools offered are the pool pages' unsaved ones (rgModel): a pool added
+// there can take a group here in the same Apply, and one removed there is no
+// longer a group's destination — though it stays listed in the dropdown while
+// a group is still in it, so the group can be moved out.
 
 // rgImportanceItems are IMPORTANCE's values, as the catalog spells them.
 var rgImportanceItems = []string{
@@ -144,7 +149,19 @@ func rgFloatValidator(lo, hi float64, whole, blank bool) func(string) error {
 	}
 }
 
-func pageRGGroups(sc *db.ServerConn, focus rgFocus) propPage {
+// rgListedPools is the Workload Groups dropdown: the pools the pool page will
+// leave, then any other pool a group is still in.
+func rgListedPools(pools []string, edits []*rgGroupEdit) []string {
+	out := slices.Clone(pools)
+	for _, e := range edits {
+		if !e.removing && !slices.Contains(out, e.cur.pool) {
+			out = append(out, e.cur.pool)
+		}
+	}
+	return out
+}
+
+func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 	return propPage{
 		title: "Workload Groups",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -168,16 +185,23 @@ func pageRGGroups(sc *db.ServerConn, focus rgFocus) propPage {
 			fractional := major == 0 || major >= int(gosmo.SQLServer2019)
 			tempdb := major == 0 || major >= int(gosmo.SQLServer2025)
 
-			poolNames := make([]string, len(pools))
+			loadedPools := make([]string, len(pools))
 			for i, p := range pools {
-				poolNames[i] = p.Name
+				loadedPools[i] = p.Name
 			}
-			// A group can be put in any pool but internal.
-			movable := slices.DeleteFunc(slices.Clone(poolNames), func(n string) bool { return n == "internal" })
-			externalNames := make([]string, len(externals))
+			loadedExternals := make([]string, len(externals))
 			for i, p := range externals {
-				externalNames[i] = p.Name
+				loadedExternals[i] = p.Name
 			}
+			// These are read and replaced on the UI goroutine only.
+			var poolNames, movable, externalNames []string
+			readModel := func() {
+				poolNames = model.pools.get(loadedPools)
+				// A group can be put in any pool but internal.
+				movable = slices.DeleteFunc(slices.Clone(poolNames), func(n string) bool { return n == "internal" })
+				externalNames = model.externals.get(loadedExternals)
+			}
+			readModel()
 
 			loaded := make([]*rgGroupEdit, len(groups))
 			for i, g := range groups {
@@ -200,7 +224,8 @@ func pageRGGroups(sc *db.ServerConn, focus rgFocus) propPage {
 			} else if slices.Contains(poolNames, focus.pool) {
 				startPool = focus.pool
 			}
-			poolRow := propsheet.Select("Resource pool", poolNames, max(slices.Index(poolNames, startPool), 0))
+			listed := rgListedPools(poolNames, edits)
+			poolRow := propsheet.Select("Resource pool", listed, max(slices.Index(listed, startPool), 0))
 			// Which pool is listed is a view, not an edit.
 			poolRow.SetDirtyTracked(false)
 
@@ -345,6 +370,28 @@ func pageRGGroups(sc *db.ServerConn, focus rgFocus) propPage {
 				syncFromSelection()
 			}
 			hint := propsheet.Hint()
+			// warnRemoved says so when the pool listed is one the Resource
+			// Pools page removes: its groups must move out first.
+			warnRemoved := func() {
+				if shown := poolRow.Value(); !slices.Contains(poolNames, shown) {
+					hint.Set(shown + " is removed on the Resource Pools page; move its groups to another pool.")
+				}
+			}
+			refreshPools := func() {
+				commitCurrent()
+				readModel()
+				shown, row := poolRow.Value(), grid.SelectedRow()
+				listed := rgListedPools(poolNames, edits)
+				poolRow.SetItems(listed)
+				if i := slices.Index(listed, shown); i >= 0 {
+					poolRow.SetSelected(i)
+				} else {
+					poolRow.SetSelected(max(slices.Index(listed, "default"), 0))
+					row = 0
+				}
+				reselect(max(min(row, len(visible())-1), 0))
+				warnRemoved()
+			}
 
 			// Listing another pool, and moving the selected group to one, both
 			// change which groups the grid holds.
@@ -352,6 +399,7 @@ func pageRGGroups(sc *db.ServerConn, focus rgFocus) propPage {
 				commitCurrent()
 				hint.Clear()
 				reselect(0)
+				warnRemoved()
 			})
 			moveRow.SetOnChange(func(to string) {
 				if current == nil {
@@ -374,6 +422,8 @@ func pageRGGroups(sc *db.ServerConn, focus rgFocus) propPage {
 				}
 				current = nil
 				reload()
+				// A reverted group may be back in a pool no longer listed.
+				refreshPools()
 			}
 
 			nameField := propsheet.Text("New workload group", "", 24)
@@ -439,8 +489,14 @@ func pageRGGroups(sc *db.ServerConn, focus rgFocus) propPage {
 				propsheet.Buttons(addBtn, removeBtn),
 				hint,
 				propsheet.Note("A new group is added to the pool listed above. internal accepts no changes; default and internal cannot be removed. 0 means unlimited, or the server's own value, for CPU time, timeout, DOP and requests."),
-				propsheet.Note("Pools added on the Resource Pools page are offered here after Apply."),
+				propsheet.Note("Pools added on the Resource Pools and External Pools pages are offered here at once."),
 			)
+
+			// The pool pages' edits change what is listed and offered. The
+			// pool listed stays listed while it is still offered, or holds a
+			// group.
+			model.pools.onChange(func() { refreshPools() })
+			model.externals.onChange(func() { refreshPools() })
 
 			apply := func(ctx context.Context) error {
 				commitCurrent()

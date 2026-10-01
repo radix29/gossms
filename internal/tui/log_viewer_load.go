@@ -106,10 +106,16 @@ func (lv *LogViewer) Load() {
 		// that came straight off a ~150 ms load on 2016 and 2017. (2025 shows
 		// no gain — it appears to serialise the two server-side — and no loss.)
 		enums := make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile, len(logFamilies))
+		mailOwnOnly := false
 		var enumerated sync.WaitGroup
 		enumerated.Add(1)
 		lv.app.safego("enumerating error logs", func() {
 			defer enumerated.Done()
+			if slices.ContainsFunc(refs, func(r logFileRef) bool { return r.Type == gosmo.ErrorLogDatabaseMail }) {
+				visCtx, visCancel := context.WithTimeout(ctx, logReadTimeout)
+				mailOwnOnly = !mailVisibility(visCtx, sc).AllEvents
+				visCancel()
+			}
 			for _, t := range logFamilies {
 				enumCtx, enumCancel := context.WithTimeout(ctx, logReadTimeout)
 				files, err := sc.Server.EnumErrorLogs(enumCtx, t)
@@ -126,6 +132,7 @@ func (lv *LogViewer) Load() {
 				return
 			}
 			lv.busy = false
+			lv.mailOwnOnly = mailOwnOnly
 			for t, files := range enums {
 				lv.files[t] = files
 			}
@@ -353,9 +360,11 @@ func (lv *LogViewer) confirmDeleteMailLog(before time.Time) {
 		what = "the Database Mail log entries logged before " + formatLogSearchTime(before)
 	}
 	warn := "This cannot be undone."
-	if mailItemsOwnOnly(sc) {
+	if lv.mailOwnOnly {
 		// The purge is of the table, not of the filtered view this login
-		// reads (W14).
+		// reads (W14). Unreachable today — DatabaseMailConfigRights, which
+		// Delete needs, all read the whole log (docs/decisions.md) — but kept for a login
+		// granted the purge procedure alone.
 		warn = "You see only the entries of your own mail items; this deletes the others too. It cannot be undone."
 	}
 	lv.busy = true

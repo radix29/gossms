@@ -204,3 +204,27 @@ func TestToggleGridRevertPreservesViewAndSetRowsResetsIt(t *testing.T) {
 		t.Errorf("ScrollRow() after SetRows = %d, want 0 — a new row set starts at the top", got)
 	}
 }
+
+// SetReadOnly is the page's gate: no key toggles a cell, the cells draw as
+// ticks and crosses, and lifting it restores both.
+func TestToggleGridPageReadOnly(t *testing.T) {
+	g := newTestToggleGrid()
+	g.SetReadOnly(true)
+	g.HandleKey(tcell.NewEventKey(tcell.KeyRight, "", tcell.ModNone))
+	g.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
+	g.Toggle(1, 0)
+	if g.Values()[0][0] || !g.Values()[1][0] || g.Dirty() {
+		t.Fatalf("a read-only grid toggled: %v", g.Values())
+	}
+	if got := g.Grid.Row(1)[1]; got != "✓" {
+		t.Errorf("read-only cell drew %q, want ✓", got)
+	}
+	g.SetReadOnly(false)
+	if got := g.Grid.Row(1)[1]; got != "[x]" {
+		t.Errorf("cell after lifting the gate drew %q, want [x]", got)
+	}
+	g.Toggle(0, 0)
+	if !g.Values()[0][0] {
+		t.Error("lifting the gate left the grid inert")
+	}
+}

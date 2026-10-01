@@ -132,8 +132,8 @@ func (a *App) showBackupHistoryFor(sc *db.ServerConn, dbName string) {
 
 // showLoginProperties opens Login Properties for a login on sc.
 func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
-	a.propDialog.show(sc, "", "Login Properties", "Login: "+loginName, "Server: "+sc.Opts.Server,
-		func() []propPage { return loginPropPages(a.propDialog, sc, loginName) })
+	a.propDialog.showReloading(sc, "", "Login Properties", "Login: "+loginName, "Server: "+sc.Opts.Server,
+		func() []propPage { return loginPropPages(a.propDialog, sc, loginName) }, folderOf("", NodeLogins))
 }
 
 // showTablePropertiesFor opens Table Properties for a known connection,
@@ -170,8 +170,13 @@ func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, tab
 // already knows.
 func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key string, isPrimaryKey bool) {
 	title := keyTypeName(isPrimaryKey) + " Properties"
-	a.propDialog.show(sc, dbName, title, "Key: "+key, "Table: "+fqn(schema, table),
-		func() []propPage { return keyPropPages(a.propDialog, sc, dbName, schema, table, key) })
+	// A key is listed twice — under Keys, and its backing index under Indexes.
+	a.propDialog.showReloading(sc, dbName, title, "Key: "+key, "Table: "+fqn(schema, table),
+		func() []propPage { return keyPropPages(a.propDialog, sc, dbName, schema, table, key) },
+		func(d nodeData) bool {
+			return (d.Type == NodeKeys || d.Type == NodeIndexes) &&
+				d.DBName == dbName && d.Schema == schema && d.Name == table
+		})
 }
 
 // showRolePropertiesFor opens Database Role Properties for a known connection,
@@ -228,8 +233,8 @@ func (a *App) showEndpointPropertiesFor(sc *db.ServerConn, epName string) {
 // showAuditPropertiesFor opens Audit Properties for a known connection and
 // audit name.
 func (a *App) showAuditPropertiesFor(sc *db.ServerConn, auditName string) {
-	a.propDialog.show(sc, "", "Audit Properties", "Audit: "+auditName, "Server: "+sc.Opts.Server,
-		func() []propPage { return auditPropPages(sc, auditName) })
+	a.propDialog.showReloading(sc, "", "Audit Properties", "Audit: "+auditName, "Server: "+sc.Opts.Server,
+		func() []propPage { return auditPropPages(sc, auditName) }, folderOf("", NodeAudits))
 }
 
 // showServerAuditSpecificationPropertiesFor opens Server Audit Specification
@@ -311,8 +316,8 @@ func (a *App) showNewBackupDeviceDialog(sc *db.ServerConn) {
 // showUserPropertiesFor opens Database User Properties for a known connection,
 // database, and user name.
 func (a *App) showUserPropertiesFor(sc *db.ServerConn, dbName, userName string) {
-	a.propDialog.show(sc, dbName, "Database User Properties", "User: "+userName, "Database: "+dbName,
-		func() []propPage { return userPropPages(a.propDialog, sc, dbName, userName) })
+	a.propDialog.showReloading(sc, dbName, "Database User Properties", "User: "+userName, "Database: "+dbName,
+		func() []propPage { return userPropPages(a.propDialog, sc, dbName, userName) }, folderOf(dbName, NodeUsers))
 }
 
 // showSchemaPropertiesFor opens Schema Properties for a known connection,
@@ -428,8 +433,9 @@ func (a *App) showDatabaseSnapshotPropertiesFor(sc *db.ServerConn, name string) 
 // showPlanGuidePropertiesFor opens Plan Guide Properties, whose General page
 // can enable and disable the guide.
 func (a *App) showPlanGuidePropertiesFor(sc *db.ServerConn, dbName, name, scopeSchema, scopeName string) {
-	a.propDialog.show(sc, dbName, "Plan Guide Properties", "Plan guide: "+name, "Database: "+dbName,
-		func() []propPage { return planGuidePropPages(sc, dbName, name, scopeSchema, scopeName) })
+	a.propDialog.showReloading(sc, dbName, "Plan Guide Properties", "Plan guide: "+name, "Database: "+dbName,
+		func() []propPage { return planGuidePropPages(sc, dbName, name, scopeSchema, scopeName) },
+		folderOf(dbName, NodePlanGuides))
 }
 
 // The Service Broker families' Properties. Five are read-only for the reason
@@ -480,8 +486,8 @@ func (a *App) showContractPropertiesFor(sc *db.ServerConn, dbName, name string) 
 // writes the queue's status, retention, poison-message handling and
 // activation.
 func (a *App) showBrokerQueuePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Queue Properties", "Queue: "+fqn(schema, name), "Database: "+dbName,
-		func() []propPage { return brokerQueuePropPages(sc, dbName, schema, name) })
+	a.propDialog.showReloading(sc, dbName, "Queue Properties", "Queue: "+fqn(schema, name), "Database: "+dbName,
+		func() []propPage { return brokerQueuePropPages(sc, dbName, schema, name) }, folderOf(dbName, NodeBrokerQueues))
 }
 
 // showBrokerServicePropertiesFor opens the read-only Properties for a Service

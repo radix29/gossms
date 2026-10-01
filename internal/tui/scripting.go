@@ -8,6 +8,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/fileutil"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -369,6 +370,19 @@ var scriptables = map[NodeType]scriptable{
 	NodeDatabaseMail: {"Database Mail", []scriptVerb{{"CREATE To", serverDDL(gosmo.ScriptCreate, scriptDatabaseMail)}}},
 }
 
+// scriptReadRights gate a family's whole Script cascade on the right that
+// makes what the script is built from visible, where a login without it would
+// otherwise be offered the item and see it fail in the status line. A family
+// absent here is not gated: its node is listed only to a login that can read
+// it.
+//
+// Resource Governor's node is the exception to that: it is always listed, and
+// its configuration row is invisible without VIEW ANY DEFINITION — no row, no
+// error — which VIEW SERVER STATE does not imply.
+var scriptReadRights = map[NodeType][]gate.Right{
+	NodeResourceGovernor: {gate.ViewAnyDefinition},
+}
+
 // indexMaintenanceVerbs are the three maintenance statements an index
 // offers below its DDL ones — SSMS's Rebuild/Reorganize/Update Statistics,
 // as a script rather than as an immediate action.
@@ -533,7 +547,11 @@ func (a *App) scriptMenuItems(node *explorerNode) []controls.MenuItem {
 		}
 		verbs = append(verbs, item)
 	}
-	return []controls.MenuItem{{Label: "Script " + s.noun + " as", Sub: verbs}}
+	item := controls.MenuItem{Label: "Script " + s.noun + " as", Sub: verbs}
+	if rights := scriptReadRights[node.data.Type]; len(rights) > 0 {
+		item = gate.Item(item, sc, "", rights...)
+	}
+	return []controls.MenuItem{item}
 }
 
 // scriptDestinations is the third level of the cascade — where the generated

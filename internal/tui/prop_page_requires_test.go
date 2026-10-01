@@ -49,6 +49,7 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"Resource Governor":            rgPropPages(d, sc, rgFocus{}),
 		"Database Mail":                databaseMailPropPages(d, sc),
 		"AG Listener":                  agListenerPropPages(sc, "ag1", "listener"),
+		"SQL Server Agent":             agentPropPages(sc),
 		"Job":                          jobPropPages(d, sc, "nightly"),
 		"Alert":                        alertPropPages(sc, "alert1"),
 		"Operator":                     operatorPropPages(sc, "oncall"),
@@ -227,6 +228,7 @@ func TestAnObjectScopedPageNamesItsSecurable(t *testing.T) {
 // to prevent.
 var propPageConstructors = []string{
 	"agListenerPropPages", "agPropPages", "rgPropPages", "databaseMailPropPages", "alertPropPages",
+	"agentPropPages",
 	"columnEncryptionKeyPropPages", "columnMasterKeyPropPages",
 	"databasePropPages", "fkPropPages", "indexPropPages", "jobPropPages",
 	"keyPropPages", "loginPropPages", "operatorPropPages",

@@ -159,6 +159,15 @@ func AgentWriteRights() []Right {
 	return []Right{SQLAgentUser, MsdbOwner, ControlServer}
 }
 
+// AgentPropertiesRights are what permits SQL Server Agent Properties' writes —
+// sp_set_sqlagent_properties. EXECUTE on it is granted to nobody, so msdb
+// db_owner runs it as owner, and sysadmin by being sysadmin; CONTROL SERVER
+// without sysadmin is refused partway (see Sysadmin), and SQLAgent* roles and
+// public are refused Msg 229 (probed on 17, 2026-10-01).
+func AgentPropertiesRights() []Right {
+	return []Right{MsdbOwner, Sysadmin}
+}
+
 // DatabaseMailConfigRights are what permits configuring Database Mail —
 // accounts, profiles, grants, parameters, Start/Stop, purging the log. Any
 // one of them: no sysmail_* procedure checks sysadmin, so access is ordinary
@@ -174,4 +183,16 @@ func DatabaseMailConfigRights() []Right {
 // profiles granted to them, the other two through any (W8).
 func DatabaseMailSendRights() []Right {
 	return []Right{DatabaseMailUser, MsdbOwner, ControlServer}
+}
+
+// DatabaseMailLogReadRights are what permits reading msdb.dbo.sysmail_event_log
+// — View Database Mail Log. SELECT on the view is granted to
+// DatabaseMailUserRole alone; db_datareader, db_owner and CONTROL SERVER
+// read it as well, and a login holding none (public, or msdb's guest) is
+// refused Msg 229 (probed on 17, 2026-10-01). A DatabaseMailUserRole member
+// alone sees only the events of its own items; the other three read the whole
+// log (docs/decisions.md). An explicit GRANT SELECT on the view is not probed
+// and reads as withheld.
+func DatabaseMailLogReadRights() []Right {
+	return []Right{DatabaseMailUser, MsdbDataReader, MsdbOwner, ControlServer}
 }

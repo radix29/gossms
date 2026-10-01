@@ -8,6 +8,18 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
+// dragThreshold is how far, in cells along either axis, the held pointer must
+// move from the press before an armed Object Explorer drag starts. Below it
+// the press stays a click: no ghost, and the release drops nothing.
+const dragThreshold = 2
+
+// dragPastThreshold reports whether (mx, my) is dragThreshold cells or more
+// from where the armed drag's press landed.
+func (a *App) dragPastThreshold(mx, my int) bool {
+	dx, dy := mx-a.dragStartX, my-a.dragStartY
+	return max(dx, -dx, dy, -dy) >= dragThreshold
+}
+
 // isDraggableNode reports whether t is a concrete SQL Server object that can
 // be dragged from Object Explorer into a query editor — every node except
 // grouping ("folder") nodes, the server root (no name of its own to drop),
@@ -90,7 +102,7 @@ func (a *App) dropExplorerNode(mx, my int) {
 // mouse cursor while a drag is in progress, so it looks like the object's
 // text is being picked up and carried toward the drop target.
 func (a *App) drawDragGhost(s tcell.Screen, screenW int) {
-	if a.dragNode == nil {
+	if a.dragNode == nil || !a.dragActive {
 		return
 	}
 	text := explorerDragText(a.dragNode)

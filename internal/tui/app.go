@@ -44,9 +44,17 @@ type App struct {
 	// editor — armed by a Button1 press over a draggable node, cleared on
 	// release. dragX/dragY track the cursor so draw can render a ghost of the
 	// dragged object's text. See handleMouse/dropExplorerNode.
-	dragNode *explorerNode
-	dragX    int
-	dragY    int
+	//
+	// Arming is not starting: dragActive stays false until the held pointer
+	// moves dragThreshold cells from dragStartX/dragStartY. Until then there is
+	// no ghost and the release drops nothing, so a press held still on a node
+	// is a click, not a drag.
+	dragNode   *explorerNode
+	dragX      int
+	dragY      int
+	dragStartX int
+	dragStartY int
+	dragActive bool
 
 	// mouseButtonDown tracks whether Button1 is held, wherever the gesture
 	// started. The per-widget mouseDragging latches only catch a resend staying

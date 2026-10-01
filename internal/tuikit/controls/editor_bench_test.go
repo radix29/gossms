@@ -160,3 +160,39 @@ func BenchmarkEditorUndoRedo20k(b *testing.B) {
 		e.doc.maxDisplayWidth()
 	}
 }
+
+// BenchmarkEditorTypeWrapped20k is open-threads N4's measurement: one
+// keystroke through HandleKey plus the Draw that follows it, in wrap mode, on
+// a 20,000-line script. Every edit bumps the document version that
+// buildVisualLines memoises on, so each keystroke re-segments the whole
+// document, and visualIndexForCursor then walks every visual row to find the
+// caret — the caret sits near the bottom, the far end of that walk.
+//
+// Typing alternates a rune and a Backspace so the line neither grows without
+// bound nor stops changing. Unwrapped, the same loop is the baseline the
+// wrapped cost is read against.
+func benchmarkEditorTypeDraw20k(b *testing.B, wrap bool) {
+	e := NewEditor(SQLHighlighter(&theme.Default))
+	e.SetWrapMode(wrap)
+	e.SetText(benchScript(20000))
+	e.SetBounds(0, 0, 100, 40)
+	e.cursorRow, e.cursorCol = 19000, 0
+	e.ensureCursorVisible()
+	s := &discardScreen{w: 100, h: 40}
+	ins, del := runeKey('x', tcell.ModNone), key(tcell.KeyBackspace, tcell.ModNone)
+
+	i := 0
+	b.ResetTimer()
+	for b.Loop() {
+		if i%2 == 0 {
+			e.HandleKey(ins)
+		} else {
+			e.HandleKey(del)
+		}
+		i++
+		e.Draw(s)
+	}
+}
+
+func BenchmarkEditorTypeWrapped20k(b *testing.B)   { benchmarkEditorTypeDraw20k(b, true) }
+func BenchmarkEditorTypeUnwrapped20k(b *testing.B) { benchmarkEditorTypeDraw20k(b, false) }

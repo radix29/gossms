@@ -65,7 +65,14 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   to them, so the account's credential is unlinked or orphaned (W14). A probe
   that checks only "did it error" misses this — check the side effects as sa.
   Likewise the `sysmail_allitems`/`sysmail_event_log` views filter on
-  `IS_SRVROLEMEMBER('sysadmin')`: CONTROL SERVER sees only its own rows.
+  `IS_SRVROLEMEMBER('sysadmin')`: CONTROL SERVER sees only its own rows
+  there (gosmo reads the base tables for it instead — `docs/decisions.md`).
+- **Probing trap: CONTROL SERVER is not sysadmin to a procedure that asks.**
+  `sp_set_sqlagent_properties` under CONTROL SERVER alone writes the registry,
+  then its `sp_sqlagent_notify` checks the role and refuses Msg 14260 — an
+  error with the change made. Gate such a write on `gate.Sysadmin`, and check
+  the side effect as sa, not only the error. Likewise a registry write on
+  Linux (`xp_instance_regwrite`) succeeds and stores nothing; read it back.
 - **Move to Schema is not the Rename/Delete set.** `TRANSFER` needs CONTROL on
   the securable; ALTER on the database, db_ddladmin, ALTER ANY SCHEMA and
   ALTER on the source schema all permit drop and are refused the move (Msg

@@ -123,3 +123,13 @@ type ReadOnlyDrawer interface {
 type Browsable interface {
 	Browsable() bool
 }
+
+// Revealer is implemented by a row that can ask, from a handler, to be
+// scrolled into view — a HintRow a page's button sets. TakeReveal reports
+// whether it has asked since the last call, and clears the request; Form.Draw
+// calls it every frame. Without it a hint set below the fold (Accounts'
+// "is deleted on Apply", under the focused Remove button) changes nothing the
+// user can see.
+type Revealer interface {
+	TakeReveal() bool
+}

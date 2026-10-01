@@ -34,8 +34,8 @@ func schedulePropPages(sc *db.ServerConn, scheduleName string) []propPage {
 // showScheduleProperties opens Schedule Properties from Object Explorer's
 // context menu. database is "msdb" so Script Changes' window opens there.
 func (a *App) showScheduleProperties(sc *db.ServerConn, scheduleName string) {
-	a.propDialog.show(sc, "msdb", "Schedule Properties", "Schedule: "+scheduleName, "Server: "+sc.Opts.Server,
-		func() []propPage { return schedulePropPages(sc, scheduleName) })
+	a.propDialog.showReloading(sc, "msdb", "Schedule Properties", "Schedule: "+scheduleName, "Server: "+sc.Opts.Server,
+		func() []propPage { return schedulePropPages(sc, scheduleName) }, folderOf("", NodeAgentSchedules))
 }
 
 func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {

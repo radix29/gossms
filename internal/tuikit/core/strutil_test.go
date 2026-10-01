@@ -267,6 +267,33 @@ func TestWrapTextLimitKeepsSpacesAtSoftBreaks(t *testing.T) {
 	}
 }
 
+// TestWrapParagraphsKeepsLineBreaks pins what WrapText deliberately does not:
+// each line is wrapped on its own, blank lines survive, any line-break style
+// counts, and breaks at either end add no blank line.
+func TestWrapParagraphsKeepsLineBreaks(t *testing.T) {
+	got := WrapParagraphs("\nalpha beta gamma\r\n\r\ndelta\repsilon\n", 11)
+	want := []string{"alpha beta", "gamma", "", "delta", "epsilon"}
+	if !slices.Equal(got, want) {
+		t.Errorf("WrapParagraphs = %q, want %q", got, want)
+	}
+	if w := ParagraphsWidth("ab\n\nabcd  efg\n"); w != 8 {
+		t.Errorf("ParagraphsWidth = %d, want 8 (widest line, whitespace collapsed)", w)
+	}
+}
+
+// The cap folds across paragraph breaks; the gap folds away rather than
+// leaving a doubled or leading space.
+func TestWrapParagraphsLimitFoldsAcrossParagraphs(t *testing.T) {
+	got := WrapParagraphsLimit("one\n\ntwo\nthree", 20, 2)
+	want := []string{"one", "two three"}
+	if !slices.Equal(got, want) {
+		t.Errorf("WrapParagraphsLimit = %q, want %q", got, want)
+	}
+	if got := WrapParagraphsLimit("x", 0, 2); got != nil {
+		t.Errorf("w=0: got %q, want nil", got)
+	}
+}
+
 // TestPadIsExactlyNColumnsForAnyInput pins the contract both functions state:
 // exactly n display columns, whatever they are handed. Malformed UTF-8 broke
 // it — a trailing partial cluster absorbed the padding space and PadRight

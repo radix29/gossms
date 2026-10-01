@@ -104,13 +104,79 @@ func WrapTextLimit(text string, w, maxLines int) []string {
 		return nil
 	}
 	lines, hardBreak := wrapLines(text, w)
+	return foldOverflow(lines, hardBreak, w, maxLines)
+}
+
+// WrapParagraphs is WrapText that keeps the text's line breaks: each line of
+// it (split on \n, \r\n or a lone \r) is a paragraph wrapped on its own, and
+// an empty one stays a blank line — "question?\n\nconsequence" draws as two
+// paragraphs with a gap, where WrapText would fold it into one. Line breaks
+// at either end are dropped, as WrapText drops surrounding whitespace, so a
+// message ending in "\n" gains no trailing blank line.
+func WrapParagraphs(text string, w int) []string {
+	lines, _ := wrapParagraphLines(text, w)
+	return lines
+}
+
+// WrapParagraphsLimit is WrapParagraphs capped at maxLines the way
+// WrapTextLimit caps WrapText: the overflow, paragraph breaks included, is
+// folded into the last line and clipped there with an ellipsis. A paragraph
+// break folds to a space. A w or maxLines of zero or less returns nil.
+func WrapParagraphsLimit(text string, w, maxLines int) []string {
+	if w <= 0 || maxLines <= 0 {
+		return nil
+	}
+	lines, hardBreak := wrapParagraphLines(text, w)
+	return foldOverflow(lines, hardBreak, w, maxLines)
+}
+
+// ParagraphsWidth is the display width of text's widest line as
+// WrapParagraphs draws it (whitespace runs collapsed) — the w that puts each
+// line on one row of its own.
+func ParagraphsWidth(text string) int {
+	width := 0
+	for _, para := range splitParagraphs(text) {
+		width = max(width, DisplayWidth(strings.Join(strings.Fields(para), " ")))
+	}
+	return width
+}
+
+// splitParagraphs is text's lines, with \r\n and a lone \r read as \n and
+// the surrounding whitespace (line breaks included) trimmed first.
+func splitParagraphs(text string) []string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	return strings.Split(strings.TrimSpace(text), "\n")
+}
+
+// wrapParagraphLines is wrapLines run per paragraph and concatenated. The
+// break after a paragraph's last line is a soft one, so a fold joins across
+// it with a space.
+func wrapParagraphLines(text string, w int) (lines []string, hardBreak []bool) {
+	for _, para := range splitParagraphs(text) {
+		l, hb := wrapLines(para, w)
+		lines, hardBreak = append(lines, l...), append(hardBreak, hb...)
+	}
+	return lines, hardBreak
+}
+
+// foldOverflow caps lines at maxLines, folding the surplus into the last line
+// kept and clipping it with an ellipsis; hardBreak says, per line, whether the
+// break after it fell inside a word (rejoined without a space). Blank lines
+// are dropped from the fold.
+func foldOverflow(lines []string, hardBreak []bool, w, maxLines int) []string {
 	if len(lines) <= maxLines {
 		return lines
 	}
 	var rest strings.Builder
 	rest.WriteString(lines[maxLines-1])
 	for i := maxLines; i < len(lines); i++ {
-		if !hardBreak[i-1] {
+		// A blank line (a paragraph gap) contributes nothing, not a space of
+		// its own: folding "a\n\nb" must read "a b", not "a  b" or " b".
+		if lines[i] == "" {
+			continue
+		}
+		if !hardBreak[i-1] && rest.Len() > 0 {
 			rest.WriteByte(' ')
 		}
 		rest.WriteString(lines[i])

@@ -99,7 +99,7 @@ func databaseMailDetail(ctx context.Context, sc *dbconn.ServerConn) ([]string, [
 	}
 
 	heading := fmt.Sprintf("Failed items (latest %d)", databaseMailFailedItems)
-	if mailItemsOwnOnly(sc) {
+	if !mailVisibility(ctx, sc).AllItems {
 		heading = fmt.Sprintf("Your failed items (latest %d)", databaseMailFailedItems)
 	}
 	switch items, err := sc.Server.MailItems(ctx, gosmo.MailItemFilter{Status: gosmo.MailFailed, Max: databaseMailFailedItems}); {
@@ -116,14 +116,18 @@ func databaseMailDetail(ctx context.Context, sc *dbconn.ServerConn) ([]string, [
 	return propertyRows(pairs...)
 }
 
-// mailItemsOwnOnly reports whether sc's login sees only its own mail items
-// and their log entries. sysmail_allitems and sysmail_event_log filter on
-// IS_SRVROLEMEMBER('sysadmin'), so CONTROL SERVER and msdb db_owner see no
-// more of them than DatabaseMailUserRole does (W14). A login not yet probed
-// is not presumed limited.
-func mailItemsOwnOnly(sc *dbconn.ServerConn) bool {
-	caps := sc.Capabilities()
-	return caps.Probed() && !caps.IsSysadmin()
+// mailVisibility is how much of Database Mail's items and log sc's login
+// reads: gosmo reads the base tables for a login that may (sysadmin, msdb
+// db_owner or db_datareader, CONTROL SERVER), and the sysadmin-filtered views
+// otherwise, which leave a DatabaseMailUserRole member its own items and their
+// events (docs/decisions.md). A failed read is not presumed limited — the same answer as
+// before the question was asked.
+func mailVisibility(ctx context.Context, sc *dbconn.ServerConn) gosmo.MailVisibility {
+	v, err := sc.Server.MailVisibility(ctx)
+	if err != nil {
+		return gosmo.MailVisibility{AllItems: true, AllEvents: true}
+	}
+	return v
 }
 
 // isRefusal reports whether err is the server refusing the login — what a

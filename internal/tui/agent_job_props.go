@@ -37,8 +37,9 @@ func jobPropPages(d *PropDialog, sc *db.ServerConn, jobName string) []propPage {
 // showJobPropertiesFor opens Job Properties from Object Explorer's context
 // menu. database is "msdb" so Script Changes' window opens there.
 func (a *App) showJobPropertiesFor(sc *db.ServerConn, jobName string) {
-	a.propDialog.show(sc, "msdb", "Job Properties", "Job: "+jobName, "Server: "+sc.Opts.Server,
-		func() []propPage { return jobPropPages(a.propDialog, sc, jobName) })
+	a.propDialog.showReloading(sc, "msdb", "Job Properties", "Job: "+jobName, "Server: "+sc.Opts.Server,
+		func() []propPage { return jobPropPages(a.propDialog, sc, jobName) },
+		folderOf("", NodeAgentUserJobs, NodeAgentSystemJobs))
 }
 
 // findAgentJob wraps gosmo.Server.JobByName for page closures.

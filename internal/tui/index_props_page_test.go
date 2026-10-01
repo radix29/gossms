@@ -42,7 +42,7 @@ func idxTableResp() fakeResponse {
 // idxListResp answers Table.indexList with one index. The scan order is
 // sys.indexes' own; see gosmo's table.go.
 func idxListResp(name string, indexID int64, opts indexFixture) fakeResponse {
-	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 35, rows: [][]driver.Value{{
+	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 37, rows: [][]driver.Value{{
 		name, indexID, opts.typeDesc,
 		opts.unique, opts.primaryKey, opts.uniqueConstraint, false,
 		opts.fillFactor, opts.filter,
@@ -52,8 +52,9 @@ func idxListResp(name string, indexID int64, opts indexFixture) fakeResponse {
 		"PRIMARY", int64(0), true, "",
 		opts.noRecompute, false,
 		int64(0), int64(0),
-		// The XML form and spatial tessellation columns, all zero.
-		false, "", "", "", nil, nil, nil, nil, "", "", "", "", int64(0),
+		// The XML and selective XML forms and spatial tessellation
+		// columns, all zero.
+		false, "", "", false, "", "", nil, nil, nil, nil, "", "", "", "", int64(0),
 	}}}
 }
 

@@ -161,6 +161,12 @@ type QueryPanel struct {
 	// back to a full scan whenever it cannot justify a resume.
 	completionPrefix sqlparse.PrefixCache
 
+	// completionBatch is the same for the batch-wide temp-table and
+	// table-variable scan: it diffs the text against the last scan's and
+	// re-lexes only the changed window (see sqlparse.BatchCache). Also live
+	// across calls, also never reset.
+	completionBatch sqlparse.BatchCache
+
 	executing bool
 	cancel    context.CancelFunc
 

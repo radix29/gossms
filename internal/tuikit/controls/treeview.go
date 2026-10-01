@@ -29,6 +29,18 @@ type TreeNode struct {
 	Tag      any // application data attached to this node
 }
 
+// onText reports whether virtual column vcol (scrollX already added) falls
+// on n's icon or label, as Draw lays the row out: indent, 4-column expander,
+// then "icon " and the label.
+func (n *TreeNode) onText(vcol int) bool {
+	start := n.Depth*2 + 4
+	w := core.DisplayWidth(n.Label)
+	if n.Icon != 0 {
+		w += core.DisplayWidth(string(n.Icon)) + 1
+	}
+	return vcol >= start && vcol < start+w
+}
+
 // TreeView is a collapsible/expandable tree control. The application populates
 // it with SetNodes and wires up the callbacks it needs — OnExpand, OnCollapse,
 // OnSelect, OnActivate and OnRightClick.
@@ -73,7 +85,7 @@ type TreeView struct {
 	OnCollapse func(nodeID TreeNodeID) // called when a node is collapsed
 	OnSelect   func(nodeID TreeNodeID) // called when selection changes
 	// OnActivate is the selected node's default action — Enter, or a second click
-	// on the row within doubleClickInterval. It reports whether it handled the
+	// on the node's text within doubleClickInterval. It reports whether it handled the
 	// node; false or unset falls back to expand/collapse, which keeps Enter
 	// working on a folder.
 	OnActivate   func(nodeID TreeNodeID) bool
@@ -402,11 +414,16 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 			tv.toggleExpand()
 			return true
 		}
-		if doubleClick {
+		// A double-click on the node's text (icon and label) is Enter: the
+		// default action, else expand/collapse. Blank row space past the label
+		// only selects.
+		if doubleClick && node.onText(vcol) {
 			// Cleared so a third click starts a fresh pair rather than
 			// activating again on every following click.
 			tv.lastClickAt = time.Time{}
-			tv.activateSelected()
+			if !tv.activateSelected() {
+				tv.toggleExpand()
+			}
 		}
 		return true
 	case tcell.Button2: // tcell v3: Button2 is Secondary (right-click); Button3 is Middle.

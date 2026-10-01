@@ -279,7 +279,8 @@ connected SQL Server version or engine edition are hidden or disabled.
   own page; Apply runs the changes in dependency order and then puts them in
   force — or keeps a disabled governor disabled. Enable, Disable,
   Reconfigure, Reset Statistics, Delete and Script as from the tree. Pool
-  affinity is shown and scripted, not edited.
+  affinity is edited on the pool pages: Automatic, or a tick per scheduler
+  (CPU for an external pool) with its NUMA node, in processor group 0.
 - **Database Mail** under Management: status, queues, profiles, accounts and
   recent failed items at a glance. **Database Mail Properties** replaces
   SSMS's wizard — 'Database Mail XPs', SMTP accounts (a blank password keeps

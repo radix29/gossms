@@ -297,6 +297,14 @@ func (f *Form) Draw(s tcell.Screen) {
 	core.FillRect(s, f.rect, ' ', theme.StyleDialog())
 	w := f.contentWidth()
 	f.bands = f.bands[:0]
+	// A row that asked to be seen since the last frame — a hint a handler just
+	// set — is scrolled to here, after the handler has run, whichever path
+	// (key, click, sheet button) ran it.
+	for i, row := range f.rows {
+		if r, ok := row.(Revealer); ok && r.TakeReveal() {
+			f.ensureVisible(i)
+		}
+	}
 	// Nothing else re-clamps f.scroll when the form gets taller (a terminal
 	// resize), which would leave the page starting mid-list with dead space
 	// below and the thumb pinned to the bottom of its track.

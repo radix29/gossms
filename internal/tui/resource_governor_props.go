@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -39,6 +40,14 @@ import (
 // earlier statements stored but not in force — RECONFIGURE is the last step
 // and has not run — and the dialog reloads every page, so what it shows is
 // what the server has.
+//
+// # Pages that see each other's edits
+//
+// A pool added on Resource Pools or External Pools is offered on Workload
+// Groups at once, and one removed there is no longer offered as a group's new
+// pool: creating a pool and a group in it is one Apply, since pools are
+// created first. rgModel carries the names across, as mailModel does for
+// Database Mail.
 
 // The pages of Resource Governor Properties, in order — what rgFocus.page
 // selects.
@@ -96,12 +105,63 @@ func (a *App) showResourceGovernorPropertiesFor(sc *db.ServerConn, focus rgFocus
 // rgPropPages builds the page set. Every write is Resource Governor DDL,
 // which needs CONTROL SERVER and nothing less (W1: ALTER SETTINGS is refused).
 func rgPropPages(d *PropDialog, sc *db.ServerConn, focus rgFocus) []propPage {
+	model := &rgModel{}
 	return []propPage{
 		withRequires(pageRGGeneral(d, sc), "", gate.ControlServer),
-		withRequires(pageRGPools(sc, focus.pool), "", gate.ControlServer),
-		withRequires(pageRGGroups(sc, focus), "", gate.ControlServer),
-		withRequires(pageRGExternalPools(sc, focus.external), "", gate.ControlServer),
+		withRequires(pageRGPools(sc, model, focus.pool), "", gate.ControlServer),
+		withRequires(pageRGGroups(sc, model, focus), "", gate.ControlServer),
+		withRequires(pageRGExternalPools(sc, model, focus.external), "", gate.ControlServer),
 	}
+}
+
+// rgModel is what the pages of one showing share: the pool and external pool
+// names the two pool pages will leave in place — existing ones not being
+// removed, and new ones — for the Workload Groups page.
+type rgModel struct {
+	pools, externals rgNames
+}
+
+// rgNames is one published name list, with mailModel's rules: nil until its
+// page has loaded, when the using page falls back to its own read; the
+// initial names set from the load without notifying, an edit's published
+// from the UI goroutine to the one listener, which registers at the end of
+// its page's load.
+type rgNames struct {
+	mu     sync.Mutex
+	names  []string
+	listen func()
+}
+
+func (n *rgNames) get(fallback []string) []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.names == nil {
+		return fallback
+	}
+	return slices.Clone(n.names)
+}
+
+// set publishes names, and reports whether they changed.
+func (n *rgNames) set(names []string) (changed bool, listener func()) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	changed = n.names == nil || !slices.Equal(n.names, names)
+	// Never nil once published: nil is "not published".
+	n.names = append([]string{}, names...)
+	return changed, n.listen
+}
+
+// publish is set from the UI goroutine: the listener hears of a change.
+func (n *rgNames) publish(names []string) {
+	if changed, fn := n.set(names); changed && fn != nil {
+		fn()
+	}
+}
+
+func (n *rgNames) onChange(fn func()) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.listen = fn
 }
 
 // runResourceGovernorPlan carries out a Resource Governor Apply: the pages'
@@ -346,10 +406,36 @@ type rgIntEdit struct {
 	removing bool
 	orig     []int
 	cur      []int
-	affinity string
+
+	// origAff and curAff are the pool's affinity (rgAffinityEditor).
+	// affFixed marks one the grid cannot show, which affText then renders.
+	origAff, curAff rgAffinity
+	affFixed        bool
+	affText         string
 }
 
-func (e *rgIntEdit) dirty() bool { return e.isNew || e.removing || !slices.Equal(e.cur, e.orig) }
+// changed reports an edit to an existing pool's limits or affinity.
+func (e *rgIntEdit) changed() bool {
+	return !slices.Equal(e.cur, e.orig) || !e.curAff.equal(e.origAff)
+}
+
+func (e *rgIntEdit) dirty() bool { return e.isNew || e.removing || e.changed() }
+
+// affinityText is the pool grid's Affinity cell.
+func (e *rgIntEdit) affinityText() string {
+	if e.affFixed {
+		return e.affText
+	}
+	return e.curAff.text()
+}
+
+// newRGIntEdit is an existing pool's row, its affinity read from the
+// catalog's per-group masks.
+func newRGIntEdit(name string, system, locked bool, vals []int, groups []int, masks []int64, affText string) *rgIntEdit {
+	aff, ok := rgAffinityFromMasks(groups, masks)
+	return &rgIntEdit{name: name, system: system, locked: locked, orig: vals, cur: slices.Clone(vals),
+		origAff: aff, curAff: aff, affFixed: !ok, affText: affText}
+}
 
 // rgIntPageSpec describes a pool page — the two kinds differ only in their
 // fields and their gosmo calls.
@@ -358,20 +444,34 @@ type rgIntPageSpec[O any] struct {
 	noun   string // "resource pool"
 	fields []rgIntField[O]
 	read   func(ctx context.Context) ([]*rgIntEdit, error)
+
+	// affWord and affHeader name what the kind's AFFINITY takes, in a label
+	// and a column heading; affTargets picks those from the schedulers, and
+	// setAffinity puts the write in the options.
+	affWord, affHeader string
+	affTargets         func([]gosmo.Scheduler) []rgAffinityTarget
+	setAffinity        func(o *O, a *gosmo.PoolAffinity)
+	schedulers         func(ctx context.Context) ([]gosmo.Scheduler, error)
+
 	create func(ctx context.Context, name string, o O) error
 	alter  func(ctx context.Context, name string, o O) error
 	drop   func(ctx context.Context, name string) error
+	names  *rgNames // where the page publishes its pool names
 	focus  string
 	notes  []string
 }
 
-// options is the kind's options for every field cur differs from base in.
-func (s rgIntPageSpec[O]) options(cur, base []int) O {
+// options is the kind's options for every field cur differs from base in,
+// affinity included.
+func (s rgIntPageSpec[O]) options(cur, base []int, curAff, baseAff rgAffinity) O {
 	var o O
 	for i, f := range s.fields {
 		if cur[i] != base[i] {
 			f.set(&o, new(cur[i]))
 		}
+	}
+	if !curAff.equal(baseAff) {
+		s.setAffinity(&o, curAff.option())
 	}
 	return o
 }
@@ -402,7 +502,7 @@ var rgExternalPoolFields = []rgIntField[gosmo.ExternalResourcePoolOptions]{
 	{"Max processes", "Maximum processes", 0, 2147483647, "", 0, func(o *gosmo.ExternalResourcePoolOptions, v *int) { o.MaxProcesses = v }},
 }
 
-func pageRGPools(sc *db.ServerConn, focus string) propPage {
+func pageRGPools(sc *db.ServerConn, model *rgModel, focus string) propPage {
 	return rgIntPage(rgIntPageSpec[gosmo.ResourcePoolOptions]{
 		title:  "Resource Pools",
 		noun:   "resource pool",
@@ -416,11 +516,19 @@ func pageRGPools(sc *db.ServerConn, focus string) propPage {
 			for i, p := range pools {
 				vals := []int{p.MinCPUPercent, p.MaxCPUPercent, p.CapCPUPercent,
 					p.MinMemoryPercent, p.MaxMemoryPercent, p.MinIOPSPerVolume, p.MaxIOPSPerVolume}
-				out[i] = &rgIntEdit{name: p.Name, system: p.IsSystem(), locked: p.Name == "internal",
-					orig: vals, cur: slices.Clone(vals), affinity: poolAffinityText(p.Affinity)}
+				groups, masks := make([]int, len(p.Affinity)), make([]int64, len(p.Affinity))
+				for j, a := range p.Affinity {
+					groups[j], masks[j] = a.ProcessorGroup, a.SchedulerMask
+				}
+				out[i] = newRGIntEdit(p.Name, p.IsSystem(), p.Name == "internal", vals, groups, masks, poolAffinityText(p.Affinity))
 			}
 			return out, nil
 		},
+		affWord:     "scheduler",
+		affHeader:   "Scheduler",
+		affTargets:  rgSchedulerTargets,
+		setAffinity: func(o *gosmo.ResourcePoolOptions, a *gosmo.PoolAffinity) { o.Affinity = a },
+		schedulers:  func(ctx context.Context) ([]gosmo.Scheduler, error) { return sc.Server.Schedulers(ctx) },
 		create: func(ctx context.Context, name string, o gosmo.ResourcePoolOptions) error {
 			_, err := sc.Server.CreateResourcePool(ctx, gosmo.CreateResourcePoolRequest{Name: name, Options: o})
 			return err
@@ -429,17 +537,19 @@ func pageRGPools(sc *db.ServerConn, focus string) propPage {
 			return sc.Server.ResourcePoolRef(name).Alter(ctx, o)
 		},
 		drop:  func(ctx context.Context, name string) error { return sc.Server.ResourcePoolRef(name).Drop(ctx) },
+		names: &model.pools,
 		focus: focus,
 		notes: []string{
 			"internal accepts no changes; default and internal cannot be removed. A pool is removed only once no workload group uses it — move or remove its groups on the Workload Groups page in the same Apply.",
-			"A pool added here is offered on the Workload Groups page after Apply. Scheduler affinity is shown, not edited.",
+			"A pool added here is offered on the Workload Groups page at once.",
+			"Affinity: uncheck Automatic and tick the schedulers the pool may run on — all of a NUMA node's for that node. Only processor group 0 is offered; a pool pinned beyond it is shown, not edited.",
 		},
 	})
 }
 
-func pageRGExternalPools(sc *db.ServerConn, focus string) propPage {
+func pageRGExternalPools(sc *db.ServerConn, model *rgModel, focus string) propPage {
 	return rgIntPage(rgIntPageSpec[gosmo.ExternalResourcePoolOptions]{
-		title:  "External Resource Pools",
+		title:  "External Pools",
 		noun:   "external resource pool",
 		fields: rgExternalPoolFields,
 		read: func(ctx context.Context) ([]*rgIntEdit, error) {
@@ -450,11 +560,19 @@ func pageRGExternalPools(sc *db.ServerConn, focus string) propPage {
 			out := make([]*rgIntEdit, len(pools))
 			for i, p := range pools {
 				vals := []int{p.MaxCPUPercent, p.MaxMemoryPercent, p.MaxProcesses}
-				out[i] = &rgIntEdit{name: p.Name, system: p.IsSystem(),
-					orig: vals, cur: slices.Clone(vals), affinity: externalPoolAffinityText(p.Affinity)}
+				groups, masks := make([]int, len(p.Affinity)), make([]int64, len(p.Affinity))
+				for j, a := range p.Affinity {
+					groups[j], masks[j] = a.ProcessorGroup, a.CPUMask
+				}
+				out[i] = newRGIntEdit(p.Name, p.IsSystem(), false, vals, groups, masks, externalPoolAffinityText(p.Affinity))
 			}
 			return out, nil
 		},
+		affWord:     "CPU",
+		affHeader:   "CPU",
+		affTargets:  rgCPUTargets,
+		setAffinity: func(o *gosmo.ExternalResourcePoolOptions, a *gosmo.PoolAffinity) { o.Affinity = a },
+		schedulers:  func(ctx context.Context) ([]gosmo.Scheduler, error) { return sc.Server.Schedulers(ctx) },
 		create: func(ctx context.Context, name string, o gosmo.ExternalResourcePoolOptions) error {
 			_, err := sc.Server.CreateExternalResourcePool(ctx, gosmo.CreateExternalResourcePoolRequest{Name: name, Options: o})
 			return err
@@ -463,9 +581,11 @@ func pageRGExternalPools(sc *db.ServerConn, focus string) propPage {
 			return sc.Server.ExternalResourcePoolRef(name).Alter(ctx, o)
 		},
 		drop:  func(ctx context.Context, name string) error { return sc.Server.ExternalResourcePoolRef(name).Drop(ctx) },
+		names: &model.externals,
 		focus: focus,
 		notes: []string{
-			"External pools govern external scripts (Machine Learning Services). default cannot be removed, nor a pool a workload group uses. Maximum processes: 0 is unlimited. CPU affinity is shown, not edited.",
+			"External pools govern external scripts (Machine Learning Services). default cannot be removed, nor a pool a workload group uses. Maximum processes: 0 is unlimited.",
+			"Affinity: uncheck Automatic and tick the CPUs the pool's processes may run on. Only processor group 0 is offered; a pool pinned beyond it is shown, not edited.",
 		},
 	})
 }
@@ -483,6 +603,13 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			if len(loaded) == 0 {
 				return nil, nil, errResourceGovernorNotVisible
 			}
+			// Not fatal: without VIEW SERVER STATE the affinity is shown and
+			// not edited, and every other limit still is.
+			scheds, schedErr := spec.schedulers(ctx)
+			aff := newRGAffinityEditor(spec.affWord, spec.affHeader, spec.affTargets(scheds), schedErr)
+			for _, e := range loaded {
+				aff.fix(e)
+			}
 			edits := slices.Clone(loaded)
 
 			visible := func() []*rgIntEdit {
@@ -494,6 +621,16 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				}
 				return out
 			}
+			published := func() []string {
+				vis := visible()
+				out := make([]string, len(vis))
+				for i, e := range vis {
+					out[i] = e.name
+				}
+				return out
+			}
+			spec.names.set(published())
+			publish := func() { spec.names.publish(published()) }
 			headers := []string{"Name"}
 			for _, f := range spec.fields {
 				headers = append(headers, f.header)
@@ -507,7 +644,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					for _, v := range e.cur {
 						row = append(row, strconv.Itoa(v))
 					}
-					rows[i] = append(row, orDefault(e.affinity, "Auto"))
+					rows[i] = append(row, e.affinityText())
 				}
 				return rows
 			}
@@ -525,6 +662,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			// commitCurrent folds the detail rows into the selected pool. A
 			// value the row would not validate stays what it was.
 			commitCurrent := func() {
+				aff.commit(current)
 				if current == nil || current.locked {
 					return
 				}
@@ -551,6 +689,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					}
 					row.SetReadOnly(current == nil || current.locked)
 				}
+				aff.show(current)
 			}
 			if i := slices.IndexFunc(visible(), func(e *rgIntEdit) bool { return e.name == spec.focus }); i > 0 {
 				grid.SetSelectedRow(i)
@@ -570,11 +709,12 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			gridRow.RevertFn = func() {
 				edits = edits[:0]
 				for _, e := range loaded {
-					e.cur, e.removing = slices.Clone(e.orig), false
+					e.cur, e.curAff, e.removing = slices.Clone(e.orig), e.origAff, false
 					edits = append(edits, e)
 				}
 				current = nil
 				reload()
+				publish()
 			}
 
 			nameField := propsheet.Text("New "+spec.noun, "", 24)
@@ -592,9 +732,11 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				}
 				hint.Clear()
 				def := spec.defaults()
-				edits = append(edits, &rgIntEdit{name: name, isNew: true, orig: def, cur: slices.Clone(def)})
+				auto := rgAffinity{auto: true}
+				edits = append(edits, &rgIntEdit{name: name, isNew: true, orig: def, cur: slices.Clone(def), origAff: auto, curAff: auto})
 				nameField.SetValue("")
 				reselect(len(visible()) - 1)
+				publish()
 			})
 			removeBtn := widgets.NewButton("Remove", func() {
 				commitCurrent()
@@ -616,6 +758,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					e.removing = true
 				}
 				reselect(min(i, len(visible())-1))
+				publish()
 			})
 
 			rows := []propsheet.Row{
@@ -627,6 +770,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			for _, row := range detail {
 				rows = append(rows, row)
 			}
+			rows = append(rows, aff.rows()...)
 			rows = append(rows,
 				propsheet.Section("Add or remove"),
 				nameField,
@@ -645,15 +789,21 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				}
 				def := spec.defaults()
 				for _, e := range edits {
+					if !e.removing && !e.curAff.auto && len(e.curAff.ids) == 0 {
+						return fmt.Errorf("tick at least one %s for %s %s, or check Automatic %s affinity",
+							spec.affWord, spec.noun, e.name, spec.affWord)
+					}
+				}
+				for _, e := range edits {
 					name := e.name
 					switch {
 					case e.isNew:
-						o := spec.options(e.cur, def)
+						o := spec.options(e.cur, def, e.curAff, rgAffinity{auto: true})
 						plan.add(rgPhaseCreatePools, func(ctx context.Context) error { return spec.create(ctx, name, o) })
 					case e.removing:
 						plan.add(rgPhaseDropPools, func(ctx context.Context) error { return spec.drop(ctx, name) })
-					case !slices.Equal(e.cur, e.orig):
-						o := spec.options(e.cur, e.orig)
+					case e.changed():
+						o := spec.options(e.cur, e.orig, e.curAff, e.origAff)
 						plan.add(rgPhaseAlterPools, func(ctx context.Context) error { return spec.alter(ctx, name, o) })
 					}
 				}

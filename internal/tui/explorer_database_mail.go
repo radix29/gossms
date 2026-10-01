@@ -109,11 +109,12 @@ func (a *App) refreshDatabaseMailLabel(sc *db.ServerConn) {
 // scriptables.
 //
 // Configure Database Mail... is Properties under the name SSMS gives it; both
-// open the same dialog. Neither is gated, nor is reading the log: the
-// dialog's pages come up read-only, each naming the rights it needs, for a
-// login that may read but not change them; a DatabaseMailUserRole member
-// reads the events of their own items, and a login that may read nothing
-// gets the server's refusal in the viewer.
+// open the same dialog. Neither is gated: the dialog's pages come up
+// read-only, each naming the rights it needs, for a login that may read but
+// not change them. View Database Mail Log is gated — a login that may not
+// read sysmail_event_log would open the viewer only on Msg 229 — while a
+// DatabaseMailUserRole member is offered it and reads the events of their
+// own items (the viewer says so).
 //
 // Start or Stop is offered by the state the label shows, both when it could
 // not be read. With 'Database Mail XPs' off the server refuses Send Test
@@ -127,9 +128,9 @@ func databaseMailMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQue
 	items := []controls.MenuItem{
 		{Label: "Configure Database Mail...", Action: props},
 		send,
-		{Label: "View Database Mail Log", Action: func() {
+		gate.Item(controls.MenuItem{Label: "View Database Mail Log", Action: func() {
 			a.showLogViewerFor(sc, gosmo.ErrorLogDatabaseMail, 0)
-		}},
+		}}, sc, "", gate.DatabaseMailLogReadRights()...),
 		{Divider: true},
 	}
 	start := mailNeedsXPs(node, gate.Item(controls.MenuItem{Label: "Start Database Mail",

@@ -118,9 +118,14 @@ func (r *NoteRow) SetDrawHeight(h int) { r.drawHeight = h }
 //
 // Not focusable, so it takes no Tab stop, and it reserves its line whether or
 // not it has text — an appearing hint must not reflow the rows around it.
+//
+// Set and SetError also ask the form to scroll the row into view (Revealer):
+// a hint usually sits below the button that set it, and on a long page that
+// is past the bottom edge.
 type HintRow struct {
 	text    string
 	isError bool
+	reveal  bool
 	x, y, w int
 }
 
@@ -128,10 +133,10 @@ type HintRow struct {
 func Hint() *HintRow { return &HintRow{} }
 
 // Set writes an advisory message (Warning colour).
-func (r *HintRow) Set(text string) { r.text, r.isError = text, false }
+func (r *HintRow) Set(text string) { r.text, r.isError, r.reveal = text, false, text != "" }
 
 // SetError writes a failure message (Error colour).
-func (r *HintRow) SetError(text string) { r.text, r.isError = text, true }
+func (r *HintRow) SetError(text string) { r.text, r.isError, r.reveal = text, true, text != "" }
 
 // Clear blanks the row. Call it from a handler that succeeded, so a stale
 // complaint doesn't outlive its cause.
@@ -139,6 +144,14 @@ func (r *HintRow) Clear() { r.text, r.isError = "", false }
 
 // Text returns the current message, "" when blank.
 func (r *HintRow) Text() string { return r.text }
+
+// TakeReveal implements Revealer: true once after each Set or SetError with
+// text.
+func (r *HintRow) TakeReveal() bool {
+	v := r.reveal
+	r.reveal = false
+	return v
+}
 
 func (r *HintRow) Height(w int) int   { return 1 }
 func (r *HintRow) Layout(x, y, w int) { r.x, r.y, r.w = x, y, w }

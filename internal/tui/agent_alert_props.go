@@ -34,8 +34,8 @@ func alertPropPages(sc *db.ServerConn, alertName string) []propPage {
 // showAlertProperties opens Alert Properties from Object Explorer's context
 // menu.
 func (a *App) showAlertProperties(sc *db.ServerConn, alertName string) {
-	a.propDialog.show(sc, "msdb", "Alert Properties", "Alert: "+alertName, "Server: "+sc.Opts.Server,
-		func() []propPage { return alertPropPages(sc, alertName) })
+	a.propDialog.showReloading(sc, "msdb", "Alert Properties", "Alert: "+alertName, "Server: "+sc.Opts.Server,
+		func() []propPage { return alertPropPages(sc, alertName) }, folderOf("", NodeAgentEventAlerts))
 }
 
 func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {

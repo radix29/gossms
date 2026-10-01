@@ -29,6 +29,9 @@ const (
 	mailProfAcctRead = "FROM   msdb.dbo.sysmail_profileaccount pa"
 	mailAccountRead  = "FROM   msdb.dbo.sysmail_account a"
 	mailItemsRead    = "FROM msdb.dbo.sysmail_allitems"
+	// mailVisibilityRead is MailVisibility's query; the item and event
+	// batches name IS_SRVROLEMEMBER after IF, not after CASE WHEN.
+	mailVisibilityRead = "SELECT CAST(CASE WHEN ISNULL(IS_SRVROLEMEMBER"
 )
 
 // mailStatus answers the status read as gosmo's batch does: DISABLED from
@@ -271,30 +274,14 @@ func TestDatabaseMailDetailShowsXPsWhenStatusIsRefused(t *testing.T) {
 	}
 }
 
-// sysmail_allitems shows a login that is not sysadmin its own items only —
-// CONTROL SERVER and msdb db_owner included (W14) — so the heading says whose
-// they are. A sysadmin, and a login not yet probed, keep the plain heading.
+// A DatabaseMailUserRole member reads sysmail_allitems, which shows it its
+// own items only, so the heading says whose they are; a login gosmo reads
+// the base table for — sysmail, msdb db_owner or db_datareader, CONTROL
+// SERVER (docs/decisions.md) — and one whose visibility could not be read keep the plain
+// heading.
 func TestDatabaseMailDetailSaysWhoseFailedItems(t *testing.T) {
-	conn := func(sysadmin bool) *db.ServerConn {
-		in, out := []string{}, []string{"sysadmin"}
-		if sysadmin {
-			in, out = out, in
-		}
-		resp := capabilityResponses(true, []string{"CONTROL SERVER"}, nil, nil, nil)
-		for i, r := range resp {
-			if r.match != "IS_SRVROLEMEMBER" {
-				continue
-			}
-			for _, n := range in {
-				r.rows = append(r.rows, []driver.Value{"R", n, int64(1)})
-			}
-			for _, n := range out {
-				r.rows = append(r.rows, []driver.Value{"R", n, int64(0)})
-			}
-			resp[i] = r
-		}
-		sc, _ := newFakeConn(t, append(append(resp, mailStatus("STARTED")), mailConfig()...)...)
-		sc.ProbeCapabilities()
+	conn := func(vis ...fakeResponse) *db.ServerConn {
+		sc, _ := newFakeConn(t, append(append(vis, mailStatus("STARTED")), mailConfig()...)...)
 		return sc
 	}
 	for _, tc := range []struct {
@@ -302,8 +289,9 @@ func TestDatabaseMailDetailSaysWhoseFailedItems(t *testing.T) {
 		sc      *db.ServerConn
 		heading string
 	}{
-		{"CONTROL SERVER", conn(false), "Your failed items (latest 20)"},
-		{"sysadmin", conn(true), "Failed items (latest 20)"},
+		{"role member", conn(mailVisibilityAnswer(false, false)), "Your failed items (latest 20)"},
+		{"base-table reader", conn(mailVisibilityAnswer(true, true)), "Failed items (latest 20)"},
+		{"visibility unread", conn(), "Failed items (latest 20)"},
 	} {
 		_, rows, err := databaseMailDetail(context.Background(), tc.sc)
 		if err != nil {
@@ -313,6 +301,12 @@ func TestDatabaseMailDetailSaysWhoseFailedItems(t *testing.T) {
 			t.Errorf("%s: %q = %q, want 1", tc.name, tc.heading, got)
 		}
 	}
+}
+
+// mailVisibilityAnswer answers gosmo's MailVisibility. It must come before any
+// capability response: its query names IS_SRVROLEMEMBER too.
+func mailVisibilityAnswer(items, events bool) fakeResponse {
+	return fakeResponse{match: mailVisibilityRead, cols: 2, rows: [][]driver.Value{{items, events}}}
 }
 
 // mailMenuNode is a Database Mail node in state; known false is a status
@@ -376,8 +370,9 @@ func TestDatabaseMailMenuFollowsTheState(t *testing.T) {
 }
 
 // The gates wired to the items, not just the sets: Start/Stop are
-// configuration ({db_owner in msdb, CONTROL SERVER}), and Send Test E-Mail
-// also admits DatabaseMailUserRole (W8).
+// configuration ({db_owner in msdb, CONTROL SERVER}), Send Test E-Mail
+// also admits DatabaseMailUserRole (W8), and View Database Mail Log also
+// msdb db_datareader — public alone is refused Msg 229 (live on 17).
 func TestDatabaseMailMenuGates(t *testing.T) {
 	a := newTestApp()
 	for _, tc := range []struct {
@@ -385,18 +380,20 @@ func TestDatabaseMailMenuGates(t *testing.T) {
 		granted        []string
 		roleIn         []string
 		send, startOrS bool
+		log            bool
 	}{
-		{"role only", nil, []string{"DatabaseMailUserRole"}, true, false},
-		{"msdb db_owner", nil, []string{"db_owner"}, true, true},
-		{"CONTROL SERVER", []string{"CONTROL SERVER"}, nil, true, true},
-		{"nothing", nil, nil, false, false},
+		{"role only", nil, []string{"DatabaseMailUserRole"}, true, false, true},
+		{"msdb db_datareader", nil, []string{"db_datareader"}, false, false, true},
+		{"msdb db_owner", nil, []string{"db_owner"}, true, true, true},
+		{"CONTROL SERVER", []string{"CONTROL SERVER"}, nil, true, true, true},
+		{"nothing", nil, nil, false, false, false},
 	} {
 		var denied []string
 		if len(tc.granted) == 0 {
 			denied = []string{"CONTROL SERVER"}
 		}
 		var roleNotIn []string
-		for _, r := range []string{"DatabaseMailUserRole", "db_owner", "SQLAgentUserRole"} {
+		for _, r := range []string{"DatabaseMailUserRole", "db_owner", "db_datareader", "SQLAgentUserRole"} {
 			if !slices.Contains(tc.roleIn, r) {
 				roleNotIn = append(roleNotIn, r)
 			}
@@ -413,6 +410,9 @@ func TestDatabaseMailMenuGates(t *testing.T) {
 			}
 			if got := toggle.Enabled(); got != tc.startOrS {
 				t.Errorf("%s: %s offered %v, want %v", tc.name, toggle.Label, got, tc.startOrS)
+			}
+			if got := findMenuItem(items, "View Database Mail Log").Enabled(); got != tc.log {
+				t.Errorf("%s: View Database Mail Log offered %v, want %v", tc.name, got, tc.log)
 			}
 		}
 	}

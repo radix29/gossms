@@ -112,7 +112,7 @@ func (c *PrefixCache) Scan(lines [][]rune, buf []rune, cursorRow, upTo int, rev 
 			resume = c.bounds[keep-1].off
 		}
 		lexSQL(buf, resume, upTo, false, LexNormal, nil, goScan{lo: 0, hi: rowStart},
-			func(off int, isGo bool) { c.bounds = append(c.bounds, boundary{off: off, isGo: isGo}) })
+			func(off int, isGo bool) { c.bounds = append(c.bounds, boundary{off: off, isGo: isGo}) }, nil)
 		validTo = upTo
 	}
 	c.doc, c.version, c.scannedTo, c.valid = rev.Doc, rev.Version, validTo, rev.Doc != nil

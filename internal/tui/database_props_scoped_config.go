@@ -129,7 +129,7 @@ func applyScopedConfigRows(ctx context.Context, d *gosmo.Database, intRows []sco
 // Properties' Advanced page uses for sys.configurations.
 func pageDatabaseScopedConfig(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
-		title: "Database Scoped Configurations",
+		title: "Scoped Configurations",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {

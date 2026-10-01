@@ -27,7 +27,8 @@
 // collects CREATE TABLE / DECLARE ... TABLE / SELECT ... INTO shapes across a
 // whole GO-delimited batch. The tokenizer keeps the '#'/'@' sigil as part of
 // the identifier, which is what makes those names impossible to confuse with
-// a catalog object's.
+// a catalog object's. BatchCache answers it per keystroke, re-lexing only the
+// part of the batch an edit changed.
 //
 // Still out of scope, and reported as nothing rather than guessed: the result
 // shape of a table-valued function, the WITH column lists of
@@ -35,9 +36,11 @@
 //
 // The package knows nothing about connections, catalogs, or the application
 // — resolving a name against a real database is the caller's job (see
-// internal/tui/completion_candidates.go). Everything here is a pure function
-// over runes, which is why it can be tested exhaustively: prefix_scan_test.go
-// sweeps every cursor position in a corpus of scripts against a golden file.
+// internal/tui/completion_candidates.go). Everything here but the two caches
+// (PrefixCache, BatchCache) is a pure function over runes, which is why it can
+// be tested exhaustively: prefix_scan_test.go sweeps every cursor position in
+// a corpus of scripts against a golden file, and each cache is checked against
+// that pure answer after thousands of random edits.
 //
 // Statement boundaries come from three sources, all established in one lexer
 // pass so that a ';' or a "GO" inside a comment or a literal ends nothing:

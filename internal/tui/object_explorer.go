@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -201,6 +203,43 @@ func (oe *ObjectExplorer) RefreshFolderByType(sc *db.ServerConn, t NodeType) {
 			oe.Reload(n)
 		}
 		return
+	}
+}
+
+// ReloadFolders reloads every node of sc's tree that match accepts, without
+// looking below one — after a Properties dialog's Apply renamed an object or
+// changed a state its label or icon carries. The folder, not the object's
+// node: the folder's loader builds the label, and a rename leaves the node's
+// name stale, so every later menu action on it would name the old object.
+func (oe *ObjectExplorer) ReloadFolders(sc *db.ServerConn, match func(nodeData) bool) {
+	for _, r := range oe.roots {
+		if r.data.conn != sc {
+			continue
+		}
+		var hits []*explorerNode
+		var walk func(*explorerNode)
+		walk = func(n *explorerNode) {
+			for _, c := range n.children {
+				if match(c.data) {
+					hits = append(hits, c)
+					continue
+				}
+				walk(c)
+			}
+		}
+		walk(r)
+		for _, n := range hits {
+			oe.Reload(n)
+		}
+		return
+	}
+}
+
+// folderOf matches, for ReloadFolders, the folders of the given types that
+// belong to database dbName — "" for the server-scope ones.
+func folderOf(dbName string, types ...NodeType) func(nodeData) bool {
+	return func(d nodeData) bool {
+		return slices.Contains(types, d.Type) && d.DBName == dbName
 	}
 }
 

@@ -34,7 +34,26 @@ type ToggleGridRow struct {
 	// drawReadOnly renders the toggle cells as ticks and crosses rather than
 	// as checkboxes — see SetDrawReadOnly.
 	drawReadOnly bool
+
+	// pageReadOnly is the page's own gate — see SetReadOnly.
+	pageReadOnly bool
 }
+
+// SetReadOnly is the page's own gate on the row, apart from the form's (see
+// TextRow.SetReadOnly): for a grid whose rows describe the object selected
+// elsewhere on the page, editable for one object and not another. The
+// toggles stop toggling and draw as ticks and crosses; the grid can still be
+// browsed.
+func (t *ToggleGridRow) SetReadOnly(v bool) {
+	if t.pageReadOnly == v {
+		return
+	}
+	t.pageReadOnly = v
+	t.render()
+}
+
+// ReadOnly reports the page's own gate, not the form's.
+func (t *ToggleGridRow) ReadOnly() bool { return t.pageReadOnly }
 
 // SetDrawReadOnly implements ReadOnlyDrawer: the toggle columns render their
 // state the way a read-only CheckRow does, so the one thing left on a gated
@@ -144,7 +163,7 @@ func (t *ToggleGridRow) Toggle(row, col int) {
 
 func (t *ToggleGridRow) activateCell(row, col int) {
 	j := slices.Index(t.toggleCols, col)
-	if j < 0 || row < 0 || row >= len(t.values) {
+	if t.pageReadOnly || j < 0 || row < 0 || row >= len(t.values) {
 		return
 	}
 	t.values[row][j] = !t.values[row][j]
@@ -188,7 +207,7 @@ func cloneBoolMatrix(m [][]bool) [][]bool {
 // toggleCell renders a toggle column's boolean value as SSMS-style checkbox
 // text, or as a tick/cross when the row draws read-only.
 func (t *ToggleGridRow) toggleCell(v bool) string {
-	if t.drawReadOnly {
+	if t.drawReadOnly || t.pageReadOnly {
 		if v {
 			return "✓"
 		}

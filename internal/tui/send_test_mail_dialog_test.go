@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	mssql "github.com/microsoft/go-mssqldb"
+
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -256,5 +259,37 @@ func TestSendTestMailKeepsTheDialogWhenTheSendIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(d.Message(), "permission was denied") {
 		t.Errorf("message = %q", d.Message())
+	}
+}
+
+// The errors sp_send_dbmail refuses a message with read as a plain sentence
+// rather than "gosmo: send test mail: mssql: profile name is not valid"
+// (N10); the numbers and texts are the server's own, live on 17.
+func TestSendTestMailExplainsTheRefusalsItKnows(t *testing.T) {
+	for _, tc := range []struct {
+		number  int32
+		message string
+		want    string
+	}{
+		{14607, "profile name is not valid", `Profile "alerts" does not exist or is not granted to you.`},
+		{14636, "No global profile is configured. Specify a profile name in the @profile_name parameter.", "No default profile for this login"},
+		{14641, "Mail not queued. Database Mail is stopped. Use sysmail_start_sp to start Database Mail.", "stopped and queued nothing"},
+		{15281, "SQL Server blocked access to procedure 'dbo.sp_send_dbmail' of component 'Database Mail XPs' because this component is turned off as part of the security configuration for this server.", "Database Mail XPs is off"},
+	} {
+		sc, _ := newFakeConn(t, append([]fakeResponse{mailStatus("STARTED"),
+			{match: mailSendCall, err: mssql.Error{Number: tc.number, Class: 16, Message: tc.message}}}, mailConfig()...)...)
+		d, a, f := loadSendTestMail(t, sc)
+		editSelect(t, f, "Profile", "alerts")
+		editText(t, f, "To", "dba@example.com")
+		d.send(false)
+		drainUntil(t, a, func() bool { return !d.Applying() }, "the send to fail")
+		if msg := d.Message(); !strings.Contains(msg, tc.want) || strings.Contains(msg, "mssql") {
+			t.Errorf("Msg %d: message %q, want it to contain %q", tc.number, msg, tc.want)
+		}
+		// The message line hard-clips, and an 80-column screen leaves it
+		// about 68 columns (live).
+		if w := core.DisplayWidth(d.Message()); w > 66 {
+			t.Errorf("Msg %d: message is %d columns, clipped at 80: %q", tc.number, w, d.Message())
+		}
 	}
 }

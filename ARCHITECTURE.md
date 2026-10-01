@@ -173,7 +173,7 @@ gossms/
 │       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView/TempDBView/InstanceView with tuikit/charts; no App, no connection
 │       ├── gate/                 # the permission gate: gate.RightsAllow — the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
-│       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT) and ScanBindings' batch-wide temp-table/table-variable declarations. Functions over runes; no App, no connection — pure but for PrefixCache (prefix_cache.go), the one stateful type, which makes the completion prefix scan incremental and is owned by the QueryPanel that calls it
+│       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT) and ScanBindings' batch-wide temp-table/table-variable declarations. Functions over runes; no App, no connection — pure but for its two caches, PrefixCache (prefix_cache.go: the completion prefix scan) and BatchCache (batch_cache.go: the batch-wide binding scan), each making a per-keystroke scan incremental and owned by the QueryPanel that calls it
 │       │
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
@@ -331,6 +331,7 @@ gossms/
 │       ├── agent_schedule_form.go       # shared Occurs/Recurs-every/Weekdays/Relative/Daily-frequency/Duration form used by both New Schedule and Schedule Properties
 │       ├── agent_alert_props.go         # Alert Properties dialog: General (identity/trigger/response scope/notification) + Response (operators to e-mail/response job)
 │       ├── agent_operator_props.go      # Operator Properties dialog: General (identity/e-mail/category) + read-only Notifications (linked alerts/jobs) page
+│       ├── agent_props.go               # SQL Server Agent Properties (the Agent node's menu): Alert System page — Agent's Database Mail profile; read-only note on Linux
 │       ├── new_job_dialog.go            # New Job — newObjectDialog config (prefetch + create) for a job
 │       ├── new_job_pages.go             # New Job's General/Steps/Schedules/Notifications page builders
 │       ├── new_schedule_dialog.go       # New Schedule: General page from agent_schedule_form.go + a Jobs-to-attach page
@@ -377,6 +378,7 @@ gossms/
 │       ├── server_props_advanced.go     # Server Properties > Advanced page
 │       ├── server_props_permissions.go  # Server Properties > Permissions page
 │       ├── resource_governor_props.go   # Resource Governor Properties: page set, General, Resource Pools and External Resource Pools pages; the planned Apply (phase order, then one RECONFIGURE or DISABLE)
+│       ├── resource_governor_props_affinity.go # Resource Governor Properties pool pages' affinity: Automatic box and the scheduler/CPU grid (processor group 0 only)
 │       ├── resource_governor_props_groups.go # Resource Governor Properties > Workload Groups page (pool dropdown, the pool's groups, the selected group)
 │       ├── database_mail_props.go       # Database Mail Properties: page set, the planned Apply's phases, mailModel (names shared across pages before Apply), General and System Parameters pages
 │       ├── database_mail_props_accounts.go # Database Mail Properties > Accounts page (SMTP settings; blank password = keep the credential)

@@ -541,8 +541,8 @@ func TestTreeViewDoubleClickNeedsTheSameRowAndAFreshInterval(t *testing.T) {
 		fired := false
 		tv.OnActivate = func(TreeNodeID) bool { fired = true; return true }
 
-		clickRow(tv, 10, 1)
-		clickRow(tv, 10, 2)
+		clickRow(tv, 6, 1)
+		clickRow(tv, 6, 2)
 
 		if fired {
 			t.Error("clicks on two different rows activated")
@@ -581,5 +581,41 @@ func TestTreeViewDoubleClickOnExpanderOnlyToggles(t *testing.T) {
 	}
 	if tv.nodes[0].Expanded {
 		t.Error("two clicks on the expander did not leave it collapsed again")
+	}
+}
+
+// A double-click on a node's text that no OnActivate claims toggles it, as
+// Enter does; one on the blank space past the label only selects.
+func TestTreeViewDoubleClickOnTextToggles(t *testing.T) {
+	tv := newTestTreeViewExpandable() // "[+] root": label at x 5..8
+	tv.OnActivate = func(TreeNodeID) bool { return false }
+
+	clickRow(tv, 6, 1)
+	clickRow(tv, 6, 1)
+	if !tv.nodes[0].Expanded {
+		t.Fatal("double-click on the label did not expand the node")
+	}
+	clickRow(tv, 6, 1)
+	clickRow(tv, 6, 1)
+	if tv.nodes[0].Expanded {
+		t.Fatal("double-click on the label did not collapse the node")
+	}
+
+	clickRow(tv, 20, 1)
+	clickRow(tv, 20, 1)
+	if tv.nodes[0].Expanded {
+		t.Error("double-click on blank space past the label toggled the node")
+	}
+}
+
+// A claimed activation does not also toggle — Enter's rule.
+func TestTreeViewDoubleClickActivationDoesNotToggle(t *testing.T) {
+	tv := newTestTreeViewExpandable()
+	tv.OnActivate = func(TreeNodeID) bool { return true }
+
+	clickRow(tv, 6, 1)
+	clickRow(tv, 6, 1)
+	if tv.nodes[0].Expanded {
+		t.Error("double-click both activated and expanded the node")
 	}
 }

@@ -126,7 +126,11 @@ var (
 	ControlServer   = Right{Name: "CONTROL SERVER", Role: "sysadmin"}
 	ViewServerState = Right{Name: "VIEW SERVER STATE", Role: "sysadmin",
 		Alt: []string{"VIEW SERVER PERFORMANCE STATE", "VIEW SERVER SECURITY STATE"}}
-	AlterSettings = Right{Name: "ALTER SETTINGS", Role: "serveradmin"}
+	// ViewAnyDefinition is what makes server-scope metadata visible — the
+	// Resource Governor catalog views among it, which return no rows (and no
+	// error) without it. VIEW SERVER STATE does not imply it.
+	ViewAnyDefinition = Right{Name: "VIEW ANY DEFINITION", Role: "sysadmin"}
+	AlterSettings     = Right{Name: "ALTER SETTINGS", Role: "serveradmin"}
 	// The login's class-101 DENY is all-or-nothing, so one arm on one right
 	// covers Login Properties, Rename and Delete alike: verified live on majors
 	// 13 and 17, DENY ALTER ON LOGIN::x withholds ALTER LOGIN — rename and
@@ -325,6 +329,12 @@ var (
 	// a pure diskadmin, the principal the feature is for, would be shown a
 	// read-only banner on a page they can in fact write.
 	DiskAdmin = Right{Name: "diskadmin", ServerRole: true}
+	// Sysadmin is membership of sysadmin itself, for a write that CONTROL
+	// SERVER does not reach: sp_set_sqlagent_properties's reload notification
+	// (sp_sqlagent_notify) checks the role, and refuses CONTROL SERVER alone
+	// Msg 14260 after the registry write has gone through. See
+	// AgentPropertiesRights.
+	Sysadmin = Right{Name: "sysadmin", ServerRole: true}
 
 	// The two SQL Agent rights are memberships, not permissions: New Job and
 	// its siblings are permitted by membership of an msdb role, which grants
@@ -336,6 +346,10 @@ var (
 	// EXECUTE on sp_send_dbmail and two more procedures — a membership for
 	// SQLAgentUser's reason. See DatabaseMailSendRights.
 	DatabaseMailUser = Right{Name: "DatabaseMailUserRole", Membership: true, InDB: "msdb"}
+	// MsdbDataReader is msdb's db_datareader, which reads the Database Mail
+	// views a DatabaseMailUserRole member is granted SELECT on. See
+	// DatabaseMailLogReadRights.
+	MsdbDataReader = Right{Name: "db_datareader", Membership: true, InDB: "msdb"}
 
 	// AlterOnObject is the grant made directly on one object, which no wider
 	// scope reflects: a principal granted ALTER on one table reads 0 for every

@@ -91,13 +91,23 @@ func (lv *LogViewer) invalidateDetailCache() {
 func (lv *LogViewer) summary() string {
 	switch {
 	case len(lv.entries) == 0:
-		return fmt.Sprintf("%s%s — no entries%s", lv.scopeLabel(), lv.searchSuffix(), lv.readErrSuffix())
+		return fmt.Sprintf("%s%s — no entries%s%s", lv.scopeLabel(), lv.searchSuffix(), lv.ownOnlySuffix(), lv.readErrSuffix())
 	case len(lv.shown) == len(lv.entries):
-		return fmt.Sprintf("%s%s — %d entries%s", lv.scopeLabel(), lv.searchSuffix(), len(lv.entries), lv.readErrSuffix())
+		return fmt.Sprintf("%s%s — %d entries%s%s", lv.scopeLabel(), lv.searchSuffix(), len(lv.entries), lv.ownOnlySuffix(), lv.readErrSuffix())
 	default:
-		return fmt.Sprintf("%s%s — %d of %d entries match the filter%s",
-			lv.scopeLabel(), lv.searchSuffix(), len(lv.shown), len(lv.entries), lv.readErrSuffix())
+		return fmt.Sprintf("%s%s — %d of %d entries match the filter%s%s",
+			lv.scopeLabel(), lv.searchSuffix(), len(lv.shown), len(lv.entries), lv.ownOnlySuffix(), lv.readErrSuffix())
 	}
+}
+
+// ownOnlySuffix says the Database Mail log is filtered to the login's own
+// items, as the Details pane's "Your failed items" does — otherwise an
+// almost empty log reads as a quiet server (docs/decisions.md).
+func (lv *LogViewer) ownOnlySuffix() string {
+	if !lv.mailOwnOnly {
+		return ""
+	}
+	return " (only your mail items' entries)"
 }
 
 // readErrSuffix says how much of the selection the grid is actually showing,

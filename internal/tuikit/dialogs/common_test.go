@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -122,10 +123,84 @@ func TestFitMessageWithNilScreenSkipsTheCap(t *testing.T) {
 	if len(lines) != 1 {
 		t.Errorf("lines = %v, want exactly 1 (no screen size to cap against)", lines)
 	}
-	if want := core.DisplayWidth(msg) + messageBoxOverhead; w != want {
+	if want := core.DisplayWidth(strings.TrimSpace(msg)) + messageBoxOverhead; w != want {
 		t.Errorf("w = %d, want %d", w, want)
 	}
 	if h != alertDialogBaseH {
 		t.Errorf("h = %d, want %d", h, alertDialogBaseH)
+	}
+}
+
+// TestMessageDialogsKeepLineBreaks pins B8: every message-driven dialog draws
+// a "\n\n" as a paragraph gap, sized to its widest paragraph rather than the
+// whole message. WrapText's strings.Fields folded the breaks into spaces, so
+// cycleLogMessage's question and consequence ran together on one line.
+func TestMessageDialogsKeepLineBreaks(t *testing.T) {
+	const question = "Close the current log and start a new one?"
+	const consequence = "Each archive is renumbered."
+	msg := question + "\n\n" + consequence + "\r\n"
+	want := []string{question, "", consequence}
+
+	scr := &sizedScreen{w: 200, h: 50}
+	cases := map[string]func() []string{
+		"Alert": func() []string {
+			d := NewAlertDialog(scr)
+			d.ShowAlert("t", msg)
+			return d.msgLines
+		},
+		"Confirm": func() []string {
+			d := NewConfirmDialog(scr)
+			d.ShowConfirm("t", msg, func(bool) {})
+			return d.msgLines
+		},
+		"TypedConfirm": func() []string {
+			d := NewTypedConfirmDialog(scr)
+			d.ShowTypedConfirm("t", msg, "DROP", func(bool) {})
+			return d.msgLines
+		},
+		"Prompt": func() []string {
+			d := NewPromptDialog(scr)
+			d.ShowPrompt("t", msg, "Name:", "", func(string) {})
+			return d.msgLines
+		},
+	}
+	for name, show := range cases {
+		if got := show(); !slices.Equal(got, want) {
+			t.Errorf("%s: lines = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// The width is the widest paragraph's, so a message whose paragraphs each fit
+// is not wrapped, and is not sized to the sum of them.
+func TestFitMessageSizesToTheWidestParagraph(t *testing.T) {
+	d := &ModalDialog{}
+	d.InitModal(&sizedScreen{w: 200, h: 50}, "Confirm", confirmDialogMinW, confirmDialogBaseH)
+
+	long := strings.Repeat("x", 100) // wider than confirmDialogMinW, under 2/3 of 200
+	w, h, lines := d.fitMessage("short\n"+long, confirmDialogMinW, confirmDialogBaseH)
+
+	if want := len(long) + messageBoxOverhead; w != want {
+		t.Errorf("w = %d, want %d (the longer paragraph's width)", w, want)
+	}
+	if len(lines) != 2 || h != confirmDialogBaseH+1 {
+		t.Errorf("lines = %q, h = %d, want 2 lines and h %d", lines, h, confirmDialogBaseH+1)
+	}
+}
+
+// The height cap applies across paragraphs: the surplus, gap included, folds
+// into the last line kept and is ellipsized there.
+func TestFitMessageCapsParagraphsToTheScreen(t *testing.T) {
+	scr := &sizedScreen{w: 120, h: confirmDialogBaseH + 1} // room for 2 lines
+	d := &ModalDialog{}
+	d.InitModal(scr, "Confirm", confirmDialogMinW, confirmDialogBaseH)
+
+	_, _, lines := d.fitMessage("one\n\nthree\nfour", confirmDialogMinW, confirmDialogBaseH)
+
+	if len(lines) != 2 || lines[0] != "one" {
+		t.Fatalf("lines = %q, want 2 lines starting with \"one\"", lines)
+	}
+	if lines[1] != "three four" {
+		t.Errorf("last line = %q, want the gap folded away: \"three four\"", lines[1])
 	}
 }

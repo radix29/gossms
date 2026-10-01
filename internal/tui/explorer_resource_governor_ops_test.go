@@ -170,6 +170,35 @@ func TestResourceGovernorWriteItemsNeedControlServer(t *testing.T) {
 	}
 }
 
+// The configuration row is invisible without VIEW ANY DEFINITION, which VIEW
+// SERVER STATE does not imply: the Script cascade is withheld with that
+// reason rather than failing "not visible" in the status line (N10).
+func TestScriptResourceGovernorNeedsViewAnyDefinition(t *testing.T) {
+	a := newTestApp()
+	for _, tc := range []struct {
+		name            string
+		granted, denied []string
+		want            bool
+	}{
+		{"VIEW SERVER STATE only", []string{"VIEW SERVER STATE"}, []string{"VIEW ANY DEFINITION"}, false},
+		{"VIEW ANY DEFINITION", []string{"VIEW ANY DEFINITION"}, nil, true},
+		{"unprobed", nil, nil, true},
+	} {
+		sc := probedConn(t, "", tc.granted, tc.denied, nil, nil)
+		items := a.scriptMenuItems(rgNodeOn(sc, true, false))
+		if len(items) != 1 || items[0].Label != "Script Resource Governor as" {
+			t.Fatalf("%s: script items = %+v", tc.name, items)
+		}
+		it := items[0]
+		if got := itemEnabled(it); got != tc.want {
+			t.Errorf("%s: offered = %v, want %v", tc.name, got, tc.want)
+		}
+		if !tc.want && it.Note != "needs VIEW ANY DEFINITION" {
+			t.Errorf("%s: note %q", tc.name, it.Note)
+		}
+	}
+}
+
 func TestResourceGovernorItemsOnAnUnsupportedEdition(t *testing.T) {
 	sc := newFakeConnEdition(t, 4, "16.0.4085.2")
 	for _, label := range []string{"Disable", "Reconfigure", "Reset Statistics", "Properties..."} {

@@ -155,13 +155,12 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 	// Temp tables and table variables are declared in a different statement
 	// from the one using them, so their shapes come from a scan of the whole
 	// GO-delimited batch — the one piece of cross-statement work a keystroke
-	// does. bindingsWanted keeps it off the path of scripts that name none.
+	// does. bindingsWanted keeps it off the path of scripts that name none, and
+	// p.completionBatch re-lexes only what changed since the last one.
 	var bindings []sqlparse.Binding
 	if bindingsWanted(clause, scope.Query, refs, scope.CTEs, qualifier, prefix) &&
 		sqlparse.ContainsSigil(buf, pre.GoStart) {
-		batchEnd := sqlparse.BatchEndOffset(lines, buf, row, forwardFrom)
-		batchTokens, _, _, _ := sqlparse.TokenizeRange(buf, pre.GoStart, batchEnd, false)
-		bindings = sqlparse.ScanBindings(batchTokens)
+		bindings = p.completionBatch.Bindings(lines, buf, row)
 	}
 	rels := resolveRefs(newResolveCtx(inv, sysInv, scope.CTEs, bindings), refs)
 

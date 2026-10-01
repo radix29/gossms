@@ -40,7 +40,7 @@ func TestLexSQLReportsEveryBoundary(t *testing.T) {
 			row, col := rowColForOffset(lines, off)
 			got = append(got, fmt.Sprintf("%d:%d %s", row, col, kind))
 			offs = append(offs, off)
-		})
+		}, nil)
 
 	want := []string{
 		"0:9 semi",  // SELECT 1;

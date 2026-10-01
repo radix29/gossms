@@ -1,4 +1,3 @@
-
 **Phase 5 — the big ones (L, open-ended)**
 25. Live Query Statistics; Compare Showplan
 26. Replication (read-only)

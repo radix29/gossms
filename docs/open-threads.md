@@ -62,25 +62,24 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
-- **B8 — Message dialogs fold line breaks.** `ModalDialog.fitMessage`
-  (`internal/tuikit/dialogs/common.go`) wraps through `core.WrapText`, which
-  splits on `strings.Fields`, so every `\n` in an Alert, Confirm,
-  TypedConfirm or Prompt message becomes a space — `cycleLogMessage`'s
-  paragraph break has never been drawn. Found in the Extended Events live run
-  (2026-09-29), where the filter prompt's syntax lines ran together; that help
-  text was rewritten as prose instead. Fix: wrap per paragraph (as
-  `splitLogLines` + `WrapText` do in the Log Viewer's details pane) and keep
-  `WrapTextLimit`'s cap across the joined result.
-
-- **B9 — Property-sheet page titles clip silently past 22 columns.** The
-  page list is `pageListWidth` (24, `internal/tuikit/propsheet/sheet.go`)
-  less the `▸ ` marker, with no ellipsis, so "External Resource Pools"
-  (Resource Governor Properties) renders as "External Resource Pool" and
-  "Database Scoped Configurations" (Database Properties) loses its tail. Found
-  in the Resource Governor live run (2026-10-01). Fix: a guard like
-  `TestNoPropertySheetLabelIsTruncated` over `propPage.title` literals, then
-  shorten the offenders — or widen the list, which costs every dialog form
-  width.
+- **B10 — every frame copies a query panel's whole text, twice.**
+  `QueryPanel.Dirty` is `editor.Text() != savedText`, and the panel manager's
+  tab label asks it from both `tabSegments` and `Draw`, so each frame
+  materialises the script as a string two times. Found 2026-10-01 profiling a
+  20 k-line (1.6 MB) script live: ~60 % of CPU, ~90 ms per keystroke on an
+  i5-2500K, with or without the completion popup — the lag a user sees typing
+  into a large script. Fix shape: compare against a saved document version, or
+  cache the answer per version.
+- **B11 — the completion popup's statement scan is O(rest of script) without
+  `;`.** `sqlCompletionCandidates` runs `StatementEndOffset` from the cursor to
+  the next top-level `;` or `GO`, tokenizes that span and hands it to
+  `NarrowToDMLStatement` — in a script that ends no statement with `;` (common
+  T-SQL), everything below the cursor up to the next `GO`. 2026-10-01, 20 k
+  lines, no `;`, cursor on line 2: 200–250 ms and 53 MB per keystroke while the
+  popup is open. Same class as the batch scan `sqlparse.BatchCache` fixed (N3);
+  that cache's token stream could serve this span too, but
+  `NarrowToDMLStatement` still walks every token, so the narrowing wants
+  bounding first.
 
 ### Verification gaps
 
@@ -114,7 +113,11 @@ work; close an item by deleting it when fixed.
   To run when MI is back: RG catalog/DMV reads and `CREATE RESOURCE POOL` /
   `ALTER RESOURCE GOVERNOR` rights; Database Mail `sysmail_*` reads, writes and
   a test send; the gosmo version sweep of every new read; the tmux live pass
-  for both. If MI refuses RG DDL, add an `edition_gate.go` entry.
+  for both. If MI refuses RG DDL, add an `edition_gate.go` entry. Also SQL
+  Server Agent Properties ▸ Alert System: whether MI's `xp_instance_regread`/
+  `sp_set_sqlagent_properties` answer for Agent's mail profile at all (MI's
+  Agent is documented to use the profile named
+  `AzureManagedInstance_dbmail_profile`).
 - **V5 — Edition gates of Phase 5 item 24 never met a real refusal.** Every
   instance in the estate is Developer, so Resource Governor's rule
   (Enterprise/Developer on 13–16, plus Standard on 17 —
@@ -135,59 +138,25 @@ work; close an item by deleting it when fixed.
   database). Deliberate limits of what shipped: a temp-table binding doesn't
   survive `GO` (the table does), and `PIVOT` columns are untyped (aggregates
   aren't modelled). Each is its own pass if asked.
-- **N6 — Resource pool affinity is read-only.** `AFFINITY SCHEDULER` /
-  `NUMANODE` on resource and external pools is read and scripted but not
-  edited (Phase 5 item 24; `docs/decisions.md` § Resource Governor and
-  Database Mail): editing needs a scheduler/NUMA picker
-  nothing else in gossms has.
-- **N7 — No SQL Server Agent Properties ▸ Alert System.** Agent's mail
-  profile (`sp_set_sqlagent_properties @databasemail_profile`) can't be set
-  from gossms — there is no Agent Properties dialog at all. Out of scope of
-  Phase 5 item 24 (Database Mail); until then operator/job notification mail
-  needs it set by T-SQL.
-- **N8 — Database Mail items and log are own-only below sysadmin.**
-  `sysmail_allitems` and `sysmail_event_log` filter on
-  `IS_SRVROLEMEMBER('sysadmin')`, so CONTROL SERVER and msdb db_owner — who
-  configure everything — see only their own items and those items' events,
-  as SSMS's viewer does. Details says "Your failed items" and the log's
-  Delete... warns that it purges unseen rows; the Log Viewer itself says
-  nothing. Reading the base tables (`sysmail_mailitems`, `sysmail_log`),
-  which both may SELECT, would show everything — a gosmo change, relying on
-  undocumented tables. Found in the Phase 5 W14 live run (2026-10-01).
-- **N9 — Resource Governor Properties offers a new pool to Workload Groups
-  only after Apply.** RG's pages load independently with no page-shown hook,
-  so a pool added on Resource Pools is missing from the Workload Groups pool
-  dropdown until Apply. Database Mail solved the same problem with a model
-  shared across pages (`mailModel`, `database_mail_props.go`); RG would need
-  the same. Found in Phase 5 W5 (2026-10-01).
-- **N10 — Phase 5 item 24 rough edges, left as is (2026-10-01).** Send Test
-  E-Mail's status row shows the raw gosmo/mssql error ("gosmo: send test
-  mail: mssql: profile name is not valid (14607)"); View Database Mail Log is
-  offered to a login with no msdb access and opens on "Access denied"; a hint
-  row below the fold (Accounts' "is deleted on Apply") is not scrolled into
-  view; Script Resource Governor as is offered to a VIEW SERVER STATE-only
-  login and fails "not visible" in the status line; an unreadable RG
-  configuration leaves the node label bare, as if enabled
-  (`resourceGovernorState`, deliberate). Each is small; none misleads into a
-  wrong write.
-- **N5 — Other Properties dialogs leave the tree stale after Apply.**
-  `PropDialog.onSaved` (`internal/tui/prop_dialog.go`) runs after a write
-  lands; only Session Properties sets it (`refreshXESession` reloads the
-  session's target leaves). A dialog whose Apply changes a node's tree
-  children — Table Properties' columns, a database's files — still needs a
-  Refresh of the node. Each is its own call: wire `onSaved` to reload the
-  object's node where the tree shows it.
-- **N3 — `BatchEndOffset`'s forward scan is O(script).** `sqlparse.PrefixCache`
-  made the prefix scan incremental, but `sqlparse.BatchEndOffset`
-  (`internal/tui/sqlparse/token.go`) still lexes from the cursor to the next
-  bare `GO` (or buffer end), once per keystroke while the popup is open, on the
-  UI goroutine. Not in `PrefixCache` because the boundaries are *ahead* of the
-  cursor and would be invalidated by edits below it. Unmeasured; trigger is a
-  benchmark with the cursor well above the end showing it matters.
+- **N10 — Phase 5 item 24 rough edges, left as is (2026-10-01).** An
+  unreadable RG configuration leaves the node label bare, as if enabled
+  (`resourceGovernorState`, deliberate); at 80 columns Send Test E-Mail's
+  46-column To/Subject/Body fields draw over the form's right border; a
+  `propsheet.HintRow` is one line and hard-clips, so at 80 columns Accounts'
+  "… is deleted on Apply, and leaves every profile that uses it." loses its
+  second half. Each is small; none misleads into a wrong write.
+- **N11 — a renaming Properties dialog keeps the old name in its header.**
+  Rename a login on its General page and Apply: the tree shows the new name
+  (`showReloading`), the pages reload under it, but the header still reads
+  "Login: <old>" until the dialog is reopened. Every renaming dialog
+  (`commitRename` callers) shares it; the header is set once in `showWith`.
+  Cosmetic — every write uses the page's own name pointer.
 - **N4 — Wrap mode re-segments the whole document per keystroke.**
   `Editor.buildVisualLines` (`internal/tuikit/controls/editor_wrap.go`)
   memoises on the document version, which every edit bumps, and
-  `visualIndexForCursor` scans every visual row. 2026-09-24, 20 k-line script:
-  6.5 ms per keystroke wrapped vs 0.45 ms unwrapped — inside a frame, not acted
-  on. Fix when a measurement passes ~16 ms: re-wrap only edited lines, keep a
-  per-line visual-row prefix sum.
+  `visualIndexForCursor` scans every visual row. 2026-10-01,
+  `BenchmarkEditorTypeWrapped20k` (keystroke plus Draw, 20 k lines, caret near
+  the bottom, i5-2500K): 7.9 ms wrapped vs 0.45 ms unwrapped
+  (`BenchmarkEditorTypeUnwrapped20k`) — inside a frame, not acted on. Fix when
+  that benchmark passes ~16 ms: re-wrap only edited lines, keep a per-line
+  visual-row prefix sum.

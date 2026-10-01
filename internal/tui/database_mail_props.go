@@ -35,8 +35,7 @@ import (
 // one account, one profile and one grant, and three Applies for that would be
 // the dialog getting in the way. mailModel carries the names across: the
 // page that owns them publishes, the page that uses them listens. Resource
-// Governor Properties lacks this (a new pool is offered after Apply) because
-// its pages never need it in one go.
+// Governor Properties does the same for its pools (rgModel).
 
 // The pages of Database Mail Properties, in order.
 const (

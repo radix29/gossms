@@ -241,3 +241,50 @@ func BenchmarkParseFromScopeReference(b *testing.B) {
 		ParseFromScope(toks)
 	}
 }
+
+// benchmarkBatchBindings is N3's measurement (closed by BatchCache): the
+// batch-wide binding scan one keystroke pays when a temp-table or
+// table-variable sigil is in play, on a ~20,000-line script with no GO in it,
+// typing on line 1 — the worst case, since the batch is the whole script and
+// nearly all of it lies below the cursor.
+//
+// The reference is the path BatchCache replaced: BatchEndOffset's forward lex
+// to the batch end, TokenizeRange over the batch, ScanBindings. Cached is
+// BatchCache.Bindings with the same edit between calls, alternately appending
+// and removing a rune, plus the FlattenLinesInto the provider pays anyway.
+func benchmarkBatchBindings(b *testing.B, cached bool) {
+	var lines [][]rune
+	for _, ln := range benchScript(4000) {
+		if string(ln) != "GO" {
+			lines = append(lines, ln)
+		}
+	}
+	lines[0] = append(lines[0], []rune(" CREATE TABLE #t (a int)")...)
+	buf := FlattenLinesInto(nil, lines)
+	var c BatchCache
+	if cached {
+		c.Bindings(lines, buf, 0) // the first call lexes the batch cold, once
+	}
+	b.ReportAllocs()
+	for i := 0; b.Loop(); i++ {
+		if i%2 == 0 {
+			lines[0] = append(lines[0], 'x')
+		} else {
+			lines[0] = lines[0][:len(lines[0])-1]
+		}
+		buf = FlattenLinesInto(buf, lines)
+		if cached {
+			c.Bindings(lines, buf, 0)
+			continue
+		}
+		end := BatchEndOffset(lines, buf, 0, len(lines[0]))
+		toks, _, _, _ := TokenizeRange(buf, 0, end, false)
+		ScanBindings(toks)
+	}
+}
+
+func BenchmarkBatchBindingsTypingFirstLineReference20k(b *testing.B) {
+	benchmarkBatchBindings(b, false)
+}
+
+func BenchmarkBatchBindingsTypingFirstLine20k(b *testing.B) { benchmarkBatchBindings(b, true) }

@@ -22,15 +22,16 @@ const maxMessageWidthNum, maxMessageWidthDen = 2, 3
 // more lines instead of growing past that cap when it doesn't. minW is the
 // floor the dialog is never narrower than (room for the title and button
 // row); baseH is the dialog's total height with the message on a single
-// line. The line count is further capped so the dialog's total height
-// never exceeds the screen — recentre() would otherwise clamp rect.H
+// line. Line breaks in the message are kept: each line is a paragraph
+// wrapped on its own, and the width is the widest one's. The line count is
+// further capped so the dialog's total height never exceeds the screen — recentre() would otherwise clamp rect.H
 // without shrinking the message itself, drawing the tail of a long,
 // heavily-wrapped message over the separator/button row on a short
 // terminal — dropping any lines that don't fit and ellipsizing the last
 // one kept. Returns the dialog size to pass to SetSize and the message
 // split into the lines the caller draws one per row.
 func (d *ModalDialog) fitMessage(message string, minW, baseH int) (w, h int, lines []string) {
-	w = max(minW, core.DisplayWidth(message)+messageBoxOverhead)
+	w = max(minW, core.ParagraphsWidth(message)+messageBoxOverhead)
 	if d.screen != nil {
 		if sw, _ := d.screen.Size(); sw > 0 {
 			if maxW := sw * maxMessageWidthNum / maxMessageWidthDen; w > maxW {
@@ -45,13 +46,16 @@ func (d *ModalDialog) fitMessage(message string, minW, baseH int) (w, h int, lin
 			maxLines = max(1, sh-baseH+1)
 		}
 	}
-	// WrapTextLimit is WrapText for a message that already fits in maxLines,
-	// so the cap needs no second wrap of its own. It has no unlimited form,
-	// which is what the screenless branch falls back to.
+	// WrapParagraphsLimit is WrapParagraphs for a message that already fits
+	// in maxLines, so the cap needs no second wrap of its own. It has no
+	// unlimited form, which is what the screenless branch falls back to.
+	// Paragraph-aware rather than WrapText: a message's "\n\n" is the gap
+	// between a question and its consequence, which WrapText's
+	// strings.Fields would fold into one run-on paragraph.
 	if maxLines > 0 && contentW > 0 {
-		lines = core.WrapTextLimit(message, contentW, maxLines)
+		lines = core.WrapParagraphsLimit(message, contentW, maxLines)
 	} else {
-		lines = core.WrapText(message, contentW)
+		lines = core.WrapParagraphs(message, contentW)
 	}
 	return w, baseH + len(lines) - 1, lines
 }

@@ -350,7 +350,8 @@ type PropDialog struct {
 	// onSaved, when set, runs on the UI goroutine after a write has reached
 	// the server — a full Apply, or a failed one some page of which landed —
 	// for a dialog whose writes change what the tree shows under its object
-	// (Session Properties' targets). Never after Script Changes. Reset by
+	// (Session Properties' targets) or its label (showReloading). Never after
+	// Script Changes. Reset by
 	// every show, so one dialog's hook never runs for the next.
 	onSaved func()
 
@@ -390,6 +391,19 @@ func NewPropDialog(app *App) *PropDialog {
 // evaluated at the call site it would run against a closed connection.
 func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages func() []propPage) {
 	d.showWith(sc, database, title, headerLeft, headerRight, pages, nil)
+}
+
+// showReloading is show for a dialog whose Apply can change how the tree
+// lists its object — a rename, or a state its label or icon carries
+// ("(Disabled)", a job's greyed icon). After a write the folders folder
+// matches are reloaded (ObjectExplorer.ReloadFolders); matching the folder
+// rather than the object keeps working after a rename, and after a second
+// one in the same showing.
+func (d *PropDialog) showReloading(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages func() []propPage,
+	folder func(nodeData) bool) {
+	if d.showWith(sc, database, title, headerLeft, headerRight, pages, nil) {
+		d.onSaved = func() { d.app.explorer.ReloadFolders(sc, folder) }
+	}
 }
 
 // showPlanned is show for a dialog whose pages plan their writes rather than

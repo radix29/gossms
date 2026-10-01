@@ -64,6 +64,11 @@ const defaultHints = "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+Z Rev
 
 const pageListWidth = 24
 
+// PageTitleWidth is the display-column width a page title has in the page
+// list: pageListWidth less the ListBox's two-column "▸ " marker. A longer
+// title is hard-clipped with no ellipsis.
+const PageTitleWidth = pageListWidth - 2
+
 // ApplyingSpinner is the busy indicator on the button row while an Apply/OK
 // or Script Changes is in flight — Connect's, so the two waits look alike. The
 // sheet draws it from elapsed time only; the host owns the redraw clock (see

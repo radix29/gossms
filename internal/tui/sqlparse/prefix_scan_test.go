@@ -505,7 +505,7 @@ func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
 	// Only "GO" lines strictly above the cursor's row separate the statement
 	// the cursor is in — hence the bound at that row's start.
 	r := lexSQL(buf, 0, upTo, false, LexNormal, nil,
-		goScan{lo: 0, hi: OffsetForCursor(lines, cursorRow, 0)}, nil)
+		goScan{lo: 0, hi: OffsetForCursor(lines, cursorRow, 0)}, nil, nil)
 
 	// The statement starts at whichever boundary is later: past the last
 	// top-level ';', or the line after the last real "GO". The second pass

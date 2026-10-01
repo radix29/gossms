@@ -56,6 +56,7 @@ func rgReads(config fakeResponse) []fakeResponse {
 	r := []fakeResponse{config, rgStatus(false), rgCandidates("rg_classify", "rg_other"), rgGroups()}
 	r = append(r, rgPools()...)
 	r = append(r, rgExternals()...)
+	r = append(r, rgSchedulers())
 	// CreateResourcePool reads its pool back; none found hands back the
 	// name-only handle, which is all the dialog wants of it.
 	return append(r, fakeResponse{match: "FROM   sys.resource_governor_resource_pools\nWHERE  name = @p1", cols: 9})
@@ -107,7 +108,7 @@ func rgMoveGroup(t *testing.T, f *propsheet.Form, pool string) {
 func TestRGApplyOrdersStatementsAcrossPages(t *testing.T) {
 	sc, inst := newFakeConn(t, rgReads(rgConfig(true))...)
 
-	pools, applyPools := loadPage(t, pageRGPools(sc, ""), inst)
+	pools, applyPools := loadPage(t, pageRGPools(sc, &rgModel{}, ""), inst)
 	poolGrid := plainGrid(t, pools)
 	selectGridRow(t, poolGrid, 0, "reports")
 	clickButton(t, pools, "Remove")
@@ -118,7 +119,7 @@ func TestRGApplyOrdersStatementsAcrossPages(t *testing.T) {
 	selectGridRow(t, poolGrid, 0, "default (system)")
 	editText(t, pools, "Maximum memory %", "80")
 
-	groups, applyGroups := loadPage(t, pageRGGroups(sc, rgFocus{}), inst)
+	groups, applyGroups := loadPage(t, pageRGGroups(sc, &rgModel{}, rgFocus{}), inst)
 	groupGrid := plainGrid(t, groups)
 	rgSelectPool(t, groups, "reports")
 	selectGridRow(t, groupGrid, 0, "nightly")
@@ -146,11 +147,66 @@ func TestRGApplyOrdersStatementsAcrossPages(t *testing.T) {
 	}
 }
 
+// TestRGPoolPagesReachWorkloadGroupsBeforeApply (N9): a pool added on
+// Resource Pools takes a new group in the same Apply, pools being created
+// first; one removed there is no longer a destination, but stays listed while
+// a group is in it, with a hint to move it out. Workload Groups loaded first
+// hears of an edit; loaded after, it reads it.
+func TestRGPoolPagesReachWorkloadGroupsBeforeApply(t *testing.T) {
+	sc, inst := newFakeConn(t, rgReads(rgConfig(true))...)
+	model := &rgModel{}
+	groups, applyGroups := loadPage(t, pageRGGroups(sc, model, rgFocus{}), inst)
+	pools, applyPools := loadPage(t, pageRGPools(sc, model, ""), inst)
+
+	editText(t, pools, "New resource pool", "etl")
+	clickButton(t, pools, "Add")
+	rgSelectPool(t, groups, "etl")
+	editText(t, groups, "New workload group", "batch")
+	clickButton(t, groups, "Add")
+	later, _ := loadPage(t, pageRGGroups(sc, model, rgFocus{}), inst)
+	if got := selectRow(t, later, "Resource pool").Items(); !slices.Contains(got, "etl") {
+		t.Errorf("Workload Groups loaded after the edit lists %q, without etl", got)
+	}
+	if err := runRGApply(context.Background(), sc, applyPools, applyGroups); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"CREATE RESOURCE POOL [etl]",
+		"CREATE WORKLOAD GROUP [batch] USING [etl]",
+		"ALTER RESOURCE GOVERNOR RECONFIGURE",
+	}
+	if got := inst.Statements(); !slices.Equal(got, want) {
+		t.Errorf("statements:\n  got  %q\n  want %q", got, want)
+	}
+
+	sc, inst = newFakeConn(t, rgReads(rgConfig(true))...)
+	model = &rgModel{}
+	groups, _ = loadPage(t, pageRGGroups(sc, model, rgFocus{pool: "reports"}), inst)
+	pools, _ = loadPage(t, pageRGPools(sc, model, ""), inst)
+	selectGridRow(t, plainGrid(t, pools), 0, "reports")
+	clickButton(t, pools, "Remove")
+	if got := selectRow(t, groups, "Resource pool").Value(); got != "reports" {
+		t.Errorf("Workload Groups lists %q, not reports, which still holds adhoc and nightly", got)
+	}
+	if got := hintText(t, groups); !strings.Contains(got, "move its groups") {
+		t.Errorf("hint = %q, want one asking to move reports' groups", got)
+	}
+	rgSelectPool(t, groups, "default")
+	if got := selectRow(t, groups, "Uses resource pool").Items(); slices.Contains(got, "reports") {
+		t.Errorf("default's group may move to %q: reports, being removed, among them", got)
+	}
+	// Listed again after the removal, not during it: the hint still says so.
+	rgSelectPool(t, groups, "reports")
+	if got := hintText(t, groups); !strings.Contains(got, "move its groups") {
+		t.Errorf("hint = %q on listing reports again, want one asking to move its groups", got)
+	}
+}
+
 // TestRGApplyKeepsADisabledGovernorDisabled: RECONFIGURE enables the
 // governor (W1), so an Apply on a disabled one ends in DISABLE instead.
 func TestRGApplyKeepsADisabledGovernorDisabled(t *testing.T) {
 	sc, inst := newFakeConn(t, rgReads(rgConfig(false))...)
-	f, apply := loadPage(t, pageRGExternalPools(sc, ""), inst)
+	f, apply := loadPage(t, pageRGExternalPools(sc, &rgModel{}, ""), inst)
 	editText(t, f, "Maximum memory %", "30")
 	if err := runRGApply(context.Background(), sc, apply); err != nil {
 		t.Fatal(err)
@@ -228,21 +284,21 @@ func TestRGClassifierChoices(t *testing.T) {
 // own row. Neither focus is the first row, so a page ignoring it fails.
 func TestRGPagesPreselectTheLeafTheyOpenedFrom(t *testing.T) {
 	sc, inst := newFakeConn(t, rgReads(rgConfig(true))...)
-	pools, _ := loadPage(t, pageRGPools(sc, "reports"), inst)
+	pools, _ := loadPage(t, pageRGPools(sc, &rgModel{}, "reports"), inst)
 	if got := staticValue(t, pools, "Name"); got != "reports" {
 		t.Errorf("Resource Pools opened on %q, want reports", got)
 	}
 	if got := textRow(t, pools, "Maximum CPU %").Value(); got != "40" {
 		t.Errorf("detail shows Maximum CPU %% %s, want reports' 40", got)
 	}
-	groups, _ := loadPage(t, pageRGGroups(sc, rgFocus{group: "nightly"}), inst)
+	groups, _ := loadPage(t, pageRGGroups(sc, &rgModel{}, rgFocus{group: "nightly"}), inst)
 	if got := selectRow(t, groups, "Resource pool").Value(); got != "reports" {
 		t.Errorf("Workload Groups lists pool %q, want nightly's pool reports", got)
 	}
 	if got := staticValue(t, groups, "Name"); got != "nightly" {
 		t.Errorf("Workload Groups opened on %q, want nightly", got)
 	}
-	groups, _ = loadPage(t, pageRGGroups(sc, rgFocus{pool: "reports"}), inst)
+	groups, _ = loadPage(t, pageRGGroups(sc, &rgModel{}, rgFocus{pool: "reports"}), inst)
 	if got := selectRow(t, groups, "Resource pool").Value(); got != "reports" {
 		t.Errorf("Workload Groups for pool reports lists %q", got)
 	}
@@ -252,11 +308,11 @@ func TestRGPagesPreselectTheLeafTheyOpenedFrom(t *testing.T) {
 // limits are not offered for editing, and nothing is written for it.
 func TestRGInternalIsReadOnly(t *testing.T) {
 	sc, inst := newFakeConn(t, rgReads(rgConfig(true))...)
-	pools, _ := loadPage(t, pageRGPools(sc, "internal"), inst)
+	pools, _ := loadPage(t, pageRGPools(sc, &rgModel{}, "internal"), inst)
 	if !textRow(t, pools, "Maximum CPU %").ReadOnly() {
 		t.Error("internal's limits are editable")
 	}
-	groups, _ := loadPage(t, pageRGGroups(sc, rgFocus{group: "internal"}), inst)
+	groups, _ := loadPage(t, pageRGGroups(sc, &rgModel{}, rgFocus{group: "internal"}), inst)
 	if !textRow(t, groups, "Maximum DOP").ReadOnly() || !selectRow(t, groups, "Importance").ReadOnly() {
 		t.Error("the internal group's settings are editable")
 	}
@@ -276,7 +332,7 @@ func TestRGFractionalGrantNeeds2019(t *testing.T) {
 		ok      bool
 	}{{"13.0.6500.1", false}, {"15.0.4415.2", true}} {
 		sc, inst := newFakeConnAtVersion(t, tc.version, rgReads(rgConfig(true))...)
-		f, _ := loadPage(t, pageRGGroups(sc, rgFocus{group: "default"}), inst)
+		f, _ := loadPage(t, pageRGGroups(sc, &rgModel{}, rgFocus{group: "default"}), inst)
 		editText(t, f, "Max memory grant %", "12.5")
 		if err := textRow(t, f, "Max memory grant %").Validate(); (err == nil) != tc.ok {
 			t.Errorf("%s: 12.5 validates = %v, want %v (%v)", tc.version, err == nil, tc.ok, err)
@@ -287,7 +343,7 @@ func TestRGFractionalGrantNeeds2019(t *testing.T) {
 // TestRGTempdbLimitsOnlyFrom2025 and the NULL that clears one.
 func TestRGTempdbLimitsOnlyFrom2025(t *testing.T) {
 	sc, inst := newFakeConn(t, rgReads(rgConfig(true))...)
-	f, _ := loadPage(t, pageRGGroups(sc, rgFocus{}), inst)
+	f, _ := loadPage(t, pageRGGroups(sc, &rgModel{}, rgFocus{}), inst)
 	for _, r := range f.Rows() {
 		if tr, ok := r.(*propsheet.TextRow); ok && strings.HasPrefix(tr.Label(), "Tempdb") {
 			t.Errorf("major 16 offers %q, a 2025 option", tr.Label())
@@ -297,7 +353,7 @@ func TestRGTempdbLimitsOnlyFrom2025(t *testing.T) {
 	groupsWithLimit := rgGroups()
 	groupsWithLimit.rows[2][12] = float64(10) // adhoc: 10 % of tempdb
 	sc, inst = newFakeConnAtVersion(t, "17.0.1135.8", append([]fakeResponse{groupsWithLimit}, rgReads(rgConfig(true))...)...)
-	f, apply := loadPage(t, pageRGGroups(sc, rgFocus{group: "adhoc"}), inst)
+	f, apply := loadPage(t, pageRGGroups(sc, &rgModel{}, rgFocus{group: "adhoc"}), inst)
 	if got := textRow(t, f, "Tempdb data limit %").Value(); got != "10" {
 		t.Fatalf("adhoc's tempdb limit shows %q, want 10", got)
 	}
@@ -316,7 +372,7 @@ func TestRGTempdbLimitsOnlyFrom2025(t *testing.T) {
 // WithScript — the statements in order, the finish included, nothing sent.
 func TestRGScriptChangesWritesNothing(t *testing.T) {
 	sc, inst := newFakeConn(t, rgReads(rgConfig(true))...)
-	f, apply := loadPage(t, pageRGPools(sc, ""), inst)
+	f, apply := loadPage(t, pageRGPools(sc, &rgModel{}, ""), inst)
 	editText(t, f, "New resource pool", "etl")
 	clickButton(t, f, "Add")
 	ctx, script := gosmo.WithScript(context.Background())
@@ -339,7 +395,7 @@ func TestRGFailureAfterAWriteReloadsEverything(t *testing.T) {
 	refused := errors.New("Msg 10916")
 	responses := append([]fakeResponse{{match: "DROP RESOURCE POOL", err: refused}}, rgReads(rgConfig(true))...)
 	sc, inst := newFakeConn(t, responses...)
-	f, apply := loadPage(t, pageRGPools(sc, ""), inst)
+	f, apply := loadPage(t, pageRGPools(sc, &rgModel{}, ""), inst)
 	selectGridRow(t, plainGrid(t, f), 0, "reports")
 	clickButton(t, f, "Remove")
 	editText(t, f, "New resource pool", "etl")
@@ -357,7 +413,7 @@ func TestRGFailureAfterAWriteReloadsEverything(t *testing.T) {
 // would write nothing in order; it says so instead.
 func TestPlannedPageRefusesToApplyAlone(t *testing.T) {
 	sc, inst := newFakeConn(t, rgReads(rgConfig(true))...)
-	f, apply := loadPage(t, pageRGPools(sc, ""), inst)
+	f, apply := loadPage(t, pageRGPools(sc, &rgModel{}, ""), inst)
 	editText(t, f, "New resource pool", "etl")
 	clickButton(t, f, "Add")
 	if err := apply(context.Background()); !errors.Is(err, errNotPlanned) {

@@ -280,8 +280,11 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		if ev.Buttons() == tcell.Button1 {
 			// Swallow motion while a drop is pending.
 			a.dragX, a.dragY = mx, my
+			if !a.dragActive && a.dragPastThreshold(mx, my) {
+				a.dragActive = true
+			}
 		} else {
-			a.dragNode = nil
+			a.dragNode, a.dragActive = nil, false
 		}
 		return
 	}
@@ -339,8 +342,9 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		// the wrong object and kills the scrollbar drag.
 		if freshPress {
 			if n := a.explorer.NodeAt(mx, my); n != nil && isDraggableNode(n.data.Type) {
-				a.dragNode = n
+				a.dragNode, a.dragActive = n, false
 				a.dragX, a.dragY = mx, my
+				a.dragStartX, a.dragStartY = mx, my
 			}
 		}
 		return
@@ -398,15 +402,15 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 		a.contextMenu.HandleMouse(ev)
 	}
 
-	// Complete a pending Object Explorer drop only if nothing modal opened
-	// mid-drag. dragNode is disarmed either way; armed, it swallows all later
-	// mouse events.
+	// Complete a pending Object Explorer drop only if the drag started (moved
+	// past dragThreshold) and nothing modal opened mid-drag. dragNode is
+	// disarmed either way; armed, it swallows all later mouse events.
 	if a.dragNode != nil {
-		if a.topDialog() == nil {
+		if a.dragActive && a.topDialog() == nil {
 			mx, my := ev.Position()
 			a.dropExplorerNode(mx, my)
 		}
-		a.dragNode = nil
+		a.dragNode, a.dragActive = nil, false
 	}
 
 	a.menuBar.HandleMouse(ev)

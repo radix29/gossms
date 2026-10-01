@@ -287,6 +287,7 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeAGListeners:           agListenersFolderMenuItems,
 	NodeAGListener:            agListenerMenuItems,
 
+	NodeAgentJobs:        agentRootMenuItems,
 	NodeAgentUserJobs:    agentUserJobsMenuItems,
 	NodeAgentJob:         agentJobMenuItems,
 	NodeAgentSchedules:   agentSchedulesMenuItems,

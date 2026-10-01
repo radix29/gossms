@@ -151,3 +151,31 @@ func TestNodeRowPressArmsNodeDrag(t *testing.T) {
 	}
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.ButtonNone, tcell.ModNone))
 }
+
+// Arming is not starting: a press held still, or nudged less than
+// dragThreshold cells, must not start the drag (no ghost, nothing dropped).
+// It used to start on the press itself, so every held click on a node showed
+// the ghost. Moving past the threshold starts it.
+func TestNodeDragStartsOnlyPastThreshold(t *testing.T) {
+	a := newDragTestApp(t, 5)
+	y := draggableChildRow(t, a)
+
+	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.Button1, tcell.ModNone))
+	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.Button1, tcell.ModNone)) // held still
+	a.handleMouse(tcell.NewEventMouse(dragTestLabelX+dragThreshold-1, y, tcell.Button1, tcell.ModNone))
+	if a.dragNode == nil {
+		t.Fatal("press on a draggable node row did not arm a drag")
+	}
+	if a.dragActive {
+		t.Fatal("drag started before the pointer moved dragThreshold cells")
+	}
+
+	a.handleMouse(tcell.NewEventMouse(dragTestLabelX+dragThreshold, y, tcell.Button1, tcell.ModNone))
+	if !a.dragActive {
+		t.Error("drag did not start after the pointer moved dragThreshold cells")
+	}
+	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.ButtonNone, tcell.ModNone))
+	if a.dragNode != nil || a.dragActive {
+		t.Error("release left the drag armed or active")
+	}
+}

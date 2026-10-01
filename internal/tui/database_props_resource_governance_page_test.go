@@ -27,7 +27,7 @@ func TestResourceGovernanceIsAnAzureOnlyPage(t *testing.T) {
 	// The edition must add a page, never reorder or drop one.
 	for _, want := range []string{"General", "Files", "Filegroups", "Options",
 		"Change Tracking", "Query Store", "Permissions", "Extended Properties",
-		"Database Scoped Configurations"} {
+		"Scoped Configurations"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("on-premises Database Properties lost its %q page: %v", want, got)
 		}
