@@ -30,8 +30,11 @@ import (
 // row between two picked ones as well. The rows, never the cells, for the same
 // kind of reason — which columns a selection covers says nothing about which
 // objects it covers.
+//
+// Nil, too, when the objects were installed for another node than the one now
+// current: detailMenuItems pairs them with currentNode's connection.
 func (db *DetailBrowser) selectedRowObjects() []nodeData {
-	if len(db.rowObjs) == 0 {
+	if len(db.rowObjs) == 0 || db.rowObjsNode != db.currentNode {
 		return nil
 	}
 	rows := db.grid.SelectedRows()
@@ -91,7 +94,7 @@ func (a *App) detailMenuItems(db *DetailBrowser) []controls.MenuItem {
 	node := db.currentNode
 	item := controls.MenuItem{
 		Label:  deleteItemLabel(objs),
-		Action: func() { a.confirmDeleteObjects(sc, objs, func() { a.explorer.Reload(node) }) },
+		Action: func() { a.confirmDeleteObjects(sc, objs, func() { a.explorer.ReloadFolders(sc, sameNodeAs(node)) }) },
 	}
 	return []controls.MenuItem{gateDeleteSelection(item, sc, objs)}
 }

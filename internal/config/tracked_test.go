@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -151,5 +152,50 @@ func TestNilTrackedQueriesRefusesToWrite(t *testing.T) {
 	}
 	if err := tq.Save(); err == nil {
 		t.Error("Save on a nil set should report that there is nothing to save")
+	}
+}
+
+// T60: a file written under the old fold, ToLower(Server), loads into the
+// InstanceKey keys, pools sets that now name one instance, and is written back
+// in the new keys on the next save.
+func TestTrackedQueriesLoadAnOldFormatFile(t *testing.T) {
+	path := trackedPath(t)
+	const old = `{"tracked":{
+		"host\\sql2022,1500": {"appdb": [1, 2]},
+		"host\\sql2022":      {"appdb": [2, 3], "Other": [9]},
+		"srv,1433":           {"x": [5]},
+		"srv,55253":          {"x": [6]}
+	}}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	tq := LoadTrackedQueriesFrom(path)
+	if got := tq.IDs(`HOST\SQL2022`, "appdb"); !slices.Equal(got, []int64{1, 2, 3}) {
+		t.Errorf("IDs(HOST\\SQL2022, appdb) = %v, want [1 2 3] — both old spellings merged", got)
+	}
+	if got := tq.IDs(`host\sql2022`, "Other"); !slices.Equal(got, []int64{9}) {
+		t.Errorf("IDs(host\\sql2022, Other) = %v, want [9]", got)
+	}
+	if got := tq.IDs("SRV", "x"); !slices.Equal(got, []int64{5}) {
+		t.Errorf("IDs(SRV, x) = %v, want [5] — srv,1433 is the default instance", got)
+	}
+	if got := tq.IDs("srv,55253", "x"); !slices.Equal(got, []int64{6}) {
+		t.Errorf("IDs(srv,55253, x) = %v, want [6] — another instance, kept apart", got)
+	}
+
+	if _, err := tq.Toggle("srv", "x", 7); err != nil {
+		t.Fatalf("Toggle: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	for _, gone := range []string{`sql2022,1500`, `srv,1433`} {
+		if strings.Contains(string(data), gone) {
+			t.Errorf("the saved file still holds the old key %q:\n%s", gone, data)
+		}
+	}
+	if got := LoadTrackedQueriesFrom(path).IDs(`host\sql2022`, "appdb"); !slices.Equal(got, []int64{1, 2, 3}) {
+		t.Errorf("after the save, IDs(host\\sql2022, appdb) = %v, want [1 2 3]", got)
 	}
 }

@@ -256,12 +256,12 @@ func (a *App) runAGOperation(sc *db.ServerConn, agName string, op agOperation) {
 		case cancelled:
 			// Reloaded anyway: the cancel may have arrived after the commit.
 			a.setStatus(fmt.Sprintf("Cancelled: %s", op.what))
-			a.explorer.Reload(op.refresh)
+			a.explorer.ReloadFolders(sc, sameNodeAs(op.refresh))
 		case err != nil:
 			a.setStatus(fmt.Sprintf("Failed to %s: %v", op.what, err))
 		default:
 			a.setStatus(op.done)
-			a.explorer.Reload(op.refresh)
+			a.explorer.ReloadFolders(sc, sameNodeAs(op.refresh))
 		}
 	})
 }
@@ -491,7 +491,7 @@ func (a *App) confirmFailover(sc *db.ServerConn, refresh *explorerNode, agName, 
 				return
 			}
 			a.setStatus(fmt.Sprintf("Availability group %q failed over to %s", agName, replica))
-			a.explorer.Reload(refresh)
+			a.explorer.ReloadFolders(sc, sameNodeAs(refresh))
 		})
 	}
 

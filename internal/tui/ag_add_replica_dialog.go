@@ -74,7 +74,7 @@ func NewAGAddReplicaDialog(app *App) *AGAddReplicaDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
 	})
 	// The shell would script all three statements as if run here; two belong to
 	// the new instance. See runScript.
@@ -207,11 +207,16 @@ func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 	)
 
 	d.objectName = func() string { return d.resolved.name }
+	// The replica is copied here, on the UI goroutine, and the step captures
+	// the copy — the step runs on the pipeline's, while Connect may replace
+	// d.resolved.
+	var r newAGReplica
 	d.preflight = func() error {
 		d.commit()
+		r = d.resolved
 		return validateAddReplica(d.resolved, pf)
 	}
-	d.applyFns[0] = d.addReplica
+	d.applyFns[0] = func(ctx context.Context) error { return d.addReplica(ctx, r) }
 }
 
 // validateEndpointURL rejects URLs ADD REPLICA would store and then fail to
@@ -304,8 +309,8 @@ func (d *AGAddReplicaDialog) connect(pf *agAddReplicaPrefetch, name string, done
 //
 // A failed JOIN leaves an added, disconnected replica; the error says so and
 // names the instance rather than removing it (as createGroup does).
-func (d *AGAddReplicaDialog) addReplica(ctx context.Context) error {
-	sc, agName, r := d.sc, d.agName, d.resolved
+func (d *AGAddReplicaDialog) addReplica(ctx context.Context, r newAGReplica) error {
+	sc, agName := d.sc, d.agName
 
 	ag, err := agOnPrimary(ctx, sc, agName)
 	if err != nil {

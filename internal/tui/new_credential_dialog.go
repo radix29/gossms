@@ -58,7 +58,7 @@ func NewNewCredentialDialog(app *App) *NewCredentialDialog {
 		pages:   []string{"General"},
 		fetch:   fetchNewCredentialPrefetch,
 		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeCredentials) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeCredentials)) },
 	})
 	return d
 }

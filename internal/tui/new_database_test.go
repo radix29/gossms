@@ -94,7 +94,7 @@ func (d *NewDatabaseDialog) page(t *testing.T, name string) (*propsheet.Form, pr
 	t.Helper()
 	for i, p := range d.pages {
 		if p == name {
-			return d.forms[i], d.applyFns[i]
+			return d.forms[i], hostApply(d.forms[i], d.applyFns[i])
 		}
 	}
 	t.Fatalf("this dialog has pages %v, not %q", d.pages, name)

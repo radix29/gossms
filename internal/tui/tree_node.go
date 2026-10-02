@@ -506,12 +506,12 @@ type nodeData struct {
 	AGLocalSecondary bool
 	AGLocalJoined    bool
 
-	// FuncType is a NodeFunction's sys.objects type — "FN" scalar, "IF"
-	// inline table-valued, "TF" multi-statement table-valued. Read at load
-	// time because the "Script Function as SELECT" template differs between
-	// them (a scalar function is selected, a table-valued one selected
-	// *from*) and nothing downstream can recover it from the label.
-	FuncType string
+	// FuncType is a NodeFunction's sys.objects type — T-SQL or CLR, scalar
+	// or table-valued. Read at load time because the "Script Function as
+	// SELECT" template differs between them (a scalar function is selected,
+	// a table-valued one selected *from*) and nothing downstream can recover
+	// it from the label.
+	FuncType gosmo.FunctionType
 
 	// CreateDate and IsMemoryOptimized back the Object Explorer folder
 	// filter's "Creation Date" and "Is Memory Optimized" criteria (see

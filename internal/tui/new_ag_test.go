@@ -174,7 +174,7 @@ func scriptNewAG(t *testing.T, edit func([]*newAGReplica) []*newAGReplica) strin
 		d.replicas = edit(d.replicas)
 	}
 	scriptCtx, script := gosmo.WithScript(context.Background())
-	if err := d.createGroup(scriptCtx); err != nil {
+	if err := d.createGroup(scriptCtx, agTestRequest(t, d)); err != nil {
 		t.Fatalf("createGroup under WithScript: %v", err)
 	}
 	return multiInstanceScript("New Availability Group", script)
@@ -310,6 +310,16 @@ func agPeerResponses(name string, hadr bool, epName string, port int64, state st
 }
 
 // agDialogWithPeer builds a New AG dialog whose one secondary resolves to peer.
+// agTestRequest is the request preflight would build from d's state.
+func agTestRequest(t *testing.T, d *NewAGDialog) gosmo.CreateAvailabilityGroupRequest {
+	t.Helper()
+	req, err := d.request()
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	return req
+}
+
 func agDialogWithPeer(t *testing.T, local *db.ServerConn, peer *db.ServerConn) *NewAGDialog {
 	t.Helper()
 	d := &NewAGDialog{groupName: "AAG2", clusterType: "EXTERNAL", replicas: newAGReplicaPair()}
@@ -329,7 +339,7 @@ func TestPreflightPassesAReplicaThatCouldJoin(t *testing.T) {
 	peer, _ := newFakeConnFrom(t, agPeerResponses("ubusql2", true, "AGEP", 5022, "STARTED"))
 	d := agDialogWithPeer(t, local, peer)
 
-	if err := d.preflightReplicas(context.Background()); err != nil {
+	if err := d.preflightReplicas(context.Background(), agTestRequest(t, d)); err != nil {
 		t.Errorf("a replica that could join was refused: %v", err)
 	}
 }
@@ -352,7 +362,7 @@ func TestPreflightRefusesTheReplicaStatesThatBreakTheJoin(t *testing.T) {
 			peer, _ := newFakeConnFrom(t, tt.responses)
 			d := agDialogWithPeer(t, local, peer)
 
-			err := d.preflightReplicas(context.Background())
+			err := d.preflightReplicas(context.Background(), agTestRequest(t, d))
 			if err == nil {
 				t.Fatal("the preflight passed a replica that cannot join")
 			}
@@ -377,7 +387,7 @@ func TestPreflightRefusesAPeerThatMayNotJoin(t *testing.T) {
 	peer.ProbeCapabilities()
 
 	d := agDialogWithPeer(t, local, peer)
-	err := d.preflightReplicas(context.Background())
+	err := d.preflightReplicas(context.Background(), agTestRequest(t, d))
 	if err == nil || !strings.Contains(err.Error(), "ALTER ANY AVAILABILITY GROUP") {
 		t.Fatalf("error = %v, want a refusal naming the permission", err)
 	}
@@ -392,7 +402,7 @@ func TestNothingIsCreatedWhenThePreflightFails(t *testing.T) {
 	peer, _ := newFakeConnFrom(t, agPeerResponses("ubusql2", false, "AGEP", 5022, "STARTED"))
 	d := agDialogWithPeer(t, local, peer)
 
-	if err := d.createGroup(context.Background()); err == nil {
+	if err := d.createGroup(context.Background(), agTestRequest(t, d)); err == nil {
 		t.Fatal("createGroup succeeded with a replica that cannot join")
 	}
 	for _, stmt := range inst.Statements() {
@@ -414,7 +424,7 @@ func TestScriptChangesSkipsThePreflight(t *testing.T) {
 	}
 
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.preflightReplicas(scriptCtx); err != nil {
+	if err := d.preflightReplicas(scriptCtx, agTestRequest(t, d)); err != nil {
 		t.Errorf("the preflight ran under Script Changes: %v", err)
 	}
 }

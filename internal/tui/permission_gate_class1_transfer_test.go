@@ -65,7 +65,7 @@ func classOneConn(t *testing.T, dbGranted []string, alterOnSchema bool, objRows 
 			continue
 		}
 		for tag, v := range objRows {
-			r.rows = append(r.rows, []driver.Value{tag, "sales.Thing", v})
+			r.rows = append(r.rows, []driver.Value{tag, probeKey("sales.Thing"), v})
 		}
 		resp[i] = r
 	}

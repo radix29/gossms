@@ -11,6 +11,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
 // freshEndpointInstanceResponses script an instance that has nothing yet — no
@@ -38,12 +39,10 @@ func newEndpointDialogForTest(t *testing.T) (*NewEndpointDialog, *fakeInstance, 
 	d := NewNewEndpointDialog(a)
 	d.sc = local
 	d.ctx = context.Background()
-	d.endpointName, d.port, d.algorithm, d.masterKeyPass = "Hadr_endpoint", 5022, "AES", "pw"
 	d.instances = []*newEndpointInstance{
 		{name: "UBUSQL1", local: true},
 		{name: "UBUSQL2"},
 	}
-	d.commitInputs = func() {}
 	d.peerServerFor = func(_ context.Context, inst *newEndpointInstance) (*gosmo.Server, error) {
 		if inst.local {
 			return local.Server, nil
@@ -53,25 +52,34 @@ func newEndpointDialogForTest(t *testing.T) (*NewEndpointDialog, *fakeInstance, 
 	return d, localInst, remoteInst
 }
 
+// endpointTestRequest is what preflight would build from the test dialog's
+// page: the default name, port and algorithm, a master key password, and the
+// dialog's instance list.
+func endpointTestRequest(d *NewEndpointDialog) endpointRequest {
+	return endpointRequest{name: "Hadr_endpoint", port: 5022, algorithm: "AES", masterKeyPass: "pw", instances: d.instances}
+}
+
 // The master key password is typed into the dialog, but Script Changes opens a
 // query window that is saved and shared — so the CREATE MASTER KEY each fresh
 // instance gets carries the placeholder, and the header says to replace it.
 func TestEndpointScriptDoesNotCarryTheMasterKeyPassword(t *testing.T) {
 	d, _, _ := newEndpointDialogForTest(t)
-	d.masterKeyPass = "Typed!Secret9"
+	req := endpointTestRequest(d)
+	req.masterKeyPass = "Typed!Secret9"
 
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	groups, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		joined := strings.Join(g.stmts, "\n")
 		if !strings.Contains(joined, "CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'"+scriptedPasswordPlaceholder+"'") {
 			t.Errorf("%s's script has no placeholder CREATE MASTER KEY:\n%s", g.instance, joined)
 		}
 	}
-	out := annotateEndpointScript(d.scriptedGroups)
-	if strings.Contains(out, d.masterKeyPass) {
+	out := annotateEndpointScript(groups)
+	if strings.Contains(out, req.masterKeyPass) {
 		t.Errorf("the typed master key password is in the script:\n%s", out)
 	}
 	if !strings.Contains(out, "replace "+scriptedPasswordPlaceholder) {
@@ -103,8 +111,10 @@ func TestScriptSafePasswordOnlyReplacesUnderScripting(t *testing.T) {
 func TestEndpointConfigureCollectsPerInstance(t *testing.T) {
 	d, _, _ := newEndpointDialogForTest(t)
 
+	req := endpointTestRequest(d)
 	scriptCtx, outer := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	groups, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 
@@ -112,10 +122,10 @@ func TestEndpointConfigureCollectsPerInstance(t *testing.T) {
 		t.Errorf("%d statements landed in the pipeline-wide collector, want 0 — they belong to an instance:\n%s",
 			len(outer.Statements()), strings.Join(outer.Statements(), "\n"))
 	}
-	if len(d.scriptedGroups) != 2 {
-		t.Fatalf("configure produced %d groups, want one per instance (2)", len(d.scriptedGroups))
+	if len(groups) != 2 {
+		t.Fatalf("configure produced %d groups, want one per instance (2)", len(groups))
 	}
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		if len(g.stmts) == 0 {
 			t.Errorf("%s collected no statements", g.instance)
 		}
@@ -123,13 +133,13 @@ func TestEndpointConfigureCollectsPerInstance(t *testing.T) {
 	// Each instance's certificate is created on that instance, never on the
 	// other — the one assertion that fails if the grouping is wrong rather than
 	// merely absent.
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		own := "[" + endpointPrincipalBase(g.instance) + "_Cert]"
 		joined := strings.Join(g.stmts, "\n")
 		if !strings.Contains(joined, "CREATE CERTIFICATE "+own) {
 			t.Errorf("%s's group does not create its own certificate %s:\n%s", g.instance, own, joined)
 		}
-		for _, other := range d.scriptedGroups {
+		for _, other := range groups {
 			if other.instance == g.instance {
 				continue
 			}
@@ -148,12 +158,14 @@ func TestEndpointConfigureCollectsPerInstance(t *testing.T) {
 func TestEndpointConfigureReportsThePendingCertificates(t *testing.T) {
 	d, _, _ := newEndpointDialogForTest(t)
 
+	req := endpointTestRequest(d)
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	groups, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		if !g.certPending {
 			t.Errorf("%s is not marked as having no certificate yet", g.instance)
 		}
@@ -166,7 +178,7 @@ func TestEndpointConfigureReportsThePendingCertificates(t *testing.T) {
 		}
 	}
 	// And it survives into what the user actually reads.
-	if out := annotateEndpointScript(d.scriptedGroups); !strings.Contains(out, "THIS SCRIPT IS INCOMPLETE") {
+	if out := annotateEndpointScript(groups); !strings.Contains(out, "THIS SCRIPT IS INCOMPLETE") {
 		t.Errorf("the rendered script does not warn that it is partial:\n%s", out)
 	}
 }
@@ -178,8 +190,10 @@ func TestEndpointConfigureReportsThePendingCertificates(t *testing.T) {
 func TestEndpointScriptingWritesNothingToTheServer(t *testing.T) {
 	d, localInst, remoteInst := newEndpointDialogForTest(t)
 
+	req := endpointTestRequest(d)
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	_, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 
@@ -204,8 +218,10 @@ func TestEndpointConfigureUsesEveryListedInstance(t *testing.T) {
 		return inner(ctx, inst)
 	}
 
+	req := endpointTestRequest(d)
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	_, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 	if len(asked) != 2 || asked[0] != "UBUSQL1" || asked[1] != "UBUSQL2" {
@@ -243,12 +259,14 @@ func TestDefaultPeerServerRoutesTheLocalInstanceHere(t *testing.T) {
 func TestEndpointScriptGrantsOnlyToLoginsItCreates(t *testing.T) {
 	d, _, _ := newEndpointDialogForTest(t)
 
+	req := endpointTestRequest(d)
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	groups, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		created := map[string]bool{}
 		var grantedTo []string
 		for _, stmt := range g.stmts {
@@ -274,7 +292,7 @@ func TestEndpointScriptGrantsOnlyToLoginsItCreates(t *testing.T) {
 	}
 	// The script must still be worth running: the endpoint itself is created,
 	// and its certificate with it.
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		if !strings.Contains(strings.Join(g.stmts, "\n"), "CREATE ENDPOINT") {
 			t.Errorf("%s's partial script does not create its endpoint", g.instance)
 		}
@@ -345,9 +363,8 @@ func TestEndpointConfigureScriptsTheExchangeOnceCertificatesExist(t *testing.T) 
 	d := NewNewEndpointDialog(a)
 	d.sc = local
 	d.ctx = context.Background()
-	d.endpointName, d.port, d.algorithm, d.masterKeyPass = "AGEP", 5022, "AES", "pw"
 	d.instances = []*newEndpointInstance{{name: "ubusql1", local: true}, {name: "ubusql2"}}
-	d.commitInputs = func() {}
+	req := endpointRequest{name: "AGEP", port: 5022, algorithm: "AES", masterKeyPass: "pw", instances: d.instances}
 	d.peerServerFor = func(_ context.Context, inst *newEndpointInstance) (*gosmo.Server, error) {
 		if inst.local {
 			return local.Server, nil
@@ -356,23 +373,24 @@ func TestEndpointConfigureScriptsTheExchangeOnceCertificatesExist(t *testing.T) 
 	}
 
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	groups, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		if g.certPending || len(g.certSkipped) > 0 {
 			t.Errorf("%s still reports a gap with the certificates in place: pending=%v skipped=%v",
 				g.instance, g.certPending, g.certSkipped)
 		}
 	}
-	out := annotateEndpointScript(d.scriptedGroups)
+	out := annotateEndpointScript(groups)
 	if strings.Contains(out, "INCOMPLETE") {
 		t.Errorf("the second press still warns that the script is partial:\n%s", out)
 	}
 	// The login and the CONNECT grant it needs both belong to the same
 	// instance, and the grant is only runnable because the login precedes it.
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		joined := strings.Join(g.stmts, "\n")
 		if !strings.Contains(joined, "CREATE LOGIN") {
 			t.Errorf("%s's script does not create the peer's login:\n%s", g.instance, joined)
@@ -413,9 +431,8 @@ func TestEndpointScriptSkipsAUserThatAlreadyExists(t *testing.T) {
 	d := NewNewEndpointDialog(a)
 	d.sc = local
 	d.ctx = context.Background()
-	d.endpointName, d.port, d.algorithm, d.masterKeyPass = "AGEP", 5022, "AES", "pw"
 	d.instances = []*newEndpointInstance{{name: "ubusql1", local: true}, {name: "ubusql2"}}
-	d.commitInputs = func() {}
+	req := endpointRequest{name: "AGEP", port: 5022, algorithm: "AES", masterKeyPass: "pw", instances: d.instances}
 	d.peerServerFor = func(_ context.Context, inst *newEndpointInstance) (*gosmo.Server, error) {
 		if inst.local {
 			return local.Server, nil
@@ -424,15 +441,46 @@ func TestEndpointScriptSkipsAUserThatAlreadyExists(t *testing.T) {
 	}
 
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	groups, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		for _, stmt := range g.stmts {
 			if strings.Contains(stmt, "CREATE USER") {
 				t.Errorf("%s's script creates a user that already exists — it will fail when run:\n%s",
 					g.instance, stmt)
 			}
 		}
+	}
+}
+
+// Script Changes gets its per-instance groups from the run, not from the
+// dialog: preflight builds the request on the UI goroutine, the step captures
+// it, and a scripted step hands the groups back through the destination the
+// run put in its context (withEndpointScript). Writing them into a dialog
+// field from the pipeline goroutine was T6's race.
+func TestEndpointStepDeliversTheScriptThroughTheRun(t *testing.T) {
+	d, _, _ := newEndpointDialogForTest(t)
+	instances := d.instances
+	d.forms = make([]*propsheet.Form, len(d.pages))
+	d.applyFns = make([]propApply, len(d.pages))
+	d.buildPages(&newEndpointPrefetch{localName: "UBUSQL1"})
+	d.instances = instances // buildPages starts the list over from this instance alone
+	editText(t, d.forms[0], "Master key password", "pw")
+
+	if err := d.preflight(); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	// The list changing after preflight must not reach the run in flight.
+	d.instances = d.instances[:1]
+
+	var groups []endpointScriptGroup
+	scriptCtx, _ := gosmo.WithScript(context.Background())
+	if err := d.applyFns[0](withEndpointScript(scriptCtx, &groups)); err != nil {
+		t.Fatalf("scripted step: %v", err)
+	}
+	if len(groups) != 2 || groups[0].instance != "UBUSQL1" || groups[1].instance != "UBUSQL2" {
+		t.Errorf("groups = %+v, want one per instance preflight saw", groups)
 	}
 }

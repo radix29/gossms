@@ -181,7 +181,6 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 	rows = append(rows, transferRow, warnRow, propsheet.Note(spec.Note))
 
 	apply := func(ctx context.Context) error {
-		commitCurrent()
 		for _, it := range items {
 			if it.newOwner == it.origOwner {
 				continue
@@ -192,7 +191,9 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		}
 		return nil
 	}
-	return propsheet.NewForm(rows...), apply
+	form := propsheet.NewForm(rows...)
+	form.SetCommit(commitCurrent)
+	return form, apply
 }
 
 // ownedSchema pairs a schema with its object count. The count is a per-schema

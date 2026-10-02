@@ -92,32 +92,10 @@ func databaseScopedXEvents(sc *db.ServerConn) bool {
 }
 
 // refreshXESessions reloads scope's Sessions folder on sc, where the tree has
-// it loaded — RefreshFolderByType would find the first database's.
+// it loaded. The database is part of the match: on Azure SQL Database every
+// database has a Sessions folder of its own.
 func (a *App) refreshXESessions(sc *db.ServerConn, scope xeScope) {
-	if scope.db == "" {
-		a.explorer.RefreshFolderByType(sc, NodeEventSessions)
-		return
-	}
-	var find func(n *explorerNode) *explorerNode
-	find = func(n *explorerNode) *explorerNode {
-		for _, c := range n.children {
-			if c.data.Type == NodeEventSessions && c.data.DBName == scope.db {
-				return c
-			}
-			if f := find(c); f != nil {
-				return f
-			}
-		}
-		return nil
-	}
-	for _, r := range a.explorer.roots {
-		if r.data.conn == sc {
-			if n := find(r); n != nil {
-				a.explorer.Reload(n)
-			}
-			return
-		}
-	}
+	a.explorer.ReloadFolders(sc, folderOf(scope.db, NodeEventSessions))
 }
 
 // refreshXESession reloads the node of scope's session name on sc — its
@@ -125,26 +103,9 @@ func (a *App) refreshXESessions(sc *db.ServerConn, scope xeScope) {
 // it. Reload fetches only an expanded node, so a collapsed one is just marked
 // for a fresh read when it opens.
 func (a *App) refreshXESession(sc *db.ServerConn, scope xeScope, name string) {
-	var find func(n *explorerNode) *explorerNode
-	find = func(n *explorerNode) *explorerNode {
-		for _, c := range n.children {
-			if c.data.Type == NodeEventSession && c.data.Name == name && c.data.DBName == scope.db {
-				return c
-			}
-			if f := find(c); f != nil {
-				return f
-			}
-		}
-		return nil
-	}
-	for _, r := range a.explorer.roots {
-		if r.data.conn == sc {
-			if n := find(r); n != nil {
-				a.explorer.Reload(n)
-			}
-			return
-		}
-	}
+	a.explorer.ReloadFolders(sc, func(d nodeData) bool {
+		return d.Type == NodeEventSession && d.Name == name && d.DBName == scope.db
+	})
 }
 
 // loadExtendedEventsChildren returns the Extended Events folder's children:
@@ -314,11 +275,7 @@ func (a *App) setEventSessionState(sc *db.ServerConn, node *explorerNode, start 
 		}, func(err error, cancelled bool) {
 			// The folder, not the node: the icon is drawn from IsEnabled, which
 			// the folder's listing sets.
-			reload := func() {
-				if parent := node.parent; parent != nil {
-					a.explorer.Reload(parent)
-				}
-			}
+			reload := func() { a.explorer.ReloadFolders(sc, sameNodeAs(node.parent)) }
 			switch {
 			case cancelled:
 				a.setStatus(fmt.Sprintf("%s of %q cancelled", verb, name))

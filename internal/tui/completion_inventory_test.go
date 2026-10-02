@@ -92,6 +92,54 @@ func TestPurgeCompletionInventoriesAbandonsInFlightLoads(t *testing.T) {
 	}
 }
 
+// T9: two identities on one server — Windows and Entra Default, both with an
+// empty User — get their own catalogs and saved OE filters, and disconnecting
+// one leaves the other's alone. They shared one key when it was built from
+// User: the second connection was served a catalog filtered by the first's
+// metadata visibility, and a disconnect purged both.
+func TestTwoIdentitiesOnOneServerKeepTheirOwnCaches(t *testing.T) {
+	win := &db.ServerConn{Opts: config.Connection{Server: "srv", AuthMethod: config.AuthWindows}}
+	entra := &db.ServerConn{Opts: config.Connection{Server: "srv", AuthMethod: config.AuthEntraDefault}}
+	if sysCompletionInventoryKey(win.Opts) == sysCompletionInventoryKey(entra.Opts) {
+		t.Error("Windows and Entra Default on one server share a completion key")
+	}
+
+	a := newTestApp()
+	a.completionInventories = map[string]*completionInventory{}
+	a.sysCompletionInventories = map[string]*completionInventory{}
+	for _, sc := range []*db.ServerConn{win, entra} {
+		k := sysCompletionInventoryKey(sc.Opts)
+		a.completionInventories[completionInventoryKey(sc.Opts, "appdb")] = &completionInventory{serverKey: k}
+		a.sysCompletionInventories[k] = &completionInventory{serverKey: k}
+	}
+	folder := nodeData{Type: NodeTables, DBName: "appdb"}
+	a.rememberFilter(entra, folder, nameFilter("cust"))
+
+	a.purgeCompletionInventories(win)
+
+	if _, ok := a.sysCompletionInventories[sysCompletionInventoryKey(entra.Opts)]; !ok {
+		t.Error("disconnecting the Windows login purged the Entra login's sys catalog")
+	}
+	if _, ok := a.completionInventories[completionInventoryKey(entra.Opts, "appdb")]; !ok {
+		t.Error("disconnecting the Windows login purged the Entra login's appdb catalog")
+	}
+	if len(a.completionInventories) != 1 || len(a.sysCompletionInventories) != 1 {
+		t.Errorf("after the purge: %d per-database and %d sys entries, want 1 and 1 (the Entra login's)",
+			len(a.completionInventories), len(a.sysCompletionInventories))
+	}
+
+	winTables := []*explorerNode{{data: folder}}
+	a.restoreFilters(win, winTables)
+	if winTables[0].data.Filter != nil {
+		t.Error("the Entra login's saved filter was restored on the Windows login's Tables folder")
+	}
+	entraTables := []*explorerNode{{data: folder}}
+	a.restoreFilters(entra, entraTables)
+	if entraTables[0].data.Filter == nil {
+		t.Error("the Entra login's saved filter was not restored on its own Tables folder")
+	}
+}
+
 // openPlaceholderPopup hosts qp, points it at a database whose inventory is
 // still loading, and types a FROM-clause prefix so its popup opens on the
 // "Loading suggestions..." row. It returns a pointer to the items the

@@ -209,9 +209,7 @@ func TestNewLoginMappedRefusesDefaults(t *testing.T) {
 	}
 }
 
-// A default database and language still reach a login that can have them, by
-// the two routes gosmo uses: DEFAULT_DATABASE in the CREATE for a Windows
-// login, and a following ALTER LOGIN for the language.
+// A default database and language reach a Windows login in its one CREATE.
 func TestNewLoginDefaultsReachAWindowsLogin(t *testing.T) {
 	inst, p := newLoginGeneral(t)
 	editText(t, p.form, "Login name", `CONTOSO\dba`)
@@ -219,27 +217,39 @@ func TestNewLoginDefaultsReachAWindowsLogin(t *testing.T) {
 	editSelect(t, p.form, "Default database", "warehouse")
 	editSelect(t, p.form, "Default language", "British")
 	stmts := p.runApply(t, inst)
-	if len(stmts) != 2 {
-		t.Fatalf("statements = %v, want the CREATE and the language ALTER", stmts)
-	}
-	if !strings.Contains(stmts[0], "DEFAULT_DATABASE = [warehouse]") {
-		t.Errorf("statements[0] = %q, want the default database in the CREATE", stmts[0])
-	}
-	if !strings.Contains(stmts[1], "DEFAULT_LANGUAGE") || !strings.Contains(stmts[1], "British") {
-		t.Errorf("statements[1] = %q, want the language ALTER", stmts[1])
+	want := `CREATE LOGIN [CONTOSO\dba] FROM WINDOWS WITH DEFAULT_DATABASE = [warehouse], DEFAULT_LANGUAGE = [British]`
+	if len(stmts) != 1 || stmts[0] != want {
+		t.Fatalf("statements = %q, want [%q]", stmts, want)
 	}
 }
 
-// The password policy is a SQL-login-only follow-up; ticking it under another
-// source must not produce an ALTER LOGIN the server refuses.
+// T4: the password policy rides in the CREATE, so a weak password with the
+// policy unticked is accepted rather than refused (Msg 15118) by a CREATE
+// that ran under CHECK_POLICY = ON before a follow-up ALTER turned it off.
+func TestNewLoginPolicyOffGoesInTheCreate(t *testing.T) {
+	inst, p := newLoginGeneral(t)
+	editText(t, p.form, "Login name", "app")
+	editText(t, p.form, "Password", "a")
+	editText(t, p.form, "Confirm password", "a")
+	editCheck(t, p.form, "Enforce password policy", false)
+	editSelect(t, p.form, "Default language", "British")
+	stmts := p.runApply(t, inst)
+	want := "CREATE LOGIN [app] WITH PASSWORD = N'a', DEFAULT_LANGUAGE = [British], CHECK_POLICY = OFF"
+	if len(stmts) != 1 || stmts[0] != want {
+		t.Fatalf("statements = %q, want [%q]", stmts, want)
+	}
+}
+
+// The password policy is SQL-login-only; ticking it under another source must
+// not reach a CREATE the server, and gosmo, refuse.
 func TestNewLoginPasswordPolicyIsSQLOnly(t *testing.T) {
 	inst, p := newLoginGeneral(t)
 	editText(t, p.form, "Login name", `CONTOSO\dba`)
 	editCheck(t, p.form, "Enforce password expiration", true)
 	editRadio(t, p.form, "Authentication", "Windows Authentication")
 	stmts := p.runApply(t, inst)
-	if len(stmts) != 1 {
-		t.Fatalf("statements = %v, want the CREATE alone", stmts)
+	if len(stmts) != 1 || strings.Contains(stmts[0], "CHECK_") {
+		t.Fatalf("statements = %q, want the CREATE alone", stmts)
 	}
 }
 

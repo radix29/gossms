@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/radix29/gossms/internal/fileutil"
@@ -109,22 +108,30 @@ func readTrackedFile(path string) (map[string]map[string][]int64, error) {
 		log.Printf("tracked queries: %s did not parse (%v); kept as %s.corrupt", path, err, path)
 		return sets, nil
 	}
+	// Merged, not assigned: keys are re-folded on every read, so a file
+	// written under an older fold — ToLower(Server) — loads into today's keys,
+	// and spellings that now name one instance ("host" and "host,1433") pool
+	// their ids. The next Save writes the file back in the new keys.
 	for server, dbs := range f.Tracked {
 		for database, ids := range dbs {
-			setTracked(sets, server, database, ids)
+			held := sets[serverKey(server)][database]
+			setTracked(sets, server, database, append(slices.Clone(held), ids...))
 		}
 	}
 	return sets, nil
 }
 
-// serverKey folds a server address: addresses are case-insensitive free text,
-// so HOST\SQL2022 and host\sql2022 share a set.
+// serverKey folds a server address by InstanceKey, the rule peers and saved
+// credentials key by: HOST\SQL2022, host\sql2022 and host\sql2022,1500 share a
+// set, as do "host" and "host,1433", while "host,55253" is another instance.
+// Callers pass ConnectionAddress(opts), not opts.Server, which drops a
+// Port-field port.
 //
 // The database is deliberately not folded: database names come from
 // sys.databases in the server's spelling, and on a case-sensitive collation
 // Sales and sales are different databases. TestServerIsFoldedAndDatabaseIsNot
 // pins it.
-func serverKey(server string) string { return strings.ToLower(strings.TrimSpace(server)) }
+func serverKey(server string) string { return InstanceKey(server) }
 
 // SameServer reports whether two addresses name the same instance, by the same
 // rule the sets are keyed by.

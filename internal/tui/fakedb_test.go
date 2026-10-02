@@ -605,9 +605,24 @@ func capabilityResponsesWithSchemas(dbAccessible bool, granted, denied, dbGrante
 	return out
 }
 
+// probeKey turns a fixture's "schema.object" or "schema.object.column" into
+// the key gosmo's probe records it under — gosmo.ObjectKey or
+// gosmo.ColumnKey, whose parts are joined by a separator no name can contain,
+// not by a dot. A fixture name has no dot of its own.
+func probeKey(dotted string) string {
+	switch p := strings.Split(dotted, "."); len(p) {
+	case 2:
+		return gosmo.ObjectKey(p[0], p[1])
+	case 3:
+		return gosmo.ColumnKey(p[0], p[1], p[2])
+	}
+	return dotted
+}
+
 // capabilityResponsesWithObjects is capabilityResponses plus the OBJECT-scope
 // block of the same database probe. Objects come back tagged "O:<permission>"
-// with the securable as "schema.object" — see gosmo's objectCapabilityQuery.
+// with the securable named "schema.object" here and keyed by probeKey — see
+// gosmo's objectCapabilityQuery.
 //
 // Only granted, denied and owned objects appear. The map is sparse by design,
 // which is the property the gate has to be right about, so a test naming an
@@ -619,10 +634,10 @@ func capabilityResponsesWithObjects(dbAccessible bool, dbDenied, schemaDenied, o
 			continue
 		}
 		for _, n := range objGranted {
-			r.rows = append(r.rows, []driver.Value{"O:ALTER", n, int64(1)})
+			r.rows = append(r.rows, []driver.Value{"O:ALTER", probeKey(n), int64(1)})
 		}
 		for _, n := range objDenied {
-			r.rows = append(r.rows, []driver.Value{"O:ALTER", n, int64(0)})
+			r.rows = append(r.rows, []driver.Value{"O:ALTER", probeKey(n), int64(0)})
 		}
 		out[i] = r
 	}
@@ -630,8 +645,8 @@ func capabilityResponsesWithObjects(dbAccessible bool, dbDenied, schemaDenied, o
 }
 
 // withDeniedColumns adds a column-scope DENY of ALTER to a capability script,
-// naming each column as "schema.object.column" — the key gosmo's probe records
-// them under. The rows ride on the database probe beside the object-scope
+// naming each column as "schema.object.column", keyed by probeKey as gosmo's
+// probe records them. The rows ride on the database probe beside the object-scope
 // ones, which is how the server returns them.
 func withDeniedColumns(responses []fakeResponse, columns ...string) []fakeResponse {
 	for i, r := range responses {
@@ -639,7 +654,7 @@ func withDeniedColumns(responses []fakeResponse, columns ...string) []fakeRespon
 			continue
 		}
 		for _, n := range columns {
-			r.rows = append(r.rows, []driver.Value{"C:ALTER", n, int64(0)})
+			r.rows = append(r.rows, []driver.Value{"C:ALTER", probeKey(n), int64(0)})
 		}
 		responses[i] = r
 	}
@@ -836,7 +851,21 @@ func loadPage(t *testing.T, page propPage, inst *fakeInstance) (*propsheet.Form,
 		}
 		t.Fatalf("page %q load: %v", page.title, err)
 	}
-	return form, apply
+	return form, hostApply(form, apply)
+}
+
+// hostApply is apply as the dialog runs it: the form's commit hook first, as
+// PropDialog and newObjectDialog do on the UI goroutine before every run
+// (propsheet.Form.SetCommit), so a test that drives the editor fields and calls
+// apply sees what an OK would send.
+func hostApply(form *propsheet.Form, apply propApply) propApply {
+	if apply == nil {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		form.Commit()
+		return apply(ctx)
+	}
 }
 
 // textRow finds an editable row by its label, so a test can drive a page the

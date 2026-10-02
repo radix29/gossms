@@ -52,6 +52,12 @@ type DetailBrowser struct {
 	// describe the previous node's rows.
 	rowObjs []nodeData
 
+	// rowObjsNode is the node rowObjs was installed for. detailMenuItems
+	// refuses a Delete when it is not currentNode: a reset missed on some new
+	// path then costs the menu item, not a DROP of the previous node's objects
+	// on the new node's connection.
+	rowObjsNode *explorerNode
+
 	// charts are the composition bars drawn under the grid for the node on
 	// screen (detail_browser_charts.go). Reset like rowObjs.
 	charts []detailChart
@@ -221,6 +227,7 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 		return
 	}
 	db.run.supersede()
+	prev := db.currentNode
 	db.currentNode = node
 
 	if node == nil {
@@ -251,6 +258,17 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 		return
 	}
 
+	// A different node's rows must not stay on screen under "Loading...": the
+	// fetch can take childFetchTimeout, and until it lands the context menu
+	// and Show Value would pair those rows with this node's connection — a
+	// Delete of the previous node's objects on this node's server. A Refresh
+	// of the node on screen keeps its rows (they are still this node's), but
+	// not their objects, as nothing pins which of them the reload removes.
+	db.resetForNewNode()
+	if prev != node {
+		db.grid.SetFillLastColumn(false)
+		db.grid.SetData(nil, nil)
+	}
 	db.grid.SetStatus("Loading...")
 	ctx, seq := db.run.begin(sc.Context(), node)
 	db.fetch(ctx, app, sc, node, seq)
@@ -266,14 +284,14 @@ func (db *DetailBrowser) showEmpty() {
 
 // resetForNewNode drops everything that described the node leaving the screen.
 // applyResult and postPartial reset the same fields by installing new ones;
-// every path that installs none — showEmpty, and the "Not connected" branch of
-// ShowNodeDetails — calls this instead.
+// every path that installs none — showEmpty, and the "Not connected" and
+// loading branches of ShowNodeDetails — calls this instead.
 //
 // setCharts, not `db.charts = nil`: it also re-splits the panel, giving the
 // grid the rows the strip held, and drops the pinned tooltip, which nothing
 // else clears.
 func (db *DetailBrowser) resetForNewNode() {
-	db.rowObjs = nil
+	db.rowObjs, db.rowObjsNode = nil, nil
 	db.setCharts(nil)
 }
 
@@ -305,10 +323,10 @@ func (db *DetailBrowser) setCharts(c []detailChart) {
 // describes. Losing Delete is the safe failure; the wrong DROP is not.
 func (db *DetailBrowser) setRowObjects(rows [][]string, objs []nodeData) {
 	if len(objs) != len(rows) {
-		db.rowObjs = nil
+		db.rowObjs, db.rowObjsNode = nil, nil
 		return
 	}
-	db.rowObjs = objs
+	db.rowObjs, db.rowObjsNode = objs, db.currentNode
 }
 
 // isPropertyValueColumns reports whether cols is the Property/Value shape of a

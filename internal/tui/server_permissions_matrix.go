@@ -256,7 +256,7 @@ func buildPermissionsMatrix(
 		// principal from this slice, so nothing is missed.
 		for _, p := range principals {
 			for _, e := range editsByPrincipal[p.Name] {
-				if err := applyPermEdit(ctx, applyFn, e, e.entry.Principal); err != nil {
+				if err := applyPermChange(ctx, applyFn, e.orig, e.current, e.entry.Permission, e.entry.Principal); err != nil {
 					return err
 				}
 			}
@@ -351,7 +351,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 			applyFn := serverPermApply(sc.Server)
 			apply := func(ctx context.Context) error {
 				for _, e := range edits {
-					if err := applyPermEdit(ctx, applyFn, e, principalName); err != nil {
+					if err := applyPermChange(ctx, applyFn, e.orig, e.current, e.entry.Permission, principalName); err != nil {
 						return err
 					}
 				}

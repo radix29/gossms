@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/db"
 )
 
 // app_peer_creds.go holds App's answer to db.PeerCredentials: which saved
@@ -28,7 +27,7 @@ import (
 // Read from background loader goroutines — the Object Explorer's Always On
 // loader is the main caller, through Peer — so the map is behind peerCredMu.
 func (a *App) peerCredentialsFor(server string) (config.Connection, bool) {
-	key := db.InstanceKey(server)
+	key := config.InstanceKey(server)
 	a.peerCredMu.Lock()
 	defer a.peerCredMu.Unlock()
 	if c, ok := a.peerCreds[key]; ok {
@@ -49,7 +48,7 @@ func (a *App) rememberPeerCredentials(conn config.Connection) {
 	// ConnectionAddress, not conn.Server: the Connect dialog saves a port in
 	// the separate Port field, and keyed without it "win10cli" and its
 	// SQL2017 instance on 55253 became one instance with the later login.
-	key := db.InstanceKey(db.ConnectionAddress(conn))
+	key := config.InstanceKey(config.ConnectionAddress(conn))
 	a.peerCredMu.Lock()
 	defer a.peerCredMu.Unlock()
 	if a.peerCreds == nil {

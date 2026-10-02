@@ -88,12 +88,6 @@ type NewEndpointDialog struct {
 
 	instances []*newEndpointInstance
 
-	// Values the page owns, read when the pipeline runs.
-	endpointName    string
-	port            int
-	algorithm       string
-	masterKeyPass   string
-	commitInputs    func()
 	certificateName func(instance string) string
 
 	// peerServerFor resolves an instance to the gosmo.Server its half of the
@@ -105,10 +99,33 @@ type NewEndpointDialog struct {
 	// it already has — a test seam like peerServerFor; the default is
 	// addInstance. Asynchronous: done runs on the UI goroutine.
 	resolveInstance func(name string, done func(*newEndpointInstance, error))
+}
 
-	// scriptedGroups is what the last scripted configure collected, one entry
-	// per instance. Read by runScript, which runs after the pipeline.
-	scriptedGroups []endpointScriptGroup
+// endpointRequest is what the dialog's page held when OK, Apply or Script
+// Changes was pressed — built by preflight on the UI goroutine and captured by
+// the apply step, so the pipeline's goroutine reads none of the dialog's
+// widgets or fields and writes none of them.
+type endpointRequest struct {
+	name          string
+	port          int
+	algorithm     string
+	masterKeyPass string
+	// instances is the list as it stood: a copy, since Add and Remove
+	// Instance edit d.instances. An instance itself is never edited once
+	// added, so the pointers can be shared.
+	instances []*newEndpointInstance
+}
+
+// endpointScriptKey carries the destination for a scripted configure's
+// per-instance groups — see withEndpointScript.
+type endpointScriptKey struct{}
+
+// withEndpointScript returns ctx carrying dst: a scripted configure stores the
+// groups it collected there. Owned by the run (runScript), not the dialog, so
+// the pipeline's goroutine writes nothing the UI goroutine reads until the run
+// has completed — the same shape as gosmo.WithScript's own collector.
+func withEndpointScript(ctx context.Context, dst *[]endpointScriptGroup) context.Context {
+	return context.WithValue(ctx, endpointScriptKey{}, dst)
 }
 
 // NewNewEndpointDialog creates the dialog and wires its callbacks.
@@ -121,7 +138,7 @@ func NewNewEndpointDialog(app *App) *NewEndpointDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
 	})
 	d.certificateName = func(instance string) string { return endpointPrincipalBase(instance) + "_Cert" }
 	d.peerServerFor = d.defaultPeerServer
@@ -169,7 +186,6 @@ func endpointPrincipalBase(instance string) string {
 func (d *NewEndpointDialog) show(sc *db.ServerConn, node *explorerNode) {
 	d.node = node
 	d.instances = nil
-	d.commitInputs = nil
 	d.newObjectDialog.show(sc)
 	d.SetHeader("Database mirroring endpoints", "Server: "+sc.Opts.Server)
 }
@@ -221,14 +237,17 @@ func (d *NewEndpointDialog) buildPages(pf *newEndpointPrefetch) {
 
 	instanceRows, commitInstances := d.instanceRows()
 
-	d.commitInputs = func() {
-		commitInstances()
-		d.endpointName = strings.TrimSpace(nameRow.Value())
-		d.algorithm = algorithmRow.Value()
-		d.masterKeyPass = passRow.Value()
-		if n, err := portRow.IntValue(); err == nil {
-			d.port = int(n)
+	request := func() endpointRequest {
+		req := endpointRequest{
+			name:          strings.TrimSpace(nameRow.Value()),
+			algorithm:     algorithmRow.Value(),
+			masterKeyPass: passRow.Value(),
+			instances:     slices.Clone(d.instances),
 		}
+		if n, err := portRow.IntValue(); err == nil {
+			req.port = int(n)
+		}
+		return req
 	}
 
 	rows := []propsheet.Row{
@@ -247,13 +266,23 @@ func (d *NewEndpointDialog) buildPages(pf *newEndpointPrefetch) {
 	)
 	rows = append(rows, instanceRows...)
 	d.forms[0] = propsheet.NewForm(rows...)
+	d.forms[0].SetCommit(commitInstances)
 
 	d.objectName = func() string { return strings.TrimSpace(nameRow.Value()) }
+	// The request is built here, on the UI goroutine, and the step captures it
+	// — the step itself runs on the pipeline's goroutine.
+	var req endpointRequest
 	d.preflight = func() error {
-		d.commitInputs()
-		return validateNewEndpoint(d.endpointName, d.masterKeyPass, d.instances)
+		req = request()
+		return validateNewEndpoint(req.name, req.masterKeyPass, req.instances)
 	}
-	d.applyFns[0] = d.configure
+	d.applyFns[0] = func(ctx context.Context) error {
+		groups, err := d.configure(ctx, req)
+		if dst, ok := ctx.Value(endpointScriptKey{}).(*[]endpointScriptGroup); ok {
+			*dst = groups
+		}
+		return err
+	}
 }
 
 // validateNewEndpoint rejects what would otherwise fail partway through the
@@ -461,21 +490,21 @@ type endpointScriptGroup struct {
 }
 
 // configure is the whole pipeline — see the file comment for its shape. Every
-// step is skipped when what it would create already exists.
-func (d *NewEndpointDialog) configure(ctx context.Context) error {
-	d.commitInputs()
-	if err := validateNewEndpoint(d.endpointName, d.masterKeyPass, d.instances); err != nil {
-		return err
+// step is skipped when what it would create already exists. Under Script
+// Changes it returns what each instance's collector gathered, one group per
+// instance in req's order; otherwise nil.
+func (d *NewEndpointDialog) configure(ctx context.Context, req endpointRequest) ([]endpointScriptGroup, error) {
+	if err := validateNewEndpoint(req.name, req.masterKeyPass, req.instances); err != nil {
+		return nil, err
 	}
 
-	d.scriptedGroups = nil
 	scripting := gosmo.Scripting(ctx)
 
-	peers := make([]*endpointPeer, 0, len(d.instances))
-	for _, inst := range d.instances {
+	peers := make([]*endpointPeer, 0, len(req.instances))
+	for _, inst := range req.instances {
 		server, err := d.peerServerFor(ctx, inst)
 		if err != nil {
-			return fmt.Errorf("connect to %s: %w", inst.name, err)
+			return nil, fmt.Errorf("connect to %s: %w", inst.name, err)
 		}
 		p := &endpointPeer{inst: inst, server: server, master: server.DatabaseRef("master"), ctx: ctx}
 		if scripting {
@@ -486,8 +515,8 @@ func (d *NewEndpointDialog) configure(ctx context.Context) error {
 		// unaffected either way — WithScript intercepts only the two exec
 		// chokepoints — so a peer's reads still hit the real server, which is
 		// what makes a certificate's public key readable at all.
-		if err := d.ensureCertificate(p.ctx, p); err != nil {
-			return err
+		if err := d.ensureCertificate(p.ctx, p, req.masterKeyPass); err != nil {
+			return nil, err
 		}
 		peers = append(peers, p)
 	}
@@ -501,20 +530,20 @@ func (d *NewEndpointDialog) configure(ctx context.Context) error {
 				continue
 			}
 			if err := d.importPeerCertificate(p.ctx, p, other); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
 	for _, p := range peers {
-		if err := d.ensureEndpoint(p.ctx, p, peers); err != nil {
-			return err
+		if err := d.ensureEndpoint(p.ctx, p, peers, req); err != nil {
+			return nil, err
 		}
 	}
 	if scripting {
-		d.scriptedGroups = endpointScriptGroupsFrom(peers)
+		return endpointScriptGroupsFrom(peers), nil
 	}
-	return nil
+	return nil, nil
 }
 
 // endpointScriptGroupsFrom flattens the finished peers into what
@@ -548,9 +577,10 @@ func findCertificateIfAny(ctx context.Context, d *gosmo.Database, name string) (
 }
 
 // ensureCertificate gives one instance a master key and a certificate of its
-// own, and reads the public half back.
-func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPeer) error {
-	if err := ensureMasterKey(ctx, p.master, scriptSafePassword(ctx, d.masterKeyPass)); err != nil {
+// own, and reads the public half back. masterKeyPass protects a master key it
+// has to create.
+func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPeer, masterKeyPass string) error {
+	if err := ensureMasterKey(ctx, p.master, scriptSafePassword(ctx, masterKeyPass)); err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 
@@ -675,8 +705,8 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 }
 
 // ensureEndpoint creates p's endpoint if it has none, then grants every peer's
-// login CONNECT on it.
-func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer, all []*endpointPeer) error {
+// login CONNECT on it. req says what an endpoint it creates is like.
+func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer, all []*endpointPeer, req endpointRequest) error {
 	ep, err := p.server.DatabaseMirroringEndpoint(ctx)
 	if err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
@@ -686,12 +716,12 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 		// small grammar, not one keyword — so the certificate name inside it
 		// is quoted here.
 		spec := gosmo.CreateDatabaseMirroringEndpointRequest{
-			Name:                d.endpointName,
-			Port:                d.port,
+			Name:                req.name,
+			Port:                req.port,
 			Role:                "ALL",
 			Authentication:      "CERTIFICATE " + gosmo.QuoteName(d.certificateName(p.inst.name)),
 			Encryption:          "REQUIRED",
-			EncryptionAlgorithm: d.algorithm,
+			EncryptionAlgorithm: req.algorithm,
 		}
 		if ep, err = p.server.CreateDatabaseMirroringEndpoint(ctx, spec); err != nil {
 			return fmt.Errorf("%s: create endpoint: %w", p.inst.name, err)
@@ -733,9 +763,11 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 // gosmo's per-instance labels the way NewAGDialog.runScript does.
 func (d *NewEndpointDialog) runScript() {
 	scriptCtx, _ := gosmo.WithScript(d.ctx)
+	var groups []endpointScriptGroup
+	scriptCtx = withEndpointScript(scriptCtx, &groups)
 	sc := d.sc
 	d.runPipeline(scriptCtx, func() {
-		d.app.openQueryWithText(sc, "", annotateEndpointScript(d.scriptedGroups))
+		d.app.openQueryWithText(sc, "", annotateEndpointScript(groups))
 	})
 }
 

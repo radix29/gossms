@@ -21,6 +21,13 @@ caught by driving the built binary. For TUI or database changes, run it:
 Tests assert an outcome, not "nothing panicked". Mutate the covered code and
 confirm the new test fails.
 
+**`waitAndDrain` runs one callback, not "everything".** It returns after the
+first queued UI callback, and the order goroutines post in shifts under
+`-race`. When an action posts more than one (Apply's page reloads plus a node
+reload, a showing's several loads), wait on the outcome with
+`drainUntil(t, a, cond, what)` instead — two `-race`-only flakes came from
+this.
+
 **A `-race`-only failure can be a stale build cache.** After a mutation check
 edited and restored a file, `go test -race` kept failing on byte-identical
 source (the race archive from the mutated file was reused). Run `go test -race
@@ -84,6 +91,10 @@ reason:
 - `eachDatabase` (`db_scan.go`) and gosmo's `userMappingsIn` skip a database
   whose read fails, so an under-scripted fake gives an empty grid and a no-op
   apply. Assert rows loaded first.
+- **A fake row that carries a gosmo key spells it through gosmo's helper**
+  (`probeKey`, `gosmo.DatabaseSecurableKey`), never by hand — a hand-spelled
+  key goes stale when gosmo's format changes, and "gossms builds no key
+  literal" missed exactly these fixtures (review plan T26).
 
 The harness shows the page asked the right things and built the right request —
 never that the T-SQL is valid. Statement text is gosmo's tests; acceptance is a

@@ -49,7 +49,7 @@ func endpointPeerFor(t *testing.T, d *NewEndpointDialog, name string, extra ...f
 		master: sc.Server.DatabaseRef("master"),
 		ctx:    context.Background(),
 	}
-	if err := d.ensureCertificate(p.ctx, p); err != nil {
+	if err := d.ensureCertificate(p.ctx, p, "pw"); err != nil {
 		t.Fatalf("ensureCertificate for %s: %v", name, err)
 	}
 	if len(p.encoded) == 0 || p.cert == nil {

@@ -1,6 +1,10 @@
 package controls
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestSelectStatementAtCursorSemicolonSeparated(t *testing.T) {
 	e := newTestEditor("SELECT 1;\nSELECT 2;")
@@ -228,5 +232,100 @@ func TestSelectStatementAtCursorIgnoresGoInsideNestedBlockComment(t *testing.T) 
 	}
 	if got := e.SelectedText(); got != script {
 		t.Fatalf("statement = %q, want the whole script %q — the GO in the nested comment split it", got, script)
+	}
+}
+
+// statementAtMarker returns what Ctrl+Enter selects with the cursor at the
+// "‸" in script (the marker itself removed).
+func statementAtMarker(t *testing.T, script string) string {
+	t.Helper()
+	var row, col int
+	found := false
+	for r, line := range strings.Split(script, "\n") {
+		if i := strings.Index(line, "‸"); i >= 0 {
+			row, col, found = r, utf8.RuneCountInString(line[:i]), true
+		}
+	}
+	if !found {
+		t.Fatalf("no ‸ marker in %q", script)
+	}
+	e := newTestEditor(strings.Replace(script, "‸", "", 1))
+	e.cursorRow, e.cursorCol = row, col
+	if !e.SelectStatementAtCursor() {
+		return ""
+	}
+	return e.SelectedText()
+}
+
+func TestSelectStatementAtCursorLeaderBoundaries(t *testing.T) {
+	cases := []struct{ name, script, want string }{
+		// T2: a non-DML statement after the cursor's is no longer swept in.
+		{"DDL and EXEC after a SELECT", "‸SELECT * FROM dbo.Orders\nDROP TABLE dbo.Staging\nEXEC dbo.Purge",
+			"SELECT * FROM dbo.Orders"},
+		{"the DROP itself", "SELECT 1\n‸DROP TABLE dbo.Staging\nEXEC dbo.Purge", "DROP TABLE dbo.Staging"},
+		{"SET NOCOUNT ON before a DELETE", "‸SET NOCOUNT ON\nDELETE FROM t", "SET NOCOUNT ON"},
+		{"TRUNCATE after an UPDATE", "‸UPDATE t SET a = 1\nTRUNCATE TABLE t", "UPDATE t SET a = 1"},
+		{"KILL after a SELECT", "‸SELECT 1\nKILL 55", "SELECT 1"},
+		{"IF after a DECLARE", "‸DECLARE @x int = 1\nIF @x = 1 PRINT 'a'", "DECLARE @x int = 1"},
+
+		// T3: a WITH followed by '(' is a hint or column list, never a CTE.
+		{"DELETE with a table hint", "‸DELETE FROM dbo.Orders WITH (ROWLOCK) WHERE OrderID = 42",
+			"DELETE FROM dbo.Orders WITH (ROWLOCK) WHERE OrderID = 42"},
+		{"hint on a later line", "DELETE FROM dbo.Orders\nWITH (ROWLOCK)\n‸WHERE OrderID = 42",
+			"DELETE FROM dbo.Orders\nWITH (ROWLOCK)\nWHERE OrderID = 42"},
+		{"OPENJSON column list", "‸SELECT * FROM OPENJSON(@j) WITH (a int) AS j",
+			"SELECT * FROM OPENJSON(@j) WITH (a int) AS j"},
+
+		// WITH options that are neither a hint nor a CTE.
+		{"RESTORE WITH MOVE", "‸RESTORE DATABASE d FROM DISK = 'x'\nWITH MOVE 'd' TO 'y', REPLACE",
+			"RESTORE DATABASE d FROM DISK = 'x'\nWITH MOVE 'd' TO 'y', REPLACE"},
+		{"WITH ROLLBACK IMMEDIATE", "‸ALTER DATABASE d SET SINGLE_USER WITH ROLLBACK IMMEDIATE",
+			"ALTER DATABASE d SET SINGLE_USER WITH ROLLBACK IMMEDIATE"},
+		{"WITH GRANT OPTION", "‸GRANT SELECT ON t TO u WITH GRANT OPTION\nSELECT 1",
+			"GRANT SELECT ON t TO u WITH GRANT OPTION"},
+		{"RAISERROR WITH NOWAIT then SELECT", "‸RAISERROR('x', 0, 1) WITH NOWAIT\nSELECT 1",
+			"RAISERROR('x', 0, 1) WITH NOWAIT"},
+		{"GROUP BY WITH ROLLUP", "‸SELECT a, COUNT(*) FROM t GROUP BY a WITH ROLLUP\nORDER BY a",
+			"SELECT a, COUNT(*) FROM t GROUP BY a WITH ROLLUP\nORDER BY a"},
+
+		// CTEs: WITH is the boundary and the main statement continues it.
+		{"CTE then UPDATE ... SET", "‸WITH c AS (SELECT 1 AS a)\nUPDATE c SET a = 2",
+			"WITH c AS (SELECT 1 AS a)\nUPDATE c SET a = 2"},
+		{"CTE with a column list", "SELECT 0\n‸WITH c (a) AS (SELECT 1)\nSELECT a FROM c",
+			"WITH c (a) AS (SELECT 1)\nSELECT a FROM c"},
+		{"view over a CTE", "‸CREATE VIEW v AS WITH c AS (SELECT 1 AS a) SELECT a FROM c",
+			"CREATE VIEW v AS WITH c AS (SELECT 1 AS a) SELECT a FROM c"},
+
+		// Continuations of the cursor's statement.
+		{"INSERT ... EXEC", "‸INSERT INTO t\nEXEC dbo.p", "INSERT INTO t\nEXEC dbo.p"},
+		{"INSERT ... VALUES then EXEC", "‸INSERT INTO t VALUES (1)\nEXEC dbo.p", "INSERT INTO t VALUES (1)"},
+		{"GRANT's permission list", "‸GRANT SELECT, INSERT, EXECUTE ON SCHEMA::dbo TO u\nDROP TABLE x",
+			"GRANT SELECT, INSERT, EXECUTE ON SCHEMA::dbo TO u"},
+		{"ALTER TABLE ALTER COLUMN", "‸ALTER TABLE t ALTER COLUMN c int NULL", "ALTER TABLE t ALTER COLUMN c int NULL"},
+		{"ALTER TABLE DROP CONSTRAINT", "‸ALTER TABLE t DROP CONSTRAINT pk\nDROP TABLE x",
+			"ALTER TABLE t DROP CONSTRAINT pk"},
+		{"ALTER ROLE DROP MEMBER", "‸ALTER ROLE r DROP MEMBER u", "ALTER ROLE r DROP MEMBER u"},
+		{"ALTER DATABASE SET", "‸ALTER DATABASE d SET RECOVERY SIMPLE", "ALTER DATABASE d SET RECOVERY SIMPLE"},
+		{"DROP TABLE IF EXISTS", "‸DROP TABLE IF EXISTS t\nSELECT 1", "DROP TABLE IF EXISTS t"},
+		{"foreign key actions", "‸ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (a) REFERENCES p (a)\nON DELETE CASCADE ON UPDATE SET NULL",
+			"ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (a) REFERENCES p (a)\nON DELETE CASCADE ON UPDATE SET NULL"},
+		{"MERGE actions", "‸MERGE t USING s ON t.a = s.a\nWHEN MATCHED THEN UPDATE SET b = s.b\nWHEN NOT MATCHED THEN INSERT (a) VALUES (s.a)\nWHEN NOT MATCHED BY SOURCE THEN DELETE",
+			"MERGE t USING s ON t.a = s.a\nWHEN MATCHED THEN UPDATE SET b = s.b\nWHEN NOT MATCHED THEN INSERT (a) VALUES (s.a)\nWHEN NOT MATCHED BY SOURCE THEN DELETE"},
+		{"CREATE OR ALTER", "‸CREATE OR ALTER VIEW v AS SELECT 1 AS a", "CREATE OR ALTER VIEW v AS SELECT 1 AS a"},
+		{"cursor FOR SELECT ... FOR UPDATE", "‸DECLARE c CURSOR FOR SELECT a FROM t FOR UPDATE OF a\nOPEN c",
+			"DECLARE c CURSOR FOR SELECT a FROM t FOR UPDATE OF a"},
+		{"OFFSET ... FETCH", "‸SELECT a FROM t ORDER BY a OFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY",
+			"SELECT a FROM t ORDER BY a OFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY"},
+		{"trigger UPDATE()", "‸IF UPDATE(a) OR UPDATE(b) RETURN", "IF UPDATE(a) OR UPDATE(b) RETURN"},
+		{"BULK INSERT", "‸BULK INSERT t FROM 'f'\nSELECT 1", "BULK INSERT t FROM 'f'"},
+		{"INNER MERGE JOIN", "‸SELECT * FROM a INNER MERGE JOIN b ON a.x = b.x", "SELECT * FROM a INNER MERGE JOIN b ON a.x = b.x"},
+		{"keyword-named variable", "‸SELECT @Delete = 1, @Drop = 2", "SELECT @Delete = 1, @Drop = 2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := statementAtMarker(t, tc.script); got != tc.want {
+				t.Fatalf("selected %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

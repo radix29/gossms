@@ -105,8 +105,9 @@ func TestOwnerTransferPageAppliesOnlyChangedRows(t *testing.T) {
 }
 
 // The edit sitting in the Select row when OK is pressed must be applied too:
-// the user never moves off the last row they edited, so apply has to commit it
-// rather than relying on OnSelectRow having fired.
+// the user never moves off the last row they edited, so the form's commit
+// hook, which the dialog runs before the apply, has to carry it rather than
+// relying on OnSelectRow having fired.
 func TestOwnerTransferPageAppliesTheUncommittedCurrentRow(t *testing.T) {
 	items := testItems()
 	var changed [][2]string
@@ -114,7 +115,7 @@ func TestOwnerTransferPageAppliesTheUncommittedCurrentRow(t *testing.T) {
 	p := partsOf(t, f)
 
 	p.transfer.SetSelected(1) // bob, and never leave row 0
-	if err := apply(context.Background()); err != nil {
+	if err := hostApply(f, apply)(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if len(changed) != 1 || changed[0] != [2]string{"sales", "bob"} {

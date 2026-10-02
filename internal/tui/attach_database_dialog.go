@@ -59,7 +59,7 @@ func NewAttachDatabaseDialog(app *App) *AttachDatabaseDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.RefreshDatabasesFolder(sc) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) },
 	})
 	return d
 }
@@ -205,6 +205,7 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 		pathRow,
 		propsheet.Note("Every file must be listed. SQL Server finds the others by itself only at the paths recorded inside the primary file, which is what stops being true once they are moved."),
 	)
+	d.forms[0].SetCommit(commitCurrent)
 
 	d.objectName = func() string { return strings.TrimSpace(nameRow.Value()) }
 	d.preflight = func() error {
@@ -221,7 +222,6 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		commitCurrent()
 		paths := attachFilePaths(d.files, strings.TrimSpace(mdfRow.Value()), rebuildRow.Checked())
 		// Scripting deliberately skips the check: scripting the attach now
 		// and copying the files later is a legitimate order to do this in.

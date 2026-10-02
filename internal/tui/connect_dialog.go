@@ -86,10 +86,10 @@ type ConnectDialog struct {
 	// "host\instance,port". There is no separate Port field — but
 	// config.Connection.Port stays a stored field, because the sealed-password
 	// AAD (config.connectionAAD), the saved-connection dedup key
-	// (Connection.GeneratedName) and db.ResolveServer's SQL Browser rule are
+	// (Connection.GeneratedName) and config.ResolveServer's SQL Browser rule are
 	// all keyed off it. The fold is presentation only: currentOptions splits
 	// the text back apart with gosmo.ParseServerAddress and PreFill re-joins it
-	// with db.ResolveServer, so a saved entry's GeneratedName is unchanged by
+	// with config.ResolveServer, so a saved entry's GeneratedName is unchanged by
 	// the round trip and its stored password still decrypts.
 	fServer    *widgets.InputField
 	fDatabase  *widgets.InputField
@@ -366,12 +366,12 @@ func (d *ConnectDialog) setEncryptMode(m config.EncryptMode) {
 // pane's path when a saved connection is selected.
 //
 // Server and Port come back as the single folded address the field shows;
-// db.ResolveServer is the same join dialling uses, so what is displayed is
+// config.ResolveServer is the same join dialling uses, so what is displayed is
 // what would be dialled. Remember Password comes back ticked for an entry that
 // carries a password (or an unreadable one), so entries saved before the box
 // existed keep their password until it is deliberately unticked.
 func (d *ConnectDialog) PreFill(c *config.Connection) {
-	d.fServer.SetValue(db.ResolveServer(c.Server, c.Port))
+	d.fServer.SetValue(config.ResolveServer(c.Server, c.Port))
 	d.fDatabase.SetValue(c.Database)
 	d.fUser.SetValue(c.User)
 	d.fPassword.SetValue(c.Password)
@@ -629,7 +629,7 @@ func matchLabel(c config.Connection) string {
 // named instance) and the port folded into it, and reports whether the port
 // is usable.
 //
-// An empty port means "unspecified" — 0, which db.ResolveServer leaves out of
+// An empty port means "unspecified" — 0, which config.ResolveServer leaves out of
 // the address entirely rather than pinning to 1433, since a named instance
 // takes its port from SQL Browser. A non-numeric trailing port is not a port
 // at all: gosmo.ParseServerAddress leaves it in the host, and the driver's own

@@ -66,7 +66,7 @@ func NewNewSnapshotDialog(app *App) *NewSnapshotDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.RefreshDatabasesFolder(sc) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) },
 	})
 	return d
 }
@@ -215,6 +215,7 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 		propsheet.Note("Left empty, one sparse file is placed beside each of the source's data files. The paths are on the SQL Server host, and each directory must already exist and be writable by the service account."),
 		propsheet.Note("Only data files are listed: a snapshot has no transaction log, and naming one is refused."),
 	)
+	d.forms[0].SetCommit(commitCurrent)
 
 	d.objectName = func() string { return strings.TrimSpace(nameRow.Value()) }
 	d.preflight = func() error {
@@ -234,7 +235,6 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		commitCurrent()
 		_, err := sc.Server.CreateDatabaseSnapshot(ctx, gosmo.CreateDatabaseSnapshotRequest{
 			Name:           d.objectName(),
 			SourceDatabase: sourceRow.Value(),

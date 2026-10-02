@@ -562,3 +562,39 @@ func TestSheetRefreshWhileLoadingStartsNothing(t *testing.T) {
 		t.Fatalf("loads = %d after a Refresh on a loaded page, want 2", loads)
 	}
 }
+
+// Commit runs the commit hook of every page that has a form, and only those:
+// a page never opened has no editor state to copy, and a form without a hook
+// is skipped rather than crashing the run.
+func TestSheetCommitRunsEveryLoadedFormsHook(t *testing.T) {
+	p := newTestSheet("General", "Files", "Options")
+	var seqs [3]int
+	p.OnLoadPage = func(page, seq int) { seqs[page] = seq }
+	p.Show()
+	p.SelectPage(1)
+
+	var committed []string
+	general := NewForm(Static("Name", "srv01"))
+	general.SetCommit(func() { committed = append(committed, "General") })
+	p.SetPageForm(0, seqs[0], general)
+	p.SetPageForm(1, seqs[1], NewForm(Static("Files", "2")))
+	// Options never loads, so it has no form.
+
+	p.Commit()
+	if len(committed) != 1 || committed[0] != "General" {
+		t.Errorf("committed %v, want just [General]", committed)
+	}
+}
+
+// The hook is what makes an editor's pending value count: a row bound to it
+// is dirty only once the hook has copied the value across.
+func TestFormCommitRunsTheHook(t *testing.T) {
+	text := Text("Name", "orig", 10)
+	f := NewForm(text)
+	f.Commit() // no hook yet: a no-op
+	f.SetCommit(func() { text.Edit("committed") })
+	f.Commit()
+	if !f.Dirty() || text.Value() != "committed" {
+		t.Errorf("after Commit: value %q, dirty %v — want the hook's value and a dirty form", text.Value(), f.Dirty())
+	}
+}

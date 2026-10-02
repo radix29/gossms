@@ -435,7 +435,9 @@ func TestSessionPropertiesApplyReloadsTheSessionsTargets(t *testing.T) {
 		if got := a.explorer.Selected(); got != session {
 			t.Errorf("selection after the reload = %v, want the session node", got)
 		}
-		waitAndDrain(t, a) // the reload's fetch lands
+		// The reload's fetch lands; Apply's page reloads often post first,
+		// so one callback is not enough.
+		drainUntil(t, a, func() bool { return len(session.children) == 2 }, "the session's targets to reload")
 		if got := labelsOfNodes(session.children); !slices.Equal(got, []string{"package0.event_file", "package0.ring_buffer"}) {
 			t.Errorf("session's children after the reload = %v", got)
 		}

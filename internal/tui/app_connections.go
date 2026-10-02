@@ -93,7 +93,7 @@ func (a *App) rememberConnection(opts config.Connection) {
 	a.rememberPeerCredentials(opts)
 	// A successful direct connect proves the instance is up, contradicting
 	// other connections' negative peer caches.
-	a.forgetPeerFailure(db.ConnectionAddress(opts))
+	a.forgetPeerFailure(config.ConnectionAddress(opts))
 	if err := a.cfg.Save(); err != nil {
 		a.logStatus("save config: %v", err)
 	}

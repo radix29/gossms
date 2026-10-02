@@ -130,6 +130,71 @@ func TestReloadKeepsStaleRowsUsableUntilRebuild(t *testing.T) {
 	}
 }
 
+// The refresh after a create (New Login, New Database, Attach, Restore…) is a
+// Reload like any other. RefreshLoginsFolder and RefreshDatabasesFolder set
+// children = nil by hand, so every replaced node stayed in byID until
+// disconnect.
+func TestPostWriteRefreshReleasesTheOldSubtree(t *testing.T) {
+	st := newReloadTree(t)
+	oe := st.a.explorer
+	st.logins.expanded = false // no background load: nothing to land
+	old := []*explorerNode{st.alice, st.bob, st.carol, st.alice.children[0]}
+
+	oe.ReloadFolders(st.sc, folderOf("", NodeLogins))
+	oe.rebuild()
+
+	if st.logins.data.Loaded || st.logins.children != nil {
+		t.Error("the Logins folder was not reloaded")
+	}
+	for _, n := range old {
+		if !n.retired || oe.byID[n.id] == n {
+			t.Errorf("replaced node %q was not released (retired=%v)", n.label, n.retired)
+		}
+	}
+}
+
+// A write that finishes after a Refresh above its folder must still refresh
+// that folder. The dialogs held the node they were opened from, and Reload of
+// a retired node is a no-op, so the new object stayed missing from the tree.
+func TestPostWriteRefreshFindsTheReplacementFolder(t *testing.T) {
+	st := newReloadTree(t)
+	oe := st.a.explorer
+	opened := st.logins // what a New Login dialog was opened from
+	st.security.expanded = false
+
+	oe.Reload(st.security) // the user refreshes Security while the dialog is open
+	fresh := &explorerNode{label: "Logins", data: nodeData{Type: NodeLogins, conn: st.sc}}
+	oe.SetChildren(st.security, []*explorerNode{fresh})
+	fresh.data.Loaded = true
+	if !opened.retired {
+		t.Fatal("fixture: the Refresh did not retire the folder the dialog holds")
+	}
+
+	oe.ReloadFolders(st.sc, sameNodeAs(opened))
+
+	if fresh.data.Loaded {
+		t.Error("the create's refresh missed the folder that replaced the one the dialog was opened from")
+	}
+}
+
+// sameNodeAs keeps apart folders of one type and database that belong to
+// different parents — one table's Indexes folder is not another's.
+func TestSameNodeAsKeepsTableScopedFoldersApart(t *testing.T) {
+	ix := func(table string) nodeData {
+		return nodeData{Type: NodeIndexes, DBName: "appdb", Schema: "dbo", TableName: table}
+	}
+	match := sameNodeAs(&explorerNode{data: ix("Orders")})
+	if !match(ix("Orders")) {
+		t.Error("the same folder was not matched")
+	}
+	if match(ix("Customers")) {
+		t.Error("another table's Indexes folder was matched")
+	}
+	if sameNodeAs(nil)(nodeData{}) {
+		t.Error("a nil node matched")
+	}
+}
+
 // The Detail Browser's pending map exists only to order the cache writes of
 // fetches in flight; kept after the write, it gained an entry for every node
 // ever selected and held each alive.

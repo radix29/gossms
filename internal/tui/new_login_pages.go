@@ -189,20 +189,21 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 		if !mapped && defaultDBRow.Dirty() {
 			opts.DefaultDatabase = defaultDBRow.Value()
 		}
-		if _, err := sc.Server.CreateLogin(ctx, *opts); err != nil {
-			return err
-		}
-		if isSQL && (policyRow.Dirty() || expirationRow.Dirty()) {
-			if err := sc.Server.LoginRef(name).SetPasswordPolicy(ctx, policyRow.Checked(), expirationRow.Checked()); err != nil {
-				return err
-			}
-		}
 		if !mapped && defaultLangRow.Dirty() {
-			if err := sc.Server.LoginRef(name).SetDefaultLanguage(ctx, langItems[defaultLangRow.Selected()]); err != nil {
-				return err
-			}
+			opts.DefaultLanguage = langItems[defaultLangRow.Selected()]
 		}
-		return nil
+		// The policy rides in the CREATE itself, not a follow-up ALTER: the
+		// CREATE runs under CHECK_POLICY = ON otherwise, and refuses a weak
+		// password (Msg 15118) before the ALTER could turn the policy off.
+		// An untouched row is left nil, for the server default.
+		if isSQL && policyRow.Dirty() {
+			opts.CheckPolicy = new(policyRow.Checked())
+		}
+		if isSQL && expirationRow.Dirty() {
+			opts.CheckExpiration = new(expirationRow.Checked())
+		}
+		_, err := sc.Server.CreateLogin(ctx, *opts)
+		return err
 	}
 	return f, apply, nameField
 }
@@ -425,9 +426,9 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		rolesGrid,
 		propsheet.Note("Schema/role changes only take effect for a mapped database. Space/Enter (or click) on Member toggles role membership."),
 	)
+	f.SetCommit(commitCurrent)
 
 	apply := func(ctx context.Context) error {
-		commitCurrent()
 		name := loginName()
 		l := sc.Server.LoginRef(name)
 		for _, e := range rows {

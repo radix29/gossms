@@ -535,9 +535,9 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				hint,
 				propsheet.Note("A file added to a FILESTREAM filegroup is a FILESTREAM file: its path is a directory rather than a file, and it takes neither an initial size nor autogrowth, so those two are greyed. Choosing the filegroup is what makes it one — there is no file type to pick."),
 			)
+			f.SetCommit(commitCurrent)
 
 			apply := func(ctx context.Context) error {
-				commitCurrent()
 				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err

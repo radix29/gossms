@@ -52,7 +52,7 @@ func NewNewAuditDialog(app *App) *NewAuditDialog {
 		pages:   []string{"General"},
 		fetch:   fetchNewAuditPrefetch,
 		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeAudits) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeAudits)) },
 	})
 	return d
 }

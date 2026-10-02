@@ -169,7 +169,7 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 // (entra.go).
 func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions, error) {
 	co := gosmo.ConnectionOptions{
-		Server:                 ResolveServer(opts.Server, opts.Port),
+		Server:                 config.ResolveServer(opts.Server, opts.Port),
 		Database:               opts.Database,
 		Auth:                   toGosmoAuth(opts.AuthMethod),
 		TrustServerCertificate: opts.TrustServerCertificate,
@@ -336,36 +336,6 @@ func (sc *ServerConn) Label() string {
 	}
 
 	return fmt.Sprintf("%s (%s, SQL Server %s)", name, user, version)
-}
-
-// ResolveServer folds the dialog's Server and Port into gosmo's single address.
-// Server may already be any gosmo.ParseServerAddress form; a port it carries
-// wins.
-//
-// Port 0 or 1433 is omitted: the driver defaults to 1433, and a port on
-// "host\instance" suppresses the SQL Browser lookup for the instance's dynamic
-// port (win10cli\sql2017 listens on 55253; an appended 1433 reaches the default
-// instance).
-//
-// With "\instance" and no port, a non-default port is appended with a comma;
-// gosmo reads a colon there as part of the instance name.
-func ResolveServer(server string, dialogPort int) string {
-	host, _, embeddedPort := gosmo.ParseServerAddress(server)
-	if embeddedPort != 0 {
-		return server
-	}
-	port := dialogPort
-	if port == 0 || port == 1433 {
-		return server
-	}
-	// Comma for a bare IPv6 literal too: in "fe80::1:1500" the ":1500" is
-	// another address group.
-	sep := ":"
-	if strings.ContainsRune(server, '\\') ||
-		(strings.ContainsRune(host, ':') && !strings.HasPrefix(host, "[")) {
-		sep = ","
-	}
-	return fmt.Sprintf("%s%s%d", server, sep, port)
 }
 
 // encryptString renders the mode as the driver's "encrypt" parameter. ""

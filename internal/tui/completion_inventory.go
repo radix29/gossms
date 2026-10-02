@@ -57,7 +57,7 @@ type completionInventory struct {
 	// reload it without a panel connected there.
 	database string
 
-	// serverKey is the sysCompletionInventoryKey of the server+login this entry
+	// serverKey is the sysCompletionInventoryKey of the server+identity this entry
 	// belongs to. Recorded at creation so purgeCompletionInventories can find
 	// every entry for a disconnecting connection without splitting the map
 	// key.
@@ -115,12 +115,11 @@ func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog) {
 }
 
 // completionInventoryKey identifies the shared cache entry for a
-// server+login+database, reusing config.ConnectionName's
-// server/port/database/user tuple. It leaves out the auth method, so two
-// logins with an empty User (Windows, most Entra methods) share an entry —
-// harmless here, since colliding entries see the same catalog.
+// server+identity+database: sysCompletionInventoryKey plus the database. The
+// identity matters because the catalog is filtered by metadata visibility —
+// see config.Connection.IdentityKey.
 func completionInventoryKey(opts config.Connection, database string) string {
-	return config.ConnectionName(opts.Server, opts.Port, database, opts.User)
+	return sysCompletionInventoryKey(opts) + "\x00" + database
 }
 
 // ensureCompletionInventory returns the current inventory for sc+database,
@@ -155,8 +154,8 @@ func (a *App) refreshCompletionInventory(sc *db.ServerConn, database string) {
 }
 
 // purgeCompletionInventories drops every cached catalog for sc's server+login
-// and stops any load still in flight. Entries are keyed by
-// server/port/database/user rather than by *ServerConn, so without this a
+// and stops any load still in flight. Entries are keyed by instance, identity
+// and database rather than by *ServerConn, so without this a
 // reconnect is served the catalog captured before the disconnect.
 //
 // Abandon, not Cancel: the entry is leaving the map, so a result already on its
@@ -167,8 +166,7 @@ func (a *App) refreshCompletionInventory(sc *db.ServerConn, database string) {
 func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 	serverKey := sysCompletionInventoryKey(sc.Opts)
 	// Matched on the entry's serverKey rather than by picking the database
-	// component back out of the map key: ConnectionName joins its parts with
-	// commas and a server address can carry one ("host,1435").
+	// component back out of the map key.
 	for key, inv := range a.completionInventories {
 		if inv.serverKey != serverKey {
 			continue
@@ -257,10 +255,12 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 // ---------------------------------------------------------------------------
 
 // sysCompletionInventoryKey identifies the shared "sys" schema cache entry for a
-// server+login — completionInventoryKey without the database component, since
-// sys.tables/sys.columns/… are identical in every database.
+// server+identity (config.Connection.IdentityKey) — completionInventoryKey
+// without the database component, since sys.tables/sys.columns/… are identical
+// in every database. Also the key of the database and linked-server
+// directories and of the saved OE filters.
 func sysCompletionInventoryKey(opts config.Connection) string {
-	return config.ConnectionName(opts.Server, opts.Port, "", opts.User)
+	return opts.IdentityKey()
 }
 
 // ensureSysCompletionInventory returns the "sys" schema inventory for sc's

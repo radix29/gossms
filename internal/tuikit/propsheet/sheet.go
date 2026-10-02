@@ -439,6 +439,17 @@ func (p *PropertySheet) Dirty() bool {
 	return false
 }
 
+// Commit runs every loaded page's commit hook (Form.SetCommit), in page order —
+// what a host does first, on the UI goroutine, when OK, Apply or Script
+// Changes is pressed, before it asks Dirty, Validate or ApplyConfirmations.
+func (p *PropertySheet) Commit() {
+	for _, slot := range p.pages {
+		if slot.form != nil {
+			slot.form.Commit()
+		}
+	}
+}
+
 // DirtyPages returns the indices of every loaded page with unsaved edits.
 func (p *PropertySheet) DirtyPages() []int {
 	var out []int

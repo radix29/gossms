@@ -246,7 +246,7 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 }
 
 // ConnectionName builds "server,port,database,user", the prefix of a saved
-// connection's generated name and the key completion inventories share. Port 0
+// connection's generated name. Port 0
 // is spelled 1433, as dialled, so older entries dedup against today's.
 func ConnectionName(server string, port int, database, user string) string {
 	if port == 0 {
@@ -270,19 +270,25 @@ func ConnectionName(server string, port int, database, user string) string {
 // entry under another method dedups once more, against its first save under the
 // new name.
 func (c Connection) GeneratedName() string {
+	identity, tag := c.signInIdentity()
+	name := ConnectionName(c.Server, c.Port, c.Database, identity)
+	if tag != "" {
+		name += " (" + tag + ")"
+	}
+	return name
+}
+
+// signInIdentity is the identity GeneratedName and IdentityKey name c by, and
+// its auth method's tag ("" for SQL Server Authentication).
+func (c Connection) signInIdentity() (identity, tag string) {
 	info := authInfo(c.AuthMethod)
-	identity := ""
 	switch {
 	case info.fields.User && c.User != "":
 		identity = c.User
 	case info.fields.Client:
 		identity = cmp.Or(c.ClientID, c.User)
 	}
-	name := ConnectionName(c.Server, c.Port, c.Database, identity)
-	if info.tag != "" {
-		name += " (" + info.tag + ")"
-	}
-	return name
+	return identity, info.tag
 }
 
 // PasswordUnreadable reports whether Load could not decrypt a stored password

@@ -105,7 +105,7 @@ func scriptAddReplica(t *testing.T, r newAGReplica) string {
 	d := &AGAddReplicaDialog{agName: agFixtureName, resolved: r}
 	d.sc = sc
 	scriptCtx, script := gosmo.WithScript(context.Background())
-	if err := d.addReplica(scriptCtx); err != nil {
+	if err := d.addReplica(scriptCtx, d.resolved); err != nil {
 		t.Fatalf("addReplica under WithScript: %v", err)
 	}
 	return multiInstanceScript("Add Replica", script)

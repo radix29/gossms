@@ -97,9 +97,7 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, noun string
 			// Re-read rather than assumed: the cancel may have arrived after
 			// the change committed.
 			a.setStatus(fmt.Sprintf("%s %q cancelled", doing, node.label))
-			if parent := node.parent; parent != nil {
-				a.explorer.Reload(parent)
-			}
+			a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 		case err != nil:
 			a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, node.label, err))
 		default:
@@ -135,12 +133,12 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 				// Refresh anyway: the cancel may have arrived after the delete
 				// committed.
 				a.setStatus(fmt.Sprintf("Delete of %q cancelled", node.label))
-				a.explorer.Reload(node.parent)
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
 			default:
 				a.setStatus(fmt.Sprintf("%q deleted", node.label))
-				a.explorer.Reload(node.parent)
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 			}
 		})
 	})

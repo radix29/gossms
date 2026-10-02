@@ -135,7 +135,7 @@ func deniedObjectConn(t *testing.T, dbName string, objDenied []string, sysadmin 
 		switch r.match {
 		case "IS_ROLEMEMBER":
 			for _, n := range objDenied {
-				r.rows = append(r.rows, []driver.Value{"O:ALTER", n, int64(0)})
+				r.rows = append(r.rows, []driver.Value{"O:ALTER", probeKey(n), int64(0)})
 			}
 		case "IS_SRVROLEMEMBER":
 			if sysadmin {

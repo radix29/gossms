@@ -804,11 +804,16 @@ func (d *PropDialog) applyPanicked() {
 // distinguishes Apply (stay open) from OK (close on success); on error neither
 // closes, so the edits and the message stay visible.
 //
+// Every page's commit hook (propsheet.Form.SetCommit) runs first, here on the
+// UI goroutine: a grid-plus-detail page's editor fields reach its model there
+// and nowhere else, since its apply runs on the pipeline's goroutine.
+//
 // A page whose edits carry a consequence beyond their value registers a
 // warning (propsheet.Form.SetApplyConfirm), and nothing is written until the
 // user accepts it; a No leaves every edit in place. Script Changes does not
 // ask: it writes nothing, and the script shows the consequence as text.
 func (d *PropDialog) runApply(hideOnSuccess bool) {
+	d.Commit()
 	warnings := d.ApplyConfirmations()
 	if len(warnings) == 0 {
 		d.applyNow(hideOnSuccess)
@@ -876,6 +881,7 @@ func (d *PropDialog) staleDetails() {
 // connection/database. Reads along the way still hit the server — only writes
 // are intercepted — but nothing is mutated.
 func (d *PropDialog) runScript() {
+	d.Commit()
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc, database := d.sc, d.database
 	noChanges := func() { d.SetMessage("No changes to script.", false) }

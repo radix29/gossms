@@ -434,12 +434,10 @@ func TestRGNewClassifierClosesTheDialog(t *testing.T) {
 	open := func() *propsheet.Form {
 		t.Helper()
 		d.show(sc, "", "Resource Governor Properties", "", "", pages)
-		waitAndDrain(t, a)
-		f := d.PageForm(0)
-		if f == nil {
-			t.Fatal("General did not load")
-		}
-		return f
+		// Not waitAndDrain: it returns after the first callback, which under
+		// -race in the full suite was not always General's load.
+		drainUntil(t, a, func() bool { return d.PageState(0) == propsheet.PageReady }, "General to load")
+		return d.PageForm(0)
 	}
 
 	open()

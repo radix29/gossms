@@ -149,7 +149,7 @@ func NewNewAGDialog(app *App) *NewAGDialog {
 		pages:   []string{"General", "Backup Preferences"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
 	})
 	// The shell scripts exactly what it would have run, which here is
 	// statements for three different instances with nothing saying so. Replaced
@@ -269,16 +269,16 @@ func (d *NewAGDialog) request() (gosmo.CreateAvailabilityGroupRequest, error) {
 }
 
 // replicaJoinProblem reports why r could not join the group being created, or
-// "" if nothing is in its way. Everything it asks about is a state that makes
+// "" if nothing is in its way. r is the replica as the request carries it. Everything it asks about is a state that makes
 // the JOIN fail *after* the CREATE has already succeeded — see
 // preflightReplicas.
-func (d *NewAGDialog) replicaJoinProblem(ctx context.Context, r *newAGReplica) string {
-	peer, err := d.peer(ctx, r.name)
+func (d *NewAGDialog) replicaJoinProblem(ctx context.Context, r gosmo.AvailabilityReplicaSpec) string {
+	peer, err := d.peer(ctx, r.ServerName)
 	if err != nil {
-		return fmt.Sprintf("%s cannot be reached: %v", r.name, err)
+		return fmt.Sprintf("%s cannot be reached: %v", r.ServerName, err)
 	}
 	if info := peer.Server.Info(); info != nil && !info.IsHADREnabled {
-		return fmt.Sprintf("Always On is not enabled on %s, so it cannot host a replica", r.name)
+		return fmt.Sprintf("Always On is not enabled on %s, so it cannot host a replica", r.ServerName)
 	}
 	ep, err := replicaEndpoint(ctx, peer)
 	if err != nil {
@@ -288,14 +288,14 @@ func (d *NewAGDialog) replicaJoinProblem(ctx context.Context, r *newAGReplica) s
 	// added, which may have been minutes ago on an instance whose endpoint has
 	// since been recreated on another port. A group naming the old one is
 	// created, looks right, and never connects.
-	if !strings.EqualFold(ep.URL(), r.endpointURL) {
-		return fmt.Sprintf("%s's endpoint is now %s, not %s — remove the replica and add it again", r.name, ep.URL(), r.endpointURL)
+	if !strings.EqualFold(ep.URL(), r.EndpointURL) {
+		return fmt.Sprintf("%s's endpoint is now %s, not %s — remove the replica and add it again", r.ServerName, ep.URL(), r.EndpointURL)
 	}
 	// Allows, not Has: the fail-open rule. A peer whose probe could not run
 	// answers unknown and is let through to try the JOIN, exactly as before
 	// this check existed.
 	if !peer.Capabilities().Allows("ALTER ANY AVAILABILITY GROUP") {
-		return fmt.Sprintf("%s's login may not join an availability group — it needs ALTER ANY AVAILABILITY GROUP there", r.name)
+		return fmt.Sprintf("%s's login may not join an availability group — it needs ALTER ANY AVAILABILITY GROUP there", r.ServerName)
 	}
 	return ""
 }
@@ -316,17 +316,17 @@ func (d *NewAGDialog) replicaJoinProblem(ctx context.Context, r *newAGReplica) s
 // Every replica is asked even though only the first problem is shown, so the
 // count is honest — being sent back three times, once per instance, is worse
 // than being told there are three.
-func (d *NewAGDialog) preflightReplicas(ctx context.Context) error {
+//
+// The secondaries are req's replicas after the first, which request makes
+// the primary.
+func (d *NewAGDialog) preflightReplicas(ctx context.Context, req gosmo.CreateAvailabilityGroupRequest) error {
 	if gosmo.Scripting(ctx) {
 		// Script Changes must work with no peer reachable at all: the script
 		// is what the user takes to those instances.
 		return nil
 	}
 	var problems []string
-	for _, r := range d.replicas {
-		if r.isPrimary {
-			continue
-		}
+	for _, r := range agSecondaries(req) {
 		if p := d.replicaJoinProblem(ctx, r); p != "" {
 			problems = append(problems, p)
 		}
@@ -354,44 +354,49 @@ func (d *NewAGDialog) preflightReplicas(ctx context.Context) error {
 // peer, and a DROP on the primary cannot reach a secondary that has already
 // joined and is now unreachable — its copy of the group's metadata would
 // survive the rollback and need a local DROP anyway.
-func (d *NewAGDialog) createGroup(ctx context.Context) error {
+//
+// req is built by preflight on the UI goroutine (see request); this runs on
+// the pipeline's and reads nothing else of the dialog's pages.
+func (d *NewAGDialog) createGroup(ctx context.Context, req gosmo.CreateAvailabilityGroupRequest) error {
 	sc := d.sc
-	req, err := d.request()
-	if err != nil {
-		return err
-	}
-	if err := d.preflightReplicas(ctx); err != nil {
+	if err := d.preflightReplicas(ctx, req); err != nil {
 		return err
 	}
 	if _, err := sc.Server.CreateAvailabilityGroup(ctx, req); err != nil {
 		return err
 	}
-	for _, r := range d.replicas {
-		if r.isPrimary {
-			continue
-		}
+	for _, r := range agSecondaries(req) {
 		// Under Script Changes nothing connects to the secondary: its JOIN is
 		// scripted through the primary's handle and labelled with the
 		// secondary it belongs to.
-		target, joinCtx := sc.Server, gosmo.WithScriptServer(ctx, r.name)
+		target, joinCtx := sc.Server, gosmo.WithScriptServer(ctx, r.ServerName)
 		if !gosmo.Scripting(ctx) {
-			peer, err := d.peer(ctx, r.name)
+			peer, err := d.peer(ctx, r.ServerName)
 			if err != nil {
-				return fmt.Errorf("availability group %q was created, but connecting to %s to join it failed: %w", req.Name, r.name, err)
+				return fmt.Errorf("availability group %q was created, but connecting to %s to join it failed: %w", req.Name, r.ServerName, err)
 			}
 			target, joinCtx = peer.Server, ctx
 		}
 		ag := target.AvailabilityGroupRef(req.Name)
 		if err := ag.Join(joinCtx, req.ClusterType); err != nil {
-			return fmt.Errorf("availability group %q was created, but %s could not join it: %w", req.Name, r.name, err)
+			return fmt.Errorf("availability group %q was created, but %s could not join it: %w", req.Name, r.ServerName, err)
 		}
-		if strings.EqualFold(r.seedingMode, "AUTOMATIC") {
+		if strings.EqualFold(string(r.SeedingMode), string(gosmo.SeedingAutomatic)) {
 			if err := ag.GrantCreateAnyDatabase(joinCtx); err != nil {
-				return fmt.Errorf("availability group %q was created and %s joined it, but granting it CREATE ANY DATABASE failed — automatic seeding will silently seed nothing until that is granted: %w", req.Name, r.name, err)
+				return fmt.Errorf("availability group %q was created and %s joined it, but granting it CREATE ANY DATABASE failed — automatic seeding will silently seed nothing until that is granted: %w", req.Name, r.ServerName, err)
 			}
 		}
 	}
 	return nil
+}
+
+// agSecondaries is every replica of req but the first, which request makes
+// the instance the CREATE runs on.
+func agSecondaries(req gosmo.CreateAvailabilityGroupRequest) []gosmo.AvailabilityReplicaSpec {
+	if len(req.Replicas) == 0 {
+		return nil
+	}
+	return req.Replicas[1:]
 }
 
 // runScript replaces the shell's, which would emit the statements with nothing

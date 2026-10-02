@@ -181,7 +181,7 @@ type App struct {
 	filterMu     sync.Mutex
 
 	// peerCreds is how to reach each instance the user has connected to, keyed
-	// by db.InstanceKey — the resolver behind db.ServerConn.Peer, see
+	// by config.InstanceKey — the resolver behind db.ServerConn.Peer, see
 	// app_peer_creds.go. peerCredMu guards it for the same reason filterMu
 	// guards savedFilters: background loader goroutines read it through Peer.
 	// peerCredAliases is the same keyed by short host name, consulted only when
@@ -191,12 +191,12 @@ type App struct {
 	peerCredMu      sync.Mutex
 
 	// completionInventories caches one metadata snapshot per
-	// server+login+database (see completionInventoryKey), shared by every query
+	// server+identity+database (see completionInventoryKey), shared by every query
 	// panel on that database. UI goroutine only, like every other App field.
 	completionInventories map[string]*completionInventory
 
 	// sysCompletionInventories caches one "sys" catalog-view snapshot per
-	// server+login (see sysCompletionInventoryKey) — server-scoped, since
+	// server+identity (see sysCompletionInventoryKey) — server-scoped, since
 	// sys.tables/sys.columns/… are identical in every database. Populated at
 	// connect time, not lazily.
 	sysCompletionInventories map[string]*completionInventory

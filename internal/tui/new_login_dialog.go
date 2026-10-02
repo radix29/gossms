@@ -165,7 +165,7 @@ func NewNewLoginDialog(app *App) *NewLoginDialog {
 		scriptDatabase: "",
 		fetch:          fetchNewLoginPrefetch,
 		build:          d.buildPages,
-		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshLoginsFolder(sc) },
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeLogins)) },
 	})
 	return d
 }

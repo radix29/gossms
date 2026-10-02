@@ -486,7 +486,7 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 	app.safegoRepair("the restore", func() { app.markTaskDone(task, errTaskPanicked) }, func() {
 		err := runRestore(ctx, app, sc.Server, task, req)
 		if err == nil {
-			app.postAndWake(func() { app.explorer.RefreshDatabasesFolder(sc) })
+			app.postAndWake(func() { app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) })
 		}
 		app.postTaskDone(task, err)
 	})

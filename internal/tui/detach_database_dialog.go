@@ -55,7 +55,7 @@ func NewDetachDatabaseDialog(app *App) *DetachDatabaseDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.RefreshDatabasesFolder(sc) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) },
 	})
 	return d
 }

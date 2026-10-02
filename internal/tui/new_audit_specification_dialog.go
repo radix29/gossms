@@ -68,7 +68,7 @@ func NewNewAuditSpecificationDialog(app *App) *NewAuditSpecificationDialog {
 		fetch: fetchNewAuditSpecPrefetch,
 		build: d.buildPages,
 		refresh: func(sc *db.ServerConn) {
-			d.app.explorer.RefreshFolderByType(sc, NodeServerAuditSpecifications)
+			d.app.explorer.ReloadFolders(sc, folderOf("", NodeServerAuditSpecifications))
 		},
 	})
 	return d

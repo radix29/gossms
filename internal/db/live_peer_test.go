@@ -93,7 +93,7 @@ func TestLivePeerFallsBackToTheParentCredentials(t *testing.T) {
 
 	broken := liveOpts(*liveReplica, livePeerLogin, "wrong-password")
 	parent.SetPeerCredentials(func(server string) (config.Connection, bool) {
-		if InstanceKey(server) == InstanceKey(*liveReplica) {
+		if config.InstanceKey(server) == config.InstanceKey(*liveReplica) {
 			return broken, true
 		}
 		return config.Connection{}, false
@@ -112,7 +112,7 @@ func TestLivePeerFallsBackToTheParentCredentials(t *testing.T) {
 		t.Errorf("the peer is authenticated as %q, want the parent's %q — the retry did not use parentPeerOptions",
 			peer.Login, *liveUser)
 	}
-	if name := peer.Server.Name(); !strings.EqualFold(name, InstanceKey(*liveReplica)) &&
+	if name := peer.Server.Name(); !strings.EqualFold(name, config.InstanceKey(*liveReplica)) &&
 		!strings.EqualFold(name, *liveReplica) {
 		t.Errorf("the peer is connected to %q, want %q", name, *liveReplica)
 	}
@@ -134,7 +134,7 @@ func TestLivePeerPrefersAWorkingResolverHit(t *testing.T) {
 	parent := liveParent(t)
 
 	parent.SetPeerCredentials(func(server string) (config.Connection, bool) {
-		if InstanceKey(server) == InstanceKey(*liveReplica) {
+		if config.InstanceKey(server) == config.InstanceKey(*liveReplica) {
 			return liveOpts(*liveReplica, livePeerLogin, "g0ssms-Peer-Probe!"), true
 		}
 		return config.Connection{}, false

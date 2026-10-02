@@ -404,3 +404,113 @@ func TestShowNodeDetailsNotConnectedDropsThePreviousNode(t *testing.T) {
 			"offered on the previous node's object", len(items))
 	}
 }
+
+// T1: the loading branch is B1's twin. A node that isn't cached used to get
+// only a "Loading..." status, so until its fetch landed — up to
+// childFetchTimeout — the previous node's rows, objects, charts and tooltip
+// stayed live, and detailMenuItems paired those objects with the *new* node's
+// connection: Delete dropped server A's objects on server B.
+func TestShowNodeDetailsLoadingDropsThePreviousNode(t *testing.T) {
+	a := newTestApp()
+	serverA := &dbconn.ServerConn{}
+	shown := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, conn: serverA}}
+
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 100, 30)
+	db.currentNode = shown
+	db.applyResult(&detailResult{
+		cols:   []string{"Name", "Type"},
+		rows:   [][]string{{"dbo.orders", "Table"}},
+		objs:   []nodeData{{Type: NodeTable, Name: "orders", Schema: "dbo"}},
+		charts: stripCharts(),
+	})
+	strip := db.chartsRect()
+	if strip.IsZero() {
+		t.Fatal("no chart strip to pin a tooltip on")
+	}
+	db.tooltip = db.pinChartTooltip(strip.X+1, strip.Bottom()-1)
+	if db.tooltip == nil {
+		t.Fatal("pinChartTooltip returned nil; the test cannot show the pin surviving")
+	}
+	if items := a.detailMenuItems(db); len(items) == 0 {
+		t.Fatal("setup offers no Delete on the shown node; the test cannot show it surviving")
+	}
+
+	// A node on another, live server, with no cache entry: the loading branch.
+	next, _ := newConnectedNode("orders")
+	db.ShowNodeDetails(a, next)
+
+	if got := db.grid.Status(); got != "Loading..." {
+		t.Fatalf("status = %q, want Loading... — the test is not exercising the loading branch", got)
+	}
+	if got := db.grid.Row(0); got != nil {
+		t.Errorf("grid row 0 = %v while loading another node, want none — it is %q's", got, shown.label)
+	}
+	if db.rowObjs != nil {
+		t.Errorf("rowObjs = %v while loading another node, want nil", db.rowObjs)
+	}
+	if db.charts != nil {
+		t.Errorf("charts = %d panels while loading another node, want none", len(db.charts))
+	}
+	if db.tooltip != nil {
+		t.Errorf("tooltip = %+v while loading another node, want nil", db.tooltip)
+	}
+	if items := a.detailMenuItems(db); items != nil {
+		t.Errorf("detailMenuItems = %d items while loading, want none — that is Delete of %q's "+
+			"object on the new node's server", len(items), shown.label)
+	}
+}
+
+// A Refresh reloads the node on screen through the same loading branch. Its
+// rows are still that node's, so they stay up rather than flashing empty, but
+// their objects go: nothing says which of them the reload will find gone.
+func TestRefreshKeepsRowsButDropsTheirObjects(t *testing.T) {
+	a := newTestApp()
+	node, _ := newConnectedNode("orders")
+
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 100, 30)
+	db.currentNode = node
+	db.applyResult(&detailResult{
+		cols: []string{"Name", "Type"},
+		rows: [][]string{{"dbo.orders", "Table"}},
+		objs: []nodeData{{Type: NodeTable, Name: "orders", Schema: "dbo"}},
+	})
+	db.RefreshCurrent(a)
+
+	if got := db.grid.Status(); got != "Loading..." {
+		t.Fatalf("status = %q, want Loading...", got)
+	}
+	if got := db.grid.Row(0); got == nil {
+		t.Error("grid row 0 gone during a Refresh, want the node's row kept")
+	}
+	if items := a.detailMenuItems(db); items != nil {
+		t.Errorf("detailMenuItems = %d items during a Refresh, want none", len(items))
+	}
+}
+
+// The defence behind both resets: row objects installed for one node are
+// never offered for Delete while another is current, whatever path left them.
+func TestDetailMenuRefusesObjectsOfAnotherNode(t *testing.T) {
+	a := newTestApp()
+	serverA := &dbconn.ServerConn{}
+	shown := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, conn: serverA}}
+
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 100, 30)
+	db.currentNode = shown
+	db.applyResult(&detailResult{
+		cols: []string{"Name", "Type"},
+		rows: [][]string{{"dbo.orders", "Table"}},
+		objs: []nodeData{{Type: NodeTable, Name: "orders", Schema: "dbo"}},
+	})
+	if items := a.detailMenuItems(db); len(items) == 0 {
+		t.Fatal("setup offers no Delete on the shown node")
+	}
+
+	// A path that swaps currentNode without resetting — the shape of B1 and T1.
+	db.currentNode, _ = newConnectedNode("orders")
+	if items := a.detailMenuItems(db); items != nil {
+		t.Errorf("detailMenuItems = %d items with another node current, want none", len(items))
+	}
+}

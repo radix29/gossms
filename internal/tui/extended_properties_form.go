@@ -202,8 +202,8 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 		hint,
 		propsheet.Note("Extended properties are metadata only. They can be scripted via sp_addextendedproperty, sp_updateextendedproperty, and sp_dropextendedproperty."),
 	)
+	f.SetCommit(commitCurrent)
 	apply := func(ctx context.Context) error {
-		commitCurrent()
 		d, err := sc.Server.DatabaseByName(ctx, dbName)
 		if err != nil {
 			return err

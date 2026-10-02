@@ -393,16 +393,12 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, di
 				// Re-read rather than assumed: the cancel may have arrived
 				// after the commit.
 				a.setStatus(fmt.Sprintf("%s %q cancelled", doing, display))
-				if parent := node.parent; parent != nil {
-					a.explorer.Reload(parent)
-				}
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, display, err))
 			default:
 				node.data.IsEnabled = enable
-				if parent := node.parent; parent != nil {
-					a.explorer.Reload(parent)
-				}
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("%s %q is now %sd", strings.ToUpper(noun[:1])+noun[1:], display, word))
 			}
@@ -472,16 +468,12 @@ func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosm
 			switch {
 			case cancelled:
 				a.setStatus(fmt.Sprintf("Setting %q to %s cancelled", name, state))
-				if parent := node.parent; parent != nil {
-					a.explorer.Reload(parent)
-				}
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Failed to set %q to %s: %v", name, state, err))
 			default:
 				node.data.IsEnabled = state == gosmo.EndpointStarted
-				if parent := node.parent; parent != nil {
-					a.explorer.Reload(parent)
-				}
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("Endpoint %q is now %s", name, endpointStateLabel(string(state))))
 			}
@@ -537,10 +529,17 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 				// Refresh the databases folder: after a cancel the node's state
 				// is unknown until re-read.
 				a.setStatus(fmt.Sprintf("Taking %q %s cancelled", dbName, word))
-				a.explorer.RefreshDatabasesFolder(sc)
+				a.explorer.ReloadFolders(sc, folderOf("", NodeDatabases))
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Failed to take %q %s: %v", dbName, word, err))
 			default:
+				if node.retired {
+					// A Refresh above replaced node while the change ran, and
+					// its listing may hold the old state: the folder re-reads it.
+					a.explorer.ReloadFolders(sc, folderOf("", NodeDatabases))
+					a.setStatus(fmt.Sprintf("Database %q is now %s", dbName, word))
+					return
+				}
 				node.data.IsOffline = goOffline
 				a.explorer.Reload(node)
 				a.explorer.rebuild() // repaint node's own icon immediately even when it's collapsed (Reload only rebuilds once an expanded reload completes)
@@ -603,7 +602,7 @@ func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 				return
 			}
 			a.setStatus(fmt.Sprintf("Database %q reverted to snapshot %q", source, snapshot))
-			a.explorer.RefreshDatabasesFolder(sc)
+			a.explorer.ReloadFolders(sc, folderOf("", NodeDatabases))
 		})
 	})
 }

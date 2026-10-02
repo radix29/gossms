@@ -74,7 +74,7 @@ func NewNewAlertDialog(app *App) *NewAlertDialog {
 		scriptDatabase: "msdb",
 		fetch:          fetchNewAlertPrefetch,
 		build:          d.buildPages,
-		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeAgentEventAlerts) },
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeAgentEventAlerts)) },
 	})
 	return d
 }

@@ -140,9 +140,9 @@ func pageAGBackupPreferences(sc *db.ServerConn, agName string) propPage {
 				priorityRow,
 				propsheet.Note("Priority runs 1 (lowest) to 100 (highest). 0 excludes the replica from automated backups entirely — it is the single value behind SSMS's separate Exclude Replica checkbox, and the Excluded column above just reports it."),
 			)
+			f.SetCommit(commitCurrent)
 
 			apply := func(ctx context.Context) error {
-				commitCurrent()
 				ag, err := agOnPrimary(ctx, sc, agName)
 				if err != nil {
 					return err

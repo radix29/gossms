@@ -524,9 +524,9 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				rolesGrid,
 				propsheet.Note("Schema/role changes only take effect for a mapped database. Space/Enter (or click) on Member toggles role membership."),
 			)
+			f.SetCommit(commitCurrent)
 
 			apply := func(ctx context.Context) error {
-				commitCurrent()
 				l, err := findLogin(ctx, sc, *loginName)
 				if err != nil {
 					return err

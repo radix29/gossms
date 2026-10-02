@@ -215,11 +215,26 @@ behind the mouse and async rules.
 - **An apply closure never writes page state.** `propApply` runs on the
   pipeline goroutine while page callbacks read the same variables on the UI
   goroutine, and it also runs under Script Changes. It only issues statements;
-  a real Apply reloads the page (`InvalidateAll`). (AG Listener Properties
-  cleared pending addresses in its apply; after Script Changes the next Apply
-  sent nothing.) `TestApplyClosuresDoNotWritePageState` fails on a
-  `func(ctx context.Context) error` literal assigning a captured variable; work
-  closures for `runPageAction`/`runPageActionOnce` are exempt.
+  a real Apply reloads the page (`InvalidateAll`), and a failed one reloads
+  every page that reached the server, which is what puts baselines right — an
+  apply never moves them. (AG Listener Properties cleared pending addresses in
+  its apply; after Script Changes the next Apply sent nothing.)
+  - A grid-plus-detail page copies its editor into the model with
+    `form.SetCommit(commitCurrent)`, never by calling it in the apply: the
+    host runs every form's hook on the UI goroutine before reading
+    dirtiness (`PropDialog.runApply`/`runScript`, `newObjectDialog.runPipeline`).
+  - A New-object dialog builds its request in `preflight` and the step
+    captures it (`var req …; d.applyFns[0] = func(ctx) error { return
+    d.create(ctx, req) }`), never `d.applyFns[0] = d.create` reading widgets.
+    A result the run hands back (New Endpoint's per-instance script) goes
+    through a destination the run puts in its context.
+  - `TestApplyClosuresDoNotWritePageState` checks every
+    `func(ctx context.Context) error` literal and method value, following
+    captured closures, func fields, methods of captured values and package
+    functions handed captured state. `runPageAction`/`runPageActionOnce` work
+    closures and `commitRename` are exempt. Blind spot: a local aliasing page
+    state (a range variable, `r := d.rows`) — without types a copy can't be
+    told from a pointer.
 - **An apply closure writes on the context it's handed, only through gosmo.**
   `runApplySteps` wraps it in `gosmo.WithStatementObserver`, which is how a
   failed Apply knows which pages reached the server (those reload; others keep

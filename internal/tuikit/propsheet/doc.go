@@ -24,7 +24,11 @@
 // A page's Form (see form.go) holds the actual editable rows; dirty state
 // is tracked per row and rolled up per page and for the whole sheet. Apply
 // semantics — which rows map to which backend calls — are entirely up to
-// the caller; propsheet only tracks and reports what changed.
+// the caller; propsheet only tracks and reports what changed. A form whose
+// editor fields stand in for one selected item of a list registers a commit
+// hook (Form.SetCommit), and the caller runs PropertySheet.Commit on the UI
+// goroutine before it reads Dirty or Validate for an Apply — so the apply
+// itself, usually run on another goroutine, never has to touch a widget.
 //
 // Script Changes (OnScript) is not a distinct code path: propsheet expects
 // the caller to reuse the exact same per-page apply logic it uses for

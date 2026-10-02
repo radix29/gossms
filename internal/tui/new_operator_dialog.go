@@ -59,7 +59,7 @@ func NewNewOperatorDialog(app *App) *NewOperatorDialog {
 		scriptDatabase: "msdb",
 		fetch:          fetchNewOperatorPrefetch,
 		build:          d.buildPages,
-		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeAgentOperators) },
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeAgentOperators)) },
 	})
 	return d
 }

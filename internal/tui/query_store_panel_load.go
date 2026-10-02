@@ -71,7 +71,7 @@ func (p *QueryStorePanel) trackedIDs() []int64 {
 	if !p.report().honours(qsFilterTracked) || p.conn == nil {
 		return nil
 	}
-	return config.Tracked().IDs(p.conn.Opts.Server, p.dbName)
+	return config.Tracked().IDs(config.ConnectionAddress(p.conn.Opts), p.dbName)
 }
 
 // isTracked reports whether one query is pinned, for the action row's label.
@@ -79,7 +79,7 @@ func (p *QueryStorePanel) isTracked(queryID int64) bool {
 	if queryID == 0 || p.conn == nil {
 		return false
 	}
-	return config.Tracked().IsTracked(p.conn.Opts.Server, p.dbName, queryID)
+	return config.Tracked().IsTracked(config.ConnectionAddress(p.conn.Opts), p.dbName, queryID)
 }
 
 // toggleTracked pins the selected query to the Tracked Queries view or unpins
@@ -90,7 +90,7 @@ func (p *QueryStorePanel) toggleTracked() {
 	if id == 0 || p.conn == nil {
 		return
 	}
-	tracked, err := config.Tracked().Toggle(p.conn.Opts.Server, p.dbName, id)
+	tracked, err := config.Tracked().Toggle(config.ConnectionAddress(p.conn.Opts), p.dbName, id)
 	verb := "untracked"
 	if tracked {
 		verb = "tracked"
@@ -106,7 +106,7 @@ func (p *QueryStorePanel) toggleTracked() {
 	// leaf caches its rows and would go on showing the old set. Run on the
 	// failed save too — the in-memory set took the toggle either way, and it is
 	// what every view reads.
-	p.app.trackedQueriesChanged(p.conn.Opts.Server, p.dbName)
+	p.app.trackedQueriesChanged(config.ConnectionAddress(p.conn.Opts), p.dbName)
 }
 
 // Load runs the current report in the background and applies the result on the

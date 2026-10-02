@@ -62,7 +62,13 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
-None open.
+- **B14 — New Job's Owner defaults to the first login in the list, not the
+  caller.** `new_job_pages.go:21` selects index 0 of `pf.loginNames`, which on
+  win10cli\SQL2017 is `##MS_AgentSigningCertificate##`, so an OK with the
+  field untouched creates a job owned by that certificate login (seen
+  2026-10-02 during the W6 tmux check). SSMS defaults to the connected login.
+  Fix: preselect the caller's login (`SUSER_SNAME()`), falling back to 0; pin
+  with a fake-instance test.
 
 ### Verification gaps
 

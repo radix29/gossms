@@ -240,7 +240,7 @@ func probedConnWithObject(t *testing.T, dbName, object, permission string) *db.S
 			if r.match != "IS_ROLEMEMBER" {
 				continue
 			}
-			r.rows = append(r.rows, []driver.Value{"O:CONTROL", object, int64(1)})
+			r.rows = append(r.rows, []driver.Value{"O:CONTROL", probeKey(object), int64(1)})
 			resp[i] = r
 		}
 	}

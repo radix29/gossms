@@ -427,7 +427,6 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 			)
 
 			apply := func(ctx context.Context) error {
-				commitCurrent()
 				plan, err := mailPlanFrom(ctx)
 				if err != nil {
 					return err
@@ -473,7 +472,9 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				}
 				return nil
 			}
-			return propsheet.NewForm(rows...), apply, nil
+			form := propsheet.NewForm(rows...)
+			form.SetCommit(commitCurrent)
+			return form, apply, nil
 		},
 	}
 }

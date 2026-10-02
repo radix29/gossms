@@ -136,85 +136,30 @@ func (oe *ObjectExplorer) RemoveRootByConn(sc *db.ServerConn) {
 	}
 }
 
-// RefreshDatabasesFolder refreshes sc's "Databases" folder node, after an action
-// that changes the database list from outside Object Explorer's own
-// expand/refresh flow. A folder never loaded needs no action: its next expand
-// fetches the current list anyway.
-func (oe *ObjectExplorer) RefreshDatabasesFolder(sc *db.ServerConn) {
-	for _, r := range oe.roots {
-		if r.data.conn != sc {
-			continue
-		}
-		for _, c := range r.children {
-			if c.data.Type == NodeDatabases {
-				c.data.Loaded = false
-				c.children = nil
-				if c.expanded {
-					oe.app.loadChildren(c)
-				}
-				oe.app.detailBrowser.Invalidate(oe.app, c)
-				return
-			}
-		}
-		return
-	}
-}
-
-// RefreshLoginsFolder refreshes sc's Security > Logins folder node, after an
-// action that changes the login list from outside Object Explorer's own
-// expand/refresh flow. RefreshDatabasesFolder one level deeper.
-func (oe *ObjectExplorer) RefreshLoginsFolder(sc *db.ServerConn) {
-	for _, r := range oe.roots {
-		if r.data.conn != sc {
-			continue
-		}
-		for _, c := range r.children {
-			if c.data.Type != NodeSecurity {
-				continue
-			}
-			for _, gc := range c.children {
-				if gc.data.Type == NodeLogins {
-					gc.data.Loaded = false
-					gc.children = nil
-					if gc.expanded {
-						oe.app.loadChildren(gc)
-					}
-					oe.app.detailBrowser.Invalidate(oe.app, gc)
-					return
-				}
-			}
-			return
-		}
-		return
-	}
-}
-
-// RefreshFolderByType refreshes sc's first descendant folder node of type t,
-// depth-first, after an action that changes a SQL Server Agent collection from
-// outside Object Explorer's own flow. Agent folders sit at varying depths under
-// SQL Server Agent, so this is one generic search rather than a hand-written
-// walk per folder.
-func (oe *ObjectExplorer) RefreshFolderByType(sc *db.ServerConn, t NodeType) {
-	for _, r := range oe.roots {
-		if r.data.conn != sc {
-			continue
-		}
-		if n := findDescendantByType(r, t); n != nil {
-			oe.Reload(n)
-		}
-		return
-	}
-}
-
 // ReloadFolders reloads every node of sc's tree that match accepts, without
-// looking below one — after a Properties dialog's Apply renamed an object or
-// changed a state its label or icon carries. The folder, not the object's
-// node: the folder's loader builds the label, and a rename leaves the node's
-// name stale, so every later menu action on it would name the old object.
+// looking below one. It is the one refresh after a write — a create, attach,
+// restore, delete, rename or state change — and the match is what makes it
+// the only one:
+//
+//   - A write that finishes later than it started cannot hold on to the node
+//     it was started from. A Refresh above it in the meantime retires that
+//     node, and Reload of a retired node is a no-op, so the write's own
+//     refresh was silently lost. A match names the folder by what it is
+//     (folderOf, sameNodeAs) and finds whichever node stands for it now.
+//   - The folder, not the object's node: the folder's loader builds the
+//     label, and a rename leaves the node's name stale, so every later menu
+//     action on it would name the old object.
+//
+// A folder never loaded is not in the tree and needs no action: its next
+// expand fetches the current list anyway.
 func (oe *ObjectExplorer) ReloadFolders(sc *db.ServerConn, match func(nodeData) bool) {
 	for _, r := range oe.roots {
 		if r.data.conn != sc {
 			continue
+		}
+		if match(r.data) {
+			oe.Reload(r)
+			return
 		}
 		var hits []*explorerNode
 		var walk func(*explorerNode)
@@ -240,6 +185,22 @@ func (oe *ObjectExplorer) ReloadFolders(sc *db.ServerConn, match func(nodeData) 
 func folderOf(dbName string, types ...NodeType) func(nodeData) bool {
 	return func(d nodeData) bool {
 		return slices.Contains(types, d.Type) && d.DBName == dbName
+	}
+}
+
+// sameNodeAs matches, for ReloadFolders, the nodes standing for the same
+// object or folder as n — n itself while it is live, or the node that replaced
+// it after a Refresh above retired it. Nil matches nothing. The fields are the
+// ones that name a node: TableName, AGName, XESession and RGPool each tell
+// apart folders of one type and database that belong to different parents.
+func sameNodeAs(n *explorerNode) func(nodeData) bool {
+	if n == nil {
+		return func(nodeData) bool { return false }
+	}
+	w := n.data
+	return func(d nodeData) bool {
+		return d.Type == w.Type && d.DBName == w.DBName && d.Schema == w.Schema && d.Name == w.Name &&
+			d.TableName == w.TableName && d.AGName == w.AGName && d.XESession == w.XESession && d.RGPool == w.RGPool
 	}
 }
 

@@ -47,6 +47,9 @@ type Form struct {
 	// applyConfirm is asked before this form's edits are applied for real —
 	// see SetApplyConfirm.
 	applyConfirm func() string
+
+	// commit is the form's commit hook — see SetCommit.
+	commit func()
 }
 
 // NewForm creates a Form from an initial set of rows; order is tab order and
@@ -594,6 +597,26 @@ func (f *Form) ApplyConfirm() string {
 		return ""
 	}
 	return f.applyConfirm()
+}
+
+// SetCommit registers fn as the form's commit hook: it copies what the form's
+// widgets show into the model the form's rows and apply read, for a form whose
+// editor fields stand in for one selected item of a list (a grid-plus-detail
+// page) and are otherwise only copied back when the selection moves.
+//
+// The host calls it, through PropertySheet.Commit, on its own goroutine before
+// it reads Dirty, Validate or ApplyConfirm for an Apply, OK or Script Changes
+// — so the copy happens there, and not inside the apply, which runs on another
+// goroutine while the UI goroutine may still be drawing the same widgets.
+// fn must be safe to call at any time: with nothing selected, and on a form
+// that is not dirty.
+func (f *Form) SetCommit(fn func()) { f.commit = fn }
+
+// Commit runs the form's commit hook, if it has one.
+func (f *Form) Commit() {
+	if f.commit != nil {
+		f.commit()
+	}
 }
 
 // CopyText returns the focused row's copyable value, if any.

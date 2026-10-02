@@ -56,7 +56,7 @@ func NewNewScheduleDialog(app *App) *NewScheduleDialog {
 		scriptDatabase: "msdb",
 		fetch:          fetchNewSchedulePrefetch,
 		build:          d.buildPages,
-		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeAgentSchedules) },
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeAgentSchedules)) },
 	})
 	return d
 }

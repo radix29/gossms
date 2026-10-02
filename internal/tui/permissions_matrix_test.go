@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
+	"strings"
 	"testing"
 
 	"github.com/radix29/gosmo"
@@ -139,26 +139,57 @@ func TestPermissionsMatrixApplyOrderIsStable(t *testing.T) {
 	}
 }
 
-// The retry after a mid-apply failure must issue only what is outstanding —
-// the statements that already landed are not re-sent.
-func TestPermissionsMatrixRetryIssuesOnlyOutstanding(t *testing.T) {
-	rec := &recorder{failOn: "c"}
-	apply, _ := threePrincipalMatrix(t, rec)
+// The failure a stale baseline costs: undoing an edit that already landed.
+// Apply downgrades a's grant option, grants b, and is refused on c, so the
+// server holds a plain GRANT for a. Were the page kept as it was, putting a
+// back to Grant With Grant — the state it loaded with — would read clean and
+// send nothing, leaving the grid claiming a grant option the server lost.
+//
+// An apply closure may not move the cells' baselines itself (it runs off the
+// UI goroutine, and under Script Changes), so the page is reloaded instead:
+// its statements reached the server, which gosmo's statement observer sees.
+func TestPermissionsMatrixPartlyAppliedReloads(t *testing.T) {
+	sc, _ := newFakeConn(t, fakeResponse{match: "TO [c]", err: errRefused})
+	loads := 0
+	sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Server Properties")
+	d := &PropDialog{PropertySheet: sheet, app: &App{}, ctx: context.Background(), applyFn: map[int]propApply{}}
+	d.SetPages([]string{"Permissions"})
+	d.OnLoadPage = func(page, seq int) {
+		loads++
+		principals := []permPrincipal{{Name: "a", Type: "SQL_LOGIN"}, {Name: "b", Type: "SQL_LOGIN"}, {Name: "c", Type: "SQL_LOGIN"}}
+		entries := []permEntry{{Principal: "a", Permission: permA, State: permStateGrantWith}}
+		f, apply := buildPermissionsMatrix(principals, []string{permA, permB}, entries, 8, 8, serverPermApply(sc.Server))
+		if d.SetPageForm(page, seq, f) {
+			d.applyFn[page] = apply
+		}
+		if loads > 1 {
+			return
+		}
+		p := matrixPartsOf(t, f)
+		for range 3 {
+			p.perms.OnActivateCell(0, 1) // a: Grant With Grant -> ... -> Grant
+		}
+		for _, row := range []int{1, 2} {
+			p.principals.OnSelectRow(row)
+			p.perms.OnActivateCell(0, 1) // (none) -> Grant
+		}
+	}
+	d.Show()
+	d.SelectPage(0)
+	if !d.Dirty() {
+		t.Fatal("setup: the page is not dirty")
+	}
 
-	if err := apply(context.Background()); err == nil {
-		t.Fatal("apply succeeded, want the injected failure on principal c")
-	}
-	if len(rec.stmts) != 2 {
-		t.Fatalf("first attempt issued %v, want the two statements before the failure", rec.stmts)
-	}
+	runAndWait(t, d, func() { d.runApply(false) })
 
-	rec.stmts, rec.failOn = nil, ""
-	if err := apply(context.Background()); err != nil {
-		t.Fatalf("retry: %v", err)
+	if !strings.Contains(d.Message(), "refused") {
+		t.Errorf("message = %q, want the refusal", d.Message())
 	}
-	want := "GRANT " + permA + " -> c"
-	if len(rec.stmts) != 1 || rec.stmts[0] != want {
-		t.Errorf("retry issued %v, want just [%q]", rec.stmts, want)
+	if loads != 2 {
+		t.Fatalf("the page loaded %d times, want a reload after the partial apply", loads)
+	}
+	if d.Dirty() {
+		t.Error("the reloaded page is still dirty — it kept edits that are already on the server")
 	}
 }
 
@@ -222,34 +253,5 @@ func TestPermissionsMatrixEmptyFilterClearsSelection(t *testing.T) {
 	want := "GRANT " + permA + " -> a"
 	if len(rec.stmts) != 1 || rec.stmts[0] != want {
 		t.Errorf("apply issued %v, want just [%q] — the edit made before filtering, unchanged", rec.stmts, want)
-	}
-}
-
-// The failure a stale baseline actually costs: undoing an edit that already
-// landed. The first Apply downgrades a's grant option and then fails on c, so
-// the server holds a plain GRANT. Put a back to Grant With Grant — the state
-// the page loaded with — and Apply must re-grant it. Against a stale orig the
-// cell reads clean and nothing is issued, leaving the grid claiming a grant
-// option the server does not have.
-func TestPermissionsMatrixUndoOfAnAppliedEditIsReissued(t *testing.T) {
-	rec := &recorder{failOn: "c"}
-	apply, p := threePrincipalMatrix(t, rec)
-
-	if err := apply(context.Background()); err == nil {
-		t.Fatal("apply succeeded, want the injected failure on principal c")
-	}
-
-	// Back to principal a and cycle its cell round to Grant With Grant again:
-	// Grant -> Grant With Grant is one step.
-	p.principals.OnSelectRow(0)
-	p.perms.OnActivateCell(0, 1)
-
-	rec.stmts, rec.failOn = nil, ""
-	if err := apply(context.Background()); err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	want := "GRANT " + permA + " -> a [WITH GRANT OPTION]"
-	if !slices.Contains(rec.stmts, want) {
-		t.Errorf("apply issued %v, want it to include %q — the page shows a grant option the server lost", rec.stmts, want)
 	}
 }

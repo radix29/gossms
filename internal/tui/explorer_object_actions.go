@@ -49,8 +49,9 @@ func objectDataName(n nodeData) string {
 // is what keeps the two apart — the ops take a nodeData by value for exactly
 // this reason.
 func (a *App) deleteObject(node *explorerNode) {
-	a.confirmDeleteObjects(resolveConn(node), []nodeData{node.data}, func() {
-		a.explorer.Reload(node.parent)
+	sc := resolveConn(node)
+	a.confirmDeleteObjects(sc, []nodeData{node.data}, func() {
+		a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 	})
 }
 
@@ -381,12 +382,12 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 		switch {
 		case cancelled:
 			a.setStatus(fmt.Sprintf("Rename of %s %q cancelled", strings.ToLower(op.noun), oldName))
-			a.explorer.Reload(node.parent)
+			a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 		case err != nil:
 			a.setStatus(fmt.Sprintf("Rename failed: %v", withPermissionAdvice(err)))
 		default:
 			a.setStatus(fmt.Sprintf("%s %q renamed to %q", op.noun, oldName, newName))
-			a.explorer.Reload(node.parent)
+			a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 		}
 	})
 }
@@ -475,12 +476,12 @@ func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *obj
 				switch {
 				case cancelled:
 					a.setStatus(fmt.Sprintf("Move of %s %q cancelled", strings.ToLower(op.noun), name))
-					a.explorer.Reload(node.parent)
+					a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 				case err != nil:
 					a.setStatus(fmt.Sprintf("Move failed: %v", withPermissionAdvice(err)))
 				default:
 					a.setStatus(fmt.Sprintf("%s %q moved to schema %q", op.noun, name, target))
-					a.explorer.Reload(node.parent)
+					a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
 				}
 			})
 		})

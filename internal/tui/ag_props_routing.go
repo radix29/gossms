@@ -134,9 +134,9 @@ func pageAGReadOnlyRouting(sc *db.ServerConn, agName string) propPage {
 				propsheet.Note("The URL is where this replica answers read-intent connections while it is a readable secondary, e.g. TCP://"+firstOr(names, "server")+":1433. Clearing it removes the URL."),
 				propsheet.Note("The list is where this replica sends read-intent connections while it is the primary: replica names in priority order, comma separated. Parenthesise names to load-balance between them, as in \"repB, (repC, repD)\". An empty list removes routing. Read-only routing only takes effect once the target replicas have a URL and allow read-only connections."),
 			)
+			f.SetCommit(commitCurrent)
 
 			apply := func(ctx context.Context) error {
-				commitCurrent()
 				ag, err := agOnPrimary(ctx, sc, agName)
 				if err != nil {
 					return err

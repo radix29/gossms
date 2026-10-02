@@ -59,7 +59,7 @@ func NewNewColumnMasterKeyDialog(app *App) *NewColumnMasterKeyDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
 	})
 	return d
 }

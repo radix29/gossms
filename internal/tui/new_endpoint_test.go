@@ -137,12 +137,14 @@ func TestEndpointAuthenticationQuotesTheCertificateName(t *testing.T) {
 	d, _, _ := newEndpointDialogForTest(t)
 	d.certificateName = func(string) string { return "we]ird_Cert" }
 
+	req := endpointTestRequest(d)
 	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if err := d.configure(scriptCtx); err != nil {
+	groups, err := d.configure(scriptCtx, req)
+	if err != nil {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 	var all []string
-	for _, g := range d.scriptedGroups {
+	for _, g := range groups {
 		all = append(all, g.stmts...)
 	}
 	joined := strings.Join(all, "\n")

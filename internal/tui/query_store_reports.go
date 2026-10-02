@@ -338,7 +338,7 @@ func trackedIDsFor(report queryStoreReport, sc *db.ServerConn, dbName string) []
 	if !report.honours(qsFilterTracked) || sc == nil {
 		return nil
 	}
-	return config.Tracked().IDs(sc.Opts.Server, dbName)
+	return config.Tracked().IDs(config.ConnectionAddress(sc.Opts), dbName)
 }
 
 // trackedQueriesChanged is what a pin or unpin has to run: every view showing
@@ -359,7 +359,7 @@ func (a *App) trackedQueriesChanged(server, dbName string) {
 	for i := range a.panels.Count() {
 		qs, ok := a.panels.PanelAt(i).(*QueryStorePanel)
 		if !ok || qs.conn == nil || qs.dbName != dbName ||
-			!config.SameServer(qs.conn.Opts.Server, server) {
+			!config.SameServer(config.ConnectionAddress(qs.conn.Opts), server) {
 			continue
 		}
 		// Only the view whose rows are the set: the other six reports read
@@ -383,7 +383,7 @@ func isTrackedQueriesLeaf(n *explorerNode, server, dbName string) bool {
 		return false
 	}
 	sc := resolveConn(n)
-	return sc != nil && config.SameServer(sc.Opts.Server, server)
+	return sc != nil && config.SameServer(config.ConnectionAddress(sc.Opts), server)
 }
 
 // queryStoreOffRows explains a Query Store that is not collecting, and says

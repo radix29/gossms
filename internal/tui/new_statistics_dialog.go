@@ -66,7 +66,7 @@ func NewNewStatisticsDialog(app *App) *NewStatisticsDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
 	})
 	return d
 }
@@ -130,9 +130,13 @@ func (d *NewStatisticsDialog) buildPages(pf *nstatPrefetch) {
 	)
 
 	d.forms[0] = propsheet.NewForm(rows...)
-	d.applyFns[0] = d.createStatistic
+	// The request is built by preflight, on the UI goroutine, and captured by
+	// the step, which runs on the pipeline's.
+	var req gosmo.CreateStatisticRequest
+	d.applyFns[0] = func(ctx context.Context) error { return d.createStatistic(ctx, req) }
 	d.objectName = func() string { return strings.TrimSpace(d.name.Value()) }
 	d.preflight = func() error {
+		req = d.request()
 		name := d.objectName()
 		if name == "" {
 			return fmt.Errorf("statistics name is required")
@@ -147,12 +151,12 @@ func (d *NewStatisticsDialog) buildPages(pf *nstatPrefetch) {
 	}
 }
 
-func (d *NewStatisticsDialog) createStatistic(ctx context.Context) error {
+func (d *NewStatisticsDialog) createStatistic(ctx context.Context, req gosmo.CreateStatisticRequest) error {
 	t, err := findTable(ctx, d.sc, d.dbName, d.schema, d.table)
 	if err != nil {
 		return err
 	}
-	_, err = t.CreateStatistic(ctx, d.request())
+	_, err = t.CreateStatistic(ctx, req)
 	return err
 }
 

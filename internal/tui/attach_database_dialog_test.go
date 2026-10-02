@@ -124,6 +124,7 @@ func TestAttachWritesTheCorrectedFileList(t *testing.T) {
 	selectGridRow(t, g, 0, "AppDB_2")
 	editText(t, f, "Path of selected file", `D:\Moved\AppDB_2.ndf`)
 
+	d.forms[0].Commit() // as runPipeline does before preflight
 	if err := d.preflight(); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}

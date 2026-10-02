@@ -4,12 +4,10 @@ import (
 	"context"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 )
 
@@ -44,7 +42,7 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	// InstanceKey, not lowercase: "UBUSQL2", "ubusql2,1433" and "ubusql2" are
 	// one instance ("ubusql2,1500" another). The credential resolver uses the
 	// same key.
-	key := InstanceKey(server)
+	key := config.InstanceKey(server)
 
 	for {
 		sc.peerMu.Lock()
@@ -167,7 +165,7 @@ const peerFailureTTL = 30 * time.Second
 // dials again. Called when the entry is proven stale, e.g. by a successful
 // direct connect.
 func (sc *ServerConn) ForgetPeerFailure(server string) {
-	sc.forgetPeerFailures(InstanceKey(server), map[*ServerConn]bool{})
+	sc.forgetPeerFailures(config.InstanceKey(server), map[*ServerConn]bool{})
 }
 
 // ForgetPeerFailures drops every cached connect failure, for an explicit
@@ -252,41 +250,6 @@ func retargetAt(opts config.Connection, server string) config.Connection {
 	opts.Server = server
 	opts.Database = ""
 	return opts
-}
-
-// InstanceKey normalizes an instance name for keying peers and credentials:
-// lowercased host, then "\instance" for a named instance, or ",port" when
-// there's no instance name and the port isn't 1433.
-//
-// A named instance is identified by name, so its port is dropped
-// ("host\inst,1500" = "host\inst"). Without a name the port distinguishes
-// instances on one host (win10cli vs "win10cli,55253" for SQL2017); a shared
-// key would try the other instance's login, counting toward a CHECK_POLICY
-// lockout. 1433 equals no port, as the driver dials it by default.
-//
-// The catalog reports names without ports, so a default instance saved as
-// "host,1500" doesn't answer a peer read for "HOST"; Peer then falls back to
-// the parent's settings.
-//
-// Lives here, not in config, because it needs gosmo's address parser.
-func InstanceKey(server string) string {
-	host, instance, port := gosmo.ParseServerAddress(server)
-	key := strings.ToLower(strings.TrimSpace(host))
-	switch {
-	case instance != "":
-		key += "\\" + strings.ToLower(instance)
-	case port != 0 && port != 1433:
-		key += "," + strconv.Itoa(port)
-	}
-	return key
-}
-
-// ConnectionAddress is the address a saved connection dials: Server with the
-// dialog's Port folded in, as Connect does. Key a config.Connection by
-// InstanceKey(ConnectionAddress(c)), never c.Server alone, which drops a
-// Port-field port.
-func ConnectionAddress(c config.Connection) string {
-	return ResolveServer(c.Server, c.Port)
 }
 
 // PeerCredentials returns the saved connection for an instance name; false

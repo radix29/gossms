@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -36,9 +37,19 @@ func main() {
 	app := tui.NewApp()
 	watchTermSignals(app)
 	if err := run(app); err != nil {
+		// The log above may be the only other place this goes: an error
+		// before the screen starts ("init screen") would otherwise leave the
+		// shell with nothing. run has already told stderr about a panic.
+		if !errors.Is(err, errPanicked) {
+			fmt.Fprintf(os.Stderr, "gossms error: %v\n", err)
+		}
 		log.Fatalf("gossms error: %v", err)
 	}
 }
+
+// errPanicked marks run's error for a recovered panic, which run reports to
+// stderr itself.
+var errPanicked = errors.New("panic")
 
 // watchTermSignals saves every unsaved query panel when the terminal is closed,
 // an ssh session drops (SIGHUP) or the process is killed (SIGTERM), rather than
@@ -97,7 +108,7 @@ func run(app *tui.App) (err error) {
 				log.Printf("unsaved query not recovered: %v", ferr)
 				fmt.Fprintf(os.Stderr, "Unsaved query NOT recovered: %v\n", ferr)
 			}
-			err = fmt.Errorf("panic: %v", r)
+			err = fmt.Errorf("%w: %v", errPanicked, r)
 		}
 	}()
 	return app.Run()

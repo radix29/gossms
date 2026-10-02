@@ -332,8 +332,8 @@ on that would empty menus for everyone working through a database-wide grant.
   Executing, 2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended, 6
   WaitingForStepToFinish, 7 PerformingCompletionActions, 0 = not run by Agent.
   No Cancelling or Running state.
-- **Lookup-free handles carry `Ref`; `*ByName` lookups keep their names** (55
-  families — `~/go/gosmo/CLAUDE.md`'s `Ref` bullet lists them and owns the rule
+- **Lookup-free handles carry `Ref`; `*ByName` lookups keep their names**
+  (every family — `~/go/gosmo/CLAUDE.md`'s `Ref` bullet lists them and owns the rule
   on when a handle is needed; "under a `WithScript` context" alone is
   over-broad, since `WithScript` intercepts writes only). **Two alternatives
   rejected:** giving the lookup the plain name splits it from every other
@@ -425,7 +425,7 @@ Peer credentials, easy to undo:
   before the parent's settings — connecting to a replica once via File >
   Connect gives it its own login/port/auth/TLS. A saved connection is taken
   whole (so new `config.Connection` fields aren't dropped). Keyed by
-  `db.InstanceKey` (case, port, instance spelling); since `@@SERVERNAME` is the
+  `config.InstanceKey` (case, port, instance spelling); since `@@SERVERNAME` is the
   short name, a saved connection is also registered under its short host at
   strictly lower priority, so `sql.a.example`/`sql.b.example` never swap logins.
 - **The resolver never makes an instance less reachable.** `Peer` retries once
@@ -774,9 +774,9 @@ String). Not to be reopened without asking the author:
   `ExtraProperties`).
 - **The port folds into Server Name for display only; `config.Connection.Port`
   stays stored.** It's bound into `connectionAAD`, part of `GeneratedName` (the
-  dedup key and completion-inventory key), and `db.ResolveServer` drops 0 and
+  dedup key), and `config.ResolveServer` drops 0 and
   1433 so named instances resolve via Browser. `currentOptions` splits with
-  `gosmo.ParseServerAddress`; `PreFill` re-joins with `db.ResolveServer` (what's
+  `gosmo.ParseServerAddress`; `PreFill` re-joins with `config.ResolveServer` (what's
   shown is what's dialled). `TestConnectDialogFoldingThePortKeepsTheConnectionIdentity`
   guards the round trip. No hand-rolled string surgery.
 - **The History pane replaced the autocomplete overlay; no filter box.**

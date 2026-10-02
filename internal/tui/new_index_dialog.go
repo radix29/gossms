@@ -87,7 +87,7 @@ func NewNewIndexDialog(app *App) *NewIndexDialog {
 		pages:   nidxPagesFor(gosmo.IndexTypeNonClustered),
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
 	})
 	return d
 }
@@ -200,20 +200,29 @@ func (d *NewIndexDialog) buildPages(pf *nidxPrefetch) {
 	}
 	// One statement creates the index, so the whole request is applied by the
 	// first page's apply function; the rest only contribute widgets to it.
-	d.applyFns[0] = d.createIndex
+	// The request is built by preflight, on the UI goroutine, and captured by
+	// the step, which runs on the pipeline's.
+	var req gosmo.CreateIndexRequest
+	d.applyFns[0] = func(ctx context.Context) error { return d.createIndex(ctx, req) }
 	d.objectName = func() string { return strings.TrimSpace(d.rows.name.Value()) }
-	d.preflight = func() error { return d.checkRequest(pf) }
+	d.preflight = func() error {
+		if err := d.checkRequest(pf); err != nil {
+			return err
+		}
+		req = d.request()
+		return nil
+	}
 }
 
 // createIndex is the dialog's whole apply: read the table back, then create.
 // The read is a read, so it runs against the real server under Script
 // Changes too — only the CREATE is collected.
-func (d *NewIndexDialog) createIndex(ctx context.Context) error {
+func (d *NewIndexDialog) createIndex(ctx context.Context, req gosmo.CreateIndexRequest) error {
 	t, err := findTable(ctx, d.sc, d.dbName, d.schema, d.table)
 	if err != nil {
 		return err
 	}
-	_, err = t.CreateIndex(ctx, d.request())
+	_, err = t.CreateIndex(ctx, req)
 	return err
 }
 

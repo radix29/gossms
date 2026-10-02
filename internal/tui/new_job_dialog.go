@@ -93,7 +93,7 @@ func NewNewJobDialog(app *App) *NewJobDialog {
 		scriptDatabase: "msdb",
 		fetch:          fetchNewJobPrefetch,
 		build:          d.buildPages,
-		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeAgentUserJobs) },
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeAgentUserJobs)) },
 	})
 	return d
 }

@@ -193,7 +193,7 @@ func (a *App) launchXEventProfiler(sc *db.ServerConn, k xeProfilerKind) {
 		return es.Start(ctx)
 	}, func(err error, cancelled bool) {
 		if changed || cancelled {
-			a.explorer.RefreshFolderByType(sc, NodeEventSessions)
+			a.explorer.ReloadFolders(sc, folderOf("", NodeEventSessions))
 		}
 		switch {
 		case cancelled:
@@ -260,7 +260,7 @@ func (a *App) stopXEventProfilerSession(sc *db.ServerConn, session string) {
 	}, func(ctx context.Context, _ progressReport) error {
 		return sc.Server.EventSessionRef(session).Stop(ctx)
 	}, func(err error, cancelled bool) {
-		a.explorer.RefreshFolderByType(sc, NodeEventSessions)
+		a.explorer.ReloadFolders(sc, folderOf("", NodeEventSessions))
 		switch {
 		case cancelled:
 			a.setStatus(fmt.Sprintf("Stop of %q cancelled", session))

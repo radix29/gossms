@@ -588,7 +588,6 @@ func buildSecurablesMatrix(
 				if err := applyFn(ctx, verb, opts, e.sec, e.permission); err != nil {
 					return err
 				}
-				commitApplied(ctx, &e.orig, e.current)
 			}
 		}
 		for _, k := range slices.Sorted(maps.Keys(colEdits)) {
@@ -600,7 +599,6 @@ func buildSecurablesMatrix(
 			if err := colApplyFn(ctx, verb, opts, e.sec, e.permission, e.column); err != nil {
 				return err
 			}
-			commitApplied(ctx, &e.orig, e.current)
 		}
 		return nil
 	}

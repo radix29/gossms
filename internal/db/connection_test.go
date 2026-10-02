@@ -120,24 +120,6 @@ func TestBuildConnectionStringNamedInstance(t *testing.T) {
 	}
 }
 
-// The address handed to gosmo (what Connect dials) must not append a port to a
-// named instance; that suppresses SQL Browser.
-func TestResolveServerLeavesNamedInstanceAlone(t *testing.T) {
-	for _, port := range []int{0, 1433} {
-		if got := ResolveServer(`myserver\SQLEXPRESS`, port); got != `myserver\SQLEXPRESS` {
-			t.Errorf("ResolveServer(port=%d) = %q, want myserver\\SQLEXPRESS", port, got)
-		}
-	}
-	if got := ResolveServer(`myserver\SQLEXPRESS`, 55253); got != `myserver\SQLEXPRESS,55253` {
-		t.Errorf("ResolveServer(port=55253) = %q, want myserver\\SQLEXPRESS,55253", got)
-	}
-	for _, port := range []int{0, 1433} {
-		if got := ResolveServer("myserver", port); got != "myserver" {
-			t.Errorf("ResolveServer(host, port=%d) = %q, want myserver", port, got)
-		}
-	}
-}
-
 func TestBuildConnectionStringTLSSettings(t *testing.T) {
 	for mode, want := range map[config.EncryptMode]string{
 		config.EncryptOptional: "optional", config.EncryptMandatory: "mandatory", config.EncryptStrict: "strict",
@@ -470,33 +452,6 @@ func TestServerConnLabel(t *testing.T) {
 			sc := &ServerConn{Opts: c.opts, Login: c.login}
 			if got := sc.Label(); got != c.want {
 				t.Errorf("Label() = %q, want %q", got, c.want)
-			}
-		})
-	}
-}
-
-func TestResolveServer(t *testing.T) {
-	cases := []struct {
-		name       string
-		server     string
-		dialogPort int
-		want       string
-	}{
-		{"bare host, default port", "myserver", 1433, "myserver"},
-		{"bare host, custom port", "myserver", 1434, "myserver:1434"},
-		{"embedded comma port wins over dialog port", "myserver,1434", 1500, "myserver,1434"},
-		{"instance, default port: unchanged", `myserver\SQLEXPRESS`, 1433, `myserver\SQLEXPRESS`},
-		{"instance, custom port: comma appended", `myserver\SQLEXPRESS`, 1434, `myserver\SQLEXPRESS,1434`},
-		// A colon after a bare IPv6 literal is another group.
-		{"bare IPv6, custom port: comma appended", "fe80::1", 1434, "fe80::1,1434"},
-		{"bracketed IPv6, custom port: colon appended", "[fe80::1]", 1434, "[fe80::1]:1434"},
-		{"bare IPv6, default port: unchanged", "2001:db8::5", 1433, "2001:db8::5"},
-		{"bracketed IPv6 with port wins over dialog port", "[fe80::1]:1500", 1434, "[fe80::1]:1500"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := ResolveServer(c.server, c.dialogPort); got != c.want {
-				t.Errorf("ResolveServer(%q, %d) = %q, want %q", c.server, c.dialogPort, got, c.want)
 			}
 		})
 	}

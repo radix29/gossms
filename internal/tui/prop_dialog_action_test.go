@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -327,5 +328,89 @@ func TestApplyRenameUpdatesTheHeader(t *testing.T) {
 		"the header to name the renamed login")
 	if _, right := d.Header(); right != "Server: server-one" {
 		t.Errorf("the header's right end became %q", right)
+	}
+}
+
+// A page whose pending edit is still in its editor fields — a grid-plus-detail
+// page whose user never moved off the row — has it copied across by the form's
+// commit hook, which the dialog runs on the UI goroutine before it asks which
+// pages are dirty. The apply then runs with the edit; it no longer commits for
+// itself, on the pipeline goroutine, while the UI goroutine draws the same
+// widgets.
+func TestPropDialogCommitsPagesBeforeApplyAndScript(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		run  func(d *PropDialog)
+	}{
+		{"Apply", func(d *PropDialog) { d.runApply(false) }},
+		{"Script Changes", func(d *PropDialog) { d.runScript() }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Test Properties")
+			d := &PropDialog{PropertySheet: sheet, app: newTestApp(), ctx: context.Background(), applyFn: map[int]propApply{}}
+			d.SetPages([]string{"Files"})
+			row := propsheet.Text("Name", "", 40)
+			var sent string
+			d.OnLoadPage = func(page, seq int) {
+				f := propsheet.NewForm(row)
+				f.SetCommit(func() { row.Edit("from the editor") })
+				d.SetPageForm(page, seq, f)
+				d.applyFn[page] = func(context.Context) error {
+					sent = row.Value()
+					return nil
+				}
+			}
+			d.Show()
+			d.SelectPage(0)
+			if d.Dirty() {
+				t.Fatal("setup: the page is dirty before the commit")
+			}
+
+			runAndWait(t, d, func() { tc.run(d) })
+
+			if sent != "from the editor" {
+				t.Errorf("the apply sent %q, want the editor's value — the commit hook did not run first", sent)
+			}
+		})
+	}
+}
+
+// newObjectDialog commits every page's form before preflight, so the request
+// preflight builds on the UI goroutine sees what the editors hold.
+func TestNewObjectDialogCommitsBeforePreflight(t *testing.T) {
+	a := newTestApp()
+	sc, _ := newFakeConn(t)
+	row := propsheet.Text("Path", "", 40)
+	var built string
+	d := &newObjectDialog[testPrefetch]{}
+	d.init(a, newObjectConfig[testPrefetch]{
+		title: "New Thing",
+		noun:  "Thing",
+		pages: []string{"General", "Files"},
+		fetch: func(context.Context, *db.ServerConn) (*testPrefetch, error) { return &testPrefetch{}, nil },
+		build: func(*testPrefetch) {
+			files := propsheet.NewForm(row)
+			files.SetCommit(func() { row.Edit(`D:\moved.ndf`) })
+			d.forms = []*propsheet.Form{propsheet.NewForm(), files}
+			d.applyFns = []propApply{func(context.Context) error { return nil }, nil}
+			d.objectName = func() string { return "thing" }
+			d.preflight = func() error {
+				built = row.Value()
+				return nil
+			}
+		},
+		refresh: func(*db.ServerConn) {},
+	})
+	d.show(sc)
+	waitAndDrain(t, a)
+	if d.prefetch == nil {
+		t.Fatal("setup: the prefetch never landed")
+	}
+
+	d.runApply(false)
+	drainUntil(t, a, func() bool { return !d.Applying() }, "the pipeline to finish")
+
+	if built != `D:\moved.ndf` {
+		t.Errorf("preflight saw %q, want the editor's value — the Files page was never opened, but its form still commits", built)
 	}
 }

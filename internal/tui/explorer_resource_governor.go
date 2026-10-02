@@ -392,15 +392,7 @@ func (a *App) resourceGovernorNodeOf(sc *db.ServerConn) *explorerNode {
 // refreshResourceGovernorLabel), and the two pool folders reloaded, since
 // pools and groups may have come or gone.
 func (a *App) refreshResourceGovernorNodes(sc *db.ServerConn) {
-	rgNode := a.resourceGovernorNodeOf(sc)
-	if rgNode == nil {
-		return
-	}
-	for _, t := range []NodeType{NodeResourcePools, NodeExternalResourcePools} {
-		if n := findDescendantByType(rgNode, t); n != nil {
-			a.explorer.Reload(n)
-		}
-	}
+	a.explorer.ReloadFolders(sc, folderOf("", NodeResourcePools, NodeExternalResourcePools))
 	a.refreshResourceGovernorLabel(sc)
 }
 

@@ -293,6 +293,15 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 		d.SetMessage("Still loading — try again in a moment.", true)
 		return
 	}
+	// Here, on the UI goroutine: the apply functions run on the pipeline's,
+	// so a page's editor fields reach its model now or not at all
+	// (propsheet.Form.SetCommit). preflight builds its request after it.
+	// d.forms rather than the sheet's: every page's apply runs, opened or not.
+	for _, f := range d.forms {
+		if f != nil {
+			f.Commit()
+		}
+	}
 	if err := d.preflight(); err != nil {
 		// preflight only checks the identity fields, always on the first page.
 		d.SelectPage(0)

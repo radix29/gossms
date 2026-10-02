@@ -79,7 +79,7 @@ func NewNewAsymmetricKeyDialog(app *App) *NewAsymmetricKeyDialog {
 			return fetchNewAsymmetricKeyPrefetch(ctx, sc, d.dbName)
 		},
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
 	})
 	return d
 }

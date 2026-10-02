@@ -277,9 +277,9 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 		hint,
 		propsheet.Note("Only one row-data filegroup can be the default. Leave the first-file fields blank to add an empty filegroup — the database's PRIMARY filegroup and its data/log files come from the General page, not here."),
 	)
+	f.SetCommit(syncToggles)
 
 	apply := func(ctx context.Context) error {
-		syncToggles()
 		if len(edits) == 0 {
 			return nil
 		}

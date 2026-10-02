@@ -77,61 +77,6 @@ func TestPeerOptionsDropTheDatabase(t *testing.T) {
 	}
 }
 
-// Peer cache and credential lookup share this normalizer. The catalog reports
-// "HOST\INSTANCE", the user types "host,1433"; keeping case or the default port
-// would miss.
-func TestInstanceKeyNormalizesSpellings(t *testing.T) {
-	groups := [][]string{
-		{"UBUSQL2", "ubusql2", "ubusql2,1433", "  ubusql2  ", "UbuSQL2:1433"},
-		{"HOST\\INST", "host\\inst", "HOST\\inst,1433", "host\\inst,1500"},
-		{"win10cli,55253", "WIN10CLI:55253"},
-	}
-	for _, g := range groups {
-		want := InstanceKey(g[0])
-		if want == "" {
-			t.Fatalf("InstanceKey(%q) is empty", g[0])
-		}
-		for _, spelling := range g[1:] {
-			if got := InstanceKey(spelling); got != want {
-				t.Errorf("InstanceKey(%q) = %q, want %q (same instance as %q)", spelling, got, want, g[0])
-			}
-		}
-	}
-	// Distinct instances must not share a key (that hands over a login). A
-	// named instance isn't its host's default; without a name, the port
-	// distinguishes them (win10cli's SQL2017 at "win10cli,55253").
-	for _, pair := range [][2]string{
-		{"host", "host\\inst"},
-		{"host", "host,55253"},
-		{"host,1500", "host,55253"},
-	} {
-		if InstanceKey(pair[0]) == InstanceKey(pair[1]) {
-			t.Errorf("InstanceKey collapses %q and %q onto %q", pair[0], pair[1], InstanceKey(pair[0]))
-		}
-	}
-}
-
-// The dialog stores the port in Port, so keys must fold it in, or win10cli's
-// two instances share an entry.
-func TestConnectionAddressFoldsInTheDialogPort(t *testing.T) {
-	for _, tc := range []struct {
-		conn config.Connection
-		want string
-	}{
-		{config.Connection{Server: "win10cli", Port: 55253}, InstanceKey("win10cli,55253")},
-		{config.Connection{Server: "win10cli", Port: 1433}, InstanceKey("win10cli")},
-		{config.Connection{Server: "win10cli"}, InstanceKey("win10cli")},
-		// A port in the address wins over the dialog's, as in Connect.
-		{config.Connection{Server: "win10cli,55253", Port: 1433}, InstanceKey("win10cli,55253")},
-		{config.Connection{Server: "win10cli\\sql2017", Port: 55253}, InstanceKey("win10cli\\sql2017")},
-	} {
-		if got := InstanceKey(ConnectionAddress(tc.conn)); got != tc.want {
-			t.Errorf("InstanceKey(ConnectionAddress(%q port %d)) = %q, want %q",
-				tc.conn.Server, tc.conn.Port, got, tc.want)
-		}
-	}
-}
-
 // A replica needing a different login must use its own saved credentials. The
 // requested name differs in spelling from the saved entry ("UBUSQL2\PROD" vs
 // "ubusql2\prod,1433"), so skipping InstanceKey would miss.
@@ -141,7 +86,7 @@ func TestPeerOptionsUseTheInstancesOwnCredentials(t *testing.T) {
 		Database: "SalesDB", TrustServerCertificate: true,
 	}}
 	parent.SetPeerCredentials(func(server string) (config.Connection, bool) {
-		if InstanceKey(server) == InstanceKey("ubusql2\\prod,1433") {
+		if config.InstanceKey(server) == config.InstanceKey("ubusql2\\prod,1433") {
 			return config.Connection{
 				Server: "ubusql2.fritz.box\\prod", Port: 14330,
 				User: "replica_login", Password: "replica-pw",
@@ -210,7 +155,7 @@ func TestPeerCredentialsSurviveANilResolver(t *testing.T) {
 func TestPeerCredentialsAreInheritedByAPeer(t *testing.T) {
 	parent := &ServerConn{Opts: config.Connection{Server: "ubusql1", User: "sa", Password: "parent-pw"}}
 	parent.SetPeerCredentials(func(server string) (config.Connection, bool) {
-		if InstanceKey(server) == InstanceKey("ubusql3") {
+		if config.InstanceKey(server) == config.InstanceKey("ubusql3") {
 			return config.Connection{Server: "ubusql3", User: "third_login", Password: "third-pw"}, true
 		}
 		return config.Connection{}, false
@@ -276,7 +221,7 @@ func TestPeerReturnsACachedFailureWithoutDialling(t *testing.T) {
 	defer sc.Close()
 
 	want := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
-	sc.recordPeerFailure(InstanceKey("ubusql2"), want)
+	sc.recordPeerFailure(config.InstanceKey("ubusql2"), want)
 
 	// A different spelling than recorded: both must agree through InstanceKey.
 	start := time.Now()
@@ -296,7 +241,7 @@ func TestPeerRetriesOnceACachedFailureHasExpired(t *testing.T) {
 	sc := newTestConn("ubusql1")
 	defer sc.Close()
 
-	key := InstanceKey("127.0.0.1:1")
+	key := config.InstanceKey("127.0.0.1:1")
 	cached := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
 	sc.recordPeerFailure(key, cached)
 	sc.peerMu.Lock()
@@ -329,7 +274,7 @@ func TestForgetPeerFailureDropsTheEntry(t *testing.T) {
 	defer sc.Close()
 
 	cached := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
-	sc.recordPeerFailure(InstanceKey("127.0.0.1:1"), cached)
+	sc.recordPeerFailure(config.InstanceKey("127.0.0.1:1"), cached)
 
 	// A different spelling on purpose: Connect holds the typed name, the cache
 	// the catalog's; InstanceKey reconciles them.
@@ -351,8 +296,8 @@ func TestForgetPeerFailureLeavesOtherInstances(t *testing.T) {
 	defer sc.Close()
 
 	want := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
-	sc.recordPeerFailure(InstanceKey("ubusql2"), want)
-	sc.recordPeerFailure(InstanceKey("ubusql3"), errors.New("other"))
+	sc.recordPeerFailure(config.InstanceKey("ubusql2"), want)
+	sc.recordPeerFailure(config.InstanceKey("ubusql3"), errors.New("other"))
 
 	sc.ForgetPeerFailure("ubusql3")
 
@@ -372,7 +317,7 @@ func TestForgetPeerFailuresReachCachedPeers(t *testing.T) {
 
 	sc.peers = map[string]*ServerConn{"ubusql2": primary}
 	primary.peers = map[string]*ServerConn{"ubusql1": sc}
-	primary.recordPeerFailure(InstanceKey("ubusql3"), errors.New("dial tcp: i/o timeout"))
+	primary.recordPeerFailure(config.InstanceKey("ubusql3"), errors.New("dial tcp: i/o timeout"))
 
 	sc.ForgetPeerFailures()
 

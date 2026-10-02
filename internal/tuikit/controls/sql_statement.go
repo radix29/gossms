@@ -17,23 +17,27 @@ import (
 // cursor. Statement boundaries are ';', a "GO" batch separator alone on its
 // own line — sqltext.IsGoSeparatorLine, the same rule internal/query splits a
 // script into batches to execute by — and, additionally, a top-level (paren-depth
-// zero) DML-leading keyword (SELECT/INSERT/UPDATE/DELETE/MERGE/WITH), so
-// scripts stacking several ad hoc statements with no ';' between them still
-// split correctly. A UNION/EXCEPT/INTERSECT-chained SELECT, a CTE's own main
-// SELECT after WITH ... AS (...), and INSERT ... SELECT are recognised as
-// continuations of the same statement, not new ones (see sqlStatementAt
-// below — the same heuristic internal/tui's IntelliSense scopes column
-// completion with, DMLStatementStarts in
-// internal/tui/sqlparse/scope.go, reimplemented here in row/column form
-// since tuikit must never import tui). All boundary kinds are ignored inside
-// string literals ('...'), bracketed/quoted identifiers ([...], "..."), and
-// comments (--... and /* ... */), so one of those characters appearing
-// inside never splits a statement in two.
+// zero) keyword that begins a statement (statementLeaders), so scripts
+// stacking several statements with no ';' between them still split
+// correctly. Continuations — a UNION-chained SELECT, a CTE's main statement,
+// INSERT ... SELECT/EXEC, a table hint's WITH (...), GRANT's permission list,
+// an ALTER TABLE's own ALTER COLUMN/DROP CONSTRAINT and the rest listed on
+// stmtSplitter — are recognised as part of the same statement, not new ones.
+// All boundary kinds are ignored inside string literals ('...'),
+// bracketed/quoted identifiers ([...], "..."), and comments (--... and
+// /* ... */), so one of those characters appearing inside never splits a
+// statement in two.
 //
-// This is a lexical approximation, not a full T-SQL parser: only
-// INSERT ... VALUES followed by a later, genuinely separate SELECT with no
-// ';' between them is (rarely) missed — a known limitation, matching
-// DMLStatementStarts' own.
+// The selection is what the next F5 runs, so a missed boundary runs the
+// statement after the cursor's too (T2), and a false one can cut a statement
+// short into one that still parses (T3: a DELETE losing its WHERE). Where the
+// two conflict the rules prefer an over-split into a fragment that fails to
+// parse.
+//
+// This is a lexical approximation, not a full T-SQL parser: a statement
+// inside a module body (CREATE PROCEDURE ... AS ...) is split from the
+// header, and INSERT ... VALUES followed by a later, genuinely separate SELECT
+// with no ';' between them is (rarely) missed.
 //
 // No-ops (returns false, selection untouched) if the statement at the
 // cursor is empty or all-whitespace — e.g. the cursor sits on a blank line
@@ -53,26 +57,237 @@ func (e *Editor) SelectStatementAtCursor() bool {
 	return true
 }
 
-// dmlStatementLeaders are the T-SQL keywords that can only ever begin a new
-// statement — mirrors internal/tui/sqlparse/scope.go's map of the same
-// name exactly (kept in sync by hand; tuikit cannot import tui to share it).
-var dmlStatementLeaders = map[string]bool{
-	"SELECT": true, "INSERT": true, "UPDATE": true, "DELETE": true,
-	"MERGE": true, "WITH": true,
+// statementLeaders are the top-level keywords that begin a statement unless a
+// stmtSplitter rule makes them a continuation. The DML six are
+// internal/tui/sqlparse/scope.go's dmlStatementLeaders; the rest are its
+// forwardStatementEnders plus every other statement verb whose running by
+// accident does harm. This list is interim: T54 (docs/review-plan-2026-10-02.md)
+// replaces both copies with one splitter in sqltext.
+var statementLeaders = map[string]bool{
+	"SELECT": true, "INSERT": true, "UPDATE": true, "DELETE": true, "MERGE": true, "WITH": true,
+	"DECLARE": true, "SET": true, "CREATE": true, "ALTER": true, "DROP": true, "TRUNCATE": true,
+	"EXEC": true, "EXECUTE": true, "PRINT": true, "RAISERROR": true, "IF": true, "WHILE": true,
+	"BEGIN": true, "COMMIT": true, "ROLLBACK": true, "SAVE": true, "USE": true,
+	"GRANT": true, "DENY": true, "REVOKE": true, "BACKUP": true, "RESTORE": true, "DBCC": true,
+	"KILL": true, "SHUTDOWN": true, "RECONFIGURE": true, "CHECKPOINT": true, "WAITFOR": true,
+	"OPEN": true, "CLOSE": true, "FETCH": true, "DEALLOCATE": true, "BULK": true,
 }
 
-// dmlBoundaryKeywords is dmlStatementLeaders plus the small set of
-// additional keywords the boundary heuristic below needs to track —
-// VALUES (clears a pending INSERT ... SELECT/CTE main-query suppression),
-// and UNION/EXCEPT/INTERSECT/ALL (recognise a chained SELECT as a
-// continuation, not a new statement). Every other keyword is irrelevant to
-// this narrow heuristic, so — unlike internal/tui/sqlparse/token.go's much
-// larger sqlKeywordList, which also drives clause detection and FROM-scope
-// parsing — this set only needs to be exactly these.
-var dmlBoundaryKeywords = map[string]bool{
-	"SELECT": true, "INSERT": true, "UPDATE": true, "DELETE": true,
-	"MERGE": true, "WITH": true, "VALUES": true,
-	"UNION": true, "EXCEPT": true, "INTERSECT": true, "ALL": true,
+// dmlLeaders are the leaders that can be a CTE's main statement, or follow
+// AS/THEN as a trigger body or MERGE action.
+var dmlLeaders = map[string]bool{
+	"SELECT": true, "INSERT": true, "UPDATE": true, "DELETE": true, "MERGE": true,
+}
+
+// continuesAfter are tokens no statement ends with, so a leader right after
+// one continues the statement: CREATE OR ALTER, CREATE VIEW ... AS SELECT,
+// MERGE ... THEN UPDATE, DECLARE ... CURSOR FOR SELECT, FOR UPDATE OF,
+// AFTER INSERT, UPDATE / INSTEAD OF DELETE, BULK INSERT, INNER MERGE JOIN, and
+// a reserved word used as a dotted name part. ON is not one: SET NOCOUNT ON
+// ends a statement.
+var continuesAfter = map[string]bool{
+	"OR": true, "AS": true, "THEN": true, "FOR": true, "AFTER": true, "OF": true, "BULK": true,
+	"INNER": true, "OUTER": true, "LEFT": true, "RIGHT": true, "FULL": true,
+	",": true, ".": true,
+}
+
+// notBefore names, per leader, the next tokens that make it no statement:
+// UPDATE(col) in a trigger, ON DELETE CASCADE / ON UPDATE SET NULL in a
+// foreign key, MERGE ... THEN UPDATE SET, ALTER PARTITION FUNCTION ... MERGE
+// RANGE.
+var notBefore = map[string]map[string]bool{
+	"UPDATE": {"(": true, "CASCADE": true, "NO": true, "SET": true},
+	"DELETE": {"CASCADE": true, "NO": true, "SET": true},
+	"MERGE":  {"RANGE": true, "JOIN": true},
+}
+
+// objectTypes are the words after ALTER or DROP that make it a statement of
+// its own inside an ALTER statement; anything else (ALTER COLUMN, DROP
+// CONSTRAINT, DROP MEMBER, DROP EVENT, ...) is the ALTER's own clause. Also
+// the words that DROP ... IF EXISTS puts IF after.
+var objectTypes = map[string]bool{
+	"TABLE": true, "VIEW": true, "PROCEDURE": true, "PROC": true, "FUNCTION": true,
+	"TRIGGER": true, "INDEX": true, "DATABASE": true, "LOGIN": true, "USER": true,
+	"ROLE": true, "SCHEMA": true, "TYPE": true, "SYNONYM": true, "SEQUENCE": true,
+	"STATISTICS": true, "ASSEMBLY": true, "CERTIFICATE": true, "CREDENTIAL": true,
+	"ENDPOINT": true, "AVAILABILITY": true, "PARTITION": true, "FULLTEXT": true,
+	"XML": true, "DEFAULT": true, "RULE": true, "QUEUE": true, "SERVICE": true,
+	"CONTRACT": true, "MESSAGE": true, "ROUTE": true, "REMOTE": true, "BROKER": true,
+	"AGGREGATE": true, "APPLICATION": true, "AUDIT": true, "SERVER": true,
+	"RESOURCE": true, "WORKLOAD": true, "MASTER": true, "SYMMETRIC": true,
+	"ASYMMETRIC": true, "EXTERNAL": true, "SECURITY": true, "SEARCH": true,
+	"SIGNATURE": true, "AUTHORIZATION": true,
+}
+
+// moduleOptions are WITH options a CREATE PROCEDURE/FUNCTION/VIEW header can
+// follow with AS, which would otherwise read as a CTE named after them.
+var moduleOptions = map[string]bool{
+	"RECOMPILE": true, "SCHEMABINDING": true, "ENCRYPTION": true,
+	"VIEW_METADATA": true, "NATIVE_COMPILATION": true,
+}
+
+type stmtTokenKind int
+
+const (
+	tokWord   stmtTokenKind = iota // a keyword or plain identifier, upper-cased; @var and #tmp included
+	tokIdent                       // a [bracketed] or "quoted" identifier
+	tokString                      // a '...' literal
+	tokOpen                        // (
+	tokClose                       // )
+	tokPunct                       // any other non-space rune
+)
+
+type stmtToken struct {
+	kind     stmtTokenKind
+	text     string
+	row, col int
+}
+
+type pendKind int
+
+const (
+	pendNone      pendKind = iota
+	pendWith               // WITH: the next token decides hint, option or CTE
+	pendWithName           // WITH name: AS or ( next makes it a CTE
+	pendSubClause          // ALTER/DROP inside an ALTER: objectTypes next makes it a statement
+	pendNotBefore          // UPDATE/DELETE/MERGE: notBefore next makes it no statement
+)
+
+// stmtSplitter decides, one token at a time, where statements begin within a
+// ';'/GO-delimited batch. Leaders whose role the following token decides are
+// held in pend and cut at their own position once it is known.
+type stmtSplitter struct {
+	cut func(row, col int) // begins a new statement at (row, col)
+
+	depth          int
+	prev, prevPrev string // the last two tokens' text
+	leader         string // the keyword that began the current statement
+
+	pendingMainSelect bool // INSERT waiting for its SELECT or EXEC
+	pendingCTEMain    bool // a CTE waiting for its main statement
+	permission        bool // GRANT/DENY/REVOKE before TO/FROM: verbs are permission names
+
+	pend     pendKind
+	pendTok  stmtToken
+	pendCont bool // the pending WITH continues the statement (CREATE VIEW v AS WITH ...)
+}
+
+func (s *stmtSplitter) feed(t stmtToken) {
+	if s.pend != pendNone && s.resolve(t) {
+		s.shift(t)
+		return
+	}
+	s.advance(t)
+	s.shift(t)
+}
+
+func (s *stmtSplitter) shift(t stmtToken) {
+	s.prevPrev, s.prev = s.prev, t.text
+}
+
+// start makes t, a leader, begin a new statement.
+func (s *stmtSplitter) start(t stmtToken) {
+	s.cut(t.row, t.col)
+	s.leader = t.text
+	s.pendingMainSelect = t.text == "INSERT"
+	s.pendingCTEMain = false
+	s.permission = t.text == "GRANT" || t.text == "DENY" || t.text == "REVOKE"
+}
+
+// resolve settles the pending leader with t, the token after it, and reports
+// whether t is consumed (it is then no leader itself).
+func (s *stmtSplitter) resolve(t stmtToken) bool {
+	p, tok, cont := s.pend, s.pendTok, s.pendCont
+	s.pend = pendNone
+	switch p {
+	case pendWith:
+		switch {
+		case t.kind == tokWord && (statementLeaders[t.text] || moduleOptions[t.text]):
+			return true // WITH ROLLBACK IMMEDIATE, WITH GRANT OPTION, WITH EXECUTE AS
+		case t.kind == tokWord || t.kind == tokIdent:
+			s.pend, s.pendTok, s.pendCont = pendWithName, tok, cont
+			return true
+		}
+		return false // WITH (NOLOCK), OPENJSON(...) WITH (...): a hint or column list
+	case pendWithName:
+		if (t.kind == tokWord && t.text == "AS") || t.kind == tokOpen {
+			if !cont {
+				s.start(tok)
+			}
+			s.pendingCTEMain = true
+		}
+		return false // otherwise an option: WITH NOWAIT, WITH MOVE '...' TO '...'
+	case pendSubClause:
+		if t.kind == tokWord && objectTypes[t.text] {
+			s.start(tok)
+		}
+	case pendNotBefore:
+		if !notBefore[tok.text][t.text] {
+			s.start(tok)
+		}
+	}
+	return false
+}
+
+func (s *stmtSplitter) advance(t stmtToken) {
+	switch t.kind {
+	case tokOpen:
+		s.depth++
+		return
+	case tokClose:
+		if s.depth > 0 {
+			s.depth--
+		}
+		return
+	}
+	if s.depth != 0 || t.kind != tokWord {
+		return
+	}
+	w := t.text
+	if s.permission {
+		s.permission = w != "TO" && w != "FROM"
+		return
+	}
+	if w == "VALUES" {
+		s.pendingMainSelect = false
+		return
+	}
+	if !statementLeaders[w] {
+		return
+	}
+	if continuesAfter[s.prev] || (w == "IF" && (s.leader == "DROP" || s.leader == "ALTER") &&
+		(objectTypes[s.prev] || s.prev == "COLUMN" || s.prev == "CONSTRAINT")) ||
+		(w == "FETCH" && (s.prev == "ROWS" || s.prev == "ROW")) {
+		switch {
+		case w == "WITH":
+			s.pend, s.pendTok, s.pendCont = pendWith, t, true
+		case (s.prev == "AS" || s.prev == "THEN") && dmlLeaders[w]:
+			s.leader, s.pendingMainSelect = w, w == "INSERT"
+		}
+		return
+	}
+	continuesUnion := s.prev == "UNION" || s.prev == "EXCEPT" || s.prev == "INTERSECT" ||
+		(s.prev == "ALL" && s.prevPrev == "UNION")
+	switch {
+	case w == "SELECT" && (s.pendingMainSelect || s.pendingCTEMain):
+		s.pendingMainSelect, s.pendingCTEMain = false, false
+	case w == "SELECT" && continuesUnion:
+	case (w == "EXEC" || w == "EXECUTE") && s.pendingMainSelect:
+		s.pendingMainSelect = false // INSERT ... EXEC
+	case s.pendingCTEMain && dmlLeaders[w]:
+		s.pendingCTEMain = false
+		s.leader, s.pendingMainSelect = w, w == "INSERT"
+	case w == "SET" && (s.leader == "UPDATE" || s.leader == "ALTER" || s.leader == "MERGE" ||
+		s.prev == "DELETE" || s.prev == "UPDATE"):
+	case w == "WITH":
+		s.pend, s.pendTok, s.pendCont = pendWith, t, false
+	case s.leader == "ALTER" && (w == "ALTER" || w == "DROP"):
+		s.pend, s.pendTok = pendSubClause, t
+	case notBefore[w] != nil:
+		s.pend, s.pendTok = pendNotBefore, t
+	default:
+		s.start(t)
+	}
 }
 
 // sqlStatementAt scans lines for statement boundaries and returns the
@@ -95,21 +310,24 @@ func sqlStatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, e
 	commentDepth := 0
 	curRow, curCol := 0, 0
 
-	// DML-leader statement-boundary tracking (see the doc comment above) —
+	// Leader-keyword boundaries (see the doc comment above) — the splitter is
 	// reset at every ';'/GO batch boundary, since a boundary of either kind
-	// always falls at paren depth 0 in valid SQL and DMLStatementStarts (the
-	// tui-side analogue) is likewise given a fresh token stream per batch.
-	parenDepth := 0
-	prevKeyword, prevPrevKeyword := "", ""
-	pendingMainSelect := false
+	// always falls at paren depth 0 in valid SQL.
+	var sp stmtSplitter
+	cut := func(r, c int) {
+		if r > curRow || (r == curRow && c > curCol) {
+			segments = append(segments, span{curRow, curCol, r, c})
+			curRow, curCol = r, c
+		}
+	}
+	reset := func() { sp = stmtSplitter{cut: cut} }
+	reset()
 
 	for r, line := range lines {
 		if state == stNormal && sqltext.IsGoSeparatorLine(line) {
 			segments = append(segments, span{curRow, curCol, r, 0})
 			curRow, curCol = r+1, 0
-			parenDepth = 0
-			prevKeyword, prevPrevKeyword = "", ""
-			pendingMainSelect = false
+			reset()
 			continue
 		}
 		c := 0
@@ -169,59 +387,42 @@ func sqlStatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, e
 					state, commentDepth = stBlockComment, 1
 					c += 2
 				case line[c] == '\'':
+					sp.feed(stmtToken{tokString, "'", r, c})
 					state = stSingleQuote
 					c++
 				case line[c] == '[':
+					sp.feed(stmtToken{tokIdent, "[", r, c})
 					state = stBracket
 					c++
 				case line[c] == '"':
+					sp.feed(stmtToken{tokIdent, `"`, r, c})
 					state = stDoubleQuote
 					c++
 				case line[c] == ';':
 					c++
 					segments = append(segments, span{curRow, curCol, r, c})
 					curRow, curCol = r, c
-					parenDepth = 0
-					prevKeyword, prevPrevKeyword = "", ""
-					pendingMainSelect = false
+					reset()
 				case line[c] == '(':
-					parenDepth++
+					sp.feed(stmtToken{tokOpen, "(", r, c})
 					c++
 				case line[c] == ')':
-					if parenDepth > 0 {
-						parenDepth--
-					}
+					sp.feed(stmtToken{tokClose, ")", r, c})
 					c++
-				case core.IsWordRune(line[c]):
+				case core.IsWordRune(line[c]) || line[c] == '@' || line[c] == '#':
+					// @var, @@ROWCOUNT and #tmp are one word, so @Delete is no DELETE.
 					start := c
+					for c < len(line) && (line[c] == '@' || line[c] == '#') {
+						c++
+					}
 					for c < len(line) && core.IsWordRune(line[c]) {
 						c++
 					}
-					word := strings.ToUpper(string(line[start:c]))
-					if parenDepth == 0 && dmlBoundaryKeywords[word] {
-						switch {
-						case word == "VALUES":
-							pendingMainSelect = false
-						case dmlStatementLeaders[word]:
-							continuesUnion := prevKeyword == "UNION" || prevKeyword == "EXCEPT" || prevKeyword == "INTERSECT" ||
-								(prevKeyword == "ALL" && prevPrevKeyword == "UNION")
-							switch {
-							case word == "SELECT" && pendingMainSelect:
-								pendingMainSelect = false
-							case word == "SELECT" && continuesUnion:
-								// UNION-chain continuation of the same statement, not a new one.
-							default:
-								if r > curRow || (r == curRow && start > curCol) {
-									segments = append(segments, span{curRow, curCol, r, start})
-									curRow, curCol = r, start
-								}
-								pendingMainSelect = word == "WITH" || word == "INSERT"
-							}
-						}
-						prevPrevKeyword = prevKeyword
-						prevKeyword = word
-					}
+					sp.feed(stmtToken{tokWord, strings.ToUpper(string(line[start:c])), r, start})
+				case unicode.IsSpace(line[c]):
+					c++
 				default:
+					sp.feed(stmtToken{tokPunct, string(line[c]), r, c})
 					c++
 				}
 			}

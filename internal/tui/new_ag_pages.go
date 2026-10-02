@@ -47,6 +47,9 @@ func (d *NewAGDialog) buildPages(pf *newAGPrefetch) {
 	d.buildBackupPage(pf)
 
 	d.objectName = func() string { return strings.TrimSpace(d.groupName) }
+	// The request is built here, on the UI goroutine, and the step captures it
+	// — the step itself runs on the pipeline's goroutine.
+	var req gosmo.CreateAvailabilityGroupRequest
 	d.preflight = func() error {
 		if pf.blocker != "" {
 			return fmt.Errorf("%s", pf.blocker)
@@ -54,9 +57,14 @@ func (d *NewAGDialog) buildPages(pf *newAGPrefetch) {
 		if d.commitGeneralPage != nil {
 			d.commitGeneralPage()
 		}
-		return validateNewAG(d.objectName(), d.clusterType, d.replicas, pf.existingGroups)
+		if err := validateNewAG(d.objectName(), d.clusterType, d.replicas, pf.existingGroups); err != nil {
+			return err
+		}
+		var err error
+		req, err = d.request()
+		return err
 	}
-	d.applyFns[0] = d.createGroup
+	d.applyFns[0] = func(ctx context.Context) error { return d.createGroup(ctx, req) }
 }
 
 func (d *NewAGDialog) buildGeneralPage(pf *newAGPrefetch) {

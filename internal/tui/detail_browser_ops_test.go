@@ -367,9 +367,13 @@ func TestRowObjectsThatDoNotLineUpAreDropped(t *testing.T) {
 func TestTheDetailPaneDeleteRefreshesTheFolder(t *testing.T) {
 	a := newTestApp()
 	sc, _ := opTestConn(t)
+	root := a.explorer.AddRoot("testsrv", sc) // selects the root: before the pane
 	pane := newOpsPane(a, sc, opsPaneObjects())
 	a.detailBrowser = pane
 	folder := pane.currentNode
+	// In the tree, as the pane's node always is: the refresh finds the folder
+	// by what it is, under sc's root.
+	a.explorer.SetChildren(root, []*explorerNode{folder})
 	folder.data.Loaded = true
 	pane.cache[folder] = &detailResult{cols: []string{"Name"}, rows: [][]string{{"stale"}}}
 	selectPaneRows(pane, 0, 0)

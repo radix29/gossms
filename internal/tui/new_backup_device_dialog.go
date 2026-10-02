@@ -56,7 +56,7 @@ func NewNewBackupDeviceDialog(app *App) *NewBackupDeviceDialog {
 		pages:   []string{"General"},
 		fetch:   fetchNewBackupDevicePrefetch,
 		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeBackupDevices) },
+		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeBackupDevices)) },
 	})
 	return d
 }

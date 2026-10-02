@@ -355,9 +355,9 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 				modeRow, failoverRow, primaryRoleRow, secondaryRoleRow, seedingRow, timeoutRow,
 			)
 			f := propsheet.NewForm(rows...)
+			f.SetCommit(commitCurrent)
 
 			apply := func(ctx context.Context) error {
-				commitCurrent()
 				ag, err := agOnPrimary(ctx, sc, agName)
 				if err != nil {
 					return err

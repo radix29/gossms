@@ -90,52 +90,22 @@ func permTransition(orig, current string) (string, gosmo.PermissionOptions) {
 
 // applyPermChange routes one orig->current change through apply. A no-op
 // change issues nothing.
+//
+// It never moves orig onto current, even once the write has landed: an apply
+// closure runs off the UI goroutine and under Script Changes, so it writes no
+// page state (docs/ui-rules.md). The baseline is put right by the reload that
+// follows instead. A full Apply reloads every page; one that fails part-way
+// reloads each page whose statements reached the server (PropDialog.
+// applyFailed). That reload is what keeps the data-losing case honest: cell X
+// dropped from Grant With Grant to Grant, REVOKE GRANT OPTION FOR landed, a
+// later cell failed — and the user then putting X back to Grant With Grant,
+// the state the page had loaded with, must still read as a change to send.
 func applyPermChange(ctx context.Context, apply permApplyFn, orig, current, permission, principal string) error {
 	if orig == current {
 		return nil
 	}
 	verb, opts := permTransition(orig, current)
 	return apply(ctx, verb, opts, permission, principal)
-}
-
-// commitApplied moves a cell's baseline onto the state that was just written.
-// A propApply that returns an error leaves the dialog open with every edit
-// intact, and the next Apply re-runs the whole closure from the top — so
-// without this, orig still names the state the cell had *before* the partial
-// apply, and the page is then lying about what the server holds.
-//
-// The failure that costs data is the user undoing an edit that already
-// landed. Cell X sits at Grant With Grant, the user drops it to Grant, Apply
-// issues REVOKE GRANT OPTION FOR and then fails on some later cell. The
-// server now holds a plain GRANT. The user puts X back to Grant With Grant —
-// the state the page loaded with — and presses Apply: with a stale orig the
-// cell reads clean, nothing is issued at all, and the grid claims a grant
-// option the server no longer has. Dirty() and Revert() are wrong for the
-// same reason, both being orig-versus-current comparisons.
-//
-// Re-issuing the statements themselves is only wasteful, not destructive:
-// REVOKE GRANT OPTION FOR, DENY ... CASCADE and REVOKE ... CASCADE were each
-// checked against a live server and are idempotent, so a replay leaves the
-// permission where the first attempt put it.
-//
-// Under gosmo.Scripting the statement was captured rather than executed, so
-// committing there would mark the page clean and leave the real Apply that
-// follows with nothing to do — the same trap commitRename documents.
-func commitApplied(ctx context.Context, orig *string, current string) {
-	if !gosmo.Scripting(ctx) {
-		*orig = current
-	}
-}
-
-// applyPermEdit applies one grid row's pending change and commits its
-// baseline on success — the pairing every permissions grid needs, kept in one
-// place so a caller can't do the first half and forget the second.
-func applyPermEdit(ctx context.Context, apply permApplyFn, e *permEdit, principal string) error {
-	if err := applyPermChange(ctx, apply, e.orig, e.current, e.entry.Permission, principal); err != nil {
-		return err
-	}
-	commitApplied(ctx, &e.orig, e.current)
-	return nil
 }
 
 // databasePermApply adapts a database-scoped permission edit to gosmo.

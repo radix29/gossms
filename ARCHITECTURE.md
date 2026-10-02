@@ -142,7 +142,7 @@ gossms/
 │   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
 ├── packaging/linux/         # gossms.desktop launcher; the release job ships it with docs/ico/linux's hicolor icons in the Linux archives, the Homebrew formula and the .deb
 ├── internal/
-│   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json
+│   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json; address.go is the one address fold (ResolveServer, InstanceKey, ConnectionAddress, Connection.IdentityKey) that peers, saved credentials, tracked queries and the per-identity IntelliSense and OE-filter caches key by
 │   ├── db/                  # gosmo connection wrapper: config.Connection → gosmo.ConnectionOptions (toGosmoOptions), per-role application name, masked preview
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn

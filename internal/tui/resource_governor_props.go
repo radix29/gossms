@@ -782,7 +782,6 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			}
 
 			apply := func(ctx context.Context) error {
-				commitCurrent()
 				plan, err := rgPlanFrom(ctx)
 				if err != nil {
 					return err
@@ -809,7 +808,9 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				}
 				return nil
 			}
-			return propsheet.NewForm(rows...), apply, nil
+			form := propsheet.NewForm(rows...)
+			form.SetCommit(commitCurrent)
+			return form, apply, nil
 		},
 	}
 }
