@@ -68,7 +68,7 @@ func livePropConn(t *testing.T) (*db.ServerConn, context.Context) {
 		t.Fatalf("connect %s: %v", host, err)
 	}
 	t.Cleanup(sc.Close)
-	return sc, sc.Context()
+	return sc, sc.Server.Context()
 }
 
 func TestLivePropFinders(t *testing.T) {

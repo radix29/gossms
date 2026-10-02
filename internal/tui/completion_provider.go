@@ -96,7 +96,7 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 		// An unterminated bracket identifier ("FROM [Cus|") is the one
 		// non-normal lexer state completion still works in: everything after
 		// the '[' is the prefix, and the whole "[..." span is replaced on
-		// commit (bracketIfNeeded re-quotes only when needed).
+		// commit (gosmo.QuoteNameIfNeeded re-quotes only when needed).
 		qualifier, _, _, hasQualifier = sqlparse.TokenContext(tokens, quoteStart)
 		chain = sqlparse.QualifierChain(tokens, quoteStart)
 		prefix = string(buf[quoteStart+1 : upTo])

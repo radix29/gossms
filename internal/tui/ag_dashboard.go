@@ -127,7 +127,7 @@ func NewAGDashboard(app *App, conn *db.ServerConn, agName string) *AGDashboard {
 	d.bottomGrid.SetData(d.bottomColumns(), nil)
 	d.bottomGrid.SetStatus("Loading...")
 
-	ctx, cancel := context.WithCancel(conn.Context())
+	ctx, cancel := context.WithCancel(conn.Server.Context())
 	d.cancel = cancel
 	// safegoRepair: only run's refreshes replace the "Loading..." placeholders,
 	// so a panic would leave them forever.

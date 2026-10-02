@@ -90,7 +90,7 @@ func (a *App) refreshDatabaseMailLabel(sc *db.ServerConn) {
 		return
 	}
 	a.safego("refreshing the Database Mail node", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
 		st := databaseMailState(ctx, sc)
 		a.postAndWake(func() {

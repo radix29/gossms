@@ -61,7 +61,7 @@ func xeClause(src xePredSource, op, value string) (string, error) {
 	case "like", "not like":
 		fn, lit := "[sqlserver].[like_i_sql_unicode_string]", gosmo.QuoteLiteral(v)
 		if strings.HasPrefix(src.typeName, "ansi") {
-			fn, lit = "[sqlserver].[like_i_sql_ansi_string]", "'"+strings.ReplaceAll(v, "'", "''")+"'"
+			fn, lit = "[sqlserver].[like_i_sql_ansi_string]", gosmo.QuoteAnsiLiteral(v)
 		}
 		if quoted {
 			lit = v
@@ -439,12 +439,12 @@ func (e *xeEventsEditor) showColumns(cols []gosmo.XEObjectColumn) {
 		case gosmo.XEColumnCustomizable:
 			e.fields = append(e.fields, c)
 		case gosmo.XEColumnData:
-			e.sources = append(e.sources, xePredSource{label: c.Name, ref: "[" + c.Name + "]", typeName: c.TypeName})
+			e.sources = append(e.sources, xePredSource{label: c.Name, ref: gosmo.QuoteName(c.Name), typeName: c.TypeName})
 		}
 	}
 	for _, o := range e.cat.predSources {
 		e.sources = append(e.sources, xePredSource{label: o.QualifiedName(),
-			ref: "[" + o.Package + "].[" + o.Name + "]", typeName: o.TypeName})
+			ref: gosmo.QuoteName(o.Package) + "." + gosmo.QuoteName(o.Name), typeName: o.TypeName})
 	}
 	labels := make([]string, len(e.sources))
 	for i, s := range e.sources {

@@ -59,6 +59,6 @@ func pageDatabaseScopedCredentialGeneral(sc *db.ServerConn, dbName string, credN
 			// extra round trip buys nothing and the lookup would not work
 			// under Script Changes.
 			return sc.Server.DatabaseRef(dbName).DatabaseScopedCredentialRef(*credName).
-				Alter(ctx, identity, secret)
+				Alter(ctx, gosmo.CredentialOptions{Identity: identity, Secret: secret})
 		})
 }

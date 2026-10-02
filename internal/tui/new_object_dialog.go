@@ -179,7 +179,7 @@ func (d *newObjectDialog[P]) init(app *App, cfg newObjectConfig[P]) {
 func (d *newObjectDialog[P]) show(sc *db.ServerConn) {
 	cancelIfSet(d.cancel)
 	d.prefetchRun.Abandon()
-	d.ctx, d.cancel = context.WithCancel(sc.Context())
+	d.ctx, d.cancel = context.WithCancel(sc.Server.Context())
 	d.sc = sc
 	d.prefetch = nil
 	d.forms = make([]*propsheet.Form, len(d.pages))
@@ -484,7 +484,7 @@ func (d *newObjectDialog[P]) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc
 	d.runPipeline(scriptCtx, func() {
-		if len(script.Entries) == 0 {
+		if script.Len() == 0 {
 			d.SetMessage("No changes to script.", false)
 			return
 		}

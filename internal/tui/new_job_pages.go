@@ -136,7 +136,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 			return err
 		}
 		for _, e := range visible() {
-			if err := j.AddStep(ctx, e.request()); err != nil {
+			if _, err := j.AddStep(ctx, e.request()); err != nil {
 				return err
 			}
 		}

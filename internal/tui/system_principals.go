@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	gosmo "github.com/radix29/gosmo"
 )
 
@@ -34,8 +32,8 @@ import (
 // vestigial and really can be dropped — gating either would take away
 // something legitimate. Do not "tidy" them into the general rule.
 //
-// isSystemLogin is the one deliberate exception to the refusal rule; its own
-// comment says why.
+// gosmo's Login.IsSystem is the one deliberate exception to the refusal rule;
+// its own comment says why.
 //
 // The trap in the table above: **public is not is_fixed_role in either
 // family** — it is principal_id 0 (database) and 2 (server) with the flag
@@ -91,20 +89,3 @@ func isSystemServerRole(r *gosmo.ServerRole) bool {
 // publicRoleName is the one role in each family that every principal belongs
 // to and that carries is_fixed_role = 0 despite being undroppable.
 const publicRoleName = "public"
-
-// isSystemLogin reports whether l is one SQL Server manages for itself.
-//
-// The one place this file gates something the server would permit. Dropping
-// [##MS_PolicyEventProcessingLogin##] *succeeds* — verified the hard way on
-// win10cli — and takes Policy-Based Management's execution identity with it,
-// orphaning the matching users in master and msdb; nothing warns and nothing
-// fails until a policy runs. That is worth refusing even though the server
-// won't.
-//
-// Deliberately narrow: it matches only the internal ## names, so `sa` and the
-// NT SERVICE\* logins stay editable. Renaming `sa` is a documented hardening
-// step, and the service logins are ordinary Windows logins an administrator
-// may well want gone.
-func isSystemLogin(l *gosmo.Login) bool {
-	return strings.HasPrefix(l.Name, "##")
-}

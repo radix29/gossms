@@ -465,13 +465,13 @@ func init() { sql.Register("fakedb", fakeDriver{}) }
 
 // serverInfoResponse answers the SERVERPROPERTY query gosmo.NewServer runs.
 // Every fake instance needs it, so newFakeConn prepends it rather than making
-// each test restate thirteen columns it does not care about.
+// each test restate fourteen columns it does not care about.
 func serverInfoResponse() fakeResponse {
-	return fakeResponse{match: "SERVERPROPERTY('ServerName')", cols: 13, rows: [][]driver.Value{{
+	return fakeResponse{match: "SERVERPROPERTY('ServerName')", cols: 14, rows: [][]driver.Value{{
 		"FAKE\\SQL", "Developer Edition (64-bit)", "16.0.4085.2", "RTM", "SQL_Latin1_General_CP1_CI_AS",
 		int64(0), int64(0), int64(0), int64(3),
 		"Microsoft SQL Server 2022 ... on Windows",
-		`C:\Data`, `C:\Log`, `C:\Backup`,
+		`C:\Data`, `C:\Log`, `C:\Backup`, "sa",
 	}}}
 }
 

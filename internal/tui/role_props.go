@@ -190,10 +190,10 @@ func pageRoleMembers(sc *db.ServerConn, dbName string, roleName *string) propPag
 				principalType: principalType,
 				note:          "Add a user or another role from the dropdown, or select a row above and Remove it.",
 				add: func(ctx context.Context, name string) error {
-					return d.AddRoleMember(ctx, *roleName, name)
+					return d.RoleRef(*roleName).AddMember(ctx, name)
 				},
 				remove: func(ctx context.Context, name string) error {
-					return d.RemoveRoleMember(ctx, *roleName, name)
+					return d.RoleRef(*roleName).RemoveMember(ctx, name)
 				},
 			})
 			return f, apply, nil

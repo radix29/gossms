@@ -276,7 +276,7 @@ func (p *QueryPanel) linkedDatabaseItems(ls *linkedServer, prefix string) []cont
 	for _, name := range ls.databases {
 		if ok, partial := nameMatch(name, pl); ok {
 			items = append(items, controls.CompletionItem{
-				Text: bracketIfNeeded(name), Label: name, Detail: "database — " + ls.name,
+				Text: gosmo.QuoteNameIfNeeded(name), Label: name, Detail: "database — " + ls.name,
 				Icon: nodeIcon(nodeData{Type: NodeDatabase}, p.app.cfg.IconStyle, false), Partial: partial,
 			})
 		}
@@ -295,7 +295,7 @@ func (p *QueryPanel) linkedServerItems(pl string) []controls.CompletionItem {
 	for _, ls := range d.byName {
 		if ok, partial := nameMatch(ls.name, pl); ok {
 			items = append(items, controls.CompletionItem{
-				Text: bracketIfNeeded(ls.name), Label: ls.name, Detail: "linked server",
+				Text: gosmo.QuoteNameIfNeeded(ls.name), Label: ls.name, Detail: "linked server",
 				Icon: nodeIcon(nodeData{Type: NodeLinkedServer}, p.app.cfg.IconStyle, false), Partial: partial,
 			})
 		}

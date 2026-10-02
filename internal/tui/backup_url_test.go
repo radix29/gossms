@@ -40,7 +40,7 @@ func TestBackupToABlobEmitsToURL(t *testing.T) {
 	d := backupForm("AppDB")
 	d.fDest.SetValue(blobDest)
 
-	stmt, err := gosmo.BuildBackupStatement(d.currentOptions())
+	stmt, err := (&gosmo.Server{}).BuildBackupStatement(d.currentOptions())
 	if err != nil {
 		t.Fatalf("BuildBackupStatement: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestBackupOnAzurePinsFullAndCopyOnly(t *testing.T) {
 		t.Error("Browse is live against a blob container, which is not a filesystem")
 	}
 
-	stmt, err := gosmo.BuildBackupStatement(d.currentOptions())
+	stmt, err := (&gosmo.Server{}).BuildBackupStatement(d.currentOptions())
 	if err != nil {
 		t.Fatalf("BuildBackupStatement: %v", err)
 	}

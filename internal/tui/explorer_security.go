@@ -26,7 +26,7 @@ func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 		func(login *gosmo.Login) *explorerNode {
 			n := l.node(login.Name, NodeLogin, "", login.Name, "")
 			n.data.CreateDate = login.CreateDate
-			n.data.IsSystem = isSystemLogin(login)
+			n.data.IsSystem = login.IsSystem()
 			return n
 		})
 }

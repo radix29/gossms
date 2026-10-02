@@ -461,7 +461,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 				if !e.roles[i] {
 					continue
 				}
-				if err := d.AddRoleMember(ctx, roleName, name); err != nil {
+				if err := d.RoleRef(roleName).AddMember(ctx, name); err != nil {
 					return err
 				}
 			}

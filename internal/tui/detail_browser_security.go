@@ -439,7 +439,7 @@ func certificatesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *
 	for _, c := range certs {
 		rows = append(rows, []string{
 			c.Name, c.Subject, formatSQLDate(c.ExpiryDate),
-			yesNo(certificateExpired(c, now)), privateKeyText(c.PvtKeyEncryptionType),
+			yesNo(c.IsExpired(now)), privateKeyText(c.PvtKeyEncryptionType),
 		})
 		out = append(out, nodeData{Type: NodeCertificate, DBName: node.data.DBName, Name: c.Name})
 	}
@@ -467,7 +467,7 @@ func certificateDetail(ctx context.Context, sc *dbconn.ServerConn, node *explore
 		"Serial number", c.SerialNumber,
 		"Valid from", formatSQLDate(c.StartDate),
 		"Expiry", formatSQLDate(c.ExpiryDate),
-		"Expired", yesNo(certificateExpired(c, time.Now())),
+		"Expired", yesNo(c.IsExpired(time.Now())),
 		"Key length", keyLengthText(c.KeyLength),
 		"Thumbprint", hexPreview(c.Thumbprint),
 		"Private key", privateKeyText(c.PvtKeyEncryptionType),

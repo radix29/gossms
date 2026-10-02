@@ -414,7 +414,7 @@ func TestServerConnLabel(t *testing.T) {
 			"resolved login takes precedence over Opts.User",
 			config.Connection{Server: "myserver", User: "app-client-id"},
 			"CONTOSO\\alice",
-			"myserver (CONTOSO\\alice, SQL Server )",
+			"myserver (CONTOSO\\alice, SQL Server 16.0.4085.2)",
 		},
 		{
 			"named instance",
@@ -449,7 +449,13 @@ func TestServerConnLabel(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			sc := &ServerConn{Opts: c.opts, Login: c.login}
+			sc := &ServerConn{Opts: c.opts}
+			if c.login != "" {
+				// The login is the connect's SUSER_NAME(), read with the
+				// server's info.
+				sc = capTestConnection(t, &capTestScript{login: c.login})
+				sc.Opts = c.opts
+			}
 			if got := sc.Label(); got != c.want {
 				t.Errorf("Label() = %q, want %q", got, c.want)
 			}

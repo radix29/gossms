@@ -66,7 +66,7 @@ func liveLegacyConn(t *testing.T, user, password string) (*db.ServerConn, contex
 		t.Fatalf("connect %s as %s: %v", *liveLegacyServer, user, err)
 	}
 	t.Cleanup(sc.Close)
-	ctx, cancel := context.WithTimeout(sc.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(sc.Server.Context(), 60*time.Second)
 	t.Cleanup(cancel)
 	return sc, ctx
 }

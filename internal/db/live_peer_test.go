@@ -108,9 +108,9 @@ func TestLivePeerFallsBackToTheParentCredentials(t *testing.T) {
 	if peer == parent {
 		t.Fatal("Peer returned the parent connection; the replica name was read as self")
 	}
-	if !strings.EqualFold(peer.Login, *liveUser) {
+	if !strings.EqualFold(peer.Server.Info().Login, *liveUser) {
 		t.Errorf("the peer is authenticated as %q, want the parent's %q — the retry did not use parentPeerOptions",
-			peer.Login, *liveUser)
+			peer.Server.Info().Login, *liveUser)
 	}
 	if name := peer.Server.Name(); !strings.EqualFold(name, config.InstanceKey(*liveReplica)) &&
 		!strings.EqualFold(name, *liveReplica) {
@@ -146,7 +146,7 @@ func TestLivePeerPrefersAWorkingResolverHit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Peer(%q) = %v, want the resolver's saved credentials to connect", *liveReplica, err)
 	}
-	if !strings.EqualFold(peer.Login, livePeerLogin) {
-		t.Errorf("the peer is authenticated as %q, want the resolver's %q", peer.Login, livePeerLogin)
+	if !strings.EqualFold(peer.Server.Info().Login, livePeerLogin) {
+		t.Errorf("the peer is authenticated as %q, want the resolver's %q", peer.Server.Info().Login, livePeerLogin)
 	}
 }

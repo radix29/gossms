@@ -39,11 +39,19 @@ func jobRow(name, category, owner string, enabled bool, deleteLevel, notifyLevel
 	}
 }
 
+// jobStepReadBack answers the read Job.AddStep makes of the step it just
+// added with no row, so AddStep hands back its name-only handle — the pages
+// discard it. It has to come before any job by-name response: both queries
+// say "WHERE  j.name = @p1", and the job's 17 columns do not scan into a
+// step's 23.
+var jobStepReadBack = fakeResponse{match: "AND s.step_name = @p2", cols: 23}
+
 // agentJobResponses answers job reads. The by-name read is scripted before the
 // list read: they differ only by WHERE, so otherwise every by-name lookup would
 // resolve to the first job (see fakeResponse.arg).
 func agentJobResponses(job []driver.Value) []fakeResponse {
 	return []fakeResponse{
+		jobStepReadBack,
 		{match: "WHERE  j.name = @p1", cols: 17, rows: [][]driver.Value{job}},
 		{match: "FROM   msdb.dbo.sysjobs j", cols: 17, rows: [][]driver.Value{
 			jobRow("Backup log", "Database Maintenance", "sa", true, 0, 0, ""),

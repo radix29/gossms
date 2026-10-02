@@ -125,7 +125,7 @@ func (p *QueryStorePanel) load(keepView bool) {
 	// Begin supersedes and cancels whatever report read is out: this one
 	// replaces it. Uncancelled, a superseded read goes on holding a connection
 	// on the shared host until qsReadTimeout.
-	ctx, seq := p.reportRead.BeginTimeout(p.conn.Context(), qsReadTimeout)
+	ctx, seq := p.reportRead.BeginTimeout(p.conn.Server.Context(), qsReadTimeout)
 	p.busy = true
 	p.setStatus("Running " + p.report().Title + "...")
 	p.refreshToolLabels()
@@ -144,7 +144,7 @@ func (p *QueryStorePanel) load(keepView bool) {
 		var res qsResult
 		var err error
 		switch {
-		case infoErr == nil && !queryStoreIsOn(info):
+		case infoErr == nil && !info.IsReadable():
 			// A database with Query Store off answers every report with no
 			// rows, which reads identically to a database nothing ran in.
 			res = qsOffResult(info)
@@ -309,7 +309,7 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 	// A plan read fires from the report grid's OnSelectRow, so holding Down
 	// through a ranking starts one per row: without Begin's cancel every
 	// superseded query still runs on the shared host, each until qsReadTimeout.
-	ctx, seq := p.planRead.BeginTimeout(sc.Context(), qsReadTimeout)
+	ctx, seq := p.planRead.BeginTimeout(sc.Server.Context(), qsReadTimeout)
 	// safegoRepair, not safego: the "Reading plans..." placeholder is replaced
 	// by the callback below, which a panic on the read goroutine never reaches,
 	// and nothing else writes the pane until another query is selected — so the

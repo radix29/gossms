@@ -263,7 +263,7 @@ func (d *BackupDialog) loadDefaultPaths() {
 	if app == nil || sc == nil || sc.Server == nil {
 		return
 	}
-	ctx, tok := d.defPaths.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, tok := d.defPaths.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("reading the default backup location", func() {
 		p, err := sc.Server.DefaultPaths(ctx)
 		app.postAndWake(func() {
@@ -365,7 +365,7 @@ func (d *BackupDialog) applyDeviceRules() {
 // the list may contain is backupDatabaseNames' rule, not this dialog's.
 func (d *BackupDialog) loadDatabases() {
 	app, sc := d.app, d.sc
-	ctx, seq := d.dbListRun.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, seq := d.dbListRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("loading the backup database list", func() {
 		names, err := backupDatabaseNames(ctx, sc)
 		app.postAndWake(func() {
@@ -439,7 +439,7 @@ func (d *BackupDialog) browseDest() {
 // running it, reporting the result on the status line.
 func (d *BackupDialog) validate() {
 	opts := d.currentOptions()
-	stmt, err := gosmo.BuildBackupStatement(opts)
+	stmt, err := d.sc.Server.BuildBackupStatement(opts)
 	if err != nil {
 		d.setStatusMsg(err.Error(), true)
 		return
@@ -453,7 +453,7 @@ func (d *BackupDialog) validate() {
 // cleanly; this hands the T-SQL over to inspect, tweak, or run.
 func (d *BackupDialog) script() {
 	opts := d.currentOptions()
-	stmt, err := gosmo.BuildBackupStatement(opts)
+	stmt, err := d.sc.Server.BuildBackupStatement(opts)
 	if err != nil {
 		d.setStatusMsg(err.Error(), true)
 		return
@@ -495,7 +495,7 @@ func (d *BackupDialog) startBackup() {
 	verify := d.cbVerify.Checked()
 	dest := opts.Devices[0]
 
-	task, ctx := d.app.startTask(d.sc.Context(), "Backup "+opts.Database)
+	task, ctx := d.app.startTask(d.sc.Server.Context(), "Backup "+opts.Database)
 	d.task = task
 	d.taskDB = opts.Database
 	d.taskType = backupTypeLabel(opts.Action)

@@ -345,7 +345,7 @@ func (a *App) suspendAGDatabase(sc *db.ServerConn, node *explorerNode) {
 
 	// The role must be read first; it changes the question.
 	a.safego("reading an availability group's local role", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
 		ag, err := sc.Server.AvailabilityGroupByName(ctx, agName)
 		a.postAndWake(func() {
@@ -433,7 +433,7 @@ func (a *App) failoverToReplica(sc *db.ServerConn, node *explorerNode, force boo
 	replica, agName := node.data.Name, node.data.AGName
 
 	a.safego("checking whether an availability group can be failed over", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
 		ag, err := sc.Server.AvailabilityGroupByName(ctx, agName)
 		a.postAndWake(func() {

@@ -2,20 +2,30 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 )
 
-// newTestConn builds a ServerConn with Connect's lifetime plumbing but no
-// gosmo.Server; Close is nil-safe.
+// newTestConn builds a ServerConn over a fake pool with no server behind it,
+// so Close cancels Server.Context() as a real connection's does.
 func newTestConn(server string) *ServerConn {
-	ctx, cancel := context.WithCancel(context.Background())
-	return &ServerConn{Opts: config.Connection{Server: server}, ctx: ctx, cancel: cancel}
+	pool, err := sql.Open("captestdb", "")
+	if err != nil {
+		panic(err)
+	}
+	srv, err := gosmo.NewServer(context.Background(), pool)
+	if err != nil {
+		panic(err)
+	}
+	return &ServerConn{Opts: config.Connection{Server: server}, Server: srv}
 }
 
 // recordPeerFailure is recordPeerFailureLocked taking peerMu itself, for tests
@@ -116,6 +126,32 @@ func TestPeerOptionsUseTheInstancesOwnCredentials(t *testing.T) {
 	// a secondary.
 	if opts.Database != "" {
 		t.Errorf("peer options carry Database %q from the saved connection", opts.Database)
+	}
+}
+
+// T14: a saved connection that writes its port into Server ("host\inst,port",
+// an older save or a hand edit) keeps it when retargeted at the catalog's
+// portless name. Dropped, the dial needed SQL Browser, which win10cli\SQL2017
+// doesn't run.
+func TestPeerOptionsKeepAPortWrittenInTheSavedServer(t *testing.T) {
+	parent := &ServerConn{Opts: config.Connection{Server: "ubusql1", User: "sa", Password: "p"}}
+	parent.SetPeerCredentials(func(server string) (config.Connection, bool) {
+		if config.InstanceKey(server) == config.InstanceKey(`win10cli\sql2017`) {
+			return config.Connection{Server: `win10cli\SQL2017,55253`, User: "sa", Password: "p"}, true
+		}
+		return config.Connection{}, false
+	})
+
+	opts := parent.peerOptions(`WIN10CLI\SQL2017`)
+	if opts.Server != `WIN10CLI\SQL2017` || opts.Port != 55253 {
+		t.Fatalf("peer options = %q port %d, want the catalog's name on the saved port 55253", opts.Server, opts.Port)
+	}
+	dsn, err := BuildConnectionString(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dsn, "@WIN10CLI:55253/SQL2017?") {
+		t.Errorf("peer dials %s, want WIN10CLI:55253/SQL2017 (no SQL Browser lookup)", dsn)
 	}
 }
 

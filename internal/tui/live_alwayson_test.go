@@ -84,7 +84,7 @@ func liveAGConn(t *testing.T, user, password string) (*db.ServerConn, context.Co
 		t.Fatalf("connect %s as %s: %v", *liveSecondary, user, err)
 	}
 	t.Cleanup(sc.Close)
-	ctx, cancel := context.WithTimeout(sc.Context(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(sc.Server.Context(), 90*time.Second)
 	t.Cleanup(cancel)
 	return sc, ctx
 }

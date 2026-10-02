@@ -302,12 +302,12 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 				}
 			}
 			if e.isReadOnly {
-				if err := d.SetFileGroupReadOnly(ctx, e.name, true, gosmo.TerminationNone); err != nil {
+				if err := d.FileGroupRef(e.name).SetReadOnly(ctx, true, gosmo.TerminationNone); err != nil {
 					return err
 				}
 			}
 			if e.isDefault {
-				if err := d.SetDefaultFileGroup(ctx, e.name); err != nil {
+				if err := d.FileGroupRef(e.name).SetDefault(ctx); err != nil {
 					return err
 				}
 			}

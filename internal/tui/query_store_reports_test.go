@@ -286,26 +286,6 @@ func TestPlanIDOrDashHidesZero(t *testing.T) {
 	}
 }
 
-// TestQueryStoreIsOnAcceptsReadOnly. READ_ONLY is what a Query Store that
-// filled its quota degrades to: it stopped collecting, but everything it
-// already holds is still worth reporting. Treating it as off would blank
-// every report at exactly the moment they matter.
-func TestQueryStoreIsOnAcceptsReadOnly(t *testing.T) {
-	for _, tt := range []struct {
-		state string
-		want  bool
-	}{
-		{"READ_WRITE", true},
-		{"READ_ONLY", true},
-		{"OFF", false},
-		{"ERROR", false},
-	} {
-		if got := queryStoreIsOn(&gosmo.QueryStoreInfo{ActualState: gosmo.QueryStoreState(tt.state)}); got != tt.want {
-			t.Errorf("queryStoreIsOn(%q) = %v, want %v", tt.state, got, tt.want)
-		}
-	}
-}
-
 // TestRegressedQueriesComparesTheTwoHalvesOfItsWindow.
 //
 // gosmo's default baseline is the equally long window immediately *before*

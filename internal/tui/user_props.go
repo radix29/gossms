@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -117,8 +116,8 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 			// first two, and a LoginName the SID join found is a login mapped
 			// to the same certificate, not this user's. A mapped user refuses
 			// DEFAULT_SCHEMA as well.
-			mapped := isMappedUser(u)
-			fixedLogin := mapped || isExternalUser(u)
+			mapped := u.IsMapped()
+			fixedLogin := mapped || u.IsExternal()
 
 			builtin := isSystemUser(u.Name)
 
@@ -247,22 +246,12 @@ func userTypeLabel(u *gosmo.User) string {
 	return "SQL user without login"
 }
 
-// isMappedUser reports a certificate- or asymmetric-key-mapped user.
-func isMappedUser(u *gosmo.User) bool {
-	return u.UserType == "CERTIFICATE_MAPPED_USER" || u.UserType == "ASYMMETRIC_KEY_MAPPED_USER"
-}
-
-// isExternalUser reports a Microsoft Entra user or group.
-func isExternalUser(u *gosmo.User) bool {
-	return u.AuthType == "EXTERNAL" || strings.HasPrefix(u.UserType, "EXTERNAL_")
-}
-
 // loginDisabledStr renders a user's mapped-login disabled state, or
 // "n/a" when no login is mapped (WITHOUT LOGIN, or the login no longer
 // exists — SQL Server's catalog metadata can't tell those apart) or the user
 // is of a kind that has none.
 func loginDisabledStr(u *gosmo.User) string {
-	if u.LoginName == "" || isMappedUser(u) || isExternalUser(u) {
+	if u.LoginName == "" || u.IsMapped() || u.IsExternal() {
 		return "n/a"
 	}
 	return boolStr(u.LoginDisabled)
@@ -344,11 +333,11 @@ func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) prop
 						continue
 					}
 					if member {
-						if err := d.AddRoleMember(ctx, roles[i].Name, *userName); err != nil {
+						if err := d.RoleRef(roles[i].Name).AddMember(ctx, *userName); err != nil {
 							return err
 						}
 					} else {
-						if err := d.RemoveRoleMember(ctx, roles[i].Name, *userName); err != nil {
+						if err := d.RoleRef(roles[i].Name).RemoveMember(ctx, *userName); err != nil {
 							return err
 						}
 					}

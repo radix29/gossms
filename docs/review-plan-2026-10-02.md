@@ -287,11 +287,58 @@ breaking signature has no gossms caller.
     - The XE predicate refs and `securables_matrix.go` labels.
     - Delete sqlparse's partial keyword list, or reduce it to the
       completion-only set.
+  - **Done.** `go test ./...` and `go test -race -count=1 ./...` green in
+    gossms, `go test ./...` in gosmo; gofmt and vet clean (gosmo also
+    `-tags livedb`). gosmo `quoting.go` gained the four helpers; the reserved
+    list is Microsoft's, probed on 13 and 17: the server refuses 179 of its 184
+    words bare (DISK, DUMP, LOAD, PRECISION and SECURITYAUDIT are tolerated,
+    kept as documented), no ODBC or future keyword is refused, and USER,
+    CURRENT_USER, SESSION_USER, SYSTEM_USER, CURRENT_TIMESTAMP, CURRENT_DATE
+    and NULL are accepted bare *as themselves* — the silent T17 class. Pins:
+    `quoting_test.go`; live `TestLiveReservedKeywords` on 17, 14 and 13 (fails
+    with USER dropped from the list). gossms: completion calls
+    `gosmo.QuoteNameIfNeeded` (`bracketIfNeeded` gone); `sqlparse.IsKeyword`
+    is deleted, but `sqlKeywordList` stays — it is the tokenizer's clause-word
+    set (CAST, APPLY), not a quoting list, and its comment now says so. The XE
+    refs use `QuoteName` and the ansi `LIKE` literal `QuoteAnsiLiteral` (same
+    output for every real name); securable labels quote each part. **One
+    deviation:** T34 does not import gosmo — `internal/showplan` is driver-free
+    by design (`missing_index.go`'s `bracket` comment), so it has its own
+    `unbracket`, the inverse of `bracket`; the StmtUseDb statement text keeps
+    the server's bracketed `USE [db]`. Live on 17: plan XML for
+    `[w14_odd]]db].dbo.[Odd]]Name]` writes the names doubled, and the parsed
+    Missing Index script reads `USE [w14_odd]]db]` / `ON [dbo].[Odd]]Name]
+    ([[Doc]]])`. tmux on `SQL2017`: `SELECT a.` completed `a.[User]`,
+    `a.[Odd]]Col]`, `a.Cast`; an unqualified `Us` completed `[User]`, and both
+    queries returned the row's `alice`, not `dbo`. Pins:
+    `TestSQLCompletionBracketsReservedColumnNames`,
+    `TestMissingIndexScriptKeepsABracketInAName`, `TestUnbracket`,
+    `TestSecurableLabelQuotesEachPart`. See T17, T34 and T36.
 - **W15 — T35 and T14: `ConnectionOptions.Port`.**
   - gosmo adds the field; `ResolveServer`'s comma and colon folding is removed.
   - gossms `toGosmoOptions` sets `Port`, and `retargetAt` keeps the saved
     port.
   - Live check: AG peer retarget on `SQL2017` (dynamic port, no Browser).
+  - **Done.** `go test ./...` green in both repos; gofmt and vet clean (gosmo
+    also `-tags livedb`). gosmo: `ConnectionOptions.Port`; a port written in
+    `Server` wins over it (unchanged gossms behaviour, so no saved connection
+    changes target); out of 0-65535 is an error. Every reader of the dial
+    target — the DSN host, the Browser-dialer choice, the pool's Browser-cache
+    eviction, the Entra sign-in cache key — goes through
+    `ConnectionOptions.address`. gossms: `toGosmoOptions` passes `Server` and
+    `Port` apart, through the new `config.DialPort` (1433 is unspecified, the
+    old SQL Browser rule). `ResolveServer` is not deleted: it stays the fold
+    for keys (`ConnectionAddress`) and the Connect dialog's display, now off
+    the dial path. `retargetAt` moves a port written in the saved `Server` to
+    `Port` before replacing `Server`. Live on 17, via `Peer` with a resolver
+    answering `win10cli\SQL2017,55253`: the peer dials port 55253. SQL2017's
+    Browser answers now, so the control was a resolver entry for a
+    nonexistent `win10cli\NOSUCHW15,55253`: it reached SQL2017 directly with
+    the fix and failed "no instance matching 'NOSUCHW15'" (a Browser lookup)
+    without it. tmux: Connect to `win10cli\SQL2017,55253` previews
+    `win10cli:55253/SQL2017`, connects to 14.0.2130.4 and saves Server and
+    Port apart. Pins: `TestPortReachesTheDriver` (gosmo),
+    `TestPeerOptionsKeepAPortWrittenInTheSavedServer`.
 - **W16 — The connection lifecycle.**
   - Items: T37 (`Server` lifetime context; `ServerConn.Context()` delegates,
     then is removed), T50 (`ServerInfo.Login`), T57 (no capability probe for
@@ -299,11 +346,52 @@ breaking signature has no gossms caller.
   - All three touch `internal/db/connection.go`, so one step.
   - The ARCHITECTURE § How a query runs text about `ServerConn.Context()` is
     rewritten in this step.
+  - **Done.** gofmt and vet clean in both repos (gosmo also `-tags livedb`);
+    `go test -race -count=1 ./...` green in both. gosmo: `Server` carries its
+    lifetime (`newServer`, the one constructor); `Close` cancels it before
+    closing the pool; `Server.Context()` is exported, never nil (Background
+    for a nil or literal Server). Every statement gosmo runs is bounded by it
+    through `Server.bound` — `Server.query`/`queryRow`/`execScan`/`exec`/
+    `execSecret`, `Database.withConn`/`query`/`queryRow`, `BulkInsert`,
+    `EffectiveServerPermissions` and the progress path of Backup/Restore
+    (`execWithProgress`, now a method). A rows-returning read releases the
+    link when its rows close: `Server.query` now returns the `dbRows` wrapper
+    (conn nil there), and `withConn`'s callback takes the bounded ctx. Only a
+    statement a caller runs on `DB()` is not bounded, and its doc says to
+    derive from `Context()`. `ServerInfo.Login` is read in `loadInfo`'s first
+    statement; `CurrentLogin` stays. gossms: `ServerConn.ctx`/`cancel`/`Login`
+    and `Context()` are gone — every site (54) calls `sc.Server.Context()`;
+    `Close` closes the `Server` before `closePeers`, the old cancel order.
+    `loadChildren` no longer dereferences a missing connection (the old
+    fallback hid it) and shows "not connected" directly. The capability probe
+    runs only for `RoleExplorer` (peers inherit it). Live:
+    `TestLiveCloseEndsAStatementInFlight` (gosmo) holds a 40 s `WAITFOR`
+    through `sp_executesql`, then `Close`s: the request leaves
+    `sys.dm_exec_requests` within 6 ms on 17, 14 and 13; with `bound`
+    disabled the statement outlives `Close`. The full gosmo `livedb` suite
+    passes on 17 (704 s). tmux on `SQL2017` (port 55253):
+    connect, expand Databases, a query panel runs `SELECT ... APP_NAME()` as
+    `goSSMS - Query`; File > Disconnect drops all four `goSSMS` sessions
+    server-side (the panel's own stays, as it owns it); reconnecting typed as
+    `SA` labels the root `(sa, ...)`, the server's answer. Pins:
+    `TestCloseCancelsAReadInFlight`, `TestContextOfABareServerIsNeverNil`,
+    `TestNewServerWrapsACallerSuppliedPool` (Login) in gosmo;
+    `TestOnlyExplorerConnectionsProbeServerCapabilities`, `TestServerConnLabel`,
+    `TestLoadChildrenWithoutAConnectionShowsNotConnected`. Found on the way:
+    B17 (tui's `livedb` tests do not compile since 0a14b06).
 - **W17 — Error predicates and catalog derivations.**
   - T39 replaces `refusalNumbers`, `isAlreadyExists` and the mail error
     switch.
   - T40 moves the system, mapped and expired derivations into gosmo, with
     their tests.
+  - **Done.** See T39 and T40. `go test -race -count=1 ./...` green in
+    gossms, `go test ./...` and `go vet -tags livedb ./...` in gosmo. Live:
+    `TestLiveErrorPredicates` (gosmo) on win10cli 17 — duplicate CREATE LOGIN
+    and CREATE USER, DROP of an absent login, a refused DMV read under
+    EXECUTE AS, and `SendMail` with an unknown profile. The tmux run reached
+    Send Test E-Mail, but its gates (no profile; Database Mail stopped) stop
+    every mapped error short of the server, so the dialog's `errors.Is`
+    switch is covered by the gosmo live test only.
 - **W18 — Handle-centric writes: T42 and T45.**
   - gosmo: role and server-role `AddMember`/`RemoveMember`, file and
     filegroup handles, the category handle, `Drop` everywhere,
@@ -313,6 +401,22 @@ breaking signature has no gossms caller.
     user, one tree.
   - gossms: about 15 call sites, listed under T42.
   - Then T46 (`Server.BuildBackupStatement`).
+  - **Done.** See T42, T45 and T46. `go test -race -count=1 ./...` green in
+    gossms; `go test ./...`, `go vet ./...` and `go vet -tags livedb ./...`
+    in gosmo. Live: `TestLiveHandleWrites` (gosmo, new) on win10cli 17 runs
+    every moved write through its handle and reads the catalog back —
+    role and server-role membership, file Alter (rename and size) and Drop,
+    filegroup SetReadOnly, SetDefault and Drop, the category drop, AddStep
+    and InsertStep reading their step back through a `JobRef`, JobStep.Drop
+    and RemoveNotification; `TestLiveJobReorder*` now checks AddStep's
+    returned step, and the credential, create-returns and filegroup
+    exclusive-access live tests pass on the new signatures. tmux on win10cli
+    17 against a throwaway database: Role Properties > Members scripts and
+    applies `ALTER ROLE … ADD MEMBER`; Database Properties > Filegroups
+    scripts and applies READ_ONLY and DEFAULT on a filegroup (first refused
+    with Msg 5070 while two query panels sat in the database, as
+    TerminationNone should); Back Up Database > Script opens the BACKUP.
+    Found on the way: B18 (an empty filegroup is not listed).
 - **W19 — T13, the secret policy.** Blocked on decision 1.
   - gosmo: a `Database.execSecret`, every password and secret routed
     through it, and an opt-in if one is chosen.
@@ -832,6 +936,10 @@ and requires the recreated type to script identically (17, 14, 13).
 - The clean fix is T35.
 - Live check on SQL2017.
 
+**Done** (W15). Only a port *written in* `Server` was lost: a Port-field
+port already survived. `retargetAt` moves it to `Port`, which gosmo now
+dials. Pin: `TestPeerOptionsKeepAPortWrittenInTheSavedServer`.
+
 ### T15 — Startup failures print nothing — gossms — *confirmed*
 
 **Where:** `cmd/gossms/main.go:31-39`.
@@ -870,6 +978,12 @@ with T38.
   a silent wrong result.
 
 **Fix.** T36. Then gossms uses `gosmo.QuoteNameIfNeeded`.
+
+**Done** (W14). Completion commits every name through
+`gosmo.QuoteNameIfNeeded`, whose reserved list is the documented one, checked
+against the parser on 13 and 17. Pin:
+`TestSQLCompletionBracketsReservedColumnNames` (User, Desc, Plan bracketed;
+Cast bare).
 
 ### T18 — `TestSessionPropertiesApplyReloadsTheSessionsTargets/Apply` is flaky under `-race` — gossms — *confirmed*
 
@@ -1016,7 +1130,7 @@ monthly, an owner, and a refused owner leaving no schedule) on 17, 14 and 13.
 | T31 | gosmo | `scripter_dml.go:232`, `function.go:37-43` | CLR scalar functions (FS) are scripted as `SELECT * FROM f()`, and CLR functions are missing from listings → typed `FuncType`, `LEFT JOIN sql_modules`. **Done** (W7): `FunctionType` (`IsScalar`, `IsCLR`); the listing takes FS/FT; a CLR module's CREATE/ALTER is `ErrUnsupported`, not "not found" (functions, procedures, triggers). Live: `live_clr_function_test.go` loads `testdata/clr/w7clr.dll` (trusted for the test on 14+), on 17, 14, 13; `SELECT * FROM` a CLR scalar function is Msg 208. Still open (gosmo OPEN-THREADS § CLR modules): scripting the CLR CREATE, and CLR procedures and triggers in their listings. |
 | T32 | gossms | `editor_draw.go:16,49,403` | Line numbers ≥ 10,000 draw over the border → `gutterWidth = max(5, digits+2)`. **Done** (W12), in `Editor.gutterWidth`; the wrap cache is keyed by width, so a growing gutter re-wraps. Pin: `TestEditorGutterWidensPastLine9999` (plain and wrapped). |
 | T33 | gossms | `treeview.go:299-301,326` | Right and `+` collapse an expanded node, against the comment and F1 help → `expandSelected()`. **Done** (W12); Enter still toggles. Pin: `TestTreeViewRightAndPlusNeverCollapse`. |
-| T34 | gossms | `showplan/parse.go:103,279,305,418` | `Trim(x,"[]")` doesn't un-double `]]`, so the Missing Index script names the wrong object → `gosmo.UnquoteName` (T36). |
+| T34 | gossms | `showplan/parse.go:103,279,305,418` | `Trim(x,"[]")` doesn't un-double `]]`, so the Missing Index script names the wrong object → `gosmo.UnquoteName` (T36). **Done** (W14), with a local `unbracket` rather than gosmo: the package stays driver-free. Confirmed live on 17 that plan XML doubles `]`. Pins: `TestMissingIndexScriptKeepsABracketInAName`, `TestUnbracket`. |
 | T64 | gossms | `core/drawing.go:240-251` | The scrollbar thumb never reaches the bottom → `offset*(h-thumbH)/(total-visible)`. **Done** (W12): `core.scrollThumb`, shared by `DrawScrollbar` and `DrawScrollbarH`. `ScrollOffsetForDrag` had the twin defect — `y*total/h` topped out at 900 of 995 on a 10-row track over 1000 rows — and is now linear from the first row (0) to the last (`total-visible`). Pins: `TestScrollbarThumbSpansTheWholeTrack`; `TestScrollOffsetForDrag` unchanged. |
 | T65 | gossms | `core/clip_screen.go` | `FillArea` isn't clipped, and `charts.Canvas` panics on it. Latent, but blocks T51. |
 | T66 | gossms | `core/strutil.go:356` | `EvRune` keeps only the first rune of a composed key (IME, ZWJ) → insert `[]rune(ev.Str())`. **Done** (W12): `core.EvText`, used by `Editor` (plain and block), `InputField` and the plan view's search; `EvRune` stays for key matching. Pins: `TestEditorInsertsAComposedKeyWhole`, `TestInputFieldInsertsAComposedKeyWhole`. |
@@ -1039,21 +1153,39 @@ working session (the `dev-with-local-gosmo` skill).
   - Removes `ResolveServer`'s comma and colon folding
     (`internal/db/connection.go:352-369`).
   - Fixes T14 properly.
+  - **Done** (W15). The dial path no longer folds; `ResolveServer` remains
+    for keys and display only.
 - **T36 — Identifier helpers: `IsReservedKeyword`, `QuoteNameIfNeeded`,
   `UnquoteName`, `QuoteAnsiLiteral`.**
   - Replaces sqlparse's partial keyword list (T17), showplan's `bracket()`
     (T34), and the hand-built XE predicate refs
     (`xevent_session_events.go:64,441-447`).
+  - **Done** (W14): all four in gosmo `quoting.go`; see W14 for the call
+    sites and the showplan exception.
 - **T37 — `Server` lifetime context.**
   - `Close` cancels it, and every read is bounded by it.
   - Replaces `ServerConn.ctx`/`Context()` and retires the "load rooted at
     `context.Background` outlives disconnect" bug class.
   - The largest boundary item, at about 1 day.
+  - **Done** (W16): writes are bounded too, not only reads; see W16.
 - **T39 — Exported error predicates: `IsPermissionDenied`, `IsAlreadyExists`,
   `IsObjectMissing`, Database Mail errors.**
   - Replaces `refusalNumbers` (`permission_error.go:152-176`),
     `isAlreadyExists` (`new_endpoint_dialog.go:825`) and
     `send_test_mail_dialog.go:276-298`.
+  - **Done** (W17), with two departures from the names above:
+    - `IsObjectMissing` shipped as `IsMissingOrDenied`, beside
+      `ClassifyRefusal` (kind plus the message that says so) and
+      `IsPermissionDenied`. The numbers it covers are the ambiguous
+      "does not exist or you do not have permission" ones, and a name
+      claiming "missing" would invite exactly the narrowing the server
+      withholds on purpose.
+    - `IsAlreadyExists` is numbers only (1801, 1913, 2714, 15023, 15025).
+      The English-text fallback for a non-SQL-Server error is gone;
+      `docs/decisions.md` updated.
+    - The mail errors are sentinels `SendMail` wraps:
+      `ErrMailProfileInvalid`, `ErrMailNoDefaultProfile`, `ErrMailStopped`,
+      `ErrMailXPsDisabled`.
 - **T40 — Catalog derivations as methods.**
   - `Login.IsSystem`, `Login.IsSQLLogin`, `Job.IsSystem`, `User.IsMapped` and
     `User.IsExternal`, `Certificate.IsExpired(now)`, `ServerInfo.IsWindows`,
@@ -1062,6 +1194,9 @@ working session (the `dev-with-local-gosmo` skill).
     `user_props.go:251-260`, `explorer_databases.go:410`,
     `server_filesystem.go:97` and `query_store_reports.go:401`. The system-object
     rules gate DROPs.
+  - **Done** (W17). The gossms tests for the moved helpers moved with them
+    (`catalog_derivations_test.go` in gosmo); gosmo's own scripter now uses
+    `Login.IsSQLLogin`.
 - **T42 — Handle-centric writes.**
   - Add `Role.AddMember`/`RemoveMember` and
     `ServerRole.AddMember`/`RemoveMember`.
@@ -1078,11 +1213,45 @@ working session (the `dev-with-local-gosmo` skill).
     `database_props_files.go:548,562`, `database_props_filegroups.go:163`,
     `agent_alert_props.go:213`, `agent_job_props_steps.go:447`,
     `new_job_pages.go:139`.
+  - **Done** (W18). The shapes that shipped:
+    - `DatabaseRole.AddMember`/`RemoveMember` (the type is `DatabaseRole`,
+      reached by `RoleRef`) and `ServerRole.AddMember`/`RemoveMember`
+      replace `Database.AddRoleMember`/`RemoveRoleMember` and
+      `Server.AddServerRoleMember`/`RemoveServerRoleMember`.
+      `Login.AddServerRoleMember` and `User.AddToRole` stay: they are
+      member-side handle writes, not parent-side ones, and now delegate.
+    - Files: `Database.FileRef(name)` returns a `*DatabaseFileInfo`, which
+      gained its database back-pointer and `Alter(m)` (mirrors a NEWNAME) and
+      `Drop`; `Files` and `Server.DatabaseFiles` hand back wired handles.
+      Filegroups: `Database.FileGroupRef(name)`, and `FileGroup` gained
+      `Drop`, `SetDefault`, `SetReadOnly(ro, term)`, each mirroring onto the
+      handle. `AddFile`/`AddFileGroup` stay on `Database` under their names:
+      a create returning a handle would need a by-name read neither family
+      has yet, which is outside this step.
+    - `Server.CategoryRef(class, name)` and `Category.Drop`; `Category`
+      gained its server back-pointer.
+    - `JobStep.Drop` (was `Delete`). `AddStep` and `InsertStep` both return
+      `*JobStep`, read back by job and step name (msdb keeps step names
+      unique per job), so a `JobRef` works; under `Scripting(ctx)` the
+      handle carries the name and InsertStep's position.
+    - `Credential.Alter` and `DatabaseScopedCredential.Alter` both take
+      `CredentialOptions{Identity, Secret}` — the two had the same
+      positional signature, and changing one alone would have split them.
+    - gossms: every site above plus `new_database_pages.go` (filegroup
+      read-only and default) and `credential_props.go`/
+      `database_credential_props.go`. The page tests' job fakes gained
+      `jobStepReadBack`, since the step read-back says
+      `WHERE  j.name = @p1` like the job by-name read.
 - **T45 — `ScriptCollector.Entries` becomes `Entries()`/`Len()`.** The field is
   guarded by an unexported mutex. Call sites: gossms
   `new_object_dialog.go:478`, `prop_dialog.go:883`.
+  - **Done** (W18). `Entries()` returns a copy, `Len()` the count; the
+    field is now unexported `entries`.
 - **T46 — `BuildBackupStatement` becomes a `Server` method,** matching
   `BuildRestoreStatement`. That makes room for future gating.
+  - **Done** (W18). The Back Up dialog calls it on its connection's
+    `Server`; the tui tests use a zero `gosmo.Server`, which the builder
+    never reads.
 - **T47 — `Server.InTransaction(ctx, fn)`.**
   - Binds one connection and transaction into ctx, the way `WithScript`
     threads a collector.
@@ -1100,7 +1269,7 @@ working session (the `dev-with-local-gosmo` skill).
   documented trap into an error.
 - **T50 — `ServerInfo.Login` from `loadInfo`.** Drops the separate
   `SUSER_NAME()` round trip on every connection
-  (`internal/db/connection.go:150`).
+  (`internal/db/connection.go:150`). **Done** (W16).
 
 ---
 
@@ -1114,7 +1283,7 @@ working session (the `dev-with-local-gosmo` skill).
 | T53 | gosmo | `catalog.go:119-150`, `security_policy.go:70-77`, `login.go:337-359` | `Catalog()` costs 4 round trips → 1 multi-result batch. `SecurityPolicies` runs N+1 → one grouped query. `UserMappings` does one per database → one batch with per-database TRY/CATCH (*plausible*; the parallel fan-out was already rejected). |
 | T55 | gossms | `sql_highlighter.go:234` | `ToUpper(string(…))` per word per frame → sqlparse's stack-scratch fold. |
 | T56 | gossms | `sqltext/split.go:32`, `xevent/filter.go:110` | `[]rune` of the whole script → a byte scan. `ToLower` per value per event → an allocation-free case-insensitive contains. |
-| T57 | gossms | `internal/db/connection.go:153` | The capability UNION runs for Query, Activity Monitor and XEvent connections, which never read it → skip it for non-Explorer roles. |
+| T57 | gossms | `internal/db/connection.go:153` | The capability UNION runs for Query, Activity Monitor and XEvent connections, which never read it → skip it for non-Explorer roles. **Done** (W16): `newServerConn` probes for `RoleExplorer` only; completion's per-database probe is lazy and unaffected. Pin: `TestOnlyExplorerConnectionsProbeServerCapabilities`. |
 | T58 | gossms | `options_dialog.go:321`, `query_store_panel_load.go:93`, `connect_dialog.go:494` | `config.Save` (lock, crypto, fsync) runs on the UI goroutine → save off-thread and post the result back. *Plausible stall.* |
 
 ---

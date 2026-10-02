@@ -70,7 +70,7 @@ func newServerFS(sc *db.ServerConn) (dialogs.FileSystem, bool) {
 		return nil, false
 	}
 	fs := &serverFS{PathRules: dialogs.PosixPathRules{}, sc: sc, defaultDir: info.DefaultBackupPath}
-	if serverIsWindows(info) {
+	if info.IsWindows() {
 		fs.PathRules = dialogs.WindowsPathRules{}
 	}
 	return fs, true
@@ -90,27 +90,13 @@ func currentDefaultPaths(ctx context.Context, sc *db.ServerConn) gosmo.DefaultPa
 	return gosmo.DefaultPaths{}
 }
 
-// serverIsWindows decides which path convention the server host uses.
-// ServerInfo.Platform is the direct answer; the default backup path is the
-// fallback for an instance that didn't report one, and a Windows path is
-// recognizable by its backslashes.
-func serverIsWindows(info *gosmo.ServerInfo) bool {
-	switch info.Platform {
-	case "Windows":
-		return true
-	case "Linux":
-		return false
-	}
-	return strings.Contains(info.DefaultBackupPath, `\`)
-}
-
 // Blocking marks every call below as a network round trip, so the file
 // dialog paints a "Listing ..." frame before each one instead of freezing
 // with the previous directory on screen. See dialogs.BlockingFileSystem.
 func (fs *serverFS) Blocking() bool { return true }
 
 func (fs *serverFS) ctx() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(fs.sc.Context(), serverFileSystemTimeout)
+	return context.WithTimeout(fs.sc.Server.Context(), serverFileSystemTimeout)
 }
 
 // List returns dir's contents on the server. The empty path is the level

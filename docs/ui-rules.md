@@ -245,7 +245,7 @@ behind the mouse and async rules.
   `runApplySteps` wraps it in `gosmo.WithStatementObserver`, which is how a
   failed Apply knows which pages reached the server (those reload; others keep
   edits; a New-object dialog whose first page completed counts as created).
-  Writes on `d.ctx`, `sc.Context()`, `context.Background()` or raw
+  Writes on `d.ctx`, `sc.Server.Context()`, `context.Background()` or raw
   `database/sql` are invisible and get re-sent. Derived contexts (`WithTimeout`,
   `WithoutCancel`) keep the observer. Unseeable case: a gosmo disable window
   whose re-enable is refused — re-read and mark `applyCommitted` (Audit

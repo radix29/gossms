@@ -12,24 +12,33 @@ import (
 // so the tracked-query sets and the per-identity caches key by the same rule
 // db's peer resolver does.
 
-// ResolveServer folds the dialog's Server and Port into gosmo's single address.
-// Server may already be any gosmo.ParseServerAddress form; a port it carries
-// wins.
-//
-// Port 0 or 1433 is omitted: the driver defaults to 1433, and a port on
+// DialPort is the gosmo.ConnectionOptions.Port a saved Port dials with: 1433
+// is 0, unspecified. The driver defaults to 1433 anyway, and a port on
 // "host\instance" suppresses the SQL Browser lookup for the instance's dynamic
-// port (win10cli\sql2017 listens on 55253; an appended 1433 reaches the default
-// instance).
+// port (win10cli\sql2017 listens on 55253; a pinned 1433 reaches the default
+// instance). A port written in Server wins over it, in gosmo.
+func DialPort(port int) int {
+	if port == 1433 {
+		return 0
+	}
+	return port
+}
+
+// ResolveServer folds the dialog's Server and Port into one address string,
+// for keys (ConnectionAddress) and the Connect dialog's display; dialling
+// passes them to gosmo separately (db.toGosmoOptions). Server may already be
+// any gosmo.ParseServerAddress form; a port it carries wins, as in gosmo.
 //
-// With "\instance" and no port, a non-default port is appended with a comma;
-// gosmo reads a colon there as part of the instance name.
+// Port 0 or 1433 is omitted (DialPort). With "\instance", a non-default port
+// is appended with a comma; gosmo reads a colon there as part of the instance
+// name.
 func ResolveServer(server string, dialogPort int) string {
 	host, _, embeddedPort := gosmo.ParseServerAddress(server)
 	if embeddedPort != 0 {
 		return server
 	}
-	port := dialogPort
-	if port == 0 || port == 1433 {
+	port := DialPort(dialogPort)
+	if port == 0 {
 		return server
 	}
 	// Comma for a bare IPv6 literal too: in "fe80::1:1500" the ":1500" is

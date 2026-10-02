@@ -34,7 +34,7 @@ const serverWriteTimeout = 5 * time.Minute
 // serverWriteContext bounds a menu-driven write. Shared so no site reaches for
 // childFetchTimeout, which every read here uses.
 func serverWriteContext(sc *db.ServerConn) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(sc.Context(), serverWriteTimeout)
+	return context.WithTimeout(sc.Server.Context(), serverWriteTimeout)
 }
 
 // loadChildren loads an explorer node's children in the background. A load
@@ -47,7 +47,13 @@ func (a *App) loadChildren(node *explorerNode) {
 	if node.retired {
 		return
 	}
-	ctx, seq := node.load.BeginTimeout(resolveConn(node).Context(), childFetchTimeout)
+	sc := resolveConn(node)
+	if sc == nil {
+		// What fetchChildren answers too; nothing to read, so no goroutine.
+		a.explorer.SetChildren(node, []*explorerNode{errExplorerNode(errNotConnected)})
+		return
+	}
+	ctx, seq := node.load.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	// The fetch reads a snapshot: applyNodeFilter writes node.data.Filter on
 	// the UI goroutine meanwhile. node itself is used only by the posted
 	// callback on the UI goroutine.
@@ -106,7 +112,7 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 		return
 	}
 	a.safego("refreshing the SQL Server Agent node", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
 		status, err := sc.Server.AgentInfo(ctx)
 		a.postAndWake(func() {
@@ -157,7 +163,7 @@ func (a *App) primeDatabaseCapabilities(node *explorerNode) {
 		return
 	}
 	a.safego("priming database capabilities", func() {
-		sc.DatabaseCapabilities(sc.Context(), dbName)
+		sc.DatabaseCapabilities(sc.Server.Context(), dbName)
 	})
 }
 

@@ -820,18 +820,34 @@ func TestSQLCompletionLoadingShowsPlaceholder(t *testing.T) {
 // Tokenizer / context-resolution unit tests
 // ---------------------------------------------------------------------------
 
-func TestBracketIfNeeded(t *testing.T) {
-	cases := []struct{ name, want string }{
-		{"Customers", "Customers"},
-		{"Order Details", "[Order Details]"},
-		{"select", "[select]"}, // reserved word, even though it's a valid bare identifier shape
-		{"1Customers", "[1Customers]"},
-		{"a]b", "[a]]b]"},
-	}
-	for _, c := range cases {
-		if got := bracketIfNeeded(c.name); got != c.want {
-			t.Errorf("bracketIfNeeded(%q) = %q, want %q", c.name, got, c.want)
+// A column whose name is a reserved keyword commits bracketed (T17). A bare
+// User is the USER function: the query runs and every row reads 'dbo'.
+// Desc and Plan were missing from the old partial keyword list too.
+func TestSQLCompletionBracketsReservedColumnNames(t *testing.T) {
+	inv := append(testCustomersOrders(), gosmo.CatalogObject{
+		ObjectID: 5, Schema: "dbo", Name: "Audit", Type: gosmo.CatalogTable,
+		Columns: []gosmo.CatalogColumn{
+			{Name: "User", DataType: "sysname"},
+			{Name: "Desc", DataType: "int"},
+			{Name: "Plan", DataType: "int"},
+			{Name: "Cast", DataType: "int"}, // not reserved: stays bare
+		},
+	})
+	qp := newTestQueryPanelWithInventory(t, "testdb", inv)
+	lines, row, col := linesAndCursor(t, "SELECT a.| FROM dbo.Audit a")
+
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	want := map[string]string{"User": "[User]", "Desc": "[Desc]", "Plan": "[Plan]", "Cast": "Cast"}
+	for _, it := range items {
+		if w, ok := want[it.Label]; ok {
+			if it.Text != w {
+				t.Errorf("%s commits as %q, want %q", it.Label, it.Text, w)
+			}
+			delete(want, it.Label)
 		}
+	}
+	if len(want) > 0 {
+		t.Errorf("no candidate for %v (items %v)", want, labels(items))
 	}
 }
 

@@ -408,7 +408,7 @@ func (am *ActivityMonitor) startActivityCollector() {
 
 	am.buildTools() // the rate/Pause controls are gated on the feed's state
 
-	collector, ctx, rate := am.collector, conn.Context(), am.act.rate()
+	collector, ctx, rate := am.collector, conn.Server.Context(), am.act.rate()
 	// safegoRepair, not safego: am.act.collecting is cleared only by
 	// runCollector's second half, which a panic skips; collectorStopped is
 	// guarded on the collector.
@@ -444,7 +444,7 @@ func (am *ActivityMonitor) startTempDBCollector() {
 	}
 	am.buildTools()
 
-	collector, ctx, rate := am.tdCollector, conn.Context(), am.td.rate()
+	collector, ctx, rate := am.tdCollector, conn.Server.Context(), am.td.rate()
 	// safegoRepair, as in startActivityCollector.
 	am.app.safegoRepair("collecting tempdb activity",
 		func() { am.tempDBCollectorStopped(collector) },
@@ -476,7 +476,7 @@ func (am *ActivityMonitor) startInstancePoller() {
 	}
 	am.buildTools()
 
-	poller, ctx, rate := am.instPoller, conn.Context(), am.inst.rate()
+	poller, ctx, rate := am.instPoller, conn.Server.Context(), am.inst.rate()
 	// safegoRepair, as in startActivityCollector.
 	am.app.safegoRepair("reading Azure instance resources",
 		func() { am.instancePollerStopped(poller) },

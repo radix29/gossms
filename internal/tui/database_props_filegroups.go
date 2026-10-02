@@ -160,7 +160,7 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 				for _, e := range edits {
 					switch {
 					case e.pendingRemove && !e.isNew:
-						if err := d.RemoveFileGroup(ctx, e.name); err != nil {
+						if err := d.FileGroupRef(e.name).Drop(ctx); err != nil {
 							return err
 						}
 						continue
@@ -173,12 +173,12 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 						continue
 					}
 					if e.isReadOnly != e.origReadOnly {
-						if err := d.SetFileGroupReadOnly(ctx, e.name, e.isReadOnly, gosmo.TerminationNone); err != nil {
+						if err := d.FileGroupRef(e.name).SetReadOnly(ctx, e.isReadOnly, gosmo.TerminationNone); err != nil {
 							return err
 						}
 					}
 					if e.isDefault && !e.origIsDefault {
-						if err := d.SetDefaultFileGroup(ctx, e.name); err != nil {
+						if err := d.FileGroupRef(e.name).SetDefault(ctx); err != nil {
 							return err
 						}
 					}

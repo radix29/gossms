@@ -180,7 +180,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	// at once with "context canceled" — the panel was dropped and never
 	// redialled. Nothing else can abort that dial, so it has only the
 	// connect timeout.
-	parent := sc.Context()
+	parent := sc.Server.Context()
 	if parent.Err() != nil {
 		parent = context.Background()
 	}
@@ -213,7 +213,7 @@ func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Co
 		var sess *query.Session
 		var state query.SessionState
 		if err == nil {
-			ctx, cancel := context.WithTimeout(newConn.Context(), childFetchTimeout)
+			ctx, cancel := context.WithTimeout(newConn.Server.Context(), childFetchTimeout)
 			sess, state, err = query.Open(ctx, newConn.Server.DB(), opts.Database)
 			cancel()
 			if err != nil {
@@ -270,7 +270,7 @@ func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) 
 	opts := sc.Opts
 	// Scoped to sc for the duration of the dial only, exactly as
 	// connectForQueryPanel is.
-	parent := sc.Context()
+	parent := sc.Server.Context()
 	a.safego("connecting Activity Monitor", func() {
 		newConn, err := db.ConnectContext(parent, opts, db.RoleActivityMonitor)
 		a.postAndWake(func() {

@@ -100,7 +100,7 @@ func newStatement(el xml.StartElement) *Statement {
 	})
 	if st.Text == "" {
 		if db := attrOf(el, "Database"); db != "" { // StmtUseDb
-			st.Text = "USE " + strings.Trim(db, "[]")
+			st.Text = "USE " + db // already bracketed, as the server quotes it
 		}
 	}
 	st.Props = appendAttrs(st.Props, el)
@@ -274,9 +274,26 @@ func (n *Node) setScalar(section, s string) {
 	}
 }
 
+// unbracket undoes the server's [bracket] quoting of one name part in plan
+// XML, un-doubling "]]": "[a]]b]" is "a]b". A name the server left bare comes
+// back unchanged. It mirrors gosmo.UnquoteName (bracket's comment says why
+// this package doesn't import gosmo). strings.Trim(s, "[]") is not this: it
+// left "]]" doubled, so the Missing Index script named another object, and it
+// stripped a bracket that was part of the name (T34).
+func unbracket(name string) string {
+	if len(name) < 2 || name[0] != '[' || name[len(name)-1] != ']' {
+		return name
+	}
+	inner := name[1 : len(name)-1]
+	if strings.Count(inner, "]]")*2 != strings.Count(inner, "]") {
+		return name // an undoubled ']' inside: not one quoted part
+	}
+	return strings.ReplaceAll(inner, "]]", "]")
+}
+
 // objectFrom builds an Object from <Object>, stripping [brackets].
 func objectFrom(el xml.StartElement) Object {
-	unb := func(name string) string { return strings.Trim(attrOf(el, name), "[]") }
+	unb := func(name string) string { return unbracket(attrOf(el, name)) }
 	return Object{
 		Database:  unb("Database"),
 		Schema:    unb("Schema"),
@@ -302,9 +319,9 @@ func decodeColumnList(dec *xml.Decoder) ([]string, error) {
 			if t.Name.Local == "ColumnReference" {
 				col := attrOf(t, "Column")
 				if col != "" {
-					if q := strings.Trim(attrOf(t, "Alias"), "[]"); q != "" {
+					if q := unbracket(attrOf(t, "Alias")); q != "" {
 						col = q + "." + col
-					} else if q := strings.Trim(attrOf(t, "Table"), "[]"); q != "" {
+					} else if q := unbracket(attrOf(t, "Table")); q != "" {
 						col = q + "." + col
 					}
 					cols = append(cols, col)
@@ -415,15 +432,15 @@ func decodeMissingIndexes(dec *xml.Decoder) ([]MissingIndex, error) {
 				cur = &out[len(out)-1]
 			case "MissingIndex":
 				if cur != nil {
-					cur.Database = strings.Trim(attrOf(t, "Database"), "[]")
-					cur.Schema = strings.Trim(attrOf(t, "Schema"), "[]")
-					cur.Table = strings.Trim(attrOf(t, "Table"), "[]")
+					cur.Database = unbracket(attrOf(t, "Database"))
+					cur.Schema = unbracket(attrOf(t, "Schema"))
+					cur.Table = unbracket(attrOf(t, "Table"))
 				}
 			case "ColumnGroup":
 				usage = attrOf(t, "Usage")
 			case "Column":
 				if cur != nil {
-					name := strings.Trim(attrOf(t, "Name"), "[]")
+					name := unbracket(attrOf(t, "Name"))
 					switch usage {
 					case "INCLUDE":
 						cur.Include = append(cur.Include, name)

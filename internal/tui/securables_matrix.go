@@ -36,9 +36,9 @@ func (s securable) label() string {
 	case "DATABASE":
 		return "(database)"
 	case "SCHEMA":
-		return "[" + s.Name + "]"
+		return gosmo.QuoteName(s.Name)
 	default:
-		return "[" + s.Schema + "].[" + s.Name + "]"
+		return gosmo.QuoteName(s.Schema) + "." + gosmo.QuoteName(s.Name)
 	}
 }
 

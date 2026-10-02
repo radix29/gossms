@@ -210,7 +210,7 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 						if err := al.Notify(ctx, opNames[i], gosmo.NotifyMethodEmail); err != nil {
 							return err
 						}
-					} else if err := al.RemoveNotify(ctx, opNames[i]); err != nil {
+					} else if err := al.RemoveNotification(ctx, opNames[i]); err != nil {
 						return err
 					}
 				}

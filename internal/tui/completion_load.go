@@ -56,7 +56,7 @@ type completionLoad[T any] struct {
 // open on the entry.
 func startCompletionLoad[T any](a *App, sc *db.ServerConn, c completionLoad[T]) {
 	serverKey := sysCompletionInventoryKey(sc.Opts)
-	ctx, seq := c.load.BeginTimeout(sc.Context(), c.timeout)
+	ctx, seq := c.load.BeginTimeout(sc.Server.Context(), c.timeout)
 	a.safegoRepair(c.what, func() {
 		a.completionLoadPanicked(c.load, seq, serverKey, c.owned, c.evict)
 	}, func() {

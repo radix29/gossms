@@ -132,7 +132,7 @@ func mailVisibility(ctx context.Context, sc *dbconn.ServerConn) gosmo.MailVisibi
 
 // isRefusal reports whether err is the server refusing the login — what a
 // section shows as "not visible" rather than failing the whole view.
-func isRefusal(err error) bool { return classifyRefusal(err).kind != notARefusal }
+func isRefusal(err error) bool { return classifyRefusal(err).kind != gosmo.NotRefused }
 
 // mailQueueLabel names one of sysmail_help_queue_sp's two queues.
 func mailQueueLabel(typ string) string {

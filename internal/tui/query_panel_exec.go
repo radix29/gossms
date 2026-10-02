@@ -134,7 +134,7 @@ const endTransactionsTimeout = 30 * time.Second
 // The run latch is held throughout, so nothing else reaches the session.
 func (p *QueryPanel) endTransactions(commit bool, then func()) {
 	sess := p.session
-	ctx, cancel := context.WithTimeout(p.conn.Context(), endTransactionsTimeout)
+	ctx, cancel := context.WithTimeout(p.conn.Server.Context(), endTransactionsTimeout)
 	verb := "Rolling back"
 	if commit {
 		verb = "Committing"
@@ -305,7 +305,7 @@ func (p *QueryPanel) launch(what, status string, prog *query.Progress,
 	// Snapshotted: closeConnection and connectForQueryPanel replace both on
 	// the UI goroutine while the run is in flight.
 	sess := p.session
-	ctx, cancel := context.WithCancel(p.conn.Context())
+	ctx, cancel := context.WithCancel(p.conn.Server.Context())
 	p.cancel = cancel
 	p.resultsNotice = ""
 	p.executing = true

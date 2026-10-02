@@ -90,7 +90,7 @@ type xeFeedState struct {
 // Activity Monitor pattern (connectForActivityMonitor).
 func (a *App) connectXEventViewer(v *XEventViewer) {
 	opts := v.host.Opts
-	parent := v.host.Context()
+	parent := v.host.Server.Context()
 	v.feed.connecting = true
 	v.updateStatus()
 	a.safego("connecting the Extended Events viewer", func() {
@@ -187,7 +187,7 @@ func (v *XEventViewer) startFeed() {
 	case !v.live:
 		label = "View Target Data — " + v.session + " " + v.target
 	}
-	task, taskCtx := v.app.startTask(v.conn.Context(), label)
+	task, taskCtx := v.app.startTask(v.conn.Server.Context(), label)
 	ctx, seq := v.feed.run.Begin(taskCtx)
 	v.feed.task = task
 	v.feed.running = true

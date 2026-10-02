@@ -86,7 +86,7 @@ type ConnectDialog struct {
 	// "host\instance,port". There is no separate Port field — but
 	// config.Connection.Port stays a stored field, because the sealed-password
 	// AAD (config.connectionAAD), the saved-connection dedup key
-	// (Connection.GeneratedName) and config.ResolveServer's SQL Browser rule are
+	// (Connection.GeneratedName) and config.DialPort's SQL Browser rule are
 	// all keyed off it. The fold is presentation only: currentOptions splits
 	// the text back apart with gosmo.ParseServerAddress and PreFill re-joins it
 	// with config.ResolveServer, so a saved entry's GeneratedName is unchanged by
@@ -389,7 +389,7 @@ func (d *ConnectDialog) setEncryptMode(m config.EncryptMode) {
 // pane's path when a saved connection is selected.
 //
 // Server and Port come back as the single folded address the field shows;
-// config.ResolveServer is the same join dialling uses, so what is displayed is
+// config.ResolveServer joins them as gosmo's Port does, so what is displayed is
 // what would be dialled. Remember Password comes back ticked for an entry that
 // carries a password (or an unreadable one), so entries saved before the box
 // existed keep their password until it is deliberately unticked.
@@ -653,8 +653,8 @@ func matchLabel(c config.Connection) string {
 // named instance) and the port folded into it, and reports whether the port
 // is usable.
 //
-// An empty port means "unspecified" — 0, which config.ResolveServer leaves out of
-// the address entirely rather than pinning to 1433, since a named instance
+// An empty port means "unspecified" — 0, which config.DialPort passes on as
+// unspecified rather than pinning to 1433, since a named instance
 // takes its port from SQL Browser. A non-numeric trailing port is not a port
 // at all: gosmo.ParseServerAddress leaves it in the host, and the driver's own
 // error is what surfaces. A numeric one outside 1-65535 is rejected rather
@@ -731,7 +731,7 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 	d.stopConnecting()
 	attempt := make(chan struct{})
 	// Background is deliberate here, and is the one place ARCHITECTURE.md
-	// § Threading model's "derive from ServerConn.Context()" cannot apply:
+	// § Threading model's "derive from sc.Server.Context()" cannot apply:
 	// this dial is what produces the first ServerConn, so there is no parent
 	// to derive from. Cancel (and Escape, which presses it) aborts the attempt
 	// through this cancel func; quitting mid-dial leaves it running, but Run

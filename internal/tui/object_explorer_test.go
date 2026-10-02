@@ -274,3 +274,21 @@ func TestExplorerSelectionAfterRootRemoved(t *testing.T) {
 		t.Errorf("Selected() with no roots left = %v, want nil", got)
 	}
 }
+
+// A node with no connection above it reads as "not connected" rather than
+// panicking: loadChildren roots its read in the connection's lifetime, and
+// there is none to root it in.
+func TestLoadChildrenWithoutAConnectionShowsNotConnected(t *testing.T) {
+	a := newTestApp()
+	addTestConn(a, "server-one")
+	node := a.explorer.Selected()
+	if node == nil {
+		t.Fatal("setup: no root node selected")
+	}
+	node.data.conn = nil
+
+	a.loadChildren(node)
+	if len(node.children) != 1 || node.children[0].label != errNotConnected.Error() {
+		t.Fatalf("children = %v, want the one %q error node", node.children, errNotConnected)
+	}
+}

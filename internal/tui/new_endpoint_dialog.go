@@ -652,7 +652,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		// hides a principal the caller lacks VIEW ANY DEFINITION on by returning
 		// no rows, not an error, so the lookup above cannot tell the two apart.
 		// Tolerate the collision, as the CreateUser call below does.
-		if _, err := p.server.CreateLogin(ctx, gosmo.CreateLoginRequest{Name: login, Password: password}); err != nil && !isAlreadyExists(err) {
+		if _, err := p.server.CreateLogin(ctx, gosmo.CreateLoginRequest{Name: login, Password: password}); err != nil && !gosmo.IsAlreadyExists(err) {
 			return fmt.Errorf("%s: create login %s: %w", p.inst.name, login, err)
 		}
 	default:
@@ -668,7 +668,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	case err == nil:
 		// Already there; nothing to create.
 	case errors.Is(err, gosmo.ErrNotFound):
-		if _, err := p.master.CreateUser(ctx, gosmo.CreateUserRequest{Name: user, Login: login}); err != nil && !isAlreadyExists(err) {
+		if _, err := p.master.CreateUser(ctx, gosmo.CreateUserRequest{Name: user, Login: login}); err != nil && !gosmo.IsAlreadyExists(err) {
 			return fmt.Errorf("%s: create user %s: %w", p.inst.name, user, err)
 		}
 	default:
@@ -843,37 +843,6 @@ func randomPassword() (string, error) {
 	// a complexity policy whatever the random bytes encode to.
 	return "E" + base64.RawURLEncoding.EncodeToString(buf[:]) + "!9", nil
 }
-
-// isAlreadyExists reports whether err is the server complaining that the
-// principal is already there — the case this pipeline treats as success, every
-// step being skippable.
-//
-// Matched on the error number, not the text: the message follows the session's
-// language ("Der Serverprinzipal … ist bereits vorhanden" under Deutsch), and a
-// driver error's text carries no number, so a text match fails on every
-// non-English server. 15025 is CREATE LOGIN's and 15023 CREATE USER's, both
-// confirmed live under SET LANGUAGE Deutsch. The English text is the fallback
-// for an error that reaches here with no SQL Server error in its chain.
-func isAlreadyExists(err error) bool {
-	if err == nil {
-		return false
-	}
-	if se, ok := gosmo.AsSQLError(err); ok {
-		if se.Number == errPrincipalExists || se.Number == errUserExists {
-			return true
-		}
-		return slices.ContainsFunc(se.All, func(e gosmo.SQLError) bool {
-			return e.Number == errPrincipalExists || e.Number == errUserExists
-		})
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "already exists")
-}
-
-// The "already exists" errors the endpoint pipeline tolerates.
-const (
-	errPrincipalExists = 15025 // CREATE LOGIN: the server principal already exists
-	errUserExists      = 15023 // CREATE USER: user, group or role already exists
-)
 
 // showNewEndpointDialog opens New Database Mirroring Endpoint — the Object
 // Explorer context menu's entry point on the Always On node.

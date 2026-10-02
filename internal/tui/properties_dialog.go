@@ -74,7 +74,7 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 	}
 	title := fmt.Sprintf("Dependencies: %s.%s", schema, name)
 
-	ctx, seq := d.run.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, seq := d.run.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	d.ShowProperties(title, []PropertyRow{{Key: "Status", Value: "Loading..."}})
 
 	// safegoRepair: the dialog was latched at a "Loading..." row above, and

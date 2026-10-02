@@ -406,7 +406,7 @@ func (a *App) refreshResourceGovernorLabel(sc *db.ServerConn) {
 		return
 	}
 	a.safego("refreshing the Resource Governor node", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
 		st := resourceGovernorState(ctx, sc)
 		a.postAndWake(func() {

@@ -77,7 +77,7 @@ func (a *App) runWithProgress(job progressJob, work func(ctx context.Context, re
 	if timeout == 0 {
 		timeout = serverWriteTimeout
 	}
-	ctx, stop := context.WithTimeout(job.sc.Context(), timeout)
+	ctx, stop := context.WithTimeout(job.sc.Server.Context(), timeout)
 
 	a.progressBusy = true
 	a.progressSeq++

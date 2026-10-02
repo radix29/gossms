@@ -166,10 +166,10 @@ func pageServerRoleMembers(sc *db.ServerConn, roleName *string) propPage {
 				principalType: principalType,
 				note:          "Add a login or another server role from the dropdown, or select a row above and Remove it.",
 				add: func(ctx context.Context, name string) error {
-					return sc.Server.AddServerRoleMember(ctx, *roleName, name)
+					return sc.Server.ServerRoleRef(*roleName).AddMember(ctx, name)
 				},
 				remove: func(ctx context.Context, name string) error {
-					return sc.Server.RemoveServerRoleMember(ctx, *roleName, name)
+					return sc.Server.ServerRoleRef(*roleName).RemoveMember(ctx, name)
 				},
 			})
 			return f, apply, nil

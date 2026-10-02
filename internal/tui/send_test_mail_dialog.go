@@ -117,7 +117,7 @@ func (a *App) showSendTestMailFor(sc *db.ServerConn) {
 func (d *SendTestMailDialog) show(sc *db.ServerConn) {
 	cancelIfSet(d.cancel)
 	d.load.Abandon()
-	d.ctx, d.cancel = context.WithCancel(sc.Context())
+	d.ctx, d.cancel = context.WithCancel(sc.Server.Context())
 	d.sc = sc
 	d.request = nil
 	d.SetHeader("Instance: "+sc.Opts.Server, "Connected: yes")
@@ -269,17 +269,6 @@ func (d *SendTestMailDialog) send(closeOnQueued bool) {
 	})
 }
 
-// The errors sp_send_dbmail refuses a message with, each captured live on
-// 17 (2026-10-01). Their text is the procedure's own — "profile name is not
-// valid" — behind gosmo's and the driver's prefixes, which said nothing the
-// user could act on (N10).
-const (
-	errMailProfileInvalid = 14607 // no such profile, or not granted to the sender
-	errMailNoDefault      = 14636 // no profile named and no default to fall back on
-	errMailStopped        = 14641 // Database Mail stopped; nothing is queued
-	errMailXPsOff         = 15281 // 'Database Mail XPs' is off
-)
-
 // mailSendErrorText is a refused send as the message line shows it: a plain
 // sentence for the errors sp_send_dbmail is known to raise, the raw error —
 // with any permission advice — otherwise. A mapped error's raw text goes to
@@ -287,17 +276,15 @@ const (
 // so each sentence is kept short enough for an 80-column dialog.
 func mailSendErrorText(err error, profile string) string {
 	var text string
-	if se, ok := gosmo.AsSQLError(err); ok {
-		switch se.Number {
-		case errMailProfileInvalid:
-			text = fmt.Sprintf("Profile %q does not exist or is not granted to you.", profile)
-		case errMailNoDefault:
-			text = "No default profile for this login — type a profile name."
-		case errMailStopped:
-			text = "Database Mail is stopped and queued nothing — start it first."
-		case errMailXPsOff:
-			text = "Database Mail XPs is off — enable it in Configure Database Mail."
-		}
+	switch {
+	case errors.Is(err, gosmo.ErrMailProfileInvalid):
+		text = fmt.Sprintf("Profile %q does not exist or is not granted to you.", profile)
+	case errors.Is(err, gosmo.ErrMailNoDefaultProfile):
+		text = "No default profile for this login — type a profile name."
+	case errors.Is(err, gosmo.ErrMailStopped):
+		text = "Database Mail is stopped and queued nothing — start it first."
+	case errors.Is(err, gosmo.ErrMailXPsDisabled):
+		text = "Database Mail XPs is off — enable it in Configure Database Mail."
 	}
 	if text == "" {
 		return withPermissionAdvice(err).Error()
@@ -312,7 +299,7 @@ func mailSendErrorText(err error, profile string) string {
 func (a *App) followTestMail(sc *db.ServerConn, id int) {
 	a.setStatus(fmt.Sprintf("Test e-mail queued as mail item %d — waiting for the outcome...", id))
 	a.safego("following a test e-mail", func() {
-		res := waitForTestMail(sc.Context(), sc, id, mailTestWait, mailTestPollEvery)
+		res := waitForTestMail(sc.Server.Context(), sc, id, mailTestWait, mailTestPollEvery)
 		a.postAndWake(func() {
 			text, _ := res.message()
 			a.setStatus(text)

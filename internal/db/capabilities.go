@@ -210,7 +210,7 @@ func (sc *ServerConn) ClearCapabilityCache() {
 // Exported because tests build ServerConns over scripted pools, and an unprobed
 // set silently fails open, masking a gate under test.
 func (sc *ServerConn) ProbeCapabilities() {
-	sc.ProbeCapabilitiesContext(sc.Context())
+	sc.ProbeCapabilitiesContext(sc.Server.Context())
 }
 
 // ProbeCapabilitiesContext is ProbeCapabilities under ctx, still bounded by

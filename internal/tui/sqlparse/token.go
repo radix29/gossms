@@ -439,7 +439,7 @@ const maxSQLKeywordLen = 24
 
 // sqlKeywordCanon maps each keyword from sqlKeywordList to itself: handing back
 // the map's own key lets a keyword token carry a canonical string without
-// allocating. IsKeyword reads the same map.
+// allocating.
 var sqlKeywordCanon = func() map[string]string {
 	m := make(map[string]string, len(sqlKeywordList))
 	for _, k := range sqlKeywordList {
@@ -447,12 +447,6 @@ var sqlKeywordCanon = func() map[string]string {
 	}
 	return m
 }()
-
-// IsKeyword reports whether an already-uppercased word is a keyword.
-func IsKeyword(upper string) bool {
-	_, ok := sqlKeywordCanon[upper]
-	return ok
-}
 
 // sqlKeywordCanonical reports whether buf[start:end] is a SQL keyword and, if
 // so, returns its canonical uppercase spelling without allocating. The word is
@@ -482,10 +476,13 @@ func sqlKeywordCanonical(buf []rune, start, end int) (string, bool) {
 	return kw, ok
 }
 
-// sqlKeywordList holds enough T-SQL clause and reserved words for clause
-// detection, FROM-scope parsing, and deciding when a candidate name needs
-// bracket-quoting — not the engine's full reserved-word list. The one place a
-// keyword is declared; sqlKeywordCanon derives from it.
+// sqlKeywordList holds the T-SQL words the tokenizer marks TokenKeyword: enough
+// for clause detection and FROM-scope parsing, not the engine's reserved-word
+// list. Whether a name needs bracket-quoting is gosmo.IsReservedKeyword's
+// question, not this list's — the two differ on purpose (CAST and APPLY are
+// clause words here but legal bare identifiers; USER and DESC are the
+// reverse). The one place a keyword is declared; sqlKeywordCanon derives from
+// it.
 var sqlKeywordList = []string{
 	"SELECT", "FROM", "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "FULL",
 	"OUTER", "CROSS", "ON", "GROUP", "ORDER", "BY", "HAVING", "INSERT",

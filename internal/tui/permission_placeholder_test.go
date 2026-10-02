@@ -18,7 +18,7 @@ import (
 // is this SQL Server refusing on permission grounds, and in whose words?
 func permissionDenied(err error) (string, bool) {
 	r := classifyRefusal(err)
-	return r.message, r.kind != notARefusal
+	return r.message, r.kind != gosmo.NotRefused
 }
 
 // TestPermissionRefusalIsNamedByItsFirstMessage. A refused DMV read sends

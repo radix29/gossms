@@ -15,7 +15,7 @@ import (
 // Database dropdown, then loads the selected database's backup history.
 func (d *RestoreDialog) loadHistoryDatabases() {
 	app, sc := d.app, d.sc
-	ctx, seq := d.dbListRun.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, seq := d.dbListRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("loading the restore database list", func() {
 		// Every database, offline ones included: this dropdown picks whose backup
 		// *history* to read out of msdb, which outlives the database's current
@@ -57,7 +57,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 		return
 	}
 	app, sc := d.app, d.sc
-	ctx, seq := d.historyRun.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, seq := d.historyRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	d.setStatusMsg("Loading backup history for "+dbName+"...", false)
 	app.safego("loading backup history", func() {
 		hist, err := sc.Server.BackupHistory(ctx, dbName)
@@ -244,7 +244,7 @@ func (d *RestoreDialog) loadFileList() {
 	// Captured here, never read as d.sc inside the goroutine: show() replaces
 	// d.sc when the dialog is reopened, on another server as like as not.
 	app, sc := d.app, d.sc
-	ctx, seq := d.fileRun.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, seq := d.fileRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("reading a backup set's file list", func() {
 		files, err := sc.Server.BackupFileList(ctx, fileNumber, src.targets()...)
 		app.postAndWake(func() {
@@ -348,7 +348,7 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 	// The file list an arrow key was re-reading is for the device this
 	// replaces.
 	d.fileRun.Abandon()
-	ctx, seq := d.infoRun.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, seq := d.infoRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("analyzing the backup device", func() {
 		headers, err := sc.Server.BackupHeaders(ctx, src.targets()...)
 		// A history entry opens the view on its own set, a typed path on the
@@ -405,7 +405,7 @@ func (d *RestoreDialog) startRestore() {
 
 	d.setStatusMsg("Checking target database...", false)
 	app, sc := d.app, d.sc
-	ctx, seq := d.checkRun.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, seq := d.checkRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("preparing the restore", func() {
 		dbs, err := sc.Server.Databases(ctx)
 		app.postAndWake(func() {
@@ -462,7 +462,7 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 	req.verify = d.cbVerify.Checked()
 
 	app, sc := d.app, d.sc
-	task, ctx := app.startTask(sc.Context(), "Restore "+target)
+	task, ctx := app.startTask(sc.Server.Context(), "Restore "+target)
 	d.task = task
 	d.taskTarget = target
 	d.taskSource = sourceLabel(src.devices)
@@ -672,7 +672,7 @@ func (d *RestoreDialog) script() {
 
 	d.setStatusMsg("Building script...", false)
 	app, sc := d.app, d.sc
-	ctx, seq := d.scriptRun.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, seq := d.scriptRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("scripting the restore", func() {
 		ropts, err := buildRestoreOptions(ctx, sc.Server, req)
 		var stmt string

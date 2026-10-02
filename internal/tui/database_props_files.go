@@ -545,7 +545,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				for _, e := range edits {
 					switch {
 					case e.pendingRemove && !e.isNew:
-						if err := d.RemoveFile(ctx, e.origName); err != nil {
+						if err := d.FileRef(e.origName).Drop(ctx); err != nil {
 							return err
 						}
 					case e.isNew && !e.pendingRemove:
@@ -559,7 +559,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 						// Addressed by origName, not name: a rename is carried
 						// inside the modify as NEWNAME, so the file still
 						// answers to its old name at this point.
-						if err := d.AlterFile(ctx, e.origName, e.modify()); err != nil {
+						if err := d.FileRef(e.origName).Alter(ctx, e.modify()); err != nil {
 							return err
 						}
 					}

@@ -270,7 +270,7 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 		db.grid.SetData(nil, nil)
 	}
 	db.grid.SetStatus("Loading...")
-	ctx, seq := db.run.begin(sc.Context(), node)
+	ctx, seq := db.run.begin(sc.Server.Context(), node)
 	db.fetch(ctx, app, sc, node, seq)
 }
 
@@ -457,7 +457,7 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 //
 // fetchCtx is the fetch's own, cancelled by detailRuns.stop when the fetch is
 // superseded; every loader derives each read's timeout from it, never from
-// sc.Context() directly, or cancelling it would stop nothing.
+// sc.Server.Context() directly, or cancelling it would stop nothing.
 func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	switch node.data.Type {
 	case NodeServer:
@@ -988,7 +988,7 @@ func (db *DetailBrowser) showQueryStoreValue(a *App, col int, column, value stri
 	// safego, not safegoRepair: nothing is latched here. The status line is the
 	// only thing written before the read, and the next action overwrites it.
 	a.safego("reading a Query Store query's text", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
 		text, err := queryStoreQueryText(ctx, sc, dbName, queryID)
 		a.postAndWake(func() {

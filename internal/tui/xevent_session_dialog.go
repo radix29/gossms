@@ -112,7 +112,7 @@ type xeHost struct {
 func (h xeHost) columns(run *latest, pkg, name string, done func([]gosmo.XEObjectColumn, error)) {
 	parent := h.ctx()
 	if parent == nil {
-		parent = h.sc.Context()
+		parent = h.sc.Server.Context()
 	}
 	ctx, token := run.BeginTimeout(parent, propFetchTimeout)
 	sc := h.sc

@@ -186,7 +186,7 @@ func TestMovingATypeUsesTheTypeClass(t *testing.T) {
 			if op == nil || op.transfer == nil {
 				t.Fatalf("%v offers no transfer", tc.typ)
 			}
-			if err := op.transfer(sc.Context(), sc, node.data, "archive"); err != nil {
+			if err := op.transfer(sc.Server.Context(), sc, node.data, "archive"); err != nil {
 				t.Fatalf("transfer: %v", err)
 			}
 			stmts := strings.Join(inst.StatementsIn("appdb"), "\n")
@@ -207,7 +207,7 @@ func TestRenamingAnAliasTypeUsesTheUserDataTypeClass(t *testing.T) {
 	if op == nil || op.rename == nil {
 		t.Fatal("an alias type offers no rename")
 	}
-	if err := op.rename(sc.Context(), sc, node.data, "PhoneNo"); err != nil {
+	if err := op.rename(sc.Server.Context(), sc, node.data, "PhoneNo"); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
 	stmts := strings.Join(inst.StatementsIn("appdb"), "\n")

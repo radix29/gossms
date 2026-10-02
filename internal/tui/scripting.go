@@ -583,7 +583,7 @@ func (a *App) generateScript(sc *db.ServerConn, n nodeData, v scriptVerb, then f
 	// before the goroutine starts and only the posted callback clears it, so a
 	// panic would leave the app claiming to still be working.
 	a.safegoRepair("scripting an object", func() { a.setStatus("") }, func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
 		text, err := v.gen(ctx, sc, n)
 		a.postAndWake(func() {

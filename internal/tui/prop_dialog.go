@@ -433,7 +433,7 @@ func (d *PropDialog) showWith(sc *db.ServerConn, database, title, headerLeft, he
 	if d.cancel != nil {
 		d.cancel()
 	}
-	d.ctx, d.cancel = context.WithCancel(sc.Context())
+	d.ctx, d.cancel = context.WithCancel(sc.Server.Context())
 	d.stopPageRuns()
 	d.sc = sc
 	d.database = database
@@ -890,7 +890,7 @@ func (d *PropDialog) runScript() {
 	sc, database := d.sc, d.database
 	noChanges := func() { d.SetMessage("No changes to script.", false) }
 	d.runPipeline(scriptCtx, noChanges, func() {
-		if len(script.Entries) == 0 {
+		if script.Len() == 0 {
 			noChanges()
 			return
 		}

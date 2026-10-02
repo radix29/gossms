@@ -86,7 +86,7 @@ func liveEPConn(t *testing.T, server string) (*db.ServerConn, context.Context) {
 		t.Fatalf("connect %s: %v", server, err)
 	}
 	t.Cleanup(sc.Close)
-	ctx, cancel := context.WithTimeout(sc.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(sc.Server.Context(), 120*time.Second)
 	t.Cleanup(cancel)
 	return sc, ctx
 }
@@ -150,7 +150,7 @@ func TestLiveEndpointNamedInstanceReportsABackslashName(t *testing.T) {
 	a := newTestApp()
 	d := NewNewEndpointDialog(a)
 	d.sc = sc
-	d.ctx = sc.Context()
+	d.ctx = sc.Server.Context()
 
 	typed := strings.ToLower(*liveEPNamed)
 	var got *newEndpointInstance

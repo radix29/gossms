@@ -61,7 +61,7 @@ func TestBackupTypeRadioMatchesItsAction(t *testing.T) {
 }
 
 // currentOptions is the whole form-to-request encoder, and gosmo's statement
-// builder is pure, so the two can be checked together: the assertion is on
+// builder reads nothing from the server, so the two can be checked together: the assertion is on
 // the T-SQL that would actually run, not on an intermediate struct that
 // might still build the wrong statement.
 func TestBackupOptionsBuildTheExpectedStatement(t *testing.T) {
@@ -72,7 +72,7 @@ func TestBackupOptionsBuildTheExpectedStatement(t *testing.T) {
 		d.cbChecksum.SetChecked(true)
 		d.cbCopyOnly.SetChecked(true)
 
-		stmt, err := gosmo.BuildBackupStatement(d.currentOptions())
+		stmt, err := (&gosmo.Server{}).BuildBackupStatement(d.currentOptions())
 		if err != nil {
 			t.Fatalf("BuildBackupStatement: %v", err)
 		}
@@ -89,7 +89,7 @@ func TestBackupOptionsBuildTheExpectedStatement(t *testing.T) {
 		d.rbType.SetSelected(2)
 		d.fDest.SetValue(`C:\backups\AppDB.trn`)
 
-		stmt, err := gosmo.BuildBackupStatement(d.currentOptions())
+		stmt, err := (&gosmo.Server{}).BuildBackupStatement(d.currentOptions())
 		if err != nil {
 			t.Fatalf("BuildBackupStatement: %v", err)
 		}
@@ -112,7 +112,7 @@ func TestBackupOptionsBuildTheExpectedStatement(t *testing.T) {
 		if opts.Compression != nil {
 			t.Error("Compression is set with the box unchecked — a nil pointer is what means \"use the server default\"")
 		}
-		stmt, err := gosmo.BuildBackupStatement(opts)
+		stmt, err := (&gosmo.Server{}).BuildBackupStatement(opts)
 		if err != nil {
 			t.Fatalf("BuildBackupStatement: %v", err)
 		}

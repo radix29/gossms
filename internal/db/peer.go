@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 )
 
@@ -94,7 +95,7 @@ func (sc *ServerConn) dialPeer(ctx context.Context, server, key string, d *peerD
 	// only be closed again.
 	dctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stop := context.AfterFunc(sc.Context(), cancel)
+	stop := context.AfterFunc(sc.Server.Context(), cancel)
 	defer stop()
 
 	defer func() {
@@ -103,17 +104,17 @@ func (sc *ServerConn) dialPeer(ctx context.Context, server, key string, d *peerD
 			delete(sc.peerDials, key)
 		}
 		switch {
-		case err == nil && sc.Context().Err() != nil:
+		case err == nil && sc.Server.Context().Err() != nil:
 			// sc closed while connecting; closePeers has already run.
 			peer.Close()
-			peer, err = nil, sc.Context().Err()
+			peer, err = nil, sc.Server.Context().Err()
 		case err == nil:
 			if sc.peers == nil {
 				sc.peers = map[string]*ServerConn{}
 			}
 			delete(sc.peerFails, key)
 			sc.peers[key] = peer
-		case ctx.Err() != nil || sc.Context().Err() != nil:
+		case ctx.Err() != nil || sc.Server.Context().Err() != nil:
 			// A cancelled dial learnt nothing about the instance; caching
 			// it would refuse the next caller for peerFailureTTL.
 			d.abandoned = true
@@ -246,7 +247,15 @@ func (sc *ServerConn) parentPeerOptions(server string) config.Connection {
 
 // retargetAt points a saved connection at server with no database; see
 // peerOptions.
+//
+// A port written in the saved Server moves to Port first (T14): the catalog
+// names an instance without one, so "win10cli\SQL2017,55253" retargeted to
+// WIN10CLI\SQL2017 needed SQL Browser, which that host doesn't run. A port
+// in server itself still wins, in gosmo.
 func retargetAt(opts config.Connection, server string) config.Connection {
+	if _, _, port := gosmo.ParseServerAddress(opts.Server); port != 0 {
+		opts.Port = port
+	}
 	opts.Server = server
 	opts.Database = ""
 	return opts

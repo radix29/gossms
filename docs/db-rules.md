@@ -102,6 +102,12 @@ Object Explorer filters, query execution. Each is a bug that shipped.
 
 ## T-SQL and filters
 
+- **Quote names with gosmo's helpers, never `"[" + x + "]"` or
+  `strings.Trim(x, "[]")`.** `gosmo.QuoteName` always; `QuoteNameIfNeeded`
+  for text a person reads (completion) — a bare `User` column is the USER
+  function and returns `dbo` in every row; `UnquoteName` for a name the server
+  hands back quoted (`[a]]b]`). `internal/showplan` stays driver-free, so it
+  has its own `bracket`/`unbracket` pair.
 - **A typed secret never reaches Script Changes in clear.** Every password or
   secret goes through `scriptSafePassword`/`scriptSafeSecret`
   (`new_object_dialog.go`): the value on a real Apply, `<insert password

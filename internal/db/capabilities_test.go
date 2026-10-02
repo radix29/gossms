@@ -12,6 +12,7 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/config"
 )
 
 // An unprobed or failed-probe connection must answer "not denied" to
@@ -48,11 +49,13 @@ func TestCapabilitiesFailOpenWithoutAProbe(t *testing.T) {
 
 type capTestScript struct {
 	mu       sync.Mutex
-	dbProbes int   // how many HAS_DBACCESS reads happened
-	fail     bool  // make the probe fail
-	access   int64 // what HAS_DBACCESS answers
-	srvFail  bool  // make the server-scope probe fail
-	srvBlock bool  // make the server-scope probe wait for its context
+	dbProbes int    // how many HAS_DBACCESS reads happened
+	fail     bool   // make the probe fail
+	access   int64  // what HAS_DBACCESS answers
+	srvFail  bool   // make the server-scope probe fail
+	srvBlock bool   // make the server-scope probe wait for its context
+	login    string // what loadInfo's SUSER_NAME() answers
+	srvReads int    // how many server-scope probes ran
 
 	// started, if set, is signalled when a HAS_DBACCESS read begins, which then
 	// waits for release.
@@ -98,6 +101,7 @@ func (c *capTestConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 		return &capTestRows{cols: 1, rows: [][]driver.Value{{access}}}, nil
 	case strings.Contains(q, "IS_SRVROLEMEMBER"):
 		s.mu.Lock()
+		s.srvReads++
 		srvFail, srvBlock := s.srvFail, s.srvBlock
 		s.mu.Unlock()
 		if srvBlock {
@@ -119,11 +123,16 @@ func (c *capTestConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 	case strings.Contains(q, "dm_os_sys_info"):
 		return &capTestRows{cols: 2, rows: [][]driver.Value{{int64(1), int64(1)}}}, nil
 	}
-	// gosmo.NewServer's SERVERPROPERTY read; only the version is used.
-	return &capTestRows{cols: 13, rows: [][]driver.Value{{
+	// gosmo.NewServer's SERVERPROPERTY read; only the version and login are
+	// used. s is nil for a connection built outside a capability test.
+	var login string
+	if s != nil {
+		login = s.login
+	}
+	return &capTestRows{cols: 14, rows: [][]driver.Value{{
 		"FAKE", "Developer Edition", "16.0.4085.2", "RTM", "SQL_Latin1_General_CP1_CI_AS",
 		int64(0), int64(0), int64(0), int64(3), "Microsoft SQL Server 2022 ... on Linux",
-		"/data", "/log", "/backup",
+		"/data", "/log", "/backup", login,
 	}}}, nil
 }
 
@@ -517,5 +526,31 @@ func TestHasDatabaseCapabilities(t *testing.T) {
 	}
 	if (*ServerConn)(nil).HasDatabaseCapabilities("HealthClinic") {
 		t.Error("a nil connection reports a cached answer")
+	}
+}
+
+// T57: only Object Explorer's connection reads the server-scope capability
+// set; the other roles never consult it.
+func TestOnlyExplorerConnectionsProbeServerCapabilities(t *testing.T) {
+	for _, role := range []Role{RoleExplorer, RoleQuery, RoleActivityMonitor, RoleXEventProfiler} {
+		script := &capTestScript{}
+		capTestCurrent = script
+		pool, err := sql.Open("captestdb", "")
+		if err != nil {
+			t.Fatalf("sql.Open: %v", err)
+		}
+		t.Cleanup(func() { pool.Close() })
+		srv, err := gosmo.NewServer(context.Background(), pool)
+		if err != nil {
+			t.Fatalf("gosmo.NewServer: %v", err)
+		}
+		newServerConn(context.Background(), config.Connection{}, srv, role)
+		want := 0
+		if role == RoleExplorer {
+			want = 1
+		}
+		if script.srvReads != want {
+			t.Errorf("%s: %d server-scope probes, want %d", role.ApplicationName(), script.srvReads, want)
+		}
 	}
 }

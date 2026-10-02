@@ -452,7 +452,7 @@ func buildNewUserMembershipPage(sc *db.ServerConn, dbName string, pf *nuserPrefe
 			if !v[0] {
 				continue
 			}
-			if err := d.AddRoleMember(ctx, pf.roles[i], userName()); err != nil {
+			if err := d.RoleRef(pf.roles[i]).AddMember(ctx, userName()); err != nil {
 				return err
 			}
 		}

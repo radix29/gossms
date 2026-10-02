@@ -398,6 +398,7 @@ const newJobName = "Rebuild statistics"
 func newJobResponses() []fakeResponse {
 	newJob := jobRow(newJobName, "Replication", "otheruser", true, 0, 0, "")
 	rs := []fakeResponse{
+		jobStepReadBack,
 		{match: "WHERE  j.name = @p1", arg: newJobName, cols: 17, rows: [][]driver.Value{newJob}},
 	}
 	rs = append(rs, agentJobResponses(jobRow(agentJobName, "Database Maintenance", "sa", true, 0, 0, ""))...)

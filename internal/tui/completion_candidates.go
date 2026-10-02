@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -143,7 +142,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 			continue
 		}
 		items = append(items, controls.CompletionItem{
-			Text: bracketIfNeeded(cte.Name), Label: cte.Name, Detail: "CTE",
+			Text: gosmo.QuoteNameIfNeeded(cte.Name), Label: cte.Name, Detail: "CTE",
 			Icon: p.tableIcon(gosmo.CatalogTable), Partial: partial,
 		})
 	}
@@ -175,7 +174,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 			continue
 		}
 		items = append(items, controls.CompletionItem{
-			Text: bracketIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
+			Text: gosmo.QuoteNameIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
 			Partial: partial,
 		})
 	}
@@ -186,7 +185,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 				continue
 			}
 			items = append(items, controls.CompletionItem{
-				Text: bracketIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
+				Text: gosmo.QuoteNameIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
 				Partial: partial,
 			})
 		}
@@ -223,7 +222,7 @@ func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject, partial bool) controls
 		detail = "view"
 	}
 	return controls.CompletionItem{
-		Text: bracketIfNeeded(obj.Name), Label: obj.Schema + "." + obj.Name,
+		Text: gosmo.QuoteNameIfNeeded(obj.Name), Label: obj.Schema + "." + obj.Name,
 		Detail: detail, Icon: p.tableIcon(obj.Type), Partial: partial,
 	}
 }
@@ -239,7 +238,7 @@ func (p *QueryPanel) columnItemsFor(cols []gosmo.CatalogColumn, prefix string) [
 			continue
 		}
 		items = append(items, controls.CompletionItem{
-			Text: bracketIfNeeded(col.Name), Label: col.Name,
+			Text: gosmo.QuoteNameIfNeeded(col.Name), Label: col.Name,
 			Detail: formatColumnType(col), Icon: p.columnIcon(), Partial: partial,
 		})
 	}
@@ -270,7 +269,7 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, prefix string) []co
 				detail += " — " + rel.name
 			}
 			items = append(items, controls.CompletionItem{
-				Text: bracketIfNeeded(col.Name), Label: col.Name,
+				Text: gosmo.QuoteNameIfNeeded(col.Name), Label: col.Name,
 				Detail: detail, Icon: p.columnIcon(), Partial: partial,
 			})
 		}
@@ -285,7 +284,7 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, prefix string) []co
 			objType = rel.obj.Type
 		}
 		items = append(items, controls.CompletionItem{
-			Text: bracketIfNeeded(rel.name), Label: rel.name, Detail: "table reference", Icon: p.tableIcon(objType),
+			Text: gosmo.QuoteNameIfNeeded(rel.name), Label: rel.name, Detail: "table reference", Icon: p.tableIcon(objType),
 			Partial: partial,
 		})
 	}
@@ -390,17 +389,4 @@ func formatColumnType(col gosmo.CatalogColumn) string {
 		t += ", not null"
 	}
 	return t
-}
-
-var regularIdentPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-// bracketIfNeeded returns name as-is when it's a plain identifier and not
-// one of sqlKeywordList, or "[name]" (with any ']' doubled) otherwise — so a
-// committed candidate never silently changes what it names by needing
-// quoting SQL Server would otherwise require.
-func bracketIfNeeded(name string) string {
-	if regularIdentPattern.MatchString(name) && !sqlparse.IsKeyword(strings.ToUpper(name)) {
-		return name
-	}
-	return gosmo.QuoteName(name)
 }

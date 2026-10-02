@@ -299,7 +299,7 @@ func queryStoreReportDetail(ctx context.Context, sc *db.ServerConn, dbName, titl
 	}
 	// A database with Query Store off answers every report with no rows,
 	// which is indistinguishable from a database nothing ran in. Say which.
-	if info, err := d.QueryStore(ctx); err == nil && !queryStoreIsOn(info) {
+	if info, err := d.QueryStore(ctx); err == nil && !info.IsReadable() {
 		return propertyValueColumns, queryStoreOffRows(info), nil
 	}
 	to := time.Now()
@@ -393,13 +393,6 @@ func queryStoreOffRows(info *gosmo.QueryStoreInfo) [][]string {
 		{"Query Store", queryStoreStateText(info)},
 		{"To enable", "Database Properties > Query Store — set Operation mode to Read write"},
 	}
-}
-
-// queryStoreIsOn reports whether Query Store is collecting or at least
-// readable. READ_ONLY still has data worth reporting — it is what a Query
-// Store that filled its quota degrades to.
-func queryStoreIsOn(info *gosmo.QueryStoreInfo) bool {
-	return info.ActualState == "READ_WRITE" || info.ActualState == "READ_ONLY"
 }
 
 // queryStoreStateText renders Query Store's state the way the Database

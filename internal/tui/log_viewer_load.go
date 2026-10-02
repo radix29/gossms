@@ -78,7 +78,7 @@ func (lv *LogViewer) Load() {
 	// *list* was slow. The context is released on the UI goroutine, by the
 	// Done in the callback or in readPanicked — never from the read goroutine,
 	// which must not touch lv.
-	ctx, seq := lv.read.Begin(lv.conn.Context())
+	ctx, seq := lv.read.Begin(lv.conn.Server.Context())
 	lv.busy = true
 	lv.setStatus(fmt.Sprintf("Reading %s%s...", lv.scopeLabel(), lv.searchSuffix()))
 	lv.refreshToolLabels()

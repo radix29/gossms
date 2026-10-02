@@ -34,9 +34,9 @@ func TestServerWriteContextOutlivesAFolderRead(t *testing.T) {
 		t.Fatalf("serverWriteTimeout is %v, not longer than childFetchTimeout's %v", serverWriteTimeout, childFetchTimeout)
 	}
 
-	// A nil connection: ServerConn.Context() falls back to context.Background()
-	// for exactly this, so the budget can be measured without a server.
-	ctx, cancel := serverWriteContext((*db.ServerConn)(nil))
+	// A connection without a Server: gosmo's Server.Context() is Background
+	// for a nil Server, so the budget can be measured without one.
+	ctx, cancel := serverWriteContext(&db.ServerConn{})
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()

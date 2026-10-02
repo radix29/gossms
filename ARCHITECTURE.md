@@ -49,10 +49,16 @@ a sentence and link.
    preview (`BuildConnectionString`) goes through it too, so the preview is the
    DSN dialled — and returns a `ServerConn` wrapping a `gosmo.Server`. `Role`
    sets `program_name` (`goSSMS`, `goSSMS - Query`, `goSSMS - Activity
-   Monitor`). `ServerConn.Context()`, cancelled by `Close()`, is the parent of
-   every background load on that connection: closing the `*sql.DB` does not
-   cancel an in-flight query, so a load rooted at `context.Background()` keeps
-   a server session alive after disconnect.
+   Monitor`). Only `RoleExplorer` probes the server-scope capability set; the
+   other roles never read it. The lifetime itself is gosmo's:
+   `ServerConn.Close()` closes the `gosmo.Server`, which cancels
+   `Server.Context()` and, with it, every statement gosmo has in flight on that
+   pool — closing the `*sql.DB` alone does not stop one, and its session would
+   stay on the server. `sc.Server.Context()` is the parent of every background
+   load on the connection; a statement run on `Server.DB()` directly (a query
+   session) is bounded only by the context it is given, so it must derive from
+   it too. The login the connection authenticated as is
+   `sc.Server.Info().Login`, read with the server's info at connect.
 2. **`internal/query`** (`executor.go`, `session.go`) owns *execution*. A query
    window runs on a **`Session`**: one `*sql.Conn` from `gosmo.AcquireConn` (up
    to 3 attempts on transient liveness failures, linear backoff) held for the
@@ -89,7 +95,7 @@ Reconnect opens a new one); closing, reconnecting or quitting with
 `App.Run()`). `tuikit` does no locking, so touching a widget off it is a data
 race. Background work has one shape:
 
-- **Context**: derive from `ServerConn.Context()`, never
+- **Context**: derive from `sc.Server.Context()`, never
   `context.Background()` — including a dial that clones an existing connection
   (`connectForQueryPanel`, `connectForActivityMonitor`, `amProcTab.activate`),
   so disconnect cancels a reconnect in flight. The Connect dialog's first dial
@@ -142,7 +148,7 @@ gossms/
 │   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
 ├── packaging/linux/         # gossms.desktop launcher; the release job ships it with docs/ico/linux's hicolor icons in the Linux archives, the Homebrew formula and the .deb
 ├── internal/
-│   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json; address.go is the one address fold (ResolveServer, InstanceKey, ConnectionAddress, Connection.IdentityKey) that peers, saved credentials, tracked queries and the per-identity IntelliSense and OE-filter caches key by
+│   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json; address.go is the one address fold (DialPort, ResolveServer, InstanceKey, ConnectionAddress, Connection.IdentityKey) that peers, saved credentials, tracked queries and the per-identity IntelliSense and OE-filter caches key by
 │   ├── db/                  # gosmo connection wrapper: config.Connection → gosmo.ConnectionOptions (toGosmoOptions), per-role application name, masked preview
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
@@ -222,7 +228,7 @@ gossms/
 │       ├── prop_page_gate.go    # withRequires/withRequiresOn: attaches a gate.Right set to a propPage, the one tie between the gate package and the Properties dialogs
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
-│       ├── permission_error.go   # classifies a SQL Server refusal and names the right it wants, instead of the wrapped driver error
+│       ├── permission_error.go   # names the right a refusal (classified by gosmo.ClassifyRefusal) wants, instead of the wrapped driver error
 │       ├── panel_toolbar.go      # the one-row toolbar shared by Activity Monitor, the Log File Viewer and Query Store, incl. the "More ▾" overflow menu a too-narrow row collapses into (not App's own toolbar)
 │       ├── dialog_common.go      # focus/layout behaviour shared by the hand-rolled dialogs (Connect, Backup, Restore, Tasks, Query List)
 │       ├── text_encoding.go      # decodeTextFile/encodeTextFile — BOM-detected encoding and the file's own line endings, so File > Save writes back what File > Open read

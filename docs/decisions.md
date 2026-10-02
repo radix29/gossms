@@ -336,9 +336,9 @@ on that would empty menus for everyone working through a database-wide grant.
   doing, not gosmo's to fix.** Metadata visibility returns zero rows, not an
   error, without `VIEW ANY DEFINITION`
   (`TestLiveNotFoundCannotSeePastMetadataVisibility`). The answer is
-  idempotence at the write. `isAlreadyExists` matches error numbers first
-  (15025 logins, 15023 users, on the error and every entry of its `All`), and
-  an "already exists" substring only for non-SQL-Server errors.
+  idempotence at the write. `gosmo.IsAlreadyExists` matches error numbers
+  only (15025 logins, 15023 users among them, on the error and every entry of
+  its `All`); a non-SQL-Server error is never "already exists".
 - **`JobState` follows Agent's real encoding** (`xp_sqlagent_enum_jobs`): 1
   Executing, 2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended, 6
   WaitingForStepToFinish, 7 PerformingCompletionActions, 0 = not run by Agent.
@@ -785,10 +785,11 @@ String). Not to be reopened without asking the author:
   `ExtraProperties`).
 - **The port folds into Server Name for display only; `config.Connection.Port`
   stays stored.** It's bound into `connectionAAD`, part of `GeneratedName` (the
-  dedup key), and `config.ResolveServer` drops 0 and
-  1433 so named instances resolve via Browser. `currentOptions` splits with
-  `gosmo.ParseServerAddress`; `PreFill` re-joins with `config.ResolveServer` (what's
-  shown is what's dialled). `TestConnectDialogFoldingThePortKeepsTheConnectionIdentity`
+  dedup key), and `config.DialPort` drops 1433 so named instances resolve via
+  Browser; it reaches gosmo as `ConnectionOptions.Port` (W15). `currentOptions`
+  splits with `gosmo.ParseServerAddress`; `PreFill` re-joins with
+  `config.ResolveServer`, the same fold as gosmo's (what's shown is what's
+  dialled). `TestConnectDialogFoldingThePortKeepsTheConnectionIdentity`
   guards the round trip. No hand-rolled string surgery.
 - **The History pane replaced the autocomplete overlay; no filter box.**
   `config.Config.MatchByServer("")` remains the most-recent-first ordering the

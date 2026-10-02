@@ -239,7 +239,7 @@ func (p *QueryPanel) databaseItems(pl string) []controls.CompletionItem {
 		}
 		if ok, partial := nameMatch(e.name, pl); ok {
 			items = append(items, controls.CompletionItem{
-				Text: bracketIfNeeded(e.name), Label: e.name, Detail: "database",
+				Text: gosmo.QuoteNameIfNeeded(e.name), Label: e.name, Detail: "database",
 				Icon: nodeIcon(nodeData{Type: NodeDatabase}, p.app.cfg.IconStyle, false), Partial: partial,
 			})
 		}
@@ -259,7 +259,7 @@ func (p *QueryPanel) databaseSchemaItems(other, sysInv *completionInventory, pre
 		for _, schema := range in.catalog.Schemas {
 			if ok, partial := nameMatch(schema, pl); ok {
 				items = append(items, controls.CompletionItem{
-					Text: bracketIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
+					Text: gosmo.QuoteNameIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
 					Partial: partial,
 				})
 			}

@@ -400,15 +400,10 @@ func loadSymmetricKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 // certificateLabel is a certificate's tree label: its name, suffixed
 // "(Expired)" once expiry_date is behind now.
 func certificateLabel(c *gosmo.Certificate, now time.Time) string {
-	if certificateExpired(c, now) {
+	if c.IsExpired(now) {
 		return c.Name + " (Expired)"
 	}
 	return c.Name
-}
-
-// certificateExpired reports whether c's expiry_date is behind now.
-func certificateExpired(c *gosmo.Certificate, now time.Time) bool {
-	return !c.ExpiryDate.IsZero() && c.ExpiryDate.Before(now)
 }
 
 // loadSecurityPoliciesChildren lists a database's row-level security

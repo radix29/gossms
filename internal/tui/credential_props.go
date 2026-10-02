@@ -165,6 +165,6 @@ func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
 		},
 		func(ctx context.Context, identity string, secret *string) error {
 			// CredentialRef, the name-only handle, not the by-name read.
-			return sc.Server.CredentialRef(*credName).Alter(ctx, identity, secret)
+			return sc.Server.CredentialRef(*credName).Alter(ctx, gosmo.CredentialOptions{Identity: identity, Secret: secret})
 		})
 }

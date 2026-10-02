@@ -106,7 +106,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			isSQLLogin := l.LoginType == "SQL_LOGIN"
+			isSQLLogin := l.IsSQLLogin()
 			authType := loginAuthLabel(l.LoginType)
 
 			dbNames, err := databaseNames(ctx, sc)
@@ -130,8 +130,8 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			// The ## logins are the one thing on this page the server would
 			// happily let through: ALTER LOGIN ... WITH NAME succeeds on
 			// [##MS_PolicyEventProcessingLogin##] and silently orphans the
-			// matching users in master and msdb. See isSystemLogin.
-			builtin := isSystemLogin(l)
+			// matching users in master and msdb. See gosmo.Login.IsSystem.
+			builtin := l.IsSystem()
 			var nameRow *propsheet.TextRow
 			var identityRow propsheet.Row = propsheet.Static("Login name", l.Name)
 			if !builtin {
@@ -586,11 +586,11 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 							continue
 						}
 						if e.roles[i] {
-							if err := d.AddRoleMember(ctx, name, e.user); err != nil {
+							if err := d.RoleRef(name).AddMember(ctx, e.user); err != nil {
 								return err
 							}
 						} else {
-							if err := d.RemoveRoleMember(ctx, name, e.user); err != nil {
+							if err := d.RoleRef(name).RemoveMember(ctx, e.user); err != nil {
 								return err
 							}
 						}

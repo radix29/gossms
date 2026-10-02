@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	gosmo "github.com/radix29/gosmo"
 )
 
@@ -47,24 +45,8 @@ func loadAgentJobsFolderChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	}, nil
 }
 
-// isSystemAgentJob reports whether j is SQL Server-created (e.g.
-// syspolicy_purge_history). msdb has no flag, so it's the "syspolicy_" name
-// prefix.
-//
-// It also gates Delete/Rename (via data.IsSystem in objectOpsMenuItems), and
-// msdb lets sp_delete_job drop any job: widening the prefix removes a permitted
-// operation, narrowing it exposes one this gate alone prevents. Treat like
-// isSystemLogin (system_principals.go).
-//
-// Deliberately narrow: sysutility_*, mdw_purge_data* and "SSIS Server
-// Maintenance Job" come with optionally installed features, and removing them
-// is ordinary administration.
-func isSystemAgentJob(j *gosmo.Job) bool {
-	return strings.HasPrefix(j.Name, "syspolicy_")
-}
-
 // loadAgentUserJobsChildren returns every non-system job (see
-// isSystemAgentJob).
+// gosmo.Job.IsSystem, which also gates Delete/Rename through data.IsSystem).
 func loadAgentUserJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	jobs, err := l.sc.Server.Jobs(l.ctx)
 	if err != nil {
@@ -72,7 +54,7 @@ func loadAgentUserJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 	}
 	out := make([]*explorerNode, 0, len(jobs))
 	for _, j := range jobs {
-		if isSystemAgentJob(j) {
+		if j.IsSystem() {
 			continue
 		}
 		out = append(out, agentJobNode(l, j))
@@ -80,7 +62,7 @@ func loadAgentUserJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 	return out, nil
 }
 
-// loadAgentSystemJobsChildren returns the system jobs (see isSystemAgentJob).
+// loadAgentSystemJobsChildren returns the system jobs (see gosmo.Job.IsSystem).
 func loadAgentSystemJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	jobs, err := l.sc.Server.Jobs(l.ctx)
 	if err != nil {
@@ -88,7 +70,7 @@ func loadAgentSystemJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	}
 	out := make([]*explorerNode, 0)
 	for _, j := range jobs {
-		if isSystemAgentJob(j) {
+		if j.IsSystem() {
 			out = append(out, agentJobNode(l, j))
 		}
 	}
@@ -99,7 +81,7 @@ func loadAgentSystemJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 func agentJobNode(l loaderCtx, j *gosmo.Job) *explorerNode {
 	n := l.node(j.Name, NodeAgentJob, "", j.Name, "")
 	n.data.IsEnabled = j.IsEnabled
-	n.data.IsSystem = isSystemAgentJob(j)
+	n.data.IsSystem = j.IsSystem()
 	return n
 }
 

@@ -89,7 +89,7 @@ func (t *Task) statusText() string {
 // cancelled the moment Task.Cancel is called (from the Tasks dialog, or
 // anywhere else that has the Task), or the moment parent itself is
 // cancelled. Callers whose work is scoped to a *db.ServerConn should pass
-// sc.Context() as parent, so disconnecting cancels a long-running task
+// sc.Server.Context() as parent, so disconnecting cancels a long-running task
 // (e.g. a RESTORE) too, instead of leaving it to run unbounded; callers
 // with nothing connection-scoped to tie it to can pass context.Background().
 // The caller reports progress via App.postProgress and completion via

@@ -89,3 +89,43 @@ func TestMissingIndexScript(t *testing.T) {
 		t.Errorf("CREATE names the database:\n%s", got)
 	}
 }
+
+// Plan XML writes names QUOTENAME-style, so a ']' in one arrives doubled. The
+// script must re-quote the name, not the server's quoting of it (T34): with
+// the old strings.Trim, "[Odd]]Name]" became "[Odd]]]]Name]", another table.
+func TestMissingIndexScriptKeepsABracketInAName(t *testing.T) {
+	xml := strings.NewReplacer(
+		`Database="[HealthClinic]"`, `Database="[Health]]Clinic]"`,
+		`Table="[Appointments]"`, `Table="[Odd]]Name]"`,
+		`Name="[DoctorID]"`, `Name="[[Doctor]]]"`,
+	).Replace(missingIndexPlan)
+	plan, err := Parse([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	m := plan.Statements[0].MissingIndexes[0]
+	if m.Database != "Health]Clinic" || m.Table != "Odd]Name" || m.Equality[0] != "[Doctor]" {
+		t.Errorf("parsed %q %q %q, want the bare names", m.Database, m.Table, m.Equality[0])
+	}
+	got := MissingIndexScript(plan.Statements[0].MissingIndexes)
+	for _, want := range []string{"USE [Health]]Clinic]", "ON [dbo].[Odd]]Name] ([[Doctor]]],[ScheduledAt])"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("script missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestUnbracket(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"[a]]b]", "a]b"}, {"[[x]", "[x"}, {"bare", "bare"}, {"[a]b]", "[a]b]"}, {"[]", ""}, {"[", "["},
+	} {
+		if got := unbracket(tc.in); got != tc.want {
+			t.Errorf("unbracket(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+	for _, name := range []string{"a]b", "]]", "[y]", ""} {
+		if got := unbracket(bracket(name)); got != name {
+			t.Errorf("unbracket(bracket(%q)) = %q", name, got)
+		}
+	}
+}

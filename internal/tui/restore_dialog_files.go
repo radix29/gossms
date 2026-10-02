@@ -50,7 +50,7 @@ func (d *RestoreDialog) loadDefaultPaths() {
 	if app == nil || sc == nil || sc.Server == nil {
 		return
 	}
-	ctx, tok := d.defPaths.BeginTimeout(sc.Context(), childFetchTimeout)
+	ctx, tok := d.defPaths.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("reading the default file locations", func() {
 		p, err := sc.Server.DefaultPaths(ctx)
 		app.postAndWake(func() {

@@ -411,7 +411,7 @@ func (a *App) moveObjectToSchema(node *explorerNode) {
 	data := node.data
 	a.setStatus(fmt.Sprintf("Reading schemas in %q...", data.DBName))
 	a.safego("listing schemas", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
 		d, err := sc.Server.DatabaseByName(ctx, data.DBName)
 		var names []string

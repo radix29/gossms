@@ -51,7 +51,7 @@ func falses(n int) []driver.Value {
 // This is the test the autogrowth bug needed. Every encoder-level assertion
 // around fileEdit.modify passed while the page as a whole did nothing:
 // gosmo reads a zero growth as "leave FILEGROWTH alone", so the ALTER lost
-// its only clause, buildAlterFileStatement returned "", AlterFile
+// its only clause, buildAlterFileStatement returned "", Alter
 // returned nil, and Apply reported success. Nothing short of running the
 // apply closure and looking at what reached the server could see it.
 func TestFilesPageWritesTheAutogrowthItWasGiven(t *testing.T) {

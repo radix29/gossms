@@ -67,8 +67,8 @@ work; close an item by deleting it when fixed.
   win10cli\SQL2017 is `##MS_AgentSigningCertificate##`, so an OK with the
   field untouched creates a job owned by that certificate login (seen
   2026-10-02 during the W6 tmux check). SSMS defaults to the connected login.
-  Fix: preselect the caller's login (`SUSER_SNAME()`), falling back to 0; pin
-  with a fake-instance test.
+  Fix: preselect the caller's login (`sc.Server.Info().Login`, read at
+  connect since W16), falling back to 0; pin with a fake-instance test.
 - **B15 — A large terminal paste takes minutes.** Between the two
   `EventPaste` markers `App.Run` buffers each key (`bufferPastedKey`) but still
   draws a full frame after every one, so a 10,001-line, 170 KB paste into a
@@ -82,6 +82,22 @@ work; close an item by deleting it when fixed.
   intact — `SELECT LEN(N'xéy')` typed that way returns 4, and the results grid
   shows `xéy` — only the editor's picture loses it. Fix: hand the marks to
   `SetContent` as the base rune's combining runes; pin with `glyphScreen`.
+- **B17 — `internal/tui` does not build under `-tags livedb`.**
+  `live_endpoint_test.go:255-271` still sets `NewEndpointDialog`'s
+  `commitInputs`, `endpointName`, `port`, `algorithm` and `masterKeyPass` and
+  calls the one-argument `configure`, all of which 0a14b06 replaced with an
+  `endpointRequest`; so no tui live test compiles (found 2026-10-02, W16).
+  Fix: build the request the test used to set field by field and pass it to
+  `configure(ctx, req)`; then run it against the named-instance pair.
+- **B18 — Database Properties > Filegroups does not list an empty
+  filegroup.** gosmo's `Database.FileGroups` inner-joins `sys.filegroups` to
+  `sys.database_files`, so a filegroup with no files has no row: one added
+  by `ALTER DATABASE … ADD FILEGROUP` outside the dialog (or left empty when
+  its file was removed) never appears, and the page cannot remove it — the
+  one write an empty filegroup is good for. Found on win10cli 17 during the
+  W18 tmux run, 2026-10-03. Fix in gosmo: `LEFT JOIN` the files and skip the
+  NULL file row, with a fake-driver pin and a live read of an empty group;
+  check the Files page's filegroup dropdown, which reads the same list.
 
 ### Verification gaps
 

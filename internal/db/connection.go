@@ -82,20 +82,10 @@ type ServerConn struct {
 	Opts   config.Connection
 	Server *gosmo.Server
 
-	// Login is SUSER_NAME(), fetched at ConnectContext: for Windows/Entra auth
-	// Opts.User is often empty or a UPN. Empty if the fetch failed; callers
-	// fall back to Opts.User.
-	Login string
-
-	// ctx is cancelled by Close so background loads scoped to this connection
-	// stop on disconnect. Closing the *sql.DB alone doesn't cancel an in-flight
-	// query, which would hold its session open.
-	ctx    context.Context
-	cancel context.CancelFunc
-
 	// closed is atomic because Close runs on the UI goroutine while Peer's
 	// cache lookups ask IsOpen from loader goroutines. Atomic rather than
-	// derived from ctx: a bare &ServerConn{} (tests build them) must read open.
+	// derived from Server.Context(): a bare &ServerConn{} (tests build them)
+	// must read open.
 	closed atomic.Bool
 
 	// role is what ConnectContext opened this connection for; peers inherit
@@ -147,11 +137,22 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 		err = explainExtraProperty(err)
 		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error(), Err: err}
 	}
-	login, _ := srv.CurrentLogin(ctx)
-	connCtx, connCancel := context.WithCancel(context.Background())
-	sc := &ServerConn{Opts: opts, Server: srv, Login: login, ctx: connCtx, cancel: connCancel, role: role}
-	sc.ProbeCapabilitiesContext(parent)
-	return sc, nil
+	return newServerConn(parent, opts, srv, role), nil
+}
+
+// newServerConn is ConnectContext's tail over a connected srv: ctx is the
+// caller's, for the capability probe.
+//
+// Only Object Explorer's connection gates anything on the server-scope
+// capability set; a query panel, Activity Monitor or XEvent viewer would pay
+// the probe's round trip for an answer nothing reads. AG peers inherit
+// RoleExplorer, so they still probe.
+func newServerConn(ctx context.Context, opts config.Connection, srv *gosmo.Server, role Role) *ServerConn {
+	sc := &ServerConn{Opts: opts, Server: srv, role: role}
+	if role == RoleExplorer {
+		sc.ProbeCapabilitiesContext(ctx)
+	}
+	return sc
 }
 
 // toGosmoOptions is the single conversion from config.Connection to dialled
@@ -169,7 +170,8 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 // (entra.go).
 func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions, error) {
 	co := gosmo.ConnectionOptions{
-		Server:                 config.ResolveServer(opts.Server, opts.Port),
+		Server:                 opts.Server,
+		Port:                   config.DialPort(opts.Port),
 		Database:               opts.Database,
 		Auth:                   toGosmoAuth(opts.AuthMethod),
 		TrustServerCertificate: opts.TrustServerCertificate,
@@ -274,28 +276,17 @@ func ParseExtraProperties(s string) (url.Values, error) {
 	return out, nil
 }
 
-// Close disconnects. ctx is cancelled before closing the pool so in-flight
-// background loads release their connections promptly.
+// Close disconnects. gosmo's Close cancels Server.Context() — and with it
+// every statement in flight and each load rooted in it — before closing the
+// pool; it runs before closePeers so a peer dial in progress is cancelled
+// rather than cached.
 func (sc *ServerConn) Close() {
 	// First, so a concurrent Peer lookup never hands out a peer mid-close.
 	sc.closed.Store(true)
-	if sc.cancel != nil {
-		sc.cancel()
-	}
-	sc.closePeers()
 	if sc.Server != nil {
 		sc.Server.Close()
 	}
-}
-
-// Context returns the context cancelled by Close. Background loads derive their
-// timeouts from it so disconnecting cancels them. Never nil (falls back to
-// context.Background() for nil or zero sc).
-func (sc *ServerConn) Context() context.Context {
-	if sc == nil || sc.ctx == nil {
-		return context.Background()
-	}
-	return sc.ctx
+	sc.closePeers()
 }
 
 // IsOpen reports whether sc is non-nil and not yet closed. Safe from any
@@ -322,7 +313,10 @@ func (sc *ServerConn) Label() string {
 
 	// Prefer SUSER_NAME() over Opts.User, which for Windows/Entra is often
 	// empty or unresolved.
-	user := sc.Login
+	var user string
+	if sc.Server != nil && sc.Server.Info() != nil {
+		user = sc.Server.Info().Login
+	}
 	if user == "" {
 		user = sc.Opts.User
 	}

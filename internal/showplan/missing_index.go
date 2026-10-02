@@ -75,7 +75,7 @@ func bracketList(cols []string) string {
 
 // bracket quotes an identifier like QUOTENAME, doubling ']' so names containing
 // it (legal, copied from the XML) still parse. Not gosmo.QuoteName, to keep
-// this package free of the mssql driver.
+// this package free of the mssql driver; unbracket (parse.go) is its inverse.
 func bracket(name string) string {
 	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
 }

@@ -439,12 +439,12 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					if err != nil {
 						return err
 					}
-					if err := step.Delete(ctx); err != nil {
+					if err := step.Drop(ctx); err != nil {
 						return err
 					}
 				}
 				for _, e := range plan.adds {
-					if err := j.AddStep(ctx, e.request()); err != nil {
+					if _, err := j.AddStep(ctx, e.request()); err != nil {
 						return err
 					}
 				}

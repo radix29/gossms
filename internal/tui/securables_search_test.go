@@ -200,3 +200,20 @@ func TestSecurablesSearchReportsFailure(t *testing.T) {
 		t.Errorf("picker = %v after a failed search, want it left at %v", got, before)
 	}
 }
+
+// A label quotes each part as QUOTENAME does, so a ']' in a name can't make
+// two securables read alike: [a]]b] is one name, [a]b] was ambiguous.
+func TestSecurableLabelQuotesEachPart(t *testing.T) {
+	for _, tc := range []struct {
+		s    securable
+		want string
+	}{
+		{securable{Type: "DATABASE"}, "(database)"},
+		{securable{Type: "SCHEMA", Name: "s]x"}, "[s]]x]"},
+		{securable{Type: "TABLE", Schema: "dbo", Name: "a]b"}, "[dbo].[a]]b]"},
+	} {
+		if got := tc.s.label(); got != tc.want {
+			t.Errorf("label(%+v) = %q, want %q", tc.s, got, tc.want)
+		}
+	}
+}

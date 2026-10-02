@@ -9,83 +9,23 @@ import (
 	"github.com/radix29/gossms/internal/tui/gate"
 )
 
-// refusalKind is how much a SQL Server error number lets us claim.
-type refusalKind int
-
-const (
-	// notARefusal — the error says nothing about permissions.
-	notARefusal refusalKind = iota
-
-	// refusalCertain — the server stated a permission was denied.
-	refusalCertain
-
-	// refusalAmbiguous — the server said the object "does not exist or you do
-	// not have permission", which it does deliberately: telling the two apart
-	// would let an unprivileged login enumerate objects it cannot see. Nothing
-	// downstream may narrow it to one or the other.
-	refusalAmbiguous
-)
-
-// refusalNumbers classifies the SQL Server error numbers that mean a login was
-// refused. Every one was captured from a live instance against a
-// least-privileged test login, not taken from documentation — which is the
-// point: the wording differs between numbers in ways no amount of reasoning
-// predicts, and a pattern written from the docs matches nothing.
-//
-//	229   The SELECT/EXECUTE permission was denied on the object '…'
-//	230   The SELECT permission was denied on the column '…'
-//	262   CREATE TABLE / BACKUP DATABASE / … permission denied in database '…'
-//	297   The user does not have permission to perform this action
-//	1088  Cannot find the object "…" because it does not exist or you do not
-//	      have permissions
-//	300   VIEW SERVER (PERFORMANCE|SECURITY) STATE permission was denied …
-//	916   The server principal "…" is not able to access the database "…"
-//	3701  Cannot drop the table '…', because it does not exist or …
-//	5011  User does not have permission to alter database '…', the database
-//	      does not exist, or …
-//	15151 Cannot alter the login '…', because it does not exist or …
-//	15247 User does not have permission to perform this action
-//
-// A number missing from this map only means the error keeps its raw text.
-var refusalNumbers = map[int32]refusalKind{
-	229: refusalCertain, 230: refusalCertain, 262: refusalCertain,
-	297: refusalCertain, 300: refusalCertain, 916: refusalCertain,
-
-	1088: refusalAmbiguous,
-	3701: refusalAmbiguous, 5011: refusalAmbiguous,
-	15151: refusalAmbiguous, 15247: refusalAmbiguous,
-}
-
 // refusal is what a failed statement lets us say about permissions.
 type refusal struct {
-	kind    refusalKind
+	kind    gosmo.RefusalKind
 	number  int32
 	message string // the server's own sentence, verbatim
 }
 
-// classifyRefusal reports what err says about permissions, reading the *first*
-// qualifying message rather than the last, because that is the one that names
-// the right: a refused sys.dm_os_process_memory read sends "VIEW SERVER
-// PERFORMANCE STATE permission was denied on object 'server'" (Msg 300)
-// followed by the contentless "The user does not have permission to perform
-// this action" (Msg 297), and database/sql surfaces only the second. A refused
-// BACKUP sends Msg 262 then the contentless Msg 3013 the same way. Both
-// live-captured 2026-08-25.
+// classifyRefusal is gosmo.ClassifyRefusal kept as the pair advice() reads:
+// the number that picks the pattern and the server's sentence it is read
+// from. gosmo owns which numbers are refusals and why the first message is
+// the one that counts.
 func classifyRefusal(err error) refusal {
-	se, ok := gosmo.AsSQLError(err)
-	if !ok {
+	kind, m := gosmo.ClassifyRefusal(err)
+	if m == nil {
 		return refusal{}
 	}
-	all := se.All
-	if len(all) == 0 {
-		all = []gosmo.SQLError{*se}
-	}
-	for _, m := range all {
-		if kind := refusalNumbers[m.Number]; kind != notARefusal && m.Class >= 11 && m.Message != "" {
-			return refusal{kind: kind, number: m.Number, message: m.Message}
-		}
-	}
-	return refusal{}
+	return refusal{kind: kind, number: m.Number, message: m.Message}
 }
 
 // -- turning a refusal into the right it needs -------------------------------
@@ -214,12 +154,12 @@ const accessDeniedLabel = "Access denied — "
 func accessDeniedText(err error) string {
 	r := classifyRefusal(err)
 	switch r.kind {
-	case refusalCertain:
+	case gosmo.PermissionDenied:
 		if a := r.advice(); a != "" {
 			return accessDeniedLabel + a
 		}
 		return accessDeniedLabel + r.message
-	case refusalAmbiguous:
+	case gosmo.MissingOrDenied:
 		if a := r.advice(); a != "" {
 			return a
 		}

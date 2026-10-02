@@ -135,7 +135,7 @@ func (pt *amProcTab) activate() {
 	// clone's attempt rather than leaving it to the 15 s connect timeout. The
 	// tab's own connection is unaffected once the dial has returned —
 	// ConnectContext roots it at Background.
-	parent := pt.am.conn.Context()
+	parent := pt.am.conn.Server.Context()
 	pt.am.app.safegoRepair("connecting Activity Monitor "+pt.proc.MasterName+" tab", pt.panicRepair, func() {
 		conn, err := db.ConnectContext(parent, opts, db.RoleActivityMonitor)
 		pt.am.app.postAndWake(func() { pt.connected(conn, err) })
@@ -183,7 +183,7 @@ func (pt *amProcTab) resolveProc() {
 	conn := pt.conn
 	pt.busy = true
 	pt.am.app.safegoRepair("preparing "+pt.proc.MasterName, pt.panicRepair, func() {
-		ctx, cancel := context.WithTimeout(conn.Context(), procRunTimeout)
+		ctx, cancel := context.WithTimeout(conn.Server.Context(), procRunTimeout)
 		defer cancel()
 		loc, err := pt.proc.Find(ctx, conn.Server.DB())
 		if err == nil && loc == activity.ProcNone {
@@ -232,7 +232,7 @@ func (pt *amProcTab) refresh() {
 
 	conn, script := pt.conn, pt.proc.Exec(pt.loc)
 	pt.am.app.safegoRepair("running "+qualified, pt.panicRepair, func() {
-		ctx, cancel := context.WithTimeout(conn.Context(), procRunTimeout)
+		ctx, cancel := context.WithTimeout(conn.Server.Context(), procRunTimeout)
 		defer cancel()
 		res := query.Execute(ctx, conn.Server.DB(), "", script)
 		pt.am.app.postAndWake(func() { pt.applyResult(res) })

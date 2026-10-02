@@ -190,7 +190,7 @@ func (p *QueryStorePanel) scriptPlanForce() {
 	// WithScript intercepts the exec, so this runs against the same lightweight
 	// handle the real write uses and reaches the server no more than the
 	// statement text needs it to.
-	script, err := collectScript(p.conn.Context(), func(ctx context.Context) error {
+	script, err := collectScript(p.conn.Server.Context(), func(ctx context.Context) error {
 		if force {
 			return d.QueryStoreForcePlan(ctx, plan.QueryID, plan.PlanID)
 		}

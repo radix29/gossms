@@ -184,7 +184,7 @@ func (p *QueryStorePanel) loadSeries(queryID int64) {
 	// beside it do not report on.
 	opts, sc, dbName := p.report().effectiveOptions(p.options()), p.conn, p.dbName
 	p.seriesLabel = qsValueLabel(opts)
-	ctx, seq := p.seriesRead.BeginTimeout(sc.Context(), qsReadTimeout)
+	ctx, seq := p.seriesRead.BeginTimeout(sc.Server.Context(), qsReadTimeout)
 	// safegoRepair, not safego: the "Reading..." note is replaced by the
 	// callback below, which a panic on the read goroutine never reaches, and
 	// nothing else writes it until another query is selected — so the chart

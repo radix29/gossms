@@ -99,22 +99,6 @@ func TestIsSystemRoles(t *testing.T) {
 	}
 }
 
-// sa is the deliberate hole in isSystemLogin: DROP LOGIN sa is refused, but
-// ALTER LOGIN sa WITH NAME succeeds and renaming it is a documented hardening
-// step. The ## logins are gated even though the server permits dropping them.
-func TestIsSystemLoginGatesInternalNamesButNotSa(t *testing.T) {
-	for _, name := range []string{"##MS_PolicyEventProcessingLogin##", "##MS_PolicyTsqlExecutionLogin##"} {
-		if !isSystemLogin(&gosmo.Login{Name: name}) {
-			t.Errorf("%s: dropping it orphans Policy-Based Management, want system", name)
-		}
-	}
-	for _, name := range []string{"sa", `NT SERVICE\SQLSERVERAGENT`, `WIN10CLI\radu_`, "HealthClinicApp"} {
-		if isSystemLogin(&gosmo.Login{Name: name}) {
-			t.Errorf("%s: an administrator may legitimately rename or drop it, want not system", name)
-		}
-	}
-}
-
 // The gate only works if the loaders set the flag, so the two have to stay in
 // step — the same pairing TestSystemAgentJobNodesAreMarkedSystem asserts for
 // Agent jobs. These node builders take no connection.

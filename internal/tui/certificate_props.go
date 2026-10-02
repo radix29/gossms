@@ -68,7 +68,7 @@ func certificatePropPages(sc *db.ServerConn, dbName, name string) []propPage {
 				propsheet.Section("Validity"),
 				propsheet.Static("Valid from", formatSQLDate(c.StartDate)),
 				propsheet.Static("Expiry date", formatSQLDate(c.ExpiryDate)),
-				propsheet.Static("Expired", boolStr(certificateExpired(c, time.Now()))),
+				propsheet.Static("Expired", boolStr(c.IsExpired(time.Now()))),
 				propsheet.Section("Private key"),
 				propsheet.Static("Protection", privateKeyText(c.PvtKeyEncryptionType)),
 				propsheet.Static("Last backed up", backup),
