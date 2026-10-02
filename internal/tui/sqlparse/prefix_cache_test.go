@@ -265,7 +265,7 @@ func TestPrefixCacheActuallyResumes(t *testing.T) {
 	// above that line start is still good, so the rescan covers that line and
 	// nothing else.
 	lines[row] = append(lines[row], 'c')
-	validTo, keep := c.validPrefix(lines, upTo+1, TextRevision{Doc: doc, Version: 2, DirtyFrom: row})
+	validTo, keep := c.validPrefix(lines, TextRevision{Doc: doc, Version: 2, DirtyFrom: row})
 	if want := OffsetForCursor(lines, row, 0); validTo != want {
 		t.Errorf("valid prefix after a keystroke = %d, want the cursor line's start, %d", validTo, want)
 	}
@@ -277,7 +277,7 @@ func TestPrefixCacheActuallyResumes(t *testing.T) {
 	// above it is already recorded, so the valid prefix reaches the new cursor
 	// and Scan's lexSQL pass is skipped.
 	up := OffsetForCursor(lines, row-3, 0)
-	if validTo, _ = c.validPrefix(lines, up, TextRevision{Doc: doc, Version: 1}); validTo < up {
+	if validTo, _ = c.validPrefix(lines, TextRevision{Doc: doc, Version: 1}); validTo < up {
 		t.Errorf("a cursor move with no edit left only %d of %d valid — it rescans", validTo, up)
 	}
 }

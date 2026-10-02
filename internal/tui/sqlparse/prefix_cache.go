@@ -115,7 +115,7 @@ func (c *PrefixCache) Scan(lines [][]rune, buf []rune, cursorRow, upTo int, rev 
 	// the batch start under the word being typed.
 	rowStart := OffsetForCursor(lines, cursorRow, 0)
 
-	validTo, keep := c.validPrefix(lines, upTo, rev)
+	validTo, keep := c.validPrefix(lines, rev)
 	// Everything past the valid prefix is stale or was never established;
 	// dropping it keeps bounds ascending and complete over [0, scannedTo)
 	// rather than a merge of two scans' offsets.
@@ -218,7 +218,7 @@ func (c *PrefixCache) Scan(lines [][]rune, buf []rune, cursorRow, upTo int, rev 
 // describes one mutation only. Typing is a single setLine and so hits; a
 // keystroke that first deletes a selection bumps the version twice and costs
 // one cold scan.
-func (c *PrefixCache) validPrefix(lines [][]rune, upTo int, rev TextRevision) (validTo, keep int) {
+func (c *PrefixCache) validPrefix(lines [][]rune, rev TextRevision) (validTo, keep int) {
 	if !c.valid || rev.Doc == nil || c.doc != rev.Doc {
 		return 0, 0
 	}

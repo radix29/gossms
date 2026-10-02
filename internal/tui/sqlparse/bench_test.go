@@ -258,8 +258,7 @@ func BenchmarkScopeAt(b *testing.B) {
 	toks := benchStatement()
 	upTo := toks[len(toks)-1].Start
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ScopeAt(toks, upTo)
 	}
 }
@@ -267,8 +266,7 @@ func BenchmarkScopeAt(b *testing.B) {
 func BenchmarkParseFromScopeReference(b *testing.B) {
 	toks := benchStatement()
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ParseFromScope(toks)
 	}
 }

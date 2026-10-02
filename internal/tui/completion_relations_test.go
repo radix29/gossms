@@ -362,7 +362,8 @@ func TestResolvePivotOverTempTable(t *testing.T) {
 
 // TestPivotAggregateType pins each modelled aggregate to the type
 // sys.dm_exec_describe_first_result_set reports for it (checked on SQL Server
-// 2025), and everything else to untyped.
+// 2016 and 2025), and everything else to untyped — CHECKSUM_AGG and
+// STRING_AGG among them, which PIVOT refuses.
 func TestPivotAggregateType(t *testing.T) {
 	col := func(dt string, p, s int) gosmo.CatalogColumn {
 		return gosmo.CatalogColumn{Name: "x", DataType: gosmo.DataType(dt), Precision: p, Scale: s, MaxLength: 20}
@@ -392,12 +393,27 @@ func TestPivotAggregateType(t *testing.T) {
 		{"AVG", col("money", 0, 0), "money"},
 		{"SUM", col("real", 0, 0), "float"},
 		{"AVG", col("float", 0, 0), "float"},
+		{"APPROX_COUNT_DISTINCT", col("nvarchar", 0, 0), "bigint"},
+		{"approx_count_distinct", gosmo.CatalogColumn{}, "bigint"},
+		{"STDEV", col("tinyint", 0, 0), "float"},
+		{"STDEVP", col("int", 0, 0), "float"},
+		{"VAR", col("bigint", 0, 0), "float"},
+		{"VARP", col("decimal", 10, 2), "float"},
+		{"stdev", col("NUMERIC", 9, 8), "float"},
+		{"VAR", col("smallmoney", 0, 0), "float"},
+		{"VARP", col("money", 0, 0), "float"},
+		{"STDEVP", col("real", 0, 0), "float"},
+		{"STDEV", col("float", 0, 0), "float"},
 
 		{"SUM", col("varchar", 0, 0), "column"},
 		{"AVG", col("datetime2", 0, 3), "column"},
 		{"SUM", gosmo.CatalogColumn{}, "column"},
 		{"MIN", gosmo.CatalogColumn{}, "column"},
-		{"STDEV", col("int", 0, 0), "column"},
+		{"STDEV", col("bit", 0, 0), "column"},
+		{"VAR", col("varchar", 0, 0), "column"},
+		{"VARP", gosmo.CatalogColumn{}, "column"},
+		{"CHECKSUM_AGG", col("int", 0, 0), "column"},
+		{"STRING_AGG", col("varchar", 0, 0), "column"},
 		{"", col("int", 0, 0), "column"},
 	}
 	for _, c := range cases {

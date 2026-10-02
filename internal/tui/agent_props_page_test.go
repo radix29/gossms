@@ -32,7 +32,8 @@ func formNotes(f *propsheet.Form) string {
 	var b strings.Builder
 	for _, r := range f.Rows() {
 		if n, ok := r.(*propsheet.NoteRow); ok {
-			b.WriteString(n.Text() + "\n")
+			b.WriteString(n.Text())
+			b.WriteByte('\n')
 		}
 	}
 	return b.String()

@@ -269,24 +269,27 @@ func pivotColumns(src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.Catalog
 
 // pivotAggregateType is the column a PIVOT's aggregate fn over arg produces —
 // arg is the zero column when the aggregate names none (COUNT(*)) or the
-// source lacks it. Only the common aggregates are modelled, by the rules
-// sys.dm_exec_describe_first_result_set reports:
+// source lacks it. The built-in aggregates PIVOT accepts are modelled, by the
+// rules sys.dm_exec_describe_first_result_set reports (on 13 and 17):
 //
-//   - COUNT is int and COUNT_BIG bigint, over anything;
+//   - COUNT is int, COUNT_BIG and APPROX_COUNT_DISTINCT bigint, over anything;
 //   - MIN/MAX keep the argument's type;
 //   - SUM/AVG widen it: tinyint/smallint/int to int, bigint stays, decimal and
 //     numeric to precision 38 (AVG's scale at least 6), smallmoney to money,
-//     real to float.
+//     real to float;
+//   - STDEV/STDEVP/VAR/VARP are float over any numeric argument.
 //
-// Anything else — another aggregate, a qualified (user-defined) one, an
-// argument of unknown or unsummable type — is untyped: nothing rather than
-// wrong. Every output is nullable: an IN value with no rows reads NULL.
+// CHECKSUM_AGG and STRING_AGG are absent because PIVOT refuses them (Msg 406,
+// "not invariant to NULLs"). Anything else — another aggregate, a qualified
+// (user-defined) one, an argument of unknown or non-numeric type — is untyped:
+// nothing rather than wrong. Every output is nullable: an IN value with no rows
+// reads NULL.
 func pivotAggregateType(fn string, arg gosmo.CatalogColumn) gosmo.CatalogColumn {
 	untyped := gosmo.CatalogColumn{IsNullable: true}
 	switch strings.ToUpper(fn) {
 	case "COUNT":
 		return gosmo.CatalogColumn{DataType: gosmo.DataTypeInt, IsNullable: true}
-	case "COUNT_BIG":
+	case "COUNT_BIG", "APPROX_COUNT_DISTINCT":
 		return gosmo.CatalogColumn{DataType: gosmo.DataTypeBigInt, IsNullable: true}
 	case "MIN", "MAX":
 		if arg.DataType == "" {
@@ -314,6 +317,14 @@ func pivotAggregateType(fn string, arg gosmo.CatalogColumn) gosmo.CatalogColumn 
 			return untyped
 		}
 		return col
+	case "STDEV", "STDEVP", "VAR", "VARP":
+		switch gosmo.DataType(strings.ToLower(string(arg.DataType))) {
+		case gosmo.DataTypeTinyInt, gosmo.DataTypeSmallInt, gosmo.DataTypeInt, gosmo.DataTypeBigInt,
+			gosmo.DataTypeDecimal, gosmo.DataTypeNumeric, gosmo.DataTypeMoney, gosmo.DataTypeSmallMoney,
+			gosmo.DataTypeFloat, gosmo.DataTypeReal:
+			return gosmo.CatalogColumn{DataType: gosmo.DataTypeFloat, IsNullable: true}
+		}
+		return untyped
 	}
 	return untyped
 }

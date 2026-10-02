@@ -126,5 +126,5 @@ None open.
   § IntelliSense: linked-server four-part names). Left out, answering
   *nothing* rather than a wrong list: `LS..t`/`LS.db..t` (the remote login's
   default database or schema), and a non-SQL Server linked server. `PIVOT`
-  columns are typed for `COUNT`/`COUNT_BIG`/`MIN`/`MAX`/`SUM`/`AVG` only; any
-  other aggregate leaves them untyped.
+  columns are typed for every built-in aggregate PIVOT accepts (`CHECKSUM_AGG`
+  and `STRING_AGG` it refuses); a user-defined aggregate leaves them untyped.
