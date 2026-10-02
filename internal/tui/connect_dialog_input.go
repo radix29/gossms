@@ -43,6 +43,10 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 		return true
 	}
 
+	if d.onButtons {
+		return buttonRowKey(ev, &d.btnFocus, connectButtonCount, d.buttonsDisabled(), d.doButton, d.Hide, d.leaveButtons)
+	}
+
 	// The History list owns the arrows and Enter while it has focus, ahead of
 	// the dialog's own Enter-confirms: Enter there connects to the highlighted
 	// saved connection.
@@ -73,9 +77,6 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 			return true
 		}
 		d.doButton()
-		return true
-	case tcell.KeyF1:
-		d.btnFocus = (d.btnFocus + 1) % connectButtonCount
 		return true
 	}
 

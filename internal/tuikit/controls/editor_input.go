@@ -299,14 +299,18 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 			if e.blockEditing() {
 				// One character into every row the block spans, leaving it armed
 				// a column further right so the next keystroke follows.
-				e.blockInsertRune(r)
+				for _, r := range core.EvText(ev) {
+					e.blockInsertRune(r)
+				}
 				dropSelection = false
 				break
 			}
 			if hadSelection {
 				e.deleteSelection()
 			}
-			e.insertRune(r)
+			for _, r := range core.EvText(ev) {
+				e.insertRune(r)
+			}
 		} else {
 			if dropSelection {
 				e.selecting = false

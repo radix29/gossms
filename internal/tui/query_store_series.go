@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"slices"
 	"strconv"
@@ -185,15 +184,13 @@ func (p *QueryStorePanel) loadSeries(queryID int64) {
 	// beside it do not report on.
 	opts, sc, dbName := p.report().effectiveOptions(p.options()), p.conn, p.dbName
 	p.seriesLabel = qsValueLabel(opts)
-	ctx, seq := p.seriesRead.Begin(sc.Context())
+	ctx, seq := p.seriesRead.BeginTimeout(sc.Context(), qsReadTimeout)
 	// safegoRepair, not safego: the "Reading..." note is replaced by the
 	// callback below, which a panic on the read goroutine never reaches, and
 	// nothing else writes it until another query is selected — so the chart
 	// would claim to be reading a query it gave up on.
 	p.app.safegoRepair("reading a Query Store query history", func() { p.seriesPanicked(seq) }, func() {
-		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
-		defer readCancel()
-		stats, err := sc.Server.DatabaseRef(dbName).QueryStoreTrackedQuery(readCtx, queryID, opts)
+		stats, err := sc.Server.DatabaseRef(dbName).QueryStoreTrackedQuery(ctx, queryID, opts)
 		p.app.postAndWake(func() {
 			if !p.seriesRead.Done(seq) {
 				return

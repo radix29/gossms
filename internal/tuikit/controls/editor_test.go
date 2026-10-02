@@ -1340,3 +1340,47 @@ func TestEditorRedoStackBound(t *testing.T) {
 			peak, undoBytes)
 	}
 }
+
+// TestEditorGutterWidensPastLine9999: a fixed five-column gutter drew line
+// 10,000 one column left of the editor, over whatever bordered it (T32). The
+// gutter grows to the widest number, in both the plain and the wrapped paths.
+func TestEditorGutterWidensPastLine9999(t *testing.T) {
+	text := strings.Repeat("x\n", 10000) + "last"
+	for _, wrap := range []bool{false, true} {
+		e := NewEditor(nil)
+		e.SetText(text)
+		e.SetWrapMode(wrap)
+		e.SetBounds(10, 0, 30, 3)
+		e.scrollRow = 9999
+		s := newGlyphScreen(40, 3)
+		e.Draw(s)
+
+		for p := range s.runes {
+			if p[0] < 10 {
+				t.Fatalf("wrap=%v: drew at column %d, left of the editor at 10", wrap, p[0])
+			}
+		}
+		if got, want := e.gutterWidth(), 7; got != want {
+			t.Errorf("wrap=%v: gutterWidth = %d, want %d (five digits and a column each side)", wrap, got, want)
+		}
+		if got := s.row(10, 0, 7); got != " 10000 " {
+			t.Errorf("wrap=%v: gutter row 0 = %q, want %q", wrap, got, " 10000 ")
+		}
+	}
+}
+
+// A composed key inserts every rune it carries (T66): a ZWJ family emoji is
+// five runes in one KeyRune event, and the editor kept only the first.
+func TestEditorInsertsAComposedKeyWhole(t *testing.T) {
+	const family = "\U0001F468‍\U0001F469‍\U0001F467"
+	e := NewEditor(nil)
+	e.SetBounds(0, 0, 40, 5)
+	e.SetActive(true)
+	e.SetText("ab")
+	e.cursorCol = 1
+	e.HandleKey(tcell.NewEventKey(tcell.KeyRune, family, tcell.ModNone))
+	e.HandleKey(tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone))
+	if got, want := e.Text(), "a"+family+"xb"; got != want {
+		t.Errorf("Text() = %q, want %q", got, want)
+	}
+}

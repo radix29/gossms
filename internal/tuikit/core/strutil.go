@@ -73,6 +73,57 @@ func Truncate(s string, n int) string {
 	return s
 }
 
+// TruncateLine is Truncate for a one-row rendering of text that may hold line
+// breaks or tabs — a grid cell. CR, LF, CRLF and TAB each render as one space:
+// they measure 0 columns, so drawn as they are the words either side ran
+// together ("line1line2"). A string without them is not copied.
+func TruncateLine(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	// buf stays nil until the first break is mapped; until then the output
+	// is s[:pos].
+	var buf []byte
+	budget := n - 1 // reserve one column for the ellipsis
+	var pos, cut, width int
+	haveCut := false
+	g := displaywidth.StringGraphemes(s)
+	for g.Next() {
+		v, gw := g.Value(), g.Width()
+		brk := v == "\r\n" || v == "\n" || v == "\r" || v == "\t"
+		if brk {
+			gw = 1
+		}
+		if !haveCut && width+gw > budget {
+			cut, haveCut = pos, true
+		}
+		width += gw
+		if width > n {
+			if buf == nil {
+				return s[:cut] + "…"
+			}
+			return string(buf[:cut]) + "…"
+		}
+		if brk && buf == nil {
+			buf = append(make([]byte, 0, pos+n), s[:pos]...)
+		}
+		switch {
+		case buf == nil:
+			pos += len(v)
+		case brk:
+			buf = append(buf, ' ')
+			pos = len(buf)
+		default:
+			buf = append(buf, v...)
+			pos = len(buf)
+		}
+	}
+	if buf == nil {
+		return s
+	}
+	return string(buf)
+}
+
 // WrapText greedily word-wraps text to at most w display columns per line.
 //
 // A word too wide for a line of its own is hard-broken across as many as it
@@ -353,9 +404,17 @@ func FormatThousands(n int64) string {
 
 // EvRune extracts the first rune from a tcell v3 EventKey.
 // In tcell v3, Rune() was replaced with Str() which returns a string.
+// It is for matching a key; text insertion uses EvText.
 func EvRune(ev interface{ Str() string }) rune {
 	for _, r := range ev.Str() {
 		return r
 	}
 	return 0
+}
+
+// EvText is every rune a KeyRune event carries. Str is one key or a composed
+// sequence — an IME commit, a ZWJ emoji, a base letter and its combining
+// marks — and inserting only EvRune dropped all but the first.
+func EvText(ev interface{ Str() string }) []rune {
+	return []rune(ev.Str())
 }

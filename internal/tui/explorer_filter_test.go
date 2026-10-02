@@ -382,6 +382,15 @@ func TestNodeFilterPushdown(t *testing.T) {
 			filter: &nodeFilter{criteria: []filterCriterion{{prop: pMem, op: opEquals, value: "maybe"}}},
 			wantOK: false,
 		},
+		{
+			// T73: the text arm sent every property but Schema as a Name, so
+			// a text property added later — Owner, say — would narrow by name.
+			name: "a text property with no server column is not pushable",
+			filter: &nodeFilter{criteria: []filterCriterion{{
+				prop: filterProp{id: fpMemoryOptimized + 1, name: "Owner", kind: filterText}, op: opEquals, value: "dbo",
+			}}},
+			wantOK: false,
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got, ok := c.filter.pushdown()

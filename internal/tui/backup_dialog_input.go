@@ -15,12 +15,16 @@ func (d *BackupDialog) HandleKey(ev *tcell.EventKey) bool {
 		return progressModeKey(ev, &d.btnFocus, d.progressButtons(), d.Hide, d.doProgressButton)
 	}
 
+	if d.onButtons {
+		return buttonRowKey(ev, &d.btnFocus, len(backupFormButtons), nil, d.doFormButton, d.Hide, d.leaveButtons)
+	}
+
 	switch ev.Key() {
 	case tcell.KeyTab:
-		d.setFocus(nextFocus(d.focusIdx, len(d.focusable)))
+		d.stepFocus(+1)
 		return true
 	case tcell.KeyBacktab:
-		d.setFocus(prevFocus(d.focusIdx, len(d.focusable)))
+		d.stepFocus(-1)
 		return true
 	case tcell.KeyEscape:
 		if d.ddDatabase.IsOpen() {
@@ -39,9 +43,6 @@ func (d *BackupDialog) HandleKey(ev *tcell.EventKey) bool {
 			return b.HandleKey(ev)
 		}
 		d.doFormButton()
-		return true
-	case tcell.KeyF1:
-		d.btnFocus = (d.btnFocus + 1) % len(backupFormButtons)
 		return true
 	}
 

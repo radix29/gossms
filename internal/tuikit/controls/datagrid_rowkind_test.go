@@ -149,3 +149,16 @@ func TestDataGridGroupCellsAreSampledButNotTheLabel(t *testing.T) {
 		t.Errorf("column 3 is %d wide, want %d (the aggregate cell counts)", w, len("SUM 1500")+2)
 	}
 }
+
+// A cell holding line breaks or a tab draws them as spaces, and is sized for
+// them (T67): CR, LF and TAB measure nothing, so the words ran together.
+func TestDataGridDrawsLineBreaksInACellAsSpaces(t *testing.T) {
+	g := NewDataGrid()
+	g.SetBounds(0, 0, 60, 6)
+	g.SetData([]string{"v"}, [][]string{{"line1\r\nline2\tend"}})
+	s := newRuneScreen(60, 6)
+	g.Draw(s)
+	if !strings.Contains(s.text(), "line1 line2 end") {
+		t.Errorf("grid drew:\n%s\nwant the cell as %q", s.text(), "line1 line2 end")
+	}
+}

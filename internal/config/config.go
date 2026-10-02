@@ -509,17 +509,21 @@ func Load() *Config {
 
 	key, err := loadOrCreateKey(filepath.Dir(path))
 	if err != nil {
-		// No key: stash every ciphertext in sealed so Save writes it back
-		// instead of encrypting "".
 		log.Printf("config: saved passwords unavailable: %v", err)
-		for i := range cfg.Connections {
-			cfg.Connections[i].sealed = cfg.Connections[i].Password
-			cfg.Connections[i].Password = ""
-		}
+		cfg.keepSealed()
 		return cfg
 	}
 	cfg.openPasswords(key, path)
 	return cfg
+}
+
+// keepSealed is openPasswords with no key: every ciphertext moves to sealed,
+// so Save writes it back instead of encrypting "".
+func (c *Config) keepSealed() {
+	for i := range c.Connections {
+		c.Connections[i].sealed = c.Connections[i].Password
+		c.Connections[i].Password = ""
+	}
 }
 
 // defaultConfig is the Config for a missing file.
@@ -619,6 +623,12 @@ func (c *Config) mergeSettings(dst *Config) {
 // An entry whose password couldn't be opened keeps its original ciphertext
 // (Connection.sealed), so an unrelated save doesn't destroy passwords a
 // restored key file could still open.
+//
+// An unusable key file (wrong size, unreadable) doesn't stop the save either:
+// every stored ciphertext is written back as it is, and only a password that
+// would need the key to seal is left out, named in the error returned after
+// the write. Refusing the whole save, as before, lost every setting and
+// connection change for as long as the key file stayed bad.
 func (c *Config) Save() error {
 	path := configPath()
 	if c.unreadable != nil {
@@ -634,18 +644,16 @@ func (c *Config) Save() error {
 		return err
 	}
 
-	key, err := loadOrCreateKey(dir)
-	if err != nil {
-		return err
-	}
+	key, keyErr := loadOrCreateKey(dir)
 
 	// Locked from the re-read to the write: the merge is only sound if no
 	// other instance writes in between.
-	return fileutil.WithLock(path, func() error { return c.mergeAndWrite(path, key) })
+	return fileutil.WithLock(path, func() error { return c.mergeAndWrite(path, key, keyErr) })
 }
 
 // mergeAndWrite is Save's re-read, merge and write, run under the file lock.
-func (c *Config) mergeAndWrite(path string, key []byte) error {
+// key is nil when keyErr says why there is none.
+func (c *Config) mergeAndWrite(path string, key []byte, keyErr error) error {
 	var merged *Config
 	switch data, err := os.ReadFile(path); {
 	case errors.Is(err, fs.ErrNotExist):
@@ -655,12 +663,26 @@ func (c *Config) mergeAndWrite(path string, key []byte) error {
 		return fmt.Errorf("config: not saving over %s — it could not be re-read: %w", path, err)
 	default:
 		merged = parseConfig(path, data)
-		merged.openPasswords(key, path)
+		if key != nil {
+			merged.openPasswords(key, path)
+		} else {
+			merged.keepSealed()
+		}
 	}
 	c.mergeSettings(merged)
 	for _, op := range c.ops {
 		if op.add != nil {
-			merged.Connections = addOrUpdate(merged.Connections, *op.add)
+			add := *op.add
+			if key == nil && add.Password != "" && add.sealed == "" {
+				// The new password can't be sealed, so the entry it replaces
+				// keeps its old ciphertext rather than losing it.
+				if i := slices.IndexFunc(merged.Connections, func(e Connection) bool {
+					return e.Name == add.Name || e.GeneratedName() == add.Name
+				}); i >= 0 {
+					add.sealed = merged.Connections[i].sealed
+				}
+			}
+			merged.Connections = addOrUpdate(merged.Connections, add)
 		} else {
 			merged.Connections, _ = removeConnection(merged.Connections, op.remove)
 		}
@@ -668,7 +690,12 @@ func (c *Config) mergeAndWrite(path string, key []byte) error {
 
 	onDisk := *merged
 	onDisk.Connections = make([]Connection, len(merged.Connections))
+	var unsealed []string
 	for i, conn := range merged.Connections {
+		if key == nil && conn.Password != "" {
+			unsealed = append(unsealed, conn.Name)
+			conn.Password = ""
+		}
 		if conn.Password == "" && conn.sealed != "" {
 			// Couldn't open this one; write the original bytes back.
 			conn.Password = conn.sealed
@@ -693,6 +720,9 @@ func (c *Config) mergeAndWrite(path string, key []byte) error {
 	c.Connections = merged.Connections
 	c.ops = nil
 	c.base = c.settingsSnapshot()
+	if len(unsealed) > 0 {
+		return fmt.Errorf("config: saved, but not the password for %s: %w", strings.Join(unsealed, ", "), keyErr)
+	}
 	return nil
 }
 

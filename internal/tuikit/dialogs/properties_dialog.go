@@ -43,6 +43,11 @@ type PropertiesDialog struct {
 	rows   []PropertyRow
 	scroll int
 	keyW   int
+
+	// OnClose, when set, runs after the user closes the dialog (Escape,
+	// Enter, Close) — for a host still filling it in the background, whose
+	// fetch has nothing left to show into.
+	OnClose func()
 }
 
 // NewPropertiesDialog creates a PropertiesDialog.
@@ -140,6 +145,14 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 	d.DrawButtons(s, []string{"Close"}, 0)
 }
 
+// close hides the dialog and tells the host.
+func (d *PropertiesDialog) close() {
+	d.Hide()
+	if d.OnClose != nil {
+		d.OnClose()
+	}
+}
+
 // HandleKey handles keyboard events.
 func (d *PropertiesDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.visible {
@@ -149,7 +162,7 @@ func (d *PropertiesDialog) HandleKey(ev *tcell.EventKey) bool {
 	dataH := propsDataH(inner)
 	switch ev.Key() {
 	case tcell.KeyEscape, tcell.KeyEnter:
-		d.Hide()
+		d.close()
 	case tcell.KeyUp:
 		if d.scroll > 0 {
 			d.scroll--
@@ -171,7 +184,7 @@ func (d *PropertiesDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if d.ButtonClicked(ev, []string{"Close"}) == 0 {
-		d.Hide()
+		d.close()
 		return true
 	}
 	inner := d.InnerRect()

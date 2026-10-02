@@ -297,7 +297,7 @@ func (tv *TreeView) HandleKey(ev *tcell.EventKey) bool {
 		}
 		return true
 	case tcell.KeyRight:
-		tv.toggleExpand()
+		tv.expandSelected()
 		return true
 	case tcell.KeyLeft, tcell.KeyBackspace, tcell.KeyBackspace2:
 		tv.collapseSelected()
@@ -324,7 +324,7 @@ func (tv *TreeView) HandleKey(ev *tcell.EventKey) bool {
 	}
 	switch core.EvRune(ev) {
 	case '+':
-		tv.toggleExpand()
+		tv.expandSelected()
 		return true
 	case '-':
 		tv.collapseSelected()
@@ -530,6 +530,15 @@ func (tv *TreeView) toggleExpand() {
 		}
 	} else if tv.OnCollapse != nil {
 		tv.OnCollapse(n.ID)
+	}
+}
+
+// expandSelected expands the selected node if it has children and is
+// collapsed, firing OnExpand. Right and + only ever expand: toggling there
+// collapsed an expanded node, against F1 help and the Enter case's comment.
+func (tv *TreeView) expandSelected() {
+	if n := tv.SelectedNode(); n != nil && !n.Expanded {
+		tv.toggleExpand()
 	}
 }
 

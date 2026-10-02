@@ -105,6 +105,12 @@ behind the mouse and async rules.
 
 ## Dialogs and the clipboard
 
+- **A dialog's button row is reachable with Tab**, never only through a
+  function key or the mouse. A propsheet dialog has `zoneButtons`; a dialog
+  driving a flat `focusable` slice makes the row the stop past either end of
+  its ring and hands keys to `buttonRowKey` while it is there (Connect, Back Up,
+  Restore). F1 is Help; it once cycled these rows, and was the only way to
+  reach Restore's OK from the keyboard.
 - **A dialog-level scrollbar uses `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a too-small terminal content
   is clipped to `InnerRect` (`App.drawDialogs`' `core.ClipScreen`, narrowed by

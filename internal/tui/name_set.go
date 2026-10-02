@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"iter"
+	"maps"
 	"strings"
 
 	"github.com/radix29/gosmo"
@@ -104,6 +106,14 @@ func (m *nameMap[V]) Get(name string) (V, bool) {
 	}
 	v, ok := m.m[foldName(m.fold, name)]
 	return v, ok
+}
+
+// Values yields every stored value, in no particular order.
+func (m *nameMap[V]) Values() iter.Seq[V] {
+	if m == nil {
+		return func(func(V) bool) {}
+	}
+	return maps.Values(m.m)
 }
 
 // Len is the number of distinct names in the map.

@@ -175,20 +175,76 @@ func TestConnectGatedButtonsDoNothing(t *testing.T) {
 	}
 }
 
-// F1 cycles the whole button row, not the two buttons it had before Reset and
-// Delete joined it.
-func TestConnectF1CyclesEveryButton(t *testing.T) {
-	d := twoPaneConnectDialog(t)
-	seen := map[int]bool{}
+// The button row is the Tab stop past either end of the ring, crossed with
+// Left/Right. It replaced F1, which cycled the buttons from anywhere in the form
+// and was the only keyboard way to reach them — F1 is Help everywhere else.
+func TestConnectTabReachesTheButtonRow(t *testing.T) {
+	d := twoPaneConnectDialog(t, config.Connection{Server: "srv1", User: "sa"})
+	key := func(k tcell.Key) { d.HandleKey(tcell.NewEventKey(k, "", tcell.ModNone)) }
+
+	// Backtab from History, the ring's first stop.
+	if d.focusedWidget() != d.history {
+		t.Fatal("setup: the dialog did not open on History")
+	}
+	key(tcell.KeyBacktab)
+	if !d.onButtons || d.btnFocus != connectBtnConnect {
+		t.Fatalf("Backtab from History: onButtons=%v btnFocus=%d, want the row on Connect", d.onButtons, d.btnFocus)
+	}
+	if d.FocusedClipboardTarget() != nil {
+		t.Error("a field still answers Copy/Paste while the buttons have focus")
+	}
+	server := d.fServer.Value()
+	d.HandleKey(tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone))
+	if d.fServer.Value() != server {
+		t.Error("a letter typed on the button row edited a field")
+	}
+
+	seen := map[int]bool{d.btnFocus: true}
 	for range connectButtonCount {
+		key(tcell.KeyLeft)
 		seen[d.btnFocus] = true
-		d.HandleKey(tcell.NewEventKey(tcell.KeyF1, "", tcell.ModNone))
 	}
-	if len(seen) != connectButtonCount {
-		t.Errorf("F1 reached %d of %d buttons", len(seen), connectButtonCount)
+	if d.btnFocus != connectBtnDelete {
+		t.Errorf("Left stopped on button %d, want Delete at the left end", d.btnFocus)
 	}
-	if d.btnFocus != connectBtnConnect {
-		t.Errorf("a full cycle ended on button %d, want back on Connect", d.btnFocus)
+	for range connectButtonCount {
+		key(tcell.KeyRight)
+		seen[d.btnFocus] = true
+	}
+	if d.btnFocus != connectBtnCancel || len(seen) != connectButtonCount {
+		t.Errorf("Right ended on %d having reached %d of %d buttons", d.btnFocus, len(seen), connectButtonCount)
+	}
+
+	// Tab off the row lands on the ring's first stop, with Connect — what Enter
+	// in a field fires — highlighted again.
+	key(tcell.KeyTab)
+	if d.onButtons || d.focusedWidget() != d.history || d.btnFocus != connectBtnConnect {
+		t.Errorf("Tab off the row: onButtons=%v focused=%T btnFocus=%d", d.onButtons, d.focusedWidget(), d.btnFocus)
+	}
+
+	// F1 no longer moves the highlight.
+	key(tcell.KeyF1)
+	if d.btnFocus != connectBtnConnect || d.onButtons {
+		t.Errorf("F1 moved the button focus to %d", d.btnFocus)
+	}
+}
+
+// Left/Right step over a gated button, so the highlight never rests on one
+// Enter would refuse.
+func TestConnectButtonRowSkipsGatedButtons(t *testing.T) {
+	d := twoPaneConnectDialog(t) // no history: Delete is gated
+	if !d.buttonsDisabled()[connectBtnDelete] {
+		t.Fatal("setup: Delete is live with nothing to delete")
+	}
+	d.setFocus(0)
+	d.stepFocus(-1) // back past the first stop is the row
+	if !d.onButtons {
+		t.Fatal("Backtab from the first stop did not reach the button row")
+	}
+	d.btnFocus = connectBtnReset
+	d.HandleKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
+	if d.btnFocus != connectBtnReset {
+		t.Errorf("Left from Reset moved to %d, onto gated Delete", d.btnFocus)
 	}
 }
 

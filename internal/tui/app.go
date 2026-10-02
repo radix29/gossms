@@ -232,6 +232,12 @@ type App struct {
 	// core.ClipboardTargetTokener and App.pasteInto.
 	pendingPasteToken any
 
+	// clipWriteMu runs writeClipboard's goroutines one at a time, and
+	// clipWriteSeq numbers them, so of two quick copies the later one is what
+	// the clipboard ends up holding. See writeClipboard.
+	clipWriteMu  sync.Mutex
+	clipWriteSeq atomic.Uint64
+
 	pendingMu sync.Mutex
 	pending   []func()
 

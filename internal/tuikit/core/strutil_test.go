@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func TestDisplayWidth(t *testing.T) {
@@ -331,5 +332,38 @@ func TestDisplayWidthAtMostMatchesDisplayWidth(t *testing.T) {
 				t.Errorf("DisplayWidthAtMost(%q, %d) = %d, want %d (full width %d)", s, n, got, want, full)
 			}
 		}
+	}
+}
+
+// TruncateLine shows CR, LF, CRLF and TAB as one space each, measured as one
+// column, so a multi-line cell reads "line1 line2" instead of "line1line2"
+// (T67), and clips like Truncate.
+func TestTruncateLine(t *testing.T) {
+	for _, c := range []struct {
+		s    string
+		n    int
+		want string
+	}{
+		{"line1\r\nline2", 20, "line1 line2"},
+		{"a\nb\rc\td", 20, "a b c d"},
+		{"a\n\nb", 20, "a  b"},
+		{"abc\r\ndef", 5, "abc …"},
+		{"abc\ndef", 7, "abc def"},
+		{"abcdef", 4, "abc…"},
+		{"世界\n世界", 5, "世界…"},
+		{"plain", 10, "plain"},
+		{"x", 0, ""},
+	} {
+		if got := TruncateLine(c.s, c.n); got != c.want {
+			t.Errorf("TruncateLine(%q, %d) = %q, want %q", c.s, c.n, got, c.want)
+		}
+		if got := TruncateLine(c.s, c.n); DisplayWidth(got) > c.n {
+			t.Errorf("TruncateLine(%q, %d) = %q is %d columns wide", c.s, c.n, got, DisplayWidth(got))
+		}
+	}
+	// No copy when there is nothing to map.
+	s := "no breaks here"
+	if got := TruncateLine(s, 40); unsafe.StringData(got) != unsafe.StringData(s) {
+		t.Error("a string without breaks was copied")
 	}
 }

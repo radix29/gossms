@@ -481,7 +481,7 @@ func TestTheLogViewerOverflowMenuRunsTheHiddenAction(t *testing.T) {
 // still has to say why — MenuItem.Note, which shows precisely while disabled.
 func TestTheLogViewerOverflowMenuKeepsTheGate(t *testing.T) {
 	a := newTestApp()
-	sc := probedConn(t, "", nil, []string{"CONTROL SERVER"}, nil, nil)
+	sc := serverRoleConn(t, []string{"CONTROL SERVER"}, nil, nil, []string{"sysadmin"})
 	a.connections = append(a.connections, sc)
 
 	lv := newTestLogViewer()
@@ -501,9 +501,9 @@ func TestTheLogViewerOverflowMenuKeepsTheGate(t *testing.T) {
 		}
 		found = true
 		if it.Enabled == nil || it.Enabled() {
-			t.Error("Recycle is offered in the More menu to a login refused CONTROL SERVER")
+			t.Error("Recycle is offered in the More menu to a login outside sysadmin")
 		}
-		if !strings.Contains(it.Note, "CONTROL SERVER") {
+		if !strings.Contains(it.Note, "sysadmin") {
 			t.Errorf("the withheld entry's note is %q, want the missing right named", it.Note)
 		}
 	}

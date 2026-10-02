@@ -66,6 +66,11 @@ func (a *App) runWithProgress(job progressJob, work func(ctx context.Context, re
 		// job runs — so this is a job started from a callback, and running it
 		// unseen behind another job's dialog is the one thing not to do.
 		a.setStatus("Another operation is still running — try again when it finishes")
+		// The caller latched its own busy flag before asking, and only done
+		// or repair releases it; neither runs now, so the refusal has to.
+		if job.repair != nil {
+			job.repair()
+		}
 		return
 	}
 	timeout := job.timeout

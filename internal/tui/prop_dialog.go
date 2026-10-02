@@ -841,7 +841,11 @@ func (d *PropDialog) applyNow(hideOnSuccess bool) {
 	}
 	d.runPipeline(d.ctx, hide, func() {
 		d.app.setStatus("Properties saved")
-		d.InvalidateAll()
+		// Only a dialog that stays open reloads: InvalidateAll dispatches the
+		// current page's fetch at once, and OK would close over it.
+		if !hideOnSuccess {
+			d.InvalidateAll()
+		}
 		d.saved()
 		hide()
 	})

@@ -170,3 +170,36 @@ func TestScanNextKeepsTheRowsBeforeAScanError(t *testing.T) {
 		t.Errorf("rows kept = %d, want the 2 read before the failure", got)
 	}
 }
+
+// A real column renders at float32 precision, not as the float64 the driver
+// widens it to (T10): CAST(0.1 AS real) shows 0.1, and float keeps 64 bits.
+func TestScanRendersRealAtItsOwnPrecision(t *testing.T) {
+	db := sql.OpenDB(&fakeRowsConnector{conn: &fakeRowsConn{
+		cols:  []string{"r", "f"},
+		types: []string{"REAL", "FLOAT"},
+		rows: [][]driver.Value{
+			{float64(float32(0.1)), float64(float32(0.1))},
+			{float64(float32(3.4e38)), 0.1},
+		},
+	}})
+	defer db.Close()
+
+	rows := queryFakeRows(t, db)
+	defer rows.Close()
+
+	rs, err := scanResultSet(rows, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"0.1", "0.10000000149011612"},
+		{"3.4e+38", "0.1"},
+	}
+	for i, row := range want {
+		for j, cell := range row {
+			if got := rs.Rows[i][j]; got != cell {
+				t.Errorf("row %d col %s = %q, want %q", i, rs.Columns[j], got, cell)
+			}
+		}
+	}
+}

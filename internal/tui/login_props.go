@@ -32,6 +32,11 @@ func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPa
 		// nothing and withholds nothing. DENY ALTER ON LOGIN::x withholds the
 		// rename and the password alike, so this page and Status below are
 		// read-only under it.
+		//
+		// loginName by value, not *namePtr: the gate reads the capability
+		// probe, which recorded the name the dialog opened with and is not
+		// re-run on a rename, and a DENY that would change the answer refuses
+		// the rename anyway. docs/decisions.md § Permission gating, The rest.
 		withRequiresOn(pageLoginGeneral(sc, namePtr), "", "", loginName, gate.AlterAnyLogin),
 		// Server Roles declares the plain right, and deliberately. Its write
 		// is ALTER SERVER ROLE r ADD/DROP MEMBER, which a DENY on *this login*

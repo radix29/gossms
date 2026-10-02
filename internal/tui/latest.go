@@ -9,8 +9,9 @@ import (
 // lifecycle, owned once instead of hand-rolled per site. An explorer node's
 // children, a completion inventory's catalog, a Query Store report, its plan
 // pane, its chart, the Log Viewer's read, the Detail Browser's fetch, Object
-// Dependencies, a create dialog's prefetch and Results to Text's formatting of
-// a large set are all latest-only: the newest
+// Dependencies, a create dialog's prefetch, Back Up's and Restore's loads (one
+// latest per kind), Attach's and New Snapshot's file reads and Results to
+// Text's formatting of a large set are all latest-only: the newest
 // request is the only one whose result anyone wants, and every earlier one
 // should stop taking a pool connection from it the moment it is superseded.
 //

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -68,9 +67,14 @@ type BackupDialog struct {
 	prevDB       string
 	prevType     int
 
-	// loadSeq discards a stale async database-list fetch after the dialog
-	// has been re-shown.
-	loadSeq int
+	// onButtons is set while the button row holds keyboard focus — the stop
+	// after the last field in the Tab ring (buttonRowKey). Every field is
+	// blurred meanwhile; focusIdx keeps the field focus left.
+	onButtons bool
+
+	// dbListRun is the Database dropdown's fetch, superseded by each showing
+	// and abandoned by Hide along with defPaths.
+	dbListRun latest
 
 	// backupDir is the server's default backup directory as read when the
 	// dialog opened (Server.DefaultPaths), nil until that read lands —
@@ -144,6 +148,14 @@ func (d *BackupDialog) show(sc *db.ServerConn, dbName string) {
 	d.loadDefaultPaths()
 }
 
+// Hide closes the dialog and abandons its loads. A running backup is a Task,
+// not a load, and carries on.
+func (d *BackupDialog) Hide() {
+	d.dbListRun.Abandon()
+	d.defPaths.Abandon()
+	d.ModalDialog.Hide()
+}
+
 // destFieldWidth computes the destination input's content width so the
 // input box plus the Browse button fill the dialog's inner width.
 func (d *BackupDialog) destFieldWidth() int {
@@ -158,7 +170,42 @@ func (d *BackupDialog) rebuildFocusable() {
 }
 
 func (d *BackupDialog) setFocus(i int) {
+	d.onButtons = false
 	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
+}
+
+// stepFocus is Tab (+1) or Backtab (-1) in the fields: past either end of the
+// ring is the button row.
+func (d *BackupDialog) stepFocus(dir int) {
+	if i := d.focusIdx + dir; i >= 0 && i < len(d.focusable) {
+		d.setFocus(i)
+		return
+	}
+	d.onButtons = true
+	setFocusIn(d.focusable, -1, d.focusIdx)
+}
+
+// refocus re-applies focus after rebuildFocusable swapped a widget, leaving it
+// on the button row if that is where it was: a database list landing while the
+// user is on the buttons must not pull them back into the form.
+func (d *BackupDialog) refocus() {
+	if d.onButtons {
+		setFocusIn(d.focusable, -1, d.focusIdx)
+		return
+	}
+	d.setFocus(d.focusIdx)
+}
+
+// leaveButtons is Tab (+1) or Backtab (-1) off the button row, onto the first
+// or last field. The highlight goes back to Start Backup, which is what Enter
+// in a field fires.
+func (d *BackupDialog) leaveButtons(dir int) {
+	d.btnFocus = 0
+	if dir > 0 {
+		d.setFocus(0)
+	} else {
+		d.setFocus(len(d.focusable) - 1)
+	}
 }
 
 // focusTo moves focus to w, if it's in the focusable list.
@@ -317,15 +364,12 @@ func (d *BackupDialog) applyDeviceRules() {
 // swaps it into the Database dropdown, keeping the current selection. What
 // the list may contain is backupDatabaseNames' rule, not this dialog's.
 func (d *BackupDialog) loadDatabases() {
-	d.loadSeq++
-	seq := d.loadSeq
 	app, sc := d.app, d.sc
+	ctx, seq := d.dbListRun.BeginTimeout(sc.Context(), childFetchTimeout)
 	app.safego("loading the backup database list", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
 		names, err := backupDatabaseNames(ctx, sc)
 		app.postAndWake(func() {
-			if seq != d.loadSeq || !d.Visible() {
+			if !d.dbListRun.Done(seq) || !d.Visible() {
 				return
 			}
 			if err != nil {
@@ -362,7 +406,7 @@ func (d *BackupDialog) setDatabaseItems(names []string) {
 	}
 	d.ddDatabase = dd
 	d.rebuildFocusable()
-	d.setFocus(d.focusIdx)
+	d.refocus()
 	d.prevDB = d.ddDatabase.Value()
 	d.syncAutoDest()
 }
@@ -507,7 +551,7 @@ func (d *BackupDialog) doProgressButton() {
 // is buttons and a log, and drives its own btnFocus rather than focusable, so
 // it answers nil.
 func (d *BackupDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.mode != backupModeForm {
+	if d.mode != backupModeForm || d.onButtons {
 		return nil
 	}
 	return focusedClipboardTarget(d.focusable, d.focusIdx)

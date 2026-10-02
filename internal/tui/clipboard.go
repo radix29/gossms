@@ -126,14 +126,32 @@ func (a *App) notifyClipboardEdit(target clipboardTarget) {
 // it. The shell-out runs on a background goroutine so a stalled tool can't
 // freeze the event loop; the OSC 52 fallback returns to the UI thread, since
 // SetClipboard writes to the terminal.
+//
+// One write at a time, and only the newest: two goroutines racing their tools
+// let the earlier copy finish last and win. Under clipWriteMu a write that a
+// later copy has superseded is skipped, whichever goroutine gets the lock
+// first, and so is its OSC 52 fallback if a newer copy came in meanwhile.
 func (a *App) writeClipboard(text string) {
+	seq := a.clipWriteSeq.Add(1)
 	a.safego("writing to the clipboard", func() {
-		if osClipboardWrite(text) {
+		a.clipWriteMu.Lock()
+		defer a.clipWriteMu.Unlock()
+		if a.clipWriteSeq.Load() != seq {
 			return
 		}
-		a.postAndWake(func() { a.screen.SetClipboard([]byte(text)) })
+		if clipboardWriter(text) {
+			return
+		}
+		a.postAndWake(func() {
+			if a.clipWriteSeq.Load() == seq {
+				a.screen.SetClipboard([]byte(text))
+			}
+		})
 	})
 }
+
+// clipboardWriter is osClipboardWrite, swapped by tests.
+var clipboardWriter = osClipboardWrite
 
 // copyWithStatus is writeClipboard plus the status-line acknowledgement, for the
 // grid context menus whose "Copy" item is the whole interaction: nothing else on

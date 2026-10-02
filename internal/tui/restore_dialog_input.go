@@ -26,7 +26,7 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 			d.selectHeader(d.headerIdx + 1)
 		case tcell.KeyEnter:
 			d.doInspectButton()
-		case tcell.KeyTab, tcell.KeyF1:
+		case tcell.KeyTab:
 			d.btnFocus = (d.btnFocus + 1) % len(restoreInspectButtons)
 		case tcell.KeyBacktab:
 			n := len(restoreInspectButtons)
@@ -35,13 +35,17 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 		return true
 	}
 
+	if d.onButtons {
+		return buttonRowKey(ev, &d.btnFocus, len(restoreFormButtons), nil, d.doFormButton, d.Hide, d.leaveButtons)
+	}
+
 	openDD := d.openDropDown()
 	switch ev.Key() {
 	case tcell.KeyTab:
-		d.setFocus(nextFocus(d.focusIdx, len(d.focusable)))
+		d.stepFocus(+1)
 		return true
 	case tcell.KeyBacktab:
-		d.setFocus(prevFocus(d.focusIdx, len(d.focusable)))
+		d.stepFocus(-1)
 		return true
 	case tcell.KeyEscape:
 		if openDD != nil {
@@ -60,9 +64,6 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 			return b.HandleKey(ev)
 		}
 		d.doFormButton()
-		return true
-	case tcell.KeyF1:
-		d.btnFocus = (d.btnFocus + 1) % len(restoreFormButtons)
 		return true
 	}
 

@@ -47,7 +47,7 @@ func (v *PlanView) handleSearchKey(ev *tcell.EventKey) bool {
 		// letters that would otherwise switch tabs or trigger other
 		// single-key actions — so a query can contain any character.
 		if r := core.EvRune(ev); r != 0 && ev.Modifiers()&tcell.ModCtrl == 0 {
-			v.searchSt.query += string(r)
+			v.searchSt.query += ev.Str()
 		}
 		return true
 	}

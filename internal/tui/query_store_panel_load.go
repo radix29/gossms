@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -126,7 +125,7 @@ func (p *QueryStorePanel) load(keepView bool) {
 	// Begin supersedes and cancels whatever report read is out: this one
 	// replaces it. Uncancelled, a superseded read goes on holding a connection
 	// on the shared host until qsReadTimeout.
-	ctx, seq := p.reportRead.Begin(p.conn.Context())
+	ctx, seq := p.reportRead.BeginTimeout(p.conn.Context(), qsReadTimeout)
 	p.busy = true
 	p.setStatus("Running " + p.report().Title + "...")
 	p.refreshToolLabels()
@@ -140,10 +139,8 @@ func (p *QueryStorePanel) load(keepView bool) {
 	// on it — every selector and Refresh would sit inert until the panel was
 	// closed.
 	p.app.safegoRepair("running a Query Store report", func() { p.readPanicked(seq) }, func() {
-		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
-		defer readCancel()
 		d := sc.Server.DatabaseRef(dbName)
-		info, infoErr := d.QueryStore(readCtx)
+		info, infoErr := d.QueryStore(ctx)
 		var res qsResult
 		var err error
 		switch {
@@ -152,7 +149,7 @@ func (p *QueryStorePanel) load(keepView bool) {
 			// rows, which reads identically to a database nothing ran in.
 			res = qsOffResult(info)
 		default:
-			res, err = report.load(readCtx, d, opts)
+			res, err = report.load(ctx, d, opts)
 		}
 		p.app.postAndWake(func() {
 			if !p.reportRead.Done(seq) {
@@ -312,15 +309,13 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 	// A plan read fires from the report grid's OnSelectRow, so holding Down
 	// through a ranking starts one per row: without Begin's cancel every
 	// superseded query still runs on the shared host, each until qsReadTimeout.
-	ctx, seq := p.planRead.Begin(sc.Context())
+	ctx, seq := p.planRead.BeginTimeout(sc.Context(), qsReadTimeout)
 	// safegoRepair, not safego: the "Reading plans..." placeholder is replaced
 	// by the callback below, which a panic on the read goroutine never reaches,
 	// and nothing else writes the pane until another query is selected — so the
 	// pane would claim to be reading a query it gave up on.
 	p.app.safegoRepair("reading Query Store plans", func() { p.plansPanicked(seq) }, func() {
-		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
-		defer readCancel()
-		plans, err := sc.Server.DatabaseRef(dbName).QueryStorePlans(readCtx, queryID, opts)
+		plans, err := sc.Server.DatabaseRef(dbName).QueryStorePlans(ctx, queryID, opts)
 		p.app.postAndWake(func() {
 			if !p.planRead.Done(seq) {
 				return

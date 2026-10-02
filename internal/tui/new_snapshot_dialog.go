@@ -51,9 +51,11 @@ type NewSnapshotDialog struct {
 	// pressed. Empty is a complete request — see the file comment.
 	files []gosmo.SnapshotFileSpec
 
-	// reading latches the one round trip to SnapshotFileDefaults, so a second
-	// press cannot start another over the top of it.
-	reading bool
+	// defaultsRead is the SnapshotFileDefaults round trip. A second press
+	// supersedes and cancels it, and so does a source or name change — its
+	// paths would be for the snapshot no longer described; show and close
+	// abandon it.
+	defaultsRead latest
 }
 
 // NewNewSnapshotDialog creates the dialog and wires its callbacks.
@@ -68,13 +70,17 @@ func NewNewSnapshotDialog(app *App) *NewSnapshotDialog {
 		build:   d.buildPages,
 		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) },
 	})
+	d.OnClose = func() {
+		d.defaultsRead.Abandon()
+		d.onClose()
+	}
 	return d
 }
 
 func (d *NewSnapshotDialog) show(sc *db.ServerConn, source string) {
 	d.source = source
 	d.files = nil
-	d.reading = false
+	d.defaultsRead.Abandon()
 	d.newObjectDialog.show(sc)
 	subtitle := "Read-only, point-in-time"
 	if source != "" {
@@ -149,14 +155,16 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 	// old ones. Dropping them is what puts the request back on gosmo's
 	// defaults, which are always in step with what is typed.
 	invalidateFiles := func() {
-		if len(d.files) == 0 {
+		reading := !d.defaultsRead.Idle()
+		d.defaultsRead.Abandon()
+		if len(d.files) == 0 && !reading {
 			return
 		}
 		d.files = nil
 		current = -1
 		pathRow.SetValue("")
 		reloadGrid()
-		hint.Set("The file paths were built for a different snapshot and have been cleared. They will be defaulted from the source.")
+		hint.Set("The source or name changed, so the file paths have been cleared. They will be defaulted from the source.")
 	}
 	sourceRow.SetOnChange(func(name string) {
 		if strings.TrimSpace(nameRow.Value()) == "" || isDefaultSnapshotName(nameRow.Value(), sources) {
@@ -173,21 +181,15 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 			hint.SetError("Pick a source database and type a snapshot name first.")
 			return
 		}
-		if d.reading {
-			return
-		}
-		d.reading = true
 		hint.Set("Reading " + source + "'s data files...")
-		sessionCtx := d.ctx
-		d.app.safegoRepair("reading a snapshot's default file paths", d.readPanicked, func() {
-			ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-			defer cancel()
+		// From d.ctx, so a disconnect stops it too.
+		ctx, seq := d.defaultsRead.BeginTimeout(d.ctx, propFetchTimeout)
+		d.app.safego("reading a snapshot's default file paths", func() {
 			specs, err := sc.Server.SnapshotFileDefaults(ctx, source, name)
 			d.app.postAndWake(func() {
-				if d.ctx != sessionCtx {
-					return // the dialog was closed and reopened while this was out
+				if !d.defaultsRead.Done(seq) {
+					return
 				}
-				d.reading = false
 				if err != nil {
 					d.files = nil
 					hint.SetError(displayError(err).Error())
@@ -243,11 +245,6 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 		return err
 	}
 }
-
-// readPanicked releases the read latch after a panic in the defaults
-// goroutine — its App.safegoRepair step. Without it the button is dead for
-// the rest of the dialog's life and the hint sits on "Reading..." forever.
-func (d *NewSnapshotDialog) readPanicked() { d.reading = false }
 
 // defaultSnapshotName is the name offered for a snapshot of source. SSMS
 // offers <source>_snapshot_<timestamp>; the timestamp is left off here

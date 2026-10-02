@@ -70,9 +70,9 @@ func newTestQueryPanelWithInventory(t testing.TB, database string, objects []gos
 	// And an already-loaded database directory listing only this database,
 	// for the same reason: an unresolved qualifier asks it whether the name
 	// is a database.
-	a.completionDirectories = map[string]*completionDirectory{sysKey: {
-		byName: map[string]directoryEntry{strings.ToLower(database): {name: database, state: "ONLINE"}},
-	}}
+	dir := &completionDirectory{byName: newNameMap[directoryEntry]("")}
+	dir.byName.Set(database, directoryEntry{name: database, state: "ONLINE"})
+	a.completionDirectories = map[string]*completionDirectory{sysKey: dir}
 	// And an empty linked-server list: an unresolved qualifier asks it last.
 	a.linkedDirectories = map[string]*linkedDirectory{sysKey: {byName: map[string]*linkedServer{}}}
 	return qp

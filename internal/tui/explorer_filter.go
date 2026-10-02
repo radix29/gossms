@@ -482,10 +482,16 @@ func (f *nodeFilter) pushdown() (gosmo.ObjectFilter, bool) {
 				return gosmo.ObjectFilter{}, false
 			}
 			crit := gosmo.TextCriterion{Op: op, Value: value}
-			if c.prop.id == fpSchema {
+			// Each property by name: a text property added later is not a
+			// Name, and pushing it down as one would narrow by the wrong
+			// column.
+			switch c.prop.id {
+			case fpSchema:
 				out.Schema = append(out.Schema, crit)
-			} else {
+			case fpName:
 				out.Name = append(out.Name, crit)
+			default:
+				return gosmo.ObjectFilter{}, false
 			}
 		}
 	}

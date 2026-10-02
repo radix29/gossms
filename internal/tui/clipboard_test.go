@@ -2,7 +2,9 @@ package tui
 
 import (
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
@@ -176,5 +178,51 @@ func TestPasteLandsOnlyInTheFieldItWasAimedAt(t *testing.T) {
 	}
 	if got := d.fServer.Value(); got != "ubus" {
 		t.Errorf("server field = %q — the password paste reached it too", got)
+	}
+}
+
+// Quick copies reach the clipboard one at a time, and the last one wins (T71):
+// with a goroutine each, a copy whose tool ran slow finished after the next
+// one and left the older text on the clipboard. One superseded while it
+// waited for the lock is not written at all.
+func TestQuickCopiesLeaveTheLastOnTheClipboard(t *testing.T) {
+	a := newTestApp()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var mu sync.Mutex
+	var writes []string
+	done := make(chan struct{})
+	old := clipboardWriter
+	clipboardWriter = func(text string) bool {
+		if text == "A" {
+			close(entered)
+			<-release
+		}
+		mu.Lock()
+		writes = append(writes, text)
+		mu.Unlock()
+		if text == "C" {
+			close(done)
+		}
+		return true
+	}
+	defer func() { clipboardWriter = old }()
+
+	a.writeClipboard("A")
+	<-entered // A's tool is running
+	a.writeClipboard("B")
+	a.writeClipboard("C")
+	time.Sleep(20 * time.Millisecond) // let B and C reach the tool, if they can
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("C never reached the clipboard")
+	}
+	time.Sleep(20 * time.Millisecond) // and B, if it is going to
+
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []string{"A", "C"}; !slices.Equal(writes, want) {
+		t.Errorf("clipboard writes = %q, want %q: in order, the superseded B skipped", writes, want)
 	}
 }

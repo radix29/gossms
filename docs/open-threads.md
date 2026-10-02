@@ -69,6 +69,19 @@ work; close an item by deleting it when fixed.
   2026-10-02 during the W6 tmux check). SSMS defaults to the connected login.
   Fix: preselect the caller's login (`SUSER_SNAME()`), falling back to 0; pin
   with a fake-instance test.
+- **B15 — A large terminal paste takes minutes.** Between the two
+  `EventPaste` markers `App.Run` buffers each key (`bufferPastedKey`) but still
+  draws a full frame after every one, so a 10,001-line, 170 KB paste into a
+  query editor took about 6 minutes at full CPU under tmux (2026-10-02, the
+  W12 gutter check), with nothing on screen changing until the end. Fix: skip
+  the draw while `a.pasting`, the way motion-only mouse events are coalesced;
+  pin with a test that counts draws across a pasted burst.
+- **B16 — The editor draws no combining marks.** `editor_draw.go`'s row
+  painter skips every zero-width rune ("a combining mark occupies the cell its
+  base rune already claimed"), so `e` + U+0301 shows as `e`. The text is
+  intact — `SELECT LEN(N'xéy')` typed that way returns 4, and the results grid
+  shows `xéy` — only the editor's picture loses it. Fix: hand the marks to
+  `SetContent` as the base rune's combining runes; pin with `glyphScreen`.
 
 ### Verification gaps
 

@@ -21,13 +21,15 @@ import (
 // the login can open it (see loadCompletionInventory's gate).
 // ---------------------------------------------------------------------------
 
-// completionDirectory is one server+login's database list, keyed by lowercase
-// name: enough to tell a database name from anything else in a qualifier
-// chain, and to skip one that can't be opened. A failed load leaves byName
-// empty until Ctrl+R; the failure goes to the status bar, not the entry.
+// completionDirectory is one server+login's database list, keyed by name
+// under the server's collation: enough to tell a database name from anything
+// else in a qualifier chain, and to skip one that can't be opened. On a
+// case-sensitive server `Sales` and `sales` are two databases, and a lowered
+// key let one shadow the other. A failed load leaves byName empty until
+// Ctrl+R; the failure goes to the status bar, not the entry.
 type completionDirectory struct {
 	loading bool
-	byName  map[string]directoryEntry
+	byName  *nameMap[directoryEntry]
 	load    latest
 }
 
@@ -84,9 +86,9 @@ func (a *App) loadCompletionDirectory(sc *db.ServerConn, key string, d *completi
 				a.setStatus(fmt.Sprintf("Autocomplete database list unavailable: %v (Ctrl+R in a query editor retries)", err))
 				return
 			}
-			d.byName = make(map[string]directoryEntry, len(dbs))
+			d.byName = newNameMap[directoryEntry](serverCollation(sc))
 			for _, x := range dbs {
-				d.byName[strings.ToLower(x.Name)] = directoryEntry{name: x.Name, state: x.State}
+				d.byName.Set(x.Name, directoryEntry{name: x.Name, state: x.State})
 			}
 		},
 	})
@@ -115,14 +117,14 @@ func (p *QueryPanel) databaseInventory(own *completionInventory, name string) (i
 	if name == "" {
 		return nil, false
 	}
-	if strings.EqualFold(name, p.database) {
+	if sameName(serverCollation(p.conn), name, p.database) {
 		return own, false
 	}
 	dir := p.app.ensureCompletionDirectory(p.conn)
 	if dir.loading {
 		return nil, true
 	}
-	entry, ok := dir.byName[strings.ToLower(name)]
+	entry, ok := dir.byName.Get(name)
 	if !ok || entry.state != "ONLINE" {
 		return nil, false
 	}
@@ -231,7 +233,7 @@ func (p *QueryPanel) orLinked(chain []string, prefix string, pending bool) ([]co
 func (p *QueryPanel) databaseItems(pl string) []controls.CompletionItem {
 	dir := p.app.ensureCompletionDirectory(p.conn)
 	var items []controls.CompletionItem
-	for _, e := range dir.byName {
+	for e := range dir.byName.Values() {
 		if e.state != "ONLINE" {
 			continue
 		}

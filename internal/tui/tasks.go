@@ -37,13 +37,26 @@ type Task struct {
 	Err      error
 	Started  time.Time
 	Finished time.Time
+	// Cancelled is set when the task finished with an error after Cancel was
+	// asked for while it ran. The error is then the cancel itself, as the
+	// driver or the server words it ("context canceled", "BACKUP DATABASE is
+	// terminating abnormally"), and reporting it as a failure blames the
+	// server for what the user did. A run that finished despite the cancel
+	// keeps its success; a panic is still a failure. Err keeps the error.
+	Cancelled bool
 
 	cancel context.CancelFunc
+	// cancelAsked records a Cancel while the task was running — markTaskDone's
+	// own Cancel, releasing a finished task's context, does not count.
+	cancelAsked bool
 }
 
 // Cancel requests the task's context be cancelled. Safe to call on an
 // already-finished task (a no-op) or multiple times.
 func (t *Task) Cancel() {
+	if !t.Done {
+		t.cancelAsked = true
+	}
 	if t.cancel != nil {
 		t.cancel()
 	}
@@ -62,6 +75,8 @@ func (t *Task) statusText() string {
 			return t.Label + " — " + msg
 		}
 		return t.Label + " — " + strconv.Itoa(t.Progress) + "% — " + msg
+	case t.Cancelled:
+		return t.Label + " — cancelled"
 	case t.Err != nil:
 		return t.Label + " — failed: " + t.Err.Error()
 	default:
@@ -116,11 +131,15 @@ func (a *App) postTaskDone(t *Task, err error) {
 func (a *App) markTaskDone(t *Task, err error) {
 	t.Done = true
 	t.Err = err
+	t.Cancelled = err != nil && !errors.Is(err, errTaskPanicked) && t.cancelAsked
 	t.Finished = time.Now()
 	t.Cancel()
-	if err != nil {
+	switch {
+	case t.Cancelled:
+		a.setStatus(t.Label + " cancelled")
+	case err != nil:
 		a.setStatus(fmt.Sprintf("%s failed: %v", t.Label, withPermissionAdvice(err)))
-	} else {
+	default:
 		a.setStatus(t.Label + " completed")
 	}
 }

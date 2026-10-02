@@ -297,6 +297,17 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   handlers, and a lossy round trip there must not turn a look into a write.
   Text, check and select rows stay unfocusable — their values are already on
   screen.
+- **A renamed principal's page gate keeps asking about the old name.**
+  Login, User, Role and Server Role Properties pass the name the dialog opened
+  with to `withRequiresOn`, not the `namePtr` box a rename updates. The gate
+  reads the capability probe, which is keyed by name and re-run only by a
+  server-node Refresh — unreachable while the modal dialog is open — so the
+  old name is the one it can answer for. For a login or user, the DENY that
+  would make the page read-only also refuses the rename (Msg 15151), so the
+  new name can never carry one the old didn't. For a role or server role, the
+  DENY on the role withholds ADD/DROP MEMBER but not the rename, and reading
+  the box would ask the stale probe about a name it never saw and open the
+  Members page editable under that DENY. (Review T29, closed with no change.)
 - **A schema *node* is excluded from the schema-scoped gate** — `objectOpRights`
   names `rightAlterOnSchema` beside the three database-wide rights, but ALTER
   on a schema doesn't permit dropping or renaming the schema itself.
@@ -790,6 +801,16 @@ String). Not to be reopened without asking the author:
   Reset under the connection string, Name/Color custom-property rows. The
   connection string stays a live masked preview. The "Server Type" line is
   dropped (one fixed value).
+- **The button row is a Tab stop, not F1** (W11, 2026-10-02). Connect, Back Up
+  and Restore (form and File Locations views) put their bottom buttons past
+  either end of the Tab ring, crossed with Left/Right, as a Properties dialog's
+  `zoneButtons` is (`buttonRowKey`, `dialog_common.go`). F1 used to cycle them
+  from anywhere in the form and was the only keyboard way to reach them; F1 is
+  Help everywhere else, so it was dropped rather than documented. A modifier
+  chord was rejected: Ctrl+Tab and Ctrl+digit arrive without their modifier in
+  VTE terminals. Enter in a field still fires the highlighted default button
+  (Connect, Start Backup, Analyze), and leaving the row puts the highlight back
+  on it.
 
 ## Extended Events: what the design settled — do not re-raise
 

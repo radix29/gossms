@@ -128,6 +128,7 @@ func (d *RestoreDialog) filesFocusCycle() []focusable {
 }
 
 func (d *RestoreDialog) setFilesFocus(i int) {
+	d.onButtons = false
 	for _, f := range []focusable{d.rbReloc, d.fDataDir, d.fLogDir, d.btnDefLoc} {
 		f.Focus(false)
 	}
@@ -276,19 +277,26 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 
 // handleFilesKey routes keys in the Files view.
 func (d *RestoreDialog) handleFilesKey(ev *tcell.EventKey) bool {
+	if d.onButtons {
+		return buttonRowKey(ev, &d.btnFocus, len(restoreFilesButtons), nil, d.doFilesButton, d.backToForm, d.leaveButtons)
+	}
 	cycle := d.filesFocusCycle()
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		d.backToForm()
 		return true
-	case tcell.KeyTab:
-		d.setFilesFocus(d.filesFocus + 1)
-		return true
-	case tcell.KeyBacktab:
-		d.setFilesFocus(d.filesFocus - 1)
-		return true
-	case tcell.KeyF1:
-		d.btnFocus = (d.btnFocus + 1) % len(restoreFilesButtons)
+	case tcell.KeyTab, tcell.KeyBacktab:
+		// Past either end of the cycle is the button row, as in the form.
+		dir := 1
+		if ev.Key() == tcell.KeyBacktab {
+			dir = -1
+		}
+		if i := d.filesFocus + dir; i >= 0 && i < len(cycle) {
+			d.setFilesFocus(i)
+			return true
+		}
+		d.onButtons = true
+		cycle[d.filesFocus].Focus(false)
 		return true
 	case tcell.KeyEnter:
 		if b, ok := cycle[d.filesFocus].(*widgets.Button); ok {

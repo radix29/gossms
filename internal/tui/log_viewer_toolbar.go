@@ -66,14 +66,16 @@ func (lv *LogViewer) recycleDenied() bool {
 }
 
 // recycleRights are the alternatives the Recycle cell's write needs for the
-// family on screen. Cycling an error log is CONTROL SERVER;
-// sysmail_delete_log_sp is plain msdb permission, which db_owner in msdb has
-// without any server right (W8).
+// family on screen. Cycling an error log is sysadmin itself: probed on 13
+// and 17, a CONTROL SERVER login is refused by sp_cycle_errorlog (Msg 15247)
+// and sp_cycle_agent_errorlog (Msg 14260), as the Agent reload is (see
+// gate.Sysadmin). sysmail_delete_log_sp is plain msdb permission, which
+// db_owner in msdb has without any server right (W8).
 func (lv *LogViewer) recycleRights() []gate.Right {
 	if lv.logType == gosmo.ErrorLogDatabaseMail {
 		return mailLogDeleteRights
 	}
-	return []gate.Right{gate.ControlServer}
+	return []gate.Right{gate.Sysadmin}
 }
 
 // mailLogDeleteRights are the alternatives that may purge the Database Mail

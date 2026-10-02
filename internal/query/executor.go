@@ -371,6 +371,7 @@ type rowScanner struct {
 	ptrs        []any
 	guids       []*mssql.NullUniqueIdentifier
 	decimalLike []bool
+	isReal      []bool
 	layouts     []string
 
 	// buf renders one cell at a time, reused; bytes are copied out before the
@@ -386,6 +387,10 @@ type rowScanner struct {
 // decimal/numeric/money/smallmoney also scan as []byte, but already decoded to
 // ASCII digits ("0.070312"), so render as text, not hex. (numeric reports as
 // DECIMAL.)
+//
+// real scans as float64(float32), so formatting it at 64 bits shows the
+// widening noise (0.1 → 0.10000000149011612); isReal marks those columns for
+// 32-bit formatting.
 //
 // Every date/time type scans as time.Time, so the column type and scale decide
 // what SSMS shows (date without time, datetime2(3) with three digits); layouts
@@ -406,6 +411,7 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 		ptrs:        make([]any, len(cols)),
 		guids:       make([]*mssql.NullUniqueIdentifier, len(cols)),
 		decimalLike: make([]bool, len(cols)),
+		isReal:      make([]bool, len(cols)),
 		layouts:     make([]string, len(cols)),
 	}
 	for i := range cols {
@@ -417,6 +423,8 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 			continue
 		case "DECIMAL", "MONEY", "SMALLMONEY":
 			sc.decimalLike[i] = true
+		case "REAL":
+			sc.isReal[i] = true
 		}
 		_, scale, scaleKnown := types[i].DecimalSize()
 		sc.layouts[i] = timeLayout(typeName, int(scale), scaleKnown)
@@ -435,6 +443,8 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 		sc.buf = sc.buf[:0]
 		if g := sc.guids[i]; g != nil {
 			sc.buf = appendGUID(sc.buf, *g)
+		} else if f, ok := sc.vals[i].(float64); ok && sc.isReal[i] {
+			sc.buf = appendFloat(sc.buf, f, 32)
 		} else {
 			sc.buf = appendValue(sc.buf, sc.vals[i], sc.decimalLike[i], sc.layouts[i])
 		}

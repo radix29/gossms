@@ -228,6 +228,24 @@ breaking signature has no gossms caller.
   - Also T69, T70, T28, and the T61 items (`BeginTimeout`, the "cancelled"
     wording, `applyNow` without `InvalidateAll`).
   - Plus the F1-cycles-buttons change, once decided.
+  - **Done.** `go test -race -count=1 ./...` green; gofmt and vet clean
+    (gossms only — gosmo is untouched). T70 needed no change (see its row).
+    Decision 4 went further than either option: F1 was the only keyboard
+    route to the form-view buttons of all three dialogs, not just a
+    progress-view duplicate of Tab, so the author chose to make the button row
+    a Tab stop instead (`buttonRowKey`; `docs/decisions.md` § Connect dialog).
+    Live on `SQL2017`, in a scratch config: Connect reached its row by Tab and
+    Backtab, stepped over a gated Delete, swallowed typed letters, and
+    connected from it; Back Up's Validate and Start Backup fired from the row,
+    and Cancel Backup on a 650 MB database read "Backup cancelled." and
+    "Backup w11_bk cancelled"; Restore from history went form row → Files →
+    Files row → Restore, through the target check, to a completed restore;
+    New Snapshot's name edit after Default File Paths cleared the grid with
+    the new hint; a Query Store report ran on `BeginTimeout` (the plan pane
+    and series reads, same change, were not driven). Not reproducible by hand, so pinned only: a history load
+    during the target check (T19), Hide abandoning loads, the Dependencies
+    fetch stopped on close (T69), the refused-job repair (T28), OK reloading
+    nothing (T61). See T19, T28, T61, T69 and T70.
 - **W12 — Remaining small gossms bugs.**
   - Items: T10 (REAL), T29 (rename gate), T32 (gutter), T33 (Right expands),
     T64 (scrollbar thumb), T66 (composed keys), T67 (control characters in
@@ -235,6 +253,23 @@ breaking signature has no gossms caller.
     T73 (filter pushdown), T62 (`nameMap` for the cross-db directory).
   - Each is independent, so this step can be split freely. Each carries its
     own pin.
+  - **Done.** `go test ./...` green; gofmt and vet clean (gossms only — gosmo
+    is untouched). Every new pin was checked failing against the old code. Two
+    items needed no code change: T29 (the old name is the right one) and T72
+    (already refused). T64 went one step further than its row: the drag
+    mapping could not reach the last offset of a long list either. Live on
+    `SQL2017` (tmux, scratch config): `CAST(0.1 AS real)` showed `0.1` and
+    `CAST(3.4e38 AS real)` `3.4e+38` (T10); a CR/LF/TAB cell read
+    `line1 line2 end`, its column sized to it (T67); Right and `+` on the
+    expanded server node left it expanded, `-` then Right collapsed and
+    reopened it (T33); a 30-row result's thumb sat on the track's last five
+    rows at Ctrl+End and its first five at Ctrl+Home, and a click on the last
+    track row scrolled to row 30 (T64); a 10,001-line file drew `10000` in a
+    7-column gutter clear of the border (T32); an `e` + U+0301 typed into the
+    editor reached the server whole (`LEN` 4). Not reproducible by hand, so
+    pinned only: T62 (no case-sensitive instance here), T68, T71 and T73.
+    Found on the way, not fixed: B15 (a large paste redraws per key) and B16
+    (the editor draws no combining marks), both in `docs/open-threads.md`.
 - **W13 — T20, the Recycle error log gate.**
   - Probe first, with a CONTROL SERVER login that is not sysadmin, on 13 and
     17.
@@ -699,6 +734,10 @@ unavailable from this host.
 - Pin: an executor test.
 - Live: `SELECT CAST(0.1 AS real)` shows `0.1`.
 
+**Done** (W12): `rowScanner.isReal`, set from `DatabaseTypeName()`, formats
+the cell with bitSize 32. Pin: `TestScanRendersRealAtItsOwnPrecision`. Live as
+above on `SQL2017`.
+
 ### T11 — Fragmentation and storage reads pick an arbitrary allocation-unit or partition row — gosmo — *confirmed*
 
 **Where:** gosmo `index.go:826-834, 883-896, 994-1012`.
@@ -866,6 +905,19 @@ page reloads often land before the folder reload.
 **Fix.** One `latest` per load kind, all of them abandoned on show and on
 close.
 
+**Done** (W11). Restore: `dbListRun`, `historyRun`, `infoRun`, `fileRun`,
+`checkRun`, `scriptRun` (plus the existing `defPaths`); Analyze abandons
+`fileRun`, whose list is for the device it replaces. Back Up: `dbListRun`.
+Both gained a `Hide` that abandons every load (a running backup or restore is
+a Task and carries on). Attach and New Snapshot: the `reading` latch and
+session-context compare became `fileRead`/`defaultsRead`, begun from `d.ctx`
+and abandoned by `show` and `OnClose`; a second press now supersedes instead
+of being refused. New Snapshot's source or name change abandons its read too —
+a read landing after the edit used to fill the grid with paths for the old
+name. Pins: `TestRestoreHistoryLoadDoesNotDropTheTargetCheck`,
+`TestRestoreHideAbandonsItsLoads`, `TestBackupHideAbandonsTheDatabaseList`,
+`TestSnapshotNameChangeAbandonsTheDefaultsRead` (`dialog_loads_test.go`).
+
 ### T20 — Recycle error log is gated on CONTROL SERVER — gossms — *plausible, needs a probe*
 
 **Where:** `internal/tui/explorer_management.go:252-253`,
@@ -879,6 +931,16 @@ sysadmin (Msg 15247).
   sysadmin.
 - If the server refuses, gate on `gate.Sysadmin`.
 - Leave the mail-log arm as it is.
+
+**Done** (W13). Probed on 17 (17.0.1135.8) and 13 (13.0.6500.1) with a
+throwaway login holding CONTROL SERVER and outside sysadmin:
+`sp_cycle_errorlog` refuses it Msg 15247, `msdb.dbo.sp_cycle_agent_errorlog`
+Msg 14260 (from `sp_sqlagent_notify`, as Agent Properties' reload). Both the
+Explorer item and the viewer's Recycle cell (`recycleRights`) now gate on
+`gate.Sysadmin`; the mail arm is unchanged. Pins:
+`TestExplorerRecycleIsGatedOnSysadmin`,
+`TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle`,
+`TestTheLogViewerOverflowMenuKeepsTheGate` (now a CONTROL SERVER login).
 
 ### T21 — Restore repairs MULTI_USER after any error — gosmo — *confirmed*
 
@@ -948,23 +1010,23 @@ monthly, an owner, and a refused owner leaving no schedule) on 17, 14 and 13.
 | T25 | gosmo | `statistics.go:36-45` | `CROSS APPLY dm_db_stats_properties` hides statistics the caller can't read → `OUTER APPLY`. *Confirmed on 17.* **Done** (W5): a login with only VIEW DEFINITION on the table saw 0 of 2 statistics, now 2; pin in `live_dmv_reads_test.go`. |
 | T26 | gosmo | `capabilities_database.go:294,352`, `capabilities.go:456` | Keys are `.`-joined, so `ObjectKey("a.b","c") == ObjectKey("a","b.c")` and a DENY lands on the wrong object → `\x00` separator. **Done** (W7): `keySep` in Go, `NCHAR(0)` in the probe query; SQL Server refuses NUL in an identifier (Msg 1055) and go-mssqldb returns it intact (13, 17). gossms production code builds no key literal, but its test fixtures did: the fake probe rows spelled keys `"sales.IdleQueue"` and 13 gate tests went red. They now go through `probeKey` (`fakedb_test.go`), which calls gosmo's helpers. Pins: `TestCapabilityKeysKeepDottedNamesApart`; live `live_dotted_capability_keys_test.go` on 17, 14, 13 — fails against the old separator for both objects and types. |
 | T27 | gossms | 15 `Reload`, 4 `RefreshDatabasesFolder`, 7 `RefreshFolderByType`, … | Five ways to refresh after a create, and `Reload` is a no-op on a retired node → standardise on `ReloadFolders(sc, folderOf(…))`. After T8. **Done** (W9): `folderOf` where the folder is server-scoped or named by type and database; `sameNodeAs(n)` (type, database, schema, name, table, AG, XE session, pool) where a dialog or progress job holds the node it started from, so a Refresh above it in the meantime no longer swallows the write's refresh. `ReloadFolders` also matches a root. Take Offline's success path reloads the Databases folder when its node was retired. The Agent enable/disable success path still writes `IsEnabled` into the held node without a reload — left as it was. Pins: `TestPostWriteRefreshFindsTheReplacementFolder`, `TestSameNodeAsKeepsTableScopedFoldersApart`; `TestTheDetailPaneDeleteRefreshesTheFolder` now puts its folder in the tree. |
-| T28 | gossms | `progress_job.go:64-70` | A refused `runWithProgress` never runs `repair`/`done`, so the callers' `busy` latches (Query Store, Log Viewer, Activity Monitor) stay set → call `job.repair()` on refusal. *Plausible.* |
-| T29 | gossms | `login_props.go:35,52` | `withRequiresOn` captures the login name by value, so after a rename the gate asks about the old name → read it through `namePtr`. *Plausible.* |
+| T28 | gossms | `progress_job.go:64-70` | A refused `runWithProgress` never runs `repair`/`done`, so the callers' `busy` latches (Query Store, Log Viewer, Activity Monitor) stay set → call `job.repair()` on refusal. *Plausible.* **Done** (W11): the refusal runs `repair`. Pin: `TestRefusedProgressJobRunsRepair` (fails without it). |
+| T29 | gossms | `login_props.go:35,52` | `withRequiresOn` captures the login name by value, so after a rename the gate asks about the old name → read it through `namePtr`. *Plausible.* **No change needed** (W12): the gate reads the capability probe, which recorded the old name and re-runs only on a server-node Refresh (unreachable while the modal dialog is open). A DENY on a login or user also refuses its rename, so the new name can't carry one the old didn't; for a role or server role the DENY leaves the rename alone, and reading the box would ask the stale probe about a name it never saw and open Members editable. Settled in `docs/decisions.md` § Permission gating, The rest, with a comment in `login_props.go`. |
 | T30 | gosmo | `agent_job.go:400-415`, `login.go:570-579` | `CreateJob` and `CreateLogin` are two statements, not atomic → `atomicBatch`. **Done** (W6): rollback of both shapes probed on 17 and 13. CreateLogin's batch applies only to the external-provider CREATE + ALTER; on Azure SQL Database, where CREATE LOGIN must be alone in its batch, they stay two statements (not run live: no MI or SQL Database available — pending). |
 | T31 | gosmo | `scripter_dml.go:232`, `function.go:37-43` | CLR scalar functions (FS) are scripted as `SELECT * FROM f()`, and CLR functions are missing from listings → typed `FuncType`, `LEFT JOIN sql_modules`. **Done** (W7): `FunctionType` (`IsScalar`, `IsCLR`); the listing takes FS/FT; a CLR module's CREATE/ALTER is `ErrUnsupported`, not "not found" (functions, procedures, triggers). Live: `live_clr_function_test.go` loads `testdata/clr/w7clr.dll` (trusted for the test on 14+), on 17, 14, 13; `SELECT * FROM` a CLR scalar function is Msg 208. Still open (gosmo OPEN-THREADS § CLR modules): scripting the CLR CREATE, and CLR procedures and triggers in their listings. |
-| T32 | gossms | `editor_draw.go:16,49,403` | Line numbers ≥ 10,000 draw over the border → `gutterWidth = max(5, digits+2)`. |
-| T33 | gossms | `treeview.go:299-301,326` | Right and `+` collapse an expanded node, against the comment and F1 help → `expandSelected()`. |
+| T32 | gossms | `editor_draw.go:16,49,403` | Line numbers ≥ 10,000 draw over the border → `gutterWidth = max(5, digits+2)`. **Done** (W12), in `Editor.gutterWidth`; the wrap cache is keyed by width, so a growing gutter re-wraps. Pin: `TestEditorGutterWidensPastLine9999` (plain and wrapped). |
+| T33 | gossms | `treeview.go:299-301,326` | Right and `+` collapse an expanded node, against the comment and F1 help → `expandSelected()`. **Done** (W12); Enter still toggles. Pin: `TestTreeViewRightAndPlusNeverCollapse`. |
 | T34 | gossms | `showplan/parse.go:103,279,305,418` | `Trim(x,"[]")` doesn't un-double `]]`, so the Missing Index script names the wrong object → `gosmo.UnquoteName` (T36). |
-| T64 | gossms | `core/drawing.go:240-251` | The scrollbar thumb never reaches the bottom → `offset*(h-thumbH)/(total-visible)`. |
+| T64 | gossms | `core/drawing.go:240-251` | The scrollbar thumb never reaches the bottom → `offset*(h-thumbH)/(total-visible)`. **Done** (W12): `core.scrollThumb`, shared by `DrawScrollbar` and `DrawScrollbarH`. `ScrollOffsetForDrag` had the twin defect — `y*total/h` topped out at 900 of 995 on a 10-row track over 1000 rows — and is now linear from the first row (0) to the last (`total-visible`). Pins: `TestScrollbarThumbSpansTheWholeTrack`; `TestScrollOffsetForDrag` unchanged. |
 | T65 | gossms | `core/clip_screen.go` | `FillArea` isn't clipped, and `charts.Canvas` panics on it. Latent, but blocks T51. |
-| T66 | gossms | `core/strutil.go:356` | `EvRune` keeps only the first rune of a composed key (IME, ZWJ) → insert `[]rune(ev.Str())`. |
-| T67 | gossms | `datagrid_draw.go` | CR, LF and TAB in a cell render glued together → map them to a space. |
-| T68 | gossms | `config/config.go:631` | A bad `gossms.key` blocks every save → write the sealed blobs back and refuse only new passwords. |
-| T69 | gossms | `properties_dialog.go:71-96` | The Object Dependencies fetch isn't cancelled on close → `OnClose` calls `Abandon`. |
-| T70 | gossms | `app_explorer_data.go:159-161` | `primeDatabaseCapabilities` has no deadline → `WithTimeout(childFetchTimeout)`. |
-| T71 | gossms | `clipboard.go:129-136` | Two quick copies race for the last owner → one worker goroutine. *Plausible.* |
-| T72 | gossms | `explorer_object_actions.go:338-361` | Rename sends `""` to the server → refuse it in the prompt. |
-| T73 | gossms | `explorer_filter.go:480-488` | The `default:` arm pushes any text criterion down as a Name → match `fpName` explicitly. Latent. |
+| T66 | gossms | `core/strutil.go:356` | `EvRune` keeps only the first rune of a composed key (IME, ZWJ) → insert `[]rune(ev.Str())`. **Done** (W12): `core.EvText`, used by `Editor` (plain and block), `InputField` and the plan view's search; `EvRune` stays for key matching. Pins: `TestEditorInsertsAComposedKeyWhole`, `TestInputFieldInsertsAComposedKeyWhole`. |
+| T67 | gossms | `datagrid_draw.go` | CR, LF and TAB in a cell render glued together → map them to a space. **Done** (W12): `core.TruncateLine` (CR, LF, CRLF and TAB each one space, no copy without them) in every `datagrid_draw.go` cell path and in `computeColWidths`, so the column is sized as drawn. Pins: `TestTruncateLine`, `TestDataGridDrawsLineBreaksInACellAsSpaces`. |
+| T68 | gossms | `config/config.go:631` | A bad `gossms.key` blocks every save → write the sealed blobs back and refuse only new passwords. **Done** (W12): `Save` carries the key error into `mergeAndWrite`, which keeps every ciphertext as Load does (`keepSealed`), writes settings and connections, leaves out only passwords that would need the key (a re-entered one keeps its entry's old ciphertext), and then returns an error naming those connections. Pin: `TestABadKeyFileStillSavesEverythingButNewPasswords`. |
+| T69 | gossms | `properties_dialog.go:71-96` | The Object Dependencies fetch isn't cancelled on close → `OnClose` calls `Abandon`. **Done** (W11): `dialogs.PropertiesDialog` gained an `OnClose` hook (Escape, Enter, Close), wired to `run.Abandon`. Pin: `TestDependenciesCloseAbandonsTheFetch`. |
+| T70 | gossms | `app_explorer_data.go:159-161` | `primeDatabaseCapabilities` has no deadline → `WithTimeout(childFetchTimeout)`. **No change needed** (W11): the review missed `db.ServerConn.probeDatabase`, which bounds every probe with `capabilityProbeTimeout` (10 s); a caller waiting on another's probe gets its answer or, if that one was abandoned, becomes the prober under the same bound. A 30 s outer deadline would bound nothing more. |
+| T71 | gossms | `clipboard.go:129-136` | Two quick copies race for the last owner → one worker goroutine. *Plausible.* **Done** (W12): `App.clipWriteMu` serialises the writes and `clipWriteSeq` drops one a newer copy has superseded, OSC 52 fallback included — the worker's ordering with no long-lived goroutine. Pin: `TestQuickCopiesLeaveTheLastOnTheClipboard` (old code: `C B A`). |
+| T72 | gossms | `explorer_object_actions.go:338-361` | Rename sends `""` to the server → refuse it in the prompt. **No change needed** (W12): `PromptDialog.accept` has refused an empty or whitespace-only value ("Enter a value.") since August, pinned by `TestPromptDialogRefusesEmptyAndInvalidValues`. |
+| T73 | gossms | `explorer_filter.go:480-488` | The `default:` arm pushes any text criterion down as a Name → match `fpName` explicitly. Latent. **Done** (W12): any other text property refuses the pushdown, so the folder is read whole and filtered client-side. Pin: a `TestNodeFilterPushdown` case. |
 
 ---
 
@@ -1095,9 +1157,28 @@ working session (the `dev-with-local-gosmo` skill).
   - `applyNow` skips `InvalidateAll()` when hiding (`prop_dialog.go:831`).
   - F1 cycles buttons in Connect, Backup and Restore (`dialog_common.go:137`)
     → **decision:** drop it, or document it for all three.
+  - **Done** (W11). The three Query Store reads begin with `BeginTimeout`
+    (the inner `WithTimeout` is gone). A task whose Cancel was asked for and
+    that then failed is `Task.Cancelled`: "<Label> — cancelled" in Tasks,
+    "<Verb> cancelled." in the progress view, "<Label> cancelled" in the status
+    bar; a panic is still a failure and a run that finished anyway keeps its
+    success. `applyNow` calls `InvalidateAll` only when the dialog stays open.
+    F1: replaced, not dropped or documented — the form views' only keyboard
+    route to their buttons was F1, so the button row became a Tab stop
+    (`buttonRowKey`), crossed with Left/Right, in Connect, Back Up and Restore
+    (form and File Locations; Backup Information already cycled on Tab). Pins:
+    `TestCancelledTaskReadsCancelled`,
+    `TestPropDialogOKDoesNotReloadThePageItCloses`,
+    `TestConnectTabReachesTheButtonRow`, `TestConnectButtonRowSkipsGatedButtons`,
+    `TestBackupAndRestoreTabReachTheButtonRow`,
+    `TestProgressModeKeyRotatesAndHides`.
 - **T62 — Case folding.**
   - The `completion_crossdb.go:88-90,125` database directory → the
-    collation-aware `nameMap`.
+    collation-aware `nameMap`. **Done** (W12): `completionDirectory.byName`
+    is a `nameMap` under the server collation (`nameMap.Values` added for the
+    database list), and the own-database check is `sameName`. Pin:
+    `TestCompletionDirectoryFollowsServerCollation` (Sales ONLINE beside sales
+    OFFLINE on a CS server).
   - gosmo: the remaining `.`-joined keys (T26).
 - **Docs drift.**
   - gosmo `errors.go:60-67`: the `ErrSchemaRequired` doc is spliced into
@@ -1178,5 +1259,6 @@ working session (the `dev-with-local-gosmo` skill).
 3. **T52:** drop `definition` from listings? It changes listing results for
    other gosmo users.
 4. **T61:** F1 in Connect, Backup and Restore: remove it, or document it?
+   **Decided** (W11): replaced by Tab reaching the button row.
 5. **Activity Monitor SQL:** move it into gosmo, or add a gossms-side live
    sweep?

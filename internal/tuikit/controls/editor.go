@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -234,13 +235,15 @@ func (e *Editor) SetHighlighter(h Highlighter) { e.highlight = h }
 // Pass false for plain multi-line text boxes, where line numbers mean nothing.
 func (e *Editor) SetGutterVisible(v bool) { e.hideGutter = !v }
 
-// gutterWidth returns the width reserved for the line-number gutter: gutterW
-// when shown, 0 when hidden.
+// gutterWidth returns the width reserved for the line-number gutter: 0 when
+// hidden, else gutterW, widened to the last line number plus a column each
+// side once that has more than three digits — a fixed gutterW drew line 10,000
+// one column left of the editor, over the border.
 func (e *Editor) gutterWidth() int {
 	if e.hideGutter {
 		return 0
 	}
-	return gutterW
+	return max(gutterW, len(strconv.Itoa(e.doc.Len()))+2)
 }
 
 // wrapWidth is the width word-wrap mode segments lines at: the content area

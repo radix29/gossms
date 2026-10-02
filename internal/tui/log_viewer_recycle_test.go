@@ -78,19 +78,23 @@ func TestLogViewerToolbarConstantsMatchTheirCells(t *testing.T) {
 }
 
 // TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle. The Object
-// Explorer's Recycle item is gated on CONTROL SERVER; this toolbar cell was
-// not, so the same action was grey in the tree and live here — clicked, it
-// asked for confirmation and then failed at the server.
+// Explorer's Recycle item is gated on sysadmin; this toolbar cell was not, so
+// the same action was grey in the tree and live here — clicked, it asked for
+// confirmation and then failed at the server.
+//
+// The login holds CONTROL SERVER: probed on 13 and 17, sp_cycle_errorlog
+// refuses it Msg 15247 and sp_cycle_agent_errorlog Msg 14260 (W13), so a
+// CONTROL SERVER gate let exactly this login through to the failure.
 func TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle(t *testing.T) {
 	a := newTestApp()
-	sc := probedConn(t, "", nil, []string{"CONTROL SERVER"}, nil, nil)
+	sc := serverRoleConn(t, []string{"CONTROL SERVER"}, nil, nil, []string{"sysadmin"})
 	a.connections = append(a.connections, sc)
 
 	lv := newTestLogViewer()
 	lv.app, lv.conn = a, sc
 
 	if !lv.toolDisabled(logToolRecycle) {
-		t.Error("the Recycle cell draws live for a login the server has refused CONTROL SERVER")
+		t.Error("the Recycle cell draws live for a CONTROL SERVER login outside sysadmin")
 	}
 	if lv.runTool(logToolRecycle) {
 		t.Fatal("Recycle ran for a login that cannot cycle a log")
@@ -104,7 +108,7 @@ func TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle(t *testing.T) {
 	// A cell that does nothing and says nothing is the thing the context-gating
 	// rule exists to prevent. The panel's own status line, where every other
 	// message it emits goes — "Recycle failed: ..." included.
-	if !strings.Contains(lv.grid.Status(), "CONTROL SERVER") {
+	if !strings.Contains(lv.grid.Status(), "sysadmin") {
 		t.Errorf("panel status = %q, want the missing right named", lv.grid.Status())
 	}
 
@@ -119,13 +123,13 @@ func TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle(t *testing.T) {
 // this existed.
 func TestLogViewerRecycleStaysLiveForALoginThatMay(t *testing.T) {
 	a := newTestApp()
-	granted := probedConn(t, "", []string{"CONTROL SERVER"}, nil, nil, nil)
+	granted := serverRoleConn(t, nil, nil, []string{"sysadmin"}, nil)
 	a.connections = append(a.connections, granted)
 
 	lv := newTestLogViewer()
 	lv.app, lv.conn = a, granted
 	if lv.toolDisabled(logToolRecycle) {
-		t.Error("Recycle was withheld from a login that holds CONTROL SERVER")
+		t.Error("Recycle was withheld from a sysadmin")
 	}
 
 	// Unknown fails open, the rule the whole gate layer rests on: a probe that
@@ -145,7 +149,7 @@ func TestLogViewerRecycleStaysLiveForALoginThatMay(t *testing.T) {
 	if lv.runTool(logToolRecycle) {
 		t.Error("Recycle ran while a read was in flight")
 	}
-	if strings.Contains(lv.grid.Status(), "CONTROL SERVER") {
+	if strings.Contains(lv.grid.Status(), "sysadmin") {
 		t.Errorf("panel status = %q: busy was reported as a missing permission", lv.grid.Status())
 	}
 }
@@ -298,6 +302,42 @@ func TestExplorerLogFoldersOfferRecycle(t *testing.T) {
 		}
 		if !slicesContains(labels, "Recycle") {
 			t.Errorf("%v folder menu = %q, want a Recycle item", nt, labels)
+		}
+	}
+}
+
+// TestExplorerRecycleIsGatedOnSysadmin. CONTROL SERVER is not enough to cycle
+// either log — probed on 13 and 17, sp_cycle_errorlog refuses it Msg 15247
+// and sp_cycle_agent_errorlog Msg 14260 (W13) — so the tree's Recycle item
+// must be withheld from such a login, as the viewer's cell is.
+func TestExplorerRecycleIsGatedOnSysadmin(t *testing.T) {
+	a := newTestApp()
+	for _, tc := range []struct {
+		name string
+		sc   *db.ServerConn
+		want bool
+	}{
+		{"CONTROL SERVER, not sysadmin", serverRoleConn(t, []string{"CONTROL SERVER"}, nil, nil, []string{"sysadmin"}), false},
+		{"sysadmin", serverRoleConn(t, nil, nil, []string{"sysadmin"}, nil), true},
+	} {
+		for _, nt := range []NodeType{NodeSQLServerLogs, NodeAgentErrorLogs} {
+			node := &explorerNode{data: nodeData{Type: nt, conn: tc.sc}}
+			var found bool
+			for _, it := range a.nodeMenuItems(node) {
+				if it.Label != "Recycle" {
+					continue
+				}
+				found = true
+				if got := it.Enabled == nil || it.Enabled(); got != tc.want {
+					t.Errorf("%s, %v: Recycle enabled = %v, want %v", tc.name, nt, got, tc.want)
+				}
+				if !tc.want && !strings.Contains(it.Note, "sysadmin") {
+					t.Errorf("%s, %v: withheld Recycle's note = %q", tc.name, nt, it.Note)
+				}
+			}
+			if !found {
+				t.Fatalf("%s, %v: no Recycle item", tc.name, nt)
+			}
 		}
 	}
 }

@@ -621,7 +621,9 @@ func (g *DataGrid) computeColWidths() {
 		row := g.rows.Row(r)
 		for i, cell := range row {
 			if i >= first && i < len(g.colWidths) {
-				if w := core.DisplayWidthAtMost(cell, cellLimit) + 2; w > g.colWidths[i] {
+				// Measured as drawn: TruncateLine shows a line break as a
+				// space, which DisplayWidth counts as nothing.
+				if w := core.DisplayWidthAtMost(core.TruncateLine(cell, cellLimit), cellLimit) + 2; w > g.colWidths[i] {
 					g.colWidths[i] = w
 				}
 			}

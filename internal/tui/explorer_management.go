@@ -250,7 +250,7 @@ func errorLogsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 		{Divider: true},
 		{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
 		gate.Item(controls.MenuItem{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
-			sc, "", gate.ControlServer),
+			sc, "", gate.Sysadmin),
 		{Divider: true},
 		refresh,
 	}

@@ -333,7 +333,8 @@ var (
 	// SERVER does not reach: sp_set_sqlagent_properties's reload notification
 	// (sp_sqlagent_notify) checks the role, and refuses CONTROL SERVER alone
 	// Msg 14260 after the registry write has gone through. See
-	// AgentPropertiesRights.
+	// AgentPropertiesRights. sp_cycle_errorlog (Msg 15247) and
+	// sp_cycle_agent_errorlog (Msg 14260) refuse it the same way.
 	Sysadmin = Right{Name: "sysadmin", ServerRole: true}
 
 	// The two SQL Agent rights are memberships, not permissions: New Job and

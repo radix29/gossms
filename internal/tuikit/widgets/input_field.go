@@ -400,12 +400,12 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 			if hadSelection {
 				f.deleteSelection()
 			}
-			newVal := make([]rune, len(f.value)+1)
-			copy(newVal, f.value[:f.cursor])
-			newVal[f.cursor] = r
-			copy(newVal[f.cursor+1:], f.value[f.cursor:])
-			f.value = newVal
-			f.cursor++
+			text := core.EvText(ev)
+			newVal := make([]rune, 0, len(f.value)+len(text))
+			newVal = append(newVal, f.value[:f.cursor]...)
+			newVal = append(newVal, text...)
+			f.value = append(newVal, f.value[f.cursor:]...)
+			f.cursor += len(text)
 		} else {
 			consumed = false
 		}

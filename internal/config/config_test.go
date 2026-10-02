@@ -700,6 +700,86 @@ func TestReenteredPasswordReplacesAnUnopenableOne(t *testing.T) {
 	}
 }
 
+// A key file that can't be used doesn't block the save (T68): settings and
+// connections are written, every stored ciphertext goes back as it was, and
+// only the passwords that would need the key are left out, named in the error.
+func TestABadKeyFileStillSavesEverythingButNewPasswords(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := &Config{}
+	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "s3cr3t!", RememberPassword: true})
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save(): %v", err)
+	}
+	cfgPath := configPath()
+	sealedBefore := readStoredPassword(t, cfgPath)
+	keyPath := filepath.Join(filepath.Dir(cfgPath), keyFileName)
+	origKey, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := Load()
+	loaded.MaxCellLength = 77
+	// Re-entering the saved password, and a new connection with one: neither
+	// can be sealed.
+	loaded.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "changed", RememberPassword: true})
+	loaded.AddOrUpdate(Connection{Server: "other", User: "u", Password: "pw", RememberPassword: true})
+	err = loaded.Save()
+	if err == nil || !strings.Contains(err.Error(), "expected 32") {
+		t.Fatalf("Save() = %v, want the key file's error", err)
+	}
+	for _, conn := range loaded.Connections {
+		if !strings.Contains(err.Error(), conn.Name) {
+			t.Errorf("error %q doesn't name %s, whose password wasn't saved", err, conn.Name)
+		}
+	}
+
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDisk Config
+	if err := json.Unmarshal(raw, &onDisk); err != nil {
+		t.Fatal(err)
+	}
+	if onDisk.MaxCellLength != 77 {
+		t.Errorf("MaxCellLength on disk = %d, want the changed 77", onDisk.MaxCellLength)
+	}
+	if len(onDisk.Connections) != 2 {
+		t.Fatalf("connections on disk = %d, want 2", len(onDisk.Connections))
+	}
+	for _, conn := range onDisk.Connections {
+		switch conn.Server {
+		case "srv":
+			if conn.Password != sealedBefore {
+				t.Errorf("srv's stored password = %q, want the original ciphertext kept", conn.Password)
+			}
+		case "other":
+			if conn.Password != "" {
+				t.Errorf("other's stored password = %q, want none: it could not be sealed", conn.Password)
+			}
+		}
+	}
+
+	// The session keeps what was typed; a restored key opens the old one.
+	if got := loaded.Connections[len(loaded.Connections)-1].Password; got != "pw" {
+		t.Errorf("in-memory password = %q, want the typed one kept for this session", got)
+	}
+	if err := os.WriteFile(keyPath, origKey, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, conn := range Load().Connections {
+		if conn.Server == "srv" && conn.Password != "s3cr3t!" {
+			t.Errorf("srv's password after restoring the key = %q, want %q", conn.Password, "s3cr3t!")
+		}
+	}
+}
+
 // readStoredPassword reads the single saved connection's raw encrypted password
 // from config.json.
 func readStoredPassword(t *testing.T, path string) string {

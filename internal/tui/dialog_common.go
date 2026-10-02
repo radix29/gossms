@@ -116,8 +116,8 @@ func runProgressButton(task *Task, btnFocus int, hide func()) {
 }
 
 // progressModeKey is the whole keyboard of the Backup and Restore progress
-// views: Escape hides, Enter fires the focused button, Tab/F1 and Backtab
-// rotate between them.
+// views: Escape hides, Enter fires the focused button, Tab and Backtab rotate
+// between them.
 //
 // btnFocus is clamped on Enter rather than on every rotation, because the
 // button list shrinks under the view — Cancel disappears the moment the task
@@ -134,12 +134,51 @@ func progressModeKey(ev *tcell.EventKey, btnFocus *int, buttons []string, hide, 
 	case tcell.KeyEnter:
 		*btnFocus = min(*btnFocus, len(buttons)-1)
 		fire()
-	case tcell.KeyTab, tcell.KeyF1:
+	case tcell.KeyTab:
 		*btnFocus = nextFocus(*btnFocus, len(buttons))
 	case tcell.KeyBacktab:
 		*btnFocus = prevFocus(*btnFocus, len(buttons))
 	}
 	return true
+}
+
+// buttonRowKey is the keyboard of a Connect, Backup or Restore button row
+// while it holds focus: Left/Right move along the row, past a disabled button;
+// Enter fires the focused one; Escape hides; Tab and Backtab leave it back into
+// the fields, through leave(+1) or leave(-1). Everything else is swallowed — a
+// letter typed on the row must not edit the field focus came from.
+//
+// The row is one stop in the Tab ring, crossed with the arrows, as
+// propsheet's zoneButtons is in a Properties dialog. It replaced F1, which
+// cycled the buttons from anywhere in the form and was the only keyboard way
+// to reach them — F1 is Help everywhere else.
+func buttonRowKey(ev *tcell.EventKey, btnFocus *int, n int, disabled []bool, fire, hide func(), leave func(dir int)) bool {
+	switch ev.Key() {
+	case tcell.KeyLeft:
+		*btnFocus = stepButton(*btnFocus, -1, n, disabled)
+	case tcell.KeyRight:
+		*btnFocus = stepButton(*btnFocus, +1, n, disabled)
+	case tcell.KeyEnter:
+		fire()
+	case tcell.KeyEscape:
+		hide()
+	case tcell.KeyTab:
+		leave(+1)
+	case tcell.KeyBacktab:
+		leave(-1)
+	}
+	return true
+}
+
+// stepButton is the next enabled button from i in dir, or i at either end of
+// the row. disabled may be nil or shorter than the row.
+func stepButton(i, dir, n int, disabled []bool) int {
+	for j := i + dir; j >= 0 && j < n; j += dir {
+		if j >= len(disabled) || !disabled[j] {
+			return j
+		}
+	}
+	return i
 }
 
 // confirmDiscardChanges asks before throwing away a property page's unsaved

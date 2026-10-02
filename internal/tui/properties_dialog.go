@@ -33,7 +33,11 @@ type PropertiesDialog struct {
 
 // NewPropertiesDialog creates a generic properties dialog.
 func NewPropertiesDialog(app *App) *PropertiesDialog {
-	return &PropertiesDialog{PropertiesDialog: dialogs.NewPropertiesDialog(app.screen)}
+	d := &PropertiesDialog{PropertiesDialog: dialogs.NewPropertiesDialog(app.screen)}
+	// A Dependencies fetch still out when the dialog closes has nowhere to
+	// land: stop its queries now rather than at childFetchTimeout.
+	d.OnClose = d.run.Abandon
+	return d
 }
 
 // ShowGenericProperties shows arbitrary key-value pairs (e.g. About box).

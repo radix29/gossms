@@ -504,6 +504,32 @@ func TestTreeViewRightArrowDoesNotActivate(t *testing.T) {
 	}
 }
 
+// Right and + only ever expand: on an expanded node they used to collapse it
+// (T33), against F1 help. Neither fires OnCollapse.
+func TestTreeViewRightAndPlusNeverCollapse(t *testing.T) {
+	for name, ev := range map[string]*tcell.EventKey{
+		"Right": tcell.NewEventKey(tcell.KeyRight, "", tcell.ModNone),
+		"+":     tcell.NewEventKey(tcell.KeyRune, "+", tcell.ModNone),
+	} {
+		t.Run(name, func(t *testing.T) {
+			tv := newTestTreeViewExpandable()
+			expands, collapses := 0, 0
+			tv.OnExpand = func(TreeNodeID) { expands++ }
+			tv.OnCollapse = func(TreeNodeID) { collapses++ }
+
+			tv.HandleKey(ev)
+			tv.HandleKey(ev)
+
+			if !tv.nodes[0].Expanded {
+				t.Errorf("%s twice left the node collapsed", name)
+			}
+			if expands != 1 || collapses != 0 {
+				t.Errorf("OnExpand fired %d times, OnCollapse %d; want 1 and 0", expands, collapses)
+			}
+		})
+	}
+}
+
 // A second press on the same row is the mouse spelling of Enter. Each press is
 // bracketed by the release tcell sends, which is what clears the drag latch —
 // without it the second press reads as a continued hold.

@@ -323,3 +323,15 @@ func TestInputFieldShowFromStart(t *testing.T) {
 		t.Fatalf("drawn text after typing = %q, want the tail %q", got, "ijklmnopq")
 	}
 }
+
+// A composed key — here e and a combining acute, as an IME or dead key commits
+// it — inserts every rune it carries, not only the first (T66).
+func TestInputFieldInsertsAComposedKeyWhole(t *testing.T) {
+	f := newTestInputField("ab")
+	f.HandleKey(key(tcell.KeyLeft, tcell.ModNone))
+	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, "é", tcell.ModNone))
+	f.HandleKey(runeKey('x', tcell.ModNone))
+	if got, want := f.Value(), "aéxb"; got != want {
+		t.Errorf("Value() = %q, want %q", got, want)
+	}
+}

@@ -244,26 +244,43 @@ func DrawScrollbar(s tcell.Screen, x, y, h, total, visible, offset int, style, t
 	if total <= visible || total == 0 {
 		return
 	}
-	thumbH := max(1, h*visible/total)
-	thumbY := y + offset*h/total
+	thumbH, at := scrollThumb(h, total, visible, offset)
+	thumbY := y + at
 	for i := 0; i < thumbH && thumbY+i < y+h; i++ {
 		s.SetContent(x, thumbY+i, '█', nil, thumbStyle)
 	}
 }
 
+// scrollThumb returns the thumb's length and its start within a track of
+// length n, for total > visible. The start spans the free track, n-length, in
+// step with offset's span, total-visible, so the last offset puts the thumb's
+// end on the track's last cell. Placing it at offset*n/total, as before, left
+// the rounding of length and start to decide, and the thumb stopped short of
+// the bottom (a 10-row track over 30 rows, 10 visible, ended at row 8).
+func scrollThumb(n, total, visible, offset int) (length, start int) {
+	length = Clamp(n*visible/total, 1, n)
+	return length, Clamp(offset, 0, total-visible) * (n - length) / (total - visible)
+}
+
 // ScrollOffsetForDrag returns the scroll offset a mouse click or drag at
 // track-relative row y (0 at the track's first row, matching the y..y+h
 // span DrawScrollbar was called with) should jump the view to, given the
-// same h/total/visible passed to that DrawScrollbar call — the inverse of
-// the thumbY math above. HandleScrollbarDrag below is the higher-level
-// helper most callers want; this is exposed separately for the rare caller
-// that needs the offset math without the button/latch handling.
+// same h/total/visible passed to that DrawScrollbar call: the track's first
+// row is offset 0 and its last the final offset, as scrollThumb draws them.
+// HandleScrollbarDrag below is the higher-level helper most callers want;
+// this is exposed separately for the rare caller that needs the offset math
+// without the button/latch handling.
 func ScrollOffsetForDrag(y, h, total, visible int) int {
 	if h <= 0 || total <= visible {
 		return 0
 	}
-	y = Clamp(y, 0, h-1)
-	return Clamp(y*total/h, 0, total-visible)
+	if h == 1 {
+		return 0
+	}
+	// Linear from the first row to the last. y*total/h, as before, topped
+	// out at (h-1)*total/h — 900 of 995 on a 10-row track over 1000 rows —
+	// so the end of a long list was unreachable by drag.
+	return Clamp(y, 0, h-1) * (total - visible) / (h - 1)
 }
 
 // DrawScrollbarH draws a horizontal scrollbar at y spanning [x, x+w) — the
@@ -276,8 +293,8 @@ func DrawScrollbarH(s tcell.Screen, x, y, w, total, visible, offset int, style, 
 	if total <= visible || total == 0 {
 		return
 	}
-	thumbW := max(1, w*visible/total)
-	thumbX := x + offset*w/total
+	thumbW, at := scrollThumb(w, total, visible, offset)
+	thumbX := x + at
 	for i := 0; i < thumbW && thumbX+i < x+w; i++ {
 		s.SetContent(thumbX+i, y, '█', nil, thumbStyle)
 	}

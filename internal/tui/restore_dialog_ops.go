@@ -14,18 +14,15 @@ import (
 // loadHistoryDatabases fetches the server's database list for the history
 // Database dropdown, then loads the selected database's backup history.
 func (d *RestoreDialog) loadHistoryDatabases() {
-	d.loadSeq++
-	seq := d.loadSeq
 	app, sc := d.app, d.sc
+	ctx, seq := d.dbListRun.BeginTimeout(sc.Context(), childFetchTimeout)
 	app.safego("loading the restore database list", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
 		// Every database, offline ones included: this dropdown picks whose backup
 		// *history* to read out of msdb, which outlives the database's current
 		// state — see databaseNames.
 		names, err := databaseNames(ctx, sc)
 		app.postAndWake(func() {
-			if seq != d.loadSeq || !d.Visible() {
+			if !d.dbListRun.Done(seq) || !d.Visible() {
 				return
 			}
 			if err != nil {
@@ -42,7 +39,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 			}
 			d.ddHistDB = dd
 			d.rebuildFocusable()
-			d.setFocus(d.focusIdx)
+			d.refocus()
 			d.prevHistDB = d.ddHistDB.Value()
 			d.loadHistory(d.prevHistDB)
 			d.autoFillTarget(d.prevHistDB)
@@ -59,16 +56,13 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 	if dbName == "" {
 		return
 	}
-	d.loadSeq++
-	seq := d.loadSeq
 	app, sc := d.app, d.sc
+	ctx, seq := d.historyRun.BeginTimeout(sc.Context(), childFetchTimeout)
 	d.setStatusMsg("Loading backup history for "+dbName+"...", false)
 	app.safego("loading backup history", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
 		hist, err := sc.Server.BackupHistory(ctx, dbName)
 		app.postAndWake(func() {
-			if seq != d.loadSeq || !d.Visible() {
+			if !d.historyRun.Done(seq) || !d.Visible() {
 				return
 			}
 			if err != nil {
@@ -87,7 +81,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 			}
 			d.ddHistSet = widgets.NewDropDown("Backup Set: ", labels, histSetWidth)
 			d.rebuildFocusable()
-			d.setFocus(d.focusIdx)
+			d.refocus()
 			if len(hist) == 0 && deviceless > 0 {
 				// Form mode wraps the status to two lines; keep it inside them.
 				d.setStatusMsg(fmt.Sprintf("No restorable backups for %s — its %d are automated (no device); "+
@@ -240,24 +234,21 @@ func (d *RestoreDialog) selectHeader(i int) {
 }
 
 // loadFileList re-reads the selected backup set's file list in the background.
-// Held ←/→ fires one per set crossed, and loadSeq drops every answer but the
-// newest.
+// Held ←/→ fires one per set crossed; fileRun cancels each one the next
+// replaces and drops every answer but the newest.
 func (d *RestoreDialog) loadFileList() {
 	src, fileNumber := restoreSource{devices: d.inspectDevs}, d.restoreFileNumber()
 	if len(src.devices) == 0 {
 		return
 	}
-	d.loadSeq++
-	seq := d.loadSeq
 	// Captured here, never read as d.sc inside the goroutine: show() replaces
 	// d.sc when the dialog is reopened, on another server as like as not.
 	app, sc := d.app, d.sc
+	ctx, seq := d.fileRun.BeginTimeout(sc.Context(), childFetchTimeout)
 	app.safego("reading a backup set's file list", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
 		files, err := sc.Server.BackupFileList(ctx, fileNumber, src.targets()...)
 		app.postAndWake(func() {
-			if seq != d.loadSeq || !d.Visible() {
+			if !d.fileRun.Done(seq) || !d.Visible() {
 				return
 			}
 			if err != nil {
@@ -353,12 +344,12 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 		return
 	}
 	d.setStatusMsg("Analyzing backup...", false)
-	d.loadSeq++
-	seq := d.loadSeq
 	app, sc := d.app, d.sc // see loadFileList
+	// The file list an arrow key was re-reading is for the device this
+	// replaces.
+	d.fileRun.Abandon()
+	ctx, seq := d.infoRun.BeginTimeout(sc.Context(), childFetchTimeout)
 	app.safego("analyzing the backup device", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
 		headers, err := sc.Server.BackupHeaders(ctx, src.targets()...)
 		// A history entry opens the view on its own set, a typed path on the
 		// first: the entry the user picked is the backup they meant.
@@ -371,7 +362,7 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 			files, err = sc.Server.BackupFileList(ctx, backupSetNumber(headers, idx), src.targets()...)
 		}
 		app.postAndWake(func() {
-			if seq != d.loadSeq || !d.Visible() {
+			if !d.infoRun.Done(seq) || !d.Visible() {
 				return
 			}
 			if err != nil {
@@ -413,15 +404,12 @@ func (d *RestoreDialog) startRestore() {
 	}
 
 	d.setStatusMsg("Checking target database...", false)
-	d.loadSeq++
-	seq := d.loadSeq
 	app, sc := d.app, d.sc
+	ctx, seq := d.checkRun.BeginTimeout(sc.Context(), childFetchTimeout)
 	app.safego("preparing the restore", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
 		dbs, err := sc.Server.Databases(ctx)
 		app.postAndWake(func() {
-			if seq != d.loadSeq || !d.Visible() {
+			if !d.checkRun.Done(seq) || !d.Visible() {
 				return
 			}
 			if err != nil {
@@ -683,12 +671,9 @@ func (d *RestoreDialog) script() {
 	req := d.restoreRequest(src, target) // snapshots on the UI goroutine — see beginRestore
 
 	d.setStatusMsg("Building script...", false)
-	d.loadSeq++
-	seq := d.loadSeq
 	app, sc := d.app, d.sc
+	ctx, seq := d.scriptRun.BeginTimeout(sc.Context(), childFetchTimeout)
 	app.safego("scripting the restore", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
 		ropts, err := buildRestoreOptions(ctx, sc.Server, req)
 		var stmt string
 		if err == nil {
@@ -697,7 +682,7 @@ func (d *RestoreDialog) script() {
 			stmt, err = sc.Server.BuildRestoreStatement(ropts)
 		}
 		app.postAndWake(func() {
-			if seq != d.loadSeq || !d.Visible() {
+			if !d.scriptRun.Done(seq) || !d.Visible() {
 				return
 			}
 			if err != nil {

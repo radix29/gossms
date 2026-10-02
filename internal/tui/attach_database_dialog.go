@@ -43,10 +43,10 @@ type AttachDatabaseDialog struct {
 	// attachFilePaths.
 	files []*gosmo.DetachedFile
 
-	// reading latches the one round trip to DBCC CHECKPRIMARYFILE, so a second
-	// press cannot start another over the top of it. Released by the callback
-	// the goroutine posts, and by readPanicked if it panics instead.
-	reading bool
+	// fileRead is the DBCC CHECKPRIMARYFILE round trip. A second press — a
+	// path corrected while the first was out — supersedes and cancels it;
+	// show and close abandon it.
+	fileRead latest
 }
 
 // NewAttachDatabaseDialog creates the dialog and wires its callbacks.
@@ -61,12 +61,16 @@ func NewAttachDatabaseDialog(app *App) *AttachDatabaseDialog {
 		build:   d.buildPages,
 		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) },
 	})
+	d.OnClose = func() {
+		d.fileRead.Abandon()
+		d.onClose()
+	}
 	return d
 }
 
 func (d *AttachDatabaseDialog) show(sc *db.ServerConn) {
 	d.files = nil
-	d.reading = false
+	d.fileRead.Abandon()
 	d.newObjectDialog.show(sc)
 	d.SetHeader("Server: "+sc.Opts.Server, "Attaching files already on that host")
 }
@@ -138,21 +142,15 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 			hint.SetError("Type or browse to the database's primary data file first.")
 			return
 		}
-		if d.reading {
-			return
-		}
-		d.reading = true
 		hint.Set("Reading the file list from " + serverPathBase(path) + "...")
-		sessionCtx := d.ctx
-		d.app.safegoRepair("reading a detached database's file list", d.readPanicked, func() {
-			ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-			defer cancel()
+		// From d.ctx, so a disconnect stops it too.
+		ctx, seq := d.fileRead.BeginTimeout(d.ctx, propFetchTimeout)
+		d.app.safego("reading a detached database's file list", func() {
 			info, err := sc.Server.DetachedDatabaseInfo(ctx, path)
 			d.app.postAndWake(func() {
-				if d.ctx != sessionCtx {
-					return // the dialog was closed and reopened while this was out
+				if !d.fileRead.Done(seq) {
+					return
 				}
-				d.reading = false
 				if err != nil {
 					// Not fatal: CREATE DATABASE ... FOR ATTACH still works
 					// from the primary file alone as long as the other files
@@ -237,13 +235,6 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 			RebuildLog: rebuildRow.Checked(),
 		})
 	}
-}
-
-// readPanicked releases the read latch after a panic in readFiles' goroutine —
-// its App.safegoRepair step. Without it Browse and Read File List are dead for
-// the rest of the dialog's life, and the hint sits on "Reading..." forever.
-func (d *AttachDatabaseDialog) readPanicked() {
-	d.reading = false
 }
 
 // attachFileType labels a file for the grid. DBCC CHECKPRIMARYFILE reports

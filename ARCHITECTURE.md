@@ -677,9 +677,13 @@ then assert the *next* one still runs — a flag check passes on a dead latch.
 stale results". Almost every async read is latest-only, and each of these owns
 a `latest`: an Object Explorer node's children (`object_explorer.go`), the
 completion inventory, the Query Store panel's report/plan pane/series, the Log
-File Viewer's read, a `newObjectDialog` prefetch, the Detail Browser fetch, and
-Results to Text formatting of a large set (`QueryPanel.showResultsText` — CPU,
-not a read, but superseded the same way).
+File Viewer's read, a `newObjectDialog` prefetch, the Detail Browser fetch,
+Object Dependencies, each kind of load in Back Up and Restore (one `latest` per
+kind — database list, history, analysis, file list, target check, script — so
+one kind never supersedes another; all abandoned by `show` and `Hide`), the
+Attach and New Snapshot file reads, and Results to Text formatting of a large
+set (`QueryPanel.showResultsText` — CPU, not a read, but superseded the same
+way).
 
 **Both halves matter.** The token drops a superseded result, so a slow fetch
 can't overwrite a fresher one; the cancel stops its queries so they release

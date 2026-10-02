@@ -2,7 +2,6 @@ package tui
 
 import (
 	"slices"
-	"strings"
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
@@ -42,7 +41,7 @@ func newCrossDBPanel(t *testing.T) *QueryPanel {
 	a.completionInventories[completionInventoryKey(sc.Opts, "Locked")] = &completionInventory{err: errNoDatabaseAccess, gated: true}
 	dir := a.completionDirectories[sysCompletionInventoryKey(sc.Opts)]
 	for _, e := range []directoryEntry{{"Billing", "ONLINE"}, {"Pending", "ONLINE"}, {"Locked", "ONLINE"}, {"Offline", "OFFLINE"}} {
-		dir.byName[strings.ToLower(e.name)] = e
+		dir.byName.Set(e.name, e)
 	}
 	return qp
 }

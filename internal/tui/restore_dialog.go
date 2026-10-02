@@ -127,6 +127,10 @@ type RestoreDialog struct {
 	focusIdx  int
 	focusable []focusable
 	btnFocus  int
+	// onButtons is set while the form's or the Files view's button row holds
+	// keyboard focus — the stop past either end of the view's Tab ring
+	// (buttonRowKey). The view's fields are blurred meanwhile.
+	onButtons bool
 
 	status    string
 	statusErr bool
@@ -150,9 +154,16 @@ type RestoreDialog struct {
 	histLoaded bool
 	history    []*gosmo.BackupInfo
 
-	// loadSeq discards stale async fetches (database list, history,
-	// analysis) after the dialog re-shows or the inputs change.
-	loadSeq int
+	// One latest per kind of load, so a newer load supersedes and cancels only
+	// its own kind: a single shared token let a history load started during
+	// "Checking target database..." drop startRestore's answer, and the restore
+	// never began. Every one is abandoned by show and Hide (abandonLoads).
+	dbListRun  latest // the history Database dropdown (loadHistoryDatabases)
+	historyRun latest // the selected database's backup sets (loadHistory)
+	infoRun    latest // Analyze's headers and file list (loadBackupInfo)
+	fileRun    latest // the file list of the set arrowed to (loadFileList)
+	checkRun   latest // OK's does-the-target-exist check (startRestore)
+	scriptRun  latest // Script's statement build (script)
 
 	// defDirs is the server's default data and log directories as read when
 	// the dialog opened (Server.DefaultPaths), nil until that read lands —
@@ -205,7 +216,7 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.headerIdx = 0
 	d.history = nil
 	d.histLoaded = false
-	d.loadSeq++
+	d.abandonLoads()
 	d.SetTitle("Restore Database")
 	// Literal, not restingStatus(): the widgets it reads through
 	// deviceForRestore are built below, and are nil on the first showing.
@@ -259,6 +270,20 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.setFocus(0)
 }
 
+// Hide closes the dialog and abandons every load still out, so none of them
+// goes on holding a connection for a dialog no one is looking at. A running
+// restore is a Task, not a load, and carries on.
+func (d *RestoreDialog) Hide() {
+	d.abandonLoads()
+	d.ModalDialog.Hide()
+}
+
+func (d *RestoreDialog) abandonLoads() {
+	for _, l := range []*latest{&d.dbListRun, &d.historyRun, &d.infoRun, &d.fileRun, &d.checkRun, &d.scriptRun, &d.defPaths} {
+		l.Abandon()
+	}
+}
+
 // fileFieldWidth computes the backup-file input's content width so the
 // input box plus the Browse button fill the dialog's inner width.
 func (d *RestoreDialog) fileFieldWidth() int {
@@ -285,7 +310,50 @@ func (d *RestoreDialog) rebuildFocusable() {
 }
 
 func (d *RestoreDialog) setFocus(i int) {
+	d.onButtons = false
 	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
+}
+
+// stepFocus is the form's Tab (+1) or Backtab (-1): past either end of the
+// ring is the button row.
+func (d *RestoreDialog) stepFocus(dir int) {
+	if i := d.focusIdx + dir; i >= 0 && i < len(d.focusable) {
+		d.setFocus(i)
+		return
+	}
+	d.onButtons = true
+	setFocusIn(d.focusable, -1, d.focusIdx)
+}
+
+// refocus re-applies the form's focus after rebuildFocusable swapped a
+// dropdown, leaving it on the button row if that is where it was — see
+// BackupDialog.refocus.
+func (d *RestoreDialog) refocus() {
+	if d.onButtons {
+		setFocusIn(d.focusable, -1, d.focusIdx)
+		return
+	}
+	d.setFocus(d.focusIdx)
+}
+
+// leaveButtons is Tab (+1) or Backtab (-1) off the form's or the Files view's
+// button row, onto that view's first or last field. The highlight goes back to
+// the first button, which is what Enter in a field fires.
+func (d *RestoreDialog) leaveButtons(dir int) {
+	d.btnFocus = 0
+	if d.mode == restoreModeFiles {
+		if dir > 0 {
+			d.setFilesFocus(0)
+		} else {
+			d.setFilesFocus(-1) // wraps to the last
+		}
+		return
+	}
+	if dir > 0 {
+		d.setFocus(0)
+	} else {
+		d.setFocus(len(d.focusable) - 1)
+	}
 }
 
 // focusTo moves focus to w, if it's in the focusable list.
@@ -430,6 +498,9 @@ func (d *RestoreDialog) backToForm() {
 	d.mode = restoreModeForm
 	d.btnFocus = 0
 	d.SetTitle("Restore Database")
+	// Into the field the form was left from, even if the view being left had
+	// focus on its buttons.
+	d.setFocus(d.focusIdx)
 }
 
 func (d *RestoreDialog) doProgressButton() {
@@ -441,7 +512,7 @@ func (d *RestoreDialog) doProgressButton() {
 // The inspect, files and progress views all drive their own focus rather than
 // focusable, so each answers nil.
 func (d *RestoreDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.mode != restoreModeForm {
+	if d.mode != restoreModeForm || d.onButtons {
 		return nil
 	}
 	return focusedClipboardTarget(d.focusable, d.focusIdx)

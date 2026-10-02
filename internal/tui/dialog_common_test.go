@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/db"
 )
 
 // fakeFocusable records what Focus was last told, so a test can assert which
@@ -216,14 +217,21 @@ func TestProgressModeKeyRotatesAndHides(t *testing.T) {
 	hide := func() { hidden = true }
 	fire := func() { t.Error("a rotation key fired the button") }
 
-	for _, k := range []tcell.Key{tcell.KeyTab, tcell.KeyF1} {
-		btnFocus = 0
-		if !progressModeKey(key(k), &btnFocus, buttons, hide, fire) {
-			t.Errorf("%v was not handled", k)
-		}
-		if btnFocus != 1 {
-			t.Errorf("%v left btnFocus at %d, want 1", k, btnFocus)
-		}
+	if !progressModeKey(key(tcell.KeyTab), &btnFocus, buttons, hide, fire) {
+		t.Error("Tab was not handled")
+	}
+	if btnFocus != 1 {
+		t.Errorf("Tab left btnFocus at %d, want 1", btnFocus)
+	}
+
+	// F1 is Help everywhere else, so it is not a second Tab here: swallowed,
+	// like any unbound key, and the focus stays put.
+	btnFocus = 0
+	if !progressModeKey(key(tcell.KeyF1), &btnFocus, buttons, hide, fire) {
+		t.Error("F1 fell through to the form under the progress view")
+	}
+	if btnFocus != 0 {
+		t.Errorf("F1 moved btnFocus to %d; it is not a rotation key", btnFocus)
 	}
 
 	// Three buttons, not this view's two: with two, forward and backward from
@@ -250,3 +258,70 @@ func TestProgressModeKeyRotatesAndHides(t *testing.T) {
 }
 
 func key(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, "", tcell.ModNone) }
+
+// Backup's and Restore's button rows are a Tab stop past either end of the
+// form's ring, as Connect's is (TestConnectTabReachesTheButtonRow): F1 used to
+// be the only keyboard way to reach Script, Validate or OK.
+func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
+	quietLog(t)
+	key := func(h interface{ HandleKey(*tcell.EventKey) bool }, k tcell.Key) {
+		h.HandleKey(tcell.NewEventKey(k, "", tcell.ModNone))
+	}
+
+	a := newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	b := NewBackupDialog(a)
+	a.screen = nil
+	b.show(&db.ServerConn{}, "testdb")
+	for range b.focusable {
+		key(b, tcell.KeyTab)
+	}
+	if !b.onButtons || b.btnFocus != 0 {
+		t.Fatalf("Backup: Tab past the last field: onButtons=%v btnFocus=%d", b.onButtons, b.btnFocus)
+	}
+	key(b, tcell.KeyRight)
+	key(b, tcell.KeyRight)
+	if b.btnFocus != 2 {
+		t.Errorf("Backup: Right twice reached button %d, want Validate (2)", b.btnFocus)
+	}
+	key(b, tcell.KeyBacktab)
+	if b.onButtons || b.focusIdx != len(b.focusable)-1 || b.btnFocus != 0 {
+		t.Errorf("Backup: Backtab off the row: onButtons=%v focusIdx=%d btnFocus=%d", b.onButtons, b.focusIdx, b.btnFocus)
+	}
+	key(b, tcell.KeyTab)
+	key(b, tcell.KeyRight)
+	key(b, tcell.KeyRight)
+	key(b, tcell.KeyRight)
+	key(b, tcell.KeyEnter) // Cancel
+	if b.Visible() {
+		t.Error("Backup: Enter on Cancel did not close the dialog")
+	}
+
+	a = newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	r := NewRestoreDialog(a)
+	a.screen = nil
+	r.show(&db.ServerConn{}, "testdb")
+	key(r, tcell.KeyBacktab)
+	if !r.onButtons {
+		t.Fatal("Restore: Backtab from the first field did not reach the button row")
+	}
+	if r.FocusedClipboardTarget() != nil {
+		t.Error("Restore: a field still answers Copy/Paste while the buttons have focus")
+	}
+	// Files needs an analysed backup to open on; this is where it lands.
+	r.enterFilesMode()
+	if r.onButtons {
+		t.Fatal("Restore: the Files view opened with focus still on a button row")
+	}
+	// The Files view's own row, then Back to the form, into its fields.
+	key(r, tcell.KeyBacktab)
+	if !r.onButtons {
+		t.Fatal("Restore Files: Backtab from the first field did not reach the button row")
+	}
+	key(r, tcell.KeyRight) // Back
+	key(r, tcell.KeyEnter)
+	if r.mode != restoreModeForm || r.onButtons {
+		t.Errorf("Restore: Back from the Files row: mode=%d onButtons=%v", r.mode, r.onButtons)
+	}
+}

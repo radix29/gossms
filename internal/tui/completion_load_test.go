@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/radix29/gossms/internal/db"
 )
@@ -117,5 +119,42 @@ func TestCompletionDirectoryFailuresAreReported(t *testing.T) {
 				t.Errorf("status = %q, want it to contain %q", a.statusText, c.want)
 			}
 		})
+	}
+}
+
+// On a case-sensitive server, Sales and sales are two databases, and the
+// completion directory keeps them apart (T62): keyed by lowered name, the one
+// listed last shadowed the other, so "sales." completed from Sales or not at
+// all. The panel's own database is matched under the same rule.
+func TestCompletionDirectoryFollowsServerCollation(t *testing.T) {
+	now := time.Now()
+	info := serverInfoResponse()
+	info.rows[0][4] = "Latin1_General_CS_AS"
+	dbs := fakeResponse{match: "FROM sys.databases", cols: 9, rows: [][]driver.Value{
+		{"Sales", int64(5), "ONLINE", "FULL", int64(160), "Latin1_General_CS_AS", false, now, int64(0)},
+		{"sales", int64(6), "OFFLINE", "FULL", int64(160), "Latin1_General_CS_AS", false, now, int64(0)},
+	}}
+	sc, _ := newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse(), dbs})
+	a := newTestApp()
+	d := a.ensureCompletionDirectory(sc)
+	drainUntil(t, a, func() bool { return !d.loading }, "the directory load")
+
+	for name, want := range map[string]string{"Sales": "ONLINE", "sales": "OFFLINE"} {
+		if e, ok := d.byName.Get(name); !ok || e.name != name || e.state != want {
+			t.Errorf("directory[%q] = %+v, %v; want %s under its own name", name, e, ok, want)
+		}
+	}
+	if _, ok := d.byName.Get("SALES"); ok {
+		t.Error("directory found SALES, which a case-sensitive server doesn't list")
+	}
+
+	qp := NewQueryPanel(a, "Query 1")
+	qp.conn, qp.database = sc, "Sales"
+	own := &completionInventory{}
+	if inv, _ := qp.databaseInventory(own, "Sales"); inv != own {
+		t.Error("Sales did not resolve to the panel's own database Sales")
+	}
+	if inv, pending := qp.databaseInventory(own, "sales"); inv != nil || pending {
+		t.Errorf("sales (OFFLINE) = %v, pending %v; want nothing — it is not the panel's Sales", inv, pending)
 	}
 }

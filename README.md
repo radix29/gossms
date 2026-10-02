@@ -116,7 +116,8 @@ about 96 columns History is hidden and the form fills the dialog.
 
 The form has two tabs, **Connection Properties** and **Connection String**
 (Ctrl+PgUp/PgDn). **Reset** restores defaults; **Delete** removes the selected
-history entry and its saved password. F1 cycles the buttons.
+history entry and its saved password. Tab reaches the buttons after the last
+field; Left/Right move along them.
 
 Choose SQL Server, Windows Integrated, or a Microsoft Entra ID method. Fields the
 method does not use are greyed out.

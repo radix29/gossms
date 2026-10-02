@@ -134,3 +134,24 @@ func TestScrollOffsetForDrag(t *testing.T) {
 		})
 	}
 }
+
+// The thumb reaches both ends of the track (T64): at offset*h/total it stopped
+// a row short of the bottom whenever the rounding of length and start
+// disagreed. The drag's two ends agree with it.
+func TestScrollbarThumbSpansTheWholeTrack(t *testing.T) {
+	for _, c := range []struct{ h, total, visible int }{
+		{10, 30, 10}, {10, 1000, 5}, {7, 13, 6}, {20, 21, 20}, {3, 100, 3},
+	} {
+		length, top := scrollThumb(c.h, c.total, c.visible, ScrollOffsetForDrag(0, c.h, c.total, c.visible))
+		if top != 0 {
+			t.Errorf("%+v: thumb after a drag to the first row starts at %d, want 0", c, top)
+		}
+		last := ScrollOffsetForDrag(c.h-1, c.h, c.total, c.visible)
+		if last != c.total-c.visible {
+			t.Errorf("%+v: a drag to the last row gives offset %d, want %d", c, last, c.total-c.visible)
+		}
+		if _, start := scrollThumb(c.h, c.total, c.visible, last); start+length != c.h {
+			t.Errorf("%+v: thumb at the last offset ends at %d, want the track's end %d", c, start+length, c.h)
+		}
+	}
+}
