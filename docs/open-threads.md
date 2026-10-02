@@ -100,7 +100,12 @@ None open.
   Server Agent Properties ▸ Alert System: whether MI's `xp_instance_regread`/
   `sp_set_sqlagent_properties` answer for Agent's mail profile at all (MI's
   Agent is documented to use the profile named
-  `AzureManagedInstance_dbmail_profile`).
+  `AzureManagedInstance_dbmail_profile`). And gosmo's
+  `killDatabaseSessionsBatch` (forced drop/rename, restore closing
+  connections): its wait now covers sessions killed for a DATABASE lock held
+  from another context (review K3, unit-tested only) — hold one from a second
+  session's `USE master` + a cross-database open transaction, force-drop a
+  throwaway database, expect no Msg 3702.
 - **V5 — Edition gates of Phase 5 item 24 never met a real refusal.** Every
   instance in the estate is Developer, so Resource Governor's rule
   (Enterprise/Developer on 13–16, plus Standard on 17 —

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -63,33 +64,23 @@ type completionInventory struct {
 	serverKey string
 }
 
-// loadPanicked is both loaders' safegoRepair step. loading is otherwise cleared
-// only in the callback the fetch posts on completion, which a panic unwinds
-// straight past, leaving every later lookup seeing a load in flight that doesn't
-// exist.
-//
-// The entry is dropped rather than merely unlatched — the same eviction
-// loadCompletionInventory's err-and-closed-connection branch makes — so the next
-// lookup retries from scratch instead of reading a catalog half-built by the
-// fetch that died. seq keeps a superseded panic off a live newer load.
-//
-// It also closes every open popup on the entry's server, which may be showing
-// the placeholder this load would have replaced. Closed rather than refreshed: a refresh re-asks the provider, which finds the key gone and starts
-// a fresh load — one that panics the same way, while the popup stays open,
-// loops.
-func (a *App) loadPanicked(m map[string]*completionInventory, key string, inv *completionInventory, seq int) {
-	if !inv.load.Done(seq) {
-		return
+// inventoryLoad is the completionLoad an inventory cached in m under key
+// runs: owned while m still holds inv there, evicted by evictInventory.
+func inventoryLoad[T any](m map[string]*completionInventory, key string, inv *completionInventory, timeout time.Duration, what string,
+	fetch func(ctx context.Context) (T, error), apply func(v T, err error)) completionLoad[T] {
+	return completionLoad[T]{
+		what: what, timeout: timeout, load: &inv.load,
+		owned: func() bool { return m[key] == inv },
+		evict: func() { evictInventory(m, key, inv) },
+		fetch: fetch, apply: apply,
 	}
-	evictInventory(m, key, inv)
-	a.closeSysCompletionPopups(inv.serverKey)
 }
 
 // evictInventory drops key's entry from m so the next lookup starts a fresh
 // load, but only while that entry is still inv.
 //
-// The identity check makes this safe to call from a load's own completion
-// callback, which may be reporting on a cache generation that no longer exists:
+// The identity check makes this safe to call for a load that may be reporting
+// on a cache generation that no longer exists:
 // purgeCompletionInventories drops a server's entries on disconnect, so a
 // reconnect before a superseded load lands has already installed a different
 // live entry under the same key. Deleting that one strands its own in-flight
@@ -224,61 +215,40 @@ func (p *QueryPanel) refreshCompletionCache() {
 }
 
 // loadCompletionInventory fetches the catalog on a background goroutine and
-// installs the result via postAndWake. inv.load guards a fast
-// double-refresh or a refresh racing the initial load: a newer load for the same
-// key makes this callback discard itself.
+// installs the result. inv.load guards a fast double-refresh or a refresh
+// racing the initial load: a newer load for the same key makes this one
+// discard itself.
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, inv *completionInventory) {
+	type result struct {
+		cat    *gosmo.Catalog
+		schema string
+	}
 	srv := sc.Server
-	ctx, seq := inv.load.BeginTimeout(sc.Context(), completionInventoryTimeout)
-	a.safegoRepair("loading the autocomplete catalog", func() {
-		a.loadPanicked(a.completionInventories, key, inv, seq)
-	}, func() {
-		var cat *gosmo.Catalog
-		var schema string
-		var err error
-		if inv.gated && !sc.DatabaseCapabilities(ctx, database).Accessible {
-			err = errNoDatabaseAccess
-		} else {
-			cat, err = srv.DatabaseRef(database).Catalog(ctx)
-			if err == nil {
-				// A failure here costs only "db..t" resolving through dbo
-				// alone, so it doesn't fail the catalog.
-				schema, _ = srv.DatabaseRef(database).CallerDefaultSchema(ctx)
+	startCompletionLoad(a, sc, inventoryLoad(a.completionInventories, key, inv, completionInventoryTimeout,
+		"loading the autocomplete catalog",
+		func(ctx context.Context) (r result, err error) {
+			if inv.gated && !sc.DatabaseCapabilities(ctx, database).Accessible {
+				return r, errNoDatabaseAccess
 			}
-		}
-		a.postAndWake(func() {
-			if !inv.load.Done(seq) {
-				return // superseded by a newer load for this key
+			if r.cat, err = srv.DatabaseRef(database).Catalog(ctx); err != nil {
+				return r, err
 			}
-			if err != nil && !sc.IsOpen() {
-				// This key's cache is shared by every ServerConn resolving to
-				// the same server+login+database; sc merely started the fetch,
-				// so its closing mid-fetch says nothing about whether another
-				// connection still wants the result. err's shape depends on a
-				// race — context cancellation or "database is closed", by
-				// whether sc.Close() ran before or after a connection was
-				// acquired — so sc.IsOpen() is checked instead of matching
-				// either. The entry is dropped rather than poisoned with sc's
-				// teardown error, so the next lookup retries fresh — and the
-				// refresh below is that lookup for a popup another panel
-				// holds open on it.
-				evictInventory(a.completionInventories, key, inv)
-			} else if err != nil {
+			// A failure here costs only "db..t" resolving through dbo alone,
+			// so it doesn't fail the catalog.
+			r.schema, _ = srv.DatabaseRef(database).CallerDefaultSchema(ctx)
+			return r, nil
+		},
+		func(r result, err error) {
+			if err != nil {
 				inv.err = err
 				inv.loading = false
 				a.setStatus(fmt.Sprintf("Autocomplete unavailable for %s: %v", database, err))
-			} else {
-				inv.applyCatalog(cat)
-				inv.defaultSchema = schema
-				a.setStatus(fmt.Sprintf("Autocomplete ready for %s (%d tables/views)", database, len(cat.Objects)))
+				return
 			}
-			// Every panel on the server, not only those connected to this
-			// database: another may be waiting on it through a cross-database
-			// name. Every outcome ends here — a popup left on the placeholder
-			// by a path that skipped this never fills (B12).
-			a.refreshSysCompletionPopups(inv.serverKey)
-		})
-	})
+			inv.applyCatalog(r.cat)
+			inv.defaultSchema = r.schema
+			a.setStatus(fmt.Sprintf("Autocomplete ready for %s (%d tables/views)", database, len(r.cat.Objects)))
+		}))
 }
 
 // ---------------------------------------------------------------------------
@@ -330,40 +300,24 @@ func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 	a.loadSysCompletionInventory(sc, key, inv)
 }
 
-// loadSysCompletionInventory fetches the "sys" schema catalog on a background
-// goroutine and installs it via postAndWake — loadCompletionInventory's shape
-// and stale-result guard. The query runs against master: every database returns
-// the same catalog-view definitions, and master is the one every login can
-// reach.
+// loadSysCompletionInventory fetches the "sys" schema catalog —
+// loadCompletionInventory at server level. The query runs against master:
+// every database returns the same catalog-view definitions, and master is the
+// one every login can reach.
 func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *completionInventory) {
 	srv := sc.Server
-	ctx, seq := inv.load.BeginTimeout(sc.Context(), completionInventoryTimeout)
-	a.safegoRepair("loading the system autocomplete catalog", func() {
-		a.loadPanicked(a.sysCompletionInventories, key, inv, seq)
-	}, func() {
-		cat, err := srv.DatabaseRef("master").SystemCatalog(ctx)
-		a.postAndWake(func() {
-			if !inv.load.Done(seq) {
-				return // superseded by a newer load for this key
-			}
-			if err != nil && !sc.IsOpen() {
-				// Same shared-cache reasoning as loadCompletionInventory's,
-				// keyed at server level.
-				evictInventory(a.sysCompletionInventories, key, inv)
-				a.refreshSysCompletionPopups(key)
-				return
-			}
+	startCompletionLoad(a, sc, inventoryLoad(a.sysCompletionInventories, key, inv, completionInventoryTimeout,
+		"loading the system autocomplete catalog",
+		srv.DatabaseRef("master").SystemCatalog,
+		func(cat *gosmo.Catalog, err error) {
 			if err != nil {
 				inv.err = err
 				inv.loading = false
 				a.setStatus(fmt.Sprintf("System-catalog autocomplete unavailable: %v (Ctrl+R in a query editor retries)", err))
-				a.refreshSysCompletionPopups(key)
 				return
 			}
 			inv.applyCatalog(cat)
-			a.refreshSysCompletionPopups(key)
-		})
-	})
+		}))
 }
 
 // refreshSysCompletionPopups re-queries the completion provider of every query
@@ -379,7 +333,7 @@ func (a *App) refreshSysCompletionPopups(key string) {
 }
 
 // closeSysCompletionPopups closes the completion popup of every query panel
-// on key's server — loadPanicked's ending, where a refresh could loop.
+// on key's server — completionLoadPanicked's ending, where a refresh could loop.
 func (a *App) closeSysCompletionPopups(key string) {
 	a.forServerQueryPanels(key, func(qp *QueryPanel) { qp.editor.CloseCompletion() })
 }

@@ -189,7 +189,8 @@ func TestLoadPanickedClosesWaitingPopup(t *testing.T) {
 	inv := qp.app.completionInventories[key]
 	_, seq := inv.load.Begin(context.Background())
 
-	qp.app.loadPanicked(qp.app.completionInventories, key, inv, seq)
+	m := qp.app.completionInventories
+	qp.app.completionLoadPanicked(&inv.load, seq, inv.serverKey, func() bool { return m[key] == inv }, func() { evictInventory(m, key, inv) })
 	if _, ok := qp.app.completionInventories[key]; ok {
 		t.Error("the panicked load's entry is still cached")
 	}

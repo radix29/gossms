@@ -210,7 +210,15 @@ func (sc *ServerConn) ClearCapabilityCache() {
 // Exported because tests build ServerConns over scripted pools, and an unprobed
 // set silently fails open, masking a gate under test.
 func (sc *ServerConn) ProbeCapabilities() {
-	ctx, cancel := context.WithTimeout(sc.Context(), capabilityProbeTimeout)
+	sc.ProbeCapabilitiesContext(sc.Context())
+}
+
+// ProbeCapabilitiesContext is ProbeCapabilities under ctx, still bounded by
+// capabilityProbeTimeout. ConnectContext passes the dial's ctx so cancelling
+// the Connect dialog (or a closing query panel's redial) during the probe
+// returns at once instead of waiting out the timeout.
+func (sc *ServerConn) ProbeCapabilitiesContext(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, capabilityProbeTimeout)
 	defer cancel()
 
 	if c, err := sc.Server.Capabilities(ctx); err == nil {

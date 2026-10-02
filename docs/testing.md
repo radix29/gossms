@@ -27,6 +27,21 @@ source (the race archive from the mutated file was reused). Run `go test -race
 -count=1 -a ./...` (or `go clean -cache`) before believing it, and A/B by
 copying files aside rather than editing in place.
 
+**Before a tag**, in both repos (gossms and `~/go/gosmo`), on top of the
+everyday build/test/vet:
+
+- `go test -race -count=1 ./...` — clean in both as of 2026-10-02; a few
+  minutes each.
+- `govulncheck ./...` (`go install golang.org/x/vuln/cmd/govulncheck@latest`).
+  "Your code is affected by 0 vulnerabilities" is the bar; a module-level hit
+  your code doesn't call (GO-2026-5932, x/crypto's openpgp, no fix) is noise.
+- `go vet -tags livedb ./...` and `staticcheck ./...`.
+
+gosmo's write-retry rule is a test, not a sweep:
+`write_through_read_test.go` fails when SQL handed to `query`/`queryRow`/
+`queryRowScan` contains `EXEC sp_send/add/update/delete…` or an
+`INSERT`/`UPDATE`/`DELETE` on a real table.
+
 **A round-trip test proves two functions are inverses, not that either is
 right.** Where load and write share parallel label/code tables (schedule
 dropdowns, permission states, any `items[]`/`values[]` pair) a fault cancels

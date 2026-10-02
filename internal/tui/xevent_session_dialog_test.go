@@ -254,7 +254,8 @@ func TestXEEventsPageLibraryAddsAndKeepsOneEvent(t *testing.T) {
 }
 
 // Adding a ring_buffer adds that target alone; an event_file without its
-// filename is refused, and Revert puts the list back.
+// filename is refused, and Revert puts the list back; a numeric parameter
+// that is not a number is refused.
 func TestXEStoragePageAddsATargetAndRequiresAFilename(t *testing.T) {
 	sc, inst := xePropsConn(t, "zz_trace")
 	f, apply := loadPage(t, pageXESessionStorage(xeTestHost(sc), "zz_trace"), inst)
@@ -284,6 +285,15 @@ func TestXEStoragePageAddsATargetAndRequiresAFilename(t *testing.T) {
 	f.Revert()
 	if f.Dirty() || tgt.Row(1) == nil || tgt.Row(1)[0] != "package0.ring_buffer" {
 		t.Errorf("after Revert: dirty %v, rows %v %v", f.Dirty(), tgt.Row(0), tgt.Row(1))
+	}
+
+	// A numeric parameter is written into the DDL as (value), so a value
+	// that is not a number is refused here, not after the dialog closes.
+	selectGridRow(t, tgt, 0, "package0.event_file")
+	selectGridRow(t, params, 0, "max_file_size")
+	textRow(t, f, "Selected parameter's value").Edit("5),max_rollover_files=(0")
+	if err := f.Validate(); err == nil || !strings.Contains(err.Error(), "package0.event_file: field max_file_size") {
+		t.Errorf("Validate = %v", err)
 	}
 }
 

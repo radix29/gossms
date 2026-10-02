@@ -29,11 +29,7 @@ import (
 // stack goes to the log file (see config.LogFilePath) rather than the
 // screen, which has no room for it.
 func (a *App) safego(what string, fn func()) {
-	go func() {
-		labelGoroutine(what)
-		defer a.recoverPanic(what)
-		fn()
-	}()
+	a.safegoRepair(what, nil, fn)
 }
 
 // labelGoroutine tags the calling goroutine with what, which Go 1.27 prints
@@ -51,7 +47,8 @@ func labelGoroutine(what string) {
 
 // safegoRepair is safego for a background operation that latched UI state
 // before it started: a busy flag, a "loading" placeholder, a dimmed toolbar.
-// repair runs on the UI goroutine if — and only if — fn panicked.
+// repair runs on the UI goroutine if — and only if — fn panicked; nil is
+// safego, with nothing to repair.
 //
 // The latch is otherwise cleared by the callback fn posts when it finishes,
 // and a panic unwinds straight past that callback, so the flag stays set for
@@ -72,14 +69,16 @@ func (a *App) safegoRepair(what string, repair func(), fn func()) {
 			if r == nil {
 				return
 			}
-			a.postAndWake(repair)
+			if repair != nil {
+				a.postAndWake(repair)
+			}
 			a.reportPanic(r, what)
 		}()
 		fn()
 	}()
 }
 
-// recoverPanic is safego's deferred half, also usable directly by a
+// recoverPanic is the bare deferred recovery, usable directly by a
 // goroutine that can't be expressed as a bare func() — call it as
 // `defer a.recoverPanic("what this was doing")`.
 func (a *App) recoverPanic(what string) {

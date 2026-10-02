@@ -243,6 +243,7 @@ gossms/
 │       ├── plan_panel.go         # pops an Execution Plan tab out into its own closable panel
 │       ├── completion_provider.go   # SQL completion.Provider: cursor-context resolution (FROM-scope, qualifiers) against the cached inventory
 │       ├── completion_inventory.go  # per-database + per-server(sys schema) catalog cache for IntelliSense, async load
+│       ├── completion_load.go       # the one lazy-load lifecycle every IntelliSense cache shares: latest + timeout, panic eviction, closed-connection eviction, popup refresh
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
 │       ├── completion_relations.go  # resolves FROM-scope refs (CTEs, derived tables) to columns, with depth/cycle guards
 │       ├── completion_crossdb.go    # cross-database names: the per-server database directory, HAS_DBACCESS-gated loads of another database's inventory, "db.schema." chains

@@ -133,6 +133,9 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	if config.IsEntraMethod(opts.AuthMethod) {
 		entraUsed.Store(true)
 	}
+	// The probe below gets the caller's ctx, not the dial's timeout: a slow
+	// dial must not eat the probe's own budget.
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 	// A sign-in SignIn couldn't do ahead happens in the dial; a device code
@@ -147,7 +150,7 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	login, _ := srv.CurrentLogin(ctx)
 	connCtx, connCancel := context.WithCancel(context.Background())
 	sc := &ServerConn{Opts: opts, Server: srv, Login: login, ctx: connCtx, cancel: connCancel, role: role}
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilitiesContext(parent)
 	return sc, nil
 }
 

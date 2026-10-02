@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -34,10 +35,10 @@ import (
 const linkedLoadTimeout = 10 * time.Second
 
 // linkedDirectory is one server+login's linked servers, keyed by lowercase
-// name — only those with data access, the rest failing every read.
+// name — only those with data access, the rest failing every read. A failed
+// load leaves byName empty until Ctrl+R; the failure goes to the status bar.
 type linkedDirectory struct {
 	loading bool
-	err     error
 	byName  map[string]*linkedServer
 	load    latest
 }
@@ -87,34 +88,24 @@ func (a *App) ensureLinkedDirectory(sc *db.ServerConn) *linkedDirectory {
 		a.linkedDirectories = make(map[string]*linkedDirectory)
 	}
 	a.linkedDirectories[key] = d
-	srv := sc.Server
-	ctx, seq := d.load.BeginTimeout(sc.Context(), linkedLoadTimeout)
-	a.safegoRepair("loading the autocomplete linked-server list", func() {
-		if d.load.Done(seq) && a.linkedDirectories[key] == d {
-			delete(a.linkedDirectories, key)
-			a.closeSysCompletionPopups(key) // see loadPanicked
-		}
-	}, func() {
-		list, err := srv.LinkedServers(ctx)
-		a.postAndWake(func() {
-			if !d.load.Done(seq) || a.linkedDirectories[key] != d {
-				return
-			}
-			if err != nil && !sc.IsOpen() {
-				delete(a.linkedDirectories, key)
-				a.refreshSysCompletionPopups(key)
-				return
-			}
+	startCompletionLoad(a, sc, completionLoad[[]*gosmo.LinkedServer]{
+		what: "loading the autocomplete linked-server list", timeout: linkedLoadTimeout, load: &d.load,
+		owned: func() bool { return a.linkedDirectories[key] == d },
+		evict: func() { delete(a.linkedDirectories, key) },
+		fetch: sc.Server.LinkedServers,
+		apply: func(list []*gosmo.LinkedServer, err error) {
 			d.loading = false
-			d.err = err
+			if err != nil {
+				a.setStatus(fmt.Sprintf("Autocomplete linked-server list unavailable: %v (Ctrl+R in a query editor retries)", err))
+				return
+			}
 			d.byName = make(map[string]*linkedServer, len(list))
 			for _, l := range list {
 				if l.DataAccess {
 					d.byName[strings.ToLower(l.Name)] = &linkedServer{name: l.Name}
 				}
 			}
-			a.refreshSysCompletionPopups(key)
-		})
+		},
 	})
 	return d
 }
@@ -152,39 +143,31 @@ func (p *QueryPanel) linkedDatabases(name string) (ls *linkedServer, pending boo
 	return ls, false
 }
 
-// loadLinkedDatabases reads ls's databases through it.
+// loadLinkedDatabases reads ls's databases through it. ls stays listed
+// whatever happens: evicting it means only clearing its latch, so the next
+// lookup retries.
 func (a *App) loadLinkedDatabases(sc *db.ServerConn, ls *linkedServer) {
 	key := sysCompletionInventoryKey(sc.Opts)
 	d := a.linkedDirectories[key]
 	srv := sc.Server
 	ls.loading = true
-	ctx, seq := ls.load.BeginTimeout(sc.Context(), linkedLoadTimeout)
-	a.safegoRepair("loading a linked server's autocomplete database list", func() {
-		if ls.load.Done(seq) && a.linkedDirectories[key] == d {
-			delete(a.linkedDirectories, key)
-			a.closeSysCompletionPopups(key)
-		}
-	}, func() {
-		names, err := srv.LinkedServerDatabases(ctx, ls.name)
-		a.postAndWake(func() {
-			if !ls.load.Done(seq) || a.linkedDirectories[key] != d {
-				return
-			}
+	startCompletionLoad(a, sc, completionLoad[[]string]{
+		what: "loading a linked server's autocomplete database list", timeout: linkedLoadTimeout, load: &ls.load,
+		owned: func() bool { return a.linkedDirectories[key] == d },
+		evict: func() { ls.loading = false },
+		fetch: func(ctx context.Context) ([]string, error) { return srv.LinkedServerDatabases(ctx, ls.name) },
+		apply: func(names []string, err error) {
 			ls.loading = false
-			switch {
-			case err != nil && !sc.IsOpen():
-				// Left unloaded, so the next lookup retries on a live connection.
-			case err != nil:
+			if err != nil {
 				ls.err = err
 				a.setStatus(fmt.Sprintf("Autocomplete unavailable for linked server %s: %v", ls.name, err))
-			default:
-				ls.databases = make(map[string]string, len(names))
-				for _, n := range names {
-					ls.databases[strings.ToLower(n)] = n
-				}
+				return
 			}
-			a.refreshSysCompletionPopups(key)
-		})
+			ls.databases = make(map[string]string, len(names))
+			for _, n := range names {
+				ls.databases[strings.ToLower(n)] = n
+			}
+		},
 	})
 }
 
@@ -224,34 +207,22 @@ func (p *QueryPanel) linkedInventory(server, database string) (inv *completionIn
 
 // loadLinkedInventory reads one remote database's catalog through ls.
 func (a *App) loadLinkedInventory(sc *db.ServerConn, ls *linkedServer, k string, inv *completionInventory) {
-	key := inv.serverKey
 	srv := sc.Server
-	ctx, seq := inv.load.BeginTimeout(sc.Context(), linkedLoadTimeout)
-	a.safegoRepair("loading a linked server's autocomplete catalog", func() {
-		if inv.load.Done(seq) && ls.inventories[k] == inv {
-			delete(ls.inventories, k)
-			a.closeSysCompletionPopups(key)
-		}
-	}, func() {
-		cat, err := srv.LinkedServerCatalog(ctx, ls.name, inv.database)
-		a.postAndWake(func() {
-			if !inv.load.Done(seq) || ls.inventories[k] != inv {
-				return
-			}
-			switch {
-			case err != nil && !sc.IsOpen():
-				delete(ls.inventories, k)
-			case err != nil:
+	startCompletionLoad(a, sc, inventoryLoad(ls.inventories, k, inv, linkedLoadTimeout,
+		"loading a linked server's autocomplete catalog",
+		func(ctx context.Context) (*gosmo.Catalog, error) {
+			return srv.LinkedServerCatalog(ctx, ls.name, inv.database)
+		},
+		func(cat *gosmo.Catalog, err error) {
+			if err != nil {
 				inv.err = err
 				inv.loading = false
 				a.setStatus(fmt.Sprintf("Autocomplete unavailable for %s.%s: %v", ls.name, inv.database, err))
-			default:
-				inv.applyCatalog(cat)
-				a.setStatus(fmt.Sprintf("Autocomplete ready for %s.%s (%d tables/views)", ls.name, inv.database, len(cat.Objects)))
+				return
 			}
-			a.refreshSysCompletionPopups(key)
-		})
-	})
+			inv.applyCatalog(cat)
+			a.setStatus(fmt.Sprintf("Autocomplete ready for %s.%s (%d tables/views)", ls.name, inv.database, len(cat.Objects)))
+		}))
 }
 
 // linkedChainCandidates answers a qualifier chain once its local readings

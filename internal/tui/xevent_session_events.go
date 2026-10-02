@@ -170,6 +170,15 @@ func newXEEventsEditor(h xeHost, cat *xeCatalog, m *xeSessionModel, cols map[str
 		if len(e.m.events) == 0 {
 			return errors.New("a session needs at least one event — add one from the event library")
 		}
+		// gosmo refuses these too, but only on Apply, after the dialog has
+		// closed on it.
+		for _, ev := range e.m.events {
+			for _, f := range ev.Fields {
+				if err := f.Validate(); err != nil {
+					return fmt.Errorf("%s: %w", ev.QualifiedName(), err)
+				}
+			}
+		}
 		return nil
 	}}
 	e.selRow.DirtyFn = m.eventsDirty

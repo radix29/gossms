@@ -1,6 +1,7 @@
 package query
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"testing"
@@ -136,5 +137,36 @@ func TestScanNextAbandonsAPlanSetThatFailsMidScan(t *testing.T) {
 	}
 	if len(res.Messages) == 0 {
 		t.Error("the scan failure was not recorded on the Result")
+	}
+}
+
+// A grid row that fails to scan part-way (here a malformed uniqueidentifier)
+// keeps the rows before it, the way a Next() failure does: the grid *and* the
+// error (K12).
+func TestScanNextKeepsTheRowsBeforeAScanError(t *testing.T) {
+	db := sql.OpenDB(&fakeRowsConnector{conn: &fakeRowsConn{
+		cols:  []string{"id"},
+		types: []string{"UNIQUEIDENTIFIER"},
+		rows: [][]driver.Value{
+			{make([]byte, 16)}, {make([]byte, 16)}, {[]byte{1, 2, 3}}, {make([]byte, 16)},
+		},
+	}})
+	defer db.Close()
+
+	rows := queryFakeRows(t, db)
+	defer rows.Close()
+
+	var res Result
+	if !scanNext(rows, &res, nil) {
+		t.Error("scanNext reported a set it stopped at row 3 of 4 as read to the end")
+	}
+	if len(res.Messages) == 0 {
+		t.Error("the scan failure was not recorded on the Result")
+	}
+	if len(res.Sets) != 1 {
+		t.Fatalf("Sets = %d, want the partial grid kept", len(res.Sets))
+	}
+	if got := len(res.Sets[0].Rows); got != 2 {
+		t.Errorf("rows kept = %d, want the 2 read before the failure", got)
 	}
 }

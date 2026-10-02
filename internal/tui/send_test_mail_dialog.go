@@ -74,11 +74,6 @@ func fetchSendTestMail(ctx context.Context, sc *db.ServerConn) (*sendTestMailPre
 	return pf, nil
 }
 
-// mailTestRequest is one message, read off the page on the UI goroutine.
-type mailTestRequest struct {
-	profile, to, subject, body string
-}
-
 // SendTestMailDialog is Send Test E-Mail.
 type SendTestMailDialog struct {
 	*propsheet.PropertySheet
@@ -93,8 +88,9 @@ type SendTestMailDialog struct {
 	load   latest
 	run    applyRun
 
-	// request reads the page; nil until it has loaded.
-	request func() (mailTestRequest, error)
+	// request reads the page's message, on the UI goroutine; nil until it
+	// has loaded.
+	request func() (gosmo.MailMessage, error)
 }
 
 // NewSendTestMailDialog creates the dialog and wires its callbacks.
@@ -195,15 +191,15 @@ func (d *SendTestMailDialog) build(pf *sendTestMailPrefetch) *propsheet.Form {
 		propsheet.Note("Apply sends and waits up to 30 seconds for the outcome; OK sends and reports it on the status bar. Separate several recipients with semicolons. Every attempt is in the Database Mail log."),
 	)
 
-	d.request = func() (mailTestRequest, error) {
+	d.request = func() (gosmo.MailMessage, error) {
 		p, err := profile()
 		if err != nil {
-			return mailTestRequest{}, err
+			return gosmo.MailMessage{}, err
 		}
-		r := mailTestRequest{profile: p, to: strings.TrimSpace(to.Value()), subject: subject.Value(), body: body.Value()}
-		if r.to == "" {
+		r := gosmo.MailMessage{Profile: p, To: strings.TrimSpace(to.Value()), Subject: subject.Value(), Body: body.Value()}
+		if r.To == "" {
 			//lint:ignore ST1005 the capital is the "To" field's label
-			return mailTestRequest{}, errors.New("To is required")
+			return gosmo.MailMessage{}, errors.New("To is required")
 		}
 		return r, nil
 	}
@@ -212,15 +208,15 @@ func (d *SendTestMailDialog) build(pf *sendTestMailPrefetch) *propsheet.Form {
 
 // readRequest is the page's message, or reports on the message line why
 // there is none.
-func (d *SendTestMailDialog) readRequest() (mailTestRequest, bool) {
+func (d *SendTestMailDialog) readRequest() (gosmo.MailMessage, bool) {
 	if d.request == nil {
 		d.SetMessage("Still loading — try again in a moment.", true)
-		return mailTestRequest{}, false
+		return gosmo.MailMessage{}, false
 	}
 	r, err := d.request()
 	if err != nil {
 		d.SetMessage(err.Error(), true)
-		return mailTestRequest{}, false
+		return gosmo.MailMessage{}, false
 	}
 	return r, true
 }
@@ -246,7 +242,7 @@ func (d *SendTestMailDialog) send(closeOnQueued bool) {
 	}, func() {
 		defer close(done)
 		defer stop()
-		id, err := sc.Server.SendTestMail(runCtx, req.profile, req.to, req.subject, req.body)
+		id, err := sc.Server.SendMail(runCtx, req)
 		if err != nil || closeOnQueued {
 			d.app.postAndWake(func() {
 				d.SetApplying(false)
@@ -254,7 +250,7 @@ func (d *SendTestMailDialog) send(closeOnQueued bool) {
 				case err != nil && d.run.cancelled:
 					d.SetMessage("Send cancelled. It may have been queued already — see the Database Mail log.", false)
 				case err != nil:
-					d.SetMessage(mailSendErrorText(err, req.profile), true)
+					d.SetMessage(mailSendErrorText(err, req.Profile), true)
 				default:
 					d.Dismiss()
 					d.app.followTestMail(sc, id)
@@ -341,7 +337,7 @@ func (d *SendTestMailDialog) script() {
 		return
 	}
 	text, err := collectScript(d.ctx, func(ctx context.Context) error {
-		_, err := d.sc.Server.SendTestMail(ctx, req.profile, req.to, req.subject, req.body)
+		_, err := d.sc.Server.SendMail(ctx, req)
 		return err
 	})
 	if err != nil {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/radix29/gosmo"
@@ -22,10 +23,10 @@ import (
 
 // completionDirectory is one server+login's database list, keyed by lowercase
 // name: enough to tell a database name from anything else in a qualifier
-// chain, and to skip one that can't be opened.
+// chain, and to skip one that can't be opened. A failed load leaves byName
+// empty until Ctrl+R; the failure goes to the status bar, not the entry.
 type completionDirectory struct {
 	loading bool
-	err     error
 	byName  map[string]directoryEntry
 	load    latest
 }
@@ -70,39 +71,24 @@ func (a *App) refreshCompletionDirectory(sc *db.ServerConn) {
 	a.loadCompletionDirectory(sc, key, d)
 }
 
-// loadCompletionDirectory reads sys.databases off the UI goroutine —
-// loadCompletionInventory's shape and stale-result guard.
+// loadCompletionDirectory reads sys.databases off the UI goroutine.
 func (a *App) loadCompletionDirectory(sc *db.ServerConn, key string, d *completionDirectory) {
-	srv := sc.Server
-	ctx, seq := d.load.BeginTimeout(sc.Context(), completionInventoryTimeout)
-	a.safegoRepair("loading the autocomplete database list", func() {
-		if d.load.Done(seq) && a.completionDirectories[key] == d {
-			delete(a.completionDirectories, key)
-			a.closeSysCompletionPopups(key) // see loadPanicked
-		}
-	}, func() {
-		dbs, err := srv.Databases(ctx)
-		a.postAndWake(func() {
-			if !d.load.Done(seq) {
-				return
-			}
-			if err != nil && !sc.IsOpen() {
-				if a.completionDirectories[key] == d {
-					delete(a.completionDirectories, key)
-				}
-				a.refreshSysCompletionPopups(key)
-				return
-			}
+	startCompletionLoad(a, sc, completionLoad[[]*gosmo.Database]{
+		what: "loading the autocomplete database list", timeout: completionInventoryTimeout, load: &d.load,
+		owned: func() bool { return a.completionDirectories[key] == d },
+		evict: func() { delete(a.completionDirectories, key) },
+		fetch: sc.Server.Databases,
+		apply: func(dbs []*gosmo.Database, err error) {
 			d.loading = false
-			d.err = err
-			if err == nil {
-				d.byName = make(map[string]directoryEntry, len(dbs))
-				for _, x := range dbs {
-					d.byName[strings.ToLower(x.Name)] = directoryEntry{name: x.Name, state: x.State}
-				}
+			if err != nil {
+				a.setStatus(fmt.Sprintf("Autocomplete database list unavailable: %v (Ctrl+R in a query editor retries)", err))
+				return
 			}
-			a.refreshSysCompletionPopups(key)
-		})
+			d.byName = make(map[string]directoryEntry, len(dbs))
+			for _, x := range dbs {
+				d.byName[strings.ToLower(x.Name)] = directoryEntry{name: x.Name, state: x.State}
+			}
+		},
 	})
 }
 

@@ -52,6 +52,7 @@ type capTestScript struct {
 	fail     bool  // make the probe fail
 	access   int64 // what HAS_DBACCESS answers
 	srvFail  bool  // make the server-scope probe fail
+	srvBlock bool  // make the server-scope probe wait for its context
 
 	// started, if set, is signalled when a HAS_DBACCESS read begins, which then
 	// waits for release.
@@ -97,8 +98,12 @@ func (c *capTestConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 		return &capTestRows{cols: 1, rows: [][]driver.Value{{access}}}, nil
 	case strings.Contains(q, "IS_SRVROLEMEMBER"):
 		s.mu.Lock()
-		srvFail := s.srvFail
+		srvFail, srvBlock := s.srvFail, s.srvBlock
 		s.mu.Unlock()
+		if srvBlock {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
 		if srvFail {
 			return nil, errors.New("mssql: connection reset")
 		}
@@ -276,6 +281,28 @@ func TestFailedReprobeKeepsPreviousServerCapabilities(t *testing.T) {
 
 	if got := sc.Capabilities().Permission("VIEW SERVER STATE"); got != gosmo.CapabilityDenied {
 		t.Errorf("VIEW SERVER STATE after a failed re-probe = %v, want the earlier denied", got)
+	}
+}
+
+// ConnectContext probes under the dial's ctx (K11): cancelling it during the
+// probe must return at once, not wait out capabilityProbeTimeout, and keep the
+// earlier answer.
+func TestProbeCapabilitiesContextStopsAtTheCallersCancel(t *testing.T) {
+	script := &capTestScript{access: 1}
+	sc := capTestConnection(t, script)
+
+	script.mu.Lock()
+	script.srvBlock = true
+	script.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	sc.ProbeCapabilitiesContext(ctx)
+	if d := time.Since(start); d > capabilityProbeTimeout/2 {
+		t.Errorf("probe returned after %v; the caller's cancel was ignored", d)
+	}
+	if got := sc.Capabilities().Permission("VIEW SERVER STATE"); got != gosmo.CapabilityDenied {
+		t.Errorf("VIEW SERVER STATE after a cancelled probe = %v, want the earlier denied", got)
 	}
 }
 

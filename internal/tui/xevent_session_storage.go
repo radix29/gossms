@@ -482,6 +482,11 @@ func (s *xeStorageEditor) validate() error {
 				return fmt.Errorf("%s needs a value for %s", t.QualifiedName(), name)
 			}
 		}
+		for _, f := range t.Fields {
+			if err := f.Validate(); err != nil {
+				return fmt.Errorf("%s: %w", t.QualifiedName(), err)
+			}
+		}
 		// Msg 40538 otherwise, and only after the dialog has closed on it.
 		// A target the session already had is left alone: a Managed
 		// Instance's own system_health writes a local file, which the server

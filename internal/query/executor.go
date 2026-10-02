@@ -456,7 +456,9 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 // loop rather than from here. What the absence buys is the partial set: a
 // Next() that fails part-way leaves this returning the rows it did read with a
 // nil error, so scanNext appends them and the user gets the grid *and* the
-// error, the way SSMS shows a query that died on row 900. scanPlanXML, a few
+// error, the way SSMS shows a query that died on row 900. A rows.Scan failure
+// part-way returns the rows before it with the error, and scanNext keeps
+// those too. scanPlanXML, a few
 // functions down, is the one that does check, and so discards its partial
 // result — the asymmetry is a decision about partial output, not an oversight.
 // Both are reached only through scanNext, itself reached only from runBatch;
@@ -563,11 +565,15 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 		return false
 	}
 	rs, err := scanResultSet(rows, res.progress)
+	if rs.Columns != nil {
+		// Kept on a scan error too (a conversion failure on row 900): the
+		// grid *and* the error, like a Next() that fails part-way.
+		res.Sets = append(res.Sets, rs)
+	}
 	if err != nil {
 		res.addError(err)
 		return true
 	}
-	res.Sets = append(res.Sets, rs)
 	return false
 }
 

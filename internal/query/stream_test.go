@@ -17,8 +17,9 @@ import (
 
 // fakeRowsConn returns one fixed result set for any query.
 type fakeRowsConn struct {
-	cols []string
-	rows [][]driver.Value
+	cols  []string
+	types []string // DatabaseTypeName per column; nil reports ""
+	rows  [][]driver.Value
 }
 
 func (c *fakeRowsConn) Prepare(string) (driver.Stmt, error) { return nil, errFakeRowsUnsupported }
@@ -26,7 +27,7 @@ func (c *fakeRowsConn) Close() error                        { return nil }
 func (c *fakeRowsConn) Begin() (driver.Tx, error)           { return nil, errFakeRowsUnsupported }
 
 func (c *fakeRowsConn) QueryContext(_ context.Context, _ string, _ []driver.NamedValue) (driver.Rows, error) {
-	return &fakeRows{cols: c.cols, rows: c.rows}, nil
+	return &fakeRows{cols: c.cols, types: c.types, rows: c.rows}, nil
 }
 
 func (c *fakeRowsConn) ExecContext(_ context.Context, _ string, _ []driver.NamedValue) (driver.Result, error) {
@@ -36,13 +37,20 @@ func (c *fakeRowsConn) ExecContext(_ context.Context, _ string, _ []driver.Named
 var errFakeRowsUnsupported = errors.New("fakeRowsConn: unsupported")
 
 type fakeRows struct {
-	cols []string
-	rows [][]driver.Value
-	i    int
+	cols  []string
+	types []string
+	rows  [][]driver.Value
+	i     int
 }
 
 func (r *fakeRows) Columns() []string { return r.cols }
-func (r *fakeRows) Close() error      { return nil }
+func (r *fakeRows) ColumnTypeDatabaseTypeName(i int) string {
+	if r.types == nil {
+		return ""
+	}
+	return r.types[i]
+}
+func (r *fakeRows) Close() error { return nil }
 func (r *fakeRows) Next(dest []driver.Value) error {
 	if r.i >= len(r.rows) {
 		return io.EOF
