@@ -9,8 +9,10 @@ import (
 
 // ShowEstimatedPlan fetches the estimated (compile-only) execution plan for
 // the editor's selection, or the whole script if nothing is selected — the
-// same selection-or-full-text rule as Execute.
+// same selection-or-full-text rule as Execute, and like it closes the
+// completion popup first.
 func (p *QueryPanel) ShowEstimatedPlan() {
+	p.editor.CloseCompletion()
 	if sel := p.editor.SelectedText(); sel != "" {
 		p.runEstimatedPlan(sel)
 		return

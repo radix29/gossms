@@ -52,8 +52,9 @@ const maxRelationDepth = 8
 // inventories, the CTE bindings visible at this point (innermost first), the
 // remaining recursion budget, and the set of CTE names currently being
 // expanded. otherDB, when set, finds another database's inventory for a
-// three-part name (QueryPanel.databaseInventory), and pending records that one
-// was still loading.
+// three-part name (QueryPanel.databaseInventory), linked a remote object for a
+// four-part one (QueryPanel.linkedObject), and pending records that one was
+// still loading.
 //
 // It is passed by value — depth is per-branch — but expanding is a shared map,
 // deliberately: a recursive CTE (WITH r AS (SELECT * FROM r), legal T-SQL) is
@@ -66,6 +67,7 @@ type resolveCtx struct {
 	depth       int
 	expanding   map[string]bool
 	otherDB     func(name string) (inv *completionInventory, pending bool)
+	linked      func(server, database, schema, name string) (obj *gosmo.CatalogObject, pending bool)
 	pending     *bool
 }
 
@@ -113,13 +115,13 @@ func resolveRefs(rc resolveCtx, refs []sqlparse.FromRef) []relation {
 // to a catalog object — in another database's catalog for a three-part name.
 // A schema- or database-qualified ref is never a CTE — "dbo.t1" names a real
 // object even when a CTE t1 is in scope — and a linked server's four-part
-// name resolves to nothing, its catalog being another instance's.
+// name resolves through that server's remote catalog (completion_linked.go).
 func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
-	if ref.Server != "" {
-		return relation{}, false
-	}
 	if ref.Pivot != nil {
 		return resolvePivotRef(rc, ref)
+	}
+	if ref.Server != "" {
+		return resolveLinkedRef(rc, ref)
 	}
 	if ref.Derived != nil {
 		cols := queryColumns(rc, ref.Derived)
@@ -155,26 +157,50 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 			return relation{name: name, aliased: aliased, cols: cols}, len(cols) > 0
 		}
 	}
-	inv, schema := rc.inv, ref.Schema
+	inv, schemas := rc.inv, []string{ref.Schema}
 	if ref.Database != "" {
 		other, ok := rc.database(ref.Database)
 		if !ok {
 			return relation{}, false
 		}
-		inv, schema = other, defaultSchema(ref.Schema)
+		inv, schemas = other, other.qualifierSchemas(ref.Schema)
 	}
-	if obj := findCatalogObject(inv, rc.sysInv, schema, ref.Name); obj != nil {
-		return relation{name: name, aliased: aliased, obj: obj}, true
+	for _, schema := range schemas {
+		if obj := findCatalogObject(inv, rc.sysInv, schema, ref.Name); obj != nil {
+			return relation{name: name, aliased: aliased, obj: obj}, true
+		}
 	}
 	if ref.Call {
 		// A table-valued function: its result columns, as the catalog
 		// records them. Tried after the tables, which is what a
 		// "t (NOLOCK)" hint also parses as.
-		if fn := findCatalogFunction(inv, rc.sysInv, schema, ref.Name); fn != nil {
-			return relation{name: name, aliased: aliased, obj: fn}, true
+		for _, schema := range schemas {
+			if fn := findCatalogFunction(inv, rc.sysInv, schema, ref.Name); fn != nil {
+				return relation{name: name, aliased: aliased, obj: fn}, true
+			}
 		}
 	}
 	return relation{}, false
+}
+
+// resolveLinkedRef resolves a four-part ref to the remote table or view. A
+// remote table-valued function is never one: a four-part name cannot call it.
+func resolveLinkedRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
+	if rc.linked == nil {
+		return relation{}, false
+	}
+	obj, pending := rc.linked(ref.Server, ref.Database, ref.Schema, ref.Name)
+	if pending && rc.pending != nil {
+		*rc.pending = true
+	}
+	if obj == nil {
+		return relation{}, false
+	}
+	name, aliased := ref.Alias, true
+	if name == "" {
+		name, aliased = ref.Name, false
+	}
+	return relation{name: name, aliased: aliased, obj: obj}, true
 }
 
 // resolvePivotRef resolves the reference a PIVOT/UNPIVOT clause is applied to
@@ -194,8 +220,8 @@ func resolvePivotRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 // pivotColumns applies a PIVOT/UNPIVOT clause to the source's columns:
 //
 //   - PIVOT drops the aggregated column and the one it spreads, and adds one
-//     column per IN-list name. Those carry no type: the aggregate decides it
-//     (COUNT over anything is int), and this package does not model aggregates.
+//     column per IN-list name, typed by pivotAggregateType — untyped for an
+//     aggregate it doesn't model.
 //   - UNPIVOT drops the IN-list columns and adds the value column and the name
 //     column. The value column's type is the one the unpivoted columns share —
 //     T-SQL requires them to share one — so it is taken from the first of them
@@ -222,8 +248,12 @@ func pivotColumns(src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.Catalog
 	} else {
 		drop[strings.ToLower(pv.Agg)] = true
 		drop[strings.ToLower(pv.For)] = true
+		arg, _ := findColumnIn(src, pv.Agg)
+		typed := pivotAggregateType(pv.Func, arg)
 		for _, n := range pv.In {
-			added = append(added, gosmo.CatalogColumn{Name: n})
+			col := typed
+			col.Name = n
+			added = append(added, col)
 		}
 	}
 	delete(drop, "")
@@ -235,6 +265,57 @@ func pivotColumns(src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.Catalog
 		}
 	}
 	return append(cols, added...)
+}
+
+// pivotAggregateType is the column a PIVOT's aggregate fn over arg produces —
+// arg is the zero column when the aggregate names none (COUNT(*)) or the
+// source lacks it. Only the common aggregates are modelled, by the rules
+// sys.dm_exec_describe_first_result_set reports:
+//
+//   - COUNT is int and COUNT_BIG bigint, over anything;
+//   - MIN/MAX keep the argument's type;
+//   - SUM/AVG widen it: tinyint/smallint/int to int, bigint stays, decimal and
+//     numeric to precision 38 (AVG's scale at least 6), smallmoney to money,
+//     real to float.
+//
+// Anything else — another aggregate, a qualified (user-defined) one, an
+// argument of unknown or unsummable type — is untyped: nothing rather than
+// wrong. Every output is nullable: an IN value with no rows reads NULL.
+func pivotAggregateType(fn string, arg gosmo.CatalogColumn) gosmo.CatalogColumn {
+	untyped := gosmo.CatalogColumn{IsNullable: true}
+	switch strings.ToUpper(fn) {
+	case "COUNT":
+		return gosmo.CatalogColumn{DataType: gosmo.DataTypeInt, IsNullable: true}
+	case "COUNT_BIG":
+		return gosmo.CatalogColumn{DataType: gosmo.DataTypeBigInt, IsNullable: true}
+	case "MIN", "MAX":
+		if arg.DataType == "" {
+			return untyped
+		}
+		arg.Name, arg.IsNullable = "", true
+		return arg
+	case "SUM", "AVG":
+		col := gosmo.CatalogColumn{IsNullable: true}
+		switch dt := gosmo.DataType(strings.ToLower(string(arg.DataType))); dt {
+		case gosmo.DataTypeTinyInt, gosmo.DataTypeSmallInt, gosmo.DataTypeInt:
+			col.DataType = gosmo.DataTypeInt
+		case gosmo.DataTypeBigInt:
+			col.DataType = gosmo.DataTypeBigInt
+		case gosmo.DataTypeMoney, gosmo.DataTypeSmallMoney:
+			col.DataType = gosmo.DataTypeMoney
+		case gosmo.DataTypeFloat, gosmo.DataTypeReal:
+			col.DataType = gosmo.DataTypeFloat
+		case gosmo.DataTypeDecimal, gosmo.DataTypeNumeric:
+			col.DataType, col.Precision, col.Scale = dt, 38, arg.Scale
+			if strings.EqualFold(fn, "AVG") {
+				col.Scale = max(arg.Scale, 6)
+			}
+		default:
+			return untyped
+		}
+		return col
+	}
+	return untyped
 }
 
 func findColumnIn(cols []gosmo.CatalogColumn, name string) (gosmo.CatalogColumn, bool) {

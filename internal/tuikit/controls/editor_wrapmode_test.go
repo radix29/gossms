@@ -7,11 +7,13 @@ import (
 )
 
 // newWrappedTestEditor returns an editor laid out narrow enough that text wraps,
-// with the gutter hidden so a mouse x maps straight to a rune column.
+// with the gutter hidden so a mouse x maps straight to a rune column. Lines
+// wrap at w columns: the bounds are one column wider, the column wrapWidth
+// reserves for the caret and scrollbar.
 func newWrappedTestEditor(text string, w, h int) *Editor {
 	e := newTestEditor(text)
 	e.SetGutterVisible(false)
-	e.SetBounds(0, 0, w, h)
+	e.SetBounds(0, 0, w+1, h)
 	e.SetWrapMode(true)
 	return e
 }
@@ -178,5 +180,56 @@ func TestWrappedClickPastRowEndStaysOnRow(t *testing.T) {
 				t.Fatalf("caret shows on visual row %d, want the clicked row %d", got, tc.wantVisual)
 			}
 		})
+	}
+}
+
+// A line exactly as wide as the content area used to fill a wrap segment to
+// the last column, so the caret after its last rune sat one column past the
+// area and drawWrapped dropped it (B13). wrapWidth keeps that column free: the
+// line wraps one column early and the caret shows inside the editor. A CJK line
+// of the same width must behave the same, since segments are measured in
+// columns, not runes.
+func TestWrappedCaretAtEndOfFullWidthLineIsShown(t *testing.T) {
+	const w, h = 10, 4
+	for _, tc := range []struct {
+		name, line string
+		// wantRow is the caret's screen row: the last segment of the line.
+		wantRow int
+	}{
+		{"ascii", "abcdefghij", 1},
+		{"cjk", "一二三四五", 1},
+		{"one short", "abcdefghi", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestEditor(tc.line)
+			e.SetGutterVisible(false)
+			e.SetBounds(0, 0, w, h)
+			e.SetWrapMode(true)
+			e.SetActive(true)
+			e.cursorRow, e.cursorCol = 0, len([]rune(tc.line))
+			e.ensureCursorVisible()
+
+			s := newGlyphScreen(w, h)
+			e.Draw(s)
+			if !s.curSet {
+				t.Fatalf("caret not shown")
+			}
+			if s.curX < 0 || s.curX >= w || s.curY != tc.wantRow {
+				t.Fatalf("caret at (%d,%d), want inside the %d-wide area on row %d", s.curX, s.curY, w, tc.wantRow)
+			}
+		})
+	}
+}
+
+// The segmentation memo keys on the wrap width, so a resize re-wraps rather
+// than serving the old width's segments.
+func TestWrapWidthFollowsResize(t *testing.T) {
+	e := newWrappedTestEditor("aaaa bbbb cccc", 20, 4)
+	if n := len(e.buildVisualLines(e.wrapWidth())); n != 1 {
+		t.Fatalf("at width 20: %d visual rows, want 1", n)
+	}
+	e.SetBounds(0, 0, 11, 4) // wraps at 10
+	if n := len(e.buildVisualLines(e.wrapWidth())); n != 2 {
+		t.Fatalf("after narrowing to 11: %d visual rows, want 2", n)
 	}
 }

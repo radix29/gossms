@@ -62,19 +62,7 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
-- **B12 — Completion popup stuck on "Loading suggestions...".** Typing a
-  script that ends in an identifier and pressing F5 before the inventory has
-  loaded (`use tempdb select ... as d` typed in one burst into a new window,
-  then F5) leaves the placeholder popup open after the run; it never fills
-  and only Escape closes it. Seen live 2026-10-01 on win10cli. Suspect the
-  run's `USE` moving `qp.database` so `refreshCompletionPopups` no longer
-  matches the key the popup is waiting on, and Execute not closing the popup.
-- **B13 — Wrap mode hides the caret at the end of a full-width last row.**
-  `wrapSegments` lets a segment fill the content width exactly; with the caret
-  at the end of such a line it sits one column past the area and
-  `drawWrapped` doesn't show it (and the scrollbar already covers that last
-  column's character). Seen live 2026-10-02 on a 100-column window; predates
-  N4's incremental wrap.
+None open.
 
 ### Verification gaps
 
@@ -132,13 +120,11 @@ work; close an item by deleting it when fixed.
   result columns (`gosmo.Catalog.Functions`, resolved only for a called ref,
   `sqlparse.FromRef.Call`), and three-part names in another database
   (`completion_crossdb.go`: listed by the server's database directory, loaded
-  only after `HAS_DBACCESS`). Left out, answering *nothing* rather than a wrong
-  list: a linked server's four-part names. Deliberate limits of what shipped:
-  `PIVOT` columns are untyped (aggregates aren't modelled), and `db..t`
-  assumes `dbo` rather than reading the login's default schema there. Each is
-  its own pass if asked.
-- **N10 — Phase 5 item 24 rough edges, left as is (2026-10-01).** Found
-  2026-10-02 at 80 columns: the Database Mail Profiles page's
-  `[ Move Up ] [ Move Down ] [ Remove Account ]` button row and its "Account
-  to add" picker draw over the form's right border (a `ButtonsRow` and a select row don't narrow to the row, as
-  `TextRow` now does). Each is small; none misleads into a wrong write.
+  only after `HAS_DBACCESS`; `db..t` tries the login's default schema there,
+  then `dbo`), and a linked server's four-part names (`completion_linked.go`:
+  SQL Server remotes only, read through `OPENQUERY`; see `docs/decisions.md`
+  § IntelliSense: linked-server four-part names). Left out, answering
+  *nothing* rather than a wrong list: `LS..t`/`LS.db..t` (the remote login's
+  default database or schema), and a non-SQL Server linked server. `PIVOT`
+  columns are typed for `COUNT`/`COUNT_BIG`/`MIN`/`MAX`/`SUM`/`AVG` only; any
+  other aggregate leaves them untyped.

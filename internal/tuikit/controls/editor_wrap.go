@@ -208,7 +208,7 @@ type wrapGoal struct {
 // index belongs to the next row (visualIndexForCursor), so landing there would
 // show the caret one row further than the key moved it.
 func (e *Editor) moveVisualRows(delta int) {
-	vls := e.buildVisualLines(e.rect.W - e.gutterWidth())
+	vls := e.buildVisualLines(e.wrapWidth())
 	if len(vls) == 0 {
 		return
 	}

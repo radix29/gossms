@@ -309,23 +309,24 @@ func TestResolveSelfReferencingTempTableTerminates(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // PIVOT drops the aggregated column and the one it spreads, and adds the
-// IN-list names. Before this parsed, the clause keyword was read as the alias
+// IN-list names, typed by the aggregate. Before this parsed, the clause keyword was read as the alias
 // and the source's own columns were offered under the name PIVOT.
 func TestResolvePivotOutputColumns(t *testing.T) {
 	rels := resolveTestSQL(t,
 		"SELECT | FROM dbo.Orders PIVOT (SUM(Total) FOR CustomerId IN ([1], [2])) AS p",
 		testCustomersOrders())
-	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int 1: 2:"; got != want {
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int 1:decimal 2:decimal"; got != want {
 		t.Errorf("columns = %q, want %q", got, want)
 	}
 }
 
-// COUNT(*) aggregates no column, so only the pivoted column goes.
+// COUNT(*) aggregates no column, so only the pivoted column goes; its
+// outputs are int all the same.
 func TestResolvePivotOverNoColumnKeepsTheRest(t *testing.T) {
 	rels := resolveTestSQL(t,
 		"SELECT | FROM dbo.Orders PIVOT (COUNT(*) FOR CustomerId IN ([1])) AS p",
 		testCustomersOrders())
-	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int Total:decimal 1:"; got != want {
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int Total:decimal 1:int"; got != want {
 		t.Errorf("columns = %q, want %q", got, want)
 	}
 }
@@ -345,7 +346,7 @@ func TestResolvePivotOverDerivedTable(t *testing.T) {
 	rels := resolveTestSQL(t,
 		"SELECT | FROM (SELECT CustomerId, Total FROM dbo.Orders) src PIVOT (SUM(Total) FOR CustomerId IN ([1])) AS p",
 		testCustomersOrders())
-	if got, want := columnSpecs(oneRelation(t, rels, "p")), "1:"; got != want {
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "1:decimal"; got != want {
 		t.Errorf("columns = %q, want %q", got, want)
 	}
 }
@@ -354,7 +355,69 @@ func TestResolvePivotOverTempTable(t *testing.T) {
 	rels := resolveTestSQL(t,
 		"CREATE TABLE #t (Id int, Yr int, Amt money)\nSELECT | FROM #t PIVOT (SUM(Amt) FOR Yr IN ([2005], [2006])) AS p",
 		testCustomersOrders())
-	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int 2005: 2006:"; got != want {
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int 2005:money 2006:money"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+// TestPivotAggregateType pins each modelled aggregate to the type
+// sys.dm_exec_describe_first_result_set reports for it (checked on SQL Server
+// 2025), and everything else to untyped.
+func TestPivotAggregateType(t *testing.T) {
+	col := func(dt string, p, s int) gosmo.CatalogColumn {
+		return gosmo.CatalogColumn{Name: "x", DataType: gosmo.DataType(dt), Precision: p, Scale: s, MaxLength: 20}
+	}
+	cases := []struct {
+		fn   string
+		arg  gosmo.CatalogColumn
+		want string
+	}{
+		{"COUNT", gosmo.CatalogColumn{}, "int"},
+		{"count", col("varchar", 0, 0), "int"},
+		{"COUNT_BIG", col("datetime2", 0, 3), "bigint"},
+		{"MIN", col("varchar", 0, 0), "varchar(20)"},
+		{"MAX", col("datetime2", 0, 3), "datetime2(3)"},
+		{"MAX", col("smallmoney", 0, 0), "smallmoney"},
+		{"Max", col("decimal", 10, 2), "decimal(10,2)"},
+		{"SUM", col("tinyint", 0, 0), "int"},
+		{"SUM", col("smallint", 0, 0), "int"},
+		{"AVG", col("int", 0, 0), "int"},
+		{"SUM", col("bigint", 0, 0), "bigint"},
+		{"AVG", col("BIGINT", 0, 0), "bigint"},
+		{"SUM", col("decimal", 10, 2), "decimal(38,2)"},
+		{"AVG", col("decimal", 10, 2), "decimal(38,6)"},
+		{"SUM", col("numeric", 9, 8), "numeric(38,8)"},
+		{"AVG", col("numeric", 9, 8), "numeric(38,8)"},
+		{"SUM", col("smallmoney", 0, 0), "money"},
+		{"AVG", col("money", 0, 0), "money"},
+		{"SUM", col("real", 0, 0), "float"},
+		{"AVG", col("float", 0, 0), "float"},
+
+		{"SUM", col("varchar", 0, 0), "column"},
+		{"AVG", col("datetime2", 0, 3), "column"},
+		{"SUM", gosmo.CatalogColumn{}, "column"},
+		{"MIN", gosmo.CatalogColumn{}, "column"},
+		{"STDEV", col("int", 0, 0), "column"},
+		{"", col("int", 0, 0), "column"},
+	}
+	for _, c := range cases {
+		got := pivotAggregateType(c.fn, c.arg)
+		if s := formatColumnType(got); s != c.want {
+			t.Errorf("%s(%s) = %q, want %q", c.fn, formatColumnType(c.arg), s, c.want)
+		}
+		if got.Name != "" {
+			t.Errorf("%s(%s) carries the argument's name %q", c.fn, formatColumnType(c.arg), got.Name)
+		}
+	}
+}
+
+// A qualified aggregate is user-defined whatever its name, so its outputs
+// stay untyped rather than borrowing a built-in's rule.
+func TestResolvePivotQualifiedAggregateIsUntyped(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"SELECT | FROM dbo.Orders PIVOT (dbo.SUM(Total) FOR CustomerId IN ([1])) AS p",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int 1:"; got != want {
 		t.Errorf("columns = %q, want %q", got, want)
 	}
 }

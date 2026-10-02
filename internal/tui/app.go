@@ -206,6 +206,11 @@ type App struct {
 	// cross-database name (completion_crossdb.go).
 	completionDirectories map[string]*completionDirectory
 
+	// linkedDirectories caches each server+login's linked servers, their
+	// databases and the remote catalogs a four-part name has reached, keyed
+	// like sysCompletionInventories (completion_linked.go).
+	linkedDirectories map[string]*linkedDirectory
+
 	// focus is which half of the window has the keyboard.
 	focus appFocus
 

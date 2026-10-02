@@ -36,10 +36,11 @@ import (
 // are called, and a three-part name ("Sales.dbo.Orders", "Sales..Orders")
 // against that database's own inventory, loaded on first use (see
 // completion_crossdb.go); so do the qualifier chains that type one ("Sales.",
-// "Sales.dbo.").
+// "Sales.dbo."). A linked server's four-part name resolves against the remote
+// database's catalog, read through the linked server (completion_linked.go).
 //
 // Out of scope, answered with nothing rather than a plausible wrong list:
-// keyword completion, and a linked server's four-part names.
+// keyword completion.
 // ---------------------------------------------------------------------------
 
 // newCompletionProvider builds the controls.CompletionProvider installed on
@@ -53,8 +54,9 @@ func (p *QueryPanel) newCompletionProvider() controls.CompletionProvider {
 }
 
 // loadingCompletionItem is shown, alone, until the backing inventory finishes
-// its first load. completion_inventory.go's refreshCompletionPopups re-queries
-// this provider once the data lands, replacing it without another keystroke.
+// its first load. completion_inventory.go's refreshSysCompletionPopups
+// re-queries this provider once the data lands, replacing it without another
+// keystroke.
 var loadingCompletionItem = controls.CompletionItem{Label: "Loading suggestions...", Placeholder: true}
 
 // sqlCompletionCandidates answers one provider call. req.Text identifies the
@@ -176,6 +178,7 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 	var pending bool
 	rc := newResolveCtx(inv, sysInv, scope.CTEs, bindings)
 	rc.otherDB = func(name string) (*completionInventory, bool) { return p.databaseInventory(inv, name) }
+	rc.linked = p.linkedObject
 	rc.pending = &pending
 	rels := resolveRefs(rc, refs)
 	loadingOr := func(items []controls.CompletionItem, wait bool) []controls.CompletionItem {

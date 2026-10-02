@@ -73,6 +73,8 @@ func newTestQueryPanelWithInventory(t testing.TB, database string, objects []gos
 	a.completionDirectories = map[string]*completionDirectory{sysKey: {
 		byName: map[string]directoryEntry{strings.ToLower(database): {name: database, state: "ONLINE"}},
 	}}
+	// And an empty linked-server list: an unresolved qualifier asks it last.
+	a.linkedDirectories = map[string]*linkedDirectory{sysKey: {byName: map[string]*linkedServer{}}}
 	return qp
 }
 

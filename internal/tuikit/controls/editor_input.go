@@ -439,7 +439,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.Button1 {
 		total := e.doc.Len()
 		if e.wrapMode {
-			vls = e.buildVisualLines(e.rect.W - e.gutterWidth())
+			vls = e.buildVisualLines(e.wrapWidth())
 			haveVLS = true
 			total = len(vls)
 		}
@@ -450,7 +450,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 
 	if e.wrapMode {
 		if !haveVLS {
-			vls = e.buildVisualLines(e.rect.W - e.gutterWidth())
+			vls = e.buildVisualLines(e.wrapWidth())
 		}
 		return e.handleMouseWrapped(ev, mx, my, contentX, vls)
 	}
@@ -538,7 +538,7 @@ func (e *Editor) SetCursorFromScreen(x, y int) {
 	contentX := e.rect.X + e.gutterWidth()
 	var row, col int
 	if e.wrapMode {
-		row, col = e.wrappedPosAt(e.buildVisualLines(e.rect.W-e.gutterWidth()), x, y, contentX)
+		row, col = e.wrappedPosAt(e.buildVisualLines(e.wrapWidth()), x, y, contentX)
 	} else {
 		row = core.Clamp(e.scrollRow+min(y-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
 		col = e.runeColAtScreenX(row, x-contentX)

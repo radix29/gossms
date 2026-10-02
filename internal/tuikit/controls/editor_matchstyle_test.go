@@ -110,11 +110,12 @@ func TestDrawPaintsMatchesUnderHorizontalScroll(t *testing.T) {
 // that is not re-primed for the segment's starting index paints the wrong
 // columns on every row after the first.
 func TestDrawPaintsMatchesInWrapMode(t *testing.T) {
-	e := styleEditor("ab..ab..ab..ab..", 4, 6)
+	// Width 5 wraps at 4: wrapWidth keeps the last column for the caret.
+	e := styleEditor("ab..ab..ab..ab..", 5, 6)
 	e.SetWrapMode(true)
 	setSearch(t, e, SearchOptions{Query: "ab"})
 
-	s := newStyleScreen(4, 6)
+	s := newStyleScreen(5, 6)
 	e.Draw(s)
 
 	for row := range 4 {

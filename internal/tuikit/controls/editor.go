@@ -243,6 +243,17 @@ func (e *Editor) gutterWidth() int {
 	return gutterW
 }
 
+// wrapWidth is the width word-wrap mode segments lines at: the content area
+// less its last column. That column is reserved for the caret after a
+// segment's last rune and for the scrollbar, which draws over it — wrapping
+// at the full content width put the caret one column past the area at the
+// end of a full-width row, where drawWrapped could not show it. Every
+// wrap-mode caller of buildVisualLines passes this, so draw, mouse and
+// cursor movement agree on the segments.
+func (e *Editor) wrapWidth() int {
+	return max(1, e.rect.W-e.gutterWidth()-1)
+}
+
 // SetWrapMode enables word-wrap rendering: long lines soft-wrap at word
 // boundaries to fit the content width instead of scrolling horizontally, and
 // scrolling becomes vertical-only. Off by default; used by plain multi-line text
@@ -417,8 +428,7 @@ func (e *Editor) contentH() int {
 func (e *Editor) ensureCursorVisible() {
 	contentH := e.contentH()
 	if e.wrapMode {
-		contentW := e.rect.W - e.gutterWidth()
-		vls := e.buildVisualLines(contentW)
+		vls := e.buildVisualLines(e.wrapWidth())
 		vi := visualIndexForCursor(vls, e.cursorRow, e.cursorCol)
 		if vi < e.scrollRow {
 			e.scrollRow = vi

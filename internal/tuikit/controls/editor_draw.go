@@ -293,8 +293,8 @@ func (e *Editor) drawScrollbar(s tcell.Screen, p *theme.Palette, total int) {
 // number, which is why core.HandleScrollbarDragH can drive it directly.
 func (e *Editor) hScrollbar() (x, y, w, total, offset int, ok bool) {
 	if e.wrapMode || e.rect.H < 2 {
-		// Word wrap never scrolls sideways — buildVisualLines guarantees no
-		// segment is wider than the content area.
+		// Word wrap never scrolls sideways — segments are cut at wrapWidth,
+		// narrower than the content area.
 		return 0, 0, 0, 0, 0, false
 	}
 	gw := e.gutterWidth()
@@ -351,7 +351,7 @@ func (e *Editor) cursorLineScreenPos(col int) (x, y int) {
 	if !e.wrapMode {
 		return contentX + core.ColumnOfRune(line, col) - e.scrollCol, e.rect.Y + e.cursorRow - e.scrollRow
 	}
-	vls := e.buildVisualLines(e.rect.W - e.gutterWidth())
+	vls := e.buildVisualLines(e.wrapWidth())
 	vi := visualIndexForCursor(vls, e.cursorRow, e.cursorCol)
 	start := 0
 	if vi < len(vls) {
@@ -364,7 +364,8 @@ func (e *Editor) cursorLineScreenPos(col int) (x, y int) {
 // drawWrapped renders the editor in word-wrap mode: each screen row shows one
 // soft-wrapped segment of a logical line, e.scrollRow counts visual rows, and
 // there is no horizontal scrolling — every segment starts at column 0, since
-// wrapSegments guarantees none is wider than contentW.
+// segments are cut at wrapWidth, one column narrower than contentW (the last
+// column is the caret's and the scrollbar's).
 //
 // Selection highlighting covers only actual characters, never the blank padding
 // after a short segment — unlike non-wrap mode, which highlights one extra cell
@@ -376,7 +377,7 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 	selStyle := theme.StyleSelected()
 	matchStyle := theme.StyleSearchMatch()
 
-	vls := e.buildVisualLines(contentW)
+	vls := e.buildVisualLines(e.wrapWidth())
 
 	// Highlighter runs are per logical line, so they are fetched when vl.row
 	// changes rather than per visual row.

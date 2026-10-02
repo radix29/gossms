@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -77,6 +78,7 @@ func (a *App) loadCompletionDirectory(sc *db.ServerConn, key string, d *completi
 	a.safegoRepair("loading the autocomplete database list", func() {
 		if d.load.Done(seq) && a.completionDirectories[key] == d {
 			delete(a.completionDirectories, key)
+			a.closeSysCompletionPopups(key) // see loadPanicked
 		}
 	}, func() {
 		dbs, err := srv.Databases(ctx)
@@ -88,6 +90,7 @@ func (a *App) loadCompletionDirectory(sc *db.ServerConn, key string, d *completi
 				if a.completionDirectories[key] == d {
 					delete(a.completionDirectories, key)
 				}
+				a.refreshSysCompletionPopups(key)
 				return
 			}
 			d.loading = false
@@ -173,8 +176,10 @@ func (a *App) ensureCrossDatabaseInventory(sc *db.ServerConn, database string) *
 //     ("Sales.dbo.", "Sales.." for dbo);
 //   - [database schema object]: that object's columns ("Sales.dbo.Orders.").
 //
-// Anything else — a linked server's four-part name, a database that can't be
-// read — answers nothing. wait reports a load still in flight.
+// A chain whose first part names no database here, and every four-part
+// chain, is then tried as a linked server's (linkedChainCandidates). A
+// database that can't be read answers nothing. wait reports a load still in
+// flight.
 func (p *QueryPanel) chainCandidates(inv, sysInv *completionInventory, chain []string, prefix string) (items []controls.CompletionItem, wait bool) {
 	switch len(chain) {
 	case 2:
@@ -185,29 +190,52 @@ func (p *QueryPanel) chainCandidates(inv, sysInv *completionInventory, chain []s
 		}
 		other, pending := p.databaseInventory(inv, chain[0])
 		if other == nil {
-			return nil, pending
+			return p.orLinked(chain, prefix, pending)
 		}
-		schema := strings.ToLower(defaultSchema(chain[1]))
-		if objs, ok := other.bySchema[schema]; ok {
-			return p.objectItems(objs, prefix), false
-		}
-		if sysInv != nil {
-			if objs, ok := sysInv.bySchema[schema]; ok {
-				return p.objectItems(objs, prefix), false
+		// "Sales.." offers both schemas it can mean, the default one's
+		// objects winning a name both hold, as they do on the server.
+		var objs []*gosmo.CatalogObject
+		seen := map[string]bool{}
+		for _, schema := range other.qualifierSchemas(chain[1]) {
+			schema = strings.ToLower(schema)
+			list, ok := other.bySchema[schema]
+			if !ok && sysInv != nil {
+				list = sysInv.bySchema[schema]
+			}
+			for _, obj := range list {
+				if n := strings.ToLower(obj.Name); !seen[n] {
+					seen[n] = true
+					objs = append(objs, obj)
+				}
 			}
 		}
-		return nil, false
+		if len(objs) == 0 {
+			return nil, false
+		}
+		return p.objectItems(objs, prefix), false
 	case 3:
 		other, pending := p.databaseInventory(inv, chain[0])
 		if other == nil {
-			return nil, pending
+			return p.orLinked(chain, prefix, pending)
 		}
-		if obj := findCatalogObject(other, sysInv, defaultSchema(chain[1]), chain[2]); obj != nil {
-			return p.columnItemsFor(obj.Columns, prefix), false
+		for _, schema := range other.qualifierSchemas(chain[1]) {
+			if obj := findCatalogObject(other, sysInv, schema, chain[2]); obj != nil {
+				return p.columnItemsFor(obj.Columns, prefix), false
+			}
 		}
 		return nil, false
 	}
-	return nil, false
+	return p.linkedChainCandidates(chain, prefix)
+}
+
+// orLinked is chainCandidates' answer once chain's first part named no
+// readable database: the loading row while the database directory or that
+// database is still loading, else the linked-server reading.
+func (p *QueryPanel) orLinked(chain []string, prefix string, pending bool) ([]controls.CompletionItem, bool) {
+	if pending {
+		return nil, true
+	}
+	return p.linkedChainCandidates(chain, prefix)
 }
 
 // databaseItems offers every ONLINE database on the panel's server whose name
@@ -253,12 +281,15 @@ func (p *QueryPanel) databaseSchemaItems(other, sysInv *completionInventory, pre
 	return items
 }
 
-// defaultSchema is the schema "db..t" means. The login's own default schema in
-// that database isn't known without another read, and is dbo for nearly every
-// user, so dbo is assumed.
-func defaultSchema(schema string) string {
-	if schema == "" {
-		return "dbo"
+// qualifierSchemas is the schemas a name's schema part means in inv's
+// database, in the order the server tries them: the part itself when given;
+// for an empty one ("db..t"), the login's default schema there, then dbo.
+func (inv *completionInventory) qualifierSchemas(schema string) []string {
+	if schema != "" {
+		return []string{schema}
 	}
-	return schema
+	if inv.defaultSchema == "" || strings.EqualFold(inv.defaultSchema, "dbo") {
+		return []string{"dbo"}
+	}
+	return []string{inv.defaultSchema, "dbo"}
 }

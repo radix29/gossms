@@ -246,6 +246,7 @@ gossms/
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
 │       ├── completion_relations.go  # resolves FROM-scope refs (CTEs, derived tables) to columns, with depth/cycle guards
 │       ├── completion_crossdb.go    # cross-database names: the per-server database directory, HAS_DBACCESS-gated loads of another database's inventory, "db.schema." chains
+│       ├── completion_linked.go     # linked-server four-part names: the linked-server list, a remote's databases and catalogs read through it (OPENQUERY, 10 s bound), "LS.db.schema." chains
 │       │
 │       │  ── Activity Monitor ──
 │       ├── activity_monitor.go        # ActivityMonitor state: tabs, toolbar, per-tab scroll, teardown; implements layout.Panel

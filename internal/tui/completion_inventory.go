@@ -40,6 +40,11 @@ type completionInventory struct {
 	// function only ever resolves where it is called (sqlparse.FromRef.Call).
 	fnByQualifiedName map[string]*gosmo.CatalogObject
 
+	// defaultSchema is the login's default schema in this database, read with
+	// the catalog: what "db..t" means first (see qualifierSchemas). Empty when
+	// the read failed or the user has none, which leaves dbo alone.
+	defaultSchema string
+
 	load latest
 
 	// gated is set on an inventory a query panel only names, in a
@@ -67,11 +72,17 @@ type completionInventory struct {
 // loadCompletionInventory's err-and-closed-connection branch makes — so the next
 // lookup retries from scratch instead of reading a catalog half-built by the
 // fetch that died. seq keeps a superseded panic off a live newer load.
-func loadPanicked(m map[string]*completionInventory, key string, inv *completionInventory, seq int) {
+//
+// It also closes every open popup on the entry's server, which may be showing
+// the placeholder this load would have replaced. Closed rather than refreshed: a refresh re-asks the provider, which finds the key gone and starts
+// a fresh load — one that panics the same way, while the popup stays open,
+// loops.
+func (a *App) loadPanicked(m map[string]*completionInventory, key string, inv *completionInventory, seq int) {
 	if !inv.load.Done(seq) {
 		return
 	}
 	evictInventory(m, key, inv)
+	a.closeSysCompletionPopups(inv.serverKey)
 }
 
 // evictInventory drops key's entry from m so the next lookup starts a fresh
@@ -182,12 +193,18 @@ func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 		d.load.Abandon()
 		delete(a.completionDirectories, serverKey)
 	}
+	a.purgeLinkedCompletion(serverKey)
+	// A query panel keeps its own connection to the server, so its popup may
+	// be waiting on a load just abandoned: re-asking starts a fresh one on
+	// that panel's connection, or closes the popup if it has none.
+	a.refreshSysCompletionPopups(serverKey)
 }
 
 // refreshCompletionCache is Ctrl+R with the SQL editor focused, and Query >
 // Refresh IntelliSense Cache: reloads this panel's inventory, the server's
 // database list, and every other database's inventory the server's panels
-// have loaded through a cross-database name. A no-op with a status message for
+// have loaded through a cross-database name, and drops everything read
+// through a linked server, so the next four-part name reads it afresh. A no-op with a status message for
 // a panel with no connection.
 func (p *QueryPanel) refreshCompletionCache() {
 	if p.app.cfg.IntelliSenseDisabled {
@@ -202,6 +219,7 @@ func (p *QueryPanel) refreshCompletionCache() {
 	p.app.retrySysCompletionInventory(p.conn)
 	p.app.refreshCompletionDirectory(p.conn)
 	p.app.refreshCrossDatabaseInventories(p.conn)
+	p.app.purgeLinkedCompletion(sysCompletionInventoryKey(p.conn.Opts))
 	p.app.setStatus(fmt.Sprintf("Refreshing autocomplete inventory for %s...", p.database))
 }
 
@@ -213,14 +231,20 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 	srv := sc.Server
 	ctx, seq := inv.load.BeginTimeout(sc.Context(), completionInventoryTimeout)
 	a.safegoRepair("loading the autocomplete catalog", func() {
-		loadPanicked(a.completionInventories, key, inv, seq)
+		a.loadPanicked(a.completionInventories, key, inv, seq)
 	}, func() {
 		var cat *gosmo.Catalog
+		var schema string
 		var err error
 		if inv.gated && !sc.DatabaseCapabilities(ctx, database).Accessible {
 			err = errNoDatabaseAccess
 		} else {
 			cat, err = srv.DatabaseRef(database).Catalog(ctx)
+			if err == nil {
+				// A failure here costs only "db..t" resolving through dbo
+				// alone, so it doesn't fail the catalog.
+				schema, _ = srv.DatabaseRef(database).CallerDefaultSchema(ctx)
+			}
 		}
 		a.postAndWake(func() {
 			if !inv.load.Done(seq) {
@@ -235,21 +259,23 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 				// whether sc.Close() ran before or after a connection was
 				// acquired — so sc.IsOpen() is checked instead of matching
 				// either. The entry is dropped rather than poisoned with sc's
-				// teardown error, so the next lookup retries fresh.
+				// teardown error, so the next lookup retries fresh — and the
+				// refresh below is that lookup for a popup another panel
+				// holds open on it.
 				evictInventory(a.completionInventories, key, inv)
-				return
-			}
-			if err != nil {
+			} else if err != nil {
 				inv.err = err
 				inv.loading = false
 				a.setStatus(fmt.Sprintf("Autocomplete unavailable for %s: %v", database, err))
 			} else {
 				inv.applyCatalog(cat)
+				inv.defaultSchema = schema
 				a.setStatus(fmt.Sprintf("Autocomplete ready for %s (%d tables/views)", database, len(cat.Objects)))
 			}
 			// Every panel on the server, not only those connected to this
 			// database: another may be waiting on it through a cross-database
-			// name.
+			// name. Every outcome ends here — a popup left on the placeholder
+			// by a path that skipped this never fills (B12).
 			a.refreshSysCompletionPopups(inv.serverKey)
 		})
 	})
@@ -313,7 +339,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 	srv := sc.Server
 	ctx, seq := inv.load.BeginTimeout(sc.Context(), completionInventoryTimeout)
 	a.safegoRepair("loading the system autocomplete catalog", func() {
-		loadPanicked(a.sysCompletionInventories, key, inv, seq)
+		a.loadPanicked(a.sysCompletionInventories, key, inv, seq)
 	}, func() {
 		cat, err := srv.DatabaseRef("master").SystemCatalog(ctx)
 		a.postAndWake(func() {
@@ -324,6 +350,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 				// Same shared-cache reasoning as loadCompletionInventory's,
 				// keyed at server level.
 				evictInventory(a.sysCompletionInventories, key, inv)
+				a.refreshSysCompletionPopups(key)
 				return
 			}
 			if err != nil {
@@ -343,14 +370,30 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 // panel on key's server, whatever database it is in, so a load landing while
 // one shows the "Loading suggestions..." placeholder fills in live.
 // Editor.RefreshCompletion is a no-op unless that panel's popup is open.
+//
+// Matched by server, not by server+database: a run's USE moves a panel's
+// database while its popup waits on the old one's load, and a per-database
+// match then never refreshed it (B12).
 func (a *App) refreshSysCompletionPopups(key string) {
+	a.forServerQueryPanels(key, func(qp *QueryPanel) { qp.editor.RefreshCompletion() })
+}
+
+// closeSysCompletionPopups closes the completion popup of every query panel
+// on key's server — loadPanicked's ending, where a refresh could loop.
+func (a *App) closeSysCompletionPopups(key string) {
+	a.forServerQueryPanels(key, func(qp *QueryPanel) { qp.editor.CloseCompletion() })
+}
+
+// forServerQueryPanels calls fn for every query panel connected to key's
+// server+login.
+func (a *App) forServerQueryPanels(key string, fn func(qp *QueryPanel)) {
 	for i := 0; i < a.panels.Count(); i++ {
 		qp, ok := a.panels.PanelAt(i).(*QueryPanel)
 		if !ok || qp.conn == nil {
 			continue
 		}
 		if sysCompletionInventoryKey(qp.conn.Opts) == key {
-			qp.editor.RefreshCompletion()
+			fn(qp)
 		}
 	}
 }

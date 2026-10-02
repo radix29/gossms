@@ -93,8 +93,9 @@ func findCatalogFunction(inv, sysInv *completionInventory, schema, name string) 
 // a FROM-scope alias/table/CTE/derived table (-> that relation's columns),
 // then as a schema name in the connected database (-> every table/view in
 // it), then as a schema name in the sys-schema inventory ("sys" being the
-// only one that ever matters there), and last as a database name (-> that
-// database's schemas, see databaseInventory). Nothing matching returns nil,
+// only one that ever matters there), then as a database name (-> that
+// database's schemas, see databaseInventory), and last as a linked server
+// (-> its databases, see linkedChainCandidates). Nothing matching returns nil,
 // closing the popup rather than showing something wrong; wait reports that
 // the database answer is still loading.
 func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []relation, qualifier, prefix string) (items []controls.CompletionItem, wait bool) {
@@ -113,8 +114,11 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 		}
 	}
 	other, pending := p.databaseInventory(inv, qualifier)
+	if pending {
+		return nil, true
+	}
 	if other == nil {
-		return nil, pending
+		return p.linkedChainCandidates([]string{qualifier}, prefix)
 	}
 	return p.databaseSchemaItems(other, sysInv, prefix), false
 }
@@ -122,8 +126,9 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 // tableCandidates offers every schema (the connected database's own, plus
 // "sys" once its inventory has loaded), every table/view, every visible CTE
 // name, every temp table/table variable the batch declares and every ONLINE
-// database on the server (the start of a three-part name) whose name
-// contains prefix — the FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
+// database on the server (the start of a three-part name) and queryable
+// linked server (a four-part one) whose name contains prefix — the
+// FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
 // context, and the fallback when a column context has no FROM-scope yet
 // (which passes no CTEs: a CTE name is a relation, not a column).
 // The sys-schema inventory's own objects are not mixed into the unqualified
@@ -193,6 +198,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 		}
 	}
 	items = append(items, p.databaseItems(pl)...)
+	items = append(items, p.linkedServerItems(pl)...)
 	sortCompletionItems(items)
 	return items
 }

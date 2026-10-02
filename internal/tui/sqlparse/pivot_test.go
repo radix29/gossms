@@ -12,7 +12,7 @@ func pivotSpec(pv *Pivot) string {
 	if pv == nil {
 		return "-"
 	}
-	kind, head := "PIVOT", "agg="+pv.Agg
+	kind, head := "PIVOT", "fn="+pv.Func+" agg="+pv.Agg
 	if pv.Unpivot {
 		kind, head = "UNPIVOT", "value="+pv.Value
 	}
@@ -39,14 +39,14 @@ func TestParsePivotShapes(t *testing.T) {
 		name:  "pivot",
 		sql:   "SELECT | FROM dbo.Orders PIVOT (SUM(Total) FOR Year IN ([2005], [2006])) AS p",
 		alias: "p",
-		pivot: "PIVOT agg=Total for=Year in=[2005 2006]",
+		pivot: "PIVOT fn=SUM agg=Total for=Year in=[2005 2006]",
 	}, {
 		// The aggregate's argument is qualified, and the FOR column too: both
 		// name the column with their last part.
 		name:  "qualified names",
 		sql:   "SELECT | FROM dbo.Orders o PIVOT (SUM(o.Total) FOR o.Year IN ([2005])) p",
 		alias: "p",
-		pivot: "PIVOT agg=Total for=Year in=[2005]",
+		pivot: "PIVOT fn=SUM agg=Total for=Year in=[2005]",
 	}, {
 		name:  "unpivot",
 		sql:   "SELECT | FROM dbo.Orders UNPIVOT (Amount FOR Quarter IN (Q1, Q2, Q3)) AS u",
@@ -59,14 +59,27 @@ func TestParsePivotShapes(t *testing.T) {
 		name:  "derived source with its own alias",
 		sql:   "SELECT | FROM (SELECT Total, Year FROM dbo.Orders) src PIVOT (SUM(Total) FOR Year IN ([2005])) AS p",
 		alias: "p",
-		pivot: "PIVOT agg=Total for=Year in=[2005]",
+		pivot: "PIVOT fn=SUM agg=Total for=Year in=[2005]",
 	}, {
 		// COUNT(*) aggregates no column, so nothing is dropped from the
 		// source: an empty Agg, not a guess.
 		name:  "aggregate over no column",
 		sql:   "SELECT | FROM dbo.Orders PIVOT (COUNT(*) FOR Year IN ([2005])) AS p",
 		alias: "p",
-		pivot: "PIVOT agg= for=Year in=[2005]",
+		pivot: "PIVOT fn=COUNT agg= for=Year in=[2005]",
+	}, {
+		// A qualified call is a user-defined aggregate, whatever its name, so
+		// no Func: the caller leaves its columns untyped.
+		name:  "qualified aggregate",
+		sql:   "SELECT | FROM dbo.Orders PIVOT (dbo.SUM(Total) FOR Year IN ([2005])) AS p",
+		alias: "p",
+		pivot: "PIVOT fn= agg=Total for=Year in=[2005]",
+	}, {
+		// Recorded as written; the caller matches it case-insensitively.
+		name:  "lower-case aggregate",
+		sql:   "SELECT | FROM dbo.Orders PIVOT (max(Total) FOR Year IN ([2005])) AS p",
+		alias: "p",
+		pivot: "PIVOT fn=max agg=Total for=Year in=[2005]",
 	}, {
 		// PIVOT is a legal alias. Without the '(' it is one.
 		name:  "pivot as a plain alias",

@@ -119,6 +119,12 @@ func (e *Editor) RefreshCompletion() {
 	}
 }
 
+// CloseCompletion closes the popup, for a host action that is never a
+// completion gesture, such as running the script. A later RefreshCompletion
+// leaves it closed; unlike Escape it doesn't suppress the token, so typing on
+// reopens it. Safe to call unconditionally.
+func (e *Editor) CloseCompletion() { e.closeCompletion() }
+
 // closeCompletion hides the popup, if open. Safe to call unconditionally.
 func (e *Editor) closeCompletion() {
 	e.completionOpen = false

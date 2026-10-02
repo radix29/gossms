@@ -22,6 +22,12 @@ type Pivot struct {
 	// ("COUNT(*)").
 	Agg string
 
+	// Func is a PIVOT's aggregate as written — "SUM" in "SUM(o.Amount)" —
+	// so the caller can type the output columns. Empty for UNPIVOT, and for a
+	// schema-qualified call ("dbo.MyAgg(x)"), which is a user-defined
+	// aggregate whatever its name.
+	Func string
+
 	// Value is the value column an UNPIVOT names before FOR.
 	Value string
 
@@ -62,7 +68,7 @@ func (p *queryParser) parsePivot() *Pivot {
 	p.i += pivotClauseSkip
 	pv := &Pivot{Unpivot: unpivot}
 
-	head, ok := p.pivotNameUntil(func() bool { return p.atIdentFold("FOR") })
+	head, fn, ok := p.pivotNameUntil(func() bool { return p.atIdentFold("FOR") })
 	if !ok {
 		p.i = start
 		return nil
@@ -78,11 +84,11 @@ func (p *queryParser) parsePivot() *Pivot {
 	} else {
 		// A PIVOT's aggregate may well wrap no column at all — COUNT(*) — and
 		// then there is nothing for it to drop. An empty Agg says exactly that.
-		pv.Agg = head
+		pv.Agg, pv.Func = head, fn
 	}
 	p.i++ // FOR
 
-	forCol, ok := p.pivotNameUntil(func() bool { return p.atKeyword("IN") })
+	forCol, _, ok := p.pivotNameUntil(func() bool { return p.atKeyword("IN") })
 	if !ok || forCol == "" {
 		p.i = start
 		return nil
@@ -103,7 +109,8 @@ func (p *queryParser) parsePivot() *Pivot {
 }
 
 // pivotNameUntil walks to the terminator stop reports and returns the column
-// name it passed, with ok reporting only whether the terminator was reached —
+// name it passed and the unqualified function the argument list belongs to
+// ("" when none opened, or the call was qualified), with ok reporting only whether the terminator was reached —
 // a clause can legitimately name no column ("COUNT(*)"), and telling that
 // apart from a shape that isn't a pivot clause at all is the caller's job.
 //
@@ -117,23 +124,26 @@ func (p *queryParser) parsePivot() *Pivot {
 // stop is only consulted at that level, so the FOR of a nested expression
 // cannot end the aggregate early, and the clause's own closing ')' arriving
 // first means this is not a pivot clause.
-func (p *queryParser) pivotNameUntil(stop func() bool) (string, bool) {
+func (p *queryParser) pivotNameUntil(stop func() bool) (name, fn string, ok bool) {
 	outer, inner := "", ""
-	depth, grouped := 0, false
+	depth, grouped, qualified := 0, false, false
 	for p.i < len(p.toks) {
 		if depth == 0 && stop() {
 			if grouped {
-				return inner, true
+				return inner, fn, true
 			}
-			return outer, true
+			return outer, "", true
 		}
 		switch t := p.toks[p.i]; t.Kind {
 		case TokenParenOpen:
+			if depth == 0 && !grouped && !qualified {
+				fn = outer
+			}
 			depth++
 			grouped = true
 		case TokenParenClose:
 			if depth == 0 {
-				return "", false
+				return "", "", false
 			}
 			depth--
 		case TokenIdent:
@@ -142,11 +152,12 @@ func (p *queryParser) pivotNameUntil(stop func() bool) (string, bool) {
 			switch depth {
 			case 0:
 				outer = t.Text
+				qualified = p.i > 0 && p.toks[p.i-1].Kind == TokenDot
 			case 1:
 				inner = t.Text
 			}
 		}
 		p.i++
 	}
-	return "", false
+	return "", "", false
 }

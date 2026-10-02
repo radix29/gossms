@@ -2,10 +2,14 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // evictInventory must only drop the entry the finishing load actually
@@ -67,12 +71,11 @@ func TestPurgeCompletionInventoriesAbandonsInFlightLoads(t *testing.T) {
 	_, perDBToken := perDB.load.Begin(context.Background())
 	_, sysToken := sys.load.Begin(context.Background())
 
-	a := &App{
-		completionInventories: map[string]*completionInventory{
-			completionInventoryKey(opts, "AdventureWorks"): perDB,
-		},
-		sysCompletionInventories: map[string]*completionInventory{serverKey: sys},
+	a := newTestApp()
+	a.completionInventories = map[string]*completionInventory{
+		completionInventoryKey(opts, "AdventureWorks"): perDB,
 	}
+	a.sysCompletionInventories = map[string]*completionInventory{serverKey: sys}
 
 	a.purgeCompletionInventories(sc)
 
@@ -86,5 +89,111 @@ func TestPurgeCompletionInventoriesAbandonsInFlightLoads(t *testing.T) {
 	}
 	if sys.load.Done(sysToken) {
 		t.Error("a purged sys-schema load is still current, so its result would apply a catalog to a dropped entry and overwrite the Disconnected status")
+	}
+}
+
+// openPlaceholderPopup hosts qp, points it at a database whose inventory is
+// still loading, and types a FROM-clause prefix so its popup opens on the
+// "Loading suggestions..." row. It returns a pointer to the items the
+// provider answered last, which the editor keeps no public view of.
+func openPlaceholderPopup(t *testing.T, qp *QueryPanel, database string) *[]controls.CompletionItem {
+	t.Helper()
+	qp.app.panels.AddPanel(qp)
+	qp.database = database
+	qp.app.completionInventories[completionInventoryKey(qp.conn.Opts, database)] = &completionInventory{
+		loading: true, serverKey: sysCompletionInventoryKey(qp.conn.Opts),
+	}
+	last := new([]controls.CompletionItem)
+	qp.editor.SetCompletionProvider(func(req controls.CompletionRequest) ([]controls.CompletionItem, int) {
+		items, from := qp.sqlCompletionCandidates(req)
+		*last = items
+		return items, from
+	})
+	for _, r := range "SELECT * FROM C" {
+		qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+	}
+	if !qp.editor.CompletionActive() || len(*last) != 1 || !(*last)[0].Placeholder {
+		t.Fatalf("setup: popup open = %v, items = %+v; want the placeholder alone", qp.editor.CompletionActive(), *last)
+	}
+	return last
+}
+
+// B12: a run's USE moves the panel to another database while its popup waits
+// on the old one's load. When that load lands, the popup must be re-asked and
+// fill from the panel's new database. The refresh used to match panels by
+// server+database, so the moved panel matched neither and the placeholder
+// stayed until Escape.
+//
+// Mutation check: make forServerQueryPanels match on
+// completionInventoryKey(qp.conn.Opts, qp.database), the old per-database
+// rule, and this fails.
+func TestInventoryLoadRefreshesPopupAfterUSEMovedDatabase(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "tempdb", testCustomersOrders())
+	last := openPlaceholderPopup(t, qp, "master")
+
+	qp.database = "tempdb" // the run's USE, via setResult
+	masterKey := completionInventoryKey(qp.conn.Opts, "master")
+	qp.app.completionInventories[masterKey].applyCatalog(&gosmo.Catalog{})
+	qp.app.refreshSysCompletionPopups(qp.app.completionInventories[masterKey].serverKey)
+
+	if !qp.editor.CompletionActive() {
+		t.Fatal("popup closed; want it filled from tempdb's inventory")
+	}
+	if got := labels(*last); !slices.Contains(got, "dbo.Customers") {
+		t.Errorf("items = %v (%+v), want tempdb's tables in place of the placeholder", got, *last)
+	}
+}
+
+// Running is never a completion gesture: every run entry point closes the
+// popup before anything else, refused runs included, so a placeholder can't
+// outlive the keystroke that opened it.
+func TestRunEntryPointsCloseCompletion(t *testing.T) {
+	for name, run := range map[string]func(*QueryPanel){
+		"Execute":           (*QueryPanel).Execute,
+		"ExecuteSelection":  (*QueryPanel).ExecuteSelection,
+		"ShowEstimatedPlan": (*QueryPanel).ShowEstimatedPlan,
+	} {
+		t.Run(name, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "tempdb", testCustomersOrders())
+			openPlaceholderPopup(t, qp, "master")
+			qp.executing = true // refuse the run: the fake connection has no session
+
+			run(qp)
+			if qp.editor.CompletionActive() {
+				t.Fatalf("%s left the completion popup open", name)
+			}
+			// The load landing after the run must not reopen it...
+			qp.app.completionInventories[completionInventoryKey(qp.conn.Opts, "master")].applyCatalog(&gosmo.Catalog{})
+			qp.app.refreshSysCompletionPopups(sysCompletionInventoryKey(qp.conn.Opts))
+			if qp.editor.CompletionActive() {
+				t.Errorf("a refresh after %s reopened the popup", name)
+			}
+			// ...but it is closed, not Escape-dismissed: typing on in the
+			// same token reopens it (in tempdb, which has a Customers).
+			qp.database = "tempdb"
+			qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, "u", tcell.ModNone))
+			if !qp.editor.CompletionActive() {
+				t.Errorf("typing after %s didn't reopen the popup — the token was suppressed", name)
+			}
+		})
+	}
+}
+
+// A load that panics evicts its entry and must not leave a popup on the
+// placeholder it would have replaced. It closes rather than refreshes: a
+// refresh would start a fresh load that panics the same way, in a loop.
+func TestLoadPanickedClosesWaitingPopup(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "tempdb", testCustomersOrders())
+	openPlaceholderPopup(t, qp, "master")
+	key := completionInventoryKey(qp.conn.Opts, "master")
+	inv := qp.app.completionInventories[key]
+	_, seq := inv.load.Begin(context.Background())
+
+	qp.app.loadPanicked(qp.app.completionInventories, key, inv, seq)
+	if _, ok := qp.app.completionInventories[key]; ok {
+		t.Error("the panicked load's entry is still cached")
+	}
+	if qp.editor.CompletionActive() {
+		t.Error("popup still open on the placeholder after its load panicked")
 	}
 }

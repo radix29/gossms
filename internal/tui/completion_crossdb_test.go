@@ -104,6 +104,49 @@ func TestSQLCompletionCrossDatabase(t *testing.T) {
 	}
 }
 
+// TestSQLCompletionCrossDatabaseDefaultSchema: "db..t" means the login's
+// default schema there first, then dbo — the server's order — so a user whose
+// default schema is audit reaches audit.Trail by "Billing..Trail", still
+// reaches dbo.Invoices, and gets audit's object where both schemas hold the
+// name.
+func TestSQLCompletionCrossDatabaseDefaultSchema(t *testing.T) {
+	shadow := gosmo.CatalogObject{
+		ObjectID: 12, Schema: "audit", Name: "Invoices", Type: gosmo.CatalogTable,
+		Columns: []gosmo.CatalogColumn{{Name: "Shadow", DataType: "int"}},
+	}
+	cases := []struct {
+		name, defSchema string
+		shadow          bool
+		sql             string
+		want            []string
+	}{
+		{"default schema object", "audit", false, "SELECT x.| FROM Billing..Trail x", []string{"At"}},
+		{"falls back to dbo", "audit", false, "SELECT o.| FROM Billing..Invoices o", []string{"Amount", "InvoiceNo"}},
+		{"default schema wins a shared name", "audit", true, "SELECT o.| FROM Billing..Invoices o", []string{"Shadow"}},
+		{"double dot lists both schemas", "audit", false, "SELECT * FROM Billing..|", []string{"audit.Trail", "dbo.Invoices"}},
+		{"double dot shadowed name once", "audit", true, "SELECT * FROM Billing..|", []string{"audit.Invoices", "audit.Trail"}},
+		{"explicit schema unaffected", "audit", true, "SELECT o.| FROM Billing.dbo.Invoices o", []string{"Amount", "InvoiceNo"}},
+		{"unread default is dbo", "", false, "SELECT x.| FROM Billing..Trail x", nil},
+		{"dbo default", "dbo", false, "SELECT * FROM Billing..|", []string{"dbo.Invoices"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			qp := newCrossDBPanel(t)
+			key := completionInventoryKey(qp.conn.Opts, "Billing")
+			objs := billingObjects()
+			if c.shadow {
+				objs = append(objs, shadow)
+			}
+			inv := newCompletionInventory(&gosmo.Catalog{Objects: objs, Schemas: []string{"audit", "dbo"}})
+			inv.gated, inv.defaultSchema = true, c.defSchema
+			qp.app.completionInventories[key] = inv
+			if got := crossDBLabels(t, qp, c.sql); !slices.Equal(got, c.want) {
+				t.Errorf("labels = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // TestSQLCompletionCrossDatabaseNamesLoadNothingUnlisted pins the directory as
 // the gate before any load: a name the server doesn't list as an ONLINE
 // database — a typo, an alias that resolved to nothing — starts no inventory

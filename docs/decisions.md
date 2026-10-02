@@ -1107,6 +1107,39 @@ Unverified on Managed Instance and on non-Enterprise editions:
   History pages and fail-safe operator/token replacement are later work, not
   defects.
 
+## IntelliSense: linked-server four-part names — what the design settled
+
+`internal/tui/completion_linked.go`; reads in gosmo (`linked_server.go`).
+
+- **The remote's own catalog views, through `OPENQUERY`** — not
+  `sp_catalogs`/`sp_tables_ex`/`sp_columns_ex`. Probed live (2025 → 2016 over
+  MSOLEDBSQL): `sp_columns_ex` reports `decimal` as `numeric` and `nchar` as
+  `nvarchar`, and silently drops CLR-typed columns (`geography`,
+  `hierarchyid`) — a wrong or short list, which IntelliSense never shows.
+  `OPENQUERY` runs the whole query remotely, needs only data access (on by
+  default, unlike RPC Out for `EXEC … AT`), and sees what the mapped remote
+  login sees — what the query itself will see. Cost: **SQL Server remotes
+  only**; any other product fails the read and answers nothing.
+- **Three lazy loads, each latest-only with a 10 s bound**
+  (`linkedLoadTimeout`): the local linked-server list (`sys.servers`,
+  `is_data_access_enabled = 1`), one remote's ONLINE databases the mapped login
+  can open (`HAS_DBACCESS` evaluated remotely), and one remote database's
+  tables/views with columns. A slow or dead remote shows the loading row until
+  the bound, then nothing; the failure is cached (status line says why) until
+  Ctrl+R, so a dead remote is not re-dialled per keystroke. The bound is the
+  context's: go-mssqldb then waits up to 5 s more for the server to acknowledge
+  the cancel, which it does only once the provider's own login gives up —
+  ~15 s measured against an unroutable address. The editor never waits.
+- **The local reading of a chain always wins.** While typing, `X.Y.` could be
+  schema.object, database.schema or server.database; the linked reading is
+  tried only when the local ones name nothing, as T-SQL's own part count would
+  decide once the name is complete.
+- **`LS.db..t` answers nothing.** The remote login's default schema in that
+  database is not readable through `OPENQUERY` (no database context), and
+  guessing `dbo` can name the wrong object.
+- **No remote table-valued functions or `sys` schema** — four-part names
+  cannot call a function, and the remote's `sys` views are not inventoried.
+
 ## By design — not issues, do not re-raise
 
 - **A query window's session is SSMS-like, with three deliberate

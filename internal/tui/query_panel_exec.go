@@ -13,7 +13,12 @@ import (
 // Execute runs the query against the connected server: the selected text if the
 // editor has a selection, otherwise the whole content. Query > Execute and F5
 // both call it.
+//
+// Every run entry point closes the completion popup first: running is never a
+// completion gesture, and a "Loading suggestions..." placeholder left open
+// across the run outlives its reason (B12).
 func (p *QueryPanel) Execute() {
+	p.editor.CloseCompletion()
 	if sel := p.editor.SelectedText(); sel != "" {
 		p.runQuery(sel)
 		return
@@ -25,6 +30,7 @@ func (p *QueryPanel) Execute() {
 // message and nothing else when there is no selection — the toolbar's "Execute
 // Selection" button, unlike Execute, which falls back to the whole script.
 func (p *QueryPanel) ExecuteSelection() {
+	p.editor.CloseCompletion()
 	if sel := p.editor.SelectedText(); sel != "" {
 		p.runQuery(sel)
 		return
