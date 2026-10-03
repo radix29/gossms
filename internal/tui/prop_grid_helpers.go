@@ -173,7 +173,7 @@ func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
 // still navigating. The cursor jumps to the first row, and propsheet.GridRow —
 // which reports movement by diffing SelectedCell either side of the key — then
 // answers "not handled", so Form moves focus straight out of the grid on the
-// first arrow key. See wireGridEditor (ag_props.go) for the worked example.
+// first arrow key. See wireGridEditor below for the worked example.
 //
 // The dragged widths and the scroll position go the same way, and the scroll is
 // not fixed by restoring the cursor: SetSelectedCell ends in ensureVisible,
@@ -204,6 +204,30 @@ func redrawGrid(grid *controls.DataGrid, headers []string, rows [][]string) {
 func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row int) {
 	grid.SetDataPreservingView(headers, rows)
 	grid.SetSelectedRow(row)
+}
+
+// wireGridEditor connects a detail editor to a DataGrid's selection — the
+// grid-plus-detail shape of the AG General replica grid and the Backup Preferences,
+// Read-Only Routing, User Mapping, Attach and New Index/Statistics/AG pages.
+// Moving off a row commits the editor, loads the new row, and redraws. Returns
+// the redraw a page's RevertFn needs.
+//
+// The selected cell is saved and restored around SetData, which resets it to
+// 0,0 from inside OnSelectRow. Without that only the first row is reachable,
+// and GridRow (which detects movement by comparing SelectedCell) reports arrows
+// unhandled, ejecting focus.
+func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [][]string, commitCurrent, syncFromSelection func()) (reload func()) {
+	redraw := func() { redrawGrid(grid, headers, gridRows()) }
+	grid.OnSelectRow = func(int) {
+		commitCurrent()
+		syncFromSelection()
+		redraw()
+	}
+	syncFromSelection()
+	return func() {
+		redraw()
+		syncFromSelection()
+	}
 }
 
 // compatLevelItems is the Compatibility level dropdown's base list, from the

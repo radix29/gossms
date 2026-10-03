@@ -271,7 +271,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					hint.Set("Type a name for the new profile first.")
 					return
 				}
-				if slices.ContainsFunc(edits, func(e *mailProfileEdit) bool { return !e.removing && e.name == name }) {
+				if pendingNameTaken(serverCollation(sc), visible(), func(e *mailProfileEdit) string { return e.name }, name) {
 					hint.Set("A profile named " + name + " is already listed.")
 					return
 				}

@@ -193,7 +193,7 @@ func TestScanRendersRealAtItsOwnPrecision(t *testing.T) {
 	}
 	want := [][]string{
 		{"0.1", "0.10000000149011612"},
-		{"3.4e+38", "0.1"},
+		{"3.4E+38", "0.1"},
 	}
 	for i, row := range want {
 		for j, cell := range row {

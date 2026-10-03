@@ -455,15 +455,13 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					hint.Set("Set File type to ROWS or LOG — this page adds data and log files only.")
 					return
 				}
-				for i, e := range visible() {
-					if e.name == name {
-						// Already present — say so and select it, rather than
-						// leaving the button looking broken.
-						hint.Set("A file named " + name + " is already listed — its row is selected below.")
-						grid.SetSelectedRow(i)
-						syncFieldsFromSelection()
-						return
-					}
+				if i := pendingNameIndex(d.Collation, visible(), func(e *fileEdit) string { return e.name }, name); i >= 0 {
+					// Already present — say so and select it, rather than
+					// leaving the button looking broken.
+					hint.Set("A file named " + name + " is already listed — its row is selected below.")
+					grid.SetSelectedRow(i)
+					syncFieldsFromSelection()
+					return
 				}
 				hint.Clear()
 				fileGroup := pickedFilegroup(typeSelect.Value())

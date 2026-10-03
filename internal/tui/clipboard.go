@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -13,6 +15,27 @@ import (
 // one set of App-level methods works across every dialog field and the
 // editor.
 type clipboardTarget = core.ClipboardTarget
+
+// appPaste is the state of a paste still arriving, by either route.
+type appPaste struct {
+	// Bracketed paste: bracketed is true between an *tcell.EventPaste start
+	// and its matching end, during which every EventKey is pasted content and
+	// accumulates in buf.
+	bracketed bool
+	buf       strings.Builder
+
+	// target is the widget a Ctrl+V was aimed at while the terminal's OSC 52
+	// clipboard reply is outstanding — the fallback when no native clipboard
+	// tool answered. The reply arrives as an *tcell.EventClipboard an
+	// unbounded time later; App.pasteInto says why the target is remembered
+	// rather than resolved again then.
+	target clipboardTarget
+
+	// token pins which field of target the Ctrl+V was aimed at, for a host
+	// that hands back itself rather than the field — see
+	// core.ClipboardTargetTokener and App.pasteInto.
+	token any
+}
 
 // activeClipboardTarget resolves which widget Copy/Cut/Paste acts on now:
 // whichever field is focused in the frontmost open dialog; the active query
@@ -183,7 +206,7 @@ func (a *App) pasteFromClipboard() {
 				a.pasteInto(target, token, text)
 				return
 			}
-			a.pendingPaste, a.pendingPasteToken = target, token
+			a.paste.target, a.paste.token = target, token
 			a.screen.GetClipboard()
 		})
 	})
@@ -234,22 +257,22 @@ func (a *App) pasteInto(target clipboardTarget, token any, text string) {
 // the content still arrives as ordinary EventKeys in between, which is why Run()
 // buffers them here.
 func (a *App) beginBracketedPaste() {
-	a.pasting = true
-	a.pasteBuf.Reset()
+	a.paste.bracketed = true
+	a.paste.buf.Reset()
 }
 
-// bufferPastedKey appends one key of an in-progress bracketed paste to pasteBuf.
+// bufferPastedKey appends one key of an in-progress bracketed paste to paste.buf.
 // Anything that isn't a character, newline or tab is dropped rather than acted
 // on — a stray escape sequence can decode as a function key — so a paste can
 // never trigger a command.
 func (a *App) bufferPastedKey(ev *tcell.EventKey) {
 	switch ev.Key() {
 	case tcell.KeyRune:
-		a.pasteBuf.WriteString(ev.Str())
+		a.paste.buf.WriteString(ev.Str())
 	case tcell.KeyEnter:
-		a.pasteBuf.WriteByte('\n')
+		a.paste.buf.WriteByte('\n')
 	case tcell.KeyTab:
-		a.pasteBuf.WriteByte('\t')
+		a.paste.buf.WriteByte('\t')
 	}
 }
 
@@ -259,9 +282,9 @@ func (a *App) bufferPastedKey(ev *tcell.EventKey) {
 // arrives as KeyEnter and the open IntelliSense popup commits its candidate
 // instead, silently rewriting the text. One Paste call is also one undo step.
 func (a *App) endBracketedPaste() {
-	a.pasting = false
-	text := a.pasteBuf.String()
-	a.pasteBuf.Reset()
+	a.paste.bracketed = false
+	text := a.paste.buf.String()
+	a.paste.buf.Reset()
 	if text == "" {
 		return
 	}

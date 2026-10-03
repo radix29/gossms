@@ -93,11 +93,9 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 					hint.Set("Type a filegroup name first.")
 					return
 				}
-				for _, e := range visible() {
-					if e.name == name {
-						hint.Set("A filegroup named " + name + " is already listed.")
-						return
-					}
+				if pendingNameTaken(d.Collation, visible(), func(e *fgEdit) string { return e.name }, name) {
+					hint.Set("A filegroup named " + name + " is already listed.")
+					return
 				}
 				hint.Clear()
 				edits = append(edits, &fgEdit{name: name, isNew: true})

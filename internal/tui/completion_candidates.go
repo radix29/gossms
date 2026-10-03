@@ -22,7 +22,7 @@ import (
 // so an alias/bare-name over a "sys.xxx" reference (e.g. "FROM sys.objects o")
 // resolves its columns the same way a user table would.
 func resolveQualifierToRelation(inv, sysInv *completionInventory, rels []relation, qualifier string) (relation, bool) {
-	if r, ok := findRelation(rels, qualifier); ok {
+	if r, ok := findRelation(inv.collation, rels, qualifier); ok {
 		return r, true
 	}
 	if obj := findCatalogObjectByName(inv, sysInv, qualifier); obj != nil {

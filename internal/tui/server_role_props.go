@@ -161,6 +161,7 @@ func pageServerRoleMembers(sc *db.ServerConn, roleName *string) propPage {
 			}
 
 			f, apply := buildMembershipForm(membershipConfig{
+				collation:     serverCollation(sc),
 				members:       members,
 				candidates:    candidates,
 				principalType: principalType,

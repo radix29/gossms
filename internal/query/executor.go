@@ -10,6 +10,7 @@
 package query
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -390,6 +391,7 @@ type rowScanner struct {
 	guids       []*mssql.NullUniqueIdentifier
 	decimalLike []bool
 	isReal      []bool
+	isVariant   []bool
 	layouts     []string
 
 	// isNull marks the cells of the row last scanned that hold a SQL NULL,
@@ -417,6 +419,9 @@ type rowScanner struct {
 // Every date/time type scans as time.Time, so the column type and scale decide
 // what SSMS shows (date without time, datetime2(3) with three digits); layouts
 // holds that per column.
+//
+// sql_variant scans as whatever its inner type decodes to, with that type
+// dropped; isVariant routes those columns through appendVariant.
 func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	cols, err := rows.Columns()
 	if err != nil {
@@ -434,6 +439,7 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 		guids:       make([]*mssql.NullUniqueIdentifier, len(cols)),
 		decimalLike: make([]bool, len(cols)),
 		isReal:      make([]bool, len(cols)),
+		isVariant:   make([]bool, len(cols)),
 		layouts:     make([]string, len(cols)),
 		isNull:      make([]bool, len(cols)),
 	}
@@ -448,6 +454,8 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 			sc.decimalLike[i] = true
 		case "REAL":
 			sc.isReal[i] = true
+		case "SQL_VARIANT":
+			sc.isVariant[i] = true
 		}
 		_, scale, scaleKnown := types[i].DecimalSize()
 		sc.layouts[i] = timeLayout(typeName, int(scale), scaleKnown)
@@ -471,6 +479,9 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 		} else if f, ok := sc.vals[i].(float64); ok && sc.isReal[i] {
 			sc.isNull[i] = false
 			sc.buf = appendFloat(sc.buf, f, 32)
+		} else if sc.isVariant[i] {
+			sc.isNull[i] = sc.vals[i] == nil
+			sc.buf = appendVariant(sc.buf, sc.vals[i])
 		} else {
 			sc.isNull[i] = sc.vals[i] == nil
 			sc.buf = appendValue(sc.buf, sc.vals[i], sc.decimalLike[i], sc.layouts[i])
@@ -659,8 +670,8 @@ func appendGUID(dst []byte, g mssql.NullUniqueIdentifier) []byte {
 	return append(dst, g.UUID.String()...)
 }
 
-// defaultTimeLayout is for a time.Time from a column with no known layout (e.g.
-// sql_variant); matches plain "datetime".
+// defaultTimeLayout is for a time.Time from a column with no known layout;
+// matches plain "datetime". (A sql_variant's goes through appendVariant.)
 const defaultTimeLayout = "2006-01-02 15:04:05.000"
 
 // timeLayout returns SSMS's grid layout for a date/time column type, or "" for
@@ -738,6 +749,66 @@ func appendValue(dst []byte, v any, isDecimalLike bool, layout string) []byte {
 	}
 }
 
+// appendVariant renders a sql_variant cell. go-mssqldb (v1.11.2,
+// readVariantTypeWithEncoding) decodes the variant's inner type and then
+// drops it: decimal, numeric and money arrive as their ASCII digits in a
+// []byte, a uniqueidentifier as its 16 wire bytes, and every temporal type as
+// a bare time.Time. Through appendValue that showed 1.50 as 0x312E3530, a
+// datetime2(7) cut to milliseconds and a datetimeoffset without its offset.
+// So the value has to say what it was:
+//
+//   - a []byte that is exactly a decimal literal is decimal or money digits,
+//     shown as text. A varbinary variant whose bytes happen to spell one shows
+//     as text too — rare, and accepted (docs/decisions.md);
+//   - a time.Time in a nameless fixed zone is a datetimeoffset, the only type
+//     the driver decodes into one (the others get the connection's zone, UTC
+//     unless "timezone" names one), and keeps its offset;
+//   - fractional seconds show three digits, as datetime does, and more only
+//     when the value carries them, so a datetime2(7) is no longer cut.
+//
+// A date or time variant still shows as a datetime, and a GUID as hex: the
+// value alone can't tell them from a datetime at midnight or a binary(16).
+func appendVariant(dst []byte, v any) []byte {
+	switch x := v.(type) {
+	case []byte:
+		if isDecimalLiteral(x) {
+			return append(dst, x...)
+		}
+	case time.Time:
+		dst = x.AppendFormat(dst, "2006-01-02 15:04:05.0000000")
+		for n := 7; n > 3 && dst[len(dst)-1] == '0'; n-- {
+			dst = dst[:len(dst)-1]
+		}
+		if x.Location().String() == "" {
+			dst = x.AppendFormat(dst, " -07:00")
+		}
+		return dst
+	}
+	return appendValue(dst, v, false, "")
+}
+
+// isDecimalLiteral reports whether b is -?digits(.digits)?, the form the
+// driver gives decimal and money digits in.
+func isDecimalLiteral(b []byte) bool {
+	if len(b) > 0 && b[0] == '-' {
+		b = b[1:]
+	}
+	intPart, frac, hasDot := bytes.Cut(b, []byte{'.'})
+	return allDigits(intPart) && (!hasDot || allDigits(frac))
+}
+
+func allDigits(b []byte) bool {
+	if len(b) == 0 {
+		return false
+	}
+	for _, c := range b {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // appendHexUpper appends b as SSMS's "0x…" uppercase hex in one pass.
 func appendHexUpper(dst []byte, b []byte) []byte {
 	dst = append(dst, '0', 'x')
@@ -750,13 +821,15 @@ func appendHexUpper(dst []byte, b []byte) []byte {
 const hexUpperDigits = "0123456789ABCDEF"
 
 // appendFloat renders float/real as SSMS's grid does: plain decimal in the
-// readable range, scientific outside it (Go's %g would show 1000000 as
-// "1e+06"). Shortest round-trip precision, so pasted-back text reparses to the
-// same float64.
+// readable range, scientific outside it with SSMS's upper-case "E+300" (Go's
+// %g would show 1000000 as "1e+06"); the cut-offs match SSMS 21/22. Shortest
+// round-trip precision, so pasted-back text reparses to the same float64 —
+// SSMS rounds to 15 significant digits (0.1+0.2 shows 0.3), deliberately not
+// copied.
 func appendFloat(dst []byte, f float64, bits int) []byte {
 	abs := math.Abs(f)
 	if f != 0 && !math.IsInf(f, 0) && !math.IsNaN(f) && (abs < 1e-4 || abs >= 1e15) {
-		return strconv.AppendFloat(dst, f, 'e', -1, bits)
+		return strconv.AppendFloat(dst, f, 'E', -1, bits)
 	}
 	return strconv.AppendFloat(dst, f, 'f', -1, bits)
 }

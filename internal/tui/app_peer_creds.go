@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/radix29/gossms/internal/config"
 )
@@ -21,19 +22,30 @@ import (
 // replica once through File > Connect and every later peer read reaches it the
 // same way.
 
+// peerCredStore is how to reach each instance the user has connected to.
+// byInstance is keyed by config.InstanceKey; byShortHost is the same keyed by
+// short host name, consulted only when byInstance misses — see shortHostKey.
+// mu guards both for the same reason App.filterMu guards savedFilters:
+// background loader goroutines read them through Peer.
+type peerCredStore struct {
+	mu          sync.Mutex
+	byInstance  map[string]config.Connection
+	byShortHost map[string]config.Connection
+}
+
 // peerCredentialsFor resolves an instance name to its own saved connection.
 // This is the db.PeerCredentials installed on every connection App opens.
 //
 // Read from background loader goroutines — the Object Explorer's Always On
-// loader is the main caller, through Peer — so the map is behind peerCredMu.
+// loader is the main caller, through Peer — so the maps are behind peerCreds.mu.
 func (a *App) peerCredentialsFor(server string) (config.Connection, bool) {
 	key := config.InstanceKey(server)
-	a.peerCredMu.Lock()
-	defer a.peerCredMu.Unlock()
-	if c, ok := a.peerCreds[key]; ok {
+	a.peerCreds.mu.Lock()
+	defer a.peerCreds.mu.Unlock()
+	if c, ok := a.peerCreds.byInstance[key]; ok {
 		return c, true
 	}
-	c, ok := a.peerCredAliases[key]
+	c, ok := a.peerCreds.byShortHost[key]
 	return c, ok
 }
 
@@ -49,17 +61,17 @@ func (a *App) rememberPeerCredentials(conn config.Connection) {
 	// the separate Port field, and keyed without it "win10cli" and its
 	// SQL2017 instance on 55253 became one instance with the later login.
 	key := config.InstanceKey(config.ConnectionAddress(conn))
-	a.peerCredMu.Lock()
-	defer a.peerCredMu.Unlock()
-	if a.peerCreds == nil {
-		a.peerCreds = map[string]config.Connection{}
+	a.peerCreds.mu.Lock()
+	defer a.peerCreds.mu.Unlock()
+	if a.peerCreds.byInstance == nil {
+		a.peerCreds.byInstance = map[string]config.Connection{}
 	}
-	a.peerCreds[key] = conn
+	a.peerCreds.byInstance[key] = conn
 	if alias := shortHostKey(key); alias != "" {
-		if a.peerCredAliases == nil {
-			a.peerCredAliases = map[string]config.Connection{}
+		if a.peerCreds.byShortHost == nil {
+			a.peerCreds.byShortHost = map[string]config.Connection{}
 		}
-		a.peerCredAliases[alias] = conn
+		a.peerCreds.byShortHost[alias] = conn
 	}
 }
 

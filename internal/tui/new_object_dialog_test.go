@@ -93,9 +93,9 @@ func TestNewObjectDialogReopenDuringPrefetch(t *testing.T) {
 func waitAndDrain(t *testing.T, a *App) {
 	t.Helper()
 	for range 200 {
-		a.pendingMu.Lock()
-		n := len(a.pending)
-		a.pendingMu.Unlock()
+		a.wake.mu.Lock()
+		n := len(a.wake.pending)
+		a.wake.mu.Unlock()
 		if n > 0 {
 			a.drainPending()
 			if !a.progressBusy {

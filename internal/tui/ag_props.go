@@ -166,30 +166,6 @@ func agMissingReplicaErr(name string) error {
 	return fmt.Errorf("replica %q is no longer part of this availability group — refresh the page and try again", name)
 }
 
-// wireGridEditor connects a detail editor to a DataGrid's selection — the
-// grid-plus-detail shape of this replica grid and the Backup Preferences,
-// Read-Only Routing, User Mapping, Attach and New Index/Statistics/AG pages.
-// Moving off a row commits the editor, loads the new row, and redraws. Returns
-// the redraw a page's RevertFn needs.
-//
-// The selected cell is saved and restored around SetData, which resets it to
-// 0,0 from inside OnSelectRow. Without that only the first row is reachable,
-// and GridRow (which detects movement by comparing SelectedCell) reports arrows
-// unhandled, ejecting focus.
-func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [][]string, commitCurrent, syncFromSelection func()) (reload func()) {
-	redraw := func() { redrawGrid(grid, headers, gridRows()) }
-	grid.OnSelectRow = func(int) {
-		commitCurrent()
-		syncFromSelection()
-		redraw()
-	}
-	syncFromSelection()
-	return func() {
-		redraw()
-		syncFromSelection()
-	}
-}
-
 func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 	return propPage{
 		title: "General",

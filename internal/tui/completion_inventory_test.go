@@ -72,16 +72,16 @@ func TestPurgeCompletionInventoriesAbandonsInFlightLoads(t *testing.T) {
 	_, sysToken := sys.load.Begin(context.Background())
 
 	a := newTestApp()
-	a.completionInventories = map[string]*completionInventory{
+	a.completion.inventories = map[string]*completionInventory{
 		completionInventoryKey(opts, "AdventureWorks"): perDB,
 	}
-	a.sysCompletionInventories = map[string]*completionInventory{serverKey: sys}
+	a.completion.sysInventories = map[string]*completionInventory{serverKey: sys}
 
 	a.purgeCompletionInventories(sc)
 
-	if len(a.completionInventories) != 0 || len(a.sysCompletionInventories) != 0 {
+	if len(a.completion.inventories) != 0 || len(a.completion.sysInventories) != 0 {
 		t.Fatalf("purge left %d per-database and %d sys entries, want 0 and 0",
-			len(a.completionInventories), len(a.sysCompletionInventories))
+			len(a.completion.inventories), len(a.completion.sysInventories))
 	}
 
 	if perDB.load.Done(perDBToken) {
@@ -105,27 +105,27 @@ func TestTwoIdentitiesOnOneServerKeepTheirOwnCaches(t *testing.T) {
 	}
 
 	a := newTestApp()
-	a.completionInventories = map[string]*completionInventory{}
-	a.sysCompletionInventories = map[string]*completionInventory{}
+	a.completion.inventories = map[string]*completionInventory{}
+	a.completion.sysInventories = map[string]*completionInventory{}
 	for _, sc := range []*db.ServerConn{win, entra} {
 		k := sysCompletionInventoryKey(sc.Opts)
-		a.completionInventories[completionInventoryKey(sc.Opts, "appdb")] = &completionInventory{serverKey: k}
-		a.sysCompletionInventories[k] = &completionInventory{serverKey: k}
+		a.completion.inventories[completionInventoryKey(sc.Opts, "appdb")] = &completionInventory{serverKey: k}
+		a.completion.sysInventories[k] = &completionInventory{serverKey: k}
 	}
 	folder := nodeData{Type: NodeTables, DBName: "appdb"}
 	a.rememberFilter(entra, folder, nameFilter("cust"))
 
 	a.purgeCompletionInventories(win)
 
-	if _, ok := a.sysCompletionInventories[sysCompletionInventoryKey(entra.Opts)]; !ok {
+	if _, ok := a.completion.sysInventories[sysCompletionInventoryKey(entra.Opts)]; !ok {
 		t.Error("disconnecting the Windows login purged the Entra login's sys catalog")
 	}
-	if _, ok := a.completionInventories[completionInventoryKey(entra.Opts, "appdb")]; !ok {
+	if _, ok := a.completion.inventories[completionInventoryKey(entra.Opts, "appdb")]; !ok {
 		t.Error("disconnecting the Windows login purged the Entra login's appdb catalog")
 	}
-	if len(a.completionInventories) != 1 || len(a.sysCompletionInventories) != 1 {
+	if len(a.completion.inventories) != 1 || len(a.completion.sysInventories) != 1 {
 		t.Errorf("after the purge: %d per-database and %d sys entries, want 1 and 1 (the Entra login's)",
-			len(a.completionInventories), len(a.sysCompletionInventories))
+			len(a.completion.inventories), len(a.completion.sysInventories))
 	}
 
 	winTables := []*explorerNode{{data: folder}}
@@ -148,7 +148,7 @@ func openPlaceholderPopup(t *testing.T, qp *QueryPanel, database string) *[]cont
 	t.Helper()
 	qp.app.panels.AddPanel(qp)
 	qp.database = database
-	qp.app.completionInventories[completionInventoryKey(qp.conn.Opts, database)] = &completionInventory{
+	qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, database)] = &completionInventory{
 		loading: true, serverKey: sysCompletionInventoryKey(qp.conn.Opts),
 	}
 	last := new([]controls.CompletionItem)
@@ -181,8 +181,8 @@ func TestInventoryLoadRefreshesPopupAfterUSEMovedDatabase(t *testing.T) {
 
 	qp.database = "tempdb" // the run's USE, via setResult
 	masterKey := completionInventoryKey(qp.conn.Opts, "master")
-	qp.app.completionInventories[masterKey].applyCatalog(&gosmo.Catalog{}, "")
-	qp.app.refreshSysCompletionPopups(qp.app.completionInventories[masterKey].serverKey)
+	qp.app.completion.inventories[masterKey].applyCatalog(&gosmo.Catalog{}, "")
+	qp.app.refreshSysCompletionPopups(qp.app.completion.inventories[masterKey].serverKey)
 
 	if !qp.editor.CompletionActive() {
 		t.Fatal("popup closed; want it filled from tempdb's inventory")
@@ -211,7 +211,7 @@ func TestRunEntryPointsCloseCompletion(t *testing.T) {
 				t.Fatalf("%s left the completion popup open", name)
 			}
 			// The load landing after the run must not reopen it...
-			qp.app.completionInventories[completionInventoryKey(qp.conn.Opts, "master")].applyCatalog(&gosmo.Catalog{}, "")
+			qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "master")].applyCatalog(&gosmo.Catalog{}, "")
 			qp.app.refreshSysCompletionPopups(sysCompletionInventoryKey(qp.conn.Opts))
 			if qp.editor.CompletionActive() {
 				t.Errorf("a refresh after %s reopened the popup", name)
@@ -234,12 +234,12 @@ func TestLoadPanickedClosesWaitingPopup(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "tempdb", testCustomersOrders())
 	openPlaceholderPopup(t, qp, "master")
 	key := completionInventoryKey(qp.conn.Opts, "master")
-	inv := qp.app.completionInventories[key]
+	inv := qp.app.completion.inventories[key]
 	_, seq := inv.load.Begin(context.Background())
 
-	m := qp.app.completionInventories
+	m := qp.app.completion.inventories
 	qp.app.completionLoadPanicked(&inv.load, seq, inv.serverKey, func() bool { return m[key] == inv }, func() { evictInventory(m, key, inv) })
-	if _, ok := qp.app.completionInventories[key]; ok {
+	if _, ok := qp.app.completion.inventories[key]; ok {
 		t.Error("the panicked load's entry is still cached")
 	}
 	if qp.editor.CompletionActive() {

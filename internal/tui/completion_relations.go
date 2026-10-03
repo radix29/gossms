@@ -152,7 +152,7 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 			cols := bindingColumns(rc, b)
 			return relation{name: name, aliased: aliased, cols: cols}, len(cols) > 0
 		}
-		if cte, ok := findCTE(rc.ctes, ref.Name); ok && ref.Database == "" {
+		if cte, ok := findCTE(rc.inv.collation, rc.ctes, ref.Name); ok && ref.Database == "" {
 			cols := cteColumns(rc, cte)
 			return relation{name: name, aliased: aliased, cols: cols}, len(cols) > 0
 		}
@@ -213,7 +213,7 @@ func resolvePivotRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 	if !ok {
 		return relation{}, false
 	}
-	cols := pivotColumns(base.columns(), ref.Pivot)
+	cols := pivotColumns(rc.inv.collation, base.columns(), ref.Pivot)
 	return relation{name: ref.Alias, aliased: ref.Alias != "", cols: cols}, len(cols) > 0
 }
 
@@ -229,16 +229,16 @@ func resolvePivotRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 //
 // A name the source doesn't carry simply drops nothing, so a half-typed clause
 // costs columns it shouldn't rather than inventing ones it can't have.
-func pivotColumns(src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.CatalogColumn {
-	drop := map[string]bool{}
+func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.CatalogColumn {
+	drop := newNameSet(collation)
 	var added []gosmo.CatalogColumn
 	if pv.Unpivot {
 		for _, n := range pv.In {
-			drop[strings.ToLower(n)] = true
+			drop.Add(n)
 		}
 		value := gosmo.CatalogColumn{Name: pv.Value}
 		for _, n := range pv.In {
-			if col, ok := findColumnIn(src, n); ok {
+			if col, ok := findColumnIn(collation, src, n); ok {
 				value = col
 				value.Name = pv.Value
 				break
@@ -246,9 +246,9 @@ func pivotColumns(src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.Catalog
 		}
 		added = append(added, value, gosmo.CatalogColumn{Name: pv.For})
 	} else {
-		drop[strings.ToLower(pv.Agg)] = true
-		drop[strings.ToLower(pv.For)] = true
-		arg, _ := findColumnIn(src, pv.Agg)
+		drop.Add(pv.Agg)
+		drop.Add(pv.For)
+		arg, _ := findColumnIn(collation, src, pv.Agg)
 		typed := pivotAggregateType(pv.Func, arg)
 		for _, n := range pv.In {
 			col := typed
@@ -256,11 +256,10 @@ func pivotColumns(src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.Catalog
 			added = append(added, col)
 		}
 	}
-	delete(drop, "")
 
 	cols := make([]gosmo.CatalogColumn, 0, len(src)+len(added))
 	for _, col := range src {
-		if !drop[strings.ToLower(col.Name)] {
+		if col.Name == "" || !drop.Has(col.Name) {
 			cols = append(cols, col)
 		}
 	}
@@ -329,9 +328,13 @@ func pivotAggregateType(fn string, arg gosmo.CatalogColumn) gosmo.CatalogColumn 
 	return untyped
 }
 
-func findColumnIn(cols []gosmo.CatalogColumn, name string) (gosmo.CatalogColumn, bool) {
+// findColumnIn, findCTE, findRelation and findColumn compare names the way
+// the database's collation does: on a case-sensitive one `Orders` and
+// `orders` are two tables (or CTEs, aliases, columns), and folding them let
+// "FROM dbo.Orders JOIN dbo.orders" resolve `orders.` to whichever came first.
+func findColumnIn(collation string, cols []gosmo.CatalogColumn, name string) (gosmo.CatalogColumn, bool) {
 	for _, col := range cols {
-		if strings.EqualFold(col.Name, name) {
+		if gosmo.SameName(collation, col.Name, name) {
 			return col, true
 		}
 	}
@@ -342,6 +345,11 @@ func findColumnIn(cols []gosmo.CatalogColumn, name string) (gosmo.CatalogColumn,
 // last one winning: a script that drops and recreates #t means the later
 // shape, and the earlier declaration is history by the time the cursor is
 // below it.
+//
+// Unlike the finders above it folds case whatever the database's collation:
+// a #temp table's name follows tempdb's collation and a @variable's the
+// server's, and the panel reads neither, so it keeps the case-insensitive
+// default every install ships with.
 func findBinding(bindings []sqlparse.Binding, name string) (sqlparse.Binding, bool) {
 	for i := len(bindings) - 1; i >= 0; i-- {
 		if strings.EqualFold(bindings[i].Name, name) {
@@ -436,9 +444,9 @@ func typeArgInt(args []string, i int) (int, bool) {
 	return n, true
 }
 
-func findCTE(ctes []sqlparse.CTE, name string) (sqlparse.CTE, bool) {
+func findCTE(collation string, ctes []sqlparse.CTE, name string) (sqlparse.CTE, bool) {
 	for _, cte := range ctes {
-		if strings.EqualFold(cte.Name, name) {
+		if gosmo.SameName(collation, cte.Name, name) {
 			return cte, true
 		}
 	}
@@ -449,10 +457,10 @@ func findCTE(ctes []sqlparse.CTE, name string) (sqlparse.CTE, bool) {
 // first, then a bare table/CTE name, the two-pass order this replaced
 // resolveQualifierToObject with — "FROM c, Customers x" must resolve "c" to the
 // table named c, but "FROM Orders c, Customers" must resolve it to the alias.
-func findRelation(rels []relation, qualifier string) (relation, bool) {
+func findRelation(collation string, rels []relation, qualifier string) (relation, bool) {
 	for _, wantAlias := range []bool{true, false} {
 		for _, r := range rels {
-			if r.name != "" && r.aliased == wantAlias && strings.EqualFold(r.name, qualifier) {
+			if r.name != "" && r.aliased == wantAlias && gosmo.SameName(collation, r.name, qualifier) {
 				return r, true
 			}
 		}
@@ -468,7 +476,7 @@ func cteColumns(rc resolveCtx, cte sqlparse.CTE) []gosmo.CatalogColumn {
 	if cte.Body == nil {
 		return nil
 	}
-	key := strings.ToLower(cte.Name)
+	key := foldName(gosmo.CollationIgnoresCase(rc.inv.collation), cte.Name)
 	if rc.expanding[key] {
 		return nil // recursive CTE, or a name bound to itself
 	}
@@ -528,7 +536,7 @@ func queryColumns(rc resolveCtx, q *sqlparse.Query) []gosmo.CatalogColumn {
 	for _, item := range q.Select {
 		switch {
 		case item.Star && item.StarQual != "":
-			if r, ok := findRelation(rels, item.StarQual); ok {
+			if r, ok := findRelation(rc.inv.collation, rels, item.StarQual); ok {
 				for _, col := range r.columns() {
 					add(col)
 				}
@@ -540,7 +548,7 @@ func queryColumns(rc resolveCtx, q *sqlparse.Query) []gosmo.CatalogColumn {
 				}
 			}
 		default:
-			col, ok := selectItemColumn(rels, item)
+			col, ok := selectItemColumn(rc.inv.collation, rels, item)
 			if ok {
 				add(col)
 			}
@@ -553,7 +561,7 @@ func queryColumns(rc resolveCtx, q *sqlparse.Query) []gosmo.CatalogColumn {
 // when a relation in scope carries it, an untyped one carrying just the name
 // otherwise. An item with neither a name nor an alias — an unaliased expression
 // — names nothing and is dropped.
-func selectItemColumn(rels []relation, item sqlparse.SelectItem) (gosmo.CatalogColumn, bool) {
+func selectItemColumn(collation string, rels []relation, item sqlparse.SelectItem) (gosmo.CatalogColumn, bool) {
 	name := item.Alias
 	if name == "" {
 		name = item.Name
@@ -562,7 +570,7 @@ func selectItemColumn(rels []relation, item sqlparse.SelectItem) (gosmo.CatalogC
 		return gosmo.CatalogColumn{}, false
 	}
 	if item.Name != "" {
-		if col, ok := findColumn(rels, item.Qualifier, item.Name); ok {
+		if col, ok := findColumn(collation, rels, item.Qualifier, item.Name); ok {
 			col.Name = name
 			return col, true
 		}
@@ -573,9 +581,9 @@ func selectItemColumn(rels []relation, item sqlparse.SelectItem) (gosmo.CatalogC
 // findColumn looks name up in the qualified relation, or — unqualified — in
 // every relation in scope, first match winning the way SQL Server's own
 // unambiguous-reference rule would.
-func findColumn(rels []relation, qualifier, name string) (gosmo.CatalogColumn, bool) {
+func findColumn(collation string, rels []relation, qualifier, name string) (gosmo.CatalogColumn, bool) {
 	if qualifier != "" {
-		r, ok := findRelation(rels, qualifier)
+		r, ok := findRelation(collation, rels, qualifier)
 		if !ok {
 			return gosmo.CatalogColumn{}, false
 		}
@@ -583,7 +591,7 @@ func findColumn(rels []relation, qualifier, name string) (gosmo.CatalogColumn, b
 	}
 	for _, r := range rels {
 		for _, col := range r.columns() {
-			if strings.EqualFold(col.Name, name) {
+			if gosmo.SameName(collation, col.Name, name) {
 				return col, true
 			}
 		}

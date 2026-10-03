@@ -59,22 +59,22 @@ func newTestQueryPanelWithInventory(t testing.TB, database string, objects []gos
 	sort.Strings(cat.Schemas)
 
 	key := completionInventoryKey(sc.Opts, database)
-	a.completionInventories = map[string]*completionInventory{key: newCompletionInventory(cat)}
+	a.completion.inventories = map[string]*completionInventory{key: newCompletionInventory(cat)}
 
 	// Seed an already-loaded (empty) sys-schema inventory too: like the
 	// per-database one above, this keeps ensureSysCompletionInventory from
 	// finding its key absent and starting a real background load against the
 	// fake connection's nil gosmo.Server, which would panic.
 	sysKey := sysCompletionInventoryKey(sc.Opts)
-	a.sysCompletionInventories = map[string]*completionInventory{sysKey: newCompletionInventory(&gosmo.Catalog{})}
+	a.completion.sysInventories = map[string]*completionInventory{sysKey: newCompletionInventory(&gosmo.Catalog{})}
 	// And an already-loaded database directory listing only this database,
 	// for the same reason: an unresolved qualifier asks it whether the name
 	// is a database.
 	dir := &completionDirectory{byName: newNameMap[directoryEntry]("")}
 	dir.byName.Set(database, directoryEntry{name: database, state: "ONLINE"})
-	a.completionDirectories = map[string]*completionDirectory{sysKey: dir}
+	a.completion.directories = map[string]*completionDirectory{sysKey: dir}
 	// And an empty linked-server list: an unresolved qualifier asks it last.
-	a.linkedDirectories = map[string]*linkedDirectory{sysKey: {byName: map[string]*linkedServer{}}}
+	a.completion.linked = map[string]*linkedDirectory{sysKey: {byName: map[string]*linkedServer{}}}
 	return qp
 }
 
@@ -613,7 +613,7 @@ func sysCatalogFixture() *gosmo.Catalog {
 func TestSQLCompletionSysSchemaDotOffersSystemCatalogViews(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	sysKey := sysCompletionInventoryKey(qp.conn.Opts)
-	qp.app.sysCompletionInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
+	qp.app.completion.sysInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
 
 	lines, row, col := linesAndCursor(t, "SELECT * FROM sys.|")
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
@@ -627,7 +627,7 @@ func TestSQLCompletionSysSchemaDotOffersSystemCatalogViews(t *testing.T) {
 func TestSQLCompletionSysAllKeywordPrefixResolvesMembers(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	sysKey := sysCompletionInventoryKey(qp.conn.Opts)
-	qp.app.sysCompletionInventories[sysKey] = newCompletionInventory(&gosmo.Catalog{
+	qp.app.completion.sysInventories[sysKey] = newCompletionInventory(&gosmo.Catalog{
 		Schemas: []string{"sys"},
 		Objects: []gosmo.CatalogObject{
 			{ObjectID: 102, Schema: "sys", Name: "all_objects", Type: gosmo.CatalogView},
@@ -652,10 +652,10 @@ func TestSQLCompletionSysAllKeywordPrefixResolvesMembers(t *testing.T) {
 func TestRetrySysCompletionInventoryKeepsLoadedSnapshot(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	sysKey := sysCompletionInventoryKey(qp.conn.Opts)
-	loaded := qp.app.sysCompletionInventories[sysKey]
+	loaded := qp.app.completion.sysInventories[sysKey]
 
 	qp.app.retrySysCompletionInventory(qp.conn)
-	if qp.app.sysCompletionInventories[sysKey] != loaded {
+	if qp.app.completion.sysInventories[sysKey] != loaded {
 		t.Fatal("retrySysCompletionInventory must keep a successfully loaded sys snapshot (only a failed load reloads)")
 	}
 }
@@ -663,7 +663,7 @@ func TestRetrySysCompletionInventoryKeepsLoadedSnapshot(t *testing.T) {
 func TestSQLCompletionSysSchemaAliasColumnsResolve(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	sysKey := sysCompletionInventoryKey(qp.conn.Opts)
-	qp.app.sysCompletionInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
+	qp.app.completion.sysInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
 
 	lines, row, col := linesAndCursor(t, "SELECT o.| FROM sys.objects o")
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
@@ -677,7 +677,7 @@ func TestSQLCompletionSysSchemaAliasColumnsResolve(t *testing.T) {
 func TestSQLCompletionSysSchemaListedButObjectsNotUnqualified(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	sysKey := sysCompletionInventoryKey(qp.conn.Opts)
-	qp.app.sysCompletionInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
+	qp.app.completion.sysInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
 
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
@@ -699,7 +699,7 @@ func newTestQueryPanelWithFunctions(t *testing.T) *QueryPanel {
 	t.Helper()
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	key := completionInventoryKey(qp.conn.Opts, "testdb")
-	cat := qp.app.completionInventories[key].catalog
+	cat := qp.app.completion.inventories[key].catalog
 	cat.Functions = []gosmo.CatalogObject{{
 		ObjectID: 10, Schema: "dbo", Name: "fnOrdersFor", Type: gosmo.CatalogFunction,
 		Columns: []gosmo.CatalogColumn{
@@ -707,14 +707,14 @@ func newTestQueryPanelWithFunctions(t *testing.T) *QueryPanel {
 			{Name: "Amount", DataType: "decimal", Precision: 18, Scale: 2},
 		},
 	}}
-	qp.app.completionInventories[key] = newCompletionInventory(cat)
+	qp.app.completion.inventories[key] = newCompletionInventory(cat)
 
 	sys := sysCatalogFixture()
 	sys.Functions = []gosmo.CatalogObject{{
 		ObjectID: 110, Schema: "sys", Name: "dm_exec_sql_text", Type: gosmo.CatalogFunction,
 		Columns: []gosmo.CatalogColumn{{Name: "dbid", DataType: "smallint"}, {Name: "text", DataType: "nvarchar", MaxLength: -1}},
 	}}
-	qp.app.sysCompletionInventories[sysCompletionInventoryKey(qp.conn.Opts)] = newCompletionInventory(sys)
+	qp.app.completion.sysInventories[sysCompletionInventoryKey(qp.conn.Opts)] = newCompletionInventory(sys)
 	return qp
 }
 
@@ -766,7 +766,7 @@ func TestSQLCompletionLegacyHintStillResolvesTable(t *testing.T) {
 func TestSQLCompletionSysSchemaLoadingShowsPlaceholder(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	sysKey := sysCompletionInventoryKey(qp.conn.Opts)
-	qp.app.sysCompletionInventories[sysKey] = &completionInventory{loading: true}
+	qp.app.completion.sysInventories[sysKey] = &completionInventory{loading: true}
 
 	lines, row, col := linesAndCursor(t, "SELECT * FROM sys.|")
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
@@ -807,7 +807,7 @@ func TestSQLCompletionLoadingShowsPlaceholder(t *testing.T) {
 	// starts a background load when the key is absent, and the fake
 	// connection's nil gosmo.Server would panic a real load goroutine.
 	key := completionInventoryKey(sc.Opts, qp.database)
-	a.completionInventories = map[string]*completionInventory{key: {loading: true}}
+	a.completion.inventories = map[string]*completionInventory{key: {loading: true}}
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
 
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))

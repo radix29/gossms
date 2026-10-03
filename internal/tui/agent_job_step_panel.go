@@ -190,8 +190,9 @@ func (p *jobStepPanel) newStep() *jobStepEdit {
 //
 // It doesn't read the panel into the current step first (the name row is also
 // the seed, so that would misfile a typed name as a rename). Callers check
-// preconditions (e.g. a read-only step) first.
-func (p *jobStepPanel) addStep(grid *controls.DataGrid, hint *propsheet.HintRow,
+// preconditions (e.g. a read-only step) first. collation decides whether a
+// typed name duplicates a listed one — the server's, standing in for msdb's.
+func (p *jobStepPanel) addStep(collation string, grid *controls.DataGrid, hint *propsheet.HintRow,
 	cols []string, edits *[]*jobStepEdit, rowsFor func() [][]string, sync func()) {
 
 	name := p.nameField.Value()
@@ -199,14 +200,12 @@ func (p *jobStepPanel) addStep(grid *controls.DataGrid, hint *propsheet.HintRow,
 		hint.Set("Type a step name first.")
 		return
 	}
-	for i, e := range visibleSteps(*edits) {
-		if e.name == name {
-			// Already present: say so and select it.
-			hint.Set("A step named " + name + " is already listed — its row is selected below.")
-			grid.SetSelectedRow(i)
-			sync()
-			return
-		}
+	if i := pendingNameIndex(collation, visibleSteps(*edits), func(e *jobStepEdit) string { return e.name }, name); i >= 0 {
+		// Already present: say so and select it.
+		hint.Set("A step named " + name + " is already listed — its row is selected below.")
+		grid.SetSelectedRow(i)
+		sync()
+		return
 	}
 	hint.Clear()
 	*edits = append(*edits, p.newStep())

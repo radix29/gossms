@@ -14,6 +14,32 @@ import (
 // server can't leave autocomplete stuck on "Loading..." forever.
 const completionInventoryTimeout = 30 * time.Second
 
+// completionCaches is App's IntelliSense metadata, shared by every query panel
+// on the same server and identity. UI goroutine only, like every other App
+// field.
+type completionCaches struct {
+	// inventories caches one metadata snapshot per server+identity+database
+	// (see completionInventoryKey), shared by every query panel on that
+	// database.
+	inventories map[string]*completionInventory
+
+	// sysInventories caches one "sys" catalog-view snapshot per
+	// server+identity (see sysCompletionInventoryKey) — server-scoped, since
+	// sys.tables/sys.columns/… are identical in every database. Populated at
+	// connect time, not lazily.
+	sysInventories map[string]*completionInventory
+
+	// directories caches each server+login's database list, keyed like
+	// sysInventories, for resolving the database part of a cross-database
+	// name (completion_crossdb.go).
+	directories map[string]*completionDirectory
+
+	// linked caches each server+login's linked servers, their databases and
+	// the remote catalogs a four-part name has reached, keyed like
+	// sysInventories (completion_linked.go).
+	linked map[string]*linkedDirectory
+}
+
 // completionInventory is one database's cached metadata snapshot for SQL editor
 // autocomplete. loading is true from the moment a load starts until its result
 // lands; err is set if it failed. byQualifiedName and bySchema are built once
@@ -145,14 +171,14 @@ func completionInventoryKey(opts config.Connection, database string) string {
 // background load if there is no entry yet.
 func (a *App) ensureCompletionInventory(sc *db.ServerConn, database string) *completionInventory {
 	key := completionInventoryKey(sc.Opts, database)
-	if inv, ok := a.completionInventories[key]; ok {
+	if inv, ok := a.completion.inventories[key]; ok {
 		return inv
 	}
 	inv := &completionInventory{loading: true, serverKey: sysCompletionInventoryKey(sc.Opts)}
-	if a.completionInventories == nil {
-		a.completionInventories = make(map[string]*completionInventory)
+	if a.completion.inventories == nil {
+		a.completion.inventories = make(map[string]*completionInventory)
 	}
-	a.completionInventories[key] = inv
+	a.completion.inventories[key] = inv
 	a.loadCompletionInventory(sc, database, key, inv)
 	return inv
 }
@@ -162,7 +188,7 @@ func (a *App) ensureCompletionInventory(sc *db.ServerConn, database string) *com
 // supersedes the in-flight fetch instead of racing it.
 func (a *App) refreshCompletionInventory(sc *db.ServerConn, database string) {
 	key := completionInventoryKey(sc.Opts, database)
-	inv, ok := a.completionInventories[key]
+	inv, ok := a.completion.inventories[key]
 	if !ok {
 		a.ensureCompletionInventory(sc, database)
 		return
@@ -185,20 +211,20 @@ func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 	serverKey := sysCompletionInventoryKey(sc.Opts)
 	// Matched on the entry's serverKey rather than by picking the database
 	// component back out of the map key.
-	for key, inv := range a.completionInventories {
+	for key, inv := range a.completion.inventories {
 		if inv.serverKey != serverKey {
 			continue
 		}
 		inv.load.Abandon()
-		delete(a.completionInventories, key)
+		delete(a.completion.inventories, key)
 	}
-	if inv, ok := a.sysCompletionInventories[serverKey]; ok {
+	if inv, ok := a.completion.sysInventories[serverKey]; ok {
 		inv.load.Abandon()
-		delete(a.sysCompletionInventories, serverKey)
+		delete(a.completion.sysInventories, serverKey)
 	}
-	if d, ok := a.completionDirectories[serverKey]; ok {
+	if d, ok := a.completion.directories[serverKey]; ok {
 		d.load.Abandon()
-		delete(a.completionDirectories, serverKey)
+		delete(a.completion.directories, serverKey)
 	}
 	a.purgeLinkedCompletion(serverKey)
 	// A query panel keeps its own connection to the server, so its popup may
@@ -241,7 +267,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 		collation string
 	}
 	srv := sc.Server
-	startCompletionLoad(a, sc, inventoryLoad(a.completionInventories, key, inv, completionInventoryTimeout,
+	startCompletionLoad(a, sc, inventoryLoad(a.completion.inventories, key, inv, completionInventoryTimeout,
 		"loading the autocomplete catalog",
 		func(ctx context.Context) (r result, err error) {
 			if inv.gated && !sc.DatabaseCapabilities(ctx, database).Accessible {
@@ -294,14 +320,14 @@ func sysCompletionInventoryKey(opts config.Connection) string {
 // both call it as soon as a connection succeeds.
 func (a *App) ensureSysCompletionInventory(sc *db.ServerConn) *completionInventory {
 	key := sysCompletionInventoryKey(sc.Opts)
-	if inv, ok := a.sysCompletionInventories[key]; ok {
+	if inv, ok := a.completion.sysInventories[key]; ok {
 		return inv
 	}
 	inv := &completionInventory{loading: true, serverKey: key}
-	if a.sysCompletionInventories == nil {
-		a.sysCompletionInventories = make(map[string]*completionInventory)
+	if a.completion.sysInventories == nil {
+		a.completion.sysInventories = make(map[string]*completionInventory)
 	}
-	a.sysCompletionInventories[key] = inv
+	a.completion.sysInventories[key] = inv
 	a.loadSysCompletionInventory(sc, key, inv)
 	return inv
 }
@@ -312,7 +338,7 @@ func (a *App) ensureSysCompletionInventory(sc *db.ServerConn) *completionInvento
 // successful or still-loading snapshot is kept and the entry reused.
 func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 	key := sysCompletionInventoryKey(sc.Opts)
-	inv, ok := a.sysCompletionInventories[key]
+	inv, ok := a.completion.sysInventories[key]
 	if ok && inv.err == nil {
 		return
 	}
@@ -330,7 +356,7 @@ func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 // one every login can reach.
 func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *completionInventory) {
 	srv := sc.Server
-	startCompletionLoad(a, sc, inventoryLoad(a.sysCompletionInventories, key, inv, completionInventoryTimeout,
+	startCompletionLoad(a, sc, inventoryLoad(a.completion.sysInventories, key, inv, completionInventoryTimeout,
 		"loading the system autocomplete catalog",
 		srv.DatabaseRef("master").SystemCatalog,
 		func(cat *gosmo.Catalog, err error) {

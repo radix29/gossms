@@ -144,3 +144,14 @@ work; close an item by deleting it when fixed.
   server would resolve it. Needs the containment / catalog collation on
   `gosmo.Database` (not read by `DatabaseByName` today); `nameSet` users via
   `databaseCollation` share the gap.
+- **N12 — Master-detail pages each reimplement their pending-edit list.**
+  About ten pages (Resource Governor pools/external pools/groups, Database
+  Mail profiles/accounts, database files/filegroups, New Database filegroups,
+  extended properties, role members, job steps, key signatures, symmetric-key
+  encryptions) define their own row struct with `name`/`isNew`/removing/
+  orig/cur and write their own dirty, visible, revert, add-with-duplicate-check
+  and remove-or-mark. The duplicate check is shared already
+  (`pendingNameIndex`, `pending_edits.go`, collation-aware); the rest is
+  meant to become one `pendingEdits[V]` there. Settled 2026-10-03: a page
+  migrates onto it when next touched, each keeping its tests and getting a
+  tmux pass — no sweep.

@@ -39,8 +39,8 @@ func databaseUsersResponse() fakeResponse {
 // userByNameResponse answers the by-name user read, which carries the SID and
 // the mapped login the list read leaves out.
 func userByNameResponse(name, defaultSchema, login string) fakeResponse {
-	return fakeResponse{match: "sp.sid = dp.sid", arg: name, cols: 10, rows: [][]driver.Value{
-		{int64(5), "SQL_USER", defaultSchema, principalEpoch, principalEpoch, "INSTANCE", []byte{0x01, 0x02}, login, false, nil},
+	return fakeResponse{match: "sp.sid = dp.sid", arg: name, cols: 11, rows: [][]driver.Value{
+		{name, int64(5), "SQL_USER", defaultSchema, principalEpoch, principalEpoch, "INSTANCE", []byte{0x01, 0x02}, login, false, nil},
 	}}
 }
 
@@ -118,11 +118,11 @@ func schemaObjectCountResponses() []fakeResponse {
 // enough to be worth saying out loud: they are never scripted together.
 func serverRoleResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "\tWHERE r.type = 'R' AND r.name = @p1", arg: principalSrvRole, cols: 7, rows: [][]driver.Value{
-			{int64(20), false, "sa", []byte{0x0C}, principalEpoch, principalEpoch, jsonNames("appuser")},
+		{match: "\tWHERE r.type = 'R' AND r.name = @p1", arg: principalSrvRole, cols: 8, rows: [][]driver.Value{
+			{principalSrvRole, int64(20), false, "sa", []byte{0x0C}, principalEpoch, principalEpoch, jsonNames("appuser")},
 		}},
-		{match: "\tWHERE r.type = 'R' AND r.name = @p1", arg: "sysadmin", cols: 7, rows: [][]driver.Value{
-			{int64(3), true, "sa", []byte{0x0D}, principalEpoch, principalEpoch, nil},
+		{match: "\tWHERE r.type = 'R' AND r.name = @p1", arg: "sysadmin", cols: 8, rows: [][]driver.Value{
+			{"sysadmin", int64(3), true, "sa", []byte{0x0D}, principalEpoch, principalEpoch, nil},
 		}},
 		{match: "FROM sys.server_principals r", cols: 5, rows: [][]driver.Value{
 			{principalSrvRole, int64(20), false, "sa", jsonNames("appuser")},

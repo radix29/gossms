@@ -437,7 +437,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				case pool == "internal":
 					hint.Set("The internal pool takes no workload groups; pick another pool above.")
 					return
-				case slices.ContainsFunc(edits, func(e *rgGroupEdit) bool { return e.name == name }):
+				case pendingNameTaken(serverCollation(sc), edits, func(e *rgGroupEdit) string { return e.name }, name):
 					// Names are unique server-wide, not per pool.
 					hint.Set("A workload group named " + name + " already exists.")
 					return

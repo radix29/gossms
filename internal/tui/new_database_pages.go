@@ -41,7 +41,7 @@ func buildFileSpec(nameRow, pathRow *propsheet.TextRow, sizeRow, growthRow *prop
 // the Name field alongside the form/apply so the dialog can read it back
 // for the Options/Filegroups pages' own dbName lookups and the
 // name-uniqueness preflight check.
-func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet.Form, propApply, *propsheet.TextRow) {
+func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet.Form, propApply, *propsheet.TextRow, func() string) {
 	nameField := propsheet.Text("Database name", "", 30)
 	ownerRow := propsheet.Select("Owner", pf.loginNames, indexOf(pf.loginNames, pf.defaultOwner))
 	collationField := propsheet.Text("Collation", "", 30)
@@ -124,7 +124,15 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 		}
 		return nil
 	}
-	return f, apply, nameField
+	// collation is the one the database will be created with: the typed
+	// one, else the server's, which CREATE DATABASE without COLLATE takes.
+	collation := func() string {
+		if c := strings.TrimSpace(collationField.Value()); c != "" {
+			return c
+		}
+		return serverCollation(sc)
+	}
+	return f, apply, nameField, collation
 }
 
 // buildNewDatabaseOptionsPage builds databaseOptionRows from model's current
@@ -154,7 +162,7 @@ func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func
 // add rather than the edit-existing version's isNew/pendingRemove diffing,
 // plus an inline "optional first file" mini-form under the Add-filegroup
 // fields.
-func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func() string) (*propsheet.Form, propApply) {
+func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, collation func() string) (*propsheet.Form, propApply) {
 	type fgEdit struct {
 		name         string
 		isDefault    bool
@@ -216,14 +224,12 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 			hint.Set("Type a filegroup name first.")
 			return
 		}
-		for i, e := range edits {
-			if e.name == name {
-				// Already present — say so and select it, rather than
-				// leaving the button looking broken.
-				hint.Set("A filegroup named " + name + " is already listed.")
-				fgRow.Grid.SetSelectedRow(i)
-				return
-			}
+		if i := pendingNameIndex(collation(), edits, func(e *fgEdit) string { return e.name }, name); i >= 0 {
+			// Already present — say so and select it, rather than
+			// leaving the button looking broken.
+			hint.Set("A filegroup named " + name + " is already listed.")
+			fgRow.Grid.SetSelectedRow(i)
+			return
 		}
 		hint.Clear()
 		sizeMB, _ := fileSizeField.IntValue()

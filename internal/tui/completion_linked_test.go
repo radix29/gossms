@@ -25,7 +25,7 @@ func newLinkedPanel(t *testing.T) *QueryPanel {
 			}},
 		},
 	})
-	d := qp.app.linkedDirectories[sysCompletionInventoryKey(qp.conn.Opts)]
+	d := qp.app.completion.linked[sysCompletionInventoryKey(qp.conn.Opts)]
 	d.byName = map[string]*linkedServer{
 		"remote": {
 			name:      "Remote",
@@ -97,7 +97,7 @@ func TestSQLCompletionLinkedServer(t *testing.T) {
 // answering nothing.
 func TestSQLCompletionLinkedServerListLoading(t *testing.T) {
 	qp := newCrossDBPanel(t)
-	qp.app.linkedDirectories[sysCompletionInventoryKey(qp.conn.Opts)] = &linkedDirectory{loading: true}
+	qp.app.completion.linked[sysCompletionInventoryKey(qp.conn.Opts)] = &linkedDirectory{loading: true}
 	for _, sql := range []string{"SELECT * FROM Remote.|", "SELECT * FROM Remote.Sales.dbo.|", "SELECT o.| FROM Remote.Sales.dbo.Orders o"} {
 		if got := crossDBLabels(t, qp, sql); !slices.Equal(got, []string{"<loading>"}) {
 			t.Errorf("%s: labels = %q, want the loading row", sql, got)
@@ -114,7 +114,7 @@ func TestSQLCompletionLinkedServerListLoading(t *testing.T) {
 func TestLinkedUnknownDatabaseReadsNothing(t *testing.T) {
 	qp := newLinkedPanel(t)
 	crossDBLabels(t, qp, "SELECT * FROM Remote.Nope.dbo.|")
-	ls := qp.app.linkedDirectories[sysCompletionInventoryKey(qp.conn.Opts)].byName["remote"]
+	ls := qp.app.completion.linked[sysCompletionInventoryKey(qp.conn.Opts)].byName["remote"]
 	if _, ok := ls.inventories["nope"]; ok {
 		t.Error("an inventory was created for a database the linked server does not list")
 	}
@@ -126,7 +126,7 @@ func TestLinkedUnknownDatabaseReadsNothing(t *testing.T) {
 func TestPurgeLinkedCompletionAbandonsEveryLoad(t *testing.T) {
 	qp := newLinkedPanel(t)
 	a, key := qp.app, sysCompletionInventoryKey(qp.conn.Opts)
-	d := a.linkedDirectories[key]
+	d := a.completion.linked[key]
 	ls := d.byName["remote"]
 	inv := ls.inventories["later"]
 	_, dirSeq := d.load.Begin(t.Context())
@@ -135,7 +135,7 @@ func TestPurgeLinkedCompletionAbandonsEveryLoad(t *testing.T) {
 
 	a.purgeLinkedCompletion(key)
 
-	if _, ok := a.linkedDirectories[key]; ok {
+	if _, ok := a.completion.linked[key]; ok {
 		t.Error("the linked directory is still cached")
 	}
 	if d.load.Done(dirSeq) || ls.load.Done(lsSeq) || inv.load.Done(invSeq) {

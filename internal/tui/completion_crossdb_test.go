@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
@@ -36,10 +37,10 @@ func newCrossDBPanel(t *testing.T) *QueryPanel {
 	cat := &gosmo.Catalog{Objects: billingObjects(), Schemas: []string{"audit", "dbo"}}
 	billing := newCompletionInventory(cat)
 	billing.gated = true
-	a.completionInventories[completionInventoryKey(sc.Opts, "Billing")] = billing
-	a.completionInventories[completionInventoryKey(sc.Opts, "Pending")] = &completionInventory{loading: true, gated: true}
-	a.completionInventories[completionInventoryKey(sc.Opts, "Locked")] = &completionInventory{err: errNoDatabaseAccess, gated: true}
-	dir := a.completionDirectories[sysCompletionInventoryKey(sc.Opts)]
+	a.completion.inventories[completionInventoryKey(sc.Opts, "Billing")] = billing
+	a.completion.inventories[completionInventoryKey(sc.Opts, "Pending")] = &completionInventory{loading: true, gated: true}
+	a.completion.inventories[completionInventoryKey(sc.Opts, "Locked")] = &completionInventory{err: errNoDatabaseAccess, gated: true}
+	dir := a.completion.directories[sysCompletionInventoryKey(sc.Opts)]
 	for _, e := range []directoryEntry{{"Billing", "ONLINE"}, {"Pending", "ONLINE"}, {"Locked", "ONLINE"}, {"Offline", "OFFLINE"}} {
 		dir.byName.Set(e.name, e)
 	}
@@ -138,7 +139,7 @@ func TestSQLCompletionCrossDatabaseDefaultSchema(t *testing.T) {
 			}
 			inv := newCompletionInventory(&gosmo.Catalog{Objects: objs, Schemas: []string{"audit", "dbo"}})
 			inv.gated, inv.defaultSchema = true, c.defSchema
-			qp.app.completionInventories[key] = inv
+			qp.app.completion.inventories[key] = inv
 			if got := crossDBLabels(t, qp, c.sql); !slices.Equal(got, c.want) {
 				t.Errorf("labels = %q, want %q", got, c.want)
 			}
@@ -153,7 +154,7 @@ func TestSQLCompletionCrossDatabaseDefaultSchema(t *testing.T) {
 // mistyped qualifier.
 func TestSQLCompletionCrossDatabaseNamesLoadNothingUnlisted(t *testing.T) {
 	qp := newCrossDBPanel(t)
-	before := len(qp.app.completionInventories)
+	before := len(qp.app.completion.inventories)
 	for _, sql := range []string{
 		"SELECT * FROM Nope.|",
 		"SELECT * FROM Nope.dbo.|",
@@ -163,7 +164,7 @@ func TestSQLCompletionCrossDatabaseNamesLoadNothingUnlisted(t *testing.T) {
 	} {
 		crossDBLabels(t, qp, sql)
 	}
-	if n := len(qp.app.completionInventories); n != before {
+	if n := len(qp.app.completion.inventories); n != before {
 		t.Errorf("inventories = %d after unlisted names, want %d", n, before)
 	}
 }
@@ -173,7 +174,7 @@ func TestSQLCompletionCrossDatabaseNamesLoadNothingUnlisted(t *testing.T) {
 // closing the popup on an answer that is about to change.
 func TestSQLCompletionCrossDatabaseWaitsForDirectory(t *testing.T) {
 	qp := newCrossDBPanel(t)
-	qp.app.completionDirectories[sysCompletionInventoryKey(qp.conn.Opts)] = &completionDirectory{loading: true}
+	qp.app.completion.directories[sysCompletionInventoryKey(qp.conn.Opts)] = &completionDirectory{loading: true}
 	if got := crossDBLabels(t, qp, "SELECT * FROM Billing.dbo.|"); !slices.Equal(got, []string{"<loading>"}) {
 		t.Errorf("labels = %q, want the loading row", got)
 	}
@@ -242,20 +243,22 @@ func TestSQLCompletionTableListOffersOnlineDatabases(t *testing.T) {
 // TestSQLCompletionCaseSensitiveDatabase pins E4: in a case-sensitive database
 // dbo.Orders and dbo.orders are two tables, and lowered index keys let the
 // second shadow the first, so "Orders." offered orders' columns. Prefix
-// matching stays case-insensitive.
+// matching stays case-insensitive. H2 extends it to the resolvers that match
+// a qualifier against the query's own FROM list: with both tables in FROM,
+// folding resolved `orders.` to whichever came first.
 func TestSQLCompletionCaseSensitiveDatabase(t *testing.T) {
 	objects := []gosmo.CatalogObject{
 		{ObjectID: 1, Schema: "dbo", Name: "Orders", Type: gosmo.CatalogTable,
 			Columns: []gosmo.CatalogColumn{{Name: "OrderId", DataType: "int"}, {Name: "Id", DataType: "int"}}},
 		{ObjectID: 2, Schema: "dbo", Name: "orders", Type: gosmo.CatalogTable,
-			Columns: []gosmo.CatalogColumn{{Name: "LegacyNo", DataType: "int"}, {Name: "ID", DataType: "int"}}},
+			Columns: []gosmo.CatalogColumn{{Name: "LegacyNo", DataType: "int"}, {Name: "ID", DataType: "bigint"}}},
 		{ObjectID: 3, Schema: "Sales", Name: "Region", Type: gosmo.CatalogTable,
 			Columns: []gosmo.CatalogColumn{{Name: "Code", DataType: "char"}}},
 		{ObjectID: 4, Schema: "sales", Name: "Quota", Type: gosmo.CatalogTable,
 			Columns: []gosmo.CatalogColumn{{Name: "Amount", DataType: "money"}}},
 	}
 	qp := newTestQueryPanelWithInventory(t, "csdb", objects)
-	inv := qp.app.completionInventories[completionInventoryKey(qp.conn.Opts, "csdb")]
+	inv := qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "csdb")]
 	inv.applyCatalog(inv.catalog, "Latin1_General_CS_AS")
 
 	cases := []struct {
@@ -272,11 +275,23 @@ func TestSQLCompletionCaseSensitiveDatabase(t *testing.T) {
 		{"schema lower", "SELECT * FROM sales.|", []string{"sales.Quota"}},
 		{"Id and ID both offered", "SELECT i| FROM dbo.Orders a JOIN dbo.orders b ON 1=1", []string{"Id", "ID", "OrderId"}},
 		{"prefix still folds", "SELECT * FROM ORD|", []string{"dbo.Orders", "dbo.orders"}},
+		{"lower qualifier, upper first", "SELECT orders.| FROM dbo.Orders JOIN dbo.orders ON 1=1", []string{"ID", "LegacyNo"}},
+		{"upper qualifier, lower first", "SELECT Orders.| FROM dbo.orders JOIN dbo.Orders ON 1=1", []string{"Id", "OrderId"}},
+		{"CTEs differing in case", "WITH c AS (SELECT 1 AS a), C AS (SELECT 2 AS b) SELECT C.| FROM c JOIN C ON 1=1", []string{"b"}},
 	}
 	for _, c := range cases {
 		got := crossDBLabels(t, qp, c.sql)
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s: %q = %v, want %v", c.name, c.sql, got, c.want)
 		}
+	}
+
+	// A derived table's column takes its type from the column it selects:
+	// unqualified ID is orders' bigint, not Orders' int Id.
+	sql := "SELECT x.| FROM (SELECT ID FROM dbo.Orders JOIN dbo.orders ON 1=1) x"
+	lines, row, col := linesAndCursor(t, sql)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if d := itemDetail(items, "ID"); !strings.HasPrefix(d, "bigint") {
+		t.Errorf("%q: ID detail = %q, want bigint", sql, d)
 	}
 }

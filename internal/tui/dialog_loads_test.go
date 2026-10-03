@@ -13,7 +13,7 @@ import (
 
 // The async loads in these tests run against a bare ServerConn, so their
 // goroutines panic on the nil gosmo.Server and recoverPanic logs it (muted by
-// quietLog). Nothing drains a.pending, so no completion ever runs: what is
+// quietLog). Nothing drains a.wake.pending, so no completion ever runs: what is
 // under test is which runs are still current, not what they deliver.
 
 // T19: Restore's loads used to share one token, so a history load started

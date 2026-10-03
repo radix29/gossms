@@ -55,7 +55,7 @@ behind the mouse and async rules.
   call that directly (`propsheet.ToggleGridRow`) — never hand-roll the pair.
   After Add/Remove/Revert use `resetGrid`, not `SetData` + `SetSelectedRow`
   (which silently drops widths). Packaged idioms: `wireGridEditor`
-  (`ag_props.go`) for grid + detail editor; `wireCellToggle`/
+  (`prop_grid_helpers.go`) for grid + detail editor; `wireCellToggle`/
   `newCellToggleGrid` for "activate a cell to change the row"; `staticBlock`
   for a read-only detail block — its `set()` clears every row not given, so a
   missed row can't keep describing the previous selection.

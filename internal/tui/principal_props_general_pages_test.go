@@ -269,8 +269,8 @@ func TestUserGeneralBuiltInUserHasNoApply(t *testing.T) {
 func TestUserGeneralCertificateMappedUserHasNoLoginOrSchemaToChange(t *testing.T) {
 	const certUser = "signer_user"
 	responses := append([]fakeResponse{
-		{match: "sp.sid = dp.sid", arg: certUser, cols: 10, rows: [][]driver.Value{
-			{int64(9), "CERTIFICATE_MAPPED_USER", nil, principalEpoch, principalEpoch, "NONE",
+		{match: "sp.sid = dp.sid", arg: certUser, cols: 11, rows: [][]driver.Value{
+			{certUser, int64(9), "CERTIFICATE_MAPPED_USER", nil, principalEpoch, principalEpoch, "NONE",
 				[]byte{0x01, 0x06}, "##signer_login##", false, "signer_cert"},
 		}},
 	}, userGeneralResponses()...)

@@ -271,20 +271,20 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 
-	// Object Explorer → editor drag-and-drop: once dragNode is armed it takes
+	// Object Explorer → editor drag-and-drop: once drag.node is armed it takes
 	// every event ahead of the menu row, status row and splitter, or a drag
 	// crossing them pops a menu or Status History. Every Button1 event is
 	// swallowed so the drag stays on its node. The drop happens on release, in
 	// routeRelease.
-	if a.dragNode != nil {
+	if a.drag.node != nil {
 		if ev.Buttons() == tcell.Button1 {
 			// Swallow motion while a drop is pending.
-			a.dragX, a.dragY = mx, my
-			if !a.dragActive && a.dragPastThreshold(mx, my) {
-				a.dragActive = true
+			a.drag.x, a.drag.y = mx, my
+			if !a.drag.active && a.dragPastThreshold(mx, my) {
+				a.drag.active = true
 			}
 		} else {
-			a.dragNode, a.dragActive = nil, false
+			a.drag.node, a.drag.active = nil, false
 		}
 		return
 	}
@@ -342,9 +342,9 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		// the wrong object and kills the scrollbar drag.
 		if freshPress {
 			if n := a.explorer.NodeAt(mx, my); n != nil && isDraggableNode(n.data.Type) {
-				a.dragNode, a.dragActive = n, false
-				a.dragX, a.dragY = mx, my
-				a.dragStartX, a.dragStartY = mx, my
+				a.drag.node, a.drag.active = n, false
+				a.drag.x, a.drag.y = mx, my
+				a.drag.startX, a.drag.startY = mx, my
 			}
 		}
 		return
@@ -403,14 +403,14 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	}
 
 	// Complete a pending Object Explorer drop only if the drag started (moved
-	// past dragThreshold) and nothing modal opened mid-drag. dragNode is
+	// past dragThreshold) and nothing modal opened mid-drag. drag.node is
 	// disarmed either way; armed, it swallows all later mouse events.
-	if a.dragNode != nil {
-		if a.dragActive && a.topDialog() == nil {
+	if a.drag.node != nil {
+		if a.drag.active && a.topDialog() == nil {
 			mx, my := ev.Position()
 			a.dropExplorerNode(mx, my)
 		}
-		a.dragNode, a.dragActive = nil, false
+		a.drag.node, a.drag.active = nil, false
 	}
 
 	a.menuBar.HandleMouse(ev)

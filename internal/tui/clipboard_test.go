@@ -99,7 +99,7 @@ func TestBracketedPasteAppliesAsOneEdit(t *testing.T) {
 	if got := qp.editor.Text(); got != "a\nb" {
 		t.Fatalf("editor text after bracketed paste = %q, want %q", got, "a\nb")
 	}
-	if a.pasting {
+	if a.paste.bracketed {
 		t.Fatal("still in paste mode after the end marker")
 	}
 	// One Paste call, so one undo step takes the whole paste back out.

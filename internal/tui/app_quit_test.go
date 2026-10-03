@@ -34,7 +34,7 @@ func TestRequestQuitWithNothingDirtyQuitsImmediately(t *testing.T) {
 	if quitting := a.requestQuit(); !quitting {
 		t.Error("requestQuit reported false with no dirty panels")
 	}
-	if !a.quitting {
+	if !a.quitGate.quitting {
 		t.Error("app did not quit with no dirty panels")
 	}
 	if a.confirmDialog.Visible() {
@@ -52,7 +52,7 @@ func TestRequestQuitPromptsBeforeDiscardingUnsavedWork(t *testing.T) {
 	if quitting := a.requestQuit(); quitting {
 		t.Error("requestQuit reported true while a prompt is still pending")
 	}
-	if a.quitting {
+	if a.quitGate.quitting {
 		t.Fatal("app quit without asking about an unsaved query panel")
 	}
 	if !a.confirmDialog.Visible() {
@@ -67,7 +67,7 @@ func TestRequestQuitCancelledLeavesEverythingOpen(t *testing.T) {
 
 	answer(a, 2) // Cancel
 
-	if a.quitting {
+	if a.quitGate.quitting {
 		t.Error("app quit even though the prompt was cancelled")
 	}
 	if a.panels.Count() != 1 {
@@ -87,7 +87,7 @@ func TestRequestQuitEscapeIsCancelNotDiscard(t *testing.T) {
 
 	a.confirmDialog.HandleKey(esc())
 
-	if a.quitting {
+	if a.quitGate.quitting {
 		t.Error("Escape on the exit prompt quit and discarded the unsaved query")
 	}
 }
@@ -105,13 +105,13 @@ func TestRequestQuitAsksAboutEveryDirtyPanel(t *testing.T) {
 		if !a.confirmDialog.Visible() {
 			t.Fatalf("no prompt for dirty panel %d", i+1)
 		}
-		if a.quitting {
+		if a.quitGate.quitting {
 			t.Fatalf("quit after only %d of 3 prompts", i)
 		}
 		answer(a, 1) // No — don't save, but keep going
 	}
 
-	if !a.quitting {
+	if !a.quitGate.quitting {
 		t.Error("app did not quit after every prompt was answered")
 	}
 }

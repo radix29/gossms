@@ -104,7 +104,7 @@ func TestNewDatabaseWithholdsTheFileFieldsOnAzure(t *testing.T) {
 	}
 
 	azure := probedAzureConn(t, "")
-	f, _, _ := buildNewDatabaseGeneralPage(azure, pf)
+	f, _, _, _ := buildNewDatabaseGeneralPage(azure, pf)
 	for _, label := range []string{"Logical name", "Path", "Initial size", "Growth", "Recovery model"} {
 		if focusableRowNamed(f, label) {
 			t.Errorf("%q is still editable on a Managed Instance", label)
@@ -118,7 +118,7 @@ func TestNewDatabaseWithholdsTheFileFieldsOnAzure(t *testing.T) {
 	}
 
 	onPrem := probedConn(t, "", nil, nil, nil, nil)
-	f, _, _ = buildNewDatabaseGeneralPage(onPrem, pf)
+	f, _, _, _ = buildNewDatabaseGeneralPage(onPrem, pf)
 	for _, label := range []string{"Logical name", "Path", "Recovery model"} {
 		if !focusableRowNamed(f, label) {
 			t.Errorf("%q lost its editor on an on-premises instance", label)

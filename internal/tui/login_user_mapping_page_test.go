@@ -67,8 +67,8 @@ func mappingResponses() []fakeResponse {
 		}},
 
 		// The by-name user read apply makes before a schema change.
-		fakeResponse{match: "sp.sid = dp.sid", cols: 10, rows: [][]driver.Value{
-			{int64(7), "SQL_USER", "sales", time.Now(), time.Now(), "INSTANCE", []byte{0x01, 0x02}, "appuser", false, nil},
+		fakeResponse{match: "sp.sid = dp.sid", cols: 11, rows: [][]driver.Value{
+			{"appuser", int64(7), "SQL_USER", "sales", time.Now(), time.Now(), "INSTANCE", []byte{0x01, 0x02}, "appuser", false, nil},
 		}},
 	)
 }

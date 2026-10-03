@@ -118,7 +118,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	hint := propsheet.Hint()
 	var newBtn, deleteBtn *widgets.Button
 	newBtn = widgets.NewButton("New", func() {
-		panel.addStep(grid, hint, cols, &edits, rowsFor, syncFieldsFromSelection)
+		panel.addStep(serverCollation(sc), grid, hint, cols, &edits, rowsFor, syncFieldsFromSelection)
 	})
 	deleteBtn = widgets.NewButton("Delete", func() {
 		e := selected()

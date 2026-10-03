@@ -123,7 +123,7 @@ then quits; if the loop doesn't answer within 2 s the signal goroutine saves
 anyway (a racy read beats losing text). Logged, never printed — after SIGHUP
 there is no terminal.
 
-`Run()`'s loop: clear `wakePending`, drain queued callbacks, sync the dialog
+`Run()`'s loop: clear `wake.sent`, drain queued callbacks, sync the dialog
 stack, handle one event, re-sync, draw.
 
 ## Package map
@@ -371,7 +371,8 @@ gossms/
 │       ├── prop_apply.go         # PropDialog's write path: dirty-diff Apply and Script Changes, the commit-tracking step runner, commitRename, and applyPlan for a dialog whose pages' writes are ordered across pages
 │       ├── new_object_dialog.go  # newObjectDialog — the shell behind the New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── name_set.go           # nameSet: the New-object dialogs' "already exists" check, folding case only when the scope's collation (server, database or msdb) does
-│       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm)
+│       ├── pending_edits.go      # pendingNameIndex: the master-detail pages' Add duplicate check against their pending list, under the scope's collation
+│       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm, redrawGrid/resetGrid, wireGridEditor)
 │       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles
 │       ├── perm_state.go        # the Grant/Grant With Grant/Deny/(none) cell state, the orig→current transition each one needs, and the per-scope gosmo adapters — shared by every permissions grid below

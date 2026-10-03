@@ -462,6 +462,8 @@ type rgIntPageSpec[O any] struct {
 	names  *rgNames // where the page publishes its pool names
 	focus  string
 	notes  []string
+
+	collation string // the server's: pool names are unique under it
 }
 
 // options is the kind's options for every field cur differs from base in,
@@ -507,9 +509,10 @@ var rgExternalPoolFields = []rgIntField[gosmo.ExternalResourcePoolOptions]{
 
 func pageRGPools(sc *db.ServerConn, model *rgModel, focus string) propPage {
 	return rgIntPage(rgIntPageSpec[gosmo.ResourcePoolOptions]{
-		title:  "Resource Pools",
-		noun:   "resource pool",
-		fields: rgPoolFields,
+		collation: serverCollation(sc),
+		title:     "Resource Pools",
+		noun:      "resource pool",
+		fields:    rgPoolFields,
 		read: func(ctx context.Context) ([]*rgIntEdit, error) {
 			pools, err := sc.Server.ResourcePools(ctx)
 			if err != nil {
@@ -552,9 +555,10 @@ func pageRGPools(sc *db.ServerConn, model *rgModel, focus string) propPage {
 
 func pageRGExternalPools(sc *db.ServerConn, model *rgModel, focus string) propPage {
 	return rgIntPage(rgIntPageSpec[gosmo.ExternalResourcePoolOptions]{
-		title:  "External Pools",
-		noun:   "external resource pool",
-		fields: rgExternalPoolFields,
+		collation: serverCollation(sc),
+		title:     "External Pools",
+		noun:      "external resource pool",
+		fields:    rgExternalPoolFields,
 		read: func(ctx context.Context) ([]*rgIntEdit, error) {
 			pools, err := sc.Server.ExternalResourcePools(ctx)
 			if err != nil {
@@ -729,7 +733,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					hint.Set("Type a name for the new " + spec.noun + " first.")
 					return
 				}
-				if slices.ContainsFunc(edits, func(e *rgIntEdit) bool { return e.name == name }) {
+				if pendingNameTaken(spec.collation, edits, func(e *rgIntEdit) string { return e.name }, name) {
 					hint.Set("A " + spec.noun + " named " + name + " is already listed.")
 					return
 				}

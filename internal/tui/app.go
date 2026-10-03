@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,21 +40,9 @@ type App struct {
 	// another panel is the active tab.
 	detailBrowser *DetailBrowser
 
-	// dragNode is the Object Explorer node being dragged toward the query
-	// editor — armed by a Button1 press over a draggable node, cleared on
-	// release. dragX/dragY track the cursor so draw can render a ghost of the
-	// dragged object's text. See handleMouse/dropExplorerNode.
-	//
-	// Arming is not starting: dragActive stays false until the held pointer
-	// moves dragThreshold cells from dragStartX/dragStartY. Until then there is
-	// no ghost and the release drops nothing, so a press held still on a node
-	// is a click, not a drag.
-	dragNode   *explorerNode
-	dragX      int
-	dragY      int
-	dragStartX int
-	dragStartY int
-	dragActive bool
+	// drag is the Object Explorer node drag toward the query editor (see
+	// explorerDrag).
+	drag explorerDrag
 
 	// mouseButtonDown tracks whether Button1 is held, wherever the gesture
 	// started. The per-widget mouseDragging latches only catch a resend staying
@@ -183,61 +170,23 @@ type App struct {
 	savedFilters map[filterKey]*nodeFilter
 	filterMu     sync.Mutex
 
-	// peerCreds is how to reach each instance the user has connected to, keyed
-	// by config.InstanceKey — the resolver behind db.ServerConn.Peer, see
-	// app_peer_creds.go. peerCredMu guards it for the same reason filterMu
-	// guards savedFilters: background loader goroutines read it through Peer.
-	// peerCredAliases is the same keyed by short host name, consulted only when
-	// peerCreds misses — see shortHostKey.
-	peerCreds       map[string]config.Connection
-	peerCredAliases map[string]config.Connection
-	peerCredMu      sync.Mutex
+	// peerCreds is how to reach each instance the user has connected to — the
+	// resolver behind db.ServerConn.Peer (see peerCredStore).
+	peerCreds peerCredStore
 
-	// completionInventories caches one metadata snapshot per
-	// server+identity+database (see completionInventoryKey), shared by every query
-	// panel on that database. UI goroutine only, like every other App field.
-	completionInventories map[string]*completionInventory
-
-	// sysCompletionInventories caches one "sys" catalog-view snapshot per
-	// server+identity (see sysCompletionInventoryKey) — server-scoped, since
-	// sys.tables/sys.columns/… are identical in every database. Populated at
-	// connect time, not lazily.
-	sysCompletionInventories map[string]*completionInventory
-
-	// completionDirectories caches each server+login's database list, keyed
-	// like sysCompletionInventories, for resolving the database part of a
-	// cross-database name (completion_crossdb.go).
-	completionDirectories map[string]*completionDirectory
-
-	// linkedDirectories caches each server+login's linked servers, their
-	// databases and the remote catalogs a four-part name has reached, keyed
-	// like sysCompletionInventories (completion_linked.go).
-	linkedDirectories map[string]*linkedDirectory
+	// completion is the IntelliSense metadata caches query panels share (see
+	// completionCaches).
+	completion completionCaches
 
 	// focus is which half of the window has the keyboard.
 	focus appFocus
 
-	// Bracketed paste: pasting is true between an *tcell.EventPaste start and
-	// its matching end, during which every EventKey is pasted content and
-	// accumulates in pasteBuf. See clipboard.go.
-	pasting  bool
-	pasteBuf strings.Builder
+	// paste is the state of a paste still arriving (see appPaste).
+	paste appPaste
 
 	// lastButtons is the button state of the previous mouse event, which
 	// tells pointer motion (coalesced in Run) from a press or release.
 	lastButtons tcell.ButtonMask
-
-	// pendingPaste is the widget a Ctrl+V was aimed at while the terminal's
-	// OSC 52 clipboard reply is outstanding — the fallback when no native
-	// clipboard tool answered. The reply arrives as an *tcell.EventClipboard an
-	// unbounded time later; App.pasteInto says why the target is remembered
-	// rather than resolved again then.
-	pendingPaste clipboardTarget
-
-	// pendingPasteToken pins which field of pendingPaste the Ctrl+V was aimed
-	// at, for a host that hands back itself rather than the field — see
-	// core.ClipboardTargetTokener and App.pasteInto.
-	pendingPasteToken any
 
 	// clipWriteMu runs writeClipboard's goroutines one at a time, and
 	// clipWriteSeq numbers them, so of two quick copies the later one is what
@@ -245,17 +194,9 @@ type App struct {
 	clipWriteMu  sync.Mutex
 	clipWriteSeq atomic.Uint64
 
-	pendingMu sync.Mutex
-	pending   []func()
-
-	// wakePending coalesces wakeEventLoop calls: true from the moment an
-	// EventInterrupt is sent until the loop next wakes and clears it. A
-	// goroutine finding it already true skips its own interrupt; its queued
-	// callback still runs, since the next wake for any reason drains the whole
-	// queue. Without this, a burst of near-simultaneous completions (the
-	// per-row fetches in loadDatabasesFolderDetails and friends) each cost a
-	// full drainPending + syncDialogStack + draw().
-	wakePending atomic.Bool
+	// wake is the queue background goroutines hand results to the UI
+	// goroutine through (see postAndWake).
+	wake wakeQueue
 
 	// reclaiming is true while releaseClosedPanelMemory's background
 	// FreeOSMemory is running, so closing several panels in a row queues one
@@ -263,14 +204,9 @@ type App struct {
 	// is still walking buys nothing and costs another full GC.
 	reclaiming atomic.Bool
 
-	// quitMu serializes wakeEventLoop's channel send against quit's
-	// screen.Fini(), which closes EventQ(). A flag checked before sending still
-	// races — Fini() can close the channel between check and send. Holding
-	// quitMu across flag-and-send and across set-flag-and-Fini makes the two
-	// mutually exclusive: a send either completes before the close or never
-	// happens.
-	quitMu   sync.Mutex
-	quitting bool
+	// quitGate orders quit's screen.Fini() against wakeEventLoop's send (see
+	// quitGate).
+	quitGate quitGate
 }
 
 // NewApp constructs the application.
@@ -350,9 +286,9 @@ const (
 func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	// Cleared before draining, not after, so a postEvent+wakeEventLoop
 	// racing this instant still gets its own wake: if its append to
-	// a.pending lands after drainPending's read below, wakePending is
+	// a.wake.pending lands after drainPending's read below, wake.sent is
 	// already false and its CompareAndSwap succeeds.
-	a.wakePending.Store(false)
+	a.wake.sent.Store(false)
 	a.drainPending()
 	a.syncDialogStack()
 
@@ -367,7 +303,7 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 		// not typing. Buffer it, or each pasted newline arrives as
 		// KeyEnter and IntelliSense's commit binding eats it, silently
 		// rewriting the pasted text.
-		if a.pasting {
+		if a.paste.bracketed {
 			a.bufferPastedKey(e)
 			// A buffered key changes nothing on screen, and a frame per
 			// key made a 10,001-line, 170 KB paste take ~6 minutes. The end
@@ -401,8 +337,8 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 		// recorded what it was aimed at. Clearing it first also makes an
 		// unsolicited reply — the terminal answering a request this app
 		// never made — paste nothing anywhere.
-		target, token := a.pendingPaste, a.pendingPasteToken
-		a.pendingPaste, a.pendingPasteToken = nil, nil
+		target, token := a.paste.target, a.paste.token
+		a.paste.target, a.paste.token = nil, nil
 		a.pasteInto(target, token, string(e.Data()))
 	}
 
@@ -417,6 +353,32 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 // wheelButtons is every wheel direction in a tcell.ButtonMask — wheel notches
 // arrive as repeated identical masks, but each is a discrete scroll, not motion.
 const wheelButtons = tcell.WheelUp | tcell.WheelDown | tcell.WheelLeft | tcell.WheelRight
+
+// wakeQueue is the callbacks background goroutines have queued for the UI
+// goroutine, and whether a wakeup for them is already on its way.
+type wakeQueue struct {
+	mu      sync.Mutex
+	pending []func()
+
+	// sent coalesces wakeEventLoop calls: true from the moment an
+	// EventInterrupt is sent until the loop next wakes and clears it. A
+	// goroutine finding it already true skips its own interrupt; its queued
+	// callback still runs, since the next wake for any reason drains the whole
+	// queue. Without this, a burst of near-simultaneous completions (the
+	// per-row fetches in loadDatabasesFolderDetails and friends) each cost a
+	// full drainPending + syncDialogStack + draw().
+	sent atomic.Bool
+}
+
+// quitGate serializes wakeEventLoop's channel send against quit's
+// screen.Fini(), which closes EventQ(). A flag checked before sending still
+// races — Fini() can close the channel between check and send. Holding mu
+// across flag-and-send and across set-flag-and-Fini makes the two mutually
+// exclusive: a send either completes before the close or never happens.
+type quitGate struct {
+	mu       sync.Mutex
+	quitting bool
+}
 
 // postAndWake queues fn to run on the UI goroutine and immediately wakes the
 // event loop, without waiting for an unrelated key or mouse event. Call it from
@@ -433,16 +395,16 @@ func (a *App) postAndWake(fn func()) {
 }
 
 func (a *App) postEvent(fn func()) {
-	a.pendingMu.Lock()
-	a.pending = append(a.pending, fn)
-	a.pendingMu.Unlock()
+	a.wake.mu.Lock()
+	a.wake.pending = append(a.wake.pending, fn)
+	a.wake.mu.Unlock()
 }
 
 func (a *App) drainPending() {
-	a.pendingMu.Lock()
-	fns := a.pending
-	a.pending = nil
-	a.pendingMu.Unlock()
+	a.wake.mu.Lock()
+	fns := a.wake.pending
+	a.wake.pending = nil
+	a.wake.mu.Unlock()
 	for _, fn := range fns {
 		fn()
 	}
@@ -462,25 +424,25 @@ func (a *App) drainPending() {
 //
 // No-op when a.screen is nil (every App from newTestApp): a background
 // goroutine can outlive its test function and would panic on the nil screen.
-// Also a no-op if wakePending is already set, or if the app is quitting —
-// quitMu makes this and Fini() mutually exclusive.
+// Also a no-op if wake.sent is already set, or if the app is quitting —
+// quitGate makes this and Fini() mutually exclusive.
 //
-// The send is non-blocking. quitMu is held across it and quit() takes the same
+// The send is non-blocking. quitGate.mu is held across it and quit() takes the same
 // lock from a UI goroutine that is then not draining EventQ(), so a blocking
 // send on a full queue (tcell buffers 128, which all-motion mouse tracking
 // fills fast during a slow frame) would hang Ctrl+Q. Giving up on a full queue
 // loses nothing: it means the loop is about to wake, and every iteration clears
-// wakePending and calls drainPending regardless of what woke it.
+// wake.sent and calls drainPending regardless of what woke it.
 func (a *App) wakeEventLoop() {
 	if a.screen == nil {
 		return
 	}
-	if !a.wakePending.CompareAndSwap(false, true) {
+	if !a.wake.sent.CompareAndSwap(false, true) {
 		return
 	}
-	a.quitMu.Lock()
-	defer a.quitMu.Unlock()
-	if a.quitting {
+	a.quitGate.mu.Lock()
+	defer a.quitGate.mu.Unlock()
+	if a.quitGate.quitting {
 		return
 	}
 	select {
@@ -790,7 +752,7 @@ func (a *App) draw() {
 // Run's loop and making the channel unusable. User actions want requestQuit
 // instead, which offers to save unsaved query panels first.
 //
-// quitMu is held across setting quitting and calling Fini(), so a racing
+// quitGate.mu is held across setting quitting and calling Fini(), so a racing
 // wakeEventLoop either completes its send first or sees quitting and skips it,
 // never sending on the closed channel.
 //
@@ -798,9 +760,9 @@ func (a *App) draw() {
 // Run, and quitting is what everything else keys off, so it must be set either
 // way. Same reasoning as setStatus's nil check.
 func (a *App) quit() {
-	a.quitMu.Lock()
-	defer a.quitMu.Unlock()
-	a.quitting = true
+	a.quitGate.mu.Lock()
+	defer a.quitGate.mu.Unlock()
+	a.quitGate.quitting = true
 	if a.screen != nil {
 		a.screen.Fini()
 	}

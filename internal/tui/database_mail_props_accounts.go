@@ -369,7 +369,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 					hint.Set("Type a name for the new account first.")
 					return
 				}
-				if slices.ContainsFunc(edits, func(e *mailAccountEdit) bool { return !e.removing && e.cur.name == name }) {
+				if pendingNameTaken(serverCollation(sc), visible(), func(e *mailAccountEdit) string { return e.cur.name }, name) {
 					hint.Set("An account named " + name + " is already listed.")
 					return
 				}

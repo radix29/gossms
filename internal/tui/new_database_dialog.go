@@ -102,10 +102,10 @@ func NewNewDatabaseDialog(app *App) *NewDatabaseDialog {
 func (d *NewDatabaseDialog) buildPages(pf *ndbPrefetch) {
 	sc := d.sc
 
-	generalForm, generalApply, nameField := buildNewDatabaseGeneralPage(sc, pf)
+	generalForm, generalApply, nameField, collation := buildNewDatabaseGeneralPage(sc, pf)
 	dbName := func() string { return strings.TrimSpace(nameField.Value()) }
 	optionsForm, optionsApply := buildNewDatabaseOptionsPage(sc, pf, dbName)
-	filegroupsForm, filegroupsApply := buildNewDatabaseFilegroupsPage(sc, pf, dbName)
+	filegroupsForm, filegroupsApply := buildNewDatabaseFilegroupsPage(sc, pf, dbName, collation)
 
 	d.forms = []*propsheet.Form{generalForm, optionsForm, filegroupsForm}
 	d.applyFns = []propApply{generalApply, optionsApply, filegroupsApply}

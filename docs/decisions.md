@@ -1268,6 +1268,16 @@ it from the string 'NULL'.
   recur when *editing* comments: wrong caller after a helper moved, counts,
   claims about which types implement an interface, wrong-document
   cross-references, and inverted sentences that read fine either way.
+- **A `sql_variant` cell is rendered from its value, not its inner type**
+  (settled 2026-10-03). go-mssqldb v1.11.2 decodes the inner type and drops
+  it, so `query.appendVariant` infers: a `[]byte` spelling a decimal literal is
+  decimal/money digits (a `varbinary` variant that happens to spell one shows
+  as text too — accepted), a nameless fixed zone is a `datetimeoffset`, and
+  fractions show at least three digits. A `date` still shows as a datetime at
+  midnight, a `time` on 0001-01-01, a GUID as its wire bytes in hex, and money
+  with four decimals where SSMS shows two — the driver must return a typed
+  value (or the base type) before those can be right; `TestLiveVariantCells`
+  pins today's text. The complete fix is upstream, not a heuristic here.
 - **Which databases a dropdown offers** is settled in
   `internal/tui/database_list.go`, by when the name is resolved: stored for
   later (job step, alert, login default database, restore history) → every
@@ -1397,6 +1407,12 @@ it from the string 'NULL'.
   re-propose a `prev` arm.
 - **`appendValue`'s `case float32` is unreachable but kept** (go-mssqldb returns
   `float64` for `REAL` and `FLOAT`); correct if that changes.
+- **float/real cells keep shortest round-trip digits, not SSMS's 15**
+  (`appendFloat`). SSMS 21/22 shows `123456789012345.6` as `123456789012346`
+  and `0.1e0+0.2e0` as `0.3`; gossms shows every digit needed to reparse the
+  same float64, so copied grid text doesn't silently change the value
+  (`TestFormatFloatRoundTrips`). The exponent form and its cut-offs (`>= 1e15`,
+  `< 1e-4`, `1E+300`, `1E-05`) do match SSMS, probed 2026-10-04.
 - **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix doesn't strand the
   pooled connection** (gosmo `permission_options.go`, via `server_security.go`).
   A live A/B showed eight pooled connections on the right database after a

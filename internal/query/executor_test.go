@@ -228,9 +228,17 @@ func TestFormatValueFloat(t *testing.T) {
 		{float64(0), "0"},
 		{float64(0.0001), "0.0001"},
 		{float32(2.5), "2.5"},
-		// Outside the readable range SSMS shows an exponent too.
-		{float64(1e-7), "1e-07"},
-		{float64(1e21), "1e+21"},
+		// Outside the readable range SSMS shows an upper-case exponent of at
+		// least two digits; 1e15 and 1e-5 are the first values past each
+		// cut-off (probed in SSMS 21/22).
+		{float64(1e-7), "1E-07"},
+		{float64(-1e-7), "-1E-07"},
+		{float64(1e21), "1E+21"},
+		{float64(1e300), "1E+300"},
+		{float64(1e15), "1E+15"},
+		{float64(999999999999999), "999999999999999"},
+		{float64(1e-5), "1E-05"},
+		{float32(3.4e38), "3.4E+38"},
 	}
 	for _, tc := range cases {
 		if got := formatValue(tc.in, false, ""); got != tc.want {
@@ -264,6 +272,39 @@ func TestFormatFloatSpecials(t *testing.T) {
 	for f, want := range cases {
 		if got := formatFloat(f, 64); got != want {
 			t.Errorf("formatFloat(%v) = %q, want %q", f, got, want)
+		}
+	}
+}
+
+// TestAppendVariant pins each rule appendVariant infers from a sql_variant's
+// value, the inner type go-mssqldb having dropped it.
+func TestAppendVariant(t *testing.T) {
+	plus2 := time.FixedZone("", 2*3600)
+	cases := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{"decimal digits as text", []byte("1.50"), "1.50"},
+		{"negative money digits", []byte("-12.3400"), "-12.3400"},
+		{"integral decimal", []byte("42"), "42"},
+		{"binary stays hex", []byte{0x01, 0xFF}, "0x01FF"},
+		{"half a literal stays hex", []byte("1."), "0x312E"},
+		{"a lone sign stays hex", []byte("-"), "0x2D"},
+		{"datetime keeps milliseconds", time.Date(2024, 1, 2, 3, 4, 5, 120e6, time.UTC), "2024-01-02 03:04:05.120"},
+		{"whole seconds keep .000", time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC), "2024-01-02 03:04:05.000"},
+		{"datetime2(7) not cut", time.Date(2024, 1, 2, 3, 4, 5, 123456700, time.UTC), "2024-01-02 03:04:05.1234567"},
+		{"datetime2 trailing zeros trimmed", time.Date(2024, 1, 2, 3, 4, 5, 123450000, time.UTC), "2024-01-02 03:04:05.12345"},
+		{"datetimeoffset keeps its offset", time.Date(2024, 1, 2, 3, 4, 5, 100e6, plus2), "2024-01-02 03:04:05.100 +02:00"},
+		{"datetimeoffset at +00:00", time.Date(2024, 1, 2, 3, 4, 5, 0, time.FixedZone("", 0)), "2024-01-02 03:04:05.000 +00:00"},
+		{"a named zone is the connection's, not an offset", time.Date(2024, 1, 2, 3, 4, 5, 0, time.FixedZone("CET", 3600)), "2024-01-02 03:04:05.000"},
+		{"int unchanged", int64(7), "7"},
+		{"string unchanged", "abc", "abc"},
+		{"NULL", nil, "NULL"},
+	}
+	for _, tc := range cases {
+		if got := string(appendVariant(nil, tc.in)); got != tc.want {
+			t.Errorf("%s: appendVariant(%#v) = %q, want %q", tc.name, tc.in, got, tc.want)
 		}
 	}
 }

@@ -46,7 +46,7 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 			if err != nil {
 				return nil, nil, err
 			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, lvl, props)
+			f, apply := buildExtendedPropertiesForm(sc, dbName, d.Collation, lvl, props)
 			return f, apply, nil
 		},
 	}
@@ -62,7 +62,7 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 // (DatabaseExtendedProperties for database-level, ExtendedProperties(level)
 // for anything narrower) — this function only builds the UI and the
 // apply closure, it doesn't decide how to read the initial list.
-func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.ExtendedPropertyLevel, props []*gosmo.ExtendedProperty) (*propsheet.Form, propApply) {
+func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, level gosmo.ExtendedPropertyLevel, props []*gosmo.ExtendedProperty) (*propsheet.Form, propApply) {
 	edits := make([]*extPropEdit, 0, len(props))
 	for _, p := range props {
 		edits = append(edits, &extPropEdit{name: p.Name, origValue: p.Value, value: p.Value})
@@ -141,15 +141,13 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 			hint.Set("Type a property name first.")
 			return
 		}
-		for i, e := range visible() {
-			if e.name == name {
-				// Already present — say so and select it, rather than
-				// leaving the button looking broken.
-				hint.Set("A property named " + name + " is already listed — its row is selected below.")
-				grid.SetSelectedRow(i)
-				syncFieldsFromSelection()
-				return
-			}
+		if i := pendingNameIndex(collation, visible(), func(e *extPropEdit) string { return e.name }, name); i >= 0 {
+			// Already present — say so and select it, rather than
+			// leaving the button looking broken.
+			hint.Set("A property named " + name + " is already listed — its row is selected below.")
+			grid.SetSelectedRow(i)
+			syncFieldsFromSelection()
+			return
 		}
 		hint.Clear()
 		edits = append(edits, &extPropEdit{name: name, value: valueField.Value(), isNew: true})

@@ -33,6 +33,11 @@ type membershipConfig struct {
 	// note is the page's explanatory footer.
 	note string
 
+	// collation is the role's scope's — the database's for a database role,
+	// the server's for a server role — and decides whether Add's name is
+	// already listed.
+	collation string
+
 	// add and remove issue the real membership change for one principal.
 	add    func(ctx context.Context, name string) error
 	remove func(ctx context.Context, name string) error
@@ -94,12 +99,7 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 	// so a duplicate Add can point at it. -1 when it isn't shown (a member
 	// pending removal, which Add treats as addable again).
 	indexOfVisible := func(name string) int {
-		for i, e := range visible() {
-			if e.name == name {
-				return i
-			}
-		}
-		return -1
+		return pendingNameIndex(cfg.collation, visible(), func(e *memberEdit) string { return e.name }, name)
 	}
 
 	candidates := cfg.candidates

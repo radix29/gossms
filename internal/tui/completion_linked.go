@@ -56,7 +56,7 @@ type linkedServer struct {
 }
 
 // abandon stops every load under d and drops its results — d is leaving
-// App.linkedDirectories (disconnect, Ctrl+R).
+// App.completion.linked (disconnect, Ctrl+R).
 func (d *linkedDirectory) abandon() {
 	d.load.Abandon()
 	for _, ls := range d.byName {
@@ -70,9 +70,9 @@ func (d *linkedDirectory) abandon() {
 // purgeLinkedCompletion drops serverKey's linked-server cache, stopping its
 // loads, so the next lookup reads everything afresh.
 func (a *App) purgeLinkedCompletion(serverKey string) {
-	if d, ok := a.linkedDirectories[serverKey]; ok {
+	if d, ok := a.completion.linked[serverKey]; ok {
 		d.abandon()
-		delete(a.linkedDirectories, serverKey)
+		delete(a.completion.linked, serverKey)
 	}
 }
 
@@ -80,18 +80,18 @@ func (a *App) purgeLinkedCompletion(serverKey string) {
 // there is no entry.
 func (a *App) ensureLinkedDirectory(sc *db.ServerConn) *linkedDirectory {
 	key := sysCompletionInventoryKey(sc.Opts)
-	if d, ok := a.linkedDirectories[key]; ok {
+	if d, ok := a.completion.linked[key]; ok {
 		return d
 	}
 	d := &linkedDirectory{loading: true}
-	if a.linkedDirectories == nil {
-		a.linkedDirectories = make(map[string]*linkedDirectory)
+	if a.completion.linked == nil {
+		a.completion.linked = make(map[string]*linkedDirectory)
 	}
-	a.linkedDirectories[key] = d
+	a.completion.linked[key] = d
 	startCompletionLoad(a, sc, completionLoad[[]*gosmo.LinkedServer]{
 		what: "loading the autocomplete linked-server list", timeout: linkedLoadTimeout, load: &d.load,
-		owned: func() bool { return a.linkedDirectories[key] == d },
-		evict: func() { delete(a.linkedDirectories, key) },
+		owned: func() bool { return a.completion.linked[key] == d },
+		evict: func() { delete(a.completion.linked, key) },
 		fetch: sc.Server.LinkedServers,
 		apply: func(list []*gosmo.LinkedServer, err error) {
 			d.loading = false
@@ -148,12 +148,12 @@ func (p *QueryPanel) linkedDatabases(name string) (ls *linkedServer, pending boo
 // lookup retries.
 func (a *App) loadLinkedDatabases(sc *db.ServerConn, ls *linkedServer) {
 	key := sysCompletionInventoryKey(sc.Opts)
-	d := a.linkedDirectories[key]
+	d := a.completion.linked[key]
 	srv := sc.Server
 	ls.loading = true
 	startCompletionLoad(a, sc, completionLoad[[]string]{
 		what: "loading a linked server's autocomplete database list", timeout: linkedLoadTimeout, load: &ls.load,
-		owned: func() bool { return a.linkedDirectories[key] == d },
+		owned: func() bool { return a.completion.linked[key] == d },
 		evict: func() { ls.loading = false },
 		fetch: func(ctx context.Context) ([]string, error) { return srv.LinkedServerDatabases(ctx, ls.name) },
 		apply: func(names []string, err error) {

@@ -310,7 +310,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					hint.Set("Type a name for the new step, then press New again.")
 					return
 				}
-				panel.addStep(grid, hint, cols, &edits, rowsFor, syncFieldsFromSelection)
+				panel.addStep(serverCollation(sc), grid, hint, cols, &edits, rowsFor, syncFieldsFromSelection)
 			})
 			// moveSelected moves the selected step up (-1) or down (+1),
 			// swapping in edits rather than the visible slice, which skips

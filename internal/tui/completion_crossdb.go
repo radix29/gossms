@@ -48,14 +48,14 @@ var errNoDatabaseAccess = errors.New("the login cannot open this database")
 // the sys-schema inventory, so it is normally ready before a chain needs it.
 func (a *App) ensureCompletionDirectory(sc *db.ServerConn) *completionDirectory {
 	key := sysCompletionInventoryKey(sc.Opts)
-	if d, ok := a.completionDirectories[key]; ok {
+	if d, ok := a.completion.directories[key]; ok {
 		return d
 	}
 	d := &completionDirectory{loading: true}
-	if a.completionDirectories == nil {
-		a.completionDirectories = make(map[string]*completionDirectory)
+	if a.completion.directories == nil {
+		a.completion.directories = make(map[string]*completionDirectory)
 	}
-	a.completionDirectories[key] = d
+	a.completion.directories[key] = d
 	a.loadCompletionDirectory(sc, key, d)
 	return d
 }
@@ -64,7 +64,7 @@ func (a *App) ensureCompletionDirectory(sc *db.ServerConn) *completionDirectory 
 // created since connecting becomes reachable.
 func (a *App) refreshCompletionDirectory(sc *db.ServerConn) {
 	key := sysCompletionInventoryKey(sc.Opts)
-	d, ok := a.completionDirectories[key]
+	d, ok := a.completion.directories[key]
 	if !ok {
 		a.ensureCompletionDirectory(sc)
 		return
@@ -77,8 +77,8 @@ func (a *App) refreshCompletionDirectory(sc *db.ServerConn) {
 func (a *App) loadCompletionDirectory(sc *db.ServerConn, key string, d *completionDirectory) {
 	startCompletionLoad(a, sc, completionLoad[[]*gosmo.Database]{
 		what: "loading the autocomplete database list", timeout: completionInventoryTimeout, load: &d.load,
-		owned: func() bool { return a.completionDirectories[key] == d },
-		evict: func() { delete(a.completionDirectories, key) },
+		owned: func() bool { return a.completion.directories[key] == d },
+		evict: func() { delete(a.completion.directories, key) },
 		fetch: sc.Server.Databases,
 		apply: func(dbs []*gosmo.Database, err error) {
 			d.loading = false
@@ -98,7 +98,7 @@ func (a *App) loadCompletionDirectory(sc *db.ServerConn, key string, d *completi
 // on sc's server — the databases panels reached only by name.
 func (a *App) refreshCrossDatabaseInventories(sc *db.ServerConn) {
 	serverKey := sysCompletionInventoryKey(sc.Opts)
-	for key, inv := range a.completionInventories {
+	for key, inv := range a.completion.inventories {
 		if inv.gated && inv.serverKey == serverKey {
 			inv.loading = true
 			a.loadCompletionInventory(sc, inv.database, key, inv)
@@ -143,14 +143,14 @@ func (p *QueryPanel) databaseInventory(own *completionInventory, name string) (i
 // there — a panel connected to that database made it — is reused as is.
 func (a *App) ensureCrossDatabaseInventory(sc *db.ServerConn, database string) *completionInventory {
 	key := completionInventoryKey(sc.Opts, database)
-	if inv, ok := a.completionInventories[key]; ok {
+	if inv, ok := a.completion.inventories[key]; ok {
 		return inv
 	}
 	inv := &completionInventory{loading: true, serverKey: sysCompletionInventoryKey(sc.Opts), gated: true, database: database}
-	if a.completionInventories == nil {
-		a.completionInventories = make(map[string]*completionInventory)
+	if a.completion.inventories == nil {
+		a.completion.inventories = make(map[string]*completionInventory)
 	}
-	a.completionInventories[key] = inv
+	a.completion.inventories[key] = inv
 	a.loadCompletionInventory(sc, database, key, inv)
 	return inv
 }
