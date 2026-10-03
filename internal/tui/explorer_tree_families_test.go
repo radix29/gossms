@@ -329,16 +329,14 @@ func TestAssembliesLoaderMarksTheShippedOnesSystem(t *testing.T) {
 func TestRulesAndDefaultsLoaders(t *testing.T) {
 	sc := newFamilyConn(t,
 		fakeResponse{
-			match: "WHERE  o.type = 'R'", cols: 6,
+			match: "WHERE  o.type = 'R'", cols: 5,
 			rows: [][]driver.Value{
-				{"PhoneRule", "dbo", int64(100), "CREATE RULE PhoneRule AS @v LIKE '[0-9]%'",
-					treeFamilyCreated, treeFamilyCreated},
+				{"PhoneRule", "dbo", int64(100), treeFamilyCreated, treeFamilyCreated},
 			}},
 		fakeResponse{
-			match: "WHERE  o.type = 'D'", cols: 6,
+			match: "WHERE  o.type = 'D'", cols: 5,
 			rows: [][]driver.Value{
-				{"ZeroDefault", "dbo", int64(101), "CREATE DEFAULT ZeroDefault AS 0",
-					treeFamilyCreated, treeFamilyCreated},
+				{"ZeroDefault", "dbo", int64(101), treeFamilyCreated, treeFamilyCreated},
 			}})
 
 	rules := loadFamily(t, sc, NodeRules)

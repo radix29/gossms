@@ -170,13 +170,13 @@ func buildMasterKeyEncryptionForm(m *gosmo.MasterKey, ref *gosmo.MasterKey) (*pr
 			if openPass.Value() == "" {
 				return fmt.Errorf("type one of the master key's passwords in Master key password")
 			}
-			open = scriptSafePassword(ctx, openPass.Value())
+			open = openPass.Value()
 		}
 		if v := addPass.Value(); v != "" {
 			if v != addConfirm.Value() {
 				return fmt.Errorf("the password to add and its confirmation do not match")
 			}
-			if err := ref.AddEncryption(ctx, gosmo.MasterKeyEncryptor{Password: scriptSafePassword(ctx, v)}, open); err != nil {
+			if err := ref.AddEncryption(ctx, gosmo.MasterKeyEncryptor{Password: v}, open); err != nil {
 				return err
 			}
 		}
@@ -186,7 +186,7 @@ func buildMasterKeyEncryptionForm(m *gosmo.MasterKey, ref *gosmo.MasterKey) (*pr
 			}
 		}
 		if v := dropPass.Value(); v != "" {
-			if err := ref.DropEncryption(ctx, gosmo.MasterKeyEncryptor{Password: scriptSafePassword(ctx, v)}, open); err != nil {
+			if err := ref.DropEncryption(ctx, gosmo.MasterKeyEncryptor{Password: v}, open); err != nil {
 				return err
 			}
 		}

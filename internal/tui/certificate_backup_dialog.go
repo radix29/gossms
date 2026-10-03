@@ -118,8 +118,8 @@ func (d *BackupCertificateDialog) buildPages(pf *certBackupPrefetch) {
 		spec := gosmo.CertificateBackupSpec{File: strings.TrimSpace(fileField.Value())}
 		if f := strings.TrimSpace(keyFileField.Value()); f != "" {
 			spec.PrivateKeyFile = f
-			spec.EncryptionPassword = scriptSafePassword(ctx, encPass.Value())
-			spec.DecryptionPassword = scriptSafePassword(ctx, decPass.Value())
+			spec.EncryptionPassword = encPass.Value()
+			spec.DecryptionPassword = decPass.Value()
 		}
 		return d.sc.Server.DatabaseRef(d.dbName).CertificateRef(c.Name).Backup(ctx, spec)
 	}

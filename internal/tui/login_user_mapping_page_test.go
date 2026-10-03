@@ -38,13 +38,18 @@ func mappingResponses() []fakeResponse {
 			{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 
-		// The login's mapping, per database — one row per role, grouped by
-		// principal_id. appdb answers with a user; everything else answers
-		// empty, which is what "not mapped" is.
-		fakeResponse{match: "dp.sid = @p1", db: "appdb", cols: 4, rows: [][]driver.Value{
-			{int64(5), "appuser", "sales", "db_datareader"},
+		// The login's mapping — one row per role, grouped by database and
+		// principal_id. UserMappings reads every database in one batch, so
+		// its answer is server-level and names the database in each row; the
+		// one-database read Unmap makes is answered per database. appdb has a
+		// user; everything else answers empty, which is what "not mapped" is.
+		fakeResponse{match: "sys.sp_executesql @q", cols: 5, rows: [][]driver.Value{
+			{"appdb", int64(5), "appuser", "sales", "db_datareader"},
 		}},
-		fakeResponse{match: "dp.sid = @p1", cols: 4, rows: nil},
+		fakeResponse{match: "dp.sid = @p1", db: "appdb", cols: 5, rows: [][]driver.Value{
+			{"appdb", int64(5), "appuser", "sales", "db_datareader"},
+		}},
+		fakeResponse{match: "dp.sid = @p1", cols: 5, rows: nil},
 
 		// Database roles, per database. public is present in both because the
 		// page has to exclude it — ALTER ROLE public ADD MEMBER is a syntax

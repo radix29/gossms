@@ -34,12 +34,15 @@ import (
 // briefly enabling one with a classifier in place would classify every login
 // that arrived meanwhile.
 //
-// Not one transaction. Pool and group DDL is transactional (W1), but gosmo
-// issues each write on its own pooled connection, and a transaction spanning
-// them needs a write API gosmo does not have. A failure part-way leaves the
-// earlier statements stored but not in force — RECONFIGURE is the last step
-// and has not run — and the dialog reloads every page, so what it shows is
-// what the server has.
+// The plan is one transaction (gosmo's InTransaction, W21): pool, group and
+// external-pool DDL, the classifier and the I/O cap are all transactional, so
+// a failure part-way stores nothing and the pages keep their edits to fix and
+// apply again. RECONFIGURE and DISABLE refuse to run inside a user
+// transaction (Msg 574), so they follow the COMMIT; one failing there leaves
+// the plan stored but not in force, and the dialog reloads every page, so
+// what it shows is what the server has. A rolled-back classifier change still
+// sets the governor's pending flag (verified on 17), which the next
+// RECONFIGURE clears without changing anything.
 //
 // # Pages that see each other's edits
 //
@@ -165,15 +168,15 @@ func (n *rgNames) onChange(fn func()) {
 }
 
 // runResourceGovernorPlan carries out a Resource Governor Apply: the pages'
-// statements in phase order, then RECONFIGURE, or DISABLE when the governor
-// is to be off. With General unedited, that is whatever the governor is now
+// statements in phase order as one transaction, then RECONFIGURE, or DISABLE
+// when the governor is to be off. With General unedited, that is whatever the governor is now
 // — read here, under Script Changes too, since reads still reach the server.
 //
 // A disabled governor left disabled gets DISABLE, which clears the pending
 // flag without applying anything: nothing is in force while it is off, and
 // the next RECONFIGURE (Enabled ticked) applies every stored change.
 func runResourceGovernorPlan(ctx context.Context, sc *db.ServerConn, plan *applyPlan) error {
-	if err := plan.run(ctx); err != nil {
+	if err := sc.Server.InTransaction(ctx, plan.run); err != nil {
 		return err
 	}
 	v, ok := plan.value(rgEnabledKey)

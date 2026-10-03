@@ -126,9 +126,9 @@ func (k *keyProtectionFields) input() keyProtectionInput {
 // CREATE's ENCRYPTION BY PASSWORD.
 func (k *keyProtectionFields) apply(ctx context.Context, d *gosmo.Database) (string, error) {
 	if k.byPassword() {
-		return scriptSafePassword(ctx, k.keyPass.Value()), nil
+		return k.keyPass.Value(), nil
 	}
-	return "", ensureMasterKey(ctx, d, scriptSafePassword(ctx, k.mkPass.Value()))
+	return "", ensureMasterKey(ctx, d, k.mkPass.Value())
 }
 
 // keyProtectionInput is keyProtectionFields' values, apart from the form so

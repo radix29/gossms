@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
@@ -79,15 +80,31 @@ func (d *RestoreDialog) fillDefaultLocation() {
 }
 
 // relocation snapshots the Files view's choice for buildRestoreOptions,
-// which runs on a background goroutine and must not read widgets.
-func (d *RestoreDialog) relocation() relocPlan {
-	return relocPlan{
-		mode:    d.rbReloc.Selected(),
-		dataDir: strings.TrimSpace(d.fDataDir.Value()),
-		logDir:  strings.TrimSpace(d.fLogDir.Value()),
+// which runs on a background goroutine and must not read widgets. The
+// default directories go in with it — defaultDirs' answer, so the restore
+// puts files where the Files view previewed them.
+//
+// The collation decides whether restoring Sales as sales is a rename: on a
+// case-sensitive instance it is, and without MOVE clauses the restore
+// collides with the source database's files.
+func (d *RestoreDialog) relocation() gosmo.RestoreRelocation {
+	dataDir, logDir := d.defaultDirs()
+	return gosmo.RestoreRelocation{
+		Mode:    relocationModes[d.rbReloc.Selected()],
+		DataDir: strings.TrimSpace(d.fDataDir.Value()),
+		LogDir:  strings.TrimSpace(d.fLogDir.Value()),
 
-		collation: serverCollation(d.sc),
+		DefaultDataDir: dataDir,
+		DefaultLogDir:  logDir,
+		Collation:      serverCollation(d.sc),
 	}
+}
+
+// relocationModes is the Files view's radio, by index, as gosmo's modes.
+var relocationModes = map[int]gosmo.RelocationMode{
+	relocAuto:     gosmo.RelocateIfRenamed,
+	relocOriginal: gosmo.RelocateNone,
+	relocFolder:   gosmo.RelocateToFolders,
 }
 
 // showFileLocations opens the Files view. The view lists the backup set's
@@ -148,17 +165,15 @@ func (d *RestoreDialog) syncRelocState() {
 }
 
 // plannedPaths maps each logical file name to the physical path the current
-// choice would restore it to. Built from relocateFiles, the same function
-// that builds the MOVE clauses, so the preview cannot drift from what the
+// choice would restore it to. Built by gosmo.RestoreRelocation.Moves, which
+// also builds the MOVE clauses, so the preview cannot drift from what the
 // restore actually does.
 func (d *RestoreDialog) plannedPaths() map[string]string {
 	source := ""
 	if h := d.selectedHeader(); h != nil {
 		source = h.DatabaseName
 	}
-	dataDir, logDir := d.defaultDirs()
-	moves := relocateFiles(d.files, d.relocation(), dataDir, logDir,
-		source, strings.TrimSpace(d.fTarget.Value()))
+	moves := d.relocation().Moves(d.files, source, strings.TrimSpace(d.fTarget.Value()))
 	paths := make(map[string]string, len(moves))
 	for _, m := range moves {
 		paths[m.LogicalName] = m.PhysicalName

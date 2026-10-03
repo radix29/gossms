@@ -300,8 +300,8 @@ func TestSymmetricKeyEncryptionScriptsPasswordsAsPlaceholders(t *testing.T) {
 	if strings.Contains(got, "secret") {
 		t.Errorf("the script carries a password:\n%s", got)
 	}
-	if !strings.Contains(got, "DECRYPTION BY PASSWORD = N'"+scriptedPasswordPlaceholder+"'") ||
-		!strings.Contains(got, "ADD ENCRYPTION BY PASSWORD = N'"+scriptedPasswordPlaceholder+"'") {
+	if !strings.Contains(got, "DECRYPTION BY PASSWORD = N'"+gosmo.PasswordPlaceholder+"'") ||
+		!strings.Contains(got, "ADD ENCRYPTION BY PASSWORD = N'"+gosmo.PasswordPlaceholder+"'") {
 		t.Errorf("script:\n%s", got)
 	}
 }

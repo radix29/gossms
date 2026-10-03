@@ -54,17 +54,26 @@ func isFallback(cols []string, rows [][]string) bool {
 // programmabilityFolderDetail's switch; the arms differ only in which listing
 // they call.
 func TestRulesFolderDetailCarriesItsObjects(t *testing.T) {
-	sc, _ := newTypePropConn(t, fakeResponse{match: "o.type = 'R'", cols: 6, rows: [][]driver.Value{
-		{"PhoneRule", "dbo", int64(1001), "AS @v LIKE '[0-9]%'", propTypeDate, propTypeDate},
-		{"ZipRule", "sales", int64(1002), "AS @v LIKE '[0-9][0-9][0-9][0-9][0-9]'", propTypeDate, propTypeDate},
-	}})
+	sc, _ := newTypePropConn(t,
+		moduleDefinitionResponse("[dbo].[PhoneRule]", "AS @v LIKE '[0-9]%'"),
+		moduleDefinitionResponse("[sales].[ZipRule]", "AS @v LIKE '[0-9][0-9][0-9][0-9][0-9]'"),
+		fakeResponse{match: "o.type = 'R'", cols: 5, rows: [][]driver.Value{
+			{"PhoneRule", "dbo", int64(1001), propTypeDate, propTypeDate},
+			{"ZipRule", "sales", int64(1002), propTypeDate, propTypeDate},
+		}})
 	cols, rows, objs := detailOf(t, sc, NodeRules, "", "")
 
-	if !slices.Contains(cols, "Definition") {
-		t.Errorf("the Rules folder's columns are %v, want the definition among them", cols)
+	def := slices.Index(cols, "Definition")
+	if def < 0 {
+		t.Fatalf("the Rules folder's columns are %v, want the definition among them", cols)
 	}
 	if len(rows) != 2 {
 		t.Fatalf("the folder shows %d rows, want 2", len(rows))
+	}
+	// The listing carries no text; each row's is its own by-name read, and
+	// must land on its own row.
+	if rows[1][def] != "AS @v LIKE '[0-9][0-9][0-9][0-9][0-9]'" {
+		t.Errorf("row 2's definition is %q, want ZipRule's", rows[1][def])
 	}
 	// The tree labels a rule "dbo.PhoneRule"; the pane must not render the
 	// same object as "[dbo].[PhoneRule]" beside it.
@@ -133,8 +142,8 @@ func TestEveryNewLeafHasItsOwnDetailView(t *testing.T) {
 				true, "GeoUtils", "GeoUtils.Point"}}}}},
 		{NodeXMLSchemaCollection, "dbo", "Claims", xmlSchemaCollectionResponses("<xsd:schema/>")},
 		{NodeAssembly, "", propAssembly, assemblyPropResponses()},
-		{NodeRule, "dbo", "PhoneRule", []fakeResponse{ruleResponse("AS @v > 0")}},
-		{NodeDefault, "dbo", "TodayDefault", []fakeResponse{defaultResponse("AS GETDATE()")}},
+		{NodeRule, "dbo", "PhoneRule", ruleResponses("AS @v > 0")},
+		{NodeDefault, "dbo", "TodayDefault", defaultResponses("AS GETDATE()")},
 		{NodePlanGuide, "", propPlanGuide, []fakeResponse{planGuideResponse(false, "SQL", "", "", "")}},
 		{NodeExternalDataSource, "", "HadoopCluster", []fakeResponse{externalDataSourceResponse("", false)}},
 		{NodeExternalFileFormat, "", "CsvFormat", []fakeResponse{externalFileFormatResponse(0, "")}},

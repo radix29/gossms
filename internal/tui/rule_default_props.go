@@ -47,8 +47,12 @@ func rulePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
 			if err != nil {
 				return nil, nil, err
 			}
+			def, err := r.Definition(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
 			return bindableObjectForm("Rule", r.Name, r.Schema,
-				formatSQLDate(r.CreateDate), formatSQLDate(r.ModifyDate), r.Definition,
+				formatSQLDate(r.CreateDate), formatSQLDate(r.ModifyDate), def,
 				"Rules are deprecated by Microsoft — sp_bindrule since SQL Server 2008 — and CREATE RULE has no ALTER. Use a CHECK constraint on the column instead."), nil, nil
 		},
 	}}
@@ -62,8 +66,12 @@ func defaultPropPages(sc *db.ServerConn, dbName, schema, name string) []propPage
 			if err != nil {
 				return nil, nil, err
 			}
+			def, err := df.Definition(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
 			return bindableObjectForm("Default", df.Name, df.Schema,
-				formatSQLDate(df.CreateDate), formatSQLDate(df.ModifyDate), df.Definition,
+				formatSQLDate(df.CreateDate), formatSQLDate(df.ModifyDate), def,
 				"Defaults are deprecated by Microsoft — sp_bindefault since SQL Server 2008 — and CREATE DEFAULT has no ALTER. Use a DEFAULT constraint on the column instead."), nil, nil
 		},
 	}}

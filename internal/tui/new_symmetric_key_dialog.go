@@ -203,8 +203,8 @@ func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {
 		spec := gosmo.CreateSymmetricKeyRequest{
 			Name:          in.name,
 			Algorithm:     symKeyAlgorithms[algRow.Selected()],
-			KeySource:     scriptSafe(ctx, in.keySource, scriptedKeySourcePlaceholder),
-			IdentityValue: scriptSafe(ctx, in.identityValue, scriptedIdentityValuePlaceholder),
+			KeySource:     in.keySource,
+			IdentityValue: in.identityValue,
 		}
 		// gosmo's order for the encryptions a key already has, so the script
 		// reads the same as Script as ▸ CREATE's.
@@ -212,7 +212,7 @@ func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {
 			spec.Encryptions = append(spec.Encryptions, gosmo.SymmetricKeyEncryptor{Kind: gosmo.SymmetricKeyByCertificate, Name: in.certificate})
 		}
 		if in.password != "" {
-			spec.Encryptions = append(spec.Encryptions, gosmo.SymmetricKeyEncryptor{Kind: gosmo.SymmetricKeyByPassword, Password: scriptSafePassword(ctx, in.password)})
+			spec.Encryptions = append(spec.Encryptions, gosmo.SymmetricKeyEncryptor{Kind: gosmo.SymmetricKeyByPassword, Password: in.password})
 		}
 		if in.asymmetricKey != "" {
 			spec.Encryptions = append(spec.Encryptions, gosmo.SymmetricKeyEncryptor{Kind: gosmo.SymmetricKeyByAsymmetricKey, Name: in.asymmetricKey})

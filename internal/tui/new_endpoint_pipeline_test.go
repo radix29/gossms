@@ -74,7 +74,7 @@ func TestEndpointScriptDoesNotCarryTheMasterKeyPassword(t *testing.T) {
 	}
 	for _, g := range groups {
 		joined := strings.Join(g.stmts, "\n")
-		if !strings.Contains(joined, "CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'"+scriptedPasswordPlaceholder+"'") {
+		if !strings.Contains(joined, "CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'"+gosmo.PasswordPlaceholder+"'") {
 			t.Errorf("%s's script has no placeholder CREATE MASTER KEY:\n%s", g.instance, joined)
 		}
 	}
@@ -82,22 +82,8 @@ func TestEndpointScriptDoesNotCarryTheMasterKeyPassword(t *testing.T) {
 	if strings.Contains(out, req.masterKeyPass) {
 		t.Errorf("the typed master key password is in the script:\n%s", out)
 	}
-	if !strings.Contains(out, "replace "+scriptedPasswordPlaceholder) {
+	if !strings.Contains(out, "replace each "+gosmo.PasswordPlaceholder) {
 		t.Errorf("the header does not say to replace the placeholder:\n%s", out)
-	}
-}
-
-// A real Apply sends what was typed; only Script Changes gets the placeholder.
-func TestScriptSafePasswordOnlyReplacesUnderScripting(t *testing.T) {
-	if got := scriptSafePassword(context.Background(), "pw"); got != "pw" {
-		t.Errorf("real run: got %q, want the typed password", got)
-	}
-	scriptCtx, _ := gosmo.WithScript(context.Background())
-	if got := scriptSafePassword(scriptCtx, "pw"); got != scriptedPasswordPlaceholder {
-		t.Errorf("scripted run: got %q, want the placeholder", got)
-	}
-	if got := scriptSafePassword(scriptCtx, ""); got != "" {
-		t.Errorf("scripted run, blank: got %q — a blank password must stay blank so gosmo's own check still fires", got)
 	}
 }
 

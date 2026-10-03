@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -254,5 +255,23 @@ func TestLoginGeneralWillNotRenameABuiltInLogin(t *testing.T) {
 	}
 	if v, ok := findStatic(form, "Login name"); !ok || v != name {
 		t.Errorf("the built-in login's name is shown as %q, want the static %q", v, name)
+	}
+}
+
+// T13: a password change scripts as gosmo's placeholder, not as what was
+// typed — Script Changes opens a query window that is saved and shared.
+func TestLoginGeneralScriptDoesNotCarryThePassword(t *testing.T) {
+	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+
+	editText(t, form, "Password", "n3wSecret!")
+	editText(t, form, "Confirm password", "n3wSecret!")
+	ctx, col := gosmo.WithScript(context.Background())
+	if err := apply(ctx); err != nil {
+		t.Fatalf("apply under WithScript: %v", err)
+	}
+	if script := col.String(); strings.Contains(script, "n3wSecret!") ||
+		!strings.Contains(script, "PASSWORD = N'"+gosmo.PasswordPlaceholder+"'") {
+		t.Errorf("script = %q, want the placeholder and not the password", script)
 	}
 }

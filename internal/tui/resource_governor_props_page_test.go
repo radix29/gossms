@@ -145,6 +145,14 @@ func TestRGApplyOrdersStatementsAcrossPages(t *testing.T) {
 	if got := inst.Statements(); !slices.Equal(got, want) {
 		t.Errorf("statements:\n  got  %q\n  want %q", got, want)
 	}
+	// The plan is one transaction (W21); RECONFIGURE cannot be in one
+	// (Msg 574), so it follows the COMMIT.
+	if got, want := inst.StatementsInTx(), want[:len(want)-1]; !slices.Equal(got, want) {
+		t.Errorf("in the transaction:\n  got  %q\n  want %q", got, want)
+	}
+	if got := inst.TxLog(); !slices.Equal(got, []string{"BEGIN", "COMMIT"}) {
+		t.Errorf("transactions %q, want one committed", got)
+	}
 }
 
 // TestRGPoolPagesReachWorkloadGroupsBeforeApply (N9): a pool added on
@@ -388,10 +396,10 @@ func TestRGScriptChangesWritesNothing(t *testing.T) {
 	}
 }
 
-// TestRGFailureAfterAWriteReloadsEverything: once a statement has landed the
-// plan's failure is a committed one, which reloads every page — the plan
-// interleaved them, so no page's edits can be kept as unsent.
-func TestRGFailureAfterAWriteReloadsEverything(t *testing.T) {
+// TestRGFailureMidPlanRollsBack: the plan is one transaction (W21), so a step
+// failing after another has run rolls both back, and the failure is not a
+// committed one — the pages keep their edits to fix and apply again.
+func TestRGFailureMidPlanRollsBack(t *testing.T) {
 	refused := errors.New("Msg 10916")
 	responses := append([]fakeResponse{{match: "DROP RESOURCE POOL", err: refused}}, rgReads(rgConfig(true))...)
 	sc, inst := newFakeConn(t, responses...)
@@ -401,11 +409,39 @@ func TestRGFailureAfterAWriteReloadsEverything(t *testing.T) {
 	editText(t, f, "New resource pool", "etl")
 	clickButton(t, f, "Add")
 	err := runRGApply(context.Background(), sc, apply)
-	if _, ok := errors.AsType[committedApplyError](err); !ok {
-		t.Errorf("err = %v, want a committed failure (CREATE landed before the DROP failed)", err)
+	if !errors.Is(err, refused) {
+		t.Fatalf("err = %v, want the DROP's", err)
+	}
+	if _, ok := errors.AsType[committedApplyError](err); ok {
+		t.Errorf("err = %v is a committed failure; the CREATE before it was rolled back", err)
+	}
+	if got := inst.StatementsInTx(); !slices.Equal(got, []string{"CREATE RESOURCE POOL [etl]", "DROP RESOURCE POOL [reports]"}) {
+		t.Errorf("in the transaction: %q", got)
+	}
+	if got := inst.TxLog(); !slices.Equal(got, []string{"BEGIN", "ROLLBACK"}) {
+		t.Errorf("transactions %q, want one rolled back", got)
 	}
 	if got := inst.Statements(); slices.Contains(got, "ALTER RESOURCE GOVERNOR RECONFIGURE") {
 		t.Error("RECONFIGURE ran after a failed step")
+	}
+}
+
+// TestRGReconfigureFailureReloadsEverything: RECONFIGURE runs after the
+// COMMIT, so its failure leaves the plan stored — a committed failure, which
+// reloads every page.
+func TestRGReconfigureFailureReloadsEverything(t *testing.T) {
+	refused := errors.New("Msg 10916")
+	responses := append([]fakeResponse{{match: "ALTER RESOURCE GOVERNOR RECONFIGURE", err: refused}}, rgReads(rgConfig(true))...)
+	sc, inst := newFakeConn(t, responses...)
+	f, apply := loadPage(t, pageRGPools(sc, &rgModel{}, ""), inst)
+	editText(t, f, "New resource pool", "etl")
+	clickButton(t, f, "Add")
+	err := runRGApply(context.Background(), sc, apply)
+	if _, ok := errors.AsType[committedApplyError](err); !ok {
+		t.Errorf("err = %v, want a committed failure (the plan committed before RECONFIGURE failed)", err)
+	}
+	if got := inst.TxLog(); !slices.Equal(got, []string{"BEGIN", "COMMIT"}) {
+		t.Errorf("transactions %q, want one committed", got)
 	}
 }
 

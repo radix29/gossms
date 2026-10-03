@@ -400,9 +400,9 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				mappingByDB[m.Database] = m
 			}
 
-			// One more round trip per ONLINE database on top of the one
-			// UserMappings already makes per database, so serially
-			// this page is 2N latencies deep. A database whose roles can't
+			// One round trip per ONLINE database, on top of the one batch
+			// UserMappings reads them all in, so serially this page is
+			// N+2 latencies deep. A database whose roles can't
 			// be read drops out of the list the same way an offline one
 			// does — the alternative is one unreadable availability-group
 			// secondary failing a page that has every other database to

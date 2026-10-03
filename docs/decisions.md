@@ -358,6 +358,36 @@ on that would empty menus for everyone working through a database-wide grant.
   `Server.Name()` stays (it reads `s.info.Name`). The `Ref` trap
   (`DatabaseRef("master").IsSystem()` is `false`) is documented on
   `Server.DatabaseRef` and `Database`.
+- **`Server.InTransaction(ctx, fn)` binds one transaction into ctx** (T47,
+  decided 2026-10-03), the way `WithScript` threads a collector: every
+  chokepoint, reads included, runs on it, never retried. Observers hear after
+  COMMIT and nothing on a rollback; a nested call on the same Server joins;
+  under `WithScript` it only runs `fn`, adding no BEGIN TRANSACTION (a
+  GO-split script without XACT_ABORT would be atomic in name only). Paths
+  needing their own session (Backup/Restore with progress, `BulkInsert`, the
+  effective-permission impersonations) refuse inside it with
+  `ErrUnsupported`. A rollback does not undo receiver mirroring
+  (`setIfApplied`): re-read after one.
+- **Module listings carry no text; `Definition(ctx)` reads it by name** (T52,
+  decided 2026-10-03). `StoredProcedure`, `View`, `UserDefinedFunction`,
+  `Trigger` (DML), `Rule` and `Default` lost their `Definition` field — Go
+  cannot have a field and a method of one name, and a field set by `*ByName`
+  but zero from a listing is the `Ref` trap again. The method works on a
+  `Ref`, answers `""` for an encrypted or CLR module and `ErrNotFound` for a
+  missing one or one of another kind. A caller wanting a folder's texts pays
+  one read per row (gossms's Rules/Defaults folders do; both are legacy and
+  few).
+- **Secrets are redacted in gosmo, by default, from captures and observers**
+  (T13, decided 2026-10-03). Every password, credential secret, key source and
+  identity value goes through `execSecret`; `WithScript` captures and
+  statement observers carry `gosmo.PasswordPlaceholder` and its siblings.
+  `gosmo.WithScriptSecrets(ctx)` opts a *capture* back into the real values
+  (a script a machine runs); observers are never opted in. **Rejected:**
+  always redacting with no opt-in (narrows a capability gosmo had), and
+  redacting observers only (leaves every caller's Script Changes to redact
+  for itself — the gossms-side `scriptSafePassword` missed New Login and
+  Login Properties). One placeholder text everywhere, including Database
+  Mail's former `<password>`.
 - **azidentity deprecated `UsernamePasswordCredential`** (no MFA), used by
   `AuthEntraPassword`/ROPC in `entra.go` (options literal and
   `NewUsernamePasswordCredential`). **Kept** — a supported mode verified live on
@@ -1070,13 +1100,17 @@ Unverified on Managed Instance and on non-Enterprise editions:
   DISABLE when disabled — never RECONFIGURE + DISABLE, which would classify
   logins for a moment. gosmo's writes never reconfigure; the caller does.
   A per-object script ends in a comment, not RECONFIGURE, for the same reason.
-- **A Resource Governor or Database Mail Apply is a phase-ordered plan, not
-  one transaction** (`PropDialog.applyPlan`). Page order cannot express the
-  dependencies (a pool is dropped after its groups move on another page), and
-  gosmo issues each write on its own pooled connection. A failure part-way
-  leaves earlier statements stored (for RG, not in force — RECONFIGURE is
-  last) and every page reloads. Revisit only if gosmo gains a
-  batch/transaction write API.
+- **A Resource Governor or Database Mail Apply is a phase-ordered plan**
+  (`PropDialog.applyPlan`). Page order cannot express the dependencies (a pool
+  is dropped after its groups move on another page).
+  - **Resource Governor's plan is one transaction** (W21, gosmo
+    `Server.InTransaction`): a failure part-way stores nothing and the pages
+    keep their edits. RECONFIGURE/DISABLE cannot run in a user transaction
+    (Msg 574), so they follow the COMMIT; a failure there is a committed one
+    and every page reloads.
+  - **Database Mail's is not yet**: a failure part-way leaves earlier
+    statements stored and every page reloads. Its `sysmail_*` procedures
+    have not been checked inside a user transaction.
 - **Nothing in Database Mail is sysadmin-only.** Configuration is
   `gate.DatabaseMailConfigRights()` = {msdb `db_owner`, CONTROL SERVER};
   sending is `DatabaseMailSendRights()`, adding `DatabaseMailUserRole`. A
@@ -1346,11 +1380,13 @@ Unverified on Managed Instance and on non-Enterprise editions:
   for certificate- or key-mapped logins (CREATE or ALTER), so the page refuses
   them up front.
 - **Per-file Restore destinations (SSMS's "Restore As") aren't built** — the
-  folder-level choice covers it. Rules: the backup set number comes only from
-  `backupSetNumber` (`restore_dialog_ops.go`) for the restore, the MOVE clauses
-  and Files Included — deriving it separately gave "Logical file 'x' is not part
-  of database 'y'" on appended `.bak`s; and the relocation preview and MOVE
-  clauses share `relocateFiles`.
+  folder-level choice covers it. Rules (gosmo's `restore_plan.go` since W20):
+  the backup set number comes only from `BackupHeader.SetNumber` /
+  `BackupInfo.SetNumber` for the restore, the MOVE clauses and Files Included —
+  deriving it separately gave "Logical file 'x' is not part of database 'y'" on
+  appended `.bak`s; the relocation preview and MOVE clauses share
+  `RestoreRelocation.Moves`, and `RestoreOptions.FromHeader` sets both halves
+  from one set.
 - **Distribution credentials.** Homebrew: `HOMEBREW_TAP_DEPLOY_KEY` on
   `radix29/gossms`, a write deploy key on `radix29/homebrew-tap` (not a PAT).
   APT: `APT_REPO_DEPLOY_KEY` (write deploy key on `radix29/apt`, GitHub Pages at

@@ -21,6 +21,7 @@ const (
 )
 
 // File-relocation modes, in the order the Files view's radio lists them.
+// relocation maps each onto gosmo.RelocationMode, which owns the rules.
 const (
 	// relocAuto relocates every file to the server's default data/log
 	// folders, but only when the target name differs from the backup's —
@@ -34,33 +35,6 @@ const (
 	// view, regardless of whether the database is being renamed.
 	relocFolder
 )
-
-// relocPlan is the Files view's relocation choice, snapshotted on the UI
-// goroutine so buildRestoreOptions can read it from a background one.
-type relocPlan struct {
-	mode    int
-	dataDir string
-	logDir  string
-
-	// collation is the server's, which decides whether restoring Sales as
-	// sales is a rename: on a case-sensitive instance it is, and without MOVE
-	// clauses the restore collides with the source database's files.
-	collation string
-}
-
-// needsFileList reports whether the plan actually moves anything, and so
-// whether the RESTORE FILELISTONLY the MOVE clauses are built from is worth
-// running at all.
-func (p relocPlan) needsFileList(source, target string) bool {
-	switch p.mode {
-	case relocFolder:
-		return true
-	case relocOriginal:
-		return false
-	default:
-		return !sameName(p.collation, source, target)
-	}
-}
 
 const (
 	restoreDialogW = 72

@@ -235,9 +235,9 @@ func TestDatabaseTriggersFolderDetailListsEveryTrigger(t *testing.T) {
 func TestTheTwoTriggerFamiliesReadDifferentRows(t *testing.T) {
 	dml := fakeResponse{
 		match: "tr.parent_class = 1",
-		cols:  6,
+		cols:  5,
 		rows: [][]driver.Value{
-			{"tr_Patient", "Patient", "dbo", false, jsonNames("INSERT"), "CREATE TRIGGER dbo.tr_Patient ..."},
+			{"tr_Patient", "Patient", "dbo", false, jsonNames("INSERT")},
 		},
 	}
 	sc, _ := dbTriggerConn(t, dml)

@@ -137,7 +137,13 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		})
 		rows := make([][]string, 0, len(rules))
 		for _, r := range rules {
-			rows = append(rows, []string{dottedName(r.Schema, r.Name), formatSQLDate(r.CreateDate), r.Definition})
+			// The listing carries no text (gosmo T52); rules are legacy and
+			// few, so one by-name read per row is the price of the column.
+			def, err := r.Definition(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			rows = append(rows, []string{dottedName(r.Schema, r.Name), formatSQLDate(r.CreateDate), def})
 			*objs = append(*objs, nodeData{Type: NodeRule, DBName: n.DBName, Schema: r.Schema, Name: r.Name})
 		}
 		return []string{"Name", "Created", "Definition"}, rows, nil
@@ -152,7 +158,11 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		})
 		rows := make([][]string, 0, len(defs))
 		for _, df := range defs {
-			rows = append(rows, []string{dottedName(df.Schema, df.Name), formatSQLDate(df.CreateDate), df.Definition})
+			def, err := df.Definition(ctx) // as for Rules above
+			if err != nil {
+				return nil, nil, err
+			}
+			rows = append(rows, []string{dottedName(df.Schema, df.Name), formatSQLDate(df.CreateDate), def})
 			*objs = append(*objs, nodeData{Type: NodeDefault, DBName: n.DBName, Schema: df.Schema, Name: df.Name})
 		}
 		return []string{"Name", "Created", "Definition"}, rows, nil
@@ -299,11 +309,15 @@ func programmabilityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 		if err != nil {
 			return nil, nil, err
 		}
+		def, err := r.Definition(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
 		return propertyRows(
 			"Name", dottedName(r.Schema, r.Name),
 			"Created", formatSQLDate(r.CreateDate),
 			"Modified", formatSQLDate(r.ModifyDate),
-			"Definition", r.Definition,
+			"Definition", def,
 		)
 
 	case NodeDefault:
@@ -311,11 +325,15 @@ func programmabilityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 		if err != nil {
 			return nil, nil, err
 		}
+		def, err := df.Definition(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
 		return propertyRows(
 			"Name", dottedName(df.Schema, df.Name),
 			"Created", formatSQLDate(df.CreateDate),
 			"Modified", formatSQLDate(df.ModifyDate),
-			"Definition", df.Definition,
+			"Definition", def,
 		)
 
 	default: // NodePlanGuide

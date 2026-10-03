@@ -580,7 +580,7 @@ func findCertificateIfAny(ctx context.Context, d *gosmo.Database, name string) (
 // own, and reads the public half back. masterKeyPass protects a master key it
 // has to create.
 func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPeer, masterKeyPass string) error {
-	if err := ensureMasterKey(ctx, p.master, scriptSafePassword(ctx, masterKeyPass)); err != nil {
+	if err := ensureMasterKey(ctx, p.master, masterKeyPass); err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 
@@ -783,18 +783,19 @@ func annotateEndpointScript(groups []endpointScriptGroup) string {
 	b.WriteString("-- New Database Mirroring Endpoint: these statements do NOT all run on the same instance.\n")
 	b.WriteString("-- Run each block against the instance named above it.\n")
 	b.WriteString("--\n")
-	b.WriteString("-- Each login below is created with a random password and is never signed in as:\n")
-	b.WriteString("-- it exists only to own a peer's certificate and to be the grantee of CONNECT on\n")
-	b.WriteString("-- the endpoint. The password is not recorded anywhere, here or in gossms.\n")
+	b.WriteString("-- Each login below is never signed in as: it exists only to own a peer's\n")
+	b.WriteString("-- certificate and to be the grantee of CONNECT on the endpoint.\n")
 
 	placeholder := slices.ContainsFunc(groups, func(g endpointScriptGroup) bool {
 		return slices.ContainsFunc(g.stmts, func(stmt string) bool {
-			return strings.Contains(stmt, scriptedPasswordPlaceholder)
+			return strings.Contains(stmt, gosmo.PasswordPlaceholder)
 		})
 	})
 	if placeholder {
 		b.WriteString("--\n")
-		fmt.Fprintf(&b, "-- The master key password is not scripted: replace %s with it before running.\n", scriptedPasswordPlaceholder)
+		fmt.Fprintf(&b, "-- Passwords are not scripted: replace each %s before running,\n", gosmo.PasswordPlaceholder)
+		b.WriteString("-- in CREATE MASTER KEY with the master key password and in CREATE LOGIN with any\n")
+		b.WriteString("-- strong password (Apply gives each login a random one and records it nowhere).\n")
 	}
 
 	partial := slices.ContainsFunc(groups, func(g endpointScriptGroup) bool {

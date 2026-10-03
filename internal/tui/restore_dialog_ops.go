@@ -95,20 +95,18 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 	})
 }
 
-// restorableHistory drops the history entries no RESTORE can name, returning
-// the rest in order and how many were dropped.
+// restorableHistory drops the history entries no RESTORE can name
+// (gosmo.BackupInfo.Restorable), returning the rest in order and how many
+// were dropped.
 //
-// A Managed Instance's automated backups are recorded in msdb with a NULL
-// physical_device_name (gosmo reads it as ""), and on t-qmi-01 they were every
-// row of every database's history. Listed, each one is a Backup Set entry that
-// restores from nothing — and the cap in loadHistory would let them crowd out
-// the user's own URL backups. Those backups are restored through the control
-// plane (point-in-time restore), not a RESTORE statement. Filtered here rather
-// than in gosmo: the Backup History viewer and Database Properties list the
+// On t-qmi-01 a Managed Instance's deviceless automated backups were every
+// row of every database's history, so they are dropped before loadHistory's
+// cap, or they crowd out the user's own URL backups. Filtered here, not in
+// BackupHistory: the Backup History viewer and Database Properties list the
 // same rows, and there they are true history.
 func restorableHistory(hist []*gosmo.BackupInfo) ([]*gosmo.BackupInfo, int) {
 	kept := slices.DeleteFunc(slices.Clone(hist), func(b *gosmo.BackupInfo) bool {
-		return strings.TrimSpace(b.DeviceName) == ""
+		return !b.Restorable()
 	})
 	return kept, len(hist) - len(kept)
 }
@@ -121,13 +119,14 @@ func restorableHistory(hist []*gosmo.BackupInfo) ([]*gosmo.BackupInfo, int) {
 // and one stripe alone is refused ("The media set has 2 media families but
 // only 1 are provided").
 //
-// position is the history entry's backupset.position, 0 for a typed path. A
-// file written with NOINIT holds one set per backup appended to it, and a
-// RESTORE that leaves WITH FILE off reads set 1 — the oldest — so picking
-// the newest history entry restored the oldest backup in the file.
+// setNumber is the history entry's WITH FILE = n (gosmo.BackupInfo.SetNumber),
+// 0 for a typed path or set 1. A file written with NOINIT holds one set per
+// backup appended to it, and a RESTORE that leaves WITH FILE off reads set 1
+// — the oldest — so picking the newest history entry restored the oldest
+// backup in the file.
 type restoreSource struct {
-	devices  []string
-	position int
+	devices   []string
+	setNumber int
 }
 
 // first is the source's first device, "" for none — what the URL and Browse
@@ -194,7 +193,7 @@ func (d *RestoreDialog) sourceForRestore() restoreSource {
 	}
 	if i := d.ddHistSet.Selected(); i >= 0 && i < len(d.history) {
 		b := d.history[i]
-		return restoreSource{devices: historyDevices(b), position: b.Position}
+		return restoreSource{devices: historyDevices(b), setNumber: b.SetNumber()}
 	}
 	return restoreSource{}
 }
@@ -260,40 +259,19 @@ func (d *RestoreDialog) loadFileList() {
 	})
 }
 
-// backupSetNumber is the WITH FILE = n that targets headers[i].
-//
-// RESTORE numbers backup sets by each set's own Position, so that is what is
-// sent; the slice index coincides with it only when the device's sets run
-// contiguously from 1, and index+1 is the fallback for a header that reported no
-// position.
-//
-// Zero means no clause, which SQL Server reads as the first set. A lone set gets
-// zero, so the common single-backup device produces a statement without a
-// redundant WITH FILE = 1. That is safe because a device holding one set always
-// holds it at position 1: appending numbers sets 1..n, and WITH INIT and WITH
-// FORMAT both reinitialise the media set to a single set at 1.
-//
-// Every path that names a set goes through here — the restore, the MOVE clauses
-// built from that set's file list, and the Files Included panel. They must
-// agree: a file list read from a different set names logical files the restored
-// set does not contain, which fails the whole RESTORE.
-func backupSetNumber(headers []*gosmo.BackupHeader, i int) int {
-	if len(headers) <= 1 {
-		return 0
-	}
-	if i < 0 || i >= len(headers) {
-		i = 0
-	}
-	if p := headers[i].Position; p > 0 {
-		return p
-	}
-	return i + 1
-}
-
 // restoreFileNumber is the WITH FILE = n for the set the inspect view is
-// showing — see backupSetNumber for the rule.
+// showing (gosmo.BackupHeader.SetNumber), 0 with no headers.
+//
+// Every path that names a set derives it from SetNumber — the restore, the
+// MOVE clauses built from that set's file list, and the Files Included
+// panel. They must agree: a file list read from a different set names
+// logical files the restored set does not contain, which fails the whole
+// RESTORE.
 func (d *RestoreDialog) restoreFileNumber() int {
-	return backupSetNumber(d.headers, d.headerIdx)
+	if h := d.selectedHeader(); h != nil {
+		return h.SetNumber()
+	}
+	return 0
 }
 
 // fileNumberFor is the WITH FILE = n a restore of src sends: the set the
@@ -305,26 +283,21 @@ func (d *RestoreDialog) restoreFileNumber() int {
 // another file, and the restore used to send WITH FILE = 3 against a file
 // that may not have a third set, or has a different backup there.
 //
-// A position of 1 sends no clause, by backupSetNumber's rule: set 1 is what
-// SQL Server reads without one.
+// Set 1 sends no clause, by SetNumber's rule: it is what SQL Server reads
+// without one.
 func (d *RestoreDialog) fileNumberFor(src restoreSource) int {
 	if len(d.headers) > 0 && len(src.devices) > 0 && slices.Equal(d.inspectDevs, src.devices) {
 		return d.restoreFileNumber()
 	}
-	if src.position > 1 {
-		return src.position
-	}
-	return 0
+	return src.setNumber
 }
 
-// headerAt is the index of the header at position, 0 when none is there or
-// position is unknown — where the inspect view opens for a history entry.
-func headerAt(headers []*gosmo.BackupHeader, position int) int {
-	if position > 0 {
-		for i, h := range headers {
-			if h.Position == position {
-				return i
-			}
+// headerAt is the index of the header for setNumber, 0 when none matches —
+// where the inspect view opens for a history entry.
+func headerAt(headers []*gosmo.BackupHeader, setNumber int) int {
+	for i, h := range headers {
+		if h.SetNumber() == setNumber {
+			return i
 		}
 	}
 	return 0
@@ -353,13 +326,13 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 		headers, err := sc.Server.BackupHeaders(ctx, src.targets()...)
 		// A history entry opens the view on its own set, a typed path on the
 		// first: the entry the user picked is the backup they meant.
-		idx := headerAt(headers, src.position)
+		idx := headerAt(headers, src.setNumber)
 		var files []*gosmo.BackupFile
 		if err == nil && len(headers) > 0 {
 			// The file list must name the set the view opens on, by the same
 			// rule selectHeader's reload uses — otherwise the panel disagrees
 			// with itself the moment the user arrows off and back.
-			files, err = sc.Server.BackupFileList(ctx, backupSetNumber(headers, idx), src.targets()...)
+			files, err = sc.Server.BackupFileList(ctx, headers[idx].SetNumber(), src.targets()...)
 		}
 		app.postAndWake(func() {
 			if !d.infoRun.Done(seq) || !d.Visible() {
@@ -489,17 +462,12 @@ type restoreRequest struct {
 	// fileNumber is the backup set to restore (WITH FILE = n), 0 for the
 	// first — see fileNumberFor.
 	fileNumber int
-	plan       relocPlan
-	// defData and defLog are the default directories relocAuto moves files
-	// to, and an empty folder field falls back to — defaultDirs' answer, so
-	// the restore puts files where the Files view previewed them.
-	defData, defLog string
+	plan       gosmo.RestoreRelocation
 }
 
 // restoreRequest snapshots the form for a restore or script of src into
 // target. verify is left for the caller: only a real restore verifies.
 func (d *RestoreDialog) restoreRequest(src restoreSource, target string) restoreRequest {
-	dataDir, logDir := d.defaultDirs()
 	return restoreRequest{
 		src:        src,
 		target:     target,
@@ -508,8 +476,6 @@ func (d *RestoreDialog) restoreRequest(src restoreSource, target string) restore
 		closeConns: d.cbClose.Checked(),
 		fileNumber: d.fileNumberFor(src),
 		plan:       d.relocation(),
-		defData:    dataDir,
-		defLog:     logDir,
 	}
 }
 
@@ -542,53 +508,6 @@ func runRestore(ctx context.Context, app *App, srv *gosmo.Server, task *Task, re
 	return srv.Restore(ctx, ropts)
 }
 
-// relocateFiles returns the MOVE clauses that put the backup set's files where
-// plan asks, or nil to leave every file at the path recorded in the backup.
-// defData/defLog are the server's default directories, used by relocAuto and as
-// the fallback for an empty folder field.
-//
-// Renaming decides the file *names* in every mode that moves anything: restoring
-// under a different database name mints "<target>_<logical><ext>", so the copy
-// can't collide with the original database's files, while a same-name restore
-// keeps the backup's names and changes only the directory.
-func relocateFiles(files []*gosmo.BackupFile, plan relocPlan, defData, defLog, source, target string) []gosmo.RelocateFile {
-	if !plan.needsFileList(source, target) {
-		return nil
-	}
-	dataDir, logDir := defData, defLog
-	if plan.mode == relocFolder {
-		if plan.dataDir != "" {
-			dataDir = plan.dataDir
-		}
-		if plan.logDir != "" {
-			logDir = plan.logDir
-		}
-	}
-	renamed := !sameName(plan.collation, source, target)
-
-	var relocate []gosmo.RelocateFile
-	for _, f := range files {
-		dir, ext := dataDir, serverPathExt(f.PhysicalName)
-		if f.Type == "L" {
-			dir = logDir
-			if ext == "" {
-				ext = ".ldf"
-			}
-		} else if ext == "" {
-			ext = ".ndf"
-		}
-		name := serverPathBase(f.PhysicalName)
-		if renamed {
-			name = target + "_" + f.LogicalName + ext
-		}
-		relocate = append(relocate, gosmo.RelocateFile{
-			LogicalName:  f.LogicalName,
-			PhysicalName: joinServerPath(dir, name),
-		})
-	}
-	return relocate
-}
-
 // buildRestoreOptions resolves req into a gosmo.RestoreOptions, including the
 // MOVE clauses its plan asks for — the read-only metadata lookup shared by
 // runRestore, which executes the result, and script(), which only renders it
@@ -600,7 +519,6 @@ func relocateFiles(files []*gosmo.BackupFile, plan relocPlan, defData, defLog, s
 // Managed Instance refused the statement outright; gosmo also puts the
 // database back to MULTI_USER, including after a cancelled restore.
 func buildRestoreOptions(ctx context.Context, srv *gosmo.Server, req restoreRequest) (gosmo.RestoreOptions, error) {
-	target, fileNumber, plan := req.target, req.fileNumber, req.plan
 	headers, err := srv.BackupHeaders(ctx, req.src.targets()...)
 	if err != nil {
 		return gosmo.RestoreOptions{}, err
@@ -608,40 +526,37 @@ func buildRestoreOptions(ctx context.Context, srv *gosmo.Server, req restoreRequ
 	if len(headers) == 0 {
 		return gosmo.RestoreOptions{}, fmt.Errorf("no backup sets found on %s", sourceLabel(req.src.devices))
 	}
-	// The source name comes from the set actually being restored: a device can
-	// hold sets from more than one database, and it decides whether the MOVE
-	// clauses below are needed.
-	source := headers[0].DatabaseName
-	for _, h := range headers {
-		if fileNumber > 0 && h.Position == fileNumber {
-			source = h.DatabaseName
-			break
-		}
+	// The set actually being restored: a device can hold sets from more than
+	// one database, and its own name decides whether MOVE clauses are needed.
+	// A history entry whose file was since overwritten WITH INIT names a set
+	// the device no longer has; restoring set 1 instead would restore a
+	// different backup.
+	h := gosmo.BackupSetAt(headers, req.fileNumber)
+	if h == nil {
+		return gosmo.RestoreOptions{}, fmt.Errorf("backup set %d is no longer on %s", req.fileNumber, sourceLabel(req.src.devices))
 	}
 
-	var relocate []gosmo.RelocateFile
-	if plan.needsFileList(source, target) {
-		// The file list must name the same set as FileNumber below. Asking for
-		// the device without one describes set 1, whose logical file names
-		// belong to a different database whenever backups were appended, and
-		// MOVE clauses naming files the restored set lacks fail the RESTORE.
-		files, err := srv.BackupFileList(ctx, fileNumber, req.src.targets()...)
-		if err != nil {
+	var files []*gosmo.BackupFile
+	if req.plan.NeedsFileList(h.DatabaseName, req.target) {
+		// The file list must name the same set as WITH FILE. Asking for the
+		// device without one describes set 1, whose logical file names belong
+		// to a different database whenever backups were appended, and MOVE
+		// clauses naming files the restored set lacks fail the RESTORE.
+		if files, err = srv.BackupFileList(ctx, h.SetNumber(), req.src.targets()...); err != nil {
 			return gosmo.RestoreOptions{}, err
 		}
-		relocate = relocateFiles(files, plan, req.defData, req.defLog, source, target)
 	}
 
-	return gosmo.RestoreOptions{
-		Database:      target,
-		Devices:       req.src.targets(),
-		FileNumber:    fileNumber,
-		RelocateFiles: relocate,
-		Recovery:      recoveryFor(req.recovery),
-		Replace:       req.replace,
+	opts := gosmo.RestoreOptions{
+		Database: req.target,
+		Devices:  req.src.targets(),
+		Recovery: recoveryFor(req.recovery),
+		Replace:  req.replace,
 
 		CloseExistingConnections: req.closeConns,
-	}, nil
+	}
+	opts.FromHeader(h, files, req.plan)
+	return opts, nil
 }
 
 // recoveryFor maps the dialog's two-way Recovery Options radio box onto

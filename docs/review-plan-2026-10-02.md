@@ -422,6 +422,20 @@ breaking signature has no gossms caller.
     through it, and an opt-in if one is chosen.
   - gossms: the Script button of New Login, Credential and Key behaves as
     decided.
+  - **Done.** See T13. Decision 1 taken: redact by default, with a
+    `WithScriptSecrets` opt-in for captures only. `go test ./...`,
+    `go vet ./...` and `go vet -tags livedb ./...` in gosmo;
+    `go test -race -count=1 ./...` green in gossms. Live on win10cli 17: the
+    16 gosmo livedb tests over credentials, logins, users, Database Mail, key
+    ops, and asymmetric, symmetric and master keys pass on the redacting
+    chokepoints. tmux against a throwaway login: New Login > Script Changes
+    opens `CREATE LOGIN … WITH PASSWORD = N'<insert password here>'`, and OK
+    creates the login with the typed password (`PWDCOMPARE` 1 for it, 0 for
+    the placeholder). Login Properties > Script Changes after a password
+    change gives the same, and OK sets the new password. Found on the way: New
+    Login, Login Properties and the endpoint wizard's CREATE LOGIN never went
+    through gossms's `scriptSafePassword`, so their Script Changes carried
+    the password in clear until this step.
 - **W20 — T49 and T48.**
   - **T49, the `ErrHandleNotLoaded` guard.** Before landing it in gosmo, grep
     every `TableRef`/`IndexRef`/`StatisticRef` read in gossms, because one
@@ -430,15 +444,72 @@ breaking signature has no gossms caller.
     `RestoreSpec.FromHeader` replace `backupSetNumber`, `restorableHistory`
     and `relocateFiles` in `restore_dialog_ops.go`.
   - Live check: a restore with MOVE and WITH FILE on 17.
+  - **Done.** See T48 and T49. `go test ./...`, `go vet ./...` and
+    `go vet -tags livedb ./...` in gosmo; `go test -race -count=1 ./...`
+    green in gossms. Live on win10cli 17: `TestLiveRestorePlanWithFileAndMove`
+    (gosmo, new) backs a throwaway database up twice to one file, adding a
+    data file between, and restores set 2 as a copy through `BackupSetAt` and
+    `FromHeader` — `WITH FILE = 2` and three MOVEs, the extra file at its
+    planned path; it also runs the T49 refusal, a `CreateIndex` on a TableRef
+    and `Statistic.Columns` from handles. `TestLiveAPIPass` passes on its fixed
+    subtest. tmux on the same kind of two-set file: Restore Database >
+    Analyze, → to set 2 (Files Included lists `extra`), target `W20Copy`,
+    Script opens `RESTORE … WITH FILE = 2` with three MOVEs, and F5 restores
+    it with the three files at `W20Copy_*`. Found on the way:
+    `TestLiveAPIPass`'s datetime2/decimal subtest read `Columns` off a
+    TableRef, so it checked nothing — the trap T49 closes; and
+    `Statistic.Columns` read by ObjectID and StatID although its doc promised
+    it worked from a handle.
 - **W21 — T47, `Server.InTransaction`.** Blocked on decision 2.
   - gosmo first, with a livedb test that rolls back.
   - Then make Resource Governor Apply atomic, and drop the comment at
     `resource_governor_props.go:37-42`.
+  - **Done.** See T47. Decision 2 taken as drafted. `go test ./...`,
+    `go vet ./...` and `go vet -tags livedb ./...` in gosmo;
+    `go test -race -count=1 ./...` green in gossms. Live on win10cli 17:
+    `TestLiveInTransaction` (gosmo, new) creates a pool, a group in it and a
+    schema in a throwaway database in one transaction — the group's
+    read-back and a server-scoped read after the database-scoped write run on
+    it — and rolls back (nothing left, observer silent), then commits (all
+    three, observer told in order); RECONFIGURE inside fails Msg 574 without
+    dooming the transaction, and BulkInsert refuses. tmux: Resource Governor
+    Properties with pool `w21p` and group `w21g2` added, `w21g2` created
+    behind the dialog's back: OK fails "already exists", `w21p` is not on
+    the server and the pages keep their edits; after dropping the outside
+    `w21g2`, OK commits both and RECONFIGURE leaves nothing pending. Script
+    Changes carries no BEGIN TRANSACTION. Found on the way: a rolled-back
+    `ALTER RESOURCE GOVERNOR WITH (CLASSIFIER_FUNCTION …)` still sets
+    `is_reconfiguration_pending` (pool and group DDL does not); the next
+    RECONFIGURE clears it unchanged.
 - **W22 — Lean listings: T52 and T53.** T52 is blocked on decision 3.
   - gosmo drops `definition` from listings and adds `Definition(ctx)`. In the
     same step, the gossms rule and default sites switch to it.
   - The T53 round-trip cuts follow: `Catalog`, `SecurityPolicies`,
     `UserMappings`.
+  - **Done.** See T52 and T53; decision 3 taken as drafted, the field
+    removed outright (a field and a method cannot share the name).
+    `go test ./...`, `go vet ./...` and `go vet -tags livedb ./...` in gosmo;
+    `go test -race -count=1 ./...` green in gossms. New pins:
+    `TestModuleListingsDoNotReadTheDefinition` and
+    `TestModuleDefinitionReadsByName` (gosmo, unit), and
+    `TestLiveLeanListings` (gosmo, livedb), green on win10cli 17 and the
+    SQL2016 floor: every `Definition` by name including `sys.sp_who`, an
+    encrypted view `""`, a table read as a view and a view read as a
+    procedure `ErrNotFound`; `Catalog`/`SystemCatalog` as one four-result
+    batch; three policies' predicates grouped from one query; and
+    `UserMappings` as one batch that, with a database held SINGLE_USER by
+    another session (ONLINE, Msg 924 on entry), skips it and reads the rest.
+    `TestLiveAPIPass`, `TestLiveTreeFamiliesReadTheirCatalog`,
+    `TestLiveVersionSweep`, `TestLiveScriptedFamiliesRecreateTheirObjects`
+    and `TestLiveByNameFinders*` also pass on both. tmux on 17: the Rules and
+    Defaults folders and a rule leaf show the text, Rule Properties' editor
+    holds it, Script Rule as CREATE writes it, completion lists a view and
+    its columns, a security policy's leaf shows its predicate, and Login
+    Properties › User Mapping ticks the one mapped database with its user and
+    schema. Found on the way: the procedure and DML-trigger listings
+    inner-joined `sys.sql_modules`, so a CLR procedure or CLR trigger never
+    appeared in them; without the join they do (the scripter already refuses
+    one with `ErrUnsupported`).
 
 ### Stage 5 — the lexer, rendering and the data model
 
@@ -922,6 +993,26 @@ and requires the recreated type to script identically (17, 14, 13).
 - gossms: check the Script button of New Login, Credential and Key against the
   chosen policy.
 
+**Done** (W19).
+- gosmo: `Server.execSecret` and the new `Database.execSecret` take the
+  statement to run and the one to show. `execPasswords` builds the shown form
+  with `redactSecrets`, which replaces whole string literals, so a secret that
+  is a prefix of another literal does not tear it.
+- Every site listed above is routed through it, plus a symmetric key's
+  KEY_SOURCE and IDENTITY_VALUE, each with its own placeholder (gossms already
+  redacted both).
+- The placeholders are exported: `gosmo.PasswordPlaceholder`,
+  `SecretPlaceholder`, `KeySourcePlaceholder` and `IdentityValuePlaceholder`.
+  The scripters share them, and Database Mail's `<password>` became
+  `<insert password here>`.
+- `WithScriptSecrets(ctx)` keeps the real values in a capture. Observers are
+  always redacted.
+- `secret_redaction_test.go` lists every secret write.
+- gossms: `scriptSafePassword`, `scriptSafeSecret` and `scriptSafe` are
+  removed, and every dialog passes the real value. The endpoint script's
+  header now tells the user to replace the login password as well as the
+  master key's.
+
 ### T14 — An AG peer saved as `host\inst,port` loses its port when retargeted — gossms — *confirmed in code*
 
 **Where:** `internal/db/peer.go:234-255`.
@@ -1258,15 +1349,71 @@ working session (the `dev-with-local-gosmo` skill).
   - Makes Resource Governor Apply atomic (`resource_governor_props.go:37-42`),
     and helps multi-step Database Mail applies and step reorders.
   - About 2 days. The design needs agreeing first.
+  - **Done** (W21), in gosmo's new `transaction.go`. The shape:
+    - `Server.InTransaction(ctx, fn func(ctx) error) error`: `BeginTx` on
+      the pool, bounded by `Server.Context`; the `*sql.Tx` rides in ctx and
+      `txFrom(ctx, s)` hands it to every chokepoint for the same Server.
+      `withConn`'s callback and `Database.use` now take a `sqlConn`
+      (`*sql.Conn` or `*sql.Tx`).
+    - Reads go through it, unretried. A database-scoped statement leaves the
+      session in its database; the next server-scoped one switches back to
+      the database the transaction began in (`serverTx.home`).
+    - `observe` takes the Server and holds a transaction's reports until
+      COMMIT.
+    - Refused inside (`ErrUnsupported`): Backup/Restore with progress,
+      `BulkInsert`, `EffectivePermissions` and
+      `EffectiveServerPermissions`.
+    - gossms: `runResourceGovernorPlan` runs the plan in it.
+      `fakedb_test.go`'s driver gained transactions (`TxLog`,
+      `StatementsInTx`). The Database Mail apply and step reorders are not
+      converted — their `sysmail_*`/`sp_update_jobstep` calls are unchecked
+      inside a user transaction.
 - **T48 — Restore domain rules into gosmo:** `BackupHeader.SetNumber()` and
   `RestoreSpec.FromHeader`.
   - Moved from `restore_dialog_ops.go`'s `backupSetNumber`,
     `restorableHistory` and `relocateFiles`, so the WITH FILE / MOVE agreement
     lives in one place.
+  - **Done** (W20), in gosmo's new `restore_plan.go`. The shapes that shipped:
+    - There is no `RestoreSpec`; `RestoreOptions` is the spec, so the method
+      is `RestoreOptions.FromHeader(h, files, reloc)`, setting `FileNumber`
+      and `RelocateFiles` from one set.
+    - `BackupHeader.SetNumber()` and `BackupInfo.SetNumber()`: the Position,
+      0 (no clause) for set 1. That replaces the slice-based
+      `backupSetNumber`, whose lone-set and index+1 cases both reduce to it.
+    - `BackupSetAt(headers, n)` finds the set being restored and returns nil
+      when the device no longer holds it. `buildRestoreOptions` used to fall
+      back to the first set's name there; it now refuses with "backup set n
+      is no longer on …", since restoring set 1 instead restores a different
+      backup.
+    - `RestoreRelocation{Mode, DataDir, LogDir, DefaultDataDir,
+      DefaultLogDir, Collation}` with `NeedsFileList` and `Moves` replaces
+      `relocPlan`/`relocateFiles`; the dialog's radio maps onto
+      `RelocateIfRenamed`/`RelocateNone`/`RelocateToFolders`.
+    - `BackupInfo.Restorable()` is the deviceless predicate;
+      `restorableHistory` stays in gossms as the filter around it, since
+      BackupHistory's other readers want every row.
+    - gosmo's `joinServerPath` now leaves a file bare for an empty
+      directory, as gossms's did. The case-fold rule is duplicated
+      (`sameDatabaseName` in gosmo, `collationFoldsCase` in gossms's
+      `name_set.go`); folding them into one exported gosmo helper is W27
+      material.
 - **T49 — Name-only handle guard.** `TableRef`'s ~22 ObjectID-keyed reads
   return `ErrHandleNotLoaded` instead of an empty result. This is not the
   `Load(ctx)` handle type that decisions.md rejected. It only turns the
   documented trap into an error.
+  - **Done** (W20). The gossms grep found only name-keyed uses (Drop,
+    DropColumn, RenameColumn, DropConstraint, RenameConstraint). Guarded:
+    `Detail`, `Columns`, `ForeignKeys`, `ForeignKeyByName`,
+    `CheckConstraints`, `Triggers`, `RowCount`, `Indexes`, `IndexByName`,
+    `DataSpace`, `XMLIndexes`, `Partitions`, `SpaceUsed`, `Statistics`,
+    `StatisticByName`, `EdgeConstraints` (16, through `Table.requireLoaded`);
+    `Index.IncludedColumnsSupported` now wraps the sentinel too. The
+    scripter's private reads are reached only through `TableByName` and are
+    left unguarded. `createdObject` treats the refusal like not-found, so
+    `CreateIndex`/`CreateStatistic` on a TableRef return the new handle
+    instead of failing after the create. `Statistic.Columns` now finds its
+    statistic by name, which its doc already claimed. Pin:
+    `TestTableRefReadsAreRefused`, `TestCreateOnATableRefReturnsTheHandle`.
 - **T50 — `ServerInfo.Login` from `loadInfo`.** Drops the separate
   `SUSER_NAME()` round trip on every connection
   (`internal/db/connection.go:150`). **Done** (W16).
@@ -1279,8 +1426,8 @@ working session (the `dev-with-local-gosmo` skill).
 |---|---|---|---|
 | T38 | gossms | `datagrid.go:276-279`, `propsheet/gridrow.go:38` | `DataGrid.SetBounds` re-samples 200 rows and allocates every frame, against ui-rules ("SetBounds does nothing when the rect hasn't changed") → return early on an unchanged rect. Audit hosts that rely on the per-frame recompute. Includes T16. |
 | T51 | gossms | `core/drawing.go:102-115` | `putGrapheme`'s `[]rune` plus tcell's `SetContent` re-pack cost about 2 allocations per cell per frame → `s.Put`, plus `FillArea` in `FillRect`. Needs T65. Add a frame benchmark. |
-| T52 | gosmo | `procedure.go:190,280`, `view.go:46,86`, `function.go:40,83`, `trigger.go:35`, `rule_default.go:74` | Listings pull every module's `definition` (about 1,400 system procs) → drop it from listings, and keep it on `*ByName` / `Definition(ctx)`. **Breaking.** gossms rule/default sites at `detail_browser_programmability.go:140,155,306,318` switch to the by-name read. |
-| T53 | gosmo | `catalog.go:119-150`, `security_policy.go:70-77`, `login.go:337-359` | `Catalog()` costs 4 round trips → 1 multi-result batch. `SecurityPolicies` runs N+1 → one grouped query. `UserMappings` does one per database → one batch with per-database TRY/CATCH (*plausible*; the parallel fan-out was already rejected). |
+| T52 | gosmo | `procedure.go:190,280`, `view.go:46,86`, `function.go:40,83`, `trigger.go:35`, `rule_default.go:74` | Listings pull every module's `definition` (about 1,400 system procs) → drop it from listings, and keep it on `*ByName` / `Definition(ctx)`. **Breaking.** gossms rule/default sites at `detail_browser_programmability.go:140,155,306,318` switch to the by-name read. **Done** (W22): the field is gone from `*ByName` too; `Definition(ctx)` on all six types. |
+| T53 | gosmo | `catalog.go:119-150`, `security_policy.go:70-77`, `login.go:337-359` | `Catalog()` costs 4 round trips → 1 multi-result batch. `SecurityPolicies` runs N+1 → one grouped query. `UserMappings` does one per database → one batch with per-database TRY/CATCH (*plausible*; the parallel fan-out was already rejected). **Done** (W22): all three, live on 17 and 13. |
 | T55 | gossms | `sql_highlighter.go:234` | `ToUpper(string(…))` per word per frame → sqlparse's stack-scratch fold. |
 | T56 | gossms | `sqltext/split.go:32`, `xevent/filter.go:110` | `[]rune` of the whole script → a byte scan. `ToLower` per value per event → an allocation-free case-insensitive contains. |
 | T57 | gossms | `internal/db/connection.go:153` | The capability UNION runs for Query, Activity Monitor and XEvent connections, which never read it → skip it for non-Explorer roles. **Done** (W16): `newServerConn` probes for `RoleExplorer` only; completion's per-database probe is lazy and unaffected. Pin: `TestOnlyExplorerConnectionsProbeServerCapabilities`. |
@@ -1423,10 +1570,16 @@ working session (the `dev-with-local-gosmo` skill).
 
 1. **T13:** should script captures keep secrets? The proposal is to redact by
    default, with a `WithScriptSecrets` opt-in.
+   **Decided** (W19): as proposed. Observers are always redacted, and
+   gossms dropped its own substitution.
 2. **T47:** go ahead with `Server.InTransaction`? It is the largest new gosmo
    surface.
+   **Decided** (W21): yes, as drafted — observers buffered until COMMIT, no
+   BEGIN TRANSACTION in a WithScript capture.
 3. **T52:** drop `definition` from listings? It changes listing results for
    other gosmo users.
+   **Decided** (W22): yes — the field goes, and each of the six types gains
+   `Definition(ctx)`, read by name (see `docs/decisions.md`).
 4. **T61:** F1 in Connect, Backup and Restore: remove it, or document it?
    **Decided** (W11): replaced by Tab reaching the button row.
 5. **Activity Monitor SQL:** move it into gosmo, or add a gossms-side live

@@ -74,8 +74,8 @@ func TestSourceForRestoreNamesEveryStripe(t *testing.T) {
 // set 3, a history entry on file B used to be restored WITH FILE = 3.
 func TestFileNumberForFollowsTheSource(t *testing.T) {
 	a := restoreSource{devices: []string{`E:\b\a.bak`}}
-	b3 := restoreSource{devices: []string{`E:\b\b.bak`}, position: 3}
-	b1 := restoreSource{devices: []string{`E:\b\b.bak`}, position: 1}
+	b3 := restoreSource{devices: []string{`E:\b\b.bak`}, setNumber: 3}
+	b1 := restoreSource{devices: []string{`E:\b\b.bak`}, setNumber: (&gosmo.BackupInfo{Position: 1}).SetNumber()}
 
 	d := &RestoreDialog{}
 	if got := d.fileNumberFor(b3); got != 3 {
@@ -110,9 +110,9 @@ func TestFileNumberForFollowsTheSource(t *testing.T) {
 // what the restore then sends.
 func TestHeaderAtFindsTheHistoryEntrysSet(t *testing.T) {
 	headers := []*gosmo.BackupHeader{hdr(1, "AppDB"), hdr(2, "AppDB"), hdr(3, "Other")}
-	for _, tc := range []struct{ position, want int }{{0, 0}, {1, 0}, {3, 2}, {9, 0}} {
-		if got := headerAt(headers, tc.position); got != tc.want {
-			t.Errorf("headerAt(position %d) = %d, want %d", tc.position, got, tc.want)
+	for _, tc := range []struct{ setNumber, want int }{{0, 0}, {2, 1}, {3, 2}, {9, 0}} {
+		if got := headerAt(headers, tc.setNumber); got != tc.want {
+			t.Errorf("headerAt(set %d) = %d, want %d", tc.setNumber, got, tc.want)
 		}
 	}
 	if got := headerAt(nil, 2); got != 0 {

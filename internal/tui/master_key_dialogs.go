@@ -53,7 +53,7 @@ func masterKeyOpenPassword(ctx context.Context, m *gosmo.MasterKey, openPass *pr
 	if openPass.Value() == "" {
 		return "", fmt.Errorf("type one of the master key's passwords in Master key password")
 	}
-	return scriptSafePassword(ctx, openPass.Value()), nil
+	return openPass.Value(), nil
 }
 
 // BackupMasterKeyDialog is Back Up Master Key.
@@ -135,7 +135,7 @@ func (d *BackupMasterKeyDialog) buildPages(pf *masterKeyPrefetch) {
 			return err
 		}
 		return d.sc.Server.DatabaseRef(d.dbName).MasterKeyRef().Backup(ctx,
-			strings.TrimSpace(fileField.Value()), scriptSafePassword(ctx, encPass.Value()), open)
+			strings.TrimSpace(fileField.Value()), encPass.Value(), open)
 	}
 }
 
@@ -203,7 +203,7 @@ func (d *RegenerateMasterKeyDialog) buildPages(pf *masterKeyPrefetch) {
 			return err
 		}
 		return d.sc.Server.DatabaseRef(d.dbName).MasterKeyRef().Regenerate(ctx,
-			scriptSafePassword(ctx, newPass.Value()), force.Checked(), open)
+			newPass.Value(), force.Checked(), open)
 	}
 }
 

@@ -187,7 +187,7 @@ func TestMailScriptChangesHidesThePassword(t *testing.T) {
 	if strings.Contains(text, mailSecret) {
 		t.Fatalf("the script carries the typed password:\n%s", text)
 	}
-	if !strings.Contains(text, "@password = N'<password>'") || !strings.Contains(text, "@username = N'mailer'") {
+	if !strings.Contains(text, "@password = N'"+gosmo.PasswordPlaceholder+"'") || !strings.Contains(text, "@username = N'mailer'") {
 		t.Fatalf("the script does not replace relay1's credential:\n%s", text)
 	}
 	if n := len(inst.Statements()); n != 0 {

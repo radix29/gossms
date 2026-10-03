@@ -108,11 +108,15 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   function and returns `dbo` in every row; `UnquoteName` for a name the server
   hands back quoted (`[a]]b]`). `internal/showplan` stays driver-free, so it
   has its own `bracket`/`unbracket` pair.
-- **A typed secret never reaches Script Changes in clear.** Every password or
-  secret goes through `scriptSafePassword`/`scriptSafeSecret`
-  (`new_object_dialog.go`): the value on a real Apply, `<insert password
-  here>`/`<insert secret here>` under `gosmo.WithScript` (matching gosmo's
-  Script as).
+- **A typed secret never reaches Script Changes in clear — gosmo redacts it.**
+  Pass the real password, secret or key source to gosmo on both Apply and
+  Script; under `gosmo.WithScript` its exec chokepoint captures
+  `gosmo.PasswordPlaceholder` (and `SecretPlaceholder`, `KeySourcePlaceholder`,
+  `IdentityValuePlaceholder`) in its place. Never add a gossms-side
+  substitution: the 2026-10 one covered only the dialogs that remembered to
+  call it, and New Login and Login Properties scripted passwords in clear. A
+  secret in T-SQL gossms writes itself (not through gosmo) needs the same
+  placeholder, by hand.
 - **Never give a procedure installed outside `master` an `sp_` prefix** — `sp_`
   falls back to `master`: `CREATE OR ALTER dbo.sp_x` in tempdb fails "Invalid
   object name", and `DROP PROCEDURE IF EXISTS dbo.sp_x` in tempdb **deleted

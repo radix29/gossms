@@ -263,7 +263,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 				return fmt.Errorf("type the private key's password in Private key password to sign %s", e.key())
 			}
 			if byPassword {
-				signer.Password = scriptSafePassword(ctx, passField.Value())
+				signer.Password = passField.Value()
 			}
 			if err := ref.AddSignature(ctx, e.schema, e.module, signer, false); err != nil {
 				return err

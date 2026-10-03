@@ -65,7 +65,7 @@ func TestBackupCertificateWithAPasswordProtectedKey(t *testing.T) {
 
 	stmts := scriptCertificateBackup(t, d)
 	want := `USE [certdb];` + "\nGO\n" + `BACKUP CERTIFICATE [c2] TO FILE = N'D:\keys\c2.cer' WITH PRIVATE KEY (FILE = N'D:\keys\c2.pvk', ` +
-		`ENCRYPTION BY PASSWORD = N'` + scriptedPasswordPlaceholder + `', DECRYPTION BY PASSWORD = N'` + scriptedPasswordPlaceholder + `')`
+		`ENCRYPTION BY PASSWORD = N'` + gosmo.PasswordPlaceholder + `', DECRYPTION BY PASSWORD = N'` + gosmo.PasswordPlaceholder + `')`
 	if len(stmts) != 1 || stmts[0] != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), want)
 	}

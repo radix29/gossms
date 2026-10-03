@@ -298,7 +298,6 @@ func buildNewUserGeneralPage(sc *db.ServerConn, dbName string, pf *nuserPrefetch
 
 	g.apply = func(ctx context.Context) error {
 		req := g.request()
-		req.Password = scriptSafePassword(ctx, req.Password)
 		// DatabaseRef, not DatabaseByName: the statement addresses the
 		// database by name, and the by-name read would not work under Script
 		// Changes.

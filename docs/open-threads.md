@@ -151,6 +151,13 @@ work; close an item by deleting it when fixed.
 
 ### Nice to have
 
+- **N2 — Database Mail Apply and Agent step reorders are not one
+  transaction.** gosmo's `Server.InTransaction` (W21) made Resource
+  Governor's Apply atomic; T47 also named these two. Converting either needs
+  a live check that its procedures (`sysmail_*` in msdb, `sp_update_jobstep`)
+  run and roll back cleanly inside a user transaction. Until then a failure
+  part-way leaves earlier statements stored and the dialog reloads.
+
 - **N1 — IntelliSense query-tree shapes deliberately left out.**
   `sqlparse.ScopeAt`/`completion_relations.go` resolve CTEs, derived tables,
   sub-SELECTs, set-operator chains, `PIVOT`/`UNPIVOT` outputs, temp tables and

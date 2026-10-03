@@ -265,3 +265,26 @@ func TestNewLoginSourcesMatchGosmosOwn(t *testing.T) {
 		t.Errorf("nloginSources has %d entries; gosmo has five real sources", len(nloginSources))
 	}
 }
+
+// T13: Script Changes opens a query window that is saved and shared, so the
+// typed password is scripted as gosmo's placeholder — and a real Apply still
+// sends it. New Login passed the password through to gosmo with nothing
+// redacting it, so until gosmo redacted at its exec chokepoint the script
+// carried it in clear.
+func TestNewLoginScriptDoesNotCarryThePassword(t *testing.T) {
+	inst, p := newLoginGeneral(t)
+	editText(t, p.form, "Login name", "app")
+	editText(t, p.form, "Password", "Typed!Secret9")
+	editText(t, p.form, "Confirm password", "Typed!Secret9")
+	ctx, col := gosmo.WithScript(context.Background())
+	if err := p.apply(ctx); err != nil {
+		t.Fatalf("apply under WithScript: %v", err)
+	}
+	if script := col.String(); strings.Contains(script, "Typed!Secret9") ||
+		!strings.Contains(script, "PASSWORD = N'"+gosmo.PasswordPlaceholder+"'") {
+		t.Errorf("script = %q, want the placeholder and not the password", script)
+	}
+	if got := inst.Statements(); len(got) != 0 {
+		t.Errorf("Script Changes reached the server: %v", got)
+	}
+}

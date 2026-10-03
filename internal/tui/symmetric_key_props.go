@@ -139,7 +139,7 @@ func (e *symKeyEncEdit) encryptor(ctx context.Context) gosmo.SymmetricKeyEncrypt
 	enc := gosmo.SymmetricKeyEncryptor{Kind: e.kind, Name: e.name, Open: e.open}
 	if e.kind == gosmo.SymmetricKeyByPassword {
 		enc.Name = ""
-		enc.Password = scriptSafePassword(ctx, e.password)
+		enc.Password = e.password
 	}
 	return enc
 }
@@ -541,7 +541,7 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 			if decPassword = decPass.Value(); decPassword == "" {
 				return fmt.Errorf("type the password for %s in Decryption password", strings.ToLower(o.label[:1])+o.label[1:])
 			}
-			dec.Password = scriptSafePassword(ctx, decPassword)
+			dec.Password = decPassword
 		}
 		// Removing the decryptor's own encryption goes last: each change
 		// opens the key afresh, and once it is gone nothing opens it this way.

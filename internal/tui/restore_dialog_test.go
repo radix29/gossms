@@ -35,8 +35,9 @@ func TestRestoreFileNumberFollowsSelection(t *testing.T) {
 	d := &RestoreDialog{headers: []*gosmo.BackupHeader{
 		hdr(1, "AppDB"), hdr(2, "AppDB"), hdr(3, "AppDB"),
 	}}
-	for _, want := range []int{1, 2, 3} {
-		d.headerIdx = want - 1
+	// Set 1 sends no clause, which SQL Server reads as set 1.
+	for i, want := range []int{0, 2, 3} {
+		d.headerIdx = i
 		if got := d.restoreFileNumber(); got != want {
 			t.Errorf("headerIdx %d: restoreFileNumber() = %d, want %d", d.headerIdx, got, want)
 		}
@@ -95,52 +96,6 @@ func TestSelectedHeaderOnNoHeaders(t *testing.T) {
 	}
 }
 
-// The Files Included panel, the MOVE clauses and the RESTORE itself all name
-// a backup set, and all three have to name the *same* one — a file list read
-// from a different set describes logical files the restored set does not
-// contain, and SQL Server rejects the whole statement. They agree by
-// construction only as long as every path derives the number from
-// backupSetNumber, so the rule is pinned here directly.
-//
-// The index bounds matter as much as the values: analyze asks for set 0 on a
-// header slice it has just fetched, while restoreFileNumber asks for
-// headerIdx, which is UI state left over from the previous device.
-func TestBackupSetNumber(t *testing.T) {
-	one := []*gosmo.BackupHeader{hdr(1, "AppDB")}
-	three := []*gosmo.BackupHeader{hdr(1, "AppDB"), hdr(2, "AppDB"), hdr(3, "Other")}
-	gappy := []*gosmo.BackupHeader{hdr(4, "AppDB"), hdr(7, "AppDB")}
-	unnumbered := []*gosmo.BackupHeader{hdr(0, "AppDB"), hdr(0, "AppDB")}
-
-	for _, tc := range []struct {
-		what    string
-		headers []*gosmo.BackupHeader
-		i       int
-		want    int
-	}{
-		{"no headers at all", nil, 0, 0},
-		{"no headers, stale index", nil, 5, 0},
-		// A lone set is always at position 1 (appending numbers 1..n; INIT and
-		// FORMAT reinitialise to a single set at 1), so omitting the clause
-		// cannot target the wrong set — and keeps WITH FILE = 1 out of the
-		// common single-backup statement.
-		{"lone set omits the clause", one, 0, 0},
-		{"lone set, stale index", one, 3, 0},
-		{"first of three", three, 0, 1},
-		{"last of three", three, 2, 3},
-		// Position, not index+1: the two only coincide on a contiguous device.
-		{"non-contiguous device uses Position", gappy, 1, 7},
-		{"stale index falls back to the first set", three, 99, 1},
-		{"negative index falls back to the first set", three, -1, 1},
-		// index+1 is the fallback for a header that reported no position.
-		{"unreported position falls back to index+1", unnumbered, 1, 2},
-	} {
-		if got := backupSetNumber(tc.headers, tc.i); got != tc.want {
-			t.Errorf("%s: backupSetNumber(%d headers, i=%d) = %d, want %d",
-				tc.what, len(tc.headers), tc.i, got, tc.want)
-		}
-	}
-}
-
 // bfile builds a backup file-list entry.
 func bfile(logical, physical, typ string) *gosmo.BackupFile {
 	return &gosmo.BackupFile{LogicalName: logical, PhysicalName: physical, Type: typ}
@@ -155,124 +110,9 @@ func backupSetFiles() []*gosmo.BackupFile {
 	}
 }
 
-// TestRelocateFilesAuto pins the behaviour the dialog had before the Files
-// view existed, and still defaults to: files are moved to the server's
-// default folders — under names derived from the target — only when the
-// restore renames the database, since a same-name restore is meant to land
-// on the original's own files.
-func TestRelocateFilesAuto(t *testing.T) {
-	plan := relocPlan{mode: relocAuto}
-	defData, defLog := `C:\Data`, `C:\Log`
-
-	if got := relocateFiles(backupSetFiles(), plan, defData, defLog, "AppDB", "AppDB"); got != nil {
-		t.Errorf("same-name restore relocated files: %+v, want none", got)
-	}
-	// Case-insensitively the same name is the same database.
-	if got := relocateFiles(backupSetFiles(), plan, defData, defLog, "AppDB", "appdb"); got != nil {
-		t.Errorf("case-different name relocated files: %+v, want none", got)
-	}
-
-	// On a case-sensitive instance it is a different database, which needs
-	// its own files: without MOVE clauses the restore collides with AppDB's.
-	cs := relocPlan{mode: relocAuto, collation: "Latin1_General_CS_AS"}
-	assertRelocations(t, relocateFiles(backupSetFiles(), cs, defData, defLog, "AppDB", "appdb"), []gosmo.RelocateFile{
-		{LogicalName: "AppDB", PhysicalName: `C:\Data\appdb_AppDB.mdf`},
-		{LogicalName: "AppDB_log", PhysicalName: `C:\Log\appdb_AppDB_log.ldf`},
-	})
-	if !cs.needsFileList("AppDB", "appdb") {
-		t.Error("needsFileList skipped the file list for a case-only rename on a CS instance")
-	}
-
-	got := relocateFiles(backupSetFiles(), plan, defData, defLog, "AppDB", "AppDB_Copy")
-	want := []gosmo.RelocateFile{
-		{LogicalName: "AppDB", PhysicalName: `C:\Data\AppDB_Copy_AppDB.mdf`},
-		{LogicalName: "AppDB_log", PhysicalName: `C:\Log\AppDB_Copy_AppDB_log.ldf`},
-	}
-	assertRelocations(t, got, want)
-}
-
-// TestRelocateFilesOriginal pins that the "keep the locations recorded in
-// the backup" choice emits no MOVE at all — including for a renamed target,
-// where the pre-Files-view dialog always relocated.
-func TestRelocateFilesOriginal(t *testing.T) {
-	plan := relocPlan{mode: relocOriginal}
-	for _, target := range []string{"AppDB", "AppDB_Copy"} {
-		if got := relocateFiles(backupSetFiles(), plan, `C:\Data`, `C:\Log`, "AppDB", target); got != nil {
-			t.Errorf("target %q: relocated files: %+v, want none", target, got)
-		}
-	}
-}
-
-// TestRelocateFilesFolder pins the explicit relocation: every file moves to
-// the named folders whether or not the database is renamed, and the file
-// names follow the same rule as relocAuto — the backup's own names for a
-// same-name restore, target-derived ones for a rename, so a copy restored
-// into the same folder as the original can't collide with it.
-func TestRelocateFilesFolder(t *testing.T) {
-	plan := relocPlan{mode: relocFolder, dataDir: `F:\NewData`, logDir: `G:\NewLog`}
-
-	assertRelocations(t, relocateFiles(backupSetFiles(), plan, `C:\Data`, `C:\Log`, "AppDB", "AppDB"),
-		[]gosmo.RelocateFile{
-			{LogicalName: "AppDB", PhysicalName: `F:\NewData\AppDB.mdf`},
-			{LogicalName: "AppDB_log", PhysicalName: `G:\NewLog\AppDB_log.ldf`},
-		})
-
-	assertRelocations(t, relocateFiles(backupSetFiles(), plan, `C:\Data`, `C:\Log`, "AppDB", "AppDB_Copy"),
-		[]gosmo.RelocateFile{
-			{LogicalName: "AppDB", PhysicalName: `F:\NewData\AppDB_Copy_AppDB.mdf`},
-			{LogicalName: "AppDB_log", PhysicalName: `G:\NewLog\AppDB_Copy_AppDB_log.ldf`},
-		})
-}
-
-// TestRelocateFilesFolderFallsBackToDefaults pins that a folder field left
-// empty means the server's default directory, not a bare file name — which
-// RESTORE would reject as a relative path.
-func TestRelocateFilesFolderFallsBackToDefaults(t *testing.T) {
-	plan := relocPlan{mode: relocFolder, logDir: `G:\NewLog`}
-	assertRelocations(t, relocateFiles(backupSetFiles(), plan, `C:\Data`, `C:\Log`, "AppDB", "AppDB"),
-		[]gosmo.RelocateFile{
-			{LogicalName: "AppDB", PhysicalName: `C:\Data\AppDB.mdf`},
-			{LogicalName: "AppDB_log", PhysicalName: `G:\NewLog\AppDB_log.ldf`},
-		})
-}
-
-// TestRelocateFilesSuppliesAnExtension pins the fallback for a backup whose
-// physical name carries no extension: a renamed file is minted from the
-// logical name, so it needs one, and data and log files get different ones.
-func TestRelocateFilesSuppliesAnExtension(t *testing.T) {
-	files := []*gosmo.BackupFile{
-		bfile("AppDB", `D:\SQL\DATA\AppDB`, "D"),
-		bfile("AppDB_log", `E:\SQL\LOG\AppDB_log`, "L"),
-	}
-	assertRelocations(t, relocateFiles(files, relocPlan{mode: relocAuto}, `C:\Data`, `C:\Log`, "AppDB", "Copy"),
-		[]gosmo.RelocateFile{
-			{LogicalName: "AppDB", PhysicalName: `C:\Data\Copy_AppDB.ndf`},
-			{LogicalName: "AppDB_log", PhysicalName: `C:\Log\Copy_AppDB_log.ldf`},
-		})
-}
-
-// needsFileList decides whether buildRestoreOptions runs RESTORE
-// FILELISTONLY at all, so it has to agree with relocateFiles: a mode that
-// would produce MOVE clauses must not have its file list skipped.
-func TestNeedsFileListAgreesWithRelocateFiles(t *testing.T) {
-	for _, tc := range []struct {
-		plan   relocPlan
-		target string
-	}{
-		{relocPlan{mode: relocAuto}, "AppDB"},
-		{relocPlan{mode: relocAuto}, "AppDB_Copy"},
-		{relocPlan{mode: relocOriginal}, "AppDB"},
-		{relocPlan{mode: relocOriginal}, "AppDB_Copy"},
-		{relocPlan{mode: relocFolder, dataDir: `F:\D`, logDir: `F:\L`}, "AppDB"},
-		{relocPlan{mode: relocFolder, dataDir: `F:\D`, logDir: `F:\L`}, "AppDB_Copy"},
-	} {
-		moves := relocateFiles(backupSetFiles(), tc.plan, `C:\Data`, `C:\Log`, "AppDB", tc.target)
-		if want := len(moves) > 0; tc.plan.needsFileList("AppDB", tc.target) != want {
-			t.Errorf("mode %d target %q: needsFileList = %v but relocateFiles produced %d moves",
-				tc.plan.mode, tc.target, !want, len(moves))
-		}
-	}
-}
+// The relocation rules themselves — which mode moves what, the minted names,
+// the folder fallback, the collation — are gosmo's (RestoreRelocation) and
+// pinned in its restore_plan_test.go.
 
 // TestClipPathLeft pins that a path too long for its column keeps its tail.
 // Two files under the same SQL Server default folder are ~70 columns of
@@ -301,18 +141,6 @@ func TestClipPathLeft(t *testing.T) {
 	}
 }
 
-func assertRelocations(t *testing.T, got, want []gosmo.RelocateFile) {
-	t.Helper()
-	if len(got) != len(want) {
-		t.Fatalf("got %d relocations, want %d: %+v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("relocation %d = %+v, want %+v", i, got[i], want[i])
-		}
-	}
-}
-
 // analyze opens the inspect view on headers[0] and reads that set's file
 // list; selectHeader's reload reads the selected set's. On a device whose
 // first set is the selected one they must produce the same number, or
@@ -321,7 +149,7 @@ func assertRelocations(t *testing.T, got, want []gosmo.RelocateFile) {
 func TestAnalyzeAndSelectionAgreeOnTheFirstSet(t *testing.T) {
 	headers := []*gosmo.BackupHeader{hdr(1, "AppDB"), hdr(2, "AppDB")}
 	d := &RestoreDialog{headers: headers, headerIdx: 0}
-	if opened, selected := backupSetNumber(headers, 0), d.restoreFileNumber(); opened != selected {
+	if opened, selected := headers[headerAt(headers, 0)].SetNumber(), d.restoreFileNumber(); opened != selected {
 		t.Errorf("analyze reads set %d but the selection reports %d", opened, selected)
 	}
 }
@@ -471,14 +299,15 @@ func TestRelocationSnapshotsTheFilesView(t *testing.T) {
 	d.fDataDir.SetValue(`  F:\NewData  `)
 	d.fLogDir.SetValue(`  G:\NewLog  `)
 
-	want := relocPlan{mode: relocFolder, dataDir: `F:\NewData`, logDir: `G:\NewLog`}
+	want := gosmo.RestoreRelocation{Mode: gosmo.RelocateToFolders, DataDir: `F:\NewData`, LogDir: `G:\NewLog`}
 	if got := d.relocation(); got != want {
 		t.Errorf("relocation() = %+v, want %+v (both folders trimmed)", got, want)
 	}
 }
 
 // plannedPaths is the Files view's preview, and its whole claim is that it
-// cannot drift from what the restore does — both go through relocateFiles.
+// cannot drift from what the restore does — both go through the snapshot's
+// gosmo.RestoreRelocation.Moves.
 // The test states that as an equality rather than by restating the expected
 // paths, so a change to the relocation rules updates both sides at once and
 // only a genuine divergence fails.
@@ -492,9 +321,7 @@ func TestPlannedPathsAgreeWithTheRelocationTheRestoreWillUse(t *testing.T) {
 		d.fDataDir.SetValue(`F:\NewData`)
 		d.fLogDir.SetValue(`G:\NewLog`)
 
-		// defaultDirs answers "","" with no connection, matching what the
-		// preview passes.
-		want := relocateFiles(d.files, d.relocation(), "", "", "AppDB", "AppDB_Copy")
+		want := d.relocation().Moves(d.files, "AppDB", "AppDB_Copy")
 		got := d.plannedPaths()
 
 		if len(got) != len(want) {

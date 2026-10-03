@@ -136,8 +136,7 @@ func credentialGeneralPage(dbName string, load func(context.Context) (credential
 				if identity == "" {
 					return fmt.Errorf("identity is required")
 				}
-				secret := scriptSafeSecret(ctx, typed)
-				return alter(ctx, identity, &secret)
+				return alter(ctx, identity, &typed)
 			}
 			return f, apply, nil
 		},

@@ -28,7 +28,7 @@ import (
 // replaces the credential, and for Basic authentication that needs the
 // password typed again (W8: sysmail_update_account_sp would otherwise store
 // an empty one). The typed password reaches the server only on the statement
-// that runs; Script Changes shows gosmo's <password> placeholder.
+// that runs; Script Changes shows gosmo's PasswordPlaceholder.
 
 // mailAuthItems are the Authentication choices, indexed by
 // gosmo.MailAuthentication.

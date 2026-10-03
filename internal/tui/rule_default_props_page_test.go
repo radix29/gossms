@@ -14,22 +14,39 @@ import (
 // "o.type = 'D'". A match on "sys.objects" would let either answer serve the
 // other page — the confusion the whole family is prone to, and the reason
 // gosmo's Defaults read carries parent_object_id = 0.
+//
+// The text is a second read (gosmo's Definition, by name): listings and
+// *ByName carry none. Its response comes first, since the by-name module
+// query also contains the type predicate the catalog row is matched on.
 
-func ruleResponse(definition driver.Value) fakeResponse {
-	return fakeResponse{match: "o.type = 'R'", cols: 6, rows: [][]driver.Value{
-		{"PhoneRule", "dbo", int64(1001), definition, propTypeDate, propTypeDate},
-	}}
+func ruleResponses(definition driver.Value) []fakeResponse {
+	return []fakeResponse{
+		moduleDefinitionResponse("[dbo].[PhoneRule]", definition),
+		{match: "o.type = 'R'", cols: 5, rows: [][]driver.Value{
+			{"PhoneRule", "dbo", int64(1001), propTypeDate, propTypeDate},
+		}},
+	}
 }
 
-func defaultResponse(definition driver.Value) fakeResponse {
-	return fakeResponse{match: "o.type = 'D'", cols: 6, rows: [][]driver.Value{
-		{"TodayDefault", "dbo", int64(1002), definition, propTypeDate, propTypeDate},
-	}}
+func defaultResponses(definition driver.Value) []fakeResponse {
+	return []fakeResponse{
+		moduleDefinitionResponse("[dbo].[TodayDefault]", definition),
+		{match: "o.type = 'D'", cols: 5, rows: [][]driver.Value{
+			{"TodayDefault", "dbo", int64(1002), propTypeDate, propTypeDate},
+		}},
+	}
+}
+
+// moduleDefinitionResponse answers gosmo's Definition(ctx) for one module,
+// named as gosmo passes it: bracket-quoted and schema-qualified.
+func moduleDefinitionResponse(qualified string, definition driver.Value) fakeResponse {
+	return fakeResponse{match: "OBJECT_DEFINITION", arg: qualified, cols: 1,
+		rows: [][]driver.Value{{definition}}}
 }
 
 func TestRuleGeneralShowsItsDefinition(t *testing.T) {
 	const body = "CREATE RULE dbo.PhoneRule AS @value LIKE '[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'"
-	sc, inst := newTypePropConn(t, ruleResponse(body))
+	sc, inst := newTypePropConn(t, ruleResponses(body)...)
 	form, apply := loadPage(t, rulePropPages(sc, propTypeDB, "dbo", "PhoneRule")[0], inst)
 
 	if got := staticValue(t, form, "Name"); got != "PhoneRule" {
@@ -45,7 +62,7 @@ func TestRuleGeneralShowsItsDefinition(t *testing.T) {
 
 func TestDefaultGeneralShowsItsDefinition(t *testing.T) {
 	const body = "CREATE DEFAULT dbo.TodayDefault AS GETDATE()"
-	sc, inst := newTypePropConn(t, defaultResponse(body))
+	sc, inst := newTypePropConn(t, defaultResponses(body)...)
 	form, apply := loadPage(t, defaultPropPages(sc, propTypeDB, "dbo", "TodayDefault")[0], inst)
 
 	if got := staticValue(t, form, "Name"); got != "TodayDefault" {
@@ -63,7 +80,7 @@ func TestDefaultGeneralShowsItsDefinition(t *testing.T) {
 // empty definition. An empty editor there reads as an object with an empty
 // body, which is not a state the catalog can hold.
 func TestRuleGeneralReportsAnUnreadableDefinition(t *testing.T) {
-	sc, inst := newTypePropConn(t, ruleResponse(""))
+	sc, inst := newTypePropConn(t, ruleResponses("")...)
 	form, _ := loadPage(t, rulePropPages(sc, propTypeDB, "dbo", "PhoneRule")[0], inst)
 
 	for _, r := range form.Rows() {

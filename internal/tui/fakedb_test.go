@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -127,6 +128,32 @@ type fakeInstance struct {
 	// immediately and ignores the context, so whether the caller *would* have
 	// aborted a slow query can only be seen by looking at what it passed.
 	readCtxs []context.Context
+
+	// txLog is every BEGIN, COMMIT and ROLLBACK, in order; txSeq numbers the
+	// transactions, and fakeExec.tx says which one a statement ran in.
+	txLog []string
+	txSeq int
+}
+
+// TxLog returns every BEGIN, COMMIT and ROLLBACK the instance saw, in order.
+func (f *fakeInstance) TxLog() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.txLog)
+}
+
+// StatementsInTx returns the statements Statements returns that ran inside a
+// transaction.
+func (f *fakeInstance) StatementsInTx() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, e := range f.execs {
+		if e.tx != 0 && !bareUSE.MatchString(strings.TrimSpace(e.sql)) {
+			out = append(out, e.sql)
+		}
+	}
+	return out
 }
 
 // ReadArgs returns the parameters of the first query answered whose text
@@ -269,16 +296,18 @@ type fakeExec struct {
 	// alone reads "EXEC sp_rename @objname = @p1" and says nothing about
 	// which object was renamed to what.
 	args []driver.Value
+	// tx is the transaction the statement ran in, 0 for none.
+	tx int
 }
 
-func (f *fakeInstance) recordExec(db, q string, args []driver.NamedValue) {
+func (f *fakeInstance) recordExec(db string, tx int, q string, args []driver.NamedValue) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	vals := make([]driver.Value, len(args))
 	for i, a := range args {
 		vals[i] = a.Value
 	}
-	f.execs = append(f.execs, fakeExec{db: db, sql: q, args: vals})
+	f.execs = append(f.execs, fakeExec{db: db, sql: q, args: vals, tx: tx})
 }
 
 // bareUSE matches the standalone "USE [db]" gosmo issues on the pinned
@@ -377,6 +406,7 @@ func (fakeDriver) Open(dsn string) (driver.Conn, error) {
 type fakeConn struct {
 	inst  *fakeInstance
 	curDB string
+	tx    int // the open transaction's number, 0 for none
 }
 
 // ResetSession is called by database/sql when this connection is handed back
@@ -392,13 +422,34 @@ func (c *fakeConn) ResetSession(context.Context) error {
 
 func (c *fakeConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
 func (c *fakeConn) Close() error                        { return nil }
-func (c *fakeConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
+func (c *fakeConn) Begin() (driver.Tx, error) {
+	c.inst.mu.Lock()
+	defer c.inst.mu.Unlock()
+	c.inst.txSeq++
+	c.tx = c.inst.txSeq
+	c.inst.txLog = append(c.inst.txLog, "BEGIN")
+	return fakeTx{c}, nil
+}
+
+// fakeTx ends the connection's transaction, logging how.
+type fakeTx struct{ c *fakeConn }
+
+func (t fakeTx) end(how string) error {
+	t.c.inst.mu.Lock()
+	defer t.c.inst.mu.Unlock()
+	t.c.tx = 0
+	t.c.inst.txLog = append(t.c.inst.txLog, how)
+	return nil
+}
+
+func (t fakeTx) Commit() error   { return t.end("COMMIT") }
+func (t fakeTx) Rollback() error { return t.end("ROLLBACK") }
 
 func (c *fakeConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
 	// Recorded before the failure check: the statement was attempted, and a
 	// test asserting which writes an aborted apply got as far as needs to see
 	// the one that failed.
-	c.inst.recordExec(c.curDB, q, args)
+	c.inst.recordExec(c.curDB, c.tx, q, args)
 	if b := c.inst.execBlock(q, c.curDB, args); b != nil {
 		select {
 		case <-b:
@@ -418,6 +469,10 @@ func (c *fakeConn) ExecContext(ctx context.Context, q string, args []driver.Name
 func (c *fakeConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
 	if m := batchedUSE.FindStringSubmatch(q); m != nil {
 		c.curDB, q = m[1], q[len(m[0]):]
+	}
+	// What gosmo's InTransaction asks as it begins.
+	if q == "SELECT DB_NAME()" {
+		return &fakeRows{resp: &fakeResponse{match: q, cols: 1, rows: [][]driver.Value{{cmp.Or(c.curDB, "master")}}}}, nil
 	}
 	r, ok := c.inst.respond(ctx, q, c.curDB, args)
 	if !ok {
