@@ -1369,7 +1369,7 @@ func TestSQLCompletionMatchesSubstringPrefixFirst(t *testing.T) {
 // a freshly loaded catalog.
 func newCompletionInventory(cat *gosmo.Catalog) *completionInventory {
 	inv := &completionInventory{}
-	inv.applyCatalog(cat)
+	inv.applyCatalog(cat, "")
 	return inv
 }
 

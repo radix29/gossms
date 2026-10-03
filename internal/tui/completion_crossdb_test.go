@@ -238,3 +238,45 @@ func TestSQLCompletionTableListOffersOnlineDatabases(t *testing.T) {
 		t.Error("an OFFLINE database is offered")
 	}
 }
+
+// TestSQLCompletionCaseSensitiveDatabase pins E4: in a case-sensitive database
+// dbo.Orders and dbo.orders are two tables, and lowered index keys let the
+// second shadow the first, so "Orders." offered orders' columns. Prefix
+// matching stays case-insensitive.
+func TestSQLCompletionCaseSensitiveDatabase(t *testing.T) {
+	objects := []gosmo.CatalogObject{
+		{ObjectID: 1, Schema: "dbo", Name: "Orders", Type: gosmo.CatalogTable,
+			Columns: []gosmo.CatalogColumn{{Name: "OrderId", DataType: "int"}, {Name: "Id", DataType: "int"}}},
+		{ObjectID: 2, Schema: "dbo", Name: "orders", Type: gosmo.CatalogTable,
+			Columns: []gosmo.CatalogColumn{{Name: "LegacyNo", DataType: "int"}, {Name: "ID", DataType: "int"}}},
+		{ObjectID: 3, Schema: "Sales", Name: "Region", Type: gosmo.CatalogTable,
+			Columns: []gosmo.CatalogColumn{{Name: "Code", DataType: "char"}}},
+		{ObjectID: 4, Schema: "sales", Name: "Quota", Type: gosmo.CatalogTable,
+			Columns: []gosmo.CatalogColumn{{Name: "Amount", DataType: "money"}}},
+	}
+	qp := newTestQueryPanelWithInventory(t, "csdb", objects)
+	inv := qp.app.completionInventories[completionInventoryKey(qp.conn.Opts, "csdb")]
+	inv.applyCatalog(inv.catalog, "Latin1_General_CS_AS")
+
+	cases := []struct {
+		name, sql string
+		want      []string
+	}{
+		{"bare upper", "SELECT Orders.| FROM Orders", []string{"Id", "OrderId"}},
+		{"bare lower", "SELECT orders.| FROM orders", []string{"ID", "LegacyNo"}},
+		{"alias over upper", "SELECT o.| FROM dbo.Orders o", []string{"Id", "OrderId"}},
+		{"alias over lower", "SELECT o.| FROM dbo.orders o", []string{"ID", "LegacyNo"}},
+		{"schema object dot", "SELECT dbo.orders.| FROM dbo.orders", []string{"ID", "LegacyNo"}},
+		{"wrong case resolves nothing", "SELECT o.| FROM dbo.ORDERS o", nil},
+		{"schema upper", "SELECT * FROM Sales.|", []string{"Sales.Region"}},
+		{"schema lower", "SELECT * FROM sales.|", []string{"sales.Quota"}},
+		{"Id and ID both offered", "SELECT i| FROM dbo.Orders a JOIN dbo.orders b ON 1=1", []string{"Id", "ID", "OrderId"}},
+		{"prefix still folds", "SELECT * FROM ORD|", []string{"dbo.Orders", "dbo.orders"}},
+	}
+	for _, c := range cases {
+		got := crossDBLabels(t, qp, c.sql)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: %q = %v, want %v", c.name, c.sql, got, c.want)
+		}
+	}
+}

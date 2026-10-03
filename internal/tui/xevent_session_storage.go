@@ -208,9 +208,7 @@ func xeIsBlobURL(s string) bool {
 // container URL, then the file's name — its last path segment, whichever
 // separator it was written with — with .xel added when missing.
 func xeBlobFilename(container, file string) string {
-	if i := strings.LastIndexAny(file, `/\`); i >= 0 {
-		file = file[i+1:]
-	}
+	file = gosmo.ServerPathBase(file)
 	if !strings.EqualFold(file[max(0, len(file)-4):], ".xel") {
 		file += ".xel"
 	}

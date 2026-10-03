@@ -153,7 +153,7 @@ func sourceLabel(devices []string) string {
 	if len(devices) == 0 {
 		return ""
 	}
-	label := serverPathBase(devices[0])
+	label := gosmo.ServerPathBase(devices[0])
 	if len(devices) > 1 {
 		label += fmt.Sprintf(" (%d files)", len(devices))
 	}
@@ -165,7 +165,7 @@ func sourceLabel(devices []string) string {
 // front of it, so a striped set still says so when its name does not fit.
 func historyDeviceLabel(devices []string) string {
 	if len(devices) > 1 {
-		return fmt.Sprintf("[%d files] %s", len(devices), serverPathBase(devices[0]))
+		return fmt.Sprintf("[%d files] %s", len(devices), gosmo.ServerPathBase(devices[0]))
 	}
 	return sourceLabel(devices)
 }

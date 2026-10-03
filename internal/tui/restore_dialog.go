@@ -417,7 +417,7 @@ func (d *RestoreDialog) browseFile() {
 	}
 	start := strings.TrimSpace(d.fFile.Value())
 	if start == "" {
-		start = joinServerPath(d.sc.Server.Info().DefaultBackupPath, "")
+		start = gosmo.JoinServerPath(d.sc.Server.Info().DefaultBackupPath, "")
 	}
 	d.app.fileDialog.ShowOpenOn(fs, "Select Backup File", start, func(path string) {
 		d.fFile.SetValue(path)

@@ -221,9 +221,12 @@ func TestJobStepsUntouchedPageWritesNothing(t *testing.T) {
 // Move Up/Down reorder the page; the write is a fourth pass addressing msdb's
 // future numbers, as a delete plus insert (msdb can't renumber in place).
 //
-// gosmo sends a reorder as one transactional batch (the definition exists only
-// in memory in between; see gosmo's atomicBatch). This asserts
-// delete-before-insert order within it.
+// gosmo sends a reorder as one all-or-nothing batch (the definition exists
+// only in memory in between; see gosmo's atomicBatch). The page applies inside
+// InTransaction, so the batch is gosmo's in-transaction form: the page's
+// transaction makes it atomic, and a ROLLBACK of its own would end that
+// transaction (see gosmo's execAtomic). This asserts delete-before-insert
+// order within it.
 func TestJobStepsMoveUpReordersOnTheServer(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
@@ -239,9 +242,12 @@ func TestJobStepsMoveUpReordersOnTheServer(t *testing.T) {
 		t.Fatalf("want one batch carrying the delete and the insert, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
 	}
 	batch := stmts[0]
-	if !strings.Contains(batch, "BEGIN TRANSACTION") || !strings.Contains(batch, "COMMIT TRANSACTION") {
-		t.Errorf("the reorder was not sent as a transaction, so a failure between the "+
-			"delete and the insert loses the step:\n%s", batch)
+	if !strings.Contains(batch, "BEGIN TRY") || !strings.Contains(batch, "THROW") {
+		t.Errorf("the reorder was not sent as one batch stopping at its first failure:\n%s", batch)
+	}
+	if strings.Contains(batch, "TRANSACTION") || strings.Contains(batch, "XACT_ABORT") {
+		t.Errorf("the reorder inside the page's transaction carries transaction statements "+
+			"of its own, which end the page's transaction on failure:\n%s", batch)
 	}
 	del := strings.Index(batch, "sp_delete_jobstep @job_name = N'Nightly reindex', @step_id = 2")
 	if del < 0 {

@@ -220,7 +220,7 @@ func (a *App) loadLinkedInventory(sc *db.ServerConn, ls *linkedServer, k string,
 				a.setStatus(fmt.Sprintf("Autocomplete unavailable for %s.%s: %v", ls.name, inv.database, err))
 				return
 			}
-			inv.applyCatalog(cat)
+			inv.applyCatalog(cat, "")
 			a.setStatus(fmt.Sprintf("Autocomplete ready for %s.%s (%d tables/views)", ls.name, inv.database, len(cat.Objects)))
 		}))
 }
@@ -257,7 +257,8 @@ func (p *QueryPanel) linkedChainCandidates(chain []string, prefix string) (items
 		if chain[2] == "" {
 			return nil, false
 		}
-		return p.objectItems(inv.bySchema[strings.ToLower(chain[2])], prefix), false
+		objs, _ := inv.bySchema.Get(chain[2])
+		return p.objectItems(objs, prefix), false
 	default:
 		if chain[2] == "" {
 			return nil, false

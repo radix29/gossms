@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
@@ -30,16 +29,25 @@ type completionInventory struct {
 
 	catalog *gosmo.Catalog
 
-	// byQualifiedName indexes catalog.Objects by lowercase "schema.name",
-	// for resolving "schema.table." / "alias." member lookups.
-	byQualifiedName map[string]*gosmo.CatalogObject
-	// bySchema groups catalog.Objects by lowercase schema name, for
-	// offering every table/view in a schema after "schema.".
-	bySchema map[string][]*gosmo.CatalogObject
+	// collation is the database's, which decides whether two names are the
+	// same object: in a case-sensitive database dbo.Orders and dbo.orders
+	// are two tables, and lowered keys let the second shadow the first, so
+	// "Orders." offered orders' columns. "" (the sys-schema and linked
+	// inventories, or a failed read) folds. Matching a typed prefix stays
+	// case-insensitive whatever this says — that is a convenience, not
+	// identity.
+	collation string
+
+	// byQualifiedName indexes catalog.Objects by schema and name (see
+	// qualifiedKey), for resolving "schema.table." / "alias." member lookups.
+	byQualifiedName *nameMap[*gosmo.CatalogObject]
+	// bySchema groups catalog.Objects by schema name, for offering every
+	// table/view in a schema after "schema.".
+	bySchema *nameMap[[]*gosmo.CatalogObject]
 	// fnByQualifiedName indexes catalog.Functions — table-valued functions —
 	// the way byQualifiedName indexes tables and views. Kept apart so a
 	// function only ever resolves where it is called (sqlparse.FromRef.Call).
-	fnByQualifiedName map[string]*gosmo.CatalogObject
+	fnByQualifiedName *nameMap[*gosmo.CatalogObject]
 
 	// defaultSchema is the login's default schema in this database, read with
 	// the catalog: what "db..t" means first (see qualifierSchemas). Empty when
@@ -92,26 +100,36 @@ func evictInventory(m map[string]*completionInventory, key string, inv *completi
 	}
 }
 
-// applyCatalog installs cat and rebuilds the lookup indexes in place, clearing
-// loading and err, so a reused entry keeps its load identity across reloads.
-func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog) {
+// applyCatalog installs cat, read from a database with collation, and
+// rebuilds the lookup indexes in place, clearing loading and err, so a reused
+// entry keeps its load identity across reloads.
+func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog, collation string) {
 	inv.catalog = cat
+	inv.collation = collation
 	inv.err = nil
 	inv.loading = false
-	inv.byQualifiedName = make(map[string]*gosmo.CatalogObject, len(cat.Objects))
-	inv.bySchema = make(map[string][]*gosmo.CatalogObject, len(cat.Schemas))
+	inv.byQualifiedName = newNameMap[*gosmo.CatalogObject](collation)
+	inv.bySchema = newNameMap[[]*gosmo.CatalogObject](collation)
 	for i := range cat.Objects {
 		obj := &cat.Objects[i]
-		key := strings.ToLower(obj.Schema) + "." + strings.ToLower(obj.Name)
-		inv.byQualifiedName[key] = obj
-		schemaKey := strings.ToLower(obj.Schema)
-		inv.bySchema[schemaKey] = append(inv.bySchema[schemaKey], obj)
+		inv.byQualifiedName.Set(qualifiedKey(obj.Schema, obj.Name), obj)
+		list, _ := inv.bySchema.Get(obj.Schema)
+		inv.bySchema.Set(obj.Schema, append(list, obj))
 	}
-	inv.fnByQualifiedName = make(map[string]*gosmo.CatalogObject, len(cat.Functions))
+	inv.fnByQualifiedName = newNameMap[*gosmo.CatalogObject](collation)
 	for i := range cat.Functions {
 		fn := &cat.Functions[i]
-		inv.fnByQualifiedName[strings.ToLower(fn.Schema)+"."+strings.ToLower(fn.Name)] = fn
+		inv.fnByQualifiedName.Set(qualifiedKey(fn.Schema, fn.Name), fn)
 	}
+}
+
+// qualifiedKey is byQualifiedName's key for schema.name. Joined with a NUL
+// rather than a '.', which a bracketed schema or object name may contain.
+func qualifiedKey(schema, name string) string { return schema + "\x00" + name }
+
+// sameName reports whether a and b name the same object in inv's database.
+func (inv *completionInventory) sameName(a, b string) bool {
+	return gosmo.SameName(inv.collation, a, b)
 }
 
 // completionInventoryKey identifies the shared cache entry for a
@@ -218,8 +236,9 @@ func (p *QueryPanel) refreshCompletionCache() {
 // discard itself.
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, inv *completionInventory) {
 	type result struct {
-		cat    *gosmo.Catalog
-		schema string
+		cat       *gosmo.Catalog
+		schema    string
+		collation string
 	}
 	srv := sc.Server
 	startCompletionLoad(a, sc, inventoryLoad(a.completionInventories, key, inv, completionInventoryTimeout,
@@ -234,6 +253,11 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 			// A failure here costs only "db..t" resolving through dbo alone,
 			// so it doesn't fail the catalog.
 			r.schema, _ = srv.DatabaseRef(database).CallerDefaultSchema(ctx)
+			// Nor does this one: without the collation, names fold, which is
+			// what every case-insensitive database wants anyway.
+			if d, err := srv.DatabaseByName(ctx, database); err == nil {
+				r.collation = d.Collation
+			}
 			return r, nil
 		},
 		func(r result, err error) {
@@ -243,7 +267,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 				a.setStatus(fmt.Sprintf("Autocomplete unavailable for %s: %v", database, err))
 				return
 			}
-			inv.applyCatalog(r.cat)
+			inv.applyCatalog(r.cat, r.collation)
 			inv.defaultSchema = r.schema
 			a.setStatus(fmt.Sprintf("Autocomplete ready for %s (%d tables/views)", database, len(r.cat.Objects)))
 		}))
@@ -316,7 +340,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 				a.setStatus(fmt.Sprintf("System-catalog autocomplete unavailable: %v (Ctrl+R in a query editor retries)", err))
 				return
 			}
-			inv.applyCatalog(cat)
+			inv.applyCatalog(cat, "")
 		}))
 }
 

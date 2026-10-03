@@ -220,10 +220,7 @@ func (e *Editor) canAutoOpenCompletion() bool {
 	if e.cursorCol > len(line) {
 		return false
 	}
-	start := e.cursorCol
-	for start > 0 && sqltext.IsWordRune(line[start-1]) {
-		start--
-	}
+	start := sqltext.WordStart(line, e.cursorCol)
 	if start == e.cursorCol {
 		return isNameSigil(line[e.cursorCol-1])
 	}
@@ -242,11 +239,7 @@ func (e *Editor) currentTokenStart() int {
 		return e.cursorCol
 	}
 	line := e.doc.Line(e.cursorRow)
-	i := core.Clamp(e.cursorCol, 0, len(line))
-	for i > 0 && sqltext.IsWordRune(line[i-1]) {
-		i--
-	}
-	return i
+	return sqltext.WordStart(line, core.Clamp(e.cursorCol, 0, len(line)))
 }
 
 // triggerCompletionExplicit is Ctrl+Space: query immediately and, if a word

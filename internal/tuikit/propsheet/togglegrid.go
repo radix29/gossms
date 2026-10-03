@@ -173,8 +173,8 @@ func (t *ToggleGridRow) activateCell(row, col int) {
 	}
 }
 
-// Dirty and the Revert and Validate beside it implement Editable.
-// ToggleGridRow tracks its own toggle baseline, and still consults the
+// Dirty and the Revert beside it implement Editable (Validate is the
+// embedded GridRow's). ToggleGridRow tracks its own toggle baseline, and still consults the
 // embedded GridRow's DirtyFn/RevertFn when a page sets them: a page with
 // pending row adds/removes keeps that state itself, and every SetRows that
 // shows the change resets the baseline. Shadowing them outright made
@@ -199,8 +199,6 @@ func (t *ToggleGridRow) Revert() {
 	// the rows (and the baseline) with SetRows has the last word.
 	t.GridRow.Revert()
 }
-
-func (t *ToggleGridRow) Validate() error { return nil }
 
 func cloneBoolMatrix(m [][]bool) [][]bool {
 	out := make([][]bool, len(m))

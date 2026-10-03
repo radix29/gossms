@@ -367,3 +367,21 @@ func TestTruncateLine(t *testing.T) {
 		t.Error("a string without breaks was copied")
 	}
 }
+
+func TestTrimLastGrapheme(t *testing.T) {
+	cases := []struct{ s, want string }{
+		{"", ""},
+		{"a", ""},
+		{"ab", "a"},
+		{"é", ""},     // precomposed, two bytes
+		{"xé", "x"},  // e + combining acute: one cluster
+		{"a你", "a"},   // three-byte rune
+		{"🇷🇴", ""},    // flag: two regional indicators, one cluster
+		{"a👩‍💻", "a"}, // ZWJ sequence
+	}
+	for _, c := range cases {
+		if got := TrimLastGrapheme(c.s); got != c.want {
+			t.Errorf("TrimLastGrapheme(%q) = %q, want %q", c.s, got, c.want)
+		}
+	}
+}

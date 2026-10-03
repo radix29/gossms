@@ -252,7 +252,7 @@ func (d *BackupDialog) autoDest() string {
 	} else if d.sc != nil && d.sc.Server != nil {
 		dir = d.sc.Server.Info().DefaultBackupPath
 	}
-	return joinServerPath(dir, dbName+suffix)
+	return gosmo.JoinServerPath(dir, dbName+suffix)
 }
 
 // loadDefaultPaths reads the server's current default backup directory and,

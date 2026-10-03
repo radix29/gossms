@@ -30,35 +30,11 @@ type nameSet struct {
 // with names. An empty collation — not read — folds, which is the
 // case-insensitive default every install ships with.
 func newNameSet(collation string, names ...string) *nameSet {
-	s := &nameSet{fold: collationFoldsCase(collation), m: make(map[string]struct{}, len(names))}
+	s := &nameSet{fold: gosmo.CollationIgnoresCase(collation), m: make(map[string]struct{}, len(names))}
 	for _, n := range names {
 		s.Add(n)
 	}
 	return s
-}
-
-// collationFoldsCase reports whether collation compares names without regard
-// to case: every collation but a CS one or a binary one. Matched by whole
-// "_"-separated token, so a collation whose name merely contains the letters
-// is not mistaken for one.
-func collationFoldsCase(collation string) bool {
-	for tok := range strings.SplitSeq(strings.ToUpper(collation), "_") {
-		switch tok {
-		case "CS", "BIN", "BIN2":
-			return false
-		}
-	}
-	return true
-}
-
-// sameName reports whether a and b name the same object under collation —
-// the one-off form of a nameSet lookup, for a comparison against a single
-// name rather than a set of them.
-func sameName(collation, a, b string) bool {
-	if collationFoldsCase(collation) {
-		return strings.EqualFold(a, b)
-	}
-	return a == b
 }
 
 func foldName(fold bool, name string) string {
@@ -92,7 +68,7 @@ type nameMap[V any] struct {
 
 // newNameMap returns an empty map comparing names the way collation does.
 func newNameMap[V any](collation string) *nameMap[V] {
-	return &nameMap[V]{fold: collationFoldsCase(collation), m: map[string]V{}}
+	return &nameMap[V]{fold: gosmo.CollationIgnoresCase(collation), m: map[string]V{}}
 }
 
 // Set stores v under name.

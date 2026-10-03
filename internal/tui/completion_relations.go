@@ -507,13 +507,12 @@ func queryColumns(rc resolveCtx, q *sqlparse.Query) []gosmo.CatalogColumn {
 	rels := resolveRefs(rc, q.From)
 
 	var cols []gosmo.CatalogColumn
-	seen := map[string]bool{}
+	seen := newNameSet(rc.inv.collation)
 	add := func(col gosmo.CatalogColumn) {
-		key := strings.ToLower(col.Name)
-		if col.Name == "" || seen[key] {
+		if col.Name == "" || seen.Has(col.Name) {
 			return
 		}
-		seen[key] = true
+		seen.Add(col.Name)
 		cols = append(cols, col)
 	}
 

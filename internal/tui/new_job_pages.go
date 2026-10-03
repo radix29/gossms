@@ -60,7 +60,7 @@ func connectedLoginIndex(sc *db.ServerConn, names []string) int {
 	if sc == nil || sc.Server == nil || sc.Server.Info() == nil || sc.Server.Info().Login == "" {
 		return 0
 	}
-	fold := collationFoldsCase(serverCollation(sc))
+	fold := gosmo.CollationIgnoresCase(serverCollation(sc))
 	want := foldName(fold, sc.Server.Info().Login)
 	for i, n := range names {
 		if foldName(fold, n) == want {

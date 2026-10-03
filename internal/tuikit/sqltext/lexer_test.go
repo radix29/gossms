@@ -35,8 +35,13 @@ func TestNextTokens(t *testing.T) {
 	}{
 		{"SELECT a.b, *", []string{"w:SELECT", "w:a", "p:.", "w:b", "p:,", "p:*"}, State{}},
 		{"#t ##g @v @@ROWCOUNT", []string{"w:#t", "w:##g", "w:@v", "w:@@ROWCOUNT"}, State{}},
-		// The sigil alone is a word; a mixed sigil run is two.
-		{"# @ #@x", []string{"w:#", "w:@", "w:#", "w:@x"}, State{}},
+		// The sigil alone is a word; '#'/'@' after the sigil continue it.
+		{"# @ #@x", []string{"w:#", "w:@", "w:#@x"}, State{}},
+		// '$', '#' and '@' continue a word but never start one: a leading '$'
+		// is punctuation (money, $action), a leading '#'/'@' the sigil.
+		{"Price$ t#1 a@b @x@y ##t#", []string{"w:Price$", "w:t#1", "w:a@b", "w:@x@y", "w:##t#"}, State{}},
+		{"$5.00 $action t.$x", []string{"p:$", "n:5.00", "p:$", "w:action", "w:t", "p:.", "p:$", "w:x"}, State{}},
+		{"@a+@b,c$=1", []string{"w:@a", "p:+", "w:@b", "p:,", "w:c$", "p:=", "n:1"}, State{}},
 		{"@Delete", []string{"w:@Delete"}, State{}},
 		{"42 1.5 0x1F 1e5 x1", []string{"n:42", "n:1.5", "n:0x1F", "n:1e5", "w:x1"}, State{}},
 		{"_a ä1 名前", []string{"w:_a", "w:ä1", "w:名前"}, State{}},
@@ -191,6 +196,42 @@ func TestLineEndMatchesFlatStateAtEveryLineStart(t *testing.T) {
 		}
 		st = LineEnd([]rune(line), st)
 		off += len([]rune(line)) + 1
+	}
+}
+
+func TestIsWordContinue(t *testing.T) {
+	for _, r := range "aZ_09é名$#@" {
+		if !IsWordContinue(r) {
+			t.Errorf("IsWordContinue(%q) = false", r)
+		}
+	}
+	for _, r := range " .,;()[]'\"-+*/" {
+		if IsWordContinue(r) {
+			t.Errorf("IsWordContinue(%q) = true", r)
+		}
+	}
+}
+
+func TestWordStart(t *testing.T) {
+	for _, tt := range []struct {
+		line string
+		end  int
+		want int
+	}{
+		{"SELECT Price$", 13, 7},
+		{"SELECT Pri", 10, 7},
+		{"t.a@b", 5, 2},
+		{"@var", 4, 1},    // the sigil stays before the word
+		{"@x@y", 4, 1},    // one variable; '@' mid-word is in it
+		{"#tmp#1", 6, 1},  // likewise a temp table
+		{"$action", 7, 1}, // a leading '$' is not the word's
+		{"x = $", 5, 5},   // nothing to start
+		{"a.", 2, 2},
+		{"", 0, 0},
+	} {
+		if got := WordStart([]rune(tt.line), tt.end); got != tt.want {
+			t.Errorf("WordStart(%q, %d) = %d, want %d", tt.line, tt.end, got, tt.want)
+		}
 	}
 }
 

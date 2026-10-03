@@ -117,7 +117,7 @@ func (p *QueryPanel) databaseInventory(own *completionInventory, name string) (i
 	if name == "" {
 		return nil, false
 	}
-	if sameName(serverCollation(p.conn), name, p.database) {
+	if gosmo.SameName(serverCollation(p.conn), name, p.database) {
 		return own, false
 	}
 	dir := p.app.ensureCompletionDirectory(p.conn)
@@ -183,16 +183,15 @@ func (p *QueryPanel) chainCandidates(inv, sysInv *completionInventory, chain []s
 		// "Sales.." offers both schemas it can mean, the default one's
 		// objects winning a name both hold, as they do on the server.
 		var objs []*gosmo.CatalogObject
-		seen := map[string]bool{}
+		seen := newNameSet(other.collation)
 		for _, schema := range other.qualifierSchemas(chain[1]) {
-			schema = strings.ToLower(schema)
-			list, ok := other.bySchema[schema]
+			list, ok := other.bySchema.Get(schema)
 			if !ok && sysInv != nil {
-				list = sysInv.bySchema[schema]
+				list, _ = sysInv.bySchema.Get(schema)
 			}
 			for _, obj := range list {
-				if n := strings.ToLower(obj.Name); !seen[n] {
-					seen[n] = true
+				if !seen.Has(obj.Name) {
+					seen.Add(obj.Name)
 					objs = append(objs, obj)
 				}
 			}
@@ -276,7 +275,7 @@ func (inv *completionInventory) qualifierSchemas(schema string) []string {
 	if schema != "" {
 		return []string{schema}
 	}
-	if inv.defaultSchema == "" || strings.EqualFold(inv.defaultSchema, "dbo") {
+	if inv.defaultSchema == "" || inv.sameName(inv.defaultSchema, "dbo") {
 		return []string{"dbo"}
 	}
 	return []string{inv.defaultSchema, "dbo"}

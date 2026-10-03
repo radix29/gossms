@@ -85,7 +85,11 @@ work; close an item by deleting it when fixed.
   `gossms_w6_gran` (granular CREATE/ENABLE/DISABLE only: Profiler allowed,
   Delete and Properties' Events greyed). **Left on t-qmi-01 to drop:** logins
   `gossms_w6_vss`, `gossms_w6_alt`, `gossms_w6_gran` (password
-  `W6-inSecure123!`), session `gossms_test_xe_w6`.
+  `W6-inSecure123!`), session `gossms_test_xe_w6`. Also: whether MI accepts
+  `MAX_DURATION` on an event session — gossms's Advanced page hides it off-box
+  (`major >= 17 && !azure`, `xevent_session_advanced.go`) while gosmo reads
+  `max_duration` there; the answer becomes one gosmo capability gossms asks
+  (review plan 2026-10-03 E9).
 
 - **V4 — Resource Governor and Database Mail unverified on Managed
   Instance** (Phase 5 item 24; t-qmi-01 unavailable since 2026-09-30). Both
@@ -131,3 +135,12 @@ work; close an item by deleting it when fixed.
   default database or schema), and a non-SQL Server linked server. `PIVOT`
   columns are typed for every built-in aggregate PIVOT accepts (`CHECKSUM_AGG`
   and `STRING_AGG` it refuses); a user-defined aggregate leaves them untyped.
+- **N2 — IntelliSense keys a contained database by its data collation.**
+  `completionInventory.collation` is `sys.databases.collation_name`, but a
+  partially contained database (and an Azure SQL Database with
+  `CATALOG_COLLATION`) compares *names* under its catalog collation,
+  `Latin1_General_100_CI_AS_KS_WS_SC` — case-insensitive. On a contained `_CS_`
+  database a wrong-case qualifier (`ORDERS.`) answers nothing although the
+  server would resolve it. Needs the containment / catalog collation on
+  `gosmo.Database` (not read by `DatabaseByName` today); `nameSet` users via
+  `databaseCollation` share the gap.

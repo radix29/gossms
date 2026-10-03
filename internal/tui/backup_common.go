@@ -28,29 +28,6 @@ func wrapMessage(text string, w, maxLines int) []string {
 	return core.WrapTextLimit(text, w, maxLines)
 }
 
-// joinServerPath joins a directory and file name using the separator the
-// directory itself uses — the path lives on the server, whose OS may not be
-// the one gossms runs on.
-func joinServerPath(dir, name string) string {
-	if dir == "" {
-		return name
-	}
-	sep := "/"
-	if strings.Contains(dir, `\`) {
-		sep = `\`
-	}
-	return strings.TrimRight(dir, `/\`) + sep + name
-}
-
-// serverPathBase returns the file-name component of a server-side path,
-// whichever separator convention it uses.
-func serverPathBase(path string) string {
-	if i := strings.LastIndexAny(path, `/\`); i >= 0 {
-		return path[i+1:]
-	}
-	return path
-}
-
 // formatHMS renders a duration as "HH:MM:SS". The app's only duration
 // renderer: the backup/restore progress screens, the query panel's elapsed
 // time, and every SQL Agent run duration go through it, so a job that took

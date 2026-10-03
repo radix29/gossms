@@ -37,19 +37,12 @@ func TestNameSetFollowsCollation(t *testing.T) {
 	}
 }
 
-// sameName and nameMap are nameSet's one-off and keyed forms, and must fold
-// exactly when it does.
-func TestSameNameAndNameMapFollowCollation(t *testing.T) {
+// nameMap is nameSet's keyed form, and must fold exactly when it does.
+func TestNameMapFollowsCollation(t *testing.T) {
 	for _, tt := range []struct {
 		collation string
 		fold      bool
 	}{{"", true}, {"SQL_Latin1_General_CP1_CI_AS", true}, {"Latin1_General_CS_AS", false}, {"Latin1_General_BIN2", false}} {
-		if got := sameName(tt.collation, "Sales", "sales"); got != tt.fold {
-			t.Errorf("%q: sameName(Sales, sales) = %v, want %v", tt.collation, got, tt.fold)
-		}
-		if !sameName(tt.collation, "Sales", "Sales") {
-			t.Errorf("%q: sameName of identical names is false", tt.collation)
-		}
 		m := newNameMap[int](tt.collation)
 		m.Set("Sales", 1)
 		m.Set("sales", 2)

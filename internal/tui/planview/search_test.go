@@ -2,6 +2,7 @@ package planview
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 )
@@ -125,5 +126,21 @@ func TestEstimatedToggle_TileRowsText(t *testing.T) {
 	after := v.tileRowsText(n)
 	if before == after {
 		t.Errorf("tileRowsText unchanged (%q) after toggling showEstimated, want the estimate instead of the actual", before)
+	}
+}
+
+// TestSearch_BackspaceRemovesWholeCharacter pins E3: Backspace used to cut
+// one byte, leaving half of a multi-byte character in the query.
+func TestSearch_BackspaceRemovesWholeCharacter(t *testing.T) {
+	v := newTreeTabView(t)
+	v.HandleKey(keyRune('/'))
+	typeString(v, "xé")
+	v.HandleKey(namedKey(tcell.KeyBackspace2))
+	if v.searchSt.query != "x" || !utf8.ValidString(v.searchSt.query) {
+		t.Errorf("query after Backspace = %q, want \"x\"", v.searchSt.query)
+	}
+	v.HandleKey(namedKey(tcell.KeyBackspace2))
+	if v.searchSt.query != "" {
+		t.Errorf("query after second Backspace = %q, want empty", v.searchSt.query)
 	}
 }

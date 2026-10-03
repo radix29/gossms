@@ -38,9 +38,7 @@ func (v *PlanView) handleSearchKey(ev *tcell.EventKey) bool {
 			v.searchSt.active = false
 			return true
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			if n := len(v.searchSt.query); n > 0 {
-				v.searchSt.query = v.searchSt.query[:n-1]
-			}
+			v.searchSt.query = core.TrimLastGrapheme(v.searchSt.query)
 			return true
 		}
 		// Swallow everything else while typing — including digits and

@@ -35,12 +35,12 @@ func findCatalogObject(inv, sysInv *completionInventory, schema, name string) *g
 	if schema == "" {
 		return findCatalogObjectByName(inv, sysInv, name)
 	}
-	key := strings.ToLower(schema) + "." + strings.ToLower(name)
-	if obj, ok := inv.byQualifiedName[key]; ok {
+	key := qualifiedKey(schema, name)
+	if obj, ok := inv.byQualifiedName.Get(key); ok {
 		return obj
 	}
 	if sysInv != nil {
-		if obj, ok := sysInv.byQualifiedName[key]; ok {
+		if obj, ok := sysInv.byQualifiedName.Get(key); ok {
 			return obj
 		}
 	}
@@ -48,16 +48,13 @@ func findCatalogObject(inv, sysInv *completionInventory, schema, name string) *g
 }
 
 func findCatalogObjectByName(inv, sysInv *completionInventory, name string) *gosmo.CatalogObject {
-	nl := strings.ToLower(name)
-	for i := range inv.catalog.Objects {
-		if strings.ToLower(inv.catalog.Objects[i].Name) == nl {
-			return &inv.catalog.Objects[i]
+	for _, in := range []*completionInventory{inv, sysInv} {
+		if in == nil || in.catalog == nil {
+			continue
 		}
-	}
-	if sysInv != nil && sysInv.catalog != nil {
-		for i := range sysInv.catalog.Objects {
-			if strings.ToLower(sysInv.catalog.Objects[i].Name) == nl {
-				return &sysInv.catalog.Objects[i]
+		for i := range in.catalog.Objects {
+			if in.sameName(in.catalog.Objects[i].Name, name) {
+				return &in.catalog.Objects[i]
 			}
 		}
 	}
@@ -74,13 +71,13 @@ func findCatalogFunction(inv, sysInv *completionInventory, schema, name string) 
 			continue
 		}
 		if schema != "" {
-			if fn, ok := in.fnByQualifiedName[strings.ToLower(schema)+"."+strings.ToLower(name)]; ok {
+			if fn, ok := in.fnByQualifiedName.Get(qualifiedKey(schema, name)); ok {
 				return fn
 			}
 			continue
 		}
 		for i := range in.catalog.Functions {
-			if strings.EqualFold(in.catalog.Functions[i].Name, name) {
+			if in.sameName(in.catalog.Functions[i].Name, name) {
 				return &in.catalog.Functions[i]
 			}
 		}
@@ -101,11 +98,11 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 	if r, ok := resolveQualifierToRelation(inv, sysInv, rels, qualifier); ok {
 		return p.columnItemsFor(r.columns(), prefix), false
 	}
-	if objs, ok := inv.bySchema[strings.ToLower(qualifier)]; ok {
+	if objs, ok := inv.bySchema.Get(qualifier); ok {
 		return p.objectItems(objs, prefix), false
 	}
 	if sysInv != nil {
-		if objs, ok := sysInv.bySchema[strings.ToLower(qualifier)]; ok {
+		if objs, ok := sysInv.bySchema.Get(qualifier); ok {
 			return p.objectItems(objs, prefix), false
 		}
 		if sysInv.loading && strings.EqualFold(qualifier, "sys") {
@@ -250,20 +247,21 @@ func (p *QueryPanel) columnItemsFor(cols []gosmo.CatalogColumn, prefix string) [
 // columns (deduplicated by name — a column present on more than one joined
 // table shows once) plus each relation's own alias/table/CTE name, so typing
 // "c." after "c" was just offered still works — the unqualified SELECT/
-// WHERE/ON/GROUP BY/ORDER BY/HAVING/SET context.
-func (p *QueryPanel) scopedColumnCandidates(rels []relation, prefix string) []controls.CompletionItem {
+// WHERE/ON/GROUP BY/ORDER BY/HAVING/SET context. Whether two columns share a
+// name is the panel's database collation's call: under a case-sensitive one
+// Id and ID are both offered.
+func (p *QueryPanel) scopedColumnCandidates(rels []relation, collation, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
-	seenCol := make(map[string]bool)
+	seenCol := newNameSet(collation)
 	seenRef := make(map[string]bool)
 	for _, rel := range rels {
 		for _, col := range rel.columns() {
-			key := strings.ToLower(col.Name)
-			ok, partial := nameMatch(key, pl)
-			if seenCol[key] || !ok {
+			ok, partial := nameMatch(col.Name, pl)
+			if seenCol.Has(col.Name) || !ok {
 				continue
 			}
-			seenCol[key] = true
+			seenCol.Add(col.Name)
 			detail := formatColumnType(col)
 			if rel.name != "" {
 				detail += " — " + rel.name

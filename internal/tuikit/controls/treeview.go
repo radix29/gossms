@@ -36,7 +36,7 @@ func (n *TreeNode) onText(vcol int) bool {
 	start := n.Depth*2 + 4
 	w := core.DisplayWidth(n.Label)
 	if n.Icon != 0 {
-		w += core.DisplayWidth(string(n.Icon)) + 1
+		w += core.RuneWidth(n.Icon) + 1
 	}
 	return vcol >= start && vcol < start+w
 }
@@ -165,7 +165,7 @@ func (tv *TreeView) indexOf(id TreeNodeID) int {
 func (tv *TreeView) lineWidth(n TreeNode) int {
 	w := n.Depth*2 + 4
 	if n.Icon != 0 {
-		w += max(1, core.DisplayWidth(string(n.Icon))) + 1
+		w += max(1, core.RuneWidth(n.Icon)) + 1
 	}
 	w += core.DisplayWidth(n.Label)
 	return w

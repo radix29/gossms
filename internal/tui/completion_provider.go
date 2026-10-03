@@ -204,7 +204,7 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 		// pull, so fall back to the object list.
 		return p.tableCandidates(inv, sysInv, nil, bindings, prefix), replaceFrom
 	default:
-		return p.scopedColumnCandidates(rels, prefix), replaceFrom
+		return p.scopedColumnCandidates(rels, inv.collation, prefix), replaceFrom
 	}
 }
 

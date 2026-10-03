@@ -168,13 +168,40 @@ func LineEnd(line []rune, st State) State {
 	}
 }
 
-// IsWordRune reports whether r can continue a T-SQL word: a Unicode letter or
-// digit, or '_'. A word starting with a digit is a number.
+// IsWordRune reports whether r can start a T-SQL word: a Unicode letter or
+// digit, or '_'. A word starting with a digit is a number. Inside a word
+// IsWordContinue applies instead.
 func IsWordRune(r rune) bool {
 	if r < utf8.RuneSelf {
 		return r == '_' || (r|0x20 >= 'a' && r|0x20 <= 'z') || (r >= '0' && r <= '9')
 	}
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// IsWordContinue reports whether r can continue a T-SQL word once it has
+// started: IsWordRune, or '$', '#' or '@' — a regular identifier's later
+// characters, so Price$, t#1 and a@b are each one name (gosmo's
+// QuoteNameIfNeeded leaves them bare, and completion inserts them so). Only
+// continuation: a leading '$' stays punctuation, so $5.00 is money and
+// $action a pseudo-column, and a leading '#'/'@' is the sigil Next lexes
+// itself.
+func IsWordContinue(r rune) bool {
+	return IsWordRune(r) || r == '$' || r == '#' || r == '@'
+}
+
+// WordStart returns where the word ending at end in line starts, scanning
+// back over IsWordContinue runes and then forward past any that cannot start
+// one — so the start is never a '$', and a '#'/'@' sigil sits just before it
+// rather than in it. It is end when no word ends there.
+func WordStart(line []rune, end int) int {
+	start := end
+	for start > 0 && IsWordContinue(line[start-1]) {
+		start--
+	}
+	for start < end && !IsWordRune(line[start]) {
+		start++
+	}
+	return start
 }
 
 func isDigit(r rune) bool {
@@ -185,7 +212,7 @@ func isDigit(r rune) bool {
 }
 
 func wordEnd(buf []rune, j, limit int) int {
-	for j < limit && IsWordRune(buf[j]) {
+	for j < limit && IsWordContinue(buf[j]) {
 		j++
 	}
 	return j

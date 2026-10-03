@@ -181,7 +181,7 @@ func TestInventoryLoadRefreshesPopupAfterUSEMovedDatabase(t *testing.T) {
 
 	qp.database = "tempdb" // the run's USE, via setResult
 	masterKey := completionInventoryKey(qp.conn.Opts, "master")
-	qp.app.completionInventories[masterKey].applyCatalog(&gosmo.Catalog{})
+	qp.app.completionInventories[masterKey].applyCatalog(&gosmo.Catalog{}, "")
 	qp.app.refreshSysCompletionPopups(qp.app.completionInventories[masterKey].serverKey)
 
 	if !qp.editor.CompletionActive() {
@@ -211,7 +211,7 @@ func TestRunEntryPointsCloseCompletion(t *testing.T) {
 				t.Fatalf("%s left the completion popup open", name)
 			}
 			// The load landing after the run must not reopen it...
-			qp.app.completionInventories[completionInventoryKey(qp.conn.Opts, "master")].applyCatalog(&gosmo.Catalog{})
+			qp.app.completionInventories[completionInventoryKey(qp.conn.Opts, "master")].applyCatalog(&gosmo.Catalog{}, "")
 			qp.app.refreshSysCompletionPopups(sysCompletionInventoryKey(qp.conn.Opts))
 			if qp.editor.CompletionActive() {
 				t.Errorf("a refresh after %s reopened the popup", name)

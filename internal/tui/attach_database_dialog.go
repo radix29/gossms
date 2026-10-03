@@ -142,7 +142,7 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 			hint.SetError("Type or browse to the database's primary data file first.")
 			return
 		}
-		hint.Set("Reading the file list from " + serverPathBase(path) + "...")
+		hint.Set("Reading the file list from " + gosmo.ServerPathBase(path) + "...")
 		// From d.ctx, so a disconnect stops it too.
 		ctx, seq := d.fileRead.BeginTimeout(d.ctx, propFetchTimeout)
 		d.app.safego("reading a detached database's file list", func() {
@@ -179,7 +179,7 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 		}
 		start := strings.TrimSpace(mdfRow.Value())
 		if start == "" {
-			start = joinServerPath(pf.dataPath, "")
+			start = gosmo.JoinServerPath(pf.dataPath, "")
 		}
 		d.app.fileDialog.ShowOpenOn(fs, "Select Primary Data File", start, func(path string) {
 			mdfRow.SetValue(path)
@@ -317,7 +317,7 @@ func checkAttachFiles(ctx context.Context, srv *gosmo.Server, paths []string) er
 			return nil
 		}
 		if !exists {
-			missing = append(missing, serverPathBase(p))
+			missing = append(missing, gosmo.ServerPathBase(p))
 		}
 	}
 	if len(missing) == 0 {

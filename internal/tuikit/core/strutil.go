@@ -315,6 +315,18 @@ func splitGraphemeWidth(s string, n int) (head, rest string, headWidth int) {
 	return s[:end], s[end:], width
 }
 
+// TrimLastGrapheme returns s without its last grapheme cluster — what one
+// Backspace removes. Cutting a byte (or a rune) instead leaves half a
+// multi-byte character or a dangling combining mark behind.
+func TrimLastGrapheme(s string) string {
+	last := 0
+	g := displaywidth.StringGraphemes(s)
+	for end := 0; g.Next(); end += len(g.Value()) {
+		last = end
+	}
+	return s[:last]
+}
+
 // CenterOffset returns the left padding needed to center content of width
 // contentW within a field of width fieldW, clamped to 0 if contentW >= fieldW.
 func CenterOffset(fieldW, contentW int) int {

@@ -1231,7 +1231,10 @@ Unverified on Managed Instance and on non-Enterprise editions:
   `statementLeaders` built from them).
 - **`core.IsWordRune` is not the T-SQL word rule.** It drives Ctrl+arrow word
   navigation in any text field. Lexing and the completion trigger use
-  `sqltext.IsWordRune`; the two agree today, and nothing requires them to.
+  `sqltext.IsWordRune` for a word's first rune and `sqltext.IsWordContinue`
+  (which adds `$`, `#`, `@`, as T-SQL's identifier rule does) for the rest, so
+  `Price$` is one word to them and two to Ctrl+arrow. Nothing requires the two
+  rules to agree.
 
 ## SQL NULL in results: what each consumer writes — settled, do not re-raise
 

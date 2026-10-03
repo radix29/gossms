@@ -15,6 +15,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/pkg/browser"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -575,11 +576,11 @@ func (a *App) buildUI() {
 	a.newSnapshotDialog = registerDialog(a, NewNewSnapshotDialog(a))
 	a.fileDialog = registerDialog(a, dialogs.NewFileDialog(a.screen))
 	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
-		// serverPathBase, not filepath.Base: the path uses the SQL Server
+		// gosmo.ServerPathBase, not filepath.Base: the path uses the SQL Server
 		// host's separator, so filepath.Base of `C:\Backup\db.bak` on Linux is
 		// the whole string.
 		a.confirmDialog.ShowConfirm("Confirm Save As",
-			serverPathBase(path)+" already exists. Overwrite it?",
+			gosmo.ServerPathBase(path)+" already exists. Overwrite it?",
 			func(confirmed bool) {
 				if confirmed {
 					proceed()
