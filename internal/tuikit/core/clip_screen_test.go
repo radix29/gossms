@@ -33,6 +33,15 @@ func (s *recScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
 	return rest, DisplayWidth(head)
 }
 
+// FillArea is tcell's: the area clipped to the screen, nothing more.
+func (s *recScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	for row := max(y, 0); row < min(y+h, s.h); row++ {
+		for col := max(x, 0); col < min(x+w, s.w); col++ {
+			s.SetContent(col, row, ch, nil, style)
+		}
+	}
+}
+
 func (s *recScreen) at(x, y int) rune { return s.cells[[2]int{x, y}] }
 
 func TestClipScreenDropsWritesOutsideTheClip(t *testing.T) {
@@ -103,5 +112,24 @@ func TestClipScreenFillCoversOnlyTheClip(t *testing.T) {
 	}
 	if rec.at(1, 1) != 0 || rec.at(4, 1) != 0 || rec.at(2, 3) != 0 {
 		t.Error("Fill should not write outside the clip rectangle")
+	}
+}
+
+// TestClipScreenFillAreaCoversOnlyTheClip pins T65: FillArea used to reach
+// the wrapped screen unclipped, so the first caller to fill through it would
+// paint across whatever sat beside the clip.
+func TestClipScreenFillAreaCoversOnlyTheClip(t *testing.T) {
+	rec := newRecScreen(20, 10)
+	cs := NewClipScreen(rec)
+	cs.SetClip(Rect{X: 2, Y: 1, W: 3, H: 2})
+
+	cs.FillArea(0, 0, 10, 10, '#', tcell.StyleDefault)
+
+	if len(rec.cells) != 6 || rec.at(2, 1) != '#' || rec.at(4, 2) != '#' {
+		t.Errorf("FillArea wrote %d cells, want exactly the 3x2 clip", len(rec.cells))
+	}
+	cs.FillArea(10, 0, 5, 5, '!', tcell.StyleDefault)
+	if len(rec.cells) != 6 {
+		t.Error("FillArea wholly outside the clip should write nothing")
 	}
 }

@@ -1,10 +1,10 @@
 package controls
 
 import (
-	"strings"
-	"unicode"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/sqltext"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -136,16 +136,22 @@ var sqlKeywords = map[string]bool{
 
 // SQLHighlighter is the built-in SQL syntax highlighter for Editor.
 //
+// It colours what sqltext.Next lexes — the lexer the executor splits batches
+// by and Ctrl+Enter selects statements by — so a keyword inside a [bracketed]
+// or "quoted" identifier is not coloured, and a "/*" inside one opens no
+// comment. A literal, identifier or comment left open at the end of a line
+// carries onto the next, as it does for the server.
+//
 // The returned Highlighter is stateful and belongs to exactly one Editor —
 // see the cache below. Build a fresh one per Editor, as every call site does.
 //
 // Editor.Draw calls it once per visible row, and Draw runs on every event the
 // app processes — every keystroke, mouse-move tick and timer tick included.
-// Deciding whether a line starts inside an unterminated /* */ means replaying
-// every prior line (blockCommentDepthAt): O(N) per line, O(H*N) per Draw for
-// a viewport of H rows. Measured on a 40-row viewport scrolled to the bottom
-// of the document, that is ~4.6ms per pass at 1,000 lines and ~48ms at 10,000
-// — i.e. typing in a large script is bounded by the highlighter.
+// Deciding what state a line starts in means replaying every prior line
+// (sqltext.LineEnd): O(N) per line, O(H*N) per Draw for a viewport of H rows.
+// Measured on a 40-row viewport scrolled to the bottom of the document, that
+// was ~4.6ms per pass at 1,000 lines and ~48ms at 10,000 — i.e. typing in a
+// large script is bounded by the highlighter.
 //
 // The starts cache below replays the document once and keeps the answer for
 // every line, so each call is an array index. It is rebuilt only when the
@@ -163,166 +169,57 @@ func SQLHighlighter(p *theme.Palette) Highlighter {
 	cmtStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorComment)
 	numStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)
 
-	var starts prefixStates[int]
+	var starts prefixStates[sqltext.State]
 
 	return func(doc *Document, idx int) []ColorRun {
 		line := doc.Line(idx)
 		runs := make([]ColorRun, 0, 8)
-		i := 0
-
-		// A block comment carried over, unterminated, from an earlier line —
-		// nested depth levels deep.
-		depth := starts.at(doc, idx, 0, blockCommentDepthEnd)
-
-		if depth > 0 {
-			end := blockCommentEnd(line, 0, depth)
-			if end < 0 {
-				return append(runs, ColorRun{0, len(line), cmtStyle})
+		st := starts.at(doc, idx, sqltext.State{}, sqltext.LineEnd)
+		for i := 0; ; {
+			var t sqltext.Token
+			t, st = sqltext.Next(line, i, len(line), st)
+			if t.Kind == sqltext.KindEnd {
+				return runs
 			}
-			runs = append(runs, ColorRun{0, end, cmtStyle})
-			i = end
+			i = t.End
+			switch t.Kind {
+			case sqltext.KindComment:
+				runs = append(runs, ColorRun{t.Start, t.End - t.Start, cmtStyle})
+			case sqltext.KindString:
+				runs = append(runs, ColorRun{t.Start, t.End - t.Start, strStyle})
+			case sqltext.KindNumber:
+				runs = append(runs, ColorRun{t.Start, t.End - t.Start, numStyle})
+			case sqltext.KindWord:
+				if isSQLKeyword(line[t.Start:t.End]) {
+					runs = append(runs, ColorRun{t.Start, t.End - t.Start, kwStyle})
+				}
+			}
 		}
-
-		for i < len(line) {
-			// Block comment
-			if i+1 < len(line) && line[i] == '/' && line[i+1] == '*' {
-				end := blockCommentEnd(line, i+2, 1)
-				if end < 0 {
-					runs = append(runs, ColorRun{i, len(line) - i, cmtStyle})
-					break
-				}
-				runs = append(runs, ColorRun{i, end - i, cmtStyle})
-				i = end
-				continue
-			}
-			// Line comment
-			if i+1 < len(line) && line[i] == '-' && line[i+1] == '-' {
-				runs = append(runs, ColorRun{i, len(line) - i, cmtStyle})
-				break
-			}
-			// String literal
-			if line[i] == '\'' {
-				j := stringLiteralEnd(line, i)
-				runs = append(runs, ColorRun{i, j - i, strStyle})
-				i = j
-				continue
-			}
-			// Number
-			if unicode.IsDigit(line[i]) {
-				j := i
-				for j < len(line) && (unicode.IsDigit(line[j]) || line[j] == '.') {
-					j++
-				}
-				runs = append(runs, ColorRun{i, j - i, numStyle})
-				i = j
-				continue
-			}
-			// Word — a leading '@'/'@@' (local variable / system variable
-			// like @@ROWCOUNT) or '#'/'##' (temp table) isn't itself a
-			// letter/digit/'_', so it must be consumed by its own loop
-			// before the identifier-body loop below runs; otherwise that
-			// loop's condition is already false at j==i and never
-			// advances, spinning forever on the same '@'/'#'.
-			if unicode.IsLetter(line[i]) || line[i] == '_' || line[i] == '@' || line[i] == '#' {
-				j := i
-				for j < len(line) && (line[j] == '@' || line[j] == '#') {
-					j++
-				}
-				for j < len(line) && (unicode.IsLetter(line[j]) || unicode.IsDigit(line[j]) || line[j] == '_') {
-					j++
-				}
-				if sqlKeywords[strings.ToUpper(string(line[i:j]))] {
-					runs = append(runs, ColorRun{i, j - i, kwStyle})
-				}
-				i = j
-				continue
-			}
-			i++
-		}
-		return runs
 	}
 }
 
-// blockCommentEnd returns the rune index right after the "*/" that closes a
-// block comment open depth levels deep at line[from], or -1 if it doesn't
-// close on this line (it continues onto the next one). T-SQL nests block
-// comments — each "/*" inside one needs its own "*/" — and so do the editor's
-// statement select and the executor's batch splitter (sqltext.SplitBatches);
-// colouring "/* /* */ GO */" as code after the first "*/" would show a GO the
-// executor never splits on.
-func blockCommentEnd(line []rune, from, depth int) int {
-	for j := from; j+1 < len(line); j++ {
-		switch {
-		case line[j] == '/' && line[j+1] == '*':
-			depth++
-			j++
-		case line[j] == '*' && line[j+1] == '/':
-			if depth--; depth == 0 {
-				return j + 2
-			}
-			j++
-		}
-	}
-	return -1
-}
+// maxSQLKeywordLen bounds isSQLKeyword's stack buffer, so it must be a
+// constant. TestSQLKeywordsFitTheFoldBuffer fails if a keyword outgrows it.
+const maxSQLKeywordLen = 32
 
-// blockCommentDepthEnd returns how many block comments are still open at the
-// end of line, given how many were open at its start.
-//
-// It skips over "--" line comments and '...' string literals exactly as
-// SQLHighlighter's main loop does, so a "/*" appearing inside either one does
-// not open a comment. Without that, `SELECT 4 -- has /* in it` left the scan
-// "inside a comment" for the whole rest of the document and every following
-// line rendered as one.
-//
-// This is the single definition of that per-line step, shared by the
-// prefixStates cache SQLHighlighter reads and blockCommentDepthAt's full
-// replay, which is the reference that cache's tests check against.
-//
-// An unterminated string ends at the end of its line, which is also what the
-// main loop does — a genuinely multi-line literal is still mis-scanned, and
-// consistently so.
-func blockCommentDepthEnd(line []rune, depth int) int {
-	for j := 0; j < len(line); {
-		if depth > 0 {
-			switch {
-			case j+1 < len(line) && line[j] == '/' && line[j+1] == '*':
-				depth++
-				j += 2
-			case j+1 < len(line) && line[j] == '*' && line[j+1] == '/':
-				depth--
-				j += 2
-			default:
-				j++
-			}
-			continue
+// isSQLKeyword reports whether word is in sqlKeywords, ignoring case, without
+// allocating: it runs per word per visible line on every Draw. The word is
+// ASCII-uppercased into a stack array, and Go compiles a map index on
+// string(byteSlice) without copying. A word longer than any keyword, or with a
+// non-ASCII rune, cannot be one.
+func isSQLKeyword(word []rune) bool {
+	if len(word) > maxSQLKeywordLen {
+		return false
+	}
+	var scratch [maxSQLKeywordLen]byte
+	for i, c := range word {
+		if c >= utf8.RuneSelf {
+			return false
 		}
-		switch {
-		case j+1 < len(line) && line[j] == '/' && line[j+1] == '*':
-			depth = 1
-			j += 2
-		case j+1 < len(line) && line[j] == '-' && line[j+1] == '-':
-			return 0 // rest of the line is a comment that ends with it
-		case line[j] == '\'':
-			j = stringLiteralEnd(line, j)
-		default:
-			j++
+		if c >= 'a' && c <= 'z' {
+			c -= 'a' - 'A'
 		}
+		scratch[i] = byte(c)
 	}
-	return depth
-}
-
-// stringLiteralEnd returns the rune index just past the '...' literal opening
-// at line[from], or len(line) if it never closes on this line. Mirrors the
-// scan SQLHighlighter's main loop performs inline, which blockCommentDepthEnd
-// has to agree with rune for rune.
-func stringLiteralEnd(line []rune, from int) int {
-	j := from + 1
-	for j < len(line) && line[j] != '\'' {
-		j++
-	}
-	if j < len(line) {
-		j++
-	}
-	return j
+	return sqlKeywords[string(scratch[:len(word)])]
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // agent_detail.go builds Object Explorer Details grids for SQL Server Agent
-// nodes, dispatched from detail_browser.go's fetchNodeDetails (same (cols,
+// nodes, dispatched from detail_browser_runs.go's fetchNodeDetails (same (cols,
 // rows, err) shape).
 
 // countOrDash renders a count, or an em dash if its fetch failed, so one
@@ -254,8 +254,7 @@ func agentCategoriesDetail(ctx context.Context, sc *db.ServerConn, class gosmo.C
 	return []string{"Name"}, rows, nil
 }
 
-// agentJobCategoriesDetail is agentCategoriesDetail for job categories, so
-// detail_browser.go needn't import gosmo.
+// agentJobCategoriesDetail is agentCategoriesDetail for job categories.
 func agentJobCategoriesDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	return agentCategoriesDetail(ctx, sc, gosmo.CategoryClassJob)
 }

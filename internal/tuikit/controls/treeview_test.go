@@ -645,3 +645,27 @@ func TestTreeViewDoubleClickActivationDoesNotToggle(t *testing.T) {
 		t.Error("double-click both activated and expanded the node")
 	}
 }
+
+// TestTreeViewDrawsItsTitle. The title was hard-coded "Object Explorer", so a
+// tuikit tree knew which application it was in; now the host names it, and a
+// tree given none draws a plain border.
+func TestTreeViewDrawsItsTitle(t *testing.T) {
+	topRow := func(tv *TreeView) string {
+		s := nullTestScreen(t)
+		tv.Draw(s)
+		var b strings.Builder
+		for x := range 40 {
+			str, _, _ := s.Get(x, 0)
+			b.WriteString(str)
+		}
+		return b.String()
+	}
+	tv := newTestTreeView()
+	if row := topRow(tv); strings.Contains(row, "Object Explorer") {
+		t.Errorf("untitled tree's border = %q", row)
+	}
+	tv.SetTitle("Registered Servers")
+	if row := topRow(tv); !strings.Contains(row, " Registered Servers ") {
+		t.Errorf("border = %q, want the title in it", row)
+	}
+}

@@ -588,15 +588,14 @@ func (c *Config) settingsSnapshot() *Config {
 	return &snap
 }
 
-// mergeSettings copies into dst every setting c changed since base: every
+// mergeSettings copies into dst every setting cur changed since base: every
 // exported field but Connections, by reflection for the same reason
 // settingsSnapshot copies whole.
-func (c *Config) mergeSettings(dst *Config) {
-	base := c.base
+func mergeSettings(cur, base, dst *Config) {
 	if base == nil {
 		base = new(Config)
 	}
-	cv, bv, dv := reflect.ValueOf(c).Elem(), reflect.ValueOf(base).Elem(), reflect.ValueOf(dst).Elem()
+	cv, bv, dv := reflect.ValueOf(cur).Elem(), reflect.ValueOf(base).Elem(), reflect.ValueOf(dst).Elem()
 	t := cv.Type()
 	for i := range t.NumField() {
 		if f := t.Field(i); !f.IsExported() || f.Name == "Connections" {
@@ -629,14 +628,57 @@ func (c *Config) mergeSettings(dst *Config) {
 // would need the key to seal is left out, named in the error returned after
 // the write. Refusing the whole save, as before, lost every setting and
 // connection change for as long as the key file stayed bad.
+//
+// Save is BeginSave, Run and EndSave on one goroutine. The UI goroutine uses
+// the three halves instead, so the lock wait, the key read and the fsync run
+// off it.
 func (c *Config) Save() error {
-	path := configPath()
-	if c.unreadable != nil {
+	j := c.BeginSave()
+	err := j.Run()
+	c.EndSave(j)
+	return err
+}
+
+// SaveJob is one Save split so its file work can run on another goroutine
+// than the one that owns the Config: BeginSave snapshots what to write, Run
+// does the re-read, merge and write touching nothing in the Config, and
+// EndSave adopts the result. Only one job per Config may be between BeginSave
+// and EndSave at a time — EndSave drops the ops the job carried by position.
+type SaveJob struct {
+	path       string
+	unreadable error
+	// settings is the Config's settings when the job began, and base the
+	// baseline they are compared with; the maps they share with the Config
+	// are replaced there, never written into (see XEventHiddenColumns).
+	settings, base *Config
+	ops            []connOp
+
+	// merged is the connection list written, set once Run has written the
+	// file; adopted is set by EndSave.
+	merged           []Connection
+	written, adopted bool
+}
+
+// BeginSave snapshots c for a SaveJob. Call it on the goroutine that owns c.
+func (c *Config) BeginSave() *SaveJob {
+	return &SaveJob{
+		path:       configPath(),
+		unreadable: c.unreadable,
+		settings:   c.settingsSnapshot(),
+		base:       c.base,
+		ops:        slices.Clone(c.ops),
+	}
+}
+
+// Run writes the job's changes to the file, as Save describes. It reads
+// nothing from the Config it came from, so it may run on any goroutine.
+func (j *SaveJob) Run() error {
+	if j.unreadable != nil {
 		// Load never saw this file's contents; writing c would replace them
 		// with emptiness.
-		return fmt.Errorf("config: not saving over %s — it could not be read at startup: %w", path, c.unreadable)
+		return fmt.Errorf("config: not saving over %s — it could not be read at startup: %w", j.path, j.unreadable)
 	}
-	dir := filepath.Dir(path)
+	dir := filepath.Dir(j.path)
 	// 0700, matching loadOrCreateKey's MkdirAll (secret.go). MkdirAll doesn't
 	// chmod an existing directory, so whichever runs first decides; both must
 	// ask for owner-only.
@@ -648,12 +690,42 @@ func (c *Config) Save() error {
 
 	// Locked from the re-read to the write: the merge is only sound if no
 	// other instance writes in between.
-	return fileutil.WithLock(path, func() error { return c.mergeAndWrite(path, key, keyErr) })
+	return fileutil.WithLock(j.path, func() error { return j.mergeAndWrite(key, keyErr) })
 }
 
-// mergeAndWrite is Save's re-read, merge and write, run under the file lock.
+// EndSave adopts a job Run has finished, on the goroutine that owns c: the
+// merged connection list, with any AddOrUpdate or RemoveConnection made since
+// BeginSave replayed onto it and still pending, and the settings the job
+// wrote as the new baseline. A job that wrote nothing changes nothing, so
+// its ops stay pending for the next save; ending a job twice is a no-op.
+func (c *Config) EndSave(j *SaveJob) {
+	if !j.written || j.adopted {
+		return
+	}
+	j.adopted = true
+	later := slices.Clone(c.ops[min(len(j.ops), len(c.ops)):])
+	conns := j.merged
+	for _, op := range later {
+		conns = op.applyTo(conns)
+	}
+	c.Connections = conns
+	c.ops = later
+	c.base = j.settings
+}
+
+// applyTo replays op on a connection list.
+func (op connOp) applyTo(list []Connection) []Connection {
+	if op.add != nil {
+		return addOrUpdate(list, *op.add)
+	}
+	list, _ = removeConnection(list, op.remove)
+	return list
+}
+
+// mergeAndWrite is Run's re-read, merge and write, run under the file lock.
 // key is nil when keyErr says why there is none.
-func (c *Config) mergeAndWrite(path string, key []byte, keyErr error) error {
+func (j *SaveJob) mergeAndWrite(key []byte, keyErr error) error {
+	path := j.path
 	var merged *Config
 	switch data, err := os.ReadFile(path); {
 	case errors.Is(err, fs.ErrNotExist):
@@ -669,23 +741,20 @@ func (c *Config) mergeAndWrite(path string, key []byte, keyErr error) error {
 			merged.keepSealed()
 		}
 	}
-	c.mergeSettings(merged)
-	for _, op := range c.ops {
-		if op.add != nil {
+	mergeSettings(j.settings, j.base, merged)
+	for _, op := range j.ops {
+		if op.add != nil && key == nil && op.add.Password != "" && op.add.sealed == "" {
+			// The new password can't be sealed, so the entry it replaces
+			// keeps its old ciphertext rather than losing it.
 			add := *op.add
-			if key == nil && add.Password != "" && add.sealed == "" {
-				// The new password can't be sealed, so the entry it replaces
-				// keeps its old ciphertext rather than losing it.
-				if i := slices.IndexFunc(merged.Connections, func(e Connection) bool {
-					return e.Name == add.Name || e.GeneratedName() == add.Name
-				}); i >= 0 {
-					add.sealed = merged.Connections[i].sealed
-				}
+			if i := slices.IndexFunc(merged.Connections, func(e Connection) bool {
+				return e.Name == add.Name || e.GeneratedName() == add.Name
+			}); i >= 0 {
+				add.sealed = merged.Connections[i].sealed
 			}
-			merged.Connections = addOrUpdate(merged.Connections, add)
-		} else {
-			merged.Connections, _ = removeConnection(merged.Connections, op.remove)
+			op = connOp{add: &add}
 		}
+		merged.Connections = op.applyTo(merged.Connections)
 	}
 
 	onDisk := *merged
@@ -717,9 +786,8 @@ func (c *Config) mergeAndWrite(path string, key []byte, keyErr error) error {
 	if err := fileutil.WriteAtomic(path, data, 0o600); err != nil {
 		return err
 	}
-	c.Connections = merged.Connections
-	c.ops = nil
-	c.base = c.settingsSnapshot()
+	j.merged = merged.Connections
+	j.written = true
 	if len(unsealed) > 0 {
 		return fmt.Errorf("config: saved, but not the password for %s: %w", strings.Join(unsealed, ", "), keyErr)
 	}

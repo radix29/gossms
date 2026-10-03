@@ -36,11 +36,12 @@ func benchScript(n int) string {
 	}
 	return sb.String()
 }
+func (s *discardScreen) Put(_, _ int, str string, _ tcell.Style) (string, int) { return "", 1 }
 
 // BenchmarkEditorDrawHighlighted10k is the measurement behind the
 // prefix-state cache: a Draw pass over a 40-row viewport scrolled to the
 // bottom of a 10,000-line script. The cost that mattered was
-// blockCommentDepthAt replaying the whole document for the pass's first row,
+// lineStateAt replaying the whole document for the pass's first row,
 // which no per-call memo could avoid — a pass starts at scrollRow and the
 // previous one ended at scrollRow+H-1, so the sequence breaks at every pass
 // boundary. Keyed on the document version instead, a pass that follows no

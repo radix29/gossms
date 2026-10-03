@@ -166,10 +166,10 @@ func TestTrackedSaveKeepsAnotherInstancesPins(t *testing.T) {
 	path := trackedPath(t)
 	a, b := LoadTrackedQueriesFrom(path), LoadTrackedQueriesFrom(path)
 
-	if _, err := a.Toggle("srv", "db", 1); err != nil {
+	if _, err := toggleSaved(a, "srv", "db", 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Toggle("srv", "db", 2); err != nil {
+	if _, err := toggleSaved(b, "srv", "db", 2); err != nil {
 		t.Fatal(err)
 	}
 	if got := LoadTrackedQueriesFrom(path).IDs("srv", "db"); !slices.Equal(got, []int64{1, 2}) {
@@ -180,10 +180,10 @@ func TestTrackedSaveKeepsAnotherInstancesPins(t *testing.T) {
 	}
 
 	// a unpins its own 1; b's next save must not bring it back.
-	if tracked, err := a.Toggle("srv", "db", 1); err != nil || tracked {
+	if tracked, err := toggleSaved(a, "srv", "db", 1); err != nil || tracked {
 		t.Fatalf("a's unpin: tracked %v, err %v", tracked, err)
 	}
-	if _, err := b.Toggle("srv", "db", 3); err != nil {
+	if _, err := toggleSaved(b, "srv", "db", 3); err != nil {
 		t.Fatal(err)
 	}
 	if got := LoadTrackedQueriesFrom(path).IDs("srv", "db"); !slices.Equal(got, []int64{2, 3}) {
@@ -245,7 +245,7 @@ func TestConcurrentTrackedSavesDoNotLoseEachOther(t *testing.T) {
 		wg.Go(func() {
 			tq := LoadTrackedQueriesFrom(path)
 			for i := range rounds {
-				if _, err := tq.Toggle("srv", "db", int64(g*rounds+i)); err != nil {
+				if _, err := toggleSaved(tq, "srv", "db", int64(g*rounds+i)); err != nil {
 					errs[g] = err
 					return
 				}

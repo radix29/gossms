@@ -2,8 +2,9 @@ package activity
 
 import (
 	"context"
-	"database/sql"
 	"strings"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 // Counter object and counter names as in sys.dm_os_performance_counters,
@@ -23,15 +24,15 @@ const (
 // publish beside their per-instance rows.
 const totalInstance = "_Total"
 
-// cntr_type values (WMI PERF_* types). Raw cntr_value is wrong for most:
-// cumulative counters only grow, fractions need their base.
+// cntr_type values, by gosmo's names for them. Raw cntr_value is wrong for
+// most: cumulative counters only grow, fractions need their base.
 const (
-	cntrRawGauge     = 65792      // PERF_COUNTER_LARGE_RAWCOUNT: use as-is
-	cntrPerSecond    = 272696576  // PERF_COUNTER_BULK_COUNT: delta ÷ elapsed
-	cntrPerSecondAlt = 272696320  // PERF_COUNTER_COUNTER: delta ÷ elapsed
-	cntrFraction     = 537003264  // PERF_LARGE_RAW_FRACTION: ÷ base × 100
-	cntrAverageBulk  = 1073874176 // PERF_AVERAGE_BULK: delta ÷ base delta
-	cntrBase         = 1073939712 // PERF_LARGE_RAW_BASE: the divisor for the two above
+	cntrRawGauge     = gosmo.CounterRawCount    // use as-is
+	cntrPerSecond    = gosmo.CounterBulkCount   // delta ÷ elapsed
+	cntrPerSecondAlt = gosmo.CounterCounter     // delta ÷ elapsed
+	cntrFraction     = gosmo.CounterRawFraction // ÷ base × 100
+	cntrAverageBulk  = gosmo.CounterAverageBulk // delta ÷ base delta
+	cntrBase         = gosmo.CounterRawBase     // the divisor for the two above
 )
 
 // counterKey identifies a counter row: object name without instance prefix,
@@ -45,7 +46,7 @@ type counterKey struct {
 // counterValue is one row's reading and its cntr_type.
 type counterValue struct {
 	value int64
-	typ   int
+	typ   gosmo.CounterType
 }
 
 // counterSet is one sample of every counter collected.
@@ -80,73 +81,24 @@ var counterNames = []string{
 	"Cache Hit Ratio", "Cache Hit Ratio Base",
 }
 
-// counterQuery reads the counters named above.
-var counterQuery = counterQueryFor(counterNames)
+// counterInstances are the instance names read. Databases publishes a row
+// per database and Plan Cache one per cache type, but Derive and deriveTempDB
+// use only the unnamed instance or "_Total".
+var counterInstances = []string{"", totalInstance}
 
-// counterQueryFor builds the query for a fixed list of names; the IN list is
-// built, not parameterised, because the names are constants.
-//
-// The instance filter matters: Databases publishes a row per database and Plan
-// Cache one per cache type, but readers only use the unnamed instance or
-// "_Total" (see Derive, deriveTempDB). Unfiltered, a 200-database server
-// returns ~1000 rows per tick to use ~40. RTRIM because SQL Server blank-pads
-// the column.
-func counterQueryFor(names []string) string {
-	return "SELECT RTRIM(object_name), RTRIM(counter_name), RTRIM(instance_name), cntr_value, cntr_type " +
-		"FROM sys.dm_os_performance_counters " +
-		"WHERE RTRIM(counter_name) IN (" + quotedList(names) + ") " +
-		"AND RTRIM(instance_name) IN ('', '" + totalInstance + "')"
-}
-
-// quotedList renders names as a SQL string list, doubling apostrophes so a
-// future name can't become a runtime syntax error.
-func quotedList(names []string) string {
-	var b strings.Builder
-	for i, n := range names {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString("'")
-		b.WriteString(strings.ReplaceAll(n, "'", "''"))
-		b.WriteString("'")
-	}
-	return b.String()
-}
-
-// collectCounters reads one sample of every counter in counterNames.
-func collectCounters(ctx context.Context, db *sql.DB) (counterSet, error) {
-	return collectCounterSet(ctx, db, counterQuery)
-}
-
-// collectCounterSet reads one sample of the counters query selects.
-func collectCounterSet(ctx context.Context, db *sql.DB, query string) (counterSet, error) {
-	rows, err := db.QueryContext(ctx, query)
+// collectCounterSet reads one sample of the named counters. gosmo strips the
+// object name's instance prefix ("SQLServer:" on a default instance,
+// "MSSQL$INST:" on a named one), so the keys match on either.
+func collectCounterSet(ctx context.Context, src Source, names []string) (counterSet, error) {
+	rows, err := src.PerformanceCounters(ctx, names, counterInstances)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	set := make(counterSet)
-	for rows.Next() {
-		var object, counter, instance string
-		var value int64
-		var typ int
-		if err := rows.Scan(&object, &counter, &instance, &value, &typ); err != nil {
-			return nil, err
-		}
-		set[counterKey{object: objectName(object), counter: counter, instance: instance}] = counterValue{value: value, typ: typ}
+	set := make(counterSet, len(rows))
+	for _, r := range rows {
+		set[counterKey{object: r.Object, counter: r.Counter, instance: r.Instance}] = counterValue{value: r.Value, typ: r.Type}
 	}
-	return set, rows.Err()
-}
-
-// objectName strips the instance prefix: a default instance publishes
-// "SQLServer:Buffer Manager", a named one "MSSQL$INST:Buffer Manager". Matching
-// the full string silently finds nothing on a named instance.
-func objectName(object string) string {
-	if i := strings.Index(object, ":"); i >= 0 {
-		return strings.TrimSpace(object[i+1:])
-	}
-	return strings.TrimSpace(object)
+	return set, nil
 }
 
 // value decodes a counter row by its own cntr_type (the wrong rule gives a

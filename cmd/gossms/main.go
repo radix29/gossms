@@ -36,7 +36,13 @@ func main() {
 
 	app := tui.NewApp()
 	watchTermSignals(app)
-	if err := run(app); err != nil {
+	err := run(app)
+	if !errors.Is(err, errPanicked) {
+		// Settings and tracked queries are saved in the background; a save
+		// still out when the loop returned would die with the process.
+		app.FlushSaves(3 * time.Second)
+	}
+	if err != nil {
 		// The log above may be the only other place this goes: an error
 		// before the screen starts ("init screen") would otherwise leave the
 		// shell with nothing. run has already told stderr about a panic.

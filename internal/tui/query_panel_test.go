@@ -28,6 +28,21 @@ func newTestResult(sets int, withError bool) *query.Result {
 	return r
 }
 
+// TestResultsGridKnowsWhichCellsAreNull. The results grid is handed the set
+// itself, so it reads the scan's NULL marks rather than matching the text: a
+// SQL NULL and the string 'NULL' both read "NULL", and only the first is one.
+func TestResultsGridKnowsWhichCellsAreNull(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	set := query.ResultSet{Columns: []string{"a", "b"}, Rows: [][]string{{"NULL", "NULL"}}}
+	set.MarkNull(0, 0)
+	qp.setResult(&query.Result{Sets: []query.ResultSet{set}}, false)
+	if !qp.results.IsNull(0, 0) || qp.results.IsNull(0, 1) {
+		t.Errorf("IsNull = %v, %v; want true for the NULL, false for the string 'NULL'",
+			qp.results.IsNull(0, 0), qp.results.IsNull(0, 1))
+	}
+}
+
 // TestMessagesErrorLinesColoredRed confirms the Messages tab tracks which
 // rendered line came from an error message (query.Message.IsError) and
 // that messagesHighlighter colors exactly those lines red — a plain
@@ -638,7 +653,7 @@ func TestCSVSinkWritesHeaderRowsAndBlankLineBetweenSets(t *testing.T) {
 			t.Fatalf("BeginSet: %v", err)
 		}
 		for _, row := range set.Rows {
-			if err := sink.Row(row); err != nil {
+			if err := sink.Row(row, nil); err != nil {
 				t.Fatalf("Row: %v", err)
 			}
 			n++
@@ -677,7 +692,7 @@ func TestCSVSinkQuotesAwkwardCells(t *testing.T) {
 		t.Fatalf("BeginSet: %v", err)
 	}
 	for _, cell := range []string{"a,b", `say "hi"`, "line1\nline2"} {
-		if err := sink.Row([]string{cell}); err != nil {
+		if err := sink.Row([]string{cell}, nil); err != nil {
 			t.Fatalf("Row(%q): %v", cell, err)
 		}
 	}
@@ -705,6 +720,47 @@ func TestCSVSinkQuotesAwkwardCells(t *testing.T) {
 		if recs[i][0] != want[i][0] {
 			t.Errorf("record %d = %q, want %q", i, recs[i][0], want[i][0])
 		}
+	}
+}
+
+// TestCSVSinkKeepsNullEmptyAndTheStringNULLApart. Results To File used to
+// write a SQL NULL as NULL, the same as the string 'NULL', and an empty string
+// as the same nothing a NULL now gets. NULL is an empty field, ” is "", and
+// the string 'NULL' is NULL. Every other field must come out byte-for-byte as
+// encoding/csv wrote it before.
+func TestCSVSinkKeepsNullEmptyAndTheStringNULLApart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.csv")
+	sink, err := newCSVSink(path)
+	if err != nil {
+		t.Fatalf("newCSVSink: %v", err)
+	}
+	awkward := []string{"a,b", `say "hi"`, "line1\r\nline2", " lead", "\tlead", `\.`, "plain", "naïve"}
+	if err := sink.BeginSet([]string{"null", "empty", "text"}); err != nil {
+		t.Fatalf("BeginSet: %v", err)
+	}
+	if err := sink.Row([]string{"NULL", "", "NULL"}, []bool{true, false, false}); err != nil {
+		t.Fatalf("Row: %v", err)
+	}
+	if err := sink.EndSet(1); err != nil {
+		t.Fatalf("EndSet: %v", err)
+	}
+	if err := sink.BeginSet(awkward); err != nil {
+		t.Fatalf("BeginSet: %v", err)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want strings.Builder
+	want.WriteString("null,empty,text\n" + `,"",NULL` + "\n\n")
+	w := csv.NewWriter(&want)
+	w.Write(awkward)
+	w.Flush()
+	if string(data) != want.String() {
+		t.Errorf("file = %q\nwant   %q", data, want.String())
 	}
 }
 

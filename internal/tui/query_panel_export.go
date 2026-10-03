@@ -1,9 +1,12 @@
 package tui
 
 import (
-	"encoding/csv"
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/radix29/gossms/internal/query"
 )
@@ -13,11 +16,17 @@ import (
 // are separated by a blank line, each preceded by its header row — the same
 // layout the previous buffer-everything writer produced.
 //
+// A SQL NULL is written as an empty field and an empty string as "", so the
+// file keeps the two apart, and the string 'NULL' as NULL — the convention of
+// PostgreSQL's COPY CSV and most importers. encoding/csv never quotes an empty
+// field, hence writeRecord. One limit is the format's: a row of one NULL
+// column is an empty line, the same as the separator between sets.
+//
 // The write path is deliberately dumb: no counting beyond what EndSet is
-// handed, no buffering past csv.Writer's own, nothing retained between rows.
+// handed, no buffering past bufio's own, nothing retained between rows.
 type csvSink struct {
 	f *os.File
-	w *csv.Writer
+	w *bufio.Writer
 
 	// sets counts result sets begun so far, so the blank-line separator goes
 	// between sets and not before the first.
@@ -30,40 +39,67 @@ func newCSVSink(path string) (*csvSink, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &csvSink{f: f, w: csv.NewWriter(f)}, nil
+	return &csvSink{f: f, w: bufio.NewWriter(f)}, nil
+}
+
+// writeRecord writes one CSV line: cells comma-separated, a NULL (isNull,
+// which may be nil or shorter) as nothing, an empty string as "", and any
+// other field quoted exactly where encoding/csv would quote it. bufio's error
+// is sticky, so the last write's error is every write's.
+func (s *csvSink) writeRecord(cells []string, isNull []bool) error {
+	for i, c := range cells {
+		if i > 0 {
+			s.w.WriteByte(',')
+		}
+		switch {
+		case i < len(isNull) && isNull[i]:
+		case c == "":
+			s.w.WriteString(`""`)
+		case csvNeedsQuotes(c):
+			s.w.WriteByte('"')
+			s.w.WriteString(strings.ReplaceAll(c, `"`, `""`))
+			s.w.WriteByte('"')
+		default:
+			s.w.WriteString(c)
+		}
+	}
+	return s.w.WriteByte('\n')
+}
+
+// csvNeedsQuotes is encoding/csv's rule for a non-empty field with ',' as the
+// separator: a quote, the separator or a line break anywhere, a leading space,
+// or the field \. (which a PostgreSQL reader takes as end of data).
+func csvNeedsQuotes(field string) bool {
+	if field == `\.` || strings.ContainsAny(field, "\",\r\n") {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(field)
+	return unicode.IsSpace(r)
 }
 
 // BeginSet writes the separator (for every set after the first) and header.
 func (s *csvSink) BeginSet(columns []string) error {
 	if s.sets > 0 {
-		s.w.Flush()
-		if err := s.w.Error(); err != nil {
-			return err
-		}
-		if _, err := s.f.WriteString("\n"); err != nil {
+		if err := s.w.WriteByte('\n'); err != nil {
 			return err
 		}
 	}
 	s.sets++
-	return s.w.Write(columns)
+	return s.writeRecord(columns, nil)
 }
 
-func (s *csvSink) Row(cells []string) error { return s.w.Write(cells) }
+func (s *csvSink) Row(cells []string, isNull []bool) error { return s.writeRecord(cells, isNull) }
 
 // EndSet flushes this set's rows so a long export reaches the disk as it
 // goes rather than only at Close.
-func (s *csvSink) EndSet(int) error {
-	s.w.Flush()
-	return s.w.Error()
-}
+func (s *csvSink) EndSet(int) error { return s.w.Flush() }
 
 // Close flushes and closes the file. A flush error is preferred over a close
 // error since it names the actual failure, but a close error is still
 // reported rather than dropped — a disk-full condition is often only visible
 // there.
 func (s *csvSink) Close() error {
-	s.w.Flush()
-	err := s.w.Error()
+	err := s.w.Flush()
 	if cerr := s.f.Close(); err == nil {
 		err = cerr
 	}

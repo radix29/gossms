@@ -801,6 +801,7 @@ func TestTheSummaryNamesTheFiltersItApplied(t *testing.T) {
 func useTempTracked(t *testing.T) *config.TrackedQueries {
 	t.Helper()
 	tq := config.LoadTrackedQueriesFrom(filepath.Join(t.TempDir(), "tracked_queries.json"))
+	waitForSavesAtCleanup(t)
 	config.UseTrackedQueries(tq)
 	return tq
 }

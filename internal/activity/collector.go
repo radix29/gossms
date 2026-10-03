@@ -2,7 +2,6 @@ package activity
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"sync"
 	"time"
@@ -62,8 +61,8 @@ func backoff(rate time.Duration, n int) time.Duration {
 // only in what a tick reads (probe) and what two readings become (derive). The
 // exported types are thin wrappers so their callbacks stay concretely typed.
 type collector[S, Snap any] struct {
-	db       *sql.DB
-	probe    func(context.Context, *sql.DB) (*Snap, error)
+	src      Source
+	probe    func(context.Context, Source) (*Snap, error)
 	derive   func(prev, cur *Snap) S
 	onSample func(S)
 	onError  func(error)
@@ -75,12 +74,12 @@ type collector[S, Snap any] struct {
 
 // newCollector builds the shared half. control's buffer absorbs bursts of
 // toolbar clicks without blocking the UI goroutine.
-func newCollector[S, Snap any](db *sql.DB,
-	probe func(context.Context, *sql.DB) (*Snap, error),
+func newCollector[S, Snap any](src Source,
+	probe func(context.Context, Source) (*Snap, error),
 	derive func(prev, cur *Snap) S,
 	onSample func(S), onError func(error)) collector[S, Snap] {
 	return collector[S, Snap]{
-		db:       db,
+		src:      src,
 		probe:    probe,
 		derive:   derive,
 		onSample: onSample,
@@ -107,7 +106,7 @@ func newCollector[S, Snap any](db *sql.DB,
 func (c *collector[S, Snap]) Run(ctx context.Context, rate time.Duration) {
 	defer c.Stop()
 
-	if ok, err := HasViewServerState(ctx, c.db); err != nil {
+	if ok, err := c.src.HasViewServerState(ctx); err != nil {
 		c.fail(err)
 		return
 	} else if !ok {
@@ -135,7 +134,7 @@ func (c *collector[S, Snap]) Run(ctx context.Context, rate time.Duration) {
 
 	var prev *Snap
 	tick := func() {
-		cur, err := c.probe(ctx, c.db)
+		cur, err := c.probe(ctx, c.src)
 		if err != nil {
 			c.fail(err)
 			fails++
@@ -215,6 +214,6 @@ type Collector struct {
 
 // NewCollector creates a collector. onSample is called per successful tick,
 // onError per failed one; either may be nil. The rate is Run's argument.
-func NewCollector(db *sql.DB, onSample func(Sample), onError func(error)) *Collector {
-	return new(Collector{newCollector(db, Collect, Derive, onSample, onError)})
+func NewCollector(src Source, onSample func(Sample), onError func(error)) *Collector {
+	return new(Collector{newCollector(src, Collect, Derive, onSample, onError)})
 }

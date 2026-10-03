@@ -3,6 +3,7 @@ package layout
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -26,6 +27,13 @@ func (s *comboScreen) Size() (int, int) { return s.w, s.h }
 
 func (s *comboScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
 	s.cells[[2]int{x, y}] = primary
+}
+
+// Put is how core draws a cell; it lands in SetContent like any other write.
+func (s *comboScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	r, n := utf8.DecodeRuneInString(str)
+	s.SetContent(x, y, r, nil, style)
+	return str[n:], 1
 }
 
 // row returns the text painted on row y between columns [x, x+w).

@@ -163,7 +163,7 @@ func TestXEventViewerFilterByValue(t *testing.T) {
 // New fields grow the grid's columns; hidden ones stay hidden, are saved under
 // the session's name, and a new viewer on the session starts with them hidden.
 func TestXEventViewerColumnsGrowAndHiddenOnesPersist(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigHome(t)
 	v := newTestXEventViewer(t, 100)
 	v.app.cfg = &config.Config{}
 	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("a", 1, "duration", "1")}})
@@ -178,6 +178,7 @@ func TestXEventViewerColumnsGrowAndHiddenOnesPersist(t *testing.T) {
 	if got := v.headers(); !slices.Equal(got, []string{"name", "timestamp", "cpu_time"}) {
 		t.Errorf("after hiding duration: %v", got)
 	}
+	waitForSaves(t, v.app)
 	saved := config.Load().XEventHiddenColumns["s"]
 	if !slices.Equal(saved, []string{"field:duration"}) {
 		t.Errorf("saved %v, want [field:duration]", saved)

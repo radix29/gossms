@@ -508,7 +508,7 @@ func TestScanCompletionPrefixUnaffectedByBufferReuse(t *testing.T) {
 func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
 	// Only "GO" lines strictly above the cursor's row separate the statement
 	// the cursor is in — hence the bound at that row's start.
-	r := lexSQL(buf, 0, upTo, false, LexNormal, nil,
+	r := lexSQL(buf, 0, upTo, false, nil,
 		goScan{lo: 0, hi: OffsetForCursor(lines, cursorRow, 0)}, nil, nil)
 
 	// The statement starts at whichever boundary is later: past the last
@@ -517,7 +517,7 @@ func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
 	// positions — the lexer recognises either only there, and a separator line
 	// leaves nothing open past it.
 	batchStart := max(r.boundary, r.lastGo)
-	tokens, _, _, _ := TokenizeRangeFrom(buf, batchStart, upTo, false, LexNormal)
+	tokens, _, _, _ := TokenizeRange(buf, batchStart, upTo, false)
 	// Statements stacked with no ';' between them: only the last one's
 	// tokens, from its DML leader — what NarrowToDMLStatement would make of
 	// the prefix.

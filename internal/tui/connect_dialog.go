@@ -514,10 +514,12 @@ func (d *ConnectDialog) deleteSelectedHistory() {
 			if !confirmed || !d.app.cfg.RemoveConnection(name) {
 				return
 			}
-			if err := d.app.cfg.Save(); err != nil {
-				d.app.alertDialog.ShowAlert("Delete Connection",
-					"Removed, but the configuration could not be saved: "+err.Error())
-			}
+			d.app.saveConfig(func(err error) {
+				if err != nil {
+					d.app.alertDialog.ShowAlert("Delete Connection",
+						"Removed, but the configuration could not be saved: "+err.Error())
+				}
+			})
 			d.reloadHistory()
 			if len(d.historyConns) == 0 {
 				d.resetForm()

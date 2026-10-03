@@ -25,7 +25,7 @@ var pageActionRunners = map[string]bool{
 // page state, by name. commitRename mirrors a rename into the dialog's boxed
 // name, and only when the rename really ran (not under Script Changes): every
 // sibling page and the header resolve the object by that name, so it has to
-// move before the reload the Apply ends in reads it back. See prop_dialog.go.
+// move before the reload the Apply ends in reads it back. See prop_apply.go.
 var applyHelperExemptions = map[string]bool{
 	"commitRename": true,
 }

@@ -103,9 +103,9 @@ func (d *DropDown) Draw(s tcell.Screen) {
 		borderColor = p.InputFocused
 	}
 	borderStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(borderColor)
-	s.SetContent(ix, d.rect.Y, '[', nil, borderStyle)
-	s.SetContent(ix+d.rect.W+1, d.rect.Y, ']', nil, borderStyle)
-	s.SetContent(ix+d.rect.W, d.rect.Y, 'v', nil, borderStyle)
+	core.PutRune(s, ix, d.rect.Y, '[', borderStyle)
+	core.PutRune(s, ix+d.rect.W+1, d.rect.Y, ']', borderStyle)
+	core.PutRune(s, ix+d.rect.W, d.rect.Y, 'v', borderStyle)
 
 	inputStyle := theme.StyleInput()
 	core.FillRect(s, core.Rect{X: ix + 1, Y: d.rect.Y, W: d.rect.W - 1, H: 1}, ' ', inputStyle)

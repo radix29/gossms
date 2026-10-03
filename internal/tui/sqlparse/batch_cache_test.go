@@ -15,7 +15,7 @@ import (
 // second reference: wherever the cursor's row starts in LexNormal it must agree
 // with the cache, so the cache cannot drift from what shipped before it.
 func BatchEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
-	r := lexSQL(buf, upTo, len(buf), false, LexNormal, nil,
+	r := lexSQL(buf, upTo, len(buf), false, nil,
 		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil, nil)
 	if r.firstGo >= 0 {
 		return r.firstGo
@@ -34,7 +34,7 @@ func referenceBatch(lines [][]rune, buf []rune, row int) (from, to int, rowIsMar
 		nextRow = OffsetForCursor(lines, row+1, 0)
 	}
 	to = len(buf)
-	lexSQL(buf, 0, len(buf), false, LexNormal, nil, allLines(buf), nil, func(start, goNext int) bool {
+	lexSQL(buf, 0, len(buf), false, nil, allLines(buf), nil, func(start, goNext int) bool {
 		switch {
 		case start == rowStart:
 			rowIsMark = true
@@ -54,7 +54,7 @@ func referenceBatch(lines [][]rune, buf []rune, row int) (from, to int, rowIsMar
 func referenceCarried(buf []rune, from int) []Binding {
 	var carried []Binding
 	start := 0
-	lexSQL(buf, 0, len(buf), false, LexNormal, nil, allLines(buf), nil, func(lineStart, goNext int) bool {
+	lexSQL(buf, 0, len(buf), false, nil, allLines(buf), nil, func(lineStart, goNext int) bool {
 		if lineStart >= from {
 			return true
 		}

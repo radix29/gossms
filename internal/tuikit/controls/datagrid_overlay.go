@@ -116,7 +116,9 @@ func (g *DataGrid) openViewer() {
 	if g.selCol < len(g.columns) {
 		g.viewHeader = g.columns[g.selCol]
 	}
-	if g.OnShowValue != nil && g.OnShowValue(g.selCol, g.viewHeader, cells[g.selCol]) {
+	// A NULL has no value for a host to open; the popup shows its "NULL".
+	if g.OnShowValue != nil && !g.IsNull(g.selRow, g.selCol) &&
+		g.OnShowValue(g.selCol, g.viewHeader, cells[g.selCol]) {
 		return
 	}
 	if g.viewEditor == nil {

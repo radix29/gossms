@@ -60,6 +60,9 @@ type TreeView struct {
 	scrollX  int
 	contentW int
 
+	// title is drawn in the top border; empty draws a plain box.
+	title string
+
 	// lastClickIdx/lastClickAt time consecutive presses on one row, which is how
 	// a double-click — the mouse spelling of Enter's default action — is
 	// recognised. A zero lastClickAt means "no press to pair with", and is also
@@ -96,6 +99,9 @@ type TreeView struct {
 func NewTreeView() *TreeView {
 	return new(TreeView{})
 }
+
+// SetTitle sets the text drawn in the tree's top border.
+func (tv *TreeView) SetTitle(title string) { tv.title = title }
 
 // SetBounds positions the tree view.
 func (tv *TreeView) SetBounds(x, y, w, h int) {
@@ -194,7 +200,7 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 	}
 	titleStyle := tcell.StyleDefault.Background(p.PanelBg).Foreground(p.TextHighlight).Bold(true)
 	core.FillRect(s, tv.rect, ' ', theme.StylePanel())
-	core.DrawBoxTitle(s, tv.rect, "Object Explorer", borderStyle, titleStyle)
+	core.DrawBoxTitle(s, tv.rect, tv.title, borderStyle, titleStyle)
 
 	inner := tv.rect.Inner(1)
 

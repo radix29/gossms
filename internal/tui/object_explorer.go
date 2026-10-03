@@ -83,6 +83,7 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 		view: controls.NewTreeView(),
 		byID: make(map[int]*explorerNode),
 	}
+	oe.view.SetTitle("Object Explorer")
 	oe.view.OnExpand = oe.handleExpand
 	oe.view.OnCollapse = oe.handleCollapse
 	oe.view.OnSelect = oe.handleSelect

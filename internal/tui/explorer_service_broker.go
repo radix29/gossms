@@ -42,11 +42,7 @@ func loadServiceBrokerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 // listed too, as SSMS lists them, but marked IsSystem so Delete and Rename
 // stay off their menu — the same shape loadAssembliesChildren uses.
 func loadMessageTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.MessageType, error) { return dbObj.MessageTypes(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).MessageTypes,
 		func(mt *gosmo.MessageType) *explorerNode {
 			n := l.node(mt.Name, NodeMessageType, "", mt.Name, node.data.DBName)
 			n.data.IsSystem = mt.IsSystemObject
@@ -55,11 +51,7 @@ func loadMessageTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode,
 }
 
 func loadContractsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.ServiceContract, error) { return dbObj.Contracts(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Contracts,
 		func(c *gosmo.ServiceContract) *explorerNode {
 			n := l.node(c.Name, NodeContract, "", c.Name, node.data.DBName)
 			n.data.IsSystem = c.IsSystemObject
@@ -77,11 +69,7 @@ func loadContractsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 // in the row says so. ALTER QUEUE … WITH STATUS sets both halves together, so
 // a queue is disabled when neither is on.
 func loadBrokerQueuesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.BrokerQueue, error) { return dbObj.BrokerQueues(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).BrokerQueues,
 		func(q *gosmo.BrokerQueue) *explorerNode {
 			label := q.Schema + "." + q.Name
 			enabled := q.IsEnqueueEnabled || q.IsReceiveEnabled
@@ -102,11 +90,7 @@ func loadBrokerQueuesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode,
 // service_broker.go; the two classifications cannot be made to agree and the
 // asymmetry is the catalog's, not a bug here.
 func loadBrokerServicesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.BrokerService, error) { return dbObj.BrokerServices(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).BrokerServices,
 		func(s *gosmo.BrokerService) *explorerNode {
 			n := l.node(s.Name, NodeBrokerService, "", s.Name, node.data.DBName)
 			n.data.IsSystem = s.IsSystemObject
@@ -123,11 +107,7 @@ func loadBrokerServicesChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 // The label carries the address, since a route's name says nothing about
 // where it sends and "LOCAL" vs. a TCP address is the whole of what it is.
 func loadRoutesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.Route, error) { return dbObj.Routes(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Routes,
 		func(r *gosmo.Route) *explorerNode {
 			label := r.Name
 			if r.Address != "" {
@@ -142,12 +122,7 @@ func loadRoutesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 // sys.remote_service_bindings reads fine and ALTER/DROP run — only CREATE is
 // refused, which is the edition gate's business, not the tree's.
 func loadRemoteServiceBindingsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(
-		func() ([]*gosmo.RemoteServiceBinding, error) { return dbObj.RemoteServiceBindings(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).RemoteServiceBindings,
 		func(b *gosmo.RemoteServiceBinding) *explorerNode {
 			return l.node(b.Name, NodeRemoteServiceBinding, "", b.Name, node.data.DBName)
 		})
@@ -160,11 +135,7 @@ func loadRemoteServiceBindingsChildren(l loaderCtx, node *explorerNode) ([]*expl
 // sys.conversation_priorities has no system members at all, so nothing here
 // is ever marked IsSystem.
 func loadBrokerPrioritiesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.BrokerPriority, error) { return dbObj.BrokerPriorities(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).BrokerPriorities,
 		func(p *gosmo.BrokerPriority) *explorerNode {
 			label := p.Name + " (" + strconv.Itoa(p.Level) + ")"
 			return l.node(label, NodeBrokerPriority, "", p.Name, node.data.DBName)

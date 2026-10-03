@@ -183,8 +183,8 @@ func TestSQLHighlighterNestedBlockComment(t *testing.T) {
 }
 
 // TestSQLHighlighterUnterminatedBlockCommentDoesNotHang guards the same
-// class of bug as the @/# test above: an unterminated /* (blockCommentEnd
-// returning -1 forever) must not spin — every line after it is treated as
+// class of bug as the @/# test above: an unterminated /* (the old
+// blockCommentEnd returning -1 forever) must not spin — every line after it is treated as
 // fully inside the comment.
 func TestSQLHighlighterUnterminatedBlockCommentDoesNotHang(t *testing.T) {
 	lines := [][]rune{
@@ -220,7 +220,7 @@ var memoCorpus = [][]rune{
 }
 
 // reference highlights one line the way the pre-memoization highlighter did:
-// a closure that has never been called takes blockCommentDepthAt's full
+// a closure that has never been called takes lineStateAt's full
 // replay for every idx (the memo's fast path needs idx == lastIdx+1, and
 // lastIdx starts at -1), so this is the original implementation rather than a
 // second copy of it maintained alongside.
@@ -356,19 +356,85 @@ func TestSQLHighlighterIgnoresBlockCommentOpenerInsideCommentsAndStrings(t *test
 }
 
 // The inverse: a genuinely open block comment must still swallow the lines
-// under it, and a "*/" inside what looks like a string literal still closes it
-// — quotes carry no meaning inside a comment.
+// under it, and a "*/" after what looks like a string literal's opening quote
+// still closes it — quotes carry no meaning inside a comment.
 func TestSQLHighlighterRealBlockCommentStillSwallowsFollowingLines(t *testing.T) {
 	lines := [][]rune{
 		[]rune("SELECT 1 /* opened here"),
 		[]rune("SELECT 2 FROM dbo.T"),
-		[]rune("'*/' SELECT 3"),
+		[]rune("'*/ SELECT 3"),
 		[]rune("SELECT 4 FROM dbo.U"),
 	}
 	if got := highlightLineWords(t, lines, 1); len(got) != 1 || got[0] != "SELECT 2 FROM dbo.T" {
 		t.Errorf("runs on line 1 = %q, want the whole line as one comment run", got)
 	}
+	if got := highlightLineWords(t, lines, 2); strings.Join(got, "|") != "'*/|SELECT|3" {
+		t.Errorf("runs on line 2 = %q, want the comment to close at */", got)
+	}
 	if got := highlightLineWords(t, lines, 3); strings.Join(got, "|") != "SELECT|4|FROM" {
 		t.Errorf("runs on line 3 = %q, want the comment to have closed on line 2", got)
+	}
+}
+
+// Review plan T44: the highlighter lexes what the executor and Ctrl+Enter
+// lex. A keyword inside a [bracketed] or "quoted" identifier is a name, not a
+// keyword; a "/*" inside one opens no comment; and a literal or identifier
+// left open at the end of a line carries onto the next, as it does for the
+// server. Before sqltext.Next, "[a/*b]" commented out the rest of the document,
+// and a string ended at its line's end.
+func TestSQLHighlighterLexesQuotedIdentifiersAndCarriesLiterals(t *testing.T) {
+	cases := []struct {
+		name  string
+		lines []string
+		idx   int
+		want  []string
+	}{
+		{"keyword in brackets", []string{"SELECT [select], [from] FROM t"}, 0, []string{"SELECT", "FROM"}},
+		{"keyword in double quotes", []string{`SELECT "order" FROM t`}, 0, []string{"SELECT", "FROM"}},
+		{"comment opener in brackets", []string{"SELECT [a/*b] FROM t", "SELECT 1"}, 1, []string{"SELECT", "1"}},
+		{"comment opener in double quotes", []string{`SELECT "a/*b" FROM t`, "SELECT 1"}, 1, []string{"SELECT", "1"}},
+		{"doubled bracket stays inside", []string{"SELECT [a]]select] FROM t"}, 0, []string{"SELECT", "FROM"}},
+		{"string carried over", []string{"SELECT 'one", "SELECT two'", "SELECT 3"}, 1, []string{"SELECT two'"}},
+		{"after a carried string", []string{"SELECT 'one", "SELECT two'", "SELECT 3"}, 2, []string{"SELECT", "3"}},
+		{"bracket carried over", []string{"SELECT [one", "select two] FROM t"}, 1, []string{"FROM"}},
+		{"line comment ends with its line", []string{"SELECT 1 -- x", "SELECT 2"}, 1, []string{"SELECT", "2"}},
+		{"number with a decimal point", []string{"SELECT 1.5"}, 0, []string{"SELECT", "1.5"}},
+		{"keyword case folded", []string{"select @@rowcount from t"}, 0, []string{"select", "@@rowcount", "from"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := make([][]rune, len(tc.lines))
+			for i, l := range tc.lines {
+				lines[i] = []rune(l)
+			}
+			got := highlightLineWords(t, lines, tc.idx)
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Errorf("runs on %q = %q, want %q", tc.lines[tc.idx], got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSQLKeywordsFitTheFoldBuffer: isSQLKeyword rejects any word longer than
+// its stack buffer, so a keyword that outgrew it would silently stop being
+// coloured.
+func TestSQLKeywordsFitTheFoldBuffer(t *testing.T) {
+	for kw := range sqlKeywords {
+		if len(kw) > maxSQLKeywordLen {
+			t.Errorf("keyword %q is %d bytes, over maxSQLKeywordLen (%d)", kw, len(kw), maxSQLKeywordLen)
+		}
+		if !isSQLKeyword([]rune(strings.ToLower(kw))) {
+			t.Errorf("isSQLKeyword(%q) = false", strings.ToLower(kw))
+		}
+	}
+}
+
+// T55: colouring a line allocates its run slice and nothing per word.
+func TestSQLHighlighterDoesNotAllocatePerWord(t *testing.T) {
+	hl := SQLHighlighter(&theme.Default)
+	doc := docOf([][]rune{[]rune("SELECT a, b, c FROM dbo.T WHERE x = 1 AND y IN (SELECT z FROM u) ORDER BY a DESC")})
+	hl(doc, 0) // warm the line-state cache
+	if n := testing.AllocsPerRun(100, func() { hl(doc, 0) }); n > 2 {
+		t.Errorf("SQLHighlighter allocated %v times per line, want at most 2 (the run slice and its growth)", n)
 	}
 }

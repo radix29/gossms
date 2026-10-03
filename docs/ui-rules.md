@@ -95,6 +95,16 @@ behind the mouse and async rules.
 - **`SetBounds` does nothing when the rect hasn't changed** — hosts lay out in
   `Draw`, every frame. A `ListBox` re-running `ensureVisible` there snapped the
   wheel back to the selection. Compare first; re-clamp only on real change.
+  `DataGrid` included: a host that changes cells in place calls
+  `RefreshColumnWidths`, and a setter that changes widths (`SetMaxCellWidth`,
+  `SetRowNumbers`) defers its recompute to `Draw` — never rely on a relayout.
+- **Draw a cell with `core.PutRune` or `Screen.Put`, never `SetContent`.**
+  tcell's `SetContent` re-packs its rune into a string per call: two
+  allocations per visible cell per frame before W24 (a full-screen grid went
+  from 25,028 to 393 allocations a frame). `FillArea` has the same cost
+  per cell, so `core.FillRect` puts one prebuilt string. A test screen fake
+  that embeds a nil `tcell.Screen` needs a `Put` that forwards to its
+  `SetContent`.
 - **Setting a value programmatically drops the selection** — an anchor past a
   shorter new value paints blanks as selected. `SetValue` clears `selecting`
   and re-anchors on the caret; a new `SetXxx` does the same.
@@ -261,6 +271,12 @@ behind the mouse and async rules.
   `Done` checks and releases; `Cancel` stops without superseding; `Abandon`
   does both. Token-only copies were bugs. Wrap for extra bookkeeping
   (`detailRuns`). `ARCHITECTURE.md` § Latest-only loads: latest.
+- **No file save on the UI goroutine — config goes through `App.saveConfig`,
+  tracked queries through `App.saveTracked` (`app_saves.go`).** `Config.Save`
+  waits up to two seconds on another instance's lock, reads the key file and
+  fsyncs; on the UI goroutine every one of those froze the screen (T58).
+  Change `a.cfg` first, then ask; report in the callback. `Config.Save` itself
+  stays for tests and `FlushSaves`.
 - **A confirmed write runs through `App.runWithProgress` (`progress_job.go`),
   never a bare `safego`** — otherwise nothing shows a DROP waiting on a lock and
   it can't be stopped. The job owns context, spinner clock and dialog release

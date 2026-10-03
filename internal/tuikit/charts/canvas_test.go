@@ -2,6 +2,7 @@ package charts
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -20,6 +21,13 @@ func newRecordScreen() *recordScreen {
 
 func (r *recordScreen) SetContent(x, y int, primary rune, _ []rune, _ tcell.Style) {
 	r.cells[[2]int{x, y}] = primary
+}
+
+// Put is how core draws a cell; it lands in SetContent like any other write.
+func (r *recordScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	ch, n := utf8.DecodeRuneInString(str)
+	r.SetContent(x, y, ch, nil, style)
+	return str[n:], 1
 }
 
 func (r *recordScreen) at(x, y int) rune { return r.cells[[2]int{x, y}] }
@@ -50,6 +58,19 @@ func TestCanvasOutOfRangeIsIgnored(t *testing.T) {
 	}
 	if str, _, w := c.Get(9, 0); str != "" || w != 0 {
 		t.Errorf("Get(9,0) = %q width %d, want empty width 0", str, w)
+	}
+}
+
+// TestCanvasFillAreaFillsOnlyTheArea pins T65: Canvas had no FillArea, so
+// the call fell through to the nil embedded Screen and panicked.
+func TestCanvasFillAreaFillsOnlyTheArea(t *testing.T) {
+	c := NewCanvas(5, 3)
+	c.FillArea(-1, 1, 3, 5, '#', tcell.StyleDefault)
+
+	for y, want := range []string{"     ", "##   ", "##   "} {
+		if got := c.Row(y); got != want {
+			t.Errorf("Row(%d) = %q, want %q", y, got, want)
+		}
 	}
 }
 

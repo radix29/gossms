@@ -116,14 +116,6 @@ func (m *nameMap[V]) Values() iter.Seq[V] {
 	return maps.Values(m.m)
 }
 
-// Len is the number of distinct names in the map.
-func (m *nameMap[V]) Len() int {
-	if m == nil {
-		return 0
-	}
-	return len(m.m)
-}
-
 // serverCollation is the instance's default collation, which governs
 // server-scoped names (logins, databases, credentials, audits, endpoints,
 // availability groups), or "" when there is no server info.

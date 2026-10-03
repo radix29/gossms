@@ -157,10 +157,10 @@ func menuRowStyles(item MenuItem, selected bool) (label, shortcut tcell.Style) {
 func drawMenuRow(s tcell.Screen, x, y, w int, item MenuItem, selected bool, borderStyle tcell.Style) {
 	if item.Divider {
 		for cx := x + 1; cx < x+w-1; cx++ {
-			s.SetContent(cx, y, '─', nil, borderStyle)
+			core.PutRune(s, cx, y, '─', borderStyle)
 		}
-		s.SetContent(x, y, '├', nil, borderStyle)
-		s.SetContent(x+w-1, y, '┤', nil, borderStyle)
+		core.PutRune(s, x, y, '├', borderStyle)
+		core.PutRune(s, x+w-1, y, '┤', borderStyle)
 		return
 	}
 	labelStyle, shortcutStyle := menuRowStyles(item, selected)

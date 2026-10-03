@@ -49,14 +49,10 @@ func alwaysOnRootMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQue
 // agGroupsFolderMenuItems builds the context menu for the Availability Groups
 // folder.
 func agGroupsFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Availability Group...",
 			Action: func() { a.showNewAGDialog(sc, node) }}, sc, "", gate.AlterAnyAG),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 // agGroupMenuItems builds the context menu for a NodeAvailabilityGroup.
@@ -85,27 +81,19 @@ func agGroupMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, r
 // agReplicasFolderMenuItems builds the context menu for the Availability
 // Replicas folder.
 func agReplicasFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.ItemOn(controls.MenuItem{Label: "Add Replica...",
 			Action: func() { a.showAGAddReplicaDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 // agDatabasesFolderMenuItems builds the context menu for the Availability
 // Databases folder.
 func agDatabasesFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.ItemOn(controls.MenuItem{Label: "Add Database...",
 			Action: func() { a.showAGAddDatabaseDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 // agDatabaseMenuItems builds one availability database's menu.
@@ -177,14 +165,10 @@ func agReplicaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 // agListenersFolderMenuItems builds the context menu for the Availability Group
 // Listeners folder.
 func agListenersFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.ItemOn(controls.MenuItem{Label: "Add Listener...",
 			Action: func() { a.showAGAddListenerDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 // agListenerMenuItems builds the context menu for one listener.

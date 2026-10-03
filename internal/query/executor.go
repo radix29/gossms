@@ -34,7 +34,39 @@ type ResultSet struct {
 	// ColumnTypes holds each column's declared type as SSMS writes it
 	// ("nvarchar(50)", "decimal(18,2)"), parallel to Columns.
 	ColumnTypes []string
+
+	// nulls marks the cells that hold a SQL NULL, one bit per cell in row-major
+	// order (row*len(Columns)+col). A NULL's text in Rows is "NULL", as SSMS
+	// shows it, so the text alone can't tell it from the string 'NULL'. Grown
+	// only as far as the last NULL: a set without one allocates nothing.
+	nulls []uint64
 }
+
+// MarkNull records that cell (row, col) holds a SQL NULL.
+func (rs *ResultSet) MarkNull(row, col int) {
+	bit := row*len(rs.Columns) + col
+	if w := bit / 64; w >= len(rs.nulls) {
+		rs.nulls = append(rs.nulls, make([]uint64, w+1-len(rs.nulls))...)
+	}
+	rs.nulls[bit/64] |= 1 << (bit % 64)
+}
+
+// IsNull reports whether cell (row, col) holds a SQL NULL; false for a cell
+// outside the set. With Len and Row it makes a ResultSet a
+// controls.RowSource and controls.NullSource, which is how the grid shows it.
+func (rs ResultSet) IsNull(row, col int) bool {
+	if row < 0 || col < 0 || col >= len(rs.Columns) {
+		return false
+	}
+	bit := row*len(rs.Columns) + col
+	return bit/64 < len(rs.nulls) && rs.nulls[bit/64]&(1<<(bit%64)) != 0
+}
+
+// Len returns the number of rows.
+func (rs ResultSet) Len() int { return len(rs.Rows) }
+
+// Row returns row i's cells.
+func (rs ResultSet) Row(i int) []string { return rs.Rows[i] }
 
 // Message is one line of the Messages pane.
 type Message struct {
@@ -133,13 +165,14 @@ func (r *Result) shouldReportSuccess(capture planCapture) bool {
 	return len(r.Sets) == 0 && r.sinkSets == 0 && !r.HasErrors() && capture != planCaptureEstimated
 }
 
-// planCapture selects whether and how execute captures an execution plan.
-type planCapture int
+// planCapture selects whether and how execute captures an execution plan: a
+// gosmo.PlanMode, whose StartPlanCapture switches it on and off, or none.
+type planCapture = gosmo.PlanMode
 
 const (
-	planCaptureNone      planCapture = iota
-	planCaptureActual                // SET STATISTICS XML ON — batches really run
-	planCaptureEstimated             // SET SHOWPLAN_XML ON — nothing really runs
+	planCaptureNone      planCapture = 0
+	planCaptureActual                = gosmo.PlanActual    // SET STATISTICS XML ON — batches really run
+	planCaptureEstimated             = gosmo.PlanEstimated // SET SHOWPLAN_XML ON — nothing really runs
 )
 
 // Progress is a live row counter for a running script: the executor bumps it
@@ -228,9 +261,13 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...O
 // abandoned by a Row error or whose BeginSet failed, so it's the one place to
 // finalise per-set state. Its count is rows that reached Row (0 if the set
 // never opened).
+//
+// Row's isNull parallels cells and marks the cells that hold a SQL NULL (whose
+// text is "NULL", as in a ResultSet). Both slices are reused for the next row:
+// Row must consume them before returning.
 type RowSink interface {
 	BeginSet(columns []string) error
-	Row(cells []string) error
+	Row(cells []string, isNull []bool) error
 	EndSet(rows int) error
 }
 
@@ -245,31 +282,21 @@ func newResult(opts []Option) *Result {
 	return res
 }
 
-// planCleanupTimeout bounds the SET ... OFF ending a plan capture, which runs
-// even after ctx is cancelled.
-const planCleanupTimeout = 5 * time.Second
-
 // runScript runs script's GO batches on conn in order, recording output on res,
 // with the requested plan capture switched on around them. Returns false if the
 // capture couldn't be switched on (already recorded on res).
 //
 // cleanupErr is the failure of the capture's SET ... OFF, if any. Deferred to
-// run on every exit, detached from ctx's cancellation (a cancelled run most
-// likely left it pending), bounded by the timeout.
+// run on every exit; gosmo.StartPlanCapture's stop detaches it from ctx's
+// cancellation (a cancelled run most likely left it pending) and bounds it.
 func runScript(ctx context.Context, conn *sql.Conn, script string, capture planCapture, sink RowSink, res *Result) (ran bool, cleanupErr error) {
 	if capture != planCaptureNone {
-		setOpt, label := capture.setOption()
-		if _, err := conn.ExecContext(ctx, "SET "+setOpt+" ON"); err != nil {
-			res.addError(fmt.Errorf("enable %s execution plan capture: %w", label, err))
+		stop, err := gosmo.StartPlanCapture(ctx, conn, capture)
+		if err != nil {
+			res.addError(err)
 			return false, nil
 		}
-		defer func() {
-			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), planCleanupTimeout)
-			defer cancel()
-			if _, err := conn.ExecContext(cctx, "SET "+setOpt+" OFF"); err != nil {
-				cleanupErr = fmt.Errorf("disable %s execution plan capture: %w", label, err)
-			}
-		}()
+		defer func() { cleanupErr = stop() }()
 	}
 
 	for _, b := range sqltext.SplitBatches(script) {
@@ -284,15 +311,6 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 		}
 	}
 	return true, nil
-}
-
-// setOption names the SET option that enables capture and its label for error
-// messages. Only meaningful for capture != planCaptureNone.
-func (c planCapture) setOption() (option, label string) {
-	if c == planCaptureEstimated {
-		return "SHOWPLAN_XML", "estimated"
-	}
-	return "STATISTICS XML", "actual"
 }
 
 // currentDatabase reads DB_NAME() off the connection the batches ran on, so a
@@ -374,6 +392,10 @@ type rowScanner struct {
 	isReal      []bool
 	layouts     []string
 
+	// isNull marks the cells of the row last scanned that hold a SQL NULL,
+	// reused row to row like the row itself.
+	isNull []bool
+
 	// buf renders one cell at a time, reused; bytes are copied out before the
 	// next cell overwrites them.
 	buf []byte
@@ -413,6 +435,7 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 		decimalLike: make([]bool, len(cols)),
 		isReal:      make([]bool, len(cols)),
 		layouts:     make([]string, len(cols)),
+		isNull:      make([]bool, len(cols)),
 	}
 	for i := range cols {
 		typeName := types[i].DatabaseTypeName()
@@ -433,8 +456,9 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	return sc, nil
 }
 
-// scan renders the current row into row (one slot per column). A nil arena
-// gives each cell its own string (streaming path); non-nil packs them.
+// scan renders the current row into row (one slot per column) and sc.isNull.
+// A nil arena gives each cell its own string (streaming path); non-nil packs
+// them.
 func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 	if err := rows.Scan(sc.ptrs...); err != nil {
 		return err
@@ -442,10 +466,13 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 	for i := range sc.cols {
 		sc.buf = sc.buf[:0]
 		if g := sc.guids[i]; g != nil {
+			sc.isNull[i] = !g.Valid
 			sc.buf = appendGUID(sc.buf, *g)
 		} else if f, ok := sc.vals[i].(float64); ok && sc.isReal[i] {
+			sc.isNull[i] = false
 			sc.buf = appendFloat(sc.buf, f, 32)
 		} else {
+			sc.isNull[i] = sc.vals[i] == nil
 			sc.buf = appendValue(sc.buf, sc.vals[i], sc.decimalLike[i], sc.layouts[i])
 		}
 		row[i] = a.str(sc.buf)
@@ -484,6 +511,11 @@ func scanResultSet(rows *sql.Rows, prog *Progress) (ResultSet, error) {
 		row := a.row(len(sc.cols))
 		if err := sc.scan(rows, row, a); err != nil {
 			return rs, err
+		}
+		for i, null := range sc.isNull {
+			if null {
+				rs.MarkNull(len(rs.Rows), i)
+			}
 		}
 		rs.Rows = append(rs.Rows, row)
 		prog.AddRow()
@@ -525,7 +557,7 @@ func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress) (n int, exhau
 		if err = sc.scan(rows, row, nil); err != nil {
 			return n, false, err
 		}
-		if err = sink.Row(row); err != nil {
+		if err = sink.Row(row, sc.isNull); err != nil {
 			return n, false, err
 		}
 		n++

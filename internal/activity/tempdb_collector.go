@@ -1,9 +1,6 @@
 package activity
 
-import (
-	"database/sql"
-	"time"
-)
+import "time"
 
 // TempDBRetention is four hours, not thirty minutes: this tab ticks in tens of
 // seconds, and what it shows (an uncleaned version store, a file filling over
@@ -40,6 +37,6 @@ type TempDBCollector struct {
 
 // NewTempDBCollector creates a collector. onSample is called per successful
 // tick, onError per failed one; either may be nil.
-func NewTempDBCollector(db *sql.DB, onSample func(TempDBSample), onError func(error)) *TempDBCollector {
-	return new(TempDBCollector{newCollector(db, collectTempDB, deriveTempDB, onSample, onError)})
+func NewTempDBCollector(src Source, onSample func(TempDBSample), onError func(error)) *TempDBCollector {
+	return new(TempDBCollector{newCollector(src, collectTempDB, deriveTempDB, onSample, onError)})
 }

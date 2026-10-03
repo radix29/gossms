@@ -171,14 +171,10 @@ func isBuiltInEventSession(name string) bool {
 
 // eventSessionsMenuItems is the Sessions folder's menu: New Session.
 func eventSessionsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Session...", Action: func() { a.showNewXESessionDialog(sc, xeScopeOf(node.data)) }},
 			sc, node.data.DBName, xeScopeOf(node.data).right(gate.EventSessionCreate)),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 // eventSessionMenuItems is a session's own menu. Script Session as and Delete

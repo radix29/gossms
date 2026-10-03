@@ -434,22 +434,14 @@ func loadTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 }
 
 func loadSequencesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.Sequence, error) { return dbObj.Sequences(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Sequences,
 		func(seq *gosmo.Sequence) *explorerNode {
 			return l.node(seq.Schema+"."+seq.Name, NodeSequence, seq.Schema, seq.Name, node.data.DBName)
 		})
 }
 
 func loadSynonymsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.Synonym, error) { return dbObj.Synonyms(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Synonyms,
 		func(syn *gosmo.Synonym) *explorerNode {
 			return l.node(syn.Schema+"."+syn.Name, NodeSynonym, syn.Schema, syn.Name, node.data.DBName)
 		})
@@ -529,15 +521,11 @@ func indexesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, r
 }
 
 func statisticsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.ItemOn(controls.MenuItem{Label: "New Statistics...",
 			Action: func() { a.showNewStatisticsDialog(sc, node) }},
 			sc, node.data.DBName, node.data.Schema, node.data.Name, gate.ObjectWriteRights()...),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func statisticMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {

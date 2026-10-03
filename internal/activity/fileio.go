@@ -3,7 +3,6 @@ package activity
 import (
 	"cmp"
 	"context"
-	"database/sql"
 	"slices"
 	"strings"
 )
@@ -48,44 +47,27 @@ func (f FileIO) Label() string {
 	return f.Database
 }
 
-// sys.master_files supplies whether a file is a log file. DB_NAME() rather than
-// a join to sys.databases, so databases the connection can't see still count.
-const fileIOQuery = `
-SELECT vfs.database_id, vfs.file_id, DB_NAME(vfs.database_id),
-       CASE WHEN mf.type = 1 THEN 1 ELSE 0 END,
-       vfs.num_of_reads, vfs.num_of_bytes_read, vfs.io_stall_read_ms,
-       vfs.num_of_writes, vfs.num_of_bytes_written, vfs.io_stall_write_ms
-FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS vfs
-LEFT JOIN sys.master_files AS mf
-  ON mf.database_id = vfs.database_id AND mf.file_id = vfs.file_id`
-
-// collectFileIO reads the cumulative per-file I/O totals.
-func collectFileIO(ctx context.Context, db *sql.DB) (fileSet, error) {
-	rows, err := db.QueryContext(ctx, fileIOQuery)
+// collectFileIO reads every database file's cumulative I/O.
+func collectFileIO(ctx context.Context, src Source) (fileSet, error) {
+	stats, err := src.FileIOStats(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	set := make(fileSet, 32)
-	for rows.Next() {
-		var k fileKey
-		var r fileRow
-		var name sql.NullString
-		var isLog int
-		if err := rows.Scan(&k.dbID, &k.fileID, &name, &isLog,
-			&r.reads, &r.bytesRead, &r.stallRead,
-			&r.writes, &r.bytesWrit, &r.stallWrit); err != nil {
-			return nil, err
+	set := make(fileSet, len(stats))
+	for _, f := range stats {
+		// A database the login can't see has no name; its I/O still counts,
+		// under a usable one.
+		name := f.Database
+		if name == "" {
+			name = "(unknown)"
 		}
-		r.database = name.String
-		if r.database == "" {
-			r.database = "(unknown)"
+		set[fileKey{dbID: f.DatabaseID, fileID: f.FileID}] = fileRow{
+			database: name, isLog: f.IsLog,
+			reads: f.Reads, bytesRead: f.BytesRead, stallRead: f.IOStallReadMs,
+			writes: f.Writes, bytesWrit: f.BytesWritten, stallWrit: f.IOStallWriteMs,
 		}
-		r.isLog = isLog == 1
-		set[k] = r
 	}
-	return set, rows.Err()
+	return set, nil
 }
 
 // fileDeltas turns two cumulative samples into throughput and latency per

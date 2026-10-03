@@ -35,33 +35,20 @@ type ncekPrefetch struct {
 // NewColumnEncryptionKeyDialog is the New Column Encryption Key creation
 // dialog.
 type NewColumnEncryptionKeyDialog struct {
-	newObjectDialog[ncekPrefetch]
-
-	dbName string
-	node   *explorerNode
+	dbFolderDialog[ncekPrefetch]
 }
 
 // NewNewColumnEncryptionKeyDialog creates the dialog and wires its callbacks.
 func NewNewColumnEncryptionKeyDialog(app *App) *NewColumnEncryptionKeyDialog {
 	d := &NewColumnEncryptionKeyDialog{}
-	d.init(app, newObjectConfig[ncekPrefetch]{
-		title:   "New Column Encryption Key",
-		noun:    "Column encryption key",
-		pages:   []string{"General"},
-		fetch:   d.fetchPrefetch,
-		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
+	d.initInFolder(app, newObjectConfig[ncekPrefetch]{
+		title: "New Column Encryption Key",
+		noun:  "Column encryption key",
+		pages: []string{"General"},
+		fetch: d.fetchPrefetch,
+		build: d.buildPages,
 	})
 	return d
-}
-
-// show opens the dialog for one database's Column Encryption Keys folder.
-func (d *NewColumnEncryptionKeyDialog) show(sc *db.ServerConn, node *explorerNode) {
-	d.dbName = node.data.DBName
-	d.node = node
-	d.scriptDatabase = d.dbName
-	d.newObjectDialog.show(sc)
-	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
 }
 
 func (d *NewColumnEncryptionKeyDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ncekPrefetch, error) {

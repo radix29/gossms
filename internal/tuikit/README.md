@@ -37,7 +37,7 @@ tuikit/
 │               one regexp engine for Find/Replace/Replace All), editor_block.go
 │               (column selection + rectangular clipboard), editor_selection.go,
 │               _draw, _wrap, _input, _actions, editor_completion.go (popup);
-│               sql_highlighter.go, sql_statement.go (statement/batch bounds),
+│               sql_highlighter.go, sql_statement.go (Ctrl+Enter, over sqltext),
 │               xml_highlighter.go (planview XML tab), json_highlighter.go (JSON
 │               cell panel; stateless per line)
 ├── charts/     Terminal charts from generic series data
@@ -47,30 +47,37 @@ tuikit/
 │               axis.go, legend.go, common.go (Series, stacked-run composition),
 │               history.go, stacked_history.go, barchart.go, stacked_bar.go,
 │               vbar.go, kpi.go
-├── sqltext/    T-SQL text rules — the "GO" separator line rule and SplitBatches;
-│             stdlib only, so internal/query and sqlparse can use it
-│             — doc.go, go_separator.go, split.go
+├── sqltext/    T-SQL text rules — the one lexer, the "GO" separator line rule,
+│             SplitBatches and StatementAt; stdlib only, so internal/query and
+│             sqlparse can use it
+│             — doc.go, lexer.go, go_separator.go, split.go, statement.go
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
-              — doc.go, common.go, rows.go, gridrow.go, editorrow.go,
-                togglegrid.go, form.go; sheet.go (state/pages), sheet_draw.go,
-                sheet_input.go, sheet_clipboard.go
+              — doc.go, common.go, rows.go (Section/Note/Hint/Static),
+                textrow.go, choicerows.go (Check/Select/Radio), buttonsrow.go,
+                gridrow.go, editorrow.go, togglegrid.go, form.go; sheet.go
+                (state/pages), sheet_draw.go, sheet_input.go, sheet_clipboard.go
 ```
 
 Every sub-package: one file per type or tight group, plus `doc.go`.
 
 ## Dependency direction
 
-One-way; nothing imports upward, nothing imports `tui`:
+One-way; nothing imports upward, nothing imports `tui`. Each package imports
+`core` and `theme` (`core` only `theme`, `theme` only `tcell`), plus:
 
 ```
-theme  ◄── core ◄── widgets ◄── layout ◄── dialogs ◄── propsheet
-                       ▲                      ▲            ▲
-                       └──────── controls ─────┴────────────┘
+widgets    —
+charts     —
+controls   → sqltext
+layout     → controls
+dialogs    → widgets
+propsheet  → dialogs, controls, widgets
 ```
 
-- **theme** depends only on `tcell`; **core** on `theme` (for `Init()`'s
-  default style); **widgets**, **layout**, **dialogs**, **controls** on `core`
-  and `theme`.
+- **layout** imports `controls` for the tab strip's geometry
+  (`TabStripSegments`, `TabLabelWidth`), which `PanelManager`'s tab bar
+  shares with every other tab bar in the app; nothing in tuikit imports
+  `layout`.
 - **propsheet** is the top, composing `dialogs.ModalDialog`,
   `controls.DataGrid`/`ListBox` and `widgets`.
 - **sqltext** is outside the graph: stdlib only, not even `tcell`. `controls`,
@@ -83,7 +90,10 @@ theme  ◄── core ◄── widgets ◄── layout ◄── dialogs ◄�
 
 **Geometry via `core.Rect`.** Widgets store a `core.Rect` and expose
 `SetBounds(x, y, w, h)`; containers (`PanelManager`, `Splitter`) compute child
-rects and hand them down.
+rects and hand them down. Two shapes differ, both one row high: the
+`widgets` leaf inputs (`Button`, `CheckBox`, `DropDown`, `InputField`,
+`RadioBox`) take `SetBounds(x, y)`, their width fixed by their label or by
+`SetWidth`; `MenuBar` and `Toolbar` take `SetBounds(x, y, w)`.
 
 **Self-contained state**, read through getters (`Value()`, `Checked()`,
 `Selected()`); the app never pushes into private fields.
@@ -108,7 +118,10 @@ sources scale. A source may also implement `RowKindSource` to mark rows as
 group headers (`RowGroup` — cell 0 a label from the left edge, unscrolled and
 not sampled for widths, spilling across empty cells up to the first non-empty
 one, which draws in its column like an ordinary cell; expanding one is the
-host's rebuild) or marked rows (`RowMarked`, bookmarks).
+host's rebuild) or marked rows (`RowMarked`, bookmarks), and `NullSource`
+(`IsNull(row, col)`) to mark SQL NULL cells, which draw dimmed and skip
+`OnShowValue`. The grid never reads NULL from the text: a cell reading "NULL"
+may be the string. `query.ResultSet` is a `RowSource` and a `NullSource`.
 
 **Display width, not bytes or runes.** `core.DisplayWidth(s)` (via
 `clipperhouse/displaywidth`) is the one answer to "how many columns", handling

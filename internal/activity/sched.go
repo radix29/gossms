@@ -1,9 +1,6 @@
 package activity
 
-import (
-	"context"
-	"database/sql"
-)
+import "context"
 
 // SchedStats is sys.dm_os_schedulers' CPU-pressure picture: work queued for
 // user schedulers. Host CPU percentage is CPUUsage (cpu.go), a different
@@ -16,24 +13,26 @@ type SchedStats struct {
 	Schedulers    int
 }
 
-// Only VISIBLE ONLINE schedulers run user work; hidden ones serve internal
-// tasks.
-const schedQuery = `
-SELECT COUNT(*), SUM(runnable_tasks_count), SUM(current_tasks_count),
-       SUM(active_workers_count), SUM(work_queue_count)
-FROM sys.dm_os_schedulers
-WHERE status = 'VISIBLE ONLINE'`
-
-func collectSchedulers(ctx context.Context, db *sql.DB) (SchedStats, error) {
-	var s SchedStats
-	var runnable, current, workers, queue sql.NullFloat64
-	err := db.QueryRowContext(ctx, schedQuery).Scan(&s.Schedulers, &runnable, &current, &workers, &queue)
+// collectSchedulers reads the schedulers once for both their summed pressure
+// and each one's load factor. Only online ones count: an offline scheduler
+// (outside the affinity mask) runs no user work.
+func collectSchedulers(ctx context.Context, src Source) (SchedStats, []SchedulerLoad, error) {
+	scheds, err := src.Schedulers(ctx)
 	if err != nil {
-		return SchedStats{}, err
+		return SchedStats{}, nil, err
 	}
-	s.RunnableTasks = runnable.Float64
-	s.CurrentTasks = current.Float64
-	s.ActiveWorkers = workers.Float64
-	s.WorkQueue = queue.Float64
-	return s, nil
+	var s SchedStats
+	var load []SchedulerLoad
+	for _, sc := range scheds {
+		if !sc.IsOnline {
+			continue
+		}
+		s.Schedulers++
+		s.RunnableTasks += float64(sc.RunnableTasks)
+		s.CurrentTasks += float64(sc.CurrentTasks)
+		s.ActiveWorkers += float64(sc.ActiveWorkers)
+		s.WorkQueue += float64(sc.WorkQueue)
+		load = append(load, SchedulerLoad{CPUID: sc.CPUID, LoadFactor: float64(sc.LoadFactor)})
+	}
+	return s, load, nil
 }

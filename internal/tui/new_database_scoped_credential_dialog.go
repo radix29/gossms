@@ -44,41 +44,23 @@ func fetchNewDBScopedCredPrefetch(ctx context.Context, sc *db.ServerConn, dbName
 // NewDatabaseScopedCredentialDialog is the New Database Scoped Credential
 // dialog.
 type NewDatabaseScopedCredentialDialog struct {
-	newObjectDialog[ndbScopedCredPrefetch]
-
-	// dbName is the database the credential is created in, and node the
-	// folder to refresh afterwards. Both are set by show, before the embedded
-	// dialog's own show runs the prefetch that reads them.
-	dbName string
-	node   *explorerNode
+	dbFolderDialog[ndbScopedCredPrefetch]
 }
 
 // NewNewDatabaseScopedCredentialDialog creates the dialog and wires its
 // callbacks.
 func NewNewDatabaseScopedCredentialDialog(app *App) *NewDatabaseScopedCredentialDialog {
 	d := &NewDatabaseScopedCredentialDialog{}
-	d.init(app, newObjectConfig[ndbScopedCredPrefetch]{
+	d.initInFolder(app, newObjectConfig[ndbScopedCredPrefetch]{
 		title: "New Database Scoped Credential",
 		noun:  "Database Scoped Credential",
 		pages: []string{"General"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*ndbScopedCredPrefetch, error) {
 			return fetchNewDBScopedCredPrefetch(ctx, sc, d.dbName)
 		},
-		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
+		build: d.buildPages,
 	})
 	return d
-}
-
-// show opens the dialog for one database's Database Scoped Credentials folder.
-func (d *NewDatabaseScopedCredentialDialog) show(sc *db.ServerConn, node *explorerNode) {
-	d.dbName = node.data.DBName
-	d.node = node
-	// Script Changes opens its query window in the database the statement runs
-	// in, not the connection's default.
-	d.scriptDatabase = d.dbName
-	d.newObjectDialog.show(sc)
-	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
 }
 
 func (d *NewDatabaseScopedCredentialDialog) buildPages(pf *ndbScopedCredPrefetch) {

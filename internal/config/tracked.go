@@ -27,7 +27,13 @@ const trackedFileName = "tracked_queries.json"
 // TrackedQueries is the tracked-query sets, keyed by server then database. Safe
 // for concurrent use (the Query Store panel and the Detail Browser's loaders).
 type TrackedQueries struct {
-	mu   sync.Mutex
+	// mu guards everything below and is never held across file work, so a
+	// save waiting on another instance's lock does not stall a reader.
+	mu sync.Mutex
+	// saveMu runs one Save at a time: each adopts the file it wrote and
+	// drops the pending ops it replayed, by position.
+	saveMu sync.Mutex
+
 	path string
 	sets map[string]map[string][]int64
 
@@ -195,10 +201,8 @@ func (t *TrackedQueries) IsTracked(server, database string, id int64) bool {
 	return slices.Contains(t.sets[serverKey(server)][database], id)
 }
 
-// Toggle adds or removes a query, saves the file, and reports the new state.
-// Saved on every change (there's no other save point; the file is tiny).
-//
-// The error is the save's; the in-memory set is updated regardless.
+// Toggle adds or removes a query in memory and reports the new state. Save
+// writes it; the Query Store panel calls that off the UI goroutine.
 func (t *TrackedQueries) Toggle(server, database string, id int64) (tracked bool, err error) {
 	if t == nil {
 		// Readers tolerate a nil set; a writer must not claim a pin it didn't
@@ -206,49 +210,63 @@ func (t *TrackedQueries) Toggle(server, database string, id int64) (tracked bool
 		return false, errors.New("tracked queries: no set loaded")
 	}
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	op := trackOp{server: server, database: database, id: id,
 		add: !slices.Contains(t.sets[serverKey(server)][database], id)}
 	op.apply(t.sets)
 	t.pending = append(t.pending, op)
-	t.mu.Unlock()
-	return op.add, t.Save()
+	return op.add, nil
 }
 
 // Save writes the file, refusing to overwrite one that couldn't be read (see
 // unreadable). It re-reads the file and replays this process's unsaved
 // Toggles onto it, then adopts the result, so pins another gossms instance
-// saved meanwhile are kept on disk and appear here.
+// saved meanwhile are kept on disk and appear here. A Toggle made while the
+// file is written stays pending for the next Save, replayed onto the adopted
+// set so it is not lost from memory either.
 func (t *TrackedQueries) Save() error {
 	if t == nil {
 		return errors.New("tracked queries: no set loaded")
 	}
+	t.saveMu.Lock()
+	defer t.saveMu.Unlock()
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.unreadable != nil {
+	unreadable, ops := t.unreadable, slices.Clone(t.pending)
+	t.mu.Unlock()
+	if unreadable != nil {
 		return fmt.Errorf("tracked queries: not saving over %s — it could not be read at startup: %w",
-			t.path, t.unreadable)
+			t.path, unreadable)
 	}
 	if err := os.MkdirAll(filepath.Dir(t.path), 0o700); err != nil {
 		return err
 	}
+	var sets map[string]map[string][]int64
 	// Locked from the re-read to the write, as Config.Save.
-	return fileutil.WithLock(t.path, func() error {
-		sets, err := readTrackedFile(t.path)
+	err := fileutil.WithLock(t.path, func() error {
+		var err error
+		sets, err = readTrackedFile(t.path)
 		if err != nil {
 			return fmt.Errorf("tracked queries: not saving over %s — it could not be re-read: %w", t.path, err)
 		}
-		for _, op := range t.pending {
+		for _, op := range ops {
 			op.apply(sets)
 		}
 		data, err := json.MarshalIndent(trackedFile{Tracked: sets}, "", "  ")
 		if err != nil {
 			return err
 		}
-		if err := fileutil.WriteAtomic(t.path, append(data, '\n'), 0o600); err != nil {
-			return err
-		}
-		t.sets = sets
-		t.pending = nil
-		return nil
+		return fileutil.WriteAtomic(t.path, append(data, '\n'), 0o600)
 	})
+	if err != nil {
+		return err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	later := slices.Clone(t.pending[len(ops):])
+	for _, op := range later {
+		op.apply(sets)
+	}
+	t.sets = sets
+	t.pending = later
+	return nil
 }

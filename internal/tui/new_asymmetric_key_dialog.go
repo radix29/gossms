@@ -60,37 +60,22 @@ func fetchNewAsymmetricKeyPrefetch(ctx context.Context, sc *db.ServerConn, dbNam
 
 // NewAsymmetricKeyDialog is the New Asymmetric Key dialog.
 type NewAsymmetricKeyDialog struct {
-	newObjectDialog[nasymPrefetch]
-
-	// dbName and node are set by show, before the embedded dialog's own show
-	// runs the prefetch that reads them — NewCertificateDialog's arrangement.
-	dbName string
-	node   *explorerNode
+	dbFolderDialog[nasymPrefetch]
 }
 
 // NewNewAsymmetricKeyDialog creates the dialog and wires its callbacks.
 func NewNewAsymmetricKeyDialog(app *App) *NewAsymmetricKeyDialog {
 	d := &NewAsymmetricKeyDialog{}
-	d.init(app, newObjectConfig[nasymPrefetch]{
+	d.initInFolder(app, newObjectConfig[nasymPrefetch]{
 		title: "New Asymmetric Key",
 		noun:  "Asymmetric Key",
 		pages: []string{"General"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*nasymPrefetch, error) {
 			return fetchNewAsymmetricKeyPrefetch(ctx, sc, d.dbName)
 		},
-		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
+		build: d.buildPages,
 	})
 	return d
-}
-
-// show opens the dialog for one database's Asymmetric Keys folder.
-func (d *NewAsymmetricKeyDialog) show(sc *db.ServerConn, node *explorerNode) {
-	d.dbName = node.data.DBName
-	d.node = node
-	d.scriptDatabase = d.dbName
-	d.newObjectDialog.show(sc)
-	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
 }
 
 func (d *NewAsymmetricKeyDialog) buildPages(pf *nasymPrefetch) {

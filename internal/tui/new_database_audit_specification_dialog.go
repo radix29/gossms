@@ -90,42 +90,23 @@ func fetchNewDBAuditSpecPrefetch(ctx context.Context, sc *db.ServerConn, dbName 
 // NewDatabaseAuditSpecificationDialog is the New Database Audit Specification
 // dialog.
 type NewDatabaseAuditSpecificationDialog struct {
-	newObjectDialog[ndbAuditSpecPrefetch]
-
-	// dbName is the database the specification is created in, and node the
-	// folder to refresh afterwards. Both are set by show, before the embedded
-	// dialog's own show runs the prefetch that reads them.
-	dbName string
-	node   *explorerNode
+	dbFolderDialog[ndbAuditSpecPrefetch]
 }
 
 // NewNewDatabaseAuditSpecificationDialog creates the dialog and wires its
 // callbacks.
 func NewNewDatabaseAuditSpecificationDialog(app *App) *NewDatabaseAuditSpecificationDialog {
 	d := &NewDatabaseAuditSpecificationDialog{}
-	d.init(app, newObjectConfig[ndbAuditSpecPrefetch]{
+	d.initInFolder(app, newObjectConfig[ndbAuditSpecPrefetch]{
 		title: "New Database Audit Specification",
 		noun:  "Database Audit Specification",
 		pages: []string{"General"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*ndbAuditSpecPrefetch, error) {
 			return fetchNewDBAuditSpecPrefetch(ctx, sc, d.dbName)
 		},
-		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
+		build: d.buildPages,
 	})
 	return d
-}
-
-// show opens the dialog for one database's Database Audit Specifications
-// folder.
-func (d *NewDatabaseAuditSpecificationDialog) show(sc *db.ServerConn, node *explorerNode) {
-	d.dbName = node.data.DBName
-	d.node = node
-	// Script Changes opens its query window in the database the statement runs
-	// in, not the connection's default.
-	d.scriptDatabase = d.dbName
-	d.newObjectDialog.show(sc)
-	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
 }
 
 func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetch) {

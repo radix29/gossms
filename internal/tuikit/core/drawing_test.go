@@ -155,3 +155,20 @@ func TestScrollbarThumbSpansTheWholeTrack(t *testing.T) {
 		}
 	}
 }
+
+// TestRuneStringIsStringOfRune pins RuneString to string(r) across both
+// tables, their edges and past them, and pins the tables to costing nothing:
+// they are why a drawn cell no longer allocates.
+func TestRuneStringIsStringOfRune(t *testing.T) {
+	for _, r := range []rune{0, ' ', 'A', '~', 0x7f, 0x80, 'é', boxRunesFirst - 1, boxRunesFirst, '─', '│', '█', boxRunesLast, boxRunesLast + 1, '你', -1} {
+		if got, want := RuneString(r), string(r); got != want {
+			t.Errorf("RuneString(%U) = %q, want %q", r, got, want)
+		}
+	}
+	if n := testing.AllocsPerRun(100, func() {
+		_ = RuneString('x')
+		_ = RuneString('─')
+	}); n != 0 {
+		t.Errorf("RuneString of a table rune allocated %v times, want 0", n)
+	}
+}

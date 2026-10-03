@@ -34,5 +34,5 @@
 // the caller to reuse the exact same per-page apply logic it uses for
 // OnApply/OnOK, just invoked under gosmo.WithScript so every write it
 // makes is captured as SQL text instead of executed — see
-// internal/tui/prop_dialog.go's runScript for the app-layer half of this.
+// internal/tui/prop_apply.go's runScript for the app-layer half of this.
 package propsheet

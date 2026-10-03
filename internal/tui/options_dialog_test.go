@@ -40,7 +40,7 @@ func TestQueryPanelEditorTakesConfiguredIndentWidth(t *testing.T) {
 // Options settings, this one lives in the Editor, not read from cfg at use
 // time — and into the default new editors are seeded from.
 func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigHome(t)
 	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
 
 	a := newTestApp()
@@ -70,7 +70,7 @@ func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
 // Anything unparseable or out of range falls back to the default rather than
 // storing a width no editor would accept.
 func TestOptionsApplyClampsIndentWidth(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigHome(t)
 	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
 
 	for _, in := range []string{"", "0", "-1", "99", "two"} {
@@ -89,7 +89,7 @@ func TestOptionsApplyClampsIndentWidth(t *testing.T) {
 // QueryPanel — it is an EditorRow on a property-sheet page — so apply has to
 // reach it through the open dialogs, not through a.panels.
 func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigHome(t)
 	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
 
 	a := newTestApp()
@@ -121,7 +121,7 @@ func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 // Options pre-fills the text-column cap and applies it, falling back to SSMS's
 // default for anything that is not a positive number.
 func TestOptionsApplyMaxTextColumnLength(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigHome(t)
 	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
 
 	for _, tc := range []struct {

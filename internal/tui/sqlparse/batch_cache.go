@@ -171,7 +171,7 @@ func (c *BatchCache) batch(lines [][]rune, buf []rune, cursorRow int) (from, to 
 // nextRow, or reached the end of buf.
 func (c *BatchCache) extend(buf []rune, nextRow int) {
 	stop := -1
-	lexSQL(buf, c.lexedTo, len(buf), false, LexNormal, &c.tokens, allLines(buf), nil,
+	lexSQL(buf, c.lexedTo, len(buf), false, &c.tokens, allLines(buf), nil,
 		func(start, goNext int) bool {
 			// lexedTo itself is reported again; sync may have kept its mark.
 			if n := len(c.marks); n > 0 && c.marks[n-1].start == start {
@@ -245,7 +245,7 @@ func (c *BatchCache) sync(buf []rune) bool {
 	// walk: from there both scans see the same text from the same state.
 	resync, stop := -1, -1
 	c.scratchTokens, c.scratchMarks = c.scratchTokens[:0], c.scratchMarks[:0]
-	lexSQL(buf, restart, len(buf), false, LexNormal, &c.scratchTokens, allLines(buf), nil,
+	lexSQL(buf, restart, len(buf), false, &c.scratchTokens, allLines(buf), nil,
 		func(start, goNext int) bool {
 			if start >= newWindowEnd {
 				o := start - delta

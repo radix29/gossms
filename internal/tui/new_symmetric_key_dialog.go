@@ -83,37 +83,22 @@ func fetchNewSymmetricKeyPrefetch(ctx context.Context, sc *db.ServerConn, dbName
 
 // NewSymmetricKeyDialog is the New Symmetric Key dialog.
 type NewSymmetricKeyDialog struct {
-	newObjectDialog[nsymPrefetch]
-
-	// dbName and node are set by show, before the embedded dialog's own show
-	// runs the prefetch that reads them — NewCertificateDialog's arrangement.
-	dbName string
-	node   *explorerNode
+	dbFolderDialog[nsymPrefetch]
 }
 
 // NewNewSymmetricKeyDialog creates the dialog and wires its callbacks.
 func NewNewSymmetricKeyDialog(app *App) *NewSymmetricKeyDialog {
 	d := &NewSymmetricKeyDialog{}
-	d.init(app, newObjectConfig[nsymPrefetch]{
+	d.initInFolder(app, newObjectConfig[nsymPrefetch]{
 		title: "New Symmetric Key",
 		noun:  "Symmetric Key",
 		pages: []string{"General"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*nsymPrefetch, error) {
 			return fetchNewSymmetricKeyPrefetch(ctx, sc, d.dbName)
 		},
-		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
+		build: d.buildPages,
 	})
 	return d
-}
-
-// show opens the dialog for one database's Symmetric Keys folder.
-func (d *NewSymmetricKeyDialog) show(sc *db.ServerConn, node *explorerNode) {
-	d.dbName = node.data.DBName
-	d.node = node
-	d.scriptDatabase = d.dbName
-	d.newObjectDialog.show(sc)
-	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
 }
 
 func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {

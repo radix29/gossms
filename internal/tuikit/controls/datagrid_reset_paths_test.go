@@ -2,6 +2,7 @@ package controls
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -75,21 +76,40 @@ func TestEveryResetPathClearsTheView(t *testing.T) {
 	}
 }
 
-// SetError sizes its one column to the whole rect by hand, so it must also
-// drop a RefreshColumnWidths queued before it: the Detail Browser's backfill
-// queues one per row, and Draw would otherwise recompute over the top and clip
-// the message to the width of the word "Error".
+// SetError's one column spans the rect, so a RefreshColumnWidths queued
+// before it — the Detail Browser's backfill queues one per row — must not
+// recompute it on the next Draw down to the width of the word "Error".
 func TestSetErrorSurvivesAPendingWidthRefresh(t *testing.T) {
 	g := newTestDataGrid()
 	g.SetData([]string{"a", "b"}, [][]string{{"1", "2"}})
 	g.RefreshColumnWidths()
 	g.SetError(errors.New("a message far longer than the header"))
 
+	g.Draw(&fakeMenuScreen{w: 40, h: 10})
+
 	want := g.rect.W - 2
-	if g.widthsDirty {
-		t.Fatal("widthsDirty still set: the next Draw recomputes over the full-width error column")
-	}
 	if len(g.colWidths) != 1 || g.colWidths[0] != want {
 		t.Fatalf("colWidths = %v, want [%d] (the full rect)", g.colWidths, want)
+	}
+}
+
+// TestSetErrorColumnTracksAResize pins T16: the error column spans whatever
+// rect the grid is laid out in, not only the one it had when SetError ran.
+// computeColWidths used to re-clamp it to defaultMaxCellWidth on the next
+// SetBounds, so on a wide panel the message was cut at 40 columns — and a
+// grid that had no rect yet when the error landed showed a negative width.
+func TestSetErrorColumnTracksAResize(t *testing.T) {
+	g := NewDataGrid()
+	g.SetError(errors.New(strings.Repeat("x", 150)))
+	for _, w := range []int{120, 120, 80} {
+		g.SetBounds(0, 0, w, 10)
+		if len(g.colWidths) != 1 || g.colWidths[0] != w-2 {
+			t.Fatalf("after SetBounds(w=%d): colWidths = %v, want [%d]", w, g.colWidths, w-2)
+		}
+	}
+	// A fresh result set leaves error mode: its widths are content-sized again.
+	g.SetData([]string{"a"}, [][]string{{"1"}})
+	if g.colWidths[0] != 6 {
+		t.Errorf("after SetData: colWidths[0] = %d, want 6 (content-sized)", g.colWidths[0])
 	}
 }

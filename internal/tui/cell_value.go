@@ -76,8 +76,9 @@ func jsonArrayLike(t string) bool {
 // the 60-column popup.
 func classifyCellKind(sqlType, value string) cellValueKind {
 	if k := classifySQLType(sqlType); k != cellPlain {
-		// A NULL cell renders as the literal "NULL" — nothing to open.
-		if strings.TrimSpace(value) == "" || value == "NULL" {
+		// Nothing to open. A NULL never gets here: the grid keeps it from
+		// OnShowValue (controls.NullSource).
+		if strings.TrimSpace(value) == "" {
 			return cellPlain
 		}
 		return k

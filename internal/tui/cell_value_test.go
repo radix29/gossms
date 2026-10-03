@@ -68,7 +68,6 @@ func TestClassifyCellKind(t *testing.T) {
 	}{
 		{"xml column, entity-escaped tail", "xml", "<?query --\r\nselect 1\r\n--?&gt;", cellXML},
 		{"xml column, ordinary document", "xml", "<root/>", cellXML},
-		{"xml column, NULL cell", "xml", "NULL", cellPlain},
 		{"xml column, empty cell", "xml", "", cellPlain},
 		{"json column", "json", `{"a":1}`, cellJSON},
 		{"type case-insensitive", "XML", "<?query --x--?&gt;", cellXML},

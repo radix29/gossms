@@ -41,38 +41,20 @@ type ncmkPrefetch struct {
 
 // NewColumnMasterKeyDialog is the New Column Master Key creation dialog.
 type NewColumnMasterKeyDialog struct {
-	newObjectDialog[ncmkPrefetch]
-
-	// dbName is the database the key is created in, and node the folder to
-	// refresh afterwards. Both are set by show, before the embedded dialog's
-	// own show runs the prefetch that reads them.
-	dbName string
-	node   *explorerNode
+	dbFolderDialog[ncmkPrefetch]
 }
 
 // NewNewColumnMasterKeyDialog creates the dialog and wires its callbacks.
 func NewNewColumnMasterKeyDialog(app *App) *NewColumnMasterKeyDialog {
 	d := &NewColumnMasterKeyDialog{}
-	d.init(app, newObjectConfig[ncmkPrefetch]{
-		title:   "New Column Master Key",
-		noun:    "Column master key",
-		pages:   []string{"General"},
-		fetch:   d.fetchPrefetch,
-		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
+	d.initInFolder(app, newObjectConfig[ncmkPrefetch]{
+		title: "New Column Master Key",
+		noun:  "Column master key",
+		pages: []string{"General"},
+		fetch: d.fetchPrefetch,
+		build: d.buildPages,
 	})
 	return d
-}
-
-// show opens the dialog for one database's Column Master Keys folder.
-func (d *NewColumnMasterKeyDialog) show(sc *db.ServerConn, node *explorerNode) {
-	d.dbName = node.data.DBName
-	d.node = node
-	// Script Changes opens its query window in the database the statement
-	// runs in, not the connection's default.
-	d.scriptDatabase = d.dbName
-	d.newObjectDialog.show(sc)
-	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
 }
 
 func (d *NewColumnMasterKeyDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ncmkPrefetch, error) {

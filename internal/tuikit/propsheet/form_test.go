@@ -3,6 +3,7 @@ package propsheet
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -27,6 +28,13 @@ func (s *fakeScreen) SetContent(x, y int, primary rune, comb []rune, style tcell
 		s.cells = map[[2]int]rune{}
 	}
 	s.cells[[2]int{x, y}] = primary
+}
+
+// Put is how core draws a cell; it lands in SetContent like any other write.
+func (s *fakeScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	r, n := utf8.DecodeRuneInString(str)
+	s.SetContent(x, y, r, nil, style)
+	return str[n:], 1
 }
 
 // line returns the text drawn on row y, trailing blanks trimmed.

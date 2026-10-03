@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
@@ -19,6 +20,13 @@ type recordingScreen struct {
 func (s *recordingScreen) Size() (int, int) { return s.w, s.h }
 func (s *recordingScreen) SetContent(x, y int, primary rune, _ []rune, _ tcell.Style) {
 	s.runes[[2]int{x, y}] = primary
+}
+
+// Put is how core draws a cell; it lands in SetContent like any other write.
+func (s *recordingScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	r, n := utf8.DecodeRuneInString(str)
+	s.SetContent(x, y, r, nil, style)
+	return str[n:], 1
 }
 func (s *recordingScreen) ShowCursor(int, int) {}
 
@@ -42,6 +50,14 @@ func drawnFieldText(f *widgets.InputField) string {
 func scratchConfigHome(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	waitForSavesAtCleanup(t)
+}
+
+// waitForSavesAtCleanup holds the test's end until every background save
+// has finished. Registered after the scratch directory, so it runs first: a
+// save still writing there makes TempDir's RemoveAll fail the test.
+func waitForSavesAtCleanup(t *testing.T) {
+	t.Cleanup(savesInFlight.Wait)
 }
 
 // Reset clears the right pane back to the dialog's opening defaults, and

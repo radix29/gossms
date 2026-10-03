@@ -109,7 +109,7 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 	hdrStyle := tcell.StyleDefault.Background(p.GridHeader).Foreground(p.Text).Bold(true)
 	core.FillRect(s, core.Rect{X: inner.X, Y: inner.Y + 1, W: inner.W, H: 1}, ' ', hdrStyle)
 	core.DrawTextClipped(s, inner.X+1, inner.Y+1, keyW, hdrStyle, "Property")
-	s.SetContent(inner.X+keyW+2, inner.Y+1, '|', nil, hdrStyle)
+	core.PutRune(s, inner.X+keyW+2, inner.Y+1, '|', hdrStyle)
 	core.DrawTextClipped(s, inner.X+keyW+4, inner.Y+1, inner.W-keyW-4, hdrStyle, "Value")
 
 	keyStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive).Bold(true)
@@ -134,7 +134,7 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 		}
 		core.FillRect(s, core.Rect{X: inner.X, Y: y, W: inner.W, H: 1}, ' ', valStyle)
 		core.DrawTextClipped(s, inner.X+1, y, keyW, keyStyle, pr.Key)
-		s.SetContent(inner.X+keyW+2, y, '|', nil, valStyle)
+		core.PutRune(s, inner.X+keyW+2, y, '|', valStyle)
 		core.DrawTextClipped(s, inner.X+keyW+4, y, inner.W-keyW-4, valStyle, pr.Value)
 	}
 	if len(d.rows) > dataH {

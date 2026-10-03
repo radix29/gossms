@@ -153,7 +153,7 @@ gossms/
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
 │   │                        #   entra.go: the process-wide gosmo.EntraCache every Entra connection shares, the device-code prompt hook, and the sign-in phase (SignIn) run before the dial
-│   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines, and Poller for a feed whose source is already aggregated — no TUI imports
+│   ├── activity/            # Activity Monitor collection over gosmo's DMV readings (Source): cntr_type decode, wait categories, 30-minute store, collector goroutines, Poller for a feed whose source is already aggregated, and the Block/Sessions helper procedures — no TUI imports, no DMV SQL of its own
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
 │   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
@@ -172,14 +172,14 @@ gossms/
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/Progress/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
 │   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
 │   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL/XML highlighters)
-│   │   ├── sqltext/                 # T-SQL text rules shared with internal/query and sqlparse: the "GO" separator line rule, SplitBatches; standard library only
+│   │   ├── sqltext/                 # The one T-SQL lexer (Next) and the rules built on it, shared by the editor, internal/query and sqlparse: the "GO" separator line rule, SplitBatches, StatementAt (Ctrl+Enter's statement select), the statement-verb sets; standard library only
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework (rows incl. EditorRow, the embedded multi-line controls.Editor)
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
 │       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView/TempDBView/InstanceView with tuikit/charts; no App, no connection
 │       ├── gate/                 # the permission gate: gate.RightsAllow — the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
-│       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT, rowset functions' WITH lists) and ScanBindings' batch-wide temp-table/table-variable declarations, with CarryTempBindings handing temp tables on across GO. Functions over runes; no App, no connection — pure but for its two caches, PrefixCache (prefix_cache.go: the completion prefix scan) and BatchCache (batch_cache.go: the batch-wide binding scan and the temp tables carried into it), each making a per-keystroke scan incremental and owned by the QueryPanel that calls it
+│       ├── sqlparse/             # T-SQL token stream (over sqltext.Next) + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT, rowset functions' WITH lists) and ScanBindings' batch-wide temp-table/table-variable declarations, with CarryTempBindings handing temp tables on across GO. Functions over runes; no App, no connection — pure but for its two caches, PrefixCache (prefix_cache.go: the completion prefix scan) and BatchCache (batch_cache.go: the batch-wide binding scan and the temp tables carried into it), each making a per-keystroke scan incremental and owned by the QueryPanel that calls it
 │       │
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
@@ -189,6 +189,7 @@ gossms/
 │       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Take Offline/Bring Online task consumer
 │       ├── app_panel_actions.go  # opening panels and files: new query panel, open a .sql or .sqlplan, save a plan back out
 │       ├── app_panel_close.go    # closing a panel and quitting: Disposable release, the open-transaction commit prompt, the unsaved-query prompts quit walks, activeQueryPanel/withQueryPanel
+│       ├── app_saves.go          # config.json and tracked_queries.json saves off the UI goroutine: saveConfig (Config.BeginSave → SaveJob.Run on safegoRepair → EndSave, one job at a time, later asks queued behind it), saveTracked, and FlushSaves, which cmd/gossms calls after Run returns so a save still out at quit is not lost
 │       ├── emergency_save.go     # App.EmergencySave / SaveOnSignal: after a UI-goroutine panic or on SIGHUP/SIGTERM, writes every dirty query panel to <config dir>/recovered/
 │       ├── app_query_actions.go  # what the toolbar and Query menu do to the active query panel: execute/cancel, estimated + actual plan, reconnect, results mode, save its text
 │       ├── app_show_panels.go    # opens the non-query panels: Object Explorer Details, query list, Activity Monitor, Log Viewer, Query Store — reusing one already open for the same target
@@ -307,6 +308,7 @@ gossms/
 │       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
+│       ├── detail_browser_runs.go       # the fetch lifecycle (detailRuns over latest, per-node pending tokens), the per-node-type dispatch and fetchNodeDetails
 │       ├── detail_browser_backfill.go   # bounded per-row backfill fan-out shared by the folder loaders below
 │       ├── detail_browser_server.go     # Server node: version/edition/paths/CPU/memory, then NUMA + disk volumes
 │       ├── detail_browser_databases.go  # Databases folder: name/state/recovery, then per-database size backfill
@@ -365,7 +367,8 @@ gossms/
 │       ├── properties_dialog.go  # About + Object Dependencies (wraps dialogs.PropertiesDialog, the flat viewer)
 │       │
 │       │  ── Properties dialogs (propsheet-based) ──
-│       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet on an existing object (lazy per-page loads, dirty-diff Apply; applyPlan, for a dialog whose pages' writes are ordered across pages)
+│       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet on an existing object (show, lazy per-page loads and their runs, page actions, read-only gating)
+│       ├── prop_apply.go         # PropDialog's write path: dirty-diff Apply and Script Changes, the commit-tracking step runner, commitRename, and applyPlan for a dialog whose pages' writes are ordered across pages
 │       ├── new_object_dialog.go  # newObjectDialog — the shell behind the New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── name_set.go           # nameSet: the New-object dialogs' "already exists" check, folding case only when the scope's collation (server, database or msdb) does
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm)
@@ -725,7 +728,7 @@ shadow it. The cancel, which `tuikit` must not learn about, is `PropDialog`'s
 loading, since the host was never told the first load was superseded.
 
 **A site needing more bookkeeping wraps `latest`.** `detailRuns`
-(`detail_browser.go`) embeds one and adds the run's node and the per-node
+(`detail_browser_runs.go`) embeds one and adds the run's node and the per-node
 `pending` map; its `stop`/`supersede` shadow `Cancel`/`Abandon` so a caller
 can't stop a run and leave its pending entry behind.
 

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/radix29/gossms/internal/tuikit/sqltext"
 )
 
 // statementEndOffset finds where the statement containing the cursor ends: the
@@ -14,7 +16,7 @@ import (
 // the cursor up to that boundary, which in a script with no ';' is the rest of
 // the batch (B11).
 func statementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
-	r := lexSQL(buf, upTo, len(buf), true, LexNormal, nil,
+	r := lexSQL(buf, upTo, len(buf), true, nil,
 		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil, nil)
 	end := r.boundary
 	if r.firstGo >= 0 && r.firstGo < end {
@@ -25,7 +27,7 @@ func statementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
 
 // narrowReference is the old three-pass composition — statementEndOffset,
 // TokenizeRange over the whole span, NarrowToDMLStatement — plus the one thing
-// NarrowStatementForward adds on purpose: a top-level forwardStatementEnders
+// NarrowStatementForward adds on purpose: a top-level sqltext.EndsDML
 // keyword after the cursor ends the statement too.
 func narrowReference(lines [][]rune, buf []rune, row, batchStart, from, upTo int, prefix []Token) (start, end int, tail []Token) {
 	batchEnd := statementEndOffset(lines, buf, row, from)
@@ -39,7 +41,7 @@ func narrowReference(lines [][]rune, buf []rune, row, batchStart, from, upTo int
 		case TokenParenClose:
 			depth = max(depth-1, 0)
 		case TokenKeyword:
-			if depth == 0 && t.Start > upTo && t.Start < batchEnd && forwardStatementEnders[t.Text] {
+			if depth == 0 && t.Start > upTo && t.Start < batchEnd && sqltext.EndsDML(t.Text) {
 				batchEnd = t.Start
 			}
 		}
@@ -95,7 +97,7 @@ func TestNarrowStatementForwardMatchesReference(t *testing.T) {
 				// The reference sees the whole batch's prefix; the provider gets
 				// it trimmed to the statement's leader (PrefixCache), which must
 				// not change the answer.
-				full, _, _, _ := TokenizeRangeFrom(buf, pre.BatchStart, upTo, false, LexNormal)
+				full, _, _, _ := TokenizeRange(buf, pre.BatchStart, upTo, false)
 				ws, we, wt := narrowReference(lines, buf, row, pre.BatchStart, from, upTo, full)
 				gs, ge, gt := NarrowStatementForward(lines, buf, row, pre.BatchStart, from, upTo, pre.Tokens)
 				if gs != ws || ge != we || dumpTokens(gt) != dumpTokens(wt) {

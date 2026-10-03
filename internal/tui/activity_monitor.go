@@ -117,21 +117,18 @@ type ActivityMonitor struct {
 
 	// store holds collected samples; collector fills it. History plots the
 	// store, Sample draws its newest entry.
-	store     activity.Store
-	collector *activity.Collector
+	store activity.Store
 
 	history dashboard.HistoryView
 	sample  dashboard.SampleView
 
-	// The TempDB tab's own store and collector (slow ticks, hours retained).
-	tdStore     activity.TempDBStore
-	tdCollector *activity.TempDBCollector
-	tempdb      dashboard.TempDBView
+	// The TempDB tab's own store (slow ticks, hours retained).
+	tdStore activity.TempDBStore
+	tempdb  dashboard.TempDBView
 
-	// The Instance tab's poller and view. No store: the server keeps the
-	// history and one tick reads it whole (see activity_monitor_instance.go).
-	instPoller *activity.Poller[amInstanceSample]
-	instance   dashboard.InstanceView
+	// The Instance tab's view. No store: the server keeps the history and one
+	// tick reads it whole (see activity_monitor_instance.go).
+	instance dashboard.InstanceView
 
 	// blk and sess are grids over one run of sp_block and sp_WhoIsActive. Each
 	// opens its own connection when first shown; neither auto-refreshes.
@@ -192,10 +189,7 @@ type ActivityMonitor struct {
 }
 
 // amFeed is one dashboard's collector state: rates, Pause, running, last
-// report. Activity and TempDB feeds differ only in rates and collector.
-//
-// Collectors are different types, so applyRate/applyPaused are closures
-// re-pointed by each start method; nil until started.
+// report. The feeds differ only in rates and in what runner reads.
 type amFeed struct {
 	prefix     string // the toolbar's label for this feed's rate selector
 	rates      []time.Duration
@@ -219,8 +213,10 @@ type amFeed struct {
 	// sampleTime is the on-screen sample's clock time, empty until the first.
 	sampleTime string
 
-	applyRate   func(time.Duration)
-	applyPaused func(bool)
+	// runner is the feed's collector or poller, nil until started; startFeed
+	// replaces it on every start.
+	runner amRunner
+
 	// restart starts a new collector on the panel's connection (the Retry
 	// control).
 	restart func()
@@ -236,8 +232,8 @@ func (f *amFeed) setRate(i int) bool {
 		return false
 	}
 	f.rateIdx = i
-	if f.applyRate != nil {
-		f.applyRate(f.rate())
+	if f.runner != nil {
+		f.runner.SetRate(f.rate())
 	}
 	return true
 }
@@ -245,14 +241,23 @@ func (f *amFeed) setRate(i int) bool {
 // setPaused pauses or resumes this feed's collector.
 func (f *amFeed) setPaused(v bool) {
 	f.paused = v
-	if f.applyPaused != nil {
-		f.applyPaused(v)
+	if f.runner != nil {
+		f.runner.SetPaused(v)
 	}
 }
 
 // stopped reports a collector that started and has returned; Pause then does
 // nothing.
 func (f *amFeed) stopped() bool { return f.started && !f.collecting }
+
+// amRunner is what a feed runs: an activity.Collector, TempDBCollector or
+// Poller.
+type amRunner interface {
+	Run(ctx context.Context, rate time.Duration)
+	SetRate(time.Duration)
+	SetPaused(bool)
+	Stop()
+}
 
 // amInstanceFeed is the Instance tab's feed plus its single reading. No
 // activity.Store: sys.server_resource_stats is the history and each tick
@@ -339,21 +344,13 @@ func (am *ActivityMonitor) SetActive(v bool) { am.active = v }
 
 // Close releases the collector goroutines, per-tab connections and samples.
 func (am *ActivityMonitor) Close() {
-	if am.collector != nil {
-		am.collector.Stop()
-		am.collector = nil
+	for _, f := range am.feeds() {
+		if f.runner != nil {
+			f.runner.Stop()
+			f.runner = nil
+		}
+		f.collecting = false
 	}
-	if am.tdCollector != nil {
-		am.tdCollector.Stop()
-		am.tdCollector = nil
-	}
-	if am.instPoller != nil {
-		am.instPoller.Stop()
-		am.instPoller = nil
-	}
-	am.act.collecting = false
-	am.td.collecting = false
-	am.inst.collecting = false
 	for _, sc := range am.owned {
 		sc.Close()
 	}
@@ -390,40 +387,21 @@ func (am *ActivityMonitor) startCollector(conn *db.ServerConn) {
 	am.startInstancePoller()
 }
 
+// feeds lists the panel's feeds, for what is done to each alike.
+func (am *ActivityMonitor) feeds() []*amFeed {
+	return []*amFeed{&am.act, &am.td, &am.inst.amFeed}
+}
+
 // startActivityCollector starts the History/Sample collector.
 func (am *ActivityMonitor) startActivityCollector() {
 	conn := am.feedConn
 	if conn == nil || conn.Server == nil {
 		return
 	}
-	am.collector = activity.NewCollector(conn.Server.DB(),
-		func(s activity.Sample) { am.app.postAndWake(func() { am.applySample(s) }) },
-		func(err error) { am.app.postAndWake(func() { am.applyError(err) }) })
-	am.act.applyRate = am.collector.SetRate
-	am.act.applyPaused = am.collector.SetPaused
-	am.act.started, am.act.collecting, am.act.status = true, true, ""
-	if am.act.paused {
-		am.collector.SetPaused(true)
-	}
-
-	am.buildTools() // the rate/Pause controls are gated on the feed's state
-
-	collector, ctx, rate := am.collector, conn.Server.Context(), am.act.rate()
-	// safegoRepair, not safego: am.act.collecting is cleared only by
-	// runCollector's second half, which a panic skips; collectorStopped is
-	// guarded on the collector.
-	am.app.safegoRepair("collecting server activity",
-		func() { am.collectorStopped(collector) },
-		func() { am.runCollector(collector, ctx, rate) })
-}
-
-// runCollector runs the collector, then tells the panel it stopped. Run reports
-// only ErrNoPermission via onError; a failed prologue or cancelled context
-// return silently, and without this the toolbar would claim to collect with a
-// dead Pause.
-func (am *ActivityMonitor) runCollector(c *activity.Collector, ctx context.Context, rate time.Duration) {
-	c.Run(ctx, rate)
-	am.app.postAndWake(func() { am.collectorStopped(c) })
+	startFeed(am, &am.act, conn.Server.Context(), "collecting server activity",
+		func(onSample func(activity.Sample), onError func(error)) amRunner {
+			return activity.NewCollector(conn.Server, onSample, onError)
+		}, am.applySample)
 }
 
 // startTempDBCollector starts the TempDB collector on the same pool; its own
@@ -433,22 +411,10 @@ func (am *ActivityMonitor) startTempDBCollector() {
 	if conn == nil || conn.Server == nil {
 		return
 	}
-	am.tdCollector = activity.NewTempDBCollector(conn.Server.DB(),
-		func(s activity.TempDBSample) { am.app.postAndWake(func() { am.applyTempDBSample(s) }) },
-		func(err error) { am.app.postAndWake(func() { am.applyTempDBError(err) }) })
-	am.td.applyRate = am.tdCollector.SetRate
-	am.td.applyPaused = am.tdCollector.SetPaused
-	am.td.started, am.td.collecting, am.td.status = true, true, ""
-	if am.td.paused {
-		am.tdCollector.SetPaused(true)
-	}
-	am.buildTools()
-
-	collector, ctx, rate := am.tdCollector, conn.Server.Context(), am.td.rate()
-	// safegoRepair, as in startActivityCollector.
-	am.app.safegoRepair("collecting tempdb activity",
-		func() { am.tempDBCollectorStopped(collector) },
-		func() { am.runTempDBCollector(collector, ctx, rate) })
+	startFeed(am, &am.td, conn.Server.Context(), "collecting tempdb activity",
+		func(onSample func(activity.TempDBSample), onError func(error)) amRunner {
+			return activity.NewTempDBCollector(conn.Server, onSample, onError)
+		}, am.applyTempDBSample)
 }
 
 // startInstancePoller starts the Instance tab's poller on the same pool. A
@@ -464,41 +430,73 @@ func (am *ActivityMonitor) startInstancePoller() {
 	// Captured outside the probe, which runs on the poller's goroutine and
 	// mustn't touch am.
 	srv := conn.Server
-	am.instPoller = activity.NewPoller(srv.DB(),
-		func(ctx context.Context) (*amInstanceSample, error) { return probeInstance(ctx, srv) },
-		func(s amInstanceSample) { am.app.postAndWake(func() { am.applyInstanceSample(s) }) },
-		func(err error) { am.app.postAndWake(func() { am.applyInstanceError(err) }) })
-	am.inst.applyRate = am.instPoller.SetRate
-	am.inst.applyPaused = am.instPoller.SetPaused
-	am.inst.started, am.inst.collecting, am.inst.status = true, true, ""
-	if am.inst.paused {
-		am.instPoller.SetPaused(true)
+	startFeed(am, &am.inst.amFeed, srv.Context(), "reading Azure instance resources",
+		func(onSample func(amInstanceSample), onError func(error)) amRunner {
+			return activity.NewPoller(srv,
+				func(ctx context.Context) (*amInstanceSample, error) { return probeInstance(ctx, srv) },
+				onSample, onError)
+		}, am.applyInstanceSample)
+}
+
+// startFeed starts a new runner for f: build makes it, given callbacks that
+// carry each sample to apply and each error to feedError on the UI goroutine.
+// f's rate and Pause carry into it, and it runs on its own goroutine until ctx
+// ends or it stops.
+func startFeed[S any](am *ActivityMonitor, f *amFeed, ctx context.Context, what string,
+	build func(onSample func(S), onError func(error)) amRunner, apply func(S)) {
+	r := build(
+		func(s S) { am.app.postAndWake(func() { apply(s) }) },
+		func(err error) { am.app.postAndWake(func() { am.feedError(f, err) }) })
+	f.runner = r
+	f.started, f.collecting, f.status = true, true, ""
+	if f.paused {
+		r.SetPaused(true)
 	}
-	am.buildTools()
 
-	poller, ctx, rate := am.instPoller, conn.Server.Context(), am.inst.rate()
-	// safegoRepair, as in startActivityCollector.
-	am.app.safegoRepair("reading Azure instance resources",
-		func() { am.instancePollerStopped(poller) },
-		func() { am.runInstancePoller(poller, ctx, rate) })
+	am.buildTools() // the rate/Pause controls are gated on the feed's state
+
+	rate := f.rate()
+	// safegoRepair, not safego: f.collecting is cleared only by runFeed's
+	// second half, which a panic skips; feedStopped is guarded on the runner.
+	am.app.safegoRepair(what,
+		func() { am.feedStopped(f, r) },
+		func() { am.runFeed(f, r, ctx, rate) })
 }
 
-// runInstancePoller is runCollector for the Instance tab.
-func (am *ActivityMonitor) runInstancePoller(p *activity.Poller[amInstanceSample], ctx context.Context, rate time.Duration) {
-	p.Run(ctx, rate)
-	am.app.postAndWake(func() { am.instancePollerStopped(p) })
+// runFeed runs r, then tells the panel it stopped. Run reports only
+// ErrNoPermission via onError; a failed prologue or cancelled context return
+// silently, and without this the toolbar would claim to collect with a dead
+// Pause.
+func (am *ActivityMonitor) runFeed(f *amFeed, r amRunner, ctx context.Context, rate time.Duration) {
+	r.Run(ctx, rate)
+	am.app.postAndWake(func() { am.feedStopped(f, r) })
 }
 
-// instancePollerStopped is collectorStopped for the Instance tab.
-func (am *ActivityMonitor) instancePollerStopped(p *activity.Poller[amInstanceSample]) {
-	if !am.app.panelHosted(am) || am.instPoller != p {
+// feedStopped records that r's Run returned. Checks r is still f's runner,
+// since Retry starts a new one.
+func (am *ActivityMonitor) feedStopped(f *amFeed, r amRunner) {
+	if !am.app.panelHosted(am) || f.runner != r {
 		return
 	}
-	am.inst.collecting = false
-	if am.inst.status == "" {
-		am.inst.status = collectionStoppedStatus
+	f.collecting = false
+	if f.status == "" {
+		f.status = collectionStoppedStatus
 	}
 	am.buildTools()
+}
+
+// feedError shows a failure in the header, keeping collected data: a failed
+// tick on a busy server is ordinary, and the history explains it. A missing
+// permission stops the collector, so the panel says so.
+func (am *ActivityMonitor) feedError(f *amFeed, err error) {
+	if !am.app.panelHosted(am) {
+		return
+	}
+	f.status = err.Error()
+	if errors.Is(err, activity.ErrNoPermission) {
+		f.collecting = false
+		am.buildTools()
+	}
 }
 
 // applyInstanceSample stores an instance reading and rebuilds the tab. UI
@@ -515,50 +513,6 @@ func (am *ActivityMonitor) applyInstanceSample(s amInstanceSample) {
 	am.inst.status = ""
 	am.instance = am.buildInstanceView()
 	am.invalidateView()
-}
-
-// applyInstanceError reports a failed tick, keeping what was read (see
-// applyError).
-func (am *ActivityMonitor) applyInstanceError(err error) {
-	if !am.app.panelHosted(am) {
-		return
-	}
-	am.inst.status = err.Error()
-	if errors.Is(err, activity.ErrNoPermission) {
-		am.inst.collecting = false
-		am.buildTools()
-	}
-}
-
-// runTempDBCollector is runCollector for the TempDB tab.
-func (am *ActivityMonitor) runTempDBCollector(c *activity.TempDBCollector, ctx context.Context, rate time.Duration) {
-	c.Run(ctx, rate)
-	am.app.postAndWake(func() { am.tempDBCollectorStopped(c) })
-}
-
-// collectorStopped records that the activity collector's Run returned. Checks c
-// is current, since Retry starts a new one.
-func (am *ActivityMonitor) collectorStopped(c *activity.Collector) {
-	if !am.app.panelHosted(am) || am.collector != c {
-		return
-	}
-	am.act.collecting = false
-	if am.act.status == "" {
-		am.act.status = collectionStoppedStatus
-	}
-	am.buildTools()
-}
-
-// tempDBCollectorStopped is collectorStopped for the TempDB tab.
-func (am *ActivityMonitor) tempDBCollectorStopped(c *activity.TempDBCollector) {
-	if !am.app.panelHosted(am) || am.tdCollector != c {
-		return
-	}
-	am.td.collecting = false
-	if am.td.status == "" {
-		am.td.status = collectionStoppedStatus
-	}
-	am.buildTools()
 }
 
 // restartCollector restarts the active tab's collector. The connection is still
@@ -583,19 +537,6 @@ func (am *ActivityMonitor) applyTempDBSample(s activity.TempDBSample) {
 	am.td.status = ""
 	am.tempdb = am.buildTempDBView()
 	am.invalidateView()
-}
-
-// applyTempDBError reports a failed tempdb tick, keeping what was collected
-// (see applyError).
-func (am *ActivityMonitor) applyTempDBError(err error) {
-	if !am.app.panelHosted(am) {
-		return
-	}
-	am.td.status = err.Error()
-	if errors.Is(err, activity.ErrNoPermission) {
-		am.td.collecting = false
-		am.buildTools()
-	}
 }
 
 // applySample stores a tick and rebuilds both dashboards. UI goroutine, via
@@ -624,20 +565,6 @@ func (am *ActivityMonitor) rebuild() {
 // including TempDB ticks dismissing a History pin.
 func (am *ActivityMonitor) invalidateView() {
 	am.viewGen++
-}
-
-// applyError shows a failure in the header, keeping collected data: a failed
-// tick on a busy server is ordinary, and the history explains it. A missing
-// permission stops the collector, so the panel says so.
-func (am *ActivityMonitor) applyError(err error) {
-	if !am.app.panelHosted(am) {
-		return
-	}
-	am.act.status = err.Error()
-	if errors.Is(err, activity.ErrNoPermission) {
-		am.act.collecting = false
-		am.buildTools()
-	}
 }
 
 // adopt records a connection this panel opened, for Close to release.

@@ -250,11 +250,11 @@ func (s *firstSetFailSink) BeginSet(cols []string) error {
 	return s.recordingSink.BeginSet(cols)
 }
 
-func (s *firstSetFailSink) Row(cells []string) error {
+func (s *firstSetFailSink) Row(cells []string, isNull []bool) error {
 	if s.set == 1 && s.failOn > 0 && len(s.rows)+1 == s.failOn {
 		return errors.New("sink write failed")
 	}
-	return s.recordingSink.Row(cells)
+	return s.recordingSink.Row(cells, isNull)
 }
 
 func hasMessage(res *Result, text string) bool {

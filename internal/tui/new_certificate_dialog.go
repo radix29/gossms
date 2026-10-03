@@ -58,38 +58,22 @@ func fetchNewCertificatePrefetch(ctx context.Context, sc *db.ServerConn, dbName 
 
 // NewCertificateDialog is the New Certificate dialog.
 type NewCertificateDialog struct {
-	newObjectDialog[ncertPrefetch]
-
-	// dbName is the database the certificate is created in, and node the
-	// folder to refresh afterwards. Both are set by show, before the embedded
-	// dialog's own show runs the prefetch that reads them.
-	dbName string
-	node   *explorerNode
+	dbFolderDialog[ncertPrefetch]
 }
 
 // NewNewCertificateDialog creates the dialog and wires its callbacks.
 func NewNewCertificateDialog(app *App) *NewCertificateDialog {
 	d := &NewCertificateDialog{}
-	d.init(app, newObjectConfig[ncertPrefetch]{
+	d.initInFolder(app, newObjectConfig[ncertPrefetch]{
 		title: "New Certificate",
 		noun:  "Certificate",
 		pages: []string{"General"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*ncertPrefetch, error) {
 			return fetchNewCertificatePrefetch(ctx, sc, d.dbName)
 		},
-		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
+		build: d.buildPages,
 	})
 	return d
-}
-
-// show opens the dialog for one database's Certificates folder.
-func (d *NewCertificateDialog) show(sc *db.ServerConn, node *explorerNode) {
-	d.dbName = node.data.DBName
-	d.node = node
-	d.scriptDatabase = d.dbName
-	d.newObjectDialog.show(sc)
-	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
 }
 
 func (d *NewCertificateDialog) buildPages(pf *ncertPrefetch) {

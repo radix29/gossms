@@ -2,68 +2,53 @@ package activity
 
 import (
 	"context"
-	"database/sql/driver"
 	"errors"
+	"slices"
 	"testing"
 	"time"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
-// tempdbAnswers scripts every collectTempDB query. Page counts convert to
-// distinct MB values (128 pages/MB), so a mis-scanned column is a wrong number.
-func tempdbAnswers() map[string]reply {
-	return map[string]reply{
-		tempdbCounterQuery: {
-			cols: []string{"object_name", "counter_name", "instance_name", "cntr_value", "cntr_type"},
-			rows: [][]driver.Value{
-				{"SQLServer:General Statistics", "Active Temp Tables", "", int64(9), int64(65792)},
-				{"SQLServer:Transactions", "Version Store Size (KB)", "", int64(2048), int64(65792)},
-			},
+// tempdbSource answers every collectTempDB reading. The page-to-MB
+// conversions are gosmo's, tested there; this pins what this package does
+// with the readings.
+func tempdbSource() *fakeSource {
+	return &fakeSource{
+		counters: []gosmo.PerformanceCounter{
+			{Object: "General Statistics", Counter: "Active Temp Tables", Value: 9, Type: gosmo.CounterRawCount},
+			{Object: "Transactions", Counter: "Version Store Size (KB)", Value: 2048, Type: gosmo.CounterRawCount},
 		},
-		tempdbSpaceQuery: {
-			cols: []string{"total", "free", "version", "user", "internal", "mixed"},
-			rows: [][]driver.Value{{int64(128 * 100), int64(128 * 60), int64(128 * 10),
-				int64(128 * 20), int64(128 * 8), int64(128 * 2)}},
+		tdSpace: gosmo.TempDBSpace{TotalMB: 100, FreeMB: 60, VersionStoreMB: 10, UserObjectMB: 20, InternalObjectMB: 8, MixedExtentMB: 2},
+		tdFiles: []gosmo.TempDBFile{
+			{FileID: 1, Name: "tempdev", Type: "ROWS", SizeMB: 64, UsedMB: 16, GrowthMB: 8},
+			{FileID: 3, Name: "temp2", Type: "ROWS", SizeMB: 32, UsedMB: 4, GrowthMB: 10, PercentGrowth: true},
+			{FileID: 2, Name: "templog", Type: "LOG", SizeMB: 8, GrowthMB: 2},
 		},
-		tempdbFileQuery: {
-			cols: []string{"file_id", "name", "type_desc", "size", "used", "growth", "is_percent_growth"},
-			rows: [][]driver.Value{
-				{int64(1), "tempdev", "ROWS", int64(128 * 64), int64(128 * 16), int64(128 * 8), false},
-				{int64(3), "temp2", "ROWS", int64(128 * 32), int64(128 * 4), int64(10), true},
-				{int64(2), "templog", "LOG", int64(128 * 8), int64(0), int64(128 * 2), false},
-			},
+		tdObjects: []gosmo.TempDBObjects{
+			{Kind: gosmo.TempDBLocalTemp, Count: 3, ReservedMB: 5, UsedMB: 4, Rows: 700},
+			{Kind: gosmo.TempDBUserTable, Count: 1, ReservedMB: 9, UsedMB: 6, Rows: 900},
+			// An unknown kind is skipped, not written past the array.
+			{Kind: 99, Count: 1},
 		},
-		tempdbObjectQuery: {
-			cols: []string{"kind", "count", "reserved", "used", "rows"},
-			rows: [][]driver.Value{
-				{int64(0), int64(3), int64(128 * 5), int64(128 * 4), int64(700)},
-				{int64(2), int64(1), int64(128 * 9), int64(128 * 6), int64(900)},
-				// An unknown kind is skipped, not written past the array.
-				{int64(99), int64(1), int64(128), int64(128), int64(1)},
-			},
+		tdSessions: []gosmo.TempDBSession{
+			{SessionID: 57, Host: "wkstn", Program: "SSMS", Login: "sa", UserMB: 3, InternalMB: 2, TotalMB: 5},
 		},
-		tempdbSessionQuery: {
-			cols: []string{"session_id", "host", "program", "login", "user_pages", "internal_pages"},
-			rows: [][]driver.Value{
-				{int64(57), "wkstn", "SSMS", "sa", int64(128 * 3), int64(128 * 2)},
-				// Session+task usage can go negative; it reads as none.
-				{int64(58), "", "", "", int64(-256), int64(128 * 1)},
-			},
-		},
-		tempdbCoreQuery: {
-			cols: []string{"cpu_count"},
-			rows: [][]driver.Value{{int64(8)}},
-		},
+		info: &gosmo.ServerInfo{LogicalCPUCount: 8},
 	}
 }
 
 func TestCollectTempDBReadsEveryPart(t *testing.T) {
-	db, _ := scriptedDB(t, tempdbAnswers())
+	src := tempdbSource()
 
-	snap, err := collectTempDB(context.Background(), db)
+	snap, err := collectTempDB(context.Background(), src)
 	if err != nil {
 		t.Fatalf("collectTempDB: %v", err)
 	}
 	s := snap.sample
+	if !slices.Equal(src.counterNames, tempdbCounterNames) {
+		t.Errorf("counter filter = %q, want tempdbCounterNames", src.counterNames)
+	}
 
 	want := TempDBSpace{TotalMB: 100, FreeMB: 60, VersionStoreMB: 10,
 		UserObjectMB: 20, InternalObjectMB: 8, MixedExtentMB: 2}
@@ -77,14 +62,6 @@ func TestCollectTempDBReadsEveryPart(t *testing.T) {
 	byName := map[string]TempDBFile{}
 	for _, f := range s.Files {
 		byName[f.Name] = f
-	}
-	if f := byName["tempdev"]; f.SizeMB != 64 || f.UsedMB != 16 || f.GrowthMB != 8 || f.PercentGrowth {
-		t.Errorf("tempdev = %+v, want 64MB size, 16MB used, 8MB growth", f)
-	}
-	// Percentage growth isn't a page count; dividing by 128 would turn 10% into
-	// 0.08 MB.
-	if f := byName["temp2"]; !f.PercentGrowth || f.GrowthMB != 10 {
-		t.Errorf("temp2 = %+v, want a 10 percent growth kept as 10", f)
 	}
 	if n := len(s.DataFiles()); n != 2 {
 		t.Errorf("DataFiles() = %d files, want 2 — the log file is not a data file", n)
@@ -105,41 +82,33 @@ func TestCollectTempDBReadsEveryPart(t *testing.T) {
 		}
 	}
 
-	if len(s.Sessions) != 2 {
-		t.Fatalf("got %d sessions, want 2", len(s.Sessions))
-	}
-	if got := s.Sessions[0]; got.SessionID != 57 || got.Host != "wkstn" || got.Program != "SSMS" ||
-		got.Login != "sa" || got.UserMB != 3 || got.InternalMB != 2 || got.TotalMB != 5 {
-		t.Errorf("session 57 = %+v, want wkstn/SSMS/sa holding 3 + 2 MB", got)
-	}
-	if got := s.Sessions[1]; got.UserMB != 0 || got.InternalMB != 1 || got.TotalMB != 1 {
-		t.Errorf("session 58 = %+v, want the negative half clamped to 0 and a 1MB total", got)
+	if len(s.Sessions) != 1 || s.Sessions[0] != src.tdSessions[0] {
+		t.Errorf("sessions = %+v, want the one the source read", s.Sessions)
 	}
 
 	if s.Cores != 8 {
 		t.Errorf("Cores = %d, want 8 — the one-file-per-core rule needs it", s.Cores)
 	}
+
+	// Without server info (sys.dm_os_sys_info was unreadable at connect) the
+	// core count is unknown, not a failed tick.
+	src.info = nil
+	if snap, err := collectTempDB(context.Background(), src); err != nil || snap.sample.Cores != 0 {
+		t.Errorf("no server info: cores %v, err %v; want 0, nil", snap.sample.Cores, err)
+	}
 }
 
 func TestCollectTempDBStopsAtAFailedRead(t *testing.T) {
 	boom := errors.New("activity_test: tempdb DMV unavailable")
-	for name, q := range map[string]string{
-		"counters": tempdbCounterQuery,
-		"space":    tempdbSpaceQuery,
-		"files":    tempdbFileQuery,
-		"objects":  tempdbObjectQuery,
-		"sessions": tempdbSessionQuery,
-		"cores":    tempdbCoreQuery,
-	} {
-		t.Run(name, func(t *testing.T) {
-			answers := tempdbAnswers()
-			answers[q] = reply{err: boom}
-			db, _ := scriptedDB(t, answers)
+	for _, method := range []string{"PerformanceCounters", "TempDBSpace", "TempDBFiles", "TempDBObjects", "TempDBSessions"} {
+		t.Run(method, func(t *testing.T) {
+			src := tempdbSource()
+			src.fail = map[string]error{method: boom}
 
-			if snap, err := collectTempDB(context.Background(), db); err == nil {
-				t.Fatalf("collectTempDB succeeded with the %s read failing: %+v", name, snap.sample)
+			if snap, err := collectTempDB(context.Background(), src); err == nil {
+				t.Fatalf("collectTempDB succeeded with %s failing: %+v", method, snap.sample)
 			} else if !errors.Is(err, boom) {
-				t.Errorf("error = %v, want the driver's own", err)
+				t.Errorf("error = %v, want the reading's own", err)
 			}
 		})
 	}
@@ -148,10 +117,10 @@ func TestCollectTempDBStopsAtAFailedRead(t *testing.T) {
 // The first sample has no previous one, so rates are zero rather than the
 // cumulative total.
 func TestDeriveTempDBNeedsTwoSamplesForARate(t *testing.T) {
-	db, _ := scriptedDB(t, tempdbAnswers())
+	src := tempdbSource()
 	ctx := context.Background()
 
-	first, err := collectTempDB(ctx, db)
+	first, err := collectTempDB(ctx, src)
 	if err != nil {
 		t.Fatalf("collectTempDB: %v", err)
 	}
@@ -168,7 +137,7 @@ func TestDeriveTempDBNeedsTwoSamplesForARate(t *testing.T) {
 		t.Errorf("VersionStoreMB = %v, want 2 (2048 KB)", one.VersionStoreMB)
 	}
 
-	second, err := collectTempDB(ctx, db)
+	second, err := collectTempDB(ctx, src)
 	if err != nil {
 		t.Fatalf("collectTempDB: %v", err)
 	}
@@ -182,22 +151,5 @@ func TestDeriveTempDBNeedsTwoSamplesForARate(t *testing.T) {
 	}
 	if two.Space != second.sample.Space {
 		t.Errorf("space was not carried through: %+v", two.Space)
-	}
-}
-
-func TestNonNegativeMB(t *testing.T) {
-	for _, tc := range []struct {
-		pages int64
-		want  float64
-	}{
-		{0, 0},
-		{-1, 0},
-		{-128 * 4, 0},
-		{128, 1},
-		{64, 0.5},
-	} {
-		if got := nonNegativeMB(tc.pages); got != tc.want {
-			t.Errorf("nonNegativeMB(%d) = %v, want %v", tc.pages, got, tc.want)
-		}
 	}
 }

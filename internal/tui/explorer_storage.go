@@ -22,11 +22,7 @@ func loadStorageChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 // loadPartitionFunctionsChildren lists a database's partition functions,
 // labelled the way SSMS does: the name plus its boundary count.
 func loadPartitionFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.PartitionFunction, error) { return dbObj.PartitionFunctions(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).PartitionFunctions,
 		func(pf *gosmo.PartitionFunction) *explorerNode {
 			label := fmt.Sprintf("%s (%s, %d boundaries)", pf.Name, pf.InputType, pf.BoundaryCount)
 			return l.node(label, NodePartitionFunction, "", pf.Name, node.data.DBName)
@@ -36,11 +32,7 @@ func loadPartitionFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explore
 // loadPartitionSchemesChildren lists a database's partition schemes, each
 // labelled with the function it partitions by.
 func loadPartitionSchemesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.PartitionScheme, error) { return dbObj.PartitionSchemes(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).PartitionSchemes,
 		func(ps *gosmo.PartitionScheme) *explorerNode {
 			return l.node(fmt.Sprintf("%s (%s)", ps.Name, ps.FunctionName), NodePartitionScheme, "", ps.Name, node.data.DBName)
 		})

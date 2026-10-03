@@ -11,9 +11,8 @@ import "github.com/gdamore/tcell/v3"
 // a region smaller than the one it was laid out for without every one of its
 // Draw methods learning to clip itself.
 //
-// Every way a tcell.Screen can write a cell is covered: SetContent (which
-// all of drawing.go bottoms out in), the Put family (which DimArea uses),
-// and Fill/Clear.
+// Every way a tcell.Screen can write a cell is covered: SetContent, the Put
+// family (which drawing.go bottoms out in), and Fill/FillArea/Clear.
 type ClipScreen struct {
 	tcell.Screen
 	clip Rect
@@ -75,6 +74,18 @@ func (c *ClipScreen) PutStrStyled(x, y int, str string, style tcell.Style) {
 // PutStr writes str in the default style, clipped.
 func (c *ClipScreen) PutStr(x, y int, str string) {
 	c.PutStrStyled(x, y, str, tcell.StyleDefault)
+}
+
+// FillArea fills the part of the w×h area at (x,y) that lies inside the clip.
+// tcell's own FillArea clips only to the screen, so passing it through would
+// paint past the clip.
+func (c *ClipScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	x0, y0 := max(x, c.clip.X), max(y, c.clip.Y)
+	x1, y1 := min(x+w, c.clip.Right()), min(y+h, c.clip.Bottom())
+	if x1 <= x0 || y1 <= y0 {
+		return
+	}
+	c.Screen.FillArea(x0, y0, x1-x0, y1-y0, ch, style)
 }
 
 // Fill fills the clip rectangle rather than the whole screen.

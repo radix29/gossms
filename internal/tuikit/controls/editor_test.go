@@ -3,6 +3,7 @@ package controls
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
@@ -1123,6 +1124,13 @@ func newRecordingScreen(w, h int) *recordingScreen {
 func (s *recordingScreen) Size() (int, int) { return s.w, s.h }
 func (s *recordingScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
 	s.cells[[2]int{x, y}] = style
+}
+
+// Put is how core draws a cell; it lands in SetContent like any other write.
+func (s *recordingScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	r, n := utf8.DecodeRuneInString(str)
+	s.SetContent(x, y, r, nil, style)
+	return str[n:], 1
 }
 func (s *recordingScreen) ShowCursor(x, y int) {}
 

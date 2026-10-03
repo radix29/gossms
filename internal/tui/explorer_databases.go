@@ -227,12 +227,7 @@ func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 // and for the same reason: a disabled trigger enforces nothing and nothing
 // else in the row says so.
 func loadDatabaseTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(
-		func() ([]*gosmo.DatabaseTrigger, error) { return dbObj.DatabaseTriggers(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).DatabaseTriggers,
 		func(t *gosmo.DatabaseTrigger) *explorerNode {
 			label := t.Name
 			if !t.IsEnabled {
@@ -410,11 +405,7 @@ func certificateLabel(c *gosmo.Certificate, now time.Time) string {
 // policies, each labelled with its state — a disabled policy filters
 // nothing, which is the first thing to know about one.
 func loadSecurityPoliciesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.SecurityPolicy, error) { return dbObj.SecurityPolicies(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).SecurityPolicies,
 		func(p *gosmo.SecurityPolicy) *explorerNode {
 			label := p.Schema + "." + p.Name
 			if !p.IsEnabled {
@@ -436,33 +427,21 @@ func loadAlwaysEncryptedKeysChildren(l loaderCtx, node *explorerNode) ([]*explor
 }
 
 func loadColumnMasterKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.ColumnMasterKey, error) { return dbObj.ColumnMasterKeys(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).ColumnMasterKeys,
 		func(k *gosmo.ColumnMasterKey) *explorerNode {
 			return l.node(k.Name, NodeColumnMasterKey, "", k.Name, node.data.DBName)
 		})
 }
 
 func loadColumnEncryptionKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.ColumnEncryptionKey, error) { return dbObj.ColumnEncryptionKeys(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).ColumnEncryptionKeys,
 		func(k *gosmo.ColumnEncryptionKey) *explorerNode {
 			return l.node(k.Name, NodeColumnEncryptionKey, "", k.Name, node.data.DBName)
 		})
 }
 
 func loadUsersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.User, error) { return dbObj.Users(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Users,
 		func(u *gosmo.User) *explorerNode {
 			n := l.node(u.Name, NodeUser, "", u.Name, node.data.DBName)
 			n.data.IsSystem = isSystemUser(u.Name)
@@ -471,11 +450,7 @@ func loadUsersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 }
 
 func loadDatabaseRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.DatabaseRole, error) { return dbObj.DatabaseRoles(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).DatabaseRoles,
 		func(r *gosmo.DatabaseRole) *explorerNode {
 			n := l.node(r.Name, NodeDatabaseRole, "", r.Name, node.data.DBName)
 			n.data.IsSystem = isSystemDatabaseRole(r)
@@ -484,11 +459,7 @@ func loadDatabaseRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 }
 
 func loadSchemasChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.Schema, error) { return dbObj.Schemas(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Schemas,
 		func(s *gosmo.Schema) *explorerNode {
 			n := l.node(s.Name, NodeSchema, s.Name, s.Name, node.data.DBName)
 			n.data.IsSystem = isSystemSchema(s.Name)
@@ -579,17 +550,13 @@ func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 }
 
 func databaseSnapshotsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		// CREATE DATABASE ... AS SNAPSHOT OF is a CREATE DATABASE, and
 		// takes the same rights New Database does.
 		gateAzure(gate.Item(controls.MenuItem{Label: "New Snapshot...", Action: func() {
 			a.showNewSnapshotDialog(sc, "")
 		}}, sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase), sc),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func databaseSnapshotMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -633,30 +600,22 @@ func queryStoreReportMenuItems(a *App, sc *db.ServerConn, node *explorerNode, ne
 	// The leaf's own Detail Browser grid is the report; this opens the
 	// same view in the panel, where the metric, the statistic and the
 	// window can be changed and a plan can be forced.
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "Open in Query Store Panel", Action: func() {
 			a.showQueryStorePanelFor(sc, node.data.DBName, node.data.Name)
 		}}, sc, node.data.DBName, gate.ViewDBState),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 // usersMenuItems is the Users folder's menu. New User takes the right set a
 // user's own writes do (explorerObjectRights' NodeUser entry): CREATE USER
 // needs ALTER ANY USER, which ALTER and CONTROL on the database both imply.
 func usersMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New User...",
 			Action: func() { a.showNewUserDialog(sc, node) }},
 			sc, node.data.DBName, gate.AlterAnyUser, gate.AlterDatabase, gate.ControlDB),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func userMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -666,15 +625,11 @@ func userMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refr
 }
 
 func databaseAuditSpecificationsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Database Audit Specification...",
 			Action: func() { a.showNewDatabaseAuditSpecificationDialog(sc, node) }},
 			sc, node.data.DBName, gate.AlterAnyDBAudit),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func databaseAuditSpecificationMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -693,15 +648,11 @@ func databaseAuditSpecificationMenuItems(a *App, sc *db.ServerConn, node *explor
 }
 
 func databaseScopedCredentialsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Database Scoped Credential...",
 			Action: func() { a.showNewDatabaseScopedCredentialDialog(sc, node) }},
 			sc, node.data.DBName, gate.DBScopedCredentialRights()...),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func databaseScopedCredentialMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -711,15 +662,11 @@ func databaseScopedCredentialMenuItems(a *App, sc *db.ServerConn, node *explorer
 }
 
 func asymmetricKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Asymmetric Key...",
 			Action: func() { a.showNewAsymmetricKeyDialog(sc, node) }},
 			sc, node.data.DBName, gate.CreateAsymmetricKey, gate.AlterAnyAsymmetricKey, gate.AlterDatabase, gate.ControlDB),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func asymmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -740,15 +687,11 @@ func asymmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQu
 }
 
 func symmetricKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Symmetric Key...",
 			Action: func() { a.showNewSymmetricKeyDialog(sc, node) }},
 			sc, node.data.DBName, gate.CreateSymmetricKey, gate.AlterAnySymmetricKey, gate.AlterDatabase, gate.ControlDB),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func symmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -777,15 +720,11 @@ func masterKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 }
 
 func certificatesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Certificate...",
 			Action: func() { a.showNewCertificateDialog(sc, node) }},
 			sc, node.data.DBName, gate.CreateCertificate, gate.AlterAnyCertificate, gate.AlterDatabase, gate.ControlDB),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func certificateMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -859,27 +798,19 @@ func securityPolicyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQ
 }
 
 func columnMasterKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Column Master Key...",
 			Action: func() { a.showNewColumnMasterKeyDialog(sc, node) }},
 			sc, node.data.DBName, gate.AlterAnyCMK),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func columnEncryptionKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Column Encryption Key...",
 			Action: func() { a.showNewColumnEncryptionKeyDialog(sc, node) }},
 			sc, node.data.DBName, gate.AlterAnyCEK),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func columnMasterKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {

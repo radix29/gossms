@@ -2,7 +2,7 @@ package activity
 
 import (
 	"context"
-	"database/sql"
+	"slices"
 	"strings"
 )
 
@@ -50,54 +50,42 @@ var benignWaits = []string{
 	"PREEMPTIVE_OS_DMV_PDH_QUERY",
 }
 
-// benignFamilies are background-wait prefixes, excluded by pattern. Names alone
-// let PWAIT_EXTENSIBILITY_CLEANUP_TASK through on SQL Server 2025: it reports
-// 300,000 ms after a five-minute sleep in one 2s sample, flattening the waits
-// panel. New releases keep adding background waits; a family pattern stays
+// benignFamilies are background-wait prefixes, excluded by family. Names
+// alone let PWAIT_EXTENSIBILITY_CLEANUP_TASK through on SQL Server 2025: it
+// reports 300,000 ms after a five-minute sleep in one 2s sample, flattening the
+// waits panel. New releases keep adding background waits; a family prefix stays
 // current.
 var benignFamilies = []string{
-	"SLEEP%", "QDS\\_%", "XE\\_%", "BROKER\\_%", "HADR\\_%", "PWAIT\\_%",
-	"FT\\_%", "PARALLEL\\_REDO\\_%", "DBMIRROR%", "SQLTRACE\\_%", "CLR\\_%",
-	"WAIT\\_XTP\\_%",
+	"SLEEP", "QDS_", "XE_", "BROKER_", "HADR_", "PWAIT_",
+	"FT_", "PARALLEL_REDO_", "DBMIRROR", "SQLTRACE_", "CLR_",
+	"WAIT_XTP_",
 }
 
-var waitQuery = buildWaitQuery()
-
-// buildWaitQuery excludes benign waits by name and families by pattern. ESCAPE
-// keeps pattern underscores literal; unescaped "QDS_%" would match
-// QDSXANYTHING.
-func buildWaitQuery() string {
-	var b strings.Builder
-	b.WriteString("SELECT wait_type, wait_time_ms, signal_wait_time_ms, waiting_tasks_count ")
-	b.WriteString("FROM sys.dm_os_wait_stats WHERE wait_type NOT IN (")
-	b.WriteString(quotedList(benignWaits))
-	b.WriteString(")")
-	for _, family := range benignFamilies {
-		b.WriteString(" AND wait_type NOT LIKE '")
-		b.WriteString(family)
-		b.WriteString("' ESCAPE '\\'")
+// isBenignWait reports a wait left out of the picture: one of benignWaits by
+// name, or of benignFamilies by prefix. Wait types are upper case, but the
+// server's collation would have matched any case, so this does too.
+func isBenignWait(waitType string) bool {
+	w := strings.ToUpper(waitType)
+	if slices.Contains(benignWaits, w) {
+		return true
 	}
-	return b.String()
+	return slices.ContainsFunc(benignFamilies, func(prefix string) bool { return strings.HasPrefix(w, prefix) })
 }
 
 // collectWaits reads cumulative wait totals, minus benign ones.
-func collectWaits(ctx context.Context, db *sql.DB) (waitSet, error) {
-	rows, err := db.QueryContext(ctx, waitQuery)
+func collectWaits(ctx context.Context, src Source) (waitSet, error) {
+	stats, err := src.WaitStats(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	set := make(waitSet, 256)
-	for rows.Next() {
-		var name string
-		var r waitRow
-		if err := rows.Scan(&name, &r.waitMs, &r.signalMs, &r.tasks); err != nil {
-			return nil, err
+	set := make(waitSet, len(stats))
+	for _, w := range stats {
+		if isBenignWait(w.WaitType) {
+			continue
 		}
-		set[name] = r
+		set[w.WaitType] = waitRow{waitMs: w.WaitTimeMs, signalMs: w.SignalWaitTimeMs, tasks: w.WaitingTasks}
 	}
-	return set, rows.Err()
+	return set, nil
 }
 
 // categorize maps a wait type to its plot bucket. Prefix-based because waits

@@ -1043,3 +1043,68 @@ func TestRemoveConnection(t *testing.T) {
 			legacy.Name, legacy.GeneratedName())
 	}
 }
+
+// T58: the UI goroutine snapshots with BeginSave and adopts with EndSave while
+// Run writes the file elsewhere. A connection added and a setting changed in
+// between must stay in memory and reach the file on the next save — neither
+// adopted as written, nor overwritten by the adoption.
+func TestEndSaveKeepsChangesMadeWhileTheJobRan(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	servers := func(conns []Connection) (out []string) {
+		for _, c := range conns {
+			out = append(out, c.Server)
+		}
+		return out
+	}
+	c := Load()
+	c.AddOrUpdate(Connection{Server: "a"})
+	j := c.BeginSave()
+	c.AddOrUpdate(Connection{Server: "b"})
+	c.IndentWidth = 2
+	if err := j.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	c.EndSave(j)
+	if got := servers(c.Connections); strings.Join(got, ",") != "a,b" {
+		t.Fatalf("in memory after EndSave: %v, want [a b]", got)
+	}
+	disk := Load()
+	if got := servers(disk.Connections); strings.Join(got, ",") != "a" || disk.IndentWidth != DefaultIndentWidth {
+		t.Fatalf("on disk after the job: %v, indent %d — want [a] and the default indent", got, disk.IndentWidth)
+	}
+	c.EndSave(j) // a second end must not replay anything
+	if got := servers(c.Connections); strings.Join(got, ",") != "a,b" {
+		t.Fatalf("after ending the job twice: %v", got)
+	}
+
+	if err := c.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	disk = Load()
+	if got := servers(disk.Connections); strings.Join(got, ",") != "a,b" || disk.IndentWidth != 2 {
+		t.Errorf("on disk after the next save: %v, indent %d — want [a b] and 2", got, disk.IndentWidth)
+	}
+}
+
+// A job that wrote nothing adopts nothing: its connection changes stay pending
+// for the next save.
+func TestEndSaveOfAFailedJobKeepsTheChangesPending(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	c := Load()
+	c.AddOrUpdate(Connection{Server: "a"})
+	j := c.BeginSave()
+	j.unreadable = os.ErrPermission
+	if err := j.Run(); err == nil {
+		t.Fatal("Run wrote over a file marked unreadable")
+	}
+	c.EndSave(j)
+	if len(c.ops) != 1 {
+		t.Fatalf("pending ops after a failed job: %d, want 1", len(c.ops))
+	}
+	if err := c.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if got := Load().Connections; len(got) != 1 || got[0].Server != "a" {
+		t.Errorf("on disk after the retry: %+v", got)
+	}
+}

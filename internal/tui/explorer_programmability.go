@@ -32,11 +32,7 @@ func loadTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 // purposes here) and are marked IsSystem, which is what keeps Delete and
 // Rename off their context menu.
 func loadSystemDataTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.SystemDataType, error) { return dbObj.SystemDataTypes(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).SystemDataTypes,
 		func(t *gosmo.SystemDataType) *explorerNode {
 			n := l.node(t.Name, NodeSystemDataType, "", t.Name, node.data.DBName)
 			n.data.IsSystem = true
@@ -48,12 +44,7 @@ func loadSystemDataTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 // the base type the way loadColumnsChildren's does — an alias type is its
 // base type plus a name, and the name alone says nothing about it.
 func loadUserDefinedDataTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(
-		func() ([]*gosmo.UserDefinedDataType, error) { return dbObj.UserDefinedDataTypes(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).UserDefinedDataTypes,
 		func(t *gosmo.UserDefinedDataType) *explorerNode {
 			nullWord := "null"
 			if !t.IsNullable {
@@ -66,12 +57,7 @@ func loadUserDefinedDataTypesChildren(l loaderCtx, node *explorerNode) ([]*explo
 }
 
 func loadUserDefinedTableTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(
-		func() ([]*gosmo.UserDefinedTableType, error) { return dbObj.UserDefinedTableTypes(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).UserDefinedTableTypes,
 		func(t *gosmo.UserDefinedTableType) *explorerNode {
 			n := l.node(t.Schema+"."+t.Name, NodeUserDefinedTableType, t.Schema, t.Name, node.data.DBName)
 			n.data.IsMemoryOptimized = t.IsMemoryOptimized
@@ -83,23 +69,14 @@ func loadUserDefinedTableTypesChildren(l loaderCtx, node *explorerNode) ([]*expl
 // Types" folder, which is the assembly-backed family and not the alias types
 // one folder above it.
 func loadUserDefinedTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.ClrType, error) { return dbObj.ClrTypes(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).ClrTypes,
 		func(t *gosmo.ClrType) *explorerNode {
 			return l.node(t.Schema+"."+t.Name, NodeUserDefinedType, t.Schema, t.Name, node.data.DBName)
 		})
 }
 
 func loadXMLSchemaCollectionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(
-		func() ([]*gosmo.XMLSchemaCollection, error) { return dbObj.XMLSchemaCollections(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).XMLSchemaCollections,
 		func(c *gosmo.XMLSchemaCollection) *explorerNode {
 			n := l.node(c.Schema+"."+c.Name, NodeXMLSchemaCollection, c.Schema, c.Name, node.data.DBName)
 			n.data.CreateDate = c.CreateDate
@@ -112,11 +89,7 @@ func loadXMLSchemaCollectionsChildren(l loaderCtx, node *explorerNode) ([]*explo
 // database) are listed too, as SSMS lists them, but marked IsSystem so
 // Delete and Rename stay off their menu.
 func loadAssembliesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.Assembly, error) { return dbObj.Assemblies(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Assemblies,
 		func(a *gosmo.Assembly) *explorerNode {
 			n := l.node(a.Name, NodeAssembly, "", a.Name, node.data.DBName)
 			n.data.CreateDate = a.CreateDate
@@ -126,11 +99,7 @@ func loadAssembliesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 }
 
 func loadRulesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.Rule, error) { return dbObj.Rules(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Rules,
 		func(r *gosmo.Rule) *explorerNode {
 			n := l.node(r.Schema+"."+r.Name, NodeRule, r.Schema, r.Name, node.data.DBName)
 			n.data.CreateDate = r.CreateDate
@@ -143,11 +112,7 @@ func loadRulesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 // so a table's DF_… constraints do not land here — see gosmo's
 // rule_default.go.
 func loadDefaultsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.Default, error) { return dbObj.Defaults(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).Defaults,
 		func(df *gosmo.Default) *explorerNode {
 			n := l.node(df.Schema+"."+df.Name, NodeDefault, df.Schema, df.Name, node.data.DBName)
 			n.data.CreateDate = df.CreateDate
@@ -160,11 +125,7 @@ func loadDefaultsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 // folders use, and for the same reason: a disabled plan guide shapes no plan
 // and nothing else in the row says so.
 func loadPlanGuidesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
-	if err != nil {
-		return nil, err
-	}
-	return listChildren(func() ([]*gosmo.PlanGuide, error) { return dbObj.PlanGuides(l.ctx) },
+	return listDatabaseChildren(l, node, (*gosmo.Database).PlanGuides,
 		func(g *gosmo.PlanGuide) *explorerNode {
 			label := g.Name
 			if g.IsDisabled {

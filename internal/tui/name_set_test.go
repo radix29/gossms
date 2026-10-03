@@ -143,3 +143,11 @@ func TestNewOperatorPrefetchFollowsMsdbCollation(t *testing.T) {
 			agentOperatorName, pf.existingNames.Has(agentOperatorName), pf.existingNames.Has("REPORTING"))
 	}
 }
+
+// Len is the number of distinct names in the map. Only tests ask.
+func (m *nameMap[V]) Len() int {
+	if m == nil {
+		return 0
+	}
+	return len(m.m)
+}

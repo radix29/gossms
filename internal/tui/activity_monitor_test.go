@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"math/rand/v2"
 	"slices"
@@ -777,9 +775,9 @@ func hostedActivityMonitor(t *testing.T) *ActivityMonitor {
 func TestActivityMonitorCollectorStoppedClearsCollecting(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	c := activity.NewCollector(nil, nil, nil)
-	am.collector, am.act.started, am.act.collecting, am.act.status = c, true, true, ""
+	am.act.runner, am.act.started, am.act.collecting, am.act.status = c, true, true, ""
 
-	am.collectorStopped(c)
+	am.feedStopped(&am.act, c)
 
 	if am.act.collecting {
 		t.Fatal("the panel still reports collecting after Run returned")
@@ -796,10 +794,10 @@ func TestActivityMonitorCollectorStoppedClearsCollecting(t *testing.T) {
 func TestActivityMonitorCollectorStoppedKeepsAReportedError(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	c := activity.NewCollector(nil, nil, nil)
-	am.collector, am.act.started, am.act.collecting = c, true, true
-	am.applyError(errors.New("read DMVs: connection reset"))
+	am.act.runner, am.act.started, am.act.collecting = c, true, true
+	am.feedError(&am.act, errors.New("read DMVs: connection reset"))
 
-	am.collectorStopped(c)
+	am.feedStopped(&am.act, c)
 
 	if am.act.status != "read DMVs: connection reset" {
 		t.Errorf("status = %q, want the error the collector reported", am.act.status)
@@ -811,9 +809,9 @@ func TestActivityMonitorCollectorStoppedKeepsAReportedError(t *testing.T) {
 func TestActivityMonitorStaleStoppedCallbackIgnored(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	old := activity.NewCollector(nil, nil, nil)
-	am.collector, am.act.started, am.act.collecting = activity.NewCollector(nil, nil, nil), true, true
+	am.act.runner, am.act.started, am.act.collecting = activity.NewCollector(nil, nil, nil), true, true
 
-	am.collectorStopped(old)
+	am.feedStopped(&am.act, old)
 
 	if !am.act.collecting {
 		t.Error("the previous collector's stopped-callback stopped the current one")
@@ -824,13 +822,13 @@ func TestActivityMonitorStaleStoppedCallbackIgnored(t *testing.T) {
 func TestActivityMonitorOffersRetryWhenStopped(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	c := activity.NewCollector(nil, nil, nil)
-	am.collector, am.act.started, am.act.collecting = c, true, true
+	am.act.runner, am.act.started, am.act.collecting = c, true, true
 	am.buildTools()
 	if amToolLabelled(am, "Retry") != nil {
 		t.Fatal("a running collector offered Retry")
 	}
 
-	am.collectorStopped(c)
+	am.feedStopped(&am.act, c)
 
 	retry := amToolLabelled(am, "Retry")
 	if retry == nil {
@@ -853,28 +851,25 @@ func amToolLabelled(am *ActivityMonitor, label string) *toolButton {
 	return nil
 }
 
-// deadConnector fails every dial, so the permission prologue errors and Run
-// returns before its first tick.
-type deadConnector struct{}
+// deadSource fails the permission prologue, as a server that can't be reached
+// does, so Run returns before its first tick. Any other reading would panic on
+// the nil embedded Source, which is the point: none must be attempted.
+type deadSource struct{ activity.Source }
 
-func (deadConnector) Connect(context.Context) (driver.Conn, error) {
-	return nil, errors.New("tui_test: no connection")
+func (deadSource) HasViewServerState(context.Context) (bool, error) {
+	return false, errors.New("tui_test: no connection")
 }
 
-func (deadConnector) Driver() driver.Driver { return nil }
-
 // A returning Run must reach the panel: drives the real collector against a
-// dead pool and drains postAndWake's queue.
+// dead source and drains postAndWake's queue.
 func TestActivityMonitorLearnsARunReturned(t *testing.T) {
 	am := hostedActivityMonitor(t)
-	pool := sql.OpenDB(deadConnector{})
-	defer pool.Close()
 
-	c := activity.NewCollector(pool, nil,
-		func(err error) { am.app.postAndWake(func() { am.applyError(err) }) })
-	am.collector, am.act.started, am.act.collecting = c, true, true
+	c := activity.NewCollector(deadSource{}, nil,
+		func(err error) { am.app.postAndWake(func() { am.feedError(&am.act, err) }) })
+	am.act.runner, am.act.started, am.act.collecting = c, true, true
 
-	am.runCollector(c, context.Background(), time.Second)
+	am.runFeed(&am.act, c, context.Background(), time.Second)
 	am.app.drainPending()
 
 	if am.act.collecting {

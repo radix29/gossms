@@ -388,3 +388,49 @@ func TestRestoringUndraggedWidthsDoesNotRescan(t *testing.T) {
 		t.Errorf("colWidths[1] = %d after restore, want the dragged 25", g.colWidths[1])
 	}
 }
+
+// TestSetBoundsOnAnUnchangedRectDoesNotRescan pins T38: hosts lay out every
+// frame, and a recompute per SetBounds rescanned up to colWidthSampleRows
+// rows per frame — through the XEvent viewer's RowSource, building every one
+// of them — for the widths it already had.
+func TestSetBoundsOnAnUnchangedRectDoesNotRescan(t *testing.T) {
+	counting := &countingRowSource{RowSource: SliceRowSource{{"a"}, {"b"}}}
+	g := newTestDataGrid()
+	g.SetSource([]string{"Col"}, counting)
+	counting.calls = 0
+	for range 5 {
+		g.SetBounds(0, 0, 40, 10)
+	}
+	if counting.calls != 0 {
+		t.Errorf("SetBounds on the same rect read %d rows, want 0", counting.calls)
+	}
+	g.SetBounds(0, 0, 50, 10)
+	if counting.calls == 0 {
+		t.Error("SetBounds on a new rect read no rows, want a recompute")
+	}
+}
+
+// TestSettersThatChangeWidthsApplyWithoutARelayout covers what used to ride
+// on the per-frame SetBounds recompute: a new cell-width cap, and the row
+// gutter a fillLastColumn grid's last column has to make room for.
+func TestSettersThatChangeWidthsApplyWithoutARelayout(t *testing.T) {
+	screen := &fakeMenuScreen{w: 40, h: 10}
+
+	g := newTestDataGrid()
+	g.SetData([]string{"Col"}, [][]string{{strings.Repeat("w", 100)}})
+	g.SetMaxCellWidth(20)
+	g.Draw(screen)
+	if g.colWidths[0] != 20 {
+		t.Errorf("after SetMaxCellWidth(20)+Draw: colWidths[0] = %d, want 20", g.colWidths[0])
+	}
+
+	f := newTestDataGrid()
+	f.SetFillLastColumn(true)
+	f.SetData([]string{"Property", "Value"}, [][]string{{"a", "b"}})
+	before := f.colWidths[1]
+	f.SetRowNumbers(true)
+	f.Draw(screen)
+	if want := before - f.gutterWidth(); f.colWidths[1] != want {
+		t.Errorf("after SetRowNumbers+Draw: last column = %d, want %d (narrowed by the gutter)", f.colWidths[1], want)
+	}
+}

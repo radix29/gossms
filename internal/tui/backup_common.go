@@ -106,7 +106,7 @@ func drawProgressBar(s tcell.Screen, x, y, w, pct int, st tcell.Style) {
 		if i < filled {
 			ch = '█'
 		}
-		s.SetContent(x+i, y, ch, nil, st)
+		core.PutRune(s, x+i, y, ch, st)
 	}
 	if pct >= 0 {
 		core.DrawText(s, x+barW+1, y, st, strconv.Itoa(pct)+"%")

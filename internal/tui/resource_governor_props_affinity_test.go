@@ -17,13 +17,15 @@ import (
 const rgSchedulersRead = "FROM   sys.dm_os_schedulers s"
 
 // rgSchedulers answers Server.Schedulers: four schedulers on CPUs 0-3 in
-// processor group 0, two NUMA nodes, scheduler 3 offline.
+// processor group 0, two NUMA nodes, scheduler 3 offline. The trailing five
+// columns are each scheduler's load, which affinity doesn't read.
 func rgSchedulers() fakeResponse {
-	return fakeResponse{match: rgSchedulersRead, cols: 5, rows: [][]driver.Value{
-		{int64(0), int64(0), int64(0), int64(0), true},
-		{int64(1), int64(1), int64(0), int64(0), true},
-		{int64(2), int64(2), int64(1), int64(0), true},
-		{int64(3), int64(3), int64(1), int64(0), false},
+	load := []driver.Value{int64(0), int64(0), int64(0), int64(0), int64(0)}
+	return fakeResponse{match: rgSchedulersRead, cols: 10, rows: [][]driver.Value{
+		append([]driver.Value{int64(0), int64(0), int64(0), int64(0), true}, load...),
+		append([]driver.Value{int64(1), int64(1), int64(0), int64(0), true}, load...),
+		append([]driver.Value{int64(2), int64(2), int64(1), int64(0), true}, load...),
+		append([]driver.Value{int64(3), int64(3), int64(1), int64(0), false}, load...),
 	}}
 }
 

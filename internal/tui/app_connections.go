@@ -94,9 +94,11 @@ func (a *App) rememberConnection(opts config.Connection) {
 	// A successful direct connect proves the instance is up, contradicting
 	// other connections' negative peer caches.
 	a.forgetPeerFailure(config.ConnectionAddress(opts))
-	if err := a.cfg.Save(); err != nil {
-		a.logStatus("save config: %v", err)
-	}
+	a.saveConfig(func(err error) {
+		if err != nil {
+			a.logStatus("save config: %v", err)
+		}
+	})
 }
 
 // signInPhase runs db.SignIn before the dial for sign-in methods, showing it on

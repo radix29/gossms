@@ -344,6 +344,7 @@ func TestXEventViewSettingsRoundTrip(t *testing.T) {
 	v.setFilter(f)
 	s := v.currentViewSetting()
 	v.storeViewSetting("slow", &s)
+	waitForSaves(t, v.app)
 
 	saved := config.Load().XEventViewSettings["slow"]
 	if !slices.Equal(saved.GroupBy, []string{"name", "field:duration"}) || saved.Filter != "duration > 15" ||
@@ -364,6 +365,7 @@ func TestXEventViewSettingsRoundTrip(t *testing.T) {
 		t.Errorf("filter not in force: %d shown, %d groups", len(w.shown), len(w.groups))
 	}
 	v.storeViewSetting("slow", nil)
+	waitForSaves(t, v.app)
 	if _, ok := config.Load().XEventViewSettings["slow"]; ok {
 		t.Error("Delete left the setting")
 	}

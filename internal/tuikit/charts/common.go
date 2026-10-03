@@ -203,7 +203,7 @@ func drawVRun(s tcell.Screen, x, bottomY int, cells []stackCell) {
 			continue
 		}
 		ch, fg, bg := c.vertical()
-		s.SetContent(x, bottomY-i, ch, nil, tcell.StyleDefault.Foreground(fg).Background(bg))
+		core.PutRune(s, x, bottomY-i, ch, tcell.StyleDefault.Foreground(fg).Background(bg))
 	}
 }
 
@@ -215,7 +215,7 @@ func drawHRun(s tcell.Screen, startX, y int, cells []stackCell) {
 			continue
 		}
 		ch, fg, bg := c.horizontal()
-		s.SetContent(startX+i, y, ch, nil, tcell.StyleDefault.Foreground(fg).Background(bg))
+		core.PutRune(s, startX+i, y, ch, tcell.StyleDefault.Foreground(fg).Background(bg))
 	}
 }
 
@@ -376,7 +376,7 @@ func drawPlotBackground(s tcell.Screen, plot core.Rect, gridEvery int) {
 	// heights against, sparse enough not to compete with the data.
 	for y := plot.Y; y < plot.Bottom(); y += 2 {
 		for x := plot.X + 1; x < plot.Right(); x += 3 {
-			s.SetContent(x, y, GridDot, nil, gridStyle)
+			core.PutRune(s, x, y, GridDot, gridStyle)
 		}
 	}
 	if gridEvery <= 0 {
@@ -386,7 +386,7 @@ func drawPlotBackground(s tcell.Screen, plot core.Rect, gridEvery int) {
 	// same place, so the rules stay put as data scrolls past.
 	for x := plot.Right() - 1 - gridEvery; x > plot.X; x -= gridEvery {
 		for y := plot.Y; y < plot.Bottom(); y++ {
-			s.SetContent(x, y, GridDivider, nil, gridStyle)
+			core.PutRune(s, x, y, GridDivider, gridStyle)
 		}
 	}
 }

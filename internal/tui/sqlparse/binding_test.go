@@ -163,7 +163,7 @@ func carriedSpecs(script string) []string {
 	buf := []rune(script)
 	var carried []Binding
 	start := 0
-	lexSQL(buf, 0, len(buf), false, LexNormal, nil, allLines(buf), nil, func(lineStart, goNext int) bool {
+	lexSQL(buf, 0, len(buf), false, nil, allLines(buf), nil, func(lineStart, goNext int) bool {
 		if goNext >= 0 {
 			tokens, _, _, _ := TokenizeRange(buf, start, lineStart, false)
 			carried = CarryTempBindings(carried, tokens)

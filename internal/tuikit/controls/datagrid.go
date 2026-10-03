@@ -56,6 +56,14 @@ type RowKindSource interface {
 	RowKind(i int) RowKind
 }
 
+// NullSource is an optional RowSource capability: a source implementing it
+// marks the cells that hold a SQL NULL, which the grid draws dimmed and whose
+// Show Value it keeps from OnShowValue. A source without it has no NULLs,
+// whatever its text says — a cell reading "NULL" may be the string 'NULL'.
+type NullSource interface {
+	IsNull(row, col int) bool
+}
+
 // colWidthSampleRows caps how many rows computeColWidths inspects, so sizing
 // columns never scans a million-row source.
 const colWidthSampleRows = 200
@@ -99,6 +107,12 @@ type DataGrid struct {
 
 	// widthsDirty defers a RefreshColumnWidths request to the next Draw.
 	widthsDirty bool
+
+	// errorMode is set by SetError and cleared by SetSource: the one error
+	// column spans the rect instead of being sized from its content, so
+	// computeColWidths must not clamp it back to defaultMaxCellWidth on the
+	// next resize.
+	errorMode bool
 
 	selRow    int
 	scrollRow int
@@ -231,7 +245,8 @@ type DataGrid struct {
 
 	// OnShowValue gets first refusal of "Show Value", handed the cell's column
 	// index, name and full text; true means the host displayed it and the
-	// built-in popup stays closed, false or nil opens the popup. The index
+	// built-in popup stays closed, false or nil opens the popup. A NULL cell
+	// (NullSource) never reaches it. The index
 	// disambiguates duplicate column names — QueryPanel uses it to find the
 	// declared type when routing an XML cell to a new query tab.
 	OnShowValue func(col int, column, value string) bool
@@ -273,8 +288,17 @@ func (g *DataGrid) editable() bool { return g.OnActivateCell != nil && !g.browse
 // SetBounds positions the grid and recomputes column widths, so a
 // fillLastColumn grid's last column tracks the new width. Content-based widths
 // don't depend on rect.W, so every other grid gets the same ones back.
+//
+// An unchanged rect returns at once: hosts lay out every frame, and the
+// recompute rescans up to colWidthSampleRows rows — through a RowSource that
+// may build each one — for the same answer. Content changed in place reaches
+// the widths through RefreshColumnWidths, never through a relayout.
 func (g *DataGrid) SetBounds(x, y, w, h int) {
-	g.rect = core.Rect{X: x, Y: y, W: w, H: h}
+	r := core.Rect{X: x, Y: y, W: w, H: h}
+	if r == g.rect {
+		return
+	}
+	g.rect = r
 	g.computeColWidths()
 }
 
@@ -294,6 +318,7 @@ func (g *DataGrid) SetData(columns []string, rows [][]string) {
 func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.columns = columns
 	g.rows = rows
+	g.errorMode = false
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	// Row indices from the old set name different objects in this one.
@@ -357,20 +382,20 @@ func (g *DataGrid) RefreshColumnWidths() {
 // caller in the application (the Detail Browser, both Query Store grids, the
 // Log File Viewer) is a wide grid the user can have scrolled.
 //
-// It also drops a queued RefreshColumnWidths: the column is sized to the whole
-// rect by hand here, and the next Draw would otherwise recompute over it and
-// clip the message to the width of the word "Error".
+// The column spans the rect, not its content: errorMode keeps every later
+// computeColWidths — a resize, a queued RefreshColumnWidths — from clamping
+// the message back to defaultMaxCellWidth.
 func (g *DataGrid) SetError(err error) {
 	g.columns = []string{"Error"}
 	g.rows = SliceRowSource{{err.Error()}}
-	g.colWidths = []int{g.rect.W - 2}
-	g.widthsDirty = false
+	g.errorMode = true
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.ClearMarkedRows()
 	g.colWidthOverride, g.colResizing = nil, false
 	// See SetSource: an open viewer would strand itself over stale text.
 	g.closeViewer()
+	g.computeColWidths()
 	g.status = "Error"
 }
 
@@ -540,15 +565,25 @@ func (g *DataGrid) CellCursorEnabled() bool { return g.cellCursor }
 
 // SetRowNumbers shows or hides a non-selectable, unlabelled row-number column
 // pinned left of the data columns. Off by default.
-func (g *DataGrid) SetRowNumbers(v bool) { g.showRowNumbers = v }
+//
+// The gutter narrows what a fillLastColumn grid's last column fills, so the
+// widths are recomputed on the next Draw.
+func (g *DataGrid) SetRowNumbers(v bool) {
+	g.showRowNumbers = v
+	g.widthsDirty = true
+}
 
 // SetMaxCellWidth overrides the bound computeColWidths clamps every column's
 // *default* width to — a cap on how wide content alone may make a column, not
 // on the column, which a separator drag widens past it freely. n counts display
 // columns including the padding either side of the text, so a
 // maxCellLength-character content cap passes maxCellLength+2. n <= 0 restores
-// defaultMaxCellWidth.
-func (g *DataGrid) SetMaxCellWidth(n int) { g.maxCellWidth = n }
+// defaultMaxCellWidth. It takes effect on the next Draw — SetBounds no longer
+// recomputes on an unchanged rect, so nothing else would apply it.
+func (g *DataGrid) SetMaxCellWidth(n int) {
+	g.maxCellWidth = n
+	g.widthsDirty = true
+}
 
 // SetFillLastColumn stretches the last column to fill the grid's remaining
 // width — for a two-column Property/Value view, where a content-clamped Value
@@ -586,6 +621,16 @@ func (g *DataGrid) RowKindAt(i int) RowKind {
 	return ks.RowKind(i)
 }
 
+// IsNull reports whether cell (row, col) holds a SQL NULL: what the source
+// says when it implements NullSource, false otherwise or out of range.
+func (g *DataGrid) IsNull(row, col int) bool {
+	ns, ok := g.rows.(NullSource)
+	if !ok || row < 0 || row >= g.rows.Len() {
+		return false
+	}
+	return ns.IsNull(row, col)
+}
+
 // ColumnIndex returns the position of the column named name, or -1 if the grid
 // has no such column. For a host that has to address a cell by column name
 // rather than by position — the grids here are built from whatever a loader
@@ -604,6 +649,13 @@ func (g *DataGrid) ColumnIndex(name string) int {
 // goroutine, and this runs on every SetSource, SetBounds and column drag.
 func (g *DataGrid) computeColWidths() {
 	g.widthsDirty = false
+	if g.errorMode {
+		g.colWidths = []int{g.rect.W - 2}
+		if w := g.overrideWidth(0); w > 0 {
+			g.colWidths[0] = w
+		}
+		return
+	}
 	g.colWidths = make([]int, len(g.columns))
 	for i, col := range g.columns {
 		g.colWidths[i] = core.DisplayWidth(col) + 2

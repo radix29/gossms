@@ -75,6 +75,7 @@ var (
 type recordingSink struct {
 	begins  [][]string
 	rows    [][]string
+	nulls   [][]bool
 	endRows []int
 	failOn  int // 1-based row index to fail on; 0 never fails
 }
@@ -84,11 +85,12 @@ func (s *recordingSink) BeginSet(cols []string) error {
 	return nil
 }
 
-func (s *recordingSink) Row(cells []string) error {
+func (s *recordingSink) Row(cells []string, isNull []bool) error {
 	if s.failOn > 0 && len(s.rows)+1 == s.failOn {
 		return errors.New("sink write failed")
 	}
 	s.rows = append(s.rows, append([]string(nil), cells...))
+	s.nulls = append(s.nulls, append([]bool(nil), isNull...))
 	return nil
 }
 
@@ -164,6 +166,78 @@ func TestStreamAndScanRenderIdenticalCells(t *testing.T) {
 	}
 	if len(sink.endRows) != 1 || sink.endRows[0] != n {
 		t.Errorf("EndSet got %v, want [%d]", sink.endRows, n)
+	}
+}
+
+// A SQL NULL and the string 'NULL' render the same text; the null marks are
+// what tell them apart, on the buffered and the streamed path alike.
+func TestScanAndStreamMarkOnlyRealNulls(t *testing.T) {
+	cols := []string{"s", "n"}
+	rows := func() [][]driver.Value {
+		return [][]driver.Value{
+			{"NULL", nil},
+			{nil, int64(7)},
+			{"", nil},
+		}
+	}
+	want := [][]bool{{false, true}, {true, false}, {false, true}}
+
+	bufDB := openFakeRowsDB(cols, rows())
+	defer bufDB.Close()
+	bufRows := queryFakeRows(t, bufDB)
+	rs, err := scanResultSet(bufRows, nil)
+	bufRows.Close()
+	if err != nil {
+		t.Fatalf("scanResultSet: %v", err)
+	}
+	streamDB := openFakeRowsDB(cols, rows())
+	defer streamDB.Close()
+	streamRows := queryFakeRows(t, streamDB)
+	sink := &recordingSink{}
+	if _, _, err := streamResultSet(streamRows, sink, nil); err != nil {
+		t.Fatalf("streamResultSet: %v", err)
+	}
+	streamRows.Close()
+
+	for r := range want {
+		for c := range want[r] {
+			if got := rs.IsNull(r, c); got != want[r][c] {
+				t.Errorf("buffered (%d,%d) %q: IsNull = %v, want %v", r, c, rs.Rows[r][c], got, want[r][c])
+			}
+			if got := sink.nulls[r][c]; got != want[r][c] {
+				t.Errorf("streamed (%d,%d) %q: isNull = %v, want %v", r, c, sink.rows[r][c], got, want[r][c])
+			}
+		}
+	}
+	if rs.Rows[0][0] != "NULL" || rs.Rows[1][0] != "NULL" {
+		t.Errorf("cells (0,0), (1,0) = %q, %q; both should read NULL", rs.Rows[0][0], rs.Rows[1][0])
+	}
+}
+
+// MarkNull grows the bitmap only as far as the cell it marks, and IsNull reads
+// false past it and outside the set — across a word boundary too.
+func TestResultSetNullBitmap(t *testing.T) {
+	rs := ResultSet{Columns: []string{"a", "b", "c"}, Rows: make([][]string, 40)}
+	if rs.IsNull(0, 0) || rs.nulls != nil {
+		t.Fatal("a set with no NULL marks one or allocated a bitmap")
+	}
+	rs.MarkNull(21, 1) // bit 64: the second word
+	rs.MarkNull(2, 2)  // bit 8
+	if len(rs.nulls) != 2 {
+		t.Errorf("bitmap is %d words, want 2", len(rs.nulls))
+	}
+	for r := range rs.Rows {
+		for c := range rs.Columns {
+			want := (r == 21 && c == 1) || (r == 2 && c == 2)
+			if got := rs.IsNull(r, c); got != want {
+				t.Errorf("IsNull(%d,%d) = %v, want %v", r, c, got, want)
+			}
+		}
+	}
+	for _, rc := range [][2]int{{-1, 0}, {0, -1}, {0, 3}, {500, 0}} {
+		if rs.IsNull(rc[0], rc[1]) {
+			t.Errorf("IsNull(%d,%d) outside the set = true", rc[0], rc[1])
+		}
 	}
 }
 

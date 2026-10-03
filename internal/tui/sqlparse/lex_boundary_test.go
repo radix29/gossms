@@ -31,7 +31,7 @@ func TestLexSQLReportsEveryBoundary(t *testing.T) {
 
 	var got []string
 	var offs []int
-	r := lexSQL(buf, 0, len(buf), false, LexNormal, nil, goScan{lo: 0, hi: len(buf)},
+	r := lexSQL(buf, 0, len(buf), false, nil, goScan{lo: 0, hi: len(buf)},
 		func(off int, isGo bool) {
 			kind := "semi"
 			if isGo {

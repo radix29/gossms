@@ -108,7 +108,7 @@ func (f *Filter) Match(e *Event) bool {
 }
 
 func matchesText(e *Event, needle string) bool {
-	has := func(s string) bool { return strings.Contains(strings.ToLower(s), needle) }
+	has := func(s string) bool { return containsLower(s, needle) }
 	if has(e.Name) {
 		return true
 	}
@@ -160,33 +160,32 @@ func (t term) match(e *Event) bool {
 	}
 	// A map field matches on either its text or its key, so wait_type =
 	// PAGEIOLATCH_SH and wait_type = 66 both find it.
-	candidates := []string{v.Display()}
-	if v.Text != "" && v.Text != v.Value {
-		candidates = append(candidates, v.Value)
+	if compare(v.Display(), t.op, t.value) {
+		return true
 	}
-	for _, c := range candidates {
-		if compare(c, t.op, t.value) {
-			return true
-		}
-	}
-	return false
+	return v.Text != "" && v.Text != v.Value && compare(v.Value, t.op, t.value)
 }
 
 // compare applies op to a (the event's value) and b (the filter's): as
 // numbers when both are, else as case-insensitive text.
+//
+// a is folded as it is read, never lowered into a copy: a filter runs over
+// every value of every event in the store on each edit, and over each event
+// as it arrives, so a ToLower here was an allocation per value per event.
 func compare(a string, op Op, b string) bool {
-	la, lb := strings.ToLower(a), strings.ToLower(b)
+	lb := strings.ToLower(b)
 	switch op {
 	case OpContains:
-		return strings.Contains(la, lb)
+		return containsLower(a, lb)
 	case OpNotContains:
-		return !strings.Contains(la, lb)
+		return !containsLower(a, lb)
 	case OpStartsWith:
-		return strings.HasPrefix(la, lb)
+		_, ok := cutLowerPrefix(a, lb)
+		return ok
 	}
 	var c int
-	if na, errA := strconv.ParseFloat(strings.TrimSpace(a), 64); errA == nil {
-		if nb, errB := strconv.ParseFloat(strings.TrimSpace(b), 64); errB == nil {
+	if nb, ok := parseNumber(b); ok {
+		if na, ok := parseNumber(a); ok {
 			switch {
 			case na < nb:
 				c = -1
@@ -196,7 +195,87 @@ func compare(a string, op Op, b string) bool {
 			return cmpResult(c, op)
 		}
 	}
-	return cmpResult(strings.Compare(la, lb), op)
+	return cmpResult(compareLower(a, lb), op)
+}
+
+// parseNumber is strconv.ParseFloat of s trimmed, reporting only whether it
+// parsed. Text that cannot start a float is turned away before ParseFloat
+// sees it, because ParseFloat's error is an allocation, and nearly every value
+// a text comparison meets is text.
+func parseNumber(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	t := strings.TrimLeft(s, "+-")
+	if t == "" {
+		return 0, false
+	}
+	if c := t[0]; (c < '0' || c > '9') && c != '.' {
+		// Past a sign, only a digit, a point, or inf/infinity/nan in any
+		// case starts a float.
+		if _, ok := cutLowerPrefix(t, "inf"); !ok {
+			if _, ok := cutLowerPrefix(t, "nan"); !ok {
+				return 0, false
+			}
+		}
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	return f, err == nil
+}
+
+// containsLower is strings.Contains(strings.ToLower(s), lower), for a lower
+// that is already lowercase, without building the lowered copy of s.
+func containsLower(s, lower string) bool {
+	for i := 0; ; {
+		if _, ok := cutLowerPrefix(s[i:], lower); ok {
+			return true
+		}
+		if i == len(s) {
+			return false
+		}
+		_, n := utf8.DecodeRuneInString(s[i:])
+		i += n
+	}
+}
+
+// cutLowerPrefix reports whether strings.ToLower(s) starts with lower, and
+// returns what of s follows that prefix. It lowers rune by rune as ToLower
+// does, so an invalid byte compares as utf8.RuneError either way.
+func cutLowerPrefix(s, lower string) (string, bool) {
+	for lower != "" {
+		if s == "" {
+			return s, false
+		}
+		r, n := utf8.DecodeRuneInString(s)
+		l, m := utf8.DecodeRuneInString(lower)
+		if unicode.ToLower(r) != l {
+			return s, false
+		}
+		s, lower = s[n:], lower[m:]
+	}
+	return s, true
+}
+
+// compareLower is strings.Compare(strings.ToLower(a), lower), for a lower that
+// is already lowercase. Comparing rune by rune is comparing the UTF-8 bytes:
+// the encoding preserves code-point order.
+func compareLower(a, lower string) int {
+	for a != "" && lower != "" {
+		r, n := utf8.DecodeRuneInString(a)
+		l, m := utf8.DecodeRuneInString(lower)
+		if r = unicode.ToLower(r); r != l {
+			if r < l {
+				return -1
+			}
+			return 1
+		}
+		a, lower = a[n:], lower[m:]
+	}
+	switch {
+	case a != "":
+		return 1
+	case lower != "":
+		return -1
+	}
+	return 0
 }
 
 func cmpResult(c int, op Op) bool {

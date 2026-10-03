@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func trackedPath(t *testing.T) string {
@@ -13,17 +14,26 @@ func trackedPath(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "tracked_queries.json")
 }
 
+// toggleSaved is Toggle then Save, as the Query Store panel does them.
+func toggleSaved(tq *TrackedQueries, server, database string, id int64) (bool, error) {
+	tracked, err := tq.Toggle(server, database, id)
+	if err != nil {
+		return tracked, err
+	}
+	return tracked, tq.Save()
+}
+
 // The list must survive a restart, so the second read is fresh from disk.
 func TestTrackedQueriesRoundTripThroughTheFile(t *testing.T) {
 	path := trackedPath(t)
 	tq := LoadTrackedQueriesFrom(path)
 	for _, id := range []int64{9, 3} {
-		if _, err := tq.Toggle("HOST\\SQL2022", "appdb", id); err != nil {
+		if _, err := toggleSaved(tq, "HOST\\SQL2022", "appdb", id); err != nil {
 			t.Fatalf("Toggle: %v", err)
 		}
 	}
 	// A second database on the same server is its own set.
-	if _, err := tq.Toggle("HOST\\SQL2022", "otherdb", 100); err != nil {
+	if _, err := toggleSaved(tq, "HOST\\SQL2022", "otherdb", 100); err != nil {
 		t.Fatalf("Toggle: %v", err)
 	}
 
@@ -47,13 +57,13 @@ func TestTrackedQueriesRoundTripThroughTheFile(t *testing.T) {
 func TestTrackedQueriesToggleRemovesAndForgetsTheDatabase(t *testing.T) {
 	path := trackedPath(t)
 	tq := LoadTrackedQueriesFrom(path)
-	if tracked, _ := tq.Toggle("srv", "appdb", 7); !tracked {
+	if tracked, _ := toggleSaved(tq, "srv", "appdb", 7); !tracked {
 		t.Error("the first Toggle reported the query untracked")
 	}
 	if !tq.IsTracked("srv", "appdb", 7) {
 		t.Error("IsTracked says no right after tracking")
 	}
-	if tracked, _ := tq.Toggle("srv", "appdb", 7); tracked {
+	if tracked, _ := toggleSaved(tq, "srv", "appdb", 7); tracked {
 		t.Error("the second Toggle reported the query tracked")
 	}
 	if tq.IsTracked("srv", "appdb", 7) {
@@ -90,7 +100,7 @@ func TestTrackedQueriesKeepsAFileItCannotRead(t *testing.T) {
 	if got := tq.IDs("srv", "appdb"); got != nil {
 		t.Fatalf("an unreadable file loaded as %v", got)
 	}
-	if _, err := tq.Toggle("srv", "appdb", 7); err == nil {
+	if _, err := toggleSaved(tq, "srv", "appdb", 7); err == nil {
 		t.Error("Toggle saved over a file that could not be read")
 	}
 	// The toggle still applied in memory.
@@ -119,8 +129,8 @@ func TestTrackedQueriesKeepsACorruptFileAside(t *testing.T) {
 		t.Errorf("the corrupt file was not kept aside: %v / %q", err, data)
 	}
 	// Not write-protected: the bytes are safe, so the next toggle saves.
-	if _, err := tq.Toggle("srv", "appdb", 7); err != nil {
-		t.Errorf("Toggle after a corrupt load: %v", err)
+	if _, err := toggleSaved(tq, "srv", "appdb", 7); err != nil {
+		t.Errorf("save after a corrupt load: %v", err)
 	}
 }
 
@@ -183,7 +193,7 @@ func TestTrackedQueriesLoadAnOldFormatFile(t *testing.T) {
 		t.Errorf("IDs(srv,55253, x) = %v, want [6] — another instance, kept apart", got)
 	}
 
-	if _, err := tq.Toggle("srv", "x", 7); err != nil {
+	if _, err := toggleSaved(tq, "srv", "x", 7); err != nil {
 		t.Fatalf("Toggle: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -197,5 +207,48 @@ func TestTrackedQueriesLoadAnOldFormatFile(t *testing.T) {
 	}
 	if got := LoadTrackedQueriesFrom(path).IDs(`host\sql2022`, "appdb"); !slices.Equal(got, []int64{1, 2, 3}) {
 		t.Errorf("after the save, IDs(host\\sql2022, appdb) = %v, want [1 2 3]", got)
+	}
+}
+
+// T58: Save must not hold the set's mutex while it waits for the file. The
+// Query Store panel reads the set on the UI goroutine, and a save waits up to
+// two seconds on another instance's lock. A Toggle made meanwhile stays in
+// memory and reaches the file on the next save.
+func TestTrackedReadersDoNotWaitOnASave(t *testing.T) {
+	path := trackedPath(t)
+	tq := LoadTrackedQueriesFrom(path)
+	if _, err := tq.Toggle("srv", "db", 1); err != nil {
+		t.Fatal(err)
+	}
+	lock := path + ".lock" // another instance mid-save
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- tq.Save() }()
+	time.Sleep(20 * time.Millisecond)
+
+	start := time.Now()
+	tq.IsTracked("srv", "db", 1)
+	if _, err := tq.Toggle("srv", "db", 2); err != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(start); waited > 500*time.Millisecond {
+		t.Errorf("a reader and a Toggle waited %v on a save blocked by the file lock", waited)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if got := tq.IDs("srv", "db"); !slices.Equal(got, []int64{1, 2}) {
+		t.Errorf("in memory after the save: %v, want [1 2] — the Toggle made during it kept", got)
+	}
+	if err := tq.Save(); err != nil {
+		t.Fatalf("second Save: %v", err)
+	}
+	if got := LoadTrackedQueriesFrom(path).IDs("srv", "db"); !slices.Equal(got, []int64{1, 2}) {
+		t.Errorf("on disk after the next save: %v, want [1 2]", got)
 	}
 }

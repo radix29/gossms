@@ -394,7 +394,9 @@ func saveXEHiddenColumns(app *App, session string, hidden map[string]bool) {
 		next[session] = keys
 	}
 	app.cfg.XEventHiddenColumns = next
-	if err := app.cfg.Save(); err != nil {
-		app.setStatus("Column choice not saved: " + err.Error())
-	}
+	app.saveConfig(func(err error) {
+		if err != nil {
+			app.setStatus("Column choice not saved: " + err.Error())
+		}
+	})
 }

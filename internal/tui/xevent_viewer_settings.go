@@ -113,11 +113,13 @@ func (v *XEventViewer) storeViewSetting(name string, s *config.XEventViewSetting
 		next = nil
 	}
 	cfg.XEventViewSettings = next
-	if err := cfg.Save(); err != nil {
-		v.app.setStatus("Settings not saved: " + err.Error())
-		return
-	}
-	v.app.setStatus(fmt.Sprintf("%s settings %q", verb, name))
+	v.app.saveConfig(func(err error) {
+		if err != nil {
+			v.app.setStatus("Settings not saved: " + err.Error())
+			return
+		}
+		v.app.setStatus(fmt.Sprintf("%s settings %q", verb, name))
+	})
 }
 
 // showSettingsMenu pops Save Settings As, and Apply and Delete cascades over

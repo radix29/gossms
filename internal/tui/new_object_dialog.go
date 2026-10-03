@@ -195,6 +195,35 @@ func (d *newObjectDialog[P]) show(sc *db.ServerConn) {
 	d.Show()
 }
 
+// dbFolderDialog is a New dialog opened from one database's Object Explorer
+// folder: the object is created in that database, Script Changes opens its
+// query window there rather than in the connection's default, and the folder
+// is reloaded once the create succeeds.
+type dbFolderDialog[P any] struct {
+	newObjectDialog[P]
+
+	// dbName is the database the object is created in, and node the folder
+	// to reload afterwards. Both are set by show, before the embedded
+	// dialog's own show runs the prefetch that reads them.
+	dbName string
+	node   *explorerNode
+}
+
+// initInFolder is init with cfg.refresh reloading the folder show was given.
+func (d *dbFolderDialog[P]) initInFolder(app *App, cfg newObjectConfig[P]) {
+	cfg.refresh = func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) }
+	d.init(app, cfg)
+}
+
+// show opens the dialog for node, a folder of one database.
+func (d *dbFolderDialog[P]) show(sc *db.ServerConn, node *explorerNode) {
+	d.dbName = node.data.DBName
+	d.node = node
+	d.scriptDatabase = d.dbName
+	d.newObjectDialog.show(sc)
+	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
+}
+
 func (d *newObjectDialog[P]) onClose() { cancelIfSet(d.cancel) }
 
 func (d *newObjectDialog[P]) post(fn func()) { d.app.postAndWake(fn) }

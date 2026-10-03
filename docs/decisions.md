@@ -22,6 +22,16 @@ Supported; nothing open against it.
   `amAllTabs`; `amTabLabels` and per-tab scroll arrays stay indexed by `amTab`,
   sized `amTabCount`. `setTab` is the one gate, so a new conditional tab needs
   only an `azureOnly`-style predicate.
+- **The Activity Monitor's DMV reads live in gosmo** (decision 5 of the
+  2026-10-02 review): `Server.PerformanceCounters`, `WaitStats`,
+  `FileIOStats`, `MemoryClerks`, `Schedulers`, `RequestActivity`, `HostCPU`
+  and the four `TempDB*` reads, behind `internal/activity.Source`. Chosen over a
+  gossms-side live sweep so `TestLiveVersionSweep` runs them on every major.
+  What stays in gossms is everything that is a monitoring opinion: which
+  counters, the benign-wait list (filtered in Go now; gosmo returns every
+  wait), the wait categories, rates and the stores. The Block and Sessions
+  helper procedures stay too — sp_WhoIsActive is GPL-3.0 and does not belong
+  in a library.
 - **The Instance tab's charts scale by the server's 15-second window**, not the
   refresh rate, and `internal/activity.Poller` keeps pre-aggregated sources out
   of `rates.go` (see `drawInterval`'s and `Poller`'s doc comments). IO ceilings
@@ -1195,6 +1205,43 @@ Unverified on Managed Instance and on non-Enterprise editions:
   guessing `dbo` can name the wrong object.
 - **No remote table-valued functions or `sys` schema** — four-part names
   cannot call a function, and the remote's `sys` views are not inventoried.
+
+## T-SQL lexing: one lexer, two statement splitters — settled, do not re-raise
+
+`internal/tuikit/sqltext` (review plan W23, T54).
+
+- **One lexer.** `sqltext.Next` is the only T-SQL lexer: the executor's
+  `SplitBatches`, Ctrl+Enter's `StatementAt`, the SQL highlighter and
+  IntelliSense's `sqlparse.lexSQL` all walk text with it. A comment, literal,
+  quoted-identifier or `GO` rule changes there, once.
+- **Two splitters, on purpose.** Ctrl+Enter splits on every statement verb,
+  because its selection is what F5 runs and a missed boundary runs the next
+  statement too. IntelliSense keeps its DML splitter (`sqlparse/statement.go`):
+  it scopes completion to DML statements, its golden sweep and the
+  `PrefixCache`/`BatchCache` resume rules are built on that splitter's state
+  depending on a start keyword alone, and the full splitter's pending
+  WITH-name and permission-list states would break that. Both read one set of
+  verb tables (`sqltext.IsDMLLeader`, `sqltext.EndsDML`, and
+  `statementLeaders` built from them).
+- **`core.IsWordRune` is not the T-SQL word rule.** It drives Ctrl+arrow word
+  navigation in any text field. Lexing and the completion trigger use
+  `sqltext.IsWordRune`; the two agree today, and nothing requires them to.
+
+## SQL NULL in results: what each consumer writes — settled, do not re-raise
+
+Review plan W26, T59. A NULL's text is "NULL" everywhere a result is held;
+`query.ResultSet`'s null bitmap (and `RowSink.Row`'s `isNull`) is what tells
+it from the string 'NULL'.
+
+- **Grid:** dims only a marked cell (`controls.NullSource`), never by text.
+  Show Value of a NULL opens the plain popup, never an XML/JSON tab.
+- **Copy (Ctrl+C, Copy, Copy All):** "NULL", as SSMS copies it. The user's
+  call: pasting into a query or a sheet reads as before.
+- **Results To File (CSV):** NULL is an empty field, an empty string `""`,
+  the string 'NULL' is `NULL` — PostgreSQL COPY CSV's convention, lossless.
+  The format's one limit: a one-column NULL row is an empty line, like the
+  separator between sets.
+- **Results to Text:** "NULL", as SSMS shows it.
 
 ## By design — not issues, do not re-raise
 

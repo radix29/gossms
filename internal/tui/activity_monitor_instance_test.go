@@ -259,7 +259,7 @@ func TestInstancePollerDoesNotStartOffAzure(t *testing.T) {
 	am := newTestActivityMonitor(100, 40)
 	am.feedConn = &db.ServerConn{}
 	am.startInstancePoller()
-	if am.instPoller != nil {
+	if am.inst.runner != nil {
 		t.Error("the Instance poller started on a connection with no server info")
 	}
 	if am.inst.started {

@@ -80,92 +80,71 @@ func agentJobMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh
 
 // agentScheduleMenuItems builds the context menu for a NodeAgentSchedule leaf.
 func agentScheduleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
-	enableLabel := "Disable Schedule"
-	if !node.data.IsEnabled {
-		enableLabel = "Enable Schedule"
-	}
-	return []controls.MenuItem{
-		agentGate(controls.MenuItem{Label: enableLabel, Action: func() { a.setAgentScheduleEnabled(sc, node, !node.data.IsEnabled) }}, sc),
-		{Divider: true},
-		refresh,
-		agentGate(controls.MenuItem{Label: "Delete Schedule...", Action: func() { a.deleteAgentSchedule(sc, node) }}, sc),
-		{Divider: true},
-		{Label: "Properties...", Action: func() { a.showScheduleProperties(sc, node.data.Name) }},
-	}
+	return agentToggleLeafMenu(sc, node, refresh, "Schedule",
+		func(on bool) { a.setAgentScheduleEnabled(sc, node, on) },
+		func() { a.deleteAgentSchedule(sc, node) },
+		func() { a.showScheduleProperties(sc, node.data.Name) })
 }
 
 // agentAlertMenuItems builds the context menu for a NodeAgentAlert leaf.
 func agentAlertMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
-	enableLabel := "Disable Alert"
-	if !node.data.IsEnabled {
-		enableLabel = "Enable Alert"
-	}
-	return []controls.MenuItem{
-		agentGate(controls.MenuItem{Label: enableLabel, Action: func() { a.setAgentAlertEnabled(sc, node, !node.data.IsEnabled) }}, sc),
-		{Divider: true},
-		refresh,
-		agentGate(controls.MenuItem{Label: "Delete Alert...", Action: func() { a.deleteAgentAlert(sc, node) }}, sc),
-		{Divider: true},
-		{Label: "Properties...", Action: func() { a.showAlertProperties(sc, node.data.Name) }},
-	}
+	return agentToggleLeafMenu(sc, node, refresh, "Alert",
+		func(on bool) { a.setAgentAlertEnabled(sc, node, on) },
+		func() { a.deleteAgentAlert(sc, node) },
+		func() { a.showAlertProperties(sc, node.data.Name) })
 }
 
 // agentOperatorMenuItems builds the context menu for a NodeAgentOperator leaf.
 func agentOperatorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
-	enableLabel := "Disable Operator"
+	return agentToggleLeafMenu(sc, node, refresh, "Operator",
+		func(on bool) { a.setAgentOperatorEnabled(sc, node, on) },
+		func() { a.deleteAgentOperator(sc, node) },
+		func() { a.showOperatorProperties(sc, node.data.Name) })
+}
+
+// agentToggleLeafMenu is the menu of an Agent leaf that is only switched on
+// and off, deleted and opened: schedules, alerts and operators. The writes
+// are agentGate'd; noun names the object in the item labels.
+func agentToggleLeafMenu(sc *db.ServerConn, node *explorerNode, refresh controls.MenuItem, noun string,
+	setEnabled func(bool), del, props func()) []controls.MenuItem {
+	enableLabel := "Disable " + noun
 	if !node.data.IsEnabled {
-		enableLabel = "Enable Operator"
+		enableLabel = "Enable " + noun
 	}
 	return []controls.MenuItem{
-		agentGate(controls.MenuItem{Label: enableLabel, Action: func() { a.setAgentOperatorEnabled(sc, node, !node.data.IsEnabled) }}, sc),
+		agentGate(controls.MenuItem{Label: enableLabel, Action: func() { setEnabled(!node.data.IsEnabled) }}, sc),
 		{Divider: true},
 		refresh,
-		agentGate(controls.MenuItem{Label: "Delete Operator...", Action: func() { a.deleteAgentOperator(sc, node) }}, sc),
+		agentGate(controls.MenuItem{Label: "Delete " + noun + "...", Action: del}, sc),
 		{Divider: true},
-		{Label: "Properties...", Action: func() { a.showOperatorProperties(sc, node.data.Name) }},
+		{Label: "Properties...", Action: props},
 	}
 }
 
 // agentUserJobsMenuItems builds the User Jobs folder menu; Schedules, Event
 // Alerts and Operators follow.
 func agentUserJobsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		agentGate(controls.MenuItem{Label: "New Job...", Action: func() { a.showNewJobDialog(sc) }}, sc),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func agentSchedulesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		agentGate(controls.MenuItem{Label: "New Schedule...", Action: func() { a.showNewScheduleDialog(sc) }}, sc),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func agentEventAlertsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		agentGate(controls.MenuItem{Label: "New Alert...", Action: func() { a.showNewAlertDialog(sc) }}, sc),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func agentOperatorsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		agentGate(controls.MenuItem{Label: "New Operator...", Action: func() { a.showNewOperatorDialog(sc) }}, sc),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 // ---- Jobs: Start / Stop / View History ----

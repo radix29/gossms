@@ -525,6 +525,22 @@ breaking signature has no gossms caller.
   - Also: T41 (the test-only oracle moves to `_test.go`) and the T56 byte
     scan in `SplitBatches`.
   - Split `sqlparse/scope.go` here, since the step rewrites it anyway.
+  - **Done.** Decided on the way: IntelliSense shares the lexer, not the
+    splitter. `sqlparse` keeps its DML splitter, so completion's statement
+    bounds, its golden sweep and the two caches' resume rules are unchanged;
+    both splitters now read one set of verb tables in `sqltext`. See T54,
+    T44, T55, T56 and T41. `go test -race -count=1 ./...` green. Benchmarks:
+    the cold completion prefix scan went from 6.0 to 4.2 ms at 1,000
+    statements, the highlighted 10k-line draw from 389 to 246 allocations and
+    about 10% faster; the cached typing paths are unchanged. tmux, A/B against
+    a pre-change binary: `SELECT [a/*b], [from] FROM t` above four more lines
+    — the old highlighter colours everything after `[a/*` as a comment to the
+    end of the document; the new one leaves both identifiers plain, colours
+    `FROM`, and carries a `'x`⏎`GO`⏎`y'` literal across its three lines.
+    Ctrl+Enter selects `SELECT 1 FROM t` alone above a DROP, a hinted DELETE
+    with its WHERE line, and `SELECT [select`⏎`GO]` as one statement. Live on
+    win10cli 17, F5 on a script with GO inside a literal, GO inside a block
+    comment and a `GO 2` returned exactly four result sets.
 - **W24 — The grid and the draw hot path.**
   - T16 and T38 together: the `errorMode` flag, plus `SetBounds` returning
     early on an unchanged rect. First audit the hosts that rely on the
@@ -533,12 +549,80 @@ breaking signature has no gossms caller.
   - Then T51 (`Put`/`FillArea` in `core/drawing.go`), with a frame
     benchmark committed beside it.
   - Plus the T56 XEvent filter.
+  - **Done.** Decided on the way: `FillRect` goes through `Put`, not
+    `FillArea`. Measured on a real tcell v3.5.0 screen at 200×50,
+    `FillArea` converts its rune to a string per cell — 10,000 allocations a
+    fill, where one prebuilt string through `Put` costs none. T65 shipped
+    anyway, as the latent bug it is. The per-cell `SetContent` calls outside
+    `drawing.go` (editor, grid, input field, menus, charts) moved to the new
+    `core.PutRune` too, and the rule is in `docs/ui-rules.md`. The host
+    audit found every in-place mutation already behind
+    `RefreshColumnWidths`; only `SetMaxCellWidth` and `SetRowNumbers` relied
+    on the relayout, and both now defer to `Draw`. `go test -race -count=1
+    ./...`, `gofmt` and `go vet` clean. New `BenchmarkFrameDataGrid` and
+    `BenchmarkFrameEditor` (`controls/frame_bench_test.go`, real tcell
+    screen on a mock terminal): grid 25,028 → 393 allocations and about
+    4.8 → 2.6 ms a frame; editor 20,606 → 155 and about 4.4 → 2.8 ms. tmux
+    on win10cli 17, 200 columns: a database held SINGLE_USER by another
+    session, its Tables folder's Detail Browser error (Msg 924) shows all
+    136 columns, follows a resize to 160 (ellipsis at the edge) and back out
+    to 240. A results grid with its row gutter clamps at the configured 24
+    characters. system_health live data, 38,943 events: free text
+    `SCHEDULER_Monitor` matches 13,808 case-insensitively, `name contains
+    'DIAGNOSTICS'` and `name > 'sp_' and name < 'sq'` both 11,064, and
+    `id >= 0` vs `id > 0` with a name prefix 13,809 vs 0. Borders, the
+    toolbar's wide emoji and dialogs render unchanged.
 - **W25 — T58, config and tracked-query saves off the UI goroutine.** This
   comes after W10, which changes the tracked file.
+  - **Done.** `Config.Save` is now `BeginSave` (snapshot, UI goroutine),
+    `SaveJob.Run` (lock, key, merge, fsync — touches nothing in the Config)
+    and `EndSave` (adopt, replaying any AddOrUpdate/RemoveConnection made
+    meanwhile, which stay pending). `App.saveConfig` (`app_saves.go`) runs one
+    job at a time and queues later asks behind it, each caller's callback
+    reporting on the UI goroutine; all six call sites use it.
+    `TrackedQueries.Toggle` is memory-only, and `Save` no longer holds the
+    set's mutex across the file work — before, a save waiting on another
+    instance's lock blocked `IsTracked`, which the action row draws every
+    frame, so moving the save alone would not have helped. Track Query stales
+    the tree leaf at once and reports only a failed save. `FlushSaves`, called
+    by `cmd/gossms` once `Run` returns, writes a save still out at quit.
+    Rule in `docs/ui-rules.md`. Pins: `TestEndSaveKeepsChangesMadeWhileTheJobRan`,
+    `TestEndSaveOfAFailedJobKeepsTheChangesPending`,
+    `TestTrackedReadersDoNotWaitOnASave`, `TestConfigSaveDoesNotBlockTheCaller`,
+    `TestConfigSavesAskedForMeanwhileRunAfterIt`,
+    `TestFlushSavesWritesWhatTheLoopLeftOwing`, `TestTrackedSaveDoesNotBlockTheUI`.
+    `go test -race ./...`, `gofmt` and `go vet` clean. tmux, scratch config:
+    with `config.json.lock` held as another instance would, Options' OK closed
+    the dialog and F10 opened the menu 0.1 s later; the two-second lock failure
+    then reached the log. An indent change made just before Ctrl+Q was on disk
+    after exit. A connect to win10cli 17 saved its History entry.
 - **W26 — T59, the null-aware result model and `TreeView.SetTitle`.**
   - `query.ResultSet` gains the null bitmap first, then `RowSource.IsNull`.
   - Then tuikit stops matching the `"NULL"` string.
   - Copy and CSV export use the bitmap in the same step.
+  - **Done.** `query.ResultSet` carries a null bitmap (`MarkNull`/`IsNull`,
+    grown only as far as the last NULL) and is itself the grid's source
+    (`Len`/`Row`), so the query results and Activity Monitor grids get it
+    without an adapter. `RowSink.Row` takes the row's `isNull` beside its
+    cells. tuikit's new optional `controls.NullSource` replaces the
+    `"NULL"` text match in `drawRow` and `drawCellSelection`, and a NULL never
+    reaches `OnShowValue` (an xml column's NULL opens the plain popup), so
+    `classifyCellKind` lost its text guard. Decided on the way (the user's
+    call, recorded in `docs/decisions.md`): copy keeps "NULL", as SSMS; the
+    Results To File CSV writes NULL as an empty field, `''` as `""` and the
+    string 'NULL' as `NULL`, through its own field writer — encoding/csv
+    never quotes an empty field — that otherwise quotes byte-for-byte as
+    encoding/csv did. `TreeView.SetTitle`; Object Explorer sets its own.
+    Pins: `TestScanAndStreamMarkOnlyRealNulls`, `TestResultSetNullBitmap`,
+    `TestGridDimsOnlyCellsTheSourceMarksNull`,
+    `TestShowValueOfANullSkipsTheHost`, `TestResultsGridKnowsWhichCellsAreNull`,
+    `TestCSVSinkKeepsNullEmptyAndTheStringNULLApart`,
+    `TestTreeViewDrawsItsTitle`. `go test -race ./...`, `gofmt` and `go vet`
+    clean. tmux, live on win10cli 17: `SELECT NULL, 'NULL', '', CAST(NULL AS
+    xml), CAST('<a/>' AS xml) UNION ALL SELECT 1, NULL, 'z', NULL, NULL` — the
+    four NULLs draw dim, the string 'NULL' does not; Show Value on the xml NULL
+    opens the popup, on `<a/>` a `y.xml` tab; Results To File wrote
+    `n,s,e,x,y` / `,NULL,"",,<a/>` / `1,,z,,`.
 
 ### Stage 6 — simplification and file splits (no behaviour change)
 
@@ -550,12 +634,121 @@ breaking signature has no gossms caller.
     shared plan-capture helper.
   - Then the Activity Monitor SQL move or live sweep, once decision 5 is made.
   - The `App` dialog registry stays optional.
+  - **Done, except the optional registry.** Decision 5 was made and moved
+    the Activity Monitor SQL into gosmo (below, after the deduplication).
+    - gosmo: `readByName` (`helpers.go`) is a whole by-name read — `q` on the
+      `*Server` or `*Database`, the family's `scanX(owner, scan)`, then
+      `foundRow`'s tail; 42 reads use it. `rowErr` is `foundRow`'s error half,
+      for a read that fills in more after the row; 16 reads end in it. Every
+      hand-rolled `ErrNoRows` check that meant not-found is now one of the two. Four that hand-roll it stay: there, no row
+      is an answer, not an error (`AgentInfo`, `mirroringCertificateName`,
+      `Table.DataSpace`, `BrokerQueue.MessageCount`). `TableByName`, the three
+      `isEnabled` reads and `scriptModule` used to return a driver error bare
+      and now wrap it "gosmo: …". gosmo CLAUDE.md § Row iteration says which
+      helper applies. Net −128 lines.
+    - Plan capture: gosmo's exported `StartPlanCapture(ctx, conn, PlanMode)`
+      switches SHOWPLAN_XML / STATISTICS XML on and returns `stop`, which
+      switches it off detached from ctx's cancellation and bounded at 5 s.
+      `capturePlan` and gossms's `runScript` both use it; `planCapture` is
+      now `gosmo.PlanMode`. The Messages pane's capture errors gain the
+      "gosmo: " prefix. Pins: `TestStartPlanCaptureSwitchesTheOptionOnAndOff`,
+      `TestStartPlanCaptureReportsBothFailures`.
+    - `dbFolderDialog[P]` (`new_object_dialog.go`) is the plan's
+      `dbFolderTarget`, made generic so it carries `show` and the folder
+      refresh as well as `dbName`/`node`: eight New dialogs embed it (asymmetric
+      key, certificate, symmetric key, database scoped credential, database
+      audit specification, column master key, column encryption key, user).
+      Statistics and Index stay as they are: they are table-scoped.
+    - `startFeed[S]` (`activity_monitor.go`) starts any of the three feeds;
+      each `amFeed` holds its `amRunner` (Collector, TempDBCollector or
+      Poller), so one `runFeed`, `feedStopped` and `feedError` replace three
+      of each, and `applyRate`/`applyPaused` are gone.
+    - Menus and loaders: `folderMenu` (31 folder menus: New Query, items,
+      Refresh), `agentToggleLeafMenu` (schedule, alert, operator), and
+      `listDatabaseChildren` (30 loaders that read the database, then list).
+    - T63 and T43 are done (see their items).
+    - `go test -race ./...`, `gofmt` and `go vet` (gosmo also `-tags livedb`)
+      clean; gosmo's live suite passes on win10cli 17 (812 s). tmux on win10cli 17: Estimated plan drew its graph, and the plain
+      F5 after it returned rows; Actual plan added its tab, and F5 with it off
+      again did not. Activity Monitor's activity and TempDB feeds collected,
+      paused and resumed, and the panel closed cleanly. In a throwaway
+      database: the User-Defined Data Types and Message Types folders listed
+      their objects, Message Type and Certificate Properties read theirs, and
+      New Certificate showed "Database: W27Scratch", saw the master key,
+      created `W27Cert` and reloaded Certificates. Schedules' folder menu
+      offered New Schedule; a throwaway schedule's menu went Disable → Enable
+      → Disable with the matching status. All dropped afterwards.
+    - **Activity Monitor SQL → gosmo** (decision 5). New `*Server` reads in
+      `server_activity.go` — `HasViewServerState`, `PerformanceCounters`
+      (filtered by counter and instance as parameters, instance prefix
+      stripped, `CounterType` exported), `WaitStats` (every wait),
+      `FileIOStats`, `MemoryClerks`, `RequestActivity`, `HostCPU` (zero with
+      no record yet) — and `tempdb_usage.go` — `TempDBSpace`, `TempDBFiles`,
+      `TempDBObjects`, `TempDBSessions`. `Schedulers` gained each scheduler's
+      load, so one read now gives the Activity Monitor both its pressure sums
+      and its load factors (two queries before). The tempdb core count is
+      `Info().LogicalCPUCount`, a query fewer each tick.
+      `internal/activity` reads through `Source`, which `*gosmo.Server`
+      satisfies; it keeps the counter list, the benign-wait filter (now in
+      Go: `isBenignWait`), the wait categories, the clerk groups, the rates
+      and the stores, and its tempdb types are aliases of gosmo's. The
+      collectors take a `Source`, not a `*sql.DB`. The Block and Sessions
+      procedures stay in gossms (sp_WhoIsActive is GPL-3.0). Recorded in
+      `docs/decisions.md`.
+    - Tests: gosmo's `server_activity_test.go` pins every read's column
+      mapping, the counter filter's SQL and the no-record HostCPU; the reads
+      are in `sweepMustCall`, with `PerformanceCounters` driven by hand
+      (filtered and not). gossms's collect and tempdb tests run against
+      `fakeSource`. The sweep's `QueryStoreQueryText` call now tolerates
+      not-found for its fallback query id: it failed on 17 when the scratch
+      store was still empty, which the earlier full run had not hit.
+    - Live: gosmo's `TestLiveVersionSweep` passes on SQL2016 (13), SQL2017
+      (14) and win10cli (17); gossms's `internal/activity` live tests
+      (`-tags livedb`, including the throwaway VIEW SERVER STATE-only login
+      and the procedure install) pass on all three. Managed Instance
+      pending.
 - **W28 — Remaining file splits.**
   - Split along the section comments, by exact line range. Diff byte-for-byte
     against the original, then delete the source.
   - One file per commit-sized change, each with its Package map row.
   - The gossms and gosmo lists are under § Simplification. Skip any file an
     earlier step already split.
+  - **Done.** Every range was moved by script and checked byte-for-byte
+    against the original before the source lost it; the only edits after
+    that are import blocks, one banner, and comments and tests that named
+    the old file.
+    - Skipped: `activity_monitor.go` (857) and `explorer_databases.go` (826)
+      are under the threshold since W27.
+    - gossms:
+      - `detail_browser.go` 1008 → 520: `detail_browser_runs.go` (495) takes
+        `detailRuns` and the fetch path (`fetch`, the `post*` and cache
+        writers, `fetchNodeDetails`, `fetchChildObjectsDetail`).
+        `readTimeoutSites` now counts one site in each file.
+      - `prop_dialog.go` 929 → 455: `prop_apply.go` (483) takes the write
+        path (`commitRename`, `applyRun`, `runApplySteps`, `applyPlan`,
+        `plannedApply`, and `validateDirty` through `runScript`).
+      - `propsheet/rows.go` 1024 → 253 (Section, Note, Hint, Static):
+        `textrow.go` (266), `choicerows.go` (411: Check, Select, Radio),
+        `buttonsrow.go` (124). The tuikit README file list is updated.
+    - gosmo:
+      - `backup.go` 1160 → 399 (Backup, Log backup chain): `restore.go`
+        (367: Restore and BackupHistory, its section) and
+        `backup_headers.go` (412: Backup device inspection).
+      - `query_store_reports.go` 1043 → 645 (result types, the reports,
+        wait statistics, plan forcing): `query_store_report_spec.go` (411:
+        the metric and statistic tables, options, `qsReportSpec` and the
+        shared SQL fragments).
+      - `index.go` 1049 → 450: `index_management.go` (608), its § Index
+        management.
+      - `connection.go` 1034 → 464 (options, `Connect`, address parsing):
+        `connection_dsn.go` (581: DSN and connector building, the extra
+        parameters, `ConnectionString`).
+      - `table.go` 1017 → 600: `table_columns.go` (425: § Columns and
+        § Column type builder).
+      - `scripter_table.go` 934 → 830: `column_type.go` (110), its
+        § Column type formatting.
+    - Live: none needed, no behaviour change; the full test suites and a
+      build of the binary are the check.
 
 ---
 
@@ -1057,6 +1250,11 @@ stderr. Checked on the built binary with stdin from `/dev/null`: it prints
 **Fix.** Add an `errorMode` flag that `computeColWidths` honours. Ship it
 with T38.
 
+**Done** (W24). `SetError` sets `errorMode`, `SetSource` clears it, and in
+it `computeColWidths` spans the rect (a dragged width still wins). The column
+now also tracks a resize, and a grid errored before its first layout no
+longer keeps a negative width. Pin: `TestSetErrorColumnTracksAResize`.
+
 ### T17 — Completion inserts reserved words unquoted — gossms — *confirmed*
 
 **Where:** `internal/tui/completion_candidates.go:401-406`; the
@@ -1223,7 +1421,7 @@ monthly, an owner, and a refused owner leaving no schedule) on 17, 14 and 13.
 | T33 | gossms | `treeview.go:299-301,326` | Right and `+` collapse an expanded node, against the comment and F1 help → `expandSelected()`. **Done** (W12); Enter still toggles. Pin: `TestTreeViewRightAndPlusNeverCollapse`. |
 | T34 | gossms | `showplan/parse.go:103,279,305,418` | `Trim(x,"[]")` doesn't un-double `]]`, so the Missing Index script names the wrong object → `gosmo.UnquoteName` (T36). **Done** (W14), with a local `unbracket` rather than gosmo: the package stays driver-free. Confirmed live on 17 that plan XML doubles `]`. Pins: `TestMissingIndexScriptKeepsABracketInAName`, `TestUnbracket`. |
 | T64 | gossms | `core/drawing.go:240-251` | The scrollbar thumb never reaches the bottom → `offset*(h-thumbH)/(total-visible)`. **Done** (W12): `core.scrollThumb`, shared by `DrawScrollbar` and `DrawScrollbarH`. `ScrollOffsetForDrag` had the twin defect — `y*total/h` topped out at 900 of 995 on a 10-row track over 1000 rows — and is now linear from the first row (0) to the last (`total-visible`). Pins: `TestScrollbarThumbSpansTheWholeTrack`; `TestScrollOffsetForDrag` unchanged. |
-| T65 | gossms | `core/clip_screen.go` | `FillArea` isn't clipped, and `charts.Canvas` panics on it. Latent, but blocks T51. |
+| T65 | gossms | `core/clip_screen.go` | `FillArea` isn't clipped, and `charts.Canvas` panics on it. Latent, but blocks T51. **Done** (W24): `ClipScreen.FillArea` intersects with the clip, `Canvas.FillArea` writes in bounds. Pins: `TestClipScreenFillAreaCoversOnlyTheClip`, `TestCanvasFillAreaFillsOnlyTheArea`. |
 | T66 | gossms | `core/strutil.go:356` | `EvRune` keeps only the first rune of a composed key (IME, ZWJ) → insert `[]rune(ev.Str())`. **Done** (W12): `core.EvText`, used by `Editor` (plain and block), `InputField` and the plan view's search; `EvRune` stays for key matching. Pins: `TestEditorInsertsAComposedKeyWhole`, `TestInputFieldInsertsAComposedKeyWhole`. |
 | T67 | gossms | `datagrid_draw.go` | CR, LF and TAB in a cell render glued together → map them to a space. **Done** (W12): `core.TruncateLine` (CR, LF, CRLF and TAB each one space, no copy without them) in every `datagrid_draw.go` cell path and in `computeColWidths`, so the column is sized as drawn. Pins: `TestTruncateLine`, `TestDataGridDrawsLineBreaksInACellAsSpaces`. |
 | T68 | gossms | `config/config.go:631` | A bad `gossms.key` blocks every save → write the sealed blobs back and refuse only new passwords. **Done** (W12): `Save` carries the key error into `mergeAndWrite`, which keeps every ciphertext as Load does (`keepSealed`), writes settings and connections, leaves out only passwords that would need the key (a re-entered one keeps its entry's old ciphertext), and then returns an error naming those connections. Pin: `TestABadKeyFileStillSavesEverythingButNewPasswords`. |
@@ -1424,14 +1622,14 @@ working session (the `dev-with-local-gosmo` skill).
 
 | ID | Repo | Where | Change |
 |---|---|---|---|
-| T38 | gossms | `datagrid.go:276-279`, `propsheet/gridrow.go:38` | `DataGrid.SetBounds` re-samples 200 rows and allocates every frame, against ui-rules ("SetBounds does nothing when the rect hasn't changed") → return early on an unchanged rect. Audit hosts that rely on the per-frame recompute. Includes T16. |
-| T51 | gossms | `core/drawing.go:102-115` | `putGrapheme`'s `[]rune` plus tcell's `SetContent` re-pack cost about 2 allocations per cell per frame → `s.Put`, plus `FillArea` in `FillRect`. Needs T65. Add a frame benchmark. |
+| T38 | gossms | `datagrid.go:276-279`, `propsheet/gridrow.go:38` | `DataGrid.SetBounds` re-samples 200 rows and allocates every frame, against ui-rules ("SetBounds does nothing when the rect hasn't changed") → return early on an unchanged rect. Audit hosts that rely on the per-frame recompute. Includes T16. **Done** (W24); see the step. Pins: `TestSetBoundsOnAnUnchangedRectDoesNotRescan`, `TestSettersThatChangeWidthsApplyWithoutARelayout`. |
+| T51 | gossms | `core/drawing.go:102-115` | `putGrapheme`'s `[]rune` plus tcell's `SetContent` re-pack cost about 2 allocations per cell per frame → `s.Put`, plus `FillArea` in `FillRect`. Needs T65. Add a frame benchmark. **Done** (W24), with `Put` in `FillRect` rather than `FillArea` (see the step), and `core.PutRune` (a static string table for ASCII and U+2500–U+259F) for every single-rune cell. `Canvas.Put` gained the single-rune fast path its `SetContent` had. Pin: `TestRuneStringIsStringOfRune`. |
 | T52 | gosmo | `procedure.go:190,280`, `view.go:46,86`, `function.go:40,83`, `trigger.go:35`, `rule_default.go:74` | Listings pull every module's `definition` (about 1,400 system procs) → drop it from listings, and keep it on `*ByName` / `Definition(ctx)`. **Breaking.** gossms rule/default sites at `detail_browser_programmability.go:140,155,306,318` switch to the by-name read. **Done** (W22): the field is gone from `*ByName` too; `Definition(ctx)` on all six types. |
 | T53 | gosmo | `catalog.go:119-150`, `security_policy.go:70-77`, `login.go:337-359` | `Catalog()` costs 4 round trips → 1 multi-result batch. `SecurityPolicies` runs N+1 → one grouped query. `UserMappings` does one per database → one batch with per-database TRY/CATCH (*plausible*; the parallel fan-out was already rejected). **Done** (W22): all three, live on 17 and 13. |
-| T55 | gossms | `sql_highlighter.go:234` | `ToUpper(string(…))` per word per frame → sqlparse's stack-scratch fold. |
-| T56 | gossms | `sqltext/split.go:32`, `xevent/filter.go:110` | `[]rune` of the whole script → a byte scan. `ToLower` per value per event → an allocation-free case-insensitive contains. |
+| T55 | gossms | `sql_highlighter.go:234` | `ToUpper(string(…))` per word per frame → sqlparse's stack-scratch fold. **Done** (W23): `isSQLKeyword`. Pins: `TestSQLHighlighterDoesNotAllocatePerWord` (11 allocations per line before, 2 now: the run slice and one growth) and `TestSQLKeywordsFitTheFoldBuffer`. |
+| T56 | gossms | `sqltext/split.go:32`, `xevent/filter.go:110` | `[]rune` of the whole script → a byte scan. `ToLower` per value per event → an allocation-free case-insensitive contains. **`SplitBatches` done** (W23), as a line scan rather than a byte scan: each line is decoded into one reused buffer and lexed with the carried `State`, so the cost is the longest line, and the rule stays `sqltext.Next`'s. The XEvent half is W24's. **XEvent half done** (W24): `containsLower`, `cutLowerPrefix` and `compareLower` fold as they read, and `parseNumber` turns away text before `ParseFloat` can allocate its error. Pins: `TestFoldedComparisonsMatchToLower`, `TestParseNumberMatchesParseFloat`, `TestFilterMatchDoesNotAllocate`. |
 | T57 | gossms | `internal/db/connection.go:153` | The capability UNION runs for Query, Activity Monitor and XEvent connections, which never read it → skip it for non-Explorer roles. **Done** (W16): `newServerConn` probes for `RoleExplorer` only; completion's per-database probe is lazy and unaffected. Pin: `TestOnlyExplorerConnectionsProbeServerCapabilities`. |
-| T58 | gossms | `options_dialog.go:321`, `query_store_panel_load.go:93`, `connect_dialog.go:494` | `config.Save` (lock, crypto, fsync) runs on the UI goroutine → save off-thread and post the result back. *Plausible stall.* |
+| T58 | gossms | `options_dialog.go:321`, `query_store_panel_load.go:93`, `connect_dialog.go:494` | `config.Save` (lock, crypto, fsync) runs on the UI goroutine → save off-thread and post the result back. *Plausible stall.* **Done** (W25); see the step. |
 
 ---
 
@@ -1445,15 +1643,42 @@ working session (the `dev-with-local-gosmo` skill).
   - sqlparse stops importing `tuikit/core` (word-rune rules move to
     `sqltext`).
   - About 2 days.
+  - **Done** (W23).
+    - `sqltext.Next` (`lexer.go`) is the lexer: one token per call, a
+      `State` (mode plus block-comment depth) carried between calls, so a
+      caller lexes a flat buffer or line by line and gets the same answer
+      (`TestLineByLineLexingMatchesFlat`).
+    - `SplitBatches`, `StatementAt` (the Ctrl+Enter splitter, moved from
+      `controls` with its tests unchanged), the highlighter and
+      `sqlparse.lexSQL` all walk text with it.
+    - `sqlparse` keeps its own DML splitter (the user's call): IntelliSense
+      scopes to DML statements, Ctrl+Enter to every statement verb. Both read
+      `sqltext`'s verb tables (`IsDMLLeader`, `EndsDML`, and
+      `statementLeaders` built from them), so the lists can't drift again.
+    - One word rule everywhere: `sqltext.IsWordRune`; a `#`/`@` sigil is one
+      or two of the same rune; a word starting with a digit is a number, which
+      now runs through `.` (`1.5` is one token, where sqlparse had three — no
+      golden output changed). The editor's completion trigger uses the same
+      rule. `core.IsWordRune` stays for Ctrl+arrow word navigation in any
+      text field, which is not a T-SQL rule.
+    - sqlparse no longer imports `tuikit/core`. `scope.go` is split along its
+      sections into `scope.go` (cursor context, FROM scope, clause),
+      `statement.go` (DML statement bounds) and `query.go` (the Query tree and
+      its parser), byte-for-byte apart from the headers.
 - **T44.** The highlighter ignores `[…]` and `"…"`: keywords inside them are
   coloured, and `/*` inside `[a/*b]` comments out the rest of the document.
-  Fixed by T54.
+  Fixed by T54. **Done** (W23): the highlighter colours `sqltext.Next`'s tokens, and its
+  line cache holds a `sqltext.State`, so a literal or identifier left open at
+  a line's end also carries onto the next (it used to end at the line).
+  Pin: `TestSQLHighlighterLexesQuotedIdentifiersAndCarriesLiterals`, 7 of 11
+  cases fail on the old code.
 - **T59 — Null-aware result model.** A per-set null bitmap in
   `query.ResultSet` and a `RowSource.IsNull(row,col)` capability.
   - tuikit stops dimming the literal `"NULL"` (`datagrid_draw.go:168,242,266`).
   - Grid, copy and CSV can tell NULL from `'NULL'`.
   - Also: `TreeView`'s hard-coded "Object Explorer" title
     (`treeview.go:197`) becomes `SetTitle`.
+  - **Done** (W26); see the step.
 - **T60 — One connection key.** Tracked queries key on
   `ToLower(Opts.Server)` (`config/tracked.go:120`) → `db.InstanceKey`. Fold
   this into T9's helper.
@@ -1514,6 +1739,11 @@ working session (the `dev-with-local-gosmo` skill).
     `dialogs` doesn't import `layout` (**T43**).
   - The README promises `SetBounds(x,y,w,h)`, but `Widgets`, `MenuBar` and
     `Toolbar` differ → document the exceptions.
+  - **Both done** (W27). The graph is now a per-package import list, checked
+    against `go list`; `layout → controls` is the tab strip's geometry, and
+    nothing imports `layout`. § Design principles names the two other
+    `SetBounds` shapes: `(x, y)` for the five leaf inputs, `(x, y, w)` for
+    `MenuBar` and `Toolbar`.
   - The false "mirrors exactly" comment in `sql_statement.go:55-57`.
   - `completion_relations_test.go:18` names the wrong narrowing function.
 
@@ -1525,11 +1755,18 @@ working session (the `dev-with-local-gosmo` skill).
   - `sqlparse.NarrowToDMLStatement` and `TokenizeRange` → move to `_test.go`,
     or label them as the oracle.
   - `TokenizeRangeFrom`'s always-`LexNormal` parameter → drop it.
+  - **Done** (W23). `TokenizeRangeFrom` is gone, and `TokenizeRange` is what
+    `PrefixCache` calls, so it is production code again. `NarrowToDMLStatement`
+    stays where it is, labelled as the oracle: `internal/tui`'s completion
+    tests call it too, and they can't see a `sqlparse` `_test.go`. `lexSQL`
+    lost its `initial` parameter the same way.
 - **T63 — `nameMap.Len`.** Only tests use it, so move it to `_test.go`.
+  **Done** (W27): it lives in `name_set_test.go`.
 - **gosmo generic by-name reader.**
   - About 60 `XByName` bodies are the same 8 lines, and about 25 sites
     hand-roll `errors.Is(err, sql.ErrNoRows)` instead of `foundRow`.
   - A `readByName[T]` saves about 400 lines. Not breaking.
+  - **Done** (W27); see the step.
 - **gossms dialog boilerplate.**
   - The five new-key/cert/spec/credential dialogs repeat the same
     `dbName`/`node`/`show`/refresh lines → embed a `dbFolderTarget`.
@@ -1537,25 +1774,28 @@ working session (the `dev-with-local-gosmo` skill).
     `startFeed[T]`.
   - The repeated menu and loader shapes (`agent_menu.go`, `alwayson_menu.go`,
     `explorer_programmability.go`, `explorer_service_broker.go`) → table-driven.
+  - **All three done** (W27); see the step.
 - **Optional:** an `App` dialog registry (`app.go:105-160, 504-571`). This
   stays inside `App`, since decisions.md closes package restructuring.
 - **Plan capture twice.** gosmo `capturePlan` and gossms `query.runScript`
   each have their own SET SHOWPLAN handling → an exported gosmo helper over a
-  `*sql.Conn`.
+  `*sql.Conn`. **Done** (W27): `gosmo.StartPlanCapture`.
 - **Activity Monitor DMV SQL is outside the version sweep.** About 15 raw
   queries in `internal/activity` never run under `TestLiveVersionSweep` on
   major 13 → move them to a gosmo monitor package, or add a gossms live sweep.
-  **Decision needed.**
+  **Done** (W27): moved into gosmo's root package (`server_activity.go`,
+  `tempdb_usage.go`), where the sweep reaches them; see the step.
 - **File splits** (a prompt to split, not a defect). Split along the
   existing section comments when a change lands. Each new `internal/tui` file
   needs its Package map row.
+  - **Done** (W28); see the step.
   - gossms:
     - `detail_browser.go` (990) → `detail_browser_runs.go`
     - `activity_monitor.go` (930) → collectors and feeds
     - `prop_dialog.go` (919) → `prop_apply.go`
     - `explorer_databases.go` (900) → `explorer_databases_menu.go`
     - `propsheet/rows.go` (1024)
-    - `sqlparse/scope.go` (1063, after T54)
+    - ~~`sqlparse/scope.go` (1063, after T54)~~ — done in W23
   - gosmo:
     - `backup.go` (1138) → backup, restore and backup_headers
     - `query_store_reports.go` (1046)
@@ -1584,3 +1824,4 @@ working session (the `dev-with-local-gosmo` skill).
    **Decided** (W11): replaced by Tab reaching the button row.
 5. **Activity Monitor SQL:** move it into gosmo, or add a gossms-side live
    sweep?
+   **Decided** (W27): move it into gosmo.

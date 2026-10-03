@@ -135,7 +135,7 @@ func (c *PrefixCache) Scan(lines [][]rune, buf []rune, cursorRow, upTo int, rev 
 		if n := len(c.starts); n > 0 {
 			resume = max(resume, c.starts[n-1].off)
 		}
-		lexSQL(buf, resume, upTo, false, LexNormal, nil, goScan{lo: 0, hi: rowStart},
+		lexSQL(buf, resume, upTo, false, nil, goScan{lo: 0, hi: rowStart},
 			func(off int, isGo bool) { c.bounds = append(c.bounds, boundary{off: off, isGo: isGo}) }, nil)
 		validTo = upTo
 	}
@@ -178,7 +178,7 @@ func (c *PrefixCache) Scan(lines [][]rune, buf []rune, cursorRow, upTo int, rev 
 			from = st.off
 		}
 	}
-	tokens, state, _, quoteStart := TokenizeRangeFrom(buf, from, upTo, false, LexNormal)
+	tokens, state, _, quoteStart := TokenizeRange(buf, from, upTo, false)
 	if upTo > c.startsTo {
 		// Below startsTo every start is known; past it, find them. A start
 		// at from is found again, so it is dropped first.

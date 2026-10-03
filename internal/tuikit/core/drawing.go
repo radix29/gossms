@@ -94,28 +94,66 @@ func DrawTextRight(s tcell.Screen, x, y, w int, style tcell.Style, text string) 
 }
 
 // putGrapheme writes a (possibly multi-rune) grapheme cluster to the screen
-// starting at (x,y). The first rune is the primary cell content; any
-// additional runes are passed as combining characters. Wide graphemes
-// (width 2) occupy two cells per tcell's SetContent contract — the second
-// cell is conventionally left for the terminal to render as part of the
-// wide glyph, so only the first cell receives content.
+// starting at (x,y). Wide graphemes (width 2) occupy two cells — the second
+// is left for the terminal to render as part of the wide glyph, so only the
+// first cell receives content.
+//
+// Put, not SetContent: tcell's SetContent re-packs its rune and combining
+// runes into a string for Put, an allocation per cell per frame on every
+// visible cell, and splitting the grapheme into runes for it was another.
 func putGrapheme(s tcell.Screen, x, y int, grapheme string, style tcell.Style) {
-	runes := []rune(grapheme)
-	if len(runes) == 0 {
+	if grapheme == "" {
 		return
 	}
-	var comb []rune
-	if len(runes) > 1 {
-		comb = runes[1:]
+	s.Put(x, y, grapheme, style)
+}
+
+// PutRune writes the single-rune grapheme r at (x,y) — SetContent(x, y, r,
+// nil, style) without SetContent's allocation (see putGrapheme). The cell
+// drawing in tuikit goes through here or putGrapheme, never SetContent.
+func PutRune(s tcell.Screen, x, y int, r rune, style tcell.Style) {
+	s.Put(x, y, RuneString(r), style)
+}
+
+// asciiRunes holds every ASCII character at its own index, so a one-byte
+// slice of it is the character as a string with no allocation.
+const asciiRunes = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f" +
+	"\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f" +
+	" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7f"
+
+// boxRunesFirst..boxRunesLast cover U+2500–U+259F, box drawing and block
+// elements: every border, separator, scrollbar and thumb tuikit draws.
+const boxRunesFirst, boxRunesLast = '\u2500', '\u259f'
+
+var boxRunes = func() (t [boxRunesLast - boxRunesFirst + 1]string) {
+	for i := range t {
+		t[i] = string(rune(boxRunesFirst + i))
 	}
-	s.SetContent(x, y, runes[0], comb, style)
+	return t
+}()
+
+// RuneString is string(r), without the allocation for ASCII and for the box
+// and block glyphs — the runes nearly every drawn cell holds.
+func RuneString(r rune) string {
+	switch {
+	case r >= 0 && r < 0x80:
+		return asciiRunes[r : r+1]
+	case r >= boxRunesFirst && r <= boxRunesLast:
+		return boxRunes[r-boxRunesFirst]
+	}
+	return string(r)
 }
 
 // FillRect fills a rectangle with the given rune and style.
+//
+// One Put per cell rather than tcell's FillArea: FillArea converts the rune to
+// a string for every cell it writes, where Put takes the one string built
+// here.
 func FillRect(s tcell.Screen, r Rect, ch rune, style tcell.Style) {
+	str := RuneString(ch)
 	for row := r.Y; row < r.Y+r.H; row++ {
 		for col := r.X; col < r.X+r.W; col++ {
-			s.SetContent(col, row, ch, nil, style)
+			s.Put(col, row, str, style)
 		}
 	}
 }
@@ -175,14 +213,14 @@ func BlendColor(a, b tcell.Color, num, den int) tcell.Color {
 // DrawHLine draws a horizontal line using '─'.
 func DrawHLine(s tcell.Screen, x, y, w int, style tcell.Style) {
 	for col := x; col < x+w; col++ {
-		s.SetContent(col, y, '─', nil, style)
+		PutRune(s, col, y, '─', style)
 	}
 }
 
 // DrawVLine draws a vertical line using '│'.
 func DrawVLine(s tcell.Screen, x, y, h int, style tcell.Style) {
 	for row := y; row < y+h; row++ {
-		s.SetContent(x, row, '│', nil, style)
+		PutRune(s, x, row, '│', style)
 	}
 }
 
@@ -206,17 +244,17 @@ func DrawBox(s tcell.Screen, r Rect, style tcell.Style) {
 // DrawBoxWith draws a box border around r with the given runes.
 func DrawBoxWith(s tcell.Screen, r Rect, style tcell.Style, b BoxRunes) {
 	x, y, w, h := r.X, r.Y, r.W, r.H
-	s.SetContent(x, y, b.TopLeft, nil, style)
-	s.SetContent(x+w-1, y, b.TopRight, nil, style)
-	s.SetContent(x, y+h-1, b.BottomLeft, nil, style)
-	s.SetContent(x+w-1, y+h-1, b.BottomRight, nil, style)
+	PutRune(s, x, y, b.TopLeft, style)
+	PutRune(s, x+w-1, y, b.TopRight, style)
+	PutRune(s, x, y+h-1, b.BottomLeft, style)
+	PutRune(s, x+w-1, y+h-1, b.BottomRight, style)
 	for col := x + 1; col < x+w-1; col++ {
-		s.SetContent(col, y, b.Horizontal, nil, style)
-		s.SetContent(col, y+h-1, b.Horizontal, nil, style)
+		PutRune(s, col, y, b.Horizontal, style)
+		PutRune(s, col, y+h-1, b.Horizontal, style)
 	}
 	for row := y + 1; row < y+h-1; row++ {
-		s.SetContent(x, row, b.Vertical, nil, style)
-		s.SetContent(x+w-1, row, b.Vertical, nil, style)
+		PutRune(s, x, row, b.Vertical, style)
+		PutRune(s, x+w-1, row, b.Vertical, style)
 	}
 }
 
@@ -239,7 +277,7 @@ func DrawBoxTitle(s tcell.Screen, r Rect, title string, borderStyle, titleStyle 
 // offset is the first visible item index.
 func DrawScrollbar(s tcell.Screen, x, y, h, total, visible, offset int, style, thumbStyle tcell.Style) {
 	for i := 0; i < h; i++ {
-		s.SetContent(x, y+i, '│', nil, style)
+		PutRune(s, x, y+i, '│', style)
 	}
 	if total <= visible || total == 0 {
 		return
@@ -247,7 +285,7 @@ func DrawScrollbar(s tcell.Screen, x, y, h, total, visible, offset int, style, t
 	thumbH, at := scrollThumb(h, total, visible, offset)
 	thumbY := y + at
 	for i := 0; i < thumbH && thumbY+i < y+h; i++ {
-		s.SetContent(x, thumbY+i, '█', nil, thumbStyle)
+		PutRune(s, x, thumbY+i, '█', thumbStyle)
 	}
 }
 
@@ -288,7 +326,7 @@ func ScrollOffsetForDrag(y, h, total, visible int) int {
 // PlanView's operator graph canvas) that scrolls sideways.
 func DrawScrollbarH(s tcell.Screen, x, y, w, total, visible, offset int, style, thumbStyle tcell.Style) {
 	for i := 0; i < w; i++ {
-		s.SetContent(x+i, y, '─', nil, style)
+		PutRune(s, x+i, y, '─', style)
 	}
 	if total <= visible || total == 0 {
 		return
@@ -296,7 +334,7 @@ func DrawScrollbarH(s tcell.Screen, x, y, w, total, visible, offset int, style, 
 	thumbW, at := scrollThumb(w, total, visible, offset)
 	thumbX := x + at
 	for i := 0; i < thumbW && thumbX+i < x+w; i++ {
-		s.SetContent(thumbX+i, y, '█', nil, thumbStyle)
+		PutRune(s, thumbX+i, y, '█', thumbStyle)
 	}
 }
 

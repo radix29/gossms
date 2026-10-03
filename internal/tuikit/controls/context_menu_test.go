@@ -2,6 +2,7 @@ package controls
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 )
@@ -19,6 +20,13 @@ type fakeMenuScreen struct {
 
 func (s *fakeMenuScreen) Size() (int, int) { return s.w, s.h }
 func (s *fakeMenuScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
+}
+
+// Put is how core draws a cell; it lands in SetContent like any other write.
+func (s *fakeMenuScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	r, n := utf8.DecodeRuneInString(str)
+	s.SetContent(x, y, r, nil, style)
+	return str[n:], 1
 }
 
 func TestContextMenuClickNearRightEdgeHitsClampedItem(t *testing.T) {

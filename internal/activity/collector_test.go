@@ -2,72 +2,10 @@ package activity
 
 import (
 	"context"
-	"database/sql"
-	"database/sql/driver"
-	"errors"
-	"io"
 	"sync"
 	"testing"
 	"time"
 )
-
-// deadConnector fails every dial, so the permission prologue errors and Run
-// returns before its select loop.
-type deadConnector struct{}
-
-func (deadConnector) Connect(context.Context) (driver.Conn, error) {
-	return nil, errors.New("activity_test: no connection")
-}
-
-func (deadConnector) Driver() driver.Driver { return nil }
-
-// probeOnceConnector answers the permission prologue and fails every other
-// query: an unreachable server with a live context.
-type probeOnceConnector struct{}
-
-func (probeOnceConnector) Connect(context.Context) (driver.Conn, error) {
-	return probeOnceConn{}, nil
-}
-
-func (probeOnceConnector) Driver() driver.Driver { return nil }
-
-type probeOnceConn struct{}
-
-func (probeOnceConn) Prepare(string) (driver.Stmt, error) {
-	return nil, errors.New("activity_test: prepare unsupported")
-}
-
-func (probeOnceConn) Close() error { return nil }
-
-func (probeOnceConn) Begin() (driver.Tx, error) {
-	return nil, errors.New("activity_test: transactions unsupported")
-}
-
-func (probeOnceConn) QueryContext(_ context.Context, q string, _ []driver.NamedValue) (driver.Rows, error) {
-	if q == permissionQuery {
-		return &oneIntRows{v: 1}, nil
-	}
-	return nil, errors.New("activity_test: server unreachable")
-}
-
-// oneIntRows is a single row with a single integer column.
-type oneIntRows struct {
-	v    int64
-	done bool
-}
-
-func (r *oneIntRows) Columns() []string { return []string{"ok"} }
-
-func (r *oneIntRows) Close() error { return nil }
-
-func (r *oneIntRows) Next(dest []driver.Value) error {
-	if r.done {
-		return io.EOF
-	}
-	r.done = true
-	dest[0] = r.v
-	return nil
-}
 
 // backoff's schedule is the retry policy, so it's pinned directly.
 func TestBackoffDoublesUntilCapped(t *testing.T) {
@@ -101,12 +39,11 @@ func TestBackoffDoublesUntilCapped(t *testing.T) {
 // A collector whose probes all fail must back off, not retry at the configured
 // rate forever (at 1ms, ~150 round trips in this window instead of ~8).
 func TestCollectorBacksOffWhenEveryProbeFails(t *testing.T) {
-	db := sql.OpenDB(probeOnceConnector{})
-	defer db.Close()
+	src := probeOnceSource()
 
 	var mu sync.Mutex
 	probes := 0
-	c := NewCollector(db, nil, func(error) {
+	c := NewCollector(src, nil, func(error) {
 		mu.Lock()
 		probes++
 		mu.Unlock()
@@ -133,11 +70,10 @@ func TestCollectorBacksOffWhenEveryProbeFails(t *testing.T) {
 // After Run returns, SetRate/SetPaused must not block: they run on the UI
 // goroutine and control's buffer is small.
 func TestCollectorSendAfterRunReturns(t *testing.T) {
-	db := sql.OpenDB(deadConnector{})
-	defer db.Close()
+	src := deadSource()
 
 	var failed error
-	c := NewCollector(db, nil, func(err error) { failed = err })
+	c := NewCollector(src, nil, func(err error) { failed = err })
 	c.Run(context.Background(), time.Second)
 	if failed == nil {
 		t.Fatal("Run returned without reporting the failed prologue")
@@ -160,11 +96,10 @@ func TestCollectorSendAfterRunReturns(t *testing.T) {
 }
 
 func TestTempDBCollectorSendAfterRunReturns(t *testing.T) {
-	db := sql.OpenDB(deadConnector{})
-	defer db.Close()
+	src := deadSource()
 
 	var failed error
-	c := NewTempDBCollector(db, nil, func(err error) { failed = err })
+	c := NewTempDBCollector(src, nil, func(err error) { failed = err })
 	c.Run(context.Background(), time.Second)
 	if failed == nil {
 		t.Fatal("Run returned without reporting the failed prologue")
@@ -207,13 +142,12 @@ func TestNormalizeRate(t *testing.T) {
 // A zero rate must not panic: time.NewTicker panics on it, and Run's goroutine
 // panicking takes down the app.
 func TestCollectorRunSurvivesANonPositiveRate(t *testing.T) {
-	db := sql.OpenDB(probeOnceConnector{})
-	defer db.Close()
+	src := probeOnceSource()
 
 	for _, rate := range []time.Duration{0, -time.Second} {
 		var mu sync.Mutex
 		probes := 0
-		c := NewCollector(db, nil, func(error) {
+		c := NewCollector(src, nil, func(error) {
 			mu.Lock()
 			probes++
 			mu.Unlock()
@@ -236,10 +170,9 @@ func TestCollectorRunSurvivesANonPositiveRate(t *testing.T) {
 // SetRate(0) reaches Ticker.Reset, which also panics; normalization on the
 // control path is the only guard.
 func TestCollectorSetRateSurvivesANonPositiveRate(t *testing.T) {
-	db := sql.OpenDB(probeOnceConnector{})
-	defer db.Close()
+	src := probeOnceSource()
 
-	c := NewCollector(db, nil, func(error) {})
+	c := NewCollector(src, nil, func(error) {})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -263,12 +196,11 @@ func TestCollectorSetRateSurvivesANonPositiveRate(t *testing.T) {
 // A SetRate must reach the ticker. Checked by timing, since a SetRate that
 // updates state but never resets the ticker is otherwise invisible.
 func TestCollectorSetRateReachesTheTicker(t *testing.T) {
-	db := sql.OpenDB(probeOnceConnector{})
-	defer db.Close()
+	src := probeOnceSource()
 
 	var mu sync.Mutex
 	probes := 0
-	c := NewCollector(db, nil, func(error) {
+	c := NewCollector(src, nil, func(error) {
 		mu.Lock()
 		probes++
 		mu.Unlock()
@@ -307,13 +239,12 @@ func TestCollectorSetRateReachesTheTicker(t *testing.T) {
 
 // Cancelling ctx (the dropped-connection path) must also close stop.
 func TestCollectorSendAfterContextCancel(t *testing.T) {
-	db := sql.OpenDB(deadConnector{})
-	defer db.Close()
+	src := deadSource()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	c := NewCollector(db, nil, func(error) {})
+	c := NewCollector(src, nil, func(error) {})
 	c.Run(ctx, time.Second)
 
 	done := make(chan struct{})
@@ -332,12 +263,11 @@ func TestCollectorSendAfterContextCancel(t *testing.T) {
 
 // Pause must stop reading and resume must restart it.
 func TestCollectorPauseStopsCollectionAndResumeRestartsIt(t *testing.T) {
-	db := sql.OpenDB(probeOnceConnector{})
-	defer db.Close()
+	src := probeOnceSource()
 
 	var mu sync.Mutex
 	probes := 0
-	c := NewCollector(db, nil, func(error) {
+	c := NewCollector(src, nil, func(error) {
 		mu.Lock()
 		probes++
 		mu.Unlock()
@@ -383,10 +313,9 @@ func TestCollectorPauseStopsCollectionAndResumeRestartsIt(t *testing.T) {
 // Stop must end a paused collector too; pausing removes the tick, so Stop can't
 // be handled only there.
 func TestCollectorStopEndsAPausedRun(t *testing.T) {
-	db := sql.OpenDB(probeOnceConnector{})
-	defer db.Close()
+	src := probeOnceSource()
 
-	c := NewCollector(db, nil, func(error) {})
+	c := NewCollector(src, nil, func(error) {})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

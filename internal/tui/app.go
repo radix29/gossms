@@ -171,6 +171,8 @@ type App struct {
 
 	connections []*db.ServerConn
 	cfg         *config.Config
+	// saves is the background config and tracked-query saves (app_saves.go).
+	saves appSaves
 
 	// savedFilters remembers each filtered folder's nodeFilter by identity
 	// rather than node pointer (see filterKey), so reconnecting within a

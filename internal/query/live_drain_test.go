@@ -197,9 +197,9 @@ type liveEndFailSink struct {
 	rows int
 }
 
-func (s *liveEndFailSink) BeginSet([]string) error { s.sets++; return nil }
-func (s *liveEndFailSink) Row([]string) error      { s.rows++; return nil }
-func (s *liveEndFailSink) EndSet(int) error        { return errors.New("end failed") }
+func (s *liveEndFailSink) BeginSet([]string) error    { s.sets++; return nil }
+func (s *liveEndFailSink) Row([]string, []bool) error { s.rows++; return nil }
+func (s *liveEndFailSink) EndSet(int) error           { return errors.New("end failed") }
 
 // A sink failing only at EndSet has read its set to the end, so nothing may be
 // drained; draining eats the rest of the batch, losing every later set of an

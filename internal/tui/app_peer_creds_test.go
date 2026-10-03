@@ -191,6 +191,7 @@ func TestShortHostKeyOnlyAliasesADottedHost(t *testing.T) {
 func TestPeerCredentialsSkipAPasswordThisSessionCannotRead(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	waitForSavesAtCleanup(t)
 	cfgDir := filepath.Join(dir, "gossms")
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)

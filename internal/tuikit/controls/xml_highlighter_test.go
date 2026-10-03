@@ -209,7 +209,7 @@ func TestXMLHighlighterIncrementalCacheMatchesFullReplay(t *testing.T) {
 // of edits that open and close comments and CDATA sections. xmlOpenBlock has
 // no callers outside this test and exists for it — it is the reference
 // implementation the cache is required to agree with, the role
-// blockCommentDepthAt plays for SQL in highlighter_cache_test.go.
+// lineStateAt plays for SQL in highlighter_cache_test.go.
 func TestXMLPrefixStatesMatchFullReplayAcrossEdits(t *testing.T) {
 	e := NewEditor(nil)
 	e.SetBounds(0, 0, 80, 20)
@@ -283,15 +283,14 @@ func TestXMLHighlighterCacheFallsBackOnNonContiguousJump(t *testing.T) {
 // unterminated <!-- --> comment or <![CDATA[ ]]> section carried over from
 // an earlier line, or xmlNone. Found by replaying every line before it and
 // toggling state on each construct's start/end delimiter — the same role
-// blockCommentDepthAt plays in sql_highlighter.go, over three states rather
-// than two.
+// lineStateAt plays for SQL in highlighter_cache_test.go.
 //
 // XMLHighlighter does not call it: it reads prefixStates instead, which
 // answers the same question in O(1) per line. This is the O(idx) reference
 // implementation that cache is required to agree with, and the only caller
 // is TestXMLPrefixStatesMatchFullReplayAcrossEdits, which checks exactly
 // that after each edit. Same role, and same lack of production callers, as
-// blockCommentDepthAt on the SQL side.
+// lineStateAt on the SQL side.
 func xmlOpenBlock(lines [][]rune, idx int) xmlBlockState {
 	state := xmlNone
 	for i := 0; i < idx; i++ {

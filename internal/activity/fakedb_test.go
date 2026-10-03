@@ -12,13 +12,12 @@ import (
 	"testing"
 )
 
-// A scripted *sql.DB for the DMV readers. Each collect* function is a query and
-// a scan, and a mis-scanned column stays plausible without error, so tests
-// script the rows and assert exact values.
+// A scripted *sql.DB for the helper procedures (proc.go), the one part of this
+// package that still sends its own SQL; the DMV readings come through Source
+// (fakesource_test.go).
 //
-// Replies are keyed by query constant (cpuUsageQuery, schedQuery, ...). An
-// unscripted query errors, naming itself — a silently empty read is exactly
-// what these tests catch.
+// Replies are keyed by exact query text. An unscripted query errors, naming
+// itself — a silently empty read is exactly what these tests catch.
 
 // reply is one scripted answer. err, if set, is returned instead of rows.
 type reply struct {
@@ -28,15 +27,11 @@ type reply struct {
 }
 
 // scriptedDB returns an *sql.DB answering from answers, plus a log of
-// statements received. The permission prologue is answered automatically.
+// statements received.
 func scriptedDB(t *testing.T, answers map[string]reply) (*sql.DB, *stmtLog) {
 	t.Helper()
 	log := &stmtLog{}
-	full := map[string]reply{permissionQuery: {cols: []string{"ok"}, rows: [][]driver.Value{{int64(1)}}}}
-	for q, r := range answers {
-		full[q] = r
-	}
-	db := sql.OpenDB(scriptedConnector{answers: full, log: log})
+	db := sql.OpenDB(scriptedConnector{answers: answers, log: log})
 	t.Cleanup(func() { db.Close() })
 	return db, log
 }

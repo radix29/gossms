@@ -111,14 +111,10 @@ func loadServerAuditSpecificationsChildren(l loaderCtx, node *explorerNode) ([]*
 // (explorer_loaders.go).
 
 func loginsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Login...", Action: func() { a.showNewLoginDialog(sc) }},
 			sc, "", gate.AlterAnyLogin),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func loginMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -134,14 +130,10 @@ func serverRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 }
 
 func credentialsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Credential...", Action: func() { a.showNewCredentialDialog(sc) }},
 			sc, "", gate.AlterAnyCredential),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func credentialMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -151,14 +143,10 @@ func credentialMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 }
 
 func auditsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Audit...", Action: func() { a.showNewAuditDialog(sc) }},
 			sc, "", gate.AlterAnyAudit),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func auditMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -175,15 +163,11 @@ func auditMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 }
 
 func serverAuditSpecificationsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Server Audit Specification...",
 			Action: func() { a.showNewServerAuditSpecificationDialog(sc) }},
 			sc, "", gate.AlterAnyAudit),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func serverAuditSpecificationMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {

@@ -3,9 +3,10 @@
 // statement the cursor sits in, and reports what that statement puts in
 // scope.
 //
-// This is a lexical approximation, not a T-SQL parser — the same spirit as
-// controls.Editor.SelectStatementAtCursor (tuikit/controls/sql_statement.go).
-// It recognises enough of the grammar (comments, string and quoted-identifier
+// The lexing itself is sqltext.Next, the lexer the executor splits batches by
+// and the editor selects statements and colours text by; this package turns
+// its output into Tokens. Like sqltext.StatementAt, it is a lexical
+// approximation, not a T-SQL parser: it recognises enough of the grammar (comments, string and quoted-identifier
 // literals, GO batch separators, FROM/JOIN/WHERE/... clause keywords,
 // dot-qualified names) to get common queries right; anything genuinely
 // ambiguous is reported as unknown rather than guessed at.

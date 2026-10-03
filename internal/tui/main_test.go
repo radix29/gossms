@@ -19,6 +19,7 @@ func TestMain(m *testing.M) {
 	}
 	config.UseTrackedQueries(config.LoadTrackedQueriesFrom(filepath.Join(dir, "tracked_queries.json")))
 	code := m.Run()
+	savesInFlight.Wait() // a Track Query's save may still be writing there
 	os.RemoveAll(dir)
 	os.Exit(code)
 }

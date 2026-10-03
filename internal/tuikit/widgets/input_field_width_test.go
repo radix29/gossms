@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -33,6 +34,13 @@ func (s *fieldScreen) Size() (int, int) { return s.w, s.h }
 func (s *fieldScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
 	s.runes[[2]int{x, y}] = primary
 	s.styles[[2]int{x, y}] = style
+}
+
+// Put is how core draws a cell; it lands in SetContent like any other write.
+func (s *fieldScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	r, n := utf8.DecodeRuneInString(str)
+	s.SetContent(x, y, r, nil, style)
+	return str[n:], 1
 }
 func (s *fieldScreen) ShowCursor(x, y int) {}
 

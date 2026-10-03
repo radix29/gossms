@@ -125,38 +125,22 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 
 // NewUserDialog is the New User dialog.
 type NewUserDialog struct {
-	newObjectDialog[nuserPrefetch]
-
-	// dbName is the database the user is created in, and node the Users
-	// folder to refresh afterwards — set by show, before the prefetch that
-	// reads them, as NewCertificateDialog does.
-	dbName string
-	node   *explorerNode
+	dbFolderDialog[nuserPrefetch]
 }
 
 // NewNewUserDialog creates the dialog and wires its callbacks.
 func NewNewUserDialog(app *App) *NewUserDialog {
 	d := &NewUserDialog{}
-	d.init(app, newObjectConfig[nuserPrefetch]{
+	d.initInFolder(app, newObjectConfig[nuserPrefetch]{
 		title: "New User",
 		noun:  "User",
 		pages: []string{"General", "Owned Schemas", "Membership"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*nuserPrefetch, error) {
 			return fetchNewUserPrefetch(ctx, sc, d.dbName)
 		},
-		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, sameNodeAs(d.node)) },
+		build: d.buildPages,
 	})
 	return d
-}
-
-// show opens the dialog for one database's Users folder.
-func (d *NewUserDialog) show(sc *db.ServerConn, node *explorerNode) {
-	d.dbName = node.data.DBName
-	d.node = node
-	d.scriptDatabase = d.dbName
-	d.newObjectDialog.show(sc)
-	d.SetHeader("Instance: "+sc.Opts.Server, "Database: "+d.dbName)
 }
 
 func (d *NewUserDialog) buildPages(pf *nuserPrefetch) {

@@ -174,14 +174,10 @@ func endpointStateLabel(state string) string {
 // (explorer_loaders.go).
 
 func backupDevicesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Backup Device...", Action: func() { a.showNewBackupDeviceDialog(sc) }},
 			sc, "", gate.DiskAdmin),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func backupDeviceMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -229,15 +225,11 @@ func endpointMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 }
 
 func managementMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
-		{Label: "View SQL Server Log", Action: func() {
+	return folderMenu(newQuery, refresh,
+		controls.MenuItem{Label: "View SQL Server Log", Action: func() {
 			a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
 		}},
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func errorLogsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -245,15 +237,11 @@ func errorLogsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 	if node.data.Type == NodeAgentErrorLogs {
 		logType = gosmo.ErrorLogAgent
 	}
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
-		{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
+	return folderMenu(newQuery, refresh,
+		controls.MenuItem{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
 		gate.Item(controls.MenuItem{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
 			sc, "", gate.Sysadmin),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func errorLogMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/sqltext"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -220,7 +221,7 @@ func (e *Editor) canAutoOpenCompletion() bool {
 		return false
 	}
 	start := e.cursorCol
-	for start > 0 && core.IsWordRune(line[start-1]) {
+	for start > 0 && sqltext.IsWordRune(line[start-1]) {
 		start--
 	}
 	if start == e.cursorCol {
@@ -242,7 +243,7 @@ func (e *Editor) currentTokenStart() int {
 	}
 	line := e.doc.Line(e.cursorRow)
 	i := core.Clamp(e.cursorCol, 0, len(line))
-	for i > 0 && core.IsWordRune(line[i-1]) {
+	for i > 0 && sqltext.IsWordRune(line[i-1]) {
 		i--
 	}
 	return i
@@ -589,7 +590,7 @@ func (e *Editor) DrawOverlay(s tcell.Screen) {
 
 		x := rect.X
 		if item.Icon != 0 {
-			s.SetContent(x, y, item.Icon, nil, st)
+			core.PutRune(s, x, y, item.Icon, st)
 		}
 		x += 2
 		core.DrawTextClipped(s, x, y, labelW, st, item.Label)

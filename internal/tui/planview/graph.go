@@ -214,7 +214,7 @@ func putClipped(s tcell.Screen, viewport core.Rect, x, y int, ch rune, style tce
 	if x < viewport.X || x >= viewport.Right() || y < viewport.Y || y >= viewport.Bottom() {
 		return
 	}
-	s.SetContent(x, y, ch, nil, style)
+	core.PutRune(s, x, y, ch, style)
 }
 
 func hlineClipped(s tcell.Screen, viewport core.Rect, x, y, w int, style tcell.Style) {

@@ -1,9 +1,6 @@
 package activity
 
-import (
-	"context"
-	"database/sql"
-)
+import "context"
 
 // MemoryComponent is one slice of the memory-composition bar, in MB.
 type MemoryComponent struct {
@@ -47,35 +44,21 @@ var clerkGroups = map[string]string{
 	"MEMORYCLERK_SQLQERESERVATION": memQueryGrants,
 }
 
-const clerkQuery = `
-SELECT type, SUM(pages_kb) / 1024.0
-FROM sys.dm_os_memory_clerks
-GROUP BY type`
-
 // collectMemory reads memory clerks grouped for the composition bar, in display
 // order; an empty group is absent.
-func collectMemory(ctx context.Context, db *sql.DB) ([]MemoryComponent, error) {
-	rows, err := db.QueryContext(ctx, clerkQuery)
+func collectMemory(ctx context.Context, src Source) ([]MemoryComponent, error) {
+	clerks, err := src.MemoryClerks(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	totals := map[string]float64{}
-	for rows.Next() {
-		var clerk string
-		var mb float64
-		if err := rows.Scan(&clerk, &mb); err != nil {
-			return nil, err
-		}
-		group, ok := clerkGroups[clerk]
+	for _, c := range clerks {
+		group, ok := clerkGroups[c.Type]
 		if !ok {
 			group = memOther
 		}
-		totals[group] += mb
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+		totals[group] += c.MB
 	}
 
 	out := make([]MemoryComponent, 0, len(memoryOrder))

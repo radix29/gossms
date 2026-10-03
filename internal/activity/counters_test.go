@@ -1,9 +1,10 @@
 package activity
 
 import (
-	"strings"
 	"testing"
 	"time"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 func set(rows ...counterRow) counterSet {
@@ -17,23 +18,11 @@ func set(rows ...counterRow) counterSet {
 type counterRow struct {
 	object, counter, instance string
 	value                     int64
-	typ                       int
+	typ                       gosmo.CounterType
 }
 
-// Both queries drop rows for named instances (per-database, per-cache-type),
-// which nothing reads.
-func TestCounterQueriesFilterToTheInstancesRead(t *testing.T) {
-	for name, q := range map[string]string{
-		"activity": counterQuery,
-		"tempdb":   tempdbCounterQuery,
-	} {
-		if !strings.Contains(q, "RTRIM(instance_name) IN ('', '_Total')") {
-			t.Errorf("the %s counter query does not filter by instance:\n%s", name, q)
-		}
-	}
-}
-
-// Premise of the filter: Derive reads only unnamed-instance or _Total rows. A
+// Premise of the counterInstances filter: Derive reads only unnamed-instance
+// or _Total rows. A
 // wild per-database value proves it's neither summed nor preferred.
 func TestDeriveReadsOnlyUnnamedAndTotalInstances(t *testing.T) {
 	start := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
@@ -67,21 +56,6 @@ func TestDeriveReadsOnlyUnnamedAndTotalInstances(t *testing.T) {
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s = %v, want %v", tc.what, tc.got, tc.want)
-		}
-	}
-}
-
-// Named instances publish "MSSQL$INST:..." instead of "SQLServer:..."; a
-// full-string match silently finds nothing.
-func TestObjectNameStripsTheInstancePrefix(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"SQLServer:Buffer Manager", "Buffer Manager"},
-		{"MSSQL$PROD01:Buffer Manager", "Buffer Manager"},
-		{"MSSQL$PROD01:SQL Statistics ", "SQL Statistics"},
-		{"Buffer Manager", "Buffer Manager"},
-	} {
-		if got := objectName(tc.in); got != tc.want {
-			t.Errorf("objectName(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
@@ -180,18 +154,6 @@ func TestCounterValueHandlesMissingAndDegenerateInput(t *testing.T) {
 	c := set(counterRow{objBufferMgr, "Buffer cache hit ratio", "", 97, cntrFraction})
 	if got := c.value(nil, objBufferMgr, "Buffer cache hit ratio", "", 2); got != 0 {
 		t.Errorf("fraction counter with no base = %v, want 0", got)
-	}
-}
-
-// The query is built from a list; a mis-quoted name is a runtime syntax error.
-func TestCounterQueryQuotesEveryName(t *testing.T) {
-	if got := quotedList([]string{"a", "b's"}); got != "'a', 'b''s'" {
-		t.Errorf("quotedList = %q, want the apostrophe doubled", got)
-	}
-	for _, name := range counterNames {
-		if !strings.Contains(counterQuery, "'"+name+"'") {
-			t.Errorf("counter %q is missing from the collection query", name)
-		}
 	}
 }
 

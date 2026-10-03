@@ -1,9 +1,6 @@
 package activity
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestCategorizeGroupsByWaitFamily(t *testing.T) {
 	for wait, want := range map[string]WaitCategory{
@@ -98,15 +95,15 @@ func TestWaitDeltasWithNoElapsedTime(t *testing.T) {
 
 // These waits accumulate on an idle server and one dwarfs the panel.
 // PWAIT_EXTENSIBILITY_CLEANUP_TASK on SQL Server 2025 reports 300,000 ms in one
-// 2s sample — hence family patterns.
-func TestBackgroundWaitsAreExcludedFromTheQuery(t *testing.T) {
+// 2s sample — hence family prefixes.
+func TestBackgroundWaitsAreExcluded(t *testing.T) {
 	for _, w := range []string{
 		"PWAIT_EXTENSIBILITY_CLEANUP_TASK", "LAZYWRITER_SLEEP", "XE_TIMER_EVENT",
 		"WAITFOR", "SLEEP_TASK", "QDS_ASYNC_QUEUE", "HADR_WORK_QUEUE",
 		"BROKER_TO_FLUSH", "SQLTRACE_WAIT_ENTRIES", "CLR_AUTO_EVENT",
 		"WAIT_XTP_HOST_WAIT", "CHECKPOINT_QUEUE",
 	} {
-		if !excludedByQuery(w) {
+		if !isBenignWait(w) {
 			t.Errorf("%s is not excluded; it accumulates constantly on an idle server", w)
 		}
 	}
@@ -118,25 +115,8 @@ func TestRealWaitsSurviveTheExclusions(t *testing.T) {
 		"LCK_M_X", "PAGEIOLATCH_SH", "WRITELOG", "SOS_SCHEDULER_YIELD",
 		"CXPACKET", "RESOURCE_SEMAPHORE", "ASYNC_NETWORK_IO", "THREADPOOL",
 	} {
-		if excludedByQuery(w) {
+		if isBenignWait(w) {
 			t.Errorf("%s is excluded, but it is a wait worth showing", w)
 		}
 	}
-}
-
-// excludedByQuery mirrors the query's NOT IN / NOT LIKE clauses for one wait
-// type.
-func excludedByQuery(name string) bool {
-	for _, b := range benignWaits {
-		if b == name {
-			return true
-		}
-	}
-	for _, family := range benignFamilies {
-		prefix := strings.TrimSuffix(strings.ReplaceAll(family, "\\_", "_"), "%")
-		if strings.HasPrefix(name, prefix) {
-			return true
-		}
-	}
-	return false
 }

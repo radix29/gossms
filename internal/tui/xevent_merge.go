@@ -47,13 +47,9 @@ const xeMergeHelpAzure = "Reads every Extended Events file matching a pattern an
 
 // extendedEventsMenuItems is the Extended Events folder's menu.
 func extendedEventsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
-		{Label: "Merge Extended Event Files...", Action: func() { a.promptMergeXEventFiles(sc) }},
-		{Divider: true},
-		refresh,
-	}
+	return folderMenu(newQuery, refresh,
+		controls.MenuItem{Label: "Merge Extended Event Files...", Action: func() { a.promptMergeXEventFiles(sc) }},
+	)
 }
 
 // promptMergeXEventFilesActive is File > Merge Extended Event Files, on the

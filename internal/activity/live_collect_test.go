@@ -1,11 +1,10 @@
 //go:build livedb
 
-// Live coverage of every query this package sends (ARCH-4). These DMV reads
-// bypass gosmo's TestLiveVersionSweep, and the scripted driver only proves the
-// scans, not that a column, counter or view exists on a version.
-//
-// A counter missing on a version reads 0, not an error, so each test asserts
-// the reading is present. Run on 13, 14, 17 and MI:
+// Live coverage of what this package does with gosmo's readings, and of the
+// helper procedures it installs (ARCH-4). gosmo's TestLiveVersionSweep proves
+// each reading runs on a version; these prove the readings this package needs
+// are in it — a counter missing on a version reads 0, not an error, so each
+// test asserts the reading is present. Run on 13, 14, 17 and MI:
 //
 //	go test -tags livedb ./internal/activity/ -run TestLive -v \
 //	  -livedb 'sqlserver://sa:PASS@host?TrustServerCertificate=true'
@@ -27,6 +26,7 @@ import (
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
+	gosmo "github.com/radix29/gosmo"
 )
 
 var liveDSN = flag.String("livedb", "", "SQL Server DSN for the live Activity Monitor tests")
@@ -45,6 +45,17 @@ func liveDB(t *testing.T) (*sql.DB, context.Context) {
 	return db, ctx
 }
 
+// liveServer wraps db as the Source the collectors read. db stays the test's to
+// close; the Server is never closed, so it can't close db first.
+func liveServer(t *testing.T, ctx context.Context, db *sql.DB) *gosmo.Server {
+	t.Helper()
+	srv, err := gosmo.NewServer(ctx, db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	return srv
+}
+
 // requireCounters fails for each name in want missing from set, looked up as
 // value() does (instance prefix stripped).
 func requireCounters(t *testing.T, set counterSet, want []string) {
@@ -53,7 +64,7 @@ func requireCounters(t *testing.T, set counterSet, want []string) {
 	for k, v := range set {
 		have[k.counter] = v
 	}
-	known := []int{cntrRawGauge, cntrPerSecond, cntrPerSecondAlt, cntrFraction, cntrAverageBulk, cntrBase}
+	known := []gosmo.CounterType{cntrRawGauge, cntrPerSecond, cntrPerSecondAlt, cntrFraction, cntrAverageBulk, cntrBase}
 	for _, name := range want {
 		v, ok := have[name]
 		if !ok {
@@ -68,13 +79,14 @@ func requireCounters(t *testing.T, set counterSet, want []string) {
 
 func TestLiveCollectReadsEverything(t *testing.T) {
 	db, ctx := liveDB(t)
+	srv := liveServer(t, ctx, db)
 
-	first, err := Collect(ctx, db)
+	first, err := Collect(ctx, srv)
 	if err != nil {
 		t.Fatalf("first Collect: %v", err)
 	}
 	time.Sleep(time.Second)
-	cur, err := Collect(ctx, db)
+	cur, err := Collect(ctx, srv)
 	if err != nil {
 		t.Fatalf("second Collect: %v", err)
 	}
@@ -107,7 +119,7 @@ func TestLiveCollectReadsEverything(t *testing.T) {
 	}
 
 	s := Derive(first, cur)
-	// Collect sends eight batches itself, so the rate can't be zero if the
+	// Collect sends seven batches itself, so the rate can't be zero if the
 	// counter is read.
 	if s.BatchesSec <= 0 {
 		t.Errorf("Batch Requests/sec = %v, want > 0 across two Collects", s.BatchesSec)
@@ -146,12 +158,13 @@ func TestLiveCollectTempDB(t *testing.T) {
 		t.Fatalf("temp table: %v", err)
 	}
 
-	first, err := collectTempDB(ctx, db)
+	srv := liveServer(t, ctx, db)
+	first, err := collectTempDB(ctx, srv)
 	if err != nil {
 		t.Fatalf("first collectTempDB: %v", err)
 	}
 	time.Sleep(500 * time.Millisecond)
-	cur, err := collectTempDB(ctx, db)
+	cur, err := collectTempDB(ctx, srv)
 	if err != nil {
 		t.Fatalf("second collectTempDB: %v", err)
 	}
@@ -222,7 +235,7 @@ func TestLiveViewServerStateIsTheWholeGate(t *testing.T) {
 	db, name := withLogin(t, ctx, admin)
 
 	var got []error
-	c := NewCollector(db, func(Sample) { t.Error("a sample arrived without VIEW SERVER STATE") },
+	c := NewCollector(liveServer(t, ctx, db), func(Sample) { t.Error("a sample arrived without VIEW SERVER STATE") },
 		func(err error) { got = append(got, err) })
 	c.Run(ctx, time.Second) // returns once the prologue refuses
 	if len(got) != 1 || !errors.Is(got[0], ErrNoPermission) {
@@ -242,10 +255,11 @@ func TestLiveViewServerStateIsTheWholeGate(t *testing.T) {
 	}
 	defer db.Close()
 
-	if ok, err := HasViewServerState(ctx, db); err != nil || !ok {
+	srv := liveServer(t, ctx, db)
+	if ok, err := srv.HasViewServerState(ctx); err != nil || !ok {
 		t.Fatalf("HasViewServerState after the grant = %v, %v", ok, err)
 	}
-	snap, err := Collect(ctx, db)
+	snap, err := Collect(ctx, srv)
 	if err != nil {
 		t.Fatalf("Collect as a VIEW SERVER STATE-only login: %v", err)
 	}
@@ -253,7 +267,7 @@ func TestLiveViewServerStateIsTheWholeGate(t *testing.T) {
 	if len(snap.Files) == 0 || len(snap.Memory) == 0 {
 		t.Errorf("file I/O (%d) or memory (%d) came back empty for the lesser login", len(snap.Files), len(snap.Memory))
 	}
-	td, err := collectTempDB(ctx, db)
+	td, err := collectTempDB(ctx, srv)
 	if err != nil {
 		t.Fatalf("collectTempDB as a VIEW SERVER STATE-only login: %v", err)
 	}

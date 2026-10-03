@@ -268,9 +268,11 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 	// Re-applied per result, like QueryPanel.renderActiveTab, so Options' max
 	// cell length reaches this grid.
 	pt.grid.SetMaxCellWidth(pt.am.app.cfg.MaxCellLength + 2)
-	// resetGrid, not SetData: same columns, so keep dragged widths; different
-	// sessions, so don't keep the cursor row.
-	resetGrid(pt.grid, set.Columns, set.Rows, 0)
+	// Preserving the view, not SetSource: same columns, so keep dragged
+	// widths; different sessions, so don't keep the cursor row. The set itself
+	// is the source, so its NULLs draw dimmed.
+	pt.grid.SetSourcePreservingView(set.Columns, set)
+	pt.grid.SetSelectedRow(0)
 	pt.setStatus(fmt.Sprintf("%d row(s)  %s  (%s)",
 		len(set.Rows), time.Now().Format("15:04:05"), qualified))
 }

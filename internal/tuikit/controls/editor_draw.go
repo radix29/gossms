@@ -210,7 +210,7 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 	if i < n && col < r.fromCol {
 		st := r.styleForRune(i)
 		for c := r.fromCol; c < col+core.RuneWidth(r.line[i]) && sx < r.w; c++ {
-			s.SetContent(r.x+sx, r.y, ' ', nil, st)
+			core.PutRune(s, r.x+sx, r.y, ' ', st)
 			sx++
 		}
 		i++
@@ -221,7 +221,7 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 		if i >= n {
 			// Past the end of the drawn range: one virtual column per cell, so
 			// index and column stay in step for the selection test above.
-			s.SetContent(r.x+sx, r.y, ' ', nil, st)
+			core.PutRune(s, r.x+sx, r.y, ' ', st)
 			sx++
 			i++
 			continue
@@ -238,11 +238,11 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 		if sx+rw > r.w {
 			// Clipped by the right edge — blanks, never half a glyph.
 			for ; sx < r.w; sx++ {
-				s.SetContent(r.x+sx, r.y, ' ', nil, st)
+				core.PutRune(s, r.x+sx, r.y, ' ', st)
 			}
 			break
 		}
-		s.SetContent(r.x+sx, r.y, ch, nil, st)
+		core.PutRune(s, r.x+sx, r.y, ch, st)
 		sx += rw
 		i++
 	}

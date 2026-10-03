@@ -234,8 +234,8 @@ func (f *InputField) Draw(s tcell.Screen) {
 		borderColor = p.InputFocused
 	}
 	borderStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(borderColor)
-	s.SetContent(ix, f.rect.Y, '[', nil, borderStyle)
-	s.SetContent(ix+f.rect.W+1, f.rect.Y, ']', nil, borderStyle)
+	core.PutRune(s, ix, f.rect.Y, '[', borderStyle)
+	core.PutRune(s, ix+f.rect.W+1, f.rect.Y, ']', borderStyle)
 
 	runes := f.displayRunes()
 	inputStyle := theme.StyleInput()
@@ -277,7 +277,7 @@ func (f *InputField) Draw(s tcell.Screen) {
 	// is not a glyph — blank it rather than emit half a character.
 	if i < len(runes) && col < f.scroll {
 		for c := f.scroll; c < col+core.RuneWidth(runes[i]) && sx < f.rect.W; c++ {
-			s.SetContent(ix+1+sx, f.rect.Y, ' ', nil, styleFor(i))
+			core.PutRune(s, ix+1+sx, f.rect.Y, ' ', styleFor(i))
 			sx++
 		}
 		i++
@@ -285,7 +285,7 @@ func (f *InputField) Draw(s tcell.Screen) {
 	for sx < f.rect.W {
 		st := styleFor(i)
 		if i >= len(runes) {
-			s.SetContent(ix+1+sx, f.rect.Y, ' ', nil, st)
+			core.PutRune(s, ix+1+sx, f.rect.Y, ' ', st)
 			sx++
 			i++
 			continue
@@ -301,11 +301,11 @@ func (f *InputField) Draw(s tcell.Screen) {
 			// Clipped by the right edge — blanks, never half a glyph, since
 			// tcell owns both cells of a double-width character.
 			for ; sx < f.rect.W; sx++ {
-				s.SetContent(ix+1+sx, f.rect.Y, ' ', nil, st)
+				core.PutRune(s, ix+1+sx, f.rect.Y, ' ', st)
 			}
 			break
 		}
-		s.SetContent(ix+1+sx, f.rect.Y, ch, nil, st)
+		core.PutRune(s, ix+1+sx, f.rect.Y, ch, st)
 		sx += rw
 		i++
 	}

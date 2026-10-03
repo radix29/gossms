@@ -237,13 +237,9 @@ func resourceGovernorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, ne
 }
 
 func resourcePoolsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		rgItem(sc, "New Resource Pool...", func() { a.showResourceGovernorPropertiesFor(sc, rgFocus{page: rgPagePools}) }),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 // newWorkloadGroupItem opens Workload Groups on pool. Withheld on internal:
@@ -274,13 +270,9 @@ func resourcePoolMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQue
 }
 
 func workloadGroupsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		newWorkloadGroupItem(a, sc, node.data.RGPool),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func workloadGroupMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -290,15 +282,11 @@ func workloadGroupMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQu
 }
 
 func externalResourcePoolsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return folderMenu(newQuery, refresh,
 		rgItem(sc, "New External Resource Pool...", func() {
 			a.showResourceGovernorPropertiesFor(sc, rgFocus{page: rgPageExternalPools})
 		}),
-		{Divider: true},
-		refresh,
-	}
+	)
 }
 
 func externalResourcePoolMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {

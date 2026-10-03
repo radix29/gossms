@@ -2,7 +2,6 @@ package activity
 
 import (
 	"context"
-	"database/sql"
 	"time"
 )
 
@@ -20,50 +19,32 @@ type Snapshot struct {
 	Load     []SchedulerLoad
 }
 
-// Collect reads a full snapshot, sequentially on one connection: concurrency
-// would need a connection per query and the readings would describe different
-// instants.
-func Collect(ctx context.Context, db *sql.DB) (*Snapshot, error) {
+// Collect reads a full snapshot, one reading after another: concurrent reads
+// would each need a connection, and would describe different instants.
+func Collect(ctx context.Context, src Source) (*Snapshot, error) {
 	s := &Snapshot{At: time.Now()}
 
 	var err error
-	if s.Counters, err = collectCounters(ctx, db); err != nil {
+	if s.Counters, err = collectCounterSet(ctx, src, counterNames); err != nil {
 		return nil, err
 	}
-	if s.Waits, err = collectWaits(ctx, db); err != nil {
+	if s.Waits, err = collectWaits(ctx, src); err != nil {
 		return nil, err
 	}
-	if s.Files, err = collectFileIO(ctx, db); err != nil {
+	if s.Files, err = collectFileIO(ctx, src); err != nil {
 		return nil, err
 	}
-	if s.Memory, err = collectMemory(ctx, db); err != nil {
+	if s.Memory, err = collectMemory(ctx, src); err != nil {
 		return nil, err
 	}
-	if s.Sched, err = collectSchedulers(ctx, db); err != nil {
+	if s.Sched, s.Load, err = collectSchedulers(ctx, src); err != nil {
 		return nil, err
 	}
-	if s.Sessions, err = collectSessions(ctx, db); err != nil {
+	if s.Sessions, err = collectSessions(ctx, src); err != nil {
 		return nil, err
 	}
-	if s.CPU, err = collectCPUUsage(ctx, db); err != nil {
-		return nil, err
-	}
-	if s.Load, err = collectSchedulerLoad(ctx, db); err != nil {
+	if s.CPU, err = collectCPUUsage(ctx, src); err != nil {
 		return nil, err
 	}
 	return s, nil
-}
-
-// permissionQuery checks VIEW SERVER STATE. Without it the DMVs return empty
-// sets, not errors, which looks like an idle server.
-const permissionQuery = `SELECT CASE WHEN HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE') = 1 THEN 1 ELSE 0 END`
-
-// HasViewServerState reports whether the connection may read this package's
-// DMVs.
-func HasViewServerState(ctx context.Context, db *sql.DB) (bool, error) {
-	var ok int
-	if err := db.QueryRowContext(ctx, permissionQuery).Scan(&ok); err != nil {
-		return false, err
-	}
-	return ok == 1, nil
 }

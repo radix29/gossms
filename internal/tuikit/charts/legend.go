@@ -51,7 +51,7 @@ func DrawLegend(s tcell.Screen, r core.Rect, items []LegendItem) {
 			}
 			x, y = r.X, y+1
 		}
-		s.SetContent(x, y, LegendSquare, nil, style.Foreground(items[i].Color))
+		core.PutRune(s, x, y, LegendSquare, style.Foreground(items[i].Color))
 		core.DrawTextClipped(s, x+2, y, r.Right()-(x+2), style, label)
 		x += entryW + legendGap
 	}

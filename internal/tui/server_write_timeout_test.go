@@ -77,16 +77,18 @@ var readTimeoutSites = map[string]int{
 	// 2: the database list, and the default backup directory the
 	// destination is generated in — see BackupDialog.loadDefaultPaths.
 	"backup_dialog.go": 2,
-	// 2: the node-detail fetch, and re-reading a Query Store query's text for
-	// "Show Value" — see DetailBrowser.showQueryStoreValue.
-	"detail_browser.go":          2,
+	// Re-reading a Query Store query's text for "Show Value" — see
+	// DetailBrowser.showQueryStoreValue.
+	"detail_browser.go":          1,
 	"detail_browser_backfill.go": 1,
 	// 2: the Databases folder's list-and-backfill loader, and one database's
 	// own properties-plus-disk-usage fetch.
 	"detail_browser_databases.go": 2,
 	"detail_browser_logins.go":    1,
-	"detail_browser_server.go":    1,
-	"detail_browser_tables.go":    1,
+	// The node-detail fetch — see DetailBrowser.fetch.
+	"detail_browser_runs.go":   1,
+	"detail_browser_server.go": 1,
+	"detail_browser_tables.go": 1,
 	// The Database Mail node's label, re-read on a Refresh of the node.
 	"explorer_database_mail.go":  1,
 	"explorer_object_actions.go": 1,

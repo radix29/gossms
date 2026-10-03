@@ -313,6 +313,16 @@ func propertiesOnlyMenu(newQuery, refresh controls.MenuItem, show func()) []cont
 	}
 }
 
+// folderMenu is the menu shape shared by every folder whose commands are what
+// it creates or opens — New Query, those items, Refresh — written once for the
+// same reason as propertiesOnlyMenu.
+func folderMenu(newQuery, refresh controls.MenuItem, items ...controls.MenuItem) []controls.MenuItem {
+	menu := make([]controls.MenuItem, 0, len(items)+4)
+	menu = append(menu, newQuery, controls.MenuItem{Divider: true})
+	menu = append(menu, items...)
+	return append(menu, controls.MenuItem{Divider: true}, refresh)
+}
+
 // fetchChildren looks up and runs the loader for node.data.Type. Runs on a
 // background goroutine (see App.loadChildren) — must not touch
 // ObjectExplorer's id-allocation or map state; node.id is left zero and
@@ -348,6 +358,17 @@ func listChildren[T any](fetch func() ([]T, error), toNode func(T) *explorerNode
 		out = append(out, toNode(it))
 	}
 	return out, nil
+}
+
+// listDatabaseChildren is listChildren for a folder of one database's
+// objects: it reads node's database, then lists with fetch — a gosmo.Database
+// method expression such as (*gosmo.Database).Rules.
+func listDatabaseChildren[T any](l loaderCtx, node *explorerNode, fetch func(*gosmo.Database, context.Context) ([]T, error), toNode func(T) *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(func() ([]T, error) { return fetch(dbObj, l.ctx) }, toNode)
 }
 
 // errExplorerNode builds a placeholder error node. It carries no id — the

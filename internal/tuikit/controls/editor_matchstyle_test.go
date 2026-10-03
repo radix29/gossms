@@ -3,6 +3,7 @@ package controls
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -26,6 +27,13 @@ func newStyleScreen(w, h int) *styleScreen {
 func (s *styleScreen) Size() (int, int) { return s.w, s.h }
 func (s *styleScreen) SetContent(x, y int, _ rune, _ []rune, style tcell.Style) {
 	s.styles[[2]int{x, y}] = style
+}
+
+// Put is how core draws a cell; it lands in SetContent like any other write.
+func (s *styleScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	r, n := utf8.DecodeRuneInString(str)
+	s.SetContent(x, y, r, nil, style)
+	return str[n:], 1
 }
 func (s *styleScreen) ShowCursor(int, int) {}
 

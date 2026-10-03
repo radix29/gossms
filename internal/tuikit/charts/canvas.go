@@ -15,7 +15,7 @@ import (
 // chart having to know its own scroll offset.
 //
 // Only the drawing half of tcell.Screen is implemented — Size, SetContent,
-// Get, Put, Fill, Clear. The embedded interface is nil, so calling any
+// Get, Put, Fill, FillArea, Clear. The embedded interface is nil, so calling any
 // other method (Init, Show, PollEvent, …) panics. That is deliberate: a
 // Canvas is a drawing target, and anything reaching for terminal lifecycle
 // methods on one has confused it with a real screen. Everything in this
@@ -81,6 +81,17 @@ func (c *Canvas) Fill(ch rune, style tcell.Style) {
 	}
 }
 
+// FillArea sets every cell of the w×h area at (x,y) to ch in style
+// (tcell.Screen). The part of the area off the canvas is ignored, as tcell
+// ignores the part off the screen.
+func (c *Canvas) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	for row := max(y, 0); row < min(y+h, c.h); row++ {
+		for col := max(x, 0); col < min(x+w, c.w); col++ {
+			c.setRune(col, row, ch, style)
+		}
+	}
+}
+
 // Clear fills the canvas with spaces in tcell.StyleDefault (tcell.Screen).
 func (c *Canvas) Clear() { c.Fill(' ', tcell.StyleDefault) }
 
@@ -88,8 +99,8 @@ func (c *Canvas) Clear() { c.Fill(' ', tcell.StyleDefault) }
 // (tcell.Screen). Out-of-range coordinates are ignored.
 func (c *Canvas) SetContent(x, y int, primary rune, combining []rune, style tcell.Style) {
 	if len(combining) == 0 {
-		// The whole chart draw path lands here, one call per cell per chart:
-		// it must not build a string or run a grapheme segmentation.
+		// The same per-cell fast path as Put's single rune: no string, no
+		// grapheme segmentation.
 		c.setRune(x, y, primary, style)
 		return
 	}
@@ -99,6 +110,12 @@ func (c *Canvas) SetContent(x, y int, primary rune, combining []rune, style tcel
 // Put writes the first grapheme of str at (x,y) and returns the rest of the
 // string along with the width written (tcell.Screen).
 func (c *Canvas) Put(x, y int, str string, style tcell.Style) (string, int) {
+	if r, n := utf8.DecodeRuneInString(str); n == len(str) && n > 0 {
+		// One rune — core.PutRune's call, and so the whole chart draw path,
+		// one call per cell per chart: it must not run a segmentation.
+		c.setRune(x, y, r, style)
+		return "", max(displaywidth.Rune(r), 1)
+	}
 	g := displaywidth.StringGraphemes(str)
 	if !g.Next() {
 		return "", 0
@@ -201,14 +218,14 @@ func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
 				continue
 			}
 			if dx+cell.width > cols {
-				s.SetContent(dst.X+dx, dst.Y+dy, ' ', nil, cell.style)
+				core.PutRune(s, dst.X+dx, dst.Y+dy, ' ', cell.style)
 				break
 			}
-			var combining []rune
-			if cell.rest != "" {
-				combining = []rune(cell.rest)
+			if cell.rest == "" {
+				core.PutRune(s, dst.X+dx, dst.Y+dy, cell.primary, cell.style)
+			} else {
+				s.Put(dst.X+dx, dst.Y+dy, cell.text(), cell.style)
 			}
-			s.SetContent(dst.X+dx, dst.Y+dy, cell.primary, combining, cell.style)
 			dx += cell.width
 		}
 	}

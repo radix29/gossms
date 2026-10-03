@@ -89,23 +89,29 @@ func (p *QueryStorePanel) toggleTracked() {
 	if id == 0 || p.conn == nil {
 		return
 	}
-	tracked, err := config.Tracked().Toggle(config.ConnectionAddress(p.conn.Opts), p.dbName, id)
+	server, dbName := config.ConnectionAddress(p.conn.Opts), p.dbName
+	tracked, err := config.Tracked().Toggle(server, dbName, id)
+	if err != nil {
+		p.setStatus(fmt.Sprintf("Query %d not tracked — %v", id, err))
+		return
+	}
 	verb := "untracked"
 	if tracked {
 		verb = "tracked"
 	}
-	if err != nil {
-		// The toggle applied in memory even though the file did not take it,
-		// so say both halves: this session behaves as asked, the next does not.
-		p.setStatus(fmt.Sprintf("Query %d %s for this session only — %v", id, verb, err))
-	} else {
-		p.setStatus(fmt.Sprintf("Query %d %s", id, verb))
-	}
-	// Every view of this set, not just this panel's: the tree's Tracked Queries
-	// leaf caches its rows and would go on showing the old set. Run on the
-	// failed save too — the in-memory set took the toggle either way, and it is
-	// what every view reads.
-	p.app.trackedQueriesChanged(config.ConnectionAddress(p.conn.Opts), p.dbName)
+	p.setStatus(fmt.Sprintf("Query %d %s", id, verb))
+	// Every view of this set, not just this panel's: the tree's Tracked
+	// Queries leaf caches its rows and would go on showing the old set. Now,
+	// not after the save — the in-memory set has the toggle, and it is what
+	// every view reads, whether or not the file takes it.
+	p.app.trackedQueriesChanged(server, dbName)
+	p.app.saveTracked(func(err error) {
+		if err != nil {
+			// Say both halves: this session behaves as asked, the next does
+			// not.
+			p.setStatus(fmt.Sprintf("Query %d %s for this session only — %v", id, verb, err))
+		}
+	})
 }
 
 // Load runs the current report in the background and applies the result on the

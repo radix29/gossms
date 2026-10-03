@@ -318,9 +318,11 @@ func (d *OptionsDialog) apply() {
 	xeCap, _ := strconv.Atoi(d.fXECapacity.Value())
 	d.app.cfg.XEventStoreCapacity = config.ClampXEventStoreCapacity(xeCap)
 	d.app.cfg.IntelliSenseDisabled = !d.cbIntelliSense.Checked()
-	if err := d.app.cfg.Save(); err != nil {
-		d.app.logStatus("save config: %v", err)
-	}
+	d.app.saveConfig(func(err error) {
+		if err != nil {
+			d.app.logStatus("save config: %v", err)
+		}
+	})
 	d.app.explorer.rebuild()
 }
 
