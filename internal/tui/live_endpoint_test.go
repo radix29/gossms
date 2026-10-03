@@ -252,9 +252,6 @@ func TestLiveEndpointExchangeNamesNamedInstances(t *testing.T) {
 	d := NewNewEndpointDialog(a)
 	d.sc = local
 	d.ctx = ctx
-	d.commitInputs = func() {}
-	d.endpointName, d.port, d.algorithm = "Hadr_endpoint", *liveEPPort, "AES"
-	d.masterKeyPass = liveEPMasterKeyPass
 	d.instances = []*newEndpointInstance{{name: names[0], local: true}}
 	for _, peer := range []string{*liveEPNamed, *liveEPNamed2} {
 		var inst *newEndpointInstance
@@ -268,7 +265,14 @@ func TestLiveEndpointExchangeNamesNamedInstances(t *testing.T) {
 		d.instances = append(d.instances, inst)
 	}
 
-	if err := d.configure(ctx); err != nil {
+	req := endpointRequest{
+		name:          "Hadr_endpoint",
+		port:          *liveEPPort,
+		algorithm:     "AES",
+		masterKeyPass: liveEPMasterKeyPass,
+		instances:     d.instances,
+	}
+	if _, err := d.configure(ctx, req); err != nil {
 		t.Fatalf("configure: %v", err)
 	}
 

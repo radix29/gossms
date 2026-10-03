@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"regexp"
 	"slices"
 	"strings"
@@ -75,15 +76,16 @@ func mailPages(t *testing.T, sc *db.ServerConn, inst *fakeInstance) ([]*propshee
 	return forms, applies
 }
 
-// runMailApply runs the dirty pages' applies as the dialog's Apply does.
-func runMailApply(ctx context.Context, forms []*propsheet.Form, applies []propApply) error {
+// runMailApply runs the dirty pages' applies as the dialog's Apply does:
+// planned, then carried out by runDatabaseMailPlan.
+func runMailApply(ctx context.Context, sc *db.ServerConn, forms []*propsheet.Form, applies []propApply) error {
 	var fns []propApply
 	for i, f := range forms {
 		if f.Dirty() {
 			fns = append(fns, applies[i])
 		}
 	}
-	return plannedApply(fns, func(ctx context.Context, plan *applyPlan) error { return plan.run(ctx) })(ctx)
+	return plannedApply(fns, func(ctx context.Context, plan *applyPlan) error { return runDatabaseMailPlan(ctx, sc, plan) })(ctx)
 }
 
 // mailGrid is the page's grid at index i, top to bottom — the Profiles and
@@ -145,7 +147,7 @@ func TestMailFromScratchIsOneApply(t *testing.T) {
 	activateGridCell(t, mailGrid(t, security, 0), 0, "gossms_ops", 2)
 	editText(t, params, "Account retry attempts", "3")
 
-	if err := runMailApply(context.Background(), forms, applies); err != nil {
+	if err := runMailApply(context.Background(), sc, forms, applies); err != nil {
 		t.Fatal(err)
 	}
 	stmts := inst.Statements()
@@ -180,7 +182,7 @@ func TestMailScriptChangesHidesThePassword(t *testing.T) {
 	editText(t, accounts, "Confirm password", mailSecret)
 
 	ctx, script := gosmo.WithScript(context.Background())
-	if err := runMailApply(ctx, forms, applies); err != nil {
+	if err := runMailApply(ctx, sc, forms, applies); err != nil {
 		t.Fatal(err)
 	}
 	text := strings.Join(script.Statements(), "\n")
@@ -206,7 +208,7 @@ func TestMailAccountKeepsOrReplacesItsCredential(t *testing.T) {
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
 		editText(t, a, "Display name", "Ops mailer")
-		if err := runMailApply(ctx, forms, applies); err != nil {
+		if err := runMailApply(ctx, sc, forms, applies); err != nil {
 			t.Fatal(err)
 		}
 		all := strings.Join(inst.Statements(), "\n")
@@ -223,7 +225,7 @@ func TestMailAccountKeepsOrReplacesItsCredential(t *testing.T) {
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
 		editText(t, a, "User name", "other")
-		err := runMailApply(ctx, forms, applies)
+		err := runMailApply(ctx, sc, forms, applies)
 		if err == nil || !strings.Contains(err.Error(), "typed again") {
 			t.Fatalf("err = %v, want the password asked for again", err)
 		}
@@ -237,7 +239,7 @@ func TestMailAccountKeepsOrReplacesItsCredential(t *testing.T) {
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
 		editRadio(t, a, "Authentication", "Anonymous")
-		if err := runMailApply(ctx, forms, applies); err != nil {
+		if err := runMailApply(ctx, sc, forms, applies); err != nil {
 			t.Fatal(err)
 		}
 		all := strings.Join(inst.Statements(), "\n")
@@ -262,7 +264,7 @@ func TestMailCredentialFieldsNeedAlterAnyCredential(t *testing.T) {
 	if !textRow(t, a, "User name").ReadOnly() || !textRow(t, a, "Password").ReadOnly() {
 		t.Fatal("user name and password are editable without ALTER ANY CREDENTIAL")
 	}
-	err := runMailApply(context.Background(), forms, applies)
+	err := runMailApply(context.Background(), sc, forms, applies)
 	if err == nil || !strings.Contains(err.Error(), "ALTER ANY CREDENTIAL") {
 		t.Fatalf("err = %v, want the right named", err)
 	}
@@ -273,7 +275,7 @@ func TestMailCredentialFieldsNeedAlterAnyCredential(t *testing.T) {
 	a = forms[mailPageAccounts]
 	selectGridRow(t, plainGrid(t, a), 0, "relay2")
 	editText(t, a, "Port", "2525")
-	if err := runMailApply(context.Background(), forms, applies); err != nil {
+	if err := runMailApply(context.Background(), sc, forms, applies); err != nil {
 		t.Fatal(err)
 	}
 	if all := strings.Join(inst2.Statements(), "\n"); !strings.Contains(all, "@port = 2525") || !strings.Contains(all, "@account_name = N'relay2'") {
@@ -295,7 +297,7 @@ func TestMailBasicAccountUntouchableWithoutAlterAnyCredential(t *testing.T) {
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
 		editText(t, a, "Display name", "Relay one")
-		err := runMailApply(context.Background(), forms, applies)
+		err := runMailApply(context.Background(), sc, forms, applies)
 		if err == nil || !strings.Contains(err.Error(), "unlinks its password") {
 			t.Fatalf("err = %v, want the edit refused", err)
 		}
@@ -309,7 +311,7 @@ func TestMailBasicAccountUntouchableWithoutAlterAnyCredential(t *testing.T) {
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
 		clickButton(t, a, "Remove")
 		gridRowIndex(t, plainGrid(t, a), 0, "relay1") // still listed, not "(removed)"
-		if err := runMailApply(context.Background(), forms, applies); err != nil {
+		if err := runMailApply(context.Background(), sc, forms, applies); err != nil {
 			t.Fatal(err)
 		}
 		assertNoMailWrites(t, inst)
@@ -338,7 +340,7 @@ func TestMailRenamesRunAfterWhatNamesTheOldName(t *testing.T) {
 	// relay1 is second; move it first.
 	selectGridRow(t, mailGrid(t, p, 1), 1, "relay1")
 	clickButton(t, p, "Move Up")
-	if err := runMailApply(context.Background(), forms, applies); err != nil {
+	if err := runMailApply(context.Background(), sc, forms, applies); err != nil {
 		t.Fatal(err)
 	}
 	stmts := inst.Statements()
@@ -365,7 +367,7 @@ func TestMailRemovedAccountLeavesTheProfilesPage(t *testing.T) {
 	selectGridRow(t, mailGrid(t, p, 0), 0, "ops")
 	gridRowIndex(t, mailGrid(t, p, 1), 1, "relay2 (removed)")
 	editText(t, p, "Description", "on call")
-	if err := runMailApply(context.Background(), forms, applies); err != nil {
+	if err := runMailApply(context.Background(), sc, forms, applies); err != nil {
 		t.Fatal(err)
 	}
 	got := procCalls(inst.Statements())
@@ -391,7 +393,7 @@ func TestMailPrivateGrantsFollowThePrincipal(t *testing.T) {
 		t.Fatal("choosing a principal made the page dirty")
 	}
 	activateGridCell(t, mailGrid(t, s, 1), 0, "alerts", 1)
-	if err := runMailApply(context.Background(), forms, applies); err != nil {
+	if err := runMailApply(context.Background(), sc, forms, applies); err != nil {
 		t.Fatal(err)
 	}
 	stmts := inst.Statements()
@@ -403,8 +405,9 @@ func TestMailPrivateGrantsFollowThePrincipal(t *testing.T) {
 }
 
 // TestMailGeneralTurnsOnXPs: General writes the option through
-// ApplyConfiguration, first in the plan, and System Parameters writes the
-// logging level as its number.
+// ApplyConfiguration, after the msdb writes' COMMIT — RECONFIGURE refuses to
+// run inside a transaction — and System Parameters writes the logging level
+// as its number.
 func TestMailGeneralTurnsOnXPs(t *testing.T) {
 	sc, inst := newFakeConn(t, mailPageReads()...)
 	forms, applies := mailPages(t, sc, inst)
@@ -419,15 +422,57 @@ func TestMailGeneralTurnsOnXPs(t *testing.T) {
 		t.Fatal("General has no unticked Database Mail XPs box")
 	}
 	xps.Edit(true)
-	if err := runMailApply(context.Background(), forms, applies); err != nil {
+	if err := runMailApply(context.Background(), sc, forms, applies); err != nil {
 		t.Fatal(err)
 	}
 	stmts := inst.Statements()
-	if got, want := procCalls(stmts), []string{"sp_configure N'Database Mail XPs'", "sysmail_configure_sp"}; !slices.Equal(got, want) {
+	if got, want := procCalls(stmts), []string{"sysmail_configure_sp", "sp_configure N'Database Mail XPs'"}; !slices.Equal(got, want) {
 		t.Fatalf("calls = %q, want %q", got, want)
 	}
-	if !strings.Contains(stmts[0], "N'Database Mail XPs', 1") || !strings.Contains(stmts[1], "@parameter_value = N'3'") {
+	if !strings.Contains(stmts[0], "@parameter_value = N'3'") || !strings.Contains(stmts[1], "N'Database Mail XPs', 1") {
 		t.Fatalf("statements = %q", stmts)
+	}
+	if got := procCalls(inst.StatementsInTx()); !slices.Equal(got, []string{"sysmail_configure_sp"}) {
+		t.Errorf("in the transaction: %q, want the parameter write alone", got)
+	}
+	if got := inst.TxLog(); !slices.Equal(got, []string{"BEGIN", "COMMIT"}) {
+		t.Errorf("transactions %q, want one committed", got)
+	}
+}
+
+// TestMailFailureMidPlanRollsBack: the msdb writes are one transaction (N2),
+// so a procedure failing after another has run rolls both back, the failure
+// is not a committed one — the pages keep their edits — and 'Database Mail
+// XPs', which follows the COMMIT, never runs.
+func TestMailFailureMidPlanRollsBack(t *testing.T) {
+	refused := errors.New("Msg 14607")
+	sc, inst := newFakeConn(t, append([]fakeResponse{{match: "sysmail_configure_sp", err: refused}}, mailPageReads()...)...)
+	forms, applies := mailPages(t, sc, inst)
+	editText(t, forms[mailPageAccounts], "New account name", "gossms_relay")
+	clickButton(t, forms[mailPageAccounts], "Add")
+	editText(t, forms[mailPageAccounts], "E-mail address", "dba@example.com")
+	editText(t, forms[mailPageAccounts], "SMTP server", "192.0.2.1")
+	editSelect(t, forms[mailPageParameters], "Logging level", "Verbose")
+	for _, r := range forms[mailPageGeneral].Rows() {
+		if c, ok := r.(*propsheet.CheckRow); ok && c.Label() == mailXPsOption {
+			c.Edit(true)
+		}
+	}
+	err := runMailApply(context.Background(), sc, forms, applies)
+	if !errors.Is(err, refused) {
+		t.Fatalf("err = %v, want the sysmail_configure_sp's", err)
+	}
+	if _, ok := errors.AsType[committedApplyError](err); ok {
+		t.Errorf("err = %v is a committed failure; the account before it was rolled back", err)
+	}
+	if got := procCalls(inst.StatementsInTx()); !slices.Equal(got, []string{"sysmail_add_account_sp", "sysmail_configure_sp"}) {
+		t.Errorf("in the transaction: %q", got)
+	}
+	if got := inst.TxLog(); !slices.Equal(got, []string{"BEGIN", "ROLLBACK"}) {
+		t.Errorf("transactions %q, want one rolled back", got)
+	}
+	if got := procCalls(inst.Statements()); slices.Contains(got, "sp_configure N'Database Mail XPs'") {
+		t.Error("Database Mail XPs was written after a failed step")
 	}
 }
 

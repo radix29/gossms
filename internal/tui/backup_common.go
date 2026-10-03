@@ -51,16 +51,6 @@ func serverPathBase(path string) string {
 	return path
 }
 
-// serverPathExt returns the extension (".bak") of a server-side path's file
-// name, or "" if it has none.
-func serverPathExt(path string) string {
-	base := serverPathBase(path)
-	if i := strings.LastIndex(base, "."); i > 0 {
-		return base[i:]
-	}
-	return ""
-}
-
 // formatHMS renders a duration as "HH:MM:SS". The app's only duration
 // renderer: the backup/restore progress screens, the query panel's elapsed
 // time, and every SQL Agent run duration go through it, so a job that took

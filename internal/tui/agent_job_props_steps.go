@@ -396,69 +396,85 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				propsheet.Note("Steps of other subsystems are listed but read-only; only T-SQL steps can be edited or created here. Database \"(unchanged)\" leaves the step's own database alone. \"Go to step\" fields only take effect when the matching action above is set to \"Go to step...\"."),
 			)
 			f := propsheet.NewForm(rows...)
+			// The panel's fields reach the selected step here, on the UI
+			// goroutine before the pipeline runs — never in apply
+			// (docs/ui-rules.md).
+			f.SetCommit(func() { panel.read(current) })
 
+			// One transaction (N2): a pass failing part-way would otherwise
+			// leave the earlier ones stored, and a delete renumbers the steps
+			// the page still shows. sp_update/add/delete_jobstep run and roll
+			// back cleanly inside one (probed on 13, 14 and 17); the reorder's
+			// own BEGIN/COMMIT batch nests in it.
 			apply := func(ctx context.Context) error {
-				panel.read(current)
-				j, err := findAgentJob(ctx, sc, *jobName)
-				if err != nil {
-					return err
-				}
-				// Existing steps need a fresh *gosmo.JobStep fetched under j's
-				// current name: Update/Delete capture the job name at
-				// load, which a same-Apply rename makes stale. Fetched lazily,
-				// once.
-				var freshSteps []*gosmo.JobStep
-				freshStep := func(stepID int) (*gosmo.JobStep, error) {
-					if freshSteps == nil {
-						var err error
-						freshSteps, err = j.Steps(ctx)
-						if err != nil {
-							return nil, err
-						}
-					}
-					for _, s := range freshSteps {
-						if s.StepID == stepID {
-							return s, nil
-						}
-					}
-					return nil, fmt.Errorf("gosmo: step %d not found on job %q", stepID, j.Name)
-				}
-				// Passes and order are planJobStepWrites'.
-				plan := planJobStepWrites(edits)
-				for _, e := range plan.updates {
-					step, err := freshStep(e.orig.StepID)
-					if err != nil {
-						return err
-					}
-					if err := step.Alter(ctx, e.request()); err != nil {
-						return err
-					}
-				}
-				for _, e := range plan.deletes {
-					step, err := freshStep(e.orig.StepID)
-					if err != nil {
-						return err
-					}
-					if err := step.Drop(ctx); err != nil {
-						return err
-					}
-				}
-				for _, e := range plan.adds {
-					if _, err := j.AddStep(ctx, e.request()); err != nil {
-						return err
-					}
-				}
-				// Fourth pass, last: its ids are the post-pass ones. gosmo
-				// repairs "go to step N" references; sp_delete_jobstep doesn't
-				// (see MoveStep).
-				if ids := reorderedStepIDs(edits); ids != nil {
-					if err := j.ReorderSteps(ctx, func(int) []int { return ids }); err != nil {
-						return err
-					}
-				}
-				return nil
+				return sc.Server.InTransaction(ctx, func(ctx context.Context) error {
+					return applyJobSteps(ctx, sc, *jobName, edits)
+				})
 			}
 			return f, apply, nil
 		},
 	}
+}
+
+// applyJobSteps is the Steps page's Apply inside its transaction: the three
+// passes of planJobStepWrites, then the reorder.
+func applyJobSteps(ctx context.Context, sc *db.ServerConn, jobName string, edits []*jobStepEdit) error {
+	j, err := findAgentJob(ctx, sc, jobName)
+	if err != nil {
+		return err
+	}
+	// Existing steps need a fresh *gosmo.JobStep fetched under j's
+	// current name: Update/Delete capture the job name at
+	// load, which a same-Apply rename makes stale. Fetched lazily,
+	// once.
+	var freshSteps []*gosmo.JobStep
+	freshStep := func(stepID int) (*gosmo.JobStep, error) {
+		if freshSteps == nil {
+			var err error
+			freshSteps, err = j.Steps(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+		for _, s := range freshSteps {
+			if s.StepID == stepID {
+				return s, nil
+			}
+		}
+		return nil, fmt.Errorf("gosmo: step %d not found on job %q", stepID, j.Name)
+	}
+	// Passes and order are planJobStepWrites'.
+	plan := planJobStepWrites(edits)
+	for _, e := range plan.updates {
+		step, err := freshStep(e.orig.StepID)
+		if err != nil {
+			return err
+		}
+		if err := step.Alter(ctx, e.request()); err != nil {
+			return err
+		}
+	}
+	for _, e := range plan.deletes {
+		step, err := freshStep(e.orig.StepID)
+		if err != nil {
+			return err
+		}
+		if err := step.Drop(ctx); err != nil {
+			return err
+		}
+	}
+	for _, e := range plan.adds {
+		if _, err := j.AddStep(ctx, e.request()); err != nil {
+			return err
+		}
+	}
+	// Fourth pass, last: its ids are the post-pass ones. gosmo
+	// repairs "go to step N" references; sp_delete_jobstep doesn't
+	// (see MoveStep).
+	if ids := reorderedStepIDs(edits); ids != nil {
+		if err := j.ReorderSteps(ctx, func(int) []int { return ids }); err != nil {
+			return err
+		}
+	}
+	return nil
 }

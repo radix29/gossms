@@ -1380,7 +1380,7 @@ func TestEditorGutterWidensPastLine9999(t *testing.T) {
 // A composed key inserts every rune it carries (T66): a ZWJ family emoji is
 // five runes in one KeyRune event, and the editor kept only the first.
 func TestEditorInsertsAComposedKeyWhole(t *testing.T) {
-	const family = "\U0001F468‍\U0001F469‍\U0001F467"
+	const family = "\U0001F468\u200d\U0001F469\u200d\U0001F467"
 	e := NewEditor(nil)
 	e.SetBounds(0, 0, 40, 5)
 	e.SetActive(true)

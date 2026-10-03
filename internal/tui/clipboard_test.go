@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -224,5 +225,49 @@ func TestQuickCopiesLeaveTheLastOnTheClipboard(t *testing.T) {
 	defer mu.Unlock()
 	if want := []string{"A", "C"}; !slices.Equal(writes, want) {
 		t.Errorf("clipboard writes = %q, want %q: in order, the superseded B skipped", writes, want)
+	}
+}
+
+// TestBracketedPasteDrawsOnceAtTheEnd pins B15: a frame per pasted key made a
+// 10,001-line, 170 KB paste take ~6 minutes. The start marker may draw, the
+// buffered keys must not, and the end marker draws the result — a constant
+// number of frames whatever the paste's length.
+func TestBracketedPasteDrawsOnceAtTheEnd(t *testing.T) {
+	a := newClipboardTestApp()
+	qp := focusedQueryPanel(t, a)
+
+	frames := 0
+	feed := func(ev tcell.Event) {
+		t.Helper()
+		quit, need := a.handleEvent(ev)
+		if quit {
+			t.Fatalf("%T quit the event loop", ev)
+		}
+		if need != skipFrame {
+			frames++
+		}
+	}
+	const lines = 1000
+	feed(tcell.NewEventPaste(true))
+	for range lines {
+		feed(tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone))
+		feed(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	}
+	feed(tcell.NewEventPaste(false))
+
+	if frames > 2 {
+		t.Errorf("paste of %d keys drew %d frames, want at most 2 (start and end markers)", 2*lines, frames)
+	}
+	if got, want := qp.editor.Text(), strings.Repeat("x\n", lines); got != want {
+		t.Errorf("editor holds %d bytes after the paste, want %d", len(got), len(want))
+	}
+
+	// A lost end marker must not freeze the screen: anything but a key
+	// still draws.
+	feed(tcell.NewEventPaste(true))
+	before := frames
+	feed(tcell.NewEventInterrupt(nil))
+	if frames != before+1 {
+		t.Error("a background result arriving mid-paste drew no frame")
 	}
 }

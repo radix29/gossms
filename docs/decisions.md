@@ -1118,9 +1118,15 @@ Unverified on Managed Instance and on non-Enterprise editions:
     keep their edits. RECONFIGURE/DISABLE cannot run in a user transaction
     (Msg 574), so they follow the COMMIT; a failure there is a committed one
     and every page reloads.
-  - **Database Mail's is not yet**: a failure part-way leaves earlier
-    statements stored and every page reloads. Its `sysmail_*` procedures
-    have not been checked inside a user transaction.
+  - **So is Database Mail's** (N2, 2026-10-03): every `sysmail_*` write,
+    the credential a Basic account's password creates included, runs and
+    rolls back inside a user transaction (probed on 13, 14 and 17). 'Database
+    Mail XPs' is sp_configure + RECONFIGURE (Msg 574), so it moved to the last
+    phase and follows the COMMIT; a failure there is a committed one.
+  - **Job Properties ▸ Steps is one transaction too** (N2): its update,
+    delete and add passes and the reorder (whose own BEGIN/COMMIT batch
+    nests) commit together, so a failure part-way never leaves the steps
+    renumbered under the page.
 - **Nothing in Database Mail is sysadmin-only.** Configuration is
   `gate.DatabaseMailConfigRights()` = {msdb `db_owner`, CONTROL SERVER};
   sending is `DatabaseMailSendRights()`, adding `DatabaseMailUserRole`. A

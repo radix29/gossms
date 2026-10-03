@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -53,36 +54,50 @@ var applyHelperExemptions = map[string]bool{
 // value, and a package function handed captured state — where a write through
 // that parameter is a write to page state.
 //
+// Identifiers resolve through go/types, over this package's own declarations
+// only: every import is an empty stub, so the check never waits on
+// type-checking tcell or gosmo, and the type errors that leaves are ignored.
+// A captured variable, a parameter or a package function is declared here, so
+// it resolves all the same.
+//
 // What it cannot see is a local that aliases page state: a range variable
 // over a captured slice (commitApplied(ctx, &e.orig, …) moved a permission
-// cell's baseline that way), or r := d.rows. Without types an alias can't be
-// told from a copy, and the package has several applies that edit copies of
-// page state on purpose (cloneXEEvents, a decryptor's options).
+// cell's baseline that way), or r := d.rows. Telling an alias from a copy
+// needs each value traced, not just its declaration (and with the imports
+// stubbed a gosmo element type is unknown), and the package has several
+// applies that edit copies of page state on purpose (cloneXEEvents, a
+// decryptor's options).
 func TestApplyClosuresDoNotWritePageState(t *testing.T) {
 	fset := token.NewFileSet()
 	names, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("listing the package: %v", err)
 	}
-	pkg := applyIndex{
-		closures: map[*ast.Object]*ast.FuncLit{},
-		fields:   map[string][]*ast.FuncLit{},
-		funcs:    map[string]*ast.FuncDecl{},
-		methods:  map[string][]*ast.FuncDecl{},
-	}
 	var files []*ast.File
 	for _, name := range names {
 		if strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		// Object resolution on (the default): each identifier's Obj says
-		// where it was declared, which is what tells a captured variable
-		// from the closure's own.
-		f, err := parser.ParseFile(fset, name, nil, 0)
+		f, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatalf("parsing %s: %v", name, err)
 		}
 		files = append(files, f)
+	}
+	// Defs and Uses say where each identifier was declared, which is what
+	// tells a captured variable from the closure's own.
+	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}}
+	conf := types.Config{Importer: stubImporter{}, Error: func(error) {}}
+	conf.Check("github.com/radix29/gossms/internal/tui", fset, files, info)
+
+	pkg := applyIndex{
+		info:     info,
+		closures: map[types.Object]*ast.FuncLit{},
+		fields:   map[string][]*ast.FuncLit{},
+		funcs:    map[string]*ast.FuncDecl{},
+		methods:  map[string][]*ast.FuncDecl{},
+	}
+	for _, f := range files {
 		pkg.add(f)
 	}
 
@@ -128,10 +143,10 @@ func TestApplyClosuresDoNotWritePageState(t *testing.T) {
 				if !ok {
 					return true
 				}
-				for _, m := range pkg.methodsOf(staticType(id), x.Sel.Name) {
+				for _, m := range pkg.methodsOf(pkg.staticType(id), x.Sel.Name) {
 					if isContextErrorFunc(m.Type) {
 						checked++
-						c.check(m, m.Body, receiverObjs(m), "method value "+x.Sel.Name+" → ")
+						c.check(m, m.Body, pkg.receiverObjs(m), "method value "+x.Sel.Name+" → ")
 					}
 				}
 			}
@@ -144,10 +159,21 @@ func TestApplyClosuresDoNotWritePageState(t *testing.T) {
 	}
 }
 
+// stubImporter hands back an empty package for every import: the checks need
+// only the package's own declarations resolved.
+type stubImporter struct{}
+
+func (stubImporter) Import(path string) (*types.Package, error) {
+	p := types.NewPackage(path, filepath.Base(path))
+	p.MarkComplete()
+	return p, nil
+}
+
 // applyIndex is what the package declares that an apply can reach by name.
 type applyIndex struct {
+	info *types.Info
 	// closures are local func variables (x := func(...) {...}), by object.
-	closures map[*ast.Object]*ast.FuncLit
+	closures map[types.Object]*ast.FuncLit
 	// fields are func literals assigned to a field (d.commitInputs = func),
 	// by field name.
 	fields map[string][]*ast.FuncLit
@@ -179,8 +205,8 @@ func (p applyIndex) add(f *ast.File) {
 				}
 				switch lhs := s.Lhs[i].(type) {
 				case *ast.Ident:
-					if lhs.Obj != nil {
-						p.closures[lhs.Obj] = lit
+					if o := p.info.ObjectOf(lhs); o != nil {
+						p.closures[o] = lit
 					}
 				case *ast.SelectorExpr:
 					p.fields[lhs.Sel.Name] = append(p.fields[lhs.Sel.Name], lit)
@@ -188,8 +214,10 @@ func (p applyIndex) add(f *ast.File) {
 			}
 		case *ast.ValueSpec:
 			for i, v := range s.Values {
-				if lit, ok := v.(*ast.FuncLit); ok && i < len(s.Names) && s.Names[i].Obj != nil {
-					p.closures[s.Names[i].Obj] = lit
+				if lit, ok := v.(*ast.FuncLit); ok && i < len(s.Names) {
+					if o := p.info.Defs[s.Names[i]]; o != nil {
+						p.closures[o] = lit
+					}
 				}
 			}
 		}
@@ -213,32 +241,20 @@ func (p applyIndex) methodsOf(typ, name string) []*ast.FuncDecl {
 	return out
 }
 
-// staticType is the named type id was declared with, where the declaration
-// says: a receiver or parameter, a var with a type, or x := &T{...} / T{...}.
-// "" otherwise.
-func staticType(id *ast.Ident) string {
-	if id.Obj == nil {
+// staticType is the name of the package type id's variable has, through a
+// pointer and type arguments. "" when it has none the stubbed imports let the
+// checker work out.
+func (p applyIndex) staticType(id *ast.Ident) string {
+	v, ok := p.info.ObjectOf(id).(*types.Var)
+	if !ok {
 		return ""
 	}
-	switch d := id.Obj.Decl.(type) {
-	case *ast.Field:
-		return astTypeName(d.Type)
-	case *ast.ValueSpec:
-		if d.Type != nil {
-			return astTypeName(d.Type)
-		}
-	case *ast.AssignStmt:
-		for i, lhs := range d.Lhs {
-			if l, ok := lhs.(*ast.Ident); ok && l.Obj == id.Obj && len(d.Rhs) == len(d.Lhs) {
-				rhs := d.Rhs[i]
-				if u, ok := rhs.(*ast.UnaryExpr); ok && u.Op == token.AND {
-					rhs = u.X
-				}
-				if cl, ok := rhs.(*ast.CompositeLit); ok {
-					return astTypeName(cl.Type)
-				}
-			}
-		}
+	t := v.Type()
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	if n, ok := t.(*types.Named); ok && n.Obj().Pkg() == v.Pkg() {
+		return n.Obj().Name()
 	}
 	return ""
 }
@@ -277,10 +293,11 @@ type applyChecker struct {
 // captured, which is page state. tainted are the parameters (or receiver)
 // that hold page state because the caller handed it in: a write through one
 // is a write to page state, while reassigning it is only a local change.
-func (c *applyChecker) check(scope ast.Node, body *ast.BlockStmt, tainted map[*ast.Object]bool, via string) {
+func (c *applyChecker) check(scope ast.Node, body *ast.BlockStmt, tainted map[types.Object]bool, via string) {
+	info := c.pkg.info
 	var names []string
 	for o := range tainted {
-		names = append(names, o.Name)
+		names = append(names, o.Name())
 	}
 	slices.Sort(names)
 	key := fmt.Sprintf("%d/%s", scope.Pos(), strings.Join(names, ","))
@@ -291,13 +308,19 @@ func (c *applyChecker) check(scope ast.Node, body *ast.BlockStmt, tainted map[*a
 
 	_, isLit := scope.(*ast.FuncLit)
 	captured := func(id *ast.Ident) bool {
-		if id == nil || id.Name == "_" || id.Obj == nil {
+		if id == nil || id.Name == "_" {
 			return false
 		}
-		if tainted[id.Obj] {
+		// Only a variable holds state: not a package name, a constant, a
+		// function or nil.
+		v, ok := info.ObjectOf(id).(*types.Var)
+		if !ok {
+			return false
+		}
+		if tainted[v] {
 			return true
 		}
-		decl := id.Obj.Pos()
+		decl := v.Pos()
 		return isLit && (decl < scope.Pos() || decl > scope.End())
 	}
 	report := func(target ast.Expr, at token.Pos) {
@@ -305,7 +328,7 @@ func (c *applyChecker) check(scope ast.Node, body *ast.BlockStmt, tainted map[*a
 		if !captured(id) {
 			return
 		}
-		if _, bare := target.(*ast.Ident); bare && tainted[id.Obj] {
+		if _, bare := target.(*ast.Ident); bare && tainted[info.ObjectOf(id)] {
 			return // reassigning a parameter changes nothing the caller holds
 		}
 		c.t.Errorf("%s: %san apply assigns %s, which holds page state; "+
@@ -313,12 +336,12 @@ func (c *applyChecker) check(scope ast.Node, body *ast.BlockStmt, tainted map[*a
 			"so it never writes page state (docs/ui-rules.md)", c.fset.Position(at), via, id.Name)
 	}
 	// taint maps a callee's parameters to the arguments that hold page state.
-	taint := func(params *ast.FieldList, args []ast.Expr) map[*ast.Object]bool {
-		out := map[*ast.Object]bool{}
-		var objs []*ast.Object
+	taint := func(params *ast.FieldList, args []ast.Expr) map[types.Object]bool {
+		out := map[types.Object]bool{}
+		var objs []types.Object
 		for _, f := range params.List {
 			for _, n := range f.Names {
-				objs = append(objs, n.Obj)
+				objs = append(objs, info.Defs[n])
 			}
 		}
 		for i, a := range args {
@@ -344,9 +367,10 @@ func (c *applyChecker) check(scope ast.Node, body *ast.BlockStmt, tainted map[*a
 			switch fn := s.Fun.(type) {
 			case *ast.Ident:
 				name = fn.Name
-				if lit, ok := c.pkg.closures[fn.Obj]; ok && captured(fn) {
+				_, isFunc := info.Uses[fn].(*types.Func)
+				if lit, ok := c.pkg.closures[info.Uses[fn]]; ok && captured(fn) {
 					c.check(lit, lit.Body, taint(lit.Type.Params, s.Args), via+name+" → ")
-				} else if fd, ok := c.pkg.funcs[name]; ok && fn.Obj != nil && fn.Obj.Kind == ast.Fun && !applyHelperExemptions[name] {
+				} else if fd, ok := c.pkg.funcs[name]; ok && isFunc && !applyHelperExemptions[name] {
 					if tt := taint(fd.Type.Params, s.Args); len(tt) > 0 {
 						c.check(fd, fd.Body, tt, via+name+" → ")
 					}
@@ -357,9 +381,9 @@ func (c *applyChecker) check(scope ast.Node, body *ast.BlockStmt, tainted map[*a
 				if !ok || !captured(recv) {
 					break
 				}
-				for _, md := range c.pkg.methodsOf(staticType(recv), name) {
+				for _, md := range c.pkg.methodsOf(c.pkg.staticType(recv), name) {
 					tt := taint(md.Type.Params, s.Args)
-					for o := range receiverObjs(md) {
+					for o := range c.pkg.receiverObjs(md) {
 						tt[o] = true
 					}
 					c.check(md, md.Body, tt, via+name+" → ")
@@ -374,12 +398,12 @@ func (c *applyChecker) check(scope ast.Node, body *ast.BlockStmt, tainted map[*a
 }
 
 // receiverObjs is a method's receiver, as a tainted set.
-func receiverObjs(fd *ast.FuncDecl) map[*ast.Object]bool {
-	out := map[*ast.Object]bool{}
+func (p applyIndex) receiverObjs(fd *ast.FuncDecl) map[types.Object]bool {
+	out := map[types.Object]bool{}
 	for _, f := range fd.Recv.List {
 		for _, n := range f.Names {
-			if n.Obj != nil {
-				out[n.Obj] = true
+			if o := p.info.Defs[n]; o != nil {
+				out[o] = true
 			}
 		}
 	}

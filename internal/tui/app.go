@@ -222,6 +222,10 @@ type App struct {
 	pasting  bool
 	pasteBuf strings.Builder
 
+	// lastButtons is the button state of the previous mouse event, which
+	// tells pointer motion (coalesced in Run) from a press or release.
+	lastButtons tcell.ButtonMask
+
 	// pendingPaste is the widget a Ctrl+V was aimed at while the terminal's
 	// OSC 52 clipboard reply is outstanding — the fallback when no native
 	// clipboard tool answered. The reply arrives as an *tcell.EventClipboard an
@@ -309,65 +313,11 @@ func (a *App) Run() error {
 	// tcell v3 has no PollEvent/PostEvent; events come from the EventQ()
 	// channel, which Fini() closes, so the range exits on quit without a
 	// sentinel.
-	var lastButtons tcell.ButtonMask
 	for ev := range s.EventQ() {
-		// Cleared before draining, not after, so a postEvent+wakeEventLoop
-		// racing this instant still gets its own wake: if its append to
-		// a.pending lands after drainPending's read below, wakePending is
-		// already false and its CompareAndSwap succeeds.
-		a.wakePending.Store(false)
-		a.drainPending()
-		a.syncDialogStack()
-
-		motionOnly := false
-		switch e := ev.(type) {
-		case *tcell.EventResize:
-			s.Sync()
-			a.layoutAll()
-		case *tcell.EventInterrupt:
-			// triggered after background goroutine posts result
-		case *tcell.EventKey:
-			// Between the two EventPaste markers every key is pasted content,
-			// not typing. Buffer it, or each pasted newline arrives as
-			// KeyEnter and IntelliSense's commit binding eats it, silently
-			// rewriting the pasted text.
-			if a.pasting {
-				a.bufferPastedKey(e)
-				break
-			}
-			if a.handleKey(e) {
-				return nil
-			}
-		case *tcell.EventPaste:
-			// Terminal bracketed paste — the terminal's own Paste command,
-			// or a middle-click.
-			if e.Start() {
-				a.beginBracketedPaste()
-			} else {
-				a.endBracketedPaste()
-			}
-		case *tcell.EventMouse:
-			a.handleMouse(e)
-			// A press, a release and every wheel notch change the button
-			// state; motion alone repeats it. Only motion is coalesced below.
-			btns := e.Buttons()
-			motionOnly = btns == lastButtons && btns&wheelButtons == 0
-			lastButtons = btns
-		case *tcell.EventClipboard:
-			// Response to the GetClipboard() request made from Ctrl+V, which
-			// recorded what it was aimed at. Clearing it first also makes an
-			// unsolicited reply — the terminal answering a request this app
-			// never made — paste nothing anywhere.
-			target, token := a.pendingPaste, a.pendingPasteToken
-			a.pendingPaste, a.pendingPasteToken = nil, nil
-			a.pasteInto(target, token, string(e.Data()))
+		quit, need := a.handleEvent(ev)
+		if quit {
+			return nil
 		}
-
-		// Re-sync before drawing: the event just handled may have opened or
-		// closed a dialog, and draw() renders straight from dialogStack. The
-		// top-of-loop sync still runs so input routing sees drainPending's
-		// changes.
-		a.syncDialogStack()
 		// All-motion tracking sends an event per cell the pointer crosses, and
 		// a frame costs ~6 ms over a results grid: a 400-event drag drew 406
 		// frames and left the screen 2.2 s behind the pointer. A motion event
@@ -376,12 +326,91 @@ func (a *App) Run() error {
 		// still draw each, so a widget that lays itself out in Draw (a menu
 		// just opened by the press) is on screen before the next event is
 		// hit-tested against it.
-		if motionOnly && len(s.EventQ()) > 0 {
+		if need == skipFrame || need == frameUnlessQueued && len(s.EventQ()) > 0 {
 			continue
 		}
 		a.draw()
 	}
 	return nil
+}
+
+// frameNeed is whether the event handleEvent just dispatched needs a frame.
+type frameNeed int
+
+const (
+	drawFrame         frameNeed = iota
+	frameUnlessQueued           // pointer motion: skippable while more is queued
+	skipFrame                   // nothing on screen changed
+)
+
+// handleEvent dispatches one event from the queue and reports whether the
+// event loop should quit and whether the event needs a frame. Run owns the
+// drawing, so a test can count frames across an event sequence.
+func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
+	// Cleared before draining, not after, so a postEvent+wakeEventLoop
+	// racing this instant still gets its own wake: if its append to
+	// a.pending lands after drainPending's read below, wakePending is
+	// already false and its CompareAndSwap succeeds.
+	a.wakePending.Store(false)
+	a.drainPending()
+	a.syncDialogStack()
+
+	switch e := ev.(type) {
+	case *tcell.EventResize:
+		a.screen.Sync()
+		a.layoutAll()
+	case *tcell.EventInterrupt:
+		// triggered after background goroutine posts result
+	case *tcell.EventKey:
+		// Between the two EventPaste markers every key is pasted content,
+		// not typing. Buffer it, or each pasted newline arrives as
+		// KeyEnter and IntelliSense's commit binding eats it, silently
+		// rewriting the pasted text.
+		if a.pasting {
+			a.bufferPastedKey(e)
+			// A buffered key changes nothing on screen, and a frame per
+			// key made a 10,001-line, 170 KB paste take ~6 minutes. The end
+			// marker draws the result. Only keys skip it: should the end
+			// marker be lost, every other event (resize, mouse, a
+			// background result) still draws, so the screen never freezes.
+			return false, skipFrame
+		}
+		if a.handleKey(e) {
+			return true, skipFrame
+		}
+	case *tcell.EventPaste:
+		// Terminal bracketed paste — the terminal's own Paste command,
+		// or a middle-click.
+		if e.Start() {
+			a.beginBracketedPaste()
+		} else {
+			a.endBracketedPaste()
+		}
+	case *tcell.EventMouse:
+		a.handleMouse(e)
+		// A press, a release and every wheel notch change the button
+		// state; motion alone repeats it. Only motion is coalesced.
+		btns := e.Buttons()
+		if btns == a.lastButtons && btns&wheelButtons == 0 {
+			need = frameUnlessQueued
+		}
+		a.lastButtons = btns
+	case *tcell.EventClipboard:
+		// Response to the GetClipboard() request made from Ctrl+V, which
+		// recorded what it was aimed at. Clearing it first also makes an
+		// unsolicited reply — the terminal answering a request this app
+		// never made — paste nothing anywhere.
+		target, token := a.pendingPaste, a.pendingPasteToken
+		a.pendingPaste, a.pendingPasteToken = nil, nil
+		a.pasteInto(target, token, string(e.Data()))
+	}
+
+	// Re-sync before drawing: the event just handled may have opened or
+	// closed a dialog, and draw() renders straight from dialogStack. The
+	// top-of-loop sync still runs so input routing sees drainPending's
+	// changes.
+	a.syncDialogStack()
+	return false, need
 }
 
 // wheelButtons is every wheel direction in a tcell.ButtonMask — wheel notches

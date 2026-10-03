@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -44,10 +45,13 @@ func jobStepsResponse() fakeResponse {
 	}}
 }
 
-func loadJobStepsPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+// loadJobStepsPage loads the Steps page over jobStepsResponse; first answers
+// ahead of every other, such as a statement's failure.
+func loadJobStepsPage(t *testing.T, first ...fakeResponse) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
 	t.Helper()
 	job := jobRow(agentJobName, "Database Maintenance", "appuser", true, 0, 0, "")
-	responses := append(agentJobResponses(job), jobStepsResponse(), agentDatabaseListResponse())
+	responses := append(first, agentJobResponses(job)...)
+	responses = append(responses, jobStepsResponse(), agentDatabaseListResponse())
 	sc, inst := newFakeConn(t, responses...)
 	dialog, _ := newFakeDialog(t)
 	name := agentJobName
@@ -94,6 +98,35 @@ func TestJobStepsRunsUpdatesThenDescendingDeletesThenAdds(t *testing.T) {
 	}
 	if !strings.Contains(stmts[0], "@command = N'DBCC CHECKDB WITH NO_INFOMSGS'") {
 		t.Errorf("the update carried the wrong command:\n%s", stmts[0])
+	}
+}
+
+// TestJobStepsFailureRollsBackEveryPass: the passes are one transaction
+// (N2), so the delete failing after the update ran rolls the update back
+// too, and nothing runs after the failure.
+func TestJobStepsFailureRollsBackEveryPass(t *testing.T) {
+	refused := errors.New("Msg 14262")
+	inst, apply, form, grid := loadJobStepsPage(t, fakeResponse{match: "sp_delete_jobstep", err: refused})
+
+	editEditor(t, form, "Command", "DBCC CHECKDB WITH NO_INFOMSGS")
+	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
+	clickButton(t, form, "Delete")
+	editText(t, form, "Step name", "Reorganize")
+	editEditor(t, form, "Command", "EXEC dbo.usp_reorg")
+	clickButton(t, form, "New")
+
+	if err := apply(t.Context()); !errors.Is(err, refused) {
+		t.Fatalf("apply = %v, want the delete's", err)
+	}
+	stmts := inst.StatementsInTx()
+	if len(stmts) != 2 || !strings.Contains(stmts[0], "sp_update_jobstep") || !strings.Contains(stmts[1], "sp_delete_jobstep") {
+		t.Errorf("in the transaction:\n%s", strings.Join(stmts, "\n"))
+	}
+	if got := inst.Statements(); len(got) != len(stmts) {
+		t.Errorf("statements outside the transaction:\n%s", strings.Join(got, "\n"))
+	}
+	if got := inst.TxLog(); !slices.Equal(got, []string{"BEGIN", "ROLLBACK"}) {
+		t.Errorf("transactions %q, want one rolled back", got)
 	}
 }
 

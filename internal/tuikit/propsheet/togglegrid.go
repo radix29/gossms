@@ -173,17 +173,20 @@ func (t *ToggleGridRow) activateCell(row, col int) {
 	}
 }
 
-// Dirty and the Revert and Validate beside it implement Editable, shadowing
-// GridRow's own DirtyFn/RevertFn-based (unset here) implementations —
-// ToggleGridRow tracks its own baseline instead of relying on the page to
-// supply one.
+// Dirty and the Revert and Validate beside it implement Editable.
+// ToggleGridRow tracks its own toggle baseline, and still consults the
+// embedded GridRow's DirtyFn/RevertFn when a page sets them: a page with
+// pending row adds/removes keeps that state itself, and every SetRows that
+// shows the change resets the baseline. Shadowing them outright made
+// Database Properties ▸ Filegroups drop an Add or Remove on OK — the form
+// read as clean, so nothing was applied.
 func (t *ToggleGridRow) Dirty() bool {
 	for i := range t.values {
 		if !slices.Equal(t.values[i], t.baseline[i]) {
 			return true
 		}
 	}
-	return false
+	return t.GridRow.Dirty()
 }
 
 func (t *ToggleGridRow) Revert() {
@@ -192,6 +195,9 @@ func (t *ToggleGridRow) Revert() {
 	// already on screen, so the row the user is on is still the row they
 	// meant — the row set has not changed, only what it says.
 	t.renderPreservingView()
+	// The page's own pending state goes after, so a RevertFn that rebuilds
+	// the rows (and the baseline) with SetRows has the last word.
+	t.GridRow.Revert()
 }
 
 func (t *ToggleGridRow) Validate() error { return nil }

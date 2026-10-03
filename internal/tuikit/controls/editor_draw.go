@@ -229,11 +229,19 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 		ch := r.line[i]
 		rw := core.RuneWidth(ch)
 		if rw == 0 {
-			// A combining mark occupies the cell its base rune already claimed;
-			// drawing it alone would consume a column that isn't there and shift
-			// the rest of the line.
+			// A combining mark with no base drawn in this window (the line's
+			// first rune, or its base clipped off the left): it has no cell of its
+			// own, and drawing it alone would consume a column that isn't there
+			// and shift the rest of the line.
 			i++
 			continue
+		}
+		// The zero-width runes after the base are its combining marks, drawn in
+		// the base's cell as one grapheme. They stay separate runes for the
+		// cursor and selection, each occupying no column.
+		j := i + 1
+		for j < n && core.RuneWidth(r.line[j]) == 0 {
+			j++
 		}
 		if sx+rw > r.w {
 			// Clipped by the right edge — blanks, never half a glyph.
@@ -242,9 +250,14 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 			}
 			break
 		}
-		core.PutRune(s, r.x+sx, r.y, ch, st)
+		if j == i+1 {
+			core.PutRune(s, r.x+sx, r.y, ch, st)
+		} else {
+			// Put, as core's putGrapheme does — never SetContent (see PutRune).
+			s.Put(r.x+sx, r.y, string(r.line[i:j]), st)
+		}
 		sx += rw
-		i++
+		i = j
 	}
 }
 

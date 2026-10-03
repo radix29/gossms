@@ -18,7 +18,7 @@ import (
 // none of that exists yet for a job that hasn't been created.
 func buildNewJobGeneralPage(sc *db.ServerConn, pf *njobPrefetch) (*propsheet.Form, propApply, func() string, func() bool) {
 	nameField := propsheet.Text("Name", "", 30)
-	ownerRow := propsheet.Select("Owner", pf.loginNames, 0)
+	ownerRow := propsheet.Select("Owner", pf.loginNames, connectedLoginIndex(sc, pf.loginNames))
 	catItems := append([]string{"[Uncategorized (Local)]"}, pf.categories...)
 	categoryRow := propsheet.Select("Category", catItems, 0)
 	enabledRow := propsheet.Check("Enabled", true)
@@ -47,6 +47,27 @@ func buildNewJobGeneralPage(sc *db.ServerConn, pf *njobPrefetch) (*propsheet.For
 		return err
 	}
 	return f, apply, jobName, enabled
+}
+
+// connectedLoginIndex is the index of the connected login (SUSER_NAME() as the
+// connect read it) in names, or 0 when it is not listed. SSMS defaults a new
+// job's owner to the caller; index 0 alone was whatever sorts first — on a
+// 2017 instance ##MS_AgentSigningCertificate##, so an untouched OK created a
+// job owned by a certificate login (B14). A Windows login can come back from
+// SUSER_NAME() in a different case than sys.server_principals holds it, so the
+// match is the server collation's, not an exact one.
+func connectedLoginIndex(sc *db.ServerConn, names []string) int {
+	if sc == nil || sc.Server == nil || sc.Server.Info() == nil || sc.Server.Info().Login == "" {
+		return 0
+	}
+	fold := collationFoldsCase(serverCollation(sc))
+	want := foldName(fold, sc.Server.Info().Login)
+	for i, n := range names {
+		if foldName(fold, n) == want {
+			return i
+		}
+	}
+	return 0
 }
 
 // buildNewJobStepsPage builds New Job's Steps page: the same grid + inline
@@ -128,9 +149,11 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 		propsheet.Note("Only T-SQL steps are supported. Database \"(default)\" lets the server pick the step's database. \"Go to step\" fields only take effect when the matching action above is set to \"Go to step...\"."),
 	)
 	f := propsheet.NewForm(rows...)
+	// The panel's fields reach the selected step here, on the UI goroutine
+	// before the pipeline runs — never in apply (docs/ui-rules.md).
+	f.SetCommit(func() { panel.read(current) })
 
 	apply := func(ctx context.Context) error {
-		panel.read(current)
 		j, err := scriptSafeJob(ctx, sc, jobName())
 		if err != nil {
 			return err

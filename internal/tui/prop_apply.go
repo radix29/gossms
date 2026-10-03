@@ -208,9 +208,19 @@ func (p *applyPlan) value(key string) (any, bool) {
 
 // run carries out every step in phase order, stopping at the first error.
 func (p *applyPlan) run(ctx context.Context) error {
+	return p.runPhases(ctx, func(int) bool { return true })
+}
+
+// runPhases is run restricted to the steps whose phase keep accepts — for a
+// run function that carries out some phases inside a transaction and the
+// rest, which a transaction refuses, after it.
+func (p *applyPlan) runPhases(ctx context.Context, keep func(phase int) bool) error {
 	steps := slices.Clone(p.steps)
 	slices.SortStableFunc(steps, func(a, b plannedStep) int { return a.phase - b.phase })
 	for _, st := range steps {
+		if !keep(st.phase) {
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}

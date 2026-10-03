@@ -26,24 +26,32 @@ type glyphScreen struct {
 	tcell.Screen
 	w, h   int
 	runes  map[[2]int]rune
+	comb   map[[2]int][]rune
 	curX   int
 	curY   int
 	curSet bool
 }
 
 func newGlyphScreen(w, h int) *glyphScreen {
-	return &glyphScreen{w: w, h: h, runes: map[[2]int]rune{}}
+	return &glyphScreen{w: w, h: h, runes: map[[2]int]rune{}, comb: map[[2]int][]rune{}}
 }
 func (s *glyphScreen) Size() (int, int) { return s.w, s.h }
 func (s *glyphScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
 	s.runes[[2]int{x, y}] = primary
+	s.comb[[2]int{x, y}] = comb
 }
 
 // Put is how core draws a cell; it lands in SetContent like any other write.
+// Every rune after the first is taken as a combining mark on the cell — the
+// callers pass one grapheme.
 func (s *glyphScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
 	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
+	var comb []rune
+	if n < len(str) {
+		comb = []rune(str[n:])
+	}
+	s.SetContent(x, y, r, comb, style)
+	return "", 1
 }
 func (s *glyphScreen) ShowCursor(x, y int) { s.curX, s.curY, s.curSet = x, y, true }
 
@@ -237,5 +245,33 @@ func TestWrapSegmentsTerminatesOnARuneWiderThanTheWidth(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("wrapSegments did not return — zero-length segment loop")
+	}
+}
+
+// TestEditorDrawsCombiningMarkOnItsBase: a decomposed é (e + U+0301) draws as
+// one cell holding the base and the mark. The editor used to skip every
+// zero-width rune, so the accent never reached the screen. The mark still
+// occupies no column: the 'y' after it sits at column 4, and the caret after
+// the 'y' at column 5.
+func TestEditorDrawsCombiningMarkOnItsBase(t *testing.T) {
+	e := widthEditor("N'xe\u0301y'", 20, 3)
+	e.SetActive(true)
+	e.cursorCol = 6 // after N, ', x, e, U+0301 and y
+	e.ensureCursorVisible()
+
+	s := newGlyphScreen(20, 3)
+	e.Draw(s)
+
+	if got := s.runes[[2]int{3, 0}]; got != 'e' {
+		t.Errorf("column 3 base = %q, want 'e'", got)
+	}
+	if got := s.comb[[2]int{3, 0}]; len(got) != 1 || got[0] != '\u0301' {
+		t.Errorf("column 3 combining = %q, want [U+0301]", got)
+	}
+	if got := s.row(0, 0, 6); got != "N'xey'" {
+		t.Errorf("row 0 = %q, want %q — the mark must occupy no column", got, "N'xey'")
+	}
+	if s.curX != 5 {
+		t.Errorf("caret x = %d after the 'y', want 5 (counting the mark gives 6)", s.curX)
 	}
 }

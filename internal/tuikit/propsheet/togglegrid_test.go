@@ -113,6 +113,32 @@ func TestToggleGridSetRowsResetsBaseline(t *testing.T) {
 	}
 }
 
+// TestToggleGridHonoursThePagesDirtyFnAndRevertFn pins that a page's own
+// pending state counts: Database Properties ▸ Filegroups keeps a pending
+// Add/Remove in its edits and shows it with SetRows, which resets the toggle
+// baseline. When ToggleGridRow shadowed DirtyFn, the form read as clean and
+// OK applied nothing.
+func TestToggleGridHonoursThePagesDirtyFnAndRevertFn(t *testing.T) {
+	g := newTestToggleGrid()
+	pending := false
+	g.DirtyFn = func() bool { return pending }
+	reverted := 0
+	g.RevertFn = func() { pending = false; reverted++ }
+
+	// A pending remove, shown by re-setting the rows: the toggle baseline is
+	// clean, the page is not.
+	pending = true
+	g.SetRows([][]string{{"Processor 0"}}, [][]bool{{false, false}})
+	if !g.Dirty() {
+		t.Fatal("Dirty() = false with the page's DirtyFn reporting a pending edit, want true")
+	}
+
+	g.Revert()
+	if reverted != 1 || g.Dirty() {
+		t.Fatalf("after Revert: RevertFn ran %d times, Dirty() = %v; want once and false", reverted, g.Dirty())
+	}
+}
+
 func TestToggleGridSingleToggleColumnAtIndexZero(t *testing.T) {
 	// Mirrors pageLoginServerRoles' shape: toggle column first, label second.
 	g := NewToggleGrid([]string{"Member", "Role"}, []int{0}, 10)

@@ -28,6 +28,15 @@ import (
 // then drops. Renames come after the profile-account and grant writes because
 // those pages address existing objects by the names the server still has.
 //
+// The msdb writes are one transaction (gosmo's InTransaction, N2): every
+// sysmail_* procedure, the credential an account's password creates
+// included, runs and rolls back cleanly inside one (probed on 13, 14 and 17),
+// so a failure part-way stores nothing and the pages keep their edits.
+// 'Database Mail XPs' is sp_configure plus RECONFIGURE, which refuses to run
+// inside a user transaction (Msg 574), so it follows the COMMIT; one failing
+// there leaves the msdb writes stored, and the dialog reloads every page.
+// None of the configuration procedures needs the option on.
+//
 // # Pages that see each other's edits
 //
 // A new account has to be offered on the Profiles page, and a new profile on
@@ -48,12 +57,12 @@ const (
 
 // The phases a Database Mail Apply runs in. Profile accounts and grants use
 // the names the server has now — a page shows an existing account or profile
-// by its stored name until Apply — so renames run after them; drops run last,
+// by its stored name until Apply — so renames run after them; drops run
 // after anything that might still name the dropped object, and cascade over
-// its links and grants anyway.
+// its links and grants anyway. 'Database Mail XPs' is last, outside the
+// transaction (runDatabaseMailPlan).
 const (
-	mailPhaseXPs = iota
-	mailPhaseCreateAccounts
+	mailPhaseCreateAccounts = iota
 	mailPhaseCreateProfiles
 	mailPhaseProfileAccounts
 	mailPhaseGrants
@@ -62,6 +71,7 @@ const (
 	mailPhaseDropProfiles
 	mailPhaseDropAccounts
 	mailPhaseParameters
+	mailPhaseXPs
 )
 
 // mailXPsOption is the sp_configure option Database Mail's procedures check.
@@ -162,7 +172,7 @@ func (a *App) showDatabaseMailPropertiesFor(sc *db.ServerConn, page int) {
 	d := a.propDialog
 	opened := d.showPlanned(sc, "", "Database Mail Properties", "Database Mail", "Server: "+sc.Opts.Server,
 		func() []propPage { return databaseMailPropPages(d, sc) },
-		func(ctx context.Context, plan *applyPlan) error { return plan.run(ctx) })
+		func(ctx context.Context, plan *applyPlan) error { return runDatabaseMailPlan(ctx, sc, plan) })
 	if !opened {
 		return
 	}
@@ -187,6 +197,19 @@ func databaseMailPropPages(_ *PropDialog, sc *db.ServerConn) []propPage {
 		withRequires(pageMailSecurity(sc, model), "", configure...),
 		withRequires(pageMailParameters(sc), "", configure...),
 	}
+}
+
+// runDatabaseMailPlan carries out a Database Mail Apply: every msdb write in
+// phase order as one transaction, then 'Database Mail XPs', which a
+// transaction refuses.
+func runDatabaseMailPlan(ctx context.Context, sc *db.ServerConn, plan *applyPlan) error {
+	err := sc.Server.InTransaction(ctx, func(ctx context.Context) error {
+		return plan.runPhases(ctx, func(phase int) bool { return phase != mailPhaseXPs })
+	})
+	if err != nil {
+		return err
+	}
+	return plan.runPhases(ctx, func(phase int) bool { return phase == mailPhaseXPs })
 }
 
 // mailPlanFrom is applyPlanFrom for a Database Mail page, as an error when the
