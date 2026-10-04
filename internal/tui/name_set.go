@@ -117,11 +117,18 @@ func msdbCollation(ctx context.Context, sc *db.ServerConn) string {
 	return serverCollation(sc)
 }
 
-// databaseCollation is d's collation, which governs every name inside it, or
-// "" for a nil handle.
+// databaseCollation is the collation every name inside d compares under, or
+// "" for a nil handle: its catalog collation, which differs from its data
+// collation in a partially contained database (case-insensitive whatever the
+// data says) and an Azure SQL Database created WITH CATALOG_COLLATION. A
+// DatabaseRef handle carries neither, and a Database built by hand only the
+// data collation, so that is the fallback.
 func databaseCollation(d *gosmo.Database) string {
 	if d == nil {
 		return ""
+	}
+	if d.CatalogCollation != "" {
+		return d.CatalogCollation
 	}
 	return d.Collation
 }

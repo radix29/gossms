@@ -19,6 +19,14 @@ import (
 // declaration above the cursor out of its FROM scope.
 func resolveTestSQL(t *testing.T, sql string, objects []gosmo.CatalogObject) []relation {
 	t.Helper()
+	return resolveTestSQLWith(t, sql, &gosmo.Catalog{Objects: objects}, nil)
+}
+
+// resolveTestSQLWith is resolveTestSQL over a whole catalog (its Schemas
+// derived from Objects), with configure, when set, adjusting the resolve
+// context — another database's inventory, the sys one.
+func resolveTestSQLWith(t *testing.T, sql string, cat *gosmo.Catalog, configure func(*resolveCtx)) []relation {
+	t.Helper()
 	cursor := strings.Index(sql, "|")
 	if cursor < 0 || strings.Count(sql, "|") != 1 {
 		t.Fatalf("sql must hold exactly one '|' cursor marker: %q", sql)
@@ -32,15 +40,17 @@ func resolveTestSQL(t *testing.T, sql string, objects []gosmo.CatalogObject) []r
 	if scope.Query == nil {
 		t.Fatalf("no query in scope for %q", sql)
 	}
-	cat := &gosmo.Catalog{Objects: objects}
 	seen := map[string]bool{}
-	for _, o := range objects {
+	for _, o := range cat.Objects {
 		if !seen[o.Schema] {
 			seen[o.Schema] = true
 			cat.Schemas = append(cat.Schemas, o.Schema)
 		}
 	}
 	rc := newResolveCtx(newCompletionInventory(cat), nil, scope.CTEs, sqlparse.ScanBindings(tokens))
+	if configure != nil {
+		configure(&rc)
+	}
 	return resolveRefs(rc, scope.Query.From)
 }
 
@@ -435,5 +445,67 @@ func TestResolvePivotQualifiedAggregateIsUntyped(t *testing.T) {
 		testCustomersOrders())
 	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int 1:"; got != want {
 		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+// A user-defined aggregate's PIVOT columns take its declared return type —
+// sys.dm_exec_describe_first_result_set reports exactly that, nullable, for a
+// CLR aggregate (checked on SQL Server 2025) — looked up by schema in the
+// connected database, the one a three-part call names, or the sys schema's.
+// Anything it can't name exactly stays untyped, and a qualified call never
+// borrows a built-in's rule.
+func TestResolvePivotUserDefinedAggregate(t *testing.T) {
+	agg := func(schema, name, dt string) gosmo.CatalogAggregate {
+		return gosmo.CatalogAggregate{Schema: schema, Name: name, Returns: gosmo.CatalogColumn{DataType: gosmo.DataType(dt)}}
+	}
+	own := &gosmo.Catalog{Objects: testCustomersOrders(), Aggregates: []gosmo.CatalogAggregate{
+		agg("dbo", "Concat", "nvarchar"),
+		agg("dbo", "SUM", "bigint"),
+		agg("stats", "Median", "float"),
+	}}
+	billing := newCompletionInventory(&gosmo.Catalog{Aggregates: []gosmo.CatalogAggregate{agg("dbo", "Spread", "real")}})
+	sys := newCompletionInventory(&gosmo.Catalog{Aggregates: []gosmo.CatalogAggregate{agg("sys", "ORMask", "varbinary")}})
+	configure := func(rc *resolveCtx) {
+		rc.sysInv = sys
+		rc.otherDB = func(name string) (*completionInventory, bool) {
+			switch strings.ToLower(name) {
+			case "billing":
+				return billing, false
+			case "testdb":
+				return rc.inv, false
+			}
+			return nil, false
+		}
+	}
+	cases := []struct{ name, call, want string }{
+		{"own database", "dbo.Concat(Total)", "Id:int 1:nvarchar"},
+		{"another schema", "stats.Median(Total)", "Id:int 1:float"},
+		{"names fold in a CI database", "DBO.concat(Total)", "Id:int 1:nvarchar"},
+		{"bracketed parts", "[dbo].[Concat](Total)", "Id:int 1:nvarchar"},
+		{"shadows the built-in of that name", "dbo.SUM(Total)", "Id:int 1:bigint"},
+		{"three-part, own database", "testdb.dbo.Concat(Total)", "Id:int 1:nvarchar"},
+		{"three-part, another database", "Billing.dbo.Spread(Total)", "Id:int 1:real"},
+		{"sys schema", "sys.ORMask(Total)", "Id:int 1:varbinary"},
+		{"the built-in, unqualified", "SUM(Total)", "Id:int 1:decimal"},
+
+		{"wrong schema", "stats.Concat(Total)", "Id:int 1:"},
+		{"unknown aggregate", "dbo.Nope(Total)", "Id:int 1:"},
+		{"omitted schema part", "Billing..Spread(Total)", "Id:int 1:"},
+		{"another database's aggregate in this one", "dbo.Spread(Total)", "Id:int 1:"},
+		{"unknown database", "Nope.dbo.Concat(Total)", "Id:int 1:"},
+		{"four parts", "srv.Billing.dbo.Spread(Total)", "Id:int 1:"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rels := resolveTestSQLWith(t,
+				"SELECT | FROM dbo.Orders PIVOT ("+c.call+" FOR CustomerId IN ([1])) AS p", own, configure)
+			r := oneRelation(t, rels, "p")
+			if got := columnSpecs(r); got != c.want {
+				t.Errorf("columns = %q, want %q", got, c.want)
+			}
+			if cols := r.columns(); !cols[len(cols)-1].IsNullable {
+				t.Errorf("pivoted column is NOT NULL; an IN value with no rows reads NULL")
+			}
+		})
 	}
 }

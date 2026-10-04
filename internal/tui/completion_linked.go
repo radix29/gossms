@@ -233,8 +233,9 @@ func (a *App) loadLinkedInventory(sc *db.ServerConn, ls *linkedServer, k string,
 //   - [server database schema]: its tables and views ("LS.Sales.dbo.");
 //   - [server database schema object]: their columns ("LS.Sales.dbo.Orders.").
 //
-// An empty part ("LS..", "LS.Sales..") answers nothing: it means the remote
-// login's default database or schema, which no read here can see.
+// An empty part ("LS..", "LS.Sales..") answers nothing: SQL Server refuses
+// a four-part name with an omitted database or schema outright (Msg 7313,
+// "an invalid schema or catalog was specified for the provider").
 func (p *QueryPanel) linkedChainCandidates(chain []string, prefix string) (items []controls.CompletionItem, wait bool) {
 	if len(chain) == 1 {
 		ls, pending := p.linkedDatabases(chain[0])

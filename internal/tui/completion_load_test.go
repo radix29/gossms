@@ -130,9 +130,9 @@ func TestCompletionDirectoryFollowsServerCollation(t *testing.T) {
 	now := time.Now()
 	info := serverInfoResponse()
 	info.rows[0][4] = "Latin1_General_CS_AS"
-	dbs := fakeResponse{match: "FROM sys.databases", cols: 9, rows: [][]driver.Value{
-		{"Sales", int64(5), "ONLINE", "FULL", int64(160), "Latin1_General_CS_AS", false, now, int64(0)},
-		{"sales", int64(6), "OFFLINE", "FULL", int64(160), "Latin1_General_CS_AS", false, now, int64(0)},
+	dbs := fakeResponse{match: "FROM sys.databases", cols: 10, rows: [][]driver.Value{
+		{"Sales", int64(5), "ONLINE", "FULL", int64(160), "Latin1_General_CS_AS", "Latin1_General_CS_AS", false, now, int64(0)},
+		{"sales", int64(6), "OFFLINE", "FULL", int64(160), "Latin1_General_CS_AS", "Latin1_General_CS_AS", false, now, int64(0)},
 	}}
 	sc, _ := newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse(), dbs})
 	a := newTestApp()

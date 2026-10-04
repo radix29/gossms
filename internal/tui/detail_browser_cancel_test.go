@@ -112,14 +112,14 @@ func TestMovingOnCancelsAFoldersBackfill(t *testing.T) {
 	rows := make([][]driver.Value, n)
 	for i := range rows {
 		rows[i] = []driver.Value{fmt.Sprintf("db%02d", i), int64(5 + i), "ONLINE", "FULL", int64(160),
-			"SQL_Latin1_General_CP1_CI_AS", false, time.Time{}, int64(0)}
+			"SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Time{}, int64(0)}
 	}
 	gate := make(chan struct{})
 	const spaceMatch = "AS avail_log_mb\nFROM sys.database_files"
 
 	a := newTestApp()
 	sc, inst := newFakeConn(t,
-		fakeResponse{match: "FROM sys.databases", cols: 9, rows: rows},
+		fakeResponse{match: "FROM sys.databases", cols: 10, rows: rows},
 		fakeResponse{match: spaceMatch, cols: 5, rows: [][]driver.Value{{1.0, 1.0, 0.0, 0.0, 0.0}}, block: gate})
 	a.detailBrowser = a.newDetailBrowser()
 	db := a.detailBrowser

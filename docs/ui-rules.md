@@ -58,7 +58,11 @@ behind the mouse and async rules.
   (`prop_grid_helpers.go`) for grid + detail editor; `wireCellToggle`/
   `newCellToggleGrid` for "activate a cell to change the row"; `staticBlock`
   for a read-only detail block — its `set()` clears every row not given, so a
-  missed row can't keep describing the previous selection.
+  missed row can't keep describing the previous selection. A grid with Add
+  and Remove keeps its rows in `pendingEdits` (`pending_edits.go`): the row
+  type embeds `pendingState`, and the list owns dirty, visible, revert,
+  add/remove and the collation-aware name checks the pages each used to
+  rewrite.
 - **A read-only page's grids browse, so their `OnSelectRow` runs there too.**
   `Form.SetReadOnly` leaves grids focusable and browse-only; everything else is
   inert, and the form reports clean whatever its rows say. An `OnSelectRow`

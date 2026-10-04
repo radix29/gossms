@@ -28,12 +28,12 @@ type mailProfileEdit struct {
 	origName, name         string
 	origDesc, desc         string
 	origAccounts, accounts []string
-	isNew, removing        bool
+	pendingState
 }
 
-func (e *mailProfileEdit) dirty() bool {
-	return e.isNew || e.removing || e.name != e.origName || e.desc != e.origDesc ||
-		!slices.Equal(e.accounts, e.origAccounts)
+// changed reports an edit to an existing profile.
+func (e *mailProfileEdit) changed() bool {
+	return e.name != e.origName || e.desc != e.origDesc || !slices.Equal(e.accounts, e.origAccounts)
 }
 
 // accountsIn is the profile's accounts that will exist when its accounts are
@@ -91,19 +91,14 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				loaded[i] = &mailProfileEdit{origName: p.Name, name: p.Name, origDesc: p.Description, desc: p.Description,
 					origAccounts: names, accounts: slices.Clone(names)}
 			}
-			edits := slices.Clone(loaded)
-			model.setProfiles(mailPublishedProfiles(edits))
-			publish := func() { model.publishProfiles(mailPublishedProfiles(edits)) }
-
-			visible := func() []*mailProfileEdit {
-				out := make([]*mailProfileEdit, 0, len(edits))
-				for _, e := range edits {
-					if !e.removing {
-						out = append(out, e)
-					}
-				}
-				return out
-			}
+			edits := newPendingEdits(serverCollation(sc), loaded,
+				func(e *mailProfileEdit) string { return e.name }, (*mailProfileEdit).changed,
+				func(e *mailProfileEdit) {
+					e.name, e.desc, e.accounts = e.origName, e.origDesc, slices.Clone(e.origAccounts)
+				})
+			model.setProfiles(mailPublishedProfiles(edits.all()))
+			publish := func() { model.publishProfiles(mailPublishedProfiles(edits.all())) }
+			visible := edits.visible
 			accountText := func(a string) string {
 				if !slices.Contains(available, a) {
 					return a + " (removed)"
@@ -249,21 +244,13 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				redrawGrid(grid, headers, gridRows())
 			})
 
-			gridRow := propsheet.NewGridRow(grid, min(len(edits)+4, 7))
-			gridRow.DirtyFn = func() bool { return slices.ContainsFunc(edits, (*mailProfileEdit).dirty) }
+			gridRow := propsheet.NewGridRow(grid, min(len(loaded)+4, 7))
+			gridRow.DirtyFn = edits.dirty
 			gridRow.ValidateFn = func() error {
-				names := make([]pendingName, len(edits))
-				for i, e := range edits {
-					names[i] = pendingName{stored: e.origName, name: e.name, removing: e.removing}
-				}
-				return pendingNamesRefusal(serverCollation(sc), "profile", names)
+				return edits.refusal("profile", func(e *mailProfileEdit) string { return e.origName })
 			}
 			gridRow.RevertFn = func() {
-				edits = edits[:0]
-				for _, e := range loaded {
-					e.name, e.desc, e.accounts, e.removing = e.origName, e.origDesc, slices.Clone(e.origAccounts), false
-					edits = append(edits, e)
-				}
+				edits.revert()
 				current = nil
 				reload()
 				publish()
@@ -277,12 +264,12 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					hint.Set("Type a name for the new profile first.")
 					return
 				}
-				if pendingNameTaken(serverCollation(sc), visible(), func(e *mailProfileEdit) string { return e.name }, name) {
+				if edits.listed(name) {
 					hint.Set("A profile named " + name + " is already listed.")
 					return
 				}
 				hint.Set("Add the accounts " + name + " sends through below, first choice first.")
-				edits = append(edits, &mailProfileEdit{name: name, isNew: true})
+				edits.add(&mailProfileEdit{name: name})
 				newName.SetValue("")
 				reselect(len(visible()) - 1)
 			})
@@ -295,11 +282,10 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					return
 				}
 				e := vis[i]
+				edits.remove(e)
 				if e.isNew {
-					edits = slices.DeleteFunc(edits, func(x *mailProfileEdit) bool { return x == e })
 					hint.Clear()
 				} else {
-					e.removing = true
 					hint.Set(e.origName + " is deleted on Apply with its grants; its queued mail is marked failed.")
 				}
 				reselect(min(i, len(visible())-1))
@@ -340,7 +326,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					return err
 				}
 				avail := model.accountNames(loadedAccounts)
-				for _, e := range edits {
+				for _, e := range edits.all() {
 					name, accts := e.origName, e.accountsIn(avail)
 					switch {
 					case e.isNew:

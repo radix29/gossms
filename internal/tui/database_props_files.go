@@ -47,7 +47,7 @@ const noFilegroupItem = "(not applicable)"
 // pending Add (isNew), or an existing file pending Remove.
 type fileEdit struct {
 	origName string // "" for a brand-new file
-	isNew    bool
+	pendingState
 
 	name      string // current (possibly renamed) logical name
 	fileType  string // "ROWS" or "LOG"; fixed for an existing file, chosen for a new one
@@ -66,8 +66,6 @@ type fileEdit struct {
 	origGrowthKB        int64
 	origGrowthPercent   int
 	origMaxSizeKB       int64
-
-	pendingRemove bool
 }
 
 func fileEditFromInfo(fl *gosmo.DatabaseFileInfo) *fileEdit {
@@ -96,6 +94,13 @@ func (e *fileEdit) changed() bool {
 	return e.name != e.origName || e.sizeKB != e.origSizeKB ||
 		e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB ||
 		e.growthPercent != e.origGrowthPercent || e.maxSizeKB != e.origMaxSizeKB
+}
+
+// reset undoes every change changed reports — the same fields, kept beside it
+// for the same reason.
+func (e *fileEdit) reset() {
+	e.name, e.sizeKB, e.isPercentGrowth = e.origName, e.origSizeKB, e.origIsPercentGrowth
+	e.growthKB, e.growthPercent, e.maxSizeKB = e.origGrowthKB, e.origGrowthPercent, e.origMaxSizeKB
 }
 
 // modify builds the partial ALTER for an existing file: every field is left
@@ -243,20 +248,13 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				}
 			}
 
-			edits := make([]*fileEdit, len(files))
+			loaded := make([]*fileEdit, len(files))
 			for i, fl := range files {
-				edits[i] = fileEditFromInfo(fl)
+				loaded[i] = fileEditFromInfo(fl)
 			}
-
-			visible := func() []*fileEdit {
-				out := make([]*fileEdit, 0, len(edits))
-				for _, e := range edits {
-					if !e.pendingRemove {
-						out = append(out, e)
-					}
-				}
-				return out
-			}
+			edits := newPendingEdits(databaseCollation(d), loaded,
+				func(e *fileEdit) string { return e.name }, (*fileEdit).changed, (*fileEdit).reset)
+			visible := edits.visible
 			rowsFor := func() [][]string {
 				vis := visible()
 				rows := make([][]string, len(vis))
@@ -455,7 +453,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					hint.Set("Set File type to ROWS or LOG — this page adds data and log files only.")
 					return
 				}
-				if i := pendingNameIndex(d.Collation, visible(), func(e *fileEdit) string { return e.name }, name); i >= 0 {
+				if i := edits.index(name); i >= 0 {
 					// Already present — say so and select it, rather than
 					// leaving the button looking broken.
 					hint.Set("A file named " + name + " is already listed — its row is selected below.")
@@ -466,7 +464,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				hint.Clear()
 				fileGroup := pickedFilegroup(typeSelect.Value())
 				e := &fileEdit{
-					isNew: true, name: name, fileType: effectiveType(typeSelect.Value(), fileGroup),
+					name: name, fileType: effectiveType(typeSelect.Value(), fileGroup),
 					fileGroup: fileGroup, path: pathField.Value(),
 					maxSizeKB: -1,
 				}
@@ -486,7 +484,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 						e.maxSizeKB = n * 1024
 					}
 				}
-				edits = append(edits, e)
+				edits.add(e)
 				resetGrid(grid, databaseFileColumns, rowsFor(), len(visible())-1)
 				syncFieldsFromSelection()
 			})
@@ -497,27 +495,16 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				hint.Clear()
-				e.pendingRemove = true
+				edits.remove(e)
 				current = nil
 				resetGrid(grid, databaseFileColumns, rowsFor(), 0)
 				syncFieldsFromSelection()
 			})
 
 			gridRow := propsheet.NewGridRow(grid, 10)
-			dirty := func() bool {
-				for _, e := range edits {
-					if e.isNew || e.pendingRemove || e.changed() {
-						return true
-					}
-				}
-				return false
-			}
-			gridRow.DirtyFn = dirty
+			gridRow.DirtyFn = edits.dirty
 			gridRow.RevertFn = func() {
-				edits = edits[:0]
-				for _, fl := range files {
-					edits = append(edits, fileEditFromInfo(fl))
-				}
+				edits.revert()
 				resetGrid(grid, databaseFileColumns, rowsFor(), 0)
 				syncFieldsFromSelection()
 			}
@@ -540,17 +527,17 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				if err != nil {
 					return err
 				}
-				for _, e := range edits {
+				for _, e := range edits.all() {
 					switch {
-					case e.pendingRemove && !e.isNew:
+					case e.removing:
 						if err := d.FileRef(e.origName).Drop(ctx); err != nil {
 							return err
 						}
-					case e.isNew && !e.pendingRemove:
+					case e.isNew:
 						if err := d.AddFile(ctx, e.spec()); err != nil {
 							return err
 						}
-					case !e.isNew && !e.pendingRemove:
+					default:
 						if !e.changed() {
 							continue // nothing about this file actually changed
 						}

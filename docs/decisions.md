@@ -6,7 +6,7 @@ Work knowingly left undone is in `docs/open-threads.md`.
 
 ## Azure SQL Managed Instance
 
-Supported; nothing open against it.
+Supported. Live gaps: `docs/open-threads.md` V2–V4.
 
 - **MI reports `ProductVersion` `12.0.2000.8`** while running engine 18.0, so
   every gosmo `colSince`/`VersionMajor` gate degrades or refuses features it
@@ -22,8 +22,7 @@ Supported; nothing open against it.
   `amAllTabs`; `amTabLabels` and per-tab scroll arrays stay indexed by `amTab`,
   sized `amTabCount`. `setTab` is the one gate, so a new conditional tab needs
   only an `azureOnly`-style predicate.
-- **The Activity Monitor's DMV reads live in gosmo** (decision 5 of the
-  2026-10-02 review): `Server.PerformanceCounters`, `WaitStats`,
+- **The Activity Monitor's DMV reads live in gosmo**: `Server.PerformanceCounters`, `WaitStats`,
   `FileIOStats`, `MemoryClerks`, `Schedulers`, `RequestActivity`, `HostCPU`
   and the four `TempDB*` reads, behind `internal/activity.Source`. Chosen over a
   gossms-side live sweep so `TestLiveVersionSweep` runs them on every major.
@@ -151,7 +150,7 @@ Supported; nothing open against it.
   knowingly withheld Delete.** Probed 2026-09-16 on 13/14/17: `ALTER ON
   OBJECT::<queue>` alters and is refused the drop (Msg 15151; drop needs
   CONTROL on the queue or ALTER on its schema). `gate.QueueAlterRights` is
-  `gate.ObjectWriteRights()`; `queueDropRights` is that minus the object ALTER.
+  `gate.ObjectWriteRights()`; `gate.QueueDropRights` is that minus the object ALTER.
   They're told apart by `rightControlOnObject` (gosmo's
   `ProbedObjectPermissions` `O:CONTROL` beside `O:ALTER`; ALTER reads 1 for
   either grant, CONTROL only for a CONTROL grant or the owner).
@@ -169,14 +168,14 @@ Supported; nothing open against it.
   | db_ddladmin | 1 | 0 | refused, Msg 15151 |
   | CONTROL on the database, DENY CONTROL on the object | 0 | 0 | refused, Msg 15151 |
 
-  So `objectTransferRights` falls back to `classOneTransferRights` (CONTROL on
+  So `objectTransferRights` falls back to `gate.ClassOneTransferRights` (CONTROL on
   the object or database) for table, view, procedure, function, sequence,
   synonym, rule, default and queue — never `objectDataRights`, which offered
   rows one and five. Row three is why three ALTER-denial menu tests exempt Move
   to Schema. Knowingly excluded: CONTROL on the source schema reads through
   gosmo's schema probe as ALTER (indistinguishable from ALTER alone), so such a
   principal isn't offered a move the server would allow — the same trade as
-  `queueDropRights`.
+  `gate.QueueDropRights`.
 
 **Classes 0, 1, 3, 4, 5, 6, 10, 101, 105 and 108 are gated.** Each row below is
 a *wrong* gate if assumed the other way round.
@@ -317,7 +316,7 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   new name can never carry one the old didn't. For a role or server role, the
   DENY on the role withholds ADD/DROP MEMBER but not the rename, and reading
   the box would ask the stale probe about a name it never saw and open the
-  Members page editable under that DENY. (Review T29, closed with no change.)
+  Members page editable under that DENY.
 - **A schema *node* is excluded from the schema-scoped gate** — `objectOpRights`
   names `rightAlterOnSchema` beside the three database-wide rights, but ALTER
   on a schema doesn't permit dropping or renaming the schema itself.
@@ -337,8 +336,7 @@ on that would empty menus for everyone working through a database-wide grant.
   idempotence is the caller's choice (`TestDropStatementsAreNotIdempotent`).
   Scripter's DROP-and-CREATE *scripts* keep `IF EXISTS`, being made to re-run.
 - **`CertificateByName`/`AsymmetricKeyByName` return `ErrNotFound` on absence**
-  like every `*ByName` (since 2026-09-22's breaking release; previously `(nil,
-  nil)`). Callers treating absence as ordinary test `errors.Is(err,
+  like every `*ByName`. Callers treating absence as ordinary test `errors.Is(err,
   gosmo.ErrNotFound)` (the endpoint pipeline's `findCertificateIfAny`). The
   remaining conventions are on `ErrNotFound`;
   `TestLiveCertificateNotFoundIsErrNotFound` pins both directions.
@@ -368,8 +366,7 @@ on that would empty menus for everyone working through a database-wide grant.
   `Server.Name()` stays (it reads `s.info.Name`). The `Ref` trap
   (`DatabaseRef("master").IsSystem()` is `false`) is documented on
   `Server.DatabaseRef` and `Database`.
-- **`Server.InTransaction(ctx, fn)` binds one transaction into ctx** (T47,
-  decided 2026-10-03), the way `WithScript` threads a collector: every
+- **`Server.InTransaction(ctx, fn)` binds one transaction into ctx**, the way `WithScript` threads a collector: every
   chokepoint, reads included, runs on it, never retried. Observers hear after
   COMMIT and nothing on a rollback; a nested call on the same Server joins;
   under `WithScript` it only runs `fn`, adding no BEGIN TRANSACTION (a
@@ -378,26 +375,25 @@ on that would empty menus for everyone working through a database-wide grant.
   effective-permission impersonations) refuse inside it with
   `ErrUnsupported`. A rollback does not undo receiver mirroring
   (`setIfApplied`): re-read after one.
-- **Module listings carry no text; `Definition(ctx)` reads it by name** (T52,
-  decided 2026-10-03). `StoredProcedure`, `View`, `UserDefinedFunction`,
-  `Trigger` (DML), `Rule` and `Default` lost their `Definition` field — Go
+- **Module listings carry no text; `Definition(ctx)` reads it by name**.
+  `StoredProcedure`, `View`, `UserDefinedFunction`, `Trigger` (DML), `Rule`
+  and `Default` have no `Definition` field — Go
   cannot have a field and a method of one name, and a field set by `*ByName`
   but zero from a listing is the `Ref` trap again. The method works on a
   `Ref`, answers `""` for an encrypted or CLR module and `ErrNotFound` for a
   missing one or one of another kind. A caller wanting a folder's texts pays
   one read per row (gossms's Rules/Defaults folders do; both are legacy and
   few).
-- **Secrets are redacted in gosmo, by default, from captures and observers**
-  (T13, decided 2026-10-03). Every password, credential secret, key source and
+- **Secrets are redacted in gosmo, by default, from captures and observers**.
+  Every password, credential secret, key source and
   identity value goes through `execSecret`; `WithScript` captures and
   statement observers carry `gosmo.PasswordPlaceholder` and its siblings.
   `gosmo.WithScriptSecrets(ctx)` opts a *capture* back into the real values
   (a script a machine runs); observers are never opted in. **Rejected:**
   always redacting with no opt-in (narrows a capability gosmo had), and
   redacting observers only (leaves every caller's Script Changes to redact
-  for itself — the gossms-side `scriptSafePassword` missed New Login and
-  Login Properties). One placeholder text everywhere, including Database
-  Mail's former `<password>`.
+  for itself, which is how New Login and Login Properties leaked). One
+  placeholder text everywhere, Database Mail included.
 - **azidentity deprecated `UsernamePasswordCredential`** (no MFA), used by
   `AuthEntraPassword`/ROPC in `entra.go` (options literal and
   `NewUsernamePasswordCredential`). **Kept** — a supported mode verified live on
@@ -636,7 +632,7 @@ Peer credentials, easy to undo:
   under `GRANT CONTROL ON DATABASE`, all refused under `GRANT ALTER`. Adding
   `rightAlterDatabase` "for symmetry" offers actions the server refuses. `ALTER
   ANY CREDENTIAL` is server-scope, and `HAS_PERMS_BY_NAME` on a database
-  returns NULL for it ("unknown" forever). See `dbScopedCredentialRights`.
+  returns NULL for it ("unknown" forever). See `gate.DBScopedCredentialRights`.
 - **No ALTER script verb, no rename.** The secret is unreadable, so scripts
   carry `<insert secret here>` — an ALTER verb would silently overwrite the
   secret with the placeholder. No `WITH NAME` and no `sp_rename` class.
@@ -826,7 +822,7 @@ String). Not to be reopened without asking the author:
 - **The port folds into Server Name for display only; `config.Connection.Port`
   stays stored.** It's bound into `connectionAAD`, part of `GeneratedName` (the
   dedup key), and `config.DialPort` drops 1433 so named instances resolve via
-  Browser; it reaches gosmo as `ConnectionOptions.Port` (W15). `currentOptions`
+  Browser; it reaches gosmo as `ConnectionOptions.Port`. `currentOptions`
   splits with `gosmo.ParseServerAddress`; `PreFill` re-joins with
   `config.ResolveServer`, the same fold as gosmo's (what's shown is what's
   dialled). `TestConnectDialogFoldingThePortKeepsTheConnectionIdentity`
@@ -842,20 +838,18 @@ String). Not to be reopened without asking the author:
   Reset under the connection string, Name/Color custom-property rows. The
   connection string stays a live masked preview. The "Server Type" line is
   dropped (one fixed value).
-- **The button row is a Tab stop, not F1** (W11, 2026-10-02). Connect, Back Up
-  and Restore (form and File Locations views) put their bottom buttons past
-  either end of the Tab ring, crossed with Left/Right, as a Properties dialog's
-  `zoneButtons` is (`buttonRowKey`, `dialog_common.go`). F1 used to cycle them
-  from anywhere in the form and was the only keyboard way to reach them; F1 is
-  Help everywhere else, so it was dropped rather than documented. A modifier
-  chord was rejected: Ctrl+Tab and Ctrl+digit arrive without their modifier in
+- **The button row is a Tab stop, not F1.** Connect, Back Up and Restore
+  (form and File Locations views) put their bottom buttons past either end of
+  the Tab ring, crossed with Left/Right, as a Properties dialog's
+  `zoneButtons` is (`buttonRowKey`, `dialog_common.go`). F1 is Help
+  everywhere, never a button cycle. A modifier chord was rejected: Ctrl+Tab and Ctrl+digit arrive without their modifier in
   VTE terminals. Enter in a field still fires the highlighted default button
   (Connect, Start Backup, Analyze), and leaving the row puts the highlight back
   on it.
 
 ## Extended Events: what the design settled — do not re-raise
 
-Roadmap item 23. gosmo holds the model, DDL, scripter and readers
+gosmo holds the model, DDL, scripter and readers
 (`EventSession`, `ReadEventFile`, `ReadRingBuffer`, `DecodeEventXML`).
 
 - **Live data is polled from a target, never read from the XE stream.**
@@ -999,8 +993,7 @@ Roadmap item 23. gosmo holds the model, DDL, scripter and readers
   would jump between the label and its cell as columns resized or scrolled.
   Accepted cost: scrolled so an aggregate's column comes first on screen, the
   label has no room and the rows show only the aggregates — scroll back to
-  see which group is which. This reverses the earlier "text in the label
-  only" call.
+  see which group is which.
 - **Find and bookmarks walk events in grid order, collapsed groups
   included, and open the group holding a hit** — a Find that skipped
   collapsed groups would say "not found" of an event the grid holds. Ctrl+F /
@@ -1049,7 +1042,7 @@ Roadmap item 23. gosmo holds the model, DDL, scripter and readers
   the session already had is exempt: MI's `system_health` writes a local
   file, which the server may and a user may not.
 - **The Profiler and the add-a-target offer use a ring_buffer on Azure, not
-  an event_file** (D2 revised): a blob needs a container and a credential
+  an event_file**: a blob needs a container and a credential
   gossms cannot assume.
 - **On Azure a local event file is read only by its session's wildcard**
   (`xeReadsOnlyByPattern`, `xevent_viewer_feed.go`). MI's
@@ -1060,13 +1053,12 @@ Roadmap item 23. gosmo holds the model, DDL, scripter and readers
   beside the wildcard. So on Azure Watch Live Data does not start at the
   current file (it reads the wildcard from the start — MI's system_health is
   one file), View Target Data and Merge do not list and read file by file,
-  and Merge's prompt starts on `system_health*.xel` (supersedes "Merge keeps
-  its `*.xel` default there", which was never tried: that pattern lists 149
+  and Merge's prompt starts on `system_health*.xel` (`*.xel` lists 149
   internal files and refuses the first). A URL is read as given.
 
 ## Resource Governor and Database Mail: what the design settled — do not re-raise
 
-Phase 5 item 24. gosmo holds the model, writes and scripter
+gosmo holds the model, writes and scripter
 (`resource_governor*.go`, `database_mail*.go`, `ErrorLogDatabaseMail`).
 Unverified on Managed Instance and on non-Enterprise editions:
 `docs/open-threads.md` V4, V5.
@@ -1093,7 +1085,7 @@ Unverified on Managed Instance and on non-Enterprise editions:
   scheduler no longer listed, is shown and not edited rather than having
   the unshown part dropped on Apply. Unchecking Automatic with nothing
   ticked is refused on Apply. Without VIEW SERVER STATE the list is
-  unreadable and affinity read-only, with a note. (Phase 5 N6, 2026-10-01.)
+  unreadable and affinity read-only, with a note.
 - **The classifier is a picker of schema-bound, parameterless functions in
   master plus New classifier...**, which closes the dialog (confirming when
   dirty) and opens a template — every dialog is modal, so a query window
@@ -1113,17 +1105,17 @@ Unverified on Managed Instance and on non-Enterprise editions:
 - **A Resource Governor or Database Mail Apply is a phase-ordered plan**
   (`PropDialog.applyPlan`). Page order cannot express the dependencies (a pool
   is dropped after its groups move on another page).
-  - **Resource Governor's plan is one transaction** (W21, gosmo
+  - **Resource Governor's plan is one transaction** (gosmo
     `Server.InTransaction`): a failure part-way stores nothing and the pages
     keep their edits. RECONFIGURE/DISABLE cannot run in a user transaction
     (Msg 574), so they follow the COMMIT; a failure there is a committed one
     and every page reloads.
-  - **So is Database Mail's** (N2, 2026-10-03): every `sysmail_*` write,
+  - **So is Database Mail's**: every `sysmail_*` write,
     the credential a Basic account's password creates included, runs and
     rolls back inside a user transaction (probed on 13, 14 and 17). 'Database
-    Mail XPs' is sp_configure + RECONFIGURE (Msg 574), so it moved to the last
+    Mail XPs' is sp_configure + RECONFIGURE (Msg 574), so it runs in the last
     phase and follows the COMMIT; a failure there is a committed one.
-  - **Job Properties ▸ Steps is one transaction too** (N2): its update,
+  - **Job Properties ▸ Steps is one transaction too**: its update,
     delete and add passes and the reorder (whose own BEGIN/COMMIT batch
     nests) commit together, so a failure part-way never leaves the steps
     renumbered under the page.
@@ -1206,15 +1198,18 @@ Unverified on Managed Instance and on non-Enterprise editions:
   schema.object, database.schema or server.database; the linked reading is
   tried only when the local ones name nothing, as T-SQL's own part count would
   decide once the name is complete.
-- **`LS.db..t` answers nothing.** The remote login's default schema in that
-  database is not readable through `OPENQUERY` (no database context), and
-  guessing `dbo` can name the wrong object.
+- **An omitted part (`LS..s.t`, `LS.db..t`, `LS...t`) answers nothing** —
+  SQL Server refuses the name itself: Msg 7313, "an invalid schema or catalog
+  was specified for the provider", probed 2026-10-04 (2025 → 2017 over
+  MSOLEDBSQL19, also with the linked server's `@catalog` set), though
+  `OPENQUERY`'s `DB_NAME()`/`SCHEMA_NAME()` would have named the remote
+  login's defaults. A list for a name that cannot run is a wrong list.
 - **No remote table-valued functions or `sys` schema** — four-part names
   cannot call a function, and the remote's `sys` views are not inventoried.
 
 ## T-SQL lexing: one lexer, two statement splitters — settled, do not re-raise
 
-`internal/tuikit/sqltext` (review plan W23, T54).
+`internal/tuikit/sqltext`.
 
 - **One lexer.** `sqltext.Next` is the only T-SQL lexer: the executor's
   `SplitBatches`, Ctrl+Enter's `StatementAt`, the SQL highlighter and
@@ -1238,7 +1233,7 @@ Unverified on Managed Instance and on non-Enterprise editions:
 
 ## SQL NULL in results: what each consumer writes — settled, do not re-raise
 
-Review plan W26, T59. A NULL's text is "NULL" everywhere a result is held;
+A NULL's text is "NULL" everywhere a result is held;
 `query.ResultSet`'s null bitmap (and `RowSink.Row`'s `isNull`) is what tells
 it from the string 'NULL'.
 
@@ -1268,8 +1263,8 @@ it from the string 'NULL'.
   recur when *editing* comments: wrong caller after a helper moved, counts,
   claims about which types implement an interface, wrong-document
   cross-references, and inverted sentences that read fine either way.
-- **A `sql_variant` cell is rendered from its value, not its inner type**
-  (settled 2026-10-03). go-mssqldb v1.11.2 decodes the inner type and drops
+- **A `sql_variant` cell is rendered from its value, not its inner type**.
+  go-mssqldb v1.11.2 decodes the inner type and drops
   it, so `query.appendVariant` infers: a `[]byte` spelling a decimal literal is
   decimal/money digits (a `varbinary` variant that happens to spell one shows
   as text too — accepted), a nameless fixed zone is a `datetimeoffset`, and
@@ -1384,8 +1379,8 @@ it from the string 'NULL'.
 - **Activity Monitor probes `VIEW SERVER STATE` once per collector** (twice per
   open) — Retry starts a new collector, and a cached answer would fail without
   asking. One extra round trip is cheaper.
-- **`counterQueryFor`'s `RTRIM(instance_name) IN ('', '_Total')` drops no counter
-  the panels read**, NULL notwithstanding: Windows has no NULL rows; Linux has
+- **`counterInstances` (`""`, `_Total`, `internal/activity/counters.go`) drops
+  no counter the panels read**, NULL notwithstanding: Windows has no NULL rows; Linux has
   five (`SQLPAL:Host/Guest Memory`), not in `counterNames`. All 33 names resolve
   on both. No `OR instance_name IS NULL` arm.
 - **Both cache hit ratios are `cntr_value / base`, neither a delta** (live on
@@ -1438,8 +1433,8 @@ it from the string 'NULL'.
   `dialog_gesture_test.go` are suppressed, not deleted** — the reflection walk
   reads them; they *are* the fixture. Each has `//lint:ignore U1000` naming the
   reader.
-- **`rightAlterAnyLinkedSrv` and `rightCreateTable` read as unused**,
-  deliberately (`internal/tui/gate/names_test.go`).
+- **`gate.AlterAnyLinkedSrv` and `gate.CreateTable` read as unused**,
+  deliberately (the reason is at `AlterAnyLinkedSrv`, `gate/gate.go`).
 - **`scanPlanXML`'s per-set append isn't live-testable**: every showplan result
   set holds one row (seven batch shapes, both SET options,
   `TestLivePlanEveryShowplanSetHoldsOneRow`), so only
@@ -1452,7 +1447,7 @@ it from the string 'NULL'.
   for certificate- or key-mapped logins (CREATE or ALTER), so the page refuses
   them up front.
 - **Per-file Restore destinations (SSMS's "Restore As") aren't built** — the
-  folder-level choice covers it. Rules (gosmo's `restore_plan.go` since W20):
+  folder-level choice covers it. Rules (gosmo's `restore_plan.go`):
   the backup set number comes only from `BackupHeader.SetNumber` /
   `BackupInfo.SetNumber` for the restore, the MOVE clauses and Files Included —
   deriving it separately gave "Logical file 'x' is not part of database 'y'" on
@@ -1480,12 +1475,11 @@ it from the string 'NULL'.
   the same stale lock (older than `lockStale`, 10 s) can race; it needs a dead
   holder plus two saves within one poll, and costs only a lost edit, never
   corruption (writes stay atomic). Closing it needs flock/`LockFileEx`, a GOOS
-  branch. Documented on `WithLock` (`internal/fileutil/lock.go`); 2026-09-24
-  review U9.
+  branch. Documented on `WithLock` (`internal/fileutil/lock.go`).
 - **The editor expands every tab to spaces** (`Editor.expandTabs`,
   `internal/tuikit/controls/editor_actions.go`, on `SetText`, `Paste`, block
   insert, Replace) — including in string literals, and Save writes spaces.
-  2026-09-23 review S5, withdrawn: **author's call.** No tab-preserving buffer
+  **Author's call.** No tab-preserving buffer
   or tab-stop rendering.
 
 ## Release workflow

@@ -22,11 +22,17 @@ type Pivot struct {
 	// ("COUNT(*)").
 	Agg string
 
-	// Func is a PIVOT's aggregate as written — "SUM" in "SUM(o.Amount)" —
-	// so the caller can type the output columns. Empty for UNPIVOT, and for a
-	// schema-qualified call ("dbo.MyAgg(x)"), which is a user-defined
-	// aggregate whatever its name.
+	// Func is a PIVOT's aggregate as written — "SUM" in "SUM(o.Amount)",
+	// "MyAgg" in "dbo.MyAgg(x)" — so the caller can type the output columns.
+	// Empty for UNPIVOT.
 	Func string
+
+	// FuncQualifier is the parts before Func in a qualified call: ["dbo"] for
+	// "dbo.MyAgg(x)", ["Sales", "dbo"] for "Sales.dbo.MyAgg(x)", an omitted
+	// part as "". nil for an unqualified call, which is always a built-in —
+	// T-SQL refuses an unqualified user-defined aggregate (Msg 195) — while a
+	// qualified one is user-defined whatever its name ("dbo.SUM").
+	FuncQualifier []string
 
 	// Value is the value column an UNPIVOT names before FOR.
 	Value string
@@ -68,7 +74,7 @@ func (p *queryParser) parsePivot() *Pivot {
 	p.i += pivotClauseSkip
 	pv := &Pivot{Unpivot: unpivot}
 
-	head, fn, ok := p.pivotNameUntil(func() bool { return p.atIdentFold("FOR") })
+	head, call, ok := p.pivotNameUntil(func() bool { return p.atIdentFold("FOR") })
 	if !ok {
 		p.i = start
 		return nil
@@ -84,7 +90,13 @@ func (p *queryParser) parsePivot() *Pivot {
 	} else {
 		// A PIVOT's aggregate may well wrap no column at all — COUNT(*) — and
 		// then there is nothing for it to drop. An empty Agg says exactly that.
-		pv.Agg, pv.Func = head, fn
+		pv.Agg = head
+		if n := len(call); n > 0 {
+			pv.Func = call[n-1]
+			if n > 1 {
+				pv.FuncQualifier = call[:n-1]
+			}
+		}
 	}
 	p.i++ // FOR
 
@@ -109,10 +121,11 @@ func (p *queryParser) parsePivot() *Pivot {
 }
 
 // pivotNameUntil walks to the terminator stop reports and returns the column
-// name it passed and the unqualified function the argument list belongs to
-// ("" when none opened, or the call was qualified), with ok reporting only whether the terminator was reached —
-// a clause can legitimately name no column ("COUNT(*)"), and telling that
-// apart from a shape that isn't a pivot clause at all is the caller's job.
+// name it passed and the dotted name the argument list belongs to, part by
+// part (nil when none opened), with ok reporting only whether the terminator
+// was reached — a clause can legitimately name no column ("COUNT(*)"), and
+// telling that apart from a shape that isn't a pivot clause at all is the
+// caller's job.
 //
 // Which identifier is the column depends on whether an argument list opened:
 //
@@ -124,40 +137,58 @@ func (p *queryParser) parsePivot() *Pivot {
 // stop is only consulted at that level, so the FOR of a nested expression
 // cannot end the aggregate early, and the clause's own closing ')' arriving
 // first means this is not a pivot clause.
-func (p *queryParser) pivotNameUntil(stop func() bool) (name, fn string, ok bool) {
-	outer, inner := "", ""
-	depth, grouped, qualified := 0, false, false
+func (p *queryParser) pivotNameUntil(stop func() bool) (name string, call []string, ok bool) {
+	// chain is the dotted name being read at the clause's own level, an
+	// omitted part ("db..agg") as "": the column once the clause ends, the
+	// call's name when an argument list opens after it.
+	var chain []string
+	inner := ""
+	depth, grouped, afterDot := 0, false, false
 	for p.i < len(p.toks) {
 		if depth == 0 && stop() {
 			if grouped {
-				return inner, fn, true
+				return inner, call, true
 			}
-			return outer, "", true
+			if len(chain) == 0 {
+				return "", nil, true
+			}
+			return chain[len(chain)-1], nil, true
 		}
-		switch t := p.toks[p.i]; t.Kind {
+		t := p.toks[p.i]
+		if depth == 0 {
+			switch t.Kind {
+			case TokenIdent:
+				if !afterDot {
+					chain = nil
+				}
+				chain = append(chain, t.Text)
+			case TokenDot:
+				if afterDot {
+					chain = append(chain, "")
+				}
+			}
+			afterDot = t.Kind == TokenDot
+		}
+		switch t.Kind {
 		case TokenParenOpen:
-			if depth == 0 && !grouped && !qualified {
-				fn = outer
+			if depth == 0 && !grouped {
+				call = chain
 			}
 			depth++
 			grouped = true
 		case TokenParenClose:
 			if depth == 0 {
-				return "", "", false
+				return "", nil, false
 			}
 			depth--
 		case TokenIdent:
 			// Only the argument list's own level: a name nested deeper belongs
 			// to an inner call, not to the column being aggregated.
-			switch depth {
-			case 0:
-				outer = t.Text
-				qualified = p.i > 0 && p.toks[p.i-1].Kind == TokenDot
-			case 1:
+			if depth == 1 {
 				inner = t.Text
 			}
 		}
 		p.i++
 	}
-	return "", "", false
+	return "", nil, false
 }

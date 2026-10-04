@@ -44,6 +44,7 @@ func TestFilegroupAddFollowsTheDatabaseCollation(t *testing.T) {
 	for _, tt := range pendingAddCollations {
 		responses := filegroupsPageResponses()
 		responses[0].rows[0][5] = tt.collation
+		responses[0].rows[0][6] = tt.collation // uncontained: names compare under it too
 		sc, inst := newFakeConn(t, responses...)
 		form, _ := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
@@ -133,5 +134,126 @@ func TestPendingNamesRefusal(t *testing.T) {
 		case tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)):
 			t.Errorf("%s: err = %v, want %q", tt.name, err, tt.want)
 		}
+	}
+}
+
+// pendingTestRow is a page row for the pendingEdits tests: a name and one
+// edited value.
+type pendingTestRow struct {
+	pendingState
+	name, origName string
+	value, orig    int
+}
+
+func newPendingTestEdits(collation string, names ...string) *pendingEdits[*pendingTestRow] {
+	loaded := make([]*pendingTestRow, len(names))
+	for i, n := range names {
+		loaded[i] = &pendingTestRow{name: n, origName: n}
+	}
+	return newPendingEdits(collation, loaded,
+		func(e *pendingTestRow) string { return e.name },
+		func(e *pendingTestRow) bool { return e.name != e.origName || e.value != e.orig },
+		func(e *pendingTestRow) { e.name, e.value = e.origName, e.orig })
+}
+
+func pendingTestNames(rows []*pendingTestRow) string {
+	out := make([]string, len(rows))
+	for i, e := range rows {
+		out[i] = e.name
+	}
+	return strings.Join(out, ",")
+}
+
+// TestPendingEditsLifecycle: what every page used to write for itself — an
+// Add is new, a Remove forgets a new row and marks a loaded one, the grid
+// lists what is not being removed, Revert puts the list back as loaded.
+func TestPendingEditsLifecycle(t *testing.T) {
+	p := newPendingTestEdits("", "a", "b", "c")
+	if p.dirty() {
+		t.Fatal("dirty as loaded")
+	}
+	b := p.all()[1]
+	p.remove(b)
+	p.add(&pendingTestRow{name: "d"})
+	d := p.all()[3]
+	if !d.isNew || !b.removing || !p.dirty() {
+		t.Fatalf("after Remove b and Add d: d.isNew=%v b.removing=%v dirty=%v", d.isNew, b.removing, p.dirty())
+	}
+	if got := pendingTestNames(p.visible()); got != "a,c,d" {
+		t.Errorf("visible = %s, want a,c,d", got)
+	}
+	if got := pendingTestNames(p.all()); got != "a,b,c,d" {
+		t.Errorf("all = %s, want a,b,c,d", got)
+	}
+
+	// A new row removed is forgotten: nothing for Apply to write.
+	p.remove(d)
+	if got := pendingTestNames(p.all()); got != "a,b,c" {
+		t.Errorf("all after removing new d = %s, want a,b,c", got)
+	}
+	p.restore(b)
+	if p.dirty() {
+		t.Error("dirty after the only changes were undone")
+	}
+
+	p.all()[0].value = 7
+	p.all()[2].name = "c2"
+	p.remove(p.all()[1])
+	p.add(&pendingTestRow{name: "e"})
+	p.swap(p.all()[0], p.all()[2])
+	p.revert()
+	if got := pendingTestNames(p.all()); got != "a,b,c" {
+		t.Errorf("all after Revert = %s, want a,b,c in loaded order", got)
+	}
+	if p.dirty() || p.all()[0].value != 0 {
+		t.Errorf("after Revert: dirty=%v a.value=%d, want clean", p.dirty(), p.all()[0].value)
+	}
+}
+
+// TestPendingEditsNameChecks: index and listed see only the rows the grid
+// lists; taken sees a row being removed too, for a page that creates before
+// it drops.
+func TestPendingEditsNameChecks(t *testing.T) {
+	p := newPendingTestEdits("SQL_Latin1_General_CP1_CI_AS", "Ops", "Sales", "Archive")
+	p.remove(p.all()[1])
+	for _, tt := range []struct {
+		name         string
+		index        int
+		listed, take bool
+	}{
+		{"ops", 0, true, true},
+		{"ARCHIVE", 1, true, true},
+		{"sales", -1, false, true},
+		{"other", -1, false, false},
+	} {
+		if got := p.index(tt.name); got != tt.index {
+			t.Errorf("index(%q) = %d, want %d", tt.name, got, tt.index)
+		}
+		if got := p.listed(tt.name); got != tt.listed {
+			t.Errorf("listed(%q) = %v, want %v", tt.name, got, tt.listed)
+		}
+		if got := p.taken(tt.name); got != tt.take {
+			t.Errorf("taken(%q) = %v, want %v", tt.name, got, tt.take)
+		}
+	}
+	if cs := newPendingTestEdits("Latin1_General_CS_AS", "Ops"); cs.listed("ops") {
+		t.Error("ops listed beside Ops under a case-sensitive collation")
+	}
+}
+
+// TestPendingEditsRefusal: a new row has no stored name, whatever stored
+// says of it, so it cannot be mistaken for the row it was seeded like.
+func TestPendingEditsRefusal(t *testing.T) {
+	stored := func(e *pendingTestRow) string { return e.origName }
+	p := newPendingTestEdits("SQL_Latin1_General_CP1_CI_AS", "Ops")
+	p.remove(p.all()[0])
+	p.add(&pendingTestRow{name: "ops", origName: "ops"})
+	if err := p.refusal("profile", stored); err == nil || !strings.Contains(err.Error(), "still in use until its removal") {
+		t.Errorf("re-adding a removed name: err = %v, want the removal refusal", err)
+	}
+	p.revert()
+	p.add(&pendingTestRow{name: "B", origName: "Ops"})
+	if err := p.refusal("profile", stored); err != nil {
+		t.Errorf("a new row seeded with a stored name: refused: %v", err)
 	}
 }

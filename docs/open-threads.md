@@ -71,15 +71,14 @@ work; close an item by deleting it when fixed.
   events; writing, watching and reading a blob with a real storage account
   and SAS, and whether the wildcard pattern gosmo builds lists a container's
   rollover blobs, are unrun.
-- **V3 — Managed Instance low-privilege run unfinished**
-  (t-qmi-01 refused every login, `testgo` too, Msg 40532, from 2026-09-30
-  ~21:00). Done: as a `VIEW SERVER STATE` login, Sessions listed,
-  New/Start/Stop/Delete greyed "needs ALTER ANY EVENT SESSION"; MI answers all
-  nine granular event-session names through `HAS_PERMS_BY_NAME` (not NULL as
-  on 13–16), so the `gate.EventSession*` `Alt`s decide there. Found: Watch
-  Live Data on `system_health` failed Msg 40538 (reading the current file by
-  path) — fixed by `xeReadsOnlyByPattern`, tests only. **Still to run:** the
-  fix live (Watch Live Data, View Target Data, Merge on `system_health`);
+- **V3 — Managed Instance low-privilege Extended Events run unfinished**
+  (t-qmi-01 has refused every login, `testgo` too, Msg 40532, since
+  2026-09-30). Verified so far: as a `VIEW SERVER STATE` login, Sessions
+  listed, New/Start/Stop/Delete greyed "needs ALTER ANY EVENT SESSION"; MI
+  answers all nine granular event-session names through `HAS_PERMS_BY_NAME`
+  (not NULL as on 13–16), so the `gate.EventSession*` `Alt`s decide there.
+  **Still to run:** `xeReadsOnlyByPattern` live (Watch Live Data, View
+  Target Data, Merge on `system_health` — tests only so far);
   Properties read-only and browsable; the Profiler refused; then
   `gossms_w6_alt` (Profiler creates and watches, Properties editable) and
   `gossms_w6_gran` (granular CREATE/ENABLE/DISABLE only: Profiler allowed,
@@ -88,11 +87,10 @@ work; close an item by deleting it when fixed.
   `W6-inSecure123!`), session `gossms_test_xe_w6`. Also: whether MI accepts
   `MAX_DURATION` on an event session — gossms's Advanced page hides it off-box
   (`major >= 17 && !azure`, `xevent_session_advanced.go`) while gosmo reads
-  `max_duration` there; the answer becomes one gosmo capability gossms asks
-  (review plan 2026-10-03 E9).
+  `max_duration` there; the answer becomes one gosmo capability gossms asks.
 
 - **V4 — Resource Governor and Database Mail unverified on Managed
-  Instance** (Phase 5 item 24; t-qmi-01 unavailable since 2026-09-30). Both
+  Instance** (t-qmi-01 unavailable since 2026-09-30). Both
   shipped shown and ungated on EngineEdition 8, pinned by fake-driver tests
   only (`resourceGovernorHidden`, `databaseMailHidden` in `edition_gate.go`).
   To run when MI is back: RG catalog/DMV reads and `CREATE RESOURCE POOL` /
@@ -105,10 +103,16 @@ work; close an item by deleting it when fixed.
   `AzureManagedInstance_dbmail_profile`). And gosmo's
   `killDatabaseSessionsBatch` (forced drop/rename, restore closing
   connections): its wait now covers sessions killed for a DATABASE lock held
-  from another context (review K3, unit-tested only) — hold one from a second
+  from another context (unit-tested only) — hold one from a second
   session's `USE master` + a cross-database open transaction, force-drop a
-  throwaway database, expect no Msg 3702.
-- **V5 — Edition gates of Phase 5 item 24 never met a real refusal.** Every
+  throwaway database, expect no Msg 3702. And gosmo's
+  `Database.CatalogCollation` (what gossms compares names inside a database
+  under, `databaseCollation`): live on 13/14/17 with a contained `_CS_`
+  database, never on MI, nor on an Azure SQL Database created `WITH
+  CATALOG_COLLATION` (none in the estate) — `TestLiveCatalogCollation` and
+  `TestLiveGatedColumnsMatchTheCatalog` on MI.
+- **V5 — Resource Governor and Database Mail edition gates never met a real
+  refusal.** Every
   instance in the estate is Developer, so Resource Governor's rule
   (Enterprise/Developer on 13–16, plus Standard on 17 —
   `resourceGovernorSupported`) ships from documentation, pinned by fake-driver
@@ -117,42 +121,3 @@ work; close an item by deleting it when fixed.
   unprobed. Run both when a Standard or Express instance is available.
 
 ### Nice to have
-
-- **N1 — IntelliSense query-tree shapes deliberately left out.**
-  `sqlparse.ScopeAt`/`completion_relations.go` resolve CTEs, derived tables,
-  sub-SELECTs, set-operator chains, `PIVOT`/`UNPIVOT` outputs, temp tables and
-  table variables (`sqlparse.ScanBindings`, batch-scoped; temp tables carry
-  across `GO` via `sqlparse.CarryTempBindings`), `OPENJSON`/`OPENROWSET`/
-  `OPENXML` `WITH` lists (`sqlparse.Rowset`), and table-valued function
-  result columns (`gosmo.Catalog.Functions`, resolved only for a called ref,
-  `sqlparse.FromRef.Call`), and three-part names in another database
-  (`completion_crossdb.go`: listed by the server's database directory, loaded
-  only after `HAS_DBACCESS`; `db..t` tries the login's default schema there,
-  then `dbo`), and a linked server's four-part names (`completion_linked.go`:
-  SQL Server remotes only, read through `OPENQUERY`; see `docs/decisions.md`
-  § IntelliSense: linked-server four-part names). Left out, answering
-  *nothing* rather than a wrong list: `LS..t`/`LS.db..t` (the remote login's
-  default database or schema), and a non-SQL Server linked server. `PIVOT`
-  columns are typed for every built-in aggregate PIVOT accepts (`CHECKSUM_AGG`
-  and `STRING_AGG` it refuses); a user-defined aggregate leaves them untyped.
-- **N2 — IntelliSense keys a contained database by its data collation.**
-  `completionInventory.collation` is `sys.databases.collation_name`, but a
-  partially contained database (and an Azure SQL Database with
-  `CATALOG_COLLATION`) compares *names* under its catalog collation,
-  `Latin1_General_100_CI_AS_KS_WS_SC` — case-insensitive. On a contained `_CS_`
-  database a wrong-case qualifier (`ORDERS.`) answers nothing although the
-  server would resolve it. Needs the containment / catalog collation on
-  `gosmo.Database` (not read by `DatabaseByName` today); `nameSet` users via
-  `databaseCollation` share the gap.
-- **N12 — Master-detail pages each reimplement their pending-edit list.**
-  About ten pages (Resource Governor pools/external pools/groups, Database
-  Mail profiles/accounts, database files/filegroups, New Database filegroups,
-  extended properties, role members, job steps, key signatures, symmetric-key
-  encryptions) define their own row struct with `name`/`isNew`/removing/
-  orig/cur and write their own dirty, visible, revert, add-with-duplicate-check
-  and remove-or-mark. The duplicate checks are shared already
-  (`pendingNameIndex` on Add, `pendingNamesRefusal` before Apply — Database
-  Mail and job steps so far — `pending_edits.go`, collation-aware); the rest is
-  meant to become one `pendingEdits[V]` there. Settled 2026-10-03: a page
-  migrates onto it when next touched, each keeping its tests and getting a
-  tmux pass — no sweep.

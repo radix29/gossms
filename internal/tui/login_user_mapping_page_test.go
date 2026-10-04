@@ -32,10 +32,10 @@ func mappingResponses() []fakeResponse {
 		dbByNameResp("salesdb", int64(6)),
 		dbByNameResp("master", int64(1)),
 
-		fakeResponse{match: "FROM sys.databases", cols: 9, rows: [][]driver.Value{
-			{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
-			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
-			{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
+		fakeResponse{match: "FROM sys.databases", cols: 10, rows: [][]driver.Value{
+			{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
+			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
+			{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 
 		// The login's mapping — one row per role, grouped by database and
@@ -75,8 +75,8 @@ func mappingResponses() []fakeResponse {
 
 // dbByNameResp answers a by-name sys.databases read for one database.
 func dbByNameResp(name string, id int64) fakeResponse {
-	return fakeResponse{match: "FROM sys.databases", arg: name, cols: 9, rows: [][]driver.Value{
-		{name, id, "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
+	return fakeResponse{match: "FROM sys.databases", arg: name, cols: 10, rows: [][]driver.Value{
+		{name, id, "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 	}}
 }
 

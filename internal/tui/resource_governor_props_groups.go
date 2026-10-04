@@ -54,16 +54,13 @@ func rgGroupDefaults(pool string) rgGroupValues {
 
 // rgGroupEdit is one workload group's row.
 type rgGroupEdit struct {
-	name     string
-	system   bool
-	locked   bool // the internal group: no ALTER
-	isNew    bool
-	removing bool
-	orig     rgGroupValues
-	cur      rgGroupValues
+	name   string
+	system bool
+	locked bool // the internal group: no ALTER
+	pendingState
+	orig rgGroupValues
+	cur  rgGroupValues
 }
-
-func (e *rgGroupEdit) dirty() bool { return e.isNew || e.removing || e.cur != e.orig }
 
 // options is the WorkloadGroupOptions for every setting cur differs from base
 // in. A new group always names its pool, so its script says where it goes.
@@ -214,30 +211,27 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				}
 				loaded[i] = &rgGroupEdit{name: g.Name, system: g.IsSystem(), locked: g.Name == "internal", orig: v, cur: v}
 			}
-			edits := slices.Clone(loaded)
+			edits := newPendingEdits(serverCollation(sc), loaded,
+				func(e *rgGroupEdit) string { return e.name },
+				func(e *rgGroupEdit) bool { return e.cur != e.orig },
+				func(e *rgGroupEdit) { e.cur = e.orig })
 
 			// The pool shown first: the focused group's, else the focused
 			// pool, else default.
 			startPool := "default"
-			if i := slices.IndexFunc(edits, func(e *rgGroupEdit) bool { return e.name == focus.group }); i >= 0 {
-				startPool = edits[i].cur.pool
+			if i := slices.IndexFunc(loaded, func(e *rgGroupEdit) bool { return e.name == focus.group }); i >= 0 {
+				startPool = loaded[i].cur.pool
 			} else if slices.Contains(poolNames, focus.pool) {
 				startPool = focus.pool
 			}
-			listed := rgListedPools(poolNames, edits)
+			listed := rgListedPools(poolNames, edits.all())
 			poolRow := propsheet.Select("Resource pool", listed, max(slices.Index(listed, startPool), 0))
 			// Which pool is listed is a view, not an edit.
 			poolRow.SetDirtyTracked(false)
 
 			visible := func() []*rgGroupEdit {
 				pool := poolRow.Value()
-				out := make([]*rgGroupEdit, 0, len(edits))
-				for _, e := range edits {
-					if !e.removing && e.cur.pool == pool {
-						out = append(out, e)
-					}
-				}
-				return out
+				return slices.DeleteFunc(edits.visible(), func(e *rgGroupEdit) bool { return e.cur.pool != pool })
 			}
 			headers := []string{"Name", "Importance", "Grant %", "CPU sec", "Timeout sec", "MAXDOP", "Max requests", "External pool"}
 			if tempdb {
@@ -381,7 +375,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				commitCurrent()
 				readModel()
 				shown, row := poolRow.Value(), grid.SelectedRow()
-				listed := rgListedPools(poolNames, edits)
+				listed := rgListedPools(poolNames, edits.all())
 				poolRow.SetItems(listed)
 				if i := slices.Index(listed, shown); i >= 0 {
 					poolRow.SetSelected(i)
@@ -413,13 +407,9 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 			})
 
 			gridRow := propsheet.NewGridRow(grid, 9)
-			gridRow.DirtyFn = func() bool { return slices.ContainsFunc(edits, (*rgGroupEdit).dirty) }
+			gridRow.DirtyFn = edits.dirty
 			gridRow.RevertFn = func() {
-				edits = edits[:0]
-				for _, e := range loaded {
-					e.cur, e.removing = e.orig, false
-					edits = append(edits, e)
-				}
+				edits.revert()
 				current = nil
 				reload()
 				// A reverted group may be back in a pool no longer listed.
@@ -437,14 +427,14 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				case pool == "internal":
 					hint.Set("The internal pool takes no workload groups; pick another pool above.")
 					return
-				case pendingNameTaken(serverCollation(sc), edits, func(e *rgGroupEdit) string { return e.name }, name):
+				case edits.taken(name):
 					// Names are unique server-wide, not per pool.
 					hint.Set("A workload group named " + name + " already exists.")
 					return
 				}
 				hint.Clear()
 				def := rgGroupDefaults(pool)
-				edits = append(edits, &rgGroupEdit{name: name, isNew: true, orig: def, cur: def})
+				edits.add(&rgGroupEdit{name: name, orig: def, cur: def})
 				nameField.SetValue("")
 				reselect(len(visible()) - 1)
 			})
@@ -462,11 +452,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 					return
 				}
 				hint.Clear()
-				if e.isNew {
-					edits = slices.DeleteFunc(edits, func(x *rgGroupEdit) bool { return x == e })
-				} else {
-					e.removing = true
-				}
+				edits.remove(e)
 				reselect(min(i, len(visible())-1))
 			})
 
@@ -503,7 +489,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				if err != nil {
 					return err
 				}
-				for _, e := range edits {
+				for _, e := range edits.all() {
 					name := e.name
 					switch {
 					case e.isNew:

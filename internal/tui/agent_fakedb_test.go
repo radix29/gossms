@@ -163,9 +163,9 @@ func scheduleByIDResponses(rows [][]driver.Value) []fakeResponse {
 // agentDatabaseListResponse is the database dropdown for job steps and alert
 // scope.
 func agentDatabaseListResponse() fakeResponse {
-	return fakeResponse{match: "FROM sys.databases", cols: 9, rows: [][]driver.Value{
-		{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch, int64(0)},
-		{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch, int64(0)},
-		{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch, int64(0)},
+	return fakeResponse{match: "FROM sys.databases", cols: 10, rows: [][]driver.Value{
+		{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch, int64(0)},
+		{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch, int64(0)},
+		{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch, int64(0)},
 	}}
 }

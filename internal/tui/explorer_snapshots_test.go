@@ -24,12 +24,12 @@ var snapshotCreated = time.Date(2026, 9, 1, 14, 15, 0, 0, time.UTC)
 // databasesListResp answers Server.Databases. The last column is
 // source_database_id, which is what makes a row a snapshot.
 func databasesListResp(rows ...[]driver.Value) fakeResponse {
-	return fakeResponse{match: "compatibility_level, collation_name", cols: 9, rows: rows}
+	return fakeResponse{match: "compatibility_level, collation_name", cols: 10, rows: rows}
 }
 
 func databaseRow(id int, name string, sourceID int) []driver.Value {
 	return []driver.Value{
-		name, int64(id), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false,
+		name, int64(id), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false,
 		snapshotCreated, int64(sourceID),
 	}
 }

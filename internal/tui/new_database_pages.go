@@ -159,11 +159,11 @@ func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func
 
 // buildNewDatabaseFilegroupsPage adapts pageDatabaseFilegroups' grid/Add/
 // Remove/default/read-only UI: seeded empty, so every entry is a pending
-// add rather than the edit-existing version's isNew/pendingRemove diffing,
-// plus an inline "optional first file" mini-form under the Add-filegroup
+// add, plus an inline "optional first file" mini-form under the Add-filegroup
 // fields.
 func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, collation func() string) (*propsheet.Form, propApply) {
 	type fgEdit struct {
+		pendingState
 		name         string
 		isDefault    bool
 		isReadOnly   bool
@@ -172,7 +172,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 		fileSizeKB   int64
 		fileGrowthKB int64
 	}
-	var edits []*fgEdit
+	edits := newPendingEdits(collation(), nil, func(e *fgEdit) string { return e.name }, nil, nil)
 
 	// Same Msg 41918 as the General page's file rows: an Azure edition takes
 	// no filegroup clause in CREATE DATABASE at all, and there is nothing on
@@ -188,9 +188,9 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	}
 
 	rowsFor := func() ([][]string, [][]bool) {
-		text := make([][]string, len(edits))
-		values := make([][]bool, len(edits))
-		for i, e := range edits {
+		text := make([][]string, len(edits.all()))
+		values := make([][]bool, len(edits.all()))
+		for i, e := range edits.all() {
 			fileCount := "0"
 			if e.fileName != "" {
 				fileCount = "1"
@@ -202,9 +202,10 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	}
 	fgRow := propsheet.NewToggleGrid([]string{"Name", "Files", "Read-only", "Default"}, []int{2, 3}, 8)
 	syncToggles := func() {
+		rows := edits.all()
 		for i, v := range fgRow.Values() {
-			if i < len(edits) {
-				edits[i].isReadOnly, edits[i].isDefault = v[0], v[1]
+			if i < len(rows) {
+				rows[i].isReadOnly, rows[i].isDefault = v[0], v[1]
 			}
 		}
 	}
@@ -224,7 +225,9 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 			hint.Set("Type a filegroup name first.")
 			return
 		}
-		if i := pendingNameIndex(collation(), edits, func(e *fgEdit) string { return e.name }, name); i >= 0 {
+		// The General page's collation, as it says now.
+		edits.collation = collation()
+		if i := edits.index(name); i >= 0 {
 			// Already present — say so and select it, rather than
 			// leaving the button looking broken.
 			hint.Set("A filegroup named " + name + " is already listed.")
@@ -234,7 +237,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 		hint.Clear()
 		sizeMB, _ := fileSizeField.IntValue()
 		growthMB, _ := fileGrowthField.IntValue()
-		edits = append(edits, &fgEdit{
+		edits.add(&fgEdit{
 			name:         name,
 			fileName:     strings.TrimSpace(fileNameField.Value()),
 			filePath:     strings.TrimSpace(filePathField.Value()),
@@ -251,23 +254,24 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	})
 	removeBtn = widgets.NewButton("Remove", func() {
 		syncToggles()
+		rows := edits.all()
 		row := fgRow.Grid.SelectedRow()
-		if row < 0 || row >= len(edits) {
+		if row < 0 || row >= len(rows) {
 			hint.Set("Select a filegroup in the grid above to remove it.")
 			return
 		}
 		hint.Clear()
-		edits = append(edits[:row], edits[row+1:]...)
+		edits.remove(rows[row])
 		text, values := rowsFor()
 		fgRow.SetRows(text, values)
 	})
 
 	fgRow.DirtyFn = func() bool {
 		syncToggles()
-		return len(edits) > 0
+		return edits.dirty()
 	}
 	fgRow.RevertFn = func() {
-		edits = edits[:0]
+		edits.revert()
 		text, values := rowsFor()
 		fgRow.SetRows(text, values)
 	}
@@ -286,11 +290,11 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	f.SetCommit(syncToggles)
 
 	apply := func(ctx context.Context) error {
-		if len(edits) == 0 {
+		if !edits.dirty() {
 			return nil
 		}
 		d := sc.Server.DatabaseRef(dbName())
-		for _, e := range edits {
+		for _, e := range edits.all() {
 			if err := d.AddFileGroup(ctx, e.name); err != nil {
 				return err
 			}

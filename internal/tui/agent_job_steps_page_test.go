@@ -288,8 +288,8 @@ func TestReorderedStepIDsUsesThePostApplyNumbering(t *testing.T) {
 		return &jobStepEdit{orig: &gosmo.JobStep{StepID: id}, stepID: id}
 	}
 	a, b, c := step(1), step(2), step(3)
-	b.pendingRemove = true
-	d := &jobStepEdit{isNew: true, name: "added"}
+	b.removing = true
+	d := &jobStepEdit{pendingState: pendingState{isNew: true}, name: "added"}
 
 	// Page order c, a, d with b removed: a and c become 1 and 2, the new step
 	// 3.

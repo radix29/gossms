@@ -72,12 +72,10 @@ func connectedLoginIndex(sc *db.ServerConn, names []string) int {
 // buildNewJobStepsPage builds New Job's Steps page: the same grid + inline
 // edit panel as pageJobSteps (agent_job_props_steps.go), reusing its
 // jobStepEdit/jobStepOnActionItems/stepNumberText directly — every row
-// here is simply isNew:true from the start, since the job doesn't exist
-// yet. "Start at Step" is dropped (nothing to start yet).
+// here is new, since the job doesn't exist yet. "Start at Step" is dropped (nothing to start yet).
 func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string, indentWidth int) (*propsheet.Form, propApply, func() int) {
-	var edits []*jobStepEdit
-
-	visible := func() []*jobStepEdit { return visibleSteps(edits) }
+	edits := newJobStepEdits(serverCollation(sc), nil)
+	visible := edits.visible
 	cols := []string{"Step", "Name", "Database"}
 	rowsFor := func() [][]string {
 		vis := visible()
@@ -117,7 +115,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	hint := propsheet.Hint()
 	var newBtn, deleteBtn *widgets.Button
 	newBtn = widgets.NewButton("New", func() {
-		panel.addStep(serverCollation(sc), grid, hint, cols, &edits, rowsFor, syncFieldsFromSelection)
+		panel.addStep(grid, hint, cols, edits, rowsFor, syncFieldsFromSelection)
 	})
 	deleteBtn = widgets.NewButton("Delete", func() {
 		e := selected()
@@ -126,17 +124,17 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 			return
 		}
 		hint.Clear()
-		e.pendingRemove = true
+		edits.remove(e)
 		current = nil
 		resetGrid(grid, cols, rowsFor(), 0)
 		syncFieldsFromSelection()
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 10)
-	gridRow.DirtyFn = func() bool { return len(visible()) > 0 }
-	gridRow.ValidateFn = func() error { return jobStepNamesRefusal(serverCollation(sc), edits) }
+	gridRow.DirtyFn = edits.dirty
+	gridRow.ValidateFn = func() error { return jobStepNamesRefusal(edits) }
 	gridRow.RevertFn = func() {
-		edits = nil
+		edits.revert()
 		resetGrid(grid, cols, rowsFor(), 0)
 		syncFieldsFromSelection()
 	}

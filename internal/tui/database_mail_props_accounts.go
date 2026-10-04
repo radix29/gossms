@@ -49,11 +49,12 @@ type mailAccountValues struct {
 type mailAccountEdit struct {
 	orig, cur         mailAccountValues
 	password, confirm string
-	isNew, removing   bool
+	pendingState
 }
 
-func (e *mailAccountEdit) dirty() bool {
-	return e.isNew || e.removing || e.cur != e.orig || e.password != "" || e.confirm != ""
+// changed reports an edit to an existing account, a password typed included.
+func (e *mailAccountEdit) changed() bool {
+	return e.cur != e.orig || e.password != "" || e.confirm != ""
 }
 
 // credentials is the credential change for an existing account: nil keeps
@@ -108,7 +109,7 @@ func (e *mailAccountEdit) credentialRefusal() string {
 			return "deleting it needs ALTER ANY CREDENTIAL, or its credential is left behind"
 		}
 	case !e.isNew && e.orig.auth == basic:
-		if e.dirty() {
+		if e.changed() {
 			return "changing it needs ALTER ANY CREDENTIAL, or the server unlinks its password"
 		}
 	case e.cur.auth == basic:
@@ -214,19 +215,12 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				v := mailAccountValuesOf(a)
 				loaded[i] = &mailAccountEdit{orig: v, cur: v}
 			}
-			edits := slices.Clone(loaded)
-			model.setAccounts(mailPublishedAccounts(edits))
-			publish := func() { model.publishAccounts(mailPublishedAccounts(edits)) }
-
-			visible := func() []*mailAccountEdit {
-				out := make([]*mailAccountEdit, 0, len(edits))
-				for _, e := range edits {
-					if !e.removing {
-						out = append(out, e)
-					}
-				}
-				return out
-			}
+			edits := newPendingEdits(serverCollation(sc), loaded,
+				func(e *mailAccountEdit) string { return e.cur.name }, (*mailAccountEdit).changed,
+				func(e *mailAccountEdit) { e.cur, e.password, e.confirm = e.orig, "", "" })
+			model.setAccounts(mailPublishedAccounts(edits.all()))
+			publish := func() { model.publishAccounts(mailPublishedAccounts(edits.all())) }
+			visible := edits.visible
 			headers := []string{"Name", "E-mail address", "SMTP server", "Port", "SSL", "Authentication"}
 			gridRows := func() [][]string {
 				vis := visible()
@@ -347,26 +341,15 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				}
 			})
 
-			gridRow := propsheet.NewGridRow(grid, min(len(edits)+4, 8))
-			gridRow.DirtyFn = func() bool { return slices.ContainsFunc(edits, (*mailAccountEdit).dirty) }
+			gridRow := propsheet.NewGridRow(grid, min(len(loaded)+4, 8))
+			gridRow.DirtyFn = edits.dirty
 			gridRow.ValidateFn = func() error {
-				names := make([]pendingName, len(edits))
-				for i, e := range edits {
-					// A new account's orig is its first values, not a
-					// stored row.
-					names[i] = pendingName{name: e.cur.name, removing: e.removing}
-					if !e.isNew {
-						names[i].stored = e.orig.name
-					}
-				}
-				return pendingNamesRefusal(serverCollation(sc), "account", names)
+				// A new account's orig is its first values, not a stored
+				// row; refusal leaves it no stored name.
+				return edits.refusal("account", func(e *mailAccountEdit) string { return e.orig.name })
 			}
 			gridRow.RevertFn = func() {
-				edits = edits[:0]
-				for _, e := range loaded {
-					e.cur, e.removing, e.password, e.confirm = e.orig, false, "", ""
-					edits = append(edits, e)
-				}
+				edits.revert()
 				current = nil
 				reload()
 				publish()
@@ -381,13 +364,13 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 					hint.Set("Type a name for the new account first.")
 					return
 				}
-				if pendingNameTaken(serverCollation(sc), visible(), func(e *mailAccountEdit) string { return e.cur.name }, name) {
+				if edits.listed(name) {
 					hint.Set("An account named " + name + " is already listed.")
 					return
 				}
 				hint.Set("Fill in the e-mail address and SMTP server of " + name + " below.")
 				v := mailAccountValues{name: name, port: 25}
-				edits = append(edits, &mailAccountEdit{orig: v, cur: v, isNew: true})
+				edits.add(&mailAccountEdit{orig: v, cur: v})
 				newName.SetValue("")
 				reselect(len(visible()) - 1)
 			})
@@ -404,11 +387,10 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 					hint.Set("Deleting " + e.orig.name + " needs ALTER ANY CREDENTIAL (Basic authentication).")
 					return
 				}
+				edits.remove(e)
 				if e.isNew {
-					edits = slices.DeleteFunc(edits, func(x *mailAccountEdit) bool { return x == e })
 					hint.Clear()
 				} else {
-					e.removing = true
 					// The server removes it from every profile without a
 					// word (W8), so this page says it instead.
 					hint.Set(e.orig.name + " is deleted on Apply, and leaves every profile that uses it.")
@@ -443,7 +425,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				if err != nil {
 					return err
 				}
-				for _, e := range edits {
+				for _, e := range edits.all() {
 					if why := e.credentialRefusal(); !credsAllowed && why != "" {
 						return fmt.Errorf("account %s: %s", e.orig.name, why)
 					}

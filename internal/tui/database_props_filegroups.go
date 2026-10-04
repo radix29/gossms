@@ -10,15 +10,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// fgEdit tracks one Filegroups-page row's pending state, mirroring
-// fileEdit's isNew/pendingRemove shape. Read-only/Default toggles live in
-// the ToggleGridRow itself (see syncToggles); fgEdit only needs to know
-// their loaded baseline to diff against at apply time.
+// fgEdit tracks one Filegroups-page row's pending state, as fileEdit does.
+// Read-only/Default toggles live in the ToggleGridRow itself (see
+// syncToggles); fgEdit only needs to know their loaded baseline to diff
+// against at apply time.
 type fgEdit struct {
-	name          string // "" for a brand-new filegroup
-	fileCount     int
-	isNew         bool
-	pendingRemove bool
+	name      string
+	fileCount int
+	pendingState
 	isReadOnly    bool
 	origReadOnly  bool
 	isDefault     bool
@@ -38,24 +37,19 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 				return nil, nil, err
 			}
 
-			edits := make([]*fgEdit, len(fgs))
+			loaded := make([]*fgEdit, len(fgs))
 			for i, fg := range fgs {
-				edits[i] = &fgEdit{
+				loaded[i] = &fgEdit{
 					name: fg.Name, fileCount: len(fg.Files),
 					isReadOnly: fg.IsReadOnly, origReadOnly: fg.IsReadOnly,
 					isDefault: fg.IsDefault, origIsDefault: fg.IsDefault,
 				}
 			}
-
-			visible := func() []*fgEdit {
-				out := make([]*fgEdit, 0, len(edits))
-				for _, e := range edits {
-					if !e.pendingRemove {
-						out = append(out, e)
-					}
-				}
-				return out
-			}
+			edits := newPendingEdits(databaseCollation(d), loaded,
+				func(e *fgEdit) string { return e.name },
+				func(e *fgEdit) bool { return e.isReadOnly != e.origReadOnly || e.isDefault != e.origIsDefault },
+				func(e *fgEdit) { e.isReadOnly, e.isDefault = e.origReadOnly, e.origIsDefault })
+			visible := edits.visible
 			rowsFor := func() ([][]string, [][]bool) {
 				vis := visible()
 				text := make([][]string, len(vis))
@@ -93,12 +87,12 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 					hint.Set("Type a filegroup name first.")
 					return
 				}
-				if pendingNameTaken(d.Collation, visible(), func(e *fgEdit) string { return e.name }, name) {
+				if edits.listed(name) {
 					hint.Set("A filegroup named " + name + " is already listed.")
 					return
 				}
 				hint.Clear()
-				edits = append(edits, &fgEdit{name: name, isNew: true})
+				edits.add(&fgEdit{name: name})
 				text, values := rowsFor()
 				fgRow.SetRows(text, values)
 				nameField.SetValue("")
@@ -112,29 +106,17 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				hint.Clear()
-				vis[row].pendingRemove = true
+				edits.remove(vis[row])
 				text, values := rowsFor()
 				fgRow.SetRows(text, values)
 			})
 
 			fgRow.DirtyFn = func() bool {
 				syncToggles()
-				for _, e := range edits {
-					if e.isNew || e.pendingRemove || e.isReadOnly != e.origReadOnly || e.isDefault != e.origIsDefault {
-						return true
-					}
-				}
-				return false
+				return edits.dirty()
 			}
 			fgRow.RevertFn = func() {
-				edits = edits[:0]
-				for _, fg := range fgs {
-					edits = append(edits, &fgEdit{
-						name: fg.Name, fileCount: len(fg.Files),
-						isReadOnly: fg.IsReadOnly, origReadOnly: fg.IsReadOnly,
-						isDefault: fg.IsDefault, origIsDefault: fg.IsDefault,
-					})
-				}
+				edits.revert()
 				text, values := rowsFor()
 				fgRow.SetRows(text, values)
 			}
@@ -155,20 +137,17 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 				if err != nil {
 					return err
 				}
-				for _, e := range edits {
+				for _, e := range edits.all() {
 					switch {
-					case e.pendingRemove && !e.isNew:
+					case e.removing:
 						if err := d.FileGroupRef(e.name).Drop(ctx); err != nil {
 							return err
 						}
 						continue
-					case e.isNew && !e.pendingRemove:
+					case e.isNew:
 						if err := d.AddFileGroup(ctx, e.name); err != nil {
 							return err
 						}
-					}
-					if e.pendingRemove {
-						continue
 					}
 					if e.isReadOnly != e.origReadOnly {
 						if err := d.FileGroupRef(e.name).SetReadOnly(ctx, e.isReadOnly, gosmo.TerminationNone); err != nil {

@@ -17,11 +17,10 @@ var extendedPropertyColumns = []string{"Name", "Value"}
 // extPropEdit tracks one extended property's pending state: an existing
 // property whose value changed, or a brand-new one pending Add.
 type extPropEdit struct {
-	name          string
-	origValue     string
-	value         string
-	isNew         bool
-	pendingRemove bool
+	name      string
+	origValue string
+	value     string
+	pendingState
 }
 
 // pageExtendedProperties is the Extended Properties page as every
@@ -46,7 +45,7 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 			if err != nil {
 				return nil, nil, err
 			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, d.Collation, lvl, props)
+			f, apply := buildExtendedPropertiesForm(sc, dbName, databaseCollation(d), lvl, props)
 			return f, apply, nil
 		},
 	}
@@ -63,20 +62,15 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 // for anything narrower) — this function only builds the UI and the
 // apply closure, it doesn't decide how to read the initial list.
 func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, level gosmo.ExtendedPropertyLevel, props []*gosmo.ExtendedProperty) (*propsheet.Form, propApply) {
-	edits := make([]*extPropEdit, 0, len(props))
+	loaded := make([]*extPropEdit, 0, len(props))
 	for _, p := range props {
-		edits = append(edits, &extPropEdit{name: p.Name, origValue: p.Value, value: p.Value})
+		loaded = append(loaded, &extPropEdit{name: p.Name, origValue: p.Value, value: p.Value})
 	}
-
-	visible := func() []*extPropEdit {
-		out := make([]*extPropEdit, 0, len(edits))
-		for _, e := range edits {
-			if !e.pendingRemove {
-				out = append(out, e)
-			}
-		}
-		return out
-	}
+	edits := newPendingEdits(collation, loaded,
+		func(e *extPropEdit) string { return e.name },
+		func(e *extPropEdit) bool { return e.value != e.origValue },
+		func(e *extPropEdit) { e.value = e.origValue })
+	visible := edits.visible
 	rowsFor := func() [][]string {
 		vis := visible()
 		rows := make([][]string, len(vis))
@@ -141,7 +135,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 			hint.Set("Type a property name first.")
 			return
 		}
-		if i := pendingNameIndex(collation, visible(), func(e *extPropEdit) string { return e.name }, name); i >= 0 {
+		if i := edits.index(name); i >= 0 {
 			// Already present — say so and select it, rather than
 			// leaving the button looking broken.
 			hint.Set("A property named " + name + " is already listed — its row is selected below.")
@@ -150,7 +144,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 			return
 		}
 		hint.Clear()
-		edits = append(edits, &extPropEdit{name: name, value: valueField.Value(), isNew: true})
+		edits.add(&extPropEdit{name: name, value: valueField.Value()})
 		resetGrid(grid, extendedPropertyColumns, rowsFor(), len(visible())-1)
 		syncFieldsFromSelection()
 	})
@@ -161,33 +155,16 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 			return
 		}
 		hint.Clear()
-		e.pendingRemove = true
+		edits.remove(e)
 		current = nil // its old value is void; don't let commitCurrent write back into it
 		resetGrid(grid, extendedPropertyColumns, rowsFor(), 0)
 		syncFieldsFromSelection()
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 12)
-	dirty := func() bool {
-		for _, e := range edits {
-			if e.pendingRemove || e.isNew || e.value != e.origValue {
-				return true
-			}
-		}
-		return false
-	}
-	gridRow.DirtyFn = dirty
+	gridRow.DirtyFn = edits.dirty
 	gridRow.RevertFn = func() {
-		kept := edits[:0]
-		for _, e := range edits {
-			if e.isNew {
-				continue
-			}
-			e.value = e.origValue
-			e.pendingRemove = false
-			kept = append(kept, e)
-		}
-		edits = kept
+		edits.revert()
 		resetGrid(grid, extendedPropertyColumns, rowsFor(), 0)
 	}
 
@@ -206,17 +183,17 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 		if err != nil {
 			return err
 		}
-		for _, e := range edits {
+		for _, e := range edits.all() {
 			switch {
-			case e.pendingRemove && !e.isNew:
+			case e.removing:
 				if err := d.DropExtendedProperty(ctx, e.name, level); err != nil {
 					return err
 				}
-			case e.isNew && !e.pendingRemove:
+			case e.isNew:
 				if err := d.AddExtendedProperty(ctx, e.name, e.value, level); err != nil {
 					return err
 				}
-			case !e.isNew && !e.pendingRemove && e.value != e.origValue:
+			case edits.isChanged(e):
 				if err := d.SetExtendedProperty(ctx, e.name, e.value, level); err != nil {
 					return err
 				}

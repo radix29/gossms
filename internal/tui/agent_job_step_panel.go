@@ -177,7 +177,7 @@ func (p *jobStepPanel) write(e *jobStepEdit) {
 
 // newStep builds a T-SQL step from the panel; the caller has checked the name.
 func (p *jobStepPanel) newStep() *jobStepEdit {
-	e := &jobStepEdit{isNew: true, subsystem: tsqlSubsystem}
+	e := &jobStepEdit{pendingState: pendingState{isNew: true}, subsystem: tsqlSubsystem}
 	p.read(e)
 	return e
 }
@@ -190,17 +190,16 @@ func (p *jobStepPanel) newStep() *jobStepEdit {
 //
 // It doesn't read the panel into the current step first (the name row is also
 // the seed, so that would misfile a typed name as a rename). Callers check
-// preconditions (e.g. a read-only step) first. collation decides whether a
-// typed name duplicates a listed one — the server's, standing in for msdb's.
-func (p *jobStepPanel) addStep(collation string, grid *controls.DataGrid, hint *propsheet.HintRow,
-	cols []string, edits *[]*jobStepEdit, rowsFor func() [][]string, sync func()) {
+// preconditions (e.g. a read-only step) first.
+func (p *jobStepPanel) addStep(grid *controls.DataGrid, hint *propsheet.HintRow,
+	cols []string, edits *pendingEdits[*jobStepEdit], rowsFor func() [][]string, sync func()) {
 
 	name := p.nameField.Value()
 	if name == "" {
 		hint.Set("Type a step name first.")
 		return
 	}
-	if i := pendingNameIndex(collation, visibleSteps(*edits), func(e *jobStepEdit) string { return e.name }, name); i >= 0 {
+	if i := edits.index(name); i >= 0 {
 		// Already present: say so and select it.
 		hint.Set("A step named " + name + " is already listed — its row is selected below.")
 		grid.SetSelectedRow(i)
@@ -208,33 +207,23 @@ func (p *jobStepPanel) addStep(collation string, grid *controls.DataGrid, hint *
 		return
 	}
 	hint.Clear()
-	*edits = append(*edits, p.newStep())
-	resetGrid(grid, cols, rowsFor(), len(visibleSteps(*edits))-1)
+	edits.add(p.newStep())
+	resetGrid(grid, cols, rowsFor(), len(edits.visible())-1)
 	sync()
 }
 
-// visibleSteps is the edits minus pending removals, in order.
-func visibleSteps(edits []*jobStepEdit) []*jobStepEdit {
-	out := make([]*jobStepEdit, 0, len(edits))
-	for _, e := range edits {
-		if !e.pendingRemove {
-			out = append(out, e)
-		}
-	}
-	return out
+// newJobStepEdits is both Steps pages' pending-edit list. collation decides
+// whether a typed name duplicates a listed one — the server's, standing in
+// for msdb's.
+func newJobStepEdits(collation string, loaded []*jobStepEdit) *pendingEdits[*jobStepEdit] {
+	return newPendingEdits(collation, loaded,
+		func(e *jobStepEdit) string { return e.name }, (*jobStepEdit).changed, (*jobStepEdit).reset)
 }
 
 // jobStepNamesRefusal is both Steps pages' Validate: Add refuses a duplicate,
 // but a step renamed in the panel is not checked until here, and
 // sp_add_jobstep / sp_update_jobstep refuse a name the job already has — in
 // New Job after the job and the steps before it were created.
-func jobStepNamesRefusal(collation string, edits []*jobStepEdit) error {
-	names := make([]pendingName, len(edits))
-	for i, e := range edits {
-		names[i] = pendingName{name: e.name, removing: e.pendingRemove}
-		if !e.isNew {
-			names[i].stored = e.origName
-		}
-	}
-	return pendingNamesRefusal(collation, "step", names)
+func jobStepNamesRefusal(edits *pendingEdits[*jobStepEdit]) error {
+	return edits.refusal("step", func(e *jobStepEdit) string { return e.origName })
 }

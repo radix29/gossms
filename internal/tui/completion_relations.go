@@ -213,15 +213,47 @@ func resolvePivotRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 	if !ok {
 		return relation{}, false
 	}
-	cols := pivotColumns(rc.inv.collation, base.columns(), ref.Pivot)
+	cols := pivotColumns(rc.inv.collation, base.columns(), ref.Pivot, rc.userAggregate(ref.Pivot))
 	return relation{name: ref.Alias, aliased: ref.Alias != "", cols: cols}, len(cols) > 0
+}
+
+// userAggregate resolves a PIVOT's qualified aggregate call — "dbo.MyAgg(x)",
+// "Sales.dbo.MyAgg(x)" — to the user-defined aggregate it names, in the
+// connected database or the one its database part names, then among the sys
+// schema's. nil for an unqualified (built-in) call, an omitted schema part
+// ("Sales..MyAgg", which T-SQL refuses), or a name nothing loaded holds.
+func (rc resolveCtx) userAggregate(pv *sqlparse.Pivot) *gosmo.CatalogAggregate {
+	q := pv.FuncQualifier
+	if pv.Unpivot || len(q) == 0 || len(q) > 2 || q[len(q)-1] == "" {
+		return nil
+	}
+	inv := rc.inv
+	if len(q) == 2 {
+		other, ok := rc.database(q[0])
+		if !ok {
+			return nil
+		}
+		inv = other
+	}
+	key := qualifiedKey(q[len(q)-1], pv.Func)
+	for _, in := range []*completionInventory{inv, rc.sysInv} {
+		if in == nil || in.aggByQualifiedName == nil {
+			continue
+		}
+		if agg, ok := in.aggByQualifiedName.Get(key); ok {
+			return agg
+		}
+	}
+	return nil
 }
 
 // pivotColumns applies a PIVOT/UNPIVOT clause to the source's columns:
 //
 //   - PIVOT drops the aggregated column and the one it spreads, and adds one
-//     column per IN-list name, typed by pivotAggregateType — untyped for an
-//     aggregate it doesn't model.
+//     column per IN-list name, typed by pivotAggregateType for a built-in
+//     aggregate and by uda's declared return type for a user-defined one —
+//     untyped for a built-in it doesn't model, or a user-defined aggregate
+//     uda is nil for.
 //   - UNPIVOT drops the IN-list columns and adds the value column and the name
 //     column. The value column's type is the one the unpivoted columns share —
 //     T-SQL requires them to share one — so it is taken from the first of them
@@ -229,7 +261,7 @@ func resolvePivotRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 //
 // A name the source doesn't carry simply drops nothing, so a half-typed clause
 // costs columns it shouldn't rather than inventing ones it can't have.
-func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.CatalogColumn {
+func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivot, uda *gosmo.CatalogAggregate) []gosmo.CatalogColumn {
 	drop := newNameSet(collation)
 	var added []gosmo.CatalogColumn
 	if pv.Unpivot {
@@ -248,8 +280,15 @@ func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivo
 	} else {
 		drop.Add(pv.Agg)
 		drop.Add(pv.For)
-		arg, _ := findColumnIn(collation, src, pv.Agg)
-		typed := pivotAggregateType(pv.Func, arg)
+		typed := gosmo.CatalogColumn{IsNullable: true}
+		switch {
+		case uda != nil:
+			typed = uda.Returns
+			typed.IsNullable = true
+		case len(pv.FuncQualifier) == 0:
+			arg, _ := findColumnIn(collation, src, pv.Agg)
+			typed = pivotAggregateType(pv.Func, arg)
+		}
 		for _, n := range pv.In {
 			col := typed
 			col.Name = n
@@ -279,10 +318,10 @@ func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivo
 //   - STDEV/STDEVP/VAR/VARP are float over any numeric argument.
 //
 // CHECKSUM_AGG and STRING_AGG are absent because PIVOT refuses them (Msg 406,
-// "not invariant to NULLs"). Anything else — another aggregate, a qualified
-// (user-defined) one, an argument of unknown or non-numeric type — is untyped:
-// nothing rather than wrong. Every output is nullable: an IN value with no rows
-// reads NULL.
+// "not invariant to NULLs"). Anything else — another aggregate, an argument
+// of unknown or non-numeric type — is untyped: nothing rather than wrong. A
+// qualified (user-defined) aggregate never reaches here, whatever its name.
+// Every output is nullable: an IN value with no rows reads NULL.
 func pivotAggregateType(fn string, arg gosmo.CatalogColumn) gosmo.CatalogColumn {
 	untyped := gosmo.CatalogColumn{IsNullable: true}
 	switch strings.ToUpper(fn) {

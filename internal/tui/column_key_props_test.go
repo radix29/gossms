@@ -31,8 +31,8 @@ func cekPageResponses(values ...string) []fakeResponse {
 		rows = append(rows, []driver.Value{"CEK2", int64(2), cmk, "RSA_OAEP", []byte{byte(i + 1)}})
 	}
 	return []fakeResponse{
-		{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{{
-			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)}}},
+		{match: "compatibility_level, collation_name", cols: 10, rows: [][]driver.Value{{
+			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)}}},
 		// Scoped by arg, and ahead of the fallback: both reads are the same
 		// SELECT a WHERE apart, so without this the by-name read is served
 		// the other key's rows and the page silently rotates CEK1.
@@ -94,6 +94,7 @@ func TestColumnEncryptionKeyPageKeepsCaseTwinsApartUnderCS(t *testing.T) {
 	} {
 		responses := cekPageResponses("K1")
 		responses[0].rows[0][5] = tt.collation
+		responses[0].rows[0][6] = tt.collation // uncontained: names compare under it too
 		responses[3].rows = [][]driver.Value{
 			{"K1", int64(1), "MSSQL_CERTIFICATE_STORE", "CurrentUser/my/aa", false, nil},
 			{"k1", int64(2), "MSSQL_CERTIFICATE_STORE", "CurrentUser/my/bb", false, nil},

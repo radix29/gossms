@@ -5,6 +5,8 @@ import (
 	"database/sql/driver"
 	"testing"
 	"time"
+
+	"github.com/radix29/gosmo"
 )
 
 func TestNameSetFollowsCollation(t *testing.T) {
@@ -76,8 +78,8 @@ func TestAGEligibleDatabasesFollowsServerCollation(t *testing.T) {
 
 // csDatabaseRow answers DatabaseByName(name) with a case-sensitive collation.
 func csDatabaseRow(name string) fakeResponse {
-	return fakeResponse{match: "compatibility_level, collation_name", arg: name, cols: 9, rows: [][]driver.Value{{
-		name, int64(7), "ONLINE", "FULL", int64(160), "Latin1_General_CS_AS", false,
+	return fakeResponse{match: "compatibility_level, collation_name", arg: name, cols: 10, rows: [][]driver.Value{{
+		name, int64(7), "ONLINE", "FULL", int64(160), "Latin1_General_CS_AS", "Latin1_General_CS_AS", false,
 		time.Date(2026, 5, 6, 11, 0, 0, 0, time.UTC), int64(0)}}}
 }
 
@@ -120,6 +122,43 @@ func TestNewDBScopedCredPrefetchFollowsDatabaseCollation(t *testing.T) {
 	if !pf.existingNames.Has("Sales") || pf.existingNames.Has("sales") {
 		t.Errorf("CS database on a CI server: Has(Sales)=%v Has(sales)=%v, want true/false",
 			pf.existingNames.Has("Sales"), pf.existingNames.Has("sales"))
+	}
+}
+
+// A partially contained database compares names under its catalog
+// collation, case-insensitive whatever its data collation says: on a CS
+// contained database "sales" is the existing "Sales".
+func TestNewDBScopedCredPrefetchFollowsContainedCatalogCollation(t *testing.T) {
+	now := time.Now()
+	contained := csDatabaseRow("appdb")
+	contained.rows[0][6] = "Latin1_General_100_CI_AS_KS_WS_SC"
+	sc, _ := newFakeConn(t, contained,
+		fakeResponse{match: "FROM   sys.database_scoped_credentials", cols: 5, rows: [][]driver.Value{
+			{int64(1), "Sales", "identity", now, now},
+		}})
+	pf, err := fetchNewDBScopedCredPrefetch(context.Background(), sc, "appdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pf.existingNames.Has("sales") {
+		t.Error(`contained CS database: Has("sales") = false, want true — the catalog collation is CI`)
+	}
+}
+
+// databaseCollation falls back to the data collation when the catalog one
+// was never read — a Database built by hand, or a nil handle.
+func TestDatabaseCollationFallsBackToTheDataCollation(t *testing.T) {
+	for _, tt := range []struct {
+		d    *gosmo.Database
+		want string
+	}{
+		{nil, ""},
+		{&gosmo.Database{Collation: "Latin1_General_CS_AS"}, "Latin1_General_CS_AS"},
+		{&gosmo.Database{Collation: "Latin1_General_CS_AS", CatalogCollation: "Latin1_General_100_CI_AS_KS_WS_SC"}, "Latin1_General_100_CI_AS_KS_WS_SC"},
+	} {
+		if got := databaseCollation(tt.d); got != tt.want {
+			t.Errorf("databaseCollation(%+v) = %q, want %q", tt.d, got, tt.want)
+		}
 	}
 }
 

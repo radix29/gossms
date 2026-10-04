@@ -157,7 +157,7 @@ func TestMembershipAddThenRemoveCancelsOut(t *testing.T) {
 
 	f, apply := buildMembershipForm(cfg)
 	clickFormButton(t, f, "Add")    // queues carol as isNew
-	clickFormButton(t, f, "Remove") // row 0 is carol; marks her pendingRemove
+	clickFormButton(t, f, "Remove") // row 0 is carol; forgets her
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -174,8 +174,8 @@ func TestMembershipRevertRestoresTheOriginalMembers(t *testing.T) {
 	f, apply := buildMembershipForm(testMembershipConfig(&added, &removed))
 	hint := membershipHint(t, f)
 
-	clickFormButton(t, f, "Add")    // queue carol
-	clickFormButton(t, f, "Remove") // and drop a row
+	clickFormButton(t, f, "Remove") // drop a loaded row
+	clickFormButton(t, f, "Add")    // and queue carol
 	if !f.Dirty() {
 		t.Fatal("form is not Dirty after an Add and a Remove")
 	}

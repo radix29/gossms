@@ -28,8 +28,8 @@ var propTypeDate = time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
 // before its own read. Shared by the other tree-family props tests.
 func newTypePropConn(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
 	t.Helper()
-	dbRow := fakeResponse{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{{
-		propTypeDB, int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS",
+	dbRow := fakeResponse{match: "compatibility_level, collation_name", cols: 10, rows: [][]driver.Value{{
+		propTypeDB, int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS",
 		false, propTypeDate, int64(0)}}}
 	return newFakeConn(t, append([]fakeResponse{dbRow}, responses...)...)
 }

@@ -1,18 +1,21 @@
 package sqlparse
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
 
 // pivotSpec renders a ref's PIVOT/UNPIVOT clause as one string:
-// "PIVOT agg=Total for=Year in=[2005 2006]". "-" for a ref with no clause, so
-// a test that expects none says so explicitly rather than by omission.
+// "PIVOT fn=SUM agg=Total for=Year in=[2005 2006]", a qualified call's parts
+// joined by '.' ("fn=dbo.MyAgg"). "-" for a ref with no clause, so a test
+// that expects none says so explicitly rather than by omission.
 func pivotSpec(pv *Pivot) string {
 	if pv == nil {
 		return "-"
 	}
-	kind, head := "PIVOT", "fn="+pv.Func+" agg="+pv.Agg
+	fn := strings.Join(append(slices.Clone(pv.FuncQualifier), pv.Func), ".")
+	kind, head := "PIVOT", "fn="+fn+" agg="+pv.Agg
 	if pv.Unpivot {
 		kind, head = "UNPIVOT", "value="+pv.Value
 	}
@@ -68,12 +71,30 @@ func TestParsePivotShapes(t *testing.T) {
 		alias: "p",
 		pivot: "PIVOT fn=COUNT agg= for=Year in=[2005]",
 	}, {
-		// A qualified call is a user-defined aggregate, whatever its name, so
-		// no Func: the caller leaves its columns untyped.
+		// A qualified call is a user-defined aggregate, whatever its name: the
+		// qualifier is kept so the caller looks it up rather than reading it
+		// as the built-in SUM.
 		name:  "qualified aggregate",
 		sql:   "SELECT | FROM dbo.Orders PIVOT (dbo.SUM(Total) FOR Year IN ([2005])) AS p",
 		alias: "p",
-		pivot: "PIVOT fn= agg=Total for=Year in=[2005]",
+		pivot: "PIVOT fn=dbo.SUM agg=Total for=Year in=[2005]",
+	}, {
+		name:  "three-part aggregate, bracketed and spaced",
+		sql:   "SELECT | FROM dbo.Orders PIVOT ([Sales] . dbo.[My Agg](o.Total) FOR Year IN ([2005])) AS p",
+		alias: "p",
+		pivot: "PIVOT fn=Sales.dbo.My Agg agg=Total for=Year in=[2005]",
+	}, {
+		// An omitted part is kept as one, not closed up into "Sales.MyAgg".
+		name:  "omitted schema part",
+		sql:   "SELECT | FROM dbo.Orders PIVOT (Sales..MyAgg(Total) FOR Year IN ([2005])) AS p",
+		alias: "p",
+		pivot: "PIVOT fn=Sales..MyAgg agg=Total for=Year in=[2005]",
+	}, {
+		// A dotted argument is the column's qualifier, not the call's.
+		name:  "qualified argument of a built-in",
+		sql:   "SELECT | FROM dbo.Orders o PIVOT (MAX(o.Total) FOR o.Year IN ([2005])) AS p",
+		alias: "p",
+		pivot: "PIVOT fn=MAX agg=Total for=Year in=[2005]",
 	}, {
 		// Recorded as written; the caller matches it case-insensitively.
 		name:  "lower-case aggregate",

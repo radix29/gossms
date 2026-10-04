@@ -41,9 +41,8 @@ const defaultDatabaseItem = "(default)"
 // new step (isNew), or an existing step pending Delete. orig is nil for new
 // steps; Update and Delete need a real *gosmo.JobStep.
 type jobStepEdit struct {
-	orig          *gosmo.JobStep
-	isNew         bool
-	pendingRemove bool
+	orig *gosmo.JobStep
+	pendingState
 
 	stepID int // display only; 0 for a not-yet-saved new step
 
@@ -102,6 +101,14 @@ func (e *jobStepEdit) changed() bool {
 		e.outputFileName != e.origOutputFileName
 }
 
+// reset undoes every change changed reports.
+func (e *jobStepEdit) reset() {
+	e.name, e.database, e.command = e.origName, e.origDatabase, e.origCommand
+	e.onSuccessAction, e.onSuccessStepID = e.origOnSuccessAction, e.origOnSuccessStepID
+	e.onFailAction, e.onFailStepID = e.origOnFailAction, e.origOnFailStepID
+	e.retryAttempts, e.retryInterval, e.outputFileName = e.origRetryAttempts, e.origRetryInterval, e.origOutputFileName
+}
+
 func (e *jobStepEdit) request() gosmo.JobStepRequest {
 	sub := e.subsystem
 	if sub == "" {
@@ -137,7 +144,7 @@ func planJobStepWrites(edits []*jobStepEdit) jobStepWritePlan {
 	var plan jobStepWritePlan
 	for _, e := range edits {
 		switch {
-		case e.pendingRemove:
+		case e.removing:
 			// Added and removed in one sitting: never on the server.
 			if !e.isNew {
 				plan.deletes = append(plan.deletes, e)
@@ -166,7 +173,7 @@ func reorderedStepIDs(edits []*jobStepEdit) []int {
 	var surviving, added []*jobStepEdit
 	for _, e := range edits {
 		switch {
-		case e.pendingRemove:
+		case e.removing:
 		case e.isNew:
 			added = append(added, e)
 		default:
@@ -187,7 +194,7 @@ func reorderedStepIDs(edits []*jobStepEdit) []int {
 	ids := make([]int, 0, len(final))
 	identity := true
 	for _, e := range edits {
-		if e.pendingRemove {
+		if e.removing {
 			continue
 		}
 		id := final[e]
@@ -235,12 +242,12 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				return nil, nil, err
 			}
 
-			edits := make([]*jobStepEdit, len(steps))
+			loaded := make([]*jobStepEdit, len(steps))
 			for i, s := range steps {
-				edits[i] = jobStepEditFromStep(s)
+				loaded[i] = jobStepEditFromStep(s)
 			}
-
-			visible := func() []*jobStepEdit { return visibleSteps(edits) }
+			edits := newJobStepEdits(serverCollation(sc), loaded)
+			visible := edits.visible
 			cols := []string{"Step", "Name", "Type", "Database"}
 			rowsFor := func() [][]string {
 				vis := visible()
@@ -310,7 +317,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					hint.Set("Type a name for the new step, then press New again.")
 					return
 				}
-				panel.addStep(serverCollation(sc), grid, hint, cols, &edits, rowsFor, syncFieldsFromSelection)
+				panel.addStep(grid, hint, cols, edits, rowsFor, syncFieldsFromSelection)
 			})
 			// moveSelected moves the selected step up (-1) or down (+1),
 			// swapping in edits rather than the visible slice, which skips
@@ -328,9 +335,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					return
 				}
 				hint.Clear()
-				a := slices.Index(edits, vis[i])
-				b := slices.Index(edits, vis[i+delta])
-				edits[a], edits[b] = edits[b], edits[a]
+				edits.swap(vis[i], vis[i+delta])
 				resetGrid(grid, cols, rowsFor(), i+delta)
 				syncFieldsFromSelection()
 			}
@@ -344,7 +349,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					return
 				}
 				hint.Clear()
-				e.pendingRemove = true
+				edits.remove(e)
 				current = nil
 				resetGrid(grid, cols, rowsFor(), 0)
 				syncFieldsFromSelection()
@@ -367,23 +372,10 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			})
 
 			gridRow := propsheet.NewGridRow(grid, 10)
-			gridRow.DirtyFn = func() bool {
-				if reorderedStepIDs(edits) != nil {
-					return true
-				}
-				for _, e := range edits {
-					if e.isNew || e.pendingRemove || e.changed() {
-						return true
-					}
-				}
-				return false
-			}
-			gridRow.ValidateFn = func() error { return jobStepNamesRefusal(serverCollation(sc), edits) }
+			gridRow.DirtyFn = func() bool { return reorderedStepIDs(edits.all()) != nil || edits.dirty() }
+			gridRow.ValidateFn = func() error { return jobStepNamesRefusal(edits) }
 			gridRow.RevertFn = func() {
-				edits = edits[:0]
-				for _, s := range steps {
-					edits = append(edits, jobStepEditFromStep(s))
-				}
+				edits.revert()
 				resetGrid(grid, cols, rowsFor(), 0)
 				syncFieldsFromSelection()
 			}
@@ -409,7 +401,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			// own BEGIN/COMMIT batch nests in it.
 			apply := func(ctx context.Context) error {
 				return sc.Server.InTransaction(ctx, func(ctx context.Context) error {
-					return applyJobSteps(ctx, sc, *jobName, edits)
+					return applyJobSteps(ctx, sc, *jobName, edits.all())
 				})
 			}
 			return f, apply, nil

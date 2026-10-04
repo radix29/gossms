@@ -14,8 +14,7 @@ import (
 type memberEdit struct {
 	name          string
 	principalType string
-	isNew         bool
-	pendingRemove bool
+	pendingState
 }
 
 // membershipConfig is what buildMembershipForm needs that differs between
@@ -66,22 +65,12 @@ func roleMemberSet(members []*gosmo.RoleMember) map[string]bool {
 // candidates and principalType are seeded and which gosmo call applies a
 // change — both now supply those through membershipConfig.
 func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
-	edits := make([]*memberEdit, len(cfg.members))
-	memberNames := make(map[string]bool, len(cfg.members))
+	loaded := make([]*memberEdit, len(cfg.members))
 	for i, m := range cfg.members {
-		edits[i] = &memberEdit{name: m.Name, principalType: m.Type}
-		memberNames[m.Name] = true
+		loaded[i] = &memberEdit{name: m.Name, principalType: m.Type}
 	}
-
-	visible := func() []*memberEdit {
-		out := make([]*memberEdit, 0, len(edits))
-		for _, e := range edits {
-			if !e.pendingRemove {
-				out = append(out, e)
-			}
-		}
-		return out
-	}
+	edits := newPendingEdits(cfg.collation, loaded, func(e *memberEdit) string { return e.name }, nil, nil)
+	visible := edits.visible
 	rowsFor := func() [][]string {
 		vis := visible()
 		rows := make([][]string, len(vis))
@@ -94,13 +83,6 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 	grid := controls.NewDataGrid()
 	grid.SetData(membershipColumns, rowsFor())
 	grid.SetCellCursor(true)
-
-	// indexOfVisible finds a name's row in the grid as currently displayed,
-	// so a duplicate Add can point at it. -1 when it isn't shown (a member
-	// pending removal, which Add treats as addable again).
-	indexOfVisible := func(name string) int {
-		return pendingNameIndex(cfg.collation, visible(), func(e *memberEdit) string { return e.name }, name)
-	}
 
 	candidates := cfg.candidates
 	if len(candidates) == 0 {
@@ -115,18 +97,16 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 			hint.Set("There is no principal left to add.")
 			return
 		}
-		if memberNames[name] {
+		// A member pending removal is not listed, and Add takes it back.
+		if i := edits.index(name); i >= 0 {
 			// Already a member. Say so and select the row, rather than
 			// leaving a button that looks broken.
 			hint.Set(name + " is already a member.")
-			if i := indexOfVisible(name); i >= 0 {
-				grid.SetSelectedRow(i)
-			}
+			grid.SetSelectedRow(i)
 			return
 		}
 		hint.Clear()
-		edits = append(edits, &memberEdit{name: name, principalType: cfg.principalType[name], isNew: true})
-		memberNames[name] = true
+		edits.add(&memberEdit{name: name, principalType: cfg.principalType[name]})
 		resetGrid(grid, membershipColumns, rowsFor(), len(visible())-1)
 	})
 
@@ -138,34 +118,14 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 			return
 		}
 		hint.Clear()
-		delete(memberNames, vis[i].name)
-		vis[i].pendingRemove = true
+		edits.remove(vis[i])
 		resetGrid(grid, membershipColumns, rowsFor(), 0)
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 10)
-	gridRow.DirtyFn = func() bool {
-		for _, e := range edits {
-			if e.pendingRemove || e.isNew {
-				return true
-			}
-		}
-		return false
-	}
+	gridRow.DirtyFn = edits.dirty
 	gridRow.RevertFn = func() {
-		kept := edits[:0]
-		for _, e := range edits {
-			if e.isNew {
-				continue
-			}
-			e.pendingRemove = false
-			kept = append(kept, e)
-		}
-		edits = kept
-		memberNames = make(map[string]bool, len(edits))
-		for _, e := range edits {
-			memberNames[e.name] = true
-		}
+		edits.revert()
 		resetGrid(grid, membershipColumns, rowsFor(), 0)
 		hint.Clear()
 	}
@@ -180,13 +140,13 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 	)
 
 	apply := func(ctx context.Context) error {
-		for _, e := range edits {
+		for _, e := range edits.all() {
 			switch {
-			case e.pendingRemove && !e.isNew:
+			case e.removing:
 				if err := cfg.remove(ctx, e.name); err != nil {
 					return err
 				}
-			case e.isNew && !e.pendingRemove:
+			case e.isNew:
 				if err := cfg.add(ctx, e.name); err != nil {
 					return err
 				}

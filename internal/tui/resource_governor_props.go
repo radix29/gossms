@@ -402,13 +402,12 @@ type rgIntField[O any] struct {
 // rgIntEdit is one pool's row on a pool page: what the server has, what the
 // page now says, and whether it is new or going.
 type rgIntEdit struct {
-	name     string
-	system   bool // built in: never dropped
-	locked   bool // the internal pool: no ALTER either
-	isNew    bool
-	removing bool
-	orig     []int
-	cur      []int
+	name   string
+	system bool // built in: never dropped
+	locked bool // the internal pool: no ALTER either
+	pendingState
+	orig []int
+	cur  []int
 
 	// origAff and curAff are the pool's affinity (rgAffinityEditor).
 	// affFixed marks one the grid cannot show, which affText then renders.
@@ -421,8 +420,6 @@ type rgIntEdit struct {
 func (e *rgIntEdit) changed() bool {
 	return !slices.Equal(e.cur, e.orig) || !e.curAff.equal(e.origAff)
 }
-
-func (e *rgIntEdit) dirty() bool { return e.isNew || e.removing || e.changed() }
 
 // affinityText is the pool grid's Affinity cell.
 func (e *rgIntEdit) affinityText() string {
@@ -617,17 +614,10 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			for _, e := range loaded {
 				aff.fix(e)
 			}
-			edits := slices.Clone(loaded)
-
-			visible := func() []*rgIntEdit {
-				out := make([]*rgIntEdit, 0, len(edits))
-				for _, e := range edits {
-					if !e.removing {
-						out = append(out, e)
-					}
-				}
-				return out
-			}
+			edits := newPendingEdits(spec.collation, loaded,
+				func(e *rgIntEdit) string { return e.name }, (*rgIntEdit).changed,
+				func(e *rgIntEdit) { e.cur, e.curAff = slices.Clone(e.orig), e.origAff })
+			visible := edits.visible
 			published := func() []string {
 				vis := visible()
 				out := make([]string, len(vis))
@@ -709,16 +699,10 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				syncFromSelection()
 			}
 
-			gridRow := propsheet.NewGridRow(grid, min(len(edits)+4, 10))
-			gridRow.DirtyFn = func() bool {
-				return slices.ContainsFunc(edits, (*rgIntEdit).dirty)
-			}
+			gridRow := propsheet.NewGridRow(grid, min(len(loaded)+4, 10))
+			gridRow.DirtyFn = edits.dirty
 			gridRow.RevertFn = func() {
-				edits = edits[:0]
-				for _, e := range loaded {
-					e.cur, e.curAff, e.removing = slices.Clone(e.orig), e.origAff, false
-					edits = append(edits, e)
-				}
+				edits.revert()
 				current = nil
 				reload()
 				publish()
@@ -733,14 +717,14 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					hint.Set("Type a name for the new " + spec.noun + " first.")
 					return
 				}
-				if pendingNameTaken(spec.collation, edits, func(e *rgIntEdit) string { return e.name }, name) {
+				if edits.taken(name) {
 					hint.Set("A " + spec.noun + " named " + name + " is already listed.")
 					return
 				}
 				hint.Clear()
 				def := spec.defaults()
 				auto := rgAffinity{auto: true}
-				edits = append(edits, &rgIntEdit{name: name, isNew: true, orig: def, cur: slices.Clone(def), origAff: auto, curAff: auto})
+				edits.add(&rgIntEdit{name: name, orig: def, cur: slices.Clone(def), origAff: auto, curAff: auto})
 				nameField.SetValue("")
 				reselect(len(visible()) - 1)
 				publish()
@@ -759,11 +743,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					return
 				}
 				hint.Clear()
-				if e.isNew {
-					edits = slices.DeleteFunc(edits, func(x *rgIntEdit) bool { return x == e })
-				} else {
-					e.removing = true
-				}
+				edits.remove(e)
 				reselect(min(i, len(visible())-1))
 				publish()
 			})
@@ -794,13 +774,13 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					return err
 				}
 				def := spec.defaults()
-				for _, e := range edits {
+				for _, e := range edits.all() {
 					if !e.removing && !e.curAff.auto && len(e.curAff.ids) == 0 {
 						return fmt.Errorf("tick at least one %s for %s %s, or check Automatic %s affinity",
 							spec.affWord, spec.noun, e.name, spec.affWord)
 					}
 				}
-				for _, e := range edits {
+				for _, e := range edits.all() {
 					name := e.name
 					switch {
 					case e.isNew:

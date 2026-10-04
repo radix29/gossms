@@ -55,8 +55,9 @@ type completionInventory struct {
 
 	catalog *gosmo.Catalog
 
-	// collation is the database's, which decides whether two names are the
-	// same object: in a case-sensitive database dbo.Orders and dbo.orders
+	// collation is the database's catalog collation (databaseCollation —
+	// not its data collation, which a contained database does not compare
+	// names under), which decides whether two names are the same object: in a case-sensitive database dbo.Orders and dbo.orders
 	// are two tables, and lowered keys let the second shadow the first, so
 	// "Orders." offered orders' columns. "" (the sys-schema and linked
 	// inventories, or a failed read) folds. Matching a typed prefix stays
@@ -74,6 +75,9 @@ type completionInventory struct {
 	// the way byQualifiedName indexes tables and views. Kept apart so a
 	// function only ever resolves where it is called (sqlparse.FromRef.Call).
 	fnByQualifiedName *nameMap[*gosmo.CatalogObject]
+	// aggByQualifiedName indexes catalog.Aggregates — user-defined (CLR)
+	// aggregates — for typing a PIVOT over one (pivotColumns).
+	aggByQualifiedName *nameMap[*gosmo.CatalogAggregate]
 
 	// defaultSchema is the login's default schema in this database, read with
 	// the catalog: what "db..t" means first (see qualifierSchemas). Empty when
@@ -146,6 +150,11 @@ func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog, collation strin
 	for i := range cat.Functions {
 		fn := &cat.Functions[i]
 		inv.fnByQualifiedName.Set(qualifiedKey(fn.Schema, fn.Name), fn)
+	}
+	inv.aggByQualifiedName = newNameMap[*gosmo.CatalogAggregate](collation)
+	for i := range cat.Aggregates {
+		agg := &cat.Aggregates[i]
+		inv.aggByQualifiedName.Set(qualifiedKey(agg.Schema, agg.Name), agg)
 	}
 }
 
@@ -282,7 +291,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 			// Nor does this one: without the collation, names fold, which is
 			// what every case-insensitive database wants anyway.
 			if d, err := srv.DatabaseByName(ctx, database); err == nil {
-				r.collation = d.Collation
+				r.collation = databaseCollation(d)
 			}
 			return r, nil
 		},

@@ -28,8 +28,8 @@ import (
 var treeFamilyCreated = time.Date(2026, 8, 1, 9, 30, 0, 0, time.UTC)
 
 func treeFamilyDatabaseRow() fakeResponse {
-	return fakeResponse{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{{
-		"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false,
+	return fakeResponse{match: "compatibility_level, collation_name", cols: 10, rows: [][]driver.Value{{
+		"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false,
 		treeFamilyCreated, int64(0)}}}
 }
 

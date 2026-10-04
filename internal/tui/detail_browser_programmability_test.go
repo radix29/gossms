@@ -110,8 +110,8 @@ func TestPlanGuidesFolderDetailShowsState(t *testing.T) {
 // which reads as a database with no libraries.
 func TestExternalLibrariesFolderDetailReportsTheVersionRefusal(t *testing.T) {
 	sc, _ := newFakeConnAtVersion(t, "13.0.6300.2",
-		fakeResponse{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{{
-			propTypeDB, int64(7), "ONLINE", "FULL", int64(130), "SQL_Latin1_General_CP1_CI_AS",
+		fakeResponse{match: "compatibility_level, collation_name", cols: 10, rows: [][]driver.Value{{
+			propTypeDB, int64(7), "ONLINE", "FULL", int64(130), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS",
 			false, propTypeDate, int64(0)}}})
 
 	var objs []nodeData
