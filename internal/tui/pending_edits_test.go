@@ -94,3 +94,44 @@ func TestRGGroupAddFollowsTheServerCollation(t *testing.T) {
 		}
 	}
 }
+
+// TestPendingNamesRefusal: a name freed by a removal or a rename in the same
+// Apply is still taken when the create or rename runs — Database Mail drops
+// last, Job Properties deletes after it updates — so the page refuses it
+// rather than the server refusing the Apply.
+func TestPendingNamesRefusal(t *testing.T) {
+	const ci, cs = "SQL_Latin1_General_CP1_CI_AS", "Latin1_General_CS_AS"
+	for _, tt := range []struct {
+		name, collation string
+		rows            []pendingName
+		want            string // "" accepts
+	}{
+		{"unchanged", ci, []pendingName{{"Ops", "Ops", false}, {"B", "B", false}}, ""},
+		{"removed, then added again", ci,
+			[]pendingName{{"Ops", "Ops", true}, {"", "Ops", false}}, "Ops is still in use until its removal"},
+		{"renamed away, then added", ci,
+			[]pendingName{{"Ops", "Ops-old", false}, {"", "ops", false}}, "Ops is still in use until its rename to Ops-old"},
+		{"renamed onto a removed row's", ci,
+			[]pendingName{{"A", "A", true}, {"B", "a", false}}, "A is still in use until its removal"},
+		{"two names swapped", ci,
+			[]pendingName{{"A", "B", false}, {"B", "A", false}}, "B is still in use until its rename to A"},
+		{"Ops and ops, case-insensitive", ci,
+			[]pendingName{{"A", "Ops", false}, {"B", "ops", false}}, "two profiles are named ops"},
+		{"Ops and ops, case-sensitive", cs, []pendingName{{"A", "Ops", false}, {"B", "ops", false}}, ""},
+		{"removed then added, case-sensitive other case", cs,
+			[]pendingName{{"Ops", "Ops", true}, {"", "ops", false}}, ""},
+		{"a row recased in place", ci, []pendingName{{"ops", "OPS", false}, {"B", "B", false}}, ""},
+		{"a removed row's name, freed by nothing else", ci,
+			[]pendingName{{"A", "A", true}, {"", "A2", false}}, ""},
+		{"a name blanked", ci, []pendingName{{"A", "", false}}, "every profile needs a name"},
+		{"a blank row removed", ci, []pendingName{{"", "", true}}, ""},
+	} {
+		err := pendingNamesRefusal(tt.collation, "profile", tt.rows)
+		switch {
+		case tt.want == "" && err != nil:
+			t.Errorf("%s: refused: %v", tt.name, err)
+		case tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)):
+			t.Errorf("%s: err = %v, want %q", tt.name, err, tt.want)
+		}
+	}
+}

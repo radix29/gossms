@@ -47,7 +47,7 @@ type xeStorageEditor struct {
 	colRun   latest
 
 	tgtGrid, paramGrid *controls.DataGrid
-	tgtRow             *validatedGridRow
+	tgtRow             *propsheet.GridRow
 	typeRow            *propsheet.SelectRow
 	containerRow       *propsheet.SelectRow // nil off Azure
 	valueRow           *propsheet.TextRow
@@ -85,7 +85,8 @@ func newXEStorageEditor(h xeHost, cat *xeCatalog, m *xeSessionModel, sessionName
 			s.syncParams()
 		}
 	}
-	s.tgtRow = &validatedGridRow{GridRow: propsheet.NewGridRow(s.tgtGrid, 6), validate: s.validate}
+	s.tgtRow = propsheet.NewGridRow(s.tgtGrid, 6)
+	s.tgtRow.ValidateFn = s.validate
 	s.tgtRow.DirtyFn = m.targetsDirty
 	s.tgtRow.RevertFn = func() {
 		m.targets = cloneXETargets(m.origTargets)

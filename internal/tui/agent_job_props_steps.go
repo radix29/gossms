@@ -378,6 +378,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				}
 				return false
 			}
+			gridRow.ValidateFn = func() error { return jobStepNamesRefusal(serverCollation(sc), edits) }
 			gridRow.RevertFn = func() {
 				edits = edits[:0]
 				for _, s := range steps {

@@ -134,6 +134,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 
 	gridRow := propsheet.NewGridRow(grid, 10)
 	gridRow.DirtyFn = func() bool { return len(visible()) > 0 }
+	gridRow.ValidateFn = func() error { return jobStepNamesRefusal(serverCollation(sc), edits) }
 	gridRow.RevertFn = func() {
 		edits = nil
 		resetGrid(grid, cols, rowsFor(), 0)
@@ -174,11 +175,13 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 // schedule can't be created inline — create it in New Schedule first, then
 // attach it here or from the job's own Schedules page.
 func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string) (*propsheet.Form, propApply) {
-	grid := propsheet.NewToggleGrid([]string{"Attach", "Schedule"}, []int{0}, 12)
+	// Frequency as Job Properties ▸ Schedules shows it: schedule names are
+	// not unique, and two namesakes otherwise list as identical rows.
+	grid := propsheet.NewToggleGrid([]string{"Attach", "Schedule", "Frequency"}, []int{0}, 12)
 	text := make([][]string, len(pf.schedules))
 	vals := make([][]bool, len(pf.schedules))
 	for i, sch := range pf.schedules {
-		text[i] = []string{sch.Name}
+		text[i] = []string{sch.Name, sch.Description()}
 		vals[i] = []bool{false}
 	}
 	grid.SetRows(text, vals)

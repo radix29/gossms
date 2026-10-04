@@ -16,12 +16,16 @@ import (
 // keyed by something richer than a row/col pair (principal name,
 // permission name, …), not inside the grid. DirtyFn/RevertFn let the page
 // plug that state into Form's Dirty()/Revert() without GridRow needing to
-// know its shape.
+// know its shape, and ValidateFn into Validate(): a check of the page's edits
+// as a whole — two rows given one name, a list left empty — which no single
+// cell can make. Form validates the rows that report dirty, so ValidateFn
+// runs only while DirtyFn says so.
 type GridRow struct {
 	Grid *controls.DataGrid
 
-	DirtyFn  func() bool
-	RevertFn func()
+	DirtyFn    func() bool
+	RevertFn   func()
+	ValidateFn func() error
 
 	fixedHeight int
 	drawHeight  int
@@ -139,4 +143,9 @@ func (r *GridRow) Revert() {
 		r.RevertFn()
 	}
 }
-func (r *GridRow) Validate() error { return nil }
+func (r *GridRow) Validate() error {
+	if r.ValidateFn == nil {
+		return nil
+	}
+	return r.ValidateFn()
+}

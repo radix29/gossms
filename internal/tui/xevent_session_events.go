@@ -109,7 +109,7 @@ type xeEventsEditor struct {
 	fieldSel int                    // fieldGrid's selected row
 
 	libGrid, selGrid, actGrid, fieldGrid *controls.DataGrid
-	selRow                               *validatedGridRow
+	selRow                               *propsheet.GridRow
 
 	searchRow, pred, value, fieldValue      *propsheet.TextRow
 	categoryRow, channelRow, source, op, jn *propsheet.SelectRow
@@ -166,7 +166,8 @@ func newXEEventsEditor(h xeHost, cat *xeCatalog, m *xeSessionModel, cols map[str
 			e.syncConfigure()
 		}
 	}
-	e.selRow = &validatedGridRow{GridRow: propsheet.NewGridRow(e.selGrid, 7), validate: func() error {
+	e.selRow = propsheet.NewGridRow(e.selGrid, 7)
+	e.selRow.ValidateFn = func() error {
 		if len(e.m.events) == 0 {
 			return errors.New("a session needs at least one event — add one from the event library")
 		}
@@ -180,7 +181,7 @@ func newXEEventsEditor(h xeHost, cat *xeCatalog, m *xeSessionModel, cols map[str
 			}
 		}
 		return nil
-	}}
+	}
 	e.selRow.DirtyFn = m.eventsDirty
 	e.selRow.RevertFn = func() {
 		m.events = cloneXEEvents(m.origEvents)

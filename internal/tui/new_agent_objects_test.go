@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 
@@ -614,5 +615,33 @@ func TestNewJobPreflightRejectsAnEnabledJobWithNoSteps(t *testing.T) {
 	}
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("preflight should not write:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// TestNewJobRefusesTwoStepsRenamedAlike: New Job's steps run outside any
+// transaction after the job is created, so a duplicate the server refuses
+// left a half-built job. The dialog's validation stops it before any write.
+func TestNewJobRefusesTwoStepsRenamedAlike(t *testing.T) {
+	d, inst := newJobDialog(t)
+	general, _ := d.page(t, "General")
+	editText(t, general, "Name", newJobName)
+
+	form, _ := d.page(t, "Steps")
+	editText(t, form, "Step name", "load staging")
+	clickButton(t, form, "New")
+	editText(t, form, "Step name", "notify")
+	clickButton(t, form, "New")
+	// The new row is selected; renaming it in the panel is not checked by New.
+	editText(t, form, "Step name", "Load Staging")
+	// The sheet validates the pages it holds: the ones the user opened, as
+	// anyone editing steps has.
+	d.SelectPage(slices.Index(d.pages, "Steps"))
+
+	d.runApply(false)
+	if msg := d.Message(); !strings.Contains(msg, "two steps are named Load Staging") {
+		t.Errorf("message = %q, want the duplicate refused", msg)
+	}
+	if got := inst.Statements(); len(got) != 0 {
+		t.Errorf("wrote before validating:\n%s", strings.Join(got, "\n"))
 	}
 }

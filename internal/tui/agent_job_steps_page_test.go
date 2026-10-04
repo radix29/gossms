@@ -389,3 +389,24 @@ func TestANonTSQLStepsWholeEditPanelRefusesTyping(t *testing.T) {
 		editSelect(t, form, tc[0], tc[1])
 	}
 }
+
+// TestJobStepsRefuseARenameOntoADeletedStepsName: Add refuses a duplicate, but
+// a rename in the panel is checked only before Apply — where updates run
+// before deletes, so the deleted step still holds the name and
+// sp_update_jobstep would fail the whole transaction.
+func TestJobStepsRefuseARenameOntoADeletedStepsName(t *testing.T) {
+	inst, _, form, grid := loadJobStepsPage(t)
+	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
+	clickButton(t, form, "Delete")
+	selectGridRow(t, grid, stepNameCol, "Check integrity")
+	editText(t, form, "Step name", "rebuild INDEXES")
+	form.Commit()
+
+	const want = "step Rebuild indexes is still in use until its removal is applied"
+	if err := form.Validate(); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("validate = %v, want %q", err, want)
+	}
+	if got := inst.Statements(); len(got) != 0 {
+		t.Errorf("statements:\n%s", strings.Join(got, "\n"))
+	}
+}

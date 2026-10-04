@@ -223,3 +223,18 @@ func visibleSteps(edits []*jobStepEdit) []*jobStepEdit {
 	}
 	return out
 }
+
+// jobStepNamesRefusal is both Steps pages' Validate: Add refuses a duplicate,
+// but a step renamed in the panel is not checked until here, and
+// sp_add_jobstep / sp_update_jobstep refuse a name the job already has — in
+// New Job after the job and the steps before it were created.
+func jobStepNamesRefusal(collation string, edits []*jobStepEdit) error {
+	names := make([]pendingName, len(edits))
+	for i, e := range edits {
+		names[i] = pendingName{name: e.name, removing: e.pendingRemove}
+		if !e.isNew {
+			names[i].stored = e.origName
+		}
+	}
+	return pendingNamesRefusal(collation, "step", names)
+}

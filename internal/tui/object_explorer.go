@@ -189,20 +189,31 @@ func folderOf(dbName string, types ...NodeType) func(nodeData) bool {
 	}
 }
 
+// nodeKey is what names a node: two nodes with equal keys stand for the same
+// server object or folder. TableName, AGName, XESession and RGPool each tell
+// apart folders of one type and database that belong to different parents;
+// AgentScheduleID tells apart schedules of one name. A node type whose name
+// isn't its identity adds its key here, so sameNodeAs and sameObject (the
+// selection's survivor) can't disagree — both once missed the schedule id.
+type nodeKey struct {
+	Type                                                       NodeType
+	DBName, Schema, Name, TableName, AGName, XESession, RGPool string
+	AgentScheduleID                                            int
+}
+
+func (d nodeData) key() nodeKey {
+	return nodeKey{d.Type, d.DBName, d.Schema, d.Name, d.TableName, d.AGName, d.XESession, d.RGPool, d.AgentScheduleID}
+}
+
 // sameNodeAs matches, for ReloadFolders, the nodes standing for the same
-// object or folder as n — n itself while it is live, or the node that replaced
-// it after a Refresh above retired it. Nil matches nothing. The fields are the
-// ones that name a node: TableName, AGName, XESession and RGPool each tell
-// apart folders of one type and database that belong to different parents.
+// object or folder as n (same nodeKey) — n itself while it is live, or the
+// node that replaced it after a Refresh above retired it. Nil matches nothing.
 func sameNodeAs(n *explorerNode) func(nodeData) bool {
 	if n == nil {
 		return func(nodeData) bool { return false }
 	}
-	w := n.data
-	return func(d nodeData) bool {
-		return d.Type == w.Type && d.DBName == w.DBName && d.Schema == w.Schema && d.Name == w.Name &&
-			d.TableName == w.TableName && d.AGName == w.AGName && d.XESession == w.XESession && d.RGPool == w.RGPool
-	}
+	w := n.data.key()
+	return func(d nodeData) bool { return d.key() == w }
 }
 
 // findDescendantByType searches n's subtree depth-first for the first node
@@ -463,11 +474,13 @@ func survivor(n *explorerNode, shown map[*explorerNode]bool) *explorerNode {
 }
 
 // sameObject reports whether a and b stand for the same server object — how a
-// node a reload re-created is recognised. A node with no Name (a folder, a log
-// entry) is told apart by its label instead; a label that changed simply fails
-// to match, and the selection goes to the parent, which is the safe miss.
+// node a reload re-created is recognised. By nodeKey: by name alone, a reload
+// moved the selection from one of two schedules named Daily to the other, and
+// Delete then took the one the user hadn't picked. A node with no Name (a
+// folder, a log entry) is told apart by its label too; a label that changed
+// simply fails to match, and the selection goes to the parent, the safe miss.
 func sameObject(a, b *explorerNode) bool {
-	if a.data.Type != b.data.Type || a.data.Schema != b.data.Schema || a.data.Name != b.data.Name {
+	if a.data.key() != b.data.key() {
 		return false
 	}
 	return a.data.Name != "" || a.label == b.label

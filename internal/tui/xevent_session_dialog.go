@@ -9,7 +9,6 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
 // xevent_session_dialog.go is New Session and Session Properties for an
@@ -288,22 +287,6 @@ func xeFieldsSummary(fields []gosmo.SessionField) string {
 		parts[i] = f.Name + "=" + f.Value
 	}
 	return strings.Join(parts, ", ")
-}
-
-// validatedGridRow is a GridRow whose Validate checks the page's edits as a
-// whole — that a session keeps an event, that every target has its mandatory
-// parameters — which no single cell can. The sheet validates the rows that
-// report dirty, and this is the row that reports the page's dirty state.
-type validatedGridRow struct {
-	*propsheet.GridRow
-	validate func() error
-}
-
-func (r *validatedGridRow) Validate() error {
-	if r.validate == nil {
-		return nil
-	}
-	return r.validate()
 }
 
 // alterXESession brings the session to its current definition with edit

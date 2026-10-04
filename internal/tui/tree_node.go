@@ -540,6 +540,10 @@ type nodeData struct {
 	// them. Every action on the node reads and writes by this id: by name,
 	// msdb refuses (Msg 14371) and ScheduleByName answers ErrAmbiguous.
 	AgentScheduleID int
+	// AgentScheduleDesc is the schedule's frequency (gosmo Schedule.Description)
+	// as of the folder's load — what tells namesakes apart in the Delete
+	// confirmation, where the label alone reads the same for both.
+	AgentScheduleDesc string
 
 	// XESession is the event session a NodeEventTarget belongs to. Name on
 	// the leaf is the target's own name (event_file), which is unique only

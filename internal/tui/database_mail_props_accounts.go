@@ -349,6 +349,18 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 
 			gridRow := propsheet.NewGridRow(grid, min(len(edits)+4, 8))
 			gridRow.DirtyFn = func() bool { return slices.ContainsFunc(edits, (*mailAccountEdit).dirty) }
+			gridRow.ValidateFn = func() error {
+				names := make([]pendingName, len(edits))
+				for i, e := range edits {
+					// A new account's orig is its first values, not a
+					// stored row.
+					names[i] = pendingName{name: e.cur.name, removing: e.removing}
+					if !e.isNew {
+						names[i].stored = e.orig.name
+					}
+				}
+				return pendingNamesRefusal(serverCollation(sc), "account", names)
+			}
 			gridRow.RevertFn = func() {
 				edits = edits[:0]
 				for _, e := range loaded {
@@ -430,16 +442,6 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				plan, err := mailPlanFrom(ctx)
 				if err != nil {
 					return err
-				}
-				var names []string
-				for _, e := range edits {
-					if e.removing {
-						continue
-					}
-					if slices.Contains(names, e.cur.name) {
-						return fmt.Errorf("two accounts are named %s", e.cur.name)
-					}
-					names = append(names, e.cur.name)
 				}
 				for _, e := range edits {
 					if why := e.credentialRefusal(); !credsAllowed && why != "" {

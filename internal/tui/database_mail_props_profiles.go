@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -252,6 +251,13 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 
 			gridRow := propsheet.NewGridRow(grid, min(len(edits)+4, 7))
 			gridRow.DirtyFn = func() bool { return slices.ContainsFunc(edits, (*mailProfileEdit).dirty) }
+			gridRow.ValidateFn = func() error {
+				names := make([]pendingName, len(edits))
+				for i, e := range edits {
+					names[i] = pendingName{stored: e.origName, name: e.name, removing: e.removing}
+				}
+				return pendingNamesRefusal(serverCollation(sc), "profile", names)
+			}
 			gridRow.RevertFn = func() {
 				edits = edits[:0]
 				for _, e := range loaded {
@@ -334,16 +340,6 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					return err
 				}
 				avail := model.accountNames(loadedAccounts)
-				var names []string
-				for _, e := range edits {
-					if e.removing {
-						continue
-					}
-					if slices.Contains(names, e.name) {
-						return fmt.Errorf("two profiles are named %s", e.name)
-					}
-					names = append(names, e.name)
-				}
 				for _, e := range edits {
 					name, accts := e.origName, e.accountsIn(avail)
 					switch {

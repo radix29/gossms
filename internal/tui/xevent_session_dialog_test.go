@@ -99,14 +99,11 @@ func xeTestHost(sc *db.ServerConn) xeHost {
 	return xeHost{app: newTestApp(), sc: sc, ctx: context.Background}
 }
 
-// formGrids returns a form's grids in page order, plain and validated alike.
+// formGrids returns a form's grids in page order.
 func formGrids(f *propsheet.Form) []*controls.DataGrid {
 	var out []*controls.DataGrid
 	for _, r := range f.Rows() {
-		switch g := r.(type) {
-		case *propsheet.GridRow:
-			out = append(out, g.Grid)
-		case *validatedGridRow:
+		if g, ok := r.(*propsheet.GridRow); ok {
 			out = append(out, g.Grid)
 		}
 	}
@@ -480,7 +477,7 @@ func TestXEEventsPageBrowsesReadOnly(t *testing.T) {
 	press(tcell.KeyEnter)
 	space()
 	press(tcell.KeyTab)
-	if g, ok := f.Focused().(*validatedGridRow); !ok || g.Grid != sel {
+	if g, ok := f.Focused().(*propsheet.GridRow); !ok || g.Grid != sel {
 		t.Fatalf("Tab went to %T, want the selected-events grid past the read-only filter rows", f.Focused())
 	}
 	if sel.Row(0)[0] != "sqlserver.rpc_completed" {

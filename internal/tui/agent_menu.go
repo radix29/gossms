@@ -319,8 +319,14 @@ func (a *App) deleteAgentJob(sc *db.ServerConn, node *explorerNode) {
 
 func (a *App) deleteAgentSchedule(sc *db.ServerConn, node *explorerNode) {
 	name, id := node.data.Name, node.data.AgentScheduleID
+	// The frequency too: schedule names are not unique, and two namesakes'
+	// confirmations otherwise read the same.
+	what := fmt.Sprintf("%q", name)
+	if d := node.data.AgentScheduleDesc; d != "" {
+		what += " (" + d + ")"
+	}
 	a.deleteAgentEntity(sc, node, "Delete Schedule",
-		fmt.Sprintf("Delete schedule %q? A schedule still attached to a job can't be deleted until it's detached.", name),
+		fmt.Sprintf("Delete schedule %s? A schedule still attached to a job can't be deleted until it's detached.", what),
 		func(ctx context.Context) error {
 			sch, err := findAgentSchedule(ctx, sc, id)
 			if err != nil {

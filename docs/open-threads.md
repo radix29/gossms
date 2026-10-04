@@ -150,8 +150,9 @@ work; close an item by deleting it when fixed.
   extended properties, role members, job steps, key signatures, symmetric-key
   encryptions) define their own row struct with `name`/`isNew`/removing/
   orig/cur and write their own dirty, visible, revert, add-with-duplicate-check
-  and remove-or-mark. The duplicate check is shared already
-  (`pendingNameIndex`, `pending_edits.go`, collation-aware); the rest is
+  and remove-or-mark. The duplicate checks are shared already
+  (`pendingNameIndex` on Add, `pendingNamesRefusal` before Apply — Database
+  Mail and job steps so far — `pending_edits.go`, collation-aware); the rest is
   meant to become one `pendingEdits[V]` there. Settled 2026-10-03: a page
   migrates onto it when next touched, each keeping its tests and getting a
   tmux pass — no sweep.

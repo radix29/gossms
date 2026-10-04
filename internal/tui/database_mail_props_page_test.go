@@ -493,3 +493,92 @@ func TestMailRemovingTheLastAccountReachesTheProfilesPage(t *testing.T) {
 		t.Fatalf("profileNames = %q after the last profile was removed", got)
 	}
 }
+
+// validateMail is the dialog's preflight over the five pages: commit each
+// page's selected row, then validate the dirty ones in page order — what
+// PropDialog does before it builds a plan.
+func validateMail(forms []*propsheet.Form) error {
+	for _, f := range forms {
+		f.Commit()
+	}
+	for _, f := range forms {
+		if f.Dirty() {
+			if err := f.Validate(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// TestMailRefusesANameFreedOnlyByThisApply: profiles are created and renamed
+// before they are dropped, and renamed in page order, so a name a removal or a
+// rename frees is still taken when the create or rename needing it runs. Each
+// is refused before a plan is built, rather than failing the Apply at the
+// server's unique-name constraint.
+func TestMailRefusesANameFreedOnlyByThisApply(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(t *testing.T, p *propsheet.Form)
+		want string
+	}{
+		{"removed, then added again", func(t *testing.T, p *propsheet.Form) {
+			selectGridRow(t, mailGrid(t, p, 0), 0, "ops")
+			clickButton(t, p, "Remove")
+			editText(t, p, "New profile name", "ops")
+			clickButton(t, p, "Add")
+		}, "profile ops is still in use until its removal is applied"},
+		{"renamed away, then added", func(t *testing.T, p *propsheet.Form) {
+			selectGridRow(t, mailGrid(t, p, 0), 0, "ops")
+			editText(t, p, "Profile name", "ops-old")
+			editText(t, p, "New profile name", "ops")
+			clickButton(t, p, "Add")
+		}, "profile ops is still in use until its rename to ops-old is applied"},
+		{"renamed onto a removed profile's name", func(t *testing.T, p *propsheet.Form) {
+			selectGridRow(t, mailGrid(t, p, 0), 0, "alerts")
+			clickButton(t, p, "Remove")
+			selectGridRow(t, mailGrid(t, p, 0), 0, "ops")
+			editText(t, p, "Profile name", "alerts")
+		}, "profile alerts is still in use until its removal is applied"},
+		{"two names swapped", func(t *testing.T, p *propsheet.Form) {
+			selectGridRow(t, mailGrid(t, p, 0), 0, "ops")
+			editText(t, p, "Profile name", "alerts")
+			selectGridRow(t, mailGrid(t, p, 0), 0, "alerts")
+			editText(t, p, "Profile name", "ops")
+		}, "is still in use until its rename to"},
+		// The apply-time check this replaces compared byte-wise; the
+		// server, case-insensitive here, calls them one name.
+		{"Ops and ops", func(t *testing.T, p *propsheet.Form) {
+			selectGridRow(t, mailGrid(t, p, 0), 0, "ops")
+			editText(t, p, "Profile name", "Ops")
+			selectGridRow(t, mailGrid(t, p, 0), 0, "alerts")
+			editText(t, p, "Profile name", "ops")
+		}, "two profiles are named "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sc, inst := newFakeConn(t, mailPageReads()...)
+			forms, _ := mailPages(t, sc, inst)
+			tc.edit(t, forms[mailPageProfiles])
+			err := validateMail(forms)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("validate = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestMailAccountsRefuseANameFreedOnlyByThisApply: the Accounts page runs the
+// same check — an account is created before the one it replaces is dropped.
+func TestMailAccountsRefuseANameFreedOnlyByThisApply(t *testing.T) {
+	sc, inst := newFakeConn(t, mailPageReads()...)
+	forms, _ := mailPages(t, sc, inst)
+	a := forms[mailPageAccounts]
+	selectGridRow(t, plainGrid(t, a), 0, "relay2")
+	clickButton(t, a, "Remove")
+	editText(t, a, "New account name", "RELAY2")
+	clickButton(t, a, "Add")
+	const want = "account relay2 is still in use until its removal is applied"
+	if err := validateMail(forms); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("validate = %v, want %q", err, want)
+	}
+}

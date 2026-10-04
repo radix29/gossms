@@ -143,6 +143,44 @@ func TestExplorerSelectionFollowsRecreatedNode(t *testing.T) {
 	}
 }
 
+// Schedule names are not unique. Matched by name, a reload moved the
+// selection from the second of two schedules named Daily to the first, and
+// Delete, Enable/Disable and Properties then acted on the one not picked.
+func TestExplorerSelectionFollowsScheduleByID(t *testing.T) {
+	st := newSelectionTree(t)
+	sched := func(id int) *explorerNode {
+		return &explorerNode{label: "Daily", data: nodeData{Type: NodeAgentSchedule, Name: "Daily", AgentScheduleID: id, conn: st.sc}}
+	}
+	first, second := sched(7), sched(9)
+	st.a.explorer.SetChildren(st.logins, []*explorerNode{first, second})
+	st.selectNode(t, second)
+
+	st.reload(st.logins, sched(7), sched(9))
+
+	got := st.a.explorer.Selected()
+	if got == nil || got == second {
+		t.Fatalf("Selected() after a refresh = %v, want the re-created schedule 9", got)
+	}
+	if id := got.data.AgentScheduleID; id != 9 {
+		t.Errorf("selection moved to schedule %d, want the re-created 9", id)
+	}
+}
+
+func TestSameObjectTellsNamesakeSchedulesApart(t *testing.T) {
+	sched := func(id int) *explorerNode {
+		return &explorerNode{label: "Daily", data: nodeData{Type: NodeAgentSchedule, Name: "Daily", AgentScheduleID: id}}
+	}
+	if !sameObject(sched(7), sched(7)) {
+		t.Error("the same schedule was not matched")
+	}
+	if sameObject(sched(7), sched(9)) {
+		t.Error("two schedules named alike were matched")
+	}
+	if sameNodeAs(sched(7))(sched(9).data) {
+		t.Error("sameNodeAs matched a namesake schedule")
+	}
+}
+
 // Deleting the selected object moves the selection to its parent folder,
 // not onto whichever sibling slid into its row.
 func TestExplorerSelectionMovesToParentWhenNodeRemoved(t *testing.T) {
