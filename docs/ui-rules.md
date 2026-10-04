@@ -140,6 +140,10 @@ behind the mouse and async rules.
   reintroduced fall-through. A dialog reacting to edits implements
   `core.ClipboardEditHandler` and checks the target it's handed. `App.pasteInto`
   drops text unless its target is still current (reads are async).
+- **A bracketed-paste newline arrives as `KeyEnter` (CR) or `KeyCtrlJ` (LF)**
+  — tcell's legacy key mode decodes a raw LF as Ctrl+J. `bufferPastedKey`
+  maps both to `\n`, skipping the LF of a CRLF. Dropping `KeyCtrlJ` ran every
+  line together from Alacritty and tmux `paste-buffer -r`.
 - **Every dialog is modal: a query window opened from one is unreachable
   until it closes.** `topDialog()` takes all input, so a button that hands the
   user T-SQL to edit and run (not Script Changes, which needs no edit) closes
@@ -243,7 +247,9 @@ behind the mouse and async rules.
     captures it (`var req …; d.applyFns[0] = func(ctx) error { return
     d.create(ctx, req) }`), never `d.applyFns[0] = d.create` reading widgets.
     A result the run hands back (New Endpoint's per-instance script) goes
-    through a destination the run puts in its context.
+    through a destination the run puts in its context; so does what a create
+    step hands a later page of the same run (`withCreatedHandoff` — New
+    Schedule's Jobs page attaches the schedule General created, by id).
   - `TestApplyClosuresDoNotWritePageState` checks every
     `func(ctx context.Context) error` literal and method value, following
     captured closures, func fields, methods of captured values and package

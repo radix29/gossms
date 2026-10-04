@@ -301,10 +301,18 @@ func TestNewAlertPreflightRejectsATriggerWithNoValue(t *testing.T) {
 
 // -- New Schedule ------------------------------------------------------------
 
-const newScheduleName = "Nightly 02:00"
+const (
+	newScheduleName = "Nightly 02:00"
+	// newScheduleID is the schedule_id sp_add_schedule hands back.
+	newScheduleID = 42
+)
 
 func newScheduleResponses() []fakeResponse {
 	rs := []fakeResponse{
+		// CreateSchedule reads the new id back through @schedule_id OUTPUT,
+		// then the schedule by it.
+		{match: "sp_add_schedule", cols: 1, rows: [][]driver.Value{{int64(newScheduleID)}}},
+		scheduleByIDResponses([][]driver.Value{scheduleRow(newScheduleID, newScheduleName, 4, 1, 0, "sa")})[0],
 		// As in newAlertResponses: the Jobs page resolves each job it attaches
 		// to by name, and behind the list answer every one of them would come
 		// back as whichever job sorts first.
@@ -352,7 +360,13 @@ func TestNewScheduleWeeklyTicksTheDayItIsLabelled(t *testing.T) {
 	if err := d.applyFns[0](context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmt := onlyStatementWith(t, inst, "sp_add_schedule")
+	// A read, not an exec: the new id comes back through an OUTPUT
+	// parameter (execScan).
+	adds := inst.Reads("sp_add_schedule")
+	if len(adds) != 1 {
+		t.Fatalf("sp_add_schedule sent %d times, want 1", len(adds))
+	}
+	stmt := adds[0]
 	assertStatementHas(t, stmt,
 		"@schedule_name = N'"+newScheduleName+"'",
 		"@freq_type = 8",     // FreqWeekly
@@ -377,6 +391,29 @@ func TestNewScheduleAttachesOnlyTheJobTicked(t *testing.T) {
 		"@job_name = N'"+agentJobName+"'",
 		"@schedule_name = N'"+newScheduleName+"'",
 	)
+}
+
+// Schedule names are not unique: by a name another schedule already holds,
+// msdb refuses the attach (Msg 14371). The Jobs page attaches the schedule
+// General's step created, by the id it handed off through the run.
+func TestNewScheduleAttachesTheScheduleItCreatedByID(t *testing.T) {
+	d, inst := newScheduleDialog(t)
+
+	editText(t, d.forms[0], "Name", newScheduleName)
+	toggleByName(t, toggleGrid(t, d.forms[1]), agentJobName, 0)
+	if err := d.preflight(); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+
+	ctx := withCreatedHandoff(context.Background())
+	for i, apply := range d.applyFns {
+		if err := apply(ctx); err != nil {
+			t.Fatalf("apply %d: %v", i, err)
+		}
+	}
+	stmt := onlyStatementWith(t, inst, "sp_attach_schedule")
+	assertStatementHas(t, stmt, "@schedule_id = 42")
+	assertStatementLacks(t, stmt, "@schedule_name")
 }
 
 func TestNewScheduleAttachesNothingWhenNoJobIsTicked(t *testing.T) {
@@ -504,7 +541,7 @@ func TestNewJobAttachesOnlyTheScheduleTicked(t *testing.T) {
 	stmt := onlyStatementWith(t, inst, "sp_attach_schedule")
 	assertStatementHas(t, stmt,
 		"@job_name = N'"+newJobName+"'",
-		"@schedule_name = N'"+agentScheduleName+"'",
+		"@schedule_id = 7", // agentScheduleID: names are not unique
 	)
 }
 

@@ -22,7 +22,6 @@ type njobPrefetch struct {
 	loginNames    []string
 	categories    []string
 	dbNames       []string
-	scheduleNames []string
 	schedules     []*gosmo.Schedule
 	operatorNames []string
 }
@@ -60,10 +59,6 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	if err != nil {
 		return nil, err
 	}
-	schedNames := make([]string, len(scheds))
-	for i, sch := range scheds {
-		schedNames[i] = sch.Name
-	}
 	ops, err := sc.Server.Operators(ctx)
 	if err != nil {
 		return nil, err
@@ -74,7 +69,7 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	}
 	return &njobPrefetch{
 		existingNames: existing, loginNames: loginNames, categories: catNames,
-		dbNames: dbNames, scheduleNames: schedNames, schedules: scheds, operatorNames: opNames,
+		dbNames: dbNames, schedules: scheds, operatorNames: opNames,
 	}, nil
 }
 

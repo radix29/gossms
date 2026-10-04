@@ -61,6 +61,7 @@ type fakeResponse struct {
 	// from the list read it is a WHERE clause away from — DatabaseByName's
 	// query contains "FROM sys.databases" too, so the list answer served it
 	// and every database on the page resolved to whichever row sorted first.
+	// An integer parameter matches its decimal form, for a read by id.
 	arg string
 
 	// colNames, if set, names the result's columns — for a read that scans by
@@ -276,8 +277,15 @@ func (f *fakeInstance) execBlock(q, curDB string, args []driver.NamedValue) chan
 
 func hasStringArg(args []driver.NamedValue, want string) bool {
 	for _, a := range args {
-		if s, ok := a.Value.(string); ok && s == want {
-			return true
+		switch v := a.Value.(type) {
+		case string:
+			if v == want {
+				return true
+			}
+		case int64:
+			if strconv.FormatInt(v, 10) == want {
+				return true
+			}
 		}
 	}
 	return false

@@ -91,7 +91,7 @@ func agentJobDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) 
 
 // agentScheduleDetail builds a schedule's detail view.
 func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	sch, err := sc.Server.ScheduleByName(ctx, node.data.Name)
+	sch, err := findAgentSchedule(ctx, sc, node.data.AgentScheduleID)
 	if err != nil {
 		return nil, nil, err
 	}

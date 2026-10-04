@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
+	"strconv"
 	"time"
 )
 
@@ -141,11 +142,22 @@ func agentScheduleResponses() []fakeResponse {
 		scheduleRow(agentScheduleID, agentScheduleName, 4, 1, 0, "appuser"),
 		scheduleRow(9, "Weekly Sunday", 8, 1, 1, "appuser"),
 	}
-	return []fakeResponse{
-		{match: "WHERE sch.name = @p1", cols: 16, rows: [][]driver.Value{all[1]}},
-		{match: "sysjobschedules js ON js.schedule_id", cols: 16, rows: all[:1]},
-		{match: "FROM   msdb.dbo.sysschedules sch", cols: 16, rows: all},
+	return append(scheduleByIDResponses(all),
+		fakeResponse{match: "WHERE sch.name = @p1", cols: 16, rows: [][]driver.Value{all[1]}},
+		fakeResponse{match: "sysjobschedules js ON js.schedule_id", cols: 16, rows: all[:1]},
+		fakeResponse{match: "FROM   msdb.dbo.sysschedules sch", cols: 16, rows: all},
+	)
+}
+
+// scheduleByIDResponses answers ScheduleByID for each row, by its id: every
+// schedule action reads by id, since names are not unique.
+func scheduleByIDResponses(rows [][]driver.Value) []fakeResponse {
+	out := make([]fakeResponse, len(rows))
+	for i, r := range rows {
+		out[i] = fakeResponse{match: "WHERE sch.schedule_id = @p1", arg: strconv.FormatInt(r[0].(int64), 10),
+			cols: 16, rows: [][]driver.Value{r}}
 	}
+	return out
 }
 
 // agentDatabaseListResponse is the database dropdown for job steps and alert

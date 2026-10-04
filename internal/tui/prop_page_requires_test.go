@@ -53,7 +53,7 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"Job":                          jobPropPages(d, sc, "nightly"),
 		"Alert":                        alertPropPages(sc, "alert1"),
 		"Operator":                     operatorPropPages(sc, "oncall"),
-		"Schedule":                     schedulePropPages(sc, "nightly"),
+		"Schedule":                     schedulePropPages(sc, agentScheduleID, "nightly"),
 		"User-Defined Data Type":       userDefinedDataTypePropPages(sc, "HealthClinic", "dbo", "Phone"),
 		"User-Defined Table Type":      userDefinedTableTypePropPages(sc, "HealthClinic", "dbo", "IdList"),
 		"User-Defined Type":            clrTypePropPages(sc, "HealthClinic", "dbo", "Geo"),

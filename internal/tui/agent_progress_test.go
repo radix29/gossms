@@ -40,6 +40,7 @@ func TestAgentWritesRunBehindTheProgressDialog(t *testing.T) {
 			sc, inst := newFakeConn(t, responses...)
 			node := agentJobTestNode(sc)
 			node.label, node.data.Name = c.label, c.label
+			node.data.AgentScheduleID = agentScheduleID
 
 			c.act(a, sc, node)
 			if !a.progressDialog.Visible() || !a.progressBusy {

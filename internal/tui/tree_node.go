@@ -533,6 +533,14 @@ type nodeData struct {
 	LogType   gosmo.ErrorLogType
 	LogNumber int
 
+	// AgentScheduleID is a NodeAgentSchedule's msdb schedule_id. Schedule
+	// names are not unique — SSMS's New Job ▸ Schedules makes one schedule
+	// per job, so several jobs scheduled "Daily" leave several schedules
+	// named Daily — and two such nodes carry the same label, as SSMS shows
+	// them. Every action on the node reads and writes by this id: by name,
+	// msdb refuses (Msg 14371) and ScheduleByName answers ErrAmbiguous.
+	AgentScheduleID int
+
 	// XESession is the event session a NodeEventTarget belongs to. Name on
 	// the leaf is the target's own name (event_file), which is unique only
 	// within its session — the TableName idiom, one level up.

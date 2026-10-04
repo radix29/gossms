@@ -81,6 +81,36 @@ func TestColumnEncryptionKeyPageAddsAValueUnderTheChosenMasterKey(t *testing.T) 
 	}
 }
 
+// TestColumnEncryptionKeyPageKeepsCaseTwinsApartUnderCS: master keys are
+// database-scoped, so in a _CS_ database K1 and k1 are two keys, and a value
+// under K1 must not hide k1 from the add list. A lowered set did.
+func TestColumnEncryptionKeyPageKeepsCaseTwinsApartUnderCS(t *testing.T) {
+	for _, tt := range []struct {
+		collation string
+		offered   bool
+	}{
+		{"Latin1_General_CS_AS", true},
+		{"SQL_Latin1_General_CP1_CI_AS", false},
+	} {
+		responses := cekPageResponses("K1")
+		responses[0].rows[0][5] = tt.collation
+		responses[3].rows = [][]driver.Value{
+			{"K1", int64(1), "MSSQL_CERTIFICATE_STORE", "CurrentUser/my/aa", false, nil},
+			{"k1", int64(2), "MSSQL_CERTIFICATE_STORE", "CurrentUser/my/bb", false, nil},
+		}
+		sc, inst := newFakeConn(t, responses...)
+		form, _ := loadPage(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
+
+		items := selectRow(t, form, "Encrypt under master key").Items()
+		if slices.Contains(items, "K1") {
+			t.Errorf("%s: the master key CEK2 is encrypted under is offered: %q", tt.collation, items)
+		}
+		if got := slices.Contains(items, "k1"); got != tt.offered {
+			t.Errorf("%s: k1 offered = %v, want %v (items %q)", tt.collation, got, tt.offered, items)
+		}
+	}
+}
+
 // TestColumnEncryptionKeyPageDropsTheChosenValue is the second half, on a key
 // mid-rotation. The dropdown offers only the master keys this key actually
 // has a value under, and the drop names the one the user picked — the other

@@ -219,8 +219,8 @@ func TestCrossDatabaseLoadIsGatedOnAccess(t *testing.T) {
 		if inv.err == errNoDatabaseAccess {
 			t.Error("accessible: the load was refused")
 		}
-		if n := inst.QueryCount() - before; n <= 3 {
-			t.Errorf("accessible: %d queries, want the catalog read after the probe", n)
+		if len(inst.Reads("FROM   sys.objects o")) == 0 {
+			t.Errorf("accessible: no catalog read after the probe; reads %q", inst.Reads(""))
 		}
 	}
 }

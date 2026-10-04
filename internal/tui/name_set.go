@@ -4,7 +4,6 @@ import (
 	"context"
 	"iter"
 	"maps"
-	"strings"
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -22,29 +21,24 @@ import (
 // A nil *nameSet is an empty one, so Has is safe on a prefetch that never
 // filled it.
 type nameSet struct {
-	fold bool
-	m    map[string]struct{}
+	collation string
+	m         map[string]struct{}
 }
 
 // newNameSet returns a set comparing names the way collation does, seeded
 // with names. An empty collation — not read — folds, which is the
 // case-insensitive default every install ships with.
 func newNameSet(collation string, names ...string) *nameSet {
-	s := &nameSet{fold: gosmo.CollationIgnoresCase(collation), m: make(map[string]struct{}, len(names))}
+	s := &nameSet{collation: collation, m: make(map[string]struct{}, len(names))}
 	for _, n := range names {
 		s.Add(n)
 	}
 	return s
 }
 
-func foldName(fold bool, name string) string {
-	if fold {
-		return strings.ToLower(name)
-	}
-	return name
-}
-
-func (s *nameSet) key(name string) string { return foldName(s.fold, name) }
+// key is gosmo.NameKey, so the set agrees with gosmo.SameName rune for rune —
+// a lowered key split names EqualFold joins (`ſ`/`s`, final `ς`/`σ`).
+func (s *nameSet) key(name string) string { return gosmo.NameKey(s.collation, name) }
 
 // Add puts name in the set.
 func (s *nameSet) Add(name string) { s.m[s.key(name)] = struct{}{} }
@@ -62,17 +56,17 @@ func (s *nameSet) Has(name string) bool {
 // names, where which keys are the same one is the collation's call. A nil
 // *nameMap is an empty one.
 type nameMap[V any] struct {
-	fold bool
-	m    map[string]V
+	collation string
+	m         map[string]V
 }
 
 // newNameMap returns an empty map comparing names the way collation does.
 func newNameMap[V any](collation string) *nameMap[V] {
-	return &nameMap[V]{fold: gosmo.CollationIgnoresCase(collation), m: map[string]V{}}
+	return &nameMap[V]{collation: collation, m: map[string]V{}}
 }
 
 // Set stores v under name.
-func (m *nameMap[V]) Set(name string, v V) { m.m[foldName(m.fold, name)] = v }
+func (m *nameMap[V]) Set(name string, v V) { m.m[gosmo.NameKey(m.collation, name)] = v }
 
 // Get returns the value stored under name under the map's collation.
 func (m *nameMap[V]) Get(name string) (V, bool) {
@@ -80,7 +74,7 @@ func (m *nameMap[V]) Get(name string) (V, bool) {
 		var zero V
 		return zero, false
 	}
-	v, ok := m.m[foldName(m.fold, name)]
+	v, ok := m.m[gosmo.NameKey(m.collation, name)]
 	return v, ok
 }
 

@@ -91,6 +91,7 @@ func loadAgentSchedulesChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 		func(sch *gosmo.Schedule) *explorerNode {
 			n := l.node(sch.Name, NodeAgentSchedule, "", sch.Name, "")
 			n.data.IsEnabled = sch.Enabled
+			n.data.AgentScheduleID = sch.ID
 			return n
 		})
 }

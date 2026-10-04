@@ -23,6 +23,10 @@ type appPaste struct {
 	// accumulates in buf.
 	bracketed bool
 	buf       strings.Builder
+	// afterCR is true when the last pasted key was KeyEnter (a CR), so an LF
+	// right behind it is the second half of a CRLF and adds no second line
+	// break — see bufferPastedKey.
+	afterCR bool
 
 	// target is the widget a Ctrl+V was aimed at while the terminal's OSC 52
 	// clipboard reply is outstanding — the fallback when no native clipboard
@@ -259,18 +263,33 @@ func (a *App) pasteInto(target clipboardTarget, token any, text string) {
 func (a *App) beginBracketedPaste() {
 	a.paste.bracketed = true
 	a.paste.buf.Reset()
+	a.paste.afterCR = false
 }
 
 // bufferPastedKey appends one key of an in-progress bracketed paste to paste.buf.
 // Anything that isn't a character, newline or tab is dropped rather than acted
 // on — a stray escape sequence can decode as a function key — so a paste can
 // never trigger a command.
+//
+// A newline arrives as either key. Most terminals rewrite LF to CR inside a
+// paste, which tcell reports as KeyEnter; Alacritty and tmux `paste-buffer -r`
+// send the LF unchanged, and tcell's legacy key mode reports a raw LF as
+// KeyCtrlJ (the same decoding isCtrlEnter relies on outside a paste). Dropping
+// KeyCtrlJ ran every pasted line into the next. A CRLF clipboard sends both,
+// so an LF straight after a CR is skipped rather than doubling the break.
 func (a *App) bufferPastedKey(ev *tcell.EventKey) {
+	afterCR := a.paste.afterCR
+	a.paste.afterCR = false
 	switch ev.Key() {
 	case tcell.KeyRune:
 		a.paste.buf.WriteString(ev.Str())
 	case tcell.KeyEnter:
 		a.paste.buf.WriteByte('\n')
+		a.paste.afterCR = true
+	case tcell.KeyCtrlJ:
+		if !afterCR {
+			a.paste.buf.WriteByte('\n')
+		}
 	case tcell.KeyTab:
 		a.paste.buf.WriteByte('\t')
 	}

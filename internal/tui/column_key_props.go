@@ -87,11 +87,14 @@ func columnEncryptionKeyPropPages(sc *db.ServerConn, dbName, name string) []prop
 			}
 
 			rows := make([][]string, len(k.Values))
-			under := make(map[string]bool, len(k.Values))
+			// Master keys are database-scoped, so whether two names are one
+			// key is the database collation's call: under _CS_, K1 and k1
+			// are two keys, and a value under K1 must not hide k1.
+			under := newNameSet(databaseCollation(dbObj))
 			dropItems := []string{noRotation}
 			for i, v := range k.Values {
 				rows[i] = []string{v.MasterKeyName, v.EncryptionAlgorithm, hexPreview(v.EncryptedValue)}
-				under[strings.ToLower(v.MasterKeyName)] = true
+				under.Add(v.MasterKeyName)
 				dropItems = append(dropItems, v.MasterKeyName)
 			}
 			// A master key the key is already encrypted under is not offered:
@@ -100,7 +103,7 @@ func columnEncryptionKeyPropPages(sc *db.ServerConn, dbName, name string) []prop
 			// is a drop and an add.
 			addItems := []string{noRotation}
 			for _, m := range masters {
-				if !under[strings.ToLower(m.Name)] {
+				if !under.Has(m.Name) {
 					addItems = append(addItems, m.Name)
 				}
 			}

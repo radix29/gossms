@@ -125,7 +125,7 @@ func TestScriptSafeLookupsDoNotQueryUnderScriptMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scriptSafeJob under WithScript: %v", err)
 	}
-	if err := j.AttachSchedule(ctx, "Nightly"); err != nil {
+	if err := j.AttachSchedule(ctx, &gosmo.Schedule{Name: "Nightly"}); err != nil {
 		t.Fatalf("AttachSchedule on the scripted handle: %v", err)
 	}
 

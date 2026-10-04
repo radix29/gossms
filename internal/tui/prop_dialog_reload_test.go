@@ -31,7 +31,7 @@ func TestPropertiesApplyReloadsTheFolderListingTheObject(t *testing.T) {
 			[]nodeData{{Type: NodeAgentEventAlerts}}, []nodeData{{Type: NodeAgentOperators}}},
 		{"Operator", func(a *App, sc *db.ServerConn) { a.showOperatorProperties(sc, "op") },
 			[]nodeData{{Type: NodeAgentOperators}}, []nodeData{{Type: NodeAgentEventAlerts}}},
-		{"Schedule", func(a *App, sc *db.ServerConn) { a.showScheduleProperties(sc, "sch") },
+		{"Schedule", func(a *App, sc *db.ServerConn) { a.showScheduleProperties(sc, agentScheduleID, "sch") },
 			[]nodeData{{Type: NodeAgentSchedules}}, []nodeData{{Type: NodeAgentUserJobs}}},
 		{"Key", func(a *App, sc *db.ServerConn) { a.showKeyPropertiesFor(sc, dbName, "dbo", "T", "PK_T", true) },
 			[]nodeData{

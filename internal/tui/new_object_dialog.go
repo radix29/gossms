@@ -346,7 +346,7 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	fns := d.applyFns
 	d.StartApplying(pipelineLabel(runCtx))
 	d.SetMessage("", false)
-	runCtx = d.run.start(runCtx)
+	runCtx = d.run.start(withCreatedHandoff(runCtx))
 	stop := d.run.stop
 
 	done := make(chan struct{})
@@ -410,6 +410,42 @@ func (d *newObjectDialog[P]) createFailed(runCtx context.Context, runErr error, 
 	default:
 		d.SetMessage(withPermissionAdvice(runErr).Error(), true)
 	}
+}
+
+// createdKey carries a run's createdHandoff — see withCreatedHandoff.
+type createdKey struct{}
+
+// createdHandoff holds what a New-object dialog's create step returned, for a
+// later step of the same run to act on — New Schedule's Jobs page attaches
+// the schedule General created, by its id, because schedule names are not
+// unique.
+type createdHandoff struct{ v any }
+
+// withCreatedHandoff returns ctx carrying an empty createdHandoff. It is owned
+// by the run (runPipeline makes a fresh one per run), not the dialog, so the
+// pipeline's goroutine writes nothing the UI goroutine reads — the
+// destination docs/ui-rules.md has a run's results go through.
+func withCreatedHandoff(ctx context.Context) context.Context {
+	return context.WithValue(ctx, createdKey{}, &createdHandoff{})
+}
+
+// handOffCreated records v as what this run's create step made. Without a
+// handoff in ctx it does nothing.
+func handOffCreated(ctx context.Context, v any) {
+	if h, ok := ctx.Value(createdKey{}).(*createdHandoff); ok {
+		h.v = v
+	}
+}
+
+// createdFrom is what this run's create step handed off, if it was a T.
+func createdFrom[T any](ctx context.Context) (T, bool) {
+	h, _ := ctx.Value(createdKey{}).(*createdHandoff)
+	if h == nil {
+		var zero T
+		return zero, false
+	}
+	v, ok := h.v.(T)
+	return v, ok
 }
 
 // stepName names applyFns[i]'s page for a message.

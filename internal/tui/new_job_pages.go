@@ -60,10 +60,9 @@ func connectedLoginIndex(sc *db.ServerConn, names []string) int {
 	if sc == nil || sc.Server == nil || sc.Server.Info() == nil || sc.Server.Info().Login == "" {
 		return 0
 	}
-	fold := gosmo.CollationIgnoresCase(serverCollation(sc))
-	want := foldName(fold, sc.Server.Info().Login)
+	collation, login := serverCollation(sc), sc.Server.Info().Login
 	for i, n := range names {
-		if foldName(fold, n) == want {
+		if gosmo.SameName(collation, n, login) {
 			return i
 		}
 	}
@@ -176,10 +175,10 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 // attach it here or from the job's own Schedules page.
 func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string) (*propsheet.Form, propApply) {
 	grid := propsheet.NewToggleGrid([]string{"Attach", "Schedule"}, []int{0}, 12)
-	text := make([][]string, len(pf.scheduleNames))
-	vals := make([][]bool, len(pf.scheduleNames))
-	for i, name := range pf.scheduleNames {
-		text[i] = []string{name}
+	text := make([][]string, len(pf.schedules))
+	vals := make([][]bool, len(pf.schedules))
+	for i, sch := range pf.schedules {
+		text[i] = []string{sch.Name}
 		vals[i] = []bool{false}
 	}
 	grid.SetRows(text, vals)
@@ -198,7 +197,9 @@ func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func(
 			if !v[0] {
 				continue
 			}
-			if err := j.AttachSchedule(ctx, pf.scheduleNames[i]); err != nil {
+			// By the listed schedule, which carries its id: schedule names
+			// are not unique.
+			if err := j.AttachSchedule(ctx, pf.schedules[i]); err != nil {
 				return err
 			}
 		}

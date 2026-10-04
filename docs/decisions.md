@@ -1546,6 +1546,30 @@ Staged, the pane keeps the title, shows one `Status | Not connected` row, and
 drops the previous node's rows, chart strip, pinned tooltip and menu verbs
 (`TestShowNodeDetailsNotConnectedDropsThePreviousNode`). Not dead code.
 
+## Agent schedules: identity is the id — settled, do not re-raise
+
+`msdb.dbo.sysschedules.name` is not unique; SSMS's New Job ▸ Schedules makes
+one schedule per job, so several jobs scheduled "Daily" leave several
+schedules named Daily. Probed 2026-10-04 on win10cli (17): by a shared name,
+`sp_attach_schedule`, `sp_update_schedule` and `sp_delete_schedule` all fail
+Msg 14371 ("There are two or more schedules named …"); `sp_detach_schedule`
+succeeds, because it resolves the name within the job.
+
+- **Every schedule action works by `schedule_id`.** The Object Explorer node
+  carries it (`nodeData.AgentScheduleID`); Enable/Disable, Delete, Rename,
+  the detail pane and Schedule Properties read it with `ScheduleByID`
+  (`findAgentSchedule`). Job Properties ▸ Schedules decides "Attached" by id
+  and attaches/detaches the listed `*gosmo.Schedule`; New Job attaches the
+  listed one; New Schedule attaches the one its create step handed off
+  (`withCreatedHandoff`, `new_object_dialog.go`). gosmo's `ScheduleByName`
+  refuses a shared name with `ErrAmbiguous`.
+- **Duplicate labels stay identical in Object Explorer**, as SSMS shows them.
+  No id suffix, no disambiguating text: the detail pane (frequency, "Used by
+  jobs") tells two apart, and each node acts on its own id.
+- **New Schedule still refuses a taken name** (its preflight). SSMS allows it;
+  gossms keeps the refusal because an identical name is almost always a
+  mistake, and the Jobs page no longer depends on it.
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

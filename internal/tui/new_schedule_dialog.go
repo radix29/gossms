@@ -82,7 +82,10 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 			FreqRelativeInterval: freq.FreqRelativeInterval, FreqRecurrenceFactor: freq.FreqRecurrenceFactor,
 		}
 		req.ActiveStartDate, req.ActiveEndDate, req.ActiveStartTime, req.ActiveEndTime = freqForm.readActiveRange()
-		_, err := sc.Server.CreateSchedule(ctx, req)
+		sch, err := sc.Server.CreateSchedule(ctx, req)
+		if err == nil {
+			handOffCreated(ctx, sch)
+		}
 		return err
 	}
 
@@ -101,7 +104,14 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 		propsheet.Note("Optional — a schedule doesn't need to be attached to any job yet. Attach more later from a job's own Schedules page."),
 	)
 	jobsApply := func(ctx context.Context) error {
-		name := scheduleName()
+		// The schedule General created, which carries its id: by a name
+		// another schedule already holds, msdb refuses the attach (Msg
+		// 14371). Under Script Changes it is the name-only handle, so the
+		// attach is scripted by name.
+		sch, ok := createdFrom[*gosmo.Schedule](ctx)
+		if !ok {
+			sch = sc.Server.ScheduleRef(scheduleName())
+		}
 		for i, v := range jobsGrid.Values() {
 			if !v[0] {
 				continue
@@ -110,7 +120,7 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 			if err != nil {
 				return err
 			}
-			if err := j.AttachSchedule(ctx, name); err != nil {
+			if err := j.AttachSchedule(ctx, sch); err != nil {
 				return err
 			}
 		}

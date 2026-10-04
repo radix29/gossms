@@ -83,7 +83,7 @@ func agentScheduleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, re
 	return agentToggleLeafMenu(sc, node, refresh, "Schedule",
 		func(on bool) { a.setAgentScheduleEnabled(sc, node, on) },
 		func() { a.deleteAgentSchedule(sc, node) },
-		func() { a.showScheduleProperties(sc, node.data.Name) })
+		func() { a.showScheduleProperties(sc, node.data.AgentScheduleID, node.data.Name) })
 }
 
 // agentAlertMenuItems builds the context menu for a NodeAgentAlert leaf.
@@ -256,13 +256,17 @@ func (a *App) showAgentJobHistory(sc *db.ServerConn, jobName string) {
 
 // ---- Enable / Disable ----
 
+// Jobs, alerts and operators are written through a Ref: every one of these
+// writes addresses the object by name (sp_update_job @job_name,
+// sp_delete_alert @name, ...), and their names are unique in msdb, so a
+// ByName read first would cost a round trip and buy nothing. One deleted
+// underneath the menu fails with msdb's own "does not exist" (14262).
+// Schedules are the exception: their names are not unique, so they are read
+// by the node's id.
+
 func (a *App) setAgentJobEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
-	name := node.data.Name
+	j := sc.Server.JobRef(node.data.Name)
 	a.setAgentEnabled(sc, node, "job", enable, func(ctx context.Context) error {
-		j, err := sc.Server.JobByName(ctx, name)
-		if err != nil {
-			return err
-		}
 		if enable {
 			return j.Enable(ctx)
 		}
@@ -271,9 +275,9 @@ func (a *App) setAgentJobEnabled(sc *db.ServerConn, node *explorerNode, enable b
 }
 
 func (a *App) setAgentScheduleEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
-	name := node.data.Name
+	id := node.data.AgentScheduleID
 	a.setAgentEnabled(sc, node, "schedule", enable, func(ctx context.Context) error {
-		sch, err := sc.Server.ScheduleByName(ctx, name)
+		sch, err := findAgentSchedule(ctx, sc, id)
 		if err != nil {
 			return err
 		}
@@ -285,12 +289,8 @@ func (a *App) setAgentScheduleEnabled(sc *db.ServerConn, node *explorerNode, ena
 }
 
 func (a *App) setAgentAlertEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
-	name := node.data.Name
+	al := sc.Server.AlertRef(node.data.Name)
 	a.setAgentEnabled(sc, node, "alert", enable, func(ctx context.Context) error {
-		al, err := sc.Server.AlertByName(ctx, name)
-		if err != nil {
-			return err
-		}
 		if enable {
 			return al.Enable(ctx)
 		}
@@ -299,12 +299,8 @@ func (a *App) setAgentAlertEnabled(sc *db.ServerConn, node *explorerNode, enable
 }
 
 func (a *App) setAgentOperatorEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
-	name := node.data.Name
+	o := sc.Server.OperatorRef(node.data.Name)
 	a.setAgentEnabled(sc, node, "operator", enable, func(ctx context.Context) error {
-		o, err := sc.Server.OperatorByName(ctx, name)
-		if err != nil {
-			return err
-		}
 		if enable {
 			return o.Enable(ctx)
 		}
@@ -318,21 +314,15 @@ func (a *App) deleteAgentJob(sc *db.ServerConn, node *explorerNode) {
 	name := node.data.Name
 	a.deleteAgentEntity(sc, node, "Delete Job",
 		fmt.Sprintf("Delete SQL Server Agent job %q? This cannot be undone.", name),
-		func(ctx context.Context) error {
-			j, err := sc.Server.JobByName(ctx, name)
-			if err != nil {
-				return err
-			}
-			return j.Drop(ctx)
-		})
+		sc.Server.JobRef(name).Drop)
 }
 
 func (a *App) deleteAgentSchedule(sc *db.ServerConn, node *explorerNode) {
-	name := node.data.Name
+	name, id := node.data.Name, node.data.AgentScheduleID
 	a.deleteAgentEntity(sc, node, "Delete Schedule",
 		fmt.Sprintf("Delete schedule %q? A schedule still attached to a job can't be deleted until it's detached.", name),
 		func(ctx context.Context) error {
-			sch, err := sc.Server.ScheduleByName(ctx, name)
+			sch, err := findAgentSchedule(ctx, sc, id)
 			if err != nil {
 				return err
 			}
@@ -344,24 +334,12 @@ func (a *App) deleteAgentAlert(sc *db.ServerConn, node *explorerNode) {
 	name := node.data.Name
 	a.deleteAgentEntity(sc, node, "Delete Alert",
 		fmt.Sprintf("Delete alert %q? This cannot be undone.", name),
-		func(ctx context.Context) error {
-			al, err := sc.Server.AlertByName(ctx, name)
-			if err != nil {
-				return err
-			}
-			return al.Drop(ctx)
-		})
+		sc.Server.AlertRef(name).Drop)
 }
 
 func (a *App) deleteAgentOperator(sc *db.ServerConn, node *explorerNode) {
 	name := node.data.Name
 	a.deleteAgentEntity(sc, node, "Delete Operator",
 		fmt.Sprintf("Delete operator %q? This cannot be undone.", name),
-		func(ctx context.Context) error {
-			o, err := sc.Server.OperatorByName(ctx, name)
-			if err != nil {
-				return err
-			}
-			return o.Drop(ctx)
-		})
+		sc.Server.OperatorRef(name).Drop)
 }

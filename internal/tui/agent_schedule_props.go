@@ -16,34 +16,35 @@ import (
 // rename (the run's last write, see propPage.renames) is seen by
 // PropDialog.InvalidateAll's reload.
 
-// findAgentSchedule wraps gosmo.Server.ScheduleByName, like
-// findAgentJob.
-func findAgentSchedule(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Schedule, error) {
-	return sc.Server.ScheduleByName(ctx, name)
+// findAgentSchedule reads a schedule by its schedule_id, never its name:
+// schedule names are not unique (see nodeData.AgentScheduleID).
+func findAgentSchedule(ctx context.Context, sc *db.ServerConn, id int) (*gosmo.Schedule, error) {
+	return sc.Server.ScheduleByID(ctx, id)
 }
 
-// schedulePropPages builds the page set for Schedule Properties.
-func schedulePropPages(sc *db.ServerConn, scheduleName string) []propPage {
+// schedulePropPages builds the page set for Schedule Properties of schedule
+// id, currently named scheduleName.
+func schedulePropPages(sc *db.ServerConn, id int, scheduleName string) []propPage {
 	name := &scheduleName
 	return []propPage{
-		withRequires(pageScheduleGeneral(sc, name), "", gate.AgentWriteRights()...),
-		pageScheduleJobs(sc, name),
+		withRequires(pageScheduleGeneral(sc, id, name), "", gate.AgentWriteRights()...),
+		pageScheduleJobs(sc, id),
 	}
 }
 
 // showScheduleProperties opens Schedule Properties from Object Explorer's
 // context menu. database is "msdb" so Script Changes' window opens there.
-func (a *App) showScheduleProperties(sc *db.ServerConn, scheduleName string) {
+func (a *App) showScheduleProperties(sc *db.ServerConn, id int, scheduleName string) {
 	a.propDialog.showReloading(sc, "msdb", "Schedule Properties", "Schedule: "+scheduleName, "Server: "+sc.Opts.Server,
-		func() []propPage { return schedulePropPages(sc, scheduleName) }, folderOf("", NodeAgentSchedules))
+		func() []propPage { return schedulePropPages(sc, id, scheduleName) }, folderOf("", NodeAgentSchedules))
 }
 
-func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
+func pageScheduleGeneral(sc *db.ServerConn, id int, scheduleName *string) propPage {
 	return propPage{
 		title:   "General",
 		renames: scheduleName,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			sch, err := findAgentSchedule(ctx, sc, *scheduleName)
+			sch, err := findAgentSchedule(ctx, sc, id)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -67,7 +68,7 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 			f.Add(freqForm.rows()...)
 
 			apply := func(ctx context.Context) error {
-				sch, err := findAgentSchedule(ctx, sc, *scheduleName)
+				sch, err := findAgentSchedule(ctx, sc, id)
 				if err != nil {
 					return err
 				}
@@ -113,11 +114,11 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 
 // pageScheduleJobs lists the jobs using this shared schedule, read-only;
 // editing the schedule affects them all.
-func pageScheduleJobs(sc *db.ServerConn, scheduleName *string) propPage {
+func pageScheduleJobs(sc *db.ServerConn, id int) propPage {
 	return propPage{
 		title: "Jobs",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			sch, err := findAgentSchedule(ctx, sc, *scheduleName)
+			sch, err := findAgentSchedule(ctx, sc, id)
 			if err != nil {
 				return nil, nil, err
 			}

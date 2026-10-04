@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"database/sql/driver"
 	"strings"
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -166,7 +168,7 @@ func TestJobSchedulesAttachesTheScheduleTheRowIsOn(t *testing.T) {
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	assertOneStatement(t, inst, "sp_attach_schedule @job_name = N'Nightly reindex', @schedule_name = N'Hourly'")
+	assertOneStatement(t, inst, "sp_attach_schedule @job_name = N'Nightly reindex', @schedule_id = 7")
 }
 
 // Detaching silently stops the job running.
@@ -178,7 +180,7 @@ func TestJobSchedulesDetachesTheOneItWasAttachedTo(t *testing.T) {
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	assertOneStatement(t, inst, "sp_detach_schedule @job_name = N'Nightly reindex', @schedule_name = N'Daily 01:00'")
+	assertOneStatement(t, inst, "sp_detach_schedule @job_name = N'Nightly reindex', @schedule_id = 3")
 }
 
 // The Attached column comes from a different query and shows which way a toggle
@@ -257,4 +259,40 @@ func TestJobAlertsUnlinkingClearsTheJob(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	assertOneStatement(t, inst, "sp_update_alert @name = N'Sev 20 errors', @job_name = N''")
+}
+
+// Two schedules named Daily, the job attached to the first (id 7). Attached
+// is decided by id: by name, the job's second namesake showed as attached
+// too, so ticking it did nothing and unticking it detached a schedule the
+// job never had. Ticking the second attaches it by its own id.
+func TestJobSchedulesTellsTwinNamesApartByID(t *testing.T) {
+	twins := [][]driver.Value{
+		scheduleRow(7, "Daily", 4, 1, 0, "appuser"),
+		scheduleRow(8, "Daily", 4, 1, 0, "appuser"),
+	}
+	inst, apply, form, _ := loadJobPage(t, []fakeResponse{
+		{match: "sysjobschedules js ON js.schedule_id", cols: 16, rows: twins[:1]},
+		{match: "FROM   msdb.dbo.sysschedules sch", cols: 16, rows: twins},
+	}, func(sc *db.ServerConn, n *string) propPage { return pageJobSchedules(sc, n) })
+
+	g := plainGrid(t, form)
+	if got := []string{g.Row(0)[schedAttachCol], g.Row(1)[schedAttachCol]}; got[0] != "[x]" || got[1] != "[ ]" {
+		t.Fatalf("Attached = %v, want [[x] [ ]]: only schedule 7 is attached", got)
+	}
+
+	selectGridRow(t, g, schedNameCol, "Daily")
+	gridKey(t, g, tcell.KeyDown)
+	for {
+		if _, c := g.SelectedCell(); c == schedAttachCol {
+			break
+		}
+		gridKey(t, g, tcell.KeyLeft)
+	}
+	if !g.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone)) {
+		t.Fatal("DataGrid refused Space")
+	}
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	assertOneStatement(t, inst, "sp_attach_schedule @job_name = N'Nightly reindex', @schedule_id = 8")
 }

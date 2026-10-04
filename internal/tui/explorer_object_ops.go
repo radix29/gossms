@@ -728,7 +728,7 @@ var objectOps = map[NodeType]objectOp{
 	NodeAgentSchedule: {
 		noun: "Schedule",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			s, err := sc.Server.ScheduleByName(ctx, n.Name)
+			s, err := findAgentSchedule(ctx, sc, n.AgentScheduleID)
 			if err != nil {
 				return err
 			}

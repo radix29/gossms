@@ -476,7 +476,7 @@ func cteColumns(rc resolveCtx, cte sqlparse.CTE) []gosmo.CatalogColumn {
 	if cte.Body == nil {
 		return nil
 	}
-	key := foldName(gosmo.CollationIgnoresCase(rc.inv.collation), cte.Name)
+	key := gosmo.NameKey(rc.inv.collation, cte.Name)
 	if rc.expanding[key] {
 		return nil // recursive CTE, or a name bound to itself
 	}

@@ -137,14 +137,16 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			attachedNames := make(map[string]bool, len(attachedScheds))
+			// By id: schedule names are not unique, and by name every
+			// namesake of an attached schedule showed as attached too.
+			attachedIDs := make(map[int]bool, len(attachedScheds))
 			for _, sch := range attachedScheds {
-				attachedNames[sch.Name] = true
+				attachedIDs[sch.ID] = true
 			}
 
 			edits := make([]*jobScheduleAttach, len(all))
 			for i, sch := range all {
-				a := attachedNames[sch.Name]
+				a := attachedIDs[sch.ID]
 				edits[i] = &jobScheduleAttach{sch: sch, origAttached: a, attached: a}
 			}
 
@@ -220,10 +222,10 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 						continue
 					}
 					if e.attached {
-						if err := j.AttachSchedule(ctx, e.sch.Name); err != nil {
+						if err := j.AttachSchedule(ctx, e.sch); err != nil {
 							return err
 						}
-					} else if err := j.DetachSchedule(ctx, e.sch.Name); err != nil {
+					} else if err := j.DetachSchedule(ctx, e.sch); err != nil {
 						return err
 					}
 				}
