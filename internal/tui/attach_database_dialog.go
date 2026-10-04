@@ -12,15 +12,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// attach_database_dialog.go is "Attach Database..." on the Databases folder —
-// SSMS's Attach Databases, and the other half of Detach.
+// attach_database_dialog.go is "Attach Database..." on the Databases folder:
+// SSMS's Attach Databases, the other half of Detach.
 //
-// The dialog exists because of one case: files that have moved. SQL Server
-// finds a database's secondary and log files by itself only at the paths
-// recorded inside the primary file, which is exactly what stops being true
-// once someone copies the files elsewhere. Reading that recorded list back is
-// what makes the paths correctable — see gosmo's DetachedDatabaseInfo,
-// which goes through the undocumented DBCC CHECKPRIMARYFILE.
+// The dialog exists for one case: files that have moved. SQL Server finds a
+// database's secondary and log files itself only at the paths recorded inside
+// the primary file, which stops being true once someone copies the files
+// elsewhere. Reading that recorded list back makes the paths correctable; see
+// gosmo's DetachedDatabaseInfo (the undocumented DBCC CHECKPRIMARYFILE).
 
 // attachPrefetch is what the page needs before anything is typed.
 type attachPrefetch struct {
@@ -36,11 +35,10 @@ type attachPrefetch struct {
 type AttachDatabaseDialog struct {
 	newObjectDialog[attachPrefetch]
 
-	// files is the detached database's file list as read out of its primary
-	// file, with PhysicalName editable: an attach whose files have moved is
-	// the case this dialog exists for. Empty until a primary file has been
-	// read, and legitimately still empty after a read that was refused — see
-	// attachFilePaths.
+	// files is the detached database's file list as read from its primary file,
+	// with PhysicalName editable (an attach whose files have moved is the dialog's
+	// reason to exist). Empty until a primary file has been read, and legitimately
+	// still empty after a refused read; see attachFilePaths.
 	files []*gosmo.DetachedFile
 
 	// fileRead is the DBCC CHECKPRIMARYFILE round trip. A second press — a
@@ -249,16 +247,15 @@ func attachFileType(f *gosmo.DetachedFile) string {
 // attachEditableFiles copies info's file list for editing, with the primary
 // data file's path replaced by the one the user actually pointed at.
 //
-// The list inside the file records where the files were when it was detached.
+// The list inside the file records where the files were when detached.
 // Following it blindly would send the attach back to the old location for the
-// very file just browsed to somewhere else — and the moved-files case is the
-// only reason this dialog exists.
+// very file just browsed to elsewhere, and moved files are why this dialog
+// exists.
 func attachEditableFiles(info *gosmo.DetachedDatabase, primaryPath string) []*gosmo.DetachedFile {
-	// Ask gosmo which file is the primary rather than taking the first data
-	// file in the list: DBCC CHECKPRIMARYFILE's row order is undocumented, and
-	// on a list that comes back secondary-first the browsed path lands on the
-	// secondary while the primary keeps its stale recorded path — an attach
-	// with both data files pointed at the wrong place.
+	// Ask gosmo which file is the primary rather than taking the first data file:
+	// DBCC CHECKPRIMARYFILE's row order is undocumented, and on a secondary-first
+	// list the browsed path would land on the secondary while the primary keeps its
+	// stale path, pointing both data files at the wrong place.
 	primary := info.PrimaryFile()
 	out := make([]*gosmo.DetachedFile, 0, len(info.Files))
 	for _, f := range info.Files {
@@ -273,11 +270,10 @@ func attachEditableFiles(info *gosmo.DetachedDatabase, primaryPath string) []*go
 
 // attachFilePaths builds the file list for CREATE DATABASE ... FOR ATTACH.
 //
-// With no file list read — DBCC refused, or nothing was read yet — the primary
-// file alone is the whole request, which SQL Server accepts as long as the
-// other files are still at their recorded paths. rebuildLog drops the log
-// files: ATTACH_REBUILD_LOG builds a new one and rejects a statement that
-// names the old.
+// With no file list read (DBCC refused, or nothing read yet) the primary file
+// alone is the whole request, which SQL Server accepts while the other files
+// are still at their recorded paths. rebuildLog drops the log files:
+// ATTACH_REBUILD_LOG builds a new one and rejects a statement naming the old.
 func attachFilePaths(files []*gosmo.DetachedFile, primaryPath string, rebuildLog bool) []string {
 	if len(files) == 0 {
 		if primaryPath == "" {
@@ -300,12 +296,11 @@ func attachFilePaths(files []*gosmo.DetachedFile, primaryPath string, rebuildLog
 // checkAttachFiles refuses an attach whose files are not where the request
 // says they are, naming them.
 //
-// This is the moved-files case landing one path short, and the server's own
-// answer to it is a single sentence built around the full path — "Unable to
-// open the physical file \"C:\\Program Files\\Microsoft SQL
-// Server\\...\\AppDB_2.ndf\". Operating system error 2..." — which the
-// dialog's one-line message clips mid-path, exactly where the information is.
-// Naming the files instead keeps the answer inside the line.
+// This is the moved-files case landing one path short, and the server's answer
+// is one sentence built around the full path ("Unable to open the physical file
+// \"C:\\Program Files\\Microsoft SQL Server\\...\\AppDB_2.ndf\". Operating
+// system error 2..."), which the dialog's one-line message clips mid-path,
+// exactly where the information is. Naming the files keeps it inside the line.
 //
 // A probe that cannot run is not a refusal: xp_fileexist may be denied where
 // the attach itself is not, and the attach then reports whatever it finds.

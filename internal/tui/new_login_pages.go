@@ -11,10 +11,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// serverDefaultLangItem is the Default language row's sentinel meaning
-// "don't set DEFAULT_LANGUAGE at all — let the server's own default
-// apply", the same nil-means-omit convention noneItem/credItems use on
-// Login Properties' Credential row.
+// serverDefaultLangItem is the Default language row's sentinel meaning "don't
+// set DEFAULT_LANGUAGE; let the server's default apply", the nil-means-omit
+// convention noneItem/credItems use on Login Properties' Credential row.
 const serverDefaultLangItem = "(Server default)"
 
 // nloginSources are the New Login General page's Authentication options, in
@@ -58,16 +57,15 @@ func nloginSourcesFor(sc *db.ServerConn) []nloginSource {
 const nloginNoMappable = "(None)"
 
 // buildNewLoginGeneralPage builds the General page: login identity (name,
-// authentication source and whatever that source needs), password/policy
-// (SQL Server auth only), and defaults (database, language). Windows logins
-// are typed directly as "DOMAIN\name" text — there's no principal-browse
-// picker.
+// authentication source and what that source needs), password/policy (SQL
+// Server auth only), and defaults (database, language). Windows logins are
+// typed as "DOMAIN\name" text; there's no principal-browse picker.
 //
 // The Authentication group drives the rest of the page through
-// RadioRow.SetOnChange: the rows a source does not use are disabled or
-// emptied rather than left inviting input the CREATE LOGIN cannot carry.
-// Every combination is refused by gosmo as well, so the gating here is the
-// dialog being honest about what it will send, not the only check.
+// RadioRow.SetOnChange: the rows a source does not use are disabled or emptied
+// rather than left inviting input the CREATE LOGIN cannot carry. gosmo refuses
+// every such combination too, so the gating is the dialog being honest about
+// what it will send, not the only check.
 func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet.Form, propApply, *propsheet.TextRow) {
 	nameField := propsheet.Text("Login name", "", 30)
 	sources := nloginSourcesFor(sc)
@@ -79,21 +77,18 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 	source := func() gosmo.LoginSource { return sources[authRow.Selected()].source }
 
 	// The object id is optional even for an Entra login: with none, SQL Server
-	// resolves the login name against the directory itself, which is the
-	// ordinary case. It is only needed for a display name the directory cannot
-	// resolve on its own.
+	// resolves the login name against the directory itself. It is needed only for
+	// a display name the directory cannot resolve on its own.
 	objectIDRow := propsheet.Text("Entra object ID", "", 36)
 	mappedRow := propsheet.Select("Mapped to", []string{nloginNoMappable}, 0)
 
 	passwordRow := propsheet.Password("Password", 20)
 	confirmRow := propsheet.Password("Confirm password", 20)
-	// Whether a password is required at all depends on authRow, a sibling
-	// row — and Form.Validate only runs a row's validator while that row
-	// itself is dirty, so an untouched-but-required password field can't
-	// be caught here (see the apply closure below, which checks it
-	// directly instead). This validator only guards the one thing that
-	// legitimately needs live dirty-gating: a typed password that doesn't
-	// match its confirmation.
+	// Whether a password is required depends on authRow, a sibling row, and
+	// Form.Validate only runs a row's validator while that row itself is dirty, so
+	// an untouched-but-required password field can't be caught here (the apply
+	// closure below checks it directly). This validator guards only what needs
+	// live dirty-gating: a typed password that doesn't match its confirmation.
 	passwordRow.SetValidate(func(v string) error {
 		if source() != gosmo.LoginSourceSQL {
 			return nil // only a SQL login has a password
@@ -112,11 +107,11 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 	langItems := append([]string{serverDefaultLangItem}, pf.langNames...)
 	defaultLangRow := propsheet.Select("Default language", langItems, 0)
 
-	// syncSource repoints the source-specific rows at whatever is selected
-	// now. Password and object id are TextRows and can be disabled outright;
-	// the Mapped-to picker instead has its items replaced, since an
-	// out-of-date certificate name left showing under "Windows
-	// Authentication" is what the apply would otherwise have to guess about.
+	// syncSource repoints the source-specific rows at whatever is selected now.
+	// Password and object id are TextRows and can be disabled outright; the
+	// Mapped-to picker has its items replaced instead, since a stale certificate
+	// name left under "Windows Authentication" is what the apply would otherwise
+	// have to guess about.
 	syncSource := func() {
 		src := source()
 		isSQL := src == gosmo.LoginSourceSQL
@@ -171,9 +166,9 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 			opts.ObjectID = strings.TrimSpace(objectIDRow.Value())
 		}
 		if mapped {
-			// Refused rather than dropped: the user picked a database or a
-			// language on a page that then sent neither, and SQL Server's own
-			// message arrives after the login already exists.
+			// Refused rather than dropped: the user picked a database or language on a
+			// page that then sent neither, and SQL Server's own message would arrive
+			// after the login already exists.
 			if defaultDBRow.Dirty() || defaultLangRow.Dirty() {
 				return fmt.Errorf("a login mapped to a certificate or asymmetric key cannot have a default database or language")
 			}
@@ -192,10 +187,10 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 		if !mapped && defaultLangRow.Dirty() {
 			opts.DefaultLanguage = langItems[defaultLangRow.Selected()]
 		}
-		// The policy rides in the CREATE itself, not a follow-up ALTER: the
-		// CREATE runs under CHECK_POLICY = ON otherwise, and refuses a weak
-		// password (Msg 15118) before the ALTER could turn the policy off.
-		// An untouched row is left nil, for the server default.
+		// The policy rides in the CREATE itself, not a follow-up ALTER: CREATE runs
+		// under CHECK_POLICY = ON otherwise, and refuses a weak password (Msg 15118)
+		// before the ALTER could turn the policy off. An untouched row is left nil,
+		// for the server default.
 		if isSQL && policyRow.Dirty() {
 			opts.CheckPolicy = new(policyRow.Checked())
 		}
@@ -217,12 +212,10 @@ func mappedNoun(src gosmo.LoginSource) string {
 	return "asymmetric key"
 }
 
-// buildNewLoginServerRolesPage reuses Login Properties' Server Roles page
-// idiom (pageLoginServerRoles, login_props.go), minus the "already a
-// member" diff — the login doesn't exist yet, so every checked row is
-// simply a pending ADD. public is excluded (implicit, mandatory
-// membership — see nloginDBRoles's doc comment for the same exclusion
-// rule applied to database roles).
+// buildNewLoginServerRolesPage reuses Login Properties' Server Roles page idiom
+// (pageLoginServerRoles, login_props.go), minus the "already a member" diff:
+// the login doesn't exist yet, so every checked row is a pending ADD. public is
+// excluded (implicit, mandatory membership; see nloginDBRoles's doc comment).
 func buildNewLoginServerRolesPage(sc *db.ServerConn, pf *nloginPrefetch, loginName func() string) (*propsheet.Form, propApply) {
 	var toggleable []*gosmo.ServerRole
 	for _, r := range pf.serverRoles {
@@ -285,13 +278,12 @@ func buildNewLoginServerRolesPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 	return f, apply
 }
 
-// nloginMapRow tracks one User Mapping row's pending state for a login
-// that doesn't exist yet — unlike Login Properties' mapEdit (login_props.go),
-// there's no "already mapped" baseline to diff against, and the mapped
-// username is always the new login's own name (matching a plain CREATE
-// USER [login] FOR LOGIN [login], the same default Login Properties' own
-// User Mapping page falls back to for an unmapped database), so it isn't
-// a separately editable field here.
+// nloginMapRow tracks one User Mapping row's pending state for a login that
+// doesn't exist yet. Unlike Login Properties' mapEdit (login_props.go) there is
+// no "already mapped" baseline, and the mapped username is always the new
+// login's own name (a plain CREATE USER [login] FOR LOGIN [login], the default
+// Login Properties' User Mapping page falls back to), so it isn't a separately
+// editable field.
 type nloginMapRow struct {
 	dbName    string
 	mapped    bool
@@ -337,12 +329,11 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		}
 	}
 
-	// The User column shows a fixed placeholder rather than loginName():
-	// this page's Form is built once, synchronously, right after the dialog
-	// opens (see NewLoginDialog.buildPages), possibly before a login name
-	// has been typed on General, and grid text set via SetData isn't
-	// recomputed on revisit. loginName() is read fresh at apply time
-	// (below), where it's always correct.
+	// The User column shows a fixed placeholder rather than loginName(): this
+	// page's Form is built once, synchronously, right after the dialog opens (see
+	// NewLoginDialog.buildPages), possibly before a login name has been typed on
+	// General, and grid text set via SetData isn't recomputed on revisit.
+	// loginName() is read fresh at apply time, where it's always correct.
 	const userPlaceholder = "(same as login name)"
 	rowsFor := func() [][]string {
 		out := make([][]string, len(rows))
@@ -355,9 +346,9 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		func(row int) { rows[row].mapped = !rows[row].mapped }, rowsFor)
 
 	dbStatic := propsheet.Static("Database", "")
-	// A picker over the selected database's own schemas rather than a text
-	// box: the schema has to exist in *that* database, and a typo only
-	// surfaced as a failed CREATE USER at apply time.
+	// A picker over the selected database's own schemas rather than a text box:
+	// the schema has to exist in *that* database, and a typo surfaced only as a
+	// failed CREATE USER at apply time.
 	schemaPick := propsheet.Select("Default schema", []string{"dbo"}, 0)
 	rolesGrid := propsheet.NewToggleGrid([]string{"Member", "Role"}, []int{0}, 8)
 
@@ -408,11 +399,10 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 				e.roles[i] = false
 			}
 		}
-		// reload, never syncFromSelection directly: reload redraws and reloads
-		// the editor *without* committing first, which is the whole difference.
-		// The schema picker and role toggles still hold the pre-revert values at
-		// this point, so a commit would write the selected row straight back to
-		// what Revert just undid.
+		// reload, never syncFromSelection directly: reload redraws and reloads the
+		// editor *without* committing first. The schema picker and role toggles still
+		// hold the pre-revert values here, so a commit would write the selected row
+		// straight back to what Revert just undid.
 		reload()
 	}
 
@@ -541,12 +531,11 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 }
 
 // buildNewLoginStatusPage reuses Login Properties' Status page idiom
-// (pageLoginStatus, login_props.go), minus every read-only server-reported
-// stat (last login, bad password count, active sessions, ...) — none of
-// that exists yet for a login that hasn't been created. Baselines are
-// SQL Server's own real defaults for a bare CREATE LOGIN: no explicit
-// CONNECT SQL grant/deny (public's implicit grant already covers it) and
-// enabled.
+// (pageLoginStatus, login_props.go), minus every read-only server-reported stat
+// (last login, bad password count, active sessions, ...) that doesn't exist for
+// an uncreated login. Baselines are SQL Server's defaults for a bare CREATE
+// LOGIN: no explicit CONNECT SQL grant/deny (public's implicit grant covers it)
+// and enabled.
 func buildNewLoginStatusPage(sc *db.ServerConn, loginName func() string) (*propsheet.Form, propApply) {
 	connectRow := propsheet.Radio("Permission to connect to database engine", connectPermissionItems, 2)
 	enabledRow := propsheet.Radio("Login", []string{"Enabled", "Disabled"}, 0)

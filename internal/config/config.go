@@ -246,8 +246,7 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 }
 
 // ConnectionName builds "server,port,database,user", the prefix of a saved
-// connection's generated name. Port 0
-// is spelled 1433, as dialled, so older entries dedup against today's.
+// connection's generated name. Port 0 is spelled 1433, as dialled.
 func ConnectionName(server string, port int, database, user string) string {
 	if port == 0 {
 		port = 1433
@@ -255,20 +254,18 @@ func ConnectionName(server string, port int, database, user string) string {
 	return server + "," + strconv.Itoa(port) + "," + database + "," + user
 }
 
-// GeneratedName is the name AddOrUpdate gives c — ConnectionName with c's
-// signing-in identity in the user slot, plus the auth method's tag:
-// "srv,1433,db,app-id (Entra Service Principal)". It is both the Connect
+// GeneratedName is the name AddOrUpdate gives c: ConnectionName with c's
+// signing-in identity in the user slot, plus the auth method's tag
+// ("srv,1433,db,app-id (Entra Service Principal)"). It is both the Connect
 // autocomplete label and the dedup key, so it must distinguish any two
-// different connections (e.g. two service principals on one server, or Windows
-// vs Entra Default).
+// different connections (two service principals on one server, Windows vs Entra
+// Default).
 //
-// The identity is User when the method reads one and it's set, else ClientID
-// when the method reads that; a service principal saved before ClientID existed
-// carries its application id in User.
+// The identity is User when the method reads one and it is set, else ClientID
+// when the method reads that; an older service principal entry carries its
+// application id in User.
 //
-// SQL Server Authentication has no tag, so its names are unchanged. An older
-// entry under another method dedups once more, against its first save under the
-// new name.
+// SQL Server Authentication has no tag, so its names are unchanged.
 func (c Connection) GeneratedName() string {
 	identity, tag := c.signInIdentity()
 	name := ConnectionName(c.Server, c.Port, c.Database, identity)
@@ -336,10 +333,10 @@ type Config struct {
 	XEventStoreCapacity int `json:"xevent_store_capacity"`
 	// XEventHiddenColumns is, per event session name, the columns the Extended
 	// Events viewer's Choose Columns has hidden ("name", "timestamp",
-	// "field:<name>", "action:<name>"). Hidden rather than shown, so a field
-	// the session starts collecting later still gets a column. Replace the map
-	// rather than writing into it: base shares the map with this Config, so an
-	// in-place write would compare equal to itself and Save would skip it.
+	// "field:<name>", "action:<name>"). Hidden rather than shown, so a field the
+	// session starts collecting later still gets a column. Replace the map rather
+	// than writing into it: base shares the map with this Config, so an in-place
+	// write would compare equal to itself and Save would skip it.
 	XEventHiddenColumns map[string][]string `json:"xevent_hidden_columns,omitempty"`
 	// XEventViewSettings are the Extended Events viewer's saved display
 	// settings, by the name they were saved as — SSMS's .viewsetting files.
@@ -381,7 +378,7 @@ const DefaultMaxCellLength = 24
 
 // DefaultMaxTextColumnLength is SSMS's default for the same cap in Results to
 // Text. It is the only cap there: a text column is as wide as its widest value,
-// so without one a single megabyte cell padded every row to a megabyte.
+// so without one a single huge cell padded every row.
 const DefaultMaxTextColumnLength = 256
 
 // XEventViewSetting is one saved Extended Events viewer layout: the hidden
@@ -396,11 +393,10 @@ type XEventViewSetting struct {
 }
 
 // DefaultXEventStoreCapacity is the Extended Events viewer's event limit absent
-// an Options override; it must agree with
-// xevent.DefaultCapacity, which config must not import —
-// TestXEventStoreCapacityComesFromOptions in internal/tui holds them together.
-// The bounds keep a typo from making a viewer that holds nothing or one that
-// takes the machine's memory.
+// an Options override; it must agree with xevent.DefaultCapacity, which config
+// must not import (TestXEventStoreCapacityComesFromOptions in internal/tui
+// checks). The bounds keep a typo from making a viewer that holds nothing or
+// exhausts memory.
 const (
 	DefaultXEventStoreCapacity = 100_000
 	MinXEventStoreCapacity     = 1_000
@@ -610,12 +606,11 @@ func mergeSettings(cur, base, dst *Config) {
 // Save writes the config. Passwords are AES-256-GCM encrypted and
 // base64-encoded (see secret.go) on disk only; c keeps plaintext.
 //
-// It re-reads the file first and applies this process's own changes to it —
-// the connections added or removed since the last Save, the settings changed
-// since Load — rather than writing c whole: another gossms instance may have
-// saved since this one loaded, and a whole write would silently undo that.
-// Afterwards c.Connections is the merged list, so connections the other
-// instance saved appear here too. Settings in c are not replaced by the
+// It re-reads the file and applies this process's own changes to it (the
+// connections added or removed since the last Save, the settings changed since
+// Load) rather than writing c whole: another gossms instance may have saved
+// since this one loaded, and a whole write would undo that. Afterwards
+// c.Connections is the merged list. Settings in c are not replaced by the
 // file's: a changed setting takes effect when the Options dialog applies it,
 // and adopting one here would show a value that isn't in force.
 //
@@ -623,15 +618,12 @@ func mergeSettings(cur, base, dst *Config) {
 // (Connection.sealed), so an unrelated save doesn't destroy passwords a
 // restored key file could still open.
 //
-// An unusable key file (wrong size, unreadable) doesn't stop the save either:
-// every stored ciphertext is written back as it is, and only a password that
-// would need the key to seal is left out, named in the error returned after
-// the write. Refusing the whole save, as before, lost every setting and
-// connection change for as long as the key file stayed bad.
+// An unusable key file (wrong size, unreadable) doesn't stop the save: stored
+// ciphertexts are written back as they are, and only a password that would need
+// the key to seal is left out, named in the error returned after the write.
 //
 // Save is BeginSave, Run and EndSave on one goroutine. The UI goroutine uses
-// the three halves instead, so the lock wait, the key read and the fsync run
-// off it.
+// the three halves instead, so the lock wait, key read and fsync run off it.
 func (c *Config) Save() error {
 	j := c.BeginSave()
 	err := j.Run()
@@ -826,13 +818,11 @@ func addOrUpdate(list []Connection, conn Connection) []Connection {
 }
 
 // RemoveConnection deletes the saved connection whose name matches, and reports
-// whether one was found. name is the dedup key AddOrUpdate stores — the
-// connection's GeneratedName — and the entry's sealed password goes with it,
-// since the ciphertext lives on the entry.
+// whether one was found. name is the dedup key AddOrUpdate stores (the
+// connection's GeneratedName); the entry's sealed password goes with it.
 //
-// An entry saved by an older build may carry a Name that is not its generated
-// one, so the generated name is matched too rather than leaving such an entry
-// undeletable.
+// An entry from an older build may carry a Name that is not its generated one,
+// so the generated name is matched too.
 func (c *Config) RemoveConnection(name string) bool {
 	var found bool
 	c.Connections, found = removeConnection(c.Connections, name)

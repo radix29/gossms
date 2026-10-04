@@ -13,41 +13,38 @@ import (
 
 // serverFileSystemTimeout bounds a single Browse round-trip. The file dialog
 // calls its FileSystem synchronously, so this is also how long the whole TUI
-// can sit unresponsive on one directory listing — short enough that a wedged
-// or unreachable server can't look like a hang, long enough for a directory
-// that is merely big.
+// can sit unresponsive on one directory listing: short enough that a wedged or
+// unreachable server can't look like a hang, long enough for a merely big
+// directory.
 //
-// 15s deliberately, and *not* raised to the 30s the app's other fetch
-// timeouts use (childFetchTimeout, propFetchTimeout, agDashboardTimeout,
-// completionInventoryTimeout). Those bound background work; this one bounds a
-// frozen UI, so the two halves of the sentence above pull in opposite
-// directions and the freeze is the side that should win. Doubling it would
-// double how long an unreachable server looks like a hang, to buy headroom
-// nothing needs.
+// 15s deliberately, *not* the 30s of the app's other fetch timeouts
+// (childFetchTimeout, propFetchTimeout, agDashboardTimeout,
+// completionInventoryTimeout). Those bound background work; this bounds a
+// frozen UI, and the freeze should win. Doubling it would double how long an
+// unreachable server looks like a hang, for headroom nothing needs.
 //
-// Measured on win10cli 2026-08-14, through EnumFileSystem, best of
-// three: C:\Windows\System32 4551 entries in 1.2s, C:\Windows 101 in 35ms,
-// C:\Program Files 29 in 11ms. The worst directory on a Windows box already
-// clears this by more than 10x.
+// Measured on win10cli 2026-08-14, through EnumFileSystem, best of three:
+// C:\Windows\System32 4551 entries in 1.2s, C:\Windows 101 in 35ms,
+// C:\Program Files 29 in 11ms. The worst directory on a Windows box clears this
+// by more than 10x.
 //
-// Do not read the "ten seconds" in ARCHITECTURE.md § The other direction:
-// FileDialog.showBusy as a live figure — it predates gosmo's WHERE level = 0
+// Don't read the "ten seconds" in ARCHITECTURE.md § The other direction:
+// FileDialog.showBusy as a live figure: it predates gosmo's WHERE level = 0
 // filter on sys.dm_os_enumerate_filesystem, which stops a listing walking the
 // whole subtree. showBusy still earns its place (a second of frozen UI is worth
 // labelling), but the wait it was written for is ~8x smaller.
 const serverFileSystemTimeout = 15 * time.Second
 
-// serverFS browses the SQL Server host's filesystem — the machine the backup
-// device path is resolved on — rather than the machine gossms runs on. The
-// two are routinely different, and different OSes at that: the Backup and
-// Restore dialogs' Browse buttons pick a path SQL Server will open, so
-// listing the client's own disks (which is what the file dialog does by
-// default) shows directories the server cannot see and returns paths it
-// cannot write.
+// serverFS browses the SQL Server host's filesystem (the machine the backup
+// device path is resolved on), not the machine gossms runs on. The two are
+// routinely different, and different OSes: the Backup and Restore dialogs'
+// Browse buttons pick a path SQL Server will open, so listing the client's own
+// disks (the file dialog's default) shows directories the server cannot see and
+// returns paths it cannot write.
 //
 // PathRules is embedded rather than implemented so path handling follows the
-// *server's* convention: a Linux client browsing a Windows instance still
-// joins with backslashes and treats "C:\" as a root.
+// *server's* convention: a Linux client browsing a Windows instance still joins
+// with backslashes and treats "C:\" as a root.
 type serverFS struct {
 	dialogs.PathRules
 
@@ -55,12 +52,12 @@ type serverFS struct {
 	defaultDir string
 }
 
-// newServerFS returns a FileSystem for sc's host. ok is false when there is
-// no usable connection to ask, and the caller must then refuse to browse at
-// all: falling back to dialogs.LocalFileSystem looks like it worked and hands
-// back a path off *this* machine's disks, which is a directory the server
-// cannot see and a destination BACKUP cannot write — the "a click does the
-// wrong thing" case docs/ui-rules.md rules out.
+// newServerFS returns a FileSystem for sc's host. ok is false when there is no
+// usable connection to ask, and the caller must then refuse to browse at all:
+// falling back to dialogs.LocalFileSystem looks like it worked and hands back a
+// path off *this* machine's disks, a directory the server cannot see and a
+// destination BACKUP cannot write (the "a click does the wrong thing" case
+// docs/ui-rules.md rules out).
 func newServerFS(sc *db.ServerConn) (dialogs.FileSystem, bool) {
 	if sc == nil || sc.Server == nil {
 		return nil, false
@@ -78,8 +75,8 @@ func newServerFS(sc *db.ServerConn) (dialogs.FileSystem, bool) {
 
 // currentDefaultPaths reads the server's default data, log and backup
 // directories now (gosmo's Server.DefaultPaths), for a dialog about to place
-// files there. Info's connect-time copy is the fallback when the read fails:
-// it is what these dialogs used before, and it beats refusing to open.
+// files there. Info's connect-time copy is the fallback when the read fails; it
+// beats refusing to open.
 func currentDefaultPaths(ctx context.Context, sc *db.ServerConn) gosmo.DefaultPaths {
 	if p, err := sc.Server.DefaultPaths(ctx); err == nil {
 		return p
@@ -125,10 +122,9 @@ func (fs *serverFS) List(dir string) ([]dialogs.FileEntry, error) {
 	if err := legacyListingRefusal(fs.sc, found); err != nil {
 		return nil, err
 	}
-	// A pre-2017 instance is listed through xp_dirtree, which reports names
-	// and the directory flag only: every Size is 0 and every LastModified is
-	// the zero time. Saying so is what stops the dialog printing "0 B" and
-	// 0001-01-01 for every file on such a server.
+	// A pre-2017 instance is listed through xp_dirtree, which reports names and the
+	// directory flag only: every Size is 0 and every LastModified is the zero time.
+	// Saying so stops the dialog printing "0 B" and 0001-01-01 for every file.
 	sizeUnknown := fs.sc.Server.EnumFileSystemIsLegacy()
 	entries := make([]dialogs.FileEntry, 0, len(found))
 	for _, e := range found {
@@ -169,16 +165,16 @@ func (fs *serverFS) Exists(path string) (bool, bool, error) {
 // one.
 //
 // A pre-2017 instance is listed through xp_dirtree, which returns *no rows and
-// no error* to a login that is not sysadmin — indistinguishable from an empty
-// directory, so the browser showed one and the user concluded the folder was
-// empty. There is nothing in the result to detect: the three facts that make it
-// a refusal are the version gate, the empty result, and the login's role.
+// no error* to a login that is not sysadmin, indistinguishable from an empty
+// directory (the browser showed one and the user concluded the folder was
+// empty). Nothing in the result can be detected: the three facts that make it a
+// refusal are the version gate, the empty result, and the login's role.
 //
-// Deliberately conservative on the last of those. The claim is made only when
-// the probe actually ran and actually said "not a sysadmin" — Capabilities
-// answers false for a role it was never asked about, so without Probed() every
-// unprobed connection would report an empty directory as a permissions problem.
-// A sysadmin, or a login we could not ask, still sees the empty listing.
+// Deliberately conservative on the last. The claim is made only when the probe
+// actually ran and said "not a sysadmin": Capabilities answers false for a role
+// it was never asked about, so without Probed() every unprobed connection would
+// report an empty directory as a permissions problem. A sysadmin, or a login we
+// could not ask, still sees the empty listing.
 func legacyListingRefusal(sc *db.ServerConn, found []*gosmo.FileSystemEntry) error {
 	if len(found) > 0 || !sc.Server.EnumFileSystemIsLegacy() {
 		return nil

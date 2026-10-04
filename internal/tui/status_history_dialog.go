@@ -16,21 +16,19 @@ import (
 // oldest entries are dropped first.
 const maxStatusHistoryLines = 256
 
-// StatusHistoryDialog is a read-only modal listing every status-bar/log
-// message recorded this session, newest first, each prefixed with the
-// timestamp it was recorded at. Content lives in a read-only, line-numbered
-// controls.Editor (SetReadOnly(true), gutter visible by default), so it's
-// selectable/copyable via the Editor's own selection — matching the
+// StatusHistoryDialog is a read-only modal listing every status-bar/log message
+// recorded this session, newest first, each prefixed with its timestamp.
+// Content lives in a read-only, line-numbered controls.Editor, so it's
+// selectable and copyable via the Editor's own selection, matching the
 // Results-To-Text convention (see query_panel.go's p.resultsText).
-// KeyDiagnosticsDialog is built the same way, for the same reason.
+// KeyDiagnosticsDialog is built the same way.
 //
-// Unlike KeyDiagnosticsDialog, Show() is not overridden to reset the log:
-// history accumulates across the whole session, in memory only, and is
-// gone on the next app start — there is deliberately no persistence.
+// Unlike KeyDiagnosticsDialog, Show() does not reset the log: history
+// accumulates across the session, in memory only, with no persistence.
 //
-// Record is called from background goroutines — App.logStatus reaches it from
-// the Object Explorer's loader goroutine — so mu guards lines and dirty, and
-// the editor is only ever touched from the UI goroutine (Show and Draw).
+// Record is called from background goroutines (App.logStatus reaches it from
+// the Object Explorer's loader goroutine), so mu guards lines and dirty, and
+// the editor is only touched from the UI goroutine (Show and Draw).
 type StatusHistoryDialog struct {
 	dialogs.ModalDialog
 	mu     sync.Mutex // guards lines and dirty
@@ -49,22 +47,20 @@ func NewStatusHistoryDialog(app *App) *StatusHistoryDialog {
 	return d
 }
 
-// Record prepends a timestamped line to the history. Newest-first:
+// Record prepends a timestamped line to the history. Newest-first because
 // controls.Editor.SetText always resets scroll/cursor to (0,0) and has no
-// "scroll to end" API, so newest-first is what makes the most recent
-// message visible on open without any extra plumbing.
+// "scroll to end" API, so the most recent message is visible on open without
+// extra plumbing.
 //
-// Safe to call from any goroutine, and it deliberately does no more than
-// record: rebuilding the editor's text is the UI goroutine's job, done by
-// Show and Draw when dirty. A background goroutine that called
-// Editor.SetText here would be writing the widget the UI goroutine is
-// drawing — App.logStatus reaches Record from the Object Explorer's loader
-// goroutine.
+// Safe from any goroutine, and it deliberately does no more than record:
+// rebuilding the editor's text is the UI goroutine's job, done by Show and Draw
+// when dirty. Calling Editor.SetText here would write the widget the UI
+// goroutine is drawing.
 //
 // Deferring the rebuild also keeps it off the hot path: it is a full
 // strings.Join and SetText of up to maxStatusHistoryLines lines, and a busy
-// session pays it once per frame the dialog is actually open rather than
-// once per message nobody is looking at.
+// session pays it once per frame the dialog is open rather than once per
+// message nobody is looking at.
 func (d *StatusHistoryDialog) Record(msg string) {
 	line := time.Now().Format("15:04:05") + "  " + msg
 
@@ -181,9 +177,9 @@ func (d *StatusHistoryDialog) HandleMouse(ev *tcell.EventMouse) bool {
 }
 
 // FocusedClipboardTarget implements core.ClipboardHost. The history editor is
-// read-only, so Copy works and Cut/Paste are no-ops on it — which is the point:
-// without this the dialog fell through to the query editor underneath, and
-// Ctrl+C there copied the user's SQL while they were looking at the log.
+// read-only, so Copy works and Cut/Paste are no-ops on it. Without this the
+// dialog fell through to the query editor underneath, and Ctrl+C there copied
+// the user's SQL while they were looking at the log.
 func (d *StatusHistoryDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	return d.editor
 }

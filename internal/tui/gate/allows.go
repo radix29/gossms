@@ -16,24 +16,22 @@ import (
 // be offered on sc, for the database dbName (ignored by server-scope rights).
 //
 // The test is Allows, never Has: an action is withheld only when the server
-// answered "no" to *every* right that would permit it. An unprobed connection,
-// a probe that failed, a database whose answer is not cached yet, and a
-// permission this instance does not define all leave the action offered.
-// Gating on Has instead would empty the menus of a sysadmin whose probe timed
-// out.
+// answered "no" to *every* right that would permit it. An unprobed
+// connection, a failed probe, an uncached database and a permission this
+// instance does not define all leave it offered. Gating on Has would empty
+// a sysadmin's menus when the probe timed out.
 //
-// Database-scope rights are read from the cache only — see
-// db.ServerConn.CachedDatabaseCapabilities. This runs on the UI goroutine
-// while a menu is being drawn.
+// Database-scope rights are read from the cache only (see
+// db.ServerConn.CachedDatabaseCapabilities): this runs on the UI goroutine
+// during menu draw.
 func Allows(sc *db.ServerConn, dbName string, rights ...Right) bool {
 	return AllowsOn(sc, dbName, "", "", rights...)
 }
 
-// AllowsOn is Allows for an action aimed at one Object: schema is
-// the schema that object lives in, which is what a schema-scoped right is
-// asked about. Empty means "not an object in a schema", and a schema-scoped
-// right then grants nothing — the database-wide alternatives beside it still
-// answer, so nothing is withheld that was offered before.
+// AllowsOn is Allows for an action aimed at one Object; schema is the schema
+// it lives in, which a schema-scoped right is asked about. Empty means "not
+// in a schema": such a right grants nothing, but the database-wide
+// alternatives still answer, so nothing offered before is withheld.
 func AllowsOn(sc *db.ServerConn, dbName, schema, object string, rights ...Right) bool {
 	if sc == nil || len(rights) == 0 {
 		return true
@@ -41,45 +39,38 @@ func AllowsOn(sc *db.ServerConn, dbName, schema, object string, rights ...Right)
 	return RightsAllow(sc.Capabilities(), sc.CachedDatabaseCapabilities, dbName, schema, object, rights...)
 }
 
-// RightsAllow is the whole of the Allows rule, in one place: whether an action
-// needing any one of rights may still be offered, given a server capability set
-// and a way to reach a database's.
+// RightsAllow is the whole of the Allows rule, in one place: whether an
+// action needing any one of rights may still be offered, given a server
+// capability set and a way to reach a database's.
 //
-// dbCaps is what separates the two callers. The menus pass
-// CachedDatabaseCapabilities, because they run on the UI goroutine while a menu
-// is being drawn and must not issue a query; a Properties page passes the
-// probing form, because its load already runs on a background goroutine. The
-// *rule* must not differ between them, which is why there is only one copy of
-// it — pageReadOnlyReason had its own, and that copy understood neither the
-// membership rights SQL Agent gates on nor the schema- and object-scoped ones,
-// so a login holding ALTER on just the one table would have been shown a
-// read-only banner for a page it could in fact write.
+// dbCaps separates the callers. Menus pass CachedDatabaseCapabilities (UI
+// goroutine, no query); a Properties page passes the probing form (its load
+// is already on a background goroutine). The *rule* must not differ, hence
+// one copy: pageReadOnlyReason's own copy understood neither the membership
+// rights SQL Agent gates on nor schema/object-scoped ones, so a login with
+// ALTER on one table saw a read-only banner for a page it could write.
 func RightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...Right) bool {
-	// A DENY on the object itself is the one answer in the whole gate that
-	// withholds rather than adds, and it has to be asked before the rights
-	// below rather than among them: SQL Server resolves it over every wider
-	// grant, so any one of them would otherwise answer yes for a write it
-	// then refuses. See ObjectDenial.
+	// A DENY on the object itself is the one answer in the gate that withholds
+	// rather than adds, and is asked before the rights below: SQL Server
+	// resolves it over every wider grant, so any of them would answer yes for a
+	// write it then refuses. See ObjectDenial.
 	if _, _, denied := ObjectDenial(server, dbCaps, dbName, schema, object, rights...); denied {
 		return false
 	}
 	for _, r := range rights {
 		switch {
 		case r.Membership:
-			// Unknown must allow explicitly here rather than falling through
-			// to the next right: InRole cannot tell "not a member" from
-			// "never asked", so an unprobed msdb would withhold every SQL
-			// Agent action from the login that holds the role. Probed is the
-			// only thing that separates the two.
+			// Unknown must allow explicitly: InRole cannot tell "not a member" from
+			// "never asked", so an unprobed msdb would withhold every SQL Agent action
+			// from a role holder. Probed separates the two.
 			caps := dbCaps(r.InDB)
 			if !caps.Probed() || caps.InRole(r.Name) {
 				return true
 			}
 		case r.ServerRole:
-			// Unknown must allow explicitly, for Membership's reason:
-			// InServerRole cannot tell "not a member" from "never asked". And
-			// sysadmin is asked separately — it implies membership of no other
-			// fixed role, so a sysadmin reads 0 for diskadmin while being
+			// Unknown must allow explicitly, as Membership: InServerRole cannot tell
+			// "not a member" from "never asked". sysadmin is asked separately: it
+			// implies no other fixed role, so it reads 0 for diskadmin while being
 			// permitted everything diskadmin carries.
 			if !server.Probed() || server.InServerRole(r.Name) || server.IsSysadmin() {
 				return true
@@ -89,10 +80,9 @@ func RightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			if dbName == "" || object == "" {
 				continue
 			}
-			// PermitsOnSecurable, not HasOnSecurable, and it is the one arm
-			// here that may answer yes for a securable with no row: the map
-			// is not sparse, so a missing row is one created since the probe,
-			// and unknown fails open. A 0 falls through to the wider rights.
+			// PermitsOnSecurable, not HasOnSecurable; the one arm that may answer yes
+			// for a securable with no row: the map is not sparse, so a missing row is
+			// one created since the probe, and unknown fails open. A 0 falls through.
 			if dbCaps(dbName).PermitsOnSecurable(r.Securable, schema, object, r.Name) {
 				return true
 			}
@@ -100,9 +90,8 @@ func RightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			if dbName == "" || schema == "" || object == "" {
 				continue
 			}
-			// Has, not Permits: the map is sparse, so "not denied" is true of
-			// every object in the database and would permit everything. An
-			// object with no row leaves the wider rights beside this one to
+			// Has, not Permits: the map is sparse, so "not denied" is true of every
+			// object and would permit everything. No row leaves the wider rights to
 			// answer.
 			if dbCaps(dbName).HasOnObject(schema, object, r.Name) {
 				return true
@@ -111,50 +100,42 @@ func RightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			if dbName == "" || schema == "" {
 				continue
 			}
-			// PermitsOnSchema, not AllowsOnSchema: an inaccessible database
-			// answers unknown for every schema, and unknown fails open — see
-			// gosmo.DatabaseCapabilities.Permits.
+			// PermitsOnSchema, not AllowsOnSchema: an inaccessible database answers
+			// unknown for every schema, which fails open (gosmo.DatabaseCapabilities.Permits).
 			if dbCaps(dbName).PermitsOnSchema(schema, r.Name) {
 				return true
 			}
 		case !r.DB:
-			// The name and its alternates are asked separately rather than
-			// joined into one slice: this runs per menu item and per toolbar
-			// cell on every draw, and the join allocated each time.
+			// The name and its alternates are asked separately, not joined into one
+			// slice: this runs per menu item and toolbar cell on every draw.
 			if server.Allows(r.Name) {
 				return true
 			}
-			// Has, not Allows: an alternate is a name SQL Server 2022 split out
-			// of r.Name, and 2016–2019 answer NULL for it — CapabilityUnknown.
-			// Allows would read that as "not denied" and offer the action to
-			// every login the wide name has just refused. The wide name above
-			// is what fails open for a probe that never ran.
+			// Has, not Allows: an alternate is a name SQL Server 2022 split out of
+			// r.Name; 2016-2019 answer NULL (CapabilityUnknown), which Allows would read
+			// as "not denied" and offer the action to logins the wide name refused. The
+			// wide name above is what fails open for a probe that never ran.
 			for _, n := range r.Alt {
 				if server.Has(n) {
 					return true
 				}
 			}
 		case dbName == "":
-			// No database to ask about — a folder-level action that will
-			// prompt for one. Nothing measured, so nothing withheld.
+			// No database to ask about (a folder-level action that prompts for one):
+			// nothing measured, nothing withheld.
 			return true
 		default:
-			// Permits, not Allows: an inaccessible database answers
-			// CapabilityUnknown to every permission and unknown fails open,
-			// which would leave Back Up and Delete offered on exactly the
-			// databases the login cannot open. See
-			// gosmo.DatabaseCapabilities.Permits.
+			// Permits, not Allows: an inaccessible database answers CapabilityUnknown to
+			// everything and unknown fails open, which would offer Back Up and Delete on
+			// databases the login cannot open (gosmo.DatabaseCapabilities.Permits).
 			caps := dbCaps(dbName)
 			if caps.Permits(r.Name) {
 				return true
 			}
-			// alt is consulted at this scope too. No database-scope right
-			// declares one today, so only the test reaches this loop — but a
-			// right whose alternates counted at server scope and were ignored
-			// here would withhold the action from a login that holds one of
-			// them, and nothing at run time tells that apart from a real
-			// denial. The next 2022-style permission split is as likely to
-			// land at database scope as at server scope.
+			// alt is consulted at this scope too. No database-scope right declares one
+			// today, only the test reaches it, but ignoring alternates here would
+			// withhold the action from a holder with nothing at run time to tell it
+			// from a real denial; the next 2022-style split may land at database scope.
 			for _, n := range r.Alt {
 				if caps.Permits(n) {
 					return true
@@ -173,26 +154,22 @@ type Site struct {
 	Database  string // the database the object lives in
 	Principal string // the database user the action is aimed at
 
-	// ServerSecurable is the login, server role or endpoint the action is
-	// aimed at, and ServerKind which of the three it is. The kind is carried
-	// because the sentence has to name it: "denied on login x" and "denied on
-	// endpoint x" are different securables, and only the right that asked
-	// knows which was meant.
+	// ServerSecurable is the login, server role or endpoint the action is aimed
+	// at, and ServerKind which of the three; the sentence must name it ("denied
+	// on login x" differs from "on endpoint x").
 	ServerSecurable string
 	ServerKind      gosmo.ServerSecurableKind
 
-	// AvailabilityGroup is the group the action is aimed at. Kept apart from
-	// ServerSecurable because it is a different gosmo map with a different
-	// reading — see Right.DeniedOnAG.
+	// AvailabilityGroup is the group the action is aimed at, apart from
+	// ServerSecurable because it is a different gosmo map (Right.DeniedOnAG).
 	AvailabilityGroup string
 }
 
-// ObjectDenial reports the right whose DENY withholds an action, the securable
-// that DENY sits on where it is not the object itself, and whether there is
-// one. It is the only part of the gate that
-// withholds on an object-scope answer, and it is sound for a reason
-// HasOnObject's sparseness argument does not cover: it asks for a state the
-// probe recorded, so silence stays silence.
+// ObjectDenial reports the right whose DENY withholds an action, the
+// securable that DENY sits on where not the object itself, and whether there
+// is one. The only part of the gate that withholds on an object-scope
+// answer; sound because it asks for a state the probe recorded, so silence
+// stays silence.
 //
 // Three facts it rests on, each verified live on 2026-09-01 and each a wrong
 // gate if assumed the other way:
@@ -210,23 +187,20 @@ type Site struct {
 //     existing DENY row as it transfers ownership, so an owner never carries
 //     one. An owner denied through public *is* refused by the server.
 //
-// A database that was never probed records nothing, which reads as no denial —
-// unknown fails open here as everywhere else.
+// A database never probed records nothing, which reads as no denial
+// (unknown fails open).
 //
-// A DENY on one *column* of the object withholds just as hard, and is asked
-// about second: SQL Server resolves it over every wider grant the same way, so
-// a statement touching the whole table fails for a login holding the
-// permission on the table itself. Nothing gossms writes is scoped to named
-// columns, so a column denial is a denial of the action outright.
+// A DENY on one *column* withholds just as hard and is asked second: SQL
+// Server resolves it over every wider grant, so a whole-table statement
+// fails for a table-level holder. Nothing gossms writes is column-scoped,
+// so a column denial denies the action outright.
 //
-// A DENY on the object's *schema* is asked about third, and for the same
-// reason: SQL Server resolves it over a database-wide grant, so a principal
-// with ALTER on the database and DENY ALTER on dbo was offered every rename
-// and drop in it and met Msg 297 on each. It is asked of gosmo's
-// DeniedOnSchema rather than of PermitsOnSchema because HAS_PERMS_BY_NAME
-// answers 0 for a schema permission simply never granted — which is the
-// ordinary case, and withholding on it would empty the menus of every login
-// that works through a database-wide grant.
+// A DENY on the object's *schema* is asked third, for the same reason: with
+// ALTER on the database and DENY ALTER on dbo, every rename and drop met
+// Msg 297. It asks gosmo's DeniedOnSchema, not PermitsOnSchema:
+// HAS_PERMS_BY_NAME answers 0 for a schema permission simply never granted
+// (the ordinary case), and withholding on that would empty the menus of
+// every login using a database-wide grant.
 //
 // A DENY at *database* scope is asked about last, and is the one arm that
 // exists for a grant *narrower* than itself rather than wider. The r.Object
@@ -251,13 +225,11 @@ func ObjectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Databas
 	if server.InServerRole("sysadmin") {
 		return Right{}, Site{}, false
 	}
-	// The server-scope arm comes before the dbName guard because it is the one
-	// securable family that lives outside a database entirely: a login, a
-	// server role and an endpoint all carry an empty DBName, and every arm
-	// below would answer nothing about them. It is asked only of a right that
-	// declares DeniedOnServer, so a node of some other family sharing a denied
-	// login's name is not withheld — the way DeniedOnPrincipal discriminates
-	// the class-4 arm.
+	// The server-scope arm precedes the dbName guard: a login, server role or
+	// endpoint carries an empty DBName, which every arm below would answer
+	// nothing about. Asked only of a right declaring DeniedOnServer, so another
+	// family sharing a denied login's name is not withheld (as DeniedOnPrincipal
+	// for the class-4 arm).
 	if object != "" {
 		for _, r := range rights {
 			if r.DeniedOnServer == "" {
@@ -268,14 +240,13 @@ func ObjectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Databas
 			}
 		}
 	}
-	// The availability-group arm sits beside the server one and above the
-	// dbName guard for the same reason: a group, a replica and a listener all
-	// carry an empty DBName.
+	// The availability-group arm sits above the dbName guard likewise: a group,
+	// replica and listener carry an empty DBName.
 	//
 	// server.Has, not Allows: the group answer is a HAS_PERMS_BY_NAME 0, which
 	// means "denied on this group" only while the server-wide right is held.
-	// Without that guard every login lacking ALTER ANY AVAILABILITY GROUP
-	// would be told the group is denied instead of which right to ask for.
+	// Otherwise every login lacking ALTER ANY AVAILABILITY GROUP would be told
+	// the group is denied instead of which right to ask for.
 	if object != "" {
 		for _, r := range rights {
 			if r.DeniedOnAG == "" || !server.Has(r.Name) {
@@ -297,9 +268,8 @@ func ObjectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Databas
 		}
 		return caps
 	}
-	// The class-4 arm comes before the schema guard below because it is the
-	// one securable here that has no Schema: a user node carries an empty
-	// Schema and its own name as the object.
+	// The class-4 arm precedes the schema guard: a user node has no Schema, only
+	// its own name as the object.
 	if object != "" {
 		for _, r := range rights {
 			if r.DeniedOnPrincipal == "" {
@@ -310,11 +280,10 @@ func ObjectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Databas
 			}
 		}
 	}
-	// Everything below is scoped by the object's schema, and answers nothing
-	// without one. The guard stays here rather than moving up to the top so
-	// that a schema-less node reaches the arm above and nothing else — the
-	// wider arms were never asked for one and extending them is a separate
-	// question with its own live answer to establish.
+	// Everything below is schema-scoped and answers nothing without one. The
+	// guard stays here so a schema-less node reaches only the arm above; the
+	// wider arms were never asked for one and extending them needs its own live
+	// answer.
 	if schema == "" {
 		return Right{}, Site{}, false
 	}
@@ -359,19 +328,17 @@ func DeniedOn(sc *db.ServerConn, dbName, schema, object string, rights ...Right)
 	return ObjectDenial(sc.Capabilities(), sc.CachedDatabaseCapabilities, dbName, schema, object, rights...)
 }
 
-// serverSecurableWord renders a server securable kind as the sentence says it.
-// gosmo spells the kinds the way SQL Server's DENY statement does — "LOGIN",
-// "SERVER ROLE", "ENDPOINT" — and shouting them mid-sentence reads as a
-// keyword rather than as the thing the user clicked.
+// serverSecurableWord renders a server securable kind for the sentence.
+// gosmo spells kinds as DENY does ("SERVER ROLE"); shouting them mid-sentence
+// reads as a keyword.
 func serverSecurableWord(k gosmo.ServerSecurableKind) string {
 	return strings.ToLower(string(k))
 }
 
 // DeniedText is the sentence for an action withheld by a DENY on the object
-// rather than by a missing right — RequiresText's counterpart. It names no
-// role and asks for nothing, because there is nothing to ask for: the login
-// may hold every right in the list already, and the DENY overrides all of
-// them. Only the object's own permission can be changed.
+// rather than a missing right (RequiresText's counterpart). It names no role
+// and asks for nothing: the login may hold every right already and the DENY
+// overrides all. Only the object's own permission can change.
 func DeniedText(r Right, at Site) string {
 	switch {
 	case at.Column != "":
@@ -381,25 +348,18 @@ func DeniedText(r Right, at Site) string {
 	case at.Database != "":
 		return r.Name + " is denied on database " + at.Database + "."
 	case at.Principal != "":
-		// r.DeniedOnPrincipal, not r.Name: the right is the database-wide
-		// ALTER ANY USER and the DENY that beats it is plain ALTER on the
-		// principal, so naming the right here would describe a row that does
-		// not exist.
+		// r.DeniedOnPrincipal, not r.Name: the right is the database-wide ALTER ANY
+		// USER but the DENY that beats it is plain ALTER on the principal.
 		//
-		// "principal", not "user": class 4 covers database roles too, and the
-		// membership pages ask this question about a role. The gate is given a
-		// name and cannot tell the two apart — only the catalog can — so it
-		// says the word that is true of both.
+		// "principal", not "user": class 4 covers database roles too and the gate,
+		// given only a name, cannot tell them apart.
 		return r.DeniedOnPrincipal + " is denied on principal " + at.Principal + "."
 	case at.ServerSecurable != "":
-		// r.DeniedOnServer, not r.Name, for at.Principal's reason: the right
-		// is the server-wide ALTER ANY LOGIN and the DENY that beats it is
-		// plain ALTER on the securable.
+		// r.DeniedOnServer, not r.Name, as at.Principal: the DENY that beats the
+		// server-wide ALTER ANY LOGIN is plain ALTER on the securable.
 		//
-		// The kind *is* named here, where the class-4 sentence says the
-		// vaguer "principal": the right declared which securable it asked
-		// about, so the sentence can say it — and it has to, since "denied on
-		// x" would not tell a login from the endpoint beside it.
+		// The kind *is* named here, since the right declared its securable and
+		// "denied on x" would not tell a login from an endpoint.
 		return r.DeniedOnServer + " is denied on " + serverSecurableWord(at.ServerKind) + " " + at.ServerSecurable + "."
 	case at.AvailabilityGroup != "":
 		return r.DeniedOnAG + " is denied on availability group " + at.AvailabilityGroup + "."

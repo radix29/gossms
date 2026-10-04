@@ -9,9 +9,8 @@ import (
 )
 
 // explorer_object_ops.go is Object Explorer's general Delete and Rename: one
-// table of what the two mean per node type. A node type absent from the table
-// offers neither, which is how a folder or anything gosmo can't drop stays out
-// of the menu instead of failing when clicked.
+// table of what they mean per node type. A type absent from it offers
+// neither (folders, anything gosmo can't drop).
 //
 // The menu pair is in explorer_object_menu.go, what permits each action in
 // explorer_object_rights.go, and the confirm/run/refresh flows around them in
@@ -23,9 +22,9 @@ import (
 // objectOp is what Delete and Rename do for one node type. A nil drop or rename
 // means the node doesn't offer that action.
 //
-// Both take a nodeData by value, not the *explorerNode it came off: they run on
-// a background goroutine while the UI goroutine writes node.data.
-// deleteObject/runRename make the copy before the safego.
+// Both take a nodeData by value, not the *explorerNode: they run on a
+// background goroutine while the UI goroutine writes node.data.
+// deleteObject/runRename copy before the safego.
 type objectOp struct {
 	// noun names the object in dialog titles and messages ("Table").
 	noun   string
@@ -34,27 +33,22 @@ type objectOp struct {
 	// warning is appended to the delete confirmation when the drop does
 	// something beyond removing the object itself.
 	warning string
-	// typed gates the delete behind retyping the object's name, for a drop
-	// whose blast radius is bigger than one object. A typed confirmation asks
-	// for one name, so it implies solo.
+	// typed gates the delete behind retyping the object's name, for drops with
+	// a bigger blast radius. It implies solo.
 	typed bool
-	// typedFor is typed for some objects of the type only — decided per
-	// object, where typed is per type. It implies solo for those objects, and
-	// typedWarning is appended to their confirmation after warning.
+	// typedFor is typed decided per object. Implies solo for those objects;
+	// typedWarning is appended after warning.
 	typedFor     func(n nodeData) bool
 	typedWarning string
-	// solo keeps the type out of a multi-object delete: it is deleted one at a
-	// time, from either surface. It marks the principals and the database —
-	// objects whose drop is a server-wide or database-wide act with
-	// consequences elsewhere (orphaned users, a login's sessions, every
-	// connection to a database), where the batch confirmation's shared warning
-	// stops being enough and the deliberation is per object. A schema-scoped
-	// object — table, view, procedure, index — is dropped in a set.
+	// solo keeps the type out of a multi-object delete: one at a time, from
+	// either surface. Marks principals and the database, whose drops have
+	// server- or database-wide consequences (orphaned users, sessions,
+	// connections) that a batch's shared warning cannot cover. Schema-scoped
+	// objects are dropped in a set.
 	solo bool
 	// dropOption labels a checkbox on the delete confirmation and dropWithOption
-	// is the drop it feeds. A type setting these sets both and leaves drop nil:
-	// deleteObject picks the path from dropOption, objectOpsMenuItems from either
-	// drop being present.
+	// is the drop it feeds. A type sets both and leaves drop nil: deleteObject
+	// picks the path from dropOption, objectOpsMenuItems from either drop.
 	dropOption     string
 	dropWithOption func(ctx context.Context, sc *db.ServerConn, n nodeData, opt bool) error
 	// transfer moves the object into another schema (ALTER SCHEMA ... TRANSFER),
@@ -64,39 +58,35 @@ type objectOp struct {
 	// renameWarning is a question asked between the new-name prompt and the
 	// rename itself, for a rename that costs more than the name change.
 	renameWarning string
-	// settle runs once after a delete's drops, when any landed, for a family
-	// whose DROP is stored but not in force until a further statement —
-	// Resource Governor's RECONFIGURE. It runs under Script too, so the
-	// script shows it. A delete comes from one folder, so one family's
-	// settle serves the batch. settled then refreshes whatever beyond the
-	// deleted node's folder shows that state, settle failing or not.
+	// settle runs once after a delete's drops, if any landed, for a family whose
+	// DROP is stored but not in force until a further statement (Resource
+	// Governor's RECONFIGURE). Runs under Script too. A delete comes from one
+	// folder, so one family's settle serves the batch. settled then refreshes
+	// whatever beyond the folder shows that state, settle failing or not.
 	settle  func(ctx context.Context, sc *db.ServerConn) error
 	settled func(a *App, sc *db.ServerConn)
 }
 
 // dbOf is the database a node's object lives in.
 //
-// DatabaseRef, not DatabaseByName: every statement below names its object in
-// the text and reads nothing off the *gosmo.Database but its name, so the
-// sys.databases round trip buys nothing. That is the whole reason; a
-// WithScript-derived context is not a second one, since WithScript intercepts
-// writes only and the by-name read under it would reach the server anyway.
+// DatabaseRef, not DatabaseByName: every statement names its object in the
+// text and reads only the database name, so the sys.databases round trip
+// buys nothing. WithScript intercepts writes only, so it is no reason.
 func dbOf(sc *db.ServerConn, n nodeData) *gosmo.Database {
 	return sc.Server.DatabaseRef(n.DBName)
 }
 
-// tableOf is the table a table-scoped node (index, statistic, key, constraint)
-// belongs to — nodeData.TableName, since Schema/Name there name the index or
-// constraint itself. A name-only handle, for the same reason as dbOf.
+// tableOf is the table a table-scoped node (index, statistic, key,
+// constraint) belongs to: nodeData.TableName, since Schema/Name there name
+// the index or constraint. Name-only handle, as dbOf.
 func tableOf(sc *db.ServerConn, n nodeData) *gosmo.Table {
 	return sc.Server.DatabaseRef(n.DBName).TableRef(n.Schema, n.TableName)
 }
 
-// objectOps is the per-type table. Every entry calls a method on the gosmo
-// handle for its object — Drop, Rename, Transfer — and gosmo picks the
-// statement and its class there: sp_rename's 'OBJECT' for most families,
-// 'USERDATATYPE' for an alias type, TRANSFER's TYPE:: and XML SCHEMA
-// COLLECTION:: prefixes.
+// objectOps is the per-type table. Entries call a method on the gosmo handle
+// (Drop, Rename, Transfer); gosmo picks the statement and class (sp_rename
+// 'OBJECT', 'USERDATATYPE' for alias types, TRANSFER's TYPE:: and XML SCHEMA
+// COLLECTION:: prefixes).
 var objectOps = map[NodeType]objectOp{
 	NodeDatabase: {
 		noun:    "Database",
@@ -105,19 +95,16 @@ var objectOps = map[NodeType]objectOp{
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			return dbOf(sc, n).Drop(ctx, true)
 		},
-		// MODIFY NAME needs exclusive access, which the tree's own metadata
-		// connections deny — so the rename always closes connections, and always
-		// asks first.
+		// MODIFY NAME needs exclusive access, which the tree's metadata connections
+		// deny, so the rename always closes connections and always asks first.
 		renameWarning: "Renaming a database needs exclusive access to it. Existing connections will be closed and their transactions rolled back. Continue?",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			return dbOf(sc, n).Rename(ctx, newName, true)
 		},
 	},
-	// A snapshot's drop deletes its sparse files and leaves the source
-	// database alone — so no typed confirmation, unlike a database's. solo
-	// all the same: it is still a DROP DATABASE, and reverting to a snapshot
-	// needs the source's *other* snapshots dropped first, which is exactly
-	// the moment a batch delete would take the wrong one with it.
+	// A snapshot's drop deletes its sparse files, not the source, so no typed
+	// confirmation. solo anyway: reverting needs the source's other snapshots
+	// dropped first, and a batch could take the wrong one.
 	NodeDatabaseSnapshot: {
 		noun:    "Database Snapshot",
 		warning: "Its sparse files are deleted. The source database is not affected.",
@@ -129,10 +116,9 @@ var objectOps = map[NodeType]objectOp{
 	NodeTable: {
 		noun:    "Table",
 		warning: "All of its data is deleted with it.",
-		// Unticked by default, so the plain gesture is SSMS's: a referenced
-		// table is refused until the foreign key is dealt with. Ticking it drops
-		// those foreign keys on the *other* tables, which is why it is a
-		// decision and not a retry.
+		// Unticked by default, as SSMS: a referenced table is refused until the FK
+		// is dealt with. Ticking drops FKs on the *other* tables, so it is a
+		// decision, not a retry.
 		dropOption: "Also drop the foreign keys that reference it",
 		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, cascade bool) error {
 			return dbOf(sc, n).TableRef(n.Schema, n.Name).Drop(ctx, cascade)
@@ -151,18 +137,15 @@ var objectOps = map[NodeType]objectOp{
 
 	NodeColumn: {
 		noun: "Column",
-		// The server refuses a column anything depends on — a default or check
-		// constraint, an index, a statistic — and names the blocker in the
-		// error ("The object 'DF_Orders_flagged' is dependent on column
-		// 'flagged'."), so the warning says the drop is refused and leaves the
-		// naming to the server rather than listing classes.
+		// The server refuses a column anything depends on and names the blocker in
+		// the error, so the warning says the drop is refused and leaves the naming
+		// to the server.
 		warning: "Its data goes with it, and the drop is refused while a constraint, index or statistic depends on the column — the server's error names the object that blocks it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			return tableOf(sc, n).DropColumn(ctx, n.Name)
 		},
-		// sp_rename updates the column and nothing that names it, and SQL
-		// Server's caution ("may break scripts and stored procedures") is a
-		// notice on a rename that already succeeded — so ask first.
+		// sp_rename updates nothing that names the column, and SQL Server's caution
+		// is a notice after the rename succeeded, so ask first.
 		renameWarning: "Renaming a column does not update anything that names it. Views, procedures, functions, computed columns, check constraints and filtered indexes keep the old name and break at their next use. Continue?",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			return tableOf(sc, n).RenameColumn(ctx, n.Name, newName)
@@ -266,7 +249,7 @@ var objectOps = map[NodeType]objectOp{
 	NodeColumnEncryptionKey: {
 		noun: "Column Encryption Key",
 		// Not recoverable: the key material exists only encrypted here, so every
-		// column encrypted with it becomes unreadable ciphertext.
+		// column encrypted with it becomes unreadable.
 		warning: "Data in every column encrypted with it becomes permanently unreadable.",
 		typed:   true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
@@ -278,8 +261,8 @@ var objectOps = map[NodeType]objectOp{
 		},
 	},
 
-	// Programmability ▸ Types, Rules, Defaults, Assemblies and Plan Guides,
-	// plus the External Resources folder beside Views.
+	// Programmability > Types, Rules, Defaults, Assemblies and Plan Guides, plus
+	// External Resources beside Views.
 	//
 	// The type families share one statement — DROP TYPE names an alias, table
 	// or CLR type and nothing in it says which — and one warning: the server
@@ -383,16 +366,13 @@ var objectOps = map[NodeType]objectOp{
 		},
 	},
 
-	// The seven Service Broker families. None of them has a rename: there is
-	// no sp_rename class for any of these, and the one ALTER that could carry
-	// a name change (ALTER SERVICE) renames nothing. Only the queue has a
-	// schema to be moved between.
+	// The seven Service Broker families have no rename (no sp_rename class; the
+	// one ALTER that could, ALTER SERVICE, renames nothing). Only the queue has
+	// a schema to move between.
 	//
-	// Every warning here says the drop is refused and leaves the naming of the
-	// blocker to the server, which names it in Msg 3716 ("The message type 'x'
-	// cannot be dropped because it is bound to one or more contract."). A
-	// pre-check would be a second copy of a dependency graph the server
-	// already walks, and ALTER on the database does not override the refusal.
+	// Every warning says the drop is refused and leaves the naming to the
+	// server (Msg 3716). A pre-check would duplicate a dependency graph the
+	// server already walks, and ALTER on the database does not override it.
 	NodeMessageType: {
 		noun:    "Message Type",
 		warning: "The drop is refused while a contract names it — the server's error says so.",
@@ -427,10 +407,8 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeRoute: {
 		noun: "Route",
-		// AutoCreatedLocal is an ordinary user route here — sys.routes has no
-		// system flag, so the tree marks none of them system and this Delete
-		// is offered on it like any other. That matches SSMS, and dropping it
-		// is a legitimate thing to do.
+		// AutoCreatedLocal is an ordinary user route: sys.routes has no system flag,
+		// so Delete is offered, as in SSMS.
 		warning: "Messages for the services it addresses stop being routed.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			return dbOf(sc, n).RouteRef(n.Name).Drop(ctx)
@@ -464,10 +442,9 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeCredential: {
 		noun: "Credential",
-		// A credential is dropped by name and nothing cascades, but a login
-		// or a job step mapped to it stops being able to reach outside the
-		// server — and the secret is unrecoverable, so this is not a delete
-		// that can be undone by recreating the object from what is on screen.
+		// Nothing cascades, but a login or job step mapped to the credential loses
+		// outside access, and the secret is unrecoverable, so recreating from what
+		// is on screen is no undo.
 		warning: "Logins and job steps mapped to it lose their external identity, and the stored secret cannot be recovered.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
@@ -476,10 +453,9 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeDatabaseScopedCredential: {
 		noun: "Database Scoped Credential",
-		// Same as the server-level credential: nothing cascades, but an
-		// external data source or a backup URL bound to it stops being able to
-		// authenticate, and the secret is unrecoverable — so this is not a
-		// delete that can be undone from what is on screen.
+		// As the server-level credential: nothing cascades, but an external data
+		// source or backup URL bound to it can no longer authenticate, and the
+		// secret is unrecoverable.
 		warning: "External data sources and backup URLs bound to it lose their identity, and the stored secret cannot be recovered.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
@@ -491,11 +467,10 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeCertificate: {
 		noun: "Certificate",
-		// Nothing cascades, but whatever the certificate signs or protects
-		// stops working, and a private key that was never backed up is gone
-		// for good — the scripted CREATE brings back the public half only. A
-		// mapped login or user makes the server refuse the drop (Msg 15559),
-		// which is left to its own message rather than pre-checked here.
+		// Nothing cascades, but whatever the certificate signs or protects stops
+		// working, and a never-backed-up private key is gone (the scripted CREATE
+		// restores the public half only). A mapped login or user makes the server
+		// refuse (Msg 15559); left to its message.
 		warning: "Logins, users and signed modules mapped to it stop working, and a private key held only here is lost.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
@@ -506,10 +481,9 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeAsymmetricKey: {
 		noun: "Asymmetric Key",
-		// The certificate's case, less the partial undo: the scripted CREATE
-		// makes a new key pair, so nothing signed or encrypted by this one can
-		// be verified or decrypted again. A mapped login or user is Msg 15559,
-		// again left to the server.
+		// As the certificate, less the partial undo: the scripted CREATE makes a new
+		// key pair, so nothing signed or encrypted by this one can be verified or
+		// decrypted. A mapped login or user is Msg 15559, left to the server.
 		warning: "Logins, users and signed modules mapped to it stop working, and the key pair cannot be recreated.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
@@ -519,11 +493,9 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeSymmetricKey: {
 		noun: "Symmetric Key",
-		// The scripted CREATE makes new key material, so what this key
-		// encrypted is lost with it — unless it was made from KEY_SOURCE and
-		// IDENTITY_VALUE, which re-create the same key. A key that encrypts
-		// another symmetric key is refused by the server (Msg 15352), left to
-		// its own message.
+		// The scripted CREATE makes new key material, so what this key encrypted is
+		// lost unless it was made from KEY_SOURCE and IDENTITY_VALUE. A key that
+		// encrypts another symmetric key is refused (Msg 15352), left to the server.
 		warning: "Data encrypted with it cannot be decrypted again, unless the key was created with KEY_SOURCE and IDENTITY_VALUE and is re-created from them.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
@@ -533,18 +505,16 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeAudit: {
 		noun: "Audit",
-		// Dropping the audit takes every specification bound to it with it —
-		// or rather leaves them orphaned, since SQL Server allows the drop and
-		// the specifications stay behind pointing at nothing.
+		// Dropping the audit leaves its specifications orphaned: SQL Server allows
+		// the drop.
 		warning: "Server audit specifications bound to it stop recording and are left without an audit.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			return sc.Server.ServerAuditRef(n.Name).Drop(ctx)
 		},
-		// No rename: ALTER SERVER AUDIT ... MODIFY NAME exists, but only on a
-		// disabled audit, and gosmo's Rename does the off/on dance for it.
-		// Wiring it here would offer a rename that silently stops auditing for
-		// the duration.
+		// No rename: MODIFY NAME exists but only on a disabled audit (gosmo's
+		// Rename does the off/on dance); offering it would silently stop auditing
+		// meanwhile.
 	},
 	NodeServerAuditSpecification: {
 		noun:    "Server Audit Specification",
@@ -568,9 +538,8 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeBackupDevice: {
 		noun: "Backup Device",
-		// The alias is all that is dropped by default; the .bak behind it stays
-		// on disk, which is what SSMS does and what makes an accidental delete
-		// recoverable by adding the device again.
+		// Only the alias is dropped; the .bak stays on disk (as SSMS), so an
+		// accidental delete is recoverable by re-adding the device.
 		warning: "Backup jobs and maintenance plans naming it stop working.",
 		solo:    true,
 		// Unticked by default: @delfile deletes the backup file itself, which
@@ -609,15 +578,14 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeEndpoint: {
 		noun: "Endpoint",
-		// Dropping an endpoint takes its listener away from everything using
-		// it at once: a mirroring endpoint is what every availability replica
-		// ships log through, and there is no per-database warning to give.
+		// Dropping an endpoint removes its listener from everything using it; a
+		// mirroring endpoint carries every replica's log, so there is no
+		// per-database warning.
 		warning: "Availability replicas, mirroring partners and Service Broker routes using it stop connecting.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			// Read the endpoint rather than acting on a name-only handle: the
-			// built-in ones cannot be dropped, and IsSystem — which is what
-			// gosmo refuses on — is part of what the read populates.
+			// Read the endpoint rather than using a name-only handle: built-ins cannot
+			// be dropped, and IsSystem (what gosmo refuses on) comes from the read.
 			e, err := sc.Server.EndpointByName(ctx, n.Name)
 			if err != nil {
 				return err
@@ -631,9 +599,9 @@ var objectOps = map[NodeType]objectOp{
 		noun: "Event Session",
 		// A running session needs no stopping first; DROP stops it.
 		warning: "A running session stops collecting. Files an event_file target wrote stay on the server's disk.",
-		// SQL Server's own sessions are listed like any other and SSMS deletes
-		// them on one click; here the name is typed, since nothing in goSSMS
-		// can put system_health back — see builtInEventSessions.
+		// System sessions are listed like any other and SSMS deletes them on one
+		// click; here the name is typed, since nothing in goSSMS can restore
+		// system_health (see builtInEventSessions).
 		typedFor:     func(n nodeData) bool { return isBuiltInEventSession(n.Name) },
 		typedWarning: "SQL Server created this session for its own diagnostics — Script Session as CREATE first to keep a way back.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {

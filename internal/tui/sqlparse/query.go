@@ -6,11 +6,11 @@ import "strings"
 // Query tree: CTEs, derived tables and subqueries
 //
 // The scans in scope.go and statement.go read the token stream flat, skipping
-// whatever sits inside parentheses. The parser below does not skip: it builds a shallow
-// tree of queries so a CTE body, a derived table and the cursor's own innermost
-// SELECT each have a shape of their own. It stays a lexical approximation, not
-// a T-SQL parser — anything it does not recognise becomes an unnamed item or a
-// skipped span, never a guess.
+// whatever sits inside parentheses. The parser below builds a shallow tree of
+// queries so a CTE body, a derived table and the cursor's own innermost SELECT
+// each have a shape of their own. It is a lexical approximation, not a T-SQL
+// parser: anything unrecognised becomes an unnamed item or a skipped span,
+// never a guess.
 // ---------------------------------------------------------------------------
 
 // Query is one SELECT's completion-relevant shape.
@@ -19,21 +19,20 @@ type Query struct {
 	Select []SelectItem // the select list, in order
 	From   []FromRef    // FROM/JOIN/APPLY refs at this query's own level
 
-	// Subqueries holds parenthesised sub-SELECTs that bind no name into this
-	// query — an EXISTS or IN predicate, a scalar subquery in the select list —
-	// plus the second and later branches of a UNION/EXCEPT/INTERSECT chain,
-	// whose result names T-SQL takes from the first branch. Nothing resolves
-	// against them; they are kept only so a cursor inside one still finds its
-	// own scope.
+	// Subqueries holds parenthesised sub-SELECTs that bind no name into this query
+	// (an EXISTS or IN predicate, a scalar subquery in the select list) plus the
+	// second and later branches of a UNION/EXCEPT/INTERSECT chain, whose result
+	// names T-SQL takes from the first branch. Nothing resolves against them; they
+	// are kept so a cursor inside one still finds its own scope.
 	Subqueries []*Query
 
 	Start int // rune offset of the query's first token
 	End   int // rune offset just past its last token, or of its closing ')'
 
-	// bounded records that End is a real end — a ')' or a set operator closed
-	// the query — rather than "as far as the tokens went". A cursor past an
-	// unbounded query's End is still inside it, which is the half-typed
-	// statement the completion popup exists for.
+	// bounded records that End is a real end (a ')' or a set operator closed the
+	// query) rather than "as far as the tokens went". A cursor past an unbounded
+	// query's End is still inside it: the half-typed statement completion exists
+	// for.
 	bounded bool
 
 	// tokStart/tokEnd bound this query's own tokens within the stream ScopeAt
@@ -64,14 +63,14 @@ type Scope struct {
 	Clause Clause // clause state within Query, not within the statement
 }
 
-// ScopeAt parses one statement's tokens into a Query tree and returns what is
-// in scope at upTo: the innermost query containing it, the CTEs visible from
-// there (its own plus every enclosing query's), and the clause state within
-// that query.
+// ScopeAt parses one statement's tokens into a Query tree and returns what is in
+// scope at upTo: the innermost query containing it, the CTEs visible from there
+// (its own plus every enclosing query's), and the clause state within that
+// query.
 //
-// tokens must span a whole statement — the forward half matters as much as the
+// tokens must span a whole statement: the forward half matters as much as the
 // prefix, since a CTE body typed below the cursor still defines the name the
-// cursor is completing against.
+// cursor completes against.
 func ScopeAt(tokens []Token, upTo int) Scope {
 	p := &queryParser{toks: tokens}
 	root := p.parseChain()
@@ -101,9 +100,8 @@ func (f *scopeFinder) visit(q *Query, enclosing []CTE, depth int) {
 	if len(q.CTEs) > 0 {
 		visible = append(append([]CTE{}, q.CTEs...), enclosing...)
 	}
-	// >= rather than >: two queries at one depth can both contain upTo only
-	// when the earlier is unbounded, and then the later one is where the
-	// cursor really is.
+	// >= rather than >: two queries at one depth can both contain upTo only when
+	// the earlier is unbounded, and then the later one is where the cursor is.
 	if q.contains(f.upTo) && (f.best == nil || depth >= f.depth) {
 		f.best, f.depth, f.ctes = q, depth, visible
 	}
@@ -131,7 +129,7 @@ func (q *Query) contains(off int) bool {
 
 // clauseWithin runs CurrentClause over q's own tokens up to the cursor. q's
 // tokens start at its own paren depth 0, so CurrentClause's depth skipping
-// lands on this query's clauses rather than an enclosing statement's.
+// lands on this query's clauses, not an enclosing statement's.
 func clauseWithin(tokens []Token, q *Query, upTo int) Clause {
 	lo, hi := q.tokStart, q.tokEnd
 	for hi > lo && tokens[hi-1].Start >= upTo {
@@ -183,8 +181,8 @@ var selectListEnders = map[string]bool{
 }
 
 // parseChain parses one query and the UNION/EXCEPT/INTERSECT branches chained
-// onto it, returning the first — the branch whose column names are the chain's
-// — with the rest hung off its Subqueries.
+// onto it, returning the first (whose column names are the chain's) with the
+// rest hung off its Subqueries.
 func (p *queryParser) parseChain() *Query {
 	head := p.parseBranch()
 	if head == nil {
@@ -247,21 +245,20 @@ func (p *queryParser) parseBranch() *Query {
 }
 
 // parseCTEs parses "WITH name [(cols)] AS ( query ) {, ...}". Anything else
-// following WITH — a table hint, EXECUTE ... WITH RESULT SETS — is not a CTE
-// clause, so the whole parse is abandoned unless the first binding matches,
-// and only the WITH itself is consumed.
+// following WITH (a table hint, EXECUTE ... WITH RESULT SETS) is not a CTE
+// clause, so the parse is abandoned unless the first binding matches, and only
+// the WITH itself is consumed.
 //
 // Bindings that did parse are kept even when a later one does not. The tail of
-// a half-typed clause — everything from the comma the user just typed onwards —
-// stops matching for the keystrokes before the next binding's name arrives, and
-// dropping the earlier bindings there would empty the completion popup on the
-// exact script the package exists for.
+// a half-typed clause (from the comma just typed onwards) stops matching until
+// the next binding's name arrives, and dropping earlier bindings would empty
+// the completion popup on exactly the script this package exists for.
 func (p *queryParser) parseCTEs(q *Query) {
 	p.i++ // WITH
-	// resume is where the branch loop picks up if a binding fails to parse:
-	// just past the last complete one, so the abandoned tail is walked as
-	// ordinary tokens exactly once and the bodies already stored in ctes are
-	// not re-walked as subqueries.
+	// resume is where the branch loop picks up if a binding fails to parse: just
+	// past the last complete one, so the abandoned tail is walked as ordinary
+	// tokens exactly once and bodies already stored in ctes aren't re-walked as
+	// subqueries.
 	resume := p.i
 	var ctes []CTE
 	for {
@@ -299,9 +296,9 @@ func (p *queryParser) parseCTEs(q *Query) {
 		q.CTEs = ctes
 		return
 	}
-	// A binding didn't match: keep the ones that did and let the branch loop
-	// walk what follows as ordinary tokens. With none at all this is not a CTE
-	// clause, and resume is still just past WITH.
+	// A binding didn't match: keep the ones that did and let the branch loop walk
+	// what follows as ordinary tokens. With none at all this is not a CTE clause,
+	// and resume is still just past WITH.
 	q.CTEs = ctes
 	p.i = resume
 }
@@ -358,9 +355,9 @@ func (p *queryParser) parseSelectList(q *Query) []SelectItem {
 			flush()
 			p.i++
 		case t.Kind == TokenParenOpen:
-			// The group's contents are a sub-SELECT's or an expression's, not
-			// this item's shape; keeping the brackets alone is enough to make
-			// "COUNT(*) c" read as an expression with a trailing alias.
+			// The group's contents are a sub-SELECT's or an expression's, not this item's
+			// shape; keeping the brackets alone makes "COUNT(*) c" read as an expression
+			// with a trailing alias.
 			p.parseParenGroup(q)
 			item = append(item, t)
 			if p.i > 0 && p.toks[p.i-1].Kind == TokenParenClose {
@@ -376,7 +373,7 @@ func (p *queryParser) parseSelectList(q *Query) []SelectItem {
 }
 
 // skipSelectModifiers consumes DISTINCT/ALL/TOP n/TOP (n)/PERCENT/WITH TIES.
-// PERCENT and TIES are not in sqlKeywordList — TIES is not even reserved — so
+// PERCENT and TIES are not in sqlKeywordList (TIES is not even reserved), so
 // they are matched as identifiers, and only where TOP has already been seen.
 func (p *queryParser) skipSelectModifiers() {
 	for {
@@ -385,9 +382,8 @@ func (p *queryParser) skipSelectModifiers() {
 			p.i++
 		case p.atKeyword("TOP"):
 			p.i++
-			// The count: "TOP (expr)", or the bare "10"/"@n" the lexer hands
-			// back as an identifier (it keeps digits, and keeps the '@').
-			// Whatever it is, it is never a select item.
+			// The count: "TOP (expr)", or the bare "10"/"@n" the lexer hands back as an
+			// identifier (it keeps digits and '@'). Never a select item.
 			if p.at(TokenParenOpen) {
 				p.skipParenGroup()
 			} else if p.at(TokenIdent) && !p.atIdentFold("PERCENT") {
@@ -489,9 +485,9 @@ func (p *queryParser) parseRef(q *Query) bool {
 	ref := refFromParts(parts)
 	p.i = next
 	if p.at(TokenParenOpen) {
-		// A table-valued function's argument list, or a legacy "t (NOLOCK)"
-		// hint. Either way the alias, if any, follows the group — and, for a
-		// rowset function, its WITH column list.
+		// A table-valued function's argument list, or a legacy "t (NOLOCK)" hint.
+		// Either way the alias, if any, follows the group (and, for a rowset function,
+		// its WITH column list).
 		p.skipParenGroup()
 		ref.Call = true
 		ref.Rowset = p.parseRowset(ref)
@@ -501,11 +497,11 @@ func (p *queryParser) parseRef(q *Query) bool {
 	return true
 }
 
-// multipartName reads the dotted name starting at the identifier tokens[i] —
-// "t", "s.t", "db.s.t", "db..t", "srv.db.s.t" — and returns its parts, an
-// empty one for each "..", and the index just past it. A trailing dot is left
-// unconsumed: "FROM dbo." is a name being typed, and the dot is the
-// qualifier the cursor completes after.
+// multipartName reads the dotted name starting at the identifier tokens[i]
+// ("t", "s.t", "db.s.t", "db..t", "srv.db.s.t") and returns its parts (an empty
+// one for each ".."), and the index just past it. A trailing dot is left
+// unconsumed: "FROM dbo." is a name being typed, and the dot is the qualifier
+// the cursor completes after.
 func multipartName(tokens []Token, i int) ([]string, int) {
 	parts := []string{tokens[i].Text}
 	j := i + 1
@@ -526,7 +522,7 @@ func multipartName(tokens []Token, i int) ([]string, int) {
 
 // refFromParts names a reference from multipartName's parts, last part first.
 // More than four parts is no name SQL Server accepts; it is kept as a
-// linked-server ref, so it resolves to nothing rather than to a guess.
+// linked-server ref so it resolves to nothing rather than a guess.
 func refFromParts(parts []string) FromRef {
 	n := len(parts)
 	ref := FromRef{Name: parts[n-1]}
@@ -545,11 +541,11 @@ func refFromParts(parts []string) FromRef {
 // parseRefTail consumes what can follow a table reference's name: an optional
 // PIVOT/UNPIVOT clause and an alias.
 //
-// Both orders occur — "t PIVOT (...) AS p" and "(SELECT ...) AS src PIVOT (...)
-// AS p" — and the clause is checked first in each, because parseAlias would
-// otherwise take the bare word PIVOT for the alias it is not. When a clause is
-// found, the alias that follows it is the reference's: a pivoted source's own
-// alias is only addressable inside the clause.
+// Both orders occur ("t PIVOT (...) AS p" and "(SELECT ...) AS src PIVOT (...)
+// AS p"); the clause is checked first in each, because parseAlias would take
+// the bare word PIVOT for the alias. When a clause is found, the alias after it
+// is the reference's: a pivoted source's own alias is addressable only inside
+// the clause.
 func (p *queryParser) parseRefTail(ref *FromRef) {
 	ref.Pivot = p.parsePivot()
 	ref.Alias = p.parseAlias()
@@ -574,9 +570,9 @@ func (p *queryParser) parseAlias() string {
 }
 
 // parseParenGroup walks the group at p.i and leaves p.i past its ')'. A group
-// that opens a query is parsed as one and recorded on q.Subqueries — it binds
-// no name outward, but the cursor can still be inside it; any other group is
-// skipped, its own nested groups included.
+// that opens a query is parsed as one and recorded on q.Subqueries (it binds no
+// name outward, but the cursor can be inside it); any other group is skipped,
+// nested groups included.
 func (p *queryParser) parseParenGroup(q *Query) {
 	p.i++ // '('
 	if p.atKeyword("SELECT") || p.atKeyword("WITH") {
@@ -620,8 +616,8 @@ func (p *queryParser) skipParenGroup() {
 }
 
 // tokenEnd is the offset just past t. A bracketed or double-quoted identifier
-// reports two runes short, since Text drops the delimiters — it only ever
-// shifts an unbounded query's End, which nothing compares against.
+// reports two runes short, since Text drops the delimiters; this only shifts an
+// unbounded query's End, which nothing compares against.
 func tokenEnd(t Token) int {
 	switch t.Kind {
 	case TokenIdent, TokenKeyword:

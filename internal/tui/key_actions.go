@@ -16,14 +16,14 @@ import (
 // Properties: the Owner row their General pages edit, and Remove Private Key
 // for the two with a private key.
 //
-// Probed on 13 and 17 (2026-09-22), identical — docs/decisions.md § Keys and
+// Probed on 13 and 17 (2026-09-22), identical; docs/decisions.md § Keys and
 // certificates has the table:
 //
 //   - ALTER AUTHORIZATION drops every explicit permission on the object. Taking
 //     ownership yourself needs CONTROL or TAKE OWNERSHIP on it; giving it to
 //     another principal also needs IMPERSONATE on them, which only CONTROL on
 //     the database carries implicitly. The page is gated on CONTROL on the
-//     object — the effective answer folds in CONTROL on the database — and the
+//     object (the effective answer folds in CONTROL on the database); the
 //     IMPERSONATE half is left to the server (Msg 15151 naming the principal).
 //   - A certificate or asymmetric key cannot be owned by a role (Msg 15345); a
 //     symmetric key can.
@@ -129,7 +129,7 @@ func (a *App) removePrivateKey(sc *db.ServerConn, node *explorerNode, what strin
 // providerKeyFields are the Extensible Key Management rows of New Asymmetric
 // Key and New Symmetric Key: whether SQL Server or an EKM provider holds the
 // new key, and which provider key. Shown only on an instance with a provider
-// registered — almost none has one.
+// registered, which almost none has.
 //
 // Not run against a real provider: no test instance has one (gosmo's
 // OPEN-THREADS.md, "Keys FROM PROVIDER have never executed"). The statement

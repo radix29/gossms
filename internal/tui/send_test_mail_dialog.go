@@ -14,24 +14,22 @@ import (
 )
 
 // send_test_mail_dialog.go is Database Mail's Send Test E-Mail: profile, To,
-// Subject and Body, then sp_send_dbmail — and, what the dialog is for, the
-// outcome. sp_send_dbmail only queues the message, so success there says
-// nothing about the mail server; the dialog follows the item and its log
-// rows until it is sent, an error is logged, or it gives up.
+// Subject and Body, then sp_send_dbmail and, what the dialog is for, the
+// outcome. sp_send_dbmail only queues the message, so success says nothing
+// about the mail server; the dialog follows the item and its log rows until it
+// is sent, an error is logged, or it gives up.
 //
-// It is a one-page sheet but not a New-object dialog: it creates nothing to
-// open the Properties of afterwards, and sending twice is sending twice, so
-// newObjectDialog's "already created" latch would be wrong. Apply sends and
-// waits in the dialog; OK sends, closes once the message is queued, and
-// reports the outcome on the status bar; Script Changes shows the
-// sp_send_dbmail call.
+// A one-page sheet but not a New-object dialog: it creates nothing to open the
+// Properties of, and sending twice is sending twice, so newObjectDialog's
+// "already created" latch would be wrong. Apply sends and waits in the dialog;
+// OK sends, closes once the message is queued, and reports the outcome on the
+// status bar; Script Changes shows the sp_send_dbmail call.
 
 // How long the dialog follows a test message, and how often it reads it. On
-// Windows an unreachable server's error is logged after ~20 s, while the item
-// still reads "retrying" — so the wait ends on the first error row, not on
-// "failed", which took ~80 s; on Linux nothing is logged for over two
-// minutes, the TCP connect timeout, and the item is reported still queued
-// (W8).
+// Windows an unreachable server's error is logged after ~20 s while the item
+// still reads "retrying", so the wait ends on the first error row, not on
+// "failed" (~80 s); on Linux nothing is logged for over two minutes (the TCP
+// connect timeout) and the item is reported still queued (W8).
 const (
 	mailTestWait      = 30 * time.Second
 	mailTestPollEvery = 2 * time.Second
@@ -41,9 +39,9 @@ const (
 type sendTestMailPrefetch struct {
 	state      gosmo.MailState
 	stateKnown bool
-	// profiles is nil when the login may not list them — a
-	// DatabaseMailUserRole member (Msg 229, W8) — and the profile is then
-	// typed, blank meaning the sender's default.
+	// profiles is nil when the login may not list them (a DatabaseMailUserRole
+	// member, Msg 229, W8); the profile is then typed, blank meaning the sender's
+	// default.
 	profiles []string
 	// defaultProfile indexes the public default profile in profiles, or -1.
 	defaultProfile int
@@ -81,8 +79,8 @@ type SendTestMailDialog struct {
 	app *App
 	sc  *db.ServerConn
 
-	// ctx spans one showing; closing the dialog cancels it, and with it a
-	// load or an Apply's wait in flight.
+	// ctx spans one showing; closing the dialog cancels it, and with it a load or
+	// an Apply's wait in flight.
 	ctx    context.Context
 	cancel context.CancelFunc
 	load   latest
@@ -180,8 +178,8 @@ func (d *SendTestMailDialog) build(pf *sendTestMailPrefetch) *propsheet.Form {
 		server = info.Name
 	}
 	// 46 columns fills the form at the sheet's full width (50 drew over its
-	// border there); a narrower sheet narrows them (TextRow.Layout). Subject
-	// and Body are pre-filled, and read from their start.
+	// border); a narrower sheet narrows them (TextRow.Layout). Subject and Body are
+	// pre-filled, and read from their start.
 	to := propsheet.Text("To", "", 46)
 	subject := propsheet.Text("Subject", "Database Mail Test", 46)
 	body := propsheet.Text("Body", "This is a test e-mail sent from Database Mail on "+server+".", 46)
@@ -221,9 +219,9 @@ func (d *SendTestMailDialog) readRequest() (gosmo.MailMessage, bool) {
 	return r, true
 }
 
-// send queues the message. On Apply it then follows it here; on OK the
-// dialog closes once it is queued and the status bar carries the outcome. A
-// refused send keeps the dialog open either way, with what was typed.
+// send queues the message. On Apply it then follows it here; on OK the dialog
+// closes once it is queued and the status bar carries the outcome. A refused
+// send keeps the dialog open either way, with what was typed.
 func (d *SendTestMailDialog) send(closeOnQueued bool) {
 	req, ok := d.readRequest()
 	if !ok {
@@ -270,10 +268,10 @@ func (d *SendTestMailDialog) send(closeOnQueued bool) {
 }
 
 // mailSendErrorText is a refused send as the message line shows it: a plain
-// sentence for the errors sp_send_dbmail is known to raise, the raw error —
-// with any permission advice — otherwise. A mapped error's raw text goes to
-// the log, so nothing the server said is lost. The message line hard-clips,
-// so each sentence is kept short enough for an 80-column dialog.
+// sentence for the errors sp_send_dbmail is known to raise, else the raw error
+// (with any permission advice). A mapped error's raw text goes to the log, so
+// nothing the server said is lost. The message line hard-clips, so each sentence
+// fits an 80-column dialog.
 func mailSendErrorText(err error, profile string) string {
 	var text string
 	switch {
@@ -351,13 +349,13 @@ type mailTestResult struct {
 	stopped bool
 }
 
-// waitForTestMail follows mail item id until it is sent, an error is logged
-// for it, it is failed, or wait has passed, reading it every every.
+// waitForTestMail follows mail item id until it is sent, an error is logged for
+// it, it is failed, or wait has passed, reading it every every.
 //
-// The error row is what ends a failing wait, not the status: on Windows it
-// is logged while the item still reads "retrying", a minute before "failed"
-// (W8). The reads are the sender's own — a DatabaseMailUserRole member sees
-// their own items and those items' log rows — so no further right is needed.
+// The error row ends a failing wait, not the status: on Windows it is logged
+// while the item still reads "retrying", a minute before "failed" (W8). The
+// reads are the sender's own (a DatabaseMailUserRole member sees their own
+// items and those items' log rows), so no further right is needed.
 func waitForTestMail(ctx context.Context, sc *db.ServerConn, id int, wait, every time.Duration) mailTestResult {
 	res := mailTestResult{id: id}
 	deadline := time.Now().Add(wait)
@@ -420,15 +418,15 @@ func (r mailTestResult) message() (string, bool) {
 	return fmt.Sprintf("%s is still %s after %d seconds — see the Database Mail log.", item, r.status, int(mailTestWait/time.Second)), false
 }
 
-// mailErrorSummary condenses a Database Mail error row to one line: the
-// first non-empty "Message:" line of its exception text — "Could not connect
-// to mail server. (… 127.0.0.1:1)", the part that says what went wrong —
-// or, failing one, its summary sentence. The summary leads the row but is
-// the same for every SMTP failure ("… because of the mail server failure.
-// (Sending Mail using Account 41 (…). Exception Message:", the message
-// itself on later lines), and leading with it pushed the cause off the
-// message line, which hard-clips (live on 17). The whole text, several KB
-// with .NET stack traces, is in the Log Viewer's details pane (W8).
+// mailErrorSummary condenses a Database Mail error row to one line: the first
+// non-empty "Message:" line of its exception text ("Could not connect to mail
+// server. (... 127.0.0.1:1)", the part saying what went wrong) or, failing
+// one, its summary sentence. The summary leads the row but is the same for
+// every SMTP failure ("... because of the mail server failure. (Sending Mail
+// using Account 41 (...). Exception Message:", the message itself on later
+// lines), and leading with it pushed the cause off the hard-clipped message line
+// (live on 17). The whole text, several KB with .NET stack traces, is in the
+// Log Viewer's details pane (W8).
 func mailErrorSummary(desc string) string {
 	var summary string
 	for line := range strings.Lines(desc) {

@@ -11,24 +11,22 @@ import (
 )
 
 // new_symmetric_key_dialog.go is the New Symmetric Key dialog (a database's
-// Security > Symmetric Keys folder), built on newObjectDialog — New Asymmetric
+// Security > Symmetric Keys folder), built on newObjectDialog: New Asymmetric
 // Key's shape, with the key's encryptions in place of the private-key
 // protection.
 //
 // A new key is encrypted by any of a certificate, an asymmetric key and a
-// password, at least one. Encryption by another symmetric key is not offered
-// here: it needs that key opened first, which is the decryptor prompt the
-// Encryption page owns. No master key section either — every encryptor here
-// uses a public key or a password, and none needs the master key (see
-// master_key.go).
+// password, at least one. Encryption by another symmetric key is not offered:
+// it needs that key opened first, which is the decryptor prompt the Encryption
+// page owns. No master key section either: every encryptor here uses a public
+// key or a password, and none needs the master key (see master_key.go).
 //
 // An instance with an EKM provider registered also offers FROM PROVIDER
 // (providerKeyFields), which takes no encryption and no key material.
 //
-// KEY_SOURCE and IDENTITY_VALUE are optional, and are the one way to create
-// the same key in a second database (docs/decisions.md § Keys and
-// certificates). Both are secrets: masked, confirmed, and scripted as
-// placeholders.
+// KEY_SOURCE and IDENTITY_VALUE are optional, and are the one way to create the
+// same key in a second database (docs/decisions.md § Keys and certificates).
+// Both are secrets: masked, confirmed, and scripted as placeholders.
 
 // symKeyAlgorithms is what the dialog offers, strongest last and the default.
 // Every other algorithm is deprecated, and at compatibility level 130 and
@@ -228,8 +226,7 @@ type newSymmetricKeyInput struct {
 // server allows: KEY_SOURCE alone repeats the key material under a new GUID,
 // and DECRYPTBYKEY finds its key by the GUID stored in the ciphertext, so the
 // copy decrypts nothing; IDENTITY_VALUE alone repeats the GUID over new
-// material. Neither makes the key re-creatable, which is the only reason to
-// type them.
+// material. Neither makes the key re-creatable, the only reason to type them.
 func validateNewSymmetricKey(in newSymmetricKeyInput) error {
 	if in.name == "" {
 		return fmt.Errorf("key name is required")

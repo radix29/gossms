@@ -11,20 +11,19 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// new_index_dialog.go is the New Index creation dialog — the Indexes folder's
+// new_index_dialog.go is the New Index creation dialog, the Indexes folder's
 // "New Index ▸" cascade. One dialog builds one gosmo.CreateIndexRequest; the
-// cascade item picks the index type, and the type then decides which pages
-// the dialog has, because almost nothing is shared between them: a
-// columnstore index has no fill factor, a clustered index no INCLUDE list, an
-// XML index neither, and a clustered columnstore index no key columns at all.
-// A single page set covering all of them would be mostly rows that do not
-// apply, and the server rejects each of those combinations rather than
-// ignoring it.
+// cascade item picks the index type, and the type decides which pages the
+// dialog has, because almost nothing is shared: a columnstore index has no fill
+// factor, a clustered index no INCLUDE list, an XML index neither, and a
+// clustered columnstore index no key columns. A single page set covering all of
+// them would be mostly inapplicable rows, and the server rejects those
+// combinations rather than ignoring them.
 //
 // The per-type rules live in gosmo's CreateIndexRequest.validate, not here.
-// This dialog only offers what a type accepts; the request it builds is
-// checked again there, so a page that offers too much fails with a message
-// naming the field instead of reaching the server.
+// This dialog only offers what a type accepts; the request is checked again
+// there, so a page that offers too much fails with a message naming the field
+// instead of reaching the server.
 
 // newIndexKind is one entry of the cascade: the menu label, the noun the
 // dialog's header names it by, and the type the request carries.
@@ -345,12 +344,11 @@ func (d *NewIndexDialog) checkRequest(pf *nidxPrefetch) error {
 	return nil
 }
 
-// newIndexMenuItems is the Indexes folder's "New Index ▸" cascade — one item
-// per index type, each opening this dialog preset to it. Every item is
-// enabled: whether a type is possible on this table (a second clustered
-// index, an XML index with no xml column) needs the table's columns and
-// indexes, which the menu has not read, so the dialog says so on its General
-// page and its preflight refuses rather than the menu item silently missing.
+// newIndexMenuItems is the Indexes folder's "New Index ▸" cascade, one item per
+// index type, each opening this dialog preset to it. Every item is enabled:
+// whether a type is possible on this table (a second clustered index, an XML
+// index with no xml column) needs columns and indexes the menu has not read, so
+// the dialog says so on its General page and its preflight refuses.
 func (a *App) newIndexMenuItems(sc *db.ServerConn, node *explorerNode) []controls.MenuItem {
 	items := make([]controls.MenuItem, 0, len(newIndexKinds))
 	for _, kind := range newIndexKinds {

@@ -10,16 +10,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// HistoryChart plots one column per time bucket with its series overlaid —
-// each series drawn from the baseline in its own colour, tallest first, so
-// a shorter series stays visible in front of a taller one. Use it where the
-// series are independent quantities (pages read against pages written);
+// HistoryChart plots one column per time bucket with its series overlaid, each
+// drawn from the baseline in its own colour, tallest first, so a shorter series
+// stays visible in front of a taller one. Use it where the series are
+// independent quantities (pages read against pages written);
 // StackedHistoryChart is for series that compose a total.
 //
-// The newest bucket is always the rightmost column. A chart wider than the
-// data leaves its left end empty rather than stretching the data across it,
-// so a partially filled buffer grows from the right as samples arrive
-// instead of rescaling on every tick.
+// The newest bucket is always the rightmost column. A chart wider than the data
+// leaves its left end empty rather than stretching the data, so a partially
+// filled buffer grows from the right instead of rescaling on every tick.
 type HistoryChart struct {
 	Series []Series
 
@@ -78,17 +77,15 @@ func (h HistoryChart) DrawFrame(s tcell.Screen, r core.Rect) (plot, timeRow core
 	return h.spec().drawFrame(s, r)
 }
 
-// Plot is the rect Draw would plot into for the same r — the data area,
-// without the axis gutter, time row, or legend. A caller that hit-tests a
-// drawn chart has to ask for this rather than recompute it, or the two
-// disagree the moment either chart's chrome changes.
+// Plot is the rect Draw would plot into for the same r: the data area, without
+// the axis gutter, time row, or legend. A caller hit-testing a drawn chart must
+// ask for this rather than recompute it, or the two disagree when the chrome
+// changes.
 func (h HistoryChart) Plot(r core.Rect) core.Rect { return h.spec().plotRect(r) }
 
 // TimeRow is the row Draw writes the time scale on for the same r, zero-sized
-// when the chart was too short to carry one. A caller that marks a column on
-// that scale has to ask for this for the same reason Plot exists: laying the
-// chrome out a second time by hand puts the mark on the wrong row as soon as
-// either layout changes.
+// when the chart was too short for one. A caller marking a column on that scale
+// must ask for this for the reason Plot exists.
 func (h HistoryChart) TimeRow(r core.Rect) core.Rect { return h.spec().timeRowRect(r) }
 
 // drawColumns plots every visible bucket, tallest series first within each
@@ -145,12 +142,10 @@ func BucketAt(plot core.Rect, x, buckets int) int {
 	return bucketAt(x-plot.X, plot.W, buckets)
 }
 
-// ColumnAt is the screen column bucket idx is drawn in — the inverse of
-// BucketAt, for a caller that has hold of a bucket and needs to know where
-// it is now. Returns -1 for a bucket outside the data or one that has
-// scrolled off the left edge of the plot, which is what a caller tracking a
-// bucket across ticks watches for: newer samples push older ones left, and
-// past the plot's width they are no longer drawn at all.
+// ColumnAt is the screen column bucket idx is drawn in, the inverse of
+// BucketAt, for a caller holding a bucket that needs to know where it is now.
+// Returns -1 for a bucket outside the data or scrolled off the plot's left edge
+// (newer samples push older ones left; past the plot's width they aren't drawn).
 func ColumnAt(plot core.Rect, idx, buckets int) int {
 	if plot.W <= 0 || idx < 0 || idx >= buckets {
 		return -1

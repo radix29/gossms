@@ -15,25 +15,21 @@ import (
 // it without bound; oldest entries are dropped first.
 const maxKeyDiagLines = 200
 
-// KeyDiagnosticsDialog is a small modal that shows exactly what tcell
-// decoded for every key event while it's open — the raw Key/Modifiers/rune
-// values plus ev.Name()'s human-readable decode (e.g. "Shift+Left"). It
-// exists to turn "a shortcut doesn't seem to work" from a guessing game
-// into a 10-second check of whether the terminal is actually delivering
-// the modifier bits goSSMS expects. Mouse events are logged the same way,
-// for the same reason — a terminal can keep Shift+click for itself; see internal/tuikit/controls/editor.go
-// and widgets/input_field.go for the Shift+Arrow selection handling this
-// is most often used to debug.
+// KeyDiagnosticsDialog is a small modal that shows what tcell decoded for every
+// key event while it's open: the raw Key/Modifiers/rune values plus ev.Name()'s
+// decode (e.g. "Shift+Left"). It turns "a shortcut doesn't seem to work" into a
+// 10-second check of whether the terminal delivers the modifier bits goSSMS
+// expects. Mouse events are logged the same way, since a terminal can keep
+// Shift+click for itself. See internal/tuikit/controls/editor.go and
+// widgets/input_field.go for the Shift+Arrow selection handling this most often
+// debugs.
 //
-// Newest entries are prepended, so the most recent key press is always the
-// first line — no scrolling needed for the common case of pressing one key
-// and immediately checking what was recorded.
+// Newest entries are prepended, so the most recent key press is the first line.
 //
-// The log lives in a read-only controls.Editor rather than a hand-rolled
-// scrolling line list, so it can be selected and copied: what this dialog
-// shows is exactly the text someone pastes into a bug report, and without a
-// widget to hand back there was no core.ClipboardTarget and Ctrl+C did
-// nothing at all.
+// The log lives in a read-only controls.Editor rather than a hand-rolled line
+// list, so it can be selected and copied: what the dialog shows is the text
+// pasted into a bug report, and without a core.ClipboardTarget widget Ctrl+C
+// did nothing.
 type KeyDiagnosticsDialog struct {
 	dialogs.ModalDialog
 	app    *App
@@ -60,12 +56,12 @@ func NewKeyDiagnosticsDialog(app *App) *KeyDiagnosticsDialog {
 	return d
 }
 
-// RecordKey appends a formatted description of ev to the log. Call only
-// while the dialog is visible (see app_events.go's handleKey) — recording
-// keys the user can't currently see would just be wasted work.
+// RecordKey appends a formatted description of ev to the log. Call only while
+// the dialog is visible (see app_events.go's handleKey); recording unseen keys
+// is wasted work.
 //
-// Unlike StatusHistoryDialog.Record this needs no mutex: handleKey runs on
-// the UI goroutine, which is the only goroutine that reaches this.
+// Unlike StatusHistoryDialog.Record this needs no mutex: handleKey runs on the
+// UI goroutine, the only one that reaches this.
 func (d *KeyDiagnosticsDialog) RecordKey(ev *tcell.EventKey) {
 	line := fmt.Sprintf("%-20s  Key=%-4d Mod=%-3d Str=%-8q Repeat=%d",
 		ev.Name(), ev.Key(), ev.Modifiers(), ev.Str(), ev.Repeat())
@@ -81,15 +77,13 @@ func (d *KeyDiagnosticsDialog) RecordKey(ev *tcell.EventKey) {
 //
 // A mouse gesture is not one event. tcell resends the held button for every
 // pixel of a drag, and a hundred identical lines would bury the press that
-// started it, so only a change of buttons or modifiers is recorded — a press, a
-// release, a wheel tick. The position on each line is wherever that change
-// happened.
+// started it, so only a change of buttons or modifiers is recorded (a press, a
+// release, a wheel tick). The position is wherever that change happened.
 //
-// This is here because a modifier the terminal keeps for itself is invisible
-// from inside the app: xfce4-terminal (VTE) handles Shift+click as its own text
-// selection while mouse reporting is on and never forwards it, which reads
-// exactly like a broken Shift+click. One line in this log, or none, tells the
-// two apart.
+// A modifier the terminal keeps for itself is invisible from inside the app:
+// xfce4-terminal (VTE) handles Shift+click as its own text selection while
+// mouse reporting is on and never forwards it, which reads like a broken
+// Shift+click. One line in this log, or none, tells the two apart.
 func (d *KeyDiagnosticsDialog) RecordMouse(ev *tcell.EventMouse) {
 	state := int(ev.Buttons())<<8 | int(ev.Modifiers())
 	if state == d.lastMouse {
@@ -150,12 +144,11 @@ func mouseEventName(ev *tcell.EventMouse) string {
 // syncIfDirty rebuilds the editor's content from d.lines if RecordKey or
 // RecordMouse has run since the last rebuild.
 //
-// It must not rebuild while the editor has a selection. This dialog records
-// the very keys used to copy from it, and Editor.SetText resets cursor,
-// scroll and selection: Ctrl+A is itself recorded, so a rebuild on the next
-// frame would drop the selection the user just made and the Ctrl+C after it
-// would copy nothing. Skipping leaves d.dirty set, so the deferred lines
-// appear as soon as the selection is cleared.
+// It must not rebuild while the editor has a selection. The dialog records the
+// very keys used to copy from it, and Editor.SetText resets cursor, scroll and
+// selection: Ctrl+A is itself recorded, so a rebuild on the next frame would
+// drop the selection and the following Ctrl+C would copy nothing. Skipping
+// leaves d.dirty set, so the deferred lines appear once the selection clears.
 func (d *KeyDiagnosticsDialog) syncIfDirty() {
 	if !d.dirty || d.editor == nil || d.editor.HasSelection() {
 		return
@@ -164,13 +157,12 @@ func (d *KeyDiagnosticsDialog) syncIfDirty() {
 	d.dirty = false
 }
 
-// Show resets the log, then displays the dialog — each open starts a fresh
-// diagnostic session rather than accumulating across unrelated opens.
+// Show resets the log, then displays the dialog; each open starts a fresh
+// session.
 //
-// The editor is rebuilt unconditionally rather than through syncIfDirty,
-// which deliberately refuses to while a selection is live: a selection left
-// over from the last showing would otherwise pin the previous session's text
-// on screen.
+// The editor is rebuilt unconditionally rather than through syncIfDirty, which
+// refuses while a selection is live: a selection left from the last showing
+// would pin the previous session's text on screen.
 func (d *KeyDiagnosticsDialog) Show() {
 	d.lines = nil
 	d.dirty = false
@@ -207,16 +199,16 @@ func (d *KeyDiagnosticsDialog) Draw(s tcell.Screen) {
 	d.DrawButtons(s, keyDiagButtons, 1)
 }
 
-// copyAll selects the whole log and copies it, which is what the Copy button
-// is for: the keyboard route (Ctrl+A then Ctrl+C) records two more lines
-// before it completes, and on a narrow terminal the selection is fiddly.
+// copyAll selects the whole log and copies it, for the Copy button: the
+// keyboard route (Ctrl+A then Ctrl+C) records two more lines before it
+// completes, and on a narrow terminal the selection is fiddly.
 //
-// The selection is dropped again as soon as the text has been read.
-// syncIfDirty refuses to rebuild the editor while one stands, and a read-only
-// Editor ignores every plain rune key without clearing it — so a selection
-// left behind here freezes the log on exactly the keys this dialog exists to
-// decode, until the user happens to press an arrow. copySelection reads
-// SelectedText() synchronously, so clearing immediately after is safe.
+// The selection is dropped as soon as the text has been read. syncIfDirty
+// refuses to rebuild the editor while one stands, and a read-only Editor
+// ignores every plain rune key without clearing it, so a leftover selection
+// would freeze the log on the keys this dialog exists to decode until the user
+// pressed an arrow. copySelection reads SelectedText() synchronously, so
+// clearing right after is safe.
 func (d *KeyDiagnosticsDialog) copyAll() {
 	if d.editor == nil || len(d.lines) == 0 {
 		return
@@ -226,15 +218,14 @@ func (d *KeyDiagnosticsDialog) copyAll() {
 	d.editor.ClearSelection()
 }
 
-// HandleKey processes keyboard events. RecordKey (called from
-// app_events.go before this) has already logged ev by the time this runs,
-// so Escape/Enter closing the dialog shows up in the log too — as does the
-// Ctrl+C that copies from it, which App.handleKey consumes centrally before
-// any dialog sees it.
+// HandleKey processes keyboard events. RecordKey (called from app_events.go
+// first) has already logged ev, so Escape/Enter closing the dialog shows up in
+// the log too, as does the Ctrl+C that copies from it, which App.handleKey
+// consumes centrally before any dialog sees it.
 //
 // The read-only editor gets first refusal (arrows, Home/End, PgUp/PgDn,
 // Shift-selection, Ctrl+A); it rejects Escape and Enter in read-only mode,
-// which is what leaves those free to close the dialog.
+// which leaves those free to close the dialog.
 func (d *KeyDiagnosticsDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false

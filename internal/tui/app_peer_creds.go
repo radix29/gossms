@@ -10,34 +10,31 @@ import (
 // app_peer_creds.go holds App's answer to db.PeerCredentials: which saved
 // connection to reach a given instance with.
 //
-// Always On is the reason it matters. Everything the Object Explorer, the AG
-// dialogs and the endpoint wizard read off a second instance goes through
-// db.ServerConn.Peer, which without this reaches every one of them with the
-// login the user happened to register the tree with. A topology whose replicas
-// want different credentials — or listen on a different port — surfaced as a
-// connect error naming the instance, and on the follow-the-primary path as a
-// silent "(partial — primary X unreachable)".
+// Always On is why it matters. Everything the Object Explorer, the AG dialogs
+// and the endpoint wizard read off a second instance goes through
+// db.ServerConn.Peer, which without this uses the login the user registered the
+// tree with. A topology whose replicas want different credentials, or listen on
+// a different port, surfaced as a connect error naming the instance, and on the
+// follow-the-primary path as a silent "(partial - primary X unreachable)".
 //
-// The answer is the connections the user has already made: connect to a
-// replica once through File > Connect and every later peer read reaches it the
-// same way.
+// The answer is the connections the user has already made: connect to a replica
+// once through File > Connect and every later peer read reaches it the same way.
 
 // peerCredStore is how to reach each instance the user has connected to.
-// byInstance is keyed by config.InstanceKey; byShortHost is the same keyed by
-// short host name, consulted only when byInstance misses — see shortHostKey.
-// mu guards both for the same reason App.filterMu guards savedFilters:
-// background loader goroutines read them through Peer.
+// byInstance is keyed by config.InstanceKey; byShortHost by short host name,
+// consulted only when byInstance misses (see shortHostKey). mu guards both, as
+// App.filterMu guards savedFilters: background loaders read them through Peer.
 type peerCredStore struct {
 	mu          sync.Mutex
 	byInstance  map[string]config.Connection
 	byShortHost map[string]config.Connection
 }
 
-// peerCredentialsFor resolves an instance name to its own saved connection.
-// This is the db.PeerCredentials installed on every connection App opens.
+// peerCredentialsFor resolves an instance name to its own saved connection; the
+// db.PeerCredentials installed on every connection App opens.
 //
-// Read from background loader goroutines — the Object Explorer's Always On
-// loader is the main caller, through Peer — so the maps are behind peerCreds.mu.
+// Read from background loader goroutines (chiefly the Object Explorer's Always
+// On loader, through Peer), so the maps are behind peerCreds.mu.
 func (a *App) peerCredentialsFor(server string) (config.Connection, bool) {
 	key := config.InstanceKey(server)
 	a.peerCreds.mu.Lock()
@@ -50,16 +47,16 @@ func (a *App) peerCredentialsFor(server string) (config.Connection, bool) {
 }
 
 // rememberPeerCredentials records conn as the way to reach its instance,
-// replacing whatever was held for it. Called for each saved connection at
-// startup and again on every successful connect, so the most recent way the
-// user reached an instance is the one a peer read uses.
+// replacing what was held. Called for each saved connection at startup and on
+// every successful connect, so the most recent way the user reached an instance
+// is the one a peer read uses.
 func (a *App) rememberPeerCredentials(conn config.Connection) {
 	if conn.Server == "" {
 		return
 	}
-	// ConnectionAddress, not conn.Server: the Connect dialog saves a port in
-	// the separate Port field, and keyed without it "win10cli" and its
-	// SQL2017 instance on 55253 became one instance with the later login.
+	// ConnectionAddress, not conn.Server: the Connect dialog saves a port in the
+	// separate Port field, and keyed without it "win10cli" and its SQL2017 instance
+	// on 55253 became one instance with the later login.
 	key := config.InstanceKey(config.ConnectionAddress(conn))
 	a.peerCreds.mu.Lock()
 	defer a.peerCreds.mu.Unlock()
@@ -78,18 +75,16 @@ func (a *App) rememberPeerCredentials(conn config.Connection) {
 // shortHostKey is key with the host's domain suffix dropped, or "" when the
 // host has none.
 //
-// It exists because the two names for an instance rarely agree: the catalog
-// reports @@SERVERNAME, which is the short machine name, while what the user
-// types into Connect on a domain network is usually the FQDN. Keyed only by
-// the exact host, a saved "ubusql2.fritz.box" would never answer a peer read
-// for the "ubusql2" sys.availability_replicas reports, which is most of the
-// cases this whole resolver exists for.
+// The two names for an instance rarely agree: the catalog reports @@SERVERNAME
+// (the short machine name), while on a domain network the user usually types
+// the FQDN into Connect. Keyed only by exact host, a saved "ubusql2.fritz.box"
+// would never answer a peer read for the "ubusql2" sys.availability_replicas
+// reports, which is most of what this resolver exists for.
 //
-// Deliberately a separate, lower-priority tier rather than a collapsed key:
-// two instances really can be "sql.a.example" and "sql.b.example", and folding
-// them onto one key would hand one of them the other's login. As a fallback
-// consulted only when the exact host misses, the worst case is the connect
-// error a miss gives anyway.
+// A separate, lower-priority tier rather than a collapsed key: two instances
+// really can be "sql.a.example" and "sql.b.example", and folding them onto one
+// key would hand one the other's login. As a fallback consulted only when the
+// exact host misses, the worst case is the connect error a miss gives anyway.
 //
 // The "\instance" or ",port" InstanceKey appended is kept: the alias drops the
 // domain, not what tells two instances on one host apart.
@@ -105,21 +100,20 @@ func shortHostKey(key string) string {
 	return short + suffix
 }
 
-// loadPeerCredentials seeds the map from the saved connections, in the order
-// they are stored — oldest first, so the most recently used entry for an
-// instance is the one left in the map. Same precedence config.MatchByServer
-// offers the Connect dialog.
+// loadPeerCredentials seeds the map from the saved connections in stored order
+// (oldest first, so the most recently used entry for an instance is the one
+// left). Same precedence config.MatchByServer offers the Connect dialog.
 //
 // An entry whose password could not be decrypted is not seeded. Unlike a
 // connection the user just made, nothing on disk has been proven to work, and
-// preferring one that is certain to fail over the parent connection's own
-// credentials makes an instance that was reachable unreachable. A replaced
-// config key blanks every saved password at once (config.Load), so this is a
-// whole-file state rather than a rare entry.
+// preferring one certain to fail over the parent connection's own credentials
+// makes a reachable instance unreachable. A replaced config key blanks every
+// saved password at once (config.Load), so this is a whole-file state, not a
+// rare entry.
 //
-// Nothing else is judged here — an entry that gets past this and still fails
-// is Peer's fallback to deal with, which is the general answer and does not
-// need this one to be exhaustive.
+// Nothing else is judged here: an entry that passes and still fails is Peer's
+// fallback to deal with, the general answer, which this need not make
+// exhaustive.
 func (a *App) loadPeerCredentials() {
 	if a.cfg == nil {
 		return

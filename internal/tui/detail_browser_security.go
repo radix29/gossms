@@ -80,12 +80,11 @@ func credentialKind(c *gosmo.Credential) string {
 // -- Cryptographic providers -------------------------------------------------------
 
 // cryptographicProvidersFolderDetail lists every registered EKM provider. A
-// server with none is the ordinary case and yields an empty grid, not an
-// error.
+// server with none is ordinary and yields an empty grid, not an error.
 //
-// The folder declares no filter properties (explorer_filter.go), so there is
-// no filterObjects call here — adding one without adding the folder there
-// would filter the pane by a criterion the tree cannot express.
+// The folder declares no filter properties (explorer_filter.go), so there is no
+// filterObjects call here; adding one without adding the folder there would
+// filter the pane by a criterion the tree cannot express.
 func cryptographicProvidersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, _ *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	providers, err := sc.Server.CryptographicProviders(ctx)
 	if err != nil {
@@ -127,9 +126,9 @@ func cryptographicProviderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 
 // -- Audits ----------------------------------------------------------------------
 
-// auditsFolderDetail lists every server audit. As with credentials, the read
-// is independent of the tree's, so the folder's filter is applied here too,
-// over the gosmo objects before the rows are built.
+// auditsFolderDetail lists every server audit. As with credentials, the read is
+// independent of the tree's, so the folder's filter is applied over the gosmo
+// objects before the rows are built.
 func auditsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	audits, err := sc.Server.ServerAudits(ctx)
 	if err != nil {
@@ -365,9 +364,8 @@ func auditNameText(spec *gosmo.ServerAuditSpecification) string {
 // -- Database scoped credentials ---------------------------------------------------
 
 // databaseScopedCredentialsFolderDetail lists one database's own credentials.
-// As everywhere in this file, the read is independent of the tree's, so the
-// folder's filter is applied here too, over the gosmo objects before the rows
-// are built.
+// The read is independent of the tree's, so the folder's filter is applied over
+// the gosmo objects before the rows are built.
 func databaseScopedCredentialsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
@@ -560,12 +558,12 @@ func asymmetricKeyProviderText(k *gosmo.AsymmetricKey) string {
 
 // symmetricKeysFolderDetail lists one database's symmetric keys, under a first
 // row that says whether the database has a master key. The master key gets no
-// node of its own (a later item), yet it is what every certificate- or
-// asymmetric-key-protected symmetric key rests on, and whether the New
-// dialogs will ask for its password — so its presence is shown here, where
-// the keys it protects are listed. The row is not an object: its rowObjs
-// entry is the zero nodeData, which no object operation claims, so selecting
-// it offers nothing rather than something that acts on the wrong row.
+// node of its own, yet every certificate- or asymmetric-key-protected symmetric
+// key rests on it and it decides whether the New dialogs ask for its password,
+// so its presence is shown where the keys it protects are listed. The row is
+// not an object: its rowObjs entry is the zero nodeData, which no object
+// operation claims, so selecting it offers nothing rather than acting on the
+// wrong row.
 func symmetricKeysFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {

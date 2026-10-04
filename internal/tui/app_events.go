@@ -133,13 +133,13 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		}
 		return false
 	case tcell.KeyTab:
-		// tcell has no KeyCtrlTab: Ctrl(+Shift)+Tab arrive as KeyTab with
-		// ModCtrl (and ModShift) on modern-protocol terminals. Elsewhere,
-		// including emulators that reserve Ctrl+Tab, they look like plain Tab;
-		// Ctrl+Shift+Right/Left and Ctrl+0..9 are the reliable alternatives.
+		// tcell has no KeyCtrlTab: Ctrl(+Shift)+Tab arrive as KeyTab with ModCtrl (and
+		// ModShift) on modern-protocol terminals. Elsewhere, including emulators that
+		// reserve Ctrl+Tab, they look like plain Tab; Ctrl+Shift+Right/Left and
+		// Ctrl+0..9 are the reliable alternatives.
 		//
-		// Ctrl+Tab cycles focus forward through Object Explorer, the query
-		// editor and its results; Ctrl+Shift+Tab reverses.
+		// Ctrl+Tab cycles focus forward through Object Explorer, the query editor and
+		// its results; Ctrl+Shift+Tab reverses.
 		switch {
 		case ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0:
 			a.cycleFocusReverse()
@@ -241,9 +241,9 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	}
 
 	// An overlay that opened or closed mid-press must not get that button:
-	// ModalDialog.ButtonClicked and ContextMenu.HandleMouse treat the first
-	// Button1 they see as a fresh press, so a resend could activate a button on
-	// a dialog a menu action just opened. Releases still pass so latches reset.
+	// ModalDialog.ButtonClicked and ContextMenu.HandleMouse treat the first Button1
+	// they see as a fresh press, so a resend could activate a button on a dialog a
+	// menu action just opened. Releases still pass so latches reset.
 	if freshPress {
 		a.gestureOverlay = a.overlaySnapshot()
 	} else if ev.Buttons() == tcell.Button1 && a.overlaySnapshot() != a.gestureOverlay {
@@ -271,11 +271,10 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 
-	// Object Explorer → editor drag-and-drop: once drag.node is armed it takes
+	// Object Explorer -> editor drag-and-drop: once drag.node is armed it takes
 	// every event ahead of the menu row, status row and splitter, or a drag
-	// crossing them pops a menu or Status History. Every Button1 event is
-	// swallowed so the drag stays on its node. The drop happens on release, in
-	// routeRelease.
+	// crossing them pops a menu or Status History. Every Button1 event is swallowed
+	// so the drag stays on its node. The drop happens on release, in routeRelease.
 	if a.drag.node != nil {
 		if ev.Buttons() == tcell.Button1 {
 			// Swallow motion while a drop is pending.
@@ -290,11 +289,9 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	}
 
 	// From the arming press to its release, events belong to the region that
-	// claimed it, wherever the pointer goes.
-	//
-	// A mid-gesture wheel tick is swallowed rather than routed to whatever the
-	// pointer is over (wheeling while dragging the splitter would scroll the
-	// panels).
+	// claimed it, wherever the pointer goes. A mid-gesture wheel tick is swallowed
+	// rather than routed to whatever the pointer is over (wheeling while dragging
+	// the splitter would scroll the panels).
 	if a.gestureOwner != ownerNone {
 		if ev.Buttons() == tcell.Button1 {
 			a.routeGesture(ev)
@@ -336,10 +333,10 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 			a.focusExplorer()
 		}
 		a.explorer.HandleMouse(ev)
-		// Armed from what the press hit (NodeAt), only on a fresh press.
-		// Selected() may be a node never touched — a press on the scrollbar,
-		// border or blank space leaves the selection — and arming from it drags
-		// the wrong object and kills the scrollbar drag.
+		// Armed from what the press hit (NodeAt), only on a fresh press. Selected() may
+		// be a node never touched (a press on the scrollbar, border or blank space
+		// leaves the selection), and arming from it drags the wrong object and kills
+		// the scrollbar drag.
 		if freshPress {
 			if n := a.explorer.NodeAt(mx, my); n != nil && isDraggableNode(n.data.Type) {
 				a.drag.node, a.drag.active = n, false
@@ -374,11 +371,11 @@ const (
 // holder often isn't where the release would route.
 //
 // Dialogs open on the press, so they're on the stack when the release arrives.
-// Returning early there left MenuBar's and Toolbar's latches armed, making the
-// next click read as a resend (the first toolbar click after a dialog-opening
-// one did nothing; the first menu header click didn't open). Same for editor,
-// grid or tree latches when an alert pops mid-drag. It's ModalDialog's "a latch
-// must not survive into the next showing" rule one layer up.
+// Returning early there left MenuBar's and Toolbar's latches armed, so the next
+// click read as a resend (the first toolbar click after a dialog-opening one
+// did nothing; the first menu header click didn't open). Same for editor, grid
+// or tree latches when an alert pops mid-drag. It's ModalDialog's "a latch must
+// not survive into the next showing" rule one layer up.
 //
 // So the top overlay gets the release first, then every latch owner regardless.
 // Off-bounds, each only resets: MenuBar/Toolbar clear their flag off-row;
@@ -386,14 +383,13 @@ const (
 // and acts only on Button1/Button2; PanelManager forwards any release to the
 // active panel.
 func (a *App) routeRelease(ev *tcell.EventMouse) {
-	// Every open dialog gets the release, bottom to top, not only the front
-	// one. A dialog's button latch (dialogs.ModalDialog.mouseDragging) is
-	// cleared by the release its own HandleMouse sees, and a dialog that
-	// opened a nested one from a button press never sees it while the child is
-	// up — so its next press was refused as a continuation of the click that
-	// opened the child, and the Connect dialog ignored the first click after a
-	// Delete confirmation. Acting on a release needs Button1, so the dialogs
-	// underneath only reset latches.
+	// Every open dialog gets the release, bottom to top, not only the front one. A
+	// dialog's button latch (dialogs.ModalDialog.mouseDragging) is cleared by the
+	// release its own HandleMouse sees, and a dialog that opened a nested one from
+	// a button press never sees it while the child is up, so its next press was
+	// refused as a continuation of the click that opened the child (the Connect
+	// dialog ignored the first click after a Delete confirmation). Acting on a
+	// release needs Button1, so the dialogs underneath only reset latches.
 	if len(a.dialogStack) > 0 {
 		for _, d := range a.dialogStack {
 			d.HandleMouse(ev)
@@ -402,9 +398,9 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 		a.contextMenu.HandleMouse(ev)
 	}
 
-	// Complete a pending Object Explorer drop only if the drag started (moved
-	// past dragThreshold) and nothing modal opened mid-drag. drag.node is
-	// disarmed either way; armed, it swallows all later mouse events.
+	// Complete a pending Object Explorer drop only if the drag started (moved past
+	// dragThreshold) and nothing modal opened mid-drag. drag.node is disarmed
+	// either way; armed, it swallows all later mouse events.
 	if a.drag.node != nil {
 		if a.drag.active && a.topDialog() == nil {
 			mx, my := ev.Position()

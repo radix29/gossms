@@ -17,11 +17,10 @@ type graphState struct {
 	scrollY    int
 	detailOpen bool
 
-	// sbDraggingX/sbDraggingY are true while the user is dragging the
-	// canvas's horizontal/vertical scrollbar thumb, respectively — see
-	// controls.DataGrid's sbDragging field for the rationale; two separate
-	// latches since the canvas can show either bar independently of the
-	// other.
+	// sbDraggingX/sbDraggingY are true while the user drags the canvas's
+	// horizontal/vertical scrollbar thumb (see controls.DataGrid's sbDragging for
+	// the rationale); two latches since the canvas can show either bar
+	// independently.
 	sbDraggingX bool
 	sbDraggingY bool
 }
@@ -186,10 +185,10 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	}
 	core.DrawTextClipped(s, inner.X, inner.Y+2, inner.W, textStyle, metrics)
 
-	// Corner badge: at most one of error/warning, same priority as the
-	// border color switch above. Right-aligned by the glyph's own display
-	// width (not a fixed 1-column offset) since ❌ is double-width and ⚠
-	// isn't — a fixed offset would push ❌ into the border column.
+	// Corner badge: at most one of error/warning, same priority as the border color
+	// switch above. Right-aligned by the glyph's own display width (not a fixed
+	// 1-column offset) since the error glyph is double-width and the warning isn't;
+	// a fixed offset would push it into the border column.
 	var badge string
 	var badgeStyle tcell.Style
 	switch {
@@ -205,11 +204,10 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	}
 }
 
-// putClipped, hlineClipped, and vlineClipped draw single-width
-// box-drawing cells, silently discarding anything outside viewport —
-// the graph canvas scrolls a virtual plane larger than its own rect, so
-// every edge segment needs manual clipping (core's DrawHLine/DrawVLine
-// don't clip; they always write exactly where told).
+// putClipped, hlineClipped, and vlineClipped draw single-width box-drawing
+// cells, discarding anything outside viewport: the graph canvas scrolls a
+// virtual plane larger than its own rect, so every edge segment needs manual
+// clipping (core's DrawHLine/DrawVLine write exactly where told).
 func putClipped(s tcell.Screen, viewport core.Rect, x, y int, ch rune, style tcell.Style) {
 	if x < viewport.X || x >= viewport.Right() || y < viewport.Y || y >= viewport.Bottom() {
 		return
@@ -421,10 +419,9 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	}
 	if v.graphSt.detailOpen {
 		if ev.Buttons() == tcell.ButtonNone {
-			// The splitter needs its own drag-release event to clear
-			// sp.dragging, the same reason handleTreeTabMouse forwards
-			// ButtonNone to treeSplit unconditionally rather than
-			// position-gating it.
+			// The splitter needs its own drag-release event to clear sp.dragging, the
+			// reason handleTreeTabMouse forwards ButtonNone to treeSplit unconditionally
+			// rather than position-gating it.
 			if v.graphSplit.HandleMouse(ev) {
 				v.layoutGraphTab()
 				return true
@@ -453,11 +450,9 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
-		// Shift+wheel is the common desktop convention for horizontal
-		// scroll; some terminals report it as WheelUp/WheelDown with a
-		// Shift modifier rather than as WheelLeft/WheelRight below, so
-		// honour both — matches DataGrid's and Editor's identical
-		// convention.
+		// Shift+wheel is the common desktop convention for horizontal scroll; some
+		// terminals report it as WheelUp/WheelDown with a Shift modifier rather than
+		// WheelLeft/WheelRight below, so honour both (as DataGrid and Editor do).
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			v.graphSt.scrollX = max(0, v.graphSt.scrollX-4)
 		} else {
@@ -479,10 +474,9 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		return true
 	case tcell.Button1:
 		r := v.graphCanvasRect
-		// Scrollbar drag/click takes priority over tile selection below:
-		// the bars are drawn over the canvas's own bottom row/right column
-		// (see drawGraphCanvas), so without this a click on one would be
-		// read as a click on whatever tile sits underneath.
+		// Scrollbar drag/click takes priority over tile selection below: the bars are
+		// drawn over the canvas's own bottom row/right column (see drawGraphCanvas), so
+		// a click on one would otherwise read as a click on the tile underneath.
 		if core.HandleScrollbarDragH(ev, r.X, r.Bottom()-1, r.W, v.graphSt.layout.canvasW, &v.graphSt.sbDraggingX, &v.graphSt.scrollX) {
 			return true
 		}

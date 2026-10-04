@@ -7,11 +7,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
 
-// app_show_properties.go is one entry point per Properties dialog and per New
-// dialog, each taking the connection and the names its page needs. They are
-// gathered here because every caller — the tree's menus, the Details pane, the
-// menu bar — reaches them the same way, and the dialogs themselves live one per
-// file beside prop_dialog.go.
+// app_show_properties.go holds one entry point per Properties and New dialog,
+// each taking the connection and the names its page needs. Gathered here
+// because every caller (tree menus, Details pane, menu bar) reaches them the
+// same way; the dialogs live one per file beside prop_dialog.go.
 
 func (a *App) refreshSelected() { a.explorer.RefreshSelected() }
 
@@ -21,17 +20,15 @@ func (a *App) showServerProperties() {
 	}
 }
 
-// showServerPropertiesFor opens Server Properties for a known connection —
-// the shared entry point for the Tools menu and the Object Explorer context
-// menu.
+// showServerPropertiesFor opens Server Properties for a known connection, for
+// the Tools menu and the Object Explorer context menu.
 func (a *App) showServerPropertiesFor(sc *db.ServerConn) {
 	a.propDialog.show(sc, "", "Server Properties", "Instance: "+sc.Opts.Server, "Connected: yes",
 		func() []propPage { return serverPropPages(sc) })
 }
 
-// showNewDatabaseDialog opens New Database for a known connection — the
-// Object Explorer context menu on both the server node and the "Databases"
-// folder.
+// showNewDatabaseDialog opens New Database for a known connection, from the
+// server node and the "Databases" folder.
 func (a *App) showNewDatabaseDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
@@ -39,9 +36,9 @@ func (a *App) showNewDatabaseDialog(sc *db.ServerConn) {
 	a.newDatabaseDialog.show(sc)
 }
 
-// showDatabaseProperties runs Tools > Database Properties on whichever
-// database the selected Object Explorer node belongs to — nodeData.DBName is
-// propagated to every node under a database.
+// showDatabaseProperties runs Tools > Database Properties on the database the
+// selected Object Explorer node belongs to (nodeData.DBName is propagated to
+// every node under a database).
 func (a *App) showDatabaseProperties() {
 	node := a.explorer.Selected()
 	if node == nil || node.data.DBName == "" {
@@ -52,8 +49,7 @@ func (a *App) showDatabaseProperties() {
 }
 
 // showDatabasePropertiesFor opens Database Properties for a known connection
-// and database — the shared entry point for the Tools menu and the Object
-// Explorer context menu.
+// and database, for the Tools menu and the Object Explorer context menu.
 func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
 	a.propDialog.show(sc, dbName, "Database Properties", "Database: "+dbName, "Server: "+sc.Opts.Server,
 		func() []propPage { return databasePropPages(sc, dbName) })
@@ -68,13 +64,12 @@ func (a *App) showAGPropertiesFor(sc *db.ServerConn, agName string) {
 		func() []propPage { return agPropPages(sc, agName) })
 }
 
-// showAGDashboardFor opens the Always On dashboard — the context menu's "Show
-// Dashboard", on a group or, with an empty agName, on the Always On root for
-// every group at once.
+// showAGDashboardFor opens the Always On dashboard ("Show Dashboard"), on a
+// group or, with an empty agName, on the Always On root for every group.
 //
 // One panel per (connection, group): reopening raises the existing one rather
 // than starting a second poller against the same primary. The all-groups view
-// is one more such key, so it coexists with any number of per-group panels.
+// is one more such key.
 func (a *App) showAGDashboardFor(sc *db.ServerConn, agName string) {
 	if !a.requireConn(sc) {
 		return
@@ -90,8 +85,8 @@ func (a *App) showAGDashboardFor(sc *db.ServerConn, agName string) {
 	a.focusPanels()
 }
 
-// showNewLoginDialog opens New Login for a known connection — the Object
-// Explorer context menu on Security > Logins.
+// showNewLoginDialog opens New Login for a known connection, from Security >
+// Logins.
 func (a *App) showNewLoginDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
@@ -99,9 +94,8 @@ func (a *App) showNewLoginDialog(sc *db.ServerConn) {
 	a.newLoginDialog.show(sc)
 }
 
-// showBackupDialog opens Back Up Database for a known connection — the Object
-// Explorer context menu on a database node or the "Databases" folder
-// (dbName "").
+// showBackupDialog opens Back Up Database for a known connection, from a
+// database node or the "Databases" folder (dbName "").
 func (a *App) showBackupDialog(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
@@ -109,9 +103,8 @@ func (a *App) showBackupDialog(sc *db.ServerConn, dbName string) {
 	a.backupDialog.show(sc, dbName)
 }
 
-// showRestoreDialog opens Restore Database for a known connection — the Object
-// Explorer context menu on a database node or the "Databases" folder
-// (dbName "").
+// showRestoreDialog opens Restore Database for a known connection, from a
+// database node or the "Databases" folder (dbName "").
 func (a *App) showRestoreDialog(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
@@ -119,10 +112,10 @@ func (a *App) showRestoreDialog(sc *db.ServerConn, dbName string) {
 	a.restoreDialog.show(sc, dbName)
 }
 
-// showBackupHistoryFor opens a new query window scoped to msdb, where the backup
-// catalog lives whichever database the menu was opened from, pre-filled with
-// backupHistoryQuery(dbName) and run immediately — the context menu's "View
-// Backup History...", database node only.
+// showBackupHistoryFor opens a new query window scoped to msdb (where the
+// backup catalog lives, whichever database the menu was opened from),
+// pre-filled with backupHistoryQuery(dbName) and run immediately. Database
+// node only.
 func (a *App) showBackupHistoryFor(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
@@ -166,11 +159,10 @@ func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, tab
 
 // showKeyPropertiesFor opens Primary/Unique Key Properties for a known
 // connection, database, and schema-qualified table/key. isPrimaryKey picks the
-// dialog title and comes off the tree node's nodeData, which loadKeysChildren
-// already knows.
+// dialog title and comes from the tree node's nodeData.
 func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key string, isPrimaryKey bool) {
 	title := keyTypeName(isPrimaryKey) + " Properties"
-	// A key is listed twice — under Keys, and its backing index under Indexes.
+	// A key is listed twice: under Keys, and its backing index under Indexes.
 	a.propDialog.showReloading(sc, dbName, title, "Key: "+key, "Table: "+fqn(schema, table),
 		func() []propPage { return keyPropPages(a.propDialog, sc, dbName, schema, table, key) },
 		func(d nodeData) bool {
@@ -187,8 +179,7 @@ func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) 
 }
 
 // showServerRolePropertiesFor opens Server Role Properties for a known
-// connection and role name — a server-level principal with no dbName, like
-// showLoginProperties.
+// connection and role name (server-level, no dbName, like showLoginProperties).
 func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
 	a.propDialog.show(sc, "", "Server Role Properties", "Role: "+roleName, "Server: "+sc.Opts.Server,
 		func() []propPage { return serverRolePropPages(sc, roleName) })
@@ -363,12 +354,11 @@ func (a *App) showColumnEncryptionKeyPropertiesFor(sc *db.ServerConn, dbName, na
 }
 
 // The Phase 3 tree families' Properties, all read-only bar the plan guide's
-// General page — see type_props.go, assembly_props.go, rule_default_props.go,
-// plan_guide_props.go and external_resource_props.go for why each is.
+// General page; see type_props.go, assembly_props.go, rule_default_props.go,
+// plan_guide_props.go and external_resource_props.go.
 //
-// System Data Types has no entry here on purpose: SSMS offers no Properties on
-// a built-in type either, and there is nothing to say about `int` that its
-// name does not.
+// System Data Types has no entry on purpose: SSMS offers no Properties on a
+// built-in type either.
 
 // showUserDefinedDataTypePropertiesFor opens the read-only Properties for an
 // alias type.
@@ -414,17 +404,17 @@ func (a *App) showRulePropertiesFor(sc *db.ServerConn, dbName, schema, name stri
 }
 
 // showDefaultPropertiesFor opens the read-only Properties for a standalone
-// default — never a table's DF_… constraint, which is a different family
-// under the same sys.objects type code.
+// default, never a table's DF_... constraint (a different family under the same
+// sys.objects type code).
 func (a *App) showDefaultPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
 	a.propDialog.show(sc, dbName, "Default Properties", "Default: "+fqn(schema, name), "Database: "+dbName,
 		func() []propPage { return defaultPropPages(sc, dbName, schema, name) })
 }
 
 // showDatabaseSnapshotPropertiesFor opens the read-only Properties for a
-// database snapshot. Not the Database Properties dialog: a snapshot is
-// read-only by construction, with no recovery model, no files to add and no
-// options to set — see database_snapshot_props.go.
+// database snapshot, not Database Properties: a snapshot is read-only by
+// construction (no recovery model, no files to add, no options); see
+// database_snapshot_props.go.
 func (a *App) showDatabaseSnapshotPropertiesFor(sc *db.ServerConn, name string) {
 	a.propDialog.show(sc, name, "Database Snapshot Properties", "Snapshot: "+name, "",
 		func() []propPage { return databaseSnapshotPropPages(sc, name) })
@@ -439,8 +429,8 @@ func (a *App) showPlanGuidePropertiesFor(sc *db.ServerConn, dbName, name, scopeS
 }
 
 // The Service Broker families' Properties. Five are read-only for the reason
-// each props file argues; Queue and Route can write — see queue_props.go and
-// route_props.go.
+// each props file argues; Queue and Route can write (queue_props.go,
+// route_props.go).
 
 // showMessageTypePropertiesFor opens the read-only Properties for a message
 // type.
@@ -544,7 +534,7 @@ func (a *App) showExternalLibraryPropertiesFor(sc *db.ServerConn, dbName, name s
 }
 
 // canSaveActivePanel gates File > Save / Save As...: a query panel saves its
-// script, a plan panel its .sqlplan, and nothing else has anything to write.
+// script, a plan panel its .sqlplan; nothing else has anything to write.
 func (a *App) canSaveActivePanel() bool {
 	if a.activeQueryPanel() != nil {
 		return true

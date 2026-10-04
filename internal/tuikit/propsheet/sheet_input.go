@@ -28,16 +28,16 @@ func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 		p.Refresh(p.current)
 		return true
 	}
-	// Ctrl+Z reverts the page to what it loaded with — the only way a user
-	// reaches Form.Revert and the RevertFn closures behind it. Handled here
-	// rather than in zoneForm so it works from the page list and button row
-	// too, and ahead of the focused row for the same reason F5 is:
-	// widgets.InputField takes Ctrl+A and Ctrl+U but not Ctrl+Z.
+	// Ctrl+Z reverts the page to what it loaded with: the only way a user reaches
+	// Form.Revert and the RevertFn closures behind it. Handled here rather than in
+	// zoneForm so it works from the page list and button row too, and ahead of the
+	// focused row as F5 is: widgets.InputField takes Ctrl+A and Ctrl+U but not
+	// Ctrl+Z.
 	//
 	// The focused row still gets first refusal, because EditorRow's
 	// controls.Editor is the one row widget with a Ctrl+Z of its own: without
 	// this, an undo inside a job step's T-SQL box reverted the whole page and
-	// took every other row's edits with it. A read-only editor refuses the key
+	// every other row's edits. A read-only editor refuses the key
 	// (readOnlySafeKey), so a non-T-SQL step still reverts.
 	if ev.Key() == tcell.KeyCtrlZ {
 		if p.zone == zoneForm && p.focusedRowHandles(ev) {
@@ -109,12 +109,11 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	if !p.Visible() {
 		return false
 	}
-	// A release that lands outside the dialog is consumed by
-	// ConsumeOutsideClick below before the current page's Form (and any
-	// mouseDragging-latched Button/CheckBox row it hosts) or the page list
-	// (its own mouseDragging latch) ever sees it, leaving the latch set and
-	// swallowing the next press. Reset both here first; HandleMouse returns
-	// false on ButtonNone so this has no other effect.
+	// A release landing outside the dialog is consumed by ConsumeOutsideClick
+	// below before the current page's Form (and any mouseDragging-latched
+	// Button/CheckBox row it hosts) or the page list (its own latch) sees it,
+	// leaving the latch set and swallowing the next press. Reset both here first;
+	// HandleMouse returns false on ButtonNone so this has no other effect.
 	if ev.Buttons() == tcell.ButtonNone {
 		if f := p.PageForm(p.current); f != nil {
 			f.HandleMouse(ev)
@@ -122,19 +121,19 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 		p.pageList.HandleMouse(ev)
 		p.dragZone = zoneNone
 	}
-	// Everything from the press that armed dragZone through to its release
-	// belongs to the zone that claimed it, wherever the pointer has drifted
-	// to since — including outside the dialog, which is why this outranks
-	// ConsumeOutsideClick. See the field's doc comment.
+	// Everything from the press that armed dragZone through its release belongs to
+	// the zone that claimed it, wherever the pointer has drifted, including
+	// outside the dialog, which is why this outranks ConsumeOutsideClick. See the
+	// field's doc comment.
 	//
-	// A wheel tick arriving mid-gesture is swallowed rather than routed: it
-	// isn't part of the gesture, and letting it fall through hands it to the
-	// positional routing below, which both scrolls whatever the pointer has
-	// drifted over and calls setZone — so wheeling while dragging the form's
-	// scrollbar moved the focus zone out from under the drag. Same rule as
-	// App.handleMouse's gestureOwner (internal/tui/app_events.go); App can't
-	// cover this one, since it dispatches the top dialog before its own
-	// gesture check and never arms a gesture for a dialog click.
+	// A wheel tick arriving mid-gesture is swallowed rather than routed: it isn't
+	// part of the gesture, and falling through to the positional routing below
+	// would scroll whatever the pointer drifted over and call setZone, so wheeling
+	// while dragging the form's scrollbar moved the focus zone out from under the
+	// drag. Same rule as App.handleMouse's gestureOwner
+	// (internal/tui/app_events.go); App can't cover this one, since it dispatches
+	// the top dialog before its own gesture check and never arms a gesture for a
+	// dialog click.
 	if p.dragZone != zoneNone {
 		if ev.Buttons() == tcell.Button1 {
 			p.routeDrag(ev)

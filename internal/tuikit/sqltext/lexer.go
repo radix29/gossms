@@ -17,8 +17,8 @@ const (
 	ModeQuoted            // inside a "quoted" identifier
 )
 
-// State is what the lexer carries from one token to the next: its Mode and,
-// in a block comment, how deeply nested it is. T-SQL nests block comments, so
+// State is what the lexer carries from one token to the next: its Mode and, in
+// a block comment, its nesting depth. T-SQL nests block comments, so
 // "/* /* */ GO */" is one comment and its GO no separator. The zero value is
 // the state a script starts in.
 type State struct {
@@ -27,9 +27,9 @@ type State struct {
 }
 
 // NextLine is the state the line after one ending in s starts in: a line
-// comment ends with its line, and everything else carries over. A caller lexing
-// line by line passes the line's own length as the limit, which leaves an
-// unterminated line comment in ModeLineComment; this is the step that closes it.
+// comment ends with its line, everything else carries over. A caller lexing
+// line by line passes the line's length as the limit, which leaves an
+// unterminated line comment in ModeLineComment; this step closes it.
 func (s State) NextLine() State {
 	if s.Mode == ModeLineComment {
 		return State{}
@@ -43,15 +43,15 @@ type Kind uint8
 const (
 	// KindEnd means Next reached its limit without finding a token.
 	KindEnd Kind = iota
-	// KindNewline is a '\n' reached in ModeNormal: the next rune begins a
-	// line in normal state, the only place a "GO" separator can stand. A
-	// newline inside a literal or a block comment is part of that token.
+	// KindNewline is a '\n' reached in ModeNormal: the next rune begins a line in
+	// normal state, the only place a "GO" separator can stand. A newline inside a
+	// literal or block comment is part of that token.
 	KindNewline
-	// KindWord is a keyword or a bare name: a run of word runes not starting
-	// with a digit, or one or two of the same sigil ('#' for a temp table, '@'
-	// for a variable or @@global) followed by any word runes. The sigil alone
-	// is a word too: it is what the cursor sits on at the first keystroke of
-	// "#t". "#@x" is no name, so it lexes as "#" and "@x".
+	// KindWord is a keyword or a bare name: a run of word runes not starting with a
+	// digit, or one or two of the same sigil ('#' temp table, '@' variable or
+	// @@global) followed by word runes. The sigil alone is a word too: it is what
+	// the cursor sits on at the first keystroke of "#t". "#@x" is no name, so it
+	// lexes as "#" and "@x".
 	KindWord
 	// KindNumber starts with a digit and runs on through word runes and '.':
 	// 42, 1.5, 0x1F, 1e5.
@@ -71,10 +71,9 @@ const (
 // Token is one lexeme: buf[Start:End].
 //
 // A token Next began in ModeNormal starts at its opening delimiter. One it
-// resumed — a literal, identifier or comment the previous call left open —
-// starts where that call stopped. Either way, a token that reaches the limit
-// unclosed leaves the returned State in its mode, and Next continues it from
-// there.
+// resumed (a literal, identifier or comment the previous call left open) starts
+// where that call stopped. Either way, a token reaching the limit unclosed
+// leaves the returned State in its mode, and Next continues it from there.
 type Token struct {
 	Kind       Kind
 	Start, End int
@@ -82,21 +81,21 @@ type Token struct {
 
 // Next lexes the token at or after buf[i], reading nothing at or past limit,
 // and returns it with the state after it. In ModeNormal it first skips white
-// space other than '\n'. It returns KindEnd, at limit, when only white space
-// is left, and leaves st as it is when i is already at limit.
+// space other than '\n'. It returns KindEnd, at limit, when only white space is
+// left, and leaves st as it is when i is already at limit.
 //
 // This is the one T-SQL lexer: SplitBatches, the editor's statement select
 // (StatementAt), its syntax highlighter and IntelliSense's scanner
 // (internal/tui/sqlparse) all walk text with it, so a ';', a "GO" line or a
-// keyword inside a comment, a literal or a quoted identifier means the same
-// to all four. Before it they were four hand-synced state machines, and they
-// drifted: the highlighter coloured keywords inside [brackets], and a "/*"
-// inside one commented out the rest of the document.
+// keyword inside a comment, literal or quoted identifier means the same to all
+// four. They used to be four hand-synced state machines that drifted: the
+// highlighter coloured keywords inside [brackets], and a "/*" inside one
+// commented out the rest of the document.
 //
-// A caller may lex a flat buffer, newlines included, or one line at a time
-// with the State carried across and State.NextLine applied at each line end.
-// The two agree: no two-rune delimiter — "--", "/*", "*/", or a doubled
-// quote or bracket — can span a '\n'.
+// A caller may lex a flat buffer, newlines included, or one line at a time with
+// the State carried across and State.NextLine applied at each line end. The two
+// agree: no two-rune delimiter ("--", "/*", "*/", a doubled quote or bracket)
+// can span a '\n'.
 func Next(buf []rune, i, limit int, st State) (Token, State) {
 	if i >= limit {
 		return Token{KindEnd, limit, limit}, st
@@ -153,10 +152,9 @@ func Next(buf []rune, i, limit int, st State) (Token, State) {
 	return Token{KindEnd, limit, limit}, State{}
 }
 
-// LineEnd returns the state the line after line starts in, given the state
-// line starts in: Next over the whole line, then State.NextLine. It is the
-// per-line step of every line-by-line scan, and the one the highlighter's
-// cache replays.
+// LineEnd returns the state the line after line starts in, given the state line
+// starts in: Next over the whole line, then State.NextLine. The per-line step
+// of every line-by-line scan, and the one the highlighter's cache replays.
 func LineEnd(line []rune, st State) State {
 	for i := 0; ; {
 		var t Token
@@ -178,21 +176,20 @@ func IsWordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-// IsWordContinue reports whether r can continue a T-SQL word once it has
-// started: IsWordRune, or '$', '#' or '@' — a regular identifier's later
-// characters, so Price$, t#1 and a@b are each one name (gosmo's
-// QuoteNameIfNeeded leaves them bare, and completion inserts them so). Only
-// continuation: a leading '$' stays punctuation, so $5.00 is money and
-// $action a pseudo-column, and a leading '#'/'@' is the sigil Next lexes
-// itself.
+// IsWordContinue reports whether r can continue a T-SQL word once started:
+// IsWordRune, or '$', '#' or '@' (a regular identifier's later characters, so
+// Price$, t#1 and a@b are each one name; gosmo's QuoteNameIfNeeded leaves them
+// bare, and completion inserts them so). Only continuation: a leading '$'
+// stays punctuation, so $5.00 is money and $action a pseudo-column, and a
+// leading '#'/'@' is the sigil Next lexes itself.
 func IsWordContinue(r rune) bool {
 	return IsWordRune(r) || r == '$' || r == '#' || r == '@'
 }
 
-// WordStart returns where the word ending at end in line starts, scanning
-// back over IsWordContinue runes and then forward past any that cannot start
-// one — so the start is never a '$', and a '#'/'@' sigil sits just before it
-// rather than in it. It is end when no word ends there.
+// WordStart returns where the word ending at end in line starts, scanning back
+// over IsWordContinue runes then forward past any that cannot start one, so the
+// start is never a '$' and a '#'/'@' sigil sits just before it rather than in
+// it. It is end when no word ends there.
 func WordStart(line []rune, end int) int {
 	start := end
 	for start > 0 && IsWordContinue(line[start-1]) {

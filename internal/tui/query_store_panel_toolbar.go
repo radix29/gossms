@@ -14,8 +14,8 @@ import (
 // says, when it is disabled and why, and the menu each selector pops. The
 // panel itself is in query_store_panel.go.
 
-// Selector-row cell indexes, in buildTools' layout order. Cells are addressed
-// by index: popMenu anchors a selector's list under its own cell, and HandleKey
+// Selector-row cell indexes, in buildTools' layout order. Cells are addressed by
+// index: popMenu anchors a selector's list under its own cell, and HandleKey
 // runs the Refresh cell's action for F5.
 const (
 	qsToolReport = iota
@@ -26,10 +26,10 @@ const (
 	qsToolRefresh
 )
 
-// Action-row cell indexes. The two filters lead it rather than sitting with
-// the other selectors: the selector row is already 130 columns wide with a
-// long report title, and a cell that does not fit is not drawn at all — which
-// took Refresh off the toolbar of every pane narrower than 150.
+// Action-row cell indexes. The two filters lead it rather than sitting with the
+// other selectors: the selector row is already 130 columns wide with a long
+// report title, and a cell that does not fit is not drawn, which took Refresh
+// off the toolbar of every pane narrower than 150.
 const (
 	qsActMinExec = iota
 	qsActRegression
@@ -78,16 +78,14 @@ func (p *QueryStorePanel) refreshToolLabels() {
 	p.acts[qsActMinExec].label = "Min execs: " + qsMinExecLabel(p.minExecIdx) + " ▾"
 	p.acts[qsActRegression].label = "Regression: " + qsRegressionLabel(p.regressIdx) + " ▾"
 	// The action row's one stateful label. Refreshed on every draw with the
-	// selectors, because it follows the report grid's cursor rather than a
-	// click: a button reading "Track Query" over an already-tracked query would
-	// untrack it on the press.
+	// selectors because it follows the report grid's cursor rather than a click: a
+	// button reading "Track Query" over an already-tracked query would untrack it.
 	p.acts[qsActTrack].label = "Track Query"
 	if p.isTracked(p.selectedQueryID()) {
 		p.acts[qsActTrack].label = "Untrack Query"
 	}
-	// Script scripts whichever of Force/Unforce applies to the selected plan,
-	// so the label says which rather than leaving it to be discovered in the
-	// panel it opens. Same reason Track Query's label follows the cursor.
+	// Script scripts whichever of Force/Unforce applies to the selected plan, so
+	// the label says which. Same reason as Track Query's label.
 	p.acts[qsActScript].label = "Script"
 	if plan := p.selectedPlan(); plan != nil {
 		if plan.IsForced {
@@ -96,9 +94,9 @@ func (p *QueryStorePanel) refreshToolLabels() {
 			p.acts[qsActScript].label = "Script Force"
 		}
 	}
-	// The chart mode toggle says what the press does, not what is on screen:
-	// a button reading "Plot History" while the history is already plotted
-	// would put the ranking back.
+	// The chart mode toggle says what the press does, not what is on screen: a
+	// button reading "Plot History" while the history is plotted would put the
+	// ranking back.
 	p.acts[qsActPlot].label = "Plot History"
 	if p.seriesMode {
 		p.acts[qsActPlot].label = "Plot Report"
@@ -111,8 +109,8 @@ func (p *QueryStorePanel) refreshToolLabels() {
 }
 
 // qsMinExecLabel and qsRegressionLabel name one entry of each filter's table.
-// Index 0 reads "off" rather than "0", which in a selector labelled with a
-// count would read as a floor that admits nothing.
+// Index 0 reads "off" rather than "0", which in a count-labelled selector would
+// read as a floor that admits nothing.
 func qsMinExecLabel(i int) string {
 	if qsMinExecCounts[i] <= 0 {
 		return "off"
@@ -127,10 +125,9 @@ func qsRegressionLabel(i int) string {
 	return fmt.Sprintf("≥%g%%", qsRegressionPcts[i])
 }
 
-// selDisabled reports whether selector cell i is inert right now. The whole
-// row is while a read or a write is in flight; Metric and Top are also inert on
-// a report whose query they do not reach, the same way the two filters on the
-// action row are.
+// selDisabled reports whether selector cell i is inert now. The whole row is
+// while a read or write is in flight; Metric and Top are also inert on a report
+// whose query they do not reach, as the two action-row filters are.
 func (p *QueryStorePanel) selDisabled(i int) bool {
 	if p.busy {
 		return true
@@ -145,8 +142,8 @@ func (p *QueryStorePanel) selDisabled(i int) bool {
 }
 
 // selReason is what to tell the user who clicks a dimmed selector. A disabled
-// cell swallows its click, and swallowing it silently is the thing the
-// context-gating rule exists to prevent.
+// cell swallows its click, and swallowing it silently is what the context-gating
+// rule exists to prevent.
 func (p *QueryStorePanel) selReason(i int) string {
 	switch {
 	case p.busy:
@@ -162,34 +159,34 @@ func (p *QueryStorePanel) selReason(i int) string {
 	return ""
 }
 
-// actDisabled reports whether action cell i is inert: the panel is busy, or
-// the action has no plan to act on, or the login may not force one.
+// actDisabled reports whether action cell i is inert: the panel is busy, the
+// action has no plan to act on, or the login may not force one.
 //
 // Asked on demand rather than latched into toolButton.disabled: the toolbar is
 // built in NewQueryStorePanel, before the capability probe has necessarily run.
-// Same reasoning as LogViewer.recycleDenied.
+// Same as LogViewer.recycleDenied.
 func (p *QueryStorePanel) actDisabled(i int) bool {
 	if p.busy {
 		return true
 	}
-	// The two filters are inert on a report whose query does not carry them —
-	// a selector that changed a number the next read ignores is the silent
-	// wrong-thing the context-gating rule exists to prevent.
+	// The two filters are inert on a report whose query does not carry them; a
+	// selector changing a number the next read ignores is the silent wrong-thing
+	// the context-gating rule prevents.
 	switch i {
 	case qsActMinExec:
 		return !p.report().honours(qsFilterExecs)
 	case qsActRegression:
 		return !p.report().honours(qsFilterRegression)
 	}
-	// Track acts on the report grid's query, not on a plan: a tracked query
-	// with no plan left in the window is exactly the case the view exists to
-	// show, so requiring a plan would refuse it.
+	// Track acts on the report grid's query, not a plan: a tracked query with no
+	// plan left in the window is exactly the case the view exists to show, so
+	// requiring a plan would refuse it.
 	if i == qsActTrack {
 		return p.selectedQueryID() == 0
 	}
-	// Plot acts on the report grid's query too, and only on the way in: the
-	// mode must always be switchable off, including from a row that could not
-	// have turned it on — an arrow key can leave the cursor on one.
+	// Plot acts on the report grid's query too, and only on the way in: the mode
+	// must always be switchable off, including from a row that could not have
+	// turned it on (an arrow key can leave the cursor on one).
 	if i == qsActPlot {
 		return !p.seriesMode && p.selectedQueryID() == 0
 	}
@@ -199,33 +196,30 @@ func (p *QueryStorePanel) actDisabled(i int) bool {
 	}
 	switch i {
 	case qsActCompare:
-		// Nothing to compare a plan with no XML against, either as the mark or
-		// as the second half.
+		// Nothing to compare a plan with no XML against, as the mark or the second half.
 		return plan.QueryPlanXML == ""
 	case qsActForce:
 		return plan.IsForced || p.forceDenied()
 	case qsActUnforce:
 		return !plan.IsForced || p.forceDenied()
 	}
-	// Script is deliberately not gated on forceDenied. It writes nothing — it
-	// opens the statement in a query panel — and Object Explorer's whole
-	// "Script <Noun> as ▸" cascade is ungated for the same reason: reading the
-	// T-SQL a write would issue is how someone without the permission asks for
-	// it. Gating it here withheld the text from exactly the login that needed
-	// to send it to a DBA.
+	// Script is deliberately not gated on forceDenied. It writes nothing (it opens
+	// the statement in a query panel), and Object Explorer's whole "Script <Noun>
+	// as" cascade is ungated for the same reason: reading the T-SQL a write would
+	// issue is how someone without the permission asks for it. Gating it withheld
+	// the text from exactly the login that needed to send it to a DBA.
 	return false
 }
 
 // forceDenied reports whether the connected login may not force a plan.
-// sp_query_store_force_plan is an ALTER-shaped write on the database, gated
-// the same way every Database Properties page's writes are.
+// sp_query_store_force_plan is an ALTER-shaped write on the database, gated like
+// every Database Properties page's writes.
 func (p *QueryStorePanel) forceDenied() bool {
 	return !gate.Allows(p.conn, p.dbName, gate.DatabaseWriteRights()...)
 }
 
-// actReason is what to tell the user who clicks a dimmed action cell. A
-// disabled button swallows its click, and swallowing it silently is the thing
-// the context-gating rule exists to prevent.
+// actReason is what to tell the user who clicks a dimmed action cell; silently
+// swallowing the click is what the context-gating rule exists to prevent.
 func (p *QueryStorePanel) actReason(i int) string {
 	switch {
 	case p.busy:
@@ -297,9 +291,9 @@ func (p *QueryStorePanel) showOverflowMenu(at core.Rect, tools []toolButton, hid
 	p.popMenuAt(at, toolOverflowItems(tools, hidden, disabled, reason, run))
 }
 
-// qsMenuItems builds a selector's list, marking the entry in force. The
-// bullet is what tells a user which of eight windows they are looking at
-// without reading the button they just covered with the menu.
+// qsMenuItems builds a selector's list, marking the entry in force. The bullet
+// tells a user which of eight windows they are looking at without reading the
+// button the menu covers.
 func qsMenuItems[T comparable](values []T, current T, label func(T) string, choose func(T)) []controls.MenuItem {
 	items := make([]controls.MenuItem, 0, len(values))
 	for _, v := range values {
@@ -318,9 +312,9 @@ func (p *QueryStorePanel) showReportMenu() {
 }
 
 func (p *QueryStorePanel) showMetricMenu() {
-	// The metric list comes from the connected instance, not from the whole
-	// enum: log_bytes_used and tempdb_space_used arrived in 2017, and offering
-	// them against 2016 would produce "Invalid column name" rather than rows.
+	// The metric list comes from the connected instance, not the whole enum:
+	// log_bytes_used and tempdb_space_used arrived in 2017, and offering them on
+	// 2016 would produce "Invalid column name" rather than rows.
 	p.popMenu(qsToolMetric, qsMenuItems(p.availableMetrics(), p.metric,
 		func(m gosmo.QSMetric) string { return string(m) },
 		func(m gosmo.QSMetric) { p.metric = m; p.Load() }))
@@ -366,7 +360,7 @@ func qsIndexes(n int) []int {
 
 // availableMetrics is what this instance's Query Store can rank by. The panel
 // asks gosmo rather than listing the enum, so a metric whose column the server
-// does not have is never offered.
+// lacks is never offered.
 func (p *QueryStorePanel) availableMetrics() []gosmo.QSMetric {
 	if d := p.database(); d != nil {
 		if ms := d.QueryStoreMetrics(); len(ms) > 0 {
@@ -377,8 +371,8 @@ func (p *QueryStorePanel) availableMetrics() []gosmo.QSMetric {
 }
 
 // database is the lightweight handle every read and write here goes through.
-// DatabaseRef, not DatabaseByName: this needs no metadata, and a by-name read on
-// every menu open would put a query behind every click.
+// DatabaseRef, not DatabaseByName: this needs no metadata, and a by-name read
+// on every menu open would put a query behind every click.
 func (p *QueryStorePanel) database() *gosmo.Database {
 	if p.conn == nil || p.conn.Server == nil {
 		return nil

@@ -30,11 +30,10 @@ import (
 // Returns sc itself when server is sc's own instance, so callers can always
 // route through Peer.
 //
-// One dial per instance at a time: a first expansion that asks for the same
-// primary from three folders dials it once, and the other callers wait for
-// that dial, each bounded by its own ctx. Cancelling ctx abandons the caller's
-// wait or, for the dialling caller, the dial itself — a superseded load no
-// longer waits out two 30s connects.
+// One dial per instance at a time: three folders asking for the same primary
+// dial it once and the other callers wait, each bounded by its own ctx.
+// Cancelling ctx abandons the caller's wait or, for the dialling caller, the
+// dial itself, so a superseded load no longer waits out two 30s connects.
 func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, error) {
 	if sc.isSelf(server) {
 		return sc, nil
@@ -129,13 +128,11 @@ func (sc *ServerConn) dialPeer(ctx context.Context, server, key string, d *peerD
 	opts := sc.peerOptions(server)
 	peer, err = connectPeer(dctx, opts, sc.role)
 	if err != nil {
-		// A resolver hit that can't connect (undecryptable password, dropped
-		// login) must not make the instance less reachable than the parent's
-		// credentials would, so retry with the pre-resolver derivation. Costs
-		// one extra attempt against an instance that's really down.
-		//
-		// When both fail, report the first error: it names the credentials the
-		// user registered.
+		// A resolver hit that can't connect (undecryptable password, dropped login)
+		// must not make the instance less reachable than the parent's credentials
+		// would, so retry with the pre-resolver derivation. Costs one extra attempt
+		// against an instance that's really down. When both fail, report the first
+		// error: it names the credentials the user registered.
 		fallback := sc.parentPeerOptions(server)
 		if fallback == opts || dctx.Err() != nil {
 			return nil, err
@@ -216,7 +213,7 @@ func (sc *ServerConn) recordPeerFailureLocked(key string, err error) error {
 }
 
 // peerOptions returns the options for reaching server: the resolver's saved
-// connection for that instance, or sc's own retargeted — either way with no
+// connection for that instance, or sc's own retargeted, either way with no
 // database.
 //
 // A named database must be openable or connect fails at ping ("Cannot open
@@ -227,9 +224,8 @@ func (sc *ServerConn) recordPeerFailureLocked(key string, err error) error {
 //
 // A saved connection is taken whole (port, auth, Entra tenant/client, TLS,
 // extra properties); only Server and Database are overridden, so future fields
-// aren't dropped.
-//
-// If a resolver hit fails to connect, Peer falls back to parentPeerOptions.
+// aren't dropped. If a resolver hit fails to connect, Peer falls back to
+// parentPeerOptions.
 func (sc *ServerConn) peerOptions(server string) config.Connection {
 	if creds := sc.peerCredentials(); creds != nil {
 		if saved, ok := creds(server); ok {
@@ -250,7 +246,7 @@ func (sc *ServerConn) parentPeerOptions(server string) config.Connection {
 //
 // A port written in the saved Server moves to Port first (T14): the catalog
 // names an instance without one, so "win10cli\SQL2017,55253" retargeted to
-// WIN10CLI\SQL2017 needed SQL Browser, which that host doesn't run. A port
+// WIN10CLI\SQL2017 would need SQL Browser, which that host doesn't run. A port
 // in server itself still wins, in gosmo.
 func retargetAt(opts config.Connection, server string) config.Connection {
 	if _, _, port := gosmo.ParseServerAddress(opts.Server); port != 0 {

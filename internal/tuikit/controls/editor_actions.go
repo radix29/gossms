@@ -8,18 +8,17 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Notepad++/Scintilla-style line and block actions for Editor. Every
-// exported method here is self-contained — it pushes its own undo step and
-// leaves the cursor clamped and visible — because each is invoked both from
+// Notepad++/Scintilla-style line and block actions for Editor. Every exported
+// method here is self-contained (it pushes its own undo step and leaves the
+// cursor clamped and visible) because each is invoked both from
 // Editor.HandleKey and directly from a Menu action closure, which bypasses
-// HandleKey entirely.
+// HandleKey.
 // ---------------------------------------------------------------------------
 
-// affectedLineRange returns the row range a line/block action should apply
-// to: the current selection's row span if there is one (linear or block —
-// selectionBounds' row component is always min/max regardless of which
-// corner is anchor vs. cursor, so this is correct for both modes), or just
-// the cursor's own line otherwise.
+// affectedLineRange returns the row range a line/block action applies to: the
+// current selection's row span if there is one (selectionBounds' row component
+// is min/max regardless of anchor vs. cursor, so it is right for linear and
+// block modes), else the cursor's own line.
 func (e *Editor) affectedLineRange() (startRow, endRow int) {
 	if e.HasSelection() {
 		sr, _, er, _ := e.selectionBounds()
@@ -134,9 +133,9 @@ func (e *Editor) MoveLinesDown() {
 }
 
 // DefaultIndentWidth is how many spaces IndentLines and the Tab key insert in
-// an Editor whose width has not been set. Tabs are never inserted — only
-// converted away from by DedentLines/dedentAmount — since Editor's rendering
-// has no tab-stop expansion.
+// an Editor whose width has not been set. Tabs are never inserted, only
+// converted away by DedentLines/dedentAmount, since Editor's rendering has no
+// tab-stop expansion.
 //
 // internal/config declares a constant that must agree with this one;
 // TestIndentWidthDefaultsAgree in internal/tui holds them together.
@@ -145,7 +144,7 @@ const DefaultIndentWidth = 4
 // defaultIndentWidth is what NewEditor seeds e.indentWidth with. It exists so
 // editors built where the application config is out of reach (property-sheet
 // T-SQL rows, the Agent job-step command box) still honour the user's indent
-// size; every editor that can reach the config calls SetIndentWidth instead.
+// size; editors that can reach the config call SetIndentWidth instead.
 var defaultIndentWidth = DefaultIndentWidth
 
 // SetDefaultIndentWidth sets the width newly created Editors start with.
@@ -180,18 +179,16 @@ func (e *Editor) SetIndentWidth(n int) {
 func (e *Editor) IndentWidth() int { return e.indentWidth }
 
 // expandTabs replaces every literal tab in text with e.indentWidth spaces, so
-// content loaded from disk or pasted in renders the same as typed
-// indentation (Editor's rendering has no tab-stop expansion, so a raw tab
-// would otherwise draw as a single narrow column).
+// loaded or pasted content renders like typed indentation (Editor has no
+// tab-stop expansion, so a raw tab would draw as one narrow column).
 func (e *Editor) expandTabs(text string) string {
 	return strings.ReplaceAll(text, "\t", strings.Repeat(" ", e.indentWidth))
 }
 
-// sqlIndentKeywords are the clause keywords that, left standing as the last
-// token on a line, open a block the next line belongs inside. Only these three
-// — the list the behaviour was asked for — and deliberately not BEGIN/END or
-// JOIN: anything that needs matching to a closer needs a parser, and a
-// half-done one indents wrongly more often than not.
+// sqlIndentKeywords are the clause keywords that, as the last token on a line,
+// open a block the next line belongs inside. Only these three, and deliberately
+// not BEGIN/END or JOIN: anything needing matching to a closer needs a parser,
+// and a half-done one indents wrongly more often than not.
 var sqlIndentKeywords = map[string]bool{"select": true, "from": true, "where": true}
 
 // SetSmartIndent turns on the extra indent level smartIndentBonus describes.
@@ -200,14 +197,13 @@ var sqlIndentKeywords = map[string]bool{"select": true, "from": true, "where": t
 func (e *Editor) SetSmartIndent(v bool) { e.smartIndent = v }
 
 // smartIndentBonus reports the extra indent Enter adds beyond the current
-// line's own leading whitespace: one level when the text to the left of the
-// cursor ends with an open parenthesis, or with one of sqlIndentKeywords as
-// its last token.
+// line's own leading whitespace: one level when the text left of the cursor
+// ends with an open parenthesis, or with one of sqlIndentKeywords as its last
+// token.
 //
-// "Last token" is what keeps the indentation from drifting right across a
-// query: `SELECT` alone indents the column list that follows, while
-// `SELECT a, b` does not, so the next clause starts back at the same column as
-// the one above it.
+// "Last token" keeps indentation from drifting right across a query: `SELECT`
+// alone indents the column list that follows, `SELECT a, b` does not, so the
+// next clause starts at the same column as the one above it.
 func (e *Editor) smartIndentBonus() int {
 	if !e.smartIndent || e.cursorRow < 0 || e.cursorRow >= e.doc.Len() {
 		return 0
@@ -228,12 +224,11 @@ func (e *Editor) smartIndentBonus() int {
 	return 0
 }
 
-// leadingIndentForNewLine reports how many leading whitespace runes the line
-// the cursor sits on starts with, clamped to the cursor column so that
-// splitting inside the indentation copies only what is to the left of the
-// cursor — what SSMS's smart indenting does. Runs of tabs cannot occur in the
-// buffer (expandTabs), but a tab counts as one rune anyway, mirroring
-// dedentAmount.
+// leadingIndentForNewLine reports how many leading whitespace runes the
+// cursor's line starts with, clamped to the cursor column so that splitting
+// inside the indentation copies only what is left of the cursor (SSMS's smart
+// indenting). Tabs cannot occur in the buffer (expandTabs), but one counts as a
+// rune anyway, mirroring dedentAmount.
 func (e *Editor) leadingIndentForNewLine() int {
 	if e.cursorRow < 0 || e.cursorRow >= e.doc.Len() {
 		return 0
@@ -301,9 +296,8 @@ func (e *Editor) DedentLines() {
 }
 
 // dedentAmount reports how many leading runes DedentLines should strip from
-// line: one leading tab (from content written before tabs were converted to
-// spaces, or pasted in from elsewhere), else up to e.indentWidth leading
-// spaces.
+// line: one leading tab (from content written before tabs were converted, or
+// pasted in), else up to e.indentWidth leading spaces.
 func (e *Editor) dedentAmount(line []rune) int {
 	if len(line) > 0 && line[0] == '\t' {
 		return 1
@@ -360,14 +354,13 @@ func uncommentLine(line []rune) []rune {
 	return nl
 }
 
-// ToggleLineComments comments or uncomments the current line (or every
-// line spanned by the selection): uncomments only if every affected line
-// is already commented, otherwise comments every affected line (a blank
-// line in range counts as "not commented," so it gets "-- " prefixed too
-// when the range is commented — expected, not a bug). An active selection
-// is preserved, its columns approximately shifted by the net length change
-// on whichever row the anchor/cursor sit (a cursor inside leading
-// whitespace can drift a column or two — an accepted simplification).
+// ToggleLineComments comments or uncomments the current line (or every line
+// spanned by the selection): uncomments only if every affected line is already
+// commented, otherwise comments every affected line (a blank line in range
+// counts as "not commented", so it gets "-- " too when the range is commented).
+// An active selection is preserved, its columns approximately shifted by the
+// net length change on the anchor/cursor rows (a cursor inside leading
+// whitespace can drift a column or two; accepted).
 func (e *Editor) ToggleLineComments() {
 	sr, er := e.affectedLineRange()
 	allCommented := true
@@ -398,15 +391,13 @@ func (e *Editor) ToggleLineComments() {
 }
 
 // transformSelection applies fn to every rune in the current selection, in
-// place, branching on selBlock the same way SelectedText does. No-op if
-// there's no selection.
+// place, branching on selBlock as SelectedText does. No-op with no selection.
 //
-// The rewritten lines go back through setLine even though the runes were
-// changed in place and the slice header is unchanged: the version counter is
-// what tells the highlighters and the wrap cache that the text moved, and an
-// in-place edit that skipped it would leave Ctrl+Shift+U recolouring nothing
-// — an uppercased keyword keeping its old, non-keyword colour until some
-// unrelated edit bumped the version.
+// The rewritten lines go back through setLine even though the runes changed in
+// place and the slice header is unchanged: the version counter is what tells
+// the highlighters and wrap cache the text moved, and skipping it would leave
+// an uppercased keyword with its old non-keyword colour until some unrelated
+// edit bumped the version.
 func (e *Editor) transformSelection(fn func(rune) rune) {
 	if !e.HasSelection() {
 		return

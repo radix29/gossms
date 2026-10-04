@@ -25,9 +25,9 @@ var indexTypeNames = map[gosmo.IndexType]string{
 }
 
 // indexTypeName renders t for display, falling back to the server's own
-// type_desc for a type gosmo carries through verbatim — NONCLUSTERED HASH on
-// a memory-optimized table, or a type a newer SQL Server adds. The bare map
-// lookup drew an empty row for those.
+// type_desc for a type gosmo carries through verbatim (NONCLUSTERED HASH on a
+// memory-optimized table, or a type a newer SQL Server adds); a bare map lookup
+// drew an empty row for those.
 func indexTypeName(t gosmo.IndexType) string {
 	if s, ok := indexTypeNames[t]; ok {
 		return s
@@ -35,22 +35,19 @@ func indexTypeName(t gosmo.IndexType) string {
 	return string(t)
 }
 
-// indexDataCompressionOptions is the Options page's Data compression
-// dropdown — NONE/ROW/PAGE, the three values every SQL Server edition
-// supports on a rowstore index. A columnstore index reports COLUMNSTORE or
-// COLUMNSTORE_ARCHIVE, which stay out of the editable set; see
-// dataCompressionRow for how such a value is shown instead.
+// indexDataCompressionOptions is the Options page's Data compression dropdown:
+// NONE/ROW/PAGE, the three values every edition supports on a rowstore index.
+// A columnstore index reports COLUMNSTORE or COLUMNSTORE_ARCHIVE, kept out of
+// the editable set; see dataCompressionRow.
 var indexDataCompressionOptions = []string{"NONE", "ROW", "PAGE"}
 
-// dataCompressionRow builds the Data compression row for an index Options
-// page from the server's data_compression_desc. It returns the row to lay out
-// plus the editable Select, which is nil when current isn't one of the three
-// editable values.
+// dataCompressionRow builds the Data compression row for an index Options page
+// from the server's data_compression_desc. It returns the row to lay out plus
+// the editable Select, nil when current isn't one of the three editable values.
 //
-// Selecting into the dropdown with indexOf's not-found 0 rendered a
-// columnstore index's COLUMNSTORE as "NONE" — itself a real compression
-// setting, so it read as fact rather than as a missing value. Showing the
-// server's own text read-only is the honest form.
+// indexOf's not-found 0 would render a columnstore index as "NONE", itself a
+// real compression setting read as fact. Showing the server's own text
+// read-only is the honest form.
 func dataCompressionRow(current string) (propsheet.Row, *propsheet.SelectRow) {
 	if i, ok := indexOfOK(indexDataCompressionOptions, current); ok {
 		row := propsheet.Select("Data compression", indexDataCompressionOptions, i)
@@ -115,11 +112,10 @@ func (r rebuildOptions) apply(ctx context.Context, idx *gosmo.Index) error {
 	})
 }
 
-// applySetOptions issues one ALTER INDEX ... SET when any of the rows
-// changed, restating every row the page shows at its current value. A nil
-// ignoreDup — the constraint-backing index, whose page has no such row —
-// leaves IGNORE_DUP_KEY off the statement, since SQL Server refuses the
-// option there even unchanged.
+// applySetOptions issues one ALTER INDEX ... SET when any row changed,
+// restating every row at its current value. A nil ignoreDup (the
+// constraint-backing index, whose page has no such row) leaves IGNORE_DUP_KEY
+// off the statement, since SQL Server refuses the option there even unchanged.
 func applySetOptions(ctx context.Context, idx *gosmo.Index, ignoreDup, rowLocks, pageLocks *propsheet.CheckRow) error {
 	dirty := rowLocks.Dirty() || pageLocks.Dirty() || (ignoreDup != nil && ignoreDup.Dirty())
 	if !dirty {
@@ -135,12 +131,11 @@ func applySetOptions(ctx context.Context, idx *gosmo.Index, ignoreDup, rowLocks,
 	return idx.SetOptions(ctx, opts)
 }
 
-// indexPropPages builds the page set for Index Properties. There's no
-// Permissions page: an index isn't a SQL Server securable class, so
-// GRANT/DENY/REVOKE against one isn't valid T-SQL. Sort in tempdb, Online
-// index operation, Resumable, and Max duration are left out too — they're
-// REBUILD-time-only clauses with no persisted state to show afterward,
-// unlike fill factor, pad index, and the SET-able options this page has.
+// indexPropPages builds the page set for Index Properties. No Permissions page:
+// an index isn't a securable class, so GRANT/DENY/REVOKE against one isn't
+// valid T-SQL. Sort in tempdb, Online index operation, Resumable and Max
+// duration are left out too: REBUILD-time-only clauses with no persisted state
+// to show, unlike fill factor, pad index and the SET-able options here.
 func indexPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	w := gate.ObjectWriteRights()
 	return []propPage{
@@ -220,14 +215,12 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 				return nil, nil, err
 			}
 
-			// A PK/unique-constraint-backing index rejects IGNORE_DUP_KEY
-			// outright, even to re-set its current value ("Cannot use index
-			// option ignore_dup_key to alter index '...' as it enforces a
-			// primary or unique constraint") — the restriction
-			// gosmo.IndexSetOptions's doc comment covers. Such an index
-			// gets no row here, and applySetOptions leaves IgnoreDupKey
-			// nil, so the option is never sent; Key Properties' Options
-			// page does the same.
+			// A PK/unique-constraint-backing index rejects IGNORE_DUP_KEY outright, even to
+			// re-set its current value ("Cannot use index option ignore_dup_key to alter
+			// index '...' as it enforces a primary or unique constraint"; see
+			// gosmo.IndexSetOptions). Such an index gets no row, and applySetOptions leaves
+			// IgnoreDupKey nil so the option is never sent; Key Properties' Options page
+			// does the same.
 			constrained := idx.IsPrimaryKey || idx.IsUniqueConstraint
 
 			rebuild := newRebuildOptions(idx)
@@ -261,11 +254,10 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 	}
 }
 
-// name is a *string (rather than the plain string every other Index
-// Properties page takes) so Key Properties, which shares this page, can
-// point it at a name that pageKeyGeneral's rename apply updates in place —
-// otherwise a rename-then-Apply would leave this page's next reload
-// looking up an index name that no longer exists.
+// name is a *string (not the plain string other Index Properties pages take) so
+// Key Properties, which shares this page, can point it at a name that
+// pageKeyGeneral's rename apply updates in place; otherwise rename-then-Apply
+// would leave this page's next reload looking up a name that no longer exists.
 func pageIndexStorage(sc *db.ServerConn, dbName, schema, table string, name *string) propPage {
 	return propPage{
 		title: "Storage",
@@ -305,18 +297,15 @@ func pageIndexStorage(sc *db.ServerConn, dbName, schema, table string, name *str
 	}
 }
 
-// pageIndexIncludedColumns lists every non-key table column with a toggle
-// for whether it's part of this index's INCLUDE list — SSMS's Index
-// Properties > Included Columns page. Applying a change reissues the whole
-// index via DROP_EXISTING (see Index.SetIncludedColumns): included columns
-// aren't a plain ALTER, so this is the only correct way to change them on
-// an existing index.
+// pageIndexIncludedColumns lists every non-key table column with a toggle for
+// whether it's in this index's INCLUDE list (SSMS's Index Properties > Included
+// Columns). Applying reissues the whole index via DROP_EXISTING (see
+// Index.SetIncludedColumns): included columns aren't a plain ALTER.
 //
-// Only a rowstore nonclustered index backing no constraint has an INCLUDE
-// list that can change; for any other the page says why and offers nothing,
-// where SSMS greys it out. The page is still listed, since the index type is
-// not known until the load reads it, and an Apply that failed at the server
-// was the only way to find out before.
+// Only a rowstore nonclustered index backing no constraint has a changeable
+// INCLUDE list; for any other the page says why and offers nothing (SSMS greys
+// it out). The page is still listed, since the index type isn't known until the
+// load reads it, and a failed Apply was the only other way to find out.
 func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name string) propPage {
 	return propPage{
 		title: "Included Columns",
@@ -389,10 +378,10 @@ func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name str
 	}
 }
 
-// pageIndexFilter is Index Properties' Filter page — read-only, since SQL
-// Server only accepts a filtered index's predicate at CREATE time; changing
-// one on an existing index means dropping and recreating it. Shared with
-// Statistics Properties' own Filter page via buildFilterInfoForm.
+// pageIndexFilter is Index Properties' Filter page, read-only since SQL Server
+// accepts a filtered index's predicate only at CREATE time; changing one means
+// dropping and recreating. Shared with Statistics Properties' Filter page via
+// buildFilterInfoForm.
 func pageIndexFilter(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) propPage {
 	return propPage{
 		title: "Filter",
@@ -409,10 +398,10 @@ func pageIndexFilter(d *PropDialog, sc *db.ServerConn, dbName, schema, table, na
 
 // pageIndexFragmentation is Index Properties' Fragmentation page: current
 // fragmentation/page-density (sys.dm_db_index_physical_stats, SAMPLED), a
-// recommendation using Microsoft's own documented thresholds, and
+// recommendation using Microsoft's documented thresholds, and
 // Rebuild/Reorganize/Update Statistics actions that run immediately,
-// independent of OK/Cancel/Apply. F5 re-reads the numbers.
-// name is *string — see pageIndexStorage's doc comment.
+// independent of OK/Cancel/Apply. F5 re-reads the numbers. name is *string; see
+// pageIndexStorage.
 func pageIndexFragmentation(d *PropDialog, sc *db.ServerConn, dbName, schema, table string, name *string) propPage {
 	return propPage{
 		title: "Fragmentation",

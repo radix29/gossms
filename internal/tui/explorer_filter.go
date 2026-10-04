@@ -11,16 +11,16 @@ import (
 
 // explorer_filter.go is the model behind Object Explorer's folder filter (SSMS's
 // "Filter Settings"): what a folder can be filtered on, how a criterion matches
-// a child node, and where the filtering happens. The dialog that edits one is in
+// a child node, and where filtering happens. The editing dialog is in
 // filter_dialog.go.
 //
-// A filter is applied at fetch time — fetchChildren for the tree, filterObjects
-// for the Detail Browser's loaders — not at draw time, so changing or clearing
-// one always goes through a folder reload. See App.applyNodeFilter.
+// A filter is applied at fetch time (fetchChildren for the tree, filterObjects
+// for the Detail Browser's loaders), not draw time, so changing or clearing one
+// always goes through a folder reload. See App.applyNodeFilter.
 
-// filterPropID names one property a folder's children can be filtered on. Every
-// property maps to a field nodeData already carries, so matching needs no extra
-// round trip.
+// filterPropID names one property a folder's children can be filtered on. Each
+// maps to a field nodeData already carries, so matching needs no extra round
+// trip.
 type filterPropID int
 
 const (
@@ -30,8 +30,8 @@ const (
 	fpMemoryOptimized
 )
 
-// filterPropKind is a property's value type, deciding both the operators offered
-// and how its value text is compared.
+// filterPropKind is a property's value type, deciding the operators offered and
+// how its value text is compared.
 type filterPropKind int
 
 const (
@@ -86,17 +86,16 @@ func filterOps(kind filterPropKind) []filterOp {
 }
 
 // filterDateLayout is the one date format a Creation Date criterion accepts. The
-// dialog validates it before a filter is built, so matchCriterion never reports
-// a parse failure.
+// dialog validates it before a filter is built, so matchCriterion never sees a
+// parse failure.
 const filterDateLayout = "2006-01-02"
 
 // filterProps returns the properties a folder of type t offers, or nil when the
-// folder can't be filtered — also the test callers use to decide whether to
-// offer the Filter menu items.
+// folder can't be filtered (also how callers decide whether to offer the Filter
+// menu items).
 //
-// The list is limited to what the folder's own loader already fetches: SSMS
-// offers Owner and Durability Type on Tables, both of which would cost a
-// per-table query here, so neither is offered.
+// Limited to what the folder's own loader already fetches: SSMS offers Owner
+// and Durability Type on Tables, but each would cost a per-table query here.
 func filterProps(t NodeType) []filterProp {
 	name := filterProp{id: fpName, name: "Name", kind: filterText}
 	schema := filterProp{id: fpSchema, name: "Schema", kind: filterText}
@@ -104,9 +103,8 @@ func filterProps(t NodeType) []filterProp {
 	memOpt := filterProp{id: fpMemoryOptimized, name: "Is Memory Optimized", kind: filterBool}
 
 	switch t {
-	// The four sub-folders offer what Tables offers: every one of them is a
-	// listing of sys.tables narrowed by a flag, so the same four properties
-	// are populated on every node in them.
+	// The four sub-folders offer what Tables offers: each lists sys.tables narrowed
+	// by a flag, so the same four properties are populated on every node.
 	case NodeTables, NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables:
 		return []filterProp{name, schema, created, memOpt}
 	case NodeViews, NodeSystemViews,
@@ -115,26 +113,26 @@ func filterProps(t NodeType) []filterProp {
 		return []filterProp{name, schema, created}
 	case NodeSequences, NodeSynonyms:
 		return []filterProp{name, schema}
-	// sys.types records no creation date, so the three type folders backed by
-	// it offer none — a Creation Date criterion there would match on a zero
-	// time and reject every row (see nodeData.CreateDate).
+	// sys.types records no creation date, so the three type folders backed by it
+	// offer none: a Creation Date criterion would match on a zero time and reject
+	// every row (see nodeData.CreateDate).
 	case NodeUserDefinedDataTypes, NodeUserDefinedTableTypes, NodeUserDefinedTypes:
 		return []filterProp{name, schema}
 	case NodeXMLSchemaCollections, NodeRules, NodeDefaults:
 		return []filterProp{name, schema, created}
 	case NodeAssemblies:
 		return []filterProp{name, created}
-	// Plan guides and the external resource families are schema-less
-	// server-side objects; sys.plan_guides is the only one of the four that
-	// records a creation date.
+	// Plan guides and the external resource families are schema-less server-side
+	// objects; sys.plan_guides is the only one of the four that records a creation
+	// date.
 	case NodePlanGuides:
 		return []filterProp{name, created}
 	case NodeSystemDataTypes, NodeExternalDataSources, NodeExternalFileFormats,
 		NodeExternalLibraries:
 		return []filterProp{name}
 	// The six schemaless Service Broker families. None of their catalog views
-	// records a creation date, so none offers one — the criterion would match
-	// on a zero time and reject every row.
+	// records a creation date, so none offers one (it would match a zero time and
+	// reject every row).
 	case NodeMessageTypes, NodeContracts, NodeBrokerServices, NodeRoutes,
 		NodeRemoteServiceBindings, NodeBrokerPriorities:
 		return []filterProp{name}
@@ -144,9 +142,8 @@ func filterProps(t NodeType) []filterProp {
 		return []filterProp{name, schema}
 	case NodeDatabases, NodeSystemDatabases, NodeDatabaseSnapshots, NodeLogins:
 		return []filterProp{name, created}
-	// A Triggers folder hangs under one table or view, so every row in it
-	// shares that object's schema — a Schema criterion there matches all of
-	// them or none.
+	// A Triggers folder hangs under one table or view, so every row shares that
+	// object's schema: a Schema criterion matches all of them or none.
 	case NodeTriggers,
 		NodeUsers, NodeDatabaseRoles, NodeSchemas, NodeServerRoles,
 		NodePartitionFunctions, NodePartitionSchemes,
@@ -158,17 +155,16 @@ func filterProps(t NodeType) []filterProp {
 		NodeDatabaseAuditSpecifications, NodeDatabaseScopedCredentials,
 		NodeServerTriggers, NodeDatabaseTriggers:
 		return []filterProp{name, created}
-	// sys.symmetric_keys is the one key-management view that records a
-	// creation date.
+	// sys.symmetric_keys is the one key-management view that records a creation
+	// date.
 	case NodeSymmetricKeys:
 		return []filterProp{name, created}
 	case NodeBackupDevices, NodeEndpoints, NodeCertificates, NodeAsymmetricKeys,
 		NodeEventSessions,
 		NodeResourcePools, NodeWorkloadGroups, NodeExternalResourcePools:
 		// No Creation Date: none of sys.backup_devices, sys.endpoints,
-		// sys.certificates, sys.asymmetric_keys, sys.server_event_sessions
-		// or the resource_governor catalogs records one, so the criterion
-		// would reject every row.
+		// sys.certificates, sys.asymmetric_keys, sys.server_event_sessions or the
+		// resource_governor catalogs records one, so it would reject every row.
 		return []filterProp{name}
 	}
 	return nil
@@ -182,18 +178,18 @@ type filterCriterion struct {
 }
 
 // nodeFilter is a folder's live filter. nil means unfiltered; criteria with an
-// empty value are dropped when one is built, so a non-nil filter always has at
-// least one criterion.
+// empty value are dropped on build, so a non-nil filter has at least one
+// criterion.
 type nodeFilter struct {
 	criteria []filterCriterion
 }
 
-// active reports whether f filters anything — nil-safe, so callers can ask
-// it of any folder node's Filter field.
+// active reports whether f filters anything; nil-safe, so callers can ask it of
+// any folder node's Filter field.
 func (f *nodeFilter) active() bool { return f != nil && len(f.criteria) > 0 }
 
-// matches reports whether a child node passes every criterion — SSMS's AND
-// semantics, each row narrowing the folder further.
+// matches reports whether a child node passes every criterion (SSMS's AND
+// semantics: each row narrows the folder further).
 func (f *nodeFilter) matches(d nodeData) bool {
 	if !f.active() {
 		return true
@@ -231,8 +227,8 @@ func matchCriterion(c filterCriterion, d nodeData) bool {
 }
 
 // filterTextValue is the child node's value for a text property. Name is the
-// bare, schema-free name, the rule the rest of the tree follows, so filtering on
-// "Name" never matches the schema prefix the label carries.
+// bare, schema-free name, as elsewhere in the tree, so filtering on "Name"
+// never matches the schema prefix the label carries.
 func filterTextValue(id filterPropID, d nodeData) string {
 	if id == fpSchema {
 		return d.Schema
@@ -263,9 +259,9 @@ func matchText(op filterOp, got, want string) bool {
 	}
 }
 
-// matchDate compares by calendar day: a criterion is typed as a date, so "Equals
-// 2026-08-13" means the whole day, not midnight. A node with no creation date
-// never matches.
+// matchDate compares by calendar day: a criterion is typed as a date, so
+// "Equals 2026-08-13" means the whole day, not midnight. A node with no
+// creation date never matches.
 func matchDate(op filterOp, got time.Time, want string) bool {
 	day, err := parseFilterDate(want)
 	if err != nil || got.IsZero() {
@@ -311,11 +307,11 @@ func parseFilterBool(s string) (bool, error) {
 	return false, fmt.Errorf("expected True or False")
 }
 
-// filterChildren drops the children a folder's filter rejects. Container children
-// — "System Views" inside Views, "System Databases" inside Databases — and error
-// placeholders are always kept: the filter applies to a folder's objects, not
-// its sub-folders, and hiding the error node would make a failed expand look
-// empty.
+// filterChildren drops the children a folder's filter rejects. Container
+// children ("System Views" inside Views, "System Databases" inside Databases)
+// and error placeholders are always kept: the filter applies to a folder's
+// objects, not its sub-folders, and hiding the error node would make a failed
+// expand look empty.
 func filterChildren(f *nodeFilter, children []*explorerNode) []*explorerNode {
 	if !f.active() {
 		return children
@@ -332,13 +328,13 @@ func filterChildren(f *nodeFilter, children []*explorerNode) []*explorerNode {
 // filterObjects drops the objects a folder's filter rejects, given a function
 // mapping one object to the nodeData fields the criteria read.
 //
-// This is the Detail Browser's half of the filter. Its loaders query gosmo
-// directly rather than expanding the tree, so they hold gosmo objects rather
-// than *explorerNode and can't use filterChildren; filtering the collection
-// before rows are built keeps a progressive loader's row indices lined up.
+// The Detail Browser's half of the filter. Its loaders query gosmo directly,
+// holding gosmo objects rather than *explorerNode, so they can't use
+// filterChildren; filtering the collection before rows are built keeps a
+// progressive loader's row indices lined up.
 //
-// Takes the filter, not the folder node: both halves run on a background loader
-// goroutine while the UI goroutine writes node.data.Filter underneath them (see
+// Takes the filter, not the folder node: both halves run on a background
+// loader goroutine while the UI goroutine writes node.data.Filter (see
 // explorerNode.snapshot), so the caller reads it where that is safe.
 func filterObjects[T any](f *nodeFilter, items []T, key func(T) nodeData) []T {
 	if !f.active() {
@@ -353,10 +349,10 @@ func filterObjects[T any](f *nodeFilter, items []T, key func(T) nodeData) []T {
 	return out
 }
 
-// filterKey identifies a filterable folder by what it is rather than by the
+// filterKey identifies a filterable folder by what it is, not by the
 // *explorerNode holding it, since disconnecting drops the subtree and
 // reconnecting builds fresh nodes. Schema and table keep a table-scoped folder
-// apart from the database-scoped folder of the same type, and pool one resource
+// apart from the database-scoped folder of the same type, and one resource
 // pool's Workload Groups folder apart from another's.
 type filterKey struct {
 	conn   string
@@ -378,9 +374,8 @@ func newFilterKey(sc *dbconn.ServerConn, d nodeData) filterKey {
 	}
 }
 
-// rememberFilter records, or for a nil f forgets, a folder's filter so a
-// reconnect within the session comes back filtered, as SSMS does. Nothing is
-// persisted — a filter lives as long as the process.
+// rememberFilter records (nil f forgets) a folder's filter so a reconnect within
+// the session comes back filtered, as SSMS does. Nothing is persisted.
 func (a *App) rememberFilter(sc *dbconn.ServerConn, d nodeData, f *nodeFilter) {
 	if sc == nil {
 		return
@@ -399,8 +394,8 @@ func (a *App) rememberFilter(sc *dbconn.ServerConn, d nodeData, f *nodeFilter) {
 
 // restoreFilters reattaches remembered filters to freshly loaded folder nodes.
 // Called from fetchChildren on the loading goroutine, because a folder's filter
-// must be in place before its children are fetched — restoring it afterwards
-// leaves the node labelled "(filtered)" over an unfiltered list.
+// must be in place before its children are fetched; restoring afterwards leaves
+// the node labelled "(filtered)" over an unfiltered list.
 func (a *App) restoreFilters(sc *dbconn.ServerConn, children []*explorerNode) {
 	a.filterMu.Lock()
 	defer a.filterMu.Unlock()
@@ -417,10 +412,9 @@ func (a *App) restoreFilters(sc *dbconn.ServerConn, children []*explorerNode) {
 	}
 }
 
-// applyNodeFilter installs f (nil to clear) on a folder node and reloads it. The
-// reload is what applies the filter, since fetchChildren filters the loader's
-// result, and the rebuild repaints the "(filtered)" label suffix even while the
-// node is collapsed.
+// applyNodeFilter installs f (nil to clear) on a folder node and reloads it.
+// The reload applies the filter (fetchChildren filters the loader's result),
+// and the rebuild repaints the "(filtered)" label suffix even while collapsed.
 func (a *App) applyNodeFilter(node *explorerNode, f *nodeFilter) {
 	node.data.Filter = f
 	a.rememberFilter(resolveConn(node), node.data, f)
@@ -436,16 +430,16 @@ func (a *App) applyNodeFilter(node *explorerNode, f *nodeFilter) {
 // pushdown translates f into the server-side form, reporting false when any
 // criterion cannot be expressed there.
 //
-// The push-down is an optimisation and nothing more: filterChildren and
-// filterObjects still run over whatever comes back and remain the authority on
-// what a filter means. The only way a translation can change a result is by
-// narrowing *further* than the client pass would, so every criterion here either
-// matches the client's comparison exactly — case-insensitively, whole calendar
-// days, values trimmed as matchText trims them — or is refused outright.
+// An optimisation only: filterChildren and filterObjects still run over the
+// result and remain the authority on what a filter means. A translation can
+// change a result only by narrowing *further* than the client pass, so every
+// criterion here either matches the client's comparison exactly
+// (case-insensitively, whole calendar days, values trimmed as matchText trims
+// them) or is refused.
 //
-// A criterion whose value the client itself cannot parse is refused rather than
-// dropped: dropping it would send a wider filter, which is harmless, but
-// refusing keeps both halves reading the same criterion list.
+// A criterion whose value the client cannot parse is refused rather than
+// dropped: dropping would send a wider filter (harmless), but refusing keeps
+// both halves reading the same criterion list.
 func (f *nodeFilter) pushdown() (gosmo.ObjectFilter, bool) {
 	var out gosmo.ObjectFilter
 	if !f.active() {
@@ -482,9 +476,8 @@ func (f *nodeFilter) pushdown() (gosmo.ObjectFilter, bool) {
 				return gosmo.ObjectFilter{}, false
 			}
 			crit := gosmo.TextCriterion{Op: op, Value: value}
-			// Each property by name: a text property added later is not a
-			// Name, and pushing it down as one would narrow by the wrong
-			// column.
+			// Each property by name: a text property added later is not a Name, and pushing
+			// it down as one would narrow by the wrong column.
 			switch c.prop.id {
 			case fpSchema:
 				out.Schema = append(out.Schema, crit)
@@ -513,7 +506,7 @@ func pushdownTextOp(op filterOp) (gosmo.TextOp, bool) {
 }
 
 // pushdownDateOp maps the date operators. opEquals and opOn are the same
-// comparison here as in matchDate — two spellings for one meaning.
+// comparison here as in matchDate (two spellings of one meaning).
 func pushdownDateOp(op filterOp) (gosmo.DateOp, bool) {
 	switch op {
 	case opEquals, opOn:

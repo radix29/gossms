@@ -12,17 +12,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// xevent_session_storage.go is the Data Storage page of New Session and
-// Session Properties (see xevent_session_dialog.go): the session's targets,
-// and each target's parameters from the catalog, with their defaults and the
-// ones the target cannot do without.
+// xevent_session_storage.go is the Data Storage page of New Session and Session
+// Properties (see xevent_session_dialog.go): the session's targets, and each
+// target's parameters from the catalog, with their defaults and the ones the
+// target cannot do without.
 //
 // On an Azure engine edition an event_file cannot be a path (Msg 40538): its
-// filename is a blob URL, and the server writes and reads it with the SAS of
-// the credential named after the container — a server credential on a Managed
-// Instance, a database-scoped one on Azure SQL Database. The page offers those
-// credentials as the containers to write to, and refuses a filename that is
-// not an https:// URL before anything is sent.
+// filename is a blob URL, which the server writes and reads with the SAS of the
+// credential named after the container (a server credential on a Managed
+// Instance, a database-scoped one on Azure SQL Database). The page offers those
+// credentials as the containers to write to, and refuses a filename that is not
+// an https:// URL before anything is sent.
 
 var (
 	xeTargetColumns = []string{"Target", "Settings"}
@@ -57,7 +57,7 @@ type xeStorageEditor struct {
 
 // newXEStorageEditor builds the page. cols holds target columns already read,
 // by lower-cased qualified name; a page built off the UI goroutine must hold
-// every target of m there, since reading one later is the UI goroutine's.
+// every target of m there, since a later read would be the UI goroutine's.
 // azure and containers are the blob side (xeBlobContainers).
 func newXEStorageEditor(h xeHost, cat *xeCatalog, m *xeSessionModel, sessionName func() string,
 	cols map[string][]gosmo.XEObjectColumn, azure bool, containers []string) *xeStorageEditor {
@@ -163,10 +163,10 @@ const xeAzureStorageNote = "Here an event_file is a blob: its filename is https:
 	"Enter on a true/false parameter flips it; an empty value is the server's default."
 
 // xeBlobContainers returns the blob containers an Azure event_file can be
-// written to: the names of the credentials that are container URLs — the
-// server's on a Managed Instance, the database's on Azure SQL Database. Off
-// Azure it is nil, and a login that may not list credentials gets none: the
-// URL can still be typed.
+// written to: the names of the credentials that are container URLs (the
+// server's on a Managed Instance, the database's on Azure SQL Database). Off
+// Azure it is nil, and a login that may not list credentials gets none; the URL
+// can still be typed.
 func xeBlobContainers(ctx context.Context, h xeHost) []string {
 	if !serverIsAzure(h.sc) {
 		return nil
@@ -461,10 +461,9 @@ func (s *xeStorageEditor) origTarget(t gosmo.SessionTarget) gosmo.SessionTarget 
 	return gosmo.SessionTarget{}
 }
 
-// validate refuses a target missing a parameter it cannot do without — the
-// catalog's mandatory ones, where they have been read, and an event_file's
-// filename always, which is the case that matters and is known without a
-// read.
+// validate refuses a target missing a parameter it cannot do without: the
+// catalog's mandatory ones where read, and an event_file's filename always
+// (the case that matters, known without a read).
 func (s *xeStorageEditor) validate() error {
 	for _, t := range s.m.targets {
 		var required []string
@@ -486,10 +485,9 @@ func (s *xeStorageEditor) validate() error {
 				return fmt.Errorf("%s: %w", t.QualifiedName(), err)
 			}
 		}
-		// Msg 40538 otherwise, and only after the dialog has closed on it.
-		// A target the session already had is left alone: a Managed
-		// Instance's own system_health writes a local file, which the server
-		// may do and a user may not.
+		// Msg 40538 otherwise, and only after the dialog has closed on it. A target the
+		// session already had is left alone: a Managed Instance's own system_health
+		// writes a local file, which the server may do and a user may not.
 		if s.azure && t.Name == gosmo.XETargetEventFile && !xeIsBlobURL(xeFieldValue(t.Fields, "filename")) &&
 			!xeTargetsEqual([]gosmo.SessionTarget{t}, []gosmo.SessionTarget{s.origTarget(t)}) {
 			return fmt.Errorf("%s: on Azure the filename is a blob URL, https://account.blob.core.windows.net/container/name.xel", t.QualifiedName())
@@ -511,10 +509,9 @@ func pageXESessionStorage(h xeHost, name string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			// The session's own targets' parameters are read with the page:
-			// the editor is built here, off the UI goroutine, where it must not
-			// start a read of its own, and validate then knows every target's
-			// mandatory parameters.
+			// The session's own targets' parameters are read with the page: the editor is
+			// built here, off the UI goroutine, where it must not start a read of its own,
+			// and validate then knows every target's mandatory parameters.
 			cols, err := xeReadColumns(ctx, h, es.Targets, func(t gosmo.SessionTarget) (string, string) { return t.Package, t.Name })
 			if err != nil {
 				return nil, nil, err

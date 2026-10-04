@@ -13,20 +13,20 @@ import (
 // ---------------------------------------------------------------------------
 // Cross-database names: "OtherDb.dbo.Orders", "OtherDb..Orders", "OtherDb."
 //
-// A name's database part is looked up in the server's database directory
-// before anything is loaded, so a typo, an alias that didn't resolve or a
-// database that isn't ONLINE costs no query. A database the directory does
-// list gets its own completionInventory — the same shared entry a query panel
-// connected to it uses — loaded on first use and only after HAS_DBACCESS says
-// the login can open it (see loadCompletionInventory's gate).
+// A name's database part is looked up in the server's database directory before
+// anything is loaded, so a typo, an unresolved alias or a database that isn't
+// ONLINE costs no query. A database the directory lists gets its own
+// completionInventory (the shared entry a query panel connected to it uses),
+// loaded on first use and only after HAS_DBACCESS says the login can open it
+// (see loadCompletionInventory's gate).
 // ---------------------------------------------------------------------------
 
-// completionDirectory is one server+login's database list, keyed by name
-// under the server's collation: enough to tell a database name from anything
-// else in a qualifier chain, and to skip one that can't be opened. On a
-// case-sensitive server `Sales` and `sales` are two databases, and a lowered
-// key let one shadow the other. A failed load leaves byName empty until
-// Ctrl+R; the failure goes to the status bar, not the entry.
+// completionDirectory is one server+login's database list, keyed by name under
+// the server's collation: enough to tell a database name from anything else in
+// a qualifier chain, and to skip one that can't be opened. On a case-sensitive
+// server `Sales` and `sales` are two databases, and a lowered key let one
+// shadow the other. A failed load leaves byName empty until Ctrl+R; the failure
+// goes to the status bar, not the entry.
 type completionDirectory struct {
 	loading bool
 	byName  *nameMap[directoryEntry]
@@ -106,13 +106,13 @@ func (a *App) refreshCrossDatabaseInventories(sc *db.ServerConn) {
 	}
 }
 
-// databaseInventory resolves a database part of a name to its loaded
-// inventory: own when name is p's own database, otherwise the other
-// database's, starting its load if needed. pending reports that the answer is
-// still on its way — the directory or that inventory is loading — so the
-// caller can show the loading row rather than nothing; refreshSysCompletionPopups
-// re-asks once it lands. A name the directory doesn't list, a database that
-// isn't ONLINE, or one the login can't open, gives nil and not pending.
+// databaseInventory resolves a database part of a name to its loaded inventory:
+// own when name is p's own database, otherwise the other database's, starting
+// its load if needed. pending reports the answer is still on its way (the
+// directory or that inventory is loading) so the caller can show the loading
+// row; refreshSysCompletionPopups re-asks once it lands. A name the directory
+// doesn't list, a database that isn't ONLINE, or one the login can't open gives
+// nil and not pending.
 func (p *QueryPanel) databaseInventory(own *completionInventory, name string) (inv *completionInventory, pending bool) {
 	if name == "" {
 		return nil, false
@@ -155,8 +155,8 @@ func (a *App) ensureCrossDatabaseInventory(sc *db.ServerConn, database string) *
 	return inv
 }
 
-// chainCandidates answers a qualifier chain of two or more parts — the
-// cursor after "a.b." or "a.b.c.":
+// chainCandidates answers a qualifier chain of two or more parts (the cursor
+// after "a.b." or "a.b.c."):
 //
 //   - [schema object]: that object's columns in the panel's own database
 //     ("dbo.Orders."), tried first since it is what the name means there;
@@ -164,10 +164,9 @@ func (a *App) ensureCrossDatabaseInventory(sc *db.ServerConn, database string) *
 //     ("Sales.dbo.", "Sales.." for dbo);
 //   - [database schema object]: that object's columns ("Sales.dbo.Orders.").
 //
-// A chain whose first part names no database here, and every four-part
-// chain, is then tried as a linked server's (linkedChainCandidates). A
-// database that can't be read answers nothing. wait reports a load still in
-// flight.
+// A chain whose first part names no database here, and every four-part chain,
+// is then tried as a linked server's (linkedChainCandidates). A database that
+// can't be read answers nothing. wait reports a load still in flight.
 func (p *QueryPanel) chainCandidates(inv, sysInv *completionInventory, chain []string, prefix string) (items []controls.CompletionItem, wait bool) {
 	switch len(chain) {
 	case 2:
@@ -227,8 +226,8 @@ func (p *QueryPanel) orLinked(chain []string, prefix string, pending bool) ([]co
 
 // databaseItems offers every ONLINE database on the panel's server whose name
 // contains the lower-cased pl, for the object list: what starts a three-part
-// name. Listing them is also what lets the '.' after one re-sync an open
-// popup, since a '.' never opens one from closed.
+// name. Listing them also lets the '.' after one re-sync an open popup, since a
+// '.' never opens one from closed.
 func (p *QueryPanel) databaseItems(pl string) []controls.CompletionItem {
 	dir := p.app.ensureCompletionDirectory(p.conn)
 	var items []controls.CompletionItem

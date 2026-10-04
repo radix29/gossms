@@ -8,19 +8,19 @@ import (
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
-// detailRuns is the panel's latest plus the per-node bookkeeping latest does
-// not model: pending holds, per node, the token of the most recent fetch
-// dispatched for it.
+// detailRuns is the panel's latest plus the per-node bookkeeping latest does not
+// model: pending holds, per node, the token of the most recent fetch dispatched
+// for it.
 //
 // Reselecting a node mid-fetch dispatches a second fetch for the same pointer,
 // and the first, though cancelled, can still land its final stage; without the
 // token whichever finished last wins the cache write. An entry lives only while
-// its fetch is in flight — the write that caches the result deletes it, so the
+// its fetch is in flight (the write that caches the result deletes it), so the
 // map cannot accumulate one entry per node ever selected.
 //
-// Call stop and supersede, never the embedded Cancel and Abandon: those stop
-// the run without evicting its pending entry, which is what the eviction exists
-// to prevent (see stop).
+// Call stop and supersede, never the embedded Cancel and Abandon: those stop the
+// run without evicting its pending entry, which the eviction exists to prevent
+// (see stop).
 type detailRuns struct {
 	latest
 
@@ -32,8 +32,8 @@ type detailRuns struct {
 	pending map[*explorerNode]int
 }
 
-// begin supersedes whatever run is in flight — stopping it, and evicting its
-// pending entry — and starts a new one for node under parent, the owning
+// begin supersedes whatever run is in flight (stopping it and evicting its
+// pending entry) and starts a new one for node under parent, the owning
 // connection's context.
 func (r *detailRuns) begin(parent context.Context, node *explorerNode) (context.Context, int) {
 	r.stop()
@@ -46,12 +46,11 @@ func (r *detailRuns) begin(parent context.Context, node *explorerNode) (context.
 // stop cancels the run in flight, if any, so its reads stop taking pool
 // connections from the one that replaces it.
 //
-// Its pending entry goes with it, which is what keeps a cancelled fetch out of
-// the cache: its reads now fail with "context canceled" and its rows are left
-// part-filled, yet the final stage would still find pending[node] == token and
-// cache that for good — reselecting the node would then be a permanent cache
-// hit. The display half needs nothing: whoever stops a run supersedes it, or is
-// about to.
+// Its pending entry goes with it, which keeps a cancelled fetch out of the
+// cache: its reads fail with "context canceled" and its rows are part-filled,
+// yet the final stage would still find pending[node] == token and cache that
+// for good, making reselecting the node a permanent cache hit. The display half
+// needs nothing: whoever stops a run supersedes it, or is about to.
 func (r *detailRuns) stop() {
 	if r.Idle() {
 		return
@@ -80,25 +79,25 @@ func (r *detailRuns) end(token int) {
 	r.node = nil
 }
 
-// evict drops node's pending entry if it still belongs to token, so a fetch
-// that has been superseded for that node cannot drop a newer one's entry.
+// evict drops node's pending entry if it still belongs to token, so a
+// superseded fetch cannot drop a newer one's entry.
 func (r *detailRuns) evict(node *explorerNode, token int) {
 	if node != nil && r.pending[node] == token {
 		delete(r.pending, node)
 	}
 }
 
-// forget drops node's pending entry whatever run it belongs to — for a node
-// leaving the tree, or one whose cache entry is being invalidated.
+// forget drops node's pending entry whatever run it belongs to: for a node
+// leaving the tree or whose cache entry is being invalidated.
 func (r *detailRuns) forget(node *explorerNode) { delete(r.pending, node) }
 
 // fetch dispatches to a per-node-type loader. Types worth more than one round
 // trip (NodeServer, NodeDatabases, NodeLogins) show their fast fields first and
 // backfill progressively; the rest go through fetchNodeDetails.
 //
-// fetchCtx is the fetch's own, cancelled by detailRuns.stop when the fetch is
-// superseded; every loader derives each read's timeout from it, never from
-// sc.Server.Context() directly, or cancelling it would stop nothing.
+// fetchCtx is the fetch's own, cancelled by detailRuns.stop on supersede; every
+// loader derives each read's timeout from it, never from sc.Server.Context(),
+// or cancelling it would stop nothing.
 func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	switch node.data.Type {
 	case NodeServer:
@@ -112,9 +111,9 @@ func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.Se
 	case NodeTables, NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables:
 		db.loadTablesFolderDetails(fetchCtx, app, sc, node, seq)
 	default:
-		// The fetch reads a snapshot, never the live node — see
-		// explorerNode.snapshot. node stays behind as the identity postFinal and
-		// panicRepair key off, both on the UI goroutine.
+		// The fetch reads a snapshot, never the live node (see explorerNode.snapshot).
+		// node stays as the identity postFinal and panicRepair key off, both on the UI
+		// goroutine.
 		snap := node.snapshot()
 		app.safegoRepair("loading Object Explorer details", db.panicRepair(node, seq), func() {
 			ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
@@ -126,8 +125,8 @@ func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.Se
 	}
 }
 
-// errDetailFetchPanicked is what the panel shows when a detail loader
-// panicked. The stack is already in the log by then — see reportPanic.
+// errDetailFetchPanicked is what the panel shows when a detail loader panicked.
+// The stack is already logged (see reportPanic).
 var errDetailFetchPanicked = errors.New("loading failed unexpectedly — see the log for details")
 
 // panicRepair builds the safegoRepair step every loader in fetch shares: the
@@ -135,10 +134,10 @@ var errDetailFetchPanicked = errors.New("loading failed unexpectedly — see the
 // and only postFinal clears it, which a panic never reaches.
 //
 // Nothing is cached: a panic says nothing about this node's details, so dropping
-// the pending entry lets the next selection retry — unlike postFinal, which
-// caches an ordinary error because the server answered. Both of postFinal's
-// guards are kept: pending is cleared only if this fetch is still the newest
-// for the node, and the grid touched only if its node is still selected.
+// the pending entry lets the next selection retry (unlike postFinal, which
+// caches an ordinary error because the server answered). postFinal's two guards
+// are kept: pending is cleared only if this fetch is still the newest for the
+// node, and the grid touched only if its node is still selected.
 func (db *DetailBrowser) panicRepair(node *explorerNode, seq int) func() {
 	return func() {
 		db.run.end(seq)
@@ -151,7 +150,7 @@ func (db *DetailBrowser) panicRepair(node *explorerNode, seq int) func() {
 }
 
 // postPartial displays cols/rows immediately if node and seq are still current,
-// without caching — a progressive loader's fast first stage.
+// without caching: a progressive loader's fast first stage.
 func (db *DetailBrowser) postPartial(app *App, seq int, cols []string, rows [][]string) {
 	db.postPartialObjects(app, seq, cols, rows, nil)
 }
@@ -200,12 +199,12 @@ func (db *DetailBrowser) postFinalCharts(app *App, node *explorerNode, seq int, 
 	})
 }
 
-// cacheOnlyObjects caches the completed result without touching the grid — a
+// cacheOnlyObjects caches the completed result without touching the grid: a
 // progressive loader's last stage, where every row is already updated in place
-// and postFinal's SetData would reset the scroll position. Gated by pending
-// like postFinal. The objs mapping is cached with the rows so a reselect, which
-// is served from the cache, still offers Delete; pass nil for a view whose rows
-// are not objects.
+// and postFinal's SetData would reset the scroll position. Gated by pending like
+// postFinal. The objs mapping is cached with the rows so a reselect, served
+// from the cache, still offers Delete; pass nil for a view whose rows are not
+// objects.
 func (db *DetailBrowser) cacheOnlyObjects(app *App, node *explorerNode, seq int, cols []string, rows [][]string, objs []nodeData, err error) {
 	app.postAndWake(func() {
 		db.cacheIfCurrent(node, seq, &detailResult{cols: cols, rows: rows, objs: objs, err: err})
@@ -231,18 +230,18 @@ func (db *DetailBrowser) cacheIfCurrent(node *explorerNode, seq int, result *det
 // queues a redraw for each.
 //
 // The bound is per loader, not per connection: two folders loading at once fan
-// out to 16 — inside the pool, but the headroom is two loaders, not more.
+// out to 16, inside the pool, but the headroom is two loaders, not more.
 const maxRowFetchConcurrency = 8
 
 // fetchNodeDetails runs the gosmo queries for a node's detail grid. Called from
-// a background goroutine, so it must not touch DetailBrowser or any other UI
-// state — only return data for the caller to apply via postAndWake. ctx bounds
-// the whole call.
+// a background goroutine, so it must not touch DetailBrowser or other UI state,
+// only return data for the caller to apply via postAndWake. ctx bounds the
+// whole call.
 //
-// objs is an out-parameter rather than a fourth result because only the handful
-// of arms whose rows are objects have anything to say about it: they append one
-// nodeData per row, and every other arm leaves it nil, which withholds the
-// pane's Delete. See detailResult.objs.
+// objs is an out-parameter rather than a fourth result because only the arms
+// whose rows are objects use it: they append one nodeData per row, and every
+// other arm leaves it nil, which withholds the pane's Delete. See
+// detailResult.objs.
 func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	switch node.data.Type {
 	case NodeAgentJobs:
@@ -470,7 +469,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 }
 
 // fetchChildObjectsDetail is the fallback detail view for a node type with
-// children but no purpose-built view: it lists the child objects. It reuses the
+// children but no purpose-built view: it lists the child objects, reusing the
 // childLoaders entry the tree expands with, so a newly wired NodeType gets a
 // folder-shaped detail view rather than a Property/Value grid.
 func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
@@ -486,9 +485,9 @@ func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *e
 	rows := make([][]string, 0, len(children))
 	for _, c := range children {
 		rows = append(rows, []string{c.label})
-		// The child's own nodeData, not one rebuilt from the label: the label
-		// carries type and state decoration ("IX_x (Nonclustered, Unique)")
-		// and nothing in it identifies the table an index belongs to.
+		// The child's own nodeData, not one rebuilt from the label: the label carries
+		// type and state decoration ("IX_x (Nonclustered, Unique)") and nothing in it
+		// identifies the table an index belongs to.
 		*objs = append(*objs, c.data)
 	}
 	return []string{"Name"}, rows, nil

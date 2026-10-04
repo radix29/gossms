@@ -11,9 +11,9 @@ import (
 )
 
 // log_viewer_toolbar.go is the viewer's toolbar: what each cell says, when it
-// is disabled and why, and the labels that name the file or files on screen —
-// the same wording the grid's File column and the summary line use. The panel
-// itself is in log_viewer.go.
+// is disabled and why, and the labels naming the file or files on screen (the
+// wording the grid's File column and summary line use). The panel itself is in
+// log_viewer.go.
 
 // Toolbar cell indexes, in buildTools' layout order. Cells are addressed by
 // index: popMenu anchors a selector's list under its own cell, and HandleKey
@@ -42,33 +42,31 @@ func (lv *LogViewer) buildTools() {
 	lv.refreshToolLabels()
 }
 
-// toolsEnabled reports whether the toolbar's actions are available *at all* —
-// one answer behind drawToolbar's dimming, the click path and F5, so a cell
-// drawn dimmed can never still act on a click and start a second read mid-read.
-// One cell can also be withheld on its own; see toolDisabled.
+// toolsEnabled reports whether the toolbar's actions are available *at all*:
+// one answer behind drawToolbar's dimming, the click path and F5, so a dimmed
+// cell can never still act on a click and start a second read mid-read. One
+// cell can also be withheld on its own; see toolDisabled.
 func (lv *LogViewer) toolsEnabled() bool { return !lv.busy }
 
-// recycleDenied reports whether the connected login may not cycle a log —
-// or, on the Database Mail log, purge it (recycleRights).
+// recycleDenied reports whether the connected login may not cycle a log, or, on
+// the Database Mail log, purge it (recycleRights).
 //
-// Recycle is the one write on this toolbar, and the Object Explorer's Recycle
-// item is gated on the same right. Gating only there left one action answering
-// two ways — grey in the tree, live here, failing at the server.
+// Recycle is the one write on this toolbar, and Object Explorer's Recycle item
+// is gated on the same right; gating only there left one action grey in the
+// tree, live here, and failing at the server.
 //
-// Asked on demand rather than latched into toolButton.disabled the way
-// ActivityMonitor does it: that panel rebuilds its cells on every draw, while
-// this toolbar is built once in NewLogViewer, where the capability probe may
-// not have run. A cached flag would be read from the build, and whether it had
-// been refreshed by the time of a click would depend on a draw having
-// happened first.
+// Asked on demand rather than latched into toolButton.disabled as
+// ActivityMonitor does: that panel rebuilds its cells on every draw, while this
+// toolbar is built once in NewLogViewer, where the capability probe may not
+// have run, so a cached flag would depend on a draw having happened first.
 func (lv *LogViewer) recycleDenied() bool {
 	return !gate.Allows(lv.conn, "", lv.recycleRights()...)
 }
 
 // recycleRights are the alternatives the Recycle cell's write needs for the
-// family on screen. Cycling an error log is sysadmin itself: probed on 13
-// and 17, a CONTROL SERVER login is refused by sp_cycle_errorlog (Msg 15247)
-// and sp_cycle_agent_errorlog (Msg 14260), as the Agent reload is (see
+// family on screen. Cycling an error log is sysadmin itself: probed on 13 and
+// 17, a CONTROL SERVER login is refused by sp_cycle_errorlog (Msg 15247) and
+// sp_cycle_agent_errorlog (Msg 14260), as the Agent reload is (see
 // gate.Sysadmin). sysmail_delete_log_sp is plain msdb permission, which
 // db_owner in msdb has without any server right (W8).
 func (lv *LogViewer) recycleRights() []gate.Right {
@@ -99,8 +97,8 @@ func (lv *LogViewer) toolDisabled(i int) bool {
 	return !lv.toolsEnabled() || (i == logToolRecycle && lv.recycleDenied())
 }
 
-// toolReason is what to tell the user about cell i while it is withheld, or
-// "" for a cell whose grey speaks for itself. Same order as runTool's refusals:
+// toolReason is what to tell the user about cell i while it is withheld, or ""
+// for a cell whose grey speaks for itself. Same order as runTool's refusals:
 // while a read is in flight every cell is grey for that reason, and naming
 // CONTROL SERVER there would name a right that is not why it did nothing.
 func (lv *LogViewer) toolReason(i int) string {
@@ -128,9 +126,9 @@ func (lv *LogViewer) showOverflowMenu() {
 // runTool invokes toolbar cell i's action, or says why it did not. Reports
 // whether the action ran.
 //
-// The busy check comes first deliberately: while a read is in flight every cell
-// is grey for that reason, and answering a click on Recycle with "Requires
-// CONTROL SERVER" would name a right that is not why it did nothing.
+// The busy check comes first deliberately (see toolReason): answering a click
+// on Recycle mid-read with "Requires CONTROL SERVER" would name a right that is
+// not why it did nothing.
 func (lv *LogViewer) runTool(i int) bool {
 	if !lv.toolsEnabled() {
 		return false
@@ -176,10 +174,9 @@ func logFileShortLabel(ref logFileRef) string {
 	return fmt.Sprintf("Archive #%d", ref.Num)
 }
 
-// logFileFamilyLabel names a file with its family, for the labels a mixed
-// selection makes ambiguous: archive numbers are not comparable across
-// families, so "Archive #1" alone names two different files once both are in
-// the same grid.
+// logFileFamilyLabel names a file with its family, for labels a mixed selection
+// makes ambiguous: archive numbers aren't comparable across families, so
+// "Archive #1" alone names two different files once both are in the grid.
 func logFileFamilyLabel(ref logFileRef) string {
 	return logFamilyShortName(ref.Type) + " " + logFileShortLabel(ref)
 }
@@ -241,10 +238,10 @@ func selectionFamily(refs []logFileRef, fallback gosmo.ErrorLogType) gosmo.Error
 	return refs[0].Type
 }
 
-// scopeLabel names what the grid is showing, for the status line and the
-// reading message: the family and the file for an ordinary selection, and the
-// families it draws from for a mixed one — "SQL Server log 3 files" would name
-// only half of what is on screen.
+// scopeLabel names what the grid is showing, for the status line and reading
+// message: the family and file for an ordinary selection, and the families it
+// draws from for a mixed one ("SQL Server log 3 files" would name only half of
+// what is on screen).
 func (lv *LogViewer) scopeLabel() string {
 	if !lv.multiFamily() {
 		return fmt.Sprintf("%s log %s", lv.logType, lv.selectionLabel())
@@ -258,10 +255,9 @@ func (lv *LogViewer) scopeLabel() string {
 	return strings.Join(names, " + ") + " logs " + lv.selectionLabel()
 }
 
-// selectionLabel names what is on screen for the file selector and the status
-// line: the file itself when there is one, the count when there are several.
-// Listing four archives' labels would overrun the toolbar cell and every
-// status line that names the selection.
+// selectionLabel names what is on screen for the file selector and status line:
+// the file itself when there is one, the count when several. Listing four
+// archives' labels would overrun the toolbar cell and every status line.
 func (lv *LogViewer) selectionLabel() string {
 	if lv.multiFile() {
 		return fmt.Sprintf("%d files", len(lv.sel))

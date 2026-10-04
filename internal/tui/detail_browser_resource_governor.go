@@ -15,11 +15,11 @@ import (
 // Resource Governor: the governor's configuration, the pool and group grids
 // with their live counters, and one pool, group or external pool's rows.
 //
-// The live counters come from the dm_resource_governor_* DMVs, which need
-// VIEW SERVER STATE where the catalog views need only VIEW ANY DEFINITION
-// (W1). A login with the one and not the other gets the configuration with
-// the live columns blank, never an error: the configuration is still worth
-// showing, and a blank reads as "not known" where a 0 would read as "idle".
+// The live counters come from the dm_resource_governor_* DMVs, which need VIEW
+// SERVER STATE where the catalog views need only VIEW ANY DEFINITION (W1). A
+// login with one and not the other gets the configuration with the live columns
+// blank, never an error: the configuration is worth showing, and a blank reads
+// as "not known" where 0 would read as "idle".
 
 // resourceGovernorDetail is the Resource Governor node's view: what is stored
 // beside what is in force. The two differ exactly while a change awaits

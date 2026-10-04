@@ -12,18 +12,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
 
-// query_store_panel.go is SSMS's Query Store views as one panel per database:
-// a report selector over a chart, the report's rows, and the plans of whichever
-// query is selected — the pane Force Plan and Unforce Plan act from. This file
-// is the panel's state, construction and layout; the toolbar is in
-// query_store_panel_toolbar.go, the reads in query_store_panel_load.go and the
-// plan actions in query_store_panel_plans.go. Drawing is in
-// query_store_panel_draw.go and input in query_store_panel_input.go; the
-// reports themselves are in query_store_reports.go, shared with the Detail
-// Browser's own grids.
+// query_store_panel.go is SSMS's Query Store views as one panel per database: a
+// report selector over a chart, the report's rows, and the plans of the
+// selected query (the pane Force Plan and Unforce Plan act from). This file is
+// the panel's state, construction and layout; the toolbar is in
+// query_store_panel_toolbar.go, reads in query_store_panel_load.go, plan
+// actions in query_store_panel_plans.go, drawing in query_store_panel_draw.go,
+// input in query_store_panel_input.go; the reports are in
+// query_store_reports.go, shared with the Detail Browser's grids.
 
 // qsReadTimeout bounds one report or one plan read. A Query Store aggregate
-// over a month of a busy instance is a large scan, so this is generous — but a
+// over a month of a busy instance is a large scan, so it is generous, but a
 // panel that never comes back is worse than one that says it gave up.
 const qsReadTimeout = 120 * time.Second
 
@@ -34,7 +33,7 @@ type qsWindow struct {
 }
 
 // qsWindows are the ranges the Window selector offers, shortest first. One
-// table rather than a label list beside a duration list — a "24 h" that read
+// table rather than a label list beside a duration list: a "24 h" that read
 // seven days is invisible in every unit test.
 var qsWindows = []qsWindow{
 	// The two short ranges are for the workload you just ran: a development
@@ -62,16 +61,15 @@ var qsTopCounts = []int{10, 25, 50, 100}
 const qsDefaultTopIdx = 1
 
 // qsMinExecCounts are the execution floors the Min Execs selector offers, the
-// first meaning no floor. A query that ran twice has an average, a variation
-// and a regression, and none of the three mean anything — the floor is how a
-// report about a workload stops being topped by the query that ran once
-// during a backup.
+// first meaning no floor. A query that ran twice has an average, variation and
+// regression that mean nothing; the floor stops a report being topped by the
+// query that ran once during a backup.
 var qsMinExecCounts = []int64{0, 2, 5, 10, 100, 1000}
 
 // qsRegressionPcts are the thresholds the Regression selector offers, as a
-// percentage of the baseline value; the first means no threshold. A
-// percentage rather than an amount because the same report is read under
-// eleven metrics in four different units — see gosmo's MinRegressionPct.
+// percentage of the baseline; the first means no threshold. A percentage
+// because the same report is read under eleven metrics in four units (see
+// gosmo's MinRegressionPct).
 var qsRegressionPcts = []float64{0, 10, 25, 50, 100}
 
 // qsDefaultFilterIdx is index 0 of both: the panel opens unfiltered, the way
@@ -90,8 +88,8 @@ const (
 // with the metric, statistic, window and row cap selectable, and the selected
 // query's plans beside them.
 //
-// Reads run on the panel's host connection rather than one of its own — each
-// is a one-shot query bounded by qsReadTimeout with nothing on a timer, so no
+// Reads run on the panel's host connection, not one of its own: each is a
+// one-shot query bounded by qsReadTimeout with nothing on a timer, so no
 // background traffic queues behind the shared connection.
 type QueryStorePanel struct {
 	app    *App
@@ -109,12 +107,12 @@ type QueryStorePanel struct {
 	windowIdx int
 	topIdx    int
 
-	// statChosen records that the user picked a statistic from the toolbar.
-	// Until they do, the statistic follows each report's own defaultStat —
-	// Total for the three read as accumulated cost, Avg for the other four,
-	// which are about cost per execution. Applying the default at construction
-	// only makes one action give two answers: Total on a panel opened for the
-	// report, whatever the last view left behind on one already open.
+	// statChosen records that the user picked a statistic from the toolbar. Until
+	// then the statistic follows each report's own defaultStat: Total for the
+	// three read as accumulated cost, Avg for the four about cost per execution.
+	// Applying the default at construction only would make one action give two
+	// answers: Total on a panel opened for the report, whatever the last view left
+	// behind on one already open.
 	statChosen bool
 
 	// minExecIdx and regressIdx index qsMinExecCounts and qsRegressionPcts —
@@ -131,10 +129,10 @@ type QueryStorePanel struct {
 
 	grid      *controls.DataGrid
 	plansGrid *controls.DataGrid
-	// chartSplit divides the chart from the grids below it; planSplit divides
-	// the report grid from the plan grid below that. Both are horizontal: three
-	// stacked panes, because the report grid's eight columns and the plan
-	// grid's ten have no room to sit side by side on an 80-column terminal.
+	// chartSplit divides the chart from the grids below it; planSplit divides the
+	// report grid from the plan grid below that. Both horizontal: three stacked
+	// panes, because the report grid's eight columns and the plan grid's ten don't
+	// fit side by side on an 80-column terminal.
 	chartSplit *layout.Splitter
 	planSplit  *layout.Splitter
 
@@ -142,11 +140,11 @@ type QueryStorePanel struct {
 	acts []toolButton // the plan actions
 
 	// selMore and actMore are each row's "More ▾" cell, and hiddenSel and
-	// hiddenActs the buttons it stands in for. Both rows are wider than the
-	// pane at ordinary terminal sizes — the action row alone wants 119 columns
-	// of a pane that gets 70% of the screen — and a button that does not fit is
-	// not drawn *and* not clickable, so Track Query and Compare Plans could not
-	// be reached at all below a 170-column terminal.
+	// hiddenActs the buttons it stands in for. Both rows are wider than the pane
+	// at ordinary terminal sizes (the action row alone wants 119 columns of a pane
+	// that gets 70% of the screen), and a button that does not fit is neither
+	// drawn nor clickable, so Track Query and Compare Plans were unreachable below
+	// a 170-column terminal.
 	selMore    toolButton
 	actMore    toolButton
 	hiddenSel  []int
@@ -163,9 +161,9 @@ type QueryStorePanel struct {
 	// launch here goes through safegoRepair.
 	busy bool
 	// reportRead and planRead each discard a superseded read that lands after a
-	// newer one and cancel the read it replaced. Two, not one: the report and
-	// the plan pane run independently, and a report reload must not kill the
-	// plan read beside it. See latest.
+	// newer one and cancel the read it replaced. Two, not one: the report and plan
+	// panes run independently, and a report reload must not kill the plan read
+	// beside it. See latest.
 	reportRead latest
 	planRead   latest
 
@@ -176,9 +174,9 @@ type QueryStorePanel struct {
 
 	// cmpPlan is the plan marked for comparison by the first press of Compare
 	// Plans, parsed there and then: the plan grid is rebuilt by every report
-	// reload, and a mark that pointed into it would compare whatever row that
-	// index landed on after the next Refresh. cmpQueryID is what it was a plan
-	// of — two plans of different queries are not a comparison.
+	// reload, and a mark pointing into it would compare whatever row that index
+	// landed on after the next Refresh. cmpQueryID is what it was a plan of; plans
+	// of different queries are not a comparison.
 	cmpPlan    *showplan.Plan
 	cmpPlanID  int64
 	cmpQueryID int64
@@ -187,13 +185,12 @@ type QueryStorePanel struct {
 	// lands on the same query does not blank the plans under the cursor.
 	queryID int64
 
-	// seriesMode swaps the report's bar chart for the selected query's
-	// per-plan history, series holds what was read for it, and seriesNote is
-	// what the chart says while there is nothing to plot — the read is in
-	// flight, failed, or came back with no intervals. seriesLabel names the
-	// quantity the lines carry, kept from the options the read went out with
-	// rather than taken from the toolbar, which can have moved on since.
-	// See query_store_series.go.
+	// seriesMode swaps the report's bar chart for the selected query's per-plan
+	// history, series holds what was read for it, and seriesNote is what the chart
+	// says while there is nothing to plot (read in flight, failed, or no
+	// intervals). seriesLabel names the quantity the lines carry, kept from the
+	// options the read went out with rather than the toolbar, which can have moved
+	// on. See query_store_series.go.
 	seriesMode  bool
 	series      qsSeriesData
 	seriesNote  string
@@ -272,8 +269,8 @@ func newQSGrid(app *App) *controls.DataGrid {
 // showValue is the report grid's "Show Value" hook. It opens the statement
 // Query Store actually holds, not the cell: queryStoreOneLine collapses the
 // statement onto one line for the grid, and a `-- comment` anywhere in it then
-// swallows every line that followed — the panel it opened was runnable SQL with
-// most of the query commented out.
+// swallows every line after it, leaving runnable SQL with most of the query
+// commented out.
 //
 // The row comes from the grid rather than the hook, whose first parameter is
 // the *column* index. DataGrid.openViewer reads the cell at selRow/selCol, so

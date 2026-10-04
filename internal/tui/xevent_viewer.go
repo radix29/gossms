@@ -10,24 +10,24 @@ import (
 )
 
 // xevent_viewer.go is SSMS's Extended Events viewer: Watch Live Data on a
-// session, or View Target Data on one of its targets, as a grid of events
-// over a details pane. This file is the panel's state, construction and
-// layout; the toolbar is in xevent_viewer_toolbar.go, the reads in
-// xevent_viewer_feed.go, the grid's rows and the filter in
-// xevent_viewer_rows.go, Grouping and Aggregation in xevent_viewer_group.go,
-// Find and bookmarks in xevent_viewer_find.go, Export and the saved display
-// settings in xevent_viewer_export.go, drawing in xevent_viewer_draw.go and
-// input in xevent_viewer_input.go. The event store itself is internal/xevent.
+// session, or View Target Data on one of its targets, as a grid of events over
+// a details pane. This file is the panel's state, construction and layout; the
+// toolbar is in xevent_viewer_toolbar.go, the reads in xevent_viewer_feed.go,
+// the grid's rows and filter in xevent_viewer_rows.go, Grouping and Aggregation
+// in xevent_viewer_group.go, Find and bookmarks in xevent_viewer_find.go,
+// Export and saved display settings in xevent_viewer_export.go, drawing in
+// xevent_viewer_draw.go and input in xevent_viewer_input.go. The event store is
+// internal/xevent.
 //
 // Live data is polled from the session's event_file (or ring_buffer) target
-// rather than streamed — docs/decisions.md § Extended Events.
+// rather than streamed (docs/decisions.md § Extended Events).
 
 // XEventViewer is one Extended Events viewer panel.
 //
-// It reads on a connection of its own (db.RoleXEventProfiler), opened when
-// the panel is and closed with it: a live feed polls every second, and a
-// first read of a big event_file set runs for seconds, neither of which may
-// queue ahead of Object Explorer on the host connection.
+// It reads on a connection of its own (db.RoleXEventProfiler), opened and
+// closed with the panel: a live feed polls every second and a first read of a
+// big event_file set runs for seconds, neither of which may queue ahead of
+// Object Explorer on the host connection.
 type XEventViewer struct {
 	app *App
 	// host is the Object Explorer connection the panel was opened from: the
@@ -61,18 +61,17 @@ type XEventViewer struct {
 	filter *xevent.Filter
 	// hiddenCols is the Choose Columns state: column keys (xeColumnKey) not shown.
 	hiddenCols map[string]bool
-	// columns are the grid's columns right now — the store's minus hiddenCols —
-	// and shown the events the grid is built from, oldest first: the store's
-	// events that pass the filter. The grid reads both through xeRowSource,
-	// so appending to shown grows the grid without rebuilding it.
+	// columns are the grid's columns right now (the store's minus hiddenCols) and
+	// shown the events the grid is built from, oldest first: the store's events
+	// that pass the filter. The grid reads both through xeRowSource, so appending to
+	// shown grows the grid without rebuilding it.
 	columns []xevent.Column
 	shown   []*xevent.Event
 
-	// groupBy are the Grouping columns, outermost first, and aggs the
-	// Aggregation shown on each group row; groups are shown grouped, and
-	// display the grid's rows while grouped — group rows and the events of
-	// expanded groups — nil otherwise, when the grid's rows are shown itself.
-	// expanded holds the Keys of the expanded groups. See
+	// groupBy are the Grouping columns, outermost first, and aggs the Aggregation
+	// shown on each group row; groups are shown grouped, and display the grid's
+	// rows while grouped (group rows and the events of expanded groups), nil
+	// otherwise. expanded holds the Keys of the expanded groups. See
 	// xevent_viewer_group.go.
 	groupBy  []xevent.Column
 	aggs     []xevent.Aggregate

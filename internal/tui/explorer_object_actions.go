@@ -12,25 +12,25 @@ import (
 )
 
 // explorer_object_actions.go is the Delete, Rename and Move-to-schema flows:
-// how each one names the object, confirms, scripts or runs, and refreshes the
-// tree afterwards. What each action means per node type is the table in
+// how each names the object, confirms, scripts or runs, and refreshes the tree
+// afterwards. What each action means per node type is the table in
 // explorer_object_ops.go.
 
 // objectDisplayName is the object's name as the dialogs should say it:
-// schema-qualified where it has a schema, bare otherwise. Not node.label,
-// which carries type/state decoration ("IX_x (Nonclustered, Unique)").
+// schema-qualified where it has a schema, bare otherwise. Not node.label, which
+// carries type/state decoration ("IX_x (Nonclustered, Unique)").
 //
-// A schema node is the exception, and the test is its type rather than
-// Schema == Name: loadSchemasChildren puts the schema's name in both fields,
-// so "Sales.Sales" would be nonsense — but so would dropping the qualifier
-// from the table Sales.Sales, which a value comparison also matched.
+// A schema node is the exception, tested by type rather than Schema == Name:
+// loadSchemasChildren puts the schema's name in both fields, so "Sales.Sales"
+// would be nonsense, but so would dropping the qualifier from the table
+// Sales.Sales, which a value comparison also matched.
 func objectDisplayName(n *explorerNode) string { return objectDataName(n.data) }
 
-// objectDataName is objectDisplayName for a nodeData on its own — what the
-// Details pane has, holding no node.
+// objectDataName is objectDisplayName for a nodeData on its own (the Details
+// pane holds no node).
 func objectDataName(n nodeData) string {
-	// A column's own Schema/Name are the table's schema and the column's
-	// name, so the qualifier that means anything is the table's.
+	// A column's own Schema/Name are the table's schema and the column's name, so
+	// the meaningful qualifier is the table's.
 	if n.Type == NodeColumn {
 		return n.Schema + "." + n.TableName + "." + n.Name
 	}
@@ -41,13 +41,12 @@ func objectDataName(n nodeData) string {
 }
 
 // deleteObject confirms, drops, and refreshes the parent folder so the node
-// disappears. The parent is refreshed rather than the node itself: the node
-// is gone, and its own refresh would just re-query a dropped object.
+// disappears. The parent is refreshed rather than the node: the node is gone,
+// and its own refresh would re-query a dropped object.
 //
 // The drop runs off the UI goroutine but names the object from nodeData, which
 // the UI goroutine writes (applyNodeFilter sets data.Filter). Copying it here
-// is what keeps the two apart — the ops take a nodeData by value for exactly
-// this reason.
+// keeps the two apart; the ops take a nodeData by value for this reason.
 func (a *App) deleteObject(node *explorerNode) {
 	sc := resolveConn(node)
 	a.confirmDeleteObjects(sc, []nodeData{node.data}, func() {
@@ -56,18 +55,16 @@ func (a *App) deleteObject(node *explorerNode) {
 }
 
 // confirmDeleteObjects is the whole of Delete for one or more objects: the
-// confirmation, the drops, and after() once they are done. Object Explorer
-// reaches it with a single node; the Details pane reaches it with everything
-// the grid's block selection covers.
+// confirmation, the drops, and after() once done. Object Explorer reaches it
+// with a single node; the Details pane with everything the grid's block
+// selection covers.
 //
-// One path, not two. A second copy would be the place a warning, a typed
-// confirmation or the foreign-key option quietly stops applying — the
-// difference between deleting a table from the tree and from the pane must be
-// where the click landed and nothing else.
+// One path, not two: a second copy is where a warning, a typed confirmation or
+// the foreign-key option would quietly stop applying. Deleting from the tree
+// and from the pane must differ only by where the click landed.
 func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after func()) {
-	// IsSystem and the op are re-checked here rather than trusted from the
-	// menu: this is the function that issues the DROP, so it is where the
-	// guarantee belongs.
+	// IsSystem and the op are re-checked here rather than trusted from the menu:
+	// this function issues the DROP, so the guarantee belongs here.
 	if len(objs) == 0 || !a.requireConn(sc) {
 		return
 	}
@@ -81,8 +78,8 @@ func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after fun
 	}
 	run := func(option bool) { a.runDeletes(sc, objs, ops, option, after) }
 	// answered routes the two buttons that do something. Script is neither a Yes
-	// nor a No: nothing is dropped, and the statements the Yes would have run
-	// open in a query window for the user to read, edit or run themselves.
+	// nor a No: nothing is dropped, and the statements the Yes would have run open
+	// in a query window for the user to read, edit or run.
 	answered := func(ans dialogs.ConfirmAnswer, option bool) {
 		switch ans {
 		case dialogs.ConfirmYes:
@@ -109,16 +106,16 @@ func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after fun
 			})
 			return
 		}
-		// The checkbox is unticked on every showing: the option widens what the
-		// drop touches, so it is asked for each time rather than remembered. An
-		// op without one passes "", which shows the question with no checkbox.
+		// The checkbox is unticked on every showing: the option widens what the drop
+		// touches, so it is asked each time, not remembered. An op without one passes
+		// "", showing the question with no checkbox.
 		a.confirmDialog.ShowConfirmScript(title, msg, op.dropOption, false, answered)
 		return
 	}
 
 	// Some types are deleted one at a time, from either surface: a typed
-	// confirmation asks for one object's name and cannot stand for a selection,
-	// and a principal or a database is dropped with a deliberation the batch
+	// confirmation asks for one object's name and cannot stand for a selection, and
+	// a principal or database is dropped with a deliberation the batch
 	// confirmation's one shared warning cannot carry.
 	for i, op := range ops {
 		if deletedAlone(op, objs[i]) {
@@ -126,28 +123,28 @@ func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after fun
 			return
 		}
 	}
-	// One flowing sentence: ConfirmDialog wraps and centres its message, so a
-	// list laid out with newlines arrives as prose with the names run into it.
+	// One flowing sentence: ConfirmDialog wraps and centres its message, so a list
+	// laid out with newlines arrives as prose with the names run into it.
 	msg := fmt.Sprintf("Delete these %d objects — %s? This cannot be undone.",
 		len(objs), deleteListText(objs))
 	if w := sharedDeleteWarning(ops); w != "" {
-		// The op's warning is written about one object ("All of its data is
-		// deleted with it"), so it is introduced rather than repeated as-is.
+		// The op's warning is written about one object ("All of its data is deleted
+		// with it"), so it is introduced rather than repeated as-is.
 		msg += " Each object: " + w
 	}
-	// The checkbox is offered only when every selected object answers to it,
-	// since one tick drives every drop in the batch.
+	// The checkbox is offered only when every selected object answers to it, since
+	// one tick drives every drop in the batch.
 	a.confirmDialog.ShowConfirmScript("Delete Objects", msg, sharedDropOption(ops), false, answered)
 }
 
 // scriptDeletes opens the DROP statements this delete would have run in a new
-// query window, without running any of them: the same drop closures, under
-// gosmo.WithScript, so what the user reads is what the Yes would have executed
-// rather than a second rendering built here that could drift from it.
+// query window without running any: the same drop closures under
+// gosmo.WithScript, so what the user reads is what the Yes would execute, not a
+// second rendering that could drift.
 //
-// The option is passed through for the same reason it reaches run — the
-// checkbox changes the statement, and a script that ignored it would answer a
-// different question from the one on screen.
+// The option is passed through as it is to run: the checkbox changes the
+// statement, and a script ignoring it would answer a different question from the
+// one on screen.
 func (a *App) scriptDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, option bool) {
 	a.safego("scripting deletes", func() {
 		ctx, cancel := serverWriteContext(sc)
@@ -168,9 +165,9 @@ func (a *App) scriptDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp,
 			err = s.settle(scriptCtx, sc)
 		}
 		text := script.String()
-		// The database the first object lives in: a selection comes from one
-		// folder, and a server-level principal's is "", which opens the panel on
-		// the connection's own default.
+		// The database the first object lives in: a selection comes from one folder,
+		// and a server-level principal's is "", which opens the panel on the
+		// connection's own default.
 		database := objs[0].DBName
 		a.postAndWake(func() {
 			switch {
@@ -187,7 +184,7 @@ func (a *App) scriptDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp,
 
 // maxDeleteListNames caps how many object names the multi-object confirmation
 // spells out; the rest are counted. A selection can be the whole folder, and a
-// dialog listing four hundred names says less than one listing ten and a count.
+// dialog listing four hundred names says less than ten and a count.
 const maxDeleteListNames = 10
 
 // deleteListText is the object list the multi-object confirmation shows.
@@ -219,9 +216,9 @@ func sharedDropOption(ops []*objectOp) string {
 }
 
 // sharedDeleteWarning is the extra sentence the confirmation carries when every
-// selected object has the same one — "All of its data is deleted with it." for
-// a set of tables. A mixed selection drops it rather than showing a warning
-// that is true of only some of what is about to go.
+// selected object has the same one ("All of its data is deleted with it." for a
+// set of tables). A mixed selection drops it rather than show a warning true of
+// only some of what is about to go.
 func sharedDeleteWarning(ops []*objectOp) string {
 	w := ops[0].warning
 	for _, op := range ops[1:] {
@@ -233,19 +230,19 @@ func sharedDeleteWarning(ops []*objectOp) string {
 }
 
 // runDeletes drops each object in turn on one background goroutine and reports
-// what happened. Sequential rather than concurrent: DDL, and a batch that half
-// succeeded has to say which half — a fan-out would report whichever error
-// arrived first as if it were the only one.
+// what happened. Sequential, not concurrent: it is DDL, and a batch that half
+// succeeded has to say which half (a fan-out would report whichever error
+// arrived first as if it were the only one).
 //
-// The drops run behind the progress dialog. Cancel stops the drop in flight
-// and the batch with it — the context is checked before every object as well
-// as handed to each drop, so a batch never runs on past a cancel — and what
-// already went stays gone, which is why the count leads the status line.
+// The drops run behind the progress dialog. Cancel stops the drop in flight and
+// the batch with it (the context is checked before every object as well as
+// handed to each drop), and what already went stays gone, which is why the
+// count leads the status line.
 func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, option bool, after func()) {
 	done := 0
 	var failed nodeData
-	// settleErr is the settle step's failure, kept apart from the drops':
-	// those stand either way, and the count still leads the status line.
+	// settleErr is the settle step's failure, kept apart from the drops': those
+	// stand either way, and the count still leads the status line.
 	var settleErr error
 	settling := settlingOp(ops)
 	job := progressJob{
@@ -298,8 +295,8 @@ func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, op
 		case failedErr != nil && done == 0 && len(objs) == 1:
 			a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(failedErr)))
 		case failedErr != nil:
-			// The count first: the drops already ran, and which of them
-			// landed is what the user has to know before retrying.
+			// The count first: the drops already ran, and which landed is what the user
+			// must know before retrying.
 			a.setStatus(fmt.Sprintf("Deleted %d of %d — %s failed: %v",
 				done, len(objs), objectDataName(failed), withPermissionAdvice(failedErr)))
 		case settleErr != nil && len(objs) == 1:
@@ -312,10 +309,9 @@ func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, op
 		default:
 			a.setStatus(fmt.Sprintf("Deleted %d objects", done))
 		}
-		// Even a partial batch refreshes: some objects are gone, and a
-		// folder still listing them is worse than the failure itself. A
-		// cancelled one does too, whatever the count: the cancel can reach
-		// the server after the drop it interrupted had already committed.
+		// Even a partial batch refreshes: some objects are gone, and a folder still
+		// listing them is worse than the failure. A cancelled one does too, whatever the
+		// count: the cancel can reach the server after the interrupted drop committed.
 		if done > 0 || failedErr == nil || cancelled {
 			after()
 		}
@@ -333,9 +329,9 @@ func settlingOp(ops []*objectOp) *objectOp {
 	return nil
 }
 
-// renameObject prompts for a new name and applies it. The new name is a
-// bare name even for a schema-scoped object — sp_rename refuses a qualified
-// one, and renaming never moves an object between schemas.
+// renameObject prompts for a new name and applies it. The new name is a bare
+// name even for a schema-scoped object: sp_rename refuses a qualified one, and
+// renaming never moves an object between schemas.
 func (a *App) renameObject(node *explorerNode) {
 	op := objectOpFor(node.data.Type)
 	sc := resolveConn(node)
@@ -365,8 +361,8 @@ func (a *App) renameObject(node *explorerNode) {
 // runRename performs the rename itself, once the new name is known and any
 // warning has been accepted.
 func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, oldName, newName string) {
-	// Copied on the UI goroutine, which is the only one that writes it — see
-	// deleteObject. node itself is still needed, but only inside postAndWake.
+	// Copied on the UI goroutine, the only one that writes it (see deleteObject).
+	// node is still needed, but only inside postAndWake.
 	data := node.data
 	a.runWithProgress(progressJob{
 		title:   "Rename " + op.noun,
@@ -376,9 +372,9 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 	}, func(ctx context.Context, _ progressReport) error {
 		return op.rename(ctx, sc, data, newName)
 	}, func(err error, cancelled bool) {
-		// The parent, not the node: the node's label is built by the folder's
-		// loader, so only a reload of the folder shows the new name. After a
-		// cancel too — it may have reached the server after the rename did.
+		// The parent, not the node: the node's label is built by the folder's loader,
+		// so only a reload of the folder shows the new name. After a cancel too, since
+		// it may have reached the server after the rename did.
 		switch {
 		case cancelled:
 			a.setStatus(fmt.Sprintf("Rename of %s %q cancelled", strings.ToLower(op.noun), oldName))
@@ -392,19 +388,18 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 	})
 }
 
-// moveObjectToSchema offers the database's other schemas for node's object
-// and runs ALTER SCHEMA ... TRANSFER on the one picked — Object Explorer's
-// answer to the thing Rename deliberately cannot do (sp_rename takes a bare
-// name and never crosses schemas).
+// moveObjectToSchema offers the database's other schemas for node's object and
+// runs ALTER SCHEMA ... TRANSFER on the one picked: what Rename deliberately
+// cannot do (sp_rename takes a bare name and never crosses schemas).
 //
-// The list is fetched before the menu opens rather than typed into a prompt:
-// a mistyped schema reaches the server as "Cannot find the schema", and the
-// set of legal answers is short and already known.
+// The list is fetched before the menu opens rather than typed into a prompt: a
+// mistyped schema reaches the server as "Cannot find the schema", and the set
+// of legal answers is short and known.
 func (a *App) moveObjectToSchema(node *explorerNode) {
 	op := objectOpFor(node.data.Type)
 	sc := resolveConn(node)
-	// Re-checked here, not trusted from the menu — the same rule deleteObject
-	// follows, since this is the function that issues the statement.
+	// Re-checked here, not trusted from the menu (as in deleteObject): this
+	// function issues the statement.
 	if op == nil || op.transfer == nil || node.data.IsSystem || !a.requireConn(sc) {
 		return
 	}
@@ -450,9 +445,9 @@ func (a *App) moveObjectToSchema(node *explorerNode) {
 	})
 }
 
-// confirmMoveToSchema asks before the transfer, because it is not only a
-// move: SQL Server drops every permission granted directly on the object as
-// part of ALTER SCHEMA ... TRANSFER, and nothing afterwards says so.
+// confirmMoveToSchema asks before the transfer, because it is not only a move:
+// SQL Server drops every permission granted directly on the object as part of
+// ALTER SCHEMA ... TRANSFER, and nothing afterwards says so.
 func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *objectOp, target string) {
 	name := objectDisplayName(node)
 	a.confirmDialog.ShowConfirm("Move to Schema",
@@ -471,8 +466,8 @@ func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *obj
 			}, func(ctx context.Context, _ progressReport) error {
 				return op.transfer(ctx, sc, data, target)
 			}, func(err error, cancelled bool) {
-				// The parent folder, not the node: its label is built by the
-				// folder's loader from the schema the object was in.
+				// The parent folder, not the node: its label is built by the folder's loader
+				// from the schema the object was in.
 				switch {
 				case cancelled:
 					a.setStatus(fmt.Sprintf("Move of %s %q cancelled", strings.ToLower(op.noun), name))

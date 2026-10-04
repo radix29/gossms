@@ -11,59 +11,53 @@ import (
 )
 
 // new_object_dialog.go is the shell every "New <object>" creation dialog is
-// built on. All of them are the same dialog with different contents: one
-// prefetch, one propsheet.PropertySheet whose pages are built from it at once,
-// and an OK/Apply/Script pipeline running each page's apply function in order.
-// Each per-dialog file is a newObjectConfig plus a buildPages method.
+// built on: one prefetch, one propsheet.PropertySheet whose pages are built
+// from it at once, and an OK/Apply/Script pipeline running each page's apply
+// in order. Each per-dialog file is a newObjectConfig plus a buildPages method.
 //
-// The PropDialog shell in prop_dialog.go is deliberately separate: it loads its
-// pages lazily and applies a dirty-diff, neither of which a create dialog
-// needs.
+// PropDialog (prop_dialog.go) is deliberately separate: it loads pages lazily
+// and applies a dirty-diff, neither of which a create dialog needs.
 
-// errPageLoadPanicked is what a page request is failed with when the goroutine
-// loading it panicked — this dialog's prefetch, and PropDialog's per-page load.
-// The panic is already logged and on the status bar, so the page only has to
-// say why it has no content.
+// errPageLoadPanicked fails a page request when the goroutine loading it
+// panicked (this dialog's prefetch, PropDialog's per-page load). The panic is
+// already logged, so the page only has to say why it has no content.
 var errPageLoadPanicked = errors.New("loading stopped unexpectedly — see the log for details")
 
-// newObjectConfig is everything that differs between one create dialog and
-// the next. Passed to newObjectDialog.init at construction.
+// newObjectConfig is everything that differs between create dialogs, passed to
+// newObjectDialog.init.
 type newObjectConfig[P any] struct {
 	// title is the dialog's window title, e.g. "New Job".
 	title string
-	// noun names the created object in the success status message, e.g.
-	// "Job" → `Job "nightly reindex" created`.
+	// noun names the created object in the success message, e.g. "Job" -> `Job
+	// "nightly reindex" created`.
 	noun string
-	// verb completes that message when "created" would be untrue: Add Database to
-	// an availability group sets "added to the availability group". Empty means
+	// verb completes that message when "created" would be untrue (Add Database to
+	// an availability group: "added to the availability group"). Empty means
 	// "created".
 	verb string
-	// pages are the page names, in order; forms and applyFns are indexed by
-	// the same positions.
+	// pages are the page names, in order; forms and applyFns share the indexing.
 	pages []string
-	// scriptDatabase is the database Script Changes opens its query window in —
-	// "msdb" for the Agent objects, "" (the connection's default) otherwise.
+	// scriptDatabase is the database Script Changes opens its query window in:
+	// "msdb" for Agent objects, "" (connection default) otherwise.
 	scriptDatabase string
-	// fetch loads the dialog's prefetch payload — everything its pages need
-	// from the server, in one round trip's worth of calls.
+	// fetch loads the prefetch payload: everything the pages need from the server.
 	fetch func(context.Context, *db.ServerConn) (*P, error)
 	// build populates forms, applyFns, objectName and preflight from a completed
-	// prefetch. All four close over the same widgets, so one function produces
-	// them together.
+	// prefetch. All four close over the same widgets, so one function makes them.
 	build func(*P)
-	// refresh brings the Object Explorer folder the new object belongs to
-	// back in sync, once creation has succeeded.
+	// refresh resyncs the Object Explorer folder the new object belongs to, once
+	// creation has succeeded.
 	refresh func(*db.ServerConn)
 }
 
 // pageRequest is one outstanding OnLoadPage call, held until the prefetch it
-// waits on completes. seq is passed back to SetPageForm unchanged, which drops
-// it if the page has been reloaded since.
+// waits on completes. seq goes back to SetPageForm unchanged, which drops it if
+// the page has been reloaded since.
 type pageRequest struct{ page, seq int }
 
 // newObjectDialog is the shared state and behaviour behind every create dialog.
-// P is the dialog's own prefetch payload type; concrete dialogs embed it by
-// value and add a buildPages method.
+// P is the prefetch payload type; concrete dialogs embed it by value and add a
+// buildPages method.
 type newObjectDialog[P any] struct {
 	*propsheet.PropertySheet
 	newObjectConfig[P]
@@ -71,9 +65,8 @@ type newObjectDialog[P any] struct {
 	app *App
 	sc  *db.ServerConn
 
-	// ctx spans one show..close of the dialog, derived from the connection's
-	// Context so a disconnect tears down whatever is still in flight; cancel ends
-	// it (see onClose).
+	// ctx spans one show..close, derived from the connection's Context so a
+	// disconnect tears down in-flight work; cancel ends it (see onClose).
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -81,33 +74,32 @@ type newObjectDialog[P any] struct {
 	forms    []*propsheet.Form
 	applyFns []propApply
 
-	// fetching guards against a second prefetch: the sheet asks for a page
-	// whenever one is selected, and switching pages while the first fetch is out
-	// would start another and rebuild every form. waiting collects the pages
-	// asked for meanwhile, all served from the one prefetch when it lands.
+	// fetching guards against a second prefetch: the sheet asks for a page whenever
+	// one is selected, and switching pages mid-fetch would start another and
+	// rebuild every form. waiting collects the pages asked for meanwhile, all
+	// served from the one prefetch.
 	fetching bool
 	waiting  []pageRequest
 
-	// prefetchRun is the prefetch in flight, superseded by each new showing.
-	// A prefetch outlives the showing that started it when the dialog is
-	// closed and reopened before it lands; the sheet's per-page seq keeps the
-	// stale result off the new showing's pages, but not off this dialog's own
-	// state — see onLoadPage.
+	// prefetchRun is the prefetch in flight, superseded by each new showing. A
+	// prefetch outlives its showing when the dialog is closed and reopened before it
+	// lands; the sheet's per-page seq keeps the stale result off the new pages but
+	// not off this dialog's own state (see onLoadPage).
 	prefetchRun latest
 
-	// objectName returns the name typed into the dialog, for the success message;
-	// preflight rejects it before anything is sent. Both are assigned by build.
+	// objectName returns the typed name, for the success message; preflight rejects
+	// it before anything is sent. Both are assigned by build.
 	objectName func() string
 	preflight  func() error
 
-	// afterCreate, when build sets it, runs on the UI goroutine once a real
-	// Apply or OK has created the object, after the dialog has closed on OK —
-	// New Session opening Watch Live Data on the session it started.
+	// afterCreate, when build sets it, runs on the UI goroutine once a real Apply
+	// or OK has created the object, after the dialog closes on OK (New Session
+	// opens Watch Live Data on the new session).
 	afterCreate func()
 
 	// created is set once the pipeline has run through successfully. Apply leaves
-	// the dialog open, so without this a second Apply, or an Apply then OK,
-	// re-issues the same CREATE and comes back with "already exists".
+	// the dialog open, so without it a second Apply, or Apply then OK, re-issues the
+	// CREATE and fails with "already exists".
 	created bool
 
 	// run is the OK/Apply/Script pipeline in flight, if any.
@@ -118,13 +110,12 @@ type newObjectDialog[P any] struct {
 // reads its database mirroring endpoint, delivering both to onOK on the UI
 // goroutine. onErr handles a failure; nil shows the error in the dialog.
 //
-// Shared by Add Replica and New Availability Group, which both have to know an
-// instance's real endpoint URL before they can write ADD REPLICA — guessing one
-// produces a replica that never connects. The parts worth having in one place
-// are the two easy to get wrong: the session-context snapshot compared again on
-// delivery, so a result from a dialog the user has since closed and reopened is
-// dropped rather than written into the new one, and the timeout deriving from
-// that same context, so a disconnect tears the probe down.
+// Shared by Add Replica and New Availability Group, which need an instance's
+// real endpoint URL before writing ADD REPLICA (a guessed one gives a replica
+// that never connects). Two easy-to-miss parts: the session-context snapshot is
+// compared again on delivery, so a result for a dialog since closed and
+// reopened is dropped, and the timeout derives from that context, so a
+// disconnect tears the probe down.
 func (d *newObjectDialog[P]) probeReplicaEndpoint(label, name string,
 	onOK func(peer *db.ServerConn, ep *gosmo.DatabaseMirroringEndpoint),
 	onErr func(error)) {
@@ -159,8 +150,8 @@ func (d *newObjectDialog[P]) probeReplicaEndpoint(label, name string,
 }
 
 // init wires cfg into d and hooks up the PropertySheet callbacks. Call it from
-// the concrete dialog's constructor, after the concrete value exists — cfg.build
-// is normally that value's buildPages method.
+// the concrete dialog's constructor after the concrete value exists; cfg.build
+// is normally that value's buildPages.
 func (d *newObjectDialog[P]) init(app *App, cfg newObjectConfig[P]) {
 	d.app = app
 	d.newObjectConfig = cfg
@@ -174,8 +165,8 @@ func (d *newObjectDialog[P]) init(app *App, cfg newObjectConfig[P]) {
 	d.OnCancelApply = d.run.cancel
 }
 
-// show opens the dialog against sc, discarding everything the previous showing
-// left behind: a create dialog always starts empty.
+// show opens the dialog against sc, discarding the previous showing's state: a
+// create dialog always starts empty.
 func (d *newObjectDialog[P]) show(sc *db.ServerConn) {
 	cancelIfSet(d.cancel)
 	d.prefetchRun.Abandon()
@@ -196,15 +187,14 @@ func (d *newObjectDialog[P]) show(sc *db.ServerConn) {
 }
 
 // dbFolderDialog is a New dialog opened from one database's Object Explorer
-// folder: the object is created in that database, Script Changes opens its
-// query window there rather than in the connection's default, and the folder
-// is reloaded once the create succeeds.
+// folder: the object is created in that database, Script Changes opens its query
+// window there, and the folder is reloaded once the create succeeds.
 type dbFolderDialog[P any] struct {
 	newObjectDialog[P]
 
-	// dbName is the database the object is created in, and node the folder
-	// to reload afterwards. Both are set by show, before the embedded
-	// dialog's own show runs the prefetch that reads them.
+	// dbName is the database the object is created in, node the folder to reload
+	// afterwards. Both are set by show before the embedded show runs the prefetch
+	// that reads them.
 	dbName string
 	node   *explorerNode
 }
@@ -228,10 +218,10 @@ func (d *newObjectDialog[P]) onClose() { cancelIfSet(d.cancel) }
 
 func (d *newObjectDialog[P]) post(fn func()) { d.app.postAndWake(fn) }
 
-// onLoadPage serves page from the already-built forms, or runs the one prefetch
-// and builds every page from it. Unlike PropDialog, which loads each page on
-// demand, a create dialog's pages all come from one fetch, so the first page
-// requested pays for all of them.
+// onLoadPage serves page from the built forms, or runs the one prefetch and
+// builds every page from it. Unlike PropDialog, whose pages load on demand, all
+// of a create dialog's pages come from one fetch, so the first requested pays
+// for all.
 func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 	if d.prefetch != nil {
 		d.SetPageForm(page, seq, d.forms[page])
@@ -244,15 +234,15 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 	d.fetching = true
 	sc := d.sc
 	fetch := d.fetch
-	// Derived from d.ctx, so closing the dialog or disconnecting tears the
-	// prefetch down as well as its own timeout.
+	// Derived from d.ctx, so closing or disconnecting tears the prefetch down as
+	// well as its own timeout.
 	ctx, token := d.prefetchRun.BeginTimeout(d.ctx, propFetchTimeout)
 	d.app.safegoRepair("loading a new-object page", func() { d.fetchPanicked(token) }, func() {
 		pf, err := fetch(ctx, sc)
 		d.post(func() {
-			// Without this guard the stale callback consumes the *new*
-			// showing's waiting list and clears fetching, and the live fetch
-			// then lands with nothing waiting and never calls SetPageForm.
+			// Without this guard the stale callback consumes the *new* showing's waiting
+			// list and clears fetching, and the live fetch then lands with nothing waiting
+			// and never calls SetPageForm.
 			if !d.prefetchRun.Done(token) {
 				return
 			}
@@ -275,11 +265,10 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 }
 
 // fetchPanicked releases the prefetch latch after a panic in onLoadPage's
-// goroutine — its App.safegoRepair step. d.fetching makes the fetch
-// single-flight, so leaving it set means no page ever loads again, and the
-// queued requests have to be failed too or they sit blank. Guarded by the run
-// token like the normal completion path: a reopened dialog has its own fetch
-// out.
+// goroutine (its App.safegoRepair step). d.fetching makes the fetch
+// single-flight, so leaving it set means no page ever loads again, and queued
+// requests must be failed too or they sit blank. Guarded by the run token like
+// the normal completion path: a reopened dialog has its own fetch out.
 func (d *newObjectDialog[P]) fetchPanicked(token int) {
 	if !d.prefetchRun.Done(token) {
 		return
@@ -293,7 +282,7 @@ func (d *newObjectDialog[P]) fetchPanicked(token int) {
 }
 
 // applyPanicked releases the applying latch after a panic in runPipeline's
-// goroutine — see PropDialog.applyPanicked for what the latch disables.
+// goroutine; see PropDialog.applyPanicked for what the latch disables.
 func (d *newObjectDialog[P]) applyPanicked() {
 	d.SetApplying(false)
 	d.SetMessage("Create stopped unexpectedly — see the log for details.", true)
@@ -304,8 +293,8 @@ func (d *newObjectDialog[P]) onConfirmDiscard(_ int, proceed func()) {
 }
 
 // pipelineLabel is what the button-row spinner says while runCtx's pipeline
-// runs — this shell's and PropDialog's. Script Changes runs the same apply
-// closures as Apply, so the context is the only thing that tells them apart.
+// runs (this shell's and PropDialog's). Script Changes runs the same apply
+// closures as Apply, so the context alone tells them apart.
 func pipelineLabel(runCtx context.Context) string {
 	if gosmo.Scripting(runCtx) {
 		return "Scripting..."
@@ -314,18 +303,18 @@ func pipelineLabel(runCtx context.Context) string {
 }
 
 // runPipeline validates the dialog and, if it passes, runs every page's apply
-// function in order on a background goroutine, stopping at the first error.
-// runCtx is d.ctx for a real Apply/OK and a gosmo.WithScript context for Script
-// Changes — the only difference between the two paths.
+// in order on a background goroutine, stopping at the first error. runCtx is
+// d.ctx for a real Apply/OK and a gosmo.WithScript context for Script Changes,
+// the only difference between the paths.
 func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func()) {
 	if d.prefetch == nil {
 		d.SetMessage("Still loading — try again in a moment.", true)
 		return
 	}
-	// Here, on the UI goroutine: the apply functions run on the pipeline's,
-	// so a page's editor fields reach its model now or not at all
-	// (propsheet.Form.SetCommit). preflight builds its request after it.
-	// d.forms rather than the sheet's: every page's apply runs, opened or not.
+	// Here, on the UI goroutine: the apply functions run on the pipeline's, so a
+	// page's editor fields must reach its model now (propsheet.Form.SetCommit).
+	// preflight builds its request after it. d.forms rather than the sheet's:
+	// every page's apply runs, opened or not.
 	for _, f := range d.forms {
 		if f != nil {
 			f.Commit()
@@ -366,17 +355,17 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	})
 }
 
-// createFailed reports a run that stopped at runErr. A create is several
-// statements more often than not — the CREATE, then a page's options, members
-// or schedules — so a failure, or a cancel, can land after the CREATE
-// committed and leave the object existing half-configured.
+// createFailed reports a run that stopped at runErr. A create is usually
+// several statements (the CREATE, then options, members or schedules), so a
+// failure or cancel can land after the CREATE committed and leave the object
+// half-configured.
 //
 // Once the first page ran to the end the object exists: the dialog counts as
-// created, so a second Apply doesn't re-send the CREATE into "already exists",
-// the folder is refreshed so Object Explorer shows it, and the message says so
-// and names the page that did not land. A first page that failed after some of
-// its statements ran leaves it unknown whether the object exists, so the dialog
-// stays uncreated and the message points at Object Explorer instead.
+// created (a second Apply doesn't re-send the CREATE into "already exists"),
+// the folder is refreshed, and the message names the page that did not land. A
+// first page that failed after some statements ran leaves it unknown whether
+// the object exists, so the dialog stays uncreated and the message points at
+// Object Explorer.
 func (d *newObjectDialog[P]) createFailed(runCtx context.Context, runErr error, progress applyProgress) {
 	if gosmo.Scripting(runCtx) {
 		if d.run.cancelled {
@@ -400,8 +389,8 @@ func (d *newObjectDialog[P]) createFailed(runCtx context.Context, runErr error, 
 	case d.run.cancelled:
 		d.SetMessage("Create cancelled. Part of it may already have run — check Object Explorer before trying again.", false)
 	case created:
-		// The note leads: the message line hard-clips, and SQL Server's own
-		// reason is long enough to push anything appended off the end.
+		// The note leads: the message line hard-clips, and SQL Server's own reason is
+		// long enough to push anything appended off the end.
 		d.SetMessage(fmt.Sprintf("%s, but %s failed — open its Properties to finish: %v",
 			what, d.stepName(progress.stopped), withPermissionAdvice(runErr)), true)
 	case progress.wrote:
@@ -416,15 +405,13 @@ func (d *newObjectDialog[P]) createFailed(runCtx context.Context, runErr error, 
 type createdKey struct{}
 
 // createdHandoff holds what a New-object dialog's create step returned, for a
-// later step of the same run to act on — New Schedule's Jobs page attaches
-// the schedule General created, by its id, because schedule names are not
-// unique.
+// later step of the same run (New Schedule's Jobs page attaches the schedule
+// General created, by id, because schedule names are not unique).
 type createdHandoff struct{ v any }
 
 // withCreatedHandoff returns ctx carrying an empty createdHandoff. It is owned
 // by the run (runPipeline makes a fresh one per run), not the dialog, so the
-// pipeline's goroutine writes nothing the UI goroutine reads — the
-// destination docs/ui-rules.md has a run's results go through.
+// pipeline goroutine writes nothing the UI goroutine reads (docs/ui-rules.md).
 func withCreatedHandoff(ctx context.Context) context.Context {
 	return context.WithValue(ctx, createdKey{}, &createdHandoff{})
 }
@@ -484,12 +471,12 @@ func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {
 // scriptSafeJob / scriptSafeAlert resolve the object a *previous* page of the
 // same create dialog produced.
 //
-// Under Script Changes that object does not exist: the earlier page's apply only
-// collected its EXEC, so a JobByName/AlertByName lookup — a real read, which
-// WithScript does not intercept — comes back "not found" and the whole script
-// fails. gosmo's name-only handle is what the dependent statement needs; every
-// write reached from here builds its statement from the name alone. The real
-// Apply path still reads, so a name typo is still caught there.
+// Under Script Changes that object does not exist: the earlier page's apply
+// only collected its EXEC, so a JobByName/AlertByName lookup (a real read,
+// which WithScript does not intercept) returns "not found" and fails the
+// script. gosmo's name-only handle is what the dependent statement needs; every
+// write from here builds its statement from the name alone. The real Apply path
+// still reads, so a name typo is still caught there.
 func scriptSafeJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Job, error) {
 	if gosmo.Scripting(ctx) {
 		return sc.Server.JobRef(name), nil
@@ -505,12 +492,12 @@ func scriptSafeAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosm
 }
 
 // runScript re-runs every page's apply under gosmo.WithScript, opening the
-// statements it collects in a query window instead of executing them — the
-// create-dialog half of PropDialog.runScript.
+// collected statements in a query window instead of executing them (the
+// create-dialog half of PropDialog.runScript).
 //
-// The empty check is the same one PropDialog makes: a page set can validate,
-// report itself as having work to do, and still collect nothing (every write
-// on it conditional), and an empty query window says less than a message does.
+// The empty check is PropDialog's: a page set can validate, report work to do,
+// and still collect nothing (every write conditional), and an empty query
+// window says less than a message does.
 func (d *newObjectDialog[P]) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc

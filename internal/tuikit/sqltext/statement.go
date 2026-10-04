@@ -28,7 +28,7 @@ var dmlEnders = map[string]bool{
 func IsDMLLeader(word string) bool { return dmlLeaders[word] }
 
 // EndsDML reports whether word, upper-cased, is a statement verb that cannot
-// occur inside a DML statement — DECLARE, CREATE, ALTER, DROP, TRUNCATE — so a
+// occur inside a DML statement (DECLARE, CREATE, ALTER, DROP, TRUNCATE), so a
 // top-level one ends the DML statement before it.
 //
 // IntelliSense (internal/tui/sqlparse) splits a batch into statements with
@@ -269,19 +269,18 @@ func (s *stmtSplitter) advance(t stmtToken) {
 }
 
 // StatementAt returns the trimmed [startRow,startCol]-[endRow,endCol] span of
-// the T-SQL statement containing (row, col) — what the editor's Ctrl+Enter
-// selects, and so what the next F5 runs. ok is false when that statement is
-// nothing but white space, e.g. a blank line between two GO separators.
+// the T-SQL statement containing (row, col): what Ctrl+Enter selects, and so
+// what the next F5 runs. ok is false when that statement is only white space,
+// e.g. a blank line between two GO separators.
 //
-// Statement boundaries are ';', a "GO" batch separator line
-// (IsGoSeparatorLine, the rule SplitBatches executes by), and a top-level
-// (paren-depth zero) statementLeaders keyword, so scripts stacking several
-// statements with no ';' between them still split. Continuations — a
-// UNION-chained SELECT, a CTE's main statement, INSERT ... SELECT/EXEC, a
-// table hint's WITH (...), GRANT's permission list, an ALTER TABLE's own ALTER
-// COLUMN/DROP CONSTRAINT and the rest listed on stmtSplitter — stay part of
-// the statement. Next lexes the lines, so a boundary inside a literal, a
-// quoted identifier or a comment is none.
+// Boundaries are ';', a "GO" batch separator line (IsGoSeparatorLine, the rule
+// SplitBatches executes by), and a top-level (paren-depth zero)
+// statementLeaders keyword, so scripts stacking statements with no ';' still
+// split. Continuations (a UNION-chained SELECT, a CTE's main statement,
+// INSERT ... SELECT/EXEC, a table hint's WITH (...), GRANT's permission list,
+// an ALTER TABLE's own ALTER COLUMN/DROP CONSTRAINT and the rest listed on
+// stmtSplitter) stay part of the statement. Next lexes the lines, so a
+// boundary inside a literal, quoted identifier or comment is none.
 //
 // A missed boundary runs the statement after the cursor's too (review plan
 // T2), and a false one can cut a statement short into one that still parses
@@ -290,8 +289,8 @@ func (s *stmtSplitter) advance(t stmtToken) {
 //
 // This is a lexical approximation, not a T-SQL parser: a statement inside a
 // module body (CREATE PROCEDURE ... AS ...) is split from the header, an IF
-// from its body, and INSERT ... VALUES followed by a later, genuinely separate
-// SELECT with no ';' between them is (rarely) missed.
+// from its body, and INSERT ... VALUES followed by a genuinely separate SELECT
+// with no ';' between them is (rarely) missed.
 func StatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, endCol int, ok bool) {
 	type span struct{ sr, sc, er, ec int }
 	var segments []span
@@ -373,12 +372,11 @@ func StatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, endC
 		}
 	}
 
-	// Adjacent segments share their boundary point (segment i's end equals
-	// segment i+1's start), so a cursor sitting exactly there matches both;
-	// take the last match, not the first, so it resolves to the statement
-	// the cursor is positioned at the *start* of — the common case, since
-	// users land there via Home/a mouse click on the new statement's first
-	// line — rather than the one it trails.
+	// Adjacent segments share their boundary point (segment i's end equals segment
+	// i+1's start), so a cursor exactly there matches both; take the last match so
+	// it resolves to the statement the cursor is at the *start* of (the common
+	// case, via Home or a click on the new statement's first line), not the one it
+	// trails.
 	found := -1
 	for i, sg := range segments {
 		if cmp(row, col, sg.sr, sg.sc) >= 0 && cmp(row, col, sg.er, sg.ec) <= 0 {
@@ -392,10 +390,10 @@ func StatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, endC
 	return trimStatementRange(lines, sg.sr, sg.sc, sg.er, sg.ec)
 }
 
-// trimStatementRange trims leading and trailing whitespace (including
-// blank lines) from [sr,sc]-[er,ec], so the selection wraps tightly around
-// the statement's actual text instead of the separator whitespace next to
-// it. ok is false if nothing but whitespace remains.
+// trimStatementRange trims leading and trailing whitespace (blank lines
+// included) from [sr,sc]-[er,ec], so the selection wraps the statement's text
+// rather than the separator whitespace next to it. ok is false if nothing but
+// whitespace remains.
 func trimStatementRange(lines [][]rune, sr, sc, er, ec int) (int, int, int, int, bool) {
 	for {
 		if sr > er || (sr == er && sc >= ec) {

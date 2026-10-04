@@ -11,19 +11,19 @@ import (
 )
 
 // loadTablesChildren returns the Tables folder: SSMS's four table-family
-// sub-folders first, then the plain user tables — the same shape the System
-// Databases folder gives the Databases node.
+// sub-folders first, then the plain user tables (the shape the System Databases
+// folder gives the Databases node).
 //
-// The user list is TableKindUser, which excludes the three families that have
-// a folder of their own. Without that a FileTable is listed twice, once here
-// and once under FileTables, and the two entries are the same object.
+// The user list is TableKindUser, which excludes the three families that have a
+// folder of their own; otherwise a FileTable would be listed twice, here and
+// under FileTables, as the same object.
 //
 // Which folders appear follows SSMS: System Tables and FileTables always,
-// External Tables only where the database actually has one (the folder is
-// PolyBase-specific and empty everywhere else), Graph Tables only on an
-// instance whose sys.tables has is_node/is_edge at all — 2017 and later. An
-// absent folder and an empty one are different answers, and only the absent
-// one is honest about a server that cannot have the objects.
+// External Tables only where the database has one (PolyBase-specific, empty
+// elsewhere), Graph Tables only on an instance whose sys.tables has
+// is_node/is_edge at all (2017+). An absent folder and an empty one are
+// different answers; only the absent one is honest about a server that cannot
+// have the objects.
 func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
@@ -40,9 +40,9 @@ func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 	return append(folders, tables...), nil
 }
 
-// tableSubFolders builds the folders listed above the user tables. The
-// presence read is one aggregate over sys.tables, not a listing per folder —
-// the folder's own loader is what lists it, once it is expanded.
+// tableSubFolders builds the folders listed above the user tables. The presence
+// read is one aggregate over sys.tables, not a listing per folder; each
+// folder's own loader lists it once expanded.
 func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]*explorerNode, error) {
 	dbName := node.data.DBName
 	folders := []*explorerNode{
@@ -66,19 +66,18 @@ func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]
 	return folders, nil
 }
 
-// loadTablesOfKind lists one table family as NodeTable leaves. Every leaf is
-// a NodeTable whatever folder it came from: a FileTable, an external table
-// and a graph table are all tables, with the same Columns/Keys/Indexes
-// children, the same Properties dialog and the same scripts — the folder is
-// where they differ, not the object. system marks the System Tables folder's
-// leaves, which is what keeps Delete and Rename off their menu.
+// loadTablesOfKind lists one table family as NodeTable leaves. Every leaf is a
+// NodeTable whatever folder it came from: a FileTable, external table and graph
+// table are all tables, with the same Columns/Keys/Indexes children, Properties
+// dialog and scripts. system marks the System Tables folder's leaves, which
+// keeps Delete and Rename off their menu.
 func loadTablesOfKind(l loaderCtx, node *explorerNode, dbObj *gosmo.Database,
 	kind gosmo.TableKind, system bool,
 ) ([]*explorerNode, error) {
-	// The folder's filter goes to the server where it can be expressed; what
-	// comes back is filtered again by fetchChildren, which stays the authority
-	// on what the filter means (see nodeFilter.pushdown). Each sub-folder has
-	// its own filter, the way System Views does — not the parent's.
+	// The folder's filter goes to the server where it can be expressed; what comes
+	// back is filtered again by fetchChildren, the authority on what the filter
+	// means (see nodeFilter.pushdown). Each sub-folder has its own filter, like
+	// System Views, not the parent's.
 	filter := serverFilter(node.data.Filter)
 	return listChildren(
 		func() ([]*gosmo.Table, error) { return dbObj.TablesOfKindFiltered(l.ctx, kind, filter) },
@@ -92,8 +91,8 @@ func loadTablesOfKind(l loaderCtx, node *explorerNode, dbObj *gosmo.Database,
 }
 
 // tableLabel names a table in the tree. A graph table says which half of the
-// graph it is: node and edge tables sit in one folder, nothing else in the
-// row distinguishes them, and the two are not interchangeable in a MATCH.
+// graph it is: node and edge tables share a folder, nothing else in the row
+// distinguishes them, and they are not interchangeable in a MATCH.
 func tableLabel(t *gosmo.Table) string {
 	label := t.Schema + "." + t.Name
 	switch {
@@ -132,10 +131,9 @@ func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 	}, nil
 }
 
-// loadViewChildren returns one view's object-family folders. A view has
-// exactly one: its INSTEAD OF triggers, which SSMS also files under the view
-// rather than under the database. They were previously reachable only through
-// the database-wide Triggers roll-up, and that folder is gone.
+// loadViewChildren returns one view's object-family folders. A view has exactly
+// one: its INSTEAD OF triggers, which SSMS also files under the view rather
+// than under the database.
 func loadViewChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
 		l.node("Triggers", NodeTriggers, node.data.Schema, node.data.Name, node.data.DBName),
@@ -173,9 +171,9 @@ func loadColumnsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 		typ := c.TypeString()
 		label := fmt.Sprintf("%s (%s, %s)", c.Name, typ, nullWord)
 		n := l.node(label, NodeColumn, node.data.Schema, c.Name, node.data.DBName)
-		// The owning table, the way the Keys and Indexes loaders carry it:
-		// Name here is the column's own, so without this nothing downstream
-		// can say which table an ALTER TABLE ... DROP COLUMN belongs to.
+		// The owning table, as the Keys and Indexes loaders carry it: Name here is
+		// the column's own, so without this nothing downstream can say which table an
+		// ALTER TABLE ... DROP COLUMN belongs to.
 		n.data.TableName = node.data.Name
 		n.data.IsPrimaryKey = c.IsPrimaryKey
 		out = append(out, n)
@@ -243,10 +241,9 @@ func loadIndexesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 	}
 	out := make([]*explorerNode, 0, len(indexes))
 	for _, idx := range indexes {
-		// The index's own type, not just clustered-vs-not: a columnstore,
-		// XML or spatial index read as "Nonclustered" under the old
-		// IsClustered test, and a clustered columnstore index — which gosmo
-		// does report as clustered — read as "Nonclustered" too.
+		// The index's own type, not just clustered-vs-not: a columnstore, XML or
+		// spatial index would read as "Nonclustered" under an IsClustered test, as
+		// would a clustered columnstore index, which gosmo reports as clustered.
 		kind := indexTypeName(idx.Type)
 		unique := ""
 		if idx.IsUnique {
@@ -274,17 +271,17 @@ func loadStatisticsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 		})
 }
 
-// Views, stored procedures and functions are the same folder three times
-// over: each has a user list carrying a "System …" folder in front of it and
-// a system list behind that folder, and each builds "schema.name" nodes with
-// a CreateDate. The six loaders below are the registry entries
+// Views, stored procedures and functions are the same folder three times over:
+// each has a user list carrying a "System ..." folder in front of it and a
+// system list behind that folder, and each builds "schema.name" nodes with a
+// CreateDate. The six loaders below are the registry entries
 // explorer_loaders.go binds to a NodeType; loadSchemaScoped is all the
 // behaviour.
 
 // schemaScoped names the three fields a gosmo object needs for a tree node.
-// gosmo.View, gosmo.StoredProcedure and gosmo.UserDefinedFunction each have
-// them as plain struct fields, which a type parameter can't reach, so each
-// kind supplies a two-line accessor instead.
+// gosmo.View, gosmo.StoredProcedure and gosmo.UserDefinedFunction have them as
+// plain struct fields, which a type parameter can't reach, so each kind
+// supplies a two-line accessor.
 type schemaScoped[T any] func(T) (schema, name string, created time.Time)
 
 func viewFields(v *gosmo.View) (string, string, time.Time) { return v.Schema, v.Name, v.CreateDate }
@@ -312,10 +309,10 @@ func loadSchemaScoped[T any](l loaderCtx, node *explorerNode, nt NodeType, syste
 		})
 }
 
-// withSystemFolder puts the "System …" folder ahead of the user objects,
+// withSystemFolder puts the "System ..." folder ahead of the user objects,
 // matching the "System Databases" precedent in loadDatabasesChildren. The
-// folder's own contents — identical in every database on the server — are
-// only fetched once it is actually expanded, by its own loader below.
+// folder's contents (identical in every database on the server) are fetched
+// only once it is expanded, by its own loader below.
 func withSystemFolder(l loaderCtx, node *explorerNode, label string, nt NodeType, objs []*explorerNode) []*explorerNode {
 	folder := l.node(label, nt, "", "", node.data.DBName)
 	return append([]*explorerNode{folder}, objs...)
@@ -405,20 +402,20 @@ func loadFunctionNodes(l loaderCtx, node *explorerNode, system bool,
 		})
 }
 
-// loadTriggersChildren backs the NodeTriggers folder, which hangs under a
-// table or a view — node.data.Schema/Name are the owning object's, put there
-// by loadTableChildren or loadViewChildren.
+// loadTriggersChildren backs the NodeTriggers folder, which hangs under a table
+// or a view; node.data.Schema/Name are the owning object's, set by
+// loadTableChildren or loadViewChildren.
 //
 // It reads by name through gosmo's Database.ObjectTriggers rather than
 // resolving the parent to a *Table first, because the parent is not always a
 // table: a view's INSTEAD OF triggers list here too, and gosmo's View is a
-// plain row struct with no Triggers method to call. OBJECT_ID does not care
-// which of the two it is, and it is one round trip instead of two.
+// plain row struct with no Triggers method. OBJECT_ID does not care which it
+// is, and it is one round trip instead of two.
 //
-// There is no database-wide arm any more. The flat Triggers folder that used
-// to sit under a database listed every DML trigger a second time and would
-// have read as the sibling of Programmability > Database Triggers, which is a
-// different family entirely — see loadProgrammabilityChildren.
+// There is no database-wide arm: a flat database-level Triggers folder would
+// list every DML trigger a second time and read as the sibling of
+// Programmability > Database Triggers, a different family (see
+// loadProgrammabilityChildren).
 func loadTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {

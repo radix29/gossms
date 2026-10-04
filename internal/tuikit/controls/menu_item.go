@@ -23,23 +23,21 @@ type MenuItem struct {
 	// otherwise go. See menuCascade.
 	Sub []MenuItem
 
-	// Note is shown in the shortcut column *while the item is disabled*, to
-	// say why. A disabled item cannot be selected or activated, so there is no
-	// keypress or click left to answer with a status message — without this,
-	// an item withheld for lack of a permission is simply grey and silent.
-	// Its own Shortcut is shown again once the item is enabled.
+	// Note is shown in the shortcut column *while the item is disabled*, to say
+	// why. A disabled item can't be selected or activated, so no keypress or click
+	// is left to answer with a status message; without this, an item withheld for
+	// lack of a permission is grey and silent. Its own Shortcut shows again once
+	// enabled.
 	Note string
 
-	// NoteWhen narrows Note to the reason it actually describes. nil shows
-	// Note whenever the item is disabled; a predicate shows it only when it
-	// answers true.
+	// NoteWhen narrows Note to the reason it describes. nil shows Note whenever the
+	// item is disabled; a predicate shows it only when it answers true.
 	//
-	// An item can be withheld for more than one reason at once, and Note
-	// describes exactly one of them. "Fail Over to This Replica..." is
-	// disabled on the primary because a replica cannot fail over to itself,
-	// and it was labelled "needs ALTER ANY AVAILABILITY GROUP" — a right the
-	// login may well hold, sending them to ask for a permission that would
-	// change nothing.
+	// An item can be withheld for more than one reason and Note describes one of
+	// them. "Fail Over to This Replica..." is disabled on the primary because a
+	// replica cannot fail over to itself, yet was labelled "needs ALTER ANY
+	// AVAILABILITY GROUP", a right the login may hold, sending them to ask for a
+	// permission that would change nothing.
 	NoteWhen func() bool
 }
 
@@ -95,10 +93,10 @@ func stepSelectableItem(items []MenuItem, from, dir int) int {
 	return -1
 }
 
-// menuRowSuffix returns the right-aligned text of an item: the ▸ cascade
-// marker for a submenu, otherwise its shortcut. An item with a submenu has
-// no shortcut of its own — activating it only opens the submenu — but a
-// disabled one shows its note in place of the marker.
+// menuRowSuffix returns the right-aligned text of an item: the cascade marker
+// for a submenu, otherwise its shortcut. An item with a submenu has no shortcut
+// of its own (activating it only opens the submenu), but a disabled one shows
+// its note in place of the marker.
 func menuRowSuffix(it MenuItem) string {
 	// The note outranks the ▸: a disabled cascade cannot be opened, so its
 	// marker points at a submenu the user will never see and the note is the
@@ -119,10 +117,9 @@ func menuRowSuffix(it MenuItem) string {
 func menuContentWidth(items []MenuItem, minW int) int {
 	w := minW
 	for _, item := range items {
-		// +6: 2 columns of border/inset padding plus a guaranteed 2-column
-		// gap between label and shortcut for whichever item ends up
-		// defining w — without the extra margin, that widest item's own
-		// label and shortcut land flush against each other with no gap.
+		// +6: 2 columns of border/inset padding plus a guaranteed 2-column gap between
+		// label and shortcut for whichever item ends up defining w; without the margin
+		// that widest item's label and shortcut land flush against each other.
 		if n := core.DisplayWidth(item.Label) + core.DisplayWidth(menuRowSuffix(item)) + 6; n > w {
 			w = n
 		}

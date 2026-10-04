@@ -11,16 +11,15 @@ import (
 )
 
 // loadServerDetails shows the server's connect-time-cached info (version,
-// edition, paths, CPU count, physical memory — no extra round trip, since
-// gosmo.Server.Info() returns what Connect already loaded) immediately,
-// then backfills available memory and NUMA node count (one DMV query each)
-// followed by per-volume disk free space, appended once it lands.
+// edition, paths, CPU count, physical memory; no round trip, since
+// gosmo.Server.Info() returns what Connect loaded) immediately, then backfills
+// available memory and NUMA node count (one DMV query each), then per-volume
+// disk free space, appended once it lands.
 func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
-	// Everything below, including the "instant" first stage, runs on a
-	// background goroutine — never call postPartial/postFinal (and the
-	// wakeEventLoop they trigger) directly from ShowNodeDetails' own
-	// goroutine (the UI goroutine): see wakeEventLoop's doc comment in
-	// app.go for why that's unsafe.
+	// Everything below, including the "instant" first stage, runs on a background
+	// goroutine: never call postPartial/postFinal (and the wakeEventLoop they
+	// trigger) directly from ShowNodeDetails' goroutine (the UI goroutine); see
+	// wakeEventLoop's doc comment in app.go.
 	app.safegoRepair("loading server details", db.panicRepair(node, seq), func() {
 		info := sc.Server.Info()
 		rows := [][]string{
@@ -37,9 +36,8 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 			{"Available Memory (MB)", "Loading..."},
 			{"NUMA Nodes", "Loading..."},
 		}
-		// The two backfilled rows are found by label, not by a fixed index:
-		// adding a row above them silently redirected the backfill into the
-		// wrong row when these were constants.
+		// The two backfilled rows are found by label, not fixed index: adding a row
+		// above them would silently redirect the backfill into the wrong row.
 		availMemRow := mustPropertyRowIndex(rows, "Available Memory (MB)")
 		numaRow := mustPropertyRowIndex(rows, "NUMA Nodes")
 
@@ -65,10 +63,9 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 			}
 		})
 
-		// Cross-platform disk free space (sys.dm_os_volume_stats works
-		// identically on Windows and Linux). Appended once it lands, rather
-		// than backfilled in place like the rows above, since the row count
-		// itself is only known now.
+		// Cross-platform disk free space (sys.dm_os_volume_stats works identically on
+		// Windows and Linux). Appended once it lands rather than backfilled in place,
+		// since the row count is only known now.
 		for _, r := range serverDiskSpaceRows(ctx, sc) {
 			rows = append(rows, []string{r[0], r[1]})
 		}
@@ -78,15 +75,14 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 
 // serverDiskSpaceRows builds the label/value pairs behind the "Disk space"
 // readout, shared by Object Explorer Details and Server Properties > Database
-// Settings so the two can never disagree. An unreadable DMV returns no rows
-// rather than an error: disk space is a garnish on both pages.
+// Settings so the two can't disagree. An unreadable DMV returns no rows rather
+// than an error: disk space is a garnish on both pages.
 //
-// On an Azure engine edition sys.dm_os_volume_stats describes the container
-// the engine process runs inside, not the instance — a Managed Instance
-// reports the same C:\ mount twice, each time with a total of 192 MB against
-// 64 and 96 GB available. Those rows are worse than nothing, so Azure reads
-// the instance's own quota out of sys.server_resource_stats instead, which is
-// the pair that actually governs it.
+// On an Azure engine edition sys.dm_os_volume_stats describes the container the
+// engine runs inside, not the instance (a Managed Instance reports the same C:\
+// mount twice, each with a total of 192 MB against 64 and 96 GB available).
+// Those rows are worse than nothing, so Azure reads the instance's own quota
+// from sys.server_resource_stats, the pair that actually governs it.
 func serverDiskSpaceRows(ctx context.Context, sc *dbconn.ServerConn) [][2]string {
 	if sc.Server.Info().IsAzure() {
 		st, err := sc.Server.LatestServerResourceStats(ctx)
@@ -111,12 +107,12 @@ func serverDiskSpaceRows(ctx context.Context, sc *dbconn.ServerConn) [][2]string
 // usableDiskVolumes drops the volume rows that would render as nonsense and
 // collapses repeats of one volume.
 //
-// sys.dm_os_volume_stats is read once per database file and grouped by
-// mount point *and* byte counts, so a host that answers with a different
-// available_bytes per file — an Azure Managed Instance does, twice for C:\ —
-// yields several rows for one volume. A total of zero, or an available figure
-// larger than the total, is the same host reporting a volume it does not
-// really own; "65,344 MB free of 192 MB" is worse than saying nothing.
+// sys.dm_os_volume_stats is read once per database file and grouped by mount
+// point *and* byte counts, so a host answering with a different available_bytes
+// per file (an Azure Managed Instance does, twice for C:\) yields several rows
+// for one volume. A total of zero, or an available figure larger than the
+// total, is the host reporting a volume it does not own; "65,344 MB free of 192
+// MB" is worse than saying nothing.
 func usableDiskVolumes(vols []gosmo.DiskVolumeInfo) []gosmo.DiskVolumeInfo {
 	seen := make(map[string]bool, len(vols))
 	out := make([]gosmo.DiskVolumeInfo, 0, len(vols))
@@ -232,10 +228,10 @@ func backupDevicesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 }
 
 // backupDeviceDetail is one backup device's Property/Value view. What the
-// device *holds* is not read here: RESTORE HEADERONLY opens the media, which
-// on a missing file or an offline tape is a failure the Details pane would
-// report as the device being unreadable. The Media Contents page of Backup
-// Device Properties is where that read belongs.
+// device *holds* is not read here: RESTORE HEADERONLY opens the media, and a
+// missing file or offline tape would make the Details pane report the device as
+// unreadable. The Media Contents page of Backup Device Properties is where that
+// read belongs.
 func backupDeviceDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	d, err := sc.Server.BackupDeviceByName(ctx, node.data.Name)
 	if err != nil {

@@ -40,20 +40,20 @@ type DetailBrowser struct {
 
 	// cache holds the last successful fetch per node, so reselecting a node
 	// already shown doesn't re-hit the network. Only a Refresh or a fresh node
-	// forces a refetch — a folder reload replaces its children with new
-	// *explorerNode values, which miss the cache. Final results only.
+	// forces a refetch (a folder reload replaces its children with new
+	// *explorerNode values, which miss the cache). Final results only.
 	cache map[*explorerNode]*detailResult
 
 	// rowObjs is the object each grid row describes, parallel to the rows on
-	// screen — see detailResult.objs. Empty for a view whose rows are not
-	// objects. Every path that changes the display resets it, so it can never
-	// describe the previous node's rows.
+	// screen (see detailResult.objs); empty for a view whose rows are not objects.
+	// Every path that changes the display resets it, so it never describes the
+	// previous node's rows.
 	rowObjs []nodeData
 
-	// rowObjsNode is the node rowObjs was installed for. detailMenuItems
-	// refuses a Delete when it is not currentNode: a reset missed on some new
-	// path then costs the menu item, not a DROP of the previous node's objects
-	// on the new node's connection.
+	// rowObjsNode is the node rowObjs was installed for. detailMenuItems refuses a
+	// Delete when it is not currentNode, so a reset missed on some new path costs
+	// the menu item, not a DROP of the previous node's objects on the new node's
+	// connection.
 	rowObjsNode *explorerNode
 
 	// charts are the composition bars drawn under the grid for the node on
@@ -73,10 +73,10 @@ type DetailBrowser struct {
 type detailResult struct {
 	cols []string
 	rows [][]string
-	// objs identifies the object each row describes, for the views whose rows
-	// are objects — the handle the pane's Delete needs, since a row is
-	// [][]string shared with every other node type and its Name cell is only a
-	// rendering. nil everywhere else, which withholds Delete.
+	// objs identifies the object each row describes, for views whose rows are
+	// objects: the handle the pane's Delete needs, since a row is [][]string
+	// shared with every other node type and its Name cell is only a rendering. nil
+	// elsewhere, which withholds Delete.
 	objs []nodeData
 	// charts are the composition bars drawn under the grid, empty for every
 	// view that has none.
@@ -131,11 +131,11 @@ func (db *DetailBrowser) Closable() bool { return false }
 
 // ShowNodeDetails loads detail data for node asynchronously: every fetch is a
 // network round trip and this fires on every tree-selection change, so running
-// it inline would freeze the app on each arrow key against a slow server. A node
-// already shown is served from cache. Nil-safe like Invalidate.
+// it inline would freeze the app on each arrow key against a slow server. A
+// node already shown is served from cache. Nil-safe like Invalidate.
 //
 // Whatever was in flight is cancelled first: this call supersedes it, same node
-// or not, so nothing it could still produce would be shown or cached.
+// or not.
 func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	if db == nil {
 		return
@@ -153,14 +153,14 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	sc := resolveConn(node)
 
 	if !app.isConnected(sc) {
-		// Not showEmpty: that rewrites the title, and this pane is showing a
-		// node. Everything else it drops still has to go, or the status row
-		// sits under the previous node's charts with its row objects live,
-		// and the context menu offers Delete on one of them.
+		// Not showEmpty: that rewrites the title, and this pane is showing a node.
+		// Everything else it drops still has to go, or the status row sits under the
+		// previous node's charts with its row objects live and the context menu
+		// offers Delete on one of them.
 		//
-		// Reached when a node outlives its connection's close: a peer
-		// connection closed under a node still in the tree, or a selection
-		// change queued behind one. File > Disconnect goes to showEmpty.
+		// Reached when a node outlives its connection's close: a peer connection
+		// closed under a node still in the tree, or a selection change queued behind
+		// one. File > Disconnect goes to showEmpty.
 		db.resetForNewNode()
 		db.grid.SetFillLastColumn(true)
 		db.grid.SetData([]string{"Property", "Value"}, [][]string{{"Status", "Not connected"}})
@@ -173,11 +173,11 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	}
 
 	// A different node's rows must not stay on screen under "Loading...": the
-	// fetch can take childFetchTimeout, and until it lands the context menu
-	// and Show Value would pair those rows with this node's connection — a
-	// Delete of the previous node's objects on this node's server. A Refresh
-	// of the node on screen keeps its rows (they are still this node's), but
-	// not their objects, as nothing pins which of them the reload removes.
+	// fetch can take childFetchTimeout, and until it lands the context menu and
+	// Show Value would pair those rows with this node's connection (a Delete of
+	// the previous node's objects on this node's server). A Refresh of the node on
+	// screen keeps its rows but not their objects, as nothing pins which of them
+	// the reload removes.
 	db.resetForNewNode()
 	if prev != node {
 		db.grid.SetFillLastColumn(false)
@@ -198,8 +198,8 @@ func (db *DetailBrowser) showEmpty() {
 
 // resetForNewNode drops everything that described the node leaving the screen.
 // applyResult and postPartial reset the same fields by installing new ones;
-// every path that installs none — showEmpty, and the "Not connected" and
-// loading branches of ShowNodeDetails — calls this instead.
+// every path that installs none (showEmpty, and the "Not connected" and loading
+// branches of ShowNodeDetails) calls this instead.
 //
 // setCharts, not `db.charts = nil`: it also re-splits the panel, giving the
 // grid the rows the strip held, and drops the pinned tooltip, which nothing
@@ -224,8 +224,8 @@ func (db *DetailBrowser) applyResult(r *detailResult) {
 }
 
 // setCharts installs the chart strip for what is now on screen and re-splits
-// the panel: whether there is a strip at all decides the grid's height, and
-// the two are set together so a repaint can never draw a grid over it.
+// the panel: the strip's presence decides the grid's height, and the two are
+// set together so a repaint never draws a grid over it.
 func (db *DetailBrowser) setCharts(c []detailChart) {
 	db.charts = c
 	db.layout()
@@ -233,8 +233,8 @@ func (db *DetailBrowser) setCharts(c []detailChart) {
 
 // setRowObjects installs the row-to-object mapping for what is now on screen,
 // and refuses one that does not line up with the rows: the pane deletes by row
-// index, so a mapping one short would delete the object the *next* row
-// describes. Losing Delete is the safe failure; the wrong DROP is not.
+// index, so a mapping one short would delete the *next* row's object. Losing
+// Delete is the safe failure; the wrong DROP is not.
 func (db *DetailBrowser) setRowObjects(rows [][]string, objs []nodeData) {
 	if len(objs) != len(rows) {
 		db.rowObjs, db.rowObjsNode = nil, nil
@@ -250,10 +250,10 @@ func isPropertyValueColumns(cols []string) bool {
 	return len(cols) == 2 && cols[0] == "Property" && cols[1] == "Value"
 }
 
-// Retitle re-reads the title from node's label when node is the one shown.
-// A label re-read in place (the Resource Governor and Database Mail nodes'
-// state) lands after the Refresh that re-fetched the grid, which titled the
-// pane with the old label. Nil-safe like Invalidate.
+// Retitle re-reads the title from node's label when node is the one shown. A
+// label re-read in place (the Resource Governor and Database Mail nodes' state)
+// lands after the Refresh that re-fetched the grid, which titled the pane with
+// the old label. Nil-safe like Invalidate.
 func (db *DetailBrowser) Retitle(node *explorerNode) {
 	if db == nil || node == nil || db.currentNode != node {
 		return
@@ -276,12 +276,12 @@ func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
 }
 
 // InvalidateWhere drops every cached and pending entry whose node matches, and
-// refetches the one on screen — Invalidate for a change that stales a class of
-// nodes rather than one known pointer.
+// refetches the one on screen: Invalidate for a change that stales a class of
+// nodes.
 //
 // The predicate runs over cached nodes and over currentNode separately: a node
-// whose fetch failed, or is still in flight, has no cache entry and is still
-// the one the user is looking at.
+// whose fetch failed or is in flight has no cache entry and is still the one on
+// screen.
 func (db *DetailBrowser) InvalidateWhere(app *App, match func(*explorerNode) bool) {
 	if db == nil {
 		return
@@ -302,11 +302,11 @@ func (db *DetailBrowser) InvalidateWhere(app *App, match func(*explorerNode) boo
 	}
 }
 
-// Forget drops every cached and pending entry for nodes that have left the
-// tree — ObjectExplorer.releaseRetired calls it for the nodes a Reload
-// replaced, so neither map holds them alive until the connection closes.
-// Nothing is refetched: a node on screen that is among them is about to be
-// reselected away from. Nil-safe.
+// Forget drops every cached and pending entry for nodes that have left the tree
+// (ObjectExplorer.releaseRetired calls it for the nodes a Reload replaced), so
+// neither map holds them alive until the connection closes. Nothing is
+// refetched: a node on screen that is among them is about to be reselected away
+// from. Nil-safe.
 func (db *DetailBrowser) Forget(nodes []*explorerNode) {
 	if db == nil {
 		return
@@ -336,11 +336,11 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 	if db == nil {
 		return
 	}
-	// supersede, not stop: the run belongs to a connection being torn down, so
-	// its result has nowhere to go and must not stay current. The currentNode
-	// branch below is not enough — it covers this only while ShowNodeDetails
-	// assigns currentNode in the same call that begins the run, an invariant
-	// nothing pins. See TestDetailBrowserPurgeConnSupersedes.
+	// supersede, not stop: the run belongs to a connection being torn down, so its
+	// result has nowhere to go and must not stay current. The currentNode branch
+	// below covers this only while ShowNodeDetails assigns currentNode in the same
+	// call that begins the run, an invariant nothing pins. See
+	// TestDetailBrowserPurgeConnSupersedes.
 	if db.run.node != nil && resolveConn(db.run.node) == sc {
 		db.run.supersede()
 	}
@@ -355,10 +355,10 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 		}
 	}
 	if db.currentNode != nil && resolveConn(db.currentNode) == sc {
-		// Disconnecting the last server empties the tree and fires no OnSelect,
-		// so nothing else repaints the grid and it keeps showing the
-		// disconnected server's rows. Superseding also drops the result of the
-		// fetch stopped above.
+		// Disconnecting the last server empties the tree and fires no OnSelect, so
+		// nothing else repaints the grid and it keeps showing the disconnected
+		// server's rows. Superseding also drops the result of the fetch stopped
+		// above.
 		db.currentNode = nil
 		db.run.supersede()
 		db.showEmpty()
@@ -410,9 +410,8 @@ func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 	if strip := db.chartsRect(); strip.Contains(mx, my) {
 		if ev.Buttons() == tcell.Button1 && !db.mouseDragging {
 			db.mouseDragging = true
-			// A showing box is dismissed by the next click wherever it lands,
-			// so one click never both closes a box and opens another — the
-			// user would see only the second and think the first never closed.
+			// A showing box is dismissed by the next click wherever it lands, so one
+			// click never both closes a box and opens another.
 			if db.tooltip != nil {
 				db.tooltip = nil
 			} else {
@@ -466,17 +465,16 @@ func (a *App) newDetailBrowser() *DetailBrowser {
 
 // showQueryStoreValue is the grid's "Show Value" hook. On a Query Store
 // report's Query column it re-reads the statement from the server by the row's
-// query id, rather than opening the cell.
+// query id rather than opening the cell.
 //
 // The cell cannot be opened: queryStoreOneLine collapses the statement onto one
-// line for the grid, so a `-- comment` anywhere in it swallows every line that
-// follows and what opens is SQL with most of the query commented out. This grid
-// holds only [][]string, shared with every other node type, so the id is the
-// only handle back to the statement (QueryStorePanel keeps the real text and
-// needs no round trip).
+// line for the grid, so a `-- comment` anywhere in it swallows every line after
+// it. This grid holds only [][]string, shared with every other node type, so
+// the id is the only handle back to the statement (QueryStorePanel keeps the
+// real text and needs no round trip).
 //
-// Every path that cannot produce an id — another column, another node type, a
-// row whose id cell is a dash — falls through to the flattened cell.
+// Every path that cannot produce an id (another column, another node type, a
+// row whose id cell is a dash) falls through to the flattened cell.
 func (db *DetailBrowser) showQueryStoreValue(a *App, col int, column, value string) bool {
 	if column != qsQueryColumn || db.currentNode == nil ||
 		db.currentNode.data.Type != NodeQueryStoreReport {
@@ -509,8 +507,8 @@ func (db *DetailBrowser) showQueryStoreValue(a *App, col int, column, value stri
 				return
 			}
 			if text == "" {
-				// Query Store no longer holds the statement; the flattened
-				// cell is all that is left of it.
+				// Query Store no longer holds the statement; only the flattened cell is
+				// left.
 				text = value
 			}
 			a.openValuePanel(column, ".sql", controls.SQLHighlighter(theme.Active()), text)

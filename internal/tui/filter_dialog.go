@@ -62,12 +62,10 @@ type filterDialogRow struct {
 	value *widgets.InputField
 }
 
-// Column geometry, in columns from the dialog's left text margin: property name,
-// operator dropdown, value field. Widths fit the longest property name and the
-// longest operator name without clipping.
-//
-// These are the widths on a terminal wide enough for the whole dialog; on a
-// narrower one columnWidths shrinks from them.
+// Column geometry, in columns from the dialog's left text margin: property
+// name, operator dropdown, value field. Widths fit the longest property and
+// operator names; they apply on a terminal wide enough for the whole dialog,
+// and columnWidths shrinks from them on a narrower one.
 const (
 	filterPropColW  = 21
 	filterOpW       = 17
@@ -120,9 +118,8 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 	d.drag.Clear()
 
 	// Sized before the widgets are built: recentre clamps the dialog to the
-	// terminal and a widget's width is fixed at construction, so building the
-	// rows at full width first draws the value fields past the right border of a
-	// clamped dialog.
+	// terminal and a widget's width is fixed at construction, so rows built at full
+	// width would draw value fields past a clamped dialog's right border.
 	d.SetSize(filterDialogW, d.heightFor(len(props)))
 	d.propColW, d.opW, d.valueW = d.columnWidths()
 
@@ -149,10 +146,9 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 
 // columnWidths divides the row's usable width between the three columns: the
 // full constants when they fit, otherwise shrinking in the order a narrow dialog
-// can best afford — the property name first, since the column header still says
-// what it is, then the operator, and the value field last. Every column stops at
-// its floor, so a terminal too narrow even for those overflows; that is
-// ModalDialog's limit, not this dialog's.
+// can best afford: property name first (the header still says what it is), then
+// the operator, then the value field. Every column stops at its floor, so a
+// terminal too narrow even for those overflows; that is ModalDialog's limit.
 func (d *FilterDialog) columnWidths() (propColW, opW, valueW int) {
 	propColW, opW, valueW = filterPropColW, filterOpW, filterValueW
 	// -1 for the left text margin (layout's lx = inner.X+1).
@@ -207,7 +203,7 @@ func (d *FilterDialog) headerLines() int {
 // heightFor sizes the dialog to a row count: the header, a blank row, the
 // "Filter Criteria:" caption and its column header, one row per property, a
 // blank row and the message line, plus the 5 rows ModalDialog reserves below.
-// Takes the count rather than len(d.rows), since show sizes the dialog before
+// Takes the count rather than len(d.rows) since show sizes the dialog before
 // building the rows.
 func (d *FilterDialog) heightFor(rows int) int {
 	return d.headerLines() + 4 + rows + 1 + 5
@@ -265,13 +261,13 @@ func (d *FilterDialog) openDropDown() *widgets.DropDown {
 // ---------------------------------------------------------------------------
 
 // buildFilter assembles the rows into a filter, or reports the first row whose
-// value the criterion's kind can't parse. A nil filter with no error means every
-// row was empty — "no filter", which OK applies as a removal.
+// value the criterion's kind can't parse. A nil filter with no error means
+// every row was empty: "no filter", which OK applies as a removal.
 //
-// Values are trimmed here, which is what makes a whitespace-only row count as
-// empty. Matching trims too, so an untrimmed " " reaches matchText as an empty
-// needle, making `Contains` true of every row: the folder gets the "(filtered)"
-// label and filters nothing.
+// Values are trimmed here, making a whitespace-only row count as empty.
+// Matching trims too, so an untrimmed " " would reach matchText as an empty
+// needle, making `Contains` true of every row: the folder would get the
+// "(filtered)" label and filter nothing.
 func (d *FilterDialog) buildFilter() (*nodeFilter, int, error) {
 	f := &nodeFilter{}
 	for i := range d.rows {

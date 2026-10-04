@@ -9,21 +9,21 @@ import (
 	"unicode/utf8"
 )
 
-// Filter is the viewer's client-side filter: SSMS's Filters dialog as one
-// line of text. It narrows what the grid shows, never what the session
-// collects — the session's predicate is the Properties dialog's.
+// Filter is the viewer's client-side filter: SSMS's Filters dialog as one line
+// of text. It narrows what the grid shows, never what the session collects (the
+// session's predicate is the Properties dialog's).
 //
 // Two forms:
 //
-//   - an expression — terms of the form `column op value`, joined by AND and
+//   - an expression: terms of the form `column op value`, joined by AND and
 //     OR, AND binding tighter (duration > 1000000 and database_name = 'app');
 //   - anything else is free text, matched case-insensitively against every
 //     value the event carries (the Log File Viewer's filter).
 //
 // A column is resolved against the event itself: name, timestamp and package
-// are the built-ins; any other name is a field, and failing that an action of
-// that name. field:x and action:x name one kind explicitly. An event without the column is NULL to every operator but
-// IS NULL — SQL's rule, and the one SSMS's dialog follows.
+// are built-ins; any other name is a field, failing that an action of that
+// name. field:x and action:x name one kind explicitly. An event without the
+// column is NULL to every operator but IS NULL (SQL's rule, as SSMS's dialog).
 type Filter struct {
 	text   string
 	groups [][]term // OR of ANDs; nil for free text
@@ -54,10 +54,10 @@ type term struct {
 }
 
 // ParseFilter parses s. An empty s is a nil filter, which matches everything.
-// Text that is not a valid expression is free text — unless it uses one of the
-// comparison symbols (= < > ! ~), which only an expression would, and then
-// the parse error is returned: someone who typed `duration >` meant a
-// filter, and matching the literal text would silently show nothing.
+// Text that is not a valid expression is free text, unless it uses a comparison
+// symbol (= < > ! ~), which only an expression would: then the parse error is
+// returned, since someone who typed `duration >` meant a filter and matching
+// the literal text would silently show nothing.
 func ParseFilter(s string) (*Filter, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -166,12 +166,12 @@ func (t term) match(e *Event) bool {
 	return v.Text != "" && v.Text != v.Value && compare(v.Value, t.op, t.value)
 }
 
-// compare applies op to a (the event's value) and b (the filter's): as
-// numbers when both are, else as case-insensitive text.
+// compare applies op to a (the event's value) and b (the filter's): as numbers
+// when both are, else as case-insensitive text.
 //
 // a is folded as it is read, never lowered into a copy: a filter runs over
-// every value of every event in the store on each edit, and over each event
-// as it arrives, so a ToLower here was an allocation per value per event.
+// every value of every event in the store on each edit and over each arriving
+// event, so a ToLower here was an allocation per value per event.
 func compare(a string, op Op, b string) bool {
 	lb := strings.ToLower(b)
 	switch op {
@@ -199,9 +199,9 @@ func compare(a string, op Op, b string) bool {
 }
 
 // parseNumber is strconv.ParseFloat of s trimmed, reporting only whether it
-// parsed. Text that cannot start a float is turned away before ParseFloat
-// sees it, because ParseFloat's error is an allocation, and nearly every value
-// a text comparison meets is text.
+// parsed. Text that cannot start a float is turned away before ParseFloat sees
+// it, because ParseFloat's error allocates and nearly every value a text
+// comparison meets is text.
 func parseNumber(s string) (float64, bool) {
 	s = strings.TrimSpace(s)
 	t := strings.TrimLeft(s, "+-")
@@ -310,10 +310,9 @@ func (f *Filter) AndEquals(column, value string) *Filter {
 	return f.AndTerms(Term{Column: column, Op: OpEq, Value: value})
 }
 
-// AndTerms returns a filter passing what f passes and every one of terms:
-// f's every OR branch with the terms ANDed on, since the syntax has no
-// parentheses to write "(f) AND terms". A nil or free-text f gives the terms
-// alone. f itself is not changed.
+// AndTerms returns a filter passing what f passes and every one of terms: each
+// of f's OR branches with the terms ANDed on (the syntax has no parentheses for
+// "(f) AND terms"). A nil or free-text f gives the terms alone. f is unchanged.
 func (f *Filter) AndTerms(terms ...Term) *Filter {
 	ts := make([]term, len(terms))
 	for i, t := range terms {

@@ -12,35 +12,33 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// userPropPages builds the page set for Database User Properties. General
-// is editable except for the fixed system users (dbo/guest/sys/
-// INFORMATION_SCHEMA, which reject ALTER USER entirely); Owned Schemas,
-// Membership, Securables, and Extended Properties are always editable, and
-// Effective Permissions is a read-only listing by design (see
-// effectivePermsNote).
+// userPropPages builds the page set for Database User Properties. General is
+// editable except for the fixed system users (dbo/guest/sys/INFORMATION_SCHEMA,
+// which reject ALTER USER entirely); Owned Schemas, Membership, Securables, and
+// Extended Properties are always editable, and Effective Permissions is a
+// read-only listing by design (see effectivePermsNote).
 //
 // userName is boxed in a *string shared by every page below: renaming a user
-// changes the identity every other page's lookup depends on. The
-// rename is the last write of an Apply/OK run (see propPage.renames),
-// and commitRename then updates the box so PropDialog.InvalidateAll's
-// reload re-fetches under the new name. dbName never changes, so it
-// stays a plain string.
+// changes the identity every other page's lookup depends on. The rename is the
+// last write of an Apply/OK run (see propPage.renames), and commitRename then
+// updates the box so PropDialog.InvalidateAll's reload re-fetches under the new
+// name. dbName never changes, so it stays a plain string.
 func userPropPages(d *PropDialog, sc *db.ServerConn, dbName, userName string) []propPage {
 	namePtr := &userName
 	return []propPage{
-		// withRequiresOn, not withRequires: gate.AlterAnyUser carries the
-		// class-4 arm, and a page that names no securable asks it about ""
-		// and withholds nothing — the page opened editable for a user carrying
-		// DENY ALTER ON USER::x and its rename was refused on Apply with
-		// Msg 15151. Caught by TestAnObjectScopedPageNamesItsSecurable.
+		// withRequiresOn, not withRequires: gate.AlterAnyUser carries the class-4
+		// arm, and a page that names no securable asks it about "" and withholds
+		// nothing: the page opened editable for a user carrying DENY ALTER ON USER::x
+		// and its rename was refused on Apply with Msg 15151
+		// (TestAnObjectScopedPageNamesItsSecurable).
 		withRequiresOn(pageUserGeneral(sc, dbName, namePtr), dbName, "", userName, gate.AlterAnyUser),
 		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "user"), dbName, gate.AlterAnySchema, gate.ControlDB),
-		// Gated on the user, not on the roles it lists: membership checks ALTER
-		// on the member as well as on the role, so a user carrying a class-4
-		// DENY cannot be added to any role — verified live 2026-09-04, ALTER
-		// ROLE db_datareader ADD MEMBER u refused under DENY ALTER ON USER::u.
-		// The per-role half is not expressible in one page-level banner, the
-		// same reason Login Properties' User Mapping declares nothing.
+		// Gated on the user, not on the roles it lists: membership checks ALTER on
+		// the member as well as on the role, so a user carrying a class-4 DENY cannot
+		// be added to any role (verified live 2026-09-04: ALTER ROLE db_datareader
+		// ADD MEMBER u refused under DENY ALTER ON USER::u). The per-role half is not
+		// expressible in one page-level banner, the same reason Login Properties'
+		// User Mapping declares nothing.
 		withRequiresOn(pageUserMembership(sc, dbName, namePtr), dbName, "", userName, gate.AlterAnyDBRoleMembers),
 		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, gate.ControlDB),
 		pagePrincipalEffectivePermissions(d, sc, dbName, namePtr),

@@ -27,22 +27,21 @@ func (p *QueryPanel) messagesHighlighter(doc *controls.Document, idx int) []cont
 }
 
 // onMessagesTab reports whether the active tab is Messages rather than a
-// result-set grid or execution plan — results, messages, resultsText, and
-// planView occupy the same rect (see layoutChildren), so exactly one of
-// them is drawn, and routed keys/mouse, at any given time.
+// result-set grid or execution plan. results, messages, resultsText and
+// planView occupy the same rect (see layoutChildren), so exactly one is drawn
+// and routed keys/mouse at a time.
 //
-// Built on tabCount/messagesTabIndex rather than resultTabs — this runs
-// several times per key/mouse event and every Draw (see its call sites in
-// query_panel.go), and resultTabs formats a label string per tab just to
-// have its length counted.
+// Built on tabCount/messagesTabIndex rather than resultTabs: this runs several
+// times per key/mouse event and every Draw, and resultTabs formats a label
+// string per tab just to count them.
 func (p *QueryPanel) onMessagesTab() bool {
 	idx := p.messagesTabIndex()
 	return idx >= 0 && p.activeTab == idx
 }
 
-// tabCount returns how many result tabs there currently are — the same
-// count resultTabs' returned slice would have, without allocating or
-// formatting any label. See resultTabs for what each index means.
+// tabCount returns how many result tabs there are (the count resultTabs would
+// return), without allocating or formatting labels. See resultTabs for what
+// each index means.
 func (p *QueryPanel) tabCount() int {
 	if p.planView != nil && p.result == nil {
 		return 2 // Execution Plan, Messages
@@ -66,20 +65,18 @@ func (p *QueryPanel) messagesTabIndex() int {
 	return -1
 }
 
-// textTabActive reports whether the active tab is a result set being
-// rendered as plain text (Query > Results To Text) rather than the grid —
-// results, messages, resultsText, and planView occupy the same rect (see
-// layoutChildren), so exactly one of them is drawn, and routed keys/mouse,
-// at any given time.
+// textTabActive reports whether the active tab is a result set rendered as
+// plain text (Query > Results To Text) rather than the grid. See onMessagesTab
+// for why only one panel is live.
 func (p *QueryPanel) textTabActive() bool {
 	return !p.onMessagesTab() && !p.planTabActive() && p.resultsMode == ResultsModeText && p.result != nil
 }
 
-// planTabActive reports whether the active tab is the graphical Execution
-// Plan view rather than Messages or a Results tab — see onMessagesTab and
-// resultTabs. Estimated mode (p.result == nil) puts it first; Actual mode
-// (both p.result and p.planView set — see setResultPlan) puts it right
-// after the Results tab(s), matching resultTabs' own ordering.
+// planTabActive reports whether the active tab is the graphical Execution Plan
+// view rather than Messages or a Results tab (see onMessagesTab, resultTabs).
+// Estimated mode (p.result == nil) puts it first; Actual mode (both p.result
+// and p.planView set, see setResultPlan) puts it right after the Results
+// tab(s).
 func (p *QueryPanel) planTabActive() bool {
 	if p.planView == nil {
 		return false
@@ -120,13 +117,13 @@ func (p *QueryPanel) drawTabBar(s tcell.Screen) {
 	}
 }
 
-// resultTabs returns the tab labels for the last result: one per result
-// set ("Results" alone when there's only one), plus Messages — with
-// "Execution Plan" inserted depending on how planView got populated (see
-// setEstimatedPlan and setResultPlan): alone with Messages when there's no
-// real result (Estimated mode, which never runs the query), or between the
-// Results tab(s) and Messages when there is one (Actual mode, "Include
-// Actual Execution Plan" — see planTabActive, which mirrors this ordering).
+// resultTabs returns the tab labels for the last result: one per result set
+// ("Results" alone when there's only one), plus Messages, with "Execution Plan"
+// inserted depending on how planView got populated (see setEstimatedPlan and
+// setResultPlan): alone with Messages when there's no real result (Estimated
+// mode, which never runs the query), or between the Results tab(s) and Messages
+// in Actual mode ("Include Actual Execution Plan"; planTabActive mirrors this
+// ordering).
 func (p *QueryPanel) resultTabs() []string {
 	if p.planView != nil && p.result == nil {
 		return []string{"Execution Plan", "Messages"}
@@ -198,13 +195,12 @@ func (p *QueryPanel) renderActiveTab() {
 	p.results.SetSource(set.Columns, set)
 }
 
-// setMessages installs msgs into the Messages tab's read-only editor — a
-// message's Text may itself span multiple lines (a detailed SQL Server
-// error, say), so each one is split first, keeping messageErrorLines a
-// per-rendered-line slice in lockstep with what SetText below actually
-// produces (Editor.SetText splits on "\n" the same way). Shared by a normal
-// query's Messages tab (renderActiveTab) and the execution-plan paths,
-// which report a compile failure the same way.
+// setMessages installs msgs into the Messages tab's read-only editor. A
+// message's Text may itself span lines (a detailed SQL Server error), so each
+// is split first, keeping messageErrorLines per rendered line in step with what
+// SetText produces (it splits on "\n" the same way). Shared by a normal query's
+// Messages tab (renderActiveTab) and the execution-plan paths, which report a
+// compile failure the same way.
 func (p *QueryPanel) setMessages(msgs []query.Message) {
 	var textLines []string
 	var errLines []bool
@@ -237,17 +233,16 @@ func (p *QueryPanel) textKeyNow() textKey {
 
 // textSyncCells is the largest set, in cells, that Results to Text formats on
 // the UI goroutine. A million rows of eight columns took 2.1 s to format, 1.1 s
-// to install through SetText and 370 ms more in the first Draw, all with input
-// frozen; below this the whole of it is a few tens of milliseconds, and a
-// "Formatting..." flash would cost more than it saves.
+// to install through SetText and 370 ms more in the first Draw, with input
+// frozen; below this it is a few tens of milliseconds, and a "Formatting..."
+// flash would cost more than it saves.
 const textSyncCells = 100_000
 
 // showResultsText puts set into the resultsText editor: from the memo when it
-// was the last one rendered, formatted in place when it is small, and
-// otherwise formatted off the UI goroutine behind a placeholder, installed
-// when it lands if the tab still wants it. A run for the same rendering
-// already in flight is left to finish rather than restarted, so switching
-// away and back mid-format does not throw the work away.
+// was the last one rendered, formatted in place when small, otherwise formatted
+// off the UI goroutine behind a placeholder and installed when it lands if the
+// tab still wants it. A run for the same rendering already in flight is left to
+// finish, so switching away and back mid-format does not throw the work away.
 func (p *QueryPanel) showResultsText(set query.ResultSet) {
 	key := p.textKeyNow()
 	if m := &p.textMemo; m.lines != nil && m.key == key {
@@ -264,9 +259,9 @@ func (p *QueryPanel) showResultsText(set query.ResultSet) {
 	if p.textFormatting() {
 		return
 	}
-	// Rooted at Background because formatting reads no connection: the rows
-	// are already in memory, and a disconnect leaves them worth showing. The
-	// latest still cancels it — on a newer rendering, a new run, a close.
+	// Rooted at Background because formatting reads no connection: the rows are
+	// already in memory, and a disconnect leaves them worth showing. The latest
+	// still cancels it on a newer rendering, a new run, or a close.
 	ctx, token := p.textRun.Begin(context.Background())
 	p.textRunKey = key
 	repair := func() { p.textRun.Done(token) }
@@ -295,17 +290,17 @@ func (p *QueryPanel) textFormatting() bool {
 // milliseconds, rarely enough that the check costs nothing.
 const textCancelEvery = 4096
 
-// formatResultsAsText renders set as SSMS's Results To Text look: a header
-// row, a dashed separator, then one line per data row, each column padded
-// to its widest value so columns visually line up like a real table.
+// formatResultsAsText renders set as SSMS's Results To Text look: a header row,
+// a dashed separator, then one line per data row, each column padded to its
+// widest value.
 //
-// No column is wider than maxW, and a longer value or header is cut to it with
-// no ellipsis, as SSMS does. Uncapped, one megabyte-long cell padded every row
-// of its result to a megabyte.
+// No column is wider than maxW; a longer value or header is cut to it with no
+// ellipsis, as SSMS does. Uncapped, one megabyte-long cell padded every row of
+// its result to a megabyte.
 //
-// It builds a LineBuffer rather than a string so that a large set can be
-// formatted, split and measured entirely off the UI goroutine (see
-// showResultsText). A cancelled ctx stops it with ctx's error.
+// It builds a LineBuffer rather than a string so a large set can be formatted,
+// split and measured entirely off the UI goroutine (see showResultsText). A
+// cancelled ctx stops it with ctx's error.
 func formatResultsAsText(ctx context.Context, set query.ResultSet, maxW, tabW int) (*controls.LineBuffer, error) {
 	widths := make([]int, len(set.Columns))
 	for i, c := range set.Columns {

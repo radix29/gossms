@@ -20,11 +20,10 @@ type band struct {
 // fit, and the aggregate Dirty/Revert/Validate/CopyText operations
 // PropertySheet needs.
 //
-// Scroll is tracked in row-index units, like every other scrollable list here,
-// not raw display lines: a row taller than one line (Section, Note, GridRow)
-// scrolls in and out as a whole unit. A row too tall for the space left is
-// either shrunk into it (Shrinkable) or left for the next scroll position (see
-// drawHeight).
+// Scroll is tracked in row-index units, not display lines: a row taller than one
+// line (Section, Note, GridRow) scrolls in and out whole. A row too tall for the
+// space left is shrunk into it (Shrinkable) or left for the next scroll
+// position (see drawHeight).
 type Form struct {
 	rows        []Row
 	focus       int // -1 = no focusable row
@@ -33,19 +32,18 @@ type Form struct {
 	rect        core.Rect
 	bands       []band
 
-	// readOnly makes every row but a Browsable one unfocusable and refuses to
-	// route a click into one, so the form can be read and scrolled but not
-	// edited. See SetReadOnly.
+	// readOnly makes every row but a Browsable one unfocusable and refuses to route
+	// a click into one. See SetReadOnly.
 	readOnly bool
 
 	// sbDragging is true while the form's own scrollbar thumb is being dragged.
-	// Once armed it outranks even the focused row, so the form keeps following
-	// the thumb when the pointer drifts back over a focused GridRow. Only a press
-	// on the bar's own column arms it.
+	// Once armed it outranks even the focused row, so the form keeps following the
+	// thumb when the pointer drifts over a focused GridRow. Only a press on the
+	// bar's own column arms it.
 	sbDragging bool
 
-	// applyConfirm is asked before this form's edits are applied for real —
-	// see SetApplyConfirm.
+	// applyConfirm is asked before this form's edits are applied for real; see
+	// SetApplyConfirm.
 	applyConfirm func() string
 
 	// commit is the form's commit hook — see SetCommit.
@@ -66,10 +64,9 @@ func (f *Form) Add(rows ...Row) {
 	f.applyReadOnlyDraw(rows)
 }
 
-// Prepend inserts rows ahead of the existing ones, for a caveat that has to be
-// read before the page it applies to. Appending one instead puts it below a
-// grid the sheet has to be scrolled past, and a Note is not focusable, so Tab
-// never brings it into view.
+// Prepend inserts rows ahead of the existing ones, for a caveat that must be
+// read before the page it applies to: an appended Note sits below a grid, and
+// being unfocusable Tab never brings it into view.
 //
 // Only safe before the form is interacted with: focus is an index into rows.
 func (f *Form) Prepend(rows ...Row) {
@@ -78,20 +75,17 @@ func (f *Form) Prepend(rows ...Row) {
 }
 
 // SetReadOnly makes the form uneditable: no row can take focus and a press is
-// not routed into one — except a Browsable row (a grid), which keeps both so
-// it can be moved through, and which ReadOnlyDrawer has made inert (a grid
-// goes browse-only). Wheel scrolling and PgUp/PgDn still work — the page is
-// meant to be read. Every row implementing ReadOnlyDrawer also switches to its
-// flat rendering, so the page stops offering controls it will not accept
-// input into.
+// not routed into one, except a Browsable row (a grid), which keeps both so it
+// can be moved through and which ReadOnlyDrawer has made inert (browse-only).
+// Wheel scrolling and PgUp/PgDn still work. Every ReadOnlyDrawer row also
+// switches to flat rendering.
 //
 // This is how a Properties page whose reads succeed but whose writes would be
 // refused is presented. Nothing can become dirty, so Apply and Script Changes
-// have nothing to send, which is the property that makes it safe rather than
-// merely discouraging. Dirty enforces it outright: a browsing grid's
-// OnSelectRow may run a page's commit-the-detail-rows-back handler, and a
-// lossy round trip there (a size shown in MB, stored in KB) must not turn a
-// look into a write.
+// have nothing to send. Dirty enforces it outright: a browsing grid's
+// OnSelectRow may run a commit-the-detail-rows-back handler, and a lossy round
+// trip there (a size shown in MB, stored in KB) must not turn a look into a
+// write.
 func (f *Form) SetReadOnly(v bool) {
 	f.readOnly = v
 	if v {
@@ -101,8 +95,8 @@ func (f *Form) SetReadOnly(v bool) {
 }
 
 // applyReadOnlyDraw pushes the form's read-only state into the given rows.
-// Called from Add and Prepend as well as SetReadOnly: a page that builds rows
-// after the gate has decided would otherwise draw them editable.
+// Called from Add and Prepend as well as SetReadOnly: rows built after the gate
+// decided would otherwise draw editable.
 func (f *Form) applyReadOnlyDraw(rows []Row) {
 	for _, row := range rows {
 		if rd, ok := row.(ReadOnlyDrawer); ok {
@@ -114,8 +108,8 @@ func (f *Form) applyReadOnlyDraw(rows []Row) {
 // ReadOnly reports whether SetReadOnly is in force.
 func (f *Form) ReadOnly() bool { return f.readOnly }
 
-// focusableAt reports whether row i can take focus right now — its own answer,
-// unless the whole form is read-only, when only a Browsable row can.
+// focusableAt reports whether row i can take focus right now: its own answer,
+// unless the form is read-only, when only a Browsable row can.
 func (f *Form) focusableAt(i int) bool {
 	return f.rows[i].Focusable() && (!f.readOnly || browsable(f.rows[i]))
 }
@@ -134,8 +128,8 @@ func (f *Form) Rows() []Row { return f.rows }
 func (f *Form) SetBounds(x, y, w, h int) { f.rect = core.Rect{X: x, Y: y, W: w, H: h} }
 
 // Focus sets whether the form as a whole holds focus, which drives whether the
-// current row draws highlighted. The first focusable row is focused
-// automatically the first time this is called with true.
+// current row draws highlighted. The first focusable row is focused the first
+// time this is called with true.
 func (f *Form) Focus(v bool) {
 	f.formFocused = v
 	if v && f.focus < 0 {
@@ -150,8 +144,8 @@ func (f *Form) FocusFirst() bool { f.focus = -1; return f.FocusNext() }
 func (f *Form) FocusLast() bool { f.focus = len(f.rows); return f.FocusPrev() }
 
 // FocusNext moves focus to the next focusable row, returning false and leaving
-// focus unchanged if there isn't one — the signal PropertySheet uses to move on
-// to the button zone.
+// focus unchanged if there isn't one (PropertySheet then moves to the button
+// zone).
 func (f *Form) FocusNext() bool {
 	for i := f.focus + 1; i < len(f.rows); i++ {
 		if f.focusableAt(i) {
@@ -203,10 +197,10 @@ func (f *Form) totalHeight(w int) int {
 	return total
 }
 
-// The scrollbar measures the form in content *lines*, the unit totalHeight and
-// f.rect.H use, while f.scroll is a row index — the three helpers below convert
-// between them. Sizing the thumb in row-index units leaves the bar drawn but
-// empty and undraggable on any page whose rows are few but tall.
+// The scrollbar measures the form in content *lines* (the unit totalHeight and
+// f.rect.H use), while f.scroll is a row index; the helpers below convert.
+// Sizing the thumb in row-index units leaves the bar empty and undraggable on a
+// page of few tall rows.
 
 // scrollLines returns how many content lines sit above the current scroll
 // position, i.e. the scrollbar offset for f.scroll.
@@ -230,7 +224,7 @@ func (f *Form) rowAtLine(n, w int) int {
 	return max(0, len(f.rows)-1)
 }
 
-// maxScroll returns the largest scroll index worth reaching — the one that first
+// maxScroll returns the largest scroll index worth reaching: the one that first
 // brings the last row into view. Past it, content only leaves the top and the
 // thumb can't reach the bottom of its track.
 func (f *Form) maxScroll(w int) int {
@@ -244,8 +238,8 @@ func (f *Form) maxScroll(w int) int {
 	return 0
 }
 
-// ensureVisible scrolls just enough that row idx's start is in view — not its
-// whole height, which a GridRow taller than the form could never satisfy.
+// ensureVisible scrolls just enough that row idx's start is in view (not its
+// whole height, which a GridRow taller than the form could never satisfy).
 func (f *Form) ensureVisible(idx int) {
 	if idx < f.scroll {
 		f.scroll = idx
@@ -275,10 +269,10 @@ func (f *Form) rowFits(idx, w int) bool {
 	return false
 }
 
-// drawHeight returns the height row i draws at when avail lines remain above the
-// form's bottom edge, and whether it is drawn at all. A row that doesn't fit is
-// clamped into the space left if Shrinkable, otherwise left for the scrollbar to
-// bring into view — except the first row on screen, which always draws in
+// drawHeight returns the height row i draws at when avail lines remain above
+// the form's bottom edge, and whether it is drawn at all. A row that doesn't
+// fit is clamped into the space left if Shrinkable, otherwise left for the
+// scrollbar to bring into view; the first row on screen always draws in
 // whatever space there is rather than leaving the page blank.
 func (f *Form) drawHeight(i, w, avail int, first bool) (int, bool) {
 	h := f.rows[i].Height(w)
@@ -300,23 +294,21 @@ func (f *Form) Draw(s tcell.Screen) {
 	core.FillRect(s, f.rect, ' ', theme.StyleDialog())
 	w := f.contentWidth()
 	f.bands = f.bands[:0]
-	// A row that asked to be seen since the last frame — a hint a handler just
-	// set — is scrolled to here, after the handler has run, whichever path
-	// (key, click, sheet button) ran it.
+	// A row that asked to be seen since the last frame is scrolled to here, after
+	// the handler has run, whichever path (key, click, sheet button) ran it.
 	for i, row := range f.rows {
 		if r, ok := row.(Revealer); ok && r.TakeReveal() {
 			f.ensureVisible(i)
 		}
 	}
 	// Nothing else re-clamps f.scroll when the form gets taller (a terminal
-	// resize), which would leave the page starting mid-list with dead space
-	// below and the thumb pinned to the bottom of its track.
+	// resize), which would leave the page starting mid-list with dead space below
+	// and the thumb pinned to the bottom of its track.
 	f.scroll = core.Clamp(f.scroll, 0, f.maxScroll(w))
 
 	// A row taller than the space left is drawn shrunk into it where it can be
 	// (drawHeight), so nothing renders past the form's bottom edge into the hint
-	// line and button row. A row that can't shrink that far ends the pass; the
-	// scrollbar brings it into view.
+	// line and button row. A row that can't shrink that far ends the pass.
 	y := f.rect.Y
 	bottom := f.rect.Y + f.rect.H
 	for i := f.scroll; i < len(f.rows) && y < bottom; i++ {
@@ -340,8 +332,7 @@ func (f *Form) Draw(s tcell.Screen) {
 		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
 		offset := f.scrollLines(w)
 		if f.scroll >= f.maxScroll(w) {
-			// Parked on the last row: put the thumb at the bottom of its track
-			// rather than wherever that row's first line falls.
+			// Parked on the last row: put the thumb at the bottom of its track.
 			offset = total - f.rect.H
 		}
 		core.DrawScrollbar(s, f.rect.Right()-1, f.rect.Y, f.rect.H, total, f.rect.H, offset, sbStyle, sbThumb)
@@ -358,11 +349,11 @@ func (f *Form) DrawOverlays(s tcell.Screen) {
 	}
 }
 
-// OverlayActive reports whether the focused row has an open overlay (SelectRow's
-// dropdown, GridRow's "Show Value" popup) drawn on top of the form. A host
-// laying the form out alongside other position-routed elements must check this
-// and give the form first refusal of every click while true — the same "overlay
-// drawn last gets first refusal" contract DataGrid.OverlayActive follows.
+// OverlayActive reports whether the focused row has an open overlay
+// (SelectRow's dropdown, GridRow's "Show Value" popup) drawn on top of the
+// form. A host laying the form out beside other position-routed elements must
+// give the form first refusal of every click while true, the same contract as
+// DataGrid.OverlayActive.
 func (f *Form) OverlayActive() bool {
 	row := f.Focused()
 	if row == nil {
@@ -387,10 +378,9 @@ func (f *Form) HandleKey(ev *tcell.EventKey) bool {
 		return f.FocusPrev()
 	case tcell.KeyPgDn:
 		if f.OverlayActive() {
-			// Scrolling the row list out from under an open dropdown leaves its
-			// list floating at a stale position: DrawOverlays draws every row's
-			// overlay every frame, whether or not that row got a fresh Layout.
-			// Swallow the key instead.
+			// Scrolling the row list out from under an open dropdown leaves its list
+			// floating at a stale position (DrawOverlays draws every row's overlay every
+			// frame, fresh Layout or not). Swallow the key instead.
 			return true
 		}
 		f.scroll = min(f.maxScroll(f.contentWidth()), f.scroll+max(1, f.rect.H/2))
@@ -405,12 +395,11 @@ func (f *Form) HandleKey(ev *tcell.EventKey) bool {
 	return false
 }
 
-// HandleMouse gives the row under the pointer first refusal on wheel scroll — a
-// GridRow's DataGrid has its own rows to scroll — then falls back to scrolling
-// the form. For every other button it gives the focused row first refusal, so a
-// click on its open dropdown overlay (which extends below the row's own band)
-// still reaches it, then falls back to whichever row's band contains the
-// click.
+// HandleMouse gives the row under the pointer first refusal on wheel scroll (a
+// GridRow's DataGrid has its own rows), then scrolls the form. For every other
+// button the focused row gets first refusal, so a click on its open dropdown
+// overlay (below the row's own band) still reaches it, then whichever row's
+// band contains the click.
 func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 	switch ev.Buttons() {
 	case tcell.WheelUp, tcell.WheelDown:
@@ -420,8 +409,8 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 		}
 		if f.OverlayActive() {
-			// As with PgUp/PgDn above: don't scroll the row list out from under
-			// a dropdown open elsewhere on the form.
+			// As with PgUp/PgDn above: don't scroll the row list out from under a dropdown
+			// open elsewhere on the form.
 			return true
 		}
 		if ev.Buttons() == tcell.WheelUp {
@@ -432,39 +421,37 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	// The latch is dropped before anything else can claim the release, the
-	// ordering DataGrid, Editor and TreeView use. Below the focused row's
-	// dispatch it is unreachable whenever that row is a GridRow —
-	// DataGrid.HandleMouse returns true for any release inside its rect — so a
-	// scrollbar drag let go over the grid leaves sbDragging armed and every later
-	// click reads as a drag that jumps the scroll.
+	// ordering DataGrid, Editor and TreeView use. Below the focused row's dispatch
+	// it is unreachable whenever that row is a GridRow (DataGrid.HandleMouse
+	// returns true for any release inside its rect), so a drag let go over the grid
+	// would leave sbDragging armed and every later click read as a drag.
 	if ev.Buttons() == tcell.ButtonNone {
 		f.sbDragging = false
 	}
 	// An armed scrollbar drag outranks even the focused row: the gesture started
 	// on the form's own bar, so every event until release belongs to it wherever
-	// the pointer drifted. Without this, a drag wandering back over a focused
-	// GridRow lets that grid claim the motion events. sbDragging is only ever
-	// armed by a press on the bar's column, so this can't steal a gesture that
-	// began inside a row.
+	// the pointer drifted, rather than a focused GridRow claiming the motion.
+	// sbDragging is armed only by a press on the bar's column, so this can't steal
+	// a gesture that began inside a row.
 	if f.sbDragging && f.handleScrollbarDrag(ev, f.contentWidth()) {
 		return true
 	}
-	// A press goes to the focused row first only while that row is on screen
-	// or has its overlay open. Scrolled out of view, it keeps the rect it was
-	// last drawn at, and a DataGrid claims any press inside that: with an
-	// account picked in Database Mail ▸ Accounts and the page scrolled down to
-	// its Authentication radio, the grid swallowed every click on the radio
-	// (W14). Releases and motion still go to it, so a latch it holds is let go.
+	// A press goes to the focused row first only while that row is on screen or has
+	// its overlay open. Scrolled out of view it keeps its last-drawn rect, and a
+	// DataGrid claims any press inside that: with an account picked in Database
+	// Mail > Accounts and the page scrolled to its Authentication radio, the grid
+	// swallowed every click on the radio (W14). Releases and motion still go to it,
+	// so a latch it holds is let go.
 	if row := f.Focused(); row != nil && (ev.Buttons() == tcell.ButtonNone || f.OverlayActive() || f.onScreen(f.focus)) {
 		if mh, ok := row.(MouseHandler); ok && mh.HandleMouse(ev) {
 			return true
 		}
 	}
 	if ev.Buttons() == tcell.ButtonNone {
-		// A plain hover/motion event (no button down) must not fall through to
-		// the click-routing below: tcell delivers these continuously, and
-		// band-matching on one shifts focus to whatever row the pointer is over,
-		// closing an open DropDown as the user moves toward its list.
+		// A plain hover/motion event must not fall through to the click-routing below:
+		// tcell delivers these continuously, and band-matching on one shifts focus to
+		// the row under the pointer, closing an open DropDown as the user moves toward
+		// its list.
 		return false
 	}
 	w := f.contentWidth()
@@ -481,8 +468,8 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		row := f.rows[b.row]
 		if f.readOnly && !browsable(row) {
-			// Claimed, not routed: the press landed on the form, and letting it
-			// fall through would put it wherever the sheet draws underneath.
+			// Claimed, not routed: the press landed on the form, and falling through would
+			// put it wherever the sheet draws underneath.
 			return true
 		}
 		if mh, ok := row.(MouseHandler); ok && mh.HandleMouse(ev) {
@@ -500,12 +487,11 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 	return false
 }
 
-// handleScrollbarDrag is Form's own version of core.HandleScrollbarDrag, which
-// can't be reused: that helper takes one h as both track length and visible
-// count, while Form's scrollbar measures lines (f.rect.H, f.totalHeight) and
-// f.scroll counts rows. sbDragging latches for the whole gesture so the drag
-// survives the pointer drifting off the bar's column; HandleMouse's ButtonNone
-// branch clears it.
+// handleScrollbarDrag is Form's own core.HandleScrollbarDrag, which can't be
+// reused: that helper takes one h as both track length and visible count, while
+// Form's scrollbar measures lines (f.rect.H, f.totalHeight) and f.scroll counts
+// rows. sbDragging latches for the whole gesture so the drag survives the
+// pointer leaving the bar's column; HandleMouse's ButtonNone branch clears it.
 func (f *Form) handleScrollbarDrag(ev *tcell.EventMouse, w int) bool {
 	total := f.totalHeight(w)
 	if ev.Buttons() != tcell.Button1 || total <= f.rect.H || f.rect.H <= 0 {
@@ -579,11 +565,11 @@ func (f *Form) Validate() error {
 	return nil
 }
 
-// SetApplyConfirm registers fn to be asked, while the form is dirty, before
-// its edits are applied for real: a non-empty answer is a warning the user
-// must accept first — an edit whose write has a consequence beyond the value
-// itself, such as disconnecting other sessions. fn reads the form's rows and
-// answers "" when none of the edits it cares about is pending.
+// SetApplyConfirm registers fn to be asked, while the form is dirty, before its
+// edits are applied for real: a non-empty answer is a warning the user must
+// accept first, for an edit whose write has a consequence beyond the value
+// itself (such as disconnecting other sessions). fn answers "" when none of the
+// edits it cares about is pending.
 //
 // The sheet only collects the answers (PropertySheet.ApplyConfirmations);
 // asking, and skipping the question for a write that is only scripted, is the
@@ -600,16 +586,15 @@ func (f *Form) ApplyConfirm() string {
 }
 
 // SetCommit registers fn as the form's commit hook: it copies what the form's
-// widgets show into the model the form's rows and apply read, for a form whose
-// editor fields stand in for one selected item of a list (a grid-plus-detail
-// page) and are otherwise only copied back when the selection moves.
+// widgets show into the model the rows and apply read, for a form whose editor
+// fields stand in for one selected item of a list (grid-plus-detail page) and
+// are otherwise only copied back when the selection moves.
 //
 // The host calls it, through PropertySheet.Commit, on its own goroutine before
-// it reads Dirty, Validate or ApplyConfirm for an Apply, OK or Script Changes
-// — so the copy happens there, and not inside the apply, which runs on another
-// goroutine while the UI goroutine may still be drawing the same widgets.
-// fn must be safe to call at any time: with nothing selected, and on a form
-// that is not dirty.
+// reading Dirty, Validate or ApplyConfirm for an Apply, OK or Script Changes,
+// not inside the apply, which runs on another goroutine while the UI goroutine
+// may still be drawing the same widgets. fn must be safe to call at any time:
+// with nothing selected, and on a form that is not dirty.
 func (f *Form) SetCommit(fn func()) { f.commit = fn }
 
 // Commit runs the form's commit hook, if it has one.

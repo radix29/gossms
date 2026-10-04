@@ -19,11 +19,11 @@ type MenuBar struct {
 	hoverMenu    int
 	selectedItem int // index within menus[openMenu].Items currently highlighted
 
-	// mouseDragging distinguishes a fresh Button1 press, which toggles the
-	// header, from a continued hold over it — DataGrid and Editor have the same
-	// field. Without it, all-motion tracking resends Button1 on every motion
-	// while the button is down, so a click that twitches re-toggles the header
-	// it just opened right back closed.
+	// mouseDragging distinguishes a fresh Button1 press, which toggles the header,
+	// from a continued hold over it (DataGrid and Editor have the same field).
+	// Without it, all-motion tracking resends Button1 on every motion while the
+	// button is down, so a click that twitches re-toggles the header it just
+	// opened back closed.
 	mouseDragging bool
 
 	// cascade holds any open submenu levels of the open dropdown (see
@@ -32,17 +32,16 @@ type MenuBar struct {
 
 	// scrollTop is the index of the first item drawn, for a dropdown taller than
 	// the rows below the bar. A dropdown hangs off its own header and can't be
-	// shifted up the way a ContextMenu can, so once it doesn't fit the overflow
-	// has nowhere to go but out of view — Edit's 21 items need 23 rows, and on a
-	// 20-row terminal its last three paint past the bottom edge, invisible and
-	// unreachable. Capping the height alone hides them behind a tidy border,
-	// which is worse. See drawDropdown.
+	// shifted up as a ContextMenu can, so the overflow would otherwise be out of
+	// view: Edit's 21 items need 23 rows, and on a 20-row terminal the last three
+	// would paint past the bottom edge, invisible and unreachable. Capping the
+	// height alone hides them behind a tidy border, which is worse. See
+	// drawDropdown.
 	scrollTop int
 
 	// drawnRect caches the box Draw last clamped the dropdown to, as ContextMenu
-	// caches drawnX/drawnY: only Draw sees a tcell.Screen, so only Draw knows the
-	// screen height the clamp needs, and HandleMouse must hit-test what was
-	// painted.
+	// caches drawnX/drawnY: only Draw sees a tcell.Screen and so the screen height
+	// the clamp needs, and HandleMouse must hit-test what was painted.
 	drawnRect core.Rect
 }
 
@@ -145,14 +144,13 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 	mb.cascade.draw(s, menu.Items, r, mb.scrollTop)
 }
 
-// dropdownRect returns the open dropdown's box as Draw last clamped it — the
+// dropdownRect returns the open dropdown's box as Draw last clamped it: the
 // anchor the cascade's first submenu level hangs off, and what HandleMouse
 // hit-tests. Reads the cache rather than recomputing, since the clamp needs a
 // screen height only Draw has.
 //
 // Falls back to the unclamped box when nothing has been drawn, so a MenuBar
-// driven without a Draw still hit-tests where it would have painted. The running
-// application never takes that path.
+// driven without a Draw still hit-tests where it would paint.
 func (mb *MenuBar) dropdownRect() core.Rect {
 	if mb.openMenu < 0 {
 		return core.Rect{}
@@ -336,14 +334,14 @@ func (mb *MenuBar) handleDropdownWheel(ev *tcell.EventMouse, n int) bool {
 	return true
 }
 
-// dropdownGeometry returns the box the open dropdown for menu index idx is drawn
-// in, clamped to the screen on all four sides.
+// dropdownGeometry returns the box the open dropdown for menu index idx is
+// drawn in, clamped to the screen on all four sides.
 //
 // A dropdown is anchored under its own header, so unlike a ContextMenu it can't
-// be shifted up to fit: the height is capped at the rows left below the bar and
+// shift up to fit: the height is capped at the rows left below the bar and
 // drawDropdown scrolls the items through it. The lower clamps matter as much as
-// the upper ones — a menu wider or taller than the screen gives a negative
-// column or height, and a negative height turns the box inside out.
+// the upper: a menu wider or taller than the screen gives a negative column or
+// height, and a negative height turns the box inside out.
 func (mb *MenuBar) dropdownGeometry(s tcell.Screen, idx int) core.Rect {
 	sw, sh := s.Size()
 	col, w := mb.dropdownColumn(idx)

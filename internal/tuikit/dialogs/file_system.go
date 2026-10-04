@@ -15,26 +15,26 @@ type FileEntry struct {
 	ModTime time.Time
 
 	// SizeUnknown marks an entry whose FileSystem could not report a size, as
-	// opposed to one that is genuinely empty. A zero ModTime says the same
-	// thing for the timestamp and needs no flag — no file is dated year 1 —
-	// but a zero Size cannot, and a listing that prints "0 B" for every file
-	// is stating something false. goSSMS's server-side listing sets it on
-	// pre-2017 instances, where xp_dirtree reports names and nothing else.
+	// opposed to a genuinely empty one. A zero ModTime says the same for the
+	// timestamp and needs no flag (no file is dated year 1), but a zero Size
+	// cannot, and a listing printing "0 B" for every file states something false.
+	// goSSMS's server-side listing sets it on pre-2017 instances, where xp_dirtree
+	// reports names and nothing else.
 	SizeUnknown bool
 }
 
-// FileSystem is the filesystem a FileDialog browses. Every path operation
-// the dialog performs goes through it, so a host app can point the dialog at
-// something other than the machine it runs on — goSSMS browses the SQL
-// Server host's filesystem this way, which is a different machine with
-// different path conventions (backslashes, drive letters) from the client's.
+// FileSystem is the filesystem a FileDialog browses. Every path operation the
+// dialog performs goes through it, so a host app can point the dialog at
+// something other than the machine it runs on: goSSMS browses the SQL Server
+// host's filesystem this way, a different machine with different path
+// conventions (backslashes, drive letters) from the client's.
 //
 // That is why none of these can be `path/filepath` calls at the call site:
-// filepath compiles to the *client's* rules, so a Linux client asked to
-// join a Windows server path produces "/home/user/C:\Backup\db.bak".
+// filepath compiles to the *client's* rules, so a Linux client joining a
+// Windows server path would produce "/home/user/C:\Backup\db.bak".
 //
-// Implementations may block — LocalFileSystem doesn't, a network-backed one
-// does — so a FileDialog navigation costs whatever the implementation costs.
+// Implementations may block (LocalFileSystem doesn't, a network-backed one
+// does), so a FileDialog navigation costs whatever the implementation costs.
 type FileSystem interface {
 	PathRules
 
@@ -45,20 +45,20 @@ type FileSystem interface {
 	// Default is the directory to open when the caller supplies no start
 	// path.
 	Default() string
-	// Exists reports whether path exists and whether it is a directory. A
-	// path that simply isn't there is (false, false, nil); err is for a
-	// filesystem that couldn't *ask* — a remote one that timed out or lost
-	// its connection. The distinction matters because FileDialog's
-	// save-overwrite guard treats "couldn't ask" as "assume it's there" and
-	// prompts anyway; folding the two together silently skips the prompt.
+	// Exists reports whether path exists and whether it is a directory. A path
+	// that simply isn't there is (false, false, nil); err is for a filesystem that
+	// couldn't *ask* (a remote one that timed out or lost its connection). The
+	// distinction matters: FileDialog's save-overwrite guard treats "couldn't ask"
+	// as "assume it's there" and prompts anyway; folding the two would silently
+	// skip the prompt.
 	Exists(path string) (exists, isDir bool, err error)
 }
 
-// BlockingFileSystem is implemented by a FileSystem whose calls reach off
-// this machine. FileSystem is synchronous, so each such call stops the event
-// loop until it returns; a FileDialog paints a "Listing ..." frame before
-// every call to one, and skips that repaint for a filesystem that doesn't
-// claim to block — on the local disk it would only ever flicker.
+// BlockingFileSystem is implemented by a FileSystem whose calls reach off this
+// machine. FileSystem is synchronous, so each such call stops the event loop
+// until it returns; a FileDialog paints a "Listing ..." frame before every call
+// to one, and skips that repaint for a filesystem that doesn't claim to block
+// (on the local disk it would only flicker).
 type BlockingFileSystem interface {
 	// Blocking reports whether a call may take long enough to need feedback.
 	Blocking() bool
@@ -214,10 +214,9 @@ func (w WindowsPathRules) Parent(dir string) string {
 	if clean == "" {
 		return ""
 	}
-	// A UNC path bottoms out at the share root: `\\server\share` is the
-	// shallowest thing any host can enumerate, so its parent is the drive
-	// list. Walking it by separator instead offered `\\server` and then `\`,
-	// two levels that list nothing and that Up had to be pressed through.
+	// A UNC path bottoms out at the share root: `\\server\share` is the shallowest
+	// thing any host can enumerate, so its parent is the drive list. Walking it by
+	// separator would offer `\\server` and then `\`, two levels that list nothing.
 	if strings.HasPrefix(clean, `\\`) {
 		if strings.Count(clean[2:], `\`) < 2 {
 			return ""
@@ -227,10 +226,10 @@ func (w WindowsPathRules) Parent(dir string) string {
 	if i <= 0 {
 		return ""
 	}
-	// Clean only leaves a trailing separator on a root ("C:\"), so this is
-	// the drive root — its parent is the drive list. Checked before the
-	// drive-letter case below, which would otherwise return "C:\" as its own
-	// parent and strand the browse there with no way back out.
+	// Clean only leaves a trailing separator on a root ("C:\"), so this is the
+	// drive root, whose parent is the drive list. Checked before the drive-letter
+	// case below, which would return "C:\" as its own parent and strand the browse
+	// there.
 	if i == len(clean)-1 {
 		return ""
 	}

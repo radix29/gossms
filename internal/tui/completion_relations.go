@@ -11,23 +11,22 @@ import (
 // ---------------------------------------------------------------------------
 // Relations: what a FROM-scope name resolves to
 //
-// sqlparse.ScopeAt emits structure only — a query tree of CTEs, derived tables
-// and refs, with no idea what a name means. This file turns that structure into
-// columns: a catalog table/view for an ordinary ref, and a synthetic column list
-// computed from the body for a derived table or a CTE.
+// sqlparse.ScopeAt emits structure only (CTEs, derived tables, refs) with no
+// idea what a name means. This file turns that into columns: a catalog
+// table/view for an ordinary ref, and a synthetic column list computed from the
+// body for a derived table or CTE.
 //
 // Everything here answers "no columns" rather than guessing when it runs out of
-// certainty — an unresolvable name, a cycle, a shape the parser dropped. The
-// popup closing is the package's stated stance; showing a plausible-looking
-// wrong column list is not.
+// certainty (unresolvable name, cycle, a shape the parser dropped). The popup
+// closing is the package's stance; a plausible-looking wrong list is not.
 // ---------------------------------------------------------------------------
 
 // relation is one thing a name in FROM-scope can resolve to: a catalog
-// table/view, or a synthetic column list computed from a derived table or CTE
-// body. name is the alias when there is one, else the table/CTE name, and is
-// what a dot-qualifier has to match; it is empty for an unaliased derived
-// table, which nothing can qualify. aliased records which of the two it was,
-// so an alias still outranks some other ref's bare name (see findRelation).
+// table/view, or a synthetic column list from a derived table or CTE body. name
+// is the alias if any, else the table/CTE name, and is what a dot-qualifier
+// must match; empty for an unaliased derived table, which nothing can qualify.
+// aliased records which it was, so an alias outranks another ref's bare name
+// (see findRelation).
 type relation struct {
 	name    string
 	aliased bool
@@ -43,23 +42,21 @@ func (r relation) columns() []gosmo.CatalogColumn {
 }
 
 // maxRelationDepth bounds how far nested derived tables and CTE bodies are
-// followed. Eight is far past anything hand-written; the cap exists so a
-// pathological or half-typed script can't turn one keystroke into an
-// exponential walk.
+// followed. Eight is far past hand-written SQL; the cap stops a pathological or
+// half-typed script turning one keystroke into an exponential walk.
 const maxRelationDepth = 8
 
 // resolveCtx carries what name resolution needs down the tree: the two
-// inventories, the CTE bindings visible at this point (innermost first), the
-// remaining recursion budget, and the set of CTE names currently being
-// expanded. otherDB, when set, finds another database's inventory for a
-// three-part name (QueryPanel.databaseInventory), linked a remote object for a
-// four-part one (QueryPanel.linkedObject), and pending records that one was
-// still loading.
+// inventories, the CTE bindings visible here (innermost first), the remaining
+// recursion budget, and the set of CTE names being expanded. otherDB, when set,
+// finds another database's inventory for a three-part name
+// (QueryPanel.databaseInventory), linked a remote object for a four-part one
+// (QueryPanel.linkedObject), and pending records that one was still loading.
 //
-// It is passed by value — depth is per-branch — but expanding is a shared map,
-// deliberately: a recursive CTE (WITH r AS (SELECT * FROM r), legal T-SQL) is
-// caught by the name already being on the stack, which only works if every
-// branch sees the same set.
+// Passed by value (depth is per-branch), but expanding is a shared map on
+// purpose: a recursive CTE (WITH r AS (SELECT * FROM r), legal T-SQL) is caught
+// by its name already being on the stack, which needs every branch to see the
+// same set.
 type resolveCtx struct {
 	inv, sysInv *completionInventory
 	ctes        []sqlparse.CTE
@@ -72,7 +69,7 @@ type resolveCtx struct {
 }
 
 // database returns the loaded inventory a three-part name's database part
-// names, or false — noting a load still in flight in rc.pending.
+// names, or false, noting a load still in flight in rc.pending.
 func (rc resolveCtx) database(name string) (*completionInventory, bool) {
 	if rc.otherDB == nil {
 		return nil, false
@@ -111,11 +108,11 @@ func resolveRefs(rc resolveCtx, refs []sqlparse.FromRef) []relation {
 }
 
 // resolveRef resolves one FROM/JOIN/APPLY ref: a derived table to its body's
-// columns, a bare name matching a visible CTE to that CTE's, and anything else
-// to a catalog object — in another database's catalog for a three-part name.
-// A schema- or database-qualified ref is never a CTE — "dbo.t1" names a real
-// object even when a CTE t1 is in scope — and a linked server's four-part
-// name resolves through that server's remote catalog (completion_linked.go).
+// columns, a bare name matching a visible CTE to that CTE's, anything else to a
+// catalog object (in another database's catalog for a three-part name). A
+// schema- or database-qualified ref is never a CTE ("dbo.t1" names a real
+// object even with a CTE t1 in scope); a four-part name resolves through the
+// linked server's remote catalog (completion_linked.go).
 func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 	if ref.Pivot != nil {
 		return resolvePivotRef(rc, ref)
@@ -129,7 +126,7 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 	}
 	if ref.Rowset != nil {
 		// A rowset function names no catalog object, so an unaliased one is
-		// as unqualifiable as an unaliased derived table.
+		// unqualifiable like an unaliased derived table.
 		cols := declaredColumns(ref.Rowset.Columns)
 		return relation{name: ref.Alias, aliased: true, cols: cols}, len(cols) > 0
 	}
@@ -139,12 +136,10 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 	}
 	if ref.Schema == "" {
 		if sqlparse.HasSigil(ref.Name) {
-			// A temp table or table variable. The catalog can never hold one,
-			// so a name the batch bound nothing to resolves to nothing rather
-			// than falling through to an object sharing the name without its
-			// sigil — which is what "FROM #Orders" did before the tokenizer
-			// kept the '#'. A database part is ignored, as the server ignores
-			// it: "tempdb..#t" and "x..#t" both name the session's #t.
+			// A temp table or table variable. The catalog can never hold one, so a name the
+			// batch bound nothing to resolves to nothing rather than falling through to an
+			// object sharing the name without its sigil. A database part is ignored, as the
+			// server ignores it: "tempdb..#t" and "x..#t" both name the session's #t.
 			b, ok := findBinding(rc.bindings, ref.Name)
 			if !ok {
 				return relation{}, false
@@ -171,9 +166,8 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 		}
 	}
 	if ref.Call {
-		// A table-valued function: its result columns, as the catalog
-		// records them. Tried after the tables, which is what a
-		// "t (NOLOCK)" hint also parses as.
+		// A table-valued function: its result columns as the catalog records them.
+		// Tried after the tables, which "t (NOLOCK)" also parses as.
 		for _, schema := range schemas {
 			if fn := findCatalogFunction(inv, rc.sysInv, schema, ref.Name); fn != nil {
 				return relation{name: name, aliased: aliased, obj: fn}, true
@@ -217,8 +211,8 @@ func resolvePivotRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 	return relation{name: ref.Alias, aliased: ref.Alias != "", cols: cols}, len(cols) > 0
 }
 
-// userAggregate resolves a PIVOT's qualified aggregate call — "dbo.MyAgg(x)",
-// "Sales.dbo.MyAgg(x)" — to the user-defined aggregate it names, in the
+// userAggregate resolves a PIVOT's qualified aggregate call ("dbo.MyAgg(x)",
+// "Sales.dbo.MyAgg(x)") to the user-defined aggregate it names, in the
 // connected database or the one its database part names, then among the sys
 // schema's. nil for an unqualified (built-in) call, an omitted schema part
 // ("Sales..MyAgg", which T-SQL refuses), or a name nothing loaded holds.
@@ -251,16 +245,15 @@ func (rc resolveCtx) userAggregate(pv *sqlparse.Pivot) *gosmo.CatalogAggregate {
 //
 //   - PIVOT drops the aggregated column and the one it spreads, and adds one
 //     column per IN-list name, typed by pivotAggregateType for a built-in
-//     aggregate and by uda's declared return type for a user-defined one —
-//     untyped for a built-in it doesn't model, or a user-defined aggregate
-//     uda is nil for.
-//   - UNPIVOT drops the IN-list columns and adds the value column and the name
-//     column. The value column's type is the one the unpivoted columns share —
-//     T-SQL requires them to share one — so it is taken from the first of them
-//     that the source actually has; the name column's is unknown.
+//     aggregate and by uda's declared return type for a user-defined one;
+//     untyped for an unmodelled built-in or when uda is nil.
+//   - UNPIVOT drops the IN-list columns and adds the value and name columns.
+//     The value column takes the type the unpivoted columns share (T-SQL
+//     requires one), from the first of them the source has; the name column's
+//     type is unknown.
 //
-// A name the source doesn't carry simply drops nothing, so a half-typed clause
-// costs columns it shouldn't rather than inventing ones it can't have.
+// A name the source doesn't carry drops nothing, so a half-typed clause costs
+// columns it shouldn't rather than inventing ones it can't have.
 func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivot, uda *gosmo.CatalogAggregate) []gosmo.CatalogColumn {
 	drop := newNameSet(collation)
 	var added []gosmo.CatalogColumn
@@ -305,10 +298,10 @@ func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivo
 	return append(cols, added...)
 }
 
-// pivotAggregateType is the column a PIVOT's aggregate fn over arg produces —
-// arg is the zero column when the aggregate names none (COUNT(*)) or the
-// source lacks it. The built-in aggregates PIVOT accepts are modelled, by the
-// rules sys.dm_exec_describe_first_result_set reports (on 13 and 17):
+// pivotAggregateType is the column a PIVOT's aggregate fn over arg produces;
+// arg is the zero column when the aggregate names none (COUNT(*)) or the source
+// lacks it. Built-ins PIVOT accepts are modelled by the rules
+// sys.dm_exec_describe_first_result_set reports (on 13 and 17):
 //
 //   - COUNT is int, COUNT_BIG and APPROX_COUNT_DISTINCT bigint, over anything;
 //   - MIN/MAX keep the argument's type;
@@ -318,10 +311,10 @@ func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivo
 //   - STDEV/STDEVP/VAR/VARP are float over any numeric argument.
 //
 // CHECKSUM_AGG and STRING_AGG are absent because PIVOT refuses them (Msg 406,
-// "not invariant to NULLs"). Anything else — another aggregate, an argument
-// of unknown or non-numeric type — is untyped: nothing rather than wrong. A
-// qualified (user-defined) aggregate never reaches here, whatever its name.
-// Every output is nullable: an IN value with no rows reads NULL.
+// "not invariant to NULLs"). Anything else (another aggregate, an argument of
+// unknown or non-numeric type) is untyped: nothing rather than wrong. A
+// qualified (user-defined) aggregate never reaches here. Every output is
+// nullable: an IN value with no rows reads NULL.
 func pivotAggregateType(fn string, arg gosmo.CatalogColumn) gosmo.CatalogColumn {
 	untyped := gosmo.CatalogColumn{IsNullable: true}
 	switch strings.ToUpper(fn) {
@@ -367,10 +360,10 @@ func pivotAggregateType(fn string, arg gosmo.CatalogColumn) gosmo.CatalogColumn 
 	return untyped
 }
 
-// findColumnIn, findCTE, findRelation and findColumn compare names the way
-// the database's collation does: on a case-sensitive one `Orders` and
-// `orders` are two tables (or CTEs, aliases, columns), and folding them let
-// "FROM dbo.Orders JOIN dbo.orders" resolve `orders.` to whichever came first.
+// findColumnIn, findCTE, findRelation and findColumn compare names as the
+// database's collation does: on a case-sensitive one `Orders` and `orders` are
+// two tables (or CTEs, aliases, columns), and folding them made "FROM dbo.Orders
+// JOIN dbo.orders" resolve `orders.` to whichever came first.
 func findColumnIn(collation string, cols []gosmo.CatalogColumn, name string) (gosmo.CatalogColumn, bool) {
 	for _, col := range cols {
 		if gosmo.SameName(collation, col.Name, name) {
@@ -381,14 +374,12 @@ func findColumnIn(collation string, cols []gosmo.CatalogColumn, name string) (go
 }
 
 // findBinding matches a sigil-carrying name against the batch's declarations,
-// last one winning: a script that drops and recreates #t means the later
-// shape, and the earlier declaration is history by the time the cursor is
-// below it.
+// last one winning: a script that drops and recreates #t means the later shape.
 //
-// Unlike the finders above it folds case whatever the database's collation:
-// a #temp table's name follows tempdb's collation and a @variable's the
-// server's, and the panel reads neither, so it keeps the case-insensitive
-// default every install ships with.
+// Unlike the finders above it folds case whatever the database's collation: a
+// #temp table's name follows tempdb's collation and a @variable's the server's,
+// and the panel reads neither, so it keeps the case-insensitive default every
+// install ships with.
 func findBinding(bindings []sqlparse.Binding, name string) (sqlparse.Binding, bool) {
 	for i := len(bindings) - 1; i >= 0; i-- {
 		if strings.EqualFold(bindings[i].Name, name) {
@@ -400,9 +391,9 @@ func findBinding(bindings []sqlparse.Binding, name string) (sqlparse.Binding, bo
 
 // bindingColumns computes a temp table's or table variable's columns: the
 // declared list for a CREATE TABLE / DECLARE ... TABLE, the query's own shape
-// for a SELECT ... INTO. The expanding guard is cteColumns' — "SELECT * INTO
-// #t FROM #t" is not legal T-SQL, but a half-typed script is not legal T-SQL
-// either, and this runs on every keystroke of one.
+// for SELECT ... INTO. The expanding guard is cteColumns': "SELECT * INTO #t
+// FROM #t" is not legal T-SQL, but neither is a half-typed script, and this
+// runs on every keystroke of one.
 func bindingColumns(rc resolveCtx, b sqlparse.Binding) []gosmo.CatalogColumn {
 	if b.Columns != nil {
 		return declaredColumns(b.Columns)
@@ -432,14 +423,14 @@ func declaredColumns(decl []sqlparse.BindingColumn) []gosmo.CatalogColumn {
 	return cols
 }
 
-// bindingColumn turns one declared column into the catalog shape the rest of
-// completion works in, filling the same length/precision/scale fields
-// gosmo.TypeString reads back — so a declared "nvarchar(50)" renders exactly
-// as the catalog's own nvarchar(50) would. That means doubling the declared
-// character count: sys.columns stores an nvarchar's max_length in bytes, and
-// gosmo.TypeString halves it again on the way out. Likewise a fractional-
-// seconds type declared with no scale gets the 7 the server gives it, since
-// gosmo.TypeString renders a zero scale as the (0) it is in the catalog.
+// bindingColumn turns one declared column into the catalog shape completion
+// works in, filling the length/precision/scale fields gosmo.TypeString reads
+// back, so a declared "nvarchar(50)" renders as the catalog's own would. That
+// means doubling the declared character count: sys.columns stores an
+// nvarchar's max_length in bytes and gosmo.TypeString halves it. Likewise a
+// fractional-seconds type declared without scale gets the 7 the server gives
+// it, since gosmo.TypeString renders a zero scale as the (0) it is in the
+// catalog.
 func bindingColumn(c sqlparse.BindingColumn) gosmo.CatalogColumn {
 	t := strings.ToLower(c.Type)
 	col := gosmo.CatalogColumn{Name: c.Name, DataType: gosmo.DataType(t), IsNullable: c.Nullable}
@@ -466,9 +457,8 @@ func bindingColumn(c sqlparse.BindingColumn) gosmo.CatalogColumn {
 }
 
 // typeArgInt reads one type argument as a number, with MAX as the -1 the
-// catalog stores for it. Anything else leaves the field zero, which
-// gosmo.TypeString renders as the bare type name rather than a length read
-// out of a fragment.
+// catalog stores. Anything else leaves the field zero, which gosmo.TypeString
+// renders as the bare type name rather than a length read from a fragment.
 func typeArgInt(args []string, i int) (int, bool) {
 	if i >= len(args) {
 		return 0, false
@@ -493,9 +483,8 @@ func findCTE(collation string, ctes []sqlparse.CTE, name string) (sqlparse.CTE, 
 }
 
 // findRelation matches a dot-qualifier against resolved relations: an alias
-// first, then a bare table/CTE name, the two-pass order this replaced
-// resolveQualifierToObject with — "FROM c, Customers x" must resolve "c" to the
-// table named c, but "FROM Orders c, Customers" must resolve it to the alias.
+// first, then a bare table/CTE name. "FROM c, Customers x" must resolve "c" to
+// the table named c, but "FROM Orders c, Customers" to the alias.
 func findRelation(collation string, rels []relation, qualifier string) (relation, bool) {
 	for _, wantAlias := range []bool{true, false} {
 		for _, r := range rels {
@@ -508,9 +497,9 @@ func findRelation(collation string, rels []relation, qualifier string) (relation
 }
 
 // cteColumns computes one CTE's column list. An explicit "(a, b, c)" list names
-// the columns and the body types them positionally — but only when the counts
-// agree, since a mismatch means one side was misparsed and the pairing would be
-// arbitrary. The names still stand: they are what the query actually refers to.
+// the columns and the body types them positionally, but only when the counts
+// agree (a mismatch means one side was misparsed and pairing would be
+// arbitrary). The names still stand: the query refers to them.
 func cteColumns(rc resolveCtx, cte sqlparse.CTE) []gosmo.CatalogColumn {
 	if cte.Body == nil {
 		return nil
@@ -537,14 +526,13 @@ func cteColumns(rc resolveCtx, cte sqlparse.CTE) []gosmo.CatalogColumn {
 }
 
 // queryColumns computes the columns one query produces: its select list
-// resolved against its own FROM refs, or — for a query with no select list at
-// all, which is what a parenthesised join parses as — the union of those refs'
-// own columns.
+// resolved against its own FROM refs, or, for a query with no select list (what
+// a parenthesised join parses as), the union of those refs' columns.
 //
 // A column the select list names but nothing in scope can type becomes a
 // synthetic gosmo.CatalogColumn with an empty DataType; formatColumnType
-// renders that as the bare word "column" rather than asserting a type or
-// nullability it doesn't know.
+// renders it as the bare word "column" rather than assert an unknown type or
+// nullability.
 func queryColumns(rc resolveCtx, q *sqlparse.Query) []gosmo.CatalogColumn {
 	if q == nil || rc.depth >= maxRelationDepth {
 		return nil
@@ -597,9 +585,8 @@ func queryColumns(rc resolveCtx, q *sqlparse.Query) []gosmo.CatalogColumn {
 }
 
 // selectItemColumn resolves one non-star select item to a column: the real one
-// when a relation in scope carries it, an untyped one carrying just the name
-// otherwise. An item with neither a name nor an alias — an unaliased expression
-// — names nothing and is dropped.
+// when a relation in scope carries it, else an untyped one with just the name.
+// An item with neither name nor alias (an unaliased expression) is dropped.
 func selectItemColumn(collation string, rels []relation, item sqlparse.SelectItem) (gosmo.CatalogColumn, bool) {
 	name := item.Alias
 	if name == "" {
@@ -617,9 +604,9 @@ func selectItemColumn(collation string, rels []relation, item sqlparse.SelectIte
 	return gosmo.CatalogColumn{Name: name}, true
 }
 
-// findColumn looks name up in the qualified relation, or — unqualified — in
-// every relation in scope, first match winning the way SQL Server's own
-// unambiguous-reference rule would.
+// findColumn looks name up in the qualified relation or, unqualified, in every
+// relation in scope, first match winning as SQL Server's unambiguous-reference
+// rule would.
 func findColumn(collation string, rels []relation, qualifier, name string) (gosmo.CatalogColumn, bool) {
 	if qualifier != "" {
 		r, ok := findRelation(collation, rels, qualifier)

@@ -24,9 +24,9 @@ import (
 // (ag_dashboard_all.go). Both share refresh, layout and input, so grids are
 // named by position.
 //
-// Reads through the primary (agOnPrimaryFollowed): queues and commit times for
-// a secondary's databases are reported by the primary, so a secondary-built
-// dashboard would be blank where it matters.
+// Reads through the primary (agOnPrimaryFollowed): the primary reports queues
+// and commit times for a secondary's databases, so a secondary-built dashboard
+// would be blank where it matters.
 
 // agDashboardRates are the offered intervals; agDashboardDefaultRate indexes
 // the initial one. Groups change over seconds to minutes and each tick is

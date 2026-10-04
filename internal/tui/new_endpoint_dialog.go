@@ -22,24 +22,23 @@ import (
 //
 // # Why it does not copy files
 //
-// Replicas with no domain in common — every Linux deployment — authenticate to
-// each other with certificates, and the documented setup is BACKUP CERTIFICATE
-// to a file on each host, copy the files across by hand, then CREATE
-// CERTIFICATE FROM FILE. gossms has no filesystem access to either host, so
-// that route is closed to it.
+// Replicas with no domain in common (every Linux deployment) authenticate with
+// certificates, and the documented setup is BACKUP CERTIFICATE to a file on
+// each host, copy the files by hand, then CREATE CERTIFICATE FROM FILE. gossms
+// has no filesystem access to either host.
 //
-// It takes the other one: each instance keeps its own key pair and gets its
-// peers' *public* certificates, moved as bytes over the two connections gossms
-// already has (gosmo's Certificate.Encoded and CreateCertificateRequest.FromBinary). No
-// private key is read, transmitted or written anywhere — which is also why the
-// certificates are per-instance rather than one shared certificate, as the file
-// recipe produces: sharing one requires moving its private key.
+// Instead each instance keeps its own key pair and gets its peers' *public*
+// certificates, moved as bytes over the two connections gossms already has
+// (gosmo's Certificate.Encoded and CreateCertificateRequest.FromBinary). No
+// private key is read, transmitted or written, which is also why certificates
+// are per-instance rather than one shared certificate: sharing one requires
+// moving its private key.
 //
-// Per instance the flow is: a database master key in master if there is none, a
-// certificate of its own if there is none, then for each peer a login, a user,
-// the peer's public certificate owned by that user, and CONNECT on the endpoint
-// granted to that login. Every step is skipped when what it creates is already
-// there, so a half-configured pair is completed rather than failed.
+// Per instance: a database master key in master if there is none, a certificate
+// of its own if there is none, then for each peer a login, a user, the peer's
+// public certificate owned by that user, and CONNECT on the endpoint granted to
+// that login. Every step is skipped when what it creates already exists, so a
+// half-configured pair is completed rather than failed.
 
 // endpointDefaultPort is the conventional database mirroring port. Nothing
 // requires it, but every replica must reach every other one's, and a shared
@@ -102,9 +101,8 @@ type NewEndpointDialog struct {
 }
 
 // endpointRequest is what the dialog's page held when OK, Apply or Script
-// Changes was pressed — built by preflight on the UI goroutine and captured by
-// the apply step, so the pipeline's goroutine reads none of the dialog's
-// widgets or fields and writes none of them.
+// Changes was pressed. Built by preflight on the UI goroutine and captured by
+// the apply step, so the pipeline's goroutine touches no dialog widgets.
 type endpointRequest struct {
 	name          string
 	port          int
@@ -123,7 +121,7 @@ type endpointScriptKey struct{}
 // withEndpointScript returns ctx carrying dst: a scripted configure stores the
 // groups it collected there. Owned by the run (runScript), not the dialog, so
 // the pipeline's goroutine writes nothing the UI goroutine reads until the run
-// has completed — the same shape as gosmo.WithScript's own collector.
+// completes, like gosmo.WithScript's own collector.
 func withEndpointScript(ctx context.Context, dst *[]endpointScriptGroup) context.Context {
 	return context.WithValue(ctx, endpointScriptKey{}, dst)
 }
@@ -143,10 +141,10 @@ func NewNewEndpointDialog(app *App) *NewEndpointDialog {
 	d.certificateName = func(instance string) string { return endpointPrincipalBase(instance) + "_Cert" }
 	d.peerServerFor = d.defaultPeerServer
 	d.resolveInstance = d.addInstance
-	// The shell's Script Changes emits every statement as one undifferentiated
-	// batch, which here is worse than useless: the statements belong to two or
-	// more instances, and run whole against this one the certificate imports
-	// fail and the GRANTs land on the wrong endpoint. See runScript.
+	// The shell's Script Changes emits every statement as one batch, which is
+	// wrong here: the statements belong to two or more instances, and run whole
+	// against this one the certificate imports fail and the GRANTs land on the
+	// wrong endpoint. See runScript.
 	d.OnScript = d.runScript
 	return d
 }
@@ -168,17 +166,15 @@ func (d *NewEndpointDialog) defaultPeerServer(ctx context.Context, inst *newEndp
 // login and user names the exchange creates.
 //
 // A named instance reports @@SERVERNAME as HOST\INSTANCE, and the backslash
-// makes the raw name unusable: a backslash is how SQL Server spells a Windows
-// principal, and the login this pipeline creates carries a password, so
-// CREATE LOGIN [HOST\INST_login] WITH PASSWORD is refused outright — Msg
-// 15006, "not a valid name because it contains invalid characters", measured
-// on WIN10CLI\SQL2016. It becomes HOST$INST, the convention SQL Server's own
-// service accounts use (MSSQL$INSTANCE).
+// makes the raw name unusable: it is how SQL Server spells a Windows principal,
+// and the login created here carries a password, so CREATE LOGIN
+// [HOST\INST_login] WITH PASSWORD is refused (Msg 15006, "not a valid name
+// because it contains invalid characters"). It becomes HOST$INST, the
+// convention of SQL Server's own service accounts (MSSQL$INSTANCE).
 //
-// Not truncated to the host the way gosmo's endpointURL does — right for a TCP
-// host, wrong here, since two named instances on one machine would then share
-// every principal name in the exchange. A default instance has no backslash and
-// is unchanged.
+// Not truncated to the host as gosmo's endpointURL does: two named instances on
+// one machine would then share every principal name. A default instance has no
+// backslash and is unchanged.
 func endpointPrincipalBase(instance string) string {
 	return strings.ReplaceAll(instance, `\`, "$")
 }
@@ -344,14 +340,13 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 				hint.Set(err.Error())
 				return
 			}
-			// The typed name was checked against the list above, but addInstance
-			// answers with the instance's own @@SERVERNAME — so an alias, an
-			// address, or a hostname for an instance already listed gets past
-			// that check and lands here as a second entry for one instance.
-			// configure's pairwise loop skips only on pointer identity, so the
-			// instance then imports its own certificate: <inst>_login and
-			// <inst>_user are created in its own master and granted CONNECT on
-			// its own endpoint, and a scripted run emits two groups for it.
+			// The typed name was checked against the list above, but addInstance answers
+			// with the instance's own @@SERVERNAME, so an alias, address or hostname for
+			// a listed instance passes that check and lands here as a second entry for
+			// one instance. configure's pairwise loop skips only on pointer identity, so
+			// the instance would import its own certificate: <inst>_login and
+			// <inst>_user created in its own master and granted CONNECT on its own
+			// endpoint.
 			for _, inst := range d.instances {
 				if strings.EqualFold(inst.name, added.name) {
 					hint.Set(fmt.Sprintf("%s answers as %s, which is already in the list.", name, added.name))
@@ -378,19 +373,19 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 			hint.Set("This connection's own instance is always part of the exchange.")
 			return
 		}
-		// The row that took the removed one's place, so a run of removals works
-		// from one key instead of throwing the cursor back to the top each time
-		// — and, unlike SetData, keeping any column the user dragged wider.
+		// The row that took the removed one's place, so a run of removals works from
+		// one key instead of resetting the cursor, and unlike SetData keeps any
+		// column the user dragged wider.
 		d.instances = append(d.instances[:i], d.instances[i+1:]...)
 		rows := rowsFor()
 		resetGrid(grid, headers, rows, min(i, len(rows)-1))
 	})
 
-	// The instance list the page opened with — this connection's own instance
-	// alone. Without a RevertFn, Ctrl+Z clears the name and password fields,
-	// says "Reverted to the loaded values", and leaves every added instance
-	// still in the exchange. A shallow clone is the whole snapshot: an instance
-	// is built once by addInstance and never edited, so only the list changes.
+	// The instance list the page opened with: this connection's own instance
+	// alone. Without a RevertFn, Ctrl+Z clears the name and password fields, says
+	// "Reverted to the loaded values", and leaves every added instance in the
+	// exchange. A shallow clone is the whole snapshot: an instance is never edited
+	// after addInstance builds it.
 	baseline := slices.Clone(d.instances)
 
 	gridRow := propsheet.NewGridRow(grid, 5)
@@ -464,10 +459,10 @@ type endpointPeer struct {
 	encoded []byte
 
 	// ctx is the context every write *to this instance* runs against, and script
-	// what it collects on a scripted run. One collector per instance rather than
-	// one for the pipeline: the run is three phases over N instances with a skip
-	// possible at every step, so no positional mapping leads from a flat
-	// statement list back to the instance each statement belongs to.
+	// what it collects on a scripted run. One collector per instance, not per
+	// pipeline: the run is three phases over N instances with a skip possible at
+	// every step, so no positional mapping leads from a flat statement list back
+	// to its instance.
 	ctx    context.Context
 	script *gosmo.ScriptCollector
 
@@ -511,10 +506,10 @@ func (d *NewEndpointDialog) configure(ctx context.Context, req endpointRequest) 
 			p.ctx, p.script = gosmo.WithScript(ctx)
 		}
 		// p.ctx, not ctx: every phase below writes to p, and the collector a
-		// statement lands in is what says which instance it runs on. Reads are
-		// unaffected either way — WithScript intercepts only the two exec
-		// chokepoints — so a peer's reads still hit the real server, which is
-		// what makes a certificate's public key readable at all.
+		// statement lands in says which instance it runs on. Reads are unaffected
+		// (WithScript intercepts only the two exec chokepoints), so a peer's reads
+		// still hit the real server, which is what makes a certificate's public key
+		// readable at all.
 		if err := d.ensureCertificate(p.ctx, p, req.masterKeyPass); err != nil {
 			return nil, err
 		}
@@ -600,11 +595,9 @@ func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPe
 	}
 	if cert == nil {
 		// Scripting: the CREATE above was collected, not run, so there is no
-		// certificate to read a public key from and nothing depending on one can
-		// be scripted. Recorded rather than silently skipped — the script is
-		// genuinely partial, and saying so is the difference between running it
-		// and being done, and finding the endpoints refuse each other with
-		// nothing explaining why.
+		// certificate to read a public key from and nothing depending on one can be
+		// scripted. Recorded rather than silently skipped: the script is partial, and
+		// saying so avoids endpoints refusing each other with nothing explaining why.
 		p.certPending = true
 		return nil
 	}
@@ -633,9 +626,8 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	certName := d.certificateName(other.inst.name)
 
 	// Only an actual absence means "create it". Treating every lookup failure as
-	// absence reports the CREATE LOGIN error instead of the permission or
-	// connection error that really stopped the pipeline, on a dialog where that
-	// distinction is the whole diagnosis.
+	// absence would report the CREATE LOGIN error instead of the permission or
+	// connection error that really stopped the pipeline.
 	_, err := p.server.LoginByName(ctx, login)
 	switch {
 	case err == nil:
@@ -648,21 +640,20 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		if perr != nil {
 			return perr
 		}
-		// "Absent" can also mean "there but not visible from here": SQL Server
-		// hides a principal the caller lacks VIEW ANY DEFINITION on by returning
-		// no rows, not an error, so the lookup above cannot tell the two apart.
-		// Tolerate the collision, as the CreateUser call below does.
+		// "Absent" can also mean "there but not visible from here": SQL Server hides
+		// a principal the caller lacks VIEW ANY DEFINITION on by returning no rows,
+		// not an error. Tolerate the collision, as the CreateUser call below does.
 		if _, err := p.server.CreateLogin(ctx, gosmo.CreateLoginRequest{Name: login, Password: password}); err != nil && !gosmo.IsAlreadyExists(err) {
 			return fmt.Errorf("%s: create login %s: %w", p.inst.name, login, err)
 		}
 	default:
 		return fmt.Errorf("%s: look up login %s: %w", p.inst.name, login, err)
 	}
-	// Looked up first rather than created-and-tolerated, for the same reason the
-	// login above is: an unexpected failure has to be reported as itself. It
-	// also keeps a scripted run runnable — CREATE USER is not idempotent, and
-	// the tolerate-the-error path never runs under WithScript, so an existing
-	// user would be emitted as a statement that fails.
+	// Looked up first rather than created-and-tolerated, like the login above, so
+	// an unexpected failure is reported as itself. It also keeps a scripted run
+	// runnable: CREATE USER is not idempotent and the tolerate-the-error path
+	// never runs under WithScript, so an existing user would be emitted as a
+	// failing statement.
 	_, err = p.master.UserByName(ctx, user)
 	switch {
 	case err == nil:
@@ -680,17 +671,15 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 	if existing != nil {
-		// Same name is not the same certificate. A reinstalled peer generates a
-		// fresh key pair under its old name, and skipping the import on the name
-		// alone makes the pipeline report success while the endpoint then
-		// refuses the peer's connection with nothing saying why. Thumbprints are
-		// already loaded on both rows, so this costs no round trip.
+		// Same name is not the same certificate. A reinstalled peer generates a fresh
+		// key pair under its old name, and skipping the import on the name alone
+		// would report success while the endpoint refuses the peer's connection.
+		// Thumbprints are already loaded on both rows, so this costs no round trip.
 		//
-		// other.cert is dereferenced unguarded on purpose: ensureCertificate
-		// sets cert and encoded together and an empty encoded already returned
-		// above, so a nil here means that invariant broke. A nil check would
-		// turn the break into this check silently not running — the one outcome
-		// it exists to prevent.
+		// other.cert is dereferenced unguarded on purpose: ensureCertificate sets
+		// cert and encoded together and an empty encoded already returned above, so a
+		// nil here means that invariant broke. A nil check would make this check
+		// silently not run.
 		if !bytes.Equal(existing.Thumbprint, other.cert.Thumbprint) {
 			return fmt.Errorf("%s already has a different certificate named %s than the one %s presents — drop it there and run this again",
 				p.inst.name, certName, other.inst.name)
@@ -737,12 +726,11 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 			continue
 		}
 		if slices.Contains(p.certSkipped, other.inst.name) {
-			// Scripting, and importPeerCertificate skipped this peer, so the
-			// login this would grant to was never created here either. Emitting
-			// the GRANT anyway makes the script fail on a login that does not
-			// exist — and, run as one batch, fail before the endpoint statements
-			// above it take effect. The script's note says the grant is missing
-			// along with the login.
+			// Scripting, and importPeerCertificate skipped this peer, so the login this
+			// would grant to was never created here either. Emitting the GRANT would
+			// make the script fail on a missing login and, run as one batch, fail before
+			// the endpoint statements above it take effect. The script's note says the
+			// grant is missing along with the login.
 			continue
 		}
 		if err := ep.GrantConnect(ctx, endpointPrincipalBase(other.inst.name)+"_login"); err != nil {
@@ -757,10 +745,10 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 // one, the certificate imports fail (each is FROM BINARY of a key belonging
 // elsewhere) and the GRANTs land on the wrong endpoint.
 //
-// The statements are already grouped by instance — each peer collects its own,
-// see configure — and each group carries notes about certificates the script
-// could not include, which is why this does not render one collector with
-// gosmo's per-instance labels the way NewAGDialog.runScript does.
+// Statements are already grouped by instance (each peer collects its own, see
+// configure) and each group carries notes about certificates the script could
+// not include, so this does not render one collector with gosmo's per-instance
+// labels as NewAGDialog.runScript does.
 func (d *NewEndpointDialog) runScript() {
 	scriptCtx, _ := gosmo.WithScript(d.ctx)
 	var groups []endpointScriptGroup
@@ -775,9 +763,8 @@ func (d *NewEndpointDialog) runScript() {
 // instance's statements under a comment naming it, then a note wherever the run
 // could not reach something.
 //
-// Pure, so it can be tested without a server — which matters here, since what
-// it has to get right is the case a live run on already-configured instances
-// never produces.
+// Pure, so it can be tested without a server; a live run on already-configured
+// instances never produces the case it must get right.
 func annotateEndpointScript(groups []endpointScriptGroup) string {
 	var b strings.Builder
 	b.WriteString("-- New Database Mirroring Endpoint: these statements do NOT all run on the same instance.\n")

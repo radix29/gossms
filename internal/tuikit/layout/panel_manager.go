@@ -41,28 +41,28 @@ type PanelManager struct {
 	active    int
 	comboOpen bool
 
-	// comboScroll is the drop-down list's first visible row. The list is capped
-	// to the rows that fit below the tab bar, so with more panels than rows this
-	// is the only way to reach the rest.
+	// comboScroll is the drop-down list's first visible row. The list is capped to
+	// the rows that fit below the tab bar, so with more panels than rows this is
+	// the only way to reach the rest.
 	comboScroll int
 
 	// mouseDragging distinguishes a fresh Button1 press on the combo arrow or tab
-	// row from a continued hold over the same spot — TreeView, MenuBar and
-	// Toolbar have the same field. Without it, tcell's all-motion tracking
-	// resends Button1 on every cursor motion while the button is down, so one
-	// click can toggle the combo twice or fire OnCloseTab twice.
+	// row from a continued hold over the same spot (TreeView, MenuBar and Toolbar
+	// have the same field). Without it, tcell's all-motion tracking resends
+	// Button1 on every motion while the button is down, so one click can toggle
+	// the combo twice or fire OnCloseTab twice.
 	mouseDragging bool
 
-	// comboSbDragging latches a drag of the drop-down's own scrollbar, and is
-	// deliberately not mouseDragging: that one is set by the tab row and the
-	// combo arrow too, so sharing it would let the press that opened the combo
-	// satisfy HandleScrollbarDrag's "already dragging" test and turn the next
-	// motion event anywhere into a jump to that row.
+	// comboSbDragging latches a drag of the drop-down's own scrollbar,
+	// deliberately not mouseDragging: that is also set by the tab row and combo
+	// arrow, so sharing it would let the press that opened the combo satisfy
+	// HandleScrollbarDrag's "already dragging" test and turn the next motion
+	// anywhere into a jump to that row.
 	comboSbDragging bool
 
 	// OnCloseTab, if set, is called instead of RemovePanel when the user clicks a
-	// tab's [x] button, so the application decides whether and how to close it —
-	// prompting to save a Dirty panel first, say.
+	// tab's [x] button, so the application decides whether and how to close it
+	// (prompting to save a Dirty panel, say).
 	OnCloseTab func(i int)
 }
 
@@ -110,9 +110,9 @@ func (pm *PanelManager) RemovePanel(i int) {
 	}
 	wasActive := i == pm.active
 	pm.panels = append(pm.panels[:i], pm.panels[i+1:]...)
-	// Removing a panel to the left of the active one shifts every later index
-	// down by one; without this, pm.active would keep its numeric value and
-	// point at a different panel.
+	// Removing a panel left of the active one shifts every later index down by
+	// one; without this, pm.active would keep its value and point at a different
+	// panel.
 	if i < pm.active {
 		pm.active--
 	}
@@ -209,13 +209,13 @@ func (pm *PanelManager) relayout() {
 func (pm *PanelManager) tabMaxX() int { return pm.rect.X + pm.rect.W - 5 }
 
 // comboGeom returns the drop-down list's origin column, width, and how many
-// rows it can use. Draw and HandleMouse take their column and row math from this
-// one call, so a click lands on the entry drawn under it.
+// rows it can use. Draw and HandleMouse take their math from this one call, so
+// a click lands on the entry drawn under it.
 //
 // The height is what fits between the tab bar and the bottom of the panel
 // manager, never the panel count: one row per panel runs off the bottom of the
-// screen past about twenty panels, leaving everything below the last visible row
-// unreachable by mouse and keyboard alike.
+// screen past about twenty panels, leaving the rest unreachable by mouse and
+// keyboard.
 func (pm *PanelManager) comboGeom() (x, w, h int) {
 	x = max(pm.rect.X, pm.rect.X+pm.rect.W-30)
 	w = min(28, pm.rect.W)
@@ -225,24 +225,22 @@ func (pm *PanelManager) comboGeom() (x, w, h int) {
 // comboScrollMax is the largest comboScroll that still fills the list.
 func (pm *PanelManager) comboScrollMax(h int) int { return max(0, len(pm.panels)-h) }
 
-// setComboOpen owns the drop-down's open/closed transition, the way
-// setActiveIndex owns the active index. Every place that opens or closes the
-// list goes through it, so neither of the two things a transition must do can be
-// forgotten at one of them.
+// setComboOpen owns the drop-down's open/closed transition, as setActiveIndex
+// owns the active index. Every open or close goes through it, so neither thing
+// a transition must do can be forgotten at one of them.
 //
-// Clearing comboSbDragging is the one that bites. A close while the scrollbar is
-// still held — Escape or Enter mid-drag, or a tab click landing under it —
+// Clearing comboSbDragging is the one that bites. A close while the scrollbar
+// is still held (Escape or Enter mid-drag, or a tab click landing under it)
 // leaves the latch set, and it then satisfies HandleScrollbarDrag's "already
 // dragging" test the *next* time the list opens: the first Button1 anywhere
-// jumps the scroll to whatever row the pointer is over. That is the "a latch
-// must not survive into the widget's next showing" rule, which ModalDialog.Show
-// enforces for dialogs; PanelManager has no Show, so the transition carries it.
+// jumps the scroll to the row under the pointer. This is the "a latch must not
+// survive into the widget's next showing" rule that ModalDialog.Show enforces
+// for dialogs; PanelManager has no Show, so the transition carries it.
 //
 // mouseDragging is deliberately *not* cleared here: it is owned by the press
-// that claimed the gesture, not by the list, and the tab row and combo arrow set
-// it too. Clearing it on a close would release a still-held press back to the
-// panel underneath, which the catch-all at the end of HandleMouse exists to
-// prevent.
+// that claimed the gesture, not by the list, and the tab row and combo arrow
+// set it too. Clearing it on a close would release a still-held press to the
+// panel underneath, which the catch-all at the end of HandleMouse prevents.
 func (pm *PanelManager) setComboOpen(v bool) {
 	pm.comboOpen = v
 	pm.comboSbDragging = false
@@ -251,16 +249,16 @@ func (pm *PanelManager) setComboOpen(v bool) {
 	}
 }
 
-// scrollComboToActive brings the active panel's row into the drop-down's visible
-// window, moving by the least that does it, and clamps the offset back inside
-// the list. Called when the combo opens, after each Up/Down, and from every
-// exported mutator that can move the active index or resize the list while it is
-// on screen (SetActive, Next, Prev, AddPanel, RemovePanel): those are reached by
-// global keys App.handleKey consumes before the combo sees them, so without this
-// the highlighted row ends up outside the visible window.
+// scrollComboToActive brings the active panel's row into the drop-down's
+// visible window by the least movement, and clamps the offset inside the list.
+// Called when the combo opens, after each Up/Down, and from every exported
+// mutator that can move the active index or resize the list while it is on
+// screen (SetActive, Next, Prev, AddPanel, RemovePanel): those are reached by
+// global keys App.handleKey consumes before the combo sees them, so without
+// this the highlighted row ends up outside the visible window.
 //
-// Deliberately a no-op while the combo is closed — opening it calls this — which
-// is what lets the mutators call it unconditionally.
+// A no-op while the combo is closed, which lets the mutators call it
+// unconditionally.
 func (pm *PanelManager) scrollComboToActive() {
 	if !pm.comboOpen {
 		return
@@ -279,11 +277,11 @@ func (pm *PanelManager) scrollComboToActive() {
 }
 
 // moveComboSelection moves the drop-down's highlighted row by delta, clamped to
-// the list, and brings it back into view. Clamped rather than wrapped: Next/Prev
-// wrap because Ctrl+Tab is a cycle, but a list the user is looking at stops at
-// its ends like every other list in the app.
+// the list, and brings it into view. Clamped, not wrapped: Next/Prev wrap
+// because Ctrl+Tab is a cycle, but a list the user is looking at stops at its
+// ends like every other list in the app.
 //
-// The move takes effect immediately — the drop-down previews the panel it is on
+// The move takes effect immediately; the drop-down previews the panel it is on
 // rather than waiting for Enter.
 func (pm *PanelManager) moveComboSelection(delta int) {
 	if len(pm.panels) == 0 {
@@ -432,10 +430,10 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 
 	// The drop-down's own scrollbar. Ahead of the bounds check because a latched
-	// drag owns the mouse until its release wherever the cursor drifted to, and
-	// ahead of the list hit-test because the bar sits in the list's last column,
-	// where a press would otherwise select the row it landed on. Writes nothing
-	// and returns false when the list needs no bar.
+	// drag owns the mouse until its release wherever the cursor drifted, and ahead
+	// of the list hit-test because the bar sits in the list's last column, where a
+	// press would otherwise select the row it landed on. Writes nothing and
+	// returns false when the list needs no bar.
 	if pm.comboOpen {
 		listX, listW, listH := pm.comboGeom()
 		if core.HandleScrollbarDrag(ev, listX+listW-1, pm.contentY(), listH,
@@ -448,12 +446,11 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 
-	// An open drop-down is an overlay and gets first refusal of the wheel — the
-	// rule HandleKey follows by consuming every key while comboOpen. Without
-	// this, a wheel outside the list falls through to the active panel and
-	// scrolls the query editor under a list still floating over it. Button1
-	// outside the list deliberately does fall through; see the dismiss branch
-	// below.
+	// An open drop-down is an overlay and gets first refusal of the wheel, as
+	// HandleKey does by consuming every key while comboOpen. Without this, a wheel
+	// outside the list falls through and scrolls the query editor under a list
+	// still floating over it. Button1 outside the list deliberately does fall
+	// through; see the dismiss branch below.
 	if pm.comboOpen {
 		switch ev.Buttons() {
 		case tcell.WheelUp:
@@ -529,13 +526,13 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 	}
 
-	// A press claimed above — a tab, a close button, a drop-down entry — owns the
+	// A press claimed above (a tab, a close button, a drop-down entry) owns the
 	// whole gesture until its release, so the Button1 resends all-motion tracking
 	// sends while it is held must not reach the panel underneath. The branches
 	// above return early on their own latch, but only while they still match:
 	// selecting from the drop-down closes it, and from the next resend there is
-	// nothing left to match, so the still-held press lands in the panel the click
-	// just activated.
+	// nothing left to match, so the still-held press would land in the panel the
+	// click just activated.
 	if pm.mouseDragging && ev.Buttons() == tcell.Button1 {
 		return true
 	}

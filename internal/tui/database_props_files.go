@@ -12,39 +12,38 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// databaseFileColumns heads the Files page grid, which is rebuilt from four
-// call sites and read back by column index.
+// databaseFileColumns heads the Files page grid, rebuilt from four call sites
+// and read back by column index.
 var databaseFileColumns = []string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}
 
 // logFileType is sys.database_files' type_desc for a transaction log file,
 // the one file type that belongs to no filegroup.
 const logFileType = "LOG"
 
-// addableFileTypes are the file types the picker offers — the two
+// addableFileTypes are the file types the picker offers: the two
 // sys.database_files reports that ALTER DATABASE ... ADD FILE names in the
-// statement itself. It is not the set of types a file can *have*: Files
-// also reports FILESTREAM, so the picker is widened for display when a selected
-// file's type is outside this list.
+// statement. Not the set of types a file can *have* (Files also reports
+// FILESTREAM), so the picker is widened for display when a selected file's type
+// is outside this list.
 var addableFileTypes = []string{"ROWS", logFileType}
 
 // filestreamFileType is sys.database_files' type_desc for a FILESTREAM data
-// file. It is deliberately not in addableFileTypes, because it is not something
-// to pick: ALTER DATABASE ADD FILE has no file-type keyword at all, and a file
-// becomes FILESTREAM purely by going into a FILESTREAM filegroup. The same
-// clause aimed at a ROWS filegroup produces an ordinary data file — measured on
-// win10cli against a real FILESTREAM database, 2026-09-05. See fileEdit.spec.
+// file. Deliberately not in addableFileTypes, as it is not something to pick:
+// ALTER DATABASE ADD FILE has no file-type keyword, and a file becomes
+// FILESTREAM purely by going into a FILESTREAM filegroup. The same clause aimed
+// at a ROWS filegroup produces an ordinary data file (measured on win10cli
+// against a real FILESTREAM database, 2026-09-05). See fileEdit.spec.
 const filestreamFileType = "FILESTREAM"
 
-// noFilegroupItem is what the Filegroup dropdown shows for a LOG file. The
-// list is filegroup names with no empty entry, so indexOf's not-found 0 left
-// PRIMARY in the box and commitCurrent wrote it onto the edit — the grid then
-// reported a filegroup for a log file, which is a wrong fact about the
-// database in a properties dialog.
+// noFilegroupItem is what the Filegroup dropdown shows for a LOG file. The list
+// is filegroup names with no empty entry, so indexOf's not-found 0 left PRIMARY
+// in the box and commitCurrent wrote it onto the edit, so the grid reported a
+// filegroup for a log file: a wrong fact in a properties dialog.
 const noFilegroupItem = "(not applicable)"
 
-// fileEdit tracks one Files-page row's pending state: an existing file
-// whose logical name/size/growth/max size changed, a brand-new file
-// pending Add (isNew), or an existing file pending Remove.
+// fileEdit tracks one Files-page row's pending state: an existing file whose
+// logical name/size/growth/max size changed, a new file pending Add (isNew), or
+// an existing file pending Remove.
 type fileEdit struct {
 	origName string // "" for a brand-new file
 	pendingState
@@ -76,44 +75,40 @@ func fileEditFromInfo(fl *gosmo.DatabaseFileInfo) *fileEdit {
 	}
 }
 
-// changed reports whether this file's definition differs from what the
-// server reported. Only the four things ALTER DATABASE ... MODIFY FILE can
-// actually change are compared: fileType, fileGroup and path are fixed for
-// an existing file — MODIFY FILE cannot move or retype one — so an edit to
-// them is not a change this page can write, and treating it as one would
-// send an ALTER that silently does nothing.
+// changed reports whether this file's definition differs from what the server
+// reported. Only the four things ALTER DATABASE ... MODIFY FILE can change are
+// compared: fileType, fileGroup and path are fixed for an existing file, so an
+// edit to them is not a change this page can write, and treating it as one
+// would send an ALTER that silently does nothing.
 //
-// It is a method rather than two copies because the Files page needs the
-// same answer twice, in two places that must agree: GridRow.DirtyFn, which
-// decides whether the page is dirty at all, and apply, which decides whether
-// this particular file gets an ALTER. As two expressions listing the same six
-// fields they drift: a field added to one and not the other either makes a page
-// that never reports itself dirty (so OK writes nothing) or one that is always
-// dirty (so OK always writes).
+// A method rather than two copies because the Files page needs the same answer
+// in two places that must agree: GridRow.DirtyFn (is the page dirty at all) and
+// apply (does this file get an ALTER). Two expressions listing the same six
+// fields drift: a field added to one only makes a page that never reports
+// itself dirty (OK writes nothing) or is always dirty (OK always writes).
 func (e *fileEdit) changed() bool {
 	return e.name != e.origName || e.sizeKB != e.origSizeKB ||
 		e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB ||
 		e.growthPercent != e.origGrowthPercent || e.maxSizeKB != e.origMaxSizeKB
 }
 
-// reset undoes every change changed reports — the same fields, kept beside it
-// for the same reason.
+// reset undoes every change changed reports (the same fields, kept beside it
+// for the same reason).
 func (e *fileEdit) reset() {
 	e.name, e.sizeKB, e.isPercentGrowth = e.origName, e.origSizeKB, e.origIsPercentGrowth
 	e.growthKB, e.growthPercent, e.maxSizeKB = e.origGrowthKB, e.origGrowthPercent, e.origMaxSizeKB
 }
 
 // modify builds the partial ALTER for an existing file: every field is left
-// zero unless it actually changed, because gosmo reads a zero as "leave this
-// property alone" and omits it from the statement.
+// zero unless it changed, because gosmo reads a zero as "leave this property
+// alone" and omits it.
 //
-// That is why each assignment is guarded rather than unconditional. Sending
-// the unchanged current value instead would look harmless and is not: SIZE is
-// the case that bites, since ALTER DATABASE ... MODIFY FILE treats it as a
-// grow-to target and rejects a value below the file's current size outright.
-// A user who edits only the autogrowth of a file that has since grown past
-// its recorded size would get "MODIFY FILE failed. Specified size is less
-// than or equal to current size" for an edit they never made.
+// Hence each assignment is guarded, not unconditional. Sending the unchanged
+// current value looks harmless but SIZE bites: ALTER DATABASE ... MODIFY FILE
+// treats it as a grow-to target and rejects a value below the file's current
+// size. A user editing only the autogrowth of a file that has since grown past
+// its recorded size would get "MODIFY FILE failed. Specified size is less than
+// or equal to current size" for an edit they never made.
 func (e *fileEdit) modify() gosmo.FileModify {
 	var m gosmo.FileModify
 	if e.name != e.origName {
@@ -123,17 +118,15 @@ func (e *fileEdit) modify() gosmo.FileModify {
 		m.SizeKB = e.sizeKB
 	}
 	if e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB || e.growthPercent != e.origGrowthPercent {
-		// Exactly one of the two is set: gosmo lets GrowthPercent win when
-		// both are, and the growth kind is a radio, so sending both would
-		// make the radio's losing half decide nothing while still being
-		// carried.
+		// Exactly one of the two is set: gosmo lets GrowthPercent win when both are,
+		// and the growth kind is a radio, so sending both would carry the radio's
+		// losing half for nothing.
 		//
-		// A growth of zero has to go through DisableGrowth rather than the
-		// amount fields, because gosmo reads a zero amount as "leave
-		// FILEGROWTH alone" — so turning autogrowth off produced an ALTER
-		// with no FILEGROWTH clause at all, and where growth was the only
-		// edit, no ALTER at all: OK reported success and the file still
-		// grew.
+		// A growth of zero must go through DisableGrowth, not the amount fields,
+		// because gosmo reads a zero amount as "leave FILEGROWTH alone": turning
+		// autogrowth off would produce an ALTER with no FILEGROWTH clause, and where
+		// growth was the only edit, no ALTER at all (OK reported success and the file
+		// still grew).
 		switch {
 		case e.growthOff():
 			m.DisableGrowth = true
@@ -149,24 +142,23 @@ func (e *fileEdit) modify() gosmo.FileModify {
 	return m
 }
 
-// spec builds the CREATE-side description of a brand-new file. Unlike
-// modify, every field is sent: there is no previous value to leave alone —
-// except for a FILESTREAM file, which has no size and no autogrowth to send.
+// spec builds the CREATE-side description of a new file. Unlike modify, every
+// field is sent (no previous value to leave alone), except for a FILESTREAM
+// file, which has no size or autogrowth to send.
 func (e *fileEdit) spec() gosmo.DatabaseFileSpec {
 	spec := gosmo.DatabaseFileSpec{
 		Name: e.name, Type: e.fileType, Path: e.path, MaxSizeKB: e.maxSizeKB,
 	}
-	// A LOG file belongs to no filegroup, and gosmo ignores the field for
-	// one; leaving it empty keeps the spec honest rather than relying on that.
+	// A LOG file belongs to no filegroup and gosmo ignores the field; leaving it
+	// empty keeps the spec honest rather than relying on that.
 	if e.fileType != logFileType {
 		spec.FileGroup = e.fileGroup
 	}
 	// SIZE and FILEGROWTH on a FILESTREAM file are refused outright: "The
 	// properties SIZE or FILEGROWTH cannot be specified for the FILESTREAM data
-	// file" (Msg 5509). MAXSIZE is accepted — measured, both of them, rather
-	// than assumed, since the two clauses read as one family and are not. The
-	// omission lives here rather than in the Add button so that every route to a
-	// spec goes through it.
+	// file" (Msg 5509). MAXSIZE is accepted (measured, not assumed, since the
+	// clauses read as one family and are not). The omission lives here, not in the
+	// Add button, so every route to a spec goes through it.
 	if e.fileType == filestreamFileType {
 		return spec
 	}
@@ -182,10 +174,9 @@ func (e *fileEdit) spec() gosmo.DatabaseFileSpec {
 	return spec
 }
 
-// growthOff reports whether the row asks for autogrowth to be switched off:
-// the growth spinner at zero, in whichever unit the radio has selected.
-// SSMS's equivalent is clearing "Enable Autogrowth"; here the spinner bottoms
-// out at 0 and means the same thing.
+// growthOff reports whether the row asks for autogrowth to be switched off: the
+// growth spinner at zero, in either unit. SSMS clears "Enable Autogrowth"; here
+// the spinner bottoms out at 0 with the same meaning.
 func (e *fileEdit) growthOff() bool {
 	if e.isPercentGrowth {
 		return e.growthPercent == 0
@@ -194,9 +185,8 @@ func (e *fileEdit) growthOff() bool {
 }
 
 func growthText(isPercent bool, growthKB int64, growthPercent int) string {
-	// SQL Server records autogrowth-off as a growth of zero, and the grid has
-	// to say so in words: "0 MB" reads as a field nobody filled in, next to
-	// six columns that are all real values.
+	// SQL Server records autogrowth-off as a growth of zero, and the grid must say
+	// so in words: "0 MB" reads as a field nobody filled in beside six real values.
 	if isPercent {
 		if growthPercent == 0 {
 			return "None"
@@ -237,9 +227,9 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				return nil, nil, err
 			}
 			fgNames := make([]string, len(fgs))
-			// fsGroup is which of them make a file put into them a FILESTREAM
-			// file. gosmo reports the filegroup's own type_desc; nothing about
-			// the file being added says it.
+			// fsGroup is which filegroups make a file put into them a FILESTREAM file.
+			// gosmo reports the filegroup's own type_desc; nothing about the file being
+			// added says it.
 			fsGroup := make(map[string]bool, len(fgs))
 			for i, fg := range fgs {
 				fgNames[i] = fg.Name
@@ -291,9 +281,9 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				}
 				return vis[i]
 			}
-			// showFilegroupFor swaps the Filegroup dropdown between the real
-			// filegroup list and the single "(not applicable)" entry a LOG file
-			// gets, so the row can never offer a choice that wouldn't be used.
+			// showFilegroupFor swaps the Filegroup dropdown between the real filegroup list
+			// and the single "(not applicable)" entry a LOG file gets, so the row never
+			// offers a choice that wouldn't be used.
 			showFilegroupFor := func(fileType, fileGroup string) {
 				if fileType == logFileType {
 					filegroupSelect.SetItems([]string{noFilegroupItem})
@@ -304,36 +294,33 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					filegroupSelect.SetSelected(0)
 					return
 				}
-				// Widened for the same reason as the type picker: a file can
-				// sit in a filegroup FileGroups didn't list, and a
-				// stand-in name would read as the server's answer.
+				// Widened as the type picker is: a file can sit in a filegroup FileGroups
+				// didn't list, and a stand-in name would read as the server's answer.
 				items, i := preservingItems(fgNames, fileGroup)
 				filegroupSelect.SetItems(items)
 				filegroupSelect.SetSelected(i)
 			}
-			// pickedFilegroup reads the dropdown back, as "" for a LOG file —
-			// which is what DatabaseFileInfo.FileGroup already holds for one.
+			// pickedFilegroup reads the dropdown back, as "" for a LOG file (what
+			// DatabaseFileInfo.FileGroup holds for one).
 			pickedFilegroup := func(fileType string) string {
 				if fileType == logFileType {
 					return ""
 				}
 				return filegroupSelect.Value()
 			}
-			// effectiveType is what a file put in fileGroup actually becomes.
-			// The picker offers ROWS and LOG; the filegroup is what turns a ROWS
-			// pick into a FILESTREAM file, so the two have to be read together.
+			// effectiveType is what a file put in fileGroup becomes. The picker offers ROWS
+			// and LOG; the filegroup turns a ROWS pick into FILESTREAM, so they are read
+			// together.
 			effectiveType := func(picked, fileGroup string) string {
 				if picked != logFileType && fsGroup[fileGroup] {
 					return filestreamFileType
 				}
 				return picked
 			}
-			// syncSizeRows gates the size and growth spinners on whether the
-			// file they describe can carry either. A FILESTREAM file cannot, and
-			// a live spinner whose value the statement drops is the silent
-			// wrong-thing this page's other pickers are gated against — here it
-			// would have been worse than silent, since sending them fails the
-			// whole Add with Msg 5509.
+			// syncSizeRows gates the size and growth spinners on whether the file can carry
+			// either. A FILESTREAM file cannot, and a live spinner whose value the
+			// statement drops is the silent wrong-thing this page's pickers are gated
+			// against; worse here, since sending them fails the whole Add with Msg 5509.
 			syncSizeRows := func(fileType string) {
 				fs := fileType == filestreamFileType
 				sizeField.SetEnabled(!fs)
@@ -357,15 +344,13 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				current.name = nameField.Value()
-				// Only a new file reads type/filegroup/path back. They are
-				// fixed for an existing one — changed() deliberately excludes
-				// them because MODIFY FILE can neither retype nor move a file
-				// — so writing them here could only ever record something
-				// untrue: a FILESTREAM file's type is outside the picker's
-				// two items, so the picker showed a stand-in and merely
-				// selecting the row rewrote the file as ROWS, which the grid
-				// then reported as fact. Same defect as the noFilegroupItem
-				// comment above, one field over.
+				// Only a new file reads type/filegroup/path back. They are fixed for an
+				// existing one (changed() excludes them because MODIFY FILE can neither retype
+				// nor move a file), so writing them could only record something untrue: a
+				// FILESTREAM file's type is outside the picker's two items, so the picker
+				// showed a stand-in and merely selecting the row rewrote the file as ROWS,
+				// which the grid then reported as fact. Same defect as noFilegroupItem, one
+				// field over.
 				if current.isNew {
 					current.fileGroup = pickedFilegroup(typeSelect.Value())
 					current.fileType = effectiveType(typeSelect.Value(), current.fileGroup)
@@ -399,10 +384,9 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				nameField.SetValue(current.name)
-				// preservingItems, not indexOf: sys.database_files also
-				// reports FILESTREAM (and memory-optimized) files, whose type
-				// is in neither of the two items this page can create. indexOf
-				// would show "ROWS" for one as though the server had said so.
+				// preservingItems, not indexOf: sys.database_files also reports FILESTREAM (and
+				// memory-optimized) files, whose type is in neither item this page can create.
+				// indexOf would show "ROWS" for one as though the server had said so.
 				typeItems, typeIdx := preservingItems(addableFileTypes, current.fileType)
 				typeSelect.SetItems(typeItems)
 				typeSelect.SetSelected(typeIdx)
@@ -434,28 +418,25 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 			hint := propsheet.Hint()
 			var addBtn, removeBtn *widgets.Button
 			addBtn = widgets.NewButton("Add", func() {
-				// Deliberately does NOT call commitCurrent(): these fields
-				// double as the previously-selected file's live edit, and
-				// commitCurrent() writes nameField's text into that file's
-				// rename target, so a brand-new name typed here intending
-				// to Add would silently rename the wrong file. Any
-				// not-yet-applied edit to the previously selected file is
-				// left as last synced from its own selection.
+				// Deliberately does NOT call commitCurrent(): these fields double as the
+				// previously-selected file's live edit, and commitCurrent() writes nameField's
+				// text into that file's rename target, so a new name typed here to Add would
+				// silently rename the wrong file. Any not-yet-applied edit to the previously
+				// selected file is left as last synced from its own selection.
 				name := nameField.Value()
 				if name == "" {
 					hint.Set("Type a logical file name first.")
 					return
 				}
-				// The type picker widens to show a selected file's real type
-				// (FILESTREAM, say); Add must not carry one of those into a
-				// spec this page can't build correctly.
+				// The type picker widens to show a selected file's real type (FILESTREAM, say);
+				// Add must not carry one of those into a spec this page can't build correctly.
 				if !slices.Contains(addableFileTypes, typeSelect.Value()) {
 					hint.Set("Set File type to ROWS or LOG — this page adds data and log files only.")
 					return
 				}
 				if i := edits.index(name); i >= 0 {
-					// Already present — say so and select it, rather than
-					// leaving the button looking broken.
+					// Already present: say so and select it, rather than leave the button looking
+					// broken.
 					hint.Set("A file named " + name + " is already listed — its row is selected below.")
 					grid.SetSelectedRow(i)
 					syncFieldsFromSelection()
@@ -541,9 +522,8 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 						if !e.changed() {
 							continue // nothing about this file actually changed
 						}
-						// Addressed by origName, not name: a rename is carried
-						// inside the modify as NEWNAME, so the file still
-						// answers to its old name at this point.
+						// Addressed by origName, not name: a rename is carried inside the modify as
+						// NEWNAME, so the file still answers to its old name here.
 						if err := d.FileRef(e.origName).Alter(ctx, e.modify()); err != nil {
 							return err
 						}

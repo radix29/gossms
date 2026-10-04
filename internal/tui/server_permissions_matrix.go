@@ -11,9 +11,9 @@ import (
 )
 
 // permEntry is the common shape of gosmo.ServerPermissionEntry and
-// gosmo.DatabasePermissionEntry (Principal/PrincipalType/Grantor/
-// Permission/State, all strings) — normalized at the call site so the
-// permissions-grid editor, identical for both scopes, is built once.
+// gosmo.DatabasePermissionEntry (Principal/PrincipalType/Grantor/Permission/
+// State, all strings), normalized at the call site so the permissions-grid
+// editor, identical for both scopes, is built once.
 type permEntry struct {
 	Principal     string
 	PrincipalType string
@@ -22,10 +22,9 @@ type permEntry struct {
 	State         string
 }
 
-// permEdit tracks one grid row's pending state through nextPermState's
-// cycle, driven by Space/Enter/click on the State column. orig is kept
-// alongside current because the statement that applies the change depends on
-// both — see permTransition.
+// permEdit tracks one grid row's pending state through nextPermState's cycle,
+// driven by Space/Enter/click on the State column. orig is kept alongside
+// current because the applying statement depends on both; see permTransition.
 type permEdit struct {
 	entry   permEntry
 	orig    string
@@ -42,8 +41,8 @@ type permPrincipal struct {
 
 // databasePermPrincipals is the principal list every database-scope
 // Permissions page offers: every user, then every database role. The database,
-// schema, and object pages differ only in which permission catalog they pair
-// it with, so the list itself is built once.
+// schema and object pages differ only in the permission catalog they pair it
+// with, so the list is built once.
 func databasePermPrincipals(users []*gosmo.User, roles []*gosmo.DatabaseRole) []permPrincipal {
 	principals := make([]permPrincipal, 0, len(users)+len(roles))
 	for _, u := range users {
@@ -70,15 +69,14 @@ func objectPermEntries(perms []*gosmo.PermissionEntry) []permEntry {
 }
 
 // buildPermissionsMatrix builds the Permissions page's two-pane editor: a
-// principal list (top grid) and, for whichever principal is selected, the
-// full catalog of grantable permissions at this scope (bottom grid) — not
-// just the ones with an existing GRANT/DENY entry, so a principal with no
-// prior ACL rows still shows every permission it could be granted. Tab
-// switches focus between the two grids; the bottom grid's State column
-// cycles Grant -> Grant With Grant -> Deny -> (none) on activation. A filter
-// box above each grid narrows it live. Wired to applyFn for whichever scope
-// (server-, database-, schema- or object-level GRANT/DENY/REVOKE) the caller
-// needs.
+// principal list (top grid) and, for the selected principal, the full catalog
+// of grantable permissions at this scope (bottom grid), not just those with an
+// existing GRANT/DENY entry, so a principal with no ACL rows still shows every
+// permission it could be granted. Tab switches focus between the grids; the
+// bottom grid's State column cycles Grant -> Grant With Grant -> Deny -> (none)
+// on activation. A filter box above each grid narrows it live. Wired to applyFn
+// for whichever scope (server-, database-, schema- or object-level
+// GRANT/DENY/REVOKE) the caller needs.
 func buildPermissionsMatrix(
 	principals []permPrincipal, catalog []string, entries []permEntry,
 	principalsHeight, permsHeight int,
@@ -148,15 +146,14 @@ func buildPermissionsMatrix(
 
 	permSection := propsheet.Section("Explicit permissions")
 	selected := -1
-	// selectedEdits is the edit slice the bottom grid is showing, held
-	// directly rather than re-derived from an index into visible — a filter
-	// change rebuilds visible underneath it, and an index would then address
-	// a different principal than the one on screen.
+	// selectedEdits is the edit slice the bottom grid is showing, held directly
+	// rather than re-derived from an index into visible: a filter change rebuilds
+	// visible underneath it, and an index would then address a different principal
+	// than the one on screen.
 	var selectedEdits []*permEdit
-	// clearSelection empties the bottom grid. A filter that matches nothing
-	// has to reach this: leaving it showing the previously selected principal
-	// means cycling a State there edits — and Apply then writes — permissions
-	// for a principal the page no longer lists.
+	// clearSelection empties the bottom grid. A filter matching nothing must reach
+	// this: leaving the previous principal showing means cycling a State there
+	// edits, and Apply writes, permissions for a principal the page no longer lists.
 	clearSelection := func() {
 		selected = -1
 		selectedEdits = nil
@@ -197,10 +194,9 @@ func buildPermissionsMatrix(
 			}
 		}
 		redrawGrid(principalGrid, []string{"Name", "Type"}, principalRowsFor())
-		// The row that was selected is probably not at the same index (or
-		// present at all) in the new list, so re-select from the top rather
-		// than leave the bottom grid describing a principal that scrolled
-		// out from under the cursor.
+		// The row that was selected is probably not at the same index (or present at
+		// all) in the new list, so re-select from the top rather than leave the bottom
+		// grid describing a principal that scrolled out from under the cursor.
 		selected = -1
 		principalGrid.SetSelectedRow(0)
 		loadPrincipal(0)
@@ -249,11 +245,11 @@ func buildPermissionsMatrix(
 	)
 
 	apply := func(ctx context.Context) error {
-		// Walked over principals, not over editsByPrincipal: ranging a map
-		// picks a different order every run, so which statements landed before
-		// a mid-apply failure isn't reproducible and Script Changes reorders
-		// its output between presses. editsFor is only ever called with a
-		// principal from this slice, so nothing is missed.
+		// Walked over principals, not editsByPrincipal: ranging a map picks a different
+		// order every run, so which statements landed before a mid-apply failure isn't
+		// reproducible and Script Changes would reorder its output between presses.
+		// editsFor is only called with a principal from this slice, so nothing is
+		// missed.
 		for _, p := range principals {
 			for _, e := range editsByPrincipal[p.Name] {
 				if err := applyPermChange(ctx, applyFn, e.orig, e.current, e.entry.Permission, e.entry.Principal); err != nil {
@@ -268,13 +264,11 @@ func buildPermissionsMatrix(
 
 // pagePrincipalServerPermissions builds a "Securables" page listing every
 // server-scoped permission (gosmo.ServerPermissionNames) with a
-// Grant/Deny/(none) state cyclable per row, scoped to one principal — a
-// login or server role. Shared by Login Properties and Server Role
-// Properties, both server-level principals that can hold explicit
-// server-scoped GRANT/DENY entries the same way. Unlike
-// buildPermissionsMatrix — the Permissions page of Server, Database, Schema and
-// Table Properties — which browses every principal at once, this only ever
-// shows principalName's own entries: no principal picker.
+// Grant/Deny/(none) state cyclable per row, scoped to one principal (a login or
+// server role). Shared by Login Properties and Server Role Properties, both
+// server-level principals that can hold explicit server-scoped GRANT/DENY
+// entries. Unlike buildPermissionsMatrix, which browses every principal at once,
+// this shows only principalName's own entries: no principal picker.
 func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) propPage {
 	return propPage{
 		title: "Securables",

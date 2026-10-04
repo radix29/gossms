@@ -15,16 +15,12 @@ import (
 )
 
 // xevent_session_events.go is the Events page of New Session and Session
-// Properties (see xevent_session_dialog.go): the event library with its
-// filters, the session's events, and per event SSMS's Configure — the global
-// fields (actions) it collects, its filter (predicate), and its customizable
-// event fields.
+// Properties (see xevent_session_dialog.go): the event library, the session's
+// events, and per event SSMS's Configure (actions, predicate, event fields).
 //
-// The filter is text, as the catalog stores it, and the text is what is
-// written. The clause builder below it only appends to that text — a field or
-// predicate source, a comparison and a value — so what SSMS's Filter grid
-// cannot express (parentheses, a pred_compare it does not list) is still
-// typed, and nothing is lost converting between a grid and the text.
+// The filter is the catalog's text, and that text is what is written. The
+// clause builder only appends to it, so what SSMS's Filter grid cannot express
+// (parentheses, unlisted pred_compare) is still typed and never lost.
 
 var (
 	xeLibraryColumns  = []string{"Selected", "Event", "Package", "Category", "Channel", "Description"}
@@ -36,7 +32,7 @@ var (
 
 	// xeOperators are the builder's comparisons. like and not like are the
 	// sqlserver package's case-insensitive LIKE comparators, the only
-	// pred_compare functions SSMS's Filter grid offers by name.
+	// pred_compare functions SSMS's Filter grid names.
 	xeOperators = []string{"=", "<>", ">", ">=", "<", "<=", "like", "not like"}
 	xeJoins     = []string{"AND", "OR"}
 )
@@ -171,8 +167,7 @@ func newXEEventsEditor(h xeHost, cat *xeCatalog, m *xeSessionModel, cols map[str
 		if len(e.m.events) == 0 {
 			return errors.New("a session needs at least one event — add one from the event library")
 		}
-		// gosmo refuses these too, but only on Apply, after the dialog has
-		// closed on it.
+		// gosmo refuses these too, but only on Apply, after the dialog closed.
 		for _, ev := range e.m.events {
 			for _, f := range ev.Fields {
 				if err := f.Validate(); err != nil {
@@ -395,12 +390,10 @@ func (e *xeEventsEditor) syncConfigure() {
 	e.pred.SetValue(ev.Predicate)
 	e.pred.ShowFromStart()
 
-	// What the event collects comes first — among ~80 global fields the
-	// eight it has are otherwise pages apart — then the rest of the catalog.
-	// The order is fixed until another event is selected, so a row does not
-	// move under the cursor as it is toggled. An action the catalog does not
-	// list (a private one, or one this version dropped) is among the first,
-	// so it can be taken off.
+	// Collected actions come first (else pages apart among ~80), then the
+	// rest. Order is fixed until another event is selected so rows do not
+	// move under the cursor on toggle. An action the catalog lacks (private,
+	// or dropped by this version) sorts first so it can be removed.
 	e.actions = append(e.actions[:0], ev.Actions...)
 	for _, o := range e.cat.actions {
 		if !slices.ContainsFunc(e.actions, func(x string) bool { return strings.EqualFold(x, o.QualifiedName()) }) {

@@ -10,7 +10,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// CheckRow — editable boolean, wraps widgets.CheckBox
+// CheckRow: editable boolean, wraps widgets.CheckBox
 // ---------------------------------------------------------------------------
 
 // CheckRow is a boolean toggle row.
@@ -19,9 +19,9 @@ type CheckRow struct {
 	label string
 	orig  bool
 
-	// drawReadOnly renders the row as a tick or a cross instead of a
-	// checkbox — see SetDrawReadOnly. pageReadOnly is the page's own,
-	// independent gate — see TextRow.SetReadOnly.
+	// drawReadOnly renders the row as a tick or a cross instead of a checkbox (see
+	// SetDrawReadOnly). pageReadOnly is the page's own, independent gate (see
+	// TextRow.SetReadOnly).
 	drawReadOnly bool
 	pageReadOnly bool
 	x, y, w      int
@@ -41,8 +41,7 @@ func (r *CheckRow) Checked() bool { return r.box.Checked() }
 func (r *CheckRow) SetChecked(v bool) { r.box.SetChecked(v); r.orig = v }
 
 // Edit sets the state the way pressing Space does: the value changes and the
-// row goes dirty. SetChecked's counterpart — see TextRow.Edit for why the two
-// are different operations.
+// row goes dirty. SetChecked's counterpart; see TextRow.Edit.
 func (r *CheckRow) Edit(v bool) {
 	if r.pageReadOnly {
 		return
@@ -68,9 +67,9 @@ func (r *CheckRow) SetReadOnly(v bool) { r.pageReadOnly = v }
 func (r *CheckRow) ReadOnly() bool { return r.pageReadOnly }
 
 // SetDrawReadOnly implements ReadOnlyDrawer: the row draws its state as a
-// leading tick or cross rather than as a checkbox. Both states are marked —
-// an unmarked label sitting in a column of them reads as a heading, not as an
-// option that is off.
+// leading tick or cross rather than a checkbox. Both states are marked, since
+// an unmarked label in a column of them reads as a heading, not an option that
+// is off.
 func (r *CheckRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
 
 func (r *CheckRow) Draw(s tcell.Screen, focused bool) {
@@ -112,7 +111,7 @@ func (r *CheckRow) Revert()         { r.box.SetChecked(r.orig) }
 func (r *CheckRow) Validate() error { return nil }
 
 // ---------------------------------------------------------------------------
-// SelectRow — editable dropdown, wraps widgets.DropDown
+// SelectRow: editable dropdown, wraps widgets.DropDown
 // ---------------------------------------------------------------------------
 
 // SelectRow is a dropdown-select row.
@@ -122,9 +121,9 @@ type SelectRow struct {
 	untracked bool // see TextRow.SetDirtyTracked
 	onChange  func(string)
 
-	// drawReadOnly renders the row flat instead of as a dropdown — see
-	// SetDrawReadOnly. pageReadOnly is the page's own, independent gate — see
-	// TextRow.SetReadOnly.
+	// drawReadOnly renders the row flat instead of as a dropdown (see
+	// SetDrawReadOnly). pageReadOnly is the page's own, independent gate (see
+	// TextRow.SetReadOnly).
 	drawReadOnly bool
 	pageReadOnly bool
 	// fitItems widens the control to its widest item — see SetFitItems.
@@ -136,7 +135,7 @@ type SelectRow struct {
 func Select(label string, items []string, selected int) *SelectRow {
 	dd := widgets.NewDropDown(core.PadRight(label, LabelWidth), items, selectControlWidth)
 	dd.SetSelected(selected)
-	// orig read back from the widget, not from selected — see SetSelected on why
+	// orig is read back from the widget, not from selected: see SetSelected on why
 	// an out-of-range index must not become the baseline.
 	return &SelectRow{dd: dd, orig: dd.Selected()}
 }
@@ -155,9 +154,8 @@ func (r *SelectRow) Items() []string { return r.dd.Items() }
 //
 // The baseline is read back from the widget, not taken from i: DropDown
 // silently ignores an out-of-range index, and storing the rejected i leaves
-// Selected() != orig with no way to reconcile them — a permanently dirty row
-// that reports unsaved changes forever and makes Apply write what nobody
-// asked for.
+// Selected() != orig with no way to reconcile, a permanently dirty row whose
+// Apply writes what nobody asked for.
 func (r *SelectRow) SetSelected(i int) {
 	r.dd.SetSelected(i)
 	r.orig = r.dd.Selected()
@@ -168,10 +166,9 @@ func (r *SelectRow) SetSelected(i int) {
 func (r *SelectRow) Label() string { return strings.TrimRight(r.dd.Label(), " ") }
 
 // Edit selects by index the way a keystroke does: the selection changes, the
-// row goes dirty, and OnChange fires. SetSelected's counterpart — see
-// TextRow.Edit for why the two are different operations. An out-of-range index
-// is ignored, as DropDown ignores one, so a rejected index cannot leave the row
-// dirty against a value it never took.
+// row goes dirty, and OnChange fires. SetSelected's counterpart (see
+// TextRow.Edit). An out-of-range index is ignored, as DropDown ignores one, so
+// a rejected index cannot leave the row dirty against a value it never took.
 func (r *SelectRow) Edit(i int) {
 	if r.pageReadOnly {
 		return
@@ -187,17 +184,16 @@ func (r *SelectRow) SetDirtyTracked(v bool) { r.untracked = !v }
 
 // SetItems replaces the row's choices and resets the dirty baseline with them,
 // for a picker whose options depend on another control. The baseline must move
-// too: the old orig indexed the old list, so leaving it compares against an
-// item that is no longer there.
+// too: the old orig indexed the old list.
 func (r *SelectRow) SetItems(items []string) {
 	r.dd.SetItems(items)
 	r.orig = r.dd.Selected()
 }
 
 // SetFitItems makes the control as wide as its widest item, up to the row's
-// width, instead of the fixed width every other select shares — for items too
-// long to tell apart when cut there, such as URLs that differ only at the end.
-// Never narrower than the fixed width, so short items still line up.
+// width, instead of the fixed width every other select shares, for items too
+// long to tell apart when cut (such as URLs differing only at the end). Never
+// narrower than the fixed width, so short items still line up.
 func (r *SelectRow) SetFitItems(v bool) { r.fitItems = v }
 
 func (r *SelectRow) Height(w int) int { return 1 }
@@ -211,10 +207,9 @@ func (r *SelectRow) Layout(x, y, w int) {
 		}
 	}
 	// The label, a space and the two brackets take the rest of the row. A row
-	// narrower than the control narrows it, as TextRow.Layout does, rather
-	// than drawing it over the form's right border (Database Mail Profiles'
-	// "Account to add" at 80 columns); the floor keeps one value cell and the
-	// arrow.
+	// narrower than the control narrows it, as TextRow.Layout does, rather than
+	// drawing it over the form's right border (Database Mail Profiles' "Account to
+	// add" at 80 columns); the floor keeps one value cell and the arrow.
 	room := w - core.DisplayWidth(r.dd.Label()) - 3
 	r.dd.SetWidth(max(2, min(want, room)))
 }
@@ -224,9 +219,8 @@ func (r *SelectRow) Focusable() bool { return !r.pageReadOnly }
 func (r *SelectRow) SetReadOnly(v bool) {
 	r.pageReadOnly = v
 	if v {
-		// Focus(false) closes an open list: a gate applied while it is open
-		// would otherwise leave the overlay drawn over a row nothing routes
-		// events to any more.
+		// Focus(false) closes an open list: a gate applied while it is open would leave
+		// the overlay drawn over a row nothing routes events to.
 		r.dd.Focus(false)
 	}
 }
@@ -268,7 +262,7 @@ func (r *SelectRow) HandleMouse(ev *tcell.EventMouse) bool {
 }
 
 // SetOnChange installs a callback fired whenever user interaction changes the
-// selection — TextRow.SetOnChange's counterpart. Not fired by
+// selection (TextRow.SetOnChange's counterpart). Not fired by
 // SetSelected/SetItems, which are programmatic and would re-enter whatever set
 // them.
 func (r *SelectRow) SetOnChange(fn func(string)) { r.onChange = fn }
@@ -294,7 +288,7 @@ func (r *SelectRow) Revert() {
 }
 
 // ---------------------------------------------------------------------------
-// RadioRow — editable single-select group, wraps widgets.RadioBox
+// RadioRow: editable single-select group, wraps widgets.RadioBox
 // ---------------------------------------------------------------------------
 
 // RadioRow is a radio-button-group row.
@@ -321,8 +315,8 @@ func Radio(label string, options []string, selected int) *RadioRow {
 func (r *RadioRow) Selected() int { return r.rb.Selected() }
 
 // SetSelected sets the selection by index and resets the dirty baseline,
-// reading the baseline back from the widget for the reason SelectRow.SetSelected
-// documents.
+// reading the baseline back from the widget for the reason documented on
+// SelectRow.SetSelected.
 func (r *RadioRow) SetSelected(i int) {
 	r.rb.SetSelected(i)
 	r.orig = r.rb.Selected()
@@ -338,9 +332,9 @@ func (r *RadioRow) Edit(i int) {
 }
 
 // SetOnChange installs a callback fired whenever user interaction changes the
-// selection, given the newly selected index — SelectRow.SetOnChange's
-// counterpart, for a group that drives other rows on the same page. Not fired
-// by SetSelected, which is programmatic and would re-enter whatever set it.
+// selection, given the new index (SelectRow.SetOnChange's counterpart, for a
+// group that drives other rows on the page). Not fired by SetSelected, which is
+// programmatic and would re-enter whatever set it.
 func (r *RadioRow) SetOnChange(fn func(int)) { r.onChange = fn }
 
 func (r *RadioRow) notifyChanged(before int) {
@@ -367,9 +361,9 @@ func (r *RadioRow) Layout(x, y, w int) {
 func (r *RadioRow) Focusable() bool { return true }
 
 // SetDrawReadOnly implements ReadOnlyDrawer: the group collapses to one
-// label/value line naming the selected option, the same shape SelectRow takes
-// — the unselected options are choices, and a page that cannot be written is
-// not offering them.
+// label/value line naming the selected option, as SelectRow does. The
+// unselected options are choices, which a page that cannot be written doesn't
+// offer.
 func (r *RadioRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
 
 func (r *RadioRow) Draw(s tcell.Screen, focused bool) {
@@ -401,9 +395,9 @@ func (r *RadioRow) CopyText() string {
 func (r *RadioRow) Dirty() bool     { return r.rb.Selected() != r.orig }
 func (r *RadioRow) Validate() error { return nil }
 
-// Revert restores the dirty baseline and fires onChange — SelectRow.Revert,
-// which this matches: a group driving other rows has to drive them back too,
-// or Ctrl+Z leaves the page describing a source it no longer has selected.
+// Revert restores the dirty baseline and fires onChange, as SelectRow.Revert: a
+// group driving other rows has to drive them back too, or Ctrl+Z leaves the
+// page describing a source it no longer has selected.
 func (r *RadioRow) Revert() {
 	before := r.rb.Selected()
 	r.rb.SetSelected(r.orig)

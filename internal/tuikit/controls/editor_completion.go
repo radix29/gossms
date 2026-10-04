@@ -35,24 +35,22 @@ type CompletionItem struct {
 	// Placeholder marks a row shown but not navigable or committable — a
 	// "Loading suggestions..." entry while a provider's data isn't ready.
 	Placeholder bool
-	// Partial marks a candidate that matched the typed text somewhere other
-	// than its start ("ord" in CustomerOrders). A popup the user didn't ask for
-	// with Ctrl+Space, holding only partial matches, opens with nothing
-	// selected: Enter and Tab then keep their plain meaning, so a keyword typed
-	// in full ("BY", "AND") is never swapped for a column that merely contains
-	// it (CreatedBy, BrandName). Up/Down select one as usual.
+	// Partial marks a candidate that matched the typed text somewhere other than
+	// its start ("ord" in CustomerOrders). A popup the user didn't ask for with
+	// Ctrl+Space, holding only partial matches, opens with nothing selected: Enter
+	// and Tab keep their plain meaning, so a keyword typed in full ("BY", "AND")
+	// is never swapped for a column that merely contains it (CreatedBy,
+	// BrandName). Up/Down select one as usual.
 	Partial bool
 }
 
-// TextRevision identifies the revision of the text a CompletionRequest
-// carries, so a provider keeping a cache across calls can tell whether it may
-// resume. Same key prefixStates uses, for the same reason: Doc pins which
-// buffer the version counts, since two buffers number their versions
-// independently from zero, and DirtyFrom describes one mutation only — a cache
-// more than one version behind must start over.
+// TextRevision identifies the revision of the text a CompletionRequest carries,
+// so a provider caching across calls can tell whether it may resume. Same key
+// prefixStates uses: Doc pins which buffer the version counts (two buffers
+// number versions independently from zero), and DirtyFrom describes one
+// mutation only, so a cache more than one version behind must start over.
 //
-// Doc is opaque on purpose: a provider compares it for identity and nothing
-// else.
+// Doc is opaque on purpose: a provider compares it for identity only.
 type TextRevision struct {
 	// Doc identifies the buffer. Compare it, don't dereference it.
 	Doc any
@@ -76,14 +74,14 @@ type CompletionRequest struct {
 }
 
 // CompletionProvider returns the candidates for the identifier being typed at
-// (Row, Col) in Lines, and the column that identifier starts at — the span
-// [replaceFrom, Col) replaced when an item commits. An empty items slice means
-// there is nothing to offer here (the cursor is inside a string literal or
-// comment), and Editor closes any open popup.
+// (Row, Col) in Lines, and the column that identifier starts at (the span
+// [replaceFrom, Col) is replaced when an item commits). An empty items slice
+// means there is nothing to offer here (inside a string literal or comment),
+// and Editor closes any open popup.
 //
 // Called after every key that could affect the result. A provider may answer
-// each call from scratch; one that caches between calls must key the cache on
-// req.Text and rebuild whenever that key cannot justify a resume.
+// each call from scratch; one that caches must key the cache on req.Text and
+// rebuild whenever that key cannot justify a resume.
 type CompletionProvider func(req CompletionRequest) (items []CompletionItem, replaceFrom int)
 
 // maxCompletionRows caps the popup's visible height; more candidates scroll.
@@ -105,25 +103,22 @@ func (e *Editor) SetCompletionProvider(p CompletionProvider) {
 }
 
 // CompletionActive reports whether the popup is open. A host laying the editor
-// out alongside another focusable widget must check this and give the editor
-// first refusal of every key and mouse event while true, as with
-// DataGrid.OverlayActive.
+// out beside another focusable widget must give the editor first refusal of
+// every key and mouse event while true, as with DataGrid.OverlayActive.
 func (e *Editor) CompletionActive() bool { return e.completionOpen }
 
-// RefreshCompletion re-queries the provider at the cursor if the popup is
-// open, for a caller whose backing data arrived asynchronously and wants an
-// open "Loading..." placeholder replaced before the next keystroke. No-op
-// while closed, so it is safe to call unconditionally.
+// RefreshCompletion re-queries the provider at the cursor if the popup is open,
+// for a caller whose backing data arrived asynchronously and wants an open
+// "Loading..." placeholder replaced. No-op while closed.
 func (e *Editor) RefreshCompletion() {
 	if e.completionOpen {
 		e.updateCompletion()
 	}
 }
 
-// CloseCompletion closes the popup, for a host action that is never a
-// completion gesture, such as running the script. A later RefreshCompletion
-// leaves it closed; unlike Escape it doesn't suppress the token, so typing on
-// reopens it. Safe to call unconditionally.
+// CloseCompletion closes the popup, for a host action that is not a completion
+// gesture, such as running the script. A later RefreshCompletion leaves it
+// closed; unlike Escape it doesn't suppress the token, so typing reopens it.
 func (e *Editor) CloseCompletion() { e.closeCompletion() }
 
 // closeCompletion hides the popup, if open. Safe to call unconditionally.
@@ -201,17 +196,17 @@ func hasPrefixCompletion(items []CompletionItem) bool {
 }
 
 // canAutoOpenCompletion reports whether the text left of the cursor begins a
-// word being typed — the gate HandleKey applies, with typedChar, before a typed
+// word being typed: the gate HandleKey applies, with typedChar, before a typed
 // character opens the popup from closed. The fragment touching the cursor must
-// start with a letter or one of the sigils a name can open with: '[' for a
-// quoted identifier, '#' or '@' for a name a host's provider may bind. Each
-// sigil also opens the popup on its own, since the name it introduces has no
-// other first keystroke. A space, a '.', a digit starting a numeric literal or
-// an empty line never auto-opens it; Ctrl+Space always can.
+// start with a letter or a sigil a name can open with: '[' for a quoted
+// identifier, '#' or '@' for a name a host's provider may bind. Each sigil also
+// opens the popup on its own, as the name it introduces has no other first
+// keystroke. A space, '.', a digit starting a numeric literal or an empty line
+// never auto-opens it; Ctrl+Space always can.
 //
-// What a sigil means is the provider's business — this only decides that a name
-// may be starting, and a provider with nothing to offer closes the popup again
-// on the same keystroke.
+// What a sigil means is the provider's business; this only decides that a name
+// may be starting, and a provider with nothing to offer closes the popup on the
+// same keystroke.
 func (e *Editor) canAutoOpenCompletion() bool {
 	if e.cursorRow >= e.doc.Len() || e.cursorCol <= 0 {
 		return false
@@ -242,12 +237,12 @@ func (e *Editor) currentTokenStart() int {
 	return sqltext.WordStart(line, core.Clamp(e.cursorCol, 0, len(line)))
 }
 
-// triggerCompletionExplicit is Ctrl+Space: query immediately and, if a word
-// has been started and exactly one real candidate matches it at its start,
-// commit it instead of opening the popup — SSMS's "complete word" behaviour.
-// With nothing typed yet the popup always opens, even over a single candidate:
-// the user asked to see the list, not for a guess. The popup stays explicit
-// until it closes, so partial matches keep a selection while typing narrows it.
+// triggerCompletionExplicit is Ctrl+Space: query immediately and, if a word has
+// been started and exactly one real candidate matches it at its start, commit
+// it instead of opening the popup (SSMS's "complete word"). With nothing typed
+// the popup always opens, even over a single candidate. The popup stays
+// explicit until it closes, so partial matches keep a selection while typing
+// narrows it.
 func (e *Editor) triggerCompletionExplicit() {
 	if e.completionProvider == nil || e.readOnly {
 		return
@@ -359,7 +354,6 @@ func (e *Editor) dismissCompletion() {
 func (e *Editor) handleCompletionKey(ev *tcell.EventKey) bool {
 	// A modified key is never popup navigation: Ctrl+Up/Down resize the host's
 	// panels, Ctrl+Shift+Up/Down move lines, Shift+arrows extend a selection.
-	// They fall through to normal handling, which re-syncs the popup after.
 	if ev.Modifiers()&(tcell.ModCtrl|tcell.ModAlt|tcell.ModShift) != 0 {
 		return false
 	}
@@ -378,9 +372,8 @@ func (e *Editor) handleCompletionKey(ev *tcell.EventKey) bool {
 		return true
 	case tcell.KeyTab, tcell.KeyEnter:
 		if e.completionSel < 0 {
-			// Nothing selected (see CompletionItem.Partial): the key keeps its
-			// plain meaning, and the popup closes rather than re-anchoring on
-			// the new line.
+			// Nothing selected (see CompletionItem.Partial): the key keeps its plain
+			// meaning, and the popup closes rather than re-anchoring on the new line.
 			e.closeCompletion()
 			return false
 		}
@@ -445,9 +438,9 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 		e.completionSbDragging = false
 	}
 
-	// Scrollbar drag/click takes priority over the item hit-testing below: the
-	// bar is drawn over the rightmost popup column, which would otherwise read
-	// as a click on whatever item sits in that row.
+	// Scrollbar drag/click takes priority over item hit-testing below: the bar is
+	// drawn over the rightmost popup column, which would read as a click on
+	// whatever item sits in that row.
 	if core.HandleScrollbarDrag(ev, rect.Right()-1, rect.Y, rect.H, len(e.completionItems), &e.completionSbDragging, &e.completionScroll) {
 		return true
 	}
@@ -535,9 +528,9 @@ func (e *Editor) completionRect() core.Rect {
 	h := rowCount
 
 	x, cy := e.cursorLineScreenPos(e.completionFrom)
-	// Keep the popup horizontally inside the editor's rect: a token start
-	// scrolled off to the left, or near the right edge, must not put it over
-	// the gutter or off-screen.
+	// Keep the popup horizontally inside the editor's rect: a token start scrolled
+	// off to the left, or near the right edge, must not put it over the gutter or
+	// off-screen.
 	x = max(e.rect.X, min(x, e.rect.Right()-w))
 	y := cy + 1
 

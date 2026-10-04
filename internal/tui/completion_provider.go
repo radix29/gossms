@@ -6,14 +6,14 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// SQL-aware completion.Provider for the query editor — the only caller of
+// SQL-aware completion.Provider for the query editor, the only caller of
 // controls.Editor.SetCompletionProvider in the app. Resolves the identifier at
 // the cursor against the connected database's completionInventory
-// (completion_inventory.go): schemas, tables, views, and columns, with
+// (completion_inventory.go): schemas, tables, views and columns, with
 // schema/alias/table-dot member lookup and FROM-clause alias resolution.
 //
-// A lexical approximation, not a full T-SQL parser — the same spirit as
-// controls.Editor's SelectStatementAtCursor (tuikit/controls/sql_statement.go).
+// A lexical approximation, not a full T-SQL parser (same spirit as
+// controls.Editor's SelectStatementAtCursor, tuikit/controls/sql_statement.go).
 // It recognises enough of the grammar (comments, string/quoted-identifier
 // literals, clause keywords, dot-qualified names, CTE bodies, derived tables)
 // to get common queries right; anything genuinely ambiguous offers nothing
@@ -24,20 +24,20 @@ import (
 // recursive one without looping); derived tables and sub-SELECTs at any
 // nesting; the clause state of the innermost query rather than the statement,
 // so a cursor inside a CTE body completes against that body; temp tables (#t,
-// ##t) and table variables (@t), resolved from their declaration — CREATE
-// TABLE, DECLARE ... TABLE, SELECT ... INTO — found by scanning the cursor's
+// ##t) and table variables (@t), resolved from their declaration (CREATE TABLE,
+// DECLARE ... TABLE, SELECT ... INTO) found by scanning the cursor's
 // GO-delimited batch, and temp tables also from the batches above it until a
-// DROP TABLE; with PIVOT/UNPIVOT reshaping the reference it follows; and
+// DROP TABLE; PIVOT/UNPIVOT reshaping the reference it follows; and
 // OPENJSON/OPENROWSET/OPENXML resolved from their WITH column list, or
 // OPENJSON's fixed key/value/type shape without one (see sqlparse.ScanBindings,
 // sqlparse.CarryTempBindings, sqlparse.Pivot and sqlparse.Rowset).
 //
-// Table-valued functions resolve to their catalog result columns where they
-// are called, and a three-part name ("Sales.dbo.Orders", "Sales..Orders")
-// against that database's own inventory, loaded on first use (see
-// completion_crossdb.go); so do the qualifier chains that type one ("Sales.",
-// "Sales.dbo."). A linked server's four-part name resolves against the remote
-// database's catalog, read through the linked server (completion_linked.go).
+// Table-valued functions resolve to their catalog result columns where called,
+// and a three-part name ("Sales.dbo.Orders", "Sales..Orders") against that
+// database's own inventory, loaded on first use (see completion_crossdb.go); so
+// do the qualifier chains that type one ("Sales.", "Sales.dbo."). A linked
+// server's four-part name resolves against the remote database's catalog, read
+// through the linked server (completion_linked.go).
 //
 // Out of scope, answered with nothing rather than a plausible wrong list:
 // keyword completion.
@@ -106,11 +106,11 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 	}
 
 	// Everything above works in flattened-buffer offsets, but the
-	// controls.CompletionProvider contract wants a column on the cursor's row —
-	// the editor replaces [replaceFrom, col) there and anchors the popup at it.
-	// The replaced span always starts on the cursor's own row (identifiers
-	// can't span lines; a '[' on an earlier row is malformed and bails), so
-	// subtracting the row's start offset converts it.
+	// controls.CompletionProvider contract wants a column on the cursor's row (the
+	// editor replaces [replaceFrom, col) there and anchors the popup at it). The
+	// replaced span always starts on the cursor's own row (identifiers can't span
+	// lines; a '[' on an earlier row is malformed and bails), so subtracting the
+	// row's start offset converts it.
 	rowStart := sqlparse.OffsetForCursor(lines, row, 0)
 	if replaceFrom < rowStart {
 		return nil, col
@@ -160,13 +160,13 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 		refs, clause = sqlparse.ParseFromScope(stmtTokens), sqlparse.CurrentClause(tokens)
 	}
 
-	// Temp tables and table variables are declared in a different statement
-	// from the one using them, so their shapes come from a scan of the whole
-	// GO-delimited batch, plus the temp tables the batches above it carry in —
-	// the one piece of cross-statement work a keystroke does. bindingsWanted
-	// keeps it off the path of scripts that name none, and p.completionBatch
-	// re-lexes only what changed since the last one. The sigil test starts at
-	// the top, not the batch: a temp table outlives GO.
+	// Temp tables and table variables are declared in a different statement from
+	// the one using them, so their shapes come from a scan of the whole
+	// GO-delimited batch plus the temp tables the batches above carry in: the one
+	// piece of cross-statement work a keystroke does. bindingsWanted keeps it off
+	// the path of scripts that name none, and p.completionBatch re-lexes only what
+	// changed since the last scan. The sigil test starts at the top, not the
+	// batch: a temp table outlives GO.
 	var bindings []sqlparse.Binding
 	if bindingsWanted(clause, scope.Query, refs, scope.CTEs, qualifier, prefix) &&
 		sqlparse.ContainsSigil(buf, 0) {

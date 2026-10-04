@@ -30,9 +30,8 @@ type Header struct {
 // HistoryView is everything the History dashboard draws: one series set per
 // panel, each ordered oldest sample first.
 //
-// Every field may be empty. A panel with no series renders its frame, its
-// axis, and nothing else — one unavailable metric must not blank out the
-// dashboard around it.
+// Every field may be empty. A panel with no series renders its frame and axis
+// only: one unavailable metric must not blank the dashboard around it.
 type HistoryView struct {
 	Header Header
 
@@ -52,11 +51,10 @@ type HistoryView struct {
 	Backup       []charts.Series // backup MB/sec
 	ActivityKPIs []charts.KPI    // readouts along the section bar
 
-	// SQL SERVER WAITS section, split half and half between host CPU usage
-	// and the wait categories.
-	// CPU carries SQL Server and other processes only, stacked against a
-	// fixed 0-100 axis; idle is what they leave under it and is deliberately
-	// not a series of its own (see activity.CPUUsage).
+	// SQL SERVER WAITS section, split half and half between host CPU usage and the
+	// wait categories. CPU carries SQL Server and other processes only, stacked
+	// against a fixed 0-100 axis; idle is what they leave under it and is
+	// deliberately not a series (see activity.CPUUsage).
 	CPU       []charts.Series
 	Waits     []charts.Series // wait categories — stacked
 	WaitsKPIs []charts.KPI
@@ -77,11 +75,10 @@ type HistoryView struct {
 	File string
 }
 
-// BarPanel is one group of bars plus the range they are read against. The
-// zero Scale auto-scales to the largest bar, which is only meaningful when
-// the bars are comparable to each other — a panel holding a single bar
-// needs an explicit range, or that bar fills the panel at every value it
-// can ever have.
+// BarPanel is one group of bars plus the range they are read against. The zero
+// Scale auto-scales to the largest bar, meaningful only when the bars are
+// comparable to each other: a panel holding a single bar needs an explicit
+// range, or that bar fills the panel at every value it can have.
 type BarPanel struct {
 	Bars  []charts.Bar
 	Scale charts.Scale
@@ -125,10 +122,10 @@ type SampleView struct {
 
 // TempDBView is everything the TempDB dashboard draws. It mixes history and
 // current-sample panels: space and activity are levels worth watching move,
-// while the file list and the session grid only ever mean anything for the
-// newest reading.
+// while the file list and session grid mean something only for the newest
+// reading.
 //
-// Every field may be empty, and an empty one blanks its own panel only.
+// Every field may be empty, and an empty one blanks only its own panel.
 type TempDBView struct {
 	Header Header
 
@@ -175,10 +172,10 @@ type SessionRow struct {
 	TotalMB     string
 }
 
-// ChartHit is where one History chart's plot area landed and what it
-// plotted, returned by DrawHistory so a click can be turned back into the
-// sample under it. Series is the chart's own slice — read it, don't hold it
-// past the next draw.
+// ChartHit is where one History chart's plot area landed and what it plotted,
+// returned by DrawHistory so a click can be turned back into the sample under
+// it. Series is the chart's own slice: read it, don't hold it past the next
+// draw.
 type ChartHit struct {
 	Title  string
 	Plot   core.Rect
@@ -189,11 +186,10 @@ type ChartHit struct {
 	// pinned column names the moment it covers.
 	TimeRow core.Rect
 
-	// Snapshot marks a chart of the current sample rather than a history:
-	// its series carry one value each and the whole plot describes that one
-	// instant, so every column in it resolves to index 0. Without this a
-	// one-value chart would only answer on its rightmost column, which is
-	// where the newest bucket of a history lands.
+	// Snapshot marks a chart of the current sample rather than a history: its
+	// series carry one value each and the whole plot describes that one instant, so
+	// every column resolves to index 0. Otherwise a one-value chart would answer
+	// only on its rightmost column, where a history's newest bucket lands.
 	Snapshot bool
 }
 
@@ -209,12 +205,11 @@ func (h ChartHit) Bucket(x int) int {
 	return charts.BucketAt(h.Plot, x, charts.BucketCount(h.Series))
 }
 
-// Column is where bucket idx is drawn now — the inverse of Bucket, for a
-// caller holding on to a bucket across redraws. It returns -1 once that
-// bucket has been pushed off the left edge of the plot by newer samples,
-// which is the moment a readout pinned to it stops having anything on screen
-// to point at. A snapshot chart plots one instant and nothing in it drifts,
-// so it always answers -1: there is no column to re-derive.
+// Column is where bucket idx is drawn now, the inverse of Bucket, for a caller
+// holding a bucket across redraws. It returns -1 once newer samples have pushed
+// that bucket off the plot's left edge, when a readout pinned to it has nothing
+// left to point at. A snapshot chart plots one instant and nothing drifts, so
+// it always answers -1.
 func (h ChartHit) Column(idx int) int {
 	if h.Snapshot {
 		return -1

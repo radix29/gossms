@@ -171,13 +171,13 @@ var childLoaders = map[NodeType]childLoader{
 // and agent_menu.go.
 type menuBuilder func(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem
 
-// nodeMenus maps a NodeType to its menu builder. A NodeType with no entry
-// gets New Query and Refresh only — the folders with nothing to create
-// (Server Triggers, Database Triggers, Endpoints) and Cryptographic
-// Providers. That one is read-only on purpose: registering a provider takes a
-// DLL path on the server's own filesystem, which SSMS answers with a file
-// browser this build has no way to offer, and everything
-// sys.cryptographic_providers records is already in the Detail Browser's grid.
+// nodeMenus maps a NodeType to its menu builder. A NodeType with no entry gets
+// New Query and Refresh only: the folders with nothing to create (Server
+// Triggers, Database Triggers, Endpoints) and Cryptographic Providers. That one
+// is read-only on purpose: registering a provider takes a DLL path on the
+// server's filesystem, which SSMS answers with a file browser this build can't
+// offer, and everything sys.cryptographic_providers records is already in the
+// Detail Browser's grid.
 var nodeMenus = map[NodeType]menuBuilder{
 	NodeServer:            serverMenuItems,
 	NodeDatabases:         databasesMenuItems,
@@ -371,14 +371,14 @@ func listDatabaseChildren[T any](l loaderCtx, node *explorerNode, fetch func(*go
 	return listChildren(func() ([]T, error) { return fetch(dbObj, l.ctx) }, toNode)
 }
 
-// errExplorerNode builds a placeholder error node. It carries no id — the
-// id is assigned later by ObjectExplorer.SetChildren on the UI goroutine.
+// errExplorerNode builds a placeholder error node. It carries no id; the id is
+// assigned later by ObjectExplorer.SetChildren on the UI goroutine.
 //
-// A permission refusal is rendered as the server's own sentence about it,
-// rather than the nested plumbing string the wrapping produces
-// ("gosmo: list tables in \"x\": gosmo: USE x: mssql: The server principal…").
-// Only a refusal: any other failure keeps its full text, because a truncated
-// read reported as a permissions problem sends the user after the wrong thing.
+// A permission refusal is rendered as the server's own sentence rather than the
+// nested plumbing string the wrapping produces ("gosmo: list tables in \"x\":
+// gosmo: USE x: mssql: The server principal..."). Only a refusal: any other
+// failure keeps its full text, because a truncated read reported as a
+// permissions problem sends the user after the wrong thing.
 func errExplorerNode(err error) *explorerNode {
 	label := err.Error()
 	if denied := accessDeniedText(err); denied != "" {

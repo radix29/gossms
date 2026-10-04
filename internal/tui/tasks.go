@@ -18,16 +18,15 @@ var errTaskPanicked = errors.New("stopped unexpectedly — see the log for detai
 // are never evicted.
 const maxTaskHistory = 50
 
-// Task tracks one long-running background operation — a backup, a restore,
-// an index rebuild — the kind of thing SSMS reports in its status bar and
-// lets the user check on or cancel later rather than blocking the UI.
+// Task tracks one long-running background operation (a backup, restore or index
+// rebuild) of the kind SSMS reports in its status bar and lets the user check
+// on or cancel later rather than blocking the UI.
 //
-// A Task's fields are only ever mutated on the main goroutine, via the
-// closures App.postProgress/postTaskDone hand to postAndWake — the same
-// invariant QueryPanel.result and DetailBrowser rely on elsewhere in this
-// codebase (see query_panel.go, detail_browser.go). No mutex is needed as
-// long as that invariant holds: the goroutine doing the actual work never
-// touches a Task field directly.
+// A Task's fields are only mutated on the main goroutine, via the closures
+// App.postProgress/postTaskDone hand to postAndWake (the invariant
+// QueryPanel.result and DetailBrowser rely on; see query_panel.go,
+// detail_browser.go). No mutex is needed while that holds: the goroutine doing
+// the work never touches a Task field directly.
 type Task struct {
 	ID       int
 	Label    string
@@ -37,12 +36,12 @@ type Task struct {
 	Err      error
 	Started  time.Time
 	Finished time.Time
-	// Cancelled is set when the task finished with an error after Cancel was
-	// asked for while it ran. The error is then the cancel itself, as the
-	// driver or the server words it ("context canceled", "BACKUP DATABASE is
-	// terminating abnormally"), and reporting it as a failure blames the
-	// server for what the user did. A run that finished despite the cancel
-	// keeps its success; a panic is still a failure. Err keeps the error.
+	// Cancelled is set when the task finished with an error after Cancel was asked
+	// for while it ran. The error is then the cancel itself, as the driver or
+	// server words it ("context canceled", "BACKUP DATABASE is terminating
+	// abnormally"), and reporting it as a failure blames the server for what the
+	// user did. A run that finished despite the cancel keeps its success; a panic
+	// is still a failure. Err keeps the error.
 	Cancelled bool
 
 	cancel context.CancelFunc
@@ -84,18 +83,15 @@ func (t *Task) statusText() string {
 	}
 }
 
-// startTask registers a new background task under label and returns it
-// along with a context the caller's goroutine should run its work under —
-// cancelled the moment Task.Cancel is called (from the Tasks dialog, or
-// anywhere else that has the Task), or the moment parent itself is
+// startTask registers a new background task under label and returns it with a
+// context the caller's goroutine should run its work under, cancelled when
+// Task.Cancel is called (from the Tasks dialog or elsewhere) or when parent is
 // cancelled. Callers whose work is scoped to a *db.ServerConn should pass
 // sc.Server.Context() as parent, so disconnecting cancels a long-running task
-// (e.g. a RESTORE) too, instead of leaving it to run unbounded; callers
-// with nothing connection-scoped to tie it to can pass context.Background().
-// The caller reports progress via App.postProgress and completion via
-// App.postTaskDone; both must be used instead of touching the Task
-// directly, since the work itself runs on a background goroutine (see the
-// Task doc comment).
+// (e.g. a RESTORE) instead of leaving it unbounded; others can pass
+// context.Background(). The caller reports progress via App.postProgress and
+// completion via App.postTaskDone, never by touching the Task directly, since
+// the work runs on a background goroutine (see the Task doc comment).
 func (a *App) startTask(parent context.Context, label string) (*Task, context.Context) {
 	a.taskSeq++
 	ctx, cancel := context.WithCancel(parent)
@@ -117,9 +113,8 @@ func (a *App) postProgress(t *Task, progress int, message string) {
 }
 
 // postTaskDone marks t finished (err nil on success) on the main goroutine,
-// releases its context (the task's work is done either way, whether or not
-// Cancel was ever called), updates the status bar to match (every task
-// consumer wants this, the same way query execution always reports its own
+// releases its context (the work is done whether or not Cancel was called),
+// updates the status bar to match (as query execution reports its own
 // completion), and wakes the event loop.
 func (a *App) postTaskDone(t *Task, err error) {
 	a.postAndWake(func() { a.markTaskDone(t, err) })

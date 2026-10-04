@@ -11,14 +11,14 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// Session is one SQL Server session held as long as its owner wants — what an
+// Session is one SQL Server session held as long as its owner wants, what an
 // SSMS query window runs on. Temp tables, SET options, open transactions and
 // USE persist between runs.
 //
 // Package-level Execute can't do that: database/sql marks a returned connection
-// for reset, and go-mssqldb sets the TDS reset-connection bit on its next use —
-// SET options to login defaults, temp tables dropped, open transactions rolled
-// back. If the next Execute lands on another connection, the first sits idle
+// for reset, and go-mssqldb sets the TDS reset-connection bit on its next use
+// (SET options to login defaults, temp tables dropped, open transactions rolled
+// back). If the next Execute lands on another connection, the first sits idle
 // holding the transaction's locks.
 //
 // One run at a time; the owner must not overlap runs. Close is safe from any
@@ -154,7 +154,7 @@ func (s *Session) readState(ctx context.Context) (SessionState, error) {
 	return st, err
 }
 
-// EndTransactions commits or rolls back every open transaction — what closing a
+// EndTransactions commits or rolls back every open transaction, as closing a
 // query window does after the "commit these transactions?" prompt. Nested BEGIN
 // TRANs need one COMMIT each; the loop is bounded by the starting count, so a
 // failing COMMIT ends it with the error.

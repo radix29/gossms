@@ -29,9 +29,9 @@ type TextRow struct {
 	// SetReadOnly.
 	drawReadOnly bool
 	pageReadOnly bool
-	// width is the field's width as asked for; Layout narrows the field to
-	// what the row has room for, so a sheet on an 80-column terminal doesn't
-	// draw it over the form's right border, and widens it back when it can.
+	// width is the field's width as asked for; Layout narrows the field to what
+	// the row has room for, so a sheet on an 80-column terminal doesn't draw it
+	// over the form's right border, and widens it back when it can.
 	width   int
 	x, y, w int
 }
@@ -97,12 +97,11 @@ func (r *TextRow) SetValue(v string) {
 func (r *TextRow) ShowFromStart() { r.field.ShowFromStart() }
 
 // Edit sets the value the way a keystroke does: the value changes, the row goes
-// dirty, and OnChange fires. SetValue is the counterpart, the post-load setter
-// that moves the baseline with the value, so a row set that way reports itself
-// clean.
+// dirty, and OnChange fires. SetValue is the post-load counterpart that moves
+// the baseline with the value, so a row set that way is clean.
 //
-// The distinction is the whole propsheet contract: every apply closure gates
-// its write on Dirty(), so "set the value" and "the user changed the value" are
+// This distinction is the propsheet contract: every apply closure gates its
+// write on Dirty(), so "set the value" and "the user changed the value" are
 // different operations and neither can stand in for the other.
 func (r *TextRow) Edit(v string) {
 	if !r.enabled || r.pageReadOnly {
@@ -138,14 +137,14 @@ func (r *TextRow) Layout(x, y, w int) {
 }
 func (r *TextRow) Focusable() bool { return r.enabled && !r.pageReadOnly }
 
-// SetReadOnly is the page's own gate on the row, independent of the form's:
-// the value is shown, the row cannot be focused, typed into or Edit'ed.
-// EditorRow.SetReadOnly's counterpart, and set together with it by a page
-// gating a whole panel — the Steps page's non-T-SQL step is the case.
+// SetReadOnly is the page's own gate on the row, independent of the form's: the
+// value is shown, the row cannot be focused, typed into or Edit'ed.
+// EditorRow.SetReadOnly's counterpart, set together with it by a page gating a
+// whole panel (the Steps page's non-T-SQL step).
 //
-// The two gates are separate fields rather than one flag because whichever is
-// set last must not cancel the other out: lifting the form's permission gate
-// must not make a non-T-SQL step editable.
+// Separate fields rather than one flag so whichever is set last can't cancel
+// the other: lifting the form's permission gate must not make a non-T-SQL step
+// editable.
 func (r *TextRow) SetReadOnly(v bool) { r.pageReadOnly = v }
 
 // ReadOnly reports the page's own gate, not the form's.
@@ -239,7 +238,7 @@ func (r *TextRow) SelectAll() {
 
 // SetDirtyTracked with false makes the row a *view control* rather than an
 // edit: it never reports dirty and Revert leaves it alone. For a row steering
-// what a read-only page displays — a filter box, a scope picker — rather than
+// what a read-only page displays (a filter box, a scope picker) rather than
 // something Apply writes. Without it such a page reports unsaved changes it
 // can't save, and Refresh prompts to discard them.
 func (r *TextRow) SetDirtyTracked(v bool) { r.untracked = !v }

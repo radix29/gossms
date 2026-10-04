@@ -17,10 +17,10 @@ import (
 // connections, a QueryPanel's dedicated connection and session, and the
 // in-flight reads of a Log Viewer, Query Store panel or AG dashboard, which
 // would otherwise run to completion server-side and fire their postEvent
-// closures against a panel that is no longer hosted. One interface check, not
-// a per-type switch: the switch it replaced had missed QueryStorePanel, whose
-// reads kept running on the shared Object Explorer pool until qsReadTimeout.
-// Ending a QueryPanel's session rolls back a transaction still open on it —
+// closures against a panel that is no longer hosted. One interface check, not a
+// per-type switch (which had missed QueryStorePanel, whose reads kept running
+// on the shared Object Explorer pool until qsReadTimeout). Ending a
+// QueryPanel's session rolls back a transaction still open on it;
 // requestClosePanel is where the user is offered a commit first.
 func (a *App) closePanelAt(i int) {
 	if d, ok := a.panels.PanelAt(i).(layout.Disposable); ok {
@@ -31,17 +31,16 @@ func (a *App) closePanelAt(i int) {
 }
 
 // releaseClosedPanelMemory hands a closed panel's heap back to the OS. A
-// QueryPanel holds every row of its last result set for as long as it is open
-// — a large one runs to gigabytes (see query.scanResultSet's cellArena) — and
-// dropping the panel only makes that garbage: Go's pacer collects it whenever
-// it next decides to, and the scavenger returns the pages later still, so a
-// user who closed the tab precisely because the machine was struggling watches
-// RSS sit where it was. debug.FreeOSMemory does both now.
+// QueryPanel holds every row of its last result set while open (a large one
+// runs to gigabytes, see query.scanResultSet's cellArena), and dropping the
+// panel only makes garbage: Go's pacer collects it whenever it decides to and
+// the scavenger returns pages later still, so a user who closed the tab because
+// the machine was struggling would watch RSS stay put. debug.FreeOSMemory does
+// both.
 //
-// On a background goroutine because it is not free: FreeOSMemory is a full
-// blocking GC plus a scavenge, and on a multi-gigabyte heap that is long
-// enough to stall a redraw if it ran on the UI goroutine. Nothing waits on the
-// result, so the close returns immediately either way.
+// On a background goroutine because it is a full blocking GC plus a scavenge,
+// long enough on a multi-gigabyte heap to stall a redraw on the UI goroutine.
+// Nothing waits on the result.
 func (a *App) releaseClosedPanelMemory() {
 	if !a.reclaiming.CompareAndSwap(false, true) {
 		return // one is already running; it will sweep this panel's heap too
@@ -70,10 +69,10 @@ func (a *App) panelHosted(p layout.Panel) bool {
 
 // requestClosePanel implements Ctrl+W / File > Close and a tab's [x] button:
 // closes the panel at i outright, unless it is a QueryPanel whose session has
-// an open transaction or whose editor has unsaved changes — each of which
-// prompts first, the transaction first, as SSMS asks. A panel whose
-// layout.Closable reports false (Object Explorer Details) can't be closed at
-// all — the tab bar omits its [x], and this is Ctrl+W's backstop.
+// an open transaction or whose editor has unsaved changes, each of which
+// prompts first (transaction first, as SSMS does). A panel whose
+// layout.Closable reports false (Object Explorer Details) can't be closed; the
+// tab bar omits its [x] and this is Ctrl+W's backstop.
 func (a *App) requestClosePanel(i int) {
 	if !layout.PanelClosable(a.panels.PanelAt(i)) {
 		return
@@ -143,10 +142,10 @@ func (a *App) confirmOpenTransactions(qp *QueryPanel, action string, then func()
 }
 
 // requestQuit implements Ctrl+Q / File > Exit: offers to commit every query
-// panel's open transaction and save every unsaved one before tearing the
-// screen down, and abandons the quit if any prompt is cancelled. quit() itself
-// is unconditional, so without this Ctrl+Q discards every dirty panel, and
-// rolls back every open transaction, with no prompt.
+// panel's open transaction and save every unsaved one before tearing the screen
+// down, and abandons the quit if any prompt is cancelled. quit() itself is
+// unconditional, so without this Ctrl+Q would discard dirty panels and roll
+// back open transactions with no prompt.
 func (a *App) requestQuit() (quitting bool) {
 	pending := a.queryPanelsToAskBeforeQuit()
 	if len(pending) == 0 {
@@ -177,10 +176,10 @@ func (a *App) queryPanelsToAskBeforeQuit() []*QueryPanel {
 // askBeforeQuit walks panels from index i, asking about each one's open
 // transaction and then its unsaved changes, and quitting once it runs off the
 // end. Recursion through the dialogs' callbacks rather than a loop, since each
-// prompt must be answered — and a Yes must finish committing or writing —
-// before the next is asked. Panels are re-checked as they are reached: an
-// earlier Save As may have targeted a file another panel also shows, and a
-// panel may have been closed from the prompt chain itself.
+// prompt must be answered (and a Yes must finish committing or writing) before
+// the next is asked. Panels are re-checked as reached: an earlier Save As may
+// have targeted a file another panel also shows, and a panel may have been
+// closed from the prompt chain itself.
 //
 // A cancelled prompt, a failed commit, or a Save backed out of at the file
 // dialog stops the walk and leaves the app open.
@@ -248,10 +247,10 @@ func (a *App) activeXEventViewer() *XEventViewer {
 
 // withQueryPanel runs fn on the active query panel, or says there isn't one.
 // Every Query-menu action and toolbar button that acts on the editor goes
-// through it, so none of them can be the one that quietly does nothing when
-// the active panel is a plan or a dashboard — see docs/ui-rules.md on
-// context-gating. The Enabled predicates gate the same actions ahead of
-// the click; this is what happens when one is reached anyway.
+// through it, so none quietly does nothing when the active panel is a plan or a
+// dashboard (see docs/ui-rules.md on context-gating). The Enabled predicates
+// gate the same actions ahead of the click; this is what happens when one is
+// reached anyway.
 func (a *App) withQueryPanel(fn func(*QueryPanel)) {
 	qp := a.activeQueryPanel()
 	if qp == nil {

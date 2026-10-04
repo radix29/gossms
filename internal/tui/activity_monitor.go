@@ -135,9 +135,8 @@ type ActivityMonitor struct {
 	blk  *amProcTab
 	sess *amProcTab
 
-	// feedConn is the dashboard collectors' connection (also in owned), kept
-	// separately so a stopped collector can restart without reopening the
-	// panel.
+	// feedConn is the dashboard collectors' connection (also in owned), kept so a
+	// stopped collector can restart without reopening the panel.
 	feedConn *db.ServerConn
 
 	// owned are connections this panel opened and must close on teardown.
@@ -159,9 +158,8 @@ type ActivityMonitor struct {
 	toolsEnd int
 
 	// more is the "More ▾" cell holding controls the row is too narrow for
-	// (indexes in hidden). A dashboard row needs 47 columns and the pane gets
-	// 70% of the terminal, so Pause (no key binding) would otherwise vanish
-	// below 68 columns.
+	// (indexes in hidden). A dashboard row needs 47 columns and the pane gets 70%
+	// of the terminal, so Pause (no key binding) would vanish below 68 columns.
 	more   toolButton
 	hidden []int
 
@@ -170,8 +168,8 @@ type ActivityMonitor struct {
 	hits []dashboard.ChartHit
 
 	// canvas is the last rendered dashboard and canvasKey its inputs. Draw runs
-	// every event and a full render costs milliseconds, while views change only
-	// per sample.
+	// every event and a full render costs milliseconds, while views change only per
+	// sample.
 	canvas    *charts.Canvas
 	canvasKey amCanvasKey
 
@@ -464,7 +462,7 @@ func startFeed[S any](am *ActivityMonitor, f *amFeed, ctx context.Context, what 
 }
 
 // runFeed runs r, then tells the panel it stopped. Run reports only
-// ErrNoPermission via onError; a failed prologue or cancelled context return
+// ErrNoPermission via onError; a failed prologue or cancelled context returns
 // silently, and without this the toolbar would claim to collect with a dead
 // Pause.
 func (am *ActivityMonitor) runFeed(f *amFeed, r amRunner, ctx context.Context, rate time.Duration) {
@@ -579,8 +577,8 @@ func (am *ActivityMonitor) SetBounds(x, y, w, h int) {
 	am.toolRect = core.Rect{X: x, Y: y + 1, W: w, H: 1}
 	am.contentRect = core.Rect{X: x, Y: y + 2, W: w, H: max(h-2, 0)}
 
-	// Scrollbars are always present: bars that appear on overflow change the
-	// viewport, which changes overflow — oscillating at certain sizes.
+	// Scrollbars are always present: bars appearing on overflow change the
+	// viewport, which changes overflow, oscillating at certain sizes.
 	am.viewRect = core.Rect{
 		X: am.contentRect.X,
 		Y: am.contentRect.Y,
@@ -756,10 +754,9 @@ func (am *ActivityMonitor) buildTools() {
 		})
 		// Offered only when the procedure isn't already in master.
 		if pt.loc != activity.ProcMaster {
-			// Installing into master needs sysadmin; a db_owner gets "Cannot
-			// alter the procedure 'sp_block'...". CONTROL SERVER rather than a
-			// role test, since HAS_PERMS_BY_NAME answers 1 for sysadmin while
-			// IS_SRVROLEMEMBER doesn't fold it in.
+			// Installing into master needs sysadmin; a db_owner gets "Cannot alter the
+			// procedure 'sp_block'...". CONTROL SERVER rather than a role test, since
+			// HAS_PERMS_BY_NAME answers 1 for sysadmin while IS_SRVROLEMEMBER doesn't.
 			denied := !gate.Allows(pt.conn, "", gate.ControlServer)
 			am.tools = append(am.tools, toolButton{
 				label:    "Install in master",

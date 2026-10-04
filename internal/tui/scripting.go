@@ -12,16 +12,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// scripting.go is Object Explorer's "Script <Noun> as ▸" cascade: one table
-// of which verbs each node type offers and how each is generated, plus the
-// three destinations every verb can be sent to. A node type absent from the
-// table offers no Script item at all — that is how a folder, or an object
-// gosmo can't script, stays out of the menu instead of showing an item that
-// fails when clicked.
+// scripting.go is Object Explorer's "Script <Noun> as ▸" cascade: one table of
+// which verbs each node type offers and how each is generated, plus the three
+// destinations every verb can be sent to. A node type absent from the table
+// offers no Script item, which keeps a folder, or an object gosmo can't script,
+// out of the menu instead of an item that fails when clicked.
 //
-// Every generator runs on a background goroutine and takes a nodeData by
-// value, not the *explorerNode it came off, for the same reason objectOp's
-// do: the UI goroutine writes node.data (see applyNodeFilter).
+// Every generator runs on a background goroutine and takes a nodeData by value,
+// not the *explorerNode, as objectOp's do: the UI goroutine writes node.data
+// (see applyNodeFilter).
 
 // scriptGen produces one object's script text.
 type scriptGen func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error)
@@ -39,8 +38,8 @@ type scriptable struct {
 	verbs []scriptVerb
 }
 
-// scriptFn is a Scripter method bound to the node being scripted — the part
-// of a DDL verb that differs per object family.
+// scriptFn is a Scripter method bound to the node being scripted: the part of a
+// DDL verb that differs per object family.
 type scriptFn func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error)
 
 // serverScriptFn is scriptFn for the two principals that belong to no
@@ -131,9 +130,9 @@ var (
 		return s.ScriptSymmetricKey(ctx, n.Name)
 	}
 
-	// The Programmability families that arrived with the tree's missing
-	// folders. None of them has an ALTER form — see gosmo's
-	// scripter_programmability.go — so every one is wired with alter false.
+	// The Programmability families added with the tree's missing folders. None has
+	// an ALTER form (see gosmo's scripter_programmability.go), so every one is
+	// wired with alter false.
 	scriptUserDefinedDataType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptUserDefinedDataType(ctx, n.Schema, n.Name)
 	}
@@ -152,9 +151,9 @@ var (
 	scriptDefault scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptDefault(ctx, n.Schema, n.Name)
 	}
-	// Assemblies, plan guides and the external resources are
-	// database-scoped, not schema-scoped: each is addressed by a single
-	// name, and nodeData.Schema is empty on all of them.
+	// Assemblies, plan guides and the external resources are database-scoped, not
+	// schema-scoped: each is addressed by a single name, and nodeData.Schema is
+	// empty on all of them.
 	scriptAssembly scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptAssembly(ctx, n.Name)
 	}
@@ -171,9 +170,9 @@ var (
 		return s.ScriptExternalLibrary(ctx, n.Name)
 	}
 
-	// The seven Service Broker families. Six are database-scoped and named by
-	// one name; the queue is the only schema-scoped one, and the only one
-	// whose script method takes a schema.
+	// The seven Service Broker families. Six are database-scoped and named by one
+	// name; the queue is the only schema-scoped one and the only one whose script
+	// method takes a schema.
 	scriptMessageType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptMessageType(ctx, n.Name)
 	}
@@ -243,9 +242,9 @@ var (
 // scriptables is the per-type table. Verb order follows SSMS: CREATE, ALTER,
 // DROP, DROP And CREATE, then the DML templates.
 var scriptables = map[NodeType]scriptable{
-	// A database scripts only as CREATE — gosmo's ScriptDatabase emits the
-	// CREATE plus its recovery/compatibility settings and has no DROP form,
-	// and dropping a database from a generated script is Delete's job.
+	// A database scripts only as CREATE: gosmo's ScriptDatabase emits the CREATE
+	// plus its recovery/compatibility settings and has no DROP form (dropping a
+	// database from a script is Delete's job).
 	NodeDatabase: {"Database", []scriptVerb{{"CREATE To", ddl(gosmo.ScriptCreate, scriptDB)}}},
 
 	NodeTable: {"Table", append(ddlVerbs(scriptTable, false), rowVerbs...)},
@@ -264,8 +263,8 @@ var scriptables = map[NodeType]scriptable{
 	NodeKey:        {"Key", ddlVerbs(scriptIndex, false)},
 	NodeCheck:      {"Constraint", ddlVerbs(scriptCheck, false)},
 	NodeForeignKey: {"Foreign Key", ddlVerbs(scriptFK, false)},
-	// An index's own statistic has no CREATE or DROP of its own — gosmo
-	// refuses to script one, naming the index to script instead.
+	// An index's own statistic has no CREATE or DROP: gosmo refuses to script one,
+	// naming the index to script instead.
 	NodeStatistic: {"Statistics", append(ddlVerbs(scriptStatistic, false), statisticUpdateVerb)},
 	NodeSequence:  {"Sequence", ddlVerbs(scriptSeq, false)},
 	NodeSynonym:   {"Synonym", ddlVerbs(scriptSynonym, false)},
@@ -279,63 +278,62 @@ var scriptables = map[NodeType]scriptable{
 	NodeSecurityPolicy:      {"Security Policy", ddlVerbs(scriptSecPolicy, false)},
 	NodeColumnMasterKey:     {"Column Master Key", ddlVerbs(scriptCMK, false)},
 	NodeColumnEncryptionKey: {"Column Encryption Key", ddlVerbs(scriptCEK, false)},
-	// No ALTER verb: ALTER DATABASE AUDIT SPECIFICATION replaces the whole
-	// action list rather than editing it, so a scripted ALTER would be a
-	// different statement from the CREATE beside it, not a variant of it.
+	// No ALTER verb: ALTER DATABASE AUDIT SPECIFICATION replaces the whole action
+	// list rather than editing it, so a scripted ALTER would differ from the CREATE
+	// beside it rather than vary it.
 	NodeDatabaseAuditSpecification: {"Database Audit Specification", ddlVerbs(scriptDBAuditSpec, false)},
 	NodeDatabaseTrigger:            {"Database Trigger", ddlVerbs(scriptDBTrigger, false)},
-	// The secret is unreadable, so every verb here carries a placeholder in
-	// place of it — see gosmo's buildDatabaseScopedCredentialScript.
+	// The secret is unreadable, so every verb carries a placeholder instead (see
+	// gosmo's buildDatabaseScopedCredentialScript).
 	NodeDatabaseScopedCredential: {"Database Scoped Credential", ddlVerbs(scriptDBScopedCredential, false)},
-	// CREATE is FROM BINARY: the public certificate exactly, the private key
-	// not at all — see gosmo's ScriptCertificate. No ALTER: the only
-	// ALTERs are private-key operations, which nothing on screen reproduces.
+	// CREATE is FROM BINARY: the public certificate exactly, the private key not at
+	// all (see gosmo's ScriptCertificate). No ALTER: the only ALTERs are
+	// private-key operations, which nothing on screen reproduces.
 	NodeCertificate: {"Certificate", ddlVerbs(scriptCertificate, false)},
-	// CREATE generates a NEW key pair with this one's owner and algorithm — the
-	// key material cannot be read back — and says so in a comment; see gosmo's
+	// CREATE generates a NEW key pair with this one's owner and algorithm (the key
+	// material cannot be read back) and says so in a comment; see gosmo's
 	// ScriptAsymmetricKey. No ALTER, for the certificate's reason.
 	NodeAsymmetricKey: {"Asymmetric Key", ddlVerbs(scriptAsymmetricKey, false)},
 	// CREATE makes a NEW key with this one's algorithm, owner and ENCRYPTION BY
-	// list, passwords as placeholders — the same key only with KEY_SOURCE and
-	// IDENTITY_VALUE, which cannot be read back; see gosmo's
-	// ScriptSymmetricKey. No ALTER: ADD/DROP ENCRYPTION needs the key
-	// open, and is the Encryption page's write, not a script of the object.
+	// list, passwords as placeholders; the same key only with KEY_SOURCE and
+	// IDENTITY_VALUE, which cannot be read back (gosmo's ScriptSymmetricKey). No
+	// ALTER: ADD/DROP ENCRYPTION needs the key open and is the Encryption page's
+	// write, not a script of the object.
 	NodeSymmetricKey: {"Symmetric Key", ddlVerbs(scriptSymmetricKey, false)},
 
-	// Programmability ▸ Types, Assemblies, Rules, Defaults, Plan Guides, and
-	// the External Resources folder beside Views. No ALTER anywhere in this
-	// set — none of these objects has one.
+	// Programmability > Types, Assemblies, Rules, Defaults, Plan Guides, and the
+	// External Resources folder beside Views. No ALTER anywhere in this set; none
+	// of these objects has one.
 	//
-	// System Data Types is deliberately absent: a built-in type is not an
-	// object a script creates, and SSMS offers nothing for one either.
+	// System Data Types is deliberately absent: a built-in type is not something a
+	// script creates, and SSMS offers nothing for one either.
 	NodeUserDefinedDataType:  {"User-Defined Data Type", ddlVerbs(scriptUserDefinedDataType, false)},
 	NodeUserDefinedTableType: {"User-Defined Table Type", ddlVerbs(scriptUserDefinedTableType, false)},
 	NodeUserDefinedType:      {"User-Defined Type", ddlVerbs(scriptClrType, false)},
 	NodeXMLSchemaCollection:  {"XML Schema Collection", ddlVerbs(scriptXMLSchemaCollection, false)},
 	NodeRule:                 {"Rule", ddlVerbs(scriptRule, false)},
 	NodeDefault:              {"Default", ddlVerbs(scriptDefault, false)},
-	// The binary is elided the way the credential secret is — see gosmo's
-	// buildAssemblyScript.
+	// The binary is elided like the credential secret (gosmo's buildAssemblyScript).
 	NodeAssembly: {"Assembly", ddlVerbs(scriptAssembly, false)},
 	// A plan guide's CREATE is an sp_create_plan_guide call and its DROP an
-	// sp_control_plan_guide one; the verbs are named for what they do, not
-	// for the statement behind them.
+	// sp_control_plan_guide one; verbs are named for what they do, not the
+	// statement behind them.
 	NodePlanGuide:          {"Plan Guide", ddlVerbs(scriptPlanGuide, false)},
 	NodeExternalDataSource: {"External Data Source", ddlVerbs(scriptExternalDataSource, false)},
 	NodeExternalFileFormat: {"External File Format", ddlVerbs(scriptExternalFileFormat, false)},
 	NodeExternalLibrary:    {"External Library", ddlVerbs(scriptExternalLibrary, false)},
 
 	// Service Broker. CREATE and DROP only, with no ALTER even for the six
-	// families that have one — the same choice the rest of the tree makes, and
-	// the queue's ALTER lives on its Properties page instead.
+	// families that have one, as elsewhere in the tree; the queue's ALTER lives on
+	// its Properties page.
 	NodeMessageType:   {"Message Type", ddlVerbs(scriptMessageType, false)},
 	NodeContract:      {"Contract", ddlVerbs(scriptContract, false)},
 	NodeBrokerQueue:   {"Queue", ddlVerbs(scriptBrokerQueue, false)},
 	NodeBrokerService: {"Service", ddlVerbs(scriptBrokerService, false)},
 	NodeRoute:         {"Route", ddlVerbs(scriptRoute, false)},
-	// The one family whose CREATE an Azure engine edition refuses outright —
-	// see editionRefusesScriptVerb, which withholds the two verbs that emit
-	// it rather than letting Msg 41906 come back from the server.
+	// The one family whose CREATE an Azure engine edition refuses outright; see
+	// editionRefusesScriptVerb, which withholds the two verbs that emit it rather
+	// than letting Msg 41906 come back.
 	NodeRemoteServiceBinding: {"Remote Service Binding", ddlVerbs(scriptRemoteServiceBinding, false)},
 	NodeBrokerPriority:       {"Broker Priority", ddlVerbs(scriptBrokerPriority, false)},
 
@@ -347,45 +345,44 @@ var scriptables = map[NodeType]scriptable{
 	NodeBackupDevice:             {"Backup Device", serverDDLVerbs(scriptBackupDevice)},
 	NodeServerTrigger:            {"Server Trigger", serverDDLVerbs(scriptServerTrigger)},
 	NodeEndpoint:                 {"Endpoint", serverDDLVerbs(scriptEndpoint)},
-	// "Session", as SSMS words it. The running state is not scripted — see
-	// gosmo's buildEventSessionScript.
+	// "Session", as SSMS words it. The running state is not scripted (gosmo's
+	// buildEventSessionScript).
 	NodeEventSession: {"Session", eventSessionScriptVerbs()},
 
-	// The configuration scripts as ALTER only: it always exists, and DROP
-	// means nothing for it. Its script ends in RECONFIGURE or DISABLE, per
-	// the stored state — see gosmo's ScriptResourceGovernor.
+	// The configuration scripts as ALTER only: it always exists, and DROP means
+	// nothing for it. The script ends in RECONFIGURE or DISABLE per the stored
+	// state (gosmo's ScriptResourceGovernor).
 	NodeResourceGovernor: {"Resource Governor", []scriptVerb{{"ALTER To", serverDDL(gosmo.ScriptAlter, scriptResourceGovernor)}}},
-	// A pool's or group's script ends in a comment, not RECONFIGURE, which
-	// would also enable a disabled governor for whoever runs it. The
-	// built-ins, which gosmo scripts as an ALTER and refuses to DROP, offer
-	// no Script item: scriptMenuItems withholds it from every system node.
+	// A pool's or group's script ends in a comment, not RECONFIGURE, which would
+	// also enable a disabled governor for whoever runs it. The built-ins, which
+	// gosmo scripts as an ALTER and refuses to DROP, offer no Script item:
+	// scriptMenuItems withholds it from every system node.
 	NodeResourcePool:         {"Resource Pool", serverDDLVerbs(scriptResourcePool)},
 	NodeWorkloadGroup:        {"Workload Group", serverDDLVerbs(scriptWorkloadGroup)},
 	NodeExternalResourcePool: {"External Resource Pool", serverDDLVerbs(scriptExternalResourcePool)},
 
-	// The whole configuration — accounts, profiles with their accounts and
-	// grants, system parameters — as CREATE only: gosmo refuses DROP, since
-	// no one statement removes a configuration. Passwords are placeholders.
-	// 'Database Mail XPs' is not in it; it is a server option.
+	// The whole configuration (accounts, profiles with their accounts and grants,
+	// system parameters) as CREATE only: gosmo refuses DROP, since no one statement
+	// removes a configuration. Passwords are placeholders. 'Database Mail XPs' is a
+	// server option, not part of it.
 	NodeDatabaseMail: {"Database Mail", []scriptVerb{{"CREATE To", serverDDL(gosmo.ScriptCreate, scriptDatabaseMail)}}},
 }
 
-// scriptReadRights gate a family's whole Script cascade on the right that
-// makes what the script is built from visible, where a login without it would
-// otherwise be offered the item and see it fail in the status line. A family
-// absent here is not gated: its node is listed only to a login that can read
-// it.
+// scriptReadRights gate a family's whole Script cascade on the right that makes
+// what the script is built from visible, so a login without it isn't offered
+// an item that fails in the status line. A family absent here is not gated: its
+// node is listed only to a login that can read it.
 //
-// Resource Governor's node is the exception to that: it is always listed, and
-// its configuration row is invisible without VIEW ANY DEFINITION — no row, no
-// error — which VIEW SERVER STATE does not imply.
+// Resource Governor's node is the exception: always listed, but its
+// configuration row is invisible without VIEW ANY DEFINITION (no row, no
+// error), which VIEW SERVER STATE does not imply.
 var scriptReadRights = map[NodeType][]gate.Right{
 	NodeResourceGovernor: {gate.ViewAnyDefinition},
 }
 
-// indexMaintenanceVerbs are the three maintenance statements an index
-// offers below its DDL ones — SSMS's Rebuild/Reorganize/Update Statistics,
-// as a script rather than as an immediate action.
+// indexMaintenanceVerbs are the three maintenance statements an index offers
+// below its DDL ones (SSMS's Rebuild/Reorganize/Update Statistics), as a script
+// rather than an immediate action.
 var indexMaintenanceVerbs = []scriptVerb{
 	{"REBUILD To", indexMaintenance(func(ctx context.Context, idx *gosmo.Index) error {
 		return idx.Rebuild(ctx, gosmo.IndexRebuildOptions{})
@@ -398,9 +395,9 @@ var indexMaintenanceVerbs = []scriptVerb{
 	})},
 }
 
-// statisticUpdateVerb is the UPDATE STATISTICS script behind a statistic
-// node's own "Update Statistics" menu item. A full scan, the same read
-// Statistics Properties' Details page runs.
+// statisticUpdateVerb is the UPDATE STATISTICS script behind a statistic node's
+// own "Update Statistics" item. A full scan, the same read Statistics
+// Properties' Details page runs.
 var statisticUpdateVerb = scriptVerb{"UPDATE STATISTICS To", func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
 	t, err := findTable(ctx, sc, n.DBName, n.Schema, n.TableName)
 	if err != nil {
@@ -413,10 +410,9 @@ var statisticUpdateVerb = scriptVerb{"UPDATE STATISTICS To", func(ctx context.Co
 	return collectScript(ctx, func(ctx context.Context) error { return st.Update(ctx, 0) })
 }}
 
-// indexMaintenance binds one of gosmo's index maintenance methods as a
-// script generator. The statement is gosmo's own, collected rather than
-// executed, so the script a user reads is the statement gossms would have
-// run — a second copy built here would drift from it.
+// indexMaintenance binds one of gosmo's index maintenance methods as a script
+// generator. The statement is gosmo's own, collected rather than executed, so
+// the script read is what gossms would run; a second copy here would drift.
 func indexMaintenance(f func(ctx context.Context, idx *gosmo.Index) error) scriptGen {
 	return func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
 		t, err := findTable(ctx, sc, n.DBName, n.Schema, n.TableName)
@@ -478,9 +474,9 @@ func serverDDLVerbs(f serverScriptFn) []scriptVerb {
 	}
 }
 
-// eventSessionScriptVerbs is serverDDLVerbs for an event session, which is
-// the server's or — on Azure SQL Database — a database's (xeScope): the
-// node's DBName picks the scripter.
+// eventSessionScriptVerbs is serverDDLVerbs for an event session, which is the
+// server's or, on Azure SQL Database, a database's (xeScope): the node's DBName
+// picks the scripter.
 func eventSessionScriptVerbs() []scriptVerb {
 	verbs := serverDDLVerbs(scriptEventSession)
 	for i, v := range []gosmo.ScriptVerb{gosmo.ScriptCreate, gosmo.ScriptDrop, gosmo.ScriptDropAndCreate} {
@@ -531,10 +527,10 @@ func (a *App) scriptMenuItems(node *explorerNode) []controls.MenuItem {
 		return nil
 	}
 	// A system object's definition lives in the resource database, which
-	// sys.sql_modules in a user database doesn't expose — scripting sys.objects
-	// or sys.sp_executesql can only fail, so the item isn't offered. A system
+	// sys.sql_modules in a user database doesn't expose, so scripting sys.objects
+	// or sys.sp_executesql can only fail and the item isn't offered. A system
 	// database is the exception: its CREATE script is assembled from metadata
-	// gossms can read, exactly as a user database's is.
+	// gossms can read, as a user database's is.
 	if node.data.IsSystem && node.data.Type != NodeDatabase {
 		return nil
 	}
@@ -554,10 +550,10 @@ func (a *App) scriptMenuItems(node *explorerNode) []controls.MenuItem {
 	return []controls.MenuItem{item}
 }
 
-// scriptDestinations is the third level of the cascade — where the generated
-// script goes. Each generates first and only then commits to the
-// destination, so a failure reports itself without having prompted for a
-// file or overwritten the clipboard.
+// scriptDestinations is the third cascade level: where the generated script
+// goes. Each generates first and only then commits to the destination, so a
+// failure reports itself without having prompted for a file or overwritten the
+// clipboard.
 func (a *App) scriptDestinations(sc *db.ServerConn, n nodeData, v scriptVerb) []controls.MenuItem {
 	return []controls.MenuItem{
 		{Label: "New Query Editor Window", Action: func() {
@@ -579,9 +575,9 @@ func (a *App) generateScript(sc *db.ServerConn, n nodeData, v scriptVerb, then f
 		return
 	}
 	a.setStatus("Scripting " + cmp.Or(n.Name, scriptables[n.Type].noun) + "...")
-	// safegoRepair, not safego: the status line is latched to "Scripting..."
-	// before the goroutine starts and only the posted callback clears it, so a
-	// panic would leave the app claiming to still be working.
+	// safegoRepair, not safego: the status line is latched to "Scripting..." before
+	// the goroutine starts and only the posted callback clears it, so a panic would
+	// leave the app claiming to still be working.
 	a.safegoRepair("scripting an object", func() { a.setStatus("") }, func() {
 		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
@@ -598,8 +594,8 @@ func (a *App) generateScript(sc *db.ServerConn, n nodeData, v scriptVerb, then f
 }
 
 // saveScriptAs prompts for a path and writes the generated script to it.
-// LF-separated UTF-8, the shape a script gossms generated itself has — there
-// is no source file whose encoding could be preserved (see writeQueryFile).
+// LF-separated UTF-8, the shape a gossms-generated script has; there is no
+// source file whose encoding could be preserved (see writeQueryFile).
 func (a *App) saveScriptAs(n nodeData, text string) {
 	a.fileDialog.ShowSave("Script To File", scriptFileName(n), func(path string) {
 		if err := fileutil.WriteAtomic(path, []byte(text), 0o644); err != nil {
@@ -610,11 +606,11 @@ func (a *App) saveScriptAs(n nodeData, text string) {
 	})
 }
 
-// scriptFileName is the name the save prompt starts on — the object's, the
-// way SSMS proposes one.
+// scriptFileName is the name the save prompt starts on: the object's, as SSMS
+// proposes one.
 //
-// A singleton node has no name — Resource Governor, Database Mail — and is
-// proposed under its noun, rather than as ".sql".
+// A singleton node has no name (Resource Governor, Database Mail) and is
+// proposed under its noun, not as ".sql".
 func scriptFileName(n nodeData) string {
 	switch {
 	case n.Schema != "":

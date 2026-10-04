@@ -6,20 +6,19 @@ import "slices"
 // Cursor context: what's being typed, and whether it's already dot-qualified
 // ---------------------------------------------------------------------------
 
-// TokenContext inspects the tail of tokens (already scanned up to
-// upTo) and reports:
+// TokenContext inspects the tail of tokens (already scanned up to upTo) and
+// reports:
 //   - prefix: the identifier characters immediately touching the cursor
 //     ("" if the cursor sits after whitespace/punctuation instead)
 //   - replaceFrom: where that prefix starts (== upTo when there's no prefix)
 //   - qualifier, hasQualifier: the identifier immediately before a '.' that
 //     itself immediately precedes prefix/the cursor, if any
 //
-// A keyword token touching the cursor counts as a prefix too — the word
-// being typed may only collide with a keyword by accident ("OR" on the way
-// to Orders, "sys.all" on the way to sys.all_objects), and treating it as
-// anything else would make a commit append instead of replace. Keyword
-// tokens carry uppercased text, which is fine: prefix matching is
-// case-insensitive everywhere downstream.
+// A keyword token touching the cursor counts as a prefix too: the word being
+// typed may only collide with a keyword by accident ("OR" on the way to
+// Orders, "sys.all" on the way to sys.all_objects), and anything else would
+// make a commit append instead of replace. Keyword tokens carry uppercased
+// text, fine since prefix matching is case-insensitive downstream.
 func TokenContext(tokens []Token, upTo int) (qualifier, prefix string, replaceFrom int, hasQualifier bool) {
 	n := len(tokens)
 	if n == 0 {
@@ -52,10 +51,8 @@ func TokenContext(tokens []Token, upTo int) (qualifier, prefix string, replaceFr
 // dot), outermost first. "db.dbo.Or|" gives [db dbo], "db..|" gives [db ""]
 // (the default schema), "c.|" gives [c], and an unqualified word gives nil.
 // TokenContext's qualifier is the chain's last part when that part is an
-// identifier.
-//
-// A chain that starts with an empty part ("x = ..a") names nothing, and gives
-// nil too.
+// identifier. A chain starting with an empty part ("x = ..a") names nothing and
+// gives nil too.
 func QualifierChain(tokens []Token, upTo int) []string {
 	n := len(tokens)
 	if n == 0 {
@@ -87,7 +84,7 @@ func QualifierChain(tokens []Token, upTo int) []string {
 
 // ---------------------------------------------------------------------------
 // FROM-scope: which tables/views/aliases are in play for the statement the
-// cursor is currently in
+// cursor is in
 // ---------------------------------------------------------------------------
 
 // FromRef is one table/view reference parsed out of a FROM/JOIN/INTO/
@@ -95,20 +92,20 @@ func QualifierChain(tokens []Token, upTo int) []string {
 type FromRef struct {
 	Schema, Name, Alias string
 
-	// Database is the first part of a three-part name ("db.schema.t", or
-	// "db..t" with Schema empty for the default schema). Server is the first
-	// part of a four-part, linked-server name, which nothing resolves: its
-	// catalog is another instance's.
+	// Database is the first part of a three-part name ("db.schema.t", or "db..t"
+	// with Schema empty for the default schema). Server is the first part of a
+	// four-part, linked-server name, which nothing resolves: its catalog is another
+	// instance's.
 	Database, Server string
 
 	// Derived is the query behind "( ... ) [AS] alias", with Schema and Name
 	// empty. Only the tree parser below sets it; ParseFromScope never does.
 	Derived *Query
 
-	// Pivot is the PIVOT/UNPIVOT clause applied to this reference, reshaping
-	// what it puts in scope (see pivot.go). Alias is then the pivoted result's
-	// name — the source's own alias is not addressable past the clause, so it
-	// is not kept. Only the tree parser sets it.
+	// Pivot is the PIVOT/UNPIVOT clause applied to this reference, reshaping what
+	// it puts in scope (see pivot.go). Alias is then the pivoted result's name; the
+	// source's own alias isn't addressable past the clause and is not kept. Only
+	// the tree parser sets it.
 	Pivot *Pivot
 
 	// Rowset is set when Name is a rowset function — OPENJSON, OPENROWSET,
@@ -117,19 +114,19 @@ type FromRef struct {
 	Rowset *Rowset
 
 	// Call is set when the name is followed by a parenthesised group: a
-	// table-valued function's argument list, or a legacy "t (NOLOCK)" hint.
-	// The parser can't tell the two apart; the catalog can, since a table and
-	// a function never share a name in one schema. A ref without it is never
-	// a function — one can't be named without its argument list. Only the
-	// tree parser sets it.
+	// table-valued function's argument list, or a legacy "t (NOLOCK)" hint. The
+	// parser can't tell the two apart; the catalog can, since a table and a
+	// function never share a name in one schema. A ref without it is never a
+	// function (one can't be named without its argument list). Only the tree
+	// parser sets it.
 	Call bool
 }
 
-// ParseFromScope walks tokens looking for table references introduced by
-// FROM, JOIN, INTO, UPDATE, or DELETE, each optionally schema-qualified and
-// optionally aliased (bare "AS alias" or just a trailing identifier).
-// Subquery contents (inside parentheses) are skipped rather than
-// mis-parsed — a documented limitation, see the package doc comment.
+// ParseFromScope walks tokens looking for table references introduced by FROM,
+// JOIN, INTO, UPDATE, or DELETE, each optionally schema-qualified and
+// optionally aliased (bare "AS alias" or a trailing identifier). Subquery
+// contents (inside parentheses) are skipped rather than mis-parsed, a
+// documented limitation (see the package doc comment).
 func ParseFromScope(tokens []Token) []FromRef {
 	var refs []FromRef
 	depth := 0

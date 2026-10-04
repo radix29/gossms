@@ -30,12 +30,11 @@ func classifyRefusal(err error) refusal {
 
 // -- turning a refusal into the right it needs -------------------------------
 
-// The patterns below read the identifiers out of SQL Server's own wording, and
-// every one of them is English. That is why a miss is not a failure: advice
-// returns "" and the caller shows the server's sentence verbatim, which on a
-// localized instance is the only correct thing left to say. The *numbers* are
-// not localized, which is why classification is keyed on them and only the
-// wording is parsed.
+// The patterns below read identifiers out of SQL Server's own wording, all of
+// it English, so a miss is not a failure: advice returns "" and the caller
+// shows the server's sentence verbatim, the only correct thing left on a
+// localized instance. The *numbers* are not localized, so classification is
+// keyed on them and only the wording is parsed.
 var (
 	// 229/230: "The SELECT permission was denied on the object 'sysjobservers',
 	// database 'msdb', schema 'dbo'."
@@ -73,20 +72,19 @@ var (
 		`Cannot find the ([\w ]+) "([^"]*)" because it does not exist or you do not have permission`)
 )
 
-// advice renders the refusal as a sentence naming what the login would need,
-// or "" when its wording could not be read (a localized server, or a message
-// shape this build has not seen).
+// advice renders the refusal as a sentence naming what the login would need, or
+// "" when its wording could not be read (a localized server, or an unseen
+// message shape).
 //
-// An ambiguous refusal keeps its ambiguity in the wording. SQL Server will not
-// say whether the object is missing or merely invisible, and a sentence that
-// picks one sends the user to fix the wrong thing half the time.
+// An ambiguous refusal keeps its ambiguity in the wording. SQL Server won't say
+// whether the object is missing or merely invisible, and a sentence picking one
+// sends the user to fix the wrong thing half the time.
 //
 // Msg 297 deliberately has no branch. Its text names nothing, and it is not
-// only the follow-up to Msg 300 — a refused KILL, sp_readerrorlog and several
-// other procedures raise it alone. Naming a right for it would be inventing
-// one, which is what the whole file is written to avoid; the DMV case that
-// looks like it needs a branch is already handled by classifyRefusal reading
-// the *first* message, which is the 300 that names the right.
+// only the follow-up to Msg 300 (a refused KILL, sp_readerrorlog and several
+// other procedures raise it alone). Naming a right for it would invent one; the
+// DMV case that looks like it needs a branch is handled by classifyRefusal
+// reading the *first* message, the 300 that names the right.
 func (r refusal) advice() string {
 	switch r.number {
 	case 229, 230:
@@ -180,11 +178,10 @@ func displayError(err error) error {
 	return err
 }
 
-// withPermissionAdvice appends the right a refusal needs to err's own text,
-// for the places that report a *failed action* rather than replacing content —
-// a status line, an alert. The server's words are kept: the user asked for
-// something and it did not happen, and the full failure is what they are owed;
-// the advice is what they do next.
+// withPermissionAdvice appends the right a refusal needs to err's own text, for
+// places that report a *failed action* rather than replacing content (a status
+// line, an alert). The server's words are kept: the full failure is what the
+// user is owed, and the advice is what they do next.
 func withPermissionAdvice(err error) error {
 	if err == nil {
 		return nil

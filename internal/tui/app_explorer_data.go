@@ -83,8 +83,8 @@ var errChildFetchPanicked = errors.New("loading failed unexpectedly — see the 
 // node like an ordinary loader failure.
 //
 // SetChildren marks the node Loaded, so Refresh retries (re-expanding
-// redisplays the error) — the same trade as ordinary errors; a visible failure
-// beats a silent retry.
+// redisplays the error), as with ordinary errors; a visible failure beats a
+// silent retry.
 //
 // Guarded by seq like the success path, so a newer expand's children aren't
 // overwritten.
@@ -568,14 +568,14 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 }
 
 // restoreFromSnapshot reverts the snapshot's source database to it (RESTORE
-// DATABASE … FROM DATABASE_SNAPSHOT).
+// DATABASE ... FROM DATABASE_SNAPSHOT).
 //
 // The typed confirmation is the source's name, since what's destroyed is every
 // change to the source since the snapshot.
 //
 // The server checks its own preconditions (the source has exactly one snapshot;
 // no connections to either database); both can change between a check here and
-// the statement, and the server names the failure.
+// the statement, so the server names the failure.
 func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return

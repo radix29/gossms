@@ -256,13 +256,12 @@ func (a *App) showAgentJobHistory(sc *db.ServerConn, jobName string) {
 
 // ---- Enable / Disable ----
 
-// Jobs, alerts and operators are written through a Ref: every one of these
-// writes addresses the object by name (sp_update_job @job_name,
-// sp_delete_alert @name, ...), and their names are unique in msdb, so a
-// ByName read first would cost a round trip and buy nothing. One deleted
-// underneath the menu fails with msdb's own "does not exist" (14262).
-// Schedules are the exception: their names are not unique, so they are read
-// by the node's id.
+// Jobs, alerts and operators are written through a Ref: every write addresses
+// the object by name (sp_update_job @job_name, sp_delete_alert @name, ...) and
+// names are unique in msdb, so a ByName read first would cost a round trip and
+// buy nothing. One deleted underneath the menu fails with msdb's own "does not
+// exist" (14262). Schedules are the exception: names aren't unique, so they are
+// read by the node's id.
 
 func (a *App) setAgentJobEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
 	j := sc.Server.JobRef(node.data.Name)

@@ -19,7 +19,7 @@ import (
 
 // ShowLog points the panel at a single log file and reads it. Reopening from
 // another tree node comes through here, so an already-open viewer switches
-// files instead of a second one being created — and lands on the one-file view
+// files instead of a second being created, and lands on the one-file view
 // however many files were merged before.
 func (lv *LogViewer) ShowLog(logType gosmo.ErrorLogType, logNum int) {
 	lv.ShowLogs(logType, []logFileRef{{Type: logType, Num: logNum}})
@@ -27,17 +27,16 @@ func (lv *LogViewer) ShowLog(logType gosmo.ErrorLogType, logNum int) {
 
 // ShowLogs points the panel at a set of files and reads them. The set may span
 // several families; logType is what the selectors fall back to when it does.
-// An empty set is the current log of logType: a selection the user emptied
-// would otherwise leave the grid with nothing to describe and no way back.
+// An empty set is the current log of logType: an emptied selection would leave
+// the grid with nothing to describe and no way back.
 func (lv *LogViewer) ShowLogs(logType gosmo.ErrorLogType, refs []logFileRef) {
 	if len(refs) == 0 {
 		refs = []logFileRef{{Type: logType, Num: 0}}
 	}
 	lv.sel = slices.Clone(refs)
-	// By family first, then by archive number. The merge order is the
-	// selection's order (see sortLogRowsDesc), so a set the checklist built by
-	// ticking rows in whatever order the user reached them has to be brought
-	// back to one canonical order — otherwise the same two files merge
+	// By family, then archive number. The merge order is the selection's order
+	// (see sortLogRowsDesc), so a set built by ticking rows in arbitrary order must
+	// be brought to one canonical order, or the same two files would merge
 	// differently depending on which was ticked first.
 	slices.SortFunc(lv.sel, func(a, b logFileRef) int {
 		if a.Type != b.Type {
@@ -46,23 +45,23 @@ func (lv *LogViewer) ShowLogs(logType gosmo.ErrorLogType, refs []logFileRef) {
 		return a.Num - b.Num
 	})
 	// The selectors still address exactly one family, since Recycle and the
-	// single-file picker can only mean one: the selection's own family when it
-	// has one, and whatever was on screen before when it is mixed.
+	// single-file picker can only mean one: the selection's own family, or what was
+	// on screen before when it is mixed.
 	lv.logType = selectionFamily(lv.sel, logType)
 	lv.detailScroll = 0
 	lv.Load()
 }
 
 // Refresh re-reads the current file and re-enumerates every family (F5 or the
-// toolbar). The enumeration is dropped rather than refreshed: a cycled log
-// renumbers every archive, so only a fresh read corrects the cached list.
+// toolbar). The enumeration is dropped, not refreshed: a cycled log renumbers
+// every archive, so only a fresh read corrects the cached list.
 func (lv *LogViewer) Refresh() {
 	lv.files = make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile)
 	lv.Load()
 }
 
-// Load reads the selected files in the background and applies the merged
-// result on the UI goroutine. The family's enumeration rides along, so the file
+// Load reads the selected files in the background and applies the merged result
+// on the UI goroutine. The family's enumeration rides along, so the file
 // selector has its list without a second round trip.
 func (lv *LogViewer) Load() {
 	if !lv.app.isConnected(lv.conn) {
@@ -71,40 +70,37 @@ func (lv *LogViewer) Load() {
 		lv.setStatus("Not connected")
 		return
 	}
-	// Begin supersedes and cancels whatever read is out: this one replaces it.
-	// One cancel for the panel to pull, but a fresh deadline per file read
-	// below: sharing one logReadTimeout lets a slow sp_enumerrorlogs eat the
-	// read's half of it, timing out the file the user asked for because the
-	// *list* was slow. The context is released on the UI goroutine, by the
-	// Done in the callback or in readPanicked — never from the read goroutine,
-	// which must not touch lv.
+	// Begin supersedes and cancels whatever read is out. One cancel for the panel
+	// to pull, but a fresh deadline per file read below: sharing one
+	// logReadTimeout lets a slow sp_enumerrorlogs eat the read's half, timing out
+	// the file the user asked for because the *list* was slow. The context is
+	// released on the UI goroutine, by Done in the callback or in readPanicked,
+	// never from the read goroutine, which must not touch lv.
 	ctx, seq := lv.read.Begin(lv.conn.Server.Context())
 	lv.busy = true
 	lv.setStatus(fmt.Sprintf("Reading %s%s...", lv.scopeLabel(), lv.searchSuffix()))
 	lv.refreshToolLabels()
 
 	search := lv.search
-	// Snapshotted, not read from lv on the goroutine: the selection can be
-	// changed again while this read is out, and the result has to describe the
-	// files it actually asked for.
+	// Snapshotted, not read from lv on the goroutine: the selection can change
+	// while this read is out, and the result must describe the files it asked for.
 	refs := slices.Clone(lv.sel)
 	sc := lv.conn
 	// safegoRepair, not safego: busy is cleared in the callback below, which a
-	// panic on the read goroutine never reaches, and toolsEnabled gates the
-	// whole toolbar on it — Refresh, Export and both selectors would sit inert
-	// until the panel was closed.
+	// panic on the read goroutine never reaches, and toolsEnabled gates the whole
+	// toolbar on it, so Refresh, Export and both selectors would sit inert until
+	// the panel was closed.
 	lv.app.safegoRepair("reading an error log", func() { lv.readPanicked(seq) }, func() {
-		// Every family, not only the one on screen: the file checklist offers
-		// a cross-family selection, so it needs the other families' archive
-		// numbering before the user opens it — and fetching that lazily would
-		// put a round trip behind a menu keypress. A family that cannot be
-		// enumerated (an instance with no Agent, a login with no msdb access)
-		// is simply left out of the checklist.
+		// Every family, not only the one on screen: the file checklist offers a
+		// cross-family selection, so it needs the other families' archive numbering
+		// before the user opens it, and fetching lazily would put a round trip behind a
+		// menu keypress. A family that cannot be enumerated (no Agent, no msdb access)
+		// is left out of the checklist.
 		//
-		// The enumeration runs alongside the reads rather than ahead of them:
-		// nothing in the read depends on it, and the two families cost ~50 ms
-		// that came straight off a ~150 ms load on 2016 and 2017. (2025 shows
-		// no gain — it appears to serialise the two server-side — and no loss.)
+		// The enumeration runs alongside the reads, not ahead of them: nothing in the
+		// read depends on it, and the two families cost ~50 ms off a ~150 ms load on
+		// 2016 and 2017. (2025 shows no gain or loss; it appears to serialise the two
+		// server-side.)
 		enums := make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile, len(logFamilies))
 		mailOwnOnly := false
 		var enumerated sync.WaitGroup
@@ -137,9 +133,9 @@ func (lv *LogViewer) Load() {
 				lv.files[t] = files
 			}
 			lv.refreshToolLabels()
-			// Only a selection where *nothing* could be read is an error: with
-			// one archive unreadable out of four, the grid holds the other
-			// three and summary says how many landed.
+			// Only a selection where *nothing* could be read is an error: with one archive
+			// unreadable out of four, the grid holds the other three and summary says how
+			// many landed.
 			if len(readErrs) == len(refs) && len(readErrs) > 0 {
 				lv.entries, lv.shown, lv.readErrs = nil, nil, nil
 				lv.grid.SetError(displayError(readErrs[0].err))
@@ -152,25 +148,24 @@ func (lv *LogViewer) Load() {
 	})
 }
 
-// readLogFiles reads every ref and returns the rows in ref order together with
-// whichever files failed. It runs on the read goroutine, off the UI one.
+// readLogFiles reads every ref and returns the rows in ref order with whichever
+// files failed. It runs on the read goroutine, off the UI one.
 //
 // Each read gets its own logReadTimeout deadline under the panel's one
-// cancellable ctx: sharing a single deadline across N files would let the first
-// slow archive eat the budget of the ones behind it. The pool is bounded for
-// the reason the Databases folder's is — an instance can be configured to keep
-// 99 archives, and xp_readerrorlog parses the file server-side.
+// cancellable ctx: one shared deadline across N files would let the first slow
+// archive eat the budget of those behind it. The pool is bounded as the
+// Databases folder's is: an instance can keep 99 archives, and xp_readerrorlog
+// parses the file server-side.
 //
-// Results are collected into a slice indexed by ref rather than appended as
-// they finish, so the merge order is the selection's order however the reads
-// interleave — which is what makes a timestamp tie break the same way twice.
+// Results go into a slice indexed by ref rather than appended as they finish,
+// so the merge order is the selection's order however reads interleave, which
+// makes a timestamp tie break the same way twice.
 func readLogFiles(app *App, ctx context.Context, sc *db.ServerConn, refs []logFileRef, search gosmo.LogSearch) ([]logRow, []logFileError) {
 	per := make([][]logRow, len(refs))
 	errs := make([]error, len(refs))
-	// Seeded failed and cleared on success, not the other way round: a worker
-	// whose read panicked never reaches either assignment, and a file that was
-	// never read must be reported as unread rather than passing for an empty
-	// one — an empty archive and an archive nobody read look identical here.
+	// Seeded failed and cleared on success, not the reverse: a worker whose read
+	// panicked reaches neither assignment, and a never-read file must be reported
+	// unread rather than pass for an empty one (the two look identical here).
 	for i := range errs {
 		errs[i] = errLogFileNotRead
 	}
@@ -207,15 +202,15 @@ func readLogFiles(app *App, ctx context.Context, sc *db.ServerConn, refs []logFi
 	return out, failed
 }
 
-// errLogFileNotRead is readLogFiles' seed for a file whose read never
-// finished — it panicked, and fanOut recovered it and moved on, leaving the
-// seed. It is never the reason a read *failed*, only the reason one is missing.
+// errLogFileNotRead is readLogFiles' seed for a file whose read never finished:
+// it panicked, and fanOut recovered it and moved on, leaving the seed. Never
+// the reason a read *failed*, only why one is missing.
 var errLogFileNotRead = errors.New("the read did not finish")
 
-// readPanicked releases the busy latch after a panic on the read goroutine —
-// Load's safegoRepair step. Guarded by seq like the normal completion path: a
-// newer Load set busy for itself, and clearing it here would re-enable a
-// toolbar whose read is still out.
+// readPanicked releases the busy latch after a panic on the read goroutine
+// (Load's safegoRepair step). Guarded by seq like the normal completion path: a
+// newer Load set busy for itself, and clearing it would re-enable a toolbar
+// whose read is still out.
 func (lv *LogViewer) readPanicked(seq int) {
 	if !lv.read.Done(seq) {
 		return
@@ -227,16 +222,16 @@ func (lv *LogViewer) readPanicked(seq int) {
 
 // recycle closes the current log of the family on screen and starts a new one,
 // after confirming. On success it reloads, replacing the archive numbering the
-// file selector draws from — the cycle renumbered all of it.
+// file selector draws from (the cycle renumbered all of it).
 func (lv *LogViewer) recycle() {
 	if !lv.app.requireConn(lv.conn) {
 		return
 	}
 	sc, logType := lv.conn, lv.logType
-	// Latched before the question, not in the answer: busy is what stops a read
-	// starting underneath the cycle, and the confirm dialog doesn't stop F5
-	// reaching the panel — a Load begun while the question was up would clear
-	// busy from under the cycle it knows nothing about.
+	// Latched before the question, not in the answer: busy stops a read starting
+	// underneath the cycle, and the confirm dialog doesn't stop F5 reaching the
+	// panel; a Load begun while the question was up would clear busy from under the
+	// cycle.
 	lv.busy = true
 	lv.app.confirmDialog.ShowConfirm("Recycle Log", cycleLogMessage(logType, sc.Opts.Server), func(confirmed bool) {
 		if !confirmed {
@@ -244,9 +239,9 @@ func (lv *LogViewer) recycle() {
 			return
 		}
 		lv.setStatus(fmt.Sprintf("Recycling the %s error log...", logType))
-		// The job's repair for the same reason Load uses safegoRepair: busy is
-		// cleared in the completion, which a panic never reaches, and
-		// toolsEnabled gates the whole toolbar on it.
+		// The job's repair for Load's reason (safegoRepair): busy is cleared in the
+		// completion, which a panic never reaches, and toolsEnabled gates the whole
+		// toolbar on it.
 		lv.app.runWithProgress(progressJob{
 			title:   "Recycle Log",
 			message: fmt.Sprintf("Recycling the %s error log...", logType),
@@ -260,8 +255,8 @@ func (lv *LogViewer) recycle() {
 			lv.busy = false
 			switch {
 			case cancelled:
-				// Reloaded anyway: the cycle may have landed before the
-				// cancel reached the server.
+				// Reloaded anyway: the cycle may have landed before the cancel reached the
+				// server.
 				lv.app.setStatus(fmt.Sprintf("Recycling the %s error log cancelled", logType))
 				lv.reanchorAfterCycle(logType)
 				lv.Refresh()
@@ -279,16 +274,14 @@ func (lv *LogViewer) recycle() {
 // a family it draws from has just been cycled.
 //
 // A cycle renumbers every archive one higher and deletes the oldest, so the
-// numbers a set was chosen by no longer name the files it was chosen from —
-// re-reading them would silently hand back a different set, one file of which
-// may not exist any more. A single-file view keeps its number, which is the
-// behaviour it has always had: the user asked for "Archive #1" and gets
-// whatever is now Archive #1.
+// numbers a set was chosen by no longer name the files it was chosen from;
+// re-reading would silently return a different set, one file of which may not
+// exist. A single-file view keeps its number: the user asked for "Archive #1"
+// and gets whatever is now Archive #1.
 //
-// A mixed selection is re-anchored by *any* family in it being cycled, not
-// only the one the selectors address: half a merged set going stale is the
-// same silent lie as all of it, and the cycled family is the one the user was
-// just looking at.
+// A mixed selection is re-anchored when *any* family in it is cycled, not only
+// the one the selectors address: half a merged set going stale is the same
+// silent lie as all of it.
 func (lv *LogViewer) reanchorAfterCycle(logType gosmo.ErrorLogType) {
 	if !lv.multiFile() || !slices.ContainsFunc(lv.sel, func(r logFileRef) bool { return r.Type == logType }) {
 		return
@@ -298,7 +291,7 @@ func (lv *LogViewer) reanchorAfterCycle(logType gosmo.ErrorLogType) {
 }
 
 // recyclePanicked releases the busy latch after a panic on the cycle goroutine
-// — recycle's safegoRepair step. No seq guard, unlike readPanicked: busy was
+// (recycle's safegoRepair step). No seq guard, unlike readPanicked: busy was
 // held across the whole cycle, so nothing else can have started.
 func (lv *LogViewer) recyclePanicked() {
 	lv.busy = false
@@ -310,12 +303,12 @@ func (lv *LogViewer) recyclePanicked() {
 // accident to mean the whole log.
 const mailLogDeleteAll = "all"
 
-// deleteMailLog purges Database Mail log entries logged before a time the
-// user gives, or all of them — the Recycle cell's action on that family, which
-// has no archives to cycle into. The prompt is pre-filled with the selected
-// row's time, so "everything older than this" is two keystrokes; a time is
-// server-local, the clock every row's Date is on. Nothing is latched until
-// the confirmation, since the prompt has no cancel callback to release it.
+// deleteMailLog purges Database Mail log entries logged before a time the user
+// gives, or all of them: the Recycle cell's action on that family, which has no
+// archives to cycle into. The prompt is pre-filled with the selected row's
+// time, so "everything older than this" is two keystrokes; a time is
+// server-local, the clock every row's Date is on. Nothing is latched until the
+// confirmation, since the prompt has no cancel callback to release it.
 func (lv *LogViewer) deleteMailLog() {
 	if !lv.app.requireConn(lv.conn) {
 		return
@@ -351,8 +344,8 @@ func parseMailLogCutoff(v string) (time.Time, error) {
 }
 
 // confirmDeleteMailLog asks before purging, then runs the purge and reloads.
-// busy is latched before the question for recycle's reason: the confirm
-// dialog does not stop F5 reaching the panel.
+// busy is latched before the question for recycle's reason: the confirm dialog
+// does not stop F5 reaching the panel.
 func (lv *LogViewer) confirmDeleteMailLog(before time.Time) {
 	sc := lv.conn
 	what := "every Database Mail log entry"
@@ -361,10 +354,10 @@ func (lv *LogViewer) confirmDeleteMailLog(before time.Time) {
 	}
 	warn := "This cannot be undone."
 	if lv.mailOwnOnly {
-		// The purge is of the table, not of the filtered view this login
-		// reads (W14). Unreachable today — DatabaseMailConfigRights, which
-		// Delete needs, all read the whole log (docs/decisions.md) — but kept for a login
-		// granted the purge procedure alone.
+		// The purge is of the table, not of the filtered view this login reads (W14).
+		// Unreachable today (DatabaseMailConfigRights, which Delete needs, all read the
+		// whole log; docs/decisions.md) but kept for a login granted the purge
+		// procedure alone.
 		warn = "You see only the entries of your own mail items; this deletes the others too. It cannot be undone."
 	}
 	lv.busy = true
@@ -387,8 +380,8 @@ func (lv *LogViewer) confirmDeleteMailLog(before time.Time) {
 				lv.busy = false
 				switch {
 				case cancelled:
-					// Reloaded anyway: the delete may have landed before the
-					// cancel reached the server.
+					// Reloaded anyway: the delete may have landed before the cancel reached the
+					// server.
 					lv.app.setStatus("Deleting the Database Mail log cancelled")
 				case err != nil:
 					lv.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
@@ -402,7 +395,7 @@ func (lv *LogViewer) confirmDeleteMailLog(before time.Time) {
 }
 
 // deletePanicked releases the busy latch after a panic on the purge goroutine
-// — recyclePanicked's twin.
+// (recyclePanicked's twin).
 func (lv *LogViewer) deletePanicked() {
 	lv.busy = false
 	lv.setStatus("Delete stopped unexpectedly — see the log for details")
@@ -410,7 +403,7 @@ func (lv *LogViewer) deletePanicked() {
 
 // cycleLogMessage is the confirmation question for recycling a log, shared by
 // the toolbar and the Object Explorer folder's menu. It names what is lost: the
-// archives are renumbered, and the instance drops the oldest once holding as
+// archives are renumbered, and the instance drops the oldest once it holds as
 // many as it is configured to keep.
 func cycleLogMessage(logType gosmo.ErrorLogType, server string) string {
 	return fmt.Sprintf(

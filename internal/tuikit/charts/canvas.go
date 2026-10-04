@@ -8,18 +8,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// Canvas is an off-screen cell grid that satisfies tcell.Screen well enough
-// for drawing. A caller renders a dashboard into a Canvas of fixed size and
-// then blits the visible window onto the real screen, which is how a
-// dashboard larger than the terminal scrolls on both axes without every
-// chart having to know its own scroll offset.
+// Canvas is an off-screen cell grid that satisfies tcell.Screen well enough for
+// drawing. A caller renders a dashboard into a Canvas of fixed size and blits
+// the visible window onto the real screen, so a dashboard larger than the
+// terminal scrolls on both axes without every chart knowing its scroll offset.
 //
-// Only the drawing half of tcell.Screen is implemented — Size, SetContent,
-// Get, Put, Fill, FillArea, Clear. The embedded interface is nil, so calling any
-// other method (Init, Show, PollEvent, …) panics. That is deliberate: a
-// Canvas is a drawing target, and anything reaching for terminal lifecycle
-// methods on one has confused it with a real screen. Everything in this
-// package and in tuikit/core draws through the implemented set.
+// Only the drawing half of tcell.Screen is implemented (Size, SetContent, Get,
+// Put, Fill, FillArea, Clear). The embedded interface is nil, so any other
+// method (Init, Show, PollEvent, ...) panics, deliberately: anything reaching
+// for terminal lifecycle methods has confused a Canvas with a real screen.
+// Everything in this package and in tuikit/core draws through the implemented
+// set.
 type Canvas struct {
 	tcell.Screen // nil; see the type comment
 
@@ -28,15 +27,13 @@ type Canvas struct {
 }
 
 // canvasCell is one grid cell. width is the cell's display width: 1 for an
-// ordinary cell, 2 for the first cell of a wide grapheme, and 0 for the
-// trailing cell such a grapheme covers — a 0-width cell has no content of
-// its own and is skipped when blitting.
+// ordinary cell, 2 for the first cell of a wide grapheme, 0 for the trailing
+// cell such a grapheme covers (no content of its own, skipped when blitting).
 //
-// Content is held as a primary rune plus the rest of its grapheme rather
-// than as one string, because the string form costs an allocation per cell
-// and every chart glyph is a single rune: building it here was 62% of the
-// dashboard draw path's allocations. rest is non-empty only for a cell
-// carrying combining marks.
+// Content is a primary rune plus the rest of its grapheme rather than one
+// string: the string form costs an allocation per cell and every chart glyph is
+// a single rune (building it was 62% of the dashboard draw path's allocations).
+// rest is non-empty only for a cell carrying combining marks.
 type canvasCell struct {
 	primary rune // 0 in a trailing cell, which has no content of its own
 	rest    string
@@ -196,13 +193,12 @@ func (c *Canvas) inBounds(x, y int) bool {
 	return x >= 0 && y >= 0 && x < c.w && y < c.h
 }
 
-// Blit copies the src region of the canvas onto s at dst. Only the
-// overlapping area is drawn: a src region reaching past the canvas edge and
-// a dst rect smaller than src both simply clip.
+// Blit copies the src region of the canvas onto s at dst. Only the overlapping
+// area is drawn: a src region past the canvas edge and a dst rect smaller than
+// src both clip.
 //
-// A wide grapheme whose second half falls outside dst is replaced with a
-// space rather than drawn, so a half-drawn wide glyph can never bleed a
-// stray column into whatever sits beside the viewport.
+// A wide grapheme whose second half falls outside dst is replaced with a space,
+// so a half-drawn wide glyph can't bleed a stray column beside the viewport.
 func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
 	rows := min(src.H, dst.H)
 	cols := min(src.W, dst.W)
@@ -231,10 +227,9 @@ func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
 	}
 }
 
-// Row returns row y as a plain string, one entry per cell of content
-// (trailing cells of wide graphemes contribute nothing). It exists for
-// tests and for dumping a rendered canvas into a golden file — it carries
-// no style information.
+// Row returns row y as a plain string, one entry per cell of content (trailing
+// cells of wide graphemes contribute nothing). For tests and golden files; it
+// carries no style.
 func (c *Canvas) Row(y int) string {
 	if y < 0 || y >= c.h {
 		return ""

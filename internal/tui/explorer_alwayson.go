@@ -14,12 +14,12 @@ import (
 // # Reading from the primary
 //
 // Only sys.availability_groups and sys.availability_replicas are cluster-wide.
-// The sys.dm_hadr_* DMVs describe what the connected instance can see, so a
+// The sys.dm_hadr_* DMVs describe what the connected instance sees, so a
 // secondary reports empty roles, empty health and no per-database queue detail
-// for every replica but itself. Every loader here therefore resolves the group's
+// for every replica but itself. Every loader therefore resolves the group's
 // primary and re-reads through db.ServerConn.Peer, falling back to the local
-// partial view when the primary is unreachable rather than failing the expansion
-// outright. agView carries which happened so labels can say so.
+// partial view when the primary is unreachable rather than failing the
+// expansion. agView carries which happened so labels can say so.
 
 // loadAlwaysOnChildren returns the Always On root's children. Always On being
 // disabled is reported as a node rather than an error: it is normal for most
@@ -50,14 +50,14 @@ func loadAvailabilityGroupsChildren(l loaderCtx, node *explorerNode) ([]*explore
 		})
 }
 
-// agLabel renders a group as "AAG1 (Primary)" — the local replica's role, as
-// SSMS does. A group whose primary this instance cannot see is marked so
-// explicitly: an empty primaryReplica means "unknown from here", which is what a
-// resolving or disconnected group looks like, and calling that "Secondary" would
-// claim a healthy group where there isn't one.
+// agLabel renders a group as "AAG1 (Primary)", the local replica's role as SSMS
+// does. A group whose primary this instance cannot see is marked so explicitly:
+// an empty primaryReplica means "unknown from here" (a resolving or
+// disconnected group), and calling that "Secondary" would claim a healthy
+// group.
 //
-// Takes the three values rather than the group because IsLocalPrimary depends on
-// gosmo's unexported server back-pointer, which no test outside gosmo can
+// Takes the three values rather than the group because IsLocalPrimary depends
+// on gosmo's unexported server back-pointer, which no test outside gosmo can
 // populate.
 func agLabel(name, primaryReplica string, isLocalPrimary bool) string {
 	switch {
@@ -237,16 +237,16 @@ func loadAvailabilityDatabasesChildren(l loaderCtx, node *explorerNode) ([]*expl
 	return view.appendNote(l, out), nil
 }
 
-// agLocalDatabaseJoinState reports whether the instance the tree is connected to
-// is a secondary for this group, and which of the group's databases its own copy
-// has joined.
+// agLocalDatabaseJoinState reports whether the instance the tree is connected
+// to is a secondary for this group, and which of the group's databases its own
+// copy has joined.
 //
-// Read from the local connection even when the folder was read from the primary:
-// joining is an ALTER DATABASE against one copy, so what matters is what *this*
-// instance holds. A database is in the group cluster-wide from the moment ADD
-// DATABASE runs on the primary and appears here regardless — the local copy
-// having no row in sys.dm_hadr_database_replica_states is exactly what "restored
-// but not joined yet" looks like.
+// Read from the local connection even when the folder was read from the
+// primary: joining is an ALTER DATABASE against one copy, so what matters is
+// what *this* instance holds. A database is in the group cluster-wide from the
+// moment ADD DATABASE runs on the primary and appears here regardless; the
+// local copy having no row in sys.dm_hadr_database_replica_states is what
+// "restored but not joined yet" looks like.
 //
 // Both return values are the safe-and-silent ones on failure: a nil map gates
 // Join and Unjoin off.
@@ -360,17 +360,18 @@ func slicesContains(ss []string, s string) bool {
 	return false
 }
 
-// agLocalDatabaseStates maps a database name, under the server's collation, to the availability
-// state of the copy *this* instance holds, for the Databases folder's labels.
+// agLocalDatabaseStates maps a database name, under the server's collation, to
+// the availability state of the copy *this* instance holds, for the Databases
+// folder's labels.
 //
-// Local-only on purpose: the Availability Databases folder summarises a database
-// across every replica because it is about the group, while the Databases folder
-// lists this instance's own databases, where a peer's state would not be true of
-// the database being listed. SSMS makes the same distinction.
+// Local-only on purpose: the Availability Databases folder summarises a
+// database across every replica because it is about the group, while the
+// Databases folder lists this instance's own databases, where a peer's state
+// would not be true of the database listed. SSMS makes the same distinction.
 //
-// Returns nil rather than an error on failure: this decorates a list that has to
-// render with or without Always On, so a disabled instance, a group mid-failover
-// and a failed query all leave the labels bare.
+// Returns nil rather than an error on failure: this decorates a list that has
+// to render with or without Always On, so a disabled instance, a group
+// mid-failover and a failed query all leave the labels bare.
 func agLocalDatabaseStates(l loaderCtx) *nameMap[agDatabaseSummary] {
 	if info := l.sc.Server.Info(); info == nil || !info.IsHADREnabled {
 		return nil

@@ -2,30 +2,29 @@ package tui
 
 import "github.com/gdamore/tcell/v3"
 
-// HandleKey routes keys to result tab switching (Ctrl+PgUp/PgDn), F5
-// execute, or whichever of the editor/results grid last got a mouse click
-// (see resultsFocused). The splitter's Ctrl+Up/Down resize only gets first
-// refusal while the results grid holds focus — while the editor holds it,
-// Ctrl+arrows must reach the editor's own word-jump/line-select bindings
-// instead of being swallowed for resize on every keystroke.
+// HandleKey routes keys to result tab switching (Ctrl+PgUp/PgDn), F5 execute,
+// or whichever of the editor/results grid last got a mouse click (see
+// resultsFocused). The splitter's Ctrl+Up/Down resize gets first refusal only
+// while the results grid holds focus; while the editor holds it, Ctrl+arrows
+// must reach the editor's word-jump/line-select bindings instead of being
+// swallowed for resize on every keystroke.
 func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
-	// The results grid's context menu or "Show Value" popup, if open, must
-	// get every key unconditionally — both are centred on the whole screen
-	// (see controls.DataGrid.DrawOverlay), independent of resultsFocused, so
-	// without this check their keys (Shift+arrows, Ctrl+A, Escape) would
-	// fall through to the editor instead whenever the editor holds focus.
+	// The results grid's context menu or "Show Value" popup, if open, must get
+	// every key unconditionally: both are centred on the whole screen (see
+	// controls.DataGrid.DrawOverlay), independent of resultsFocused, so otherwise
+	// their keys (Shift+arrows, Ctrl+A, Escape) would fall through to the editor
+	// whenever it holds focus.
 	if !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive() {
 		return p.results.HandleKey(ev)
 	}
-	// Same rule for the execution plan's Operator Summary grid, which owns
-	// the identical pair of popups one level down (see PlanView.OverlayActive).
+	// Same rule for the execution plan's Operator Summary grid, which owns the
+	// identical pair of popups one level down (see PlanView.OverlayActive).
 	if p.planTabActive() && p.planView.OverlayActive() {
 		return p.planView.HandleKey(ev)
 	}
-	// Same reasoning, for the SQL editor's own completion popup: it floats
-	// over the editor's rect independently of resultsFocused, so it must
-	// get every key before F5/Ctrl+PgUp/splitter routing below gets a
-	// chance to misroute one meant for it.
+	// Same reasoning for the SQL editor's completion popup: it floats over the
+	// editor's rect independently of resultsFocused, so it must get every key
+	// before F5/Ctrl+PgUp/splitter routing can misroute one meant for it.
 	if p.editor.CompletionActive() {
 		return p.editor.HandleKey(ev)
 	}
@@ -33,35 +32,30 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 		p.Execute()
 		return true
 	}
-	// Ctrl+R reloads this panel's autocomplete inventory — only while the
-	// editor holds focus, matching Ctrl+Up/Down's identical resultsFocused
-	// gating just below, so it doesn't collide with a future results-grid
-	// binding on the same key.
+	// Ctrl+R reloads this panel's autocomplete inventory, only while the editor
+	// holds focus (as Ctrl+Up/Down's resultsFocused gating just below), so it
+	// doesn't collide with a future results-grid binding on the same key.
 	if ev.Key() == tcell.KeyCtrlR && !p.resultsFocused {
 		p.refreshCompletionCache()
 		return true
 	}
 	// Ctrl+Enter selects the T-SQL statement at the cursor (see
-	// controls.Editor.SelectStatementAtCursor) — the first step toward
-	// "execute current statement"; this only selects, it doesn't run it.
+	// controls.Editor.SelectStatementAtCursor), the first step toward "execute
+	// current statement"; it only selects.
 	//
-	// Two encodings reach us, and both have to be accepted. A terminal with
-	// a modern keyboard protocol reports it as Enter with Ctrl held. Every
-	// other terminal — xfce4-terminal and the rest of the VTE family
-	// included — sends a bare LF (0x0A) instead, which tcell decodes as
-	// KeyCtrlJ, since plain Enter is CR (0x0D). Only the first was handled,
-	// so on an ordinary terminal the key did nothing at all: KeyCtrlJ isn't
-	// KeyEnter, so the editor below didn't want it either. Menu > Query >
-	// Execute at Cursor kept working throughout, which is the tell that the
-	// action was fine and only the binding was missing.
+	// Two encodings must be accepted. A terminal with a modern keyboard protocol
+	// reports Enter with Ctrl held. Every other terminal (xfce4-terminal and the
+	// VTE family) sends a bare LF (0x0A), which tcell decodes as KeyCtrlJ since
+	// plain Enter is CR (0x0D). KeyCtrlJ isn't KeyEnter, so handling only the first
+	// made the key do nothing on an ordinary terminal, while Menu > Query > Execute
+	// at Cursor kept working.
 	if isCtrlEnter(ev) {
 		p.editor.SelectStatementAtCursor()
 		return true
 	}
-	// Ctrl+PgUp/PgDn cycle the result tabs. Like Ctrl+Tab (see app_events),
-	// the Ctrl modifier on these keys is only reported by terminals with a
-	// modern keyboard protocol; elsewhere they stay plain PgUp/PgDn and
-	// fall through to the editor.
+	// Ctrl+PgUp/PgDn cycle the result tabs. Like Ctrl+Tab (see app_events), the
+	// Ctrl modifier is reported only by terminals with a modern keyboard protocol;
+	// elsewhere they stay plain PgUp/PgDn and fall through to the editor.
 	if (p.result != nil || p.planView != nil) && ev.Modifiers()&tcell.ModCtrl != 0 {
 		switch ev.Key() {
 		case tcell.KeyPgUp:
@@ -105,8 +99,7 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 }
 
 // setResultsFocused switches keyboard focus between the editor and results
-// grid, updating both sub-regions' visual focus state to match (see
-// syncFocusVisuals).
+// grid, updating both sub-regions' visual focus state (see syncFocusVisuals).
 func (p *QueryPanel) setResultsFocused(v bool) {
 	p.resultsFocused = v
 	p.syncFocusVisuals()
@@ -115,18 +108,17 @@ func (p *QueryPanel) setResultsFocused(v bool) {
 // HandleMouse routes mouse events to the splitter (drag), result tabs,
 // editor, results grid, or results-text view.
 func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
-	// Same reasoning as the OverlayActive check at the top of HandleKey:
-	// the popup/menu can visually overlap the editor's rect, so it must get
-	// every mouse event — including the drag-release that follows a
-	// click-drag selection inside it — before any position-based routing
-	// below gets a chance to hand the click to the editor instead.
+	// Same reasoning as the OverlayActive check at the top of HandleKey: the
+	// popup/menu can overlap the editor's rect, so it must get every mouse event
+	// (including the drag-release after a click-drag selection inside it) before
+	// position-based routing hands the click to the editor.
 	if !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive() {
 		p.setResultsFocused(true)
 		return p.results.HandleMouse(ev)
 	}
-	// Same rule for the execution plan's Operator Summary grid. PlanView's
-	// own HandleMouse lets releases through to its inner branches, so the
-	// forwarding below still clears any latch this doesn't reach.
+	// Same rule for the execution plan's Operator Summary grid. PlanView's own
+	// HandleMouse lets releases through to its inner branches, so the forwarding
+	// below still clears any latch this doesn't reach.
 	if p.planTabActive() && p.planView.OverlayActive() {
 		p.setResultsFocused(true)
 		return p.planView.HandleMouse(ev)
@@ -136,16 +128,14 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		return p.editor.HandleMouse(ev)
 	}
 	mx, my := ev.Position()
-	// Always forward release events — regardless of position — to the
-	// splitter, the query editor, the messages view, the results-text view,
-	// the execution plan view, and the results grid, so an in-progress
-	// splitter drag, text-selection drag, or cell-block selection drag
-	// terminates cleanly even if the cursor has moved outside this panel's
-	// column (or out of whichever of those widgets started the drag) before
-	// the button was released. Without forwarding to results too, its own
-	// drag-tracking flag never resets, so every click after the very first
-	// one in the grid's lifetime gets mistaken for a continued drag from
-	// that first click's anchor instead of a fresh single-cell selection.
+	// Always forward release events, regardless of position, to the splitter,
+	// query editor, messages view, results-text view, execution plan view and
+	// results grid, so an in-progress splitter drag, text-selection drag or
+	// cell-block selection drag ends cleanly even if the cursor has left this
+	// panel's column (or the widget that started the drag) before release. Without
+	// forwarding to results too, its drag-tracking flag never resets, and every
+	// click after the first in the grid's lifetime is mistaken for a continued drag
+	// from that first click's anchor instead of a fresh single-cell selection.
 	if ev.Buttons() == tcell.ButtonNone {
 		handled := false
 		if p.splitter.HandleMouse(ev) {
@@ -170,19 +160,18 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		p.dragZone = qZoneNone
 		return handled
 	}
-	// Everything from the press that armed dragZone through to its release
-	// belongs to the sub-region that claimed it, wherever the pointer has
-	// drifted to since — including out of the panel's own columns, which is
-	// why this outranks the bounds check. See the field's doc comment.
+	// Everything from the press that armed dragZone through its release belongs to
+	// the sub-region that claimed it, wherever the pointer drifts, including out of
+	// the panel's columns, which is why this outranks the bounds check. See the
+	// field's doc comment.
 	//
-	// A wheel tick arriving mid-gesture is swallowed rather than routed, same
-	// rule as App.handleMouse's gestureOwner and PropertySheet's dragZone: it
-	// isn't part of the gesture, and the positional routing below would hand
-	// it to whichever sub-region the pointer has drifted over. App's own
-	// gestureOwner (armed as ownerPanels for any press in this column) happens
-	// to swallow it one level up today, so this is belt-and-braces — but the
-	// invariant belongs to whoever owns the gesture, not to a caller that
-	// might stop arming one.
+	// A wheel tick mid-gesture is swallowed rather than routed, as in
+	// App.handleMouse's gestureOwner and PropertySheet's dragZone: it isn't part of
+	// the gesture, and positional routing would hand it to whichever sub-region the
+	// pointer drifted over. App's gestureOwner (armed as ownerPanels for any press
+	// in this column) swallows it one level up today, so this is belt-and-braces,
+	// but the invariant belongs to whoever owns the gesture, not a caller that might
+	// stop arming one.
 	if p.dragZone != qZoneNone {
 		if ev.Buttons() == tcell.Button1 {
 			return p.routeDrag(ev)
@@ -204,10 +193,9 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
-	// A left- or right-click decides which sub-region owns keyboard focus
-	// from now on (see resultsFocused) — matches ordinary GUI
-	// click-to-focus, and is the only way focus moves into the results
-	// grid (Escape is the way back out, see HandleKey).
+	// A left- or right-click decides which sub-region owns keyboard focus from now
+	// on (see resultsFocused), as ordinary click-to-focus, and is the only way
+	// focus moves into the results grid (Escape is the way out, see HandleKey).
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {
 		if p.editor.HandleMouse(ev) {
 			p.armDrag(ev, qZoneEditor)
@@ -228,12 +216,11 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	return p.resultsHandleMouse(ev)
 }
 
-// isCtrlEnter reports whether ev is Ctrl+Enter, in either encoding a
-// terminal can deliver it as. A modern keyboard protocol (kitty, xterm's
-// modifyOtherKeys) reports Enter with ModCtrl set; everything else sends a
-// bare LF, 0x0A, which tcell decodes as KeyCtrlJ — plain Enter being CR,
-// 0x0D. Nothing else in the app binds Ctrl+J, so accepting it costs
-// nothing. See its use in HandleKey.
+// isCtrlEnter reports whether ev is Ctrl+Enter in either encoding a terminal
+// can deliver. A modern keyboard protocol (kitty, xterm's modifyOtherKeys)
+// reports Enter with ModCtrl; everything else sends a bare LF, 0x0A, which tcell
+// decodes as KeyCtrlJ (plain Enter being CR, 0x0D). Nothing else binds Ctrl+J,
+// so accepting it costs nothing. See HandleKey.
 func isCtrlEnter(ev *tcell.EventKey) bool {
 	if ev.Key() == tcell.KeyCtrlJ {
 		return true
@@ -241,8 +228,8 @@ func isCtrlEnter(ev *tcell.EventKey) bool {
 	return ev.Key() == tcell.KeyEnter && ev.Modifiers()&tcell.ModCtrl != 0
 }
 
-// resultsHandleMouse dispatches to whichever of the four widgets sharing
-// the results rect is currently shown — see layoutChildren.
+// resultsHandleMouse dispatches to whichever of the four widgets sharing the
+// results rect is shown (see layoutChildren).
 func (p *QueryPanel) resultsHandleMouse(ev *tcell.EventMouse) bool {
 	switch {
 	case p.onMessagesTab():
@@ -266,8 +253,8 @@ func (p *QueryPanel) armDrag(ev *tcell.EventMouse, zone queryDragZone) {
 
 // routeDrag delivers a held-Button1 event to the sub-region that armed the
 // gesture. qZoneTabs and qZoneUnclaimed swallow it: the tab switch already
-// happened on the press, and there is nothing further to deliver — the
-// point is only that no other sub-region sees the repeats.
+// happened on the press, and the point is only that no other sub-region sees
+// the repeats.
 func (p *QueryPanel) routeDrag(ev *tcell.EventMouse) bool {
 	switch p.dragZone {
 	case qZoneSplitter:

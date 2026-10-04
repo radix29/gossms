@@ -6,16 +6,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// ToggleGridRow is a Form row wrapping a cell-cursor controls.DataGrid
-// where some columns are [x]/[ ] boolean toggles (Space/Enter or click
-// flips the focused cell) and the rest are plain read-only text — the
-// mechanism every variable-length "grid with checkbox columns" page uses
-// (processor affinity, change tracking tables, server role membership,
-// login/database user mapping). It owns cell rendering, re-render on
-// toggle, selected-row preservation across a toggle, and Dirty()/Revert()
-// against the baseline captured by the most recent SetRows; the page only
-// supplies the domain data and, in its apply closure, diffs Values()
-// against what it loaded to decide which gosmo writer calls to make.
+// ToggleGridRow is a Form row wrapping a cell-cursor controls.DataGrid where
+// some columns are [x]/[ ] boolean toggles (Space/Enter or click flips the
+// focused cell) and the rest plain read-only text: the mechanism every
+// variable-length "grid with checkbox columns" page uses (processor affinity,
+// change tracking tables, server role membership, login/database user
+// mapping). It owns cell rendering, re-render on toggle, selected-row
+// preservation across a toggle, and Dirty()/Revert() against the baseline
+// captured by the latest SetRows; the page supplies the domain data and, in its
+// apply closure, diffs Values() against what it loaded.
 type ToggleGridRow struct {
 	*GridRow
 
@@ -40,10 +39,9 @@ type ToggleGridRow struct {
 }
 
 // SetReadOnly is the page's own gate on the row, apart from the form's (see
-// TextRow.SetReadOnly): for a grid whose rows describe the object selected
-// elsewhere on the page, editable for one object and not another. The
-// toggles stop toggling and draw as ticks and crosses; the grid can still be
-// browsed.
+// TextRow.SetReadOnly): for a grid whose rows describe an object selected
+// elsewhere on the page, editable for one object and not another. The toggles
+// stop toggling and draw as ticks and crosses; the grid can still be browsed.
 func (t *ToggleGridRow) SetReadOnly(v bool) {
 	if t.pageReadOnly == v {
 		return
@@ -56,16 +54,14 @@ func (t *ToggleGridRow) SetReadOnly(v bool) {
 func (t *ToggleGridRow) ReadOnly() bool { return t.pageReadOnly }
 
 // SetDrawReadOnly implements ReadOnlyDrawer: the toggle columns render their
-// state the way a read-only CheckRow does, so the one thing left on a gated
-// page that still looked like a control stops doing so. The cells are already
-// inert: GridRow.SetDrawReadOnly, called first, makes the grid browse-only, so
-// Space, Enter and a click select a cell and toggle nothing.
+// state as a read-only CheckRow does, so nothing on a gated page still looks
+// like a control. The cells are already inert: GridRow.SetDrawReadOnly, called
+// first, makes the grid browse-only.
 //
 // render, not renderPreservingView: Form calls this from SetReadOnly, which a
-// page runs before the sheet has ever laid the grid out, and preserving the
-// view of a grid with no rect ends in SetSelectedCell's ensureVisible
-// scrolling past every row — the affinity grid drew four blank lines under its
-// header, live.
+// page runs before the sheet has laid the grid out, and preserving the view of
+// a grid with no rect ends in SetSelectedCell's ensureVisible scrolling past
+// every row (the affinity grid drew four blank lines under its header, live).
 func (t *ToggleGridRow) SetDrawReadOnly(v bool) {
 	t.GridRow.SetDrawReadOnly(v)
 	if t.drawReadOnly == v {
@@ -76,9 +72,9 @@ func (t *ToggleGridRow) SetDrawReadOnly(v bool) {
 }
 
 // NewToggleGrid creates a ToggleGridRow. columns are the grid's headers;
-// toggleCols lists which column indices render as toggle cells — every
-// other column is plain text supplied via SetRows. height is a fixed
-// number of screen lines, sized the same way as NewGridRow.
+// toggleCols lists which column indices render as toggle cells; every other
+// column is plain text supplied via SetRows. height is a fixed number of screen
+// lines, sized as in NewGridRow.
 func NewToggleGrid(columns []string, toggleCols []int, height int) *ToggleGridRow {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
@@ -91,10 +87,10 @@ func NewToggleGrid(columns []string, toggleCols []int, height int) *ToggleGridRo
 	return t
 }
 
-// SetRows replaces the grid's rows and captures values as the
-// dirty-tracking baseline. text[i] supplies row i's non-toggle columns, in
-// column order (skipping toggleCols positions); values[i] supplies row i's
-// toggleCols state, in toggleCols order.
+// SetRows replaces the grid's rows and captures values as the dirty-tracking
+// baseline. text[i] supplies row i's non-toggle columns, in column order
+// (skipping toggleCols positions); values[i] supplies row i's toggleCols state,
+// in toggleCols order.
 func (t *ToggleGridRow) SetRows(text [][]string, values [][]bool) {
 	t.text = text
 	t.values = cloneBoolMatrix(values)
@@ -127,17 +123,15 @@ func (t *ToggleGridRow) renderRows() [][]string {
 }
 
 // render replaces the grid's rows outright, taking SetData's reset of the cell
-// cursor, the scroll and any dragged column width. For SetRows, whose rows are
-// a different set; a change that leaves the row set alone uses
-// renderPreservingView instead.
+// cursor, scroll and dragged column widths. For SetRows, whose rows are a
+// different set; a change leaving the row set alone uses renderPreservingView.
 func (t *ToggleGridRow) render() {
 	t.Grid.SetData(t.columns, t.renderRows())
 }
 
 // renderPreservingView re-renders the same rows without moving the grid under
-// the user — see controls.DataGrid.SetDataPreservingView, and redrawGrid in
-// the application layer, which is the same fix for the same reason on the
-// Properties pages that hand-rolled it.
+// the user; see controls.DataGrid.SetDataPreservingView, and redrawGrid in the
+// application layer (the same fix for pages that hand-rolled it).
 func (t *ToggleGridRow) renderPreservingView() {
 	t.Grid.SetDataPreservingView(t.columns, t.renderRows())
 }
@@ -145,15 +139,14 @@ func (t *ToggleGridRow) renderPreservingView() {
 // Text returns the non-toggle cell text, row-parallel with Values.
 //
 // The pairing is the point: a page reads Values()[i] against its own i'th
-// object, so anything that needs to know *which* row a value belongs to has
-// to be able to read the row's own text. Without it the two are only
-// relatable by an index nobody outside the page can check.
+// object, so anything needing to know *which* row a value belongs to must read
+// the row's own text; otherwise they relate only by an index nobody outside the
+// page can check.
 func (t *ToggleGridRow) Text() [][]string { return t.text }
 
 // Toggle flips one toggle cell the way clicking or pressing Space on it does,
 // including the redraw and the OnToggle callback. row is a row index; col
-// indexes toggleCols, not the raw grid column — the same convention OnToggle
-// reports in.
+// indexes toggleCols, not the raw grid column (as OnToggle reports).
 func (t *ToggleGridRow) Toggle(row, col int) {
 	if col < 0 || col >= len(t.toggleCols) {
 		return
@@ -173,13 +166,12 @@ func (t *ToggleGridRow) activateCell(row, col int) {
 	}
 }
 
-// Dirty and the Revert beside it implement Editable (Validate is the
-// embedded GridRow's). ToggleGridRow tracks its own toggle baseline, and still consults the
-// embedded GridRow's DirtyFn/RevertFn when a page sets them: a page with
-// pending row adds/removes keeps that state itself, and every SetRows that
-// shows the change resets the baseline. Shadowing them outright made
-// Database Properties ▸ Filegroups drop an Add or Remove on OK — the form
-// read as clean, so nothing was applied.
+// Dirty and the Revert beside it implement Editable (Validate is the embedded
+// GridRow's). ToggleGridRow tracks its own toggle baseline and still consults
+// the embedded GridRow's DirtyFn/RevertFn when a page sets them: a page with
+// pending row adds/removes keeps that state itself, and every SetRows showing
+// the change resets the baseline. Shadowing them outright made Database
+// Properties > Filegroups drop an Add or Remove on OK (the form read clean).
 func (t *ToggleGridRow) Dirty() bool {
 	for i := range t.values {
 		if !slices.Equal(t.values[i], t.baseline[i]) {

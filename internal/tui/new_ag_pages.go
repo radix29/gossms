@@ -15,14 +15,14 @@ import (
 )
 
 // new_ag_pages.go builds New Availability Group's two pages. Both edit the same
-// NewAGDialog state — the replica list in particular — because everything they
+// NewAGDialog state (the replica list in particular) because everything they
 // collect goes into one CREATE AVAILABILITY GROUP rather than a create followed
 // by ALTERs.
 
-// agClusterTypeItems are the CLUSTER_TYPE values, in the order they are worth
-// offering: EXTERNAL first because a Linux instance is the case where the value
-// has to be chosen at all. WSFC is the server's own default and the only one
-// that works with no cluster type stated.
+// agClusterTypeItems are the CLUSTER_TYPE values, in the order worth offering:
+// EXTERNAL first because a Linux instance is where the value has to be chosen
+// at all. WSFC is the server's default and the only one that works with no
+// cluster type stated.
 var agClusterTypeItems = []string{"EXTERNAL", "WSFC", "NONE"}
 
 func (d *NewAGDialog) buildPages(pf *newAGPrefetch) {
@@ -118,11 +118,11 @@ func (d *NewAGDialog) buildGeneralPage(pf *newAGPrefetch) {
 	d.forms[0] = propsheet.NewForm(rows...)
 }
 
-// validateNewAG rejects what the server would, but with an explanation of why.
+// validateNewAG rejects what the server would, with an explanation of why.
 //
-// The two cluster-type rules are the ones worth catching here rather than
-// letting CREATE fail: both are consequences of what the cluster type *means*,
-// and the server's own errors name neither the replica nor the reason.
+// The two cluster-type rules are worth catching here rather than letting CREATE
+// fail: both follow from what the cluster type *means*, and the server's errors
+// name neither the replica nor the reason.
 func validateNewAG(name, clusterType string, replicas []*newAGReplica, existing *nameSet) error {
 	if name == "" {
 		return fmt.Errorf("availability group name is required")
@@ -150,8 +150,8 @@ func validateNewAG(name, clusterType string, replicas []*newAGReplica, existing 
 // agFailoverModesFor is which failover modes a cluster type permits, and the
 // clause explaining why, for the error message.
 //
-// Not a preference in any of the three cases, and the server's own errors do
-// not name the replica: CLUSTER_TYPE = NONE is rejected with Msg 47101 ("only
+// Not a preference in any of the three cases, and the server's errors don't
+// name the replica: CLUSTER_TYPE = NONE is rejected with Msg 47101 ("only
 // supports MANUAL failover mode"), and EXTERNAL requires the mode of the same
 // name because the external cluster manager owns failover outright. Both
 // verified against SQL Server 2025.
@@ -198,11 +198,11 @@ func (d *NewAGDialog) databaseRows() (propsheet.Row, propsheet.Row, func()) {
 	}
 	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 
-	// The inclusions the page opened with — nothing, since the group does not
-	// exist yet. RevertFn needs a baseline of its own because the state it
-	// restores lives on the dialog, not in the grid: Ctrl+Z otherwise emptied
-	// the name field, said "Reverted to the loaded values", and left every
-	// database the user had ticked still queued for the CREATE.
+	// The inclusions the page opened with: nothing, since the group doesn't exist
+	// yet. RevertFn needs its own baseline because the state it restores lives on
+	// the dialog, not in the grid: Ctrl+Z otherwise emptied the name field, said
+	// "Reverted to the loaded values", and left every ticked database still queued
+	// for the CREATE.
 	baseline := slices.Clone(d.databases)
 
 	gridRow := propsheet.NewGridRow(grid, 7)
@@ -306,13 +306,11 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 		reload()
 	})
 
-	// The replica list the page opened with. Same reason databaseRows keeps
-	// one: without it Ctrl+Z reverted the visible rows and left every added
-	// replica, and every per-replica mode already committed, in the request.
-	// It restores the whole list, backup priorities included — those are set
-	// on the Backup Preferences page but stored on these same replicas, and a
-	// dialog that has not been applied has no other baseline to keep them
-	// against.
+	// The replica list the page opened with. Same reason databaseRows keeps one:
+	// otherwise Ctrl+Z reverted the visible rows and left every added replica, and
+	// every per-replica mode already committed, in the request. It restores the
+	// whole list, backup priorities included (set on the Backup Preferences page
+	// but stored on these replicas; an unapplied dialog has no other baseline).
 	baseline := cloneAGReplicas(d.replicas)
 
 	gridRow := propsheet.NewGridRow(grid, 8)
@@ -341,11 +339,11 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 }
 
 // addReplica resolves an instance name to a replica: connect to it (with its
-// own saved credentials if there are any), read its endpoint, and append it.
+// own saved credentials if any), read its endpoint, and append it.
 //
-// The connect is what makes this worth doing rather than just taking the name
-// on trust — the endpoint URL has to come from the instance itself, and an
-// instance that cannot be reached now certainly cannot join later.
+// The connect is worth doing rather than taking the name on trust: the endpoint
+// URL has to come from the instance itself, and an instance that can't be
+// reached now certainly can't join later.
 func (d *NewAGDialog) addReplica(name string, done func()) {
 	if name == "" {
 		d.SetMessage("Type the instance name to add first.", true)
@@ -419,10 +417,10 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 
 	// Priorities are keyed by replica name rather than snapshotted as a slice,
-	// unlike the General page's baseline: the replica list belongs to that
-	// page, and a replica added there after this page was built must survive a
-	// revert here. A name missing from the map is such a replica, and keeps
-	// whatever priority it was added with.
+	// unlike the General page's baseline: the replica list belongs to that page,
+	// and a replica added there after this page was built must survive a revert
+	// here. A name missing from the map is such a replica and keeps the priority
+	// it was added with.
 	basePriority := map[string]int{}
 	for _, r := range d.replicas {
 		basePriority[r.name] = r.backupPriority

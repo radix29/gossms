@@ -53,43 +53,40 @@ type TreeView struct {
 	scroll int
 	active bool
 
-	// scrollX is the horizontal scroll offset, in display columns, applied to
-	// every row's rendered content. contentW is the widest row across tv.nodes,
-	// recomputed by SetNodes — the horizontal counterpart of scroll and
-	// len(tv.nodes) above.
+	// scrollX is the horizontal scroll offset, in display columns, applied to every
+	// row's rendered content. contentW is the widest row across tv.nodes,
+	// recomputed by SetNodes.
 	scrollX  int
 	contentW int
 
 	// title is drawn in the top border; empty draws a plain box.
 	title string
 
-	// lastClickIdx/lastClickAt time consecutive presses on one row, which is how
-	// a double-click — the mouse spelling of Enter's default action — is
-	// recognised. A zero lastClickAt means "no press to pair with", and is also
-	// how a completed double-click resets.
+	// lastClickIdx/lastClickAt time consecutive presses on one row to recognise a
+	// double-click (the mouse spelling of Enter's default action). A zero
+	// lastClickAt means "no press to pair with" and is how a completed
+	// double-click resets.
 	lastClickIdx int
 	lastClickAt  time.Time
 
-	// mouseDragging distinguishes a fresh Button1 press from a continued hold
-	// over the same row — MenuBar, DataGrid and Editor have the same field.
-	// Without it, tcell's all-motion tracking resends Button1 on every cursor
-	// motion while the button is down, so a click that twitches re-fires the
-	// click handling on every resend.
+	// mouseDragging distinguishes a fresh Button1 press from a continued hold over
+	// the same row (as in MenuBar, DataGrid and Editor). Without it, tcell's
+	// all-motion tracking resends Button1 on every motion while the button is down,
+	// re-firing the click handling on every resend.
 	mouseDragging bool
 
-	// sbDragging is true while the scrollbar thumb is being dragged — see
-	// DataGrid's field of the same name for why it is separate from
-	// mouseDragging.
+	// sbDragging is true while the scrollbar thumb is being dragged; see DataGrid's
+	// field of the same name for why it is separate from mouseDragging.
 	sbDragging  bool
 	sbDraggingX bool // same, for the horizontal scrollbar thumb
 
-	// Callbacks — set by the application layer
+	// Callbacks, set by the application layer
 	OnExpand   func(nodeID TreeNodeID) // called when a node is expanded
 	OnCollapse func(nodeID TreeNodeID) // called when a node is collapsed
 	OnSelect   func(nodeID TreeNodeID) // called when selection changes
-	// OnActivate is the selected node's default action — Enter, or a second click
-	// on the node's text within doubleClickInterval. It reports whether it handled the
-	// node; false or unset falls back to expand/collapse, which keeps Enter
+	// OnActivate is the selected node's default action: Enter, or a second click on
+	// the node's text within doubleClickInterval. It reports whether it handled
+	// the node; false or unset falls back to expand/collapse, which keeps Enter
 	// working on a folder.
 	OnActivate   func(nodeID TreeNodeID) bool
 	OnRightClick func(nodeID TreeNodeID, x, y int)
@@ -111,16 +108,15 @@ func (tv *TreeView) SetBounds(x, y, w, h int) {
 // SetActive marks the tree as focused.
 func (tv *TreeView) SetActive(v bool) { tv.active = v }
 
-// SetNodes replaces the entire visible node list — typically rebuilt in
-// OnExpand after loading children.
+// SetNodes replaces the entire visible node list, typically rebuilt in OnExpand
+// after loading children.
 //
 // The selection follows the selected node's ID, and its row keeps its screen
-// line. Keeping the index instead is wrong whenever rows are inserted or
-// removed above the selection — children arriving for a folder higher up — and
-// silently moves it onto a different node, which every keyboard action then
-// acts on. Only a selected ID that is gone falls back to clamping the index;
-// SetNodes never fires OnSelect, so a host that replaces nodes resolves where
-// that selection belongs itself (see SelectID).
+// line. Keeping the index is wrong whenever rows are inserted or removed above
+// the selection (children arriving for a folder higher up): it silently moves
+// onto a different node, which every keyboard action then acts on. Only a gone
+// ID falls back to clamping the index. SetNodes never fires OnSelect, so a
+// host that replaces nodes resolves the selection itself (see SelectID).
 func (tv *TreeView) SetNodes(nodes []TreeNode) {
 	prevID, hadSel := 0, false
 	if n := tv.SelectedNode(); n != nil {
@@ -134,10 +130,9 @@ func (tv *TreeView) SetNodes(nodes []TreeNode) {
 	} else {
 		tv.sel = core.Clamp(tv.sel, 0, max(0, len(nodes)-1))
 	}
-	// A collapse or refresh that shrinks the list below the old scroll offset
-	// would otherwise leave scroll past the end of nodes, and Draw's loop breaks
-	// on its first iteration — nothing renders until an arrow key recomputes
-	// scroll through ensureVisible.
+	// A collapse or refresh that shrinks the list below the old scroll offset would
+	// leave scroll past the end of nodes, and Draw's loop breaks on its first
+	// iteration: nothing renders until an arrow key recomputes scroll.
 	tv.ensureVisible(tv.rect.Inner(1).H)
 
 	tv.contentW = 0
@@ -171,10 +166,10 @@ func (tv *TreeView) lineWidth(n TreeNode) int {
 	return w
 }
 
-// SelectID selects the node with the given ID, if present, and fires OnSelect —
-// unlike SetNodes, which only carries an existing selection across and never
-// reports one. Use it for a node added or replaced programmatically that should
-// end up selected and reported like a click would.
+// SelectID selects the node with the given ID, if present, and fires OnSelect,
+// unlike SetNodes, which never reports a selection. Use it for a node added or
+// replaced programmatically that should end up selected and reported like a
+// click.
 func (tv *TreeView) SelectID(id TreeNodeID) {
 	if i := tv.indexOf(id); i >= 0 {
 		tv.sel = i
@@ -227,9 +222,9 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 		}
 		core.FillRect(s, core.Rect{X: inner.X, Y: y, W: inner.W, H: 1}, ' ', style)
 
-		// The whole row — indent, expander, icon, label — is built as one
-		// logical line and drawn through DrawTextOffset, so tv.scrollX shifts it
-		// uniformly and wide glyphs measure by display column, not by rune.
+		// The whole row (indent, expander, icon, label) is built as one logical line
+		// and drawn through DrawTextOffset, so tv.scrollX shifts it uniformly and wide
+		// glyphs measure by display column, not rune.
 		var line strings.Builder
 		line.WriteString(strings.Repeat(" ", node.Depth*2))
 		line.WriteString(expander)
@@ -296,8 +291,8 @@ func (tv *TreeView) HandleKey(ev *tcell.EventKey) bool {
 		tv.fireSelect()
 		return true
 	case tcell.KeyEnter:
-		// Enter is "do the default thing with this node"; Right only ever
-		// expands, so the activation hook hangs off Enter alone.
+		// Enter is "do the default thing with this node"; Right only ever expands, so
+		// the activation hook hangs off Enter alone.
 		if !tv.activateSelected() {
 			tv.toggleExpand()
 		}
@@ -309,22 +304,19 @@ func (tv *TreeView) HandleKey(ev *tcell.EventKey) bool {
 		tv.collapseSelected()
 		return true
 	case tcell.KeyF10:
-		// Shift+F10 is the cross-platform "open context menu" convention, and
-		// the binding most terminal apps use on macOS, which has no dedicated
-		// context-menu key.
+		// Shift+F10 is the cross-platform "open context menu" convention and the
+		// binding most macOS terminal apps use (no dedicated context-menu key).
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			tv.openContextMenuAtSelection()
 			return true
 		}
 	case tcell.KeyMenu:
-		// The dedicated Menu/Application key present on most Windows and
-		// Linux keyboards.
+		// The dedicated Menu/Application key on most Windows and Linux keyboards.
 		tv.openContextMenuAtSelection()
 		return true
 	}
 	if ev.Modifiers()&tcell.ModCtrl != 0 && core.EvRune(ev) == ' ' {
-		// Ctrl+Space: a third, always-available way to open the context menu,
-		// alongside Shift+F10 and Menu above.
+		// Ctrl+Space: an always-available third way, beside Shift+F10 and Menu.
 		tv.openContextMenuAtSelection()
 		return true
 	}
@@ -354,8 +346,8 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 
 	// Scrollbar drag/click takes priority over the row hit-testing below. The
 	// vertical bar is drawn over the right border column and the horizontal bar
-	// over the bottom border row (see Draw), and the latter sits outside the row
-	// range the hit-test checks — so both scrollbar checks must run first.
+	// over the bottom border row (see Draw), the latter outside the row range the
+	// hit-test checks, so both scrollbar checks must run first.
 	if core.HandleScrollbarDrag(ev, tv.rect.Right()-1, inner.Y, inner.H, len(tv.nodes), &tv.sbDragging, &tv.scroll) {
 		return true
 	}
@@ -372,13 +364,13 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	if idx < 0 || idx >= len(tv.nodes) {
 		return false
 	}
-	// A press acts on one specific node, so it needs the stricter content
-	// hit-test too: the row bound above doesn't constrain mx, and the vertical
-	// scrollbar is drawn over the right border column. HandleScrollbarDrag has
-	// already claimed a press there whenever the bar shows, so this only changes
-	// the no-bar case — but nodeIndexAt is also what app-level drag arming
-	// hit-tests with (see NodeIDAt), and the two must agree on what "landed on a
-	// node" means. The wheel cases below keep the looser row-only bound.
+	// A press acts on one specific node, so it needs the stricter content hit-test:
+	// the row bound above doesn't constrain mx, and the vertical scrollbar is drawn
+	// over the right border column. HandleScrollbarDrag already claims a press
+	// there whenever the bar shows, so this only changes the no-bar case, but
+	// nodeIndexAt is also what app-level drag arming hit-tests with (see NodeIDAt)
+	// and the two must agree on what "landed on a node" means. The wheel cases
+	// below keep the looser row-only bound.
 	if b := ev.Buttons(); b == tcell.Button1 || b == tcell.Button2 {
 		if _, ok := tv.nodeIndexAt(mx, my); !ok {
 			return false
@@ -387,29 +379,27 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	switch ev.Buttons() {
 	case tcell.Button1:
 		if tv.mouseDragging {
-			// Still the same physical press, or the same drag toward the query
-			// editor (see explorer_drag.go) — don't re-select or re-toggle on
-			// every resent motion event.
+			// Still the same physical press, or the same drag toward the query editor (see
+			// explorer_drag.go): don't re-select or re-toggle on every resent motion event.
 			return true
 		}
 		tv.mouseDragging = true
 		node := &tv.nodes[idx]
 		// A second press on the same row inside the interval is a double-click:
-		// activate rather than re-select. Recorded before the expander test
-		// below so a double-click on the glyph only toggles — activating from it
-		// too would fire on the second half of an ordinary expand.
-		// doubleClickInterval is the Editor's, one speed for the whole app.
+		// activate rather than re-select. Recorded before the expander test so a
+		// double-click on the glyph only toggles (activating from it too would fire on
+		// the second half of an ordinary expand). doubleClickInterval is the Editor's,
+		// one speed for the whole app.
 		doubleClick := idx == tv.lastClickIdx && !tv.lastClickAt.IsZero() &&
 			time.Since(tv.lastClickAt) <= doubleClickInterval
 		tv.lastClickIdx = idx
 		tv.lastClickAt = time.Now()
 		// Only the "[+]"/"[-]" expander glyph toggles expand/collapse; a click
-		// elsewhere on the row reselects it. That is what lets a node be
-		// click-dragged into the query editor without flipping its expand state,
-		// since a drag starts on the label. mx is a screen column while the
-		// expander's position is virtual (depth*2..depth*2+4, see Draw), so it
-		// must be translated through tv.scrollX or this matches only at
-		// scrollX==0.
+		// elsewhere on the row reselects it, which lets a node be click-dragged into
+		// the query editor without flipping its expand state (a drag starts on the
+		// label). mx is a screen column while the expander's position is virtual
+		// (depth*2..depth*2+4, see Draw), so it must be translated through tv.scrollX
+		// or this matches only at scrollX==0.
 		vcol := mx - inner.X + tv.scrollX
 		onExpander := node.HasKids && vcol >= node.Depth*2 && vcol < node.Depth*2+4
 		if tv.sel != idx {
@@ -420,12 +410,10 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 			tv.toggleExpand()
 			return true
 		}
-		// A double-click on the node's text (icon and label) is Enter: the
-		// default action, else expand/collapse. Blank row space past the label
-		// only selects.
+		// A double-click on the node's text (icon and label) is Enter: the default
+		// action, else expand/collapse. Blank row space past the label only selects.
 		if doubleClick && node.onText(vcol) {
-			// Cleared so a third click starts a fresh pair rather than
-			// activating again on every following click.
+			// Cleared so a third click starts a fresh pair rather than activating again.
 			tv.lastClickAt = time.Time{}
 			if !tv.activateSelected() {
 				tv.toggleExpand()
@@ -440,8 +428,8 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	case tcell.WheelUp:
 		// Shift+wheel is the desktop convention for horizontal scroll, and some
-		// terminals report it that way rather than as WheelLeft/WheelRight
-		// below, so honour both — as DataGrid, Editor and PlanView do.
+		// terminals report it that way rather than as WheelLeft/WheelRight below, so
+		// honour both (as DataGrid, Editor and PlanView do).
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			tv.scrollLeft()
 		} else if tv.scroll > 0 {
@@ -466,9 +454,9 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 }
 
 // nodeIndexAt returns the index into tv.nodes of the row drawn at screen
-// position (mx, my), and whether that position is over a node row at all. The
-// test is against the content area, not the whole rect, so the border columns
-// and rows the scrollbars are drawn over never resolve to a node.
+// position (mx, my), and whether that position is over a node row. The test is
+// against the content area, not the whole rect, so border columns and rows the
+// scrollbars are drawn over never resolve to a node.
 func (tv *TreeView) nodeIndexAt(mx, my int) (int, bool) {
 	inner := tv.rect.Inner(1)
 	if !inner.Contains(mx, my) {
@@ -482,12 +470,11 @@ func (tv *TreeView) nodeIndexAt(mx, my int) (int, bool) {
 }
 
 // NodeIDAt returns the ID of the node drawn at screen position (mx, my), and
-// whether there is one there — how a host finds out what a press landed on
-// rather than inferring it from the selection afterwards. A press on the
-// scrollbar, the border, or blank space below the last node reports no node.
-// Object Explorer's drag-and-drop arms from this (via ObjectExplorer.NodeAt);
-// without it a scrollbar drag arms as a node drag and the thumb stops following
-// the mouse.
+// whether there is one: how a host learns what a press landed on rather than
+// inferring it from the selection afterwards. A press on the scrollbar, the
+// border, or blank space below the last node reports no node. Object Explorer's
+// drag-and-drop arms from this (via ObjectExplorer.NodeAt); otherwise a
+// scrollbar drag arms as a node drag and the thumb stops following the mouse.
 func (tv *TreeView) NodeIDAt(mx, my int) (int, bool) {
 	idx, ok := tv.nodeIndexAt(mx, my)
 	if !ok {
@@ -497,8 +484,7 @@ func (tv *TreeView) NodeIDAt(mx, my int) (int, bool) {
 }
 
 // scrollLeft/scrollRight nudge the horizontal scroll offset by 4 columns,
-// clamped to [0, contentW-inner.W] so the thumb never runs past either end of
-// the track.
+// clamped to [0, contentW-inner.W] so the thumb never runs past either end.
 func (tv *TreeView) scrollLeft() {
 	tv.scrollX = max(0, tv.scrollX-4)
 }
@@ -509,8 +495,8 @@ func (tv *TreeView) scrollRight() {
 }
 
 // activateSelected runs the selected node's default action, reporting whether
-// anything handled it. A host with no OnActivate, or one that declines this
-// node, gets false and the caller falls back to expand/collapse.
+// anything handled it. With no OnActivate, or one that declines this node, the
+// caller falls back to expand/collapse.
 func (tv *TreeView) activateSelected() bool {
 	n := tv.SelectedNode()
 	if n == nil || tv.OnActivate == nil {
@@ -521,9 +507,9 @@ func (tv *TreeView) activateSelected() bool {
 
 // toggleExpand flips the selected node's Expanded state and fires
 // OnExpand/OnCollapse. OnExpand fires on every expand, loaded or not, so the
-// caller can redisplay cached children; whether that means a fetch is the
-// caller's decision. TreeNode.Loaded is caller-supplied display metadata, not
-// something TreeView tracks or gates on.
+// caller can redisplay cached children; whether to fetch is the caller's
+// decision. TreeNode.Loaded is caller-supplied display metadata, not tracked or
+// gated on here.
 func (tv *TreeView) toggleExpand() {
 	n := tv.SelectedNode()
 	if n == nil || !n.HasKids {
@@ -539,9 +525,9 @@ func (tv *TreeView) toggleExpand() {
 	}
 }
 
-// expandSelected expands the selected node if it has children and is
-// collapsed, firing OnExpand. Right and + only ever expand: toggling there
-// collapsed an expanded node, against F1 help and the Enter case's comment.
+// expandSelected expands the selected node if it has children and is collapsed,
+// firing OnExpand. Right and + only ever expand (toggling would collapse an
+// expanded node, against F1 help and the Enter case).
 func (tv *TreeView) expandSelected() {
 	if n := tv.SelectedNode(); n != nil && !n.Expanded {
 		tv.toggleExpand()
@@ -588,7 +574,7 @@ func (tv *TreeView) openContextMenuAtSelection() {
 
 // SelectionAnchor returns the screen position a menu about the selected node
 // should open at, and whether there is a selection. Exported so a host opening
-// its own menu about the selection uses the same anchor the context menu does.
+// its own menu about the selection uses the same anchor as the context menu.
 func (tv *TreeView) SelectionAnchor() (x, y int, ok bool) {
 	n := tv.SelectedNode()
 	if n == nil {
@@ -596,7 +582,7 @@ func (tv *TreeView) SelectionAnchor() (x, y int, ok bool) {
 	}
 	inner := tv.rect.Inner(1)
 	// n.Depth*2 is a virtual column (see Draw's row-line layout), translated back
-	// through tv.scrollX like the expander hit-test does and clamped, so a node
-	// scrolled left of the panel still pops its menu on screen.
+	// through tv.scrollX like the expander hit-test and clamped, so a node scrolled
+	// left of the panel still pops its menu on screen.
 	return inner.X + max(0, n.Depth*2-tv.scrollX), inner.Y + (tv.sel - tv.scroll), true
 }

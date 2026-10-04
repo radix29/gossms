@@ -82,10 +82,9 @@ type ServerConn struct {
 	Opts   config.Connection
 	Server *gosmo.Server
 
-	// closed is atomic because Close runs on the UI goroutine while Peer's
-	// cache lookups ask IsOpen from loader goroutines. Atomic rather than
-	// derived from Server.Context(): a bare &ServerConn{} (tests build them)
-	// must read open.
+	// closed is atomic because Close runs on the UI goroutine while Peer's cache
+	// lookups ask IsOpen from loader goroutines. Atomic rather than derived from
+	// Server.Context(): a bare &ServerConn{} (tests build them) must read open.
 	closed atomic.Bool
 
 	// role is what ConnectContext opened this connection for; peers inherit
@@ -140,13 +139,13 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	return newServerConn(parent, opts, srv, role), nil
 }
 
-// newServerConn is ConnectContext's tail over a connected srv: ctx is the
+// newServerConn is ConnectContext's tail over a connected srv; ctx is the
 // caller's, for the capability probe.
 //
 // Only Object Explorer's connection gates anything on the server-scope
-// capability set; a query panel, Activity Monitor or XEvent viewer would pay
-// the probe's round trip for an answer nothing reads. AG peers inherit
-// RoleExplorer, so they still probe.
+// capability set; a query panel, Activity Monitor or XEvent viewer would pay a
+// round trip for an answer nothing reads. AG peers inherit RoleExplorer, so
+// they still probe.
 func newServerConn(ctx context.Context, opts config.Connection, srv *gosmo.Server, role Role) *ServerConn {
 	sc := &ServerConn{Opts: opts, Server: srv, role: role}
 	if role == RoleExplorer {
@@ -164,10 +163,8 @@ func newServerConn(ctx context.Context, opts config.Connection, srv *gosmo.Serve
 // Device Code is ApplicationClientID; only a user-assigned managed identity
 // uses ClientID. A service principal saved with its id in User is the fallback.
 // MFA's User is a login hint. Fields a method doesn't use (config.FieldsFor)
-// aren't passed.
-//
-// Every Entra method gets the shared entraCache and device-code prompt
-// (entra.go).
+// aren't passed. Every Entra method gets the shared entraCache and device-code
+// prompt (entra.go).
 func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions, error) {
 	co := gosmo.ConnectionOptions{
 		Server:                 opts.Server,
@@ -276,10 +273,10 @@ func ParseExtraProperties(s string) (url.Values, error) {
 	return out, nil
 }
 
-// Close disconnects. gosmo's Close cancels Server.Context() — and with it
-// every statement in flight and each load rooted in it — before closing the
-// pool; it runs before closePeers so a peer dial in progress is cancelled
-// rather than cached.
+// Close disconnects. gosmo's Close cancels Server.Context(), and with it every
+// statement in flight and each load rooted in it, before closing the pool; it
+// runs before closePeers so a peer dial in progress is cancelled rather than
+// cached.
 func (sc *ServerConn) Close() {
 	// First, so a concurrent Peer lookup never hands out a peer mid-close.
 	sc.closed.Store(true)

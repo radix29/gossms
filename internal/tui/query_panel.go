@@ -49,24 +49,23 @@ type QueryPanel struct {
 	database    string         // the session's DB_NAME() as of its last run
 	app         *App
 
-	// session is the one SQL Server session every run of this panel executes
-	// on, taken out of conn's pool by connectForQueryPanel; nil exactly when
-	// conn is nil or closed. conn itself still serves IntelliSense. See
-	// query.Session.
+	// session is the one SQL Server session every run of this panel executes on,
+	// taken out of conn's pool by connectForQueryPanel; nil exactly when conn is
+	// nil or closed. conn itself still serves IntelliSense. See query.Session.
 	session *query.Session
 
-	// connectingTo is the server connectForQueryPanel is still dialling for
-	// this panel, "" when no connect is in flight. Connecting is async and an
-	// Entra login fetches a token first, so a new window can sit unconnected
-	// for seconds. Without it, an F5 in that gap reports "No active connection"
-	// and a second Reconnect starts a second dial whose connection the first
-	// one's result overwrites.
+	// connectingTo is the server connectForQueryPanel is still dialling for this
+	// panel, "" when none is in flight. Connecting is async and an Entra login
+	// fetches a token first, so a new window can sit unconnected for seconds.
+	// Without it, an F5 in that gap reports "No active connection" and a second
+	// Reconnect starts a second dial whose connection the first one's result
+	// overwrites.
 	connectingTo string
 
 	// tranCount is the session's @@TRANCOUNT as its last run left it, deciding
-	// whether closing, reconnecting or quitting must first ask to commit.
-	// Nothing else runs on the session between runs, so it can only go stale by
-	// the session dying, which rolls the transaction back.
+	// whether closing, reconnecting or quitting must first ask to commit. Nothing
+	// else runs on the session between runs, so it goes stale only if the session
+	// dies, which rolls the transaction back.
 	tranCount int
 
 	filePath    string      // last path used by Save; "" if never saved
@@ -86,9 +85,8 @@ type QueryPanel struct {
 	fileCRLF bool
 
 	// runMode is the resultsMode the in-flight or most recent execution started
-	// under, snapshotted by runQuery. Anything that must agree with how that
-	// execution ran reads this, not resultsMode, which the Query menu can
-	// change mid-run.
+	// under, snapshotted by runQuery. Anything that must agree with how that run
+	// went reads this, not resultsMode, which the Query menu can change mid-run.
 	runMode ResultsMode
 
 	result    *query.Result // last execution's result; nil until first run
@@ -96,9 +94,9 @@ type QueryPanel struct {
 	tabRect   core.Rect     // results tab bar row; zero rect while hidden
 
 	// textMemo is the last Results to Text rendering and what it was rendered
-	// from, so a tab switch back to a set already seen reuses it: formatting is
-	// a pass over every cell. A result's sets never change once setResult has
-	// installed it, so textKey is the whole key.
+	// from, so switching back to a set already seen reuses it (formatting is a
+	// pass over every cell). A result's sets never change once setResult installs
+	// it, so textKey is the whole key.
 	textMemo struct {
 		key   textKey
 		lines *controls.LineBuffer
@@ -109,10 +107,10 @@ type QueryPanel struct {
 	textRun    latest
 	textRunKey textKey
 
-	// statusRect is the results area's bottom row, where drawResultsStatus
-	// paints the execution status for every tab the DataGrid isn't drawing —
-	// the grid renders the same line inside its own rect. Zero when the results
-	// area is too short to spare a row.
+	// statusRect is the results area's bottom row, where drawResultsStatus paints
+	// the execution status for every tab the DataGrid isn't drawing (the grid
+	// renders the same line inside its own rect). Zero when the area is too short
+	// to spare a row.
 	statusRect core.Rect
 
 	// execStart marks when the in-flight execution began — read by
@@ -120,40 +118,38 @@ type QueryPanel struct {
 	// ticker wakes the event loop to repaint.
 	execStart time.Time
 
-	// progress is the in-flight run's live row counter, non-nil only while a
-	// query (not an estimated plan, which scans no rows) is executing. The
-	// executor goroutine bumps it as rows are scanned and resultsStatusText
-	// reads it on the UI goroutine (see query.Progress), so "Executing..."
-	// shows how much has loaded, not just how long it has taken.
+	// progress is the in-flight run's live row counter, non-nil only while a query
+	// (not an estimated plan, which scans no rows) is executing. The executor
+	// goroutine bumps it as rows are scanned and resultsStatusText reads it on the
+	// UI goroutine (see query.Progress), so "Executing..." shows how much has
+	// loaded.
 	progress *query.Progress
 
-	// resultsNotice is a one-shot message ("No query to execute", "Not
-	// connected") outranking the computed elapsed/row/col status in
-	// updateResultsStatus until the next execution starts. Without it the next
-	// Draw recomputes the line from the last real result before the user sees
-	// it.
+	// resultsNotice is a one-shot message ("No query to execute", "Not connected")
+	// outranking the computed status in updateResultsStatus until the next
+	// execution starts. Without it the next Draw recomputes the line from the last
+	// real result before the user sees it.
 	resultsNotice string
 
 	// messageErrorLines marks which rendered line of p.messages belongs to an
-	// error message — built in renderActiveTab alongside the text, one entry per
-	// line index so it stays in sync with a message spanning several lines. Read
-	// by messagesHighlighter.
+	// error message; built in renderActiveTab alongside the text, one entry per
+	// line so it stays in sync with a message spanning several lines. Read by
+	// messagesHighlighter.
 	messageErrorLines []bool
 
-	// resultsFocused tracks which sub-region keyboard input goes to: false (the
-	// default) the editor, true the results grid. Set by whichever a click last
-	// landed in. It also gates the splitter's Ctrl+Up/Down resize to the results
-	// grid, as App.handleKey gates the explorer splitter to explorer focus —
-	// otherwise it steals Ctrl+Up/Down from the editor.
+	// resultsFocused tracks which sub-region gets keyboard input: false (default)
+	// the editor, true the results grid; set by whichever a click last landed in.
+	// It also gates the splitter's Ctrl+Up/Down resize to the results grid, as
+	// App.handleKey gates the explorer splitter to explorer focus; otherwise it
+	// steals Ctrl+Up/Down from the editor.
 	resultsFocused bool
 
 	// dragZone is the sub-region that claimed the Button1 press being held, or
-	// qZoneNone between gestures. tcell resends Button1 on every motion while
-	// the button is down, and the results tab bar sits a row below the splitter,
-	// itself directly below the editor — so a text-selection drag heading down
-	// out of the editor walks over both, grabbing the splitter and then flipping
-	// the active tab on every motion. Mirrors propsheet.PropertySheet.dragZone;
-	// cleared on the release.
+	// qZoneNone between gestures. tcell resends Button1 on every motion while the
+	// button is down, and the results tab bar sits a row below the splitter,
+	// itself directly below the editor, so a text-selection drag heading down out
+	// of the editor would grab the splitter and then flip the active tab on every
+	// motion. Mirrors propsheet.PropertySheet.dragZone; cleared on the release.
 	dragZone queryDragZone
 
 	// completionBuf is the flattened editor text sqlCompletionCandidates scans,
@@ -161,26 +157,26 @@ type QueryPanel struct {
 	// sqlparse.FlattenLinesInto). Valid only within one call.
 	completionBuf []rune
 
-	// completionPrefix makes that scan's batch-boundary pass incremental,
-	// resuming from the last boundary above the edit instead of relexing the
-	// whole prefix on every keystroke (see sqlparse.PrefixCache). Unlike
-	// completionBuf it stays live *across* calls, and needs no reset: it falls
-	// back to a full scan whenever it cannot justify a resume.
+	// completionPrefix makes that scan's batch-boundary pass incremental, resuming
+	// from the last boundary above the edit instead of relexing the whole prefix
+	// per keystroke (see sqlparse.PrefixCache). Unlike completionBuf it stays live
+	// *across* calls and needs no reset: it falls back to a full scan whenever it
+	// cannot justify a resume.
 	completionPrefix sqlparse.PrefixCache
 
-	// completionBatch is the same for the batch-wide temp-table and
-	// table-variable scan: it diffs the text against the last scan's and
-	// re-lexes only the changed window (see sqlparse.BatchCache). Also live
-	// across calls, also never reset.
+	// completionBatch does the same for the batch-wide temp-table and
+	// table-variable scan: it diffs the text against the last scan's and re-lexes
+	// only the changed window (see sqlparse.BatchCache). Also live across calls,
+	// never reset.
 	completionBatch sqlparse.BatchCache
 
 	executing bool
 	cancel    context.CancelFunc
 
-	// execDone is closed when the in-flight run's goroutine exits, which is how
-	// launch's App.animateUntil ticker knows to stop. Both execute paths close
-	// it from a defer, so a panic can't leave the ticker waking the event loop
-	// every second for the life of the process.
+	// execDone is closed when the in-flight run's goroutine exits, which tells
+	// launch's App.animateUntil ticker to stop. Both execute paths close it from a
+	// defer, so a panic can't leave the ticker waking the event loop every second
+	// for the life of the process.
 	execDone chan struct{}
 }
 
@@ -251,15 +247,15 @@ func (p *QueryPanel) SetTitle(t string) { p.title = t }
 func (p *QueryPanel) FilePath() string { return p.filePath }
 
 // Dirty reports whether the editor holds changes not yet saved to filePath, or
-// any content at all for a panel never saved — layout.Dirty, so the tab bar can
-// show a "*".
+// any content at all for a panel never saved. It is layout.Dirty, so the tab
+// bar can show a "*".
 //
-// The tab bar asks this from both tabSegments and Draw, every frame, and
-// Text() materialises the whole script: a 20 k-line script spent ~90 ms per
-// keystroke here (B10). So the answer is cached per document version, and a
-// recompute walks the document's lines against savedText rather than building
-// Text(). It still compares text rather than versions, because undoing back to
-// the saved text must read as clean and the version never repeats.
+// The tab bar asks this from both tabSegments and Draw every frame, and Text()
+// materialises the whole script (a 20k-line script cost ~90 ms per keystroke,
+// B10). So the answer is cached per document version, and a recompute walks the
+// document's lines against savedText rather than building Text(). It compares
+// text rather than versions because undoing back to the saved text must read as
+// clean and the version never repeats.
 func (p *QueryPanel) Dirty() bool {
 	doc := p.editor.Document()
 	if v := doc.Version(); !p.dirtyValid || v != p.dirtyVer {
@@ -338,9 +334,9 @@ func (p *QueryPanel) layoutChildren() {
 		p.tabRect = core.Rect{}
 	}
 	// DataGrid draws its own status bar on the last row of its rect; the other
-	// three don't, so they get one row less and drawResultsStatus paints the
-	// same line into the gap. Sized here rather than per tab, so switching tabs
-	// needs no relayout. Below two rows nothing is left to give up.
+	// three don't, so they get one row less and drawResultsStatus paints the same
+	// line into the gap. Sized here rather than per tab, so switching tabs needs
+	// no relayout. Below two rows nothing is left to give up.
 	p.statusRect = core.Rect{}
 	otherH := respH
 	if respH > 1 {
@@ -371,7 +367,7 @@ func (p *QueryPanel) resultsHasFocus() bool { return p.active && p.resultsFocuse
 // syncFocusVisuals applies editorHasFocus/resultsHasFocus to the editor's
 // cursor, the results grid's selection highlight and the Messages editor's
 // cursor. Called whenever p.active or p.resultsFocused changes, so at most one
-// sub-region ever shows itself as focused.
+// sub-region shows as focused.
 func (p *QueryPanel) syncFocusVisuals() {
 	p.editor.SetActive(p.editorHasFocus())
 	p.results.Focus(p.resultsHasFocus())
@@ -384,8 +380,7 @@ func (p *QueryPanel) syncFocusVisuals() {
 // activeResultSet returns the result set the active tab shows, or ok false when
 // the active tab isn't one (Messages, Execution Plan) or there is no result.
 // Every caller indexing result.Sets by activeTab goes through here:
-// setResult/setActiveTab keep the indices in step, but a mismatch would panic
-// rather than merely misdraw.
+// setResult/setActiveTab keep the indices in step, but a mismatch would panic.
 func (p *QueryPanel) activeResultSet() (query.ResultSet, bool) {
 	if p.result == nil || p.activeTab < 0 || p.activeTab >= len(p.result.Sets) {
 		return query.ResultSet{}, false

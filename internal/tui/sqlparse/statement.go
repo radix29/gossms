@@ -6,28 +6,27 @@ import "github.com/radix29/gossms/internal/tuikit/sqltext"
 // Statement bounds: where the DML statement the cursor is in begins and ends
 // ---------------------------------------------------------------------------
 
-// DMLStatementStarts scans tokens — already correctly depth-tracked from
-// its own start, since a ';'/GO textual boundary always falls outside any
-// paren in valid SQL — and returns, in ascending order, the offset of
-// every top-level WITH or sqltext.IsDMLLeader keyword that actually begins a new
-// statement rather than continuing the current one:
+// DMLStatementStarts scans tokens (already correctly depth-tracked from its own
+// start, since a ';'/GO textual boundary falls outside any paren in valid SQL)
+// and returns, in ascending order, the offset of every top-level WITH or
+// sqltext.IsDMLLeader keyword that begins a new statement rather than
+// continuing the current one:
 //   - a SELECT chained onto the previous top-level clause by
 //     UNION[ ALL]/EXCEPT/INTERSECT is the same statement, not a new one
 //   - the first top-level SELECT after WITH or after an INSERT with no
 //     intervening VALUES or EXEC is that statement's own main query/source
-//     (CTE's SELECT, INSERT ... SELECT), not a new one — only WITH/INSERT
-//     itself is the boundary; an INSERT ... VALUES has no such SELECT to
-//     suppress, so a later, genuinely separate SELECT stacked right after
-//     it with no ';' is (rarely) missed — a known limitation
-//   - a WITH directly followed by '(' is a table hint ("t WITH (NOLOCK)") or
-//     a rowset function's column list ("OPENJSON(@j) WITH (a int)"), never a
-//     CTE, which names itself first; a WITH that is the last token is not
-//     decided either way, and is not reported
+//     (CTE's SELECT, INSERT ... SELECT), not a new one; only WITH/INSERT itself
+//     is the boundary. An INSERT ... VALUES has no such SELECT to suppress, so
+//     a later, separate SELECT stacked right after it with no ';' is (rarely)
+//     missed (known limitation)
+//   - a WITH directly followed by '(' is a table hint ("t WITH (NOLOCK)") or a
+//     rowset function's column list ("OPENJSON(@j) WITH (a int)"), never a CTE,
+//     which names itself first; a WITH that is the last token is not decided
+//     either way, and is not reported
 //
-// Combined with the ';'/GO boundaries PrefixCache and
-// NarrowStatementForward already apply, this narrows FROM-scope/clause
-// analysis to the actual statement under the cursor even when the editor
-// holds several statements back to back with no ';' between them.
+// Combined with the ';'/GO boundaries PrefixCache and NarrowStatementForward
+// apply, this narrows FROM-scope/clause analysis to the statement under the
+// cursor even when several statements sit back to back with no ';'.
 func DMLStatementStarts(tokens []Token) []int {
 	var starts []int
 	var s dmlSplitter
@@ -144,16 +143,16 @@ func NarrowToDMLStatement(tokens []Token, batchStart, batchEnd, upTo int) (start
 // NarrowToDMLStatement did in three passes (the reference composition in
 // statement_forward_test.go), in one bounded pass. prefix holds the tokens of
 // [batchStart, upTo) as ScanPrefix returns them; the forward half is lexed from
-// from (upTo, or just past a bracket identifier the cursor sits in) and stops at
-// the first top-level ';', the next "GO" line below cursorRow, or the first
-// keyword after upTo that starts a new statement — whichever comes first. It
+// from (upTo, or just past a bracket identifier the cursor sits in) and stops
+// at the first top-level ';', the next "GO" line below cursorRow, or the first
+// keyword after upTo that starts a new statement, whichever comes first. It
 // returns the cursor's statement bounds and the forward tokens in [from, end).
 //
 // Stopping at the next statement is the point: in a script that ends no
-// statement with ';', the old ';'/GO scan lexed everything below the cursor —
-// 200–250 ms and 53 MB per keystroke on a 20 k-line script (B11). The leader
-// test is DMLStatementStarts' own, seeded with the prefix, so a SELECT that
-// continues an INSERT, a WITH or a UNION before the cursor still continues it.
+// statement with ';', a ';'/GO scan lexes everything below the cursor (200-250
+// ms and 53 MB per keystroke on a 20k-line script, B11). The leader test is
+// DMLStatementStarts' own, seeded with the prefix, so a SELECT that continues
+// an INSERT, WITH or UNION before the cursor still continues it.
 func NarrowStatementForward(lines [][]rune, buf []rune, cursorRow, batchStart, from, upTo int, prefix []Token) (start, end int, tail []Token) {
 	start, end = batchStart, len(buf)
 	var s dmlSplitter

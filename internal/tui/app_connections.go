@@ -161,27 +161,25 @@ func tidyErrorText(msg string) string {
 // (openQueryWithTextAndExecute uses it to run immediately).
 //
 // The connection is a pool for IntelliSense and catalog reads plus one
-// query.Session for the panel's lifetime, which every Execute uses (see
-// query.Session: a pool loses temp tables, SET options and transactions).
-// Catalog reads never queue behind a query. The panel starts in the session's
-// DB_NAME() — the login default if none was asked.
+// query.Session for the panel's lifetime, which every Execute uses (a pool
+// loses temp tables, SET options and transactions; see query.Session). Catalog
+// reads never queue behind a query. The panel starts in the session's
+// DB_NAME(), the login default if none was asked.
 func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database string, onConnected func()) {
 	opts := sc.Opts
 	if database != "" {
 		opts.Database = database
 	}
-	// The dial is scoped to the connection it is cloned from, per
-	// ARCHITECTURE.md § Threading model: disconnecting the Object Explorer
-	// node aborts a reconnect still in flight instead of leaving it to the
-	// 15 s connect timeout. Only the attempt is scoped — ConnectContext roots
-	// the new connection's own context at Background, so the panel's
-	// connection still outlives sc once the dial has returned.
+	// The dial is scoped to the connection it is cloned from (ARCHITECTURE.md §
+	// Threading model): disconnecting the Object Explorer node aborts a reconnect
+	// still in flight instead of leaving it to the 15 s connect timeout. Only the
+	// attempt is scoped; ConnectContext roots the new connection's own context at
+	// Background, so the panel's connection still outlives sc.
 	//
 	// Except when sc is already closed: Reconnect hands in the panel's own
-	// connection, which it has just closed, and a dial scoped to that failed
-	// at once with "context canceled" — the panel was dropped and never
-	// redialled. Nothing else can abort that dial, so it has only the
-	// connect timeout.
+	// connection, just closed, and a dial scoped to that failed at once with
+	// "context canceled", dropping the panel without a redial. Nothing else can
+	// abort that dial, so it has only the connect timeout.
 	parent := sc.Server.Context()
 	if parent.Err() != nil {
 		parent = context.Background()
@@ -190,13 +188,13 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 }
 
 // dialQueryPanel is connectForQueryPanel's dial, and the Connect dialog's when
-// it was opened for a query window (ConnectDialog.ShowForQueryPanel): opts as
-// given, qp's previous connection, if any, replaced once the new one is up.
+// opened for a query window (ConnectDialog.ShowForQueryPanel): opts as given,
+// qp's previous connection, if any, replaced once the new one is up.
 //
 // phase and done are the dialog's, as for connectServer: phase (nil from
-// connectForQueryPanel) also runs the sign-in phase first; done reports
-// whether the caller still wants the attempt, and a failure it still wants
-// gets an alert as well as the status bar.
+// connectForQueryPanel) also runs the sign-in phase first; done reports whether
+// the caller still wants the attempt, and a failure it still wants gets an
+// alert as well as the status bar.
 func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Connection,
 	phase func(label string), done func(err error) bool, onConnected func()) {
 	qp.database = opts.Database

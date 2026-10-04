@@ -13,10 +13,10 @@ import (
 )
 
 // The Files view (restoreModeFiles) is where the restore's file handling is
-// chosen: whether the restored database's files stay at the paths recorded
-// in the backup, go to the server's default data/log folders, or go to
-// folders the user names — with each file's recorded location and the path
-// it would actually be restored to listed side by side.
+// chosen: whether the restored database's files stay at the paths recorded in
+// the backup, go to the server's default data/log folders, or go to folders the
+// user names, with each file's recorded location and its restore path listed
+// side by side.
 
 // dirFieldWidth is the content width of the data/log folder inputs, sized so
 // the label, the box and the dialog's right margin fill the inner width.
@@ -41,11 +41,10 @@ func (d *RestoreDialog) defaultDirs() (dataDir, logDir string) {
 	return "", ""
 }
 
-// loadDefaultPaths reads the server's current default directories, and moves
+// loadDefaultPaths reads the server's current default directories and moves
 // each folder field still showing the snapshot's value onto the fresh one. A
-// field the user has already edited is left alone. A failed read leaves the
-// snapshot in place: it is what the dialog showed before this read existed,
-// and a restore is not worth refusing over it.
+// field the user has edited is left alone. A failed read leaves the snapshot: a
+// restore is not worth refusing over it.
 func (d *RestoreDialog) loadDefaultPaths() {
 	app, sc := d.app, d.sc
 	if app == nil || sc == nil || sc.Server == nil {
@@ -79,14 +78,14 @@ func (d *RestoreDialog) fillDefaultLocation() {
 	d.fLogDir.SetValue(logDir)
 }
 
-// relocation snapshots the Files view's choice for buildRestoreOptions,
-// which runs on a background goroutine and must not read widgets. The
-// default directories go in with it — defaultDirs' answer, so the restore
-// puts files where the Files view previewed them.
+// relocation snapshots the Files view's choice for buildRestoreOptions, which
+// runs on a background goroutine and must not read widgets. The default
+// directories go in with it (defaultDirs' answer), so the restore puts files
+// where the Files view previewed them.
 //
 // The collation decides whether restoring Sales as sales is a rename: on a
-// case-sensitive instance it is, and without MOVE clauses the restore
-// collides with the source database's files.
+// case-sensitive instance it is, and without MOVE clauses the restore collides
+// with the source database's files.
 func (d *RestoreDialog) relocation() gosmo.RestoreRelocation {
 	dataDir, logDir := d.defaultDirs()
 	return gosmo.RestoreRelocation{
@@ -108,9 +107,9 @@ var relocationModes = map[int]gosmo.RelocationMode{
 }
 
 // showFileLocations opens the Files view. The view lists the backup set's
-// files, so the set's file list has to be in hand first: a device already
-// analyzed for this form has it, anything else re-reads the header and file
-// list exactly as Analyze does.
+// files, so the file list has to be in hand first: a device already analyzed
+// for this form has it, anything else re-reads the header and file list as
+// Analyze does.
 func (d *RestoreDialog) showFileLocations() {
 	src := d.sourceForRestore()
 	if len(src.devices) == 0 {
@@ -133,10 +132,9 @@ func (d *RestoreDialog) enterFilesMode() {
 	d.setFilesFocus(0)
 }
 
-// filesFocusCycle is the view's Tab order. The folder fields only take part
-// while relocFolder is selected — they are disabled otherwise, and a
-// disabled field that can still be focused is a hole the cursor vanishes
-// into.
+// filesFocusCycle is the view's Tab order. The folder fields take part only
+// while relocFolder is selected; they are disabled otherwise, and a disabled
+// field that can still be focused is a hole the cursor vanishes into.
 func (d *RestoreDialog) filesFocusCycle() []focusable {
 	if d.rbReloc.Selected() != relocFolder {
 		return []focusable{d.rbReloc}
@@ -166,8 +164,7 @@ func (d *RestoreDialog) syncRelocState() {
 
 // plannedPaths maps each logical file name to the physical path the current
 // choice would restore it to. Built by gosmo.RestoreRelocation.Moves, which
-// also builds the MOVE clauses, so the preview cannot drift from what the
-// restore actually does.
+// also builds the MOVE clauses, so the preview cannot drift from the restore.
 func (d *RestoreDialog) plannedPaths() map[string]string {
 	source := ""
 	if h := d.selectedHeader(); h != nil {
@@ -182,10 +179,10 @@ func (d *RestoreDialog) plannedPaths() map[string]string {
 }
 
 // clipPathLeft fits path into w display columns by dropping columns off its
-// *front*, marking the cut with "…". core.Truncate cuts the tail instead,
-// which on a server path throws away the only part that differs: two files
-// under "C:\Program Files\Microsoft SQL Server\MSSQL17.MSSQLSERVER\MSSQL\"
-// clip to the identical string, file name and all.
+// *front*, marking the cut with "...". core.Truncate cuts the tail, which on a
+// server path discards the only part that differs: two files under "C:\Program
+// Files\Microsoft SQL Server\MSSQL17.MSSQLSERVER\MSSQL\" would clip to the
+// identical string.
 func clipPathLeft(path string, w int) string {
 	if w <= 0 {
 		return ""

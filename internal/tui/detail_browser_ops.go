@@ -13,10 +13,10 @@ import (
 // Delete its grid's context menu offers over whatever the block selection
 // covers.
 //
-// It lives in the pane rather than in the tree because controls.TreeView has a
-// single selection, so SSMS's "Delete Object" dialog listing several objects
-// can never come from there. The grid already had block selection; what it had
-// no route to was an action.
+// It lives in the pane rather than the tree because controls.TreeView has a
+// single selection, so SSMS's multi-object "Delete Object" dialog can't come
+// from there. The grid already had block selection; it lacked a route to an
+// action.
 //
 // Rename and Move to Schema stay in the tree deliberately: neither means
 // anything applied to a set, and both are one click away there.
@@ -26,13 +26,12 @@ import (
 // runs past them.
 //
 // DataGrid.SelectedRows, never SelectionBounds: Ctrl+click builds a selection
-// of rows that no rectangle describes, and the bounds of one would name every
-// row between two picked ones as well. The rows, never the cells, for the same
-// kind of reason — which columns a selection covers says nothing about which
-// objects it covers.
+// of rows that no rectangle describes, and the bounds would name every row
+// between two picked ones too. Rows, never cells: which columns a selection
+// covers says nothing about which objects it covers.
 //
-// Nil, too, when the objects were installed for another node than the one now
-// current: detailMenuItems pairs them with currentNode's connection.
+// Nil also when the objects were installed for another node than the current
+// one: detailMenuItems pairs them with currentNode's connection.
 func (db *DetailBrowser) selectedRowObjects() []nodeData {
 	if len(db.rowObjs) == 0 || db.rowObjsNode != db.currentNode {
 		return nil
@@ -63,20 +62,20 @@ func (a *App) detailMenuItems(db *DetailBrowser) []controls.MenuItem {
 	if sc == nil {
 		return nil
 	}
-	// Every selected object has to be deletable, not just the first: a batch
-	// that dropped what it could and skipped the rest would be a partial delete
-	// nobody asked for.
+	// Every selected object has to be deletable, not just the first: a batch that
+	// dropped what it could and skipped the rest would be a partial delete nobody
+	// asked for.
 	for _, n := range objs {
 		op := objectOpFor(n.Type)
 		if op == nil || (op.drop == nil && op.dropWithOption == nil) {
 			return nil
 		}
 	}
-	// A type that is deleted on its own — a database, a principal, an encryption
-	// key — is offered as a withheld item naming the row to keep, not left out
-	// of the menu: a Delete that vanishes when a second row is selected reads as
-	// the pane having no Delete at all. confirmDeleteObjects refuses the batch
-	// too; this is the half that says so before the click.
+	// A type deleted on its own (a database, a principal, an encryption key) is
+	// offered as a withheld item naming the row to keep, not left out of the menu:
+	// a Delete that vanishes when a second row is selected reads as the pane
+	// having no Delete. confirmDeleteObjects refuses the batch too; this is the
+	// half that says so before the click.
 	if len(objs) > 1 {
 		for _, n := range objs {
 			if op := objectOpFor(n.Type); deletedAlone(op, n) {
@@ -115,10 +114,10 @@ func deleteItemLabel(objs []nodeData) string {
 	return fmt.Sprintf("Delete %d %s...", len(objs), pluralNoun(noun))
 }
 
-// pluralNoun pluralises an objectOp noun. Two rules cover the whole table, and
-// TestEveryObjectOpNounPluralises is what keeps that true as it grows: "Index"
-// is the only one taking -es, and "Security Policy" the only one taking -ies
-// ("Key" keeps its -s, its y following a vowel).
+// pluralNoun pluralises an objectOp noun. Two rules cover the table
+// (TestEveryObjectOpNounPluralises keeps that true as it grows): "Index" is the
+// only one taking -es, and "Security Policy" the only one taking -ies ("Key"
+// keeps its -s, its y following a vowel).
 func pluralNoun(noun string) string {
 	switch {
 	case strings.HasSuffix(noun, "x") || strings.HasSuffix(noun, "s") ||
@@ -131,17 +130,17 @@ func pluralNoun(noun string) string {
 }
 
 // gateDeleteSelection withholds Delete unless every selected object may be
-// deleted — the rights objectOpsMenuItems gates the tree's Delete on, asked per
-// object, plus the system-object rule the tree applies through nodeData.IsSystem.
+// deleted: the rights objectOpsMenuItems gates the tree's Delete on, asked per
+// object, plus the system-object rule the tree applies through
+// nodeData.IsSystem.
 //
 // Per object rather than once for the folder: gate.AlterOnSchema and
 // gate.AlterOnObject answer about a named securable, so a selection spanning
 // two schemas can be permitted in one and refused in the other, and one answer
-// for the batch would be right about at most one of them.
+// for the batch would be right about at most one.
 //
-// The note names the object that is the problem, which gate's does not have to:
-// "needs ALTER" on a forty-row selection says nothing about which row to
-// deselect.
+// The note names the offending object, which gate's does not: "needs ALTER" on
+// a forty-row selection doesn't say which row to deselect.
 func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []nodeData) controls.MenuItem {
 	firstDenied := func() (nodeData, bool) {
 		for _, n := range objs {

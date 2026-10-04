@@ -13,13 +13,13 @@ import (
 // Service Bindings and Broker Priorities.
 //
 // The folder is listed whether or not the broker is enabled on the database.
-// Every one of these objects can be created, listed and dropped with
-// is_broker_enabled off — disabling the broker stops message delivery, not
-// DDL — and Database Properties ▸ Options already reports the flag.
+// These objects can all be created, listed and dropped with is_broker_enabled
+// off (disabling the broker stops message delivery, not DDL), and Database
+// Properties ▸ Options reports the flag.
 //
-// Queues are the one schema-scoped family here (a sys.objects row of type
-// 'SQ'); the other six are database-scoped with an owner and no schema, which
-// is why only the queue loader fills nodeData.Schema.
+// Queues are the one schema-scoped family (a sys.objects row of type 'SQ'); the
+// other six are database-scoped with an owner and no schema, so only the queue
+// loader fills nodeData.Schema.
 
 // loadServiceBrokerChildren returns the seven family folders, in SSMS's
 // order. A static loader: each folder reads for itself, so expanding Service
@@ -59,15 +59,15 @@ func loadContractsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 		})
 }
 
-// loadBrokerQueuesChildren lists the database's queues — the one family here
-// that is schema-scoped, so the label carries the schema the way every other
-// schema-scoped folder's does.
+// loadBrokerQueuesChildren lists the database's queues, the one schema-scoped
+// family here, so the label carries the schema as other schema-scoped folders'
+// do.
 //
-// A queue taken out of service is labelled "(Disabled)", the same suffix the
-// trigger, policy and plan-guide folders use and for the same reason: a queue
-// with STATUS = OFF neither receives nor enqueues anything, and nothing else
-// in the row says so. ALTER QUEUE … WITH STATUS sets both halves together, so
-// a queue is disabled when neither is on.
+// A queue taken out of service is labelled "(Disabled)", the suffix the
+// trigger, policy and plan-guide folders use, for the same reason: a queue with
+// STATUS = OFF neither receives nor enqueues and nothing else in the row says
+// so. ALTER QUEUE ... WITH STATUS sets both halves together, so a queue is
+// disabled when neither is on.
 func loadBrokerQueuesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listDatabaseChildren(l, node, (*gosmo.Database).BrokerQueues,
 		func(q *gosmo.BrokerQueue) *explorerNode {
@@ -85,10 +85,9 @@ func loadBrokerQueuesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode,
 }
 
 // loadBrokerServicesChildren lists the database's services. IsSystemObject is
-// the id-range test, which is why msdb shows Database Mail's services as user
-// objects while the same feature's queues come back system — see gosmo's
-// service_broker.go; the two classifications cannot be made to agree and the
-// asymmetry is the catalog's, not a bug here.
+// the id-range test, so msdb shows Database Mail's services as user objects
+// while the same feature's queues come back system (see gosmo's
+// service_broker.go); the asymmetry is the catalog's, not a bug here.
 func loadBrokerServicesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listDatabaseChildren(l, node, (*gosmo.Database).BrokerServices,
 		func(s *gosmo.BrokerService) *explorerNode {
@@ -99,13 +98,12 @@ func loadBrokerServicesChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 }
 
 // loadRoutesChildren lists the database's routes. No route is marked system,
-// deliberately: sys.routes has no is_ms_shipped and no system id range —
-// AutoCreatedLocal, which SQL Server puts in every database, has route_id
-// 65536, inside the user range. SSMS lists it plainly and a user may
-// legitimately drop it.
+// deliberately: sys.routes has no is_ms_shipped and no system id range
+// (AutoCreatedLocal, in every database, has route_id 65536, inside the user
+// range). SSMS lists it plainly and a user may legitimately drop it.
 //
-// The label carries the address, since a route's name says nothing about
-// where it sends and "LOCAL" vs. a TCP address is the whole of what it is.
+// The label carries the address, since a route's name says nothing about where
+// it sends and "LOCAL" vs. a TCP address is the whole of what it is.
 func loadRoutesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listDatabaseChildren(l, node, (*gosmo.Database).Routes,
 		func(r *gosmo.Route) *explorerNode {
@@ -119,7 +117,7 @@ func loadRoutesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 
 // loadRemoteServiceBindingsChildren lists the database's remote service
 // bindings. The family exists on Managed Instance and is listed there:
-// sys.remote_service_bindings reads fine and ALTER/DROP run — only CREATE is
+// sys.remote_service_bindings reads fine and ALTER/DROP run; only CREATE is
 // refused, which is the edition gate's business, not the tree's.
 func loadRemoteServiceBindingsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listDatabaseChildren(l, node, (*gosmo.Database).RemoteServiceBindings,
@@ -143,19 +141,18 @@ func loadBrokerPrioritiesChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 }
 
 // The context menus for the seven leaves, looked up through nodeMenus
-// (explorer_loaders.go). Each opens its family's Properties; five of them are
-// read-only pages, and the queue's and the route's can write.
+// (explorer_loaders.go). Each opens its family's Properties; five are read-only
+// pages, and the queue's and route's can write.
 //
-// Each is Properties only here because the rest of the menu is spliced in
-// from the shared tables rather than named per family: Delete comes from
-// objectOps, Script as from scriptables, and Move to Schema — queues only,
-// the one schema-scoped family — from the same objectOp's transfer. There are
-// no renames at all in this subtree: no sp_rename class exists for any of the
-// seven.
+// Each is Properties only here because the rest of the menu is spliced in from
+// shared tables: Delete from objectOps, Script as from scriptables, and Move to
+// Schema (queues only, the one schema-scoped family) from the same objectOp's
+// transfer. There are no renames in this subtree: no sp_rename class exists for
+// any of the seven.
 //
 // There is no Enable/Disable item for a queue, deliberately: a queue's status
-// is a row on its Properties page, which is one place rather than two. A plan
-// guide has the item because it has no other page that writes.
+// is a row on its Properties page, one place rather than two. A plan guide has
+// the item because it has no other page that writes.
 
 func messageTypeMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {

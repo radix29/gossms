@@ -13,38 +13,37 @@ import (
 )
 
 // database_mail_props.go is Database Mail Properties: the whole Database Mail
-// configuration in one paged dialog — General (status and 'Database Mail
-// XPs'), Accounts (database_mail_props_accounts.go), Profiles and Profile
-// Security (database_mail_props_profiles.go), and System Parameters. It
-// replaces SSMS's Configure Database Mail wizard (docs/decisions.md): accounts
-// and profiles have no tree nodes, so this is where they are edited.
+// configuration in one paged dialog: General (status and 'Database Mail XPs'),
+// Accounts (database_mail_props_accounts.go), Profiles and Profile Security
+// (database_mail_props_profiles.go), and System Parameters. It replaces SSMS's
+// Configure Database Mail wizard (docs/decisions.md): accounts and profiles
+// have no tree nodes, so this is where they are edited.
 //
 // # One Apply, in dependency order
 //
-// The pages refer to each other's objects: a profile lists accounts, and a
-// grant names a profile, and either may be new in the same Apply. So the
-// dialog is planned (applyPlan), and the pages' statements run in
-// mailPhase order — creations first, then what refers to them, then renames,
-// then drops. Renames come after the profile-account and grant writes because
-// those pages address existing objects by the names the server still has.
+// The pages refer to each other's objects (a profile lists accounts, a grant
+// names a profile) and either may be new in the same Apply. So the dialog is
+// planned (applyPlan) and statements run in mailPhase order: creations first,
+// then what refers to them, then renames, then drops. Renames follow the
+// profile-account and grant writes because those address existing objects by
+// the names the server still has.
 //
 // The msdb writes are one transaction (gosmo's InTransaction, N2): every
-// sysmail_* procedure, the credential an account's password creates
-// included, runs and rolls back cleanly inside one (probed on 13, 14 and 17),
-// so a failure part-way stores nothing and the pages keep their edits.
-// 'Database Mail XPs' is sp_configure plus RECONFIGURE, which refuses to run
-// inside a user transaction (Msg 574), so it follows the COMMIT; one failing
-// there leaves the msdb writes stored, and the dialog reloads every page.
-// None of the configuration procedures needs the option on.
+// sysmail_* procedure, the credential an account's password creates included,
+// runs and rolls back cleanly inside one (probed on 13, 14 and 17), so a
+// failure part-way stores nothing and the pages keep their edits. 'Database
+// Mail XPs' is sp_configure plus RECONFIGURE, which refuses to run inside a
+// user transaction (Msg 574), so it follows the COMMIT; a failure there leaves
+// the msdb writes stored, and the dialog reloads every page. None of the
+// configuration procedures needs the option on.
 //
 // # Pages that see each other's edits
 //
 // A new account has to be offered on the Profiles page, and a new profile on
-// Profile Security, before Apply — configuring Database Mail from nothing is
-// one account, one profile and one grant, and three Applies for that would be
-// the dialog getting in the way. mailModel carries the names across: the
-// page that owns them publishes, the page that uses them listens. Resource
-// Governor Properties does the same for its pools (rgModel).
+// Profile Security, before Apply: configuring from nothing is one account, one
+// profile and one grant, and three Applies would be the dialog getting in the
+// way. mailModel carries the names across: the owning page publishes, the
+// using page listens. Resource Governor Properties does the same (rgModel).
 
 // The pages of Database Mail Properties, in order.
 const (
@@ -55,12 +54,12 @@ const (
 	mailPageParameters
 )
 
-// The phases a Database Mail Apply runs in. Profile accounts and grants use
-// the names the server has now — a page shows an existing account or profile
-// by its stored name until Apply — so renames run after them; drops run
-// after anything that might still name the dropped object, and cascade over
-// its links and grants anyway. 'Database Mail XPs' is last, outside the
-// transaction (runDatabaseMailPlan).
+// The phases a Database Mail Apply runs in. Profile accounts and grants use the
+// names the server has now (a page shows an existing account or profile by its
+// stored name until Apply), so renames run after them; drops run after
+// anything that might still name the dropped object, and cascade over its links
+// and grants anyway. 'Database Mail XPs' is last, outside the transaction
+// (runDatabaseMailPlan).
 const (
 	mailPhaseCreateAccounts = iota
 	mailPhaseCreateProfiles
@@ -78,20 +77,20 @@ const (
 const mailXPsOption = "Database Mail XPs"
 
 // mailModel is what the pages of one showing share: the account names the
-// Accounts page will leave in place (for the Profiles page) and the profile
-// names the Profiles page will (for Profile Security). A list is nil until
-// its page has loaded; the using page then falls back to its own read.
+// Accounts page will leave in place (for Profiles) and the profile names the
+// Profiles page will (for Profile Security). A list is nil until its page has
+// loaded; the using page then falls back to its own read.
 //
 // Published names are the ones valid while profile accounts and grants are
-// written: an existing object's stored name, even if the page renames it, and
-// a new object's name. Removed objects are left out.
+// written: an existing object's stored name, even if the page renames it, and a
+// new object's name. Removed objects are left out.
 //
 // Pages load on background goroutines and edit on the UI goroutine, hence the
-// lock. A page publishes its initial names from its load without notifying —
-// they are what the server has, which every page read for itself — and
-// notifies listeners only from the UI goroutine, after an edit. A listener is
-// registered at the end of its page's load, once the rows it touches are
-// built, keyed by page so a reload replaces it.
+// lock. A page publishes its initial names from its load without notifying
+// (they are what the server has, which every page read itself) and notifies
+// listeners only from the UI goroutine, after an edit. A listener is
+// registered at the end of its page's load, once the rows it touches are built,
+// keyed by page so a reload replaces it.
 type mailModel struct {
 	mu         sync.Mutex
 	accounts   []string
@@ -184,9 +183,9 @@ func (a *App) showDatabaseMailPropertiesFor(sc *db.ServerConn, page int) {
 }
 
 // databaseMailPropPages builds the page set. Configuration is ordinary msdb
-// permission — db_owner there, or CONTROL SERVER — not sysadmin (W8);
-// 'Database Mail XPs' is sp_configure, ALTER SETTINGS. The Accounts page
-// asks ALTER ANY CREDENTIAL itself, for the credential fields alone.
+// permission (db_owner there, or CONTROL SERVER), not sysadmin (W8); 'Database
+// Mail XPs' is sp_configure, ALTER SETTINGS. The Accounts page asks ALTER ANY
+// CREDENTIAL itself, for the credential fields alone.
 func databaseMailPropPages(_ *PropDialog, sc *db.ServerConn) []propPage {
 	model := &mailModel{}
 	configure := gate.DatabaseMailConfigRights()
@@ -234,9 +233,9 @@ func mailNotVisibleForm(section string) *propsheet.Form {
 // -- General -----------------------------------------------------------------
 
 // pageMailGeneral is Database Mail's state and its sp_configure switch. With
-// the switch off the rest of the dialog still works — every configuration
-// procedure runs with 'Database Mail XPs' at 0 (W8) — but nothing is sent,
-// and Database Mail cannot be started.
+// the switch off the rest of the dialog still works (every configuration
+// procedure runs with 'Database Mail XPs' at 0, W8), but nothing is sent and
+// Database Mail cannot be started.
 func pageMailGeneral(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "General",

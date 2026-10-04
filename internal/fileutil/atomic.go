@@ -162,14 +162,14 @@ func resolveSymlink(path string) string {
 // tracked_queries.json; 0644 for scripts), and applying it blindly would
 // re-widen a script the user chmodded 0600 on every save.
 //
-// Capping at perm tightens a config.json or gossms.key that somehow reached
-// 0644 back to 0600 instead of keeping it wide forever.
+// Capping at perm tightens a config.json or gossms.key that reached 0644 back
+// to 0600 instead of keeping it wide.
 //
 // The mode read is the symlink target's; WriteAtomic resolved it already.
 //
 // Ownership is not preserved (the new file belongs to the running user). That
-// only matters when running as root over another user's file, which isn't
-// supported, and fixing it would need OS branching.
+// matters only as root over another user's file, which isn't supported, and
+// fixing it would need OS branching.
 func modeFor(path string, perm os.FileMode) os.FileMode {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -182,8 +182,8 @@ func modeFor(path string, perm os.FileMode) os.FileMode {
 // rename survives a crash.
 //
 // Best-effort and silent: it must not fail a save that already succeeded.
-// Directory sync is POSIX-only — Windows FlushFileBuffers rejects a read handle
-// — so reporting errors would break saving on Windows.
+// Directory sync is POSIX-only (Windows FlushFileBuffers rejects a read
+// handle), so reporting errors would break saving on Windows.
 func syncDir(dir string) {
 	d, err := os.Open(dir)
 	if err != nil {

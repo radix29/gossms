@@ -11,11 +11,10 @@ import (
 // XML syntax highlighter (can be used as a Highlighter for Editor)
 // ---------------------------------------------------------------------------
 
-// xmlBlockState is what an unterminated multi-line construct a line can
-// begin already inside — either an XML comment or a CDATA section, carried
-// from line to line by xmlLineEndState. The two never nest inside each
-// other in valid XML, so a
-// single state (rather than a stack) is enough.
+// xmlBlockState is what an unterminated multi-line construct (an XML comment or
+// CDATA section) a line can begin inside, carried line to line by
+// xmlLineEndState. The two never nest in valid XML, so a single state rather
+// than a stack is enough.
 type xmlBlockState int
 
 const (
@@ -24,11 +23,10 @@ const (
 	xmlCDATA
 )
 
-// Fixed delimiter literals, pre-converted to []rune once at package init
-// rather than via []rune(literal) on every xmlHasPrefixAt/xmlFindClose call
-// — those run once per '<' encountered across the whole document on every
-// keystroke/redraw, so re-allocating a throwaway slice each time is wasted
-// GC pressure for no benefit.
+// Fixed delimiter literals, converted to []rune once at package init rather
+// than per xmlHasPrefixAt/xmlFindClose call: those run once per '<' across the
+// whole document on every keystroke/redraw, so re-allocating a throwaway slice
+// each time is wasted GC pressure.
 var (
 	xmlCommentOpen  = []rune("<!--")
 	xmlCommentClose = []rune("-->")
@@ -36,22 +34,20 @@ var (
 	xmlCDATAClose   = []rune("]]>")
 )
 
-// XMLHighlighter is the built-in XML syntax highlighter for Editor — used
-// by PlanView's raw-XML tab (see planview.New) and by the query editor when
-// a .xml file is opened via File > Open (see App.openQueryFile).
+// XMLHighlighter is the built-in XML syntax highlighter for Editor, used by
+// PlanView's raw-XML tab (see planview.New) and by the query editor when a .xml
+// file is opened via File > Open (see App.openQueryFile).
 //
 // Editor.Draw calls the returned Highlighter once per visible row, and Draw
-// runs on every event the app processes — every keystroke, menu click, and
-// mouse-move tick — for as long as the XML tab stays the visible/selected
-// one, whether or not it holds keyboard focus. Determining whether a line
-// starts inside an unterminated <!-- --> comment or <![CDATA[ ]]> section
-// means replaying every prior line (xmlOpenBlock): O(N) per line, O(H*N) per
-// Draw for a viewport of H rows, which is noticeably slow on large
-// execution-plan XML.
+// runs on every event the app processes while the XML tab is visible, focused
+// or not. Determining whether a line starts inside an unterminated <!-- -->
+// comment or <![CDATA[ ]]> section means replaying every prior line
+// (xmlOpenBlock): O(N) per line, O(H*N) per Draw for H rows, noticeably slow on
+// large execution-plan XML.
 //
-// starts below holds the answer for every line, replayed once per change to
-// the document and reused for every redraw in between — see prefixStates, and
-// SQLHighlighter for why a one-line memo cannot help the first row of a pass.
+// starts below holds the answer for every line, replayed once per change to the
+// document and reused for every redraw in between (see prefixStates, and
+// SQLHighlighter for why a one-line memo cannot help the first row of a pass).
 func XMLHighlighter(p *theme.Palette) Highlighter {
 	tagStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorKeyword).Bold(true)
 	attrStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)
@@ -105,12 +101,11 @@ func XMLHighlighter(p *theme.Palette) Highlighter {
 					i = end
 				}
 			case line[i] == '<' && i+1 < len(line) && (line[i+1] == '!' || line[i+1] == '?'):
-				// <?xml ...?> declaration or <!DOCTYPE ...> — styled as one
-				// comment-colored run up to the first '>'. Doesn't track
-				// cross-line state or a DOCTYPE internal subset's nested
-				// '>'s; both are rare enough in practice (and never appear
-				// in showplan XML) that treating this as always one line is
-				// an accepted simplification, not a goal.
+				// <?xml ...?> declaration or <!DOCTYPE ...>: styled as one comment-colored
+				// run up to the first '>'. Doesn't track cross-line state or a DOCTYPE
+				// internal subset's nested '>'s; both are rare enough (and absent from
+				// showplan XML) that treating this as always one line is an accepted
+				// simplification.
 				j := i + 2
 				for j < len(line) && line[j] != '>' {
 					j++
