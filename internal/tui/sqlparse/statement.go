@@ -62,9 +62,13 @@ func (s *dmlSplitter) feed(t Token) (Token, bool) {
 	if s.withPending {
 		s.withPending = false
 		if t.Kind != TokenParenOpen {
+			// advance may overwrite s.with — t can be another WITH — and
+			// may set a WITH pending; t continues this statement either way.
+			with := s.with
 			s.pendingMainSelect = true
 			s.advance(t)
-			return s.with, true
+			s.withPending = false
+			return with, true
 		}
 	}
 	if s.advance(t) {

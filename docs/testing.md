@@ -21,6 +21,12 @@ caught by driving the built binary. For TUI or database changes, run it:
 Tests assert an outcome, not "nothing panicked". Mutate the covered code and
 confirm the new test fails.
 
+**After a lexer or parser change, fuzz it:** `go test ./internal/tuikit/sqltext
+-run XXX -fuzz FuzzLexer -fuzztime 60s -fuzzminimizetime 0`, likewise `FuzzScope`
+in `./internal/tui/sqlparse` (their seeds run in plain `go test`; without
+`-fuzzminimizetime 0` the minimizer stalls them). A crasher is a bug to fix,
+and its `testdata/fuzz/` file stays as the regression seed.
+
 **`waitAndDrain` runs one callback, not "everything".** It returns after the
 first queued UI callback, and the order goroutines post in shifts under
 `-race`. When an action posts more than one (Apply's page reloads plus a node

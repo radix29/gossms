@@ -119,12 +119,17 @@ var lexCorpus = strings.Join([]string{
 // sees the same tokens and the same states as one lexing the flat buffer.
 // SplitBatches, StatementAt and the highlighter lex by line, and sqlparse
 // lexes flat, so this is what makes the four agree.
-func TestLineByLineLexingMatchesFlat(t *testing.T) {
+func TestLineByLineLexingMatchesFlat(t *testing.T) { checkLineByLineMatchesFlat(t, lexCorpus) }
+
+// checkLineByLineMatchesFlat is TestLineByLineLexingMatchesFlat over any
+// text; FuzzLexer runs it too.
+func checkLineByLineMatchesFlat(t *testing.T, text string) {
+	t.Helper()
 	type span struct {
 		kind       Kind
 		start, end int
 	}
-	buf := []rune(lexCorpus)
+	buf := []rune(text)
 	var flat []span
 	var flatEnd State
 	for i := 0; ; {
@@ -143,10 +148,14 @@ func TestLineByLineLexingMatchesFlat(t *testing.T) {
 	var byLine []span
 	var st State
 	off := 0
-	for n, text := range strings.Split(lexCorpus, "\n") {
-		line := []rune(text)
+	for n, l := range strings.Split(text, "\n") {
+		line := []rune(l)
 		if n > 0 && st.Mode == ModeNormal {
 			byLine = append(byLine, span{KindNewline, off - 1, off})
+		} else if n > 0 {
+			// The open token takes the '\n' even when this line is empty
+			// and resumes nothing.
+			byLine[len(byLine)-1].end = off
 		}
 		for i := 0; ; {
 			resumed := st.Mode != ModeNormal
@@ -166,20 +175,27 @@ func TestLineByLineLexingMatchesFlat(t *testing.T) {
 		off += len(line) + 1
 	}
 	if !slices.Equal(byLine, flat) {
-		t.Fatalf("line-by-line lexing differs from flat:\n line %v\n flat %v", byLine, flat)
+		t.Fatalf("%q: line-by-line lexing differs from flat:\n line %v\n flat %v", text, byLine, flat)
 	}
 	if st != flatEnd.NextLine() {
-		t.Errorf("end state: line-by-line %+v, flat %+v", st, flatEnd)
+		t.Errorf("%q: end state: line-by-line %+v, flat %+v", text, st, flatEnd)
 	}
 }
 
 // LineEnd is the step the highlighter cache replays; it must agree with the
 // state a flat lex reaches at each line start.
 func TestLineEndMatchesFlatStateAtEveryLineStart(t *testing.T) {
-	lines := strings.Split(lexCorpus, "\n")
+	checkLineEndMatchesFlat(t, lexCorpus)
+}
+
+// checkLineEndMatchesFlat is TestLineEndMatchesFlatStateAtEveryLineStart over
+// any text; FuzzLexer runs it too.
+func checkLineEndMatchesFlat(t *testing.T, text string) {
+	t.Helper()
+	lines := strings.Split(text, "\n")
 	var st State
 	off := 0
-	buf := []rune(lexCorpus)
+	buf := []rune(text)
 	for n, line := range lines {
 		// The flat state at this line's start.
 		var flat State

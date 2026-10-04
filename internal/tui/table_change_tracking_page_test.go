@@ -24,7 +24,7 @@ func tableChangeTrackingResponses(rows ...[]driver.Value) []fakeResponse {
 		}},
 		// The by-table read, ahead of any list read for the same reason every
 		// by-name response goes first.
-		{match: "SCHEMA_NAME(t.schema_id) = @p1", db: principalDatabase, cols: 4, rows: rows},
+		{match: "SCHEMA_NAME(t.schema_id) COLLATE DATABASE_DEFAULT = @p1", db: principalDatabase, cols: 4, rows: rows},
 	}
 }
 

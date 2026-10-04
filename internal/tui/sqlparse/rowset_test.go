@@ -125,6 +125,10 @@ func TestDMLStatementStartsWithParenIsNotACTE(t *testing.T) {
 		{"SELECT a FROM t\nWITH c AS (SELECT 1 x) SELECT x FROM c", 2},
 		{"SELECT a FROM t\nWITH XMLNAMESPACES ('urn:x' AS x) SELECT 1", 2},
 		{"SELECT a FROM t\nWITH", 1},
+		// A WITH right after a pending one continues its statement: one
+		// start, at the first WITH (FuzzScope found it reported twice, at
+		// the second).
+		{"SELECT a FROM t\nWITH WITH c AS (SELECT 1 x) SELECT x FROM c", 2},
 	}
 	for _, c := range cases {
 		buf := []rune(c.sql)

@@ -110,7 +110,7 @@ func cryptographicProviderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		return nil, nil, err
 	}
 	for _, p := range providers {
-		if !strings.EqualFold(p.Name, node.data.Name) {
+		if p.Name != node.data.Name {
 			continue
 		}
 		return propertyRows(
