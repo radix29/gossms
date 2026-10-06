@@ -201,3 +201,131 @@ func TestExpandButton_ClickFiresCallback(t *testing.T) {
 func newClick(x, y int) *tcell.EventMouse {
 	return tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone)
 }
+
+// twoStatementPlanXML is a batch of two statements whose NodeIds overlap, as
+// SQL Server numbers them: per statement, from 0. Node 2 exists only in the
+// second statement, under node 1.
+const twoStatementPlanXML = `<?xml version="1.0"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.539" Build="16.0.1000.6">
+ <BatchSequence><Batch><Statements>
+  <StmtSimple StatementText="SELECT 1" StatementType="SELECT" StatementSubTreeCost="1">
+   <QueryPlan DegreeOfParallelism="1">
+    <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="1" EstimatedTotalSubtreeCost="1">
+     <NestedLoops>
+      <RelOp NodeId="1" PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="1" EstimatedTotalSubtreeCost="0.5">
+       <IndexScan><Object Database="[appdb]" Schema="[dbo]" Table="[orders]" Index="[IX_date]"/></IndexScan>
+      </RelOp>
+     </NestedLoops>
+    </RelOp>
+   </QueryPlan>
+  </StmtSimple>
+  <StmtSimple StatementText="SELECT 2" StatementType="SELECT" StatementSubTreeCost="3">
+   <QueryPlan DegreeOfParallelism="1">
+    <RelOp NodeId="0" PhysicalOp="Sort" LogicalOp="Sort" EstimateRows="9" EstimatedTotalSubtreeCost="3">
+     <Sort>
+      <RelOp NodeId="1" PhysicalOp="Hash Match" LogicalOp="Aggregate" EstimateRows="9" EstimatedTotalSubtreeCost="2">
+       <Hash>
+        <RelOp NodeId="2" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="90" EstimatedTotalSubtreeCost="1">
+         <IndexScan><Object Database="[appdb]" Schema="[dbo]" Table="[lines]" Index="[PK_lines]"/></IndexScan>
+        </RelOp>
+       </Hash>
+      </RelOp>
+     </Sort>
+    </RelOp>
+   </QueryPlan>
+  </StmtSimple>
+ </Statements></Batch></BatchSequence>
+</ShowPlanXML>`
+
+// TestSelectNodeSwitchesStatementAndRevealsTheOperator. SelectNode is how a host
+// opens a plan at an operator, so it has to land on the right statement (NodeIds
+// repeat across a batch) and show the operator in the Tree tab even when an
+// ancestor is collapsed — otherwise the details pane names it and the tree
+// highlights nothing.
+func TestSelectNodeSwitchesStatementAndRevealsTheOperator(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 100, 30)
+	if err := v.SetPlanXML(twoStatementPlanXML); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Plan().Statements) != 2 {
+		t.Fatalf("fixture parsed to %d statements, want 2", len(v.Plan().Statements))
+	}
+	v.setActiveTab(TabTree)
+	v.treeSt.collapsed[1] = true // statement 2's Hash Match, the scan's parent
+
+	if !v.SelectNode(1, 2) {
+		t.Fatal("SelectNode(1, 2) = false, want the second statement's scan selected")
+	}
+	if v.stmtIdx != 1 {
+		t.Errorf("stmtIdx = %d, want 1", v.stmtIdx)
+	}
+	if n := v.selectedNode(); n == nil || n.PhysicalOp != "Clustered Index Scan" {
+		t.Errorf("selected %v, want the Clustered Index Scan", n)
+	}
+	if v.treeSt.collapsed[1] {
+		t.Error("the scan's collapsed parent was left collapsed, so the Tree tab cannot show it")
+	}
+	found := false
+	for _, r := range v.treeSt.rows {
+		found = found || r.node.ID == 2
+	}
+	if !found {
+		t.Error("the Tree tab's rows do not contain the selected operator")
+	}
+}
+
+// TestSelectNodeRefusesAnOperatorTheStatementLacks — and changes nothing, so a
+// stale (statement, node) pair cannot move the view to an unrelated operator.
+func TestSelectNodeRefusesAnOperatorTheStatementLacks(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 100, 30)
+	if err := v.SetPlanXML(twoStatementPlanXML); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ stmt, id int }{{0, 2}, {2, 0}, {-1, 0}} {
+		if v.SelectNode(c.stmt, c.id) {
+			t.Errorf("SelectNode(%d, %d) = true, want false", c.stmt, c.id)
+		}
+		if v.stmtIdx != 0 || v.selectedID != 0 {
+			t.Errorf("SelectNode(%d, %d) moved the view to statement %d node %d",
+				c.stmt, c.id, v.stmtIdx, v.selectedID)
+		}
+	}
+	if New().SelectNode(0, 0) {
+		t.Error("SelectNode on an empty view = true")
+	}
+}
+
+// A right-click on the operators opens the host's plan menu once per press —
+// a held button resends Button2 on every motion — and nowhere else: the XML
+// tab's right-click is the editor's.
+func TestRightClickOnOperatorsOpensTheHostMenuOncePerPress(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 100, 30)
+	v.SetPlan(loadTestPlan(t))
+	var at []core.Rect
+	v.OnContextMenu = func(x, y int) { at = append(at, core.Rect{X: x, Y: y}) }
+
+	c := v.graphCanvasRect
+	press := tcell.NewEventMouse(c.X+2, c.Y+1, tcell.Button2, tcell.ModNone)
+	v.HandleMouse(press)
+	v.HandleMouse(tcell.NewEventMouse(c.X+3, c.Y+1, tcell.Button2, tcell.ModNone)) // held, moved
+	v.HandleMouse(tcell.NewEventMouse(c.X+3, c.Y+1, tcell.ButtonNone, tcell.ModNone))
+	if len(at) != 1 || at[0].X != c.X+2 || at[0].Y != c.Y+1 {
+		t.Fatalf("plan tab: OnContextMenu calls = %v, want one at the press", at)
+	}
+
+	v.setActiveTab(TabTree)
+	v.HandleMouse(tcell.NewEventMouse(v.treePaneRect.X+1, v.treePaneRect.Y, tcell.Button2, tcell.ModNone))
+	v.HandleMouse(tcell.NewEventMouse(v.treePaneRect.X+1, v.treePaneRect.Y, tcell.ButtonNone, tcell.ModNone))
+	if len(at) != 2 {
+		t.Fatalf("tree tab: OnContextMenu calls = %d, want 2", len(at))
+	}
+
+	v.setActiveTab(TabXML)
+	v.HandleMouse(tcell.NewEventMouse(v.contentRect.X+1, v.contentRect.Y+1, tcell.Button2, tcell.ModNone))
+	if len(at) != 2 {
+		t.Error("a right-click in the XML tab opened the plan menu")
+	}
+}

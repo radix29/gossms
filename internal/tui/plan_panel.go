@@ -46,7 +46,9 @@ func NewPlanPanel(app *App, title string, plan *showplan.Plan) *PlanPanel {
 		app.openQueryWithText(sc, database, script)
 	}
 	v.SetPlan(plan)
-	return new(PlanPanel{title: title, planView: v})
+	pp := new(PlanPanel{title: title, planView: v})
+	v.OnContextMenu = func(x, y int) { app.showPlanContextMenu(x, y, pp) }
+	return pp
 }
 
 // Title returns the panel's tab/window title (Panel interface).

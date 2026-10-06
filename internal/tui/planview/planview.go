@@ -26,6 +26,7 @@ type PlanView struct {
 	tabRect       core.Rect
 	stmtRect      core.Rect
 	bannerRect    core.Rect // missing-index banner; zero when the statement has none
+	liveRect      core.Rect // live mode's progress row; zero outside live mode
 	contentRect   core.Rect
 	expandBtnRect core.Rect // zero when OnExpand is nil
 
@@ -36,6 +37,13 @@ type PlanView struct {
 	active    bool
 
 	xml *controls.Editor // backs TabXML
+
+	// liveOn and live are live mode's state (see live.go): set by SetLive,
+	// cleared by SetPlan/SetPlanXML. live may be empty while liveOn — the
+	// plan has arrived but no counters yet.
+	liveOn   bool
+	live     map[int]showplan.LiveCounters
+	liveNote string // SetLiveNote's text, "" for the waiting notes
 
 	// selectedID is the ID of the operator selected in the Tree tab (and,
 	// once built, the Plan/graph tab) — shared across both so switching
@@ -97,6 +105,11 @@ type PlanView struct {
 	// reach the screen's clipboard itself, so the host does it). Wired by
 	// QueryPanel and PlanPanel to App.writeClipboard.
 	OnCopyRequest func(text string)
+	// OnContextMenu, when set, is called with the pointer's screen position on
+	// a right-click in the Plan tab's canvas or the Tree tab's operator pane —
+	// the host's plan menu (Compare Showplan...). Elsewhere a right-click keeps
+	// its own meaning: the operator summary's cell menu, the XML editor's.
+	OnContextMenu func(x, y int)
 
 	// mouseDragging distinguishes a fresh Button1 press on the tab bar or
 	// statement selector from a continued hold — mirrors Toolbar's/
@@ -134,6 +147,7 @@ func New() *PlanView {
 // SetPlanXML parses xml and installs it as the displayed plan. On a parse
 // error, the error is kept and rendered inline instead of the plan.
 func (v *PlanView) SetPlanXML(xml string) error {
+	v.clearLive()
 	plan, err := showplan.Parse([]byte(xml))
 	if err != nil {
 		v.plan = nil
@@ -149,6 +163,7 @@ func (v *PlanView) SetPlanXML(xml string) error {
 // re-parse (used by "[ Expand ]" to hand the same *showplan.Plan to a
 // freshly created PlanView).
 func (v *PlanView) SetPlan(p *showplan.Plan) {
+	v.clearLive()
 	v.installPlan(p)
 }
 
@@ -229,6 +244,31 @@ func nodeByID(root *showplan.Node, id int) *showplan.Node {
 	return nil
 }
 
+// SelectNode shows statement stmt (an index into Plan().Statements) and selects
+// its operator id, expanding any collapsed ancestor so the Tree tab shows it
+// too — how a host opens a plan "at" an operator (Compare Showplan's Enter on
+// an operator row). Both are needed because SQL Server numbers NodeIds per
+// statement: id alone names a different operator in every statement of a batch.
+// It reports false, changing nothing, when the plan has no such statement or
+// the statement no such operator.
+func (v *PlanView) SelectNode(stmt, id int) bool {
+	if v.plan == nil || stmt < 0 || stmt >= len(v.plan.Statements) ||
+		nodeByID(v.plan.Statements[stmt].Root, id) == nil {
+		return false
+	}
+	if stmt != v.stmtIdx {
+		v.stmtIdx = stmt
+		v.selectFirstNode()
+		v.layout() // the missing-index banner row; see stepStatement
+	}
+	v.revealAndSelect(id)
+	return true
+}
+
+// SelectedOperator returns the statement on screen and the operator selected in
+// it — what SelectNode sets — with id -1 when the statement has no operator.
+func (v *PlanView) SelectedOperator() (stmt, id int) { return v.stmtIdx, v.selectedID }
+
 // selectNode changes the selected operator and keeps every tab that
 // depends on it in sync (tree scroll position, properties scroll).
 func (v *PlanView) selectNode(id int) {
@@ -271,6 +311,12 @@ func (v *PlanView) layout() {
 		y++
 	} else {
 		v.bannerRect = core.Rect{}
+	}
+	if v.liveOn {
+		v.liveRect = core.Rect{X: v.rect.X, Y: y, W: v.rect.W, H: 1}
+		y++
+	} else {
+		v.liveRect = core.Rect{}
 	}
 	h := v.rect.Bottom() - y
 	if h < 0 {

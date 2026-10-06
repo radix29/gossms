@@ -14,8 +14,12 @@ const (
 	// 5 rows, not 4: Rect.Inner(1) on a 4-row tile yields only 2 interior
 	// rows, and the third line would overwrite the bottom border.
 	graphTileH = 5
-	graphHGap  = 4 // horizontal gap between a tile and its children's column
-	graphVGap  = 1 // vertical gap between sibling tiles
+	// graphLiveTileH adds a fourth interior line in live mode (see live.go):
+	// the "rows of estimate (pct)" figure Live Query Statistics is about,
+	// beneath a cost/elapsed line, without giving up the object name.
+	graphLiveTileH = 6
+	graphHGap      = 4 // horizontal gap between a tile and its children's column
+	graphVGap      = 1 // vertical gap between sibling tiles
 )
 
 // tile is one operator's placed position on the virtual canvas.
@@ -50,8 +54,8 @@ type graphLayout struct {
 // testable without a screen. Each node's tile is top-aligned with its
 // first child's tile, matching SSMS — the root lands on the canvas's
 // first row rather than floating to its vertical middle. A childless
-// node occupies exactly one tile-height band.
-func layoutGraph(root *showplan.Node) *graphLayout {
+// node occupies exactly one tile-height band of tileH rows.
+func layoutGraph(root *showplan.Node, tileH int) *graphLayout {
 	g := &graphLayout{rects: make(map[int]core.Rect)}
 	if root == nil {
 		return g
@@ -61,10 +65,10 @@ func layoutGraph(root *showplan.Node) *graphLayout {
 	place = func(n *showplan.Node, depth, top int) (int, int) {
 		x := depth * (graphTileW + graphHGap)
 		if len(n.Children) == 0 {
-			r := core.Rect{X: x, Y: top, W: graphTileW, H: graphTileH}
+			r := core.Rect{X: x, Y: top, W: graphTileW, H: tileH}
 			g.tiles = append(g.tiles, tile{node: n, rect: r})
 			g.rects[n.ID] = r
-			return top + graphTileH, top
+			return top + tileH, top
 		}
 		cursor := top
 		selfY := 0
@@ -75,7 +79,7 @@ func layoutGraph(root *showplan.Node) *graphLayout {
 			}
 			cursor = cBottom + graphVGap
 		}
-		r := core.Rect{X: x, Y: selfY, W: graphTileW, H: graphTileH}
+		r := core.Rect{X: x, Y: selfY, W: graphTileW, H: tileH}
 		g.tiles = append(g.tiles, tile{node: n, rect: r})
 		g.rects[n.ID] = r
 		return cursor - graphVGap, selfY
@@ -91,8 +95,8 @@ func layoutGraph(root *showplan.Node) *graphLayout {
 			cr := g.rects[c.ID]
 			midX := t.rect.Right() + (cr.X-t.rect.Right())/2
 			g.edges = append(g.edges, edge{
-				x1: t.rect.Right(), y1: t.rect.Y + graphTileH/2,
-				x2: cr.X, y2: cr.Y + graphTileH/2,
+				x1: t.rect.Right(), y1: t.rect.Y + tileH/2,
+				x2: cr.X, y2: cr.Y + tileH/2,
 				midX: midX,
 			})
 		}

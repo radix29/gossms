@@ -9,7 +9,7 @@ import (
 
 func TestDetailLines_AlignedAndCurated(t *testing.T) {
 	v := newTreeTabView(t)
-	lines := detailLines(v.selectedNode(), v.currentStatement())
+	lines := detailLines(v.selectedNode(), v.currentStatement(), nil)
 	if len(lines) == 0 {
 		t.Fatal("detailLines returned nothing for the selected root")
 	}
@@ -37,7 +37,7 @@ func TestDetailLines_AlignedAndCurated(t *testing.T) {
 // Properties field list for both tabs.
 func TestDetailKVs_IncludesCostPercent(t *testing.T) {
 	v := newTreeTabView(t)
-	lines := detailLines(v.selectedNode(), v.currentStatement())
+	lines := detailLines(v.selectedNode(), v.currentStatement(), nil)
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "Cost %") {
 		t.Errorf("detailLines missing \"Cost %%\"; got:\n%s", joined)
@@ -45,8 +45,8 @@ func TestDetailKVs_IncludesCostPercent(t *testing.T) {
 }
 
 func TestDetailLines_NilNode(t *testing.T) {
-	if lines := detailLines(nil, nil); lines != nil {
-		t.Errorf("detailLines(nil, nil) = %v, want nil", lines)
+	if lines := detailLines(nil, nil, nil); lines != nil {
+		t.Errorf("detailLines(nil, nil, nil) = %v, want nil", lines)
 	}
 }
 
@@ -54,7 +54,7 @@ func TestDetailsPane_WheelScrolls(t *testing.T) {
 	v := newTreeTabView(t)
 	v.SetBounds(0, 0, 120, 8) // short enough that the details pane can't fit every line
 
-	total := len(detailLines(v.selectedNode(), v.currentStatement()))
+	total := len(detailLines(v.selectedNode(), v.currentStatement(), nil))
 	if total <= v.detailsContentRect.H {
 		t.Fatalf("detail lines (%d) fit entirely in the pane (%d rows) — test needs an overflow to be meaningful", total, v.detailsContentRect.H)
 	}

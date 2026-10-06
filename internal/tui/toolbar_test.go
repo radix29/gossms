@@ -20,8 +20,8 @@ func TestMetaToggleIconStates(t *testing.T) {
 }
 
 // TestBuildToolbarHasMetaAfterActualPlan pins the toolbar's order and each
-// button's label: Meta sits immediately after Act.Plan, itself after
-// Est.Plan, and both plan buttons keep their compact, space-free text.
+// button's label: Est.Plan, Act.Plan, Live, Meta in a row (SSMS's order for
+// the plan buttons), and the plan buttons keep their compact, space-free text.
 func TestBuildToolbarHasMetaAfterActualPlan(t *testing.T) {
 	a := new(App{})
 	buttons := a.buildToolbar()
@@ -33,12 +33,12 @@ func TestBuildToolbarHasMetaAfterActualPlan(t *testing.T) {
 		}
 		return -1
 	}
-	est, act, meta := idx("Est.Plan"), idx(actualPlanToggleIcon(false)), idx(metaToggleIcon(false))
-	if est < 0 || act < 0 || meta < 0 {
-		t.Fatalf("toolbar missing a button: Est.Plan=%d Act.Plan=%d Meta=%d", est, act, meta)
+	est, act, live, meta := idx("Est.Plan"), idx(actualPlanToggleIcon(false)), idx(liveStatsToggleIcon(false)), idx(metaToggleIcon(false))
+	if est < 0 || act < 0 || live < 0 || meta < 0 {
+		t.Fatalf("toolbar missing a button: Est.Plan=%d Act.Plan=%d Live=%d Meta=%d", est, act, live, meta)
 	}
-	if act != est+1 || meta != act+1 {
-		t.Errorf("toolbar order = Est.Plan@%d, Act.Plan@%d, Meta@%d; want Meta directly after Act.Plan, itself after Est.Plan", est, act, meta)
+	if act != est+1 || live != act+1 || meta != live+1 {
+		t.Errorf("toolbar order = Est.Plan@%d, Act.Plan@%d, Live@%d, Meta@%d; want them consecutive in that order", est, act, live, meta)
 	}
 	if buttons[meta].Action == nil {
 		t.Error("the Meta button has no action — it would silently do nothing when clicked")
@@ -51,8 +51,8 @@ func TestBuildToolbarHasMetaAfterActualPlan(t *testing.T) {
 }
 
 // TestQueryMenuOutputColumnMetaItem pins the Query menu's metadata toggle:
-// it sits in the same group as Actual Execution Plan (no divider between
-// them), carries its state in its label, and flips that label when toggled
+// it sits in the same group as Actual Execution Plan and Live Query
+// Statistics (no divider between them), carries its state in its label, and flips that label when toggled
 // — the menu is rebuilt on toggle, so a stale label would be the symptom.
 func TestQueryMenuOutputColumnMetaItem(t *testing.T) {
 	if outputColumnMetaMenuLabel(false) == outputColumnMetaMenuLabel(true) {
@@ -61,20 +61,22 @@ func TestQueryMenuOutputColumnMetaItem(t *testing.T) {
 
 	a := newTestApp()
 	items := queryMenuItems(t, a.buildMenus())
-	act, meta := -1, -1
+	act, live, meta := -1, -1, -1
 	for i, it := range items {
 		switch it.Label {
 		case actualExecutionPlanMenuLabel(a.actualPlanEnabled):
 			act = i
+		case liveQueryStatisticsMenuLabel(a.liveStatsEnabled):
+			live = i
 		case outputColumnMetaMenuLabel(a.metaEnabled):
 			meta = i
 		}
 	}
-	if act < 0 || meta < 0 {
-		t.Fatalf("Query menu missing an item: Actual Execution Plan=%d, Output Column Metadata=%d", act, meta)
+	if act < 0 || live < 0 || meta < 0 {
+		t.Fatalf("Query menu missing an item: Actual Execution Plan=%d, Live Query Statistics=%d, Output Column Metadata=%d", act, live, meta)
 	}
-	if meta != act+1 {
-		t.Errorf("Output Column Metadata at %d, Actual Execution Plan at %d; want adjacent, same group", meta, act)
+	if live != act+1 || meta != live+1 {
+		t.Errorf("Actual Execution Plan at %d, Live Query Statistics at %d, Output Column Metadata at %d; want consecutive, same group", act, live, meta)
 	}
 	if items[meta].Divider {
 		t.Error("the Output Column Metadata item is a divider")

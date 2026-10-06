@@ -143,7 +143,7 @@ or `App`. See § Why the permission gate is its own package.
 gossms/
 ├── cmd/
 │   ├── gossms/               # main entry point
-│   ├── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file (not part of the release build)
+│   ├── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file, or -live replays a recorded Live Query Statistics run (not part of the release build)
 │   ├── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
 │   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
 ├── packaging/linux/         # gossms.desktop launcher; the release job ships it with docs/ico/linux's hicolor icons in the Linux archives, the Homebrew formula and the .deb
@@ -158,7 +158,7 @@ gossms/
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
 │   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
-│   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan). No TUI/DB deps
+│   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan); live.go merges per-thread query-profile rows into Live Query Statistics counters and progress. No TUI/DB deps
 │   ├── xevent/              # Extended Events viewer's event store: bounded ring, column registry, ring_buffer dedupe, the client-side filter expression, grouping and aggregation. No TUI/DB deps
 │   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export; WithLock: the lock file around config.json's and tracked_queries.json's read-merge-write
 │   │                        #   keeps an existing file's narrower mode (perm is a ceiling) and writes through a symlink, dangling or not
@@ -244,6 +244,7 @@ gossms/
 │       ├── query_panel_exec.go   # Execute/Execute Selection/Cancel, plan-capture wiring
 │       ├── query_panel_tabs.go   # result-set tabs + Messages tab
 │       ├── query_panel_plan.go   # Estimated/Actual Execution Plan tabs, backed by planview.PlanView
+│       ├── query_panel_live.go   # Live Query Statistics: the toggle's run, DMV poller, live tab → actual plan
 │       ├── query_panel_export.go # Results To File (Text/Grid/File modes)
 │       ├── column_meta.go        # the Output Column Metadata block folded into a result's Messages
 │       ├── cell_value.go         # classifies a grid cell as plain/XML/JSON and routes the last two to their own panel
@@ -305,6 +306,7 @@ gossms/
 │       ├── query_store_panel_input.go # HandleKey/HandleMouse: grid focus, splitter keys, gesture zones
 │       ├── query_store_series.go      # the panel's second chart mode: the cursor's query plotted per plan, interval by interval — a mode of the chart, not an eighth report
 │       ├── plan_compare_panel.go     # Compare Showplan: two plans of one query as two grids (operators, statement properties); implements layout.Panel
+│       ├── plan_compare_open.go      # Compare Showplan's entry points: the open plans, Compare Showplan... (a .sqlplan), Compare with ▸, the plan right-click menu
 │       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel

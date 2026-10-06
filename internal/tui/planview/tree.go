@@ -173,11 +173,12 @@ func (v *PlanView) drawTreeTab(s tcell.Screen) {
 	v.drawTreePane(s)
 	v.treeSplit.Draw(s)
 	n := v.selectedNode()
-	total := len(detailLines(n, st))
+	live := v.liveCountersPtr(n)
+	total := len(detailLines(n, st, live))
 	canUp := v.detailsScroll > 0
 	canDown := v.detailsScroll+v.detailsContentRect.H < total
 	drawDetailsHeader(s, v.detailsHeaderRect, "Operator Details", canUp, canDown)
-	drawDetails(s, v.detailsContentRect, n, st, v.detailsScroll)
+	drawDetails(s, v.detailsContentRect, n, st, live, v.detailsScroll)
 	v.drawBottomSection(s)
 }
 
@@ -187,7 +188,9 @@ func (v *PlanView) drawTreeHeader(s tcell.Screen, st *showplan.Statement) {
 	core.FillRect(s, v.treeHeaderRect, ' ', hs)
 
 	cpu, elapsed := "—", "—"
-	if st.TimeStats != nil {
+	// An in-flight plan's QueryTimeStats is the moment it was read, long
+	// stale by the next poll; the live row carries the running figures.
+	if st.TimeStats != nil && !v.liveOn {
 		cpu = fmt.Sprintf("%d ms", st.TimeStats.CPUMS)
 		elapsed = fmt.Sprintf("%d ms", st.TimeStats.ElapsedMS)
 	}
@@ -210,6 +213,15 @@ func (v *PlanView) drawTreePane(s tcell.Screen) {
 	if r.H <= 0 {
 		return
 	}
+	// The live column sits left of the scrollbar column, when there is one.
+	textW, liveX := r.W, 0
+	if v.liveOn && r.W >= liveTreeMinW {
+		liveX = r.Right() - liveTreeColW
+		if len(v.treeSt.rows) > r.H {
+			liveX--
+		}
+		textW = liveX - r.X - 1
+	}
 	for row := 0; row < r.H; row++ {
 		idx := v.treeSt.scroll + row
 		if idx >= len(v.treeSt.rows) {
@@ -227,7 +239,15 @@ func (v *PlanView) drawTreePane(s tcell.Screen) {
 			style = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
 		}
 		core.FillRect(s, core.Rect{X: r.X, Y: y, W: r.W, H: 1}, ' ', style)
-		core.DrawTextClipped(s, r.X, y, r.W, style, v.treeRowText(tr))
+		core.DrawTextClipped(s, r.X, y, textW, style, v.treeRowText(tr))
+		if liveX > 0 {
+			c, ok := v.liveFor(tr.node)
+			colStyle := style
+			if tr.node.ID != v.selectedID {
+				colStyle = bg.Foreground(liveStateColor(pal, c, ok))
+			}
+			core.DrawTextClipped(s, liveX, y, liveTreeColW, colStyle, liveTreeColumn(c, ok))
+		}
 	}
 	if len(v.treeSt.rows) > r.H {
 		sbStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Border)

@@ -98,6 +98,7 @@ func (p *QueryPanel) Close() {
 	if p.executing && p.cancel != nil {
 		p.cancel()
 	}
+	p.stopLiveStats()
 	p.textRun.Cancel()
 	p.closeConnection()
 }
@@ -248,8 +249,11 @@ func (p *QueryPanel) runRefused(queryText string, retry func()) bool {
 func (p *QueryPanel) startRun(queryText, exportPath string) {
 	p.clearResults()
 	// Snapshot now, not read from the goroutine below: the "Include Actual
-	// Execution Plan" toggle can change while this goroutine runs.
-	capturePlan := p.app.actualPlanEnabled
+	// Execution Plan" toggle can change while this goroutine runs. Live Query
+	// Statistics rides on the actual plan's profiling and has nothing to watch
+	// in a Results To File run, which captures no plan.
+	capturePlan := p.app.actualPlanEnabled || p.app.liveStatsEnabled
+	live := p.app.liveStatsEnabled && exportPath == ""
 	prog := &query.Progress{}
 
 	// Written by run on the background goroutine, read by the completion on the UI
@@ -275,11 +279,14 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 		}
 	}
 	p.launch("query execution", "Executing query...", prog, run, func(res *query.Result, cancelled bool) {
-		p.setResult(res, cancelled)
+		p.setRunResult(res, cancelled)
 		if exportPath != "" {
 			p.reportExport(res, exportPath, res.RowsWritten, exportErr)
 		}
 	})
+	if live {
+		p.startLiveStats(p.execDone)
+	}
 }
 
 // launch starts run on the panel's session in the background: the one run-start
@@ -376,6 +383,7 @@ func closedPanelResultStatus(title string, cancelled bool) string {
 // refused. No seq guard is needed, unlike LogViewer.readPanicked: p.executing
 // itself stops a second run starting.
 func (p *QueryPanel) execPanicked() {
+	p.stopLiveStats()
 	p.executing = false
 	p.cancel = nil
 	p.progress = nil
@@ -439,6 +447,7 @@ func (p *QueryPanel) newPlanView() *planview.PlanView {
 			p.app.openPlanPanel("Execution Plan — "+p.Title(), plan)
 		}
 	}
+	v.OnContextMenu = func(x, y int) { p.app.showPlanContextMenu(x, y, p) }
 	return v
 }
 

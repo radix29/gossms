@@ -7,8 +7,9 @@ import (
 
 // buildToolbar assembles the icon-only toolbar embedded in the menu bar
 // row, right-aligned (see App.layoutAll/App.draw). Called once at startup and
-// again by toggleActualExecutionPlan and toggleOutputColumnMeta, whose two
-// buttons carry their ON/OFF state in the label itself.
+// again by the toggles (toggleActualExecutionPlan, toggleLiveQueryStatistics,
+// toggleOutputColumnMeta), whose buttons carry their ON/OFF state in the
+// label itself.
 func (a *App) buildToolbar() []controls.ToolbarButton {
 	return []controls.ToolbarButton{
 		{Icon: "✚", Tooltip: "New Query", Action: func() { a.newQueryPanel() }},
@@ -23,6 +24,7 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Icon: "Est.Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
 			Enabled: func() bool { return a.activeQueryPanel() != nil }},
 		{Icon: actualPlanToggleIcon(a.actualPlanEnabled), Tooltip: "Include Actual Execution Plan", Action: func() { a.toggleActualExecutionPlan() }},
+		{Icon: liveStatsToggleIcon(a.liveStatsEnabled), Tooltip: "Include Live Query Statistics", Action: func() { a.toggleLiveQueryStatistics() }},
 		{Icon: metaToggleIcon(a.metaEnabled), Tooltip: "Show Output Column Metadata", Action: func() { a.toggleOutputColumnMeta() }},
 		{Divider: true, Icon: "|"},
 		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() },
@@ -41,6 +43,15 @@ func actualPlanToggleIcon(on bool) string {
 		return "Act.Plan[ON--]"
 	}
 	return "Act.Plan[-OFF]"
+}
+
+// liveStatsToggleIcon renders the "Include Live Query Statistics" toggle
+// button's text. Same equal-width rule as actualPlanToggleIcon.
+func liveStatsToggleIcon(on bool) string {
+	if on {
+		return "Live[ON--]"
+	}
+	return "Live[-OFF]"
 }
 
 // metaToggleIcon renders the "Show Output Column Metadata" toggle button's

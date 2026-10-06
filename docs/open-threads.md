@@ -62,6 +62,16 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
+- **B19 — The main toolbar overdraws the menu bar on a narrow terminal.**
+  `controls.Toolbar.SetBounds` right-aligns its buttons with no left limit,
+  so once they are wider than the row beside the menu labels they paint over
+  them (Tools and Help vanish). Below ~100 columns before Phase 5 W6; the
+  Include Live Query Statistics button (`Live[-OFF]`, 12 columns) moved that
+  to ~112. Likely fix: the toolbar takes the menu labels' right edge as its
+  left limit and drops buttons that don't fit, as panel toolbars do
+  (`docs/ui-rules.md` § Panels, toolbars and grid hosts) — which end to drop
+  is a call to make.
+
 ### Verification gaps
 
 - **V2 — Azure Extended Events not run end to end.** Azure SQL Database's database-scoped sessions

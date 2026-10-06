@@ -220,3 +220,164 @@ func TestAGestureStaysWithThePaneThatClaimedIt(t *testing.T) {
 		})
 	}
 }
+
+// twoStatementPlanXML is a batch of a SET, the seek query comparePlanXML builds
+// and a sort over a scan. Each SELECT numbers its operators from 0, as SQL
+// Server does, so the second can only be told from the first by statement.
+func twoStatementPlanXML(index string) string {
+	const set = `  <StmtSimple StatementText="SET NOCOUNT ON" StatementType="SET ON/OFF"/>` + "\n"
+	const sorted = `  <StmtSimple StatementText="SELECT line FROM lines ORDER BY line" StatementType="SELECT" StatementSubTreeCost="3">
+   <QueryPlan DegreeOfParallelism="1">
+    <RelOp NodeId="0" PhysicalOp="Sort" LogicalOp="Sort" EstimateRows="9" EstimatedTotalSubtreeCost="3">
+     <Sort>
+      <RelOp NodeId="1" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="9" EstimatedTotalSubtreeCost="1">
+       <IndexScan><Object Database="[appdb]" Schema="[dbo]" Table="[lines]" Index="[PK_lines]"/></IndexScan>
+      </RelOp>
+     </Sort>
+    </RelOp>
+   </QueryPlan>
+  </StmtSimple>
+`
+	x := comparePlanXML(index, 10, 1)
+	x = strings.Replace(x, `  <StmtSimple StatementText="SELECT 1"`, set+`  <StmtSimple StatementText="SELECT 1"`, 1)
+	return strings.Replace(x, ` </Statements>`, sorted+` </Statements>`, 1)
+}
+
+// TestComparePanelPairsTheStatementsTheUserPicks. Each side starts on its first
+// statement with a plan, and either side moves on its own: two batches that
+// differ by a statement must still be comparable query to query, which a fixed
+// N-with-N pairing cannot do.
+func TestComparePanelPairsTheStatementsTheUserPicks(t *testing.T) {
+	a := newTestApp()
+	left := mustParsePlan(t, twoStatementPlanXML("IX_date"))
+	right := mustParsePlan(t, twoStatementPlanXML("IX_customer"))
+	if len(left.Statements) != 3 {
+		t.Fatalf("the fixture parsed to %d statements, want SET, seek, sort", len(left.Statements))
+	}
+	p := NewPlanComparePanel(a, "Compare", left, right)
+	p.SetBounds(0, 0, 160, 40)
+
+	// The default pair: both seeks, the SET passed over.
+	if p.stmtA != 1 || p.stmtB != 1 {
+		t.Fatalf("starts on statements %d and %d, want 1 and 1 (the first with a plan)", p.stmtA, p.stmtB)
+	}
+	seek := gridRowStartingWith(t, p.ops, "  Index Seek")
+	if !strings.Contains(seek[len(seek)-1], "IX_date → IX_customer") {
+		t.Errorf("the default pair shows %q, want the seeks compared", seek[len(seek)-1])
+	}
+
+	// '}' moves B alone, to the sort: the roots pair (CompareStatements always
+	// pairs roots), but nothing below them does.
+	key := func(r rune) bool { return p.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone)) }
+	if !key('}') {
+		t.Fatal("'}' was declined, want it to step plan B's statement")
+	}
+	if p.stmtA != 1 || p.stmtB != 2 {
+		t.Fatalf("after '}' the pair is %d/%d, want 1/2", p.stmtA, p.stmtB)
+	}
+	if row := gridRowStartingWith(t, p.ops, "  Index Seek"); row[1] != "Only in A" {
+		t.Errorf("A's seek reads %q against B's sort, want Only in A", row[1])
+	}
+	if row := gridRowStartingWith(t, p.ops, "  Clustered Index Scan"); row[1] != "Only in B" {
+		t.Errorf("B's scan reads %q, want Only in B", row[1])
+	}
+
+	// ']' moves A to its sort too: the same statement both sides, so Same.
+	if !key(']') {
+		t.Fatal("']' was declined, want it to step plan A's statement")
+	}
+	for i := 0; p.ops.Row(i) != nil; i++ {
+		if got := p.ops.Row(i)[1]; got != "Same" {
+			t.Errorf("row %d (%s) reads %q comparing the sort with itself", i, p.ops.Row(i)[0], got)
+		}
+	}
+
+	// Stepping wraps past the SET: it has no plan to compare.
+	if key(']'); p.stmtA != 1 {
+		t.Errorf("']' from the last statement went to %d, want 1 — the SET has no plan", p.stmtA)
+	}
+	if !strings.Contains(p.pickers[pcPickA].label, "statement 2/3") {
+		t.Errorf("picker A reads %q, want it to name the statement compared", p.pickers[pcPickA].label)
+	}
+}
+
+// TestComparePanelPickerMenuChoosesAStatement — the mouse route: a click on a
+// picker pops that side's statements, the SET withheld, and choosing one
+// re-compares.
+func TestComparePanelPickerMenuChoosesAStatement(t *testing.T) {
+	a := newTestApp()
+	p := NewPlanComparePanel(a, "Compare", mustParsePlan(t, twoStatementPlanXML("IX_date")),
+		mustParsePlan(t, twoStatementPlanXML("IX_customer")))
+	p.SetBounds(0, 0, 160, 40)
+
+	if p.toolRect.H != 1 {
+		t.Fatal("no picker row for two multi-statement plans")
+	}
+	r := p.pickers[pcPickB].rect
+	if r.IsZero() {
+		t.Fatal("picker B did not fit a 160-column pane")
+	}
+	p.HandleMouse(tcell.NewEventMouse(r.X+1, r.Y, tcell.Button1, tcell.ModNone))
+	p.HandleMouse(tcell.NewEventMouse(r.X+1, r.Y, tcell.ButtonNone, tcell.ModNone))
+	if !a.contextMenu.Visible() {
+		t.Fatal("a click on picker B opened no menu")
+	}
+	items := a.contextMenu.Items()
+	if len(items) != 3 {
+		t.Fatalf("the menu lists %d statements, want 3", len(items))
+	}
+	if items[0].Enabled() {
+		t.Error("the SET is offered, but it has no plan to compare")
+	}
+	if !strings.HasPrefix(items[1].Label, "• ") {
+		t.Errorf("the statement in force is not marked: %q", items[1].Label)
+	}
+	items[2].Action()
+	if p.stmtB != 2 {
+		t.Errorf("choosing statement 3 left B on %d", p.stmtB)
+	}
+	if row := gridRowStartingWith(t, p.ops, "  Clustered Index Scan"); row[1] != "Only in B" {
+		t.Errorf("after choosing B's sort its scan reads %q, want Only in B", row[1])
+	}
+}
+
+// TestComparePanelHasNoPickerRowForSingleStatementPlans. Query Store's
+// comparison is one statement a side; a toolbar of two selectors with nothing
+// to select would take a row from the grids for nothing.
+func TestComparePanelHasNoPickerRowForSingleStatementPlans(t *testing.T) {
+	a := newTestApp()
+	plan := mustParsePlan(t, comparePlanXML("IX_date", 10, 1))
+	p := NewPlanComparePanel(a, "Compare", plan, mustParsePlan(t, comparePlanXML("IX_customer", 4000, 8)))
+	p.SetBounds(0, 0, 160, 40)
+	if p.toolRect.H != 0 {
+		t.Error("a picker row for two one-statement plans")
+	}
+	if got := p.split.FirstRect().Y; got != 1 {
+		t.Errorf("the grids start at row %d, want 1 — straight under the title", got)
+	}
+	if p.HandleKey(tcell.NewEventKey(tcell.KeyRune, "]", tcell.ModNone)) {
+		t.Error("']' was consumed with no other statement to step to")
+	}
+}
+
+// TestComparePanelKeepsBothPickersOnANarrowRow. A toolbar cell that does not fit
+// is not drawn or clickable at all, so a long statement on A once took B's
+// picker off a 70-column row. Both stay, at every width a pane gets.
+func TestComparePanelKeepsBothPickersOnANarrowRow(t *testing.T) {
+	a := newTestApp()
+	p := NewPlanComparePanel(a, "Compare", mustParsePlan(t, twoStatementPlanXML("IX_date")),
+		mustParsePlan(t, twoStatementPlanXML("IX_customer")))
+	p.stepStatement(pcPickA, 1)
+	p.stepStatement(pcPickB, 1) // both on the long ORDER BY statement
+	for _, w := range []int{160, 70, 50, 40} {
+		p.SetBounds(0, 0, w, 30)
+		for i, name := range []string{"A", "B"} {
+			r := p.pickers[i].rect
+			if r.IsZero() {
+				t.Errorf("width %d: picker %s was dropped from the row", w, name)
+			} else if r.Right() > w {
+				t.Errorf("width %d: picker %s runs to column %d", w, name, r.Right())
+			}
+		}
+	}
+}

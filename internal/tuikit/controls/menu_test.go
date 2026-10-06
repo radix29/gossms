@@ -99,6 +99,43 @@ func TestMenuBarHeldButtonOverHeaderDoesNotReToggle(t *testing.T) {
 	}
 }
 
+// OnBeforeOpen runs as a closed bar opens, by key and by click, and the
+// dropdown shows what it set — a host listing open plans in a cascade rebuilds
+// the list there, so the menu cannot offer a plan whose panel has closed.
+func TestMenuBarOnBeforeOpenRebuildsItemsBeforeTheyAreRead(t *testing.T) {
+	for _, open := range []struct {
+		name string
+		do   func(mb *MenuBar)
+	}{
+		{"key", func(mb *MenuBar) { mb.Open() }},
+		{"click", func(mb *MenuBar) { mb.HandleMouse(tcell.NewEventMouse(2, 0, tcell.Button1, tcell.ModNone)) }},
+	} {
+		mb := newTestMenuBar()
+		calls := 0
+		mb.OnBeforeOpen = func() {
+			calls++
+			mb.SetMenus([]Menu{
+				{Label: "File", Items: []MenuItem{{Label: "Off", Enabled: func() bool { return false }}, {Label: "Fresh"}}},
+				{Label: "Edit", Items: []MenuItem{{Label: "Copy"}}},
+			})
+		}
+		open.do(mb)
+		if calls != 1 {
+			t.Errorf("%s: OnBeforeOpen ran %d times, want 1", open.name, calls)
+		}
+		// selectedItem is read from the rebuilt items: 1 skips the new disabled
+		// first row, where the stale list would have given 0.
+		if mb.selectedItem != 1 || mb.menus[0].Items[1].Label != "Fresh" {
+			t.Errorf("%s: selectedItem = %d over %v, want 1 over the rebuilt items", open.name, mb.selectedItem, mb.menus[0].Items)
+		}
+		// Moving within an open dropdown is not an open.
+		mb.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
+		if calls != 1 {
+			t.Errorf("%s: OnBeforeOpen ran again inside an open menu", open.name)
+		}
+	}
+}
+
 func TestMenuBarClosedIgnoresEventsOffTheBar(t *testing.T) {
 	mb := newTestMenuBar()
 

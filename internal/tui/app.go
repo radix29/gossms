@@ -75,6 +75,13 @@ type App struct {
 	// query.Session's Execute and ExecuteWithPlan.
 	actualPlanEnabled bool
 
+	// liveStatsEnabled is the "Include Live Query Statistics" toggle, off by
+	// default. On implies actualPlanEnabled (toggleLiveQueryStatistics and
+	// toggleActualExecutionPlan keep the two in step): the live view polls a
+	// session profiled by the actual plan's SET STATISTICS XML ON, and becomes
+	// that plan when the run ends. See query_panel_live.go.
+	liveStatsEnabled bool
+
 	// metaEnabled is the "Show Output Column Metadata" toolbar toggle, off by
 	// default. QueryPanel.setResult reads it on the UI goroutine after the
 	// query returns, so it needs no snapshot semantics.
@@ -485,6 +492,9 @@ func (a *App) buildUI() {
 
 	a.menuBar = controls.NewMenuBar()
 	a.menuBar.SetMenus(a.buildMenus())
+	// Rebuilt on every open, for Query > Compare with ▸: its submenu lists the
+	// plans open right now, which no toggle's rebuild would keep current.
+	a.menuBar.OnBeforeOpen = func() { a.menuBar.SetMenus(a.buildMenus()) }
 
 	a.toolbar = controls.NewToolbar()
 	a.toolbar.SetButtons(a.buildToolbar())

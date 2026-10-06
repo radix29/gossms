@@ -17,9 +17,14 @@ func (v *PlanView) Draw(s tcell.Screen) {
 	v.drawTabBar(s)
 	v.drawStatementBar(s)
 	v.drawMissingIndexBanner(s)
+	v.drawLiveRow(s)
 	switch {
 	case v.err != nil:
 		v.drawMessage(s, fmt.Sprintf("Error parsing execution plan: %v", v.err))
+	case v.plan == nil && v.liveOn && v.liveNote != "":
+		v.drawWrappedMessage(s, v.liveNote)
+	case v.plan == nil && v.liveOn:
+		v.drawMessage(s, "Waiting for the running statement's plan…")
 	case v.plan == nil:
 		v.drawMessage(s, "No execution plan loaded")
 	case v.activeTab == TabXML:
@@ -59,6 +64,19 @@ func (v *PlanView) drawMessage(s tcell.Screen, msg string) {
 	core.FillRect(s, v.contentRect, ' ', st)
 	if v.contentRect.H > 0 && v.contentRect.W > 2 {
 		core.DrawTextClipped(s, v.contentRect.X+1, v.contentRect.Y, v.contentRect.W-2, st, msg)
+	}
+}
+
+// drawWrappedMessage is drawMessage for a note longer than a line, wrapped
+// to the content width (SetLiveNote's explanations).
+func (v *PlanView) drawWrappedMessage(s tcell.Screen, msg string) {
+	st := theme.StylePanel()
+	core.FillRect(s, v.contentRect, ' ', st)
+	if v.contentRect.W <= 2 {
+		return
+	}
+	for i, line := range core.WrapTextLimit(msg, v.contentRect.W-2, v.contentRect.H) {
+		core.DrawTextClipped(s, v.contentRect.X+1, v.contentRect.Y+i, v.contentRect.W-2, st, line)
 	}
 }
 

@@ -35,7 +35,7 @@ func (v *PlanView) SelectedText() string {
 		return v.xml.SelectedText()
 	case v.activeTab == TabTree, v.activeTab == TabPlan:
 		if n := v.selectedNode(); n != nil {
-			return formatDetailsText(n, v.currentStatement())
+			return formatDetailsText(n, v.currentStatement(), v.liveCountersPtr(n))
 		}
 	}
 	return ""

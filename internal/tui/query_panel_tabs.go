@@ -121,12 +121,13 @@ func (p *QueryPanel) drawTabBar(s tcell.Screen) {
 // ("Results" alone when there's only one), plus Messages, with "Execution Plan"
 // inserted depending on how planView got populated (see setEstimatedPlan and
 // setResultPlan): alone with Messages when there's no real result (Estimated
-// mode, which never runs the query), or between the Results tab(s) and Messages
+// mode, which never runs the query, and a Live Query Statistics run still
+// executing, whose tab is labelled for it — planTabLabel), or between the Results tab(s) and Messages
 // in Actual mode ("Include Actual Execution Plan"; planTabActive mirrors this
 // ordering).
 func (p *QueryPanel) resultTabs() []string {
 	if p.planView != nil && p.result == nil {
-		return []string{"Execution Plan", "Messages"}
+		return []string{p.planTabLabel(), "Messages"}
 	}
 	if p.result == nil {
 		return nil
@@ -140,9 +141,19 @@ func (p *QueryPanel) resultTabs() []string {
 		}
 	}
 	if p.planView != nil {
-		tabs = append(tabs, "Execution Plan")
+		tabs = append(tabs, p.planTabLabel())
 	}
 	return append(tabs, "Messages")
+}
+
+// planTabLabel is the plan tab's label: "Live Query Statistics" while a run
+// with that toggle on is executing (startLiveStats), "Execution Plan" once
+// the actual plan replaces it, and for every other plan.
+func (p *QueryPanel) planTabLabel() string {
+	if p.planView != nil && p.planView.Live() {
+		return "Live Query Statistics"
+	}
+	return "Execution Plan"
 }
 
 // setActiveTab switches the results area to tab i, if it exists.

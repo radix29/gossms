@@ -111,12 +111,10 @@ func (a *App) openQueryFile() {
 // File > Open keys off to show one rather than treating it as a script.
 const sqlPlanExt = ".sqlplan"
 
-// openPlanFile shows an already-read .sqlplan in its own PlanPanel, through
-// decodeTextFile like every other file gossms reads: SSMS writes .sqlplan as
-// UTF-16, identified by its BOM (see text_encoding.go).
+// openPlanFile shows an already-read .sqlplan in its own PlanPanel, decoded
+// and parsed by parsePlanFile.
 func (a *App) openPlanFile(path string, data []byte) {
-	text, _, _, _ := decodeTextFile(data)
-	plan, err := showplan.Parse([]byte(text))
+	plan, err := parsePlanFile(data)
 	if err != nil {
 		a.setStatus(fmt.Sprintf("Could not parse %s: %v", filepath.Base(path), err))
 		return

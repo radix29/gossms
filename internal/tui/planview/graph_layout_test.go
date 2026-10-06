@@ -23,14 +23,14 @@ func buildTestTree() *showplan.Node {
 }
 
 func TestLayoutGraph_NilRoot(t *testing.T) {
-	g := layoutGraph(nil)
+	g := layoutGraph(nil, graphTileH)
 	if len(g.tiles) != 0 || len(g.edges) != 0 {
 		t.Fatalf("layoutGraph(nil) produced tiles/edges, want none")
 	}
 }
 
 func TestLayoutGraph_AllNodesPlaced(t *testing.T) {
-	g := layoutGraph(buildTestTree())
+	g := layoutGraph(buildTestTree(), graphTileH)
 	if len(g.tiles) != 5 {
 		t.Fatalf("len(tiles) = %d, want 5", len(g.tiles))
 	}
@@ -40,7 +40,7 @@ func TestLayoutGraph_AllNodesPlaced(t *testing.T) {
 }
 
 func TestLayoutGraph_ParentLeftOfChildren(t *testing.T) {
-	g := layoutGraph(buildTestTree())
+	g := layoutGraph(buildTestTree(), graphTileH)
 	root, a, b, a1, a2 := g.rects[0], g.rects[1], g.rects[2], g.rects[3], g.rects[4]
 	for name, pair := range map[string][2]int{
 		"root<a": {root.X, a.X},
@@ -55,7 +55,7 @@ func TestLayoutGraph_ParentLeftOfChildren(t *testing.T) {
 }
 
 func TestLayoutGraph_TilesNonOverlapping(t *testing.T) {
-	g := layoutGraph(buildTestTree())
+	g := layoutGraph(buildTestTree(), graphTileH)
 	for i := range g.tiles {
 		for j := range g.tiles {
 			if i == j {
@@ -75,7 +75,7 @@ func TestLayoutGraph_TilesNonOverlapping(t *testing.T) {
 }
 
 func TestLayoutGraph_EdgesConnectTileMidpoints(t *testing.T) {
-	g := layoutGraph(buildTestTree())
+	g := layoutGraph(buildTestTree(), graphTileH)
 	rootRect, aRect := g.rects[0], g.rects[1]
 	var found bool
 	for _, e := range g.edges {
@@ -90,7 +90,7 @@ func TestLayoutGraph_EdgesConnectTileMidpoints(t *testing.T) {
 }
 
 func TestLayoutGraph_CanvasSize(t *testing.T) {
-	g := layoutGraph(buildTestTree())
+	g := layoutGraph(buildTestTree(), graphTileH)
 	wantW := 0
 	wantH := 0
 	for _, t := range g.tiles {
@@ -110,7 +110,7 @@ func TestLayoutGraph_CanvasSize(t *testing.T) {
 }
 
 func TestLayoutGraph_ParentTopAlignedWithFirstChild(t *testing.T) {
-	g := layoutGraph(buildTestTree())
+	g := layoutGraph(buildTestTree(), graphTileH)
 	root, a, a1 := g.rects[0], g.rects[1], g.rects[3]
 	if a.Y != a1.Y {
 		t.Errorf("node a's Y = %d, want %d (top-aligned with first child a1)", a.Y, a1.Y)

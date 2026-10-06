@@ -120,7 +120,12 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: actualExecutionPlanMenuLabel(a.actualPlanEnabled), Action: func() { a.toggleActualExecutionPlan() }},
+			{Label: liveQueryStatisticsMenuLabel(a.liveStatsEnabled), Action: func() { a.toggleLiveQueryStatistics() }},
 			{Label: outputColumnMetaMenuLabel(a.metaEnabled), Action: func() { a.toggleOutputColumnMeta() }},
+			{Divider: true},
+			{Label: "Compare Showplan...", Action: func() { a.compareShowplan() },
+				Enabled: func() bool { return a.activePlan() != nil }, Note: "no execution plan"},
+			a.activeCompareWithItem(),
 			{Divider: true},
 			{Label: "Results To Text", Action: func() { a.setResultsMode(ResultsModeText) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
@@ -167,6 +172,15 @@ func actualExecutionPlanMenuLabel(on bool) string {
 		return "Actual Execution Plan (ON)"
 	}
 	return "Actual Execution Plan (OFF)"
+}
+
+// liveQueryStatisticsMenuLabel folds the "Include Live Query Statistics"
+// toggle state into its Query menu label, as actualExecutionPlanMenuLabel does.
+func liveQueryStatisticsMenuLabel(on bool) string {
+	if on {
+		return "Live Query Statistics (ON)"
+	}
+	return "Live Query Statistics (OFF)"
 }
 
 // outputColumnMetaMenuLabel folds the "Show Output Column Metadata" toggle

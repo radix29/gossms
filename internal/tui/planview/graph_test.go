@@ -192,7 +192,7 @@ func TestGraph_DetailStripIsResizeable(t *testing.T) {
 // Operator Details pane.
 func TestGraph_PropertiesBlockShowsSelectedNode(t *testing.T) {
 	v := newGraphTabView(t)
-	lines := detailLines(v.selectedNode(), v.currentStatement())
+	lines := detailLines(v.selectedNode(), v.currentStatement(), nil)
 	if len(lines) == 0 {
 		t.Fatal("detailLines empty for the selected root — Properties block would render nothing")
 	}
@@ -205,7 +205,7 @@ func TestGraph_PropertiesWheelScrolls(t *testing.T) {
 	v := newGraphTabView(t)
 	v.SetBounds(0, 0, 160, 14) // short enough that the strip's Properties block overflows
 
-	total := len(detailLines(v.selectedNode(), v.currentStatement()))
+	total := len(detailLines(v.selectedNode(), v.currentStatement(), nil))
 	if total <= v.graphPropsRect.H {
 		t.Fatalf("detail lines (%d) fit entirely in the Properties block (%d rows) — test needs an overflow", total, v.graphPropsRect.H)
 	}

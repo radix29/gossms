@@ -173,6 +173,10 @@ type QueryPanel struct {
 	executing bool
 	cancel    context.CancelFunc
 
+	// liveRun is the in-flight run's Live Query Statistics poller, idle when
+	// the run has none. See query_panel_live.go.
+	liveRun latest
+
 	// execDone is closed when the in-flight run's goroutine exits, which tells
 	// launch's App.animateUntil ticker to stop. Both execute paths close it from a
 	// defer, so a panic can't leave the ticker waking the event loop every second

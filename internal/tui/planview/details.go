@@ -50,7 +50,8 @@ func drawDetailsHeader(s tcell.Screen, rect core.Rect, title string, canUp, canD
 // scrollDetails shifts the Operator Details pane's scroll offset by delta
 // rows, clamped to the current selection's line count.
 func (v *PlanView) scrollDetails(delta int) {
-	total := len(detailLines(v.selectedNode(), v.currentStatement()))
+	n := v.selectedNode()
+	total := len(detailLines(n, v.currentStatement(), v.liveCountersPtr(n)))
 	maxScroll := max(0, total-v.detailsContentRect.H)
 	v.detailsScroll = core.Clamp(v.detailsScroll+delta, 0, maxScroll)
 }
@@ -66,8 +67,9 @@ func (v *PlanView) scrollBottomProps(delta int) {
 
 // drawDetails renders the Operator Details pane's aligned key/value lines
 // for n, scrolled by scroll rows — shared by the Tree tab's right-hand pane
-// and the Plan tab's "Selected Operator" detail strip.
-func drawDetails(s tcell.Screen, rect core.Rect, n *showplan.Node, st *showplan.Statement, scroll int) {
+// and the Plan tab's "Selected Operator" detail strip. live is n's live
+// counters in live mode, else nil (see detailKVs).
+func drawDetails(s tcell.Screen, rect core.Rect, n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters, scroll int) {
 	pal := theme.Active()
 	bg := theme.StylePanel()
 	core.FillRect(s, rect, ' ', bg)
@@ -78,7 +80,7 @@ func drawDetails(s tcell.Screen, rect core.Rect, n *showplan.Node, st *showplan.
 		core.DrawTextClipped(s, rect.X+1, rect.Y, rect.W-2, bg, "(no operator selected)")
 		return
 	}
-	lines := detailLines(n, st)
+	lines := detailLines(n, st, live)
 	for row := 0; row < rect.H; row++ {
 		idx := scroll + row
 		if idx >= len(lines) {
@@ -97,7 +99,11 @@ func drawDetails(s tcell.Screen, rect core.Rect, n *showplan.Node, st *showplan.
 // statement-level Memory Grant, shown only on the plan's root operator —
 // same as real SSMS, which reports memory grant once per statement rather
 // than per operator.
-func detailKVs(n *showplan.Node, st *showplan.Statement) []showplan.KV {
+//
+// live, when non-nil, is n's live counters (live mode): they add a Live block
+// after the estimates and stand in for the Actual figures, which in an
+// in-flight plan are a partial snapshot older than the counters.
+func detailKVs(n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters) []showplan.KV {
 	var kvs []showplan.KV
 	add := func(k, v string) { kvs = append(kvs, showplan.KV{Key: k, Value: v}) }
 
@@ -121,12 +127,19 @@ func detailKVs(n *showplan.Node, st *showplan.Statement) []showplan.KV {
 		add("Seek Predicate", n.SeekPredicate)
 	}
 	add("Estimated Rows", formatCount(n.EstRows))
-	if n.Runtime != nil {
+	rt := n.Runtime
+	if live != nil {
+		rt = nil
+	}
+	if rt != nil {
 		add("Actual Rows", fmt.Sprintf("%d", n.Runtime.Rows))
 	}
 	add("Estimated I/O", fmt.Sprintf("%.2f", n.EstIO))
 	add("Estimated CPU", fmt.Sprintf("%.2f", n.EstCPU))
-	if n.Runtime != nil {
+	if live != nil {
+		kvs = append(kvs, liveKVs(*live)...)
+	}
+	if rt != nil {
 		add("Actual CPU", fmt.Sprintf("%d ms", n.Runtime.CPUMS))
 		add("Actual Duration", fmt.Sprintf("%d ms", n.Runtime.ElapsedMS))
 	}
@@ -135,8 +148,11 @@ func detailKVs(n *showplan.Node, st *showplan.Statement) []showplan.KV {
 	}
 	if n.Parallel {
 		threads := ""
-		if n.Runtime != nil && n.Runtime.Threads > 0 {
-			threads = fmt.Sprintf(" (%d threads)", n.Runtime.Threads)
+		switch {
+		case live != nil && live.Threads > 0:
+			threads = fmt.Sprintf(" (%d threads)", live.Threads)
+		case rt != nil && rt.Threads > 0:
+			threads = fmt.Sprintf(" (%d threads)", rt.Threads)
 		}
 		add("Parallel", "Yes"+threads)
 	} else {
@@ -153,11 +169,11 @@ func detailKVs(n *showplan.Node, st *showplan.Statement) []showplan.KV {
 // detailLines renders detailKVs as "Label : Value" lines with every label
 // padded to the widest one, so the colons line up in a column — shared by
 // drawDetails and formatDetailsText (Copy).
-func detailLines(n *showplan.Node, st *showplan.Statement) []string {
+func detailLines(n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters) []string {
 	if n == nil {
 		return nil
 	}
-	kvs := detailKVs(n, st)
+	kvs := detailKVs(n, st, live)
 	width := 0
 	for _, kv := range kvs {
 		if w := core.DisplayWidth(kv.Key); w > width {
@@ -172,8 +188,8 @@ func detailLines(n *showplan.Node, st *showplan.Statement) []string {
 }
 
 // formatDetailsText renders detailLines as Copy-ready plain text.
-func formatDetailsText(n *showplan.Node, st *showplan.Statement) string {
-	return strings.Join(detailLines(n, st), "\n")
+func formatDetailsText(n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters) string {
+	return strings.Join(detailLines(n, st, live), "\n")
 }
 
 // formatCount renders an estimate (a float64 in the source XML, even

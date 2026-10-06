@@ -33,7 +33,7 @@ func (v *PlanView) rebuildGraphLayout() {
 		v.graphSt.layout = nil
 		return
 	}
-	v.graphSt.layout = layoutGraph(st.Root)
+	v.graphSt.layout = layoutGraph(st.Root, v.graphTileHeight())
 	v.graphSt.scrollX, v.graphSt.scrollY = 0, 0
 }
 
@@ -80,11 +80,12 @@ func (v *PlanView) drawGraphTab(s tcell.Screen) {
 	}
 	v.graphSplit.Draw(s)
 	n, st := v.selectedNode(), v.currentStatement()
-	total := len(detailLines(n, st))
+	live := v.liveCountersPtr(n)
+	total := len(detailLines(n, st, live))
 	canUp := v.graphPropsScroll > 0
 	canDown := v.graphPropsScroll+v.graphPropsRect.H < total
 	drawDetailsHeader(s, v.graphPropsHeaderRect, "Properties", canUp, canDown)
-	drawDetails(s, v.graphPropsRect, n, st, v.graphPropsScroll)
+	drawDetails(s, v.graphPropsRect, n, st, live, v.graphPropsScroll)
 }
 
 // drawGraphCanvas draws every edge then every tile, scrolled by
@@ -148,10 +149,16 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	}
 	selected := t.node.ID == v.selectedID
 	costPct := v.nodeCostPct(t.node)
+	live, liveOK := v.liveFor(t.node)
 	borderStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Border)
+	textStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Text)
 	switch {
 	case selected:
 		borderStyle = theme.StyleActiveBorder()
+	case v.liveOn:
+		// In live mode the border says where the operator is in its run;
+		// the expensive/warning badge below still marks the rest.
+		borderStyle = borderStyle.Foreground(liveStateColor(pal, live, liveOK))
 	case costPct >= expensiveCostThreshold:
 		borderStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
 	case len(t.node.Warnings) > 0:
@@ -164,8 +171,11 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	}
 	core.DrawBoxWith(s, screenRect, borderStyle, box)
 
+	if v.liveOn && (!liveOK || live.State == showplan.LiveNotStarted) {
+		textStyle = textStyle.Foreground(pal.TextDim)
+	}
+
 	inner := screenRect.Inner(1)
-	textStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Text)
 	core.DrawTextClipped(s, inner.X, inner.Y, inner.W, textStyle, t.node.PhysicalOp)
 
 	line2 := t.node.LogicalOp
@@ -179,11 +189,15 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 		core.DrawTextClipped(s, inner.X, inner.Y+1, inner.W, textStyle, line2)
 	}
 
-	metrics := fmt.Sprintf("%.0f%%  %s", costPct*100, v.tileRowsText(t.node))
-	if t.node.Parallel {
-		metrics += "  ⇄"
+	if v.liveOn {
+		v.drawLiveTileLines(s, inner, textStyle, t.node, costPct, live, liveOK)
+	} else {
+		metrics := fmt.Sprintf("%.0f%%  %s", costPct*100, v.tileRowsText(t.node))
+		if t.node.Parallel {
+			metrics += "  ⇄"
+		}
+		core.DrawTextClipped(s, inner.X, inner.Y+2, inner.W, textStyle, metrics)
 	}
-	core.DrawTextClipped(s, inner.X, inner.Y+2, inner.W, textStyle, metrics)
 
 	// Corner badge: at most one of error/warning, same priority as the border color
 	// switch above. Right-aligned by the glyph's own display width (not a fixed
@@ -369,7 +383,8 @@ func (v *PlanView) graphSelectRoot() {
 // scrollGraphProps shifts the Plan tab's Properties block scroll offset by
 // delta rows, clamped to the current selection's line count.
 func (v *PlanView) scrollGraphProps(delta int) {
-	total := len(detailLines(v.selectedNode(), v.currentStatement()))
+	n := v.selectedNode()
+	total := len(detailLines(n, v.currentStatement(), v.liveCountersPtr(n)))
 	maxScroll := max(0, total-v.graphPropsRect.H)
 	v.graphPropsScroll = core.Clamp(v.graphPropsScroll+delta, 0, maxScroll)
 }

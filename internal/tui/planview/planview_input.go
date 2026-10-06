@@ -144,8 +144,29 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
+	if ev.Buttons() == tcell.Button2 && v.OnContextMenu != nil && v.contextMenuAt(mx, my) {
+		// Latched like a Button1 press: a held right button resends Button2 on
+		// every motion event, and each would open the menu again.
+		if !v.mouseDragging {
+			v.mouseDragging = true
+			v.OnContextMenu(mx, my)
+		}
+		return true
+	}
 	if ev.Buttons() == tcell.Button1 {
 		v.mouseDragging = true
 	}
 	return v.routeToContent(ev)
+}
+
+// contextMenuAt reports whether a right-click at (x, y) opens the host's plan
+// menu: on the operators themselves, the graph canvas or the tree pane.
+func (v *PlanView) contextMenuAt(x, y int) bool {
+	switch v.activeTab {
+	case TabPlan:
+		return v.graphCanvasRect.Contains(x, y)
+	case TabTree:
+		return v.treePaneRect.Contains(x, y)
+	}
+	return false
 }

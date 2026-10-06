@@ -43,6 +43,12 @@ type MenuBar struct {
 	// caches drawnX/drawnY: only Draw sees a tcell.Screen and so the screen height
 	// the clamp needs, and HandleMouse must hit-test what was painted.
 	drawnRect core.Rect
+
+	// OnBeforeOpen, when set, is called as a closed bar opens a dropdown, by
+	// key or click, before the dropdown reads its items — the host's chance to
+	// SetMenus afresh when an item's list (not just its enabled state, which
+	// Enabled already answers live) depends on state that has moved since.
+	OnBeforeOpen func()
 }
 
 // NewMenuBar creates a MenuBar.
@@ -73,6 +79,9 @@ func (mb *MenuBar) Close() {
 // nothing if there are no menus, or one is already open.
 func (mb *MenuBar) Open() {
 	if mb.openMenu < 0 && len(mb.menus) > 0 {
+		if mb.OnBeforeOpen != nil {
+			mb.OnBeforeOpen()
+		}
 		mb.openMenu = 0
 		mb.hoverMenu = 0
 		mb.selectedItem = firstSelectableItem(mb.menus[0].Items)
@@ -237,8 +246,11 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 						mb.Close()
 					} else {
 						mb.Close()
+						if mb.OnBeforeOpen != nil {
+							mb.OnBeforeOpen()
+						}
 						mb.openMenu = i
-						mb.selectedItem = firstSelectableItem(m.Items)
+						mb.selectedItem = firstSelectableItem(mb.menus[i].Items)
 					}
 				}
 				return true

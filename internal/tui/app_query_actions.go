@@ -19,17 +19,48 @@ func (a *App) showEstimatedExecutionPlan() {
 
 // toggleActualExecutionPlan flips whether Execute captures the actual
 // (post-run) execution plan alongside a query's results, rebuilding the toolbar
-// and Query menu to match.
+// and Query menu to match. Turning it off turns Live Query Statistics off too,
+// which needs the capture (see App.liveStatsEnabled).
 func (a *App) toggleActualExecutionPlan() {
 	a.actualPlanEnabled = !a.actualPlanEnabled
+	status := "Include Actual Execution Plan: " + toggleStateWord(a.actualPlanEnabled)
+	if !a.actualPlanEnabled && a.liveStatsEnabled {
+		a.liveStatsEnabled = false
+		status += " (Live Query Statistics: off)"
+	}
+	a.rebuildQueryToggles()
+	a.setStatus(status)
+}
+
+// toggleLiveQueryStatistics flips "Include Live Query Statistics": Execute
+// shows the running statement's plan with operator counters polled while it
+// runs, then the actual plan. Turning it on turns on the actual plan capture
+// it rides on (see App.liveStatsEnabled).
+func (a *App) toggleLiveQueryStatistics() {
+	a.liveStatsEnabled = !a.liveStatsEnabled
+	status := "Include Live Query Statistics: " + toggleStateWord(a.liveStatsEnabled)
+	if a.liveStatsEnabled && !a.actualPlanEnabled {
+		a.actualPlanEnabled = true
+		status += " (Actual Execution Plan: on)"
+	}
+	a.rebuildQueryToggles()
+	a.setStatus(status)
+}
+
+// rebuildQueryToggles rebuilds the toolbar and Query menu after a toggle, whose
+// ON/OFF state both carry in their labels.
+func (a *App) rebuildQueryToggles() {
 	a.toolbar.SetButtons(a.buildToolbar())
 	a.menuBar.SetMenus(a.buildMenus())
 	a.layoutAll()
-	state := "off"
-	if a.actualPlanEnabled {
-		state = "on"
+}
+
+// toggleStateWord is a toggle's state word for the status bar.
+func toggleStateWord(on bool) string {
+	if on {
+		return "on"
 	}
-	a.setStatus("Include Actual Execution Plan: " + state)
+	return "off"
 }
 
 // toggleWordWrap flips Edit > Word Wrap (Alt+Z) for every open query editor —
