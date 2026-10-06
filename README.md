@@ -156,9 +156,10 @@ connected SQL Server version or engine edition are hidden or disabled.
 
 goSSMS adds no privileges: each action needs the same permission it would in
 other clients. Connecting needs `CONNECT SQL`; listing databases may need
-`VIEW ANY DATABASE`. Live data such as Activity Monitor needs `VIEW SERVER
-STATE` (on SQL Server 2022+, `VIEW SERVER PERFORMANCE STATE` or `VIEW SERVER
-SECURITY STATE`).
+`VIEW ANY DATABASE`. Live data such as Activity Monitor and Live Query
+Statistics needs `VIEW SERVER STATE` (on SQL Server 2022+, `VIEW SERVER
+PERFORMANCE STATE` or `VIEW SERVER SECURITY STATE`); without it a query still
+runs and returns its actual plan, but shows no live view.
 
 Where a permission is missing, the action is disabled, the page opens read-only,
 or values show as `N/A`.

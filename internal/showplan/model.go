@@ -123,7 +123,9 @@ type Node struct {
 	PhysicalOp     string
 	LogicalOp      string
 	Object         Object
-	EstRows        float64
+	EstRows        float64 // per execution
+	EstRebinds     float64
+	EstRewinds     float64
 	EstRowsRead    float64
 	EstIO          float64
 	EstCPU         float64

@@ -157,6 +157,8 @@ func decodeRelOp(dec *xml.Decoder, start xml.StartElement) (*Node, error) {
 		PhysicalOp:     attrOf(start, "PhysicalOp"),
 		LogicalOp:      attrOf(start, "LogicalOp"),
 		EstRows:        attrF(start, "EstimateRows"),
+		EstRebinds:     attrF(start, "EstimateRebinds"),
+		EstRewinds:     attrF(start, "EstimateRewinds"),
 		EstRowsRead:    attrF(start, "EstimatedRowsRead"),
 		EstIO:          attrF(start, "EstimateIO"),
 		EstCPU:         attrF(start, "EstimateCPU"),

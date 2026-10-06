@@ -53,7 +53,7 @@ func TestMergeProfilesParallelThreads(t *testing.T) {
 	}
 	c := m[2]
 	want := LiveCounters{
-		NodeID: 2, PhysicalOp: "Parallelism", State: LiveRunning, Threads: 4,
+		NodeID: 2, PhysicalOp: "Parallelism", State: LiveRunning, Threads: 4, Timed: true,
 		Rows: 8478846, EstRows: 3000, ElapsedMS: 3166, CPUMS: 217,
 	}
 	if c != want {
@@ -92,6 +92,40 @@ func TestMergeProfilesStates(t *testing.T) {
 	if len(MergeProfiles(nil)) != 0 {
 		t.Error("no rows should merge to no nodes")
 	}
+}
+
+// Lightweight profiling counts rows and leaves every time at 0 (2025, a
+// session nothing asked an actual plan of): an operator with rows is running,
+// untimed; one without is not started.
+func TestMergeProfilesLightweight(t *testing.T) {
+	m := MergeProfiles([]ProfileRow{
+		{NodeID: 3, RowCount: 160107277, EstimateRowCount: 2140369000},
+		{NodeID: 14, EstimateRowCount: 2926},
+	})
+	if got := m[3]; got.State != LiveRunning || got.Threads != 1 || got.Timed {
+		t.Errorf("node 3 = %+v, want running on 1 thread, untimed", got)
+	}
+	if got := NodeProgress(m[3]); !near(got, 160107277.0/2140369000) {
+		t.Errorf("node 3 progress = %v", got)
+	}
+	if got := m[14]; got.State != LiveNotStarted || got.Timed {
+		t.Errorf("node 14 = %+v, want not started, untimed", got)
+	}
+}
+
+// A node the DMV gave no estimate takes the plan's, over every execution; one
+// it did estimate keeps the DMV's (it is already split per thread and covers
+// rebinds).
+func TestFillPlanEstimates(t *testing.T) {
+	inner := &Node{ID: 1, EstRows: 4, EstRebinds: 9, EstRewinds: 0}
+	root := &Node{ID: 0, EstRows: 7, Children: []*Node{inner, {ID: 2, EstRows: 3}}}
+	p := &Plan{Statements: []*Statement{{}, {Root: root}}}
+	m := map[int]LiveCounters{0: {NodeID: 0}, 1: {NodeID: 1}, 2: {NodeID: 2, EstRows: 99}}
+	FillPlanEstimates(p, m)
+	if m[0].EstRows != 7 || m[1].EstRows != 40 || m[2].EstRows != 99 {
+		t.Errorf("estimates = %d, %d, %d; want 7, 40, 99", m[0].EstRows, m[1].EstRows, m[2].EstRows)
+	}
+	FillPlanEstimates(nil, m) // no plan yet: nothing to fill, no panic
 }
 
 func TestNodeProgress(t *testing.T) {

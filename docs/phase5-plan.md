@@ -347,22 +347,96 @@ releasable stopping point.
   actual plan; a throwaway login without VIEW SERVER STATE (note shown, query
   ran on). Found, not fixed: the toolbar now overdraws Tools/Help below ~112
   columns (`docs/open-threads.md` B19). README/help left to W7 as planned.
-- **W7** — Edge cases driven live: multi-statement batch (shape reload),
+- **W7** ✅ *done 2026-10-06* — Edge cases driven live: multi-statement batch (shape reload),
   multi-batch script with `GO`, cancel mid-run, error mid-run, parallel plan,
   a login without `VIEW SERVER STATE`, SQL2016 floor, Azure MI. README +
   help. *(ships)*
-- **W8** *(optional)* — Activity Monitor: **Show Live Execution Plan** on a
+  *As built:* driven in tmux at 160×50 on win10cli (17.0) and
+  win10cli\SQL2016 (13.0 SP3): a two-batch `GO` script reloads the shape per
+  batch and hands over to a 2-statement actual plan; a `SELECT INTO #t` +
+  DOP-4 cross join + `GO` + second query (3-statement actual plan, the DROP
+  has none) on both versions; a divide-by-zero mid-statement — the live tab
+  moves on to the next statement and the run lands on Messages, the failed
+  statement having no actual plan (as SSMS); cancel mid-run on 2016 — live
+  tab gone, nothing left in `dm_exec_query_profiles`, and repeated
+  cancel/run cycles leave one idle pooled connection, no growth; a throwaway
+  2016 login without `VIEW SERVER STATE` — note shown, actual plan arrives.
+  Fixed: a tile's "over" was dropped whenever the compact form needed 19+
+  columns (`78.8K of 2926`); `liveRowsText` now tries `78.8K of 2926 over`
+  before dropping the mark. Seen, not a defect: mid-run, the DMV itself
+  reports 0 rows/0 ms for a parallel Nested Loops whose scans and spool are
+  counting (13 and 17 alike), so its tile reads `0 of 4000`. Help: a Query
+  menu entry in F1's Execution Plan section; README § Required rights and the
+  wiki's Execution Plans gain Live Query Statistics. **Not run: Azure MI** —
+  t-qmi-01 refused the login (40532) again; `docs/open-threads.md` V6. Found,
+  not fixed: F1 help clips lines over 57 columns (B20).
+- **W8** ✅ *done 2026-10-06* *(optional)* — Activity Monitor: **Show Live Execution Plan** on a
   running request row (read-only view of another session; no actual-plan
   capture possible, so it relies on lightweight profiling — 2019+ only, or a
   session already under profiling; gate on version and say why when absent).
+  *As built:* new `live_plan_panel.go` (+ package-map row): `LivePlanPanel`,
+  W6's `pollLiveStats` pointed at another session on the Activity Monitor
+  connection's pool (outlives the Activity Monitor, stops on close or
+  disconnect; a second open of the same session brings the panel forward).
+  The Sessions and Block grids' cell menu gains the item for the selected
+  row's session (`session_id`, or the number ending `blktree`), disabled
+  with a note on a row naming none. Not gated on version — whether a query
+  is profiled is only known by asking — so the panel says why it is empty:
+  on 2019+/Azure "not running a query, or LIGHTWEIGHT_QUERY_PROFILING off";
+  before 2019, what profiles one (actual plan, TF 7412, a
+  `query_thread_profile` XE session). It follows the session from statement
+  to statement and, the query over, keeps its last reading, the title bar
+  saying so. The poller now reports idle reads (the query panel ignores
+  them). Found driving it, fixed for both live views: **lightweight
+  profiling reports rows only** — every time column 0, open/close included —
+  so W4's merge called every operator "not started"; a thread with rows now
+  counts as opened (never closed), `LiveCounters.Timed` is false and times
+  draw as "—" in tiles, tree, details and the progress row. And the DMV's
+  `estimate_row_count` came back **0 on a re-run of a cached plan** (first
+  run had them), so `showplan.FillPlanEstimates` falls back to the plan's
+  `EstimateRows × (1 + rebinds + rewinds)`. Driven live at 160×48: win10cli
+  (17.0) an unprofiled 2-minute serial cross join from sqlcmd — rows of
+  2.1B, 11 running / 5 not started, untimed, then "no query running — last
+  reading shown"; win10cli\SQL2016 (13.0 SP3) the same query unprofiled —
+  the pre-2019 note — then with `SET STATISTICS XML ON` on the reused
+  session id, picked up by the open panel with timed figures; Ctrl+W closes
+  it. Not run: Azure MI (`docs/open-threads.md` V6), SQL2017, the Block tab
+  live (unit-tested), the refused-DMV note (Activity Monitor itself needs
+  `VIEW SERVER STATE`).
 
 ### 26 — Replication (read-only)
 
-- **W9** — Test fixture on win10cli (Q1): gosmo `testdata` script that sets up a
+- **W9** ✅ *done 2026-10-06* — Test fixture on win10cli (Q1): gosmo `testdata` script that sets up a
   local distributor, a transactional and a merge publication on throwaway
   `gossms_p5_repl_*` databases with a pull subscription, and its teardown
   (`sp_removedbreplication`, `sp_dropdistributor`). Run once by hand; live
   tests skip with a message when absent.
+  *As built:* gosmo `testdata/replication/setup.sql` + `teardown.sql`
+  (sqlcmd, `-b` for setup). Distributor `distribution` on the instance
+  itself; `gossms_p5_repl_tran` publishes `gossms_p5_tran_pub` (Customer with
+  row filter `Region = N'EU'`, OrderLine, GetCustomers as proc schema only),
+  `gossms_p5_repl_merge` publishes `gossms_p5_merge_pub` (Item, subset filter
+  `Category = N'A'`), and `gossms_p5_repl_sub` holds a pull subscription to
+  each. Setup runs both snapshot agents and both pull agents once (~1.5 min),
+  so every agent type has history and the subscriber has rows. Setup refuses
+  an instance that already has a distributor; teardown stops the fixture's
+  agent jobs first (a running Log Reader made every drop fail Msg 18752),
+  drops everything, and drops the distributor only if no other publisher's
+  publication remains. Two win10cli traps, worked around in the script: the
+  Agent account can't write `ReplData` (setup makes `ReplData\gossms_p5_repl`
+  and grants it via `xp_cmdshell`/`icacls`; teardown deletes it), and
+  `@sync_method = 'concurrent'` runs SQLCLR that fails "LCID 8192 is not
+  supported" (the Agent account's custom locale) — the publication uses
+  `native`. Go side: `live_replication_fixture_test.go` —
+  `liveReplicationFixture` (skips with the setup command) and
+  `TestLiveReplicationFixture` checking the shape; passes on win10cli, skips
+  on SQL2016. Setup/teardown each cycled live three times, teardown leaving
+  no database, job, linked server, `distributor_admin` or folder behind.
+  **Left set up on win10cli** for W10–W13. For W10: `sys.databases.is_subscribed`
+  stays 0 for the pull-subscribed database, so local subscriptions must be
+  found from `MSreplication_subscriptions`/`sysmergesubscriptions`, not that
+  flag; `sp_get_distributor`'s column count varies by version (the scripts
+  test `sys.servers.is_distributor` instead).
 - **W10** — gosmo `replication.go`: `ReplicationInfo`, `Publications`,
   `Articles`, `Subscriptions`, `LocalSubscriptions` + version gates + live
   tests (win10cli; SQL2016; Linux transactional-only).

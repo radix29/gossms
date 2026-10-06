@@ -43,11 +43,13 @@ const liveRefusedNote = "No live statistics: reading sys.dm_exec_query_profiles 
 	"(VIEW DATABASE STATE on Azure SQL Database). The actual plan still arrives when the query ends."
 
 // liveUpdate is one poll's result for the UI goroutine: the statement's plan
-// and its operators' counters, or note when polling has stopped for good.
+// and its operators' counters, note when polling has stopped for good, or
+// idle when the session is running no profiled statement at the moment.
 type liveUpdate struct {
 	plan     *showplan.Plan
 	counters map[int]showplan.LiveCounters
 	note     string
+	idle     bool
 }
 
 // liveStmtKey identifies the statement a profile row or in-flight plan belongs
@@ -90,8 +92,8 @@ func (p *QueryPanel) startLiveStats(done <-chan struct{}) {
 // applyLiveUpdate puts one poll's result on the live tab, unless the run it
 // belongs to has been stopped or the tab has already become the actual plan.
 func (p *QueryPanel) applyLiveUpdate(token int, u liveUpdate) {
-	if !p.liveRun.Current(token) || p.planView == nil || !p.planView.Live() {
-		return
+	if !p.liveRun.Current(token) || p.planView == nil || !p.planView.Live() || u.idle {
+		return // idle: between statements, or not started yet — keep the last picture
 	}
 	if u.note != "" {
 		p.planView.SetLiveNote(u.note)
@@ -128,8 +130,8 @@ func (p *QueryPanel) liveTabActive() bool {
 }
 
 // pollLiveStats reads spid's operator counters every tm.every until ctx
-// is cancelled or done closes, reporting each read that found the session
-// running a profiled statement. The statement's in-flight plan is re-read only
+// is cancelled or done closes (nil: never), reporting each read — idle when it
+// found the session running no profiled statement. The statement's in-flight plan is re-read only
 // when the counters name a different statement than the plan on hand: a
 // multi-statement batch moving on, or a script's next GO batch.
 //
@@ -168,7 +170,8 @@ func pollLiveStats(ctx context.Context, src liveSource, spid int, done <-chan st
 		wait = tm.every
 		rows = currentStatementRows(rows)
 		if len(rows) == 0 {
-			continue // between statements, or not started yet: keep the last picture
+			report(liveUpdate{idle: true})
+			continue
 		}
 		if k := profileKey(rows[0]); plan == nil || k != key {
 			fp, err := src.InFlightPlan(ctx, spid)
@@ -194,7 +197,9 @@ func pollLiveStats(ctx context.Context, src liveSource, spid int, done <-chan st
 			}
 			plan, key = parsed, k
 		}
-		report(liveUpdate{plan: plan, counters: showplan.MergeProfiles(profileRows(rows))})
+		counters := showplan.MergeProfiles(profileRows(rows))
+		showplan.FillPlanEstimates(plan, counters)
+		report(liveUpdate{plan: plan, counters: counters})
 	}
 }
 

@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
@@ -86,7 +88,59 @@ func (pt *amProcTab) newGrid() *controls.DataGrid {
 	g.OnShowValue = func(col int, column, value string) bool {
 		return pt.am.app.openCellValuePanel(pt.columnType(col), column, value)
 	}
+	g.OnMenuItems = pt.menuItems
 	return g
+}
+
+// menuItems is the grid's own part of its cell menu: Show Live Execution
+// Plan for the selected row's session, disabled with a note on a row that
+// names none. Offered whatever the session is doing — whether its query is
+// profiled is only known by asking, and the plan panel says why it is empty.
+func (pt *amProcTab) menuItems() []controls.MenuItem {
+	spid, ok := pt.selectedSession()
+	item := controls.MenuItem{Label: "Show Live Execution Plan"}
+	sc := pt.am.conn
+	if !ok || sc == nil || sc.Server == nil {
+		item.Enabled = func() bool { return false }
+		item.Note = "no session"
+		return []controls.MenuItem{item}
+	}
+	item.Action = func() { pt.am.app.openLivePlanPanel(sc, spid) }
+	return []controls.MenuItem{item}
+}
+
+// selectedSession is the session id of the grid's selected row: Sessions'
+// session_id column, or the number that ends Block's blktree cell (the tree's
+// indent drawing comes first).
+func (pt *amProcTab) selectedSession() (int, bool) {
+	if pt.result == nil || len(pt.result.Sets) == 0 || pt.grid == nil {
+		return 0, false
+	}
+	set := pt.result.Sets[0]
+	row := pt.grid.SelectedRow()
+	if row < 0 || row >= len(set.Rows) {
+		return 0, false
+	}
+	for i, c := range set.Columns {
+		if (c == "session_id" || c == "blktree") && i < len(set.Rows[row]) && !set.IsNull(row, i) {
+			return sessionIDIn(set.Rows[row][i])
+		}
+	}
+	return 0, false
+}
+
+// sessionIDIn reads the session id a cell ends with, past any tree drawing
+// and padding: "57", "  57", "|         |------  57".
+func sessionIDIn(cell string) (int, bool) {
+	fields := strings.Fields(cell)
+	if len(fields) == 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimLeft(fields[len(fields)-1], "|-"))
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 // columnType is column col's declared SQL Server type, which identifies XML

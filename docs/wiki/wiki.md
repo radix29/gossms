@@ -125,6 +125,15 @@ collapsible tree that shows each operator's details in text form.
 
 ![exec plan tree](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/09_exec_plan_tree.png)
 
+### Live Query Statistics
+
+With **Query > Live Query Statistics** (toolbar **Live**) on, Execute opens a
+live tab showing the running statement's plan: each operator's rows against
+its estimate, elapsed time and state, under a progress bar for the statement.
+It follows a multi-statement batch or `GO` script statement by statement, and
+becomes the actual execution plan when the run ends. Needs `VIEW SERVER
+STATE`; without it the query runs as usual and the tab says why it is empty.
+
 ## Activity Monitor
 
 ### Historical activity view
@@ -142,6 +151,18 @@ trend: throughput bars, cache-ratio KPIs, memory composition and the current
 wait breakdown. Blocking chains and running sessions have tabs of their own.
 
 ![act mon sample](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/11_act_mon_sample.png)
+
+### Live execution plan of a session
+
+Right-click a row on the Sessions or Block tab and pick **Show Live Execution
+Plan** to watch that session's running query the way Live Query Statistics
+does: each operator's rows against its estimate, its state, and a progress bar
+for the statement. The view follows the session from statement to statement
+and keeps its last reading when the query ends. SQL Server 2019 and later
+profile every query, so any running query shows; on 2016 and 2017 only one
+already profiled does (run with an actual plan, trace flag 7412, or an
+Extended Events `query_thread_profile` session), and the view says so.
+Without an actual plan the server counts rows only, so times show as `—`.
 
 ### TempDB monitoring
 

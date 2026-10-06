@@ -1,5 +1,7 @@
 package showplan
 
+import "math"
+
 // ============================================================
 // Live Query Statistics counters
 // ============================================================
@@ -20,6 +22,14 @@ package showplan
 // scan) and already covers every execution of an inner-side operator (a
 // spool under nested loops estimated 750 × 3000), so the per-node estimate is
 // a plain sum, exactly like the rows.
+//
+// Lightweight profiling — what a session is under when nothing asked for an
+// actual plan (on by default from 2019; Activity Monitor's Show Live
+// Execution Plan watches such sessions) — counts rows and nothing else: every
+// time column stays 0, open and close included (observed on 2025). A thread
+// that has produced rows has plainly opened, so it counts as open without an
+// open time; it can never be seen to close, so such an operator stays running,
+// and LiveCounters.Timed is false so nobody draws its zero times as measured.
 
 // ProfileRow is one row of sys.dm_exec_query_profiles: one operator on one
 // thread. The caller filters to the statement being shown (gosmo's
@@ -79,6 +89,11 @@ type LiveCounters struct {
 	State      LiveState
 	Threads    int // threads that have opened the operator
 
+	// Timed is set when the server timed the operator (some thread has an
+	// open time). Lightweight profiling does not, and ElapsedMS and CPUMS
+	// are then 0 for want of a measurement, not a measured 0.
+	Timed bool
+
 	Rows       int64
 	EstRows    int64
 	Rebinds    int64
@@ -124,6 +139,9 @@ func MergeProfiles(rows []ProfileRow) map[int]LiveCounters {
 		c.PhysicalReads += r.PhysicalReads
 		c.ReadAheads += r.ReadAheads
 		if r.OpenTime != 0 {
+			c.Timed = true
+		}
+		if r.OpenTime != 0 || r.RowCount > 0 {
 			t := tallies[r.NodeID]
 			t.open++
 			if r.CloseTime != 0 {
@@ -147,6 +165,33 @@ func MergeProfiles(rows []ProfileRow) map[int]LiveCounters {
 		out[id] = c
 	}
 	return out
+}
+
+// FillPlanEstimates gives each operator in m that the DMV reported no
+// estimate for the plan's own, over all its executions: EstimateRows (one
+// execution's) × (1 + EstimateRebinds + EstimateRewinds), the figure the
+// DMV's estimate_row_count otherwise carries. The DMV leaves it 0 at times —
+// observed on 2025 under lightweight profiling, on a re-run of a cached plan
+// whose first run had them. The plan is the in-flight one, a single
+// statement; its first statement with an operator tree is used.
+func FillPlanEstimates(p *Plan, m map[int]LiveCounters) {
+	if p == nil || len(m) == 0 {
+		return
+	}
+	for _, st := range p.Statements {
+		if st.Root == nil {
+			continue
+		}
+		for _, n := range st.Nodes() {
+			c, ok := m[n.ID]
+			if !ok || c.EstRows != 0 {
+				continue
+			}
+			c.EstRows = int64(math.Round(n.EstRows * (1 + n.EstRebinds + n.EstRewinds)))
+			m[n.ID] = c
+		}
+		return
+	}
 }
 
 // liveCap is the most a still-running operator or statement shows: SSMS never

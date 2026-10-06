@@ -61,7 +61,7 @@ func liveCountersFor(p *showplan.Plan) map[int]showplan.LiveCounters {
 		if n == st.Root {
 			continue
 		}
-		c := showplan.LiveCounters{NodeID: n.ID, PhysicalOp: n.PhysicalOp, EstRows: 1000, ElapsedMS: 1234}
+		c := showplan.LiveCounters{NodeID: n.ID, PhysicalOp: n.PhysicalOp, EstRows: 1000, ElapsedMS: 1234, Timed: true}
 		if i%2 == 0 {
 			c.State, c.Rows = showplan.LiveDone, 1000
 		} else {
@@ -232,7 +232,7 @@ func TestLiveDetailsReplaceTheActualFigures(t *testing.T) {
 	if n == nil {
 		t.Fatal("fixture has no non-root operator with runtime counters")
 	}
-	live := showplan.LiveCounters{State: showplan.LiveRunning, Rows: 7781283, EstRows: 36000000, ElapsedMS: 898, CPUMS: 870, Threads: 4}
+	live := showplan.LiveCounters{State: showplan.LiveRunning, Rows: 7781283, EstRows: 36000000, ElapsedMS: 898, CPUMS: 870, Threads: 4, Timed: true}
 	text := strings.Join(detailLines(n, st, &live), "\n")
 	for _, want := range []string{"Live State", "running", "7781283 of 36000000 (21%)", "0.898s", "870 ms"} {
 		if !strings.Contains(text, want) {
@@ -301,7 +301,9 @@ func TestLiveRowsText(t *testing.T) {
 		want string
 	}{
 		{over, 100, "8478846 of 3000 (over)"},
-		{over, 18, "8.5M of 3000"},
+		{over, 18, "8.5M of 3000 over"},
+		{showplan.LiveCounters{State: showplan.LiveRunning, Rows: 78_812, EstRows: 2926}, 18, "78.8K of 2926 over"},
+		{over, 16, "8.5M of 3000"},
 		{over, 10, "8.5M"},
 		{capped, 18, "3000 of 3000 (99%)"},
 		{done, 18, "3 of 10 (100%)"},
@@ -347,5 +349,22 @@ func TestSetLiveOnTheShownPlan(t *testing.T) {
 	if v.liveRect.H != 1 || v.graphSt.layout.tiles[0].rect.H != graphLiveTileH {
 		t.Errorf("liveRect %+v, tile height %d; want a progress row and %d-row tiles",
 			v.liveRect, v.graphSt.layout.tiles[0].rect.H, graphLiveTileH)
+	}
+}
+
+// An operator lightweight profiling counted but did not time shows dashes,
+// not a measured 0.
+func TestLiveUntimedShowsDashes(t *testing.T) {
+	c := showplan.LiveCounters{State: showplan.LiveRunning, Rows: 5, EstRows: 10}
+	if got := strings.TrimSpace(liveTreeColumn(c, true)); !strings.HasSuffix(got, "—") {
+		t.Errorf("tree column = %q, want a dash for elapsed", got)
+	}
+	for _, kv := range liveKVs(c) {
+		if (kv.Key == "Live Elapsed" || kv.Key == "Live CPU") && kv.Value != "—" {
+			t.Errorf("%s = %q, want —", kv.Key, kv.Value)
+		}
+	}
+	if summarizeLive(map[int]showplan.LiveCounters{1: c}).timed {
+		t.Error("summary of untimed counters claims a time")
 	}
 }

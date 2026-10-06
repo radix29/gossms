@@ -72,6 +72,7 @@ func TestClosePanelAtDisposesAnyDisposablePanel(t *testing.T) {
 var panelsWithClose = []string{
 	"AGDashboard",
 	"ActivityMonitor",
+	"LivePlanPanel",
 	"LogViewer",
 	"QueryPanel",
 	"QueryStorePanel",
@@ -172,6 +173,7 @@ func TestEveryPanelCloseIsDisposable(t *testing.T) {
 var (
 	_ layout.Disposable = (*AGDashboard)(nil)
 	_ layout.Disposable = (*ActivityMonitor)(nil)
+	_ layout.Disposable = (*LivePlanPanel)(nil)
 	_ layout.Disposable = (*LogViewer)(nil)
 	_ layout.Disposable = (*QueryPanel)(nil)
 	_ layout.Disposable = (*XEventViewer)(nil)

@@ -128,15 +128,17 @@ func livePct(c showplan.LiveCounters) string {
 func floorPct(f float64) int { return int(math.Floor(f*100 + 1e-9)) }
 
 // liveRowsText is the "rows of estimate (pct)" figure, in the first form that
-// fits w columns: exact counts, then K/M/B-compacted ones, then without the
-// percentage. A tile is 18 columns inside, and a parallel exchange routinely
-// passes millions of rows against an estimate of thousands.
+// fits w columns: exact counts, then K/M/B-compacted ones, then the
+// percentage without its parentheses, then without it. A tile is 18 columns
+// inside, and a parallel exchange routinely passes millions of rows against an
+// estimate of thousands — exactly when "over" is the figure worth keeping.
 func liveRowsText(c showplan.LiveCounters, w int) string {
 	pct := livePct(c)
 	rows, est := compactCount(c.Rows), compactCount(c.EstRows)
 	for _, s := range []string{
 		fmt.Sprintf("%d of %d (%s)", c.Rows, c.EstRows, pct),
 		fmt.Sprintf("%s of %s (%s)", rows, est, pct),
+		rows + " of " + est + " " + pct,
 		rows + " of " + est,
 	} {
 		if core.DisplayWidth(s) <= w {
@@ -178,13 +180,32 @@ func liveElapsedText(ms int64) string {
 	return fmt.Sprintf("%dm%02ds", ms/60_000, ms/1000%60)
 }
 
+// liveTimeText is liveElapsedText for an operator's ms, or a dash when the
+// server did not time it (lightweight profiling, LiveCounters.Timed).
+func liveTimeText(c showplan.LiveCounters, ms int64) string {
+	if !c.Timed {
+		return "—"
+	}
+	return liveElapsedText(ms)
+}
+
+// liveCPUText is an operator's CPU time, or a dash when it was not timed.
+func liveCPUText(c showplan.LiveCounters) string {
+	if !c.Timed {
+		return "—"
+	}
+	return fmt.Sprintf("%d ms", c.CPUMS)
+}
+
 // liveSummary is the progress row's figures: the statement's overall
 // completion, its elapsed time so far (the slowest operator's — the root's
 // clock starts first and stops last), and how many operators are in each
-// state.
+// state. timed is false when no operator was timed (lightweight profiling),
+// and the elapsed figure is then left out.
 type liveSummary struct {
 	progress                  float64
 	elapsedMS                 int64
+	timed                     bool
 	running, done, notStarted int
 }
 
@@ -192,6 +213,7 @@ func summarizeLive(m map[int]showplan.LiveCounters) liveSummary {
 	s := liveSummary{progress: showplan.StatementProgress(m)}
 	for _, c := range m {
 		s.elapsedMS = max(s.elapsedMS, c.ElapsedMS)
+		s.timed = s.timed || c.Timed
 		switch c.State {
 		case showplan.LiveRunning:
 			s.running++
@@ -243,7 +265,10 @@ func (v *PlanView) drawLiveRow(s tcell.Screen) {
 	filled := int(sum.progress * liveBarW)
 	put(st.Foreground(pal.Success), strings.Repeat("█", filled))
 	put(st.Foreground(pal.Border), strings.Repeat("░", liveBarW-filled))
-	put(st, fmt.Sprintf("  %d%%   %s   ", floorPct(sum.progress), liveElapsedText(sum.elapsedMS)))
+	put(st, fmt.Sprintf("  %d%%   ", floorPct(sum.progress)))
+	if sum.timed {
+		put(st, liveElapsedText(sum.elapsedMS)+"   ")
+	}
 	put(st.Foreground(pal.Info), fmt.Sprintf("%d running", sum.running))
 	put(st, " · ")
 	put(st.Foreground(pal.Success), fmt.Sprintf("%d done", sum.done))
@@ -267,7 +292,7 @@ func liveTreeColumn(c showplan.LiveCounters, ok bool) string {
 		return core.PadRight("—", liveTreeColW)
 	}
 	return core.PadRight(liveRowsText(c, liveTreeRowsW), liveTreeRowsW) + " " +
-		fmt.Sprintf("%*s", liveTreeTimeW, liveElapsedText(c.ElapsedMS))
+		fmt.Sprintf("%*s", liveTreeTimeW, liveTimeText(c, c.ElapsedMS))
 }
 
 // liveKVs is the details panes' live block for one operator.
@@ -275,8 +300,8 @@ func liveKVs(c showplan.LiveCounters) []showplan.KV {
 	return []showplan.KV{
 		{Key: "Live State", Value: c.State.String()},
 		{Key: "Live Rows", Value: liveRowsText(c, math.MaxInt)},
-		{Key: "Live Elapsed", Value: liveElapsedText(c.ElapsedMS)},
-		{Key: "Live CPU", Value: fmt.Sprintf("%d ms", c.CPUMS)},
+		{Key: "Live Elapsed", Value: liveTimeText(c, c.ElapsedMS)},
+		{Key: "Live CPU", Value: liveCPUText(c)},
 		{Key: "Live Logical Reads", Value: strconv.FormatInt(c.LogicalReads, 10)},
 	}
 }
@@ -286,7 +311,7 @@ func liveKVs(c showplan.LiveCounters) []showplan.KV {
 // An operator the DMV has not reported shows its cost alone and a dash.
 func (v *PlanView) drawLiveTileLines(s tcell.Screen, inner core.Rect, style tcell.Style, n *showplan.Node, costPct float64, c showplan.LiveCounters, ok bool) {
 	metrics := fmt.Sprintf("%.0f%%", costPct*100)
-	if ok && c.State != showplan.LiveNotStarted {
+	if ok && c.State != showplan.LiveNotStarted && c.Timed {
 		metrics += "  " + liveElapsedText(c.ElapsedMS)
 	}
 	if n.Parallel {

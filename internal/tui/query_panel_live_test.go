@@ -176,7 +176,7 @@ func TestPollLiveStatsStopsWithANoteWhenRefused(t *testing.T) {
 }
 
 // Any other failure is retried — the batch is still running — and nothing is
-// reported until a read succeeds; an idle session (no rows) reports nothing.
+// reported until a read succeeds; an idle session (no rows) reports idle.
 func TestPollLiveStatsRetriesOtherFailures(t *testing.T) {
 	src := &fakeLiveSource{
 		profiles: []fakeProfileAnswer{
@@ -187,8 +187,8 @@ func TestPollLiveStatsRetriesOtherFailures(t *testing.T) {
 		plans: map[string]*gosmo.InFlightPlan{"A": liveInFlight("A")},
 	}
 	got := runPoller(t, src)
-	if len(got) != 1 || got[0].note != "" || got[0].plan == nil {
-		t.Fatalf("reports = %+v, want one live update after the failure", got)
+	if len(got) != 2 || !got[0].idle || got[1].note != "" || got[1].plan == nil {
+		t.Fatalf("reports = %+v, want idle, then one live update", got)
 	}
 }
 

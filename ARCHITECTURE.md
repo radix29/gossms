@@ -249,6 +249,7 @@ gossms/
 │       ├── column_meta.go        # the Output Column Metadata block folded into a result's Messages
 │       ├── cell_value.go         # classifies a grid cell as plain/XML/JSON and routes the last two to their own panel
 │       ├── plan_panel.go         # pops an Execution Plan tab out into its own closable panel
+│       ├── live_plan_panel.go    # Activity Monitor's Show Live Execution Plan: another session's live plan, read-only
 │       ├── completion_provider.go   # SQL completion.Provider: cursor-context resolution (FROM-scope, qualifiers) against the cached inventory
 │       ├── completion_inventory.go  # per-database + per-server(sys schema) catalog cache for IntelliSense, async load
 │       ├── completion_load.go       # the one lazy-load lifecycle every IntelliSense cache shares: latest + timeout, panic eviction, closed-connection eviction, popup refresh

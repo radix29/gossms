@@ -71,6 +71,11 @@ work; close an item by deleting it when fixed.
   left limit and drops buttons that don't fit, as panel toolbars do
   (`docs/ui-rules.md` § Panels, toolbars and grid hosts) — which end to drop
   is a call to make.
+- **B20 — F1 help clips its long lines.** `HelpDialog` is a fixed 62×28
+  modal (`NewHelpDialog`) with no horizontal scroll, so a line over 57
+  characters loses its tail — 67 lines do as of Phase 5 W7 (Plan Compare's,
+  the Shift+click mouse line, …). Wrap them to 57, or size the dialog to the
+  screen as wider dialogs do.
 
 ### Verification gaps
 
@@ -129,5 +134,12 @@ work; close an item by deleting it when fixed.
   tests; Database Mail on Express (procs present, no `DatabaseMail.exe`, so a
   test mail should sit `unsent` until the dialog's 30 s wait gives up) is
   unprobed. Run both when a Standard or Express instance is available.
+- **V6 — Live Query Statistics never run on Azure.** Phase 5 W3/W7 drove it
+  on 13, 14 and 17 only: t-qmi-01 refused the login (40532) on both
+  2026-10-06 attempts. On MI, run a long query with Live on (as `testgo`, and
+  as a login without `VIEW SERVER STATE` for the note); Azure SQL Database's
+  `VIEW DATABASE STATE` path is untested for want of one. W8's Activity
+  Monitor **Show Live Execution Plan** is likewise unrun there: MI should
+  behave as 2019+ (lightweight profiling on, so an unprofiled query shows).
 
 ### Nice to have
