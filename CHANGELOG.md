@@ -6,6 +6,82 @@ entries start with v0.0.2 onward.
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-10-06
+
+### Added
+
+- **Resource Governor** under Management: Resource Pools with their Workload
+  Groups nested beneath, and External Resource Pools, with live DMV counters
+  (blank without `VIEW SERVER STATE`), an unsupported-edition row and a
+  not-visible row (`explorer_resource_governor.go`). **Resource Governor
+  Properties** (`resource_governor_props.go`) has General, Resource Pools,
+  External Resource Pools and Workload Groups pages and applies in dependency
+  order followed by one `RECONFIGURE` (or `DISABLE`); pool pages edit CPU and
+  NUMA scheduler affinity, Automatic or per scheduler (processor group 0
+  only).
+- **Database Mail > Send Test E-Mail** (`send_test_mail_dialog.go`) calls
+  `sp_send_dbmail`, then follows the item and its error rows, so a failure
+  shows the SMTP error instead of a silent success.
+- **Cross-database IntelliSense.** `db.schema.` chains complete tables and
+  columns from another database, loaded on demand and only for databases the
+  login can access (`HAS_DBACCESS`); a per-server database directory feeds the
+  list (`completion_crossdb.go`). **Linked servers** complete the same way,
+  four-part names included.
+- **Extended Events grouping and aggregation.** Events group by one or more
+  columns into collapsible groups with COUNT, SUM, AVG, MIN and MAX; the
+  display is saved by name under the viewer's Settings menu
+  (`xevent_viewer_group.go`, `internal/xevent`).
+- **PIVOT and rowset functions** in the SQL parser: qualified aggregate
+  calls in `PIVOT`, and `OPENJSON`, `OPENROWSET` and `OPENXML` column
+  definitions, so their columns complete.
+- **Lexer batch cache.** Tokens and batch marks are cached between
+  keystrokes (`BatchCache`), so typing in a large script no longer re-lexes it.
+
+### Fixed
+
+- **Agent schedules sharing a name** opened, edited or deleted the wrong one;
+  every schedule path now uses the schedule ID. Duplicate schedule and job
+  step names are refused across pending edits.
+- **Name uniqueness ignored the database collation** in extended
+  properties, column encryption keys and other pending-edit pages; checks now
+  follow the collation.
+- **Database Mail Apply** left `Database Mail XPs` changed after a failed
+  plan; the option is now set outside the transaction and rolled back.
+- **New Job** defaulted to no owner; it now defaults to the connected login.
+- **Server addresses with a port** (`host`, `host\instance`, `host,port`)
+  resolve consistently, and instances are keyed distinctly so two instances
+  on one host no longer share saved credentials or peers
+  (`ResolveServer`, `InstanceKey`).
+- **Identifiers containing `$`, `#` or `@`** were split mid-word by
+  IntelliSense and word-boundary movement.
+- **Text rendering.** Combining marks drew in the wrong cell in the editor;
+  data grid cells with line breaks or tabs were mis-measured; the scrollbar
+  thumb was mis-sized and mis-positioned; pasting text with line breaks into
+  single-line fields and composed keys (AltGr, dead keys) were mishandled;
+  Backspace could split a grapheme cluster.
+- **A cancelled task** was reported as an error; the status bar now says
+  Cancelled.
+- **Rule and Default properties** showed the wrong definition; **symmetric
+  key** encryption changes no longer script an unneeded password.
+- **Linked-server and completion-directory failures** were silent; they now
+  say the list is unavailable, and partial results survive a scan error.
+- **Restore relocation** edge cases around file lists now follow gosmo's
+  relocation modes.
+- Dragging in Object Explorer and word-wrap caret and scrollbar width
+  corrected; property-sheet controls no longer overflow their row.
+
+### Changed
+
+- `gosmo` v0.0.15 → v0.0.16; `shopspring/decimal` v1.5.0. The `replace`
+  directive is commented out for the release.
+- Restore relocation, user and role membership, and context handling use
+  gosmo's own types and methods (`gosmo.RestoreRelocation`, `Server.Context()`)
+  instead of local copies.
+- Pending-edit lists share one `pendingState` model (resource governor,
+  symmetric keys, agent pages).
+- Source comments across `internal/` condensed; SQL lexer and parser fuzz
+  coverage extended.
+
 ## [0.0.13] - 2026-09-29
 
 ### Added

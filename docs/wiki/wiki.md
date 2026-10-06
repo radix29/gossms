@@ -19,17 +19,16 @@ A terminal-based SQL Server Management Studio for Linux, macOS, and Windows.
 One executable — no GUI, no installer, no SQL client tools or drivers
 required. More content here soon.
 
-Current release: **v0.0.13**. See
+Current release: **v0.0.14**. See
 [RELEASE.md](https://github.com/radix29/gossms/blob/main/RELEASE.md) for what
 changed and
 [CHANGELOG.md](https://github.com/radix29/gossms/blob/main/CHANGELOG.md) for
 the detail behind it. Supported servers: **SQL Server 2016 SP1 and later**, on
 Windows and Linux, and **Azure SQL Managed Instance**.
 
-**New in v0.0.13:** **certificates, asymmetric and symmetric keys** and the
-database master key in Object Explorer, a **New User** dialog, word wrap in the
-query editor (Alt+Z), IntelliSense that matches anywhere in a name, and
-unsaved queries kept when gossms crashes or the terminal closes.
+**New in v0.0.14:** **Resource Governor** pools, workload groups and
+Properties, a Database Mail **Send Test E-Mail** dialog, cross-database and
+linked-server IntelliSense, and Extended Events grouping.
 
 Questions and feedback: [goSSMS on Discord](https://discord.gg/7YVKzB3vZ).
 
