@@ -141,5 +141,16 @@ work; close an item by deleting it when fixed.
   `VIEW DATABASE STATE` path is untested for want of one. W8's Activity
   Monitor **Show Live Execution Plan** is likewise unrun there: MI should
   behave as 2019+ (lightweight profiling on, so an unprofiled query shows).
+- **V7 — Replication reads (gosmo `replication*.go`) met real rows on 17
+  only.** The fixture is on win10cli (2025). win10cli\SQL2016 has
+  **replication components not installed** (`sp_addpullsubscription` fails
+  Msg 21028), so there only the subscriber-side transactional read ran, against
+  tables made by `sp_MScreate_sub_tables` in a throwaway database; the
+  publisher-side reads (`syspublications`, `sysarticles`, `syssubscriptions`)
+  and every merge read are unrun below 17. Linux (ubusql1) and 2016 ran the
+  not-configured path only; MI not at all. Every column read predates 2016,
+  so no gate was added — run `TestLiveReplication*` wherever a publisher can
+  be set up. W11's Object Explorer Replication folder is likewise shown on MI
+  and undriven there.
 
 ### Nice to have

@@ -205,6 +205,11 @@ const (
 	NodeExternalResourcePools
 	NodeExternalResourcePool
 	NodeDatabaseMail
+	NodeReplication
+	NodeLocalPublications
+	NodePublication
+	NodeLocalSubscriptions
+	NodeLocalSubscription
 	NodeLoading
 	NodeError
 
@@ -251,7 +256,8 @@ func isContainerNode(t NodeType) bool {
 		NodeAlwaysOn, NodeAvailabilityGroups, NodeAvailabilityReplicas,
 		NodeAvailabilityDatabases, NodeAGListeners,
 		NodeExtendedEvents, NodeEventSessions, NodeXEventProfiler,
-		NodeResourcePools, NodeWorkloadGroups, NodeExternalResourcePools:
+		NodeResourcePools, NodeWorkloadGroups, NodeExternalResourcePools,
+		NodeReplication, NodeLocalPublications, NodeLocalSubscriptions:
 		return true
 	}
 	return false
@@ -384,6 +390,10 @@ func nodeTypeName(t NodeType) string {
 		return "External Resource Pool"
 	case NodeDatabaseMail:
 		return "Database Mail"
+	case NodePublication:
+		return "Publication"
+	case NodeLocalSubscription:
+		return "Subscription"
 	default:
 		return "Object"
 	}
@@ -416,6 +426,7 @@ func hasChildren(t NodeType) bool {
 		NodeColumnMasterKey, NodeColumnEncryptionKey,
 		NodeEventTarget, NodeXEventProfilerSession,
 		NodeWorkloadGroup, NodeExternalResourcePool, NodeDatabaseMail,
+		NodePublication, NodeLocalSubscription,
 		NodeLoading, NodeError:
 		return false
 	}
@@ -556,6 +567,16 @@ type nodeData struct {
 	// nothing.
 	MailState      gosmo.MailState
 	MailStateKnown bool
+
+	// ReplPubType is the kind of publication a NodePublication is, or a
+	// NodeLocalSubscription subscribes to; a publication's icon shows it, as
+	// SSMS's does. ReplPublisher and ReplPublisherDB are where a
+	// NodeLocalSubscription's publication lives: Name is the publication's
+	// name, which one database can subscribe to from two publishers, so both
+	// are in its nodeKey.
+	ReplPubType     gosmo.PublicationType
+	ReplPublisher   string
+	ReplPublisherDB string
 
 	conn *db.ServerConn
 }

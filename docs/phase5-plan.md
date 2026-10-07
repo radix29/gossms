@@ -437,16 +437,99 @@ releasable stopping point.
   found from `MSreplication_subscriptions`/`sysmergesubscriptions`, not that
   flag; `sp_get_distributor`'s column count varies by version (the scripts
   test `sys.servers.is_distributor` instead).
-- **W10** — gosmo `replication.go`: `ReplicationInfo`, `Publications`,
+- **W10** ✅ *done 2026-10-07* — gosmo `replication.go`: `ReplicationInfo`, `Publications`,
   `Articles`, `Subscriptions`, `LocalSubscriptions` + version gates + live
   tests (win10cli; SQL2016; Linux transactional-only).
-- **W11** — OE: Replication folder, Local Publications/Subscriptions loaders
+  *As built:* `replication.go` (server config, publications, articles,
+  `SchemaOption.Options()`) and `replication_subscription.go` (publisher-side
+  `Publication.Subscriptions`, subscriber-side `LocalSubscription`). Beyond the
+  plan: `Server.LocalPublications`/`LocalSubscriptions` (what W11's folders
+  list) and `Database.PublicationByName`. Each read probes `OBJECT_ID` first,
+  so a database or instance without the tables reads as empty, never "invalid
+  object name"; Azure SQL Database is refused (`ErrUnsupportedVersion`).
+  Local subscriptions are found by the subscriber tables a database holds
+  (`is_subscribed` is 0 for a pull subscriber); the merge rows a subscriber's
+  `sysmergepublications` keeps for its publisher are filtered out of its
+  publications, and the publisher's own `sysmergesubscriptions` row out of its
+  subscriptions. Server names compare with `UPPER` — the fixture stores
+  `WIN10CLI` and `win10cli` for one instance. **No version gate**: every
+  column read predates 2016. `ReplicationInfo` has no publisher-side answer for a
+  remote distributor, so `IsPublisher` there means "a database here is
+  published". `server.go`'s `Databases`/`DatabaseByName` now share
+  `databaseSelect`/`scanDatabase`, which the two server-level listings reuse.
+  Live: `live_replication_test.go` passes on win10cli against the fixture;
+  2016 and ubusql1 pass the not-configured test; both version sweeps (17, 13)
+  are 0-failed with the six new reads in `sweepMustCall`. 2016 has no
+  replication components, so only its transactional subscriber read met
+  rows — `docs/open-threads.md` V7. Class diagram `diagram/25-replication.mmd`.
+- **W11** ✅ *done 2026-10-07* — OE: Replication folder, Local Publications/Subscriptions loaders
   and icons (`explorer_replication.go`, `tree_node.go`,
   `tree_node_icons.go`), edition hiding, not-configured/not-visible leaves,
   menus (Properties, Refresh, Launch Replication Monitor).
-- **W12** — Read-only Properties (`replication_props.go`) and Detail Browser
+  *As built:* five node types (`NodeReplication`, `NodeLocalPublications`,
+  `NodePublication`, `NodeLocalSubscriptions`, `NodeLocalSubscription`).
+  Replication sits after Server Objects, hidden on Azure SQL Database only
+  (`replicationHidden`, `edition_gate.go`; MI keeps it, unverified — V7). Both
+  folders are always listed — a subscriber-only instance has no distributor.
+  Labels are SSMS's: `[db]: pub` and `[db] - [publisher].[pubdb]: pub`. A
+  publication's glyph shows its kind (`publicationIcon`: transactional,
+  snapshot, peer-to-peer, merge); subscriptions have one glyph. Local
+  Publications reads `ReplicationInfo` after the list to explain it: one
+  "`[db]: not visible (offline, or no access)`" row per published database the
+  login cannot read (`LocalPublications` skips them silently — gosmo gained
+  `ReplicationDatabase.Readable` for this), and "Replication is not configured
+  — no distributor" when nothing is listed and no distributor is named; a
+  failed `ReplicationInfo` costs only those rows. An empty Local
+  Subscriptions gets no row: an unreadable subscriber database leaves no trace
+  to report. A subscription's `nodeKey` adds `ReplPublisher`/`ReplPublisherDB`
+  (one database can subscribe to two publishers' same-named publication).
+  Menus: Replication and Local Publications carry Launch Replication Monitor,
+  a publication Launch Replication Monitor + Properties, a subscription
+  Properties — all **withheld with the note "not yet"** (`replicationNotYet`)
+  until W12/W13 wire them; folders are not filterable (SSMS offers no filter
+  there). Details pane shows the generic grids until W12. Tests:
+  `explorer_replication_test.go` (list + explanation rows on a fake, folder
+  placement per edition, labels, key, glyph per kind), mutation-checked.
+  Driven at 160×48: win10cli as sa (both publications with their glyphs, both
+  subscriptions, menus, Refresh); win10cli as a throwaway login with VIEW
+  SERVER STATE only (two not-visible rows, empty Local Subscriptions);
+  SQL2016 (the not-configured row). README/wiki untouched — W12 ships the
+  browsing.
+- **W12** ✅ *done 2026-10-07* — Read-only Properties (`replication_props.go`) and Detail Browser
   grids (`detail_browser_replication.go`); `docs/decisions.md` records the
   read-only exclusion. *(ships — browsing)*
+  *As built:* Publication Properties — General (status, retention,
+  merge compatibility level), Articles (grid; the selected article's
+  description, row filter, pre-creation command and decoded schema options
+  follow the selection), Filter Rows (filtered articles only, a note when
+  none), Snapshot (format, location, compression, pre/post scripts,
+  transactional "keep snapshot available"), Subscription Options (push/pull/
+  anonymous/copy, DDL; merge: web sync, partitions, conflicts; transactional:
+  independent agent, init from backup, updatable), Subscriptions (the
+  publisher's list). Subscription Properties — General, Agent (where it runs,
+  job, distributor), Synchronization (last sync; merge: result, summary,
+  subscriber type; transactional: update mode). Both menus' Properties are
+  live; Launch Replication Monitor stays "not yet" for W13. Finders shared
+  with the Details pane: `findPublication`, `findLocalSubscription` (publisher,
+  publisher DB and publication, case-insensitive — the fixture stores
+  `WIN10CLI` and `win10cli`). Details: Replication folder (distributor,
+  distribution databases with retention, publishers, each database's roles),
+  Local Publications (one row per publication, plus the tree's not-visible /
+  not-configured rows), Local Subscriptions (one row per subscription), a
+  publication (articles then subscriptions, a Kind column), a subscription
+  (Property/Value). No `objs`: nothing replicated has Delete.
+  `docs/decisions.md` § Replication: read-only. Tests:
+  `replication_props_page_test.go` (selection-following detail on the second
+  article, filter page, subscriptions, the second of two same-named
+  subscriptions in another case, the Details arms, the empty-list rows),
+  mutation-checked; the two dialogs are in `propPageSets`/`pagesThatOnlyRead`.
+  Driven at 160×48: win10cli as sa — Replication/Local Publications/Local
+  Subscriptions/both publications/both subscriptions in Details, all six
+  Publication pages on both publications, all three Subscription pages on
+  both subscriptions; win10cli\SQL2016 — not-configured rows in both tree
+  and Details. Not run: a login that can't read a published database (the
+  not-visible Details row is unit-tested; W11 drove the tree's), MI, Linux.
+  README has no feature list to update.
 - **W13** — gosmo `replication_monitor.go` (the `sp_replmonitor*` reads, agent
   status/history, errors, `replmonitor` gate) + live tests; then the
   **Replication Monitor** panel (`replication_monitor_panel*.go`, split

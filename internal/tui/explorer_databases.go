@@ -11,7 +11,7 @@ import (
 )
 
 // loadServerChildren returns a connected server's top-level folders:
-// Databases, Security, Server Objects (linked servers), Management (the SQL
+// Databases, Security, Server Objects (linked servers), Replication, Management (the SQL
 // Server logs), Always On High Availability, and SQL Server Agent — the last
 // three siblings of Databases
 // here rather than nested under Server Objects, matching SSMS's own top-level
@@ -22,15 +22,24 @@ import (
 // listed unconditionally for the same reason SSMS does: whether the instance
 // has Always On enabled is a query, and the answer belongs in the folder's
 // own expansion (loadAlwaysOnChildren), not in whether it appears.
+//
+// Replication follows Server Objects, where SSMS puts it, on every instance
+// but Azure SQL Database (replicationHidden) — read from the connection's
+// cached ServerInfo, so the loader still issues no query.
 func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return []*explorerNode{
+	out := []*explorerNode{
 		l.node("Databases", NodeDatabases, "", "", ""),
 		l.node("Security", NodeSecurity, "", "", ""),
 		l.node("Server Objects", NodeServerObjects, "", "", ""),
+	}
+	if l.sc == nil || l.sc.Server == nil || !replicationHidden(l.sc.Server.Info()) {
+		out = append(out, l.node("Replication", NodeReplication, "", "", ""))
+	}
+	return append(out,
 		l.node("Management", NodeManagement, "", "", ""),
 		l.node(alwaysOnRootLabel, NodeAlwaysOn, "", "", ""),
 		l.node(agentRootLabel, NodeAgentJobs, "", "", ""),
-	}, nil
+	), nil
 }
 
 // agentRootLabel is the "SQL Server Agent" node's base label — the literal

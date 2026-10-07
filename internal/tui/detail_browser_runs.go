@@ -452,6 +452,17 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeDatabaseMail:
 		return databaseMailDetail(ctx, sc)
 
+	case NodeReplication:
+		return replicationDetail(ctx, sc)
+	case NodeLocalPublications:
+		return localPublicationsDetail(ctx, sc)
+	case NodeLocalSubscriptions:
+		return localSubscriptionsDetail(ctx, sc)
+	case NodePublication:
+		return publicationDetail(ctx, sc, node)
+	case NodeLocalSubscription:
+		return localSubscriptionDetail(ctx, sc, node)
+
 	case NodeStoredProcedure, NodeFunction, NodeTrigger:
 		return moduleDetail(ctx, sc, node)
 

@@ -625,6 +625,24 @@ Peer credentials, easy to undo:
   Devices and Endpoints: Name only (no creation date; a zero
   `nodeData.CreateDate` rejects every row). Cryptographic Providers: no filter.
 
+## Replication: read-only — settled, do not re-raise
+
+- **Replication is browsed, never configured** (phase 5 item 26). No
+  create/alter/drop of a distributor, publication, article or subscription; no
+  reinitialize, no start/stop of an agent, no tracer tokens, no Generate
+  Scripts. Publication Properties (General, Articles, Filter Rows, Snapshot,
+  Subscription Options, Subscriptions) and Subscription Properties (General,
+  Agent, Synchronization) show SSMS's pages with no apply
+  (`replication_props.go`, all in `pagesThatOnlyRead`), and nothing in the
+  folder has Delete. Setting replication up is a script job (`sp_adddistributor`
+  and friends, gosmo `testdata/replication/setup.sql` is an example); a wizard
+  would need the agent accounts, snapshot share and security a terminal can't
+  check. Replication Monitor (W13) reads, too.
+- **A subscription is named by publisher, publisher database and publication**,
+  compared without regard to case (`findLocalSubscription`): one database can
+  subscribe to two publishers' same-named publication, and the subscriber stores
+  one publisher name in two cases (`WIN10CLI` / `win10cli`).
+
 ## Database-scoped credentials: what the design settled
 
 - **CONTROL on the database is the whole right set; `ALTER` is deliberately

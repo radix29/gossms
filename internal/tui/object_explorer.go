@@ -192,17 +192,21 @@ func folderOf(dbName string, types ...NodeType) func(nodeData) bool {
 // nodeKey is what names a node: two nodes with equal keys stand for the same
 // server object or folder. TableName, AGName, XESession and RGPool each tell
 // apart folders of one type and database that belong to different parents;
-// AgentScheduleID tells apart schedules of one name. A node type whose name
-// isn't its identity adds its key here, so sameNodeAs and sameObject (the
-// selection's survivor) can't disagree — both once missed the schedule id.
+// AgentScheduleID tells apart schedules of one name; ReplPublisher and
+// ReplPublisherDB tell apart a database's subscriptions to two publications
+// of one name. A node type whose name isn't its identity adds its key here,
+// so sameNodeAs and sameObject (the selection's survivor) can't disagree —
+// both once missed the schedule id.
 type nodeKey struct {
 	Type                                                       NodeType
 	DBName, Schema, Name, TableName, AGName, XESession, RGPool string
 	AgentScheduleID                                            int
+	ReplPublisher, ReplPublisherDB                             string
 }
 
 func (d nodeData) key() nodeKey {
-	return nodeKey{d.Type, d.DBName, d.Schema, d.Name, d.TableName, d.AGName, d.XESession, d.RGPool, d.AgentScheduleID}
+	return nodeKey{d.Type, d.DBName, d.Schema, d.Name, d.TableName, d.AGName, d.XESession, d.RGPool, d.AgentScheduleID,
+		d.ReplPublisher, d.ReplPublisherDB}
 }
 
 // sameNodeAs matches, for ReloadFolders, the nodes standing for the same

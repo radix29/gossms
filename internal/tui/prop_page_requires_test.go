@@ -78,6 +78,8 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"External Library":             externalLibraryPropPages(sc, "HealthClinic", "ggplot2"),
 		"Database Snapshot":            databaseSnapshotPropPages(sc, "HealthClinic_snapshot"),
 		"Event Session":                eventSessionPropPages(d, sc, xeScope{}, "gossms_trace"),
+		"Publication":                  publicationPropPages(sc, "HealthClinic", "claims_pub"),
+		"Subscription":                 localSubscriptionPropPages(sc, "HealthClinic", "PUB1", "claims", "claims_pub"),
 	}
 }
 
@@ -143,6 +145,11 @@ var pagesThatOnlyRead = []string{
 	// The master key's General page shows it; its writes are on Encryption,
 	// Regenerate and Back Up.
 	"Database Master Key/General",
+	// Replication is browsed, never configured (docs/decisions.md §
+	// Replication): no page of either dialog has an apply.
+	"Publication/General", "Publication/Articles", "Publication/Filter Rows",
+	"Publication/Snapshot", "Publication/Subscription Options", "Publication/Subscriptions",
+	"Subscription/General", "Subscription/Agent", "Subscription/Synchronization",
 }
 
 // allPropPageKeys is every page in every dialog, as "<dialog>/<page>".
@@ -252,6 +259,7 @@ var propPageConstructors = []string{
 	"databaseSnapshotPropPages",
 	"certificatePropPages", "asymmetricKeyPropPages", "symmetricKeyPropPages", "masterKeyPropPages",
 	"eventSessionPropPages",
+	"publicationPropPages", "localSubscriptionPropPages",
 }
 
 func TestEveryPropPagesConstructorIsListed(t *testing.T) {

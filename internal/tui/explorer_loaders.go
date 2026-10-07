@@ -145,6 +145,10 @@ var childLoaders = map[NodeType]childLoader{
 	NodeWorkloadGroups:        loadWorkloadGroupsChildren,
 	NodeExternalResourcePools: loadExternalResourcePoolsChildren,
 
+	NodeReplication:        loadReplicationChildren,
+	NodeLocalPublications:  loadLocalPublicationsChildren,
+	NodeLocalSubscriptions: loadLocalSubscriptionsChildren,
+
 	NodeAlwaysOn:              loadAlwaysOnChildren,
 	NodeAvailabilityGroups:    loadAvailabilityGroupsChildren,
 	NodeAvailabilityGroup:     loadAvailabilityGroupChildren,
@@ -276,6 +280,11 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeExternalResourcePools: externalResourcePoolsMenuItems,
 	NodeExternalResourcePool:  externalResourcePoolMenuItems,
 	NodeDatabaseMail:          databaseMailMenuItems,
+
+	NodeReplication:       replicationMenuItems,
+	NodeLocalPublications: localPublicationsMenuItems,
+	NodePublication:       publicationMenuItems,
+	NodeLocalSubscription: localSubscriptionMenuItems,
 
 	NodeAlwaysOn:              alwaysOnRootMenuItems,
 	NodeAvailabilityGroups:    agGroupsFolderMenuItems,

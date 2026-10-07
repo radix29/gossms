@@ -1,10 +1,14 @@
 package tui
 
-import "github.com/radix29/gossms/internal/config"
+import (
+	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/config"
+)
 
 // tree_node_icons.go is the Object Explorer's glyphs: nodeIcon, which picks
 // one for a node from its type and state, and the per-style tables behind it
-// (Emoji, Symbols, Portable). isContainerNode, which decides folder or
+// (Emoji, Symbols, Portable), and the substitutions a node's state makes
+// (offline database, stopped session, publication kind). isContainerNode, which decides folder or
 // object, stays with the NodeType enum in tree_node.go.
 
 // nodeIcon returns the icon glyph for a node, in the given icon style.
@@ -34,7 +38,35 @@ func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	if d.Type == NodeEventSession && !d.IsEnabled {
 		return stoppedEventSessionIcon(style)
 	}
+	if d.Type == NodePublication {
+		return publicationIcon(d.ReplPubType, style)
+	}
 	return objectIcon(d.Type, style)
+}
+
+// publicationIcon returns a NodePublication's glyph by its kind, as SSMS
+// draws each kind its own: objectIcon's NodePublication glyph is the
+// transactional one, and the other three substitute here.
+func publicationIcon(t gosmo.PublicationType, style config.IconStyle) rune {
+	emoji := style == config.IconStyleEmoji
+	switch t {
+	case gosmo.PublicationSnapshot:
+		if emoji {
+			return '📷'
+		}
+		return '◘'
+	case gosmo.PublicationPeerToPeer:
+		if emoji {
+			return '🔁'
+		}
+		return '⇋'
+	case gosmo.PublicationMerge:
+		if emoji {
+			return '🔀'
+		}
+		return '⋔'
+	}
+	return objectIcon(NodePublication, style)
 }
 
 // stoppedEventSessionIcon returns the glyph substituted for a NodeEventSession
@@ -247,6 +279,10 @@ func objectIconEmoji(t NodeType) rune {
 		return '🧪'
 	case NodeDatabaseMail:
 		return '📮'
+	case NodePublication:
+		return '📤'
+	case NodeLocalSubscription:
+		return '📬'
 	case NodeLoading:
 		return '⏳'
 	case NodeError:
@@ -408,6 +444,10 @@ func objectIconSymbols(t NodeType) rune {
 		return '◓'
 	case NodeDatabaseMail:
 		return '✆'
+	case NodePublication:
+		return '⇶'
+	case NodeLocalSubscription:
+		return '⇲'
 	case NodeLoading:
 		return '…'
 	case NodeError:

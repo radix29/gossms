@@ -241,6 +241,11 @@ var nodeTypeWiring = map[NodeType]nodeWiring{
 	NodeExternalResourcePools:       {class: classFolder, filterable: true},
 	NodeExternalResourcePool:        {class: classObject},
 	NodeDatabaseMail:                {class: classObject},
+	NodeReplication:                 {class: classFolder},
+	NodeLocalPublications:           {class: classFolder},
+	NodePublication:                 {class: classObject},
+	NodeLocalSubscriptions:          {class: classFolder},
+	NodeLocalSubscription:           {class: classObject},
 	NodeLoading:                     {class: classInternal},
 	NodeError:                       {class: classInternal},
 }

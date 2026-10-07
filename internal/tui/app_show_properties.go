@@ -542,3 +542,17 @@ func (a *App) canSaveActivePanel() bool {
 	_, ok := a.panels.ActivePanel().(*PlanPanel)
 	return ok
 }
+
+// showPublicationPropertiesFor opens the read-only Publication Properties
+// (replication_props.go).
+func (a *App) showPublicationPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Publication Properties", "Publication: "+publicationLabel(dbName, name), "Server: "+sc.Opts.Server,
+		func() []propPage { return publicationPropPages(sc, dbName, name) })
+}
+
+// showLocalSubscriptionPropertiesFor opens the read-only Subscription
+// Properties for the subscription dbName holds to publisher's pub.
+func (a *App) showLocalSubscriptionPropertiesFor(sc *db.ServerConn, dbName, publisher, publisherDB, pub string) {
+	a.propDialog.show(sc, dbName, "Subscription Properties", "Subscription: "+localSubscriptionLabel(dbName, publisher, publisherDB, pub), "Server: "+sc.Opts.Server,
+		func() []propPage { return localSubscriptionPropPages(sc, dbName, publisher, publisherDB, pub) })
+}
