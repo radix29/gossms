@@ -120,6 +120,7 @@ type SelectRow struct {
 	orig      int
 	untracked bool // see TextRow.SetDirtyTracked
 	onChange  func(string)
+	validate  func(string) error
 
 	// drawReadOnly renders the row flat instead of as a dropdown (see
 	// SetDrawReadOnly). pageReadOnly is the page's own, independent gate (see
@@ -274,7 +275,17 @@ func (r *SelectRow) notifyChanged(before string) {
 }
 func (r *SelectRow) CopyText() string { return r.dd.Value() }
 func (r *SelectRow) Dirty() bool      { return !r.untracked && r.dd.Selected() != r.orig }
-func (r *SelectRow) Validate() error  { return nil }
+func (r *SelectRow) Validate() error {
+	if r.validate == nil {
+		return nil
+	}
+	return r.validate(r.dd.Value())
+}
+
+// SetValidate installs a validator run on the selected item when the form
+// validates — TextRow.SetValidate's twin, for a choice the server would
+// refuse for a reason the list cannot show (a missing right on the item).
+func (r *SelectRow) SetValidate(fn func(string) error) { r.validate = fn }
 
 // Revert restores the dirty baseline and fires onChange — see
 // TextRow.Revert, which this matches in both respects.

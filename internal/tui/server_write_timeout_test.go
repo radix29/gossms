@@ -94,7 +94,11 @@ var readTimeoutSites = map[string]int{
 	"explorer_object_actions.go": 1,
 	// The Resource Governor node's label, re-read after its Properties saved.
 	"explorer_resource_governor.go": 1,
-	"properties_dialog.go":          1,
+	// 3: the index read before each cascade action, the check for a
+	// population after one that may start it, and each read of a followed
+	// population.
+	"fulltext_index_ops.go": 3,
+	"properties_dialog.go":  1,
 	// The default data and log directories — RestoreDialog.loadDefaultPaths.
 	"restore_dialog_files.go": 1,
 	"restore_dialog_ops.go":   6,

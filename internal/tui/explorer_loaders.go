@@ -220,9 +220,12 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodePartitionFunction: partitionFunctionMenuItems,
 	NodePartitionScheme:   partitionSchemeMenuItems,
 
-	NodeFullTextCatalog:    fullTextCatalogMenuItems,
-	NodeFullTextStoplist:   fullTextStoplistMenuItems,
-	NodeSearchPropertyList: searchPropertyListMenuItems,
+	NodeFullTextCatalogs:    fullTextCatalogsMenuItems,
+	NodeFullTextCatalog:     fullTextCatalogMenuItems,
+	NodeFullTextStoplists:   fullTextStoplistsMenuItems,
+	NodeFullTextStoplist:    fullTextStoplistMenuItems,
+	NodeSearchPropertyLists: searchPropertyListsMenuItems,
+	NodeSearchPropertyList:  searchPropertyListMenuItems,
 
 	NodeTable:           tableMenuItems,
 	NodeKey:             keyMenuItems,

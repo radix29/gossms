@@ -503,6 +503,32 @@ var objectOps = map[NodeType]objectOp{
 		},
 		// No rename: no ALTER SYMMETRIC KEY ... WITH NAME, no sp_rename class.
 	},
+	// The three full-text families under Storage. Nothing cascades: the server
+	// refuses a catalog that still holds an index (Msg 7668) and a stoplist or
+	// property list an index uses (Msg 30034, 30036), and its message says
+	// what to do. No rename: none of the three has a WITH NAME or an sp_rename
+	// class.
+	NodeFullTextCatalog: {
+		noun:    "Full-Text Catalog",
+		warning: "The drop is refused while a full-text index is in the catalog.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).FullTextCatalogRef(n.Name).Drop(ctx)
+		},
+	},
+	NodeFullTextStoplist: {
+		noun:    "Full-Text Stoplist",
+		warning: "The drop is refused while a full-text index uses the stoplist.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).FullTextStoplistRef(n.Name).Drop(ctx)
+		},
+	},
+	NodeSearchPropertyList: {
+		noun:    "Search Property List",
+		warning: "The drop is refused while a full-text index uses the property list.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).SearchPropertyListRef(n.Name).Drop(ctx)
+		},
+	},
 	NodeAudit: {
 		noun: "Audit",
 		// Dropping the audit leaves its specifications orphaned: SQL Server allows

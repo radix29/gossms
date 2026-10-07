@@ -1177,6 +1177,7 @@ var databaseScopedOpTypes = []NodeType{
 	NodeExternalLibrary,
 	NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
 	NodeRoute, NodeRemoteServiceBinding, NodeBrokerPriority,
+	NodeFullTextCatalog, NodeFullTextStoplist, NodeSearchPropertyList,
 }
 
 // TestServerScopedOpsAreGated is the meta-test §2 of the 2026-09-02 review

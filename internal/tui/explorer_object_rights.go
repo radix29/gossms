@@ -259,6 +259,13 @@ var dbScopedOpRights = map[NodeType][]gate.Right{
 	NodeAsymmetricKey: {gate.AlterAnyAsymmetricKey, gate.AlterDatabase, gate.ControlDB, gate.ControlOnAsymmetricKey},
 	// Likewise: the probe found all three families alike.
 	NodeSymmetricKey: {gate.AlterAnySymmetricKey, gate.AlterDatabase, gate.ControlDB, gate.ControlOnSymmetricKey},
+	// The certificate's shape again, the three full-text families sharing one
+	// narrow right. Probed 2026-10-07 on 14 and 17; see gate.AlterAnyFullTextCatalog.
+	// A catalog holding an index, or a stoplist or property list an index uses,
+	// is refused by the server whoever asks (Msg 7668, 30034, 30036).
+	NodeFullTextCatalog:    {gate.AlterAnyFullTextCatalog, gate.AlterDatabase, gate.ControlDB, gate.ControlOnFullTextCatalog},
+	NodeFullTextStoplist:   {gate.AlterAnyFullTextCatalog, gate.AlterDatabase, gate.ControlDB, gate.ControlOnFullTextStoplist},
+	NodeSearchPropertyList: {gate.AlterAnyFullTextCatalog, gate.AlterDatabase, gate.ControlDB, gate.ControlOnSearchPropertyList},
 }
 
 // serverScopedOpRights is Rename/Delete's right set for the node types that

@@ -481,6 +481,9 @@ func TestEveryObjectOpNounPluralises(t *testing.T) {
 		"Resource Pool":                "Resource Pools",
 		"Workload Group":               "Workload Groups",
 		"External Resource Pool":       "External Resource Pools",
+		"Full-Text Catalog":            "Full-Text Catalogs",
+		"Full-Text Stoplist":           "Full-Text Stoplists",
+		"Search Property List":         "Search Property Lists",
 	}
 	for _, op := range objectOps {
 		w, ok := want[op.noun]

@@ -268,7 +268,16 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
 
 ### The rest
 
-- **No other class is reachable** — no fulltext catalog node. Certificates
+- **No other class is reachable.** Full-text catalogs (class 23), stoplists
+  (29) and search property lists (31): Delete gated on `ALTER ANY FULLTEXT
+  CATALOG` (one right for all three), database `ALTER`/`CONTROL`, or `CONTROL`
+  on the object (per-securable probe — offers it to the owner); Script as
+  ungated; no Rename (no statement). Probed 2026-10-07 on 14 and 17, identical:
+  `db_ddladmin` drops; `CREATE FULLTEXT CATALOG`, `ALTER ANY SCHEMA`, and
+  `ALTER` or `TAKE OWNERSHIP` on the object drop nothing; DENY `ALTER` refuses
+  nothing; DENY `CONTROL` hides the object. A catalog holding an index, or a
+  stoplist or list an index uses, is refused whoever asks (Msg 7668, 30034,
+  30036). Certificates
   (class 25): Delete gated on `ALTER ANY CERTIFICATE`, database
   `ALTER`/`CONTROL`, or `CONTROL` on the certificate (per-securable probe — which
   offers it to the owner, including a `CREATE CERTIFICATE`-only principal);
@@ -624,6 +633,37 @@ Peer credentials, easy to undo:
   Server Audit Specifications, Server DDL Triggers: Name + Creation Date; Backup
   Devices and Endpoints: Name only (no creation date; a zero
   `nodeData.CreateDate` rejects every row). Cryptographic Providers: no filter.
+
+## Full-Text Search: what the writes leave out — settled, do not re-raise
+
+- **No population schedules** (phase 5 Q3). SSMS's per-index and per-catalog
+  population schedules are SQL Agent jobs it writes for you; gossms starts,
+  stops and follows populations from the table's Full-Text index menu, and a
+  schedule is an Agent job anyone can make with New Job. No Schedules page on
+  Full-Text Index Properties, no Population Schedule page on the catalog.
+- **No Repopulate catalog action.** SSMS's catalog action of that name starts
+  a full population of every index in the catalog, which needs ALTER on each
+  table rather than on the catalog — a page cannot declare that. Each table's
+  Start Full Population does it, gated per table.
+- **Owners are set on create only.** The New dialogs take AUTHORIZATION; the
+  Properties pages show the owner. `ALTER AUTHORIZATION` needs TAKE OWNERSHIP
+  or IMPERSONATE on the new owner — neither probed — and a change of owner
+  drops the object's explicit permissions.
+- **A loaded index column is removed and re-added, not edited.** ALTER
+  FULLTEXT INDEX has no form that changes a column's language, type column or
+  statistical semantics; the Columns page says so.
+- **The gates** (probed 2026-10-08 on 14 and 17 with a WITHOUT LOGIN user per
+  right, identical — gosmo `ProbedSecurablePermissions`): the three New items
+  on `CREATE FULLTEXT CATALOG`; catalog General (AS DEFAULT) on `ALTER ANY
+  FULLTEXT CATALOG` — `ALTER` on the catalog is refused it; catalog
+  Maintenance, Stopwords and Properties on the effective `ALTER` on the
+  object; index pages and Define on `ALTER` on the table. Define also needs
+  `REFERENCES` on the catalog, and a user stoplist or property list named
+  needs `REFERENCES` on it — asked in preflight / page validation once chosen,
+  because the menu cannot know which. `ALTER` on the database and `ALTER ANY
+  FULLTEXT CATALOG` hold no `REFERENCES` and are refused (Msg 7666, 30023,
+  30025); `CONTROL` on the database, `db_ddladmin` and `REFERENCES`/`CONTROL`
+  on the object hold it.
 
 ## Replication: read-only — settled, do not re-raise
 

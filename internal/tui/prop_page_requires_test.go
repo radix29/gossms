@@ -154,12 +154,12 @@ var pagesThatOnlyRead = []string{
 	"Publication/General", "Publication/Articles", "Publication/Filter Rows",
 	"Publication/Snapshot", "Publication/Subscription Options", "Publication/Subscriptions",
 	"Subscription/General", "Subscription/Agent", "Subscription/Synchronization",
-	// Full-text objects are browsed until W19 makes these pages write
-	// (docs/phase5-plan.md § 27).
-	"Full-Text Catalog/General", "Full-Text Catalog/Tables/Views",
-	"Full-Text Stoplist/General", "Full-Text Stoplist/Stopwords",
-	"Search Property List/General", "Search Property List/Properties",
-	"Full-Text Index/General", "Full-Text Index/Columns",
+	// Full-text: the catalog's indexes are changed from their tables, and the
+	// stoplist's and property list's General pages show what their other page
+	// edits (fulltext_props.go).
+	"Full-Text Catalog/Tables/Views",
+	"Full-Text Stoplist/General",
+	"Search Property List/General",
 }
 
 // allPropPageKeys is every page in every dialog, as "<dialog>/<page>".

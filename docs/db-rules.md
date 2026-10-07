@@ -100,6 +100,19 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   gate would say anyway. Gate it only if something else in the batch must
   survive. (Both probed on `t-qmi-01`, 2026-09-16/17.)
 
+- **A catalog view lists only what the login holds a permission on — "none"
+  can mean "none visible".** `sys.fulltext_catalogs` (and the other securable
+  views) hide a catalog the login has no right on, so New Full-Text Index
+  first told a login with ALTER on one table that the database had "no
+  catalog yet" beside two (W19, driven). Word an empty list as "none visible
+  to this login", and name the right that would show one.
+- **`ALTER` on the database does not imply `REFERENCES` on what is in it.**
+  It reads 0 for REFERENCES on a full-text catalog, stoplist or property list,
+  and CREATE FULLTEXT INDEX naming one is refused (Msg 7666) however much
+  ALTER the login holds; CONTROL on the database does imply it. Ask the right
+  the statement checks on the object it names (`gate.ReferencesOn…`), not the
+  wider-looking one.
+
 ## T-SQL and filters
 
 - **Quote names with gosmo's helpers, never `"[" + x + "]"` or
@@ -139,6 +152,17 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   OBJECT_OR_COLUMN::x BY y)` rejects and a `WHEN 'OBJECT'` arm never matches.
   gosmo translates out (`database_audit_specification.go`) and accepts it as
   `OBJECT` in. Found live on major 17 with unit tests green.
+
+- **A statement the server ignores answers with a warning, and gosmo's exec
+  drops warnings** — a nil error is not "it happened". `ALTER FULLTEXT INDEX
+  … STOP POPULATION` under AUTO/MANUAL tracking and `START … POPULATION`
+  while one runs both return cleanly and do nothing (17, 2026-10-07); so does
+  START FULL/INCREMENTAL under AUTO tracking, where the "running" population
+  is a permanent AUTO row in `sys.dm_fts_index_population` that the
+  `TableFulltextPopulateStatus` idle check cannot see (14 and 17, 2026-10-08
+  — W18's tests were green and the drive used a MANUAL table). Read the
+  state first and refuse what the server would ignore
+  (`fulltext_index_ops.go`), or compare a stamp before and after.
 
 ## Query execution
 

@@ -118,6 +118,10 @@ type App struct {
 	newStatisticsDialog         *NewStatisticsDialog
 	newCMKDialog                *NewColumnMasterKeyDialog
 	newCEKDialog                *NewColumnEncryptionKeyDialog
+	newFullTextCatalogDialog    *NewFullTextCatalogDialog
+	newFullTextStoplistDialog   *NewFullTextStoplistDialog
+	newSearchPropListDialog     *NewSearchPropertyListDialog
+	newFullTextIndexDialog      *NewFullTextIndexDialog
 	agAddDatabaseDialog         *AGAddDatabaseDialog
 	agAddListenerDialog         *AGAddListenerDialog
 	agAddReplicaDialog          *AGAddReplicaDialog
@@ -530,6 +534,10 @@ func (a *App) buildUI() {
 	a.newStatisticsDialog = registerDialog(a, NewNewStatisticsDialog(a))
 	a.newCMKDialog = registerDialog(a, NewNewColumnMasterKeyDialog(a))
 	a.newCEKDialog = registerDialog(a, NewNewColumnEncryptionKeyDialog(a))
+	a.newFullTextCatalogDialog = registerDialog(a, NewNewFullTextCatalogDialog(a))
+	a.newFullTextStoplistDialog = registerDialog(a, NewNewFullTextStoplistDialog(a))
+	a.newSearchPropListDialog = registerDialog(a, NewNewSearchPropertyListDialog(a))
+	a.newFullTextIndexDialog = registerDialog(a, NewNewFullTextIndexDialog(a))
 	a.logSearchDialog = registerDialog(a, NewLogSearchDialog(a))
 	a.agAddDatabaseDialog = registerDialog(a, NewAGAddDatabaseDialog(a))
 	a.agAddListenerDialog = registerDialog(a, NewAGAddListenerDialog(a))

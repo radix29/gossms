@@ -10,6 +10,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	mssql "github.com/microsoft/go-mssqldb"
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -30,6 +31,7 @@ const (
 	ftPopulationsRead = "FROM   sys.dm_fts_index_population"
 	ftStoplistsRead   = "FROM   sys.fulltext_stoplists"
 	ftStopwordsRead   = "FROM   sys.fulltext_stopwords"
+	ftPropListsRead   = "FROM   sys.registered_search_property_lists"
 )
 
 // ftInfo answers FullTextInfo: installed or not, no languages, no filters.
@@ -132,7 +134,7 @@ func TestFullTextCatalogTablesFollowTheSelection(t *testing.T) {
 			{int64(101), "Body", "", int64(1033), "English", false},
 			{int64(102), "Content", "Ext", int64(1031), "German", true},
 		}})
-	form, _ := loadPage(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[1], inst)
+	form, _ := loadPage(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[2], inst)
 	var grids []*controls.DataGrid
 	for _, r := range form.Rows() {
 		if gr, ok := r.(*propsheet.GridRow); ok {
@@ -170,7 +172,66 @@ func ftIndexResponses(pops fakeResponse) []fakeResponse {
 			{int64(102), "Content", "Ext", int64(1031), "German", true},
 		}},
 		pops,
+		ftStoplistsResp("legal_words", "other_words"),
+		ftPropListsResp("doc_props"),
+		ftTableColumnsResp(ftCol{"ID", "int", false}, ftCol{"Content", "varbinary", true},
+			ftCol{"Ext", "nvarchar", true}, ftCol{"Title", "nvarchar", true}),
+		{match: ftInstalledRead, cols: 4, rows: [][]driver.Value{{int64(1), int64(0), int64(1), int64(0)}}},
+		{match: ftLanguagesRead, cols: 2, rows: [][]driver.Value{
+			{int64(1033), "English"}, {int64(1031), "German"}, {int64(0), "Neutral"},
+		}},
+		{match: ftDocTypesRead, cols: 5},
 	}
+}
+
+// ftCol is one column ftTableColumnsResp answers with.
+type ftCol struct {
+	name, typ string
+	nullable  bool
+}
+
+// ftTableColumnsResp answers Table.Columns in columnSelect's scan order;
+// only name, type and nullability matter to the full-text pages.
+func ftTableColumnsResp(cols ...ftCol) fakeResponse {
+	rows := make([][]driver.Value, len(cols))
+	for k, c := range cols {
+		rows[k] = []driver.Value{
+			c.name, int64(k + 1),
+			c.typ, int64(-1), int64(0), int64(0),
+			c.nullable, false, false,
+			"", "", "",
+			false, "",
+			int64(0), int64(0),
+			false,
+			"sys", false,
+			false, false,
+			false, false,
+			"",
+			int64(0), false, false,
+			int64(0), false,
+			"", "", "",
+			"", "", false, int64(0), "",
+		}
+	}
+	return fakeResponse{match: "FROM   sys.columns c", db: "AppDB", cols: 37, rows: rows}
+}
+
+// ftStoplistsResp answers FullTextStoplists with names, ids from 1.
+func ftStoplistsResp(names ...string) fakeResponse {
+	rows := make([][]driver.Value, len(names))
+	for k, n := range names {
+		rows[k] = []driver.Value{int64(k + 1), n, "dbo", time.Time{}, time.Time{}}
+	}
+	return fakeResponse{match: ftStoplistsRead, db: "AppDB", cols: 5, rows: rows}
+}
+
+// ftPropListsResp answers SearchPropertyLists with names, ids from 1.
+func ftPropListsResp(names ...string) fakeResponse {
+	rows := make([][]driver.Value, len(names))
+	for k, n := range names {
+		rows[k] = []driver.Value{int64(k + 1), n, "dbo", time.Time{}, time.Time{}}
+	}
+	return fakeResponse{match: ftPropListsRead, db: "AppDB", cols: 5, rows: rows}
 }
 
 // The populations DMV needs VIEW SERVER STATE, which the index read does not:
@@ -180,7 +241,7 @@ func TestFullTextIndexGeneralSurvivesARefusedPopulationRead(t *testing.T) {
 		Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}}
 	sc, inst := newFakeConn(t, ftIndexResponses(refused)...)
 	form, _ := loadPage(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
-	if got := staticValue(t, form, "Stoplist"); got != "legal_words" {
+	if got := selectRow(t, form, "Stoplist").Value(); got != "legal_words" {
 		t.Errorf("Stoplist = %q, want legal_words", got)
 	}
 	if got := staticValue(t, form, "Full-text catalog"); got != "main_cat" {
@@ -225,9 +286,10 @@ func TestFullTextStoplistText(t *testing.T) {
 			ftIndexRow(101, "dbo", "Notes", "main_cat", nil, "", 4),
 		}},
 		fakeResponse{match: ftColumnsRead, db: "AppDB", cols: 6},
-		fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10})
+		fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10},
+		ftStoplistsResp(), ftPropListsResp())
 	form, _ := loadPage(t, fullTextIndexPropPages(sc, "AppDB", "dbo", "Notes")[0], inst)
-	if got := staticValue(t, form, "Stoplist"); got != "<off>" {
+	if got := selectRow(t, form, "Stoplist").Value(); got != "<off>" {
 		t.Errorf("STOPLIST OFF reads %q, want <off>", got)
 	}
 	if got := staticValue(t, form, "Populations"); got != "None (idle)" {
@@ -318,6 +380,144 @@ func TestFullTextIndexPagesOnATableWithoutOne(t *testing.T) {
 		}
 		if got := formNotes(form); !strings.Contains(got, "no full-text index") {
 			t.Errorf("%s: notes = %q, want one saying there is no full-text index", page.title, got)
+		}
+	}
+}
+
+// fullTextLeaves are the three Storage leaf types W17 wires for Delete and
+// Script, with the class word their per-securable CONTROL is keyed by.
+// view is the catalog view its script reads first, which tells one family's
+// Scripter method from a sibling's.
+var fullTextLeaves = []struct {
+	nt   NodeType
+	kind gosmo.DatabaseSecurableKind
+	noun string
+	drop string
+	view string
+}{
+	{NodeFullTextCatalog, gosmo.DatabaseSecurableFullTextCatalog, "Full-Text Catalog", "DROP FULLTEXT CATALOG [f1]", "sys.fulltext_catalogs"},
+	{NodeFullTextStoplist, gosmo.DatabaseSecurableFullTextStoplist, "Full-Text Stoplist", "DROP FULLTEXT STOPLIST [f1];", "sys.fulltext_stoplists"},
+	{NodeSearchPropertyList, gosmo.DatabaseSecurableSearchPropertyList, "Search Property List", "DROP SEARCH PROPERTY LIST [f1];", "sys.registered_search_property_lists"},
+}
+
+// Each family's script verbs call its own Scripter method: the wiring takes
+// the method as a value, so a sibling's compiles and scripts the wrong family.
+// Asserted by the catalog view the script reads, the object itself unscripted.
+func TestFullTextScriptsReadTheirOwnFamily(t *testing.T) {
+	for _, l := range fullTextLeaves {
+		for _, v := range scriptables[l.nt].verbs {
+			sc, inst := newFakeConn(t, dbByNameResp("appdb", 5))
+			v.gen(t.Context(), sc, nodeData{Type: l.nt, DBName: "appdb", Name: "f1"})
+			if len(inst.Reads(l.view)) == 0 {
+				t.Errorf("%s %s read nothing from %s", l.noun, v.label, l.view)
+			}
+			for _, other := range fullTextLeaves {
+				if other.nt != l.nt && len(inst.Reads(other.view)) != 0 {
+					t.Errorf("%s %s read %s, a sibling family's view", l.noun, v.label, other.view)
+				}
+			}
+		}
+	}
+}
+
+// Each leaf offers Script as (CREATE and DROP, no ALTER), Delete and
+// Properties, and no Rename: none of the three has a statement for one.
+func TestFullTextLeavesScriptAndDelete(t *testing.T) {
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	for _, l := range fullTextLeaves {
+		leaf := &explorerNode{data: nodeData{Type: l.nt, DBName: "appdb", Name: "f1", conn: sc}}
+		got := labelsOf(a.contextMenuItemsForNode(leaf))
+		for _, want := range []string{"Script " + l.noun + " as", "Delete...", "Properties..."} {
+			if !slices.Contains(got, want) {
+				t.Errorf("%s: menu %q has no %q", l.noun, got, want)
+			}
+		}
+		if slices.Contains(got, "Rename...") {
+			t.Errorf("%s: menu %q offers a rename SQL Server has no statement for", l.noun, got)
+		}
+		items := (&App{}).scriptMenuItems(opNode(l.nt, "", "f1", "appdb"))
+		if len(items) == 0 {
+			t.Fatalf("%s offers no Script item", l.noun)
+		}
+		if got, want := labelsOf(items[0].Sub), []string{"CREATE To", "DROP To", "DROP And CREATE To"}; !slices.Equal(got, want) {
+			t.Errorf("%s: script verbs = %v, want %v", l.noun, got, want)
+		}
+		op := objectOps[l.nt]
+		if op.rename != nil || op.warning == "" || op.solo {
+			t.Errorf("%s: objectOp = rename %v, warning %q, solo %v; want no rename, a warning, batchable",
+				l.noun, op.rename != nil, op.warning, op.solo)
+		}
+	}
+}
+
+// Each drop is its family's one statement through the name-only handle: no
+// sys.databases read, nothing in master.
+func TestFullTextDropsSendOneStatement(t *testing.T) {
+	for _, l := range fullTextLeaves {
+		t.Run(l.noun, func(t *testing.T) {
+			sc, inst := newFakeConn(t)
+			if err := objectOps[l.nt].drop(t.Context(), sc, nodeData{Type: l.nt, DBName: "appdb", Name: "f1"}); err != nil {
+				t.Fatalf("drop: %v", err)
+			}
+			if reads := inst.Reads("sys.databases"); len(reads) != 0 {
+				t.Errorf("drop read sys.databases:\n%s", strings.Join(reads, "\n"))
+			}
+			assertOneStatementIn(t, inst, "appdb", l.drop)
+			assertNoStatementsIn(t, inst, "master")
+		})
+	}
+}
+
+// TestFullTextDeleteGateMatchesWhatTheServerAllowed is the probed DROP column
+// (2026-10-07, majors 14 and 17, identical for all three families), each row
+// one WITHOUT LOGIN user as gosmo's probe reads it back. ALTER or TAKE
+// OWNERSHIP on the object read CONTROL 0 and hold nothing wider, and were
+// refused; ALTER ANY SCHEMA and CREATE FULLTEXT CATALOG read 0 for every right
+// in the set.
+func TestFullTextDeleteGateMatchesWhatTheServerAllowed(t *testing.T) {
+	for _, l := range fullTextLeaves {
+		for _, tc := range []struct {
+			name    string
+			granted []string
+			control bool
+			want    bool
+		}{
+			{"nothing, ALTER ANY SCHEMA, CREATE FULLTEXT CATALOG, or ALTER on it", nil, false, false},
+			{"its owner", nil, true, true},
+			{"CONTROL on it", nil, true, true},
+			{"ALTER ANY FULLTEXT CATALOG, or db_ddladmin", []string{"ALTER ANY FULLTEXT CATALOG"}, false, true},
+			{"ALTER on the database", []string{"ALTER", "ALTER ANY FULLTEXT CATALOG"}, false, true},
+			{"CONTROL on the database", []string{"ALTER", "CONTROL", "ALTER ANY FULLTEXT CATALOG"}, true, true},
+		} {
+			var denied []string
+			for _, n := range []string{"ALTER", "CONTROL", "ALTER ANY FULLTEXT CATALOG"} {
+				if !slices.Contains(tc.granted, n) {
+					denied = append(denied, n)
+				}
+			}
+			responses := withSecurableAnswers(capabilityResponses(true, nil, nil, tc.granted, denied),
+				map[string]bool{gosmo.DatabaseSecurableKey(l.kind, "", "f1"): tc.control})
+			sc, _ := newFakeConn(t, responses...)
+			sc.ProbeCapabilities()
+			sc.DatabaseCapabilities(context.Background(), "appdb")
+			node := &explorerNode{data: nodeData{Type: l.nt, DBName: "appdb", Name: "f1", conn: sc}}
+			var found bool
+			for _, it := range (&App{}).objectOpsMenuItems(node) {
+				if it.Label != "Delete..." {
+					continue
+				}
+				found = true
+				if got := it.Enabled == nil || it.Enabled(); got != tc.want {
+					t.Errorf("%s, %s: Delete enabled = %v, want %v", l.noun, tc.name, got, tc.want)
+				}
+				if !tc.want && it.Note != "needs ALTER ANY FULLTEXT CATALOG" {
+					t.Errorf("%s, %s: withheld Delete's note = %q", l.noun, tc.name, it.Note)
+				}
+			}
+			if !found {
+				t.Fatalf("%s, %s: no Delete item", l.noun, tc.name)
+			}
 		}
 	}
 }

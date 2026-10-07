@@ -44,6 +44,9 @@ func (d *AlertDialog) ShowAlert(title, message string) {
 	d.ModalDialog.Show()
 }
 
+// Message returns the message the dialog shows.
+func (d *AlertDialog) Message() string { return d.message }
+
 // Relayout re-wraps the message for the new screen width, then recentres.
 func (d *AlertDialog) Relayout() {
 	w, h, lines := d.fitMessage(d.message, alertDialogMinW, alertDialogBaseH)

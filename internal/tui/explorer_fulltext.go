@@ -3,15 +3,17 @@ package tui
 import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // explorer_fulltext.go is a database's three full-text folders under
 // Storage — Full Text Catalogs, Full Text Stoplists, Search Property Lists —
-// and the table menu's Full-Text index cascade. Read-only for now
-// (docs/phase5-plan.md § 27, W15): every leaf opens its Properties
-// (fulltext_props.go); create, alter, drop and population control come with
-// W16–W19.
+// and the table menu's Full-Text index cascade. Every leaf opens its
+// Properties (fulltext_props.go); Script as and Delete are spliced in from
+// scripting.go and explorer_object_ops.go, gated in explorer_object_rights.go.
+// The cascade's actions are fulltext_index_ops.go (W18); the folders' New
+// items and Define open the new_fulltext_*_dialog.go dialogs (W19).
 
 // fullTextNotInstalledLabel is Storage's one row in place of the three
 // folders on an instance without the Full-Text Search component.
@@ -66,19 +68,88 @@ func loadSearchPropertyListsChildren(l loaderCtx, node *explorerNode) ([]*explor
 		})
 }
 
-// tableFullTextMenu is a table's Full-Text index cascade. W15 has only
-// Properties, which says so when the table has no full-text index; W18 adds
-// enable/disable, population and change tracking here.
+// tableFullTextMenu is a table's Full-Text index cascade, in SSMS's order.
+// The tree does not know whether the table has an
+// index or what state it is in, so nothing here is greyed for that: each
+// action reads the index first and says why it does nothing
+// (fulltext_index_ops.go).
+//
+// Every write is gated on ALTER on the table, which is what each of these
+// statements checks — probed on 14 and 17 with a WITHOUT LOGIN user per
+// right: ALTER or CONTROL on the table, ALTER on its schema, ALTER ANY
+// SCHEMA, ALTER or CONTROL on the database and db_ddladmin each ran ENABLE,
+// DISABLE, SET CHANGE_TRACKING, START and STOP POPULATION and DROP; a right
+// on the catalog alone (REFERENCES, CONTROL, ALTER ANY FULLTEXT CATALOG) ran
+// none, and none was needed beside ALTER on the table.
+//
+// Define is the exception: CREATE FULLTEXT INDEX also needs REFERENCES on the
+// catalog it names (2026-10-08 probe), which the menu cannot ask before one
+// is chosen, so the item has the cascade's gate and the dialog's preflight
+// asks the rest (new_fulltext_index_dialog.go).
 func tableFullTextMenu(a *App, sc *db.ServerConn, node *explorerNode) controls.MenuItem {
+	op := func(label string, build func() fullTextIndexOp) controls.MenuItem {
+		return gate.ItemOn(controls.MenuItem{Label: label, Action: func() { a.runFullTextIndexOp(sc, node, build()) }},
+			sc, node.data.DBName, node.data.Schema, node.data.Name, gate.ObjectWriteRights()...)
+	}
+	track := func(label string, ct gosmo.FullTextChangeTracking) controls.MenuItem {
+		return controls.MenuItem{Label: label, Action: func() { a.runFullTextIndexOp(sc, node, fullTextTrackChangesOp(ct)) }}
+	}
 	return controls.MenuItem{Label: "Full-Text index", Sub: []controls.MenuItem{
+		gate.ItemOn(controls.MenuItem{Label: "Define Full-Text Index...", Action: func() { a.showNewFullTextIndexDialog(sc, node) }},
+			sc, node.data.DBName, node.data.Schema, node.data.Name, gate.ObjectWriteRights()...),
+		{Divider: true},
+		op("Enable Full-Text Index", fullTextEnableOp),
+		op("Disable Full-Text Index", fullTextDisableOp),
+		op("Delete Full-Text Index...", fullTextDeleteOp),
+		{Divider: true},
+		op("Start Full Population", func() fullTextIndexOp { return fullTextStartOp(gosmo.FullTextPopulationFull) }),
+		op("Start Incremental Population", func() fullTextIndexOp { return fullTextStartOp(gosmo.FullTextPopulationIncremental) }),
+		op("Stop Population", fullTextStopOp),
+		{Divider: true},
+		gate.ItemOn(controls.MenuItem{Label: "Track Changes", Sub: []controls.MenuItem{
+			track("Manual", gosmo.FullTextChangeTrackingManual),
+			track("Automatic", gosmo.FullTextChangeTrackingAuto),
+			track("Off", gosmo.FullTextChangeTrackingOff),
+		}}, sc, node.data.DBName, node.data.Schema, node.data.Name, gate.ObjectWriteRights()...),
+		op("Apply Tracked Changes", fullTextApplyTrackedChangesOp),
+		{Divider: true},
 		{Label: "Properties...", Action: func() {
 			a.showFullTextIndexPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
 		}},
 	}}
 }
 
-// The context menus for this family's leaves, looked up through nodeMenus
-// (explorer_loaders.go). Nothing here writes yet, so nothing is gated.
+// The context menus for this family's folders and leaves, looked up through
+// nodeMenus (explorer_loaders.go). Each New item is gated on CREATE FULLTEXT
+// CATALOG, the one right all three CREATEs check — it reads 1 under ALTER ANY
+// FULLTEXT CATALOG, ALTER/CONTROL on the database and db_ddladmin too
+// (2026-10-08 probe). Properties is not gated: its pages declare their own
+// rights and come up read-only without them; the Delete spliced in beside it
+// is gated (objectOpsMenuItems).
+
+func fullTextCatalogsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return folderMenu(newQuery, refresh,
+		gate.Item(controls.MenuItem{Label: "New Full-Text Catalog...",
+			Action: func() { a.showNewFullTextCatalogDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateFullTextCatalog),
+	)
+}
+
+func fullTextStoplistsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return folderMenu(newQuery, refresh,
+		gate.Item(controls.MenuItem{Label: "New Full-Text Stoplist...",
+			Action: func() { a.showNewFullTextStoplistDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateFullTextCatalog),
+	)
+}
+
+func searchPropertyListsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return folderMenu(newQuery, refresh,
+		gate.Item(controls.MenuItem{Label: "New Search Property List...",
+			Action: func() { a.showNewSearchPropertyListDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateFullTextCatalog),
+	)
+}
 
 func fullTextCatalogMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {

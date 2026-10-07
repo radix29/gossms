@@ -308,6 +308,19 @@ var (
 	AlterAnySymmetricKey = Right{Name: "ALTER ANY SYMMETRIC KEY", Role: "db_ddladmin", DB: true}
 	CreateSymmetricKey   = Right{Name: "CREATE SYMMETRIC KEY", Role: "db_ddladmin", DB: true}
 
+	// What DROP FULLTEXT CATALOG, DROP FULLTEXT STOPLIST and DROP SEARCH PROPERTY
+	// LIST check at database scope: one right for all three families. Probed live
+	// 2026-10-07 on majors 14 and 17, identical (docs/decisions.md § The rest):
+	// the right alone drops any of the three, ALTER and CONTROL on the database
+	// and db_ddladmin read 1 for it and drop too, and CREATE FULLTEXT CATALOG and
+	// ALTER ANY SCHEMA drop nothing.
+	AlterAnyFullTextCatalog = Right{Name: "ALTER ANY FULLTEXT CATALOG", Role: "db_ddladmin", DB: true}
+	// What CREATE FULLTEXT CATALOG, CREATE FULLTEXT STOPLIST and CREATE SEARCH
+	// PROPERTY LIST check: one right for all three, read 1 under ALTER ANY
+	// FULLTEXT CATALOG, ALTER and CONTROL on the database and db_ddladmin, each
+	// of which creates too (2026-10-08, majors 14 and 17, identical).
+	CreateFullTextCatalog = Right{Name: "CREATE FULLTEXT CATALOG", Role: "db_ddladmin", DB: true}
+
 	// A backup device is added and dropped by sp_addumpdevice/sp_dropdevice, which
 	// diskadmin carries and no server *permission* answers for, so this is a role
 	// membership. CONTROL SERVER would be a knowingly wrong gate: a pure
@@ -367,6 +380,29 @@ var (
 	ControlOnAsymmetricKey = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableAsymmetricKey}
 	// ControlOnSymmetricKey is ControlOnCertificate for a symmetric key.
 	ControlOnSymmetricKey = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableSymmetricKey}
+	// CONTROL on one full-text catalog, stoplist or search property list: the
+	// certificate's shape, the same 2026-10-07 probe. Its owner or a CONTROL
+	// grantee drops it with no database-scope right; ALTER and TAKE OWNERSHIP on
+	// it permit nothing.
+	ControlOnFullTextCatalog    = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableFullTextCatalog}
+	ControlOnFullTextStoplist   = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableFullTextStoplist}
+	ControlOnSearchPropertyList = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableSearchPropertyList}
+	// The effective ALTER on one full-text catalog, stoplist or search property
+	// list: the exact test for REBUILD/REORGANIZE, ADD/DROP of a stopword and
+	// ADD/DROP of a property (2026-10-08, majors 14 and 17). It folds in ALTER
+	// ANY FULLTEXT CATALOG, ALTER/CONTROL on the database, db_ddladmin and
+	// ownership. AS DEFAULT is not its to answer — AlterAnyFullTextCatalog is.
+	AlterOnFullTextCatalog    = Right{Name: "ALTER", DB: true, Securable: gosmo.DatabaseSecurableFullTextCatalog}
+	AlterOnFullTextStoplist   = Right{Name: "ALTER", DB: true, Securable: gosmo.DatabaseSecurableFullTextStoplist}
+	AlterOnSearchPropertyList = Right{Name: "ALTER", DB: true, Securable: gosmo.DatabaseSecurableSearchPropertyList}
+	// REFERENCES on one of them is what naming it in a full-text index checks,
+	// beside ALTER on the table: the catalog in CREATE FULLTEXT INDEX, the
+	// stoplist or property list in its STOPLIST/SEARCH PROPERTY LIST clause
+	// (same probe). It reads 0 under ALTER on the database and ALTER ANY
+	// FULLTEXT CATALOG, which the server refuses there (Msg 7666, 30023, 30025).
+	ReferencesOnFullTextCatalog    = Right{Name: "REFERENCES", DB: true, Securable: gosmo.DatabaseSecurableFullTextCatalog}
+	ReferencesOnFullTextStoplist   = Right{Name: "REFERENCES", DB: true, Securable: gosmo.DatabaseSecurableFullTextStoplist}
+	ReferencesOnSearchPropertyList = Right{Name: "REFERENCES", DB: true, Securable: gosmo.DatabaseSecurableSearchPropertyList}
 	// AlterOnSymmetricKey is the effective ALTER on one symmetric key, the exact
 	// test for ALTER SYMMETRIC KEY ... ADD / DROP ENCRYPTION (probed live on 13 and
 	// 17, 2026-09-22). It folds in ALTER ANY SYMMETRIC KEY, ALTER on the database

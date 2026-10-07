@@ -1,6 +1,9 @@
 package propsheet
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // TestEditDirtiesAndSetValueDoesNot pins the one distinction every apply
 // closure in the application depends on. A page writes a row only when it is
@@ -94,5 +97,25 @@ func TestEditOnADisabledTextRowDoesNothing(t *testing.T) {
 	r.Edit("after")
 	if r.Value() != "before" || r.Dirty() {
 		t.Errorf("Edit changed a disabled row: value %q dirty %v", r.Value(), r.Dirty())
+	}
+}
+
+// SetValidate runs on the selected item when the form validates, so a form
+// holding a refused choice fails Validate and one holding none passes.
+func TestSelectRowSetValidate(t *testing.T) {
+	r := Select("Stoplist", []string{"<system>", "refused"}, 0)
+	r.SetValidate(func(v string) error {
+		if v == "refused" {
+			return errors.New("no REFERENCES")
+		}
+		return nil
+	})
+	f := NewForm(r)
+	if err := f.Validate(); err != nil {
+		t.Fatalf("the loaded choice failed: %v", err)
+	}
+	r.Edit(1)
+	if err := f.Validate(); err == nil {
+		t.Error("the refused choice validated")
 	}
 }

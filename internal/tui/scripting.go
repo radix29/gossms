@@ -195,6 +195,18 @@ var (
 		return s.ScriptBrokerPriority(ctx, n.Name)
 	}
 
+	// The three full-text families under Storage, each named by one name. A
+	// stoplist's or property list's script carries one ADD per word or property.
+	scriptFullTextCatalog scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptFullTextCatalog(ctx, n.Name)
+	}
+	scriptFullTextStoplist scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptFullTextStoplist(ctx, n.Name)
+	}
+	scriptSearchPropertyList scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptSearchPropertyList(ctx, n.Name)
+	}
+
 	scriptLogin serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptLogin(ctx, n.Name)
 	}
@@ -336,6 +348,13 @@ var scriptables = map[NodeType]scriptable{
 	// than letting Msg 41906 come back.
 	NodeRemoteServiceBinding: {"Remote Service Binding", ddlVerbs(scriptRemoteServiceBinding, false)},
 	NodeBrokerPriority:       {"Broker Priority", ddlVerbs(scriptBrokerPriority, false)},
+
+	// Full-text. No ALTER: a catalog's ALTERs are REBUILD/REORGANIZE/AS DEFAULT
+	// and a stoplist's or list's are one ADD or DROP each, none a script of the
+	// object.
+	NodeFullTextCatalog:    {"Full-Text Catalog", ddlVerbs(scriptFullTextCatalog, false)},
+	NodeFullTextStoplist:   {"Full-Text Stoplist", ddlVerbs(scriptFullTextStoplist, false)},
+	NodeSearchPropertyList: {"Search Property List", ddlVerbs(scriptSearchPropertyList, false)},
 
 	NodeLogin:                    {"Login", serverDDLVerbs(scriptLogin)},
 	NodeServerRole:               {"Server Role", serverDDLVerbs(scriptServerRole)},

@@ -79,6 +79,9 @@ func NewConfirmDialog(s tcell.Screen) *ConfirmDialog {
 	return d
 }
 
+// Message returns the question the dialog asks.
+func (d *ConfirmDialog) Message() string { return d.message }
+
 // ShowConfirm shows a Yes/No question. Escape answers No, so this is only
 // safe for a question whose No is the harmless answer — every current
 // caller's is ("Discard changes?", "Take database offline?", …). A question

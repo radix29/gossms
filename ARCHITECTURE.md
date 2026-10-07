@@ -209,7 +209,7 @@ gossms/
 │       ├── explorer_management.go # loaders: Server Objects folder (Backup Devices, Endpoints, Linked Servers, Server Triggers), Management folder, SQL Server Logs / Agent Error Logs file lists
 │       ├── explorer_resource_governor.go # loaders: Management > Resource Governor (state in the label), Resource Pools > pool > Workload Groups, External Resource Pools; the unsupported-edition and not-visible rows
 │       ├── explorer_database_mail.go # Management > Database Mail: the leaf (state in the label, re-read in place on Refresh), its menu and Start/Stop; hidden on Azure SQL Database
-│       ├── explorer_fulltext.go  # database > Storage: Full Text Catalogs, Full Text Stoplists, Search Property Lists (one "not installed" row in their place without the component); read-only menus, and the table menu's Full-Text index cascade (Properties)
+│       ├── explorer_fulltext.go  # database > Storage: Full Text Catalogs, Full Text Stoplists, Search Property Lists (one "not installed" row in their place without the component); read-only menus, and the table menu's Full-Text index cascade
 │       ├── explorer_replication.go # server > Replication (after Server Objects; hidden on Azure SQL Database): Local Publications ("[db]: pub", icon by kind, not-configured and not-visible rows) and Local Subscriptions; read-only menus (Properties open replication_props.go, Launch Replication Monitor replication_monitor_panel.go)
 │       ├── explorer_xevents.go   # loaders + menus: Management > Extended Events > Sessions (a database's own folder on Azure SQL Database — xeScope), one node per event session (running/stopped glyph) and its targets; Start/Stop Session; Watch Live Data / View Target Data
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
@@ -468,7 +468,9 @@ gossms/
 │       ├── replication_monitor_panel_load.go # its reads (snapshot of every distribution database, an agent's sessions, a session's actions with MSrepl_errors detail), selection kept by key across refreshes, the refresh timer
 │       ├── replication_monitor_panel_draw.go # its toolbar (Refresh, Auto refresh, History window, Failed sessions only) and drawing
 │       ├── replication_monitor_panel_input.go # HandleKey/HandleMouse: Tab through the grids, splitter keys, gesture zones
-│       ├── fulltext_props.go     # read-only Full-Text Catalog (General, Tables/Views), Stoplist (General, Stopwords), Search Property List (General, Properties) and a table's Full-Text Index (General with running populations, Columns) Properties
+│       ├── fulltext_props.go     # Full-Text Catalog (General: set default; Maintenance: Optimize/Rebuild with accent sensitivity; Tables/Views), Stoplist (General, Stopwords: add/remove words and languages) and Search Property List (General, Properties: register/remove) Properties, plus the owner and language pickers the full-text dialogs share
+│       ├── fulltext_index_props.go # a table's Full-Text Index Properties (General: change tracking, stoplist, property list; Columns: add/remove) and the column editor New Full-Text Index shares
+│       ├── fulltext_index_ops.go # the table's Full-Text index cascade actions — Enable/Disable, Delete, Start Full/Incremental and Stop Population, Track Changes, Apply Tracked Changes — each refused or confirmed on a fresh read of the index; the population it starts followed in Background Tasks
 │       ├── replication_props.go  # read-only Publication (General, Articles, Filter Rows, Snapshot, Subscription Options, Subscriptions) and Subscription (General, Agent, Synchronization) Properties
 │       ├── assembly_props.go     # read-only Properties for a CLR assembly: General, Files, Routines
 │       ├── type_props.go         # read-only Properties for the four user-type families, system data types and XML schema collections
@@ -501,6 +503,10 @@ gossms/
 │       ├── new_backup_device_dialog.go         # New Backup Device — the disk or tape alias a backup destination can name
 │       ├── new_database_audit_specification_dialog.go # New Database Audit Specification — the audit to bind to, its action groups and its per-securable actions
 │       ├── new_database_scoped_credential_dialog.go   # New Database Scoped Credential
+│       ├── new_fulltext_catalog_dialog.go       # New Full-Text Catalog — owner, default, accent sensitivity
+│       ├── new_fulltext_stoplist_dialog.go      # New Full-Text Stoplist — empty, from the system stoplist or a copy of one
+│       ├── new_fulltext_property_list_dialog.go # New Search Property List — empty or a copy of one
+│       ├── new_fulltext_index_dialog.go         # New Full-Text Index (the cascade's Define…) — key index, catalog, filegroup, change tracking, stoplist, property list, columns; REFERENCES asked in preflight
 │       ├── new_snapshot_dialog.go              # New Snapshot — CREATE DATABASE … AS SNAPSHOT OF, data files only
 │       │
 │       │  ── Backup & Restore ──

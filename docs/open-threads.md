@@ -177,5 +177,33 @@ work; close an item by deleting it when fixed.
   W16's writes and scripts ran live on 17 and 14 only (skipped on 13, no
   component); PAUSE/RESUME POPULATION were sent only to an idle index, where
   the server's answer is not asserted — a paused population was never seen.
+  W17's Delete gate (classes 23/29/31 in gosmo's per-securable probe, `ALTER
+  ANY FULLTEXT CATALOG`) was probed and live-tested on 17 and 14; the
+  extended probe query ran clean on 13 via the other securable live tests. MI
+  refused every login at the gateway on 2026-10-07 (Msg 40532, sqlcmd too), so
+  it is unrun there, and Azure SQL Database never: if its `HAS_PERMS_BY_NAME`
+  rejected one of the three class words the whole database probe would fail,
+  not just these rows. W18's cascade was driven on 17 only; its gate (ALTER
+  on the table) was probed on 14 and 17. The server's ignore-with-a-warning
+  answers it refuses up front (STOP under AUTO/MANUAL tracking, START while
+  a population runs) were seen on 17 only. A paused or throttled population
+  (status 5) is unit-tested in the follow's message, never seen through it.
+  W19's New dialogs and writable pages were driven on 17 only; their gates
+  (CREATE FULLTEXT CATALOG, ALTER and REFERENCES per securable) were probed
+  and live-tested on 14 and 17, the extended probe query run clean on 13.
+  A semantic-statistics column (`STATISTICAL_SEMANTICS`, needs the semantic
+  language database) was never created live. W20's end-to-end drive (create
+  → populate → `CONTAINS` → alter → drop) ran on 17 only; MI still refused
+  the login at the gateway (2026-10-08), and the planned Azure SQL Database
+  pass (no semantic search there) waits for one to exist. Its START-under-AUTO
+  refusal was probed on 14 and 17.
 
 ### Nice to have
+
+- **N1 — Copying a stoplist or property list from another database.** gosmo's
+  `CreateFullTextStoplistRequest`/`CreateSearchPropertyListRequest` take
+  `FromDatabase`, and the New dialogs offer this database's lists only (the
+  other database's lists would be a second read per database chosen). A
+  cross-database copy is a one-line `CREATE … FROM [db].[list]` in a query
+  window meanwhile.
+
