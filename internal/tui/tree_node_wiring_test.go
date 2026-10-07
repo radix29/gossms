@@ -246,6 +246,12 @@ var nodeTypeWiring = map[NodeType]nodeWiring{
 	NodePublication:                 {class: classObject},
 	NodeLocalSubscriptions:          {class: classFolder},
 	NodeLocalSubscription:           {class: classObject},
+	NodeFullTextCatalogs:            {class: classFolder, filterable: true},
+	NodeFullTextCatalog:             {class: classObject},
+	NodeFullTextStoplists:           {class: classFolder, filterable: true},
+	NodeFullTextStoplist:            {class: classObject},
+	NodeSearchPropertyLists:         {class: classFolder, filterable: true},
+	NodeSearchPropertyList:          {class: classObject},
 	NodeLoading:                     {class: classInternal},
 	NodeError:                       {class: classInternal},
 }

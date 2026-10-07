@@ -80,6 +80,10 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"Event Session":                eventSessionPropPages(d, sc, xeScope{}, "gossms_trace"),
 		"Publication":                  publicationPropPages(sc, "HealthClinic", "claims_pub"),
 		"Subscription":                 localSubscriptionPropPages(sc, "HealthClinic", "PUB1", "claims", "claims_pub"),
+		"Full-Text Catalog":            fullTextCatalogPropPages(sc, "HealthClinic", "ftc"),
+		"Full-Text Stoplist":           fullTextStoplistPropPages(sc, "HealthClinic", "sl"),
+		"Search Property List":         searchPropertyListPropPages(sc, "HealthClinic", "spl"),
+		"Full-Text Index":              fullTextIndexPropPages(sc, "HealthClinic", "dbo", "Notes"),
 	}
 }
 
@@ -150,6 +154,12 @@ var pagesThatOnlyRead = []string{
 	"Publication/General", "Publication/Articles", "Publication/Filter Rows",
 	"Publication/Snapshot", "Publication/Subscription Options", "Publication/Subscriptions",
 	"Subscription/General", "Subscription/Agent", "Subscription/Synchronization",
+	// Full-text objects are browsed until W19 makes these pages write
+	// (docs/phase5-plan.md § 27).
+	"Full-Text Catalog/General", "Full-Text Catalog/Tables/Views",
+	"Full-Text Stoplist/General", "Full-Text Stoplist/Stopwords",
+	"Search Property List/General", "Search Property List/Properties",
+	"Full-Text Index/General", "Full-Text Index/Columns",
 }
 
 // allPropPageKeys is every page in every dialog, as "<dialog>/<page>".
@@ -260,6 +270,7 @@ var propPageConstructors = []string{
 	"certificatePropPages", "asymmetricKeyPropPages", "symmetricKeyPropPages", "masterKeyPropPages",
 	"eventSessionPropPages",
 	"publicationPropPages", "localSubscriptionPropPages",
+	"fullTextCatalogPropPages", "fullTextStoplistPropPages", "searchPropertyListPropPages", "fullTextIndexPropPages",
 }
 
 func TestEveryPropPagesConstructorIsListed(t *testing.T) {

@@ -18,7 +18,8 @@ func TestStorageAndKeyFoldersPropagateDBName(t *testing.T) {
 		nt     NodeType
 		labels []string
 	}{
-		{NodeStorage, []string{"Partition Functions", "Partition Schemes"}},
+		{NodeStorage, []string{"Full Text Catalogs", "Partition Functions", "Partition Schemes",
+			"Full Text Stoplists", "Search Property Lists"}},
 		{NodeAlwaysEncryptedKeys, []string{"Column Master Keys", "Column Encryption Keys"}},
 	} {
 		node := &explorerNode{data: nodeData{Type: tt.nt, DBName: "AppDB", conn: sc}}

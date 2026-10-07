@@ -76,6 +76,13 @@ work; close an item by deleting it when fixed.
   characters loses its tail — 67 lines do as of Phase 5 W7 (Plan Compare's,
   the Shift+click mouse line, …). Wrap them to 57, or size the dialog to the
   screen as wider dialogs do.
+- **B21 — Rows holding Arabic combining marks draw one column wide under
+  tmux.** Seen in Phase 5 W15 on a stoplist made `FROM SYSTEM STOPLIST`:
+  words with a shadda (`إنّ`) push the grid's — and the dialog's — right
+  border one column right on that row only. `core.DisplayWidth` is
+  grapheme-aware (`displaywidth`), so the suspect is how tcell emits the
+  combining mark or how tmux places it, not the grid's arithmetic; not
+  diagnosed, and not tried in another terminal.
 
 ### Verification gaps
 
@@ -151,6 +158,24 @@ work; close an item by deleting it when fixed.
   not-configured path only; MI not at all. Every column read predates 2016,
   so no gate was added — run `TestLiveReplication*` wherever a publisher can
   be set up. W11's Object Explorer Replication folder is likewise shown on MI
-  and undriven there.
+  and undriven there. W13's Replication Monitor (gosmo
+  `replication_monitor.go`, `sp_replmonitor*`/`sp_MSenum_*`) likewise ran
+  against the 2025 fixture only; on 2016/2017 only the not-a-distributor path
+  (`MonitorPublishers` empty, the panel's not-configured note). Its
+  remote-distributor note is unit-tested only — no instance here uses another
+  as its distributor.
+- **V8 — Full-Text reads (gosmo `fulltext.go`, W14) met real rows on 17 and
+  14 only.** win10cli\SQL2016 has the component not installed, so it ran the
+  empty path; Azure SQL Database, MI and Linux (`mssql-server-fts`) not at
+  all. The one gate, `sys.fulltext_indexes.index_version` at 2025, is checked
+  absent on 13/14 and present on 17; no 2019/2022 instance exists to confirm
+  the floor. `FULLTEXTSERVICEPROPERTY`/`sys.fulltext_document_types` on Azure
+  SQL Database are assumed, not seen. W15's Object Explorer folders, Details
+  and read-only Properties were driven on 17 (rows) and 13 (the not-installed
+  row) only; a running population's row on the index General page is
+  unit-tested, never seen live (the fixture's populations finish at once).
+  W16's writes and scripts ran live on 17 and 14 only (skipped on 13, no
+  component); PAUSE/RESUME POPULATION were sent only to an idle index, where
+  the server's answer is not asserted — a paused population was never seen.
 
 ### Nice to have

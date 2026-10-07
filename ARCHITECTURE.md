@@ -209,7 +209,8 @@ gossms/
 │       ├── explorer_management.go # loaders: Server Objects folder (Backup Devices, Endpoints, Linked Servers, Server Triggers), Management folder, SQL Server Logs / Agent Error Logs file lists
 │       ├── explorer_resource_governor.go # loaders: Management > Resource Governor (state in the label), Resource Pools > pool > Workload Groups, External Resource Pools; the unsupported-edition and not-visible rows
 │       ├── explorer_database_mail.go # Management > Database Mail: the leaf (state in the label, re-read in place on Refresh), its menu and Start/Stop; hidden on Azure SQL Database
-│       ├── explorer_replication.go # server > Replication (after Server Objects; hidden on Azure SQL Database): Local Publications ("[db]: pub", icon by kind, not-configured and not-visible rows) and Local Subscriptions; read-only menus (Properties open replication_props.go)
+│       ├── explorer_fulltext.go  # database > Storage: Full Text Catalogs, Full Text Stoplists, Search Property Lists (one "not installed" row in their place without the component); read-only menus, and the table menu's Full-Text index cascade (Properties)
+│       ├── explorer_replication.go # server > Replication (after Server Objects; hidden on Azure SQL Database): Local Publications ("[db]: pub", icon by kind, not-configured and not-visible rows) and Local Subscriptions; read-only menus (Properties open replication_props.go, Launch Replication Monitor replication_monitor_panel.go)
 │       ├── explorer_xevents.go   # loaders + menus: Management > Extended Events > Sessions (a database's own folder on Azure SQL Database — xeScope), one node per event session (running/stopped glyph) and its targets; Start/Stop Session; Watch Live Data / View Target Data
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_programmability.go # loaders: Programmability > Types (five sub-folders), Assemblies, Rules, Defaults, Plan Guides
@@ -323,6 +324,7 @@ gossms/
 │       ├── detail_browser_programmability.go # Programmability families: the Types folders and members, Assemblies, Rules, Defaults, Plan Guides
 │       ├── detail_browser_external.go   # External Resources: external data sources, file formats, libraries
 │       ├── detail_browser_snapshots.go  # Database Snapshots folder and one snapshot
+│       ├── detail_browser_fulltext.go # full-text catalogs (population status), one catalog's indexed tables, stoplists and one stoplist's words, search property lists and one list's properties
 │       ├── detail_browser_replication.go # Replication folder (distributor config), Local Publications/Subscriptions, one publication (articles + subscriptions), one subscription
 │       ├── detail_browser_service_broker.go # the seven Service Broker families: each folder and its leaves, each leaf reusing its Properties page's finder
 │       ├── detail_browser_resource_governor.go # Resource Governor: stored vs in-force configuration, pool and group grids with live DMV counters (blank without VIEW SERVER STATE), one pool / group / external pool
@@ -462,6 +464,11 @@ gossms/
 │       ├── master_key_dialogs.go # Back Up Master Key and Regenerate Master Key, opening the key by password when the service master key does not
 │       ├── master_key.go         # ensureMasterKey — the create-the-database-master-key-if-absent step the endpoint and key dialogs share — and keyProtectionFields, the private-key / master-key sections of New Certificate and New Asymmetric Key
 │       ├── database_snapshot_props.go # read-only Properties for a database snapshot: General + Files
+│       ├── replication_monitor_panel.go      # Replication Monitor (W13): state, construction, layout of the four stacked grids (publications, subscriptions and agents, sessions, actions), the one-per-server entry point
+│       ├── replication_monitor_panel_load.go # its reads (snapshot of every distribution database, an agent's sessions, a session's actions with MSrepl_errors detail), selection kept by key across refreshes, the refresh timer
+│       ├── replication_monitor_panel_draw.go # its toolbar (Refresh, Auto refresh, History window, Failed sessions only) and drawing
+│       ├── replication_monitor_panel_input.go # HandleKey/HandleMouse: Tab through the grids, splitter keys, gesture zones
+│       ├── fulltext_props.go     # read-only Full-Text Catalog (General, Tables/Views), Stoplist (General, Stopwords), Search Property List (General, Properties) and a table's Full-Text Index (General with running populations, Columns) Properties
 │       ├── replication_props.go  # read-only Publication (General, Articles, Filter Rows, Snapshot, Subscription Options, Subscriptions) and Subscription (General, Agent, Synchronization) Properties
 │       ├── assembly_props.go     # read-only Properties for a CLR assembly: General, Files, Routines
 │       ├── type_props.go         # read-only Properties for the four user-type families, system data types and XML schema collections

@@ -283,6 +283,12 @@ func objectIconEmoji(t NodeType) rune {
 		return '📤'
 	case NodeLocalSubscription:
 		return '📬'
+	case NodeFullTextCatalog:
+		return '🔎'
+	case NodeFullTextStoplist:
+		return '🚫'
+	case NodeSearchPropertyList:
+		return '🗒'
 	case NodeLoading:
 		return '⏳'
 	case NodeError:
@@ -448,6 +454,12 @@ func objectIconSymbols(t NodeType) rune {
 		return '⇶'
 	case NodeLocalSubscription:
 		return '⇲'
+	case NodeFullTextCatalog:
+		return '⌕'
+	case NodeFullTextStoplist:
+		return '∅'
+	case NodeSearchPropertyList:
+		return '≔'
 	case NodeLoading:
 		return '…'
 	case NodeError:

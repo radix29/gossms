@@ -530,27 +530,188 @@ releasable stopping point.
   and Details. Not run: a login that can't read a published database (the
   not-visible Details row is unit-tested; W11 drove the tree's), MI, Linux.
   README has no feature list to update.
-- **W13** — gosmo `replication_monitor.go` (the `sp_replmonitor*` reads, agent
+- **W13** ✅ *done 2026-10-07* — gosmo `replication_monitor.go` (the `sp_replmonitor*` reads, agent
   status/history, errors, `replmonitor` gate) + live tests; then the
   **Replication Monitor** panel (`replication_monitor_panel*.go`, split
   state/draw/input like Query Store) with auto-refresh. Drive with a stopped
   agent and an injected error. *(ships)*
+  *As built:* gosmo — `Server.MonitorPublishers` (none on a non-distributor:
+  the procedure itself fails there on a missing msdb table, so the reflective
+  version sweep needed it to read as empty); on a `*DistributionDatabase`:
+  `CanMonitor` (sysadmin, or db_owner/`replmonitor`), `MonitorPublications`/
+  `MonitorSubscriptions` (`sp_replmonitorhelppublication`/`…subscription`,
+  read by column name; `MonitorWarning.Warnings()`), `Agents` →
+  `ReplicationAgent` with its last run, `Sessions(hours, errorsOnly)` /
+  `SessionActions(session)`, `Errors(id)`. **Not the `MS*` tables the plan
+  named**: `replmonitor` has no SELECT on `MS*_agents`/`_history` (Msg 229,
+  seen on 2025) — only the `sp_MSenum_*` (`_s`, `_sd`) and
+  `sp_MSget_repl_error` procedures SSMS uses, which check the role
+  themselves; their times are `fn_replformatdatetime` text. Merge's `_sd`
+  finds a session by its *end* time, the others by start. **W10 bug fixed on
+  the way**: `ReplicationInfo` failed outright for any non-sysadmin at a
+  distributor (msdb's `MSdistributiondbs`/`MSdistpublishers` are sysadmin's,
+  and metadata visibility makes them look absent) — it now skips them and says
+  so (`DistributorDetailsHidden`), and `Server.DistributionDatabaseRef(name)`
+  is the handle the monitor builds from `ReplicationInfo.Databases`. Live tests
+  `live_replication_monitor_test.go` (fixture; a throwaway `replmonitor`
+  login; error detail behind a failed session); version sweeps 0-failed on 17,
+  14, 13. Diagram `25-replication.mmd`. gossms — four stacked grids:
+  publications (status, type, counts, latency, last sync, warnings), the
+  selected one's subscriptions with their Distribution/Merge Agent then its
+  Snapshot and Log Reader agents (a subscription's status is the monitor's,
+  not the agent's last history row), the selected agent's sessions, the
+  selected session's actions with an Error details column joining each
+  `MSrepl_errors` entry (Show Value for all of it). Toolbar: Refresh (F5),
+  Auto refresh (Off/5 s/10 s/30 s/1 min, default 10 s), History (24 h/2 d/
+  7 d/All), Failed sessions only. Each pane keeps its row by key across a
+  refresh (worst-first order moves rows); a tick is skipped while a read is
+  out or a grid's popup is open (a rebuild closed the error popup at the next
+  tick — caught driving). One panel per server; Tools › Replication Monitor
+  (hidden on Azure SQL Database) and Launch Replication Monitor on
+  Replication, Local Publications and a publication (which selects it). Notes
+  instead of rows: not configured, remote distributor (named), no right to
+  monitor, nothing distributed. Not `activity.Poller`: its VIEW SERVER STATE
+  prologue is the wrong gate here. Tests `replication_monitor_panel_test.go`
+  (join by agent name across `WIN10CLI`/`win10cli`, the four notes, selection
+  kept by key and the opened-for publication, error detail read once per id,
+  the tick's three refusals and Close, the note's width), mutation-checked.
+  Driven at 160×48 on win10cli: as sa from the folder and from Tools; an
+  injected error (subscriber `OrderLine` renamed, a row published, the
+  Distribution Agent run → Failed, `Invalid object name`, error 14151 in the
+  popup), then fixed and re-run — auto refresh showed the recovery with the
+  cursor kept on the failed session; the Log Reader job stopped (shows
+  Succeeded, "The process was successfully stopped" — what the server
+  records) and restarted; Failed sessions only; History All; a publication
+  node's Launch selecting it in the open panel; a throwaway `replmonitor`
+  login (everything, error detail included); a login with no distribution
+  user (the rights note); win10cli\SQL2016 (not configured). Fixture restored
+  (row removed, re-synced). Not run: remote distributor (unit-tested), MI,
+  Linux — `docs/open-threads.md` V7.
 
 ### 27 — Full-Text
 
-- **W14** — gosmo `fulltext.go` reads: `FullTextInfo`, catalogs, stoplists +
+- **W14** ✅ *done 2026-10-07* — gosmo `fulltext.go` reads: `FullTextInfo`, catalogs, stoplists +
   stopwords, search property lists, `Table.FullTextIndex` + population state;
   version gates; live tests on a `gossms_p5_fts` database on win10cli and
   win10cli\SQL2017 (Q2), plus the not-installed path on an instance without
   FTS.
-- **W15** — OE: three Storage subfolders + not-installed leaf
+  *As built:* `Server.FullTextInfo` (installed, load OS resources, verify
+  signature, `UpgradeOption`, languages, document types);
+  `Database.FullTextCatalogs`/`FullTextCatalogByName` with the
+  `FULLTEXTCATALOGPROPERTY` counters (index count, items, unique keys, size
+  MB, `PopulateStatus`, merge, `LastPopulated` from `PopulateCompletionAge`)
+  and `FullTextCatalog.Indexes` (W15's catalog tables);
+  `FullTextStoplists`/`…ByName` + `Stopwords`; `SearchPropertyLists`/`…ByName`
+  + `Properties`; `Database.FullTextIndexes` and `Table.FullTextIndex`
+  (`ErrNotFound` without one, `ErrHandleNotLoaded` on a `TableRef`) — key
+  index, catalog, filegroup, change tracking (`AUTO`/`MANUAL`/`OFF`, the DDL
+  spelling), `StoplistKind` Off/System/User + name, property list, last
+  crawl, the `OBJECTPROPERTYEX` `TableFulltext*` counters, columns (type
+  column, language, statistical semantics; fetched in one second query and
+  grouped in Go). **Population state is its own read**,
+  `FullTextIndex.Populations` (`sys.dm_fts_index_population`): the DMV needs
+  VIEW SERVER STATE, and folded in it would fail the index for any other
+  login — live-tested with a throwaway login that reads the index and is
+  refused only the DMV. No `Ref` handles yet — they come with W16's writes.
+  **One gate**: `sys.fulltext_indexes.index_version` (2025's version-2 word
+  breakers) — column lists compared on 13/14/17, it is the only difference;
+  inventory, golden file `testdata/version_gates/fulltext_indexes.sql`.
+  An instance without the component reads empty, not failed (catalog views
+  exist regardless). **W16 trap found**: stoplist and search-property-list
+  DDL must end in `;` (Msg 10736). Live: `live_fulltext_test.go` passes on
+  17 and 14 (scratch `gossms_p5_fts`, dropped after), the not-installed test
+  on SQL2016; version sweeps 0-failed on 17, 14, 13 (full-text objects made
+  in the sweep's database where installed, six reads in `sweepMustCall`, a
+  table without an index answering not-found tolerated); live gate-catalog
+  check green on all three. gosmo `ARCHITECTURE.md` § Full-Text Search,
+  diagram `26-fulltext.mmd`. Not run: Azure SQL Database, MI, Linux —
+  `docs/open-threads.md` V8.
+- **W15** ✅ *done 2026-10-07* — OE: three Storage subfolders + not-installed leaf
   (`explorer_fulltext.go`); Detail Browser grids
   (`detail_browser_fulltext.go`); read-only Properties for catalog, stoplist,
   property list, table's full-text index (`fulltext_props.go`). *(ships —
   browsing)*
-- **W16** — gosmo writes with `Ref` handles + scripter verbs (Script as
+  *As built:* six node types (`NodeFullTextCatalogs`/`…Catalog`,
+  `…Stoplists`/`…Stoplist`, `NodeSearchPropertyLists`/`…List`). Storage
+  lists them in SSMS's order — Full Text Catalogs, the two partition
+  folders, Full Text Stoplists, Search Property Lists — and on an instance
+  where `FullTextInfo.Installed` is false, one "Full-Text Search is not
+  installed" row in place of the three (the catalog views exist there and
+  would read empty); a failed `FullTextInfo` keeps the folders (fail open).
+  Leaves are labelled by name; the three folders filter by Name. Menus:
+  Properties on each leaf, and the table menu gains a **Full-Text index ▸**
+  cascade holding Properties only (W18 fills it). Properties: Catalog
+  (General — owner, default, accent sensitivity, population status, last
+  populated, merge, counters; Tables/Views — the catalog's indexes, the
+  selected one's columns following the selection), Stoplist (General,
+  Stopwords), Search Property List (General, Properties), Full-Text Index
+  (General — key index, catalog, filegroup, change tracking, stoplist as
+  `<off>`/`<system>`/name, property list, index version on 2025, last crawl,
+  the `TableFulltext*` counters, running populations; Columns). The
+  populations DMV's refusal costs only that row and names VIEW SERVER STATE;
+  a table with no full-text index gets a note on each page, not an "Error …
+  Press F5" (caught driving — `findFullTextIndex` answers (nil, nil) for the
+  index read's not-found only, a missing table stays an error). Details:
+  catalogs with counters and population status, one catalog's indexed
+  tables, stoplists, one stoplist's words, property lists, one list's
+  properties; folder views apply the folder filter and map rows to objects.
+  All eight pages are in `pagesThatOnlyRead` until W19. Tests
+  `explorer_fulltext_test.go` (Storage installed / not installed / read
+  failed, loader, selection-following columns, refused and running
+  populations, `<off>` stoplist, the no-index note, stopwords Details,
+  filtered catalogs Details, menus), mutation-checked. Driven at 160×48:
+  win10cli (17.0) as sa on a scratch `gossms_p5_fts` (two catalogs, a
+  stoplist from the system one plus `hereby`, a property list with Title,
+  `dbo.Notes` AUTO/user stoplist and `sales.Docs` MANUAL/system stoplist/
+  property list/TYPE COLUMN, `dbo.Plain` with none) — tree, every Details
+  view, all four dialogs and both cascade cases; win10cli\SQL2016 (13.0,
+  not installed) — the not-installed row in tree and Details. Database
+  dropped after. Found, not fixed: Arabic stopwords with a shadda misdraw a
+  column under tmux (`docs/open-threads.md` B21). Not run: a live running
+  population, Azure SQL Database, MI, Linux (V8). README has no feature
+  list to update; no key added.
+- **W16** ✅ *done 2026-10-07* — gosmo writes with `Ref` handles + scripter verbs (Script as
   CREATE/DROP for catalog, stoplist, property list, index), `WithScript`
   tests, live write tests on disposable objects.
+  *As built:* gosmo `fulltext_write.go` — handles `Database.FullTextCatalogRef`/
+  `FullTextStoplistRef`/`SearchPropertyListRef` and `Table.FullTextIndexRef()`
+  (a table has one; works from a `TableRef`). Catalog: `CreateFullTextCatalog`
+  (`AccentSensitive *bool`, `IsDefault`, `Owner`), `Rebuild(ctx,
+  accentSensitive *bool)`, `Reorganize` (SSMS's Optimize), `SetDefault`,
+  `SetOwner`, `Drop`. Stoplist: `CreateFullTextStoplist` (empty / `FromSystem`
+  / `From` + optional `FromDatabase`), `AddStopword`/`DropStopword(ctx, word,
+  language)`, `DropLanguageStopwords`, `DropAllStopwords`, `SetOwner`, `Drop`
+  — a language is an LCID (`"1033"`, `"0x0409"`, `"0"`) or a name, emitted
+  bare or as a literal. Property list: `CreateSearchPropertyList` (empty /
+  `From`), `AddProperty(SearchProperty)`, `DropProperty`, `SetOwner`, `Drop`.
+  Index: `Table.CreateFullTextIndex` (`[]FullTextIndexColumnSpec` with TYPE
+  COLUMN/LANGUAGE/STATISTICAL_SEMANTICS, key index, catalog, filegroup,
+  change tracking, `NoPopulation` — refused unless tracking is OFF —
+  `StoplistOff`/`Stoplist` with empty meaning SYSTEM, property list);
+  `Enable`/`Disable`, `AddColumn`/`DropColumn(…, noPopulation)`,
+  `SetChangeTracking`, `SetStoplist(kind, name)`, `SetSearchPropertyList`
+  (`""` = OFF), `StartPopulation(Full|Incremental|Update)` (Update is Apply
+  Tracked Changes), `Stop`/`Pause`/`ResumePopulation`, `Drop`. Setters mirror
+  through `setIfApplied`; stoplist/property-list statements carry the `;`
+  (Msg 10736), nothing else does. `scripter_fulltext.go`:
+  `ScriptFullTextCatalog`, `ScriptFullTextStoplist` (CREATE + one ADD per
+  word), `ScriptSearchPropertyList` (CREATE + one ADD per property),
+  `ScriptFullTextIndex` (+ DISABLE when disabled); under IncludeIfNotExists
+  every ADD is guarded too — a duplicate word fails Msg 30033, so an
+  unguarded re-run stopped at the first — and the DROPs test the catalog
+  views (no family has `DROP … IF EXISTS`). Tests: `fulltext_write_test.go`
+  (every statement whole, quote-hostile names, from handles; the refusals
+  send nothing; scripted writes don't mirror; the four builders), mutation-
+  checked; `live_fulltext_write_test.go` on scratch `gossms_p5_fts_w`/`_w2`:
+  create/alter/drop of every family, copies (incl. cross-database), the
+  MANUAL-tracked insert applied by an UPDATE population, then each script
+  run twice in the second database and compared, then the DROP scripts
+  twice — passes on 17 and 14, skips on SQL2016 (not installed); both
+  databases dropped. All four families' probe forms (`LANGUAGE N'English'`,
+  stoplist DDL inside `IF`, `ON (catalog, FILEGROUP …)`) were checked by hand
+  on 17 first. gosmo `ARCHITECTURE.md` § Full-Text Search + Scripter list,
+  `CLAUDE.md` Ref list, diagram `26-fulltext.mmd`. Not run: PAUSE/RESUME on a
+  running population, Azure SQL Database, MI, Linux (V8). No gossms change.
 - **W17** — Gate: securable classes 23/29/31-32 in
   `explorer_object_rights.go`, Delete/Script wiring in
   `explorer_object_ops.go`/`scripting.go`; update `docs/decisions.md`'s

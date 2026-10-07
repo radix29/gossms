@@ -19,10 +19,6 @@ import (
 // folder: no distributor ("not configured"), or published databases this
 // login cannot read ("not visible"), which gosmo's LocalPublications skips.
 
-// Launch Replication Monitor is W13's. Until then it is listed, withheld, so
-// the menus already have the shape SSMS's have.
-const replicationNotYetNote = "not yet"
-
 // loadReplicationChildren returns the Replication folder's two folders.
 func loadReplicationChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
@@ -109,29 +105,31 @@ func localSubscriptionLabel(dbName, publisher, publisherDB, pub string) string {
 	return "[" + dbName + "] - [" + publisher + "].[" + publisherDB + "]: " + pub
 }
 
-// replicationNotYet withholds a replication item whose target a later step
-// builds (W13 Replication Monitor).
-func replicationNotYet(label string) controls.MenuItem {
-	return controls.MenuItem{Label: label, Action: func() {},
-		Enabled: func() bool { return false }, Note: replicationNotYetNote,
-		NoteWhen: func() bool { return true }}
+// launchReplicationMonitor is the folders' and a publication's Launch
+// Replication Monitor (replication_monitor_panel.go). pubDB and pub select a
+// publication; empty for a folder. Not permission-gated: the rights it needs
+// (replmonitor in the distribution database) are not probed at connect, so
+// the panel itself measures them and says what is missing.
+func launchReplicationMonitor(a *App, sc *db.ServerConn, pubDB, pub string) controls.MenuItem {
+	return controls.MenuItem{Label: "Launch Replication Monitor", Action: func() {
+		a.showReplicationMonitorFor(sc, pubDB, pub)
+	}}
 }
 
 // The context menus for this family, looked up through nodeMenus
-// (explorer_loaders.go). Nothing here writes, so nothing is permission-gated;
-// the monitor's own replmonitor gate comes with it (W13).
+// (explorer_loaders.go). Nothing here writes, so nothing is permission-gated.
 
 func replicationMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh, replicationNotYet("Launch Replication Monitor"))
+	return folderMenu(newQuery, refresh, launchReplicationMonitor(a, sc, "", ""))
 }
 
 func localPublicationsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh, replicationNotYet("Launch Replication Monitor"))
+	return folderMenu(newQuery, refresh, launchReplicationMonitor(a, sc, "", ""))
 }
 
 func publicationMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return []controls.MenuItem{
-		replicationNotYet("Launch Replication Monitor"),
+		launchReplicationMonitor(a, sc, node.data.DBName, node.data.Name),
 		{Divider: true},
 		newQuery,
 		{Divider: true},

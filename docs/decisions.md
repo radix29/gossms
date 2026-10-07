@@ -637,7 +637,15 @@ Peer credentials, easy to undo:
   folder has Delete. Setting replication up is a script job (`sp_adddistributor`
   and friends, gosmo `testdata/replication/setup.sql` is an example); a wizard
   would need the agent accounts, snapshot share and security a terminal can't
-  check. Replication Monitor (W13) reads, too.
+  check. Replication Monitor (W13) reads, too: no start/stop of an agent, no
+  tracer tokens, no threshold changes, no reinitialize from the monitor.
+- **Replication Monitor reads through the procedures SSMS uses, never the
+  `MS*` tables** (`sp_replmonitorhelp*`, `sp_MSenum_*`, `sp_MSget_repl_error`):
+  `replmonitor` may run them but has no SELECT on `MS*_agents`/`_history`,
+  and msdb's distributor tables are sysadmin's alone. It monitors the
+  distribution databases on the instance it is opened on; a publisher with a
+  remote distributor is told to connect there. Not gated on a probed right:
+  the panel measures `CanMonitor` and says what is missing.
 - **A subscription is named by publisher, publisher database and publication**,
   compared without regard to case (`findLocalSubscription`): one database can
   subscribe to two publishers' same-named publication, and the subscriber stores

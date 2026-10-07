@@ -147,6 +147,7 @@ func filterProps(t NodeType) []filterProp {
 	case NodeTriggers,
 		NodeUsers, NodeDatabaseRoles, NodeSchemas, NodeServerRoles,
 		NodePartitionFunctions, NodePartitionSchemes,
+		NodeFullTextCatalogs, NodeFullTextStoplists, NodeSearchPropertyLists,
 		NodeColumnMasterKeys, NodeColumnEncryptionKeys:
 		return []filterProp{name}
 	case NodeSecurityPolicies:

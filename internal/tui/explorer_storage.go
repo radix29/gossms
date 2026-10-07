@@ -9,14 +9,22 @@ import (
 )
 
 // explorer_storage.go backs a database's Storage folder — the partition
-// functions and schemes SSMS files there.
+// functions and schemes SSMS files there. The full-text folders filed there
+// too are explorer_fulltext.go's.
 
-// loadStorageChildren returns the Storage folder's own subfolders.
+// loadStorageChildren returns the Storage folder's own subfolders, in SSMS's
+// order: Full Text Catalogs first, the partition folders, then Full Text
+// Stoplists and Search Property Lists — or, in place of the three full-text
+// folders, the one row saying the component is not installed
+// (fullTextStorageFolders).
 func loadStorageChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return []*explorerNode{
-		l.node("Partition Functions", NodePartitionFunctions, "", "", node.data.DBName),
-		l.node("Partition Schemes", NodePartitionSchemes, "", "", node.data.DBName),
-	}, nil
+	dbName := node.data.DBName
+	first, last := fullTextStorageFolders(l, dbName)
+	out := append(first,
+		l.node("Partition Functions", NodePartitionFunctions, "", "", dbName),
+		l.node("Partition Schemes", NodePartitionSchemes, "", "", dbName),
+	)
+	return append(out, last...), nil
 }
 
 // loadPartitionFunctionsChildren lists a database's partition functions,

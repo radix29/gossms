@@ -463,6 +463,19 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeLocalSubscription:
 		return localSubscriptionDetail(ctx, sc, node)
 
+	case NodeFullTextCatalogs:
+		return fullTextCatalogsFolderDetail(ctx, sc, node, objs)
+	case NodeFullTextCatalog:
+		return fullTextCatalogDetail(ctx, sc, node)
+	case NodeFullTextStoplists:
+		return fullTextStoplistsFolderDetail(ctx, sc, node, objs)
+	case NodeFullTextStoplist:
+		return fullTextStoplistDetail(ctx, sc, node)
+	case NodeSearchPropertyLists:
+		return searchPropertyListsFolderDetail(ctx, sc, node, objs)
+	case NodeSearchPropertyList:
+		return searchPropertyListDetail(ctx, sc, node)
+
 	case NodeStoredProcedure, NodeFunction, NodeTrigger:
 		return moduleDetail(ctx, sc, node)
 

@@ -60,9 +60,13 @@ var childLoaders = map[NodeType]childLoader{
 	NodeCertificates:                loadCertificatesChildren,
 	NodeSymmetricKeys:               loadSymmetricKeysChildren,
 
-	NodeStorage:              loadStorageChildren,
-	NodePartitionFunctions:   loadPartitionFunctionsChildren,
-	NodePartitionSchemes:     loadPartitionSchemesChildren,
+	NodeStorage:            loadStorageChildren,
+	NodePartitionFunctions: loadPartitionFunctionsChildren,
+	NodePartitionSchemes:   loadPartitionSchemesChildren,
+
+	NodeFullTextCatalogs:     loadFullTextCatalogsChildren,
+	NodeFullTextStoplists:    loadFullTextStoplistsChildren,
+	NodeSearchPropertyLists:  loadSearchPropertyListsChildren,
 	NodeSecurityPolicies:     loadSecurityPoliciesChildren,
 	NodeQueryStore:           loadQueryStoreChildren,
 	NodeAlwaysEncryptedKeys:  loadAlwaysEncryptedKeysChildren,
@@ -215,6 +219,10 @@ var nodeMenus = map[NodeType]menuBuilder{
 
 	NodePartitionFunction: partitionFunctionMenuItems,
 	NodePartitionScheme:   partitionSchemeMenuItems,
+
+	NodeFullTextCatalog:    fullTextCatalogMenuItems,
+	NodeFullTextStoplist:   fullTextStoplistMenuItems,
+	NodeSearchPropertyList: searchPropertyListMenuItems,
 
 	NodeTable:           tableMenuItems,
 	NodeKey:             keyMenuItems,

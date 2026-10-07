@@ -54,10 +54,12 @@ func replTransactionalPub(dbName, pub string) []fakeResponse {
 
 // replInfo answers ReplicationInfo: the distributor's name (nil for none), not
 // a distributor itself, and the given sys.databases flag rows (name,
-// published, merge published, distribution, readable).
+// published, merge published, distribution, readable). The probe's six
+// columns: distributor, is a distributor, the two msdb tables exist, and
+// whether the login may read each.
 func replInfo(distributor any, dbs ...[]driver.Value) []fakeResponse {
 	return []fakeResponse{
-		{match: replDistributorRead, cols: 4, rows: [][]driver.Value{{distributor, false, false, false}}},
+		{match: replDistributorRead, cols: 6, rows: [][]driver.Value{{distributor, false, false, false, false, false}}},
 		{match: replDatabasesRead, cols: 5, rows: dbs},
 	}
 }
@@ -193,10 +195,10 @@ func TestPublicationIconShowsItsKind(t *testing.T) {
 	}
 }
 
-// TestReplicationMenusOpenPropertiesAndWithholdTheMonitor. The two leaves'
-// Properties open their dialogs (W12); Launch Replication Monitor stays
-// withheld, with its note, until W13 builds it.
-func TestReplicationMenusOpenPropertiesAndWithholdTheMonitor(t *testing.T) {
+// TestReplicationMenusOpenPropertiesAndTheMonitor. The two leaves' Properties
+// open their dialogs (W12), and Launch Replication Monitor (W13) is live on
+// the publication and both folders.
+func TestReplicationMenusOpenPropertiesAndTheMonitor(t *testing.T) {
 	var newQuery, refresh controls.MenuItem
 	find := func(items []controls.MenuItem, label string) *controls.MenuItem {
 		for i := range items {
@@ -214,8 +216,15 @@ func TestReplicationMenusOpenPropertiesAndWithholdTheMonitor(t *testing.T) {
 			t.Errorf("%s: Properties... missing or withheld: %+v", name, it)
 		}
 	}
-	it := find(pub, "Launch Replication Monitor")
-	if it == nil || it.Enabled == nil || it.Enabled() || it.Note == "" {
-		t.Errorf("Launch Replication Monitor enabled or unexplained — it has nothing to open yet")
+	folders := map[string][]controls.MenuItem{
+		"publication":        pub,
+		"Replication":        replicationMenuItems(nil, nil, &explorerNode{}, newQuery, refresh),
+		"Local Publications": localPublicationsMenuItems(nil, nil, &explorerNode{}, newQuery, refresh),
+	}
+	for name, items := range folders {
+		it := find(items, "Launch Replication Monitor")
+		if it == nil || it.Action == nil || (it.Enabled != nil && !it.Enabled()) || it.Note != "" {
+			t.Errorf("%s: Launch Replication Monitor missing or withheld: %+v", name, it)
+		}
 	}
 }

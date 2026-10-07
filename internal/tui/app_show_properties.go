@@ -556,3 +556,32 @@ func (a *App) showLocalSubscriptionPropertiesFor(sc *db.ServerConn, dbName, publ
 	a.propDialog.show(sc, dbName, "Subscription Properties", "Subscription: "+localSubscriptionLabel(dbName, publisher, publisherDB, pub), "Server: "+sc.Opts.Server,
 		func() []propPage { return localSubscriptionPropPages(sc, dbName, publisher, publisherDB, pub) })
 }
+
+// showFullTextCatalogPropertiesFor opens the read-only Full-Text Catalog
+// Properties (fulltext_props.go).
+func (a *App) showFullTextCatalogPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Full-Text Catalog Properties", "Catalog: "+name, "Database: "+dbName,
+		func() []propPage { return fullTextCatalogPropPages(sc, dbName, name) })
+}
+
+// showFullTextStoplistPropertiesFor opens the read-only Full-Text Stoplist
+// Properties.
+func (a *App) showFullTextStoplistPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Full-Text Stoplist Properties", "Stoplist: "+name, "Database: "+dbName,
+		func() []propPage { return fullTextStoplistPropPages(sc, dbName, name) })
+}
+
+// showSearchPropertyListPropertiesFor opens the read-only Search Property
+// List Properties.
+func (a *App) showSearchPropertyListPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Search Property List Properties", "Search property list: "+name, "Database: "+dbName,
+		func() []propPage { return searchPropertyListPropPages(sc, dbName, name) })
+}
+
+// showFullTextIndexPropertiesFor opens the read-only Full-Text Index
+// Properties of a table — the table menu's Full-Text index cascade. A table
+// without one says so on each page (noFullTextIndexForm).
+func (a *App) showFullTextIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table string) {
+	a.propDialog.show(sc, dbName, "Full-Text Index Properties", "Table: "+fqn(schema, table), "Database: "+dbName,
+		func() []propPage { return fullTextIndexPropPages(sc, dbName, schema, table) })
+}

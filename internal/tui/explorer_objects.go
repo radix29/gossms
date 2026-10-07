@@ -461,6 +461,8 @@ func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 		}},
 		{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
 		{Divider: true},
+		tableFullTextMenu(a, sc, node),
+		{Divider: true},
 		refresh,
 		{Label: "Properties...", Action: func() {
 			a.showTablePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)

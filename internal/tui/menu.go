@@ -148,6 +148,11 @@ func (a *App) buildMenus() []controls.Menu {
 						gate.Allows(a.activeServerConn(), "", gate.ViewServerState)
 				}},
 			a.xeProfilerMenu(),
+			{Label: "Replication Monitor", Action: func() { a.showReplicationMonitor() },
+				Enabled: func() bool {
+					sc := a.activeServerConn()
+					return sc != nil && sc.Server != nil && !replicationHidden(sc.Server.Info())
+				}},
 			{Label: "Query List", Action: func() { a.showQueryList() }},
 			{Label: "Background Tasks", Action: func() { a.tasksDialog.Show() }},
 			{Divider: true},

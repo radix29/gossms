@@ -175,6 +175,10 @@ behind the mouse and async rules.
   `SelectionBounds()`** — bounds are a rectangle, so Ctrl+click rows 1 and 3
   deletes row 2 too. `selectedRowObjects` (`detail_browser_ops.go`) is the
   example; bounds are for cell ranges (block copy).
+- **A timer-driven refresh skips while a grid's overlay is open**
+  (`DataGrid.OverlayActive()`): `SetData`/`redrawGrid` close the value popup
+  and cell menu, so Replication Monitor's 10 s tick closed the error a user had
+  opened to read. `ReplicationMonitorPanel.onTick` is the example.
 - **A panel drawing a `DataGrid` also calls `grid.DrawOverlay(s)` after every
   grid** — the cell menu and value popup draw outside the grid rect. Without it
   the menu opens invisibly and swallows keys until Escape (shipped in Query

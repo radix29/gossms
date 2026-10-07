@@ -210,6 +210,12 @@ const (
 	NodePublication
 	NodeLocalSubscriptions
 	NodeLocalSubscription
+	NodeFullTextCatalogs
+	NodeFullTextCatalog
+	NodeFullTextStoplists
+	NodeFullTextStoplist
+	NodeSearchPropertyLists
+	NodeSearchPropertyList
 	NodeLoading
 	NodeError
 
@@ -257,7 +263,8 @@ func isContainerNode(t NodeType) bool {
 		NodeAvailabilityDatabases, NodeAGListeners,
 		NodeExtendedEvents, NodeEventSessions, NodeXEventProfiler,
 		NodeResourcePools, NodeWorkloadGroups, NodeExternalResourcePools,
-		NodeReplication, NodeLocalPublications, NodeLocalSubscriptions:
+		NodeReplication, NodeLocalPublications, NodeLocalSubscriptions,
+		NodeFullTextCatalogs, NodeFullTextStoplists, NodeSearchPropertyLists:
 		return true
 	}
 	return false
@@ -394,6 +401,12 @@ func nodeTypeName(t NodeType) string {
 		return "Publication"
 	case NodeLocalSubscription:
 		return "Subscription"
+	case NodeFullTextCatalog:
+		return "Full-Text Catalog"
+	case NodeFullTextStoplist:
+		return "Full-Text Stoplist"
+	case NodeSearchPropertyList:
+		return "Search Property List"
 	default:
 		return "Object"
 	}
@@ -427,6 +440,7 @@ func hasChildren(t NodeType) bool {
 		NodeEventTarget, NodeXEventProfilerSession,
 		NodeWorkloadGroup, NodeExternalResourcePool, NodeDatabaseMail,
 		NodePublication, NodeLocalSubscription,
+		NodeFullTextCatalog, NodeFullTextStoplist, NodeSearchPropertyList,
 		NodeLoading, NodeError:
 		return false
 	}
