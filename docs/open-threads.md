@@ -62,13 +62,7 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
-- **B23 — a right-click moves a cell-cursor grid's selection without
-  `OnSelectRow`** (*suspected*, from reading, not driven). The `Button2` data-cell
-  branch of `DataGrid.HandleMouse` (`datagrid_input.go`) sets `selRow`/`selCol`
-  when the click lands outside the current selection, then opens the menu, but
-  never fires `OnSelectRow`, so a grid-plus-detail page goes on describing the
-  row it was on. Found during review plan 3a (K3); fire it on a move, as the
-  `Button1` paths now do.
+None open.
 
 ### Verification gaps
 
@@ -109,10 +103,9 @@ work; close an item by deleting it when fixed.
   Agent is documented to use the profile named
   `AzureManagedInstance_dbmail_profile`). And gosmo's
   `killDatabaseSessionsBatch` (forced drop/rename, restore closing
-  connections): its wait now covers sessions killed for a DATABASE lock held
-  from another context (unit-tested only) — hold one from a second
-  session's `USE master` + a cross-database open transaction, force-drop a
-  throwaway database, expect no Msg 3702. And gosmo's
+  connections): live on 17 for the DATABASE-lock wait
+  (`TestLiveKillDatabaseSessionsLockWait`); the MI run itself is still open.
+  And gosmo's
   `Database.CatalogCollation` (what gossms compares names inside a database
   under, `databaseCollation`): live on 13/14/17 with a contained `_CS_`
   database, never on MI, nor on an Azure SQL Database created `WITH
@@ -134,9 +127,10 @@ work; close an item by deleting it when fixed.
   there: MI should behave as 2019+ (lightweight profiling on, so an unprofiled
   query shows).
 - **V7 — Replication reads (gosmo `replication*.go`) met real rows on 17
-  only.** The fixture is on win10cli (2025). win10cli\SQL2016 has
-  **replication components not installed** (`sp_addpullsubscription` fails
-  Msg 21028), so there only the subscriber-side transactional read ran, against
+  only.** The fixture is on win10cli (2025). win10cli\SQL2016 and
+  win10cli\SQL2017 (checked 2026-10-08: `sp_adddistributor` fails Msg 21028,
+  no `Replication` registry key) have **replication components not
+  installed** (`sp_addpullsubscription` fails Msg 21028 on 2016), so on 2016 only the subscriber-side transactional read ran, against
   tables made by `sp_MScreate_sub_tables` in a throwaway database; the
   publisher-side reads (`syspublications`, `sysarticles`, `syssubscriptions`)
   and every merge read are unrun below 17. Linux (ubusql1) and 2016 ran the
@@ -158,8 +152,10 @@ work; close an item by deleting it when fixed.
   `FULLTEXTSERVICEPROPERTY`/`sys.fulltext_document_types` on Azure SQL
   Database (assumed); whether its `HAS_PERMS_BY_NAME` accepts the class words
   for 23/29/31 (a rejection would fail the whole database probe, not just
-  these rows). Unit-tested, never seen live: a running population's row on
-  the index General page, a paused or throttled population (status 5) in the
-  follow's message, PAUSE/RESUME on a busy index (sent only to an idle one),
-  and a `STATISTICAL_SEMANTICS` column (needs the semantic language
-  database).
+  these rows). Seen live on 17 (2026-10-08, 1.5M-row table): a running population's row on
+  the General page, status 5 in the page and the follow's message (PAUSE sent
+  to a busy index), and RESUME on it. Still never seen: a
+  `STATISTICAL_SEMANTICS` column — win10cli has no semantic language database.
+  The follow's read was picked as a deadlock victim (Msg 1205) mid-crawl and
+  ended the task; it now retries `fullTextFollowReadRetries` reads, with no
+  test for the retry.

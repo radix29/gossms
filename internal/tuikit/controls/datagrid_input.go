@@ -326,9 +326,16 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		if row := g.rowAtY(my); g.cellCursor && row >= 0 {
 			if col, ok := g.colAt(mx); ok {
 				if !g.selectionContains(row, col) && !g.rowMarked(row) {
+					prevRow := g.selRow
 					g.selRow, g.selCol = row, col
 					g.blockSelecting = false
 					g.ClearMarkedRows()
+					// A move like any other: without it a grid-plus-detail page (Replication
+					// Monitor) goes on describing the row the highlight just left. Fired before
+					// the menu opens, so its actions see the page synced to the clicked row.
+					if g.selRow != prevRow && g.OnSelectRow != nil {
+						g.OnSelectRow(g.selRow)
+					}
 				}
 				if !g.editable() {
 					g.ctxMenu.Show(mx, my, g.cellContextMenuItems())

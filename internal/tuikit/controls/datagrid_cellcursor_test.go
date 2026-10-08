@@ -211,3 +211,36 @@ func TestDataGridMouseFiresOnSelectRowOnlyOnAMove(t *testing.T) {
 		})
 	}
 }
+
+// B23: a right-click outside the selection moved a cell-cursor grid's
+// highlight without firing OnSelectRow, so Replication Monitor's detail grids
+// went on describing the row the highlight had left. It fires on a move only:
+// not for a right-click inside the selection, nor on the selected row.
+func TestDataGridRightClickFiresOnSelectRowOnlyOnAMove(t *testing.T) {
+	g := newCellCursorGrid()
+	g.OnCopyRequest = func(string) {}
+	var selected []int
+	g.OnSelectRow = func(row int) { selected = append(selected, row) }
+	rightClick := func(x, y int) {
+		g.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button2, tcell.ModNone))
+		g.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+		g.ctxMenu.Hide()
+	}
+
+	rightClick(1, g.rect.Y+3) // row 1: outside the selection, a move
+	if !slices.Equal(selected, []int{1}) {
+		t.Fatalf("OnSelectRow calls = %v, want [1]", selected)
+	}
+	if row, _ := g.SelectedCell(); row != 1 {
+		t.Fatalf("SelectedCell row = %d, want 1", row)
+	}
+	rightClick(1, g.rect.Y+3) // inside the selection
+	x2 := g.rect.X
+	for c, ok := g.colAt(x2); !ok || c != 1; c, ok = g.colAt(x2) {
+		x2++
+	}
+	rightClick(x2, g.rect.Y+3) // the selected row, another column: not a row move
+	if !slices.Equal(selected, []int{1}) {
+		t.Errorf("OnSelectRow calls = %v, want [1]: neither later click moves the row", selected)
+	}
+}

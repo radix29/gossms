@@ -102,7 +102,7 @@ Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
   and the bare form). On `t-qmi-01` the bare form, run by hand as SQL-auth
   sysadmin, created working user and service-principal logins; the dialog's
   `WITH OBJECT_ID` form hasn't been executed.
-- **The Phase 3 tree families are read-only** — no create, no edit; they still
+- **The schema-object tree families listed here are read-only** — no create, no edit; they still
   have Script as, Delete, and (where SQL Server has it) Rename and Move to
   Schema:
   - **Rules and Defaults**: deprecated since 2008, no ALTER. Use CHECK/DEFAULT
@@ -893,7 +893,7 @@ String). Not to be reopened without asking the author:
   `config.ResolveServer`, the same fold as gosmo's (what's shown is what's
   dialled). `TestConnectDialogFoldingThePortKeepsTheConnectionIdentity`
   guards the round trip. No hand-rolled string surgery.
-- **The History pane replaced the autocomplete overlay; no filter box.**
+- **The History pane is the connection picker (no autocomplete overlay); no filter box.**
   `config.Config.MatchByServer("")` remains the most-recent-first ordering the
   pane depends on. The dialog opens on the first row, but only into an empty
   form (fields persist across Show/Hide).
@@ -1234,7 +1234,7 @@ Unverified on Managed Instance and on non-Enterprise editions:
   sqlagent.databasemailprofile`: the emulated registry accepts the write and
   keeps nothing, so gosmo refuses both halves there
   (`ErrAgentSettingsInMssqlConf`). General/Advanced/Job System/Connection/
-  History pages and fail-safe operator/token replacement are later work, not
+  History pages and fail-safe operator/token replacement are not built, not
   defects.
 
 ## IntelliSense: linked-server four-part names — what the design settled
@@ -1643,7 +1643,7 @@ succeeds, because it resolves the name within the job.
   jobs") tells two apart, and each node acts on its own id.
 - **New Schedule still refuses a taken name** (its preflight). SSMS allows it;
   gossms keeps the refusal because an identical name is almost always a
-  mistake, and the Jobs page no longer depends on it.
+  mistake.
 
 ## No top-level plan document — do not re-raise
 
@@ -1651,12 +1651,12 @@ Neither repo has, or should get, a top-level plan file. State and package map:
 `ARCHITECTURE.md`; unfinished work: `docs/open-threads.md`; shipped per tag:
 `CHANGELOG.md`; settled questions: here.
 
-## gosmo API reshaping (review plan Phase 5, 2026-10-08) — settled, do not re-raise
+## gosmo API shape — settled, do not re-raise
 
 - **One permission write: `ApplyPermission(ctx, verb, Securable, perm,
   principal, opts)`**, `Server`'s for `SecurableServer` and `Database`'s for
-  every other class. The eighteen `Grant`/`Deny`/`Revoke…Permission` methods
-  and `User.Grant`/`Deny`/`Revoke` were deleted, not kept as wrappers. Each
+  every other class. There are no per-class `Grant`/`Deny`/`Revoke…Permission`
+  methods or `User.Grant`/`Deny`/`Revoke` wrappers. Each
   class has its own allowlist, set by probing SQL Server 2016 and 2025 rather
   than from the documentation, which is wrong three ways (a procedure takes
   REFERENCES, a synonym ALTER, a view refuses VIEW CHANGE TRACKING). gossms
@@ -1664,19 +1664,21 @@ Neither repo has, or should get, a top-level plan file. State and package map:
   and a grid's permission list is `SecurableClass.PermissionNames()`.
 - **`ScriptDatabase` honours `Verb`**: DROP is a guarded `DROP DATABASE`
   after `USE [master]`, and Script Database as offers CREATE, DROP and DROP
-  And CREATE. Its CREATE is still a name, a collation and two settings (`~/go/gosmo/OPEN-THREADS.md`
-  § Scripter fidelity: `ScriptDatabase`).
+  And CREATE. Its CREATE carries the file layout, collation, containment
+  and FILESTREAM options, followed by the database options that differ from
+  a new database's, Query Store and the owner; what it still leaves out is
+  in `~/go/gosmo/OPEN-THREADS.md` § Scripter fidelity: what `ScriptDatabase`
+  still leaves out.
 - **A write is a method on its handle**: `Table.SetChangeTracking`/
   `ChangeTracking`, and `AddSignature`/`DropSignature` on `StoredProcedure`,
-  `UserDefinedFunction` and `Trigger`. The `Database` forms were removed.
+  `UserDefinedFunction` and `Trigger`; `Database` has no such forms.
 
 ## File modes: new files honour the umask — settled, do not re-raise
 
 - **A new file from `fileutil.WriteAtomic`/`CreateAtomic` gets `perm &^
   umask`**, as `os.WriteFile` would; an existing file keeps its own mode,
-  capped at `perm` (`modeFor`). The explicit chmod after `CreateTemp` used to
-  bypass the umask, so under umask 077 every new script was 0644 (review plan
-  K14). The umask is probed once by creating a file at 0777
+  capped at `perm` (`modeFor`). No explicit chmod after `CreateTemp`: it would
+  bypass the umask (under umask 077 every new script would be 0644). The umask is probed once by creating a file at 0777
   (`probeUmask`), not read with `syscall.Umask`: that is POSIX-only (a
   `runtime.GOOS`/build-tag split) and sets the mask to read it, racing every
-  concurrent create. A failed probe means no mask, the old behaviour.
+  concurrent create. A failed probe means no mask.

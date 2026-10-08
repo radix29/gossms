@@ -127,6 +127,13 @@ var fullTextPollInterval = 2 * time.Second
 // ALTER … START returns (seen on 17), so this is a backstop, not a wait.
 const fullTextNoPopulationPolls = 3
 
+// fullTextFollowReadRetries is how many reads in a row may fail before the
+// follow gives up. The crawl holds locks on the very catalog views the poll
+// reads, and the poll can be picked as a deadlock victim (Msg 1205, seen on 17
+// against a 1.5M-row population): the population is unharmed, so one lost
+// read must not end the follow.
+const fullTextFollowReadRetries = 3
+
 // watchFullTextPopulation follows the population an action started on the
 // table: a Background Tasks entry whose message tracks the index's populate
 // status and counters, finished when sys.fulltext_indexes shows a crawl that
@@ -182,7 +189,7 @@ func (a *App) watchFullTextPopulation(sc *db.ServerConn, dbName, schema, table s
 func (a *App) followFullTextPopulation(ctx context.Context, task *Task, tbl *gosmo.Table, before time.Time) {
 	ticker := time.NewTicker(fullTextPollInterval)
 	defer ticker.Stop()
-	idle := 0
+	idle, failed := 0, 0
 	for {
 		rctx, cancel := context.WithTimeout(ctx, childFetchTimeout)
 		cur, err := tbl.FullTextIndex(rctx)
@@ -191,13 +198,22 @@ func (a *App) followFullTextPopulation(ctx context.Context, task *Task, tbl *gos
 			a.postAndWake(func() { a.endFullTextFollow(task, ctx.Err(), "") })
 			return
 		}
-		if errors.Is(err, gosmo.ErrNotFound) {
+		dropped := errors.Is(err, gosmo.ErrNotFound)
+		if dropped {
 			err = fmt.Errorf("the full-text index on %s was dropped", tbl.FullName())
 		}
 		if err != nil {
-			a.postTaskDone(task, err)
-			return
+			if failed++; dropped || failed > fullTextFollowReadRetries {
+				a.postTaskDone(task, err)
+				return
+			}
+			select {
+			case <-ctx.Done():
+			case <-ticker.C:
+			}
+			continue
 		}
+		failed = 0
 		done, msg := fullTextPopulationPoll(before, cur, &idle)
 		if done {
 			a.postAndWake(func() { a.endFullTextFollow(task, nil, msg) })

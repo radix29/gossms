@@ -30,7 +30,7 @@ func databaseGeneralResponses(owner string) []fakeResponse {
 		{match: "AS total_mb", db: genDatabase, cols: 5, rows: [][]driver.Value{
 			{12.0, 8.0, 4.0, 3.0, 2.0},
 		}},
-		{match: "page_verify_option_desc", cols: 25, rows: [][]driver.Value{{
+		{match: "page_verify_option_desc", cols: 27, rows: [][]driver.Value{{
 			owner, "CHECKSUM", "MULTI_USER", "NONE", false, "OFF",
 			false, false, true,
 			true, false,
@@ -39,6 +39,7 @@ func databaseGeneralResponses(owner string) []fakeResponse {
 			false, true, false,
 			false, false,
 			false, false, false,
+			"OFF", "",
 		}}},
 		{match: "WHERE  type IN ('S','U','G','E','X','C','K')", db: genDatabase, cols: 7, rows: [][]driver.Value{
 			{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
