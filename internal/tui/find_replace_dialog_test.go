@@ -166,6 +166,25 @@ func TestFindWordAtCursorSearchesWholeWord(t *testing.T) {
 	}
 }
 
+// WordAtCursor takes Unicode letters, so the whole-word search it starts must
+// too: wrapped in RE2's ASCII \b, "Société" had no boundary after its "é" and
+// Ctrl+F3 reported no match for the word under the caret.
+func TestFindWordAtCursorOnANonASCIIWord(t *testing.T) {
+	a, qp := newFindTestApp(t, "Société Sociétés\nx = Société")
+	a.findWordAtCursor()
+
+	if got, want := qp.editor.MatchCount(), 2; got != want {
+		t.Fatalf("MatchCount = %d, want %d", got, want)
+	}
+	if line, col, ok := qp.editor.CurrentMatchPos(); !ok || line != 1 || col != 1 {
+		t.Fatalf("current match = %d:%d (ok %v), want the word under the caret at 1:1", line, col, ok)
+	}
+	a.findNextInEditor(1)
+	if line, col, ok := qp.editor.CurrentMatchPos(); !ok || line != 2 || col != 5 {
+		t.Fatalf("after F3, current match = %d:%d (ok %v), want the next occurrence at 2:5", line, col, ok)
+	}
+}
+
 func TestFindWordAtCursorOnWhitespace(t *testing.T) {
 	a, qp := newFindTestApp(t, "   ")
 	a.findWordAtCursor()

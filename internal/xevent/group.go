@@ -63,8 +63,10 @@ type Aggregate struct {
 // groups of the columns before it.
 type Group struct {
 	Column Column
-	// Value is the group's value as shown (a map field's text); Null is set
-	// for the events without the column, whose Value is "".
+	// Value is the group's value as shown (a map field's text) — the first
+	// spelling seen, since the group holds every value the filter's = finds
+	// equal to it (equalityKey). Null is set for the events without the
+	// column, whose Value is "".
 	Value string
 	Null  bool
 	// Level is the depth, 0 for the outermost column.
@@ -129,11 +131,14 @@ func groupLevel(events []*Event, by []Column, aggs []Aggregate, level int, paren
 		v, ok := e.Value(c)
 		id := groupID{null: !ok}
 		if ok {
-			id.value = v.Display()
+			id.value = equalityKey(v.Display())
 		}
 		g := index[id]
 		if g == nil {
-			g = &Group{Column: c, Value: id.value, Null: id.null, Level: level, Parent: parent}
+			g = &Group{Column: c, Null: id.null, Level: level, Parent: parent}
+			if ok {
+				g.Value = v.Display()
+			}
 			if parent != nil {
 				g.Key = parent.Key
 			}
@@ -170,8 +175,24 @@ func groupLevel(events []*Event, by []Column, aggs []Aggregate, level int, paren
 }
 
 type groupID struct {
-	value string
+	value string // equalityKey of the value
 	null  bool
+}
+
+// equalityKey is the one key per class of values the filter's = treats as
+// equal, so a group and its Terms agree: a number (1, 1.0, " 1") keys by its
+// value, anything else by its lowered text (App, app). Grouping by the exact
+// text made App and app two groups whose `= App` filters each matched both.
+// The group shows the first value seen; its Key uses this, so a group keeps
+// its expanded state whichever spelling arrived first.
+func equalityKey(s string) string {
+	if f, ok := parseNumber(s); ok {
+		if f == 0 {
+			f = 0 // -0 = 0, as compare finds
+		}
+		return "n" + strconv.FormatFloat(f, 'g', -1, 64)
+	}
+	return "t" + strings.ToLower(s)
 }
 
 // compareValues orders two values numerically when both are numbers, else as

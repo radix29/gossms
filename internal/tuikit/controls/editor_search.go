@@ -2,6 +2,7 @@ package controls
 
 import (
 	"regexp"
+	"regexp/syntax"
 	"slices"
 	"unicode/utf8"
 
@@ -47,6 +48,9 @@ type searchMatch struct {
 type editorSearch struct {
 	opts SearchOptions
 	re   *regexp.Regexp
+	// beginAnchored is set when the pattern holds `^` or `\A`, which a search over
+	// a line's tail would wrongly satisfy at the tail's start (wholeWordLocs).
+	beginAnchored bool
 
 	matches    []searchMatch
 	cur        int // index into matches, or -1 when nothing is current
@@ -76,9 +80,10 @@ func (e *Editor) SetSearch(opts SearchOptions) error {
 	if !opts.Regexp {
 		pat = regexp.QuoteMeta(pat)
 	}
-	if opts.WholeWord {
-		pat = `\b(?:` + pat + `)\b`
-	}
+	// WholeWord is not a `\b` wrapper: RE2's \b is an ASCII word boundary, so
+	// `\b@id\b` never matches "x = @id" and `\bcafé\b` never matches at all.
+	// appendLineMatches filters on core.IsWordRune instead, the editor's own word
+	// definition, so Find, Ctrl+F3 and word motion agree.
 	if !opts.MatchCase {
 		pat = `(?i)` + pat
 	}
@@ -87,7 +92,7 @@ func (e *Editor) SetSearch(opts SearchOptions) error {
 		e.ClearSearch()
 		return err
 	}
-	e.search = editorSearch{opts: opts, re: re, cur: -1}
+	e.search = editorSearch{opts: opts, re: re, cur: -1, beginAnchored: hasBeginAnchor(pat)}
 	if opts.InSelection && e.HasSelection() && !e.selBlock {
 		sr, sc, er, ec := e.selectionBounds()
 		e.search.selValid = true
@@ -174,7 +179,7 @@ func (s *editorSearch) appendLineMatches(dst []searchMatch, row int, text string
 	// than per match: every position Editor works in is a rune index, and a byte
 	// offset reaching one lands mid-character on the first non-ASCII line.
 	byteToRune := byteRuneIndex(text)
-	for _, loc := range s.re.FindAllStringIndex(text, -1) {
+	for _, loc := range s.lineMatchLocs(text, false) {
 		start, end := loc[0], loc[1]
 		if byteToRune != nil {
 			start, end = byteToRune[start], byteToRune[end]
@@ -187,6 +192,103 @@ func (s *editorSearch) appendLineMatches(dst []searchMatch, row int, text string
 		dst = append(dst, searchMatch{row: row, startCol: start, endCol: end})
 	}
 	return dst
+}
+
+// lineMatchLocs returns the byte bounds of every match on one line's text,
+// shaped like FindStringIndex's result, or like FindStringSubmatchIndex's when
+// submatches is set (Replace needs the groups; the scan on every Draw does
+// not, and asking for them costs the regexp engine its fast path).
+func (s *editorSearch) lineMatchLocs(text string, submatches bool) [][]int {
+	if !s.opts.WholeWord || s.beginAnchored {
+		var locs [][]int
+		if submatches {
+			locs = s.re.FindAllStringSubmatchIndex(text, -1)
+		} else {
+			locs = s.re.FindAllStringIndex(text, -1)
+		}
+		if s.opts.WholeWord {
+			// Anchored: no tail search (see wholeWordLocs), so a rejected match can hide
+			// an overlapping valid one. `^` binds a match to the line start, so that takes
+			// an alternation like `^a|b` to show.
+			locs = slices.DeleteFunc(locs, func(loc []int) bool {
+				return !isWholeWord(text, loc[0], loc[1])
+			})
+		}
+		return locs
+	}
+	return s.wholeWordLocs(text, submatches)
+}
+
+// wholeWordLocs finds the whole-word matches on text one at a time. A rejected
+// candidate must not hide an overlapping valid one, so after a rejection the
+// search resumes one rune past the candidate's start rather than at its end,
+// which FindAll cannot do.
+//
+// Resuming searches text[pos:], where the regexp sees pos as the start of
+// text. That changes only assertions evaluated at pos: `^`/`\A`, which
+// beginAnchored keeps away from this path, and `\b`/`\B`. Those agree with the
+// full line whenever the rune before pos is not a word rune; when it is, a
+// match starting at pos fails isWholeWord's left check whatever the engine
+// decided, and the search moves on.
+func (s *editorSearch) wholeWordLocs(text string, submatches bool) [][]int {
+	find := s.re.FindStringIndex
+	if submatches {
+		find = s.re.FindStringSubmatchIndex
+	}
+	var locs [][]int
+	for pos := 0; pos <= len(text); {
+		loc := find(text[pos:])
+		if loc == nil {
+			break
+		}
+		for i := range loc {
+			if loc[i] >= 0 {
+				loc[i] += pos
+			}
+		}
+		start, end := loc[0], loc[1]
+		if start < end && isWholeWord(text, start, end) {
+			locs = append(locs, loc)
+			pos = end
+			continue
+		}
+		if start == len(text) {
+			break
+		}
+		_, size := utf8.DecodeRuneInString(text[start:])
+		pos = start + size
+	}
+	return locs
+}
+
+// isWholeWord reports whether text[start:end] has no word rune directly before
+// or after it. Only the outside neighbours count: `@id` in "x = @id" is a whole
+// word though `@` is not a word rune itself, as `#tmp` and `@@ROWCOUNT` are.
+func isWholeWord(text string, start, end int) bool {
+	if r, _ := utf8.DecodeLastRuneInString(text[:start]); start > 0 && core.IsWordRune(r) {
+		return false
+	}
+	if r, _ := utf8.DecodeRuneInString(text[end:]); end < len(text) && core.IsWordRune(r) {
+		return false
+	}
+	return true
+}
+
+// hasBeginAnchor reports whether pat, a pattern regexp.Compile accepted, holds
+// a start-of-text or start-of-line assertion anywhere.
+func hasBeginAnchor(pat string) bool {
+	re, err := syntax.Parse(pat, syntax.Perl)
+	if err != nil {
+		return true // the conservative answer: FindAll over the whole line
+	}
+	var walk func(*syntax.Regexp) bool
+	walk = func(r *syntax.Regexp) bool {
+		if r.Op == syntax.OpBeginText || r.Op == syntax.OpBeginLine {
+			return true
+		}
+		return slices.ContainsFunc(r.Sub, walk)
+	}
+	return walk(re)
 }
 
 // rowRange returns the half-open index range of row's matches in a list sorted
@@ -363,8 +465,8 @@ func (e *Editor) selectMatch(m searchMatch) {
 // does nothing unless the selection is exactly a match (the SSMS/VS rule: on a
 // fresh dialog Replace finds first and replaces on the second press).
 //
-// For a regexp search the replacement goes through Regexp.ReplaceAllString, so
-// $1 group references work; a literal replacement is inserted as-is.
+// For a regexp search $1 group references are expanded (replacementFor); a
+// literal replacement is inserted as-is.
 func (e *Editor) ReplaceCurrent() bool {
 	if e.readOnly || e.search.re == nil {
 		return false
@@ -377,10 +479,14 @@ func (e *Editor) ReplaceCurrent() bool {
 	if !e.selectionIsMatch(m) {
 		return false
 	}
+	repl, ok := e.search.replacementFor(m, e.search.submatchesOf(e.doc.Line(m.row)))
+	if !ok {
+		return false
+	}
 	// replaceMatch rewrites one line and never changes the line count, so the step
 	// is that one row: Replace/F3 down a large script is a held key.
 	e.pushUndoSpan(m.row, m.row+1)
-	e.replaceMatch(m)
+	e.replaceMatch(m, repl)
 	e.search.cur = -1
 	e.FindNext(1)
 	return true
@@ -395,16 +501,55 @@ func (e *Editor) selectionIsMatch(m searchMatch) bool {
 	return sr == m.row && er == m.row && sc == m.startCol && ec == m.endCol
 }
 
-// replaceMatch substitutes m's text in place. The caller owns the undo step:
-// ReplaceAll pushes one for the whole run, so this must not push its own or
-// Replace All would take one Ctrl+Z per occurrence.
-func (e *Editor) replaceMatch(m searchMatch) {
-	line := e.doc.Line(m.row)
-	old := string(line[m.startCol:m.endCol])
-	repl := e.search.opts.Replace
-	if e.search.opts.Regexp {
-		repl = e.search.re.ReplaceAllString(old, repl)
+// lineSubmatches is one line's text with its regexp matches, submatches
+// included, for expanding replacement templates.
+type lineSubmatches struct {
+	text       string
+	locs       [][]int // FindStringSubmatchIndex-shaped, byte offsets into text
+	byteToRune []int   // byteRuneIndex(text)
+}
+
+// submatchesOf scans line for replacementFor. Only a regexp search needs it; a
+// literal one returns the zero value without scanning.
+func (s *editorSearch) submatchesOf(line []rune) lineSubmatches {
+	if !s.opts.Regexp {
+		return lineSubmatches{}
 	}
+	text := string(line)
+	return lineSubmatches{text: text, locs: s.lineMatchLocs(text, true), byteToRune: byteRuneIndex(text)}
+}
+
+// replacementFor returns the text that replaces m. A regexp template is
+// expanded against the match *in its line*, never by re-running the pattern on
+// the matched text cut out of it: there `\B`, `\b`, `^` and `$` see the cut's
+// edges instead of the line's (`\Bing` fails on "ing" alone, so Replace counted
+// a replacement and changed nothing), and an alternative matching again inside
+// the cut was substituted twice. line must be the row's text before any
+// replacement on it — Replace All rewrites a row right to left, and `$` or a
+// trailing `\b` would otherwise see the already-replaced tail.
+//
+// ok is false when m is not a match of line, so nothing is replaced.
+func (s *editorSearch) replacementFor(m searchMatch, line lineSubmatches) (repl string, ok bool) {
+	if !s.opts.Regexp {
+		return s.opts.Replace, true
+	}
+	for _, loc := range line.locs {
+		start, end := loc[0], loc[1]
+		if line.byteToRune != nil {
+			start, end = line.byteToRune[start], line.byteToRune[end]
+		}
+		if start == m.startCol && end == m.endCol {
+			return string(s.re.ExpandString(nil, s.opts.Replace, line.text, loc)), true
+		}
+	}
+	return "", false
+}
+
+// replaceMatch substitutes repl for m's text in place. The caller owns the undo
+// step: ReplaceAll pushes one for the whole run, so this must not push its own
+// or Replace All would take one Ctrl+Z per occurrence.
+func (e *Editor) replaceMatch(m searchMatch, repl string) {
+	line := e.doc.Line(m.row)
 	replRunes := []rune(e.expandTabs(repl))
 
 	updated := make([]rune, 0, len(line)-(m.endCol-m.startCol)+len(replRunes))
@@ -435,12 +580,26 @@ func (e *Editor) ReplaceAll() int {
 			targets = append(targets, m)
 		}
 	}
+	// Every replacement is worked out before the first is made, so each expands
+	// against its row as it was (replacementFor).
+	repls := make([]string, 0, len(targets))
+	lineRow, line := -1, lineSubmatches{}
+	for _, m := range targets {
+		if m.row != lineRow {
+			lineRow, line = m.row, e.search.submatchesOf(e.doc.Line(m.row))
+		}
+		if repl, ok := e.search.replacementFor(m, line); ok {
+			targets[len(repls)] = m
+			repls = append(repls, repl)
+		}
+	}
+	targets = targets[:len(repls)]
 	if len(targets) == 0 {
 		return 0
 	}
 	e.pushUndo()
-	for _, target := range slices.Backward(targets) {
-		e.replaceMatch(target)
+	for i, target := range slices.Backward(targets) {
+		e.replaceMatch(target, repls[i])
 	}
 	e.search.cur = -1
 	e.selecting = false

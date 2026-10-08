@@ -191,3 +191,41 @@ func TestGroupTermsTellAFieldFromItsNamesakeAction(t *testing.T) {
 		}
 	}
 }
+
+// L7: groups use the filter's = equality — case-insensitive text, numbers by
+// value — so App/app and 1/1.0 are one group each, and the group's Terms match
+// exactly its events rather than a sibling group's too.
+func TestGroupsMergeWhatTheFilterFindsEqual(t *testing.T) {
+	mk := func(seq uint64, db, n string) *Event {
+		e := ev("e", seq, "n", n)
+		e.Actions = []Value{{Name: "database_name", Value: db}}
+		return &e
+	}
+	events := []*Event{
+		mk(1, "App", "1"), mk(2, "app", "1.0"), mk(3, "APP", " 1"),
+		mk(4, "master", "2"), mk(5, "Master", "-0"), mk(6, "x", "0"),
+	}
+	nCol := Column{Kind: ColField, Name: "n"}
+	all := []Column{NameColumn, nCol, dbCol}
+	for _, c := range []struct {
+		by   Column
+		want []string
+	}{
+		{dbCol, []string{"App", "master", "x"}},
+		{nCol, []string{"-0", "1", "2"}},
+	} {
+		gs := GroupEvents(events, []Column{c.by}, nil)
+		if got := groupValues(gs); !slices.Equal(got, c.want) {
+			t.Errorf("by %s: groups %v, want %v", c.by.Name, got, c.want)
+		}
+		for _, g := range gs {
+			f := (*Filter)(nil).AndTerms(g.Terms(all)...)
+			for _, e := range events {
+				if f.Match(e) != slices.Contains(g.Events, e) {
+					t.Errorf("%q: Match(event %d) = %v, group membership %v",
+						f.String(), e.Seq, f.Match(e), !f.Match(e))
+				}
+			}
+		}
+	}
+}

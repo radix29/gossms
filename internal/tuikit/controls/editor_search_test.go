@@ -541,3 +541,120 @@ func BenchmarkSearchTypingWithMatches(b *testing.B) {
 		})
 	}
 }
+
+// matchTexts returns every match of the active search as its text, in order.
+func matchTexts(e *Editor) []string {
+	var out []string
+	for _, m := range e.scanMatches() {
+		out = append(out, string(e.doc.Line(m.row)[m.startCol:m.endCol]))
+	}
+	return out
+}
+
+// Whole word is the editor's word definition (core.IsWordRune), not RE2's
+// ASCII \b: wrapped in \b, a term starting with a sigil needed a *word* rune
+// beside it, and one ending in a non-ASCII letter never had a boundary.
+func TestSearchWholeWordSigilsAndNonASCII(t *testing.T) {
+	for _, tc := range []struct {
+		text, query string
+		regexp      bool
+		want        []string
+	}{
+		{"WHERE x = @id AND y=@id\n@id", "@id", false, []string{"@id", "@id", "@id"}},
+		{"SELECT @identity, x@id", "@id", false, nil},
+		{"FROM #tmp t JOIN (#tmp)", "#tmp", false, []string{"#tmp", "#tmp"}},
+		{"SELECT @@ROWCOUNT;IF @@ROWCOUNT=0", "@@ROWCOUNT", false, []string{"@@ROWCOUNT", "@@ROWCOUNT"}},
+		{"id identity xid id_x id", "id", false, []string{"id", "id"}},
+		{"SELECT café FROM t WHERE cafés = 1", "café", false, []string{"café"}},
+		{"Société, Sociétés", "société", false, []string{"Société"}},
+		// The first candidate "ab" (followed by "c") is rejected; a FindAll walk
+		// resumed after it and lost the valid overlapping "bc".
+		{"abc", `ab|bc|b`, true, nil},
+		{"abc-", `abc|bc`, true, []string{"abc"}},
+		{"xabc-", `abc|bc`, true, nil},
+		// "@abc" has a word rune before it; "abc" inside it has "@" before it.
+		{"x@abc", `@abc|abc`, true, []string{"abc"}},
+		{"-x@ab-", `x@ab|@ab`, true, []string{"x@ab"}},
+		{"@id = @idx", `@\w+`, true, []string{"@id", "@idx"}},
+		// Anchored: filtered FindAll, `^` never satisfied mid-line.
+		{"GO GO", `^GO`, true, []string{"GO"}},
+		{"GOX GO", `^GO`, true, nil},
+		// A tail search resumed at the second "-" would see it at start of text.
+		{"--", `^-`, true, []string{"-"}},
+	} {
+		e := newTestEditor(tc.text)
+		setSearch(t, e, SearchOptions{Query: tc.query, Regexp: tc.regexp, WholeWord: true})
+		if got := matchTexts(e); !slices.Equal(got, tc.want) {
+			t.Errorf("whole-word %q in %q = %q, want %q", tc.query, tc.text, got, tc.want)
+		}
+	}
+}
+
+// A rejected candidate must not hide an overlapping whole-word match.
+func TestSearchWholeWordRejectionResumesInsideTheCandidate(t *testing.T) {
+	e := newTestEditor("xab-")
+	setSearch(t, e, SearchOptions{Query: `xa|ab-|b`, Regexp: true, WholeWord: true})
+	// "xa" is followed by "b" (rejected); "ab-" starts after a word rune
+	// (rejected); "b" is after "a" (rejected). Nothing is whole-word here, but
+	// the walk must reach "b" at all: an end-resume would skip from "xa" to "b-".
+	if got := matchTexts(e); got != nil {
+		t.Fatalf("matches = %q, want none", got)
+	}
+
+	e = newTestEditor("a-bc d")
+	setSearch(t, e, SearchOptions{Query: `a-b|bc`, Regexp: true, WholeWord: true})
+	// "a-b" is followed by "c": rejected. "bc" starts after "-": valid, and it
+	// overlaps the rejected candidate.
+	if got, want := matchTexts(e), []string{"bc"}; !slices.Equal(got, want) {
+		t.Fatalf("matches = %q, want %q", got, want)
+	}
+}
+
+func TestSearchRegexpReplaceUsesLineContext(t *testing.T) {
+	for _, tc := range []struct {
+		text, query, repl, want string
+		n                       int
+	}{
+		{"running", `\Bing`, "ed", "runned", 1},
+		{"mail bob@example now", `(\w+)@(\w+)`, "$2.$1", "mail example.bob now", 1},
+		{"    SELECT 1", `^\s+`, "", "SELECT 1", 1},
+		{"a@b, c@d", `(\w)@(\w)`, "$2@$1", "b@a, d@c", 2},
+		// `$` sees the original line: replacing right to left must not let the
+		// first match see the already-rewritten tail.
+		{"ab ab", `ab$|ab`, "[$0]", "[ab] [ab]", 2},
+		// An alternative matching inside the match text was substituted twice.
+		{"aXa", `aXa|a`, "<$0>", "<aXa>", 1},
+	} {
+		e := newTestEditor(tc.text)
+		setSearch(t, e, SearchOptions{Query: tc.query, Replace: tc.repl, Regexp: true})
+		if n := e.ReplaceAll(); n != tc.n {
+			t.Errorf("%q in %q: ReplaceAll = %d, want %d", tc.query, tc.text, n, tc.n)
+		}
+		if got := e.Text(); got != tc.want {
+			t.Errorf("%q in %q: text = %q, want %q", tc.query, tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestSearchRegexpReplaceCurrentUsesLineContext(t *testing.T) {
+	e := newTestEditor("running")
+	setSearch(t, e, SearchOptions{Query: `\Bing`, Replace: "ed", Regexp: true})
+	e.FindNext(1)
+	if !e.ReplaceCurrent() {
+		t.Fatal("ReplaceCurrent reported nothing replaced")
+	}
+	if got, want := e.Text(), "runned"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
+	}
+}
+
+// A match that is not a match of its line any more is not replaced, and is not
+// counted: the old path counted it, pushed an undo step and changed nothing.
+func TestSearchRegexpReplaceOfANonMatchIsNotReplaced(t *testing.T) {
+	e := newTestEditor("running")
+	setSearch(t, e, SearchOptions{Query: `\Bing`, Replace: "ed", Regexp: true})
+	stale := searchMatch{row: 0, startCol: 0, endCol: 3}
+	if _, ok := e.search.replacementFor(stale, e.search.submatchesOf(e.doc.Line(0))); ok {
+		t.Fatal("replacementFor accepted a span that is not a match of the line")
+	}
+}

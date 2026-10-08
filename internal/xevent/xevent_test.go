@@ -151,6 +151,19 @@ func TestFilterExpressions(t *testing.T) {
 		// A map field matches its text or its key.
 		{"wait_type = PAGEIOLATCH_SH", []string{"wait_info"}},
 		{"wait_type = 66", []string{"wait_info"}},
+		// Negated, it must differ from both (L3: either kept the event).
+		{"wait_type <> PAGEIOLATCH_SH", nil},
+		{"wait_type <> 66", nil},
+		{"wait_type !~ latch", nil},
+		{"wait_type not contains 66", nil},
+		{"wait_type <> CXPACKET", []string{"wait_info"}},
+		{"wait_type !~ cxpacket", []string{"wait_info"}},
+		// Ordering against a number is the key's; against text, the text's.
+		{"wait_type > 100", nil},
+		{"wait_type < 100", []string{"wait_info"}},
+		{"wait_type >= 66", []string{"wait_info"}},
+		{"wait_type > PAGEIOLATCH", []string{"wait_info"}},
+		{"wait_type < PAGEIOLATCH", nil},
 		// Free text over every value.
 		{"usp_load", []string{"rpc_completed"}},
 		{"pageiolatch", []string{"wait_info"}},

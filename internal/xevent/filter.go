@@ -158,12 +158,25 @@ func (t term) match(e *Event) bool {
 	if !ok {
 		return false
 	}
-	// A map field matches on either its text or its key, so wait_type =
-	// PAGEIOLATCH_SH and wait_type = 66 both find it.
-	if compare(v.Display(), t.op, t.value) {
-		return true
+	if v.Text == "" || v.Text == v.Value {
+		return compare(v.Value, t.op, t.value)
 	}
-	return v.Text != "" && v.Text != v.Value && compare(v.Value, t.op, t.value)
+	// A map field is its text or its key, so wait_type = PAGEIOLATCH_SH and
+	// wait_type = 66 both find it. The negated operators are that rule's De
+	// Morgan — <> must differ from both — else `wait_type <> PAGEIOLATCH_SH`
+	// passed on the key and kept the event it excludes. Ordering picks one
+	// side: the key against a number, the text otherwise, else `> 100`
+	// compared the name with "100" as text and passed every named wait.
+	switch t.op {
+	case OpNe, OpNotContains:
+		return compare(v.Text, t.op, t.value) && compare(v.Value, t.op, t.value)
+	case OpLt, OpLe, OpGt, OpGe:
+		if _, ok := parseNumber(t.value); ok {
+			return compare(v.Value, t.op, t.value)
+		}
+		return compare(v.Text, t.op, t.value)
+	}
+	return compare(v.Text, t.op, t.value) || compare(v.Value, t.op, t.value)
 }
 
 // compare applies op to a (the event's value) and b (the filter's): as numbers
