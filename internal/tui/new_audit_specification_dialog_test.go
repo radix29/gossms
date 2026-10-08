@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -85,4 +86,34 @@ func TestNewDatabaseAuditSpecificationSendsTheTickedGroups(t *testing.T) {
 		t.Errorf("not a database specification create:\n%s", stmt)
 	}
 	checkTickedGroups(t, stmt)
+}
+
+// TestNewServerAuditSpecificationOffersOnlyFreeAudits pins T6 for the New
+// dialog: audits another server specification holds are not offered, and
+// when every audit is held the dialog says so instead of claiming the server
+// has none.
+func TestNewServerAuditSpecificationOffersOnlyFreeAudits(t *testing.T) {
+	sc, _ := newFakeConn(t, specRows(), auditRows(), actionGroupRows())
+	pf, err := fetchNewAuditSpecPrefetch(t.Context(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// AppSpec holds AppLogAudit and HIPAA_spec holds HIPAA; the orphan holds none.
+	if !slices.Equal(pf.auditNames, []string{"Rollover"}) || pf.audits != 3 {
+		t.Errorf("free audits %q of %d, want [Rollover] of 3", pf.auditNames, pf.audits)
+	}
+
+	d := &NewAuditSpecificationDialog{}
+	d.sc = sc
+	d.pages = []string{"General"}
+	d.forms = make([]*propsheet.Form, 1)
+	d.applyFns = make([]propApply, 1)
+	d.buildPages(&nauditSpecPrefetch{existingNames: newNameSet(""), audits: 2, actionGroups: newAuditSpecGroups})
+	if !strings.Contains(formNotes(d.forms[0]), "already has a server audit specification") {
+		t.Error("with every audit held, the dialog does not say so")
+	}
+	editText(t, d.forms[0], "Name", "spec1")
+	if err := d.preflight(); err == nil {
+		t.Error("preflight passed with no audit free")
+	}
 }

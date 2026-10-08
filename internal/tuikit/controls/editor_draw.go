@@ -174,46 +174,44 @@ func (r *lineRow) styleForRune(i int) tcell.Style {
 // logical line.
 //
 // This is the whole of Editor's rune-index-to-column mapping on the drawing
-// side. It walks the line accumulating core.RuneWidth rather than assuming a
-// column per rune: a CJK or emoji glyph spans two cells and shifts every rune
-// after it one column right, and counting runes puts the rest of the line — and
-// the caret — one column left of where it rendered.
+// side. It walks the line by grapheme cluster (core.GraphemeAt), accumulating
+// each cluster's width rather than assuming a column per rune: a CJK glyph or
+// an emoji spans two cells and shifts everything after it, "❤️" is two runes
+// of which neither alone is two columns wide, and counting runes put the rest
+// of the line — and the caret — out of step with what rendered. A cluster is
+// styled by its first rune.
 //
 // Columns past endRune count one virtual rune each, so a linear selection
 // running on to the next line still paints the extra cell showing the line break
 // as selected.
 //
-// A wide rune clipped by either edge of the window is drawn as blanks, never as
-// half a glyph: tcell owns both cells of a double-width character and writes the
-// second itself, so emitting half of one leaves the terminal drawing a
+// A wide cluster clipped by either edge of the window is drawn as blanks, never
+// as half a glyph: tcell owns both cells of a double-width character and writes
+// the second itself, so emitting half of one leaves the terminal drawing a
 // full-width glyph over a neighbouring cell.
 func drawLineRow(s tcell.Screen, r lineRow) {
 	if r.w <= 0 {
 		return
 	}
 	n := min(r.endRune, len(r.line))
+	line := r.line[:n]
 
-	// Skip whatever lies entirely left of the window.
-	i, col := 0, 0
-	for i < n {
-		rw := core.RuneWidth(r.line[i])
-		if col+rw > r.fromCol {
-			break
-		}
-		col += rw
-		i++
-	}
+	// Skip whatever lies entirely left of the window. Past the end, drawing
+	// starts at the first virtual position.
+	i, col := core.ClusterAtColumn(line, r.fromCol)
+	i = min(i, n)
 
 	sx := 0
-	// A wide rune straddling the left edge shows only its right-hand cell, which
-	// is not a glyph — blank it.
+	// A wide cluster straddling the left edge shows only its right-hand cell,
+	// which is not a glyph — blank it.
 	if i < n && col < r.fromCol {
+		end, cw := core.GraphemeAt(line, i)
 		st := r.styleForRune(i)
-		for c := r.fromCol; c < col+core.RuneWidth(r.line[i]) && sx < r.w; c++ {
+		for c := r.fromCol; c < col+cw && sx < r.w; c++ {
 			core.PutRune(s, r.x+sx, r.y, ' ', st)
 			sx++
 		}
-		i++
+		i = end
 	}
 
 	for sx < r.w {
@@ -226,24 +224,19 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 			i++
 			continue
 		}
-		ch := r.line[i]
-		rw := core.RuneWidth(ch)
-		if rw == 0 {
-			// A combining mark with no base drawn in this window (the line's
-			// first rune, or its base clipped off the left): it has no cell of its
-			// own, and drawing it alone would consume a column that isn't there
-			// and shift the rest of the line.
-			i++
+		j, cw := i+1, 1
+		if !core.LoneASCII(line, i) {
+			j, cw = core.GraphemeAt(line, i)
+		}
+		if cw == 0 {
+			// Combining marks with no base drawn in this window (the line's
+			// first runes): they have no cell of their own, and drawing them
+			// alone would consume a column that isn't there and shift the rest
+			// of the line.
+			i = j
 			continue
 		}
-		// The zero-width runes after the base are its combining marks, drawn in
-		// the base's cell as one grapheme. They stay separate runes for the
-		// cursor and selection, each occupying no column.
-		j := i + 1
-		for j < n && core.RuneWidth(r.line[j]) == 0 {
-			j++
-		}
-		if sx+rw > r.w {
+		if sx+cw > r.w {
 			// Clipped by the right edge — blanks, never half a glyph.
 			for ; sx < r.w; sx++ {
 				core.PutRune(s, r.x+sx, r.y, ' ', st)
@@ -251,12 +244,13 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 			break
 		}
 		if j == i+1 {
-			core.PutRune(s, r.x+sx, r.y, ch, st)
+			core.PutRune(s, r.x+sx, r.y, line[i], st)
 		} else {
+			// The whole cluster in one cell write, so the terminal joins it.
 			// Put, as core's putGrapheme does — never SetContent (see PutRune).
-			s.Put(r.x+sx, r.y, string(r.line[i:j]), st)
+			s.Put(r.x+sx, r.y, string(line[i:j]), st)
 		}
-		sx += rw
+		sx += cw
 		i = j
 	}
 }

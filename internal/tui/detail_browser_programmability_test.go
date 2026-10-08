@@ -33,7 +33,7 @@ func detailOf(t *testing.T, sc *db.ServerConn, typ NodeType, schema, name string
 	return cols, rows, objs
 }
 
-// fallbackColumns are what fetchNodeDetails' default arm returns. A family
+// fallbackColumns are what fetchNodeDetails' fallback returns. A family
 // that reached it shows these instead of its own.
 var fallbackRowLabels = []string{"Name", "Type", "Database", "Schema"}
 
@@ -55,8 +55,10 @@ func isFallback(cols []string, rows [][]string) bool {
 // they call.
 func TestRulesFolderDetailCarriesItsObjects(t *testing.T) {
 	sc, _ := newTypePropConn(t,
-		moduleDefinitionResponse("[dbo].[PhoneRule]", "AS @v LIKE '[0-9]%'"),
-		moduleDefinitionResponse("[sales].[ZipRule]", "AS @v LIKE '[0-9][0-9][0-9][0-9][0-9]'"),
+		fakeResponse{match: "SELECT o.object_id, OBJECT_DEFINITION", cols: 2, rows: [][]driver.Value{
+			{int64(1001), "AS @v LIKE '[0-9]%'"},
+			{int64(1002), "AS @v LIKE '[0-9][0-9][0-9][0-9][0-9]'"},
+		}},
 		fakeResponse{match: "o.type = 'R'", cols: 5, rows: [][]driver.Value{
 			{"PhoneRule", "dbo", int64(1001), propTypeDate, propTypeDate},
 			{"ZipRule", "sales", int64(1002), propTypeDate, propTypeDate},
@@ -70,8 +72,8 @@ func TestRulesFolderDetailCarriesItsObjects(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("the folder shows %d rows, want 2", len(rows))
 	}
-	// The listing carries no text; each row's is its own by-name read, and
-	// must land on its own row.
+	// The listing carries no text; the batch read's is keyed by object id,
+	// and each must land on its own row.
 	if rows[1][def] != "AS @v LIKE '[0-9][0-9][0-9][0-9][0-9]'" {
 		t.Errorf("row 2's definition is %q, want ZipRule's", rows[1][def])
 	}
@@ -85,6 +87,37 @@ func TestRulesFolderDetailCarriesItsObjects(t *testing.T) {
 	}
 	if objs[1].Type != NodeRule || objs[1].Schema != "sales" || objs[1].Name != "ZipRule" {
 		t.Errorf("row 2 maps to %+v, want sales.ZipRule as a NodeRule", objs[1])
+	}
+}
+
+// The definitions are one column of the folder, read apart from the listing:
+// that read failing, or missing a row, must cost the column, not the folder.
+// It used to be one read per row, and any one failing failed the whole pane.
+func TestRulesFolderDetailSurvivesAFailedDefinitionRead(t *testing.T) {
+	listing := fakeResponse{match: "o.type = 'R'", cols: 5, rows: [][]driver.Value{
+		{"PhoneRule", "dbo", int64(1001), propTypeDate, propTypeDate},
+		{"ZipRule", "sales", int64(1002), propTypeDate, propTypeDate},
+	}}
+	for name, texts := range map[string]fakeResponse{
+		// No answer to the batch read: the fake's error for an unmatched query.
+		"read fails": {match: "no such statement"},
+		// The batch read answers for one rule only: the other was dropped and
+		// re-created in between, or is not visible.
+		"row missing": {match: "SELECT o.object_id, OBJECT_DEFINITION", cols: 2, rows: [][]driver.Value{
+			{int64(1001), "AS @v LIKE '[0-9]%'"},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sc, _ := newTypePropConn(t, texts, listing)
+			cols, rows, _ := detailOf(t, sc, NodeRules, "", "")
+			def := slices.Index(cols, "Definition")
+			if def < 0 || len(rows) != 2 {
+				t.Fatalf("the folder shows %v %v, want both rules with a Definition column", cols, rows)
+			}
+			if rows[1][def] != "N/A" {
+				t.Errorf("ZipRule's definition is %q, want N/A", rows[1][def])
+			}
+		})
 	}
 }
 
@@ -156,7 +189,7 @@ func TestEveryNewLeafHasItsOwnDetailView(t *testing.T) {
 		sc, _ := newTypePropConn(t, c.responses...)
 		cols, rows, objs := detailOf(t, sc, c.typ, c.schema, c.name)
 		if isFallback(cols, rows) {
-			t.Errorf("%v falls to fetchNodeDetails' default arm — it has no detail view of its own", c.typ)
+			t.Errorf("%v falls to fetchNodeDetails' fallback — it has no detail view of its own", c.typ)
 			continue
 		}
 		if len(rows) == 0 {

@@ -172,7 +172,7 @@ func (g *DataGrid) drawRow(s tcell.Screen, y, row int, cells []string, nulls Nul
 		}
 		avail := min(cw, g.rect.Right()-col)
 		core.FillRect(s, core.Rect{X: col, Y: y, W: avail, H: 1}, ' ', cellStyle)
-		core.DrawTextClipped(s, col+1, y, avail-2, cellStyle, core.TruncateLine(cell, avail-2))
+		core.DrawTextLine(s, col+1, y, avail-2, cellStyle, cell)
 		if col+cw-1 < g.rect.Right() {
 			core.PutRune(s, col+cw-1, y, '|', style.Foreground(p.GridBorder))
 		}
@@ -215,7 +215,7 @@ func (g *DataGrid) drawGroupRow(s tcell.Screen, y int, cells []string, xOffset i
 		if stop < 0 {
 			w = r.W - 2
 		}
-		core.DrawTextClipped(s, r.X+1, y, w, st, core.TruncateLine(cells[0], w))
+		core.DrawTextLine(s, r.X+1, y, w, st, cells[0])
 	}
 	if stop < 0 {
 		return
@@ -229,7 +229,7 @@ func (g *DataGrid) drawGroupRow(s tcell.Screen, y int, cells []string, xOffset i
 		cw := g.colWidths[i]
 		if i < len(cells) {
 			avail := min(cw, r.Right()-col)
-			core.DrawTextClipped(s, col+1, y, avail-2, st, core.TruncateLine(cells[i], avail-2))
+			core.DrawTextLine(s, col+1, y, avail-2, st, cells[i])
 		}
 		if col+cw-1 < r.Right() {
 			core.PutRune(s, col+cw-1, y, '|', sep)
@@ -265,7 +265,7 @@ func (g *DataGrid) drawCellSelection(s tcell.Screen, y, row int, cells []string,
 			}
 			avail := min(cw, g.rect.Right()-col)
 			core.FillRect(s, core.Rect{X: col, Y: y, W: avail, H: 1}, ' ', cellSt)
-			core.DrawTextClipped(s, col+1, y, avail-2, cellSt, core.TruncateLine(cellText, avail-2))
+			core.DrawTextLine(s, col+1, y, avail-2, cellSt, cellText)
 			if col+cw-1 < g.rect.Right() {
 				core.PutRune(s, col+cw-1, y, '|', cellSt.Foreground(p.GridBorder))
 			}

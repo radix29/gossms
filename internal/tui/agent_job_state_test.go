@@ -13,7 +13,7 @@ import (
 // sent, and the user gets an app message instead of "SQLServerAgent Error:
 // Request to run job ... refused because the job is already running".
 //
-// State is column 17 of the job read (1 Executing while a session is open, 4
+// State is the last column of the job read (1 Executing while a session is open, 4
 // Idle otherwise); only it varies. The fake answers no xp_sqlagent_enum_jobs,
 // covering gosmo's fallback.
 func jobRowInState(state int64) []driver.Value {

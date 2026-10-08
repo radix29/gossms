@@ -209,7 +209,7 @@ func (p *QueryStorePanel) loadSeries(queryID int64) {
 }
 
 // seriesPanicked replaces the chart's "Reading..." note after a panic on the
-// read goroutine — loadSeries' safegoRepair step. Guarded by seriesSeq like
+// read goroutine — loadSeries' safegoRepair step. Guarded by seriesRead like
 // the normal completion path: a newer read owns the chart, and blanking it
 // here would drop a series that is still on its way.
 func (p *QueryStorePanel) seriesPanicked(seq int) {

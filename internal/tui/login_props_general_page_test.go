@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -237,6 +238,38 @@ func TestLoginGeneralOffersNoPasswordForAWindowsLogin(t *testing.T) {
 	}
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("a Windows login's password policy was written:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// A Windows login cannot hold a credential (ALTER LOGIN … ADD CREDENTIAL is
+// Msg 15080 for one), so the credential select is switched off rather than
+// offering a choice Apply would fail on.
+func TestLoginGeneralOffersNoCredentialForAWindowsLogin(t *testing.T) {
+	sc, inst := newFakeConn(t, loginGeneralResponses("DOMAIN\\alice", "WINDOWS_LOGIN")...)
+	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("DOMAIN\\alice")), inst)
+
+	row := selectRow(t, form, "Map to credential")
+	if row.Enabled() || row.Focusable() {
+		t.Fatal("the credential select is live for a Windows login")
+	}
+	if i := slices.Index(row.Items(), "cred_new"); i >= 0 {
+		row.Edit(i)
+	}
+	if row.Dirty() {
+		t.Fatal("the disabled credential select took an edit")
+	}
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Errorf("a Windows login's credential was written:\n%s", strings.Join(stmts, "\n"))
+	}
+
+	// And only for a Windows login.
+	sc, inst = newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	form, _ = loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	if !selectRow(t, form, "Map to credential").Enabled() {
+		t.Error("the credential select is off for a SQL login too")
 	}
 }
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -25,6 +27,15 @@ import (
 type rmSnapshot struct {
 	note string
 	pubs []rmPub
+	// failed are the distribution databases whose read failed while another's
+	// succeeded: their publications are missing, and the status line says so.
+	failed []rmDBFailure
+}
+
+// rmDBFailure is one distribution database whose read failed.
+type rmDBFailure struct {
+	db  string
+	err error
 }
 
 // rmPub is one publication with what serves it: its subscriptions, each with
@@ -81,7 +92,10 @@ const (
 // readReplicationSnapshot reads every distribution database on srv: its
 // publications, subscriptions and agents, joined by the agent names the
 // monitor procedures report. A distribution database the login may not
-// monitor is skipped; if that leaves nothing, the note says why.
+// monitor is skipped; if that leaves nothing, the note says why. One whose
+// read fails is reported in failed rather than blanking every other's
+// publications (as readLogFiles does per file); only when none could be read
+// is the failure the read's error.
 func readReplicationSnapshot(ctx context.Context, srv *gosmo.Server) (rmSnapshot, error) {
 	info, err := srv.ReplicationInfo(ctx)
 	if err != nil {
@@ -97,26 +111,42 @@ func readReplicationSnapshot(ctx context.Context, srv *gosmo.Server) (rmSnapshot
 	// list of distribution databases is sysadmin's alone.
 	var snap rmSnapshot
 	var denied []string
+	read := 0
 	for _, d := range info.Databases {
 		if !d.Distribution {
 			continue
 		}
 		dd := srv.DistributionDatabaseRef(d.Name)
 		ok, err := dd.CanMonitor(ctx)
-		if err != nil {
-			return rmSnapshot{}, err
-		}
-		if !ok {
+		if err == nil && !ok {
 			denied = append(denied, d.Name)
 			continue
 		}
-		pubs, err := readDistribution(ctx, dd)
-		if err != nil {
-			return rmSnapshot{}, err
+		var pubs []rmPub
+		if err == nil {
+			pubs, err = readDistribution(ctx, dd)
 		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return rmSnapshot{}, err
+			}
+			snap.failed = append(snap.failed, rmDBFailure{db: d.Name, err: err})
+			continue
+		}
+		read++
 		snap.pubs = append(snap.pubs, pubs...)
 	}
-	if len(snap.pubs) == 0 {
+	if read == 0 && len(snap.failed) > 0 {
+		if len(snap.failed) == 1 {
+			return rmSnapshot{}, snap.failed[0].err
+		}
+		errs := make([]error, len(snap.failed))
+		for i, f := range snap.failed {
+			errs[i] = fmt.Errorf("%s: %w", f.db, f.err)
+		}
+		return rmSnapshot{}, errors.Join(errs...)
+	}
+	if len(snap.pubs) == 0 && len(snap.failed) == 0 {
 		snap.note = rmNothingNote
 		if len(denied) > 0 {
 			snap.note = fmt.Sprintf(rmNoAccessNote, strings.Join(denied, ", "))
@@ -359,7 +389,18 @@ func (p *ReplicationMonitorPanel) readPanicked(seq int) {
 		return
 	}
 	p.busy = false
-	p.pubsGrid.SetStatus("The read stopped unexpectedly — see the log for details")
+	p.pubsGrid.SetStatus(rmReadPanickedText)
+}
+
+const rmReadPanickedText = "The read stopped unexpectedly — see the log for details"
+
+// paneReadPanicked replaces the "Reading…" a session or action read left on
+// its grid when it panicked, unless a newer read owns the grid. Without it the
+// pane said "Reading…" for good.
+func paneReadPanicked(l *latest, seq int, g *controls.DataGrid) {
+	if l.Done(seq) {
+		g.SetStatus(rmReadPanickedText)
+	}
 }
 
 // applySnapshot puts a read on screen, on the publication the user had (or
@@ -417,7 +458,11 @@ func (p *ReplicationMonitorPanel) summary() string {
 	if r := rmRates[p.rateIdx]; r.every > 0 {
 		auto = "refreshed every " + r.label
 	}
-	return fmt.Sprintf("%d publications · read %s · %s", len(p.snap.pubs), p.updated.Format("15:04:05"), auto)
+	s := fmt.Sprintf("%d publications · read %s · %s", len(p.snap.pubs), p.updated.Format("15:04:05"), auto)
+	for _, f := range p.snap.failed {
+		s += fmt.Sprintf(" · could not read %s: %v", f.db, displayError(f.err))
+	}
+	return s
 }
 
 // pubIndexByName finds a publication by database and name, as an Object
@@ -517,7 +562,7 @@ func (p *ReplicationMonitorPanel) loadSessions(keep bool) {
 	hours, errorsOnly := rmWindows[p.windowIdx].hours, p.errorsOnly
 	ctx, seq := p.sessionRead.BeginTimeout(p.conn.Server.Context(), rmReadTimeout)
 	p.sessionsGrid.SetStatus("Reading…")
-	p.app.safego("reading a replication agent's sessions", func() {
+	p.app.safegoRepair("reading a replication agent's sessions", func() { paneReadPanicked(&p.sessionRead, seq, p.sessionsGrid) }, func() {
 		sessions, err := agent.Sessions(ctx, hours, errorsOnly)
 		p.app.postAndWake(func() {
 			if !p.sessionRead.Done(seq) {
@@ -600,7 +645,7 @@ func (p *ReplicationMonitorPanel) loadActions(keep bool) {
 	agent, s := row.agent, sess.s
 	ctx, seq := p.actionRead.BeginTimeout(p.conn.Server.Context(), rmReadTimeout)
 	p.actionsGrid.SetStatus("Reading…")
-	p.app.safego("reading a replication agent session", func() {
+	p.app.safegoRepair("reading a replication agent session", func() { paneReadPanicked(&p.actionRead, seq, p.actionsGrid) }, func() {
 		rows, err := readActions(ctx, agent, s)
 		p.app.postAndWake(func() {
 			if !p.actionRead.Done(seq) {

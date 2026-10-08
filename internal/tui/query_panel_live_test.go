@@ -9,6 +9,7 @@ import (
 
 	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
 )
 
 // fakeLiveSource scripts the poller's two reads: profiles[i] answers the i'th
@@ -88,7 +89,7 @@ func runPoller(t *testing.T, src *fakeLiveSource) []liveUpdate {
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		pollLiveStats(t.Context(), src, 57, done, fastLiveTiming, func(u liveUpdate) { got = append(got, u) })
+		pollLiveStats(t.Context(), src, 57, done, fastLiveTiming, nil, func(u liveUpdate) { got = append(got, u) })
 	}()
 	select {
 	case <-finished:
@@ -296,5 +297,114 @@ func TestLiveQueryStatisticsToggleKeepsActualPlanInStep(t *testing.T) {
 	off, on := liveStatsToggleIcon(false), liveStatsToggleIcon(true)
 	if off == on || len(off) != len(on) {
 		t.Errorf("liveStatsToggleIcon off=%q on=%q, want distinct text of equal width", off, on)
+	}
+}
+
+// runWatch runs pollLiveStats as a LivePlanPanel does, under watch, until it
+// returns or stop closes, collecting every report.
+func runWatch(t *testing.T, src *fakeLiveSource, tm liveTiming, watch *liveWatch, stop <-chan struct{}) []liveUpdate {
+	t.Helper()
+	var got []liveUpdate
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		pollLiveStats(t.Context(), src, 57, stop, tm, watch, func(u liveUpdate) { got = append(got, u) })
+	}()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("pollLiveStats did not return")
+	}
+	return got
+}
+
+// A watch on another session has no end of its own, so an idle session is
+// polled ever more slowly (up to maxBackoff); a query panel's own run keeps
+// its one-a-tick pace, since idle there is only between statements.
+func TestPollLiveStatsWatchBacksOffWhileIdle(t *testing.T) {
+	tm := liveTiming{first: time.Millisecond, every: time.Millisecond, maxBackoff: time.Hour}
+	count := func(watch *liveWatch) int {
+		src := &fakeLiveSource{profiles: []fakeProfileAnswer{{}}}
+		stop := make(chan struct{})
+		time.AfterFunc(150*time.Millisecond, func() { close(stop) })
+		runWatch(t, src, tm, watch, stop)
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return src.calls
+	}
+	if n := count(&liveWatch{}); n > 10 {
+		t.Errorf("a watched idle session was read %d times in 150ms, want the wait doubling", n)
+	}
+	if n := count(nil); n < 20 {
+		t.Errorf("a query panel's own idle run was read %d times in 150ms, want its steady pace", n)
+	}
+}
+
+// A background tab is polled at maxBackoff, and wake (the panel drawn again)
+// reads at once.
+func TestPollLiveStatsWatchSlowsInTheBackgroundAndWakes(t *testing.T) {
+	tm := liveTiming{first: time.Millisecond, every: time.Millisecond, maxBackoff: time.Hour}
+	src := &fakeLiveSource{profiles: []fakeProfileAnswer{{}}}
+	wake := make(chan struct{}, 1)
+	stop := make(chan struct{})
+	watch := &liveWatch{background: func() bool { return true }, wake: wake}
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		src.mu.Lock()
+		n := src.calls
+		src.mu.Unlock()
+		if n != 0 {
+			t.Errorf("a background watch read %d times before its first maxBackoff wait", n)
+		}
+		wake <- struct{}{}
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			src.mu.Lock()
+			n = src.calls
+			src.mu.Unlock()
+			if n > 0 {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if n == 0 {
+			t.Error("wake did not cut the background wait short")
+		}
+		close(stop)
+	}()
+	runWatch(t, src, tm, watch, stop)
+}
+
+// A session id is reused once its session ends: a row from a session that
+// logged in at another time than the pinned one is another login's query,
+// and ends the watch rather than showing it under this session's title.
+func TestPollLiveStatsWatchStopsWhenTheSessionIDIsReused(t *testing.T) {
+	pin := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	ours, theirs := liveRow("A", 0, 0, 10, 100), liveRow("B", 0, 0, 1, 7)
+	ours.SessionLoginTime, theirs.SessionLoginTime = pin, pin.Add(time.Hour)
+	src := &fakeLiveSource{
+		profiles: []fakeProfileAnswer{
+			{rows: []gosmo.QueryProfile{ours}},
+			{},
+			{rows: []gosmo.QueryProfile{theirs}},
+		},
+		plans: map[string]*gosmo.InFlightPlan{"A": liveInFlight("A"), "B": liveInFlight("B")},
+	}
+	got := runWatch(t, src, fastLiveTiming, &liveWatch{pin: pin}, nil)
+	if len(got) != 3 || got[0].plan == nil || !got[1].idle {
+		t.Fatalf("reports = %+v, want a reading, idle, then the end", got)
+	}
+	if last := got[2]; !last.ended || last.note != liveSessionEndedNote(57) || last.plan != nil {
+		t.Errorf("the reused id's query was reported as %+v, want the ended note", last)
+	}
+}
+
+// A LivePlanPanel without a server says so instead of dereferencing it.
+func TestLivePlanPanelStartWithoutAServer(t *testing.T) {
+	a := newTestApp()
+	lp := newLivePlanPanel(a, &db.ServerConn{}, 57)
+	lp.start()
+	if lp.state != "not available" || !lp.run.Idle() {
+		t.Errorf("state %q, poller idle %v; want not available and no poller", lp.state, lp.run.Idle())
 	}
 }

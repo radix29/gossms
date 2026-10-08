@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 )
 
 // new_ag_dialog.go is New Availability Group — the Object Explorer's Always On
@@ -291,10 +292,10 @@ func (d *NewAGDialog) replicaJoinProblem(ctx context.Context, r gosmo.Availabili
 	if !strings.EqualFold(ep.URL(), r.EndpointURL) {
 		return fmt.Sprintf("%s's endpoint is now %s, not %s — remove the replica and add it again", r.ServerName, ep.URL(), r.EndpointURL)
 	}
-	// Allows, not Has: the fail-open rule. A peer whose probe could not run
-	// answers unknown and is let through to try the JOIN, exactly as before
-	// this check existed.
-	if !peer.Capabilities().Allows("ALTER ANY AVAILABILITY GROUP") {
+	// gate.Allows, not Has: the fail-open rule. A peer whose probe could not
+	// run answers unknown and is let through to try the JOIN, exactly as
+	// before this check existed; sysadmin passes by role.
+	if !gate.Allows(peer, "", gate.AlterAnyAG) {
 		return fmt.Sprintf("%s's login may not join an availability group — it needs ALTER ANY AVAILABILITY GROUP there", r.ServerName)
 	}
 	return ""

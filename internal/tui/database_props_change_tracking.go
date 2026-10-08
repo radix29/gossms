@@ -73,7 +73,7 @@ func pageDatabaseChangeTracking(sc *db.ServerConn, dbName string) propPage {
 					if v[0] == t.Enabled && v[1] == t.TrackColumnsUpdated {
 						continue
 					}
-					if err := d.SetTableChangeTracking(ctx, t.Schema, t.Name, v[0], v[1]); err != nil {
+					if err := d.TableRef(t.Schema, t.Name).SetChangeTracking(ctx, v[0], v[1]); err != nil {
 						return err
 					}
 				}

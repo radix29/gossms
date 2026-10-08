@@ -32,11 +32,7 @@ func schemaPropPages(sc *db.ServerConn, dbName, schemaName string) []propPage {
 
 // findSchema resolves dbName/schemaName to a *gosmo.Schema.
 func findSchema(ctx context.Context, sc *db.ServerConn, dbName, schemaName string) (*gosmo.Schema, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.SchemaByName(ctx, schemaName)
+	return inDB(ctx, sc, dbName, schemaName, (*gosmo.Database).SchemaByName)
 }
 
 func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
@@ -180,9 +176,9 @@ func pageSchemaPermissions(sc *db.ServerConn, dbName, schemaName string) propPag
 				return nil, nil, err
 			}
 
-			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.SchemaPermissionNames(),
+			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.SecurableSchema.PermissionNames(),
 				objectPermEntries(perms), 8, 12,
-				schemaPermApply(d, schemaName))
+				securablePermApply(d, gosmo.Securable{Class: gosmo.SecurableSchema, Name: schemaName}))
 			return f, apply, nil
 		},
 	}

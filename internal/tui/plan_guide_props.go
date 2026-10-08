@@ -25,11 +25,7 @@ import (
 // actually checks — there is no "ALTER ANY PLAN GUIDE" for it to take.
 
 func findPlanGuide(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.PlanGuide, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.PlanGuideByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).PlanGuideByName)
 }
 
 // scopeSchema and scopeName are the routine an OBJECT-scoped guide is bound
@@ -104,10 +100,7 @@ func pagePlanGuideGeneral(sc *db.ServerConn, dbName, name string) propPage {
 				if err != nil {
 					return err
 				}
-				if enabled.Checked() {
-					return guide.Enable(ctx)
-				}
-				return guide.Disable(ctx)
+				return guide.SetEnabled(ctx, enabled.Checked())
 			}
 			return f, apply, nil
 		},

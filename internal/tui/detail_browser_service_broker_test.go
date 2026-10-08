@@ -50,7 +50,7 @@ func TestEveryServiceBrokerFolderDetailCarriesItsObjects(t *testing.T) {
 			continue
 		}
 		if isFallback(cols, rows) {
-			t.Errorf("%v falls to fetchNodeDetails' default arm", c.folder)
+			t.Errorf("%v falls to fetchNodeDetails' fallback", c.folder)
 			continue
 		}
 		if len(rows) != c.rows {
@@ -73,7 +73,7 @@ func TestEveryServiceBrokerFolderDetailCarriesItsObjects(t *testing.T) {
 	}
 }
 
-// TestEveryServiceBrokerLeafHasItsOwnDetailView. The default arm never errors
+// TestEveryServiceBrokerLeafHasItsOwnDetailView. The fallback never errors
 // and never queries, so a leaf missed in the dispatch looks like a working
 // pane that happens to say very little.
 func TestEveryServiceBrokerLeafHasItsOwnDetailView(t *testing.T) {
@@ -101,7 +101,7 @@ func TestEveryServiceBrokerLeafHasItsOwnDetailView(t *testing.T) {
 		sc, _ := newTypePropConn(t, c.resp...)
 		cols, rows, objs := detailOf(t, sc, c.typ, c.schema, c.name)
 		if isFallback(cols, rows) {
-			t.Errorf("%v falls to fetchNodeDetails' default arm — it has no detail view of its own", c.typ)
+			t.Errorf("%v falls to fetchNodeDetails' fallback — it has no detail view of its own", c.typ)
 			continue
 		}
 		if len(rows) == 0 {
@@ -167,7 +167,7 @@ func TestQueueLeafSurvivesUnreadableDMVs(t *testing.T) {
 	sc, _ := newTypePropConn(t, brokerRowByArg(queueResp(), "ClaimQueue", 0))
 	cols, rows, _ := detailOf(t, sc, NodeBrokerQueue, "dbo", "ClaimQueue")
 	if isFallback(cols, rows) {
-		t.Fatal("the queue leaf fell to the default arm")
+		t.Fatal("the queue leaf fell to the fallback")
 	}
 	if !slices.ContainsFunc(rows, func(r []string) bool { return r[0] == "Activation procedure" }) {
 		t.Error("the queue's own rows are missing although the catalog answered")

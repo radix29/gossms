@@ -443,3 +443,28 @@ func pageReadOnlyReason(ctx context.Context, sc *db.ServerConn, p propPage) stri
 	}
 	return readOnlyBannerPrefix + gate.RequiresText(p.requires...)
 }
+
+// inDB reads a database-scoped object by name: DatabaseByName, then read (a
+// method expression such as (*gosmo.Database).RuleByName) on it. It is the
+// body of most find* helpers, so each stays one line naming its family.
+// DatabaseByName rather than DatabaseRef is settled in decisions.md.
+func inDB[T any](ctx context.Context, sc *db.ServerConn, dbName, name string,
+	read func(*gosmo.Database, context.Context, string) (T, error)) (T, error) {
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return read(d, ctx, name)
+}
+
+// inDBSchema is inDB for a schema-scoped family.
+func inDBSchema[T any](ctx context.Context, sc *db.ServerConn, dbName, schema, name string,
+	read func(*gosmo.Database, context.Context, string, string) (T, error)) (T, error) {
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return read(d, ctx, schema, name)
+}

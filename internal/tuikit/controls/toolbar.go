@@ -1,6 +1,8 @@
 package controls
 
 import (
+	"slices"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -16,6 +18,12 @@ type ToolbarButton struct {
 	Action  func()      // nil still renders and hovers normally, but clicking is a no-op
 	Divider bool        // renders Icon as static text (e.g. "|"); never hovers, tooltips, or clicks
 	Enabled func() bool // nil means always enabled
+
+	// DropRank orders which buttons SetBounds hides when the row is too
+	// narrow: the highest rank goes first, then the next, and zero-ranked
+	// buttons last (leftmost first among equals). Dividers ignore it — one is
+	// hidden when it would lead, trail or double up.
+	DropRank int
 }
 
 // enabled reports whether b can be activated right now.
@@ -38,7 +46,7 @@ type Toolbar struct {
 	rect    core.Rect
 	buttons []ToolbarButton
 	starts  []int // starts[i] is the column button i begins at
-	widths  []int // widths[i] is button i's total width (icon + padding)
+	widths  []int // widths[i] is button i's total width (icon + padding); 0 = hidden
 	hover   int   // index of the hovered button, -1 = none
 
 	// mouseDragging distinguishes a fresh Button1 press (fire the button's
@@ -65,14 +73,27 @@ func (tb *Toolbar) SetButtons(buttons []ToolbarButton) {
 }
 
 // SetBounds positions the toolbar flush against the right edge of the row
-// [x, x+w), at height y — the same row MenuBar occupies.
+// [x, x+w), at height y — the same row MenuBar occupies. x is a hard left
+// limit (the host passes MenuBar.LabelsEnd()): buttons that don't fit are
+// hidden in DropRank order rather than painted over the menu labels, which
+// is how Tools and Help vanished on a narrow terminal.
 func (tb *Toolbar) SetBounds(x, y, w int) {
+	shown := make([]bool, len(tb.buttons))
+	for i := range shown {
+		shown[i] = true
+	}
+	if !hideToFit(shown, tb.dropOrder(), tb.fitWidth, w) { // even dividers alone don't fit
+		clear(shown)
+	}
+	tb.pruneDividers(shown)
+
 	widths := make([]int, len(tb.buttons))
 	total := 0
 	for i, b := range tb.buttons {
-		bw := core.DisplayWidth(b.Icon) + toolbarButtonPad*2
-		widths[i] = bw
-		total += bw
+		if shown[i] {
+			widths[i] = core.DisplayWidth(b.Icon) + toolbarButtonPad*2
+			total += widths[i]
+		}
 	}
 	starts := make([]int, len(tb.buttons))
 	col := x + w - total
@@ -83,6 +104,61 @@ func (tb *Toolbar) SetBounds(x, y, w int) {
 	tb.rect = core.Rect{X: x + w - total, Y: y, W: total, H: 1}
 	tb.widths = widths
 	tb.starts = starts
+	if tb.hover >= 0 && tb.hover < len(widths) && widths[tb.hover] == 0 {
+		tb.hover = -1
+	}
+}
+
+// dropOrder returns the non-divider button indexes in the order SetBounds
+// hides them: highest DropRank first, leftmost first among equal ranks.
+func (tb *Toolbar) dropOrder() []int {
+	var order []int
+	for i, b := range tb.buttons {
+		if !b.Divider {
+			order = append(order, i)
+		}
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		return tb.buttons[b].DropRank - tb.buttons[a].DropRank
+	})
+	return order
+}
+
+// fitWidth is the row width the shown buttons need once dividers are pruned.
+func (tb *Toolbar) fitWidth(shown []bool) int {
+	s := slices.Clone(shown)
+	tb.pruneDividers(s)
+	total := 0
+	for i, b := range tb.buttons {
+		if s[i] {
+			total += core.DisplayWidth(b.Icon) + toolbarButtonPad*2
+		}
+	}
+	return total
+}
+
+// pruneDividers hides each shown divider that would lead, trail or follow
+// another — what is left after its neighbouring buttons were dropped.
+func (tb *Toolbar) pruneDividers(shown []bool) {
+	prevButton := false // a shown non-divider precedes, since the last kept divider
+	last := -1          // the last kept divider not yet followed by a button
+	for i, b := range tb.buttons {
+		if !shown[i] {
+			continue
+		}
+		if !b.Divider {
+			prevButton, last = true, -1
+			continue
+		}
+		if !prevButton {
+			shown[i] = false
+			continue
+		}
+		prevButton, last = false, i
+	}
+	if last >= 0 {
+		shown[last] = false
+	}
 }
 
 // buttonAt returns the index of the button containing column mx, or -1 —
@@ -108,6 +184,9 @@ func (tb *Toolbar) Draw(s tcell.Screen) {
 	hoverStyle := tcell.StyleDefault.Background(theme.Active().MenuSelected).Foreground(color.White)
 	disabledStyle := theme.StyleDisabled()
 	for i, b := range tb.buttons {
+		if tb.widths[i] == 0 { // hidden by SetBounds
+			continue
+		}
 		st := barStyle
 		switch {
 		case !b.Divider && !b.enabled():

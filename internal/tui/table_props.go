@@ -39,11 +39,7 @@ func tablePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
 // findTable resolves dbName/schema/name to a *gosmo.Table, the one lookup
 // every page on this dialog needs first.
 func findTable(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.Table, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.TableByName(ctx, schema, name)
+	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).TableByName)
 }
 
 func pageTableGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
@@ -254,7 +250,7 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 			// since the tree was populated — shows as "tracking off" rather
 			// than failing the page, which is what the listing scan this
 			// replaced did.
-			current, err := d.TableChangeTrackingFor(ctx, schema, name)
+			current, err := d.TableRef(schema, name).ChangeTracking(ctx)
 			if err != nil {
 				if !errors.Is(err, gosmo.ErrNotFound) {
 					return nil, nil, err
@@ -284,7 +280,7 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 				if err != nil {
 					return err
 				}
-				return d.SetTableChangeTracking(ctx, schema, name, enabledRow.Selected() == 1, trackColsRow.Selected() == 1)
+				return d.TableRef(schema, name).SetChangeTracking(ctx, enabledRow.Selected() == 1, trackColsRow.Selected() == 1)
 			}
 			return f, apply, nil
 		},
@@ -312,9 +308,9 @@ func pageTablePermissions(sc *db.ServerConn, dbName, schema, name string) propPa
 				return nil, nil, err
 			}
 
-			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.ObjectPermissionNames(),
+			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.SecurableTable.PermissionNames(),
 				objectPermEntries(perms), 8, 12,
-				objectPermApply(d, schema, name))
+				securablePermApply(d, gosmo.Securable{Class: gosmo.SecurableTable, Schema: schema, Name: name}))
 			return f, apply, nil
 		},
 	}

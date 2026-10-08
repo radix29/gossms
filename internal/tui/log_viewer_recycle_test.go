@@ -61,18 +61,18 @@ func TestLogViewerToolbarConstantsMatchTheirCells(t *testing.T) {
 		logToolRecycle: "Recycle...",
 		logToolExport:  "Export...",
 	}
-	if len(lv.tools) != len(wantPrefix)+len(wantExact) {
+	if len(lv.tools.Cells) != len(wantPrefix)+len(wantExact) {
 		t.Fatalf("buildTools laid out %d cells, the logTool* constants name %d",
-			len(lv.tools), len(wantPrefix)+len(wantExact))
+			len(lv.tools.Cells), len(wantPrefix)+len(wantExact))
 	}
 	for i, want := range wantPrefix {
-		if !strings.HasPrefix(lv.tools[i].label, want) {
-			t.Errorf("tools[%d].label = %q, want a %q selector", i, lv.tools[i].label, want)
+		if !strings.HasPrefix(lv.tools.Cells[i].Label, want) {
+			t.Errorf("tools[%d].label = %q, want a %q selector", i, lv.tools.Cells[i].Label, want)
 		}
 	}
 	for i, want := range wantExact {
-		if lv.tools[i].label != want {
-			t.Errorf("tools[%d].label = %q, want %q", i, lv.tools[i].label, want)
+		if lv.tools.Cells[i].Label != want {
+			t.Errorf("tools[%d].label = %q, want %q", i, lv.tools.Cells[i].Label, want)
 		}
 	}
 }
@@ -282,7 +282,7 @@ func TestLogViewerRecyclePanicClearsTheLatch(t *testing.T) {
 		t.Fatal("toolsEnabled() is still false after the panic")
 	}
 	fired := 0
-	lv.tools[logToolRefresh].action = func() { fired++ }
+	lv.tools.Cells[logToolRefresh].Action = func() { fired++ }
 	if !lv.runTool(logToolRefresh) || fired != 1 {
 		t.Error("the next toolbar click was refused — the latch never really cleared")
 	}

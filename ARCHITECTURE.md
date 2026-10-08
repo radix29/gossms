@@ -152,6 +152,7 @@ gossms/
 │   ├── db/                  # gosmo connection wrapper: config.Connection → gosmo.ConnectionOptions (toGosmoOptions), per-role application name, masked preview
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
+│   │                        #   flight.go: the keyed single-flight both share (a probe or dial in progress; later callers wait on it)
 │   │                        #   entra.go: the process-wide gosmo.EntraCache every Entra connection shares, the device-code prompt hook, and the sign-in phase (SignIn) run before the dial
 │   ├── activity/            # Activity Monitor collection over gosmo's DMV readings (Source): cntr_type decode, wait categories, 30-minute store, collector goroutines, Poller for a feed whose source is already aggregated, and the Block/Sessions helper procedures — no TUI imports, no DMV SQL of its own
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
@@ -166,12 +167,12 @@ gossms/
 │   │
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
 │   │   ├── theme/                # colour palette + derived tcell.Style helpers
-│   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers
+│   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers, ClipScreen, the ClipboardTarget/ClipboardHost contract
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox, Spinner (a busy indicator as a pure function of elapsed time)
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/Progress/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
 │   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
-│   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL/XML highlighters)
+│   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, ToolRow (a panel's text toolbar: layout, hit-test, "More ▾"), TabStrip, TreeView, DataGrid, ListBox, Editor (Document, LineBuffer; +SQL/XML/JSON highlighters)
 │   │   ├── sqltext/                 # The one T-SQL lexer (Next) and the rules built on it, shared by the editor, internal/query and sqlparse: the "GO" separator line rule, SplitBatches, StatementAt (Ctrl+Enter's statement select), the statement-verb sets; standard library only
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework (rows incl. EditorRow, the embedded multi-line controls.Editor)
 │   │
@@ -232,7 +233,6 @@ gossms/
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
 │       ├── permission_error.go   # names the right a refusal (classified by gosmo.ClassifyRefusal) wants, instead of the wrapped driver error
-│       ├── panel_toolbar.go      # the one-row toolbar shared by Activity Monitor, the Log File Viewer and Query Store, incl. the "More ▾" overflow menu a too-narrow row collapses into (not App's own toolbar)
 │       ├── dialog_common.go      # focus/layout behaviour shared by the hand-rolled dialogs (Connect, Backup, Restore, Tasks, Query List)
 │       ├── text_encoding.go      # decodeTextFile/encodeTextFile — BOM-detected encoding and the file's own line endings, so File > Save writes back what File > Open read
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
@@ -504,8 +504,9 @@ gossms/
 │       ├── new_database_audit_specification_dialog.go # New Database Audit Specification — the audit to bind to, its action groups and its per-securable actions
 │       ├── new_database_scoped_credential_dialog.go   # New Database Scoped Credential
 │       ├── new_fulltext_catalog_dialog.go       # New Full-Text Catalog — owner, default, accent sensitivity
-│       ├── new_fulltext_stoplist_dialog.go      # New Full-Text Stoplist — empty, from the system stoplist or a copy of one
-│       ├── new_fulltext_property_list_dialog.go # New Search Property List — empty or a copy of one
+│       ├── new_fulltext_stoplist_dialog.go      # New Full-Text Stoplist — empty, from the system stoplist or a copy of one (this database or another)
+│       ├── new_fulltext_property_list_dialog.go # New Search Property List — empty or a copy of one, in this database or another
+│       ├── new_fulltext_copy_source.go          # the two dialogs' "Copy from database" picker: another database's lists read once when chosen, latest-only, CONNECT asked first
 │       ├── new_fulltext_index_dialog.go         # New Full-Text Index (the cascade's Define…) — key index, catalog, filegroup, change tracking, stoplist, property list, columns; REFERENCES asked in preflight
 │       ├── new_snapshot_dialog.go              # New Snapshot — CREATE DATABASE … AS SNAPSHOT OF, data files only
 │       │
@@ -707,7 +708,7 @@ stale results". Almost every async read is latest-only, and each of these owns
 a `latest`: an Object Explorer node's children (`object_explorer.go`), the
 completion inventory, the Query Store panel's report/plan pane/series, the Log
 File Viewer's read, a `newObjectDialog` prefetch, the Detail Browser fetch,
-Object Dependencies, each kind of load in Back Up and Restore (one `latest` per
+Object Dependencies, the full-text New dialogs' copy-from list read, each kind of load in Back Up and Restore (one `latest` per
 kind — database list, history, analysis, file list, target check, script — so
 one kind never supersedes another; all abandoned by `show` and `Hide`), the
 Attach and New Snapshot file reads, and Results to Text formatting of a large

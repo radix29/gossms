@@ -27,6 +27,9 @@ const (
 	replPublicationsRead = "FROM   dbo.syspublications"
 	replDistributorRead  = "FROM sys.servers WHERE is_distributor = 1"
 	replDatabasesRead    = "WHERE  is_published = 1 OR is_merge_published = 1 OR is_distributor = 1"
+	// LocalPublications reads every published database in one batch, each
+	// result set led by DB_NAME() under this alias.
+	replLocalPublicationsBatch = "AS tran_publication"
 )
 
 // replPublishedDB answers LocalPublications' database list with one online
@@ -50,6 +53,14 @@ func replTransactionalPub(dbName, pub string) []fakeResponse {
 			false, true, false, false, false,
 		}}},
 	}
+}
+
+// replLocalPublications answers LocalPublications' one batch with dbName's
+// single transactional publication: the row replTransactionalPub's read
+// returns, led by the database's name.
+func replLocalPublications(dbName, pub string) fakeResponse {
+	row := append([]driver.Value{dbName}, replTransactionalPub(dbName, pub)[1].rows[0]...)
+	return fakeResponse{match: replLocalPublicationsBatch, cols: len(row), rows: [][]driver.Value{row}}
 }
 
 // replInfo answers ReplicationInfo: the distributor's name (nil for none), not
@@ -84,7 +95,7 @@ func TestLocalPublicationsListsAndExplains(t *testing.T) {
 		want      []string
 	}{
 		{"a publication, and a published database the login cannot read",
-			slices.Concat([]fakeResponse{replPublishedDB("SalesDB")}, replTransactionalPub("SalesDB", "pubA"),
+			slices.Concat([]fakeResponse{replPublishedDB("SalesDB"), replLocalPublications("SalesDB", "pubA")},
 				replInfo("SRV",
 					[]driver.Value{"HiddenDB", false, true, false, false},
 					[]driver.Value{"SalesDB", true, false, false, true})),
@@ -100,7 +111,7 @@ func TestLocalPublicationsListsAndExplains(t *testing.T) {
 		// The explanation is all ReplicationInfo is read for; its failure
 		// must not cost the list.
 		{"configuration read refused",
-			slices.Concat([]fakeResponse{replPublishedDB("SalesDB")}, replTransactionalPub("SalesDB", "pubA"),
+			slices.Concat([]fakeResponse{replPublishedDB("SalesDB"), replLocalPublications("SalesDB", "pubA")},
 				[]fakeResponse{{match: replDistributorRead, err: errors.New("refused")}}),
 			[]string{"[SalesDB]: pubA"}},
 	} {

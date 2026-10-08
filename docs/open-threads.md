@@ -62,27 +62,13 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
-- **B19 — The main toolbar overdraws the menu bar on a narrow terminal.**
-  `controls.Toolbar.SetBounds` right-aligns its buttons with no left limit,
-  so once they are wider than the row beside the menu labels they paint over
-  them (Tools and Help vanish). Below ~100 columns before Phase 5 W6; the
-  Include Live Query Statistics button (`Live[-OFF]`, 12 columns) moved that
-  to ~112. Likely fix: the toolbar takes the menu labels' right edge as its
-  left limit and drops buttons that don't fit, as panel toolbars do
-  (`docs/ui-rules.md` § Panels, toolbars and grid hosts) — which end to drop
-  is a call to make.
-- **B20 — F1 help clips its long lines.** `HelpDialog` is a fixed 62×28
-  modal (`NewHelpDialog`) with no horizontal scroll, so a line over 57
-  characters loses its tail — 67 lines do as of Phase 5 W7 (Plan Compare's,
-  the Shift+click mouse line, …). Wrap them to 57, or size the dialog to the
-  screen as wider dialogs do.
-- **B21 — Rows holding Arabic combining marks draw one column wide under
-  tmux.** Seen in Phase 5 W15 on a stoplist made `FROM SYSTEM STOPLIST`:
-  words with a shadda (`إنّ`) push the grid's — and the dialog's — right
-  border one column right on that row only. `core.DisplayWidth` is
-  grapheme-aware (`displaywidth`), so the suspect is how tcell emits the
-  combining mark or how tmux places it, not the grid's arithmetic; not
-  diagnosed, and not tried in another terminal.
+- **B23 — a right-click moves a cell-cursor grid's selection without
+  `OnSelectRow`** (*suspected*, from reading, not driven). The `Button2` data-cell
+  branch of `DataGrid.HandleMouse` (`datagrid_input.go`) sets `selRow`/`selCol`
+  when the click lands outside the current selection, then opens the menu, but
+  never fires `OnSelectRow`, so a grid-plus-detail page goes on describing the
+  row it was on. Found during review plan 3a (K3); fire it on a move, as the
+  `Button1` paths now do.
 
 ### Verification gaps
 
@@ -94,8 +80,7 @@ work; close an item by deleting it when fixed.
   and SAS, and whether the wildcard pattern gosmo builds lists a container's
   rollover blobs, are unrun.
 - **V3 — Managed Instance low-privilege Extended Events run unfinished**
-  (t-qmi-01 has refused every login, `testgo` too, Msg 40532, since
-  2026-09-30). Verified so far: as a `VIEW SERVER STATE` login, Sessions
+  (t-qmi-01 refuses every login, `testgo` too, Msg 40532). Verified so far: as a `VIEW SERVER STATE` login, Sessions
   listed, New/Start/Stop/Delete greyed "needs ALTER ANY EVENT SESSION"; MI
   answers all nine granular event-session names through `HAS_PERMS_BY_NAME`
   (not NULL as on 13–16), so the `gate.EventSession*` `Alt`s decide there.
@@ -112,7 +97,7 @@ work; close an item by deleting it when fixed.
   `max_duration` there; the answer becomes one gosmo capability gossms asks.
 
 - **V4 — Resource Governor and Database Mail unverified on Managed
-  Instance** (t-qmi-01 unavailable since 2026-09-30). Both
+  Instance** (t-qmi-01 refuses logins). Both
   shipped shown and ungated on EngineEdition 8, pinned by fake-driver tests
   only (`resourceGovernorHidden`, `databaseMailHidden` in `edition_gate.go`).
   To run when MI is back: RG catalog/DMV reads and `CREATE RESOURCE POOL` /
@@ -141,13 +126,13 @@ work; close an item by deleting it when fixed.
   tests; Database Mail on Express (procs present, no `DatabaseMail.exe`, so a
   test mail should sit `unsent` until the dialog's 30 s wait gives up) is
   unprobed. Run both when a Standard or Express instance is available.
-- **V6 — Live Query Statistics never run on Azure.** Phase 5 W3/W7 drove it
-  on 13, 14 and 17 only: t-qmi-01 refused the login (40532) on both
-  2026-10-06 attempts. On MI, run a long query with Live on (as `testgo`, and
-  as a login without `VIEW SERVER STATE` for the note); Azure SQL Database's
-  `VIEW DATABASE STATE` path is untested for want of one. W8's Activity
-  Monitor **Show Live Execution Plan** is likewise unrun there: MI should
-  behave as 2019+ (lightweight profiling on, so an unprofiled query shows).
+- **V6 — Live Query Statistics never run on Azure.** Driven on 13, 14 and 17
+  only (t-qmi-01 refuses the login, Msg 40532). On MI, run a long query with
+  Live on (as `testgo`, and as a login without `VIEW SERVER STATE` for the
+  note); Azure SQL Database's `VIEW DATABASE STATE` path is untested for want
+  of one. Activity Monitor's **Show Live Execution Plan** is likewise unrun
+  there: MI should behave as 2019+ (lightweight profiling on, so an unprofiled
+  query shows).
 - **V7 — Replication reads (gosmo `replication*.go`) met real rows on 17
   only.** The fixture is on win10cli (2025). win10cli\SQL2016 has
   **replication components not installed** (`sp_addpullsubscription` fails
@@ -157,53 +142,24 @@ work; close an item by deleting it when fixed.
   and every merge read are unrun below 17. Linux (ubusql1) and 2016 ran the
   not-configured path only; MI not at all. Every column read predates 2016,
   so no gate was added — run `TestLiveReplication*` wherever a publisher can
-  be set up. W11's Object Explorer Replication folder is likewise shown on MI
-  and undriven there. W13's Replication Monitor (gosmo
-  `replication_monitor.go`, `sp_replmonitor*`/`sp_MSenum_*`) likewise ran
-  against the 2025 fixture only; on 2016/2017 only the not-a-distributor path
-  (`MonitorPublishers` empty, the panel's not-configured note). Its
-  remote-distributor note is unit-tested only — no instance here uses another
-  as its distributor.
-- **V8 — Full-Text reads (gosmo `fulltext.go`, W14) met real rows on 17 and
-  14 only.** win10cli\SQL2016 has the component not installed, so it ran the
-  empty path; Azure SQL Database, MI and Linux (`mssql-server-fts`) not at
-  all. The one gate, `sys.fulltext_indexes.index_version` at 2025, is checked
-  absent on 13/14 and present on 17; no 2019/2022 instance exists to confirm
-  the floor. `FULLTEXTSERVICEPROPERTY`/`sys.fulltext_document_types` on Azure
-  SQL Database are assumed, not seen. W15's Object Explorer folders, Details
-  and read-only Properties were driven on 17 (rows) and 13 (the not-installed
-  row) only; a running population's row on the index General page is
-  unit-tested, never seen live (the fixture's populations finish at once).
-  W16's writes and scripts ran live on 17 and 14 only (skipped on 13, no
-  component); PAUSE/RESUME POPULATION were sent only to an idle index, where
-  the server's answer is not asserted — a paused population was never seen.
-  W17's Delete gate (classes 23/29/31 in gosmo's per-securable probe, `ALTER
-  ANY FULLTEXT CATALOG`) was probed and live-tested on 17 and 14; the
-  extended probe query ran clean on 13 via the other securable live tests. MI
-  refused every login at the gateway on 2026-10-07 (Msg 40532, sqlcmd too), so
-  it is unrun there, and Azure SQL Database never: if its `HAS_PERMS_BY_NAME`
-  rejected one of the three class words the whole database probe would fail,
-  not just these rows. W18's cascade was driven on 17 only; its gate (ALTER
-  on the table) was probed on 14 and 17. The server's ignore-with-a-warning
-  answers it refuses up front (STOP under AUTO/MANUAL tracking, START while
-  a population runs) were seen on 17 only. A paused or throttled population
-  (status 5) is unit-tested in the follow's message, never seen through it.
-  W19's New dialogs and writable pages were driven on 17 only; their gates
-  (CREATE FULLTEXT CATALOG, ALTER and REFERENCES per securable) were probed
-  and live-tested on 14 and 17, the extended probe query run clean on 13.
-  A semantic-statistics column (`STATISTICAL_SEMANTICS`, needs the semantic
-  language database) was never created live. W20's end-to-end drive (create
-  → populate → `CONTAINS` → alter → drop) ran on 17 only; MI still refused
-  the login at the gateway (2026-10-08), and the planned Azure SQL Database
-  pass (no semantic search there) waits for one to exist. Its START-under-AUTO
-  refusal was probed on 14 and 17.
-
-### Nice to have
-
-- **N1 — Copying a stoplist or property list from another database.** gosmo's
-  `CreateFullTextStoplistRequest`/`CreateSearchPropertyListRequest` take
-  `FromDatabase`, and the New dialogs offer this database's lists only (the
-  other database's lists would be a second read per database chosen). A
-  cross-database copy is a one-line `CREATE … FROM [db].[list]` in a query
-  window meanwhile.
-
+  be set up. The Object Explorer Replication folder is shown on MI and
+  undriven there. Replication Monitor (gosmo `replication_monitor.go`,
+  `sp_replmonitor*`/`sp_MSenum_*`) likewise ran against the 2025 fixture
+  only; on 2016/2017 only the not-a-distributor path (`MonitorPublishers`
+  empty, the panel's not-configured note). Its remote-distributor note is
+  unit-tested only — no instance here uses another as its distributor.
+- **V8 — Full-Text unverified outside 17 and 14.** Reads, folders,
+  properties, writes, New dialogs and the end-to-end drive (create → populate
+  → `CONTAINS` → alter → drop) ran on 17 (rows) and 14; win10cli\SQL2016 has
+  the component not installed (empty path and the not-installed row only,
+  writes skipped); the cascade ran on 17 only. Never run: Azure SQL Database,
+  MI (Msg 40532), Linux (`mssql-server-fts`). Unknown: the `index_version`
+  gate's floor (2025; absent on 13/14, present on 17, no 2019/2022 instance);
+  `FULLTEXTSERVICEPROPERTY`/`sys.fulltext_document_types` on Azure SQL
+  Database (assumed); whether its `HAS_PERMS_BY_NAME` accepts the class words
+  for 23/29/31 (a rejection would fail the whole database probe, not just
+  these rows). Unit-tested, never seen live: a running population's row on
+  the index General page, a paused or throttled population (status 5) in the
+  follow's message, PAUSE/RESUME on a busy index (sent only to an idle one),
+  and a `STATISTICAL_SEMANTICS` column (needs the semantic language
+  database).

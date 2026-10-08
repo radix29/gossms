@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/charts"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -18,8 +19,8 @@ func (p *QueryStorePanel) Draw(s tcell.Screen) {
 	// in step; it is a handful of width measurements.
 	p.refreshToolLabels()
 	p.layoutToolRows()
-	p.drawToolRow(s, p.selRect, p.sel, &p.selMore, p.selDisabled)
-	p.drawToolRow(s, p.actRect, p.acts, &p.actMore, p.actDisabled)
+	p.drawToolRow(s, p.selRect, &p.sel, p.selDisabled)
+	p.drawToolRow(s, p.actRect, &p.acts, p.actDisabled)
 	p.drawChart(s)
 	p.chartSplit.Draw(s)
 	p.planSplit.Draw(s)
@@ -35,34 +36,35 @@ func (p *QueryStorePanel) Draw(s tcell.Screen) {
 // drawToolRow paints one toolbar row in the tooltip scheme Activity Monitor's
 // buttons use, dimming each cell the panel would refuse a click on. The dimmed
 // state and the refusal are the same predicate, so a cell that looks inert is.
-func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, tools []toolButton, more *toolButton, disabled func(int) bool) {
+func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, row *controls.ToolRow, disabled func(int) bool) {
 	if r.H != 1 {
 		return
 	}
 	pal := theme.Active()
 	core.FillRect(s, r, ' ', theme.StyleMenuBar())
-	for i, t := range tools {
-		if t.rect.IsZero() {
+	for i, t := range row.Cells {
+		if t.Rect.IsZero() {
 			continue
 		}
 		style := theme.StyleTooltip()
 		if disabled(i) {
 			style = style.Foreground(pal.TextDim)
 		}
-		core.FillRect(s, t.rect, ' ', style)
-		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
+		core.FillRect(s, t.Rect, ' ', style)
+		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
 	}
 	// The stand-in for whatever did not fit. Dimmed only while the whole row
 	// is: what it holds is gated item by item once the menu is open.
-	if more.rect.IsZero() {
+	more := row.More
+	if more.Rect.IsZero() {
 		return
 	}
 	style := theme.StyleTooltip()
 	if p.busy {
 		style = style.Foreground(pal.TextDim)
 	}
-	core.FillRect(s, more.rect, ' ', style)
-	core.DrawText(s, more.rect.X+1, more.rect.Y, style, more.label)
+	core.FillRect(s, more.Rect, ' ', style)
+	core.DrawText(s, more.Rect.X+1, more.Rect.Y, style, more.Label)
 }
 
 // drawChart plots the report's rows in the order the loader produced them:

@@ -410,3 +410,18 @@ func TestJobStepsRefuseARenameOntoADeletedStepsName(t *testing.T) {
 		t.Errorf("statements:\n%s", strings.Join(got, "\n"))
 	}
 }
+
+// TestJobStepsGridShowsTheEditOnceMovedOff. The grid redraws after the
+// commit, so the step moved off shows the name Apply will send rather than the
+// one loaded.
+func TestJobStepsGridShowsTheEditOnceMovedOff(t *testing.T) {
+	_, _, form, grid := loadJobStepsPage(t)
+
+	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
+	editText(t, form, "Step name", "Rebuild indexes online")
+	selectGridRow(t, grid, stepNameCol, "Check integrity")
+
+	if gridRowIndex(t, grid, stepNameCol, "Rebuild indexes online") != 1 {
+		t.Error("the renamed step is not on its row")
+	}
+}

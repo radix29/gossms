@@ -54,26 +54,18 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 			sc.peerMu.Unlock()
 			return nil, f.err
 		}
-		d, inFlight := sc.peerDials[key]
-		if !inFlight {
-			d = &peerDial{done: make(chan struct{})}
-			if sc.peerDials == nil {
-				sc.peerDials = map[string]*peerDial{}
-			}
-			sc.peerDials[key] = d
+		d, leader := sc.peerDials.join(key)
+		if leader {
 			sc.peerMu.Unlock()
 			return sc.dialPeer(ctx, server, key, d)
 		}
-		d.waiters++
 		sc.peerMu.Unlock()
 
-		select {
-		case <-d.done:
-		case <-ctx.Done():
+		if !d.wait(ctx) {
 			return nil, ctx.Err()
 		}
-		if d.peer != nil {
-			return d.peer, nil
+		if d.val != nil {
+			return d.val, nil
 		}
 		// The dialling caller gave up, which says nothing about the instance;
 		// a waiter still wanting an answer dials again as first in line.
@@ -99,9 +91,7 @@ func (sc *ServerConn) dialPeer(ctx context.Context, server, key string, d *peerD
 
 	defer func() {
 		sc.peerMu.Lock()
-		if sc.peerDials[key] == d {
-			delete(sc.peerDials, key)
-		}
+		sc.peerDials.forget(key, d)
 		switch {
 		case err == nil && sc.Server.Context().Err() != nil:
 			// sc closed while connecting; closePeers has already run.
@@ -120,9 +110,9 @@ func (sc *ServerConn) dialPeer(ctx context.Context, server, key string, d *peerD
 		default:
 			sc.recordPeerFailureLocked(key, err)
 		}
-		d.peer, d.err = peer, err
+		d.val, d.err = peer, err
 		sc.peerMu.Unlock()
-		close(d.done)
+		d.land()
 	}()
 
 	opts := sc.peerOptions(server)
@@ -311,7 +301,7 @@ type peerFields struct {
 	peers  map[string]*ServerConn
 	// peerDials is the in-flight dial per instance; later callers wait for
 	// it. Guarded by peerMu.
-	peerDials map[string]*peerDial
+	peerDials flights[string, *ServerConn]
 	// peerFails holds each instance's last connect failure so it isn't
 	// re-dialled for peerFailureTTL. Guarded by peerMu.
 	peerFails map[string]peerFailure
@@ -326,16 +316,5 @@ type peerFailure struct {
 	at  time.Time
 }
 
-// peerDial is one in-flight Peer dial. Fields other than done are written
-// before done closes and read after.
-type peerDial struct {
-	done chan struct{}
-	peer *ServerConn // nil if the dial failed
-	err  error
-	// abandoned means the dialling caller's context ended, which says
-	// nothing about the instance; a waiter still wanting an answer dials
-	// again.
-	abandoned bool
-	// waiters counts joined callers; tests read it.
-	waiters int
-}
+// peerDial is one in-flight Peer dial; val is nil if it failed.
+type peerDial = flight[*ServerConn]

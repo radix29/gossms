@@ -44,7 +44,7 @@ func reportRow(t *testing.T, rows [][]string, name string) []string {
 // all fine).
 func TestJobsWithoutSchedulesListsAFailedJobAsUnknown(t *testing.T) {
 	responses := append([]fakeResponse{
-		{match: "FROM   msdb.dbo.sysjobs j", cols: 17, rows: [][]driver.Value{
+		{match: "FROM   msdb.dbo.sysjobs j", cols: jobCols, rows: [][]driver.Value{
 			jobRow("scheduled", "Database Maintenance", "sa", true, 0, 0, ""),
 			jobRow("broken", "Database Maintenance", "sa", true, 0, 0, ""),
 			jobRow("orphan", "Replication", "appuser", false, 0, 0, ""),
@@ -85,7 +85,7 @@ func TestJobsWithoutSchedulesListsAFailedJobAsUnknown(t *testing.T) {
 // unverifiable.
 func TestJobsWithoutSchedulesReportsCancellation(t *testing.T) {
 	sc, _ := newFakeConn(t,
-		fakeResponse{match: "FROM   msdb.dbo.sysjobs j", cols: 17, rows: [][]driver.Value{
+		fakeResponse{match: "FROM   msdb.dbo.sysjobs j", cols: jobCols, rows: [][]driver.Value{
 			jobRow("orphan", "Replication", "appuser", false, 0, 0, ""),
 		}},
 		fakeResponse{match: "WHERE  js.job_id = @p1", err: errors.New("context canceled")},

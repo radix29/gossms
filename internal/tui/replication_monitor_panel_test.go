@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // Replication Monitor's wiring: what it does with the monitor procedures'
@@ -297,3 +299,66 @@ func TestReplicationMonitorNoteWidthDoesNotOutliveTheNote(t *testing.T) {
 }
 
 func fmtNoAccess(db string) string { return strings.Replace(rmNoAccessNote, "%s", db, 1) }
+
+// TestReplicationPaneReadPanicClearsReading: a session or action read that
+// panicked left "Reading…" on its pane for good (safego, no repair). The
+// repair replaces it, but only while that read still owns the pane.
+func TestReplicationPaneReadPanicClearsReading(t *testing.T) {
+	var l latest
+	g := controls.NewDataGrid()
+
+	_, seq := l.Begin(context.Background())
+	g.SetStatus("Reading…")
+	paneReadPanicked(&l, seq, g)
+	if g.Status() != rmReadPanickedText {
+		t.Errorf("status = %q after the read panicked, want %q", g.Status(), rmReadPanickedText)
+	}
+
+	// Superseded: the newer read's "Reading…" is left alone.
+	_, old := l.Begin(context.Background())
+	_, _ = l.Begin(context.Background())
+	g.SetStatus("Reading…")
+	paneReadPanicked(&l, old, g)
+	if g.Status() != "Reading…" {
+		t.Errorf("a superseded panic overwrote the newer read's status: %q", g.Status())
+	}
+}
+
+// TestReplicationSnapshotKeepsTheDatabasesThatRead: one distribution database
+// failing its read blanked every other's publications. It is reported beside
+// them instead, and is the read's error only when no database could be read.
+func TestReplicationSnapshotKeepsTheDatabasesThatRead(t *testing.T) {
+	info := []fakeResponse{
+		{match: replDistributorRead, cols: 6, rows: [][]driver.Value{{"WIN10CLI", true, true, true, false, false}}},
+		{match: replDatabasesRead, cols: 5, rows: [][]driver.Value{
+			{"distribution", false, false, true, true},
+			{"dist2", false, false, true, true},
+			{"salesdb", true, false, false, true},
+		}},
+	}
+	broken := fakeResponse{match: "[dist2].dbo.sp_replmonitorhelppublication", err: errors.New("dist2 is suspect")}
+
+	sc, _ := newFakeConn(t, slices.Concat(info, []fakeResponse{broken, rmCanMonitor()}, rmMonitorResponses())...)
+	snap, err := readReplicationSnapshot(context.Background(), sc.Server)
+	if err != nil {
+		t.Fatalf("one failing distribution database failed the whole read: %v", err)
+	}
+	if len(snap.pubs) != 2 || len(snap.failed) != 1 || snap.failed[0].db != "dist2" {
+		t.Fatalf("%d publications, failed %+v; want distribution's two and dist2 reported", len(snap.pubs), snap.failed)
+	}
+	a := newTestApp()
+	p := NewReplicationMonitorPanel(a, nil)
+	p.SetBounds(0, 0, 160, 48)
+	p.applySnapshot(snap, nil)
+	if st := p.pubsGrid.Status(); !strings.Contains(st, "could not read dist2") || !strings.Contains(st, "suspect") {
+		t.Errorf("status = %q, want dist2's failure named", st)
+	}
+
+	// Nothing read at all: the failure is the read's.
+	allBroken := fakeResponse{match: "sp_replmonitorhelppublication", err: errors.New("down")}
+	sc, _ = newFakeConn(t, slices.Concat(info, []fakeResponse{allBroken, rmCanMonitor()})...)
+	if _, err := readReplicationSnapshot(context.Background(), sc.Server); err == nil ||
+		!strings.Contains(err.Error(), "distribution") || !strings.Contains(err.Error(), "dist2") {
+		t.Errorf("err = %v, want both databases' failures", err)
+	}
+}

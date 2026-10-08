@@ -55,11 +55,7 @@ func rolePropPages(d *PropDialog, sc *db.ServerConn, dbName, roleName string) []
 // findRole resolves dbName/roleName to a *gosmo.DatabaseRole, the one
 // lookup every page on this dialog needs first.
 func findRole(ctx context.Context, sc *db.ServerConn, dbName, roleName string) (*gosmo.DatabaseRole, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.RoleByName(ctx, roleName)
+	return inDB(ctx, sc, dbName, roleName, (*gosmo.Database).RoleByName)
 }
 
 // principalNames returns every database principal (user or role) that

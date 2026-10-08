@@ -39,26 +39,26 @@ func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 	barStyle := theme.StyleMenuBar()
 	core.FillRect(s, lv.toolRect, ' ', barStyle)
 
-	for i, t := range lv.tools {
-		if t.rect.IsZero() {
+	for i, t := range lv.tools.Cells {
+		if t.Rect.IsZero() {
 			continue
 		}
 		style := theme.StyleTooltip()
 		if lv.toolDisabled(i) {
 			style = style.Foreground(pal.TextDim)
 		}
-		core.FillRect(s, t.rect, ' ', style)
-		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
+		core.FillRect(s, t.Rect, ' ', style)
+		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
 	}
 	// The stand-in for whatever did not fit. Dimmed only while the whole row
 	// is: what it holds is gated item by item once the menu is open.
-	if !lv.more.rect.IsZero() {
+	if !lv.tools.More.Rect.IsZero() {
 		style := theme.StyleTooltip()
 		if !lv.toolsEnabled() {
 			style = style.Foreground(pal.TextDim)
 		}
-		core.FillRect(s, lv.more.rect, ' ', style)
-		core.DrawText(s, lv.more.rect.X+1, lv.more.rect.Y, style, lv.more.label)
+		core.FillRect(s, lv.tools.More.Rect, ' ', style)
+		core.DrawText(s, lv.tools.More.Rect.X+1, lv.tools.More.Rect.Y, style, lv.tools.More.Label)
 	}
 	if lv.filterVisible() {
 		lv.filter.Draw(s)

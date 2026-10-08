@@ -102,17 +102,18 @@ func TestParsePivotShapes(t *testing.T) {
 		alias: "p",
 		pivot: "PIVOT fn=max agg=Total for=Year in=[2005]",
 	}, {
-		// PIVOT is a legal alias. Without the '(' it is one.
-		name:  "pivot as a plain alias",
+		// PIVOT is reserved, so a bare one is no alias: it is the clause still
+		// being typed, and the reference keeps its own name.
+		name:  "pivot not yet opened",
 		sql:   "SELECT | FROM dbo.Orders PIVOT",
-		alias: "PIVOT",
+		alias: "",
 		pivot: "-",
 	}, {
 		// No FOR: not a pivot clause at all, and the parse rewinds to what it
 		// did before rather than keeping half a shape.
 		name:  "malformed clause rewinds",
 		sql:   "SELECT | FROM dbo.Orders PIVOT (SUM(Total)) AS p",
-		alias: "PIVOT",
+		alias: "",
 		pivot: "-",
 	}}
 	for _, c := range cases {

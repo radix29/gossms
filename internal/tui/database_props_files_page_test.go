@@ -23,12 +23,14 @@ func filesPageResponses() []fakeResponse {
 		{match: "page_verify_option_desc", cols: 25, rows: [][]driver.Value{
 			append([]driver.Value{"sa", "CHECKSUM", "MULTI_USER", "NONE", false, "OFF"}, falses(19)...),
 		}},
+		// First: FileGroups' select names the file columns too, so the Files
+		// answer below would serve it.
+		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 13, rows: [][]driver.Value{
+			{"PRIMARY", gosmo.RowsFileGroup, true, false, int64(1), "appdb", `C:\data\appdb.mdf`, "ROWS", "ONLINE", int64(204800), int64(-1), int64(8192), false},
+		}},
 		{match: "df.file_id, df.name, df.physical_name", cols: 10, rows: [][]driver.Value{
 			{int64(1), "appdb", `C:\data\appdb.mdf`, "ROWS", "PRIMARY", "ONLINE", int64(204800), int64(-1), int64(8192), false},
 			{int64(2), "appdb_log", `C:\data\appdb_log.ldf`, "LOG", "", "ONLINE", int64(51200), int64(-1), int64(1280), false},
-		}},
-		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 11, rows: [][]driver.Value{
-			{"PRIMARY", gosmo.RowsFileGroup, true, false, "appdb", `C:\data\appdb.mdf`, int64(204800), int64(-1), int64(8192), false, true},
 		}},
 	}
 }
@@ -140,11 +142,11 @@ func filestreamFilesResponses() []fakeResponse {
 	// Size 0, growth 0, max size -1 (UNLIMITED) and a physical name with no
 	// extension, because that is what a real FILESTREAM file reports — measured
 	// against a FILESTREAM database on win10cli, 2026-09-05.
-	r[2].rows = append(r[2].rows, []driver.Value{
+	r[3].rows = append(r[3].rows, []driver.Value{
 		int64(3), "appdb_fs", `C:\data\appdb_fs`, "FILESTREAM", "fsgroup", "ONLINE", int64(0), int64(-1), int64(0), false,
 	})
-	r[3].rows = append(r[3].rows, []driver.Value{
-		"fsgroup", gosmo.FileStreamFileGroup, true, false, "appdb_fs", `C:\data\appdb_fs`, int64(0), int64(-1), int64(0), false, false,
+	r[2].rows = append(r[2].rows, []driver.Value{
+		"fsgroup", gosmo.FileStreamFileGroup, true, false, int64(65537), "appdb_fs", `C:\data\appdb_fs`, "FILESTREAM", "ONLINE", int64(0), int64(-1), int64(0), false,
 	})
 	return r
 }
@@ -286,5 +288,21 @@ func TestFilesPageAddsAFilestreamFileWithoutSizeOrGrowth(t *testing.T) {
 	row := g.Row(gridRowIndex(t, g, 0, "appdb_fs2"))
 	if row[1] != "FILESTREAM" {
 		t.Errorf("the grid reports the new file as %q, want FILESTREAM", row[1])
+	}
+}
+
+// TestFilesPageGridShowsTheEditOnceMovedOff. The grid redraws after the
+// commit, so the file moved off shows the name Apply will send rather than the
+// one loaded.
+func TestFilesPageGridShowsTheEditOnceMovedOff(t *testing.T) {
+	sc, inst := newFakeConn(t, filesPageResponses()...)
+	form, _ := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	g := plainGrid(t, form)
+
+	editText(t, form, "Logical name", "appdb_data")
+	selectGridRow(t, g, 0, "appdb_log")
+
+	if got := g.Row(0)[0]; got != "appdb_data" {
+		t.Errorf("the grid shows %q for the renamed file, want the new name", got)
 	}
 }

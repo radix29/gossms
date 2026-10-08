@@ -718,7 +718,8 @@ func (a *App) layoutAll() {
 	contentH := h - menuH - statusH
 
 	a.menuBar.SetBounds(0, 0, w)
-	a.toolbar.SetBounds(0, 0, w)
+	labelsEnd := a.menuBar.LabelsEnd() + 1 // one blank column after Help
+	a.toolbar.SetBounds(labelsEnd, 0, w-labelsEnd)
 	a.explorerSplit.SetBounds(0, menuH, w, contentH)
 
 	left := a.explorerSplit.FirstRect()

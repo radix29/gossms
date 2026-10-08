@@ -24,7 +24,9 @@ type CheckRow struct {
 	// TextRow.SetReadOnly).
 	drawReadOnly bool
 	pageReadOnly bool
-	x, y, w      int
+	// disabled is SetEnabled's state: see TextRow.SetEnabled.
+	disabled bool
+	x, y, w  int
 }
 
 // Check returns an editable checkbox row.
@@ -43,7 +45,7 @@ func (r *CheckRow) SetChecked(v bool) { r.box.SetChecked(v); r.orig = v }
 // Edit sets the state the way pressing Space does: the value changes and the
 // row goes dirty. SetChecked's counterpart; see TextRow.Edit.
 func (r *CheckRow) Edit(v bool) {
-	if r.pageReadOnly {
+	if r.disabled || r.pageReadOnly {
 		return
 	}
 	r.box.SetChecked(v)
@@ -58,7 +60,19 @@ func (r *CheckRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w
 	r.box.SetBounds(x, y)
 }
-func (r *CheckRow) Focusable() bool { return !r.pageReadOnly }
+func (r *CheckRow) Focusable() bool { return !r.disabled && !r.pageReadOnly }
+
+// SetEnabled toggles whether the row can be focused or changed; a disabled row
+// still draws its box, greyed, as TextRow.SetEnabled does. SetReadOnly, by
+// contrast, draws the row flat: it is for a page that cannot be written, this
+// for one control another on the page switches off.
+func (r *CheckRow) SetEnabled(v bool) {
+	r.disabled = !v
+	r.box.SetEnabled(v)
+}
+
+// Enabled reports SetEnabled's state.
+func (r *CheckRow) Enabled() bool { return !r.disabled }
 
 // SetReadOnly is the page's own gate on the row — see TextRow.SetReadOnly.
 func (r *CheckRow) SetReadOnly(v bool) { r.pageReadOnly = v }
@@ -85,7 +99,7 @@ func (r *CheckRow) Draw(s tcell.Screen, focused bool) {
 		core.DrawTextClipped(s, r.x+2, r.y, max(0, r.w-2), lst, r.label)
 		return
 	}
-	r.box.Focus(focused)
+	r.box.Focus(focused && !r.disabled)
 	r.box.Draw(s)
 }
 func (r *CheckRow) HandleKey(ev *tcell.EventKey) bool {
@@ -127,6 +141,8 @@ type SelectRow struct {
 	// TextRow.SetReadOnly).
 	drawReadOnly bool
 	pageReadOnly bool
+	// disabled is SetEnabled's state: see TextRow.SetEnabled.
+	disabled bool
 	// fitItems widens the control to its widest item — see SetFitItems.
 	fitItems bool
 	x, y, w  int
@@ -171,7 +187,7 @@ func (r *SelectRow) Label() string { return strings.TrimRight(r.dd.Label(), " ")
 // TextRow.Edit). An out-of-range index is ignored, as DropDown ignores one, so
 // a rejected index cannot leave the row dirty against a value it never took.
 func (r *SelectRow) Edit(i int) {
-	if r.pageReadOnly {
+	if r.disabled || r.pageReadOnly {
 		return
 	}
 	before := r.dd.Value()
@@ -214,7 +230,19 @@ func (r *SelectRow) Layout(x, y, w int) {
 	room := w - core.DisplayWidth(r.dd.Label()) - 3
 	r.dd.SetWidth(max(2, min(want, room)))
 }
-func (r *SelectRow) Focusable() bool { return !r.pageReadOnly }
+func (r *SelectRow) Focusable() bool { return !r.disabled && !r.pageReadOnly }
+
+// SetEnabled toggles whether the row can be focused or changed; a disabled row
+// still draws its dropdown, greyed, as TextRow.SetEnabled does, so a page
+// switching off a select beside text rows shows them alike. SetReadOnly draws
+// the row flat instead: it is for a page that cannot be written.
+func (r *SelectRow) SetEnabled(v bool) {
+	r.disabled = !v
+	r.dd.SetEnabled(v)
+}
+
+// Enabled reports SetEnabled's state.
+func (r *SelectRow) Enabled() bool { return !r.disabled }
 
 // SetReadOnly is the page's own gate on the row — see TextRow.SetReadOnly.
 func (r *SelectRow) SetReadOnly(v bool) {
@@ -238,7 +266,7 @@ func (r *SelectRow) Draw(s tcell.Screen, focused bool) {
 		drawFlatReadOnly(s, r.x, r.y, r.w, r.Label(), r.dd.Value())
 		return
 	}
-	r.dd.Focus(focused)
+	r.dd.Focus(focused && !r.disabled)
 	r.dd.Draw(s)
 }
 func (r *SelectRow) DrawOverlay(s tcell.Screen) { r.dd.DrawOverlay(s) }

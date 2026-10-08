@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
@@ -77,16 +78,29 @@ func scheduleRelativeDayIndex(v int) int {
 	return 0
 }
 
-// parseAgentClock parses "HH:MM:SS" into msdb's HHMMSS integer encoding.
+// parseAgentClock parses "HH:MM:SS" (or "H:MM:SS"), surrounding white space
+// aside, into msdb's HHMMSS integer encoding. It is strict where Sscanf was
+// not: "12:30:00pm", "1:2:3" and "+1:00:00" were read as times, so a typo
+// saved a schedule at a time nobody typed.
 func parseAgentClock(s string) (int, error) {
-	var h, m, sec int
-	if _, err := fmt.Sscanf(s, "%d:%d:%d", &h, &m, &sec); err != nil {
-		return 0, fmt.Errorf("time must be HH:MM:SS")
+	h, rest, ok1 := strings.Cut(strings.TrimSpace(s), ":")
+	m, sec, ok2 := strings.Cut(rest, ":")
+	if !ok1 || !ok2 || len(h) < 1 || len(h) > 2 || len(m) != 2 || len(sec) != 2 {
+		return 0, fmt.Errorf("time must be HH:MM:SS, as 08:30:00")
 	}
-	if h < 0 || h > 23 || m < 0 || m > 59 || sec < 0 || sec > 59 {
-		return 0, fmt.Errorf("time must be a valid HH:MM:SS")
+	var parts [3]int
+	for i, p := range []string{h, m, sec} {
+		for _, c := range p {
+			if c < '0' || c > '9' {
+				return 0, fmt.Errorf("time must be HH:MM:SS, as 08:30:00")
+			}
+			parts[i] = parts[i]*10 + int(c-'0')
+		}
 	}
-	return h*10000 + m*100 + sec, nil
+	if parts[0] > 23 || parts[1] > 59 || parts[2] > 59 {
+		return 0, fmt.Errorf("time %q is not a time of day: hours run 00-23, minutes and seconds 00-59", strings.TrimSpace(s))
+	}
+	return parts[0]*10000 + parts[1]*100 + parts[2], nil
 }
 
 // formatAgentClock is parseAgentClock's inverse.
@@ -94,12 +108,23 @@ func formatAgentClock(n int) string {
 	return fmt.Sprintf("%02d:%02d:%02d", n/10000, (n%10000)/100, n%100)
 }
 
-// parseAgentDate parses "YYYY-MM-DD", returning the zero Time for "".
+// parseAgentDate parses "YYYY-MM-DD", surrounding white space aside,
+// returning the zero Time for "". A date msdb refuses — before 1990-01-01
+// (sp_verify_job_date's floor, Msg 14266) — is refused here, with a message
+// naming the form, rather than time.Parse's layout-speak at Apply.
 func parseAgentDate(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}, nil
 	}
-	return time.Parse("2006-01-02", s)
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("date %q must be a real date written YYYY-MM-DD, as 2026-01-31", s)
+	}
+	if t.Year() < 1990 {
+		return time.Time{}, fmt.Errorf("date %q is before 1990-01-01, the earliest SQL Server Agent accepts", s)
+	}
+	return t, nil
 }
 
 func formatAgentDate(t time.Time) string {

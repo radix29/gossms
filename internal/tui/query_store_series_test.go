@@ -131,7 +131,7 @@ func TestPlotHistoryIsWithheldOnARowThatIsNotAQuery(t *testing.T) {
 		t.Errorf("the mode cannot be switched off from this row: %s", p.actReason(qsActPlot))
 	}
 	p.refreshToolLabels()
-	if got := p.acts[qsActPlot].label; got != "Plot Report" {
+	if got := p.acts.Cells[qsActPlot].Label; got != "Plot Report" {
 		t.Errorf("label with the history plotted = %q, want it to offer the report back", got)
 	}
 }

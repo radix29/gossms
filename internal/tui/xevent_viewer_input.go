@@ -13,6 +13,7 @@ import (
 // false for anything not acted on, so App's Tab and Escape still work.
 func (v *XEventViewer) HandleKey(ev *tcell.EventKey) bool {
 	if v.grid.OverlayActive() {
+		defer v.catchUpAfterOverlay()
 		return v.grid.HandleKey(ev)
 	}
 	switch ev.Key() {
@@ -89,6 +90,7 @@ func (v *XEventViewer) scrollDetails(delta int) {
 // every latch-bearing child wherever the pointer is.
 func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	if v.grid.OverlayActive() {
+		defer v.catchUpAfterOverlay()
 		return v.grid.HandleMouse(ev)
 	}
 	mx, my := ev.Position()
@@ -132,9 +134,9 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	if v.toolRect.H == 1 && my == v.toolRect.Y && ev.Buttons() == tcell.Button1 {
 		// The action runs on the press; xZoneToolbar swallows the repeats.
 		v.armDrag(ev, xZoneToolbar)
-		if i := toolButtonAt(v.tools, mx, my); i >= 0 {
+		if i := v.tools.CellAt(mx, my); i >= 0 {
 			v.runTool(i)
-		} else if v.more.rect.Contains(mx, my) {
+		} else if v.tools.More.Rect.Contains(mx, my) {
 			v.showOverflowMenu()
 		}
 		return true

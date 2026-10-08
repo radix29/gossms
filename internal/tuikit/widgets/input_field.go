@@ -260,27 +260,31 @@ func (f *InputField) Draw(s tcell.Screen) {
 		return inputStyle
 	}
 
-	// Walk runes accumulating display width rather than assuming a column each: a
-	// wide rune shifts everything after it one column right, and counting runes
-	// draws the tail of the field one column left of the terminal's.
+	// Walk grapheme clusters accumulating display width rather than assuming a
+	// column per rune: a wide character shifts everything after it, and a
+	// cluster's width is not the sum of its runes' ("❤️" is two runes and two
+	// columns, neither rune two wide). Counting runes drew the tail of the field
+	// out of step with the terminal, and dropping zero-width runes lost every
+	// combining mark. Each cluster is styled by its first rune.
 	i, col := 0, 0
 	for i < len(runes) {
-		rw := core.RuneWidth(runes[i])
-		if col+rw > f.scroll {
+		end, cw := core.GraphemeAt(runes, i)
+		if col+cw > f.scroll {
 			break
 		}
-		col += rw
-		i++
+		col += cw
+		i = end
 	}
 	sx := 0
-	// A wide rune straddling the left edge shows only its right-hand cell, which
-	// is not a glyph — blank it rather than emit half a character.
+	// A wide cluster straddling the left edge shows only its right-hand cell,
+	// which is not a glyph — blank it rather than emit half a character.
 	if i < len(runes) && col < f.scroll {
-		for c := f.scroll; c < col+core.RuneWidth(runes[i]) && sx < f.rect.W; c++ {
+		end, cw := core.GraphemeAt(runes, i)
+		for c := f.scroll; c < col+cw && sx < f.rect.W; c++ {
 			core.PutRune(s, ix+1+sx, f.rect.Y, ' ', styleFor(i))
 			sx++
 		}
-		i++
+		i = end
 	}
 	for sx < f.rect.W {
 		st := styleFor(i)
@@ -290,14 +294,13 @@ func (f *InputField) Draw(s tcell.Screen) {
 			i++
 			continue
 		}
-		ch := runes[i]
-		rw := core.RuneWidth(ch)
-		if rw == 0 {
-			// A combining mark shares its base rune's cell.
-			i++
+		j, cw := core.GraphemeAt(runes, i)
+		if cw == 0 {
+			// Combining marks with no base: no cell of their own.
+			i = j
 			continue
 		}
-		if sx+rw > f.rect.W {
+		if sx+cw > f.rect.W {
 			// Clipped by the right edge — blanks, never half a glyph, since
 			// tcell owns both cells of a double-width character.
 			for ; sx < f.rect.W; sx++ {
@@ -305,9 +308,14 @@ func (f *InputField) Draw(s tcell.Screen) {
 			}
 			break
 		}
-		core.PutRune(s, ix+1+sx, f.rect.Y, ch, st)
-		sx += rw
-		i++
+		if j == i+1 {
+			core.PutRune(s, ix+1+sx, f.rect.Y, runes[i], st)
+		} else {
+			// The whole cluster in one cell write, so the terminal joins it.
+			s.Put(ix+1+sx, f.rect.Y, string(runes[i:j]), st)
+		}
+		sx += cw
+		i = j
 	}
 }
 
@@ -357,13 +365,13 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 		if ctrlHeld {
 			f.cursor = core.WordBoundaryLeft(f.value, f.cursor)
 		} else if f.cursor > 0 {
-			f.cursor--
+			f.cursor = core.PrevGrapheme(f.displayRunes(), f.cursor)
 		}
 	case tcell.KeyRight:
 		if ctrlHeld {
 			f.cursor = core.WordBoundaryRight(f.value, f.cursor)
 		} else if f.cursor < len(f.value) {
-			f.cursor++
+			f.cursor = core.NextGrapheme(f.displayRunes(), f.cursor)
 		}
 	case tcell.KeyHome:
 		f.cursor = 0
@@ -379,8 +387,10 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 		case ctrlHeld:
 			f.deleteWordLeft()
 		case f.cursor > 0:
-			f.value = append(f.value[:f.cursor-1], f.value[f.cursor:]...)
-			f.cursor--
+			// The whole cluster, as Left moves over it (see Editor.backspace).
+			from := core.PrevGrapheme(f.displayRunes(), f.cursor)
+			f.value = append(f.value[:from], f.value[f.cursor:]...)
+			f.cursor = from
 		}
 	case tcell.KeyDelete:
 		switch {
@@ -389,7 +399,8 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 		case ctrlHeld:
 			f.deleteWordRight()
 		case f.cursor < len(f.value):
-			f.value = append(f.value[:f.cursor], f.value[f.cursor+1:]...)
+			to := min(core.NextGrapheme(f.displayRunes(), f.cursor), len(f.value))
+			f.value = append(f.value[:f.cursor], f.value[to:]...)
 		}
 	case tcell.KeyCtrlU:
 		f.value = nil

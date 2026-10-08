@@ -28,23 +28,26 @@ const (
 
 var agentEpoch = time.Date(2026, 8, 1, 3, 0, 0, 0, time.UTC)
 
-// jobRow is one row of the 17-column job SELECT used by Jobs and
-// JobByName.
+// jobCols is the width of the job SELECT used by Jobs and JobByName.
+const jobCols = 18
+
+// jobRow is one row of the jobCols-column job SELECT. The last run is
+// sysjobservers' YYYYMMDD / HHMMSS pair for agentEpoch.
 func jobRow(name, category, owner string, enabled bool, deleteLevel, notifyLevel int64, operator string) []driver.Value {
 	return []driver.Value{
 		"job-" + name, name, "Rebuilds every index",
 		enabled, category, owner,
 		agentEpoch, agentEpoch, int64(1),
 		deleteLevel, notifyLevel, operator,
-		agentEpoch, int64(1), int64(1500), agentEpoch, int64(1),
+		int64(20260801), int64(30000), int64(1), int64(1500), agentEpoch, int64(1),
 	}
 }
 
 // jobStepReadBack answers the read Job.AddStep makes of the step it just
 // added with no row, so AddStep hands back its name-only handle — the pages
 // discard it. It has to come before any job by-name response: both queries
-// say "WHERE  j.name = @p1", and the job's 17 columns do not scan into a
-// step's 23.
+// say "WHERE  j.name = @p1", and the job's jobCols columns do not scan into
+// a step's 23.
 var jobStepReadBack = fakeResponse{match: "AND s.step_name = @p2", cols: 23}
 
 // agentJobResponses answers job reads. The by-name read is scripted before the
@@ -53,8 +56,8 @@ var jobStepReadBack = fakeResponse{match: "AND s.step_name = @p2", cols: 23}
 func agentJobResponses(job []driver.Value) []fakeResponse {
 	return []fakeResponse{
 		jobStepReadBack,
-		{match: "WHERE  j.name = @p1", cols: 17, rows: [][]driver.Value{job}},
-		{match: "FROM   msdb.dbo.sysjobs j", cols: 17, rows: [][]driver.Value{
+		{match: "WHERE  j.name = @p1", cols: jobCols, rows: [][]driver.Value{job}},
+		{match: "FROM   msdb.dbo.sysjobs j", cols: jobCols, rows: [][]driver.Value{
 			jobRow("Backup log", "Database Maintenance", "sa", true, 0, 0, ""),
 			job,
 		}},

@@ -13,6 +13,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	dbconn "github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -119,8 +120,8 @@ func TestQueryStorePanelOptionsFollowTheToolbar(t *testing.T) {
 		qsToolWindow:    qsWindows[len(qsWindows)-1].label,
 		qsToolTop:       "100",
 	} {
-		if !strings.Contains(p.sel[i].label, want) {
-			t.Errorf("selector %d reads %q, want it to name %q", i, p.sel[i].label, want)
+		if !strings.Contains(p.sel.Cells[i].Label, want) {
+			t.Errorf("selector %d reads %q, want it to name %q", i, p.sel.Cells[i].Label, want)
 		}
 	}
 }
@@ -590,15 +591,15 @@ func TestTheFilterSelectorsReachTheQuery(t *testing.T) {
 
 	p.refreshToolLabels()
 	for i, want := range map[int]string{qsActMinExec: "off", qsActRegression: "off"} {
-		if !strings.Contains(p.acts[i].label, want) {
-			t.Errorf("filter %d reads %q, want it to say %q", i, p.acts[i].label, want)
+		if !strings.Contains(p.acts.Cells[i].Label, want) {
+			t.Errorf("filter %d reads %q, want it to say %q", i, p.acts.Cells[i].Label, want)
 		}
 	}
 	p.minExecIdx, p.regressIdx = 3, 2
 	p.refreshToolLabels()
 	for i, want := range map[int]string{qsActMinExec: "10", qsActRegression: "≥25%"} {
-		if !strings.Contains(p.acts[i].label, want) {
-			t.Errorf("filter %d reads %q, want it to name %q", i, p.acts[i].label, want)
+		if !strings.Contains(p.acts.Cells[i].Label, want) {
+			t.Errorf("filter %d reads %q, want it to name %q", i, p.acts.Cells[i].Label, want)
 		}
 	}
 }
@@ -828,7 +829,7 @@ func TestTrackingAQueryPutsItInTheTrackedView(t *testing.T) {
 	}
 	// The button says what the press will do, before and after.
 	p.refreshToolLabels()
-	if got := p.acts[qsActTrack].label; got != "Track Query" {
+	if got := p.acts.Cells[qsActTrack].Label; got != "Track Query" {
 		t.Errorf("the action reads %q over an untracked query", got)
 	}
 	p.runAct(qsActTrack)
@@ -839,7 +840,7 @@ func TestTrackingAQueryPutsItInTheTrackedView(t *testing.T) {
 		t.Error("the row above the cursor was tracked instead")
 	}
 	p.refreshToolLabels()
-	if got := p.acts[qsActTrack].label; got != "Untrack Query" {
+	if got := p.acts.Cells[qsActTrack].Label; got != "Untrack Query" {
 		t.Errorf("the action still reads %q over a tracked query", got)
 	}
 
@@ -991,7 +992,7 @@ func TestComparePlansTakesTwoPressesAndOpensAPanel(t *testing.T) {
 	}
 	// The button says which press it is on.
 	p.refreshToolLabels()
-	if got := p.acts[qsActCompare].label; !strings.Contains(got, "41") {
+	if got := p.acts.Cells[qsActCompare].Label; !strings.Contains(got, "41") {
 		t.Errorf("the action reads %q, want it to name the marked plan", got)
 	}
 
@@ -1116,7 +1117,7 @@ func TestATrackedQueryThatIsGoneCanStillBeUntracked(t *testing.T) {
 
 	p.grid.SetSelectedCell(0, 0)
 	p.refreshToolLabels()
-	if got := p.acts[qsActTrack].label; got != "Untrack Query" {
+	if got := p.acts.Cells[qsActTrack].Label; got != "Untrack Query" {
 		t.Errorf("the action reads %q over the missing query's row", got)
 	}
 	if p.actDisabled(qsActTrack) {
@@ -1710,31 +1711,29 @@ func TestNoToolbarButtonIsUnreachableAtAnyWidth(t *testing.T) {
 		p.layoutToolRows()
 
 		for _, row := range []struct {
-			name   string
-			tools  []toolButton
-			hidden []int
-			more   toolButton
+			name string
+			*controls.ToolRow
 		}{
-			{"selector", p.sel, p.hiddenSel, p.selMore},
-			{"action", p.acts, p.hiddenActs, p.actMore},
+			{"selector", &p.sel},
+			{"action", &p.acts},
 		} {
 			inMenu := map[int]bool{}
-			for _, i := range row.hidden {
+			for _, i := range row.Hidden {
 				inMenu[i] = true
 			}
-			for i, tb := range row.tools {
-				if tb.rect.IsZero() == inMenu[i] {
+			for i, tb := range row.Cells {
+				if tb.Rect.IsZero() == inMenu[i] {
 					continue // drawn, or reachable through the menu
 				}
 				t.Fatalf("width %d: %s cell %d (%q) is neither drawn nor in the More menu",
-					panelW, row.name, i, tb.label)
+					panelW, row.name, i, tb.Label)
 			}
-			if len(row.hidden) > 0 && row.more.rect.IsZero() && panelW > 12 {
+			if len(row.Hidden) > 0 && row.More.Rect.IsZero() && panelW > 12 {
 				t.Fatalf("width %d: %s row hides %d buttons with no More cell to reach them",
-					panelW, row.name, len(row.hidden))
+					panelW, row.name, len(row.Hidden))
 			}
 			// The stand-in must itself be inside the row it stands in.
-			if !row.more.rect.IsZero() && row.more.rect.Right() > p.rect.Right() {
+			if !row.More.Rect.IsZero() && row.More.Rect.Right() > p.rect.Right() {
 				t.Fatalf("width %d: %s row's More cell runs past the pane", panelW, row.name)
 			}
 		}
@@ -1742,10 +1741,10 @@ func TestNoToolbarButtonIsUnreachableAtAnyWidth(t *testing.T) {
 }
 
 // TestTheHiddenButtonsAreTheRowsTail: the More menu must hold a suffix, not a
-// scattered subset. layoutToolButtons skips a button that does not fit and
-// carries on, so a later, shorter one is squeezed in after it — which would
-// leave the menu holding the middle of the row and the row itself with a gap
-// in the order the user reads it.
+// scattered subset. A layout that skipped a button that does not fit and
+// carried on would squeeze a later, shorter one in after it — leaving the menu
+// holding the middle of the row and the row itself with a gap in the order the
+// user reads it.
 //
 // Swept across widths rather than checked at one: the squeeze needs a long
 // button followed by a shorter one at exactly the wrong boundary, and a single
@@ -1760,22 +1759,21 @@ func TestTheHiddenButtonsAreTheRowsTail(t *testing.T) {
 		p.layoutToolRows()
 
 		for _, row := range []struct {
-			name   string
-			tools  []toolButton
-			hidden []int
+			name string
+			*controls.ToolRow
 		}{
-			{"selector", p.sel, p.hiddenSel},
-			{"action", p.acts, p.hiddenActs},
+			{"selector", &p.sel},
+			{"action", &p.acts},
 		} {
-			if len(row.hidden) == 0 {
+			if len(row.Hidden) == 0 {
 				continue
 			}
 			sawOverflow = true
-			want := len(row.tools) - len(row.hidden)
-			for n, i := range row.hidden {
+			want := len(row.Cells) - len(row.Hidden)
+			for n, i := range row.Hidden {
 				if i != want+n {
 					t.Fatalf("width %d: hidden %s buttons %v are not the row's tail starting at %d",
-						panelW, row.name, row.hidden, want)
+						panelW, row.name, row.Hidden, want)
 				}
 			}
 		}
@@ -1800,15 +1798,15 @@ func TestTheOverflowMenuRunsTheHiddenAction(t *testing.T) {
 	p.SetBounds(0, 0, 92, 40)
 	p.refreshToolLabels()
 	p.layoutToolRows()
-	if !p.acts[qsActTrack].rect.IsZero() {
+	if !p.acts.Cells[qsActTrack].Rect.IsZero() {
 		t.Fatal("Track Query still fits at 92 columns, so this proves nothing")
 	}
-	if p.actMore.rect.IsZero() {
+	if p.acts.More.Rect.IsZero() {
 		t.Fatal("no More cell to reach it through")
 	}
 
 	// Press the More cell where the mouse would, then choose the entry.
-	if !p.handleToolbarPress(p.actMore.rect.X+1, p.actMore.rect.Y) {
+	if !p.handleToolbarPress(p.acts.More.Rect.X+1, p.acts.More.Rect.Y) {
 		t.Fatal("the More cell did not take the press")
 	}
 	chooseMenuItem(t, a, "Track Query")
@@ -1834,7 +1832,7 @@ func TestTheOverflowMenuKeepsTheGateAndSaysWhy(t *testing.T) {
 	p.refreshToolLabels()
 	p.layoutToolRows()
 
-	p.handleToolbarPress(p.actMore.rect.X+1, p.actMore.rect.Y)
+	p.handleToolbarPress(p.acts.More.Rect.X+1, p.acts.More.Rect.Y)
 	var found bool
 	for _, it := range a.contextMenu.Items() {
 		if !strings.Contains(it.Label, "Compare Plans") {
@@ -1869,12 +1867,12 @@ func TestTheScriptLabelSaysWhichStatement(t *testing.T) {
 
 	p.plansGrid.SetSelectedCell(0, 0) // plan 41, not forced
 	p.refreshToolLabels()
-	if got := p.acts[qsActScript].label; got != "Script Force" {
+	if got := p.acts.Cells[qsActScript].Label; got != "Script Force" {
 		t.Errorf("over an unforced plan the label is %q, want Script Force", got)
 	}
 	p.plansGrid.SetSelectedCell(1, 0) // plan 42, forced
 	p.refreshToolLabels()
-	if got := p.acts[qsActScript].label; got != "Script Unforce" {
+	if got := p.acts.Cells[qsActScript].Label; got != "Script Unforce" {
 		t.Errorf("over a forced plan the label is %q, want Script Unforce", got)
 	}
 }

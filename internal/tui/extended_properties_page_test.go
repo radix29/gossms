@@ -147,3 +147,18 @@ func TestExtendedPropertiesUntouchedPageWritesNothing(t *testing.T) {
 		t.Errorf("an untouched page wrote:\n%s", strings.Join(stmts, "\n"))
 	}
 }
+
+// TestExtendedPropertiesGridShowsTheEditOnceMovedOff. The grid redraws after
+// the commit, so the row moved off shows the value Apply will send rather than
+// the one loaded.
+func TestExtendedPropertiesGridShowsTheEditOnceMovedOff(t *testing.T) {
+	_, _, form, grid, _ := loadExtPropPage(t)
+
+	selectGridRow(t, grid, extPropNameCol, "Owner_Team")
+	editText(t, form, "Value", "Data Platform")
+	selectGridRow(t, grid, extPropNameCol, "MS_Description")
+
+	if got := grid.Row(gridRowIndex(t, grid, extPropNameCol, "Owner_Team"))[1]; got != "Data Platform" {
+		t.Errorf("the grid shows %q for the edited property, want the edit", got)
+	}
+}

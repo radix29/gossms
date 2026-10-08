@@ -48,27 +48,37 @@ func (r githubRelease) releasesURL() string {
 // checkForUpdates opens UpdateDialog in its loading state, then fetches the
 // latest release from GitHub on a background goroutine — same postAndWake
 // handoff as connectServer (see app_connections.go).
+//
+// Latest-only (d.check): a check left running by an earlier showing must not
+// land in this one, where a late failure would overwrite this showing's
+// success.
 func (a *App) checkForUpdates() {
-	a.updateDialog.ShowChecking(version.Version)
+	d := a.updateDialog
+	d.ShowChecking(version.Version)
+	ctx, seq := d.check.BeginTimeout(context.Background(), 10*time.Second)
 
 	// safegoRepair: ShowChecking latches the dialog into its loading state,
 	// which only ShowResult leaves — a panic strands it there.
 	a.safegoRepair("the update check", func() {
-		a.updateDialog.ShowResult(version.Version, githubRelease{}, errUpdateCheckPanicked)
+		if d.check.Done(seq) {
+			d.ShowResult(version.Version, githubRelease{}, errUpdateCheckPanicked)
+		}
 	}, func() {
-		rel, err := fetchLatestRelease()
+		rel, err := releaseFetcher(ctx)
 		a.postAndWake(func() {
-			a.updateDialog.ShowResult(version.Version, rel, err)
+			if d.check.Done(seq) {
+				d.ShowResult(version.Version, rel, err)
+			}
 		})
 	})
 }
 
-// fetchLatestRelease calls the GitHub API for gossms's latest release.
-// GitHub requires a User-Agent header on API requests or it returns 403.
-func fetchLatestRelease() (githubRelease, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+// releaseFetcher is fetchLatestRelease, swapped by tests.
+var releaseFetcher = fetchLatestRelease
 
+// fetchLatestRelease calls the GitHub API for gossms's latest release, bounded
+// by ctx. GitHub requires a User-Agent header on API requests or it returns 403.
+func fetchLatestRelease(ctx context.Context) (githubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubReleasesAPI, nil)
 	if err != nil {
 		return githubRelease{}, err

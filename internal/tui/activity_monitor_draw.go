@@ -89,24 +89,24 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 	}
 
 	// Buttons wear the tooltip scheme: both are the panel's raised surfaces.
-	for _, t := range am.tools {
-		if t.rect.IsZero() {
+	for _, t := range am.tools.Cells {
+		if t.Rect.IsZero() {
 			continue
 		}
 		style := theme.StyleTooltip()
-		if t.disabled {
+		if t.Disabled {
 			style = style.Foreground(pal.TextDim)
-		} else if t.selected {
+		} else if t.Selected {
 			style = tcell.StyleDefault.Background(pal.MenuSelected).Foreground(color.White).Bold(true)
 		}
-		core.FillRect(s, t.rect, ' ', style)
-		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
+		core.FillRect(s, t.Rect, ' ', style)
+		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
 	}
 	// Never dimmed: its contents are gated per control once opened.
-	if !am.more.rect.IsZero() {
+	if !am.tools.More.Rect.IsZero() {
 		style := theme.StyleTooltip()
-		core.FillRect(s, am.more.rect, ' ', style)
-		core.DrawText(s, am.more.rect.X+1, am.more.rect.Y, style, am.more.label)
+		core.FillRect(s, am.tools.More.Rect, ' ', style)
+		core.DrawText(s, am.tools.More.Rect.X+1, am.tools.More.Rect.Y, style, am.tools.More.Label)
 	}
 }
 

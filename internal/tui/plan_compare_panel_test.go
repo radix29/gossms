@@ -296,8 +296,8 @@ func TestComparePanelPairsTheStatementsTheUserPicks(t *testing.T) {
 	if key(']'); p.stmtA != 1 {
 		t.Errorf("']' from the last statement went to %d, want 1 — the SET has no plan", p.stmtA)
 	}
-	if !strings.Contains(p.pickers[pcPickA].label, "statement 2/3") {
-		t.Errorf("picker A reads %q, want it to name the statement compared", p.pickers[pcPickA].label)
+	if !strings.Contains(p.pickers.Cells[pcPickA].Label, "statement 2/3") {
+		t.Errorf("picker A reads %q, want it to name the statement compared", p.pickers.Cells[pcPickA].Label)
 	}
 }
 
@@ -313,7 +313,7 @@ func TestComparePanelPickerMenuChoosesAStatement(t *testing.T) {
 	if p.toolRect.H != 1 {
 		t.Fatal("no picker row for two multi-statement plans")
 	}
-	r := p.pickers[pcPickB].rect
+	r := p.pickers.Cells[pcPickB].Rect
 	if r.IsZero() {
 		t.Fatal("picker B did not fit a 160-column pane")
 	}
@@ -372,7 +372,7 @@ func TestComparePanelKeepsBothPickersOnANarrowRow(t *testing.T) {
 	for _, w := range []int{160, 70, 50, 40} {
 		p.SetBounds(0, 0, w, 30)
 		for i, name := range []string{"A", "B"} {
-			r := p.pickers[i].rect
+			r := p.pickers.Cells[i].Rect
 			if r.IsZero() {
 				t.Errorf("width %d: picker %s was dropped from the row", w, name)
 			} else if r.Right() > w {

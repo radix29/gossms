@@ -31,35 +31,19 @@ import (
 // and the reason the Detail Browser and this dialog can never disagree about
 // which object a node names.
 func findUserDefinedDataType(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.UserDefinedDataType, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.UserDefinedDataTypeByName(ctx, schema, name)
+	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).UserDefinedDataTypeByName)
 }
 
 func findUserDefinedTableType(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.UserDefinedTableType, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.UserDefinedTableTypeByName(ctx, schema, name)
+	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).UserDefinedTableTypeByName)
 }
 
 func findClrType(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.ClrType, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.ClrTypeByName(ctx, schema, name)
+	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).ClrTypeByName)
 }
 
 func findXMLSchemaCollection(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.XMLSchemaCollection, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.XMLSchemaCollectionByName(ctx, schema, name)
+	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).XMLSchemaCollectionByName)
 }
 
 // findSystemDataType picks one built-in type out of the instance's list.

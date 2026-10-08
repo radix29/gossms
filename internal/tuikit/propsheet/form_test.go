@@ -1,6 +1,7 @@
 package propsheet
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -451,5 +452,102 @@ func TestFormClickReachesRowWhereAScrolledOutGridWas(t *testing.T) {
 	press(2, y)
 	if !check.Checked() {
 		t.Errorf("the click went to the scrolled-out grid (focused %T), not the checkbox", f.Focused())
+	}
+}
+
+// TestFormWheelOverAnOpenDropdownScrollsTheList: the open list lies over the
+// grid row below it, and the wheel went to the row under the pointer, so the
+// hidden grid scrolled while the list stayed put. The focused row's overlay
+// gets the wheel first, and neither the grid nor the form moves.
+func TestFormWheelOverAnOpenDropdownScrollsTheList(t *testing.T) {
+	items := make([]string, 100)
+	for i := range items {
+		items[i] = fmt.Sprintf("login%03d", i)
+	}
+	sel := Select("Owner", items, 0)
+	g := controls.NewDataGrid()
+	gridRows := make([][]string, 50)
+	for i := range gridRows {
+		gridRows[i] = []string{fmt.Sprint(i)}
+	}
+	g.SetData([]string{"N"}, gridRows)
+	rows := []Row{sel, NewGridRow(g, 8)}
+	for range 20 {
+		rows = append(rows, Static("Label", "value"))
+	}
+	f := NewForm(rows...)
+	f.SetBounds(0, 0, 60, 12)
+	scr := &fakeScreen{w: 60, h: 12}
+	f.Focus(true)
+	f.Draw(scr)
+	if !f.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) || !f.OverlayActive() {
+		t.Fatal("setup: Enter did not open the Owner list")
+	}
+	f.Draw(scr)
+	f.DrawOverlays(scr)
+	listX := -1
+	for x := range 60 {
+		if scr.cells[[2]int{x, f.bands[0].y}] == '[' {
+			listX = x + 2
+			break
+		}
+	}
+	if listX < 0 {
+		t.Fatal("setup: no dropdown box drawn on the Owner row")
+	}
+	listY := f.bands[1].y + 2 // over the grid's band
+	formScroll := f.scroll
+	if !f.HandleMouse(tcell.NewEventMouse(listX, listY, tcell.WheelDown, tcell.ModNone)) {
+		t.Fatal("wheel over the open list = false, want true")
+	}
+	if g.ScrollRow() != 0 || f.scroll != formScroll {
+		t.Fatalf("grid scrollRow=%d form scroll=%d after the wheel, want both unmoved", g.ScrollRow(), f.scroll)
+	}
+	f.Draw(scr)
+	f.DrawOverlays(scr)
+	f.HandleMouse(tcell.NewEventMouse(listX, f.bands[0].y+1, tcell.Button1, tcell.ModNone))
+	if sel.Selected() != 3 {
+		t.Fatalf("click on the list's first row picked %d, want 3 (the wheel scrolled it by 3)", sel.Selected())
+	}
+}
+
+// heightCounter is a Row counting its Height calls.
+type heightCounter struct {
+	Row
+	calls int
+}
+
+func (r *heightCounter) Height(w int) int { r.calls++; return r.Row.Height(w) }
+
+// TestFormMeasuresEachRowOncePerWidthPerDraw: Draw walks the rows for the
+// scrollbar, the scroll clamp and the layout, and used to ask each row its
+// Height on every walk — a Note's being a whole word-wrap. Once per width is
+// the bound: twice for a form that needs its scrollbar, measured with and
+// without that column.
+func TestFormMeasuresEachRowOncePerWidthPerDraw(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		rows, h   int
+		wantCalls int
+	}{
+		{"fits", 3, 20, 1},
+		{"scrolls", 30, 10, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var counters []*heightCounter
+			f := NewForm()
+			for range tc.rows {
+				c := &heightCounter{Row: Note("a note long enough to wrap at this width")}
+				counters = append(counters, c)
+				f.Add(c)
+			}
+			f.SetBounds(0, 0, 30, tc.h)
+			f.Draw(&fakeScreen{w: 30, h: tc.h})
+			for i, c := range counters {
+				if c.calls != tc.wantCalls {
+					t.Errorf("row %d: Height called %d times in one Draw, want %d", i, c.calls, tc.wantCalls)
+				}
+			}
+		})
 	}
 }

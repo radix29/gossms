@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // WriteAtomic writes data to a temp file in path's directory and renames it
@@ -15,8 +16,8 @@ import (
 // temp file must share path's directory; a cross-filesystem rename isn't
 // atomic.
 //
-// perm is the mode a new file gets and the widest an existing one keeps; see
-// modeFor.
+// perm is the mode a new file gets, less the umask, and the widest an existing
+// one keeps; see modeFor.
 //
 // Both the file and the directory are synced: the rename changes the directory,
 // and without syncing it a crash can bring the old contents back.
@@ -77,7 +78,7 @@ func CreateAtomic(path string, data []byte, perm os.FileMode) (created bool, err
 	tmp := f.Name()
 	defer os.Remove(tmp) // the link, if made, keeps the data alive under path
 
-	if err := f.Chmod(perm); err != nil {
+	if err := f.Chmod(perm &^ umask()); err != nil {
 		f.Close()
 		return false, err
 	}
@@ -155,12 +156,16 @@ func resolveSymlink(path string) string {
 }
 
 // modeFor returns the mode path already has, capped at perm; a missing or
-// unreadable path gets perm.
+// unreadable path gets perm less the umask, as os.WriteFile's would.
 //
 // Preserving the mode keeps rename-based writes behaving like os.WriteFile:
 // callers pass a constant (0600 for config.json, gossms.key,
 // tracked_queries.json; 0644 for scripts), and applying it blindly would
 // re-widen a script the user chmodded 0600 on every save.
+//
+// The umask matters because the chmod is explicit: the kernel applies it only
+// at create, and CreateTemp creates at 0600, so a 0644 chmod after it bypassed
+// a umask of 077 and every new script was world-readable (K14).
 //
 // Capping at perm tightens a config.json or gossms.key that reached 0644 back
 // to 0600 instead of keeping it wide.
@@ -173,9 +178,37 @@ func resolveSymlink(path string) string {
 func modeFor(path string, perm os.FileMode) os.FileMode {
 	fi, err := os.Stat(path)
 	if err != nil {
-		return perm
+		return perm &^ umask()
 	}
 	return fi.Mode().Perm() & perm
+}
+
+// umask is the process's file-creation mask. A variable so tests can set one
+// without changing the process's own.
+var umask = sync.OnceValue(probeUmask)
+
+// probeUmask reads the umask by creating a file at 0777 and seeing which bits
+// the kernel kept: Go has no portable read of it (syscall.Umask is POSIX-only,
+// and it sets the mask to read it, racing every other goroutine's create).
+// Read once: gossms never changes its umask. Any failure reads as no mask,
+// WriteAtomic's behaviour before the umask was honoured. On Windows the probe
+// reads 0666 back, a mask of 0111 that no caller's perm has bits in.
+func probeUmask() os.FileMode {
+	dir, err := os.MkdirTemp("", "gossms-umask")
+	if err != nil {
+		return 0
+	}
+	defer os.RemoveAll(dir)
+	f, err := os.OpenFile(filepath.Join(dir, "probe"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o777)
+	if err != nil {
+		return 0
+	}
+	fi, err := f.Stat()
+	f.Close()
+	if err != nil {
+		return 0
+	}
+	return 0o777 &^ fi.Mode().Perm()
 }
 
 // syncDir flushes the directory entry WriteAtomic's rename created, so the

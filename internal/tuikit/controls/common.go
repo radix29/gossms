@@ -91,3 +91,18 @@ func (c *prefixStates[S]) replay(doc *Document, from int, zero S, step func(line
 	}
 	c.doc, c.version, c.valid = doc, doc.Version(), true
 }
+
+// hideToFit is the one overflow policy of Toolbar and ToolRow: it hides the
+// entries of shown in order, one at a time, until need(shown) fits in avail,
+// and reports whether it did. Only the order differs between the two —
+// Toolbar's comes from DropRank, ToolRow's is right to left, so what a
+// ToolRow hides is always the row's tail.
+func hideToFit(shown []bool, order []int, need func(shown []bool) int, avail int) bool {
+	for _, i := range order {
+		if need(shown) <= avail {
+			return true
+		}
+		shown[i] = false
+	}
+	return need(shown) <= avail
+}

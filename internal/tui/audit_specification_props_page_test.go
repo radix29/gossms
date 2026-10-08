@@ -156,3 +156,15 @@ func TestSpecificationGeneralDoesNotSilentlyRebindAnOrphan(t *testing.T) {
 		t.Errorf("an orphaned specification was rebound by opening the page: %v", stmts)
 	}
 }
+
+// TestSpecificationGeneralOffersOnlyFreeAudits pins T6: an audit takes one
+// server audit specification (Msg 33230 on a second, CREATE or rebind,
+// verified live on 17), so the dropdown leaves out AppLogAudit, which AppSpec
+// holds, and keeps this specification's own HIPAA.
+func TestSpecificationGeneralOffersOnlyFreeAudits(t *testing.T) {
+	sc, inst := specPageConn(t, "HIPAA_spec")
+	form, _ := loadPage(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
+	if got := selectRow(t, form, "Audit").Items(); !slices.Equal(got, []string{"HIPAA", "Rollover"}) {
+		t.Errorf("Audit offers %q, want [HIPAA Rollover]", got)
+	}
+}

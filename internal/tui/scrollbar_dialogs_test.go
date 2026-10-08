@@ -52,7 +52,7 @@ func TestQueryListDialogScrollbarDragScrolls(t *testing.T) {
 	d.ModalDialog.Show()
 
 	inner := d.InnerRect()
-	dataH := inner.H - 2
+	dataH := d.dataH()
 	if len(d.titles) <= dataH {
 		t.Fatalf("test needs more titles than dataH (%d) to exercise scrolling, got %d", dataH, len(d.titles))
 	}
@@ -87,7 +87,7 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 	d.Show()
 
 	inner := d.InnerRect()
-	dataH := inner.H - 2
+	dataH := d.dataH()
 	if len(a.tasks) <= dataH {
 		t.Fatalf("test needs more tasks than dataH (%d) to exercise scrolling, got %d", dataH, len(a.tasks))
 	}
@@ -121,7 +121,7 @@ func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	d.Show()
 
 	inner := d.InnerRect()
-	dataH := inner.H - 2
+	dataH := d.dataH()
 	if len(helpLines) <= dataH {
 		t.Fatalf("helpLines (%d) must exceed dataH (%d) for this test to mean anything", len(helpLines), dataH)
 	}

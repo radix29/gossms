@@ -5,6 +5,9 @@
 //     MenuItem/Menu types live in menu_item.go, and the nested submenu
 //     machinery in menu_cascade.go
 //   - Toolbar — row of icon-only buttons with hover tooltips (toolbar.go)
+//   - ToolRow — a panel's one-row text toolbar: layout, hit-testing and the
+//     "More ▾" overflow, drawn by the host (tool_row.go); it hides cells by
+//     the same policy as Toolbar (hideToFit, common.go)
 //   - TreeView — collapsible/expandable tree with generic node data
 //     (treeview.go)
 //   - ListBox — scrollable single-column list of strings (listbox.go)

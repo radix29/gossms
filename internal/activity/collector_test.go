@@ -68,7 +68,7 @@ func TestCollectorBacksOffWhenEveryProbeFails(t *testing.T) {
 }
 
 // After Run returns, SetRate/SetPaused must not block: they run on the UI
-// goroutine and control's buffer is small.
+// goroutine.
 func TestCollectorSendAfterRunReturns(t *testing.T) {
 	src := deadSource()
 
@@ -82,7 +82,7 @@ func TestCollectorSendAfterRunReturns(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		// Well past control's buffer.
+		// Many, as a burst of toolbar clicks would be.
 		for i := 0; i < 64; i++ {
 			c.SetPaused(i%2 == 0)
 			c.SetRate(time.Duration(i+1) * time.Second)
@@ -332,4 +332,67 @@ func TestCollectorStopEndsAPausedRun(t *testing.T) {
 		t.Fatal("Run did not return after Stop while paused")
 	}
 	c.Stop() // idempotent: a second close would panic
+}
+
+// SetRate/SetPaused run on the UI goroutine. Run takes changes only between
+// probes, so during a stalled DMV read a queue of them filled and the next
+// toolbar click froze the UI until the read returned. They coalesce instead:
+// never blocking, and the newest values win.
+func TestCollectorControlNeverBlocksDuringAStalledProbe(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	var mu sync.Mutex
+	var probes []time.Time
+	c := newCollector(probeOnceSource(), func(ctx context.Context, _ Source) (*int, error) {
+		mu.Lock()
+		probes = append(probes, time.Now())
+		n := len(probes)
+		mu.Unlock()
+		if n == 1 {
+			entered <- struct{}{}
+			<-release
+		}
+		return new(0), nil
+	}, func(_, _ *int) int { return 0 }, nil, nil)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.Run(context.Background(), time.Hour)
+	}()
+	<-entered
+
+	clicked := make(chan struct{})
+	go func() {
+		defer close(clicked)
+		for i := range 64 {
+			c.SetPaused(i%2 == 0)
+			c.SetRate(time.Duration(i+1) * time.Hour)
+		}
+		c.SetPaused(false)
+		c.SetRate(time.Millisecond)
+	}()
+	select {
+	case <-clicked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SetPaused/SetRate blocked while a probe was stalled")
+	}
+
+	// The newest rate (1ms, unpaused) wins once the probe returns.
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		n := len(probes)
+		mu.Unlock()
+		if n >= 5 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d probes after the stall; the newest rate never took effect", n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	c.Stop()
+	<-done
 }

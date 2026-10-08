@@ -50,9 +50,9 @@ func (v *XEventViewer) buildTools() {
 			xeToolFind, xeToolBookmarks, xeToolSettings, xeToolExport}
 	}
 	v.toolIDs = ids
-	v.tools = make([]toolButton, len(ids))
+	v.tools.Cells = make([]controls.ToolCell, len(ids))
 	for i, id := range ids {
-		v.tools[i].action = v.toolAction(id)
+		v.tools.Cells[i].Action = v.toolAction(id)
 	}
 	v.refreshToolLabels()
 }
@@ -137,7 +137,7 @@ func (v *XEventViewer) refreshToolLabels() {
 		case xeToolExport:
 			label = "Export ▾"
 		}
-		v.tools[i].label = label
+		v.tools.Cells[i].Label = label
 	}
 }
 
@@ -185,14 +185,14 @@ func (v *XEventViewer) toolReason(i int) string {
 
 // runTool invokes cell i's action, or says why it did not.
 func (v *XEventViewer) runTool(i int) bool {
-	if i < 0 || i >= len(v.tools) {
+	if i < 0 || i >= len(v.tools.Cells) {
 		return false
 	}
 	if r := v.toolReason(i); r != "" {
-		v.app.setStatus(v.tools[i].label + ": " + r)
+		v.app.setStatus(v.tools.Cells[i].Label + ": " + r)
 		return false
 	}
-	v.tools[i].action()
+	v.tools.Cells[i].Action()
 	return true
 }
 
@@ -209,20 +209,20 @@ func (v *XEventViewer) runToolByID(id xeTool) bool {
 
 // showOverflowMenu pops the cells the row was too narrow to draw.
 func (v *XEventViewer) showOverflowMenu() {
-	r := v.more.rect
+	r := v.tools.More.Rect
 	if r.IsZero() {
 		r = core.Rect{X: v.rect.X, Y: v.rect.Y}
 	}
 	v.app.contextMenu.Show(r.X, r.Y+1,
-		toolOverflowItems(v.tools, v.overflow, v.toolDisabled, v.toolReason, func(i int) { v.runTool(i) }))
+		v.tools.OverflowItems(v.toolDisabled, v.toolReason, func(i int) { v.runTool(i) }))
 }
 
 // popMenu shows items under cell id, or at the panel's top-left when the cell
 // is folded into More.
 func (v *XEventViewer) popMenu(id xeTool, items []controls.MenuItem) {
 	r := core.Rect{X: v.rect.X, Y: v.rect.Y}
-	if i := v.toolIndex(id); i >= 0 && !v.tools[i].rect.IsZero() {
-		r = v.tools[i].rect
+	if i := v.toolIndex(id); i >= 0 && !v.tools.Cells[i].Rect.IsZero() {
+		r = v.tools.Cells[i].Rect
 	}
 	v.app.contextMenu.Show(r.X, r.Y+1, items)
 }

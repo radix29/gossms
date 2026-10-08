@@ -41,11 +41,24 @@ func pageServerAuditSpecificationGeneral(sc *db.ServerConn, specName string) pro
 				return nil, nil, err
 			}
 
+			// The audits no other server specification holds: one per audit
+			// (Msg 33230, see freeAuditNames), so a rebind onto a held one is
+			// refused. This specification's own audit stays.
+			all, err := sc.Server.ServerAuditSpecifications(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			var held []string
+			for _, other := range all {
+				if other.Name != spec.Name {
+					held = append(held, other.AuditName)
+				}
+			}
 			auditNames := make([]string, len(audits))
 			for i, a := range audits {
 				auditNames[i] = a.Name
 			}
-			auditRow := auditSelectRow(auditNames, spec.AuditName)
+			auditRow := auditSelectRow(freeAuditNames(serverCollation(sc), auditNames, held), spec.AuditName)
 			groups = unionSorted(groups, spec.ActionGroups)
 
 			grid := auditGroupGrid(groups, spec.ActionGroups, 14)

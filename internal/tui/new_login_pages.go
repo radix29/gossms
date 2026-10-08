@@ -514,13 +514,8 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 			if e.current == "" {
 				continue
 			}
-			var err error
-			switch e.current {
-			case "GRANT":
-				err = sc.Server.GrantServerPermission(ctx, gosmo.ServerPermission(e.permission), name, gosmo.PermissionOptions{})
-			case "DENY":
-				err = sc.Server.DenyServerPermission(ctx, gosmo.ServerPermission(e.permission), name, gosmo.PermissionOptions{})
-			}
+			// e.current is "GRANT" or "DENY", spelled as gosmo's verbs are.
+			err := serverPermApply(sc.Server)(ctx, gosmo.PermissionVerb(e.current), gosmo.PermissionOptions{}, e.permission, name)
 			if err != nil {
 				return err
 			}
@@ -550,16 +545,12 @@ func buildNewLoginStatusPage(sc *db.ServerConn, loginName func() string) (*props
 
 	apply := func(ctx context.Context) error {
 		name := loginName()
-		if connectRow.Dirty() {
-			switch connectRow.Selected() {
-			case 0:
-				if err := sc.Server.GrantServerPermission(ctx, "CONNECT SQL", name, gosmo.PermissionOptions{}); err != nil {
-					return err
-				}
-			case 1:
-				if err := sc.Server.DenyServerPermission(ctx, "CONNECT SQL", name, gosmo.PermissionOptions{}); err != nil {
-					return err
-				}
+		// Default is a no-op here: a new login has no explicit entry to
+		// revoke.
+		if connectRow.Dirty() && connectRow.Selected() != 2 {
+			verb := connectPermissionVerbs[connectRow.Selected()]
+			if err := serverPermApply(sc.Server)(ctx, verb, gosmo.PermissionOptions{}, "CONNECT SQL", name); err != nil {
+				return err
 			}
 		}
 		if enabledRow.Dirty() && enabledRow.Selected() == 1 {

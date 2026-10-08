@@ -55,15 +55,16 @@ func (p *PropertySheet) SelectedText() string {
 // (internal/tui/clipboard.go) only calls Cut() when HasSelection() was
 // already true, so this still only fires when there's something to copy.
 func (p *PropertySheet) Cut() string {
-	if cr, ok := p.focusedClipboardRow(); ok && cr.HasSelection() {
+	if cr, ok := p.focusedClipboardRow(); ok && cr.HasSelection() && !p.formLocked() {
 		return cr.Cut()
 	}
 	return p.SelectedText()
 }
 
-// Paste inserts text into the focused field, if it's an editable one.
+// Paste inserts text into the focused field, if it's an editable one and the
+// form is not locked for an Apply (see HandleKey).
 func (p *PropertySheet) Paste(text string) {
-	if cr, ok := p.focusedClipboardRow(); ok {
+	if cr, ok := p.focusedClipboardRow(); ok && !p.formLocked() {
 		cr.Paste(text)
 	}
 }

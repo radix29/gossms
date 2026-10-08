@@ -25,7 +25,8 @@ import (
 // hard-coded so it stays right across versions.
 type nauditSpecPrefetch struct {
 	existingNames *nameSet
-	auditNames    []string
+	auditNames    []string // the audits no server specification holds yet
+	audits        int      // every audit on the server, held or not
 	actionGroups  []string
 }
 
@@ -43,14 +44,19 @@ func fetchNewAuditSpecPrefetch(ctx context.Context, sc *db.ServerConn) (*nauditS
 		return nil, err
 	}
 	existing := newNameSet(serverCollation(sc))
-	for _, s := range specs {
+	held := make([]string, len(specs))
+	for i, s := range specs {
 		existing.Add(s.Name)
+		held[i] = s.AuditName
 	}
 	names := make([]string, len(audits))
 	for i, a := range audits {
 		names[i] = a.Name
 	}
-	return &nauditSpecPrefetch{existingNames: existing, auditNames: names, actionGroups: groups}, nil
+	return &nauditSpecPrefetch{
+		existingNames: existing, auditNames: freeAuditNames(serverCollation(sc), names, held),
+		audits: len(audits), actionGroups: groups,
+	}, nil
 }
 
 // NewAuditSpecificationDialog is the New Server Audit Specification dialog.
@@ -85,15 +91,20 @@ func (d *NewAuditSpecificationDialog) buildPages(pf *nauditSpecPrefetch) {
 	}
 
 	// A server with no audit cannot carry a specification at all — FOR SERVER
-	// AUDIT is required. Saying so is better than a dropdown with nothing in
-	// it and an error only on OK.
+	// AUDIT is required — and one whose every audit already has one cannot
+	// carry another (freeAuditNames). Saying so is better than a dropdown with
+	// nothing in it and an error only on OK.
 	var auditField *propsheet.SelectRow
-	if len(pf.auditNames) == 0 {
-		rows = append(rows, propsheet.Note(
-			"This server has no audit yet. Create one under Security > Audits first — a specification must name the audit it writes to."))
-	} else {
+	switch {
+	case len(pf.auditNames) > 0:
 		auditField = propsheet.Select("Audit", pf.auditNames, 0)
 		rows = append(rows, auditField)
+	case pf.audits == 0:
+		rows = append(rows, propsheet.Note(
+			"This server has no audit yet. Create one under Security > Audits first — a specification must name the audit it writes to."))
+	default:
+		rows = append(rows, propsheet.Note(
+			"Every audit on this server already has a server audit specification, and an audit takes only one. Create another audit under Security > Audits, or add the groups to the existing specification."))
 	}
 
 	groups := slices.Clone(pf.actionGroups)
@@ -116,7 +127,7 @@ func (d *NewAuditSpecificationDialog) buildPages(pf *nauditSpecPrefetch) {
 			return fmt.Errorf("a server audit specification named %q already exists", name)
 		}
 		if auditField == nil {
-			return fmt.Errorf("this server has no audit to bind the specification to")
+			return fmt.Errorf("this server has no audit free to bind the specification to")
 		}
 		return nil
 	}

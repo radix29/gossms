@@ -1,4 +1,6 @@
-- enable MI / shutdown MI
+analyze the libraries
+
+ enable MI / shutdown MI
 
 - number formatting: whete you shown MB, KB . TB etc ... if there is more than 1000 show next scale: ex:
 2.000 KB -> 2 MB
@@ -23,7 +25,7 @@ sp_blitz & index with reference built in
 ask questions and then write the implementation order list
 
 /effort
-sql managed instance is not available at the moment.
+
 review both projects and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. you can change gosmo and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them
 
 show me the top 20 know bugs,issues etc if thre are any in both projects. show only issues that can be fixed. create a plan file in docs/ to fix them
@@ -50,6 +52,9 @@ update the docs/dicord.md file for this release. it should be below 2000 charact
 
 update open-threads and decisions, delete what it is done and the history. keep only what is actual.
 update the fix lists at the bottom of open threads if something was already fixed.
+
+
+analyze the used libraries especially tcell and mssql as there were updates since first integrated and look if the changes in these libraries can improve current projects. do the same for golang 1.27.1. if you have any findings create a plan file.
 
 --------------
 

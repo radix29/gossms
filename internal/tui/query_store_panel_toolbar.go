@@ -46,65 +46,65 @@ const (
 // constants name. refreshToolLabels rebuilds the selector labels on every
 // draw, since each shows what it points at.
 func (p *QueryStorePanel) buildTools() {
-	p.sel = []toolButton{
-		{action: p.showReportMenu},
-		{action: p.showMetricMenu},
-		{action: p.showStatisticMenu},
-		{action: p.showWindowMenu},
-		{action: p.showTopMenu},
-		{label: "Refresh", action: p.Refresh},
+	p.sel.Cells = []controls.ToolCell{
+		{Action: p.showReportMenu},
+		{Action: p.showMetricMenu},
+		{Action: p.showStatisticMenu},
+		{Action: p.showWindowMenu},
+		{Action: p.showTopMenu},
+		{Label: "Refresh", Action: p.Refresh},
 	}
-	p.acts = []toolButton{
-		{action: p.showMinExecMenu},
-		{action: p.showRegressionMenu},
-		{label: "Force Plan", action: func() { p.setPlanForced(true) }},
-		{label: "Unforce Plan", action: func() { p.setPlanForced(false) }},
-		{label: "Show Plan", action: p.showPlan},
-		{label: "Script", action: p.scriptPlanForce},
-		{label: "Track Query", action: p.toggleTracked},
-		{label: "Compare Plans", action: p.comparePlans},
-		{label: "Plot History", action: p.toggleSeriesMode},
+	p.acts.Cells = []controls.ToolCell{
+		{Action: p.showMinExecMenu},
+		{Action: p.showRegressionMenu},
+		{Label: "Force Plan", Action: func() { p.setPlanForced(true) }},
+		{Label: "Unforce Plan", Action: func() { p.setPlanForced(false) }},
+		{Label: "Show Plan", Action: p.showPlan},
+		{Label: "Script", Action: p.scriptPlanForce},
+		{Label: "Track Query", Action: p.toggleTracked},
+		{Label: "Compare Plans", Action: p.comparePlans},
+		{Label: "Plot History", Action: p.toggleSeriesMode},
 	}
 	p.refreshToolLabels()
 }
 
 // refreshToolLabels updates the five selectors from the current selection.
 func (p *QueryStorePanel) refreshToolLabels() {
-	p.sel[qsToolReport].label = "Report: " + p.report().Title + " ▾"
-	p.sel[qsToolMetric].label = "Metric: " + string(p.metric) + " ▾"
-	p.sel[qsToolStatistic].label = "Statistic: " + string(p.stat) + " ▾"
-	p.sel[qsToolWindow].label = "Window: " + qsWindows[p.windowIdx].label + " ▾"
-	p.sel[qsToolTop].label = "Top: " + strconv.Itoa(qsTopCounts[p.topIdx]) + " ▾"
-	p.acts[qsActMinExec].label = "Min execs: " + qsMinExecLabel(p.minExecIdx) + " ▾"
-	p.acts[qsActRegression].label = "Regression: " + qsRegressionLabel(p.regressIdx) + " ▾"
+	p.sel.Cells[qsToolReport].Label = "Report: " + p.report().Title + " ▾"
+	p.sel.Cells[qsToolMetric].Label = "Metric: " + string(p.metric) + " ▾"
+	p.sel.Cells[qsToolStatistic].Label = "Statistic: " + string(p.stat) + " ▾"
+	p.sel.Cells[qsToolWindow].Label = "Window: " + qsWindows[p.windowIdx].label + " ▾"
+	p.sel.Cells[qsToolTop].Label = "Top: " + strconv.Itoa(qsTopCounts[p.topIdx]) + " ▾"
+	p.acts.Cells[qsActMinExec].Label = "Min execs: " + qsMinExecLabel(p.minExecIdx) + " ▾"
+	p.acts.Cells[qsActRegression].Label = "Regression: " + qsRegressionLabel(p.regressIdx) + " ▾"
 	// The action row's one stateful label. Refreshed on every draw with the
 	// selectors because it follows the report grid's cursor rather than a click: a
 	// button reading "Track Query" over an already-tracked query would untrack it.
-	p.acts[qsActTrack].label = "Track Query"
+	p.acts.Cells[qsActTrack].Label = "Track Query"
 	if p.isTracked(p.selectedQueryID()) {
-		p.acts[qsActTrack].label = "Untrack Query"
+		p.acts.Cells[qsActTrack].Label = "Untrack Query"
 	}
 	// Script scripts whichever of Force/Unforce applies to the selected plan, so
 	// the label says which. Same reason as Track Query's label.
-	p.acts[qsActScript].label = "Script"
+	p.acts.Cells[qsActScript].Label = "Script"
 	if plan := p.selectedPlan(); plan != nil {
 		if plan.IsForced {
-			p.acts[qsActScript].label = "Script Unforce"
+			p.acts.Cells[qsActScript].Label = "Script Unforce"
 		} else {
-			p.acts[qsActScript].label = "Script Force"
+			p.acts.Cells[qsActScript].Label = "Script Force"
 		}
 	}
 	// The chart mode toggle says what the press does, not what is on screen: a
 	// button reading "Plot History" while the history is plotted would put the
 	// ranking back.
-	p.acts[qsActPlot].label = "Plot History"
+	p.acts.Cells[qsActPlot].Label = "Plot History"
 	if p.seriesMode {
-		p.acts[qsActPlot].label = "Plot Report"
+		p.acts.Cells[qsActPlot].Label = "Plot Report"
 	}
 	// Compare takes two presses, and the button says which one it is on.
-	p.acts[qsActCompare].label = "Compare Plans"
+	p.acts.Cells[qsActCompare].Label = "Compare Plans"
 	if p.cmpPlanID != 0 {
-		p.acts[qsActCompare].label = fmt.Sprintf("Compare with %d", p.cmpPlanID)
+		p.acts.Cells[qsActCompare].Label = fmt.Sprintf("Compare with %d", p.cmpPlanID)
 	}
 }
 
@@ -162,7 +162,7 @@ func (p *QueryStorePanel) selReason(i int) string {
 // actDisabled reports whether action cell i is inert: the panel is busy, the
 // action has no plan to act on, or the login may not force one.
 //
-// Asked on demand rather than latched into toolButton.disabled: the toolbar is
+// Asked on demand rather than latched into ToolCell.Disabled: the toolbar is
 // built in NewQueryStorePanel, before the capability probe has necessarily run.
 // Same as LogViewer.recycleDenied.
 func (p *QueryStorePanel) actDisabled(i int) bool {
@@ -256,7 +256,7 @@ func (p *QueryStorePanel) runSel(i int) {
 		}
 		return
 	}
-	p.sel[i].action()
+	p.sel.Cells[i].Action()
 }
 
 // runAct invokes action cell i's action, or says why it did not.
@@ -267,12 +267,12 @@ func (p *QueryStorePanel) runAct(i int) {
 		}
 		return
 	}
-	p.acts[i].action()
+	p.acts.Cells[i].Action()
 }
 
 // popMenu shows items under selector cell i of the selector row.
 func (p *QueryStorePanel) popMenu(i int, items []controls.MenuItem) {
-	p.popMenuAt(p.sel[i].rect, items)
+	p.popMenuAt(p.sel.Cells[i].Rect, items)
 }
 
 // popMenuAt shows items under one toolbar cell, or at the panel's top-left if
@@ -285,10 +285,10 @@ func (p *QueryStorePanel) popMenuAt(r core.Rect, items []controls.MenuItem) {
 }
 
 // showOverflowMenu pops the buttons a row was too narrow to draw, under its
-// "More ▾" cell — see toolOverflowItems for what each entry carries.
-func (p *QueryStorePanel) showOverflowMenu(at core.Rect, tools []toolButton, hidden []int,
+// "More ▾" cell — see ToolRow.OverflowItems for what each entry carries.
+func (p *QueryStorePanel) showOverflowMenu(row *controls.ToolRow,
 	disabled func(int) bool, reason func(int) string, run func(int)) {
-	p.popMenuAt(at, toolOverflowItems(tools, hidden, disabled, reason, run))
+	p.popMenuAt(row.More.Rect, row.OverflowItems(disabled, reason, run))
 }
 
 // qsMenuItems builds a selector's list, marking the entry in force. The bullet
@@ -339,12 +339,12 @@ func (p *QueryStorePanel) showTopMenu() {
 }
 
 func (p *QueryStorePanel) showMinExecMenu() {
-	p.popMenuAt(p.acts[qsActMinExec].rect, qsMenuItems(qsIndexes(len(qsMinExecCounts)), p.minExecIdx,
+	p.popMenuAt(p.acts.Cells[qsActMinExec].Rect, qsMenuItems(qsIndexes(len(qsMinExecCounts)), p.minExecIdx,
 		qsMinExecLabel, func(i int) { p.minExecIdx = i; p.Load() }))
 }
 
 func (p *QueryStorePanel) showRegressionMenu() {
-	p.popMenuAt(p.acts[qsActRegression].rect, qsMenuItems(qsIndexes(len(qsRegressionPcts)), p.regressIdx,
+	p.popMenuAt(p.acts.Cells[qsActRegression].Rect, qsMenuItems(qsIndexes(len(qsRegressionPcts)), p.regressIdx,
 		qsRegressionLabel, func(i int) { p.regressIdx = i; p.Load() }))
 }
 

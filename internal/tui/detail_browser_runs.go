@@ -120,7 +120,7 @@ func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.Se
 			defer cancel()
 			var objs []nodeData
 			cols, rows, err := fetchNodeDetails(ctx, sc, snap, &objs)
-			db.postFinalObjects(app, node, seq, cols, rows, objs, err)
+			db.postFinalResult(app, node, seq, &detailResult{cols: cols, rows: rows, objs: objs, err: err})
 		})
 	}
 }
@@ -171,25 +171,12 @@ func (db *DetailBrowser) postPartialObjects(app *App, seq int, cols []string, ro
 // postFinal caches the completed result for node, unless a newer fetch has been
 // dispatched since, and displays it if still current. Called once per fetch.
 func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
-	db.postFinalObjects(app, node, seq, cols, rows, nil, err)
+	db.postFinalResult(app, node, seq, &detailResult{cols: cols, rows: rows, err: err})
 }
 
-// postFinalObjects is postFinal for a view whose rows are objects.
-func (db *DetailBrowser) postFinalObjects(app *App, node *explorerNode, seq int, cols []string, rows [][]string, objs []nodeData, err error) {
-	result := &detailResult{cols: cols, rows: rows, objs: objs, err: err}
-	app.postAndWake(func() {
-		db.cacheIfCurrent(node, seq, result)
-		if !db.run.Current(seq) {
-			return
-		}
-		db.applyResult(result)
-	})
-}
-
-// postFinalCharts is postFinal for a view that draws a chart strip under its
-// grid.
-func (db *DetailBrowser) postFinalCharts(app *App, node *explorerNode, seq int, cols []string, rows [][]string, cs []detailChart, err error) {
-	result := &detailResult{cols: cols, rows: rows, charts: cs, err: err}
+// postFinalResult is postFinal for a result carrying more than a grid: the
+// row objects of a view whose rows are objects, or a chart strip.
+func (db *DetailBrowser) postFinalResult(app *App, node *explorerNode, seq int, result *detailResult) {
 	app.postAndWake(func() {
 		db.cacheIfCurrent(node, seq, result)
 		if !db.run.Current(seq) {
@@ -238,258 +225,245 @@ const maxRowFetchConcurrency = 8
 // only return data for the caller to apply via postAndWake. ctx bounds the
 // whole call.
 //
-// objs is an out-parameter rather than a fourth result because only the arms
-// whose rows are objects use it: they append one nodeData per row, and every
-// other arm leaves it nil, which withholds the pane's Delete. See
+// objs is an out-parameter rather than a fourth result because only the
+// loaders whose rows are objects use it: they append one nodeData per row, and
+// every other loader leaves it nil, which withholds the pane's Delete. See
 // detailResult.objs.
 func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	switch node.data.Type {
-	case NodeAgentJobs:
-		return agentServerDetail(ctx, sc)
-	case NodeAgentJob:
-		return agentJobDetail(ctx, sc, node)
-	case NodeAgentSchedule:
-		return agentScheduleDetail(ctx, sc, node)
-	case NodeAgentAlert:
-		return agentAlertDetail(ctx, sc, node)
-	case NodeAgentOperator:
-		return agentOperatorDetail(ctx, sc, node)
-	case NodeAgentJobActivity:
-		return agentJobActivityDetail(ctx, sc)
-	case NodeAgentJobHistory:
-		return agentJobHistoryDetail(ctx, sc)
-	case NodeAgentJobCategories:
-		return agentJobCategoriesDetail(ctx, sc)
-	case NodeAgentAlertCategories:
-		return agentAlertCategoriesDetail(ctx, sc)
-	case NodeAgentReport:
-		return agentReportDetail(ctx, sc, node.data.Name)
-	case NodeQueryStore:
-		return queryStoreFolderDetail(ctx, sc, node.data.DBName)
-	case NodeQueryStoreReport:
-		return queryStoreReportDetail(ctx, sc, node.data.DBName, node.data.Name)
-	case NodeSQLServerLogs:
-		return errorLogFilesDetail(ctx, sc, gosmo.ErrorLogSQLServer)
-	case NodeAgentErrorLogs:
-		return errorLogFilesDetail(ctx, sc, gosmo.ErrorLogAgent)
-	case NodeSQLServerLog, NodeAgentErrorLog:
-		return errorLogFileDetail(ctx, sc, node)
-	case NodeSystemDatabases:
-		dbs, err := sc.Server.Databases(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-		dbs = filterObjects(node.data.Filter, dbs, func(d *gosmo.Database) nodeData {
-			return nodeData{Name: d.Name, CreateDate: d.CreateDate}
-		})
-		rows := make([][]string, 0, 4)
-		for _, d := range dbs {
-			if d.IsSystem() {
-				rows = append(rows, []string{d.Name, d.State, string(d.RecoveryModel)})
-			}
-		}
-		return []string{"Name", "State", "Recovery"}, rows, nil
-
-	case NodeViews:
-		dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
-		if err != nil {
-			return nil, nil, err
-		}
-		views, err := dbObj.ViewsFiltered(ctx, serverFilter(node.data.Filter))
-		if err != nil {
-			return nil, nil, err
-		}
-		views = filterObjects(node.data.Filter, views, func(v *gosmo.View) nodeData {
-			return nodeData{Name: v.Name, Schema: v.Schema, CreateDate: v.CreateDate}
-		})
-		rows := make([][]string, 0, len(views))
-		for _, v := range views {
-			rows = append(rows, []string{v.Schema + "." + v.Name, formatSQLDate(v.CreateDate)})
-			*objs = append(*objs, nodeData{Type: NodeView, DBName: node.data.DBName, Schema: v.Schema, Name: v.Name})
-		}
-		return []string{"Name", "Created"}, rows, nil
-
-	case NodeStoredProcedures:
-		dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
-		if err != nil {
-			return nil, nil, err
-		}
-		procs, err := dbObj.StoredProceduresFiltered(ctx, serverFilter(node.data.Filter))
-		if err != nil {
-			return nil, nil, err
-		}
-		procs = filterObjects(node.data.Filter, procs, func(p *gosmo.StoredProcedure) nodeData {
-			return nodeData{Name: p.Name, Schema: p.Schema, CreateDate: p.CreateDate}
-		})
-		rows := make([][]string, 0, len(procs))
-		for _, p := range procs {
-			rows = append(rows, []string{p.Schema + "." + p.Name, formatSQLDate(p.CreateDate), formatSQLDate(p.ModifyDate)})
-			*objs = append(*objs, nodeData{Type: NodeStoredProcedure, DBName: node.data.DBName, Schema: p.Schema, Name: p.Name})
-		}
-		return []string{"Name", "Created", "Modified"}, rows, nil
-
-	case NodePartitionFunction, NodePartitionScheme, NodeSecurityPolicy,
-		NodeColumnMasterKey, NodeColumnEncryptionKey:
-		return storageSecurityDetail(ctx, sc, node)
-
-	case NodeSystemDataTypes, NodeUserDefinedDataTypes, NodeUserDefinedTableTypes,
-		NodeUserDefinedTypes, NodeXMLSchemaCollections,
-		NodeAssemblies, NodeRules, NodeDefaults:
-		return programmabilityFolderDetail(ctx, sc, node, objs)
-	case NodePlanGuides:
-		return planGuidesFolderDetail(ctx, sc, node, objs)
-	case NodeSystemDataType, NodeUserDefinedDataType, NodeUserDefinedTableType,
-		NodeUserDefinedType, NodeXMLSchemaCollection,
-		NodeAssembly, NodeRule, NodeDefault, NodePlanGuide:
-		return programmabilityDetail(ctx, sc, node)
-
-	case NodeMessageTypes, NodeContracts, NodeBrokerQueues, NodeBrokerServices,
-		NodeRoutes, NodeRemoteServiceBindings, NodeBrokerPriorities:
-		return serviceBrokerFolderDetail(ctx, sc, node, objs)
-	case NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
-		NodeRoute, NodeRemoteServiceBinding, NodeBrokerPriority:
-		return serviceBrokerDetail(ctx, sc, node)
-
-	case NodeExternalDataSources, NodeExternalFileFormats, NodeExternalLibraries:
-		return externalFolderDetail(ctx, sc, node, objs)
-	case NodeExternalDataSource, NodeExternalFileFormat, NodeExternalLibrary:
-		return externalDetail(ctx, sc, node)
-
-	case NodeDatabaseSnapshots:
-		return databaseSnapshotsFolderDetail(ctx, sc, node, objs)
-	case NodeDatabaseSnapshot:
-		return databaseSnapshotDetail(ctx, sc, node)
-
-	case NodeCredentials:
-		return credentialsFolderDetail(ctx, sc, node, objs)
-	case NodeCredential:
-		return credentialDetail(ctx, sc, node)
-
-	case NodeCryptographicProviders:
-		return cryptographicProvidersFolderDetail(ctx, sc, node, objs)
-	case NodeCryptographicProvider:
-		return cryptographicProviderDetail(ctx, sc, node)
-
-	case NodeAudits:
-		return auditsFolderDetail(ctx, sc, node, objs)
-	case NodeAudit:
-		return auditDetail(ctx, sc, node)
-
-	case NodeServerAuditSpecifications:
-		return serverAuditSpecificationsFolderDetail(ctx, sc, node, objs)
-	case NodeServerAuditSpecification:
-		return serverAuditSpecificationDetail(ctx, sc, node)
-
-	case NodeDatabaseAuditSpecifications:
-		return databaseAuditSpecificationsFolderDetail(ctx, sc, node, objs)
-	case NodeDatabaseAuditSpecification:
-		return databaseAuditSpecificationDetail(ctx, sc, node)
-
-	case NodeDatabaseScopedCredentials:
-		return databaseScopedCredentialsFolderDetail(ctx, sc, node, objs)
-	case NodeDatabaseScopedCredential:
-		return databaseScopedCredentialDetail(ctx, sc, node)
-
-	case NodeAsymmetricKeys:
-		return asymmetricKeysFolderDetail(ctx, sc, node, objs)
-	case NodeAsymmetricKey:
-		return asymmetricKeyDetail(ctx, sc, node)
-
-	case NodeCertificates:
-		return certificatesFolderDetail(ctx, sc, node, objs)
-	case NodeCertificate:
-		return certificateDetail(ctx, sc, node)
-
-	case NodeSymmetricKeys:
-		return symmetricKeysFolderDetail(ctx, sc, node, objs)
-	case NodeSymmetricKey:
-		return symmetricKeyDetail(ctx, sc, node)
-	case NodeMasterKey:
-		return masterKeyDetail(ctx, sc, node)
-
-	case NodeBackupDevices:
-		return backupDevicesFolderDetail(ctx, sc, node, objs)
-	case NodeBackupDevice:
-		return backupDeviceDetail(ctx, sc, node)
-
-	case NodeServerTriggers:
-		return serverTriggersFolderDetail(ctx, sc, node, objs)
-	case NodeServerTrigger:
-		return serverTriggerDetail(ctx, sc, node)
-
-	case NodeDatabaseTriggers:
-		return databaseTriggersFolderDetail(ctx, sc, node, objs)
-	case NodeDatabaseTrigger:
-		return databaseTriggerDetail(ctx, sc, node)
-
-	case NodeEndpoints:
-		return endpointsFolderDetail(ctx, sc, node, objs)
-	case NodeEndpoint:
-		return endpointDetail(ctx, sc, node)
-
-	case NodeEventSessions:
-		return eventSessionsFolderDetail(ctx, sc, node, objs)
-	case NodeEventSession:
-		return eventSessionDetail(ctx, sc, node)
-	case NodeEventTarget:
-		return eventTargetDetail(ctx, sc, node)
-
-	case NodeResourceGovernor:
-		return resourceGovernorDetail(ctx, sc)
-	case NodeResourcePools:
-		return resourcePoolsFolderDetail(ctx, sc, node, objs)
-	case NodeResourcePool:
-		return resourcePoolDetail(ctx, sc, node)
-	case NodeWorkloadGroups:
-		return workloadGroupsFolderDetail(ctx, sc, node, objs)
-	case NodeWorkloadGroup:
-		return workloadGroupDetail(ctx, sc, node)
-	case NodeExternalResourcePools:
-		return externalResourcePoolsFolderDetail(ctx, sc, node, objs)
-	case NodeExternalResourcePool:
-		return externalResourcePoolDetail(ctx, sc, node)
-
-	case NodeDatabaseMail:
-		return databaseMailDetail(ctx, sc)
-
-	case NodeReplication:
-		return replicationDetail(ctx, sc)
-	case NodeLocalPublications:
-		return localPublicationsDetail(ctx, sc)
-	case NodeLocalSubscriptions:
-		return localSubscriptionsDetail(ctx, sc)
-	case NodePublication:
-		return publicationDetail(ctx, sc, node)
-	case NodeLocalSubscription:
-		return localSubscriptionDetail(ctx, sc, node)
-
-	case NodeFullTextCatalogs:
-		return fullTextCatalogsFolderDetail(ctx, sc, node, objs)
-	case NodeFullTextCatalog:
-		return fullTextCatalogDetail(ctx, sc, node)
-	case NodeFullTextStoplists:
-		return fullTextStoplistsFolderDetail(ctx, sc, node, objs)
-	case NodeFullTextStoplist:
-		return fullTextStoplistDetail(ctx, sc, node)
-	case NodeSearchPropertyLists:
-		return searchPropertyListsFolderDetail(ctx, sc, node, objs)
-	case NodeSearchPropertyList:
-		return searchPropertyListDetail(ctx, sc, node)
-
-	case NodeStoredProcedure, NodeFunction, NodeTrigger:
-		return moduleDetail(ctx, sc, node)
-
-	default:
-		if hasChildren(node.data.Type) {
-			return fetchChildObjectsDetail(ctx, sc, node, objs)
-		}
-		return []string{"Property", "Value"}, [][]string{
-			{"Name", node.label},
-			{"Type", nodeTypeName(node.data.Type)},
-			{"Database", node.data.DBName},
-			{"Schema", node.data.Schema},
-		}, nil
+	if load, ok := detailLoaders[node.data.Type]; ok {
+		return load(ctx, sc, node, objs)
 	}
+	if hasChildren(node.data.Type) {
+		return fetchChildObjectsDetail(ctx, sc, node, objs)
+	}
+	return []string{"Property", "Value"}, [][]string{
+		{"Name", node.label},
+		{"Type", nodeTypeName(node.data.Type)},
+		{"Database", node.data.DBName},
+		{"Schema", node.data.Schema},
+	}, nil
+}
+
+// detailLoader builds the Details grid for one node type. objs is the
+// out-parameter fetchNodeDetails documents; a loader whose rows are not
+// objects ignores it.
+type detailLoader func(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error)
+
+// serverDetail adapts a loader that needs only the connection.
+func serverDetail(f func(context.Context, *dbconn.ServerConn) ([]string, [][]string, error)) detailLoader {
+	return func(ctx context.Context, sc *dbconn.ServerConn, _ *explorerNode, _ *[]nodeData) ([]string, [][]string, error) {
+		return f(ctx, sc)
+	}
+}
+
+// nodeDetail adapts a loader whose rows are not objects.
+func nodeDetail(f func(context.Context, *dbconn.ServerConn, *explorerNode) ([]string, [][]string, error)) detailLoader {
+	return func(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, _ *[]nodeData) ([]string, [][]string, error) {
+		return f(ctx, sc, node)
+	}
+}
+
+// detailLoaders maps a NodeType to its purpose-built Details view. A type
+// with no entry falls to fetchNodeDetails' fallback: a folder lists its
+// children (fetchChildObjectsDetail), a leaf gets a Property/Value grid. The
+// progressive types fetch dispatches itself never reach this table
+// (TestDetailLoadersCoverage).
+var detailLoaders = map[NodeType]detailLoader{
+	NodeAgentJobs:            serverDetail(agentServerDetail),
+	NodeAgentJob:             nodeDetail(agentJobDetail),
+	NodeAgentSchedule:        nodeDetail(agentScheduleDetail),
+	NodeAgentAlert:           nodeDetail(agentAlertDetail),
+	NodeAgentOperator:        nodeDetail(agentOperatorDetail),
+	NodeAgentJobActivity:     serverDetail(agentJobActivityDetail),
+	NodeAgentJobHistory:      serverDetail(agentJobHistoryDetail),
+	NodeAgentJobCategories:   serverDetail(agentJobCategoriesDetail),
+	NodeAgentAlertCategories: serverDetail(agentAlertCategoriesDetail),
+	NodeAgentReport: func(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, _ *[]nodeData) ([]string, [][]string, error) {
+		return agentReportDetail(ctx, sc, node.data.Name)
+	},
+	NodeQueryStore: func(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, _ *[]nodeData) ([]string, [][]string, error) {
+		return queryStoreFolderDetail(ctx, sc, node.data.DBName)
+	},
+	NodeQueryStoreReport: func(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, _ *[]nodeData) ([]string, [][]string, error) {
+		return queryStoreReportDetail(ctx, sc, node.data.DBName, node.data.Name)
+	},
+	NodeSQLServerLogs: func(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, _ *[]nodeData) ([]string, [][]string, error) {
+		return errorLogFilesDetail(ctx, sc, gosmo.ErrorLogSQLServer)
+	},
+	NodeAgentErrorLogs: func(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, _ *[]nodeData) ([]string, [][]string, error) {
+		return errorLogFilesDetail(ctx, sc, gosmo.ErrorLogAgent)
+	},
+
+	NodeSQLServerLog:  nodeDetail(errorLogFileDetail),
+	NodeAgentErrorLog: nodeDetail(errorLogFileDetail),
+
+	NodeSystemDatabases:  systemDatabasesDetail,
+	NodeViews:            viewsFolderDetail,
+	NodeStoredProcedures: storedProceduresFolderDetail,
+
+	NodePartitionFunction:   nodeDetail(storageSecurityDetail),
+	NodePartitionScheme:     nodeDetail(storageSecurityDetail),
+	NodeSecurityPolicy:      nodeDetail(storageSecurityDetail),
+	NodeColumnMasterKey:     nodeDetail(storageSecurityDetail),
+	NodeColumnEncryptionKey: nodeDetail(storageSecurityDetail),
+
+	NodeSystemDataTypes:       programmabilityFolderDetail,
+	NodeUserDefinedDataTypes:  programmabilityFolderDetail,
+	NodeUserDefinedTableTypes: programmabilityFolderDetail,
+	NodeUserDefinedTypes:      programmabilityFolderDetail,
+	NodeXMLSchemaCollections:  programmabilityFolderDetail,
+	NodeAssemblies:            programmabilityFolderDetail,
+	NodeRules:                 programmabilityFolderDetail,
+	NodeDefaults:              programmabilityFolderDetail,
+
+	NodePlanGuides: planGuidesFolderDetail,
+
+	NodeSystemDataType:       nodeDetail(programmabilityDetail),
+	NodeUserDefinedDataType:  nodeDetail(programmabilityDetail),
+	NodeUserDefinedTableType: nodeDetail(programmabilityDetail),
+	NodeUserDefinedType:      nodeDetail(programmabilityDetail),
+	NodeXMLSchemaCollection:  nodeDetail(programmabilityDetail),
+	NodeAssembly:             nodeDetail(programmabilityDetail),
+	NodeRule:                 nodeDetail(programmabilityDetail),
+	NodeDefault:              nodeDetail(programmabilityDetail),
+	NodePlanGuide:            nodeDetail(programmabilityDetail),
+
+	NodeMessageTypes:          serviceBrokerFolderDetail,
+	NodeContracts:             serviceBrokerFolderDetail,
+	NodeBrokerQueues:          serviceBrokerFolderDetail,
+	NodeBrokerServices:        serviceBrokerFolderDetail,
+	NodeRoutes:                serviceBrokerFolderDetail,
+	NodeRemoteServiceBindings: serviceBrokerFolderDetail,
+	NodeBrokerPriorities:      serviceBrokerFolderDetail,
+
+	NodeMessageType:          nodeDetail(serviceBrokerDetail),
+	NodeContract:             nodeDetail(serviceBrokerDetail),
+	NodeBrokerQueue:          nodeDetail(serviceBrokerDetail),
+	NodeBrokerService:        nodeDetail(serviceBrokerDetail),
+	NodeRoute:                nodeDetail(serviceBrokerDetail),
+	NodeRemoteServiceBinding: nodeDetail(serviceBrokerDetail),
+	NodeBrokerPriority:       nodeDetail(serviceBrokerDetail),
+
+	NodeExternalDataSources: externalFolderDetail,
+	NodeExternalFileFormats: externalFolderDetail,
+	NodeExternalLibraries:   externalFolderDetail,
+
+	NodeExternalDataSource: nodeDetail(externalDetail),
+	NodeExternalFileFormat: nodeDetail(externalDetail),
+	NodeExternalLibrary:    nodeDetail(externalDetail),
+
+	NodeDatabaseSnapshots:           databaseSnapshotsFolderDetail,
+	NodeDatabaseSnapshot:            nodeDetail(databaseSnapshotDetail),
+	NodeCredentials:                 credentialsFolderDetail,
+	NodeCredential:                  nodeDetail(credentialDetail),
+	NodeCryptographicProviders:      cryptographicProvidersFolderDetail,
+	NodeCryptographicProvider:       nodeDetail(cryptographicProviderDetail),
+	NodeAudits:                      auditsFolderDetail,
+	NodeAudit:                       nodeDetail(auditDetail),
+	NodeServerAuditSpecifications:   serverAuditSpecificationsFolderDetail,
+	NodeServerAuditSpecification:    nodeDetail(serverAuditSpecificationDetail),
+	NodeDatabaseAuditSpecifications: databaseAuditSpecificationsFolderDetail,
+	NodeDatabaseAuditSpecification:  nodeDetail(databaseAuditSpecificationDetail),
+	NodeDatabaseScopedCredentials:   databaseScopedCredentialsFolderDetail,
+	NodeDatabaseScopedCredential:    nodeDetail(databaseScopedCredentialDetail),
+	NodeAsymmetricKeys:              asymmetricKeysFolderDetail,
+	NodeAsymmetricKey:               nodeDetail(asymmetricKeyDetail),
+	NodeCertificates:                certificatesFolderDetail,
+	NodeCertificate:                 nodeDetail(certificateDetail),
+	NodeSymmetricKeys:               symmetricKeysFolderDetail,
+	NodeSymmetricKey:                nodeDetail(symmetricKeyDetail),
+	NodeMasterKey:                   nodeDetail(masterKeyDetail),
+	NodeBackupDevices:               backupDevicesFolderDetail,
+	NodeBackupDevice:                nodeDetail(backupDeviceDetail),
+	NodeServerTriggers:              serverTriggersFolderDetail,
+	NodeServerTrigger:               nodeDetail(serverTriggerDetail),
+	NodeDatabaseTriggers:            databaseTriggersFolderDetail,
+	NodeDatabaseTrigger:             nodeDetail(databaseTriggerDetail),
+	NodeEndpoints:                   endpointsFolderDetail,
+	NodeEndpoint:                    nodeDetail(endpointDetail),
+	NodeEventSessions:               eventSessionsFolderDetail,
+	NodeEventSession:                nodeDetail(eventSessionDetail),
+	NodeEventTarget:                 nodeDetail(eventTargetDetail),
+	NodeResourceGovernor:            serverDetail(resourceGovernorDetail),
+	NodeResourcePools:               resourcePoolsFolderDetail,
+	NodeResourcePool:                nodeDetail(resourcePoolDetail),
+	NodeWorkloadGroups:              workloadGroupsFolderDetail,
+	NodeWorkloadGroup:               nodeDetail(workloadGroupDetail),
+	NodeExternalResourcePools:       externalResourcePoolsFolderDetail,
+	NodeExternalResourcePool:        nodeDetail(externalResourcePoolDetail),
+	NodeDatabaseMail:                serverDetail(databaseMailDetail),
+	NodeReplication:                 serverDetail(replicationDetail),
+	NodeLocalPublications:           serverDetail(localPublicationsDetail),
+	NodeLocalSubscriptions:          serverDetail(localSubscriptionsDetail),
+	NodePublication:                 nodeDetail(publicationDetail),
+	NodeLocalSubscription:           nodeDetail(localSubscriptionDetail),
+	NodeFullTextCatalogs:            fullTextCatalogsFolderDetail,
+	NodeFullTextCatalog:             nodeDetail(fullTextCatalogDetail),
+	NodeFullTextStoplists:           fullTextStoplistsFolderDetail,
+	NodeFullTextStoplist:            nodeDetail(fullTextStoplistDetail),
+	NodeSearchPropertyLists:         searchPropertyListsFolderDetail,
+	NodeSearchPropertyList:          nodeDetail(searchPropertyListDetail),
+
+	NodeStoredProcedure: nodeDetail(moduleDetail),
+	NodeFunction:        nodeDetail(moduleDetail),
+	NodeTrigger:         nodeDetail(moduleDetail),
+}
+
+func systemDatabasesDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbs, err := sc.Server.Databases(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	dbs = filterObjects(node.data.Filter, dbs, func(d *gosmo.Database) nodeData {
+		return nodeData{Name: d.Name, CreateDate: d.CreateDate}
+	})
+	rows := make([][]string, 0, 4)
+	for _, d := range dbs {
+		if d.IsSystem() {
+			rows = append(rows, []string{d.Name, d.State, string(d.RecoveryModel)})
+		}
+	}
+	return []string{"Name", "State", "Recovery"}, rows, nil
+}
+
+func viewsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	views, err := dbObj.ViewsFiltered(ctx, serverFilter(node.data.Filter))
+	if err != nil {
+		return nil, nil, err
+	}
+	views = filterObjects(node.data.Filter, views, func(v *gosmo.View) nodeData {
+		return nodeData{Name: v.Name, Schema: v.Schema, CreateDate: v.CreateDate}
+	})
+	rows := make([][]string, 0, len(views))
+	for _, v := range views {
+		rows = append(rows, []string{v.Schema + "." + v.Name, formatSQLDate(v.CreateDate)})
+		*objs = append(*objs, nodeData{Type: NodeView, DBName: node.data.DBName, Schema: v.Schema, Name: v.Name})
+	}
+	return []string{"Name", "Created"}, rows, nil
+}
+
+func storedProceduresFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	procs, err := dbObj.StoredProceduresFiltered(ctx, serverFilter(node.data.Filter))
+	if err != nil {
+		return nil, nil, err
+	}
+	procs = filterObjects(node.data.Filter, procs, func(p *gosmo.StoredProcedure) nodeData {
+		return nodeData{Name: p.Name, Schema: p.Schema, CreateDate: p.CreateDate}
+	})
+	rows := make([][]string, 0, len(procs))
+	for _, p := range procs {
+		rows = append(rows, []string{p.Schema + "." + p.Name, formatSQLDate(p.CreateDate), formatSQLDate(p.ModifyDate)})
+		*objs = append(*objs, nodeData{Type: NodeStoredProcedure, DBName: node.data.DBName, Schema: p.Schema, Name: p.Name})
+	}
+	return []string{"Name", "Created", "Modified"}, rows, nil
 }
 
 // fetchChildObjectsDetail is the fallback detail view for a node type with

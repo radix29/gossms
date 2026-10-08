@@ -20,9 +20,19 @@ func (p *PropertySheet) focusedRowHandles(ev *tcell.EventKey) bool {
 	return ok && kh.HandleKey(ev)
 }
 
+// While an Apply, OK or Script Changes is in flight the form takes no input
+// (keys, mouse, paste, Refresh, Revert): the page's apply runs on the
+// pipeline goroutine and reads the form's rows, so an edit made meanwhile
+// raced it, and could reach the server without having been validated. Apply
+// reloads the page afterwards, so nothing typed then would have survived
+// anyway. The page list, the button row (only Cancel acts) and Escape still
+// work. See formLocked.
 func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 	if !p.Visible() {
 		return false
+	}
+	if p.formLocked() && (ev.Key() == tcell.KeyF5 || ev.Key() == tcell.KeyCtrlZ) {
+		return true
 	}
 	if ev.Key() == tcell.KeyF5 {
 		p.Refresh(p.current)
@@ -72,6 +82,17 @@ func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 			p.setZone(zoneButtons)
 		}
 	case zoneForm:
+		if p.formLocked() {
+			switch ev.Key() {
+			case tcell.KeyEscape:
+				p.cancel()
+			case tcell.KeyTab:
+				p.setZone(zoneButtons)
+			case tcell.KeyBacktab, tcell.KeyLeft:
+				p.setZone(zonePages)
+			}
+			return true
+		}
 		if f := p.PageForm(p.current); f != nil && f.HandleKey(ev) {
 			return true
 		}
@@ -143,6 +164,19 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	if p.ConsumeOutsideClick(ev) {
 		return true
 	}
+	if p.formLocked() {
+		// The button row and page list only; see HandleKey.
+		if i := p.ButtonClicked(ev, p.buttonLabels()); i >= 0 {
+			p.armDrag(ev, zoneButtons)
+			p.setZone(zoneButtons)
+			p.btnFocus = i
+			p.activateButton(i)
+		} else if p.pageList.HandleMouse(ev) {
+			p.armDrag(ev, zonePages)
+			p.setZone(zonePages)
+		}
+		return true
+	}
 	// A focused row's open overlay (SelectRow's dropdown list, GridRow's
 	// "Show Value" popup) is drawn last (see Form.DrawOverlays) and can
 	// visually extend below the row's own band far enough to overlap the
@@ -175,6 +209,10 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
+// formLocked reports whether the form refuses input: while applying. See
+// HandleKey.
+func (p *PropertySheet) formLocked() bool { return p.applying }
+
 // armDrag records that zone consumed a Button1 press, so every further
 // event until the release goes back to it — see the dragZone field.
 func (p *PropertySheet) armDrag(ev *tcell.EventMouse, zone focusZone) {
@@ -191,7 +229,7 @@ func (p *PropertySheet) armDrag(ev *tcell.EventMouse, zone focusZone) {
 func (p *PropertySheet) routeDrag(ev *tcell.EventMouse) {
 	switch p.dragZone {
 	case zoneForm:
-		if f := p.PageForm(p.current); f != nil {
+		if f := p.PageForm(p.current); f != nil && !p.formLocked() {
 			f.HandleMouse(ev)
 		}
 	case zonePages:

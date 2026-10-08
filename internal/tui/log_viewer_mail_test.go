@@ -84,12 +84,12 @@ func TestLogViewerSaysWhenTheMailLogIsOwnOnly(t *testing.T) {
 
 func TestLogViewerOffersDeleteInsteadOfRecycleOnTheMailLog(t *testing.T) {
 	lv := newTestLogViewer()
-	if got := lv.tools[logToolRecycle].label; got != "Recycle..." {
+	if got := lv.tools.Cells[logToolRecycle].Label; got != "Recycle..." {
 		t.Errorf("SQL Server log: cell = %q, want Recycle...", got)
 	}
 	lv.logType = gosmo.ErrorLogDatabaseMail
 	lv.refreshToolLabels()
-	if got := lv.tools[logToolRecycle].label; got != "Delete..." {
+	if got := lv.tools.Cells[logToolRecycle].Label; got != "Delete..." {
 		t.Errorf("Database Mail log: cell = %q, want Delete...", got)
 	}
 }

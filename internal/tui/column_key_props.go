@@ -22,19 +22,11 @@ import (
 // has the new one.
 
 func findColumnMasterKey(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ColumnMasterKey, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.ColumnMasterKeyByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).ColumnMasterKeyByName)
 }
 
 func findColumnEncryptionKey(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ColumnEncryptionKey, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.ColumnEncryptionKeyByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).ColumnEncryptionKeyByName)
 }
 
 func columnMasterKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {

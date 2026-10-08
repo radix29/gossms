@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/gate"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -31,13 +32,13 @@ const (
 // order the logTool* constants name. refreshToolLabels rebuilds the labels on
 // every draw, since both selectors show what they point at.
 func (lv *LogViewer) buildTools() {
-	lv.tools = []toolButton{
-		{action: lv.showLogTypeMenu},
-		{action: lv.showLogFileMenu},
-		{label: "Refresh", action: lv.Refresh},
-		{label: "Search...", action: lv.showSearch},
-		{label: "Recycle...", action: lv.recycleOrDelete},
-		{label: "Export...", action: lv.export},
+	lv.tools.Cells = []controls.ToolCell{
+		{Action: lv.showLogTypeMenu},
+		{Action: lv.showLogFileMenu},
+		{Label: "Refresh", Action: lv.Refresh},
+		{Label: "Search...", Action: lv.showSearch},
+		{Label: "Recycle...", Action: lv.recycleOrDelete},
+		{Label: "Export...", Action: lv.export},
 	}
 	lv.refreshToolLabels()
 }
@@ -55,7 +56,7 @@ func (lv *LogViewer) toolsEnabled() bool { return !lv.busy }
 // is gated on the same right; gating only there left one action grey in the
 // tree, live here, and failing at the server.
 //
-// Asked on demand rather than latched into toolButton.disabled as
+// Asked on demand rather than latched into ToolCell.Disabled as
 // ActivityMonitor does: that panel rebuilds its cells on every draw, while this
 // toolbar is built once in NewLogViewer, where the capability probe may not
 // have run, so a cached flag would depend on a draw having happened first.
@@ -114,12 +115,12 @@ func (lv *LogViewer) toolReason(i int) string {
 // showOverflowMenu pops the buttons the row was too narrow to draw, under the
 // "More ▾" cell — each gated exactly as its button is.
 func (lv *LogViewer) showOverflowMenu() {
-	r := lv.more.rect
+	r := lv.tools.More.Rect
 	if r.IsZero() {
 		r = core.Rect{X: lv.rect.X, Y: lv.rect.Y}
 	}
 	lv.app.contextMenu.Show(r.X, r.Y+1,
-		toolOverflowItems(lv.tools, lv.hidden, lv.toolDisabled, lv.toolReason,
+		lv.tools.OverflowItems(lv.toolDisabled, lv.toolReason,
 			func(i int) { lv.runTool(i) }))
 }
 
@@ -137,18 +138,18 @@ func (lv *LogViewer) runTool(i int) bool {
 		lv.setStatus(gate.RequiresText(lv.recycleRights()...))
 		return false
 	}
-	lv.tools[i].action()
+	lv.tools.Cells[i].Action()
 	return true
 }
 
 // refreshToolLabels updates the two selectors' labels from the current
 // selection, and the Recycle cell's from the family it acts on.
 func (lv *LogViewer) refreshToolLabels() {
-	lv.tools[logToolLogType].label = "Log: " + lv.logType.String() + " ▾"
-	lv.tools[logToolFile].label = "File: " + lv.selectionLabel() + " ▾"
-	lv.tools[logToolRecycle].label = "Recycle..."
+	lv.tools.Cells[logToolLogType].Label = "Log: " + lv.logType.String() + " ▾"
+	lv.tools.Cells[logToolFile].Label = "File: " + lv.selectionLabel() + " ▾"
+	lv.tools.Cells[logToolRecycle].Label = "Recycle..."
 	if lv.logType == gosmo.ErrorLogDatabaseMail {
-		lv.tools[logToolRecycle].label = "Delete..."
+		lv.tools.Cells[logToolRecycle].Label = "Delete..."
 	}
 }
 

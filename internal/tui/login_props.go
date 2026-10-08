@@ -166,6 +166,11 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			defaultLangRow := selectPreserving("Default language", langNames, det.DefaultLanguage, unsetItem)
 			origCredential := det.CredentialName
 			credentialRow := selectPreserving("Map to credential", credItems, origCredential, noneItem)
+			if !isSQLLogin {
+				// Only a SQL login can hold a credential: ALTER LOGIN … ADD CREDENTIAL on
+				// any other kind is Msg 15080 at Apply.
+				credentialRow.SetEnabled(false)
+			}
 
 			rows := []propsheet.Row{
 				propsheet.Section("Login identity"),
@@ -382,7 +387,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			mappings, err := l.UserMappings(ctx)
+			mappings, err := l.UserMappingsIn(ctx, dbs)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -600,6 +605,11 @@ func pageLoginSecurables(sc *db.ServerConn, loginName *string) propPage {
 
 var connectPermissionItems = []string{"Grant", "Deny", "Default"}
 
+// connectPermissionVerbs is the statement each connectPermissionItems choice
+// issues for CONNECT SQL; Default is the REVOKE that removes the explicit
+// entry.
+var connectPermissionVerbs = []gosmo.PermissionVerb{gosmo.VerbGrant, gosmo.VerbDeny, gosmo.VerbRevoke}
+
 func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
 		title: "Status",
@@ -666,30 +676,14 @@ func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 					return err
 				}
 				if connectRow.Dirty() {
-					switch connectRow.Selected() {
-					case 0:
-						if err := sc.Server.GrantServerPermission(ctx, "CONNECT SQL", *loginName, gosmo.PermissionOptions{}); err != nil {
-							return err
-						}
-					case 1:
-						if err := sc.Server.DenyServerPermission(ctx, "CONNECT SQL", *loginName, gosmo.PermissionOptions{}); err != nil {
-							return err
-						}
-					case 2:
-						if err := sc.Server.RevokeServerPermission(ctx, "CONNECT SQL", *loginName, gosmo.PermissionOptions{}); err != nil {
-							return err
-						}
+					verb := connectPermissionVerbs[connectRow.Selected()]
+					if err := serverPermApply(sc.Server)(ctx, verb, gosmo.PermissionOptions{}, "CONNECT SQL", *loginName); err != nil {
+						return err
 					}
 				}
 				if enabledRow.Dirty() {
-					if enabledRow.Selected() == 1 {
-						if err := l.Disable(ctx); err != nil {
-							return err
-						}
-					} else {
-						if err := l.Enable(ctx); err != nil {
-							return err
-						}
+					if err := l.SetEnabled(ctx, enabledRow.Selected() == 0); err != nil {
+						return err
 					}
 				}
 				return nil

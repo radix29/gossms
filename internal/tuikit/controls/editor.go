@@ -481,9 +481,13 @@ func (e *Editor) backspace() {
 		return
 	}
 	if e.cursorCol > 0 {
+		// The whole cluster before the cursor, as Left moves over it: removing only
+		// its last rune turns "❤️" into a narrower heart or a flag into a stray
+		// regional indicator.
 		line := e.doc.Line(e.cursorRow)
-		e.doc.setLine(e.cursorRow, append(line[:e.cursorCol-1], line[e.cursorCol:]...))
-		e.cursorCol--
+		from := core.PrevGrapheme(line, e.cursorCol)
+		e.doc.setLine(e.cursorRow, append(line[:from], line[e.cursorCol:]...))
+		e.cursorCol = from
 		return
 	}
 	prev := e.doc.Line(e.cursorRow - 1)
@@ -498,7 +502,8 @@ func (e *Editor) deleteChar() {
 	}
 	line := e.doc.Line(e.cursorRow)
 	if e.cursorCol < len(line) {
-		e.doc.setLine(e.cursorRow, append(line[:e.cursorCol], line[e.cursorCol+1:]...))
+		to := min(core.NextGrapheme(line, e.cursorCol), len(line))
+		e.doc.setLine(e.cursorRow, append(line[:e.cursorCol], line[to:]...))
 		return
 	}
 	if e.cursorRow < e.doc.Len()-1 {

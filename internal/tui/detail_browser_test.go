@@ -3,6 +3,10 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"slices"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -12,7 +16,7 @@ import (
 )
 
 // newConnectedNode builds a standalone explorerNode of an unhandled type
-// (falls to fetchNodeDetails' default case, which never touches sc.Server)
+// (falls to fetchNodeDetails' fallback, which never touches sc.Server)
 // wired to a fake, "open" connection — safe to exercise ShowNodeDetails'
 // cache/dispatch logic without a real gosmo.Server or network access.
 func newConnectedNode(label string) (*explorerNode, *dbconn.ServerConn) {
@@ -512,5 +516,50 @@ func TestDetailMenuRefusesObjectsOfAnotherNode(t *testing.T) {
 	db.currentNode, _ = newConnectedNode("orders")
 	if items := a.detailMenuItems(db); items != nil {
 		t.Errorf("detailMenuItems = %d items with another node current, want none", len(items))
+	}
+}
+
+// TestDetailLoadersCoverage pins the detailLoaders table against the rest of
+// the dispatch: no entry for a type fetch handles itself (it would never run),
+// and none for a placeholder type (NodeLoading/NodeError have no details).
+// fetch's own cases are read out of its switch rather than listed, so a type
+// moved between the two is checked without anyone remembering this test.
+func TestDetailLoadersCoverage(t *testing.T) {
+	f, err := parser.ParseFile(token.NewFileSet(), "detail_browser_runs.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing detail_browser_runs.go: %v", err)
+	}
+	var progressive []string
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "fetch" || fn.Recv == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if cc, ok := n.(*ast.CaseClause); ok {
+				for _, e := range cc.List {
+					if id, ok := e.(*ast.Ident); ok {
+						progressive = append(progressive, id.Name)
+					}
+				}
+			}
+			return true
+		})
+	}
+	if len(progressive) == 0 {
+		t.Fatal("found no case in DetailBrowser.fetch's switch — has it moved?")
+	}
+	names := nodeTypeNames(t)
+	for nt := range detailLoaders {
+		if nt < 0 || nt >= nodeTypeCount {
+			t.Errorf("detailLoaders has an entry for NodeType %d, outside the const block", nt)
+			continue
+		}
+		if slices.Contains(progressive, names[nt]) {
+			t.Errorf("%s is in detailLoaders, but DetailBrowser.fetch handles it itself — the entry never runs", names[nt])
+		}
+		if nodeTypeWiring[nt].class == classInternal {
+			t.Errorf("%s is a placeholder type with a detailLoaders entry", names[nt])
+		}
 	}
 }

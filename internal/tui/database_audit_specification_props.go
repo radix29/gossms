@@ -83,19 +83,17 @@ func pageDatabaseAuditSpecificationGeneral(sc *db.ServerConn, dbName, specName s
 			if err != nil {
 				return nil, nil, err
 			}
-			taken := newNameSet(serverCollation(sc))
+			var held []string
 			for _, other := range all {
 				if other.Name != spec.Name {
-					taken.Add(other.AuditName)
+					held = append(held, other.AuditName)
 				}
 			}
-			auditNames := make([]string, 0, len(audits))
-			for _, a := range audits {
-				if !taken.Has(a.Name) {
-					auditNames = append(auditNames, a.Name)
-				}
+			auditNames := make([]string, len(audits))
+			for i, a := range audits {
+				auditNames[i] = a.Name
 			}
-			auditRow := auditSelectRow(auditNames, spec.AuditName)
+			auditRow := auditSelectRow(freeAuditNames(serverCollation(sc), auditNames, held), spec.AuditName)
 			groups = unionSorted(groups, spec.ActionGroups)
 
 			groupGrid := auditGroupGrid(groups, spec.ActionGroups, 12)
@@ -216,18 +214,21 @@ func auditActionFromFields(action, class, securable, principal string) (gosmo.Da
 	if securable == "" {
 		return gosmo.DatabaseAuditAction{}, fmt.Errorf("an audited action needs a securable to audit it on")
 	}
-	schema, object := "", securable
-	// Only an OBJECT is schema-qualified. Splitting on the first dot rather
-	// than the last is what SSMS's own box does, and a name containing a dot
-	// can be written in brackets.
+	schema, object := "", gosmo.UnquoteName(securable)
+	// Only an OBJECT is schema-qualified, and a dot inside [brackets] or
+	// "quotes" is part of a name, not the separator.
 	if strings.EqualFold(class, "OBJECT") {
-		if s, o, ok := strings.Cut(securable, "."); ok {
-			schema, object = trimIdentBrackets(s), trimIdentBrackets(o)
-		} else {
-			object = trimIdentBrackets(securable)
+		parts, err := gosmo.SplitName(securable)
+		switch {
+		case err != nil:
+			return gosmo.DatabaseAuditAction{}, fmt.Errorf("the audited object %q is not a valid name; bracket a name holding a dot or a space, as [my.table]", securable)
+		case len(parts) > 2:
+			return gosmo.DatabaseAuditAction{}, fmt.Errorf("the audited object %q has %d name parts; give schema.object, or just object", securable, len(parts))
+		case len(parts) == 2:
+			schema, object = parts[0], parts[1]
+		default:
+			object = parts[0]
 		}
-	} else {
-		object = trimIdentBrackets(securable)
 	}
 	principal = strings.TrimSpace(principal)
 	if principal == "" {
@@ -238,17 +239,6 @@ func auditActionFromFields(action, class, securable, principal string) (gosmo.Da
 		ClassDesc:  class,
 		SchemaName: schema,
 		ObjectName: object,
-		Principal:  trimIdentBrackets(principal),
+		Principal:  gosmo.UnquoteName(principal),
 	}, nil
-}
-
-// trimIdentBrackets strips one layer of [] a user may have typed around a
-// name. gosmo bracket-quotes the securable itself, so leaving them on would
-// produce [[dbo]] — a name no object has.
-func trimIdentBrackets(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 && s[0] == '[' && s[len(s)-1] == ']' {
-		return strings.ReplaceAll(s[1:len(s)-1], "]]", "]")
-	}
-	return s
 }

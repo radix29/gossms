@@ -293,6 +293,9 @@ func (g *DataGrid) editable() bool { return g.OnActivateCell != nil && !g.browse
 // recompute rescans up to colWidthSampleRows rows — through a RowSource that
 // may build each one — for the same answer. Content changed in place reaches
 // the widths through RefreshColumnWidths, never through a relayout.
+//
+// A real change re-clamps the scroll as SetScroll does: a view grown taller
+// after End kept its old top row and drew blank rows under the last one.
 func (g *DataGrid) SetBounds(x, y, w, h int) {
 	r := core.Rect{X: x, Y: y, W: w, H: h}
 	if r == g.rect {
@@ -300,6 +303,7 @@ func (g *DataGrid) SetBounds(x, y, w, h int) {
 	}
 	g.rect = r
 	g.computeColWidths()
+	g.SetScroll(g.scrollRow, g.scrollCol)
 }
 
 // Bounds is the rectangle SetBounds last placed the grid at — what a

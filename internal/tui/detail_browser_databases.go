@@ -131,7 +131,7 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 			availDataStr, availLogStr = formatMB(usage.UnallocatedMB), formatMB(usage.LogUnusedMB)
 			cs = diskUsageCharts(usage)
 		}
-		db.postFinalCharts(app, node, seq, []string{"Property", "Value"}, [][]string{
+		db.postFinalResult(app, node, seq, &detailResult{cols: []string{"Property", "Value"}, rows: [][]string{
 			{"Name", d.Name},
 			{"State", d.State},
 			{"Recovery Model", string(d.RecoveryModel)},
@@ -144,7 +144,7 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 			{"Log (MB)", logStr},
 			{"Avail. Data (MB)", availDataStr},
 			{"Avail. Log (MB)", availLogStr},
-		}, cs, nil)
+		}, charts: cs})
 	})
 }
 

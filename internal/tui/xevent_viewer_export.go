@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
+	"unicode/utf16"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/fileutil"
@@ -161,13 +161,21 @@ func (v *XEventViewer) exportCSV() ([]byte, error) {
 }
 
 // xeSQLType is the column type the INSERT script declares for column c of
-// the shown events: bigint or float where every value is a number, datetime2
+// the shown events: bigint where every value is a number that fits one,
+// decimal(20,0) where they are integers some of which only fit a uint64 (a
+// query_hash, a plan_handle's hash), float for any other numbers, datetime2
 // for the timestamp, nvarchar otherwise — (max) only when a value needs it.
+//
+// A uint64 past bigint's range typed float would round: a 64-bit hash keeps
+// about 16 of its 20 digits, so two different hashes can import equal. And
+// nvarchar(n) counts UTF-16 code units, so a character outside the Basic
+// Multilingual Plane (an emoji) takes two: sized in runes, the INSERT fails
+// "String or binary data would be truncated".
 func (v *XEventViewer) xeSQLType(c xevent.Column) string {
 	if c.Kind == xevent.ColTimestamp {
 		return "datetime2(6)"
 	}
-	allInt, allNum, seen, longest := true, true, false, 0
+	allInt, allWide, allNum, seen, longest := true, true, true, false, 0
 	for _, e := range v.shown {
 		val, ok := e.Value(c)
 		if !ok {
@@ -175,24 +183,38 @@ func (v *XEventViewer) xeSQLType(c xevent.Column) string {
 		}
 		s := val.Display()
 		seen = true
-		longest = max(longest, utf8.RuneCountInString(s))
+		longest = max(longest, utf16Len(s))
 		if !isSQLNumber(s) {
-			allInt, allNum = false, false
+			allInt, allWide, allNum = false, false, false
 			continue
 		}
 		if _, err := strconv.ParseInt(s, 10, 64); err != nil {
 			allInt = false
+			if _, err := strconv.ParseUint(s, 10, 64); err != nil {
+				allWide = false
+			}
 		}
 	}
 	switch {
 	case seen && allInt:
 		return "bigint"
+	case seen && allWide:
+		return "decimal(20,0)"
 	case seen && allNum:
 		return "float"
 	case longest > 4000:
 		return "nvarchar(max)"
 	}
 	return "nvarchar(" + strconv.Itoa(max(1, longest)) + ")"
+}
+
+// utf16Len is s's length in UTF-16 code units, the unit nvarchar(n) counts.
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n += max(1, utf16.RuneLen(r))
+	}
+	return n
 }
 
 // isSQLNumber reports whether s is a plain decimal number T-SQL reads as a
@@ -281,7 +303,7 @@ func (v *XEventViewer) insertScript() string {
 			switch {
 			case !ok:
 				b.WriteString("NULL")
-			case types[j] == "bigint" || types[j] == "float":
+			case types[j] == "bigint" || types[j] == "decimal(20,0)" || types[j] == "float":
 				b.WriteString(val.Display())
 			case types[j] == "datetime2(6)":
 				b.WriteString("'")

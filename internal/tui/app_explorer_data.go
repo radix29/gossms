@@ -263,10 +263,7 @@ func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
 			if err != nil {
 				return err
 			}
-			if on {
-				return p.Enable(ctx)
-			}
-			return p.Disable(ctx)
+			return p.SetEnabled(ctx, on)
 		})
 }
 
@@ -279,11 +276,7 @@ func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
 		"Disable Server Trigger",
 		fmt.Sprintf("Disable %s? The DDL or logon policy it enforces stops applying server-wide.", name),
 		func(ctx context.Context, name string, on bool) error {
-			t := sc.Server.ServerTriggerRef(name)
-			if on {
-				return t.Enable(ctx)
-			}
-			return t.Disable(ctx)
+			return sc.Server.ServerTriggerRef(name).SetEnabled(ctx, on)
 		})
 }
 
@@ -298,11 +291,7 @@ func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
 		func(ctx context.Context, name string, on bool) error {
 			// DatabaseRef, not DatabaseByName: addressing a trigger needs no
 			// sys.databases read.
-			t := sc.Server.DatabaseRef(dbName).DatabaseTriggerRef(name)
-			if on {
-				return t.Enable(ctx)
-			}
-			return t.Disable(ctx)
+			return sc.Server.DatabaseRef(dbName).DatabaseTriggerRef(name).SetEnabled(ctx, on)
 		})
 }
 
@@ -324,11 +313,7 @@ func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
 		"Disable Audit",
 		fmt.Sprintf("Disable %s? The instance stops recording anything through it.", name),
 		func(ctx context.Context, name string, on bool) error {
-			au := sc.Server.ServerAuditRef(name)
-			if on {
-				return au.Enable(ctx)
-			}
-			return au.Disable(ctx)
+			return sc.Server.ServerAuditRef(name).SetEnabled(ctx, on)
 		})
 }
 
@@ -339,11 +324,7 @@ func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNo
 		"Disable Server Audit Specification",
 		fmt.Sprintf("Disable %s? The action groups it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
-			spec := sc.Server.ServerAuditSpecificationRef(name)
-			if on {
-				return spec.Enable(ctx)
-			}
-			return spec.Disable(ctx)
+			return sc.Server.ServerAuditSpecificationRef(name).SetEnabled(ctx, on)
 		})
 }
 
@@ -355,11 +336,7 @@ func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorer
 		"Disable Database Audit Specification",
 		fmt.Sprintf("Disable %s? The action groups and actions it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
-			spec := sc.Server.DatabaseRef(dbName).DatabaseAuditSpecificationRef(name)
-			if on {
-				return spec.Enable(ctx)
-			}
-			return spec.Disable(ctx)
+			return sc.Server.DatabaseRef(dbName).DatabaseAuditSpecificationRef(name).SetEnabled(ctx, on)
 		})
 }
 
@@ -434,11 +411,7 @@ func (a *App) togglePlanGuide(sc *db.ServerConn, node *explorerNode) {
 		"Disable Plan Guide",
 		fmt.Sprintf("Disable %s? The queries it applies hints to go back to the plans the optimizer picks on its own.", name),
 		func(ctx context.Context, name string, on bool) error {
-			g := sc.Server.DatabaseRef(dbName).PlanGuideRef(name)
-			if on {
-				return g.Enable(ctx)
-			}
-			return g.Disable(ctx)
+			return sc.Server.DatabaseRef(dbName).PlanGuideRef(name).SetEnabled(ctx, on)
 		})
 }
 

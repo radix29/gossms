@@ -37,7 +37,7 @@ func TestScriptMenuItemsPerNodeType(t *testing.T) {
 		{"login", opNode(NodeLogin, "", "app_login", ""), "Script Login as",
 			[]string{"CREATE To", "DROP To", "DROP And CREATE To"}},
 		// A database has no DROP form — see scriptables.
-		{"database", opNode(NodeDatabase, "", "AppDB", ""), "Script Database as", []string{"CREATE To"}},
+		{"database", opNode(NodeDatabase, "", "AppDB", ""), "Script Database as", []string{"CREATE To", "DROP To", "DROP And CREATE To"}},
 		// Folders and columns are not objects that script.
 		{"tables folder", opNode(NodeTables, "", "", ""), "", nil},
 		{"column", opNode(NodeColumn, "dbo", "OrderID", ""), "", nil},

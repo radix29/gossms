@@ -133,8 +133,8 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 				pathRow.SetEnabled(f)
 				sizeRow.SetEnabled(f)
 				countRow.SetEnabled(f)
-				countKindRow.SetReadOnly(!f)
-				reserveRow.SetReadOnly(!f)
+				countKindRow.SetEnabled(f)
+				reserveRow.SetEnabled(f)
 			}
 			destRow.SetOnChange(func(string) { syncDest() })
 			syncDest()

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -287,8 +288,7 @@ func TestAGLabelForDatabase(t *testing.T) {
 // primary's row.
 func TestApplyResizesTheReplicaGridToFitEveryReplica(t *testing.T) {
 	// agName must be set; empty means the all-groups view.
-	d := &AGDashboard{agName: "AAG1", topGrid: controls.NewDataGrid(), bottomGrid: controls.NewDataGrid()}
-	d.SetBounds(0, 0, 120, 40)
+	d := hostedTestAGDashboard(t)
 	before := d.topRect.H
 
 	replicas := []*gosmo.AvailabilityReplica{
@@ -410,5 +410,120 @@ func TestDashboardRateSelectorStopsAtBothEnds(t *testing.T) {
 	if len(agDashboardRateLabels) != len(agDashboardRates) {
 		t.Fatalf("%d labels for %d rates — the header indexes one by the other",
 			len(agDashboardRateLabels), len(agDashboardRates))
+	}
+}
+
+// hostedTestAGDashboard is a one-group dashboard with no refresh loop, hosted
+// (apply ignores a closed panel) and laid out at 120×40.
+func hostedTestAGDashboard(t *testing.T) *AGDashboard {
+	t.Helper()
+	// agName must be set; empty means the all-groups view.
+	d := &AGDashboard{app: newTestApp(), agName: "AAG1", topGrid: controls.NewDataGrid(), bottomGrid: controls.NewDataGrid()}
+	d.app.panels.AddPanel(d)
+	d.SetBounds(0, 0, 120, 40)
+	return d
+}
+
+// agTestSnapshot is a reading of AAG1 with four replicas and one database row
+// on each, so both grids have rows to click.
+func agTestSnapshot() agSnapshot {
+	var replicas []*gosmo.AvailabilityReplica
+	var dbs []*gosmo.AvailabilityDatabase
+	for i, n := range []string{"a", "b", "c", "d"} {
+		role := "SECONDARY"
+		if i == 0 {
+			role = "PRIMARY"
+		}
+		replicas = append(replicas, &gosmo.AvailabilityReplica{ReplicaServerName: n, Role: role})
+		dbs = append(dbs, &gosmo.AvailabilityDatabase{DatabaseName: "appdb", ReplicaServerName: n, IsPrimaryReplica: i == 0})
+	}
+	return agSnapshot{group: &gosmo.AvailabilityGroup{Name: "AAG1"}, replicas: replicas, dbs: agComputeDatabaseMetrics(dbs), at: time.Now()}
+}
+
+// TestAGDashboardDragFollowsTheGridThatClaimedThePress is T1: routing by
+// position only, a column-resize drag started on the top grid's header and
+// released over the bottom grid never reached the top grid again — it stayed
+// latched, and its next press resized instead of selecting. The gesture now
+// belongs to the press's grid until release, wherever the pointer drifts.
+func TestAGDashboardDragFollowsTheGridThatClaimedThePress(t *testing.T) {
+	d := hostedTestAGDashboard(t)
+	d.apply(agTestSnapshot(), nil)
+	top, bottom := d.topGrid.Bounds(), d.bottomGrid.Bounds()
+	sep := top.X + d.topGrid.ColumnWidth(0) - 1 // first column's separator, on the header row
+	w0 := d.topGrid.ColumnWidth(0)
+
+	d.HandleMouse(tcell.NewEventMouse(sep, top.Y, tcell.Button1, 0))
+	d.HandleMouse(tcell.NewEventMouse(sep+4, bottom.Y+2, tcell.Button1, 0)) // dragged over the bottom grid
+	if d.topGrid.ColumnWidth(0) == w0 {
+		t.Fatalf("the drag over the bottom grid did not reach the top grid (width still %d)", w0)
+	}
+	if d.focusBottom {
+		t.Error("motion over the bottom grid moved keyboard focus mid-gesture")
+	}
+	d.HandleMouse(tcell.NewEventMouse(sep+4, bottom.Y+2, tcell.ButtonNone, 0))
+	if d.dragZone != agZoneNone {
+		t.Fatalf("dragZone = %v after the release, want none", d.dragZone)
+	}
+	// A fresh press on a top-grid row selects it rather than resizing.
+	resized := d.topGrid.ColumnWidth(0)
+	d.HandleMouse(tcell.NewEventMouse(top.X+2, top.Y+4, tcell.Button1, 0))
+	d.HandleMouse(tcell.NewEventMouse(top.X+2, top.Y+4, tcell.ButtonNone, 0))
+	if d.topGrid.ColumnWidth(0) != resized {
+		t.Errorf("a fresh press resized the column (%d → %d): the grid was still latched", resized, d.topGrid.ColumnWidth(0))
+	}
+	if d.topGrid.SelectedRow() != 2 {
+		t.Errorf("SelectedRow() = %d after clicking the third row, want 2", d.topGrid.SelectedRow())
+	}
+}
+
+// TestAGDashboardOpenCellMenuGetsFirstRefusal is T2: with a cell menu open,
+// Enter drilled into the group instead of choosing the menu's item, and a
+// refresh rebuilt the grid under the menu and closed it. Keys go to the open
+// menu, and the reading waits until it closes.
+func TestAGDashboardOpenCellMenuGetsFirstRefusal(t *testing.T) {
+	d := hostedTestAGDashboard(t)
+	// The dashboard's grids have no cell cursor today, so no menu opens on them
+	// yet; the guards hold the rule for when one does (Copy, Show Value).
+	d.topGrid.SetCellCursor(true)
+	d.apply(agTestSnapshot(), nil)
+	r := d.topGrid.Bounds()
+	d.HandleMouse(tcell.NewEventMouse(r.X+3, r.Y+2, tcell.Button2, 0))
+	d.HandleMouse(tcell.NewEventMouse(r.X+3, r.Y+2, tcell.ButtonNone, 0))
+	if !d.topGrid.OverlayActive() {
+		t.Fatal("setup: the right-click opened no cell menu")
+	}
+
+	// A reading with a different row count would resetGrid, closing the menu.
+	fewer := agTestSnapshot()
+	fewer.replicas = fewer.replicas[:2]
+	d.apply(fewer, nil)
+	if !d.topGrid.OverlayActive() {
+		t.Fatal("a refresh closed the open cell menu")
+	}
+	if len(d.topRows) != 4 {
+		t.Fatalf("top grid has %d rows under the open menu, want the old 4", len(d.topRows))
+	}
+
+	// Escape goes to the menu (closing it), not the panel; the deferred
+	// reading lands as it closes.
+	if !d.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", 0)) {
+		t.Fatal("Escape with the menu open = false, want true")
+	}
+	if d.topGrid.OverlayActive() {
+		t.Fatal("Escape left the menu open")
+	}
+	if len(d.topRows) != 2 || d.deferred != nil {
+		t.Fatalf("after the menu closed: %d rows, deferred=%v; want the deferred reading's 2", len(d.topRows), d.deferred != nil)
+	}
+}
+
+// TestAGDashboardApplyIgnoresAClosedPanel: a read in flight when the panel
+// closed must not touch it.
+func TestAGDashboardApplyIgnoresAClosedPanel(t *testing.T) {
+	d := &AGDashboard{app: newTestApp(), agName: "AAG1", topGrid: controls.NewDataGrid(), bottomGrid: controls.NewDataGrid()}
+	d.SetBounds(0, 0, 120, 40)
+	d.apply(agTestSnapshot(), nil)
+	if d.snap.ok() || len(d.topRows) != 0 {
+		t.Fatal("apply installed a reading on a panel that is not hosted")
 	}
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // The rule for which databases a dropdown offers, in one place rather than
-// decided separately at each of its seven call sites.
+// decided separately at each call site.
 //
 // It turns on *when* the name is resolved, not on what looks tidy:
 //
@@ -20,7 +20,8 @@ import (
 //     choice, and filtering it out would silently drop a name the user
 //     already has configured on the server.
 //   - A name acted on now lists only what the action can actually run
-//     against. Backup is the only such dialog; see backupDatabaseNames.
+//     against: backupDatabaseNames for Backup, onlineDatabaseNames for a
+//     read made the moment the name is picked.
 //
 // databaseNames is the first case: every database, in the server's order.
 func databaseNames(ctx context.Context, sc *db.ServerConn) ([]string, error) {
@@ -49,6 +50,25 @@ func backupDatabaseNames(ctx context.Context, sc *db.ServerConn) ([]string, erro
 			continue
 		}
 		out = append(out, d.Name)
+	}
+	return out, nil
+}
+
+// onlineDatabaseNames is the second case for a picker that reads the chosen
+// database at once (the full-text New dialogs' "Copy from database"): every
+// ONLINE database. Anything else fails the read with "cannot be opened", so
+// offering it only offers that error. Access is not filtered here — it is a
+// probe per database, asked when one is chosen.
+func onlineDatabaseNames(ctx context.Context, sc *db.ServerConn) ([]string, error) {
+	dbs, err := sc.Server.Databases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(dbs))
+	for _, d := range dbs {
+		if d.State == "ONLINE" {
+			out = append(out, d.Name)
+		}
 	}
 	return out, nil
 }

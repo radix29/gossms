@@ -193,7 +193,7 @@ func (lv *LogViewer) checklistApplyLabel(named bool) string {
 // popMenu shows items under tool i, or at the panel's top-left if that cell
 // didn't fit on the row.
 func (lv *LogViewer) popMenu(i int, items []controls.MenuItem) {
-	r := lv.tools[i].rect
+	r := lv.tools.Cells[i].Rect
 	if r.IsZero() {
 		r = core.Rect{X: lv.rect.X, Y: lv.rect.Y}
 	}

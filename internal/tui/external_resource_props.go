@@ -27,27 +27,15 @@ import (
 // the note on the Parsing section below).
 
 func findExternalDataSource(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ExternalDataSource, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.ExternalDataSourceByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).ExternalDataSourceByName)
 }
 
 func findExternalFileFormat(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ExternalFileFormat, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.ExternalFileFormatByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).ExternalFileFormatByName)
 }
 
 func findExternalLibrary(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ExternalLibrary, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.ExternalLibraryByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).ExternalLibraryByName)
 }
 
 func externalDataSourcePropPages(sc *db.ServerConn, dbName, name string) []propPage {

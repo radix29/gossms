@@ -9,8 +9,9 @@ import (
 // explorer_replication.go is the server's Replication folder, as SSMS hangs it
 // after Server Objects: Local Publications, one leaf per publication of every
 // published database here, and Local Subscriptions, one leaf per subscription
-// a database here holds to a publication anywhere. Read-only (docs/phase5-plan.md
-// § 26): nothing here creates, alters or drops replication objects.
+// a database here holds to a publication anywhere. Read-only
+// (docs/decisions.md § Replication): nothing here creates, alters or drops
+// replication objects.
 //
 // Both folders are listed on every instance but Azure SQL Database, which has
 // no replication catalog (replicationHidden) — a subscriber-only instance has

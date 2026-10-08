@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -432,5 +433,27 @@ func TestSettersThatChangeWidthsApplyWithoutARelayout(t *testing.T) {
 	f.Draw(screen)
 	if want := before - f.gutterWidth(); f.colWidths[1] != want {
 		t.Errorf("after SetRowNumbers+Draw: last column = %d, want %d (narrowed by the gutter)", f.colWidths[1], want)
+	}
+}
+
+// K4: SetBounds kept the scroll it was given, so a grid scrolled to its end
+// and then made taller kept its old top row and drew blank rows below the
+// last. A real change re-clamps as SetScroll does.
+func TestDataGridGrowingTheViewReclampsTheScroll(t *testing.T) {
+	g := NewDataGrid()
+	rows := make([][]string, 20)
+	for i := range rows {
+		rows[i] = []string{fmt.Sprint(i)}
+	}
+	g.SetData([]string{"N"}, rows)
+	g.SetBounds(0, 0, 40, 8) // 5 data rows
+	g.HandleKey(tcell.NewEventKey(tcell.KeyEnd, "", tcell.ModCtrl))
+	g.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
+	if g.ScrollRow() != 15 {
+		t.Fatalf("setup: scrollRow = %d at the end, want 15", g.ScrollRow())
+	}
+	g.SetBounds(0, 0, 40, 18) // 15 data rows
+	if g.ScrollRow() != 5 {
+		t.Errorf("scrollRow = %d after growing to 15 rows, want 5 (the last top row that fills the view)", g.ScrollRow())
 	}
 }

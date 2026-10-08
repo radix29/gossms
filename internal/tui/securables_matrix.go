@@ -47,15 +47,21 @@ func (s securable) label() string {
 func (s securable) hasColumns() bool { return s.Type == "TABLE" || s.Type == "VIEW" }
 
 // catalog returns every permission name grantable on this securable's type.
+// A view's differs from a table's: it has no VIEW CHANGE TRACKING.
 func (s securable) catalog() []string {
-	switch s.Type {
-	case "SCHEMA":
-		return gosmo.SchemaPermissionNames()
-	case "DATABASE":
-		return gosmo.DatabasePermissionNames()
-	default:
-		return gosmo.ObjectPermissionNames()
+	return gosmo.SecurableClass(s.Type).PermissionNames()
+}
+
+// gosmo is the securable as ApplyPermission addresses it, narrowed to columns
+// when they are given. Type is spelled as gosmo's SecurableClass values for
+// these four classes are; the database's own name stays off it, since the
+// receiver already names the database.
+func (s securable) gosmo(columns []string) gosmo.Securable {
+	sec := gosmo.Securable{Class: gosmo.SecurableClass(s.Type), Schema: s.Schema, Name: s.Name, Columns: columns}
+	if sec.Class == gosmo.SecurableDatabase {
+		sec.Name, sec.Schema = "", ""
 	}
+	return sec
 }
 
 // securableEdit tracks one (securable, permission) cell's pending state,
@@ -152,10 +158,10 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 			}
 
 			f, apply := buildSecurablesMatrix(d, database, initial, entries, colEntries, candidates, find, 8, 12,
-				func(ctx context.Context, verb string, opts gosmo.PermissionOptions, s securable, permission string) error {
+				func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission string) error {
 					return applySecurable(ctx, database, verb, opts, s, permission, *principal)
 				},
-				func(ctx context.Context, verb string, opts gosmo.PermissionOptions, s securable, permission, column string) error {
+				func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission, column string) error {
 					return applyColumnSecurable(ctx, database, verb, opts, s, permission, column, *principal)
 				},
 			)
@@ -167,8 +173,8 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 // securableApplyFn applies one object/schema/database-scoped state change, and
 // columnApplyFn one column-scoped change — the securables-page counterparts of
 // permApplyFn, which carries no securable.
-type securableApplyFn func(ctx context.Context, verb string, opts gosmo.PermissionOptions, s securable, permission string) error
-type columnApplyFn func(ctx context.Context, verb string, opts gosmo.PermissionOptions, s securable, permission, column string) error
+type securableApplyFn func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission string) error
+type columnApplyFn func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission, column string) error
 
 // securableFindFn searches the server for addable securables whose name contains
 // term, returning at most securableSearchLimit+1 — the extra row is how the page
@@ -447,16 +453,17 @@ func buildSecurablesMatrix(
 			hint.Clear()
 			securables = append(securables, s)
 		}
-		redrawGrid(securableGrid, securableListColumns, securableRows())
+		rows := securableRows()
 		row := slices.IndexFunc(visibleSecurables, func(e securable) bool { return e.key() == s.key() })
 		if row < 0 {
 			// Present, but the filter box is hiding it — selecting row 0 would
 			// point the grids at a different securable.
+			redrawGrid(securableGrid, securableListColumns, rows)
 			hint.Set(s.label() + " is listed, but the filter above is hiding it.")
 			return
 		}
 		selected = -1
-		securableGrid.SetSelectedRow(row)
+		resetGrid(securableGrid, securableListColumns, rows, row)
 		loadSecurable(row)
 	})
 
@@ -465,6 +472,10 @@ func buildSecurablesMatrix(
 	// while it was out the completion starts the next. A query per keystroke
 	// would put five round trips behind "Order" and let an early one land last,
 	// repopulating the picker from a term already backspaced away.
+	//
+	// runPageActionOnce owns the latch: a panicking search releases it, where
+	// a hand-cleared flag stayed set and killed search for the rest of the
+	// showing.
 	searchTerm, searchedFor := "", ""
 	searchRunning := false
 	var runSearch func()
@@ -472,15 +483,13 @@ func buildSecurablesMatrix(
 		if searchRunning || searchTerm == searchedFor {
 			return
 		}
-		searchRunning = true
 		want := searchTerm
 		var found []securable
-		d.runPageAction(func(ctx context.Context) error {
+		d.runPageActionOnce(&searchRunning, func(ctx context.Context) error {
 			var err error
 			found, err = find(ctx, want)
 			return err
 		}, func(err error) {
-			searchRunning = false
 			searchedFor = want
 			if err != nil {
 				hint.SetError("Search failed: " + err.Error())
@@ -501,9 +510,8 @@ func buildSecurablesMatrix(
 	securableFilterRow.SetDirtyTracked(false)
 	securableFilterRow.SetOnChange(func(term string) {
 		securableFilter = term
-		redrawGrid(securableGrid, securableListColumns, securableRows())
 		selected = -1
-		securableGrid.SetSelectedRow(0)
+		resetGrid(securableGrid, securableListColumns, securableRows(), 0)
 		loadSecurable(0)
 	})
 
@@ -605,31 +613,14 @@ func buildSecurablesMatrix(
 	return f, apply
 }
 
-// applySecurable routes a buildSecurablesMatrix state change to the right gosmo
-// method by s.Type: tables and views use the object-level trio, schemas the
-// schema-level trio, the database itself the database-scoped trio.
-func applySecurable(ctx context.Context, d *gosmo.Database, verb string, opts gosmo.PermissionOptions, s securable, permission, principal string) error {
-	switch s.Type {
-	case "SCHEMA":
-		return schemaPermApply(d, s.Name)(ctx, verb, opts, permission, principal)
-	case "DATABASE":
-		return databasePermApply(d)(ctx, verb, opts, permission, principal)
-	default:
-		return objectPermApply(d, s.Schema, s.Name)(ctx, verb, opts, permission, principal)
-	}
+// applySecurable issues one object/schema/database-scoped state change.
+func applySecurable(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission, principal string) error {
+	return securablePermApply(d, s.gosmo(nil))(ctx, verb, opts, permission, principal)
 }
 
-// applyColumnSecurable routes a column-level state change. Only tables and views
-// reach it — securable.hasColumns gates the editor that produces these edits.
-func applyColumnSecurable(ctx context.Context, d *gosmo.Database, verb string, opts gosmo.PermissionOptions, s securable, permission, column, principal string) error {
-	p := gosmo.ObjectPermission(permission)
-	cols := []string{column}
-	switch verb {
-	case "GRANT":
-		return d.GrantColumnPermission(ctx, s.Schema, s.Name, p, cols, principal, opts)
-	case "DENY":
-		return d.DenyColumnPermission(ctx, s.Schema, s.Name, p, cols, principal, opts)
-	default:
-		return d.RevokeColumnPermission(ctx, s.Schema, s.Name, p, cols, principal, opts)
-	}
+// applyColumnSecurable issues one column-level state change. Only tables and
+// views reach it — securable.hasColumns gates the editor that produces these
+// edits.
+func applyColumnSecurable(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission, column, principal string) error {
+	return securablePermApply(d, s.gosmo([]string{column}))(ctx, verb, opts, permission, principal)
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/radix29/gosmo"
@@ -37,18 +38,44 @@ type liveTiming struct {
 
 var livePollTiming = liveTiming{first: 250 * time.Millisecond, every: time.Second, maxBackoff: 8 * time.Second}
 
+// liveWatch is what watching *another* session adds to the poller
+// (LivePlanPanel): a query panel's live tab polls its own run, which ends, so
+// it needs none of it.
+//
+// A watch has no end of its own — it lasts until the panel closes — so it
+// slows down when nobody is looking: an idle read doubles the wait up to
+// maxBackoff as a failed one does, and so does a panel in a background tab
+// (background reports it). wake cuts a slowed wait short, so a panel brought
+// back to the front reads now rather than after up to maxBackoff.
+//
+// pin is the session's login time when the watch began. A session id is
+// reused once its session ends, so a row from a session that logged in at
+// another time is someone else's query and ends the watch with a note.
+type liveWatch struct {
+	pin        time.Time
+	background func() bool
+	wake       <-chan struct{}
+}
+
+// liveSessionEndedNote is the view's note when the watched session has ended.
+func liveSessionEndedNote(spid int) string {
+	return fmt.Sprintf("Session %d has ended; its id now belongs to another session, which is not shown.", spid)
+}
+
 // liveRefusedNote is the live tab's note when the server refuses the DMV. The
 // run goes on regardless and still brings back its actual plan.
 const liveRefusedNote = "No live statistics: reading sys.dm_exec_query_profiles needs VIEW SERVER STATE " +
 	"(VIEW DATABASE STATE on Azure SQL Database). The actual plan still arrives when the query ends."
 
 // liveUpdate is one poll's result for the UI goroutine: the statement's plan
-// and its operators' counters, note when polling has stopped for good, or
-// idle when the session is running no profiled statement at the moment.
+// and its operators' counters, note when polling has stopped for good (ended
+// too when that is because the watched session ended), or idle when the
+// session is running no profiled statement at the moment.
 type liveUpdate struct {
 	plan     *showplan.Plan
 	counters map[int]showplan.LiveCounters
 	note     string
+	ended    bool
 	idle     bool
 }
 
@@ -83,7 +110,7 @@ func (p *QueryPanel) startLiveStats(done <-chan struct{}) {
 	p.syncFocusVisuals()
 
 	p.app.safego("polling live query statistics", func() {
-		pollLiveStats(ctx, srv, spid, done, livePollTiming, func(u liveUpdate) {
+		pollLiveStats(ctx, srv, spid, done, livePollTiming, nil, func(u liveUpdate) {
 			p.app.postAndWake(func() { p.applyLiveUpdate(token, u) })
 		})
 	})
@@ -137,14 +164,22 @@ func (p *QueryPanel) liveTabActive() bool {
 //
 // A refused read ends polling with a note; any other failure is retried with
 // backoff — the batch is still running and a later read may well succeed.
-func pollLiveStats(ctx context.Context, src liveSource, spid int, done <-chan struct{}, tm liveTiming, report func(liveUpdate)) {
+// watch, nil for a query panel's own run, is another session's; see liveWatch.
+func pollLiveStats(ctx context.Context, src liveSource, spid int, done <-chan struct{}, tm liveTiming, watch *liveWatch, report func(liveUpdate)) {
 	var (
 		plan *showplan.Plan
 		key  liveStmtKey
 		wait = tm.first
+		wake <-chan struct{}
 	)
 	backoff := func() { wait = min(max(wait, tm.every)*2, tm.maxBackoff) }
+	if watch != nil {
+		wake = watch.wake
+	}
 	for {
+		if watch != nil && watch.background != nil && watch.background() {
+			wait = max(wait, tm.maxBackoff)
+		}
 		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -153,6 +188,8 @@ func pollLiveStats(ctx context.Context, src liveSource, spid int, done <-chan st
 		case <-done:
 			t.Stop()
 			return
+		case <-wake:
+			t.Stop()
 		case <-t.C:
 		}
 		rows, err := src.QueryProfiles(ctx, spid)
@@ -167,11 +204,20 @@ func pollLiveStats(ctx context.Context, src liveSource, spid int, done <-chan st
 			backoff()
 			continue
 		}
-		wait = tm.every
 		rows = currentStatementRows(rows)
 		if len(rows) == 0 {
+			if watch != nil {
+				backoff()
+			} else {
+				wait = tm.every
+			}
 			report(liveUpdate{idle: true})
 			continue
+		}
+		wait = tm.every
+		if login := rows[0].SessionLoginTime; watch != nil && !watch.pin.IsZero() && !login.IsZero() && !login.Equal(watch.pin) {
+			report(liveUpdate{note: liveSessionEndedNote(spid), ended: true})
+			return
 		}
 		if k := profileKey(rows[0]); plan == nil || k != key {
 			fp, err := src.InFlightPlan(ctx, spid)

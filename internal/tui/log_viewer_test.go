@@ -196,8 +196,8 @@ func TestLogViewerBusyToolbarIsInert(t *testing.T) {
 	lv.SetBounds(0, 0, 200, 30)
 
 	fired := 0
-	lv.tools[logToolRefresh].action = func() { fired++ }
-	r := lv.tools[logToolRefresh].rect
+	lv.tools.Cells[logToolRefresh].Action = func() { fired++ }
+	r := lv.tools.Cells[logToolRefresh].Rect
 	if r.IsZero() {
 		t.Fatal("Refresh cell didn't fit at width 200; the rest of this test is meaningless")
 	}
@@ -413,30 +413,30 @@ func TestNoLogViewerToolbarButtonIsUnreachableAtAnyWidth(t *testing.T) {
 		lv.layoutTools()
 
 		inMenu := map[int]bool{}
-		for _, i := range lv.hidden {
+		for _, i := range lv.tools.Hidden {
 			inMenu[i] = true
 		}
-		for i, tb := range lv.tools {
-			if tb.rect.IsZero() != inMenu[i] {
-				t.Fatalf("width %d: cell %d (%q) is neither drawn nor in the More menu", w, i, tb.label)
+		for i, tb := range lv.tools.Cells {
+			if tb.Rect.IsZero() != inMenu[i] {
+				t.Fatalf("width %d: cell %d (%q) is neither drawn nor in the More menu", w, i, tb.Label)
 			}
 		}
-		if len(lv.hidden) == 0 {
+		if len(lv.tools.Hidden) == 0 {
 			continue
 		}
 		sawOverflow = true
-		if lv.more.rect.IsZero() && w > 12 {
-			t.Fatalf("width %d: the row hides %d cells with no More cell to reach them", w, len(lv.hidden))
+		if lv.tools.More.Rect.IsZero() && w > 12 {
+			t.Fatalf("width %d: the row hides %d cells with no More cell to reach them", w, len(lv.tools.Hidden))
 		}
-		if !lv.more.rect.IsZero() && lv.more.rect.Right() > lv.rect.Right() {
+		if !lv.tools.More.Rect.IsZero() && lv.tools.More.Rect.Right() > lv.rect.Right() {
 			t.Fatalf("width %d: the More cell runs past the pane", w)
 		}
 		// The hidden set has to be the row's tail, or the menu holds the
 		// middle of the toolbar and the row itself has a gap in it.
-		want := len(lv.tools) - len(lv.hidden)
-		for n, i := range lv.hidden {
+		want := len(lv.tools.Cells) - len(lv.tools.Hidden)
+		for n, i := range lv.tools.Hidden {
 			if i != want+n {
-				t.Fatalf("width %d: hidden cells %v are not the row's tail starting at %d", w, lv.hidden, want)
+				t.Fatalf("width %d: hidden cells %v are not the row's tail starting at %d", w, lv.tools.Hidden, want)
 			}
 		}
 	}
@@ -457,15 +457,15 @@ func TestTheLogViewerOverflowMenuRunsTheHiddenAction(t *testing.T) {
 	lv.SetBounds(0, 0, 60, 40)
 	lv.refreshToolLabels()
 	lv.layoutTools()
-	if !lv.tools[logToolSearch].rect.IsZero() {
+	if !lv.tools.Cells[logToolSearch].Rect.IsZero() {
 		t.Fatal("Search still fits at 60 columns, so this proves nothing")
 	}
-	if lv.more.rect.IsZero() {
+	if lv.tools.More.Rect.IsZero() {
 		t.Fatal("no More cell to reach it through")
 	}
 
 	// Press the More cell where the mouse would.
-	press := tcell.NewEventMouse(lv.more.rect.X+1, lv.more.rect.Y, tcell.Button1, 0)
+	press := tcell.NewEventMouse(lv.tools.More.Rect.X+1, lv.tools.More.Rect.Y, tcell.Button1, 0)
 	if !lv.HandleMouse(press) {
 		t.Fatal("the More cell did not take the press")
 	}
@@ -489,7 +489,7 @@ func TestTheLogViewerOverflowMenuKeepsTheGate(t *testing.T) {
 	lv.SetBounds(0, 0, 60, 40)
 	lv.refreshToolLabels()
 	lv.layoutTools()
-	if !lv.tools[logToolRecycle].rect.IsZero() {
+	if !lv.tools.Cells[logToolRecycle].Rect.IsZero() {
 		t.Fatal("Recycle still fits at 60 columns, so this proves nothing")
 	}
 

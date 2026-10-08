@@ -52,6 +52,12 @@ type xeFeedState struct {
 	paused     bool
 	autoScroll bool
 
+	// overlayHeld is set when a batch's rebuild of the grid was put off because
+	// its value popup or cell menu was open: SetSource closes them, so with
+	// grouping on every live batch closed Show Value within a second.
+	// catchUpAfterOverlay does the rebuild once the overlay closes.
+	overlayHeld bool
+
 	// reader is the cursor state carried across a Stop and Start of the live
 	// feed, so a restart picks up where the last left off rather than re-reading
 	// the files. Touched only by the goroutine while running is set, and by

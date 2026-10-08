@@ -78,10 +78,11 @@ func TestAuditGeneralGatesFileRowsForALogAudit(t *testing.T) {
 	if textRow(t, form, "File path").Focusable() {
 		t.Error("File path is editable on an application-log audit")
 	}
-	if !selectRow(t, form, "File count limit").ReadOnly() {
+	// Disabled like the text rows beside them, not drawn flat (review plan K10).
+	if r := selectRow(t, form, "File count limit"); r.Enabled() || r.Focusable() {
 		t.Error("File count limit is editable on an application-log audit")
 	}
-	if !checkRow(t, form, "Reserve disk space").ReadOnly() {
+	if r := checkRow(t, form, "Reserve disk space"); r.Enabled() || r.Focusable() {
 		t.Error("Reserve disk space is editable on an application-log audit")
 	}
 }
@@ -96,8 +97,8 @@ func TestAuditGeneralUngatesFileRowsWhenFileIsChosen(t *testing.T) {
 	if !textRow(t, form, "File path").Focusable() {
 		t.Error("File path stayed gated after choosing File")
 	}
-	if checkRow(t, form, "Reserve disk space").ReadOnly() {
-		t.Error("Reserve disk space stayed gated after choosing File")
+	if !checkRow(t, form, "Reserve disk space").Enabled() || !selectRow(t, form, "File count limit").Enabled() {
+		t.Error("the file rows stayed gated after choosing File")
 	}
 }
 

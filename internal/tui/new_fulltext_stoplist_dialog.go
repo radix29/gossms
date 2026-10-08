@@ -13,15 +13,15 @@ import (
 // new_fulltext_stoplist_dialog.go is the New Full-Text Stoplist dialog (a
 // database's Storage > Full Text Stoplists folder), built on newObjectDialog.
 // SSMS's three starting points: empty, a copy of the system stoplist, or a
-// copy of an existing stoplist. The copy is offered from this database's
-// stoplists only; gosmo's FromDatabase (a cross-database copy) is left to a
-// query window — docs/open-threads.md N1.
+// copy of an existing stoplist, in this database or another
+// (new_fulltext_copy_source.go).
 
 // nftStoplistPrefetch is what the dialog reads before it opens.
 type nftStoplistPrefetch struct {
 	existingNames *nameSet
 	stoplists     []string
 	owners        []string
+	databases     []string
 }
 
 func fetchNewFullTextStoplistPrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*nftStoplistPrefetch, error) {
@@ -39,6 +39,9 @@ func fetchNewFullTextStoplistPrefetch(ctx context.Context, sc *db.ServerConn, db
 		pf.stoplists = append(pf.stoplists, l.Name)
 	}
 	if pf.owners, err = fullTextOwnerItems(ctx, d); err != nil {
+		return nil, err
+	}
+	if pf.databases, err = onlineDatabaseNames(ctx, sc); err != nil {
 		return nil, err
 	}
 	return pf, nil
@@ -81,8 +84,8 @@ func (d *NewFullTextStoplistDialog) buildPages(pf *nftStoplistPrefetch) {
 	source := propsheet.Radio("Start from", []string{
 		"An empty stoplist", "The system stoplist", "An existing stoplist",
 	}, stoplistSourceSystem)
-	from := propsheet.Select("Existing stoplist", pf.stoplists, 0)
-	from.SetFitItems(true)
+	from := newFullTextCopySource(d.app, d.ctx, sc, dbName, pf.databases, pf.stoplists,
+		"stoplist", "Existing stoplist", fullTextStoplistNames)
 
 	rows := []propsheet.Row{
 		propsheet.Section("Stoplist"),
@@ -91,11 +94,8 @@ func (d *NewFullTextStoplistDialog) buildPages(pf *nftStoplistPrefetch) {
 		owner,
 		propsheet.Section("Stopwords"),
 		source,
-		from,
 	}
-	if len(pf.stoplists) == 0 {
-		rows = append(rows, propsheet.Note("This database has no stoplist to copy yet."))
-	}
+	rows = append(rows, from.rows()...)
 	rows = append(rows, propsheet.Note("A stoplist leaves its words out of every full-text index that uses it. "+
 		"Copying one copies its words now; the two are independent afterwards."))
 	d.forms[0] = propsheet.NewForm(rows...)
@@ -115,10 +115,10 @@ func (d *NewFullTextStoplistDialog) buildPages(pf *nftStoplistPrefetch) {
 		case stoplistSourceSystem:
 			req.FromSystem = true
 		case stoplistSourceExisting:
-			if len(pf.stoplists) == 0 {
-				return fmt.Errorf("there is no existing stoplist to copy — start from the system stoplist or an empty one")
+			var err error
+			if req.From, req.FromDatabase, err = from.source("start from the system stoplist or an empty one"); err != nil {
+				return err
 			}
-			req.From = from.Value()
 		}
 		return nil
 	}
@@ -126,4 +126,17 @@ func (d *NewFullTextStoplistDialog) buildPages(pf *nftStoplistPrefetch) {
 		_, err := sc.Server.DatabaseRef(dbName).CreateFullTextStoplist(ctx, req)
 		return err
 	}
+}
+
+// fullTextStoplistNames reads d's stoplist names, for the copy-from picker.
+func fullTextStoplistNames(ctx context.Context, d *gosmo.Database) ([]string, error) {
+	lists, err := d.FullTextStoplists(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(lists))
+	for i, l := range lists {
+		names[i] = l.Name
+	}
+	return names, nil
 }

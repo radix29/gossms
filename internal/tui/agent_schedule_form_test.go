@@ -2,6 +2,7 @@ package tui
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,6 +332,10 @@ func TestScheduleFormClockAndDateValidators(t *testing.T) {
 		{"12:00:60", false}, // second out of range
 		{"12:30", false},    // not HH:MM:SS
 		{"noon", false}, {"", false},
+		// T13: Sscanf took each of these, and trailing junk silently.
+		{" 08:30:00 ", true},
+		{"12:30:00pm", false}, {"12:30:00 junk", false}, {"1:2:3", false},
+		{"+1:00:00", false}, {"-1:00:00", false}, {"123:00:00", false}, {"12:30:00:00", false},
 	} {
 		if err := validateAgentClock(tc.in); (err == nil) != tc.ok {
 			t.Errorf("validateAgentClock(%q) error = %v, want ok=%v", tc.in, err, tc.ok)
@@ -346,10 +351,20 @@ func TestScheduleFormClockAndDateValidators(t *testing.T) {
 		// date").
 		{"", true},
 		{"2026-13-01", false}, {"01-03-2026", false}, {"tomorrow", false},
+		// T13: surrounding space is no error; msdb's floor is.
+		{" 2026-03-01 ", true}, {"   ", true}, {"1990-01-01", true}, {"9999-12-31", true},
+		{"1989-12-31", false}, {"2026-02-30", false}, {"2026-3-1", false}, {"2026-03-01x", false},
 	} {
 		if err := validateAgentDate(tc.in); (err == nil) != tc.ok {
 			t.Errorf("validateAgentDate(%q) error = %v, want ok=%v", tc.in, err, tc.ok)
 		}
+	}
+	// The message names the form, not Go's reference layout.
+	if _, err := parseAgentDate("31/01/2026"); err == nil || strings.Contains(err.Error(), "2006") {
+		t.Errorf("parseAgentDate error = %v, want one naming YYYY-MM-DD", err)
+	}
+	if n, err := parseAgentClock(" 6:05:09 "); err != nil || n != 60509 {
+		t.Errorf("parseAgentClock = %d, %v; want 60509", n, err)
 	}
 }
 

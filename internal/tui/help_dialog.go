@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
@@ -11,14 +13,142 @@ import (
 // renders a static, scrollable list of keyboard/mouse shortcuts.
 type HelpDialog struct {
 	dialogs.ModalDialog
+	app    *App
+	lines  []string // helpLines wrapped to the current text width (applySize)
+	heads  []bool   // per row of lines: true when it came from a heading line
 	scroll int
 }
 
+// helpMinHeight is the dialog's height floor: below it the help is a sliver
+// even when the terminal has room (it is clamped to the screen regardless).
+const helpMinHeight = 28
+
 // NewHelpDialog creates the help dialog.
 func NewHelpDialog(app *App) *HelpDialog {
-	d := &HelpDialog{}
-	d.InitModal(app.screen, "goSSMS Help", 62, 28)
+	d := &HelpDialog{app: app}
+	d.InitModal(app.screen, "goSSMS Help", 62, helpMinHeight)
+	d.applySize()
 	return d
+}
+
+// Show re-fits the dialog to the terminal, then shows it.
+func (d *HelpDialog) Show() {
+	d.applySize()
+	d.ModalDialog.Show()
+}
+
+// Relayout re-fits the dialog to a resized terminal: ModalDialog.Relayout
+// only recentres at the size last requested.
+func (d *HelpDialog) Relayout() { d.applySize() }
+
+// applySize sizes the dialog to its widest help line, or to the screen when
+// that is narrower, and wraps helpLines to the text width that leaves. A fixed
+// 62-column box with no horizontal scroll cut every line over 57 columns (B20);
+// wrapping at the drawn width means no tail is ever lost, whatever the
+// terminal. The height grows with the screen down to helpMinHeight.
+func (d *HelpDialog) applySize() {
+	textW := 0
+	for _, l := range helpLines {
+		textW = max(textW, core.DisplayWidth(l))
+	}
+	w, sh := textW+4, 0 // border + one column of padding on each side
+	if d.app != nil && d.app.screen != nil {
+		var sw int
+		sw, sh = d.app.screen.Size()
+		w = min(w, max(sw-2, 0))
+	}
+	d.lines, d.heads = wrapHelpLines(helpLines, w-4)
+	h := len(d.lines) + 5 // borders, top padding row, Close button row and the row under it
+	if sh > 0 {
+		h = min(h, max(sh-2, helpMinHeight))
+	}
+	d.SetSize(w, h)
+	d.scroll = max(0, min(d.scroll, len(d.lines)-d.dataH()))
+}
+
+// dataH is the number of help rows drawn: those between the top padding row
+// and the Close button row (ButtonRowY). It was InnerRect().H-2, one too many,
+// so the button row overdrew the last help row and the final line of the help
+// could never be scrolled into view.
+func (d *HelpDialog) dataH() int { return d.ButtonRowY() - d.InnerRect().Y - 1 }
+
+// wrapHelpLines wraps each help line wider than w at a space, keeping its own
+// spacing (core.WrapText collapses it, which would scramble the key/description
+// columns). A continuation hangs under the description: the column after the
+// first run of two or more spaces past the line's indent, else the indent
+// itself, so a wrapped entry still reads as one entry under its key.
+//
+// heads marks each output row whose source line is a heading (isHelpHeading).
+// Draw styles a row by it rather than by the row's own first column: a
+// heading's continuation hangs at column 0 like an unindented line, but a
+// heading that hung under a two-space gap would start with a space and lose
+// its style, and a row is a heading only because its source line is.
+func wrapHelpLines(lines []string, w int) (out []string, heads []bool) {
+	out = make([]string, 0, len(lines))
+	heads = make([]bool, 0, len(lines))
+	for _, line := range lines {
+		head := isHelpHeading(line)
+		if w <= 0 {
+			out, heads = append(out, line), append(heads, head)
+			continue
+		}
+		hang := helpHang(line)
+		if hang > w/2 {
+			hang = min(helpIndent(line), w/2)
+		}
+		for core.DisplayWidth(line) > w {
+			first, rest := splitHelpLine(line, w, hang)
+			out, heads = append(out, first), append(heads, head)
+			line = strings.Repeat(" ", hang) + rest
+		}
+		out, heads = append(out, line), append(heads, head)
+	}
+	return out, heads
+}
+
+// isHelpHeading reports whether a helpLines entry is a heading: anything not
+// indented and not blank. Entries are indented; headings and their underlines
+// start at column 0.
+func isHelpHeading(line string) bool { return line != "" && line[0] != ' ' }
+
+// splitHelpLine cuts line into a head of at most w columns and the rest,
+// breaking at the last space that fits beyond the hang (so the continuation
+// always makes progress), or mid-word when no such space exists. The head is
+// right-trimmed and the rest left-trimmed of spaces.
+func splitHelpLine(line string, w, hang int) (head, rest string) {
+	cut, col := -1, 0
+	for i, r := range line {
+		rw := core.DisplayWidth(string(r))
+		if col+rw > w {
+			if cut < 0 {
+				cut = i
+			}
+			break
+		}
+		if r == ' ' && col > hang {
+			cut = i
+		}
+		col += rw
+	}
+	if cut <= 0 {
+		cut = len(line)
+	}
+	return strings.TrimRight(line[:cut], " "), strings.TrimLeft(line[cut:], " ")
+}
+
+// helpIndent is the number of leading spaces in line.
+func helpIndent(line string) int { return len(line) - len(strings.TrimLeft(line, " ")) }
+
+// helpHang is the column a wrapped line continues at: just past the first run
+// of two or more spaces after the indent (the key/description gap), or the
+// indent when the line has no such gap.
+func helpHang(line string) int {
+	ind := helpIndent(line)
+	if gap := strings.Index(line[ind:], "  "); gap >= 0 {
+		start := ind + gap
+		return core.DisplayWidth(line[:start]) + helpIndent(line[start:])
+	}
+	return ind
 }
 
 var helpLines = []string{
@@ -204,24 +334,24 @@ func (d *HelpDialog) Draw(s tcell.Screen) {
 	headStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive).Bold(true)
 
 	inner := d.InnerRect()
-	dataH := inner.H - 2 // leave room for the Close button
+	dataH := d.dataH()
 
 	for row := 0; row < dataH; row++ {
 		idx := d.scroll + row
-		if idx >= len(helpLines) {
+		if idx >= len(d.lines) {
 			break
 		}
-		line := helpLines[idx]
+		line := d.lines[idx]
 		st := contentStyle
-		if len(line) > 0 && line[0] != ' ' {
+		if d.heads[idx] {
 			st = headStyle
 		}
 		core.FillRect(s, core.Rect{X: inner.X, Y: inner.Y + 1 + row, W: inner.W, H: 1}, ' ', contentStyle)
 		core.DrawTextClipped(s, inner.X+1, inner.Y+1+row, inner.W-2, st, line)
 	}
 
-	if len(helpLines) > dataH {
-		d.DrawContentScrollbar(s, inner.Y+1, dataH, len(helpLines), d.scroll)
+	if len(d.lines) > dataH {
+		d.DrawContentScrollbar(s, inner.Y+1, dataH, len(d.lines), d.scroll)
 	}
 
 	d.DrawButtons(s, []string{"Close"}, 0)
@@ -232,7 +362,7 @@ func (d *HelpDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	dataH := d.InnerRect().H - 2
+	dataH := d.dataH()
 	switch ev.Key() {
 	case tcell.KeyEscape, tcell.KeyEnter:
 		d.Hide()
@@ -241,13 +371,13 @@ func (d *HelpDialog) HandleKey(ev *tcell.EventKey) bool {
 			d.scroll--
 		}
 	case tcell.KeyDown:
-		if d.scroll+dataH < len(helpLines) {
+		if d.scroll+dataH < len(d.lines) {
 			d.scroll++
 		}
 	case tcell.KeyPgUp:
 		d.scroll = max(0, d.scroll-dataH)
 	case tcell.KeyPgDn:
-		d.scroll = max(0, min(len(helpLines)-dataH, d.scroll+dataH))
+		d.scroll = max(0, min(len(d.lines)-dataH, d.scroll+dataH))
 	}
 	return true
 }
@@ -264,8 +394,8 @@ func (d *HelpDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.Hide()
 		return true
 	}
-	dataH := d.InnerRect().H - 2
-	if d.ScrollbarDrag(ev, d.Rect().Right()-1, d.InnerRect().Y+1, dataH, len(helpLines), &d.scroll) {
+	dataH := d.dataH()
+	if d.ScrollbarDrag(ev, d.Rect().Right()-1, d.InnerRect().Y+1, dataH, len(d.lines), &d.scroll) {
 		return true
 	}
 	switch ev.Buttons() {
@@ -274,7 +404,7 @@ func (d *HelpDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			d.scroll--
 		}
 	case tcell.WheelDown:
-		if d.scroll+dataH < len(helpLines) {
+		if d.scroll+dataH < len(d.lines) {
 			d.scroll++
 		}
 	}

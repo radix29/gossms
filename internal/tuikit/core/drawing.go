@@ -45,6 +45,70 @@ func DrawTextClipped(s tcell.Screen, x, y, maxW int, style tcell.Style, text str
 	}
 }
 
+// DrawTextLine draws what DrawTextClipped(s, x, y, maxW, style,
+// TruncateLine(text, maxW)) draws — line breaks and tabs as one space, "…"
+// in the last column when text does not fit — without building the
+// truncated string. A grid draws every visible cell every frame, and a clipped
+// cell's TruncateLine was an allocation each time.
+//
+// One pass: graphemes are drawn while they fit maxW-1 columns. The first that
+// does not is where "…" goes if text overflows, and what follows it fits in
+// at most the two columns that grapheme's width allows, so up to two are held
+// back until the overflow question is answered.
+func DrawTextLine(s tcell.Screen, x, y, maxW int, style tcell.Style, text string) {
+	if maxW <= 0 {
+		return
+	}
+	budget := maxW - 1 // reserve one column for the ellipsis
+	width := 0
+	var held [2]heldGrapheme
+	nHeld := 0
+	cutting := false
+	g := displaywidth.StringGraphemes(text)
+	for g.Next() {
+		v, gw := g.Value(), g.Width()
+		if v == "\r\n" || v == "\n" || v == "\r" || v == "\t" {
+			v, gw = " ", 1
+		}
+		if !cutting && width+gw > budget {
+			cutting = true
+		}
+		width += gw
+		if width > maxW {
+			putGrapheme(s, x+width-gw-heldWidth(held[:nHeld]), y, "…", style)
+			return
+		}
+		switch {
+		case gw <= 0:
+			// Measured but never drawn, as DrawTextClipped skips it.
+		case cutting:
+			held[nHeld].v, held[nHeld].w = v, gw
+			nHeld++
+		default:
+			putGrapheme(s, x+width-gw, y, v, style)
+		}
+	}
+	col := x + width - heldWidth(held[:nHeld])
+	for _, h := range held[:nHeld] {
+		putGrapheme(s, col, y, h.v, style)
+		col += h.w
+	}
+}
+
+// heldGrapheme is one grapheme DrawTextLine has measured but not yet drawn.
+type heldGrapheme struct {
+	v string
+	w int
+}
+
+func heldWidth(held []heldGrapheme) int {
+	w := 0
+	for _, h := range held {
+		w += h.w
+	}
+	return w
+}
+
 // DrawTextOffset draws text horizontally scrolled by startCol display columns:
 // graphemes whose virtual column falls before startCol are skipped, then up to
 // maxW columns are drawn from (x,y). A grapheme straddling startCol is dropped

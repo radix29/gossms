@@ -130,7 +130,7 @@ type FromRef struct {
 func ParseFromScope(tokens []Token) []FromRef {
 	var refs []FromRef
 	depth := 0
-	expectRef := false
+	expectRef, merge := false, false
 	for i := 0; i < len(tokens); i++ {
 		t := tokens[i]
 		switch t.Kind {
@@ -150,24 +150,28 @@ func ParseFromScope(tokens []Token) []FromRef {
 			switch t.Text {
 			case "FROM", "JOIN", "INTO", "UPDATE", "DELETE":
 				expectRef = true
+			case "MERGE":
+				expectRef, merge = true, merge || !isJoinHint(tokens, i)
 			case "WHERE", "ON", "GROUP", "ORDER", "HAVING", "SET", "VALUES", "AND", "OR",
 				"UNION", "EXCEPT", "INTERSECT":
 				expectRef = false
 			}
 			continue
 		}
+		if atMergeUsing(tokens, i, merge) {
+			expectRef = true
+			continue
+		}
 		if expectRef && t.Kind == TokenIdent {
 			parts, j := multipartName(tokens, i)
 			ref := refFromParts(parts)
-			if j < len(tokens) && tokens[j].Kind == TokenKeyword && tokens[j].Text == "AS" {
-				j++
-			}
-			if j < len(tokens) && tokens[j].Kind == TokenIdent {
-				ref.Alias = tokens[j].Text
-				j++
-			}
+			ref.Alias, j = aliasAt(tokens, j)
 			refs = append(refs, ref)
 			i = j - 1
+			// Only a comma carries the list on ("FROM a, b"); any other word after a
+			// reference and its alias is a clause ("FOR JSON PATH", "OUTPUT
+			// deleted.id"), not another table.
+			expectRef = j < len(tokens) && tokens[j].Kind == TokenComma
 		}
 	}
 	return refs
@@ -187,7 +191,8 @@ const (
 func CurrentClause(tokens []Token) Clause {
 	clause := ClauseUnknown
 	depth := 0
-	for _, t := range tokens {
+	merge := false
+	for i, t := range tokens {
 		switch t.Kind {
 		case TokenParenOpen:
 			depth++
@@ -198,7 +203,14 @@ func CurrentClause(tokens []Token) Clause {
 			}
 			continue
 		}
-		if depth != 0 || t.Kind != TokenKeyword {
+		if depth != 0 {
+			continue
+		}
+		if atMergeUsing(tokens, i, merge) {
+			clause = ClauseTable
+			continue
+		}
+		if t.Kind != TokenKeyword {
 			continue
 		}
 		switch t.Text {
@@ -206,6 +218,8 @@ func CurrentClause(tokens []Token) Clause {
 			clause = ClauseColumn
 		case "FROM", "JOIN", "INTO", "UPDATE", "DELETE", "TABLE":
 			clause = ClauseTable
+		case "MERGE":
+			clause, merge = ClauseTable, merge || !isJoinHint(tokens, i)
 		}
 	}
 	return clause

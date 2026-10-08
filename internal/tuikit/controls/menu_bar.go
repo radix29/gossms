@@ -61,6 +61,10 @@ func (mb *MenuBar) SetBounds(x, y, w int) {
 	mb.rect = core.Rect{X: x, Y: y, W: w, H: 1}
 }
 
+// LabelsEnd returns the column just past the last menu label — the left limit
+// for anything sharing the bar's row, such as a right-aligned Toolbar.
+func (mb *MenuBar) LabelsEnd() int { return mb.menuHeaderOffset(len(mb.menus)) }
+
 // SetMenus replaces all menus.
 func (mb *MenuBar) SetMenus(menus []Menu) { mb.menus = menus }
 

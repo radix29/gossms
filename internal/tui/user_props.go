@@ -54,11 +54,7 @@ func userPropPages(d *PropDialog, sc *db.ServerConn, dbName, userName string) []
 // findUser resolves dbName/userName to a *gosmo.User, the one lookup
 // every page on this dialog needs first.
 func findUser(ctx context.Context, sc *db.ServerConn, dbName, userName string) (*gosmo.User, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.UserByName(ctx, userName)
+	return inDB(ctx, sc, dbName, userName, (*gosmo.Database).UserByName)
 }
 
 func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPage {

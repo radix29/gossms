@@ -186,7 +186,7 @@ func TestLogViewerSelectionLabelsCountFiles(t *testing.T) {
 	if got := lv.selectionLabel(); got != "2 files" {
 		t.Errorf("selectionLabel = %q, want %q", got, "2 files")
 	}
-	if got := lv.tools[logToolFile].label; !strings.Contains(got, "2 files") {
+	if got := lv.tools.Cells[logToolFile].Label; !strings.Contains(got, "2 files") {
 		t.Errorf("file selector label = %q, want it to say how many files are merged", got)
 	}
 	if got := lv.summary(); !strings.Contains(got, "2 files") {

@@ -12,7 +12,7 @@ import (
 )
 
 // fulltext_index_ops.go is what the table menu's Full-Text index cascade
-// does (docs/phase5-plan.md § 27, W18): Enable/Disable, Delete, Start Full/
+// does: Enable/Disable, Delete, Start Full/
 // Incremental Population, Stop Population, Track Changes, Apply Tracked
 // Changes — and the Background Tasks entry that follows a population to its
 // end. The cascade itself is tableFullTextMenu (explorer_fulltext.go).

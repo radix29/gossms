@@ -21,26 +21,25 @@ const (
 // buildTools makes the toolbar cells. Labels carry the selection, so they
 // are refreshed on every draw (refreshToolLabels).
 func (p *ReplicationMonitorPanel) buildTools() {
-	p.tools = []toolButton{
-		rmToolRefresh: {action: p.Refresh},
-		rmToolAuto:    {action: p.showRateMenu},
-		rmToolHistory: {action: p.showWindowMenu},
-		rmToolErrors:  {action: p.toggleErrorsOnly},
+	p.tools.Cells = []controls.ToolCell{
+		rmToolRefresh: {Action: p.Refresh},
+		rmToolAuto:    {Action: p.showRateMenu},
+		rmToolHistory: {Action: p.showWindowMenu},
+		rmToolErrors:  {Action: p.toggleErrorsOnly},
 	}
-	p.more = toolButton{label: overflowLabel}
 	p.refreshToolLabels()
 }
 
 func (p *ReplicationMonitorPanel) refreshToolLabels() {
-	p.tools[rmToolRefresh].label = "Refresh (F5)"
-	p.tools[rmToolAuto].label = "Auto refresh: " + rmRates[p.rateIdx].label + " ▾"
-	p.tools[rmToolHistory].label = "History: " + rmWindows[p.windowIdx].label + " ▾"
+	p.tools.Cells[rmToolRefresh].Label = "Refresh (F5)"
+	p.tools.Cells[rmToolAuto].Label = "Auto refresh: " + rmRates[p.rateIdx].label + " ▾"
+	p.tools.Cells[rmToolHistory].Label = "History: " + rmWindows[p.windowIdx].label + " ▾"
 	if p.errorsOnly {
-		p.tools[rmToolErrors].label = "Failed sessions only: on"
+		p.tools.Cells[rmToolErrors].Label = "Failed sessions only: on"
 	} else {
-		p.tools[rmToolErrors].label = "Failed sessions only: off"
+		p.tools.Cells[rmToolErrors].Label = "Failed sessions only: off"
 	}
-	p.tools[rmToolErrors].selected = p.errorsOnly
+	p.tools.Cells[rmToolErrors].Selected = p.errorsOnly
 }
 
 // toolDisabled is the one gate the row has: Refresh while a read is out. The
@@ -54,11 +53,11 @@ func (p *ReplicationMonitorPanel) runTool(i int) {
 	if p.toolDisabled(i) {
 		return
 	}
-	p.tools[i].action()
+	p.tools.Cells[i].Action()
 }
 
 func (p *ReplicationMonitorPanel) layoutTools() {
-	p.hidden, p.toolEnd = layoutToolButtonsOverflow(p.tools, p.toolRect, "", &p.more)
+	p.toolEnd = p.tools.Layout(p.toolRect, "")
 }
 
 func (p *ReplicationMonitorPanel) popMenuAt(r core.Rect, items []controls.MenuItem) {
@@ -69,7 +68,7 @@ func (p *ReplicationMonitorPanel) popMenuAt(r core.Rect, items []controls.MenuIt
 }
 
 func (p *ReplicationMonitorPanel) showRateMenu() {
-	p.popMenuAt(p.tools[rmToolAuto].rect, qsMenuItems(rmRates, rmRates[p.rateIdx],
+	p.popMenuAt(p.tools.Cells[rmToolAuto].Rect, qsMenuItems(rmRates, rmRates[p.rateIdx],
 		func(r rmRate) string { return r.label },
 		func(r rmRate) {
 			for i := range rmRates {
@@ -85,7 +84,7 @@ func (p *ReplicationMonitorPanel) showRateMenu() {
 }
 
 func (p *ReplicationMonitorPanel) showWindowMenu() {
-	p.popMenuAt(p.tools[rmToolHistory].rect, qsMenuItems(rmWindows, rmWindows[p.windowIdx],
+	p.popMenuAt(p.tools.Cells[rmToolHistory].Rect, qsMenuItems(rmWindows, rmWindows[p.windowIdx],
 		func(w rmWindow) string { return w.label },
 		func(w rmWindow) {
 			for i := range rmWindows {
@@ -130,16 +129,16 @@ func (p *ReplicationMonitorPanel) drawToolRow(s tcell.Screen) {
 	}
 	pal := theme.Active()
 	core.FillRect(s, r, ' ', theme.StyleMenuBar())
-	cells := append(p.tools[:len(p.tools):len(p.tools)], p.more)
+	cells := append(p.tools.Cells[:len(p.tools.Cells):len(p.tools.Cells)], p.tools.More)
 	for i, t := range cells {
-		if t.rect.IsZero() {
+		if t.Rect.IsZero() {
 			continue
 		}
 		style := theme.StyleTooltip()
-		if i < len(p.tools) && p.toolDisabled(i) {
+		if i < len(p.tools.Cells) && p.toolDisabled(i) {
 			style = style.Foreground(pal.TextDim)
 		}
-		core.FillRect(s, t.rect, ' ', style)
-		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
+		core.FillRect(s, t.Rect, ' ', style)
+		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
 	}
 }

@@ -43,7 +43,7 @@ func mappingResponses() []fakeResponse {
 		// its answer is server-level and names the database in each row; the
 		// one-database read Unmap makes is answered per database. appdb has a
 		// user; everything else answers empty, which is what "not mapped" is.
-		fakeResponse{match: "sys.sp_executesql @q", cols: 5, rows: [][]driver.Value{
+		fakeResponse{match: "EXEC @proc @q", cols: 5, rows: [][]driver.Value{
 			{"appdb", int64(5), "appuser", "sales", "db_datareader"},
 		}},
 		fakeResponse{match: "dp.sid = @p1", db: "appdb", cols: 5, rows: [][]driver.Value{

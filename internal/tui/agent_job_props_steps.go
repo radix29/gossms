@@ -296,11 +296,9 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					hint.Clear()
 				}
 			}
-			grid.OnSelectRow = func(row int) {
-				panel.read(current)
-				syncFieldsFromSelection()
-			}
-			syncFieldsFromSelection()
+			// wireGridEditor redraws after the commit, so the step moved off shows
+			// what Apply will send rather than its loaded name, type and database.
+			wireGridEditor(grid, cols, rowsFor, func() { panel.read(current) }, syncFieldsFromSelection)
 
 			var newBtn, deleteBtn *widgets.Button
 			newBtn = widgets.NewButton("New", func() {

@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -169,4 +170,44 @@ func click(t *testing.T, g *DataGrid, x, y int) {
 	t.Helper()
 	g.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
 	g.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+}
+
+// K3: a mouse press fired OnSelectRow on every Button1 event — each motion
+// resend while the button was held, and every click on the row already
+// selected — where the keyboard fires only on a move. Replication Monitor
+// re-read an agent's history on each one. Both shapes of grid (plain, and a
+// read-only cell-cursor grid that block-selects) now fire on a move only.
+func TestDataGridMouseFiresOnSelectRowOnlyOnAMove(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		grid func() *DataGrid
+	}{
+		{"plain", func() *DataGrid {
+			g := newCellCursorGrid()
+			g.SetCellCursor(false)
+			return g
+		}},
+		{"read-only cell cursor", newCellCursorGrid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := tc.grid()
+			var selected []int
+			g.OnSelectRow = func(row int) { selected = append(selected, row) }
+			y1 := g.rect.Y + 3 // row 1
+			g.HandleMouse(tcell.NewEventMouse(1, y1, tcell.Button1, tcell.ModNone))
+			g.HandleMouse(tcell.NewEventMouse(2, y1, tcell.Button1, tcell.ModNone)) // held, same row
+			g.HandleMouse(tcell.NewEventMouse(1, y1, tcell.Button1, tcell.ModNone))
+			g.HandleMouse(tcell.NewEventMouse(1, y1, tcell.ButtonNone, tcell.ModNone))
+			click(t, g, 1, y1) // the selected row again
+			if !slices.Equal(selected, []int{1}) {
+				t.Fatalf("OnSelectRow calls = %v, want [1]: one move", selected)
+			}
+			g.HandleMouse(tcell.NewEventMouse(1, y1, tcell.Button1, tcell.ModNone))
+			g.HandleMouse(tcell.NewEventMouse(1, g.rect.Y+2, tcell.Button1, tcell.ModNone)) // dragged to row 0
+			g.HandleMouse(tcell.NewEventMouse(1, g.rect.Y+2, tcell.ButtonNone, tcell.ModNone))
+			if !slices.Equal(selected, []int{1, 0}) {
+				t.Fatalf("OnSelectRow calls = %v, want [1 0]: a drag onto another row is a move", selected)
+			}
+		})
+	}
 }

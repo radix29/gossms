@@ -266,9 +266,13 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 							g.selAnchorRow, g.selAnchorCol = row, col
 						}
 					}
+					prevRow := g.selRow
 					g.selRow, g.selCol = row, col
 					g.blockSelecting = g.selRow != g.selAnchorRow || g.selCol != g.selAnchorCol
-					if g.OnSelectRow != nil {
+					// Only on a move, as the keyboard fires: tcell resends Button1 on every
+					// motion while held, and a host reloading on selection (Replication
+					// Monitor's agent history) re-read on each one.
+					if g.selRow != prevRow && g.OnSelectRow != nil {
 						g.OnSelectRow(g.selRow)
 					}
 				}
@@ -299,7 +303,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 					return true
 				}
 			}
-			if g.OnSelectRow != nil {
+			if row != prevRow && g.OnSelectRow != nil {
 				g.OnSelectRow(g.selRow)
 			}
 		}

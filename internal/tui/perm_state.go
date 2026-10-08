@@ -52,12 +52,12 @@ func displayPermState(s string) string {
 const permStateCycleNote = "Space/Enter (or click) on State cycles Grant → Grant With Grant → Deny → (none)."
 
 // permApplyFn issues one GRANT/DENY/REVOKE at whatever scope the page
-// edits. verb is "GRANT", "DENY" or "REVOKE"; opts carries the WITH GRANT
+// edits. opts carries the WITH GRANT
 // OPTION / CASCADE / GRANT OPTION FOR modifiers permTransition worked out.
 // One function rather than a grant/deny/revoke triple, because the modifiers
 // are decided from the *pair* of states and a three-way split has nowhere to
 // put that.
-type permApplyFn func(ctx context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error
+type permApplyFn func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error
 
 // permTransition returns the single statement that moves a permission from
 // orig to current, and the modifiers it needs.
@@ -71,20 +71,20 @@ type permApplyFn func(ctx context.Context, verb string, opts gosmo.PermissionOpt
 // is not a plain re-grant: REVOKE GRANT OPTION FOR takes away the right to
 // re-grant and leaves the underlying GRANT standing, where a bare
 // GRANT would leave the grant option in place and change nothing.
-func permTransition(orig, current string) (string, gosmo.PermissionOptions) {
+func permTransition(orig, current string) (gosmo.PermissionVerb, gosmo.PermissionOptions) {
 	hadGrantOption := orig == permStateGrantWith
 	switch current {
 	case permStateGrant:
 		if hadGrantOption {
-			return "REVOKE", gosmo.PermissionOptions{GrantOptionOnly: true}
+			return gosmo.VerbRevoke, gosmo.PermissionOptions{GrantOptionOnly: true}
 		}
-		return "GRANT", gosmo.PermissionOptions{}
+		return gosmo.VerbGrant, gosmo.PermissionOptions{}
 	case permStateGrantWith:
-		return "GRANT", gosmo.PermissionOptions{WithGrantOption: true}
+		return gosmo.VerbGrant, gosmo.PermissionOptions{WithGrantOption: true}
 	case permStateDeny:
-		return "DENY", gosmo.PermissionOptions{Cascade: hadGrantOption}
+		return gosmo.VerbDeny, gosmo.PermissionOptions{Cascade: hadGrantOption}
 	default:
-		return "REVOKE", gosmo.PermissionOptions{Cascade: hadGrantOption}
+		return gosmo.VerbRevoke, gosmo.PermissionOptions{Cascade: hadGrantOption}
 	}
 }
 
@@ -108,64 +108,30 @@ func applyPermChange(ctx context.Context, apply permApplyFn, orig, current, perm
 	return apply(ctx, verb, opts, permission, principal)
 }
 
-// databasePermApply adapts a database-scoped permission edit to gosmo.
-func databasePermApply(d *gosmo.Database) permApplyFn {
-	return func(ctx context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error {
-		p := gosmo.DatabasePermission(permission)
-		switch verb {
-		case "GRANT":
-			return d.GrantDatabasePermission(ctx, p, principal, opts)
-		case "DENY":
-			return d.DenyDatabasePermission(ctx, p, principal, opts)
-		default:
-			return d.RevokeDatabasePermission(ctx, p, principal, opts)
-		}
-	}
-}
-
-// objectPermApply adapts a table/view permission edit to gosmo.
-func objectPermApply(d *gosmo.Database, schema, name string) permApplyFn {
-	return func(ctx context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error {
-		p := gosmo.ObjectPermission(permission)
-		switch verb {
-		case "GRANT":
-			return d.GrantPermission(ctx, schema, name, p, principal, opts)
-		case "DENY":
-			return d.DenyPermission(ctx, schema, name, p, principal, opts)
-		default:
-			return d.RevokePermission(ctx, schema, name, p, principal, opts)
-		}
-	}
-}
-
-// schemaPermApply adapts a schema permission edit to gosmo.
-func schemaPermApply(d *gosmo.Database, schemaName string) permApplyFn {
-	return func(ctx context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error {
-		p := gosmo.ObjectPermission(permission)
-		switch verb {
-		case "GRANT":
-			return d.GrantSchemaPermission(ctx, schemaName, p, principal, opts)
-		case "DENY":
-			return d.DenySchemaPermission(ctx, schemaName, p, principal, opts)
-		default:
-			return d.RevokeSchemaPermission(ctx, schemaName, p, principal, opts)
-		}
+// securablePermApply adapts a permission edit on one securable inside d —
+// the database itself, a schema, a table or view — to gosmo.
+func securablePermApply(d *gosmo.Database, sec gosmo.Securable) permApplyFn {
+	return func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
+		return d.ApplyPermission(ctx, verb, sec, permissionName(sec.Class, permission), principal, opts)
 	}
 }
 
 // serverPermApply adapts a server-scoped permission edit to gosmo.
 func serverPermApply(srv *gosmo.Server) permApplyFn {
-	return func(ctx context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error {
-		p := gosmo.ServerPermission(permission)
-		switch verb {
-		case "GRANT":
-			return srv.GrantServerPermission(ctx, p, principal, opts)
-		case "DENY":
-			return srv.DenyServerPermission(ctx, p, principal, opts)
-		default:
-			return srv.RevokeServerPermission(ctx, p, principal, opts)
-		}
+	return func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
+		return srv.ApplyPermission(ctx, verb, gosmo.Securable{Class: gosmo.SecurableServer},
+			gosmo.ServerPermission(permission), principal, opts)
 	}
+}
+
+// permissionName types a grid's permission name for class. gosmo checks the
+// name against the class's own allowlist whatever its Go type; this only
+// keeps a database-scoped name a DatabasePermission.
+func permissionName(class gosmo.SecurableClass, permission string) gosmo.PermissionName {
+	if class == gosmo.SecurableDatabase {
+		return gosmo.DatabasePermission(permission)
+	}
+	return gosmo.ObjectPermission(permission)
 }
 
 // matchesFilter reports whether any of fields contains term,

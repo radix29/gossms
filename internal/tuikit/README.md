@@ -12,7 +12,10 @@ tuikit/
 ├── core/       Rect geometry, drawing primitives, string/int helpers
 │             — geometry.go, screen.go, drawing.go, strutil.go, mathutil.go,
 │               runecol.go (rune index ↔ display column), wordutil.go (word
-│               boundaries for Editor and InputField)
+│               boundaries for Editor and InputField), clip_screen.go
+│               (ClipScreen: a tcell.Screen that drops writes outside a clip
+│               rect), clipboard.go (ClipboardTarget/ClipboardHost — the
+│               Copy/Cut/Paste contract every widget package shares)
 ├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox, Spinner — one file each
 ├── layout/     Panel interface, PanelManager (tabs), Splitter — panel.go,
 │               panel_manager.go, splitter.go
@@ -22,11 +25,15 @@ tuikit/
 │               _draw, _input, _complete (path completion), and file_system.go:
 │               the FileSystem it browses (LocalFileSystem by default; Windows/
 │               Posix path rules for a remote one — see ShowOpenOn/ShowSaveOn,
-│               and BlockingFileSystem for the "Listing ..." repaint)
-├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor
+│               and BlockingFileSystem for the "Listing ..." repaint);
+│               field_gesture.go (FieldGesture: a dialog's drag latch for an
+│               InputField's text-selection gesture)
+├── controls/   MenuBar+ContextMenu, Toolbar, ToolRow, TreeView, DataGrid, ListBox, TabStrip, Editor
 │             — menu_bar.go, context_menu.go, menu_item.go (shared types),
 │               menu_cascade.go (submenu chain draw/hit-test/keys for both hosts),
-│               toolbar.go, treeview.go, listbox.go, tabstrip.go;
+│               toolbar.go, tool_row.go (a panel's text toolbar: layout,
+│               hit-test, "More ▾"; drawn by the host), treeview.go, listbox.go,
+│               tabstrip.go;
 │               DataGrid: datagrid.go (state/source/widths), _draw, _input,
 │               _overlay (right-click menu, "Show Value" popup);
 │               Editor: document.go (the one text-mutation chokepoint; its
@@ -46,7 +53,7 @@ tuikit/
 │               scales, ticks, formatting), glyph.go (eighth-block ramps),
 │               axis.go, legend.go, common.go (Series, stacked-run composition),
 │               history.go, stacked_history.go, barchart.go, stacked_bar.go,
-│               vbar.go, kpi.go
+│               vbar.go, kpi.go, panel_title.go (a chart panel's heading row)
 ├── sqltext/    T-SQL text rules — the one lexer, the "GO" separator line rule,
 │             SplitBatches and StatementAt; stdlib only, so internal/query and
 │             sqlparse can use it
@@ -129,10 +136,15 @@ wide CJK and grapheme clusters; `core.DrawText`, `DrawTextClipped`,
 `DrawTextRight`, `Truncate`, `PadRight` build on it. Anything positioned after
 a label uses `core.DisplayWidth(label)`, never `len(label)`, or drawing and
 hit-testing desync. Rune-indexed text (`Editor`, `InputField` cursors,
-selections, wrap segments) converts via `core/runecol.go` only — `RuneWidth`,
-`RunesWidth`, `ColumnOfRune`, `RuneIndexAtColumn`. Until 2026-08-02 both
-widgets treated rune index as column, and a CJK/emoji character shifted the
-rest of its line.
+selections, wrap segments) converts via `core/runecol.go` only — `RunesWidth`,
+`ColumnOfRune`, `RuneIndexAtColumn`/`ClusterAtColumn`, and `GraphemeAt`,
+`NextGrapheme`, `PrevGrapheme` for drawing and cursor steps. They measure by
+grapheme cluster, as tcell does: summing rune widths made `❤️` one column, a
+flag four and a ZWJ family six, so the glyph overwrote the next cell (review
+plan K1). Draw a cluster in one `Put`, move the cursor over it whole, and never
+size text with `RuneWidth` alone — it is right only for a lone rune. Until
+2026-08-02 both widgets treated rune index as column, and a CJK/emoji character
+shifted the rest of its line.
 
 **Async state as data, not goroutines — `propsheet.PropertySheet`.** A
 multi-page dialog (page list, a `Form` of `Row`s, OK/Cancel/Apply/Script

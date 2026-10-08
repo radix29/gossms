@@ -12,6 +12,7 @@ import (
 	"github.com/radix29/gossms/internal/tui/dashboard"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/charts"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -147,21 +148,18 @@ type ActivityMonitor struct {
 	contentRect core.Rect // everything below the toolbar, scrollbars included
 	viewRect    core.Rect // the dashboard viewport, scrollbars excluded
 
-	// tools are the panel's toolbar cells (panel_toolbar.go, not App's icon
-	// strip). Rate controls disable only once their collector has started and
-	// stopped (amFeed.stopped): Pause is a preference carried into
-	// startActivityCollector, so a connecting panel keeps them live.
-	tools      []toolButton
+	// tools is the panel's toolbar row (not App's icon strip). Rate controls
+	// disable only once their collector has started and stopped
+	// (amFeed.stopped): Pause is a preference carried into
+	// startActivityCollector, so a connecting panel keeps them live. Its More
+	// cell holds controls the row is too narrow for: a dashboard row needs 47
+	// columns and the pane gets 70% of the terminal, so Pause (no key binding)
+	// would vanish below 68 columns.
+	tools      controls.ToolRow
 	toolPrefix string
 	// toolsEnd is the column past the last control (More included); the
 	// collector state fits into what's left.
 	toolsEnd int
-
-	// more is the "More ▾" cell holding controls the row is too narrow for
-	// (indexes in hidden). A dashboard row needs 47 columns and the pane gets 70%
-	// of the terminal, so Pause (no key binding) would vanish below 68 columns.
-	more   toolButton
-	hidden []int
 
 	// hits records where each History chart's plot landed, in canvas
 	// coordinates, on the last draw.
@@ -718,7 +716,7 @@ func (am *ActivityMonitor) setPaused(v bool) {
 // on dashboards, Refresh on procedure tabs. Positions come from toolRect, so
 // SetBounds calls this too.
 func (am *ActivityMonitor) buildTools() {
-	am.tools = am.tools[:0]
+	am.tools.Cells = am.tools.Cells[:0]
 	switch {
 	case am.tab.canvasTab():
 		// One arm for all dashboards, via feed().
@@ -726,31 +724,31 @@ func (am *ActivityMonitor) buildTools() {
 		am.toolPrefix = f.prefix
 		off := f.stopped()
 		for i, label := range f.rateLabels {
-			am.tools = append(am.tools, toolButton{
-				label:    label,
-				selected: i == f.rateIdx,
-				disabled: off,
-				action:   func() { am.setRate(i) },
+			am.tools.Cells = append(am.tools.Cells, controls.ToolCell{
+				Label:    label,
+				Selected: i == f.rateIdx,
+				Disabled: off,
+				Action:   func() { am.setRate(i) },
 			})
 		}
 		if off {
 			// A stopped collector leaves nothing to pause; Retry is the one
 			// control that can act.
-			am.tools = append(am.tools, toolButton{label: "Retry", action: am.restartCollector})
+			am.tools.Cells = append(am.tools.Cells, controls.ToolCell{Label: "Retry", Action: am.restartCollector})
 			break
 		}
 		label := "Pause"
 		if f.paused {
 			label = "Continue"
 		}
-		am.tools = append(am.tools, toolButton{label: label, action: func() { am.setPaused(!f.paused) }})
+		am.tools.Cells = append(am.tools.Cells, controls.ToolCell{Label: label, Action: func() { am.setPaused(!f.paused) }})
 	default:
 		pt := am.procTab()
 		am.toolPrefix = ""
-		am.tools = append(am.tools, toolButton{
-			label:    "Refresh",
-			disabled: pt.busy,
-			action:   pt.refresh,
+		am.tools.Cells = append(am.tools.Cells, controls.ToolCell{
+			Label:    "Refresh",
+			Disabled: pt.busy,
+			Action:   pt.refresh,
 		})
 		// Offered only when the procedure isn't already in master.
 		if pt.loc != activity.ProcMaster {
@@ -758,50 +756,46 @@ func (am *ActivityMonitor) buildTools() {
 			// procedure 'sp_block'...". CONTROL SERVER rather than a role test, since
 			// HAS_PERMS_BY_NAME answers 1 for sysadmin while IS_SRVROLEMEMBER doesn't.
 			denied := !gate.Allows(pt.conn, "", gate.ControlServer)
-			am.tools = append(am.tools, toolButton{
-				label:    "Install in master",
-				disabled: pt.busy || pt.conn == nil || denied,
-				reason:   gate.RequiresText(gate.ControlServer),
-				action:   pt.confirmInstallInMaster,
+			am.tools.Cells = append(am.tools.Cells, controls.ToolCell{
+				Label:    "Install in master",
+				Disabled: pt.busy || pt.conn == nil || denied,
+				Reason:   gate.RequiresText(gate.ControlServer),
+				Action:   pt.confirmInstallInMaster,
 			})
 		}
 	}
 	am.layoutTools()
 }
 
-// layoutTools assigns control rects, collapsing what doesn't fit into "More ▾"
-// (see layoutToolButtonsOverflow).
+// layoutTools assigns control rects, collapsing what doesn't fit into "More ▾".
 func (am *ActivityMonitor) layoutTools() {
-	am.hidden, am.toolsEnd = layoutToolButtonsOverflow(am.tools, am.toolRect, am.toolPrefix, &am.more)
+	am.toolsEnd = am.tools.Layout(am.toolRect, am.toolPrefix)
 }
 
 // prefixVisible reports whether the rate selector's label is drawn; "More ▾"
 // replaces it on a narrow row, and they'd otherwise overlap.
 func (am *ActivityMonitor) prefixVisible() bool {
-	return am.more.rect.IsZero() || am.more.rect.X > am.toolRect.X+1
+	return am.tools.PrefixShown(am.toolRect)
 }
 
 // runTool invokes cell i's action or explains why not — the single gate for
 // clicks and the overflow menu.
 func (am *ActivityMonitor) runTool(i int) {
-	switch t := am.tools[i]; {
-	case t.disabled && t.reason != "":
-		am.app.setStatus(t.reason)
-	case t.action != nil && !t.disabled:
-		t.action()
+	switch t := am.tools.Cells[i]; {
+	case t.Disabled && t.Reason != "":
+		am.app.setStatus(t.Reason)
+	case t.Action != nil && !t.Disabled:
+		t.Action()
 	}
 }
 
 // showOverflowMenu pops the hidden controls under "More ▾".
 func (am *ActivityMonitor) showOverflowMenu() {
-	r := am.more.rect
+	r := am.tools.More.Rect
 	if r.IsZero() {
 		r = core.Rect{X: am.rect.X, Y: am.rect.Y}
 	}
-	am.app.contextMenu.Show(r.X, r.Y+1, toolOverflowItems(am.tools, am.hidden,
-		func(i int) bool { return am.tools[i].disabled },
-		func(i int) string { return am.tools[i].reason },
-		am.runTool))
+	am.app.contextMenu.Show(r.X, r.Y+1, am.tools.OverflowItems(nil, nil, am.runTool))
 }
 
 // resolution names what one plotted column covers. Follows drawInterval, not

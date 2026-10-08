@@ -16,10 +16,12 @@ import (
 // that runs on the UI goroutine. Their work closures are the one place a
 // func(ctx context.Context) error may assign a captured variable: the variable
 // is declared beside the call for exactly that handoff, and nothing reads it
-// until the completion does.
+// until the completion does. newObjectDialog.probe (a peer instance's
+// connection and endpoint) is one too.
 var pageActionRunners = map[string]bool{
 	"runPageAction":     true,
 	"runPageActionOnce": true,
+	"probe":             true,
 }
 
 // applyHelperExemptions are package functions an apply closure may call with

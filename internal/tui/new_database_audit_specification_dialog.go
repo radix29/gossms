@@ -30,18 +30,20 @@ type ndbAuditSpecPrefetch struct {
 	actionNames   []string
 }
 
-// freeAuditNames are the audits not already spoken for in this database.
+// freeAuditNames are the audits in auditNames that no specification in held
+// (the audit names other specifications write to) already holds.
 //
-// SQL Server allows one database audit specification per audit per database —
-// a second is Msg 33230, "An audit specification for audit 'x' already
-// exists", verified live on major 17. Offering a taken audit would make OK
-// the only way to find that out, so the dropdown lists what can actually be
-// chosen. Audits are server objects, so serverCollation decides which names
-// are the same one.
-func freeAuditNames(serverCollation string, auditNames []string, specs []*gosmo.DatabaseAuditSpecification) []string {
+// SQL Server allows one database audit specification per audit per database,
+// and one server audit specification per audit — a second is Msg 33230, "An
+// audit specification for audit 'x' already exists", verified live on major
+// 17 for both, on CREATE and on an ALTER ... FOR SERVER AUDIT rebind. Offering
+// a taken audit would make OK the only way to find that out, so the dropdown
+// lists what can actually be chosen. Audits are server objects, so
+// serverCollation decides which names are the same one.
+func freeAuditNames(serverCollation string, auditNames, held []string) []string {
 	taken := newNameSet(serverCollation)
-	for _, s := range specs {
-		taken.Add(s.AuditName)
+	for _, n := range held {
+		taken.Add(n)
 	}
 	out := make([]string, 0, len(auditNames))
 	for _, n := range auditNames {
@@ -81,8 +83,12 @@ func fetchNewDBAuditSpecPrefetch(ctx context.Context, sc *db.ServerConn, dbName 
 	for i, a := range audits {
 		names[i] = a.Name
 	}
+	held := make([]string, len(specs))
+	for i, sp := range specs {
+		held[i] = sp.AuditName
+	}
 	return &ndbAuditSpecPrefetch{
-		existingNames: existing, auditNames: freeAuditNames(serverCollation(sc), names, specs),
+		existingNames: existing, auditNames: freeAuditNames(serverCollation(sc), names, held),
 		actionGroups: groups, actionNames: actions,
 	}, nil
 }

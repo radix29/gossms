@@ -266,10 +266,7 @@ func (a *App) showAgentJobHistory(sc *db.ServerConn, jobName string) {
 func (a *App) setAgentJobEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
 	j := sc.Server.JobRef(node.data.Name)
 	a.setAgentEnabled(sc, node, "job", enable, func(ctx context.Context) error {
-		if enable {
-			return j.Enable(ctx)
-		}
-		return j.Disable(ctx)
+		return j.SetEnabled(ctx, enable)
 	})
 }
 
@@ -280,30 +277,21 @@ func (a *App) setAgentScheduleEnabled(sc *db.ServerConn, node *explorerNode, ena
 		if err != nil {
 			return err
 		}
-		if enable {
-			return sch.Enable(ctx)
-		}
-		return sch.Disable(ctx)
+		return sch.SetEnabled(ctx, enable)
 	})
 }
 
 func (a *App) setAgentAlertEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
 	al := sc.Server.AlertRef(node.data.Name)
 	a.setAgentEnabled(sc, node, "alert", enable, func(ctx context.Context) error {
-		if enable {
-			return al.Enable(ctx)
-		}
-		return al.Disable(ctx)
+		return al.SetEnabled(ctx, enable)
 	})
 }
 
 func (a *App) setAgentOperatorEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
 	o := sc.Server.OperatorRef(node.data.Name)
 	a.setAgentEnabled(sc, node, "operator", enable, func(ctx context.Context) error {
-		if enable {
-			return o.Enable(ctx)
-		}
-		return o.Disable(ctx)
+		return o.SetEnabled(ctx, enable)
 	})
 }
 

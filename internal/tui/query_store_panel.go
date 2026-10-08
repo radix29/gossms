@@ -136,19 +136,13 @@ type QueryStorePanel struct {
 	chartSplit *layout.Splitter
 	planSplit  *layout.Splitter
 
-	sel  []toolButton // the five selectors and Refresh
-	acts []toolButton // the plan actions
-
-	// selMore and actMore are each row's "More ▾" cell, and hiddenSel and
-	// hiddenActs the buttons it stands in for. Both rows are wider than the pane
-	// at ordinary terminal sizes (the action row alone wants 119 columns of a pane
-	// that gets 70% of the screen), and a button that does not fit is neither
-	// drawn nor clickable, so Track Query and Compare Plans were unreachable below
-	// a 170-column terminal.
-	selMore    toolButton
-	actMore    toolButton
-	hiddenSel  []int
-	hiddenActs []int
+	// sel is the selector row (the five selectors and Refresh), acts the plan
+	// actions. Each row's More cell matters: both are wider than the pane at
+	// ordinary terminal sizes (the action row alone wants 119 columns of a pane
+	// that gets 70% of the screen), so without it Track Query and Compare Plans
+	// were unreachable below a 170-column terminal.
+	sel  controls.ToolRow
+	acts controls.ToolRow
 
 	selRect   core.Rect
 	actRect   core.Rect
@@ -336,8 +330,8 @@ func (p *QueryStorePanel) SetBounds(x, y, w, h int) {
 // layoutToolRows places both toolbar rows, collapsing whatever does not fit
 // into each row's own "More ▾" menu.
 func (p *QueryStorePanel) layoutToolRows() {
-	p.hiddenSel, _ = layoutToolButtonsOverflow(p.sel, p.selRect, "", &p.selMore)
-	p.hiddenActs, _ = layoutToolButtonsOverflow(p.acts, p.actRect, "", &p.actMore)
+	p.sel.Layout(p.selRect, "")
+	p.acts.Layout(p.actRect, "")
 }
 
 // layoutChildren gives the chart and the two grids their shares of the area

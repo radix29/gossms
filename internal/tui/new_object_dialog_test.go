@@ -149,3 +149,45 @@ func TestScriptSafeLookupsDoNotQueryUnderScriptMode(t *testing.T) {
 		t.Errorf("Statements[1] = %q, want sp_add_notification naming the alert", script.Statements()[1])
 	}
 }
+
+// TestPeerProbeDropsAResultForAnEarlierShowing: every peer probe (Add
+// Replica, New Availability Group, New Endpoint's Add Instance) runs bounded
+// by a timeout from the showing's context, and its result is dropped when the
+// dialog has since been closed and reopened. Add Instance once had neither,
+// so a late connect landed in the reopened dialog's instance list.
+func TestPeerProbeDropsAResultForAnEarlierShowing(t *testing.T) {
+	a := newTestApp()
+	d := NewNewEndpointDialog(a)
+	d.ctx = context.Background()
+
+	release := make(chan struct{})
+	hadDeadline := make(chan bool, 1)
+	delivered := false
+	d.probe("test probe", func(ctx context.Context) error {
+		_, ok := ctx.Deadline()
+		hadDeadline <- ok
+		<-release
+		return nil
+	}, func(error) { delivered = true })
+
+	if !<-hadDeadline {
+		t.Error("the probe ran without a timeout")
+	}
+	// Closed and reopened: a new showing's context.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.ctx = ctx
+	close(release)
+	for deadline := time.Now().Add(100 * time.Millisecond); time.Now().Before(deadline); {
+		a.drainPending()
+		time.Sleep(time.Millisecond)
+	}
+	if delivered {
+		t.Error("an earlier showing's probe result was delivered to the reopened dialog")
+	}
+
+	// The same showing's result is delivered.
+	done := false
+	d.probe("test probe", func(context.Context) error { return nil }, func(error) { done = true })
+	drainUntil(t, a, func() bool { return done }, "the current showing's probe result")
+}

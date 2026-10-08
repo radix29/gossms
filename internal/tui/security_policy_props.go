@@ -19,11 +19,7 @@ import (
 // loadSecurityPoliciesChildren stores each policy's Schema on the node it
 // builds.
 func findSecurityPolicy(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.SecurityPolicy, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.SecurityPolicyByName(ctx, schema, name)
+	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).SecurityPolicyByName)
 }
 
 func securityPolicyPropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {

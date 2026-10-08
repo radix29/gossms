@@ -21,7 +21,7 @@ type wrapSegment struct {
 
 // wrapSegments appends line's visual segments to dst and returns it: no segment
 // wider than w *terminal columns*, breaking after the last space at or before
-// the width limit when one exists, otherwise hard-breaking at the last rune
+// the width limit when one exists, otherwise hard-breaking at the last cluster
 // that fits (so a word longer than w still progresses instead of overflowing).
 // Always appends at least one segment, even for an empty line, so every logical
 // line occupies at least one visual row.
@@ -43,17 +43,22 @@ func wrapSegments(dst []wrapSegment, line []rune, w int) []wrapSegment {
 	for start < n {
 		// Widest prefix of line[start:] that fits in w columns, remembering
 		// the last space inside it to break after.
+		// Whole grapheme clusters only: a cut inside one would split "❤️" or a
+		// flag across two rows.
 		end, width, lastSpace := start, 0, -1
 		for end < n {
-			rw := core.RuneWidth(line[end])
-			if width+rw > w {
+			next, cw := end+1, 1
+			if !core.LoneASCII(line, end) {
+				next, cw = core.GraphemeAt(line, end)
+			}
+			if width+cw > w {
 				break
 			}
 			if line[end] == ' ' || line[end] == '\t' {
 				lastSpace = end
 			}
-			width += rw
-			end++
+			width += cw
+			end = next
 		}
 		if end >= n {
 			return append(dst, wrapSegment{start, n})
@@ -63,10 +68,10 @@ func wrapSegments(dst []wrapSegment, line []rune, w int) []wrapSegment {
 			breakAt = lastSpace + 1
 		}
 		if breakAt == start {
-			// A single rune wider than the whole wrap width (a wide rune in a one-column
-			// area). Emit it alone rather than looping forever on a zero-length segment;
-			// it overflows by one column, which beats hanging.
-			breakAt = start + 1
+			// A single cluster wider than the whole wrap width (a wide one in a
+			// one-column area). Emit it alone rather than looping forever on a
+			// zero-length segment; it overflows by one column, which beats hanging.
+			breakAt = core.NextGrapheme(line, start)
 		}
 		dst = append(dst, wrapSegment{start, breakAt})
 		start = breakAt

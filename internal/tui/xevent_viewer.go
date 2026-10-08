@@ -90,10 +90,8 @@ type XEventViewer struct {
 	toolRect   core.Rect
 	gridRect   core.Rect
 	detailRect core.Rect
-	tools      []toolButton
-	toolIDs    []xeTool // what each of tools is; the cells differ by mode
-	more       toolButton
-	overflow   []int // toolbar cells folded into "More ▾"
+	tools      controls.ToolRow
+	toolIDs    []xeTool // what each of tools.Cells is; the cells differ by mode
 
 	detailScroll     int
 	detailCache      []string
@@ -206,5 +204,5 @@ func (v *XEventViewer) layoutChildren() {
 // layoutTools places the toolbar cells, folding whatever doesn't fit into
 // "More ▾".
 func (v *XEventViewer) layoutTools() {
-	v.overflow, _ = layoutToolButtonsOverflow(v.tools, v.toolRect, "", &v.more)
+	v.tools.Layout(v.toolRect, "")
 }

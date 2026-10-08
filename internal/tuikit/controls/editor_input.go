@@ -117,7 +117,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 				e.cursorCol = len(e.doc.Line(e.cursorRow))
 			}
 		} else if e.cursorCol > 0 {
-			e.cursorCol--
+			e.cursorCol = core.PrevGrapheme(e.doc.Line(e.cursorRow), e.cursorCol)
 		} else if e.cursorRow > 0 && !e.selBlock {
 			e.cursorRow--
 			e.cursorCol = len(e.doc.Line(e.cursorRow))
@@ -131,7 +131,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 				e.cursorCol = 0
 			}
 		} else if e.cursorRow < e.doc.Len() && e.cursorCol < len(e.doc.Line(e.cursorRow)) {
-			e.cursorCol++
+			e.cursorCol = core.NextGrapheme(e.doc.Line(e.cursorRow), e.cursorCol)
 		} else if e.cursorRow < e.doc.Len()-1 && !e.selBlock {
 			e.cursorRow++
 			e.cursorCol = 0

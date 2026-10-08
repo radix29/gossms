@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,8 +36,9 @@ func main() {
 	}
 
 	app := tui.NewApp()
-	watchTermSignals(app)
+	loopReturned := watchTermSignals(app)
 	err := run(app)
+	loopReturned()
 	if !errors.Is(err, errPanicked) {
 		// Settings and tracked queries are saved in the background; a save
 		// still out when the loop returned would die with the process.
@@ -66,16 +68,36 @@ var errPanicked = errors.New("panic")
 // normally. If Run is wedged and never does, the exit below ends the process
 // anyway: the text is on disk by then, and a hung process on a closed terminal
 // is worse than an unrestored one.
-func watchTermSignals(app *tui.App) {
+//
+// main calls the returned func as soon as Run returns. From then on main owns
+// the exit: the watchdog's os.Exit used to fire 2 s after the signal whatever
+// main was doing, cutting off its FlushSaves(3s) mid-write.
+func watchTermSignals(app *tui.App) (loopReturned func()) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGTERM)
-	go func() {
-		sig := <-sigs
-		app.SaveOnSignal(sig, 2*time.Second)
-		time.Sleep(2 * time.Second)
+	returned := make(chan struct{})
+	go watchdog(sigs, returned, func(sig os.Signal) { app.SaveOnSignal(sig, 2*time.Second) },
+		2*time.Second, func() { os.Exit(1) })
+	return sync.OnceFunc(func() { close(returned) })
+}
+
+// watchdog is watchTermSignals' goroutine, with the save and the exit injected
+// for a test. After a signal it saves, then exits only if returned is still open
+// once grace has passed.
+func watchdog(sigs <-chan os.Signal, returned <-chan struct{}, save func(os.Signal), grace time.Duration, exit func()) {
+	var sig os.Signal
+	select {
+	case sig = <-sigs:
+	case <-returned:
+		return
+	}
+	save(sig)
+	select {
+	case <-returned:
+	case <-time.After(grace):
 		log.Printf("exiting on %v: the event loop did not return", sig)
-		os.Exit(1)
-	}()
+		exit()
+	}
 }
 
 // printVersion writes the build metadata Help > About shows. Keep in step with

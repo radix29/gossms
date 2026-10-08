@@ -416,18 +416,16 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 
 // addInstance connects to a named instance and reads what it already has, so
 // the grid can say what will be created before anything is. Asynchronous — the
-// connect is a round trip, and Peer may have to open a new one.
+// connect is a round trip, and Peer may have to open a new one. Through probe,
+// so it is bounded by a timeout and a result for an earlier showing of the
+// dialog is dropped.
 func (d *NewEndpointDialog) addInstance(name string, done func(*newEndpointInstance, error)) {
 	sc := d.sc
-	ctx := d.ctx
-	d.app.safego("connecting to an instance for the endpoint exchange", func() {
-		inst := &newEndpointInstance{name: name}
+	inst := &newEndpointInstance{name: name}
+	d.probe("connecting to an instance for the endpoint exchange", func(ctx context.Context) error {
 		peer, err := sc.Peer(ctx, name)
 		if err != nil {
-			d.app.postAndWake(func() {
-				done(nil, fmt.Errorf("connect to %s: %w", name, err))
-			})
-			return
+			return fmt.Errorf("connect to %s: %w", name, err)
 		}
 		// The name as the instance reports it, not as typed: the certificate,
 		// login and user names derive from it and must match on both sides.
@@ -436,16 +434,19 @@ func (d *NewEndpointDialog) addInstance(name string, done func(*newEndpointInsta
 		}
 		ep, err := peer.Server.DatabaseMirroringEndpoint(ctx)
 		if err != nil {
-			d.app.postAndWake(func() {
-				done(nil, fmt.Errorf("read %s's endpoint: %w", name, err))
-			})
-			return
+			return fmt.Errorf("read %s's endpoint: %w", name, err)
 		}
 		if ep != nil {
 			inst.hasEndpoint = true
 			inst.endpointURL = ep.URL()
 		}
-		d.app.postAndWake(func() { done(inst, nil) })
+		return nil
+	}, func(err error) {
+		if err != nil {
+			done(nil, err)
+			return
+		}
+		done(inst, nil)
 	})
 }
 

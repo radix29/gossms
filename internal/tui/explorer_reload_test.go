@@ -206,8 +206,8 @@ func TestDetailPendingEndsWhenResultIsCached(t *testing.T) {
 
 	for name, final := range map[string]func(seq int){
 		"postFinal": func(seq int) { dbr.postFinal(a, node, seq, []string{"Name"}, [][]string{{"x"}}, nil) },
-		"postFinalCharts": func(seq int) {
-			dbr.postFinalCharts(a, node, seq, []string{"Name"}, [][]string{{"x"}}, nil, nil)
+		"postFinalResult": func(seq int) {
+			dbr.postFinalResult(a, node, seq, &detailResult{cols: []string{"Name"}, rows: [][]string{{"x"}}})
 		},
 		"cacheOnlyObjects": func(seq int) { dbr.cacheOnlyObjects(a, node, seq, []string{"Name"}, [][]string{{"x"}}, nil, nil) },
 	} {

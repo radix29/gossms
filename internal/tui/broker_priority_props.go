@@ -22,11 +22,7 @@ import (
 // prop_page_requires_test.go's pagesThatOnlyRead.
 
 func findBrokerPriority(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.BrokerPriority, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.BrokerPriorityByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).BrokerPriorityByName)
 }
 
 func brokerPriorityPropPages(sc *db.ServerConn, dbName, name string) []propPage {

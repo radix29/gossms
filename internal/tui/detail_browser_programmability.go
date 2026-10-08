@@ -135,14 +135,13 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		rules = filterObjects(n.Filter, rules, func(r *gosmo.Rule) nodeData {
 			return nodeData{Name: r.Name, Schema: r.Schema, CreateDate: r.CreateDate}
 		})
+		// The listing carries no text (gosmo T52), so the column is one
+		// batch read beside it; see boundObjectDefinition for what a row
+		// without one shows.
+		texts, textErr := d.RuleDefinitions(ctx)
 		rows := make([][]string, 0, len(rules))
 		for _, r := range rules {
-			// The listing carries no text (gosmo T52); rules are legacy and
-			// few, so one by-name read per row is the price of the column.
-			def, err := r.Definition(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
+			def := boundObjectDefinition(texts, textErr, r.ObjectID)
 			rows = append(rows, []string{dottedName(r.Schema, r.Name), formatSQLDate(r.CreateDate), def})
 			*objs = append(*objs, nodeData{Type: NodeRule, DBName: n.DBName, Schema: r.Schema, Name: r.Name})
 		}
@@ -156,17 +155,31 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		defs = filterObjects(n.Filter, defs, func(df *gosmo.Default) nodeData {
 			return nodeData{Name: df.Name, Schema: df.Schema, CreateDate: df.CreateDate}
 		})
+		texts, textErr := d.DefaultDefinitions(ctx) // as for Rules above
 		rows := make([][]string, 0, len(defs))
 		for _, df := range defs {
-			def, err := df.Definition(ctx) // as for Rules above
-			if err != nil {
-				return nil, nil, err
-			}
+			def := boundObjectDefinition(texts, textErr, df.ObjectID)
 			rows = append(rows, []string{dottedName(df.Schema, df.Name), formatSQLDate(df.CreateDate), def})
 			*objs = append(*objs, nodeData{Type: NodeDefault, DBName: n.DBName, Schema: df.Schema, Name: df.Name})
 		}
 		return []string{"Name", "Created", "Definition"}, rows, nil
 	}
+}
+
+// boundObjectDefinition is a Rules or Defaults folder row's Definition cell
+// from the folder's one batch read. A failed read, or an object missing from
+// it (created or dropped between the two reads), shows N/A rather than
+// failing the folder: the listing already answered, and the text is one
+// column of it. Encrypted text is "", as the Properties page shows it.
+func boundObjectDefinition(texts map[int]string, err error, objectID int) string {
+	if err != nil {
+		return "N/A"
+	}
+	def, ok := texts[objectID]
+	if !ok {
+		return "N/A"
+	}
+	return def
 }
 
 // planGuidesFolderDetail lists the Plan Guides folder. Separate from the

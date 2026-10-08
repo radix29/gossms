@@ -238,3 +238,27 @@ func TestSelectRowFitItems(t *testing.T) {
 		t.Errorf("without SetFitItems: width %d, want the fixed %d", got, selectControlWidth)
 	}
 }
+
+// TestDisabledSelectAndCheckRowsRefuseEdits is K10 at the row level: a disabled
+// row leaves the focus cycle and refuses Edit, as TextRow.SetEnabled does.
+func TestDisabledSelectAndCheckRowsRefuseEdits(t *testing.T) {
+	sel := Select("Kind", []string{"a", "b"}, 0)
+	sel.SetEnabled(false)
+	sel.Edit(1)
+	if sel.Focusable() || sel.Dirty() || sel.Enabled() {
+		t.Fatalf("disabled SelectRow: Focusable=%v Dirty=%v Enabled=%v", sel.Focusable(), sel.Dirty(), sel.Enabled())
+	}
+	chk := Check("Reserve", false)
+	chk.SetEnabled(false)
+	chk.Edit(true)
+	if chk.Focusable() || chk.Dirty() || chk.Enabled() {
+		t.Fatalf("disabled CheckRow: Focusable=%v Dirty=%v Enabled=%v", chk.Focusable(), chk.Dirty(), chk.Enabled())
+	}
+	sel.SetEnabled(true)
+	chk.SetEnabled(true)
+	sel.Edit(1)
+	chk.Edit(true)
+	if !sel.Dirty() || !chk.Dirty() {
+		t.Fatal("re-enabled rows refuse Edit")
+	}
+}

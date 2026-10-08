@@ -24,11 +24,7 @@ import (
 // an absent key into an ErrNotFound, unlike the certificate and asymmetric-key
 // finders, so there is no (nil, nil) to translate.
 func findSymmetricKey(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.SymmetricKey, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.SymmetricKeyByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).SymmetricKeyByName)
 }
 
 func symmetricKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {

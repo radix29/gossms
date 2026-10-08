@@ -19,6 +19,9 @@ import "github.com/radix29/gossms/internal/tuikit/sqltext"
 //     is the boundary. An INSERT ... VALUES has no such SELECT to suppress, so
 //     a later, separate SELECT stacked right after it with no ';' is (rarely)
 //     missed (known limitation)
+//   - an INSERT, UPDATE or DELETE right after THEN is a MERGE action, part
+//     of the MERGE, and a MERGE after INNER/OUTER/LEFT/RIGHT/FULL is a join
+//     hint
 //   - a WITH directly followed by '(' is a table hint ("t WITH (NOLOCK)") or a
 //     rowset function's column list ("OPENJSON(@j) WITH (a int)"), never a CTE,
 //     which names itself first; a WITH that is the last token is not decided
@@ -76,6 +79,10 @@ func (s *dmlSplitter) feed(t Token) (Token, bool) {
 	return Token{}, false
 }
 
+// joinHintPrefixes are the keywords a MERGE join hint follows ("INNER MERGE
+// JOIN", "LEFT OUTER MERGE JOIN", "FULL MERGE JOIN").
+var joinHintPrefixes = map[string]bool{"INNER": true, "OUTER": true, "LEFT": true, "RIGHT": true, "FULL": true}
+
 // advance is feed for every token but the one after a pending WITH's verdict.
 func (s *dmlSplitter) advance(t Token) bool {
 	switch t.Kind {
@@ -107,6 +114,12 @@ func (s *dmlSplitter) advance(t Token) bool {
 			s.pendingMainSelect = false
 		case t.Text == "SELECT" && continuesUnion:
 			// UNION-chain continuation of the same statement.
+		case s.prevKeyword == "THEN":
+			// MERGE's "WHEN MATCHED THEN UPDATE SET ..." action, part of the MERGE
+			// (sqltext's splitter makes the same call). A CASE's THEN is followed by
+			// an expression, where a leader can only sit inside parentheses.
+		case t.Text == "MERGE" && joinHintPrefixes[s.prevKeyword]:
+			// "INNER MERGE JOIN": a join hint, not a MERGE statement.
 		default:
 			starts = true
 			s.pendingMainSelect = t.Text == "INSERT"

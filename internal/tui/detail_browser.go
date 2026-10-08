@@ -30,9 +30,13 @@ type DetailBrowser struct {
 	// zero-width when the panel is too narrow to fit it.
 	refreshRect core.Rect
 
-	// mouseDragging distinguishes a fresh Button1 press on the refresh button
-	// from a continued hold, like controls.Toolbar's field of the same name.
-	mouseDragging bool
+	// dragZone is what claimed the current gesture's press — the grid, or the
+	// panel itself (the refresh button, the chart strip, a click dismissing a
+	// readout) — and the rest of the gesture goes there until release (the
+	// mouseDragging idiom). Hit-testing each event instead let a grid drag
+	// released over the strip leave the grid latched, and a held grid press
+	// drifting onto the strip pin a readout.
+	dragZone dbDragZone
 
 	// currentNode is the node ShowNodeDetails last displayed, so Invalidate can
 	// tell whether to refetch immediately or just drop the cache entry.
@@ -399,42 +403,63 @@ func (db *DetailBrowser) HandleKey(ev *tcell.EventKey) bool {
 	return db.grid.HandleKey(ev)
 }
 
-// HandleMouse fires OnRefresh for a press on the title bar's refresh button and
-// delegates the rest to the grid. A release over the button still reaches the
-// grid, so its mouseDragging latch can't stick.
+// dbDragZone names what owns the current mouse gesture.
+type dbDragZone int
+
+const (
+	dbZoneNone dbDragZone = iota
+	dbZoneGrid
+	dbZonePanel // the panel acted on the press; the rest of the gesture is swallowed
+)
+
+// HandleMouse fires OnRefresh for a press on the title bar's refresh button,
+// pins or dismisses a chart readout for one on the strip, and delegates the
+// rest to the grid.
 func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
-		db.mouseDragging = false
+		// The release reaches the grid wherever it lands, strip and refresh
+		// button included, so its latch can't stick (invariant 5).
+		db.dragZone = dbZoneNone
+		return db.grid.HandleMouse(ev)
+	}
+	// The grid's "Show Value" viewer and cell menu open over the whole panel,
+	// chart rows included, so they get first refusal.
+	if db.grid.OverlayActive() {
+		return db.grid.HandleMouse(ev)
+	}
+	switch db.dragZone {
+	case dbZoneGrid:
+		return db.grid.HandleMouse(ev)
+	case dbZonePanel:
+		return true
 	}
 	mx, my := ev.Position()
-	if strip := db.chartsRect(); strip.Contains(mx, my) {
-		if ev.Buttons() == tcell.Button1 && !db.mouseDragging {
-			db.mouseDragging = true
+	strip := db.chartsRect()
+	if ev.Buttons() == tcell.Button1 {
+		switch {
+		case db.tooltip != nil:
 			// A showing box is dismissed by the next click wherever it lands, so one
 			// click never both closes a box and opens another.
-			if db.tooltip != nil {
-				db.tooltip = nil
-			} else {
-				db.tooltip = db.pinChartTooltip(mx, my)
-			}
-		}
-		// Claimed either way: the strip is not the grid, and a press on it
-		// must not scroll or select behind the charts.
-		return true
-	}
-	if db.tooltip != nil && ev.Buttons() == tcell.Button1 && !db.mouseDragging {
-		db.mouseDragging = true
-		db.tooltip = nil
-		return true
-	}
-	if db.refreshRect.Contains(mx, my) {
-		if ev.Buttons() == tcell.Button1 && !db.mouseDragging {
-			db.mouseDragging = true
+			db.dragZone = dbZonePanel
+			db.tooltip = nil
+			return true
+		case strip.Contains(mx, my):
+			db.dragZone = dbZonePanel
+			db.tooltip = db.pinChartTooltip(mx, my)
+			return true
+		case db.refreshRect.Contains(mx, my):
+			db.dragZone = dbZonePanel
 			if db.OnRefresh != nil {
 				db.OnRefresh()
 			}
+			return true
 		}
-		db.grid.HandleMouse(ev)
+		db.dragZone = dbZoneGrid
+		return db.grid.HandleMouse(ev)
+	}
+	if strip.Contains(mx, my) {
+		// The strip is not the grid: a wheel or right-click on it must not
+		// scroll or select behind the charts.
 		return true
 	}
 	return db.grid.HandleMouse(ev)

@@ -29,11 +29,7 @@ import (
 // route's Delete alike — unlike a queue, whose two verbs differ.
 
 func findRoute(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.Route, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.RouteByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).RouteByName)
 }
 
 func routePropPages(sc *db.ServerConn, dbName, name string) []propPage {

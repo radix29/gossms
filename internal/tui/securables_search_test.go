@@ -89,8 +89,12 @@ func securablesPage(t *testing.T, rec *searchRecorder, candidates []securable) (
 	a := &App{}
 	d := &PropDialog{app: a, ctx: context.Background()}
 	f, _ := buildSecurablesMatrix(d, nil, nil, nil, nil, candidates, rec.fn(), 8, 12,
-		func(context.Context, string, gosmo.PermissionOptions, securable, string) error { return nil },
-		func(context.Context, string, gosmo.PermissionOptions, securable, string, string) error { return nil },
+		func(context.Context, gosmo.PermissionVerb, gosmo.PermissionOptions, securable, string) error {
+			return nil
+		},
+		func(context.Context, gosmo.PermissionVerb, gosmo.PermissionOptions, securable, string, string) error {
+			return nil
+		},
 	)
 	return a, securablesPartsOf(t, f)
 }

@@ -27,23 +27,14 @@ type capabilityFields struct {
 	// dbProbes is the in-flight probe per database. Selecting a node primes its
 	// database, so arrowing through nodes asks per keystroke; later callers
 	// wait for the first.
-	dbProbes map[string]*dbProbe
+	dbProbes flights[string, *gosmo.DatabaseCapabilities]
 	// dbGen is bumped by ClearCapabilityCache so a pre-clear probe can't cache
 	// its answer afterwards.
 	dbGen uint64
 }
 
-// dbProbe is one in-flight per-database probe. Fields other than done are
-// written before done closes and read after.
-type dbProbe struct {
-	done chan struct{}
-	caps *gosmo.DatabaseCapabilities // nil if the probe failed
-	// abandoned means the probing caller's context ended, which says nothing
-	// about the server; a waiter still wanting an answer probes again.
-	abandoned bool
-	// waiters counts joined callers; tests read it.
-	waiters int
-}
+// dbProbe is one in-flight per-database probe; val is nil if it failed.
+type dbProbe = flight[*gosmo.DatabaseCapabilities]
 
 // Capabilities reports what the login may do at server scope. Never nil or an
 // error: a failed probe (in ConnectContext or a server Refresh, see
@@ -80,27 +71,19 @@ func (sc *ServerConn) DatabaseCapabilities(ctx context.Context, name string) *go
 			sc.mu.Unlock()
 			return c
 		}
-		p, inFlight := sc.dbProbes[name]
-		if !inFlight {
-			p = &dbProbe{done: make(chan struct{})}
-			if sc.dbProbes == nil {
-				sc.dbProbes = map[string]*dbProbe{}
-			}
-			sc.dbProbes[name] = p
+		p, leader := sc.dbProbes.join(name)
+		if leader {
 			gen := sc.dbGen
 			sc.mu.Unlock()
 			return sc.probeDatabase(ctx, name, gen, p)
 		}
-		p.waiters++
 		sc.mu.Unlock()
 
-		select {
-		case <-p.done:
-		case <-ctx.Done():
+		if !p.wait(ctx) {
 			return unknownDatabaseCapabilities()
 		}
-		if p.caps != nil {
-			return p.caps
+		if p.val != nil {
+			return p.val
 		}
 		// The probing caller gave up (e.g. a Properties dialog closed
 		// mid-load); nothing was learned, so probe again as first in line.
@@ -118,11 +101,9 @@ func (sc *ServerConn) probeDatabase(ctx context.Context, name string, gen uint64
 	var err error
 	defer func() {
 		sc.mu.Lock()
-		if sc.dbProbes[name] == p {
-			delete(sc.dbProbes, name)
-		}
+		sc.dbProbes.forget(name, p)
 		if err == nil && c != nil {
-			p.caps = c
+			p.val = c
 			// A clear since the probe started means this answer may be stale;
 			// return it, but don't cache it past the Refresh that asked for a
 			// re-read.
@@ -138,7 +119,7 @@ func (sc *ServerConn) probeDatabase(ctx context.Context, name string, gen uint64
 			p.abandoned = ctx.Err() != nil
 		}
 		sc.mu.Unlock()
-		close(p.done)
+		p.land()
 	}()
 
 	pctx, cancel := context.WithTimeout(ctx, capabilityProbeTimeout)

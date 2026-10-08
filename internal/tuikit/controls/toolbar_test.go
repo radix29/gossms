@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -105,5 +106,108 @@ func TestToolbarHoverOnDisabledButtonStillSetsHoverForTooltip(t *testing.T) {
 
 	if tb.hover != 0 {
 		t.Fatalf("hover = %d, want 0 (disabled button still tracked for hover/tooltip)", tb.hover)
+	}
+}
+
+// mainToolbarShape mirrors the app's main toolbar: icon widths, dividers and
+// DropRanks as buildToolbar sets them.
+func mainToolbarShape() []ToolbarButton {
+	return []ToolbarButton{
+		{Icon: "✚", Tooltip: "New Query", DropRank: 2},
+		{Divider: true, Icon: "|"},
+		{Icon: "▶", Tooltip: "Execute"},
+		{Icon: "▷", Tooltip: "Execute Selection", DropRank: 3},
+		{Icon: "■", Tooltip: "Stop Execution", DropRank: 1},
+		{Divider: true, Icon: "|"},
+		{Icon: "Est.Plan", Tooltip: "Est", DropRank: 5},
+		{Icon: "Act.Plan[-OFF]", Tooltip: "Act", DropRank: 6},
+		{Icon: "Live[-OFF]", Tooltip: "Live", DropRank: 7},
+		{Icon: "Meta[-OFF]", Tooltip: "Meta", DropRank: 8},
+		{Divider: true, Icon: "|"},
+		{Icon: "📈", Tooltip: "Activity Monitor", DropRank: 4},
+	}
+}
+
+// TestToolbarNeverCrossesLeftLimit covers B19: SetBounds right-aligned with no
+// left limit, so on a narrow terminal the buttons painted over the menu
+// labels and Tools and Help vanished. No shown button may start left of x,
+// and the shown buttons stay flush right.
+func TestToolbarNeverCrossesLeftLimit(t *testing.T) {
+	const limit = 52 // roughly where the main menu labels end
+	for _, screenW := range []int{40, 60, 80, 100, 112, 140} {
+		tb := NewToolbar()
+		tb.SetButtons(mainToolbarShape())
+		tb.SetBounds(limit, 0, screenW-limit)
+		end := limit
+		for i := range tb.buttons {
+			if tb.widths[i] == 0 {
+				continue
+			}
+			if tb.starts[i] < limit {
+				t.Errorf("width %d: button %q starts at %d, left of limit %d", screenW, tb.buttons[i].Icon, tb.starts[i], limit)
+			}
+			end = tb.starts[i] + tb.widths[i]
+		}
+		if tb.rect.W > 0 && end != screenW {
+			t.Errorf("width %d: last shown button ends at %d, want flush at %d", screenW, end, screenW)
+		}
+	}
+}
+
+// TestToolbarDropsByRank pins the drop order: highest DropRank first, unranked
+// last, and a divider left leading, trailing or doubled is hidden too.
+func TestToolbarDropsByRank(t *testing.T) {
+	shownIcons := func(w int) []string {
+		tb := NewToolbar()
+		tb.SetButtons(mainToolbarShape())
+		tb.SetBounds(0, 0, w)
+		var icons []string
+		for i, b := range tb.buttons {
+			if tb.widths[i] > 0 {
+				icons = append(icons, b.Icon)
+			}
+		}
+		return icons
+	}
+	cases := []struct {
+		w    int
+		want []string
+	}{
+		{100, []string{"✚", "|", "▶", "▷", "■", "|", "Est.Plan", "Act.Plan[-OFF]", "Live[-OFF]", "Meta[-OFF]", "|", "📈"}},
+		// Widths are icon + 2: 75 in all. Meta, Live, then Act.Plan drop first.
+		{74, []string{"✚", "|", "▶", "▷", "■", "|", "Est.Plan", "Act.Plan[-OFF]", "Live[-OFF]", "|", "📈"}},
+		{50, []string{"✚", "|", "▶", "▷", "■", "|", "Est.Plan", "|", "📈"}},
+		// Est.Plan gone: the divider before it would double up with 📈's.
+		{24, []string{"✚", "|", "▶", "▷", "■", "|", "📈"}},
+		// Activity Monitor gone: its divider would trail.
+		{21, []string{"✚", "|", "▶", "▷", "■"}},
+		{14, []string{"✚", "|", "▶", "■"}},
+		{9, []string{"▶", "■"}},
+		{5, []string{"▶"}},
+		{2, nil},
+	}
+	for _, c := range cases {
+		if got := shownIcons(c.w); !slices.Equal(got, c.want) {
+			t.Errorf("width %d: shown = %q, want %q", c.w, got, c.want)
+		}
+	}
+}
+
+// TestToolbarHiddenButtonIsNotClickable confirms a dropped button neither
+// hovers nor fires — its column belongs to the menu labels now.
+func TestToolbarHiddenButtonIsNotClickable(t *testing.T) {
+	calls := 0
+	tb := NewToolbar()
+	tb.SetButtons([]ToolbarButton{
+		{Icon: "Drop", Tooltip: "Drop", DropRank: 1, Action: func() { calls++ }},
+		{Icon: "Keep", Tooltip: "Keep"},
+	})
+	tb.SetBounds(0, 0, 6)
+	for x := range 6 {
+		tb.HandleMouse(tcell.NewEventMouse(x, 0, tcell.ButtonNone, tcell.ModNone))
+		tb.HandleMouse(tcell.NewEventMouse(x, 0, tcell.Button1, tcell.ModNone))
+	}
+	if calls != 0 {
+		t.Errorf("hidden button fired %d times", calls)
 	}
 }

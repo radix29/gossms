@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -181,7 +182,8 @@ func displayError(err error) error {
 // withPermissionAdvice appends the right a refusal needs to err's own text, for
 // places that report a *failed action* rather than replacing content (a status
 // line, an alert). The server's words are kept: the full failure is what the
-// user is owed, and the advice is what they do next.
+// user is owed, and the advice is what they do next. err stays wrapped, so
+// errors.Is and gosmo.AsSQLError still see through the advice.
 func withPermissionAdvice(err error) error {
 	if err == nil {
 		return nil
@@ -190,5 +192,5 @@ func withPermissionAdvice(err error) error {
 	if a == "" || strings.Contains(err.Error(), a) {
 		return err
 	}
-	return errors.New(err.Error() + " — " + a)
+	return fmt.Errorf("%w — %s", err, a)
 }

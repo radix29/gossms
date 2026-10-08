@@ -80,6 +80,14 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		// dialog — exactly the case that would otherwise strand the latch.
 		d.drag.Release(ev)
 	}
+	// The open list is clamped to the screen, not the dialog, so it can reach
+	// past the dialog's edge: it is offered every event (wheel included) before
+	// ConsumeOutsideClick can discard one as "outside" — FilterDialog's order.
+	if d.mode == backupModeForm && d.ddDatabase.IsOpen() && d.ddDatabase.HandleMouse(ev) {
+		d.focusTo(d.ddDatabase)
+		d.syncAutoDest()
+		return true
+	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}

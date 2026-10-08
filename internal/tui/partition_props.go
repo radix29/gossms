@@ -22,19 +22,11 @@ import (
 // lookup itself is gosmo's, which matches the name in SQL and so under the
 // server's collation.
 func findPartitionFunction(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.PartitionFunction, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.PartitionFunctionByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).PartitionFunctionByName)
 }
 
 func findPartitionScheme(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.PartitionScheme, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.PartitionSchemeByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).PartitionSchemeByName)
 }
 
 func partitionFunctionPropPages(sc *db.ServerConn, dbName, name string) []propPage {

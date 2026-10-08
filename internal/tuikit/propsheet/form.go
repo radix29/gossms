@@ -48,6 +48,15 @@ type Form struct {
 
 	// commit is the form's commit hook — see SetCommit.
 	commit func()
+
+	// heights is every row's Height at width heightsW, measured once per Draw:
+	// the scrollbar, the scroll clamp and the layout each walk the rows, and a
+	// Note or Hint row's Height wraps its whole text. measured is false outside
+	// Draw, where a height is asked of the row itself — a handler may have
+	// changed the content since.
+	heights  []int
+	heightsW int
+	measured bool
 }
 
 // NewForm creates a Form from an initial set of rows; order is tab order and
@@ -191,10 +200,28 @@ func (f *Form) contentWidth() int {
 
 func (f *Form) totalHeight(w int) int {
 	total := 0
-	for _, row := range f.rows {
-		total += row.Height(w)
+	for i := range f.rows {
+		total += f.rowHeight(i, w)
 	}
 	return total
+}
+
+// rowHeight is row i's Height at w, from the frame's measurement when Draw
+// has taken one at that width.
+func (f *Form) rowHeight(i, w int) int {
+	if f.measured && w == f.heightsW {
+		return f.heights[i]
+	}
+	return f.rows[i].Height(w)
+}
+
+// measure records every row's height at w for the rest of the frame.
+func (f *Form) measure(w int) {
+	f.heights = f.heights[:0]
+	for _, row := range f.rows {
+		f.heights = append(f.heights, row.Height(w))
+	}
+	f.heightsW, f.measured = w, true
 }
 
 // The scrollbar measures the form in content *lines* (the unit totalHeight and
@@ -207,7 +234,7 @@ func (f *Form) totalHeight(w int) int {
 func (f *Form) scrollLines(w int) int {
 	lines := 0
 	for i := 0; i < f.scroll && i < len(f.rows); i++ {
-		lines += f.rows[i].Height(w)
+		lines += f.rowHeight(i, w)
 	}
 	return lines
 }
@@ -215,8 +242,8 @@ func (f *Form) scrollLines(w int) int {
 // rowAtLine returns the index of the row containing content line n.
 func (f *Form) rowAtLine(n, w int) int {
 	y := 0
-	for i, row := range f.rows {
-		y += row.Height(w)
+	for i := range f.rows {
+		y += f.rowHeight(i, w)
 		if n < y {
 			return i
 		}
@@ -229,8 +256,8 @@ func (f *Form) rowAtLine(n, w int) int {
 // thumb can't reach the bottom of its track.
 func (f *Form) maxScroll(w int) int {
 	used := 0
-	for i, row := range slices.Backward(f.rows) {
-		used += row.Height(w)
+	for i := range slices.Backward(f.rows) {
+		used += f.rowHeight(i, w)
 		if used > f.rect.H {
 			return min(i+1, max(0, len(f.rows)-1))
 		}
@@ -275,7 +302,7 @@ func (f *Form) rowFits(idx, w int) bool {
 // scrollbar to bring into view; the first row on screen always draws in
 // whatever space there is rather than leaving the page blank.
 func (f *Form) drawHeight(i, w, avail int, first bool) (int, bool) {
-	h := f.rows[i].Height(w)
+	h := f.rowHeight(i, w)
 	if avail <= 0 {
 		return h, false
 	}
@@ -292,7 +319,12 @@ func (f *Form) drawHeight(i, w, avail int, first bool) (int, bool) {
 // click-routing bands used by HandleMouse.
 func (f *Form) Draw(s tcell.Screen) {
 	core.FillRect(s, f.rect, ' ', theme.StyleDialog())
+	defer func() { f.measured = false }()
+	f.measure(f.rect.W)
 	w := f.contentWidth()
+	if w != f.rect.W {
+		f.measure(w)
+	}
 	f.bands = f.bands[:0]
 	// A row that asked to be seen since the last frame is scrolled to here, after
 	// the handler has run, whichever path (key, click, sheet button) ran it.
@@ -403,15 +435,21 @@ func (f *Form) HandleKey(ev *tcell.EventKey) bool {
 func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 	switch ev.Buttons() {
 	case tcell.WheelUp, tcell.WheelDown:
+		if f.OverlayActive() {
+			// An open overlay gets first refusal of the wheel too: a dropdown's list
+			// scrolls, and lies over other rows — handing the wheel to the row under
+			// the pointer scrolled a grid hidden beneath the list. Swallowed either
+			// way: as with PgUp/PgDn above, the row list must not scroll out from
+			// under the open overlay.
+			if mh, ok := f.Focused().(MouseHandler); ok {
+				mh.HandleMouse(ev)
+			}
+			return true
+		}
 		if row, ok := f.rowAt(ev); ok {
 			if mh, isHandler := row.(MouseHandler); isHandler && mh.HandleMouse(ev) {
 				return true
 			}
-		}
-		if f.OverlayActive() {
-			// As with PgUp/PgDn above: don't scroll the row list out from under a dropdown
-			// open elsewhere on the form.
-			return true
 		}
 		if ev.Buttons() == tcell.WheelUp {
 			f.scroll = max(0, f.scroll-3)

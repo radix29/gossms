@@ -507,3 +507,61 @@ func TestXEventSummaryCountsOneInTheSingular(t *testing.T) {
 		t.Errorf("summary %q, want it to end in \"— 1 event\"", s)
 	}
 }
+
+// U5: grouped, each live batch rebuilt the grid with SetSource, which closes
+// its overlay — the Show Value popup a user opened closed within a second.
+// The rebuild waits while the overlay is open and lands when it closes.
+func TestXEventViewerGroupedBatchWaitsForAnOpenOverlay(t *testing.T) {
+	v := groupedViewer(t)
+	// Show Value on a group row: the grid's own popup (no event to hand off).
+	v.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModCtrl))
+	v.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone)) // Copy
+	v.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone)) // Show Value
+	v.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	viewerOpen := func() bool { v.grid.SelectAll(); return v.grid.SelectedText() != "" }
+	if !viewerOpen() {
+		t.Fatal("setup: the Show Value popup did not open")
+	}
+	before := gridLabels(v)
+	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("sp", 6, "duration", "60")}})
+	if !viewerOpen() {
+		t.Fatal("a live batch closed the open Show Value popup")
+	}
+	if got := gridLabels(v); !slices.Equal(got, before) {
+		t.Fatalf("grid rows changed under the open menu: %v, was %v", got, before)
+	}
+	v.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	if v.grid.OverlayActive() {
+		t.Fatal("setup: Escape left the popup open")
+	}
+	if groupRow(v, "sp") < 0 {
+		t.Fatalf("the held batch's group never appeared after the menu closed: %v", gridLabels(v))
+	}
+}
+
+// TestXEventInsertScriptTypesHashesAndWideText pins U4: a uint64 past
+// bigint's range is decimal(20,0), not a float that rounds two hashes equal,
+// and nvarchar is sized in UTF-16 code units, so an emoji counts twice.
+func TestXEventInsertScriptTypesHashesAndWideText(t *testing.T) {
+	v := newTestXEventViewer(t, 100)
+	v.applyBatch(xeBatch{events: []xevent.Event{
+		xeTestEvent("rpc", 1, "query_hash", "18446744073709551615", "plan_id", "-3", "note", "ok 😀"),
+		xeTestEvent("rpc", 2, "query_hash", "18446744073709551614", "plan_id", "9223372036854775808", "note", "é"),
+	}})
+	v.session = "s"
+	s := v.insertScript()
+	for _, want := range []string{
+		"[query_hash] decimal(20,0) NULL,",
+		"[plan_id] decimal(20,0) NULL,",
+		"[note] nvarchar(5) NULL\n",
+		", 18446744073709551615, -3, N'ok 😀')",
+		", 18446744073709551614, 9223372036854775808, N'é')",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("script lacks %q:\n%s", want, s)
+		}
+	}
+	if n := utf16Len("a😀\U0010FFFF"); n != 5 {
+		t.Errorf("utf16Len = %d, want 5", n)
+	}
+}

@@ -1,8 +1,13 @@
 package tui
 
 import (
+	"context"
+	"errors"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCompareVersions(t *testing.T) {
@@ -131,5 +136,44 @@ func TestGithubReleaseReleasesURL(t *testing.T) {
 	withoutHTML := githubRelease{TagName: "v1.2.3"}
 	if got := withoutHTML.releasesURL(); got != githubReleasesPage {
 		t.Errorf("releasesURL() = %q, want fallback %q", got, githubReleasesPage)
+	}
+}
+
+// TestUpdateCheckDropsAnEarlierShowingsResult: a check left running by an
+// earlier showing (closed, reopened) must not land in the next one, where a
+// late failure overwrote the newer check's success.
+func TestUpdateCheckDropsAnEarlierShowingsResult(t *testing.T) {
+	a := newTestApp()
+	a.updateDialog = NewUpdateDialog(a)
+
+	release, returned := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	defer func(f func(context.Context) (githubRelease, error)) { releaseFetcher = f }(releaseFetcher)
+	releaseFetcher = func(ctx context.Context) (githubRelease, error) {
+		if calls.Add(1) == 1 {
+			defer close(returned)
+			<-release
+			return githubRelease{}, errors.New("slow failure")
+		}
+		return githubRelease{TagName: "v9.9.9"}, nil
+	}
+
+	a.checkForUpdates()
+	drainUntil(t, a, func() bool { return calls.Load() == 1 }, "the first check to start")
+	a.updateDialog.Hide()
+	a.checkForUpdates()
+	has := func(sub string) bool {
+		return slices.ContainsFunc(a.updateDialog.lines, func(l string) bool { return strings.Contains(l, sub) })
+	}
+	drainUntil(t, a, func() bool { return has("v9.9.9") }, "the second check's result")
+	close(release)
+	<-returned
+	// The stale result is posted just after the fetch returns.
+	for deadline := time.Now().Add(100 * time.Millisecond); time.Now().Before(deadline); {
+		a.drainPending()
+		time.Sleep(time.Millisecond)
+	}
+	if has("slow failure") || !has("v9.9.9") {
+		t.Errorf("a superseded check overwrote the newer result: %q", a.updateDialog.lines)
 	}
 }

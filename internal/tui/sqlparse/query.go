@@ -169,9 +169,25 @@ func (p *queryParser) atKeyword(text string) bool {
 var setOperators = map[string]bool{"UNION": true, "EXCEPT": true, "INTERSECT": true}
 
 // refIntroducers are the keywords a table reference can follow. APPLY covers
-// both CROSS and OUTER APPLY, whose leading keyword is skipped as noise.
+// both CROSS and OUTER APPLY, whose leading keyword is skipped as noise. MERGE
+// names its target directly or through INTO; its source follows USING, which
+// is no keyword (it is a legal name) and is recognised only in a MERGE (see
+// atMergeUsing).
 var refIntroducers = map[string]bool{
 	"FROM": true, "JOIN": true, "INTO": true, "UPDATE": true, "DELETE": true, "APPLY": true,
+	"MERGE": true,
+}
+
+// isJoinHint reports whether the MERGE at toks[i] is a join hint ("INNER
+// MERGE JOIN") rather than a MERGE statement.
+func isJoinHint(toks []Token, i int) bool {
+	return i > 0 && toks[i-1].Kind == TokenKeyword && joinHintPrefixes[toks[i-1].Text]
+}
+
+// atMergeUsing reports whether toks[i] is the USING that introduces a MERGE's
+// source, given whether the statement so far is a MERGE.
+func atMergeUsing(toks []Token, i int, inMerge bool) bool {
+	return inMerge && i < len(toks) && identFold(toks[i], "USING") && !toks[i].Quoted
 }
 
 // selectListEnders stop a select list. FROM is the usual one; the rest catch a
@@ -214,6 +230,7 @@ func (p *queryParser) parseBranch() *Query {
 	if p.atKeyword("WITH") {
 		p.parseCTEs(q)
 	}
+	merge := false
 	for p.i < len(p.toks) {
 		t := p.toks[p.i]
 		if t.Kind == TokenParenClose || (t.Kind == TokenKeyword && setOperators[t.Text]) {
@@ -224,6 +241,12 @@ func (p *queryParser) parseBranch() *Query {
 			p.i++
 			q.Select = p.parseSelectList(q)
 		case t.Kind == TokenKeyword && refIntroducers[t.Text]:
+			if t.Text == "MERGE" && !isJoinHint(p.toks, p.i) {
+				merge = true
+			}
+			p.i++
+			p.parseFromRefs(q)
+		case atMergeUsing(p.toks, p.i, merge):
 			p.i++
 			p.parseFromRefs(q)
 		case t.Kind == TokenParenOpen:
@@ -349,6 +372,11 @@ func (p *queryParser) parseSelectList(q *Query) []SelectItem {
 			flush()
 			return items
 		case t.Kind == TokenKeyword && (selectListEnders[t.Text] || setOperators[t.Text]):
+			flush()
+			return items
+		case t.Kind == TokenIdent && !t.Quoted && (identFold(t, "FOR") || identFold(t, "OPTION")):
+			// "SELECT @x FOR XML PATH", "SELECT 1 OPTION (MAXDOP 1)": a clause of a
+			// select with no FROM, not the last item's alias.
 			flush()
 			return items
 		case t.Kind == TokenComma:
@@ -547,6 +575,7 @@ func refFromParts(parts []string) FromRef {
 // is the reference's: a pivoted source's own alias is addressable only inside
 // the clause.
 func (p *queryParser) parseRefTail(ref *FromRef) {
+	p.skipSystemTime()
 	ref.Pivot = p.parsePivot()
 	ref.Alias = p.parseAlias()
 	if ref.Pivot != nil {
@@ -559,14 +588,104 @@ func (p *queryParser) parseRefTail(ref *FromRef) {
 
 // parseAlias consumes an optional "AS name" or bare trailing name.
 func (p *queryParser) parseAlias() string {
-	if p.atKeyword("AS") {
+	alias, next := aliasAt(p.toks, p.i)
+	p.i = next
+	return alias
+}
+
+// notAliases are reserved words that are not in sqlKeywordList but can follow
+// a table reference: a clause of the same statement (FOR JSON, FOR
+// SYSTEM_TIME, OPTION, TABLESAMPLE, PIVOT while its clause is still being
+// typed) or the first word of the next statement. Unquoted, none can be an
+// alias (SQL Server refuses each one bare); taken for one, the reference's
+// real name stops resolving and the clause after it is lost.
+var notAliases = map[string]bool{
+	"FOR": true, "OPTION": true, "TABLESAMPLE": true, "PIVOT": true, "UNPIVOT": true,
+	"IF": true, "WHILE": true, "BEGIN": true, "PRINT": true, "RETURN": true,
+	"RAISERROR": true, "GOTO": true, "COMMIT": true, "ROLLBACK": true, "SAVE": true,
+	"USE": true, "WAITFOR": true, "OPEN": true, "CLOSE": true, "FETCH": true,
+	"DEALLOCATE": true, "GRANT": true, "DENY": true, "REVOKE": true, "BREAK": true,
+	"CONTINUE": true, "BACKUP": true, "RESTORE": true, "DBCC": true, "KILL": true,
+	"CHECKPOINT": true, "RECONFIGURE": true, "REVERT": true,
+}
+
+// clauseAliases are the words that are legal aliases ("FROM t output" names
+// t "output") but also open a DML clause: OUTPUT in INSERT/UPDATE/DELETE/MERGE,
+// USING in MERGE. An alias is never followed by a name or a '(' where the
+// clause always is ("OUTPUT inserted.id", "USING src", "USING (SELECT ...)"),
+// so that is what decides.
+var clauseAliases = map[string]bool{"OUTPUT": true, "USING": true}
+
+// aliasAt reads an optional "AS name" or bare trailing name at toks[i] and
+// returns it with the index just past it. It is the one alias rule for the
+// tree parser and ParseFromScope.
+func aliasAt(toks []Token, i int) (string, int) {
+	if i < len(toks) && toks[i].Kind == TokenKeyword && toks[i].Text == "AS" {
+		// After AS the word is the alias whatever it spells.
+		if i+1 < len(toks) && toks[i+1].Kind == TokenIdent {
+			return toks[i+1].Text, i + 2
+		}
+		return "", i + 1
+	}
+	if i >= len(toks) || toks[i].Kind != TokenIdent {
+		return "", i
+	}
+	t := toks[i]
+	if !t.Quoted {
+		upper := strings.ToUpper(t.Text)
+		if notAliases[upper] {
+			return "", i
+		}
+		if clauseAliases[upper] && i+1 < len(toks) &&
+			(toks[i+1].Kind == TokenIdent || toks[i+1].Kind == TokenParenOpen) {
+			return "", i
+		}
+	}
+	return t.Text, i + 1
+}
+
+// skipSystemTime consumes a temporal table's "FOR SYSTEM_TIME <period>", which
+// sits between the name and the alias ("FROM t FOR SYSTEM_TIME AS OF @d AS
+// h"). Left in place it hides the alias, and its FROM ... TO form reads as a
+// second FROM clause. A period's bound is a literal (no token: the tokenizer
+// drops strings) or a variable, so only an '@' word is taken for one:
+//
+//	AS OF <v> | FROM <v> TO <v> | BETWEEN <v> AND <v> | CONTAINED IN ( <v>, <v> ) | ALL
+func (p *queryParser) skipSystemTime() {
+	if !p.atIdentFold("FOR") || p.i+1 >= len(p.toks) || !identFold(p.toks[p.i+1], "SYSTEM_TIME") {
+		return
+	}
+	p.i += 2
+	bound := func() {
+		if t, ok := p.cur(); ok && t.Kind == TokenIdent && !t.Quoted && strings.HasPrefix(t.Text, "@") {
+			p.i++
+		}
+	}
+	switch {
+	case p.atKeyword("AS"):
+		p.i++
+		if p.atIdentFold("OF") {
+			p.i++
+		}
+		bound()
+	case p.atKeyword("FROM"), p.atKeyword("BETWEEN"):
+		p.i++
+		bound()
+		if p.atIdentFold("TO") || p.atKeyword("AND") {
+			p.i++
+		}
+		bound()
+	case p.atIdentFold("CONTAINED"):
+		p.i++
+		if p.atKeyword("IN") {
+			p.i++
+		}
+		if p.at(TokenParenOpen) {
+			p.skipParenGroup()
+		}
+	case p.atKeyword("ALL"):
 		p.i++
 	}
-	if t, ok := p.cur(); ok && t.Kind == TokenIdent {
-		p.i++
-		return t.Text
-	}
-	return ""
 }
 
 // parseParenGroup walks the group at p.i and leaves p.i past its ')'. A group
@@ -616,8 +735,9 @@ func (p *queryParser) skipParenGroup() {
 }
 
 // tokenEnd is the offset just past t. A bracketed or double-quoted identifier
-// reports two runes short, since Text drops the delimiters; this only shifts an
-// unbounded query's End, which nothing compares against.
+// reports two runes short, since Text drops the delimiters (and one more per
+// doubled closing delimiter it collapses); this only shifts an unbounded
+// query's End, which nothing compares against.
 func tokenEnd(t Token) int {
 	switch t.Kind {
 	case TokenIdent, TokenKeyword:

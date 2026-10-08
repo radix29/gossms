@@ -409,11 +409,9 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					maxField.SetValue(strconv.FormatInt(current.maxSizeKB/1024, 10))
 				}
 			}
-			grid.OnSelectRow = func(row int) {
-				commitCurrent()
-				syncFieldsFromSelection()
-			}
-			syncFieldsFromSelection()
+			// wireGridEditor redraws after the commit, so the row moved off shows
+			// what Apply will send rather than its loaded values.
+			wireGridEditor(grid, databaseFileColumns, rowsFor, commitCurrent, syncFieldsFromSelection)
 
 			hint := propsheet.Hint()
 			var addBtn, removeBtn *widgets.Button

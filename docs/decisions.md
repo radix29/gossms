@@ -6,7 +6,7 @@ Work knowingly left undone is in `docs/open-threads.md`.
 
 ## Azure SQL Managed Instance
 
-Supported. Live gaps: `docs/open-threads.md` V2–V4.
+Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
 
 - **MI reports `ProductVersion` `12.0.2000.8`** while running engine 18.0, so
   every gosmo `colSince`/`VersionMajor` gate degrades or refuses features it
@@ -636,7 +636,7 @@ Peer credentials, easy to undo:
 
 ## Full-Text Search: what the writes leave out — settled, do not re-raise
 
-- **No population schedules** (phase 5 Q3). SSMS's per-index and per-catalog
+- **No population schedules** SSMS's per-index and per-catalog
   population schedules are SQL Agent jobs it writes for you; gossms starts,
   stops and follows populations from the table's Full-Text index menu, and a
   schedule is an Agent job anyone can make with New Job. No Schedules page on
@@ -667,7 +667,7 @@ Peer credentials, easy to undo:
 
 ## Replication: read-only — settled, do not re-raise
 
-- **Replication is browsed, never configured** (phase 5 item 26). No
+- **Replication is browsed, never configured**. No
   create/alter/drop of a distributor, publication, article or subscription; no
   reinitialize, no start/stop of an agent, no tracer tokens, no Generate
   Scripts. Publication Properties (General, Articles, Filter Rows, Snapshot,
@@ -677,7 +677,7 @@ Peer credentials, easy to undo:
   folder has Delete. Setting replication up is a script job (`sp_adddistributor`
   and friends, gosmo `testdata/replication/setup.sql` is an example); a wizard
   would need the agent accounts, snapshot share and security a terminal can't
-  check. Replication Monitor (W13) reads, too: no start/stop of an agent, no
+  check. Replication Monitor reads, too: no start/stop of an agent, no
   tracer tokens, no threshold changes, no reinitialize from the monitor.
 - **Replication Monitor reads through the procedures SSMS uses, never the
   `MS*` tables** (`sp_replmonitorhelp*`, `sp_MSenum_*`, `sp_MSget_repl_error`):
@@ -1315,6 +1315,21 @@ it from the string 'NULL'.
 
 ## By design — not issues, do not re-raise
 
+- **On a narrow terminal the main toolbar hides buttons; it never overlaps
+  the menu labels.** `Toolbar.SetBounds` takes `MenuBar.LabelsEnd()` as a
+  hard left limit and hides by `ToolbarButton.DropRank`, highest first:
+  Meta, Live, Act.Plan, Est.Plan, Activity Monitor, Execute Selection, New
+  Query, Stop — Execute last. Optional toggles go before the run controls
+  because every hidden button keeps a menu entry or key; a divider left
+  leading, trailing or doubled is hidden with them. All buttons show from
+  ~140 columns.
+- **A combining mark does not shift a row; a tmux capture only looks like
+  it.** Arabic stopwords ending in a shadda (`إنّ`, U+0651) seem to push the
+  grid's and dialog's right border one column, but tcell emits base and mark in
+  one cell write with no cursor move and tmux's cell grid keeps every separator
+  in the header's column; the shift is `capture-pane -p` text read by a viewer
+  that counts the mark as a column. `TestGridCombiningMarkKeepsSeparatorColumn`
+  pins the emitted bytes and separator columns.
 - **A query window's session is SSMS-like, with three deliberate
   differences.** A panel closed *mid-run* isn't asked about its transaction —
   the run is cancelled and the session ended (rollback), since its
@@ -1635,3 +1650,33 @@ succeeds, because it resolves the name within the job.
 Neither repo has, or should get, a top-level plan file. State and package map:
 `ARCHITECTURE.md`; unfinished work: `docs/open-threads.md`; shipped per tag:
 `CHANGELOG.md`; settled questions: here.
+
+## gosmo API reshaping (review plan Phase 5, 2026-10-08) — settled, do not re-raise
+
+- **One permission write: `ApplyPermission(ctx, verb, Securable, perm,
+  principal, opts)`**, `Server`'s for `SecurableServer` and `Database`'s for
+  every other class. The eighteen `Grant`/`Deny`/`Revoke…Permission` methods
+  and `User.Grant`/`Deny`/`Revoke` were deleted, not kept as wrappers. Each
+  class has its own allowlist, set by probing SQL Server 2016 and 2025 rather
+  than from the documentation, which is wrong three ways (a procedure takes
+  REFERENCES, a synonym ALTER, a view refuses VIEW CHANGE TRACKING). gossms
+  calls it through `securablePermApply`/`serverPermApply` (`perm_state.go`),
+  and a grid's permission list is `SecurableClass.PermissionNames()`.
+- **`ScriptDatabase` honours `Verb`**: DROP is a guarded `DROP DATABASE`
+  after `USE [master]`, and Script Database as offers CREATE, DROP and DROP
+  And CREATE. Its CREATE is still a name, a collation and two settings (`~/go/gosmo/OPEN-THREADS.md`
+  § Scripter fidelity: `ScriptDatabase`).
+- **A write is a method on its handle**: `Table.SetChangeTracking`/
+  `ChangeTracking`, and `AddSignature`/`DropSignature` on `StoredProcedure`,
+  `UserDefinedFunction` and `Trigger`. The `Database` forms were removed.
+
+## File modes: new files honour the umask — settled, do not re-raise
+
+- **A new file from `fileutil.WriteAtomic`/`CreateAtomic` gets `perm &^
+  umask`**, as `os.WriteFile` would; an existing file keeps its own mode,
+  capped at `perm` (`modeFor`). The explicit chmod after `CreateTemp` used to
+  bypass the umask, so under umask 077 every new script was 0644 (review plan
+  K14). The umask is probed once by creating a file at 0777
+  (`probeUmask`), not read with `syscall.Umask`: that is POSIX-only (a
+  `runtime.GOOS`/build-tag split) and sets the mask to read it, racing every
+  concurrent create. A failed probe means no mask, the old behaviour.

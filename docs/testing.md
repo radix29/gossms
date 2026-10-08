@@ -11,7 +11,13 @@ caught by driving the built binary. For TUI or database changes, run it:
   codes, to tell focused from selected). Send `Escape` in its **own**
   `send-keys` — batched, tcell reads `\x1b<key>` as Alt+key. Check focus by
   capture after each key rather than counting `Tab`s; capture full pane height
-  before concluding a dialog closed.
+  before concluding a dialog closed. Judge alignment by visual width
+  (combining marks 0, wide 2), not by how the captured text looks — a viewer
+  counting a combining mark as a column fakes a shifted border. tmux 3.6 also
+  disagrees with tcell on one emoji kind: it draws an emoji + skin-tone
+  modifier (`👍🏽`) four columns wide where tcell gives two, so what follows it
+  looks overwritten. `❤️`, flags, ZWJ sequences, CJK and combining marks agree
+  — test cluster alignment with those.
 - **Database** — a real SQL Server, not a mock (details not in the repo; ask).
   Create throwaway objects, exercise the real write, drop them — never mutate
   pre-existing ones.

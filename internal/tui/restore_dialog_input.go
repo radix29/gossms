@@ -115,6 +115,16 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		// return early — exactly the cases that would strand the latch.
 		d.drag.Release(ev)
 	}
+	// The open list is clamped to the screen, not the dialog, so it can reach
+	// past the dialog's edge: it is offered every event (wheel included) before
+	// ConsumeOutsideClick can discard one as "outside" — FilterDialog's order.
+	if d.mode == restoreModeForm && d.rbSource.Selected() == 1 {
+		if dd := d.openDropDown(); dd != nil && dd.HandleMouse(ev) {
+			d.focusTo(dd)
+			d.syncSourceState()
+			return true
+		}
+	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
@@ -151,18 +161,6 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 
 	histMode := d.rbSource.Selected() == 1
-
-	// An open dropdown's list is an overlay drawn last, so it gets first
-	// refusal of every click — ahead of ButtonClicked below, which would
-	// otherwise steal a click landing on an open list row that happens to
-	// visually overlap the button row.
-	if histMode {
-		if dd := d.openDropDown(); dd != nil && dd.HandleMouse(ev) {
-			d.focusTo(dd)
-			d.syncSourceState()
-			return true
-		}
-	}
 
 	if i := d.ButtonClicked(ev, restoreFormButtons); i >= 0 {
 		d.btnFocus = i

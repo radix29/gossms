@@ -21,11 +21,7 @@ import (
 // prop_page_requires_test.go's pagesThatOnlyRead.
 
 func findAssembly(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.Assembly, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.AssemblyByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).AssemblyByName)
 }
 
 func assemblyPropPages(sc *db.ServerConn, dbName, name string) []propPage {

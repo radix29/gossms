@@ -18,13 +18,17 @@ import (
 // by filegroup name, and folds them into groups.
 func filegroupsPageResponses() []fakeResponse {
 	fg := func(name string, isDefault, readOnly bool, file string, primary bool) []driver.Value {
-		return []driver.Value{name, gosmo.RowsFileGroup, isDefault, readOnly, file, `C:\data\` + file + ".ndf",
-			int64(204800), int64(-1), int64(8192), false, primary}
+		id := int64(3)
+		if primary {
+			id = 1
+		}
+		return []driver.Value{name, gosmo.RowsFileGroup, isDefault, readOnly, id, file, `C:\data\` + file + ".ndf",
+			"ROWS", "ONLINE", int64(204800), int64(-1), int64(8192), false}
 	}
 	return []fakeResponse{
 		{match: "compatibility_level, collation_name", cols: 10, rows: [][]driver.Value{{
 			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)}}},
-		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 11, rows: [][]driver.Value{
+		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 13, rows: [][]driver.Value{
 			fg("ARCHIVE", false, true, "appdb_archive", false),
 			fg("PRIMARY", true, false, "appdb", true),
 			fg("STAGING", false, false, "appdb_staging", false),

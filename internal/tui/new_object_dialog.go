@@ -112,39 +112,55 @@ type newObjectDialog[P any] struct {
 //
 // Shared by Add Replica and New Availability Group, which need an instance's
 // real endpoint URL before writing ADD REPLICA (a guessed one gives a replica
-// that never connects). Two easy-to-miss parts: the session-context snapshot is
-// compared again on delivery, so a result for a dialog since closed and
-// reopened is dropped, and the timeout derives from that context, so a
-// disconnect tears the probe down.
+// that never connects).
 func (d *newObjectDialog[P]) probeReplicaEndpoint(label, name string,
 	onOK func(peer *db.ServerConn, ep *gosmo.DatabaseMirroringEndpoint),
 	onErr func(error)) {
 
 	sc := d.sc
-	sessionCtx := d.ctx
 	d.SetMessage("Connecting to "+name+"...", false)
+	var peer *db.ServerConn
+	var ep *gosmo.DatabaseMirroringEndpoint
+	d.probe(label, func(ctx context.Context) error {
+		var err error
+		if peer, err = sc.Peer(ctx, name); err != nil {
+			return err
+		}
+		ep, err = replicaEndpoint(ctx, peer)
+		return err
+	}, func(err error) {
+		if err != nil {
+			if onErr != nil {
+				onErr(err)
+				return
+			}
+			d.SetMessage(err.Error(), true)
+			return
+		}
+		onOK(peer, ep)
+	})
+}
+
+// probe runs work — a round trip to another instance — on a background
+// goroutine and hands its error to onDone on the UI goroutine; work passes
+// anything else out through captured variables, which onDone may then read.
+//
+// Two easy-to-miss parts, and the reason every peer probe goes through here
+// (Add Replica, New Availability Group, New Endpoint's Add Instance): the
+// session-context snapshot is compared again on delivery, so a result for a
+// dialog since closed and reopened is dropped, and the propFetchTimeout
+// derives from that context, so a disconnect tears the probe down.
+func (d *newObjectDialog[P]) probe(label string, work func(ctx context.Context) error, onDone func(error)) {
+	sessionCtx := d.ctx
 	d.app.safego(label, func() {
 		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
-
-		peer, err := sc.Peer(ctx, name)
-		var ep *gosmo.DatabaseMirroringEndpoint
-		if err == nil {
-			ep, err = replicaEndpoint(ctx, peer)
-		}
+		err := work(ctx)
 		d.app.postAndWake(func() {
 			if d.ctx != sessionCtx {
 				return
 			}
-			if err != nil {
-				if onErr != nil {
-					onErr(err)
-					return
-				}
-				d.SetMessage(err.Error(), true)
-				return
-			}
-			onOK(peer, ep)
+			onDone(err)
 		})
 	})
 }

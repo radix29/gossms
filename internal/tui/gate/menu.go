@@ -101,28 +101,19 @@ func ItemOnAll(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object
 		// beats it. Read once here rather than in the predicate: the menu is
 		// rebuilt each time it opens, and Note is a string, not a callback.
 		if r, at, denied := DeniedOn(sc, dbName, schema, object, rights...); denied {
-			switch {
-			case at.Column != "":
-				item.Note = r.Name + " denied on column " + at.Column
-			case at.Schema != "":
-				item.Note = r.Name + " denied on schema " + at.Schema
-			case at.Database != "":
-				item.Note = r.Name + " denied on database " + at.Database
-			case at.Principal != "":
-				item.Note = r.DeniedOnPrincipal + " denied on principal " + at.Principal
-			case at.ServerSecurable != "":
-				item.Note = r.DeniedOnServer + " denied on " + serverSecurableWord(at.ServerKind) + " " + at.ServerSecurable
-			case at.AvailabilityGroup != "":
-				item.Note = r.DeniedOnAG + " denied on availability group " + at.AvailabilityGroup
-			default:
-				item.Note = r.Name + " denied on this object"
-			}
+			right, where := deniedPhrase(r, at)
+			item.Note = right + " denied on " + where
 		}
 		// And only when the rights are why it is disabled. An item its own
 		// predicate has already withheld — a failover offered on secondaries
 		// only — is grey for a reason this note does not describe, and naming
 		// a permission there sends the user after one they may already hold.
-		item.NoteWhen = func() bool { return (prev == nil || prev()) && !allowed() }
+		//
+		// prev alone decides: NoteWhen is consulted only while the item is
+		// disabled (MenuItem.showsNote), and with prev passing that already
+		// means allowed() said no. Asking it again re-ran the whole gate on
+		// every draw of every withheld item.
+		item.NoteWhen = func() bool { return prev == nil || prev() }
 	}
 	item.Enabled = func() bool {
 		if prev != nil && !prev() {

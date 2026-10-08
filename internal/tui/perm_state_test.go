@@ -40,7 +40,7 @@ func TestPermTransitionModifiers(t *testing.T) {
 	cases := []struct {
 		name       string
 		orig, want string
-		verb       string
+		verb       gosmo.PermissionVerb
 		opts       gosmo.PermissionOptions
 	}{
 		{"none to grant", permStateNone, permStateGrant, "GRANT", gosmo.PermissionOptions{}},
@@ -82,7 +82,7 @@ func TestGrantWithGrantDowngradeIsNotAReGrant(t *testing.T) {
 
 func TestApplyPermChangeSkipsNoOps(t *testing.T) {
 	calls := 0
-	apply := func(context.Context, string, gosmo.PermissionOptions, string, string) error {
+	apply := func(context.Context, gosmo.PermissionVerb, gosmo.PermissionOptions, string, string) error {
 		calls++
 		return nil
 	}

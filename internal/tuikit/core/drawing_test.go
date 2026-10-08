@@ -1,7 +1,12 @@
 package core
 
 import (
+	"fmt"
+	"slices"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/clipperhouse/displaywidth"
 
 	"github.com/gdamore/tcell/v3"
 )
@@ -172,3 +177,97 @@ func TestRuneStringIsStringOfRune(t *testing.T) {
 		t.Errorf("RuneString of a table rune allocated %v times, want 0", n)
 	}
 }
+
+// putLog is a tcell.Screen fake recording each Put as "x,y:str".
+type putLog struct {
+	tcell.Screen
+	puts []string
+}
+
+func (s *putLog) Put(x, y int, str string, _ tcell.Style) (string, int) {
+	s.puts = append(s.puts, fmt.Sprintf("%d,%d:%s", x, y, str))
+	return "", 1
+}
+
+// drawTextLineCases are cells chosen to land the cut on every kind of
+// grapheme: wide, combining, a ZWJ sequence, a line break, a tab.
+var drawTextLineCases = []string{
+	"", "a", "abc", "abcdef", "日本語テキスト", "a日b本c", "éééé",
+	"👨‍👩‍👧x👍🏽y", "line1\nline2", "a\r\nb\tc", "\t\t\t\t", "ab日", "abc日", "abcd日",
+	"x́", "́abc", "🇺🇸🇺🇸🇺🇸",
+}
+
+// TestDrawTextLineMatchesTruncateLine pins DrawTextLine to the composition
+// it replaces, Put for Put, at every width from 0 past each string's own.
+func TestDrawTextLineMatchesTruncateLine(t *testing.T) {
+	for _, text := range drawTextLineCases {
+		for w := 0; w <= DisplayWidth(text)+3; w++ {
+			want, got := &putLog{}, &putLog{}
+			DrawTextClipped(want, 2, 1, w, tcell.StyleDefault, TruncateLine(text, w))
+			DrawTextLine(got, 2, 1, w, tcell.StyleDefault, text)
+			if !slices.Equal(got.puts, want.puts) {
+				t.Errorf("DrawTextLine(%q, %d) = %v, want %v", text, w, got.puts, want.puts)
+			}
+		}
+	}
+}
+
+func FuzzDrawTextLineMatchesTruncateLine(f *testing.F) {
+	for _, text := range drawTextLineCases {
+		f.Add(text, 5)
+	}
+	f.Fuzz(func(t *testing.T, text string, w int) {
+		if w < -1 || w > 200 || !utf8.ValidString(text) {
+			t.Skip()
+		}
+		// TruncateLine maps a break to a space and the draw re-segments its
+		// output, so a mark or modifier after a break joins the space; it is
+		// the one place the two differ (TestDrawTextLineKeepsAMarkAfterABreakApart).
+		if graphemeCount(TruncateLine(text, 1<<30)) != graphemeCount(text) {
+			t.Skip()
+		}
+		want, got := &putLog{}, &putLog{}
+		DrawTextClipped(want, 0, 0, w, tcell.StyleDefault, TruncateLine(text, w))
+		DrawTextLine(got, 0, 0, w, tcell.StyleDefault, text)
+		if !slices.Equal(got.puts, want.puts) {
+			t.Errorf("DrawTextLine(%q, %d) = %v, want %v", text, w, got.puts, want.puts)
+		}
+	})
+}
+
+func graphemeCount(s string) int {
+	n := 0
+	for g := displaywidth.StringGraphemes(s); g.Next(); {
+		n++
+	}
+	return n
+}
+
+// TestDrawTextLineKeepsAMarkAfterABreakApart is where DrawTextLine and the
+// TruncateLine composition differ, on purpose: a skin-tone modifier after a
+// line break. Re-segmented after the break becomes a space, the modifier
+// joined it and drew as one cell; DrawTextLine segments the cell once, so the
+// space stays a space and the modifier draws as itself.
+func TestDrawTextLineKeepsAMarkAfterABreakApart(t *testing.T) {
+	s := &putLog{}
+	DrawTextLine(s, 0, 0, 10, tcell.StyleDefault, "a\r🏽b")
+	want := []string{"0,0:a", "1,0: ", "2,0:🏽", "4,0:b"}
+	if !slices.Equal(s.puts, want) {
+		t.Errorf("puts = %v, want %v", s.puts, want)
+	}
+}
+
+func TestDrawTextLineDoesNotAllocate(t *testing.T) {
+	text := "a long cell value\nwith a line break that is clipped"
+	if n := testing.AllocsPerRun(100, func() {
+		DrawTextLine(quietScreen{}, 0, 0, 12, tcell.StyleDefault, text)
+	}); n != 0 {
+		t.Errorf("DrawTextLine allocated %v times per call, want 0", n)
+	}
+}
+
+// quietScreen is a tcell.Screen fake whose Put records nothing, so an
+// allocation count is the drawing code's alone.
+type quietScreen struct{ tcell.Screen }
+
+func (quietScreen) Put(int, int, string, tcell.Style) (string, int) { return "", 1 }

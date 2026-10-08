@@ -26,8 +26,12 @@ const (
 
 type Token struct {
 	Kind  TokenKind
-	Text  string // TokenIdent: unwrapped name; TokenKeyword: uppercased
+	Text  string // TokenIdent: unwrapped, unescaped name; TokenKeyword: uppercased
 	Start int    // rune offset into the flattened buffer
+
+	// Quoted marks a [bracketed] or "quoted" identifier. Its Text can spell a
+	// reserved word ("[FOR]") that is still a name, never the clause word.
+	Quoted bool
 }
 
 // LexState is the lexer's mode at the end of a scan: sqltext.Mode under the
@@ -233,7 +237,9 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, tokens *[]Token, g
 				quoteStart = t.Start
 				break
 			}
-			emitIdent(t.Start, t.Start+1, t.End-1)
+			if tokens != nil {
+				*tokens = append(*tokens, Token{Kind: TokenIdent, Text: unquoteIdent(buf[t.Start+1:t.End-1], buf[t.End-1]), Start: t.Start, Quoted: true})
+			}
 		case sqltext.KindWord:
 			if buf[t.Start] == '#' || buf[t.Start] == '@' {
 				// A temp table (#t, ##t), variable or table variable (@t), or built-in global
@@ -286,6 +292,27 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, tokens *[]Token, g
 		return lexResult{st.Mode, upTo, quoteStart, firstGo, lastGo}
 	}
 	return lexResult{st.Mode, semiStart, quoteStart, firstGo, lastGo}
+}
+
+// unquoteIdent is a quoted identifier's body with each doubled closing
+// delimiter ("]]" in [a]]b], `""` in "a""b") collapsed to one, which is the
+// name the catalog holds.
+func unquoteIdent(body []rune, closer rune) string {
+	i := 0
+	for i < len(body) && body[i] != closer {
+		i++
+	}
+	if i == len(body) {
+		return string(body)
+	}
+	out := make([]rune, 0, len(body)-1)
+	for i = 0; i < len(body); i++ {
+		out = append(out, body[i])
+		if body[i] == closer && i+1 < len(body) && body[i+1] == closer {
+			i++
+		}
+	}
+	return string(out)
 }
 
 // PrefixScan is everything the query editor's completion provider needs to

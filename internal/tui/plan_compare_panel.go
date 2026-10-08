@@ -55,7 +55,7 @@ type PlanComparePanel struct {
 	// pcPickB). The row is there only when either plan has a statement to
 	// choose (toolRect.H == 1): a Query Store plan is one statement, and a row
 	// holding two selectors with nothing to select would be a row of nothing.
-	pickers  []toolButton
+	pickers  controls.ToolRow
 	toolRect core.Rect
 
 	diffs []showplan.NodeDiff
@@ -115,10 +115,10 @@ func NewPlanComparePanel(app *App, title string, a, b *showplan.Plan) *PlanCompa
 		ops:   newQSGrid(app),
 		split: layout.NewHorizontalSplitter("─── Operators ─── (drag or Ctrl+Up/Down to resize)"),
 	})
-	p.pickers = []toolButton{
-		{action: func() { p.showStatementMenu(pcPickA) }},
-		{action: func() { p.showStatementMenu(pcPickB) }},
-	}
+	p.pickers = controls.ToolRow{NoOverflow: true, Cells: []controls.ToolCell{
+		{Action: func() { p.showStatementMenu(pcPickA) }},
+		{Action: func() { p.showStatementMenu(pcPickB) }},
+	}}
 	p.ops.OnMenuItems = p.operatorMenuItems
 	p.split.SetRatio(0.4)
 	p.compare()
@@ -186,7 +186,7 @@ func statementCount(p *showplan.Plan) int {
 // toolbar without opening either menu.
 //
 // Each label is cut to half the row. A toolbar cell that does not fit is not
-// drawn at all (layoutToolButtons), so a long statement on A would otherwise
+// drawn at all (ToolRow.NoOverflow), so a long statement on A would otherwise
 // take B's picker off the row — and the mouse route to B with it.
 func (p *PlanComparePanel) refreshPickerLabels() {
 	limit := (p.toolRect.W-6)/2 - core.DisplayWidth(" ▾")
@@ -199,7 +199,7 @@ func (p *PlanComparePanel) refreshPickerLabels() {
 		if p.toolRect.H == 1 {
 			label = core.Truncate(label, max(limit, 1))
 		}
-		p.pickers[i].label = label + " ▾"
+		p.pickers.Cells[i].Label = label + " ▾"
 	}
 	p.layoutPickers()
 }
@@ -240,13 +240,13 @@ func (p *PlanComparePanel) runPicker(i int) {
 		p.app.setStatus(fmt.Sprintf("Plan %s has only the one statement", []string{"A", "B"}[i]))
 		return
 	}
-	p.pickers[i].action()
+	p.pickers.Cells[i].Action()
 }
 
 // showStatementMenu pops picker i's statement list under its cell.
 func (p *PlanComparePanel) showStatementMenu(i int) {
 	plan, idx := p.side(i)
-	r := p.pickers[i].rect
+	r := p.pickers.Cells[i].Rect
 	if r.IsZero() {
 		r = core.Rect{X: p.rect.X, Y: p.rect.Y}
 	}
@@ -459,13 +459,7 @@ func (p *PlanComparePanel) SetBounds(x, y, w, h int) {
 // change makes, and never in Draw, since a click is hit-tested against these
 // rects.
 func (p *PlanComparePanel) layoutPickers() {
-	if p.toolRect.H != 1 {
-		for i := range p.pickers {
-			p.pickers[i].rect = core.Rect{}
-		}
-		return
-	}
-	layoutToolButtons(p.pickers, p.toolRect, "")
+	p.pickers.Layout(p.toolRect, "")
 }
 
 func (p *PlanComparePanel) layoutChildren() {
@@ -502,16 +496,16 @@ func (p *PlanComparePanel) drawPickers(s tcell.Screen) {
 		return
 	}
 	core.FillRect(s, p.toolRect, ' ', theme.StyleMenuBar())
-	for i, t := range p.pickers {
-		if t.rect.IsZero() {
+	for i, t := range p.pickers.Cells {
+		if t.Rect.IsZero() {
 			continue
 		}
 		style := theme.StyleTooltip()
 		if plan, _ := p.side(i); statementCount(plan) < 2 {
 			style = style.Foreground(theme.Active().TextDim)
 		}
-		core.FillRect(s, t.rect, ' ', style)
-		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
+		core.FillRect(s, t.Rect, ' ', style)
+		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
 	}
 }
 
@@ -611,7 +605,7 @@ func (p *PlanComparePanel) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	if _, my := ev.Position(); ev.Buttons() == tcell.Button1 && p.toolRect.H == 1 && my == p.toolRect.Y {
-		if i := toolButtonAt(p.pickers, mx, my); i >= 0 {
+		if i := p.pickers.CellAt(mx, my); i >= 0 {
 			p.runPicker(i)
 		}
 		p.armDrag(ev, pcZoneToolbar)

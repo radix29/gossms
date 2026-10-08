@@ -16,7 +16,13 @@ type QueryListDialog struct {
 	titles  []string
 	sel     int
 	scroll  int
+	// btnFocus is the focused button, moved by Tab/Backtab and Left/Right
+	// and pressed by Enter, as UpdateDialog's.
+	btnFocus int
 }
+
+// queryListDialogButtons is the button row, in order; the first is the default.
+var queryListDialogButtons = []string{"Switch To", "Close"}
 
 // NewQueryListDialog creates the dialog.
 func NewQueryListDialog(app *App) *QueryListDialog {
@@ -46,6 +52,7 @@ func (d *QueryListDialog) Show() {
 	}
 	d.sel = 0
 	d.scroll = 0
+	d.btnFocus = 0
 	d.ModalDialog.Show()
 }
 
@@ -57,7 +64,7 @@ func (d *QueryListDialog) Draw(s tcell.Screen) {
 	d.DrawBase(s)
 	p := theme.Active()
 	inner := d.InnerRect()
-	dataH := inner.H - 2 // leave room for the button row
+	dataH := d.dataH()
 
 	if len(d.titles) == 0 {
 		msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
@@ -82,7 +89,7 @@ func (d *QueryListDialog) Draw(s tcell.Screen) {
 		d.DrawContentScrollbar(s, inner.Y+1, dataH, len(d.titles), d.scroll)
 	}
 
-	d.DrawButtons(s, []string{"Switch To", "Close"}, 0)
+	d.DrawButtons(s, queryListDialogButtons, d.btnFocus)
 }
 
 // HandleKey processes keyboard events.
@@ -90,7 +97,7 @@ func (d *QueryListDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	dataH := d.InnerRect().H - 2
+	dataH := d.dataH()
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		d.Hide()
@@ -105,9 +112,24 @@ func (d *QueryListDialog) HandleKey(ev *tcell.EventKey) bool {
 			d.ensureVisible(dataH)
 		}
 	case tcell.KeyEnter:
-		d.activate()
+		d.press()
+	case tcell.KeyTab, tcell.KeyRight:
+		d.btnFocus = (d.btnFocus + 1) % len(queryListDialogButtons)
+	case tcell.KeyBacktab, tcell.KeyLeft:
+		d.btnFocus = (d.btnFocus - 1 + len(queryListDialogButtons)) % len(queryListDialogButtons)
+	default:
+		return false
 	}
 	return true
+}
+
+// press runs the focused button.
+func (d *QueryListDialog) press() {
+	if d.btnFocus == 0 {
+		d.activate()
+	} else {
+		d.Hide()
+	}
 }
 
 // HandleMouse processes mouse events.
@@ -118,16 +140,13 @@ func (d *QueryListDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	if i := d.ButtonClicked(ev, []string{"Switch To", "Close"}); i >= 0 {
-		if i == 0 {
-			d.activate()
-		} else {
-			d.Hide()
-		}
+	if i := d.ButtonClicked(ev, queryListDialogButtons); i >= 0 {
+		d.btnFocus = i
+		d.press()
 		return true
 	}
 	inner := d.InnerRect()
-	dataH := inner.H - 2
+	dataH := d.dataH()
 	if d.ScrollbarDrag(ev, d.Rect().Right()-1, inner.Y+1, dataH, len(d.titles), &d.scroll) {
 		return true
 	}
@@ -147,6 +166,12 @@ func (d *QueryListDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	return true
 }
+
+// dataH is the number of query rows drawn: those between the top padding row
+// and the button row (ButtonRowY). It was InnerRect().H-2, one too many, so the
+// button row overdrew the last row and the final query of a full list could
+// never be scrolled into view (as HelpDialog.dataH).
+func (d *QueryListDialog) dataH() int { return d.ButtonRowY() - d.InnerRect().Y - 1 }
 
 func (d *QueryListDialog) ensureVisible(dataH int) {
 	d.scroll = scrollToShow(d.sel, d.scroll, dataH)

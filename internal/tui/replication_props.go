@@ -13,7 +13,7 @@ import (
 )
 
 // replication_props.go is the read-only Properties for a publication and a
-// local subscription (docs/phase5-plan.md § 26): the pages SSMS's Publication
+// local subscription: the pages SSMS's Publication
 // and Subscription Properties have, every one showing and none writing.
 // Replication is browsed here, never configured — no create, alter or drop,
 // no reinitialize, no agent start/stop (docs/decisions.md § Replication) — so
@@ -24,11 +24,7 @@ import (
 
 // findPublication resolves a publication by database and name, of either kind.
 func findPublication(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.Publication, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.PublicationByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).PublicationByName)
 }
 
 // findLocalSubscription resolves the subscription dbName holds to publisher's

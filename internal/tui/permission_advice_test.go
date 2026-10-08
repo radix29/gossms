@@ -246,6 +246,15 @@ func TestWithPermissionAdviceAddsToTheFailureRatherThanReplacingIt(t *testing.T)
 		t.Errorf("advice not appended: %q", got)
 	}
 
+	// The chain survives: errors.Is and gosmo.AsSQLError still reach the
+	// server's error through the advice.
+	if !errors.Is(withPermissionAdvice(wrapped), wrapped) {
+		t.Error("advice dropped the error chain")
+	}
+	if _, ok := gosmo.AsSQLError(withPermissionAdvice(wrapped)); !ok {
+		t.Error("gosmo.AsSQLError no longer finds the server's error")
+	}
+
 	// Idempotent: reporting the same error twice must not stack the sentence.
 	if once, twice := got, withPermissionAdvice(withPermissionAdvice(wrapped)).Error(); once != twice {
 		t.Errorf("advice appended twice:\n  %q\n  %q", once, twice)

@@ -54,7 +54,7 @@ type recorder struct {
 }
 
 func (r *recorder) fn() permApplyFn {
-	return func(_ context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error {
+	return func(_ context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
 		s := fmt.Sprintf("%s %s -> %s%s", verb, permission, principal, modifiers(opts))
 		if r.failOn != "" && principal == r.failOn {
 			r.err = errors.New("boom")

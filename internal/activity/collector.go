@@ -13,7 +13,7 @@ import (
 var ErrNoPermission = errors.New("VIEW SERVER STATE permission is required to read activity")
 
 // collectorState is touched only by the collector's goroutine; rate and pause
-// changes arrive as functions on the control channel.
+// changes arrive through pending (see collector.pending).
 type collectorState struct {
 	rate   time.Duration
 	paused bool
@@ -67,13 +67,28 @@ type collector[S, Snap any] struct {
 	onSample func(S)
 	onError  func(error)
 
-	control chan func(*collectorState)
+	// pending holds the latest SetRate/SetPaused not yet taken by Run, and
+	// changed (one slot, sent to without blocking) says there is some. A
+	// burst of toolbar clicks coalesces into the newest values instead of
+	// queueing: a queue drained only between probes filled during a stalled
+	// DMV read, and the next click then blocked the UI goroutine until the
+	// read returned.
+	mu      sync.Mutex
+	pending pendingState
+	changed chan struct{}
+
 	stop    chan struct{}
 	stopped sync.Once
 }
 
-// newCollector builds the shared half. control's buffer absorbs bursts of
-// toolbar clicks without blocking the UI goroutine.
+// pendingState is the changes asked for since Run last looked; nil leaves
+// that part of the state alone.
+type pendingState struct {
+	rate   *time.Duration
+	paused *bool
+}
+
+// newCollector builds the shared half.
 func newCollector[S, Snap any](src Source,
 	probe func(context.Context, Source) (*Snap, error),
 	derive func(prev, cur *Snap) S,
@@ -84,7 +99,7 @@ func newCollector[S, Snap any](src Source,
 		derive:   derive,
 		onSample: onSample,
 		onError:  onError,
-		control:  make(chan func(*collectorState), 8),
+		changed:  make(chan struct{}, 1),
 		stop:     make(chan struct{}),
 	}
 }
@@ -96,10 +111,8 @@ func newCollector[S, Snap any](src Source,
 // collector reports ErrNoPermission and stops rather than draw an idle-looking
 // server.
 //
-// Run stops itself on exit so send's `case <-c.stop` works; otherwise
-// SetRate/SetPaused on the UI goroutine would block once control's buffer
-// fills. Exits are silent except the error one, so callers learn from Run
-// returning.
+// SetRate/SetPaused never block, running or not (see pending). Exits are
+// silent except the error one, so callers learn from Run returning.
 //
 // Failed probes don't end the run, but consecutive failures back off the
 // interval (see backoff); the first success resets it.
@@ -157,11 +170,19 @@ func (c *collector[S, Snap]) Run(ctx context.Context, rate time.Duration) {
 			return
 		case <-c.stop:
 			return
-		case apply := <-c.control:
+		case <-c.changed:
 			// A rate change doesn't clear backoff; Retry starts a new
 			// collector.
-			apply(&state)
-			state.rate = normalizeRate(state.rate)
+			c.mu.Lock()
+			p := c.pending
+			c.pending = pendingState{}
+			c.mu.Unlock()
+			if p.rate != nil {
+				state.rate = normalizeRate(*p.rate)
+			}
+			if p.paused != nil {
+				state.paused = *p.paused
+			}
 			retune()
 		case <-ticker.C:
 			if !state.paused {
@@ -175,13 +196,19 @@ func (c *collector[S, Snap]) Run(ctx context.Context, rate time.Duration) {
 // SetRate changes the interval from the next tick; non-positive falls back to
 // defaultRate. Safe from any goroutine.
 func (c *collector[S, Snap]) SetRate(d time.Duration) {
-	c.send(func(s *collectorState) { s.rate = d })
+	c.mu.Lock()
+	c.pending.rate = &d
+	c.mu.Unlock()
+	c.signal()
 }
 
 // SetPaused stops or resumes collection, keeping what's been collected. Safe
 // from any goroutine.
 func (c *collector[S, Snap]) SetPaused(v bool) {
-	c.send(func(s *collectorState) { s.paused = v })
+	c.mu.Lock()
+	c.pending.paused = &v
+	c.mu.Unlock()
+	c.signal()
 }
 
 // Stop ends the collector. Idempotent, and safe to call from any goroutine.
@@ -189,12 +216,12 @@ func (c *collector[S, Snap]) Stop() {
 	c.stopped.Do(func() { close(c.stop) })
 }
 
-// send queues a state change, dropping it if the collector has stopped rather
-// than block the UI goroutine.
-func (c *collector[S, Snap]) send(apply func(*collectorState)) {
+// signal tells Run there is a pending change. Never blocks: a full slot
+// already says so, and Run reads every pending value when it takes it.
+func (c *collector[S, Snap]) signal() {
 	select {
-	case c.control <- apply:
-	case <-c.stop:
+	case c.changed <- struct{}{}:
+	default:
 	}
 }
 

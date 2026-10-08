@@ -317,7 +317,7 @@ func newScheduleResponses() []fakeResponse {
 		// As in newAlertResponses: the Jobs page resolves each job it attaches
 		// to by name, and behind the list answer every one of them would come
 		// back as whichever job sorts first.
-		{match: "WHERE  j.name = @p1", arg: agentJobName, cols: 17, rows: [][]driver.Value{
+		{match: "WHERE  j.name = @p1", arg: agentJobName, cols: jobCols, rows: [][]driver.Value{
 			jobRow(agentJobName, "Database Maintenance", "sa", true, 0, 0, ""),
 		}},
 	}
@@ -437,7 +437,7 @@ func newJobResponses() []fakeResponse {
 	newJob := jobRow(newJobName, "Replication", "otheruser", true, 0, 0, "")
 	rs := []fakeResponse{
 		jobStepReadBack,
-		{match: "WHERE  j.name = @p1", arg: newJobName, cols: 17, rows: [][]driver.Value{newJob}},
+		{match: "WHERE  j.name = @p1", arg: newJobName, cols: jobCols, rows: [][]driver.Value{newJob}},
 	}
 	rs = append(rs, agentJobResponses(jobRow(agentJobName, "Database Maintenance", "sa", true, 0, 0, ""))...)
 	rs = append(rs, loginListResponse(), agentCategoryResponse(), agentDatabaseListResponse())

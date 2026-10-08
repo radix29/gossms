@@ -254,10 +254,9 @@ var (
 // scriptables is the per-type table. Verb order follows SSMS: CREATE, ALTER,
 // DROP, DROP And CREATE, then the DML templates.
 var scriptables = map[NodeType]scriptable{
-	// A database scripts only as CREATE: gosmo's ScriptDatabase emits the CREATE
-	// plus its recovery/compatibility settings and has no DROP form (dropping a
-	// database from a script is Delete's job).
-	NodeDatabase: {"Database", []scriptVerb{{"CREATE To", ddl(gosmo.ScriptCreate, scriptDB)}}},
+	// A database has no ALTER that restates it. Its CREATE carries the
+	// collation, recovery model and compatibility level only, not the files.
+	NodeDatabase: {"Database", ddlVerbs(scriptDB, false)},
 
 	NodeTable: {"Table", append(ddlVerbs(scriptTable, false), rowVerbs...)},
 	NodeView:  {"View", append(ddlVerbs(scriptView, true), rowVerbs...)},

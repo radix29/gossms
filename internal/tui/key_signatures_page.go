@@ -66,6 +66,26 @@ func moduleTypeText(typeDesc string) string {
 	return typeDesc
 }
 
+// moduleSigner is what gosmo signs and unsigns: a procedure, function or DML
+// trigger handle.
+type moduleSigner interface {
+	AddSignature(ctx context.Context, by gosmo.Signer, counter bool) error
+	DropSignature(ctx context.Context, by gosmo.Signer, counter bool) error
+}
+
+// signableRef returns the handle for the module e names, picked by its
+// sys.objects type_desc (SQL_ or CLR_, which sign alike).
+func (e *keySignatureEdit) signableRef(d *gosmo.Database) moduleSigner {
+	switch {
+	case strings.HasSuffix(e.typ, "_STORED_PROCEDURE"):
+		return d.StoredProcedureRef(e.schema, e.module)
+	case strings.HasSuffix(e.typ, "_TRIGGER"):
+		return d.TriggerRef(e.schema, e.module)
+	default:
+		return d.UserDefinedFunctionRef(e.schema, e.module)
+	}
+}
+
 // keySigner is what the page needs to know about its own signer.
 type keySigner struct {
 	kind gosmo.SignerKind
@@ -237,7 +257,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 		signer := gosmo.Signer{Kind: s.kind, Name: s.name}
 		for _, e := range edits.all() {
 			if e.removing {
-				if err := ref.DropSignature(ctx, e.schema, e.module, signer, e.counter); err != nil {
+				if err := e.signableRef(ref).DropSignature(ctx, signer, e.counter); err != nil {
 					return err
 				}
 			}
@@ -252,7 +272,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 			if byPassword {
 				signer.Password = passField.Value()
 			}
-			if err := ref.AddSignature(ctx, e.schema, e.module, signer, false); err != nil {
+			if err := e.signableRef(ref).AddSignature(ctx, signer, false); err != nil {
 				return err
 			}
 		}

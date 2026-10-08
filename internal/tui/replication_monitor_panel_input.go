@@ -95,9 +95,9 @@ func (p *ReplicationMonitorPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 	}
 	if ev.Buttons() == tcell.Button1 && p.toolRect.H == 1 && my == p.toolRect.Y {
-		if p.more.rect.Contains(mx, my) {
-			p.popMenuAt(p.more.rect, toolOverflowItems(p.tools, p.hidden, p.toolDisabled, p.toolReason, p.runTool))
-		} else if i := toolButtonAt(p.tools, mx, my); i >= 0 {
+		if p.tools.More.Rect.Contains(mx, my) {
+			p.popMenuAt(p.tools.More.Rect, p.tools.OverflowItems(p.toolDisabled, p.toolReason, p.runTool))
+		} else if i := p.tools.CellAt(mx, my); i >= 0 {
 			p.runTool(i)
 		}
 		p.armDrag(ev, rmZoneToolbar)

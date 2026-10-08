@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
@@ -17,7 +18,7 @@ import (
 // W19: the full-text pages that write, and the four New dialogs. The
 // harness shows each page asked the right things and built the right
 // statements; the statements' text is gosmo's tests, and acceptance was a
-// live run (docs/phase5-plan.md § W19).
+// live run.
 
 // ftLanguagesResps answers FullTextInfo with three languages, English first
 // in the list only by name order as the server gives them.
@@ -472,6 +473,107 @@ func TestNewSearchPropertyListCopy(t *testing.T) {
 	editText(t, d.forms[0], "List name", "p2")
 	editRadio(t, d.forms[0], "Start from", "An existing list")
 	want := []string{"CREATE SEARCH PROPERTY LIST [p2] FROM [doc_props];"}
+	if got := scriptRun(t, &d.newObjectDialog); !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// newCopyTestStoplistDialog is a New Full-Text Stoplist dialog over sc, as
+// show would build it for AppDB, with OtherDB and Locked to copy from.
+func newCopyTestStoplistDialog(t *testing.T, sc *db.ServerConn) (*NewFullTextStoplistDialog, *App) {
+	t.Helper()
+	a := newTestApp()
+	d := &NewFullTextStoplistDialog{}
+	d.app, d.ctx, d.sc, d.dbName = a, context.Background(), sc, "AppDB"
+	d.forms = make([]*propsheet.Form, 1)
+	d.applyFns = make([]propApply, 1)
+	d.buildPages(&nftStoplistPrefetch{existingNames: newNameSet(""), stoplists: []string{"legal_words"},
+		owners: []string{fullTextDefaultOwner}, databases: []string{"AppDB", "OtherDB", "Locked"}})
+	editText(t, d.forms[0], "Stoplist name", "s2")
+	editRadio(t, d.forms[0], "Start from", "An existing stoplist")
+	return d, a
+}
+
+// N1: another database's stoplists are read when it is chosen, once, and the
+// copy names that database; going back to the dialog's own reads nothing.
+func TestNewFullTextStoplistCopiesFromAnotherDatabase(t *testing.T) {
+	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	sc, inst := newFakeConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
+		fakeResponse{match: ftStoplistsRead, db: "OtherDB", cols: 5, rows: [][]driver.Value{
+			{int64(3), "a_list", "dbo", created, created},
+			{int64(4), "other_words", "dbo", created, created},
+		}})...)
+	d, a := newCopyTestStoplistDialog(t, sc)
+	f := d.forms[0]
+
+	editSelect(t, f, "Copy from database", "OtherDB")
+	if err := d.preflight(); err == nil || !strings.Contains(err.Error(), "still reading") {
+		t.Errorf("preflight while reading = %v, want a still-reading refusal", err)
+	}
+	list := selectRow(t, f, "Existing stoplist")
+	drainUntil(t, a, func() bool { return len(list.Items()) == 2 }, "OtherDB's stoplists")
+	editSelect(t, f, "Existing stoplist", "other_words")
+	want := []string{"CREATE FULLTEXT STOPLIST [s2] FROM [OtherDB].[other_words];"}
+	if got := scriptRun(t, &d.newObjectDialog); !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	// Back to the original choice, so not dirty: editSelect would object.
+	selectRow(t, f, "Copy from database").Edit(0)
+	if got := list.Items(); !slices.Equal(got, []string{"legal_words"}) {
+		t.Errorf("AppDB's lists = %q, want the prefetch's", got)
+	}
+	want = []string{"CREATE FULLTEXT STOPLIST [s2] FROM [legal_words];"}
+	if got := scriptRun(t, &d.newObjectDialog); !slices.Equal(got, want) {
+		t.Errorf("back home: got %q, want %q", got, want)
+	}
+	editSelect(t, f, "Copy from database", "OtherDB")
+	if got := list.Items(); !slices.Equal(got, []string{"a_list", "other_words"}) {
+		t.Errorf("OtherDB again = %q, want its lists from the first read", got)
+	}
+	if n := len(inst.Reads(ftStoplistsRead)); n != 1 {
+		t.Errorf("%d stoplist reads, want one (OtherDB's, once)", n)
+	}
+}
+
+// A database the login cannot open says so, and reads nothing past the probe.
+func TestNewFullTextStoplistCopyFromAnInaccessibleDatabase(t *testing.T) {
+	sc, inst := newFakeConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
+	d, a := newCopyTestStoplistDialog(t, sc)
+	editSelect(t, d.forms[0], "Copy from database", "Locked")
+	drainUntil(t, a, func() bool { return d.preflight() != nil && !strings.Contains(d.preflight().Error(), "still reading") },
+		"Locked's access probe")
+	if err := d.preflight(); !strings.Contains(err.Error(), "CONNECT permission on Locked") {
+		t.Errorf("preflight = %v, want the CONNECT reason", err)
+	}
+	if n := len(inst.Reads(ftStoplistsRead)); n != 0 {
+		t.Errorf("%d stoplist reads of an inaccessible database, want none", n)
+	}
+}
+
+func TestNewSearchPropertyListCopiesFromAnotherDatabase(t *testing.T) {
+	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	sc, _ := newFakeConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
+		fakeResponse{match: ftPropListsRead, db: "OtherDB", cols: 5, rows: [][]driver.Value{
+			{int64(2), "their_props", "dbo", created, created},
+		}})...)
+	a := newTestApp()
+	d := &NewSearchPropertyListDialog{}
+	d.app, d.ctx, d.sc, d.dbName = a, context.Background(), sc, "AppDB"
+	d.forms = make([]*propsheet.Form, 1)
+	d.applyFns = make([]propApply, 1)
+	d.buildPages(&nftPropertyListPrefetch{existingNames: newNameSet(""),
+		owners: []string{fullTextDefaultOwner}, databases: []string{"AppDB", "OtherDB"}})
+	f := d.forms[0]
+	editText(t, f, "List name", "p2")
+	editRadio(t, f, "Start from", "An existing list")
+	if err := d.preflight(); err == nil || !strings.Contains(err.Error(), "no search property list in this database is visible to this login") {
+		t.Errorf("empty home preflight = %v", err)
+	}
+	editSelect(t, f, "Copy from database", "OtherDB")
+	list := selectRow(t, f, "Existing list")
+	drainUntil(t, a, func() bool { return len(list.Items()) == 1 }, "OtherDB's lists")
+	want := []string{"CREATE SEARCH PROPERTY LIST [p2] FROM [OtherDB].[their_props];"}
 	if got := scriptRun(t, &d.newObjectDialog); !slices.Equal(got, want) {
 		t.Errorf("got %q, want %q", got, want)
 	}

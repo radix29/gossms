@@ -214,14 +214,14 @@ script "SELECT [a]]b] FROM T"
 0,10 normal batch=0 quote=- | kw:"SELECT"@0 id:"a"@7
 0,11 bracket batch=0 quote=7 | kw:"SELECT"@0
 0,12 bracket batch=0 quote=7 | kw:"SELECT"@0
-0,13 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]]b"@7
-0,14 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]]b"@7
-0,15 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]]b"@7 id:"F"@14
-0,16 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]]b"@7 id:"FR"@14
-0,17 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]]b"@7 id:"FRO"@14
-0,18 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]]b"@7 kw:"FROM"@14
-0,19 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]]b"@7 kw:"FROM"@14
-0,20 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]]b"@7 kw:"FROM"@14 id:"T"@19
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]b"@7
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]b"@7
+0,15 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]b"@7 id:"F"@14
+0,16 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]b"@7 id:"FR"@14
+0,17 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]b"@7 id:"FRO"@14
+0,18 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]b"@7 kw:"FROM"@14
+0,19 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]b"@7 kw:"FROM"@14
+0,20 normal batch=0 quote=- | kw:"SELECT"@0 id:"a]b"@7 kw:"FROM"@14 id:"T"@19
 
 == escaped doublequote
 script "SELECT \"a\"\"b\" FROM T"
@@ -238,14 +238,14 @@ script "SELECT \"a\"\"b\" FROM T"
 0,10 normal batch=0 quote=- | kw:"SELECT"@0 id:"a"@7
 0,11 doublequote batch=0 quote=7 | kw:"SELECT"@0
 0,12 doublequote batch=0 quote=7 | kw:"SELECT"@0
-0,13 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"\"b"@7
-0,14 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"\"b"@7
-0,15 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"\"b"@7 id:"F"@14
-0,16 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"\"b"@7 id:"FR"@14
-0,17 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"\"b"@7 id:"FRO"@14
-0,18 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"\"b"@7 kw:"FROM"@14
-0,19 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"\"b"@7 kw:"FROM"@14
-0,20 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"\"b"@7 kw:"FROM"@14 id:"T"@19
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"b"@7
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"b"@7
+0,15 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"b"@7 id:"F"@14
+0,16 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"b"@7 id:"FR"@14
+0,17 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"b"@7 id:"FRO"@14
+0,18 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"b"@7 kw:"FROM"@14
+0,19 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"b"@7 kw:"FROM"@14
+0,20 normal batch=0 quote=- | kw:"SELECT"@0 id:"a\"b"@7 kw:"FROM"@14 id:"T"@19
 
 == escaped quote
 script "SELECT 'it''s' FROM T"
@@ -1740,8 +1740,8 @@ c46ead117004498e bare sigils
 de0a28388fd5e914 consecutive semicolon
 51a1bc46948677fd double quote spans go line
 e2e1f55f81c02875 empty
-06b94a2ffbc8acdc escaped bracket
-9e3b637d4502101f escaped doublequote
+7a5c823be2cc92f0 escaped bracket
+7cd58160004981f8 escaped doublequote
 525814170fa6771a escaped quote
 545abdef43ce70c6 global temp table
 f8fad5e2ef15c44f go casing and spacing

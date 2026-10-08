@@ -90,9 +90,14 @@ behind the mouse and async rules.
   `gate`; `TestEveryWriteMenuItemIsGated` enforces it, and its exemption list
   says why for deliberate exceptions.
 - **A disabled control keeps its place in the focus ring.** `Button`,
-  `CheckBox`, `RadioBox`, `InputField` share `SetEnabled`/`Enabled`: still
-  drawn greyed (`theme.StyleControlDisabled`; `StyleButtonDisabled` for
+  `CheckBox`, `RadioBox`, `InputField`, `DropDown` share `SetEnabled`/`Enabled`:
+  still drawn greyed (`theme.StyleControlDisabled`; `StyleButtonDisabled` for
   buttons), refusing input, but not removed — removal renumbers focus indexes.
+  In a property sheet, a control another row switches off uses the row's
+  `SetEnabled` (`TextRow`, `SelectRow`, `CheckRow`: greyed, out of the focus
+  cycle); `SetReadOnly` draws a row flat and is for a page or panel that cannot
+  be written at all. Mixing the two on one page made a switched-off select look
+  like a heading beside greyed text boxes.
 - **A busy indicator is a function of elapsed time.** `widgets.Spinner` has no
   start time or goroutine: `Frame(elapsed)`/`FrameSince(start)`, redrawn from
   the host's clock. Don't add a goroutine.
@@ -130,6 +135,11 @@ behind the mouse and async rules.
   is clipped to `InnerRect` (`App.drawDialogs`' `core.ClipScreen`, narrowed by
   `DrawBase` when `clamped()`), and the border column is outside the clip. A
   child widget's own scrollbar needs nothing.
+- **A dialog's content rows stop above `ButtonRowY()` — derive the count from
+  it, not from `InnerRect().H`.** Rows drawn from `inner.Y+1` fit
+  `ButtonRowY() - inner.Y - 1` (one fewer again above a `DrawSeparator` line);
+  `inner.H - 2` ran one row onto the buttons, so Help, Tasks and Query List hid
+  their last entry for good (B20, B22).
 - **Key Diagnostics (`key_diagnostics_dialog.go`, Help menu) is a permanent
   feature**, not debug scaffolding — never trim it. It separates app bugs from
   terminal limits.
@@ -166,11 +176,12 @@ behind the mouse and async rules.
 
 ## Panels, toolbars and grid hosts
 
-- **A toolbar cell that doesn't fit isn't drawn at all** — `layoutToolButtons`
-  gives it a zero rect, neither painted nor clickable, so adding a cell can
-  delete the last one (Query Store's filters removed `Refresh` below ~150
-  columns, tests green). Check against the real pane width (Object Explorer
-  takes ~60 columns).
+- **A panel's text toolbar is a `controls.ToolRow`** — it collapses the cells
+  that don't fit into "More ▾"; drawing and gating stay with the panel. A cell
+  without a rect is neither painted nor clickable, so a `NoOverflow` row
+  deletes what doesn't fit (Query Store's filters once removed `Refresh` below
+  ~150 columns, tests green). Check against the real pane width (Object
+  Explorer takes ~60 columns).
 - **Hosts acting on whole objects read `DataGrid.SelectedRows()`, never
   `SelectionBounds()`** — bounds are a rectangle, so Ctrl+click rows 1 and 3
   deletes row 2 too. `selectedRowObjects` (`detail_browser_ops.go`) is the
@@ -236,7 +247,10 @@ behind the mouse and async rules.
   handler depends on is set in the handler, never in `Draw`.
 - **An overlay drawn last gets first refusal** of every event while open —
   `DataGrid.OverlayActive()` atop `QueryPanel.HandleKey`/`HandleMouse`; the
-  focused row before positional routing in `propsheet.Form.HandleMouse`.
+  focused row before positional routing in `propsheet.Form.HandleMouse`, the
+  wheel included. A `DropDown`'s open list is clamped to the *screen*, not the
+  dialog, so a dialog routing one by hand offers it every event before
+  `ConsumeOutsideClick` (Filter, Back Up, Restore).
 - **Report with `App.postAndWake(fn)`**, never `postEvent` + `wakeEventLoop` by
   hand (tree nodes stuck on "Loading..."). `ARCHITECTURE.md` § Async result delivery:
   postAndWake. The elapsed-timer tick is the one legit bare `wakeEventLoop()`.
@@ -258,10 +272,17 @@ behind the mouse and async rules.
     through a destination the run puts in its context; so does what a create
     step hands a later page of the same run (`withCreatedHandoff` — New
     Schedule's Jobs page attaches the schedule General created, by id).
+  - An apply may *read* its page's rows: `PropertySheet` locks the form while
+    applying (`formLocked` — no keys, clicks, paste, Ctrl+Z or F5; the page
+    list, the button row and Escape still work), so nothing writes a widget
+    the pipeline goroutine is reading. It only greyed its buttons before, and
+    a field typed into mid-Apply raced ~340 reads in ~80 applies (review plan
+    T5). A widget value set from a callback — a page action finishing
+    mid-Apply — would still race; none is known.
   - `TestApplyClosuresDoNotWritePageState` checks every
     `func(ctx context.Context) error` literal and method value, following
     captured closures, func fields, methods of captured values and package
-    functions handed captured state. `runPageAction`/`runPageActionOnce` work
+    functions handed captured state. `runPageAction`/`runPageActionOnce`/`probe` work
     closures and `commitRename` are exempt. Blind spot: a local aliasing page
     state (a range variable, `r := d.rows`) — without types a copy can't be
     told from a pointer.

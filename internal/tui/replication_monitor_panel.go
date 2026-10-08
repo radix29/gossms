@@ -130,16 +130,16 @@ type ReplicationMonitorPanel struct {
 	// sessions | actions.
 	splits [3]*layout.Splitter
 
-	tools    []toolButton
-	more     toolButton
-	hidden   []int
+	tools    controls.ToolRow
 	toolRect core.Rect
 	toolEnd  int
 
 	focus rmFocus
 
 	// busy latches Refresh while a snapshot read is out; released by the
-	// callback the read posts, so every launch goes through safegoRepair.
+	// callback the read posts, so every launch goes through safegoRepair. The
+	// session and action reads go through it too: their repair replaces the
+	// "Reading…" status a panic would otherwise leave on the pane.
 	busy bool
 	// One latest per pane: a refresh supersedes the snapshot read it replaces,
 	// a cursor move the session or action read it moved past, and none

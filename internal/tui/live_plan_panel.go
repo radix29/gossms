@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
+	"sync/atomic"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
@@ -34,6 +37,12 @@ type LivePlanPanel struct {
 
 	// run is the poller, cancelled by Close or by disconnecting.
 	run latest
+	// drawnAt is when Draw last ran (UnixNano), read by the poller's goroutine:
+	// a panel not drawn for liveBackgroundAfter is in a background tab, and
+	// polled slowly (liveWatch). wake is the poller's, signalled by Draw so a
+	// panel brought back to the front reads at once.
+	drawnAt atomic.Int64
+	wake    chan struct{}
 	// seen is set once a plan has been shown; state is the title bar's word
 	// on what the view shows.
 	seen  bool
@@ -66,6 +75,11 @@ func liveSessionIdleNote(info *gosmo.ServerInfo, spid int) string {
 		"session on query_thread_profile. Waiting for one…", spid)
 }
 
+// liveBackgroundAfter is how long a LivePlanPanel goes undrawn before its
+// poller counts it as in a background tab. Every poll result redraws a panel
+// that is visible, so a visible one is never undrawn this long.
+const liveBackgroundAfter = 3 * time.Second
+
 // openLivePlanPanel shows session spid's live plan, bringing forward a panel
 // already watching it on sc rather than opening a second poller.
 func (a *App) openLivePlanPanel(sc *db.ServerConn, spid int) {
@@ -86,22 +100,48 @@ func newLivePlanPanel(app *App, sc *db.ServerConn, spid int) *LivePlanPanel {
 	v := planview.New()
 	v.OnCopyRequest = app.copyWithStatus
 	v.SetLive(nil, nil)
-	lp := new(LivePlanPanel{app: app, sc: sc, sessionID: spid, planView: v, state: "waiting"})
+	lp := new(LivePlanPanel{app: app, sc: sc, sessionID: spid, planView: v, state: "waiting",
+		wake: make(chan struct{}, 1)})
+	lp.drawnAt.Store(time.Now().UnixNano())
 	if sc != nil && sc.Server != nil {
 		lp.info = sc.Server.Info()
 	}
 	return lp
 }
 
-// start polls the session on sc's pool until Close or disconnect.
+// start polls the session on sc's pool until Close or disconnect. It first
+// reads the session's login time, which pins the watch to this session rather
+// than whichever later one is given its id (liveWatch).
 func (lp *LivePlanPanel) start() {
+	if lp.sc == nil || lp.sc.Server == nil {
+		lp.state = "not available"
+		lp.planView.SetLiveNote("Not connected.")
+		return
+	}
 	srv := lp.sc.Server
 	ctx, token := lp.run.Begin(srv.Context())
 	spid := lp.sessionID
+	report := func(u liveUpdate) { lp.app.postAndWake(func() { lp.apply(token, u) }) }
+	watch := &liveWatch{
+		background: func() bool {
+			return time.Since(time.Unix(0, lp.drawnAt.Load())) > liveBackgroundAfter
+		},
+		wake: lp.wake,
+	}
 	lp.app.safego("polling a live execution plan", func() {
-		pollLiveStats(ctx, srv, spid, nil, livePollTiming, func(u liveUpdate) {
-			lp.app.postAndWake(func() { lp.apply(token, u) })
-		})
+		pin, err := srv.SessionLoginTime(ctx, spid)
+		switch {
+		case ctx.Err() != nil:
+			return
+		case errors.Is(err, gosmo.ErrNotFound):
+			report(liveUpdate{note: fmt.Sprintf("Session %d has ended.", spid), ended: true})
+			return
+		case err == nil:
+			watch.pin = pin
+		}
+		// Any other failure leaves the watch unpinned: the poller's own read
+		// reports a refusal, and a passing failure is no reason to show nothing.
+		pollLiveStats(ctx, srv, spid, nil, livePollTiming, watch, report)
 	})
 }
 
@@ -115,6 +155,9 @@ func (lp *LivePlanPanel) apply(token int, u liveUpdate) {
 	case u.note != "":
 		lp.planView.SetLiveNote(u.note)
 		lp.state = "not available"
+		if u.ended {
+			lp.state = "session ended"
+		}
 		lp.app.setStatus(u.note)
 	case u.idle && !lp.seen:
 		lp.planView.SetLiveNote(liveSessionIdleNote(lp.info, lp.sessionID))
@@ -151,6 +194,13 @@ func (lp *LivePlanPanel) SetActive(v bool) {
 // Draw renders the title bar, with the view's state after the title, and the
 // wrapped PlanView.
 func (lp *LivePlanPanel) Draw(s tcell.Screen) {
+	// Drawn means visible: a poller slowed for a background tab reads now.
+	if time.Since(time.Unix(0, lp.drawnAt.Swap(time.Now().UnixNano()))) > liveBackgroundAfter {
+		select {
+		case lp.wake <- struct{}{}:
+		default:
+		}
+	}
 	pal := theme.Active()
 	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.Text)
 	if lp.active {

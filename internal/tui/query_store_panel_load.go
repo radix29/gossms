@@ -339,7 +339,7 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 
 // plansPanicked replaces the plan pane's "Reading plans..." placeholder after a
 // panic on the read goroutine (loadPlans' safegoRepair step). Guarded by
-// planSeq like the normal completion path: a newer load owns the pane, and
+// planRead like the normal completion path: a newer load owns the pane, and
 // blanking it would drop a result still on its way.
 func (p *QueryStorePanel) plansPanicked(seq int) {
 	if !p.planRead.Done(seq) {

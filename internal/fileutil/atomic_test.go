@@ -43,6 +43,7 @@ func TestWriteAtomicAppliesAWiderModeThanCreateTempsOwn(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no POSIX mode bits on Windows")
 	}
+	setUmask(t, 0o022)
 	path := filepath.Join(t.TempDir(), "script.sql")
 	if err := WriteAtomic(path, []byte("SELECT 1\n"), 0o644); err != nil {
 		t.Fatalf("WriteAtomic: %v", err)
@@ -400,4 +401,64 @@ func TestCreateAtomicNeverReplacesAnExistingFile(t *testing.T) {
 		t.Errorf("contents = %q, want the first writer's", got)
 	}
 	assertOnlyFile(t, dir, "key")
+}
+
+// setUmask makes WriteAtomic see mask for the rest of the test, without
+// touching the process's real umask.
+func setUmask(t *testing.T, mask os.FileMode) {
+	t.Helper()
+	saved := umask
+	umask = func() os.FileMode { return mask }
+	t.Cleanup(func() { umask = saved })
+}
+
+// A new file honours the umask as os.WriteFile's would: under umask 077 a
+// script saved with perm 0644 is the user's alone (K14). The explicit chmod
+// after CreateTemp used to bypass it.
+func TestWriteAtomicNewFileHonoursTheUmask(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no POSIX mode bits on Windows")
+	}
+	setUmask(t, 0o077)
+	dir := t.TempDir()
+
+	path := filepath.Join(dir, "script.sql")
+	if err := WriteAtomic(path, []byte("SELECT 1\n"), 0o644); err != nil {
+		t.Fatalf("WriteAtomic: %v", err)
+	}
+	if fi, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	} else if got := fi.Mode().Perm(); got != 0o600 {
+		t.Errorf("WriteAtomic under umask 077: mode = %04o, want 0600", got)
+	}
+
+	key := filepath.Join(dir, "gossms.key")
+	if _, err := CreateAtomic(key, []byte("k"), 0o644); err != nil {
+		t.Fatalf("CreateAtomic: %v", err)
+	}
+	if fi, err := os.Stat(key); err != nil {
+		t.Fatal(err)
+	} else if got := fi.Mode().Perm(); got != 0o600 {
+		t.Errorf("CreateAtomic under umask 077: mode = %04o, want 0600", got)
+	}
+}
+
+// The probe agrees with what the kernel does to an ordinary create, so a new
+// file from WriteAtomic gets the mode os.WriteFile would have given it.
+func TestProbeUmaskMatchesAnOrdinaryCreate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no POSIX mode bits on Windows")
+	}
+	dir := t.TempDir()
+	plain := filepath.Join(dir, "plain")
+	if err := os.WriteFile(plain, nil, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := 0o666&^probeUmask(), fi.Mode().Perm(); got != want {
+		t.Errorf("0666 less the probed umask = %04o, os.WriteFile gave %04o", got, want)
+	}
 }

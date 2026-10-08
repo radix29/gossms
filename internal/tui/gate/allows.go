@@ -340,29 +340,40 @@ func serverSecurableWord(k gosmo.ServerSecurableKind) string {
 // and asks for nothing: the login may hold every right already and the DENY
 // overrides all. Only the object's own permission can change.
 func DeniedText(r Right, at Site) string {
+	right, where := deniedPhrase(r, at)
+	if at.Column != "" {
+		where += " of this object"
+	}
+	return right + " is denied on " + where + "."
+}
+
+// deniedPhrase is the two halves every DENY wording shares — the right the
+// DENY is on and the securable it sits on — for DeniedText's sentence and a
+// withheld menu item's note.
+func deniedPhrase(r Right, at Site) (right, where string) {
 	switch {
 	case at.Column != "":
-		return r.Name + " is denied on column " + at.Column + " of this object."
+		return r.Name, "column " + at.Column
 	case at.Schema != "":
-		return r.Name + " is denied on schema " + at.Schema + "."
+		return r.Name, "schema " + at.Schema
 	case at.Database != "":
-		return r.Name + " is denied on database " + at.Database + "."
+		return r.Name, "database " + at.Database
 	case at.Principal != "":
 		// r.DeniedOnPrincipal, not r.Name: the right is the database-wide ALTER ANY
 		// USER but the DENY that beats it is plain ALTER on the principal.
 		//
 		// "principal", not "user": class 4 covers database roles too and the gate,
 		// given only a name, cannot tell them apart.
-		return r.DeniedOnPrincipal + " is denied on principal " + at.Principal + "."
+		return r.DeniedOnPrincipal, "principal " + at.Principal
 	case at.ServerSecurable != "":
 		// r.DeniedOnServer, not r.Name, as at.Principal: the DENY that beats the
 		// server-wide ALTER ANY LOGIN is plain ALTER on the securable.
 		//
 		// The kind *is* named here, since the right declared its securable and
 		// "denied on x" would not tell a login from an endpoint.
-		return r.DeniedOnServer + " is denied on " + serverSecurableWord(at.ServerKind) + " " + at.ServerSecurable + "."
+		return r.DeniedOnServer, serverSecurableWord(at.ServerKind) + " " + at.ServerSecurable
 	case at.AvailabilityGroup != "":
-		return r.DeniedOnAG + " is denied on availability group " + at.AvailabilityGroup + "."
+		return r.DeniedOnAG, "availability group " + at.AvailabilityGroup
 	}
-	return r.Name + " is denied on this object."
+	return r.Name, "this object"
 }

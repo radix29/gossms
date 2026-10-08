@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -279,5 +280,64 @@ func TestDetailChartTooltipSkipsEmptySegments(t *testing.T) {
 	}
 	if rows[0].label != "Unused" || rows[0].value != "8 MB  100.0%" {
 		t.Errorf("row = %q %q, want Unused at the whole bar", rows[0].label, rows[0].value)
+	}
+}
+
+// T3: the strip took events before the grid's overlay, so with the cell menu
+// open over the chart rows a click there pinned a readout instead of reaching
+// the menu. The open overlay gets first refusal.
+func TestDetailChartStripYieldsToAnOpenCellMenu(t *testing.T) {
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 100, 30)
+	db.grid.SetData([]string{"Name"}, [][]string{{"a"}, {"b"}})
+	db.setCharts(stripCharts())
+	r := db.grid.Bounds()
+	db.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+2, tcell.Button2, tcell.ModNone))
+	db.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+2, tcell.ButtonNone, tcell.ModNone))
+	if !db.grid.OverlayActive() {
+		t.Fatal("setup: the right-click opened no cell menu")
+	}
+	x, y := chartPoint(db)
+	clickAt(db, x, y)
+	if db.tooltip != nil {
+		t.Fatal("a click with the cell menu open pinned a chart readout")
+	}
+	if db.grid.OverlayActive() {
+		t.Error("the click outside the menu did not reach it (still open)")
+	}
+}
+
+// T3: a grid drag released over the strip never reached the grid, leaving it
+// latched; and a held grid press drifting onto the strip pinned a readout.
+// The gesture belongs to the grid until the release, wherever it lands.
+func TestDetailGridDragEndingOverTheStripReleasesTheGrid(t *testing.T) {
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 100, 30)
+	rows := make([][]string, 5)
+	for i := range rows {
+		rows[i] = []string{fmt.Sprint(i), "x"}
+	}
+	db.grid.SetData([]string{"N", "V"}, rows)
+	db.setCharts(stripCharts())
+	r := db.grid.Bounds()
+	x, y := chartPoint(db)
+
+	db.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+2, tcell.Button1, tcell.ModNone))
+	db.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone)) // held, over the strip
+	if db.tooltip != nil {
+		t.Fatal("a held grid press drifting onto the strip pinned a readout")
+	}
+	db.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+
+	// A fresh click two rows down selects that row: the grid's latch was let go.
+	first := db.grid.SelectedRow()
+	clickAt(db, r.X+2, r.Y+4)
+	if got := db.grid.SelectedRow(); got != first+2 {
+		t.Fatalf("SelectedRow() = %d after a fresh click two rows below %d (grid still latched?)", got, first)
+	}
+	// And a fresh click on the strip still pins.
+	clickAt(db, x, y)
+	if db.tooltip == nil {
+		t.Error("a fresh click on the strip pinned nothing")
 	}
 }

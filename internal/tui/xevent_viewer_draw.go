@@ -47,21 +47,21 @@ func (v *XEventViewer) drawToolbar(s tcell.Screen) {
 	}
 	pal := theme.Active()
 	core.FillRect(s, v.toolRect, ' ', theme.StyleMenuBar())
-	for i, t := range v.tools {
-		if t.rect.IsZero() {
+	for i, t := range v.tools.Cells {
+		if t.Rect.IsZero() {
 			continue
 		}
 		style := theme.StyleTooltip()
 		if v.toolDisabled(i) {
 			style = style.Foreground(pal.TextDim)
 		}
-		core.FillRect(s, t.rect, ' ', style)
-		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
+		core.FillRect(s, t.Rect, ' ', style)
+		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
 	}
-	if !v.more.rect.IsZero() {
+	if !v.tools.More.Rect.IsZero() {
 		style := theme.StyleTooltip()
-		core.FillRect(s, v.more.rect, ' ', style)
-		core.DrawText(s, v.more.rect.X+1, v.more.rect.Y, style, v.more.label)
+		core.FillRect(s, v.tools.More.Rect, ' ', style)
+		core.DrawText(s, v.tools.More.Rect.X+1, v.tools.More.Rect.Y, style, v.tools.More.Label)
 	}
 }
 

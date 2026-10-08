@@ -24,19 +24,11 @@ import (
 // living under sys.objects type 'D'.
 
 func findRule(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.Rule, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.RuleByName(ctx, schema, name)
+	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).RuleByName)
 }
 
 func findDefault(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.Default, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.DefaultByName(ctx, schema, name)
+	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).DefaultByName)
 }
 
 func rulePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {

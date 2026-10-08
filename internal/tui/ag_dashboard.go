@@ -74,6 +74,19 @@ type AGDashboard struct {
 	// focusBottom picks the keyboard's grid; Tab flips it.
 	focusBottom bool
 
+	// dragZone is the grid that claimed the current gesture's press: motion and
+	// the held button go to it until release, wherever the pointer drifts (the
+	// mouseDragging idiom; Activity Monitor's dragZone). Positional routing left
+	// the top grid latched in column-resize mode when the release landed over
+	// the bottom one.
+	dragZone agDragZone
+
+	// deferred holds a reading that arrived while a grid's cell menu or value
+	// popup was open: applying it would rebuild the grid under the overlay and
+	// close it (ui-rules: a timer-driven refresh skips while one is open).
+	// Installed once the overlay closes.
+	deferred *agReading
+
 	// snap is the last reading, err the last refresh failure. A failed refresh
 	// keeps the previous reading rather than blanking.
 	snap agSnapshot
@@ -108,6 +121,21 @@ type agSnapshot struct {
 	followed bool
 	at       time.Time
 }
+
+// agReading is one refresh's outcome, as apply takes it.
+type agReading struct {
+	snap agSnapshot
+	err  error
+}
+
+// agDragZone names the grid owning the current mouse gesture.
+type agDragZone int
+
+const (
+	agZoneNone agDragZone = iota
+	agZoneTop
+	agZoneBottom
+)
 
 // ok reports whether the snapshot holds a reading.
 func (s agSnapshot) ok() bool { return s.group != nil || s.allGroup }
@@ -234,6 +262,14 @@ func (d *AGDashboard) read(ctx context.Context) (agSnapshot, error) {
 // apply installs a reading on the UI goroutine. A failed refresh records the
 // error but keeps the previous reading and timestamp.
 func (d *AGDashboard) apply(snap agSnapshot, err error) {
+	if !d.app.panelHosted(d) {
+		return // closed while the read was in flight
+	}
+	if d.overlayGrid() != nil {
+		d.deferred = &agReading{snap, err}
+		return
+	}
+	d.deferred = nil
 	d.err = err
 	if err != nil {
 		if !d.snap.ok() {
@@ -455,9 +491,34 @@ func (d *AGDashboard) grid() *controls.DataGrid {
 	return d.topGrid
 }
 
+// overlayGrid returns the grid whose cell menu or value popup is open, or nil.
+// The overlay is drawn last and gets first refusal of every event.
+func (d *AGDashboard) overlayGrid() *controls.DataGrid {
+	for _, g := range []*controls.DataGrid{d.topGrid, d.bottomGrid} {
+		if g.OverlayActive() {
+			return g
+		}
+	}
+	return nil
+}
+
+// overlayRouted hands ev's outcome back after an overlay took it, installing
+// a reading deferred while it was open once it has closed.
+func (d *AGDashboard) overlayRouted(handled bool) bool {
+	if d.deferred != nil && d.overlayGrid() == nil {
+		r := d.deferred
+		d.apply(r.snap, r.err)
+	}
+	return handled
+}
+
 // HandleKey handles panel keys and passes the rest to the focused grid,
 // returning its answer so app accelerators aren't swallowed.
 func (d *AGDashboard) HandleKey(ev *tcell.EventKey) bool {
+	// An open cell menu takes Enter for its item, not a drill-down.
+	if g := d.overlayGrid(); g != nil {
+		return d.overlayRouted(g.HandleKey(ev))
+	}
 	switch ev.Key() {
 	case tcell.KeyF5:
 		d.forceRefresh()
@@ -499,23 +560,41 @@ func (d *AGDashboard) forceRefresh() {
 	}
 }
 
-// HandleMouse routes to the clicked grid and moves focus with it, so wheel and
-// keys act on the same grid.
+// HandleMouse routes a press to the grid under it and moves focus with it, so
+// wheel and keys act on the same grid; the rest of the gesture follows the
+// press (dragZone).
 func (d *AGDashboard) HandleMouse(ev *tcell.EventMouse) bool {
+	if ev.Buttons() == tcell.ButtonNone {
+		// The release ends the gesture wherever the pointer is, so both grids
+		// see it (ARCHITECTURE.md § The mouseDragging idiom, invariant 5).
+		d.topGrid.HandleMouse(ev)
+		d.bottomGrid.HandleMouse(ev)
+		d.dragZone = agZoneNone
+		return false
+	}
+	if g := d.overlayGrid(); g != nil {
+		return d.overlayRouted(g.HandleMouse(ev))
+	}
+	switch d.dragZone {
+	case agZoneTop:
+		return d.topGrid.HandleMouse(ev)
+	case agZoneBottom:
+		return d.bottomGrid.HandleMouse(ev)
+	}
 	x, y := ev.Position()
 	switch {
 	case d.topRect.Contains(x, y):
 		d.focusBottom = false
+		if ev.Buttons() == tcell.Button1 {
+			d.dragZone = agZoneTop
+		}
 		return d.topGrid.HandleMouse(ev)
 	case d.bottomRect.Contains(x, y):
 		d.focusBottom = true
+		if ev.Buttons() == tcell.Button1 {
+			d.dragZone = agZoneBottom
+		}
 		return d.bottomGrid.HandleMouse(ev)
-	}
-	// A drag or release that started in a grid still belongs to it
-	// (ARCHITECTURE.md § The mouseDragging idiom, invariant 5).
-	if ev.Buttons() == tcell.ButtonNone {
-		d.topGrid.HandleMouse(ev)
-		d.bottomGrid.HandleMouse(ev)
 	}
 	return false
 }

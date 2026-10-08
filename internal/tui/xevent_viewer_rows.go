@@ -129,6 +129,7 @@ func (v *XEventViewer) headers() []string {
 // column set, keeping its cursor and scroll: after a filter change, a column
 // change, a Clear or a Resume.
 func (v *XEventViewer) rebuildRows() {
+	v.feed.overlayHeld = false
 	v.columns = v.visibleColumns()
 	v.shown = v.shown[:0:0]
 	for i := range v.store.Len() {
@@ -177,6 +178,11 @@ func (v *XEventViewer) applyBatch(b xeBatch) {
 		}
 	}
 	if v.grouped() {
+		if v.grid.OverlayActive() {
+			v.feed.overlayHeld = true
+			v.updateStatus()
+			return
+		}
 		// Any group can have grown, and one can have appeared above the
 		// cursor: regrouped whole, the cursor kept on what it was on.
 		v.dropAged()
@@ -189,6 +195,8 @@ func (v *XEventViewer) applyBatch(b xeBatch) {
 	}
 	v.trimShown()
 	switch {
+	case grew && v.grid.OverlayActive():
+		v.feed.overlayHeld = true
 	case grew:
 		v.columns = v.visibleColumns()
 		v.grid.SetSourcePreservingView(v.headers(), xeRowSource{v})
@@ -198,6 +206,23 @@ func (v *XEventViewer) applyBatch(b xeBatch) {
 		v.grid.RefreshColumnWidths()
 	}
 	v.followTail(atEnd)
+	v.updateStatus()
+}
+
+// catchUpAfterOverlay does the grid rebuild applyBatch put off while the
+// grid's overlay was open, once it has closed.
+func (v *XEventViewer) catchUpAfterOverlay() {
+	if !v.feed.overlayHeld || v.grid.OverlayActive() {
+		return
+	}
+	v.feed.overlayHeld = false
+	v.columns = v.visibleColumns()
+	if v.grouped() {
+		v.dropAged()
+		v.regroup()
+	} else {
+		v.grid.SetSourcePreservingView(v.headers(), xeRowSource{v})
+	}
 	v.updateStatus()
 }
 

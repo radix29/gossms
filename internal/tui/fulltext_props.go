@@ -18,8 +18,7 @@ import (
 )
 
 // fulltext_props.go is the Properties for a full-text catalog, a stoplist and
-// a search property list (docs/phase5-plan.md § 27, W15 read-only, W19
-// writable), and the helpers the four full-text families share; a table's
+// a search property list, and the helpers the four full-text families share; a table's
 // full-text index is fulltext_index_props.go. The New dialogs are the
 // new_fulltext_*_dialog.go files.
 //
@@ -40,27 +39,15 @@ import (
 // so the pane and the dialog cannot disagree about which object a node names.
 
 func findFullTextCatalog(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.FullTextCatalog, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.FullTextCatalogByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).FullTextCatalogByName)
 }
 
 func findFullTextStoplist(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.FullTextStoplist, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.FullTextStoplistByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).FullTextStoplistByName)
 }
 
 func findSearchPropertyList(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.SearchPropertyList, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	return d.SearchPropertyListByName(ctx, name)
+	return inDB(ctx, sc, dbName, name, (*gosmo.Database).SearchPropertyListByName)
 }
 
 // findFullTextIndex resolves a table's full-text index. FullTextIndex needs

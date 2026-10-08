@@ -16,6 +16,9 @@ type UpdateDialog struct {
 	lines    []string
 	linkRow  int // index into lines that gets the "link" style, -1 = none
 	btnFocus int
+	// check is the GitHub request in flight (App.checkForUpdates); a newer
+	// showing's supersedes it.
+	check latest
 }
 
 // NewUpdateDialog creates the Check for Updates dialog.
@@ -129,7 +132,9 @@ func (d *UpdateDialog) Draw(s tcell.Screen) {
 	linkStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive).Underline(true)
 
 	inner := d.InnerRect()
-	dataH := inner.H - 2 // leave room for the button row
+	// Rows between the top padding row and DrawSeparator's line (one above
+	// ButtonRowY). It was inner.H-2, which ran onto the button row itself.
+	dataH := d.ButtonRowY() - 1 - inner.Y - 1
 	for row := 0; row < dataH && row < len(d.lines); row++ {
 		st := textStyle
 		if row == d.linkRow {

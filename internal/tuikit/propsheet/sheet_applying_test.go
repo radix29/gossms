@@ -141,3 +141,98 @@ func TestSheetApplyingLeavesCancelLiveWhenCancellable(t *testing.T) {
 		t.Errorf("button row after Cancel = %q, want Cancelling...", row)
 	}
 }
+
+// TestSheetFormRefusesInputWhileApplying: a page's apply runs on the pipeline
+// goroutine and reads the form's rows, so while it runs the form takes no
+// input — no typing, paste, cut, Ctrl+Z revert, F5 refresh or click — or an
+// edit raced the read and could reach the server unvalidated. The lock lifts
+// with the apply.
+func TestSheetFormRefusesInputWhileApplying(t *testing.T) {
+	p := newTestSheet("General")
+	loads := 0
+	p.OnLoadPage = func(int, int) { loads++ }
+	p.Show()
+	name := Text("Name", "orders", 20)
+	f := NewForm(name)
+	p.SetPageForm(0, p.pages[0].seq, f)
+	f.SetBounds(0, 0, 60, 10)
+	p.setZone(zoneForm)
+	f.Draw(newCellScreen(80, 20)) // a row's widget takes focus as it is drawn
+	key := func(k tcell.Key, s string) { p.HandleKey(tcell.NewEventKey(k, s, tcell.ModNone)) }
+
+	// Typing reaches the field before the apply, so the refusals below are the
+	// lock's and not an unfocused field's.
+	key(tcell.KeyEnd, "")
+	key(tcell.KeyRune, "s")
+	if got := name.Value(); got != "orderss" {
+		t.Fatalf("value = %q before applying; the test cannot type into the field", got)
+	}
+	name.Edit("orders")
+
+	p.SetApplying(true)
+	key(tcell.KeyRune, "x")
+	p.Paste("pasted")
+	p.HandleKey(tcell.NewEventKey(tcell.KeyRune, "a", tcell.ModCtrl))
+	p.Cut()
+	if got := name.Value(); got != "orders" {
+		t.Fatalf("value = %q while applying, want it untouched", got)
+	}
+
+	name.Edit("orders2") // as if typed before the apply began
+	loadsBefore := loads
+	key(tcell.KeyCtrlZ, "")
+	key(tcell.KeyF5, "")
+	if name.Value() != "orders2" || loads != loadsBefore {
+		t.Errorf("while applying: value %q, %d reloads; Ctrl+Z and F5 must do nothing", name.Value(), loads-loadsBefore)
+	}
+
+	// Tab still reaches the button row, where Cancel lives.
+	key(tcell.KeyTab, "")
+	if p.zone != zoneButtons {
+		t.Errorf("zone = %v after Tab while applying, want the button row", p.zone)
+	}
+
+	p.SetApplying(false)
+	p.setZone(zoneForm)
+	key(tcell.KeyEnd, "")
+	key(tcell.KeyRune, "x")
+	if got := name.Value(); got != "orders2x" {
+		t.Errorf("value = %q after the apply, want typing to work again", got)
+	}
+}
+
+// TestSheetFormRefusesClicksWhileApplying: a click is an edit too — a
+// checkbox toggles on it.
+func TestSheetFormRefusesClicksWhileApplying(t *testing.T) {
+	// The screen and hand-set bounds are newScrollableSheet's, for its reasons.
+	p := NewPropertySheet(&fakeScreen{w: 100, h: 40}, "Test Properties")
+	p.SetSize(90, 28)
+	p.SetPages([]string{"General"})
+	p.Show()
+	check := Check("Enabled", false)
+	f := NewForm(check)
+	p.SetPageForm(0, p.pages[0].seq, f)
+	f.SetBounds(p.Rect().X+2, p.Rect().Y+2, p.Rect().W-6, 10)
+	f.Focus(true)
+	f.Draw(&fakeScreen{w: 100, h: 40})
+	x, y := p.Rect().X+3, p.Rect().Y+2
+	click := func() {
+		p.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+		p.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+	}
+
+	click()
+	if !check.Checked() {
+		t.Fatal("a click did not toggle the checkbox before applying; the test is not hitting it")
+	}
+	p.SetApplying(true)
+	click()
+	if !check.Checked() {
+		t.Error("a click toggled the checkbox while applying")
+	}
+	p.SetApplying(false)
+	click()
+	if check.Checked() {
+		t.Error("a click after the apply did not toggle the checkbox")
+	}
+}

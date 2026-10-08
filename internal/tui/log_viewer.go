@@ -157,18 +157,14 @@ type LogViewer struct {
 	gridRect   core.Rect
 	detailRect core.Rect
 
-	tools []toolButton
+	// tools is the toolbar row. Its More cell matters here: the row wants 121
+	// columns once both selectors carry a real file label, and the pane gets
+	// 70% of the terminal — so without it Export and Recycle were unreachable
+	// on any ordinary terminal, neither having a key binding.
+	tools controls.ToolRow
 	// toolsEnd is the column just past the last laid-out cell, where the
 	// filter field starts — mirrors ActivityMonitor.toolsEnd.
 	toolsEnd int
-
-	// more is the "More ▾" cell standing in for the buttons this row was too
-	// narrow to draw, and hidden the indexes it holds. The row wants 121
-	// columns once both selectors carry a real file label, and the pane gets
-	// 70% of the terminal — so Export and Recycle were unreachable on any
-	// ordinary terminal, neither having a key binding.
-	more   toolButton
-	hidden []int
 
 	// detailScroll is the first drawn line of the details pane, so a long
 	// message can be read past the pane's height without resizing it.
@@ -274,11 +270,9 @@ func (lv *LogViewer) layoutChildren() {
 }
 
 // layoutTools places the toolbar cells, collapsing whatever does not fit into
-// the "More ▾" menu (see layoutToolButtonsOverflow), then the filter field in
-// whatever is left.
+// the "More ▾" menu, then the filter field in whatever is left.
 func (lv *LogViewer) layoutTools() {
-	var x int
-	lv.hidden, x = layoutToolButtonsOverflow(lv.tools, lv.toolRect, "", &lv.more)
+	x := lv.tools.Layout(lv.toolRect, "")
 	lv.toolsEnd = x
 	// The field's own width excludes its label and brackets, so the fit test
 	// adds them back — see widgets.InputField.Draw.

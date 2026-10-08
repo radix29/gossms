@@ -14,6 +14,7 @@ import (
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/charts"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // newTestActivityMonitor builds a bound panel over a never-opened connection; a
@@ -265,7 +266,7 @@ func TestActivityMonitorTabClickAndKeyboardSwitching(t *testing.T) {
 // its control, and a toolbar gesture must not switch tabs.
 func TestActivityMonitorHeldClickFiresOnce(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
-	pause := am.tools[len(am.tools)-1].rect
+	pause := am.tools.Cells[len(am.tools.Cells)-1].Rect
 
 	am.HandleMouse(tcell.NewEventMouse(pause.X+1, pause.Y, tcell.Button1, tcell.ModNone))
 	if !am.act.paused {
@@ -839,13 +840,13 @@ func TestActivityMonitorOffersRetryWhenStopped(t *testing.T) {
 	}
 	// feedConn is nil here, so restart is a no-op; this pins that the control
 	// is live.
-	retry.action()
+	retry.Action()
 }
 
-func amToolLabelled(am *ActivityMonitor, label string) *toolButton {
-	for i := range am.tools {
-		if am.tools[i].label == label {
-			return &am.tools[i]
+func amToolLabelled(am *ActivityMonitor, label string) *controls.ToolCell {
+	for i := range am.tools.Cells {
+		if am.tools.Cells[i].Label == label {
+			return &am.tools.Cells[i]
 		}
 	}
 	return nil
@@ -892,32 +893,32 @@ func TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth(t *testing.T) {
 			am.setTab(tab)
 
 			inMenu := map[int]bool{}
-			for _, i := range am.hidden {
+			for _, i := range am.tools.Hidden {
 				inMenu[i] = true
 			}
-			for i, tb := range am.tools {
-				if tb.rect.IsZero() != inMenu[i] {
+			for i, tb := range am.tools.Cells {
+				if tb.Rect.IsZero() != inMenu[i] {
 					t.Fatalf("tab %d width %d: control %d (%q) is neither drawn nor in the More menu",
-						tab, w, i, tb.label)
+						tab, w, i, tb.Label)
 				}
 			}
-			if len(am.hidden) == 0 {
+			if len(am.tools.Hidden) == 0 {
 				continue
 			}
 			sawOverflow = true
-			if am.more.rect.IsZero() && w > 12 {
+			if am.tools.More.Rect.IsZero() && w > 12 {
 				t.Fatalf("tab %d width %d: the row hides %d controls with no More cell to reach them",
-					tab, w, len(am.hidden))
+					tab, w, len(am.tools.Hidden))
 			}
-			if !am.more.rect.IsZero() && am.more.rect.Right() > am.rect.Right() {
+			if !am.tools.More.Rect.IsZero() && am.tools.More.Rect.Right() > am.rect.Right() {
 				t.Fatalf("tab %d width %d: the More cell runs past the pane", tab, w)
 			}
 			// The hidden set must be the row's tail.
-			want := len(am.tools) - len(am.hidden)
-			for n, i := range am.hidden {
+			want := len(am.tools.Cells) - len(am.tools.Hidden)
+			for n, i := range am.tools.Hidden {
 				if i != want+n {
 					t.Fatalf("tab %d width %d: hidden controls %v are not the row's tail starting at %d",
-						tab, w, am.hidden, want)
+						tab, w, am.tools.Hidden, want)
 				}
 			}
 		}
@@ -931,16 +932,16 @@ func TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth(t *testing.T) {
 // feed.
 func TestTheActivityMonitorOverflowMenuRunsTheHiddenControl(t *testing.T) {
 	am := newTestActivityMonitor(40, 30)
-	pause := len(am.tools) - 1
-	if !am.tools[pause].rect.IsZero() {
+	pause := len(am.tools.Cells) - 1
+	if !am.tools.Cells[pause].Rect.IsZero() {
 		t.Fatal("Pause still fits at 40 columns, so this proves nothing")
 	}
-	if am.more.rect.IsZero() {
+	if am.tools.More.Rect.IsZero() {
 		t.Fatal("no More cell to reach it through")
 	}
 
 	// Press the More cell.
-	press := tcell.NewEventMouse(am.more.rect.X+1, am.more.rect.Y, tcell.Button1, 0)
+	press := tcell.NewEventMouse(am.tools.More.Rect.X+1, am.tools.More.Rect.Y, tcell.Button1, 0)
 	if !am.HandleMouse(press) {
 		t.Fatal("the More cell did not take the press")
 	}
@@ -956,7 +957,7 @@ func TestTheActivityMonitorOverflowMenuRunsTheHiddenControl(t *testing.T) {
 func TestTheActivityMonitorOverflowMenuMarksTheRateInForce(t *testing.T) {
 	am := newTestActivityMonitor(30, 30)
 	am.setRate(2) // "5 s"
-	if len(am.hidden) == 0 {
+	if len(am.tools.Hidden) == 0 {
 		t.Fatal("nothing overflowed at 30 columns, so this proves nothing")
 	}
 	am.showOverflowMenu()

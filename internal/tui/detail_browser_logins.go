@@ -41,6 +41,6 @@ func (db *DetailBrowser) loadLoginsDetails(fetchCtx context.Context, app *App, s
 			objs = append(objs, nodeData{Type: NodeLogin, Name: l.Name})
 		}
 		cols := []string{"Name", "Type", "Status", "Default Database", "Created"}
-		db.postFinalObjects(app, node, seq, cols, rows, objs, nil)
+		db.postFinalResult(app, node, seq, &detailResult{cols: cols, rows: rows, objs: objs})
 	})
 }

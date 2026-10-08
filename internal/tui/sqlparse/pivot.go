@@ -51,13 +51,14 @@ const pivotClauseSkip = 2
 
 // parsePivot parses a PIVOT/UNPIVOT clause at p.i:
 //
-// 	PIVOT   ( <agg> ( col ) FOR <col> IN ( a, b, c ) )
-// 	UNPIVOT ( <col>         FOR <col> IN ( a, b, c ) )
+//	PIVOT   ( <agg> ( col ) FOR <col> IN ( a, b, c ) )
+//	UNPIVOT ( <col>         FOR <col> IN ( a, b, c ) )
 //
-// PIVOT, UNPIVOT and FOR are context-sensitive in T-SQL (all three are legal
-// column and alias names), so they are matched as identifiers followed by the
-// shape they must have, not added to sqlKeywordList where they would change how
-// every other statement tokenizes. skipSelectModifiers matches PERCENT and TIES
+// PIVOT, UNPIVOT and FOR are reserved (bare, none is a legal column or alias
+// name: Msg 156, probed on 17), but they are matched as identifiers followed by
+// the shape they must have, not added to sqlKeywordList where they would change
+// how every other statement tokenizes. A bare one that does not open its
+// clause is no alias either (notAliases). skipSelectModifiers matches PERCENT and TIES
 // the same way.
 //
 // Anything that does not match rewinds p.i and returns nil, so the reference

@@ -360,3 +360,38 @@ func TestDatabaseAuditSpecificationsFolderLabelsDisabledOnes(t *testing.T) {
 		t.Errorf("child DBName = %q, want appdb", children[1].data.DBName)
 	}
 }
+
+// TestAuditActionFromFieldsSplitsNamesAsTSQLDoes pins T7: the securable is
+// split on the dot T-SQL splits on, not the first one in the text, so a
+// bracketed name holding a dot reaches gosmo whole (it re-quotes each part),
+// and what is not one or two name parts is refused before Apply runs.
+func TestAuditActionFromFieldsSplitsNamesAsTSQLDoes(t *testing.T) {
+	for _, tc := range []struct {
+		class, securable, principal string
+		schema, object, wantPrin    string
+	}{
+		{"OBJECT", "dbo.Orders", "", "dbo", "Orders", "public"},
+		{"OBJECT", "[my.schema].[a.b]", "[app]]user]", "my.schema", "a.b", "app]user"},
+		{"OBJECT", `"x"."y"`, `"p"`, "x", "y", "p"},
+		{"OBJECT", " Orders ", "dbo", "", "Orders", "dbo"},
+		{"OBJECT", "[a]]b]", `DOMAIN\u.x`, "", "a]b", `DOMAIN\u.x`},
+		// A schema or database securable is one name: its dot is not a split.
+		{"SCHEMA", "[my.schema]", "", "", "my.schema", "public"},
+		{"SCHEMA", "Sales", "", "", "Sales", "public"},
+	} {
+		a, err := auditActionFromFields("SELECT", tc.class, tc.securable, tc.principal)
+		if err != nil {
+			t.Errorf("%s %q: %v", tc.class, tc.securable, err)
+			continue
+		}
+		if a.SchemaName != tc.schema || a.ObjectName != tc.object || a.Principal != tc.wantPrin {
+			t.Errorf("%s %q by %q = schema %q object %q principal %q; want %q %q %q", tc.class, tc.securable, tc.principal,
+				a.SchemaName, a.ObjectName, a.Principal, tc.schema, tc.object, tc.wantPrin)
+		}
+	}
+	for _, bad := range []string{"db.dbo.Orders", "[dbo.Orders", "dbo Orders", "dbo.", ""} {
+		if a, err := auditActionFromFields("SELECT", "OBJECT", bad, ""); err == nil {
+			t.Errorf("OBJECT %q = %+v, want an error", bad, a)
+		}
+	}
+}
