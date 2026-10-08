@@ -12,10 +12,6 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// ptr boxes a login name the way the Login Properties pages share one: a
-// rename changes the identity every other page's lookup depends on.
-func ptr(s string) *string { return &s }
-
 // Login Properties > General is the page with the credentials on it. Four
 // things it does are worth pinning, each of which fails silently in a
 // direction that looks like success:
@@ -64,7 +60,7 @@ func loginGeneralResponses(name, loginType string) []fakeResponse {
 // includes not sending a password.
 func TestLoginGeneralWritesNothingWhenUntouched(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	_, apply := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	_, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -88,7 +84,7 @@ func TestLoginGeneralWritesTheDefaultsChosen(t *testing.T) {
 	} {
 		t.Run(tc.label, func(t *testing.T) {
 			sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-			form, apply := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+			form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 			editSelect(t, form, tc.label, tc.value)
 			if err := apply(context.Background()); err != nil {
@@ -106,7 +102,7 @@ func TestLoginGeneralWritesTheDefaultsChosen(t *testing.T) {
 // exists to keep true: every other write here is recoverable.
 func TestLoginGeneralSendsNoPasswordUnlessOneWasTyped(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	// Something else changed, so apply has work to do and cannot pass by
 	// doing nothing at all.
@@ -123,7 +119,7 @@ func TestLoginGeneralSendsNoPasswordUnlessOneWasTyped(t *testing.T) {
 
 func TestLoginGeneralChangesThePasswordWhenTyped(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "n3wSecret!")
@@ -142,7 +138,7 @@ func TestLoginGeneralChangesThePasswordWhenTyped(t *testing.T) {
 // otherwise skip it entirely.
 func TestLoginGeneralRefusesAMismatchedConfirmation(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, _ := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	form, _ := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "typo")
@@ -160,7 +156,7 @@ func TestLoginGeneralRefusesAMismatchedConfirmation(t *testing.T) {
 // login mapped to a credential it no longer displays.
 func TestLoginGeneralUnmapsTheOldCredentialBeforeMappingTheNew(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editSelect(t, form, "Map to credential", "cred_new")
 	if err := apply(context.Background()); err != nil {
@@ -184,7 +180,7 @@ func TestLoginGeneralUnmapsTheOldCredentialBeforeMappingTheNew(t *testing.T) {
 // the server no longer has.
 func TestLoginGeneralRenamesLast(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	name := ptr("appuser")
+	name := new("appuser")
 	form, apply := loadPage(t, pageLoginGeneral(sc, name), inst)
 
 	editSelect(t, form, "Default database", "reporting")
@@ -217,7 +213,7 @@ func TestLoginGeneralRenamesLast(t *testing.T) {
 // change that never happened.
 func TestLoginGeneralOffersNoPasswordForAWindowsLogin(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("DOMAIN\\alice", "WINDOWS_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("DOMAIN\\alice")), inst)
+	form, apply := loadPage(t, pageLoginGeneral(sc, new("DOMAIN\\alice")), inst)
 
 	// Asserted by typing into them: a disabled row's Edit is a no-op, which
 	// is the behaviour a user meets, and the enabled flag is not readable
@@ -246,7 +242,7 @@ func TestLoginGeneralOffersNoPasswordForAWindowsLogin(t *testing.T) {
 // offering a choice Apply would fail on.
 func TestLoginGeneralOffersNoCredentialForAWindowsLogin(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("DOMAIN\\alice", "WINDOWS_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("DOMAIN\\alice")), inst)
+	form, apply := loadPage(t, pageLoginGeneral(sc, new("DOMAIN\\alice")), inst)
 
 	row := selectRow(t, form, "Map to credential")
 	if row.Enabled() || row.Focusable() {
@@ -267,7 +263,7 @@ func TestLoginGeneralOffersNoCredentialForAWindowsLogin(t *testing.T) {
 
 	// And only for a Windows login.
 	sc, inst = newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, _ = loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	form, _ = loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 	if !selectRow(t, form, "Map to credential").Enabled() {
 		t.Error("the credential select is off for a SQL login too")
 	}
@@ -279,7 +275,7 @@ func TestLoginGeneralOffersNoCredentialForAWindowsLogin(t *testing.T) {
 func TestLoginGeneralWillNotRenameABuiltInLogin(t *testing.T) {
 	const name = "##MS_PolicyEventProcessingLogin##"
 	sc, inst := newFakeConn(t, loginGeneralResponses(name, "SQL_LOGIN")...)
-	form, _ := loadPage(t, pageLoginGeneral(sc, ptr(name)), inst)
+	form, _ := loadPage(t, pageLoginGeneral(sc, new(name)), inst)
 
 	for _, r := range form.Rows() {
 		if tr, ok := r.(*propsheet.TextRow); ok && tr.Label() == sheetLabel("Login name") {
@@ -295,7 +291,7 @@ func TestLoginGeneralWillNotRenameABuiltInLogin(t *testing.T) {
 // typed — Script Changes opens a query window that is saved and shared.
 func TestLoginGeneralScriptDoesNotCarryThePassword(t *testing.T) {
 	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "n3wSecret!")

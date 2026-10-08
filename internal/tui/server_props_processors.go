@@ -13,7 +13,7 @@ import (
 // slice (bit i = CPU i). Pure and unit-tested — see server_props_test.go.
 func affinityBits(mask int64, cpuCount int) []bool {
 	bits := make([]bool, cpuCount)
-	for i := 0; i < cpuCount; i++ {
+	for i := range cpuCount {
 		bits[i] = mask&(1<<uint(i)) != 0
 	}
 	return bits
@@ -100,7 +100,7 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 
 			text := make([][]string, cpuCount)
 			values := make([][]bool, cpuCount)
-			for i := 0; i < cpuCount; i++ {
+			for i := range cpuCount {
 				text[i] = []string{"Processor " + strconv.Itoa(i), numaNodeOf(proc.CPUNUMANode, i)}
 				values[i] = []bool{cpuAff[i], ioAff[i]}
 			}

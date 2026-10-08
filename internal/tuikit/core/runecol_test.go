@@ -114,7 +114,7 @@ func TestColumnOfRuneAndRuneIndexAtColumnRoundTrip(t *testing.T) {
 // printable ASCII against the table it skips, over the whole range — the
 // speedup is only sound if the two never disagree.
 func TestRuneWidthASCIIFastPathAgrees(t *testing.T) {
-	for r := rune(0); r < 0x100; r++ {
+	for r := range rune(0x100) {
 		if got, want := RuneWidth(r), displaywidth.Rune(r); got != want {
 			t.Errorf("RuneWidth(%U) = %d, displaywidth.Rune = %d", r, got, want)
 		}
@@ -193,10 +193,10 @@ func TestPrevGraphemeAfterARunOfClusters(t *testing.T) {
 		t.Fatalf("cluster starts = %v, want %v", forward, want)
 	}
 	i := len(line)
-	for k := len(forward) - 1; k >= 0; k-- {
+	for _, f := range slices.Backward(forward) {
 		i = PrevGrapheme(line, i)
-		if i != forward[k] {
-			t.Fatalf("PrevGrapheme walk reached %d, want %d", i, forward[k])
+		if i != f {
+			t.Fatalf("PrevGrapheme walk reached %d, want %d", i, f)
 		}
 	}
 	// Past the end and at the start, one virtual step, as before.

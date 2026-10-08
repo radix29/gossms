@@ -79,7 +79,7 @@ func TestVBarChartSmallValueStaysVisible(t *testing.T) {
 
 	bottom := plotBottom(7)
 	found := false
-	for x := 0; x < 16; x++ {
+	for x := range 16 {
 		if isBlock(column(c, x, bottom, 1)[0]) {
 			found = true
 		}

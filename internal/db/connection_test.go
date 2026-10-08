@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/url"
@@ -458,6 +459,35 @@ func TestServerConnLabel(t *testing.T) {
 			}
 			if got := sc.Label(); got != c.want {
 				t.Errorf("Label() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestCertStoreHint covers the SSL_CERT_FILE/SSL_CERT_DIR suffix: it needs a
+// variable set and an unknown-authority failure, found by type or — for the
+// driver's %v-wrapped Mandatory handshake — by text.
+func TestCertStoreHint(t *testing.T) {
+	typed := fmt.Errorf("gosmo: connect: %w", x509.UnknownAuthorityError{})
+	flattened := errors.New("TLS Handshake failed: tls: failed to verify certificate: x509: certificate signed by unknown authority")
+	other := errors.New("TLS Handshake failed: x509: certificate is not valid for any names")
+
+	for _, tc := range []struct {
+		name      string
+		file, dir string
+		err       error
+		want      bool
+	}{
+		{"no variable", "", "", typed, false},
+		{"file, typed", "/etc/ca.pem", "", typed, true},
+		{"dir, flattened", "", "/etc/certs", flattened, true},
+		{"file, other x509 failure", "/etc/ca.pem", "", other, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SSL_CERT_FILE", tc.file)
+			t.Setenv("SSL_CERT_DIR", tc.dir)
+			if got := certStoreHint(tc.err) != ""; got != tc.want {
+				t.Errorf("certStoreHint(%v) non-empty = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}

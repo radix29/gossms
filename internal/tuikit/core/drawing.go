@@ -324,10 +324,7 @@ func DrawBoxTitle(s tcell.Screen, r Rect, title string, borderStyle, titleStyle 
 		return
 	}
 	titleStr := " " + title + " "
-	tx := r.X + (r.W-DisplayWidth(titleStr))/2
-	if tx < r.X+1 {
-		tx = r.X + 1
-	}
+	tx := max(r.X+(r.W-DisplayWidth(titleStr))/2, r.X+1)
 	DrawTextClipped(s, tx, r.Y, r.X+r.W-2-tx+1, titleStyle, titleStr)
 }
 
@@ -335,7 +332,7 @@ func DrawBoxTitle(s tcell.Screen, r Rect, title string, borderStyle, titleStyle 
 // total item count; visible how many fit on screen; offset the first visible
 // item index.
 func DrawScrollbar(s tcell.Screen, x, y, h, total, visible, offset int, style, thumbStyle tcell.Style) {
-	for i := 0; i < h; i++ {
+	for i := range h {
 		PutRune(s, x, y+i, '│', style)
 	}
 	if total <= visible || total == 0 {
@@ -383,7 +380,7 @@ func ScrollOffsetForDrag(y, h, total, visible int) int {
 // counterpart of DrawScrollbar for content (like PlanView's operator graph
 // canvas) that scrolls sideways.
 func DrawScrollbarH(s tcell.Screen, x, y, w, total, visible, offset int, style, thumbStyle tcell.Style) {
-	for i := 0; i < w; i++ {
+	for i := range w {
 		PutRune(s, x+i, y, '─', style)
 	}
 	if total <= visible || total == 0 {

@@ -106,19 +106,19 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 				// update the shared cell the other pages read.
 				var ch gosmo.JobChanges
 				if descRow.Dirty() {
-					ch.Description = gosmo.Ptr(descRow.Value())
+					ch.Description = new(descRow.Value())
 				}
 				if cat, ok := changedTo(categoryRow, unsetItem); ok {
-					ch.Category = gosmo.Ptr(cat)
+					ch.Category = new(cat)
 				}
 				if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
-					ch.OwnerLogin = gosmo.Ptr(owner)
+					ch.OwnerLogin = new(owner)
 				}
 				if enabledRow.Dirty() {
-					ch.Enabled = gosmo.Ptr(enabledRow.Checked())
+					ch.Enabled = new(enabledRow.Checked())
 				}
 				if nameRow.Dirty() {
-					ch.Name = gosmo.Ptr(nameRow.Value())
+					ch.Name = new(nameRow.Value())
 				}
 				if err := j.Alter(ctx, ch); err != nil {
 					return err

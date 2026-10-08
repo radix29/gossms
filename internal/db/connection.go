@@ -4,9 +4,11 @@ package db
 import (
 	"cmp"
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -134,7 +136,7 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	srv, err := gosmo.Connect(ctx, co)
 	if err != nil {
 		err = explainExtraProperty(err)
-		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error(), Err: err}
+		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error() + certStoreHint(err), Err: err}
 	}
 	return newServerConn(parent, opts, srv, role), nil
 }
@@ -403,4 +405,27 @@ func explainExtraProperty(err error) error {
 		}
 	}
 	return &extraPropertyError{msg: "extra properties: " + strings.TrimPrefix(err.Error(), "gosmo: "), err: err}
+}
+
+// certStoreHint is a suffix for a connect or sign-in cause that failed
+// certificate validation while SSL_CERT_FILE or SSL_CERT_DIR is set; "" otherwise.
+//
+// From Go 1.27 either variable makes Windows and macOS load roots from disk
+// instead of the platform store (GODEBUG x509sslcertoverrideplatform), so an
+// enterprise CA present only in the system store stops validating — and the
+// variables are often set by unrelated installs (Python, corporate images).
+// On Linux the variables were always honoured; the hint is still true there,
+// so no GOOS branch.
+//
+// The text match backs up the type check: go-mssqldb's Mandatory-mode
+// handshake wraps with %v (tds.go), losing the *x509.UnknownAuthorityError.
+func certStoreHint(err error) string {
+	if os.Getenv("SSL_CERT_FILE") == "" && os.Getenv("SSL_CERT_DIR") == "" {
+		return ""
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); !ok &&
+		!strings.Contains(err.Error(), "certificate signed by unknown authority") {
+		return ""
+	}
+	return " (SSL_CERT_FILE/SSL_CERT_DIR is set, so the system certificate store is not consulted)"
 }

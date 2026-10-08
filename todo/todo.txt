@@ -1,4 +1,4 @@
-analyze the libraries
+script database securitx
 
  enable MI / shutdown MI
 

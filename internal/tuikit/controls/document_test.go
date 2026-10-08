@@ -241,7 +241,7 @@ func TestDocumentChangedSince(t *testing.T) {
 		if len(after)-len(before) != newN-oldN {
 			t.Errorf("%s: line count moved by %d, span says %d", name, len(after)-len(before), newN-oldN)
 		}
-		for i := 0; i < row; i++ {
+		for i := range row {
 			if &after[i][0] != &before[i][0] {
 				t.Errorf("%s: line %d above the span changed", name, i)
 			}

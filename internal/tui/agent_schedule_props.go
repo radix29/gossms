@@ -80,7 +80,7 @@ func pageScheduleGeneral(sc *db.ServerConn, id int, scheduleName *string) propPa
 				// reads.
 				var ch gosmo.ScheduleChanges
 				if freqForm.enabledCheck.Dirty() {
-					ch.Enabled = gosmo.Ptr(freqForm.enabled())
+					ch.Enabled = new(freqForm.enabled())
 				}
 				if freqForm.frequencyDirty() {
 					f := freqForm.readFrequency()
@@ -94,10 +94,10 @@ func pageScheduleGeneral(sc *db.ServerConn, id int, scheduleName *string) propPa
 					}
 				}
 				if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
-					ch.OwnerLogin = gosmo.Ptr(owner)
+					ch.OwnerLogin = new(owner)
 				}
 				if freqForm.nameField.Dirty() {
-					ch.Name = gosmo.Ptr(freqForm.name())
+					ch.Name = new(freqForm.name())
 				}
 				if err := sch.Alter(ctx, ch); err != nil {
 					return err

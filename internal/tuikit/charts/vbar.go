@@ -75,10 +75,7 @@ func (v VBarChart) Draw(s tcell.Screen, r core.Rect) {
 // others.
 func (v VBarChart) drawBars(s tcell.Screen, plot core.Rect, sc Scale) {
 	bg := theme.Active().ChartPlotBg
-	slot := plot.W / len(v.Bars)
-	if slot < 1 {
-		slot = 1
-	}
+	slot := max(plot.W/len(v.Bars), 1)
 	barW := v.BarWidth
 	if barW <= 0 {
 		// Capped rather than filling the slot: two bars in a wide panel
@@ -119,10 +116,7 @@ func (v VBarChart) drawLabels(s tcell.Screen, plot, row core.Rect) {
 	}
 	for i, bar := range v.Bars {
 		label := bar.labelFor(slot - 1)
-		x := plot.X + i*slot + (slot-core.DisplayWidth(label))/2
-		if x < plot.X+i*slot {
-			x = plot.X + i*slot
-		}
+		x := max(plot.X+i*slot+(slot-core.DisplayWidth(label))/2, plot.X+i*slot)
 		core.DrawTextClipped(s, x, row.Y, plot.Right()-x, style, label)
 	}
 }

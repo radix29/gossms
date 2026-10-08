@@ -37,7 +37,7 @@ func (e *Editor) Draw(s tcell.Screen) {
 	// widest line in the buffer, so leaving it in the loop condition costs that
 	// lookup once per drawn row.
 	contentH := e.contentH()
-	for row := 0; row < contentH; row++ {
+	for row := range contentH {
 		lineIdx := e.scrollRow + row
 		y := e.rect.Y + row
 

@@ -216,7 +216,7 @@ func TestResolveUnknownTableResolvesToNothing(t *testing.T) {
 func TestResolveDepthCapStopsDeepNesting(t *testing.T) {
 	const depth = maxRelationDepth + 2
 	sql := "SELECT * FROM dbo.Customers"
-	for i := 0; i < depth; i++ {
+	for i := range depth {
 		sql = fmt.Sprintf("SELECT * FROM (%s) d%d", sql, i)
 	}
 	rels := resolveTestSQL(t, strings.Replace(sql, "SELECT *", "SELECT |", 1), testCustomersOrders())

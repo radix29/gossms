@@ -95,8 +95,8 @@ func TestASelfTargetingClipboardHostCarriesAToken(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()
 
-	hostType := reflect.TypeOf((*core.ClipboardHost)(nil)).Elem()
-	tokenerType := reflect.TypeOf((*core.ClipboardTargetTokener)(nil)).Elem()
+	hostType := reflect.TypeFor[core.ClipboardHost]()
+	tokenerType := reflect.TypeFor[core.ClipboardTargetTokener]()
 
 	selfTargeting := 0
 	for _, d := range a.allDialogs {

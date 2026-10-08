@@ -17,7 +17,7 @@ type rowRecordingScreen struct {
 }
 
 func newRowRecordingScreen(w, h int) *rowRecordingScreen {
-	return &rowRecordingScreen{fakeSizedScreen: fakeSizedScreen{w: w, h: h}, cells: map[[2]int]string{}}
+	return &rowRecordingScreen{w: w, h: h, cells: map[[2]int]string{}}
 }
 
 func (s *rowRecordingScreen) SetContent(x, y int, r rune, comb []rune, _ tcell.Style) {

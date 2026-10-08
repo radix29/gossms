@@ -147,7 +147,7 @@ func TestDrawHistoryStaysInsideItsRect(t *testing.T) {
 	DrawHistory(c, core.Rect{X: 4, Y: 3, W: 100, H: 30}, fullHistory())
 
 	rows := c.Rows()
-	for y := 0; y < 3; y++ {
+	for y := range 3 {
 		if strings.TrimSpace(rows[y]) != "" {
 			t.Errorf("row %d above the rect was written: %q", y, rows[y])
 		}
@@ -200,7 +200,7 @@ func fullSample() SampleView {
 // loadFactorBars is one bar per core, the way the panel is fed live.
 func loadFactorBars(cores int) []charts.Bar {
 	bars := make([]charts.Bar, 0, cores)
-	for i := 0; i < cores; i++ {
+	for i := range cores {
 		bars = append(bars, charts.Bar{Label: strconv.Itoa(i), Value: float64(i), Color: tcell.NewRGBColor(2, 2, 2)})
 	}
 	return bars

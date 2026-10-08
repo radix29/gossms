@@ -40,11 +40,10 @@ var WhoIsActiveProc = &Proc{
 // so it matches what's installed. Empty if the header lacks one.
 func WhoIsActiveVersion() string {
 	const marker = "Who Is Active? "
-	i := strings.Index(whoIsActiveScript, marker)
-	if i < 0 {
+	_, rest, ok := strings.Cut(whoIsActiveScript, marker)
+	if !ok {
 		return ""
 	}
-	rest := whoIsActiveScript[i+len(marker):]
 	if j := strings.IndexAny(rest, "\r\n"); j >= 0 {
 		rest = rest[:j]
 	}

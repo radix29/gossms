@@ -242,8 +242,8 @@ func statementAtMarker(t *testing.T, script string) string {
 	var row, col int
 	found := false
 	for r, line := range strings.Split(script, "\n") {
-		if i := strings.Index(line, "‸"); i >= 0 {
-			row, col, found = r, utf8.RuneCountInString(line[:i]), true
+		if before, _, ok := strings.Cut(line, "‸"); ok {
+			row, col, found = r, utf8.RuneCountInString(before), true
 		}
 	}
 	if !found {

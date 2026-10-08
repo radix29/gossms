@@ -2,6 +2,7 @@ package tui
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/radix29/gossms/internal/config"
@@ -20,9 +21,9 @@ import (
 // both.
 func textEntryTypes() []reflect.Type {
 	return []reflect.Type{
-		reflect.TypeOf((*widgets.InputField)(nil)),
-		reflect.TypeOf((*controls.Editor)(nil)),
-		reflect.TypeOf((*propsheet.PropertySheet)(nil)),
+		reflect.TypeFor[*widgets.InputField](),
+		reflect.TypeFor[*controls.Editor](),
+		reflect.TypeFor[*propsheet.PropertySheet](),
 	}
 }
 
@@ -44,7 +45,7 @@ func TestEveryDialogWithTextEntryIsAClipboardHost(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()
 
-	hostType := reflect.TypeOf((*core.ClipboardHost)(nil)).Elem()
+	hostType := reflect.TypeFor[core.ClipboardHost]()
 	checked, withText := 0, 0
 	for _, d := range a.allDialogs {
 		dt := reflect.TypeOf(d)
@@ -93,16 +94,14 @@ func holdsTextEntry(v reflect.Value, seen map[uintptr]bool) bool {
 		return false
 	}
 	t := v.Type()
-	for _, w := range textEntryTypes() {
-		if t == w {
-			return true
-		}
+	if slices.Contains(textEntryTypes(), t) {
+		return true
 	}
-	if t == reflect.TypeOf((*App)(nil)) {
+	if t == reflect.TypeFor[*App]() {
 		return false
 	}
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			return typeHoldsTextEntry(t.Elem(), map[reflect.Type]bool{})
 		}
@@ -129,8 +128,8 @@ func holdsTextEntry(v reflect.Value, seen map[uintptr]bool) bool {
 			}
 		}
 	case reflect.Struct:
-		for i := range v.NumField() {
-			if holdsTextEntry(v.Field(i), seen) {
+		for _, field := range v.Fields() {
+			if holdsTextEntry(field, seen) {
 				return true
 			}
 		}
@@ -146,22 +145,20 @@ func typeHoldsTextEntry(t reflect.Type, seen map[reflect.Type]bool) bool {
 		return false
 	}
 	seen[t] = true
-	for _, w := range textEntryTypes() {
-		if t == w {
-			return true
-		}
+	if slices.Contains(textEntryTypes(), t) {
+		return true
 	}
-	if t == reflect.TypeOf((*App)(nil)) {
+	if t == reflect.TypeFor[*App]() {
 		return false
 	}
 	switch t.Kind() {
-	case reflect.Ptr, reflect.Slice, reflect.Array:
+	case reflect.Pointer, reflect.Slice, reflect.Array:
 		return typeHoldsTextEntry(t.Elem(), seen)
 	case reflect.Map:
 		return typeHoldsTextEntry(t.Key(), seen) || typeHoldsTextEntry(t.Elem(), seen)
 	case reflect.Struct:
-		for i := range t.NumField() {
-			if typeHoldsTextEntry(t.Field(i).Type, seen) {
+		for field := range t.Fields() {
+			if typeHoldsTextEntry(field.Type, seen) {
 				return true
 			}
 		}

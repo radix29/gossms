@@ -118,7 +118,7 @@ func TestBuildVisualLinesReusesItsBuffer(t *testing.T) {
 	if firstCap == 0 {
 		t.Fatal("buildVisualLines returned an empty slice, nothing to check")
 	}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if got := cap(e.buildVisualLines(40)); got != firstCap {
 			t.Fatalf("call %d reallocated: cap = %d, want the first call's %d", i+2, got, firstCap)
 		}

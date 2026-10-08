@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/radix29/gosmo"
@@ -115,10 +116,8 @@ func RightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			// r.Name; 2016-2019 answer NULL (CapabilityUnknown), which Allows would read
 			// as "not denied" and offer the action to logins the wide name refused. The
 			// wide name above is what fails open for a probe that never ran.
-			for _, n := range r.Alt {
-				if server.Has(n) {
-					return true
-				}
+			if slices.ContainsFunc(r.Alt, server.Has) {
+				return true
 			}
 		case dbName == "":
 			// No database to ask about (a folder-level action that prompts for one):
@@ -136,10 +135,8 @@ func RightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			// today, only the test reaches it, but ignoring alternates here would
 			// withhold the action from a holder with nothing at run time to tell it
 			// from a real denial; the next 2022-style split may land at database scope.
-			for _, n := range r.Alt {
-				if caps.Permits(n) {
-					return true
-				}
+			if slices.ContainsFunc(r.Alt, caps.Permits) {
+				return true
 			}
 		}
 	}

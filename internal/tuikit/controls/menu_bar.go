@@ -126,7 +126,7 @@ func (mb *MenuBar) DrawOverlay(s tcell.Screen) {
 // should begin, measured by display width of the preceding menu headers.
 func (mb *MenuBar) menuHeaderOffset(idx int) int {
 	col := mb.rect.X + 1
-	for i := 0; i < idx; i++ {
+	for i := range idx {
 		col += core.DisplayWidth(" " + mb.menus[i].Label + " ")
 	}
 	return col
@@ -146,7 +146,7 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 	core.DrawBox(s, r, borderStyle)
 	core.FillRect(s, r.Inner(1), ' ', ddStyle)
 
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		item := mb.scrollTop + i
 		if item >= len(menu.Items) {
 			break

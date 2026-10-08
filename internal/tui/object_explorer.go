@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
@@ -631,15 +632,8 @@ func FormatNodePath(n *explorerNode) string {
 	for cur := n; cur != nil; cur = cur.parent {
 		parts = append(parts, cur.label)
 	}
-	// reverse
-	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
-		parts[i], parts[j] = parts[j], parts[i]
-	}
-	out := parts[0]
-	for _, p := range parts[1:] {
-		out += " > " + p
-	}
-	return out
+	slices.Reverse(parts)
+	return strings.Join(parts, " > ")
 }
 
 // resolveConn walks up the explorer tree to find the owning connection. Every

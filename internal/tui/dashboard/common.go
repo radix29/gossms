@@ -125,7 +125,7 @@ func splitColumns(r core.Rect, n int) []core.Rect {
 	each := (r.W - (n-1)*panelGutter) / n
 	out := make([]core.Rect, 0, n)
 	x := r.X
-	for i := 0; i < n; i++ {
+	for i := range n {
 		w := each
 		if i == n-1 {
 			w = r.Right() - x // the last panel absorbs the rounding

@@ -18,7 +18,7 @@ import (
 
 func newTestResult(sets int, withError bool) *query.Result {
 	r := &query.Result{}
-	for i := 0; i < sets; i++ {
+	for range sets {
 		r.Sets = append(r.Sets, query.ResultSet{Columns: []string{"c"}, Rows: [][]string{{"v"}}})
 	}
 	r.Messages = append(r.Messages, query.Message{Text: "(1 row affected)"})
@@ -308,7 +308,7 @@ func TestQueryPanelSwallowsWheelDuringADrag(t *testing.T) {
 	// Enough rows that the grid genuinely has somewhere to scroll to —
 	// newTestResult's one-row sets would make the assertion below vacuous.
 	big := &query.Result{Sets: []query.ResultSet{{Columns: []string{"c"}}}}
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		big.Sets[0].Rows = append(big.Sets[0].Rows, []string{"v"})
 	}
 	qp.setResult(big, false)
@@ -323,7 +323,7 @@ func TestQueryPanelSwallowsWheelDuringADrag(t *testing.T) {
 
 	// Wheel, mid-drag, down over the results grid. Several ticks, so the
 	// assertion doesn't depend on one being enough to move a short grid.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if !qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, qp.tabRect.Y+3, tcell.WheelDown, tcell.ModNone)) {
 			t.Fatal("HandleMouse returned false for a wheel tick during a drag; it must consume it")
 		}
@@ -968,7 +968,7 @@ func TestResultsStatusTextExecutingRowCounter(t *testing.T) {
 	if got := qp.resultsStatusText(); !strings.Contains(got, "0 rows") {
 		t.Errorf("status at the start of a run = %q, want a 0 rows counter", got)
 	}
-	for i := 0; i < 7; i++ {
+	for range 7 {
 		prog.AddRow()
 	}
 	if got := qp.resultsStatusText(); !strings.Contains(got, "7 rows") {

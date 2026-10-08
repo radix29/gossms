@@ -40,7 +40,7 @@ func TestAuditFailureLabelsAndValuesArePaired(t *testing.T) {
 
 func TestAuditGeneralLoadsTheNamedAudit(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
-	form, _ := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+	form, _ := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	if got := textRow(t, form, "Audit name").Value(); got != "HIPAA" {
 		t.Errorf("Audit name = %q", got)
@@ -70,7 +70,7 @@ func TestAuditGeneralLoadsTheNamedAudit(t *testing.T) {
 // ALTER would drop on the floor.
 func TestAuditGeneralGatesFileRowsForALogAudit(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("AppLogAudit"), auditRows())
-	form, _ := loadPage(t, pageAuditGeneral(sc, ptr("AppLogAudit")), inst)
+	form, _ := loadPage(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
 
 	if got := selectRow(t, form, "Audit destination").Value(); got != "Application Log" {
 		t.Errorf("Audit destination = %q", got)
@@ -91,7 +91,7 @@ func TestAuditGeneralGatesFileRowsForALogAudit(t *testing.T) {
 // destination the audit was loaded with.
 func TestAuditGeneralUngatesFileRowsWhenFileIsChosen(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("AppLogAudit"), auditRows())
-	form, _ := loadPage(t, pageAuditGeneral(sc, ptr("AppLogAudit")), inst)
+	form, _ := loadPage(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
 
 	editSelect(t, form, "Audit destination", "File")
 	if !textRow(t, form, "File path").Focusable() {
@@ -107,7 +107,7 @@ func TestAuditGeneralUngatesFileRowsWhenFileIsChosen(t *testing.T) {
 // APPLICATION_LOG is a syntax error.
 func TestAuditGeneralSwitchesAFileAuditToTheApplicationLog(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editSelect(t, form, "Audit destination", "Application Log")
 	if err := apply(t.Context()); err != nil {
@@ -132,7 +132,7 @@ func TestAuditGeneralSwitchesAFileAuditToTheApplicationLog(t *testing.T) {
 // disabling the audit — so the page refuses it before the window opens.
 func TestAuditGeneralRefusesFileWithNoPath(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("AppLogAudit"), auditRows(), auditEnabled("AppLogAudit", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("AppLogAudit")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
 
 	editSelect(t, form, "Audit destination", "File")
 	if err := apply(t.Context()); err == nil {
@@ -147,7 +147,7 @@ func TestAuditGeneralRefusesFileWithNoPath(t *testing.T) {
 // gate just released rather than from the audit's (empty) catalog row.
 func TestAuditGeneralSwitchesALogAuditToFile(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("AppLogAudit"), auditRows(), auditEnabled("AppLogAudit", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("AppLogAudit")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
 
 	editSelect(t, form, "Audit destination", "File")
 	editText(t, form, "File path", `C:\newaudit\`)
@@ -175,7 +175,7 @@ func TestAuditGeneralSwitchesALogAuditToFile(t *testing.T) {
 // re-enables the audit.
 func TestAuditGeneralWritesNothingWhenUntouched(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
-	_, apply := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+	_, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestAuditGeneralWritesNothingWhenUntouched(t *testing.T) {
 // replaces the whole block and a value left out is a value cleared.
 func TestAuditGeneralAppliesEverySettingTogether(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editText(t, form, "Queue delay", "5000")
 	if err := apply(t.Context()); err != nil {
@@ -219,7 +219,7 @@ func TestAuditGeneralAppliesEverySettingTogether(t *testing.T) {
 // simply leaves WHERE out keeps the old filter.
 func TestAuditGeneralClearingTheFilterRemovesIt(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editText(t, form, "Filter predicate", "")
 	if err := apply(t.Context()); err != nil {
@@ -245,7 +245,7 @@ func TestAuditGeneralClearingTheFilterRemovesIt(t *testing.T) {
 // own: this pins the value that actually reaches the server.
 func TestAuditGeneralWritesTheChosenFailureAction(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editSelect(t, form, "On audit log failure", "Fail operation")
 	if err := apply(t.Context()); err != nil {
@@ -260,7 +260,7 @@ func TestAuditGeneralWritesTheChosenFailureAction(t *testing.T) {
 // apply has to come out as off, alter, on — in that order.
 func TestAuditGeneralApplyOnAnEnabledAuditTurnsItOffAndBackOn(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("Rollover"), auditRows(), auditEnabled("Rollover", true))
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("Rollover")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("Rollover")), inst)
 
 	editText(t, form, "Queue delay", "3000")
 	if err := apply(t.Context()); err != nil {
@@ -285,7 +285,7 @@ func TestAuditGeneralApplyOnAnEnabledAuditTurnsItOffAndBackOn(t *testing.T) {
 // server has.
 func TestAuditGeneralRenamesLast(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editText(t, form, "Audit name", "HIPAA2")
 	editText(t, form, "Queue delay", "4000")
@@ -377,7 +377,7 @@ func TestAuditGeneralApplyReportsAFailedReEnable(t *testing.T) {
 	sc, inst := newFakeConn(t,
 		auditByName("Rollover"), auditRows(), auditEnabled("Rollover", true),
 		fakeResponse{match: "STATE = ON", err: errors.New("Audit 'Rollover' failed to start")})
-	form, apply := loadPage(t, pageAuditGeneral(sc, ptr("Rollover")), inst)
+	form, apply := loadPage(t, pageAuditGeneral(sc, new("Rollover")), inst)
 
 	editSelect(t, form, "Audit destination", "Security Log")
 	err := apply(t.Context())
@@ -434,7 +434,7 @@ func TestAuditQueueDelayRowRefusesSubSecondDelays(t *testing.T) {
 // drift between them: both go through auditQueueDelayRow.
 func TestAuditGeneralQueueDelayRowIsTheValidatedOne(t *testing.T) {
 	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
-	form, _ := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+	form, _ := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	row := textRow(t, form, "Queue delay")
 	row.Edit("500")

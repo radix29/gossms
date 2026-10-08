@@ -17,7 +17,7 @@ const fuzzMaxRunes = 2000
 //	go test ./internal/tuikit/sqltext -run XXX -fuzz FuzzLexer -fuzztime 60s
 func FuzzLexer(f *testing.F) {
 	f.Add(lexCorpus)
-	for _, l := range strings.Split(lexCorpus, "\n") {
+	for l := range strings.SplitSeq(lexCorpus, "\n") {
 		f.Add(l)
 	}
 	for _, s := range []string{
@@ -44,7 +44,7 @@ func FuzzLexer(f *testing.F) {
 		checkLineEndMatchesFlat(t, text)
 
 		lines := make([][]rune, 0, strings.Count(text, "\n")+1)
-		for _, l := range strings.Split(text, "\n") {
+		for l := range strings.SplitSeq(text, "\n") {
 			lines = append(lines, []rune(l))
 		}
 		for row, line := range lines {

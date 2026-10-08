@@ -83,16 +83,16 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 				// instead of having to go last (see propPage.renames).
 				var ch gosmo.OperatorChanges
 				if enabledCheck.Dirty() {
-					ch.Enabled = gosmo.Ptr(enabledCheck.Checked())
+					ch.Enabled = new(enabledCheck.Checked())
 				}
 				if emailField.Dirty() {
-					ch.EmailAddress = gosmo.Ptr(emailField.Value())
+					ch.EmailAddress = new(emailField.Value())
 				}
 				if categoryRow.Dirty() {
-					ch.Category = gosmo.Ptr(preservedValue(categoryRow, noneItem))
+					ch.Category = new(preservedValue(categoryRow, noneItem))
 				}
 				if nameField.Dirty() {
-					ch.Name = gosmo.Ptr(nameField.Value())
+					ch.Name = new(nameField.Value())
 				}
 				if err := o.Alter(ctx, ch); err != nil {
 					return err

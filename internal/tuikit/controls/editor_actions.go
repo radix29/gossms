@@ -50,7 +50,7 @@ func (e *Editor) DuplicateLines() {
 	e.selecting, e.selBlock = false, false
 	n := er - sr + 1
 	block := make([][]rune, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		line := e.doc.Line(sr + i)
 		cp := make([]rune, len(line))
 		copy(cp, line)

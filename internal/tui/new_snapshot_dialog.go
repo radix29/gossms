@@ -114,10 +114,7 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 		// refuses, with a sentence rather than an empty picker.
 		sources = []string{""}
 	}
-	selected := slices.Index(sources, d.source)
-	if selected < 0 {
-		selected = 0
-	}
+	selected := max(slices.Index(sources, d.source), 0)
 	sourceRow := propsheet.Select("Source database", sources, selected)
 	nameRow := propsheet.Text("Snapshot name", defaultSnapshotName(sources[selected]), 40)
 	pathRow := propsheet.Text("Path of selected file", "", 48)

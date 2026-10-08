@@ -67,7 +67,7 @@ func TestCellToggleKeepsCursorAndScroll(t *testing.T) {
 		func(row int) { on[row] = !on[row] }, rowsFor)
 	grid.SetBounds(0, 0, 40, 10)
 
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		grid.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 	}
 	wantRow, wantCol := grid.SelectedCell()

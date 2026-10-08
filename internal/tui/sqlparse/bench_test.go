@@ -12,7 +12,7 @@ import (
 // filler.
 func benchScript(n int) [][]rune {
 	var b strings.Builder
-	for i := 0; i < n; i++ {
+	for i := range n {
 		fmt.Fprintf(&b, "-- report section %d\n", i)
 		fmt.Fprintf(&b, "SELECT c.CustomerID, c.Name, o.OrderDate, o.Total\n")
 		fmt.Fprintf(&b, "FROM   dbo.Customers AS c\n")
@@ -142,7 +142,7 @@ func BenchmarkCompletionPrefixScanTypingFirstLine_1000Stmts(b *testing.B) {
 // was tokenized on every keystroke here — the Uncached figure.
 func benchScriptNoSemicolon(n int) [][]rune {
 	var b strings.Builder
-	for i := 0; i < n; i++ {
+	for i := range n {
 		fmt.Fprintf(&b, "SELECT c.CustomerID, c.Name, o.OrderDate, o.Total\n")
 		fmt.Fprintf(&b, "FROM   dbo.Customers AS c\n")
 		fmt.Fprintf(&b, "JOIN   dbo.Orders    AS o ON o.CustomerID = c.CustomerID\n")

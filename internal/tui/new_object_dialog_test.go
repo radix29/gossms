@@ -174,8 +174,7 @@ func TestPeerProbeDropsAResultForAnEarlierShowing(t *testing.T) {
 		t.Error("the probe ran without a timeout")
 	}
 	// Closed and reopened: a new showing's context.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	d.ctx = ctx
 	close(release)
 	for deadline := time.Now().Add(100 * time.Millisecond); time.Now().Before(deadline); {

@@ -190,7 +190,7 @@ func (w WindowsPathRules) Clean(dir string) string {
 		s = s[2:]
 	}
 	var parts []string
-	for _, p := range strings.Split(s, `\`) {
+	for p := range strings.SplitSeq(s, `\`) {
 		switch p {
 		case "", ".":
 		case "..":
@@ -269,7 +269,7 @@ func (PosixPathRules) Clean(dir string) string {
 	}
 	abs := strings.HasPrefix(dir, "/")
 	var parts []string
-	for _, p := range strings.Split(dir, "/") {
+	for p := range strings.SplitSeq(dir, "/") {
 		switch p {
 		case "", ".":
 		case "..":
@@ -289,12 +289,12 @@ func (PosixPathRules) Clean(dir string) string {
 
 func (p PosixPathRules) Parent(dir string) string {
 	clean := p.Clean(dir)
-	i := strings.LastIndex(clean, "/")
-	if i < 0 {
+	parent, _, found := strings.CutLast(clean, "/")
+	if !found {
 		return clean
 	}
-	if i == 0 {
+	if parent == "" {
 		return "/"
 	}
-	return clean[:i]
+	return parent
 }

@@ -188,7 +188,7 @@ func TestLivePropFinders(t *testing.T) {
 	})
 
 	t.Run("changeTracking", func(t *testing.T) {
-		on, err := d.TableChangeTrackingFor(ctx, "app", "child")
+		on, err := d.TableRef("app", "child").ChangeTracking(ctx)
 		if err != nil {
 			t.Fatalf("app.child: %v", err)
 		}
@@ -197,14 +197,14 @@ func TestLivePropFinders(t *testing.T) {
 		}
 		// A table with tracking off must come back as a row, not as
 		// ErrNotFound — the page shows it as "off", not as an error.
-		off, err := d.TableChangeTrackingFor(ctx, "app", "parent")
+		off, err := d.TableRef("app", "parent").ChangeTracking(ctx)
 		if err != nil {
 			t.Fatalf("app.parent: %v", err)
 		}
 		if off.Enabled {
 			t.Errorf("app.parent = %+v, want tracking off", off)
 		}
-		if _, err := d.TableChangeTrackingFor(ctx, "app", "nope"); !errors.Is(err, gosmo.ErrNotFound) {
+		if _, err := d.TableRef("app", "nope").ChangeTracking(ctx); !errors.Is(err, gosmo.ErrNotFound) {
 			t.Errorf("missing table: err = %v, want ErrNotFound", err)
 		}
 	})

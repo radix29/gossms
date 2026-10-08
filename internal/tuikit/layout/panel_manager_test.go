@@ -44,7 +44,7 @@ func TestPanelManagerNonClosablePanelNeverFiresOnCloseTab(t *testing.T) {
 	closed := -1
 	pm.OnCloseTab = func(i int) { closed = i }
 
-	for x := 0; x < 40; x++ {
+	for x := range 40 {
 		pm.HandleMouse(tcell.NewEventMouse(x, 0, tcell.ButtonNone, tcell.ModNone))
 		pm.HandleMouse(tcell.NewEventMouse(x, 0, tcell.Button1, tcell.ModNone))
 	}

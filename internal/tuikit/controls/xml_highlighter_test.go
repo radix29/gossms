@@ -293,7 +293,7 @@ func TestXMLHighlighterCacheFallsBackOnNonContiguousJump(t *testing.T) {
 // lineStateAt on the SQL side.
 func xmlOpenBlock(lines [][]rune, idx int) xmlBlockState {
 	state := xmlNone
-	for i := 0; i < idx; i++ {
+	for i := range idx {
 		state = xmlLineEndState(lines[i], state)
 	}
 	return state

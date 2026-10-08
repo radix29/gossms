@@ -3,6 +3,7 @@ package activity
 import (
 	"context"
 	"errors"
+	"slices"
 
 	gosmo "github.com/radix29/gosmo"
 )
@@ -78,12 +79,7 @@ func contains(list []string, s string) bool {
 	if len(list) == 0 {
 		return true
 	}
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 func (f *fakeSource) WaitStats(context.Context) ([]gosmo.WaitStat, error) {

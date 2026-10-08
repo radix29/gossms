@@ -66,7 +66,7 @@ func TestKeyboardScrollsAnOverTallDropdownToTheSelectedItem(t *testing.T) {
 
 	// Walk to the last item, redrawing between keys the way the event loop
 	// does — the scroll is applied by Draw, from the selection.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		mb.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 		mb.DrawOverlay(s)
 	}
@@ -92,7 +92,7 @@ func TestKeyboardScrollsAnOverTallDropdownToTheSelectedItem(t *testing.T) {
 func TestClickOnAScrolledDropdownHitsTheItemDrawnThere(t *testing.T) {
 	var ran string
 	mb, s := openTallMenuBar(21, 20, &ran)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		mb.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 		mb.DrawOverlay(s)
 	}
@@ -120,7 +120,7 @@ func TestWheelScrollsAnOverTallDropdown(t *testing.T) {
 		t.Fatalf("scrollTop = %d on a freshly opened menu, want 0", mb.scrollTop)
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		mb.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+2, tcell.WheelDown, tcell.ModNone))
 		mb.DrawOverlay(s)
 	}
@@ -133,7 +133,7 @@ func TestWheelScrollsAnOverTallDropdown(t *testing.T) {
 		t.Fatal("the wheel closed the dropdown; want it consumed as a scroll")
 	}
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		mb.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+2, tcell.WheelUp, tcell.ModNone))
 		mb.DrawOverlay(s)
 	}
@@ -145,7 +145,7 @@ func TestWheelScrollsAnOverTallDropdown(t *testing.T) {
 func TestDropdownThatFitsDoesNotScroll(t *testing.T) {
 	var ran string
 	mb, s := openTallMenuBar(6, 24, &ran)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		mb.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 		mb.DrawOverlay(s)
 	}

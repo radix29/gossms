@@ -91,10 +91,10 @@ func pageAgentAlertSystem(sc *db.ServerConn) propPage {
 				}
 				var ch gosmo.AgentMailChanges
 				if enabled.Dirty() {
-					ch.Enabled = gosmo.Ptr(enabled.Checked())
+					ch.Enabled = new(enabled.Checked())
 				}
 				if profile.Dirty() {
-					ch.Profile = gosmo.Ptr(name)
+					ch.Profile = new(name)
 				}
 				return sc.Server.SetAgentMailSettings(ctx, ch)
 			}

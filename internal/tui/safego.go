@@ -132,9 +132,7 @@ func (a *App) fanOut(n int, what string, work func(i int), onPanic func(i int)) 
 
 	var wg sync.WaitGroup
 	for range min(n, maxRowFetchConcurrency) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// The per-item recovery above keeps a worker alive; this is the belt under it,
 			// for a panic in onPanic or reportPanic itself. One escaping both is on a
 			// background goroutine where nothing else can catch it: the process dies and
@@ -144,7 +142,7 @@ func (a *App) fanOut(n int, what string, work func(i int), onPanic func(i int)) 
 			for i := range idx {
 				one(i)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

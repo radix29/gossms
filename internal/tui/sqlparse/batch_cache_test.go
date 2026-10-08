@@ -122,7 +122,7 @@ func TestBatchCacheRandomEditSweep(t *testing.T) {
 	c := &BatchCache{}
 
 	var history []string
-	for i := 0; i < 3000; i++ {
+	for i := range 3000 {
 		op := editOps[rng.Intn(len(editOps))]
 		if len(d.lines) > 60 {
 			op = deleteLineOp

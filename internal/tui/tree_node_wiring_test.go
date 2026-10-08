@@ -298,7 +298,7 @@ func TestEveryNodeTypeIsWired(t *testing.T) {
 	}
 	// Safe to index: the count check above pins len(names) to nodeTypeCount.
 	name := func(nt NodeType) string { return names[nt] }
-	for nt := NodeType(0); nt < nodeTypeCount; nt++ {
+	for nt := range nodeTypeCount {
 		w, ok := nodeTypeWiring[nt]
 		if !ok {
 			t.Errorf("%s has no entry in nodeTypeWiring — a new type is wired nowhere "+

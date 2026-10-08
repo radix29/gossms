@@ -62,7 +62,7 @@ func TestProcScriptIsOneUnqualifiedBatch(t *testing.T) {
 	for _, p := range procs {
 		for _, loc := range []ProcLocation{ProcMaster, ProcTempDB} {
 			script := p.Script(loc)
-			for _, line := range strings.Split(script, "\n") {
+			for line := range strings.SplitSeq(script, "\n") {
 				switch strings.ToLower(strings.TrimSpace(strings.TrimSuffix(line, "\r"))) {
 				case "go":
 					t.Errorf("%s %s script contains a GO, which sp_executesql cannot run",

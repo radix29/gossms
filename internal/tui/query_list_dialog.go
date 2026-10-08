@@ -71,7 +71,7 @@ func (d *QueryListDialog) Draw(s tcell.Screen) {
 		core.DrawText(s, inner.X+1, inner.Y+1, msgStyle, "(no open queries)")
 	}
 
-	for row := 0; row < dataH; row++ {
+	for row := range dataH {
 		idx := d.scroll + row
 		if idx >= len(d.titles) {
 			break

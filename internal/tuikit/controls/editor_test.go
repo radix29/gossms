@@ -255,7 +255,7 @@ func TestEditorCaseConversion(t *testing.T) {
 // deleteSelection() can see it silently leaves the text in place.
 func TestEditorSelectionDeletedByBackspace(t *testing.T) {
 	e := newTestEditor("abcdef")
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
 	}
 	if !e.HasSelection() || e.SelectedText() != "abc" {
@@ -267,7 +267,7 @@ func TestEditorSelectionDeletedByBackspace(t *testing.T) {
 	}
 
 	e2 := newTestEditor("abcdef")
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		e2.HandleKey(key(tcell.KeyRight, tcell.ModShift))
 	}
 	e2.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
@@ -278,7 +278,7 @@ func TestEditorSelectionDeletedByBackspace(t *testing.T) {
 
 func TestEditorCutCopyPasteRoundTrip(t *testing.T) {
 	e := newTestEditor("hello world")
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
 	}
 	if got := e.SelectedText(); got != "hello" {
@@ -479,13 +479,13 @@ func TestEditorWordDelete(t *testing.T) {
 // rewinds to 5 characters short of empty.
 func TestEditorUndoStackCapped(t *testing.T) {
 	e := newTestEditor("")
-	for i := 0; i < maxUndoSteps+5; i++ {
+	for range maxUndoSteps + 5 {
 		e.HandleKey(runeKey('x', tcell.ModNone))
 	}
 	if len(e.undoStack) != maxUndoSteps {
 		t.Fatalf("undoStack len = %d, want %d (capped)", len(e.undoStack), maxUndoSteps)
 	}
-	for i := 0; i < maxUndoSteps; i++ {
+	for range maxUndoSteps {
 		e.undo()
 	}
 	if len(e.undoStack) != 0 {
@@ -510,7 +510,7 @@ func TestEditorUndoStackCappedByBytes(t *testing.T) {
 		lines[i] = line
 	}
 	e := newTestEditor(strings.Join(lines, "\n"))
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		e.Paste("y")
 	}
 	if e.undoBytes > maxUndoBytes {
@@ -522,7 +522,7 @@ func TestEditorUndoStackCappedByBytes(t *testing.T) {
 	// The retained steps are the newest ones, so undo still walks back one
 	// character at a time from the newest edit.
 	want := len(e.undoStack)
-	for i := 0; i < want; i++ {
+	for range want {
 		e.undo()
 	}
 	if got := e.Text(); !strings.HasPrefix(got, strings.Repeat("y", 10-want)+line) {
@@ -736,7 +736,7 @@ func TestEditorShiftClickExtendsExistingSelection(t *testing.T) {
 	e := newTestEditor("hello world")
 	e.SetBounds(0, 0, 40, 5)
 	e.cursorRow, e.cursorCol = 0, 0
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
 	}
 	if got := e.SelectedText(); got != "hel" {
@@ -1314,7 +1314,7 @@ func TestEditorSlowSecondClickDoesNotSelectWord(t *testing.T) {
 func TestEditorRedoStackBound(t *testing.T) {
 	chunk := strings.Repeat(strings.Repeat("z", 100)+"\n", 50)
 	e := newTestEditor("seed")
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		e.cursorRow, e.cursorCol = 0, 0
 		e.Paste(chunk) // a whole-document step, so each one grows the buffer
 	}

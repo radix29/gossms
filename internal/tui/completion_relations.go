@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -381,9 +382,9 @@ func findColumnIn(collation string, cols []gosmo.CatalogColumn, name string) (go
 // and the panel reads neither, so it keeps the case-insensitive default every
 // install ships with.
 func findBinding(bindings []sqlparse.Binding, name string) (sqlparse.Binding, bool) {
-	for i := len(bindings) - 1; i >= 0; i-- {
-		if strings.EqualFold(bindings[i].Name, name) {
-			return bindings[i], true
+	for _, binding := range slices.Backward(bindings) {
+		if strings.EqualFold(binding.Name, name) {
+			return binding, true
 		}
 	}
 	return sqlparse.Binding{}, false

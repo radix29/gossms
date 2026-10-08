@@ -247,10 +247,7 @@ func (d *ConnectDialog) rebuildFocusable() {
 			d.fHostCert, d.fExtraProps)
 	}
 	d.focusable = list
-	i := indexOfFocusable(list, prev)
-	if i < 0 {
-		i = 0
-	}
+	i := max(indexOfFocusable(list, prev), 0)
 	d.focusIdx = i
 	if d.onButtons {
 		// A resize switching the pane mode is no reason to leave the buttons.

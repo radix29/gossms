@@ -458,11 +458,12 @@ func (p *ReplicationMonitorPanel) summary() string {
 	if r := rmRates[p.rateIdx]; r.every > 0 {
 		auto = "refreshed every " + r.label
 	}
-	s := fmt.Sprintf("%d publications · read %s · %s", len(p.snap.pubs), p.updated.Format("15:04:05"), auto)
+	var s strings.Builder
+	fmt.Fprintf(&s, "%d publications · read %s · %s", len(p.snap.pubs), p.updated.Format("15:04:05"), auto)
 	for _, f := range p.snap.failed {
-		s += fmt.Sprintf(" · could not read %s: %v", f.db, displayError(f.err))
+		fmt.Fprintf(&s, " · could not read %s: %v", f.db, displayError(f.err))
 	}
-	return s
+	return s.String()
 }
 
 // pubIndexByName finds a publication by database and name, as an Object

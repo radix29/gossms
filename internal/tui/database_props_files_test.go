@@ -218,7 +218,7 @@ func TestFileEditModifyCarriesOnlyWhatChanged(t *testing.T) {
 func TestFileEditSpecForANewFile(t *testing.T) {
 	t.Run("a data file carries its filegroup", func(t *testing.T) {
 		e := &fileEdit{
-			pendingState: pendingState{isNew: true}, name: "AW_Data2", fileType: "ROWS", fileGroup: "SECONDARY",
+			isNew: true, name: "AW_Data2", fileType: "ROWS", fileGroup: "SECONDARY",
 			path: `D:\data\AW2.ndf`, sizeKB: 100 * mb, growthKB: 64 * mb, maxSizeKB: -1,
 		}
 		want := gosmo.DatabaseFileSpec{
@@ -232,7 +232,7 @@ func TestFileEditSpecForANewFile(t *testing.T) {
 
 	t.Run("a log file carries no filegroup", func(t *testing.T) {
 		e := &fileEdit{
-			pendingState: pendingState{isNew: true}, name: "AW_Log2", fileType: logFileType, fileGroup: "PRIMARY",
+			isNew: true, name: "AW_Log2", fileType: logFileType, fileGroup: "PRIMARY",
 			path: `D:\log\AW2.ldf`, sizeKB: 50 * mb, growthKB: 32 * mb, maxSizeKB: -1,
 		}
 		if got := e.spec().FileGroup; got != "" {
@@ -241,7 +241,7 @@ func TestFileEditSpecForANewFile(t *testing.T) {
 	})
 
 	t.Run("percent growth excludes KB growth", func(t *testing.T) {
-		e := &fileEdit{pendingState: pendingState{isNew: true}, name: "x", fileType: "ROWS", isPercentGrowth: true, growthPercent: 10, growthKB: 64 * mb}
+		e := &fileEdit{isNew: true, name: "x", fileType: "ROWS", isPercentGrowth: true, growthPercent: 10, growthKB: 64 * mb}
 		spec := e.spec()
 		if spec.GrowthPercent != 10 || spec.GrowthKB != 0 {
 			t.Errorf("spec() growth = %d%% / %dKB, want 10%% and no KB", spec.GrowthPercent, spec.GrowthKB)
@@ -352,7 +352,7 @@ func TestAGrowthAmountStillTravelsWhenItIsNotZero(t *testing.T) {
 // the same zero means the same thing and gosmo would otherwise omit the
 // clause and let the server's default growth apply.
 func TestANewFileCanBeCreatedWithAutogrowthOff(t *testing.T) {
-	e := &fileEdit{pendingState: pendingState{isNew: true}, name: "appdb_2", fileType: "ROWS", fileGroup: "PRIMARY", path: `C:\data\appdb_2.ndf`, sizeKB: 8 * mb, maxSizeKB: -1}
+	e := &fileEdit{isNew: true, name: "appdb_2", fileType: "ROWS", fileGroup: "PRIMARY", path: `C:\data\appdb_2.ndf`, sizeKB: 8 * mb, maxSizeKB: -1}
 	if spec := e.spec(); !spec.DisableGrowth {
 		t.Errorf("a new file with growth 0 did not ask for autogrowth off: %+v", spec)
 	}

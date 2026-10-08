@@ -93,7 +93,7 @@ func TestFindDialogTabReachesButtons(t *testing.T) {
 	if got := d.btnFocus(); got != 0 {
 		t.Fatalf("btnFocus = %d with a field focused, want 0", got)
 	}
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 	}
 	if got := d.btnFocus(); got != 0 || d.focusIdx != 4 {
@@ -104,7 +104,7 @@ func TestFindDialogTabReachesButtons(t *testing.T) {
 		t.Fatalf("btnFocus = %d after another Tab, want 1 (Find Previous)", got)
 	}
 	// Tab wraps back around to the first field rather than dead-ending.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 	}
 	if d.focusIdx != 0 {

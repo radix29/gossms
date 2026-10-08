@@ -372,7 +372,7 @@ func sqlKeywordCanonical(buf []rune, start, end int) (string, bool) {
 		return "", false
 	}
 	var scratch [maxSQLKeywordLen]byte
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c := buf[start+i]
 		if c >= utf8.RuneSelf {
 			return "", false

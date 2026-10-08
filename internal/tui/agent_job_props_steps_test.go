@@ -127,7 +127,7 @@ func TestJobStepEditableIsTSQLOrNew(t *testing.T) {
 		{"", true, true},
 		{"CmdExec", true, true},
 	} {
-		e := &jobStepEdit{subsystem: tc.subsystem, pendingState: pendingState{isNew: tc.isNew}}
+		e := &jobStepEdit{subsystem: tc.subsystem, isNew: tc.isNew}
 		if got := e.editable(); got != tc.want {
 			t.Errorf("editable() for subsystem %q isNew=%v = %v, want %v", tc.subsystem, tc.isNew, got, tc.want)
 		}
@@ -137,7 +137,7 @@ func TestJobStepEditableIsTSQLOrNew(t *testing.T) {
 // A New step has no subsystem and sp_add_jobstep rejects an empty one, so
 // request() defaults it; a loaded step's subsystem must survive.
 func TestJobStepRequestSubsystemDefaultsToTSQLOnly(t *testing.T) {
-	if got := (&jobStepEdit{pendingState: pendingState{isNew: true}}).request().Subsystem; got != tsqlSubsystem {
+	if got := (&jobStepEdit{isNew: true}).request().Subsystem; got != tsqlSubsystem {
 		t.Errorf("a new step's request Subsystem = %q, want %q", got, tsqlSubsystem)
 	}
 	if got := (&jobStepEdit{subsystem: "CmdExec"}).request().Subsystem; got != "CmdExec" {
@@ -146,7 +146,7 @@ func TestJobStepRequestSubsystemDefaultsToTSQLOnly(t *testing.T) {
 }
 
 func TestStepNumberText(t *testing.T) {
-	if got := stepNumberText(&jobStepEdit{pendingState: pendingState{isNew: true}}); got != "New" {
+	if got := stepNumberText(&jobStepEdit{isNew: true}); got != "New" {
 		t.Errorf("a pending step shows %q, want \"New\" — its step_id is not assigned until Apply", got)
 	}
 	if got := stepNumberText(&jobStepEdit{stepID: 3}); got != "3" {
@@ -236,10 +236,10 @@ func TestPlanJobStepWritesSortsEveryEditIntoOnePass(t *testing.T) {
 	readOnly := jobStepEditFromStep(&gosmo.JobStep{StepID: 4, Name: "ps", Subsystem: "PowerShell", Command: "Get-Date"})
 	readOnly.command = "rm -rf /"
 
-	added := &jobStepEdit{pendingState: pendingState{isNew: true}, subsystem: tsqlSubsystem, name: "added"}
+	added := &jobStepEdit{isNew: true, subsystem: tsqlSubsystem, name: "added"}
 
 	// Added then deleted: nothing to add or delete.
-	addedThenRemoved := &jobStepEdit{pendingState: pendingState{isNew: true, removing: true}, subsystem: tsqlSubsystem, name: "transient"}
+	addedThenRemoved := &jobStepEdit{isNew: true, removing: true, subsystem: tsqlSubsystem, name: "transient"}
 
 	plan := planJobStepWrites([]*jobStepEdit{unchanged, edited, removed, readOnly, added, addedThenRemoved})
 

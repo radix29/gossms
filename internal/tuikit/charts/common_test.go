@@ -1,6 +1,7 @@
 package charts
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -21,7 +22,7 @@ func plotBg() tcell.Color { return theme.Active().ChartPlotBg }
 // column reads canvas column x bottom-up, returning one rune per row.
 func column(c *Canvas, x, bottomY, height int) []rune {
 	out := make([]rune, 0, height)
-	for i := 0; i < height; i++ {
+	for i := range height {
 		str, _, _ := c.Get(x, bottomY-i)
 		runes := []rune(str)
 		if len(runes) == 0 {
@@ -35,17 +36,10 @@ func column(c *Canvas, x, bottomY, height int) []rune {
 
 // isBlock reports whether r is any part of a filled bar or stack.
 func isBlock(r rune) bool {
-	for _, b := range vBlocks[1:] {
-		if r == b {
-			return true
-		}
+	if slices.Contains(vBlocks[1:], r) {
+		return true
 	}
-	for _, b := range hBlocks[1:] {
-		if r == b {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(hBlocks[1:], r)
 }
 
 // assertNoHoles fails when a run of block glyphs has a gap in it — the

@@ -31,7 +31,7 @@ func TestWrapMessageFitsWithinBudget(t *testing.T) {
 	}
 	// Nothing was dropped: every word survives somewhere in the layout.
 	joined := strings.Join(lines, " ")
-	for _, word := range strings.Fields(restoreFailure) {
+	for word := range strings.FieldsSeq(restoreFailure) {
 		if !strings.Contains(joined, word) {
 			t.Errorf("word %q went missing from a layout with room to spare", word)
 		}

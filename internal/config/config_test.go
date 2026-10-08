@@ -163,7 +163,7 @@ func TestAddOrUpdateReplacesExistingAndMovesToEnd(t *testing.T) {
 
 func TestAddOrUpdateEvictsOldestBeyondCap(t *testing.T) {
 	cfg := &Config{}
-	for i := 0; i < MaxSavedConnections+3; i++ {
+	for i := range MaxSavedConnections + 3 {
 		cfg.AddOrUpdate(Connection{Server: "srv", Port: i, Database: "db", User: "u"})
 	}
 	if len(cfg.Connections) != MaxSavedConnections {

@@ -34,7 +34,7 @@ func TestStatusHistoryRecordPrependsNewest(t *testing.T) {
 // maxStatusHistoryLines messages are kept.
 func TestStatusHistoryRecordCapsAtMax(t *testing.T) {
 	d := &StatusHistoryDialog{}
-	for i := 0; i < maxStatusHistoryLines+10; i++ {
+	for i := range maxStatusHistoryLines + 10 {
 		d.Record("message " + strconv.Itoa(i))
 	}
 	if len(d.lines) != maxStatusHistoryLines {
@@ -141,16 +141,16 @@ func TestStatusHistoryRecordIsSafeFromBackgroundGoroutines(t *testing.T) {
 
 	screen := &fakeSizedScreen{w: 100, h: 40}
 	var wg sync.WaitGroup
-	for w := 0; w < 4; w++ {
+	for w := range 4 {
 		wg.Add(1)
 		go func(w int) {
 			defer wg.Done()
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				d.Record("worker " + strconv.Itoa(w) + " message " + strconv.Itoa(i))
 			}
 		}(w)
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		d.Draw(screen)
 	}
 	wg.Wait()

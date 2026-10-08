@@ -193,7 +193,7 @@ func ColumnOfRune(line []rune, idx int) int {
 	// The rune at idx is looked at too: if it joins, idx is inside a cluster
 	// whose base is the rune before it.
 	col, lim := 0, min(idx+1, len(line))
-	for i := 0; i < lim; i++ {
+	for i := range lim {
 		r := line[i]
 		if r >= joinFloor {
 			j := max(i-1, 0) // its possible base

@@ -32,14 +32,14 @@ func TestEveryAppDialogFieldIsRegisteredInAllDialogs(t *testing.T) {
 		registered[p] = true
 	}
 
-	dialogType := reflect.TypeOf((*Dialog)(nil)).Elem()
+	dialogType := reflect.TypeFor[Dialog]()
 	av := reflect.ValueOf(a).Elem()
 	found := 0
 	for i := range av.NumField() {
 		f := av.Type().Field(i)
 		// Pointer() rather than Interface(): these fields are unexported, and
 		// Interface() panics on those. Identity is all this needs.
-		if f.Type.Kind() != reflect.Ptr || !f.Type.Implements(dialogType) {
+		if f.Type.Kind() != reflect.Pointer || !f.Type.Implements(dialogType) {
 			continue
 		}
 		found++

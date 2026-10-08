@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -380,9 +381,7 @@ func saveXEHiddenColumns(app *App, session string, hidden map[string]bool) {
 		return
 	}
 	next := make(map[string][]string, len(app.cfg.XEventHiddenColumns)+1)
-	for k, cols := range app.cfg.XEventHiddenColumns {
-		next[k] = cols
-	}
+	maps.Copy(next, app.cfg.XEventHiddenColumns)
 	keys := make([]string, 0, len(hidden))
 	for k := range hidden {
 		keys = append(keys, k)

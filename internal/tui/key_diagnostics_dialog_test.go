@@ -142,7 +142,7 @@ func TestKeyDiagnosticsShowResetsTheLog(t *testing.T) {
 func TestKeyDiagnosticsRecordKeyCapsAtMax(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyF1, "", tcell.ModNone))
-	for i := 0; i < maxKeyDiagLines; i++ {
+	for range maxKeyDiagLines {
 		d.RecordKey(tcell.NewEventKey(tcell.KeyF2, "", tcell.ModNone))
 	}
 	if len(d.lines) != maxKeyDiagLines {

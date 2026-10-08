@@ -108,7 +108,7 @@ func signIn(ctx context.Context, opts config.Connection, co gosmo.ConnectionOpti
 		return &ConnectionError{Server: opts.Server,
 			Cause: fmt.Sprintf("sign-in not completed within %v", SignInTimeout), Err: errors.Join(ctx.Err(), err)}
 	}
-	cause := "Microsoft Entra sign-in failed: " + strings.TrimPrefix(err.Error(), "gosmo: entra sign-in: ")
+	cause := "Microsoft Entra sign-in failed: " + strings.TrimPrefix(err.Error(), "gosmo: entra sign-in: ") + certStoreHint(err)
 	return &ConnectionError{Server: opts.Server, Cause: cause, Err: err}
 }
 

@@ -99,7 +99,7 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 				// instead of having to go last (see propPage.renames).
 				var ch gosmo.AlertChanges
 				if enabledCheck.Dirty() {
-					ch.Enabled = gosmo.Ptr(enabledCheck.Checked())
+					ch.Enabled = new(enabledCheck.Checked())
 				}
 				if triggerRow.Dirty() || errorField.Dirty() || severityField.Dirty() {
 					// Both parameters go every time, the unused one zeroed:
@@ -113,23 +113,23 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 					} else {
 						sev = intRowValue0(severityField.IntValue())
 					}
-					ch.ErrorNumber, ch.Severity = gosmo.Ptr(errNum), gosmo.Ptr(sev)
+					ch.ErrorNumber, ch.Severity = new(errNum), new(sev)
 				}
 				if dbRow.Dirty() {
-					ch.DatabaseName = gosmo.Ptr(preservedValue(dbRow, allDatabasesItem))
+					ch.DatabaseName = new(preservedValue(dbRow, allDatabasesItem))
 				}
 				if delayField.Dirty() {
 					n := intRowValue0(delayField.IntValue())
-					ch.DelayBetweenResponses = gosmo.Ptr(time.Duration(n) * time.Second)
+					ch.DelayBetweenResponses = new(time.Duration(n) * time.Second)
 				}
 				if messageField.Dirty() {
-					ch.NotificationMessage = gosmo.Ptr(messageField.Value())
+					ch.NotificationMessage = new(messageField.Value())
 				}
 				if categoryRow.Dirty() {
-					ch.Category = gosmo.Ptr(preservedValue(categoryRow, noneItem))
+					ch.Category = new(preservedValue(categoryRow, noneItem))
 				}
 				if nameField.Dirty() {
-					ch.Name = gosmo.Ptr(nameField.Value())
+					ch.Name = new(nameField.Value())
 				}
 				if err := al.Alter(ctx, ch); err != nil {
 					return err

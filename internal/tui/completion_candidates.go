@@ -144,10 +144,10 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 		})
 	}
 	seenBinding := map[string]bool{}
-	for i := len(bindings) - 1; i >= 0; i-- {
+	for _, binding := range slices.Backward(bindings) {
 		// Backwards and deduplicated, to match findBinding: a redeclared name
 		// is one candidate, and it is the later declaration's.
-		name := bindings[i].Name
+		name := binding.Name
 		key := strings.ToLower(name)
 		ok, partial := nameMatch(key, pl)
 		if seenBinding[key] || !ok {

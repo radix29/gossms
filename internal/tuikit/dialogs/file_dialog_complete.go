@@ -83,10 +83,7 @@ func commonPrefix(strs []string) string {
 	prefix := []rune(strs[0])
 	for _, s := range strs[1:] {
 		r := []rune(s)
-		n := len(prefix)
-		if len(r) < n {
-			n = len(r)
-		}
+		n := min(len(r), len(prefix))
 		i := 0
 		for i < n && prefix[i] == r[i] {
 			i++

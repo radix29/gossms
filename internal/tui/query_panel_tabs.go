@@ -216,7 +216,7 @@ func (p *QueryPanel) setMessages(msgs []query.Message) {
 	var textLines []string
 	var errLines []bool
 	for _, m := range msgs {
-		for _, l := range strings.Split(m.Text, "\n") {
+		for l := range strings.SplitSeq(m.Text, "\n") {
 			textLines = append(textLines, l)
 			errLines = append(errLines, m.IsError)
 		}

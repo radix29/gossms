@@ -202,7 +202,7 @@ func (c *Canvas) inBounds(x, y int) bool {
 func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
 	rows := min(src.H, dst.H)
 	cols := min(src.W, dst.W)
-	for dy := 0; dy < rows; dy++ {
+	for dy := range rows {
 		for dx := 0; dx < cols; {
 			// Read the cell rather than Get it: Get composes a string per
 			// cell, and the whole visible viewport comes through here.

@@ -201,7 +201,7 @@ func TestFilesTabStaysPutOnASingleEntryCycle(t *testing.T) {
 	d := filesDialog()
 	d.rbReloc.SetSelected(relocAuto)
 	d.syncRelocState()
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		d.handleFilesKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 		if d.filesFocus != 0 {
 			t.Fatalf("Tab %d: filesFocus = %d, want 0", i+1, d.filesFocus)

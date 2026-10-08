@@ -117,7 +117,7 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 	secStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive).Bold(true)
 	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
 
-	for row := 0; row < dataH; row++ {
+	for row := range dataH {
 		idx := d.scroll + row
 		if idx >= len(d.rows) {
 			break

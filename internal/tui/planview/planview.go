@@ -318,10 +318,7 @@ func (v *PlanView) layout() {
 	} else {
 		v.liveRect = core.Rect{}
 	}
-	h := v.rect.Bottom() - y
-	if h < 0 {
-		h = 0
-	}
+	h := max(v.rect.Bottom()-y, 0)
 	v.contentRect = core.Rect{X: v.rect.X, Y: y, W: v.rect.W, H: h}
 	v.xml.SetBounds(v.contentRect.X, v.contentRect.Y, v.contentRect.W, v.contentRect.H)
 	v.layoutTree()

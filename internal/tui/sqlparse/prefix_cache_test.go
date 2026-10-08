@@ -2,7 +2,9 @@ package sqlparse
 
 import (
 	"fmt"
+	"maps"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -65,8 +67,8 @@ SELECT g FROM dbo.Seven`
 func checkCursorSweep(t *testing.T, c *PrefixCache, lines [][]rune, rev TextRevision, label string) {
 	t.Helper()
 	buf := flattenFresh(lines)
-	for row := len(lines) - 1; row >= 0; row-- {
-		for col := 0; col <= len(lines[row]); col++ {
+	for row, line := range slices.Backward(lines) {
+		for col := 0; col <= len(line); col++ {
 			upTo := OffsetForCursor(lines, row, col)
 			want := ScanPrefix(lines, flattenFresh(lines), row, upTo)
 			got := c.Scan(lines, buf, row, upTo, rev)
@@ -243,7 +245,7 @@ func TestPrefixCacheFallsBackWhenItCannotResume(t *testing.T) {
 func TestPrefixCacheActuallyResumes(t *testing.T) {
 	doc := &cacheDoc{}
 	var b strings.Builder
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		b.WriteString("SELECT col FROM dbo.Tbl;\n")
 		if i%10 == 9 {
 			b.WriteString("GO\n")
@@ -486,7 +488,7 @@ func TestPrefixCacheRandomEditSweep(t *testing.T) {
 	// The last few edits only: the failure prints the script as it stands, and
 	// what matters is how it got its last shape.
 	var history []string
-	for i := 0; i < 2000; i++ {
+	for i := range 2000 {
 		op := editOps[rng.Intn(len(editOps))]
 		if len(d.lines) > 60 {
 			op = deleteLineOp
@@ -561,9 +563,7 @@ func TestPrefixCacheMatchesCorpusWhileTyping(t *testing.T) {
 // versions alone would answer one script from another's boundaries.
 func TestPrefixCacheMatchesCorpusCursorSweep(t *testing.T) {
 	scripts := make(map[string]string, len(diffCorpus)+400)
-	for name, script := range diffCorpus {
-		scripts[name] = script
-	}
+	maps.Copy(scripts, diffCorpus)
 	for i, script := range generatedScripts() {
 		scripts[fmt.Sprintf("script%03d", i)] = script
 	}

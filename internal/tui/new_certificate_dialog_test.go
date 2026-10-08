@@ -96,8 +96,8 @@ func TestNewCertificateByPasswordNeedsNoMasterKey(t *testing.T) {
 func TestValidateNewCertificate(t *testing.T) {
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	ok := newCertificateInput{name: "c", subject: "s",
-		keyProtectionInput: keyProtectionInput{hasMasterKey: true, dbName: "d"},
-		existingNames:      newNameSet("", "taken")}
+		hasMasterKey: true, dbName: "d",
+		existingNames: newNameSet("", "taken")}
 	cases := []struct {
 		name string
 		edit func(*newCertificateInput)

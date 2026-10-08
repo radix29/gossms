@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,12 +157,7 @@ func TestDBSpecificationGeneralLoadsTheNamedSpecification(t *testing.T) {
 }
 
 func containsString(all []string, want string) bool {
-	for _, s := range all {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(all, want)
 }
 
 // SQL Server allows one specification per audit per database, so an audit

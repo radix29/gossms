@@ -51,7 +51,7 @@ func (c *menuCascade) popTo(n int) {
 // a path that no longer matches its items yields nil.
 func (c *menuCascade) levelItems(root []MenuItem, level int) []MenuItem {
 	items := root
-	for i := 0; i < level; i++ {
+	for i := range level {
 		if i >= len(c.path) || c.path[i] < 0 || c.path[i] >= len(items) {
 			return nil
 		}

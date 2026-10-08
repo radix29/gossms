@@ -177,7 +177,7 @@ func (p *jobStepPanel) write(e *jobStepEdit) {
 
 // newStep builds a T-SQL step from the panel; the caller has checked the name.
 func (p *jobStepPanel) newStep() *jobStepEdit {
-	e := &jobStepEdit{pendingState: pendingState{isNew: true}, subsystem: tsqlSubsystem}
+	e := &jobStepEdit{isNew: true, subsystem: tsqlSubsystem}
 	p.read(e)
 	return e
 }

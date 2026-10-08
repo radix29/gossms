@@ -78,11 +78,9 @@ func TestSnapshotIsRaceFreeAgainstConcurrentFilterWrites(t *testing.T) {
 	for range rounds {
 		// The UI goroutine's half: snapshot, hand it off, then write the node.
 		snap := node.snapshot()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			loaded <- len(filterChildren(snap.data.Filter, children))
-		}()
+		})
 		node.data.Filter = &nodeFilter{criteria: []filterCriterion{{prop: nameProp(), op: opContains, value: "cust"}}}
 	}
 	wg.Wait()

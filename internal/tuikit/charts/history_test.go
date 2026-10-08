@@ -188,7 +188,7 @@ func TestHistoryChartAllZeroSeries(t *testing.T) {
 	c := NewCanvas(16, 5)
 	bareHistory([]Series{{Label: "A", Color: colA, Values: []float64{0, 0, 0}}}, 0).Draw(c, c.Rect())
 
-	for x := 0; x < 16; x++ {
+	for x := range 16 {
 		if col := column(c, x, 4, 5); isBlock(col[0]) {
 			t.Fatalf("column %d drew a bar for an all-zero series", x)
 		}

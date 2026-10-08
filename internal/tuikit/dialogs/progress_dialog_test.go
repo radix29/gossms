@@ -59,11 +59,11 @@ func (s *cellScreen) row(y int) []rune {
 func cancelColumn(t *testing.T, scr *cellScreen, d *ProgressDialog) int {
 	t.Helper()
 	row := string(scr.row(d.ButtonRowY()))
-	i := strings.Index(row, "[ Cancel ]")
-	if i < 0 {
+	before, _, ok := strings.Cut(row, "[ Cancel ]")
+	if !ok {
 		t.Fatalf("button row %q has no Cancel", row)
 	}
-	return len([]rune(row[:i]))
+	return len([]rune(before))
 }
 
 // Cancel asks the operation to stop exactly once and leaves the dialog up:

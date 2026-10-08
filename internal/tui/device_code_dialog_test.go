@@ -47,8 +47,7 @@ func TestDeviceCodeDialogClosesWhenTheSignInEnds(t *testing.T) {
 func TestDeviceCodeDialogIgnoresTheEndOfAnEarlierSignIn(t *testing.T) {
 	a := newDeviceCodeTestApp()
 	first, cancelFirst := context.WithCancel(context.Background())
-	second, cancelSecond := context.WithCancel(context.Background())
-	defer cancelSecond()
+	second := t.Context()
 	_ = a.promptDeviceCode(first, testDeviceCode)
 	later := testDeviceCode
 	later.UserCode = "SECOND"

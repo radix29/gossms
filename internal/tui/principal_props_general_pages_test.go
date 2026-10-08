@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 
@@ -377,10 +378,5 @@ func hasEditableRow(f *propsheet.Form, label string) bool {
 }
 
 func containsItem(items []string, want string) bool {
-	for _, it := range items {
-		if it == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(items, want)
 }

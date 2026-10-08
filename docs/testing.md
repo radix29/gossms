@@ -40,6 +40,13 @@ reload, a showing's several loads), wait on the outcome with
 `drainUntil(t, a, cond, what)` instead — two `-race`-only flakes came from
 this.
 
+**A timing test over pure channels and timers runs in `synctest.Test`.** The
+bubble's clock is fake, so a window holds exactly the ticks the schedule
+predicts: assert exact counts and wait with `synctest.Sleep`, not a
+`time.Sleep` poll loop (`internal/activity/collector_test.go`). Only for code
+that does no real I/O — a goroutine blocked on a tty, socket or live server is
+not "durably blocked", so screen and live tests can't move.
+
 **A `-race`-only failure can be a stale build cache.** After a mutation check
 edited and restored a file, `go test -race` kept failing on byte-identical
 source (the race archive from the mutated file was reused). Run `go test -race

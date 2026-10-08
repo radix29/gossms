@@ -82,7 +82,7 @@ func newDragTestApp(t *testing.T, childCount int) *App {
 // the tests don't hard-code the tree's internal row arithmetic.
 func draggableChildRow(t *testing.T, a *App) int {
 	t.Helper()
-	for y := 0; y < dragTestScreenH; y++ {
+	for y := range dragTestScreenH {
 		if n := a.explorer.NodeAt(dragTestLabelX, y); n != nil && isDraggableNode(n.data.Type) {
 			return y
 		}

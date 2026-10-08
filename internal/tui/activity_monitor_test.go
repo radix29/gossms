@@ -351,7 +351,7 @@ func amClick(am *ActivityMonitor, x, y int) bool {
 // amWithSamples fills the store so charts and tooltips have samples.
 func amWithSamples(am *ActivityMonitor, n int) {
 	base := time.Date(2026, 8, 6, 15, 32, 0, 0, time.UTC)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		am.store.Append(activity.Sample{
 			At:              base.Add(time.Duration(i) * 2 * time.Second),
 			BatchesSec:      float64(100 + i),
@@ -495,7 +495,7 @@ func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
 	// full.
 	base := time.Date(2026, 8, 6, 16, 0, 0, 0, time.UTC)
 	n := am.hits[0].Plot.W
-	for i := 0; i < n; i++ {
+	for i := range n {
 		am.store.Append(activity.Sample{
 			At:         base.Add(time.Duration(i) * 2 * time.Second),
 			BatchesSec: float64(i),
@@ -666,7 +666,7 @@ func TestActivityMonitorMemoryCompositionClickPinsATooltip(t *testing.T) {
 // amWithTempDBSamples fills the tempdb store.
 func amWithTempDBSamples(am *ActivityMonitor, n int) {
 	start := time.Date(2026, 8, 6, 20, 0, 0, 0, time.UTC)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		s := activity.TempDBSample{
 			At: start.Add(time.Duration(i) * 30 * time.Second),
 			Space: activity.TempDBSpace{

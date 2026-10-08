@@ -60,10 +60,7 @@ func drawTimeLabel(s tcell.Screen, row core.Rect, text string) {
 	}
 	style := theme.StyleChartAxis()
 	core.FillRect(s, row, ' ', style)
-	x := row.X + (row.W-core.DisplayWidth(text))/2
-	if x < row.X {
-		x = row.X
-	}
+	x := max(row.X+(row.W-core.DisplayWidth(text))/2, row.X)
 	core.DrawTextClipped(s, x, row.Y, row.Right()-x, style, text)
 }
 

@@ -381,7 +381,7 @@ func TestEveryScheduleFormRowIsReachable(t *testing.T) {
 	// Interface() but allows Pointer().
 	inRows := make(map[uintptr]bool)
 	for _, r := range f.rows() {
-		if rv := reflect.ValueOf(r); rv.Kind() == reflect.Ptr {
+		if rv := reflect.ValueOf(r); rv.Kind() == reflect.Pointer {
 			inRows[rv.Pointer()] = true
 		}
 	}
@@ -389,7 +389,7 @@ func TestEveryScheduleFormRowIsReachable(t *testing.T) {
 	v := reflect.ValueOf(f).Elem()
 	for i := range v.NumField() {
 		field, name := v.Field(i), v.Type().Field(i).Name
-		if field.Kind() != reflect.Ptr {
+		if field.Kind() != reflect.Pointer {
 			t.Fatalf("%s is not a row pointer — this test assumes every field of scheduleFreqForm is one", name)
 		}
 		row := field.Pointer()

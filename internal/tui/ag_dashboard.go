@@ -340,12 +340,9 @@ func agComputeDatabaseMetrics(dbs []*gosmo.AvailabilityDatabase) []agDatabaseMet
 			continue
 		}
 		if pc, ok := primaryCommit[strings.ToLower(d.DatabaseName)]; ok && !d.LastCommitTime.IsZero() {
-			loss := pc.Sub(d.LastCommitTime)
 			// A secondary can't lead its primary; a negative difference is
 			// clock skew, not "-3s of data loss".
-			if loss < 0 {
-				loss = 0
-			}
+			loss := max(pc.Sub(d.LastCommitTime), 0)
 			m.DataLoss, m.HasDataLoss = loss, true
 		}
 		switch {

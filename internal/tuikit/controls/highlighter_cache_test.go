@@ -361,7 +361,7 @@ func TestPrefixStatesIncrementalReplayAfterReplaceRange(t *testing.T) {
 // lines[0:idx]. The zero State means the line starts in code.
 func lineStateAt(lines [][]rune, idx int) sqltext.State {
 	var st sqltext.State
-	for i := 0; i < idx; i++ {
+	for i := range idx {
 		st = sqltext.LineEnd(lines[i], st)
 	}
 	return st

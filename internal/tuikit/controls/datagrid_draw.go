@@ -32,7 +32,7 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 
 	r0, c0, r1, c1 := g.selectionBounds()
 	dataH := g.rect.H - 3
-	for row := 0; row < dataH; row++ {
+	for row := range dataH {
 		dataIdx := g.scrollRow + row
 		y := g.rect.Y + 2 + row
 		if dataIdx >= g.rows.Len() {

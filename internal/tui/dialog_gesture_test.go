@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,13 +48,13 @@ import (
 // directly (New Index, New Statistics) rather than only through the sheet. A
 // text field behind any of the three is that widget's problem, not the
 // dialog's.
-func gestureFieldType() reflect.Type { return reflect.TypeOf((*widgets.InputField)(nil)) }
+func gestureFieldType() reflect.Type { return reflect.TypeFor[*widgets.InputField]() }
 
 func gestureWalkStops() []reflect.Type {
 	return []reflect.Type{
-		reflect.TypeOf((*propsheet.PropertySheet)(nil)),
-		reflect.TypeOf((*propsheet.TextRow)(nil)),
-		reflect.TypeOf((*controls.Editor)(nil)),
+		reflect.TypeFor[*propsheet.PropertySheet](),
+		reflect.TypeFor[*propsheet.TextRow](),
+		reflect.TypeFor[*controls.Editor](),
 	}
 }
 
@@ -70,7 +71,7 @@ func TestEveryDialogWithATextFieldOwnsAFieldGesture(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()
 
-	field, gesture := gestureFieldType(), reflect.TypeOf(dialogs.FieldGesture{})
+	field, gesture := gestureFieldType(), reflect.TypeFor[dialogs.FieldGesture]()
 	checked, withField := 0, 0
 	for _, d := range a.allDialogs {
 		name := reflect.TypeOf(d).String()
@@ -133,16 +134,14 @@ func reaches(v reflect.Value, want reflect.Type, seen map[uintptr]bool) bool {
 	if t == want {
 		return true
 	}
-	if t == reflect.TypeOf((*App)(nil)) {
+	if t == reflect.TypeFor[*App]() {
 		return false
 	}
-	for _, stop := range gestureWalkStops() {
-		if t == stop {
-			return false
-		}
+	if slices.Contains(gestureWalkStops(), t) {
+		return false
 	}
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		// A nil pointer has nothing to walk, so the question falls back to the
 		// declared type: a sub-struct the dialog builds lazily — every property
 		// dialog's pages, for one — still owns whatever is in it.
@@ -172,8 +171,8 @@ func reaches(v reflect.Value, want reflect.Type, seen map[uintptr]bool) bool {
 			}
 		}
 	case reflect.Struct:
-		for i := range v.NumField() {
-			if reaches(v.Field(i), want, seen) {
+		for _, field := range v.Fields() {
+			if reaches(field, want, seen) {
 				return true
 			}
 		}
@@ -536,22 +535,20 @@ func reachesType(t, want reflect.Type, seen map[reflect.Type]bool) bool {
 	if t == want {
 		return true
 	}
-	if t == reflect.TypeOf((*App)(nil)) {
+	if t == reflect.TypeFor[*App]() {
 		return false
 	}
-	for _, stop := range gestureWalkStops() {
-		if t == stop {
-			return false
-		}
+	if slices.Contains(gestureWalkStops(), t) {
+		return false
 	}
 	switch t.Kind() {
-	case reflect.Ptr, reflect.Slice, reflect.Array:
+	case reflect.Pointer, reflect.Slice, reflect.Array:
 		return reachesType(t.Elem(), want, seen)
 	case reflect.Map:
 		return reachesType(t.Key(), want, seen) || reachesType(t.Elem(), want, seen)
 	case reflect.Struct:
-		for i := range t.NumField() {
-			if reachesType(t.Field(i).Type, want, seen) {
+		for field := range t.Fields() {
+			if reachesType(field.Type, want, seen) {
 				return true
 			}
 		}

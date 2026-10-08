@@ -667,7 +667,7 @@ func (g *DataGrid) computeColWidths() {
 	maxW := g.maxCellWidthOrDefault()
 	cellLimit := max(maxW, 6) - 2
 	n := min(g.rows.Len(), colWidthSampleRows)
-	for r := 0; r < n; r++ {
+	for r := range n {
 		// A group row's label (cell 0) spills across the row; its other
 		// cells are ordinary.
 		first := 0

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -129,9 +130,7 @@ func (lv *LogViewer) Load() {
 			}
 			lv.busy = false
 			lv.mailOwnOnly = mailOwnOnly
-			for t, files := range enums {
-				lv.files[t] = files
-			}
+			maps.Copy(lv.files, enums)
 			lv.refreshToolLabels()
 			// Only a selection where *nothing* could be read is an error: with one archive
 			// unreadable out of four, the grid holds the other three and summary says how

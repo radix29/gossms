@@ -79,7 +79,7 @@ func TestQueryListDialogScrollbarDragScrolls(t *testing.T) {
 func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
 	a.screen = &fakeSizedScreen{w: 80, h: 30}
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		a.tasks = append(a.tasks, &Task{Label: "Task " + strconv.Itoa(i)})
 	}
 

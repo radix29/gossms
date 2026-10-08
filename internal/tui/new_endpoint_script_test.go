@@ -43,7 +43,7 @@ func TestAnnotateEndpointScriptGroupsByInstance(t *testing.T) {
 // it appears before any of them.
 func instanceSectionFor(script, stmt string) string {
 	section := ""
-	for _, line := range strings.Split(script, "\n") {
+	for line := range strings.SplitSeq(script, "\n") {
 		if after, ok := strings.CutPrefix(line, "-- on "); ok {
 			section = after
 		}

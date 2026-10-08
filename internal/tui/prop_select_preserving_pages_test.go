@@ -54,7 +54,7 @@ func TestLoginGeneralShowsACredentialMissingFromTheList(t *testing.T) {
 	responses := loginGeneralResponses("appuser", "SQL_LOGIN")
 	responses[1].rows[0][10] = "cred_gone" // LOGINPROPERTY's credential_name
 	sc, inst := newFakeConn(t, responses...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, ptr("appuser")), inst)
+	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	assertShowsVanishedValue(t, form, "Map to credential", "cred_gone")
 	assertUntouchedApplyWritesNothing(t, inst, apply)

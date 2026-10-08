@@ -332,7 +332,7 @@ func TestWheelLeftRightScrollsHorizontally(t *testing.T) {
 	}
 
 	maxScroll := tv.contentW - tv.rect.Inner(1).W
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.WheelRight, tcell.ModNone))
 	}
 	if tv.scrollX != maxScroll {

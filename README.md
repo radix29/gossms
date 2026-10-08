@@ -130,8 +130,15 @@ method does not use are greyed out.
 - **Encryption**: Mandatory with **Trust Server Certificate** on by default.
   Untick it to validate the certificate. **Strict** (TDS 8.0) needs SQL Server
   2022+ or Azure SQL Managed Instance.
+  On Windows and macOS, setting `SSL_CERT_FILE` or `SSL_CERT_DIR` (Python and
+  some corporate images do) makes validation, including Entra sign-in, use
+  those files instead of the system certificate store, so a CA trusted only
+  there fails with `certificate signed by unknown authority`. Unset the
+  variable, or start goSSMS with `GODEBUG=x509sslcertoverrideplatform=0`.
 - **Custom Properties**: extra driver settings as `key=value` pairs separated by
-  `;` or `&`, e.g. `ApplicationIntent=ReadOnly`.
+  `;` or `&`, e.g. `ApplicationIntent=ReadOnly`. SSMS's spellings work too
+  (`Application Intent=ReadOnly`, `Multi Subnet Failover=True`); giving both
+  spellings of one setting is refused.
 
 | Entra method | Fields |
 |---|---|

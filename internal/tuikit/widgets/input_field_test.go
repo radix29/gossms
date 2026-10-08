@@ -75,7 +75,7 @@ func TestInputFieldWordDelete(t *testing.T) {
 func TestInputFieldSelectionDeletedByBackspace(t *testing.T) {
 	f := newTestInputField("abcdef")
 	f.cursor = 0
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		f.HandleKey(key(tcell.KeyRight, tcell.ModShift))
 	}
 	if !f.HasSelection() || f.SelectedText() != "abc" {
@@ -88,7 +88,7 @@ func TestInputFieldSelectionDeletedByBackspace(t *testing.T) {
 
 	f2 := newTestInputField("abcdef")
 	f2.cursor = 0
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		f2.HandleKey(key(tcell.KeyRight, tcell.ModShift))
 	}
 	f2.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
@@ -119,7 +119,7 @@ func TestInputFieldHandleKeyReportsUnhandledKeys(t *testing.T) {
 func TestInputFieldCutPasteRoundTrip(t *testing.T) {
 	f := newTestInputField("hello world")
 	f.cursor = 0
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		f.HandleKey(key(tcell.KeyRight, tcell.ModShift))
 	}
 	cut := f.Cut()

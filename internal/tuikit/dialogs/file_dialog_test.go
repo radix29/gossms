@@ -264,7 +264,7 @@ func TestFileDialogTabCompletionNoMatchReturnsFalse(t *testing.T) {
 // selects/activates whatever entry sits under it.
 func TestFileDialogScrollbarDragScrolls(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		name := filepath.Join(dir, "file"+string(rune('a'+i))+".txt")
 		if err := os.WriteFile(name, []byte("x"), 0644); err != nil {
 			t.Fatal(err)

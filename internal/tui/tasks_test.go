@@ -80,7 +80,7 @@ func TestPruneFinishedTasksKeepsRunningAndCapsHistory(t *testing.T) {
 	// how many finished tasks pile up after it.
 	oldestRunning, _ := a.startTask(context.Background(), "still running")
 
-	for i := 0; i < maxTaskHistory+10; i++ {
+	for range maxTaskHistory + 10 {
 		task, _ := a.startTask(context.Background(), "finished")
 		task.Done = true
 	}

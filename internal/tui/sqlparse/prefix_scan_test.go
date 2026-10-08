@@ -260,10 +260,10 @@ var fragments = []string{
 func generatedScripts() []string {
 	rng := rand.New(rand.NewSource(20260730))
 	out := make([]string, 0, 400)
-	for i := 0; i < 400; i++ {
+	for range 400 {
 		var b strings.Builder
 		nLines := 1 + rng.Intn(6)
-		for l := 0; l < nLines; l++ {
+		for l := range nLines {
 			if l > 0 {
 				b.WriteByte('\n')
 			}

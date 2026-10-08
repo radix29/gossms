@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -352,12 +353,7 @@ func agDatabaseLabel(name string, states []string, suspended, unhealthy bool) st
 }
 
 func slicesContains(ss []string, s string) bool {
-	for _, v := range ss {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, s)
 }
 
 // agLocalDatabaseStates maps a database name, under the server's collation, to

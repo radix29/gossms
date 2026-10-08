@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -522,8 +523,8 @@ func (r *xeReader) progress() string {
 // older files left unread, and ends the newest-first read.
 func (r *xeReader) flush(b xeBatch) xeBatch {
 	b.events = make([]xevent.Event, 0, r.stacked)
-	for i := len(r.stack) - 1; i >= 0; i-- {
-		b.events = append(b.events, r.stack[i]...)
+	for _, v := range slices.Backward(r.stack) {
+		b.events = append(b.events, v...)
 	}
 	// The file a failed read stopped on is still in backlog: it was not
 	// read either.

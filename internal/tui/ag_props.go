@@ -192,10 +192,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 
 			// Required synchronous secondaries can't exceed the replica count
 			// less the primary.
-			maxRequiredSync := int64(len(replicas) - 1)
-			if maxRequiredSync < 0 {
-				maxRequiredSync = 0
-			}
+			maxRequiredSync := max(int64(len(replicas)-1), 0)
 			requiredSyncRow := propsheet.Int("Required sync secondaries", int64(ag.RequiredSynchronizedSecondariesToCommit), 0, maxRequiredSync, "")
 			dbFailoverRow := propsheet.Check("Database level health detection", ag.DBFailover)
 			dtcRow := propsheet.Check("Per database DTC support", ag.DTCSupport)

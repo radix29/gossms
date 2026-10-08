@@ -43,8 +43,8 @@ func findOnScreen(s tcell.Screen, text string) (int, int) {
 	_, h := s.Size()
 	for y := range h {
 		line := screenLine(s, y)
-		if i := strings.Index(line, text); i >= 0 {
-			return core.DisplayWidth(line[:i]), y
+		if before, _, ok := strings.Cut(line, text); ok {
+			return core.DisplayWidth(before), y
 		}
 	}
 	return -1, -1

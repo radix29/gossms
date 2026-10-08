@@ -37,10 +37,7 @@ func (d *AGDashboard) SetBounds(x, y, w, h int) {
 	}
 
 	// Each section spends a line on its bar.
-	want := len(d.topRows) + agGridChrome
-	if want < agGridChrome+1 {
-		want = agGridChrome + 1
-	}
+	want := max(len(d.topRows)+agGridChrome, agGridChrome+1)
 	replicaH := min(want, (body-2)/2)
 	replicaH = max(replicaH, 4)
 

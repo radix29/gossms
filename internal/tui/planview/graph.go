@@ -230,13 +230,13 @@ func putClipped(s tcell.Screen, viewport core.Rect, x, y int, ch rune, style tce
 }
 
 func hlineClipped(s tcell.Screen, viewport core.Rect, x, y, w int, style tcell.Style) {
-	for i := 0; i < w; i++ {
+	for i := range w {
 		putClipped(s, viewport, x+i, y, '─', style)
 	}
 }
 
 func vlineClipped(s tcell.Screen, viewport core.Rect, x, y, h int, style tcell.Style) {
-	for i := 0; i < h; i++ {
+	for i := range h {
 		putClipped(s, viewport, x, y+i, '│', style)
 	}
 }

@@ -336,7 +336,7 @@ func (d *HelpDialog) Draw(s tcell.Screen) {
 	inner := d.InnerRect()
 	dataH := d.dataH()
 
-	for row := 0; row < dataH; row++ {
+	for row := range dataH {
 		idx := d.scroll + row
 		if idx >= len(d.lines) {
 			break

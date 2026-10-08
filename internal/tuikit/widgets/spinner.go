@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
@@ -171,11 +172,11 @@ func codexPhases(w int) []string {
 	}
 	frames := make([]string, len(cycle))
 	for p := range cycle {
-		s := ""
+		var s strings.Builder
 		for i := range w {
-			s += cycle[(p+i)%len(cycle)]
+			s.WriteString(cycle[(p+i)%len(cycle)])
 		}
-		frames[p] = s
+		frames[p] = s.String()
 	}
 	return frames
 }
