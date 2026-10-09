@@ -13,23 +13,22 @@ import (
 // replication_monitor_panel.go is SSMS's Replication Monitor as one panel per
 // server: the publications the instance distributes, the selected one's
 // subscriptions and agents, the selected agent's sessions, and the selected
-// session's actions with the error detail behind any that failed — four grids
+// session's actions with the error detail behind any that failed: four grids
 // stacked, refreshed on a timer. Read-only, like the rest of replication
-// (docs/decisions.md § Replication): nothing here starts, stops or
-// reinitializes an agent.
+// (docs/decisions.md § Replication): nothing here starts, stops or reinitializes
+// an agent.
 //
-// This file is the panel's state, construction and layout; reads and the
-// refresh timer are in replication_monitor_panel_load.go, the toolbar and
-// drawing in replication_monitor_panel_draw.go, input in
-// replication_monitor_panel_input.go.
+// This file is state, construction and layout; reads and the refresh timer are in
+// replication_monitor_panel_load.go, the toolbar and drawing in _draw.go, input in
+// _input.go.
 //
 // It monitors the distribution databases on the instance it is opened on. A
 // publisher whose distributor is elsewhere is monitored there, which the panel
 // says instead of showing an empty grid.
 
 // rmReadTimeout bounds one read. The monitor procedures refresh
-// MSreplication_monitordata when it is stale, which on a busy distributor is
-// not instant, but a panel that never comes back is worse.
+// MSreplication_monitordata when it is stale, which on a busy distributor is not
+// instant.
 const rmReadTimeout = 60 * time.Second
 
 // rmRate is one entry of the Auto refresh selector; 0 is off.
@@ -76,8 +75,8 @@ const (
 	rmFocusCount
 )
 
-// rmDragZone names the sub-region owning a mouse gesture — see
-// QueryPanel.dragZone for why one is needed at all.
+// rmDragZone names the sub-region owning a mouse gesture; see
+// QueryPanel.dragZone.
 type rmDragZone int
 
 const (
@@ -85,16 +84,15 @@ const (
 	rmZoneSplit
 	rmZoneGrid
 	rmZoneToolbar
-	// rmZoneUnclaimed is a press nothing wanted; it still owns the gesture
-	// so the repeats while the button is held land nowhere.
+	// rmZoneUnclaimed is a press nothing wanted; it still owns the gesture so the
+	// repeats while the button is held land nowhere.
 	rmZoneUnclaimed
 )
 
 // ReplicationMonitorPanel is one server's Replication Monitor.
 //
-// Reads run on the server's shared pool: each is a short procedure call,
-// bounded by rmReadTimeout, and the timer never starts a refresh while one is
-// out (busy).
+// Reads run on the server's shared pool: each is a short procedure call, bounded
+// by rmReadTimeout, and the timer never starts a refresh while one is out (busy).
 type ReplicationMonitorPanel struct {
 	app  *App
 	conn *db.ServerConn
@@ -106,9 +104,9 @@ type ReplicationMonitorPanel struct {
 	windowIdx  int
 	errorsOnly bool
 
-	// snap is the last publication/subscription/agent read; rows are the
-	// publication grid's rows in its order, agentRows the agent grid's for the
-	// selected publication, sessions and actions the two lower grids'.
+	// snap is the last publication/subscription/agent read; rows are the publication
+	// grid's rows in its order, agentRows the agent grid's for the selected
+	// publication, sessions and actions the two lower grids'.
 	snap      rmSnapshot
 	agentRows []rmAgentRow
 	sessions  []rmSessionRow
@@ -117,9 +115,8 @@ type ReplicationMonitorPanel struct {
 	// updated is when snap was read, shown on the toolbar row.
 	updated time.Time
 
-	// want* are the selection the panel was asked to open on (a publication
-	// node's Launch Replication Monitor), applied to the first read and then
-	// cleared.
+	// want* are the selection the panel was asked to open on (a publication node's
+	// Launch Replication Monitor), applied to the first read and then cleared.
 	wantPubDB, wantPub string
 
 	pubsGrid     *controls.DataGrid
@@ -136,14 +133,14 @@ type ReplicationMonitorPanel struct {
 
 	focus rmFocus
 
-	// busy latches Refresh while a snapshot read is out; released by the
-	// callback the read posts, so every launch goes through safegoRepair. The
-	// session and action reads go through it too: their repair replaces the
-	// "Reading…" status a panic would otherwise leave on the pane.
+	// busy latches Refresh while a snapshot read is out; released by the callback the
+	// read posts, so every launch goes through safegoRepair. The session and action
+	// reads go through it too: their repair replaces the "Reading..." status a panic
+	// would otherwise leave on the pane.
 	busy bool
-	// One latest per pane: a refresh supersedes the snapshot read it replaces,
-	// a cursor move the session or action read it moved past, and none
-	// cancels another pane's.
+	// One latest per pane: a refresh supersedes the snapshot read it replaces, a
+	// cursor move the session or action read it moved past, and none cancels another
+	// pane's.
 	snapRead    latest
 	sessionRead latest
 	actionRead  latest
@@ -155,11 +152,10 @@ type ReplicationMonitorPanel struct {
 	dragGrid  *controls.DataGrid
 }
 
-// showReplicationMonitorFor opens Replication Monitor on sc — the Tools menu
-// and the Replication folder's Launch Replication Monitor. One panel per
-// server: asking again raises it. pubDB and pub, when set, select that
-// publication (a publication node's menu); on a panel already open they
-// select it now.
+// showReplicationMonitorFor opens Replication Monitor on sc (the Tools menu and
+// the Replication folder's Launch Replication Monitor). One panel per server:
+// asking again raises it. pubDB and pub, when set, select that publication (a
+// publication node's menu); on a panel already open they select it now.
 func (a *App) showReplicationMonitorFor(sc *db.ServerConn, pubDB, pub string) {
 	if !a.requireConn(sc) {
 		return
@@ -206,9 +202,9 @@ func NewReplicationMonitorPanel(app *App, sc *db.ServerConn) *ReplicationMonitor
 	p.splits[0].SetRatio(0.25)
 	p.splits[1].SetRatio(0.35)
 	p.splits[2].SetRatio(0.45)
-	// Each grid's move rebuilds or re-reads only the grids below it, never
-	// itself — SetData from inside a grid's own OnSelectRow undoes the move
-	// (see the redrawGrid rule).
+	// Each grid's move rebuilds or re-reads only the grids below it, never itself:
+	// SetData from inside a grid's own OnSelectRow undoes the move (the redrawGrid
+	// rule).
 	p.pubsGrid.OnSelectRow = func(int) { p.showAgents(false) }
 	p.agentsGrid.OnSelectRow = func(int) { p.loadSessions(false) }
 	p.sessionsGrid.OnSelectRow = func(int) { p.loadActions(false) }
@@ -261,8 +257,8 @@ func (p *ReplicationMonitorPanel) Close() {
 	p.actionRead.Cancel()
 }
 
-// SetBounds positions the panel: the toolbar row, then the four grids on
-// either side of the three splitters.
+// SetBounds positions the panel: the toolbar row, then the four grids either side
+// of the three splitters.
 func (p *ReplicationMonitorPanel) SetBounds(x, y, w, h int) {
 	p.rect = core.Rect{X: x, Y: y, W: w, H: h}
 	p.toolRect = core.Rect{}
@@ -274,8 +270,8 @@ func (p *ReplicationMonitorPanel) SetBounds(x, y, w, h int) {
 	p.layoutChildren()
 }
 
-// layoutChildren gives each grid its share below the toolbar, on every resize
-// and after every splitter drag.
+// layoutChildren gives each grid its share below the toolbar, on every resize and
+// splitter drag.
 func (p *ReplicationMonitorPanel) layoutChildren() {
 	place := func(g *controls.DataGrid, r core.Rect) { g.SetBounds(r.X, r.Y, r.W, r.H) }
 	place(p.pubsGrid, p.splits[0].FirstRect())

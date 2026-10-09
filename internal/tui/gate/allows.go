@@ -62,8 +62,8 @@ func RightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 		switch {
 		case r.Membership:
 			// Unknown must allow explicitly: InRole cannot tell "not a member" from
-			// "never asked", so an unprobed msdb would withhold every SQL Agent action
-			// from a role holder. Probed separates the two.
+			// "never asked", so an unprobed msdb would withhold every SQL Agent
+			// action. Probed separates the two.
 			caps := dbCaps(r.InDB)
 			if !caps.Probed() || caps.InRole(r.Name) {
 				return true
@@ -173,8 +173,7 @@ type Site struct {
 //
 //   - An object-scope DENY beats every wider grant. A principal holding
 //     database-wide ALTER, or db_owner, reads HAS_PERMS_BY_NAME 0 on a table
-//     denied ALTER, and its rename fails Msg 297 — which is what the login saw
-//     instead of a greyed-out item before this check existed.
+//     denied ALTER, and its rename fails Msg 297.
 //   - A member of sysadmin bypasses the check, and must be asked about first.
 //     The probe's principal set includes public, so a DENY made to public is
 //     recorded for everyone including a sysadmin, whose write SQL Server then
@@ -200,24 +199,19 @@ type Site struct {
 // every login using a database-wide grant.
 //
 // A DENY at *database* scope is asked about last, and is the one arm that
-// exists for a grant *narrower* than itself rather than wider. The r.Object
-// and r.Schema arms of RightsAllow answer yes on HasOnObject and
-// PermitsOnSchema, neither of which can see a class-0 row, so a principal
-// granted ALTER on one table and denied ALTER on the database was offered
-// every write on that table. Verified live 2026-09-04: with GRANT ALTER ON
-// OBJECT::dbo.t1 and DENY ALTER at database scope, the server answers
-// HAS_PERMS_BY_NAME('dbo.t1','OBJECT','ALTER') = 0 and refuses the ALTER —
-// the wider DENY beats the narrower GRANT, which is the opposite of the
-// column-level exception and the reason this arm cannot be folded into the
-// loop. It is asked only of rights declared db-scoped, the way the arms above
-// ask only of the scope they can answer for.
+// exists for a grant *narrower* than itself. The r.Object and r.Schema arms
+// answer yes on HasOnObject and PermitsOnSchema, neither of which can see a
+// class-0 row, so a principal granted ALTER on one table and denied ALTER on
+// the database was offered every write on that table. Verified live 2026-09-04:
+// the server answers HAS_PERMS_BY_NAME = 0 and refuses the ALTER, so the wider
+// DENY beats the narrower GRANT. This cannot be folded into the loop, since
+// column-level DENY is the opposite case. It is asked only of rights declared
+// db-scoped.
 //
-// It goes through gosmo's DeniedOnDatabase, never Permission/Permits: those
-// answer HAS_PERMS_BY_NAME, whose 0 means "does not hold" and is the *ordinary*
-// reading for a principal working through a narrower grant, so withholding on
-// it takes the write away from exactly the principal it was granted to. Only
-// the catalog can say a DENY row exists — the same distinction
-// ExplicitSchemaPermissions exists for, one scope wider.
+// It goes through gosmo's DeniedOnDatabase, never Permission/Permits: a 0 from
+// HAS_PERMS_BY_NAME is the ordinary reading for a principal working through a
+// narrower grant, so withholding on it would take the write away from exactly
+// the principal it was granted to. Only the catalog can say a DENY row exists.
 func ObjectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...Right) (Right, Site, bool) {
 	if server.InServerRole("sysadmin") {
 		return Right{}, Site{}, false

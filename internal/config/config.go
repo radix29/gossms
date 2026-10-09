@@ -137,8 +137,8 @@ func AllIconStyles() []IconStyle {
 	return []IconStyle{IconStyleEmoji, IconStyleSymbols, IconStylePortable, IconStyleNone}
 }
 
-// Connection stores one saved server connection. Password is always plaintext
-// in memory; Load and Save encrypt at the JSON boundary (see secret.go).
+// Connection is one saved server connection. Password is plaintext in memory;
+// Load and Save encrypt at the JSON boundary (see secret.go).
 type Connection struct {
 	Name                   string     `json:"name"`
 	Server                 string     `json:"server"`
@@ -164,11 +164,8 @@ type Connection struct {
 
 	// sealed is the on-disk ciphertext Load could not open (replaced key file,
 	// hand-edited server/user bound into the AAD, truncated write). Save writes
-	// it back verbatim instead of encrypting the "" Password holds, so the
-	// password stays recoverable.
-	//
-	// Unexported, so JSON ignores it. Reconnecting goes through AddOrUpdate
-	// with sealed empty, so re-entering the password replaces the ciphertext.
+	// it back verbatim instead of encrypting the "" Password, so the password
+	// stays recoverable. Unexported, so JSON ignores it.
 	sealed string
 }
 
@@ -289,9 +286,8 @@ func (c Connection) signInIdentity() (identity, tag string) {
 }
 
 // PasswordUnreadable reports whether Load could not decrypt a stored password
-// (the ciphertext is kept and written back). It separates "no password saved"
-// from "saved but unusable", which Password alone can't — Load blanks both, and
-// connecting with "" is a guaranteed login failure.
+// (the ciphertext is kept and written back). Password alone cannot tell "no
+// password saved" from "saved but unusable": Load blanks both.
 func (c *Connection) PasswordUnreadable() bool {
 	return c.Password == "" && c.sealed != ""
 }
@@ -310,8 +306,7 @@ func (c *Connection) DisplayName() string {
 // Config is the root configuration structure.
 type Config struct {
 	// Connections is read freely but changed only through AddOrUpdate and
-	// RemoveConnection: Save writes the operations those record, not this
-	// slice (see ops).
+	// RemoveConnection: Save replays the recorded operations, not this slice.
 	Connections   []Connection `json:"connections"`
 	IconStyle     IconStyle    `json:"icon_style"`
 	MaxCellLength int          `json:"max_cell_length"`
@@ -349,12 +344,9 @@ type Config struct {
 	// neither serialises nor survives a copy.
 	unreadable error
 
-	// ops is this process's own AddOrUpdate/RemoveConnection calls since the
-	// last successful Save, which Save replays onto the file as it is now
-	// rather than writing Connections whole. Two gossms instances each hold
-	// the list they loaded at start, so a whole-list write deletes whatever
-	// the other one saved meanwhile. Connections must therefore only ever be
-	// changed through those two methods.
+	// ops is this process's AddOrUpdate/RemoveConnection calls since the last
+	// successful Save, replayed onto the file as it is now. Writing the whole
+	// list would delete what another gossms instance saved meanwhile.
 	ops []connOp
 
 	// base is the settings as this process last loaded or saved them, nil for
@@ -606,21 +598,17 @@ func mergeSettings(cur, base, dst *Config) {
 // Save writes the config. Passwords are AES-256-GCM encrypted and
 // base64-encoded (see secret.go) on disk only; c keeps plaintext.
 //
-// It re-reads the file and applies this process's own changes to it (the
-// connections added or removed since the last Save, the settings changed since
-// Load) rather than writing c whole: another gossms instance may have saved
-// since this one loaded, and a whole write would undo that. Afterwards
-// c.Connections is the merged list. Settings in c are not replaced by the
-// file's: a changed setting takes effect when the Options dialog applies it,
-// and adopting one here would show a value that isn't in force.
+// It re-reads the file and applies this process's own changes to it (connections
+// added or removed, settings changed since Load) rather than writing c whole,
+// since another gossms instance may have saved meanwhile. Afterwards
+// c.Connections is the merged list. Settings in c are not replaced by the file's:
+// a changed setting takes effect when the Options dialog applies it.
 //
-// An entry whose password couldn't be opened keeps its original ciphertext
-// (Connection.sealed), so an unrelated save doesn't destroy passwords a
-// restored key file could still open.
-//
-// An unusable key file (wrong size, unreadable) doesn't stop the save: stored
-// ciphertexts are written back as they are, and only a password that would need
-// the key to seal is left out, named in the error returned after the write.
+// An entry whose password could not be opened keeps its ciphertext
+// (Connection.sealed), so an unrelated save does not destroy passwords a
+// restored key file could still open. An unusable key file does not stop the
+// save: stored ciphertexts are written back as they are, and only a password
+// that would need the key to seal is left out, named in the returned error.
 //
 // Save is BeginSave, Run and EndSave on one goroutine. The UI goroutine uses
 // the three halves instead, so the lock wait, key read and fsync run off it.

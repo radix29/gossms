@@ -36,15 +36,14 @@ func contractPropPages(sc *db.ServerConn, dbName, name string) []propPage {
 				propsheet.Static("System object", boolStr(c.IsSystemObject)),
 				propsheet.Section("Message types"),
 			)
-			// is_sent_by_initiator and is_sent_by_target are two bits, and
-			// both set is SENT BY ANY — the case a one-column reading gets
-			// wrong. Each is shown with its message type rather than as a
-			// bare list, since the pair is what the contract says.
+			// is_sent_by_initiator and is_sent_by_target are two bits, and both set is SENT BY
+			// ANY — the case a one-column reading gets wrong. Each is shown with its message
+			// type rather than as a bare list, since the pair is what the contract says.
 			//
-			// The message type goes in the *value*, not the label: a label
-			// clips at propsheet.LabelWidth with no ellipsis, and these names
-			// are URIs — "//schemas.microsoft.com/SQL/ServiceBroker/…" would
-			// render as a different, shorter name for every one of them.
+			// The message type goes in the *value*, not the label: a label clips at
+			// propsheet.LabelWidth with no ellipsis, and these names are URIs
+			// ("//schemas.microsoft.com/SQL/ServiceBroker/…") that would render as a
+			// different, shorter name.
 			if len(c.Messages) == 0 {
 				f.Add(propsheet.Note("This contract names no message type, which CREATE CONTRACT does not allow — the rows are either invisible to this login or the contract is one SQL Server ships."))
 			}

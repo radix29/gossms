@@ -10,9 +10,8 @@ import (
 // AlertDialog — single-button info message
 // ---------------------------------------------------------------------------
 
-// alertDialogMinW/alertDialogBaseH are AlertDialog's original fixed size —
-// now the floor fitMessage never shrinks below, and the height with the
-// message on a single line.
+// alertDialogMinW/alertDialogBaseH are AlertDialog's floor size for fitMessage
+// and its height with a one-line message.
 const (
 	alertDialogMinW  = 44
 	alertDialogBaseH = 9
@@ -32,9 +31,8 @@ func NewAlertDialog(s tcell.Screen) *AlertDialog {
 	return d
 }
 
-// ShowAlert shows a message. The dialog grows to show it on one line where
-// that fits within 2/3 of the screen's width, or word-wraps onto more
-// lines (growing taller instead) when it doesn't — see fitMessage.
+// ShowAlert shows a message, on one line where it fits within 2/3 of the screen
+// width, else word-wrapped and taller (see fitMessage).
 func (d *AlertDialog) ShowAlert(title, message string) {
 	d.SetTitle(title)
 	d.message = message

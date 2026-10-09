@@ -8,15 +8,13 @@ import (
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
-// detail_browser_fulltext.go is the Detail Browser's view of a database's
-// three full-text folders (explorer_fulltext.go) and their leaves: the
-// catalogs with their population status, one catalog's indexed tables, the
-// stoplists and one stoplist's words, the search property lists and one
-// list's properties.
+// detail_browser_fulltext.go is the Detail Browser's view of a database's three
+// full-text folders (explorer_fulltext.go) and their leaves: the catalogs with
+// their population status, one catalog's indexed tables, the stoplists and one
+// stoplist's words, the search property lists and one list's properties.
 //
-// Like every other detail view here, each leaf reuses the finder its
-// Properties page uses (fulltext_props.go), and each folder applies the
-// folder's filter the way the tree does.
+// Each leaf reuses the finder its Properties page uses (fulltext_props.go), and
+// each folder applies the folder's filter the way the tree does.
 
 func fullTextCatalogsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	d, err := sc.Server.DatabaseByName(ctx, node.data.DBName)

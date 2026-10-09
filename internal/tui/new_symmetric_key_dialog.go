@@ -16,22 +16,21 @@ import (
 // protection.
 //
 // A new key is encrypted by any of a certificate, an asymmetric key and a
-// password, at least one. Encryption by another symmetric key is not offered:
-// it needs that key opened first, which is the decryptor prompt the Encryption
-// page owns. No master key section either: every encryptor here uses a public
-// key or a password, and none needs the master key (see master_key.go).
+// password, at least one. Encryption by another symmetric key is not offered: it
+// needs that key opened first, the decryptor prompt the Encryption page owns. No
+// master key section: every encryptor here uses a public key or a password, and
+// none needs the master key (master_key.go).
 //
 // An instance with an EKM provider registered also offers FROM PROVIDER
 // (providerKeyFields), which takes no encryption and no key material.
 //
-// KEY_SOURCE and IDENTITY_VALUE are optional, and are the one way to create the
+// KEY_SOURCE and IDENTITY_VALUE are optional and are the one way to create the
 // same key in a second database (docs/decisions.md § Keys and certificates).
 // Both are secrets: masked, confirmed, and scripted as placeholders.
 
 // symKeyAlgorithms is what the dialog offers, strongest last and the default.
-// Every other algorithm is deprecated, and at compatibility level 130 and
-// above a syntax error (Msg 102), so only AES is offered even though gosmo
-// accepts the rest.
+// Every other algorithm is deprecated and, at compatibility level 130 and above,
+// a syntax error (Msg 102), so only AES is offered though gosmo accepts the rest.
 var symKeyAlgorithms = []gosmo.SymmetricKeyAlgorithm{
 	gosmo.SymmetricKeyAES128, gosmo.SymmetricKeyAES192, gosmo.SymmetricKeyAES256,
 }
@@ -172,8 +171,8 @@ func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {
 		return provider.validate()
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		// DatabaseRef, not DatabaseByName: the CREATE addresses the database
-		// by name, and the by-name read would not work under Script Changes.
+		// DatabaseRef, not DatabaseByName: the CREATE addresses the database by name,
+		// and the by-name read would not work under Script Changes.
 		in := input()
 		if p := provider.spec(); p != nil {
 			spec := gosmo.CreateSymmetricKeyRequest{Name: in.name, Algorithm: symKeyAlgorithms[algRow.Selected()], FromProvider: p}
@@ -189,8 +188,8 @@ func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {
 			KeySource:     in.keySource,
 			IdentityValue: in.identityValue,
 		}
-		// gosmo's order for the encryptions a key already has, so the script
-		// reads the same as Script as ▸ CREATE's.
+		// gosmo's order for the encryptions a key already has, so the script reads like
+		// Script as > CREATE's.
 		if in.certificate != "" {
 			spec.Encryptions = append(spec.Encryptions, gosmo.SymmetricKeyEncryptor{Kind: gosmo.SymmetricKeyByCertificate, Name: in.certificate})
 		}
@@ -215,25 +214,25 @@ type newSymmetricKeyInput struct {
 	identityValue, identityConfirm string
 	existingNames                  *nameSet
 	dbName                         string
-	// provider is set when an EKM provider is to hold the key, which then
-	// takes no encryption and no key material.
+	// provider is set when an EKM provider is to hold the key, which then takes no
+	// encryption and no key material.
 	provider bool
 }
 
 // validateNewSymmetricKey refuses what the server would, naming the field.
 //
 // KEY_SOURCE and IDENTITY_VALUE are refused one without the other, which the
-// server allows: KEY_SOURCE alone repeats the key material under a new GUID,
-// and DECRYPTBYKEY finds its key by the GUID stored in the ciphertext, so the
-// copy decrypts nothing; IDENTITY_VALUE alone repeats the GUID over new
-// material. Neither makes the key re-creatable, the only reason to type them.
+// server allows: KEY_SOURCE alone repeats the key material under a new GUID, and
+// DECRYPTBYKEY finds its key by the GUID stored in the ciphertext, so the copy
+// decrypts nothing; IDENTITY_VALUE alone repeats the GUID over new material.
+// Neither makes the key re-creatable, the only reason to type them.
 func validateNewSymmetricKey(in newSymmetricKeyInput) error {
 	if in.name == "" {
 		return fmt.Errorf("key name is required")
 	}
-	// A #name is a temporary key, dropped with the session that made it — and
-	// the pooled connection that runs the CREATE is not one the user keeps; a
-	// ##name is Msg 15316, "global temporary keys are not allowed".
+	// A #name is a temporary key, dropped with the session that made it, and the
+	// pooled connection that runs the CREATE is not one the user keeps; a ##name is
+	// Msg 15316, "global temporary keys are not allowed".
 	if strings.HasPrefix(in.name, "#") {
 		return fmt.Errorf("a name beginning with # makes a temporary key, gone when its session ends — create one from a query window")
 	}

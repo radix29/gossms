@@ -144,14 +144,14 @@ func (a *App) notifyClipboardEdit(target clipboardTarget) {
 // writeClipboard sends text to the clipboard off the UI thread: the native OS
 // clipboard (xclip/xsel/wl-copy/pbcopy/clip.exe, see os_clipboard.go) first,
 // falling back to tcell's OSC 52 terminal clipboard when no native tool handled
-// it. The shell-out runs on a background goroutine so a stalled tool can't
-// freeze the event loop; the OSC 52 fallback returns to the UI thread, since
-// SetClipboard writes to the terminal.
+// it. The shell-out runs on a background goroutine so a stalled tool can't freeze
+// the event loop; the OSC 52 fallback returns to the UI thread, since SetClipboard
+// writes to the terminal.
 //
 // One write at a time, and only the newest: racing goroutines would let the
 // earlier copy finish last and win. Under clipWriteMu a write a later copy has
-// superseded is skipped, whichever goroutine gets the lock first, as is its
-// OSC 52 fallback if a newer copy came in meanwhile.
+// superseded is skipped, whichever goroutine gets the lock first, as is its OSC 52
+// fallback if a newer copy came in meanwhile.
 func (a *App) writeClipboard(text string) {
 	seq := a.clipWriteSeq.Add(1)
 	a.safego("writing to the clipboard", func() {
@@ -225,8 +225,8 @@ func clipboardTargetToken(top Dialog) any {
 // Every clipboard read is asynchronous (a shell-out on a goroutine, or the
 // terminal's OSC 52 reply as a later event), so between Ctrl+V and the text
 // arriving the user can have closed the dialog it was meant for. Re-resolving
-// then would land a paste aimed at a dialog field in the query editor behind
-// it. Dropping the paste is right: the text is still on the clipboard.
+// would land a paste aimed at a dialog field in the query editor behind it.
+// Dropping the paste is right: the text is still on the clipboard.
 //
 // token carries the same check one level deeper, for a host that answers with
 // itself: a PropertySheet is the active target whichever row has focus, so the
@@ -256,17 +256,17 @@ func (a *App) beginBracketedPaste() {
 	a.paste.afterCR = false
 }
 
-// bufferPastedKey appends one key of an in-progress bracketed paste to
-// paste.buf. Anything that isn't a character, newline or tab is dropped rather
-// than acted on (a stray escape sequence can decode as a function key), so a
-// paste can never trigger a command.
+// bufferPastedKey appends one key of an in-progress bracketed paste to paste.buf.
+// Anything that isn't a character, newline or tab is dropped rather than acted on
+// (a stray escape sequence can decode as a function key), so a paste can never
+// trigger a command.
 //
-// A newline arrives as either key. Most terminals rewrite LF to CR inside a
-// paste, which tcell reports as KeyEnter; Alacritty and tmux `paste-buffer -r`
-// send LF unchanged, which tcell's legacy key mode reports as KeyCtrlJ (the
-// decoding isCtrlEnter relies on outside a paste). Dropping KeyCtrlJ ran every
-// pasted line into the next. A CRLF clipboard sends both, so an LF straight
-// after a CR is skipped rather than doubling the break.
+// A newline arrives as either key. Most terminals rewrite LF to CR inside a paste,
+// which tcell reports as KeyEnter; Alacritty and tmux `paste-buffer -r` send LF
+// unchanged, which tcell's legacy key mode reports as KeyCtrlJ (the decoding
+// isCtrlEnter relies on outside a paste). Dropping KeyCtrlJ would run every pasted
+// line into the next. A CRLF clipboard sends both, so an LF straight after a CR is
+// skipped rather than doubling the break.
 func (a *App) bufferPastedKey(ev *tcell.EventKey) {
 	afterCR := a.paste.afterCR
 	a.paste.afterCR = false

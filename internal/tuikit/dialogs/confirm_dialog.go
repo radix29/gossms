@@ -11,9 +11,8 @@ import (
 // ConfirmDialog — two-button yes/no
 // ---------------------------------------------------------------------------
 
-// confirmDialogMinW/confirmDialogBaseH are ConfirmDialog's original fixed
-// size — now the floor fitMessage never shrinks below, and the height
-// with the message on a single line.
+// confirmDialogMinW/confirmDialogBaseH are ConfirmDialog's floor size for
+// fitMessage and its height with a one-line message.
 const (
 	confirmDialogMinW  = 78
 	confirmDialogBaseH = 9
@@ -26,10 +25,9 @@ const (
 	ConfirmYes ConfirmAnswer = iota
 	ConfirmNo
 	ConfirmCancel
-	// ConfirmScript is a third way out of a question about a write: neither
-	// doing it nor abandoning it, but asking for the statements it would have
-	// run. The caller opens them somewhere the user can read them, and the
-	// question is over — the dialog closes as it does for any other answer.
+	// ConfirmScript is a third way out of a question about a write: neither doing it
+	// nor abandoning it, but asking for the statements it would have run. The
+	// caller opens them for reading; the dialog closes as for any answer.
 	ConfirmScript
 )
 
@@ -41,20 +39,17 @@ type ConfirmDialog struct {
 	msgLines []string
 	btnFocus int
 
-	// option is the optional checkbox a ShowConfirmOption showing carries —
-	// one extra decision that belongs to the question rather than to a dialog
-	// of its own ("also drop the foreign keys that reference it"). nil for
-	// every other showing. optFocused puts the keyboard on it, ahead of the
-	// buttons in the Tab cycle.
+	// option is the optional checkbox a ShowConfirmOption showing carries: one extra
+	// decision belonging to the question ("also drop the foreign keys that
+	// reference it"); nil otherwise. optFocused puts the keyboard on it, ahead of
+	// the buttons in the Tab cycle.
 	option     *widgets.CheckBox
 	optFocused bool
 
-	// buttons is what the current showing renders and hit-tests, so Draw
-	// and HandleMouse can't disagree about how many there are, and answers is
-	// what each of them means. The two are parallel rather than the answer
-	// being the button's index: a showing with a Script button has three
-	// buttons and no Cancel, so index 2 is ConfirmScript there and
-	// ConfirmCancel on a three-way prompt.
+	// buttons is what the showing renders and hit-tests, so Draw and HandleMouse
+	// can't disagree on the count; answers is what each means. They are parallel,
+	// not the button index: a Script showing has three buttons and no Cancel, so
+	// index 2 is ConfirmScript there and ConfirmCancel on a three-way prompt.
 	buttons  []string
 	answers  []ConfirmAnswer
 	escape   ConfirmAnswer
@@ -82,14 +77,10 @@ func NewConfirmDialog(s tcell.Screen) *ConfirmDialog {
 // Message returns the question the dialog asks.
 func (d *ConfirmDialog) Message() string { return d.message }
 
-// ShowConfirm shows a Yes/No question. Escape answers No, so this is only
-// safe for a question whose No is the harmless answer — every current
-// caller's is ("Discard changes?", "Take database offline?", …). A question
-// where No is itself destructive wants ShowConfirmCancel instead.
-//
-// The dialog grows to show message on one line where that fits within 2/3
-// of the screen's width, or word-wraps onto more lines (growing taller
-// instead) when it doesn't — see fitMessage.
+// ShowConfirm shows a Yes/No question. Escape answers No, so use it only where
+// No is the harmless answer (every current caller's is: "Discard changes?",
+// "Take database offline?"); where No is itself destructive use
+// ShowConfirmCancel. The dialog sizes as ShowAlert does (see fitMessage).
 func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func(bool)) {
 	d.option = nil
 	d.show(title, message, twoButtons, twoAnswers, ConfirmNo, func(a ConfirmAnswer) {
@@ -97,24 +88,20 @@ func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func(bool))
 	})
 }
 
-// ShowConfirmDefaultNo is ShowConfirm opening with No focused, for a question
-// whose Yes the user should have to choose rather than reach by pressing
-// Enter through it — Escape still answers No.
+// ShowConfirmDefaultNo is ShowConfirm opening with No focused, for a Yes the
+// user should have to choose rather than Enter through. Escape still answers No.
 func (d *ConfirmDialog) ShowConfirmDefaultNo(title, message string, onConfirm func(bool)) {
 	d.ShowConfirm(title, message, onConfirm)
 	d.btnFocus = 1
 }
 
 // ShowConfirmOption is ShowConfirm with one checkbox above the buttons, whose
-// state is reported alongside the answer. It exists for a question that has a
-// single modifier rather than a second question — SSMS's own Delete Object
-// dialog carries its "close existing connections" the same way — and keeps
-// that modifier where the consequence is described instead of behind another
-// prompt.
+// state is reported with the answer: for a question with a single modifier
+// rather than a second question (SSMS's Delete Object dialog carries "close
+// existing connections" the same way), kept where the consequence is described.
 //
-// The checkbox leads the Tab cycle and is reported as it stands when an
-// answer is given, including for a No: a caller reads it only when the answer
-// is yes.
+// The checkbox leads the Tab cycle and is reported as it stands for any answer,
+// including No; a caller reads it only on yes.
 func (d *ConfirmDialog) ShowConfirmOption(title, message, optionLabel string, initial bool, onConfirm func(confirmed, checked bool)) {
 	box := widgets.NewCheckBox(optionLabel)
 	box.SetChecked(initial)
@@ -125,24 +112,21 @@ func (d *ConfirmDialog) ShowConfirmOption(title, message, optionLabel string, in
 	})
 }
 
-// ShowConfirmCancel shows a Yes/No/Cancel question, with Escape answering
-// Cancel. For a question where both Yes and No commit to something — "Save
-// before closing?", where No discards unsaved work — Escape must not pick
-// either, and the user needs a way to back out of having asked at all.
+// ShowConfirmCancel shows a Yes/No/Cancel question, Escape answering Cancel. For
+// a question where both Yes and No commit ("Save before closing?", No discards
+// work), Escape must pick neither and the user needs a way to back out.
 func (d *ConfirmDialog) ShowConfirmCancel(title, message string, onAnswer func(ConfirmAnswer)) {
 	d.option = nil
 	d.show(title, message, threeButtons, threeAnswers, ConfirmCancel, onAnswer)
 }
 
-// ShowConfirmScript is ShowConfirm with a third button that answers
-// ConfirmScript — for a question about a write the user may want to read as SQL
-// instead of running. Escape still answers No: Script commits to opening a query
-// window, so it must be asked for.
+// ShowConfirmScript is ShowConfirm with a third button answering ConfirmScript,
+// for a write the user may want to read as SQL instead of running. Escape still
+// answers No: Script commits to opening a query window, so it must be asked for.
 //
-// optionLabel adds the ShowConfirmOption checkbox when it isn't empty, and the
-// answer carries its state for the same reason the option form does — the
-// checkbox changes the statements, so a script that ignored it would not be the
-// script the Yes would have run.
+// optionLabel, when not empty, adds the ShowConfirmOption checkbox, and the
+// answer carries its state: it changes the statements, so a script ignoring it
+// would not be what Yes would have run.
 func (d *ConfirmDialog) ShowConfirmScript(title, message, optionLabel string, initial bool, onAnswer func(a ConfirmAnswer, checked bool)) {
 	d.option = nil
 	checked := func() bool { return false }
@@ -211,18 +195,15 @@ func (d *ConfirmDialog) Draw(s tcell.Screen) {
 	d.DrawButtons(s, d.buttons, d.btnFocus)
 }
 
-// HandleKey handles keyboard events. Escape answers whatever the showing named
-// as its way out — Cancel on a three-way prompt, No everywhere else, the closest
-// thing to "I didn't mean to ask" each button set has.
+// HandleKey handles keyboard events. Escape answers the showing's way out:
+// Cancel on a three-way prompt, No otherwise.
 func (d *ConfirmDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.visible {
 		return false
 	}
 	n := len(d.buttons)
-	// The checkbox gets the key first while it has focus, so Space and Enter
-	// toggle it rather than answering the question — an Enter that answered
-	// while the box was focused would commit the state the user was still
-	// setting.
+	// The checkbox gets the key first while focused, so Space and Enter toggle it:
+	// an Enter that answered would commit the state the user was still setting.
 	if d.optFocused && d.option != nil && d.option.HandleKey(ev) {
 		return true
 	}
@@ -246,8 +227,8 @@ func (d *ConfirmDialog) focusNext(n, step int) {
 		d.btnFocus = (d.btnFocus + step + n) % n
 		return
 	}
-	// Positions 0..n-1 are the buttons and n is the checkbox, so the cycle is
-	// one longer than the button set.
+	// Positions 0..n-1 are the buttons and n the checkbox, so the cycle is one
+	// longer than the button set.
 	cur := d.btnFocus
 	if d.optFocused {
 		cur = n
@@ -259,10 +240,9 @@ func (d *ConfirmDialog) focusNext(n, step int) {
 	}
 }
 
-// setOptFocused moves the keyboard onto or off the checkbox. The widget's own
-// focus flag is set here rather than left to Draw: CheckBox.HandleKey refuses
-// every key while it is unfocused, so a dialog that only told it at draw time
-// would drop the first Space of a showing that had not been drawn yet.
+// setOptFocused moves the keyboard onto or off the checkbox. The widget's focus
+// flag is set here, not left to Draw: CheckBox.HandleKey refuses every key while
+// unfocused, so the first Space of a not-yet-drawn showing would be dropped.
 func (d *ConfirmDialog) setOptFocused(v bool) {
 	d.optFocused = v
 	if d.option != nil {
@@ -276,17 +256,16 @@ func (d *ConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	// A release must reach the checkbox even when it lands outside the dialog
-	// (consumed below) — otherwise its mouseDragging latch survives the
-	// gesture and swallows the next press as a continuation of it. CheckBox
-	// returns false on ButtonNone, so this only resets the latch.
+	// (consumed below), or its mouseDragging latch survives and swallows the next
+	// press. CheckBox returns false on ButtonNone, so this only resets the latch.
 	if ev.Buttons() == tcell.ButtonNone && d.option != nil {
 		d.option.HandleMouse(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	// The checkbox is offered the press before the buttons are hit-tested,
-	// and takes focus with it so the keyboard is where the pointer just was.
+	// The checkbox is offered the press before the buttons are hit-tested, and takes
+	// focus with it so the keyboard is where the pointer just was.
 	if d.option != nil && d.option.HandleMouse(ev) {
 		d.setOptFocused(true)
 		return true
@@ -305,10 +284,9 @@ func (d *ConfirmDialog) answerAt(i int) ConfirmAnswer {
 	return d.answers[i]
 }
 
-// finish hides the dialog and reports answer. The handler is read and
-// cleared before it runs: it commonly opens another dialog (a Save As file
-// dialog, say) that can itself route back here, and a stale handler left
-// installed would then be fired a second time by the next Escape.
+// finish hides the dialog and reports answer. The handler is read and cleared
+// first: it commonly opens another dialog (a Save As file dialog) that can route
+// back here, and a stale handler would fire again on the next Escape.
 func (d *ConfirmDialog) finish(answer ConfirmAnswer) {
 	d.Hide()
 	onAnswer := d.onAnswer

@@ -13,10 +13,9 @@ import (
 
 // Draw renders the panel (Panel interface).
 func (p *QueryStorePanel) Draw(s tcell.Screen) {
-	// Every selector is labelled with what it points at, so the labels change
-	// without a resize — and a rect laid out for the old label leaves the next
-	// button overpainting the tail of this one. Relaying out here keeps the two
-	// in step; it is a handful of width measurements.
+	// Every selector is labelled with what it points at, so labels change without a
+	// resize, and a rect laid out for the old label would let the next button
+	// overpaint its tail. Relaying out here is a few width measurements.
 	p.refreshToolLabels()
 	p.layoutToolRows()
 	p.drawToolRow(s, p.selRect, &p.sel, p.selDisabled)
@@ -26,16 +25,16 @@ func (p *QueryStorePanel) Draw(s tcell.Screen) {
 	p.planSplit.Draw(s)
 	p.grid.Draw(s)
 	p.plansGrid.Draw(s)
-	// Last, over both grids: a cell's context menu or value popup is drawn
-	// outside the grid's own rect, and without this the menu a right-click
-	// opens is invisible while still eating every key until Escape.
+	// Last, over both grids: a cell's context menu or value popup is drawn outside the
+	// grid's own rect, and without this a right-click's menu is invisible while still
+	// eating every key until Escape.
 	p.grid.DrawOverlay(s)
 	p.plansGrid.DrawOverlay(s)
 }
 
-// drawToolRow paints one toolbar row in the tooltip scheme Activity Monitor's
-// buttons use, dimming each cell the panel would refuse a click on. The dimmed
-// state and the refusal are the same predicate, so a cell that looks inert is.
+// drawToolRow paints one toolbar row in Activity Monitor's tooltip scheme,
+// dimming each cell the panel would refuse a click on. The dimmed state and the
+// refusal are the same predicate, so a cell that looks inert is.
 func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, row *controls.ToolRow, disabled func(int) bool) {
 	if r.H != 1 {
 		return
@@ -53,8 +52,8 @@ func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, row *controls
 		core.FillRect(s, t.Rect, ' ', style)
 		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
 	}
-	// The stand-in for whatever did not fit. Dimmed only while the whole row
-	// is: what it holds is gated item by item once the menu is open.
+	// The stand-in for whatever did not fit. Dimmed only while the whole row is; its
+	// items are gated one by one once the menu is open.
 	more := row.More
 	if more.Rect.IsZero() {
 		return
@@ -69,9 +68,9 @@ func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, row *controls
 
 // drawChart plots the report's rows in the order the loader produced them:
 // tallest first for the five that rank, chronologically for Overall Resource
-// Consumption, and most recently executed first for Tracked Queries — which is
-// a pinned list rather than a ranking, so its bars are deliberately unsorted.
-// Bars beyond the pane's height are dropped by BarChart itself.
+// Consumption, and most recently executed first for Tracked Queries, a pinned list
+// rather than a ranking, so its bars are deliberately unsorted. Bars beyond the
+// pane's height are dropped by BarChart itself.
 func (p *QueryStorePanel) drawChart(s tcell.Screen) {
 	r := p.chartRect
 	if r.W <= 0 || r.H <= 0 {
@@ -90,8 +89,8 @@ func (p *QueryStorePanel) drawChart(s tcell.Screen) {
 			"Nothing to plot for "+p.report().Title)
 		return
 	}
-	// The value column is what the grid's own value column says, so a bar and
-	// its row can be read against each other without converting units.
+	// The value column is what the grid's own value column says, so a bar and its
+	// row can be read against each other without converting units.
 	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, theme.StyleChartAxis(), p.chartTitle())
 	charts.BarChart{
 		Bars:       bars,
@@ -99,9 +98,9 @@ func (p *QueryStorePanel) drawChart(s tcell.Screen) {
 	}.Draw(s, core.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 1})
 }
 
-// chartTitle names what the bars measure: the report, and the quantity the
-// loader plotted — which is not always the value column, so it comes from the
-// result rather than from the toolbar.
+// chartTitle names what the bars measure: the report, and the quantity the loader
+// plotted (not always the value column, so it comes from the result, not the
+// toolbar).
 func (p *QueryStorePanel) chartTitle() string {
 	if p.res.chartLabel == "" {
 		return p.report().Title
@@ -110,10 +109,10 @@ func (p *QueryStorePanel) chartTitle() string {
 }
 
 // drawSeriesChart plots the selected query's per-plan history in place of the
-// report's bars — the chart's other mode, see query_store_series.go. A read
-// that is still out, one that failed, and a query with no intervals in the
-// window all draw their note here rather than an empty plot: an axis with no
-// lines on it reads as "this query did nothing", which is one of the three.
+// report's bars (query_store_series.go). A read still out, one that failed, and a
+// query with no intervals in the window all draw their note here rather than an
+// empty plot: an axis with no lines reads as "this query did nothing", which is
+// one of the three.
 func (p *QueryStorePanel) drawSeriesChart(s tcell.Screen, r core.Rect) {
 	pal := theme.Active()
 	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, theme.StyleChartAxis(), p.seriesTitle())

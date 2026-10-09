@@ -2,13 +2,13 @@
 // Version/Commit/Date are never hand-edited; they resolve in priority order:
 //
 //  1. -ldflags -X, set by .github/workflows/release.yml from the pushed tag.
-//  2. debug.BuildInfo.Main.Version, when ldflags didn't set Version: the tag
-//     for `go install ...@<tag>`, or a pseudo-version for a plain `go build` in
-//     a checkout ("v0.0.11-0.20260911113756-cf929d309586", "+dirty" if the tree
-//     had changes). A pseudo-version is a pre-release of the next patch, so the
-//     update check ranks it below that release.
-//  3. The literal "(devel)", only when the binary has no module version (`go
-//     run`, `go build -buildvcs=false`), matching `go version -m`.
+//  2. debug.BuildInfo.Main.Version when ldflags didn't set it: the tag for
+//     `go install ...@<tag>`, or a pseudo-version for a plain `go build` in a
+//     checkout ("v0.0.11-0.20260911113756-cf929d309586", "+dirty" if modified).
+//     A pseudo-version is a pre-release of the next patch, so the update check
+//     ranks it below that release.
+//  3. The literal "(devel)", only with no module version (`go run`,
+//     `go build -buildvcs=false`), matching `go version -m`.
 //
 // Commit/Date come from the VCS info embedded by the toolchain (go help
 // buildvcs). Used by cmd/gossms and the About dialog.

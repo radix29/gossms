@@ -11,16 +11,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// partition_props.go is the read-only Properties for a partition function
-// and a partition scheme. Read-only for the same reason Foreign Key
-// Properties is: neither has an ALTER that changes what these pages show —
-// ALTER PARTITION FUNCTION only splits or merges a boundary, and ALTER
-// PARTITION SCHEME only names the next filegroup to use.
+// partition_props.go is the read-only Properties for a partition function and a
+// partition scheme. Read-only for the reason Foreign Key Properties is: neither
+// has an ALTER that changes what these pages show (ALTER PARTITION FUNCTION only
+// splits or merges a boundary, ALTER PARTITION SCHEME only names the next
+// filegroup to use).
 
-// findPartitionFunction resolves a partition function by name. It exists
-// only to save the DatabaseByName step at its three call sites; the
-// lookup itself is gosmo's, which matches the name in SQL and so under the
-// server's collation.
+// findPartitionFunction resolves a partition function by name; it only saves the
+// DatabaseByName step at its three call sites. The lookup is gosmo's, which
+// matches the name in SQL and so under the server's collation.
 func findPartitionFunction(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.PartitionFunction, error) {
 	return inDB(ctx, sc, dbName, name, (*gosmo.Database).PartitionFunctionByName)
 }
@@ -41,9 +40,8 @@ func partitionFunctionPropPages(sc *db.ServerConn, dbName, name string) []propPa
 			grid.SetData([]string{"#", "Boundary value"}, partitionBoundaryRows(pf))
 			grid.SetCellCursor(true)
 
-			// RANGE LEFT/RIGHT says which side of a boundary the boundary
-			// value itself falls on, which is the one thing about a
-			// partition function that is easy to get backwards.
+			// RANGE LEFT/RIGHT says which side of a boundary the boundary value itself falls
+			// on, the thing about a partition function that is easiest to get backwards.
 			rangeText := "LEFT — a boundary value belongs to the partition below it"
 			if pf.IsRight {
 				rangeText = "RIGHT — a boundary value belongs to the partition above it"

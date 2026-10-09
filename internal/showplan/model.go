@@ -161,9 +161,8 @@ func (n *Node) Cost(stmtTotal float64) float64 {
 
 // Runtime aggregates RunTimeCountersPerThread: rows, reads and CPU summed,
 // elapsed time from the slowest thread. Elapsed is wall clock, which parallel
-// threads share; CPU is spent per thread and adds up — the busiest thread's
-// alone showed a DOP-4 operator at a quarter of its CPU, and below the
-// statement's own CpuTime.
+// threads share; CPU is spent per thread and adds up (the busiest thread alone
+// showed a DOP-4 operator at a quarter of its CPU).
 type Runtime struct {
 	Rows          int64
 	RowsRead      int64

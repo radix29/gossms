@@ -15,9 +15,9 @@ type propsState struct {
 	scroll int
 }
 
-// detailsHeaderText builds a details-style header's title row: title plus a
-// right-aligned scroll indicator — shared by the Tree tab's "Operator
-// Details" pane and the Plan tab's "Properties" block.
+// detailsHeaderText builds a details header's title plus right-aligned scroll
+// indicator, shared by the Tree tab's "Operator Details" and the Plan tab's
+// "Properties".
 func detailsHeaderText(title string, w int, canUp, canDown bool) string {
 	var indicator string
 	switch {
@@ -56,19 +56,17 @@ func (v *PlanView) scrollDetails(delta int) {
 	v.detailsScroll = core.Clamp(v.detailsScroll+delta, 0, maxScroll)
 }
 
-// scrollBottomProps shifts the Tree tab's bottom Properties section's
-// scroll offset by delta rows, clamped to its (Warnings-inclusive) row
-// count — mirrors scrollDetails for the "Operator Details" pane.
+// scrollBottomProps shifts the bottom Properties scroll by delta rows, clamped
+// to its (Warnings-inclusive) row count; mirrors scrollDetails.
 func (v *PlanView) scrollBottomProps(delta int) {
 	total := len(nodePropsForDisplay(v.selectedNode()))
 	maxScroll := max(0, total-v.bottomRect.H)
 	v.propsSt.scroll = core.Clamp(v.propsSt.scroll+delta, 0, maxScroll)
 }
 
-// drawDetails renders the Operator Details pane's aligned key/value lines
-// for n, scrolled by scroll rows — shared by the Tree tab's right-hand pane
-// and the Plan tab's "Selected Operator" detail strip. live is n's live
-// counters in live mode, else nil (see detailKVs).
+// drawDetails renders n's aligned key/value lines scrolled by scroll rows,
+// shared by the Tree tab's right pane and the Plan tab's strip. live is n's live
+// counters, else nil (see detailKVs).
 func drawDetails(s tcell.Screen, rect core.Rect, n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters, scroll int) {
 	pal := theme.Active()
 	bg := theme.StylePanel()
@@ -94,15 +92,13 @@ func drawDetails(s tcell.Screen, rect core.Rect, n *showplan.Node, st *showplan.
 	}
 }
 
-// detailKVs builds the Operator Details pane's ordered key/value pairs for
-// n, matching the SSMS Properties-grid field set. st supplies the
-// statement-level Memory Grant, shown only on the plan's root operator —
-// same as real SSMS, which reports memory grant once per statement rather
-// than per operator.
+// detailKVs builds n's ordered key/value pairs, matching SSMS's Properties
+// grid. st supplies the statement-level Memory Grant, shown only on the root
+// operator as SSMS does.
 //
-// live, when non-nil, is n's live counters (live mode): they add a Live block
-// after the estimates and stand in for the Actual figures, which in an
-// in-flight plan are a partial snapshot older than the counters.
+// live, when non-nil, adds a Live block after the estimates and stands in for
+// the Actual figures, which in an in-flight plan are a partial snapshot older
+// than the counters.
 func detailKVs(n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters) []showplan.KV {
 	var kvs []showplan.KV
 	add := func(k, v string) { kvs = append(kvs, showplan.KV{Key: k, Value: v}) }
@@ -166,9 +162,8 @@ func detailKVs(n *showplan.Node, st *showplan.Statement, live *showplan.LiveCoun
 	return kvs
 }
 
-// detailLines renders detailKVs as "Label : Value" lines with every label
-// padded to the widest one, so the colons line up in a column — shared by
-// drawDetails and formatDetailsText (Copy).
+// detailLines renders detailKVs as "Label : Value" lines, labels padded so the
+// colons align; shared by drawDetails and formatDetailsText (Copy).
 func detailLines(n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters) []string {
 	if n == nil {
 		return nil
@@ -192,17 +187,16 @@ func formatDetailsText(n *showplan.Node, st *showplan.Statement, live *showplan.
 	return strings.Join(detailLines(n, st, live), "\n")
 }
 
-// formatCount renders an estimate (a float64 in the source XML, even
-// though it's always integral in practice) without a decimal point.
+// formatCount renders an estimate (a float in the XML, integral in practice)
+// without a decimal point.
 func formatCount(f float64) string {
 	return fmt.Sprintf("%.0f", f)
 }
 
-// nodePropsForDisplay returns n's raw attribute list with a synthetic
-// "Warnings" entry prepended when n has any. n.Props stays a literal mirror
-// of the plan XML's attributes — decodeWarnings consumes the <Warnings>
-// element into n.Warnings, so it never lands in Props — so this display
-// list is built fresh at render/scroll time instead.
+// nodePropsForDisplay returns n's attribute list with a synthetic "Warnings"
+// entry prepended when n has any. n.Props stays a literal mirror of the XML
+// attributes (decodeWarnings moves <Warnings> into n.Warnings), so this list is
+// built at render/scroll time.
 func nodePropsForDisplay(n *showplan.Node) []showplan.KV {
 	if n == nil {
 		return nil

@@ -130,7 +130,7 @@ Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
     (verified on MI with a fabricated node).
     `TestTheBindingsCreateIsWithheldOnAzure` (`service_broker_ops_test.go`).
   - **Route Msg 41943 is not gated**: `CREATE`/`ALTER ROUTE` with `ADDRESS =
-    'TRANSPORT'` or any `MIRROR_ADDRESS` on MI (probed `t-qmi-01` 2026-09-17) is
+    'TRANSPORT'` or any `MIRROR_ADDRESS` on MI (probed on `t-qmi-01`) is
     a *runtime* refusal. Nothing gossms emits hits it except user text typed
     into Route Properties, which gets the server's clear message. Gating one
     value of a free-text field per edition isn't a shape `edition_gate.go` has.
@@ -147,7 +147,7 @@ Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
 ## Permission gating: what is settled — do not re-raise
 
 - **A queue's Properties and Delete use different rights; the owner is
-  knowingly withheld Delete.** Probed 2026-09-16 on 13/14/17: `ALTER ON
+  knowingly withheld Delete.** Probed on 13/14/17: `ALTER ON
   OBJECT::<queue>` alters and is refused the drop (Msg 15151; drop needs
   CONTROL on the queue or ALTER on its schema). `gate.QueueAlterRights` is
   `gate.ObjectWriteRights()`; `gate.QueueDropRights` is that minus the object ALTER.
@@ -156,7 +156,7 @@ Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
   either grant, CONTROL only for a CONTROL grant or the owner).
 - **Move to Schema on every class-1 family is gated on CONTROL on the object;
   one set serves all nine.** `TRANSFER` needs CONTROL on it plus ALTER on the
-  target schema. Probed twice on 17 (queue 2026-09-16, table 2026-09-17), one
+  target schema. Probed twice on 17 (queue, table), one
   `WITHOUT LOGIN` user per right, identical:
 
   | right held | `O:ALTER` | `O:CONTROL` | transfer |
@@ -188,7 +188,7 @@ Enable/Disable and Properties.
 
 **A security policy's Delete and Disable/Enable ask both halves**: ALTER ANY
 SECURITY POLICY **and** ALTER on its schema (Msg 3701/33268 otherwise). Probed
-2026-09-11 on 13 and 17, 17 cases: with the policy right, both worked exactly
+on 13 and 17, 17 cases: with the policy right, both worked exactly
 when `HAS_PERMS_BY_NAME(schema, 'SCHEMA', 'ALTER')` was 1 (which folds in schema
 CONTROL/ownership, ALTER ANY SCHEMA, db_ddladmin, database ALTER/CONTROL); a
 schema DENY beat database ALTER; CONTROL on the policy permits neither. So the
@@ -233,7 +233,7 @@ reads 0 for the denied ALTER in every row, including actions the server allows
   both scopes (needs CONTROL on the role plus IMPERSONATE on the new owner).
 
 **Classes 5, 6 and 10 are answered by effective CONTROL, with no DENY arm.**
-Probed 2026-09-11 on 13/14/17, `WITHOUT LOGIN` user per case, identical;
+Probed on 13/14/17, `WITHOUT LOGIN` user per case, identical;
 "CONTROL" = gosmo's `SecurablePermissions` (`HAS_PERMS_BY_NAME(...,
 'CONTROL')`); ALTER on the target schema held for every transfer:
 
@@ -272,7 +272,7 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   (29) and search property lists (31): Delete gated on `ALTER ANY FULLTEXT
   CATALOG` (one right for all three), database `ALTER`/`CONTROL`, or `CONTROL`
   on the object (per-securable probe — offers it to the owner); Script as
-  ungated; no Rename (no statement). Probed 2026-10-07 on 14 and 17, identical:
+  ungated; no Rename (no statement). Probed on 14 and 17, identical:
   `db_ddladmin` drops; `CREATE FULLTEXT CATALOG`, `ALTER ANY SCHEMA`, and
   `ALTER` or `TAKE OWNERSHIP` on the object drop nothing; DENY `ALTER` refuses
   nothing; DENY `CONTROL` hides the object. A catalog holding an index, or a
@@ -652,7 +652,7 @@ Peer credentials, easy to undo:
 - **A loaded index column is removed and re-added, not edited.** ALTER
   FULLTEXT INDEX has no form that changes a column's language, type column or
   statistical semantics; the Columns page says so.
-- **The gates** (probed 2026-10-08 on 14 and 17 with a WITHOUT LOGIN user per
+- **The gates** (probed on 14 and 17 with a WITHOUT LOGIN user per
   right, identical — gosmo `ProbedSecurablePermissions`): the three New items
   on `CREATE FULLTEXT CATALOG`; catalog General (AS DEFAULT) on `ALTER ANY
   FULLTEXT CATALOG` — `ALTER` on the catalog is refused it; catalog
@@ -713,7 +713,7 @@ Peer credentials, easy to undo:
 
 A database's Security folder holds Asymmetric Keys, Certificates, Symmetric
 Keys (in that order, after Schemas), on every database including `master`.
-Every result below was probed 2026-09-22 with `WITHOUT LOGIN` users on 13, 14,
+Every result below was probed with `WITHOUT LOGIN` users on 13, 14,
 17 and MI — identical on all four — and the UI driven on 17 and MI.
 
 - **Keys are generated, never imported from a file.** `FROM FILE`, `EXECUTABLE
@@ -1115,7 +1115,7 @@ gosmo holds the model, DDL, scripter and readers
   `fn_xe_file_target_read_file` accepts `system_health*.xel` and nothing else
   local — a full path, a bare file name, `system_health_0*.xel`, `*.xel`,
   `AlwaysOn_health*.xel` are all Msg 40538, sysadmin or not (probed on
-  t-qmi-01, 2026-09-30); a cursor naming the file by full path is accepted
+  t-qmi-01); a cursor naming the file by full path is accepted
   beside the wildcard. So on Azure Watch Live Data does not start at the
   current file (it reads the wildcard from the start — MI's system_health is
   one file), View Target Data and Merge do not list and read file by file,
@@ -1212,7 +1212,7 @@ Unverified on Managed Instance and on non-Enterprise editions:
   caller is not sysadmin and `HAS_PERMS_BY_NAME` grants SELECT on them
   (msdb db_owner or db_datareader, CONTROL SERVER), the views otherwise, in
   one server-side `IF … ELSE` batch; the tables are unchanged 13 through 17
-  (live there, 2026-10-01). A DatabaseMailUserRole member still reads its
+  (live there). A DatabaseMailUserRole member still reads its
   own items only, and Details ("Your failed items") and the Log Viewer's
   status line ("only your mail items' entries") say so from
   `Server.MailVisibility`, the same test the reads branch on — not from role
@@ -1225,7 +1225,7 @@ Unverified on Managed Instance and on non-Enterprise editions:
   is granted to nobody; under CONTROL SERVER alone it writes the registry and
   then `sp_sqlagent_notify` refuses Msg 14260 — the change stored, the dialog
   reporting failure, a running Agent not told. SQLAgent* roles and public get
-  Msg 229. Probed on 17, 2026-10-01. The read (`xp_instance_regread`) works for
+  Msg 229. Probed on 17. The read (`xp_instance_regread`) works for
   public, so every login sees the settings.
 - **SQL Server Agent Properties is one page, Alert System's mail profile.**
   `@email_profile`/`@email_save_in_sent_folder` are the obsolete SQL Mail
@@ -1266,7 +1266,7 @@ Unverified on Managed Instance and on non-Enterprise editions:
   decide once the name is complete.
 - **An omitted part (`LS..s.t`, `LS.db..t`, `LS...t`) answers nothing** —
   SQL Server refuses the name itself: Msg 7313, "an invalid schema or catalog
-  was specified for the provider", probed 2026-10-04 (2025 → 2017 over
+  was specified for the provider", probed (2025 → 2017 over
   MSOLEDBSQL19, also with the linked server's `@catalog` set), though
   `OPENQUERY`'s `DB_NAME()`/`SCHEMA_NAME()` would have named the remote
   login's defaults. A list for a name that cannot run is a wrong list.
@@ -1436,19 +1436,11 @@ it from the string 'NULL'.
   `N/A` in one row. If ever slow, add the batch as a fast path with the fan-out
   as fallback — never as a replacement.
 - **Restructuring `internal/tui` is closed**; no split candidates outstanding.
-  Measured on a type-checked cross-file reference graph; the splits that paid
-  (zero references back into `tui`) are done — `sqlparse`, `planview`,
-  `dashboard`, `gate`. File length alone doesn't reopen it. Negative results:
-  - `agent_*`/`database_props_*`/`new_*` families aren't a seam — they cut
-    through the `App` dependency.
-  - "Lines never mentioning `App`" isn't either: `grep -w App` misses
-    `p.app`/`d.app`; the real figure is 48% (58 files, 12,618 lines), not 56%.
-  - A `props` package isn't a five-method interface: 41 `propPage` files have
-    110 outbound references to 44 symbols, ~6 of them `App` services, the rest
-    helpers in 146-221-reference hubs. It'd need a fourth package.
-  - "Testable without `App`" already holds (five such `*_test.go` files).
-  - `planview`, the precedent, has no `Host` interface; both precedents are
-    leaves.
+  The splits that paid (zero references back into `tui`) are done —
+  `sqlparse`, `planview`, `dashboard`, `gate`. File length alone doesn't reopen
+  it: the `agent_*`/`database_props_*`/`new_*` families cut through the `App`
+  dependency, and a `props` package would need a fourth package (41 `propPage`
+  files share 110 references to 44 symbols).
 - **The Block tab listing its own session is intended** — `sp_block` drops only
   idle *and* non-blocking sessions, so an unblocked server shows one row: the
   monitor. `and spr.spid <> @@spid` is **rejected — author's call**.
@@ -1465,7 +1457,7 @@ it from the string 'NULL'.
   five (`SQLPAL:Host/Guest Memory`), not in `counterNames`. All 33 names resolve
   on both. No `OR instance_name IS NULL` arm.
 - **Both cache hit ratios are `cntr_value / base`, neither a delta** (live on
-  win10cli 17.0.1135.8, 2026-09-18). `cntrFraction` in
+  win10cli 17.0.1135.8). `cntrFraction` in
   `internal/activity/counters.go` not using `prev` (unlike
   `cntrAverageBulk`) looks like an oversight and isn't:
   - **Buffer cache hit ratio is a window over recent lookups**, not cumulative —
@@ -1488,7 +1480,7 @@ it from the string 'NULL'.
   and `0.1e0+0.2e0` as `0.3`; gossms shows every digit needed to reparse the
   same float64, so copied grid text doesn't silently change the value
   (`TestFormatFloatRoundTrips`). The exponent form and its cut-offs (`>= 1e15`,
-  `< 1e-4`, `1E+300`, `1E-05`) do match SSMS, probed 2026-10-04.
+  `< 1e-4`, `1E+300`, `1E-05`) do match SSMS, probed.
 - **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix doesn't strand the
   pooled connection** (gosmo `permission_options.go`, via `server_security.go`).
   A live A/B showed eight pooled connections on the right database after a
@@ -1496,7 +1488,7 @@ it from the string 'NULL'.
   TDS reset restoring the connection-string database. A pinned
   read-switch-restore would cost three round trips for nothing.
 - **`mssql.ServerError` is fatal-only, so gosmo's `IsRetryable` treating it as
-  retryable is right.** go-mssqldb v1.11.2 (checked 2026-09-23): its doc says
+  retryable is right.** go-mssqldb v1.11.2 (checked): its doc says
   fatal/severs the connection, and both rows loops routing token errors through
   `Conn.checkBadConn` still "Ignore non-fatal server errors". Cited by symbol —
   lines move.
@@ -1625,7 +1617,7 @@ drops the previous node's rows, chart strip, pinned tooltip and menu verbs
 
 `msdb.dbo.sysschedules.name` is not unique; SSMS's New Job ▸ Schedules makes
 one schedule per job, so several jobs scheduled "Daily" leave several
-schedules named Daily. Probed 2026-10-04 on win10cli (17): by a shared name,
+schedules named Daily. Probed on win10cli (17): by a shared name,
 `sp_attach_schedule`, `sp_update_schedule` and `sp_delete_schedule` all fail
 Msg 14371 ("There are two or more schedules named …"); `sp_detach_schedule`
 succeeds, because it resolves the name within the job.

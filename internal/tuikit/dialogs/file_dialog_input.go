@@ -50,10 +50,9 @@ func (d *FileDialog) handleListKey(ev *tcell.EventKey) bool {
 	return true
 }
 
-// typeaheadJump extends the pending typeahead buffer with r and jumps
-// selection to the first entry whose name starts with it (case-
-// insensitive); if nothing matches the extended buffer, it restarts from
-// just r — classic file-manager "type to jump" navigation.
+// typeaheadJump extends the typeahead buffer with r and jumps to the first
+// entry whose name starts with it (case-insensitive); if none matches, it
+// restarts from just r.
 func (d *FileDialog) typeaheadJump(r rune) {
 	for _, candidate := range []string{d.typeahead + string(r), string(r)} {
 		lower := strings.ToLower(candidate)
@@ -134,10 +133,9 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// A release must reach whichever field currently has focus even when it
-	// lands outside the dialog (consumed below) — otherwise its next press
-	// is swallowed as a continuation of the stale drag. Each returns false
-	// on ButtonNone, so this has no effect beyond resetting the latch.
+	// A release must reach the focused field even when it lands outside the dialog
+	// (consumed below), or its next press is swallowed as a continuation of the
+	// stale drag. Each returns false on ButtonNone, so this only resets the latch.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.listMouseDragging = false
 		switch d.focus {
@@ -146,9 +144,8 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		case ffName:
 			d.nameField.HandleMouse(ev)
 		}
-		// Terminate a text-selection drag in the field that claimed the
-		// press even if focus has since moved elsewhere; the switch above
-		// only covers the still-focused case.
+		// Terminate a selection drag in the field that claimed the press even if focus
+		// has moved; the switch above covers only the still-focused case.
 		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
@@ -157,10 +154,9 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		return true
 	}
-	// The gesture belongs to whichever field claimed its press, so motion is
-	// replayed there without hit-testing — ahead of ButtonClicked below,
-	// which would otherwise fire a button the moment a selection drag
-	// wandered over the button row.
+	// The gesture belongs to the field that claimed the press, so motion is replayed
+	// there without hit-testing, ahead of ButtonClicked, which would fire a button
+	// when a selection drag wandered over the button row.
 	if d.drag.Replay(ev) {
 		return true
 	}
@@ -189,8 +185,7 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		if lr.Contains(mx, my) {
 			if d.listMouseDragging {
-				// Still the same physical press — do not re-activate on
-				// every resent motion event.
+				// Same physical press: don't re-activate on resent motion.
 				return true
 			}
 			d.listMouseDragging = true

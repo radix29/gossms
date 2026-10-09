@@ -11,13 +11,13 @@ import (
 
 // objectOpsMenuItems is the Rename/Delete pair a node offers, or nil.
 //
-// A system object offers neither, the same way a node type absent from
-// objectOps does. The System * folders emit the same node types as the user
-// ones, so the type alone put Delete and Rename on master, on sys.objects and
-// on the SQL-Server-created Agent jobs: renaming a system database runs
-// SET SINGLE_USER WITH ROLLBACK IMMEDIATE — kicking every connection to msdb
-// or model — before the server refuses the rename itself, and renaming a
-// system Agent job is not refused at all.
+// A system object offers neither, the same way a node type absent from objectOps
+// does. The System * folders emit the same node types as the user ones, so the
+// type alone would put Delete and Rename on master, on sys.objects and on the
+// SQL-Server-created Agent jobs: renaming a system database runs SET SINGLE_USER
+// WITH ROLLBACK IMMEDIATE — kicking every connection to msdb or model — before the
+// server refuses the rename itself, and renaming a system Agent job is not refused
+// at all.
 func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 	op := objectOpFor(node.data.Type)
 	if op == nil || node.data.IsSystem {
@@ -55,12 +55,11 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 // items the server then refuses.
 func objectOpSchema(n *explorerNode) string { return objectDataSchema(n.data) }
 
-// objectOpName is the object whose own ALTER permits these operations on
-// node, or "" for a node they are not scoped by.
+// objectOpName is the object whose own ALTER permits these operations on node, or
+// "" for a node they are not scoped by.
 //
-// A schema node is excluded for the same reason objectOpSchema excludes it:
-// the schema is not an object, and its own name would answer for a table that
-// happened to share it. A node type gosmo's object probe does not record —
-// an index, a statistic — simply has no row, and the wider rights answer as
-// they did before.
+// A schema node is excluded for the same reason objectOpSchema excludes it: the
+// schema is not an object, and its own name would answer for a table that happened
+// to share it. A node type gosmo's object probe does not record (an index, a
+// statistic) has no row, and the wider rights answer.
 func objectOpName(n *explorerNode) string { return objectDataObject(n.data) }

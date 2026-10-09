@@ -13,16 +13,15 @@ import (
 
 // certificate_backup_dialog.go is Back Up Certificate (a certificate's context
 // menu), built on newObjectDialog for its OK / Script Changes pipeline: BACKUP
-// CERTIFICATE to a file on the server, with the private key to a second file
-// when one is named.
+// CERTIFICATE to a file on the server, with the private key to a second file when
+// one is named.
 //
-// Rights, probed on 17 (2026-09-22): the public certificate backs up for
-// anyone who can see the certificate, db_securityadmin included; the private
-// key needs CONTROL on it (Msg 15247 otherwise), which the server is left to
-// say. Both files are written by the SQL Server service account, which must be
-// able to write the directory (Msg 15240 otherwise, as the 2016 instance on
-// the test host could not write C:\temp), and they come out readable by that
-// account alone — nothing but an administrator on the host can delete them.
+// Rights: the public certificate backs up for anyone who can see the certificate,
+// db_securityadmin included; the private key needs CONTROL on it (Msg 15247
+// otherwise), which the server is left to say. Both files are written by the SQL
+// Server service account, which must be able to write the directory (Msg 15240
+// otherwise), and they come out readable by that account alone — nothing but an
+// administrator on the host can delete them.
 
 // certBackupPrefetch is what the dialog reads before it opens.
 type certBackupPrefetch struct {

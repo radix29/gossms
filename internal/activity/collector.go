@@ -38,11 +38,9 @@ func normalizeRate(d time.Duration) time.Duration {
 
 // backoff is the tick interval after n consecutive failed probes: rate doubled
 // per failure, capped at maxFailureBackoff; n <= 0 is rate itself. It bounds
-// retries against an unreachable server — a dropped connection doesn't cancel
-// the context and only ErrNoPermission is fatal.
-//
-// A non-positive rate is returned unchanged, since doubling it never reaches
-// the cap.
+// retries against an unreachable server (a dropped connection doesn't cancel
+// the context; only ErrNoPermission is fatal). A non-positive rate is returned
+// unchanged, since doubling never reaches the cap.
 func backoff(rate time.Duration, n int) time.Duration {
 	if rate <= 0 || n <= 0 {
 		return rate
@@ -67,12 +65,11 @@ type collector[S, Snap any] struct {
 	onSample func(S)
 	onError  func(error)
 
-	// pending holds the latest SetRate/SetPaused not yet taken by Run, and
-	// changed (one slot, sent to without blocking) says there is some. A
-	// burst of toolbar clicks coalesces into the newest values instead of
-	// queueing: a queue drained only between probes filled during a stalled
-	// DMV read, and the next click then blocked the UI goroutine until the
-	// read returned.
+	// pending holds the latest SetRate/SetPaused not yet taken by Run;
+	// changed (one slot, non-blocking send) says there is some. Clicks
+	// coalesce into the newest values rather than queueing: a queue drained
+	// only between probes filled during a stalled DMV read and the next click
+	// then blocked the UI goroutine.
 	mu      sync.Mutex
 	pending pendingState
 	changed chan struct{}
@@ -109,13 +106,9 @@ func newCollector[S, Snap any](src Source,
 //
 // The permission check runs once, first: without VIEW SERVER STATE the
 // collector reports ErrNoPermission and stops rather than draw an idle-looking
-// server.
-//
-// SetRate/SetPaused never block, running or not (see pending). Exits are
-// silent except the error one, so callers learn from Run returning.
-//
-// Failed probes don't end the run, but consecutive failures back off the
-// interval (see backoff); the first success resets it.
+// server. SetRate/SetPaused never block (see pending). Exits are silent except
+// the error one. Failed probes don't end the run, but back off the interval
+// (see backoff); the first success resets it.
 func (c *collector[S, Snap]) Run(ctx context.Context, rate time.Duration) {
 	defer c.Stop()
 
@@ -132,9 +125,8 @@ func (c *collector[S, Snap]) Run(ctx context.Context, rate time.Duration) {
 	defer ticker.Stop()
 
 	// fails counts consecutive failed probes; running is the ticker's current
-	// interval. retune is the only place the ticker is reset, so backoff and
-	// user-picked rate can't clobber each other. Unguarded because state.rate
-	// is normalized wherever written.
+	// interval. retune alone resets the ticker, so backoff and the user's rate
+	// can't clobber each other. Unguarded: state.rate is normalized on write.
 	fails, running := 0, state.rate
 	retune := func() {
 		d := backoff(state.rate, fails)

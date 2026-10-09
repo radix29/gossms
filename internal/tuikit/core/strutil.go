@@ -27,10 +27,8 @@ func DisplayWidthAtMost(s string, n int) int {
 	if n <= 0 {
 		return 0
 	}
-	// No grapheme is wider than its byte length (printable ASCII is one byte per
-	// column; anything wider than one column takes at least two bytes), so a string
-	// this short is under the limit, and the full measure's printable-ASCII fast
-	// path is the cheaper walk.
+	// No grapheme is wider than its byte length, so a string this short is under
+	// the limit, and the full measure's printable-ASCII fast path is cheaper.
 	if len(s) <= n {
 		return DisplayWidth(s)
 	}
@@ -51,9 +49,8 @@ func Truncate(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	// One pass answers both questions: cut remembers where the string must end to
-	// leave a column for the ellipsis, while width keeps running so a string that
-	// fits is returned whole.
+	// One pass: cut remembers where the string must end to leave a column for the
+	// ellipsis, while width keeps running so a string that fits is returned whole.
 	budget := n - 1 // reserve one column for the ellipsis
 	var pos, cut, width int
 	haveCut := false
@@ -80,8 +77,7 @@ func TruncateLine(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	// buf stays nil until the first break is mapped; until then the output
-	// is s[:pos].
+	// buf stays nil until the first break is mapped; until then output is s[:pos].
 	var buf []byte
 	budget := n - 1 // reserve one column for the ellipsis
 	var pos, cut, width int
@@ -125,28 +121,25 @@ func TruncateLine(s string, n int) string {
 
 // WrapText greedily word-wraps text to at most w display columns per line.
 //
-// A word too wide for a line is hard-broken across as many as it needs. Every
-// caller draws through DrawTextClipped, so an unbroken token (a stack frame, an
-// unspaced path, a certificate thumbprint) would be cut at the pane's right
-// edge with no ellipsis and no way to reach the rest.
+// A word too wide for a line is hard-broken: callers draw through
+// DrawTextClipped, so an unbroken token (stack frame, path, thumbprint) would be
+// cut at the pane edge with no ellipsis and no way to reach the rest.
 //
-// Runs of whitespace, including leading indentation, are not preserved:
-// strings.Fields is what makes a paragraph reflow. A caller needing the
-// original spacing must keep it itself.
+// Whitespace runs, including leading indentation, are not preserved
+// (strings.Fields reflows the paragraph); a caller needing them must keep them.
 func WrapText(text string, w int) []string {
 	lines, _ := wrapLines(text, w)
 	return lines
 }
 
-// WrapTextLimit is WrapText capped at maxLines: overflow is folded back into
-// the last line and clipped there with an ellipsis. Dropping the surplus lines
-// would leave a message that merely stops early reading like a complete one (a
-// truncated SQL Server error is the case this exists for). A w or maxLines of
-// zero or less returns nil.
+// WrapTextLimit is WrapText capped at maxLines: overflow is folded into the
+// last line and clipped there with an ellipsis. Dropping surplus lines would let
+// a truncated message (e.g. a SQL Server error) read as complete. A w or
+// maxLines of zero or less returns nil.
 //
-// The fold re-joins with a space only where the wrap broke at one. WrapText
-// hard-breaks a word too long for the line, and gluing those halves with a
-// space turns one unreachable path into two plausible-looking ones.
+// The fold re-joins with a space only where the wrap broke at one: gluing the
+// halves of a hard-broken word with a space turns one unreachable path into two
+// plausible ones.
 func WrapTextLimit(text string, w, maxLines int) []string {
 	if w <= 0 || maxLines <= 0 {
 		return nil
@@ -155,20 +148,18 @@ func WrapTextLimit(text string, w, maxLines int) []string {
 	return foldOverflow(lines, hardBreak, w, maxLines)
 }
 
-// WrapParagraphs is WrapText that keeps the text's line breaks: each line (split
-// on \n, \r\n or a lone \r) is a paragraph wrapped on its own, and an empty one
-// stays a blank line, so "question?\n\nconsequence" draws as two paragraphs
-// with a gap. Line breaks at either end are dropped, as WrapText drops
-// surrounding whitespace, so a message ending in "\n" gains no trailing blank.
+// WrapParagraphs is WrapText that keeps line breaks: each line (split on \n,
+// \r\n or a lone \r) is a paragraph wrapped on its own and an empty one stays a
+// blank line. Breaks at either end are dropped, so a trailing "\n" gains no
+// blank line.
 func WrapParagraphs(text string, w int) []string {
 	lines, _ := wrapParagraphLines(text, w)
 	return lines
 }
 
-// WrapParagraphsLimit is WrapParagraphs capped at maxLines the way
-// WrapTextLimit caps WrapText: overflow, paragraph breaks included (folded to a
-// space), is folded into the last line and clipped with an ellipsis. A w or
-// maxLines of zero or less returns nil.
+// WrapParagraphsLimit is WrapParagraphs capped at maxLines as WrapTextLimit caps
+// WrapText: overflow, paragraph breaks folded to a space, goes into the last
+// line, clipped with an ellipsis. A w or maxLines of zero or less returns nil.
 func WrapParagraphsLimit(text string, w, maxLines int) []string {
 	if w <= 0 || maxLines <= 0 {
 		return nil
@@ -178,7 +169,7 @@ func WrapParagraphsLimit(text string, w, maxLines int) []string {
 }
 
 // ParagraphsWidth is the display width of text's widest line as WrapParagraphs
-// draws it (whitespace runs collapsed): the w that puts each line on its own row.
+// draws it (whitespace runs collapsed).
 func ParagraphsWidth(text string) int {
 	width := 0
 	for _, para := range splitParagraphs(text) {
@@ -216,8 +207,8 @@ func foldOverflow(lines []string, hardBreak []bool, w, maxLines int) []string {
 	var rest strings.Builder
 	rest.WriteString(lines[maxLines-1])
 	for i := maxLines; i < len(lines); i++ {
-		// A blank line (a paragraph gap) contributes nothing, not a space: folding
-		// "a\n\nb" must read "a b", not "a  b" or " b".
+		// A blank line (paragraph gap) contributes nothing, not a space: "a\n\nb" must
+		// fold to "a b", not "a  b" or " b".
 		if lines[i] == "" {
 			continue
 		}
@@ -241,10 +232,10 @@ func wrapLines(text string, w int) (lines []string, hardBreak []bool) {
 		return []string{""}, []bool{false}
 	}
 	lines, hardBreak = make([]string, 0, 4), make([]bool, 0, 4)
-	// Widths are carried, never re-measured: re-measuring the remainder on every
-	// hard break made one unbroken n-byte token O(n^2/w) (a 64 KB base64 blob took
-	// 33 ms to wrap, a 48 KB CJK run 210 ms, on the UI goroutine). A width splits
-	// exactly at a grapheme boundary, the only place splitGraphemeWidth cuts.
+	// Widths are carried, never re-measured: re-measuring the remainder per hard
+	// break made one unbroken n-byte token O(n^2/w) (a 64 KB base64 blob took 33 ms,
+	// a 48 KB CJK run 210 ms, on the UI goroutine). A width splits exactly at a
+	// grapheme boundary, the only place splitGraphemeWidth cuts.
 	cur, curW := "", 0
 	for _, word := range words {
 		wordW := DisplayWidth(word)
@@ -256,9 +247,9 @@ func wrapLines(text string, w int) (lines []string, hardBreak []bool) {
 			}
 			lines, hardBreak = append(lines, cur), append(hardBreak, false)
 		}
-		// word now starts a fresh line. One that doesn't fit on an empty line is split
-		// until what's left does; splitGraphemeWidth always takes at least one
-		// grapheme, so this terminates even for a grapheme wider than w.
+		// word now starts a fresh line. One that doesn't fit an empty line is split
+		// until the rest does; splitGraphemeWidth always takes at least one grapheme,
+		// so this terminates even for a grapheme wider than w.
 		for wordW > w {
 			var head string
 			var headW int
@@ -268,9 +259,8 @@ func wrapLines(text string, w int) (lines []string, hardBreak []bool) {
 		}
 		cur, curW = word, wordW
 	}
-	// cur is empty when the last word divided exactly into full lines, and
-	// appending it would hand the caller a blank line. The len check keeps the
-	// "always at least one line" promise for the case where that is the only line.
+	// cur is empty when the last word divided exactly into full lines; appending it
+	// would add a blank line, but the len check keeps "always at least one line".
 	if cur != "" || len(lines) == 0 {
 		lines, hardBreak = append(lines, cur), append(hardBreak, false)
 	}
@@ -278,11 +268,8 @@ func wrapLines(text string, w int) (lines []string, hardBreak []bool) {
 }
 
 // splitGrapheme cuts s at the last grapheme boundary that keeps the head within
-// n display columns, returning the head and the remainder.
-//
-// At least one grapheme always moves into the head, even one wider than n:
-// otherwise the head would be empty, the remainder unchanged, and WrapText's
-// loop would never end.
+// n display columns. At least one grapheme always moves into the head, even one
+// wider than n, or WrapText's loop would never end.
 func splitGrapheme(s string, n int) (head, rest string) {
 	head, rest, _ = splitGraphemeWidth(s, n)
 	return head, rest
@@ -341,11 +328,10 @@ func padSpaces(s string, n int, left bool) string {
 	if n <= 0 {
 		return ""
 	}
-	// Padding is concatenation, and a grapheme cluster can absorb the bytes that
-	// follow it, so a string ending mid-cluster comes back wider than the sum of
-	// its parts: PadRight("0\xcc", 2) measured 1 column, then 3 once a space was
-	// appended. Only invalid UTF-8 can end mid-cluster; replacing it makes the
-	// "exactly n" promise hold for any input.
+	// Padding is concatenation, and a cluster can absorb following bytes, so a
+	// string ending mid-cluster comes back wider than the sum of its parts:
+	// PadRight("0\xcc", 2) measured 1 column, then 3 after a space. Only invalid
+	// UTF-8 can end mid-cluster; replacing it keeps "exactly n" true.
 	if !utf8.ValidString(s) {
 		s = strings.ToValidUTF8(s, "�")
 	}
@@ -378,8 +364,8 @@ func padSpaces(s string, n int, left bool) string {
 // FormatThousands renders n in base 10 with "," every three digits, e.g.
 // 1234567 -> "1,234,567".
 //
-// The digits come from strconv, not a hand-rolled loop: negating n is a no-op at
-// math.MinInt64, where such a loop produced no digits ("--").
+// The digits come from strconv: negating n is a no-op at math.MinInt64, where a
+// hand-rolled loop produced no digits ("--").
 func FormatThousands(n int64) string {
 	digits := strconv.FormatInt(n, 10)
 	sign := ""
@@ -398,9 +384,8 @@ func FormatThousands(n int64) string {
 	return sb.String()
 }
 
-// EvRune extracts the first rune from a tcell v3 EventKey (Rune() was replaced
-// by Str(), which returns a string). It is for matching a key; text insertion
-// uses EvText.
+// EvRune extracts the first rune from a tcell v3 EventKey (via Str()), for
+// matching a key; text insertion uses EvText.
 func EvRune(ev interface{ Str() string }) rune {
 	for _, r := range ev.Str() {
 		return r
@@ -408,8 +393,8 @@ func EvRune(ev interface{ Str() string }) rune {
 	return 0
 }
 
-// EvText is every rune a KeyRune event carries. Str is one key or a composed
-// sequence (an IME commit, a ZWJ emoji, a base letter and combining marks);
+// EvText is every rune a KeyRune event carries: Str is one key or a composed
+// sequence (IME commit, ZWJ emoji, base letter plus combining marks), so
 // inserting only EvRune dropped all but the first.
 func EvText(ev interface{ Str() string }) []rune {
 	return []rune(ev.Str())

@@ -4,10 +4,8 @@ import "context"
 
 // CPUUsage is host busy CPU at the newest scheduler-monitor record, split into
 // SQL Server and other processes. Idle is omitted: its band would fill the
-// chart on a quiet server and squeeze the two that matter.
-//
-// This is host-wide CPU, unlike SchedStats' scheduler pressure; a server pinned
-// by another process shows only here.
+// chart on a quiet server. Host-wide, unlike SchedStats' scheduler pressure; a
+// server pinned by another process shows only here.
 type CPUUsage struct {
 	SQLPct   float64
 	OtherPct float64

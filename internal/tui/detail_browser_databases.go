@@ -148,17 +148,15 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 	})
 }
 
-// diskUsageCharts are the two composition bars of the Disk Usage strip, in
-// SSMS's Disk Usage report order and split the same way: the data files
-// against what their pages hold, the log files against how much of them is
-// live.
+// diskUsageCharts are the two composition bars of the Disk Usage strip, in SSMS's
+// Disk Usage report order and split the same way: the data files against what
+// their pages hold, the log files against how much of them is live.
 //
 // The segments are read against each other, not against the file total —
-// StackedBar's zero Scale fills the width — which is why the data-file bar
-// carries the file size as its total and the parts, which sum to slightly
-// less (see gosmo.DiskUsage), still fill it. Format is what puts megabytes
-// on the tooltip a click pins: the legend under the bar has room for the
-// names only.
+// StackedBar's zero Scale fills the width — which is why the data-file bar carries
+// the file size as its total and the parts, which sum to slightly less (see
+// gosmo.DiskUsage), still fill it. Format puts megabytes on the tooltip a click
+// pins: the legend under the bar has room for the names only.
 func diskUsageCharts(u gosmo.DiskUsage) []detailChart {
 	cyan, green, _, blue, _, purple, _ := chartColors()
 	return []detailChart{

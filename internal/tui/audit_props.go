@@ -244,21 +244,21 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 	}
 }
 
-// auditApplyFailure reports a failed Audit Properties apply, marking it
-// committed when the audit has been left switched off.
+// auditApplyFailure reports a failed Audit Properties apply, marking it committed
+// when the audit has been left switched off.
 //
-// The whole apply runs inside gosmo's disable window, which re-enables the
-// audit last and reports that failure with everything before it already
-// committed. Switching an enabled audit to SECURITY LOG does exactly this on a
-// host whose service account may not write the Windows security log: the ALTER
-// lands, the restore is refused, and the page goes on showing "State: Enabled"
-// for an audit the server has stopped — verified live on win10cli. Re-reading
-// the state is the only way to tell that from the ordinary failure where
-// nothing landed and the user's edits must survive to be retried.
+// The whole apply runs inside gosmo's disable window, which re-enables the audit
+// last and reports that failure with everything before it already committed.
+// Switching an enabled audit to SECURITY LOG does exactly this on a host whose
+// service account may not write the Windows security log: the ALTER lands, the
+// restore is refused, and the page goes on showing "State: Enabled" for an audit
+// the server has stopped. Re-reading the state is the only way to tell that from
+// the ordinary failure where nothing landed and the user's edits must survive to
+// be retried.
 //
-// The re-read ignores ctx's cancellation: a user cancelling the Apply is one
-// way to reach here, and a read on the cancelled context fails, reporting a
-// stopped audit as the ordinary failure.
+// The re-read ignores ctx's cancellation: a user cancelling the Apply is one way
+// to reach here, and a read on the cancelled context fails, reporting a stopped
+// audit as the ordinary failure.
 func auditApplyFailure(ctx context.Context, sc *db.ServerConn, name string, wasEnabled bool, applyErr error) error {
 	if !wasEnabled || gosmo.Scripting(ctx) {
 		return applyErr

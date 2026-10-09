@@ -15,8 +15,8 @@ import (
 // both call it.
 //
 // Every run entry point closes the completion popup first: running is never a
-// completion gesture, and a "Loading suggestions..." placeholder left open
-// across the run outlives its reason (B12).
+// completion gesture, and a "Loading suggestions..." placeholder left open across
+// the run outlives its reason (B12).
 func (p *QueryPanel) Execute() {
 	p.editor.CloseCompletion()
 	if sel := p.editor.SelectedText(); sel != "" {
@@ -26,9 +26,9 @@ func (p *QueryPanel) Execute() {
 	p.runQuery(p.editor.Text())
 }
 
-// ExecuteSelection runs only the editor's selected text, setting a status
-// message and nothing else when there is no selection (unlike Execute, which
-// falls back to the whole script).
+// ExecuteSelection runs only the editor's selected text, setting a status message
+// and nothing else when there is no selection (unlike Execute, which falls back
+// to the whole script).
 func (p *QueryPanel) ExecuteSelection() {
 	p.editor.CloseCompletion()
 	if sel := p.editor.SelectedText(); sel != "" {
@@ -49,19 +49,19 @@ func (p *QueryPanel) CancelExecution() {
 }
 
 // Reconnect re-dials this panel's connection with the same server and login, in
-// the database it is currently in (see connectForQueryPanel): the escape hatch
-// for a connection dropped by an idle timeout, a killed session or a failover.
-// A no-op if the panel was never connected (no Opts to redial with).
+// the database it is currently in (connectForQueryPanel): the escape hatch for a
+// connection dropped by an idle timeout, a killed session or a failover. A no-op
+// if the panel was never connected (no Opts to redial with).
 //
 // The new connection brings a new session, so everything the old one held (temp
-// tables, SET options, an open transaction) is gone, and the status bar says
-// so. An open transaction is offered for commit first, as closing the panel
-// does; nothing is re-run on the new session.
+// tables, SET options, an open transaction) is gone, and the status bar says so.
+// An open transaction is offered for commit first, as closing the panel does;
+// nothing is re-run on the new session.
 //
 // p.conn is left as the now-closed old connection rather than nilled:
-// connectForQueryPanel reads only its Opts, and keeping it non-nil after a
-// failed redial leaves the panel like any with a dropped connection:
-// isConnected false, Reconnect enabled, Opts still there to retry.
+// connectForQueryPanel reads only its Opts, and keeping it non-nil after a failed
+// redial leaves the panel like any with a dropped connection: isConnected false,
+// Reconnect enabled, Opts there to retry.
 func (p *QueryPanel) Reconnect() {
 	if p.conn == nil {
 		p.app.setStatus("Nothing to reconnect — this query window was never connected")
@@ -86,14 +86,14 @@ func (p *QueryPanel) Reconnect() {
 }
 
 // connected reports whether the panel can run anything: an open connection and
-// the session taken from it. connectForQueryPanel sets both and
-// closeConnection clears both, but only the pair is what a run needs.
+// the session taken from it. connectForQueryPanel sets both and closeConnection
+// clears both, but only the pair is what a run needs.
 func (p *QueryPanel) connected() bool {
 	return p.app.isConnected(p.conn) && p.session != nil
 }
 
-// Close cancels an in-flight query or plan fetch and ends the panel's session
-// and connection (layout.Disposable). Called from App.closePanelAt.
+// Close cancels an in-flight query or plan fetch and ends the panel's session and
+// connection (layout.Disposable). Called from App.closePanelAt.
 func (p *QueryPanel) Close() {
 	if p.executing && p.cancel != nil {
 		p.cancel()
@@ -103,10 +103,10 @@ func (p *QueryPanel) Close() {
 	p.closeConnection()
 }
 
-// closeConnection ends the panel's session and closes its connection, for a
-// panel closing, reconnecting or finding its session lost. The session is
-// closed off the UI goroutine: query.Session.Close waits for a run still
-// unwinding from a cancel, and closing p.conn cancels that run's context.
+// closeConnection ends the panel's session and closes its connection, for a panel
+// closing, reconnecting or finding its session lost. The session is closed off
+// the UI goroutine: query.Session.Close waits for a run still unwinding from a
+// cancel, and closing p.conn cancels that run's context.
 func (p *QueryPanel) closeConnection() {
 	if s := p.session; s != nil {
 		p.session = nil
@@ -124,11 +124,11 @@ const endTransactionsTimeout = 30 * time.Second
 
 // endTransactions commits or rolls back the session's open transactions in the
 // background, then runs then on the UI goroutine, unless a commit failed: that
-// leaves the panel open with the transaction and an alert, since then would
-// close the session and roll back the work the user asked to keep. A commit
-// that failed because the session was lost leaves the panel open too, but
-// disconnected, saying the server rolled the work back. A failed rollback goes
-// on to then regardless (ending the session rolls back anyway).
+// leaves the panel open with the transaction and an alert, since then would close
+// the session and roll back the work the user asked to keep. A commit that failed
+// because the session was lost leaves the panel open too, but disconnected, saying
+// the server rolled the work back. A failed rollback goes on to then regardless
+// (ending the session rolls back anyway).
 //
 // The run latch is held throughout, so nothing else reaches the session.
 func (p *QueryPanel) endTransactions(commit bool, then func()) {
@@ -147,9 +147,9 @@ func (p *QueryPanel) endTransactions(commit bool, then func()) {
 		p.app.postAndWake(func() {
 			p.executing = false
 			if err != nil && commit && sess.Lost() {
-				// The connection went with the commit: the server rolled the
-				// transaction back, so there is nothing left to retry, and the
-				// panel shows as disconnected like any run that lost its session.
+				// The connection went with the commit: the server rolled the transaction back, so
+				// there is nothing left to retry, and the panel shows as disconnected like any run
+				// that lost its session.
 				p.closeConnection()
 				p.app.setStatus("Connection lost — the session's state is gone; use Query > Reconnect")
 				p.app.alertDialog.ShowAlert("Commit Failed",
@@ -190,9 +190,8 @@ func (p *QueryPanel) clearResults() {
 	p.layoutChildren() // the tab bar's row goes back to the results area
 }
 
-// runQuery is the shared execution path for Execute and Execute Selection; the
-// heavy lifting (GO batch splitting, result sets, message stream) is in
-// internal/query.
+// runQuery is the shared execution path for Execute and Execute Selection; GO
+// batch splitting, result sets and the message stream are in internal/query.
 //
 // In Results To File mode it asks for the destination first, then runs through
 // query.Session.ExecuteToSink, streaming rows to the file as they are scanned.
@@ -200,15 +199,15 @@ func (p *QueryPanel) runQuery(queryText string) {
 	if p.runRefused(queryText, func() { p.runQuery(queryText) }) {
 		return
 	}
-	// Snapshotted here rather than read inside the closures below: the Query menu
-	// can switch modes while the save dialog is open or the query is running. See
+	// Snapshotted here rather than read inside the closures below: the Query menu can
+	// switch modes while the save dialog is open or the query is running. See
 	// QueryPanel.runMode.
 	p.runMode = p.resultsMode
 
 	if p.runMode == ResultsModeFile {
-		// The destination must exist before the first row is scanned, so the prompt
-		// comes first and the run starts from its callback. Cancelling runs nothing,
-		// and the panel keeps its previous results.
+		// The destination must exist before the first row is scanned, so the prompt comes
+		// first and the run starts from its callback. Cancelling runs nothing, and the
+		// panel keeps its previous results.
 		p.promptResultsFile(func(path string) {
 			if p.executing {
 				p.app.setStatus("A query is already executing in this panel")
@@ -229,8 +228,8 @@ func (p *QueryPanel) runQuery(queryText string) {
 }
 
 // runRefused applies the checks every run entry point opens with (something to
-// run, a connection, no run in flight), reporting the first that fails and
-// whether one did.
+// run, a connection, no run in flight), reporting the first that fails and whether
+// one did.
 //
 // With no connection (and none on the way) it opens the Connect dialog for this
 // window, pre-filled with its previous connection, and calls retry once that
@@ -256,14 +255,14 @@ func (p *QueryPanel) runRefused(queryText string, retry func()) bool {
 }
 
 // startRun executes queryText, clearing the results area first. exportPath is
-// non-empty only for a Results To File run, which streams every row there
-// instead of retaining it, bounded by the file rather than memory.
+// non-empty only for a Results To File run, which streams every row there instead
+// of retaining it, bounded by the file rather than memory.
 func (p *QueryPanel) startRun(queryText, exportPath string) {
 	p.clearResults()
-	// Snapshot now, not read from the goroutine below: the "Include Actual
-	// Execution Plan" toggle can change while this goroutine runs. Live Query
-	// Statistics rides on the actual plan's profiling and has nothing to watch
-	// in a Results To File run, which captures no plan.
+	// Snapshot now, not read from the goroutine below: the "Include Actual Execution
+	// Plan" toggle can change while it runs. Live Query Statistics rides on the actual
+	// plan's profiling and has nothing to watch in a Results To File run, which
+	// captures no plan.
 	capturePlan := p.app.actualPlanEnabled || p.app.liveStatsEnabled
 	live := p.app.liveStatsEnabled && exportPath == ""
 	prog := &query.Progress{}
@@ -308,9 +307,9 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 // and, once run returns, takes in what the run says about the session before
 // finish installs the result on the UI goroutine.
 //
-// finish runs only for a panel still hosted; a closed one gets the status bar
-// told instead (finish normally replaces the "Executing..." status). prog is
-// the run's live row counter, nil for a run that scans no rows.
+// finish runs only for a panel still hosted; a closed one gets the status bar told
+// instead (finish normally replaces the "Executing..." status). prog is the run's
+// live row counter, nil for a run that scans no rows.
 func (p *QueryPanel) launch(what, status string, prog *query.Progress,
 	run func(context.Context, *query.Session) *query.Result,
 	finish func(res *query.Result, cancelled bool)) {
@@ -331,8 +330,8 @@ func (p *QueryPanel) launch(what, status string, prog *query.Progress,
 
 	p.app.safegoRepair(what, p.execPanicked, func() {
 		// Both on every exit, not just the normal one: a panic past them leaks ctx and
-		// leaves the animateUntil ticker waking the event loop once a second for the
-		// life of the process.
+		// leaves the animateUntil ticker waking the event loop once a second for the life
+		// of the process.
 		defer cancel()
 		defer close(done)
 
@@ -362,11 +361,11 @@ func (p *QueryPanel) launch(what, status string, prog *query.Progress,
 const sessionLostMessage = "The connection to the server was lost. This session's temp tables, " +
 	"SET options and any open transaction are gone; use Query > Reconnect to start a new session."
 
-// noteSessionState takes in what a finished run says about the session,
-// reporting whether it was lost. A lost session takes the panel's connection
-// with it, so the panel shows as disconnected and Query > Reconnect is the way
-// on, never a silent re-dial, which would carry on as if the temp tables and
-// transaction were still there.
+// noteSessionState takes in what a finished run says about the session, reporting
+// whether it was lost. A lost session takes the panel's connection with it, so the
+// panel shows as disconnected and Query > Reconnect is the way on, never a silent
+// re-dial, which would carry on as if the temp tables and transaction were still
+// there.
 func (p *QueryPanel) noteSessionState(res *query.Result) (lost bool) {
 	if res.SessionLost {
 		p.closeConnection()
@@ -380,8 +379,8 @@ func (p *QueryPanel) noteSessionState(res *query.Result) (lost bool) {
 }
 
 // closedPanelResultStatus is what the status bar says once a query whose panel
-// was closed mid-flight returns. closePanelAt cancels the context on the way
-// out, so this is normally the cancelled wording.
+// was closed mid-flight returns. closePanelAt cancels the context on the way out,
+// so this is normally the cancelled wording.
 func closedPanelResultStatus(title string, cancelled bool) string {
 	if cancelled {
 		return fmt.Sprintf("%s was closed — its query was cancelled", title)
@@ -392,8 +391,8 @@ func closedPanelResultStatus(title string, cancelled bool) string {
 // execPanicked releases the single-flight latch after a panic on an execute or
 // estimated-plan goroutine (the App.safegoRepair step for both). Otherwise
 // p.executing stays set for the panel's lifetime and every later Execute is
-// refused. No seq guard is needed, unlike LogViewer.readPanicked: p.executing
-// itself stops a second run starting.
+// refused. No seq guard, unlike LogViewer.readPanicked: p.executing itself stops
+// a second run starting.
 func (p *QueryPanel) execPanicked() {
 	p.stopLiveStats()
 	p.executing = false
@@ -402,20 +401,20 @@ func (p *QueryPanel) execPanicked() {
 	p.resultsNotice = "Execution stopped unexpectedly — see the log for details."
 }
 
-// setResult installs a finished execution: picks the initial tab (the first
-// grid, or Messages when there are no grids or the run had errors, as SSMS
-// does), makes room for the tab bar, and renders.
+// setResult installs a finished execution: picks the initial tab (the first grid,
+// or Messages when there are no grids or the run had errors, as SSMS does), makes
+// room for the tab bar, and renders.
 func (p *QueryPanel) setResult(res *query.Result, cancelled bool) {
 	// A mid-script "USE otherdb" changes the session's database out from under
-	// p.database. res.Database, read off the same connection right after the
-	// script ran, is the source of truth from here on, keeping the connection-info
-	// bar and the next Execute's own USE in sync.
+	// p.database. res.Database, read off the same connection right after the script
+	// ran, is the source of truth from here, keeping the connection-info bar and the
+	// next Execute's own USE in sync.
 	if res.Database != "" {
 		p.database = res.Database
 	}
-	// Folded into res.Messages once here rather than at render time: the Messages
-	// tab is re-rendered on every tab switch, so appending there would repeat the
-	// block on each visit.
+	// Folded into res.Messages once here rather than at render time: the Messages tab
+	// is re-rendered on every tab switch, so appending there would repeat the block
+	// on each visit.
 	if p.app.metaEnabled {
 		if meta := columnMetaMessages(res.Sets); len(meta) > 0 {
 			if len(res.Messages) > 0 {
@@ -463,8 +462,8 @@ func (p *QueryPanel) newPlanView() *planview.PlanView {
 	return v
 }
 
-// setResultPlan installs or clears the Execution Plan tab that rides alongside
-// a normal Execute when "Include Actual Execution Plan" was on. Unlike
+// setResultPlan installs or clears the Execution Plan tab that rides alongside a
+// normal Execute when "Include Actual Execution Plan" was on. Unlike
 // setEstimatedPlan, which replaces Results/Messages entirely because it never
 // runs the query, this tab sits alongside res's own Results tabs.
 //

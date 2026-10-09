@@ -10,18 +10,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// databaseTriggerPropPages builds the page set for Database Trigger
-// Properties: General and Definition, both read-only.
+// databaseTriggerPropPages builds the page set for Database Trigger Properties:
+// General and Definition, both read-only.
 //
-// Nothing here writes, and that is the object's shape rather than an omission
-// — the same reason serverTriggerPropPages gives one scope up. A database-scope
-// DDL trigger has exactly three writes: ENABLE, DISABLE and DROP ... ON
-// DATABASE, all three Object Explorer commands on the node. Enabling and
-// disabling change what the database does the moment they run, which is not an
-// Apply, and there is no ALTER a form could build — the body is edited as
-// T-SQL, through Script Database Trigger as > ALTER To. Neither page declares
-// requires for that reason; both are named in prop_page_requires_test.go's
-// pagesThatOnlyRead.
+// Nothing here writes, by the object's shape — the same reason
+// serverTriggerPropPages gives one scope up. A database-scope DDL trigger has
+// exactly three writes: ENABLE, DISABLE and DROP ... ON DATABASE, all Object
+// Explorer commands on the node. Enabling and disabling change what the database
+// does the moment they run, which is not an Apply, and no ALTER a form could
+// build exists — the body is edited as T-SQL, through Script Database Trigger as >
+// ALTER To. Neither page declares requires for that reason; both are named in
+// prop_page_requires_test.go's pagesThatOnlyRead.
 func databaseTriggerPropPages(sc *db.ServerConn, dbName, trigName string) []propPage {
 	return []propPage{
 		pageDatabaseTriggerGeneral(sc, dbName, trigName),

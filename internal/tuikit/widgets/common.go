@@ -6,9 +6,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// drawLabel draws a widget's inline label in the standard dialog text
-// style. Currently only DropDown uses it (InputField/CheckBox/Button draw
-// their own label/text inline).
+// drawLabel draws a widget's inline label in the standard dialog text style
+// (currently only DropDown uses it).
 func drawLabel(s tcell.Screen, x, y int, label string, p *theme.Palette) {
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
 	core.DrawText(s, x, y, st, label)

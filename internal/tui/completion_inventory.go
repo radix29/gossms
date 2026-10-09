@@ -106,16 +106,15 @@ func inventoryLoad[T any](m map[string]*completionInventory, key string, inv *co
 	}
 }
 
-// evictInventory drops key's entry from m so the next lookup starts a fresh
-// load, but only while that entry is still inv.
+// evictInventory drops key's entry from m so the next lookup starts a fresh load,
+// but only while that entry is still inv.
 //
-// The identity check makes it safe for a load reporting on a cache generation
-// that no longer exists: purgeCompletionInventories drops a server's entries on
-// disconnect, so a reconnect before a superseded load lands has already
-// installed a different live entry under the same key, and deleting that one
-// strands its own in-flight load. inv's load token can't catch this: it is
-// per-entry, and the stale result belongs to the discarded entry, whose seq
-// nothing bumped.
+// The identity check makes it safe for a load reporting on a cache generation that
+// no longer exists: purgeCompletionInventories drops a server's entries on
+// disconnect, so a reconnect before a superseded load lands has already installed
+// a different live entry under the same key, and deleting that one strands its
+// own in-flight load. inv's load token can't catch this: it is per-entry, and the
+// stale result belongs to the discarded entry, whose seq nothing bumped.
 func evictInventory(m map[string]*completionInventory, key string, inv *completionInventory) {
 	if m[key] == inv {
 		delete(m, key)
@@ -198,16 +197,15 @@ func (a *App) refreshCompletionInventory(sc *db.ServerConn, database string) {
 	a.loadCompletionInventory(sc, database, key, inv)
 }
 
-// purgeCompletionInventories drops every cached catalog for sc's server+login
-// and stops any load still in flight. Entries are keyed by instance, identity
-// and database, not *ServerConn, so without this a reconnect is served the
-// catalog captured before the disconnect.
+// purgeCompletionInventories drops every cached catalog for sc's server+login and
+// stops any load still in flight. Entries are keyed by instance, identity and
+// database, not *ServerConn, so without this a reconnect is served the catalog
+// captured before the disconnect.
 //
 // Abandon, not Cancel: the entry is leaving the map, so a result already on its
-// way has nowhere to land. Cancel leaves seq untouched, so a fetch completed
-// just before the disconnect still passed Done and called setStatus, painting
-// "Autocomplete ready for <db>" over "Disconnected". See latest, and
-// ARCHITECTURE.md § Latest-only loads.
+// way has nowhere to land. Cancel leaves seq untouched, so a fetch completed just
+// before the disconnect would still pass Done and paint "Autocomplete ready for
+// <db>" over "Disconnected". See latest, and ARCHITECTURE.md § Latest-only loads.
 func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 	serverKey := sysCompletionInventoryKey(sc.Opts)
 	// Matched on the entry's serverKey rather than picking the database component

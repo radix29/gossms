@@ -15,14 +15,12 @@ import (
 )
 
 // new_ag_pages.go builds New Availability Group's two pages. Both edit the same
-// NewAGDialog state (the replica list in particular) because everything they
-// collect goes into one CREATE AVAILABILITY GROUP rather than a create followed
-// by ALTERs.
+// NewAGDialog state (the replica list in particular) because everything goes
+// into one CREATE AVAILABILITY GROUP rather than a create followed by ALTERs.
 
-// agClusterTypeItems are the CLUSTER_TYPE values, in the order worth offering:
-// EXTERNAL first because a Linux instance is where the value has to be chosen
-// at all. WSFC is the server's default and the only one that works with no
-// cluster type stated.
+// agClusterTypeItems are the CLUSTER_TYPE values in the order worth offering:
+// EXTERNAL first because a Linux instance is where it must be chosen. WSFC is
+// the server's default and the only one that works with none stated.
 var agClusterTypeItems = []string{"EXTERNAL", "WSFC", "NONE"}
 
 func (d *NewAGDialog) buildPages(pf *newAGPrefetch) {
@@ -47,8 +45,8 @@ func (d *NewAGDialog) buildPages(pf *newAGPrefetch) {
 	d.buildBackupPage(pf)
 
 	d.objectName = func() string { return strings.TrimSpace(d.groupName) }
-	// The request is built here, on the UI goroutine, and the step captures it
-	// — the step itself runs on the pipeline's goroutine.
+	// The request is built here on the UI goroutine and the step captures it; the
+	// step runs on the pipeline's goroutine.
 	var req gosmo.CreateAvailabilityGroupRequest
 	d.preflight = func() error {
 		if pf.blocker != "" {
@@ -120,9 +118,9 @@ func (d *NewAGDialog) buildGeneralPage(pf *newAGPrefetch) {
 
 // validateNewAG rejects what the server would, with an explanation of why.
 //
-// The two cluster-type rules are worth catching here rather than letting CREATE
-// fail: both follow from what the cluster type *means*, and the server's errors
-// name neither the replica nor the reason.
+// The two cluster-type rules are caught here rather than left to CREATE: both
+// follow from what the cluster type *means*, and the server's errors name
+// neither the replica nor the reason.
 func validateNewAG(name, clusterType string, replicas []*newAGReplica, existing *nameSet) error {
 	if name == "" {
 		return fmt.Errorf("availability group name is required")
@@ -150,11 +148,10 @@ func validateNewAG(name, clusterType string, replicas []*newAGReplica, existing 
 // agFailoverModesFor is which failover modes a cluster type permits, and the
 // clause explaining why, for the error message.
 //
-// Not a preference in any of the three cases, and the server's errors don't
-// name the replica: CLUSTER_TYPE = NONE is rejected with Msg 47101 ("only
-// supports MANUAL failover mode"), and EXTERNAL requires the mode of the same
-// name because the external cluster manager owns failover outright. Both
-// verified against SQL Server 2025.
+// Not a preference, and the server's errors don't name the replica:
+// CLUSTER_TYPE = NONE is rejected with Msg 47101 ("only supports MANUAL failover
+// mode"), and EXTERNAL requires the mode of the same name because the external
+// cluster manager owns failover. Both verified against SQL Server 2025.
 func agFailoverModesFor(clusterType string) (allowed []string, why string) {
 	switch strings.ToUpper(clusterType) {
 	case "EXTERNAL":
@@ -167,8 +164,8 @@ func agFailoverModesFor(clusterType string) (allowed []string, why string) {
 }
 
 // databaseRows builds the include-a-database grid and the checkbox that edits
-// the selected row — the same grid-plus-detail-row idiom the Properties pages
-// use, rather than a multi-select list, which propsheet has no row type for.
+// the selected row: the Properties pages' grid-plus-detail-row idiom, as
+// propsheet has no multi-select row type.
 func (d *NewAGDialog) databaseRows() (propsheet.Row, propsheet.Row, func()) {
 	headers := []string{"Database name", "In the group"}
 	rowsFor := func() [][]string {
@@ -198,17 +195,16 @@ func (d *NewAGDialog) databaseRows() (propsheet.Row, propsheet.Row, func()) {
 	}
 	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 
-	// The inclusions the page opened with: nothing, since the group doesn't exist
-	// yet. RevertFn needs its own baseline because the state it restores lives on
-	// the dialog, not in the grid: Ctrl+Z otherwise emptied the name field, said
-	// "Reverted to the loaded values", and left every ticked database still queued
-	// for the CREATE.
+	// The inclusions the page opened with: nothing, since the group doesn't exist.
+	// RevertFn needs its own baseline because the state it restores lives on the
+	// dialog, not the grid: otherwise Ctrl+Z emptied the name field, said
+	// "Reverted to the loaded values", and left every ticked database queued for
+	// the CREATE.
 	baseline := slices.Clone(d.databases)
 
 	gridRow := propsheet.NewGridRow(grid, 7)
-	// The grid mirrors state the checkbox owns, so it has to be redrawn from
-	// that state whenever the checkbox is read back — the row itself is never
-	// edited in place.
+	// The grid mirrors state the checkbox owns, so redraw it from that state
+	// whenever the checkbox is read back; the row is never edited in place.
 	gridRow.DirtyFn = func() bool {
 		commit()
 		reload()
@@ -307,10 +303,10 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 	})
 
 	// The replica list the page opened with. Same reason databaseRows keeps one:
-	// otherwise Ctrl+Z reverted the visible rows and left every added replica, and
-	// every per-replica mode already committed, in the request. It restores the
-	// whole list, backup priorities included (set on the Backup Preferences page
-	// but stored on these replicas; an unapplied dialog has no other baseline).
+	// otherwise Ctrl+Z reverted the visible rows but left added replicas and
+	// committed per-replica modes in the request. It restores the whole list,
+	// backup priorities included (set on the Backup Preferences page but stored on
+	// these replicas; an unapplied dialog has no other baseline).
 	baseline := cloneAGReplicas(d.replicas)
 
 	gridRow := propsheet.NewGridRow(grid, 8)
@@ -342,8 +338,8 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 // own saved credentials if any), read its endpoint, and append it.
 //
 // The connect is worth doing rather than taking the name on trust: the endpoint
-// URL has to come from the instance itself, and an instance that can't be
-// reached now certainly can't join later.
+// URL must come from the instance itself, and one unreachable now can't join
+// later.
 func (d *NewAGDialog) addReplica(name string, done func()) {
 	if name == "" {
 		d.SetMessage("Type the instance name to add first.", true)
@@ -358,8 +354,8 @@ func (d *NewAGDialog) addReplica(name string, done func()) {
 
 	d.probeReplicaEndpoint("adding an availability replica", name,
 		func(peer *db.ServerConn, ep *gosmo.DatabaseMirroringEndpoint) {
-			// Seeding and failover default to the primary's, which is nearly
-			// always what a second replica of the same group wants.
+			// Seeding and failover default to the primary's, nearly always what a second
+			// replica of the same group wants.
 			primary := d.replicas[0]
 			d.replicas = append(d.replicas, &newAGReplica{
 				name:             peer.Server.Name(),
@@ -419,17 +415,16 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 	// Priorities are keyed by replica name rather than snapshotted as a slice,
 	// unlike the General page's baseline: the replica list belongs to that page,
 	// and a replica added there after this page was built must survive a revert
-	// here. A name missing from the map is such a replica and keeps the priority
-	// it was added with.
+	// here. A name missing from the map is such a replica and keeps its priority.
 	basePriority := map[string]int{}
 	for _, r := range d.replicas {
 		basePriority[r.name] = r.backupPriority
 	}
 
 	gridRow := propsheet.NewGridRow(grid, 8)
-	// The replica list is the General page's, and a replica added there after
-	// this page was built has to show up here. Rebuilding on every dirty check
-	// is what keeps the two in step without a change notification.
+	// The replica list is the General page's, and a replica added there after this
+	// page was built must show up here. Rebuilding on every dirty check keeps the
+	// two in step without a change notification.
 	gridRow.DirtyFn = func() bool {
 		commit()
 		reload()
@@ -463,8 +458,8 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 }
 
 // replicaEndpoint reads an instance's database mirroring endpoint and refuses
-// the two states that would produce a group that looks created and never
-// connects: no endpoint at all, and one that is not started.
+// the two states that give a group that looks created and never connects: no
+// endpoint, and one that is not started.
 func replicaEndpoint(ctx context.Context, sc *db.ServerConn) (*gosmo.DatabaseMirroringEndpoint, error) {
 	ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
 	if err != nil {

@@ -22,17 +22,15 @@ type Dialog interface {
 	Relayout()
 }
 
-// syncDialogStack reconciles dialogStack with reality: every dialog closes
-// itself (Escape, a Close button, ShowXxx swapping content on an already-
-// open PropertiesDialog, ...) by flipping its own Visible() to false, with
-// no way to tell the stack directly, so any stack entry that's no longer
-// visible is dropped here. Conversely, any dialog that became visible
-// since the last sync — which today is every Show()/Prompt()/ShowXxx()
-// call, none of which know about the stack either — is appended, becoming
-// the new top. Called twice per event-loop iteration (see Run): after
-// draining posted callbacks so input routing sees their changes, and again
-// after handling the event so a dialog it opened or closed is drawn that
-// same frame rather than one event later.
+// syncDialogStack reconciles dialogStack with reality: every dialog closes itself
+// (Escape, a Close button, ShowXxx swapping content on an already-open
+// PropertiesDialog, ...) by flipping its own Visible() to false, with no way to
+// tell the stack directly, so any stack entry that's no longer visible is dropped
+// here. Conversely, any dialog that became visible since the last sync (every
+// Show()/Prompt()/ShowXxx() call, none of which know about the stack) is appended
+// as the new top. Called twice per event-loop iteration (see Run): after draining
+// posted callbacks so input routing sees their changes, and again after handling
+// the event so a dialog it opened or closed is drawn that same frame.
 func (a *App) syncDialogStack() {
 	a.dialogStack = slices.DeleteFunc(a.dialogStack, func(d Dialog) bool { return !d.Visible() })
 	for _, d := range a.allDialogs {

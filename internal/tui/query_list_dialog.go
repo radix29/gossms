@@ -16,8 +16,8 @@ type QueryListDialog struct {
 	titles  []string
 	sel     int
 	scroll  int
-	// btnFocus is the focused button, moved by Tab/Backtab and Left/Right
-	// and pressed by Enter, as UpdateDialog's.
+	// btnFocus is the focused button, moved by Tab/Backtab and Left/Right and pressed
+	// by Enter, as UpdateDialog's.
 	btnFocus int
 }
 
@@ -167,10 +167,10 @@ func (d *QueryListDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
-// dataH is the number of query rows drawn: those between the top padding row
-// and the button row (ButtonRowY). It was InnerRect().H-2, one too many, so the
-// button row overdrew the last row and the final query of a full list could
-// never be scrolled into view (as HelpDialog.dataH).
+// dataH is the number of query rows drawn: those between the top padding row and
+// the button row (ButtonRowY). InnerRect().H-2 was one too many, so the button row
+// overdrew the last row and the final query of a full list could never be
+// scrolled into view (as HelpDialog.dataH).
 func (d *QueryListDialog) dataH() int { return d.ButtonRowY() - d.InnerRect().Y - 1 }
 
 func (d *QueryListDialog) ensureVisible(dataH int) {

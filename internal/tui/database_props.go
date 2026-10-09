@@ -12,16 +12,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// unknownOwnerItem is the stand-in every Owner dropdown shows when the
-// owning principal doesn't resolve — SUSER_SNAME/DPRINCIPAL name comes back
-// NULL (gosmo reports "") for a database restored from elsewhere, a job or
-// schedule whose owner_sid no longer exists, or a role or schema owned by a
-// dropped principal. Without it, indexOf's 0-fallback silently displays an
-// unrelated real login as though it were the actual owner.
+// unknownOwnerItem is the stand-in every Owner dropdown shows when the owning
+// principal doesn't resolve — SUSER_SNAME/DPRINCIPAL name comes back NULL (gosmo
+// reports "") for a database restored from elsewhere, a job or schedule whose
+// owner_sid no longer exists, or a role or schema owned by a dropped principal.
+// Without it, indexOf's 0-fallback silently displays an unrelated real login as
+// the owner.
 //
-// Shared by database, job, schedule, role, server-role and schema properties
-// via selectPreserving, so the six pages say the same thing about the same
-// condition.
+// Shared by database, job, schedule, role, server-role and schema properties via
+// selectPreserving, so the six pages say the same thing about the same condition.
 const unknownOwnerItem = "(unresolved owner)"
 
 // unsetItem is the stand-in for a non-owner setting the server reports blank

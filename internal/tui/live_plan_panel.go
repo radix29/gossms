@@ -18,10 +18,9 @@ import (
 // live_plan_panel.go is Activity Monitor's Show Live Execution Plan: the live
 // plan of another session's running query, read-only. It is the Live Query
 // Statistics view (query_panel_live.go) pointed at a session goSSMS does not
-// run, so there is no actual plan to hand over to at the end, and the
-// session is profiled only if something else made it so — lightweight
-// profiling, on by default from SQL Server 2019, or the session's own
-// STATISTICS XML/PROFILE (another goSSMS with Live on, SSMS's actual plan).
+// run, so there is no actual plan to hand over to at the end, and the session
+// is profiled only if something else made it so: lightweight profiling (on by
+// default from SQL Server 2019), or the session's own STATISTICS XML/PROFILE.
 
 // LivePlanPanel watches one session's running query in a live plan view until
 // it is closed. It polls whatever the session runs next too: a batch moving
@@ -37,14 +36,13 @@ type LivePlanPanel struct {
 
 	// run is the poller, cancelled by Close or by disconnecting.
 	run latest
-	// drawnAt is when Draw last ran (UnixNano), read by the poller's goroutine:
-	// a panel not drawn for liveBackgroundAfter is in a background tab, and
-	// polled slowly (liveWatch). wake is the poller's, signalled by Draw so a
-	// panel brought back to the front reads at once.
+	// drawnAt is when Draw last ran (UnixNano), read by the poller's goroutine: a
+	// panel not drawn for liveBackgroundAfter is in a background tab and polled
+	// slowly (liveWatch). wake is signalled by Draw so a panel brought back to the
+	// front reads at once.
 	drawnAt atomic.Int64
 	wake    chan struct{}
-	// seen is set once a plan has been shown; state is the title bar's word
-	// on what the view shows.
+	// seen is set once a plan has been shown; state is the title bar's word.
 	seen  bool
 	state string
 }
@@ -76,8 +74,8 @@ func liveSessionIdleNote(info *gosmo.ServerInfo, spid int) string {
 }
 
 // liveBackgroundAfter is how long a LivePlanPanel goes undrawn before its
-// poller counts it as in a background tab. Every poll result redraws a panel
-// that is visible, so a visible one is never undrawn this long.
+// poller counts it as in a background tab. A visible panel is redrawn by every
+// poll result, so it is never undrawn this long.
 const liveBackgroundAfter = 3 * time.Second
 
 // openLivePlanPanel shows session spid's live plan, bringing forward a panel
@@ -111,7 +109,7 @@ func newLivePlanPanel(app *App, sc *db.ServerConn, spid int) *LivePlanPanel {
 
 // start polls the session on sc's pool until Close or disconnect. It first
 // reads the session's login time, which pins the watch to this session rather
-// than whichever later one is given its id (liveWatch).
+// than a later one given its id (liveWatch).
 func (lp *LivePlanPanel) start() {
 	if lp.sc == nil || lp.sc.Server == nil {
 		lp.state = "not available"
@@ -139,8 +137,8 @@ func (lp *LivePlanPanel) start() {
 		case err == nil:
 			watch.pin = pin
 		}
-		// Any other failure leaves the watch unpinned: the poller's own read
-		// reports a refusal, and a passing failure is no reason to show nothing.
+		// Any other failure leaves the watch unpinned: a passing failure is no reason
+		// to show nothing.
 		pollLiveStats(ctx, srv, spid, nil, livePollTiming, watch, report)
 	})
 }
@@ -191,8 +189,7 @@ func (lp *LivePlanPanel) SetActive(v bool) {
 	lp.planView.SetActive(v)
 }
 
-// Draw renders the title bar, with the view's state after the title, and the
-// wrapped PlanView.
+// Draw renders the title bar (with the view's state) and the wrapped PlanView.
 func (lp *LivePlanPanel) Draw(s tcell.Screen) {
 	// Drawn means visible: a poller slowed for a background tab reads now.
 	if time.Since(time.Unix(0, lp.drawnAt.Swap(time.Now().UnixNano()))) > liveBackgroundAfter {

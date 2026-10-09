@@ -6,13 +6,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// StackedBar is a single horizontal bar composed of several coloured
-// contributions — the memory-composition bar, where the whole is one
-// quantity (server memory) and each segment is a component of it.
-//
-// It shares composeStack with the stacked history chart, so a segment
-// boundary falling inside a cell is drawn the same way in both and the bar
-// has no internal gaps.
+// StackedBar is a single horizontal bar of several coloured contributions (the
+// memory-composition bar: the whole is one quantity, each segment a component).
+// It shares composeStack with the stacked history chart, so a boundary inside a
+// cell is drawn the same way and the bar has no internal gaps.
 type StackedBar struct {
 	Series []Series
 
@@ -20,10 +17,8 @@ type StackedBar struct {
 	// callers leave it 0.
 	Index int
 
-	// Scale fixes the bar's full-width value. The zero Scale sizes the bar
-	// so its segments exactly fill the available width, which is what a
-	// composition bar wants — the parts are read against each other, not
-	// against an absolute maximum.
+	// Scale fixes the bar's full-width value. The zero Scale sizes the bar so its
+	// segments exactly fill the width: the parts are read against each other.
 	Scale Scale
 
 	// Rows is how many rows tall the bar itself is; 0 means one.
@@ -37,9 +32,9 @@ type StackedBar struct {
 	ShowTotal bool
 }
 
-// Draw renders the bar into r and returns the rectangle the bar itself
-// covers — the segments only, without the total or the legend — so a caller
-// can hit-test a click against it. The zero Rect means nothing was drawn.
+// Draw renders the bar into r and returns the rect the bar itself covers
+// (segments only, no total or legend) for hit-testing. The zero Rect means
+// nothing was drawn.
 func (b StackedBar) Draw(s tcell.Screen, r core.Rect) core.Rect {
 	if r.W <= 0 || r.H <= 0 {
 		return core.Rect{}
@@ -53,15 +48,14 @@ func (b StackedBar) Draw(s tcell.Screen, r core.Rect) core.Rect {
 		}
 	}
 
-	// Clamped to leave the legend its rows, and never past r itself: r.H > 0
-	// above, so both arms land in 1..r.H. That is what bounds the drawing
-	// loop below, and what lets the returned rect be stated as barRows rather
-	// than counted — the two must not be able to disagree.
+	// Clamped to leave the legend its rows, and never past r: r.H > 0 above, so
+	// both arms land in 1..r.H. That bounds the drawing loop and lets the returned
+	// rect be stated as barRows rather than counted.
 	//
-	// legendRows is then re-derived rather than assumed: the bar keeps a row
-	// even when that leaves the legend none, so on a rect too short for both
-	// the original figure would place the legend below r and DrawLegend, which
-	// fills whatever rect it is handed, would paint over the panel beneath.
+	// legendRows is then re-derived: the bar keeps a row even when that leaves the
+	// legend none, so on a rect too short for both the original figure would place
+	// the legend below r, and DrawLegend, which fills whatever rect it is handed,
+	// would paint over the panel beneath.
 	legendRows := legendRowsFor(b.LegendRows, b.Series)
 	barRows := max(b.Rows, 1)
 	if barRows+legendRows > r.H {
@@ -80,9 +74,8 @@ func (b StackedBar) Draw(s tcell.Screen, r core.Rect) core.Rect {
 
 	sc := b.Scale
 	if sc.IsZero() {
-		// Fill the width: the composition is the message, so an empty tail
-		// would only invite reading the bar as a fraction of some maximum
-		// that isn't shown anywhere.
+		// Fill the width: the composition is the message; an empty tail would invite
+		// reading the bar as a fraction of an unshown maximum.
 		sc = Scale{Min: 0, Max: total}
 	}
 
@@ -113,9 +106,8 @@ func (b StackedBar) Draw(s tcell.Screen, r core.Rect) core.Rect {
 		DrawLegend(s, core.Rect{X: r.X, Y: r.Y + barRows, W: r.W, H: legendRows}, LegendItems(b.Series))
 	}
 	if len(segs) == 0 {
-		// Every series was zero or negative, so the plot is blank background
-		// and there is nothing for a click to report. Saying so here is what
-		// keeps "the zero Rect means nothing was drawn" true for the caller.
+		// Every series was zero or negative: blank plot, nothing for a click to report.
+		// Saying so keeps "the zero Rect means nothing was drawn" true.
 		return core.Rect{}
 	}
 	return core.Rect{X: r.X, Y: r.Y, W: barW, H: barRows}

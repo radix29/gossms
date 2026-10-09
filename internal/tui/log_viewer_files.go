@@ -14,13 +14,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
 
-// log_viewer_files.go is how a file is chosen — the family menu, the file menu
-// and the multi-file checklist behind them — plus Export, and the two App-level
-// entry points that recycle a log from the tree and refresh an open viewer.
+// log_viewer_files.go is how a file is chosen (family menu, file menu, the
+// multi-file checklist), plus Export and the App-level entry points that
+// recycle a log from the tree and refresh an open viewer.
 
 // showLogTypeMenu pops the log-family selector under its toolbar cell, reusing
-// the application's context menu so the open list gets the same first-refusal
-// event handling as every other overlay.
+// the application's context menu for the same first-refusal event handling as
+// every other overlay.
 func (lv *LogViewer) showLogTypeMenu() {
 	items := make([]controls.MenuItem, 0, len(logFamilies))
 	for _, logType := range logFamilies {
@@ -30,8 +30,8 @@ func (lv *LogViewer) showLogTypeMenu() {
 		}
 		items = append(items, controls.MenuItem{Label: label, Action: func() {
 			if logType != lv.logType {
-				// Archive numbers aren't comparable across families, so
-				// switching family always lands on that family's current log.
+				// Archive numbers aren't comparable across families, so switching family
+				// lands on that family's current log.
 				lv.ShowLog(logType, 0)
 			}
 		}})
@@ -40,17 +40,17 @@ func (lv *LogViewer) showLogTypeMenu() {
 }
 
 // showLogFileMenu pops the archive selector for the family the selectors
-// address. With nothing enumerated at all it offers Refresh instead, rather
-// than an empty menu that looks like the instance has no logs.
+// address. With nothing enumerated it offers Refresh rather than an empty menu
+// that looks like an instance with no logs.
 //
 // Picking a file here always narrows to that one file, however many were
-// merged before — the one-click case stays what it was. Merging, including
-// across families, is the checklist below, reached from the last entry.
+// merged before. Merging, including across families, is the checklist reached
+// from the last entry.
 func (lv *LogViewer) showLogFileMenu() {
 	files := lv.files[lv.logType]
-	// The other family's list is enough to open the checklist on: an instance
-	// whose Agent log cannot be enumerated must not lock the user out of
-	// merging the SQL Server files, and the reverse.
+	// The other family's list suffices to open the checklist: an instance whose
+	// Agent log cannot be enumerated must not lock the user out of merging the SQL
+	// Server files, and the reverse.
 	if len(files) == 0 && len(lv.enumeratedFamilies()) == 0 {
 		lv.popMenu(logToolFile, []controls.MenuItem{
 			{Label: "(log list not loaded — Refresh)", Action: lv.Refresh},
@@ -61,8 +61,8 @@ func (lv *LogViewer) showLogFileMenu() {
 	for _, f := range files {
 		num := f.Number
 		label := errorLogFileLabel(f)
-		// Every selected file is bulleted, not just the first: with three
-		// merged, one bullet would name the grid's contents wrongly.
+		// Every selected file is bulleted: with three merged, one bullet would
+		// misdescribe the grid.
 		if lv.isSelected(logFileRef{Type: lv.logType, Num: num}) {
 			label = "• " + label
 		}
@@ -73,9 +73,8 @@ func (lv *LogViewer) showLogFileMenu() {
 	items = append(items,
 		controls.MenuItem{Divider: true},
 		controls.MenuItem{Label: "Select Files...", Action: func() {
-			// Seeded here rather than in showLogFileChecklist, which every
-			// toggle re-enters: seeding there would undo the tick that called
-			// it.
+			// Seeded here, not in showLogFileChecklist, which every toggle re-enters:
+			// seeding there would undo the tick that called it.
 			lv.pending = slices.Clone(lv.sel)
 			lv.showLogFileChecklist()
 		}})
@@ -86,8 +85,8 @@ func (lv *LogViewer) showLogFileMenu() {
 func (lv *LogViewer) isSelected(ref logFileRef) bool { return slices.Contains(lv.sel, ref) }
 
 // enumeratedFamilies are the families whose file lists are cached, in
-// logFamilies order — what the checklist can offer. A family the instance does
-// not have (no Agent) never enumerates and simply does not appear.
+// logFamilies order: what the checklist can offer. A family the instance lacks
+// (no Agent) never enumerates and does not appear.
 func (lv *LogViewer) enumeratedFamilies() []gosmo.ErrorLogType {
 	out := make([]gosmo.ErrorLogType, 0, len(logFamilies))
 	for _, t := range logFamilies {
@@ -100,16 +99,15 @@ func (lv *LogViewer) enumeratedFamilies() []gosmo.ErrorLogType {
 
 // showLogFileChecklist pops the multi-file picker: one tickable row per file,
 // every enumerated family in turn, then Select All / Clear, then the entry that
-// reads the ticked set. Nothing is read until that last entry is chosen — the
-// toggles edit pending, so dismissing the menu leaves the grid describing the
-// files it actually holds.
+// reads the ticked set. Toggles edit pending, so dismissing the menu leaves
+// the grid describing the files it actually holds.
 //
-// The set may span families. Archive numbers are not comparable across
-// them, which is why the family selector, the file list and Recycle each still
-// mean exactly one family — but a merged read is per-ref and a row carries its
-// own logFileRef, so a mixed set costs only the family in the labels. Reading
-// the SQL Server and Agent logs of the same minute side by side is the whole
-// reason to look at the Agent log at all.
+// The set may span families. Archive numbers are not comparable across them,
+// which is why the family selector, file list and Recycle each still mean one
+// family, but a merged read is per-ref and a row carries its own logFileRef, so
+// a mixed set costs only the family in the labels. Reading the SQL Server and
+// Agent logs of the same minute side by side is the reason to look at the Agent
+// log at all.
 func (lv *LogViewer) showLogFileChecklist() {
 	families := lv.enumeratedFamilies()
 	if len(families) == 0 {
@@ -119,7 +117,7 @@ func (lv *LogViewer) showLogFileChecklist() {
 		return
 	}
 	// Named only when there is something to tell apart: with one family
-	// enumerated the rows are what they have always been.
+	// enumerated, rows stay unprefixed.
 	named := len(families) > 1
 	items := make([]controls.MenuItem, 0, 8)
 	var all []logFileRef
@@ -138,9 +136,8 @@ func (lv *LogViewer) showLogFileChecklist() {
 			if named {
 				label = logFamilyShortName(t) + " — " + label
 			}
-			// The item's own index, taken as it is appended: the dividers
-			// between families make it no longer the file's position in the
-			// list, and SetHover below addresses menu rows.
+			// The item's own index, taken as appended: family dividers make it differ
+			// from the file's list position, and SetHover addresses menu rows.
 			row := len(items)
 			items = append(items, controls.MenuItem{Label: mark + label, Action: func() {
 				if j := slices.Index(lv.pending, ref); j >= 0 {
@@ -149,9 +146,8 @@ func (lv *LogViewer) showLogFileChecklist() {
 					lv.pending = append(lv.pending, ref)
 				}
 				lv.showLogFileChecklist()
-				// Re-showing resets the hover to nothing, which for a keyboard
-				// user means every tick sends the cursor back to the top of the
-				// list. Put it back on the row they just ticked.
+				// Re-showing resets the hover, which sends a keyboard user's cursor back to
+				// the top on every tick. Restore it to the ticked row.
 				lv.app.contextMenu.SetHover(row)
 			}})
 		}
@@ -177,9 +173,8 @@ func (lv *LogViewer) showLogFileChecklist() {
 }
 
 // checklistApplyLabel names what the checklist's last entry will read, so the
-// count is visible before the menu closes. named carries the checklist's own
-// rule for a single file: the family is part of the name only while more than
-// one family is on offer to tell apart.
+// count is visible before the menu closes. named carries the single-file rule:
+// the family is part of the name only while more than one is on offer.
 func (lv *LogViewer) checklistApplyLabel(named bool) string {
 	if len(lv.pending) == 1 {
 		if named {
@@ -191,7 +186,7 @@ func (lv *LogViewer) checklistApplyLabel(named bool) string {
 }
 
 // popMenu shows items under tool i, or at the panel's top-left if that cell
-// didn't fit on the row.
+// didn't fit.
 func (lv *LogViewer) popMenu(i int, items []controls.MenuItem) {
 	r := lv.tools.Cells[i].Rect
 	if r.IsZero() {
@@ -200,8 +195,8 @@ func (lv *LogViewer) popMenu(i int, items []controls.MenuItem) {
 	lv.app.contextMenu.Show(r.X, r.Y+1, items)
 }
 
-// export writes the entries currently shown — the filtered set, not the whole
-// file — to a tab-separated file.
+// export writes the entries currently shown (the filtered set, not the whole
+// file) to a tab-separated file.
 func (lv *LogViewer) export() {
 	if len(lv.shown) == 0 {
 		lv.app.setStatus("Nothing to export")
@@ -211,22 +206,21 @@ func (lv *LogViewer) export() {
 	name := fmt.Sprintf("%s-log-%d.txt", family, lv.currentRef().Num)
 	switch {
 	case lv.multiFamily():
-		// The family in the name would be the selectors' one, which is not
-		// what the file holds.
+		// The family in the name would be the selectors' one, which is not what the
+		// file holds.
 		name = fmt.Sprintf("error-log-%dfiles.txt", len(lv.sel))
 	case lv.multiFile():
 		name = fmt.Sprintf("%s-log-%dfiles.txt", family, len(lv.sel))
 	}
 	lv.app.fileDialog.ShowSave("Export Log", name, func(path string) {
-		// Rendered here on the UI goroutine, with only the write running off it:
-		// applyFilter reuses shown's backing array, so a snapshot of the slice
-		// would be rewritten under the goroutine by the next keystroke in the
-		// filter field.
+		// Rendered on the UI goroutine, with only the write off it: applyFilter reuses
+		// shown's backing array, so a slice snapshot would be rewritten under the
+		// goroutine by the next filter keystroke.
 		text := lv.exportText()
 		n := len(lv.shown)
 		lv.app.safego("exporting a log", func() {
-			// Writing on the UI goroutine would freeze the app: a big log to a
-			// network path takes seconds.
+			// On the UI goroutine this would freeze the app: a big log to a network path
+			// takes seconds.
 			err := fileutil.WriteAtomic(path, []byte(text), 0o644)
 			lv.app.postAndWake(func() {
 				if err != nil {
@@ -253,13 +247,12 @@ func (lv *LogViewer) exportText() string {
 }
 
 // recycleLogFrom cycles a log family from its Object Explorer folder, then
-// refreshes the folder so the renumbered archives appear under it.
+// refreshes the folder so the renumbered archives appear.
 //
-// Any LogViewer open on the same connection is refreshed too, through Refresh
-// rather than Load, because the viewer may be sitting on the *other* family:
-// Load re-enumerates only the family on screen, so the cycled one's cached
-// numbering would survive until the user flipped the selector to it and opened
-// an archive its label no longer named.
+// Any LogViewer open on the same connection is refreshed too, via Refresh not
+// Load: the viewer may be on the *other* family, and Load re-enumerates only
+// the family on screen, so the cycled one's cached numbering would survive and
+// name the wrong archive.
 func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
@@ -279,8 +272,8 @@ func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node
 		}, func(err error, cancelled bool) {
 			switch {
 			case cancelled:
-				// Reloaded anyway: the cycle may have landed before the
-				// cancel reached the server.
+				// Reloaded anyway: the cycle may have landed before the cancel reached the
+				// server.
 				a.setStatus(fmt.Sprintf("Recycling the %s error log cancelled", logType))
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Recycle failed: %v", withPermissionAdvice(err)))
@@ -294,9 +287,8 @@ func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node
 	})
 }
 
-// refreshOpenLogViewer re-reads the LogViewer open on sc, if there is one,
-// after logType has been cycled. There is at most one per connection — see
-// showLogViewerFor.
+// refreshOpenLogViewer re-reads the LogViewer open on sc, if any, after
+// logType was cycled. There is at most one per connection (showLogViewerFor).
 func (a *App) refreshOpenLogViewer(sc *db.ServerConn, logType gosmo.ErrorLogType) {
 	idx := a.panels.FindIndex(func(p layout.Panel) bool {
 		lv, ok := p.(*LogViewer)

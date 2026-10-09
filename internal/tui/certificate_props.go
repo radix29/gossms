@@ -12,16 +12,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// certificate_props.go is the Properties for a certificate. General's one
-// write is the owner (key_actions.go has the rights and the permission loss);
-// Signatures lists and edits the modules it signs (key_signatures_page.go).
+// certificate_props.go is the Properties for a certificate. General's one write is
+// the owner (key_actions.go has the rights and the permission loss); Signatures
+// lists and edits the modules it signs (key_signatures_page.go).
 //
-// Nothing else on the certificate is settable. There is no rename, and every
-// other ALTER CERTIFICATE is a private-key operation: Remove Private Key and
-// Back Up Certificate are Object Explorer commands (key_actions.go,
+// Nothing else on the certificate is settable. There is no rename, and every other
+// ALTER CERTIFICATE is a private-key operation: Remove Private Key and Back Up
+// Certificate are Object Explorer commands (key_actions.go,
 // certificate_backup_dialog.go), and re-protecting the key reads the server's
-// filesystem. ACTIVE FOR BEGIN_DIALOG is the one flag, and is left to a
-// scripted ALTER.
+// filesystem. ACTIVE FOR BEGIN_DIALOG is the one flag, left to a scripted ALTER.
 
 // findCertificate resolves name in dbName, rewording CertificateByName's
 // ErrNotFound for a certificate dropped since the tree was read.

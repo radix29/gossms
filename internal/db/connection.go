@@ -17,11 +17,10 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// maxOpenConns and maxIdleConns bound gosmo's pool per connection. Some detail
-// panels fan out one connection per row; uncapped, hundreds of tables open
-// hundreds of connections, and gosmo's default MaxIdleConns (2) closes them
-// again, paying full setup every refresh. sql.DB queues past MaxOpenConns
-// rather than erroring.
+// maxOpenConns and maxIdleConns bound gosmo's pool per connection. Detail
+// panels fan out one connection per row; gosmo's default MaxIdleConns (2) would
+// close them again and pay full setup on every refresh. sql.DB queues past
+// MaxOpenConns rather than erroring.
 const (
 	maxOpenConns = 20
 	maxIdleConns = 10
@@ -84,9 +83,9 @@ type ServerConn struct {
 	Opts   config.Connection
 	Server *gosmo.Server
 
-	// closed is atomic because Close runs on the UI goroutine while Peer's cache
-	// lookups ask IsOpen from loader goroutines. Atomic rather than derived from
-	// Server.Context(): a bare &ServerConn{} (tests build them) must read open.
+	// closed is atomic: Close runs on the UI goroutine while Peer's cache
+	// lookups call IsOpen from loader goroutines. Not derived from
+	// Server.Context(), so a bare &ServerConn{} (tests) reads open.
 	closed atomic.Bool
 
 	// role is what ConnectContext opened this connection for; peers inherit
@@ -144,10 +143,9 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 // newServerConn is ConnectContext's tail over a connected srv; ctx is the
 // caller's, for the capability probe.
 //
-// Only Object Explorer's connection gates anything on the server-scope
-// capability set; a query panel, Activity Monitor or XEvent viewer would pay a
-// round trip for an answer nothing reads. AG peers inherit RoleExplorer, so
-// they still probe.
+// Only Object Explorer's connection gates on the server-scope capability set;
+// other roles would pay a round trip for an answer nothing reads. AG peers
+// inherit RoleExplorer, so they still probe.
 func newServerConn(ctx context.Context, opts config.Connection, srv *gosmo.Server, role Role) *ServerConn {
 	sc := &ServerConn{Opts: opts, Server: srv, role: role}
 	if role == RoleExplorer {
@@ -160,13 +158,13 @@ func newServerConn(ctx context.Context, opts config.Connection, srv *gosmo.Serve
 // gosmo.ConnectionOptions, used by Connect and BuildConnectionString so the
 // dialog preview is exactly what's sent.
 //
-// Dialog fields don't map one-to-one: a service principal's application id is
+// Dialog fields do not map one-to-one: a service principal's application id is
 // gosmo's User (secret as Password); the app registration for Password, MFA and
 // Device Code is ApplicationClientID; only a user-assigned managed identity
 // uses ClientID. A service principal saved with its id in User is the fallback.
-// MFA's User is a login hint. Fields a method doesn't use (config.FieldsFor)
-// aren't passed. Every Entra method gets the shared entraCache and device-code
-// prompt (entra.go).
+// MFA's User is a login hint. Fields a method does not use (config.FieldsFor)
+// are not passed. Every Entra method gets the shared entraCache and
+// device-code prompt (entra.go).
 func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions, error) {
 	co := gosmo.ConnectionOptions{
 		Server:                 opts.Server,
@@ -275,10 +273,9 @@ func ParseExtraProperties(s string) (url.Values, error) {
 	return out, nil
 }
 
-// Close disconnects. gosmo's Close cancels Server.Context(), and with it every
-// statement in flight and each load rooted in it, before closing the pool; it
-// runs before closePeers so a peer dial in progress is cancelled rather than
-// cached.
+// Close disconnects. gosmo's Close cancels Server.Context() (every statement in
+// flight) before closing the pool; it runs before closePeers so a peer dial in
+// progress is cancelled rather than cached.
 func (sc *ServerConn) Close() {
 	// First, so a concurrent Peer lookup never hands out a peer mid-close.
 	sc.closed.Store(true)
@@ -412,10 +409,9 @@ func explainExtraProperty(err error) error {
 //
 // From Go 1.27 either variable makes Windows and macOS load roots from disk
 // instead of the platform store (GODEBUG x509sslcertoverrideplatform), so an
-// enterprise CA present only in the system store stops validating — and the
+// enterprise CA present only in the system store stops validating. The
 // variables are often set by unrelated installs (Python, corporate images).
-// On Linux the variables were always honoured; the hint is still true there,
-// so no GOOS branch.
+// The hint is also true on Linux, so there is no GOOS branch.
 //
 // The text match backs up the type check: go-mssqldb's Mandatory-mode
 // handshake wraps with %v (tds.go), losing the *x509.UnknownAuthorityError.

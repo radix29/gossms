@@ -16,9 +16,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// resultsStatusStyle is the results grid's status bar look — light yellow on
-// black, matching SSMS's query execution status bar. Shared with the toolbar's
-// hover tooltip via theme.StyleGridStatus.
+// resultsStatusStyle is the results grid's status bar look: light yellow on
+// black, as SSMS's execution status bar. Shared with the toolbar's hover tooltip
+// via theme.StyleGridStatus.
 var resultsStatusStyle = theme.StyleGridStatus()
 
 // ResultsMode selects how QueryPanel renders a successful result set —
@@ -50,20 +50,19 @@ type QueryPanel struct {
 	app         *App
 
 	// session is the one SQL Server session every run of this panel executes on,
-	// taken out of conn's pool by connectForQueryPanel; nil exactly when conn is
-	// nil or closed. conn itself still serves IntelliSense. See query.Session.
+	// taken out of conn's pool by connectForQueryPanel; nil exactly when conn is nil
+	// or closed. conn itself still serves IntelliSense. See query.Session.
 	session *query.Session
 
 	// connectingTo is the server connectForQueryPanel is still dialling for this
-	// panel, "" when none is in flight. Connecting is async and an Entra login
-	// fetches a token first, so a new window can sit unconnected for seconds.
-	// Without it, an F5 in that gap reports "No active connection" and a second
-	// Reconnect starts a second dial whose connection the first one's result
-	// overwrites.
+	// panel, "" when none. Connecting is async and an Entra login fetches a token
+	// first, so a new window can sit unconnected for seconds. Without it, F5 in that
+	// gap reports "No active connection" and a second Reconnect starts a second dial
+	// whose connection the first one's result overwrites.
 	connectingTo string
-	// connectingDB is the database that dial asked for ("" for the login's
-	// default), cleared with connectingTo. qp.database stays the previous
-	// connection's until the dial succeeds.
+	// connectingDB is the database that dial asked for ("" for the login's default),
+	// cleared with connectingTo. qp.database stays the previous connection's until
+	// the dial succeeds.
 	connectingDB string
 
 	// tranCount is the session's @@TRANCOUNT as its last run left it, deciding
@@ -83,113 +82,110 @@ type QueryPanel struct {
 	dirtyValid bool
 
 	// fileEnc and fileCRLF are how the opened file was encoded on disk, so Save
-	// writes it back in the same shape rather than converting to LF-separated
-	// UTF-8. Their zero values suit a panel with no file. See decodeTextFile.
+	// writes it back in the same shape rather than converting to LF-separated UTF-8.
+	// Zero values suit a panel with no file. See decodeTextFile.
 	fileEnc  fileEncoding
 	fileCRLF bool
 
 	// runMode is the resultsMode the in-flight or most recent execution started
-	// under, snapshotted by runQuery. Anything that must agree with how that run
-	// went reads this, not resultsMode, which the Query menu can change mid-run.
+	// under, snapshotted by runQuery. Anything that must agree with how that run went
+	// reads this, not resultsMode, which the Query menu can change mid-run.
 	runMode ResultsMode
 
 	result    *query.Result // last execution's result; nil until first run
 	activeTab int           // 0..len(result.Sets)-1 = result grids; len(result.Sets) = Messages
 	tabRect   core.Rect     // results tab bar row; zero rect while hidden
 
-	// textMemo is the last Results to Text rendering and what it was rendered
-	// from, so switching back to a set already seen reuses it (formatting is a
-	// pass over every cell). A result's sets never change once setResult installs
-	// it, so textKey is the whole key.
+	// textMemo is the last Results to Text rendering and what it was rendered from,
+	// so switching back to a set already seen reuses it (formatting is a pass over
+	// every cell). A result's sets never change once setResult installs it, so
+	// textKey is the whole key.
 	textMemo struct {
 		key   textKey
 		lines *controls.LineBuffer
 	}
 
-	// textRun formats a set too large to format on the UI goroutine, and
-	// textRunKey is the rendering it is producing — see showResultsText.
+	// textRun formats a set too large to format on the UI goroutine, and textRunKey
+	// is the rendering it is producing; see showResultsText.
 	textRun    latest
 	textRunKey textKey
 
-	// statusRect is the results area's bottom row, where drawResultsStatus paints
-	// the execution status for every tab the DataGrid isn't drawing (the grid
-	// renders the same line inside its own rect). Zero when the area is too short
-	// to spare a row.
+	// statusRect is the results area's bottom row, where drawResultsStatus paints the
+	// execution status for every tab the DataGrid isn't drawing (the grid renders the
+	// same line inside its own rect). Zero when the area is too short to spare a row.
 	statusRect core.Rect
 
-	// execStart marks when the in-flight execution began — read by
-	// updateResultsStatus for the live elapsed timer, which the execDone
-	// ticker wakes the event loop to repaint.
+	// execStart marks when the in-flight execution began, read by
+	// updateResultsStatus for the live elapsed timer, which the execDone ticker wakes
+	// the event loop to repaint.
 	execStart time.Time
 
 	// progress is the in-flight run's live row counter, non-nil only while a query
 	// (not an estimated plan, which scans no rows) is executing. The executor
-	// goroutine bumps it as rows are scanned and resultsStatusText reads it on the
-	// UI goroutine (see query.Progress), so "Executing..." shows how much has
-	// loaded.
+	// goroutine bumps it as rows are scanned and resultsStatusText reads it on the UI
+	// goroutine (query.Progress), so "Executing..." shows how much has loaded.
 	progress *query.Progress
 
 	// resultsNotice is a one-shot message ("No query to execute", "Not connected")
-	// outranking the computed status in updateResultsStatus until the next
-	// execution starts. Without it the next Draw recomputes the line from the last
-	// real result before the user sees it.
+	// outranking the computed status in updateResultsStatus until the next execution
+	// starts. Without it the next Draw recomputes the line from the last real result
+	// before the user sees it.
 	resultsNotice string
 
-	// messageErrorLines marks which rendered line of p.messages belongs to an
-	// error message; built in renderActiveTab alongside the text, one entry per
-	// line so it stays in sync with a message spanning several lines. Read by
+	// messageErrorLines marks which rendered line of p.messages belongs to an error
+	// message; built in renderActiveTab alongside the text, one entry per line so it
+	// stays in sync with a message spanning several lines. Read by
 	// messagesHighlighter.
 	messageErrorLines []bool
 
-	// resultsFocused tracks which sub-region gets keyboard input: false (default)
-	// the editor, true the results grid; set by whichever a click last landed in.
-	// It also gates the splitter's Ctrl+Up/Down resize to the results grid, as
+	// resultsFocused tracks which sub-region gets keyboard input: false (default) the
+	// editor, true the results grid; set by whichever a click last landed in. It also
+	// gates the splitter's Ctrl+Up/Down resize to the results grid, as
 	// App.handleKey gates the explorer splitter to explorer focus; otherwise it
 	// steals Ctrl+Up/Down from the editor.
 	resultsFocused bool
 
 	// dragZone is the sub-region that claimed the Button1 press being held, or
 	// qZoneNone between gestures. tcell resends Button1 on every motion while the
-	// button is down, and the results tab bar sits a row below the splitter,
-	// itself directly below the editor, so a text-selection drag heading down out
-	// of the editor would grab the splitter and then flip the active tab on every
-	// motion. Mirrors propsheet.PropertySheet.dragZone; cleared on the release.
+	// button is down, and the results tab bar sits a row below the splitter, itself
+	// directly below the editor, so a text-selection drag heading down out of the
+	// editor would grab the splitter and then flip the active tab on every motion.
+	// Mirrors propsheet.PropertySheet.dragZone; cleared on the release.
 	dragZone queryDragZone
 
-	// completionBuf is the flattened editor text sqlCompletionCandidates scans,
-	// kept across keystrokes so a large script isn't re-copied on each one (see
+	// completionBuf is the flattened editor text sqlCompletionCandidates scans, kept
+	// across keystrokes so a large script isn't re-copied on each one (see
 	// sqlparse.FlattenLinesInto). Valid only within one call.
 	completionBuf []rune
 
 	// completionPrefix makes that scan's batch-boundary pass incremental, resuming
-	// from the last boundary above the edit instead of relexing the whole prefix
-	// per keystroke (see sqlparse.PrefixCache). Unlike completionBuf it stays live
-	// *across* calls and needs no reset: it falls back to a full scan whenever it
-	// cannot justify a resume.
+	// from the last boundary above the edit instead of relexing the whole prefix per
+	// keystroke (sqlparse.PrefixCache). Unlike completionBuf it stays live *across*
+	// calls and needs no reset: it falls back to a full scan whenever it cannot
+	// justify a resume.
 	completionPrefix sqlparse.PrefixCache
 
-	// completionBatch does the same for the batch-wide temp-table and
-	// table-variable scan: it diffs the text against the last scan's and re-lexes
-	// only the changed window (see sqlparse.BatchCache). Also live across calls,
-	// never reset.
+	// completionBatch does the same for the batch-wide temp-table and table-variable
+	// scan: it diffs the text against the last scan's and re-lexes only the changed
+	// window (sqlparse.BatchCache). Also live across calls, never reset.
 	completionBatch sqlparse.BatchCache
 
 	executing bool
 	cancel    context.CancelFunc
 
-	// liveRun is the in-flight run's Live Query Statistics poller, idle when
-	// the run has none. See query_panel_live.go.
+	// liveRun is the in-flight run's Live Query Statistics poller, idle when the run
+	// has none. See query_panel_live.go.
 	liveRun latest
 
-	// execDone is closed when the in-flight run's goroutine exits, which tells
-	// launch's App.animateUntil ticker to stop. Both execute paths close it from a
-	// defer, so a panic can't leave the ticker waking the event loop every second
-	// for the life of the process.
+	// execDone is closed when the in-flight run's goroutine exits, telling launch's
+	// App.animateUntil ticker to stop. Both execute paths close it from a defer, so a
+	// panic can't leave the ticker waking the event loop every second for the life of
+	// the process.
 	execDone chan struct{}
 }
 
-// queryDragZone names the QueryPanel sub-region that owns the in-progress
-// mouse gesture — see the dragZone field.
+// queryDragZone names the QueryPanel sub-region that owns the in-progress mouse
+// gesture; see the dragZone field.
 type queryDragZone int
 
 const (
@@ -198,14 +194,13 @@ const (
 	qZoneTabs
 	qZoneEditor
 	qZoneResults
-	// qZoneUnclaimed is a press no sub-region wanted. It still owns the gesture,
-	// so the repeats are swallowed rather than landing on whatever the pointer
-	// drifts over.
+	// qZoneUnclaimed is a press no sub-region wanted. It still owns the gesture, so
+	// the repeats are swallowed rather than landing wherever the pointer drifts.
 	qZoneUnclaimed
 )
 
-// NewQueryPanel creates a new query panel bound to the given App (for
-// connection lookup and status updates) and titled accordingly.
+// NewQueryPanel creates a query panel bound to the given App (for connection
+// lookup and status updates) and titled accordingly.
 func NewQueryPanel(app *App, title string) *QueryPanel {
 	results := controls.NewDataGrid()
 	results.SetCellCursor(true)
@@ -219,9 +214,8 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 		results:  results,
 		splitter: layout.NewHorizontalSplitter("─── Results ─── (drag or Ctrl+Up/Down to resize)"),
 	})
-	// Before anything sets text: SetText expands tabs at the editor's current
-	// width, and savedText is seeded from Text() afterwards — see
-	// controls.SetIndentWidth.
+	// Before anything sets text: SetText expands tabs at the editor's current width,
+	// and savedText is seeded from Text() afterwards; see controls.SetIndentWidth.
 	p.editor.SetIndentWidth(app.cfg.IndentWidth)
 	p.editor.SetSmartIndent(true)
 	p.editor.SetWrapMode(app.wordWrap)
@@ -232,7 +226,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	// An XML or JSON cell goes to its own query tab with matching highlighting
 	// instead of the grid's 60-column popup; anything else falls through to the
 	// popup. The declared column type comes from the active result set, since a
-	// value's text isn't a reliable XML tell (see classifyCellKind).
+	// value's text isn't a reliable XML tell (classifyCellKind).
 	results.OnShowValue = func(col int, column, value string) bool {
 		return app.openCellValuePanel(p.columnType(col), column, value)
 	}
@@ -241,8 +235,8 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	return p
 }
 
-// Title returns the panel's tab title: the file's base name once the panel is
-// associated with one, otherwise the counter-based "Query N".
+// Title returns the panel's tab title: the file's base name once associated with
+// one, otherwise the counter-based "Query N".
 func (p *QueryPanel) Title() string {
 	if p.filePath != "" {
 		return filepath.Base(p.filePath)
@@ -255,8 +249,8 @@ func (p *QueryPanel) SetTitle(t string) { p.title = t }
 func (p *QueryPanel) FilePath() string { return p.filePath }
 
 // Dirty reports whether the editor holds changes not yet saved to filePath, or
-// any content at all for a panel never saved. It is layout.Dirty, so the tab
-// bar can show a "*".
+// any content at all for a panel never saved. It is layout.Dirty, so the tab bar
+// can show a "*".
 //
 // The tab bar asks this from both tabSegments and Draw every frame, and Text()
 // materialises the whole script (a 20k-line script cost ~90 ms per keystroke,
@@ -273,16 +267,16 @@ func (p *QueryPanel) Dirty() bool {
 	return p.dirty
 }
 
-// markSaved records the editor's current text as the saved state. Every write
-// of savedText goes through here, so the Dirty cache is never left answering
-// for the old baseline.
+// markSaved records the editor's current text as the saved state. Every write of
+// savedText goes through here, so the Dirty cache never answers for the old
+// baseline.
 func (p *QueryPanel) markSaved() {
 	p.savedText = p.editor.Text()
 	p.dirtyValid = false
 }
 
-// docEquals reports whether doc's text is s — doc's lines joined by '\n', as
-// Editor.Text builds it — without building that string.
+// docEquals reports whether doc's text is s (doc's lines joined by '\n', as
+// Editor.Text builds it) without building that string.
 func docEquals(doc *controls.Document, s string) bool {
 	pos := 0
 	for i := range doc.Len() {
@@ -331,9 +325,9 @@ func (p *QueryPanel) layoutChildren() {
 	top := p.splitter.FirstRect()
 	bottom := p.splitter.SecondRect()
 	p.editor.SetBounds(top.X, top.Y, top.W, top.H)
-	// Once a result or plan exists, the first row of the results area is its tab
-	// bar. results, messages, resultsText and planView share the rect below it;
-	// only one is drawn or routed to at a time.
+	// Once a result or plan exists, the first row of the results area is its tab bar.
+	// results, messages, resultsText and planView share the rect below it; only one
+	// is drawn or routed to at a time.
 	respY, respH := bottom.Y, bottom.H
 	if (p.result != nil || p.planView != nil) && bottom.H > 1 {
 		p.tabRect = core.Rect{X: bottom.X, Y: bottom.Y, W: bottom.W, H: 1}
@@ -341,10 +335,10 @@ func (p *QueryPanel) layoutChildren() {
 	} else {
 		p.tabRect = core.Rect{}
 	}
-	// DataGrid draws its own status bar on the last row of its rect; the other
-	// three don't, so they get one row less and drawResultsStatus paints the same
-	// line into the gap. Sized here rather than per tab, so switching tabs needs
-	// no relayout. Below two rows nothing is left to give up.
+	// DataGrid draws its own status bar on the last row of its rect; the other three
+	// don't, so they get one row less and drawResultsStatus paints the same line into
+	// the gap. Sized here rather than per tab, so switching tabs needs no relayout.
+	// Below two rows nothing is left to give up.
 	p.statusRect = core.Rect{}
 	otherH := respH
 	if respH > 1 {
@@ -372,10 +366,10 @@ func (p *QueryPanel) SetActive(v bool) {
 func (p *QueryPanel) editorHasFocus() bool  { return p.active && !p.resultsFocused }
 func (p *QueryPanel) resultsHasFocus() bool { return p.active && p.resultsFocused }
 
-// syncFocusVisuals applies editorHasFocus/resultsHasFocus to the editor's
-// cursor, the results grid's selection highlight and the Messages editor's
-// cursor. Called whenever p.active or p.resultsFocused changes, so at most one
-// sub-region shows as focused.
+// syncFocusVisuals applies editorHasFocus/resultsHasFocus to the editor's cursor,
+// the results grid's selection highlight and the Messages editor's cursor. Called
+// whenever p.active or p.resultsFocused changes, so at most one sub-region shows
+// as focused.
 func (p *QueryPanel) syncFocusVisuals() {
 	p.editor.SetActive(p.editorHasFocus())
 	p.results.Focus(p.resultsHasFocus())

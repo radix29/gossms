@@ -33,17 +33,16 @@ func tableKindForNode(t NodeType) gosmo.TableKind {
 	}
 }
 
-// loadTablesFolderDetails shows the Tables folder's Name column as soon as
-// the fast table-list query returns, then fills every row's row count and
-// space columns from two whole-database aggregate queries.
+// loadTablesFolderDetails shows the Tables folder's Name column as soon as the
+// fast table-list query returns, then fills every row's row count and space
+// columns from two whole-database aggregate queries.
 //
 // Two queries for the folder, not two per table. Fanning Table.RowCount and
 // Table.SpaceUsed out per row costs 2N round trips, each on its own pooled
 // connection, so a database with a few hundred tables visibly trickles in.
-// gosmo's TableRowCounts and TableSpaceUsedAll answer the same question for
-// every table at once (same aggregates, grouped by object_id instead of
-// filtered to one). loadDatabasesFolderDetails still fans out — see the note
-// there for why the same collapse isn't available for database sizes.
+// gosmo's TableRowCounts and TableSpaceUsedAll answer the same question for every
+// table at once. loadDatabasesFolderDetails still fans out — see the note there
+// for why the same collapse isn't available for database sizes.
 func (db *DetailBrowser) loadTablesFolderDetails(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	// data, not node: this runs on a background goroutine and the UI goroutine
 	// writes node.data underneath it (see explorerNode.snapshot). node stays

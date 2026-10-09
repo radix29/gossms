@@ -18,8 +18,8 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 	ctx, seq := d.dbListRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("loading the restore database list", func() {
 		// Every database, offline ones included: this dropdown picks whose backup
-		// *history* to read out of msdb, which outlives the database's current
-		// state — see databaseNames.
+		// *history* to read out of msdb, which outlives the database's current state; see
+		// databaseNames.
 		names, err := databaseNames(ctx, sc)
 		app.postAndWake(func() {
 			if !d.dbListRun.Done(seq) || !d.Visible() {
@@ -96,14 +96,14 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 }
 
 // restorableHistory drops the history entries no RESTORE can name
-// (gosmo.BackupInfo.Restorable), returning the rest in order and how many
-// were dropped.
+// (gosmo.BackupInfo.Restorable), returning the rest in order and how many were
+// dropped.
 //
-// On t-qmi-01 a Managed Instance's deviceless automated backups were every
-// row of every database's history, so they are dropped before loadHistory's
-// cap, or they crowd out the user's own URL backups. Filtered here, not in
-// BackupHistory: the Backup History viewer and Database Properties list the
-// same rows, and there they are true history.
+// On a Managed Instance (t-qmi-01) deviceless automated backups were every row of
+// every database's history, so they are dropped before loadHistory's cap or they
+// crowd out the user's own URL backups. Filtered here, not in BackupHistory: the
+// Backup History viewer and Database Properties list the same rows, and there they
+// are true history.
 func restorableHistory(hist []*gosmo.BackupInfo) ([]*gosmo.BackupInfo, int) {
 	kept := slices.DeleteFunc(slices.Clone(hist), func(b *gosmo.BackupInfo) bool {
 		return !b.Restorable()
@@ -111,26 +111,25 @@ func restorableHistory(hist []*gosmo.BackupInfo) ([]*gosmo.BackupInfo, int) {
 	return kept, len(hist) - len(kept)
 }
 
-// restoreSource is the backup the form names: every device it is read from,
-// and where on them the set sits.
+// restoreSource is the backup the form names: every device it is read from, and
+// where on them the set sits.
 //
-// devices is one path for a plain backup and every stripe of a striped one —
-// a RESTORE, and each read the dialog makes before it, has to name them all,
-// and one stripe alone is refused ("The media set has 2 media families but
-// only 1 are provided").
+// devices is one path for a plain backup and every stripe of a striped one: a
+// RESTORE, and each read the dialog makes before it, has to name them all, and one
+// stripe alone is refused ("The media set has 2 media families but only 1 are
+// provided").
 //
-// setNumber is the history entry's WITH FILE = n (gosmo.BackupInfo.SetNumber),
-// 0 for a typed path or set 1. A file written with NOINIT holds one set per
-// backup appended to it, and a RESTORE that leaves WITH FILE off reads set 1
-// — the oldest — so picking the newest history entry restored the oldest
-// backup in the file.
+// setNumber is the history entry's WITH FILE = n (gosmo.BackupInfo.SetNumber), 0
+// for a typed path or set 1. A file written with NOINIT holds one set per backup
+// appended to it, and a RESTORE that leaves WITH FILE off reads set 1, the oldest,
+// so picking the newest history entry restored the oldest backup in the file.
 type restoreSource struct {
 	devices   []string
 	setNumber int
 }
 
-// first is the source's first device, "" for none — what the URL and Browse
-// rules look at, since a striped set's stripes share one kind.
+// first is the source's first device, "" for none: what the URL and Browse rules
+// look at, since a striped set's stripes share one kind.
 func (s restoreSource) first() string {
 	if len(s.devices) == 0 {
 		return ""
@@ -160,9 +159,9 @@ func sourceLabel(devices []string) string {
 	return label
 }
 
-// historyDeviceLabel is sourceLabel for a Backup Set dropdown entry, where
-// the file name comes last and is clipped first: the file count goes in
-// front of it, so a striped set still says so when its name does not fit.
+// historyDeviceLabel is sourceLabel for a Backup Set dropdown entry, where the
+// file name comes last and is clipped first: the file count goes in front of it,
+// so a striped set still says so when its name does not fit.
 func historyDeviceLabel(devices []string) string {
 	if len(devices) > 1 {
 		return fmt.Sprintf("[%d files] %s", len(devices), gosmo.ServerPathBase(devices[0]))
@@ -170,8 +169,8 @@ func historyDeviceLabel(devices []string) string {
 	return sourceLabel(devices)
 }
 
-// historyDevices is b's device list, falling back to DeviceName for an entry
-// built with only that.
+// historyDevices is b's device list, falling back to DeviceName for an entry built
+// with only that.
 func historyDevices(b *gosmo.BackupInfo) []string {
 	if len(b.Devices) > 0 {
 		return b.Devices
@@ -204,9 +203,9 @@ func (d *RestoreDialog) deviceForRestore() string { return d.sourceForRestore().
 
 // selectedHeader returns the backup set the inspect view is showing and the
 // restore will target, or nil when there are no headers. The nil return is not
-// decoration: this runs on the UI goroutine, where recoverPanic cannot reach, so
-// an index into an empty slice takes the process down with the terminal still on
-// the alternate screen. A stale headerIdx falls back to the first set.
+// decoration: this runs on the UI goroutine, where recoverPanic cannot reach, so an
+// index into an empty slice takes the process down with the terminal still on the
+// alternate screen. A stale headerIdx falls back to the first set.
 func (d *RestoreDialog) selectedHeader() *gosmo.BackupHeader {
 	if len(d.headers) == 0 {
 		return nil
@@ -217,13 +216,13 @@ func (d *RestoreDialog) selectedHeader() *gosmo.BackupHeader {
 	return d.headers[d.headerIdx]
 }
 
-// selectHeader moves the inspect view to backup set i, clamped: ←/→ at either
-// end stays put rather than wrapping, so holding an arrow can't cycle past the
-// set the user meant to stop on.
+// selectHeader moves the inspect view to backup set i, clamped: left/right at
+// either end stays put rather than wrapping, so holding an arrow can't cycle past
+// the set the user meant to stop on.
 //
-// Each set on a device has its own file list, so moving between them re-reads
-// it. Without that the Files Included panel shows the first set's files under a
-// header naming a different one.
+// Each set on a device has its own file list, so moving between them re-reads it.
+// Without that the Files Included panel shows the first set's files under a header
+// naming a different one.
 func (d *RestoreDialog) selectHeader(i int) {
 	was := d.headerIdx
 	d.headerIdx = core.Clamp(i, 0, len(d.headers)-1)
@@ -233,15 +232,15 @@ func (d *RestoreDialog) selectHeader(i int) {
 }
 
 // loadFileList re-reads the selected backup set's file list in the background.
-// Held ←/→ fires one per set crossed; fileRun cancels each one the next
+// Held left/right fires one per set crossed; fileRun cancels each one the next
 // replaces and drops every answer but the newest.
 func (d *RestoreDialog) loadFileList() {
 	src, fileNumber := restoreSource{devices: d.inspectDevs}, d.restoreFileNumber()
 	if len(src.devices) == 0 {
 		return
 	}
-	// Captured here, never read as d.sc inside the goroutine: show() replaces
-	// d.sc when the dialog is reopened, on another server as like as not.
+	// Captured here, never read as d.sc inside the goroutine: show() replaces d.sc
+	// when the dialog is reopened, on another server as like as not.
 	app, sc := d.app, d.sc
 	ctx, seq := d.fileRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("reading a backup set's file list", func() {
@@ -259,14 +258,13 @@ func (d *RestoreDialog) loadFileList() {
 	})
 }
 
-// restoreFileNumber is the WITH FILE = n for the set the inspect view is
-// showing (gosmo.BackupHeader.SetNumber), 0 with no headers.
+// restoreFileNumber is the WITH FILE = n for the set the inspect view is showing
+// (gosmo.BackupHeader.SetNumber), 0 with no headers.
 //
-// Every path that names a set derives it from SetNumber — the restore, the
-// MOVE clauses built from that set's file list, and the Files Included
-// panel. They must agree: a file list read from a different set names
-// logical files the restored set does not contain, which fails the whole
-// RESTORE.
+// Every path that names a set derives it from SetNumber: the restore, the MOVE
+// clauses built from that set's file list, and the Files Included panel. They must
+// agree: a file list read from a different set names logical files the restored
+// set does not contain, which fails the whole RESTORE.
 func (d *RestoreDialog) restoreFileNumber() int {
 	if h := d.selectedHeader(); h != nil {
 		return h.SetNumber()
@@ -274,17 +272,17 @@ func (d *RestoreDialog) restoreFileNumber() int {
 	return 0
 }
 
-// fileNumberFor is the WITH FILE = n a restore of src sends: the set the
-// inspect view is showing when src is the backup it analyzed, or else the
-// history entry's own position.
+// fileNumberFor is the WITH FILE = n a restore of src sends: the set the inspect
+// view is showing when src is the backup it analyzed, or else the history entry's
+// own position.
 //
-// The inspect view's set only counts for the devices it was read from.
-// Analyze a multi-set file, move to set 3, then pick a history entry on
-// another file, and the restore used to send WITH FILE = 3 against a file
-// that may not have a third set, or has a different backup there.
+// The inspect view's set only counts for the devices it was read from. Analyze a
+// multi-set file, move to set 3, then pick a history entry on another file, and
+// the restore used to send WITH FILE = 3 against a file that may not have a third
+// set, or has a different backup there.
 //
-// Set 1 sends no clause, by SetNumber's rule: it is what SQL Server reads
-// without one.
+// Set 1 sends no clause, by SetNumber's rule: it is what SQL Server reads without
+// one.
 func (d *RestoreDialog) fileNumberFor(src restoreSource) int {
 	if len(d.headers) > 0 && len(src.devices) > 0 && slices.Equal(d.inspectDevs, src.devices) {
 		return d.restoreFileNumber()
@@ -292,8 +290,8 @@ func (d *RestoreDialog) fileNumberFor(src restoreSource) int {
 	return src.setNumber
 }
 
-// headerAt is the index of the header for setNumber, 0 when none matches —
-// where the inspect view opens for a history entry.
+// headerAt is the index of the header for setNumber, 0 when none matches: where
+// the inspect view opens for a history entry.
 func headerAt(headers []*gosmo.BackupHeader, setNumber int) int {
 	for i, h := range headers {
 		if h.SetNumber() == setNumber {
@@ -303,13 +301,13 @@ func headerAt(headers []*gosmo.BackupHeader, setNumber int) int {
 	return 0
 }
 
-// analyze reads the backup's header and file list in the background and
-// switches to the inspection view (mockup's "Backup Information").
+// analyze reads the backup's header and file list in the background and switches
+// to the inspection view (the mockup's "Backup Information").
 func (d *RestoreDialog) analyze() { d.loadBackupInfo(restoreModeInspect) }
 
-// loadBackupInfo reads the backup's header and file list in the background,
-// then switches to next — the inspection view, or the Files view, both of
-// which render that same data.
+// loadBackupInfo reads the backup's header and file list in the background, then
+// switches to next: the inspection view, or the Files view, both of which render
+// that same data.
 func (d *RestoreDialog) loadBackupInfo(next int) {
 	src := d.sourceForRestore()
 	if len(src.devices) == 0 {
@@ -318,20 +316,19 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 	}
 	d.setStatusMsg("Analyzing backup...", false)
 	app, sc := d.app, d.sc // see loadFileList
-	// The file list an arrow key was re-reading is for the device this
-	// replaces.
+	// The file list an arrow key was re-reading is for the device this replaces.
 	d.fileRun.Abandon()
 	ctx, seq := d.infoRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("analyzing the backup device", func() {
 		headers, err := sc.Server.BackupHeaders(ctx, src.targets()...)
-		// A history entry opens the view on its own set, a typed path on the
-		// first: the entry the user picked is the backup they meant.
+		// A history entry opens the view on its own set, a typed path on the first: the
+		// entry the user picked is the backup they meant.
 		idx := headerAt(headers, src.setNumber)
 		var files []*gosmo.BackupFile
 		if err == nil && len(headers) > 0 {
-			// The file list must name the set the view opens on, by the same
-			// rule selectHeader's reload uses — otherwise the panel disagrees
-			// with itself the moment the user arrows off and back.
+			// The file list must name the set the view opens on, by the rule selectHeader's
+			// reload uses; otherwise the panel disagrees with itself the moment the user
+			// arrows off and back.
 			files, err = sc.Server.BackupFileList(ctx, headers[idx].SetNumber(), src.targets()...)
 		}
 		app.postAndWake(func() {
@@ -362,8 +359,8 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 }
 
 // startRestore validates the form, then checks whether the target database
-// already exists: if so the restore would overwrite it, so beginRestore only
-// runs after confirmOverwrite's typed confirmation.
+// already exists: if so the restore would overwrite it, so beginRestore only runs
+// after confirmOverwrite's typed confirmation.
 func (d *RestoreDialog) startRestore() {
 	src := d.sourceForRestore()
 	target := strings.TrimSpace(d.fTarget.Value())
@@ -425,12 +422,12 @@ func (d *RestoreDialog) confirmOverwrite(target string, proceed func()) {
 	)
 }
 
-// beginRestore switches to the progress view and runs the restore as a
-// background Task — startRestore's working half, run immediately for a new
-// target or after confirmOverwrite for an existing one.
+// beginRestore switches to the progress view and runs the restore as a background
+// Task: startRestore's working half, run immediately for a new target or after
+// confirmOverwrite for an existing one.
 func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
-	// Snapshotted on the UI goroutine: runRestore reads them from a background
-	// one, where the dialog's state must not be touched.
+	// Snapshotted on the UI goroutine: runRestore reads them from a background one,
+	// where the dialog's state must not be touched.
 	req := d.restoreRequest(src, target)
 	req.verify = d.cbVerify.Checked()
 
@@ -453,20 +450,20 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 	})
 }
 
-// restoreRequest is everything a restore reads off the form, snapshotted on
-// the UI goroutine for runRestore and script(), which run on another.
+// restoreRequest is everything a restore reads off the form, snapshotted on the
+// UI goroutine for runRestore and script(), which run on another.
 type restoreRequest struct {
 	src                                   restoreSource
 	target                                string
 	recovery, replace, verify, closeConns bool
-	// fileNumber is the backup set to restore (WITH FILE = n), 0 for the
-	// first — see fileNumberFor.
+	// fileNumber is the backup set to restore (WITH FILE = n), 0 for the first; see
+	// fileNumberFor.
 	fileNumber int
 	plan       gosmo.RestoreRelocation
 }
 
-// restoreRequest snapshots the form for a restore or script of src into
-// target. verify is left for the caller: only a real restore verifies.
+// restoreRequest snapshots the form for a restore or script of src into target.
+// verify is left for the caller: only a real restore verifies.
 func (d *RestoreDialog) restoreRequest(src restoreSource, target string) restoreRequest {
 	return restoreRequest{
 		src:        src,
@@ -479,16 +476,15 @@ func (d *RestoreDialog) restoreRequest(src restoreSource, target string) restore
 	}
 }
 
-// runRestore is the background body of startRestore: verify (optional),
-// read metadata, relocate files for a renamed target, then the RESTORE itself
-// with progress — closing existing connections in the same batch when asked.
+// runRestore is the background body of startRestore: verify (optional), read
+// metadata, relocate files for a renamed target, then the RESTORE itself with
+// progress, closing existing connections in the same batch when asked.
 //
-// It is a function of srv, not a method reading d.sc: the restore is a Task
-// that outlives Hide, and reopening the dialog on another server replaces
-// d.sc while this is still in VerifyBackup. Read through the dialog, the
-// headers, file list and default directories came from the second server
-// while the RESTORE ran on the first — MOVE clauses naming the wrong
-// server's folders.
+// It is a function of srv, not a method reading d.sc: the restore is a Task that
+// outlives Hide, and reopening the dialog on another server replaces d.sc while
+// this is still in VerifyBackup. Read through the dialog, the headers, file list
+// and default directories came from the second server while the RESTORE ran on
+// the first, giving MOVE clauses naming the wrong server's folders.
 func runRestore(ctx context.Context, app *App, srv *gosmo.Server, task *Task, req restoreRequest) error {
 	if req.verify {
 		app.postProgress(task, -1, "Verifying backup...")
@@ -509,15 +505,15 @@ func runRestore(ctx context.Context, app *App, srv *gosmo.Server, task *Task, re
 }
 
 // buildRestoreOptions resolves req into a gosmo.RestoreOptions, including the
-// MOVE clauses its plan asks for — the read-only metadata lookup shared by
-// runRestore, which executes the result, and script(), which only renders it
-// as T-SQL. It reads srv only, never the dialog: see runRestore.
+// MOVE clauses its plan asks for: the read-only metadata lookup shared by
+// runRestore, which executes the result, and script(), which only renders it as
+// T-SQL. It reads srv only, never the dialog; see runRestore.
 //
-// closeConns is left to gosmo, which closes the connections in the RESTORE's
-// own batch. As a separate SET SINGLE_USER first, the freed slot was anyone's
-// until the RESTORE arrived — gossms's own background reads included — and a
-// Managed Instance refused the statement outright; gosmo also puts the
-// database back to MULTI_USER, including after a cancelled restore.
+// closeConns is left to gosmo, which closes the connections in the RESTORE's own
+// batch. As a separate SET SINGLE_USER first, the freed slot was anyone's until
+// the RESTORE arrived (gossms's own background reads included) and a Managed
+// Instance refused the statement outright; gosmo also puts the database back to
+// MULTI_USER, including after a cancelled restore.
 func buildRestoreOptions(ctx context.Context, srv *gosmo.Server, req restoreRequest) (gosmo.RestoreOptions, error) {
 	headers, err := srv.BackupHeaders(ctx, req.src.targets()...)
 	if err != nil {
@@ -526,24 +522,23 @@ func buildRestoreOptions(ctx context.Context, srv *gosmo.Server, req restoreRequ
 	if len(headers) == 0 {
 		return gosmo.RestoreOptions{}, fmt.Errorf("no backup sets found on %s", sourceLabel(req.src.devices))
 	}
-	// The set actually being restored: a device can hold sets from more than
-	// one database, and its own name decides whether MOVE clauses are needed.
-	// A history entry whose file was since overwritten WITH INIT names a set
-	// the device no longer has; restoring set 1 instead would restore a
-	// different backup.
+	// The set actually being restored: a device can hold sets from more than one
+	// database, and its own name decides whether MOVE clauses are needed. A history
+	// entry whose file was since overwritten WITH INIT names a set the device no
+	// longer has; restoring set 1 instead would restore a different backup.
 	h := gosmo.BackupSetAt(headers, req.fileNumber)
 	if h == nil {
 		return gosmo.RestoreOptions{}, fmt.Errorf("backup set %d is no longer on %s", req.fileNumber, sourceLabel(req.src.devices))
 	}
 
-	// Only a set that lays the files down takes MOVE clauses (FromHeader), so
-	// only its file list is worth reading.
+	// Only a set that lays the files down takes MOVE clauses (FromHeader), so only its
+	// file list is worth reading.
 	var files []*gosmo.BackupFile
 	if h.SetType.PlacesFiles() && req.plan.NeedsFileList(h.DatabaseName, req.target) {
-		// The file list must name the same set as WITH FILE. Asking for the
-		// device without one describes set 1, whose logical file names belong
-		// to a different database whenever backups were appended, and MOVE
-		// clauses naming files the restored set lacks fail the RESTORE.
+		// The file list must name the same set as WITH FILE. Asking for the device without
+		// one describes set 1, whose logical file names belong to a different database
+		// whenever backups were appended, and MOVE clauses naming files the restored set
+		// lacks fail the RESTORE.
 		if files, err = srv.BackupFileList(ctx, h.SetNumber(), req.src.targets()...); err != nil {
 			return gosmo.RestoreOptions{}, err
 		}
@@ -561,8 +556,8 @@ func buildRestoreOptions(ctx context.Context, srv *gosmo.Server, req restoreRequ
 	return opts, nil
 }
 
-// recoveryFor maps the dialog's two-way Recovery Options radio box onto
-// gosmo's recovery state.
+// recoveryFor maps the dialog's two-way Recovery Options radio box onto gosmo's
+// recovery state.
 func recoveryFor(recovery bool) gosmo.RestoreRecovery {
 	if recovery {
 		return gosmo.RestoreWithRecovery
@@ -570,10 +565,9 @@ func recoveryFor(recovery bool) gosmo.RestoreRecovery {
 	return gosmo.RestoreWithNoRecovery
 }
 
-// script builds the RESTORE statement's T-SQL, including the file relocation
-// this dialog would perform for a renamed target, and opens it in a new query
-// window. Only buildRestoreOptions' read-only metadata lookup touches the
-// server.
+// script builds the RESTORE statement's T-SQL, including the file relocation this
+// dialog would perform for a renamed target, and opens it in a new query window.
+// Only buildRestoreOptions' read-only metadata lookup touches the server.
 func (d *RestoreDialog) script() {
 	src := d.sourceForRestore()
 	target := strings.TrimSpace(d.fTarget.Value())
@@ -594,8 +588,8 @@ func (d *RestoreDialog) script() {
 		ropts, err := buildRestoreOptions(ctx, sc.Server, req)
 		var stmt string
 		if err == nil {
-			// The instance's own form: on a Managed Instance, closing
-			// connections is KILLs rather than the SINGLE_USER it refuses.
+			// The instance's own form: on a Managed Instance, closing connections is KILLs
+			// rather than the SINGLE_USER it refuses.
 			stmt, err = sc.Server.BuildRestoreStatement(ropts)
 		}
 		app.postAndWake(func() {

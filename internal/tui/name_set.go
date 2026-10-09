@@ -9,13 +9,12 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// nameSet is the set of names a New-object dialog's "already exists"
-// preflight checks against. Whether two names are the same one is the
-// collation's call, not ours: on a case-sensitive or binary collation
-// (…_CS_…, …_BIN, …_BIN2) `Sales` and `sales` are two principals, and a
-// lowered map refused the second with "already exists" although the server
-// would have created it. The collation is the one of the scope the object
-// lives in — the server's for logins, databases and other server objects, the
+// nameSet is the set of names a New-object dialog's "already exists" preflight
+// checks against. Whether two names are the same is the collation's call: on a
+// case-sensitive or binary collation (_CS_, _BIN, _BIN2) `Sales` and `sales`
+// are two principals, and a lowered map would refuse the second although the
+// server would create it. The collation is that of the scope the object lives
+// in: the server's for logins, databases and other server objects, the
 // database's for its principals, keys and indexes, msdb's for Agent objects.
 //
 // A nil *nameSet is an empty one, so Has is safe on a prefetch that never
@@ -25,9 +24,8 @@ type nameSet struct {
 	m         map[string]struct{}
 }
 
-// newNameSet returns a set comparing names the way collation does, seeded
-// with names. An empty collation — not read — folds, which is the
-// case-insensitive default every install ships with.
+// newNameSet returns a set comparing names the way collation does, seeded with
+// names. An empty (unread) collation folds, the case-insensitive default.
 func newNameSet(collation string, names ...string) *nameSet {
 	s := &nameSet{collation: collation, m: make(map[string]struct{}, len(names))}
 	for _, n := range names {
@@ -36,8 +34,8 @@ func newNameSet(collation string, names ...string) *nameSet {
 	return s
 }
 
-// key is gosmo.NameKey, so the set agrees with gosmo.SameName rune for rune —
-// a lowered key split names EqualFold joins (`ſ`/`s`, final `ς`/`σ`).
+// key is gosmo.NameKey, so the set agrees with gosmo.SameName rune for rune; a
+// lowered key splits names EqualFold joins (`ſ`/`s`, final `ς`/`σ`).
 func (s *nameSet) key(name string) string { return gosmo.NameKey(s.collation, name) }
 
 // Add puts name in the set.
@@ -88,7 +86,7 @@ func (m *nameMap[V]) Values() iter.Seq[V] {
 
 // serverCollation is the instance's default collation, which governs
 // server-scoped names (logins, databases, credentials, audits, endpoints,
-// availability groups), or "" when there is no server info.
+// availability groups), or "" without server info.
 func serverCollation(sc *db.ServerConn) string {
 	if sc == nil {
 		return ""
@@ -97,8 +95,7 @@ func serverCollation(sc *db.ServerConn) string {
 }
 
 // instanceCollation is serverCollation for a server handle that is not the
-// connection's own — an availability group's primary, reached through a
-// follow.
+// connection's own (an availability group's primary, reached through a follow).
 func instanceCollation(s *gosmo.Server) string {
 	if s == nil || s.Info() == nil {
 		return ""
@@ -106,10 +103,9 @@ func instanceCollation(s *gosmo.Server) string {
 	return s.Info().Collation
 }
 
-// msdbCollation is msdb's collation, which governs the Agent's object names
-// (jobs, schedules, operators, alerts). msdb normally has the server's
-// collation, and a failed read falls back to it rather than failing the
-// dialog over a nicety the server enforces anyway.
+// msdbCollation is msdb's collation, which governs Agent object names (jobs,
+// schedules, operators, alerts). It normally equals the server's, and a failed
+// read falls back to it rather than failing the dialog.
 func msdbCollation(ctx context.Context, sc *db.ServerConn) string {
 	if d, err := sc.Server.DatabaseByName(ctx, "msdb"); err == nil && d.Collation != "" {
 		return d.Collation
@@ -117,12 +113,11 @@ func msdbCollation(ctx context.Context, sc *db.ServerConn) string {
 	return serverCollation(sc)
 }
 
-// databaseCollation is the collation every name inside d compares under, or
-// "" for a nil handle: its catalog collation, which differs from its data
-// collation in a partially contained database (case-insensitive whatever the
-// data says) and an Azure SQL Database created WITH CATALOG_COLLATION. A
-// DatabaseRef handle carries neither, and a Database built by hand only the
-// data collation, so that is the fallback.
+// databaseCollation is the collation every name inside d compares under, or ""
+// for a nil handle: its catalog collation, which differs from the data
+// collation in a partially contained database and an Azure SQL Database created
+// WITH CATALOG_COLLATION. A DatabaseRef handle carries neither, and a hand-built
+// Database only the data collation, hence the fallback.
 func databaseCollation(d *gosmo.Database) string {
 	if d == nil {
 		return ""

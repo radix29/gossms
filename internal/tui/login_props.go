@@ -13,42 +13,39 @@ import (
 )
 
 // loginPropPages builds the page set for Login Properties. Securables models
-// only the server itself as a securable (server-scoped permissions on one
-// principal, see pagePrincipalServerPermissions) and Effective Permissions is a
-// read-only listing by design (see effectivePermsNote); every other page is
-// editable.
+// only the server itself as a securable (pagePrincipalServerPermissions) and
+// Effective Permissions is read-only by design (effectivePermsNote); every
+// other page is editable.
 //
 // loginName is boxed in a *string shared by every page: renaming a login
 // changes the identity every page's lookup depends on. The rename is the last
-// write of an Apply/OK run (see propPage.renames), and commitRename then
-// updates the box so PropDialog.InvalidateAll's reload re-fetches under the new
-// name. Key Properties' pageKeyGeneral and Server Role Properties'
+// write of an Apply/OK run (propPage.renames), and commitRename then updates
+// the box so PropDialog.InvalidateAll's reload re-fetches under the new name.
+// Key Properties' pageKeyGeneral and Server Role Properties'
 // pageServerRoleGeneral box their names the same way.
 func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPage {
 	namePtr := &loginName
 	return []propPage{
 		// withRequiresOn, not withRequires: gate.AlterAnyLogin carries the class-101
-		// arm, and a page naming no securable asks it about nothing and withholds
+		// arm, and a page naming no securable asks about nothing and withholds
 		// nothing. DENY ALTER ON LOGIN::x withholds the rename and the password alike,
 		// so this page and Status below are read-only under it.
 		//
 		// loginName by value, not *namePtr: the gate reads the capability probe, which
-		// recorded the name the dialog opened with and is not re-run on a rename, and
-		// a DENY that would change the answer refuses the rename anyway.
+		// recorded the name the dialog opened with and is not re-run on a rename; a
+		// DENY that would change the answer refuses the rename anyway.
 		// docs/decisions.md § Permission gating, The rest.
 		withRequiresOn(pageLoginGeneral(sc, namePtr), "", "", loginName, gate.AlterAnyLogin),
 		// Server Roles declares the plain right, deliberately. Its write is ALTER
 		// SERVER ROLE r ADD/DROP MEMBER, which a DENY on *this login* does not withhold
-		// (verified live on majors 13 and 17, unlike the database scope, where the
-		// member is checked). What withholds it is a DENY on the role, a different
-		// answer per list row that one page-level banner cannot state. See
-		// gate.AlterAnyServerRoleMembers.
+		// (verified live on majors 13 and 17, unlike the database scope). What
+		// withholds it is a DENY on the role, a different answer per list row that one
+		// page-level banner cannot state. See gate.AlterAnyServerRoleMembers.
 		withRequires(pageLoginServerRoles(sc, namePtr), "", gate.AlterAnyServerRole),
 		// User Mapping deliberately declares nothing. Its writes create and drop
 		// *database* users, permitted by ALTER ANY USER in each mapped database: a
-		// different answer per grid row that one page-level banner cannot state. A
-		// wrong banner would be worse than none, telling a db_accessadmin they cannot
-		// do the one thing they can.
+		// different answer per grid row that one banner cannot state. A wrong banner
+		// would tell a db_accessadmin they cannot do the one thing they can.
 		pageLoginUserMapping(sc, namePtr),
 		withRequires(pageLoginSecurables(sc, namePtr), "", gate.ControlServer),
 		pageLoginEffectivePermissions(d, sc, namePtr),
@@ -56,23 +53,21 @@ func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPa
 	}
 }
 
-// findLogin wraps gosmo.Server.LoginByName so every page's load/apply closure
-// has one short name to call rather than reaching into sc.Server.
+// findLogin wraps gosmo.Server.LoginByName so every page's closure has one
+// short name to call.
 func findLogin(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Login, error) {
 	return sc.Server.LoginByName(ctx, name)
 }
 
 // noneItem is the stand-in for a mapping the server reports as absent (a login
-// mapped to no credential, a user to no login, an alert or operator in no
+// with no credential, a user with no login, an alert or operator in no
 // category). Passed to selectPreserving as its unset value, so a mapping naming
-// something the list doesn't carry shows that name rather than "nothing is
-// mapped".
+// something the list doesn't carry shows that name.
 const noneItem = "(None)"
 
 // loginAuthLabel renders a login's type_desc as SSMS's authentication wording.
-// Each type gets its own wording rather than all non-SQL reading "Windows
-// Authentication": the certificate-mapped ##MS_* logins the Logins folder lists
-// are not Windows logins.
+// Each type gets its own wording: the certificate-mapped ##MS_* logins the
+// Logins folder lists are not Windows logins.
 func loginAuthLabel(loginType string) string {
 	switch loginType {
 	case "SQL_LOGIN":
@@ -123,10 +118,10 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			}
 			credItems := append([]string{noneItem}, credNames(creds)...)
 
-			// The ## logins are the one thing on this page the server would happily let
-			// through: ALTER LOGIN ... WITH NAME succeeds on
-			// [##MS_PolicyEventProcessingLogin##] and silently orphans the matching users
-			// in master and msdb. See gosmo.Login.IsSystem.
+			// The ## logins are the one thing on this page the server would let through:
+			// ALTER LOGIN ... WITH NAME succeeds on [##MS_PolicyEventProcessingLogin##] and
+			// silently orphans the matching users in master and msdb. See
+			// gosmo.Login.IsSystem.
 			builtin := l.IsSystem()
 			var nameRow *propsheet.TextRow
 			var identityRow propsheet.Row = propsheet.Static("Login name", l.Name)
@@ -138,9 +133,8 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			confirmRow := propsheet.Password("Confirm password", 20)
 			// The mismatch check must live on passwordRow, not confirmRow: Form.Validate
 			// runs a row's validator only while that row is dirty, so a user who types a
-			// new password but never touches Confirm (at its blank baseline) would skip the
-			// check. passwordRow is dirty exactly when non-blank, so this fires whenever
-			// there's a password change to validate.
+			// new password but never touches Confirm (at its blank baseline) would skip it.
+			// passwordRow is dirty exactly when non-blank.
 			passwordRow.SetValidate(func(v string) error {
 				if v != confirmRow.Value() {
 					return fmt.Errorf("passwords do not match")
@@ -167,8 +161,8 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			origCredential := det.CredentialName
 			credentialRow := selectPreserving("Map to credential", credItems, origCredential, noneItem)
 			if !isSQLLogin {
-				// Only a SQL login can hold a credential: ALTER LOGIN … ADD CREDENTIAL on
-				// any other kind is Msg 15080 at Apply.
+				// Only a SQL login can hold a credential: ALTER LOGIN ... ADD CREDENTIAL on any
+				// other kind is Msg 15080 at Apply.
 				credentialRow.SetEnabled(false)
 			}
 
@@ -176,10 +170,9 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				propsheet.Section("Login identity"),
 				identityRow,
 				propsheet.Static("Authentication", authType),
-				// Static, and the reason must be on the page: the row reads as a bug otherwise.
-				// ALTER LOGIN has no form that changes the kind, so the only way is a drop and
-				// recreate, which issues a new SID and orphans every database user mapped to
-				// the old one.
+				// Static, and the reason must be on the page or the row reads as a bug. ALTER
+				// LOGIN cannot change the kind; only drop and recreate, which issues a new SID
+				// and orphans every database user mapped to the old one.
 				propsheet.Note("The authentication kind can't be changed. ALTER LOGIN has no form for it, and recreating the login gives it a new SID, orphaning every database user mapped to it."),
 				propsheet.Section("Password"),
 				passwordRow, confirmRow,
@@ -336,9 +329,8 @@ func pageLoginServerRoles(sc *db.ServerConn, loginName *string) propPage {
 }
 
 // mapEdit tracks one User Mapping row's pending state: whether the database is
-// mapped and, if so, the mapped user's default schema and database role
-// membership. Schema/role edits only make sense once mapped, so apply skips
-// them for any row that ends up unmapped.
+// mapped and, if so, the user's default schema and role membership. Schema and
+// role edits need a mapping, so apply skips rows that end up unmapped.
 type mapEdit struct {
 	dbName     string
 	origMapped bool
@@ -352,8 +344,8 @@ type mapEdit struct {
 }
 
 // setRoleToggles fills a one-checkbox-per-role toggle grid from the parallel
-// name/checked slices both User Mapping pages keep a database's role membership
-// in (this one and buildNewLoginUserMappingPage's, new_login_pages.go).
+// name/checked slices both User Mapping pages keep (this one and
+// buildNewLoginUserMappingPage's, new_login_pages.go).
 func setRoleToggles(g *propsheet.ToggleGridRow, names []string, checked []bool) {
 	text := make([][]string, len(names))
 	vals := make([][]bool, len(names))
@@ -396,11 +388,11 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				mappingByDB[m.Database] = m
 			}
 
-			// One round trip per ONLINE database, on top of the one batch UserMappings
-			// reads them all in, so serially this page is N+2 latencies deep. A database
-			// whose roles can't be read drops out of the list as an offline one does:
-			// otherwise one unreadable availability-group secondary would fail a page that
-			// has every other database to show, which the mapping half above doesn't do.
+			// One round trip per ONLINE database on top of the one batch UserMappings reads
+			// them in, so this page is N+2 latencies deep. A database whose roles can't be
+			// read drops out of the list as an offline one does: one unreadable
+			// availability-group secondary must not fail a page with every other database
+			// to show.
 			edits, err := eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (*mapEdit, error) {
 				m, isMapped := mappingByDB[d.Name]
 				user := *loginName
@@ -440,9 +432,9 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 			rowsFor := func() [][]string {
 				rows := make([][]string, len(edits))
 				for i, e := range edits {
-					// e.schema, not e.origSchema: the redraw after each commit exists so the grid
-					// reports what the editor below just wrote; showing the loaded value left an
-					// edited schema invisible in the grid until Apply.
+					// e.schema, not e.origSchema: the redraw after each commit must report what
+					// the editor just wrote; the loaded value left an edited schema invisible until
+					// Apply.
 					rows[i] = []string{mapCell(e.mapped), e.dbName, e.user, e.schema}
 				}
 				return rows
@@ -504,9 +496,9 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 					e.roles = append([]bool(nil), e.origRoles...)
 				}
 				// reload, never syncFromSelection directly: reload redraws and reloads the
-				// editor *without* committing first, which is the whole difference. The schema
-				// box and role toggles still hold the pre-revert values here, so a commit would
-				// write the selected row straight back to what Revert undid.
+				// editor *without* committing first. The schema box and role toggles still hold
+				// the pre-revert values, so a commit would write the selected row straight back
+				// to what Revert undid.
 				reload()
 			}
 
@@ -608,10 +600,9 @@ var connectPermissionItems = []string{"Grant", "Deny", "Default"}
 // connectPermissionState is the permission state a connectPermissionItems
 // choice stands for, given the state CONNECT SQL loaded with. The page has no
 // "Grant With Grant" choice, so "Grant" over a loaded GRANT_WITH_GRANT_OPTION
-// is that state unchanged — it must not issue REVOKE GRANT OPTION FOR. Apply
-// goes through applyPermChange with the loaded state as orig: a DENY or REVOKE
-// away from a grant WITH GRANT OPTION needs CASCADE (Msg 4611 without it),
-// which a bare verb per choice did not send.
+// is that state unchanged and must not issue REVOKE GRANT OPTION FOR. Apply goes
+// through applyPermChange with the loaded state as orig: a DENY or REVOKE away
+// from WITH GRANT OPTION needs CASCADE (Msg 4611 without it).
 func connectPermissionState(orig string, selected int) string {
 	switch selected {
 	case 0:

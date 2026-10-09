@@ -9,12 +9,10 @@ import (
 // maxAutoBarWidth caps how wide an auto-sized vertical bar gets.
 const maxAutoBarWidth = 6
 
-// VBarChart draws one vertical bar per value against a labelled Y axis,
-// with eighth-block smoothing on each bar's top edge.
-//
-// It plots categories, not time: the snapshot dashboard's pages read/write
-// and per-database I/O panels, where the X positions are named things
-// rather than moments. HistoryChart is the time-series counterpart.
+// VBarChart draws one vertical bar per value against a labelled Y axis, with
+// eighth-block smoothing on each top edge. It plots categories, not time (the
+// pages read/write and per-database I/O panels); HistoryChart is the
+// time-series counterpart.
 type VBarChart struct {
 	Bars []Bar
 
@@ -78,16 +76,15 @@ func (v VBarChart) drawBars(s tcell.Screen, plot core.Rect, sc Scale) {
 	slot := max(plot.W/len(v.Bars), 1)
 	barW := v.BarWidth
 	if barW <= 0 {
-		// Capped rather than filling the slot: two bars in a wide panel
-		// would otherwise become two 20-column slabs, which reads as a
-		// colour field rather than as a pair of measured values.
+		// Capped rather than filling the slot: two bars in a wide panel would become
+		// two 20-column slabs, a colour field rather than a pair of measured values.
 		barW = core.Clamp(slot-1, 1, maxAutoBarWidth)
 	}
 	barW = min(barW, slot)
 
 	for i, bar := range v.Bars {
-		// Centre the bar in its slot so the gaps either side are even and
-		// the label under it lines up with the bar rather than the slot.
+		// Centre the bar in its slot so the gaps are even and the label lines up with
+		// the bar.
 		x := plot.X + i*slot + (slot-barW)/2
 		if x >= plot.Right() {
 			return

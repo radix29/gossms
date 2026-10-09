@@ -8,9 +8,9 @@ import (
 // Input
 // ---------------------------------------------------------------------------
 
-// focusedRowHandles gives the current page's focused row the chance to consume
-// a key the sheet would otherwise take for itself. Asked only for keys with a
-// sheet-wide meaning, so it never reaches Form's own focus cycling.
+// focusedRowHandles gives the focused row the chance to consume a key the sheet
+// would otherwise take. Asked only for keys with a sheet-wide meaning, so it
+// never reaches Form's focus cycling.
 func (p *PropertySheet) focusedRowHandles(ev *tcell.EventKey) bool {
 	f := p.PageForm(p.current)
 	if f == nil {
@@ -21,12 +21,11 @@ func (p *PropertySheet) focusedRowHandles(ev *tcell.EventKey) bool {
 }
 
 // While an Apply, OK or Script Changes is in flight the form takes no input
-// (keys, mouse, paste, Refresh, Revert): the page's apply runs on the
-// pipeline goroutine and reads the form's rows, so an edit made meanwhile
-// raced it, and could reach the server without having been validated. Apply
-// reloads the page afterwards, so nothing typed then would have survived
-// anyway. The page list, the button row (only Cancel acts) and Escape still
-// work. See formLocked.
+// (keys, mouse, paste, Refresh, Revert): the page's apply runs on the pipeline
+// goroutine and reads the form's rows, so a concurrent edit raced it and could
+// reach the server unvalidated. Apply reloads the page afterwards, so nothing
+// typed then would survive anyway. The page list, the button row (only Cancel
+// acts) and Escape still work. See formLocked.
 func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 	if !p.Visible() {
 		return false
@@ -39,16 +38,15 @@ func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 		return true
 	}
 	// Ctrl+Z reverts the page to what it loaded with: the only way a user reaches
-	// Form.Revert and the RevertFn closures behind it. Handled here rather than in
-	// zoneForm so it works from the page list and button row too, and ahead of the
-	// focused row as F5 is: widgets.InputField takes Ctrl+A and Ctrl+U but not
-	// Ctrl+Z.
+	// Form.Revert and the RevertFn closures behind it. Handled here, not in
+	// zoneForm, so it works from the page list and button row too, and ahead of the
+	// focused row as F5 is (widgets.InputField takes Ctrl+A and Ctrl+U but not
+	// Ctrl+Z).
 	//
-	// The focused row still gets first refusal, because EditorRow's
-	// controls.Editor is the one row widget with a Ctrl+Z of its own: without
-	// this, an undo inside a job step's T-SQL box reverted the whole page and
-	// every other row's edits. A read-only editor refuses the key
-	// (readOnlySafeKey), so a non-T-SQL step still reverts.
+	// The focused row still gets first refusal: EditorRow's controls.Editor has a
+	// Ctrl+Z of its own, and without this an undo in a job step's T-SQL box reverted
+	// the whole page. A read-only editor refuses the key (readOnlySafeKey), so a
+	// non-T-SQL step still reverts.
 	if ev.Key() == tcell.KeyCtrlZ {
 		if p.zone == zoneForm && p.focusedRowHandles(ev) {
 			return true
@@ -60,11 +58,10 @@ func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 		}
 		return true
 	}
-	// Escape cancels the whole sheet everywhere except zoneForm, where the
-	// focused row gets first refusal — an open dropdown overlay consumes
-	// Escape to close itself (see DropDown.HandleKey) rather than the
-	// whole dialog vanishing out from under it. If the form doesn't want
-	// the key, Escape falls through to cancel below, same as elsewhere.
+	// Escape cancels the whole sheet everywhere except zoneForm, where the focused
+	// row gets first refusal: an open dropdown consumes Escape to close itself (see
+	// DropDown.HandleKey) rather than the dialog vanishing from under it. If the
+	// form doesn't want it, Escape falls through to cancel below.
 	if ev.Key() == tcell.KeyEscape && p.zone != zoneForm {
 		p.cancel()
 		return true
@@ -130,11 +127,10 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	if !p.Visible() {
 		return false
 	}
-	// A release landing outside the dialog is consumed by ConsumeOutsideClick
-	// below before the current page's Form (and any mouseDragging-latched
-	// Button/CheckBox row it hosts) or the page list (its own latch) sees it,
-	// leaving the latch set and swallowing the next press. Reset both here first;
-	// HandleMouse returns false on ButtonNone so this has no other effect.
+	// A release outside the dialog is consumed by ConsumeOutsideClick below before
+	// the Form (and any mouseDragging-latched Button/CheckBox row) or page list
+	// sees it, leaving the latch set and swallowing the next press. Reset both here
+	// first; HandleMouse returns false on ButtonNone, so nothing else happens.
 	if ev.Buttons() == tcell.ButtonNone {
 		if f := p.PageForm(p.current); f != nil {
 			f.HandleMouse(ev)
@@ -143,18 +139,15 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 		p.dragZone = zoneNone
 	}
 	// Everything from the press that armed dragZone through its release belongs to
-	// the zone that claimed it, wherever the pointer has drifted, including
-	// outside the dialog, which is why this outranks ConsumeOutsideClick. See the
-	// field's doc comment.
+	// the zone that claimed it, wherever the pointer drifted, including outside the
+	// dialog, which is why this outranks ConsumeOutsideClick (see the field's doc).
 	//
-	// A wheel tick arriving mid-gesture is swallowed rather than routed: it isn't
-	// part of the gesture, and falling through to the positional routing below
-	// would scroll whatever the pointer drifted over and call setZone, so wheeling
-	// while dragging the form's scrollbar moved the focus zone out from under the
-	// drag. Same rule as App.handleMouse's gestureOwner
-	// (internal/tui/app_events.go); App can't cover this one, since it dispatches
-	// the top dialog before its own gesture check and never arms a gesture for a
-	// dialog click.
+	// A wheel tick mid-gesture is swallowed, not routed: it isn't part of the
+	// gesture, and routing would scroll whatever the pointer drifted over and call
+	// setZone, moving the focus zone out from under a scrollbar drag. Same rule as
+	// App.handleMouse's gestureOwner (internal/tui/app_events.go); App can't cover
+	// this one since it dispatches the top dialog before its gesture check and never
+	// arms a gesture for a dialog click.
 	if p.dragZone != zoneNone {
 		if ev.Buttons() == tcell.Button1 {
 			p.routeDrag(ev)
@@ -177,11 +170,10 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
-	// A focused row's open overlay (SelectRow's dropdown list, GridRow's
-	// "Show Value" popup) is drawn last (see Form.DrawOverlays) and can
-	// visually extend below the row's own band far enough to overlap the
-	// button row or page list — give it first refusal here, same as
-	// DataGrid.OverlayActive()/QueryPanel do one level down.
+	// A focused row's open overlay (SelectRow's dropdown, GridRow's "Show Value"
+	// popup) draws last (see Form.DrawOverlays) and can extend below its band far
+	// enough to overlap the button row or page list, so it gets first refusal here,
+	// as DataGrid.OverlayActive()/QueryPanel do one level down.
 	if f := p.PageForm(p.current); f != nil && f.OverlayActive() {
 		if f.HandleMouse(ev) {
 			p.armDrag(ev, zoneForm)
@@ -213,19 +205,18 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 // HandleKey.
 func (p *PropertySheet) formLocked() bool { return p.applying }
 
-// armDrag records that zone consumed a Button1 press, so every further
-// event until the release goes back to it — see the dragZone field.
+// armDrag records that zone consumed a Button1 press, so every event until the
+// release goes back to it (see dragZone).
 func (p *PropertySheet) armDrag(ev *tcell.EventMouse, zone focusZone) {
 	if ev.Buttons() == tcell.Button1 {
 		p.dragZone = zone
 	}
 }
 
-// routeDrag delivers a held-Button1 event to the zone that armed the
-// gesture. zoneButtons swallows it: ModalDialog.ButtonClicked already fired
-// the action on the press and its mouseDragging latch suppresses the
-// repeats, so there's nothing further to deliver — the point is only that
-// no other zone sees them either.
+// routeDrag delivers a held-Button1 event to the zone that armed the gesture.
+// zoneButtons swallows it: ModalDialog.ButtonClicked already fired on the press
+// and its mouseDragging latch suppresses repeats; the point is that no other
+// zone sees them.
 func (p *PropertySheet) routeDrag(ev *tcell.EventMouse) {
 	switch p.dragZone {
 	case zoneForm:

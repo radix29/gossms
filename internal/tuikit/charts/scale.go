@@ -14,17 +14,14 @@ type Scale struct {
 // every chart treats as "derive the range from the data".
 func (s Scale) IsZero() bool { return s.Min == 0 && s.Max == 0 }
 
-// niceSteps are the mantissas a rounded-up axis maximum is allowed to land
-// on. 2.5 and 7.5 are included because a five-level axis over them divides
-// into readable quarters (7.5K → 5.6K/3.8K/1.9K reads worse than 7.5K →
-// 5K/2.5K, which is what including them buys).
+// niceSteps are the mantissas an axis maximum may round up to. 2.5 and 7.5 are
+// included because a five-level axis then divides into readable quarters
+// (7.5K -> 5K/2.5K reads better than 5.6K/3.8K/1.9K).
 var niceSteps = [...]float64{1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10}
 
-// AutoScale returns a 0-based scale whose maximum is max rounded up to the
-// next "nice" number, so axis labels land on readable values instead of
-// whatever the largest sample happened to be. A non-positive max yields a
-// 0..1 scale, which renders an empty plot with a sane axis rather than
-// dividing by zero.
+// AutoScale returns a 0-based scale whose maximum is max rounded up to the next
+// "nice" number so axis labels are readable. A non-positive max yields 0..1,
+// an empty plot with a sane axis rather than a divide by zero.
 func AutoScale(max float64) Scale {
 	if max <= 0 || math.IsNaN(max) || math.IsInf(max, 0) {
 		return Scale{Min: 0, Max: 1}

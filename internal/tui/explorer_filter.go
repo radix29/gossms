@@ -431,16 +431,15 @@ func (a *App) applyNodeFilter(node *explorerNode, f *nodeFilter) {
 // pushdown translates f into the server-side form, reporting false when any
 // criterion cannot be expressed there.
 //
-// An optimisation only: filterChildren and filterObjects still run over the
-// result and remain the authority on what a filter means. A translation can
-// change a result only by narrowing *further* than the client pass, so every
-// criterion here either matches the client's comparison exactly
-// (case-insensitively, whole calendar days, values trimmed as matchText trims
-// them) or is refused.
+// An optimisation only: filterChildren and filterObjects still run over the result
+// and remain the authority on what a filter means. A translation can change a
+// result only by narrowing *further* than the client pass, so every criterion here
+// either matches the client's comparison exactly (case-insensitively, whole
+// calendar days, values trimmed as matchText trims them) or is refused.
 //
-// A criterion whose value the client cannot parse is refused rather than
-// dropped: dropping would send a wider filter (harmless), but refusing keeps
-// both halves reading the same criterion list.
+// A criterion whose value the client cannot parse is refused rather than dropped:
+// dropping would send a wider filter (harmless), but refusing keeps both halves
+// reading the same criterion list.
 func (f *nodeFilter) pushdown() (gosmo.ObjectFilter, bool) {
 	var out gosmo.ObjectFilter
 	if !f.active() {

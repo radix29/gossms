@@ -194,10 +194,8 @@ func (s *Session) markLost() { s.lost.Store(true) }
 
 // Close ends the session. The connection is discarded, not pooled: pooled, it
 // would sit idle holding the open transaction's locks; discarded, the server
-// rolls it back.
-//
-// Close waits for an in-flight run, so cancel it first and call Close off the
-// UI goroutine if needed. Idempotent.
+// rolls it back. Close waits for an in-flight run, so cancel it first and call
+// Close off the UI goroutine if needed. Idempotent.
 func (s *Session) Close() {
 	s.markLost()
 	// driver.ErrBadConn from Raw is database/sql's way to close rather than

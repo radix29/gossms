@@ -12,16 +12,14 @@ import (
 // the commit prompt an open transaction earns first, the save prompts quit
 // walks, and the accessors every query action reaches the active panel through.
 
-// closePanelAt removes the panel at index i, first releasing what it owns
-// through layout.Disposable: an Activity Monitor's collector and per-tab
-// connections, a QueryPanel's dedicated connection and session, and the
-// in-flight reads of a Log Viewer, Query Store panel or AG dashboard, which
-// would otherwise run to completion server-side and fire their postEvent
-// closures against a panel that is no longer hosted. One interface check, not a
-// per-type switch (which had missed QueryStorePanel, whose reads kept running
-// on the shared Object Explorer pool until qsReadTimeout). Ending a
-// QueryPanel's session rolls back a transaction still open on it;
-// requestClosePanel is where the user is offered a commit first.
+// closePanelAt removes the panel at index i, first releasing what it owns through
+// layout.Disposable: an Activity Monitor's collector and per-tab connections, a
+// QueryPanel's dedicated connection and session, and the in-flight reads of a Log
+// Viewer, Query Store panel or AG dashboard, which would otherwise run to
+// completion server-side and fire their postEvent closures against a panel that
+// is no longer hosted. One interface check, not a per-type switch (which missed
+// QueryStorePanel). Ending a QueryPanel's session rolls back a transaction still
+// open on it; requestClosePanel is where the user is offered a commit first.
 func (a *App) closePanelAt(i int) {
 	if d, ok := a.panels.PanelAt(i).(layout.Disposable); ok {
 		d.Close()
@@ -31,16 +29,14 @@ func (a *App) closePanelAt(i int) {
 }
 
 // releaseClosedPanelMemory hands a closed panel's heap back to the OS. A
-// QueryPanel holds every row of its last result set while open (a large one
-// runs to gigabytes, see query.scanResultSet's cellArena), and dropping the
-// panel only makes garbage: Go's pacer collects it whenever it decides to and
-// the scavenger returns pages later still, so a user who closed the tab because
-// the machine was struggling would watch RSS stay put. debug.FreeOSMemory does
-// both.
+// QueryPanel holds every row of its last result set while open (a large one runs
+// to gigabytes, see query.scanResultSet's cellArena), and dropping the panel only
+// makes garbage: Go's pacer collects it whenever it decides to and the scavenger
+// returns pages later still. debug.FreeOSMemory does both.
 //
 // On a background goroutine because it is a full blocking GC plus a scavenge,
-// long enough on a multi-gigabyte heap to stall a redraw on the UI goroutine.
-// Nothing waits on the result.
+// long enough on a multi-gigabyte heap to stall a redraw. Nothing waits on the
+// result.
 func (a *App) releaseClosedPanelMemory() {
 	if !a.reclaiming.CompareAndSwap(false, true) {
 		return // one is already running; it will sweep this panel's heap too

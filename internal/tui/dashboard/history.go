@@ -6,29 +6,26 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// Fixed scales for the History panels. Live data varies by orders of
-// magnitude between servers, so most panels auto-scale; these are the ones
-// whose readings are only meaningful against a known range — a cache hit
-// ratio is a percentage, and a latency chart that rescales to its own worst
-// sample hides the difference between a fast server and a slow one.
+// Fixed scales for the History panels. Most panels auto-scale since data varies
+// by orders of magnitude between servers; these are meaningful only against a
+// known range (a hit ratio is a percentage; a latency chart rescaling to its
+// worst sample hides the difference between fast and slow servers).
 var (
 	cacheRatioScale = charts.Scale{Min: 0, Max: 100}
 	cpuPercentScale = charts.Scale{Min: 0, Max: 100}
 	latencyScale    = charts.Scale{Min: 0, Max: 250} // milliseconds
 )
 
-// DrawHistory renders the History dashboard into r, top to bottom:
-// activity, waits, memory, database I/O. Each section is a title bar plus a
-// row of panels; the waits section is full width because wait patterns need
-// horizontal history to read.
+// DrawHistory renders the History dashboard into r, top to bottom: activity,
+// waits, memory, database I/O. Each section is a title bar plus a row of
+// panels; waits is full width since wait patterns need horizontal history.
 //
-// r is normally a canvas of HistoryCanvasW × HistoryCanvasH. A shorter or
-// narrower rect simply loses the sections and panels that don't fit, which
-// is why the caller scrolls a viewport rather than shrinking the rect.
-// The returned hits describe where each chart's plot area landed and what
-// it plotted, so a caller can turn a click into the sample under it. They
-// are in r's coordinates — a caller drawing into an off-screen canvas has
-// to translate them the same way it translates the pixels.
+// r is normally a canvas of HistoryCanvasW × HistoryCanvasH. A smaller rect
+// loses the sections and panels that don't fit, which is why the caller
+// scrolls a viewport rather than shrinking the rect. The returned hits give
+// each chart's plot area and what it plotted, so a click maps to a sample. They
+// are in r's coordinates; a caller drawing off-screen must translate them as it
+// does the pixels.
 func DrawHistory(s tcell.Screen, r core.Rect, v HistoryView) []ChartHit {
 	if r.W <= 0 || r.H <= 0 {
 		return nil
@@ -61,14 +58,12 @@ func drawStackedChart(s tcell.Screen, panel core.Rect, title string, c charts.St
 }
 
 // section draws one section's bar and returns the body rect under it plus
-// the row the next section starts on. A body that would fall past the
-// bottom of r comes back zero-sized, and every panel drawn into it clips to
-// nothing.
+// the row the next section starts on. A body past the bottom of r comes back
+// zero-sized, so panels drawn into it clip to nothing.
 func section(s tcell.Screen, r core.Rect, y, bodyH int, title string, kpis []charts.KPI) (core.Rect, int) {
 	if y < r.Bottom() {
-		// Guarded rather than clipped by the drawing helpers: a section bar
-		// is a filled row, so one starting past the bottom of r would paint
-		// a stripe across whatever sits below the dashboard.
+		// Guarded, not left to the helpers' clipping: a section bar is a filled
+		// row, so one past the bottom of r would stripe whatever lies below.
 		drawSectionBar(s, core.Rect{X: r.X, Y: y, W: r.W, H: sectionBarH}, title, kpis)
 	}
 	body := core.Rect{X: r.X, Y: y + sectionBarH, W: r.W, H: bodyH}
@@ -109,10 +104,9 @@ func historyWaits(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]Cha
 	body, next := section(s, r, y, historyBodyH, "SQL SERVER WAITS", v.WaitsKPIs)
 	cols := splitColumns(body, 2)
 
-	// Stacked against a fixed 0-100: the three parts are one machine's CPU
-	// split, so the column is always full height and only the mix moves.
-	// Dropped entirely when the body is too narrow to split, since waits is
-	// the panel this section is named for.
+	// Stacked on a fixed 0-100: the parts are one machine's CPU split, so the
+	// column is always full height and only the mix moves. Dropped when the
+	// body is too narrow to split; waits is the section's namesake.
 	waits := cols[0]
 	if len(cols) > 1 {
 		drawStackedChart(s, cols[0], "CPU usage", charts.StackedHistoryChart{
@@ -137,9 +131,8 @@ func historyMemory(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]Ch
 	body, next := section(s, r, y, historyBodyH, "SQL SERVER MEMORY", v.MemoryKPIs)
 	cols := splitColumns(body, 3)
 
-	// Overlaid rather than stacked: these are total and target server
-	// memory, and target is a ceiling the total sits under — stacking them
-	// would draw a combined height that means nothing.
+	// Overlaid, not stacked: total and target server memory, target being a
+	// ceiling the total sits under; a combined height would mean nothing.
 	drawChart(s, cols[0], "SQL SERVER MEMORY", charts.HistoryChart{
 		Series:    v.Memory,
 		TimeLabel: v.Header.SampleTime,
@@ -147,9 +140,8 @@ func historyMemory(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]Ch
 	}, hits)
 
 	if len(cols) > 1 {
-		// Overlaid, not stacked: two hit ratios are two readings of the same
-		// 0-100 scale, and stacking them draws a 200% column that pins the
-		// panel to its ceiling and hides both.
+		// Overlaid, not stacked: two readings of one 0-100 scale; stacking draws
+		// a 200% column pinned to the ceiling that hides both.
 		drawChart(s, cols[1], "CACHE HIT RATIOS / PLE", charts.HistoryChart{
 			Series:    v.CacheRatios,
 			Scale:     cacheRatioScale,

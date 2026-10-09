@@ -277,11 +277,10 @@ func (n *Node) setScalar(section, s string) {
 }
 
 // unbracket undoes the server's [bracket] quoting of one name part in plan
-// XML, un-doubling "]]": "[a]]b]" is "a]b". A name the server left bare comes
-// back unchanged. It mirrors gosmo.UnquoteName (bracket's comment says why
-// this package doesn't import gosmo). strings.Trim(s, "[]") is not this: it
-// left "]]" doubled, so the Missing Index script named another object, and it
-// stripped a bracket that was part of the name (T34).
+// XML, un-doubling "]]": "[a]]b]" is "a]b". A bare name comes back unchanged.
+// It mirrors gosmo.UnquoteName (this package does not import gosmo).
+// strings.Trim(s, "[]") is wrong: it leaves "]]" doubled and strips a bracket
+// that is part of the name.
 func unbracket(name string) string {
 	if len(name) < 2 || name[0] != '[' || name[len(name)-1] != ']' {
 		return name

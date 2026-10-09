@@ -1,8 +1,8 @@
 package tui
 
-// fixedRoleDescriptions gives each fixed database role a short blurb for
-// a Database User Properties' Membership page — matching SSMS's own
-// well-known descriptions. User-defined roles have no entry (blank).
+// fixedRoleDescriptions gives each fixed database role a short blurb for Database
+// User Properties' Membership page, matching SSMS's descriptions. User-defined
+// roles have no entry (blank).
 var fixedRoleDescriptions = map[string]string{
 	"db_owner":          "Full control over the database",
 	"db_accessadmin":    "Add or remove access for logins",

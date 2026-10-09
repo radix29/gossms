@@ -133,13 +133,13 @@ type jobStepWritePlan struct {
 // sp_delete_jobstep renumbers every later step down by one.
 //
 // Updates first, while loaded step_ids are valid. Deletes in descending step_id
-// order, so each renumbers only steps already handled; ascending makes the
-// second delete hit a shifted id ("not found" or the wrong step). Adds last,
-// since msdb numbers new steps from the remaining count.
+// order, so each renumbers only steps already handled (ascending makes the second
+// delete hit a shifted id). Adds last, since msdb numbers new steps from the
+// remaining count.
 //
 // editable() is implied by changed() (the panel won't copy onto another
-// subsystem's step) but checked again, since this pass would rewrite that
-// step's subsystem if that ever changed.
+// subsystem's step) but checked again, since this pass would rewrite that step's
+// subsystem if that ever changed.
 func planJobStepWrites(edits []*jobStepEdit) jobStepWritePlan {
 	var plan jobStepWritePlan
 	for _, e := range edits {

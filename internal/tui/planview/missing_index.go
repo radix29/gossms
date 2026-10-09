@@ -53,9 +53,8 @@ func (v *PlanView) drawMissingIndexBanner(s tcell.Screen) {
 	}
 }
 
-// openMissingIndexDetails hands the current statement's suggestions to the
-// host as a ready-to-review script — SSMS's "Missing Index Details...".
-// Reports whether there was anything to hand over.
+// openMissingIndexDetails hands the statement's suggestions to the host as a
+// script (SSMS's "Missing Index Details..."), reporting whether there were any.
 func (v *PlanView) openMissingIndexDetails() bool {
 	mi := v.missingIndexes()
 	if len(mi) == 0 || v.OnMissingIndex == nil {

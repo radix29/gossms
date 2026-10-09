@@ -13,9 +13,9 @@ import (
 // TypedConfirmDialog — retype-to-confirm
 // ---------------------------------------------------------------------------
 
-// typedConfirmFocus tracks which of the dialog's focusable elements has focus:
-// the input, then one position per button — so focus-1 indexes d.buttons, and a
-// showing with a Script button adds a position rather than renumbering these.
+// typedConfirmFocus tracks which element has focus: the input, then one
+// position per button (focus-1 indexes d.buttons), so a Script button adds a
+// position rather than renumbering.
 type typedConfirmFocus int
 
 const (
@@ -30,9 +30,8 @@ const (
 )
 
 // TypedConfirmDialog gates an action behind retyping a short confirmation
-// string, rather than a plain Yes/No (ConfirmDialog) — for actions serious
-// enough that a single misclick shouldn't be enough to trigger them.
-// Confirm only fires once the typed text matches Required, checked
+// string rather than a plain Yes/No, for actions where a misclick shouldn't
+// suffice. Confirm fires only once the typed text matches Required,
 // case-insensitively.
 type TypedConfirmDialog struct {
 	ModalDialog
@@ -43,18 +42,16 @@ type TypedConfirmDialog struct {
 	input    *widgets.InputField
 	focus    typedConfirmFocus
 
-	// drag owns the text-selection gesture a press in input starts. See
-	// FieldGesture for why its three calls sit where they do in HandleMouse.
+	// drag owns the text-selection gesture a press in input starts; see
+	// FieldGesture.
 	drag FieldGesture
 
-	// buttons is what the current showing renders and hit-tests, and answers
-	// what each of them means — parallel rather than the answer being the
-	// button's index, for the reason ConfirmDialog's pair are.
+	// buttons is what the showing renders and hit-tests; answers is what each
+	// means, parallel rather than the button index (as in ConfirmDialog).
 	buttons []string
 	answers []ConfirmAnswer
 
-	// onAnswer is the showing's handler. OnConfirm is the two-button form's,
-	// kept as the exported field it has always been.
+	// onAnswer is the showing's handler. OnConfirm is the two-button form's.
 	onAnswer  func(ConfirmAnswer)
 	OnConfirm func(confirmed bool)
 }
@@ -66,13 +63,11 @@ func NewTypedConfirmDialog(s tcell.Screen) *TypedConfirmDialog {
 	return d
 }
 
-// ShowTypedConfirm shows the dialog: message explains the action, required
-// is the exact text (matched case-insensitively, surrounding whitespace
-// ignored) the user must type before Confirm proceeds. The dialog grows
-// to show message on one line where that fits within 2/3 of the screen's
-// width, or word-wraps onto more lines (growing taller, and pushing the
-// required-text line/input down to make room) when it doesn't — see
-// fitMessage.
+// ShowTypedConfirm shows the dialog: message explains the action, required is
+// the exact text (case-insensitive, surrounding whitespace ignored) the user
+// must type before Confirm proceeds. Sizing follows fitMessage: one line where
+// it fits within 2/3 of the screen width, else wrapped and taller, pushing the
+// required-text line and input down.
 func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, onConfirm func(bool)) {
 	d.OnConfirm = onConfirm
 	d.show(title, message, required, []string{"Confirm", "Cancel"},
@@ -84,12 +79,10 @@ func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, o
 }
 
 // ShowTypedConfirmScript is ShowTypedConfirm with a third button answering
-// ConfirmScript — the retype-to-confirm counterpart of
-// ConfirmDialog.ShowConfirmScript, for a delete serious enough to be typed out
-// that the user may want to read as SQL first.
-//
-// Script is not gated on the typed text: it runs nothing, so there is nothing
-// for the retyping to protect. Escape still answers No.
+// ConfirmScript, the counterpart of ConfirmDialog.ShowConfirmScript for a delete
+// serious enough to be typed out that the user may want to read as SQL first.
+// Script is not gated on the typed text: it runs nothing for the retyping to
+// protect. Escape still answers No.
 func (d *TypedConfirmDialog) ShowTypedConfirmScript(title, message, required string, onAnswer func(ConfirmAnswer)) {
 	d.OnConfirm = nil
 	d.show(title, message, required, []string{"Confirm", "Cancel", "Script"},
@@ -105,8 +98,8 @@ func (d *TypedConfirmDialog) show(title, message, required string, buttons []str
 	d.input = widgets.NewInputField("", max(20, core.DisplayWidth(required)+16), false)
 	d.focus = typedConfirmFocusInput
 	d.syncFocus()
-	// input is rebuilt above, so a gesture held from the last showing points
-	// at a discarded widget — and would route every click there.
+	// input is rebuilt above, so a gesture held from the last showing points at a
+	// discarded widget and would route every click there.
 	d.drag.Clear()
 	d.buttons, d.answers = buttons, answers
 	d.onAnswer = onAnswer
@@ -131,18 +124,17 @@ func (d *TypedConfirmDialog) matched() bool {
 	return d.required != "" && strings.EqualFold(strings.TrimSpace(d.input.Value()), d.required)
 }
 
-// finish resolves the dialog: every other answer proceeds, but a confirm whose
-// typed text doesn't match is refused in place, with a status message,
-// rather than treated as a cancel — the user should have to either fix
-// their input or explicitly back out.
+// finish resolves the dialog: every answer proceeds, but a confirm whose typed
+// text doesn't match is refused in place with a status message rather than
+// treated as a cancel, so the user must fix the input or explicitly back out.
 func (d *TypedConfirmDialog) finish(answer ConfirmAnswer) {
 	if answer == ConfirmYes && !d.matched() {
 		d.status = "Text doesn't match — action not confirmed."
 		return
 	}
 	d.Hide()
-	// Read and cleared before it runs: it commonly opens something else that can
-	// route back here, and a stale handler would then fire a second time.
+	// Read and cleared before it runs: it commonly opens something that can route
+	// back here, and a stale handler would fire twice.
 	onAnswer := d.onAnswer
 	d.onAnswer = nil
 	if onAnswer != nil {
@@ -211,8 +203,8 @@ func (d *TypedConfirmDialog) HandleKey(ev *tcell.EventKey) bool {
 		d.syncFocus()
 		return true
 	case tcell.KeyEnter:
-		// Enter with the keyboard still in the input answers the question the
-		// dialog is about, as it did when the buttons were Confirm and Cancel.
+		// Enter with the keyboard in the input answers the question the dialog is
+		// about.
 		if d.focus == typedConfirmFocusInput {
 			d.finish(ConfirmYes)
 		} else {
@@ -231,19 +223,17 @@ func (d *TypedConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.visible {
 		return false
 	}
-	// A release must reach d.input even when it lands outside the dialog
-	// (consumed below) — otherwise its next press is swallowed as a
-	// continuation of the stale drag.
+	// A release must reach d.input even when it lands outside the dialog (consumed
+	// below), or its next press is swallowed as a continuation of the stale drag.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	// The gesture belongs to the field that claimed its press, so motion is
-	// replayed there without hit-testing — ahead of ButtonClicked below,
-	// which would otherwise answer the confirmation the moment a selection
-	// drag in the retype field wandered down onto the button row.
+	// The gesture belongs to the field that claimed the press, so motion is
+	// replayed there without hit-testing, ahead of ButtonClicked, which would answer
+	// the confirmation when a selection drag wandered onto the button row.
 	if d.drag.Replay(ev) {
 		return true
 	}

@@ -293,17 +293,17 @@ func attachFilePaths(files []*gosmo.DetachedFile, primaryPath string, rebuildLog
 	return out
 }
 
-// checkAttachFiles refuses an attach whose files are not where the request
-// says they are, naming them.
+// checkAttachFiles refuses an attach whose files are not where the request says
+// they are, naming them.
 //
-// This is the moved-files case landing one path short, and the server's answer
-// is one sentence built around the full path ("Unable to open the physical file
-// \"C:\\Program Files\\Microsoft SQL Server\\...\\AppDB_2.ndf\". Operating
-// system error 2..."), which the dialog's one-line message clips mid-path,
-// exactly where the information is. Naming the files keeps it inside the line.
+// This is the moved-files case landing one path short, and the server's answer is
+// one sentence built around the full path ("Unable to open the physical file
+// \"C:\\...\\AppDB_2.ndf\". Operating system error 2..."), which the dialog's
+// one-line message clips mid-path, exactly where the information is. Naming the
+// files keeps it inside the line.
 //
-// A probe that cannot run is not a refusal: xp_fileexist may be denied where
-// the attach itself is not, and the attach then reports whatever it finds.
+// A probe that cannot run is not a refusal: xp_fileexist may be denied where the
+// attach itself is not, and the attach then reports whatever it finds.
 func checkAttachFiles(ctx context.Context, srv *gosmo.Server, paths []string) error {
 	var missing []string
 	for _, p := range paths {

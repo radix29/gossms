@@ -69,25 +69,24 @@ func objectDataRightGroups(n nodeData) [][]gate.Right {
 	return groups
 }
 
-// conjoinedOpRights is a second right set a family's Rename/Delete needs *as
-// well as* objectDataRights', for a statement SQL Server refuses unless it
-// holds a right from each.
+// conjoinedOpRights is a second right set a family's Rename/Delete needs *as well
+// as* objectDataRights', for a statement SQL Server refuses unless it holds a
+// right from each.
 //
-// DROP SECURITY POLICY needs ALTER ANY SECURITY POLICY and ALTER on the
-// policy's schema, as does ALTER SECURITY POLICY ... WITH (STATE = ON|OFF), so
-// Disable/Enable asks these groups too. Probed live 2026-09-11 on majors 13 and
-// 17 (identical) with a WITHOUT LOGIN user per case: holding ALTER ANY SECURITY
-// POLICY, both succeeded exactly when HAS_PERMS_BY_NAME(schema, 'SCHEMA',
-// 'ALTER') read 1 (ALTER or CONTROL on the schema, its ownership, ALTER ANY
-// SCHEMA, db_ddladmin, ALTER or CONTROL on the database) and were refused
-// (Msg 3701, Msg 33268) when it read 0: the policy right alone, ALTER on
-// another schema, CONTROL on the policy, and DENY ALTER on the schema beside a
-// database-wide ALTER or CONTROL. Without the policy right, every schema grant
-// was refused.
+// DROP SECURITY POLICY needs ALTER ANY SECURITY POLICY and ALTER on the policy's
+// schema, as does ALTER SECURITY POLICY ... WITH (STATE = ON|OFF), so
+// Disable/Enable asks these groups too. Probed on majors 13 and 17 (identical)
+// with a WITHOUT LOGIN user per case: holding ALTER ANY SECURITY POLICY, both
+// succeeded exactly when HAS_PERMS_BY_NAME(schema, 'SCHEMA', 'ALTER') read 1
+// (ALTER or CONTROL on the schema, its ownership, ALTER ANY SCHEMA, db_ddladmin,
+// ALTER or CONTROL on the database) and were refused (Msg 3701, Msg 33268) when it
+// read 0: the policy right alone, ALTER on another schema, CONTROL on the policy,
+// and DENY ALTER on the schema beside a database-wide ALTER or CONTROL. Without
+// the policy right, every schema grant was refused.
 //
-// So the schema half is gate.AlterOnSchema alone: gosmo's per-schema probe is
-// that HAS_PERMS_BY_NAME, which folds in every wider grant, and a DENY on the
-// schema is withheld by gate.ObjectDenial's schema arm before any grant is read.
+// So the schema half is gate.AlterOnSchema alone: gosmo's per-schema probe is that
+// HAS_PERMS_BY_NAME, which folds in every wider grant, and a DENY on the schema is
+// withheld by gate.ObjectDenial's schema arm before any grant is read.
 var conjoinedOpRights = map[NodeType][]gate.Right{
 	NodeSecurityPolicy: {gate.AlterOnSchema},
 }
@@ -110,16 +109,15 @@ func objectTransferRights(n nodeData) []gate.Right {
 // securableOpRights is Rename/Delete's right set for the user-defined types and
 // the XML schema collection (class 6 and 10 securables in a schema).
 // gate.ObjectWriteRights() fits them wrongly twice: gate.AlterOnObject reads
-// gosmo's class-1 map, where a type is never recorded but a same-named *table*
-// is, and nothing in it speaks for a principal granted CONTROL on the type or
-// owning it.
+// gosmo's class-1 map, where a type is never recorded but a same-named *table* is,
+// and nothing in it speaks for a principal granted CONTROL on the type or owning
+// it.
 //
-// Probed live 2026-09-11 on majors 13, 14 and 17 with a WITHOUT LOGIN user per
-// case, for DROP TYPE, DROP XML SCHEMA COLLECTION and sp_rename's USERDATATYPE:
-// ALTER and CONTROL on the database, ALTER ANY SCHEMA (so db_ddladmin), ALTER
-// on the schema, CONTROL on the securable and its ownership each permit all
-// three; DENY CONTROL on the securable refuses them by hiding it, so its node
-// never reaches the tree.
+// Probed on majors 13, 14 and 17 with a WITHOUT LOGIN user per case, for DROP
+// TYPE, DROP XML SCHEMA COLLECTION and sp_rename's USERDATATYPE: ALTER and CONTROL
+// on the database, ALTER ANY SCHEMA (so db_ddladmin), ALTER on the schema, CONTROL
+// on the securable and its ownership each permit all three; DENY CONTROL on the
+// securable refuses them by hiding it, so its node never reaches the tree.
 var securableOpRights = map[NodeType][]gate.Right{
 	NodeUserDefinedDataType:  securableWriteRights(gate.ControlOnType),
 	NodeUserDefinedTableType: securableWriteRights(gate.ControlOnType),
@@ -137,16 +135,15 @@ func securableWriteRights(own gate.Right) []gate.Right {
 }
 
 // securableTransferRights is Move to Schema's right set for the families whose
-// transfer takes CONTROL on a class 6 or 10 securable: securableOpRights'
-// three, minus the assembly (no schema). A class-1 object is read from the
-// object map instead (objectTransferRights' fallback). Probed live alongside
-// securableOpRights, with ALTER on the target schema held throughout: the
-// transfer succeeded under CONTROL on the securable, its ownership, CONTROL on
-// or ownership of the source schema, and CONTROL on the database (all of which
-// gosmo's per-securable CONTROL reads as 1), and was refused (Msg 15151) under
-// ALTER on the database, ALTER ANY SCHEMA, db_ddladmin and ALTER on the source
-// schema, all of which permit the drop. Using the Delete set would offer a move
-// to principals the server refuses.
+// transfer takes CONTROL on a class 6 or 10 securable: securableOpRights' three,
+// minus the assembly (no schema). A class-1 object is read from the object map
+// instead (objectTransferRights' fallback). Probed alongside securableOpRights,
+// with ALTER on the target schema held throughout: the transfer succeeded under
+// CONTROL on the securable, its ownership, CONTROL on or ownership of the source
+// schema, and CONTROL on the database (all of which gosmo's per-securable CONTROL
+// reads as 1), and was refused (Msg 15151) under ALTER on the database, ALTER ANY
+// SCHEMA, db_ddladmin and ALTER on the source schema, all of which permit the
+// drop. Using the Delete set would offer a move to principals the server refuses.
 var securableTransferRights = map[NodeType][]gate.Right{
 	NodeUserDefinedDataType:  {gate.ControlOnType},
 	NodeUserDefinedTableType: {gate.ControlOnType},
@@ -154,22 +151,21 @@ var securableTransferRights = map[NodeType][]gate.Right{
 	NodeXMLSchemaCollection:  {gate.ControlOnXMLSchemaCollection},
 }
 
-// principalOpRights is Rename/Delete's right set for the database-level node
-// types that are not schema objects. A user and a database role are class-4
-// securables, and no member of gate.ObjectWriteRights() speaks for them:
-// verified live 2026-09-04 on win10cli, a db_accessadmin member drops a user
-// while HAS_PERMS_BY_NAME reads 0 for ALTER, CONTROL and ALTER ANY SCHEMA on
-// the database, and db_securityadmin reads the same zeroes and drops a role.
-// Rename and Delete would otherwise be withheld from exactly the two fixed
-// roles meant to perform them, while User/Role Properties (gated on ALTER ANY
-// USER / ALTER ANY ROLE) stayed writable.
+// principalOpRights is Rename/Delete's right set for the database-level node types
+// that are not schema objects. A user and a database role are class-4 securables,
+// and no member of gate.ObjectWriteRights() speaks for them: a db_accessadmin
+// member drops a user while HAS_PERMS_BY_NAME reads 0 for ALTER, CONTROL and ALTER
+// ANY SCHEMA on the database, and db_securityadmin reads the same zeroes and drops
+// a role. Rename and Delete would otherwise be withheld from exactly the two fixed
+// roles meant to perform them, while User/Role Properties (gated on ALTER ANY USER
+// / ALTER ANY ROLE) stayed writable.
 //
 // The wider database rights stay in the set: sys.fn_builtin_permissions gives
-// ALTER on DATABASE as ALTER ANY USER's and ALTER ANY ROLE's covering
-// permission, so a principal holding it must not be gated out.
+// ALTER on DATABASE as ALTER ANY USER's and ALTER ANY ROLE's covering permission,
+// so a principal holding it must not be gated out.
 //
-// Narrowest first, because gateOn shows only rights[0] in a withheld item's
-// note (see gate.AgentWriteRights).
+// Narrowest first, because gateOn shows only rights[0] in a withheld item's note
+// (see gate.AgentWriteRights).
 var principalOpRights = map[NodeType][]gate.Right{
 	NodeUser:         {gate.AlterAnyUser, gate.AlterDatabase, gate.ControlDB},
 	NodeDatabaseRole: {gate.AlterAnyDBRole, gate.AlterDatabase, gate.ControlDB},
@@ -185,39 +181,37 @@ var principalOpRights = map[NodeType][]gate.Right{
 }
 
 // dbScopedOpRights is Delete's right set for the remaining schemaless
-// database-level families: principalOpRights' reason without the principals.
-// Their nodes carry no schema and no object securable gosmo probes, so
+// database-level families: principalOpRights' reason without the principals. Their
+// nodes carry no schema and no object securable gosmo probes, so
 // gate.ObjectWriteRights() collapses to ALTER and CONTROL on the database plus
-// ALTER ANY SCHEMA, which permits none of these drops, while the narrow right
-// that does was never asked.
+// ALTER ANY SCHEMA, which permits none of these drops, while the narrow right that
+// does was never asked.
 //
-// Each set was probed live 2026-09-10 on majors 13 and 17 (and 14 where the
-// family exists) with a WITHOUT LOGIN user per right, running the DROP: the
-// narrow right, ALTER on the database and CONTROL on it each permit the drop,
-// and ALTER ANY SCHEMA is refused every one. sys.fn_builtin_permissions gives
-// ALTER on DATABASE as each narrow right's covering permission, hence the
-// wider pair. Two families differ:
+// Each set was probed on majors 13 and 17 (and 14 where the family exists) with a
+// WITHOUT LOGIN user per right, running the DROP: the narrow right, ALTER on the
+// database and CONTROL on it each permit the drop, and ALTER ANY SCHEMA is refused
+// every one. sys.fn_builtin_permissions gives ALTER on DATABASE as each narrow
+// right's covering permission, hence the wider pair. Two families differ:
 //
-//   - A plan guide has no narrow right. sp_control_plan_guide checks ALTER on
-//     the database for a SQL or TEMPLATE guide (db_ddladmin is refused) and
-//     ALTER on the routine for an OBJECT guide, which objectDataRights answers.
-//   - A security policy has a schema, and its drop needs ALTER ANY SECURITY
-//     POLICY *and* ALTER on that schema: each alone is refused (Msg 3701).
-//     This set is the policy half; conjoinedOpRights carries the schema half.
+//   - A plan guide has no narrow right. sp_control_plan_guide checks ALTER on the
+//     database for a SQL or TEMPLATE guide (db_ddladmin is refused) and ALTER on
+//     the routine for an OBJECT guide, which objectDataRights answers.
+//   - A security policy has a schema, and its drop needs ALTER ANY SECURITY POLICY
+//     *and* ALTER on that schema: each alone is refused (Msg 3701). This set is
+//     the policy half; conjoinedOpRights carries the schema half.
 //
-// An assembly also takes CONTROL on itself, which its owner holds: probed live
-// 2026-09-11 on 13, 14 and 17, CONTROL on the assembly or its ownership
-// permits DROP ASSEMBLY while every database-scope right reads 0. DENY CONTROL
-// refuses the drop over ALTER ANY ASSEMBLY by hiding the assembly (no node to
-// withhold on), and DENY ALTER refuses nothing.
+// An assembly also takes CONTROL on itself, which its owner holds: CONTROL on the
+// assembly or its ownership permits DROP ASSEMBLY while every database-scope right
+// reads 0. DENY CONTROL refuses the drop over ALTER ANY ASSEMBLY by hiding the
+// assembly (no node to withhold on), and DENY ALTER refuses nothing.
 //
 // Not every drop could be run everywhere. Without PolyBase, 13 has no external
 // data sources and 13/14 no file formats, so those ran on 14 and 17 or 17 alone;
 // no test instance has Machine Learning Services, so the external library set
-// rests on HAS_PERMS_BY_NAME (narrow right, ALTER, CONTROL and db_ddladmin read
-// 1, ALTER ANY SCHEMA 0, on 14 and 17) and the documented DROP EXTERNAL LIBRARY
-// permission. That right is 2017-only and reads unknown on 2016, which fails
-// open, correct since nothing exists there to delete.
+// rests on HAS_PERMS_BY_NAME (narrow right, ALTER, CONTROL and db_ddladmin read 1,
+// ALTER ANY SCHEMA 0, on 14 and 17) and the documented DROP EXTERNAL LIBRARY
+// permission. That right is 2017-only and reads unknown on 2016, which fails open,
+// correct since nothing exists there to delete.
 //
 // Narrowest first, for gateOn's note (see principalOpRights).
 var dbScopedOpRights = map[NodeType][]gate.Right{
@@ -232,8 +226,8 @@ var dbScopedOpRights = map[NodeType][]gate.Right{
 	NodeExternalLibrary:     {gate.AlterAnyExtLibrary, gate.AlterDatabase, gate.ControlDB},
 	NodePlanGuide:           planGuideWriteRights(),
 	// The five schemaless Service Broker families that have a narrow right of
-	// their own, and the one that does not. Probed live 2026-09-16 on majors 13, 14
-	// and 17, identically: each narrow right alone drops its family, a right from
+	// their own, and the one that does not. Probed on majors 13, 14 and 17,
+	// identically: each narrow right alone drops its family, a right from
 	// one family drops nothing in another, and ALTER on the database drops every
 	// one. A broker priority has no grantable right; see
 	// gate.BrokerPriorityWriteRights.
@@ -250,17 +244,16 @@ var dbScopedOpRights = map[NodeType][]gate.Right{
 	NodeSecurityPolicy: {gate.AlterAnySecPolicy},
 	// The assembly's shape: the narrow right, the wider pair, and CONTROL on the
 	// certificate itself, which its owner holds, so a CREATE CERTIFICATE-only
-	// principal is offered Delete on exactly the certificates it made. Probed
-	// 2026-09-22 on 13, 14, 17 and Managed Instance; see gate.AlterAnyCertificate.
-	// A certificate a login or user is mapped to is refused by the server
-	// (Msg 15559), whoever asks.
+	// principal is offered Delete on exactly the certificates it made. Probed on 13,
+	// 14, 17 and Managed Instance; see gate.AlterAnyCertificate. A certificate a login
+	// or user is mapped to is refused by the server (Msg 15559), whoever asks.
 	NodeCertificate: {gate.AlterAnyCertificate, gate.AlterDatabase, gate.ControlDB, gate.ControlOnCertificate},
 	// The certificate's shape; the same probe found the two alike.
 	NodeAsymmetricKey: {gate.AlterAnyAsymmetricKey, gate.AlterDatabase, gate.ControlDB, gate.ControlOnAsymmetricKey},
 	// Likewise: the probe found all three families alike.
 	NodeSymmetricKey: {gate.AlterAnySymmetricKey, gate.AlterDatabase, gate.ControlDB, gate.ControlOnSymmetricKey},
 	// The certificate's shape again, the three full-text families sharing one
-	// narrow right. Probed 2026-10-07 on 14 and 17; see gate.AlterAnyFullTextCatalog.
+	// narrow right. Probed on 14 and 17; see gate.AlterAnyFullTextCatalog.
 	// A catalog holding an index, or a stoplist or property list an index uses,
 	// is refused by the server whoever asks (Msg 7668, 30034, 30036).
 	NodeFullTextCatalog:    {gate.AlterAnyFullTextCatalog, gate.AlterDatabase, gate.ControlDB, gate.ControlOnFullTextCatalog},
@@ -268,16 +261,16 @@ var dbScopedOpRights = map[NodeType][]gate.Right{
 	NodeSearchPropertyList: {gate.AlterAnyFullTextCatalog, gate.AlterDatabase, gate.ControlDB, gate.ControlOnSearchPropertyList},
 }
 
-// serverScopedOpRights is Rename/Delete's right set for the node types that
-// live outside a database, keyed to the rights the matching New-X item gates on.
+// serverScopedOpRights is Rename/Delete's right set for the node types that live
+// outside a database, keyed to the rights the matching New-X item gates on.
 //
-// Without an entry a node falls to gate.ObjectWriteRights(), whose members are
-// all database-, schema- or object-scoped, and the node carries no DBName, so
+// Without an entry a node falls to gate.ObjectWriteRights(), whose members are all
+// database-, schema- or object-scoped, and the node carries no DBName, so
 // gate.RightsAllow takes its `dbName == ""` branch and answers yes
 // unconditionally. That branch suits folder-level actions that prompt for a
-// database, but not Delete on a login, which would be offered to every
-// principal and then refused. TestServerScopedOpsAreGated catches a new
-// server-level family missing here.
+// database, but not Delete on a login, which would be offered to every principal
+// and then refused. TestServerScopedOpsAreGated catches a new server-level family
+// missing here.
 var serverScopedOpRights = map[NodeType][]gate.Right{
 	NodeLogin:                    {gate.AlterAnyLogin},
 	NodeServerRole:               {gate.AlterAnyServerRole},

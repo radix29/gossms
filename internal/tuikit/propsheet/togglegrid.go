@@ -8,13 +8,13 @@ import (
 
 // ToggleGridRow is a Form row wrapping a cell-cursor controls.DataGrid where
 // some columns are [x]/[ ] boolean toggles (Space/Enter or click flips the
-// focused cell) and the rest plain read-only text: the mechanism every
-// variable-length "grid with checkbox columns" page uses (processor affinity,
-// change tracking tables, server role membership, login/database user
-// mapping). It owns cell rendering, re-render on toggle, selected-row
-// preservation across a toggle, and Dirty()/Revert() against the baseline
-// captured by the latest SetRows; the page supplies the domain data and, in its
-// apply closure, diffs Values() against what it loaded.
+// focused cell) and the rest plain read-only text: the mechanism for every
+// "grid with checkbox columns" page (processor affinity, change tracking tables,
+// server role membership, login/database user mapping). It owns cell rendering,
+// re-render on toggle, selected-row preservation across a toggle, and
+// Dirty()/Revert() against the baseline captured by the latest SetRows; the page
+// supplies the domain data and, in its apply closure, diffs Values() against
+// what it loaded.
 type ToggleGridRow struct {
 	*GridRow
 
@@ -25,13 +25,12 @@ type ToggleGridRow struct {
 	values   [][]bool   // per row: one entry per toggleCols entry, toggleCols order
 	baseline [][]bool
 
-	// OnToggle, if set, is called after a cell is toggled: row is the row
-	// index, col is the index into toggleCols (not the raw grid column
-	// index), on is the new state.
+	// OnToggle, if set, is called after a cell is toggled: row is the row index, col
+	// the index into toggleCols (not the raw grid column), on the new state.
 	OnToggle func(row, col int, on bool)
 
 	// drawReadOnly renders the toggle cells as ticks and crosses rather than
-	// as checkboxes — see SetDrawReadOnly.
+	// checkboxes; see SetDrawReadOnly.
 	drawReadOnly bool
 
 	// pageReadOnly is the page's own gate — see SetReadOnly.
@@ -39,9 +38,9 @@ type ToggleGridRow struct {
 }
 
 // SetReadOnly is the page's own gate on the row, apart from the form's (see
-// TextRow.SetReadOnly): for a grid whose rows describe an object selected
-// elsewhere on the page, editable for one object and not another. The toggles
-// stop toggling and draw as ticks and crosses; the grid can still be browsed.
+// TextRow.SetReadOnly): for a grid describing an object selected elsewhere on
+// the page, editable for one object and not another. Toggles stop toggling and
+// draw as ticks and crosses; the grid can still be browsed.
 func (t *ToggleGridRow) SetReadOnly(v bool) {
 	if t.pageReadOnly == v {
 		return
@@ -59,9 +58,9 @@ func (t *ToggleGridRow) ReadOnly() bool { return t.pageReadOnly }
 // first, makes the grid browse-only.
 //
 // render, not renderPreservingView: Form calls this from SetReadOnly, which a
-// page runs before the sheet has laid the grid out, and preserving the view of
-// a grid with no rect ends in SetSelectedCell's ensureVisible scrolling past
-// every row (the affinity grid drew four blank lines under its header, live).
+// page runs before the sheet has laid the grid out, and preserving the view of a
+// grid with no rect ends in SetSelectedCell's ensureVisible scrolling past every
+// row (the affinity grid drew four blank lines under its header).
 func (t *ToggleGridRow) SetDrawReadOnly(v bool) {
 	t.GridRow.SetDrawReadOnly(v)
 	if t.drawReadOnly == v {
@@ -73,8 +72,8 @@ func (t *ToggleGridRow) SetDrawReadOnly(v bool) {
 
 // NewToggleGrid creates a ToggleGridRow. columns are the grid's headers;
 // toggleCols lists which column indices render as toggle cells; every other
-// column is plain text supplied via SetRows. height is a fixed number of screen
-// lines, sized as in NewGridRow.
+// column is plain text supplied via SetRows. height is fixed screen lines, sized
+// as in NewGridRow.
 func NewToggleGrid(columns []string, toggleCols []int, height int) *ToggleGridRow {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
@@ -88,9 +87,9 @@ func NewToggleGrid(columns []string, toggleCols []int, height int) *ToggleGridRo
 }
 
 // SetRows replaces the grid's rows and captures values as the dirty-tracking
-// baseline. text[i] supplies row i's non-toggle columns, in column order
-// (skipping toggleCols positions); values[i] supplies row i's toggleCols state,
-// in toggleCols order.
+// baseline. text[i] supplies row i's non-toggle columns in column order
+// (skipping toggleCols positions); values[i] its toggleCols state, in
+// toggleCols order.
 func (t *ToggleGridRow) SetRows(text [][]string, values [][]bool) {
 	t.text = text
 	t.values = cloneBoolMatrix(values)
@@ -122,31 +121,29 @@ func (t *ToggleGridRow) renderRows() [][]string {
 	return rows
 }
 
-// render replaces the grid's rows outright, taking SetData's reset of the cell
-// cursor, scroll and dragged column widths. For SetRows, whose rows are a
-// different set; a change leaving the row set alone uses renderPreservingView.
+// render replaces the grid's rows outright, taking SetData's reset of cell
+// cursor, scroll and dragged column widths: for SetRows, whose rows are a
+// different set. A change leaving the row set alone uses renderPreservingView.
 func (t *ToggleGridRow) render() {
 	t.Grid.SetData(t.columns, t.renderRows())
 }
 
 // renderPreservingView re-renders the same rows without moving the grid under
-// the user; see controls.DataGrid.SetDataPreservingView, and redrawGrid in the
-// application layer (the same fix for pages that hand-rolled it).
+// the user; see controls.DataGrid.SetDataPreservingView and redrawGrid in the
+// application layer.
 func (t *ToggleGridRow) renderPreservingView() {
 	t.Grid.SetDataPreservingView(t.columns, t.renderRows())
 }
 
-// Text returns the non-toggle cell text, row-parallel with Values.
-//
-// The pairing is the point: a page reads Values()[i] against its own i'th
-// object, so anything needing to know *which* row a value belongs to must read
-// the row's own text; otherwise they relate only by an index nobody outside the
-// page can check.
+// Text returns the non-toggle cell text, row-parallel with Values. The pairing
+// is the point: a page reads Values()[i] against its own i'th object, so
+// anything needing to know which row a value belongs to must read the row's own
+// text, else they relate only by an index nobody outside the page can check.
 func (t *ToggleGridRow) Text() [][]string { return t.text }
 
-// Toggle flips one toggle cell the way clicking or pressing Space on it does,
-// including the redraw and the OnToggle callback. row is a row index; col
-// indexes toggleCols, not the raw grid column (as OnToggle reports).
+// Toggle flips one toggle cell the way clicking or pressing Space does,
+// including the redraw and OnToggle callback. col indexes toggleCols, not the
+// raw grid column (as OnToggle reports).
 func (t *ToggleGridRow) Toggle(row, col int) {
 	if col < 0 || col >= len(t.toggleCols) {
 		return
@@ -183,12 +180,11 @@ func (t *ToggleGridRow) Dirty() bool {
 
 func (t *ToggleGridRow) Revert() {
 	t.values = cloneBoolMatrix(t.baseline)
-	// Preserving, not resetting: Ctrl+Z restores the values of the rows
-	// already on screen, so the row the user is on is still the row they
-	// meant — the row set has not changed, only what it says.
+	// Preserving, not resetting: Ctrl+Z restores the values of the rows already on
+	// screen, so the row the user is on is still the one they meant.
 	t.renderPreservingView()
-	// The page's own pending state goes after, so a RevertFn that rebuilds
-	// the rows (and the baseline) with SetRows has the last word.
+	// The page's own pending state goes after, so a RevertFn that rebuilds the rows
+	// (and baseline) with SetRows has the last word.
 	t.GridRow.Revert()
 }
 
@@ -200,8 +196,8 @@ func cloneBoolMatrix(m [][]bool) [][]bool {
 	return out
 }
 
-// toggleCell renders a toggle column's boolean value as SSMS-style checkbox
-// text, or as a tick/cross when the row draws read-only.
+// toggleCell renders a toggle column's boolean as SSMS-style checkbox text, or a
+// tick/cross when the row draws read-only.
 func (t *ToggleGridRow) toggleCell(v bool) string {
 	if t.drawReadOnly || t.pageReadOnly {
 		if v {

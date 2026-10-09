@@ -13,21 +13,21 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// ag_add_replica_dialog.go is "Add Replica..." on a group's Availability
-// Replicas folder (SSMS's Add Replica wizard), the only way to add a replica to
-// an existing group.
+// ag_add_replica_dialog.go is "Add Replica..." on a group's Availability Replicas
+// folder (SSMS's Add Replica wizard), the only way to add a replica to an
+// existing group.
 //
 // # Adding a replica is three statements on two instances
 //
 // ADD REPLICA runs on the primary and leaves the replica disconnected. The
 // replica must then JOIN itself and, for automatic seeding, GRANT CREATE ANY
-// DATABASE, without which AUTOMATIC seeding silently seeds nothing. Same shape
-// as NewAGDialog.createGroup.
+// DATABASE (without it AUTOMATIC seeding silently seeds nothing). Same shape as
+// NewAGDialog.createGroup.
 //
 // Replicas are reached through db.ServerConn.Peer: the instance's own saved
-// connection if any (and working), else this connection's credentials. A
-// replica needing a different login or port is reached by connecting to it once
-// via File > Connect.
+// connection if any (and working), else this connection's credentials. A replica
+// needing a different login or port is reached by connecting once via File >
+// Connect.
 
 // agAddReplicaPrefetch is read from the primary before building pages: what the
 // new replica must be compatible with, and its defaults.

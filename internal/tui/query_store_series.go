@@ -15,14 +15,13 @@ import (
 // query_store_series.go is the Query Store panel's second chart mode: the
 // selected query's per-plan history, one line per plan, interval by interval
 // (SSMS plots it under Tracked Queries). The seven reports rank queries; this
-// plots the query the report grid's cursor is on, so it belongs to the row as
-// the plan pane and plan actions do, and is a mode of the chart, not an eighth
-// report.
+// plots the query the report grid's cursor is on, so it belongs to the row as the
+// plan pane and plan actions do, and is a mode of the chart, not an eighth report.
 //
-// The read is gosmo's QueryStoreTrackedQuery, with the options the report was
-// run with. Top, the execution floor and the tracked-query set do not reach
-// that query (it is one query over every interval), so the selectors carrying
-// them stay live for the report grid below, which still honours them.
+// The read is gosmo's QueryStoreTrackedQuery, with the options the report was run
+// with. Top, the execution floor and the tracked-query set do not reach that query
+// (one query over every interval), so the selectors carrying them stay live for
+// the report grid below, which still honours them.
 
 // qsSeriesData is one query's per-plan series, already resolved onto a single
 // interval axis, plus what a chart needs to label the time scale.
@@ -31,8 +30,8 @@ type qsSeriesData struct {
 	series  []charts.Series
 
 	// interval is how much time one bucket covers, taken from the Query Store
-	// interval width of a bucket that came back; newest is the end of the most
-	// recent bucket, which is the timestamp the chart's right edge carries.
+	// interval width of a bucket that came back; newest is the end of the most recent
+	// bucket, the timestamp the chart's right edge carries.
 	interval time.Duration
 	newest   time.Time
 }
@@ -42,21 +41,20 @@ type qsSeriesData struct {
 //
 // The rows are not dense: a QSPlanIntervalStat exists only for an interval in
 // which that plan ran, so two plans of one query generally come back with
-// different bucket counts and gaps. HistoryChart indexes its series
-// positionally and Series.At reads 0 outside the slice, so appending each
-// plan's values in arrival order would plot two plans against two different
-// time axes (plan B's Tuesday in the column holding plan A's Monday, with
-// nothing saying so). One axis is built from the union of every plan's
-// StartTime and each series is filled against it; an interval the plan is
-// missing from is a genuine zero.
+// different bucket counts and gaps. HistoryChart indexes its series positionally
+// and Series.At reads 0 outside the slice, so appending each plan's values in
+// arrival order would plot two plans against two different time axes (plan B's
+// Tuesday in the column holding plan A's Monday, with nothing saying so). One axis
+// is built from the union of every plan's StartTime and each series is filled
+// against it; an interval the plan is missing from is a genuine zero.
 func buildQSSeries(queryID int64, stats []*gosmo.QSPlanIntervalStat, colors []tcell.Color) qsSeriesData {
 	out := qsSeriesData{queryID: queryID}
 	if len(stats) == 0 || len(colors) == 0 {
 		return out
 	}
 
-	// The axis: every distinct interval start any plan reported, oldest first,
-	// which is the order HistoryChart plots buckets in.
+	// The axis: every distinct interval start any plan reported, oldest first, the
+	// order HistoryChart plots buckets in.
 	starts := make([]time.Time, 0, len(stats))
 	for _, st := range stats {
 		starts = append(starts, st.StartTime)
@@ -72,8 +70,8 @@ func buildQSSeries(queryID int64, stats []*gosmo.QSPlanIntervalStat, colors []tc
 		axis = append(axis, t)
 	}
 
-	// One series per plan, in the order the plans arrived — gosmo orders by
-	// plan id, so the legend reads in plan order too.
+	// One series per plan, in arrival order; gosmo orders by plan id, so the legend
+	// reads in plan order too.
 	byPlan := make(map[int64]int, len(stats))
 	for _, st := range stats {
 		si, ok := byPlan[st.PlanID]
@@ -88,9 +86,9 @@ func buildQSSeries(queryID int64, stats []*gosmo.QSPlanIntervalStat, colors []tc
 				Values: make([]float64, len(axis)),
 			})
 		}
-		// Added rather than assigned: the query groups by plan and interval, so
-		// one row per pair is expected, but a second row for a pair must add to
-		// the bucket rather than replace it.
+		// Added rather than assigned: the query groups by plan and interval, so one row
+		// per pair is expected, but a second row for a pair must add to the bucket rather
+		// than replace it.
 		out.series[si].Values[at[st.StartTime.UnixNano()]] += st.Value
 		if st.EndTime.After(out.newest) {
 			out.newest = st.EndTime
@@ -108,9 +106,9 @@ func buildQSSeries(queryID int64, stats []*gosmo.QSPlanIntervalStat, colors []tc
 // empty reports whether there is nothing to plot.
 func (d qsSeriesData) empty() bool { return len(d.series) == 0 }
 
-// chart is the plot for this data. Interval and TimeLabel come from the
-// buckets themselves, so the time scale describes the intervals Query Store
-// actually kept rather than the range the Window selector asked for.
+// chart is the plot for this data. Interval and TimeLabel come from the buckets
+// themselves, so the time scale describes the intervals Query Store actually kept
+// rather than the range the Window selector asked for.
 func (d qsSeriesData) chart() charts.HistoryChart {
 	label := ""
 	if !d.newest.IsZero() {
@@ -123,22 +121,22 @@ func (d qsSeriesData) chart() charts.HistoryChart {
 	}
 }
 
-// qsSeriesColors give each plan a line colour, in the order the dashboard's
-// own charts use them.
+// qsSeriesColors gives each plan a line colour, in the order the dashboard's own
+// charts use them.
 func qsSeriesColors() []tcell.Color {
 	cyan, green, yellow, blue, red, purple, neutral := chartColors()
 	return []tcell.Color{cyan, green, yellow, blue, red, purple, neutral}
 }
 
 // toggleSeriesMode switches the chart between the report's ranking and the
-// selected query's history, reading the series the first time it is needed:
-// it is a second round trip per row, and the panel already reads plans on
-// every cursor move.
+// selected query's history, reading the series the first time it is needed: it is
+// a second round trip per row, and the panel already reads plans on every cursor
+// move.
 func (p *QueryStorePanel) toggleSeriesMode() {
 	p.seriesMode = !p.seriesMode
 	if !p.seriesMode {
-		// Abandon, not a bare cancel: the chart is going back to the ranking,
-		// so a read still on its way must not land in p.series behind it.
+		// Abandon, not a bare cancel: the chart is going back to the ranking, so a read
+		// still on its way must not land in p.series behind it.
 		p.seriesRead.Abandon()
 		p.series, p.seriesNote = qsSeriesData{}, ""
 		return
@@ -146,41 +144,40 @@ func (p *QueryStorePanel) toggleSeriesMode() {
 	p.loadSeries(p.selectedQueryID())
 }
 
-// loadSeriesIfShown re-reads the series for a query when the chart is in
-// series mode, and does nothing when it is not — every caller that changes
-// which query or which window the panel is on goes through here.
+// loadSeriesIfShown re-reads the series for a query when the chart is in series
+// mode, and does nothing otherwise; every caller that changes which query or
+// window the panel is on goes through here.
 func (p *QueryStorePanel) loadSeriesIfShown(queryID int64) {
 	if p.seriesMode {
 		p.loadSeries(queryID)
 	}
 }
 
-// loadSeries reads one query's per-plan history into the chart, or empties it
-// for a zero id. Its own sequence, not the report's or the plan pane's: the
-// three reads are independent, and a report reload that has not landed must not
-// blank a series that has.
+// loadSeries reads one query's per-plan history into the chart, or empties it for
+// a zero id. Its own sequence, not the report's or the plan pane's: the three
+// reads are independent, and a report reload that has not landed must not blank a
+// series that has.
 func (p *QueryStorePanel) loadSeries(queryID int64) {
-	// Abandon first, so a read already on its way cannot fill a chart the
-	// branches below emptied. A series read fires from the report grid's
-	// cursor, so holding Down through a ranking starts one per row, and
-	// uncancelled they all still run on the shared host.
+	// Abandon first, so a read already on its way cannot fill a chart the branches
+	// below emptied. A series read fires from the report grid's cursor, so holding
+	// Down through a ranking starts one per row, and uncancelled they all still run on
+	// the shared host.
 	p.seriesRead.Abandon()
 	p.series = qsSeriesData{}
 	if queryID == 0 {
 		p.seriesNote = "Select a query in the report below to plot its history"
 		return
 	}
-	// Said separately from the line above: a disconnected panel that asked for
-	// a selection would send the user clicking at rows that cannot answer.
+	// Said separately from the line above: a disconnected panel that asked for a
+	// selection would send the user clicking at rows that cannot answer.
 	if !p.app.isConnected(p.conn) {
 		p.seriesNote = "Not connected"
 		return
 	}
 	p.seriesNote = fmt.Sprintf("Reading the history of query %d...", queryID)
 	// The report's effective window, not the toolbar's, as the plan pane does: on
-	// Regressed Queries the rows cover the second half of the window, and a chart
-	// over the whole of it would plot intervals the rows beside it do not report
-	// on.
+	// Regressed Queries the rows cover the second half of the window, and a chart over
+	// the whole of it would plot intervals the rows beside it do not report on.
 	opts, sc, dbName := p.report().effectiveOptions(p.options()), p.conn, p.dbName
 	p.seriesLabel = qsValueLabel(opts)
 	ctx, seq := p.seriesRead.BeginTimeout(sc.Server.Context(), qsReadTimeout)
@@ -208,10 +205,10 @@ func (p *QueryStorePanel) loadSeries(queryID int64) {
 	})
 }
 
-// seriesPanicked replaces the chart's "Reading..." note after a panic on the
-// read goroutine — loadSeries' safegoRepair step. Guarded by seriesRead like
-// the normal completion path: a newer read owns the chart, and blanking it
-// here would drop a series that is still on its way.
+// seriesPanicked replaces the chart's "Reading..." note after a panic on the read
+// goroutine (loadSeries' safegoRepair step). Guarded by seriesRead like the normal
+// completion: a newer read owns the chart, and blanking it would drop a series
+// still on its way.
 func (p *QueryStorePanel) seriesPanicked(seq int) {
 	if !p.seriesRead.Done(seq) {
 		return
@@ -220,9 +217,9 @@ func (p *QueryStorePanel) seriesPanicked(seq int) {
 	p.seriesNote = "Reading the query history stopped unexpectedly — see the log for details"
 }
 
-// seriesTitle names what the lines measure, from the options the series was
-// read with rather than from the toolbar — the toolbar can have moved on since,
-// and a title built from it would relabel a chart nothing re-read.
+// seriesTitle names what the lines measure, from the options the series was read
+// with rather than from the toolbar, which can have moved on since; a title built
+// from it would relabel a chart nothing re-read.
 func (p *QueryStorePanel) seriesTitle() string {
 	if p.series.queryID == 0 {
 		return "Query history"

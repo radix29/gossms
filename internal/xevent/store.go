@@ -1,14 +1,12 @@
 package xevent
 
-// DefaultCapacity is how many events a Store holds before the oldest go. A
-// busy TSQL trace fills it in minutes; the point is
-// that it fills and stops rather than taking the machine's memory.
+// DefaultCapacity is how many events a Store holds before the oldest go; it
+// bounds memory.
 const DefaultCapacity = 100_000
 
 // Store holds the most recent events a viewer has read, oldest first, up to
-// its capacity; past it the oldest are dropped and counted. It also keeps the
-// registry of every column its events have carried, in the order they first
-// appeared, so a field that shows up in the 500th event still gets a column.
+// its capacity; past it the oldest are dropped and counted. It also registers
+// every column its events have carried, in first-seen order.
 //
 // Not safe for concurrent use: the viewer owns it on the UI goroutine.
 type Store struct {
@@ -55,8 +53,7 @@ func (s *Store) At(i int) *Event { return s.ring[(s.head+i)%len(s.ring)] }
 func (s *Store) Dropped() int64 { return s.dropped }
 
 // OldestID is the ID of the oldest held event, or the ID the next event will
-// get when the store is empty — either way, every event with a smaller ID is
-// gone.
+// get when empty; every event with a smaller ID is gone.
 func (s *Store) OldestID() uint64 {
 	if s.n == 0 {
 		return s.nextID + 1
@@ -65,9 +62,9 @@ func (s *Store) OldestID() uint64 {
 }
 
 // Add appends events in order, numbering each, and returns the stored copies
-// together with whether any carried a field or action no earlier event had —
-// the caller's cue that the column set grew. An Add of more than the capacity
-// keeps only the newest capacity of them, and counts the rest as dropped.
+// and whether any carried a field or action no earlier event had (the column
+// set grew). An Add beyond capacity keeps only the newest and counts the rest
+// as dropped.
 func (s *Store) Add(events ...Event) (added []*Event, newColumns bool) {
 	added = make([]*Event, 0, len(events))
 	for i := range events {
@@ -91,9 +88,8 @@ func (s *Store) Add(events ...Event) (added []*Event, newColumns bool) {
 		s.push(e)
 		added = append(added, e)
 	}
-	// Only what is still held: an Add bigger than the capacity pushed its own
-	// first events out, and a view handed those would show rows the store no
-	// longer has.
+	// Only what is still held: an oversized Add pushed its own first events
+	// out, and a view given those would show rows the store no longer has.
 	if len(added) > s.n {
 		added = added[len(added)-s.n:]
 	}
@@ -101,8 +97,7 @@ func (s *Store) Add(events ...Event) (added []*Event, newColumns bool) {
 }
 
 // push appends e, dropping the oldest event when full. The ring grows by
-// doubling up to the capacity rather than being allocated whole: most
-// sessions a viewer opens hold a few hundred events, not a hundred thousand.
+// doubling up to capacity: most sessions hold a few hundred events.
 func (s *Store) push(e *Event) {
 	if s.n == s.capacity {
 		s.ring[s.head] = e
@@ -122,16 +117,14 @@ func (s *Store) push(e *Event) {
 }
 
 // Clear drops every held event and resets the dropped count. The column
-// registry is kept: SSMS's Clear Data empties the grid, not its layout, and
-// the next event would bring the same columns straight back anyway.
+// registry is kept (as SSMS's Clear Data keeps the layout).
 func (s *Store) Clear() {
 	s.ring, s.head, s.n, s.dropped = nil, 0, 0, 0
 }
 
 // Columns is every column the store's events have carried: the name and
-// timestamp, then the fields and then the actions, each in the order first
-// seen. The package is left out — it is the details pane's, and one column of
-// "sqlserver" on every row is noise.
+// timestamp, then the fields and then the actions, each in first-seen order.
+// The package is left out: it belongs to the details pane.
 func (s *Store) Columns() []Column {
 	out := make([]Column, 0, 2+len(s.fields)+len(s.actions))
 	out = append(out, NameColumn, TimestampColumn)

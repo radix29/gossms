@@ -11,26 +11,24 @@ import (
 
 // Draw renders the panel (Panel interface).
 func (lv *LogViewer) Draw(s tcell.Screen) {
-	// Both selectors are labelled with what they point at, so the labels
-	// change without a resize — and a rect laid out for the old label leaves
-	// the next button overpainting the tail of this one. Relaying out here
-	// keeps the two in step; it is a handful of width measurements.
+	// Both selectors are labelled with what they point at, so labels change
+	// without a resize, and a rect laid out for the old label would let the next
+	// button overpaint its tail. Relaying out here is a few width measurements.
 	lv.refreshToolLabels()
 	lv.layoutTools()
 	lv.drawToolbar(s)
 	lv.grid.Draw(s)
 	lv.splitter.Draw(s)
 	lv.drawDetails(s)
-	// Last, over everything else: the grid's cell context menu and its
-	// "Show Value" popup are drawn outside the grid's own rect, so Draw alone
-	// paints neither — and HandleKey/HandleMouse still give OverlayActive()
-	// first refusal, so a right-click opens a menu nobody can see that eats
-	// every key until Escape.
+	// Last, over everything else: the grid's cell context menu and "Show Value"
+	// popup are drawn outside the grid's own rect, and HandleKey/HandleMouse give
+	// OverlayActive() first refusal, so skipping this leaves an invisible menu
+	// eating every key until Escape.
 	lv.grid.DrawOverlay(s)
 }
 
-// drawToolbar paints the toolbar row: the two selectors and the buttons in
-// the tooltip scheme Activity Monitor's buttons use, then the filter field.
+// drawToolbar paints the toolbar row (selectors and buttons in Activity
+// Monitor's tooltip scheme), then the filter field.
 func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 	if lv.toolRect.H != 1 {
 		return
@@ -50,8 +48,8 @@ func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 		core.FillRect(s, t.Rect, ' ', style)
 		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
 	}
-	// The stand-in for whatever did not fit. Dimmed only while the whole row
-	// is: what it holds is gated item by item once the menu is open.
+	// The stand-in for whatever did not fit. Dimmed only while the whole row is;
+	// its items are gated one by one once the menu is open.
 	if !lv.tools.More.Rect.IsZero() {
 		style := theme.StyleTooltip()
 		if !lv.toolsEnabled() {
@@ -65,10 +63,9 @@ func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 	}
 }
 
-// drawDetails paints the selected entry in full below the splitter: its
-// date, log file and source on one line each, then the message wrapped over
-// the rest of the pane. The message is drawn as the log wrote it — the grid
-// row above is the flattened one-line form.
+// drawDetails paints the selected entry in full below the splitter: date, log
+// file and source one per line, then the message wrapped over the rest. The
+// message is drawn as the log wrote it; the grid row is the flattened form.
 func (lv *LogViewer) drawDetails(s tcell.Screen) {
 	r := lv.detailRect
 	if r.W <= 0 || r.H <= 0 {
@@ -93,25 +90,23 @@ func (lv *LogViewer) drawDetails(s tcell.Screen) {
 		}
 		core.DrawTextClipped(s, r.X+1, y, r.W-2, style, lines[i])
 	}
-	// A message longer than the pane is the normal case for a stack dump, so
-	// the pane says so rather than silently ending mid-sentence.
+	// A message longer than the pane is normal (stack dumps), so say so rather
+	// than end mid-sentence.
 	if hidden := len(lines) - lv.detailScroll - r.H; hidden > 0 {
 		core.DrawTextRight(s, r.X, r.Y+r.H-1, r.W-1, dimStyle,
 			core.Truncate("▾ more (Alt+↓)", r.W-1))
 	}
 }
 
-// detailLines renders one entry into the details pane's lines, wrapped to w
-// columns. Kept separate from drawDetails so the scroll bounds can be
-// computed from the same text that gets drawn.
+// detailLines renders one entry into the details pane's lines, wrapped to w.
+// Separate from drawDetails so scroll bounds use the same text that is drawn.
 //
-// The result is cached per (entry, width) — see detailCache. Callers must
-// treat the slice as read-only: the next call hands back the same one.
+// Cached per (entry, width), see detailCache. Callers must treat the slice as
+// read-only: the next call returns the same one.
 func (lv *LogViewer) detailLines(row logRow, w int) []string {
-	// Three columns, not one: the message body is indented by two, so a
-	// narrower pane leaves WrapText a width of zero or less, and it answers
-	// that by handing back the paragraph unwrapped — one long line that
-	// DrawTextClipped then cuts at the edge with no ellipsis.
+	// Three columns, not one: the body is indented by two, so a narrower pane
+	// leaves WrapText a width <= 0, which returns the paragraph unwrapped, and
+	// DrawTextClipped then cuts it at the edge with no ellipsis.
 	if w < 3 {
 		return nil
 	}
@@ -121,10 +116,8 @@ func (lv *LogViewer) detailLines(row logRow, w int) []string {
 	}
 	lines := []string{
 		"Date    " + formatSQLDate(e.Date),
-		// The row's own file, not the selection's: with several merged, the
-		// pane is the only place a row says which file it came from at full
-		// width, and naming the selection here would name the wrong file on
-		// every row but one.
+		// The row's own file, not the selection's: with several merged this is the
+		// only place a row names its file at full width.
 		"Log     " + row.ref.Type.String() + " (" + lv.fileLabel(row.ref) + ")",
 		"Source  " + e.Source(),
 		"Message",

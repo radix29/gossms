@@ -68,24 +68,23 @@ func loadSearchPropertyListsChildren(l loaderCtx, node *explorerNode) ([]*explor
 		})
 }
 
-// tableFullTextMenu is a table's Full-Text index cascade, in SSMS's order.
-// The tree does not know whether the table has an
-// index or what state it is in, so nothing here is greyed for that: each
-// action reads the index first and says why it does nothing
-// (fulltext_index_ops.go).
+// tableFullTextMenu is a table's Full-Text index cascade, in SSMS's order. The
+// tree does not know whether the table has an index or what state it is in, so
+// nothing here is greyed for that: each action reads the index first and says why
+// it does nothing (fulltext_index_ops.go).
 //
 // Every write is gated on ALTER on the table, which is what each of these
-// statements checks — probed on 14 and 17 with a WITHOUT LOGIN user per
-// right: ALTER or CONTROL on the table, ALTER on its schema, ALTER ANY
-// SCHEMA, ALTER or CONTROL on the database and db_ddladmin each ran ENABLE,
-// DISABLE, SET CHANGE_TRACKING, START and STOP POPULATION and DROP; a right
-// on the catalog alone (REFERENCES, CONTROL, ALTER ANY FULLTEXT CATALOG) ran
-// none, and none was needed beside ALTER on the table.
+// statements checks — probed on 14 and 17 with a WITHOUT LOGIN user per right:
+// ALTER or CONTROL on the table, ALTER on its schema, ALTER ANY SCHEMA, ALTER or
+// CONTROL on the database and db_ddladmin each ran ENABLE, DISABLE, SET
+// CHANGE_TRACKING, START and STOP POPULATION and DROP; a right on the catalog
+// alone (REFERENCES, CONTROL, ALTER ANY FULLTEXT CATALOG) ran none, and none was
+// needed beside ALTER on the table.
 //
 // Define is the exception: CREATE FULLTEXT INDEX also needs REFERENCES on the
-// catalog it names (2026-10-08 probe), which the menu cannot ask before one
-// is chosen, so the item has the cascade's gate and the dialog's preflight
-// asks the rest (new_fulltext_index_dialog.go).
+// catalog it names, which the menu cannot ask before one is chosen, so the item
+// has the cascade's gate and the dialog's preflight asks the rest
+// (new_fulltext_index_dialog.go).
 func tableFullTextMenu(a *App, sc *db.ServerConn, node *explorerNode) controls.MenuItem {
 	op := func(label string, build func() fullTextIndexOp) controls.MenuItem {
 		return gate.ItemOn(controls.MenuItem{Label: label, Action: func() { a.runFullTextIndexOp(sc, node, build()) }},
@@ -122,10 +121,9 @@ func tableFullTextMenu(a *App, sc *db.ServerConn, node *explorerNode) controls.M
 // The context menus for this family's folders and leaves, looked up through
 // nodeMenus (explorer_loaders.go). Each New item is gated on CREATE FULLTEXT
 // CATALOG, the one right all three CREATEs check — it reads 1 under ALTER ANY
-// FULLTEXT CATALOG, ALTER/CONTROL on the database and db_ddladmin too
-// (2026-10-08 probe). Properties is not gated: its pages declare their own
-// rights and come up read-only without them; the Delete spliced in beside it
-// is gated (objectOpsMenuItems).
+// FULLTEXT CATALOG, ALTER/CONTROL on the database and db_ddladmin too. Properties
+// is not gated: its pages declare their own rights and come up read-only without
+// them; the Delete spliced in beside it is gated (objectOpsMenuItems).
 
 func fullTextCatalogsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return folderMenu(newQuery, refresh,

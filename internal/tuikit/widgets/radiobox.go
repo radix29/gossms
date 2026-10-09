@@ -17,14 +17,9 @@ type RadioBox struct {
 	focused  bool
 	disabled bool
 
-	// mouseDragging distinguishes a fresh Button1 press from a continued
-	// hold over the same option — mirrors Toolbar's/TreeView's/MenuBar's
-	// field of the same name and purpose. Without it, tcell's all-motion
-	// mouse tracking resends Buttons()==Button1 on every motion event
-	// while the button stays down, so a click that so much as twitches
-	// before release keeps reassigning the selection to whatever option
-	// the pointer drifts over instead of a single, physical-radio-button-
-	// style pick at press time.
+	// mouseDragging separates a fresh Button1 press from a resent hold (same field
+	// as Toolbar/TreeView/MenuBar): the selection is a single pick at press time,
+	// not reassigned to whatever option the pointer drifts over.
 	mouseDragging bool
 }
 
@@ -41,11 +36,10 @@ func (r *RadioBox) Label() string { return r.label }
 func (r *RadioBox) SetBounds(x, y int) { r.rect.X, r.rect.Y = x, y }
 func (r *RadioBox) Focus(v bool)       { r.focused = v }
 
-// SetEnabled toggles whether the selection can be moved. A disabled group
-// draws greyed out *and* refuses keys and clicks — see CheckBox.SetEnabled
-// for why it keeps its place in the caller's focus ring rather than vanishing
-// from it. SetSelected still works, so a page can pin the group to the one
-// option the server accepts and then switch it off.
+// SetEnabled toggles whether the selection can be moved. A disabled group draws
+// greyed and refuses keys and clicks, keeping its focus-ring place (see
+// CheckBox.SetEnabled). SetSelected still works, so a page can pin the group to
+// the one option the server accepts, then switch it off.
 func (r *RadioBox) SetEnabled(v bool) { r.disabled = !v }
 
 // Enabled reports whether the selection can be moved.

@@ -5,14 +5,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// menu.go wraps a menu item in the rule: the Enabled predicate it already had,
-// ANDed with the gate's answer, and a Note that says what is missing when the
-// item is withheld.
+// menu.go wraps a menu item in the rule: its Enabled predicate ANDed with the
+// gate's answer, and a Note saying what is missing when withheld.
 
 // Item returns item with its Enabled predicate extended to consult the
-// capability set, keeping any predicate it already had. The two are ANDed:
-// "no active query panel" and "no rights for this" are both reasons to
-// withhold, and neither should cancel the other out.
+// capability set, ANDed with any it had: either reason withholds.
 func Item(item controls.MenuItem, sc *db.ServerConn, dbName string, rights ...Right) controls.MenuItem {
 	return ItemOn(item, sc, dbName, "", "", rights...)
 }
@@ -23,12 +20,11 @@ func ItemOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object st
 	return ItemOnAll(item, sc, dbName, schema, object, rights)
 }
 
-// AllowsAllOn is AllowsOn for an action that needs a right from *each*
-// of groups: every group is any-of, as AllowsOn's one set is, and every
-// group must pass. It exists for the statement that checks two permissions and
-// is refused with either missing — DROP SECURITY POLICY, which needs ALTER ANY
-// SECURITY POLICY and ALTER on the policy's schema. Flattened into one any-of
-// set, either half alone offered a drop the server refuses.
+// AllowsAllOn is AllowsOn for an action needing a right from *each* of groups:
+// every group is any-of and every group must pass. For statements refused with
+// either permission missing: DROP SECURITY POLICY needs ALTER ANY SECURITY
+// POLICY and ALTER on the policy's schema. Flattened into one any-of set,
+// either half alone offered a drop the server refuses.
 //
 // An empty group, like an empty set, withholds nothing.
 func AllowsAllOn(sc *db.ServerConn, dbName, schema, object string, groups ...[]Right) bool {
@@ -40,11 +36,11 @@ func AllowsAllOn(sc *db.ServerConn, dbName, schema, object string, groups ...[]R
 	return true
 }
 
-// Missing is the right a withheld item's note names: the first right of
-// the first group that fails, or of the first group when none does. It is the
-// first *failing* group rather than the first group because that one may well
-// be held — naming ALTER ANY SECURITY POLICY to a principal who holds it and
-// lacks the schema half sends them after the wrong grant.
+// Missing is the right a withheld item's note names: the first right of the
+// first group that fails, or of the first group when none does. Failing, not
+// merely first: the first group may be held, and naming ALTER ANY SECURITY
+// POLICY to a principal who holds it and lacks the schema half sends them after
+// the wrong grant.
 func Missing(sc *db.ServerConn, dbName, schema, object string, groups ...[]Right) (Right, bool) {
 	var first Right
 	found := false
@@ -62,13 +58,12 @@ func Missing(sc *db.ServerConn, dbName, schema, object string, groups ...[]Right
 	return first, found
 }
 
-// NoteName is how a withheld item's note names one right. Bare for the
-// database- and server-wide rights, which is what the note has always said;
-// scoped for a right on one schema, securable or object, where "needs ALTER"
-// or "needs CONTROL" reads as the database-wide right — far wider than what is
-// missing. Move to Schema is the item this matters most on: its note is the
-// only one an object-scoped right leads, and "needs CONTROL" sent the reader
-// after CONTROL on the database when CONTROL on the one object is the grant.
+// NoteName is how a withheld item's note names one right: bare for database-
+// and server-wide rights; scoped for a right on one schema, securable or
+// object, where "needs CONTROL" would read as the far wider database-wide
+// right. Matters most for Move to Schema, the only note an object-scoped right
+// leads: "needs CONTROL" sent readers after CONTROL on the database when
+// CONTROL on the one object is the grant.
 func NoteName(r Right) string {
 	if r.Securable != "" || r.Schema || r.Object {
 		return r.nameOnly()
@@ -77,10 +72,9 @@ func NoteName(r Right) string {
 }
 
 // ItemOnAll is ItemOn for an action needing a right from each of groups — see
-// AllowsAllOn. ItemOn is its one-group case, so the note, the DENY reading and
-// the ANDing with the item's own predicate are the same code for both: nesting
-// two gateOns instead ANDs the predicates but keeps only the outer note, which
-// then names a right the principal may already hold.
+// AllowsAllOn. ItemOn is its one-group case, so the note, DENY reading and
+// predicate ANDing are shared: nesting two gateOns keeps only the outer note,
+// which may name a right the principal already holds.
 func ItemOnAll(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object string, groups ...[]Right) controls.MenuItem {
 	prev := item.Enabled
 	allowed := func() bool { return AllowsAllOn(sc, dbName, schema, object, groups...) }
@@ -91,28 +85,26 @@ func ItemOnAll(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object
 		rights = append(rights, g...)
 	}
 	if len(rights) > 0 {
-		// Shown only while the item is disabled, and only one right — the
-		// whole "Requires X (role) or Y or Z." sentence would double the width
-		// of every context menu it appears in.
+		// Shown only while disabled, and only one right: the whole "Requires
+		// X (role) or Y or Z." sentence would double every context menu's width.
 		r, _ := Missing(sc, dbName, schema, object, groups...)
 		item.Note = "needs " + NoteName(r)
-		// Unless a DENY on the object is what withheld it, and then naming a
-		// right sends the user after one they may already hold — the denial
-		// beats it. Read once here rather than in the predicate: the menu is
-		// rebuilt each time it opens, and Note is a string, not a callback.
+		// Unless a DENY on the object withheld it: naming a right would send
+		// the user after one they may hold, since the denial beats it. Read
+		// once here, not in the predicate: the menu is rebuilt on each open and
+		// Note is a string, not a callback.
 		if r, at, denied := DeniedOn(sc, dbName, schema, object, rights...); denied {
 			right, where := deniedPhrase(r, at)
 			item.Note = right + " denied on " + where
 		}
-		// And only when the rights are why it is disabled. An item its own
-		// predicate has already withheld — a failover offered on secondaries
-		// only — is grey for a reason this note does not describe, and naming
-		// a permission there sends the user after one they may already hold.
+		// And only when the rights are why it is disabled: an item its own
+		// predicate withheld (a failover offered on secondaries only) is grey
+		// for a reason this note doesn't describe.
 		//
-		// prev alone decides: NoteWhen is consulted only while the item is
-		// disabled (MenuItem.showsNote), and with prev passing that already
-		// means allowed() said no. Asking it again re-ran the whole gate on
-		// every draw of every withheld item.
+		// prev alone decides: NoteWhen is consulted only while disabled
+		// (MenuItem.showsNote), and with prev passing that means allowed() said
+		// no. Asking again re-ran the whole gate on every draw of every
+		// withheld item.
 		item.NoteWhen = func() bool { return prev == nil || prev() }
 	}
 	item.Enabled = func() bool {

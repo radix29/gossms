@@ -10,7 +10,7 @@ import (
 )
 
 // capabilityProbeTimeout bounds one capability probe (one round trip for the
-// server, two for a database). It's a liveness bound: the server probe runs
+// server, two for a database). It is a liveness bound; the server probe runs
 // inside ConnectContext.
 const capabilityProbeTimeout = 10 * time.Second
 
@@ -104,8 +104,8 @@ func (sc *ServerConn) probeDatabase(ctx context.Context, name string, gen uint64
 		sc.dbProbes.forget(name, p)
 		if err == nil && c != nil {
 			p.val = c
-			// A clear since the probe started means this answer may be stale;
-			// return it, but don't cache it past the Refresh that asked for a
+			// A clear since the probe started makes this answer possibly stale:
+			// return it, but do not cache it past the Refresh that asked for a
 			// re-read.
 			if sc.dbGen == gen {
 				if sc.dbCaps == nil {

@@ -10,16 +10,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// schemaPropPages builds the page set for Schema Properties: General
-// (read-only info plus an editable Owner for non-system schemas — SQL
-// Server has no RENAME SCHEMA facility, so unlike Table/Role/User
-// Properties the schema name itself is always read-only, not just for
-// built-ins), Permissions (schema-scoped GRANT/DENY, the schema analog of
-// Table Properties' Permissions page), and Extended Properties. Principal
-// pickers, permission-detail/effective-permissions modals, and the Drop
-// Schema prompt are folded into inline fields and the existing Script
-// Changes/SetMessage mechanisms. There are no Created/Modified rows:
-// sys.schemas has no create_date/modify_date columns.
+// schemaPropPages builds the page set for Schema Properties: General (read-only
+// info plus an editable Owner for non-system schemas; SQL Server has no RENAME
+// SCHEMA, so unlike Table/Role/User Properties the name itself is always
+// read-only), Permissions (schema-scoped GRANT/DENY, the analog of Table
+// Properties' Permissions page), and Extended Properties. Principal pickers,
+// permission-detail/effective-permissions modals, and the Drop Schema prompt are
+// folded into inline fields and the existing Script Changes/SetMessage
+// mechanisms. There are no Created/Modified rows: sys.schemas has no
+// create_date/modify_date columns.
 func schemaPropPages(sc *db.ServerConn, dbName, schemaName string) []propPage {
 	return []propPage{
 		withRequires(pageSchemaGeneral(sc, dbName, schemaName), dbName, gate.AlterAnySchema, gate.ControlDB),

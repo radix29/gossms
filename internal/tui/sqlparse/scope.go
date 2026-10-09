@@ -14,11 +14,10 @@ import "slices"
 //   - qualifier, hasQualifier: the identifier immediately before a '.' that
 //     itself immediately precedes prefix/the cursor, if any
 //
-// A keyword token touching the cursor counts as a prefix too: the word being
-// typed may only collide with a keyword by accident ("OR" on the way to
-// Orders, "sys.all" on the way to sys.all_objects), and anything else would
-// make a commit append instead of replace. Keyword tokens carry uppercased
-// text, fine since prefix matching is case-insensitive downstream.
+// A keyword token touching the cursor counts as a prefix too: the word may
+// collide with a keyword by accident ("OR" on the way to Orders, "sys.all" to
+// sys.all_objects), and otherwise a commit would append instead of replace.
+// Keyword tokens carry uppercased text; prefix matching is case-insensitive.
 func TokenContext(tokens []Token, upTo int) (qualifier, prefix string, replaceFrom int, hasQualifier bool) {
 	n := len(tokens)
 	if n == 0 {
@@ -47,12 +46,11 @@ func TokenContext(tokens []Token, upTo int) (qualifier, prefix string, replaceFr
 }
 
 // QualifierChain is TokenContext's qualifier with every part before it: the
-// dotted parts ahead of the word being typed (or of the cursor, right after a
-// dot), outermost first. "db.dbo.Or|" gives [db dbo], "db..|" gives [db ""]
-// (the default schema), "c.|" gives [c], and an unqualified word gives nil.
-// TokenContext's qualifier is the chain's last part when that part is an
-// identifier. A chain starting with an empty part ("x = ..a") names nothing and
-// gives nil too.
+// dotted parts ahead of the word being typed (or the cursor right after a dot),
+// outermost first. "db.dbo.Or|" gives [db dbo], "db..|" gives [db ""] (default
+// schema), "c.|" gives [c], an unqualified word nil. TokenContext's qualifier
+// is the chain's last part when an identifier. A chain starting with an empty
+// part ("x = ..a") names nothing and gives nil.
 func QualifierChain(tokens []Token, upTo int) []string {
 	n := len(tokens)
 	if n == 0 {
@@ -93,19 +91,19 @@ type FromRef struct {
 	Schema, Name, Alias string
 
 	// Database is the first part of a three-part name ("db.schema.t", or "db..t"
-	// with Schema empty for the default schema). Server is the first part of a
-	// four-part, linked-server name, which nothing resolves: its catalog is another
-	// instance's.
+	// with Schema empty for the default). Server is the first part of a
+	// four-part linked-server name, which nothing resolves (another instance's
+	// catalog).
 	Database, Server string
 
 	// Derived is the query behind "( ... ) [AS] alias", with Schema and Name
 	// empty. Only the tree parser below sets it; ParseFromScope never does.
 	Derived *Query
 
-	// Pivot is the PIVOT/UNPIVOT clause applied to this reference, reshaping what
-	// it puts in scope (see pivot.go). Alias is then the pivoted result's name; the
-	// source's own alias isn't addressable past the clause and is not kept. Only
-	// the tree parser sets it.
+	// Pivot is the PIVOT/UNPIVOT clause applied to this reference (see
+	// pivot.go). Alias is then the pivoted result's name; the source's own
+	// alias isn't addressable past the clause and is not kept. Only the tree
+	// parser sets it.
 	Pivot *Pivot
 
 	// Rowset is set when Name is a rowset function — OPENJSON, OPENROWSET,
@@ -114,10 +112,9 @@ type FromRef struct {
 	Rowset *Rowset
 
 	// Call is set when the name is followed by a parenthesised group: a
-	// table-valued function's argument list, or a legacy "t (NOLOCK)" hint. The
-	// parser can't tell the two apart; the catalog can, since a table and a
-	// function never share a name in one schema. A ref without it is never a
-	// function (one can't be named without its argument list). Only the tree
+	// table-valued function's arguments, or a "t (NOLOCK)" hint. The parser
+	// can't tell them apart; the catalog can (a table and function never share
+	// a name in a schema). A ref without it is never a function. Only the tree
 	// parser sets it.
 	Call bool
 }
@@ -168,8 +165,8 @@ func ParseFromScope(tokens []Token) []FromRef {
 			ref.Alias, j = aliasAt(tokens, j)
 			refs = append(refs, ref)
 			i = j - 1
-			// Only a comma carries the list on ("FROM a, b"); any other word after a
-			// reference and its alias is a clause ("FOR JSON PATH", "OUTPUT
+			// Only a comma carries the list on ("FROM a, b"); any other word
+			// after a reference and alias is a clause ("FOR JSON PATH", "OUTPUT
 			// deleted.id"), not another table.
 			expectRef = j < len(tokens) && tokens[j].Kind == TokenComma
 		}

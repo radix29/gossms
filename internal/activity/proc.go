@@ -33,12 +33,11 @@ func (l ProcLocation) Database() string {
 // Proc is a helper stored procedure backing an Activity Monitor tab, named
 // differently in each database it can live in.
 //
-// In master it keeps its sp_ name, the name a hand-installed copy has. In
-// tempdb it has no sp_ prefix: an sp_ name falls back to master when the
-// current database lacks it, so in tempdb CREATE OR ALTER dbo.sp_block alters
-// master's copy and fails with "Invalid object name", and DROP PROCEDURE IF
-// EXISTS deletes master's copy (both verified live). Without the prefix, the
-// name resolves in tempdb like any object.
+// In master it keeps its sp_ name, as a hand-installed copy has. In tempdb it
+// has no sp_ prefix: an sp_ name falls back to master when the current
+// database lacks it, so in tempdb CREATE OR ALTER dbo.sp_block alters master's
+// copy and fails with "Invalid object name", and DROP PROCEDURE IF EXISTS
+// deletes master's copy (verified live).
 type Proc struct {
 	// MasterName is the unqualified name in master, sp_-prefixed.
 	MasterName string
@@ -110,8 +109,8 @@ func (p *Proc) Find(ctx context.Context, db *sql.DB) (ProcLocation, error) {
 
 // Install creates or replaces the procedure at l (not ProcNone). The script is
 // a parameter to the three-part db..sp_executesql, which runs it in the target
-// database without USE — the pooled connection's database must be left
-// unchanged (verified live) — and avoids quoting the body.
+// database without USE (the pooled connection's database must stay unchanged;
+// verified live) and avoids quoting the body.
 func (p *Proc) Install(ctx context.Context, db *sql.DB, l ProcLocation) error {
 	database := l.Database()
 	if database == "" {

@@ -7,23 +7,20 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// Header is the identification strip both dashboards carry: which instance
-// is being watched, where it runs, and which moment is on screen.
+// Header is the identification strip both dashboards carry: the instance
+// watched, where it runs, and the moment on screen.
 type Header struct {
 	Instance   string
 	Version    string
 	Host       string
 	SampleTime string
-	// Resolution names the sampling interval ("2 sec"), shown beside the
-	// sample time so a reading is never ambiguous about what one column
-	// covers.
+	// Resolution names the sampling interval ("2 sec"), shown beside the sample
+	// time so it's clear what one column covers.
 	Resolution string
-	// Status is a non-fatal message from the collector — a failed tick, a
-	// missing permission — shown in the header rather than replacing the
-	// dashboard, so previously collected data stays readable.
+	// Status is a non-fatal collector message (failed tick, missing permission)
+	// shown in the header so collected data stays readable.
 	Status string
-	// Paused marks the collector as stopped, so the header can say the
-	// numbers are retained rather than live.
+	// Paused marks the collector stopped: the numbers are retained, not live.
 	Paused bool
 }
 
@@ -35,14 +32,12 @@ type Header struct {
 type HistoryView struct {
 	Header Header
 
-	// Interval is how much time one plotted bucket covers, which is what the
-	// time scale under each chart counts back in. Zero leaves the charts with
-	// the sample time alone and no scale.
+	// Interval is the time one bucket covers, which the time scale under each
+	// chart counts back in. Zero leaves the sample time alone, no scale.
 	Interval time.Duration
 
-	// Times are the clock times of the plotted buckets, oldest first and
-	// aligned with every series' values. They label the sample a tooltip
-	// reports; an empty or short slice simply leaves that line off.
+	// Times are the buckets' clock times, oldest first, aligned with every
+	// series. They label a tooltip's sample; an empty or short slice omits it.
 	Times []string
 
 	// SQL SERVER ACTIVITY section.
@@ -51,10 +46,10 @@ type HistoryView struct {
 	Backup       []charts.Series // backup MB/sec
 	ActivityKPIs []charts.KPI    // readouts along the section bar
 
-	// SQL SERVER WAITS section, split half and half between host CPU usage and the
-	// wait categories. CPU carries SQL Server and other processes only, stacked
-	// against a fixed 0-100 axis; idle is what they leave under it and is
-	// deliberately not a series (see activity.CPUUsage).
+	// SQL SERVER WAITS section, split half and half between host CPU usage and
+	// the wait categories. CPU carries SQL Server and other processes only,
+	// stacked on a fixed 0-100 axis; idle is the remainder, deliberately not a
+	// series (see activity.CPUUsage).
 	CPU       []charts.Series
 	Waits     []charts.Series // wait categories — stacked
 	WaitsKPIs []charts.KPI
@@ -76,9 +71,8 @@ type HistoryView struct {
 }
 
 // BarPanel is one group of bars plus the range they are read against. The zero
-// Scale auto-scales to the largest bar, meaningful only when the bars are
-// comparable to each other: a panel holding a single bar needs an explicit
-// range, or that bar fills the panel at every value it can have.
+// Scale auto-scales to the largest bar, meaningful only for comparable bars: a
+// single-bar panel needs an explicit range, or the bar fills it at any value.
 type BarPanel struct {
 	Bars  []charts.Bar
 	Scale charts.Scale
@@ -102,8 +96,7 @@ type SampleView struct {
 	Waits         BarPanel
 	WaitLegend    []charts.LegendItem
 	// LoadFactor is one bar per visible online scheduler, in cpu_id order.
-	// The panel is sized from the number of bars, so an empty slice leaves
-	// the waits chart the whole section.
+	// The panel is sized from the bar count, so empty leaves waits the section.
 	LoadFactor BarPanel
 
 	// SQL SERVER MEMORY section.
@@ -120,10 +113,9 @@ type SampleView struct {
 	DatabaseIO      BarPanel // per file/database read and write latency
 }
 
-// TempDBView is everything the TempDB dashboard draws. It mixes history and
-// current-sample panels: space and activity are levels worth watching move,
-// while the file list and session grid mean something only for the newest
-// reading.
+// TempDBView is everything the TempDB dashboard draws. It mixes history panels
+// (space and activity: levels worth watching move) and current-sample panels
+// (file list and session grid: meaningful only for the newest reading).
 //
 // Every field may be empty, and an empty one blanks only its own panel.
 type TempDBView struct {
@@ -159,9 +151,8 @@ type TempDBView struct {
 	Sessions []SessionRow
 }
 
-// SessionRow is one line of the session-usage grid, pre-formatted: the
-// dashboard package draws text, and deciding how many decimals a megabyte
-// gets is the caller's business.
+// SessionRow is one pre-formatted line of the session-usage grid: this package
+// draws text; number formatting is the caller's.
 type SessionRow struct {
 	Session     string
 	Login       string
@@ -173,23 +164,20 @@ type SessionRow struct {
 }
 
 // ChartHit is where one History chart's plot area landed and what it plotted,
-// returned by DrawHistory so a click can be turned back into the sample under
-// it. Series is the chart's own slice: read it, don't hold it past the next
-// draw.
+// returned by DrawHistory so a click maps back to a sample. Series is the
+// chart's own slice: don't hold it past the next draw.
 type ChartHit struct {
 	Title  string
 	Plot   core.Rect
 	Series []charts.Series
 
-	// TimeRow is the chart's time-scale row, directly under Plot, zero-sized
-	// on a chart too short to carry one. It is where a caller marking the
-	// pinned column names the moment it covers.
+	// TimeRow is the time-scale row directly under Plot, zero-sized on a chart
+	// too short for one; where a caller names the pinned column's moment.
 	TimeRow core.Rect
 
-	// Snapshot marks a chart of the current sample rather than a history: its
-	// series carry one value each and the whole plot describes that one instant, so
-	// every column resolves to index 0. Otherwise a one-value chart would answer
-	// only on its rightmost column, where a history's newest bucket lands.
+	// Snapshot marks a chart of the current sample, not a history: each series
+	// has one value describing one instant, so every column resolves to index
+	// 0 (else it would answer only on the rightmost column).
 	Snapshot bool
 }
 
@@ -206,10 +194,8 @@ func (h ChartHit) Bucket(x int) int {
 }
 
 // Column is where bucket idx is drawn now, the inverse of Bucket, for a caller
-// holding a bucket across redraws. It returns -1 once newer samples have pushed
-// that bucket off the plot's left edge, when a readout pinned to it has nothing
-// left to point at. A snapshot chart plots one instant and nothing drifts, so
-// it always answers -1.
+// holding a bucket across redraws. It returns -1 once newer samples push the
+// bucket off the left edge. A snapshot chart always answers -1 (nothing drifts).
 func (h ChartHit) Column(idx int) int {
 	if h.Snapshot {
 		return -1

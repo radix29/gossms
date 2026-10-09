@@ -14,24 +14,22 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// new_statistics_dialog.go is the New Statistics creation dialog (a table's
-// Statistics folder, "New Statistics..."). Built on newObjectDialog like
-// every other create dialog; what it adds is the table it creates the
-// statistic on, the way New Column Master Key adds a database.
+// new_statistics_dialog.go is the New Statistics dialog (a table's Statistics
+// folder), built on newObjectDialog; it adds the table the statistic is created
+// on, as New Column Master Key adds a database.
 //
 // The column list is ordered on purpose: the leading column is the one the
-// histogram is built on, and only that one. The rest contribute to the
-// density vector, so a statistic on (b, a) answers a different set of
-// estimates than one on (a, b) — hence the grid with Move Up/Move Down
-// rather than a set of checkboxes.
+// histogram is built on, and only that one. The rest contribute to the density
+// vector, so a statistic on (b, a) answers different estimates than one on
+// (a, b); hence a grid with Move Up/Move Down rather than checkboxes.
 
-// nstatSamplingItems is the sampling choice, in the order the request reads
-// it back: index 0 leaves the server to pick, 1 is a full scan, 2 takes the
-// percentage from the row below.
+// nstatSamplingItems is the sampling choice in the order the request reads it
+// back: 0 leaves the server to pick, 1 is a full scan, 2 takes the percentage
+// from the row below.
 var nstatSamplingItems = []string{"Server default", "Full scan", "Sample percent"}
 
-// nstatPrefetch is the one fetch this dialog needs: the table's columns for
-// the picker, and its existing statistic names for the uniqueness preflight.
+// nstatPrefetch is the one fetch this dialog needs: the table's columns for the
+// picker, and its existing statistic names for the uniqueness preflight.
 type nstatPrefetch struct {
 	columns       []*gosmo.Column
 	existingNames *nameSet
@@ -75,8 +73,8 @@ func NewNewStatisticsDialog(app *App) *NewStatisticsDialog {
 func (d *NewStatisticsDialog) show(sc *db.ServerConn, node *explorerNode) {
 	d.node = node
 	d.dbName, d.schema, d.table = node.data.DBName, node.data.Schema, node.data.Name
-	// Script Changes opens its query window in the database the statement
-	// runs in, not the connection's default.
+	// Script Changes opens its query window in the database the statement runs in,
+	// not the connection's default.
 	d.scriptDatabase = d.dbName
 	d.columns = nil
 	d.newObjectDialog.show(sc)
@@ -130,8 +128,8 @@ func (d *NewStatisticsDialog) buildPages(pf *nstatPrefetch) {
 	)
 
 	d.forms[0] = propsheet.NewForm(rows...)
-	// The request is built by preflight, on the UI goroutine, and captured by
-	// the step, which runs on the pipeline's.
+	// The request is built by preflight on the UI goroutine and captured by the
+	// step, which runs on the pipeline's.
 	var req gosmo.CreateStatisticRequest
 	d.applyFns[0] = func(ctx context.Context) error { return d.createStatistic(ctx, req) }
 	d.objectName = func() string { return strings.TrimSpace(d.name.Value()) }
@@ -180,14 +178,14 @@ func (d *NewStatisticsDialog) request() gosmo.CreateStatisticRequest {
 	return req
 }
 
-// orderedColumnRows is an ordered column picker: a grid of what has been
-// chosen, in order, plus Add/Remove/Move Up/Move Down over the available
-// names. list is the model the buttons edit — the caller's own slice, so it
-// reads the result back without a callback.
+// orderedColumnRows is an ordered column picker: a grid of what has been chosen,
+// in order, plus Add/Remove/Move Up/Move Down over the available names. list is
+// the model the buttons edit (the caller's own slice, so it reads the result back
+// without a callback).
 //
-// The order is the point. A statistics object's leading column is the only
-// one that gets a histogram, so a picker that lost the order would quietly
-// build a different statistic from the one the user described.
+// The order is the point: a statistics object's leading column is the only one
+// that gets a histogram, so a picker that lost the order would quietly build a
+// different statistic from the one described.
 func orderedColumnRows(list *[]string, available []string, section, emptyNote string) []propsheet.Row {
 	headers := []string{"Ord", "Column name"}
 	rowsFor := func() [][]string {
@@ -245,8 +243,8 @@ func orderedColumnRows(list *[]string, available []string, section, emptyNote st
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 6)
-	// The grid mirrors a list the buttons own, so its dirty state is that
-	// list's and reverting restores the list rather than the rows.
+	// The grid mirrors a list the buttons own, so its dirty state is that list's and
+	// reverting restores the list rather than the rows.
 	gridRow.DirtyFn = func() bool { return len(*list) > 0 }
 	gridRow.RevertFn = func() {
 		*list = nil

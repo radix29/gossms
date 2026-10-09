@@ -28,9 +28,8 @@ func (s *TempDBStore) Append(sample TempDBSample) {
 }
 
 // TempDBCollector ticks tempdb readings against one connection. Separate from
-// Collector because it runs at a slower rate and its object enumeration touches
-// tempdb metadata, which shouldn't ride a 2-second tick. Shares collector's
-// ticking half.
+// Collector: it runs slower, and its object enumeration touches tempdb
+// metadata, which shouldn't ride a 2-second tick.
 type TempDBCollector struct {
 	collector[TempDBSample, tempdbSnapshot]
 }

@@ -48,8 +48,8 @@ func (d *RestoreDialog) Draw(s tcell.Screen) {
 	d.cbVerify.Draw(s)
 	d.cbClose.Draw(s)
 
-	// Two lines: the form's last row (cbClose) leaves exactly that much room
-	// above the separator.
+	// Two lines: the form's last row (cbClose) leaves exactly that much room above the
+	// separator.
 	d.drawStatus(s, 2)
 	d.DrawSeparator(s)
 	d.DrawButtons(s, restoreFormButtons, d.btnFocus)
@@ -94,9 +94,9 @@ func (d *RestoreDialog) layoutForm() {
 	d.cbClose.SetBounds(lx, row)
 }
 
-// drawStatus renders the status line, growing *upward* from the row above
-// the separator so a wrapped server error uses the rows the mode leaves
-// free above it (maxLines) instead of being cut off at one line.
+// drawStatus renders the status line, growing *upward* from the row above the
+// separator so a wrapped server error uses the rows the mode leaves free above it
+// (maxLines) instead of being cut off at one line.
 func (d *RestoreDialog) drawStatus(s tcell.Screen, maxLines int) {
 	p := theme.Active()
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
@@ -112,8 +112,8 @@ func (d *RestoreDialog) drawStatus(s tcell.Screen, maxLines int) {
 	}
 }
 
-// drawInspect renders the Backup Information view: the selected backup
-// set's header fields plus the files it contains.
+// drawInspect renders the Backup Information view: the selected backup set's
+// header fields plus the files it contains.
 func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 	p := theme.Active()
 	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)

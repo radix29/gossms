@@ -13,11 +13,10 @@ import (
 	"github.com/radix29/gossms/internal/version"
 )
 
-// buildMenus assembles the top-level application menu bar (File, Edit,
-// View, Query, Tools, Help). This is the single place the menu structure
-// is defined; MenuBar itself (in tuikit/controls) knows nothing about
-// gossms — it only renders and navigates whatever []controls.Menu it's
-// given here.
+// buildMenus assembles the top-level menu bar (File, Edit, View, Query, Tools,
+// Help). It is the single place the structure is defined; MenuBar
+// (tuikit/controls) knows nothing about gossms and just renders and navigates
+// what it is given.
 func (a *App) buildMenus() []controls.Menu {
 	return []controls.Menu{
 		{Label: "File", Items: []controls.MenuItem{
@@ -168,10 +167,9 @@ func (a *App) buildMenus() []controls.Menu {
 	}
 }
 
-// actualExecutionPlanMenuLabel mirrors actualPlanToggleIcon's state text
-// for the Query menu item — MenuItem has no separate "checked" visual, so
-// state is folded into the label itself instead of adding one (the toolbar
-// button, always visible in the same row, is the primary indicator).
+// actualExecutionPlanMenuLabel mirrors actualPlanToggleIcon's state text for
+// the Query menu item. MenuItem has no "checked" visual, so state is folded
+// into the label (the always-visible toolbar button is the primary indicator).
 func actualExecutionPlanMenuLabel(on bool) string {
 	if on {
 		return "Actual Execution Plan (ON)"
@@ -188,9 +186,8 @@ func liveQueryStatisticsMenuLabel(on bool) string {
 	return "Live Query Statistics (OFF)"
 }
 
-// outputColumnMetaMenuLabel folds the "Show Output Column Metadata" toggle
-// state into its Query menu label, for the same reason as
-// actualExecutionPlanMenuLabel.
+// outputColumnMetaMenuLabel folds the "Show Output Column Metadata" state into
+// its Query menu label, as actualExecutionPlanMenuLabel does.
 func outputColumnMetaMenuLabel(on bool) string {
 	if on {
 		return "Output Column Metadata (ON)"
@@ -207,22 +204,21 @@ func wordWrapMenuLabel(on bool) string {
 	return "Word Wrap (OFF)"
 }
 
-// editorAction runs fn against the active query panel's editor, if any —
-// used by the menu entries that are meaningful only for the SQL editor
-// (Duplicate/Delete Line, Move Line, Comment/Uncomment, Uppercase/Lowercase,
-// and Query > Execute at Cursor), unlike Cut/Copy/Paste/Select All, which also
-// work on dialog input fields via activeClipboardTarget.
+// editorAction runs fn against the active query panel's editor, if any. For
+// entries meaningful only for the SQL editor (Duplicate/Delete Line, Move Line,
+// Comment/Uncomment, Uppercase/Lowercase, Execute at Cursor), unlike
+// Cut/Copy/Paste/Select All, which also work on dialog input fields via
+// activeClipboardTarget.
 func (a *App) editorAction(fn func(e *controls.Editor)) {
 	if qp := a.activeQueryPanel(); qp != nil {
 		fn(qp.editor)
 	}
 }
 
-// editorUndo and editorRedo act on whichever *controls.Editor Cut/Copy/
-// Paste would currently act on (the query editor, or a dialog's
-// connection-string Editor field) rather than going through editorAction,
-// which is query-editor-only. InputField keeps no undo
-// history, so a focused InputField simply has no effect here.
+// editorUndo and editorRedo act on whichever *controls.Editor Cut/Copy/Paste
+// would act on (the query editor, or a dialog's connection-string Editor)
+// rather than going through editorAction, which is query-editor-only.
+// InputField keeps no undo history, so a focused one has no effect here.
 func (a *App) editorUndo() {
 	if e, ok := a.activeClipboardTarget().(*controls.Editor); ok {
 		e.Undo()
@@ -235,12 +231,10 @@ func (a *App) editorRedo() {
 	}
 }
 
-// showAbout displays the About goSSMS properties dialog. gosmo's own
-// Commit/Built rows are included only when gosmo actually recorded them
-// for this binary — see gosmo/version's doc comment: a plain semver
-// dependency version or a local `replace ... => ../gosmo` dev checkout
-// carries no decodable commit info, so those stay omitted rather than
-// showing a bare "unknown".
+// showAbout displays the About goSSMS properties dialog. gosmo's Commit/Built
+// rows appear only when gosmo recorded them for this binary (gosmo/version): a
+// plain semver dependency or a local `replace ... => ../gosmo` checkout carries
+// no decodable commit info, so they stay omitted rather than show "unknown".
 func (a *App) showAbout() {
 	rows := []PropertyRow{
 		PropertySection("Application"),
@@ -274,17 +268,16 @@ func (a *App) showAbout() {
 		PropertyRow{Key: "TUI Library", Value: "internal/tuikit (embedded)"},
 		PropertyRow{Key: "TUI Backend", Value: "github.com/gdamore/tcell/v3"},
 
-		// The Activity Monitor's Sessions tab installs and runs somebody
-		// else's GPL-3.0 procedure, so it is listed as a component like any
-		// other bundled dependency. Author and licence are deliberately not
-		// repeated here: whoIsActiveCredit draws both on the Sessions tab
-		// itself, and the embedded whoisactive.sql carries the upstream
-		// copyright header alongside LICENSE.sp_whoisactive. Dropping either
-		// of those is what would cost the attribution — not this list.
+		// The Activity Monitor's Sessions tab installs and runs somebody else's
+		// GPL-3.0 procedure, so it is listed as a bundled component. Author and licence
+		// are deliberately not repeated here: whoIsActiveCredit draws both on the
+		// Sessions tab and the embedded whoisactive.sql carries the upstream copyright
+		// header alongside LICENSE.sp_whoisactive. Dropping either would cost the
+		// attribution, not this list.
 		PropertyRow{Key: "Sessions Procedure", Value: "sp_WhoIsActive " + activity.WhoIsActiveVersion()},
 		PropertyRow{Key: "Sessions Procedure Source", Value: activity.WhoIsActiveRepo},
 	)
-	// Sized to the whole list so the About box doesn't open scrolled on a
-	// normal terminal; recentre clamps it on a small one.
+	// Sized to the whole list so the box doesn't open scrolled on a normal
+	// terminal; recentre clamps it on a small one.
 	a.propsDialog.ShowGenericPropertiesSized("About goSSMS", rows, 82, len(rows)+7)
 }

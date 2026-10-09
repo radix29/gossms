@@ -150,9 +150,9 @@ func loadBrokerPrioritiesChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 // transfer. There are no renames in this subtree: no sp_rename class exists for
 // any of the seven.
 //
-// There is no Enable/Disable item for a queue, deliberately: a queue's status
-// is a row on its Properties page, one place rather than two. A plan guide has
-// the item because it has no other page that writes.
+// There is no Enable/Disable item for a queue, deliberately: a queue's status is a
+// row on its Properties page, one place rather than two. A plan guide has the item
+// because it has no other page that writes.
 
 func messageTypeMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {

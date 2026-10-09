@@ -12,11 +12,10 @@ import (
 
 // recording is a Live Query Statistics run captured from a real server: the
 // in-flight plan (sys.dm_exec_query_statistics_xml), the
-// sys.dm_exec_query_profiles rows read every IntervalMS while it ran, and the
-// actual plan it finished with. testdata/live_crossjoin.json is a DOP-4 cross
-// join of a 6000-row #temp table with itself, recorded on win10cli (SQL
-// Server 2025) on 2026-10-06; its Compute Scalars never appear in the DMV, so
-// it shows the "not reported" tiles too.
+// sys.dm_exec_query_profiles rows read every IntervalMS, and the final actual
+// plan. testdata/live_crossjoin.json is a DOP-4 cross join of a 6000-row #temp
+// table with itself (SQL Server 2025); its Compute Scalars never appear in the
+// DMV, so it shows the "not reported" tiles too.
 type recording struct {
 	Query      string                  `json:"query"`
 	IntervalMS int                     `json:"interval_ms"`
@@ -59,9 +58,8 @@ func (rp *replay) restart(v *planview.PlanView) {
 	rp.step(v)
 }
 
-// step shows the next snapshot — after the last, the actual plan, as the
-// query panel does when the batch ends — and reports whether anything
-// changed.
+// step shows the next snapshot (after the last, the actual plan, as the query
+// panel does) and reports whether anything changed.
 func (rp *replay) step(v *planview.PlanView) bool {
 	switch {
 	case rp.paused || rp.next > len(rp.rec.Snapshots):

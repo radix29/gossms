@@ -9,22 +9,22 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// external_resource_props.go is the read-only Properties for the three
-// External Resources families: external data sources, external file formats
-// and external libraries.
+// external_resource_props.go is the read-only Properties for the three External
+// Resources families: external data sources, external file formats and external
+// libraries.
 //
-// None of the three writes. CREATE EXTERNAL DATA SOURCE and CREATE EXTERNAL
-// FILE FORMAT have no ALTER at all on any supported major, and CREATE
-// EXTERNAL LIBRARY's ALTER replaces the package *content* — an R or Python
-// binary a form cannot supply, the same wall assembly_props.go hits. All
-// pages here are named in prop_page_requires_test.go's pagesThatOnlyRead.
+// None of the three writes. CREATE EXTERNAL DATA SOURCE and CREATE EXTERNAL FILE
+// FORMAT have no ALTER at all on any supported major, and CREATE EXTERNAL
+// LIBRARY's ALTER replaces the package *content* — an R or Python binary a form
+// cannot supply, the same wall assembly_props.go hits. All pages here are named in
+// prop_page_requires_test.go's pagesThatOnlyRead.
 //
-// Several fields below arrived in SQL Server 2019 and are simply absent from
-// the catalog on 13 and 14, where gosmo reads them as empty or zero rather
-// than failing — the pages say so rather than showing a blank that reads as
-// an unset option. That gating was settled by reading the real catalog on 13,
-// 14 and 17 rather than the documentation, which is wrong for first_row (see
-// the note on the Parsing section below).
+// Several fields below arrived in SQL Server 2019 and are absent from the catalog
+// on 13 and 14, where gosmo reads them as empty or zero rather than failing — the
+// pages say so rather than showing a blank that reads as an unset option. That
+// gating was settled by reading the real catalog on 13, 14 and 17 rather than the
+// documentation, which is wrong for first_row (see the note on the Parsing
+// section below).
 
 func findExternalDataSource(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ExternalDataSource, error) {
 	return inDB(ctx, sc, dbName, name, (*gosmo.Database).ExternalDataSourceByName)

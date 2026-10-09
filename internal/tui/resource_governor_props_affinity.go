@@ -17,19 +17,18 @@ import (
 //
 // # Processor group 0 only
 //
-// The catalog stores affinity as a mask per processor group and the DDL
-// takes ids; in group 0 bit n is id n, beyond it the ids depend on each
-// group's actual size (gosmo's scripter_resource_governor.go). So only
-// group 0's schedulers are offered, and a pool whose stored affinity reaches
-// past them — another group, or an id the instance no longer lists — is
-// shown and not edited: ticking what the grid can show would silently drop
-// the rest on Apply.
+// The catalog stores affinity as a mask per processor group and the DDL takes
+// ids; in group 0 bit n is id n, beyond it the ids depend on each group's actual
+// size (gosmo's scripter_resource_governor.go). So only group 0's schedulers are
+// offered, and a pool whose stored affinity reaches past them (another group, or
+// an id the instance no longer lists) is shown and not edited: ticking what the
+// grid can show would silently drop the rest on Apply.
 //
 // # No NUMA node picker
 //
-// AFFINITY NUMANODE is stored as the node's schedulers, so it would read
-// back as scheduler ticks anyway. The grid's NUMA node column is how a node
-// is chosen: tick its schedulers.
+// AFFINITY NUMANODE is stored as the node's schedulers, so it would read back as
+// scheduler ticks anyway. The grid's NUMA node column is how a node is chosen:
+// tick its schedulers.
 
 // rgAffinity is a pool's affinity as the page edits it: Automatic, or the ids
 // it may run on, sorted.
@@ -111,8 +110,8 @@ func rgSchedulerTargets(scheds []gosmo.Scheduler) []rgAffinityTarget {
 	return out
 }
 
-// rgCPUTargets are an external pool's: group 0's CPUs, each once — a CPU
-// hosts at most one visible scheduler, but nothing promises it.
+// rgCPUTargets are an external pool's: group 0's CPUs, each once (a CPU hosts at
+// most one visible scheduler, but nothing promises it).
 func rgCPUTargets(scheds []gosmo.Scheduler) []rgAffinityTarget {
 	var out []rgAffinityTarget
 	for _, s := range scheds {
@@ -124,9 +123,9 @@ func rgCPUTargets(scheds []gosmo.Scheduler) []rgAffinityTarget {
 	return out
 }
 
-// rgAffinityEditor is the Automatic box and the grid, shared by every pool on
-// the page the way the limit rows are: show loads the selected pool into
-// them, commit folds them back.
+// rgAffinityEditor is the Automatic box and the grid, shared by every pool on the
+// page as the limit rows are: show loads the selected pool into them, commit folds
+// them back.
 type rgAffinityEditor struct {
 	word    string // "scheduler" or "CPU", as a label says it
 	targets []rgAffinityTarget
@@ -163,7 +162,7 @@ func (a *rgAffinityEditor) rows() []propsheet.Row {
 	return rows
 }
 
-// fix marks a pool whose stored affinity the grid cannot show — see the file
+// fix marks a pool whose stored affinity the grid cannot show; see the file
 // comment.
 func (a *rgAffinityEditor) fix(e *rgIntEdit) {
 	if e.affFixed || e.origAff.auto || a.err != nil {

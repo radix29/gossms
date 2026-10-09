@@ -11,12 +11,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// buildFileSpec builds a gosmo.DatabaseFileSpec from a Data/Log file
-// section's four rows, or nil if every one of them was left blank — the
-// server's own bare CREATE DATABASE default for that file (a single file
-// at the server's default path/size). A field left blank when at least
-// one sibling field was set falls back to defaultName/defaultDir+ext, the
-// same identity SQL Server itself would have chosen.
+// buildFileSpec builds a gosmo.DatabaseFileSpec from a Data/Log file section's
+// four rows, or nil if all were left blank: the server's bare CREATE DATABASE
+// default for that file (one file at the default path/size). A blank field when
+// a sibling is set falls back to defaultName/defaultDir+ext, the identity SQL
+// Server would have chosen.
 func buildFileSpec(nameRow, pathRow *propsheet.TextRow, sizeRow, growthRow *propsheet.TextRow, defaultName, defaultDir, ext string) *gosmo.DatabaseFileSpec {
 	name := strings.TrimSpace(nameRow.Value())
 	path := strings.TrimSpace(pathRow.Value())
@@ -34,13 +33,11 @@ func buildFileSpec(nameRow, pathRow *propsheet.TextRow, sizeRow, growthRow *prop
 	return &gosmo.DatabaseFileSpec{Name: name, Path: path, SizeKB: sizeMB * 1024, GrowthKB: growthMB * 1024}
 }
 
-// buildNewDatabaseGeneralPage builds the General page: identity (name,
-// owner, collation), maintenance (recovery model, compatibility level —
-// seeded from model's current settings, matching a real bare CREATE
-// DATABASE's own inheritance), and the initial data/log file. It returns
-// the Name field alongside the form/apply so the dialog can read it back
-// for the Options/Filegroups pages' own dbName lookups and the
-// name-uniqueness preflight check.
+// buildNewDatabaseGeneralPage builds the General page: identity (name, owner,
+// collation), maintenance (recovery model, compatibility level, seeded from
+// model as a bare CREATE DATABASE inherits), and the initial data/log file. It
+// returns the Name field alongside form/apply so the dialog can read it back for
+// the Options/Filegroups pages' dbName lookups and the uniqueness preflight.
 func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet.Form, propApply, *propsheet.TextRow, func() string) {
 	nameField := propsheet.Text("Database name", "", 30)
 	ownerRow := propsheet.Select("Owner", pf.loginNames, indexOf(pf.loginNames, pf.defaultOwner))
@@ -61,14 +58,13 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 	logSizeField := propsheet.Int("Initial size", 0, 0, 16777216, "MB")
 	logGrowthField := propsheet.Int("Growth", 0, 0, 2097151, "MB")
 
-	// An Azure edition rejects the file clauses outright — Msg 41918,
-	// "Specifying files and filegroups in CREATE DATABASE is not supported" —
-	// and answers a follow-on SET RECOVERY with Msg 5008, user databases
-	// being FULL only. CREATE DATABASE itself works there as long as those
-	// clauses are absent, which is exactly what a blank file section emits
-	// (buildFileSpec returns nil), so the rows are made read-only rather than
-	// the dialog withheld. Read-only also keeps Dirty() false on the recovery
-	// row, so apply below cannot emit the statement either.
+	// An Azure edition rejects the file clauses outright (Msg 41918, "Specifying
+	// files and filegroups in CREATE DATABASE is not supported") and answers a
+	// follow-on SET RECOVERY with Msg 5008, user databases being FULL only. CREATE
+	// DATABASE works there as long as those clauses are absent, which is what a
+	// blank file section emits (buildFileSpec returns nil), so the rows are made
+	// read-only rather than the dialog withheld. Read-only also keeps Dirty() false
+	// on the recovery row, so apply cannot emit the statement either.
 	fileNote := "Leave a file's fields blank to use the server default (logical name/path derived from the database name, server-default size and growth)."
 	if serverIsAzure(sc) {
 		for _, r := range []*propsheet.TextRow{
@@ -102,11 +98,10 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 			PrimaryFile: buildFileSpec(dataNameField, dataPathField, dataSizeField, dataGrowthField, name, pf.defaultDataPath, ".mdf"),
 			LogFile:     buildFileSpec(logNameField, logPathField, logSizeField, logGrowthField, name+"_log", pf.defaultLogPath, ".ldf"),
 		}
-		// Recovery model/compatibility level are only set explicitly when
-		// the user chose something other than what a bare CREATE DATABASE
-		// would already inherit from model — matching every other row on
-		// this dialog's Dirty()-gated apply, and keeping Script Changes free
-		// of no-op ALTER statements for untouched fields.
+		// Recovery model and compatibility level are set explicitly only when the user
+		// chose something other than what a bare CREATE DATABASE inherits from model,
+		// as with every Dirty()-gated row here; this keeps Script Changes free of no-op
+		// ALTERs.
 		if recoveryRow.Dirty() {
 			opts.RecoveryModel = gosmo.RecoveryModel(recoveryItems[recoveryRow.Selected()])
 		}
@@ -124,8 +119,8 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 		}
 		return nil
 	}
-	// collation is the one the database will be created with: the typed
-	// one, else the server's, which CREATE DATABASE without COLLATE takes.
+	// collation is the one the database will be created with: the typed one, else
+	// the server's, which CREATE DATABASE without COLLATE takes.
 	collation := func() string {
 		if c := strings.TrimSpace(collationField.Value()); c != "" {
 			return c
@@ -137,9 +132,8 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 
 // buildNewDatabaseOptionsPage builds databaseOptionRows from model's current
 // options rather than an existing database's. CREATE DATABASE inherits all of
-// these from model, so a dirty row means the user chose something other than
-// what would have been inherited, and only those need a follow-on ALTER
-// DATABASE SET once dbName() exists.
+// these from model, so a dirty row means the user chose something else, and
+// only those need a follow-on ALTER DATABASE SET once dbName() exists.
 func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func() string) (*propsheet.Form, propApply) {
 	rows, tracked, userAccessRow := databaseOptionRows(pf.modelOptions)
 	f := propsheet.NewForm(rows...)
@@ -158,9 +152,8 @@ func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func
 }
 
 // buildNewDatabaseFilegroupsPage adapts pageDatabaseFilegroups' grid/Add/
-// Remove/default/read-only UI: seeded empty, so every entry is a pending
-// add, plus an inline "optional first file" mini-form under the Add-filegroup
-// fields.
+// Remove/default/read-only UI: seeded empty, so every entry is a pending add,
+// plus an inline "optional first file" mini-form under the Add-filegroup fields.
 func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, collation func() string) (*propsheet.Form, propApply) {
 	type fgEdit struct {
 		pendingState
@@ -174,11 +167,10 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	}
 	edits := newPendingEdits(collation(), nil, func(e *fgEdit) string { return e.name }, nil, nil)
 
-	// Same Msg 41918 as the General page's file rows: an Azure edition takes
-	// no filegroup clause in CREATE DATABASE at all, and there is nothing on
-	// this page that is not one. The page stays in the list — dropping it
-	// would renumber the dialog's fixed pages/forms/applyFns triple — and
-	// says why instead.
+	// Same Msg 41918 as the General page's file rows: an Azure edition takes no
+	// filegroup clause in CREATE DATABASE and nothing on this page is not one. The
+	// page stays in the list (dropping it would renumber the dialog's fixed
+	// pages/forms/applyFns triple) and says why.
 	if serverIsAzure(sc) {
 		f := propsheet.NewForm(
 			propsheet.Note(engineEditionName(sc.Server.Info().EngineEdition) +
@@ -228,8 +220,8 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 		// The General page's collation, as it says now.
 		edits.collation = collation()
 		if i := edits.index(name); i >= 0 {
-			// Already present — say so and select it, rather than
-			// leaving the button looking broken.
+			// Already present: say so and select it rather than leave the button looking
+			// broken.
 			hint.Set("A filegroup named " + name + " is already listed.")
 			fgRow.Grid.SetSelectedRow(i)
 			return

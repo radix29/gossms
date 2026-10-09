@@ -10,19 +10,18 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_column_encryption_key_dialog.go is the New Column Encryption Key
-// creation dialog (a database's Security > Always Encrypted Keys > Column
-// Encryption Keys folder). Database-scoped like New Column Master Key — see
-// that file for why both carry a database the other create dialogs don't.
+// new_column_encryption_key_dialog.go is the New Column Encryption Key dialog
+// (a database's Security > Always Encrypted Keys > Column Encryption Keys
+// folder). Database-scoped like New Column Master Key; see that file for why.
 //
 // The encrypted value is pasted, not generated: it is a random key encrypted
-// under the column master key, which only a client that can reach that
-// master key's store can produce. The dialog creates a key with one value;
-// a second value is what a master-key rotation adds, and stays out.
+// under the column master key, which only a client that can reach that master
+// key's store can produce. The dialog creates a key with one value; a second
+// value is what a master-key rotation adds, and stays out.
 
 // cekAlgorithm is the only encryption algorithm SQL Server accepts for a
-// column encryption key value. Shown as a static row rather than a dropdown
-// of one.
+// column encryption key value, shown as a static row rather than a dropdown of
+// one.
 const cekAlgorithm = "RSA_OAEP"
 
 // ncekPrefetch holds the two reads this dialog needs: the master keys to
@@ -92,8 +91,8 @@ func (d *NewColumnEncryptionKeyDialog) buildPages(pf *ncekPrefetch) {
 		propsheet.Note("The value is this key's material encrypted under the master key above, produced by SSMS or the SqlColumnEncryptionKey cmdlets. SQL Server stores it without checking it — a wrong value is only discovered when a client first decrypts a column."),
 	}
 	if len(pf.masterKeys) == 0 {
-		// Without a master key there is nothing to encrypt the value under,
-		// and the dropdown would be empty with no explanation.
+		// Without a master key there is nothing to encrypt the value under, and the
+		// dropdown would be empty with no explanation.
 		rows = append(rows,
 			propsheet.Section("Note"),
 			propsheet.Note("This database has no column master key yet. Create one first — a column encryption key is always encrypted under one."))

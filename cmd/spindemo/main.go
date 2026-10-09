@@ -22,8 +22,7 @@ import (
 const tickMS = 25
 
 // speeds are percentages of each spinner's PeriodMS; defaultSpeed indexes 100%.
-// Slow speeds are included because half speed exposes a bad frame better than
-// double does.
+// Slow speeds expose a bad frame better than fast ones.
 var speeds = []int{25, 50, 75, 100, 150, 200, 300, 400}
 
 const defaultSpeed = 3

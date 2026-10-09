@@ -17,13 +17,12 @@ import (
 // line of SQL, which the server then rejects. A digit inside the comment is
 // not a count: "GO -- step 2" runs the batch once.
 //
-// A count too large for an int saturates at math.MaxInt; a run that long is
-// ended by cancelling it, as any other. "GO 0" runs the batch no times.
+// A count too large for an int saturates at math.MaxInt. "GO 0" runs the batch
+// no times.
 //
-// The scan bails on the first rune that can't be part of a separator, so an
-// ordinary line costs a rune or two rather than a walk to its end: IntelliSense
-// runs this once per line of the whole prefix on every keystroke while its
-// popup is open.
+// The scan bails on the first rune that can't be part of a separator:
+// IntelliSense runs this per line of the whole prefix on every keystroke while
+// its popup is open.
 func GoSeparatorAt(buf []rune, start, limit int) (next, count int, ok bool) {
 	i := start
 	for i < limit && buf[i] != '\n' && unicode.IsSpace(buf[i]) {

@@ -2,9 +2,9 @@ package activity
 
 import "context"
 
-// SessionStats is the current session and request picture. Only ActiveRequests
-// is drawn now; the rest are for the increment-2 Sessions tab and come from the
-// same reading (gosmo's RequestActivity, which defines each count).
+// SessionStats is the current session and request picture, from gosmo's
+// RequestActivity (which defines each count). Only ActiveRequests is drawn;
+// the rest are for the increment-2 Sessions tab.
 type SessionStats struct {
 	UserSessions     float64
 	ActiveRequests   float64

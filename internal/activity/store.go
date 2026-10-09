@@ -15,7 +15,7 @@ const DetailWindow = 60
 // in element type, retention, and which field an out-of-window sample drops.
 //
 // Config is passed to appendSample rather than held, so the zero value is
-// usable (ActivityMonitor holds both stores as plain fields).
+// usable.
 type sampleStore[T any] struct {
 	samples []T
 }

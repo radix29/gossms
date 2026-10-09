@@ -20,19 +20,18 @@ type ModalDialog struct {
 	visible    bool
 	screen     tcell.Screen // needed for Size() during recentre
 
-	// mouseDragging distinguishes a fresh Button1 press on the button row from a
-	// continued hold (as in Toolbar, TreeView and MenuBar). Without it, tcell's
-	// all-motion tracking resends Button1 on every motion while the button is down,
-	// so a twitching click fires the action on every resend. Reset in
-	// ConsumeOutsideClick rather than ButtonClicked, since every embedding dialog's
-	// HandleMouse calls the former first while some reach the latter only through
-	// a mode-gated branch a release never takes; and again in Show, for the one
-	// gesture whose release never gets that far.
+	// mouseDragging separates a fresh Button1 press on the button row from a resent
+	// hold (as Toolbar, TreeView, MenuBar): otherwise a twitching click fires the
+	// action on every resend. Reset in ConsumeOutsideClick rather than
+	// ButtonClicked, since every embedding dialog's HandleMouse calls the former
+	// first while some reach the latter only through a mode-gated branch a release
+	// never takes; and again in Show, for the gesture whose release never gets that
+	// far.
 	mouseDragging bool
 
 	// sbDragging is true while a content scrollbar an embedding dialog draws is
-	// being dragged (see ScrollbarDrag); separate from mouseDragging, which
-	// targets the button row. Reset alongside it, in both places.
+	// dragged (see ScrollbarDrag); separate from mouseDragging, reset alongside it
+	// in both places.
 	sbDragging bool
 }
 
@@ -45,20 +44,17 @@ func (d *ModalDialog) InitModal(s tcell.Screen, title string, w, h int) {
 	d.recentre()
 }
 
-// SetSize resizes the dialog and recentres it. For a dialog whose content grows
-// with the screen (see propsheet.PropertySheet), call it from Show or Draw with
-// a size computed from the current screen dimensions.
+// SetSize resizes the dialog and recentres it. A dialog whose content grows with
+// the screen (see propsheet.PropertySheet) calls it from Show or Draw.
 func (d *ModalDialog) SetSize(w, h int) {
 	d.reqW, d.reqH = w, h
 	d.recentre()
 }
 
-// recentre repositions the dialog in the centre of the screen, clamping its
-// size to fit first: a dialog larger than the terminal would otherwise draw its
-// right/bottom border, and anything docked to it, off-screen. The clamp is
-// recomputed from reqW/reqH (the last size requested via InitModal/SetSize),
-// not applied to rect.W/H in place, so a dialog shown on a cramped terminal
-// returns to full size on a larger one.
+// recentre centres the dialog, clamping its size to the terminal first (else the
+// right/bottom border and anything docked to it draws off-screen). The clamp is
+// recomputed from reqW/reqH, not applied to rect.W/H in place, so a dialog
+// shown on a cramped terminal returns to full size on a larger one.
 func (d *ModalDialog) recentre() {
 	if d.screen == nil {
 		return
@@ -70,15 +66,14 @@ func (d *ModalDialog) recentre() {
 	d.rect.Y = max(0, (sh-d.rect.H)/2)
 }
 
-// Show makes the dialog visible, recentred on the screen.
+// Show makes the dialog visible, recentred.
 //
-// The drag latches start clear on every showing, because the release that
-// would clear them never arrives: a button click closes the dialog on the
-// *press*, and by the matching ButtonNone HandleMouse returns early on
-// !visible and the host has dropped the dialog from input routing. A latch left
-// set makes ButtonClicked refuse the first click on every reopening. A dialog
-// that opens *during* a held gesture is the host's hazard; see
-// App.gestureOverlay.
+// The drag latches start clear on every showing because their clearing release
+// never arrives: a button click closes the dialog on the press, and by the
+// matching ButtonNone HandleMouse returns early on !visible and the host has
+// dropped the dialog from input routing. A stale latch makes ButtonClicked
+// refuse the first click on every reopening. A dialog opening during a held
+// gesture is the host's hazard; see App.gestureOverlay.
 func (d *ModalDialog) Show() {
 	d.recentre()
 	d.mouseDragging = false
@@ -88,12 +83,10 @@ func (d *ModalDialog) Show() {
 
 // Relayout re-fits the dialog to the current screen size. The host calls it on
 // every terminal resize for each open dialog: recentre otherwise runs only from
-// InitModal/SetSize/Show, so a dialog open across a resize would keep its old
-// rect, drawing its border and button row off-screen while still swallowing
-// every key.
-//
-// A dialog whose size depends on the screen overrides this to recompute that
-// size and then call SetSize, which recentres.
+// InitModal/SetSize/Show, so the dialog would keep its old rect, drawing its
+// border and button row off-screen while still swallowing every key. A dialog
+// whose size depends on the screen overrides this to recompute it and call
+// SetSize.
 func (d *ModalDialog) Relayout() { d.recentre() }
 
 // Hide dismisses the dialog.
@@ -114,12 +107,10 @@ func (d *ModalDialog) ContainsMouse(mx, my int) bool {
 }
 
 // ConsumeOutsideClick returns true if the mouse event originated outside the
-// dialog. The dialog is always visible when this is called.
-//
-// A ButtonNone (release/hover) event always clears mouseDragging here whatever
-// its position, as Toolbar does before any bounds check: this is the one call
-// every embedding dialog's HandleMouse makes unconditionally, including for a
-// mouse-up outside the dialog's rect.
+// dialog (always visible when called). A ButtonNone event always clears
+// mouseDragging here whatever its position, as Toolbar does: every embedding
+// dialog's HandleMouse makes this call unconditionally, including for a mouse-up
+// outside the rect.
 func (d *ModalDialog) ConsumeOutsideClick(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		d.mouseDragging = false
@@ -134,11 +125,10 @@ func (d *ModalDialog) ConsumeOutsideClick(ev *tcell.EventMouse) bool {
 
 // ScrollbarDrag handles a click or drag on a vertical scrollbar an embedding
 // dialog draws at trackX (normally Rect().Right()-1) spanning [trackY,
-// trackY+trackH), the mouse-side counterpart of core.DrawScrollbar. Returns
-// true and updates *scroll for a Button1 press on the bar, or any continuation
-// of a started drag regardless of x (the mouse can drift off the column). Call
-// it before the dialog's own row hit-testing, since the bar can sit over a
-// column that would otherwise resolve to a content row.
+// trackY+trackH), the counterpart of core.DrawScrollbar. Returns true and updates
+// *scroll for a Button1 press on the bar or any continuation of a started drag
+// regardless of x. Call it before the dialog's row hit-testing: the bar can sit
+// over a column that would resolve to a content row.
 func (d *ModalDialog) ScrollbarDrag(ev *tcell.EventMouse, trackX, trackY, trackH, total int, scroll *int) bool {
 	return core.HandleScrollbarDrag(ev, trackX, trackY, trackH, total, &d.sbDragging, scroll)
 }
@@ -152,8 +142,7 @@ const dialogDimNum, dialogDimDen = 3, 5
 func (d *ModalDialog) DrawBase(s tcell.Screen) {
 	p := theme.Active()
 
-	// Fade the already-drawn UI in place rather than painting a solid overlay, so
-	// the inactive interface stays visible but dimmed.
+	// Fade the drawn UI in place, not a solid overlay, so it stays visible dimmed.
 	sw, sh := s.Size()
 	core.DimArea(s, core.Rect{X: 0, Y: 0, W: sw, H: sh}, p.DialogOverlay, dialogDimNum, dialogDimDen)
 
@@ -166,18 +155,17 @@ func (d *ModalDialog) DrawBase(s tcell.Screen) {
 	core.DrawBoxTitle(s, d.rect, d.title, borderStyle, titleStyle)
 
 	// Everything the embedding type draws from here is confined to the box (see
-	// contentClip). Set after the dim and the border, which draw outside it.
+	// contentClip); set after the dim and border, which draw outside it.
 	if d.clamped() {
 		core.SetClip(s, d.contentClip())
 	}
 }
 
-// clamped reports whether recentre had to shrink the dialog to fit the
-// terminal. Embedding types lay content out at fixed offsets for the size they
-// *asked* for, so on a clamped rect rows run past the right border and the
-// button row, and DrawButtons lands on top of them. The clip and the
-// button-row clear are gated on this: a dropdown or completion overlay opened
-// inside a dialog may legitimately extend beyond the box.
+// clamped reports whether recentre had to shrink the dialog. Embedding types lay
+// content out at fixed offsets for the size they asked for, so on a clamped rect
+// rows run past the right border and button row, and DrawButtons lands on top.
+// The clip and button-row clear are gated on this: a dropdown or completion
+// overlay inside a dialog may legitimately extend beyond the box.
 func (d *ModalDialog) clamped() bool {
 	return d.rect.W < d.reqW || d.rect.H < d.reqH
 }
@@ -190,8 +178,7 @@ func (d *ModalDialog) contentClip() core.Rect { return d.InnerRect() }
 // DrawContentScrollbar draws the dialog's vertical scrollbar spanning [trackY,
 // trackY+trackH) on the right border column, where ScrollbarDrag hit-tests. That
 // column is outside contentClip, so the clip widens to the whole box for the
-// draw: core.DrawScrollbar called directly there loses its bar on a clamped
-// rect.
+// draw; core.DrawScrollbar called directly loses its bar on a clamped rect.
 func (d *ModalDialog) DrawContentScrollbar(s tcell.Screen, trackY, trackH, total, offset int) {
 	if c, ok := s.(*core.ClipScreen); ok {
 		saved := c.Clip()
@@ -218,17 +205,15 @@ func (d *ModalDialog) DrawSeparator(s tcell.Screen) {
 	core.DrawHLine(s, d.rect.X+1, d.ButtonRowY()-1, d.rect.W-2, sep)
 }
 
-// ButtonRowStartX returns the x column the button row starts at so it ends
-// flush with the dialog's right margin. Shared by DrawButtons and ButtonClicked
-// so hit-testing matches the drawing; exported so a dialog drawing status at
-// the left end of the row can stop short of the buttons.
+// ButtonRowStartX returns the x column the button row starts at so it ends flush
+// with the right margin. Shared by DrawButtons and ButtonClicked so hit-testing
+// matches the drawing; exported so a dialog drawing status at the row's left end
+// can stop short of the buttons.
 func (d *ModalDialog) ButtonRowStartX(labels []string) int {
 	return d.rect.Right() - 2 - d.ButtonRowWidth(labels)
 }
 
-// ButtonRowWidth is how many columns a button row occupies, gaps included:
-// what a caller placing something beside a row, or a second group at its other
-// end, measures against.
+// ButtonRowWidth is how many columns a button row occupies, gaps included.
 func (d *ModalDialog) ButtonRowWidth(labels []string) int {
 	total := 0
 	for i, label := range labels {
@@ -246,30 +231,28 @@ func (d *ModalDialog) DrawButtons(s tcell.Screen, labels []string, activeIdx int
 	d.DrawButtonsGated(s, labels, activeIdx, nil)
 }
 
-// DrawButtonsGated draws the button row with every button whose index is true
-// in disabled painted in the disabled foreground, as a gated menu item is.
-// disabled may be nil or shorter than labels. Drawing it gated does not gate
-// it: the dialog's handler must still refuse the button.
+// DrawButtonsGated draws the button row with every button whose index is true in
+// disabled in the disabled foreground (disabled may be nil or shorter). Drawing
+// it gated does not gate it: the handler must still refuse the button.
 func (d *ModalDialog) DrawButtonsGated(s tcell.Screen, labels []string, activeIdx int, disabled []bool) {
 	y := d.ButtonRowY()
 	// On a clamped rect, content laid out for the full height reaches this row and
-	// the one below; the buttons are right-aligned, so without the clear what shows
-	// is the tail of a content row with a button row in the middle. A dialog with a
-	// button row draws nothing of its own from ButtonRowY down.
+	// the one below; the buttons are right-aligned, so without the clear a content
+	// row's tail shows with a button row in the middle. A dialog with a button row
+	// draws nothing of its own from ButtonRowY down.
 	//
-	// The clear belongs to this entry point alone: a dialog splitting its row draws
-	// the right-aligned group through here first, and a second clear from
-	// DrawButtonsAtGated would wipe it.
+	// The clear belongs to this entry point alone: a split row draws its
+	// right-aligned group here first, and a second clear from DrawButtonsAtGated
+	// would wipe it.
 	if d.clamped() {
 		core.FillRect(s, core.Rect{X: d.rect.X + 1, Y: y, W: d.rect.W - 2, H: d.rect.Bottom() - 1 - y}, ' ', theme.StyleDialog())
 	}
 	d.DrawButtonsAtGated(s, d.ButtonRowStartX(labels), labels, activeIdx, disabled)
 }
 
-// DrawButtonsAtGated draws a gated button row starting at column x, for a
-// dialog placing a group somewhere other than the right-aligned default (e.g. a
-// destructive button set apart at the left). It clears nothing, so the caller
-// draws the right-aligned group through DrawButtonsGated first.
+// DrawButtonsAtGated draws a gated button row starting at column x, for a group
+// placed away from the right-aligned default (e.g. a destructive button at the
+// left). It clears nothing; the caller draws the right-aligned group first.
 func (d *ModalDialog) DrawButtonsAtGated(s tcell.Screen, x int, labels []string, activeIdx int, disabled []bool) {
 	p := theme.Active()
 	disabledStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.TextDisabled)
@@ -291,15 +274,14 @@ func (d *ModalDialog) DrawButtonsAtGated(s tcell.Screen, x int, labels []string,
 }
 
 // ButtonClicked returns the index of the button clicked, or -1. mouseDragging
-// guards against tcell's held-motion Button1 resend, so a twitching click fires
-// once.
+// guards against the held-motion Button1 resend so a twitching click fires once.
 func (d *ModalDialog) ButtonClicked(ev *tcell.EventMouse, labels []string) int {
 	return d.ButtonClickedAt(ev, d.ButtonRowStartX(labels), labels)
 }
 
 // ButtonClickedAt is ButtonClicked for a row drawn at column x by
-// DrawButtonsAtGated. A dialog with two groups calls it once per group; a call
-// that hits nothing latches nothing, so call order doesn't matter.
+// DrawButtonsAtGated. A call that hits nothing latches nothing, so with two
+// groups call order doesn't matter.
 func (d *ModalDialog) ButtonClickedAt(ev *tcell.EventMouse, x int, labels []string) int {
 	if ev.Buttons() != tcell.Button1 {
 		return -1

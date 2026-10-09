@@ -17,9 +17,9 @@ import (
 //
 // Under gosmo.WithScript a write is recorded and returns success without the
 // server seeing it, while reads still hit the server. Mirroring the new name
-// would point every sibling page's lookup at a nonexistent object: each
-// fails "not found", the run aborts, no script is produced, and namePtr
-// stays wrong for the dialog's life.
+// would point every sibling page's lookup at a nonexistent object: each fails
+// "not found", the run aborts, no script is produced, and namePtr stays wrong
+// for the dialog's life.
 //
 // Every dialog that can rename calls this from its General page, which is also
 // marked propPage.renames so its apply runs last.
@@ -29,27 +29,26 @@ func commitRename(ctx context.Context, namePtr *string, newName string) {
 	}
 }
 
-// committedApplyError marks an apply failure that changed the server anyway,
-// so the whole sheet reloads before the message shows. Otherwise a failed
-// apply keeps pages whose statements never reached the server as they were
-// and reloads the ones that did (see applyProgress).
+// committedApplyError marks an apply failure that changed the server anyway, so
+// the whole sheet reloads before the message shows. Otherwise a failed apply
+// keeps pages whose statements never reached the server as they were and reloads
+// the ones that did (applyProgress).
 //
-// That per-page account comes from gosmo's statement observer, which cannot
-// see a disable window whose closing re-enable is refused: the window's own
-// brackets are not reported, so a refused ALTER inside it counts as nothing
-// landed while the audit was left switched off. Audit Properties is the
-// case (enabled audit switched to SECURITY LOG where the service account may
-// not write it). The page re-reads the state and marks the failure itself
-// (auditApplyFailure).
+// That per-page account comes from gosmo's statement observer, which cannot see
+// a disable window whose closing re-enable is refused: the window's own brackets
+// are not reported, so a refused ALTER inside it counts as nothing landed while
+// the audit was left switched off. Audit Properties is the case (enabled audit
+// switched to SECURITY LOG where the service account may not write it). The page
+// re-reads the state and marks the failure itself (auditApplyFailure).
 //
-// Reloading discards the page's edits, so only a *committed* failure is
-// marked: they are already on the server.
+// Reloading discards the page's edits, so only a *committed* failure is marked:
+// its edits are already on the server.
 type committedApplyError struct{ err error }
 
 func (e committedApplyError) Error() string { return e.err.Error() }
 func (e committedApplyError) Unwrap() error { return e.err }
 
-// applyCommitted marks err as a failure that still changed the server — see
+// applyCommitted marks err as a failure that still changed the server; see
 // committedApplyError.
 func applyCommitted(err error) error { return committedApplyError{err} }
 
@@ -62,8 +61,8 @@ type applyRun struct {
 	cancelled bool
 }
 
-// start derives the context one run executes under from parent, which keeps
-// parent's values — a WithScript collector stays in force.
+// start derives the context one run executes under from parent, keeping parent's
+// values (a WithScript collector stays in force).
 func (r *applyRun) start(parent context.Context) context.Context {
 	ctx, stop := context.WithCancel(parent)
 	r.stop, r.cancelled = stop, false
@@ -71,8 +70,8 @@ func (r *applyRun) start(parent context.Context) context.Context {
 }
 
 // cancel is OnCancelApply: stop the run and remember the user did it. The
-// driver's error for a cancelled statement need not wrap context.Canceled,
-// so the flag, not the error, makes the completion say "cancelled".
+// driver's error for a cancelled statement need not wrap context.Canceled, so the
+// flag, not the error, makes the completion say "cancelled".
 func (r *applyRun) cancel() {
 	if r.stop != nil {
 		r.cancelled = true
@@ -81,11 +80,10 @@ func (r *applyRun) cancel() {
 }
 
 // applyProgress is how far runApplySteps got, and which steps reached the
-// server. A step is committed once a statement executed: a later failure
-// leaves the server changed, and a page keeping its edits would re-send them
-// (harmless for ALTER, a duplicate for ADD FILE, a job step or a schedule
-// attach). A failed New-object dialog is the same shape: CREATE landed, a
-// later page did not.
+// server. A step is committed once a statement executed: a later failure leaves
+// the server changed, and a page keeping its edits would re-send them (harmless
+// for ALTER, a duplicate for ADD FILE, a job step or a schedule attach). A failed
+// New-object dialog is the same shape: CREATE landed, a later page did not.
 type applyProgress struct {
 	// completed counts the steps that ran to the end; nil steps don't count.
 	completed int
@@ -110,14 +108,13 @@ func (p applyProgress) anyCommitted() bool {
 	return !p.scripted && (p.completed > 0 || p.wrote)
 }
 
-// runApplySteps runs fns in order against ctx, stopping at the first error,
-// and reports how far it got. ctx is checked before every step as well as
-// handed to it, since a step whose writes ignore ctx would otherwise run on
-// after a cancel.
+// runApplySteps runs fns in order against ctx, stopping at the first error, and
+// reports how far it got. ctx is checked before every step as well as handed to
+// it, since a step whose writes ignore ctx would otherwise run on after a cancel.
 //
 // Which steps reached the server comes from gosmo's statement observer, so a
-// write on some other context is invisible to it. Under Script Changes
-// nothing executes and no step counts as committed.
+// write on some other context is invisible to it. Under Script Changes nothing
+// executes and no step counts as committed.
 func runApplySteps(ctx context.Context, fns []propApply) (applyProgress, error) {
 	var wrote atomic.Bool
 	ctx = gosmo.WithStatementObserver(ctx, func(gosmo.ScriptEntry) { wrote.Store(true) })
@@ -141,18 +138,18 @@ func runApplySteps(ctx context.Context, fns []propApply) (applyProgress, error) 
 	return p, nil
 }
 
-// applyPlan is what a planned dialog's pages write into instead of the
-// server: steps tagged with a phase, carried out afterwards in phase order.
-// A dialog is planned when its pages edit one configuration whose statements
-// must be ordered across pages and finished once: Resource Governor, where a
-// group's pool must exist before the group moves into it, a pool cannot be
-// dropped until no group uses it, and every Apply ends in one ALTER RESOURCE
-// GOVERNOR RECONFIGURE. Page order cannot express that.
+// applyPlan is what a planned dialog's pages write into instead of the server:
+// steps tagged with a phase, carried out afterwards in phase order. A dialog is
+// planned when its pages edit one configuration whose statements must be ordered
+// across pages and finished once: Resource Governor, where a group's pool must
+// exist before the group moves into it, a pool cannot be dropped until no group
+// uses it, and every Apply ends in one ALTER RESOURCE GOVERNOR RECONFIGURE. Page
+// order cannot express that.
 //
-// A planned page's apply gets a context carrying the plan (applyPlanFrom)
-// and only adds steps; the dialog's run function (showPlanned) decides how
-// they run. Steps are apply closures in every respect: pipeline goroutine,
-// under Script Changes too, never writing page state.
+// A planned page's apply gets a context carrying the plan (applyPlanFrom) and
+// only adds steps; the dialog's run function (showPlanned) decides how they run.
+// Steps are apply closures in every respect: pipeline goroutine, under Script
+// Changes too, never writing page state.
 type applyPlan struct {
 	steps []plannedStep
 	// values carries what a page decided for the run function, by key (e.g.
@@ -167,9 +164,9 @@ type plannedStep struct {
 
 type applyPlanKey struct{}
 
-// applyPlanFrom returns the plan a planned page's apply adds steps to, or
-// nil when applied any other way: a wiring bug the page reports rather than
-// writing directly out of order.
+// applyPlanFrom returns the plan a planned page's apply adds steps to, or nil
+// when applied any other way: a wiring bug the page reports rather than writing
+// directly out of order.
 func applyPlanFrom(ctx context.Context) *applyPlan {
 	p, _ := ctx.Value(applyPlanKey{}).(*applyPlan)
 	return p
@@ -203,8 +200,8 @@ func (p *applyPlan) run(ctx context.Context) error {
 }
 
 // runPhases is run restricted to steps whose phase keep accepts, for a run
-// function doing some phases in a transaction and the rest (which a
-// transaction refuses) after it.
+// function doing some phases in a transaction and the rest (which a transaction
+// refuses) after it.
 func (p *applyPlan) runPhases(ctx context.Context, keep func(phase int) bool) error {
 	steps := slices.Clone(p.steps)
 	slices.SortStableFunc(steps, func(a, b plannedStep) int { return a.phase - b.phase })
@@ -222,12 +219,12 @@ func (p *applyPlan) runPhases(ctx context.Context, keep func(phase int) bool) er
 	return nil
 }
 
-// plannedApply folds a planned dialog's dirty pages into one pipeline step:
-// each page's apply plans against a fresh plan, then run carries it out.
+// plannedApply folds a planned dialog's dirty pages into one pipeline step: each
+// page's apply plans against a fresh plan, then run carries it out.
 //
 // A failure after a statement reached the server is reported as committed,
-// reloading every page: the plan interleaves the pages' statements, so no
-// telling which page's edits landed.
+// reloading every page: the plan interleaves the pages' statements, so there is
+// no telling which page's edits landed.
 func plannedApply(fns []propApply, run func(ctx context.Context, plan *applyPlan) error) propApply {
 	return func(ctx context.Context) error {
 		plan := &applyPlan{}
@@ -250,7 +247,7 @@ func plannedApply(fns []propApply, run func(ctx context.Context, plan *applyPlan
 }
 
 // validateDirty runs every dirty page's validator, reporting the first failure
-// via SetMessage/SelectPage — the preflight for both runApply and runScript.
+// via SetMessage/SelectPage: the preflight for runApply and runScript.
 func (d *PropDialog) validateDirty() bool {
 	if page, err := d.Validate(); err != nil {
 		d.SelectPage(page)
@@ -261,7 +258,7 @@ func (d *PropDialog) validateDirty() bool {
 }
 
 // dirtyApplyFns returns the apply closures for every dirty page in page order,
-// except that a renaming page's apply moves to the end — see propPage.renames.
+// except that a renaming page's apply moves to the end (propPage.renames).
 // pages[i] is the page fns[i] belongs to.
 func (d *PropDialog) dirtyApplyFns() (pages []int, fns []propApply) {
 	var lastPages []int
@@ -280,12 +277,12 @@ func (d *PropDialog) dirtyApplyFns() (pages []int, fns []propApply) {
 	return append(pages, lastPages...), append(fns, last...)
 }
 
-// runPipeline is the shared shape behind runApply and runScript: validate
-// dirty pages, run their closures sequentially against runCtx on a
-// background goroutine, report back on the UI goroutine via d.post.
-// noChanges runs on the UI goroutine when nothing was dirty; onSuccess once
-// every closure succeeded. Callers differ in the context (real or
-// gosmo.WithScript) and what "nothing to do" and "it worked" mean.
+// runPipeline is the shared shape behind runApply and runScript: validate dirty
+// pages, run their closures sequentially against runCtx on a background
+// goroutine, report back on the UI goroutine via d.post. noChanges runs on the UI
+// goroutine when nothing was dirty; onSuccess once every closure succeeded.
+// Callers differ in the context (real or gosmo.WithScript) and what "nothing to
+// do" and "it worked" mean.
 func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess func()) {
 	if !d.validateDirty() {
 		return
@@ -296,9 +293,8 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 		return
 	}
 	if d.planned != nil {
-		// One step for every dirty page: it either reached the server or it
-		// did not, and a step that did reports itself committed, which
-		// reloads the whole sheet.
+		// One step for every dirty page: it either reached the server or it did not, and
+		// a step that did reports itself committed, which reloads the whole sheet.
 		fns, pages = []propApply{plannedApply(fns, d.planned)}, pages[:1]
 	}
 
@@ -324,13 +320,13 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 	})
 }
 
-// applyFailed reports a pipeline that stopped at runErr and reloads every
-// page whose statements reached the server (pages[i] is fns[i]'s page);
-// keeping their edits would re-send them next Apply. Other pages keep their
-// edits so the user can fix the failed one and retry.
+// applyFailed reports a pipeline that stopped at runErr and reloads every page
+// whose statements reached the server (pages[i] is fns[i]'s page); keeping their
+// edits would re-send them next Apply. Other pages keep their edits so the user
+// can fix the failed one and retry.
 func (d *PropDialog) applyFailed(runCtx context.Context, runErr error, progress applyProgress, pages []int) {
-	// A committed failure outranks the cancel that may have led to it: it
-	// says what the server was left in, which the cancel message cannot.
+	// A committed failure outranks the cancel that may have led to it: it says what
+	// the server was left in, which the cancel message cannot.
 	_, marked := errors.AsType[committedApplyError](runErr)
 	if d.run.cancelled && !marked {
 		d.SetMessage(propCancelledMessage(runCtx, progress.completed, len(pages)), false)
@@ -343,8 +339,8 @@ func (d *PropDialog) applyFailed(runCtx context.Context, runErr error, progress 
 			landed = append(landed, page)
 		}
 	}
-	// After the message, not before: the reload leaves it standing, and it is
-	// the only account of what went wrong.
+	// After the message, not before: the reload leaves it standing, and it is the
+	// only account of what went wrong.
 	switch {
 	case marked:
 		d.InvalidateAll()
@@ -360,9 +356,9 @@ func (d *PropDialog) applyFailed(runCtx context.Context, runErr error, progress 
 
 // propCancelledMessage is the message line after a user-cancelled run. A
 // cancelled statement is rolled back, but a page's apply can be several
-// statements and the cancel may land between them or after the last
-// committed, so a real run never claims nothing changed. Pages that ran to
-// completion before the cancel are counted.
+// statements and the cancel may land between them or after the last committed,
+// so a real run never claims nothing changed. Pages that ran to completion
+// before the cancel are counted.
 func propCancelledMessage(runCtx context.Context, completed, total int) string {
 	if gosmo.Scripting(runCtx) {
 		return "Script Changes cancelled."
@@ -374,8 +370,8 @@ func propCancelledMessage(runCtx context.Context, completed, total int) string {
 }
 
 // applyPanicked releases the applying latch after a panic in runPipeline's
-// goroutine (App.safegoRepair step). While applying, PropertySheet ignores
-// every button, so without this the whole dialog, Cancel included, is inert.
+// goroutine (App.safegoRepair step). While applying, PropertySheet ignores every
+// button, so without this the whole dialog, Cancel included, is inert.
 func (d *PropDialog) applyPanicked() {
 	d.SetApplying(false)
 	d.SetMessage("Apply stopped unexpectedly — see the log for details.", true)
@@ -383,16 +379,16 @@ func (d *PropDialog) applyPanicked() {
 
 // runApply validates and applies every dirty page for real. hideOnSuccess
 // distinguishes Apply (stay open) from OK (close on success); on error neither
-// closes, so the edits and the message stay visible.
+// closes, so the edits and message stay visible.
 //
 // Every page's commit hook (propsheet.Form.SetCommit) runs first on the UI
-// goroutine: a grid-plus-detail page's editor fields reach its model only
-// there, since its apply runs on the pipeline's goroutine.
+// goroutine: a grid-plus-detail page's editor fields reach its model only there,
+// since its apply runs on the pipeline's goroutine.
 //
 // A page whose edits carry a consequence registers a warning
-// (propsheet.Form.SetApplyConfirm); nothing is written until accepted, and a
-// No leaves every edit in place. Script Changes does not ask: it writes
-// nothing and the script shows the consequence.
+// (propsheet.Form.SetApplyConfirm); nothing is written until accepted, and a No
+// leaves every edit in place. Script Changes does not ask: it writes nothing and
+// the script shows the consequence.
 func (d *PropDialog) runApply(hideOnSuccess bool) {
 	d.Commit()
 	warnings := d.ApplyConfirmations()
@@ -400,8 +396,8 @@ func (d *PropDialog) runApply(hideOnSuccess bool) {
 		d.applyNow(hideOnSuccess)
 		return
 	}
-	// Validation first, so a Yes is never followed by a refusal the user
-	// could have been told about before being asked.
+	// Validation first, so a Yes is never followed by a refusal the user could have
+	// been told about before being asked.
 	if !d.validateDirty() {
 		return
 	}
@@ -422,8 +418,8 @@ func (d *PropDialog) applyNow(hideOnSuccess bool) {
 	}
 	d.runPipeline(d.ctx, hide, func() {
 		d.app.setStatus("Properties saved")
-		// Only a dialog that stays open reloads: InvalidateAll dispatches the
-		// current page's fetch at once, and OK would close over it.
+		// Only a dialog that stays open reloads: InvalidateAll dispatches the current
+		// page's fetch at once, and OK would close over it.
 		if !hideOnSuccess {
 			d.InvalidateAll()
 		}
@@ -433,7 +429,7 @@ func (d *PropDialog) applyNow(hideOnSuccess bool) {
 }
 
 // saved is what follows a write that reached the server: the Details pane's
-// stale view goes, and the dialog's own onSaved hook runs.
+// stale view goes, and the dialog's onSaved hook runs.
 func (d *PropDialog) saved() {
 	d.staleDetails()
 	if d.headerName != nil {
@@ -444,10 +440,10 @@ func (d *PropDialog) saved() {
 	}
 }
 
-// staleDetails drops the Details pane's cached view of what this dialog
-// wrote: the node it opened over, its parent folder (whose list may carry
-// the edited columns) and its cached children (the edited object, when
-// opened from a row of the folder's list). The one on screen refetches.
+// staleDetails drops the Details pane's cached view of what this dialog wrote:
+// the node it opened over, its parent folder (whose list may carry the edited
+// columns) and its cached children (the edited object, when opened from a row of
+// the folder's list). The one on screen refetches.
 func (d *PropDialog) staleDetails() {
 	node := d.detailNode
 	if node == nil {
@@ -459,10 +455,9 @@ func (d *PropDialog) staleDetails() {
 }
 
 // runScript validates like Apply, then re-runs the apply closures under
-// gosmo.WithScript: the same code a real save uses, with every write
-// captured as SQL text. The result opens in a new query window scoped to
-// this dialog's connection/database. Reads still hit the server; only
-// writes are intercepted.
+// gosmo.WithScript: the code a real save uses, with every write captured as SQL
+// text. The result opens in a new query window scoped to this dialog's
+// connection/database. Reads still hit the server; only writes are intercepted.
 func (d *PropDialog) runScript() {
 	d.Commit()
 	scriptCtx, script := gosmo.WithScript(d.ctx)

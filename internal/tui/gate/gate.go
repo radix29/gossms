@@ -195,12 +195,10 @@ var (
 	AlterAnyAG = Right{Name: "ALTER ANY AVAILABILITY GROUP", Role: "sysadmin",
 		DeniedOnAG: "ALTER"}
 	// Held for a feature that does not exist yet (nothing creates or alters a
-	// linked server). Declared so permission_gate_names_test.go checks the literal
-	// against gosmo's Probed* list; a misspelled name would read CapabilityUnknown
-	// forever and gate nothing.
-	//lint:ignore U1000 declared ahead of a New/Alter Linked Server feature so
-	// permission_gate_names_test.go checks the literal against gosmo's Probed*
-	// list now rather than after a misspelling has shipped.
+	// linked server). Declared so permission_gate_names_test.go checks the
+	// literal against gosmo's Probed* list; a misspelled name would read
+	// CapabilityUnknown forever and gate nothing.
+	//lint:ignore U1000 declared ahead of a New/Alter Linked Server feature
 	AlterAnyLinkedSrv = Right{Name: "ALTER ANY LINKED SERVER", Role: "sysadmin"}
 
 	BackupDatabase = Right{Name: "BACKUP DATABASE", Role: "db_backupoperator", DB: true}
@@ -234,10 +232,9 @@ var (
 	// Members offers an edit it refuses.
 	AlterAnyDBRoleMembers = Right{Name: "ALTER ANY ROLE", Role: "db_securityadmin", DB: true,
 		DeniedOnPrincipal: "ALTER"}
-	// Held for a feature that does not exist yet (no New Table), for the reason at
-	// AlterAnyLinkedSrv.
-	//lint:ignore U1000 declared ahead of a New Table feature, for the reason
-	// given at AlterAnyLinkedSrv.
+	// Held for a feature that does not exist yet (no New Table), for the reason
+	// at AlterAnyLinkedSrv.
+	//lint:ignore U1000 declared ahead of a New Table feature
 	CreateTable = Right{Name: "CREATE TABLE", Role: "db_ddladmin", DB: true}
 
 	AlterAnySchema = Right{Name: "ALTER ANY SCHEMA", Role: "db_ddladmin", DB: true}
@@ -328,9 +325,8 @@ var (
 	// can write.
 	DiskAdmin = Right{Name: "diskadmin", ServerRole: true}
 	// Sysadmin is membership of sysadmin itself, for a write CONTROL SERVER does
-	// not reach: sp_set_sqlagent_properties's reload notification
-	// (sp_sqlagent_notify) checks the role and refuses CONTROL SERVER alone with
-	// Msg 14260 after the registry write has gone through. See
+	// not reach: sp_sqlagent_notify checks the role and refuses CONTROL SERVER
+	// alone with Msg 14260 after the registry write has gone through. See
 	// AgentPropertiesRights. sp_cycle_errorlog (Msg 15247) and
 	// sp_cycle_agent_errorlog (Msg 14260) refuse it the same way.
 	Sysadmin = Right{Name: "sysadmin", ServerRole: true}

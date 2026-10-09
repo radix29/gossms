@@ -9,12 +9,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_schedule_dialog.go is the New Schedule creation dialog (Object
-// Explorer's SQL Server Agent > Schedules folder, "New Schedule..."). The
-// General page is built from agent_schedule_form.go's shared
-// scheduleFreqForm — the same frequency-field set Schedule Properties
-// (agent_schedule_props.go) edits on an existing schedule. Only the second
-// page is specific to creation: Jobs to attach at creation time.
+// new_schedule_dialog.go is the New Schedule dialog (Object Explorer's SQL
+// Server Agent > Schedules folder). The General page is built from
+// agent_schedule_form.go's shared scheduleFreqForm, the frequency-field set
+// Schedule Properties (agent_schedule_props.go) edits on an existing schedule.
+// Only the second page is specific to creation: Jobs to attach.
 
 type nschedulePrefetch struct {
 	existingNames *nameSet
@@ -104,10 +103,9 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 		propsheet.Note("Optional — a schedule doesn't need to be attached to any job yet. Attach more later from a job's own Schedules page."),
 	)
 	jobsApply := func(ctx context.Context) error {
-		// The schedule General created, which carries its id: by a name
-		// another schedule already holds, msdb refuses the attach (Msg
-		// 14371). Under Script Changes it is the name-only handle, so the
-		// attach is scripted by name.
+		// The schedule General created, which carries its id: by a name another
+		// schedule already holds, msdb refuses the attach (Msg 14371). Under Script
+		// Changes it is the name-only handle, so the attach is scripted by name.
 		sch, ok := createdFrom[*gosmo.Schedule](ctx)
 		if !ok {
 			sch = sc.Server.ScheduleRef(scheduleName())

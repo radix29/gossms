@@ -105,19 +105,19 @@ func (r *NoteRow) SetDrawHeight(h int) { r.drawHeight = h }
 
 // HintRow is a short message a page's button handlers write to, saying why an
 // action did nothing: an empty name, a duplicate, nothing selected. Blank and
-// invisible until something sets it.
+// invisible until set.
 //
 // A page is built by a plain function with no App or dialog in scope, so
-// without this an Add that hit a duplicate could only `return`, leaving a
-// button that looks broken. The row also sits next to the control the user just
-// used, unlike the status bar behind the dialog.
+// without this an Add that hit a duplicate could only `return`, leaving a button
+// that looks broken. The row also sits next to the control just used, unlike the
+// status bar behind the dialog.
 //
-// Not focusable (no Tab stop), and it reserves its line whether or not it has
-// text, so an appearing hint doesn't reflow the rows around it. Text wider than
-// the row wraps to a second line, the rest clipped with an ellipsis (N10: at 80
-// columns Accounts' "... is deleted on Apply, and leaves every profile that
-// uses it." lost its second half). That line pushes down only the rows below
-// the hint, never the button above it that set it.
+// Not focusable, and it reserves its line whether or not it has text, so an
+// appearing hint doesn't reflow the rows around it. Text wider than the row
+// wraps to a second line, the rest clipped with an ellipsis (N10: at 80 columns
+// Accounts' "... is deleted on Apply, and leaves every profile that uses it."
+// lost its second half). That line pushes down only the rows below the hint,
+// never the button above it that set it.
 //
 // Set and SetError also ask the form to scroll the row into view (Revealer): a
 // hint usually sits below its button, past the bottom edge on a long page.
@@ -219,7 +219,7 @@ func (r *StaticRow) Draw(s tcell.Screen, focused bool) {
 
 // drawFlatValue renders a label/value pair as plain text: what StaticRow draws
 // and every editable row switches to under Form.SetReadOnly. Shared on purpose:
-// a gated page mixes both kinds of row, and two spellings of "a value you cannot
+// a gated page mixes both kinds, and two spellings of "a value you cannot
 // change" would read as two kinds of field.
 //
 // The value never starts on LabelWidth: a label may be exactly that wide (the
@@ -233,9 +233,8 @@ func drawFlatValue(s tcell.Screen, x, y, w int, label, value string, lst, vst tc
 
 // flatValueX is the column a flat value starts in: where the same row's text
 // sits when editable, so a row switching between the two doesn't jog its value
-// sideways. An editable row pads its label to LabelWidth and draws '[' after
-// it, text one further; TestFlatValueStartsWhereAnEditableValueDoes pins the
-// pair.
+// sideways. An editable row pads its label to LabelWidth and draws '[' after it,
+// text one further; TestFlatValueStartsWhereAnEditableValueDoes pins the pair.
 func flatValueX(x int) int { return x + LabelWidth + 2 }
 
 // drawFlatReadOnly is drawFlatValue in the styles a read-only row uses.

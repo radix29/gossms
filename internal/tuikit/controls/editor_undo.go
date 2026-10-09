@@ -16,20 +16,19 @@ import (
 // so trimUndo never walks it again.
 //
 // A step is a delta rather than a whole-document snapshot because pushUndo runs
-// on every keystroke: copying the buffer costs 3.2 ms and 5 MB per character in
-// a 20,000-line script to record a one-line change.
+// on every keystroke: copying the buffer costs 3.2 ms and 5 MB per character in a
+// 20,000-line script to record a one-line change.
 //
 // newLen isn't knowable when the step is pushed (the edit hasn't run), so the
 // newest step is left open and closed by finalizeStep. docLen is the document's
-// line count at push time, which makes closing possible: an edit confined to
-// the span can only have changed the count from inside it, so the span's new
-// extent is its old one plus the document's net growth.
+// line count at push time, which makes closing possible: an edit confined to the
+// span can only have changed the count from inside it, so the span's new extent
+// is its old one plus the document's net growth.
 //
 // A closed step's [row, row+newLen) must lie inside the document it is applied
 // to, since applyStep slices by it unguarded. That holds only while every
 // pushUndoSpan caller keeps its promise; a violated span surfaces as an
-// out-of-range panic. TestEditorUndoRestoresEveryEditPath checks it per edit
-// path.
+// out-of-range panic. TestEditorUndoRestoresEveryEditPath checks it per edit path.
 type editorState struct {
 	row    int
 	old    [][]rune
@@ -41,10 +40,10 @@ type editorState struct {
 	bytes     int
 }
 
-// cloneLines deep-copies lines so an undo step never aliases the document.
-// Several edit paths rewrite a line's runes in place (transformSelection
-// deliberately, backspace's append(line[:c-1], line[c:]...) incidentally),
-// which would scribble over the step meant to undo them.
+// cloneLines deep-copies lines so an undo step never aliases the document:
+// several edit paths rewrite a line's runes in place (transformSelection
+// deliberately, backspace's append(line[:c-1], line[c:]...) incidentally), which
+// would scribble over the step meant to undo them.
 func cloneLines(lines [][]rune) [][]rune {
 	out := make([][]rune, len(lines))
 	for i, l := range lines {
@@ -64,23 +63,21 @@ func linesBytes(lines [][]rune) int {
 
 // maxUndoSteps caps the undo stack; oldest steps are dropped first.
 //
-// The redo stack has no cap of its own and is bounded only in *count*: undo
-// pushes one entry per pop, so redo never holds more entries than undo did, and
-// a new edit clears it.
-//
-// Deliberately not bounded in bytes. applyStep's inverse carries the lines
-// being *replaced* (the document as it is now), so on a document that grew over
-// its history each inverse is larger than the step that produced it, and redo
-// totals exceed undo totals (48.4 MB against 46.5 MB, measured). The undo
-// stack's byte cap bounds how much history there is to walk back through, so
+// The redo stack has no cap of its own and is bounded only in count: undo pushes
+// one entry per pop, so redo never holds more entries than undo did, and a new
+// edit clears it. Deliberately not bounded in bytes: applyStep's inverse carries
+// the lines being replaced (the document as it is now), so on a document that
+// grew over its history each inverse is larger than the step that produced it,
+// and redo totals exceed undo totals (48.4 MB against 46.5 MB, measured). The
+// undo stack's byte cap bounds how much history there is to walk back through, so
 // the worst case is one document's worth over maxUndoBytes, not a multiple. A
 // redoBytes cap would trade that for silently dropping the deepest redo.
 const maxUndoSteps = 500
 
 // maxUndoBytes caps the undo stack's total size, since a step count alone does
 // not bound memory: a step covering the whole document copies the whole buffer,
-// so 500 over a 20,000-line script is ~2.5 GB. Whichever cap binds first wins,
-// and the newest step is always kept even if it alone exceeds this.
+// so 500 over a 20,000-line script is ~2.5 GB. Whichever cap binds first wins;
+// the newest step is always kept even if it alone exceeds this.
 const maxUndoBytes = 64 << 20
 
 // sliceHeaderBytes is what one line's []rune header costs on a 64-bit build,
@@ -88,21 +85,20 @@ const maxUndoBytes = 64 << 20
 // free.
 const sliceHeaderBytes = 24
 
-// pushUndo records an undo step covering the whole document — the conservative
-// form, for an edit whose reach isn't confined to a row range the caller knows
-// in advance. Per-keystroke paths use pushUndoLocal.
+// pushUndo records an undo step covering the whole document: the conservative
+// form, for an edit whose reach isn't a row range the caller knows in advance.
+// Per-keystroke paths use pushUndoLocal.
 func (e *Editor) pushUndo() { e.pushUndoSpan(0, e.doc.Len()) }
 
 // pushUndoLocal records an undo step covering only the rows a keystroke-sized
-// edit can reach — see editSpan.
+// edit can reach; see editSpan.
 func (e *Editor) pushUndoLocal() { e.pushUndoSpan(e.editSpan()) }
 
-// pushUndoSpan records an undo step for an edit confined to rows [lo, hi).
-//
-// The caller promises to modify no line outside that range and to make any
-// line-count change from inside it. A span narrower than the edit fails
-// silently (undo restores a document that was never typed), so every call site
-// is round-tripped by TestEditorUndoRestoresEveryEditPath.
+// pushUndoSpan records an undo step for an edit confined to rows [lo, hi). The
+// caller promises to modify no line outside that range and to make any line-count
+// change from inside it. A span narrower than the edit fails silently (undo
+// restores a document that was never typed), so every call site is round-tripped
+// by TestEditorUndoRestoresEveryEditPath.
 func (e *Editor) pushUndoSpan(lo, hi int) {
 	e.finalizeStep()
 	st := editorState{
@@ -122,9 +118,9 @@ func (e *Editor) pushUndoSpan(lo, hi int) {
 
 // editSpan is the row range a keystroke-sized edit can touch: the rows the
 // selection covers, or the cursor's row, widened by one either side because
-// Backspace at column 0 joins onto the line above and Delete at end of line
-// pulls the one below up. Widening costs two line copies per keystroke; too
-// little corrupts a document on undo.
+// Backspace at column 0 joins onto the line above and Delete at end of line pulls
+// the one below up. Widening costs two line copies per keystroke; too little
+// corrupts a document on undo.
 func (e *Editor) editSpan() (lo, hi int) {
 	lo, hi = e.cursorRow, e.cursorRow+1
 	if e.HasSelection() {
@@ -135,9 +131,9 @@ func (e *Editor) editSpan() (lo, hi int) {
 }
 
 // finalizeStep closes the newest undo step. A step is pushed before its edit
-// runs, so it can't know how many rows ended up in its span; the edit is
-// confined there, so the new extent is the old one plus the document's net
-// growth. Called by everything that reads or replaces the stack.
+// runs, so it can't know how many rows ended up in its span; the edit is confined
+// there, so the new extent is the old one plus the document's net growth. Called
+// by everything that reads or replaces the stack.
 func (e *Editor) finalizeStep() {
 	if !e.stepOpen {
 		return
@@ -161,9 +157,9 @@ func (e *Editor) trimUndo() {
 	}
 	// Shifted down in place, then the vacated tail cleared. Reslicing to
 	// e.undoStack[drop:] would keep every dropped step's lines reachable behind the
-	// slice header for the editor's life; copying into a fresh array avoids that
-	// but leaves cap == len, so the next push reallocates the whole stack (38 KB
-	// per keystroke once the step cap binds).
+	// slice header for the editor's life; copying into a fresh array avoids that but
+	// leaves cap == len, so the next push reallocates the whole stack (38 KB per
+	// keystroke once the step cap binds).
 	kept := e.undoStack[:copy(e.undoStack, e.undoStack[drop:])]
 	clear(e.undoStack[len(kept):])
 	e.undoStack = kept
@@ -174,12 +170,11 @@ func (e *Editor) trimUndo() {
 // step pushed onto one stack by popping the other is always closed.
 //
 // The document takes ownership of st.old rather than a copy, sound only because
-// every caller has already popped st and never applies a step twice: the
-// reverse step is built from the lines being replaced, not from st.
-//
-// The slice below is deliberately unguarded (see editorState.newLen). Clamping
-// would turn a broken span promise, a document-corrupting bug, into an undo
-// that quietly restores the wrong text.
+// every caller has already popped st and never applies a step twice: the reverse
+// step is built from the lines being replaced, not from st. The slice below is
+// deliberately unguarded (see editorState.newLen): clamping would turn a broken
+// span promise, a document-corrupting bug, into an undo that quietly restores the
+// wrong text.
 func (e *Editor) applyStep(st editorState) editorState {
 	inv := editorState{
 		row:       st.row,

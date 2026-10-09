@@ -10,24 +10,22 @@ import (
 
 // master_key.go is the database-master-key precondition the dialogs that
 // create key material share. A certificate or asymmetric key whose private key
-// is to open without a password is protected by the database master key, and
-// SQL Server refuses to create one in a database that has none (Msg 15581) —
-// so New Database Mirroring Endpoint and the New Certificate / Asymmetric Key
-// dialogs create the master key first when it is absent. New Symmetric Key
-// does not: a symmetric key is encrypted by a certificate's or asymmetric
-// key's public half, or by a password, and none of those needs the master key
-// (probed 2026-09-22).
+// opens without a password is protected by the database master key, and SQL
+// Server refuses to create one in a database that has none (Msg 15581), so New
+// Database Mirroring Endpoint and the New Certificate / Asymmetric Key dialogs
+// create the master key first when absent. New Symmetric Key does not: a
+// symmetric key is encrypted by a certificate's or asymmetric key's public half
+// or a password, none of which needs it (probed 2026-09-22).
 //
 // This is the only place gossms creates one; the master key's own node
 // (master_key_props.go) works on one that exists.
 
 // ensureMasterKey creates d's database master key, protected by password, if
-// it has none; a database that already has one is left alone and password is
-// not used.
+// it has none; an existing one is left alone and password is unused.
 //
 // The check is a read, so under Script Changes it still asks the real server
-// and only the CREATE is collected — a script for a database that already has
-// a master key does not try to make a second one.
+// and only the CREATE is collected: a script for a database that already has a
+// master key does not try to make a second.
 func ensureMasterKey(ctx context.Context, d *gosmo.Database, password string) error {
 	has, err := d.HasMasterKey(ctx)
 	if err != nil {
@@ -40,8 +38,7 @@ func ensureMasterKey(ctx context.Context, d *gosmo.Database, password string) er
 	return err
 }
 
-// Private-key protection choices, in the order keyProtectionFields' radio
-// lists them.
+// Private-key protection choices, in keyProtectionFields' radio order.
 const (
 	keyByMasterKey = iota
 	keyByPassword
@@ -50,9 +47,9 @@ const (
 var keyProtections = []string{"Database master key", "Password"}
 
 // keyProtectionFields is the "Private key" and "Master key" sections New
-// Certificate and New Asymmetric Key share: a private key protected by the
-// master key or by a password, and — when the database has no master key and
-// the first is chosen — the password pair that creates one.
+// Certificate and New Asymmetric Key share: protection by the master key or a
+// password, plus (when the database has no master key and the first is chosen)
+// the password pair that creates one.
 type keyProtectionFields struct {
 	dbName       string
 	hasMasterKey bool
@@ -72,8 +69,8 @@ func newKeyProtectionFields(dbName string, hasMasterKey bool) *keyProtectionFiel
 		mkPass:       propsheet.Password("Master key password", 20),
 		mkConfirm:    propsheet.Password("Confirm master key password", 20),
 	}
-	// Only the fields the chosen protection uses can be typed into; the master
-	// key's are dead altogether when the database already has one.
+	// Only the fields the chosen protection uses are typeable; the master key's
+	// are dead when the database already has one.
 	sync := func() {
 		byPassword := k.byPassword()
 		k.keyPass.SetEnabled(byPassword)
@@ -88,8 +85,8 @@ func newKeyProtectionFields(dbName string, hasMasterKey bool) *keyProtectionFiel
 
 func (k *keyProtectionFields) byPassword() bool { return k.by.Selected() == keyByPassword }
 
-// rows is the two sections, usage being the note under the private-key
-// choice that says what each protection means for this kind of key.
+// rows is the two sections; usage is the note under the private-key choice
+// saying what each protection means for this kind of key.
 func (k *keyProtectionFields) rows(usage string) []propsheet.Row {
 	rows := []propsheet.Row{
 		propsheet.Section("Private key"),
@@ -120,10 +117,9 @@ func (k *keyProtectionFields) input() keyProtectionInput {
 	}
 }
 
-// apply is the protection's share of the apply: it creates the master key
-// when the master key is chosen and absent, and returns the private-key
-// password — script-safe, and empty for master-key protection — for the
-// CREATE's ENCRYPTION BY PASSWORD.
+// apply is the protection's share of the apply: it creates the master key when
+// chosen and absent, and returns the private-key password (script-safe; empty
+// for master-key protection) for the CREATE's ENCRYPTION BY PASSWORD.
 func (k *keyProtectionFields) apply(ctx context.Context, d *gosmo.Database) (string, error) {
 	if k.byPassword() {
 		return k.keyPass.Value(), nil
@@ -132,7 +128,7 @@ func (k *keyProtectionFields) apply(ctx context.Context, d *gosmo.Database) (str
 }
 
 // keyProtectionInput is keyProtectionFields' values, apart from the form so
-// validateKeyProtection is testable on its own.
+// validateKeyProtection is testable alone.
 type keyProtectionInput struct {
 	byPassword              bool
 	keyPassword, keyConfirm string
@@ -141,9 +137,8 @@ type keyProtectionInput struct {
 	dbName                  string
 }
 
-// validateKeyProtection refuses what the server would, naming the field — Msg
-// 15581 for a missing master key password says nothing about the dialog it
-// came from.
+// validateKeyProtection refuses what the server would, naming the field: Msg
+// 15581 says nothing about the dialog it came from.
 func validateKeyProtection(in keyProtectionInput) error {
 	if in.byPassword {
 		if in.keyPassword == "" {

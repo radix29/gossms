@@ -71,8 +71,8 @@ func engineEditionName(code int) string {
 	return strconv.Itoa(code)
 }
 
-// boolIdx maps a bool onto a two-item Select/Radio row's index — 1 for true, 0
-// for false — matching the [off, on] ordering every such row uses.
+// boolIdx maps a bool onto a two-item Select/Radio row's index (1 true, 0 false),
+// matching the [off, on] ordering every such row uses.
 func boolIdx(b bool) int {
 	if b {
 		return 1
@@ -80,13 +80,13 @@ func boolIdx(b bool) int {
 	return 0
 }
 
-// indexOf returns the index of value within items, or 0 if absent: the
-// fallback a Select/Radio row needs when the server reports a value outside the
-// row's options (not slices.Index's -1, which no row can show).
+// indexOf returns the index of value within items, or 0 if absent: the fallback
+// a Select/Radio row needs when the server reports a value outside the row's
+// options (not slices.Index's -1, which no row can show).
 //
-// Only safe when items[0] is a sentinel meaning "nothing" ((None),
-// <All databases>). In a closed set it renders the first real option as though
-// the server had reported it; use indexOfOK there.
+// Only safe when items[0] is a sentinel meaning "nothing" ((None), <All
+// databases>). In a closed set it renders the first real option as though the
+// server had reported it; use indexOfOK there.
 func indexOf(items []string, value string) int {
 	i, _ := indexOfOK(items, value)
 	return i
@@ -103,8 +103,7 @@ func indexOfOK(items []string, value string) (int, bool) {
 }
 
 // preservingItems returns base and the index of value within it, widening the
-// list with value itself when base lacks it, so the index always points at
-// value.
+// list with value itself when base lacks it, so the index always points at value.
 //
 // Prefer this to indexOf for any server-supplied value: indexOf's not-found 0
 // would display items[0] as fact, e.g. for a job owned by a dropped login, on
@@ -124,8 +123,8 @@ func preservingItems(base []string, value string) ([]string, int) {
 // value whether or not base offers it, showing unset when the server reported
 // nothing.
 //
-// Read it back with preservedValue, which maps unset to "" again; a stand-in
-// must not be written as a real name.
+// Read it back with preservedValue, which maps unset to "" again; a stand-in must
+// not be written as a real name.
 func selectPreserving(label string, base []string, value, unset string) *propsheet.SelectRow {
 	items, i := preservingItems(base, orDefault(value, unset))
 	return propsheet.Select(label, items, i)
@@ -143,10 +142,10 @@ func preservedValue(row *propsheet.SelectRow, unset string) string {
 // changedTo reports the real value a selectPreserving row was edited to, and
 // whether there is one: dirty, and not sitting on its stand-in.
 //
-// Gate every write behind it rather than on Dirty() alone. Dirty() suffices
-// only because a stand-in is listed only when it is also the original
-// selection, a property of how the list is built far from the write; otherwise
-// "(unresolved owner)" could be sent to the server as a principal name.
+// Gate every write behind it rather than on Dirty() alone. Dirty() suffices only
+// because a stand-in is listed only when it is also the original selection, a
+// property of how the list is built far from the write; otherwise "(unresolved
+// owner)" could be sent to the server as a principal name.
 //
 // A nil row is a page that drew the value read-only for this object and never
 // changes.
@@ -158,15 +157,14 @@ func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
 	return v, v != ""
 }
 
-// redrawGrid replaces a grid's rows while leaving the cell cursor, dragged
-// column widths and scroll position where the user put them.
+// redrawGrid replaces a grid's rows while leaving the cell cursor, dragged column
+// widths and scroll position where the user put them.
 //
-// DataGrid.SetData resets the cursor to 0,0: right for a fresh result set,
-// wrong for a Properties page re-rendering state the user is navigating. The
-// cursor would jump to the first row, and propsheet.GridRow (which detects
-// movement by diffing SelectedCell around the key) would answer "not handled",
-// so Form moves focus out of the grid on the first arrow key. See
-// wireGridEditor.
+// DataGrid.SetData resets the cursor to 0,0: right for a fresh result set, wrong
+// for a Properties page re-rendering state the user is navigating. The cursor
+// would jump to the first row, and propsheet.GridRow (which detects movement by
+// diffing SelectedCell around the key) would answer "not handled", so Form moves
+// focus out of the grid on the first arrow key. See wireGridEditor.
 //
 // Restoring the cursor alone doesn't fix the scroll: SetSelectedCell ends in
 // ensureVisible, which scrolls from zero to put the row at the bottom edge, so
@@ -182,9 +180,9 @@ func redrawGrid(grid *controls.DataGrid, headers []string, rows [][]string) {
 // nothing.
 //
 // SetData is wrong here too: SetSource clears colWidthOverride, so an Add threw
-// away a column the user had dragged wider. The scroll is restored and then
-// moved by SetSelectedRow's ensureVisible, so appending a row scrolls just far
-// enough to show it.
+// away a column the user had dragged wider. The scroll is restored and then moved
+// by SetSelectedRow's ensureVisible, so appending a row scrolls just far enough
+// to show it.
 func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row int) {
 	grid.SetDataPreservingView(headers, rows)
 	grid.SetSelectedRow(row)
@@ -193,12 +191,12 @@ func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row i
 // wireGridEditor connects a detail editor to a DataGrid's selection (the
 // grid-plus-detail shape of the AG General replica grid, Backup Preferences,
 // Read-Only Routing, User Mapping, Attach and New Index/Statistics/AG pages).
-// Moving off a row commits the editor, loads the new row, and redraws. Returns
-// the redraw a page's RevertFn needs.
+// Moving off a row commits the editor, loads the new row, and redraws. Returns the
+// redraw a page's RevertFn needs.
 //
-// The selected cell is saved and restored around SetData, which resets it to
-// 0,0 from inside OnSelectRow. Without that only the first row is reachable,
-// and GridRow reports arrows unhandled, ejecting focus.
+// The selected cell is saved and restored around SetData, which resets it to 0,0
+// from inside OnSelectRow. Without that only the first row is reachable, and
+// GridRow reports arrows unhandled, ejecting focus.
 func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [][]string, commitCurrent, syncFromSelection func()) (reload func()) {
 	redraw := func() { redrawGrid(grid, headers, gridRows()) }
 	grid.OnSelectRow = func(int) {
@@ -214,19 +212,17 @@ func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [
 }
 
 // compatLevelItems is the Compatibility level dropdown's base list, oldest
-// accepted level to newest gosmo names. Don't use it directly: a server can
-// report a level outside it and offers only its own version's levels, so build
-// the list with compatItemsFor.
+// accepted level to newest gosmo names. Don't use it directly: a server can report
+// a level outside it and offers only its own version's levels, so build the list
+// with compatItemsFor.
 var compatLevelItems = []string{"100", "110", "120", "130", "140", "150", "160", "170"}
 
 // maxCompatForMajor is the highest compatibility level each SQL Server major
-// accepts. Offering a higher one gets "Valid values of the database
-// compatibility level are 100, 110, 120, 130 or 140. (15048)" (2017 rejects
-// 150, 160, 170).
+// accepts. Offering a higher one gets "Valid values of the database compatibility
+// level are 100, 110, 120, 130 or 140. (15048)" (2017 rejects 150, 160, 170).
 //
-// major*10 holds for every reachable version, but an explicit map makes a
-// future irregular release a compile-time edit rather than a silent wrong
-// answer.
+// major*10 holds for every reachable version, but an explicit map makes a future
+// irregular release a compile-time edit rather than a silent wrong answer.
 var maxCompatForMajor = map[int]int{
 	13: 130, // 2016
 	14: 140, // 2017
@@ -235,14 +231,14 @@ var maxCompatForMajor = map[int]int{
 	17: 170, // 2025
 }
 
-// compatItemsFor returns the Compatibility level items for a database at level
-// on a server of the given major version.
+// compatItemsFor returns the Compatibility level items for a database at level on
+// a server of the given major version.
 //
 // The list is capped at what major accepts; an unknown major (0, or newer than
-// the map) is uncapped, gosmo's "treat it as newest" convention. level is
-// inserted in numeric order when the capped list lacks it (a database restored
-// from an older instance, or above the cap) because it must display as its
-// real level even though it can't be selected.
+// the map) is uncapped, gosmo's "treat it as newest" convention. level is inserted
+// in numeric order when the capped list lacks it (a database restored from an
+// older instance, or above the cap) because it must display as its real level
+// though it can't be selected.
 //
 // indexOf's not-found 0 would show such a database as level 100, a real level
 // read as fact. A level of 0 (an unpopulated lightweight handle) adds nothing.
@@ -267,11 +263,11 @@ func compatItemsFor(level, major int) []string {
 	return items
 }
 
-// serverMajor is the connected instance's major version, or 0 when unknown,
-// which every version-gated helper treats as newest.
+// serverMajor is the connected instance's major version, or 0 when unknown, which
+// every version-gated helper treats as newest.
 //
-// An Azure edition is 0 too (see gosmo's serverMajorVersion): a Managed
-// Instance reports 12 while running an 18.x engine, so believing it would cap
+// An Azure edition is 0 too (gosmo's serverMajorVersion): a Managed Instance
+// reports 12 while running an 18.x engine, so believing it would cap
 // compatibility levels at 120 and hide the 2019 enclave options.
 func serverMajor(sc *db.ServerConn) int {
 	if sc == nil || sc.Server == nil || sc.Server.Info() == nil || sc.Server.Info().IsAzure() {
@@ -280,7 +276,7 @@ func serverMajor(sc *db.ServerConn) int {
 	return sc.Server.Info().VersionMajor
 }
 
-// orDefault returns s, or def if s is empty — for server fields that come back
+// orDefault returns s, or def if s is empty: for server fields that come back
 // blank when unset but need a concrete default for indexOf/Select.
 func orDefault(s, def string) string {
 	if s == "" {
@@ -340,9 +336,9 @@ func buildFilterInfoForm(d *PropDialog, t *gosmo.Table, hasFilter bool, filterDe
 }
 
 // Column headers shared by more than one grid. These pages read grids back
-// positionally against the slice they were built from, and several rebuild a
-// grid from three or four call sites, so headers spelled out at each can drift
-// (a column labelled for its neighbour) in a way no test sees.
+// positionally against the slice they were built from, and several rebuild a grid
+// from three or four call sites, so headers spelled out at each can drift (a
+// column labelled for its neighbour) in a way no test sees.
 var (
 	// permissionStateColumns heads the grant/deny/revoke matrices.
 	permissionStateColumns = []string{"Permission", "State"}
@@ -367,8 +363,8 @@ func platformText(info *gosmo.ServerInfo) string {
 
 // versionBanner renders ServerInfo.OSVersion (@@VERSION verbatim) for a
 // single-line row. Line breaks and tabs would break a grid row, so every
-// whitespace run collapses to one space; the full text is still what Show
-// Value and a Static row's Ctrl+C hand back.
+// whitespace run collapses to one space; the full text is still what Show Value
+// and a Static row's Ctrl+C hand back.
 func versionBanner(info *gosmo.ServerInfo) string {
 	s := strings.Join(strings.Fields(info.OSVersion), " ")
 	if s == "" {
@@ -379,9 +375,9 @@ func versionBanner(info *gosmo.ServerInfo) string {
 
 // mustPropertyRowIndex returns the index of the label/value row carrying the
 // given label. A loader that backfills a row after an async read addresses it
-// this way rather than by constant, so inserting a row above cannot redirect
-// the write into the wrong row. The label is a literal in the same function, so
-// a miss is a typo and panics rather than backfilling nothing.
+// this way rather than by constant, so inserting a row above cannot redirect the
+// write into the wrong row. The label is a literal in the same function, so a
+// miss is a typo and panics rather than backfilling nothing.
 func mustPropertyRowIndex(rows [][]string, label string) int {
 	for i, r := range rows {
 		if len(r) > 0 && r[0] == label {
@@ -392,13 +388,13 @@ func mustPropertyRowIndex(rows [][]string, label string) int {
 }
 
 // wireCellToggle wires the "activate a cell in one column to change that row's
-// value" idiom: bounds-check the activation, mutate the page's own edit for
-// that row, then re-render in place.
+// value" idiom: bounds-check the activation, mutate the page's own edit for that
+// row, then re-render in place.
 //
 // col is the one editable column; every other column and an out-of-range row
-// (header area, blank space past the last row) is ignored, which stops a write
-// to edits[len(edits)-1]. count is read at activation time, not captured,
-// because a filter row can shrink the visible slice after wiring.
+// (header area, blank space past the last row) is ignored, which stops a write to
+// edits[len(edits)-1]. count is read at activation time, not captured, because a
+// filter row can shrink the visible slice after wiring.
 //
 // The redraw is redrawGrid, never SetData: these grids are navigated while
 // toggled. Centralised here because it is easy to get wrong nine times.
@@ -428,16 +424,15 @@ func newCellToggleGrid(headers []string, col int,
 }
 
 // staticBlock is a group of read-only detail rows filled from a grid's selected
-// row (the "Selected alert"/"Selected schedule" half of a grid-plus-detail
-// page).
+// row (the "Selected alert"/"Selected schedule" half of a grid-plus-detail page).
 //
-// It exists for the out-of-range branch: clearing one SetValue("") per row
-// risks a missed row that keeps describing the object the selection just left.
-// set() with no values clears every row, and a short list clears the rest.
+// It exists for the out-of-range branch: clearing one SetValue("") per row risks
+// a missed row that keeps describing the object the selection just left. set()
+// with no values clears every row, and a short list clears the rest.
 //
 // Rows are constructed by the caller so each label stays a literal argument to
-// propsheet.Static; TestNoPropertySheetLabelIsTruncated reads the call sites
-// and a label moved into a slice would silently stop being checked.
+// propsheet.Static; TestNoPropertySheetLabelIsTruncated reads the call sites and
+// a label moved into a slice would silently stop being checked.
 type staticBlock struct {
 	rows []*propsheet.StaticRow
 }
@@ -515,15 +510,15 @@ func indexKeyColumnGrid(idx *gosmo.Index) *controls.DataGrid {
 	return grid
 }
 
-// auditSelectRow builds the "Audit" dropdown both audit-specification pages
-// show, from the audits offered and the one the specification is bound to.
+// auditSelectRow builds the "Audit" dropdown both audit-specification pages show,
+// from the audits offered and the one the specification is bound to.
 //
 // An orphaned specification (its audit dropped, which SQL Server allows) has a
-// name in no list, and the database page also omits audits another
-// specification holds. A dropdown preselecting the first real audit would let a
-// stray Apply silently rebind the specification to it. The missing name is
-// added as missingAuditItem and selected; the apply paths test the row's value
-// against that constant before writing.
+// name in no list, and the database page also omits audits another specification
+// holds. A dropdown preselecting the first real audit would let a stray Apply
+// silently rebind the specification to it. The missing name is added as
+// missingAuditItem and selected; the apply paths test the row's value against
+// that constant before writing.
 func auditSelectRow(names []string, current string) *propsheet.SelectRow {
 	selected := slices.Index(names, current)
 	if selected < 0 {
@@ -537,9 +532,9 @@ func auditSelectRow(names []string, current string) *propsheet.SelectRow {
 // sorted: the audit-specification pick lists' rule.
 //
 // A group the instance no longer defines but the specification still records is
-// not in the server's list; dropping it would hide it from the only page that
-// can stop recording it. Pages read grids back positionally against the
-// returned slice, so the sort happens here, once.
+// not in the server's list; dropping it would hide it from the only page that can
+// stop recording it. Pages read grids back positionally against the returned
+// slice, so the sort happens here, once.
 func unionSorted(list, extra []string) []string {
 	for _, v := range extra {
 		if !slices.Contains(list, v) {

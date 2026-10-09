@@ -13,18 +13,18 @@ import (
 )
 
 // key_actions.go is what the three key families share beyond their own
-// Properties: the Owner row their General pages edit, and Remove Private Key
-// for the two with a private key.
+// Properties: the Owner row their General pages edit, and Remove Private Key for
+// the two with a private key.
 //
-// Probed on 13 and 17 (2026-09-22), identical; docs/decisions.md § Keys and
-// certificates has the table:
+// Probed on 13 and 17, identical; docs/decisions.md § Keys and certificates has
+// the table:
 //
 //   - ALTER AUTHORIZATION drops every explicit permission on the object. Taking
 //     ownership yourself needs CONTROL or TAKE OWNERSHIP on it; giving it to
-//     another principal also needs IMPERSONATE on them, which only CONTROL on
-//     the database carries implicitly. The page is gated on CONTROL on the
-//     object (the effective answer folds in CONTROL on the database); the
-//     IMPERSONATE half is left to the server (Msg 15151 naming the principal).
+//     another principal also needs IMPERSONATE on them, which only CONTROL on the
+//     database carries implicitly. The page is gated on CONTROL on the object (the
+//     effective answer folds in CONTROL on the database); the IMPERSONATE half is
+//     left to the server (Msg 15151 naming the principal).
 //   - A certificate or asymmetric key cannot be owned by a role (Msg 15345); a
 //     symmetric key can.
 //   - REMOVE PRIVATE KEY needs the effective ALTER on the object.

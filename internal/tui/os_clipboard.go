@@ -12,12 +12,10 @@ import (
 	"unicode/utf16"
 )
 
-// ---------------------------------------------------------------------------
-// OS-native clipboard, shelled out to the platform's clipboard tool. This
-// is the primary clipboard path — see clipboard.go, which falls back to
-// tcell's OSC 52 terminal clipboard when no native tool is available (e.g.
-// a bare SSH session) or a particular invocation fails.
-// ---------------------------------------------------------------------------
+// OS-native clipboard, shelled out to the platform's clipboard tool. This is
+// the primary clipboard path; clipboard.go falls back to tcell's OSC 52 terminal
+// clipboard when no native tool is available (e.g. a bare SSH session) or an
+// invocation fails.
 
 // clipboardMethod holds the platform-specific copy/paste implementations
 // chosen by detectClipboardMethod. nil means no native tool was found.
@@ -40,10 +38,9 @@ func resolveClipboardMethod() *clipboardMethod {
 	return clipboardMeth
 }
 
-// detectClipboardMethod picks a clipboardMethod for runtime.GOOS using
-// lookPath to probe for available tools. Takes lookPath as a parameter so
-// it's unit-testable without requiring real clipboard binaries to be
-// installed.
+// detectClipboardMethod picks a clipboardMethod for runtime.GOOS using lookPath
+// to probe for tools. lookPath is a parameter so it is unit-testable without
+// real clipboard binaries.
 func detectClipboardMethod(lookPath func(string) (string, error)) *clipboardMethod {
 	found := func(name string) bool {
 		_, err := lookPath(name)
@@ -60,19 +57,16 @@ func detectClipboardMethod(lookPath func(string) (string, error)) *clipboardMeth
 	case "windows":
 		if found("clip") {
 			return &clipboardMethod{
-				// clip.exe reads plain stdin in the console's OEM code
-				// page, not UTF-8: "ö" (C3 B6) landed on the clipboard as
-				// "├╢" under CP437. A UTF-16LE stream with a BOM is the one
-				// input it takes as Unicode, whatever the code page.
+				// clip.exe reads plain stdin in the console's OEM code page, not UTF-8: "ö"
+				// (C3 B6) landed on the clipboard as "├╢" under CP437. A UTF-16LE stream with a
+				// BOM is the one input it takes as Unicode, whatever the code page.
 				copy: func(text string) bool { return runClipboardCmd(utf16LEWithBOM(text), "clip") },
 				paste: func() (string, bool) {
-					// PowerShell writes redirected stdout in
-					// [Console]::OutputEncoding, the OEM code page, so
-					// Get-Clipboard alone turns "ö" into a lone 0x94 byte.
-					// Switch it to BOM-less UTF-8 first. A cold PowerShell
-					// start takes seconds, hence the longer timeout: a paste
-					// that times out falls back to OSC 52, which Windows
-					// Terminal does not answer, so it pasted nothing.
+					// PowerShell writes redirected stdout in [Console]::OutputEncoding, the OEM code
+					// page, so Get-Clipboard alone turns "ö" into a lone 0x94 byte. Switch it to
+					// BOM-less UTF-8 first. A cold PowerShell start takes seconds, hence the longer
+					// timeout: a paste that times out falls back to OSC 52, which Windows Terminal
+					// does not answer, so it pasted nothing.
 					out, ok := runClipboardOutCmdTimeout(powerShellTimeout, "powershell", "-NoProfile", "-NonInteractive", "-Command", windowsPasteScript)
 					if !ok {
 						return "", false
@@ -104,8 +98,8 @@ func detectClipboardMethod(lookPath func(string) (string, error)) *clipboardMeth
 	return nil
 }
 
-// windowsPasteScript reads the clipboard with PowerShell's stdout switched
-// to BOM-less UTF-8 — see the Windows paste in detectClipboardMethod.
+// windowsPasteScript reads the clipboard with PowerShell's stdout switched to
+// BOM-less UTF-8; see the Windows paste in detectClipboardMethod.
 const windowsPasteScript = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; Get-Clipboard -Raw"
 
 // trimPowerShellOutput removes what PowerShell adds to the clipboard text: a
@@ -127,9 +121,9 @@ const (
 	powerShellTimeout = 5 * time.Second
 )
 
-// utf16LEWithBOM encodes text as UTF-16LE preceded by a byte-order mark,
-// the form clip.exe takes as Unicode. The result is raw bytes carried in a
-// string, for runClipboardCmd's stdin.
+// utf16LEWithBOM encodes text as UTF-16LE preceded by a byte-order mark, the
+// form clip.exe takes as Unicode. The result is raw bytes carried in a string,
+// for runClipboardCmd's stdin.
 func utf16LEWithBOM(text string) string {
 	units := utf16.Encode([]rune(text))
 	b := make([]byte, 0, 2+2*len(units))
@@ -141,8 +135,7 @@ func utf16LEWithBOM(text string) string {
 }
 
 // runClipboardCmd runs name(args...) with text piped to stdin, for a copy
-// command. Returns false if the tool isn't available or the invocation
-// fails.
+// command. Returns false if the tool isn't available or the invocation fails.
 func runClipboardCmd(text string, name string, args ...string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
 	defer cancel()
@@ -151,13 +144,12 @@ func runClipboardCmd(text string, name string, args ...string) bool {
 	return cmd.Run() == nil
 }
 
-// runClipboardOutCmd runs name(args...) and returns its stdout verbatim,
-// for a paste command. ok=false means the tool isn't available or the
-// invocation failed — not the same as a legitimately empty clipboard,
-// which is ok=true with text=="". Output is returned byte-for-byte (no
-// trailing-newline trimming here) since xclip/xsel/pbpaste/wl-paste
-// (with --no-newline) all emit the clipboard's exact bytes; a caller
-// whose tool doesn't (PowerShell) trims it itself.
+// runClipboardOutCmd runs name(args...) and returns its stdout verbatim, for a
+// paste command. ok=false means the tool isn't available or failed, not a
+// legitimately empty clipboard (ok=true, text==""). Output is byte-for-byte (no
+// newline trimming) since xclip/xsel/pbpaste/wl-paste (--no-newline) emit the
+// clipboard's exact bytes; a tool that doesn't (PowerShell) is trimmed by its
+// caller.
 func runClipboardOutCmd(name string, args ...string) (string, bool) {
 	return runClipboardOutCmdTimeout(clipboardTimeout, name, args...)
 }
@@ -175,8 +167,8 @@ func runClipboardOutCmdTimeout(timeout time.Duration, name string, args ...strin
 }
 
 // osClipboardWrite writes text to the native OS clipboard via the first
-// available platform tool. Returns false if no tool is available or this
-// particular invocation failed — callers fall back to the OSC 52 path.
+// available platform tool. Returns false if none is available or this
+// invocation failed; callers fall back to OSC 52.
 func osClipboardWrite(text string) bool {
 	m := resolveClipboardMethod()
 	if m == nil {
@@ -185,9 +177,9 @@ func osClipboardWrite(text string) bool {
 	return m.copy(text)
 }
 
-// osClipboardRead reads the native OS clipboard synchronously. ok=false
-// means no tool is available or this invocation failed — callers fall
-// back to the async GetClipboard()/EventClipboard path.
+// osClipboardRead reads the native OS clipboard synchronously. ok=false means no
+// tool is available or this invocation failed; callers fall back to the async
+// GetClipboard()/EventClipboard path.
 func osClipboardRead() (string, bool) {
 	m := resolveClipboardMethod()
 	if m == nil {

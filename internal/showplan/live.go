@@ -9,32 +9,30 @@ import "math"
 // sys.dm_exec_query_profiles reports a running statement one row per operator
 // per thread; Live Query Statistics shows one figure per operator. MergeProfiles
 // folds the rows into node-keyed LiveCounters, and NodeProgress /
-// StatementProgress turn those into the percentages SSMS draws. The package
-// stays free of database dependencies, so ProfileRow mirrors only the
-// gosmo.QueryProfile fields the merge reads and the caller copies them across.
+// StatementProgress turn those into percentages. The package stays free of
+// database dependencies, so ProfileRow mirrors only the gosmo.QueryProfile
+// fields the merge reads.
 //
-// What a parallel plan looks like (observed on 2025, DOP 4): an operator in a
-// parallel zone has a row per worker thread 1..DOP *and* a thread-0 row that
-// stays all zeros — never opened, no estimate. Treating that phantom row as a
-// thread that has not started would keep every parallel operator "running"
-// forever, so threads that never opened are ignored once any thread has.
-// estimate_row_count is split across the threads (750 each of a 3000-row
-// scan) and already covers every execution of an inner-side operator (a
-// spool under nested loops estimated 750 × 3000), so the per-node estimate is
-// a plain sum, exactly like the rows.
+// Parallel plans (observed on 2025, DOP 4): an operator in a parallel zone has
+// a row per worker thread 1..DOP *and* a thread-0 row that stays all zeros
+// (never opened, no estimate). Treating that phantom as an unstarted thread
+// would keep every parallel operator "running" forever, so threads that never
+// opened are ignored once any thread has. estimate_row_count is split across
+// threads (750 each of a 3000-row scan) and already covers every execution of
+// an inner-side operator (a spool under nested loops estimated 750 × 3000), so
+// the per-node estimate is a plain sum, like the rows.
 //
-// Lightweight profiling — what a session is under when nothing asked for an
-// actual plan (on by default from 2019; Activity Monitor's Show Live
-// Execution Plan watches such sessions) — counts rows and nothing else: every
-// time column stays 0, open and close included (observed on 2025). A thread
-// that has produced rows has plainly opened, so it counts as open without an
-// open time; it can never be seen to close, so such an operator stays running,
-// and LiveCounters.Timed is false so nobody draws its zero times as measured.
+// Lightweight profiling (on by default from 2019; what Activity Monitor's Show
+// Live Execution Plan watches) counts rows only: every time column stays 0,
+// open and close included (observed on 2025). A thread that has produced rows
+// counts as open without an open time; it is never seen to close, so the
+// operator stays running, and LiveCounters.Timed is false so the zero times
+// are not drawn as measured.
 
 // ProfileRow is one row of sys.dm_exec_query_profiles: one operator on one
-// thread. The caller filters to the statement being shown (gosmo's
-// PlanHandle and statement offsets) before merging — the merge keys on
-// NodeID alone, and node ids repeat across statements.
+// thread. The caller filters to the statement shown (gosmo's PlanHandle and
+// statement offsets) before merging: the merge keys on NodeID alone, and node
+// ids repeat across statements.
 type ProfileRow struct {
 	NodeID           int
 	ThreadID         int
@@ -81,17 +79,16 @@ func (s LiveState) String() string {
 
 // LiveCounters is one operator's counters so far, merged over its threads.
 // Rows, estimates, reads and CPUMS are summed and ElapsedMS comes from the
-// slowest thread, as Runtime's do, so the figures do not jump when the live
-// view gives way to the actual plan.
+// slowest thread, as Runtime's do, so figures don't jump when the actual plan
+// replaces the live view.
 type LiveCounters struct {
 	NodeID     int
 	PhysicalOp string
 	State      LiveState
 	Threads    int // threads that have opened the operator
 
-	// Timed is set when the server timed the operator (some thread has an
-	// open time). Lightweight profiling does not, and ElapsedMS and CPUMS
-	// are then 0 for want of a measurement, not a measured 0.
+	// Timed is set when some thread has an open time. Lightweight profiling
+	// has none, so ElapsedMS and CPUMS are then unmeasured, not a measured 0.
 	Timed bool
 
 	Rows       int64
@@ -167,13 +164,12 @@ func MergeProfiles(rows []ProfileRow) map[int]LiveCounters {
 	return out
 }
 
-// FillPlanEstimates gives each operator in m that the DMV reported no
-// estimate for the plan's own, over all its executions: EstimateRows (one
-// execution's) × (1 + EstimateRebinds + EstimateRewinds), the figure the
-// DMV's estimate_row_count otherwise carries. The DMV leaves it 0 at times —
-// observed on 2025 under lightweight profiling, on a re-run of a cached plan
-// whose first run had them. The plan is the in-flight one, a single
-// statement; its first statement with an operator tree is used.
+// FillPlanEstimates gives each operator in m that the DMV reported no estimate
+// for the plan's own over all executions: EstimateRows × (1 + EstimateRebinds +
+// EstimateRewinds), the figure estimate_row_count otherwise carries. The DMV
+// leaves it 0 at times (observed on 2025 under lightweight profiling, on a
+// re-run of a cached plan). The plan is the in-flight single statement; its
+// first statement with an operator tree is used.
 func FillPlanEstimates(p *Plan, m map[int]LiveCounters) {
 	if p == nil || len(m) == 0 {
 		return
@@ -200,7 +196,7 @@ const liveCap = 0.99
 
 // NodeProgress is the operator's completion in [0, 1]: 1 once done, 0 before
 // it starts, otherwise rows over the estimate capped at 99 %. A running
-// operator with no estimate reports 0 — there is nothing to measure against.
+// operator with no estimate reports 0.
 func NodeProgress(c LiveCounters) float64 {
 	switch {
 	case c.State == LiveDone:
@@ -214,10 +210,8 @@ func NodeProgress(c LiveCounters) float64 {
 // StatementProgress is the statement's overall completion in [0, 1], row-
 // weighted across operators: each contributes its rows so far against the
 // larger of its estimate and its rows (a finished operator, its actual rows
-// alone — its estimate no longer matters). Capped at 99 % until every
-// operator is done. An over-estimate operator thus counts as caught up rather
-// than dragging the total past what is known; no estimate can say how much
-// more it will produce.
+// alone). Capped at 99 % until every operator is done. An operator past its
+// estimate thus counts as caught up; nothing says how much more it will produce.
 func StatementProgress(m map[int]LiveCounters) float64 {
 	if len(m) == 0 {
 		return 0

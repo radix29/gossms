@@ -20,8 +20,8 @@ import (
 
 func main() {
 	// Handled first, without the flag package: gossms takes no other arguments,
-	// and everything below opens a file or a tcell screen. `brew test`, CI and
-	// bug reports run without a TTY, where App.Run cannot start.
+	// and everything below opens a file or a tcell screen. `brew test` and CI
+	// run without a TTY, where App.Run cannot start.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "--version", "-version", "-v":
@@ -40,14 +40,13 @@ func main() {
 	err := run(app)
 	loopReturned()
 	if !errors.Is(err, errPanicked) {
-		// Settings and tracked queries are saved in the background; a save
-		// still out when the loop returned would die with the process.
+		// Background saves still out when the loop returned would die with
+		// the process.
 		app.FlushSaves(3 * time.Second)
 	}
 	if err != nil {
-		// The log above may be the only other place this goes: an error
-		// before the screen starts ("init screen") would otherwise leave the
-		// shell with nothing. run has already told stderr about a panic.
+		// An error before the screen starts ("init screen") would otherwise
+		// leave the shell with nothing. run already reported a panic.
 		if !errors.Is(err, errPanicked) {
 			fmt.Fprintf(os.Stderr, "gossms error: %v\n", err)
 		}
@@ -62,16 +61,16 @@ var errPanicked = errors.New("panic")
 // watchTermSignals saves every unsaved query panel when the terminal is closed,
 // an ssh session drops (SIGHUP) or the process is killed (SIGTERM), rather than
 // dying with the default action. Both constants exist on every GOOS; on
-// Windows they are simply never delivered.
+// Windows they are never delivered.
 //
-// App.SaveOnSignal quits once it has saved, so Run returns and main exits
-// normally. If Run is wedged and never does, the exit below ends the process
-// anyway: the text is on disk by then, and a hung process on a closed terminal
-// is worse than an unrestored one.
+// App.SaveOnSignal quits once saved, so Run returns and main exits normally.
+// If Run is wedged, the exit below ends the process anyway: the text is on disk
+// by then, and a hung process on a closed terminal is worse than an unrestored
+// one.
 //
-// main calls the returned func as soon as Run returns. From then on main owns
-// the exit: the watchdog's os.Exit used to fire 2 s after the signal whatever
-// main was doing, cutting off its FlushSaves(3s) mid-write.
+// main calls the returned func as soon as Run returns, and then owns the exit:
+// a watchdog os.Exit firing regardless would cut off main's FlushSaves(3s)
+// mid-write.
 func watchTermSignals(app *tui.App) (loopReturned func()) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGTERM)
@@ -112,12 +111,12 @@ func printVersion() {
 }
 
 // run reports a panic on the UI goroutine instead of letting it vanish:
-// App.Run's deferred screen.Fini restores the terminal, but the trace goes to
-// stderr while still on the alternate screen and scrolls away with it.
-// Recovering here, after Fini, puts the trace in the log and a short line on
-// the restored screen. Every query panel with unsaved text is then written to
-// config.RecoveredDir by App.EmergencySave, and the files named. Background
-// goroutines use App.safego/recoverPanic instead.
+// App.Run's deferred screen.Fini restores the terminal, but a trace written
+// while on the alternate screen scrolls away with it. Recovering here, after
+// Fini, puts the trace in the log and a short line on the restored screen.
+// Query panels with unsaved text are written to config.RecoveredDir by
+// App.EmergencySave and the files named. Background goroutines use
+// App.safego/recoverPanic instead.
 func run(app *tui.App) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

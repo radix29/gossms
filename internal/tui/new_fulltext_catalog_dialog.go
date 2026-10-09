@@ -60,9 +60,9 @@ func NewNewFullTextCatalogDialog(app *App) *NewFullTextCatalogDialog {
 	return d
 }
 
-// fullTextAccentItems are the accent-sensitivity choices of the New dialog,
-// in the order fullTextAccentChoice reads them: the first leaves the clause
-// out, which takes the database's collation.
+// fullTextAccentItems are the New dialog's accent-sensitivity choices, in the
+// order fullTextAccentChoice reads them; the first omits the clause, taking the
+// database's collation.
 var fullTextAccentItems = []string{"Database default", "Sensitive", "Insensitive"}
 
 // fullTextAccentChoice is WITH ACCENT_SENSITIVITY for item i of
@@ -117,8 +117,8 @@ func (d *NewFullTextCatalogDialog) buildPages(pf *nftCatalogPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		// DatabaseRef: the CREATE addresses the database by name, and a
-		// by-name read would not work under Script Changes.
+		// DatabaseRef: the CREATE addresses the database by name, and a by-name read
+		// would not work under Script Changes.
 		_, err := sc.Server.DatabaseRef(dbName).CreateFullTextCatalog(ctx, req)
 		return err
 	}

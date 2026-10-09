@@ -9,14 +9,13 @@
 //   - Rendering is done with Draw(tcell.Screen).
 //   - Focus is toggled with Focus(bool).
 //
-// Widgets are purely presentational; they hold their own value state but
-// know nothing about the application.  The caller reads values via Value(),
-// Checked(), Selected(), etc.
+// Widgets are purely presentational: they hold their own value state and know
+// nothing about the application. The caller reads Value(), Checked(),
+// Selected(), etc.
 //
-// spinner.go is the exception to the pattern above: a Spinner is a busy
-// indicator, not an input, so it has no bounds, focus or event handling — it
-// is a value that answers which frame shows for a given elapsed duration, and
-// leaves the redraw clock to the host.
+// spinner.go is the exception: a Spinner is a busy indicator, not an input, so
+// it has no bounds, focus or events. It answers which frame shows for a given
+// elapsed duration and leaves the redraw clock to the host.
 //
 // One file per widget: input_field.go, dropdown.go, checkbox.go, button.go,
 // radiobox.go, spinner.go. common.go holds small helpers shared across more

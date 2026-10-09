@@ -6,19 +6,13 @@ import (
 )
 
 // latest is the "start a load, cancel the one it replaces, drop stale results"
-// lifecycle, owned once instead of hand-rolled per site. An explorer node's
-// children, a completion inventory's catalog, a Query Store report, its plan
-// pane, its chart, the Log Viewer's read, the Detail Browser's fetch, Object
-// Dependencies, a create dialog's prefetch, Back Up's and Restore's loads (one
-// latest per kind), Attach's and New Snapshot's file reads and Results to
-// Text's formatting of a large set are all latest-only: the newest
-// request is the only one whose result anyone wants, and every earlier one
-// should stop taking a pool connection from it the moment it is superseded.
+// lifecycle, owned once instead of hand-rolled per site. Every load where only
+// the newest request's result matters uses it (explorer node children,
+// completion catalogs, Query Store reports, the Log Viewer's read, Back Up's and
+// Restore's loads, file reads, ...); an earlier one should stop taking a pool
+// connection the moment it is superseded.
 //
-// Both halves matter, and every copy of this that shipped with only the first
-// half was a bug: Refresh left every replaced node's load running, the
-// Properties dialog let a previous showing's page loads reach the next one,
-// and the Detail Browser never cancelled a fetch it had moved past.
+// Both halves matter, and every copy that shipped with only the first was a bug:
 //
 //   - the token discards a superseded result, so a slow fetch cannot overwrite
 //     the fresher one that replaced it;
@@ -27,9 +21,9 @@ import (
 //     through a ranking or arrowing through a folder starts one read per row
 //     and the row the user stops on queues behind all of them.
 //
-// A site needing more than one run's worth of bookkeeping wraps this rather
-// than growing it: DetailBrowser's detailRuns adds the node each run is for and
-// the per-node pending map a cancel has to evict.
+// A site needing more than one run's bookkeeping wraps this rather than growing
+// it: DetailBrowser's detailRuns adds the node each run is for and the per-node
+// pending map a cancel has to evict.
 //
 // Every method runs on the UI goroutine; the zero value is ready to use, and a
 // latest with nothing in flight is safe to Cancel, Abandon or ask Idle.
@@ -43,10 +37,9 @@ type latest struct {
 }
 
 // Begin supersedes whatever run is in flight and starts a new one under a
-// context derived from parent — the owning connection's Context(), so
-// disconnecting cancels the run rather than leaving it to idle out. It returns
-// that context and the run's token, which the caller hands to Done on
-// completion.
+// context derived from parent (the owning connection's Context(), so
+// disconnecting cancels the run). It returns that context and the run's token,
+// which the caller hands to Done on completion.
 func (l *latest) Begin(parent context.Context) (context.Context, int) {
 	return l.begin(context.WithCancel(parent))
 }
@@ -69,9 +62,9 @@ func (l *latest) begin(ctx context.Context, cancel context.CancelFunc) (context.
 func (l *latest) Current(token int) bool { return l.seq == token }
 
 // Done reports what Current does, and on true releases the finished run's
-// context. The cancel is called, not merely dropped: the result is already in
-// hand, but the context stays registered on its parent — with its timer armed,
-// for BeginTimeout — until something cancels it, for every run ever started.
+// context. The cancel is called, not merely dropped: the context stays
+// registered on its parent (timer armed, for BeginTimeout) until something
+// cancels it, for every run ever started.
 func (l *latest) Done(token int) bool {
 	if !l.Current(token) {
 		return false
@@ -82,8 +75,7 @@ func (l *latest) Done(token int) bool {
 
 // Cancel stops the run in flight, if any, without superseding it: its token
 // stays current, so a result already on its way still lands. That is what a
-// panel's Close wants — the panel is going away and nothing will read the
-// result anyway — and what Begin does before starting the run that replaces it.
+// panel's Close wants, and what Begin does before starting the replacement.
 func (l *latest) Cancel() {
 	if l.cancel != nil {
 		l.cancel()

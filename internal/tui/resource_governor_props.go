@@ -16,44 +16,40 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// resource_governor_props.go is Resource Governor Properties: one dialog for
-// the whole configuration, as SSMS has it, paged — General, Resource Pools,
-// Workload Groups (resource_governor_props_groups.go) and External Resource
-// Pools. A pool, group or external pool leaf opens the same dialog on its own
-// page with its row selected; there is no separate Pool Properties, so there
-// is one editor per concept.
+// resource_governor_props.go is Resource Governor Properties: one dialog for the
+// whole configuration, as SSMS has it, paged: General, Resource Pools, Workload
+// Groups (resource_governor_props_groups.go) and External Resource Pools. A pool,
+// group or external pool leaf opens the same dialog on its own page with its row
+// selected; there is no separate Pool Properties.
 //
 // # One Apply, in dependency order, finished once
 //
 // The pages plan their statements rather than send them (applyPlan): a group
-// cannot move into a pool before the pool exists, nor a pool be dropped while
-// a group still uses it, and those edits sit on different pages. The plan
-// runs in rgPhase order, and runResourceGovernorPlan then ends every Apply
-// with exactly one ALTER RESOURCE GOVERNOR RECONFIGURE — or DISABLE, when the
-// governor is to stay off: RECONFIGURE enables a disabled governor (W1), and
-// briefly enabling one with a classifier in place would classify every login
-// that arrived meanwhile.
+// cannot move into a pool before the pool exists, nor a pool be dropped while a
+// group still uses it, and those edits sit on different pages. The plan runs in
+// rgPhase order, and runResourceGovernorPlan then ends every Apply with exactly
+// one ALTER RESOURCE GOVERNOR RECONFIGURE, or DISABLE when the governor is to stay
+// off: RECONFIGURE enables a disabled governor (W1), and briefly enabling one with
+// a classifier in place would classify every login that arrived meanwhile.
 //
 // The plan is one transaction (gosmo's InTransaction, W21): pool, group and
-// external-pool DDL, the classifier and the I/O cap are all transactional, so
-// a failure part-way stores nothing and the pages keep their edits to fix and
-// apply again. RECONFIGURE and DISABLE refuse to run inside a user
-// transaction (Msg 574), so they follow the COMMIT; one failing there leaves
-// the plan stored but not in force, and the dialog reloads every page, so
-// what it shows is what the server has. A rolled-back classifier change still
-// sets the governor's pending flag (verified on 17), which the next
-// RECONFIGURE clears without changing anything.
+// external-pool DDL, the classifier and the I/O cap are all transactional, so a
+// failure part-way stores nothing and the pages keep their edits to fix and apply
+// again. RECONFIGURE and DISABLE refuse to run inside a user transaction (Msg
+// 574), so they follow the COMMIT; one failing there leaves the plan stored but
+// not in force, and the dialog reloads every page, so what it shows is what the
+// server has. A rolled-back classifier change still sets the governor's pending
+// flag (verified on 17), which the next RECONFIGURE clears without changing
+// anything.
 //
 // # Pages that see each other's edits
 //
-// A pool added on Resource Pools or External Pools is offered on Workload
-// Groups at once, and one removed there is no longer offered as a group's new
-// pool: creating a pool and a group in it is one Apply, since pools are
-// created first. rgModel carries the names across, as mailModel does for
-// Database Mail.
+// A pool added on Resource Pools or External Pools is offered on Workload Groups
+// at once, and one removed there is no longer offered as a group's new pool:
+// creating a pool and a group in it is one Apply, since pools are created first.
+// rgModel carries the names across, as mailModel does for Database Mail.
 
-// The pages of Resource Governor Properties, in order — what rgFocus.page
-// selects.
+// The pages of Resource Governor Properties, in order: what rgFocus.page selects.
 const (
 	rgPageGeneral = iota
 	rgPagePools
@@ -61,11 +57,11 @@ const (
 	rgPageExternalPools
 )
 
-// The phases a Resource Governor Apply runs in. Everything that will be
-// referred to is created first, groups are created and moved next, and drops
-// come after the moves that empty a pool. Pool limits are altered last, after
-// the drops: a dropped pool's MIN_CPU_PERCENT and MIN_MEMORY_PERCENT are then
-// free for a raised one, since the minimums across pools may not exceed 100.
+// The phases a Resource Governor Apply runs in. Everything that will be referred
+// to is created first, groups are created and moved next, and drops come after
+// the moves that empty a pool. Pool limits are altered last, after the drops: a
+// dropped pool's MIN_CPU_PERCENT and MIN_MEMORY_PERCENT are then free for a raised
+// one, since the minimums across pools may not exceed 100.
 const (
 	rgPhaseGovernor = iota
 	rgPhaseCreatePools
@@ -76,13 +72,13 @@ const (
 	rgPhaseAlterPools
 )
 
-// rgEnabledKey is the plan value General's Enabled box sets: whether the run
-// ends in RECONFIGURE or DISABLE. Absent when General was not edited.
+// rgEnabledKey is the plan value General's Enabled box sets: whether the run ends
+// in RECONFIGURE or DISABLE. Absent when General was not edited.
 const rgEnabledKey = "resource governor enabled"
 
-// rgFocus is where Resource Governor Properties opens: the page, and the row
-// to select on it. Pool also picks the Workload Groups page's pool when no
-// group is named.
+// rgFocus is where Resource Governor Properties opens: the page, and the row to
+// select on it. Pool also picks the Workload Groups page's pool when no group is
+// named.
 type rgFocus struct {
 	page                  int
 	pool, group, external string
@@ -105,8 +101,8 @@ func (a *App) showResourceGovernorPropertiesFor(sc *db.ServerConn, focus rgFocus
 	}
 }
 
-// rgPropPages builds the page set. Every write is Resource Governor DDL,
-// which needs CONTROL SERVER and nothing less (W1: ALTER SETTINGS is refused).
+// rgPropPages builds the page set. Every write is Resource Governor DDL, which
+// needs CONTROL SERVER and nothing less (W1: ALTER SETTINGS is refused).
 func rgPropPages(d *PropDialog, sc *db.ServerConn, focus rgFocus) []propPage {
 	model := &rgModel{}
 	return []propPage{
@@ -118,17 +114,16 @@ func rgPropPages(d *PropDialog, sc *db.ServerConn, focus rgFocus) []propPage {
 }
 
 // rgModel is what the pages of one showing share: the pool and external pool
-// names the two pool pages will leave in place — existing ones not being
-// removed, and new ones — for the Workload Groups page.
+// names the two pool pages will leave in place (existing ones not being removed,
+// and new ones), for the Workload Groups page.
 type rgModel struct {
 	pools, externals rgNames
 }
 
-// rgNames is one published name list, with mailModel's rules: nil until its
-// page has loaded, when the using page falls back to its own read; the
-// initial names set from the load without notifying, an edit's published
-// from the UI goroutine to the one listener, which registers at the end of
-// its page's load.
+// rgNames is one published name list, with mailModel's rules: nil until its page
+// has loaded, when the using page falls back to its own read; the initial names
+// are set from the load without notifying, an edit's published from the UI
+// goroutine to the one listener, which registers at the end of its page's load.
 type rgNames struct {
 	mu     sync.Mutex
 	names  []string
@@ -168,13 +163,14 @@ func (n *rgNames) onChange(fn func()) {
 }
 
 // runResourceGovernorPlan carries out a Resource Governor Apply: the pages'
-// statements in phase order as one transaction, then RECONFIGURE, or DISABLE
-// when the governor is to be off. With General unedited, that is whatever the governor is now
-// — read here, under Script Changes too, since reads still reach the server.
+// statements in phase order as one transaction, then RECONFIGURE, or DISABLE when
+// the governor is to be off. With General unedited, that is whatever the governor
+// is now, read here (under Script Changes too, since reads still reach the
+// server).
 //
-// A disabled governor left disabled gets DISABLE, which clears the pending
-// flag without applying anything: nothing is in force while it is off, and
-// the next RECONFIGURE (Enabled ticked) applies every stored change.
+// A disabled governor left disabled gets DISABLE, which clears the pending flag
+// without applying anything: nothing is in force while it is off, and the next
+// RECONFIGURE (Enabled ticked) applies every stored change.
 func runResourceGovernorPlan(ctx context.Context, sc *db.ServerConn, plan *applyPlan) error {
 	if err := sc.Server.InTransaction(ctx, plan.run); err != nil {
 		return err
@@ -190,8 +186,8 @@ func runResourceGovernorPlan(ctx context.Context, sc *db.ServerConn, plan *apply
 	return rg.Disable(ctx)
 }
 
-// rgPlanFrom is applyPlanFrom for a Resource Governor page, as an error when
-// the page was applied without one.
+// rgPlanFrom is applyPlanFrom for a Resource Governor page, as an error when the
+// page was applied without one.
 func rgPlanFrom(ctx context.Context) (*applyPlan, error) {
 	if plan := applyPlanFrom(ctx); plan != nil {
 		return plan, nil
@@ -227,11 +223,11 @@ GO
 `
 
 // rgNewClassifier is New classifier...: it closes the dialog, then opens the
-// template on master. The dialog is modal, so a template opened behind it
-// could not be typed in, run, or even reached until the dialog closed — the
-// first version left it open and told the user to "create the function, then
-// F5 here", which no key could do (W7). Edits on any page would be lost with
-// the dialog, so they are confirmed first.
+// template on master. The dialog is modal, so a template opened behind it could
+// not be typed in, run, or even reached until the dialog closed (the first version
+// left it open and told the user to "create the function, then F5 here", which no
+// key could do, W7). Edits on any page would be lost with the dialog, so they are
+// confirmed first.
 func rgNewClassifier(d *PropDialog, sc *db.ServerConn) {
 	open := func() {
 		d.Dismiss()
@@ -250,14 +246,13 @@ func rgNewClassifier(d *PropDialog, sc *db.ServerConn) {
 		})
 }
 
-// pageRGGeneral is the governor itself: enabled, the classifier, and the
-// stored I/O limit, with what is in force beside them when the login may
-// read it.
+// pageRGGeneral is the governor itself: enabled, the classifier, and the stored
+// I/O limit, with what is in force beside them when the login may read it.
 //
-// The classifier is a picker (docs/decisions.md): the dialog lists the
-// functions master already has that the server would accept, and New
-// classifier... opens a template to write one. Writing T-SQL is a query
-// window's job, not a property sheet's.
+// The classifier is a picker (docs/decisions.md): the dialog lists the functions
+// master already has that the server would accept, and New classifier... opens a
+// template to write one. Writing T-SQL is a query window's job, not a property
+// sheet's.
 func pageRGGeneral(d *PropDialog, sc *db.ServerConn) propPage {
 	return propPage{
 		title: "General",
@@ -276,8 +271,8 @@ func pageRGGeneral(d *PropDialog, sc *db.ServerConn) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			// In force needs VIEW SERVER STATE; without it the page shows the
-			// stored half only.
+			// In force needs VIEW SERVER STATE; without it the page shows the stored half
+			// only.
 			status, _ := sc.Server.ResourceGovernorStatus(ctx)
 
 			choices, selected := rgClassifierChoices(candidates, rg.ClassifierSchema, rg.ClassifierName, rg.ClassifierFunctionID)
@@ -351,12 +346,11 @@ func rgPendingNote(enabled bool) string {
 	return "Changes were stored since the governor was disabled; they take effect when it is enabled."
 }
 
-// rgClassifierChoices is the Classifier function list — none, then each
-// candidate — and the index of the stored classifier in it. A stored
-// classifier missing from the candidates (its definition no longer
-// qualifies, or the login cannot see it) is appended rather than displayed as
-// some other choice; an unresolvable one is shown by id and can only be
-// replaced.
+// rgClassifierChoices is the Classifier function list (none, then each candidate)
+// and the index of the stored classifier in it. A stored classifier missing from
+// the candidates (its definition no longer qualifies, or the login cannot see it)
+// is appended rather than displayed as some other choice; an unresolvable one is
+// shown by id and can only be replaced.
 func rgClassifierChoices(candidates []gosmo.ClassifierFunction, schema, name string, id int) ([]gosmo.ClassifierFunction, int) {
 	choices := append([]gosmo.ClassifierFunction{{}}, candidates...)
 	if id == 0 && name == "" {
@@ -366,8 +360,8 @@ func rgClassifierChoices(candidates []gosmo.ClassifierFunction, schema, name str
 		return choices, i
 	}
 	if name == "" {
-		// Unresolvable: the item text says so, and choosing it again sends
-		// nothing, since the row is only dirty off it.
+		// Unresolvable: the item text says so, and choosing it again sends nothing, since
+		// the row is only dirty off it.
 		name = fmt.Sprintf("object_id %d (not visible)", id)
 	}
 	choices = append(choices, gosmo.ClassifierFunction{Schema: schema, Name: name})
@@ -387,8 +381,8 @@ func rgClassifierItem(c gosmo.ClassifierFunction) string {
 
 // -- Resource pools and external resource pools -------------------------------
 
-// rgIntField is one integer limit of a pool kind: its grid column, its detail
-// row, its range and default, and where it goes in the kind's options. O is
+// rgIntField is one integer limit of a pool kind: its grid column, detail row,
+// range and default, and where it goes in the kind's options. O is
 // gosmo.ResourcePoolOptions or gosmo.ExternalResourcePoolOptions.
 type rgIntField[O any] struct {
 	header   string
@@ -399,8 +393,8 @@ type rgIntField[O any] struct {
 	set      func(o *O, v *int)
 }
 
-// rgIntEdit is one pool's row on a pool page: what the server has, what the
-// page now says, and whether it is new or going.
+// rgIntEdit is one pool's row on a pool page: what the server has, what the page
+// now says, and whether it is new or going.
 type rgIntEdit struct {
 	name   string
 	system bool // built in: never dropped
@@ -409,8 +403,8 @@ type rgIntEdit struct {
 	orig []int
 	cur  []int
 
-	// origAff and curAff are the pool's affinity (rgAffinityEditor).
-	// affFixed marks one the grid cannot show, which affText then renders.
+	// origAff and curAff are the pool's affinity (rgAffinityEditor). affFixed marks
+	// one the grid cannot show, which affText then renders.
 	origAff, curAff rgAffinity
 	affFixed        bool
 	affText         string
@@ -429,25 +423,25 @@ func (e *rgIntEdit) affinityText() string {
 	return e.curAff.text()
 }
 
-// newRGIntEdit is an existing pool's row, its affinity read from the
-// catalog's per-group masks.
+// newRGIntEdit is an existing pool's row, its affinity read from the catalog's
+// per-group masks.
 func newRGIntEdit(name string, system, locked bool, vals []int, groups []int, masks []int64, affText string) *rgIntEdit {
 	aff, ok := rgAffinityFromMasks(groups, masks)
 	return &rgIntEdit{name: name, system: system, locked: locked, orig: vals, cur: slices.Clone(vals),
 		origAff: aff, curAff: aff, affFixed: !ok, affText: affText}
 }
 
-// rgIntPageSpec describes a pool page — the two kinds differ only in their
-// fields and their gosmo calls.
+// rgIntPageSpec describes a pool page; the two kinds differ only in their fields
+// and gosmo calls.
 type rgIntPageSpec[O any] struct {
 	title  string
 	noun   string // "resource pool"
 	fields []rgIntField[O]
 	read   func(ctx context.Context) ([]*rgIntEdit, error)
 
-	// affWord and affHeader name what the kind's AFFINITY takes, in a label
-	// and a column heading; affTargets picks those from the schedulers, and
-	// setAffinity puts the write in the options.
+	// affWord and affHeader name what the kind's AFFINITY takes, in a label and a
+	// column heading; affTargets picks those from the schedulers, and setAffinity
+	// puts the write in the options.
 	affWord, affHeader string
 	affTargets         func([]gosmo.Scheduler) []rgAffinityTarget
 	setAffinity        func(o *O, a *gosmo.PoolAffinity)
@@ -594,8 +588,8 @@ func pageRGExternalPools(sc *db.ServerConn, model *rgModel, focus string) propPa
 	})
 }
 
-// rgIntPage is a pool page: the pools in a grid, the selected one's limits
-// below it, and Add/Remove.
+// rgIntPage is a pool page: the pools in a grid, the selected one's limits below
+// it, and Add/Remove.
 func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 	return propPage{
 		title: spec.title,
@@ -607,8 +601,8 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			if len(loaded) == 0 {
 				return nil, nil, errResourceGovernorNotVisible
 			}
-			// Not fatal: without VIEW SERVER STATE the affinity is shown and
-			// not edited, and every other limit still is.
+			// Not fatal: without VIEW SERVER STATE the affinity is shown and not edited, and
+			// every other limit still is.
 			scheds, schedErr := spec.schedulers(ctx)
 			aff := newRGAffinityEditor(spec.affWord, spec.affHeader, spec.affTargets(scheds), schedErr)
 			for _, e := range loaded {
@@ -656,8 +650,8 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			selectedRow := propsheet.Static("Name", "")
 
 			var current *rgIntEdit
-			// commitCurrent folds the detail rows into the selected pool. A
-			// value the row would not validate stays what it was.
+			// commitCurrent folds the detail rows into the selected pool. A value the row
+			// would not validate stays what it was.
 			commitCurrent := func() {
 				aff.commit(current)
 				if current == nil || current.locked {

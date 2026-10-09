@@ -12,11 +12,11 @@ import (
 // model: pending holds, per node, the token of the most recent fetch dispatched
 // for it.
 //
-// Reselecting a node mid-fetch dispatches a second fetch for the same pointer,
-// and the first, though cancelled, can still land its final stage; without the
-// token whichever finished last wins the cache write. An entry lives only while
-// its fetch is in flight (the write that caches the result deletes it), so the
-// map cannot accumulate one entry per node ever selected.
+// Reselecting a node mid-fetch dispatches a second fetch for the same pointer, and
+// the first, though cancelled, can still land its final stage; without the token
+// whichever finished last wins the cache write. An entry lives only while its
+// fetch is in flight (the write that caches the result deletes it), so the map
+// cannot accumulate one entry per node ever selected.
 //
 // Call stop and supersede, never the embedded Cancel and Abandon: those stop the
 // run without evicting its pending entry, which the eviction exists to prevent
@@ -129,15 +129,15 @@ func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.Se
 // The stack is already logged (see reportPanic).
 var errDetailFetchPanicked = errors.New("loading failed unexpectedly — see the log for details")
 
-// panicRepair builds the safegoRepair step every loader in fetch shares: the
-// panel is latched at "Loading..." (or a progressive loader's placeholder rows)
-// and only postFinal clears it, which a panic never reaches.
+// panicRepair builds the safegoRepair step every loader in fetch shares: the panel
+// is latched at "Loading..." (or a progressive loader's placeholder rows) and only
+// postFinal clears it, which a panic never reaches.
 //
 // Nothing is cached: a panic says nothing about this node's details, so dropping
-// the pending entry lets the next selection retry (unlike postFinal, which
-// caches an ordinary error because the server answered). postFinal's two guards
-// are kept: pending is cleared only if this fetch is still the newest for the
-// node, and the grid touched only if its node is still selected.
+// the pending entry lets the next selection retry (unlike postFinal, which caches
+// an ordinary error because the server answered). postFinal's two guards are kept:
+// pending is cleared only if this fetch is still the newest for the node, and the
+// grid touched only if its node is still selected.
 func (db *DetailBrowser) panicRepair(node *explorerNode, seq int) func() {
 	return func() {
 		db.run.end(seq)
@@ -220,15 +220,13 @@ func (db *DetailBrowser) cacheIfCurrent(node *explorerNode, seq int, result *det
 // out to 16, inside the pool, but the headroom is two loaders, not more.
 const maxRowFetchConcurrency = 8
 
-// fetchNodeDetails runs the gosmo queries for a node's detail grid. Called from
-// a background goroutine, so it must not touch DetailBrowser or other UI state,
-// only return data for the caller to apply via postAndWake. ctx bounds the
-// whole call.
+// fetchNodeDetails runs the gosmo queries for a node's detail grid. Called from a
+// background goroutine, so it must not touch DetailBrowser or other UI state, only
+// return data for the caller to apply via postAndWake. ctx bounds the whole call.
 //
-// objs is an out-parameter rather than a fourth result because only the
-// loaders whose rows are objects use it: they append one nodeData per row, and
-// every other loader leaves it nil, which withholds the pane's Delete. See
-// detailResult.objs.
+// objs is an out-parameter rather than a fourth result because only the loaders
+// whose rows are objects use it: they append one nodeData per row, and every other
+// loader leaves it nil, which withholds the pane's Delete. See detailResult.objs.
 func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	if load, ok := detailLoaders[node.data.Type]; ok {
 		return load(ctx, sc, node, objs)

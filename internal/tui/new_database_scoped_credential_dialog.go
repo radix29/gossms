@@ -12,12 +12,11 @@ import (
 
 // new_database_scoped_credential_dialog.go is the New Database Scoped
 // Credential dialog (a database's Security > Database Scoped Credentials
-// folder), built on newObjectDialog like every other New-X so
-// OK/Cancel/Apply/Script Changes behave the same.
+// folder), built on newObjectDialog.
 //
-// It is the database-scope twin of new_credential_dialog.go, minus the
-// encryption-provider section: there is no FOR CRYPTOGRAPHIC PROVIDER form of
-// a database-scoped credential.
+// It is the database-scope twin of new_credential_dialog.go minus the
+// encryption-provider section: a database-scoped credential has no FOR
+// CRYPTOGRAPHIC PROVIDER form.
 
 // ndbScopedCredPrefetch holds what the dialog needs before it opens: the
 // existing credential names in this database, for the uniqueness preflight.
@@ -97,9 +96,8 @@ func (d *NewDatabaseScopedCredentialDialog) buildPages(pf *ndbScopedCredPrefetch
 		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a database scoped credential named %q already exists in %s", name, dbName)
 		}
-		// CREATE DATABASE SCOPED CREDENTIAL has no form without IDENTITY, and
-		// the server's own error for the omission is a syntax error naming
-		// nothing useful.
+		// CREATE DATABASE SCOPED CREDENTIAL has no form without IDENTITY, and the
+		// server's error for the omission is a syntax error naming nothing useful.
 		if strings.TrimSpace(identityField.Value()) == "" {
 			return fmt.Errorf("identity is required")
 		}
@@ -111,16 +109,14 @@ func (d *NewDatabaseScopedCredentialDialog) buildPages(pf *ndbScopedCredPrefetch
 	d.applyFns[0] = func(ctx context.Context) error {
 		spec := gosmo.CreateDatabaseScopedCredentialRequest{
 			Name: d.objectName(),
-			// Trimmed to match what the preflight validated: SQL Server stores
-			// IDENTITY verbatim, so a pasted trailing space becomes part of
-			// the account name and the credential then fails to authenticate
-			// with nothing on the page saying why.
+			// Trimmed to match what the preflight validated: SQL Server stores IDENTITY
+			// verbatim, so a pasted trailing space becomes part of the account name and the
+			// credential then fails to authenticate with nothing saying why.
 			Identity: strings.TrimSpace(identityField.Value()),
 			Secret:   passwordField.Value(),
 		}
-		// DatabaseRef, not DatabaseByName: the CREATE addresses the
-		// database by name, and the by-name read would not work under Script
-		// Changes.
+		// DatabaseRef, not DatabaseByName: the CREATE addresses the database by name,
+		// and the by-name read would not work under Script Changes.
 		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseScopedCredential(ctx, spec)
 		return err
 	}

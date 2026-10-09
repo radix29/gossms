@@ -10,12 +10,12 @@ import (
 // app_peer_creds.go holds App's answer to db.PeerCredentials: which saved
 // connection to reach a given instance with.
 //
-// Always On is why it matters. Everything the Object Explorer, the AG dialogs
-// and the endpoint wizard read off a second instance goes through
-// db.ServerConn.Peer, which without this uses the login the user registered the
-// tree with. A topology whose replicas want different credentials, or listen on
-// a different port, surfaced as a connect error naming the instance, and on the
-// follow-the-primary path as a silent "(partial - primary X unreachable)".
+// Always On is why it matters. Everything the Object Explorer, the AG dialogs and
+// the endpoint wizard read off a second instance goes through
+// db.ServerConn.Peer, which without this uses the login the tree was registered
+// with. A topology whose replicas want different credentials or ports would
+// surface as a connect error naming the instance, and on the follow-the-primary
+// path as a silent "(partial - primary X unreachable)".
 //
 // The answer is the connections the user has already made: connect to a replica
 // once through File > Connect and every later peer read reaches it the same way.
@@ -72,19 +72,18 @@ func (a *App) rememberPeerCredentials(conn config.Connection) {
 	}
 }
 
-// shortHostKey is key with the host's domain suffix dropped, or "" when the
-// host has none.
+// shortHostKey is key with the host's domain suffix dropped, or "" when the host
+// has none.
 //
 // The two names for an instance rarely agree: the catalog reports @@SERVERNAME
-// (the short machine name), while on a domain network the user usually types
-// the FQDN into Connect. Keyed only by exact host, a saved "ubusql2.fritz.box"
-// would never answer a peer read for the "ubusql2" sys.availability_replicas
-// reports, which is most of what this resolver exists for.
+// (the short machine name), while on a domain network the user usually types the
+// FQDN into Connect. Keyed only by exact host, a saved "ubusql2.fritz.box" would
+// never answer a peer read for the "ubusql2" sys.availability_replicas reports.
 //
 // A separate, lower-priority tier rather than a collapsed key: two instances
-// really can be "sql.a.example" and "sql.b.example", and folding them onto one
-// key would hand one the other's login. As a fallback consulted only when the
-// exact host misses, the worst case is the connect error a miss gives anyway.
+// really can be "sql.a.example" and "sql.b.example", and folding them onto one key
+// would hand one the other's login. Consulted only when the exact host misses, the
+// worst case is the connect error a miss gives anyway.
 //
 // The "\instance" or ",port" InstanceKey appended is kept: the alias drops the
 // domain, not what tells two instances on one host apart.
@@ -101,19 +100,17 @@ func shortHostKey(key string) string {
 }
 
 // loadPeerCredentials seeds the map from the saved connections in stored order
-// (oldest first, so the most recently used entry for an instance is the one
-// left). Same precedence config.MatchByServer offers the Connect dialog.
+// (oldest first, so the most recently used entry for an instance is the one left).
+// Same precedence config.MatchByServer offers the Connect dialog.
 //
-// An entry whose password could not be decrypted is not seeded. Unlike a
-// connection the user just made, nothing on disk has been proven to work, and
-// preferring one certain to fail over the parent connection's own credentials
-// makes a reachable instance unreachable. A replaced config key blanks every
-// saved password at once (config.Load), so this is a whole-file state, not a
-// rare entry.
+// An entry whose password could not be decrypted is not seeded. Nothing on disk
+// has been proven to work for it, and preferring one certain to fail over the
+// parent connection's own credentials makes a reachable instance unreachable. A
+// replaced config key blanks every saved password at once (config.Load), so this
+// is a whole-file state, not a rare entry.
 //
 // Nothing else is judged here: an entry that passes and still fails is Peer's
-// fallback to deal with, the general answer, which this need not make
-// exhaustive.
+// fallback to deal with.
 func (a *App) loadPeerCredentials() {
 	if a.cfg == nil {
 		return

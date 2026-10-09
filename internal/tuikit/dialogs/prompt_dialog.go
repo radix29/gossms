@@ -28,13 +28,11 @@ const (
 	promptH = 10
 )
 
-// PromptDialog asks for a single line of text — a new name, a label — and
-// hands it back through OnAccept. It is ConfirmDialog's shape with an input
-// instead of a yes/no: a message, one field, OK/Cancel.
-//
-// An empty value is refused in place rather than accepted or treated as a
-// cancel, and a Validate hook lets the host reject more (a duplicate name, a
-// bad identifier) without the dialog knowing what the value means.
+// PromptDialog asks for a single line of text (a new name, a label) and hands
+// it back through OnAccept: ConfirmDialog's shape with an input instead of
+// yes/no. An empty value is refused in place, and a Validate hook lets the host
+// reject more (duplicate name, bad identifier) without the dialog knowing what
+// the value means.
 type PromptDialog struct {
 	ModalDialog
 	message  string
@@ -44,12 +42,12 @@ type PromptDialog struct {
 	input    *widgets.InputField
 	focus    promptFocus
 
-	// drag owns the text-selection gesture a press in input starts. See
-	// FieldGesture for why its three calls sit where they do in HandleMouse.
+	// drag owns the text-selection gesture a press in input starts; see
+	// FieldGesture.
 	drag FieldGesture
 
-	// OnAccept receives the trimmed value once it passes Validate. Not
-	// called on cancel — a dialog the user backed out of reports nothing.
+	// OnAccept receives the trimmed value once it passes Validate. Not called on
+	// cancel.
 	OnAccept func(value string)
 
 	// Validate rejects a value with the error shown in the dialog, which
@@ -64,10 +62,9 @@ func NewPromptDialog(s tcell.Screen) *PromptDialog {
 	return d
 }
 
-// ShowPrompt opens the dialog: message explains what is being asked, label
-// names the field, and initial pre-fills it selected, so typing replaces it
-// (the rename case — the current name is what the user is editing away
-// from). Validate is cleared on every showing; set it after this call.
+// ShowPrompt opens the dialog: message explains the question, label names the
+// field, and initial pre-fills it selected so typing replaces it (the rename
+// case). Validate is cleared on every showing; set it after this call.
 func (d *PromptDialog) ShowPrompt(title, message, label, initial string, onAccept func(string)) {
 	d.SetTitle(title)
 	d.message = message
@@ -80,8 +77,8 @@ func (d *PromptDialog) ShowPrompt(title, message, label, initial string, onAccep
 	d.input.SelectAll()
 	d.focus = promptFocusInput
 	d.syncFocus()
-	// input is rebuilt above, so a gesture held from the last showing points
-	// at a discarded widget — and would route every click there.
+	// input is rebuilt above, so a gesture held from the last showing points at a
+	// discarded widget and would route every click there.
 	d.drag.Clear()
 	w, h, lines := d.fitMessage(message, promptW, promptH)
 	d.msgLines = lines
@@ -101,9 +98,8 @@ func (d *PromptDialog) Value() string { return strings.TrimSpace(d.input.Value()
 
 func (d *PromptDialog) syncFocus() { d.input.Focus(d.focus == promptFocusInput) }
 
-// accept validates and resolves the dialog. A rejected value leaves the
-// dialog open with the reason shown, rather than closing and silently doing
-// nothing.
+// accept validates and resolves the dialog. A rejected value leaves it open with
+// the reason shown rather than silently doing nothing.
 func (d *PromptDialog) accept() {
 	v := d.Value()
 	if v == "" {
@@ -159,9 +155,8 @@ func (d *PromptDialog) Draw(s tcell.Screen) {
 	d.DrawButtons(s, d.buttons(), activeIdx)
 }
 
-// HandleKey routes keyboard events. Enter accepts from the input as well as
-// from OK — the field is the only thing to fill in, so typing and pressing
-// Enter is the whole interaction.
+// HandleKey routes keyboard events. Enter accepts from the input as well as OK:
+// the field is the only thing to fill in.
 func (d *PromptDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
@@ -197,19 +192,18 @@ func (d *PromptDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// A release must reach d.input even when it lands outside the dialog
-	// (consumed below) — otherwise its next press is swallowed as a
-	// continuation of the stale drag.
+	// A release must reach d.input even when it lands outside the dialog (consumed
+	// below), or its next press is swallowed as a continuation of the stale drag.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	// The gesture belongs to the field that claimed its press, so motion is
-	// replayed there without hit-testing — ahead of ButtonClicked below,
-	// which would otherwise press OK the moment a selection drag wandered
-	// down onto the button row, accepting the value being edited.
+	// The gesture belongs to the field that claimed the press, so motion is
+	// replayed there without hit-testing, ahead of ButtonClicked, which would press
+	// OK when a selection drag wandered onto the button row, accepting the value
+	// being edited.
 	if d.drag.Replay(ev) {
 		return true
 	}

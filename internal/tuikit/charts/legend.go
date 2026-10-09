@@ -16,8 +16,8 @@ type LegendItem struct {
 	Color tcell.Color
 }
 
-// LegendItems builds legend entries from the series a chart drew, in the
-// same order, so square colours match plotted colours by construction.
+// LegendItems builds entries from the series a chart drew, in order, so square
+// colours match plotted colours by construction.
 func LegendItems(series []Series) []LegendItem {
 	out := make([]LegendItem, 0, len(series))
 	for _, s := range series {
@@ -28,9 +28,8 @@ func LegendItems(series []Series) []LegendItem {
 
 // DrawLegend renders items into r, wrapping across r's rows.
 //
-// Degradation is ordered: full labels if they fit, short labels if those
-// fit, and clipping only once neither does — a legend loses text detail
-// before it loses entries, since an entry dropped entirely leaves a plotted
+// Degradation is ordered: full labels, then short labels, then clipping. A
+// legend loses text before entries, since a dropped entry leaves a plotted
 // colour unexplained.
 func DrawLegend(s tcell.Screen, r core.Rect, items []LegendItem) {
 	if r.W <= 0 || r.H <= 0 || len(items) == 0 {
@@ -44,8 +43,8 @@ func DrawLegend(s tcell.Screen, r core.Rect, items []LegendItem) {
 	for i, label := range labels {
 		entryW := 2 + core.DisplayWidth(label) // square + space + label
 		if x > r.X && x+entryW > r.Right() {
-			// Doesn't fit on this row: wrap if there's another row, else
-			// stop — a half-drawn entry reads worse than a short legend.
+			// Doesn't fit this row: wrap if there's another row, else stop (a half-drawn
+			// entry reads worse than a short legend).
 			if y+1 >= r.Bottom() {
 				return
 			}

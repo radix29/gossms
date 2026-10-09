@@ -35,10 +35,9 @@ type ResultSet struct {
 	// ("nvarchar(50)", "decimal(18,2)"), parallel to Columns.
 	ColumnTypes []string
 
-	// nulls marks the cells that hold a SQL NULL, one bit per cell in row-major
-	// order (row*len(Columns)+col). A NULL's text in Rows is "NULL", so the text
-	// alone can't tell it from the string 'NULL'. Grown only as far as the last
-	// NULL: a set without one allocates nothing.
+	// nulls marks the cells holding a SQL NULL, one bit per cell in row-major
+	// order (row*len(Columns)+col). A NULL's text is "NULL", so the text alone
+	// cannot tell it from the string 'NULL'. Grown only to the last NULL.
 	nulls []uint64
 }
 
@@ -174,7 +173,7 @@ const (
 // per scanned row so a caller can show progress before Result arrives. Pass it
 // with WithProgress.
 //
-// Read from another goroutine, hence atomic. The zero value is ready and every
+// Read from another goroutine, hence atomic. The zero value is ready; every
 // method is nil-safe.
 type Progress struct {
 	rows atomic.Int64
@@ -479,14 +478,11 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 //
 // No trailing rows.Err(), deliberately, and likewise in streamResultSet:
 // runBatch ends the message loop with one, so a truncated set is still
-// reported, from there. This keeps the partial set: a Next() failing part-way
-// returns the rows read with a nil error, so scanNext appends them and the user
-// gets the grid *and* the error, as SSMS shows a query that died on row 900. A
-// rows.Scan failure part-way likewise returns the rows before it with the
-// error. scanPlanXML does check, and discards its partial result; the
-// asymmetry is a decision about partial output. Both are reached only through
-// scanNext, itself reached only from runBatch; a caller added outside runBatch
-// must bring its own check.
+// reported from there. This keeps the partial set: the user gets the grid *and*
+// the error, as SSMS shows a query that died on row 900. scanPlanXML checks and
+// discards its partial result; the asymmetry is a decision about partial
+// output. Both are reached only through scanNext, itself reached only from
+// runBatch; a caller added outside runBatch must bring its own check.
 func scanResultSet(rows *sql.Rows, prog *Progress) (ResultSet, error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
@@ -613,10 +609,9 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 // tell a failed end from a clean one, and neither needs draining.
 //
 // Unlike the grid scanners it checks the trailing rows.Err(), so a truncated
-// plan set yields *no* plans (scanNext drops plans whenever err is non-nil):
-// half a showplan is not a plan, whereas a grid truncated at row 900 is still
-// 900 rows. runBatch's own rows.Err() then reports the same failure a second
-// time in Messages, which is accepted.
+// plan set yields *no* plans: half a showplan is not a plan, whereas a grid cut
+// at row 900 is still 900 rows. runBatch reports the same failure again in
+// Messages, which is accepted.
 func scanPlanXML(rows *sql.Rows) (plans []string, exhausted bool, err error) {
 	for rows.Next() {
 		var xml string

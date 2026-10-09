@@ -10,28 +10,25 @@ import (
 )
 
 // detail_browser_ops.go is the Object Explorer Details pane's write path: the
-// Delete its grid's context menu offers over whatever the block selection
-// covers.
+// Delete its grid's context menu offers over whatever the block selection covers.
 //
-// It lives in the pane rather than the tree because controls.TreeView has a
-// single selection, so SSMS's multi-object "Delete Object" dialog can't come
-// from there. The grid already had block selection; it lacked a route to an
-// action.
+// It lives in the pane rather than the tree because controls.TreeView has a single
+// selection, so SSMS's multi-object "Delete Object" dialog can't come from there.
 //
-// Rename and Move to Schema stay in the tree deliberately: neither means
-// anything applied to a set, and both are one click away there.
+// Rename and Move to Schema stay in the tree deliberately: neither means anything
+// applied to a set, and both are one click away there.
 
-// selectedRowObjects is the object each selected row describes, in row order,
-// or nil when this view's rows are not objects (rowObjs empty) or the selection
-// runs past them.
+// selectedRowObjects is the object each selected row describes, in row order, or
+// nil when this view's rows are not objects (rowObjs empty) or the selection runs
+// past them.
 //
-// DataGrid.SelectedRows, never SelectionBounds: Ctrl+click builds a selection
-// of rows that no rectangle describes, and the bounds would name every row
-// between two picked ones too. Rows, never cells: which columns a selection
-// covers says nothing about which objects it covers.
+// DataGrid.SelectedRows, never SelectionBounds: Ctrl+click builds a selection of
+// rows that no rectangle describes, and the bounds would name every row between
+// two picked ones too. Rows, never cells: which columns a selection covers says
+// nothing about which objects it covers.
 //
-// Nil also when the objects were installed for another node than the current
-// one: detailMenuItems pairs them with currentNode's connection.
+// Nil also when the objects were installed for another node than the current one:
+// detailMenuItems pairs them with currentNode's connection.
 func (db *DetailBrowser) selectedRowObjects() []nodeData {
 	if len(db.rowObjs) == 0 || db.rowObjsNode != db.currentNode {
 		return nil
@@ -135,12 +132,11 @@ func pluralNoun(noun string) string {
 // nodeData.IsSystem.
 //
 // Per object rather than once for the folder: gate.AlterOnSchema and
-// gate.AlterOnObject answer about a named securable, so a selection spanning
-// two schemas can be permitted in one and refused in the other, and one answer
-// for the batch would be right about at most one.
+// gate.AlterOnObject answer about a named securable, so a selection spanning two
+// schemas can be permitted in one and refused in the other.
 //
-// The note names the offending object, which gate's does not: "needs ALTER" on
-// a forty-row selection doesn't say which row to deselect.
+// The note names the offending object, which gate's does not: "needs ALTER" on a
+// forty-row selection doesn't say which row to deselect.
 func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []nodeData) controls.MenuItem {
 	firstDenied := func() (nodeData, bool) {
 		for _, n := range objs {

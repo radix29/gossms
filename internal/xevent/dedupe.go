@@ -5,17 +5,14 @@ import (
 	"time"
 )
 
-// Deduper picks the new events out of successive whole reads of a
-// ring_buffer. The buffer has no cursor — every read returns everything still
-// in it — so a poller has to tell the events it already holds from the ones
-// that arrived since.
+// Deduper picks the new events out of successive whole reads of a ring_buffer,
+// which has no cursor: every read returns everything still in it.
 //
-// The key is the event_sequence action where the session collects it, which
-// is unique per session. Without it the key is the timestamp, the name and a
-// hash of every field and action (the fallback D1 records), and two events
-// identical in all of those are genuinely indistinguishable. They are counted
-// rather than collapsed, so a read holding the same event twice where the last
-// read held it once yields one new copy, not none.
+// The key is the event_sequence action where the session collects it (unique
+// per session). Otherwise it is the timestamp, name and a hash of every field
+// and action (the fallback D1 records), and events identical in all of those
+// are indistinguishable. They are counted rather than collapsed, so a read
+// holding the same event twice where the last held it once yields one new copy.
 type Deduper struct {
 	prev map[dedupeKey]int
 
@@ -50,8 +47,8 @@ func (d *Deduper) New(batch []Event) []Event {
 	return out
 }
 
-// Reset forgets the previous batch, so the next read counts as a first one —
-// after Clear, where the events it held are no longer on screen.
+// Reset forgets the previous batch, so the next read counts as a first one
+// (after Clear).
 func (d *Deduper) Reset() { d.prev = nil }
 
 func (d *Deduper) key(e *Event) dedupeKey {

@@ -273,15 +273,15 @@ func agLocalDatabaseJoinState(l loaderCtx, view agView, dbs []*gosmo.Availabilit
 	return true, agJoinedCopies(local, l.sc.Server.Name(), serverCollation(l.sc))
 }
 
-// agJoinedCopies maps a database name, under collation, to whether localName's
-// own copy has joined the group. The replica name is a host name and compares
+// agJoinedCopies maps a database name, under collation, to whether localName's own
+// copy has joined the group. The replica name is a host name and compares
 // case-insensitively whatever the collation.
 //
-// The test is having a synchronization state at all.
-// AvailabilityGroup.Databases cross-joins the cluster-wide database list with
-// the replica list, so a database the local copy hasn't joined still produces a
-// row, with every sys.dm_hadr_database_replica_states column empty. An empty
-// state is therefore "not joined here", not "unknown".
+// The test is having a synchronization state at all. AvailabilityGroup.Databases
+// cross-joins the cluster-wide database list with the replica list, so a database
+// the local copy hasn't joined still produces a row, with every
+// sys.dm_hadr_database_replica_states column empty. An empty state is "not joined
+// here", not "unknown".
 func agJoinedCopies(dbs []*gosmo.AvailabilityDatabase, localName, collation string) *nameMap[bool] {
 	joined := newNameMap[bool](collation)
 	for _, d := range dbs {

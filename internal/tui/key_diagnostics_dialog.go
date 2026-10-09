@@ -27,9 +27,9 @@ const maxKeyDiagLines = 200
 // Newest entries are prepended, so the most recent key press is the first line.
 //
 // The log lives in a read-only controls.Editor rather than a hand-rolled line
-// list, so it can be selected and copied: what the dialog shows is the text
-// pasted into a bug report, and without a core.ClipboardTarget widget Ctrl+C
-// did nothing.
+// list, so it can be selected and copied: what the dialog shows is the text pasted
+// into a bug report, and a non-core.ClipboardTarget widget would make Ctrl+C do
+// nothing.
 type KeyDiagnosticsDialog struct {
 	dialogs.ModalDialog
 	app    *App
@@ -72,18 +72,18 @@ func (d *KeyDiagnosticsDialog) RecordKey(ev *tcell.EventKey) {
 	d.dirty = true
 }
 
-// RecordMouse appends a description of a mouse event: the buttons, the
-// modifiers, and where it landed. Same call rule as RecordKey.
+// RecordMouse appends a description of a mouse event: the buttons, the modifiers,
+// and where it landed. Same call rule as RecordKey.
 //
-// A mouse gesture is not one event. tcell resends the held button for every
-// pixel of a drag, and a hundred identical lines would bury the press that
-// started it, so only a change of buttons or modifiers is recorded (a press, a
-// release, a wheel tick). The position is wherever that change happened.
+// A mouse gesture is not one event. tcell resends the held button for every pixel
+// of a drag, and a hundred identical lines would bury the press that started it,
+// so only a change of buttons or modifiers is recorded (a press, a release, a
+// wheel tick). The position is wherever that change happened.
 //
 // A modifier the terminal keeps for itself is invisible from inside the app:
-// xfce4-terminal (VTE) handles Shift+click as its own text selection while
-// mouse reporting is on and never forwards it, which reads like a broken
-// Shift+click. One line in this log, or none, tells the two apart.
+// xfce4-terminal (VTE) handles Shift+click as its own text selection while mouse
+// reporting is on and never forwards it, which reads like a broken Shift+click.
+// One line in this log, or none, tells the two apart.
 func (d *KeyDiagnosticsDialog) RecordMouse(ev *tcell.EventMouse) {
 	state := int(ev.Buttons())<<8 | int(ev.Modifiers())
 	if state == d.lastMouse {
@@ -199,16 +199,16 @@ func (d *KeyDiagnosticsDialog) Draw(s tcell.Screen) {
 	d.DrawButtons(s, keyDiagButtons, 1)
 }
 
-// copyAll selects the whole log and copies it, for the Copy button: the
-// keyboard route (Ctrl+A then Ctrl+C) records two more lines before it
-// completes, and on a narrow terminal the selection is fiddly.
+// copyAll selects the whole log and copies it, for the Copy button: the keyboard
+// route (Ctrl+A then Ctrl+C) records two more lines before it completes, and on a
+// narrow terminal the selection is fiddly.
 //
-// The selection is dropped as soon as the text has been read. syncIfDirty
-// refuses to rebuild the editor while one stands, and a read-only Editor
-// ignores every plain rune key without clearing it, so a leftover selection
-// would freeze the log on the keys this dialog exists to decode until the user
-// pressed an arrow. copySelection reads SelectedText() synchronously, so
-// clearing right after is safe.
+// The selection is dropped as soon as the text has been read. syncIfDirty refuses
+// to rebuild the editor while one stands, and a read-only Editor ignores every
+// plain rune key without clearing it, so a leftover selection would freeze the log
+// on the keys this dialog exists to decode until the user pressed an arrow.
+// copySelection reads SelectedText() synchronously, so clearing right after is
+// safe.
 func (d *KeyDiagnosticsDialog) copyAll() {
 	if d.editor == nil || len(d.lines) == 0 {
 		return

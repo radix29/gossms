@@ -10,17 +10,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_audit_dialog.go is the New Audit creation dialog (Object Explorer's
-// Security > Audits folder, "New Audit..."), built on newObjectDialog like
-// every other New-X.
+// new_audit_dialog.go is the New Audit dialog (Object Explorer's Security >
+// Audits folder), built on newObjectDialog.
 //
-// The audit is created disabled, which is what CREATE SERVER AUDIT does and
-// what SSMS's own dialog produces; Enable Audit on the new node turns it on.
+// The audit is created disabled, as CREATE SERVER AUDIT and SSMS's dialog do;
+// Enable Audit on the new node turns it on.
 
-// nauditPrefetch holds what the dialog needs before it opens: the existing
-// audit names for the uniqueness preflight, and the server's default backup
-// directory, which is the only server-side path goSSMS knows and so the least
-// wrong place to point the file browser at first.
+// nauditPrefetch holds what the dialog needs before it opens: existing audit
+// names for the uniqueness preflight, and the server's default backup directory,
+// the only server-side path goSSMS knows and so the least wrong place to point
+// the file browser first.
 type nauditPrefetch struct {
 	existingNames *nameSet
 	defaultDir    string
@@ -57,10 +56,9 @@ func NewNewAuditDialog(app *App) *NewAuditDialog {
 	return d
 }
 
-// auditDestinationItems and auditDestinationValues are one table split in two,
-// the same pairing rule as audit_props.go's on-failure pair: item i means
-// value i, and new_audit_dialog_test.go pins it by name and asserts the two
-// are the same length.
+// auditDestinationItems and auditDestinationValues are one table split in two
+// (same pairing rule as audit_props.go's on-failure pair): item i means value
+// i; new_audit_dialog_test.go pins it by name and asserts equal length.
 var (
 	auditDestinationItems  = []string{"File", "Application Log", "Security Log"}
 	auditDestinationValues = []string{

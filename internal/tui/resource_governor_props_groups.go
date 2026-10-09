@@ -13,18 +13,18 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// resource_governor_props_groups.go is Resource Governor Properties ▸
-// Workload Groups: a pool dropdown, that pool's groups in a grid, and the
-// selected group's settings (docs/decisions.md — the dropdown, rather than a
-// grid following the Resource Pools page's selection, keeps the pages
-// independent). The page holds every group on the server; the dropdown only
-// chooses which pool's are listed, so a group moved to another pool leaves the
-// grid and turns up under that pool, unsaved, until Apply.
+// resource_governor_props_groups.go is Resource Governor Properties > Workload
+// Groups: a pool dropdown, that pool's groups in a grid, and the selected group's
+// settings (docs/decisions.md: the dropdown, rather than a grid following the
+// Resource Pools page's selection, keeps the pages independent). The page holds
+// every group on the server; the dropdown only chooses which pool's are listed, so
+// a group moved to another pool leaves the grid and turns up under that pool,
+// unsaved, until Apply.
 //
-// The pools offered are the pool pages' unsaved ones (rgModel): a pool added
-// there can take a group here in the same Apply, and one removed there is no
-// longer a group's destination — though it stays listed in the dropdown while
-// a group is still in it, so the group can be moved out.
+// The pools offered are the pool pages' unsaved ones (rgModel): a pool added there
+// can take a group here in the same Apply, and one removed there is no longer a
+// group's destination, though it stays listed in the dropdown while a group is
+// still in it, so the group can be moved out.
 
 // rgImportanceItems are IMPORTANCE's values, as the catalog spells them.
 var rgImportanceItems = []string{
@@ -46,8 +46,7 @@ type rgGroupValues struct {
 	tempdbMB      string
 }
 
-// rgGroupDefaults is a new group's settings — the server's defaults — in
-// pool.
+// rgGroupDefaults is a new group's settings (the server's defaults) in pool.
 func rgGroupDefaults(pool string) rgGroupValues {
 	return rgGroupValues{importance: string(gosmo.ImportanceMedium), grant: 25, pool: pool, external: "default"}
 }
@@ -216,8 +215,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				func(e *rgGroupEdit) bool { return e.cur != e.orig },
 				func(e *rgGroupEdit) { e.cur = e.orig })
 
-			// The pool shown first: the focused group's, else the focused
-			// pool, else default.
+			// The pool shown first: the focused group's, else the focused pool, else default.
 			startPool := "default"
 			if i := slices.IndexFunc(loaded, func(e *rgGroupEdit) bool { return e.name == focus.group }); i >= 0 {
 				startPool = loaded[i].cur.pool
@@ -278,8 +276,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 			selectRows := []*propsheet.SelectRow{importanceRow, moveRow, externalRow}
 
 			var current *rgGroupEdit
-			// valid reads a detail row's value only when it validates; a
-			// value it would refuse leaves the group as it was.
+			// valid reads a detail row's value only when it validates; a value it would
+			// refuse leaves the group as it was.
 			valid := func(row *propsheet.TextRow) (string, bool) {
 				return row.Value(), row.Validate() == nil
 			}
@@ -327,8 +325,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 					row.SetReadOnly(locked)
 				}
 				if current == nil {
-					// Nothing selected (a pool with no groups): blank, not the
-					// last group's settings under no name.
+					// Nothing selected (a pool with no groups): blank, not the last group's settings
+					// under no name.
 					selectedRow.SetValue("")
 					for _, row := range textRows {
 						row.SetValue("")
@@ -364,8 +362,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				syncFromSelection()
 			}
 			hint := propsheet.Hint()
-			// warnRemoved says so when the pool listed is one the Resource
-			// Pools page removes: its groups must move out first.
+			// warnRemoved says so when the pool listed is one the Resource Pools page
+			// removes: its groups must move out first.
 			warnRemoved := func() {
 				if shown := poolRow.Value(); !slices.Contains(poolNames, shown) {
 					hint.Set(shown + " is removed on the Resource Pools page; move its groups to another pool.")
@@ -387,8 +385,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				warnRemoved()
 			}
 
-			// Listing another pool, and moving the selected group to one, both
-			// change which groups the grid holds.
+			// Listing another pool, and moving the selected group to one, both change which
+			// groups the grid holds.
 			poolRow.SetOnChange(func(string) {
 				commitCurrent()
 				hint.Clear()
@@ -478,9 +476,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				propsheet.Note("Pools added on the Resource Pools and External Pools pages are offered here at once."),
 			)
 
-			// The pool pages' edits change what is listed and offered. The
-			// pool listed stays listed while it is still offered, or holds a
-			// group.
+			// The pool pages' edits change what is listed and offered. The pool listed stays
+			// listed while it is still offered, or holds a group.
 			model.pools.onChange(func() { refreshPools() })
 			model.externals.onChange(func() { refreshPools() })
 

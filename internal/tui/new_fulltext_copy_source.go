@@ -12,9 +12,9 @@ import (
 
 // new_fulltext_copy_source.go is the "copy an existing one" pair the New
 // Full-Text Stoplist and New Search Property List dialogs share: a database
-// picker and the list picker it fills (CREATE … FROM [db].[list]). The
-// dialog's own database is answered from its prefetch; any other is read when
-// first chosen and kept for the showing, so each database costs one read.
+// picker and the list picker it fills (CREATE ... FROM [db].[list]). The dialog's
+// own database is answered from its prefetch; any other is read when first
+// chosen and kept for the showing, so each database costs one read.
 // Latest-only: running the picker through several databases ends on the last
 // one's lists, and the reads it moved past are cancelled.
 
@@ -32,16 +32,16 @@ type fullTextCopySource struct {
 	noun string // "stoplist", "search property list"
 	read func(context.Context, *gosmo.Database) ([]string, error)
 
-	// lists holds each database's lists once read; failed its read's error,
-	// until the database is chosen again and retried.
+	// lists holds each database's lists once read; failed its read's error, until
+	// the database is chosen again and retried.
 	lists  map[string][]string
 	failed map[string]error
 	run    latest
 }
 
-// newFullTextCopySource builds the rows. databases is what the database
-// picker offers (home is added if the list lacks it), homeLists home's own
-// lists from the prefetch.
+// newFullTextCopySource builds the rows. databases is what the database picker
+// offers (home is added if missing), homeLists home's own lists from the
+// prefetch.
 func newFullTextCopySource(app *App, ctx context.Context, sc *db.ServerConn, home string,
 	databases, homeLists []string, noun, listLabel string,
 	read func(context.Context, *gosmo.Database) ([]string, error)) *fullTextCopySource {
@@ -99,8 +99,8 @@ func (c *fullTextCopySource) choose(dbName string) {
 }
 
 // fetch reads dbName's lists. A database the login cannot open says so in one
-// sentence rather than the server's Msg 916; a probe that could not run
-// answers Accessible and lets the read report what it finds.
+// sentence rather than the server's Msg 916; a probe that could not run answers
+// Accessible and lets the read report what it finds.
 func (c *fullTextCopySource) fetch(ctx context.Context, dbName string) ([]string, error) {
 	if !c.sc.DatabaseCapabilities(ctx, dbName).Accessible {
 		//lint:ignore ST1005 a sentence under accessDeniedLabel, worded like the explorer's
@@ -113,10 +113,10 @@ func (c *fullTextCopySource) fetch(ctx context.Context, dbName string) ([]string
 	return lists, nil
 }
 
-// show fills the list picker. The catalog views list only what the login
-// holds a permission on, so an empty list is worded as "none visible", never
-// "none" (db-rules), and names the right — REFERENCES, which CREATE … FROM
-// needs on the source anyway.
+// show fills the list picker. The catalog views list only what the login holds
+// a permission on, so an empty list is worded "none visible", never "none"
+// (db-rules), and names the right: REFERENCES, which CREATE ... FROM needs on
+// the source anyway.
 func (c *fullTextCopySource) show(dbName string, lists []string) {
 	c.listRow.SetItems(lists)
 	switch {
@@ -129,9 +129,9 @@ func (c *fullTextCopySource) show(dbName string, lists []string) {
 	}
 }
 
-// source is the chosen list and, for another database, that database — the
-// request's From and FromDatabase. orElse ends the refusal when there is
-// nothing to copy ("start from an empty one").
+// source is the chosen list and, for another database, that database: the
+// request's From and FromDatabase. orElse ends the refusal when there is nothing
+// to copy ("start from an empty one").
 func (c *fullTextCopySource) source(orElse string) (from, fromDB string, err error) {
 	dbName := c.dbRow.Value()
 	lists, ok := c.lists[dbName]

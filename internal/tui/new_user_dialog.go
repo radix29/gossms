@@ -11,16 +11,16 @@ import (
 )
 
 // new_user_dialog.go is the New User dialog (a database's Security > Users
-// folder), built on newObjectDialog. It offers SSMS's user types — every form
-// of gosmo.CreateUserRequest — with Entra only on an Azure engine edition.
+// folder), built on newObjectDialog. It offers SSMS's user types (every form of
+// gosmo.CreateUserRequest), with Entra only on an Azure engine edition.
 //
 // Three pages, applied in order: General creates the user, then Owned Schemas
-// and Membership target a user that now exists. Under Script Changes the
-// later pages address the user by name alone, so nothing has to be read back.
+// and Membership target a user that now exists. Under Script Changes the later
+// pages address the user by name alone, so nothing is read back.
 
-// nuserKinds are the General page's User type options, in radio order. The
-// labels are userTypeLabel's (user_props.go), so a user created here and then
-// opened in its Properties describes itself the same way.
+// nuserKinds are the General page's User type options in radio order. The labels
+// are userTypeLabel's (user_props.go), so a user created here and opened in its
+// Properties describes itself the same way.
 var nuserKinds = []struct {
 	label string
 	kind  gosmo.UserKind
@@ -34,14 +34,14 @@ var nuserKinds = []struct {
 	{"External user or group", gosmo.UserFromExternalProvider},
 }
 
-// nuserDefaultSchema is the Default schema picker's "leave DEFAULT_SCHEMA
-// off" entry — the server then defaults it to dbo.
+// nuserDefaultSchema is the Default schema picker's "leave DEFAULT_SCHEMA off"
+// entry; the server then defaults it to dbo.
 const nuserDefaultSchema = "(Default)"
 
 // nuserPrefetch is everything the dialog reads before it opens.
 type nuserPrefetch struct {
-	// existingNames holds every database principal's name: a user cannot
-	// share one with a role either.
+	// existingNames holds every database principal's name: a user cannot share one
+	// with a role either.
 	existingNames *nameSet
 	logins        []string
 	windowsLogins []string
@@ -50,12 +50,12 @@ type nuserPrefetch struct {
 	certNames     []string
 	asymKeyNames  []string
 
-	// containment is the database's CONTAINMENT, or "" when it could not be
-	// read — then gosmo's own check is the one that refuses.
+	// containment is the database's CONTAINMENT, or "" when unread; then gosmo's own
+	// check is the one that refuses.
 	containment string
-	// entra offers the Entra kind; everyContained skips the containment
-	// preflight on Azure SQL Database, where every database takes contained
-	// users while reporting CONTAINMENT = NONE.
+	// entra offers the Entra kind; everyContained skips the containment preflight on
+	// Azure SQL Database, where every database takes contained users while
+	// reporting CONTAINMENT = NONE.
 	entra          bool
 	everyContained bool
 }
@@ -83,8 +83,8 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 	}
 	for _, r := range roles {
 		pf.existingNames.Add(r.Name)
-		// public's membership is implicit and ALTER ROLE public ADD MEMBER
-		// is a syntax error — the exclusion every membership page makes.
+		// public's membership is implicit and ALTER ROLE public ADD MEMBER is a syntax
+		// error: the exclusion every membership page makes.
 		if r.Name != "public" {
 			pf.roles = append(pf.roles, r.Name)
 		}
@@ -104,9 +104,9 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 		}
 	}
 
-	// Best-effort, as masterMappableNames is for New Login: a principal that
-	// cannot read the key catalogs still creates every other kind, and an
-	// empty picker turns into a refusal naming the missing pick.
+	// Best-effort, as masterMappableNames is for New Login: a principal that cannot
+	// read the key catalogs still creates every other kind, and an empty picker
+	// becomes a refusal naming the missing pick.
 	if cs, err := d.Certificates(ctx); err == nil {
 		for _, c := range cs {
 			pf.certNames = append(pf.certNames, c.Name)
@@ -155,8 +155,8 @@ func (d *NewUserDialog) buildPages(pf *nuserPrefetch) {
 	d.preflight = func() error { return validateNewUser(general.input(), pf) }
 }
 
-// nuserGeneral is the General page's widgets, for the dialog's preflight and
-// the later pages' use of the name.
+// nuserGeneral is the General page's widgets, for the preflight and the later
+// pages' use of the name.
 type nuserGeneral struct {
 	form  *propsheet.Form
 	apply propApply
@@ -171,8 +171,8 @@ type nuserGeneral struct {
 	schema            *propsheet.SelectRow
 }
 
-// nuserKindsFor is the User type options on this server: Entra is left off
-// where entraPrincipalsOffered says the server refuses it.
+// nuserKindsFor is the User type options on this server: Entra is left off where
+// entraPrincipalsOffered says the server refuses it.
 func nuserKindsFor(pf *nuserPrefetch) []gosmo.UserKind {
 	var out []gosmo.UserKind
 	for _, k := range nuserKinds {
@@ -196,8 +196,8 @@ func nuserKindLabel(k gosmo.UserKind) string {
 // buildNewUserGeneralPage builds the General page. The User type group drives
 // the rest through RadioRow.SetOnChange, as New Login's Authentication group
 // does: a row the kind has no clause for is disabled or emptied, never left
-// inviting input the CREATE USER cannot carry. gosmo refuses every such
-// combination too; the gating is the dialog being honest about what it sends.
+// inviting input CREATE USER cannot carry. gosmo refuses every such combination
+// too; the gating is honesty about what is sent.
 func buildNewUserGeneralPage(sc *db.ServerConn, dbName string, pf *nuserPrefetch) *nuserGeneral {
 	kinds := nuserKindsFor(pf)
 	labels := make([]string, len(kinds))
@@ -226,14 +226,13 @@ func buildNewUserGeneralPage(sc *db.ServerConn, dbName string, pf *nuserPrefetch
 		var logins, mapped []string
 		switch k {
 		case gosmo.UserForLogin:
-			// (None) first, which the preflight refuses: the first login
-			// alphabetically is typically a ##MS_...## certificate login,
-			// and pre-selecting it made it the answer to a question nobody
-			// had answered yet.
+			// (None) first, which the preflight refuses: the first login alphabetically is
+			// typically a ##MS_...## certificate login, and pre-selecting it made it the
+			// answer to a question nobody had answered.
 			logins = append([]string{noneItem}, pf.logins...)
 		case gosmo.UserWindows:
-			// (None) first here too, but as a real choice: a Windows user
-			// with no login is a contained database's.
+			// (None) first here too, but as a real choice: a Windows user with no login is a
+			// contained database's.
 			logins = append([]string{noneItem}, pf.windowsLogins...)
 		case gosmo.UserFromCertificate:
 			mapped = pf.certNames
@@ -282,9 +281,8 @@ func buildNewUserGeneralPage(sc *db.ServerConn, dbName string, pf *nuserPrefetch
 
 	g.apply = func(ctx context.Context) error {
 		req := g.request()
-		// DatabaseRef, not DatabaseByName: the statement addresses the
-		// database by name, and the by-name read would not work under Script
-		// Changes.
+		// DatabaseRef, not DatabaseByName: the statement addresses the database by name,
+		// and the by-name read would not work under Script Changes.
 		_, err := sc.Server.DatabaseRef(dbName).CreateUser(ctx, req)
 		return err
 	}
@@ -301,9 +299,9 @@ func (g *nuserGeneral) input() nuserInput {
 	return nuserInput{req: g.request(), confirm: g.confirm.Value()}
 }
 
-// request reads the page into the gosmo request, taking from each row only
-// what the selected kind has a clause for — so a password left typed after
-// switching kind is never sent.
+// request reads the page into the gosmo request, taking from each row only what
+// the selected kind has a clause for, so a password left typed after switching
+// kind is never sent.
 func (g *nuserGeneral) request() gosmo.CreateUserRequest {
 	k := g.kinds[g.kind.Selected()]
 	req := gosmo.CreateUserRequest{Name: strings.TrimSpace(g.name.Value()), Kind: k}
@@ -333,9 +331,9 @@ func (g *nuserGeneral) request() gosmo.CreateUserRequest {
 	return req
 }
 
-// validateNewUser refuses what the server would, with a message naming the
-// field: Msg 33233 for a contained user says nothing about which setting or
-// database, and "FOR LOGIN []" is gosmo's refusal of a pick nobody made.
+// validateNewUser refuses what the server would, naming the field: Msg 33233 for
+// a contained user says nothing about which setting or database, and "FOR LOGIN
+// []" is gosmo's refusal of a pick nobody made.
 func validateNewUser(in nuserInput, pf *nuserPrefetch) error {
 	r := in.req
 	if r.Name == "" {
@@ -373,7 +371,7 @@ func validateNewUser(in nuserInput, pf *nuserPrefetch) error {
 
 // buildNewUserOwnedSchemasPage lists every schema whose owner can change,
 // unticked; a ticked one is transferred to the new user. sys and
-// INFORMATION_SCHEMA are left out — their ownership cannot be changed.
+// INFORMATION_SCHEMA are left out (their ownership cannot change).
 func buildNewUserOwnedSchemasPage(pf *nuserPrefetch, userName func() string) (*propsheet.Form, propApply) {
 	var schemas []*gosmo.Schema
 	for _, s := range pf.schemas {
@@ -401,8 +399,8 @@ func buildNewUserOwnedSchemasPage(pf *nuserPrefetch, userName func() string) (*p
 			if !v[0] {
 				continue
 			}
-			// The prefetched schema is enough: SetOwner addresses it by
-			// name, which is what keeps this page scriptable.
+			// The prefetched schema is enough: SetOwner addresses it by name, which keeps
+			// this page scriptable.
 			if err := schemas[i].SetOwner(ctx, userName()); err != nil {
 				return err
 			}

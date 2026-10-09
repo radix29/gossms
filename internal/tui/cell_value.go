@@ -63,17 +63,16 @@ func jsonArrayLike(t string) bool {
 	return false
 }
 
-// classifyCellKind decides how a "Show Value" cell is displayed when the
-// column's declared SQL Server type is known (see query.ResultSet.ColumnTypes;
-// sqlType may be empty for a set that doesn't carry types).
+// classifyCellKind decides how a "Show Value" cell is displayed when the column's
+// declared SQL Server type is known (see query.ResultSet.ColumnTypes; sqlType may
+// be empty for a set that doesn't carry types).
 //
 // The declared type wins over the text sniff, and has to: a real xml column's
-// value is not reliably bracket-shaped. SQL Server serialises an xml fragment
-// with its text nodes entity-escaped, so the blocked-process idiom
-// `try_cast('<?query --' + text + '--?>' as xml)` comes back ending in
-// "--?&gt;" whenever the batch text closed the processing instruction early —
-// last byte ';', which classifyCellValue reads as plain text and drops into
-// the 60-column popup.
+// value is not reliably bracket-shaped. SQL Server serialises an xml fragment with
+// its text nodes entity-escaped, so the blocked-process idiom
+// `try_cast('<?query --' + text + '--?>' as xml)` comes back ending in "--?&gt;"
+// whenever the batch text closed the processing instruction early — last byte ';',
+// which classifyCellValue reads as plain text and drops into the 60-column popup.
 func classifyCellKind(sqlType, value string) cellValueKind {
 	if k := classifySQLType(sqlType); k != cellPlain {
 		// Nothing to open. A NULL never gets here: the grid keeps it from
@@ -102,20 +101,18 @@ func classifySQLType(sqlType string) cellValueKind {
 
 // openCellValuePanel shows a structured cell value in a brand new query panel
 // with the matching highlighter — the same treatment File > Open gives a .xml
-// file (see openQueryFile), rather than the grid's fixed 60-column value
-// popup. Reports whether it took the value; a plain one is left to the popup.
+// file (see openQueryFile), rather than the grid's fixed 60-column value popup.
+// Reports whether it took the value; a plain one is left to the popup.
 //
-// Deliberately a panel rather than a highlighted popup. The popup is an
-// Editor in wrap mode, which resolves each drawn column through a linear scan
-// of that line's ColorRuns (editor_draw.go's styleAt) — fine against SQL's
-// few coarse runs, but a highlighter emitting one run per token across a
-// whole XML or JSON document is exactly the case that scan is not arranged
-// for, and this would be the call site where it landed. A panel draws
-// unwrapped and pays nothing extra.
+// Deliberately a panel rather than a highlighted popup. The popup is an Editor in
+// wrap mode, which resolves each drawn column through a linear scan of that line's
+// ColorRuns (editor_draw.go's styleAt) — fine for SQL's few coarse runs, but not
+// for a highlighter emitting one run per token across a whole XML or JSON
+// document. A panel draws unwrapped and pays nothing extra.
 //
-// The panel has no connection of its own: it exists to read a value, not to
-// run it. savedText is seeded so the panel isn't born dirty and closing it
-// doesn't prompt to save.
+// The panel has no connection of its own: it exists to read a value, not run it.
+// savedText is seeded so the panel isn't born dirty and closing it doesn't prompt
+// to save.
 func (a *App) openCellValuePanel(sqlType, column, value string) bool {
 	var suffix string
 	var highlighter controls.Highlighter

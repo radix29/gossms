@@ -11,23 +11,22 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_column_master_key_dialog.go is the New Column Master Key creation
-// dialog (a database's Security > Always Encrypted Keys > Column Master Keys
-// folder). Built on newObjectDialog like every other create dialog; the one
-// thing it adds is a database — the two Always Encrypted creates are
-// database-scoped, where New Job/Login/Database are server-scoped.
+// new_column_master_key_dialog.go is the New Column Master Key dialog (a
+// database's Security > Always Encrypted Keys > Column Master Keys folder),
+// built on newObjectDialog. It adds a database: the two Always Encrypted
+// creates are database-scoped, where New Job/Login/Database are server-scoped.
 //
 // The key itself is never here: SQL Server stores only the provider name and
 // the path into that provider's store, and the enclave signature is computed
-// client-side from the master key's private key. gossms cannot reach a
-// Windows certificate store or a Key Vault from a portable no-CGO build, so
-// an enclave-enabled key is created by pasting the signature SSMS or the
+// client-side from the master key's private key. gossms cannot reach a Windows
+// certificate store or Key Vault from a portable no-CGO build, so an
+// enclave-enabled key is created by pasting the signature SSMS or the
 // SqlColumnMasterKey cmdlets produced.
 
 // cmkProviders are the key store providers SQL Server ships with, listed in
-// the dialog's note. The field is free text rather than a dropdown because a
-// custom provider name is legal — the server stores whatever it is given and
-// only the client driver ever resolves it.
+// the dialog's note. The field is free text because a custom provider name is
+// legal: the server stores what it is given and only the client driver resolves
+// it.
 var cmkProviders = []string{
 	"MSSQL_CERTIFICATE_STORE", "AZURE_KEY_VAULT",
 	"MSSQL_CSP_PROVIDER", "MSSQL_CNG_STORE", "MSSQL_JAVA_KEYSTORE",
@@ -83,10 +82,9 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 	enclaveRow := propsheet.Check("Allow enclave computations", false)
 	signatureField := propsheet.Text("Signature (hex)", "", 40)
 
-	// ENCLAVE_COMPUTATIONS is SQL Server 2019 syntax and the parser rejects
-	// the whole CREATE below that, so the two controls are replaced by a note
-	// rather than offered as a row that can only fail on Apply. An unread
-	// version (0) is treated as newest.
+	// ENCLAVE_COMPUTATIONS is SQL Server 2019 syntax and the parser rejects the
+	// whole CREATE below that, so the two controls become a note rather than a row
+	// that can only fail on Apply. An unread version (0) is treated as newest.
 	hasEnclaves := serverMajor(sc) == 0 || serverMajor(sc) >= int(gosmo.SQLServer2019)
 	enclaveRows := []propsheet.Row{
 		propsheet.Section("Secure enclaves"),
@@ -133,17 +131,16 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 			}
 			return nil
 		}
-		// A pasted signature with the box unticked is refused rather than
-		// dropped: the statement would succeed and create a key that is not
-		// the one the user was setting up.
+		// A pasted signature with the box unticked is refused, not dropped: the
+		// statement would succeed and create a key other than the one being set up.
 		if sig != "" {
 			return fmt.Errorf("a signature only applies to a key that allows enclave computations — tick that box or clear the signature")
 		}
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		// DatabaseRef, not DatabaseByName: the create reads nothing off
-		// the handle and this one also works under Script Changes.
+		// DatabaseRef, not DatabaseByName: the create reads nothing off the handle and
+		// this one works under Script Changes.
 		dbObj := sc.Server.DatabaseRef(dbName)
 		name := d.objectName()
 		provider := strings.TrimSpace(providerField.Value())
@@ -155,8 +152,8 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 				return fmt.Errorf("signature: %w", err)
 			}
 			if len(sig) == 0 {
-				// The request reads an empty signature as "no enclave
-				// computations"; a checked box asked for them.
+				// The request reads an empty signature as "no enclave computations"; a checked
+				// box asked for them.
 				return fmt.Errorf("signature is empty")
 			}
 			req.Signature = sig

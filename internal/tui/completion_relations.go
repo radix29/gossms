@@ -12,10 +12,10 @@ import (
 // ---------------------------------------------------------------------------
 // Relations: what a FROM-scope name resolves to
 //
-// sqlparse.ScopeAt emits structure only (CTEs, derived tables, refs) with no
-// idea what a name means. This file turns that into columns: a catalog
-// table/view for an ordinary ref, and a synthetic column list computed from the
-// body for a derived table or CTE.
+// sqlparse.ScopeAt emits structure only (CTEs, derived tables, refs) with no idea
+// what a name means. This file turns that into columns: a catalog table/view for
+// an ordinary ref, and a synthetic column list computed from the body for a
+// derived table or CTE.
 //
 // Everything here answers "no columns" rather than guessing when it runs out of
 // certainty (unresolvable name, cycle, a shape the parser dropped). The popup
@@ -299,9 +299,9 @@ func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivo
 	return append(cols, added...)
 }
 
-// pivotAggregateType is the column a PIVOT's aggregate fn over arg produces;
-// arg is the zero column when the aggregate names none (COUNT(*)) or the source
-// lacks it. Built-ins PIVOT accepts are modelled by the rules
+// pivotAggregateType is the column a PIVOT's aggregate fn over arg produces; arg
+// is the zero column when the aggregate names none (COUNT(*)) or the source lacks
+// it. Built-ins PIVOT accepts are modelled by the rules
 // sys.dm_exec_describe_first_result_set reports (on 13 and 17):
 //
 //   - COUNT is int, COUNT_BIG and APPROX_COUNT_DISTINCT bigint, over anything;
@@ -311,11 +311,11 @@ func pivotColumns(collation string, src []gosmo.CatalogColumn, pv *sqlparse.Pivo
 //     real to float;
 //   - STDEV/STDEVP/VAR/VARP are float over any numeric argument.
 //
-// CHECKSUM_AGG and STRING_AGG are absent because PIVOT refuses them (Msg 406,
-// "not invariant to NULLs"). Anything else (another aggregate, an argument of
-// unknown or non-numeric type) is untyped: nothing rather than wrong. A
-// qualified (user-defined) aggregate never reaches here. Every output is
-// nullable: an IN value with no rows reads NULL.
+// CHECKSUM_AGG and STRING_AGG are absent because PIVOT refuses them (Msg 406, "not
+// invariant to NULLs"). Anything else (another aggregate, an argument of unknown or
+// non-numeric type) is untyped: nothing rather than wrong. A qualified
+// (user-defined) aggregate never reaches here. Every output is nullable: an IN
+// value with no rows reads NULL.
 func pivotAggregateType(fn string, arg gosmo.CatalogColumn) gosmo.CatalogColumn {
 	untyped := gosmo.CatalogColumn{IsNullable: true}
 	switch strings.ToUpper(fn) {

@@ -13,16 +13,16 @@ import (
 
 // new_database_audit_specification_dialog.go is the New Database Audit
 // Specification dialog (a database's Security > Database Audit Specifications
-// folder), built on newObjectDialog like every other New-X.
+// folder), built on newObjectDialog.
 //
-// As with the server-scope one, the specification is created disabled: turning
-// it on is Enable's job, and one enabled at creation starts recording before
-// the user has seen it in the tree.
+// As with the server-scope one, the specification is created disabled: Enable
+// turns it on, and one enabled at creation records before the user has seen it
+// in the tree.
 
-// ndbAuditSpecPrefetch holds what the dialog needs before it opens: the
-// existing specification names in this database for the uniqueness preflight,
-// the server audits to bind to, and the two pick lists, both read from the
-// server rather than hard-coded so they stay right across versions.
+// ndbAuditSpecPrefetch holds what the dialog needs before it opens: existing
+// specification names in this database for the uniqueness preflight, the server
+// audits to bind to, and the two pick lists, read from the server so they stay
+// right across versions.
 type ndbAuditSpecPrefetch struct {
 	existingNames *nameSet
 	auditNames    []string
@@ -34,12 +34,12 @@ type ndbAuditSpecPrefetch struct {
 // (the audit names other specifications write to) already holds.
 //
 // SQL Server allows one database audit specification per audit per database,
-// and one server audit specification per audit — a second is Msg 33230, "An
-// audit specification for audit 'x' already exists", verified live on major
-// 17 for both, on CREATE and on an ALTER ... FOR SERVER AUDIT rebind. Offering
-// a taken audit would make OK the only way to find that out, so the dropdown
-// lists what can actually be chosen. Audits are server objects, so
-// serverCollation decides which names are the same one.
+// and one server audit specification per audit; a second is Msg 33230 "An audit
+// specification for audit 'x' already exists" (verified live on major 17, on
+// CREATE and on an ALTER ... FOR SERVER AUDIT rebind). Offering a taken audit
+// would make OK the only way to find out, so the dropdown lists what can be
+// chosen. Audits are server objects, so serverCollation decides which names are
+// the same.
 func freeAuditNames(serverCollation string, auditNames, held []string) []string {
 	taken := newNameSet(serverCollation)
 	for _, n := range held {
@@ -127,10 +127,9 @@ func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetc
 		propsheet.Static("Database", dbName),
 	}
 
-	// A server with no audit cannot carry a specification at all — FOR SERVER
-	// AUDIT is required, and the audit is a *server* object even for a
-	// database specification. Saying so beats a dropdown with nothing in it
-	// and an error only on OK.
+	// A server with no audit cannot carry a specification (FOR SERVER AUDIT is
+	// required, and the audit is a *server* object even for a database
+	// specification). Say so rather than show an empty dropdown and an error on OK.
 	var auditField *propsheet.SelectRow
 	if len(pf.auditNames) == 0 {
 		rows = append(rows, propsheet.Note(
@@ -185,9 +184,9 @@ func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetc
 			}
 			actions = append(actions, a)
 		}
-		// The name-only database handle, not DatabaseByName: the create needs
-		// nothing off sys.databases, and this is the form that also works
-		// under the script context Script-To uses.
+		// The name-only database handle, not DatabaseByName: the create needs nothing
+		// off sys.databases, and this form also works under Script-To's script
+		// context.
 		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseAuditSpecification(ctx,
 			gosmo.CreateDatabaseAuditSpecificationRequest{
 				Name:         d.objectName(),

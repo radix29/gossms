@@ -20,9 +20,9 @@ type Series struct {
 	Values []float64
 }
 
-// At returns the value at index i, or 0 when i is outside the series: series in
-// one chart may differ in length while a metric fills its buffer, and a missing
-// sample reads as zero rather than shortening the chart.
+// At returns the value at index i, or 0 outside the series: series in one chart
+// may differ in length while a metric fills its buffer, and a missing sample
+// reads as zero rather than shortening the chart.
 func (s Series) At(i int) float64 {
 	if i < 0 || i >= len(s.Values) {
 		return 0
@@ -70,9 +70,9 @@ func maxValue(series []Series) float64 {
 	return max
 }
 
-// maxStackTotal is the largest per-bucket sum across every series, for scaling a
-// chart whose series stack. Negative values don't contribute: a stack has no
-// meaning below its baseline, and the column renderer drops them too.
+// maxStackTotal is the largest per-bucket sum across every series, for scaling
+// a stacking chart. Negative values don't contribute (a stack has no meaning
+// below its baseline; the column renderer drops them too).
 func maxStackTotal(series []Series) float64 {
 	max := 0.0
 	for i, n := 0, maxLen(series); i < n; i++ {
@@ -96,11 +96,10 @@ type segment struct {
 }
 
 // stackCell is one composed cell of a stacked run: the two colours it splits
-// between and where the split falls, in eighths of the cell. split == 8 means
-// one colour owns the whole cell, 0 means the cell is past the end of the stack.
-//
-// Orientation is applied at draw time, so the same composition serves a vertical
-// column and a horizontal bar.
+// between and where the split falls, in eighths. split == 8 means one colour
+// owns the whole cell, 0 means the cell is past the end of the stack.
+// Orientation is applied at draw time, so one composition serves both columns
+// and bars.
 type stackCell struct {
 	lower, upper tcell.Color
 	split        int
@@ -127,22 +126,19 @@ func (c stackCell) glyph(block func(int) rune) (rune, tcell.Color, tcell.Color) 
 }
 
 // filled reports whether the cell carries any of the stack; cells past the end
-// are skipped when drawing, so the plot's grid dots stay visible above the
-// data.
+// are skipped so the plot's grid dots stay visible above the data.
 func (c stackCell) filled() bool { return c.split > 0 }
 
 // composeStack turns a run of segments into exactly length composed cells,
-// ordered from the base of the stack outward.
+// ordered from the stack's base outward.
 //
-// Every cell is filled: a cell spanning a segment boundary carries the lower
+// Every cell is filled: one spanning a segment boundary carries the lower
 // segment as foreground and the upper as background, so the partial block glyph
-// shows both and the stack has no internal hole. Rendering each segment
-// independently and rounding its own height leaves gaps and double counts at
-// every boundary. Cells past the top are filled with bg.
-//
-// When more than one boundary falls inside one cell, it keeps the segment
-// covering most of its lower half and the one covering most of its upper half;
-// the rest are dropped rather than drawn as a hole.
+// shows both with no hole. Rendering each segment independently and rounding its
+// own height leaves gaps and double counts at every boundary. Cells past the top
+// are filled with bg. When several boundaries fall in one cell, it keeps the
+// segment covering most of its lower half and the one covering most of its upper
+// half; the rest are dropped rather than drawn as a hole.
 func composeStack(length int, segs []segment, bg tcell.Color) []stackCell {
 	out := make([]stackCell, max(length, 0))
 	for i := range out {
@@ -153,9 +149,9 @@ func composeStack(length int, segs []segment, bg tcell.Color) []stackCell {
 	}
 
 	if len(segs) == 1 {
-		// A single segment has no internal boundary to place, so the eighths pass
-		// below buys nothing and its owner slice is pure allocation.
-		// HistoryChart.drawColumns takes this path once per series per column.
+		// A single segment has no internal boundary, so the eighths pass buys nothing
+		// and its owner slice is pure allocation (HistoryChart.drawColumns takes this
+		// path once per series per column).
 		whole, rem := eighths(segs[0].cells)
 		for i := range out {
 			switch {
@@ -168,8 +164,8 @@ func composeStack(length int, segs []segment, bg tcell.Color) []stackCell {
 		return out
 	}
 
-	// Lay the segments out along one axis measured in eighths of a cell, so a
-	// boundary can fall inside a cell rather than snap to one.
+	// Lay segments out along one axis in eighths of a cell so a boundary can fall
+	// inside a cell rather than snap to one.
 	limit := len(out) * 8
 	owner := make([]int, limit) // eighth → segment index, -1 = past the top
 	for i := range owner {
@@ -224,8 +220,8 @@ func drawHRun(s tcell.Screen, startX, y int, cells []stackCell) {
 // the top of the stack).
 //
 // A cell holding three or more segments keeps the lowest two: the third is
-// thinner than an eighth of a cell, and absorbing it into its neighbour is the
-// only representation without a gap.
+// thinner than an eighth, and absorbing it into its neighbour is the only
+// representation without a gap.
 func splitCell(cell []int, segs []segment, bg tcell.Color) (lower, upper tcell.Color, split int) {
 	colorOf := func(i int) tcell.Color {
 		if i >= 0 && i < len(segs) {
@@ -294,16 +290,13 @@ func layoutPlot(r core.Rect, gutter, legendRows int) plotFrame {
 	return f
 }
 
-// historySpec is everything HistoryChart and StackedHistoryChart do identically,
-// which is all of it but two things: where an auto-scale takes its maximum from,
-// and how one column is drawn. Both public types convert themselves into one of
-// these and the code below takes over, so the chrome sequence — gutter, plot,
-// time row, legend, and their draw order — exists once. Two copies drift apart
-// silently: nothing fails to compile when only one learns about new chrome.
+// historySpec is everything HistoryChart and StackedHistoryChart do
+// identically: all but where an auto-scale takes its maximum and how a column is
+// drawn. Both convert themselves into one so the chrome sequence (gutter, plot,
+// time row, legend, draw order) exists once; two copies drift silently.
 //
-// autoMax is a func, not a value, because it is wanted only when Scale is zero,
-// and computing it walks every bucket of every series on a chart that redraws on
-// every collector tick.
+// autoMax is a func because it is needed only when Scale is zero, and it walks
+// every bucket of every series on a chart redrawn every collector tick.
 type historySpec struct {
 	series     []Series
 	scale      Scale
@@ -372,8 +365,8 @@ func drawPlotBackground(s tcell.Screen, plot core.Rect, gridEvery int) {
 	gridStyle := theme.StyleChartGrid()
 	core.FillRect(s, plot, ' ', bgStyle)
 
-	// Dots on every third column and every other row: dense enough to read
-	// heights against, sparse enough not to compete with the data.
+	// Dots on every third column and other row: dense enough to read heights
+	// against, sparse enough not to compete with the data.
 	for y := plot.Y; y < plot.Bottom(); y += 2 {
 		for x := plot.X + 1; x < plot.Right(); x += 3 {
 			core.PutRune(s, x, y, GridDot, gridStyle)
@@ -382,8 +375,7 @@ func drawPlotBackground(s tcell.Screen, plot core.Rect, gridEvery int) {
 	if gridEvery <= 0 {
 		return
 	}
-	// Dividers are anchored to the right edge: the newest bucket is always in the
-	// same place, so the rules stay put as data scrolls past.
+	// Dividers anchor to the right edge so they stay put as data scrolls past.
 	for x := plot.Right() - 1 - gridEvery; x > plot.X; x -= gridEvery {
 		for y := plot.Y; y < plot.Bottom(); y++ {
 			core.PutRune(s, x, y, GridDivider, gridStyle)

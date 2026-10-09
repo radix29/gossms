@@ -42,17 +42,17 @@ type completionLoad[T any] struct {
 	apply func(v T, err error)
 }
 
-// startCompletionLoad runs c.fetch on a background goroutine bounded by
-// c.timeout under sc's context, and delivers the result on the UI goroutine.
+// startCompletionLoad runs c.fetch on a background goroutine bounded by c.timeout
+// under sc's context, and delivers the result on the UI goroutine.
 //
-// An error with sc no longer open evicts the entry instead of reaching apply.
-// The caches are shared by every ServerConn resolving to the same server+login
-// (+database); sc merely started the fetch, so its closing mid-fetch says
-// nothing about whether another connection still wants the result. err's shape
-// depends on a race (context cancellation or "database is closed", by whether
-// sc.Close() ran before or after a connection was acquired), so sc.IsOpen() is
-// checked instead of matching either. The popup refresh that follows is the
-// next lookup, for a popup another panel holds open on the entry.
+// An error with sc no longer open evicts the entry instead of reaching apply. The
+// caches are shared by every ServerConn resolving to the same server+login
+// (+database); sc merely started the fetch, so its closing mid-fetch says nothing
+// about whether another connection still wants the result. err's shape depends on
+// a race (context cancellation or "database is closed", by whether sc.Close() ran
+// before or after a connection was acquired), so sc.IsOpen() is checked instead.
+// The popup refresh that follows is the next lookup, for a popup another panel
+// holds open on the entry.
 func startCompletionLoad[T any](a *App, sc *db.ServerConn, c completionLoad[T]) {
 	serverKey := sysCompletionInventoryKey(sc.Opts)
 	ctx, seq := c.load.BeginTimeout(sc.Server.Context(), c.timeout)
@@ -79,17 +79,17 @@ func startCompletionLoad[T any](a *App, sc *db.ServerConn, c completionLoad[T]) 
 
 // completionLoadPanicked is every completion load's safegoRepair step. The
 // loading latch is otherwise cleared only in the callback the fetch posts on
-// completion, which a panic unwinds past, leaving every later lookup seeing a
-// load in flight that doesn't exist.
+// completion, which a panic unwinds past, leaving every later lookup seeing a load
+// in flight that doesn't exist.
 //
 // The entry is evicted rather than unlatched, so the next lookup retries from
 // scratch instead of reading a catalog half-built by the fetch that died. seq
 // keeps a superseded panic off a live newer load.
 //
 // It also closes every open popup on the server, which may show the placeholder
-// this load would have replaced. Closed rather than refreshed: a refresh
-// re-asks the provider, which finds the entry gone and starts a fresh load that
-// panics the same way while the popup stays open, in a loop.
+// this load would have replaced. Closed rather than refreshed: a refresh re-asks
+// the provider, which finds the entry gone and starts a fresh load that panics the
+// same way while the popup stays open, in a loop.
 func (a *App) completionLoadPanicked(l *latest, seq int, serverKey string, owned func() bool, evict func()) {
 	if !l.Done(seq) || !owned() {
 		return

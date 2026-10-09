@@ -8,24 +8,19 @@ type Batch struct {
 	Count int
 }
 
-// SplitBatches splits script into its GO batches, dropping any that are
-// nothing but whitespace.
+// SplitBatches splits script into its GO batches, dropping whitespace-only ones.
 //
-// A line is a separator only by GoSeparatorAt's rule — the one the editor
-// selects statements by and IntelliSense scopes completion by — and only when
-// Next's lexer reaches its start in ModeNormal, outside a 'string', "quoted
-// identifier", [bracketed identifier] or /* block comment */, so a GO line
-// inside any of those is text of the batch. Block comments nest, as the
-// server's own lexer nests them. An unterminated literal or comment runs to
-// the end of the script, which then goes to the server as one batch for it to
-// reject.
+// A line is a separator by GoSeparatorAt's rule (shared with statement select
+// and IntelliSense) and only when Next's lexer reaches its start in ModeNormal,
+// so a GO line inside a string, quoted/bracketed identifier or (nesting) block
+// comment is batch text. An unterminated literal or comment runs to the end of
+// the script, which goes to the server as one batch for it to reject.
 //
-// The script is walked a line at a time, each decoded into one reused buffer,
-// so a large script costs its longest line in runes rather than a []rune copy
-// of the whole of it.
+// Lines are decoded into one reused buffer, so a large script costs its longest
+// line rather than a []rune copy of the whole.
 //
-// The count is not capped: SSMS runs "GO 100000" as asked, and a caller
-// checks for cancellation between repetitions.
+// The repeat count is not capped: SSMS runs "GO 100000" as asked; callers check
+// for cancellation between repetitions.
 func SplitBatches(script string) []Batch {
 	var batches []Batch
 	emit := func(text string, count int) {

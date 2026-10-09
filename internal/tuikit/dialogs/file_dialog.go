@@ -47,8 +47,8 @@ type FileDialog struct {
 
 	mode FileDialogMode
 
-	// fs is whose filesystem is being browsed. Every Show* entry point sets it, so
-	// one caller's remote filesystem can't leak into the next local browse.
+	// fs is the filesystem being browsed. Every Show* entry point sets it, so one
+	// caller's remote filesystem can't leak into the next local browse.
 	fs FileSystem
 
 	dir     string
@@ -61,12 +61,10 @@ type FileDialog struct {
 	scroll    int
 	typeahead string
 
-	// listMouseDragging distinguishes a fresh Button1 press on the list from a
-	// continued hold over the same row (TreeView and DataGrid have the same field).
-	// Without it, tcell's all-motion tracking resends Button1 on every motion while
-	// the button is down, so one click on an already-selected row could call
-	// activateSelected more than once. Distinct from the embedded ModalDialog's
-	// mouseDragging, a separate latch for the button row.
+	// listMouseDragging separates a fresh Button1 press on the list from a resent
+	// hold (as TreeView, DataGrid): otherwise one click on an already-selected row
+	// could call activateSelected repeatedly. Distinct from the embedded
+	// ModalDialog's mouseDragging, the button row's latch.
 	listMouseDragging bool
 
 	// drag is the text-selection gesture a click in pathField or nameField starts;
@@ -152,9 +150,9 @@ func (d *FileDialog) start(startPath string, initialFocus int) {
 	// would reopen still routing every click to that field.
 	d.drag.Clear()
 	d.setFocus(initialFocus)
-	// Shown *before* the first listing: that listing is a FileSystem call like any
-	// other, the slowest of the session on a remote filesystem, and showBusy can
-	// only paint a dialog that is already visible.
+	// Shown before the first listing: it is a FileSystem call like any other (the
+	// slowest of the session on a remote one) and showBusy can only paint a visible
+	// dialog.
 	d.ModalDialog.Show()
 	d.loadDir(dir)
 	if name != "" {
@@ -163,13 +161,10 @@ func (d *FileDialog) start(startPath string, initialFocus int) {
 }
 
 // showBusy paints the dialog with msg in place of the listing and flushes it,
-// ahead of a FileSystem call that may block.
-//
-// FileSystem is synchronous by design, so a remote one spends a network round
-// trip inside the event handler and the TUI stops with the *previous* directory
-// on screen, indistinguishable from a hang. This is the one place tuikit paints
-// outside the app's draw cycle, so only a BlockingFileSystem gets a repaint,
-// which also keeps the local browse from flickering.
+// ahead of a FileSystem call that may block. FileSystem is synchronous, so a
+// remote call stops the TUI with the previous directory on screen, looking like
+// a hang. This is the one place tuikit paints outside the app's draw cycle, so
+// only a BlockingFileSystem gets a repaint (local browsing would flicker).
 func (d *FileDialog) showBusy(msg string) {
 	if d.screen == nil || !d.Visible() {
 		return
@@ -183,9 +178,8 @@ func (d *FileDialog) showBusy(msg string) {
 }
 
 // entryFor returns the listing row for path when it names something in the
-// directory already on screen (where a typed path usually points). It spares a
-// FileSystem.Exists round trip, which a remote filesystem answers over the
-// network on a keystroke.
+// directory already on screen (where a typed path usually points), sparing a
+// FileSystem.Exists network round trip per keystroke.
 func (d *FileDialog) entryFor(path string) (FileEntry, bool) {
 	fs := d.FileSystem()
 	dir, name := fs.Split(path)
@@ -272,10 +266,10 @@ func (d *FileDialog) selectByName(name string) {
 	}
 }
 
-// FocusedField returns whichever text field has keyboard focus (path bar or
-// filename field), or nil when the list or button row is focused. Exported so a
-// host's clipboard plumbing can resolve Cut/Copy/Paste's target without
-// FileDialog knowing about clipboards.
+// FocusedField returns the text field with keyboard focus (path bar or filename
+// field), or nil when the list or button row is focused. Exported so a host's
+// clipboard plumbing can resolve its target without FileDialog knowing about
+// clipboards.
 func (d *FileDialog) FocusedField() *widgets.InputField {
 	switch d.focus {
 	case ffPath:
@@ -417,10 +411,9 @@ func (d *FileDialog) confirmChoice() {
 // fires.
 func (d *FileDialog) finish(path string) {
 	if d.mode == FileDialogSave && d.OnConfirmOverwrite != nil {
-		// "Couldn't ask" prompts as if the file were there. A remote filesystem answers
-		// over the network, and treating a timeout as "not there" would skip the
-		// overwrite guard silently, worse than an unnecessary prompt whose Yes does
-		// what the user asked anyway.
+		// "Couldn't ask" prompts as if the file were there: a remote timeout treated as
+		// "not there" would silently skip the overwrite guard, worse than a needless
+		// prompt whose Yes does what the user asked anyway.
 		exists, _, err := d.FileSystem().Exists(path)
 		if exists || err != nil {
 			d.OnConfirmOverwrite(path, func() { d.choose(path) })
@@ -453,12 +446,10 @@ func (d *FileDialog) activateButton() {
 }
 
 // FocusedClipboardTarget implements core.ClipboardHost: the path or name field
-// while one has focus, nothing while the file list does.
-//
-// The explicit nil is load-bearing: FocusedField returns a typed
-// *widgets.InputField, and a nil one in an interface is not a nil interface, so
-// returning it directly hands the caller a non-nil target whose every method
-// dereferences nil.
+// while one has focus, nothing while the list does. The explicit nil is
+// load-bearing: FocusedField returns a typed *widgets.InputField, and a nil one
+// in an interface is not a nil interface, so returning it directly hands the
+// caller a non-nil target whose methods dereference nil.
 func (d *FileDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	if f := d.FocusedField(); f != nil {
 		return f

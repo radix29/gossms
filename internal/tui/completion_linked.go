@@ -16,17 +16,17 @@ import (
 // "LS.Sales.dbo.Orders." and "FROM LS.Sales.dbo.Orders o".
 //
 // Three lazy loads per server+login, each latest-only and bounded by
-// linkedLoadTimeout: the linked servers this one may query (sys.servers,
-// data access on), one linked server's databases, and one remote database's
-// catalog (gosmo.Server.LinkedServerCatalog — the remote's own catalog views
-// through OPENQUERY, so SQL Server remotes only). A remote that is slow or
-// down shows the loading row until the bound, then nothing; its failure stays
-// cached until Ctrl+R, so a dead remote is not re-dialled per keystroke.
+// linkedLoadTimeout: the linked servers this one may query (sys.servers, data
+// access on), one linked server's databases, and one remote database's catalog
+// (gosmo.Server.LinkedServerCatalog — the remote's own catalog views through
+// OPENQUERY, so SQL Server remotes only). A slow or down remote shows the loading
+// row until the bound, then nothing; its failure stays cached until Ctrl+R, so a
+// dead remote is not re-dialled per keystroke.
 //
-// The local reading of a chain always wins — "X.Y." is tried as
-// schema.object and database.schema before server.database — so this file is
-// only ever asked once completion_crossdb.go has found nothing. See
-// docs/decisions.md § IntelliSense: linked-server four-part names.
+// The local reading of a chain always wins — "X.Y." is tried as schema.object and
+// database.schema before server.database — so this file is only asked once
+// completion_crossdb.go has found nothing. See docs/decisions.md § IntelliSense:
+// linked-server four-part names.
 // ---------------------------------------------------------------------------
 
 // linkedLoadTimeout bounds every read through a linked server, and the local

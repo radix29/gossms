@@ -91,16 +91,15 @@ func (e *mailAccountEdit) checkBasic() error {
 	return nil
 }
 
-// credentialRefusal is why applying e needs ALTER ANY CREDENTIAL, "" when it
-// does not. A Basic account's password is a server credential (W8, Msg
-// 15247), and the sysmail procedures find it by joining sys.credentials,
-// which shows a login without that right nothing (W14). Such a login is not
-// refused: sysmail_delete_account_sp deletes the account and leaves its
-// credential behind, and sysmail_update_account_sp — @no_credential_change
-// = 1 included — writes the NULL it read back as the credential id, so a
-// display-name edit leaves the account its user name and no password. So
-// an existing Basic account is untouchable without the right, not only its
-// credential fields.
+// credentialRefusal is why applying e needs ALTER ANY CREDENTIAL, "" when it does
+// not. A Basic account's password is a server credential (W8, Msg 15247), and the
+// sysmail procedures find it by joining sys.credentials, which shows a login
+// without that right nothing (W14). Such a login is not refused by the server:
+// sysmail_delete_account_sp deletes the account and leaves its credential behind,
+// and sysmail_update_account_sp — @no_credential_change = 1 included — writes the
+// NULL it read back as the credential id, so a display-name edit leaves the
+// account its user name and no password. So an existing Basic account is
+// untouchable without the right, not only its credential fields.
 func (e *mailAccountEdit) credentialRefusal() string {
 	basic := gosmo.MailAuthBasic
 	switch {

@@ -19,8 +19,8 @@ const (
 // uppercase DatabaseTypeName; length/lengthOK from Length;
 // precision/scale/decimalOK from DecimalSize.
 //
-// Only character and binary types take a length. The driver also reports
-// capacities for text/ntext/image/xml, which SSMS writes bare.
+// Only character and binary types take a length; the driver's capacities for
+// text/ntext/image/xml are omitted, as SSMS does.
 func columnTypeName(dbType string, length int64, lengthOK bool, precision, scale int64, decimalOK bool) string {
 	name := strings.ToLower(dbType)
 	switch dbType {

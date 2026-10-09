@@ -11,13 +11,12 @@ import (
 // message_type_props.go is the read-only Properties for a Service Broker
 // message type.
 //
-// Read-only although ALTER MESSAGE TYPE exists, and the reason is what the
-// ALTER does: it changes the VALIDATION clause, which every conversation
-// already using the type is measured against from the next message on. That
-// is a change to a running application's wire contract, not a setting, and it
-// belongs in the script the application ships — Script as ▸ CREATE is what
-// this build offers for it. The page is named in
-// prop_page_requires_test.go's pagesThatOnlyRead.
+// Read-only although ALTER MESSAGE TYPE exists: it changes the VALIDATION
+// clause, which every conversation already using the type is measured against
+// from the next message on. That changes a running application's wire contract
+// and belongs in the script the application ships; Script as > CREATE is what
+// this build offers. The page is named in prop_page_requires_test.go's
+// pagesThatOnlyRead.
 
 func findMessageType(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.MessageType, error) {
 	return inDB(ctx, sc, dbName, name, (*gosmo.Database).MessageTypeByName)
@@ -38,10 +37,9 @@ func messageTypePropPages(sc *db.ServerConn, dbName, name string) []propPage {
 				propsheet.Static("System object", boolStr(mt.IsSystemObject)),
 				propsheet.Section("Validation"),
 				propsheet.Static("Validation", string(mt.Validation)),
-				// dottedName, not gosmo's SchemaCollection(): that is the
-				// bracket-quoted form a CREATE MESSAGE TYPE takes, and
-				// "[dbo].[ClaimSchema]" in a property row reads as a name
-				// with brackets in it.
+				// dottedName, not gosmo's SchemaCollection(): that is the bracket-quoted form
+				// a CREATE MESSAGE TYPE takes, and "[dbo].[ClaimSchema]" in a property row
+				// reads as a name with brackets in it.
 				propsheet.Static("Schema collection", boundOrNone(dottedName(mt.SchemaCollectionSchema, mt.SchemaCollectionName))),
 				propsheet.Note("VALIDATION is what the broker measures every message of this type against, from the next message on — an edit here would change a running application's wire contract, so it is made by script rather than by form."),
 			)

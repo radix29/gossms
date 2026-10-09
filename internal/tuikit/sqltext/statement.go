@@ -282,15 +282,15 @@ func (s *stmtSplitter) advance(t stmtToken) {
 // stmtSplitter) stay part of the statement. Next lexes the lines, so a
 // boundary inside a literal, quoted identifier or comment is none.
 //
-// A missed boundary runs the statement after the cursor's too (review plan
-// T2), and a false one can cut a statement short into one that still parses
-// (T3: a DELETE losing its WHERE). Where the two conflict the rules prefer an
-// over-split into a fragment that fails to parse.
+// A missed boundary runs the statement after the cursor's too (review plan T2);
+// a false one can cut a statement short into one that still parses (T3: a
+// DELETE losing its WHERE). Where the two conflict, over-split into a fragment
+// that fails to parse.
 //
-// This is a lexical approximation, not a T-SQL parser: a statement inside a
-// module body (CREATE PROCEDURE ... AS ...) is split from the header, an IF
-// from its body, and INSERT ... VALUES followed by a genuinely separate SELECT
-// with no ';' between them is (rarely) missed.
+// This is a lexical approximation, not a parser: a statement inside a module
+// body (CREATE PROCEDURE ... AS ...) is split from the header, an IF from its
+// body, and INSERT ... VALUES followed by a separate SELECT with no ';' is
+// (rarely) missed.
 func StatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, endCol int, ok bool) {
 	type span struct{ sr, sc, er, ec int }
 	var segments []span
@@ -372,11 +372,9 @@ func StatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, endC
 		}
 	}
 
-	// Adjacent segments share their boundary point (segment i's end equals segment
-	// i+1's start), so a cursor exactly there matches both; take the last match so
-	// it resolves to the statement the cursor is at the *start* of (the common
-	// case, via Home or a click on the new statement's first line), not the one it
-	// trails.
+	// Adjacent segments share a boundary point, so a cursor exactly there matches
+	// both; take the last so it resolves to the statement the cursor is at the
+	// start of (Home, or a click on its first line), not the one it trails.
 	found := -1
 	for i, sg := range segments {
 		if cmp(row, col, sg.sr, sg.sc) >= 0 && cmp(row, col, sg.er, sg.ec) <= 0 {

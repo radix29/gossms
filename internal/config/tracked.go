@@ -17,9 +17,9 @@ import (
 // tracked.go holds the Query Store panel's tracked-query sets: per server and
 // database, the query ids pinned to the Tracked Queries view.
 //
-// Kept out of config.json: it's neither a profile nor a setting, every save
-// would rewrite the file holding encrypted passwords, and losing it only costs
-// a rebuildable list.
+// Kept out of config.json: it's neither profile nor setting, every save would
+// rewrite the file holding encrypted passwords, and losing it costs only a
+// rebuildable list.
 
 // trackedFileName is the file, beside config.json.
 const trackedFileName = "tracked_queries.json"
@@ -41,9 +41,9 @@ type TrackedQueries struct {
 	// the set, as Config.unreadable does.
 	unreadable error
 
-	// pending is this process's Toggles not yet saved, which Save replays
-	// onto the file as it is now — as Config.ops does, and for the same
-	// reason: another gossms instance may have saved since this one loaded.
+	// pending is this process's unsaved Toggles, which Save replays onto the
+	// file as it is now, as Config.ops does: another instance may have saved
+	// since this one loaded.
 	pending []trackOp
 }
 
@@ -115,9 +115,8 @@ func readTrackedFile(path string) (map[string]map[string][]int64, error) {
 		return sets, nil
 	}
 	// Merged, not assigned: keys are re-folded on every read, so a file
-	// written under an older fold — ToLower(Server) — loads into today's keys,
-	// and spellings that now name one instance ("host" and "host,1433") pool
-	// their ids. The next Save writes the file back in the new keys.
+	// written under an older fold (ToLower(Server)) loads into today's keys and
+	// spellings naming one instance ("host", "host,1433") pool their ids.
 	for server, dbs := range f.Tracked {
 		for database, ids := range dbs {
 			held := sets[serverKey(server)][database]
@@ -219,11 +218,10 @@ func (t *TrackedQueries) Toggle(server, database string, id int64) (tracked bool
 }
 
 // Save writes the file, refusing to overwrite one that couldn't be read (see
-// unreadable). It re-reads the file and replays this process's unsaved
-// Toggles onto it, then adopts the result, so pins another gossms instance
-// saved meanwhile are kept on disk and appear here. A Toggle made while the
-// file is written stays pending for the next Save, replayed onto the adopted
-// set so it is not lost from memory either.
+// unreadable). It re-reads the file, replays this process's unsaved Toggles
+// onto it, then adopts the result, so pins another instance saved meanwhile
+// are kept. A Toggle made during the write stays pending for the next Save,
+// replayed onto the adopted set so memory keeps it too.
 func (t *TrackedQueries) Save() error {
 	if t == nil {
 		return errors.New("tracked queries: no set loaded")

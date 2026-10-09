@@ -13,10 +13,9 @@ import (
 )
 
 // peer.go lets a connection reach a different instance, which Always On needs:
-// sys.availability_groups/replicas are cluster-wide, but sys.dm_hadr_* only
-// describe what the connected instance sees, so a secondary reports empty
-// roles, health and queue detail for other replicas. Only the primary has the
-// whole picture, and it's usually not the registered instance.
+// sys.dm_hadr_* only describes what the connected instance sees, so a secondary
+// reports empty roles, health and queue detail for other replicas. Only the
+// primary has the whole picture, and it is usually not the registered instance.
 //
 // Peers are cached for the parent's lifetime and closed with it.
 
@@ -118,11 +117,11 @@ func (sc *ServerConn) dialPeer(ctx context.Context, server, key string, d *peerD
 	opts := sc.peerOptions(server)
 	peer, err = connectPeer(dctx, opts, sc.role)
 	if err != nil {
-		// A resolver hit that can't connect (undecryptable password, dropped login)
-		// must not make the instance less reachable than the parent's credentials
-		// would, so retry with the pre-resolver derivation. Costs one extra attempt
-		// against an instance that's really down. When both fail, report the first
-		// error: it names the credentials the user registered.
+		// A resolver hit that cannot connect must not leave the instance less
+		// reachable than the parent's credentials would, so retry with the
+		// pre-resolver derivation. Costs one extra attempt against a really
+		// down instance. When both fail, report the first error: it names the
+		// credentials the user registered.
 		fallback := sc.parentPeerOptions(server)
 		if fallback == opts || dctx.Err() != nil {
 			return nil, err
@@ -191,9 +190,8 @@ func (sc *ServerConn) forgetPeerFailures(key string, seen map[*ServerConn]bool) 
 // recordPeerFailureLocked caches err for key and returns it, for `return nil,
 // sc.recordPeerFailureLocked(...)`. peerMu must be held.
 //
-// Without it, a primary that drops packets costs the full connect timeout (15s,
-// 30s with a fallback) on every call: expanding an AG's three folders stalled
-// 45s, then Properties another 15s.
+// Without it, a primary that drops packets costs the full connect timeout on
+// every call: expanding an AG's three folders stalled 45s.
 func (sc *ServerConn) recordPeerFailureLocked(key string, err error) error {
 	if sc.peerFails == nil {
 		sc.peerFails = map[string]peerFailure{}
@@ -212,10 +210,9 @@ func (sc *ServerConn) recordPeerFailureLocked(key string, err error) error {
 // is lost: Peer's reads are server-scoped, and database-scoped work uses gosmo
 // Database handles that set context per query.
 //
-// A saved connection is taken whole (port, auth, Entra tenant/client, TLS,
-// extra properties); only Server and Database are overridden, so future fields
-// aren't dropped. If a resolver hit fails to connect, Peer falls back to
-// parentPeerOptions.
+// A saved connection is taken whole (port, auth, Entra, TLS, extra properties)
+// so future fields are not dropped; only Server and Database are overridden.
+// If a resolver hit fails to connect, Peer falls back to parentPeerOptions.
 func (sc *ServerConn) peerOptions(server string) config.Connection {
 	if creds := sc.peerCredentials(); creds != nil {
 		if saved, ok := creds(server); ok {
@@ -234,10 +231,10 @@ func (sc *ServerConn) parentPeerOptions(server string) config.Connection {
 // retargetAt points a saved connection at server with no database; see
 // peerOptions.
 //
-// A port written in the saved Server moves to Port first (T14): the catalog
-// names an instance without one, so "win10cli\SQL2017,55253" retargeted to
-// WIN10CLI\SQL2017 would need SQL Browser, which that host doesn't run. A port
-// in server itself still wins, in gosmo.
+// A port written in the saved Server moves to Port first: the catalog names an
+// instance without one, and "host\SQL2017,55253" retargeted to "HOST\SQL2017"
+// would need SQL Browser, which that host may not run. A port in server itself
+// still wins, in gosmo.
 func retargetAt(opts config.Connection, server string) config.Connection {
 	if _, _, port := gosmo.ParseServerAddress(opts.Server); port != 0 {
 		opts.Port = port

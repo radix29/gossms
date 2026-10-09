@@ -6,20 +6,16 @@ import "github.com/gdamore/tcell/v3"
 // ClipScreen
 // ---------------------------------------------------------------------------
 
-// ClipScreen wraps a tcell.Screen and drops cell writes that fall outside a
-// clip rectangle, so a widget that draws at fixed offsets can be confined to
-// a region smaller than the one it was laid out for without every one of its
-// Draw methods learning to clip itself.
-//
-// Every way a tcell.Screen can write a cell is covered: SetContent, the Put
-// family (which drawing.go bottoms out in), and Fill/FillArea/Clear.
+// ClipScreen wraps a tcell.Screen and drops cell writes outside a clip
+// rectangle, confining widgets that draw at fixed offsets without each Draw
+// learning to clip. It covers SetContent, the Put family (which drawing.go
+// bottoms out in), and Fill/FillArea/Clear.
 type ClipScreen struct {
 	tcell.Screen
 	clip Rect
 }
 
-// NewClipScreen wraps s with the clip set to the whole screen — that is,
-// with nothing clipped until SetClip narrows it.
+// NewClipScreen wraps s with the clip set to the whole screen.
 func NewClipScreen(s tcell.Screen) *ClipScreen {
 	c := &ClipScreen{Screen: s}
 	c.ResetClip()
@@ -47,8 +43,8 @@ func (c *ClipScreen) SetContent(x, y int, primary rune, combining []rune, style 
 }
 
 // Put writes the first grapheme of str only if (x,y) is inside the clip. It
-// reports the same remainder and width either way, so a caller advancing
-// across a row (DimArea) steps over the clipped cells rather than stalling.
+// reports the same remainder and width either way, so a caller advancing across
+// a row (DimArea) steps over clipped cells rather than stalling.
 func (c *ClipScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
 	if c.clip.Contains(x, y) {
 		return c.Screen.Put(x, y, str, style)
@@ -76,9 +72,8 @@ func (c *ClipScreen) PutStr(x, y int, str string) {
 	c.PutStrStyled(x, y, str, tcell.StyleDefault)
 }
 
-// FillArea fills the part of the w×h area at (x,y) that lies inside the clip.
-// tcell's own FillArea clips only to the screen, so passing it through would
-// paint past the clip.
+// FillArea fills the part of the area inside the clip; tcell's own clips only
+// to the screen.
 func (c *ClipScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
 	x0, y0 := max(x, c.clip.X), max(y, c.clip.Y)
 	x1, y1 := min(x+w, c.clip.Right()), min(y+h, c.clip.Bottom())
@@ -96,10 +91,8 @@ func (c *ClipScreen) Fill(ch rune, style tcell.Style) {
 // Clear erases the clip rectangle rather than the whole screen.
 func (c *ClipScreen) Clear() { c.Fill(' ', tcell.StyleDefault) }
 
-// SetClip narrows drawing on s to r when s is a *ClipScreen, and does
-// nothing otherwise — so a Draw method can ask for clipping without caring
-// whether its caller supplied a clipping screen (tests and any host that
-// draws straight onto the terminal do not).
+// SetClip narrows drawing on s to r when s is a *ClipScreen, else does nothing,
+// so Draw methods needn't care whether the caller supplied a clipping screen.
 func SetClip(s tcell.Screen, r Rect) {
 	if c, ok := s.(*ClipScreen); ok {
 		c.SetClip(r)

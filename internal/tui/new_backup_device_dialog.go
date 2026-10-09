@@ -11,17 +11,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// new_backup_device_dialog.go is the New Backup Device creation dialog (Object
-// Explorer's Server Objects > Backup Devices folder, "New Backup Device..."),
-// built on newObjectDialog like every other New-X.
+// new_backup_device_dialog.go is the New Backup Device dialog (Object
+// Explorer's Server Objects > Backup Devices folder), built on newObjectDialog.
 //
-// Disk only, as SSMS's own dialog is: sp_addumpdevice still takes a tape
-// device, but tape backup is gone from every supported version, so a tape
-// device is listed and dropped here and never created.
+// Disk only, as SSMS's is: sp_addumpdevice still takes a tape device, but tape
+// backup is gone from every supported version, so a tape device is listed and
+// dropped here and never created.
 
-// nbackupDevicePrefetch holds what the dialog needs before it opens: the
-// existing device names for the uniqueness preflight, and the server's default
-// backup directory to seed the path with.
+// nbackupDevicePrefetch holds what the dialog needs before it opens: existing
+// device names for the uniqueness preflight, and the server's default backup
+// directory to seed the path.
 type nbackupDevicePrefetch struct {
 	existingNames *nameSet
 	defaultDir    string
@@ -67,8 +66,8 @@ func (d *NewBackupDeviceDialog) buildPages(pf *nbackupDevicePrefetch) {
 	nameField := propsheet.Text("Device name", "", 30)
 	fileField := propsheet.Text("File", "", 45)
 
-	// The path is filled in as the name is typed, the way SSMS does it, until
-	// the user edits the path themselves — after which their value stands.
+	// The path follows the name as typed, as in SSMS, until the user edits the path
+	// themselves.
 	pathEdited := false
 	fileField.SetOnChange(func(string) { pathEdited = true })
 	nameField.SetOnChange(func(v string) {
@@ -111,8 +110,8 @@ func (d *NewBackupDeviceDialog) buildPages(pf *nbackupDevicePrefetch) {
 }
 
 // browseFile picks the device's path off the *server's* filesystem: the path
-// is resolved on the SQL Server host, so one picked from the client's own
-// disks names a directory the server cannot write.
+// resolves on the SQL Server host, so one from the client's disks names a
+// directory the server cannot write.
 func (d *NewBackupDeviceDialog) browseFile(fileField *propsheet.TextRow, pf *nbackupDevicePrefetch) {
 	fs, ok := newServerFS(d.sc)
 	if !ok {
@@ -129,9 +128,9 @@ func (d *NewBackupDeviceDialog) browseFile(fileField *propsheet.TextRow, pf *nba
 }
 
 // backupDevicePath joins the server's default backup directory and a device
-// name into a suggested file path, with the separator the *server's* paths
-// use — a Linux client naming a file for a Windows instance still joins with
-// a backslash.
+// name into a suggested path with the separator the *server's* paths use (a
+// Linux client naming a file for a Windows instance still joins with a
+// backslash).
 func backupDevicePath(dir, name string) string {
 	if dir == "" || name == "" {
 		return ""

@@ -20,20 +20,19 @@ type explorerNode struct {
 	parent   *explorerNode
 	children []*explorerNode
 
-	// load guards this node's in-flight background fetch of its children (see
-	// App.loadChildren): a result arriving after a newer fetch started drops
-	// itself instead of overwriting fresher children, and the superseded fetch
-	// is cancelled outright. See latest.
+	// load guards this node's in-flight fetch of its children (App.loadChildren): a
+	// result arriving after a newer fetch started drops itself, and the superseded
+	// fetch is cancelled outright. See latest.
 	load latest
 
-	// loadingID is the tree ID of this node's "Loading..." row, allocated once
-	// and reused by every rebuild, so a selection parked on that row stays on
-	// it until the load replaces it (see ObjectExplorer.reselect).
+	// loadingID is the tree ID of this node's "Loading..." row, allocated once and
+	// reused by every rebuild, so a selection parked on that row stays on it until
+	// the load replaces it (ObjectExplorer.reselect).
 	loadingID int
 
-	// retired marks a node a Reload replaced: it is no longer part of the tree,
-	// and nothing may load children into it — SetChildren would register them
-	// in byID under a parent nobody can reach. See ObjectExplorer.dropChildren.
+	// retired marks a node a Reload replaced: it is no longer in the tree and
+	// nothing may load children into it, or SetChildren would register them in byID
+	// under a parent nobody can reach. See ObjectExplorer.dropChildren.
 	retired bool
 }
 
@@ -43,14 +42,14 @@ type loadingRow struct{ owner *explorerNode }
 
 // snapshot returns a detached copy of n carrying only what a loader reads: its
 // label and its nodeData, by value. Every background fetch takes one instead of
-// the live node, because the UI goroutine writes n.data while the fetch runs —
-// applyNodeFilter sets data.Filter, and the object ops write it too — so reading
-// it from the fetch is a data race, not merely a stale read. The live node still
-// travels alongside as the identity the posted callback keys off, but nothing
-// dereferences it off the UI goroutine.
+// the live node, because the UI goroutine writes n.data while the fetch runs
+// (applyNodeFilter sets data.Filter, and the object ops write it too), so
+// reading it from the fetch is a data race, not merely stale. The live node
+// still travels alongside as the identity the posted callback keys off, but
+// nothing dereferences it off the UI goroutine.
 //
 // id, parent and children are deliberately dropped: no loader reads them, and
-// leaving them out stops a snapshot being usable as a tree node by mistake.
+// leaving them out stops a snapshot being used as a tree node by mistake.
 func (n *explorerNode) snapshot() *explorerNode {
 	return &explorerNode{label: n.label, data: n.data}
 }
@@ -66,14 +65,14 @@ type ObjectExplorer struct {
 	nextID int
 
 	// reselectFrom is the node a rebuild took the selection away from, set only
-	// while reselect's SelectID runs, so handleSelect can tell a selection the
-	// tree moved by itself from one the user made.
+	// while reselect's SelectID runs, so handleSelect can tell a selection the tree
+	// moved by itself from one the user made.
 	reselectFrom *explorerNode
 
-	// retired is every node a Reload replaced whose rows may still be on
-	// screen. They stay in byID until the next rebuild takes them off — until
-	// then the stale rows are still there to click, and Selected() still has to
-	// answer for them — and are released there (see releaseRetired).
+	// retired is every node a Reload replaced whose rows may still be on screen.
+	// They stay in byID until the next rebuild takes them off (the stale rows are
+	// still clickable and Selected() has to answer for them) and are released there
+	// (releaseRetired).
 	retired []*explorerNode
 }
 
@@ -100,9 +99,8 @@ func (oe *ObjectExplorer) HandleKey(ev *tcell.EventKey) bool     { return oe.vie
 func (oe *ObjectExplorer) HandleMouse(ev *tcell.EventMouse) bool { return oe.view.HandleMouse(ev) }
 
 // AddRoot adds a new server root node and selects it, so Object Explorer Details
-// populates immediately after a connect rather than sitting empty until the next
-// manual selection. SetNodes only carries the *previous* selection across — see
-// controls.TreeView.SelectID.
+// populates immediately after a connect. SetNodes only carries the *previous*
+// selection across; see controls.TreeView.SelectID.
 func (oe *ObjectExplorer) AddRoot(label string, sc *db.ServerConn) *explorerNode {
 	n := &explorerNode{
 		id:    oe.allocID(),
@@ -116,9 +114,9 @@ func (oe *ObjectExplorer) AddRoot(label string, sc *db.ServerConn) *explorerNode
 	return n
 }
 
-// ExpandNode expands n and fetches its children if they aren't loaded — the path
-// a click on the expander glyph takes. connect uses it to open a new server node
-// the way SSMS does.
+// ExpandNode expands n and fetches its children if not loaded: the path a click
+// on the expander glyph takes. connect uses it to open a new server node as SSMS
+// does.
 func (oe *ObjectExplorer) ExpandNode(n *explorerNode) {
 	if n == nil {
 		return
@@ -139,21 +137,20 @@ func (oe *ObjectExplorer) RemoveRootByConn(sc *db.ServerConn) {
 }
 
 // ReloadFolders reloads every node of sc's tree that match accepts, without
-// looking below one. It is the one refresh after a write — a create, attach,
-// restore, delete, rename or state change — and the match is what makes it
-// the only one:
+// looking below one. It is the one refresh after a write (create, attach,
+// restore, delete, rename or state change), and the match is why:
 //
-//   - A write that finishes later than it started cannot hold on to the node
-//     it was started from. A Refresh above it in the meantime retires that
-//     node, and Reload of a retired node is a no-op, so the write's own
-//     refresh was silently lost. A match names the folder by what it is
-//     (folderOf, sameNodeAs) and finds whichever node stands for it now.
-//   - The folder, not the object's node: the folder's loader builds the
-//     label, and a rename leaves the node's name stale, so every later menu
-//     action on it would name the old object.
+//   - A write that finishes later than it started cannot hold on to the node it
+//     started from. A Refresh above it meanwhile retires that node, and Reload
+//     of a retired node is a no-op, so the write's own refresh was silently
+//     lost. A match names the folder by what it is (folderOf, sameNodeAs) and
+//     finds whichever node stands for it now.
+//   - The folder, not the object's node: the folder's loader builds the label,
+//     and a rename leaves the node's name stale, so every later menu action on
+//     it would name the old object.
 //
-// A folder never loaded is not in the tree and needs no action: its next
-// expand fetches the current list anyway.
+// A folder never loaded is not in the tree and needs no action: its next expand
+// fetches the current list.
 func (oe *ObjectExplorer) ReloadFolders(sc *db.ServerConn, match func(nodeData) bool) {
 	for _, r := range oe.roots {
 		if r.data.conn != sc {
@@ -182,22 +179,21 @@ func (oe *ObjectExplorer) ReloadFolders(sc *db.ServerConn, match func(nodeData) 
 	}
 }
 
-// folderOf matches, for ReloadFolders, the folders of the given types that
-// belong to database dbName — "" for the server-scope ones.
+// folderOf matches, for ReloadFolders, the folders of the given types that belong
+// to database dbName ("" for the server-scope ones).
 func folderOf(dbName string, types ...NodeType) func(nodeData) bool {
 	return func(d nodeData) bool {
 		return slices.Contains(types, d.Type) && d.DBName == dbName
 	}
 }
 
-// nodeKey is what names a node: two nodes with equal keys stand for the same
-// server object or folder. TableName, AGName, XESession and RGPool each tell
-// apart folders of one type and database that belong to different parents;
-// AgentScheduleID tells apart schedules of one name; ReplPublisher and
-// ReplPublisherDB tell apart a database's subscriptions to two publications
-// of one name. A node type whose name isn't its identity adds its key here,
-// so sameNodeAs and sameObject (the selection's survivor) can't disagree —
-// both once missed the schedule id.
+// nodeKey is what names a node: equal keys stand for the same server object or
+// folder. TableName, AGName, XESession and RGPool each tell apart folders of one
+// type and database with different parents; AgentScheduleID tells apart schedules
+// of one name; ReplPublisher and ReplPublisherDB tell apart a database's
+// subscriptions to two publications of one name. A node type whose name isn't
+// its identity adds its key here, so sameNodeAs and sameObject (the selection's
+// survivor) can't disagree; both once missed the schedule id.
 type nodeKey struct {
 	Type                                                       NodeType
 	DBName, Schema, Name, TableName, AGName, XESession, RGPool string
@@ -210,9 +206,9 @@ func (d nodeData) key() nodeKey {
 		d.ReplPublisher, d.ReplPublisherDB}
 }
 
-// sameNodeAs matches, for ReloadFolders, the nodes standing for the same
-// object or folder as n (same nodeKey) — n itself while it is live, or the
-// node that replaced it after a Refresh above retired it. Nil matches nothing.
+// sameNodeAs matches, for ReloadFolders, the nodes standing for the same object
+// or folder as n (same nodeKey): n itself while live, or the node that replaced
+// it after a Refresh above retired it. Nil matches nothing.
 func sameNodeAs(n *explorerNode) func(nodeData) bool {
 	if n == nil {
 		return func(nodeData) bool { return false }
@@ -257,9 +253,9 @@ func (oe *ObjectExplorer) Selected() *explorerNode {
 }
 
 // NodeAt returns the node drawn at screen position (mx, my), or nil when that
-// position isn't over one — the scrollbar, the border and blank space below the
-// last node all report nil. Unlike Selected, it says what a press actually
-// landed on, which is what drag-and-drop arming needs.
+// position isn't over one (scrollbar, border and blank space below the last
+// node). Unlike Selected, it says what a press landed on, which drag-and-drop
+// arming needs.
 func (oe *ObjectExplorer) NodeAt(mx, my int) *explorerNode {
 	id, ok := oe.view.NodeIDAt(mx, my)
 	if !ok {
@@ -268,9 +264,9 @@ func (oe *ObjectExplorer) NodeAt(mx, my int) *explorerNode {
 	return oe.byID[id]
 }
 
-// RefreshSelected forces the selected node to reload its children — F5 and
-// Edit > Refresh. Everything a Refresh does is Reload's, so this path and the
-// context menu's cannot drift apart again.
+// RefreshSelected forces the selected node to reload its children (F5 and Edit >
+// Refresh). Everything a Refresh does is Reload's, so this path and the context
+// menu's cannot drift apart.
 func (oe *ObjectExplorer) RefreshSelected() {
 	n := oe.Selected()
 	if n == nil {
@@ -280,28 +276,28 @@ func (oe *ObjectExplorer) RefreshSelected() {
 	oe.Reload(n)
 }
 
-// Reload re-reads n: its children if it is expanded, and its details. It is the
-// one body behind every Refresh — F5, the context menu's, and the reload after
-// a write — so what a Refresh has to release or re-read is done once, here.
+// Reload re-reads n: its children if expanded, and its details. It is the one
+// body behind every Refresh (F5, the context menu's, the reload after a write),
+// so what a Refresh releases or re-reads is done once, here.
 //
-// n's children are replaced, not updated: the load makes new nodes. The old
-// ones are released through dropChildren, or every Refresh leaked them.
+// n's children are replaced, not updated: the load makes new nodes. The old ones
+// are released through dropChildren or every Refresh leaked them.
 //
 // Two connection-level extras ride along:
 //   - on the server node, the cached capability answers are re-read. Rights
-//     granted to a login while it is connected take effect on its existing
-//     sessions, so a Refresh that re-reads the objects has to re-read what may
-//     be done with them, or the tree comes back current and every gate on it
-//     stale. The per-database answers are dropped (and the selection's
-//     re-primed); the server-scope set is re-probed off the UI goroutine.
+//     granted to a connected login take effect on its existing sessions, so a
+//     Refresh that re-reads the objects must re-read what may be done with them,
+//     or the tree comes back current and every gate on it stale. Per-database
+//     answers are dropped (and the selection's re-primed); the server-scope set
+//     is re-probed off the UI goroutine.
 //   - in the Always On subtree, the cached peer connect failures are dropped
-//     (see forgetPeerFailuresForRefresh).
+//     (forgetPeerFailuresForRefresh).
 //
-// And two node-level ones: the Resource Governor and Database Mail nodes'
-// labels carry their state, which Management's loader reads, so a Refresh of
-// the node itself re-reads it in place (refreshResourceGovernorLabel,
-// refreshDatabaseMailLabel) — or a change made from a query window would show
-// only after a Refresh of Management.
+// And two node-level ones: the Resource Governor and Database Mail nodes' labels
+// carry their state, which Management's loader reads, so a Refresh of the node
+// itself re-reads it in place (refreshResourceGovernorLabel,
+// refreshDatabaseMailLabel), or a change from a query window would show only
+// after a Refresh of Management.
 func (oe *ObjectExplorer) Reload(n *explorerNode) {
 	if n == nil || n.retired {
 		return
@@ -332,9 +328,8 @@ func (oe *ObjectExplorer) Reload(n *explorerNode) {
 }
 
 // dropChildren detaches n's subtree from n and retires every node in it: each
-// in-flight load is cancelled now, and the nodes are released — dropped from
-// byID and from the Detail Browser — by the next rebuild, which is when their
-// rows leave the screen.
+// in-flight load is cancelled now, and the nodes are released (dropped from byID
+// and the Detail Browser) by the next rebuild, when their rows leave the screen.
 //
 // A retired node keeps its parent pointer: reselect walks it to find where a
 // selection on a replaced node belongs.
@@ -354,10 +349,10 @@ func (oe *ObjectExplorer) dropChildren(n *explorerNode) {
 	n.children = nil
 }
 
-// releaseRetired drops the nodes dropChildren retired from byID and from the
-// Detail Browser's cache — called by rebuild, once they are no longer drawn.
-// Their loads were cancelled when they were retired; this cancels any started
-// since, from a stale row expanded in the meantime.
+// releaseRetired drops the nodes dropChildren retired from byID and the Detail
+// Browser's cache, called by rebuild once they are no longer drawn. Their loads
+// were cancelled when retired; this cancels any started since from a stale row
+// expanded meanwhile.
 func (oe *ObjectExplorer) releaseRetired() {
 	if len(oe.retired) == 0 {
 		return
@@ -372,10 +367,10 @@ func (oe *ObjectExplorer) releaseRetired() {
 
 // SetChildren installs the loaded children for a node, from the background-load
 // callback on the UI goroutine, and rebuilds the flat view. IDs are allocated
-// here rather than during the fetch, since allocID mutates shared state.
+// here, not during the fetch, since allocID mutates shared state.
 //
-// A retired node takes nothing: its children would be registered in byID under
-// a parent no longer in the tree, and never released.
+// A retired node takes nothing: its children would be registered in byID under a
+// parent no longer in the tree, and never released.
 func (oe *ObjectExplorer) SetChildren(n *explorerNode, children []*explorerNode) {
 	if n.retired {
 		return
@@ -412,15 +407,15 @@ func (oe *ObjectExplorer) rebuild() {
 	oe.reselect(prev, onPlaceholder, flat)
 }
 
-// reselect moves the selection off a node the rebuild no longer shows — prev,
-// or prev's "Loading..." row when onPlaceholder — and reports the move through
-// OnSelect, so the Details pane and the status bar stop describing it.
+// reselect moves the selection off a node the rebuild no longer shows (prev, or
+// prev's "Loading..." row when onPlaceholder) and reports the move through
+// OnSelect, so the Details pane and status bar stop describing it.
 //
-// TreeView.SetNodes already carries a surviving selection across by ID, but a
-// Refresh makes new nodes with new IDs, and a delete or a collapse removes the
-// selected one outright; for those SetNodes can only clamp an index, which
-// lands on whatever row slid into place. Keyboard actions — Delete, Rename,
-// Properties, Script — then went to an object nobody selected.
+// TreeView.SetNodes carries a surviving selection across by ID, but a Refresh
+// makes new nodes with new IDs, and a delete or collapse removes the selected one
+// outright; SetNodes can then only clamp an index, landing on whatever row slid
+// into place, and keyboard actions (Delete, Rename, Properties, Script) went to
+// an object nobody selected.
 func (oe *ObjectExplorer) reselect(prev *explorerNode, onPlaceholder bool, flat []controls.TreeNode) {
 	if prev == nil {
 		return
@@ -440,8 +435,8 @@ func (oe *ObjectExplorer) reselect(prev *explorerNode, onPlaceholder bool, flat 
 	}
 	target := survivor(prev, shown)
 	if target == nil {
-		// prev's whole root is gone (a disconnect): nothing is related to it, so
-		// report whichever node SetNodes' clamp left selected.
+		// prev's whole root is gone (a disconnect): nothing is related to it, so report
+		// whichever node SetNodes' clamp left selected.
 		if tn := oe.view.SelectedNode(); tn != nil {
 			target, _ = tn.Tag.(*explorerNode)
 		}
@@ -456,9 +451,9 @@ func (oe *ObjectExplorer) reselect(prev *explorerNode, onPlaceholder bool, flat 
 
 // survivor is where a selection on n belongs once n is no longer shown: a shown
 // node for the same object under n's parent (a reload re-created it), else the
-// parent itself. The parent is resolved the same way first, so a parent a
-// higher Refresh re-created is found too — it comes back collapsed, and is
-// then the answer. nil when n's root is gone.
+// parent. The parent is resolved the same way first, so a parent a higher
+// Refresh re-created is found too (it comes back collapsed, and is then the
+// answer). nil when n's root is gone.
 func survivor(n *explorerNode, shown map[*explorerNode]bool) *explorerNode {
 	if shown[n] {
 		return n
@@ -478,12 +473,12 @@ func survivor(n *explorerNode, shown map[*explorerNode]bool) *explorerNode {
 	return p
 }
 
-// sameObject reports whether a and b stand for the same server object — how a
+// sameObject reports whether a and b stand for the same server object, how a
 // node a reload re-created is recognised. By nodeKey: by name alone, a reload
 // moved the selection from one of two schedules named Daily to the other, and
 // Delete then took the one the user hadn't picked. A node with no Name (a
-// folder, a log entry) is told apart by its label too; a label that changed
-// simply fails to match, and the selection goes to the parent, the safe miss.
+// folder, a log entry) is told apart by its label too; a changed label fails to
+// match and the selection goes to the parent, the safe miss.
 func sameObject(a, b *explorerNode) bool {
 	if a.data.key() != b.data.key() {
 		return false
@@ -539,9 +534,8 @@ func (oe *ObjectExplorer) handleExpand(id controls.TreeNodeID) {
 	}
 	n.expanded = true
 	if n.data.Loaded {
-		// Already fetched from a previous expand: collapsing never clears
-		// n.children, so redisplay them — no loadChildren, no "Loading...", no
-		// round trip.
+		// Already fetched by a previous expand: collapsing never clears n.children, so
+		// redisplay them (no loadChildren, no "Loading...", no round trip).
 		oe.rebuild()
 		return
 	}
@@ -549,9 +543,9 @@ func (oe *ObjectExplorer) handleExpand(id controls.TreeNodeID) {
 	oe.app.loadChildren(n)
 }
 
-// handleActivate is a node's default action — Enter, or a double-click on its
-// row. Only leaves standing for something openable claim it; everything else
-// answers false and keeps Enter's expand.
+// handleActivate is a node's default action (Enter, or a double-click). Only
+// leaves standing for something openable claim it; everything else answers false
+// and keeps Enter's expand.
 //
 // Deliberately narrow: an object node's menu offers several actions and none is
 // obviously "the" one, so guessing would make Enter unpredictable.
@@ -637,8 +631,8 @@ func FormatNodePath(n *explorerNode) string {
 }
 
 // resolveConn walks up the explorer tree to find the owning connection. Every
-// node fetchChildren creates carries its connection directly; the walk only
-// matters for nodes without one, such as error placeholders.
+// node fetchChildren creates carries its connection; the walk matters only for
+// nodes without one, such as error placeholders.
 func resolveConn(n *explorerNode) *db.ServerConn {
 	for cur := n; cur != nil; cur = cur.parent {
 		if cur.data.conn != nil {

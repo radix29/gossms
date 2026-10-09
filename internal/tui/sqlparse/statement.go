@@ -6,30 +6,28 @@ import "github.com/radix29/gossms/internal/tuikit/sqltext"
 // Statement bounds: where the DML statement the cursor is in begins and ends
 // ---------------------------------------------------------------------------
 
-// DMLStatementStarts scans tokens (already correctly depth-tracked from its own
-// start, since a ';'/GO textual boundary falls outside any paren in valid SQL)
-// and returns, in ascending order, the offset of every top-level WITH or
-// sqltext.IsDMLLeader keyword that begins a new statement rather than
-// continuing the current one:
-//   - a SELECT chained onto the previous top-level clause by
-//     UNION[ ALL]/EXCEPT/INTERSECT is the same statement, not a new one
-//   - the first top-level SELECT after WITH or after an INSERT with no
-//     intervening VALUES or EXEC is that statement's own main query/source
-//     (CTE's SELECT, INSERT ... SELECT), not a new one; only WITH/INSERT itself
-//     is the boundary. An INSERT ... VALUES has no such SELECT to suppress, so
-//     a later, separate SELECT stacked right after it with no ';' is (rarely)
-//     missed (known limitation)
-//   - an INSERT, UPDATE or DELETE right after THEN is a MERGE action, part
-//     of the MERGE, and a MERGE after INNER/OUTER/LEFT/RIGHT/FULL is a join
-//     hint
+// DMLStatementStarts scans tokens (depth-tracked from their own start, since a
+// ';'/GO boundary falls outside any paren in valid SQL) and returns, ascending,
+// the offset of every top-level WITH or sqltext.IsDMLLeader keyword that begins
+// a new statement rather than continuing the current one:
+//   - a SELECT chained onto the previous clause by UNION[ ALL]/EXCEPT/INTERSECT
+//     is the same statement
+//   - the first top-level SELECT after WITH, or after an INSERT with no
+//     intervening VALUES or EXEC, is that statement's own main query/source
+//     (CTE's SELECT, INSERT ... SELECT); only WITH/INSERT itself is the
+//     boundary. An INSERT ... VALUES has no such SELECT to suppress, so a
+//     separate SELECT stacked right after it with no ';' is (rarely) missed
+//     (known limitation)
+//   - an INSERT, UPDATE or DELETE right after THEN is a MERGE action, and a
+//     MERGE after INNER/OUTER/LEFT/RIGHT/FULL is a join hint
 //   - a WITH directly followed by '(' is a table hint ("t WITH (NOLOCK)") or a
 //     rowset function's column list ("OPENJSON(@j) WITH (a int)"), never a CTE,
-//     which names itself first; a WITH that is the last token is not decided
-//     either way, and is not reported
+//     which names itself first; a WITH that is the last token is undecided and
+//     not reported
 //
 // Combined with the ';'/GO boundaries PrefixCache and NarrowStatementForward
 // apply, this narrows FROM-scope/clause analysis to the statement under the
-// cursor even when several statements sit back to back with no ';'.
+// cursor even when statements sit back to back with no ';'.
 func DMLStatementStarts(tokens []Token) []int {
 	var starts []int
 	var s dmlSplitter
@@ -56,10 +54,9 @@ type dmlSplitter struct {
 }
 
 // feed advances the splitter past t and reports the token that begins a new
-// statement, if one does. That is usually t itself, but a WITH is reported
-// one token late, when the token after it shows what it is. A token that would
-// itself start a statement right after a WITH reported that way — no valid
-// script has one — continues the WITH's statement.
+// statement, if any. Usually t itself, but a WITH is reported one token late,
+// when the next token shows what it is. A token that would start a statement
+// right after such a WITH (no valid script has one) continues the WITH's.
 func (s *dmlSplitter) feed(t Token) (Token, bool) {
 	if s.withPending {
 		s.withPending = false
@@ -130,15 +127,14 @@ func (s *dmlSplitter) advance(t Token) bool {
 	return starts
 }
 
-// NarrowToDMLStatement tightens [batchStart, batchEnd) — the ';'/GO-
-// delimited boundaries ScanPrefix/statementEndOffset already
-// computed — to the actual DML statement containing upTo, using
-// DMLStatementStarts on tokens (which must already span the same
-// [batchStart, batchEnd) range so its depth tracking starts at 0).
+// NarrowToDMLStatement tightens [batchStart, batchEnd), the ';'/GO-delimited
+// boundaries ScanPrefix/statementEndOffset computed, to the DML statement
+// containing upTo, using DMLStatementStarts on tokens (which must span the same
+// range so depth tracking starts at 0).
 //
-// Only tests call it: it is the oracle NarrowStatementForward's one bounded
-// pass is checked against (statement_forward_test.go), and the obvious
-// composition internal/tui's completion tests narrow a statement with.
+// Only tests call it: it is the oracle NarrowStatementForward is checked
+// against (statement_forward_test.go) and internal/tui's completion tests'
+// composition.
 func NarrowToDMLStatement(tokens []Token, batchStart, batchEnd, upTo int) (start, end int) {
 	start, end = batchStart, batchEnd
 	for _, off := range DMLStatementStarts(tokens) {
@@ -152,20 +148,20 @@ func NarrowToDMLStatement(tokens []Token, batchStart, batchEnd, upTo int) (start
 	return start, end
 }
 
-// NarrowStatementForward does what a ';'/GO end scan, TokenizeRange and
-// NarrowToDMLStatement did in three passes (the reference composition in
-// statement_forward_test.go), in one bounded pass. prefix holds the tokens of
-// [batchStart, upTo) as ScanPrefix returns them; the forward half is lexed from
-// from (upTo, or just past a bracket identifier the cursor sits in) and stops
-// at the first top-level ';', the next "GO" line below cursorRow, or the first
-// keyword after upTo that starts a new statement, whichever comes first. It
-// returns the cursor's statement bounds and the forward tokens in [from, end).
+// NarrowStatementForward is a ';'/GO end scan, TokenizeRange and
+// NarrowToDMLStatement (the reference composition in statement_forward_test.go)
+// in one bounded pass. prefix holds the tokens of [batchStart, upTo) as
+// ScanPrefix returns them; the forward half is lexed from from (upTo, or just
+// past a bracket identifier the cursor sits in) and stops at the first
+// top-level ';', the next "GO" line below cursorRow, or the first keyword after
+// upTo that starts a new statement. It returns the cursor's statement bounds
+// and the forward tokens in [from, end).
 //
 // Stopping at the next statement is the point: in a script that ends no
 // statement with ';', a ';'/GO scan lexes everything below the cursor (200-250
 // ms and 53 MB per keystroke on a 20k-line script, B11). The leader test is
-// DMLStatementStarts' own, seeded with the prefix, so a SELECT that continues
-// an INSERT, WITH or UNION before the cursor still continues it.
+// DMLStatementStarts' own, seeded with the prefix, so a SELECT continuing an
+// INSERT, WITH or UNION before the cursor still continues it.
 func NarrowStatementForward(lines [][]rune, buf []rune, cursorRow, batchStart, from, upTo int, prefix []Token) (start, end int, tail []Token) {
 	start, end = batchStart, len(buf)
 	var s dmlSplitter

@@ -12,24 +12,23 @@ import (
 )
 
 // csvSink implements query.RowSink by writing each row to a CSV file as it
-// arrives, so an export never holds more than one row in memory. Result sets
-// are separated by a blank line, each preceded by its header row — the same
-// layout the previous buffer-everything writer produced.
+// arrives, so an export never holds more than one row in memory. Result sets are
+// separated by a blank line, each preceded by its header row.
 //
-// A SQL NULL is written as an empty field and an empty string as "", so the
-// file keeps the two apart, and the string 'NULL' as NULL — the convention of
+// A SQL NULL is written as an empty field and an empty string as "", so the file
+// keeps the two apart, and the string 'NULL' as NULL: the convention of
 // PostgreSQL's COPY CSV and most importers. encoding/csv never quotes an empty
-// field, hence writeRecord. One limit is the format's: a row of one NULL
-// column is an empty line, the same as the separator between sets.
+// field, hence writeRecord. One limit is the format's: a row of one NULL column is
+// an empty line, the same as the separator between sets.
 //
-// The write path is deliberately dumb: no counting beyond what EndSet is
-// handed, no buffering past bufio's own, nothing retained between rows.
+// The write path is deliberately dumb: no counting beyond what EndSet is handed,
+// no buffering past bufio's own, nothing retained between rows.
 type csvSink struct {
 	f *os.File
 	w *bufio.Writer
 
-	// sets counts result sets begun so far, so the blank-line separator goes
-	// between sets and not before the first.
+	// sets counts result sets begun so far, so the blank-line separator goes between
+	// sets and not before the first.
 	sets int
 }
 
@@ -42,10 +41,10 @@ func newCSVSink(path string) (*csvSink, error) {
 	return &csvSink{f: f, w: bufio.NewWriter(f)}, nil
 }
 
-// writeRecord writes one CSV line: cells comma-separated, a NULL (isNull,
-// which may be nil or shorter) as nothing, an empty string as "", and any
-// other field quoted exactly where encoding/csv would quote it. bufio's error
-// is sticky, so the last write's error is every write's.
+// writeRecord writes one CSV line: cells comma-separated, a NULL (isNull, which
+// may be nil or shorter) as nothing, an empty string as "", and any other field
+// quoted exactly where encoding/csv would quote it. bufio's error is sticky, so
+// the last write's error is every write's.
 func (s *csvSink) writeRecord(cells []string, isNull []bool) error {
 	for i, c := range cells {
 		if i > 0 {
@@ -90,14 +89,13 @@ func (s *csvSink) BeginSet(columns []string) error {
 
 func (s *csvSink) Row(cells []string, isNull []bool) error { return s.writeRecord(cells, isNull) }
 
-// EndSet flushes this set's rows so a long export reaches the disk as it
-// goes rather than only at Close.
+// EndSet flushes this set's rows so a long export reaches the disk as it goes
+// rather than only at Close.
 func (s *csvSink) EndSet(int) error { return s.w.Flush() }
 
 // Close flushes and closes the file. A flush error is preferred over a close
-// error since it names the actual failure, but a close error is still
-// reported rather than dropped — a disk-full condition is often only visible
-// there.
+// error since it names the actual failure, but a close error is still reported
+// rather than dropped: a disk-full condition is often only visible there.
 func (s *csvSink) Close() error {
 	err := s.w.Flush()
 	if cerr := s.f.Close(); err == nil {
@@ -106,13 +104,13 @@ func (s *csvSink) Close() error {
 	return err
 }
 
-// promptResultsFile asks where a Results To File run should write, then hands
-// the chosen path to run. Cancelling the dialog calls neither.
+// promptResultsFile asks where a Results To File run should write, then hands the
+// chosen path to run. Cancelling the dialog calls neither.
 //
-// The prompt comes *before* execution, not after: the rows are streamed
-// straight to the file as they are scanned (see csvSink), so the destination
-// has to exist by the time the query starts. This also matches SSMS, which
-// asks for the filename when you execute in Results To File mode.
+// The prompt comes *before* execution: rows are streamed straight to the file as
+// scanned (csvSink), so the destination has to exist by the time the query
+// starts. This also matches SSMS, which asks for the filename when you execute in
+// Results To File mode.
 func (p *QueryPanel) promptResultsFile(run func(path string)) {
 	p.app.fileDialog.ShowSave("Results To File", "results.csv", run)
 }

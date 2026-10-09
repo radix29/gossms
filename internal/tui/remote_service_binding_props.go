@@ -13,15 +13,14 @@ import (
 //
 // ALTER REMOTE SERVICE BINDING exists and changes the user whose certificate
 // authenticates the remote service, or makes the binding anonymous. It is not
-// offered here: the user it names has to already own the remote service's
-// public certificate, which is a key-management step this build has no page
-// for, and a binding pointed at a user with no certificate authenticates
-// nothing while looking correct. The page is named in
-// prop_page_requires_test.go's pagesThatOnlyRead.
+// offered here: the user it names has to already own the remote service's public
+// certificate, a key-management step this build has no page for, and a binding
+// pointed at a user with no certificate authenticates nothing while looking
+// correct. The page is named in prop_page_requires_test.go's pagesThatOnlyRead.
 //
-// The family exists on Azure SQL Managed Instance and this page works there:
-// only CREATE is refused (Msg 41906, at compile time), which is the edition
-// gate's business — see edition_gate.go.
+// The family exists on Azure SQL Managed Instance and this page works there: only
+// CREATE is refused (Msg 41906, at compile time), which is the edition gate's
+// business (edition_gate.go).
 
 func findRemoteServiceBinding(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.RemoteServiceBinding, error) {
 	return inDB(ctx, sc, dbName, name, (*gosmo.Database).RemoteServiceBindingByName)

@@ -23,18 +23,17 @@ type membershipConfig struct {
 	// members is the role's current membership.
 	members []*gosmo.RoleMember
 
-	// candidates lists every principal that can be added, already filtered
-	// to exclude current members and the role itself; principalType maps a
-	// candidate name to the type shown in the grid.
+	// candidates lists every principal that can be added, already filtered to
+	// exclude current members and the role itself; principalType maps a candidate
+	// name to the type shown in the grid.
 	candidates    []string
 	principalType map[string]string
 
 	// note is the page's explanatory footer.
 	note string
 
-	// collation is the role's scope's — the database's for a database role,
-	// the server's for a server role — and decides whether Add's name is
-	// already listed.
+	// collation is the role's scope's (the database's for a database role, the
+	// server's for a server role) and decides whether Add's name is already listed.
 	collation string
 
 	// add and remove issue the real membership change for one principal.
@@ -59,11 +58,9 @@ func roleMemberSet(members []*gosmo.RoleMember) map[string]bool {
 // Properties (pageRoleMembers) and Server Role Properties
 // (pageServerRoleMembers): a grid of current members, a dropdown of addable
 // principals, and Add/Remove. Edits are collected and applied on OK/Apply, so
-// the grid can be reverted without having touched the server.
-//
-// The two pages had this as ~95 identical lines each, differing only in how
-// candidates and principalType are seeded and which gosmo call applies a
-// change — both now supply those through membershipConfig.
+// the grid can be reverted without touching the server. The pages differ only
+// in how candidates and principalType are seeded and which gosmo call applies a
+// change, supplied through membershipConfig.
 func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 	loaded := make([]*memberEdit, len(cfg.members))
 	for i, m := range cfg.members {
@@ -99,8 +96,8 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 		}
 		// A member pending removal is not listed, and Add takes it back.
 		if i := edits.index(name); i >= 0 {
-			// Already a member. Say so and select the row, rather than
-			// leaving a button that looks broken.
+			// Already a member: say so and select the row rather than leave a button that
+			// looks broken.
 			hint.Set(name + " is already a member.")
 			grid.SetSelectedRow(i)
 			return

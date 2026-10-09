@@ -10,13 +10,12 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// query_store_panel_toolbar.go is the panel's two tool rows: what each cell
-// says, when it is disabled and why, and the menu each selector pops. The
-// panel itself is in query_store_panel.go.
+// query_store_panel_toolbar.go is the panel's two tool rows: what each cell says,
+// when it is disabled and why, and the menu each selector pops. The panel is in
+// query_store_panel.go.
 
-// Selector-row cell indexes, in buildTools' layout order. Cells are addressed by
-// index: popMenu anchors a selector's list under its own cell, and HandleKey
-// runs the Refresh cell's action for F5.
+// Selector-row cell indexes, in buildTools' layout order. popMenu anchors a
+// selector's list under its cell, and HandleKey runs the Refresh cell for F5.
 const (
 	qsToolReport = iota
 	qsToolMetric
@@ -26,10 +25,10 @@ const (
 	qsToolRefresh
 )
 
-// Action-row cell indexes. The two filters lead it rather than sitting with the
+// Action-row cell indexes. The two filters lead the row rather than sit with the
 // other selectors: the selector row is already 130 columns wide with a long
-// report title, and a cell that does not fit is not drawn, which took Refresh
-// off the toolbar of every pane narrower than 150.
+// report title, and a cell that does not fit is not drawn, which took Refresh off
+// the toolbar of every pane narrower than 150.
 const (
 	qsActMinExec = iota
 	qsActRegression
@@ -43,8 +42,8 @@ const (
 )
 
 // buildTools defines the two toolbar rows in the order the qsTool*/qsAct*
-// constants name. refreshToolLabels rebuilds the selector labels on every
-// draw, since each shows what it points at.
+// constants name. refreshToolLabels rebuilds the selector labels every draw, since
+// each shows what it points at.
 func (p *QueryStorePanel) buildTools() {
 	p.sel.Cells = []controls.ToolCell{
 		{Action: p.showReportMenu},
@@ -77,15 +76,15 @@ func (p *QueryStorePanel) refreshToolLabels() {
 	p.sel.Cells[qsToolTop].Label = "Top: " + strconv.Itoa(qsTopCounts[p.topIdx]) + " ▾"
 	p.acts.Cells[qsActMinExec].Label = "Min execs: " + qsMinExecLabel(p.minExecIdx) + " ▾"
 	p.acts.Cells[qsActRegression].Label = "Regression: " + qsRegressionLabel(p.regressIdx) + " ▾"
-	// The action row's one stateful label. Refreshed on every draw with the
-	// selectors because it follows the report grid's cursor rather than a click: a
-	// button reading "Track Query" over an already-tracked query would untrack it.
+	// The action row's one stateful label. Refreshed every draw with the selectors
+	// because it follows the report grid's cursor rather than a click: a button
+	// reading "Track Query" over an already-tracked query would untrack it.
 	p.acts.Cells[qsActTrack].Label = "Track Query"
 	if p.isTracked(p.selectedQueryID()) {
 		p.acts.Cells[qsActTrack].Label = "Untrack Query"
 	}
-	// Script scripts whichever of Force/Unforce applies to the selected plan, so
-	// the label says which. Same reason as Track Query's label.
+	// Script scripts whichever of Force/Unforce applies to the selected plan, so the
+	// label says which. Same reason as Track Query's label.
 	p.acts.Cells[qsActScript].Label = "Script"
 	if plan := p.selectedPlan(); plan != nil {
 		if plan.IsForced {
@@ -94,9 +93,8 @@ func (p *QueryStorePanel) refreshToolLabels() {
 			p.acts.Cells[qsActScript].Label = "Script Force"
 		}
 	}
-	// The chart mode toggle says what the press does, not what is on screen: a
-	// button reading "Plot History" while the history is plotted would put the
-	// ranking back.
+	// The chart mode toggle says what the press does, not what is on screen: "Plot
+	// History" while the history is plotted would put the ranking back.
 	p.acts.Cells[qsActPlot].Label = "Plot History"
 	if p.seriesMode {
 		p.acts.Cells[qsActPlot].Label = "Plot Report"
@@ -127,7 +125,7 @@ func qsRegressionLabel(i int) string {
 
 // selDisabled reports whether selector cell i is inert now. The whole row is
 // while a read or write is in flight; Metric and Top are also inert on a report
-// whose query they do not reach, as the two action-row filters are.
+// whose query they do not reach, as are the two action-row filters.
 func (p *QueryStorePanel) selDisabled(i int) bool {
 	if p.busy {
 		return true
@@ -142,8 +140,8 @@ func (p *QueryStorePanel) selDisabled(i int) bool {
 }
 
 // selReason is what to tell the user who clicks a dimmed selector. A disabled
-// cell swallows its click, and swallowing it silently is what the context-gating
-// rule exists to prevent.
+// cell swallows its click, and doing so silently is what the context-gating rule
+// exists to prevent.
 func (p *QueryStorePanel) selReason(i int) string {
 	switch {
 	case p.busy:
@@ -162,31 +160,31 @@ func (p *QueryStorePanel) selReason(i int) string {
 // actDisabled reports whether action cell i is inert: the panel is busy, the
 // action has no plan to act on, or the login may not force one.
 //
-// Asked on demand rather than latched into ToolCell.Disabled: the toolbar is
-// built in NewQueryStorePanel, before the capability probe has necessarily run.
-// Same as LogViewer.recycleDenied.
+// Asked on demand rather than latched into ToolCell.Disabled: the toolbar is built
+// in NewQueryStorePanel, before the capability probe has necessarily run. Same as
+// LogViewer.recycleDenied.
 func (p *QueryStorePanel) actDisabled(i int) bool {
 	if p.busy {
 		return true
 	}
 	// The two filters are inert on a report whose query does not carry them; a
-	// selector changing a number the next read ignores is the silent wrong-thing
-	// the context-gating rule prevents.
+	// selector changing a number the next read ignores is the silent wrong-thing the
+	// context-gating rule prevents.
 	switch i {
 	case qsActMinExec:
 		return !p.report().honours(qsFilterExecs)
 	case qsActRegression:
 		return !p.report().honours(qsFilterRegression)
 	}
-	// Track acts on the report grid's query, not a plan: a tracked query with no
-	// plan left in the window is exactly the case the view exists to show, so
-	// requiring a plan would refuse it.
+	// Track acts on the report grid's query, not a plan: a tracked query with no plan
+	// left in the window is the case the view exists to show, so requiring a plan
+	// would refuse it.
 	if i == qsActTrack {
 		return p.selectedQueryID() == 0
 	}
-	// Plot acts on the report grid's query too, and only on the way in: the mode
-	// must always be switchable off, including from a row that could not have
-	// turned it on (an arrow key can leave the cursor on one).
+	// Plot acts on the report grid's query too, and only on the way in: the mode must
+	// always be switchable off, including from a row that could not have turned it on
+	// (an arrow key can leave the cursor on one).
 	if i == qsActPlot {
 		return !p.seriesMode && p.selectedQueryID() == 0
 	}
@@ -203,11 +201,11 @@ func (p *QueryStorePanel) actDisabled(i int) bool {
 	case qsActUnforce:
 		return !plan.IsForced || p.forceDenied()
 	}
-	// Script is deliberately not gated on forceDenied. It writes nothing (it opens
-	// the statement in a query panel), and Object Explorer's whole "Script <Noun>
-	// as" cascade is ungated for the same reason: reading the T-SQL a write would
-	// issue is how someone without the permission asks for it. Gating it withheld
-	// the text from exactly the login that needed to send it to a DBA.
+	// Script is deliberately not gated on forceDenied. It writes nothing (it opens the
+	// statement in a query panel), and Object Explorer's whole "Script <Noun> as"
+	// cascade is ungated for the same reason: reading the T-SQL a write would issue
+	// is how someone without the permission asks for it. Gating it withheld the text
+	// from exactly the login that needed to send it to a DBA.
 	return false
 }
 
@@ -218,8 +216,8 @@ func (p *QueryStorePanel) forceDenied() bool {
 	return !gate.Allows(p.conn, p.dbName, gate.DatabaseWriteRights()...)
 }
 
-// actReason is what to tell the user who clicks a dimmed action cell; silently
-// swallowing the click is what the context-gating rule exists to prevent.
+// actReason is what to tell the user who clicks a dimmed action cell; swallowing
+// the click silently is what the context-gating rule exists to prevent.
 func (p *QueryStorePanel) actReason(i int) string {
 	switch {
 	case p.busy:
@@ -285,7 +283,7 @@ func (p *QueryStorePanel) popMenuAt(r core.Rect, items []controls.MenuItem) {
 }
 
 // showOverflowMenu pops the buttons a row was too narrow to draw, under its
-// "More ▾" cell — see ToolRow.OverflowItems for what each entry carries.
+// "More ▾" cell; see ToolRow.OverflowItems for what each entry carries.
 func (p *QueryStorePanel) showOverflowMenu(row *controls.ToolRow,
 	disabled func(int) bool, reason func(int) string, run func(int)) {
 	p.popMenuAt(row.More.Rect, row.OverflowItems(disabled, reason, run))
@@ -313,8 +311,8 @@ func (p *QueryStorePanel) showReportMenu() {
 
 func (p *QueryStorePanel) showMetricMenu() {
 	// The metric list comes from the connected instance, not the whole enum:
-	// log_bytes_used and tempdb_space_used arrived in 2017, and offering them on
-	// 2016 would produce "Invalid column name" rather than rows.
+	// log_bytes_used and tempdb_space_used arrived in 2017, and offering them on 2016
+	// would produce "Invalid column name" rather than rows.
 	p.popMenu(qsToolMetric, qsMenuItems(p.availableMetrics(), p.metric,
 		func(m gosmo.QSMetric) string { return string(m) },
 		func(m gosmo.QSMetric) { p.metric = m; p.Load() }))
@@ -349,7 +347,7 @@ func (p *QueryStorePanel) showRegressionMenu() {
 }
 
 // qsIndexes is 0..n-1, for a selector whose menu picks a position in a table
-// rather than a value — the label and the value then come from the same entry.
+// rather than a value; label and value then come from the same entry.
 func qsIndexes(n int) []int {
 	idxs := make([]int, n)
 	for i := range idxs {
@@ -371,8 +369,8 @@ func (p *QueryStorePanel) availableMetrics() []gosmo.QSMetric {
 }
 
 // database is the lightweight handle every read and write here goes through.
-// DatabaseRef, not DatabaseByName: this needs no metadata, and a by-name read
-// on every menu open would put a query behind every click.
+// DatabaseRef, not DatabaseByName: this needs no metadata, and a by-name read on
+// every menu open would put a query behind every click.
 func (p *QueryStorePanel) database() *gosmo.Database {
 	if p.conn == nil || p.conn.Server == nil {
 		return nil

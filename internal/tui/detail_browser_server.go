@@ -80,9 +80,9 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 //
 // On an Azure engine edition sys.dm_os_volume_stats describes the container the
 // engine runs inside, not the instance (a Managed Instance reports the same C:\
-// mount twice, each with a total of 192 MB against 64 and 96 GB available).
-// Those rows are worse than nothing, so Azure reads the instance's own quota
-// from sys.server_resource_stats, the pair that actually governs it.
+// mount twice, with a total of 192 MB against 64 and 96 GB available). Those rows
+// are worse than nothing, so Azure reads the instance's own quota from
+// sys.server_resource_stats.
 func serverDiskSpaceRows(ctx context.Context, sc *dbconn.ServerConn) [][2]string {
 	if sc.Server.Info().IsAzure() {
 		st, err := sc.Server.LatestServerResourceStats(ctx)
@@ -107,12 +107,12 @@ func serverDiskSpaceRows(ctx context.Context, sc *dbconn.ServerConn) [][2]string
 // usableDiskVolumes drops the volume rows that would render as nonsense and
 // collapses repeats of one volume.
 //
-// sys.dm_os_volume_stats is read once per database file and grouped by mount
-// point *and* byte counts, so a host answering with a different available_bytes
-// per file (an Azure Managed Instance does, twice for C:\) yields several rows
-// for one volume. A total of zero, or an available figure larger than the
-// total, is the host reporting a volume it does not own; "65,344 MB free of 192
-// MB" is worse than saying nothing.
+// sys.dm_os_volume_stats is read once per database file and grouped by mount point
+// *and* byte counts, so a host answering with a different available_bytes per file
+// (an Azure Managed Instance does, twice for C:\) yields several rows for one
+// volume. A total of zero, or an available figure larger than the total, is the
+// host reporting a volume it does not own; "65,344 MB free of 192 MB" is worse
+// than saying nothing.
 func usableDiskVolumes(vols []gosmo.DiskVolumeInfo) []gosmo.DiskVolumeInfo {
 	seen := make(map[string]bool, len(vols))
 	out := make([]gosmo.DiskVolumeInfo, 0, len(vols))

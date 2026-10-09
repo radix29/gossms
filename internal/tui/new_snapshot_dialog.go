@@ -13,29 +13,28 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// new_snapshot_dialog.go is "New Snapshot..." — CREATE DATABASE … AS SNAPSHOT
+// new_snapshot_dialog.go is "New Snapshot...": CREATE DATABASE ... AS SNAPSHOT
 // OF, on the Database Snapshots folder and on a database.
 //
-// The file grid is empty until it is asked for, and an empty grid is a
-// complete request: gosmo derives one sparse file per ROWS file of the source
-// when none is given, which is also the only way to get paths that match the
-// name currently typed. Pressing Default File Paths freezes them, so the
-// button re-runs whenever the source or the name changes rather than leaving
-// a list built for a different snapshot.
+// The file grid is empty until asked for, and an empty grid is a complete
+// request: gosmo derives one sparse file per ROWS file of the source when none
+// is given, the only way to get paths matching the name currently typed.
+// Pressing Default File Paths freezes them, so the button re-runs whenever the
+// source or name changes rather than leave a list built for a different
+// snapshot.
 //
 // Only data files are ever listed. A snapshot has no transaction log and no
 // FILESTREAM container, and naming either is the usual way a hand-written
-// CREATE DATABASE … AS SNAPSHOT OF fails.
+// CREATE DATABASE ... AS SNAPSHOT OF fails.
 
 // snapshotPrefetch is what the dialog needs before anything is typed: which
 // databases can be snapshotted, and every name already taken.
 type snapshotPrefetch struct {
-	// sources are the user databases that are online and not themselves
-	// snapshots — a snapshot of a snapshot is refused by the server, and an
-	// offline database cannot be read at all.
+	// sources are the user databases that are online and not themselves snapshots
+	// (a snapshot of a snapshot is refused, and an offline database cannot be read).
 	sources []string
-	// existing is every database name on the instance under its collation, snapshots
-	// included: the new snapshot is a database and collides with all of them.
+	// existing is every database name on the instance under its collation,
+	// snapshots included: the new snapshot is a database and collides with all.
 	existing *nameSet
 }
 
@@ -43,18 +42,17 @@ type snapshotPrefetch struct {
 type NewSnapshotDialog struct {
 	newObjectDialog[snapshotPrefetch]
 
-	// source is the database the dialog was opened on, empty when it was
-	// opened from the folder and the source is still to be picked.
+	// source is the database the dialog was opened on, empty when opened from the
+	// folder with the source still to be picked.
 	source string
 
-	// files is the sparse-file list, empty until Default File Paths has been
-	// pressed. Empty is a complete request — see the file comment.
+	// files is the sparse-file list, empty until Default File Paths is pressed.
+	// Empty is a complete request (file comment).
 	files []gosmo.SnapshotFileSpec
 
 	// defaultsRead is the SnapshotFileDefaults round trip. A second press
-	// supersedes and cancels it, and so does a source or name change — its
-	// paths would be for the snapshot no longer described; show and close
-	// abandon it.
+	// supersedes and cancels it, as does a source or name change (its paths would
+	// be for a snapshot no longer described); show and close abandon it.
 	defaultsRead latest
 }
 
@@ -110,8 +108,8 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 
 	sources := pf.sources
 	if len(sources) == 0 {
-		// Nothing to snapshot. The dialog still opens — preflight is what
-		// refuses, with a sentence rather than an empty picker.
+		// Nothing to snapshot. The dialog still opens; preflight refuses with a
+		// sentence rather than an empty picker.
 		sources = []string{""}
 	}
 	selected := max(slices.Index(sources, d.source), 0)
@@ -148,9 +146,9 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 	}
 	reloadGrid := wireGridEditor(grid, headers, fileRows, commitCurrent, syncFromSelection)
 
-	// A source or name change invalidates paths that were derived from the
-	// old ones. Dropping them is what puts the request back on gosmo's
-	// defaults, which are always in step with what is typed.
+	// A source or name change invalidates paths derived from the old ones. Dropping
+	// them puts the request back on gosmo's defaults, always in step with what is
+	// typed.
 	invalidateFiles := func() {
 		reading := !d.defaultsRead.Idle()
 		d.defaultsRead.Abandon()
@@ -243,10 +241,10 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 	}
 }
 
-// defaultSnapshotName is the name offered for a snapshot of source. SSMS
-// offers <source>_snapshot_<timestamp>; the timestamp is left off here
-// because the name is the one thing the user is certain to retype, and a
-// second snapshot of the same source only needs the suffix changed.
+// defaultSnapshotName is the name offered for a snapshot of source. SSMS offers
+// <source>_snapshot_<timestamp>; the timestamp is left off because the name is
+// the one thing the user is sure to retype, and a second snapshot of the same
+// source only needs the suffix changed.
 func defaultSnapshotName(source string) string {
 	if source == "" {
 		return ""
@@ -255,8 +253,8 @@ func defaultSnapshotName(source string) string {
 }
 
 // isDefaultSnapshotName reports whether name is still one of the offered
-// defaults — what decides whether changing the source may rewrite it. A name
-// the user typed is never overwritten.
+// defaults, which decides whether changing the source may rewrite it. A name the
+// user typed is never overwritten.
 func isDefaultSnapshotName(name string, sources []string) bool {
 	name = strings.TrimSpace(name)
 	for _, s := range sources {
@@ -267,8 +265,8 @@ func isDefaultSnapshotName(name string, sources []string) bool {
 	return false
 }
 
-// showNewSnapshotDialog opens New Database Snapshot. source is the database
-// to snapshot, empty when the dialog was opened from the folder.
+// showNewSnapshotDialog opens New Database Snapshot. source is the database to
+// snapshot, empty when opened from the folder.
 func (a *App) showNewSnapshotDialog(sc *db.ServerConn, source string) {
 	if !a.requireConn(sc) {
 		return

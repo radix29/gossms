@@ -9,16 +9,14 @@ import (
 )
 
 // Canvas is an off-screen cell grid that satisfies tcell.Screen well enough for
-// drawing. A caller renders a dashboard into a Canvas of fixed size and blits
-// the visible window onto the real screen, so a dashboard larger than the
-// terminal scrolls on both axes without every chart knowing its scroll offset.
+// drawing. A dashboard is rendered into a fixed-size Canvas and the visible
+// window blitted onto the real screen, so it scrolls on both axes without each
+// chart knowing the offset.
 //
 // Only the drawing half of tcell.Screen is implemented (Size, SetContent, Get,
 // Put, Fill, FillArea, Clear). The embedded interface is nil, so any other
-// method (Init, Show, PollEvent, ...) panics, deliberately: anything reaching
-// for terminal lifecycle methods has confused a Canvas with a real screen.
-// Everything in this package and in tuikit/core draws through the implemented
-// set.
+// method (Init, Show, PollEvent, ...) panics deliberately: it means a Canvas was
+// confused with a real screen.
 type Canvas struct {
 	tcell.Screen // nil; see the type comment
 
@@ -26,14 +24,13 @@ type Canvas struct {
 	cells []canvasCell
 }
 
-// canvasCell is one grid cell. width is the cell's display width: 1 for an
-// ordinary cell, 2 for the first cell of a wide grapheme, 0 for the trailing
-// cell such a grapheme covers (no content of its own, skipped when blitting).
+// canvasCell is one grid cell. width is its display width: 1 for an ordinary
+// cell, 2 for the first cell of a wide grapheme, 0 for the trailing cell it
+// covers (no content, skipped when blitting).
 //
 // Content is a primary rune plus the rest of its grapheme rather than one
-// string: the string form costs an allocation per cell and every chart glyph is
-// a single rune (building it was 62% of the dashboard draw path's allocations).
-// rest is non-empty only for a cell carrying combining marks.
+// string, which cost an allocation per cell (62% of the dashboard draw path's
+// allocations). rest is non-empty only for a cell carrying combining marks.
 type canvasCell struct {
 	primary rune // 0 in a trailing cell, which has no content of its own
 	rest    string
@@ -41,8 +38,8 @@ type canvasCell struct {
 	width   int
 }
 
-// text is the cell's content as one string, allocated on demand — Get and
-// Row want a string, the draw path does not.
+// text is the cell's content as one string, allocated on demand (Get and Row
+// want a string, the draw path does not).
 func (c canvasCell) text() string {
 	switch {
 	case c.primary == 0:
@@ -53,9 +50,8 @@ func (c canvasCell) text() string {
 	return string(c.primary) + c.rest
 }
 
-// NewCanvas returns a w×h canvas filled with spaces in tcell.StyleDefault.
-// Non-positive dimensions are clamped to zero, giving a canvas that accepts
-// (and discards) every draw.
+// NewCanvas returns a w×h canvas of spaces in tcell.StyleDefault. Non-positive
+// dimensions clamp to zero, giving a canvas that discards every draw.
 func NewCanvas(w, h int) *Canvas {
 	w, h = max(w, 0), max(h, 0)
 	c := &Canvas{w: w, h: h, cells: make([]canvasCell, w*h)}
@@ -66,8 +62,7 @@ func NewCanvas(w, h int) *Canvas {
 // Size returns the canvas dimensions (tcell.Screen).
 func (c *Canvas) Size() (int, int) { return c.w, c.h }
 
-// Rect is the canvas's full extent, for handing to a chart that should
-// cover all of it.
+// Rect is the canvas's full extent.
 func (c *Canvas) Rect() core.Rect { return core.Rect{X: 0, Y: 0, W: c.w, H: c.h} }
 
 // Fill sets every cell to ch in style (tcell.Screen).
@@ -96,8 +91,7 @@ func (c *Canvas) Clear() { c.Fill(' ', tcell.StyleDefault) }
 // (tcell.Screen). Out-of-range coordinates are ignored.
 func (c *Canvas) SetContent(x, y int, primary rune, combining []rune, style tcell.Style) {
 	if len(combining) == 0 {
-		// The same per-cell fast path as Put's single rune: no string, no
-		// grapheme segmentation.
+		// Same per-cell fast path as Put's single rune: no string, no segmentation.
 		c.setRune(x, y, primary, style)
 		return
 	}
@@ -108,8 +102,7 @@ func (c *Canvas) SetContent(x, y int, primary rune, combining []rune, style tcel
 // string along with the width written (tcell.Screen).
 func (c *Canvas) Put(x, y int, str string, style tcell.Style) (string, int) {
 	if r, n := utf8.DecodeRuneInString(str); n == len(str) && n > 0 {
-		// One rune — core.PutRune's call, and so the whole chart draw path,
-		// one call per cell per chart: it must not run a segmentation.
+		// One rune (core.PutRune's call, one per cell per chart): must not segment.
 		c.setRune(x, y, r, style)
 		return "", max(displaywidth.Rune(r), 1)
 	}
@@ -158,8 +151,8 @@ func (c *Canvas) setRune(x, y int, r rune, style tcell.Style) {
 		return
 	}
 	if r == 0 {
-		// A zero primary marks a trailing cell, so it can't also mean
-		// content; tcell draws a blank for one and so does this.
+		// A zero primary marks a trailing cell, so it can't also mean content; tcell
+		// draws a blank for one and so does this.
 		r = ' '
 	}
 	c.write(x, y, canvasCell{primary: r, style: style, width: max(displaywidth.Rune(r), 1)})
@@ -169,8 +162,8 @@ func (c *Canvas) setRune(x, y int, r rune, style tcell.Style) {
 // grapheme so a later Get or Blit doesn't emit the same glyph twice.
 func (c *Canvas) write(x, y int, cell canvasCell) {
 	if x+cell.width > c.w {
-		// A wide grapheme in the last column has nowhere to put its second
-		// half; tcell substitutes a space there and so does this.
+		// A wide grapheme in the last column has no room for its second half; tcell
+		// substitutes a space and so does this.
 		cell = canvasCell{primary: ' ', style: cell.style, width: 1}
 	}
 	i := y*c.w + x
@@ -193,23 +186,18 @@ func (c *Canvas) inBounds(x, y int) bool {
 	return x >= 0 && y >= 0 && x < c.w && y < c.h
 }
 
-// Blit copies the src region of the canvas onto s at dst. Only the overlapping
-// area is drawn: a src region past the canvas edge and a dst rect smaller than
-// src both clip.
-//
-// A wide grapheme whose second half falls outside dst is replaced with a space,
-// so a half-drawn wide glyph can't bleed a stray column beside the viewport.
+// Blit copies the src region onto s at dst, clipping a src past the canvas edge
+// and a dst smaller than src. A wide grapheme whose second half falls outside
+// dst becomes a space, so no stray half-glyph bleeds beside the viewport.
 func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
 	rows := min(src.H, dst.H)
 	cols := min(src.W, dst.W)
 	for dy := range rows {
 		for dx := 0; dx < cols; {
-			// Read the cell rather than Get it: Get composes a string per
-			// cell, and the whole visible viewport comes through here.
+			// Read the cell rather than Get it: Get composes a string per cell.
 			cell := c.cellAt(src.X+dx, src.Y+dy)
 			if cell.width == 0 {
-				// Trailing half of a wide grapheme, or off-canvas; either
-				// way there is nothing of its own to draw here.
+				// Trailing half of a wide grapheme, or off-canvas: nothing of its own to draw.
 				dx++
 				continue
 			}

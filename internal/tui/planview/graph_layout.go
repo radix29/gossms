@@ -5,18 +5,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// Tile geometry, in virtual canvas cells — fixed-width "operator card"
-// per the SSMS-classic graph mockup.
+// Tile geometry, in virtual canvas cells: a fixed-width "operator card".
 const (
 	graphTileW = 20
-	// graphTileH must leave room for 3 interior text lines (PhysicalOp,
-	// object/LogicalOp, cost%+rows) between the top and bottom borders —
-	// 5 rows, not 4: Rect.Inner(1) on a 4-row tile yields only 2 interior
-	// rows, and the third line would overwrite the bottom border.
+	// graphTileH leaves room for 3 interior text lines (PhysicalOp,
+	// object/LogicalOp, cost%+rows): 5 rows, since Rect.Inner(1) on 4 yields
+	// 2 interior rows and the third line would overwrite the border.
 	graphTileH = 5
 	// graphLiveTileH adds a fourth interior line in live mode (see live.go):
-	// the "rows of estimate (pct)" figure Live Query Statistics is about,
-	// beneath a cost/elapsed line, without giving up the object name.
+	// the "rows of estimate (pct)" figure, without giving up the object name.
 	graphLiveTileH = 6
 	graphHGap      = 4 // horizontal gap between a tile and its children's column
 	graphVGap      = 1 // vertical gap between sibling tiles
@@ -28,19 +25,17 @@ type tile struct {
 	rect core.Rect
 }
 
-// edge is one parent→child connector, as three straight segments: a
-// horizontal run from the parent's right edge to midX, a vertical run at
-// midX between the parent's and child's row, and a horizontal run from
-// midX to the child's left edge. All coordinates are virtual-canvas cells.
+// edge is one parent→child connector in three straight segments: horizontal
+// from the parent's right edge to midX, vertical at midX between the two rows,
+// horizontal from midX to the child's left edge (virtual-canvas cells).
 type edge struct {
 	x1, y1 int // parent tile's right-edge midpoint
 	x2, y2 int // child tile's left-edge midpoint
 	midX   int // the connector's vertical trunk column
 }
 
-// graphLayout is the result of laying out one statement's operator tree
-// as a left-to-right node-and-edge graph — root at the smallest X,
-// children extending rightward, matching real SSMS.
+// graphLayout is one statement's operator tree laid out left to right, root at
+// the smallest X, as SSMS does.
 type graphLayout struct {
 	tiles   []tile
 	edges   []edge
@@ -49,12 +44,10 @@ type graphLayout struct {
 	canvasH int
 }
 
-// layoutGraph places root's operator tree on a virtual canvas. Pure
-// function of the tree shape — no tcell/theme dependency — so it's
-// testable without a screen. Each node's tile is top-aligned with its
-// first child's tile, matching SSMS — the root lands on the canvas's
-// first row rather than floating to its vertical middle. A childless
-// node occupies exactly one tile-height band of tileH rows.
+// layoutGraph places root's operator tree on a virtual canvas. A pure function
+// of the tree shape (no tcell/theme), so testable without a screen. Each tile
+// is top-aligned with its first child's, as SSMS does, so the root lands on
+// the first row. A childless node occupies one band of tileH rows.
 func layoutGraph(root *showplan.Node, tileH int) *graphLayout {
 	g := &graphLayout{rects: make(map[int]core.Rect)}
 	if root == nil {

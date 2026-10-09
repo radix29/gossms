@@ -11,16 +11,15 @@ import (
 
 // WriteAtomic writes data to a temp file in path's directory and renames it
 // over path, so path is only ever replaced whole. os.WriteFile truncates in
-// place: a crash, full disk or power loss mid-write leaves a half file and the
-// original is gone (a truncated config.json loses every saved connection). The
-// temp file must share path's directory; a cross-filesystem rename isn't
-// atomic.
+// place: a crash mid-write leaves a half file (a truncated config.json loses
+// every saved connection). The temp file must share path's directory; a
+// cross-filesystem rename is not atomic.
 //
 // perm is the mode a new file gets, less the umask, and the widest an existing
 // one keeps; see modeFor.
 //
-// Both the file and the directory are synced: the rename changes the directory,
-// and without syncing it a crash can bring the old contents back.
+// Both the file and the directory are synced: without syncing the directory a
+// crash can bring the old contents back.
 func WriteAtomic(path string, data []byte, perm os.FileMode) error {
 	path = resolveSymlink(path)
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp")
@@ -62,9 +61,8 @@ func WriteAtomic(path string, data []byte, perm os.FileMode) error {
 // created is false, with no error, when path already existed — the caller
 // then reads the winner's file instead of its own data.
 //
-// It exists for two processes creating the same file at once. With
-// WriteAtomic's rename both "succeed" and the later rename silently wins, so
-// the earlier writer goes on using data that is no longer on disk.
+// It exists for two processes creating the same file at once: with WriteAtomic's
+// rename both "succeed" and the later one silently wins.
 //
 // A filesystem that cannot hard-link falls back to an O_EXCL create written in
 // place: still create-if-absent, but a concurrent reader can see it partly
@@ -158,23 +156,22 @@ func resolveSymlink(path string) string {
 // modeFor returns the mode path already has, capped at perm; a missing or
 // unreadable path gets perm less the umask, as os.WriteFile's would.
 //
-// Preserving the mode keeps rename-based writes behaving like os.WriteFile:
-// callers pass a constant (0600 for config.json, gossms.key,
-// tracked_queries.json; 0644 for scripts), and applying it blindly would
-// re-widen a script the user chmodded 0600 on every save.
+// Preserving the mode keeps rename-based writes behaving like os.WriteFile: a
+// script the user chmodded 0600 must stay 0600 across saves, which applying
+// perm blindly would undo.
 //
-// The umask matters because the chmod is explicit: the kernel applies it only
-// at create, and CreateTemp creates at 0600, so a 0644 chmod after it bypassed
-// a umask of 077 and every new script was world-readable (K14).
+// The umask matters because the chmod is explicit: the kernel applies the umask
+// only at create, and CreateTemp creates at 0600, so an explicit 0644 chmod
+// would bypass a umask of 077.
 //
 // Capping at perm tightens a config.json or gossms.key that reached 0644 back
-// to 0600 instead of keeping it wide.
+// to 0600.
 //
 // The mode read is the symlink target's; WriteAtomic resolved it already.
 //
-// Ownership is not preserved (the new file belongs to the running user). That
-// matters only as root over another user's file, which isn't supported, and
-// fixing it would need OS branching.
+// Ownership is not preserved: the new file belongs to the running user.
+// Preserving it would need OS branching and matters only for root writing
+// another user's file, which is not supported.
 func modeFor(path string, perm os.FileMode) os.FileMode {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -188,11 +185,10 @@ func modeFor(path string, perm os.FileMode) os.FileMode {
 var umask = sync.OnceValue(probeUmask)
 
 // probeUmask reads the umask by creating a file at 0777 and seeing which bits
-// the kernel kept: Go has no portable read of it (syscall.Umask is POSIX-only,
-// and it sets the mask to read it, racing every other goroutine's create).
-// Read once: gossms never changes its umask. Any failure reads as no mask,
-// WriteAtomic's behaviour before the umask was honoured. On Windows the probe
-// reads 0666 back, a mask of 0111 that no caller's perm has bits in.
+// the kernel kept: Go has no portable read of it (syscall.Umask sets the mask
+// to read it, racing every other goroutine's create). Read once: gossms never
+// changes its umask. Any failure reads as no mask. On Windows the probe reads
+// 0666 back, a mask of 0111 that no caller's perm has bits in.
 func probeUmask() os.FileMode {
 	dir, err := os.MkdirTemp("", "gossms-umask")
 	if err != nil {

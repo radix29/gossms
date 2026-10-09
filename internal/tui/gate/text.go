@@ -7,16 +7,16 @@ import (
 	"github.com/radix29/gosmo"
 )
 
-// text.go is how a right is worded for the user: the name alone, the name with
-// its role, and the "Requires …" sentence a disabled menu item carries. The
-// wording of a denial is with the denial itself, in allows.go.
+// text.go words a right for the user: the name alone, with its role, and the
+// "Requires …" sentence a disabled menu item carries. Denial wording is in
+// allows.go.
 
 // nameOnly is the permission as the user is told to ask for it, without the
-// role — RequiresText gathers the roles into one trailing clause instead.
+// role (RequiresText gathers roles into one trailing clause).
 //
-// A schema-scoped right is named for the securable and carries no role at all:
-// "ALTER (db_ddladmin)" would send the user after a role that grants something
-// much wider than what is missing.
+// A schema-scoped right is named for the securable with no role:
+// "ALTER (db_ddladmin)" would send the user after a role granting far more
+// than what is missing.
 func (r Right) nameOnly() string {
 	switch {
 	case r.Securable != "":
@@ -42,10 +42,8 @@ func databaseSecurableWord(k gosmo.DatabaseSecurableKind) string {
 	return strings.ToLower(string(k))
 }
 
-// String renders one right on its own — the permission with the role that also
-// carries it, as permission_error.go names it in a single-right sentence.
-// RequiresText does not use it: with several alternatives the roles are
-// collapsed into one clause instead.
+// String renders one right on its own: the permission with the role that also
+// carries it, as permission_error.go names it. RequiresText does not use it.
 func (r Right) String() string {
 	if r.Role == "" {
 		return r.nameOnly()
@@ -66,14 +64,13 @@ func orList(names []string) string {
 }
 
 // RequiresText is the sentence shown when an action is withheld. Any one of
-// the rights is enough, which is why they are joined with "or".
+// the rights suffices, hence "or".
 //
-// The roles are gathered into one trailing clause instead of following each
-// permission, because the alternatives for one action overwhelmingly share a
-// Role: three rights spelled out gave "ALTER (db_owner) or CONTROL (db_owner)
-// or ALTER ANY DATABASE (dbcreator)", which names db_owner twice and reads as
-// six things to ask for rather than three. A right with no role stays outside
-// the clause — see Right.String.
+// Roles are gathered into one trailing clause because the alternatives for an
+// action mostly share a Role: spelled out per right it read "ALTER (db_owner)
+// or CONTROL (db_owner) or ALTER ANY DATABASE (dbcreator)", naming db_owner
+// twice and looking like six things to ask for. A right with no role stays
+// outside the clause (see Right.String).
 func RequiresText(rights ...Right) string {
 	var named, plain, roles []string
 	for _, r := range rights {

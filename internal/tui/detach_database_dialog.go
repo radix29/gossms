@@ -11,17 +11,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// detach_database_dialog.go is "Detach Database..." on a database — SSMS's
-// Tasks > Detach, on the newObjectDialog shell so OK/Apply/Script Changes
-// behave like every other write dialog. What it produces is the removal of a
-// database rather than an object, which is why it overrides the shell's
-// success verb.
+// detach_database_dialog.go is "Detach Database..." on a database — SSMS's Tasks >
+// Detach, on the newObjectDialog shell so OK/Apply/Script Changes behave like
+// every other write dialog. What it produces is the removal of a database rather
+// than an object, which is why it overrides the shell's success verb.
 //
-// The file grid is not decoration. Detaching leaves the files on disk and
-// takes away the only place their paths are recorded that a client can read:
+// The file grid is not decoration. Detaching leaves the files on disk and takes
+// away the only place their paths are recorded that a client can read:
 // sys.database_files is behind a USE, and the detached database has none. The
-// paths shown here are what an attach needs afterwards, primary data file
-// first.
+// paths shown here are what an attach needs afterwards, primary data file first.
 
 // detachPrefetch is what the page needs to describe a detach before it runs.
 type detachPrefetch struct {

@@ -97,13 +97,11 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 				if err != nil {
 					return err
 				}
-				// One sp_update_job for the whole page: msdb takes every
-				// parameter in one call, and a five-edit apply was five round
-				// trips. The rename rides along in the same statement — it is
-				// addressed by @job_name, the name the server still has, so
-				// there is no ordering to get wrong the way separate calls had
-				// (see propPage.renames). commitRename still runs after, to
-				// update the shared cell the other pages read.
+				// One sp_update_job for the whole page: msdb takes every parameter in one call. The
+				// rename rides along in the same statement — it is addressed by @job_name, the name
+				// the server still has, so there is no ordering to get wrong (see
+				// propPage.renames). commitRename still runs after, to update the shared cell the
+				// other pages read.
 				var ch gosmo.JobChanges
 				if descRow.Dirty() {
 					ch.Description = new(descRow.Value())

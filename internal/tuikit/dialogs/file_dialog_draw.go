@@ -19,9 +19,8 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 	p := theme.Active()
 	contentX := inner.X + 1
 	contentW := inner.W - 2
-	// -1: reserve the list's rightmost column for the scrollbar (see
-	// listRect/DrawScrollbar below), so a full-width Modified timestamp
-	// never gets its last digits overwritten by the scrollbar track/thumb.
+	// -1: reserve the list's rightmost column for the scrollbar (see listRect), so a
+	// full-width Modified timestamp isn't overwritten by the track/thumb.
 	nameColW := nameColWidth(contentW - 1)
 
 	d.pathField.SetBounds(contentX, inner.Y)
@@ -39,9 +38,8 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 
 	lr := d.listRect()
 	baseStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	// busy wins over listErr: it is only ever set for the duration of a
-	// FileSystem call, and what it replaces is the previous directory's
-	// listing or error, both of which are about to be superseded.
+	// busy wins over listErr: it is set only during a FileSystem call, and what it
+	// replaces (the previous listing or error) is about to be superseded.
 	note := d.busy
 	if note == "" {
 		note = d.listErr
@@ -49,11 +47,10 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 	if note != "" {
 		core.FillRect(s, lr, ' ', baseStyle)
 		noteStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
-		// Wrapped across the list area, not clipped to its first line: a
-		// listing error is a whole sentence from the server or the caller and
-		// the box is barely 70 columns, so a one-line clip cut the reason off
-		// mid-word with no ellipsis — "before SQL Server 2017 the server lists"
-		// is where the pre-2017 xp_dirtree refusal stopped.
+		// Wrapped across the list area, not clipped to one line: a listing error is a
+		// whole sentence in a ~70-column box, and a one-line clip cut the reason off
+		// mid-word ("before SQL Server 2017 the server lists", the pre-2017 xp_dirtree
+		// refusal).
 		for i, line := range core.WrapTextLimit(note, lr.W, lr.H) {
 			core.DrawTextClipped(s, lr.X, lr.Y+i, lr.W, noteStyle, line)
 		}
@@ -97,9 +94,8 @@ func (d *FileDialog) drawEntry(s tcell.Screen, y, x, nameColW, idx int) {
 			st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextHighlight)
 		}
 	}
-	// +1: also paint the scrollbar gutter column so the row's selection
-	// highlight reaches the dialog's right edge even when no scrollbar is
-	// drawn over it this frame (see Draw's nameColW comment).
+	// +1: also paint the scrollbar gutter so the selection highlight reaches the
+	// dialog's right edge when no scrollbar is drawn (see Draw's nameColW comment).
 	core.FillRect(s, core.Rect{X: x, Y: y, W: nameColW + 1 + fileSizeColW + 1 + fileModColW + 1, H: 1}, ' ', st)
 
 	icon, name := "📄", e.Name
@@ -109,10 +105,9 @@ func (d *FileDialog) drawEntry(s tcell.Screen, y, x, nameColW, idx int) {
 	}
 	core.DrawTextClipped(s, x, y, nameColW, st, marker+icon+" "+name)
 
-	// An unreported size or timestamp is left blank rather than rendered:
-	// a FileSystem that cannot supply them (goSSMS listing a pre-2017 SQL
-	// Server through xp_dirtree) otherwise dates every entry 0001-01-01 and
-	// calls every file empty, which reads as fact rather than as absence.
+	// An unreported size or timestamp is left blank: a FileSystem that can't supply
+	// them (a pre-2017 SQL Server via xp_dirtree) would otherwise date every entry
+	// 0001-01-01 and call every file empty, which reads as fact, not absence.
 	sizeText := ""
 	switch {
 	case e.IsDir:

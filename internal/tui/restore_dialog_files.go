@@ -13,21 +13,20 @@ import (
 )
 
 // The Files view (restoreModeFiles) is where the restore's file handling is
-// chosen: whether the restored database's files stay at the paths recorded in
-// the backup, go to the server's default data/log folders, or go to folders the
-// user names, with each file's recorded location and its restore path listed
-// side by side.
+// chosen: whether the restored database's files stay at the paths recorded in the
+// backup, go to the server's default data/log folders, or go to folders the user
+// names, with each file's recorded location and its restore path listed side by
+// side.
 
-// dirFieldWidth is the content width of the data/log folder inputs, sized so
-// the label, the box and the dialog's right margin fill the inner width.
+// dirFieldWidth is the content width of the data/log folder inputs, sized so the
+// label, the box and the dialog's right margin fill the inner width.
 func (d *RestoreDialog) dirFieldWidth() int {
 	return restoreDialogW - 2 /*border*/ - 2 /*margins*/ - 13 /*label + gap*/ - 2 /*brackets*/
 }
 
-// defaultDirs returns the server's default data and log directories: the
-// ones read when the dialog opened, or the connect-time snapshot until that
-// read lands (and if it failed). Empty when the dialog has no live connection
-// (unit tests).
+// defaultDirs returns the server's default data and log directories: the ones
+// read when the dialog opened, or the connect-time snapshot until that read lands
+// (and if it failed). Empty when the dialog has no live connection (unit tests).
 func (d *RestoreDialog) defaultDirs() (dataDir, logDir string) {
 	if d.defDirs != nil {
 		return d.defDirs.Data, d.defDirs.Log
@@ -41,10 +40,10 @@ func (d *RestoreDialog) defaultDirs() (dataDir, logDir string) {
 	return "", ""
 }
 
-// loadDefaultPaths reads the server's current default directories and moves
-// each folder field still showing the snapshot's value onto the fresh one. A
-// field the user has edited is left alone. A failed read leaves the snapshot: a
-// restore is not worth refusing over it.
+// loadDefaultPaths reads the server's current default directories and moves each
+// folder field still showing the snapshot's value onto the fresh one. A field the
+// user has edited is left alone. A failed read leaves the snapshot: a restore is
+// not worth refusing over it.
 func (d *RestoreDialog) loadDefaultPaths() {
 	app, sc := d.app, d.sc
 	if app == nil || sc == nil || sc.Server == nil {
@@ -69,19 +68,19 @@ func (d *RestoreDialog) loadDefaultPaths() {
 	})
 }
 
-// fillDefaultLocation puts the server's own default data/log directories
-// into the folder fields — the Default Location button, and the initial
-// contents of both fields.
+// fillDefaultLocation puts the server's own default data/log directories into the
+// folder fields: the Default Location button, and the initial contents of both
+// fields.
 func (d *RestoreDialog) fillDefaultLocation() {
 	dataDir, logDir := d.defaultDirs()
 	d.fDataDir.SetValue(dataDir)
 	d.fLogDir.SetValue(logDir)
 }
 
-// relocation snapshots the Files view's choice for buildRestoreOptions, which
-// runs on a background goroutine and must not read widgets. The default
-// directories go in with it (defaultDirs' answer), so the restore puts files
-// where the Files view previewed them.
+// relocation snapshots the Files view's choice for buildRestoreOptions, which runs
+// on a background goroutine and must not read widgets. The default directories go
+// in with it (defaultDirs' answer), so the restore puts files where the Files view
+// previewed them.
 //
 // The collation decides whether restoring Sales as sales is a rename: on a
 // case-sensitive instance it is, and without MOVE clauses the restore collides
@@ -106,10 +105,9 @@ var relocationModes = map[int]gosmo.RelocationMode{
 	relocFolder:   gosmo.RelocateToFolders,
 }
 
-// showFileLocations opens the Files view. The view lists the backup set's
-// files, so the file list has to be in hand first: a device already analyzed
-// for this form has it, anything else re-reads the header and file list as
-// Analyze does.
+// showFileLocations opens the Files view. The view lists the backup set's files,
+// so the file list has to be in hand first: a device already analyzed for this
+// form has it, anything else re-reads the header and file list as Analyze does.
 func (d *RestoreDialog) showFileLocations() {
 	src := d.sourceForRestore()
 	if len(src.devices) == 0 {
@@ -132,9 +130,9 @@ func (d *RestoreDialog) enterFilesMode() {
 	d.setFilesFocus(0)
 }
 
-// filesFocusCycle is the view's Tab order. The folder fields take part only
-// while relocFolder is selected; they are disabled otherwise, and a disabled
-// field that can still be focused is a hole the cursor vanishes into.
+// filesFocusCycle is the view's Tab order. The folder fields take part only while
+// relocFolder is selected; they are disabled otherwise, and a disabled field that
+// can still be focused is a hole the cursor vanishes into.
 func (d *RestoreDialog) filesFocusCycle() []focusable {
 	if d.rbReloc.Selected() != relocFolder {
 		return []focusable{d.rbReloc}
@@ -153,8 +151,8 @@ func (d *RestoreDialog) setFilesFocus(i int) {
 	cycle[d.filesFocus].Focus(true)
 }
 
-// syncRelocState follows a change of relocation mode: the folder fields are
-// only editable when the restore is actually going to use them.
+// syncRelocState follows a change of relocation mode: the folder fields are only
+// editable when the restore is actually going to use them.
 func (d *RestoreDialog) syncRelocState() {
 	on := d.rbReloc.Selected() == relocFolder
 	d.fDataDir.SetEnabled(on)
@@ -163,8 +161,8 @@ func (d *RestoreDialog) syncRelocState() {
 }
 
 // plannedPaths maps each logical file name to the physical path the current
-// choice would restore it to. Built by gosmo.RestoreRelocation.Moves, which
-// also builds the MOVE clauses, so the preview cannot drift from the restore.
+// choice would restore it to. Built by gosmo.RestoreRelocation.Moves, which also
+// builds the MOVE clauses, so the preview cannot drift from the restore.
 func (d *RestoreDialog) plannedPaths() map[string]string {
 	source := ""
 	if h := d.selectedHeader(); h != nil {
@@ -217,15 +215,15 @@ func (d *RestoreDialog) layoutFiles() {
 	d.btnDefLoc.SetBounds(d.fLogDir.InputX(), row)
 }
 
-// filesListY is the first row of the file list, below the button laid out
-// by layoutFiles plus a blank row.
+// filesListY is the first row of the file list, below the button laid out by
+// layoutFiles plus a blank row.
 func (d *RestoreDialog) filesListY() int {
 	return d.fLogDir.RectY() + 3
 }
 
-// drawFiles renders the relocation options over the backup set's file list:
-// each file's location in the backup, and the location it would be restored
-// to under the current choice.
+// drawFiles renders the relocation options over the backup set's file list: each
+// file's location in the backup, and the location it would be restored to under
+// the current choice.
 func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 	d.layoutFiles()
 
@@ -254,8 +252,8 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 	planned := d.plannedPaths()
 	lastRow := d.ButtonRowY() - 3 // drawStatus owns ButtonRowY()-2
 	for i, f := range d.files {
-		// Each file takes two rows, so it only goes in when both of them
-		// fit; the row left over carries the "... and N more" line.
+		// Each file takes two rows, so it only goes in when both fit; the row left over
+		// carries the "... and N more" line.
 		if row+1 > lastRow {
 			core.DrawTextClipped(s, lx, row, w, dimStyle,
 				fmt.Sprintf("... and %d more", len(d.files)-i))
@@ -327,14 +325,14 @@ func (d *RestoreDialog) handleFilesKey(ev *tcell.EventKey) bool {
 	return true
 }
 
-// handleFilesMouse routes mouse events in the Files view. Called with the
-// release already delivered to every latch-bearing widget by HandleMouse.
+// handleFilesMouse routes mouse events in the Files view. Called with the release
+// already delivered to every latch-bearing widget by HandleMouse.
 func (d *RestoreDialog) handleFilesMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() != tcell.Button1 {
 		return true
 	}
-	// The gesture belongs to whichever field claimed its press — see
-	// HandleMouse's d.drag.
+	// The gesture belongs to whichever field claimed its press; see HandleMouse's
+	// d.drag.
 	if d.drag.Replay(ev) {
 		return true
 	}

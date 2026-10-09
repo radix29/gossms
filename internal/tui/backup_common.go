@@ -182,8 +182,7 @@ func backupTypeLabel(a gosmo.BackupAction) string {
 // backupSetLabel names a backup set's type the way the Restore dialog lists
 // it — backupTypeLabel's names where the two overlap, short enough for the
 // Backup Set list's 15-column field. A set type gosmo cannot name says so
-// rather than passing for a full backup, which it was read as until
-// 2026-10-09 and then offered for restore as one.
+// rather than passing for a full backup and being offered for restore as one.
 func backupSetLabel(t gosmo.BackupSetType) string {
 	switch t {
 	case gosmo.BackupSetDatabase:

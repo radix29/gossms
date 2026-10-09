@@ -15,15 +15,14 @@ import (
 // folder gives the Databases node).
 //
 // The user list is TableKindUser, which excludes the three families that have a
-// folder of their own; otherwise a FileTable would be listed twice, here and
-// under FileTables, as the same object.
+// folder of their own; otherwise a FileTable would be listed twice, here and under
+// FileTables.
 //
-// Which folders appear follows SSMS: System Tables and FileTables always,
-// External Tables only where the database has one (PolyBase-specific, empty
-// elsewhere), Graph Tables only on an instance whose sys.tables has
-// is_node/is_edge at all (2017+). An absent folder and an empty one are
-// different answers; only the absent one is honest about a server that cannot
-// have the objects.
+// Which folders appear follows SSMS: System Tables and FileTables always, External
+// Tables only where the database has one (PolyBase-specific, empty elsewhere),
+// Graph Tables only on an instance whose sys.tables has is_node/is_edge at all
+// (2017+). An absent folder and an empty one are different answers; only the
+// absent one is honest about a server that cannot have the objects.
 func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
@@ -402,20 +401,19 @@ func loadFunctionNodes(l loaderCtx, node *explorerNode, system bool,
 		})
 }
 
-// loadTriggersChildren backs the NodeTriggers folder, which hangs under a table
-// or a view; node.data.Schema/Name are the owning object's, set by
-// loadTableChildren or loadViewChildren.
+// loadTriggersChildren backs the NodeTriggers folder, which hangs under a table or
+// a view; node.data.Schema/Name are the owning object's, set by loadTableChildren
+// or loadViewChildren.
 //
-// It reads by name through gosmo's Database.ObjectTriggers rather than
-// resolving the parent to a *Table first, because the parent is not always a
-// table: a view's INSTEAD OF triggers list here too, and gosmo's View is a
-// plain row struct with no Triggers method. OBJECT_ID does not care which it
-// is, and it is one round trip instead of two.
+// It reads by name through gosmo's Database.ObjectTriggers rather than resolving
+// the parent to a *Table first, because the parent is not always a table: a view's
+// INSTEAD OF triggers list here too, and gosmo's View is a plain row struct with
+// no Triggers method. OBJECT_ID does not care which it is, and it is one round
+// trip instead of two.
 //
-// There is no database-wide arm: a flat database-level Triggers folder would
-// list every DML trigger a second time and read as the sibling of
-// Programmability > Database Triggers, a different family (see
-// loadProgrammabilityChildren).
+// There is no database-wide arm: a flat database-level Triggers folder would list
+// every DML trigger a second time and read as the sibling of Programmability >
+// Database Triggers, a different family (see loadProgrammabilityChildren).
 func loadTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {

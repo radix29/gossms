@@ -11,22 +11,22 @@ import (
 )
 
 // new_asymmetric_key_dialog.go is the New Asymmetric Key dialog (a database's
-// Security > Asymmetric Keys folder), built on newObjectDialog — New
-// Certificate's shape, with an algorithm in place of the subject and dates.
+// Security > Asymmetric Keys folder), built on newObjectDialog: New
+// Certificate's shape, with an algorithm in place of subject and dates.
 //
 // A generated key (WITH ALGORITHM), or one an EKM provider holds (FROM
-// PROVIDER, offered only on an instance with a provider — providerKeyFields).
-// FROM FILE, EXECUTABLE FILE and ASSEMBLY read the server's own filesystem,
-// and are left to a query window.
+// PROVIDER, offered only on an instance with a provider, providerKeyFields).
+// FROM FILE, EXECUTABLE FILE and ASSEMBLY read the server's own filesystem and
+// are left to a query window.
 //
-// The private key is protected by the database master key or by a password,
-// through keyProtectionFields — the master key created first when the database
-// has none.
+// The private key is protected by the database master key or a password via
+// keyProtectionFields; the master key is created first when the database has
+// none.
 
 // asymKeyAlgorithms is what the dialog offers, strongest last. RSA_512 and
 // RSA_1024 are a syntax error (Msg 102) at compatibility level 130 and above,
-// which every supported version defaults to, so they are not offered even
-// though gosmo accepts them for a database at a lowered level.
+// the default of every supported version, so they are not offered though gosmo
+// accepts them for a database at a lowered level.
 var asymKeyAlgorithms = []gosmo.AsymmetricKeyAlgorithm{
 	gosmo.AsymmetricKeyRSA2048, gosmo.AsymmetricKeyRSA3072, gosmo.AsymmetricKeyRSA4096,
 }
@@ -112,17 +112,15 @@ func (d *NewAsymmetricKeyDialog) buildPages(pf *nasymPrefetch) {
 		return validateNewAsymmetricKey(d.objectName(), pf.existingNames, protection.input())
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		// DatabaseRef, not DatabaseByName: every statement here addresses the
-		// database by name, and the by-name read would not work under Script
-		// Changes.
+		// DatabaseRef, not DatabaseByName: every statement addresses the database by
+		// name, and the by-name read would not work under Script Changes.
 		dbObj := sc.Server.DatabaseRef(dbName)
 		spec := gosmo.CreateAsymmetricKeyRequest{
 			Name:      d.objectName(),
 			Algorithm: asymKeyAlgorithms[algRow.Selected()],
 		}
 		if p := provider.spec(); p != nil {
-			// The provider protects the key: no password, and no master key
-			// to create first.
+			// The provider protects the key: no password, no master key to create first.
 			spec.FromProvider = p
 			if p.Disposition == gosmo.ProviderOpenExisting {
 				spec.Algorithm = ""

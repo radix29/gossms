@@ -14,13 +14,9 @@ type CheckBox struct {
 	focused  bool
 	disabled bool
 
-	// mouseDragging distinguishes a fresh Button1 press from a continued
-	// hold over the box — mirrors Toolbar's/TreeView's/MenuBar's field of
-	// the same name and purpose. Without it, tcell's all-motion mouse
-	// tracking resends Buttons()==Button1 on every motion event while the
-	// button stays down, so a click that so much as twitches before
-	// release toggles again on every resent event instead of once per
-	// physical click.
+	// mouseDragging separates a fresh Button1 press from a resent hold (same field
+	// as Toolbar/TreeView/MenuBar): all-motion tracking resends Button1 on every
+	// motion, so a twitchy click would toggle repeatedly.
 	mouseDragging bool
 }
 
@@ -37,18 +33,17 @@ func (c *CheckBox) SetChecked(v bool)  { c.checked = v }
 func (c *CheckBox) Focus(v bool)       { c.focused = v }
 
 // SetEnabled toggles whether the box can be changed. A disabled box draws
-// greyed out *and* refuses keys and clicks: one that only stopped accepting
-// input would look like a live box ignoring the user. It keeps its place in
-// the caller's focus ring — mirroring InputField.SetEnabled, which every
-// property page already relies on — so Tab order does not shift under the
-// user when a page switches a control off.
+// greyed and refuses keys and clicks (one that only stopped accepting input
+// would look like a live box ignoring the user). It keeps its place in the focus
+// ring, as InputField.SetEnabled does, so Tab order doesn't shift when a page
+// switches a control off.
 func (c *CheckBox) SetEnabled(v bool) { c.disabled = !v }
 
 // Enabled reports whether the box can be changed.
 func (c *CheckBox) Enabled() bool { return !c.disabled }
 
-// Width returns the display width of the box glyph plus label — the
-// clickable region HandleMouse hit-tests against.
+// Width returns the display width of the glyph plus label: the clickable
+// region.
 func (c *CheckBox) Width() int { return core.DisplayWidth(c.label) + 4 }
 
 // Draw renders the check box.

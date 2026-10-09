@@ -11,30 +11,29 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// new_index_pages.go builds New Index's pages. Which pages exist is
-// nidxPagesFor's answer (new_index_dialog.go); this file builds each one, and
-// every widget it creates is recorded in nidxRows so request() can read the
-// whole form back without threading a dozen values through.
+// new_index_pages.go builds New Index's pages. Which exist is nidxPagesFor's
+// answer (new_index_dialog.go); every widget created here is recorded in
+// nidxRows so request() can read the whole form back.
 
 // nidxRows holds the widgets the pages built. A row belonging to a page this
-// index type doesn't have is nil, so request() nil-guards every read.
+// index type lacks is nil, so request() nil-guards every read.
 type nidxRows struct {
 	name   *propsheet.TextRow
 	unique *propsheet.CheckRow
 
-	// commitKeyColumn writes the Sort order dropdown back onto the selected
-	// key column. The grid commits on every selection change, but the last
-	// edit before OK has had no selection change after it — without this,
-	// setting a column to Descending and pressing OK created it ascending.
+	// commitKeyColumn writes the Sort order dropdown back onto the selected key
+	// column. The grid commits on every selection change, but the last edit before
+	// OK has none after it; without this, setting a column to Descending and
+	// pressing OK created it ascending.
 	commitKeyColumn func()
 
-	// singleColumn is the one column an XML or spatial index is on — those
-	// take exactly one, so they get a dropdown instead of the key-column
-	// grid. Nil when the table has no column of the matching type.
+	// singleColumn is the one column an XML or spatial index is on (exactly one, so
+	// a dropdown instead of the key-column grid). Nil when the table has no column
+	// of the matching type.
 	singleColumn *propsheet.SelectRow
 
-	// included is the Included Columns toggle grid, and includedNames its
-	// rows in grid order.
+	// included is the Included Columns toggle grid, includedNames its rows in grid
+	// order.
 	included      *propsheet.ToggleGridRow
 	includedNames []string
 
@@ -63,9 +62,9 @@ type nidxRows struct {
 }
 
 // includedColumns is the ticked non-key columns. A column that is also a key
-// column is dropped rather than sent: CREATE INDEX rejects the duplicate, and
-// the two lists are edited on different pages, so the overlap is easy to
-// produce and impossible to see.
+// column is dropped, not sent: CREATE INDEX rejects the duplicate, and the two
+// lists are edited on different pages so the overlap is easy to produce and
+// impossible to see.
 func (r nidxRows) includedColumns(keys []gosmo.IndexColumnDef) []string {
 	var out []string
 	for i, v := range r.included.Values() {
@@ -81,13 +80,13 @@ func (r nidxRows) includedColumns(keys []gosmo.IndexColumnDef) []string {
 	return out
 }
 
-// nidxSortOrders is the key column grid's sort order, in the order ASC/DESC
-// map onto: index 1 is Descending, which is what request() reads back.
+// nidxSortOrders is the key column grid's sort order, in ASC/DESC order: index 1
+// is Descending, which request() reads back.
 var nidxSortOrders = []string{"Ascending", "Descending"}
 
-// nidxCompressionItems is the Data compression dropdown per index family.
-// The leading "(default)" is what request() treats as "say nothing", so the
-// server keeps its own default rather than being told NONE.
+// nidxCompressionItems is the Data compression dropdown per index family. The
+// leading "(default)" is what request() treats as "say nothing", so the server
+// keeps its own default rather than being told NONE.
 var (
 	nidxRowstoreCompression    = []string{"(default)", "NONE", "ROW", "PAGE"}
 	nidxColumnstoreCompression = []string{"(default)", "COLUMNSTORE", "COLUMNSTORE_ARCHIVE"}
@@ -112,13 +111,13 @@ var nidxSecondaryXMLTypes = []string{
 }
 
 // nidxNeedsOneColumn reports whether typ indexes exactly one column of a
-// particular data type, rather than a key column list.
+// particular data type rather than a key column list.
 func nidxNeedsOneColumn(typ gosmo.IndexType) bool {
 	return typ == gosmo.IndexTypeXML || typ == gosmo.IndexTypeSpatial
 }
 
 // nidxColumnKind names the column type such an index needs, for the message
-// that explains why the table has none.
+// explaining why the table has none.
 func nidxColumnKind(typ gosmo.IndexType) string {
 	if typ == gosmo.IndexTypeXML {
 		return "xml"
@@ -127,9 +126,8 @@ func nidxColumnKind(typ gosmo.IndexType) string {
 }
 
 // nidxEligibleColumns is the columns typ can be created on. XML and spatial
-// indexes take their own data types and nothing else; a key column list takes
-// anything but those and the deprecated large types, none of which SQL Server
-// will index.
+// indexes take their own data types only; a key column list takes anything but
+// those and the deprecated large types, none of which SQL Server will index.
 func nidxEligibleColumns(cols []*gosmo.Column, typ gosmo.IndexType) []string {
 	var out []string
 	for _, c := range cols {
@@ -154,8 +152,8 @@ func nidxEligibleColumns(cols []*gosmo.Column, typ gosmo.IndexType) []string {
 	return out
 }
 
-// nidxColumnNames is every column of the table, for the pickers that don't
-// care about type (the partitioning column).
+// nidxColumnNames is every column of the table, for pickers that don't care
+// about type (the partitioning column).
 func nidxColumnNames(cols []*gosmo.Column) []string {
 	out := make([]string, len(cols))
 	for i, c := range cols {
@@ -164,8 +162,8 @@ func nidxColumnNames(cols []*gosmo.Column) []string {
 	return out
 }
 
-// nidxInt reads an Int row, treating an unparsable value as unset — the row
-// has already refused anything but digits, so this is the empty field.
+// nidxInt reads an Int row, an unparsable value as unset: the row already
+// refused anything but digits, so this is the empty field.
 func nidxInt(r *propsheet.TextRow) int {
 	n, err := r.IntValue()
 	if err != nil {
@@ -174,15 +172,15 @@ func nidxInt(r *propsheet.TextRow) int {
 	return int(n)
 }
 
-// nidxFloat reads a bounding-box coordinate; the preflight has already
-// rejected one that doesn't parse.
+// nidxFloat reads a bounding-box coordinate; the preflight already rejected one
+// that doesn't parse.
 func nidxFloat(r *propsheet.TextRow) float64 {
 	v, _ := strconv.ParseFloat(strings.TrimSpace(r.Value()), 64)
 	return v
 }
 
-// nidxDensity reads a grid level, mapping the leading "(default)" onto the
-// empty density that omits the level from the GRIDS clause.
+// nidxDensity reads a grid level, mapping the leading "(default)" onto the empty
+// density that omits the level from the GRIDS clause.
 func nidxDensity(r *propsheet.SelectRow) gosmo.SpatialGridDensity {
 	if r.Selected() == 0 {
 		return ""
@@ -191,7 +189,7 @@ func nidxDensity(r *propsheet.SelectRow) gosmo.SpatialGridDensity {
 }
 
 // nidxNamePrefixes is the name each type's suggested index name starts with,
-// following the convention SSMS's own generated names use.
+// following SSMS's generated names.
 var nidxNamePrefixes = map[gosmo.IndexType]string{
 	gosmo.IndexTypeClustered:            "CIX",
 	gosmo.IndexTypeNonClustered:         "IX",
@@ -209,8 +207,8 @@ func (d *NewIndexDialog) suggestedName() string {
 	return prefix + "_" + d.table
 }
 
-// generalForm is the name, the type, and whatever stands for "which columns"
-// for this type: a key column list, one dropdown, or nothing at all.
+// generalForm is the name, the type, and whatever stands for "which columns" for
+// this type: a key column list, one dropdown, or nothing.
 func (d *NewIndexDialog) generalForm(pf *nidxPrefetch) *propsheet.Form {
 	d.rows.name = propsheet.Text("Index name", d.suggestedName(), 40)
 	rows := []propsheet.Row{
@@ -245,10 +243,10 @@ func (d *NewIndexDialog) generalForm(pf *nidxPrefetch) *propsheet.Form {
 	return propsheet.NewForm(rows...)
 }
 
-// keyColumnRows is the key column list: a grid of what has been chosen, in
-// index order, plus the controls that add to it, remove from it and reorder
-// it. ordered adds the per-column sort order, which only a rowstore index
-// has — ASC/DESC in a columnstore column list is a syntax error.
+// keyColumnRows is the key column list: a grid of what has been chosen, in index
+// order, plus controls to add, remove and reorder. ordered adds the per-column
+// sort order, which only a rowstore index has (ASC/DESC in a columnstore column
+// list is a syntax error).
 func (d *NewIndexDialog) keyColumnRows(pf *nidxPrefetch, ordered bool) []propsheet.Row {
 	headers := []string{"Ord", "Column name"}
 	if ordered {
@@ -288,9 +286,9 @@ func (d *NewIndexDialog) keyColumnRows(pf *nidxPrefetch, ordered bool) []propshe
 	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 	d.rows.commitKeyColumn = commit
 
-	// move slides the selected column one place through the list and keeps
-	// the selection on it — the column the user is moving, not the position
-	// they started from, is what they are still working with.
+	// move slides the selected column one place and keeps the selection on it: the
+	// column being moved, not the starting position, is what the user still works
+	// with.
 	move := func(delta int) {
 		commit()
 		to := current + delta
@@ -332,8 +330,8 @@ func (d *NewIndexDialog) keyColumnRows(pf *nidxPrefetch, ordered bool) []propshe
 	downBtn := widgets.NewButton("Move Down", func() { move(1) })
 
 	gridRow := propsheet.NewGridRow(grid, 6)
-	// The grid mirrors a list the buttons own, so its dirty state is that
-	// list's, and reverting restores the list rather than the rows.
+	// The grid mirrors a list the buttons own, so its dirty state is that list's,
+	// and reverting restores the list rather than the rows.
 	gridRow.DirtyFn = func() bool {
 		commit()
 		return len(d.keyColumns) > 0
@@ -360,8 +358,8 @@ func (d *NewIndexDialog) keyColumnRows(pf *nidxPrefetch, ordered bool) []propshe
 	return rows
 }
 
-// includedForm is the INCLUDE list — every column of the table with a
-// toggle, since an included column has no order and no direction.
+// includedForm is the INCLUDE list: every column of the table with a toggle (an
+// included column has no order or direction).
 func (d *NewIndexDialog) includedForm(pf *nidxPrefetch) *propsheet.Form {
 	grid := propsheet.NewToggleGrid([]string{"Column name", "Data type", "Included"}, []int{2}, 10)
 	names := make([]string, 0, len(pf.columns))
@@ -382,10 +380,9 @@ func (d *NewIndexDialog) includedForm(pf *nidxPrefetch) *propsheet.Form {
 	)
 }
 
-// optionsForm is the WITH clause. The rows differ per family because the
-// options do — a columnstore index has no fill factor and a rowstore one no
-// compression delay, and offering either would build a statement the server
-// rejects.
+// optionsForm is the WITH clause. Rows differ per family because the options
+// do: a columnstore index has no fill factor and a rowstore one no compression
+// delay, and offering either would build a statement the server rejects.
 func (d *NewIndexDialog) optionsForm() *propsheet.Form {
 	rows := []propsheet.Row{propsheet.Section("Index options")}
 
@@ -403,8 +400,8 @@ func (d *NewIndexDialog) optionsForm() *propsheet.Form {
 		rows = append(rows, d.rows.sortInTempDB)
 	}
 
-	// An XML index takes no DATA_COMPRESSION at all; the other families take
-	// their own keywords, which are not interchangeable.
+	// An XML index takes no DATA_COMPRESSION at all; the other families take their
+	// own keywords, which are not interchangeable.
 	if d.kind.typ != gosmo.IndexTypeXML {
 		items := nidxRowstoreCompression
 		if d.kind.typ.IsColumnStore() {
@@ -451,8 +448,8 @@ func (d *NewIndexDialog) storageForm(pf *nidxPrefetch) *propsheet.Form {
 	)
 }
 
-// xmlForm chooses between the primary XML index and a secondary one built
-// over it.
+// xmlForm chooses between the primary XML index and a secondary one built over
+// it.
 func (d *NewIndexDialog) xmlForm(pf *nidxPrefetch) *propsheet.Form {
 	d.rows.xmlPrimary = propsheet.Radio("Index kind", []string{"Primary", "Secondary"}, 0)
 	rows := []propsheet.Row{propsheet.Section("XML index"), d.rows.xmlPrimary}

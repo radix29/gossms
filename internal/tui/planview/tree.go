@@ -10,13 +10,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// bottomSectionHeight caps how many rows the Properties/Summary bottom
-// section takes, even on a very tall terminal — it's a supplementary
-// view, not the main content.
+// bottomSectionHeight caps the Properties/Summary section's rows, even on a
+// tall terminal; it's supplementary.
 const bottomSectionHeight = 12
 
-// bottomMode selects what, if anything, the Tree tab's bottom section
-// shows — cycled by 'o'.
+// bottomMode selects what the Tree tab's bottom section shows; 'o' cycles it.
 type bottomMode int
 
 const (
@@ -31,38 +29,34 @@ type treeRow struct {
 	depth   int
 	lastSib bool // true if this is the last child of its parent
 	// continuation has length depth-1 (empty for depth 0 and 1): for each
-	// ancestor level strictly between the root and this node's immediate
-	// parent, whether that ancestor still has a pending sibling — i.e.
-	// whether a "│" (true) or blank (false) belongs in that column.
+	// ancestor strictly between the root and this node's parent, whether it
+	// still has a pending sibling, i.e. "│" (true) or blank (false) there.
 	continuation []bool
 }
 
-// treeState holds the Tree tab's own view state: the flattened row list,
-// scroll position, and which operators are collapsed.
+// treeState holds the Tree tab's view state: flattened rows, scroll, collapsed
+// operators.
 type treeState struct {
 	rows      []treeRow
 	scroll    int
 	collapsed map[int]bool // NodeID -> collapsed; absent = expanded (default)
 
-	// sbDragging is true while the user is dragging the tree pane's
-	// scrollbar thumb — see controls.DataGrid's field of the same name and
-	// purpose for the rationale.
+	// sbDragging is true while dragging the scrollbar thumb (see
+	// controls.DataGrid's field of the same name).
 	sbDragging bool
 
 	// rowDragging is true from a press on a tree row until its release.
-	// PlanView.mouseDragging cannot stand in for it: that latch is set
-	// unconditionally on the way down to the content area, precisely so the
-	// XML editor and the graph still receive the resent Button1 events a
-	// selection drag is made of. The row click is the opposite case — it
-	// toggles, so a press held over an already-selected row would expand
-	// and collapse it once per motion event, and a press on an unselected
-	// one selects it and then toggles it on the very next resend.
+	// PlanView.mouseDragging can't stand in: it is set unconditionally on the
+	// way to the content area so the XML editor and graph still receive the
+	// resent Button1 events a selection drag is made of. A row click is the
+	// opposite: it toggles, so a held press would expand and collapse a
+	// selected row per motion event, and select-then-toggle an unselected one
+	// on the next resend.
 	rowDragging bool
 }
 
-// rebuildTreeRows re-flattens the current statement's operator tree,
-// respecting collapsed state — called whenever the plan, statement, or
-// any expand/collapse state changes.
+// rebuildTreeRows re-flattens the statement's tree, respecting collapsed state,
+// on any plan, statement or expand/collapse change.
 func (v *PlanView) rebuildTreeRows() {
 	v.treeSt.rows = v.treeSt.rows[:0]
 	st := v.currentStatement()
@@ -89,9 +83,8 @@ func (v *PlanView) rebuildTreeRows() {
 	}
 }
 
-// layoutTree computes the Tree tab's internal layout: a 1-row statement
-// metrics header, a tree|details split, and — while bottomMode isn't
-// hidden — a bottom Properties/Summary section beneath it.
+// layoutTree computes the Tree tab's layout: a 1-row metrics header, a
+// tree|details split, and (unless bottomMode is hidden) a bottom section.
 func (v *PlanView) layoutTree() {
 	r := v.contentRect
 	if r.H <= 0 || r.W <= 0 {
@@ -128,21 +121,19 @@ func (v *PlanView) layoutTree() {
 		v.bottomHeaderRect = core.Rect{X: r.X, Y: y, W: r.W, H: 1}
 		v.bottomRect = core.Rect{X: r.X, Y: y + 1, W: r.W, H: bottomTotal - 1}
 	}
-	// The summary grid is bounded here rather than in drawSummary: mouse
-	// routing hit-tests against the grid's own rect, so leaving it to draw
-	// time would mean a click landing before the first frame was tested
-	// against stale bounds.
+	// The summary grid is bounded here, not in drawSummary: mouse routing
+	// hit-tests the grid's rect, so a click before the first frame would hit
+	// stale bounds.
 	v.summarySt.grid.SetBounds(v.bottomRect.X, v.bottomRect.Y, v.bottomRect.W, v.bottomRect.H)
 }
 
-// expensiveCostThreshold is the cost-percentage cutoff, shared by the Plan
-// tab's tiles and the Tree tab's rows, above which an operator is flagged
-// as expensive (❌ badge, red border/text) — matching real SSMS's own
-// "expensive operator" highlight convention.
+// expensiveCostThreshold is the cost-percentage cutoff above which an operator
+// is flagged expensive (❌ badge, red border/text) on Plan tiles and Tree rows,
+// as in SSMS.
 const expensiveCostThreshold = 0.80
 
-// nodeCostPct returns n's own cost as a fraction of the current
-// statement's total — 0 if there's no current statement.
+// nodeCostPct returns n's cost as a fraction of the statement's total, 0 if no
+// statement.
 func (v *PlanView) nodeCostPct(n *showplan.Node) float64 {
 	st := v.currentStatement()
 	if st == nil {
@@ -151,9 +142,8 @@ func (v *PlanView) nodeCostPct(n *showplan.Node) float64 {
 	return n.Cost(st.SubTreeCost)
 }
 
-// tileRowsText renders a graph tile's row-count line: the actual count
-// when available, unless showEstimated ('p') asks for the estimate
-// regardless — an estimated-only node always shows its estimate.
+// tileRowsText renders a tile's row-count line: the actual count when
+// available unless showEstimated ('p'); an estimated-only node shows its estimate.
 func (v *PlanView) tileRowsText(n *showplan.Node) string {
 	if !v.showEstimated && n.Runtime != nil {
 		return fmt.Sprintf("%d rows", n.Runtime.Rows)
@@ -188,8 +178,8 @@ func (v *PlanView) drawTreeHeader(s tcell.Screen, st *showplan.Statement) {
 	core.FillRect(s, v.treeHeaderRect, ' ', hs)
 
 	cpu, elapsed := "—", "—"
-	// An in-flight plan's QueryTimeStats is the moment it was read, long
-	// stale by the next poll; the live row carries the running figures.
+	// An in-flight plan's QueryTimeStats is stale by the next poll; the live
+	// row carries the running figures.
 	if st.TimeStats != nil && !v.liveOn {
 		cpu = fmt.Sprintf("%d ms", st.TimeStats.CPUMS)
 		elapsed = fmt.Sprintf("%d ms", st.TimeStats.ElapsedMS)
@@ -256,9 +246,8 @@ func (v *PlanView) drawTreePane(s tcell.Screen) {
 	}
 }
 
-// treeRowText builds one row's text: ancestor continuation bars, this
-// node's own connector, an expand/collapse chevron (only for operators
-// with children), the operator name, cost%, and status/parallelism icons.
+// treeRowText builds one row: ancestor continuation bars, the node's connector,
+// a chevron (operators with children), name, cost%, and status/parallelism icons.
 func (v *PlanView) treeRowText(tr treeRow) string {
 	var sb strings.Builder
 	for _, cont := range tr.continuation {
@@ -424,15 +413,12 @@ func (v *PlanView) toggleSelectedExpand() {
 	v.rebuildTreeRows()
 }
 
-// expandAncestorsOf clears the collapsed flag on every ancestor of the
-// node with the given id (found by walking down from n), so that node
-// becomes reachable in rebuildTreeRows' flattened row list — a search/
-// warning jump (see search.go's jumpToMatch/jumpToWarning) can land on any
-// operator regardless of clause, including one currently hidden under a
-// collapsed ancestor. The target node itself is left as-is: rebuildTreeRows
-// always emits a node's own row, collapsed or not — only its children are
-// hidden by its own collapsed flag. Reports whether id was found in n's
-// subtree; callers should rebuildTreeRows afterward if it returns true.
+// expandAncestorsOf clears the collapsed flag on every ancestor of node id
+// (found walking down from n) so it appears in rebuildTreeRows' list: search/
+// warning jumps (search.go) can land on an operator hidden under a collapsed
+// ancestor. The target itself is left as-is (its row is always emitted; its
+// collapsed flag hides only its children). Reports whether id was found in n's
+// subtree; callers rebuildTreeRows afterward if true.
 func (v *PlanView) expandAncestorsOf(n *showplan.Node, id int) bool {
 	if n == nil {
 		return false
@@ -452,12 +438,11 @@ func (v *PlanView) expandAncestorsOf(n *showplan.Node, id int) bool {
 // handleTreeTabKey handles navigation, expand/collapse, and the bottom
 // section's own key handling while the Tree tab is active.
 //
-// The Summary table's sort keys (c/r/t) work regardless of which pane
-// has focus — they don't collide with anything the tree itself binds.
-// Tab switches focus between the tree and the summary table (Properties
-// has nothing to navigate, so it doesn't participate); while the summary
-// has focus, arrow/PgUp/PgDn/Enter drive its own grid and row-jump
-// instead of the tree's — see trySummarySort/bottomFocused.
+// The Summary table's sort keys (c/r/t) work whichever pane has focus; they
+// collide with nothing the tree binds. Tab switches focus between the tree and
+// the summary table (Properties has nothing to navigate); while the summary has
+// focus, arrow/PgUp/PgDn/Enter drive its grid and row-jump instead of the
+// tree's (see trySummarySort/bottomFocused).
 func (v *PlanView) handleTreeTabKey(ev *tcell.EventKey) bool {
 	if core.EvRune(ev) == 'o' {
 		v.cycleBottomMode()
@@ -545,11 +530,9 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 	case tcell.ButtonNone:
 		v.treeSt.sbDragging = false
 		v.treeSt.rowDragging = false
-		// The splitter needs to see its own drag-release event to clear
-		// sp.dragging — otherwise it stays stuck true and the next plain
-		// click anywhere in the tab, not just on the bar, is misread as a
-		// drag continuation, moving the divider instead of selecting what
-		// was clicked.
+		// The splitter needs its own release to clear sp.dragging; otherwise
+		// the next plain click anywhere in the tab is read as a drag
+		// continuation and moves the divider instead of selecting.
 		if v.treeSplit.HandleMouse(ev) {
 			v.layoutTree()
 			return true
@@ -559,10 +542,9 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 			v.layoutTree()
 			return true
 		}
-		// Scrollbar drag/click takes priority over row hit-testing below —
-		// the bar is drawn at treePaneRect.Right()-1 (see drawTreePane),
-		// which without this check first would otherwise be read as a
-		// click on whatever row sits in that screen column.
+		// Scrollbar drag/click outranks row hit-testing: the bar is drawn at
+		// treePaneRect.Right()-1 (see drawTreePane) and would otherwise read as
+		// a click on the row in that column.
 		if core.HandleScrollbarDrag(ev, v.treePaneRect.Right()-1, v.treePaneRect.Y, v.treePaneRect.H, len(v.treeSt.rows), &v.treeSt.sbDragging, &v.treeSt.scroll) {
 			return true
 		}
@@ -589,8 +571,8 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 		}
 	}
 	if v.bottomMode == bottomSummary && v.bottomRect.Contains(mx, my) {
-		// A right-click opens the grid's cell menu, so it takes focus too —
-		// otherwise the menu would be driven by keys the tree still owns.
+		// A right-click opens the grid's cell menu, so it takes focus too, or
+		// the tree would still own the menu's keys.
 		if ev.Buttons() == tcell.Button2 {
 			v.bottomFocused = true
 		}
@@ -599,8 +581,7 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 	return false
 }
 
-// orDash returns s, or "—" if it's empty — for metrics that may be
-// absent from an estimated-only plan.
+// orDash returns s, or "—" if empty (metrics absent from estimated-only plans).
 func orDash(s string) string {
 	if s == "" {
 		return "—"

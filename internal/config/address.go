@@ -9,8 +9,8 @@ import (
 )
 
 // address.go folds server addresses into keys. It lives in config, below db,
-// so the tracked-query sets and the per-identity caches key by the same rule
-// db's peer resolver does.
+// so tracked-query sets and per-identity caches key by the same rule as db's
+// peer resolver.
 
 // DialPort is the gosmo.ConnectionOptions.Port a saved Port dials with: 1433
 // is 0, unspecified. The driver defaults to 1433 anyway, and a port on
@@ -89,12 +89,12 @@ func ConnectionAddress(c Connection) string {
 // InstanceKey, then the GeneratedName identity and auth tag, NUL-separated
 // (a login name or an address may hold a comma; neither can hold a NUL).
 //
-// Key anything that depends on who is looking by it — the IntelliSense caches
-// (the catalog is filtered by metadata visibility) and the saved OE filters.
-// User alone is empty for Windows, Entra Default/MSI and service principals,
-// so two identities on one server would share one catalog, and disconnecting
-// either would purge the other's. The database is left out; a per-database
-// cache appends its own.
+// Key anything that depends on who is looking by it: the IntelliSense caches
+// (the catalog is filtered by metadata visibility) and saved OE filters. User
+// alone is empty for Windows, Entra Default/MSI and service principals, so two
+// identities on one server would share one catalog, and disconnecting either
+// would purge the other's. The database is left out; a per-database cache
+// appends its own.
 func (c Connection) IdentityKey() string {
 	identity, tag := c.signInIdentity()
 	return InstanceKey(ConnectionAddress(c)) + "\x00" + identity + "\x00" + tag

@@ -345,12 +345,12 @@ func (d *ConnectDialog) leaveButtons(dir int) {
 	d.stepFocus(dir)
 }
 
-// setEncryptMode selects m in ddEncrypt. An unknown value (only a
-// hand-edited config.json) selects Mandatory.
+// setEncryptMode selects m in ddEncrypt. An unknown value (only a hand-edited
+// config.json) selects Mandatory.
 //
-// The fallback resolves an index rather than recursing with Mandatory: the
-// recursion relied on AllEncryptModes containing Mandatory and turned
-// dropping a mode into a stack overflow. The final 0 keeps that local.
+// The fallback resolves an index rather than recursing with Mandatory: recursion
+// relies on AllEncryptModes containing Mandatory, and dropping a mode would turn
+// into a stack overflow. The final 0 keeps that local.
 func (d *ConnectDialog) setEncryptMode(m config.EncryptMode) {
 	modes := config.AllEncryptModes()
 	i := slices.Index(modes, m)

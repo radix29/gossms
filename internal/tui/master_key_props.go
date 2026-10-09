@@ -13,16 +13,15 @@ import (
 
 // master_key_props.go is the database master key's node: its Properties
 // (General, read-only; Encryption, which adds and drops the service master
-// key's encryption and password encryptions) and its Details view. The node
-// is the first child of the Symmetric Keys folder, and only when the key
-// exists — docs/decisions.md § Keys and certificates.
+// key's encryption and password encryptions) and its Details view. The node is
+// the first child of the Symmetric Keys folder, only when the key exists
+// (docs/decisions.md § Keys and certificates).
 //
-// Every write on the master key needs CONTROL on the database; ALTER on it,
-// ALTER ANY SYMMETRIC KEY and CONTROL on everything else are refused (Msg
-// 15151, "Cannot find the symmetric key 'master key'"), probed on 13 and 17
-// (2026-09-22). A master key the service master key no longer encrypts has to
-// be opened by password for each of them (Msg 15581 without), which the
-// Encryption page and the two dialogs ask for.
+// Every write needs CONTROL on the database; ALTER on it, ALTER ANY SYMMETRIC
+// KEY and CONTROL on everything else are refused (Msg 15151, "Cannot find the
+// symmetric key 'master key'"; probed on 13 and 17, 2026-09-22). A key the
+// service master key no longer encrypts must be opened by password for each
+// write (Msg 15581 without), which the Encryption page and both dialogs ask for.
 
 // masterKeyNodeLabel is the master key's tree label.
 const masterKeyNodeLabel = "Database Master Key"
@@ -31,7 +30,7 @@ const masterKeyNodeLabel = "Database Master Key"
 var masterKeyRights = []gate.Right{gate.ControlDB}
 
 // findMasterKey reads the master key of dbName, or fails when there is none
-// the caller can see — MasterKey's (nil, nil).
+// the caller can see (MasterKey's (nil, nil)).
 func findMasterKey(ctx context.Context, sc *db.ServerConn, dbName string) (*gosmo.MasterKey, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
@@ -127,21 +126,21 @@ func masterKeyPropPages(sc *db.ServerConn, dbName string) []propPage {
 	return []propPage{general, withRequires(encryption, dbName, masterKeyRights...)}
 }
 
-// buildMasterKeyEncryptionForm is the master key's Encryption page. A
-// password encryption is removed by typing it — the server finds it by value
-// (Msg 15313 on a miss) — and the last one cannot be removed (Msg 15558).
+// buildMasterKeyEncryptionForm is the master key's Encryption page. A password
+// encryption is removed by typing it (the server finds it by value, Msg 15313
+// on a miss) and the last one cannot be removed (Msg 15558).
 //
-// The apply adds before it drops, and drops the service master key's
-// encryption last: until then SQL Server opens the key on its own, and after
-// it every statement needs the key's password.
+// The apply adds before it drops, and drops the service master key's encryption
+// last: until then SQL Server opens the key itself, and after it every
+// statement needs the key's password.
 func buildMasterKeyEncryptionForm(m *gosmo.MasterKey, ref *gosmo.MasterKey) (*propsheet.Form, propApply) {
 	smk := propsheet.Check("Encrypted by the service master key", m.EncryptedByServer)
 	addPass := propsheet.Password("Add password", 20)
 	addConfirm := propsheet.Password("Confirm password", 20)
 	dropPass := propsheet.Password("Remove password", 20)
 	openPass := propsheet.Password("Master key password", 20)
-	// The confirmation and the key's own password change nothing by
-	// themselves; only the fields that name a change make the page dirty.
+	// The confirmation and the key's own password change nothing by themselves;
+	// only the fields that name a change make the page dirty.
 	addConfirm.SetDirtyTracked(false)
 	openPass.SetDirtyTracked(false)
 

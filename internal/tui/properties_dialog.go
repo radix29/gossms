@@ -16,37 +16,35 @@ type PropertyRow = dialogs.PropertyRow
 // for a PropertyRow list.
 func PropertySection(caption string) PropertyRow { return dialogs.PropertySection(caption) }
 
-// PropertiesDialog wraps tuikit/dialogs.PropertiesDialog — the flat,
-// single-page key/value viewer used for the About box and Object
-// Dependencies. Multi-page, editable dialogs use PropDialog
-// (prop_dialog.go / propsheet.PropertySheet) instead; a page list and
-// OK/Cancel/Apply are unnecessary weight for these two read-only lists.
+// PropertiesDialog wraps tuikit/dialogs.PropertiesDialog, the flat single-page
+// key/value viewer used for the About box and Object Dependencies. Multi-page,
+// editable dialogs use PropDialog (prop_dialog.go / propsheet.PropertySheet); a
+// page list and OK/Cancel/Apply are unnecessary weight for these two read-only
+// lists.
 type PropertiesDialog struct {
 	*dialogs.PropertiesDialog
 
-	// run guards against a slow, superseded fetch (see ShowDependencies)
-	// overwriting the dialog with results for an object that isn't what's
-	// being shown (or being shown at all) anymore, and cancels its reads when
-	// it is superseded.
+	// run guards against a slow, superseded fetch (ShowDependencies) overwriting the
+	// dialog with results for an object no longer shown, and cancels its reads when
+	// superseded.
 	run latest
 }
 
 // NewPropertiesDialog creates a generic properties dialog.
 func NewPropertiesDialog(app *App) *PropertiesDialog {
 	d := &PropertiesDialog{PropertiesDialog: dialogs.NewPropertiesDialog(app.screen)}
-	// A Dependencies fetch still out when the dialog closes has nowhere to
-	// land: stop its queries now rather than at childFetchTimeout.
+	// A Dependencies fetch still out when the dialog closes has nowhere to land: stop
+	// its queries now rather than at childFetchTimeout.
 	d.OnClose = d.run.Abandon
 	return d
 }
 
 // ShowGenericProperties shows arbitrary key-value pairs (e.g. About box).
-// Supersedes the run in flight like ShowDependencies does on every new show — this dialog is a
-// single shared instance reused for both features, so a Dependencies fetch
-// still in flight when the dialog is repurposed here (e.g. Escape out of
-// Object Dependencies, then Help > About before the fetch lands) must not
-// be allowed to land later and silently overwrite these rows with stale
-// dependency data.
+// Supersedes the run in flight like ShowDependencies on every new show: this
+// dialog is a single shared instance reused for both features, so a Dependencies
+// fetch still in flight when it is repurposed here (Escape out of Object
+// Dependencies, then Help > About before the fetch lands) must not land later and
+// overwrite these rows with stale dependency data.
 func (d *PropertiesDialog) ShowGenericProperties(title string, rows []PropertyRow) {
 	d.run.Abandon()
 	d.ShowProperties(title, rows)
@@ -60,11 +58,11 @@ func (d *PropertiesDialog) ShowGenericPropertiesSized(title string, rows []Prope
 }
 
 // ShowDependencies loads and displays what schema.name depends on and what
-// depends on it — SSMS's Object Dependencies dialog. Both Dependencies and
-// Dependents are real network round trips, so the load is asynchronous and
-// guarded by d.run: this dialog is a single shared instance, and a result
-// landing after it has been closed or repurposed must not overwrite what it is
-// showing now — and its reads stop as soon as it is superseded.
+// depends on it: SSMS's Object Dependencies dialog. Both lists are network round
+// trips, so the load is asynchronous and guarded by d.run: this dialog is a
+// single shared instance, and a result landing after it has been closed or
+// repurposed must not overwrite what it shows now. Its reads stop as soon as it
+// is superseded.
 func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName, schema, name string) {
 	if !app.isConnected(sc) {
 		d.ShowProperties("Object Dependencies", []PropertyRow{
@@ -77,8 +75,8 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 	ctx, seq := d.run.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	d.ShowProperties(title, []PropertyRow{{Key: "Status", Value: "Loading..."}})
 
-	// safegoRepair: the dialog was latched at a "Loading..." row above, and
-	// only the completion callback replaces it.
+	// safegoRepair: the dialog was latched at a "Loading..." row above, and only the
+	// completion callback replaces it.
 	app.safegoRepair("loading dependencies", func() {
 		if !d.run.Done(seq) || !d.Visible() {
 			return
@@ -101,11 +99,10 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 	})
 }
 
-// fetchDependencyRows runs the gosmo dependency queries for the
-// Dependencies dialog. Called from a background goroutine (see
-// ShowDependencies) — must not touch any UI state directly. ctx bounds the
-// whole call (see the caller's childFetchTimeout) so a hung server leaves
-// the goroutine and its connection to time out instead of blocking forever.
+// fetchDependencyRows runs the gosmo dependency queries for the Dependencies
+// dialog. Called from a background goroutine (ShowDependencies); must not touch
+// UI state. ctx bounds the whole call (the caller's childFetchTimeout) so a hung
+// server leaves the goroutine and its connection to time out.
 func fetchDependencyRows(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) ([]PropertyRow, error) {
 	dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {

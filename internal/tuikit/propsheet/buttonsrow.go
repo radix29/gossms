@@ -13,7 +13,7 @@ import (
 
 // ButtonsRow is a row of push buttons laid out rightward from the row's start,
 // unlike ModalDialog's right-aligned DrawButtons: page actions like Add/Remove
-// read better flush left with the rest of the form.
+// read better flush left with the form.
 type ButtonsRow struct {
 	buttons []*widgets.Button
 	focus   int
@@ -21,8 +21,8 @@ type ButtonsRow struct {
 	// drawReadOnly dims the buttons — see SetDrawReadOnly.
 	drawReadOnly bool
 	x, y         int
-	// pos is each button's position from the last Layout, which Draw's
-	// read-only branch reuses so dimmed and live buttons sit in the same cells.
+	// pos is each button's position from the last Layout, reused by Draw's read-only
+	// branch so dimmed and live buttons sit in the same cells.
 	pos []buttonPos
 }
 
@@ -34,17 +34,16 @@ func Buttons(btns ...*widgets.Button) *ButtonsRow {
 	return &ButtonsRow{buttons: btns}
 }
 
-// Height reports how many lines the buttons flow onto at width w — more than
-// one when they don't fit side by side (Database Mail Profiles'
-// Move Up/Move Down/Remove Account at 80 columns).
+// Height reports how many lines the buttons flow onto at width w: more than one
+// when they don't fit side by side (Database Mail Profiles' Move Up/Move
+// Down/Remove Account at 80 columns).
 func (r *ButtonsRow) Height(w int) int {
 	return r.flow(0, 0, w)[max(0, len(r.buttons)-1)].Y + 1
 }
 
-// flow places the buttons left to right from (x, y), starting a new line for a
-// button that would cross x+w — except the first on a line, which keeps its
-// line even when wider than w, as nothing narrower is available. Wrapping
-// rather than clipping: a clipped button cannot be clicked.
+// flow places the buttons left to right from (x, y), starting a new line for one
+// that would cross x+w, except the first on a line, which keeps it even when
+// wider than w. Wrapping, not clipping: a clipped button can't be clicked.
 func (r *ButtonsRow) flow(x, y, w int) []buttonPos {
 	pos := make([]buttonPos, max(1, len(r.buttons)))
 	pos[0] = buttonPos{X: x, Y: y}
@@ -68,14 +67,13 @@ func (r *ButtonsRow) Layout(x, y, w int) {
 }
 func (r *ButtonsRow) Focusable() bool { return len(r.buttons) > 0 }
 
-// Buttons returns the row's buttons, for a host reaching one by label after the
-// row is built.
+// Buttons returns the row's buttons, for a host reaching one by label.
 func (r *ButtonsRow) Buttons() []*widgets.Button { return r.buttons }
 
 // SetDrawReadOnly implements ReadOnlyDrawer: the buttons draw dimmed. They are
-// already inert on a read-only form — Form refuses to route a press into a row
-// — so what is left is not to look clickable. Drawn here rather than through a
-// widgets.Button state, which no other caller needs.
+// already inert on a read-only form (Form routes no press into a row), so what
+// remains is not to look clickable. Drawn here rather than via a widgets.Button
+// state no other caller needs.
 func (r *ButtonsRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
 
 func (r *ButtonsRow) Draw(s tcell.Screen, focused bool) {

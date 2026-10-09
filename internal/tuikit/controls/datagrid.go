@@ -34,13 +34,12 @@ type RowKind int
 const (
 	// RowNormal is an ordinary row of cells.
 	RowNormal RowKind = iota
-	// RowGroup is a group header, in the header style: its first cell is a
-	// label drawn from the grid's left edge whatever the horizontal scroll,
-	// spilling across the empty cells to its right and clipped at the first
-	// non-empty one on screen; the cells from there on (a host's aggregates)
-	// draw as an ordinary row's, scrolled with their columns. The label is
-	// left out of column-width sampling — a label sized to the row would
-	// otherwise widen the first column to the cap — the other cells are
+	// RowGroup is a group header, in the header style: its first cell is a label
+	// drawn from the grid's left edge whatever the horizontal scroll, spilling
+	// across the empty cells to its right and clipped at the first non-empty one on
+	// screen; later cells (a host's aggregates) draw as an ordinary row's, scrolled
+	// with their columns. The label is left out of column-width sampling (a label
+	// sized to the row would widen the first column to the cap); the other cells are
 	// sampled like any. The row is highlighted whole when selected. What
 	// expanding or collapsing it does is the host's: it rebuilds its rows.
 	RowGroup
@@ -56,10 +55,10 @@ type RowKindSource interface {
 	RowKind(i int) RowKind
 }
 
-// NullSource is an optional RowSource capability: a source implementing it
-// marks the cells that hold a SQL NULL, which the grid draws dimmed and whose
-// Show Value it keeps from OnShowValue. A source without it has no NULLs,
-// whatever its text says — a cell reading "NULL" may be the string 'NULL'.
+// NullSource is an optional RowSource capability: a source implementing it marks
+// the cells that hold a SQL NULL, which the grid draws dimmed and whose Show
+// Value it keeps from OnShowValue. Without it a source has no NULLs, whatever
+// its text says (a cell reading "NULL" may be the string 'NULL').
 type NullSource interface {
 	IsNull(row, col int) bool
 }
@@ -265,12 +264,11 @@ func NewDataGrid() *DataGrid {
 }
 
 // SetBrowseOnly lets the grid be looked at but not edited: navigation,
-// selection, OnSelectRow, Copy and Show Value all still work, but Enter, Space
-// and a cell click no longer reach OnActivateCell, and the host's OnMenuItems
-// entries are left off the menu — the grid cannot tell which of them edit.
-// Paste and Cut never edit a grid. A property page gated read-only uses it
-// (propsheet.GridRow) so its grids can be browsed while the page can still
-// never become dirty.
+// selection, OnSelectRow, Copy and Show Value still work, but Enter, Space and a
+// cell click no longer reach OnActivateCell, and the host's OnMenuItems entries
+// are left off the menu (the grid can't tell which of them edit). Paste and Cut
+// never edit a grid. A property page gated read-only uses it (propsheet.GridRow)
+// so its grids can be browsed while the page can never become dirty.
 func (g *DataGrid) SetBrowseOnly(v bool) {
 	g.browseOnly = v
 	g.mouseDragging = false
@@ -279,20 +277,20 @@ func (g *DataGrid) SetBrowseOnly(v bool) {
 // BrowseOnly reports whether SetBrowseOnly is in force.
 func (g *DataGrid) BrowseOnly() bool { return g.browseOnly }
 
-// editable reports whether the grid's cells can be activated right now: it
-// has an OnActivateCell and is not browse-only. Every path that chooses
-// between editing a cell and selecting one asks this, never OnActivateCell
-// directly, so the browse-only gate has one place to hold.
+// editable reports whether the grid's cells can be activated now: it has an
+// OnActivateCell and is not browse-only. Every path choosing between editing and
+// selecting a cell asks this, never OnActivateCell directly, so the browse-only
+// gate has one place to hold.
 func (g *DataGrid) editable() bool { return g.OnActivateCell != nil && !g.browseOnly }
 
-// SetBounds positions the grid and recomputes column widths, so a
-// fillLastColumn grid's last column tracks the new width. Content-based widths
-// don't depend on rect.W, so every other grid gets the same ones back.
+// SetBounds positions the grid and recomputes column widths, so a fillLastColumn
+// grid's last column tracks the new width. Content-based widths don't depend on
+// rect.W, so every other grid gets the same ones back.
 //
 // An unchanged rect returns at once: hosts lay out every frame, and the
-// recompute rescans up to colWidthSampleRows rows — through a RowSource that
-// may build each one — for the same answer. Content changed in place reaches
-// the widths through RefreshColumnWidths, never through a relayout.
+// recompute rescans up to colWidthSampleRows rows (through a RowSource that may
+// build each one) for the same answer. Content changed in place reaches the
+// widths through RefreshColumnWidths, never a relayout.
 //
 // A real change re-clamps the scroll as SetScroll does: a view grown taller
 // after End kept its old top row and drew blank rows under the last one.
@@ -337,18 +335,16 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.status = strconv.Itoa(rows.Len()) + " rows"
 }
 
-// SetDataPreservingView is SetData for a change that leaves the row set alone —
-// a cell toggled, an edit reverted — where the grid must not jump under the
-// user. The cell cursor, the scroll position and any dragged column width all
-// go back where they were. SetData discards all three, which is right only for
-// a fresh result set.
+// SetDataPreservingView is SetData for a change that leaves the row set alone (a
+// cell toggled, an edit reverted) where the grid must not jump under the user:
+// cell cursor, scroll position and dragged column widths go back where they
+// were. SetData discards all three, right only for a fresh result set.
 //
 // The order is load-bearing. Widths first, because ensureVisibleCol picks the
-// horizontal offset by walking colWidths and would otherwise walk the
-// recomputed defaults. Scroll before the selection, because SetSelectedCell
-// ends in ensureVisible: from the restored scroll it has nothing to do, from
-// the zero SetSource left behind it drags the selected row to the viewport
-// edge.
+// horizontal offset by walking colWidths and would otherwise walk the recomputed
+// defaults. Scroll before the selection, because SetSelectedCell ends in
+// ensureVisible: from the restored scroll it has nothing to do, from the zero
+// SetSource left behind it drags the selected row to the viewport edge.
 func (g *DataGrid) SetDataPreservingView(columns []string, rows [][]string) {
 	g.SetSourcePreservingView(columns, SliceRowSource(rows))
 }
@@ -367,28 +363,26 @@ func (g *DataGrid) SetSourcePreservingView(columns []string, rows RowSource) {
 }
 
 // RefreshColumnWidths recomputes column widths without resetting scroll or
-// selection, unlike SetData/SetSource. Call it after mutating row cells in
-// place — a progressive backfill, where SetData on every update would throw the
-// user's scroll away.
-//
-// Deferred to the next Draw, the first moment the widths matter: recomputing on
-// the spot rescans up to colWidthSampleRows rows per call, where a burst of
-// rows between two frames needs one rescan.
+// selection, unlike SetData/SetSource. Call it after mutating row cells in place
+// (a progressive backfill, where SetData on every update would throw the user's
+// scroll away). Deferred to the next Draw, the first moment the widths matter:
+// recomputing on the spot rescans up to colWidthSampleRows rows per call, where
+// a burst of rows between two frames needs one rescan.
 func (g *DataGrid) RefreshColumnWidths() {
 	g.widthsDirty = true
 }
 
 // SetError shows an error row.
 //
-// It resets the same view state SetSource does, scrollCol included: the error
-// is one column at index 0, so a grid left scrolled right draws nothing at all
-// — drawRow starts its walk at scrollCol and never reaches column 0. Every
-// caller in the application (the Detail Browser, both Query Store grids, the
-// Log File Viewer) is a wide grid the user can have scrolled.
+// It resets the same view state SetSource does, scrollCol included: the error is
+// one column at index 0, so a grid left scrolled right draws nothing at all
+// (drawRow starts at scrollCol and never reaches column 0). Every caller (the
+// Detail Browser, both Query Store grids, the Log File Viewer) is a wide grid
+// the user can have scrolled.
 //
-// The column spans the rect, not its content: errorMode keeps every later
-// computeColWidths — a resize, a queued RefreshColumnWidths — from clamping
-// the message back to defaultMaxCellWidth.
+// The column spans the rect, not its content: errorMode keeps later
+// computeColWidths (a resize, a queued RefreshColumnWidths) from clamping the
+// message back to defaultMaxCellWidth.
 func (g *DataGrid) SetError(err error) {
 	g.columns = []string{"Error"}
 	g.rows = SliceRowSource{{err.Error()}}
@@ -435,25 +429,21 @@ func (g *DataGrid) ScrollRow() int { return g.scrollRow }
 // propsheet.GridRow.HandleKey.
 func (g *DataGrid) ScrollCol() int { return g.scrollCol }
 
-// SetScroll restores the scroll position (both clamped) after a
-// SetData/SetSource that deliberately discarded it — the scroll half of what
-// SetDataPreservingView puts back, alongside restoreOverrideWidths and
-// SetSelectedCell, and called from there alone.
+// SetScroll restores the scroll position (both clamped) after a SetData/
+// SetSource that deliberately discarded it: the scroll half of what
+// SetDataPreservingView puts back, called from there alone.
 //
 // Not for driving the view: scrolling is the grid's own response to a wheel, a
-// drag, or a selection moving out of sight, and ensureVisible undoes on the
-// next selection change anything a host sets. SetSelectedRow/SetSelectedCell
-// are how a host asks for a row to be shown.
-//
-// Call it before restoring the selection, not after: SetSelectedCell ends in
-// ensureVisible, which from the restored scroll has nothing to do and from the
-// zero SetSource left behind drags the selected row to the viewport edge.
+// drag, or a selection moving out of sight, and ensureVisible undoes anything a
+// host sets on the next selection change. SetSelectedRow/SetSelectedCell are how
+// a host asks for a row to be shown. Call it before restoring the selection (see
+// SetDataPreservingView for why).
 func (g *DataGrid) SetScroll(row, col int) {
-	// Bounded by the last row that can sit at the *top* of the viewport, the
-	// bound the wheel uses — not by the last row. Clamping to rows.Len()-1
-	// would let a redraw that shrank the list leave a two-row grid scrolled one
-	// row down, blank line above its only visible row. Columns keep
-	// scrollColBy's bound: varying widths give no "last column that fits".
+	// Bounded by the last row that can sit at the top of the viewport, the bound the
+	// wheel uses, not the last row: clamping to rows.Len()-1 would let a redraw that
+	// shrank the list leave a two-row grid scrolled one row down, blank line above
+	// its only visible row. Columns keep scrollColBy's bound: varying widths give no
+	// "last column that fits".
 	g.scrollRow = core.Clamp(row, 0, max(0, g.rows.Len()-(g.rect.H-3)))
 	g.scrollCol = core.Clamp(col, 0, max(0, len(g.columns)-1))
 }
@@ -504,12 +494,10 @@ func (g *DataGrid) SelectedCell() (row, col int) { return g.selRow, g.selCol }
 func (g *DataGrid) SelectionBounds() (r0, c0, r1, c1 int) { return g.selectionBounds() }
 
 // SelectedRows returns the rows the selection covers, ascending: the rows
-// Ctrl+click marked while a discontiguous selection is in force, otherwise the
-// rows the anchor/cursor rectangle spans — which is the one cursor row when
-// nothing is extended.
-//
-// A host acting on whole objects reads this rather than SelectionBounds: the
-// bounds describe a rectangle, and a Ctrl+click selection is not one.
+// Ctrl+click marked while a discontiguous selection is in force, otherwise those
+// the anchor/cursor rectangle spans (the one cursor row when nothing is
+// extended). A host acting on whole objects reads this rather than
+// SelectionBounds: a Ctrl+click selection is not a rectangle.
 func (g *DataGrid) SelectedRows() []int { return g.selectedRows() }
 
 func (g *DataGrid) selectedRows() []int {
@@ -538,14 +526,12 @@ func (g *DataGrid) ClearMarkedRows() {
 	g.markedRows, g.marking = nil, false
 }
 
-// markRow adds the clicked row to the discontiguous selection, or removes it
-// when it is already in — the toggle Ctrl+click means everywhere.
-//
-// The selection in force at the time is folded in first, so Shift-selecting a
-// run and then Ctrl+clicking one more row keeps the run. That includes the lone
-// cursor row: this grid always highlights one, and every host that acts on the
-// selection acts on that row when nothing else is picked, so a Ctrl+click that
-// dropped it would deselect a row the user can see is selected.
+// markRow adds the clicked row to the discontiguous selection, or removes it if
+// already in: the toggle Ctrl+click means everywhere. The selection in force is
+// folded in first, so Shift-selecting a run then Ctrl+clicking one more row
+// keeps the run. That includes the lone cursor row: the grid always highlights
+// one and hosts act on it when nothing else is picked, so a Ctrl+click dropping
+// it would deselect a row the user can see is selected.
 func (g *DataGrid) markRow(row int) {
 	if !g.marking {
 		g.markedRows = map[int]bool{}
@@ -578,12 +564,11 @@ func (g *DataGrid) SetRowNumbers(v bool) {
 }
 
 // SetMaxCellWidth overrides the bound computeColWidths clamps every column's
-// *default* width to — a cap on how wide content alone may make a column, not
-// on the column, which a separator drag widens past it freely. n counts display
-// columns including the padding either side of the text, so a
-// maxCellLength-character content cap passes maxCellLength+2. n <= 0 restores
-// defaultMaxCellWidth. It takes effect on the next Draw — SetBounds no longer
-// recomputes on an unchanged rect, so nothing else would apply it.
+// default width to: a cap on how wide content alone may make a column, not on the
+// column, which a separator drag widens past it. n counts display columns
+// including the padding either side, so a maxCellLength-character content cap
+// passes maxCellLength+2. n <= 0 restores defaultMaxCellWidth. Takes effect on
+// the next Draw (SetBounds doesn't recompute on an unchanged rect).
 func (g *DataGrid) SetMaxCellWidth(n int) {
 	g.maxCellWidth = n
 	g.widthsDirty = true
@@ -635,22 +620,19 @@ func (g *DataGrid) IsNull(row, col int) bool {
 	return ns.IsNull(row, col)
 }
 
-// ColumnIndex returns the position of the column named name, or -1 if the grid
-// has no such column. For a host that has to address a cell by column name
-// rather than by position — the grids here are built from whatever a loader
-// returned, so an index is only ever right by coincidence.
+// ColumnIndex returns the position of the column named name, or -1. For a host
+// addressing a cell by column name: the grids are built from whatever a loader
+// returned, so an index is right only by coincidence.
 func (g *DataGrid) ColumnIndex(name string) int {
 	return slices.Index(g.columns, name)
 }
 
-// computeColWidths sizes columns from their header plus up to
-// colWidthSampleRows data rows, so a huge result set doesn't make SetSource
-// slow.
-//
-// A cell is measured only as far as the clamp below can see: past
-// max(maxW, 6) columns every width clamps to the same result. Measuring whole
-// cells cost 0.3-0.7 s per call for one column of 256 KB XML values, on the UI
-// goroutine, and this runs on every SetSource, SetBounds and column drag.
+// computeColWidths sizes columns from their header plus up to colWidthSampleRows
+// data rows, so a huge result set doesn't slow SetSource. A cell is measured only
+// as far as the clamp can see: past max(maxW, 6) columns every width clamps to
+// the same result. Measuring whole cells cost 0.3-0.7 s per call for one column
+// of 256 KB XML values, on the UI goroutine, and this runs on every SetSource,
+// SetBounds and column drag.
 func (g *DataGrid) computeColWidths() {
 	g.widthsDirty = false
 	if g.errorMode {
@@ -718,17 +700,17 @@ func (g *DataGrid) setOverrideWidth(i, w int) {
 	g.colWidthOverride[i] = w
 }
 
-// restoreOverrideWidths reinstates a whole column set's dragged widths and
-// recomputes once, for SetDataPreservingView. Calling SetColumnWidth per column
-// instead runs a full computeColWidths — a rescan of up to colWidthSampleRows
-// rows — once per column, and that pair runs on every redrawGrid, which is
-// every keystroke on a grid-backed Properties page. Applies SetColumnWidth's
-// minResizeWidth floor so a restored width is the width a drag would have set.
+// restoreOverrideWidths reinstates a column set's dragged widths and recomputes
+// once, for SetDataPreservingView. Calling SetColumnWidth per column runs a full
+// computeColWidths (a rescan of up to colWidthSampleRows rows) per column, and
+// that runs on every redrawGrid, i.e. every keystroke on a grid-backed
+// Properties page. Applies SetColumnWidth's minResizeWidth floor so a restored
+// width is what a drag would have set.
 //
-// The recompute is conditional because widths is always as long as the column
-// count (ColumnWidthOverrides pads it), all zeros on a grid nobody has
-// resized. Recomputing unconditionally doubled the scan on exactly the hot
-// path this helper exists for: SetData has already computed the widths.
+// The recompute is conditional because widths is always column-count long
+// (ColumnWidthOverrides pads it), all zeros on an unresized grid; recomputing
+// unconditionally doubled the scan on the hot path, since SetData has already
+// computed the widths.
 func (g *DataGrid) restoreOverrideWidths(widths []int) {
 	restored := false
 	for i, w := range widths {
@@ -742,11 +724,10 @@ func (g *DataGrid) restoreOverrideWidths(widths []int) {
 	}
 }
 
-// ColumnWidthOverrides returns each column's dragged width, 0 for one still at
-// its computed default — the inverse of SetColumnWidth, and the only way to
-// carry drags across a SetData that discards them (see SetDataPreservingView,
-// its one caller). The slice is a copy, as long as the column count at the time
-// of the call.
+// ColumnWidthOverrides returns each column's dragged width, 0 for one at its
+// computed default: the inverse of SetColumnWidth, and the only way to carry
+// drags across a SetData that discards them (see SetDataPreservingView). The
+// slice is a copy, as long as the column count.
 func (g *DataGrid) ColumnWidthOverrides() []int {
 	out := make([]int, len(g.colWidths))
 	copy(out, g.colWidthOverride)

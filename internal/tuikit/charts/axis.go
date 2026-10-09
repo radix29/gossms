@@ -65,16 +65,12 @@ func drawTimeLabel(s tcell.Screen, row core.Rect, text string) {
 }
 
 // drawTimeAxis writes the horizontal scale under a history plot: the newest
-// sample's time under the rightmost column, and an age at each of the plot's
-// time dividers — "-30s", "-1m" — so a column's distance from now can be
-// read off the chart instead of counted.
+// sample's time under the rightmost column and an age ("-30s", "-1m") at each
+// time divider. interval is the time one column covers; zero falls back to the
+// centred sample time alone.
 //
-// interval is how much time one column covers. Zero means the caller doesn't
-// know, and the row falls back to the centred sample time alone.
-//
-// Labels are laid out right to left and each one is dropped rather than
-// truncated when it would touch its neighbour, so the row never shows a
-// half-written age that reads as a different number.
+// Labels are laid out right to left and dropped, not truncated, when they would
+// touch their neighbour: a half-written age reads as a different number.
 func drawTimeAxis(s tcell.Screen, row, plot core.Rect, now string, interval time.Duration, gridEvery int) {
 	if row.W <= 0 || row.H <= 0 {
 		return
@@ -95,9 +91,9 @@ func drawTimeAxis(s tcell.Screen, row, plot core.Rect, now string, interval time
 		leftmost = x
 	}
 
-	// The dividers this labels are the ones drawPlotBackground draws, at the
-	// same spacing and anchored to the same right edge. The unit comes from
-	// the oldest of them so one axis never mixes "-100s" with "-2.5m".
+	// The dividers labelled are those drawPlotBackground draws, at the same spacing
+	// and right edge. The unit comes from the oldest so one axis never mixes "-100s"
+	// with "-2.5m".
 	oldest := time.Duration(plot.W-1) * interval
 	for x := plot.Right() - 1 - gridEvery; x > plot.X; x -= gridEvery {
 		text := formatAge(time.Duration(plot.Right()-1-x)*interval, oldest)

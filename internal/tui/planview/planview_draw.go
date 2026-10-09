@@ -36,29 +36,25 @@ func (v *PlanView) Draw(s tcell.Screen) {
 	}
 }
 
-// DrawOverlay renders the operator summary grid's right-click menu and
-// "Show Value" popup, if either is open. Must be called after every other
-// widget in the same frame has drawn — both float free of the grid's own
-// rect, so anything drawn afterward paints straight over them. Hosts
-// (QueryPanel, PlanPanel) call this at the end of their own Draw, the same
-// way they already do for DataGrid/Editor overlays.
+// DrawOverlay renders the summary grid's right-click menu and "Show Value"
+// popup, if open. Call it after every other widget in the frame has drawn: both
+// float free of the grid's rect, so later drawing paints over them. Hosts
+// (QueryPanel, PlanPanel) call it at the end of their Draw, as for DataGrid/
+// Editor overlays.
 func (v *PlanView) DrawOverlay(s tcell.Screen) {
 	v.drawSummaryOverlay(s)
 }
 
-// OverlayActive reports whether one of those popups is currently showing.
-// It carries controls.DataGrid.OverlayActive's contract outward: a host
-// laying PlanView out beside another focusable widget must give PlanView
-// exclusive first refusal of every key and mouse event while this is true,
-// or input meant for a popup goes to whatever sits underneath its screen
-// coordinates instead. PlanView applies the same rule internally — see
-// HandleKey/HandleMouse.
+// OverlayActive reports whether one of those popups is showing. It carries
+// controls.DataGrid.OverlayActive's contract outward: while true, a host must
+// give PlanView exclusive first refusal of every key and mouse event, or input
+// meant for a popup goes to whatever sits under it. PlanView applies the same
+// rule in HandleKey/HandleMouse.
 func (v *PlanView) OverlayActive() bool {
 	return v.summaryOverlayActive()
 }
 
-// drawMessage fills the content area with a single line of placeholder
-// or error text.
+// drawMessage fills the content area with one line of placeholder or error text.
 func (v *PlanView) drawMessage(s tcell.Screen, msg string) {
 	st := theme.StylePanel()
 	core.FillRect(s, v.contentRect, ' ', st)
@@ -80,9 +76,8 @@ func (v *PlanView) drawWrappedMessage(s tcell.Screen, msg string) {
 	}
 }
 
-// tabSegments computes each Plan/Tree/XML tab's on-screen extent. Draw and
-// hit-test both build their column math from this same call so hits line up
-// with what's actually on screen.
+// tabSegments computes each tab's on-screen extent; Draw and hit-test share it
+// so hits match what's drawn.
 func (v *PlanView) tabSegments() [][]controls.TabSegment {
 	widths := make([][]int, len(tabLabels))
 	for i, label := range tabLabels {
@@ -126,9 +121,8 @@ func (v *PlanView) drawTabBar(s tcell.Screen) {
 	}
 }
 
-// searchIndicatorText returns the tab bar's right-aligned search
-// display: "/query_" while typing, "/query (i/n)" once confirmed with
-// matches, or "" when there's nothing to show.
+// searchIndicatorText returns the tab bar's search display: "/query_" while
+// typing, "/query (i/n)" once confirmed with matches, else "".
 func (v *PlanView) searchIndicatorText() string {
 	switch {
 	case v.searchSt.active:
@@ -184,9 +178,7 @@ func (v *PlanView) drawStatementBar(s tcell.Screen) {
 	}
 }
 
-// oneLine collapses embedded line breaks and repeated whitespace in a
-// multi-line statement (e.g. a formatted CREATE VIEW body) to a single
-// display line.
+// oneLine collapses line breaks and repeated whitespace to a single display line.
 func oneLine(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", " ")
 	s = strings.ReplaceAll(s, "\n", " ")

@@ -7,18 +7,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// dialog_common.go holds the small behaviours shared by the hand-rolled
-// dialogs — the ones that lay out widgets directly and drive focus with a flat
-// slice, rather than delegating to propsheet.Form's rows: Connect, Backup,
-// Restore, Find/Replace and Log Search. Tasks and Query List share only the
-// list-scroll helper.
+// dialog_common.go holds the small behaviours shared by the hand-rolled dialogs —
+// the ones that lay out widgets directly and drive focus with a flat slice, rather
+// than delegating to propsheet.Form's rows: Connect, Backup, Restore, Find/Replace
+// and Log Search. Tasks and Query List share only the list-scroll helper.
 //
 // Each dialog keeps its own state (`focusable`, `focusIdx`, `sel`, `scroll`,
 // `task`); only the operations over that state live here — focus and scroll
 // movement, the Backup/Restore progress button, and the discard-changes
-// confirmation. That is deliberate: the alternative, embedded structs owning
-// the fields, renames every direct `d.focusable[d.focusIdx]` access for no
-// behavioural gain.
+// confirmation. Embedded structs owning the fields would rename every direct
+// `d.focusable[d.focusIdx]` access for no behavioural gain.
 
 // focusable is satisfied by any tuikit widget that supports keyboard focus.
 type focusable interface {
@@ -76,15 +74,14 @@ func nextFocus(idx, n int) int { return (idx + 1) % n }
 
 func prevFocus(idx, n int) int { return (idx - 1 + n) % n }
 
-// scrollToShow returns the scroll offset that brings row sel into a viewport
-// dataH rows tall, moving by the least that does it — up when sel is above the
-// top, down when it is past the bottom, unchanged when it is already in view.
+// scrollToShow returns the scroll offset that brings row sel into a viewport dataH
+// rows tall, moving by the least that does it — up when sel is above the top, down
+// when it is past the bottom, unchanged when it is already in view.
 //
-// A viewport with no rows in it has nothing to scroll anything into, so the
-// offset is left alone. Without the guard the "past the bottom" arm below is
-// unconditionally true at dataH == 0 and answers sel+1 — scrolled one row
-// past the very selection it was asked to reveal, which draws as an empty
-// pane rather than as a short one.
+// A viewport with no rows has nothing to scroll into, so the offset is left alone.
+// Without the guard the "past the bottom" arm is unconditionally true at dataH ==
+// 0 and answers sel+1 — one row past the selection it was asked to reveal, which
+// draws as an empty pane rather than a short one.
 func scrollToShow(sel, scroll, dataH int) int {
 	if dataH <= 0 {
 		return scroll
@@ -115,18 +112,16 @@ func runProgressButton(task *Task, btnFocus int, hide func()) {
 	}
 }
 
-// progressModeKey is the whole keyboard of the Backup and Restore progress
-// views: Escape hides, Enter fires the focused button, Tab and Backtab rotate
-// between them.
+// progressModeKey is the whole keyboard of the Backup and Restore progress views:
+// Escape hides, Enter fires the focused button, Tab and Backtab rotate between
+// them.
 //
-// btnFocus is clamped on Enter rather than on every rotation, because the
-// button list shrinks under the view — Cancel disappears the moment the task
-// finishes — and a focus index recorded against the longer list would
-// otherwise index past the shorter one.
+// btnFocus is clamped on Enter rather than on every rotation, because the button
+// list shrinks under the view — Cancel disappears the moment the task finishes —
+// and a focus index recorded against the longer list would index past the shorter.
 //
-// It always reports handled: a progress view is modal over its dialog, and a
-// key falling through to the form underneath would edit a page the user cannot
-// see.
+// It always reports handled: a progress view is modal over its dialog, and a key
+// falling through to the form underneath would edit a page the user cannot see.
 func progressModeKey(ev *tcell.EventKey, btnFocus *int, buttons []string, hide, fire func()) bool {
 	switch ev.Key() {
 	case tcell.KeyEscape:
@@ -142,16 +137,15 @@ func progressModeKey(ev *tcell.EventKey, btnFocus *int, buttons []string, hide, 
 	return true
 }
 
-// buttonRowKey is the keyboard of a Connect, Backup or Restore button row
-// while it holds focus: Left/Right move along the row, past a disabled button;
-// Enter fires the focused one; Escape hides; Tab and Backtab leave it back into
-// the fields, through leave(+1) or leave(-1). Everything else is swallowed — a
-// letter typed on the row must not edit the field focus came from.
+// buttonRowKey is the keyboard of a Connect, Backup or Restore button row while it
+// holds focus: Left/Right move along the row, past a disabled button; Enter fires
+// the focused one; Escape hides; Tab and Backtab leave it back into the fields,
+// through leave(+1) or leave(-1). Everything else is swallowed — a letter typed on
+// the row must not edit the field focus came from.
 //
-// The row is one stop in the Tab ring, crossed with the arrows, as
-// propsheet's zoneButtons is in a Properties dialog. It replaced F1, which
-// cycled the buttons from anywhere in the form and was the only keyboard way
-// to reach them — F1 is Help everywhere else.
+// The row is one stop in the Tab ring, crossed with the arrows, as propsheet's
+// zoneButtons is in a Properties dialog (F1, which cycled the buttons, is Help
+// everywhere else).
 func buttonRowKey(ev *tcell.EventKey, btnFocus *int, n int, disabled []bool, fire, hide func(), leave func(dir int)) bool {
 	switch ev.Key() {
 	case tcell.KeyLeft:
@@ -194,38 +188,35 @@ func (a *App) confirmDiscardChanges(proceed func()) {
 		})
 }
 
-// forwardReleaseToFocusedField hands a release to the dialog's focused field
-// so a text-selection drag in it ends cleanly wherever the pointer was when
-// the button came up, and reports whether the event was that release — a true
-// answer means HandleMouse is done with it. Invariant 5 in docs/ui-rules.md,
-// "a host that returns early from HandleMouse must still forward ButtonNone to
-// a latch-bearing child": Backup, Restore and Connect all reached it by
-// writing the same switch out.
+// forwardReleaseToFocusedField hands a release to the dialog's focused field so a
+// text-selection drag in it ends cleanly wherever the pointer was when the button
+// came up, and reports whether the event was that release — a true answer means
+// HandleMouse is done with it. Invariant 5 in docs/ui-rules.md, "a host that
+// returns early from HandleMouse must still forward ButtonNone to a latch-bearing
+// child": Backup, Restore and Connect all need the same switch.
 //
-// Call it below ConsumeOutsideClick and below FieldGesture.Release. The live
-// arm is the Editor: an Editor keeps its own latch and is deliberately outside
+// Call it below ConsumeOutsideClick and below FieldGesture.Release. The live arm
+// is the Editor: an Editor keeps its own latch and is deliberately outside
 // FieldGesture, so nothing above here ends a selection drag started in one.
 //
-// focused is whatever the dialog's focus ring points at. Only an InputField
-// and an Editor are forwarded to: the checkboxes, radio groups and drop-downs
-// were already given the release above ConsumeOutsideClick, and handing it to
-// one twice would toggle it.
+// focused is whatever the dialog's focus ring points at. Only an InputField and an
+// Editor are forwarded to: the checkboxes, radio groups and drop-downs were
+// already given the release above ConsumeOutsideClick, and handing it to one twice
+// would toggle it.
 //
-// The InputField arm is belt-and-braces, not a path these three dialogs take.
-// In all of them the only route a press takes to an InputField is
-// FieldGesture.Claim, so a latched field always has the gesture too and
-// FieldGesture.Release — which runs above this — has already ended it; the one
-// way the halves came apart, a dialog dismissed mid-drag and reopened, is
-// closed in FieldGesture.Clear. The arm stays because a fourth caller, or a
-// dialog that hit-tests a field itself, would need it, and it costs a type
-// switch case.
+// The InputField arm is belt-and-braces, not a path these three dialogs take. The
+// only route a press takes to an InputField is FieldGesture.Claim, so a latched
+// field always has the gesture too and FieldGesture.Release (above this) has
+// already ended it; the one way the halves came apart, a dialog dismissed
+// mid-drag and reopened, is closed in FieldGesture.Clear. The arm stays for a
+// fourth caller, or a dialog that hit-tests a field itself.
 //
 // It deliberately does not call FieldGesture.Release or .Replay, and does not
 // answer the non-Button1 question. Their placement differs per dialog —
 // docs/ui-rules.md puts Release above ConsumeOutsideClick and above any mode
 // switch, Replay after it and before any hit-test, and Connect reads the wheel
-// between the two — so a helper that fixed an order would be wrong for the
-// dialogs with a mode or a scrollable pane.
+// between the two — so a helper that fixed an order would be wrong for dialogs
+// with a mode or a scrollable pane.
 func forwardReleaseToFocusedField(ev *tcell.EventMouse, focused any) bool {
 	if ev.Buttons() != tcell.ButtonNone {
 		return false

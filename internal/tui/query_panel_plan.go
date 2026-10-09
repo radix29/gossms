@@ -7,10 +7,9 @@ import (
 	"github.com/radix29/gossms/internal/showplan"
 )
 
-// ShowEstimatedPlan fetches the estimated (compile-only) execution plan for
-// the editor's selection, or the whole script if nothing is selected — the
-// same selection-or-full-text rule as Execute, and like it closes the
-// completion popup first.
+// ShowEstimatedPlan fetches the estimated (compile-only) execution plan for the
+// editor's selection, or the whole script if nothing is selected: the same rule
+// as Execute, and like it closes the completion popup first.
 func (p *QueryPanel) ShowEstimatedPlan() {
 	p.editor.CloseCompletion()
 	if sel := p.editor.SelectedText(); sel != "" {
@@ -21,19 +20,18 @@ func (p *QueryPanel) ShowEstimatedPlan() {
 }
 
 // runEstimatedPlan is runQuery's plan-fetching counterpart, through the same
-// runRefused guards and launch — so Stop Execution and Cancel Executing Query
-// cancel an in-flight plan fetch for free, and a panel closed mid-fetch still
-// has its status line cleared. Uses query.Session.ExecuteEstimatedPlan rather
-// than talking to gosmo directly, so a script containing GO batch separators
-// is split the same way Execute splits it — gosmo's own EstimatedPlan
-// takes one statement at a time and would otherwise reject any multi-batch
-// script with a syntax error on "GO" itself.
+// runRefused guards and launch, so Stop Execution and Cancel Executing Query
+// cancel an in-flight plan fetch for free, and a panel closed mid-fetch still has
+// its status line cleared. Uses query.Session.ExecuteEstimatedPlan rather than
+// gosmo directly, so a script containing GO batch separators is split as Execute
+// splits it: gosmo's own EstimatedPlan takes one statement at a time and would
+// reject a multi-batch script with a syntax error on "GO" itself.
 func (p *QueryPanel) runEstimatedPlan(queryText string) {
 	if p.runRefused(queryText, func() { p.runEstimatedPlan(queryText) }) {
 		return
 	}
-	// No rows are scanned by an estimated plan, so the status line's row
-	// counter stays off for this run.
+	// No rows are scanned by an estimated plan, so the status line's row counter
+	// stays off for this run.
 	p.launch("the estimated execution plan", "Fetching estimated execution plan...", nil,
 		func(ctx context.Context, sess *query.Session) *query.Result {
 			return sess.ExecuteEstimatedPlan(ctx, queryText)
@@ -41,20 +39,19 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 		p.setEstimatedPlan)
 }
 
-// setEstimatedPlan installs a finished plan fetch. On success, the plan
-// replaces Results/Messages entirely — Estimated mode never runs the query
-// for real, so p.result stays nil and there's nothing else to show (see
-// planTabActive/resultTabs, which key off p.result == nil for this case).
-// Like setResult's own res/cancelled split, a plan that did come back is
-// still installed and shown even if cancelled happens to be true — the
+// setEstimatedPlan installs a finished plan fetch. On success, the plan replaces
+// Results/Messages entirely: Estimated mode never runs the query, so p.result
+// stays nil and there's nothing else to show (see planTabActive/resultTabs, which
+// key off p.result == nil for this case). As in setResult's res/cancelled split, a
+// plan that did come back is installed and shown even if cancelled is true: the
 // fetch can race a cancel signal and still succeed.
 //
 // On any failure (a SQL error, an empty or unparseable plan, or a genuine
-// cancellation), res itself becomes p.result instead — with a Messages
-// entry explaining why — which resultTabs reduces to a single "Messages"
-// tab, the same fallback setResult gives a normal Execute failure. It also
-// clears p.planView, so a previous run's plan can't stay browsable next to
-// an unrelated new failure's Messages.
+// cancellation), res itself becomes p.result instead, with a Messages entry
+// explaining why, which resultTabs reduces to a single "Messages" tab, the same
+// fallback setResult gives a normal Execute failure. It also clears p.planView, so
+// a previous run's plan can't stay browsable next to an unrelated new failure's
+// Messages.
 func (p *QueryPanel) setEstimatedPlan(res *query.Result, cancelled bool) {
 	p.result = nil // Estimated mode has no result; setResultPlan clears the other way
 
@@ -64,8 +61,8 @@ func (p *QueryPanel) setEstimatedPlan(res *query.Result, cancelled bool) {
 		fetchFailed = true
 	}
 
-	// showMessages installs res as the Messages-only fallback described
-	// above — shared by the fetchFailed case and a parse failure below.
+	// showMessages installs res as the Messages-only fallback described above,
+	// shared by the fetchFailed case and a parse failure below.
 	showMessages := func() {
 		if cancelled {
 			res.Messages = []query.Message{{Text: "Query was cancelled by user.", IsError: true}}

@@ -9,21 +9,20 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// endpointPropPages builds the page set for Endpoint Properties: General and
-// Type Properties.
+// endpointPropPages builds the page set for Endpoint Properties: General and Type
+// Properties.
 //
-// Every page is read-only, and that is the family's shape rather than an
-// omission. An endpoint's writes are ALTER ENDPOINT ... STATE and DROP
-// ENDPOINT, both immediate Object Explorer commands rather than an Apply, and
-// changing a payload's authentication or encryption means rewriting the
-// endpoint every replica connects through — which goSSMS does not offer from a
-// form. Both pages are named in prop_page_requires_test.go's
+// Every page is read-only, by the family's shape. An endpoint's writes are ALTER
+// ENDPOINT ... STATE and DROP ENDPOINT, both immediate Object Explorer commands
+// rather than an Apply, and changing a payload's authentication or encryption
+// means rewriting the endpoint every replica connects through, which goSSMS does
+// not offer from a form. Both pages are named in prop_page_requires_test.go's
 // pagesThatOnlyRead.
 //
-// The payload-specific half is one page that branches inside its own load
-// rather than a page chosen per type when the dialog opens: the page list is
-// built on the UI goroutine, and reading the endpoint there to decide would
-// block the whole application on a round trip.
+// The payload-specific half is one page that branches inside its own load rather
+// than a page chosen per type when the dialog opens: the page list is built on the
+// UI goroutine, and reading the endpoint there to decide would block the whole
+// application on a round trip.
 func endpointPropPages(sc *db.ServerConn, epName string) []propPage {
 	return []propPage{
 		pageEndpointGeneral(sc, epName),

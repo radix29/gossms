@@ -10,13 +10,13 @@ import (
 )
 
 // InputField is a single-line text input control.
+// InputField is a single-line text input control.
 //
-// value is indexed by rune while everything on screen is measured in terminal
-// columns, which are not the same count: a CJK ideograph or emoji takes two
-// columns, a combining mark none. cursor and selAnchor are rune indices, scroll
-// is a column offset, and every conversion goes through core.ColumnOfRune or
-// core.RuneIndexAtColumn — treating a rune index as a column puts the caret one
-// column left of the character it is on.
+// value is indexed by rune but drawn in terminal columns (a CJK ideograph or
+// emoji takes two, a combining mark none). cursor and selAnchor are rune
+// indices, scroll is a column offset, and conversions go through
+// core.ColumnOfRune or core.RuneIndexAtColumn: treating a rune index as a column
+// puts the caret one column left of its character.
 type InputField struct {
 	rect     core.Rect
 	value    []rune
@@ -65,10 +65,9 @@ func (f *InputField) InputX() int { return f.inputX() }
 // brackets), as passed to NewInputField or SetWidth.
 func (f *InputField) Width() int { return f.rect.W }
 
-// SetWidth changes the input box's visible width (excluding label and
-// brackets). It doesn't chase the caret, as an edit does: a layout pass
-// calling it on every frame would undo ShowFromStart. A widened box only
-// stops scrolling past the value's end.
+// SetWidth changes the input box's visible width. It doesn't chase the caret
+// as an edit does: a layout pass calling it per frame would undo ShowFromStart.
+// A widened box only stops scrolling past the value's end.
 func (f *InputField) SetWidth(w int) {
 	if w = max(1, w); w == f.rect.W {
 		return
@@ -90,12 +89,9 @@ func (f *InputField) HitTest(mx, my int) bool {
 // Value returns the current text content.
 func (f *InputField) Value() string { return string(f.value) }
 
-// SetValue sets the text and moves the cursor to the end.
-//
-// Any selection is dropped: it was anchored in the text being replaced, and a
-// stale anchor past the end of the new value paints the blanks beyond it as
-// selected — a dialog field refilled with a shorter value showed a highlight
-// wider than the value itself.
+// SetValue sets the text and moves the cursor to the end. Any selection is
+// dropped: a stale anchor past the end of a shorter new value paints the blanks
+// beyond it as selected.
 func (f *InputField) SetValue(v string) {
 	f.value = []rune(v)
 	f.cursor = len(f.value)
@@ -104,25 +100,20 @@ func (f *InputField) SetValue(v string) {
 	f.adjustScroll()
 }
 
-// ShowFromStart scrolls the view back to the field's first column, leaving the
-// value and the caret where they are. It is what a caller pre-filling a field
-// uses: SetValue leaves the caret at the end and the view on the value's tail
-// — right for a Destination path, where the file name is what matters, wrong
-// for the Connect dialog's Server Name, which showed
-// "long-server-name.corp.example.com" for a connection the user picked by its
-// first few characters.
-//
-// The caret is then off screen on a focused field until the first key, which
-// adjustScroll brings the view back to; the focus border still says where
-// input would go.
+// ShowFromStart scrolls the view to the field's first column, leaving value and
+// caret. A caller pre-filling a field uses it: SetValue leaves the view on the
+// tail, right for a Destination path (the file name matters) but wrong for the
+// Connect dialog's Server Name, where users pick by the first few characters.
+// The caret is off screen on a focused field until the first key
+// (adjustScroll); the focus border still shows where input goes.
 func (f *InputField) ShowFromStart() { f.scroll = 0 }
 
 // Focus sets the focused state.
 func (f *InputField) Focus(v bool) { f.focused = v }
 
 // SetEnabled toggles whether the field accepts input. A disabled field draws
-// greyed out *and* refuses keys and clicks: one that only stopped accepting
-// input would look like a live field ignoring the user.
+// greyed and refuses keys and clicks (one that only stopped accepting input
+// would look like a live field ignoring the user).
 func (f *InputField) SetEnabled(v bool) { f.disabled = !v }
 
 // Enabled reports whether the field accepts input.
@@ -260,12 +251,11 @@ func (f *InputField) Draw(s tcell.Screen) {
 		return inputStyle
 	}
 
-	// Walk grapheme clusters accumulating display width rather than assuming a
-	// column per rune: a wide character shifts everything after it, and a
-	// cluster's width is not the sum of its runes' ("❤️" is two runes and two
-	// columns, neither rune two wide). Counting runes drew the tail of the field
-	// out of step with the terminal, and dropping zero-width runes lost every
-	// combining mark. Each cluster is styled by its first rune.
+	// Walk grapheme clusters accumulating display width, not a column per rune: a
+	// wide character shifts everything after it and a cluster's width isn't the sum
+	// of its runes' ("❤️" is two runes, two columns). Counting runes drew the tail
+	// out of step; dropping zero-width runes lost every combining mark. Each
+	// cluster is styled by its first rune.
 	i, col := 0, 0
 	for i < len(runes) {
 		end, cw := core.GraphemeAt(runes, i)
@@ -276,8 +266,8 @@ func (f *InputField) Draw(s tcell.Screen) {
 		i = end
 	}
 	sx := 0
-	// A wide cluster straddling the left edge shows only its right-hand cell,
-	// which is not a glyph — blank it rather than emit half a character.
+	// A wide cluster straddling the left edge shows only its right-hand cell, not a
+	// glyph: blank it.
 	if i < len(runes) && col < f.scroll {
 		end, cw := core.GraphemeAt(runes, i)
 		for c := f.scroll; c < col+cw && sx < f.rect.W; c++ {
@@ -301,8 +291,8 @@ func (f *InputField) Draw(s tcell.Screen) {
 			continue
 		}
 		if sx+cw > f.rect.W {
-			// Clipped by the right edge — blanks, never half a glyph, since
-			// tcell owns both cells of a double-width character.
+			// Clipped by the right edge: blanks, never half a glyph (tcell owns both cells
+			// of a double-width character).
 			for ; sx < f.rect.W; sx++ {
 				core.PutRune(s, ix+1+sx, f.rect.Y, ' ', st)
 			}
@@ -319,9 +309,8 @@ func (f *InputField) Draw(s tcell.Screen) {
 	}
 }
 
-// displayRunes is what Draw and the click-to-position math both measure: the
-// value itself, or one '*' per rune in password mode. The masked form keeps the
-// value's rune count, so a rune index means the same thing in both.
+// displayRunes is what Draw and click-to-position both measure: the value, or
+// one '*' per rune in password mode (same rune count, so indices agree).
 func (f *InputField) displayRunes() []rune {
 	if f.password {
 		return []rune(strings.Repeat("*", len(f.value)))
@@ -330,9 +319,8 @@ func (f *InputField) displayRunes() []rune {
 }
 
 // HandleKey processes keyboard input, returning true only for keys InputField
-// acts on. Everything else — Up/Down, Tab/Backtab, Esc, Enter, plain modifiers —
-// returns false, so a caller like propsheet.Form can fall through to
-// focus-cycling instead of the field swallowing the key.
+// acts on; Up/Down, Tab/Backtab, Esc, Enter and plain modifiers return false so
+// a caller like propsheet.Form can cycle focus.
 func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 	if !f.focused || f.disabled {
 		return false
@@ -354,9 +342,8 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 		f.selecting = true
 		f.selAnchor = f.cursor
 	}
-	// dropSelection decides, after the switch below, whether to clear the
-	// selection. True by default, flipped false by any case managing the
-	// selection itself.
+	// dropSelection decides, after the switch, whether to clear the selection. True
+	// by default; cases managing the selection themselves clear it.
 	dropSelection := !extending
 	consumed := true
 
@@ -458,10 +445,10 @@ func (f *InputField) HandleMouse(ev *tcell.EventMouse) bool {
 		f.mouseDragging = false
 		return wasDragging
 	}
-	// Once the press is latched the gesture is this field's until the release, so
-	// motion is consumed wherever the pointer went. Hit-testing instead freezes
-	// the selection the moment the pointer leaves the box. Only reachable when
-	// the host forwards off-rect motion here.
+	// Once the press is latched the gesture is this field's until release, so
+	// motion is consumed wherever the pointer went; hit-testing would freeze the
+	// selection when it leaves the box. Reachable only when the host forwards
+	// off-rect motion here.
 	if !f.mouseDragging && !f.HitTest(ev.Position()) {
 		return false
 	}
@@ -470,9 +457,8 @@ func (f *InputField) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	mx, _ := ev.Position()
 	ix := f.inputX()
-	// mx-ix-1 is a terminal-column offset into the box while the cursor is a rune
-	// index; converting is what keeps a click landing on the character it was
-	// aimed at once the field holds a wide rune.
+	// mx-ix-1 is a column offset while the cursor is a rune index; converting keeps
+	// a click on its character once the field holds a wide rune.
 	runes := f.displayRunes()
 	col := core.Clamp(core.RuneIndexAtColumn(runes, f.scroll+(mx-ix-1)), 0, len(f.value))
 	if !f.mouseDragging {
@@ -488,16 +474,14 @@ func (f *InputField) HandleMouse(ev *tcell.EventMouse) bool {
 }
 
 // CancelMouseDrag drops the drag latch without moving the cursor or touching
-// the selection, for a host that is taking the field out of a gesture rather
-// than ending one — `dialogs.FieldGesture.Clear` on a reshow. Forwarding a
-// synthetic `ButtonNone` would do the same thing, but it would be a lie about
-// where the pointer is, and `HandleMouse`'s answer ("was a drag ended here")
-// is not the question the caller is asking.
+// the selection, for a host taking the field out of a gesture rather than
+// ending one (`dialogs.FieldGesture.Clear` on a reshow). A synthetic
+// `ButtonNone` would misreport the pointer position and HandleMouse's answer
+// isn't what the caller asks.
 func (f *InputField) CancelMouseDrag() { f.mouseDragging = false }
 
-// adjustScroll keeps the caret inside the visible box, working in display
-// columns rather than rune indices so a field of wide characters scrolls twice
-// as far per caret step.
+// adjustScroll keeps the caret inside the visible box, in display columns so a
+// field of wide characters scrolls twice as far per caret step.
 func (f *InputField) adjustScroll() {
 	runes := f.displayRunes()
 	col := core.ColumnOfRune(runes, f.cursor)
@@ -507,10 +491,9 @@ func (f *InputField) adjustScroll() {
 	if col >= f.scroll+f.rect.W {
 		f.scroll = col - f.rect.W + 1
 	}
-	// Keeping the caret visible is not enough on its own: replacing a long value
-	// with a short one leaves the caret at the new, shorter end, and the rule
-	// above scrolls the window to start exactly there — past every character in
-	// the field, which then draws blank over a value that is really set.
+	// Keeping the caret visible isn't enough: replacing a long value with a short
+	// one leaves the caret at the new end, and the rule above scrolls the window to
+	// start exactly there, past every character, drawing blank over a set value.
 	if last := core.ColumnOfRune(runes, len(runes)) - f.rect.W + 1; f.scroll > last {
 		f.scroll = last
 	}

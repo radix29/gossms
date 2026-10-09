@@ -10,14 +10,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// assembly_props.go is the read-only Properties for a CLR assembly: General,
-// Files and Routines.
+// assembly_props.go is the read-only Properties for a CLR assembly: General, Files
+// and Routines.
 //
-// Nothing here writes, and no dialog could. CREATE and ALTER ASSEMBLY both
-// need the assembly binary — a compiled .dll, or its hex literal — which is
-// not something a form can produce, and the two flags a form *could* set
-// (PERMISSION_SET, VISIBILITY) are changed by an ALTER that a user scripts
-// rather than fills in. All three pages are named in
+// Nothing here writes, and no dialog could. CREATE and ALTER ASSEMBLY both need
+// the assembly binary (a compiled .dll or its hex literal), which a form cannot
+// produce, and the two flags a form could set (PERMISSION_SET, VISIBILITY) are
+// changed by an ALTER a user scripts. All three pages are named in
 // prop_page_requires_test.go's pagesThatOnlyRead.
 
 func findAssembly(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.Assembly, error) {

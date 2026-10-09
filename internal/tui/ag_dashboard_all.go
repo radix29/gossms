@@ -16,12 +16,11 @@ import (
 //
 // # One unreachable primary must not empty the page
 //
-// Each group resolves independently through resolveAGView, degrading to a
-// partial local read (Object Explorer's rule) rather than failing (AG
-// Properties' rule, where a secondary-loaded page would offer rejected edits).
-// This page only reads, and failing because one of five primaries is
-// unreachable would be useless when needed most. A locally read group says so
-// in Issues.
+// Each group resolves independently through resolveAGView, degrading to a partial
+// local read (Object Explorer's rule) rather than failing (AG Properties' rule,
+// where a secondary-loaded page would offer rejected edits). This page only reads,
+// and failing because one of five primaries is unreachable would be useless when
+// needed most. A locally read group says so in Issues.
 
 // agGroupRollup is one group's row, with the replicas and databases it
 // summarizes; the replica grid is built from these.

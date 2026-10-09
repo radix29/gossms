@@ -33,14 +33,10 @@ type Splitter struct {
 	label     string // optional label drawn on the splitter bar
 	active    bool   // see SetActive
 
-	// mouseDragging is true from the first Button1 of a gesture until its
-	// release, wherever that press landed — mirrors Toolbar's/TreeView's/
-	// MenuBar's field of the same name. Without it a resize starts from any
-	// Button1 that happens to be over the bar, and tcell's all-motion
-	// tracking resends Button1 on every motion event while the button stays
-	// down: a text-selection drag in the editor above that crosses the bar
-	// on its way down grabs it and resizes the panes instead. dragging
-	// alone can't tell the two apart — it's only ever set by this branch.
+	// mouseDragging is true from the first Button1 of a gesture until its release,
+	// wherever the press landed (same field as Toolbar/TreeView/MenuBar). Without
+	// it, tcell's all-motion tracking resends Button1 on every motion, so an editor
+	// text-selection drag crossing the bar would grab it and resize the panes.
 	mouseDragging bool
 }
 
@@ -70,10 +66,8 @@ func (sp *Splitter) SetBounds(x, y, w, h int) {
 	sp.rect = core.Rect{X: x, Y: y, W: w, H: h}
 }
 
-// SetActive marks the splitter's bar (and label, if any) as belonging to
-// the region that currently holds keyboard focus, drawing it in the same
-// highlighted style used elsewhere for a focused panel/tab (see theme
-// "BorderActive" convention, e.g. TreeView's active border).
+// SetActive marks the bar (and label) as belonging to the focused region,
+// drawing it in the focused-border style.
 func (sp *Splitter) SetActive(v bool) { sp.active = v }
 
 // Ratio returns the current split ratio.
@@ -135,9 +129,8 @@ func (sp *Splitter) Draw(s tcell.Screen) {
 	}
 }
 
-// HandleKey adjusts the ratio with Ctrl+Arrow. Requires Shift to be
-// unheld, so it doesn't swallow Ctrl+Shift combos reserved elsewhere (e.g.
-// the query editor's Ctrl+Shift+Up/Down "move line" binding).
+// HandleKey adjusts the ratio with Ctrl+Arrow. Shift must be unheld so it
+// doesn't swallow Ctrl+Shift combos (e.g. the editor's "move line").
 func (sp *Splitter) HandleKey(ev *tcell.EventKey) bool {
 	const step = 0.05
 	isResizeMod := ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift == 0
@@ -166,12 +159,9 @@ func (sp *Splitter) HandleKey(ev *tcell.EventKey) bool {
 	return false
 }
 
-// HandleMouse handles drag events on the splitter bar. Returns true when
-// the event was consumed (including during an active drag). A resize only
-// ever begins on a press that lands on the bar — see mouseDragging — so
-// the host must pass every Button1 event through here, not just the ones
-// over the bar, or a press elsewhere won't be recognized as the start of
-// the gesture it is.
+// HandleMouse handles drag events on the bar and reports whether it consumed
+// them. A resize begins only on a press on the bar (see mouseDragging), so the
+// host must pass every Button1 event through here.
 func (sp *Splitter) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	pos := sp.SplitPos()

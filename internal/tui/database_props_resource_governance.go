@@ -13,20 +13,20 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// pageDatabaseResourceGovernance is the Azure-only Resource Governance page:
-// what the resource governor lets this database have, and what it was using
-// when the server last measured.
+// pageDatabaseResourceGovernance is the Azure-only Resource Governance page: what
+// the resource governor lets this database have, and what it was using when the
+// server last measured.
 //
-// It exists because the percentages an Azure database reports are percentages
-// *of something*, and that something is invisible everywhere else in the UI —
-// "CPU 0.6%" against an unnamed limit says nothing, while "0.6% of 4 vCores"
-// does. sys.dm_db_resource_stats supplies the reading and
-// sys.dm_user_db_resource_governance the scale, so the page pairs them.
+// It exists because the percentages an Azure database reports are percentages *of
+// something* that is invisible elsewhere in the UI — "CPU 0.6%" against an unnamed
+// limit says nothing, while "0.6% of 4 vCores" does. sys.dm_db_resource_stats
+// supplies the reading and sys.dm_user_db_resource_governance the scale, so the
+// page pairs them.
 //
-// Read-only throughout: every value here changes by resizing the instance or
-// the database, which is a control-plane operation and not something a T-SQL
-// statement from this dialog could do. The page is offered only on an Azure
-// engine edition, where both views exist — see databasePropPages.
+// Read-only: every value here changes by resizing the instance or the database, a
+// control-plane operation no T-SQL statement from this dialog could do. Offered
+// only on an Azure engine edition, where both views exist — see
+// databasePropPages.
 func pageDatabaseResourceGovernance(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Resource Governance",

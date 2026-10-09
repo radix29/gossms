@@ -161,9 +161,9 @@ func signature(n *Node) string {
 // nodeChanges names what differs between two matched operators.
 //
 // Estimates use a relative tolerance, since a re-estimate against slightly
-// different statistics nudges every number. The two runtime numbers are
-// compared exactly: they're measurements, and hiding a reads delta hides what
-// the user is tuning.
+// different statistics nudges every number. Runtime numbers are compared
+// exactly: they are measurements, and hiding a reads delta hides what the user
+// is tuning.
 func nodeChanges(l, r *Node) []string {
 	var out []string
 	if l.Object.Index != r.Object.Index && (l.Object.Index != "" || r.Object.Index != "") {

@@ -16,23 +16,20 @@ import (
 // Live mode (Live Query Statistics)
 // ============================================================
 //
-// SetLive puts the view in live mode: the plan is the running statement's
-// in-flight showplan and each operator carries the counters a poller merged
-// from sys.dm_exec_query_profiles (showplan.MergeProfiles). Live mode adds a
-// progress row above the content, a fourth line to every graph tile (rows of
-// estimate, percentage), a rows/elapsed column to the Tree tab and live
+// Live mode: the plan is the running statement's in-flight showplan and each
+// operator carries counters a poller merged from sys.dm_exec_query_profiles
+// (showplan.MergeProfiles). It adds a progress row above the content, a fourth
+// line to every graph tile, a rows/elapsed column to the Tree tab and live
 // figures to the details panes; tiles and tree rows are coloured by state
-// (running / done / not started). SetPlan or SetPlanXML — the actual plan
-// arriving at the end — leaves it. Nothing animates: the view repaints only
-// when the host hands it new counters.
+// (running / done / not started). SetPlan or SetPlanXML (the final actual
+// plan) leaves it. Nothing animates: the view repaints only when the host
+// hands it new counters.
 
-// SetLive shows p in live mode with counters, keyed by NodeID of the statement
-// on screen — the in-flight plan is the running statement's alone, so the
-// host has already filtered its profile rows to that statement. Called again
-// with the same p it only swaps the counters, keeping selection, scroll and
-// tab; a different p (the batch moved to its next statement) is installed
-// fresh but keeps the tab the user was on. A nil p shows a waiting note until
-// the first plan arrives.
+// SetLive shows p in live mode with counters keyed by NodeID of the statement
+// on screen (the host has already filtered its profile rows to it). Called
+// again with the same p it only swaps the counters, keeping selection, scroll
+// and tab; a different p (the batch moved on) is installed fresh but keeps the
+// tab. A nil p shows a waiting note until the first plan arrives.
 func (v *PlanView) SetLive(p *showplan.Plan, counters map[int]showplan.LiveCounters) {
 	wasLive := v.liveOn
 	v.liveOn = true
@@ -47,8 +44,8 @@ func (v *PlanView) SetLive(p *showplan.Plan, counters map[int]showplan.LiveCount
 		v.activeTab = tab
 		v.syncFocus()
 	case !wasLive:
-		// Same plan entering live mode: the tiles grow a line and the
-		// progress row needs its place.
+		// Same plan entering live mode: tiles grow a line, the progress row
+		// needs its place.
 		v.rebuildGraphLayout()
 		v.layout()
 	}
@@ -57,14 +54,13 @@ func (v *PlanView) SetLive(p *showplan.Plan, counters map[int]showplan.LiveCount
 // Live reports whether the view is in live mode (see SetLive).
 func (v *PlanView) Live() bool { return v.liveOn }
 
-// SetLiveNote replaces live mode's waiting texts — the content area's before
-// a plan arrives, the progress row's before counters do — with msg: the host
-// saying why nothing more is coming (the DMV was refused). "" restores them.
-// Leaving live mode clears it.
+// SetLiveNote replaces live mode's waiting texts (content area before a plan,
+// progress row before counters) with msg, the host saying why nothing more is
+// coming (the DMV was refused). "" restores them; leaving live mode clears it.
 func (v *PlanView) SetLiveNote(msg string) { v.liveNote = msg }
 
-// clearLive leaves live mode — SetPlan/SetPlanXML call it before installing
-// the plan, so the actual plan lays out with ordinary tiles.
+// clearLive leaves live mode; SetPlan/SetPlanXML call it first so the actual
+// plan lays out with ordinary tiles.
 func (v *PlanView) clearLive() {
 	v.liveOn = false
 	v.live = nil
@@ -79,9 +75,8 @@ func (v *PlanView) graphTileHeight() int {
 	return graphTileH
 }
 
-// liveFor returns n's live counters, if live mode has any for it. An operator
-// the DMV has not reported yet reads as absent rather than as zero rows of a
-// zero estimate.
+// liveFor returns n's live counters, if any. An operator the DMV hasn't
+// reported reads as absent, not zero rows of a zero estimate.
 func (v *PlanView) liveFor(n *showplan.Node) (showplan.LiveCounters, bool) {
 	if !v.liveOn || n == nil {
 		return showplan.LiveCounters{}, false
@@ -112,9 +107,8 @@ func liveStateColor(pal *theme.Palette, c showplan.LiveCounters, ok bool) tcell.
 	}
 }
 
-// livePct renders the operator's progress for a "rows of estimate" figure:
-// "over" once it has passed the estimate (SSMS's word; the percentage stops
-// meaning anything), otherwise a floored percentage.
+// livePct renders progress for a "rows of estimate" figure: "over" once past
+// the estimate (SSMS's word), otherwise a floored percentage.
 func livePct(c showplan.LiveCounters) string {
 	if c.Over() {
 		return "over"
@@ -122,16 +116,15 @@ func livePct(c showplan.LiveCounters) string {
 	return fmt.Sprintf("%d%%", floorPct(showplan.NodeProgress(c)))
 }
 
-// floorPct turns a [0, 1] fraction into a whole percentage, floored so a
-// capped 0.99 never reads as 100 — with a hair of slack, since 0.99*100 is
-// 98.999… in floating point.
+// floorPct turns a [0, 1] fraction into a floored whole percentage, so a capped
+// 0.99 never reads 100, with slack since 0.99*100 is 98.999… in floating point.
 func floorPct(f float64) int { return int(math.Floor(f*100 + 1e-9)) }
 
 // liveRowsText is the "rows of estimate (pct)" figure, in the first form that
-// fits w columns: exact counts, then K/M/B-compacted ones, then the
-// percentage without its parentheses, then without it. A tile is 18 columns
-// inside, and a parallel exchange routinely passes millions of rows against an
-// estimate of thousands — exactly when "over" is the figure worth keeping.
+// fits w columns: exact counts, then K/M/B-compacted ones, then the percentage
+// without parentheses, then without it. A tile is 18 columns inside, and a
+// parallel exchange routinely passes millions of rows against an estimate of
+// thousands, when "over" is the figure worth keeping.
 func liveRowsText(c showplan.LiveCounters, w int) string {
 	pct := livePct(c)
 	rows, est := compactCount(c.Rows), compactCount(c.EstRows)
@@ -170,9 +163,8 @@ func compactCount(n int64) string {
 	}
 }
 
-// liveElapsedText renders an operator's elapsed milliseconds the way SSMS's
-// live tiles do, as seconds to the millisecond — minutes and seconds past
-// the first minute, where the milliseconds stop mattering.
+// liveElapsedText renders elapsed milliseconds as SSMS's live tiles do: seconds
+// to the millisecond, minutes and seconds past the first minute.
 func liveElapsedText(ms int64) string {
 	if ms < 60_000 {
 		return fmt.Sprintf("%.3fs", float64(ms)/1000)
@@ -197,11 +189,10 @@ func liveCPUText(c showplan.LiveCounters) string {
 	return fmt.Sprintf("%d ms", c.CPUMS)
 }
 
-// liveSummary is the progress row's figures: the statement's overall
-// completion, its elapsed time so far (the slowest operator's — the root's
-// clock starts first and stops last), and how many operators are in each
-// state. timed is false when no operator was timed (lightweight profiling),
-// and the elapsed figure is then left out.
+// liveSummary is the progress row's figures: overall completion, elapsed so far
+// (the slowest operator's; the root's clock starts first and stops last), and
+// operators per state. timed is false when no operator was timed (lightweight
+// profiling), and the elapsed figure is then left out.
 type liveSummary struct {
 	progress                  float64
 	elapsedMS                 int64
@@ -276,9 +267,9 @@ func (v *PlanView) drawLiveRow(s tcell.Screen) {
 	put(st.Foreground(pal.TextDim), fmt.Sprintf("%d not started", sum.notStarted))
 }
 
-// Tree tab's live column: "rows of est (pct)" then elapsed, right-aligned in
-// the tree pane. Below liveTreeMinW the pane keeps its operator text whole
-// and the column is left out — the details pane still has the figures.
+// Tree tab's live column: "rows of est (pct)" then elapsed, right-aligned.
+// Below liveTreeMinW the column is left out and operator text kept whole (the
+// details pane has the figures).
 const (
 	liveTreeRowsW = 18
 	liveTreeTimeW = 8

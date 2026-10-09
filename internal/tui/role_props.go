@@ -10,57 +10,54 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// rolePropPages builds the page set for Database Role Properties. Members,
-// Owned Schemas, Owned Roles, Securables and Extended Properties are all
-// editable; General is editable except for a built-in role's name/owner. Application roles are
-// not covered — they're a separate principal type with no tree node of
-// their own.
+// rolePropPages builds the page set for Database Role Properties. Members, Owned
+// Schemas, Owned Roles, Securables and Extended Properties are all editable;
+// General is editable except for a built-in role's name/owner. Application roles
+// are not covered: they're a separate principal type with no tree node of their
+// own.
 //
-// There is deliberately no Effective Permissions page here, unlike Database
-// User Properties. Resolving effective permissions means impersonating the
-// principal (gosmo's EffectivePermissions, and SSMS's own Effective tab,
-// both work that way), and SQL Server refuses to impersonate a role —
-// Msg 15517, "this type of principal cannot be impersonated", verified live
-// 2026-08-05 against a role that did exist. Adding the page back would give
-// a tab whose only possible outcome is that error.
+// There is deliberately no Effective Permissions page here, unlike Database User
+// Properties. Resolving effective permissions means impersonating the principal
+// (gosmo's EffectivePermissions, and SSMS's Effective tab, both work that way),
+// and SQL Server refuses to impersonate a role: Msg 15517, "this type of
+// principal cannot be impersonated", verified live 2026-08-05 against a role that
+// did exist. The page's only possible outcome would be that error.
 //
 // roleName is boxed in a *string shared by every page below: renaming a role
-// changes the identity every other page's lookup depends on. The
-// rename is the last write of an Apply/OK run (see propPage.renames),
-// and commitRename then updates the box so PropDialog.InvalidateAll's
-// reload re-fetches under the new name. dbName never changes, so it
-// stays a plain string.
+// changes the identity every other page's lookup depends on. The rename is the
+// last write of an Apply/OK run (propPage.renames), and commitRename then updates
+// the box so PropDialog.InvalidateAll's reload re-fetches under the new name.
+// dbName never changes, so it stays a plain string.
 func rolePropPages(d *PropDialog, sc *db.ServerConn, dbName, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
 		withRequires(pageRoleGeneral(sc, dbName, namePtr), dbName, gate.AlterAnyDBRole),
-		// Members, alone on this dialog, is gated on the role itself: a class-4
-		// DENY on the role withholds ADD/DROP MEMBER while leaving the rename
-		// and the drop the other pages make alone. The name is the one the
-		// dialog was opened with — a rename is not blocked by that DENY, and
-		// the probe that answers the question recorded the old name too.
+		// Members, alone on this dialog, is gated on the role itself: a class-4 DENY on
+		// the role withholds ADD/DROP MEMBER while leaving the rename and the drop the
+		// other pages make alone. The name is the one the dialog was opened with: a rename
+		// is not blocked by that DENY, and the probe that answers the question recorded
+		// the old name too.
 		withRequiresOn(pageRoleMembers(sc, dbName, namePtr), dbName, "", roleName, gate.AlterAnyDBRoleMembers),
 		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "role"), dbName, gate.AlterAnySchema, gate.ControlDB),
 		withRequires(pageRoleOwnedRoles(sc, dbName, namePtr), dbName, gate.AlterAnyDBRole),
 		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, gate.ControlDB),
-		// A database role is classed as USER in sp_addextendedproperty's
-		// level names — it's a database principal like a user, not a
-		// level of its own.
+		// A database role is classed as USER in sp_addextendedproperty's level names: a
+		// database principal like a user, not a level of its own.
 		withRequires(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *namePtr}
 		}), dbName, gate.AlterAnyDBRole),
 	}
 }
 
-// findRole resolves dbName/roleName to a *gosmo.DatabaseRole, the one
-// lookup every page on this dialog needs first.
+// findRole resolves dbName/roleName to a *gosmo.DatabaseRole, the lookup every
+// page on this dialog needs first.
 func findRole(ctx context.Context, sc *db.ServerConn, dbName, roleName string) (*gosmo.DatabaseRole, error) {
 	return inDB(ctx, sc, dbName, roleName, (*gosmo.Database).RoleByName)
 }
 
-// principalNames returns every database principal (user or role) that
-// could own a role or schema, or be added as a role member — the
-// candidate list every owner/member picker on this dialog draws from.
+// principalNames returns every database principal (user or role) that could own a
+// role or schema, or be added as a role member: the candidate list every
+// owner/member picker on this dialog draws from.
 func principalNames(users []*gosmo.User, roles []*gosmo.DatabaseRole) []string {
 	names := make([]string, 0, len(users)+len(roles))
 	for _, u := range users {
@@ -112,8 +109,8 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 					ownedRoles++
 				}
 			}
-			// Counted distinct: one securable with SELECT, INSERT and UPDATE
-			// on it is one securable, not three permission rows.
+			// Counted distinct: one securable with SELECT, INSERT and UPDATE on it is one
+			// securable, not three permission rows.
 			distinctSecurables := make(map[string]bool)
 			for _, e := range securables {
 				distinctSecurables[securable{e.SecurableType, e.Schema, e.Name}.key()] = true

@@ -12,13 +12,12 @@ import (
 
 // plan_compare_open.go starts a comparison the ways SSMS's Compare Showplan
 // does: the plan on screen against a saved .sqlplan (Compare Showplan...), or
-// against another plan already open in a panel (Compare with ▸). Both sit on
-// the Query menu and on a right-click in a plan's graph or tree. The
-// comparison itself is PlanComparePanel's; Query Store's Compare Plans is its
-// third way in.
+// against another plan already open in a panel (Compare with >). Both sit on the
+// Query menu and on a right-click in a plan's graph or tree. The comparison
+// itself is PlanComparePanel's; Query Store's Compare Plans is its third way in.
 
 // openPlan is a plan a panel shows, with the name a comparison calls it by.
-// panel is kept so Compare with ▸ can leave the plan's own panel off its list.
+// panel is kept so Compare with > can leave the plan's own panel off its list.
 type openPlan struct {
 	name  string
 	plan  *showplan.Plan
@@ -52,14 +51,14 @@ func (a *App) openPlans() []openPlan {
 	return plans
 }
 
-// compareTitle names a comparison by its two sides — the A and B the grids'
+// compareTitle names a comparison by its two sides, the A and B the grids'
 // column headers refer to.
 func compareTitle(a, b string) string {
 	return "Compare Showplan — A: " + a + " · B: " + b
 }
 
-// openShowplanComparison opens from (A) against to (B), each side named by
-// its source so a plan opened back out of the comparison is too.
+// openShowplanComparison opens from (A) against to (B), each side named by its
+// source so a plan opened back out of the comparison is too.
 func (a *App) openShowplanComparison(from openPlan, toName string, to *showplan.Plan) {
 	cp := NewPlanComparePanel(a, compareTitle(from.name, toName), from.plan, to)
 	cp.sideNames = [2]string{from.name, toName}
@@ -78,10 +77,9 @@ func (a *App) compareShowplan() {
 	a.compareShowplanFrom(from)
 }
 
-// compareShowplanFrom asks for the .sqlplan to compare from against. The plan
-// is captured now, not looked up when the file is chosen: a query re-run
-// behind the dialog would otherwise swap side A for a plan the user never
-// asked to compare.
+// compareShowplanFrom asks for the .sqlplan to compare from against. The plan is
+// captured now, not looked up when the file is chosen: a query re-run behind the
+// dialog would otherwise swap side A for a plan the user never asked to compare.
 func (a *App) compareShowplanFrom(from openPlan) {
 	start := ""
 	if pp, ok := from.panel.(*PlanPanel); ok && pp.filePath != "" {
@@ -102,9 +100,9 @@ func (a *App) compareShowplanFrom(from openPlan) {
 	})
 }
 
-// compareWithItem is the Compare with ▸ cascade for from: one entry per other
-// open plan. With none to offer it is withheld and says why — an empty
-// submenu would open onto nothing.
+// compareWithItem is the Compare with > cascade for from: one entry per other
+// open plan. With none to offer it is withheld and says why; an empty submenu
+// would open onto nothing.
 func (a *App) compareWithItem(from openPlan, ok bool) controls.MenuItem {
 	item := controls.MenuItem{Label: "Compare with", Enabled: func() bool { return false }}
 	if !ok {
@@ -127,9 +125,9 @@ func (a *App) compareWithItem(from openPlan, ok bool) controls.MenuItem {
 	return item
 }
 
-// activeCompareWithItem is the Query menu's Compare with ▸, built for the
-// active panel. The menu bar rebuilds its menus as it opens
-// (MenuBar.OnBeforeOpen), so the list is the panels open at that moment.
+// activeCompareWithItem is the Query menu's Compare with >, built for the active
+// panel. The menu bar rebuilds its menus as it opens (MenuBar.OnBeforeOpen), so
+// the list is the panels open at that moment.
 func (a *App) activeCompareWithItem() controls.MenuItem {
 	from, ok := panelPlan(a.panels.ActivePanel())
 	return a.compareWithItem(from, ok)
@@ -150,9 +148,9 @@ func (a *App) showPlanContextMenu(x, y int, p layout.Panel) {
 	})
 }
 
-// parsePlanFile parses a .sqlplan as read from disk, through decodeTextFile
-// like every other file gossms reads: SSMS writes .sqlplan as UTF-16,
-// identified by its BOM (see text_encoding.go).
+// parsePlanFile parses a .sqlplan as read from disk, through decodeTextFile like
+// every file gossms reads: SSMS writes .sqlplan as UTF-16, identified by its BOM
+// (text_encoding.go).
 func parsePlanFile(data []byte) (*showplan.Plan, error) {
 	text, _, _, _ := decodeTextFile(data)
 	return showplan.Parse([]byte(text))

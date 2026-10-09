@@ -15,26 +15,23 @@ type FileEntry struct {
 	ModTime time.Time
 
 	// SizeUnknown marks an entry whose FileSystem could not report a size, as
-	// opposed to a genuinely empty one. A zero ModTime says the same for the
-	// timestamp and needs no flag (no file is dated year 1), but a zero Size
-	// cannot, and a listing printing "0 B" for every file states something false.
-	// goSSMS's server-side listing sets it on pre-2017 instances, where xp_dirtree
-	// reports names and nothing else.
+	// opposed to a genuinely empty one. A zero ModTime needs no flag (no file is
+	// dated year 1), but a zero Size cannot say it, and "0 B" for every file states
+	// something false. goSSMS's server-side listing sets it on pre-2017 instances,
+	// where xp_dirtree reports names only.
 	SizeUnknown bool
 }
 
-// FileSystem is the filesystem a FileDialog browses. Every path operation the
-// dialog performs goes through it, so a host app can point the dialog at
-// something other than the machine it runs on: goSSMS browses the SQL Server
-// host's filesystem this way, a different machine with different path
-// conventions (backslashes, drive letters) from the client's.
+// FileSystem is the filesystem a FileDialog browses. Every path operation goes
+// through it, so a host can point the dialog at another machine: goSSMS browses
+// the SQL Server host's filesystem, with different path conventions
+// (backslashes, drive letters) from the client's. So none of these can be
+// `path/filepath` calls at the call site: filepath uses the client's rules, and a
+// Linux client joining a Windows server path would produce
+// "/home/user/C:\Backup\db.bak".
 //
-// That is why none of these can be `path/filepath` calls at the call site:
-// filepath compiles to the *client's* rules, so a Linux client joining a
-// Windows server path would produce "/home/user/C:\Backup\db.bak".
-//
-// Implementations may block (LocalFileSystem doesn't, a network-backed one
-// does), so a FileDialog navigation costs whatever the implementation costs.
+// Implementations may block (LocalFileSystem doesn't, a network one does), so
+// navigation costs whatever the implementation costs.
 type FileSystem interface {
 	PathRules
 
@@ -46,28 +43,26 @@ type FileSystem interface {
 	// path.
 	Default() string
 	// Exists reports whether path exists and whether it is a directory. A path
-	// that simply isn't there is (false, false, nil); err is for a filesystem that
-	// couldn't *ask* (a remote one that timed out or lost its connection). The
-	// distinction matters: FileDialog's save-overwrite guard treats "couldn't ask"
-	// as "assume it's there" and prompts anyway; folding the two would silently
-	// skip the prompt.
+	// that isn't there is (false, false, nil); err is for a filesystem that couldn't
+	// ask (a remote timeout or lost connection). The save-overwrite guard treats
+	// "couldn't ask" as "assume it's there" and prompts; folding the two would
+	// silently skip the prompt.
 	Exists(path string) (exists, isDir bool, err error)
 }
 
 // BlockingFileSystem is implemented by a FileSystem whose calls reach off this
-// machine. FileSystem is synchronous, so each such call stops the event loop
-// until it returns; a FileDialog paints a "Listing ..." frame before every call
-// to one, and skips that repaint for a filesystem that doesn't claim to block
-// (on the local disk it would only flicker).
+// machine. Each such call stops the event loop until it returns, so a FileDialog
+// paints a "Listing ..." frame before it, and skips that repaint for a
+// filesystem that doesn't claim to block (it would only flicker locally).
 type BlockingFileSystem interface {
 	// Blocking reports whether a call may take long enough to need feedback.
 	Blocking() bool
 }
 
 // PathRules is the half of FileSystem that only manipulates path strings.
-// WindowsPathRules and PosixPathRules implement it, so a FileSystem for a
-// remote host embeds whichever matches that host and supplies only the three
-// methods that actually reach the filesystem.
+// WindowsPathRules and PosixPathRules implement it, so a remote-host FileSystem
+// embeds the matching one and supplies only the three filesystem-reaching
+// methods.
 type PathRules interface {
 	// Clean normalizes dir into the absolute form the dialog stores and
 	// displays.
@@ -139,10 +134,9 @@ func (LocalFileSystem) Exists(path string) (bool, bool, error) {
 }
 
 // WindowsPathRules implements the path half of FileSystem for Windows-style
-// paths — backslash separator, "C:\" roots — without consulting
-// path/filepath, so it behaves identically whatever OS the client runs on.
-// A FileSystem for a remote Windows host embeds it and supplies List,
-// Default and Exists.
+// paths (backslash, "C:\" roots) without path/filepath, so it behaves the same
+// on any client OS. A remote Windows host's FileSystem embeds it and supplies
+// List, Default and Exists.
 type WindowsPathRules struct{}
 
 func (WindowsPathRules) Separator() string { return `\` }
@@ -171,11 +165,10 @@ func (w WindowsPathRules) Join(dir, name string) string {
 	return strings.TrimRight(dir, `\/`) + `\` + name
 }
 
-// Clean normalizes slashes to backslashes, collapses repeats, resolves "."
-// and "..", and leaves a drive root ("C:\") its trailing separator so it stays
-// distinguishable from the drive-list level above it. A UNC root comes back as
-// `\\server\share` without one — Parent recognizes it by component count
-// instead.
+// Clean normalizes slashes to backslashes, collapses repeats, resolves "." and
+// "..", and leaves a drive root ("C:\") its trailing separator so it stays
+// distinct from the drive-list level above. A UNC root comes back as
+// `\\server\share` without one; Parent recognizes it by component count.
 func (w WindowsPathRules) Clean(dir string) string {
 	if dir == "" {
 		return ""
@@ -214,9 +207,9 @@ func (w WindowsPathRules) Parent(dir string) string {
 	if clean == "" {
 		return ""
 	}
-	// A UNC path bottoms out at the share root: `\\server\share` is the shallowest
-	// thing any host can enumerate, so its parent is the drive list. Walking it by
-	// separator would offer `\\server` and then `\`, two levels that list nothing.
+	// A UNC path bottoms out at the share root, the shallowest thing any host can
+	// enumerate, so its parent is the drive list. Walking by separator would offer
+	// `\\server` then `\`, which list nothing.
 	if strings.HasPrefix(clean, `\\`) {
 		if strings.Count(clean[2:], `\`) < 2 {
 			return ""
@@ -226,10 +219,9 @@ func (w WindowsPathRules) Parent(dir string) string {
 	if i <= 0 {
 		return ""
 	}
-	// Clean only leaves a trailing separator on a root ("C:\"), so this is the
-	// drive root, whose parent is the drive list. Checked before the drive-letter
-	// case below, which would return "C:\" as its own parent and strand the browse
-	// there.
+	// Clean leaves a trailing separator only on a root ("C:\"), so this is the drive
+	// root, whose parent is the drive list. Checked before the drive-letter case,
+	// which would return "C:\" as its own parent and strand the browse.
 	if i == len(clean)-1 {
 		return ""
 	}
@@ -240,9 +232,8 @@ func (w WindowsPathRules) Parent(dir string) string {
 	return clean[:i]
 }
 
-// PosixPathRules is the WindowsPathRules counterpart for "/"-separated
-// hosts, again without touching path/filepath so a Windows client browsing
-// a Linux server stays correct.
+// PosixPathRules is the WindowsPathRules counterpart for "/"-separated hosts,
+// likewise avoiding path/filepath so a Windows client browsing Linux is correct.
 type PosixPathRules struct{}
 
 func (PosixPathRules) Separator() string   { return "/" }

@@ -74,15 +74,14 @@ func (d *HelpDialog) dataH() int { return d.ButtonRowY() - d.InnerRect().Y - 1 }
 
 // wrapHelpLines wraps each help line wider than w at a space, keeping its own
 // spacing (core.WrapText collapses it, which would scramble the key/description
-// columns). A continuation hangs under the description: the column after the
-// first run of two or more spaces past the line's indent, else the indent
-// itself, so a wrapped entry still reads as one entry under its key.
+// columns). A continuation hangs under the description: the column after the first
+// run of two or more spaces past the line's indent, else the indent itself, so a
+// wrapped entry still reads as one entry under its key.
 //
-// heads marks each output row whose source line is a heading (isHelpHeading).
-// Draw styles a row by it rather than by the row's own first column: a
-// heading's continuation hangs at column 0 like an unindented line, but a
-// heading that hung under a two-space gap would start with a space and lose
-// its style, and a row is a heading only because its source line is.
+// heads marks each output row whose source line is a heading (isHelpHeading). Draw
+// styles a row by it rather than by the row's own first column: a heading's
+// continuation hangs at column 0 like an unindented line, but a heading that hung
+// under a two-space gap would start with a space and lose its style.
 func wrapHelpLines(lines []string, w int) (out []string, heads []bool) {
 	out = make([]string, 0, len(lines))
 	heads = make([]bool, 0, len(lines))

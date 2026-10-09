@@ -8,9 +8,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// searchState holds the Tree/Plan tabs' shared operator search: '/'
-// starts typing a query, Enter confirms it and jumps to the first match,
-// Escape cancels; once confirmed, n/N cycle to the next/previous match.
+// searchState holds the Tree/Plan tabs' shared operator search: '/' starts a
+// query, Enter confirms and jumps to the first match, Escape cancels; then n/N
+// cycle matches.
 type searchState struct {
 	active  bool
 	query   string
@@ -18,16 +18,14 @@ type searchState struct {
 	idx     int
 }
 
-// searchEligibleTab reports whether operator search/warning-jump apply
-// to the active tab — the XML tab has its own browsing model (raw
-// text), not per-operator navigation.
+// searchEligibleTab reports whether operator search/warning-jump apply to the
+// active tab (not the XML tab, which browses raw text).
 func (v *PlanView) searchEligibleTab() bool {
 	return v.activeTab == TabTree || v.activeTab == TabPlan
 }
 
-// handleSearchKey handles '/' typing, Enter/Escape, and the n/N/w/p
-// single-key actions. Returns false for anything it doesn't own, so the
-// caller falls through to the active tab's own key handling.
+// handleSearchKey handles '/' typing, Enter/Escape, and the n/N/w/p keys.
+// Returns false for anything else, so the caller falls through to the tab.
 func (v *PlanView) handleSearchKey(ev *tcell.EventKey) bool {
 	if v.searchSt.active {
 		switch ev.Key() {
@@ -41,9 +39,8 @@ func (v *PlanView) handleSearchKey(ev *tcell.EventKey) bool {
 			v.searchSt.query = core.TrimLastGrapheme(v.searchSt.query)
 			return true
 		}
-		// Swallow everything else while typing — including digits and
-		// letters that would otherwise switch tabs or trigger other
-		// single-key actions — so a query can contain any character.
+		// Swallow everything else while typing (digits and letters would
+		// switch tabs or fire other keys) so a query can contain any character.
 		if r := core.EvRune(ev); r != 0 && ev.Modifiers()&tcell.ModCtrl == 0 {
 			v.searchSt.query += ev.Str()
 		}
@@ -73,9 +70,8 @@ func (v *PlanView) handleSearchKey(ev *tcell.EventKey) bool {
 	return false
 }
 
-// confirmSearch computes every operator matching the typed query
-// (case-insensitive substring against PhysicalOp/LogicalOp/Object.Table)
-// and jumps to the first one.
+// confirmSearch finds every operator matching the query (case-insensitive
+// substring of PhysicalOp/LogicalOp/Object.Table) and jumps to the first.
 func (v *PlanView) confirmSearch() {
 	v.searchSt.active = false
 	st := v.currentStatement()
@@ -95,8 +91,8 @@ func (v *PlanView) confirmSearch() {
 	v.jumpToMatch(1)
 }
 
-// nodeMatchesQuery reports whether n's operator name or object matches
-// the (already-lowercased) query as a substring.
+// nodeMatchesQuery reports whether n's operator name or object contains the
+// (lowercased) query.
 func nodeMatchesQuery(n *showplan.Node, q string) bool {
 	if strings.Contains(strings.ToLower(n.PhysicalOp), q) {
 		return true
@@ -107,8 +103,8 @@ func nodeMatchesQuery(n *showplan.Node, q string) bool {
 	return !n.Object.IsZero() && strings.Contains(strings.ToLower(n.Object.Table), q)
 }
 
-// jumpToMatch selects the next/previous search match, wrapping around;
-// reports "no matches" via OnStatus if the query found nothing.
+// jumpToMatch selects the next/previous match, wrapping; reports "no matches"
+// via OnStatus.
 func (v *PlanView) jumpToMatch(delta int) {
 	n := len(v.searchSt.matches)
 	if n == 0 {
@@ -121,12 +117,11 @@ func (v *PlanView) jumpToMatch(delta int) {
 	v.revealAndSelect(v.searchSt.matches[v.searchSt.idx])
 }
 
-// revealAndSelect expands any collapsed ancestor standing between the
-// current statement's root and id, so the Tree tab's flattened row list
-// (rebuildTreeRows) actually contains it before selectNode scrolls to it —
-// without this, selectNode's ensureTreeRowVisible silently no-ops for a
-// match/warning hidden under a collapsed node: Operator Details/Properties
-// update, but nothing moves or highlights in the Tree pane.
+// revealAndSelect expands any collapsed ancestor between the statement root
+// and id, so the flattened row list (rebuildTreeRows) contains it before
+// selectNode scrolls. Otherwise ensureTreeRowVisible silently no-ops for a
+// match hidden under a collapsed node: details update but the Tree pane
+// doesn't move.
 func (v *PlanView) revealAndSelect(id int) {
 	if st := v.currentStatement(); st != nil && v.expandAncestorsOf(st.Root, id) {
 		v.rebuildTreeRows()
@@ -134,8 +129,7 @@ func (v *PlanView) revealAndSelect(id int) {
 	v.selectNode(id)
 }
 
-// jumpToWarning selects the next/previous operator with a warning,
-// starting from the current selection and wrapping around.
+// jumpToWarning selects the next/previous operator with a warning, wrapping.
 func (v *PlanView) jumpToWarning(delta int) {
 	st := v.currentStatement()
 	if st == nil {

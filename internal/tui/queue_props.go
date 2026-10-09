@@ -14,24 +14,24 @@ import (
 // queue_props.go is Queue Properties, one of the two writable pages in the
 // Service Broker tree.
 //
-// A queue is here and a contract is not because a queue's settings are the
-// ones that change in operation rather than at design time: a queue taken out
-// of service, an activation procedure that has to be stopped, a reader count
-// raised under load. Every one of them is an ALTER QUEUE clause, and none of
-// them changes what the application's messages mean.
+// A queue is here and a contract is not because a queue's settings change in
+// operation rather than at design time: a queue taken out of service, an
+// activation procedure that has to be stopped, a reader count raised under load.
+// Every one of them is an ALTER QUEUE clause, and none changes what the
+// application's messages mean.
 //
-// The rights are the queue's own and are *not* the ones its Delete takes —
-// ALTER ON OBJECT::<queue> writes this page and is refused the drop, which
-// needs CONTROL on the queue or ALTER on its schema. See gate.QueueAlterRights.
+// The rights are the queue's own and are *not* the ones its Delete takes: ALTER ON
+// OBJECT::<queue> writes this page and is refused the drop, which needs CONTROL on
+// the queue or ALTER on its schema. See gate.QueueAlterRights.
 
 func findBrokerQueue(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.BrokerQueue, error) {
 	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).BrokerQueueByName)
 }
 
-// findQueueMonitor returns the broker's activation state for one queue, or
-// nil. A queue with no monitor row is the normal case — the broker creates one
-// when it first has reason to look at the queue — and so is a login without
-// VIEW DATABASE STATE, so neither is an error the caller has to handle.
+// findQueueMonitor returns the broker's activation state for one queue, or nil. A
+// queue with no monitor row is the normal case (the broker creates one when it
+// first has reason to look at the queue) and so is a login without VIEW DATABASE
+// STATE, so neither is an error the caller handles.
 func findQueueMonitor(ctx context.Context, sc *db.ServerConn, dbName string, objectID int) *gosmo.QueueMonitor {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
@@ -65,18 +65,16 @@ func pageBrokerQueueGeneral(sc *db.ServerConn, dbName, schema, name string) prop
 				return nil, nil, err
 			}
 
-			// One STATUS row, not two: ALTER QUEUE ... WITH STATUS moves the
-			// enqueue and receive halves together and the catalog's two
-			// columns always agree, so a pair of checkboxes would offer a
-			// combination no statement can produce.
+			// One STATUS row, not two: ALTER QUEUE ... WITH STATUS moves the enqueue and
+			// receive halves together and the catalog's two columns always agree, so two
+			// checkboxes would offer a combination no statement can produce.
 			status := propsheet.Check("Queue enabled", q.IsEnqueueEnabled || q.IsReceiveEnabled)
 			retention := propsheet.Check("Retention", q.IsRetentionEnabled)
 			poison := propsheet.Check("Poison message handling", q.IsPoisonMessageHandlingEnabled)
 
 			activation := propsheet.Check("Activation enabled", q.IsActivationEnabled)
-			// A queue with no activation has no procedure schema to show.
-			// gosmo refuses an empty one rather than guessing, so the row
-			// offers dbo — visibly, where it can be changed — instead.
+			// A queue with no activation has no procedure schema to show. gosmo refuses an
+			// empty one rather than guessing, so the row offers dbo, visibly and changeable.
 			procSchemaValue := q.ActivationProcedureSchema
 			if procSchemaValue == "" {
 				procSchemaValue = "dbo"
@@ -115,10 +113,9 @@ func pageBrokerQueueGeneral(sc *db.ServerConn, dbName, schema, name string) prop
 					v := poison.Checked()
 					s.PoisonMessageHandling, dirty = &v, true
 				}
-				// The ACTIVATION block is restated in full whenever any part
-				// of it changed: the server refuses a partial one on a queue
-				// that has no activation ("the activation user is not
-				// specified"), so the four rows move together.
+				// The ACTIVATION block is restated in full whenever any part of it changed: the
+				// server refuses a partial one on a queue that has no activation ("the activation
+				// user is not specified"), so the four rows move together.
 				if activation.Dirty() || procSchema.Dirty() || procName.Dirty() ||
 					readers.Dirty() || executeAs.Dirty() {
 					proc := strings.TrimSpace(procName.Value())
@@ -146,9 +143,8 @@ func pageBrokerQueueGeneral(sc *db.ServerConn, dbName, schema, name string) prop
 				if !dirty {
 					return nil
 				}
-				// Re-read rather than reusing q: the apply runs after the form
-				// was built, and a queue dropped in between must fail here
-				// rather than have an ALTER sent for it.
+				// Re-read rather than reusing q: the apply runs after the form was built, and a
+				// queue dropped in between must fail here rather than have an ALTER sent for it.
 				queue, err := findBrokerQueue(ctx, sc, dbName, schema, name)
 				if err != nil {
 					return err

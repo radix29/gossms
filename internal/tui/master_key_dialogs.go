@@ -11,11 +11,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// master_key_dialogs.go is the database master key's two action dialogs —
-// Back Up Master Key and Regenerate Master Key — built on newObjectDialog for
-// its OK / Script Changes pipeline, as Back Up Certificate is. Both need
-// CONTROL on the database (master_key_props.go), and both need the key's
-// password when the service master key does not encrypt it.
+// master_key_dialogs.go is the database master key's two action dialogs, Back
+// Up Master Key and Regenerate Master Key, built on newObjectDialog for its OK /
+// Script Changes pipeline, as Back Up Certificate is. Both need CONTROL on the
+// database (master_key_props.go) and the key's password when the service master
+// key does not encrypt it.
 
 // masterKeyPrefetch is what both dialogs read before they open.
 type masterKeyPrefetch struct {

@@ -8,20 +8,20 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// The rule for which databases a dropdown offers, in one place rather than
-// decided separately at each call site.
+// The rule for which databases a dropdown offers, in one place rather than decided
+// separately at each call site.
 //
 // It turns on *when* the name is resolved, not on what looks tidy:
 //
-//   - A name stored now and resolved later — a job step's database, an
-//     alert's database, a login's default database — lists every database,
-//     system and non-ONLINE alike. The database is opened when the job runs
-//     or the login connects, so one that is offline today is a legitimate
-//     choice, and filtering it out would silently drop a name the user
-//     already has configured on the server.
-//   - A name acted on now lists only what the action can actually run
-//     against: backupDatabaseNames for Backup, onlineDatabaseNames for a
-//     read made the moment the name is picked.
+//   - A name stored now and resolved later — a job step's database, an alert's
+//     database, a login's default database — lists every database, system and
+//     non-ONLINE alike. The database is opened when the job runs or the login
+//     connects, so one that is offline today is a legitimate choice, and
+//     filtering it out would silently drop a name already configured on the
+//     server.
+//   - A name acted on now lists only what the action can actually run against:
+//     backupDatabaseNames for Backup, onlineDatabaseNames for a read made the
+//     moment the name is picked.
 //
 // databaseNames is the first case: every database, in the server's order.
 func databaseNames(ctx context.Context, sc *db.ServerConn) ([]string, error) {
@@ -35,10 +35,10 @@ func databaseNames(ctx context.Context, sc *db.ServerConn) ([]string, error) {
 // backupDatabaseNames is the second case: the databases BACKUP DATABASE will
 // accept right now.
 //
-// Both exclusions are hard server restrictions verified on win10cli, not
-// preferences — `BACKUP DATABASE tempdb` and a backup of an OFFLINE database
-// each fail with "BACKUP DATABASE is terminating abnormally". Offering either
-// gives the user a dropdown entry whose only outcome is that error.
+// Both exclusions are hard server restrictions, not preferences: `BACKUP
+// DATABASE tempdb` and a backup of an OFFLINE database each fail with "BACKUP
+// DATABASE is terminating abnormally", so offering either gives a dropdown entry
+// whose only outcome is that error.
 func backupDatabaseNames(ctx context.Context, sc *db.ServerConn) ([]string, error) {
 	dbs, err := sc.Server.Databases(ctx)
 	if err != nil {
@@ -73,8 +73,7 @@ func onlineDatabaseNames(ctx context.Context, sc *db.ServerConn) ([]string, erro
 	return out, nil
 }
 
-// namesOf is the name-extraction loop each dropdown prefetch used to carry
-// its own byte-identical copy of.
+// namesOf extracts the names for the dropdown prefetches.
 func namesOf(dbs []*gosmo.Database) []string {
 	out := make([]string, len(dbs))
 	for i, d := range dbs {

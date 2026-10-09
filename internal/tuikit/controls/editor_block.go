@@ -12,14 +12,11 @@ import (
 // ---------------------------------------------------------------------------
 
 // blockEditing reports whether an edit should apply to every row of a block
-// (column) selection rather than to the cursor's row alone.
-//
-// It stays true after a zero-width block — one whose two columns are equal,
-// which is what typing in column mode leaves behind — so a run of typed
-// characters keeps going into every row instead of the first character
-// collapsing the block and the rest landing on one line. HasSelection is not
-// enough on its own for exactly that reason: it reports false once anchor and
-// cursor coincide entirely.
+// (column) selection rather than the cursor's row alone. It stays true after a
+// zero-width block (equal columns, what typing in column mode leaves behind), so
+// typed characters keep going into every row instead of the first collapsing the
+// block and the rest landing on one line. HasSelection alone is not enough: it
+// reports false once anchor and cursor coincide.
 func (e *Editor) blockEditing() bool { return e.selecting && e.selBlock }
 
 // blockRows returns the block selection's row range, ordered.
@@ -27,9 +24,9 @@ func (e *Editor) blockRows() (top, bot int) {
 	return min(e.selAnchorRow, e.cursorRow), max(e.selAnchorRow, e.cursorRow)
 }
 
-// setBlockCaret re-arms the block over rows top..bot as a zero-width column
-// at col — the state every block edit ends in, so the next typed character
-// continues down the same column.
+// setBlockCaret re-arms the block over rows top..bot as a zero-width column at
+// col: the state every block edit ends in, so the next typed character continues
+// down the same column.
 func (e *Editor) setBlockCaret(top, bot, col int) {
 	e.selecting, e.selBlock = true, true
 	e.selAnchorRow, e.selAnchorCol = top, col
@@ -37,10 +34,9 @@ func (e *Editor) setBlockCaret(top, bot, col int) {
 }
 
 // blockPadLine returns row's line padded with spaces to at least col runes,
-// writing the padded line back to the document. A block edit at a column past
-// a short row's end has to insert *at that column* to stay rectangular, which
-// means the gap has to be made of something — matching SSMS's and Notepad++'s
-// column-mode behaviour of filling it with spaces.
+// writing it back to the document. A block edit at a column past a short row's
+// end must insert at that column to stay rectangular, so the gap is filled with
+// spaces (SSMS's and Notepad++'s column-mode behaviour).
 func (e *Editor) blockPadLine(row, col int) []rune {
 	line := e.doc.Line(row)
 	if len(line) >= col {
@@ -55,9 +51,8 @@ func (e *Editor) blockPadLine(row, col int) []rune {
 	return nl
 }
 
-// blockCollapse removes the block selection's contents (a no-op for a
-// zero-width block), leaving a zero-width block at its left column, and
-// returns that column.
+// blockCollapse removes the block selection's contents (no-op for a zero-width
+// block), leaving a zero-width block at its left column, and returns that column.
 func (e *Editor) blockCollapse() int {
 	top, bot := e.blockRows()
 	loCol, hiCol := e.blockColumnBounds()
@@ -89,10 +84,9 @@ func (e *Editor) blockInsertRune(r rune) {
 	e.setBlockCaret(top, bot, col+1)
 }
 
-// blockBackspace deletes the block's contents, or — when the block is
-// zero-width — the rune to its left on every row it spans. Rows too short to
-// have a rune at that column are left alone rather than padded: there is
-// nothing there to delete.
+// blockBackspace deletes the block's contents or, when zero-width, the rune to its
+// left on every row it spans. Rows too short to have a rune there are left alone,
+// not padded: nothing to delete.
 func (e *Editor) blockBackspace() {
 	top, bot := e.blockRows()
 	loCol, hiCol := e.blockColumnBounds()
@@ -132,12 +126,10 @@ func (e *Editor) blockDelete() {
 	e.setBlockCaret(top, bot, loCol)
 }
 
-// blockPaste inserts text rectangularly: line i of the pasted text goes into
-// the i'th row below the cursor, all at the same column, appending rows at the
-// end of the buffer if the paste runs past it. This is what a block copy
-// pasted back expects — see Paste for how one is recognised.
-//
-// The caller pushes the undo step.
+// blockPaste inserts text rectangularly: line i of the pasted text goes into the
+// i'th row below the cursor, all at the same column, appending rows at the end of
+// the buffer if the paste runs past it. This is what a block copy pasted back
+// expects (see Paste for how one is recognised). The caller pushes the undo step.
 func (e *Editor) blockPaste(text string) {
 	parts := strings.Split(strings.ReplaceAll(e.expandTabs(text), "\r\n", "\n"), "\n")
 	col := e.cursorCol

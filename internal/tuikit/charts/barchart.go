@@ -10,8 +10,7 @@ import (
 // Short is the abbreviated label used when the full one doesn't fit.
 //
 // A bar is either a single colour (Value plus Color) or a stack of
-// contributions (Parts), which is what the snapshot dashboard's wait
-// categories need: one bar per category, split into resource and signal
+// contributions (Parts), e.g. a wait category split into resource and signal
 // time. Parts wins when both are set.
 type Bar struct {
 	Label string
@@ -43,9 +42,8 @@ func (b Bar) total() float64 {
 	return sum
 }
 
-// segments converts the bar into stack segments sized in cells, so a
-// single-colour bar and a stacked one render through the same path and get
-// the same boundary treatment.
+// segments converts the bar into stack segments sized in cells, so single and
+// stacked bars share one render path and boundary treatment.
 func (b Bar) segments(sc Scale, cells int) []segment {
 	if len(b.Parts) == 0 {
 		return []segment{{color: b.Color, cells: sc.Cells(b.Value, cells)}}
@@ -71,12 +69,9 @@ func (b Bar) labelFor(maxW int) string {
 }
 
 // BarChart draws one horizontal bar per value, each on its own row, with
-// eighth-block smoothing so a bar's length tracks its value to an eighth of
-// a column instead of snapping to whole cells.
-//
-// Rows are the natural shape for a handful of named current values — the
-// snapshot dashboard's activity and wait-category panels — where a
-// time-series chart would have nothing to show along its X axis.
+// eighth-block smoothing so length tracks value to an eighth of a column. Rows
+// suit a handful of named current values (the snapshot dashboard's activity and
+// wait panels), where a time-series chart would have nothing on its X axis.
 type BarChart struct {
 	Bars []Bar
 
@@ -110,8 +105,7 @@ func (b BarChart) Draw(s tcell.Screen, r core.Rect) {
 	valueW := b.valueGutter()
 	barW := r.W - labelW - valueW
 	if barW <= 0 {
-		// No room for bars once the labels are placed; the labels alone
-		// still carry more than a blank panel would.
+		// No room for bars once labels are placed; the labels alone beat a blank panel.
 		barW, valueW = 0, 0
 		labelW = r.W
 	}

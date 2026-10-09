@@ -8,24 +8,22 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// log_viewer_rows.go is what the read's rows become on screen: the grid's
-// columns, the client-side filter over them, the summary line, and the text
-// helpers the two share. The read itself is in log_viewer_load.go.
+// log_viewer_rows.go is what the read's rows become on screen: grid columns,
+// the client-side filter, the summary line, and shared text helpers. The read
+// is in log_viewer_load.go.
 
-// logGridColumns are the entry grid's columns. The marker on Date says which
-// way rows are ordered; Source is whichever of ProcessInfo and ErrorLevel the
-// log family populates.
+// logGridColumns are the entry grid's columns. The marker on Date gives the
+// sort direction; Source is whichever of ProcessInfo and ErrorLevel the log
+// family populates.
 var logGridColumns = []string{"Date ▼", "Source", "Message"}
 
 // logGridColumnsMulti is logGridColumns with the File column a merged view
-// needs. Source is the log's own ProcessInfo/severity and says nothing about
-// which *file* a row came from, so a merged grid without this column cannot be
-// read at all. It appears only while more than one file is selected — the
-// single-file view is untouched.
+// needs: Source says nothing about which *file* a row came from. It appears
+// only while more than one file is selected.
 var logGridColumnsMulti = []string{"Date ▼", "File", "Source", "Message"}
 
 // logExportColumns are the same columns without the sort marker: an exported
-// header row names the column rather than describing the grid.
+// header names the column rather than describing the grid.
 var logExportColumns = []string{"Date", "Source", "Message"}
 
 // logExportColumnsMulti is logExportColumns with the File column, on the same
@@ -56,8 +54,7 @@ func (lv *LogViewer) cells(r logRow) []string {
 }
 
 // applyFilter rebuilds shown from entries and hands it to the grid, matching a
-// case-insensitive substring over the source and message. An empty filter
-// shows everything.
+// case-insensitive substring over source and message. Empty shows everything.
 func (lv *LogViewer) applyFilter() {
 	lv.invalidateDetailCache()
 	needle := strings.ToLower(strings.TrimSpace(lv.filter.Value()))
@@ -77,17 +74,15 @@ func (lv *LogViewer) applyFilter() {
 }
 
 // invalidateDetailCache forces the next detailLines call to re-wrap. The cache
-// is keyed on the entry pointer, but two of the three lines above the message
-// name the log file — a fresh enumeration can rename "Archive #3" without the
-// selected entry changing.
+// is keyed on the entry pointer, but the file-naming lines can change on a
+// fresh enumeration ("Archive #3" renamed) without the entry changing.
 func (lv *LogViewer) invalidateDetailCache() {
 	lv.detailCacheEntry, lv.detailCache = nil, nil
 }
 
 // summary is the status line under the grid: how much of the file is shown,
-// which file it is, and what the server was asked for when a search is in
-// force. Naming the search matters — "no entries" on a searched read means the
-// search found nothing, not that the log is empty.
+// which file, and the search in force. Naming the search matters: "no entries"
+// on a searched read means nothing matched, not that the log is empty.
 func (lv *LogViewer) summary() string {
 	switch {
 	case len(lv.entries) == 0:
@@ -101,8 +96,8 @@ func (lv *LogViewer) summary() string {
 }
 
 // ownOnlySuffix says the Database Mail log is filtered to the login's own
-// items, as the Details pane's "Your failed items" does — otherwise an
-// almost empty log reads as a quiet server (docs/decisions.md).
+// items, as the Details pane's "Your failed items" does; otherwise an almost
+// empty log reads as a quiet server (docs/decisions.md).
 func (lv *LogViewer) ownOnlySuffix() string {
 	if !lv.mailOwnOnly {
 		return ""
@@ -110,10 +105,9 @@ func (lv *LogViewer) ownOnlySuffix() string {
 	return " (only your mail items' entries)"
 }
 
-// readErrSuffix says how much of the selection the grid is actually showing,
-// or "" when every file was read. A merged read that dropped one archive shows
-// the rest, so without this the panel would silently be short a file — and the
-// entry count alone cannot say so.
+// readErrSuffix says how much of the selection the grid shows, or "" when
+// every file was read. A merged read that dropped one archive shows the rest,
+// and the entry count alone cannot say so.
 func (lv *LogViewer) readErrSuffix() string {
 	if len(lv.readErrs) == 0 {
 		return ""
@@ -145,8 +139,8 @@ func (lv *LogViewer) searchSuffix() string {
 }
 
 // showSearch opens the Search dialog and re-reads with whatever it returns,
-// unconditionally, including for an unchanged search: a press that appeared to
-// do nothing would read as the dialog having failed.
+// even for an unchanged search: a press that appeared to do nothing would read
+// as the dialog having failed.
 func (lv *LogViewer) showSearch() {
 	if !lv.app.requireConn(lv.conn) {
 		return
@@ -158,8 +152,8 @@ func (lv *LogViewer) showSearch() {
 	})
 }
 
-// setStatus writes the panel's one-line state into the grid's own status bar,
-// so it sits with the rows it describes.
+// setStatus writes the panel's one-line state into the grid's status bar,
+// beside the rows it describes.
 func (lv *LogViewer) setStatus(s string) { lv.grid.SetStatus(s) }
 
 // logEntryMatches reports whether needle (already lowercased) appears in the
@@ -169,10 +163,10 @@ func logEntryMatches(e *gosmo.ErrorLogEntry, needle string) bool {
 		strings.Contains(strings.ToLower(e.Source()), needle)
 }
 
-// flattenLogText makes one grid line out of a log entry's text. An entry can
-// carry embedded newlines and tabs — the startup banner spans four lines — and
-// a grid cell is one row tall, so they become spaces. The details pane shows
-// the text as written.
+// flattenLogText makes one grid line out of a log entry's text. Entries can
+// carry embedded newlines and tabs (the startup banner spans four lines) and a
+// grid cell is one row tall, so they become spaces. The details pane shows the
+// text as written.
 func flattenLogText(s string) string {
 	if !strings.ContainsAny(s, "\r\n\t") {
 		return s
@@ -180,13 +174,12 @@ func flattenLogText(s string) string {
 	return strings.Join(strings.Fields(strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(s)), " ")
 }
 
-// sortLogRowsDesc orders merged rows newest first, as SSMS's Log File Viewer
-// opens. The sort is stable and the input is in selection order, file by file,
-// so a timestamp shared across two files breaks by file and then by position
-// within the file — the same order every time. An unstable sort, or a merge in
-// completion order, would reorder same-second rows under the cursor on every
-// refresh, and reversing a shared second would scramble a startup sequence or
-// a stack dump.
+// sortLogRowsDesc orders merged rows newest first, as SSMS does. The sort is
+// stable and the input is in selection order, file by file, so a timestamp
+// shared across files breaks by file then position, the same every time. An
+// unstable sort or a completion-order merge would reorder same-second rows
+// under the cursor on every refresh, and reversing a shared second would
+// scramble a startup sequence or stack dump.
 func sortLogRowsDesc(rows []logRow) []logRow {
 	slices.SortStableFunc(rows, func(a, b logRow) int {
 		return b.entry.Date.Compare(a.entry.Date)
@@ -195,10 +188,9 @@ func sortLogRowsDesc(rows []logRow) []logRow {
 }
 
 // splitLogLines breaks an entry's text into the lines the log wrote. One
-// xp_readerrorlog row can span several — the startup banner puts the build date
-// and the OS on their own indented lines — and the details pane wraps each
-// separately rather than reflowing them into a paragraph. Line breaks survive;
-// indentation does not, since core.WrapText splits on strings.Fields.
+// xp_readerrorlog row can span several (the startup banner), and the details
+// pane wraps each separately rather than reflowing a paragraph. Line breaks
+// survive; indentation does not, since core.WrapText splits on strings.Fields.
 func splitLogLines(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
@@ -206,7 +198,7 @@ func splitLogLines(s string) []string {
 }
 
 // selectedLogRow is the row the grid's cursor is on, and whether there is one.
-// Indexed against shown, which is what the grid was built from.
+// Indexed against shown, which the grid was built from.
 func (lv *LogViewer) selectedLogRow() (logRow, bool) {
 	row := lv.grid.SelectedRow()
 	if row < 0 || row >= len(lv.shown) {

@@ -10,22 +10,21 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// loadServerChildren returns a connected server's top-level folders:
-// Databases, Security, Server Objects (linked servers), Replication, Management (the SQL
-// Server logs), Always On High Availability, and SQL Server Agent — the last
-// three siblings of Databases
-// here rather than nested under Server Objects, matching SSMS's own top-level
-// placement. Kept a static, no-query loader (unlike loadDatabasesChildren
-// etc.) so it stays safe to call directly in tests; the Agent node's
-// " (Stopped)" label suffix is instead filled in by a follow-up async check —
-// see refreshAgentRootLabel in app_explorer_data.go. The Always On folder is
-// listed unconditionally for the same reason SSMS does: whether the instance
-// has Always On enabled is a query, and the answer belongs in the folder's
-// own expansion (loadAlwaysOnChildren), not in whether it appears.
+// loadServerChildren returns a connected server's top-level folders: Databases,
+// Security, Server Objects (linked servers), Replication, Management (the SQL
+// Server logs), Always On High Availability, and SQL Server Agent — the last three
+// siblings of Databases rather than nested under Server Objects, matching SSMS's
+// own top-level placement. A static, no-query loader (unlike loadDatabasesChildren
+// etc.) so it stays safe to call directly in tests; the Agent node's " (Stopped)"
+// label suffix is filled in by a follow-up async check — see
+// refreshAgentRootLabel in app_explorer_data.go. The Always On folder is listed
+// unconditionally, as in SSMS: whether the instance has Always On enabled is a
+// query, and the answer belongs in the folder's own expansion
+// (loadAlwaysOnChildren), not in whether it appears.
 //
-// Replication follows Server Objects, where SSMS puts it, on every instance
-// but Azure SQL Database (replicationHidden) — read from the connection's
-// cached ServerInfo, so the loader still issues no query.
+// Replication follows Server Objects, where SSMS puts it, on every instance but
+// Azure SQL Database (replicationHidden) — read from the connection's cached
+// ServerInfo, so the loader still issues no query.
 func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	out := []*explorerNode{
 		l.node("Databases", NodeDatabases, "", "", ""),
@@ -47,25 +46,23 @@ func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 // so the two stay in sync.
 const agentRootLabel = "SQL Server Agent"
 
-// loadDatabasesChildren lists user databases, with a "System Databases"
-// folder listed first if the server has any, then "Database Snapshots" —
-// matching SSMS. A database that belongs to an availability group carries its
-// synchronization state in the label, the same way the Availability Databases
-// folder writes it; see agLocalDatabaseStates for why the state shown here is
-// the local replica's alone.
+// loadDatabasesChildren lists user databases, with a "System Databases" folder
+// listed first if the server has any, then "Database Snapshots" — matching SSMS. A
+// database that belongs to an availability group carries its synchronization state
+// in the label, the same way the Availability Databases folder writes it; see
+// agLocalDatabaseStates for why the state shown here is the local replica's alone.
 //
-// A snapshot is an ordinary row in sys.databases, so it comes back from
-// Databases with the user databases and has to be excluded here or it
-// appears twice — once as a user database and once under its own folder.
+// A snapshot is an ordinary row in sys.databases, so it comes back from Databases
+// with the user databases and has to be excluded here or it appears twice.
 // Database.IsSnapshot answers from the source_database_id the listing already
-// read, so the exclusion costs no second query. The Detail Browser's own
-// Databases list makes the same exclusion (see loadDatabasesFolderDetails):
-// the two panes describe the same folder.
+// read, so the exclusion costs no second query. The Detail Browser's Databases
+// list makes the same exclusion (see loadDatabasesFolderDetails): the two panes
+// describe the same folder.
 //
 // The Database Snapshots folder is listed whether or not the server has any,
-// unlike System Databases: it is where New Snapshot lives, so a server with
-// no snapshots is exactly the server that needs to reach it. An Azure engine
-// edition is the exception — see below.
+// unlike System Databases: it is where New Snapshot lives, so a server with no
+// snapshots is exactly the server that needs to reach it. An Azure engine edition
+// is the exception — see below.
 func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbs, err := l.sc.Server.Databases(l.ctx)
 	if err != nil {
@@ -139,15 +136,13 @@ func loadSystemDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	return out, nil
 }
 
-// loadDatabaseSnapshotChildren returns a snapshot's folders: the object
-// families, and only those.
+// loadDatabaseSnapshotChildren returns a snapshot's folders: the object families,
+// and only those.
 //
-// Query Store, Storage and Security are deliberately absent. A snapshot is
-// read-only by construction — it has no transaction log, no file to add and
-// no recovery model — and each of those three folders' menus leads to
-// Database Properties pages that write: the files page, the recovery model,
-// New User. Offering them on a database that refuses every one of them is
-// worse than not offering them, and the snapshot's own read-only Properties
+// Query Store, Storage and Security are absent. A snapshot is read-only by
+// construction — no transaction log, no file to add, no recovery model — and each
+// of those folders' menus leads to Database Properties pages that write: the files
+// page, the recovery model, New User. The snapshot's own read-only Properties
 // dialog is on its context menu instead (see database_snapshot_props.go).
 //
 // What is left is what a snapshot is *for*: reading the data as it was.
@@ -208,13 +203,12 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 // loadProgrammabilityChildren returns the module families SSMS files under
 // Programmability, in SSMS's order.
 //
-// The folder exists because Database Triggers needed a home. Database-scope
-// DDL triggers are a third trigger family (gosmo's database_trigger.go) and
-// the label "Database Triggers" beside a flat "Triggers" folder listing DML
-// triggers reads as a distinction without a difference — so the DML roll-up
-// that used to sit here is gone instead: a DML trigger belongs to a table or
-// a view, and is now reachable only under that object's own Triggers folder,
-// which is where SSMS puts it and where it was already listed.
+// The folder exists because Database Triggers needed a home. Database-scope DDL
+// triggers are a third trigger family (gosmo's database_trigger.go) and a
+// "Database Triggers" label beside a flat "Triggers" folder listing DML triggers
+// reads as a distinction without a difference — so there is no DML roll-up here: a
+// DML trigger belongs to a table or a view and is reachable under that object's
+// own Triggers folder, as in SSMS.
 func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbName := node.data.DBName
 	return []*explorerNode{

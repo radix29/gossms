@@ -51,8 +51,7 @@ func main() {
 
 	view := planview.New()
 	view.SetActive(true)
-	// tick stays nil — a channel that never fires — unless a replay is
-	// running.
+	// tick stays nil (never fires) unless a replay is running.
 	var tick <-chan time.Time
 	if rp != nil {
 		rp.restart(view)
@@ -81,8 +80,7 @@ func main() {
 				w, h := s.Size()
 				view.SetBounds(0, 0, w, h)
 			case *tcell.EventKey:
-				// 'q' quits the harness; a reusable control shouldn't own an
-				// app-lifecycle key.
+				// 'q' is the harness's; the control shouldn't own it.
 				if e.Key() == tcell.KeyCtrlQ || (core.EvRune(e) == 'q' && e.Modifiers() == 0) {
 					return
 				}

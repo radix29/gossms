@@ -55,10 +55,9 @@ type term struct {
 
 // ParseFilter parses s. An empty s is a nil filter, which matches everything.
 // Text that is not a valid expression is free text, unless it uses a comparison
-// symbol (= < > ~, and so != and !~), which only an expression would: then the
-// parse error is returned, since someone who typed `duration >` meant a filter
-// and matching the literal text would silently show nothing. A '!' alone is
-// not a symbol, so `hello!` is free text.
+// symbol (= < > ~, hence != and !~): then the parse error is returned, since
+// `duration >` meant a filter and literal matching would silently show nothing.
+// A lone '!' is not a symbol, so `hello!` is free text.
 func ParseFilter(s string) (*Filter, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -124,8 +123,8 @@ func matchesText(e *Event, needle string) bool {
 }
 
 // resolve finds column name in e: a built-in, a field, then an action. A
-// field: or action: prefix names one kind only — how a field called timestamp,
-// or an action sharing a field's name, is reached at all.
+// field: or action: prefix names one kind only (the only way to reach a field
+// called timestamp, or an action sharing a field's name).
 func resolve(e *Event, name string) (Value, bool) {
 	lower := strings.ToLower(name)
 	switch {
@@ -163,11 +162,10 @@ func (t term) match(e *Event) bool {
 		return compare(v.Value, t.op, t.value)
 	}
 	// A map field is its text or its key, so wait_type = PAGEIOLATCH_SH and
-	// wait_type = 66 both find it. The negated operators are that rule's De
-	// Morgan — <> must differ from both — else `wait_type <> PAGEIOLATCH_SH`
-	// passed on the key and kept the event it excludes. Ordering picks one
-	// side: the key against a number, the text otherwise, else `> 100`
-	// compared the name with "100" as text and passed every named wait.
+	// wait_type = 66 both find it. Negated operators are the De Morgan of that
+	// (<> must differ from both), else `wait_type <> PAGEIOLATCH_SH` passed on
+	// the key. Ordering picks one side: the key against a number, the text
+	// otherwise, else `> 100` compared the name as text and passed every wait.
 	switch t.op {
 	case OpNe, OpNotContains:
 		return compare(v.Text, t.op, t.value) && compare(v.Value, t.op, t.value)
@@ -183,9 +181,9 @@ func (t term) match(e *Event) bool {
 // compare applies op to a (the event's value) and b (the filter's): as numbers
 // when both are, else as case-insensitive text.
 //
-// a is folded as it is read, never lowered into a copy: a filter runs over
-// every value of every event in the store on each edit and over each arriving
-// event, so a ToLower here was an allocation per value per event.
+// a is folded as it is read, never lowered into a copy: the filter runs over
+// every value of every event on each edit and arrival, where ToLower would
+// allocate per value per event.
 func compare(a string, op Op, b string) bool {
 	lb := strings.ToLower(b)
 	switch op {
@@ -213,9 +211,8 @@ func compare(a string, op Op, b string) bool {
 }
 
 // parseNumber is strconv.ParseFloat of s trimmed, reporting only whether it
-// parsed. Text that cannot start a float is turned away before ParseFloat sees
-// it, because ParseFloat's error allocates and nearly every value a text
-// comparison meets is text.
+// parsed. Text that cannot start a float is rejected first, since ParseFloat's
+// error allocates and most values are text.
 func parseNumber(s string) (float64, bool) {
 	s = strings.TrimSpace(s)
 	t := strings.TrimLeft(s, "+-")
@@ -235,8 +232,8 @@ func parseNumber(s string) (float64, bool) {
 	return f, err == nil
 }
 
-// containsLower is strings.Contains(strings.ToLower(s), lower), for a lower
-// that is already lowercase, without building the lowered copy of s.
+// containsLower is strings.Contains(strings.ToLower(s), lower) for an already
+// lowercase lower, without the lowered copy.
 func containsLower(s, lower string) bool {
 	for i := 0; ; {
 		if _, ok := cutLowerPrefix(s[i:], lower); ok {
@@ -251,8 +248,8 @@ func containsLower(s, lower string) bool {
 }
 
 // cutLowerPrefix reports whether strings.ToLower(s) starts with lower, and
-// returns what of s follows that prefix. It lowers rune by rune as ToLower
-// does, so an invalid byte compares as utf8.RuneError either way.
+// returns the rest of s. It lowers rune by rune as ToLower does, so an invalid
+// byte compares as utf8.RuneError either way.
 func cutLowerPrefix(s, lower string) (string, bool) {
 	for lower != "" {
 		if s == "" {
@@ -268,9 +265,8 @@ func cutLowerPrefix(s, lower string) (string, bool) {
 	return s, true
 }
 
-// compareLower is strings.Compare(strings.ToLower(a), lower), for a lower that
-// is already lowercase. Comparing rune by rune is comparing the UTF-8 bytes:
-// the encoding preserves code-point order.
+// compareLower is strings.Compare(strings.ToLower(a), lower) for an already
+// lowercase lower. Rune order equals UTF-8 byte order.
 func compareLower(a, lower string) int {
 	for a != "" && lower != "" {
 		r, n := utf8.DecodeRuneInString(a)
@@ -318,8 +314,7 @@ type Term struct {
 	Value  string
 }
 
-// AndEquals returns a filter passing what f passes and also has column equal
-// to value — AndTerms with the one term.
+// AndEquals is AndTerms with the one term column = value.
 func (f *Filter) AndEquals(column, value string) *Filter {
 	return f.AndTerms(Term{Column: column, Op: OpEq, Value: value})
 }
@@ -388,8 +383,8 @@ var symbols = []string{"<>", "!=", "<=", ">=", "!~", "=", "<", ">", "~"}
 func tokenize(s string) ([]token, error) {
 	var out []token
 	for i := 0; i < len(s); {
-		// Decoded, not rune(s[i]): a UTF-8 continuation byte such as 0x85 or
-		// 0xA0 would otherwise read as a space and split a word.
+		// Decoded, not rune(s[i]): a continuation byte such as 0x85 or 0xA0
+		// would read as a space and split a word.
 		r, _ := utf8.DecodeRuneInString(s[i:])
 		switch {
 		case unicode.IsSpace(r):
@@ -431,10 +426,9 @@ func tokenize(s string) ([]token, error) {
 			if matched {
 				continue
 			}
-			// A '!' ends a word only where it opens != or !~; anywhere else it
-			// is a word character. Ending the word at every '!' made a lone
-			// one (hello!) an empty word that never advanced i (M1: the
-			// filter prompt hung the UI, appending empty tokens forever).
+			// A '!' ends a word only where it opens != or !~. Ending at every
+			// '!' made a lone one (hello!) an empty word that never advanced
+			// i (M1: the prompt hung, appending empty tokens forever).
 			j := i
 			for j < len(s) {
 				c, size := utf8.DecodeRuneInString(s[j:])
@@ -578,7 +572,6 @@ func Quote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-// ContainsText reports whether any value e carries — its name, a field's or
-// an action's value or map text — contains s, case-insensitively: the
-// viewer's Find, which is the free-text filter's match without the filtering.
+// ContainsText reports whether any value e carries (name, field or action
+// value or map text) contains s, case-insensitively: the viewer's Find.
 func (e *Event) ContainsText(s string) bool { return matchesText(e, strings.ToLower(s)) }

@@ -16,17 +16,17 @@ import (
 )
 
 // EmergencySave writes the text of every query panel with unsaved changes to
-// config.RecoveredDir, and returns the files it wrote plus one error per panel
-// it could not save. cmd/gossms's run calls it from its recover, after App.Run
-// has restored the terminal: a panic on the UI goroutine ends the process, and
-// without this it takes every unsaved query with it.
+// config.RecoveredDir, and returns the files it wrote plus one error per panel it
+// could not save. cmd/gossms's run calls it from its recover, after App.Run has
+// restored the terminal: a panic on the UI goroutine ends the process, and without
+// this it takes every unsaved query with it.
 //
-// Resuming the event loop after the panic instead was rejected — the state the
-// panic left mid-mutation is worse than a clean exit with the text saved.
+// Resuming the event loop after the panic is rejected: the state the panic left
+// mid-mutation is worse than a clean exit with the text saved.
 //
-// Safe on a nil App and on one whose UI was never built (a panic during
-// startup). It draws nothing and touches no connection: it runs after
-// screen.Fini, with state the panic may have left half-updated.
+// Safe on a nil App and on one whose UI was never built (a panic during startup).
+// It draws nothing and touches no connection: it runs after screen.Fini, with
+// state the panic may have left half-updated.
 func (a *App) EmergencySave() (paths []string, errs []error) {
 	if a == nil || a.panels == nil {
 		return nil, nil
@@ -39,18 +39,18 @@ func (a *App) EmergencySave() (paths []string, errs []error) {
 }
 
 // SaveOnSignal is the SIGHUP/SIGTERM counterpart of EmergencySave: closing the
-// terminal window, a dropped ssh session or a kill would otherwise end the
-// process with the default action and take every unsaved query with it. tcell
-// registers only SIGWINCH, so cmd/gossms's main relays the signal here.
+// terminal window, a dropped ssh session or a kill would otherwise end the process
+// with the default action and take every unsaved query with it. tcell registers
+// only SIGWINCH, so cmd/gossms's main relays the signal here.
 //
-// The save runs on the UI goroutine, which owns the panels, and that callback
-// then quits so Run returns. If the loop has not answered within wait — it may
-// be the thing that is stuck — the save runs here instead: a racy read of the
-// panel text beats losing it. It runs once either way, so a loop that wakes up
-// late only quits. The caller still has to exit if Run never returns.
+// The save runs on the UI goroutine, which owns the panels, and that callback then
+// quits so Run returns. If the loop has not answered within wait — it may be the
+// thing that is stuck — the save runs here instead: a racy read of the panel text
+// beats losing it. It runs once either way, so a loop that wakes up late only
+// quits. The caller still has to exit if Run never returns.
 //
-// Everything goes to the log and nothing to the terminal, which after a SIGHUP
-// is gone.
+// Everything goes to the log and nothing to the terminal, which after a SIGHUP is
+// gone.
 func (a *App) SaveOnSignal(sig os.Signal, wait time.Duration) (paths []string, errs []error) {
 	return a.saveOnSignal(sig, wait, a.EmergencySave)
 }

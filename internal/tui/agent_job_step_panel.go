@@ -185,11 +185,10 @@ func (p *jobStepPanel) newStep() *jobStepEdit {
 // addStep is both Steps pages' New button: seed a step from the panel, refuse a
 // duplicate name, and select the new row.
 //
-// A duplicate selects the existing row and re-syncs rather than failing
-// silently, so the button never looks broken.
+// A duplicate selects the existing row and re-syncs rather than failing silently.
 //
-// It doesn't read the panel into the current step first (the name row is also
-// the seed, so that would misfile a typed name as a rename). Callers check
+// It doesn't read the panel into the current step first (the name row is also the
+// seed, so that would misfile a typed name as a rename). Callers check
 // preconditions (e.g. a read-only step) first.
 func (p *jobStepPanel) addStep(grid *controls.DataGrid, hint *propsheet.HintRow,
 	cols []string, edits *pendingEdits[*jobStepEdit], rowsFor func() [][]string, sync func()) {

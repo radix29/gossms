@@ -12,12 +12,12 @@ import (
 )
 
 // query_store_panel_load.go is the report read: the options the toolbar's
-// selections come to, the tracked-query set, the load itself and the summary
-// line it leaves behind. The panel itself is in query_store_panel.go.
+// selections come to, the tracked-query set, the load itself and the summary line
+// it leaves behind. The panel itself is in query_store_panel.go.
 
 // ShowReport points the panel at one of the seven views and reads it. Reopening
-// from another tree node comes through here, so an already-open panel switches
-// view instead of a second being created.
+// from another tree node comes through here, so an open panel switches view
+// instead of a second being created.
 func (p *QueryStorePanel) ShowReport(title string) {
 	p.reportIdx = queryStoreReportIndex(title)
 	if !p.statChosen {
@@ -26,9 +26,9 @@ func (p *QueryStorePanel) ShowReport(title string) {
 	p.Load()
 }
 
-// Refresh re-reads the current report (F5 or the toolbar), keeping the user
-// where they were. Rewriting the same rows under the cursor is what redrawGrid
-// is for; after a Force Plan the user is looking at the row just acted on.
+// Refresh re-reads the current report (F5 or the toolbar), keeping the user where
+// they were. Rewriting the same rows under the cursor is what redrawGrid is for;
+// after a Force Plan the user is looking at the row just acted on.
 func (p *QueryStorePanel) Refresh() { p.load(true) }
 
 // options are what the toolbar currently asks for.
@@ -40,12 +40,11 @@ func (p *QueryStorePanel) options() gosmo.QueryStoreReportOptions {
 		From:      to.Add(-qsWindows[p.windowIdx].back),
 		To:        to,
 		Top:       qsTopCounts[p.topIdx],
-		// Gated here, not left to gosmo: MinExecCount is carried by the same gosmo
-		// query Tracked Queries reads, so a floor set on another view would drop a
-		// pinned query, and the row left behind says "Not in Query Store for this
-		// window", which is not why it went. MinRegressionPct only reaches the
-		// two-window query but is gated the same way so the table stays the single
-		// answer.
+		// Gated here, not left to gosmo: MinExecCount is carried by the same gosmo query
+		// Tracked Queries reads, so a floor set on another view would drop a pinned query,
+		// and the row left behind says "Not in Query Store for this window", which is not
+		// why it went. MinRegressionPct only reaches the two-window query but is gated the
+		// same way so the table stays the single answer.
 		MinExecCount:     filterValue(p, qsFilterExecs, qsMinExecCounts[p.minExecIdx]),
 		MinRegressionPct: filterValue(p, qsFilterRegression, qsRegressionPcts[p.regressIdx]),
 		QueryIDs:         p.trackedIDs(),
@@ -63,8 +62,8 @@ func filterValue[T int64 | float64](p *QueryStorePanel, f qsFilters, v T) T {
 }
 
 // trackedIDs is the pinned set for this database, empty on every report but
-// Tracked Queries: QueryIDs restricts a report to those queries, and pinning
-// one would otherwise empty every other view.
+// Tracked Queries: QueryIDs restricts a report to those queries, and pinning one
+// would otherwise empty every other view.
 func (p *QueryStorePanel) trackedIDs() []int64 {
 	if !p.report().honours(qsFilterTracked) || p.conn == nil {
 		return nil
@@ -80,8 +79,8 @@ func (p *QueryStorePanel) isTracked(queryID int64) bool {
 	return config.Tracked().IsTracked(config.ConnectionAddress(p.conn.Opts), p.dbName, queryID)
 }
 
-// toggleTracked pins the selected query to the Tracked Queries view or unpins
-// it. The set is per server and database and outlives the session; see
+// toggleTracked pins the selected query to the Tracked Queries view or unpins it.
+// The set is per server and database and outlives the session; see
 // config.TrackedQueries.
 func (p *QueryStorePanel) toggleTracked() {
 	id := p.selectedQueryID()
@@ -99,10 +98,10 @@ func (p *QueryStorePanel) toggleTracked() {
 		verb = "tracked"
 	}
 	p.setStatus(fmt.Sprintf("Query %d %s", id, verb))
-	// Every view of this set, not just this panel's: the tree's Tracked Queries
-	// leaf caches its rows and would keep showing the old set. Now, not after the
-	// save: the in-memory set has the toggle and every view reads it, whether or not
-	// the file takes it.
+	// Every view of this set, not just this panel's: the tree's Tracked Queries leaf
+	// caches its rows and would keep showing the old set. Now, not after the save: the
+	// in-memory set has the toggle and every view reads it, whether or not the file
+	// takes it.
 	p.app.trackedQueriesChanged(server, dbName)
 	p.app.saveTracked(func(err error) {
 		if err != nil {
@@ -112,14 +111,13 @@ func (p *QueryStorePanel) toggleTracked() {
 	})
 }
 
-// Load runs the current report in the background and applies the result on the
-// UI goroutine.
+// Load runs the current report in the background and applies the result on the UI
+// goroutine.
 func (p *QueryStorePanel) Load() { p.load(false) }
 
-// load runs the current report. keepView carries the cursor and scroll across
-// the reload; a report, metric, statistic or window change does not, because
-// the rows then mean something else (row 4 of the old ranking is not row 4 of
-// the new one).
+// load runs the current report. keepView carries the cursor and scroll across the
+// reload; a report, metric, statistic or window change does not, because the rows
+// then mean something else (row 4 of the old ranking is not row 4 of the new one).
 func (p *QueryStorePanel) load(keepView bool) {
 	if !p.app.isConnected(p.conn) {
 		p.applyResult(qsResult{}, false)
@@ -136,11 +134,11 @@ func (p *QueryStorePanel) load(keepView bool) {
 
 	report, sc, dbName := p.report(), p.conn, p.dbName
 	// The window the report's query really reads; for Regressed Queries half the
-	// toolbar's (see queryStoreReport.effectiveOptions).
+	// toolbar's (queryStoreReport.effectiveOptions).
 	opts := report.effectiveOptions(p.options())
-	// safegoRepair, not safego: busy is cleared in the callback below, which a
-	// panic on the read goroutine never reaches, and both toolbars are gated on it,
-	// so every selector and Refresh would sit inert until the panel was closed.
+	// safegoRepair, not safego: busy is cleared in the callback below, which a panic
+	// on the read goroutine never reaches, and both toolbars are gated on it, so every
+	// selector and Refresh would sit inert until the panel was closed.
 	p.app.safegoRepair("running a Query Store report", func() { p.readPanicked(seq) }, func() {
 		d := sc.Server.DatabaseRef(dbName)
 		info, infoErr := d.QueryStore(ctx)
@@ -148,8 +146,8 @@ func (p *QueryStorePanel) load(keepView bool) {
 		var err error
 		switch {
 		case infoErr == nil && !info.IsReadable():
-			// A database with Query Store off answers every report with no rows, which
-			// reads identically to a database nothing ran in.
+			// A database with Query Store off answers every report with no rows, which reads
+			// identically to a database nothing ran in.
 			res = qsOffResult(info)
 		default:
 			res, err = report.load(ctx, d, opts)
@@ -176,8 +174,8 @@ func (p *QueryStorePanel) load(keepView bool) {
 func qsOffResult(info *gosmo.QueryStoreInfo) qsResult {
 	res := qsResult{
 		columns: propertyValueColumns,
-		// Without this the two explanatory rows are counted as report rows and the
-		// status line claims a metric and window for a query that never ran.
+		// Without this the two explanatory rows are counted as report rows and the status
+		// line claims a metric and window for a query that never ran.
 		note: "Query Store is " + queryStoreStateText(info) + " — no report was run",
 	}
 	for _, cells := range queryStoreOffRows(info) {
@@ -187,9 +185,9 @@ func qsOffResult(info *gosmo.QueryStoreInfo) qsResult {
 }
 
 // readPanicked releases the busy latch after a panic on the read goroutine
-// (Load's safegoRepair step). Guarded by seq like the normal completion path: a
-// newer Load set busy for itself, and clearing it would re-enable a toolbar
-// whose read is still out.
+// (Load's safegoRepair step). Guarded by seq like the normal completion: a newer
+// Load set busy for itself, and clearing it would re-enable a toolbar whose read
+// is still out.
 func (p *QueryStorePanel) readPanicked(seq int) {
 	if !p.reportRead.Done(seq) {
 		return
@@ -215,8 +213,8 @@ func (p *QueryStorePanel) applyResult(res qsResult, keepView bool) {
 	p.setStatus(p.summary())
 	p.loadPlans(p.selectedQueryID())
 	// The window, metric and statistic can all have changed with the report, so a
-	// plotted series is re-read rather than left describing the options it was
-	// read under.
+	// plotted series is re-read rather than left describing the options it was read
+	// under.
 	p.loadSeriesIfShown(p.selectedQueryID())
 }
 
@@ -228,12 +226,12 @@ func (p *QueryStorePanel) summary() string {
 		return p.res.note
 	}
 	if len(p.res.rows) == 0 {
-		// The filters are named here above all: an empty report reads as "the server
-		// was idle" unless it says a floor was applied.
+		// The filters are named here above all: an empty report reads as "the server was
+		// idle" unless it says a floor was applied.
 		return fmt.Sprintf("%s — no rows in %s%s", p.report().Title, p.windowSummary(), p.filterSummary())
 	}
 	// The value label comes from the result, not p.stat and p.metric: the metric
-	// selector does not reach every report (see qsResult.valueLabel).
+	// selector does not reach every report (qsResult.valueLabel).
 	return fmt.Sprintf("%s — %d rows, %s over %s%s",
 		p.report().Title, len(p.res.rows), p.res.valueLabel, p.windowSummary(), p.filterSummary())
 }
@@ -250,8 +248,8 @@ func (p *QueryStorePanel) windowSummary() string {
 }
 
 // filterSummary names the filters this report actually applied, or "" when none.
-// Gated on the report as the selectors are, so a floor left set from another
-// view is not claimed by one whose query ignores it.
+// Gated on the report as the selectors are, so a floor left set from another view
+// is not claimed by one whose query ignores it.
 func (p *QueryStorePanel) filterSummary() string {
 	var parts []string
 	if p.report().honours(qsFilterExecs) && qsMinExecCounts[p.minExecIdx] > 0 {
@@ -276,9 +274,9 @@ func (p *QueryStorePanel) selectedQueryID() int64 {
 	return p.res.rows[row].queryID
 }
 
-// selectedQueryChanged reloads the plan pane when the report grid's cursor
-// moves to a different query. Guarded on the id, not the row: an arrow key
-// through a wait-category report would otherwise start a plan read per row.
+// selectedQueryChanged reloads the plan pane when the report grid's cursor moves
+// to a different query. Guarded on the id, not the row: an arrow key through a
+// wait-category report would otherwise start a plan read per row.
 func (p *QueryStorePanel) selectedQueryChanged() {
 	if id := p.selectedQueryID(); id != p.queryID {
 		p.loadPlans(id)
@@ -286,10 +284,10 @@ func (p *QueryStorePanel) selectedQueryChanged() {
 	}
 }
 
-// loadPlans reads one query's plans into the plan pane, or empties it for a
-// zero id. It has its own sequence rather than sharing the report's: the reads
-// are independent, and the plan pane must not be blanked by a report reload that
-// has not landed.
+// loadPlans reads one query's plans into the plan pane, or empties it for a zero
+// id. It has its own sequence rather than sharing the report's: the reads are
+// independent, and the plan pane must not be blanked by a report reload that has
+// not landed.
 func (p *QueryStorePanel) loadPlans(queryID int64) {
 	p.queryID = queryID
 	if queryID == 0 || !p.app.isConnected(p.conn) {
@@ -302,18 +300,18 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 		return
 	}
 	p.plansGrid.SetStatus(fmt.Sprintf("Reading plans for query %d...", queryID))
-	// The report's effective window, not the toolbar's: on Regressed Queries the
-	// rows cover the second half of it, and a plan pane reading the whole window
-	// reported more executions for one plan than the query above had altogether.
+	// The report's effective window, not the toolbar's: on Regressed Queries the rows
+	// cover the second half of it, and a plan pane reading the whole window reported
+	// more executions for one plan than the query above had altogether.
 	opts, sc, dbName := p.report().effectiveOptions(p.options()), p.conn, p.dbName
-	// A plan read fires from the report grid's OnSelectRow, so holding Down through
-	// a ranking starts one per row: without Begin's cancel every superseded query
-	// still runs on the shared host until qsReadTimeout.
+	// A plan read fires from the report grid's OnSelectRow, so holding Down through a
+	// ranking starts one per row: without Begin's cancel every superseded query still
+	// runs on the shared host until qsReadTimeout.
 	ctx, seq := p.planRead.BeginTimeout(sc.Server.Context(), qsReadTimeout)
-	// safegoRepair, not safego: the "Reading plans..." placeholder is replaced by
-	// the callback below, which a panic on the read goroutine never reaches, and
-	// nothing else writes the pane until another query is selected, so it would
-	// claim to be reading a query it gave up on.
+	// safegoRepair, not safego: the "Reading plans..." placeholder is replaced by the
+	// callback below, which a panic on the read goroutine never reaches, and nothing
+	// else writes the pane until another query is selected, so it would claim to be
+	// reading a query it gave up on.
 	p.app.safegoRepair("reading Query Store plans", func() { p.plansPanicked(seq) }, func() {
 		plans, err := sc.Server.DatabaseRef(dbName).QueryStorePlans(ctx, queryID, opts)
 		p.app.postAndWake(func() {
@@ -326,11 +324,10 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 				return
 			}
 			p.plans = plans
-			// resetGrid, not SetData: the plan pane's columns are qsPlanColumns on every
-			// load, so a dragged column width stays meaningful, and SetData drops it each
-			// time the report cursor moves to another query. resetGrid rather than
-			// redrawGrid because these are a different query's plans, so the old cursor
-			// means nothing.
+			// resetGrid, not SetData: the plan pane's columns are qsPlanColumns on every load,
+			// so a dragged column width stays meaningful, and SetData drops it each time the
+			// report cursor moves to another query. resetGrid rather than redrawGrid because
+			// these are a different query's plans, so the old cursor means nothing.
 			resetGrid(p.plansGrid, qsPlanColumns, qsPlanRows(plans, opts), 0)
 			p.plansGrid.SetStatus(fmt.Sprintf("Query %d — %d plans", queryID, len(plans)))
 		})
@@ -338,9 +335,9 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 }
 
 // plansPanicked replaces the plan pane's "Reading plans..." placeholder after a
-// panic on the read goroutine (loadPlans' safegoRepair step). Guarded by
-// planRead like the normal completion path: a newer load owns the pane, and
-// blanking it would drop a result still on its way.
+// panic on the read goroutine (loadPlans' safegoRepair step). Guarded by planRead
+// like the normal completion: a newer load owns the pane, and blanking it would
+// drop a result still on its way.
 func (p *QueryStorePanel) plansPanicked(seq int) {
 	if !p.planRead.Done(seq) {
 		return
@@ -384,6 +381,6 @@ func (p *QueryStorePanel) selectedPlan() *gosmo.QSPlan {
 	return p.plans[row]
 }
 
-// setStatus writes the panel's one-line state into the report grid's own
-// status bar, so it sits with the rows it describes.
+// setStatus writes the panel's one-line state into the report grid's status bar,
+// beside the rows it describes.
 func (p *QueryStorePanel) setStatus(s string) { p.grid.SetStatus(s) }

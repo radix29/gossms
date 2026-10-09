@@ -8,10 +8,9 @@ import (
 )
 
 // Grouping and Aggregation: SSMS's viewer toolbar pair. Events are grouped by
-// one or more columns, nested in the order given, and each group can carry
-// aggregates — COUNT, SUM, AVG, MIN, MAX of a column — over the events under
-// it. Evaluated over whatever event list the caller hands in (the viewer's
-// filtered events), so a filter narrows the groups too.
+// one or more columns, nested in the order given; each group can carry
+// aggregates (COUNT, SUM, AVG, MIN, MAX) over the events under it. Evaluated
+// over the event list the caller hands in, so a filter narrows the groups too.
 
 // AggFunc is an aggregate function.
 type AggFunc int

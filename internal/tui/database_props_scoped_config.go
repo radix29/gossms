@@ -49,13 +49,12 @@ func newScopedConfigIntEditor(configs []*gosmo.DatabaseScopedConfig, tracked *[]
 		}
 		v, err := strconv.ParseInt(c.Value, 10, 64)
 		if err != nil {
-			// Not every scoped configuration is integer-valued — a secondary
-			// can read PRIMARY, and options added since have keyword values.
-			// Discarding the parse error rendered such a value as 0, which
-			// matches the dirty baseline and so is never written: the row
-			// shows a number the server never held and silently declines to
-			// change it. Show what is actually set instead, and leave it out
-			// of *tracked so nothing pretends to edit it.
+			// Not every scoped configuration is integer-valued — a secondary can read PRIMARY,
+			// and newer options have keyword values. Discarding the parse error would render
+			// such a value as 0, which matches the dirty baseline and so is never written: the
+			// row would show a number the server never held and silently decline to change it.
+			// Show what is actually set instead, and leave it out of *tracked so nothing
+			// pretends to edit it.
 			row := propsheet.Text(label, c.Value, 12)
 			row.SetEnabled(false)
 			return row
@@ -66,17 +65,16 @@ func newScopedConfigIntEditor(configs []*gosmo.DatabaseScopedConfig, tracked *[]
 	}
 }
 
-// newScopedConfigBoolEditor is newScopedConfigIntEditor's counterpart for
-// options whose value is conventionally "0"/"1". It returns a Row, not a
-// SelectRow, because an option missing on this server/edition renders as the
-// same disabled "N/A" text row the Int editor uses.
+// newScopedConfigBoolEditor is newScopedConfigIntEditor's counterpart for options
+// whose value is conventionally "0"/"1". It returns a Row, not a SelectRow,
+// because an option missing on this server/edition renders as the same disabled
+// "N/A" text row the Int editor uses.
 //
-// The N/A row is the point, not a detail: half these options postdate SQL
-// Server 2019, so on an older instance sys.database_scoped_configurations
-// simply has no row for them. An ordinary OFF/ON dropdown there is left out of
-// *tracked, so the user switches PARAMETER_SNIFFING on, presses OK, and is told
-// it succeeded while nothing was ever sent — the "never let a control silently
-// do nothing" rule, one page down from the menus it is usually stated about.
+// The N/A row is the point: half these options postdate SQL Server 2019, so on an
+// older instance sys.database_scoped_configurations has no row for them. An
+// ordinary OFF/ON dropdown there is left out of *tracked, so the user switches
+// PARAMETER_SNIFFING on, presses OK, and is told it succeeded while nothing was
+// sent — the "never let a control silently do nothing" rule.
 func newScopedConfigBoolEditor(configs []*gosmo.DatabaseScopedConfig, tracked *[]scopedConfigBoolRow) func(name, label string) propsheet.Row {
 	return func(name, label string) propsheet.Row {
 		c := findScopedConfig(configs, name)

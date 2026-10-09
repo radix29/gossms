@@ -28,9 +28,8 @@ func (v Value) Display() string {
 
 // Event is one event a target recorded.
 type Event struct {
-	// ID is the store's own number for the event, assigned by Store.Add in
-	// arrival order and never reused. It is what a view holding a subset of
-	// the store compares against Store.OldestID to see what has aged out.
+	// ID is assigned by Store.Add in arrival order and never reused; a view
+	// compares it against Store.OldestID to see what has aged out.
 	ID uint64
 
 	Name      string
@@ -60,9 +59,8 @@ func findValue(vs []Value, name string) (Value, bool) {
 	return Value{}, false
 }
 
-// TimestampLayout is how a timestamp is shown: local time to the microsecond,
-// which is as fine as an event's timestamp is recorded. It sorts as text, so
-// the filter's < and > work on it without parsing.
+// TimestampLayout is how a timestamp is shown: local time to the microsecond.
+// It sorts as text, so the filter's < and > work without parsing.
 const TimestampLayout = "2006-01-02 15:04:05.000000"
 
 // FormatTimestamp renders t in the viewer's local time.

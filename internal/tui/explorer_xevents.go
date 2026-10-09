@@ -13,18 +13,18 @@ import (
 )
 
 // explorer_xevents.go is Management ▸ Extended Events: the Sessions folder, one
-// node per server-scoped event session, one leaf per target, and the state
-// verbs on a session; New Session and Session Properties are
-// xevent_session_dialog.go. Script Session as and Delete come from scripting.go's
-// and explorer_object_ops.go's tables; the Details pane's grids are in
+// node per server-scoped event session, one leaf per target, and the state verbs
+// on a session; New Session and Session Properties are xevent_session_dialog.go.
+// Script Session as and Delete come from scripting.go's and
+// explorer_object_ops.go's tables; the Details pane's grids are in
 // detail_browser_xevents.go; the XEvent Profiler folder beside Sessions is
 // xevent_profiler.go.
 //
 // Azure SQL Database has no server-scoped sessions: its sessions belong to a
 // database (ON DATABASE), and the folder hangs off each database node there
-// instead of Management, as SSMS hangs it. The same node types serve both;
-// a node's DBName is the scope — empty for the server — and xeScope turns it
-// into the gosmo handle and the right every verb asks for.
+// instead of Management, as SSMS hangs it. The same node types serve both; a
+// node's DBName is the scope — empty for the server — and xeScope turns it into
+// the gosmo handle and the right every verb asks for.
 
 // xeScope is where an event session lives: the server (db empty), or one
 // database — Azure SQL Database's database-scoped sessions.

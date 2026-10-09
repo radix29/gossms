@@ -7,9 +7,9 @@ import (
 	"github.com/radix29/gosmo"
 )
 
-// pendingState is a master-detail row's place in its page's pending-edit
-// list: added since the page loaded (isNew), or loaded and to be removed on
-// Apply (removing). A row type embeds it and so satisfies pendingRow.
+// pendingState is a master-detail row's place in its page's pending-edit list:
+// added since load (isNew), or loaded and to be removed on Apply (removing). A
+// row type embeds it and so satisfies pendingRow.
 type pendingState struct {
 	isNew, removing bool
 }
@@ -23,16 +23,15 @@ type pendingRow interface {
 }
 
 // pendingEdits is a master-detail page's pending-edit list: the rows as loaded
-// and as the page now says, Apply's to write. Every page with a grid of rows,
+// and as the page now says, for Apply to write. Every page with a grid of rows,
 // an Add and a Remove keeps one (Resource Governor pools and groups, Database
 // Mail profiles and accounts, database files and filegroups, New Database
 // filegroups, extended properties, role members, job steps, key signatures,
 // symmetric-key encryptions).
 //
 // changed reports an edit to a loaded row's values, and reset undoes it; both
-// are nil on a page whose rows are only added and removed. nameOf is the row's
-// name for the Add duplicate check (taken, index); nil on a page with no name
-// to type.
+// nil on a page whose rows are only added and removed. nameOf is the row's name
+// for the Add duplicate check (taken, index); nil on a page with no name to type.
 type pendingEdits[E pendingRow] struct {
 	collation string
 	nameOf    func(E) string
@@ -42,15 +41,15 @@ type pendingEdits[E pendingRow] struct {
 	loaded, rows []E
 }
 
-// newPendingEdits is the list for loaded under collation, the scope's — see
+// newPendingEdits is the list for loaded under collation, the scope's; see
 // pendingNameIndex.
 func newPendingEdits[E pendingRow](collation string, loaded []E, nameOf func(E) string, changed func(E) bool, reset func(E)) *pendingEdits[E] {
 	return &pendingEdits[E]{collation: collation, nameOf: nameOf, changed: changed, reset: reset,
 		loaded: loaded, rows: slices.Clone(loaded)}
 }
 
-// all is every row, those being removed included, in the order loaded then
-// added — Apply's input.
+// all is every row, those being removed included, in loaded-then-added order:
+// Apply's input.
 func (p *pendingEdits[E]) all() []E { return p.rows }
 
 // visible is the rows the grid lists: all but those being removed.
@@ -89,8 +88,8 @@ func (p *pendingEdits[E]) revert() {
 	}
 }
 
-// swap exchanges rows a and b — a page that reorders its rows moves them in
-// all, not in visible, which skips rows being removed.
+// swap exchanges rows a and b; a page that reorders moves them in all, not in
+// visible, which skips rows being removed.
 func (p *pendingEdits[E]) swap(a, b E) {
 	i, j := slices.Index(p.rows, a), slices.Index(p.rows, b)
 	p.rows[i], p.rows[j] = p.rows[j], p.rows[i]
@@ -102,8 +101,8 @@ func (p *pendingEdits[E]) add(e E) {
 	p.rows = append(p.rows, e)
 }
 
-// remove takes e off the list: a new row is forgotten, a loaded one marked
-// for removal on Apply.
+// remove takes e off the list: a new row is forgotten, a loaded one marked for
+// removal on Apply.
 func (p *pendingEdits[E]) remove(e E) {
 	if e.pending().isNew {
 		p.rows = slices.DeleteFunc(p.rows, func(x E) bool { return x == e })
@@ -112,31 +111,31 @@ func (p *pendingEdits[E]) remove(e E) {
 	e.pending().removing = true
 }
 
-// restore takes back e's pending removal — an Add of a row being removed,
-// on a page that would otherwise drop and re-create it.
+// restore takes back e's pending removal: an Add of a row being removed, on a
+// page that would otherwise drop and re-create it.
 func (p *pendingEdits[E]) restore(e E) { e.pending().removing = false }
 
-// index is the index in visible of the row named name, or -1 — the Add
-// duplicate check of a page that selects the row it finds.
+// index is the index in visible of the row named name, or -1: the Add duplicate
+// check of a page that selects the row it finds.
 func (p *pendingEdits[E]) index(name string) int {
 	return pendingNameIndex(p.collation, p.visible(), p.nameOf, name)
 }
 
 // listed reports whether a visible row is named name. A row being removed is
-// not: on a page whose Apply drops before it creates, its name is free, and on
-// one that runs refusal first, that explains a name a removal frees only on
-// Apply better than "already listed" about a row no longer shown.
+// not: on a page whose Apply drops before it creates its name is free, and on
+// one that runs refusal first, a message explaining that the removal frees the
+// name only on Apply beats "already listed" about a row no longer shown.
 func (p *pendingEdits[E]) listed(name string) bool { return p.index(name) >= 0 }
 
-// taken reports whether any row is named name, those being removed included:
-// the Add check of a page whose Apply creates before it drops and has no
-// refusal to catch the clash.
+// taken reports whether any row is named name, those being removed included: the
+// Add check of a page whose Apply creates before it drops and has no refusal to
+// catch the clash.
 func (p *pendingEdits[E]) taken(name string) bool {
 	return pendingNameTaken(p.collation, p.rows, p.nameOf, name)
 }
 
-// refusal is pendingNamesRefusal over the rows, stored being a loaded row's
-// name on the server.
+// refusal is pendingNamesRefusal over the rows, stored being a loaded row's name
+// on the server.
 func (p *pendingEdits[E]) refusal(noun string, stored func(E) string) error {
 	names := make([]pendingName, len(p.rows))
 	for i, e := range p.rows {
@@ -149,17 +148,17 @@ func (p *pendingEdits[E]) refusal(noun string, stored func(E) string) error {
 	return pendingNamesRefusal(p.collation, noun, names)
 }
 
-// pendingNameIndex is a master-detail page's "Add" duplicate check: the index
-// in edits of the row whose name is name under collation, or -1. The collation
-// is the scope's, as for nameSet: the database's for files, filegroups,
-// extended properties and database-role members; the server's for server-role
-// members, msdb objects (job steps, mail) and Resource Governor.
+// pendingNameIndex is a master-detail page's "Add" duplicate check: the index in
+// edits of the row whose name is name under collation, or -1. The collation is
+// the scope's, as for nameSet: the database's for files, filegroups, extended
+// properties and database-role members; the server's for server-role members,
+// msdb objects (job steps, mail) and Resource Governor.
 //
 // A byte-wise `==` accepted filegroup `fg1` beside `FG1` on the default
-// case-insensitive collation, and Apply then failed with the server's "already
-// exists" after any earlier phase of the same Apply had run (filegroup and file
-// DDL cannot run in a transaction). On a case-sensitive collation the two are
-// distinct, so the check is the collation's call, not strings.EqualFold.
+// case-insensitive collation, and Apply then failed with "already exists" after
+// any earlier phase of the same Apply had run (filegroup and file DDL cannot run
+// in a transaction). On a case-sensitive collation the two are distinct, so the
+// check is the collation's call, not strings.EqualFold.
 //
 // pendingEdits.index is the pages' way in.
 func pendingNameIndex[E any](collation string, edits []E, nameOf func(E) string, name string) int {
@@ -171,30 +170,30 @@ func pendingNameIndex[E any](collation string, edits []E, nameOf func(E) string,
 	return -1
 }
 
-// pendingNameTaken reports whether a row of edits is named name under
-// collation — pendingNameIndex for a page that has no row to select.
+// pendingNameTaken reports whether a row of edits is named name under collation:
+// pendingNameIndex for a page that has no row to select.
 func pendingNameTaken[E any](collation string, edits []E, nameOf func(E) string, name string) bool {
 	return pendingNameIndex(collation, edits, nameOf, name) >= 0
 }
 
-// pendingName is one row of a master-detail page as pendingNamesRefusal sees
-// it: the name the server has ("" for a row not yet created), the name the
-// page gives it, and whether the page removes it.
+// pendingName is one row of a master-detail page as pendingNamesRefusal sees it:
+// the name the server has ("" for a row not yet created), the name the page gives
+// it, and whether the page removes it.
 type pendingName struct {
 	stored, name string
 	removing     bool
 }
 
 // pendingNamesRefusal is the check a page with Add, Remove and rename runs over
-// its rows before Apply writes anything: every name that will exist is
-// non-empty and unique under collation, and no row is created or renamed onto
-// the stored name of another row being removed or renamed. noun names a row
-// ("profile", "step").
+// its rows before Apply writes anything: every name that will exist is non-empty
+// and unique under collation, and no row is created or renamed onto the stored
+// name of another row being removed or renamed. noun names a row ("profile",
+// "step").
 //
-// The second rule is the Apply's order: Database Mail creates and renames
-// before it drops, and Job Properties updates steps before it deletes them, so
-// the name is still taken when the create or rename runs and the server refuses
-// it (the whole Apply in one transaction, or in New Job a job left half-built).
+// The second rule is the Apply's order: Database Mail creates and renames before
+// it drops, and Job Properties updates steps before it deletes them, so the name
+// is still taken when the create or rename runs and the server refuses it (the
+// whole Apply in one transaction, or in New Job a job left half-built).
 // Reordering the phases fixes a removal but not a swap of two names, so the page
 // refuses and the user applies the removal first.
 //

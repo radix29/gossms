@@ -176,10 +176,10 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	// attempt is scoped; ConnectContext roots the new connection's own context at
 	// Background, so the panel's connection still outlives sc.
 	//
-	// Except when sc is already closed: Reconnect hands in the panel's own
-	// connection, just closed, and a dial scoped to that failed at once with
-	// "context canceled", dropping the panel without a redial. Nothing else can
-	// abort that dial, so it has only the connect timeout.
+	// Except when sc is already closed: Reconnect hands in the panel's own connection,
+	// just closed, and a dial scoped to that fails at once with "context canceled"
+	// and drops the panel without a redial. Nothing else can abort that dial, so it
+	// has only the connect timeout.
 	parent := sc.Server.Context()
 	if parent.Err() != nil {
 		parent = context.Background()

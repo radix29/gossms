@@ -167,18 +167,16 @@ func pageLoginEffectivePermissions(d *PropDialog, sc *db.ServerConn, principal *
 	}
 }
 
-// effectivePermsShow is one press of either page's Show button: the
-// "Resolving..." state, the fetch off the UI goroutine, and the one way both
-// pages report what came back. The pages differ only in which gosmo call fetch
-// makes.
+// effectivePermsShow is one press of either page's Show button: the "Resolving..."
+// state, the fetch off the UI goroutine, and the one way both pages report what
+// came back. The pages differ only in which gosmo call fetch makes.
 //
-// The database page's scope validation stays at its call site: it must refuse
-// the press *before* "Resolving..." goes up, and each refusal has its own
-// message.
+// The database page's scope validation stays at its call site: it must refuse the
+// press *before* "Resolving..." goes up, and each refusal has its own message.
 //
-// principal stays a pointer: it is the rename box every page of the dialog
-// shares (see loginPropPages), so the summary names whoever the principal is
-// by the time the fetch returns.
+// principal stays a pointer: it is the rename box every page of the dialog shares
+// (see loginPropPages), so the summary names whoever the principal is by the time
+// the fetch returns.
 func effectivePermsShow(d *PropDialog, hint *propsheet.HintRow, busy *bool, principal *string,
 	fill func([]*gosmo.EffectivePermission),
 	fetch func(ctx context.Context) ([]*gosmo.EffectivePermission, error)) {

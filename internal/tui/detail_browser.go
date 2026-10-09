@@ -488,18 +488,18 @@ func (a *App) newDetailBrowser() *DetailBrowser {
 	return db
 }
 
-// showQueryStoreValue is the grid's "Show Value" hook. On a Query Store
-// report's Query column it re-reads the statement from the server by the row's
-// query id rather than opening the cell.
+// showQueryStoreValue is the grid's "Show Value" hook. On a Query Store report's
+// Query column it re-reads the statement from the server by the row's query id
+// rather than opening the cell.
 //
 // The cell cannot be opened: queryStoreOneLine collapses the statement onto one
 // line for the grid, so a `-- comment` anywhere in it swallows every line after
-// it. This grid holds only [][]string, shared with every other node type, so
-// the id is the only handle back to the statement (QueryStorePanel keeps the
-// real text and needs no round trip).
+// it. This grid holds only [][]string, shared with every other node type, so the
+// id is the only handle back to the statement (QueryStorePanel keeps the real text
+// and needs no round trip).
 //
-// Every path that cannot produce an id (another column, another node type, a
-// row whose id cell is a dash) falls through to the flattened cell.
+// Every path that cannot produce an id (another column, another node type, a row
+// whose id cell is a dash) falls through to the flattened cell.
 func (db *DetailBrowser) showQueryStoreValue(a *App, col int, column, value string) bool {
 	if column != qsQueryColumn || db.currentNode == nil ||
 		db.currentNode.data.Type != NodeQueryStoreReport {

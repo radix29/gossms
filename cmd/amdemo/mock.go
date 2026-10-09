@@ -21,10 +21,9 @@ const buckets = 900
 var mockStart = time.Date(2026, 8, 5, 11, 56, 23, 0, time.UTC)
 
 // The workload is two periodic waves plus five one-off events. Waves, because
-// panels show different spans of the same history (a 48-column panel ~40
-// samples, the full-width waits panel ~140) and a single bump would leave
-// narrow panels showing noise. Events sit inside the last 140 samples so every
-// panel that can show them does.
+// panels show different spans of the history (a 48-column panel ~40 samples,
+// the full-width waits panel ~140) and a single bump would leave narrow panels
+// showing noise. Events sit inside the last 140 samples so every panel shows them.
 const (
 	workloadPeriod  = 55.0 // samples per workload wave
 	reportingPeriod = 130.0
@@ -212,8 +211,8 @@ func MockSample(h dashboard.HistoryView) dashboard.SampleView {
 		Header:           h.Header,
 		UserConnections:  "1519",
 		BlockedProcesses: "92",
-		// Fixed scales from the work order, not auto-scaling: panels holding
-		// one dominant bar would always show it full-width.
+		// Fixed scales, not auto-scaling: a panel with one dominant bar would
+		// always show it full-width.
 		Activity: dashboard.BarPanel{
 			Scale: charts.Scale{Min: 0, Max: 30000},
 			Bars: []charts.Bar{

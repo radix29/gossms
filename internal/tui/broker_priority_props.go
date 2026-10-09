@@ -12,14 +12,13 @@ import (
 // broker_priority_props.go is the read-only Properties for a conversation
 // priority.
 //
-// ALTER BROKER PRIORITY exists and can change the level and the three
-// criteria. It is not offered here because the permission that would gate it
-// cannot be read: SQL Server enforces a BROKER PRIORITY permission it does not
-// publish — HAS_PERMS_BY_NAME answers NULL for every spelling of one — so the
-// only right the gate can ask about is ALTER on the database, and a page
-// gating a narrow write on the widest right there is would show a read-only
-// banner to everyone else who can in fact perform it. The page is named in
-// prop_page_requires_test.go's pagesThatOnlyRead.
+// ALTER BROKER PRIORITY exists and can change the level and the three criteria.
+// It is not offered because the permission that would gate it cannot be read: SQL
+// Server enforces a BROKER PRIORITY permission it does not publish
+// (HAS_PERMS_BY_NAME answers NULL for every spelling), so the only right the gate
+// can ask about is ALTER on the database, and gating a narrow write on the widest
+// right would show a read-only banner to everyone else who can perform it. The
+// page is named in prop_page_requires_test.go's pagesThatOnlyRead.
 
 func findBrokerPriority(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.BrokerPriority, error) {
 	return inDB(ctx, sc, dbName, name, (*gosmo.Database).BrokerPriorityByName)

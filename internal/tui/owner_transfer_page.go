@@ -12,10 +12,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// ownerTransferItem is one object owned by the principal a properties dialog
-// is open for, together with the owner the user has picked for it. origOwner
-// is what the server reported, so a row is dirty exactly when newOwner
-// differs from it.
+// ownerTransferItem is one object owned by the principal a properties dialog is
+// open for, with the owner the user picked for it. origOwner is what the server
+// reported, so a row is dirty exactly when newOwner differs from it.
 type ownerTransferItem[T any] struct {
 	obj       T
 	name      string
@@ -23,20 +22,19 @@ type ownerTransferItem[T any] struct {
 	newOwner  string
 }
 
-// ownerTransferSpec is what differs between the owner-transfer pages — Owned
-// Schemas in User and Database Role Properties, Owned Roles in Database Role
-// and Server Role Properties. Everything else about those pages is
-// identical and lives in newOwnerTransferPage.
+// ownerTransferSpec is what differs between the owner-transfer pages (Owned
+// Schemas in User and Database Role Properties, Owned Roles in Database Role and
+// Server Role Properties). Everything else is shared in newOwnerTransferPage.
 type ownerTransferSpec[T any] struct {
-	// Headers are the grid's column headers. Cells returns one cell per
-	// header for a single item, and re-runs whenever an owner changes, so a
-	// column showing the owner tracks edits.
+	// Headers are the grid's column headers. Cells returns one cell per header for
+	// an item, and re-runs whenever an owner changes, so an owner column tracks
+	// edits.
 	Headers []string
 	Cells   func(it *ownerTransferItem[T]) []string
 
-	// DetailLabels are extra Static rows shown under "Current owner" for the
-	// selected object, filled from DetailValues in the same order. Both are
-	// nil for a page with no extra detail.
+	// DetailLabels are extra Static rows under "Current owner" for the selected
+	// object, filled from DetailValues in order. Both nil for a page with no extra
+	// detail.
 	DetailLabels []string
 	DetailValues func(it *ownerTransferItem[T]) []string
 
@@ -50,17 +48,17 @@ type ownerTransferSpec[T any] struct {
 	SetOwner func(ctx context.Context, obj T, newOwner string) error
 }
 
-// newOwnerTransferPage builds the form and apply function for an
-// owner-transfer page over items, offering ownerNames as the new owner.
+// newOwnerTransferPage builds the form and apply function for an owner-transfer
+// page over items, offering ownerNames as the new owner.
 func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []string, spec ownerTransferSpec[T]) (*propsheet.Form, propApply) {
-	// An owner the server reports but ownerNames doesn't list is appended
-	// rather than left to indexOf's not-found 0: the page commits whatever the
-	// row displays, so a fallback to the first principal would transfer
-	// ownership on a page that was merely opened and OK'd.
+	// An owner the server reports but ownerNames doesn't list is appended rather
+	// than left to indexOf's not-found 0: the page commits whatever the row
+	// displays, so a fallback to the first principal would transfer ownership on a
+	// page that was merely opened and OK'd.
 	//
-	// No current caller can reach this — all three filter items by
-	// Owner == the principal the dialog is for, which is itself in the list.
-	// It guards the invariant for a caller that doesn't.
+	// No current caller can reach this (all three filter items by Owner == the
+	// principal the dialog is for, which is in the list); it guards the invariant
+	// for a caller that doesn't.
 	owners := slices.Clone(ownerNames)
 	for _, it := range items {
 		if !slices.Contains(owners, it.origOwner) {
@@ -86,9 +84,8 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		detailStatics[i] = propsheet.Static(label, "")
 	}
 	transferRow := propsheet.Select("Transfer owner to", owners, 0)
-	// The warning SSMS puts in a modal before an ownership change. It is a
-	// row rather than a modal because the change is not issued here — it is
-	// staged until Apply/OK, so there is no point at which a blocking prompt
+	// The warning SSMS puts in a modal before an ownership change. A row rather than
+	// a modal because the change is staged until Apply/OK, so no blocking prompt
 	// would be answering "do it now?".
 	warnRow := propsheet.Hint()
 	refreshWarning := func() {
@@ -105,8 +102,8 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		warnRow.Set(fmt.Sprintf("%d ownership change(s) pending. Transferring ownership gives the new owner full control of the object and can revoke permissions that flowed from the old owner. Applied on OK/Apply.", pending))
 	}
 
-	// selected is the grid row whose edit transferRow currently holds, so a
-	// move to another row can write the old one back first.
+	// selected is the grid row whose edit transferRow holds, so a move to another
+	// row can write the old one back first.
 	selected := -1
 	commitCurrent := func() {
 		if selected >= 0 && selected < len(items) {
@@ -135,8 +132,8 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		}
 		transferRow.SetSelected(indexOf(owners, it.newOwner))
 	}
-	// Staying on the row and changing the dropdown must update the warning
-	// too, not only moving off it.
+	// Staying on the row and changing the dropdown must update the warning too, not
+	// only moving off it.
 	transferRow.SetOnChange(func(string) {
 		commitCurrent()
 		redrawGrid(grid, spec.Headers, rowsFor())
@@ -148,9 +145,9 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 
 	gridRow := propsheet.NewGridRow(grid, 8)
 	gridRow.DirtyFn = func() bool {
-		// commitCurrent is deliberately not called here: DirtyFn runs on
-		// every redraw, and writing the edit back from a draw path would
-		// make a mere visit to the page look like a change.
+		// commitCurrent is deliberately not called here: DirtyFn runs on every redraw,
+		// and writing the edit back from a draw path would make a mere visit look like a
+		// change.
 		for _, it := range items {
 			if it.newOwner != it.origOwner {
 				return true
@@ -197,18 +194,17 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 }
 
 // ownedSchema pairs a schema with its object count. The count is a per-schema
-// query, so it is fetched once at load time rather than from the draw path
-// that fills the detail rows.
+// query, fetched once at load rather than from the draw path that fills the
+// detail rows.
 type ownedSchema struct {
 	schema      *gosmo.Schema
 	objectCount int
 }
 
-// pagePrincipalOwnedSchemas is the "Owned Schemas" page for both Database
-// Role Properties and User Properties. The two are the same page and differ
-// only in the word for the principal, which principalKind supplies ("role" or
-// "user"). principalName is dereferenced at load time, not at page
-// construction, so a reload after a rename picks up the new name.
+// pagePrincipalOwnedSchemas is the "Owned Schemas" page for both Database Role
+// Properties and User Properties, differing only in the word for the principal
+// (principalKind: "role" or "user"). principalName is dereferenced at load, not
+// at page construction, so a reload after a rename picks up the new name.
 func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *string, principalKind string) propPage {
 	return propPage{
 		title: "Owned Schemas",

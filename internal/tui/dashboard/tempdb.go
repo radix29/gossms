@@ -9,9 +9,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// TempDB canvas size. Same width as the other two dashboards so the panel's
-// horizontal scrolling behaves identically on every tab; taller because it
-// carries five sections, the last of which is a grid rather than a chart.
+// TempDB canvas size. Same width as the other dashboards so horizontal
+// scrolling behaves identically; taller for five sections, the last a grid.
 const (
 	TempDBCanvasW = 150
 	TempDBCanvasH = 68
@@ -46,9 +45,8 @@ func DrawTempDB(s tcell.Screen, r core.Rect, v TempDBView) []ChartHit {
 
 func tempdbSpace(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]ChartHit) int {
 	body, next := section(s, r, y, tempdbBodyH, "TEMPDB SPACE", v.SpaceKPIs)
-	// Stacked, and Free is one of the bands: the column's full height is the
-	// size tempdb has grown to, so a file that is filling up and a file that
-	// has already grown look different rather than both pinning the axis.
+	// Stacked with Free a band: full height is the size tempdb has grown to,
+	// so a filling file and an already-grown one look different.
 	drawStackedChart(s, body, "TEMPDB SPACE (MB)", charts.StackedHistoryChart{
 		Series:     v.Space,
 		TimeLabel:  v.Header.SampleTime,
@@ -77,8 +75,7 @@ func tempdbActivity(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]Ch
 	}
 	if len(cols) > 2 {
 		// Overlaid, not stacked: generation and cleanup are two readings of
-		// the same flow, and the gap between them — cleanup falling behind
-		// generation — is the whole point of the panel.
+		// one flow, and the gap (cleanup falling behind) is the panel's point.
 		drawChart(s, cols[2], "VERSION GENERATION / CLEANUP KB/s", charts.HistoryChart{
 			Series:    v.VersionRates,
 			TimeLabel: v.Header.SampleTime,
@@ -109,9 +106,8 @@ func tempdbFiles(s tcell.Screen, r core.Rect, y int, v TempDBView) int {
 	body, next := section(s, r, y, tempdbFilesH, "TEMPDB FILES", v.FileKPIs)
 	inner := charts.DrawPanelTitle(s, body, "SIZE AND USED SPACE BY FILE (MB)")
 
-	// The advisory takes the last row when there is something to say. It is
-	// the one thing on this tab that is a recommendation rather than a
-	// reading, so it is worded as one and coloured as a warning.
+	// The advisory takes the last row when there is something to say: the one
+	// recommendation (not a reading) on this tab, worded and coloured as one.
 	if v.FileNote != "" && inner.H > 1 {
 		core.DrawTextClipped(s, inner.X, inner.Bottom()-1, inner.W,
 			theme.StylePanel().Foreground(theme.Active().Warning), v.FileNote)
@@ -122,9 +118,8 @@ func tempdbFiles(s tcell.Screen, r core.Rect, y int, v TempDBView) int {
 }
 
 // sessionColumns are the grid's headings and how many columns each gets.
-// Fixed widths rather than measured ones: the grid is redrawn every tick,
-// and a column that resizes itself around the current widest login makes the
-// whole table jump between readings.
+// Fixed widths, not measured: the grid redraws every tick and self-sizing
+// columns would make the table jump between readings.
 var sessionColumns = []struct {
 	title string
 	width int
@@ -177,9 +172,8 @@ func sessionHeadings() []string {
 	return out
 }
 
-// drawSessionRow lays one row out across the fixed column grid, clipping
-// each cell to its own column so a long application name can't run into the
-// numbers beside it.
+// drawSessionRow lays one row across the fixed columns, clipping each cell so a
+// long application name can't run into the numbers beside it.
 func drawSessionRow(s tcell.Screen, r core.Rect, style tcell.Style, cells []string) {
 	x := r.X
 	for i, col := range sessionColumns {

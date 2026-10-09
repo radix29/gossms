@@ -14,13 +14,9 @@ type Button struct {
 	disabled bool
 	OnClick  func()
 
-	// mouseDragging distinguishes a fresh Button1 press from a continued
-	// hold over the button — mirrors Toolbar's/TreeView's/MenuBar's field
-	// of the same name and purpose. Without it, tcell's all-motion mouse
-	// tracking resends Buttons()==Button1 on every motion event while the
-	// button stays down, so a click that so much as twitches before
-	// release fires OnClick again on every resent event instead of once
-	// per physical click.
+	// mouseDragging separates a fresh Button1 press from a resent hold (same field
+	// as Toolbar/TreeView/MenuBar): all-motion tracking resends Button1 on every
+	// motion, so a twitchy click would fire OnClick repeatedly.
 	mouseDragging bool
 }
 
@@ -32,9 +28,9 @@ func NewButton(label string, onClick func()) *Button {
 func (b *Button) SetBounds(x, y int) { b.rect.X, b.rect.Y = x, y }
 func (b *Button) Focus(v bool)       { b.focused = v }
 
-// SetEnabled toggles whether the button fires. A disabled button draws
-// greyed out *and* refuses keys and clicks — see CheckBox.SetEnabled for why
-// it keeps its place in the caller's focus ring rather than vanishing from it.
+// SetEnabled toggles whether the button fires. A disabled button draws greyed
+// and refuses keys and clicks, keeping its place in the focus ring (see
+// CheckBox.SetEnabled).
 func (b *Button) SetEnabled(v bool) { b.disabled = !v }
 
 // Enabled reports whether the button fires.

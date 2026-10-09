@@ -9,18 +9,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// keyPropPages builds the page set for Primary/Unique Key Properties. A
-// PRIMARY KEY or UNIQUE constraint is implemented as a unique index
-// (sys.indexes.is_primary_key/is_unique_constraint), so most pages reuse
-// Index Properties' own page builders unchanged. Included Columns and
-// Filter are left out: ALTER TABLE ADD CONSTRAINT has no INCLUDE or WHERE
-// clause, so a constraint-backed index can never have either.
+// keyPropPages builds the page set for Primary/Unique Key Properties. A PRIMARY
+// KEY or UNIQUE constraint is implemented as a unique index
+// (sys.indexes.is_primary_key/is_unique_constraint), so most pages reuse Index
+// Properties' own page builders unchanged. Included Columns and Filter are left
+// out: ALTER TABLE ADD CONSTRAINT has no INCLUDE or WHERE clause, so a
+// constraint-backed index can never have either.
 //
-// name is boxed in a *string shared by every page below: renaming a key
-// changes the identity every other page's lookup depends on. The
-// rename is the last write of an Apply/OK run (see propPage.renames),
-// and commitRename then updates the box so PropDialog.InvalidateAll's
-// reload re-fetches under the new name.
+// name is boxed in a *string shared by every page below: renaming a key changes
+// the identity every other page's lookup depends on. The rename is the last write
+// of an Apply/OK run (see propPage.renames), and commitRename then updates the box
+// so PropDialog.InvalidateAll's reload re-fetches under the new name.
 func keyPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	namePtr := &name
 	w := gate.ObjectWriteRights()

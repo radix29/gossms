@@ -6,13 +6,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// KPI is a compact "label: value" readout — the numeric boxes along a
-// dashboard's section headers (User Connections, Blocked Processes, Page
-// Life Expectancy).
-//
-// The value is drawn on a filled background so it reads as a figure rather
-// than as more label text, which is the whole point of a KPI next to a wall
-// of charts.
+// KPI is a compact "label: value" readout, the numeric boxes along a dashboard
+// section header (User Connections, Blocked Processes, Page Life Expectancy).
+// The value is drawn on a filled background so it reads as a figure rather than
+// more label text.
 type KPI struct {
 	Label string
 	Value string
@@ -25,9 +22,9 @@ type KPI struct {
 	// highlight text.
 	ValueFg tcell.Color
 
-	// LabelBg backs the label text; the zero colour uses the panel
-	// background. A KPI drawn onto a filled strip has to be told what that
-	// strip's colour is, or its label punches a panel-coloured hole in it.
+	// LabelBg backs the label text; the zero colour uses the panel background. A KPI
+	// on a filled strip must be told the strip's colour, or its label punches a
+	// panel-coloured hole in it.
 	LabelBg tcell.Color
 }
 
@@ -36,12 +33,9 @@ func (k KPI) Width() int {
 	return core.DisplayWidth(k.Label) + core.DisplayWidth(k.Value) + 3
 }
 
-// Draw renders the KPI right-aligned within r's first row — dashboards
-// place these at the right end of a section header, so growing leftward
-// keeps them anchored as the value's width changes.
-//
-// Too little room drops the label before the value: the number is the
-// point, and the surrounding section already gives it context.
+// Draw renders the KPI right-aligned within r's first row, so it stays anchored
+// at a section header's right end as the value's width changes. With too little
+// room the label is dropped before the value: the number is the point.
 func (k KPI) Draw(s tcell.Screen, r core.Rect) {
 	if r.W <= 0 || r.H <= 0 {
 		return

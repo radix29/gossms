@@ -119,17 +119,16 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 	return p.databaseSchemaItems(other, sysInv, prefix), false
 }
 
-// tableCandidates offers every schema (the connected database's own, plus
-// "sys" once its inventory has loaded), every table/view, every visible CTE
-// name, every temp table/table variable the batch declares and every ONLINE
-// database on the server (the start of a three-part name) and queryable
-// linked server (a four-part one) whose name contains prefix — the
-// FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
-// context, and the fallback when a column context has no FROM-scope yet
-// (which passes no CTEs: a CTE name is a relation, not a column).
-// The sys-schema inventory's own objects are not mixed into the unqualified
-// list below: there are hundreds of them, so they're offered only once a
-// query qualifies with "sys." (see memberCandidates).
+// tableCandidates offers every schema (the connected database's own, plus "sys"
+// once its inventory has loaded), every table/view, every visible CTE name, every
+// temp table/table variable the batch declares and every ONLINE database on the
+// server (the start of a three-part name) and queryable linked server (a
+// four-part one) whose name contains prefix — the FROM/JOIN/INTO/UPDATE/DELETE/
+// TRUNCATE TABLE context, and the fallback when a column context has no FROM-scope
+// yet (which passes no CTEs: a CTE name is a relation, not a column). The
+// sys-schema inventory's own objects are not mixed into the unqualified list:
+// there are hundreds, so they're offered only once a query qualifies with "sys."
+// (see memberCandidates).
 func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sqlparse.CTE, bindings []sqlparse.Binding, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
@@ -369,15 +368,15 @@ func (p *QueryPanel) schemaIcon() rune {
 	return nodeIcon(nodeData{Type: NodeSchema}, p.app.cfg.IconStyle, false)
 }
 
-// formatColumnType renders a CatalogColumn's type plus, when it's not
-// nullable, a ", not null" suffix — used by IntelliSense's completion detail
-// text, where a nullable column's detail stays bare to save popup width.
+// formatColumnType renders a CatalogColumn's type plus, when it's not nullable, a
+// ", not null" suffix — used by IntelliSense's completion detail text, where a
+// nullable column's detail stays bare to save popup width.
 //
-// A column with no DataType is a synthetic one whose type could not be worked
-// out — a derived table's or CTE's expression column. It renders as the bare
-// word "column": nullability is unknown too, and a zero CatalogColumn has
-// IsNullable false, so the suffix would otherwise assert NOT NULL about every
-// column this code knows least about.
+// A column with no DataType is a synthetic one whose type could not be worked out
+// (a derived table's or CTE's expression column). It renders as the bare word
+// "column": nullability is unknown too, and a zero CatalogColumn has IsNullable
+// false, so the suffix would otherwise assert NOT NULL about the columns this code
+// knows least about.
 func formatColumnType(col gosmo.CatalogColumn) string {
 	if col.DataType == "" {
 		return "column"

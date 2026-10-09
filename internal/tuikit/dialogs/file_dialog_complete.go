@@ -11,14 +11,11 @@ import (
 // Tab completion
 // ---------------------------------------------------------------------------
 
-// completeField extends f's current value with the longest name prefix
-// shared by every directory entry (dirsOnly, for the path field — it only
-// ever navigates directories) or every entry (the name field) matching
-// what's typed after the last path separator — shell-style Tab completion.
-// Returns false (leaving f untouched) when there's nothing to complete, so
-// the caller can fall through to ordinary Tab focus-cycling instead, the
-// same convention every other tuikit field follows for keys it doesn't act
-// on.
+// completeField extends f's value with the longest prefix shared by every
+// directory entry (dirsOnly, for the path field) or every entry (the name field)
+// matching what's typed after the last separator: shell-style Tab completion.
+// Returns false, leaving f untouched, when there's nothing to complete, so the
+// caller falls through to Tab focus-cycling.
 func (d *FileDialog) completeField(f *widgets.InputField, dirsOnly bool) bool {
 	fs := d.FileSystem()
 	val := f.Value()
@@ -31,11 +28,10 @@ func (d *FileDialog) completeField(f *widgets.InputField, dirsOnly bool) bool {
 			searchDir = fs.Join(d.dir, dirPart)
 		}
 	}
-	// Completing against the directory already on screen must not cost a
-	// second listing: this runs on every Tab keypress, and on a remote
-	// filesystem each one is a network round trip inside the event handler.
-	// d.entries carries the dialog's own ".." row, which fs.List never
-	// reports and which would otherwise poison the common prefix.
+	// Complete against the directory already on screen, not a second listing: this
+	// runs on every Tab, a network round trip on a remote filesystem. d.entries
+	// carries the dialog's own ".." row, which fs.List never reports and which would
+	// poison the common prefix.
 	infos := d.entries
 	if searchDir != d.dir {
 		var err error
@@ -73,12 +69,10 @@ func (d *FileDialog) completeField(f *widgets.InputField, dirsOnly bool) bool {
 	return true
 }
 
-// commonPrefix returns the longest string every element of strs starts
-// with. strs is never empty when called. Compares rune by rune, not byte by
-// byte — a multi-byte UTF-8 filename that shares only part of another's
-// encoded character would otherwise let the trimmed byte-prefix end mid-
-// rune, producing an invalid UTF-8 tail that InputField.SetValue's
-// []rune(v) conversion turns into a stray replacement character.
+// commonPrefix returns the longest string every element of strs starts with
+// (strs is never empty). It compares rune by rune: a byte prefix could end
+// mid-rune on multi-byte filenames, and InputField.SetValue's []rune(v) turns
+// that invalid tail into a stray replacement character.
 func commonPrefix(strs []string) string {
 	prefix := []rune(strs[0])
 	for _, s := range strs[1:] {

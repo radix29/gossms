@@ -9,26 +9,26 @@ import (
 )
 
 // edition_gate.go withholds what the *engine edition* refuses, as
-// permission_gate.go withholds what the login may not do. The two are
-// deliberately separate questions asked in the same shape — a disabled item
-// carrying a short note — and they compose: gateAzure wraps the result of
-// gate, and the edition's note wins, because no permission gets a user past
-// an edition that does not implement the statement at all.
+// permission_gate.go withholds what the login may not do. The two are separate
+// questions asked in the same shape — a disabled item carrying a short note — and
+// they compose: gateAzure wraps the result of gate, and the edition's note wins,
+// because no permission gets a user past an edition that does not implement the
+// statement at all.
 //
 // Every entry here is a refusal driven live against a Managed Instance
-// (t-qmi-01, EngineEdition 8, 2026-09-08):
+// (EngineEdition 8):
 //
-//	Detach Database          Could not find stored procedure 'sp_detach_db'
-//	Attach Database          same class
-//	Take Database Offline    Msg 5008, ALTER DATABASE statement is not supported
-//	Recovery model           Msg 5008 — user databases are FULL only
-//	CREATE DATABASE files    Msg 41918, specifying files and filegroups is not
-//	                         supported
+// 	Detach Database          Could not find stored procedure 'sp_detach_db'
+// 	Attach Database          same class
+// 	Take Database Offline    Msg 5008, ALTER DATABASE statement is not supported
+// 	Recovery model           Msg 5008 — user databases are FULL only
+// 	CREATE DATABASE files    Msg 41918, specifying files and filegroups is not
+// 	                         supported
 //
 // The last of those is why New Database is gated row by row rather than
 // wholesale: CREATE DATABASE itself succeeds on an MI as long as the file and
-// filegroup clauses are left off, which is the documented "server default"
-// path, so blocking the dialog would withhold something that works.
+// filegroup clauses are left off (the documented "server default" path), so
+// blocking the dialog would withhold something that works.
 
 // serverIsAzure reports whether sc is connected to an Azure engine edition —
 // SQL Database, Managed Instance, Synapse or SQL Edge. A connection with no
@@ -51,20 +51,19 @@ func editionNote(sc *db.ServerConn) string {
 }
 
 // azureRefusedScriptVerbs names the Script as ▸ verbs whose generated text
-// contains a statement an Azure engine edition refuses to *compile*, keyed by
-// the node type that offers them.
+// contains a statement an Azure engine edition refuses to *compile*, keyed by the
+// node type that offers them.
 //
-// CREATE REMOTE SERVICE BINDING is the only one. Probed live on t-qmi-01
-// (EngineEdition 8) on 2026-09-16: it comes back Msg 41906, "not supported in
-// SQL Database Managed Instance", and the refusal aborts the whole batch
-// before any statement in it runs — so it is withheld rather than sent to be
-// refused. ALTER and DROP REMOTE SERVICE BINDING are *not* refused there, and
-// neither is the catalog view, which is why the family ships on MI with only
-// these two verbs missing.
+// CREATE REMOTE SERVICE BINDING is the only one: on an MI it comes back Msg 41906,
+// "not supported in SQL Database Managed Instance", and the refusal aborts the
+// whole batch before any statement in it runs — so it is withheld rather than sent
+// to be refused. ALTER and DROP REMOTE SERVICE BINDING are *not* refused there,
+// nor is the catalog view, so the family ships on MI with only these two verbs
+// missing.
 //
-// Both verbs that emit the CREATE are named: DROP And CREATE carries it too,
-// and the DROP half succeeding first would leave the binding gone and the
-// script half-run if this were treated as a runtime error.
+// Both verbs that emit the CREATE are named: DROP And CREATE carries it too, and
+// the DROP half succeeding first would leave the binding gone and the script
+// half-run if this were treated as a runtime error.
 var azureRefusedScriptVerbs = map[NodeType][]string{
 	NodeRemoteServiceBinding: {"CREATE To", "DROP And CREATE To"},
 }
@@ -77,15 +76,14 @@ func editionRefusesScriptVerb(t NodeType, label string) bool {
 	return slices.Contains(azureRefusedScriptVerbs[t], label)
 }
 
-// gateAzure disables item when the connected instance is an Azure engine
-// edition, which refuses the statement it emits.
+// gateAzure disables item when the connected instance is an Azure engine edition,
+// which refuses the statement it emits.
 //
-// It is applied outside gate, never instead of it: an action is withheld from
-// a login without the rights on every edition, and the permission note stays
-// right on the ones that do implement it. NoteWhen is unconditional here
-// because the edition is the reason whenever it applies at all — the note
-// gate replaces sets is the one that would have sent the user after a
-// permission that cannot help.
+// It is applied outside gate, never instead of it: an action is withheld from a
+// login without the rights on every edition, and the permission note stays right
+// on the ones that do implement it. NoteWhen is unconditional here because the
+// edition is the reason whenever it applies at all — the note gate replaces is the
+// one that would have sent the user after a permission that cannot help.
 func gateAzure(item controls.MenuItem, sc *db.ServerConn) controls.MenuItem {
 	if !serverIsAzure(sc) {
 		return item
@@ -96,17 +94,16 @@ func gateAzure(item controls.MenuItem, sc *db.ServerConn) controls.MenuItem {
 	return item
 }
 
-// entraPrincipalsOffered reports whether New Login and New User offer a
-// Microsoft Entra principal (CREATE LOGIN/USER … FROM EXTERNAL PROVIDER). Both
-// dialogs ask this one question so they cannot disagree again: New User used
-// to offer it only on Azure, and New Login on every server.
+// entraPrincipalsOffered reports whether New Login and New User offer a Microsoft
+// Entra principal (CREATE LOGIN/USER … FROM EXTERNAL PROVIDER). Both dialogs ask
+// this one question so they cannot disagree.
 //
 // An Azure edition takes both. On a boxed instance the syntax arrived in SQL
 // Server 2022 (major 16), for an instance Entra has been configured on through
-// Azure Arc; 2016-2019 refuse it outright, so offering it there only lets the
-// user fill the page in to be refused. The Azure test comes first because an
-// Azure edition's VersionMajor (12 on a Managed Instance) is not its feature
-// level. No server info answers yes, per gate.AllowsOn's fail-open rule.
+// Azure Arc; 2016-2019 refuse it outright, so offering it there only lets the user
+// fill the page in to be refused. The Azure test comes first because an Azure
+// edition's VersionMajor (12 on a Managed Instance) is not its feature level. No
+// server info answers yes, per gate.AllowsOn's fail-open rule.
 func entraPrincipalsOffered(info *gosmo.ServerInfo) bool {
 	return info == nil || info.IsAzure() || info.VersionMajor >= 16
 }
@@ -152,13 +149,12 @@ func gateResourceGovernorEdition(item controls.MenuItem, sc *db.ServerConn) cont
 
 // resourceGovernorSupported reports whether the edition implements Resource
 // Governor's DDL: Enterprise and Developer (EngineEdition 3) on every major,
-// Standard from SQL Server 2025 (major 17), and a Managed Instance. Express
-// and pre-2025 Standard refuse it, and the node there expands to a single
-// row saying so rather than to folders every read and write of would fail.
+// Standard from SQL Server 2025 (major 17), and a Managed Instance. Express and
+// pre-2025 Standard refuse it, and the node there expands to a single row saying
+// so rather than to folders every read and write of would fail.
 //
-// From documentation only: every instance in the test estate is Developer,
-// so no refusal was driven live (W1). No server info answers yes, per
-// gate.AllowsOn's fail-open rule.
+// From documentation only: no refusal was driven live (W1). No server info
+// answers yes, per gate.AllowsOn's fail-open rule.
 func resourceGovernorSupported(info *gosmo.ServerInfo) bool {
 	if info == nil {
 		return true

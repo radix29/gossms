@@ -48,18 +48,18 @@ func (st rgState) applyTo(n *explorerNode) {
 // resourceGovernorState is the Resource Governor node's label, whether the
 // governor is enabled, and whether changes wait for RECONFIGURE.
 //
-// "(Reconfiguration pending)" shows only while enabled. The pending flag is
-// set by any metadata change even with the governor disabled, and there it
-// means only "changed since the last DISABLE" — nothing is waiting to take
-// effect, since RECONFIGURE would enable the governor as well as apply it
-// (W1). So a disabled governor says "(Disabled)" and nothing else.
+// "(Reconfiguration pending)" shows only while enabled. The pending flag is set by
+// any metadata change even with the governor disabled, and there it means only
+// "changed since the last DISABLE" — nothing is waiting to take effect, since
+// RECONFIGURE would enable the governor as well as apply it (W1). So a disabled
+// governor says "(Disabled)" and nothing else.
 //
 // A failed read is not a reason to fail the Management folder: the stored
 // configuration is invisible without VIEW ANY DEFINITION and the pending flag
-// without VIEW SERVER STATE. An unreadable configuration says "(unknown)" —
-// a bare label would read as enabled — and reports enabled, so nothing is
-// withheld on a guess. An unreadable pending flag leaves the label bare: the
-// governor is known to be enabled, and pending is only a qualifier.
+// without VIEW SERVER STATE. An unreadable configuration says "(unknown)" — a bare
+// label would read as enabled — and reports enabled, so nothing is withheld on a
+// guess. An unreadable pending flag leaves the label bare: the governor is known
+// to be enabled, and pending is only a qualifier.
 func resourceGovernorState(ctx context.Context, sc *db.ServerConn) rgState {
 	bare := rgState{label: resourceGovernorRootLabel, enabled: true}
 	if sc == nil || sc.Server == nil || !resourceGovernorSupported(sc.Server.Info()) {

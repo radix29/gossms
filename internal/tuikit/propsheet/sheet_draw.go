@@ -55,10 +55,9 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 		activeIdx = p.btnFocus
 	}
 	labels := p.buttonLabels()
-	// Every button greys while applying except Cancel/Close, and that one only
-	// while pressing it would stop the run (canCancelApply): activateButton
-	// refuses the rest, and a button drawn live that does nothing on Enter
-	// reads as a hang.
+	// Every button greys while applying except Cancel/Close, and that one only while
+	// pressing it would stop the run (canCancelApply): activateButton refuses the
+	// rest, and a live-looking button that does nothing on Enter reads as a hang.
 	var disabled []bool
 	if p.applying {
 		disabled = make([]bool, len(labels))
@@ -67,8 +66,8 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 		}
 	}
 	p.DrawButtonsGated(s, labels, activeIdx, disabled)
-	// After the buttons, never before: on a clamped rect DrawButtonsGated
-	// clears the whole button row, which would wipe the spinner.
+	// After the buttons, never before: on a clamped rect DrawButtonsGated clears the
+	// whole button row, wiping the spinner.
 	p.drawApplying(s, labels)
 
 	if p.zone == zoneForm {
@@ -78,9 +77,9 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 	}
 }
 
-// drawApplying paints the spinner and its label at the left end of the button
-// row, opposite the buttons — where Connect puts its own — clipped short of
-// the first button on a dialog clamped too narrow for both.
+// drawApplying paints the spinner and label at the left end of the button row,
+// opposite the buttons (where Connect puts its own), clipped short of the first
+// button on a dialog clamped too narrow for both.
 func (p *PropertySheet) drawApplying(s tcell.Screen, labels []string) {
 	if !p.applying {
 		return

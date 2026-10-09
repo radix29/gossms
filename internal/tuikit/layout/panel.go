@@ -17,38 +17,29 @@ type Panel interface {
 	Title() string
 }
 
-// Activatable is an optional interface a Panel may implement to be notified
-// when it becomes the visible/focused panel (true) or loses focus (false).
-// PanelManager calls SetActive automatically on every panel that implements
-// it whenever the active panel changes — panels that don't need an "active"
-// concept (e.g. a static read-only view) can simply not implement it.
+// Activatable is an optional interface a Panel may implement to be told when it
+// becomes (true) or stops being (false) the active panel. PanelManager calls
+// SetActive on every implementer whenever the active panel changes.
 type Activatable interface {
 	SetActive(active bool)
 }
 
 // Dirty is an optional interface a Panel may implement to report unsaved
-// changes. PanelManager detects it the same way it detects Activatable and
-// marks such a panel's tab with a trailing "*" — a panel with nothing worth
-// losing (e.g. a static read-only view) can simply not implement it.
+// changes; PanelManager marks such a panel's tab with a trailing "*".
 type Dirty interface {
 	Dirty() bool
 }
 
 // Closable is an optional interface a Panel may implement to forbid the tab
-// bar's [x] button — e.g. a fixed, always-present panel like Object
-// Explorer Details. A panel that doesn't implement it is closable by
-// default, matching Activatable/Dirty's "absence means the common case"
-// convention.
+// bar's [x] button (e.g. Object Explorer Details). Absence means closable.
 type Closable interface {
 	Closable() bool
 }
 
-// Disposable is an optional interface a Panel may implement to release what
-// it owns — an in-flight read, a collector goroutine, a connection — when it
-// is closed. PanelManager never calls it: the host does, just before
-// RemovePanel, so every panel type is disposed through one check rather than a
-// per-type list a new panel can be left out of. A panel that owns nothing
-// beyond its own memory can simply not implement it.
+// Disposable is an optional interface a Panel may implement to release what it
+// owns (an in-flight read, a collector goroutine, a connection) on close.
+// PanelManager never calls it: the host does, just before RemovePanel, so every
+// panel type is disposed through one check rather than a per-type list.
 type Disposable interface {
 	Close()
 }

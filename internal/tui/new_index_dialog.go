@@ -11,19 +11,18 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// new_index_dialog.go is the New Index creation dialog, the Indexes folder's
-// "New Index ▸" cascade. One dialog builds one gosmo.CreateIndexRequest; the
-// cascade item picks the index type, and the type decides which pages the
-// dialog has, because almost nothing is shared: a columnstore index has no fill
-// factor, a clustered index no INCLUDE list, an XML index neither, and a
-// clustered columnstore index no key columns. A single page set covering all of
-// them would be mostly inapplicable rows, and the server rejects those
-// combinations rather than ignoring them.
+// new_index_dialog.go is the New Index dialog, the Indexes folder's "New Index >"
+// cascade. One dialog builds one gosmo.CreateIndexRequest; the cascade item picks
+// the index type, and the type decides which pages exist, because almost nothing
+// is shared: a columnstore index has no fill factor, a clustered index no
+// INCLUDE list, an XML index neither, and a clustered columnstore index no key
+// columns. One page set would be mostly inapplicable rows, and the server
+// rejects those combinations rather than ignoring them.
 //
-// The per-type rules live in gosmo's CreateIndexRequest.validate, not here.
-// This dialog only offers what a type accepts; the request is checked again
-// there, so a page that offers too much fails with a message naming the field
-// instead of reaching the server.
+// The per-type rules live in gosmo's CreateIndexRequest.validate. This dialog
+// only offers what a type accepts; the request is checked again there, so a page
+// that offers too much fails with a message naming the field instead of
+// reaching the server.
 
 // newIndexKind is one entry of the cascade: the menu label, the noun the
 // dialog's header names it by, and the type the request carries.
@@ -43,11 +42,10 @@ var newIndexKinds = []newIndexKind{
 	{"Spatial Index...", "Spatial index", gosmo.IndexTypeSpatial},
 }
 
-// nidxPrefetch is the one fetch every page of this dialog is built from: the
-// table's columns (every column picker), its existing index names (the
-// name-uniqueness preflight, and the primary XML indexes a secondary one can
-// be built over), and the database's filegroups and partition schemes (the
-// Storage page).
+// nidxPrefetch is the one fetch every page is built from: the table's columns
+// (every column picker), its existing index names (name-uniqueness preflight,
+// and the primary XML indexes a secondary can be built over), and the
+// database's filegroups and partition schemes (Storage page).
 type nidxPrefetch struct {
 	columns          []*gosmo.Column
 	existingNames    *nameSet
@@ -61,19 +59,18 @@ type NewIndexDialog struct {
 	newObjectDialog[nidxPrefetch]
 
 	// kind, and the table it creates an index on, are set by show before the
-	// embedded dialog's own show runs the prefetch that reads them.
+	// embedded dialog's show runs the prefetch that reads them.
 	kind   newIndexKind
 	dbName string
 	schema string
 	table  string
 	node   *explorerNode
 
-	// rows are the widgets the pages built, read back by request(). Which of
-	// them exist depends on kind, so every read is nil-guarded.
+	// rows are the widgets the pages built, read back by request(). Which exist
+	// depends on kind, so every read is nil-guarded.
 	rows nidxRows
-	// keyColumns is the key column list the General page's grid edits — the
-	// one piece of the request that is a list the user reorders rather than a
-	// widget's value.
+	// keyColumns is the key column list the General page's grid edits: the one part
+	// of the request that is a list the user reorders rather than a widget's value.
 	keyColumns []gosmo.IndexColumnDef
 }
 
@@ -91,14 +88,14 @@ func NewNewIndexDialog(app *App) *NewIndexDialog {
 	return d
 }
 
-// show opens the dialog for one table's Indexes folder. The page set is
-// chosen here, before the embedded show calls SetPages with it.
+// show opens the dialog for one table's Indexes folder. The page set is chosen
+// here, before the embedded show calls SetPages with it.
 func (d *NewIndexDialog) show(sc *db.ServerConn, node *explorerNode, kind newIndexKind) {
 	d.kind = kind
 	d.node = node
 	d.dbName, d.schema, d.table = node.data.DBName, node.data.Schema, node.data.Name
-	// Script Changes opens its query window in the database the statement
-	// runs in, not the connection's default.
+	// Script Changes opens its query window in the database the statement runs in,
+	// not the connection's default.
 	d.scriptDatabase = d.dbName
 	d.keyColumns = nil
 	d.rows = nidxRows{}
@@ -107,9 +104,8 @@ func (d *NewIndexDialog) show(sc *db.ServerConn, node *explorerNode, kind newInd
 	d.SetHeader("Database: "+d.dbName, kind.noun+" on "+fqn(d.schema, d.table))
 }
 
-// nidxPagesFor is the page set one index type needs. Every page named here
-// is built by buildPages; a type that has no use for a page simply doesn't
-// list it.
+// nidxPagesFor is the page set one index type needs. Every page named here is
+// built by buildPages; a type with no use for a page doesn't list it.
 func nidxPagesFor(typ gosmo.IndexType) []string {
 	switch typ {
 	case gosmo.IndexTypeXML:
@@ -145,8 +141,8 @@ func (d *NewIndexDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (
 		pf.existingNames.Add(idx.Name)
 	}
 	if d.kind.typ == gosmo.IndexTypeXML {
-		// A secondary XML index is built over a primary one, which the
-		// catalog reports as an XML index with no secondary type.
+		// A secondary XML index is built over a primary one, which the catalog reports
+		// as an XML index with no secondary type.
 		xml, err := t.XMLIndexes(ctx)
 		if err != nil {
 			return nil, err
@@ -197,10 +193,10 @@ func (d *NewIndexDialog) buildPages(pf *nidxPrefetch) {
 			d.forms[i] = d.spatialForm()
 		}
 	}
-	// One statement creates the index, so the whole request is applied by the
-	// first page's apply function; the rest only contribute widgets to it.
-	// The request is built by preflight, on the UI goroutine, and captured by
-	// the step, which runs on the pipeline's.
+	// One statement creates the index, so the first page's apply function applies the
+	// whole request; the rest only contribute widgets. The request is built by
+	// preflight on the UI goroutine and captured by the step, which runs on the
+	// pipeline's.
 	var req gosmo.CreateIndexRequest
 	d.applyFns[0] = func(ctx context.Context) error { return d.createIndex(ctx, req) }
 	d.objectName = func() string { return strings.TrimSpace(d.rows.name.Value()) }
@@ -213,9 +209,9 @@ func (d *NewIndexDialog) buildPages(pf *nidxPrefetch) {
 	}
 }
 
-// createIndex is the dialog's whole apply: read the table back, then create.
-// The read is a read, so it runs against the real server under Script
-// Changes too — only the CREATE is collected.
+// createIndex is the dialog's whole apply: read the table back, then create. The
+// read runs against the real server under Script Changes too; only the CREATE
+// is collected.
 func (d *NewIndexDialog) createIndex(ctx context.Context, req gosmo.CreateIndexRequest) error {
 	t, err := findTable(ctx, d.sc, d.dbName, d.schema, d.table)
 	if err != nil {
@@ -225,9 +221,9 @@ func (d *NewIndexDialog) createIndex(ctx context.Context, req gosmo.CreateIndexR
 	return err
 }
 
-// request assembles the CreateIndexRequest from whichever rows this type's
-// pages built. Every read is nil-guarded: a row that belongs to a page this
-// type doesn't have was never created.
+// request assembles the CreateIndexRequest from whichever rows this type's pages
+// built. Every read is nil-guarded: a row belonging to a page this type lacks
+// was never created.
 func (d *NewIndexDialog) request() gosmo.CreateIndexRequest {
 	r := d.rows
 	if r.commitKeyColumn != nil {
@@ -308,9 +304,9 @@ func (d *NewIndexDialog) request() gosmo.CreateIndexRequest {
 	return req
 }
 
-// checkRequest is the preflight: the things worth catching before a round
-// trip, plus the ones the server's own message would not explain. Everything
-// else is gosmo's validate and the server's job.
+// checkRequest is the preflight: what is worth catching before a round trip,
+// plus what the server's own message would not explain. Everything else is
+// gosmo's validate and the server's job.
 func (d *NewIndexDialog) checkRequest(pf *nidxPrefetch) error {
 	name := d.objectName()
 	if name == "" {
@@ -337,14 +333,13 @@ func (d *NewIndexDialog) checkRequest(pf *nidxPrefetch) error {
 			}
 		}
 	}
-	// Everything else is gosmo's CreateIndexRequest.validate, which the apply
-	// runs before it reaches the server — a combination this dialog let
-	// through fails there with a message naming the field, without a round
-	// trip.
+	// Everything else is gosmo's CreateIndexRequest.validate, run by the apply before
+	// the server: a combination this dialog let through fails there with a message
+	// naming the field, without a round trip.
 	return nil
 }
 
-// newIndexMenuItems is the Indexes folder's "New Index ▸" cascade, one item per
+// newIndexMenuItems is the Indexes folder's "New Index >" cascade, one item per
 // index type, each opening this dialog preset to it. Every item is enabled:
 // whether a type is possible on this table (a second clustered index, an XML
 // index with no xml column) needs columns and indexes the menu has not read, so

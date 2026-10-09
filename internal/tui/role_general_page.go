@@ -10,26 +10,25 @@ import (
 )
 
 // roleWriter is the pair of writes a role's General page makes. Both
-// *gosmo.DatabaseRole and *gosmo.ServerRole satisfy it, which is what lets the
-// two dialogs share one apply.
+// *gosmo.DatabaseRole and *gosmo.ServerRole satisfy it, letting the two dialogs
+// share one apply.
 //
-// It is deliberately this narrow. The apply below re-fetches the role and then
-// does exactly two things to it; anything wider would invite a third write into
-// a function two dialogs depend on.
+// It is deliberately narrow. The apply re-fetches the role and then does exactly
+// two things to it; anything wider would invite a third write into a function two
+// dialogs depend on.
 type roleWriter interface {
 	Rename(ctx context.Context, newName string) error
 	SetOwner(ctx context.Context, newOwner string) error
 }
 
 // roleGeneral is one role as its General page needs it: the facts both scopes
-// report identically (sys.database_principals and sys.server_principals carry
-// the same columns for a role), plus the four things the two scopes answer
-// differently.
+// report identically (sys.database_principals and sys.server_principals carry the
+// same columns for a role), plus the four things the scopes answer differently.
 //
-// The facts are copied into a struct rather than read off the gosmo type
-// through an interface because they are struct *fields* on both — Go cannot
-// reach a field through an interface or a type parameter, so a two-line
-// conversion at each call site is the whole cost of sharing the page.
+// The facts are copied into a struct rather than read off the gosmo type through
+// an interface because they are struct *fields* on both, and Go cannot reach a
+// field through an interface or a type parameter; a two-line conversion at each
+// call site is the whole cost of sharing the page.
 type roleGeneral struct {
 	name        string
 	owner       string
@@ -40,33 +39,32 @@ type roleGeneral struct {
 	modified    time.Time
 	members     int
 
-	// builtin drives the whole read-only half of the page: a fixed role's name
-	// and owner are Static rows, it gets the explanatory Note, and its page
-	// returns no apply at all.
+	// builtin drives the whole read-only half of the page: a fixed role's name and
+	// owner are Static rows, it gets the explanatory Note, and its page returns no
+	// apply at all.
 	builtin bool
-	// roleType is the wording for the Role type row, already resolved for
-	// builtin ("Fixed database role" / "Server role").
+	// roleType is the wording for the Role type row, already resolved for builtin
+	// ("Fixed database role" / "Server role").
 	roleType string
-	// ownerNames are the principals the Owner picker offers — database
-	// principals for a database role, server principals for a server role.
-	// Unread when builtin.
+	// ownerNames are the principals the Owner picker offers: database principals for
+	// a database role, server principals for a server role. Unread when builtin.
 	ownerNames []string
-	// summary are the scope-specific rows appended after "Direct members":
-	// owned schemas and explicit securables for a database role, explicit
-	// permissions for a server role.
+	// summary are the scope-specific rows appended after "Direct members": owned
+	// schemas and explicit securables for a database role, explicit permissions for a
+	// server role.
 	summary []propsheet.Row
 }
 
-// roleGeneralPage builds the General page shared by Database Role Properties
-// and Server Role Properties. The two differ only in where the facts come from
-// and which summary rows they can count, so everything else — the builtin
-// split, the Identity block, the rename-and-reown apply, and the ordering rule
-// that the rename is the run's last write — lives here once.
+// roleGeneralPage builds the General page shared by Database Role Properties and
+// Server Role Properties. The two differ only in where the facts come from and
+// which summary rows they can count, so everything else (the builtin split, the
+// Identity block, the rename-and-reown apply, and the ordering rule that the
+// rename is the run's last write) lives here once.
 //
 // Sharing the apply is the point. Its two halves have to stay in step with
-// propPage.renames and with commitRename, and as two copies they were two
-// places to remember that: the owner change goes first, the rename last, and
-// the boxed name is updated only after the server accepted it.
+// propPage.renames and commitRename, and as two copies they were two places to
+// remember that: the owner change goes first, the rename last, and the boxed name
+// is updated only after the server accepted it.
 //
 // load reads the role; lookup re-fetches it inside the apply, because the apply
 // runs against the server as it is at OK time, not as it was when the page was
@@ -130,9 +128,9 @@ func roleGeneralPage(roleName *string,
 							return err
 						}
 					}
-					// Last, and only then committed to the box: every other
-					// page on the dialog is addressed by this name, so it must
-					// not change until the server has accepted the rename.
+					// Last, and only then committed to the box: every other page on the dialog is
+					// addressed by this name, so it must not change until the server has accepted the
+					// rename.
 					if nameRow.Dirty() {
 						if err := role.Rename(ctx, nameRow.Value()); err != nil {
 							return err

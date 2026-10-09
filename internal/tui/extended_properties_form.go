@@ -23,14 +23,13 @@ type extPropEdit struct {
 	pendingState
 }
 
-// pageExtendedProperties is the Extended Properties page as every
-// Properties dialog for an object *inside* a database uses it — schema,
-// table, index, primary/unique key, statistic, user, database role. Only the
-// ExtendedPropertyLevel naming that object differs between them, and it's
-// supplied as a closure rather than a value because a rename on the
-// General page changes it while the dialog is open (the level literals
-// that read a *string). The database itself is the one exception, having
-// no level to name and its own read method — see
+// pageExtendedProperties is the Extended Properties page as every Properties
+// dialog for an object *inside* a database uses it — schema, table, index,
+// primary/unique key, statistic, user, database role. Only the
+// ExtendedPropertyLevel naming that object differs between them, and it's supplied
+// as a closure rather than a value because a rename on the General page changes it
+// while the dialog is open (the level literals that read a *string). The database
+// itself is the exception, having no level to name and its own read method — see
 // pageDatabaseExtendedProperties in database_props_permissions.go.
 func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo.ExtendedPropertyLevel) propPage {
 	return propPage{
@@ -52,15 +51,13 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 }
 
 // buildExtendedPropertiesForm builds the Extended Properties page every
-// object-Properties dialog shares: a Name/Value grid, a "selected
-// property" field pair below it for editing, and Add/Remove — level
-// determines which object the Add/Set/DropExtendedProperty calls
-// target (empty for database-level, SCHEMA+TABLE for a table, also usable
-// for column-level extended properties with SCHEMA+TABLE+COLUMN once a
-// caller needs that). props is whatever the caller already fetched
-// (DatabaseExtendedProperties for database-level, ExtendedProperties(level)
-// for anything narrower) — this function only builds the UI and the
-// apply closure, it doesn't decide how to read the initial list.
+// object-Properties dialog shares: a Name/Value grid, a "selected property" field
+// pair below it for editing, and Add/Remove — level determines which object the
+// Add/Set/DropExtendedProperty calls target (empty for database-level,
+// SCHEMA+TABLE for a table, also usable for column-level with SCHEMA+TABLE+COLUMN
+// once a caller needs that). props is whatever the caller already fetched
+// (DatabaseExtendedProperties for database-level, ExtendedProperties(level) for
+// anything narrower); this function only builds the UI and the apply closure.
 func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, level gosmo.ExtendedPropertyLevel, props []*gosmo.ExtendedProperty) (*propsheet.Form, propApply) {
 	loaded := make([]*extPropEdit, 0, len(props))
 	for _, p := range props {

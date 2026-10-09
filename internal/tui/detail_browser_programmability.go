@@ -9,15 +9,15 @@ import (
 )
 
 // detail_browser_programmability.go is the Detail Browser's view of the
-// Programmability families Phase 3 added: the four Types folders and their
-// members, Assemblies, Rules, Defaults and Plan Guides.
+// Programmability families: the four Types folders and their members, Assemblies,
+// Rules, Defaults and Plan Guides.
 //
 // Each leaf reuses the finder its Properties page uses — the rule
-// detail_browser_storage.go's header states — so the pane and the dialog can
-// never disagree about which object a node names. Each folder reads the same
-// gosmo listing its explorer_programmability.go loader reads, and applies the
-// folder's own filter through filterObjects, so the pane shows exactly the
-// rows the tree shows.
+// detail_browser_storage.go's header states — so the pane and the dialog can never
+// disagree about which object a node names. Each folder reads the same gosmo
+// listing its explorer_programmability.go loader reads, and applies the folder's
+// own filter through filterObjects, so the pane shows exactly the rows the tree
+// shows.
 
 // programmabilityFolderDetail lists one Programmability folder. The caller
 // has already narrowed node.data.Type to one this switch handles.

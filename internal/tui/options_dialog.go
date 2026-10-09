@@ -24,17 +24,15 @@ type OptionsDialog struct {
 	fXECapacity    *widgets.InputField
 	cbIntelliSense *widgets.CheckBox
 
-	// drag owns the text-selection gesture a press in one of the input
-	// fields starts — see dialogs.FieldGesture for why the three calls it
-	// drives have to sit where they do in HandleMouse. One value suffices for
-	// every field: the gesture is per-target, holding whichever field claimed
-	// the press.
+	// drag owns the text-selection gesture a press in one of the input fields
+	// starts; see dialogs.FieldGesture for why its three calls sit where they do in
+	// HandleMouse. One value suffices for every field: the gesture is per-target,
+	// holding whichever field claimed the press.
 	drag dialogs.FieldGesture
 
-	// focusable is the Tab order, top to bottom; Tab/Backtab, hit-testing
-	// and the clipboard target are all derived from it, so a new control is
-	// one entry here plus its Draw position. focusIdx == len(focusable) is
-	// the button row, which is not a widget.
+	// focusable is the Tab order, top to bottom; Tab/Backtab, hit-testing and the
+	// clipboard target derive from it, so a new control is one entry here plus its
+	// Draw position. focusIdx == len(focusable) is the button row, not a widget.
 	focusable []focusable
 	focusIdx  int
 	btnFocus  int // 0=OK 1=Cancel
@@ -61,8 +59,8 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	return d
 }
 
-// Show opens the dialog with the icon-style radio box focused, pre-filling
-// every control from the current config.
+// Show opens the dialog with the icon-style radio box focused, pre-filling every
+// control from the current config.
 func (d *OptionsDialog) Show() {
 	d.btnFocus = 0
 	for i, st := range config.AllIconStyles() {
@@ -78,8 +76,8 @@ func (d *OptionsDialog) Show() {
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
 	d.setFocus(0)
 	d.ModalDialog.Show()
-	// A latch must not survive into the next showing: a dialog dismissed
-	// mid-drag would reopen still routing every click to that field.
+	// A latch must not survive into the next showing: a dialog dismissed mid-drag
+	// would reopen still routing every click to that field.
 	d.drag.Clear()
 }
 
@@ -170,8 +168,8 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyEnter:
 		d.doButton()
 	default:
-		// The icon-style radio box has always swallowed the keys it does not
-		// use; the fields and the checkbox pass them on.
+		// The icon-style radio box swallows the keys it does not use; the fields and the
+		// checkbox pass them on.
 		return d.focusIdx == 0
 	}
 	return true
@@ -182,13 +180,12 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// A release that lands outside the dialog is consumed by
-	// ConsumeOutsideClick below before rbIconStyle/cbIntelliSense's own
-	// HandleMouse calls further down ever see it, leaving their
-	// mouseDragging latch set and swallowing the next press. Reset it here
-	// first; each returns false on ButtonNone so this has no other effect.
-	// drag.Release does the same for the input fields, and must likewise come
-	// before ConsumeOutsideClick.
+	// A release outside the dialog is consumed by ConsumeOutsideClick below before
+	// rbIconStyle/cbIntelliSense's own HandleMouse calls see it, leaving their
+	// mouseDragging latch set and swallowing the next press. Reset it here first;
+	// each returns false on ButtonNone so this has no other effect. drag.Release
+	// does the same for the input fields and must likewise come before
+	// ConsumeOutsideClick.
 	if ev.Buttons() == tcell.ButtonNone {
 		for _, f := range d.focusable {
 			if w, ok := optionsMouseTarget(f); ok {
@@ -200,10 +197,9 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	// The gesture belongs to the field that claimed its press, so motion is
-	// replayed there without hit-testing — ahead of ButtonClicked below,
-	// which would otherwise fire OK the moment a selection drag wandered
-	// down onto the button row.
+	// The gesture belongs to the field that claimed its press, so motion is replayed
+	// there without hit-testing, ahead of ButtonClicked below, which would fire OK
+	// the moment a selection drag wandered onto the button row.
 	if d.drag.Replay(ev) {
 		return true
 	}
@@ -213,9 +209,8 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.doButton()
 		return true
 	}
-	// The fields first, hit-tested here rather than left to
-	// InputField.HandleMouse's own bounds check, which a latch left over from
-	// a previous showing skips.
+	// The fields first, hit-tested here rather than left to InputField.HandleMouse's
+	// own bounds check, which a latch left from a previous showing skips.
 	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 {
 		if i, fld := d.fieldAt(mx, my); fld != nil {
 			d.setFocus(i)
@@ -242,9 +237,9 @@ func (d *OptionsDialog) fieldAt(x, y int) (int, *widgets.InputField) {
 	return -1, nil
 }
 
-// optionsMouseTarget answers the controls that take a press themselves — the
-// radio box and the checkbox. An input field is excluded: its press goes
-// through d.drag, and its own HandleMouse would honour a stale latch.
+// optionsMouseTarget answers the controls that take a press themselves (radio
+// box and checkbox). An input field is excluded: its press goes through d.drag,
+// and its own HandleMouse would honour a stale latch.
 func optionsMouseTarget(f focusable) (interface{ HandleMouse(*tcell.EventMouse) bool }, bool) {
 	if _, isField := f.(*widgets.InputField); isField {
 		return nil, false
@@ -264,20 +259,20 @@ func (d *OptionsDialog) doButton() {
 }
 
 // editorIndentHost is a dialog holding Editors that Options' indent size has to
-// reach while it is open — every propsheet.PropertySheet-based dialog, by
-// promotion. Matched structurally rather than by naming the two concrete
-// dialogs, since which sheets host a writable EditorRow changes with the pages.
+// reach while open: every propsheet.PropertySheet-based dialog, by promotion.
+// Matched structurally rather than by naming the concrete dialogs, since which
+// sheets host a writable EditorRow changes with the pages.
 type editorIndentHost interface{ SetEditorIndentWidth(n int) }
 
-// apply commits all six settings — icon style, max cell length, max text
-// column length, indent size, the Extended Events viewer's event limit and
-// whether IntelliSense is enabled — to the config, persists it, and
-// rebuilds the Object Explorer so the icon change is visible immediately.
+// apply commits all six settings (icon style, max cell length, max text column
+// length, indent size, the Extended Events viewer's event limit, IntelliSense
+// enabled) to the config, persists it, and rebuilds the Object Explorer so the
+// icon change shows immediately.
 //
 // The indent size needs one step the others don't: MaxCellLength,
-// MaxTextColumnLength and IntelliSenseDisabled are read from cfg where they are used, but the width
-// lives in each Editor, so it has to be pushed into the open query panels and
-// property sheets (and into the default new editors are seeded from) here.
+// MaxTextColumnLength and IntelliSenseDisabled are read from cfg where used, but
+// the width lives in each Editor, so it is pushed into the open query panels and
+// property sheets (and the default new editors are seeded from) here.
 func (d *OptionsDialog) apply() {
 	styles := config.AllIconStyles()
 	if i := d.rbIconStyle.Selected(); i >= 0 && i < len(styles) {
@@ -304,11 +299,10 @@ func (d *OptionsDialog) apply() {
 			qp.editor.SetIndentWidth(n)
 		}
 	}
-	// The open property sheets too: the Agent job-step Command box is a
-	// writable editor that is not a QueryPanel, so walking the panels alone
-	// leaves it on the old width until the page is rebuilt. Every sheet-based
-	// dialog answers this, so a future writable EditorRow is covered without
-	// another arm here.
+	// The open property sheets too: the Agent job-step Command box is a writable
+	// editor that is not a QueryPanel, so walking the panels alone leaves it on the
+	// old width until the page is rebuilt. Every sheet-based dialog answers this, so
+	// a future writable EditorRow is covered without another arm here.
 	for _, dlg := range d.app.allDialogs {
 		if h, ok := dlg.(editorIndentHost); ok {
 			h.SetEditorIndentWidth(n)
@@ -326,9 +320,8 @@ func (d *OptionsDialog) apply() {
 	d.app.explorer.rebuild()
 }
 
-// FocusedClipboardTarget implements core.ClipboardHost: whichever of the
-// input fields has focus. The radio box, the checkbox and the button row
-// answer nil.
+// FocusedClipboardTarget implements core.ClipboardHost: whichever input field
+// has focus. The radio box, checkbox and button row answer nil.
 func (d *OptionsDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	return focusedClipboardTarget(d.focusable, d.focusIdx)
 }

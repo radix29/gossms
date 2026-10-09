@@ -423,27 +423,26 @@ func (a *App) drainPending() {
 
 // wakeEventLoop nudges the event loop to run one more iteration, draining
 // callbacks queued via postEvent and redrawing. Call it from a background
-// goroutine after postEvent; from the UI thread it would deadlock, since the
-// loop can't read EventQ mid-dispatch.
+// goroutine after postEvent; from the UI thread it would deadlock, since the loop
+// can't read EventQ mid-dispatch.
 //
 // Prefer postAndWake. The wakeup has to be sent after postEvent and outside its
-// closure: the loop drains queued callbacks only when it wakes for an event, so
-// a wakeup nested inside the closure waiting to be drained never fires and the
-// result sits queued and invisible until an unrelated keypress. The one caller
-// that needs this alone is QueryPanel's elapsed-timer tick, which has no
-// callback to post.
+// closure: the loop drains queued callbacks only when it wakes for an event, so a
+// wakeup nested inside the closure waiting to be drained never fires and the
+// result sits queued until an unrelated keypress. The one caller that needs this
+// alone is QueryPanel's elapsed-timer tick, which has no callback to post.
 //
-// No-op when a.screen is nil (every App from newTestApp): a background
-// goroutine can outlive its test function and would panic on the nil screen.
-// Also a no-op if wake.sent is already set, or if the app is quitting —
-// quitGate makes this and Fini() mutually exclusive.
+// No-op when a.screen is nil (every App from newTestApp): a background goroutine
+// can outlive its test function and would panic on the nil screen. Also a no-op
+// if wake.sent is already set, or if the app is quitting — quitGate makes this
+// and Fini() mutually exclusive.
 //
-// The send is non-blocking. quitGate.mu is held across it and quit() takes the same
-// lock from a UI goroutine that is then not draining EventQ(), so a blocking
-// send on a full queue (tcell buffers 128, which all-motion mouse tracking
-// fills fast during a slow frame) would hang Ctrl+Q. Giving up on a full queue
-// loses nothing: it means the loop is about to wake, and every iteration clears
-// wake.sent and calls drainPending regardless of what woke it.
+// The send is non-blocking. quitGate.mu is held across it and quit() takes the
+// same lock from a UI goroutine that is then not draining EventQ(), so a blocking
+// send on a full queue (tcell buffers 128, which all-motion mouse tracking fills
+// fast during a slow frame) would hang Ctrl+Q. Giving up on a full queue loses
+// nothing: the loop is about to wake, and every iteration clears wake.sent and
+// calls drainPending regardless of what woke it.
 func (a *App) wakeEventLoop() {
 	if a.screen == nil {
 		return

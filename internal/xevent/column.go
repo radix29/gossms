@@ -52,10 +52,9 @@ func (e *Event) Value(c Column) (Value, bool) {
 }
 
 // Header names c for a grid header among the columns in all: its own name,
-// with " (action)" appended to an action sharing its name with a field in all,
-// and " (field)" or " (action)" to one named like a built-in column — some
-// events carry a field called timestamp, and without the suffix the grid shows
-// two columns headed the same with nothing to say which is the event's time.
+// plus " (action)" for an action sharing its name with a field in all, and
+// " (field)" or " (action)" for one named like a built-in column (some events
+// carry a field called timestamp; unsuffixed, two columns would share a header).
 func Header(c Column, all []Column) string {
 	switch c.Kind {
 	case ColName, ColTimestamp, ColPackage:

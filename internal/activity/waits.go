@@ -50,11 +50,9 @@ var benignWaits = []string{
 	"PREEMPTIVE_OS_DMV_PDH_QUERY",
 }
 
-// benignFamilies are background-wait prefixes, excluded by family. Names
-// alone let PWAIT_EXTENSIBILITY_CLEANUP_TASK through on SQL Server 2025: it
-// reports 300,000 ms after a five-minute sleep in one 2s sample, flattening the
-// waits panel. New releases keep adding background waits; a family prefix stays
-// current.
+// benignFamilies are background-wait prefixes, excluded by family: names alone
+// let PWAIT_EXTENSIBILITY_CLEANUP_TASK through on SQL Server 2025 (300,000 ms
+// in one 2s sample, flattening the panel), and releases keep adding more.
 var benignFamilies = []string{
 	"SLEEP", "QDS_", "XE_", "BROKER_", "HADR_", "PWAIT_",
 	"FT_", "PARALLEL_REDO_", "DBMIRROR", "SQLTRACE_", "CLR_",
@@ -62,8 +60,8 @@ var benignFamilies = []string{
 }
 
 // isBenignWait reports a wait left out of the picture: one of benignWaits by
-// name, or of benignFamilies by prefix. Wait types are upper case, but the
-// server's collation would have matched any case, so this does too.
+// name, or of benignFamilies by prefix. Case-insensitive, as the server's
+// collation would be.
 func isBenignWait(waitType string) bool {
 	w := strings.ToUpper(waitType)
 	if slices.Contains(benignWaits, w) {
@@ -122,13 +120,11 @@ func categorize(waitType string) WaitCategory {
 
 // waitDeltas turns two cumulative samples into per-second wait time by
 // category, the signal part of it by category, and the overall signal share
-// (time runnable after the resource was ready — the DMV's view of CPU
-// pressure).
+// (time runnable after the resource was ready: the DMV's view of CPU pressure).
 //
 // wait_time_ms includes signal_wait_time_ms, so resource time = byCategory -
-// signalByCategory. Keeping signal time per category, rather than folding it
-// into WaitCPU, lets one bar show both halves; a mostly-signal category is
-// queueing for CPU.
+// signalByCategory. Per-category signal time (not folded into WaitCPU) lets
+// one bar show both halves; a mostly-signal category is queueing for CPU.
 //
 // A wait type absent from prev contributes nothing (restart or new type): its
 // cumulative total isn't a delta.

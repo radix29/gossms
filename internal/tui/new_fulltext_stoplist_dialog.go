@@ -12,9 +12,8 @@ import (
 
 // new_fulltext_stoplist_dialog.go is the New Full-Text Stoplist dialog (a
 // database's Storage > Full Text Stoplists folder), built on newObjectDialog.
-// SSMS's three starting points: empty, a copy of the system stoplist, or a
-// copy of an existing stoplist, in this database or another
-// (new_fulltext_copy_source.go).
+// SSMS's three starting points: empty, a copy of the system stoplist, or a copy
+// of an existing one in this database or another (new_fulltext_copy_source.go).
 
 // nftStoplistPrefetch is what the dialog reads before it opens.
 type nftStoplistPrefetch struct {

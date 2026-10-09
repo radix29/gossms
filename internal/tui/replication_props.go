@@ -12,12 +12,12 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// replication_props.go is the read-only Properties for a publication and a
-// local subscription: the pages SSMS's Publication
-// and Subscription Properties have, every one showing and none writing.
-// Replication is browsed here, never configured — no create, alter or drop,
-// no reinitialize, no agent start/stop (docs/decisions.md § Replication) — so
-// every page is in prop_page_requires_test.go's pagesThatOnlyRead.
+// replication_props.go is the read-only Properties for a publication and a local
+// subscription: the pages SSMS's Publication and Subscription Properties have,
+// every one showing and none writing. Replication is browsed here, never
+// configured (no create, alter or drop, no reinitialize, no agent start/stop;
+// docs/decisions.md § Replication), so every page is in
+// prop_page_requires_test.go's pagesThatOnlyRead.
 //
 // Both finders are the ones the Details pane uses, so the pane and the dialog
 // cannot disagree about what a publication or a subscription is.
@@ -29,10 +29,10 @@ func findPublication(ctx context.Context, sc *db.ServerConn, dbName, name string
 
 // findLocalSubscription resolves the subscription dbName holds to publisher's
 // publication pub in publisherDB. A database can subscribe to same-named
-// publications of two publishers, so all three name it — the same three the
-// tree node's key carries. Server and database names compare without regard
-// to case: the fixture's subscriber stores its publisher as WIN10CLI in one
-// table and win10cli in another.
+// publications of two publishers, so all three name it (the three the tree node's
+// key carries). Server and database names compare without regard to case: the
+// fixture's subscriber stores its publisher as WIN10CLI in one table and win10cli
+// in another.
 func findLocalSubscription(ctx context.Context, sc *db.ServerConn, dbName, publisher, publisherDB, pub string) (*gosmo.LocalSubscription, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
@@ -87,8 +87,8 @@ func pagePublicationGeneral(find func(context.Context) (*gosmo.Publication, erro
 				propsheet.Section("Subscription expiration"),
 				propsheet.Static("Subscriptions expire", publicationRetention(p)),
 			)
-			// A merge publication names the oldest subscriber it supports;
-			// a transactional one has no such setting.
+			// A merge publication names the oldest subscriber it supports; a transactional
+			// one has no such setting.
 			if p.Type == gosmo.PublicationMerge {
 				f.Add(propsheet.Section("Compatibility"))
 				f.Add(propsheet.Static("Compatibility level", mergeCompatLevel(p.CompatibilityLevel)))
@@ -99,8 +99,8 @@ func pagePublicationGeneral(find func(context.Context) (*gosmo.Publication, erro
 	}
 }
 
-// publicationRetention renders a publication's retention as SSMS's General
-// page words it: never, or after so many units.
+// publicationRetention renders a publication's retention as SSMS's General page
+// words it: never, or after so many units.
 func publicationRetention(p *gosmo.Publication) string {
 	if p.Retention == 0 {
 		return "Never"
@@ -166,8 +166,8 @@ func pagePublicationArticles(find func(context.Context) (*gosmo.Publication, err
 			// The options are sentences; the default cap cut them mid-word.
 			opts.SetMaxCellWidth(100)
 			opts.SetData(optsHeaders, nil)
-			// The detail rows follow the selection only: a read-only page's
-			// grid browses, and nothing here writes (docs/ui-rules.md).
+			// The detail rows follow the selection only: a read-only page's grid browses, and
+			// nothing here writes (docs/ui-rules.md).
 			syncFromSelection := func(row int) {
 				if row < 0 || row >= len(arts) {
 					descStatic.SetValue("")
@@ -334,8 +334,8 @@ func pagePublicationSubscriptions(find func(context.Context) (*gosmo.Publication
 }
 
 // publicationSubscriptionColumns and publicationSubscriptionRows are the
-// publisher's list of a publication's subscriptions, shared by the
-// Subscriptions page and the publication's Details view.
+// publisher's list of a publication's subscriptions, shared by the Subscriptions
+// page and the publication's Details view.
 var publicationSubscriptionColumns = []string{"Subscriber", "Subscription Database", "Type", "Status", "Sync Type", "Last Sync", "Last Result"}
 
 func publicationSubscriptionRows(subs []*gosmo.Subscription) [][]string {
@@ -347,9 +347,9 @@ func publicationSubscriptionRows(subs []*gosmo.Subscription) [][]string {
 	return rows
 }
 
-// replSyncStatus names a merge agent's last run status as the subscription
-// tables record it (sysmergesubscriptions.last_sync_status); 0 is "never ran"
-// and renders empty, like a missing date.
+// replSyncStatus names a merge agent's last run status as the subscription tables
+// record it (sysmergesubscriptions.last_sync_status); 0 is "never ran" and renders
+// empty, like a missing date.
 func replSyncStatus(status int) string {
 	switch status {
 	case 0:
@@ -414,8 +414,8 @@ func pageLocalSubscriptionAgent(find func(context.Context) (*gosmo.LocalSubscrip
 			if err != nil {
 				return nil, nil, err
 			}
-			// Where the agent runs is the subscription type: a pull agent
-			// is a job here, a push agent one at the distributor.
+			// Where the agent runs is the subscription type: a pull agent is a job here, a
+			// push agent one at the distributor.
 			runsAt := "Distributor (push subscription)"
 			if s.Type == gosmo.SubscriptionPull {
 				runsAt = "Subscriber (pull subscription)"

@@ -11,14 +11,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// ndbPrefetch holds the one shared, one-time fetch every New Database page
-// is built from: existing database names (for the name-uniqueness preflight
-// check), server logins (for the Owner row), model's current options/
-// recovery model/compatibility level (the Options/General pages' baselines —
-// CREATE DATABASE inherits these from model, so seeding each row's Dirty()
-// baseline from model makes the apply-if-dirty logic correct for a brand-new
-// database too, see new_database_pages.go), and the server's default
-// data/log paths (for file Path fields left blank).
+// ndbPrefetch holds the one-time fetch every New Database page is built from:
+// existing database names (name-uniqueness preflight), server logins (Owner
+// row), model's current options/recovery model/compatibility level (the
+// Options/General baselines: CREATE DATABASE inherits these from model, so
+// seeding each row's Dirty() baseline from model makes apply-if-dirty correct
+// for a brand-new database, see new_database_pages.go), and the server's
+// default data/log paths (for blank file Path fields).
 type ndbPrefetch struct {
 	existingNames *nameSet
 	loginNames    []string
@@ -73,13 +72,12 @@ func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefe
 	}, nil
 }
 
-// NewDatabaseDialog is the New Database creation dialog (Object Explorer's
-// server node and "Databases" folder, "New Database..."). Unlike PropDialog
-// (prop_dialog.go), it doesn't diff "dirty" pages against a loaded baseline
-// — there's no existing object to diff against. General's apply always runs
-// first, unconditionally, since it's what creates the database, before
-// Options'/Filegroups' applies can target it: a fixed three-step sequence,
-// not a discovered dirty set. One instance is reused for every invocation.
+// NewDatabaseDialog is the New Database dialog (Object Explorer's server node
+// and "Databases" folder). Unlike PropDialog (prop_dialog.go) it doesn't diff
+// dirty pages against a loaded baseline: there is no existing object. General's
+// apply always runs first, unconditionally, since it creates the database before
+// Options'/Filegroups' applies can target it: a fixed three-step sequence, not
+// a discovered dirty set. One instance is reused for every invocation.
 type NewDatabaseDialog struct {
 	newObjectDialog[ndbPrefetch]
 }
@@ -122,6 +120,6 @@ func (d *NewDatabaseDialog) buildPages(pf *ndbPrefetch) {
 	}
 }
 
-// onConfirmDiscard guards F5/Refresh (which would otherwise silently
-// rebuild whichever page is current from scratch, discarding any pending
-// edits on it) behind the same confirmation prompt PropDialog uses.
+// onConfirmDiscard guards F5/Refresh (which would silently rebuild the current
+// page, discarding pending edits) behind the confirmation prompt PropDialog
+// uses.

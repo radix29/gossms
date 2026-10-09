@@ -43,23 +43,22 @@ type credentialFacts struct {
 	provider     string
 }
 
-// credentialGeneralPage builds Credential Properties > General for either
-// scope: dbName is "" at the server level and names the database otherwise,
-// which is the only row that differs. The two scopes are one page shape on
-// purpose — docs/decisions.md § Database-scoped credentials requires them to
-// state the same rule in the same wording, and when each wrote its own copy
-// the two explanations had already drifted apart while saying the same thing.
+// credentialGeneralPage builds Credential Properties > General for either scope:
+// dbName is "" at the server level and names the database otherwise, which is the
+// only row that differs. The two scopes are one page shape on purpose —
+// docs/decisions.md § Database-scoped credentials requires them to state the same
+// rule in the same wording (separate copies had drifted apart).
 //
-// Identity and password are one unit here, and that is not a UI preference:
-// ALTER CREDENTIAL resets both halves every time, and SQL Server documents an
-// omitted SECRET as setting the stored secret to NULL. There is no statement
-// that changes the identity while keeping the secret, and the secret cannot be
-// read back to re-supply it — so changing the identity with the password blank
-// is refused rather than applied, which would silently destroy the secret.
+// Identity and password are one unit here, and that is not a UI preference: ALTER
+// CREDENTIAL resets both halves every time, and SQL Server documents an omitted
+// SECRET as setting the stored secret to NULL. No statement changes the identity
+// while keeping the secret, and the secret cannot be read back to re-supply it —
+// so changing the identity with the password blank is refused rather than
+// applied, which would silently destroy the secret.
 //
 // alter addresses the credential by name from the caller's own handle: the
-// identity comes from the form, so the extra by-name read buys nothing and
-// would not work under Script Changes.
+// identity comes from the form, so the extra by-name read buys nothing and would
+// not work under Script Changes.
 func credentialGeneralPage(dbName string, load func(context.Context) (credentialFacts, error),
 	alter func(ctx context.Context, identity string, secret *string) error) propPage {
 	return propPage{

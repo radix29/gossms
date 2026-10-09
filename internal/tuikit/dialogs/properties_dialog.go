@@ -10,10 +10,9 @@ import (
 // PropertiesDialog — generic key/value viewer
 // ---------------------------------------------------------------------------
 
-// Default dialog size, restored by every ShowProperties call so a caller
-// that widened the dialog with ShowPropertiesSized doesn't leave the next,
-// unrelated showing oversized — the same instance is reused for every
-// feature that uses this dialog.
+// Default dialog size, restored by every ShowProperties call so a caller that
+// widened it with ShowPropertiesSized doesn't leave the next, unrelated showing
+// oversized (the instance is reused across features).
 const (
 	propsDefaultW = 60
 	propsDefaultH = 24
@@ -44,9 +43,8 @@ type PropertiesDialog struct {
 	scroll int
 	keyW   int
 
-	// OnClose, when set, runs after the user closes the dialog (Escape,
-	// Enter, Close) — for a host still filling it in the background, whose
-	// fetch has nothing left to show into.
+	// OnClose, when set, runs after the user closes the dialog (Escape, Enter,
+	// Close), for a host still filling it in the background.
 	OnClose func()
 }
 
@@ -63,10 +61,9 @@ func (d *PropertiesDialog) ShowProperties(title string, rows []PropertyRow) {
 	d.ShowPropertiesSized(title, rows, propsDefaultW, propsDefaultH)
 }
 
-// ShowPropertiesSized is ShowProperties with an explicit dialog size, for
-// content that doesn't fit the default 60x24 (the About box). recentre
-// clamps w/h to the terminal, so asking for more than the screen has is
-// safe.
+// ShowPropertiesSized is ShowProperties with an explicit size, for content that
+// doesn't fit the default 60x24 (the About box). recentre clamps w/h to the
+// terminal, so asking for more than the screen has is safe.
 func (d *PropertiesDialog) ShowPropertiesSized(title string, rows []PropertyRow, w, h int) {
 	d.SetTitle(title)
 	d.rows = rows
@@ -85,12 +82,11 @@ func (d *PropertiesDialog) ShowPropertiesSized(title string, rows []PropertyRow,
 	d.ModalDialog.Show()
 }
 
-// propsDataH is how many rows fit between the header and the button row.
-// The dialog spends five of its inner lines on chrome — a blank line, the
-// column header, the separator, the button row, and the blank line under it
-// — so a naive inner.H-3 draws the last two rows straight under the
-// separator and buttons, where DrawSeparator/DrawButtons overwrite them and
-// the scroll clamp then refuses to bring them into view at all.
+// propsDataH is how many rows fit between the header and the button row. Five
+// inner lines go to chrome (blank, column header, separator, button row, blank
+// below), so a naive inner.H-3 draws the last two rows under the separator and
+// buttons, where DrawSeparator/DrawButtons overwrite them and the scroll clamp
+// never brings them into view.
 func propsDataH(inner core.Rect) int { return max(0, inner.H-5) }
 
 // Draw renders the properties dialog.
@@ -125,9 +121,8 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 		pr := d.rows[idx]
 		y := inner.Y + 2 + row
 		if pr.Section {
-			// A rule rather than a background band: GridHeader and DialogBg
-			// are the same colour in several themes, so a filled row would be
-			// indistinguishable from an ordinary one.
+			// A rule rather than a background band: GridHeader and DialogBg are the same
+			// colour in several themes.
 			core.FillRect(s, core.Rect{X: inner.X, Y: y, W: inner.W, H: 1}, '─', ruleStyle)
 			core.DrawTextClipped(s, inner.X+1, y, inner.W-2, secStyle, " "+pr.Key+" ")
 			continue

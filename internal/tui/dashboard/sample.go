@@ -6,15 +6,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// DrawSample renders the Sample dashboard into r: the same four sections as
-// History, but showing the current sample rather than its history. Numbers
-// that read better as figures than as bars sit in the section bars as KPIs.
+// DrawSample renders the Sample dashboard into r: History's four sections
+// showing the current sample. Numbers better read as figures sit in the
+// section bars as KPIs.
 //
-// r is normally a canvas of SampleCanvasW × SampleCanvasH.
-//
-// The returned hits describe the panels a click can be resolved against —
-// the memory composition bar, whose segments are otherwise named only by a
-// legend that has no room for their values.
+// r is normally a canvas of SampleCanvasW × SampleCanvasH. The returned hits
+// are the panels a click resolves against: the memory composition bar, whose
+// segments the legend has no room to give values for.
 func DrawSample(s tcell.Screen, r core.Rect, v SampleView) []ChartHit {
 	if r.W <= 0 || r.H <= 0 {
 		return nil
@@ -51,9 +49,8 @@ func sampleWaits(s tcell.Screen, r core.Rect, y int, v SampleView) int {
 	body, next := section(s, r, y, sampleWaitsBodyH, "SQL SERVER WAITS", []charts.KPI{
 		kpi("CPU % of Total Waits", v.CPUPctOfWaits),
 	})
-	// The load factor panel takes only the width its cores need, so the
-	// waits chart keeps everything left over rather than being halved on a
-	// four-core box.
+	// The load factor panel takes only the width its cores need, so waits
+	// keeps the rest rather than being halved on a four-core box.
 	waitsBody := body
 	if w := loadFactorWidth(len(v.LoadFactor.Bars), body.W); w > 0 {
 		lf := core.Rect{X: body.X, Y: body.Y, W: w, H: body.H}
@@ -63,8 +60,7 @@ func sampleWaits(s tcell.Screen, r core.Rect, y int, v SampleView) int {
 			W: body.Right() - lf.Right() - panelGutter, H: body.H}
 	}
 
-	// One bar per wait category, each split into its resource and signal
-	// parts, so the categories stay comparable and the split stays visible.
+	// One bar per wait category, split into resource and signal parts.
 	plot := waitsBody
 	if len(v.WaitLegend) > 0 && plot.H > 1 {
 		plot.H--
@@ -76,26 +72,23 @@ func sampleWaits(s tcell.Screen, r core.Rect, y int, v SampleView) int {
 	return next
 }
 
-// Load Factor panel geometry: one slot per core, wide enough for a two-
-// column bar with a gap and the cpu_id under it, plus the panel's own
-// padding and the Y-axis gutter.
+// Load Factor panel geometry: one slot per core (a two-column bar, a gap and
+// the cpu_id under it), plus panel padding and the Y-axis gutter.
 const (
 	loadFactorSlotW   = 4
 	loadFactorChromeW = 7
 )
 
 // loadFactorWidth is how many columns the Load Factor panel gets in a body
-// of width bodyW, or 0 when there are no cores to draw or no room for the
-// panel. It never takes more than half the section: the waits chart is what
-// this section is named for, and a 64-core server would otherwise push it
-// off the canvas entirely.
+// of width bodyW, or 0 when there are no cores or no room. It never takes more
+// than half the section: waits is the section's namesake, and a 64-core server
+// would otherwise push it off the canvas.
 func loadFactorWidth(cores, bodyW int) int {
 	if cores <= 0 || bodyW <= 0 {
 		return 0
 	}
-	// Not held to minPanelW: this panel is deliberately narrow on a small
-	// box, and widening it to a general panel's minimum would take room from
-	// the waits chart for empty columns.
+	// Not held to minPanelW: deliberately narrow on a small box; widening it
+	// would take room from waits for empty columns.
 	w := min(loadFactorChromeW+cores*loadFactorSlotW, bodyW/2)
 	if w < loadFactorChromeW+loadFactorSlotW {
 		return 0
@@ -110,8 +103,8 @@ func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView, hits *[]Char
 	})
 	cols := splitColumns(body, 3)
 
-	// The composition bar is the section's centrepiece: it gets several
-	// rows so its segments are legible, with its own legend beneath.
+	// The composition bar is the centrepiece: several rows for legible
+	// segments, with its own legend beneath.
 	bar := charts.StackedBar{
 		Series:     v.Memory,
 		Rows:       max(cols[0].H/3, 1),
@@ -151,10 +144,9 @@ func drawBarPanel(s tcell.Screen, panel core.Rect, title string, p BarPanel) {
 		Draw(s, withLegend(s, panel, title, p.Bars))
 }
 
-// withLegend draws the panel's title, reserves its last row for a legend
-// naming the bars, and returns what's left for the chart itself. A bar
-// chart drawn with LabelWidth -1 has no row labels, so this legend is what
-// identifies its colours.
+// withLegend draws the title, reserves the last row for a legend naming the
+// bars, and returns the rest for the chart. A bar chart with LabelWidth -1 has
+// no row labels, so this legend identifies its colours.
 func withLegend(s tcell.Screen, panel core.Rect, title string, bars []charts.Bar) core.Rect {
 	r := charts.DrawPanelTitle(s, panel, title)
 	if r.H <= 1 || len(bars) == 0 {

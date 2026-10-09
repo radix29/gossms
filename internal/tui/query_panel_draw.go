@@ -41,16 +41,16 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 		p.results.Draw(s)
 		p.results.DrawOverlay(s)
 	}
-	// Drawn last, after the results grid's own overlay — see the "overlays
-	// drawn last" rule in tuikit/README.md.
+	// Drawn last, after the results grid's own overlay; see the "overlays drawn last"
+	// rule in tuikit/README.md.
 	p.editor.DrawOverlay(s)
 }
 
-// connInfoText builds the bar above the editor: "server | user (spid) | db",
-// matching SSMS's connection status bar — the one place in the panel that
-// says what this query is actually running against, distinct from the
-// PanelManager tab bar's title just above it. An open transaction is called
-// out at the end: it holds locks, and closing the window rolls it back.
+// connInfoText builds the bar above the editor: "server | user (spid) | db", as
+// SSMS's connection status bar: the one place in the panel that says what this
+// query is actually running against, distinct from the tab bar's title. An open
+// transaction is called out at the end: it holds locks, and closing the window
+// rolls it back.
 func (p *QueryPanel) connInfoText() string {
 	if p.connectingTo != "" {
 		if p.connectingDB != "" {
@@ -79,11 +79,10 @@ func (p *QueryPanel) connInfoText() string {
 }
 
 // notConnectedMessage is runQuery/runEstimatedPlan's resultsNotice when
-// connected() is false — distinguishing a panel that was connected
-// and then had its connection silently dropped (p.conn is still this
-// panel's own *db.ServerConn, just no longer open — see Reconnect) from one
-// that was never connected in the first place, since Query > Reconnect only
-// has anything to redial in the former case. A connect still in flight is
+// connected() is false, distinguishing a panel that was connected and had its
+// connection silently dropped (p.conn still this panel's own *db.ServerConn, no
+// longer open; see Reconnect) from one never connected, since Query > Reconnect
+// has something to redial only in the former case. A connect still in flight is
 // neither, and says so.
 func (p *QueryPanel) notConnectedMessage() string {
 	if p.connectingTo != "" {
@@ -96,18 +95,18 @@ func (p *QueryPanel) notConnectedMessage() string {
 }
 
 // updateResultsStatus pushes the current status line into the results grid,
-// recomputed on every Draw so it tracks row/column navigation and, while a
-// query is executing, ticks live off execStart (the launch ticker repaints). The
-// other three tabs get the same line from drawResultsStatus.
+// recomputed on every Draw so it tracks row/column navigation and, while a query
+// is executing, ticks live off execStart (the launch ticker repaints). The other
+// three tabs get the same line from drawResultsStatus.
 func (p *QueryPanel) updateResultsStatus() {
 	p.results.SetStatus(p.resultsStatusText())
 }
 
 // drawResultsStatus paints the status line for a tab the results grid isn't
-// drawing — Messages, Results To Text, and Execution Plan. Without it those
-// tabs showed nothing at all: the line lives on the DataGrid, which isn't on
-// screen for any of them, so elapsed time, row counts and the live
-// "Executing..." counter all disappeared the moment the tab changed.
+// drawing (Messages, Results To Text, Execution Plan). The line lives on the
+// DataGrid, which isn't on screen for any of them, so without this elapsed time,
+// row counts and the live "Executing..." counter all vanished when the tab
+// changed.
 func (p *QueryPanel) drawResultsStatus(s tcell.Screen) {
 	if p.statusRect.H != 1 {
 		return
@@ -117,25 +116,25 @@ func (p *QueryPanel) drawResultsStatus(s tcell.Screen) {
 		resultsStatusStyle, p.resultsStatusText())
 }
 
-// resultsStatusText builds the results area's status line for whichever tab
-// is active. resultsNotice, when set, takes priority — see its field doc.
+// resultsStatusText builds the results area's status line for the active tab.
+// resultsNotice, when set, takes priority (see its field doc).
 func (p *QueryPanel) resultsStatusText() string {
 	if p.resultsNotice != "" {
 		return p.resultsNotice
 	}
 	if p.executing {
 		text := formatHMS(time.Since(p.execStart)) + " | Executing..."
-		// Only for a run that scans rows: an estimated plan leaves p.progress
-		// nil, where a "0 rows" that never moves would be noise.
+		// Only for a run that scans rows: an estimated plan leaves p.progress nil, where
+		// a "0 rows" that never moves would be noise.
 		if p.progress != nil {
 			text += fmt.Sprintf(" | %d rows", p.progress.Rows())
 		}
 		return text
 	}
 	if p.result == nil {
-		// Estimated plan: nothing ran, so there's no elapsed time or row
-		// count to report — and the previous run's, left over from before
-		// setEstimatedPlan cleared p.result, would be a lie.
+		// Estimated plan: nothing ran, so there's no elapsed time or row count to report,
+		// and the previous run's (left over from before setEstimatedPlan cleared
+		// p.result) would be a lie.
 		if p.planView != nil {
 			return "Estimated execution plan"
 		}

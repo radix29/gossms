@@ -93,11 +93,11 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// A release must reach every mouseDragging-latched widget even when it
-	// lands outside the dialog or arrives in a mode of its own — both of
-	// which return below, before any widget sees the event, so its next
-	// press would be swallowed as a continuation of the stale drag. Each returns false on ButtonNone, so
-	// this has no effect beyond resetting the latch.
+	// A release must reach every mouseDragging-latched widget even when it lands
+	// outside the dialog or arrives in a mode of its own, both of which return below
+	// before any widget sees the event, so its next press would be swallowed as a
+	// continuation of the stale drag. Each returns false on ButtonNone, so this has no
+	// effect beyond resetting the latch.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.rbSource.HandleMouse(ev)
 		d.ddHistDB.HandleMouse(ev)
@@ -109,15 +109,14 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.cbReplace.HandleMouse(ev)
 		d.cbVerify.HandleMouse(ev)
 		d.cbClose.HandleMouse(ev)
-		// Terminate a text-selection drag in the field that claimed the
-		// press, wherever the release landed. Done before
-		// ConsumeOutsideClick and the mode switch below, both of which
-		// return early — exactly the cases that would strand the latch.
+		// Terminate a text-selection drag in the field that claimed the press, wherever
+		// the release landed. Done before ConsumeOutsideClick and the mode switch below,
+		// both of which return early: exactly the cases that would strand the latch.
 		d.drag.Release(ev)
 	}
-	// The open list is clamped to the screen, not the dialog, so it can reach
-	// past the dialog's edge: it is offered every event (wheel included) before
-	// ConsumeOutsideClick can discard one as "outside" — FilterDialog's order.
+	// The open list is clamped to the screen, not the dialog, so it can reach past the
+	// dialog's edge: it is offered every event (wheel included) before
+	// ConsumeOutsideClick can discard one as "outside" (FilterDialog's order).
 	if d.mode == restoreModeForm && d.rbSource.Selected() == 1 {
 		if dd := d.openDropDown(); dd != nil && dd.HandleMouse(ev) {
 			d.focusTo(dd)
@@ -153,9 +152,9 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 
-	// The gesture belongs to whichever field claimed its press, so motion is
-	// replayed there without hit-testing — ahead of every widget below,
-	// since none of them can own a gesture this one already started.
+	// The gesture belongs to whichever field claimed its press, so motion is replayed
+	// there without hit-testing, ahead of every widget below, since none can own a
+	// gesture this one already started.
 	if d.drag.Replay(ev) {
 		return true
 	}

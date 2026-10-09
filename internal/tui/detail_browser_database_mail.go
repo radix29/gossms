@@ -10,17 +10,17 @@ import (
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
-// detail_browser_database_mail.go is the Details pane for Management ▸
-// Database Mail: status, queues, profiles, accounts and the latest failed
-// items, in one Property/Value grid. The node is a leaf (docs/decisions.md), so
-// its one view carries what folders would otherwise list; each section is a
-// heading row with a count, then one indented row per object.
+// detail_browser_database_mail.go is the Details pane for Management ▸ Database
+// Mail: status, queues, profiles, accounts and the latest failed items, in one
+// Property/Value grid. The node is a leaf (docs/decisions.md), so its one view
+// carries what folders would otherwise list; each section is a heading row with a
+// count, then one indented row per object.
 //
 // Each section needs different rights (W8) and degrades alone: status needs
-// DatabaseMailUserRole or more, queues VIEW SERVER STATE, profiles and
-// accounts db_owner in msdb or CONTROL SERVER, and items are filtered by the
-// server to the caller's own for a role-only member. A refused section says
-// what it needs rather than failing the view.
+// DatabaseMailUserRole or more, queues VIEW SERVER STATE, profiles and accounts
+// db_owner in msdb or CONTROL SERVER, and items are filtered by the server to the
+// caller's own for a role-only member. A refused section says what it needs
+// rather than failing the view.
 
 // databaseMailFailedItems is how many of the newest failed items the view
 // lists: enough to see a pattern, few enough not to bury the configuration.

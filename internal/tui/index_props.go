@@ -303,9 +303,9 @@ func pageIndexStorage(sc *db.ServerConn, dbName, schema, table string, name *str
 // Index.SetIncludedColumns): included columns aren't a plain ALTER.
 //
 // Only a rowstore nonclustered index backing no constraint has a changeable
-// INCLUDE list; for any other the page says why and offers nothing (SSMS greys
-// it out). The page is still listed, since the index type isn't known until the
-// load reads it, and a failed Apply was the only other way to find out.
+// INCLUDE list; for any other the page says why and offers nothing (SSMS greys it
+// out). The page is still listed, since the index type isn't known until the load
+// reads it.
 func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name string) propPage {
 	return propPage{
 		title: "Included Columns",

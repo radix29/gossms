@@ -10,40 +10,31 @@ import (
 // Rune-index <-> terminal-column conversion
 // ---------------------------------------------------------------------------
 
-// Text that is *indexed* by rune still has to be *drawn* in terminal
-// columns, and the two do not correspond one-for-one: a CJK ideograph or an
-// emoji occupies two columns, a combining mark none. Editor and InputField
-// both index by rune (cursor, selection, wrap segments), so every place they
-// turn an index into a screen position — or a click position back into an
-// index — goes through the helpers below. They are the entire conversion
-// between the two coordinate systems; a caller that reaches for len(line)
-// instead reintroduces the drift these exist to remove.
+// Text indexed by rune is drawn in terminal columns, and the two differ: a CJK
+// ideograph or emoji takes two columns, a combining mark none. Editor and
+// InputField index by rune, so every index <-> screen position conversion goes
+// through the helpers below; reaching for len(line) reintroduces the drift.
 //
-// The unit of width is the grapheme cluster, not the rune, because that is
-// what tcell's Put, DisplayWidth and the terminal measure. Summing rune widths
-// gets "❤️" (heart + VS16) as 1 column instead of 2, a flag (two regional
-// indicators) and "👍🏽" as 4 instead of 2, and a ZWJ family as 6: the glyph
-// then overwrote the next cell, and every column after it was off (review plan
-// K1). A rune index inside a cluster has no column of its own; it maps to its
-// cluster's start, and the cursor moves by NextGrapheme/PrevGrapheme so it
-// never lands there.
+// The unit of width is the grapheme cluster, because that is what tcell's Put,
+// DisplayWidth and the terminal measure. Summing rune widths gets "❤️" as 1
+// column instead of 2, a flag and "👍🏽" as 4 instead of 2, a ZWJ family as 6:
+// the glyph overwrote the next cell and every later column was off (review plan
+// K1). A rune index inside a cluster maps to its cluster's start, and the cursor
+// moves by NextGrapheme/PrevGrapheme so it never lands there.
 
-// joinFloor is the first code point that can join a neighbour into a
-// multi-rune grapheme cluster (U+0300, the first combining mark). Below it every
-// rune is a cluster of its own — Extend, ZWJ, SpacingMark, Prepend, Hangul
-// jamo, regional indicators and variation selectors all sit above it — apart
-// from CR LF, which a text widget never holds (lines are split on it). T-SQL is
+// joinFloor is the first code point that can join a neighbour into a multi-rune
+// cluster (U+0300). Below it every rune is its own cluster (Extend, ZWJ,
+// SpacingMark, Prepend, Hangul jamo, regional indicators and variation selectors
+// are all above), apart from CR LF, which text widgets never hold. T-SQL is
 // almost entirely below it, so the common case never segments.
 const joinFloor = 0x300
 
 // GraphemeAt returns the end (exclusive rune index) and display width of the
-// grapheme cluster starting at rune index i of line. i at or past the end
-// returns (i, 0). A cluster is only ever found from its start, so i is
-// expected to be a cluster boundary; from inside one, the rest of it is
-// returned as a cluster (combining marks with no base, width 0).
-//
-// The printable-ASCII case is split out (LoneASCII) so a walk can take it
-// inline: the editor runs them per character drawn and wrapped.
+// grapheme cluster starting at rune index i. i at or past the end returns
+// (i, 0). i is expected to be a cluster boundary; from inside one, the rest is
+// returned as a cluster. LoneASCII is split out so a walk can take the
+// printable-ASCII case inline: the editor runs it per character drawn and
+// wrapped.
 func GraphemeAt(line []rune, i int) (end, width int) {
 	if i >= 0 && LoneASCII(line, i) {
 		return i + 1, 1
@@ -51,9 +42,9 @@ func GraphemeAt(line []rune, i int) (end, width int) {
 	return graphemeAtSlow(line, i)
 }
 
-// LoneASCII reports whether line[i] (i in range) is printable ASCII that is a
-// one-column cluster on its own: a walk that checks it first takes the common
-// case inline and calls GraphemeAt only for the rest.
+// LoneASCII reports whether line[i] is printable ASCII, a one-column cluster on
+// its own, so a walk can take the common case inline and call GraphemeAt for the
+// rest.
 func LoneASCII(line []rune, i int) bool {
 	r := line[i]
 	return r >= 0x20 && r < 0x7F && (i+1 == len(line) || line[i+1] < joinFloor)
@@ -71,10 +62,9 @@ func graphemeAtSlow(line []rune, i int) (end, width int) {
 	if line[i] < joinFloor && (i+1 == n || line[i+1] < joinFloor) {
 		return i + 1, RuneWidth(line[i])
 	}
-	// Segment a short window from i, widening it only when the first cluster
-	// fills it (a long run of combining marks): clusters are almost always a
-	// few runes, and a window of the rest of the line would make a walk over a
-	// line quadratic. The bytes live on the stack.
+	// Segment a short window from i, widening it only when the first cluster fills
+	// it (a long run of combining marks): a window of the rest of the line would
+	// make a walk quadratic. The bytes live on the stack.
 	var buf [128]byte
 	for win := 8; ; win *= 2 {
 		j := min(i+win, n)
@@ -104,12 +94,10 @@ func NextGrapheme(line []rune, i int) int {
 	return end
 }
 
-// PrevGrapheme returns the start of the grapheme cluster that ends at rune
-// index i — where Left and Backspace move to. i past the end steps back one.
-//
-// Clusters can only be found walking forward, so it backs up to a known
-// boundary first: the nearest point between two runes both below joinFloor, or
-// the line's start. In ASCII text that is the previous rune.
+// PrevGrapheme returns the start of the cluster that ends at rune index i
+// (where Left and Backspace move). i past the end steps back one. Clusters are
+// found only walking forward, so it backs up to a known boundary first: the
+// nearest point between two runes both below joinFloor, or the line's start.
 func PrevGrapheme(line []rune, i int) int {
 	if i <= 0 {
 		return 0
@@ -132,14 +120,9 @@ func PrevGrapheme(line []rune, i int) int {
 
 // RuneWidth returns how many terminal columns r occupies on its own: 2 for a
 // wide (CJK/emoji) rune, 0 for a combining mark or other zero-width rune, 1
-// otherwise.
-//
-// Printable ASCII short-circuits the table lookup. That range is the
-// overwhelming majority of every character this project measures — T-SQL is
-// ASCII apart from string literals — and these run per rune over whole
-// documents, so the branch is worth it. TestRuneWidthASCIIFastPathAgrees
-// checks it against displaywidth for the entire range rather than trusting
-// the assumption.
+// otherwise. Printable ASCII short-circuits the table lookup: it is nearly all
+// that is measured (T-SQL) and this runs per rune over whole documents.
+// TestRuneWidthASCIIFastPathAgrees checks it against displaywidth.
 func RuneWidth(r rune) int {
 	if r >= 0x20 && r < 0x7F {
 		return 1
@@ -147,12 +130,10 @@ func RuneWidth(r rune) int {
 	return displaywidth.Rune(r)
 }
 
-// RunesWidth returns the total column width of line.
-//
-// It and the two conversions below sum rune widths — as fast as before
-// clusters mattered — up to the first rune that can join a cluster, then
-// back up one rune (its possible base, which the run below joinFloor
-// guarantees starts a cluster) and walk by cluster from there. Document width
+// RunesWidth returns the total column width of line. It and the two
+// conversions below sum rune widths up to the first rune that can join a
+// cluster, then back up one rune (its possible base, which the run below
+// joinFloor guarantees starts a cluster) and walk by cluster. Document width
 // runs this over every line after an edit.
 func RunesWidth(line []rune) int {
 	w := 0
@@ -178,20 +159,17 @@ func RunesWidth(line []rune) int {
 	return w
 }
 
-// ColumnOfRune returns the column at which the rune at index idx begins —
-// the width of the clusters before it. An idx inside a cluster returns the
-// cluster's start column: it shares the cluster's cells.
-//
-// An idx past the end of line counts one column per missing rune, matching
-// the virtual one-column-per-position model a text widget uses for a cursor
-// or selection sitting past end-of-line. RuneIndexAtColumn is its inverse
-// over that range too, so the two round-trip past the end as well as within.
+// ColumnOfRune returns the column at which the rune at idx begins. An idx
+// inside a cluster returns the cluster's start column. An idx past the end
+// counts one column per missing rune, the virtual model a cursor or selection
+// past end-of-line uses; RuneIndexAtColumn inverts it, round-tripping past the
+// end too.
 func ColumnOfRune(line []rune, idx int) int {
 	if idx <= 0 {
 		return 0
 	}
-	// The rune at idx is looked at too: if it joins, idx is inside a cluster
-	// whose base is the rune before it.
+	// The rune at idx is looked at too: if it joins, idx is inside a cluster whose
+	// base is the rune before it.
 	col, lim := 0, min(idx+1, len(line))
 	for i := range lim {
 		r := line[i]
@@ -217,14 +195,10 @@ func ColumnOfRune(line []rune, idx int) int {
 	return col + max(idx-len(line), 0)
 }
 
-// RuneIndexAtColumn returns the index of the cluster covering column col.
-//
-// It snaps to the start of a wide cluster whichever of its columns was hit,
-// so clicking either half of a CJK character or an emoji puts the cursor
-// before it and never inside it — an index between a wide cluster's columns
-// has no valid text position behind it. A col past the line's last column
-// returns one index per extra column, inverting ColumnOfRune's past-the-end
-// rule.
+// RuneIndexAtColumn returns the index of the cluster covering column col. It
+// snaps to the start of a wide cluster whichever column was hit, so a click on
+// either half of a CJK character puts the cursor before it, never inside. A col
+// past the end returns one index per extra column, inverting ColumnOfRune.
 func RuneIndexAtColumn(line []rune, col int) int {
 	i, _ := ClusterAtColumn(line, col)
 	return i

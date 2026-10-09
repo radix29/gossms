@@ -84,14 +84,11 @@ type Token struct {
 // space other than '\n'. It returns KindEnd, at limit, when only white space is
 // left, and leaves st as it is when i is already at limit.
 //
-// This is the one T-SQL lexer: SplitBatches, the editor's statement select
-// (StatementAt), its syntax highlighter and IntelliSense's scanner
-// (internal/tui/sqlparse) all walk text with it, so a ';', a "GO" line or a
-// keyword inside a comment, literal or quoted identifier means the same to all
-// four. They used to be four hand-synced state machines that drifted: the
-// highlighter coloured keywords inside [brackets], and a "/*" inside one
-// commented out the rest of the document.
-//
+// This is the one T-SQL lexer: SplitBatches, StatementAt, the syntax highlighter
+// and IntelliSense's scanner (internal/tui/sqlparse) all use it, so a ';', GO
+// line or keyword inside a comment, literal or quoted identifier means the same
+// to all four. (Separate state machines drifted: the highlighter coloured
+// keywords in [brackets], and a "/*" inside one commented out the document.)
 // A caller may lex a flat buffer, newlines included, or one line at a time with
 // the State carried across and State.NextLine applied at each line end. The two
 // agree: no two-rune delimiter ("--", "/*", "*/", a doubled quote or bracket)

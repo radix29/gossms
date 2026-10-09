@@ -108,19 +108,18 @@ func (a *App) refreshDatabaseMailLabel(sc *db.ServerConn) {
 // through nodeMenus (explorer_loaders.go). Script as is spliced in from
 // scriptables.
 //
-// Configure Database Mail... is Properties under the name SSMS gives it; both
-// open the same dialog. Neither is gated: the dialog's pages come up
-// read-only, each naming the rights it needs, for a login that may read but
-// not change them. View Database Mail Log is gated — a login that may not
-// read sysmail_event_log would open the viewer only on Msg 229 — while a
-// DatabaseMailUserRole member is offered it and reads the events of their
-// own items (the viewer says so).
+// Configure Database Mail... is Properties under the name SSMS gives it; both open
+// the same dialog. Neither is gated: the dialog's pages come up read-only, each
+// naming the rights it needs, for a login that may read but not change them. View
+// Database Mail Log is gated — a login that may not read sysmail_event_log would
+// open the viewer only on Msg 229 — while a DatabaseMailUserRole member is offered
+// it and reads the events of their own items (the viewer says so).
 //
-// Start or Stop is offered by the state the label shows, both when it could
-// not be read. With 'Database Mail XPs' off the server refuses Send Test
-// E-Mail, Start and Stop (Msg 15281, W8), and the General page is where it is
-// turned on; while stopped it refuses the send too (Msg 14641 — nothing is
-// queued), so the item is withheld until Start.
+// Start or Stop is offered by the state the label shows, both when it could not be
+// read. With 'Database Mail XPs' off the server refuses Send Test E-Mail, Start
+// and Stop (Msg 15281, W8), and the General page is where it is turned on; while
+// stopped it refuses the send too (Msg 14641 — nothing is queued), so the item is
+// withheld until Start.
 func databaseMailMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	props := func() { a.showDatabaseMailPropertiesFor(sc, mailPageGeneral) }
 	send := mailNeedsStarted(node, gate.Item(controls.MenuItem{Label: "Send Test E-Mail...",

@@ -15,7 +15,7 @@ import (
 )
 
 // messagesHighlighter colors an entire line in the Messages tab red when it
-// belongs to an error message (see query.Message.IsError and the parallel
+// belongs to an error message (query.Message.IsError and the parallel
 // messageErrorLines slice built in renderActiveTab).
 func (p *QueryPanel) messagesHighlighter(doc *controls.Document, idx int) []controls.ColorRun {
 	if idx >= len(p.messageErrorLines) || !p.messageErrorLines[idx] {
@@ -27,21 +27,21 @@ func (p *QueryPanel) messagesHighlighter(doc *controls.Document, idx int) []cont
 }
 
 // onMessagesTab reports whether the active tab is Messages rather than a
-// result-set grid or execution plan. results, messages, resultsText and
-// planView occupy the same rect (see layoutChildren), so exactly one is drawn
-// and routed keys/mouse at a time.
+// result-set grid or execution plan. results, messages, resultsText and planView
+// occupy the same rect (layoutChildren), so exactly one is drawn and routed
+// keys/mouse at a time.
 //
 // Built on tabCount/messagesTabIndex rather than resultTabs: this runs several
-// times per key/mouse event and every Draw, and resultTabs formats a label
-// string per tab just to count them.
+// times per key/mouse event and every Draw, and resultTabs formats a label string
+// per tab just to count them.
 func (p *QueryPanel) onMessagesTab() bool {
 	idx := p.messagesTabIndex()
 	return idx >= 0 && p.activeTab == idx
 }
 
 // tabCount returns how many result tabs there are (the count resultTabs would
-// return), without allocating or formatting labels. See resultTabs for what
-// each index means.
+// return), without allocating or formatting labels. See resultTabs for what each
+// index means.
 func (p *QueryPanel) tabCount() int {
 	if p.planView != nil && p.result == nil {
 		return 2 // Execution Plan, Messages
@@ -56,8 +56,8 @@ func (p *QueryPanel) tabCount() int {
 	return n
 }
 
-// messagesTabIndex returns the Messages tab's index — always the last tab,
-// per resultTabs' ordering — or -1 when there are no tabs at all.
+// messagesTabIndex returns the Messages tab's index (always the last, per
+// resultTabs' ordering), or -1 when there are no tabs at all.
 func (p *QueryPanel) messagesTabIndex() int {
 	if n := p.tabCount(); n > 0 {
 		return n - 1
@@ -65,18 +65,17 @@ func (p *QueryPanel) messagesTabIndex() int {
 	return -1
 }
 
-// textTabActive reports whether the active tab is a result set rendered as
-// plain text (Query > Results To Text) rather than the grid. See onMessagesTab
-// for why only one panel is live.
+// textTabActive reports whether the active tab is a result set rendered as plain
+// text (Query > Results To Text) rather than the grid. See onMessagesTab for why
+// only one panel is live.
 func (p *QueryPanel) textTabActive() bool {
 	return !p.onMessagesTab() && !p.planTabActive() && p.resultsMode == ResultsModeText && p.result != nil
 }
 
 // planTabActive reports whether the active tab is the graphical Execution Plan
-// view rather than Messages or a Results tab (see onMessagesTab, resultTabs).
-// Estimated mode (p.result == nil) puts it first; Actual mode (both p.result
-// and p.planView set, see setResultPlan) puts it right after the Results
-// tab(s).
+// view rather than Messages or a Results tab (onMessagesTab, resultTabs).
+// Estimated mode (p.result == nil) puts it first; Actual mode (p.result and
+// p.planView both set, see setResultPlan) puts it right after the Results tab(s).
 func (p *QueryPanel) planTabActive() bool {
 	if p.planView == nil {
 		return false
@@ -87,9 +86,9 @@ func (p *QueryPanel) planTabActive() bool {
 	return p.activeTab == len(p.result.Sets)
 }
 
-// tabSegments computes each result-tab's on-screen extent for labels. Draw
-// and hit-test both build their column math from this same call so hits
-// line up with what's actually on screen.
+// tabSegments computes each result-tab's on-screen extent for labels. Draw and
+// hit-test both build their column math from this call so hits line up with
+// what's on screen.
 func (p *QueryPanel) tabSegments(labels []string) [][]controls.TabSegment {
 	widths := make([][]int, len(labels))
 	for i, label := range labels {
@@ -119,12 +118,12 @@ func (p *QueryPanel) drawTabBar(s tcell.Screen) {
 
 // resultTabs returns the tab labels for the last result: one per result set
 // ("Results" alone when there's only one), plus Messages, with "Execution Plan"
-// inserted depending on how planView got populated (see setEstimatedPlan and
-// setResultPlan): alone with Messages when there's no real result (Estimated
-// mode, which never runs the query, and a Live Query Statistics run still
-// executing, whose tab is labelled for it — planTabLabel), or between the Results tab(s) and Messages
-// in Actual mode ("Include Actual Execution Plan"; planTabActive mirrors this
-// ordering).
+// inserted depending on how planView got populated (setEstimatedPlan and
+// setResultPlan): alone with Messages when there's no real result (Estimated mode,
+// which never runs the query, and a Live Query Statistics run still executing,
+// whose tab is labelled for it, planTabLabel), or between the Results tab(s) and
+// Messages in Actual mode ("Include Actual Execution Plan"; planTabActive mirrors
+// this ordering).
 func (p *QueryPanel) resultTabs() []string {
 	if p.planView != nil && p.result == nil {
 		return []string{p.planTabLabel(), "Messages"}
@@ -146,9 +145,9 @@ func (p *QueryPanel) resultTabs() []string {
 	return append(tabs, "Messages")
 }
 
-// planTabLabel is the plan tab's label: "Live Query Statistics" while a run
-// with that toggle on is executing (startLiveStats), "Execution Plan" once
-// the actual plan replaces it, and for every other plan.
+// planTabLabel is the plan tab's label: "Live Query Statistics" while a run with
+// that toggle on is executing (startLiveStats), "Execution Plan" once the actual
+// plan replaces it, and for every other plan.
 func (p *QueryPanel) planTabLabel() string {
 	if p.planView != nil && p.planView.Live() {
 		return "Live Query Statistics"
@@ -183,9 +182,8 @@ func (p *QueryPanel) renderActiveTab() {
 		return
 	}
 	// +2 to convert the Options dialog's "max default cell length" (a character
-	// count) into a column-width clamp, matching computeColWidths's own
-	// header-width convention of content width + 1 column of padding on
-	// each side.
+	// count) into a column-width clamp, matching computeColWidths's header-width
+	// convention of content width + 1 column of padding on each side.
 	p.results.SetMaxCellWidth(p.app.cfg.MaxCellLength + 2)
 	if p.onMessagesTab() {
 		p.setMessages(res.Messages)
@@ -206,12 +204,12 @@ func (p *QueryPanel) renderActiveTab() {
 	p.results.SetSource(set.Columns, set)
 }
 
-// setMessages installs msgs into the Messages tab's read-only editor. A
-// message's Text may itself span lines (a detailed SQL Server error), so each
-// is split first, keeping messageErrorLines per rendered line in step with what
-// SetText produces (it splits on "\n" the same way). Shared by a normal query's
-// Messages tab (renderActiveTab) and the execution-plan paths, which report a
-// compile failure the same way.
+// setMessages installs msgs into the Messages tab's read-only editor. A message's
+// Text may itself span lines (a detailed SQL Server error), so each is split
+// first, keeping messageErrorLines per rendered line in step with what SetText
+// produces (it splits on "\n" the same way). Shared by a normal query's Messages
+// tab (renderActiveTab) and the execution-plan paths, which report a compile
+// failure the same way.
 func (p *QueryPanel) setMessages(msgs []query.Message) {
 	var textLines []string
 	var errLines []bool
@@ -225,9 +223,8 @@ func (p *QueryPanel) setMessages(msgs []query.Message) {
 	p.messages.SetText(strings.Join(textLines, "\n"))
 }
 
-// textKey is what one Results to Text rendering depends on: the set (a result
-// and a tab in it), the column cap, and the tab width a cell's own tabs expand
-// to.
+// textKey is what one Results to Text rendering depends on: the set (a result and
+// a tab in it), the column cap, and the tab width a cell's own tabs expand to.
 type textKey struct {
 	result         *query.Result
 	tab, max, tabW int
@@ -242,17 +239,17 @@ func (p *QueryPanel) textKeyNow() textKey {
 	return textKey{result: p.result, tab: p.activeTab, max: maxW, tabW: p.resultsText.IndentWidth()}
 }
 
-// textSyncCells is the largest set, in cells, that Results to Text formats on
-// the UI goroutine. A million rows of eight columns took 2.1 s to format, 1.1 s
-// to install through SetText and 370 ms more in the first Draw, with input
-// frozen; below this it is a few tens of milliseconds, and a "Formatting..."
-// flash would cost more than it saves.
+// textSyncCells is the largest set, in cells, that Results to Text formats on the
+// UI goroutine. A million rows of eight columns took 2.1 s to format, 1.1 s to
+// install through SetText and 370 ms more in the first Draw, with input frozen;
+// below this it is a few tens of milliseconds, and a "Formatting..." flash would
+// cost more than it saves.
 const textSyncCells = 100_000
 
-// showResultsText puts set into the resultsText editor: from the memo when it
-// was the last one rendered, formatted in place when small, otherwise formatted
-// off the UI goroutine behind a placeholder and installed when it lands if the
-// tab still wants it. A run for the same rendering already in flight is left to
+// showResultsText puts set into the resultsText editor: from the memo when it was
+// the last one rendered, formatted in place when small, otherwise formatted off
+// the UI goroutine behind a placeholder and installed when it lands if the tab
+// still wants it. A run for the same rendering already in flight is left to
 // finish, so switching away and back mid-format does not throw the work away.
 func (p *QueryPanel) showResultsText(set query.ResultSet) {
 	key := p.textKeyNow()
@@ -271,8 +268,8 @@ func (p *QueryPanel) showResultsText(set query.ResultSet) {
 		return
 	}
 	// Rooted at Background because formatting reads no connection: the rows are
-	// already in memory, and a disconnect leaves them worth showing. The latest
-	// still cancels it on a newer rendering, a new run, or a close.
+	// already in memory, and a disconnect leaves them worth showing. The latest still
+	// cancels it on a newer rendering, a new run, or a close.
 	ctx, token := p.textRun.Begin(context.Background())
 	p.textRunKey = key
 	repair := func() { p.textRun.Done(token) }
@@ -296,22 +293,22 @@ func (p *QueryPanel) textFormatting() bool {
 	return !p.textRun.Idle() && p.textRunKey == p.textKeyNow()
 }
 
-// textCancelEvery is how many rows formatResultsAsText formats between checks
-// of its context: often enough that a superseded run stops within a few
+// textCancelEvery is how many rows formatResultsAsText formats between checks of
+// its context: often enough that a superseded run stops within a few
 // milliseconds, rarely enough that the check costs nothing.
 const textCancelEvery = 4096
 
-// formatResultsAsText renders set as SSMS's Results To Text look: a header row,
-// a dashed separator, then one line per data row, each column padded to its
-// widest value.
+// formatResultsAsText renders set as SSMS's Results To Text look: a header row, a
+// dashed separator, then one line per data row, each column padded to its widest
+// value.
 //
 // No column is wider than maxW; a longer value or header is cut to it with no
-// ellipsis, as SSMS does. Uncapped, one megabyte-long cell padded every row of
-// its result to a megabyte.
+// ellipsis, as SSMS does. Uncapped, one megabyte-long cell padded every row of its
+// result to a megabyte.
 //
 // It builds a LineBuffer rather than a string so a large set can be formatted,
-// split and measured entirely off the UI goroutine (see showResultsText). A
-// cancelled ctx stops it with ctx's error.
+// split and measured entirely off the UI goroutine (showResultsText). A cancelled
+// ctx stops it with ctx's error.
 func formatResultsAsText(ctx context.Context, set query.ResultSet, maxW, tabW int) (*controls.LineBuffer, error) {
 	widths := make([]int, len(set.Columns))
 	for i, c := range set.Columns {

@@ -11,15 +11,15 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// DeviceCodeDialog shows the code a Microsoft Entra Device Code sign-in is
-// waiting on, for the user to enter at Microsoft's page on any device — a
-// phone, or a browser on another machine when gossms runs over SSH.
+// DeviceCodeDialog shows the code a Microsoft Entra Device Code sign-in is waiting
+// on, for the user to enter at Microsoft's page on any device — a phone, or a
+// browser on another machine when gossms runs over SSH.
 //
 // It lives exactly as long as the sign-in: App.promptDeviceCode opens it and
-// closes it again when the sign-in's context ends, whether the code was
-// entered, the attempt timed out, or it was cancelled. Left to azidentity,
-// the code is printed to standard output — the terminal tcell draws on — and
-// erased by the next redraw.
+// closes it when the sign-in's context ends, whether the code was entered, the
+// attempt timed out, or it was cancelled. Left to azidentity, the code is printed
+// to standard output — the terminal tcell draws on — and erased by the next
+// redraw.
 type DeviceCodeDialog struct {
 	dialogs.ModalDialog
 	app *App

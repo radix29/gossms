@@ -10,17 +10,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_object_dialog.go is the shell every "New <object>" creation dialog is
-// built on: one prefetch, one propsheet.PropertySheet whose pages are built
-// from it at once, and an OK/Apply/Script pipeline running each page's apply
-// in order. Each per-dialog file is a newObjectConfig plus a buildPages method.
+// new_object_dialog.go is the shell every "New <object>" dialog is built on: one
+// prefetch, one propsheet.PropertySheet whose pages are built from it at once,
+// and an OK/Apply/Script pipeline running each page's apply in order. Each
+// per-dialog file is a newObjectConfig plus a buildPages method.
 //
 // PropDialog (prop_dialog.go) is deliberately separate: it loads pages lazily
 // and applies a dirty-diff, neither of which a create dialog needs.
 
 // errPageLoadPanicked fails a page request when the goroutine loading it
 // panicked (this dialog's prefetch, PropDialog's per-page load). The panic is
-// already logged, so the page only has to say why it has no content.
+// already logged; the page only has to say why it has no content.
 var errPageLoadPanicked = errors.New("loading stopped unexpectedly — see the log for details")
 
 // newObjectConfig is everything that differs between create dialogs, passed to
@@ -31,9 +31,8 @@ type newObjectConfig[P any] struct {
 	// noun names the created object in the success message, e.g. "Job" -> `Job
 	// "nightly reindex" created`.
 	noun string
-	// verb completes that message when "created" would be untrue (Add Database to
-	// an availability group: "added to the availability group"). Empty means
-	// "created".
+	// verb completes that message when "created" would be untrue (Add Database to an
+	// availability group: "added to the availability group"). Empty means "created".
 	verb string
 	// pages are the page names, in order; forms and applyFns share the indexing.
 	pages []string
@@ -50,9 +49,9 @@ type newObjectConfig[P any] struct {
 	refresh func(*db.ServerConn)
 }
 
-// pageRequest is one outstanding OnLoadPage call, held until the prefetch it
-// waits on completes. seq goes back to SetPageForm unchanged, which drops it if
-// the page has been reloaded since.
+// pageRequest is one outstanding OnLoadPage call, held until its prefetch
+// completes. seq goes back to SetPageForm unchanged, which drops it if the page
+// has been reloaded since.
 type pageRequest struct{ page, seq int }
 
 // newObjectDialog is the shared state and behaviour behind every create dialog.
@@ -66,7 +65,7 @@ type newObjectDialog[P any] struct {
 	sc  *db.ServerConn
 
 	// ctx spans one show..close, derived from the connection's Context so a
-	// disconnect tears down in-flight work; cancel ends it (see onClose).
+	// disconnect tears down in-flight work; cancel ends it (onClose).
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -75,26 +74,26 @@ type newObjectDialog[P any] struct {
 	applyFns []propApply
 
 	// fetching guards against a second prefetch: the sheet asks for a page whenever
-	// one is selected, and switching pages mid-fetch would start another and
-	// rebuild every form. waiting collects the pages asked for meanwhile, all
-	// served from the one prefetch.
+	// one is selected, and switching pages mid-fetch would start another and rebuild
+	// every form. waiting collects the pages asked for meanwhile, all served from
+	// the one prefetch.
 	fetching bool
 	waiting  []pageRequest
 
 	// prefetchRun is the prefetch in flight, superseded by each new showing. A
 	// prefetch outlives its showing when the dialog is closed and reopened before it
 	// lands; the sheet's per-page seq keeps the stale result off the new pages but
-	// not off this dialog's own state (see onLoadPage).
+	// not off this dialog's own state (onLoadPage).
 	prefetchRun latest
 
-	// objectName returns the typed name, for the success message; preflight rejects
+	// objectName returns the typed name for the success message; preflight rejects
 	// it before anything is sent. Both are assigned by build.
 	objectName func() string
 	preflight  func() error
 
-	// afterCreate, when build sets it, runs on the UI goroutine once a real Apply
-	// or OK has created the object, after the dialog closes on OK (New Session
-	// opens Watch Live Data on the new session).
+	// afterCreate, when build sets it, runs on the UI goroutine once a real Apply or
+	// OK has created the object, after the dialog closes on OK (New Session opens
+	// Watch Live Data on the new session).
 	afterCreate func()
 
 	// created is set once the pipeline has run through successfully. Apply leaves
@@ -141,15 +140,15 @@ func (d *newObjectDialog[P]) probeReplicaEndpoint(label, name string,
 	})
 }
 
-// probe runs work — a round trip to another instance — on a background
-// goroutine and hands its error to onDone on the UI goroutine; work passes
-// anything else out through captured variables, which onDone may then read.
+// probe runs work (a round trip to another instance) on a background goroutine
+// and hands its error to onDone on the UI goroutine; work passes anything else
+// out through captured variables, which onDone may read.
 //
-// Two easy-to-miss parts, and the reason every peer probe goes through here
-// (Add Replica, New Availability Group, New Endpoint's Add Instance): the
-// session-context snapshot is compared again on delivery, so a result for a
-// dialog since closed and reopened is dropped, and the propFetchTimeout
-// derives from that context, so a disconnect tears the probe down.
+// Every peer probe goes through here (Add Replica, New Availability Group, New
+// Endpoint's Add Instance) for two easy-to-miss parts: the session-context
+// snapshot is compared again on delivery, so a result for a dialog since closed
+// and reopened is dropped, and the propFetchTimeout derives from that context,
+// so a disconnect tears the probe down.
 func (d *newObjectDialog[P]) probe(label string, work func(ctx context.Context) error, onDone func(error)) {
 	sessionCtx := d.ctx
 	d.app.safego(label, func() {
@@ -166,8 +165,8 @@ func (d *newObjectDialog[P]) probe(label string, work func(ctx context.Context) 
 }
 
 // init wires cfg into d and hooks up the PropertySheet callbacks. Call it from
-// the concrete dialog's constructor after the concrete value exists; cfg.build
-// is normally that value's buildPages.
+// the concrete dialog's constructor after the concrete value exists; cfg.build is
+// normally that value's buildPages.
 func (d *newObjectDialog[P]) init(app *App, cfg newObjectConfig[P]) {
 	d.app = app
 	d.newObjectConfig = cfg
@@ -235,9 +234,9 @@ func (d *newObjectDialog[P]) onClose() { cancelIfSet(d.cancel) }
 func (d *newObjectDialog[P]) post(fn func()) { d.app.postAndWake(fn) }
 
 // onLoadPage serves page from the built forms, or runs the one prefetch and
-// builds every page from it. Unlike PropDialog, whose pages load on demand, all
-// of a create dialog's pages come from one fetch, so the first requested pays
-// for all.
+// builds every page from it. Unlike PropDialog's on-demand pages, all of a
+// create dialog's pages come from one fetch, so the first requested pays for
+// all.
 func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 	if d.prefetch != nil {
 		d.SetPageForm(page, seq, d.forms[page])
@@ -284,7 +283,7 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 // goroutine (its App.safegoRepair step). d.fetching makes the fetch
 // single-flight, so leaving it set means no page ever loads again, and queued
 // requests must be failed too or they sit blank. Guarded by the run token like
-// the normal completion path: a reopened dialog has its own fetch out.
+// the normal completion: a reopened dialog has its own fetch out.
 func (d *newObjectDialog[P]) fetchPanicked(token int) {
 	if !d.prefetchRun.Done(token) {
 		return
@@ -308,9 +307,9 @@ func (d *newObjectDialog[P]) onConfirmDiscard(_ int, proceed func()) {
 	d.app.confirmDiscardChanges(proceed)
 }
 
-// pipelineLabel is what the button-row spinner says while runCtx's pipeline
-// runs (this shell's and PropDialog's). Script Changes runs the same apply
-// closures as Apply, so the context alone tells them apart.
+// pipelineLabel is what the button-row spinner says while runCtx's pipeline runs
+// (this shell's and PropDialog's). Script Changes runs the same apply closures as
+// Apply, so the context alone tells them apart.
 func pipelineLabel(runCtx context.Context) string {
 	if gosmo.Scripting(runCtx) {
 		return "Scripting..."
@@ -318,19 +317,19 @@ func pipelineLabel(runCtx context.Context) string {
 	return "Applying..."
 }
 
-// runPipeline validates the dialog and, if it passes, runs every page's apply
-// in order on a background goroutine, stopping at the first error. runCtx is
-// d.ctx for a real Apply/OK and a gosmo.WithScript context for Script Changes,
-// the only difference between the paths.
+// runPipeline validates the dialog and, if it passes, runs every page's apply in
+// order on a background goroutine, stopping at the first error. runCtx is d.ctx
+// for a real Apply/OK and a gosmo.WithScript context for Script Changes, the only
+// difference between the paths.
 func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func()) {
 	if d.prefetch == nil {
 		d.SetMessage("Still loading — try again in a moment.", true)
 		return
 	}
-	// Here, on the UI goroutine: the apply functions run on the pipeline's, so a
+	// Here on the UI goroutine: the apply functions run on the pipeline's, so a
 	// page's editor fields must reach its model now (propsheet.Form.SetCommit).
-	// preflight builds its request after it. d.forms rather than the sheet's:
-	// every page's apply runs, opened or not.
+	// preflight builds its request after it. d.forms rather than the sheet's: every
+	// page's apply runs, opened or not.
 	for _, f := range d.forms {
 		if f != nil {
 			f.Commit()
@@ -371,17 +370,16 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	})
 }
 
-// createFailed reports a run that stopped at runErr. A create is usually
-// several statements (the CREATE, then options, members or schedules), so a
-// failure or cancel can land after the CREATE committed and leave the object
-// half-configured.
+// createFailed reports a run that stopped at runErr. A create is usually several
+// statements (the CREATE, then options, members or schedules), so a failure or
+// cancel can land after the CREATE committed and leave the object half-configured.
 //
 // Once the first page ran to the end the object exists: the dialog counts as
-// created (a second Apply doesn't re-send the CREATE into "already exists"),
-// the folder is refreshed, and the message names the page that did not land. A
-// first page that failed after some statements ran leaves it unknown whether
-// the object exists, so the dialog stays uncreated and the message points at
-// Object Explorer.
+// created (a second Apply doesn't re-send the CREATE into "already exists"), the
+// folder is refreshed, and the message names the page that did not land. A first
+// page that failed after some statements ran leaves it unknown whether the
+// object exists, so the dialog stays uncreated and the message points at Object
+// Explorer.
 func (d *newObjectDialog[P]) createFailed(runCtx context.Context, runErr error, progress applyProgress) {
 	if gosmo.Scripting(runCtx) {
 		if d.run.cancelled {
@@ -417,7 +415,7 @@ func (d *newObjectDialog[P]) createFailed(runCtx context.Context, runErr error, 
 	}
 }
 
-// createdKey carries a run's createdHandoff — see withCreatedHandoff.
+// createdKey carries a run's createdHandoff; see withCreatedHandoff.
 type createdKey struct{}
 
 // createdHandoff holds what a New-object dialog's create step returned, for a
@@ -425,9 +423,9 @@ type createdKey struct{}
 // General created, by id, because schedule names are not unique).
 type createdHandoff struct{ v any }
 
-// withCreatedHandoff returns ctx carrying an empty createdHandoff. It is owned
-// by the run (runPipeline makes a fresh one per run), not the dialog, so the
-// pipeline goroutine writes nothing the UI goroutine reads (docs/ui-rules.md).
+// withCreatedHandoff returns ctx carrying an empty createdHandoff. Owned by the
+// run (runPipeline makes a fresh one per run), not the dialog, so the pipeline
+// goroutine writes nothing the UI goroutine reads (docs/ui-rules.md).
 func withCreatedHandoff(ctx context.Context) context.Context {
 	return context.WithValue(ctx, createdKey{}, &createdHandoff{})
 }
@@ -487,12 +485,12 @@ func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {
 // scriptSafeJob / scriptSafeAlert resolve the object a *previous* page of the
 // same create dialog produced.
 //
-// Under Script Changes that object does not exist: the earlier page's apply
-// only collected its EXEC, so a JobByName/AlertByName lookup (a real read,
-// which WithScript does not intercept) returns "not found" and fails the
-// script. gosmo's name-only handle is what the dependent statement needs; every
-// write from here builds its statement from the name alone. The real Apply path
-// still reads, so a name typo is still caught there.
+// Under Script Changes that object does not exist: the earlier page's apply only
+// collected its EXEC, so a JobByName/AlertByName lookup (a real read, which
+// WithScript does not intercept) returns "not found" and fails the script.
+// gosmo's name-only handle is what the dependent statement needs; every write
+// from here builds its statement from the name alone. The real Apply path still
+// reads, so a name typo is still caught there.
 func scriptSafeJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Job, error) {
 	if gosmo.Scripting(ctx) {
 		return sc.Server.JobRef(name), nil
@@ -512,8 +510,8 @@ func scriptSafeAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosm
 // create-dialog half of PropDialog.runScript).
 //
 // The empty check is PropDialog's: a page set can validate, report work to do,
-// and still collect nothing (every write conditional), and an empty query
-// window says less than a message does.
+// and still collect nothing (every write conditional), and an empty query window
+// says less than a message does.
 func (d *newObjectDialog[P]) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc

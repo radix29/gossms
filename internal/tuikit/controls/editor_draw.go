@@ -33,9 +33,8 @@ func (e *Editor) Draw(s tcell.Screen) {
 
 	selStyle := theme.StyleSelected()
 	matchStyle := theme.StyleSearchMatch()
-	// Hoisted: contentH consults the horizontal scrollbar, which measures the
-	// widest line in the buffer, so leaving it in the loop condition costs that
-	// lookup once per drawn row.
+	// Hoisted: contentH consults the horizontal scrollbar, which measures the widest
+	// line in the buffer; in the loop condition that costs a lookup per drawn row.
 	contentH := e.contentH()
 	for row := range contentH {
 		lineIdx := e.scrollRow + row
@@ -82,25 +81,23 @@ func (e *Editor) Draw(s tcell.Screen) {
 	}
 }
 
-// lineRow is one call's worth of arguments to drawLineRow, grouped rather than
-// passed positionally: there are more than a dozen, several of them ints that
-// would be trivial to transpose. Passed by value, so grouping costs no
-// allocation.
+// lineRow is one call's arguments to drawLineRow, grouped rather than passed
+// positionally: more than a dozen, several ints trivial to transpose. Passed by
+// value, so grouping costs no allocation.
 type lineRow struct {
 	x, y, w int
-	// fromCol is the terminal column of the line that lands at x — the
-	// horizontal scroll offset in non-wrap mode, the wrap segment's starting
-	// column in wrap mode.
+	// fromCol is the terminal column of the line that lands at x: the horizontal
+	// scroll offset in non-wrap mode, the wrap segment's starting column in wrap mode.
 	fromCol int
 
 	line []rune
 	// endRune bounds the drawn text: runes at or past it are treated as
-	// past-end-of-line, which is how a wrap segment stops at its own end
-	// instead of bleeding into the next one.
+	// past-end-of-line, so a wrap segment stops at its own end instead of bleeding
+	// into the next.
 	endRune int
 
-	// styles, when non-nil, gives a per-rune style indexed like line; otherwise
-	// runs is scanned per column. See runStyles and styleAt.
+	// styles, when non-nil, gives a per-rune style indexed like line; otherwise runs
+	// is scanned per column. See runStyles and styleAt.
 	styles []tcell.Style
 	runs   []ColorRun
 
@@ -108,29 +105,25 @@ type lineRow struct {
 	selStart, selEnd int
 	hasSel           bool
 
-	// matches are this line's find/replace hits, in rune indices, and matchStyle
-	// what they are painted in. The caller excludes the current match: it is the
-	// editor's selection, already painted in the selection colour, which is what
-	// tells it apart.
+	// matches are this line's find/replace hits, in rune indices, and matchStyle what
+	// they are painted in. The caller excludes the current match: it is the editor's
+	// selection, already painted in the selection colour, which tells it apart.
 	matches    []searchMatch
 	matchStyle tcell.Style
 
-	// matchCur is inMatch's cursor into matches — the first match that could
-	// still cover a rune — and matchPrimed says it has been positioned. Both are
-	// drawLineRow's scratch, not caller input, so the zero value must mean "not
-	// yet primed": otherwise a construction site that forgot them silently starts
-	// the cursor at match 0.
+	// matchCur is inMatch's cursor into matches (the first match that could still
+	// cover a rune) and matchPrimed says it has been positioned. Both are
+	// drawLineRow's scratch, so the zero value must mean "not yet primed", else a
+	// construction site that forgot them silently starts the cursor at match 0.
 	matchCur    int
 	matchPrimed bool
 }
 
-// inMatch reports whether the rune at index i falls inside a search match.
-//
-// Only valid for a non-decreasing sequence of i, which is what drawLineRow
-// produces: matches is sorted and non-overlapping, so the cursor steps past each
-// match once per row rather than rescanning the list per styled column. The
-// first call binary-searches, since a scrolled row or wrap segment begins
-// part-way along the line.
+// inMatch reports whether the rune at index i falls inside a search match. Valid
+// only for a non-decreasing sequence of i, which drawLineRow produces: matches is
+// sorted and non-overlapping, so the cursor steps past each match once per row
+// rather than rescanning per styled column. The first call binary-searches, since
+// a scrolled row or wrap segment begins part-way along the line.
 func (r *lineRow) inMatch(i int) bool {
 	if len(r.matches) == 0 {
 		return false
@@ -150,7 +143,7 @@ func (r *lineRow) inMatch(i int) bool {
 
 // styleForRune resolves the style of the rune at index i: an active selection
 // wins over a search match, which wins over the highlighter, which wins over the
-// default. i must not decrease across calls on one lineRow — see inMatch.
+// default. i must not decrease across calls on one lineRow; see inMatch.
 func (r *lineRow) styleForRune(i int) tcell.Style {
 	if r.hasSel && i >= r.selStart && i < r.selEnd {
 		return r.sel
@@ -173,22 +166,21 @@ func (r *lineRow) styleForRune(i int) tcell.Style {
 // drawLineRow renders the [fromCol, fromCol+w) terminal-column window of one
 // logical line.
 //
-// This is the whole of Editor's rune-index-to-column mapping on the drawing
-// side. It walks the line by grapheme cluster (core.GraphemeAt), accumulating
-// each cluster's width rather than assuming a column per rune: a CJK glyph or
-// an emoji spans two cells and shifts everything after it, "❤️" is two runes
-// of which neither alone is two columns wide, and counting runes put the rest
-// of the line — and the caret — out of step with what rendered. A cluster is
-// styled by its first rune.
+// This is the whole of Editor's rune-index-to-column mapping on the drawing side.
+// It walks by grapheme cluster (core.GraphemeAt), accumulating each cluster's
+// width rather than a column per rune: a CJK glyph or emoji spans two cells and
+// shifts everything after it, "❤️" is two runes of which neither alone is two
+// columns wide, and counting runes put the rest of the line and the caret out of
+// step. A cluster is styled by its first rune.
 //
-// Columns past endRune count one virtual rune each, so a linear selection
-// running on to the next line still paints the extra cell showing the line break
-// as selected.
+// Columns past endRune count one virtual rune each, so a linear selection running
+// on to the next line still paints the extra cell showing the line break as
+// selected.
 //
 // A wide cluster clipped by either edge of the window is drawn as blanks, never
-// as half a glyph: tcell owns both cells of a double-width character and writes
-// the second itself, so emitting half of one leaves the terminal drawing a
-// full-width glyph over a neighbouring cell.
+// half a glyph: tcell owns both cells of a double-width character and writes the
+// second itself, so emitting half leaves the terminal drawing a full-width glyph
+// over a neighbouring cell.
 func drawLineRow(s tcell.Screen, r lineRow) {
 	if r.w <= 0 {
 		return
@@ -196,14 +188,14 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 	n := min(r.endRune, len(r.line))
 	line := r.line[:n]
 
-	// Skip whatever lies entirely left of the window. Past the end, drawing
-	// starts at the first virtual position.
+	// Skip whatever lies entirely left of the window. Past the end, drawing starts at
+	// the first virtual position.
 	i, col := core.ClusterAtColumn(line, r.fromCol)
 	i = min(i, n)
 
 	sx := 0
-	// A wide cluster straddling the left edge shows only its right-hand cell,
-	// which is not a glyph — blank it.
+	// A wide cluster straddling the left edge shows only its right-hand cell, not a
+	// glyph: blank it.
 	if i < n && col < r.fromCol {
 		end, cw := core.GraphemeAt(line, i)
 		st := r.styleForRune(i)
@@ -217,8 +209,8 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 	for sx < r.w {
 		st := r.styleForRune(i)
 		if i >= n {
-			// Past the end of the drawn range: one virtual column per cell, so
-			// index and column stay in step for the selection test above.
+			// Past the end of the drawn range: one virtual column per cell, so index and
+			// column stay in step for the selection test above.
 			core.PutRune(s, r.x+sx, r.y, ' ', st)
 			sx++
 			i++
@@ -229,10 +221,9 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 			j, cw = core.GraphemeAt(line, i)
 		}
 		if cw == 0 {
-			// Combining marks with no base drawn in this window (the line's
-			// first runes): they have no cell of their own, and drawing them
-			// alone would consume a column that isn't there and shift the rest
-			// of the line.
+			// Combining marks with no base drawn in this window (the line's first runes) have
+			// no cell of their own; drawing them alone would consume a column that isn't
+			// there and shift the rest of the line.
 			i = j
 			continue
 		}
@@ -256,10 +247,8 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 }
 
 // runStyles expands a line's ColorRuns into a per-rune style map, reusing the
-// scratch buffer rather than allocating one per line per Draw, which runs on
-// every event. Later runs win, matching styleAt.
-//
-// Valid only until the next call; nothing may retain the result.
+// scratch buffer rather than allocating per line per Draw (which runs on every
+// event). Later runs win, matching styleAt. Valid only until the next call.
 func (e *Editor) runStyles(runs []ColorRun, n int, def tcell.Style) []tcell.Style {
 	if cap(e.styleScratch) < n {
 		e.styleScratch = make([]tcell.Style, n)
@@ -277,10 +266,9 @@ func (e *Editor) runStyles(runs []ColorRun, n int, def tcell.Style) []tcell.Styl
 }
 
 // drawScrollbar renders a DataGrid-style vertical scrollbar over the editor's
-// rightmost screen column when the content — total lines in plain mode, visual
-// rows in wrap mode — doesn't fit the visible height. There is no reserved
-// border column, so this overdraws whatever was there; called only when there is
-// something to scroll.
+// rightmost screen column when the content (total lines in plain mode, visual rows
+// in wrap mode) doesn't fit. There is no reserved border column, so this
+// overdraws whatever was there; called only when there is something to scroll.
 func (e *Editor) drawScrollbar(s tcell.Screen, p *theme.Palette, total int) {
 	h := e.contentH()
 	if total <= h || h <= 0 {
@@ -292,16 +280,15 @@ func (e *Editor) drawScrollbar(s tcell.Screen, p *theme.Palette, total int) {
 }
 
 // hScrollbar returns the horizontal scrollbar's screen span and the total and
-// offset describing it, or ok false when the widest line fits or there is no
-// room for a bar. The visible count a scrollbar also needs is w itself.
-//
-// The unit throughout is terminal columns, matching scrollCol, the caret's x and
-// drawLineRow's window. That keeps track width and visible count the same
-// number, which is why core.HandleScrollbarDragH can drive it directly.
+// offset describing it, or ok false when the widest line fits or there is no room.
+// The visible count a scrollbar also needs is w itself. The unit throughout is
+// terminal columns, matching scrollCol, the caret's x and drawLineRow's window,
+// which keeps track width and visible count the same number, so
+// core.HandleScrollbarDragH can drive it directly.
 func (e *Editor) hScrollbar() (x, y, w, total, offset int, ok bool) {
 	if e.wrapMode || e.rect.H < 2 {
-		// Word wrap never scrolls sideways — segments are cut at wrapWidth,
-		// narrower than the content area.
+		// Word wrap never scrolls sideways: segments are cut at wrapWidth, narrower than
+		// the content area.
 		return 0, 0, 0, 0, 0, false
 	}
 	gw := e.gutterWidth()
@@ -314,17 +301,17 @@ func (e *Editor) hScrollbar() (x, y, w, total, offset int, ok bool) {
 }
 
 // hScrollbarVisible reports whether the bottom row is currently a scrollbar
-// rather than a line of text — see contentH.
+// rather than a line of text; see contentH.
 func (e *Editor) hScrollbarVisible() bool {
 	_, _, _, _, _, ok := e.hScrollbar()
 	return ok
 }
 
-// drawScrollbarH renders the horizontal scrollbar along the editor's bottom row
-// when the widest line doesn't fit. Unlike the vertical bar, which overdraws the
-// rightmost content column, this one gets a row of its own (see contentH): a
-// whole line of hidden text is too much to give up. The track starts where the
-// text does, so the thumb's position matches the text it describes.
+// drawScrollbarH renders the horizontal scrollbar along the bottom row when the
+// widest line doesn't fit. Unlike the vertical bar, which overdraws the rightmost
+// content column, it gets a row of its own (see contentH): a whole line of hidden
+// text is too much to give up. The track starts where the text does, so the
+// thumb's position matches the text it describes.
 func (e *Editor) drawScrollbarH(s tcell.Screen, p *theme.Palette) {
 	x, y, w, total, offset, ok := e.hScrollbar()
 	if !ok {
@@ -336,22 +323,21 @@ func (e *Editor) drawScrollbarH(s tcell.Screen, p *theme.Palette) {
 }
 
 // cursorScreenPos returns the screen coordinates of the text cursor, valid only
-// while it is within the visible rect — callers that draw it still bounds-check.
-// Also positions the Cut/Copy/Paste context menu when Ctrl+Space opens it.
+// while within the visible rect (callers that draw it bounds-check). Also
+// positions the Cut/Copy/Paste menu when Ctrl+Space opens it.
 func (e *Editor) cursorScreenPos() (x, y int) {
 	return e.cursorLineScreenPos(e.cursorCol)
 }
 
-// cursorLineScreenPos returns where rune index col of the cursor's line lands
-// on screen, on the cursor's own screen row. The completion popup anchors on
-// its token's start through it, the caret on cursorCol.
+// cursorLineScreenPos returns where rune index col of the cursor's line lands on
+// screen, on the cursor's own screen row. The completion popup anchors on its
+// token's start through it, the caret on cursorCol.
 //
 // In wrap mode the row is the cursor's visual row and x is measured from that
-// segment's start, not the logical line's: scrollRow counts visual rows there
-// and scrollCol is always zero, so the unwrapped arithmetic put the popup and
-// the Ctrl+Space menu on the wrong row once any line above had wrapped. A col
-// in an earlier segment (a token that wrapped mid-word) clamps to the
-// segment's first column.
+// segment's start, not the logical line's: scrollRow counts visual rows there and
+// scrollCol is zero, so unwrapped arithmetic put the popup and the Ctrl+Space
+// menu on the wrong row once any line above had wrapped. A col in an earlier
+// segment (a token that wrapped mid-word) clamps to the segment's first column.
 func (e *Editor) cursorLineScreenPos(col int) (x, y int) {
 	contentX := e.rect.X + e.gutterWidth()
 	line := e.cursorLine()
@@ -370,14 +356,14 @@ func (e *Editor) cursorLineScreenPos(col int) (x, y int) {
 
 // drawWrapped renders the editor in word-wrap mode: each screen row shows one
 // soft-wrapped segment of a logical line, e.scrollRow counts visual rows, and
-// there is no horizontal scrolling — every segment starts at column 0, since
-// segments are cut at wrapWidth, one column narrower than contentW (the last
-// column is the caret's and the scrollbar's).
+// there is no horizontal scrolling: every segment starts at column 0 and is cut at
+// wrapWidth, one column narrower than contentW (the last is the caret's and the
+// scrollbar's).
 //
 // Selection highlighting covers only actual characters, never the blank padding
-// after a short segment — unlike non-wrap mode, which highlights one extra cell
-// past a selected line's end to show the selection continuing across a real line
-// break. Clamping selEnd to the segment's end below is what does that.
+// after a short segment, unlike non-wrap mode, which highlights one extra cell
+// past a selected line's end to show the selection continuing across a line
+// break. Clamping selEnd to the segment's end below does that.
 func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterStyle tcell.Style) {
 	p := theme.Active()
 	bgStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Text)
@@ -386,8 +372,8 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 
 	vls := e.buildVisualLines(e.wrapWidth())
 
-	// Highlighter runs are per logical line, so they are fetched when vl.row
-	// changes rather than per visual row.
+	// Highlighter runs are per logical line, so they are fetched when vl.row changes
+	// rather than per visual row.
 	runRow, runs := -1, []ColorRun(nil)
 
 	for screenRow := 0; screenRow < e.rect.H; screenRow++ {
@@ -403,8 +389,7 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 		}
 		vl := vls[vi]
 
-		// Only the first visual row of a logical line gets a gutter line number;
-		// continuation rows leave it blank.
+		// Only the first visual row of a logical line gets a gutter number.
 		if gw > 0 && (vi == 0 || vls[vi-1].row != vl.row) {
 			num := strconv.Itoa(vl.row + 1)
 			gx := e.rect.X + gw - 1 - len(num)
@@ -430,17 +415,15 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 			matches: e.matchSpansForLine(vl.row), matchStyle: matchStyle,
 		}
 		if e.highlight != nil {
-			// Runs are scanned per column rather than expanded into a per-rune
-			// map: wrap mode's one call site showing query data is DataGrid's
-			// cell viewer, where one logical line can be a whole varchar(max)
-			// document with ~15 rows on screen. Materialising a style per rune
-			// would be work proportional to the cell, not the viewport.
+			// Runs are scanned per column rather than expanded into a per-rune map: wrap
+			// mode's one call site showing query data is DataGrid's cell viewer, where one
+			// logical line can be a whole varchar(max) document with ~15 rows on screen, and
+			// a per-rune style map would cost work proportional to the cell, not the viewport.
 			//
-			// Only the runs overlapping this segment are passed on, since
-			// styleAt scans them all per column: one run per token over a
-			// one-line XML value is tens of thousands of runs, times every
-			// visible column. The query editor's Word Wrap reaches exactly
-			// that — it applies to XML/JSON cell-value panels too.
+			// Only the runs overlapping this segment are passed on, since styleAt scans them
+			// all per column: one run per token over a one-line XML value is tens of
+			// thousands of runs, times every visible column. The query editor's Word Wrap
+			// reaches exactly that (it applies to XML/JSON cell-value panels too).
 			e.segRunScratch = runsInSpan(e.segRunScratch[:0], runs, vl.start, vl.end)
 			spec.runs = e.segRunScratch
 		}
@@ -463,8 +446,7 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 }
 
 // runsInSpan appends to dst the runs overlapping rune range [start, end), in
-// their original order so styleAt's later-runs-win rule is unchanged, and
-// returns it.
+// original order so styleAt's later-runs-win rule is unchanged, and returns it.
 func runsInSpan(dst, runs []ColorRun, start, end int) []ColorRun {
 	for _, run := range runs {
 		if run.Start < end && run.Start+run.Len > start {

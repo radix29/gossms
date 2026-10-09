@@ -11,16 +11,16 @@ import (
 	"github.com/radix29/gossms/internal/showplan"
 )
 
-// query_panel_live.go is Live Query Statistics: with the toggle on, Execute
-// opens a "Live Query Statistics" tab showing the running statement's plan
-// while a poller fills in each operator's counters, and the tab becomes the
-// Execution Plan tab — the actual plan — when the run ends.
+// query_panel_live.go is Live Query Statistics: with the toggle on, Execute opens
+// a "Live Query Statistics" tab showing the running statement's plan while a
+// poller fills in each operator's counters, and the tab becomes the Execution Plan
+// tab (the actual plan) when the run ends.
 //
-// The run itself is an ordinary actual-plan run (SET STATISTICS XML ON), which
-// is what makes the session show up in sys.dm_exec_query_profiles on every
-// supported version. The poller reads that DMV, and the in-flight showplan
-// when the statement changes, on the panel connection's pool, never on the
-// panel's own query.Session, which is busy running the batch.
+// The run itself is an ordinary actual-plan run (SET STATISTICS XML ON), which is
+// what makes the session show up in sys.dm_exec_query_profiles on every supported
+// version. The poller reads that DMV, and the in-flight showplan when the
+// statement changes, on the panel connection's pool, never on the panel's own
+// query.Session, which is busy running the batch.
 
 // liveSource is what the poller reads: *gosmo.Server, or a test fake.
 type liveSource interface {
@@ -28,10 +28,10 @@ type liveSource interface {
 	InFlightPlan(ctx context.Context, sessionID int) (*gosmo.InFlightPlan, error)
 }
 
-// liveTiming paces the poller: the first read comes soon after the batch is
-// sent, so a query of a second or two still shows a live picture, then one a
-// second as SSMS does. A failed read doubles the wait up to maxBackoff, so a
-// struggling server is not hammered by the panel watching it.
+// liveTiming paces the poller: the first read comes soon after the batch is sent,
+// so a query of a second or two still shows a live picture, then one a second as
+// SSMS does. A failed read doubles the wait up to maxBackoff, so a struggling
+// server is not hammered by the panel watching it.
 type liveTiming struct {
 	first, every, maxBackoff time.Duration
 }
@@ -39,18 +39,18 @@ type liveTiming struct {
 var livePollTiming = liveTiming{first: 250 * time.Millisecond, every: time.Second, maxBackoff: 8 * time.Second}
 
 // liveWatch is what watching *another* session adds to the poller
-// (LivePlanPanel): a query panel's live tab polls its own run, which ends, so
-// it needs none of it.
+// (LivePlanPanel); a query panel's live tab polls its own run, which ends, so it
+// needs none of it.
 //
-// A watch has no end of its own — it lasts until the panel closes — so it
-// slows down when nobody is looking: an idle read doubles the wait up to
-// maxBackoff as a failed one does, and so does a panel in a background tab
-// (background reports it). wake cuts a slowed wait short, so a panel brought
-// back to the front reads now rather than after up to maxBackoff.
+// A watch has no end of its own (it lasts until the panel closes), so it slows
+// down when nobody is looking: an idle read doubles the wait up to maxBackoff as a
+// failed one does, and so does a panel in a background tab (background reports
+// it). wake cuts a slowed wait short, so a panel brought back to the front reads
+// now rather than after up to maxBackoff.
 //
-// pin is the session's login time when the watch began. A session id is
-// reused once its session ends, so a row from a session that logged in at
-// another time is someone else's query and ends the watch with a note.
+// pin is the session's login time when the watch began. A session id is reused
+// once its session ends, so a row from a session that logged in at another time is
+// someone else's query and ends the watch with a note.
 type liveWatch struct {
 	pin        time.Time
 	background func() bool
@@ -67,10 +67,10 @@ func liveSessionEndedNote(spid int) string {
 const liveRefusedNote = "No live statistics: reading sys.dm_exec_query_profiles needs VIEW SERVER STATE " +
 	"(VIEW DATABASE STATE on Azure SQL Database). The actual plan still arrives when the query ends."
 
-// liveUpdate is one poll's result for the UI goroutine: the statement's plan
-// and its operators' counters, note when polling has stopped for good (ended
-// too when that is because the watched session ended), or idle when the
-// session is running no profiled statement at the moment.
+// liveUpdate is one poll's result for the UI goroutine: the statement's plan and
+// its operators' counters, note when polling has stopped for good (ended too when
+// that is because the watched session ended), or idle when the session is running
+// no profiled statement at the moment.
 type liveUpdate struct {
 	plan     *showplan.Plan
 	counters map[int]showplan.LiveCounters
@@ -94,10 +94,10 @@ func inFlightKey(p *gosmo.InFlightPlan) liveStmtKey {
 	return liveStmtKey{string(p.PlanHandle), p.StatementStart, p.StatementEnd}
 }
 
-// startLiveStats opens the Live Query Statistics tab, waiting for the first
-// plan, and starts polling the panel's session until done closes (the run's
-// goroutine exited) or the run is stopped (stopLiveStats). Called by startRun
-// right after launch, which set p.execDone.
+// startLiveStats opens the Live Query Statistics tab, waiting for the first plan,
+// and starts polling the panel's session until done closes (the run's goroutine
+// exited) or the run is stopped (stopLiveStats). Called by startRun right after
+// launch, which set p.execDone.
 func (p *QueryPanel) startLiveStats(done <-chan struct{}) {
 	srv := p.conn.Server
 	spid := p.session.SPID()
@@ -130,17 +130,17 @@ func (p *QueryPanel) applyLiveUpdate(token int, u liveUpdate) {
 	p.planView.SetLive(u.plan, u.counters)
 }
 
-// stopLiveStats stops the poller, cancelling a read in flight, and drops
-// whatever it still has queued. The run finishing, the panel closing and a
-// panicked run all come through here.
+// stopLiveStats stops the poller, cancelling a read in flight, and drops whatever
+// it still has queued. The run finishing, the panel closing and a panicked run all
+// come through here.
 func (p *QueryPanel) stopLiveStats() {
 	p.liveRun.Abandon()
 }
 
-// setRunResult is setResult for an Execute run, which may have had a live
-// tab: it stops the poller first, and someone watching the live tab when the
-// run ends lands on the actual plan it turns into, unless the run failed —
-// Messages is where an error is read, as setResult decides.
+// setRunResult is setResult for an Execute run, which may have had a live tab: it
+// stops the poller first, and someone watching the live tab when the run ends
+// lands on the actual plan it turns into, unless the run failed (Messages is where
+// an error is read, as setResult decides).
 func (p *QueryPanel) setRunResult(res *query.Result, cancelled bool) {
 	onLive := p.liveTabActive()
 	p.stopLiveStats()
@@ -150,20 +150,20 @@ func (p *QueryPanel) setRunResult(res *query.Result, cancelled bool) {
 	}
 }
 
-// liveTabActive reports whether the active tab is the Live Query Statistics
-// tab — the plan tab while the plan view is still live.
+// liveTabActive reports whether the active tab is the Live Query Statistics tab:
+// the plan tab while the plan view is still live.
 func (p *QueryPanel) liveTabActive() bool {
 	return p.planTabActive() && p.planView.Live()
 }
 
-// pollLiveStats reads spid's operator counters every tm.every until ctx
-// is cancelled or done closes (nil: never), reporting each read — idle when it
-// found the session running no profiled statement. The statement's in-flight plan is re-read only
-// when the counters name a different statement than the plan on hand: a
-// multi-statement batch moving on, or a script's next GO batch.
+// pollLiveStats reads spid's operator counters every tm.every until ctx is
+// cancelled or done closes (nil: never), reporting each read (idle when it found
+// the session running no profiled statement). The statement's in-flight plan is
+// re-read only when the counters name a different statement than the plan on
+// hand: a multi-statement batch moving on, or a script's next GO batch.
 //
 // A refused read ends polling with a note; any other failure is retried with
-// backoff — the batch is still running and a later read may well succeed.
+// backoff, since the batch is still running and a later read may well succeed.
 // watch, nil for a query panel's own run, is another session's; see liveWatch.
 func pollLiveStats(ctx context.Context, src liveSource, spid int, done <-chan struct{}, tm liveTiming, watch *liveWatch, report func(liveUpdate)) {
 	var (
@@ -250,7 +250,7 @@ func pollLiveStats(ctx context.Context, src liveSource, spid int, done <-chan st
 }
 
 // currentStatementRows keeps the rows of the statement the session's first
-// request is running — the one InFlightPlan reads (MARS sessions have several
+// request is running, the one InFlightPlan reads (MARS sessions have several
 // requests; QueryProfiles orders by request).
 func currentStatementRows(rows []gosmo.QueryProfile) []gosmo.QueryProfile {
 	if len(rows) == 0 {

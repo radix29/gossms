@@ -14,11 +14,11 @@ import (
 // ProgressDialog — spinner, elapsed time and a Cancel button
 // ---------------------------------------------------------------------------
 
-// progressDialogMinW is the narrowest the dialog gets: room for the title, the
-// status line and the Cancel button. progressDialogBaseH is its height with
-// the message on one line and no reason line: border, blank, message, blank,
-// status, blank, separator, buttons, blank, border. A reason adds its lines
-// under the status line.
+// progressDialogMinW is the narrowest the dialog gets: room for the title,
+// status line and Cancel button. progressDialogBaseH is its height with a
+// one-line message and no reason line (border, blank, message, blank, status,
+// blank, separator, buttons, blank, border); a reason adds lines under the
+// status.
 const (
 	progressDialogMinW  = 56
 	progressDialogBaseH = 10
@@ -28,25 +28,22 @@ const (
 var progressButtons = []string{"Cancel"}
 
 // ProgressDialog stands in front of the application while one long operation
-// runs — the wait after a confirmation was answered, a delete or a failover
-// running on the server. It shows what is happening, a spinner and the
-// elapsed time, and has a single Cancel button; nothing else can be reached
-// until the host hides it.
+// runs (the wait after a confirmation: a delete, a failover). It shows what is
+// happening, a spinner and the elapsed time, with a single Cancel button;
+// nothing else is reachable until the host hides it.
 //
-// Like every control here it runs nothing itself. The host starts the work,
-// calls SetMessage as it moves through it, drives the redraw at
-// Spinner.Period (the spinner is drawn from elapsed time, see widgets.Spinner),
-// and calls Hide once the work has returned. Cancel does not close the
-// dialog: it calls the onCancel the showing was given and switches to
-// "Cancelling...", because what the operation got through is only known once
-// it returns, and hiding before then would say it was over when it is not.
+// It runs nothing itself. The host starts the work, calls SetMessage as it
+// progresses, drives the redraw at Spinner.Period (the spinner is drawn from
+// elapsed time, see widgets.Spinner), and calls Hide when the work returns.
+// Cancel does not close the dialog: it calls the showing's onCancel and switches
+// to "Cancelling...", because what the operation got through is known only once
+// it returns, and hiding earlier would claim it was over.
 type ProgressDialog struct {
 	ModalDialog
 	message  string
 	msgLines []string
-	// shownW is the widest the dialog has been this showing. A batch rewrites
-	// the message for every object, and a width recomputed from each one
-	// would make the box jump sideways as the names change length.
+	// shownW is the widest the dialog has been this showing: a batch rewrites the
+	// message per object, and a per-message width would make the box jump sideways.
 	shownW int
 
 	started time.Time
@@ -59,11 +56,10 @@ type ProgressDialog struct {
 
 	// Spinner is the busy indicator; the host redraws at its Period.
 	Spinner widgets.Spinner
-	// RevealDelay holds the dialog back from the screen for the first moments
-	// of a showing, so an operation that returns at once — most single DROPs
-	// do — never flashes a box. The dialog is open, and swallows every key and
-	// click, from ShowProgress on; it only draws once the delay has passed,
-	// and Cancel cannot be pressed on a dialog the user cannot see.
+	// RevealDelay holds the dialog back from the screen at the start of a showing,
+	// so an operation that returns at once (most single DROPs) never flashes a box.
+	// The dialog is open, swallowing keys and clicks, from ShowProgress on; it only
+	// draws after the delay, and Cancel can't be pressed on an invisible dialog.
 	RevealDelay time.Duration
 }
 
@@ -100,9 +96,8 @@ func (d *ProgressDialog) show(title, message string, onCancel func(), reason str
 	d.ModalDialog.Show()
 }
 
-// SetMessage replaces the line saying what is happening — the object a batch
-// has reached, say. The dialog widens to fit it but never narrows within one
-// showing.
+// SetMessage replaces the line saying what is happening (e.g. the object a batch
+// has reached). The dialog widens to fit but never narrows within a showing.
 func (d *ProgressDialog) SetMessage(message string) {
 	d.message = message
 	d.fit()
@@ -114,8 +109,8 @@ func (d *ProgressDialog) Message() string { return d.message }
 // Cancelling reports whether Cancel has been pressed this showing.
 func (d *ProgressDialog) Cancelling() bool { return d.cancelling }
 
-// CanCancel reports whether pressing Cancel now would stop the operation: it
-// has a way to be stopped and has not already been asked to.
+// CanCancel reports whether Cancel would stop the operation: it can be stopped
+// and hasn't been asked to.
 func (d *ProgressDialog) CanCancel() bool { return d.onCancel != nil && !d.cancelling }
 
 // Revealed reports whether the dialog is drawing yet — see RevealDelay.
@@ -132,8 +127,8 @@ func (d *ProgressDialog) Relayout() {
 // indent is the room the spinner takes in front of the message.
 func (d *ProgressDialog) indent() int { return d.Spinner.Width() + 1 }
 
-// fit sizes the dialog to its message, the way fitMessage does for the other
-// message dialogs, with the spinner's column taken off the wrap width.
+// fit sizes the dialog to its message as fitMessage does, with the spinner's
+// column off the wrap width.
 func (d *ProgressDialog) fit() {
 	w := max(progressDialogMinW, core.DisplayWidth(d.message)+d.indent()+messageBoxOverhead,
 		core.DisplayWidth(d.reason)+messageBoxOverhead, d.shownW)
@@ -146,8 +141,8 @@ func (d *ProgressDialog) fit() {
 			maxLines = max(1, sh-progressDialogBaseH+1)
 		}
 	}
-	// The reason is short and fixed, the message is the part that can run
-	// long, so the reason is wrapped whole and the message gets what is left.
+	// The reason is short and fixed while the message can run long, so the reason is
+	// wrapped whole and the message gets what is left.
 	d.reasonLines = nil
 	if d.reason != "" {
 		d.reasonLines = core.WrapText(d.reason, w-messageBoxOverhead)

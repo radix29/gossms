@@ -13,16 +13,16 @@ import (
 
 // new_audit_specification_dialog.go is the New Server Audit Specification
 // dialog (Object Explorer's Security > Server Audit Specifications folder),
-// built on newObjectDialog like every other New-X.
+// built on newObjectDialog.
 //
-// The specification is created disabled, matching New Audit and SSMS: turning
-// it on is Enable's job, and a specification enabled at creation starts
-// recording before the user has seen it in the tree.
+// The specification is created disabled, matching New Audit and SSMS: Enable
+// turns it on, and one enabled at creation records before the user has seen it
+// in the tree.
 
-// nauditSpecPrefetch holds what the dialog needs before it opens: the existing
+// nauditSpecPrefetch holds what the dialog needs before it opens: existing
 // specification names for the uniqueness preflight, the audits to bind to, and
-// the action-group pick list, which is read from the server rather than
-// hard-coded so it stays right across versions.
+// the action-group pick list, read from the server so it stays right across
+// versions.
 type nauditSpecPrefetch struct {
 	existingNames *nameSet
 	auditNames    []string // the audits no server specification holds yet
@@ -90,10 +90,10 @@ func (d *NewAuditSpecificationDialog) buildPages(pf *nauditSpecPrefetch) {
 		nameField,
 	}
 
-	// A server with no audit cannot carry a specification at all — FOR SERVER
-	// AUDIT is required — and one whose every audit already has one cannot
-	// carry another (freeAuditNames). Saying so is better than a dropdown with
-	// nothing in it and an error only on OK.
+	// A server with no audit cannot carry a specification (FOR SERVER AUDIT is
+	// required) and one whose every audit already has one cannot carry another
+	// (freeAuditNames). Say so rather than show an empty dropdown and an error on
+	// OK.
 	var auditField *propsheet.SelectRow
 	switch {
 	case len(pf.auditNames) > 0:

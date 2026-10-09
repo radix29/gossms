@@ -11,12 +11,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_alert_dialog.go is the New Alert creation dialog (Object Explorer's
-// SQL Server Agent > Alerts > SQL Server Event Alerts, "New Alert...").
-// Two pages: General (the alert's own definition) and Response (which
-// operators get e-mailed). Linking a response job is left out —
-// alert-to-job linking lives on Job Properties' own Alerts page (see
-// agent_job_props_alerts.go), which has the job list to pick from.
+// new_alert_dialog.go is the New Alert dialog (Object Explorer's SQL Server
+// Agent > Alerts > SQL Server Event Alerts, "New Alert..."). Two pages: General
+// (the definition) and Response (which operators get e-mailed). Linking a
+// response job is left out: alert-to-job linking lives on Job Properties' own
+// Alerts page (agent_job_props_alerts.go), which has the job list to pick from.
 
 type nalertPrefetch struct {
 	existingNames *nameSet
@@ -179,10 +178,9 @@ func (d *NewAlertDialog) buildPages(pf *nalertPrefetch) {
 	}
 }
 
-// intRowValue0 adapts an Int row's (int64, error) IntValue() to a plain
-// int, falling back to 0 on a parse error. Int rows carry their own range
-// validator, so callers have already rejected a malformed field before
-// Apply runs.
+// intRowValue0 adapts an Int row's (int64, error) IntValue() to a plain int,
+// 0 on a parse error. Int rows carry their own range validator, so callers have
+// already rejected a malformed field before Apply.
 func intRowValue0(v int64, err error) int {
 	if err != nil {
 		return 0

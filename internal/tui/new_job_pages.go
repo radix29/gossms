@@ -14,8 +14,8 @@ import (
 
 // buildNewJobGeneralPage builds New Job's General page: identity, owner,
 // category, enabled, description. Mirrors pageJobGeneral's field shape
-// (agent_job_props.go) minus the read-only "current execution summary" —
-// none of that exists yet for a job that hasn't been created.
+// (agent_job_props.go) minus the read-only execution summary, which doesn't
+// exist for an uncreated job.
 func buildNewJobGeneralPage(sc *db.ServerConn, pf *njobPrefetch) (*propsheet.Form, propApply, func() string, func() bool) {
 	nameField := propsheet.Text("Name", "", 30)
 	ownerRow := propsheet.Select("Owner", pf.loginNames, connectedLoginIndex(sc, pf.loginNames))
@@ -50,12 +50,12 @@ func buildNewJobGeneralPage(sc *db.ServerConn, pf *njobPrefetch) (*propsheet.For
 }
 
 // connectedLoginIndex is the index of the connected login (SUSER_NAME() as the
-// connect read it) in names, or 0 when it is not listed. SSMS defaults a new
-// job's owner to the caller; index 0 alone was whatever sorts first — on a
-// 2017 instance ##MS_AgentSigningCertificate##, so an untouched OK created a
-// job owned by a certificate login (B14). A Windows login can come back from
+// connect read it) in names, or 0 when not listed. SSMS defaults a new job's
+// owner to the caller; index 0 alone was whatever sorts first, on a 2017
+// instance ##MS_AgentSigningCertificate##, so an untouched OK created a job
+// owned by a certificate login (B14). A Windows login can come back from
 // SUSER_NAME() in a different case than sys.server_principals holds it, so the
-// match is the server collation's, not an exact one.
+// match is the server collation's, not exact.
 func connectedLoginIndex(sc *db.ServerConn, names []string) int {
 	if sc == nil || sc.Server == nil || sc.Server.Info() == nil || sc.Server.Info().Login == "" {
 		return 0
@@ -69,10 +69,10 @@ func connectedLoginIndex(sc *db.ServerConn, names []string) int {
 	return 0
 }
 
-// buildNewJobStepsPage builds New Job's Steps page: the same grid + inline
-// edit panel as pageJobSteps (agent_job_props_steps.go), reusing its
-// jobStepEdit/jobStepOnActionItems/stepNumberText directly — every row
-// here is new, since the job doesn't exist yet. "Start at Step" is dropped (nothing to start yet).
+// buildNewJobStepsPage builds New Job's Steps page: the same grid + inline edit
+// panel as pageJobSteps (agent_job_props_steps.go), reusing its jobStepEdit/
+// jobStepOnActionItems/stepNumberText; every row is new. "Start at Step" is
+// dropped (nothing to start yet).
 func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string, indentWidth int) (*propsheet.Form, propApply, func() int) {
 	edits := newJobStepEdits(serverCollation(sc), nil)
 	visible := edits.visible
@@ -89,9 +89,9 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	grid := controls.NewDataGrid()
 	grid.SetData(cols, rowsFor())
 
-	// The sentinel goes first, so a step the user never picked a database
-	// for is created against the server's own default rather than against
-	// whichever database sorts first — see defaultDatabaseItem.
+	// The sentinel goes first, so a step whose database the user never picked is
+	// created against the server's own default, not whichever database sorts first
+	// (defaultDatabaseItem).
 	panel := newJobStepPanel(defaultDatabaseItem, pf.dbNames, indentWidth)
 
 	selected := func() *jobStepEdit {
@@ -147,8 +147,8 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 		propsheet.Note("Only T-SQL steps are supported. Database \"(default)\" lets the server pick the step's database. \"Go to step\" fields only take effect when the matching action above is set to \"Go to step...\"."),
 	)
 	f := propsheet.NewForm(rows...)
-	// The panel's fields reach the selected step here, on the UI goroutine
-	// before the pipeline runs — never in apply (docs/ui-rules.md).
+	// The panel's fields reach the selected step here on the UI goroutine before the
+	// pipeline runs, never in apply (docs/ui-rules.md).
 	f.SetCommit(func() { panel.read(current) })
 
 	apply := func(ctx context.Context) error {
@@ -168,13 +168,12 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 }
 
 // buildNewJobSchedulesPage builds New Job's Schedules page: attach existing
-// shared schedules at creation time (a toggle grid, the same idiom
-// new_schedule_dialog.go's own Jobs page uses in reverse). A brand-new
-// schedule can't be created inline — create it in New Schedule first, then
-// attach it here or from the job's own Schedules page.
+// shared schedules at creation (a toggle grid, the idiom new_schedule_dialog.go's
+// Jobs page uses in reverse). A new schedule can't be created inline; create it
+// in New Schedule first, then attach it here or from the job's Schedules page.
 func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string) (*propsheet.Form, propApply) {
-	// Frequency as Job Properties ▸ Schedules shows it: schedule names are
-	// not unique, and two namesakes otherwise list as identical rows.
+	// Frequency as Job Properties > Schedules shows it: schedule names are not
+	// unique, and two namesakes would list as identical rows.
 	grid := propsheet.NewToggleGrid([]string{"Attach", "Schedule", "Frequency"}, []int{0}, 12)
 	text := make([][]string, len(pf.schedules))
 	vals := make([][]bool, len(pf.schedules))
@@ -198,8 +197,7 @@ func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func(
 			if !v[0] {
 				continue
 			}
-			// By the listed schedule, which carries its id: schedule names
-			// are not unique.
+			// By the listed schedule, which carries its id: names are not unique.
 			if err := j.AttachSchedule(ctx, pf.schedules[i]); err != nil {
 				return err
 			}
@@ -209,9 +207,9 @@ func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func(
 	return f, apply
 }
 
-// buildNewJobNotificationsPage builds New Job's Notifications page — same
-// fields and excluded-feature notes as pageJobNotifications
-// (agent_job_props_alerts.go), operating on a job that doesn't exist yet.
+// buildNewJobNotificationsPage builds New Job's Notifications page: same fields
+// and excluded-feature notes as pageJobNotifications (agent_job_props_alerts.go),
+// on a job that doesn't exist yet.
 func buildNewJobNotificationsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string) (*propsheet.Form, propApply) {
 	emailCheck := propsheet.Check("E-mail", false)
 	operatorSelect := propsheet.Select("Operator", pf.operatorNames, 0)

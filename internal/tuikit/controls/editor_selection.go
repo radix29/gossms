@@ -23,7 +23,7 @@ func (e *Editor) ClearSelection() { e.selecting = false }
 
 // selectWordAt selects the word under (row, col), a double-click's result (see
 // HandleMouse). A position with no word (whitespace between words, past the end
-// of an empty line) just places the cursor there with no selection.
+// of an empty line) just places the cursor there.
 func (e *Editor) selectWordAt(row, col int) {
 	e.cursorRow, e.cursorCol = row, col
 	e.selecting, e.selBlock = false, false
@@ -39,9 +39,8 @@ func (e *Editor) selectWordAt(row, col int) {
 	e.ensureCursorVisible()
 }
 
-// selectionBounds returns the selection endpoints ordered so the start is
-// always at or before the end in document order (anchor and cursor can be
-// in either order depending on which direction the user selected in).
+// selectionBounds returns the selection endpoints ordered start <= end in
+// document order (anchor and cursor can be either way round).
 func (e *Editor) selectionBounds() (startRow, startCol, endRow, endCol int) {
 	ar, ac := e.selAnchorRow, e.selAnchorCol
 	cr, cc := e.cursorRow, e.cursorCol
@@ -52,11 +51,9 @@ func (e *Editor) selectionBounds() (startRow, startCol, endRow, endCol int) {
 }
 
 // blockColumnBounds returns the [loCol, hiCol) column range shared by every row
-// of a block (column) selection, ordered lo <= hi regardless of which of
-// selAnchorCol/cursorCol is smaller. Unlike selectionBounds's (row,col)
-// document-order pairing, a block selection's row and column orders are
-// independent: anchor (5,3), cursor (2,10) spans rows 2-5 at columns 3-10, not
-// "backwards".
+// of a block (column) selection, ordered lo <= hi. Unlike selectionBounds's
+// document-order pairing, a block's row and column orders are independent:
+// anchor (5,3), cursor (2,10) spans rows 2-5 at columns 3-10, not "backwards".
 func (e *Editor) blockColumnBounds() (loCol, hiCol int) {
 	if e.selAnchorCol <= e.cursorCol {
 		return e.selAnchorCol, e.cursorCol
@@ -64,16 +61,16 @@ func (e *Editor) blockColumnBounds() (loCol, hiCol int) {
 	return e.cursorCol, e.selAnchorCol
 }
 
-// selectionRangeForLine returns the selected [startCol, endCol) column range
-// for lineIdx, and whether that line participates in the selection at all.
+// selectionRangeForLine returns the selected [startCol, endCol) column range for
+// lineIdx, and whether that line participates at all.
 //
 // Linear (stream) selection: for every line but the last of a multi-line
-// selection, endCol is len(line)+1, the extra column representing the line
-// break so the highlight reads as continuous across lines.
+// selection, endCol is len(line)+1, the extra column representing the line break
+// so the highlight reads as continuous.
 //
-// Block (column) selection: every affected row uses the same
-// blockColumnBounds() range, clamped to that row's length; a row shorter than
-// loCol contributes an empty (start==end) range with no special case.
+// Block (column) selection: every affected row uses the same blockColumnBounds()
+// range, clamped to the row's length; a row shorter than loCol yields an empty
+// (start==end) range with no special case.
 func (e *Editor) selectionRangeForLine(lineIdx int) (startCol, endCol int, ok bool) {
 	if !e.HasSelection() {
 		return 0, 0, false
@@ -102,13 +99,11 @@ func (e *Editor) selectionRangeForLine(lineIdx int) (startCol, endCol int, ok bo
 	return start, end, true
 }
 
-// SelectedText returns the currently selected text, or "" if none. For a block
-// (column) selection, each affected row's [loCol,hiCol) slice is joined with
-// "\n", as for a linear multi-line selection.
-//
-// It also records a block selection's text in blockClip, so a later Paste of
-// the same text can put it back rectangularly; every copy path (Edit > Copy,
-// Ctrl+C, the context menu) passes through here.
+// SelectedText returns the selected text, or "" if none. For a block (column)
+// selection each affected row's [loCol,hiCol) slice is joined with "\n", as for a
+// linear multi-line selection. It also records a block selection's text in
+// blockClip so a later Paste of the same text can put it back rectangularly;
+// every copy path (Edit > Copy, Ctrl+C, the context menu) passes through here.
 func (e *Editor) SelectedText() string {
 	if !e.HasSelection() {
 		return ""
@@ -117,8 +112,8 @@ func (e *Editor) SelectedText() string {
 		topRow, botRow := min(e.selAnchorRow, e.cursorRow), max(e.selAnchorRow, e.cursorRow)
 		loCol, hiCol := e.blockColumnBounds()
 		if hiCol == loCol {
-			// A zero-width block is the caret left behind by typing in column
-			// mode, not a selection: it must not copy as a run of newlines.
+			// A zero-width block is the caret left behind by typing in column mode, not a
+			// selection: it must not copy as a run of newlines.
 			e.blockClip = ""
 			return ""
 		}
@@ -158,10 +153,10 @@ func (e *Editor) SelectedText() string {
 	return sb.String()
 }
 
-// deleteSelection removes the currently selected text (if any) and moves the
-// cursor to where the selection started. No-op if there is no selection.
-// Callers wanting the deletion undoable call pushUndo() first; this doesn't,
-// since every caller does so as part of a larger edit.
+// deleteSelection removes the selected text (if any) and moves the cursor to
+// where the selection started. No-op without a selection. Callers wanting the
+// deletion undoable call pushUndo() first; this doesn't, since every caller does
+// so as part of a larger edit.
 func (e *Editor) deleteSelection() {
 	if !e.HasSelection() {
 		return
@@ -197,9 +192,9 @@ func (e *Editor) deleteSelection() {
 	e.selecting = false
 }
 
-// Cut returns the currently selected text (like SelectedText) and removes it,
-// pushing an undo step first: Ctrl+X's "copy then delete". Returns "" with
-// nothing deleted and no undo step if there is no selection.
+// Cut returns the selected text (like SelectedText) and removes it, pushing an
+// undo step first: Ctrl+X's "copy then delete". Returns "" with nothing deleted
+// and no undo step if there is no selection.
 func (e *Editor) Cut() string {
 	if e.readOnly || !e.HasSelection() {
 		return ""
@@ -212,18 +207,18 @@ func (e *Editor) Cut() string {
 	return text
 }
 
-// Paste inserts text at the cursor, replacing the current selection if any.
-// Embedded newlines produce multiple lines, as typing them would.
+// Paste inserts text at the cursor, replacing the selection if any. Embedded
+// newlines produce multiple lines, as typing them would.
 //
-// Deliberately bypasses the completion popup entirely: it closes it and never
-// re-queries the provider. Pasted text is finished text; offering (let alone
-// committing) IntelliSense candidates against the token the paste ends on is
-// how pasted SQL gets silently rewritten.
+// It bypasses the completion popup entirely: it closes it and never re-queries
+// the provider. Pasted text is finished text; offering (let alone committing)
+// IntelliSense candidates against the token the paste ends on is how pasted SQL
+// gets silently rewritten.
 //
-// Text that came out of this editor's own block (column) selection goes back in
-// as a block, one line per row at the cursor's column (see blockPaste). A block
-// copy is unmarked once it reaches the OS clipboard, so the only way to
-// recognise it is the text matching blockClip.
+// Text from this editor's own block (column) selection goes back in as a block,
+// one line per row at the cursor's column (see blockPaste). A block copy is
+// unmarked once it reaches the OS clipboard, so the only way to recognise it is
+// the text matching blockClip.
 func (e *Editor) Paste(text string) {
 	if e.readOnly || text == "" {
 		return

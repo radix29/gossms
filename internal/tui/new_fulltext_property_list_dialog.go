@@ -11,10 +11,10 @@ import (
 )
 
 // new_fulltext_property_list_dialog.go is the New Search Property List dialog
-// (a database's Storage > Search Property Lists folder), built on
-// newObjectDialog: empty, or a copy of a list in this database or another
-// (new_fulltext_copy_source.go).
-// Properties are registered afterwards, on the list's Properties page.
+// (a database's Storage > Search Property Lists folder), built on newObjectDialog:
+// empty, or a copy of a list in this database or another
+// (new_fulltext_copy_source.go). Properties are registered afterwards on the
+// list's Properties page.
 
 // nftPropertyListPrefetch is what the dialog reads before it opens.
 type nftPropertyListPrefetch struct {

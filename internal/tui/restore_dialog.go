@@ -11,9 +11,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// RestoreDialog modes: the option form, the backup-inspection view Analyze
-// Backup switches to, the file-relocation view Files switches to, and the
-// in-place progress view once the restore runs.
+// RestoreDialog modes: the option form, the backup-inspection view Analyze Backup
+// switches to, the file-relocation view Files switches to, and the in-place
+// progress view once the restore runs.
 const (
 	restoreModeForm = iota
 	restoreModeInspect
@@ -41,35 +41,34 @@ const (
 	restoreDialogH = 26
 )
 
-// maxHistorySets caps how many backup-history entries the Backup Set
-// dropdown lists (most recent first) — its open list doesn't scroll.
+// maxHistorySets caps how many backup-history entries the Backup Set dropdown
+// lists (most recent first); its open list doesn't scroll.
 const maxHistorySets = 10
 
 // histSetWidth is the Backup Set dropdown's width: as wide as the form leaves
-// room for, since the device name is the last thing on each entry and the
-// first thing clipped.
+// room for, since the device name is the last thing on each entry and the first
+// thing clipped.
 const histSetWidth = 53
 
 // Button rows. The form's labels are kept short deliberately: five buttons at
-// "Analyze Backup" width don't fit inside restoreDialogW. The inspect row has
-// room to spell "File Locations" out but says "Files" like the form, because
-// both open the same view and two names read as two destinations.
+// "Analyze Backup" width don't fit inside restoreDialogW. The inspect row has room
+// to spell "File Locations" out but says "Files" like the form, because both open
+// the same view and two names read as two destinations.
 var (
 	restoreFormButtons    = []string{"Analyze", "Files", "Script", "Start Restore", "Cancel"}
 	restoreInspectButtons = []string{"Files", "Restore", "Back"}
 	restoreFilesButtons   = []string{"Restore", "Back"}
 )
 
-// RestoreDialog is the Restore Database dialog (Object Explorer, database node
-// and Databases folder, "Restore Database..."). The source is either a backup
-// file path or an entry picked from msdb backup history; the restore runs as a
-// background Task (see tasks.go), so Hide can dismiss the progress view while
-// it keeps running.
+// RestoreDialog is the Restore Database dialog (Object Explorer, database node and
+// Databases folder). The source is either a backup file path or an entry picked
+// from msdb backup history; the restore runs as a background Task (tasks.go), so
+// Hide can dismiss the progress view while it keeps running.
 //
-// When the target database name differs from the one in the backup, every file
-// is relocated (MOVE) to the server's default data/log directories under a
-// "<target>_<logical name>" name, so restoring a copy next to the original
-// works without the two databases fighting over the same files.
+// When the target database name differs from the one in the backup, every file is
+// relocated (MOVE) to the server's default data/log directories under a
+// "<target>_<logical name>" name, so restoring a copy next to the original works
+// without the two databases fighting over the same files.
 type RestoreDialog struct {
 	dialogs.ModalDialog
 	app *App
@@ -88,8 +87,8 @@ type RestoreDialog struct {
 	cbVerify   *widgets.CheckBox
 	cbClose    *widgets.CheckBox
 
-	// Files view (restoreModeFiles): where the restored database's files
-	// land, and the folders relocFolder puts them in.
+	// Files view (restoreModeFiles): where the restored database's files land, and
+	// the folders relocFolder puts them in.
 	rbReloc    *widgets.RadioBox
 	fDataDir   *widgets.InputField
 	fLogDir    *widgets.InputField
@@ -99,41 +98,40 @@ type RestoreDialog struct {
 	focusIdx  int
 	focusable []focusable
 	btnFocus  int
-	// onButtons is set while the form's or the Files view's button row holds
-	// keyboard focus (the stop past either end of the view's Tab ring, see
-	// buttonRowKey). The view's fields are blurred meanwhile.
+	// onButtons is set while the form's or the Files view's button row holds keyboard
+	// focus (the stop past either end of the view's Tab ring, see buttonRowKey). The
+	// view's fields are blurred meanwhile.
 	onButtons bool
 
 	status    string
 	statusErr bool
-	// statusResting marks status as restingStatus's, which applyDeviceRules
-	// may replace as the form changes; any other message stays until the
-	// next one.
+	// statusResting marks status as restingStatus's, which applyDeviceRules may
+	// replace as the form changes; any other message stays until the next one.
 	statusResting bool
 
 	// Label rows computed by layoutForm, read by Draw.
 	sourceLabelY int
 	targetLabelY int
 
-	// Source-change detection (see syncSourceState): prevSource tracks the
-	// Restore From radio, prevHistDB the history-database dropdown.
+	// Source-change detection (syncSourceState): prevSource tracks the Restore From
+	// radio, prevHistDB the history-database dropdown.
 	prevSource int
 	prevHistDB string
 
-	// lastAutoTarget mirrors BackupDialog.lastAutoDest: the target name the
-	// dialog filled in itself, so it only overwrites an unedited field.
+	// lastAutoTarget mirrors BackupDialog.lastAutoDest: the target name the dialog
+	// filled in itself, so it only overwrites an unedited field.
 	lastAutoTarget string
 
-	// histLoaded records that the history-database list fetch has been kicked off
-	// for this show(); history holds the selected database's backup sets, in the
-	// Backup Set dropdown's order.
+	// histLoaded records that the history-database list fetch has been kicked off for
+	// this show(); history holds the selected database's backup sets, in the Backup
+	// Set dropdown's order.
 	histLoaded bool
 	history    []*gosmo.BackupInfo
 
-	// One latest per kind of load, so a newer load supersedes and cancels only its
-	// own kind: a single shared token let a history load started during "Checking
-	// target database..." drop startRestore's answer, and the restore never began.
-	// Every one is abandoned by show and Hide (abandonLoads).
+	// One latest per kind of load, so a newer load supersedes and cancels only its own
+	// kind: a single shared token let a history load started during "Checking target
+	// database..." drop startRestore's answer, and the restore never began. Every one
+	// is abandoned by show and Hide (abandonLoads).
 	dbListRun  latest // the history Database dropdown (loadHistoryDatabases)
 	historyRun latest // the selected database's backup sets (loadHistory)
 	infoRun    latest // Analyze's headers and file list (loadBackupInfo)
@@ -141,11 +139,11 @@ type RestoreDialog struct {
 	checkRun   latest // OK's does-the-target-exist check (startRestore)
 	scriptRun  latest // Script's statement build (script)
 
-	// defDirs is the server's default data and log directories as read when the
-	// dialog opened (Server.DefaultPaths), nil until that read lands; defaultDirs
-	// falls back to the connect-time snapshot until then. The snapshot alone went
-	// stale: a default moved in SSMS since connect sent a relocated restore's files
-	// to the old directory.
+	// defDirs is the server's default data and log directories as read when the dialog
+	// opened (Server.DefaultPaths), nil until that read lands; defaultDirs falls back
+	// to the connect-time snapshot until then. The snapshot alone went stale: a
+	// default moved in SSMS since connect sent a relocated restore's files to the old
+	// directory.
 	defDirs  *gosmo.DefaultPaths
 	defPaths latest
 
@@ -163,8 +161,8 @@ type RestoreDialog struct {
 	// headerIdx is which of headers the inspect view shows and the restore targets,
 	// carried into RestoreOptions.FileNumber. A device written with NOINIT holds
 	// several backup sets (a full at position 1, then differentials or logs), and
-	// RESTORE without WITH FILE = n always takes the first, so leaving this at 0
-	// would restore the full backup whichever set the user was looking at.
+	// RESTORE without WITH FILE = n always takes the first, so leaving this at 0 would
+	// restore the full backup whichever set the user was looking at.
 	headerIdx int
 
 	// task is the running (or finished) restore the progress view renders.
@@ -192,9 +190,9 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.histLoaded = false
 	d.abandonLoads()
 	d.SetTitle("Restore Database")
-	// Literal, not restingStatus(): the widgets it reads through deviceForRestore
-	// are built below and are nil on the first showing. applyDeviceRules refreshes
-	// it once they exist.
+	// Literal, not restingStatus(): the widgets it reads through deviceForRestore are
+	// built below and are nil on the first showing. applyDeviceRules refreshes it once
+	// they exist.
 	d.setStatusMsg("Ready", false)
 
 	d.rbSource = widgets.NewRadioBox("Restore From:", []string{"Backup File", "Backup History"})
@@ -244,9 +242,9 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.setFocus(0)
 }
 
-// Hide closes the dialog and abandons every load still out, so none keeps
-// holding a connection for a dialog no one is looking at. A running restore is
-// a Task, not a load, and carries on.
+// Hide closes the dialog and abandons every load still out, so none keeps holding
+// a connection for a dialog no one is looking at. A running restore is a Task, not
+// a load, and carries on.
 func (d *RestoreDialog) Hide() {
 	d.abandonLoads()
 	d.ModalDialog.Hide()
@@ -258,14 +256,14 @@ func (d *RestoreDialog) abandonLoads() {
 	}
 }
 
-// fileFieldWidth computes the backup-file input's content width so the
-// input box plus the Browse button fill the dialog's inner width.
+// fileFieldWidth computes the backup-file input's content width so the input box
+// plus the Browse button fill the dialog's inner width.
 func (d *RestoreDialog) fileFieldWidth() int {
 	return restoreDialogW - 2 /*border*/ - 2 /*margins*/ - 2 /*brackets*/ - 1 /*gap*/ - d.btnBrowse.Width()
 }
 
-// rebuildFocusable assembles the Tab cycle for the current source mode:
-// the file input + Browse button, or the two history dropdowns.
+// rebuildFocusable assembles the Tab cycle for the current source mode: the file
+// input + Browse button, or the two history dropdowns.
 func (d *RestoreDialog) rebuildFocusable() {
 	if d.rbSource.Selected() == 0 {
 		d.focusable = []focusable{
@@ -299,9 +297,8 @@ func (d *RestoreDialog) stepFocus(dir int) {
 	setFocusIn(d.focusable, -1, d.focusIdx)
 }
 
-// refocus re-applies the form's focus after rebuildFocusable swapped a
-// dropdown, leaving it on the button row if it was there; see
-// BackupDialog.refocus.
+// refocus re-applies the form's focus after rebuildFocusable swapped a dropdown,
+// leaving it on the button row if it was there; see BackupDialog.refocus.
 func (d *RestoreDialog) refocus() {
 	if d.onButtons {
 		setFocusIn(d.focusable, -1, d.focusIdx)
@@ -348,9 +345,9 @@ func (d *RestoreDialog) setRestingStatus() {
 }
 
 // syncSourceState reacts to input that changed the Restore From radio or the
-// history-database selection: it swaps the Tab cycle, kicks off the lazy
-// history fetches, and keeps an unedited target-database field following the
-// picked source database.
+// history-database selection: it swaps the Tab cycle, kicks off the lazy history
+// fetches, and keeps an unedited target-database field following the picked
+// source database.
 func (d *RestoreDialog) syncSourceState() {
 	if d.mode != restoreModeForm {
 		return
@@ -374,8 +371,8 @@ func (d *RestoreDialog) syncSourceState() {
 	d.applyDeviceRules()
 }
 
-// autoFillTarget sets the target-database field to name unless the user
-// has already typed their own.
+// autoFillTarget sets the target-database field to name unless the user has
+// already typed their own.
 func (d *RestoreDialog) autoFillTarget(name string) {
 	if strings.TrimSpace(d.fTarget.Value()) == "" || d.fTarget.Value() == d.lastAutoTarget {
 		d.lastAutoTarget = name
@@ -383,8 +380,8 @@ func (d *RestoreDialog) autoFillTarget(name string) {
 	}
 }
 
-// restoreURLHint is the resting status line for a blob source — the RESTORE
-// half of backupURLHint, and the same credential.
+// restoreURLHint is the resting status line for a blob source: the RESTORE half
+// of backupURLHint, and the same credential.
 const restoreURLHint = "From URL: the container needs a credential named for it."
 
 // restingStatus is the status line when nothing has gone wrong.
@@ -400,10 +397,10 @@ func (d *RestoreDialog) restingStatus() string {
 	return "Ready"
 }
 
-// selectedSetType is the type of the backup set a restore would read, when
-// the dialog knows it: the analyzed header's for the devices the inspect view
-// read (fileNumberFor's rule for which set that is), else the picked history
-// entry's. ok is false for a typed path not yet analyzed.
+// selectedSetType is the type of the backup set a restore would read, when the
+// dialog knows it: the analyzed header's for the devices the inspect view read
+// (fileNumberFor's rule for which set that is), else the picked history entry's.
+// ok is false for a typed path not yet analyzed.
 func (d *RestoreDialog) selectedSetType() (gosmo.BackupSetType, bool) {
 	src := d.sourceForRestore()
 	if len(src.devices) == 0 {
@@ -420,11 +417,11 @@ func (d *RestoreDialog) selectedSetType() (gosmo.BackupSetType, bool) {
 	return "", false
 }
 
-// restoreSequenceHint says, for a log or differential set, that it restores
-// only onto a database an earlier restore left RESTORING — whichever Recovery
-// option is picked. Onto an online database (or none) the server refuses it
-// with a message about files not ready to roll forward, which never says why.
-// "" for a set that starts a restore sequence.
+// restoreSequenceHint says, for a log or differential set, that it restores only
+// onto a database an earlier restore left RESTORING, whichever Recovery option is
+// picked. Onto an online database (or none) the server refuses it with a message
+// about files not ready to roll forward, which never says why. "" for a set that
+// starts a restore sequence.
 func restoreSequenceHint(t gosmo.BackupSetType) string {
 	if t != gosmo.BackupSetLog && !t.IsDifferential() {
 		return ""
@@ -432,16 +429,15 @@ func restoreSequenceHint(t gosmo.BackupSetType) string {
 	return backupSetTypeName(t) + " backup: the target must be RESTORING, left so by an earlier restore WITH NORECOVERY."
 }
 
-// applyDeviceRules switches off what the source device cannot offer, the
-// RESTORE counterpart of BackupDialog.applyDeviceRules (see its comment for why
-// gosmo already emits FROM URL without help from here).
+// applyDeviceRules switches off what the source device cannot offer, the RESTORE
+// counterpart of BackupDialog.applyDeviceRules (see its comment for why gosmo
+// already emits FROM URL without help from here).
 //
-// Only Browse is gated: it walks the *server's filesystem*, which a blob
-// container is not, and an Azure engine has no filesystem to browse for
-// backups. The recovery, replace and relocation options are left alone
-// deliberately: none was driven against a Managed Instance in the audit, and
-// withholding one that works is the worse error. See docs/decisions.md § Azure
-// SQL Managed Instance.
+// Only Browse is gated: it walks the *server's filesystem*, which a blob container
+// is not, and an Azure engine has no filesystem to browse for backups. The
+// recovery, replace and relocation options are left alone deliberately: none was
+// driven against a Managed Instance in the audit, and withholding one that works
+// is the worse error. See docs/decisions.md § Azure SQL Managed Instance.
 func (d *RestoreDialog) applyDeviceRules() {
 	d.btnBrowse.SetEnabled(!serverIsAzure(d.sc) && !gosmo.IsBackupURL(d.deviceForRestore()))
 	if !d.statusErr && (d.status == "" || d.status == "Ready" || d.statusResting) {
@@ -449,9 +445,9 @@ func (d *RestoreDialog) applyDeviceRules() {
 	}
 }
 
-// browseFile opens the shared file dialog to pick the backup file. Like
-// Backup's Browse it browses the server's filesystem: RESTORE reads the device
-// on the SQL Server host.
+// browseFile opens the shared file dialog to pick the backup file. Like Backup's
+// Browse it browses the server's filesystem: RESTORE reads the device on the SQL
+// Server host.
 func (d *RestoreDialog) browseFile() {
 	fs, ok := newServerFS(d.sc)
 	if !ok {
@@ -515,8 +511,8 @@ func (d *RestoreDialog) backToForm() {
 	d.mode = restoreModeForm
 	d.btnFocus = 0
 	d.SetTitle("Restore Database")
-	// Into the field the form was left from, even if the view being left had focus
-	// on its buttons.
+	// Into the field the form was left from, even if the view being left had focus on
+	// its buttons.
 	d.setFocus(d.focusIdx)
 	// The inspect view's ←/→ may have picked a set of another type.
 	d.applyDeviceRules()
@@ -527,9 +523,8 @@ func (d *RestoreDialog) doProgressButton() {
 }
 
 // FocusedClipboardTarget implements core.ClipboardHost: the backup-file or
-// target-database field while the option form is showing and has it focused.
-// The inspect, files and progress views drive their own focus, so each answers
-// nil.
+// target-database field while the option form is showing and has it focused. The
+// inspect, files and progress views drive their own focus, so each answers nil.
 func (d *RestoreDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	if d.mode != restoreModeForm || d.onButtons {
 		return nil

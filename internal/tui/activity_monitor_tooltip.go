@@ -192,13 +192,11 @@ func (am *ActivityMonitor) drawCallout(s tcell.Screen, c *charts.Canvas) int {
 }
 
 // drawTimeCallout writes the pinned bucket's time on the time-axis row, centred
-// under column x and kept within the row and viewport (the row's labels are
-// ages; a clipped callout would read as one).
+// under column x and kept within the row and viewport (the row's labels are ages;
+// a clipped callout would read as one).
 //
 // Any label it overlaps is cleared whole, or a tail survives as a bogus number
-// ("-0:20" + callout → "-0:211:34:44"). c is the canvas the row was rendered
-// on.
-//
+// ("-0:20" + callout → "-0:211:34:44"). c is the canvas the row was rendered on.
 // Returns the row, or -1 when there's no room.
 func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *charts.Canvas, x int) int {
 	t := am.tooltip

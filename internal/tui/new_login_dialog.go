@@ -10,27 +10,24 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// nloginDBRoles is one online database's assignable role names — "public"
-// excluded, since membership is implicit and ALTER ROLE public ADD MEMBER
-// is a syntax error, the same exclusion pageLoginUserMapping already makes
-// for an existing login.
+// nloginDBRoles is one online database's assignable role names. "public" is
+// excluded: membership is implicit and ALTER ROLE public ADD MEMBER is a syntax
+// error (same exclusion as pageLoginUserMapping).
 type nloginDBRoles struct {
 	dbName    string
 	roleNames []string
 
-	// schemaNames is the database's schemas, for the Default schema picker
-	// on the User Mapping page — a schema that does not exist there fails
-	// the CREATE USER at apply time, which is what a free-text box invited.
+	// schemaNames is the database's schemas, for the User Mapping page's Default
+	// schema picker: a nonexistent schema fails CREATE USER at apply, which free text
+	// invited.
 	schemaNames []string
 }
 
-// nloginPrefetch holds the one shared, one-time fetch every New Login page
-// is built from: existing login names (for the name-uniqueness preflight
-// check), database names (Default database/User Mapping rows), languages
-// (Default language), server roles (Server Roles page), and each online
-// database's role list (User Mapping page) — mirrors ndbPrefetch's "one
-// fetch, build every page synchronously from it" shape
-// (new_database_dialog.go).
+// nloginPrefetch holds the one-time fetch every New Login page is built from:
+// existing login names (uniqueness preflight), database names (Default
+// database/User Mapping), languages, server roles, and each online database's
+// role list (User Mapping); ndbPrefetch's "one fetch, build every page
+// synchronously from it" shape (new_database_dialog.go).
 type nloginPrefetch struct {
 	existingNames *nameSet
 	dbNames       []string
@@ -38,10 +35,10 @@ type nloginPrefetch struct {
 	serverRoles   []*gosmo.ServerRole
 	dbRoles       []nloginDBRoles
 
-	// certNames and asymKeyNames are master's certificates and asymmetric
-	// keys, for the Mapped-object picker a certificate- or asymmetric-key-
-	// mapped login needs. Either list can be empty because the read failed
-	// rather than because the instance has none — see fetchNewLoginPrefetch.
+	// certNames and asymKeyNames are master's certificates and asymmetric keys, for
+	// the Mapped-object picker a certificate- or asymmetric-key-mapped login needs.
+	// Either list can be empty because the read failed rather than because the
+	// instance has none (fetchNewLoginPrefetch).
 	certNames    []string
 	asymKeyNames []string
 }
@@ -64,11 +61,10 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 	for _, d := range dbs {
 		dbNames = append(dbNames, d.Name)
 	}
-	// Two round trips per ONLINE database, so serially this is 2N latencies
-	// inside one propFetchTimeout before the dialog can show any page at all.
-	// A database that drops out here — offline, or unreadable — simply has no
-	// roles or schemas to offer, which is what the User Mapping page already
-	// shows for an offline one.
+	// Two round trips per ONLINE database, so serially this is 2N latencies inside
+	// one propFetchTimeout before any page shows. A database that drops out here
+	// (offline or unreadable) has no roles or schemas to offer, as the User Mapping
+	// page already shows for an offline one.
 	dbRoles, err := eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (nloginDBRoles, error) {
 		roles, err := d.DatabaseRoles(ctx)
 		if err != nil {
@@ -123,11 +119,11 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 }
 
 // masterMappableNames reads the certificates and asymmetric keys in master a
-// mapped login can be created from. A failure here is deliberately not the
-// dialog's failure: sys.certificates and sys.asymmetric_keys are readable only
-// with permission on master, and a login that lacks it still creates ordinary
-// SQL and Windows logins. An empty list leaves the picker offering nothing,
-// which the General page's apply turns into a refusal naming the missing pick.
+// mapped login can be created from. Failure is deliberately not the dialog's:
+// sys.certificates and sys.asymmetric_keys need permission on master, and a login
+// lacking it still creates ordinary SQL and Windows logins. An empty list leaves
+// the picker empty, which the General page's apply turns into a refusal naming
+// the missing pick.
 func masterMappableNames(ctx context.Context, sc *db.ServerConn) (certs, keys []string) {
 	master := sc.Server.DatabaseRef("master")
 	if cs, err := master.Certificates(ctx); err == nil {
@@ -143,14 +139,12 @@ func masterMappableNames(ctx context.Context, sc *db.ServerConn) (certs, keys []
 	return certs, keys
 }
 
-// NewLoginDialog is the New Login creation dialog (Object Explorer's
-// Security > Logins folder, "New Login..."). Same fixed-sequence-apply
-// shape as NewDatabaseDialog (new_database_dialog.go): General's apply
-// always runs first — it's what creates the login — before Server Roles/
-// User Mapping/Securables/Status's own applies can target a login that now
-// exists, a fixed five-step sequence rather than a discovered dirty set.
-// All five of gosmo's login sources are offered — see
-// buildNewLoginGeneralPage.
+// NewLoginDialog is the New Login dialog (Object Explorer's Security > Logins
+// folder). Same fixed-sequence apply as NewDatabaseDialog
+// (new_database_dialog.go): General's apply always runs first, creating the
+// login, before Server Roles/User Mapping/Securables/Status's applies can target
+// it: a fixed five-step sequence, not a discovered dirty set. All five of
+// gosmo's login sources are offered (buildNewLoginGeneralPage).
 type NewLoginDialog struct {
 	newObjectDialog[nloginPrefetch]
 }
@@ -195,7 +189,6 @@ func (d *NewLoginDialog) buildPages(pf *nloginPrefetch) {
 	}
 }
 
-// onConfirmDiscard guards F5/Refresh (which would otherwise silently
-// rebuild whichever page is current from scratch, discarding any pending
-// edits on it) behind the same confirmation prompt PropDialog/
+// onConfirmDiscard guards F5/Refresh (which would silently rebuild the current
+// page, discarding pending edits) behind the confirmation prompt PropDialog/
 // NewDatabaseDialog use.

@@ -14,13 +14,12 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// replication_monitor_panel_load.go is Replication Monitor's reads: the
-// snapshot of every publication with its subscriptions and agents, the
-// selected agent's sessions, the selected session's actions with their error
-// detail, and the timer that repeats them. Each pane keeps the row the user
-// had across a refresh, by key rather than by index — an agent that failed
-// moves up the procedures' worst-first order. The panel is in
-// replication_monitor_panel.go.
+// replication_monitor_panel_load.go is Replication Monitor's reads: the snapshot
+// of every publication with its subscriptions and agents, the selected agent's
+// sessions, the selected session's actions with their error detail, and the timer
+// that repeats them. Each pane keeps the row the user had across a refresh, by key
+// rather than index (an agent that failed moves up the procedures' worst-first
+// order). The panel is in replication_monitor_panel.go.
 
 // rmSnapshot is one read of the instance's distribution databases. note, when
 // set, is why there is nothing to list and replaces the publication grid.
@@ -90,12 +89,12 @@ const (
 )
 
 // readReplicationSnapshot reads every distribution database on srv: its
-// publications, subscriptions and agents, joined by the agent names the
-// monitor procedures report. A distribution database the login may not
-// monitor is skipped; if that leaves nothing, the note says why. One whose
-// read fails is reported in failed rather than blanking every other's
-// publications (as readLogFiles does per file); only when none could be read
-// is the failure the read's error.
+// publications, subscriptions and agents, joined by the agent names the monitor
+// procedures report. A distribution database the login may not monitor is
+// skipped; if that leaves nothing, the note says why. One whose read fails is
+// reported in failed rather than blanking every other's publications (as
+// readLogFiles does per file); only when none could be read is the failure the
+// read's error.
 func readReplicationSnapshot(ctx context.Context, srv *gosmo.Server) (rmSnapshot, error) {
 	info, err := srv.ReplicationInfo(ctx)
 	if err != nil {
@@ -107,8 +106,8 @@ func readReplicationSnapshot(ctx context.Context, srv *gosmo.Server) (rmSnapshot
 	case !info.IsDistributor:
 		return rmSnapshot{note: fmt.Sprintf(rmRemoteNote, info.Distributor, info.Distributor)}, nil
 	}
-	// The names come from sys.databases, which every login reads; msdb's
-	// list of distribution databases is sysadmin's alone.
+	// The names come from sys.databases, which every login reads; msdb's list of
+	// distribution databases is sysadmin's alone.
 	var snap rmSnapshot
 	var denied []string
 	read := 0
@@ -174,9 +173,9 @@ func readDistribution(ctx context.Context, dd *gosmo.DistributionDatabase) ([]rm
 }
 
 // joinReplication hangs each subscription and agent on its publication. The
-// procedures name each publication's agents and each subscription's, so the
-// join is by agent name; subscriptions are matched to publications by
-// publisher, database and name, compared without regard to case.
+// procedures name each publication's agents and each subscription's, so the join
+// is by agent name; subscriptions are matched to publications by publisher,
+// database and name, compared without regard to case.
 func joinReplication(dd *gosmo.DistributionDatabase, mpubs []gosmo.MonitorPublication,
 	msubs []gosmo.MonitorSubscription, agents []*gosmo.ReplicationAgent) []rmPub {
 	byName := make(map[string]*gosmo.ReplicationAgent, len(agents))
@@ -246,8 +245,8 @@ var rmAgentColumns = []string{"Agent", "Status", "Subscriber", "Last action", "L
 	"Delivered", "Latency", "Expires in", "Warnings", "Agent name"}
 
 // agentRowsFor lists a publication's subscriptions, then its Snapshot and Log
-// Reader agents — the subscriptions first because they are what Replication
-// Monitor's publication view is about, and where an agent failing shows.
+// Reader agents: subscriptions first because they are what Replication Monitor's
+// publication view is about, and where an agent failing shows.
 func agentRowsFor(p rmPub) []rmAgentRow {
 	var rows []rmAgentRow
 	for i := range p.subs {
@@ -284,8 +283,8 @@ func (r rmAgentRow) cells() []string {
 		c[3] = "The distributor lists no such agent"
 	}
 	if s := r.sub; s != nil {
-		// The monitor's own status: it knows an agent that is not running,
-		// which the last history row cannot say.
+		// The monitor's own status: it knows an agent that is not running, which the last
+		// history row cannot say.
 		c[1] = s.Status.String()
 		c[2] = "[" + s.Subscriber + "].[" + s.SubscriberDB + "] (" + s.Type.String() + ")"
 		if s.Latency != nil {
@@ -357,8 +356,8 @@ func rmErrorText(errs []gosmo.ReplicationError) string {
 
 // -- loads ----------------------------------------------------------------------
 
-// Refresh re-reads everything (F5, the toolbar, the timer), keeping each
-// pane's selection.
+// Refresh re-reads everything (F5, the toolbar, the timer), keeping each pane's
+// selection.
 func (p *ReplicationMonitorPanel) Refresh() {
 	if !p.app.isConnected(p.conn) {
 		p.applySnapshot(rmSnapshot{note: "Not connected"}, nil)
@@ -368,8 +367,8 @@ func (p *ReplicationMonitorPanel) Refresh() {
 	p.busy = true
 	p.pubsGrid.SetStatus("Reading…")
 	srv := p.conn.Server
-	// safegoRepair: busy is released in the callback, which a panic skips,
-	// and the timer refreshes only while busy is clear.
+	// safegoRepair: busy is released in the callback, which a panic skips, and the
+	// timer refreshes only while busy is clear.
 	p.app.safegoRepair("reading Replication Monitor", func() { p.readPanicked(seq) }, func() {
 		snap, err := readReplicationSnapshot(ctx, srv)
 		p.app.postAndWake(func() {
@@ -394,21 +393,21 @@ func (p *ReplicationMonitorPanel) readPanicked(seq int) {
 
 const rmReadPanickedText = "The read stopped unexpectedly — see the log for details"
 
-// paneReadPanicked replaces the "Reading…" a session or action read left on
-// its grid when it panicked, unless a newer read owns the grid. Without it the
-// pane said "Reading…" for good.
+// paneReadPanicked replaces the "Reading..." a session or action read left on its
+// grid when it panicked, unless a newer read owns the grid. Without it the pane
+// said "Reading..." for good.
 func paneReadPanicked(l *latest, seq int, g *controls.DataGrid) {
 	if l.Done(seq) {
 		g.SetStatus(rmReadPanickedText)
 	}
 }
 
-// applySnapshot puts a read on screen, on the publication the user had (or
-// the one the panel was opened for), and cascades to the panes below.
+// applySnapshot puts a read on screen, on the publication the user had (or the
+// one the panel was opened for), and cascades to the panes below.
 func (p *ReplicationMonitorPanel) applySnapshot(snap rmSnapshot, err error) {
 	prev := p.selectedPubKey()
-	// A note grid's one column was widened to fit it; carrying that width
-	// over to the Status column is what redrawGrid would do.
+	// A note grid's one column was widened to fit it; carrying that width over to the
+	// Status column is what redrawGrid would do.
 	wasNote := p.snap.note != ""
 	if err != nil {
 		p.snap = rmSnapshot{}
@@ -420,8 +419,8 @@ func (p *ReplicationMonitorPanel) applySnapshot(snap rmSnapshot, err error) {
 	p.updated = time.Now()
 	if snap.note != "" {
 		p.pubsGrid.SetData([]string{"Replication Monitor"}, [][]string{{snap.note}})
-		// The note is a sentence, not a value: the default cell cap clips it
-		// to its first few words.
+		// The note is a sentence, not a value: the default cell cap clips it to its first
+		// few words.
 		p.pubsGrid.SetColumnWidth(0, core.DisplayWidth(snap.note)+2)
 		p.pubsGrid.SetStatus(snap.note)
 		p.showAgents(false)
@@ -500,10 +499,10 @@ func (p *ReplicationMonitorPanel) selectedPubKey() string {
 	return ""
 }
 
-// showAgents fills the agent grid from the selected publication — no read,
-// the snapshot has it — and reads the selected agent's sessions. keep holds
-// the agent row the user had, for a refresh; a move to another publication
-// starts at its first row.
+// showAgents fills the agent grid from the selected publication (no read, the
+// snapshot has it) and reads the selected agent's sessions. keep holds the agent
+// row the user had, for a refresh; a move to another publication starts at its
+// first row.
 func (p *ReplicationMonitorPanel) showAgents(keep bool) {
 	prev := ""
 	if keep {
@@ -608,8 +607,8 @@ func (p *ReplicationMonitorPanel) applySessions(agent *gosmo.ReplicationAgent, s
 	p.loadActions(keep)
 }
 
-// sessionsSummary is the session grid's status line: whose sessions, over
-// what window.
+// sessionsSummary is the session grid's status line: whose sessions, over what
+// window.
 func (p *ReplicationMonitorPanel) sessionsSummary(agent *gosmo.ReplicationAgent, n int) string {
 	window := "the last " + rmWindows[p.windowIdx].label
 	if rmWindows[p.windowIdx].hours == 0 {
@@ -717,11 +716,11 @@ func (p *ReplicationMonitorPanel) applyActions(rows []rmActionRow, err error, ke
 
 // -- the refresh timer ----------------------------------------------------------
 
-// startTicker (re)starts the refresh timer at the selected rate, or stops it
-// at Off. A tick while a read is out is skipped, not queued — and so is one
-// while a grid's value popup or cell menu is open: a refresh rebuilds the
-// grids, and rebuilding one closes its popup, so the error a user opened to
-// read vanished at the next tick.
+// startTicker (re)starts the refresh timer at the selected rate, or stops it at
+// Off. A tick while a read is out is skipped, not queued, and so is one while a
+// grid's value popup or cell menu is open: a refresh rebuilds the grids, and
+// rebuilding one closes its popup, so the error a user opened to read vanished at
+// the next tick.
 func (p *ReplicationMonitorPanel) startTicker() {
 	p.ticker.Abandon()
 	every := rmRates[p.rateIdx].every

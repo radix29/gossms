@@ -9,24 +9,22 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// graphState holds the Plan (graph) tab's own view state: the current
-// layout, scroll position, and whether the detail strip is open.
+// graphState holds the Plan tab's view state: layout, scroll, detail strip.
 type graphState struct {
 	layout     *graphLayout
 	scrollX    int
 	scrollY    int
 	detailOpen bool
 
-	// sbDraggingX/sbDraggingY are true while the user drags the canvas's
-	// horizontal/vertical scrollbar thumb (see controls.DataGrid's sbDragging for
-	// the rationale); two latches since the canvas can show either bar
-	// independently.
+	// sbDraggingX/sbDraggingY are true while dragging the horizontal/vertical
+	// scrollbar thumb (see controls.DataGrid's sbDragging); two latches since
+	// either bar can show alone.
 	sbDraggingX bool
 	sbDraggingY bool
 }
 
-// rebuildGraphLayout re-lays-out the current statement's operator tree
-// and resets scroll — called whenever the plan or statement changes.
+// rebuildGraphLayout re-lays-out the statement's tree and resets scroll, on
+// plan or statement change.
 func (v *PlanView) rebuildGraphLayout() {
 	st := v.currentStatement()
 	if st == nil || st.Root == nil {
@@ -37,9 +35,8 @@ func (v *PlanView) rebuildGraphLayout() {
 	v.graphSt.scrollX, v.graphSt.scrollY = 0, 0
 }
 
-// layoutGraphTab computes the Plan tab's canvas rect and, while the detail
-// strip is open, the Properties block below it — sized by graphSplit, a
-// draggable divider defaulting to a 70/30 canvas/strip ratio.
+// layoutGraphTab computes the canvas rect and, while the strip is open, the
+// Properties block below it, sized by graphSplit (draggable, default 70/30).
 func (v *PlanView) layoutGraphTab() {
 	r := v.contentRect
 	zero := func() {
@@ -67,8 +64,7 @@ func (v *PlanView) layoutGraphTab() {
 	}
 }
 
-// drawGraphTab renders the operator graph and, while open, the draggable
-// splitter bar and Properties block beneath it.
+// drawGraphTab renders the graph and, while open, the splitter and Properties.
 func (v *PlanView) drawGraphTab(s tcell.Screen) {
 	if v.graphSt.layout == nil || len(v.graphSt.layout.tiles) == 0 {
 		v.drawMessage(s, "No plan tree for this statement")
@@ -88,8 +84,7 @@ func (v *PlanView) drawGraphTab(s tcell.Screen) {
 	drawDetails(s, v.graphPropsRect, n, st, live, v.graphPropsScroll)
 }
 
-// drawGraphCanvas draws every edge then every tile, scrolled by
-// graphSt.scrollX/Y and clipped to graphCanvasRect.
+// drawGraphCanvas draws edges then tiles, scrolled and clipped to the canvas.
 func (v *PlanView) drawGraphCanvas(s tcell.Screen) {
 	r := v.graphCanvasRect
 	bg := theme.StylePanel()
@@ -116,8 +111,8 @@ func (v *PlanView) drawGraphCanvas(s tcell.Screen) {
 	}
 }
 
-// drawEdge renders one parent→child connector as three clipped line
-// segments plus an arrowhead pointing into the parent.
+// drawEdge renders one connector as three clipped segments plus an arrowhead
+// into the parent.
 func (v *PlanView) drawEdge(s tcell.Screen, e edge, pal *theme.Palette) {
 	r := v.graphCanvasRect
 	style := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.TextDim)
@@ -135,9 +130,8 @@ func (v *PlanView) drawEdge(s tcell.Screen, e edge, pal *theme.Palette) {
 	putClipped(s, r, x1, y1, '◄', style)
 }
 
-// drawTile renders one operator's card. A tile is only drawn when it's
-// fully within the viewport — partial-glyph clipping isn't worth the
-// complexity for a coarsely-scrolled fixed-size card.
+// drawTile renders one operator's card, only when fully within the viewport
+// (partial clipping isn't worth it for a fixed-size card).
 func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	r := v.graphCanvasRect
 	screenRect := core.Rect{
@@ -156,8 +150,8 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	case selected:
 		borderStyle = theme.StyleActiveBorder()
 	case v.liveOn:
-		// In live mode the border says where the operator is in its run;
-		// the expensive/warning badge below still marks the rest.
+		// In live mode the border shows the operator's run state; the badge
+		// below still marks the rest.
 		borderStyle = borderStyle.Foreground(liveStateColor(pal, live, liveOK))
 	case costPct >= expensiveCostThreshold:
 		borderStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
@@ -199,10 +193,9 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 		core.DrawTextClipped(s, inner.X, inner.Y+2, inner.W, textStyle, metrics)
 	}
 
-	// Corner badge: at most one of error/warning, same priority as the border color
-	// switch above. Right-aligned by the glyph's own display width (not a fixed
-	// 1-column offset) since the error glyph is double-width and the warning isn't;
-	// a fixed offset would push it into the border column.
+	// Corner badge: at most one of error/warning, same priority as the border
+	// color above. Right-aligned by the glyph's display width, not a fixed
+	// offset: the error glyph is double-width and would hit the border.
 	var badge string
 	var badgeStyle tcell.Style
 	switch {
@@ -219,9 +212,8 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 }
 
 // putClipped, hlineClipped, and vlineClipped draw single-width box-drawing
-// cells, discarding anything outside viewport: the graph canvas scrolls a
-// virtual plane larger than its own rect, so every edge segment needs manual
-// clipping (core's DrawHLine/DrawVLine write exactly where told).
+// cells, discarding anything outside viewport: the canvas scrolls a plane larger
+// than its rect and core's DrawHLine/DrawVLine write exactly where told.
 func putClipped(s tcell.Screen, viewport core.Rect, x, y int, ch rune, style tcell.Style) {
 	if x < viewport.X || x >= viewport.Right() || y < viewport.Y || y >= viewport.Bottom() {
 		return
@@ -323,9 +315,8 @@ func (v *PlanView) graphSelectFirstChild() {
 	v.ensureTileVisible(n.Children[0].ID)
 }
 
-// graphSelectSibling moves to the previous/next sibling; if there is
-// none in that direction, it falls back to the nearest tile in the same
-// column (depth) above/below the current one.
+// graphSelectSibling moves to the previous/next sibling, else the nearest tile
+// above/below in the same column.
 func (v *PlanView) graphSelectSibling(delta int) {
 	st := v.currentStatement()
 	if st == nil || v.graphSt.layout == nil {
@@ -389,13 +380,12 @@ func (v *PlanView) scrollGraphProps(delta int) {
 	v.graphPropsScroll = core.Clamp(v.graphPropsScroll+delta, 0, maxScroll)
 }
 
-// handleGraphTabKey handles the Plan tab's navigation, detail-strip toggle,
-// and — while the strip is open — the Operator Summary table's own key
-// handling, mirroring handleTreeTabKey's bottomFocused pattern.
+// handleGraphTabKey handles Plan tab navigation, the strip toggle, and (strip
+// open) the summary table's keys, mirroring handleTreeTabKey's bottomFocused.
 func (v *PlanView) handleGraphTabKey(ev *tcell.EventKey) bool {
-	// Ctrl+Up/Down resizes the canvas/Properties split — see
-	// layout.Splitter.HandleKey. Safe to try unconditionally: it only acts
-	// on a Ctrl (not Ctrl+Shift) chord, which nothing below binds.
+	// Ctrl+Up/Down resizes the split (layout.Splitter.HandleKey). Safe to try
+	// unconditionally: it acts only on a Ctrl (not Ctrl+Shift) chord, which
+	// nothing below binds.
 	if v.graphSt.detailOpen && v.graphSplit.HandleKey(ev) {
 		return true
 	}
@@ -423,9 +413,8 @@ func (v *PlanView) handleGraphTabKey(ev *tcell.EventKey) bool {
 	return false
 }
 
-// handleGraphTabMouse handles wheel scrolling over the canvas (Shift+wheel
-// or WheelLeft/WheelRight for horizontal) and the Properties block,
-// dragging graphSplit, and clicking a tile to select it.
+// handleGraphTabMouse handles wheel scrolling (Shift+wheel or WheelLeft/Right
+// for horizontal), dragging graphSplit, and clicking a tile.
 func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	if ev.Buttons() == tcell.ButtonNone {
@@ -434,9 +423,8 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	}
 	if v.graphSt.detailOpen {
 		if ev.Buttons() == tcell.ButtonNone {
-			// The splitter needs its own drag-release event to clear sp.dragging, the
-			// reason handleTreeTabMouse forwards ButtonNone to treeSplit unconditionally
-			// rather than position-gating it.
+			// The splitter needs its own release to clear sp.dragging (why
+			// handleTreeTabMouse forwards ButtonNone to treeSplit unconditionally).
 			if v.graphSplit.HandleMouse(ev) {
 				v.layoutGraphTab()
 				return true
@@ -465,9 +453,9 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
-		// Shift+wheel is the common desktop convention for horizontal scroll; some
-		// terminals report it as WheelUp/WheelDown with a Shift modifier rather than
-		// WheelLeft/WheelRight below, so honour both (as DataGrid and Editor do).
+		// Shift+wheel is the desktop convention for horizontal scroll; some
+		// terminals report it as WheelUp/Down with Shift rather than
+		// WheelLeft/Right, so honour both (as DataGrid and Editor do).
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			v.graphSt.scrollX = max(0, v.graphSt.scrollX-4)
 		} else {
@@ -489,9 +477,9 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		return true
 	case tcell.Button1:
 		r := v.graphCanvasRect
-		// Scrollbar drag/click takes priority over tile selection below: the bars are
-		// drawn over the canvas's own bottom row/right column (see drawGraphCanvas), so
-		// a click on one would otherwise read as a click on the tile underneath.
+		// Scrollbar drag/click outranks tile selection: the bars are drawn over
+		// the canvas's bottom row/right column (see drawGraphCanvas), so a click
+		// would otherwise select the tile underneath.
 		if core.HandleScrollbarDragH(ev, r.X, r.Bottom()-1, r.W, v.graphSt.layout.canvasW, &v.graphSt.sbDraggingX, &v.graphSt.scrollX) {
 			return true
 		}

@@ -11,19 +11,18 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// fulltext_index_ops.go is what the table menu's Full-Text index cascade
-// does: Enable/Disable, Delete, Start Full/
-// Incremental Population, Stop Population, Track Changes, Apply Tracked
-// Changes — and the Background Tasks entry that follows a population to its
-// end. The cascade itself is tableFullTextMenu (explorer_fulltext.go).
+// fulltext_index_ops.go is what the table menu's Full-Text index cascade does:
+// Enable/Disable, Delete, Start Full/Incremental Population, Stop Population,
+// Track Changes, Apply Tracked Changes — and the Background Tasks entry that
+// follows a population to its end. The cascade itself is tableFullTextMenu
+// (explorer_fulltext.go).
 //
-// Every action reads the index first. The tree does not know whether a table
-// has one, and the server answers several of these with an informational
-// message and no error — STOP POPULATION under AUTO or MANUAL change
-// tracking ("Stop crawl request is ignored"), START … POPULATION while one
-// runs ("is ignored because a population is currently active") — which
-// gosmo's exec does not surface. Without the read, those report success for
-// a statement that did nothing (probed on 17, 2026-10-07).
+// Every action reads the index first. The tree does not know whether a table has
+// one, and the server answers several of these with an informational message and
+// no error — STOP POPULATION under AUTO or MANUAL change tracking ("Stop crawl
+// request is ignored"), START … POPULATION while one runs ("is ignored because a
+// population is currently active") — which gosmo's exec does not surface. Without
+// the read, those report success for a statement that did nothing.
 
 // fullTextIndexOp is one cascade action.
 type fullTextIndexOp struct {
@@ -134,18 +133,18 @@ const fullTextNoPopulationPolls = 3
 // read must not end the follow.
 const fullTextFollowReadRetries = 3
 
-// watchFullTextPopulation follows the population an action started on the
-// table: a Background Tasks entry whose message tracks the index's populate
-// status and counters, finished when sys.fulltext_indexes shows a crawl that
-// started after before has completed — a stop and a DISABLE complete it too
-// (has_crawl_completed = 1), so "finished" is all it can say.
+// watchFullTextPopulation follows the population an action started on the table: a
+// Background Tasks entry whose message tracks the index's populate status and
+// counters, finished when sys.fulltext_indexes shows a crawl that started after
+// before has completed — a stop and a DISABLE complete it too (has_crawl_completed
+// = 1), so "finished" is all it can say.
 //
-// maybe registers the task only once the first read shows a population: an
-// ENABLE or a change-tracking switch starts one only in some states.
+// maybe registers the task only once the first read shows a population: an ENABLE
+// or a change-tracking switch starts one only in some states.
 //
-// Cancel stops following, not the population: STOP POPULATION is ignored
-// under AUTO and MANUAL change tracking, so a Cancel that sent it would
-// claim to stop what it did not.
+// Cancel stops following, not the population: STOP POPULATION is ignored under
+// AUTO and MANUAL change tracking, so a Cancel that sent it would claim to stop
+// what it did not.
 func (a *App) watchFullTextPopulation(sc *db.ServerConn, dbName, schema, table string, before time.Time, label string, maybe bool) {
 	label = label + " — " + fqn(schema, table)
 	follow := func(task *Task, ctx context.Context, tbl *gosmo.Table) {

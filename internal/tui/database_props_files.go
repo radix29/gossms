@@ -31,8 +31,8 @@ var addableFileTypes = []string{"ROWS", logFileType}
 // file. Deliberately not in addableFileTypes, as it is not something to pick:
 // ALTER DATABASE ADD FILE has no file-type keyword, and a file becomes
 // FILESTREAM purely by going into a FILESTREAM filegroup. The same clause aimed
-// at a ROWS filegroup produces an ordinary data file (measured on win10cli
-// against a real FILESTREAM database, 2026-09-05). See fileEdit.spec.
+// at a ROWS filegroup produces an ordinary data file (measured against a real
+// FILESTREAM database). See fileEdit.spec.
 const filestreamFileType = "FILESTREAM"
 
 // noFilegroupItem is what the Filegroup dropdown shows for a LOG file. The list
@@ -78,14 +78,14 @@ func fileEditFromInfo(fl *gosmo.DatabaseFileInfo) *fileEdit {
 // changed reports whether this file's definition differs from what the server
 // reported. Only the four things ALTER DATABASE ... MODIFY FILE can change are
 // compared: fileType, fileGroup and path are fixed for an existing file, so an
-// edit to them is not a change this page can write, and treating it as one
-// would send an ALTER that silently does nothing.
+// edit to them is not a change this page can write, and treating it as one would
+// send an ALTER that silently does nothing.
 //
-// A method rather than two copies because the Files page needs the same answer
-// in two places that must agree: GridRow.DirtyFn (is the page dirty at all) and
-// apply (does this file get an ALTER). Two expressions listing the same six
-// fields drift: a field added to one only makes a page that never reports
-// itself dirty (OK writes nothing) or is always dirty (OK always writes).
+// A method rather than two copies because the Files page needs the same answer in
+// two places that must agree: GridRow.DirtyFn (is the page dirty at all) and apply
+// (does this file get an ALTER). Two expressions listing the same fields drift: a
+// field added to one only makes a page that never reports itself dirty (OK writes
+// nothing) or is always dirty (OK always writes).
 func (e *fileEdit) changed() bool {
 	return e.name != e.origName || e.sizeKB != e.origSizeKB ||
 		e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB ||
@@ -99,16 +99,15 @@ func (e *fileEdit) reset() {
 	e.growthKB, e.growthPercent, e.maxSizeKB = e.origGrowthKB, e.origGrowthPercent, e.origMaxSizeKB
 }
 
-// modify builds the partial ALTER for an existing file: every field is left
-// zero unless it changed, because gosmo reads a zero as "leave this property
-// alone" and omits it.
+// modify builds the partial ALTER for an existing file: every field is left zero
+// unless it changed, because gosmo reads a zero as "leave this property alone" and
+// omits it.
 //
-// Hence each assignment is guarded, not unconditional. Sending the unchanged
-// current value looks harmless but SIZE bites: ALTER DATABASE ... MODIFY FILE
-// treats it as a grow-to target and rejects a value below the file's current
-// size. A user editing only the autogrowth of a file that has since grown past
-// its recorded size would get "MODIFY FILE failed. Specified size is less than
-// or equal to current size" for an edit they never made.
+// Hence each assignment is guarded. Sending the unchanged current value looks
+// harmless but SIZE bites: MODIFY FILE treats it as a grow-to target and rejects a
+// value below the file's current size, so editing only the autogrowth of a file
+// that has since grown past its recorded size would fail with "MODIFY FILE failed.
+// Specified size is less than or equal to current size".
 func (e *fileEdit) modify() gosmo.FileModify {
 	var m gosmo.FileModify
 	if e.name != e.origName {
@@ -118,15 +117,14 @@ func (e *fileEdit) modify() gosmo.FileModify {
 		m.SizeKB = e.sizeKB
 	}
 	if e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB || e.growthPercent != e.origGrowthPercent {
-		// Exactly one of the two is set: gosmo lets GrowthPercent win when both are,
-		// and the growth kind is a radio, so sending both would carry the radio's
-		// losing half for nothing.
+		// Exactly one of the two is set: gosmo lets GrowthPercent win when both are, and
+		// the growth kind is a radio, so sending both would carry the radio's losing half
+		// for nothing.
 		//
-		// A growth of zero must go through DisableGrowth, not the amount fields,
-		// because gosmo reads a zero amount as "leave FILEGROWTH alone": turning
-		// autogrowth off would produce an ALTER with no FILEGROWTH clause, and where
-		// growth was the only edit, no ALTER at all (OK reported success and the file
-		// still grew).
+		// A growth of zero must go through DisableGrowth, not the amount fields, because
+		// gosmo reads a zero amount as "leave FILEGROWTH alone": turning autogrowth off
+		// would produce an ALTER with no FILEGROWTH clause, and where growth was the only
+		// edit, no ALTER at all (OK reported success and the file still grew).
 		switch {
 		case e.growthOff():
 			m.DisableGrowth = true
@@ -354,25 +352,23 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				current.name = nameField.Value()
-				// Only a new file reads type/filegroup/path back. They are fixed for an
-				// existing one (changed() excludes them because MODIFY FILE can neither retype
-				// nor move a file), so writing them could only record something untrue: a
-				// FILESTREAM file's type is outside the picker's two items, so the picker
-				// showed a stand-in and merely selecting the row rewrote the file as ROWS,
-				// which the grid then reported as fact. Same defect as noFilegroupItem, one
-				// field over.
+				// Only a new file reads type/filegroup/path back. They are fixed for an existing
+				// one (changed() excludes them because MODIFY FILE can neither retype nor move a
+				// file), so writing them could only record something untrue: a FILESTREAM file's
+				// type is outside the picker's two items, so the picker shows a stand-in and
+				// merely selecting the row would rewrite the file as ROWS. Same defect as
+				// noFilegroupItem, one field over.
 				if current.isNew {
 					current.fileGroup = pickedFilegroup(typeSelect.Value())
 					current.fileType = effectiveType(typeSelect.Value(), current.fileGroup)
 					current.path = pathField.Value()
 				}
-				// The spinners are whole MB, so each reads back only once the user has
-				// edited it (Dirty is "since this file was selected": syncFieldsFromSelection
-				// resets each baseline). Copied back unconditionally, a file not sized in
-				// whole MB — any that grew by a percentage or by a KB amount — came back
-				// rounded down on every OK of a page nobody touched: a smaller SIZE the
-				// server refuses, a cap lowered, and a growth under 1 MB read as 0, which
-				// growthOff sends as FILEGROWTH = 0 — autogrowth silently switched off.
+				// The spinners are whole MB, so each reads back only once the user has edited it
+				// (Dirty is "since this file was selected": syncFieldsFromSelection resets each
+				// baseline). Copied back unconditionally, a file not sized in whole MB (grown by a
+				// percentage or a KB amount) would round down on every OK of an untouched page: a
+				// smaller SIZE the server refuses, a cap lowered, and a growth under 1 MB read as
+				// 0, which growthOff sends as FILEGROWTH = 0 — autogrowth silently switched off.
 				if sizeField.Dirty() {
 					if n, err := sizeField.IntValue(); err == nil {
 						current.sizeKB = n * 1024

@@ -14,20 +14,20 @@ import (
 // new_certificate_dialog.go is the New Certificate dialog (a database's
 // Security > Certificates folder), built on newObjectDialog.
 //
-// Generated certificates only (WITH SUBJECT). Every import form — FROM FILE,
-// EXECUTABLE FILE, ASSEMBLY, WITH PRIVATE KEY (FILE = …) — reads the server's
+// Generated certificates only (WITH SUBJECT). Every import form (FROM FILE,
+// EXECUTABLE FILE, ASSEMBLY, WITH PRIVATE KEY (FILE = ...)) reads the server's
 // own filesystem, which gossms cannot browse, and is left to a query window.
 //
-// The private key is protected by the database master key or by a password.
-// The first needs a master key, which SQL Server will not create implicitly
-// (Msg 15581), so when the database has none the dialog asks for its password
-// and creates it first — ensureMasterKey, shared with the endpoint dialog. The
+// The private key is protected by the database master key or a password. The
+// first needs a master key, which SQL Server will not create implicitly (Msg
+// 15581), so when the database has none the dialog asks for its password and
+// creates it first (ensureMasterKey, shared with the endpoint dialog). The
 // private-key and master-key fields are keyProtectionFields, shared with New
 // Asymmetric Key.
 
 // certDateLayout is what the two date fields take. EXPIRY_DATE and START_DATE
-// are dates to SQL Server's parser as gosmo emits them (yyyymmdd), so a time
-// of day would be a promise the statement does not keep.
+// are dates to SQL Server's parser as gosmo emits them (yyyymmdd), so a time of
+// day would be a promise the statement does not keep.
 const certDateLayout = "2006-01-02"
 
 // ncertPrefetch is what the dialog reads before it opens.
@@ -110,16 +110,15 @@ func (d *NewCertificateDialog) buildPages(pf *ncertPrefetch) {
 		}, time.Now())
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		// DatabaseRef, not DatabaseByName: every statement here addresses the
-		// database by name, and the by-name read would not work under Script
-		// Changes.
+		// DatabaseRef, not DatabaseByName: every statement addresses the database by
+		// name, and the by-name read would not work under Script Changes.
 		dbObj := sc.Server.DatabaseRef(dbName)
 		spec := gosmo.CreateCertificateRequest{
 			Name:    d.objectName(),
 			Subject: strings.TrimSpace(subjectField.Value()),
 		}
-		// Already validated by the preflight; blank parses to the zero time,
-		// which gosmo omits.
+		// Already validated by the preflight; blank parses to the zero time, which
+		// gosmo omits.
 		spec.StartDate, _ = parseCertDate(startField.Value())
 		spec.ExpiryDate, _ = parseCertDate(expiryField.Value())
 		var err error
@@ -138,9 +137,8 @@ type newCertificateInput struct {
 	existingNames *nameSet
 }
 
-// validateNewCertificate refuses what the server would, with a message that
-// names the field — Msg 15581 for a missing master key password says nothing
-// about the dialog it came from.
+// validateNewCertificate refuses what the server would, naming the field: Msg
+// 15581 says nothing about the dialog it came from.
 func validateNewCertificate(in newCertificateInput, now time.Time) error {
 	if in.name == "" {
 		return fmt.Errorf("certificate name is required")

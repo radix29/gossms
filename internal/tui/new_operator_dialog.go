@@ -10,11 +10,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_operator_dialog.go is the New Operator creation dialog (Object
-// Explorer's SQL Server Agent > Operators folder, "New Operator..."). A
-// single-page entity, but still built on propsheet.PropertySheet (one page,
-// "General") rather than a bespoke shell, so OK/Cancel/Apply/Script Changes
-// behave identically to every other dialog in the app.
+// new_operator_dialog.go is the New Operator dialog (Object Explorer's SQL
+// Server Agent > Operators folder). A single-page entity still built on
+// propsheet.PropertySheet (one "General" page) so OK/Cancel/Apply/Script
+// Changes behave as in every other dialog.
 
 // noperatorPrefetch holds the one shared prefetch this dialog is built from:
 // existing operator names (name-uniqueness preflight) and operator categories

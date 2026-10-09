@@ -10,10 +10,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_credential_dialog.go is the New Credential creation dialog (Object
-// Explorer's Security > Credentials folder, "New Credential..."). One page,
-// built on newObjectDialog like every other New-X so OK/Cancel/Apply/Script
-// Changes behave the same.
+// new_credential_dialog.go is the New Credential dialog (Object Explorer's
+// Security > Credentials folder). One page, built on newObjectDialog so
+// OK/Cancel/Apply/Script Changes behave as in every New-X.
 
 // ncredentialPrefetch holds what the dialog needs before it opens: existing
 // credential names for the uniqueness preflight, and the EKM providers
@@ -32,9 +31,9 @@ func fetchNewCredentialPrefetch(ctx context.Context, sc *db.ServerConn) (*ncrede
 	for _, c := range creds {
 		existing.Add(c.Name)
 	}
-	// A server with no EKM provider configured is the ordinary case, and the
-	// read needs rights this dialog does not otherwise require — so a failure
-	// here leaves the dropdown empty rather than failing the dialog.
+	// A server with no EKM provider configured is the ordinary case, and the read
+	// needs rights this dialog does not otherwise require, so a failure leaves the
+	// dropdown empty rather than failing the dialog.
 	var providerNames []string
 	if providers, err := sc.Server.CryptographicProviders(ctx); err == nil {
 		for _, p := range providers {
@@ -83,9 +82,8 @@ func (d *NewCredentialDialog) buildPages(pf *ncredentialPrefetch) {
 		passwordField, confirmField,
 		propsheet.Note("The secret is optional — an identity that needs no password can be left blank. It can never be read back afterwards."),
 	}
-	// The provider section appears only on a server that has one registered.
-	// A dropdown whose only entry is "<none>" offers nothing to choose, and an
-	// empty control the user can focus reads as a broken one.
+	// The provider section appears only on a server that has one registered: a
+	// dropdown whose only entry is "<none>" offers nothing and reads as broken.
 	var providerRow *propsheet.SelectRow
 	if len(pf.providers) > 0 {
 		providerRow = propsheet.Select("Encryption provider", append([]string{noneItem}, pf.providers...), 0)
@@ -106,8 +104,8 @@ func (d *NewCredentialDialog) buildPages(pf *ncredentialPrefetch) {
 		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a credential named %q already exists", name)
 		}
-		// CREATE CREDENTIAL has no form without IDENTITY, and the server's own
-		// error for the omission is a syntax error naming nothing useful.
+		// CREATE CREDENTIAL has no form without IDENTITY, and the server's error for
+		// the omission is a syntax error naming nothing useful.
 		if strings.TrimSpace(identityField.Value()) == "" {
 			return fmt.Errorf("identity is required")
 		}
@@ -119,10 +117,9 @@ func (d *NewCredentialDialog) buildPages(pf *ncredentialPrefetch) {
 	d.applyFns[0] = func(ctx context.Context) error {
 		spec := gosmo.CreateCredentialRequest{
 			Name: d.objectName(),
-			// Trimmed to match what the preflight validated: SQL Server
-			// stores IDENTITY verbatim, so a pasted trailing space becomes
-			// part of the account name and the credential then fails to
-			// authenticate with nothing on the page saying why.
+			// Trimmed to match what the preflight validated: SQL Server stores IDENTITY
+			// verbatim, so a pasted trailing space becomes part of the account name and
+			// the credential then fails to authenticate with nothing saying why.
 			Identity: strings.TrimSpace(identityField.Value()),
 			Secret:   passwordField.Value(),
 		}

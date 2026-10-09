@@ -51,17 +51,16 @@ func isDraggableNode(t NodeType) bool {
 	return true
 }
 
-// explorerDragText returns the quoted T-SQL identifier to insert into a
-// query editor when n is dropped there. Tables, views, stored procedures,
-// functions, sequences, synonyms, and triggers are addressable as
-// schema.name in T-SQL (e.g. "DROP TRIGGER dbo.MyTrigger"), so those get the
-// full two-part fqn; everything else (databases, schemas, columns, keys,
-// indexes, statistics, foreign keys, checks, logins, users, roles, agent
-// jobs, linked servers) is quoted as a single bare name. In particular, for
-// the table-nested detail types (column, key, index, statistic, foreign
-// key, check), n.data.Schema holds the *owning table's* schema, not a
-// schema this object itself is addressed by — qualifying with it would
-// produce a misleading (and invalid) two-part name.
+// explorerDragText returns the quoted T-SQL identifier to insert into a query
+// editor when n is dropped there. Tables, views, stored procedures, functions,
+// sequences, synonyms, and triggers are addressable as schema.name in T-SQL (e.g.
+// "DROP TRIGGER dbo.MyTrigger"), so those get the full two-part fqn; everything
+// else (databases, schemas, columns, keys, indexes, statistics, foreign keys,
+// checks, logins, users, roles, agent jobs, linked servers) is quoted as a single
+// bare name. For the table-nested detail types (column, key, index, statistic,
+// foreign key, check), n.data.Schema holds the *owning table's* schema, not one
+// this object is addressed by — qualifying with it would produce a misleading
+// (and invalid) two-part name.
 func explorerDragText(n *explorerNode) string {
 	switch n.data.Type {
 	case NodeTable, NodeView, NodeStoredProcedure, NodeFunction, NodeSequence, NodeSynonym, NodeTrigger,

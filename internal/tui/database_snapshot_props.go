@@ -10,19 +10,18 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// database_snapshot_props.go is the read-only Properties for a database
-// snapshot.
+// database_snapshot_props.go is the read-only Properties for a database snapshot.
 //
-// Nothing here writes, and this is not the Database Properties dialog with
-// its pages disabled: a snapshot is read-only by construction, has no
-// transaction log and no recovery model to set, and the two operations it
-// does have — revert and drop — are its context menu's, not a form's. Both
-// pages are named in prop_page_requires_test.go's pagesThatOnlyRead.
+// Nothing here writes, and this is not the Database Properties dialog with its
+// pages disabled: a snapshot is read-only by construction, has no transaction log
+// and no recovery model to set, and the two operations it has — revert and drop —
+// are its context menu's, not a form's. Both pages are named in
+// prop_page_requires_test.go's pagesThatOnlyRead.
 //
 // The Files page reads the snapshot's own sys.database_files, which lists the
-// sparse files, not the source's. Their size is what the snapshot has
-// actually copied so far — a snapshot starts near empty and grows as its
-// source changes — so it is the one figure here that moves.
+// sparse files, not the source's. Their size is what the snapshot has copied so
+// far (it starts near empty and grows as its source changes), so it is the one
+// figure here that moves.
 
 func findDatabaseSnapshot(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.DatabaseSnapshot, error) {
 	return sc.Server.DatabaseSnapshotByName(ctx, name)

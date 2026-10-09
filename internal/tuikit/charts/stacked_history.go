@@ -8,15 +8,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// StackedHistoryChart plots one column per time bucket with its series
-// stacked, so a column's height is the bucket's total and each colour is
-// one metric's contribution to it. This is the shape the waits and memory
-// panels need: what matters there is the total and the mix, not each
-// series against the baseline.
-//
-// The stack is composed as a single run per column rather than as one bar
-// per series, which is what keeps it continuous — see composeStack. Series
-// stack in slice order, first at the baseline.
+// StackedHistoryChart plots one column per time bucket with its series stacked:
+// column height is the bucket total, each colour one metric's contribution
+// (the waits and memory panels, where total and mix matter). The stack is one
+// run per column rather than a bar per series, which keeps it continuous (see
+// composeStack). Series stack in slice order, first at the baseline.
 type StackedHistoryChart struct {
 	Series []Series
 
@@ -93,10 +89,9 @@ func (h StackedHistoryChart) drawColumns(s tcell.Screen, plot core.Rect, sc Scal
 		if idx < 0 {
 			continue
 		}
-		// Segment heights come from each series' share of the column's
-		// total, not from scaling each value on its own: rounding every
-		// series independently would let the parts disagree with the total
-		// the axis reports.
+		// Segment heights come from each series' share of the column total: scaling
+		// each value independently would let rounding make the parts disagree with the
+		// total the axis reports.
 		segs = segs[:0]
 		running := 0.0
 		prevCells := 0.0

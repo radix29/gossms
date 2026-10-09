@@ -17,26 +17,26 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// fulltext_props.go is the Properties for a full-text catalog, a stoplist and
-// a search property list, and the helpers the four full-text families share; a table's
-// full-text index is fulltext_index_props.go. The New dialogs are the
+// fulltext_props.go is the Properties for a full-text catalog, a stoplist and a
+// search property list, and the helpers the four full-text families share; a
+// table's full-text index is fulltext_index_props.go. The New dialogs are the
 // new_fulltext_*_dialog.go files.
 //
-// What each page writes, and the right that gates it (probed 2026-10-08 on
-// majors 14 and 17, identical — gate.AlterOnFullTextCatalog's comment):
-//   - Catalog General: AS DEFAULT, which needs ALTER ANY FULLTEXT CATALOG;
-//     ALTER on the catalog alone is refused it.
-//   - Catalog Maintenance: REORGANIZE (SSMS's Optimize) and REBUILD, with
-//     the accent sensitivity a rebuild can change — ALTER on the catalog.
-//   - Stoplist Stopwords and Property List Properties: ADD/DROP — ALTER on
-//     the stoplist or list.
+// What each page writes, and the right that gates it (probed on majors 14 and 17,
+// identical — gate.AlterOnFullTextCatalog's comment):
+//   - Catalog General: AS DEFAULT, which needs ALTER ANY FULLTEXT CATALOG; ALTER on
+//     the catalog alone is refused it.
+//   - Catalog Maintenance: REORGANIZE (SSMS's Optimize) and REBUILD, with the
+//     accent sensitivity a rebuild can change — ALTER on the catalog.
+//   - Stoplist Stopwords and Property List Properties: ADD/DROP — ALTER on the
+//     stoplist or list.
 //
-// Owners are shown, not changed: ALTER AUTHORIZATION is a different right
-// (TAKE OWNERSHIP, or IMPERSONATE on the new owner), and the New dialogs set
-// the owner the object starts with.
+// Owners are shown, not changed: ALTER AUTHORIZATION is a different right (TAKE
+// OWNERSHIP, or IMPERSONATE on the new owner), and the New dialogs set the owner
+// the object starts with.
 //
-// The finders are the ones the Details pane uses (detail_browser_fulltext.go),
-// so the pane and the dialog cannot disagree about which object a node names.
+// The finders are the ones the Details pane uses (detail_browser_fulltext.go), so
+// the pane and the dialog cannot disagree about which object a node names.
 
 func findFullTextCatalog(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.FullTextCatalog, error) {
 	return inDB(ctx, sc, dbName, name, (*gosmo.Database).FullTextCatalogByName)
@@ -451,15 +451,15 @@ func sameStopword(a, b gosmo.FullTextStopword) bool {
 	return a.LanguageID == b.LanguageID && strings.EqualFold(a.Word, b.Word)
 }
 
-// pageFullTextStopwords is the stoplist's words, master-detail over
-// pendingEdits: a word and language to Add, Remove for the selected word, and
-// Remove Language for every word of the selected word's language.
+// pageFullTextStopwords is the stoplist's words, master-detail over pendingEdits:
+// a word and language to Add, Remove for the selected word, and Remove Language
+// for every word of the selected word's language.
 //
 // Apply drops before it adds (a removed word can be added back in the same
-// Apply), and sends the narrowest statement that does the whole job: DROP ALL
-// when every loaded word goes, DROP ALL LANGUAGE when every word of a language
-// does — a copy of the system stoplist holds thousands of words, which one
-// DROP each would take minutes to send.
+// Apply), and sends the narrowest statement that does the whole job: DROP ALL when
+// every loaded word goes, DROP ALL LANGUAGE when every word of a language does —
+// a copy of the system stoplist holds thousands of words, which one DROP each
+// would take minutes to send.
 func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.Context) (*gosmo.FullTextStoplist, error)) propPage {
 	return propPage{
 		title: "Stopwords",

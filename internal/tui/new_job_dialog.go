@@ -9,12 +9,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_job_dialog.go is the New Job creation dialog (Object Explorer's SQL
-// Server Agent > Jobs folder, "New Job..."). Four pages — General, Steps,
-// Schedules, Notifications — page builders live in new_job_pages.go.
-// Alerts, Targets, and History are left out: alert-job linking lives on Job
-// Properties' own Alerts page, Targets has nothing to configure before the
-// job exists, and History is empty for a job that hasn't run.
+// new_job_dialog.go is the New Job dialog (Object Explorer's SQL Server Agent >
+// Jobs folder). Four pages (General, Steps, Schedules, Notifications); builders
+// are in new_job_pages.go. Alerts, Targets and History are left out: alert-job
+// linking lives on Job Properties' Alerts page, Targets has nothing to configure
+// before the job exists, and History is empty for a job that hasn't run.
 
 // njobPrefetch holds the one fetch every New Job page is built from.
 type njobPrefetch struct {

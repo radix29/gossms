@@ -14,16 +14,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// fulltext_index_props.go is a table's Full-Text Index Properties (W15
-// read-only, W19 writable) and the column editor it shares with New
-// Full-Text Index (new_fulltext_index_dialog.go).
+// fulltext_index_props.go is a table's Full-Text Index Properties (W15 read-only,
+// W19 writable) and the column editor it shares with New Full-Text Index
+// (new_fulltext_index_dialog.go).
 //
 // Both pages write through ALTER FULLTEXT INDEX, gated on ALTER on the table
-// (gate.ObjectWriteRights(), the cascade's set — explorer_fulltext.go). Naming
-// a user stoplist or a property list also needs REFERENCES on it (2026-10-08
-// probe, gate.ReferencesOnFullTextStoplist); the General page asks that of the
-// cached capabilities when it validates (SelectRow.SetValidate), which refuses
-// before anything is sent.
+// (gate.ObjectWriteRights(), the cascade's set — explorer_fulltext.go). Naming a
+// user stoplist or a property list also needs REFERENCES on it
+// (gate.ReferencesOnFullTextStoplist); the General page asks that of the cached
+// capabilities when it validates (SelectRow.SetValidate), which refuses before
+// anything is sent.
 
 func fullTextIndexPropPages(sc *db.ServerConn, dbName, schema, table string) []propPage {
 	find := func(ctx context.Context) (*gosmo.FullTextIndex, error) {

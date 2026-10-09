@@ -12,13 +12,12 @@ import (
 
 // HistoryChart plots one column per time bucket with its series overlaid, each
 // drawn from the baseline in its own colour, tallest first, so a shorter series
-// stays visible in front of a taller one. Use it where the series are
-// independent quantities (pages read against pages written);
-// StackedHistoryChart is for series that compose a total.
+// stays visible in front. Use it for independent quantities (pages read vs
+// written); StackedHistoryChart is for series that compose a total.
 //
 // The newest bucket is always the rightmost column. A chart wider than the data
-// leaves its left end empty rather than stretching the data, so a partially
-// filled buffer grows from the right instead of rescaling on every tick.
+// leaves its left end empty, so a partially filled buffer grows from the right
+// instead of rescaling every tick.
 type HistoryChart struct {
 	Series []Series
 
@@ -62,30 +61,27 @@ func (h HistoryChart) spec() historySpec {
 	}
 }
 
-// Draw renders the chart into r and returns the plot rect it drew into —
-// the same rect Plot reports for the same r, handed back so a caller that
-// hit-tests what it just drew doesn't repeat the scale and layout pass.
+// Draw renders the chart into r and returns the plot rect it drew into (the
+// same rect Plot reports), so a hit-testing caller needn't repeat the layout.
 func (h HistoryChart) Draw(s tcell.Screen, r core.Rect) core.Rect {
 	plot, _ := h.spec().drawFrame(s, r)
 	return plot
 }
 
-// DrawFrame is Draw reporting the time row as well, for a caller that needs
-// both — Draw followed by TimeRow lays the chart out twice, and the layout
-// pass runs the auto-scale walk over every bucket of every series.
+// DrawFrame is Draw also reporting the time row; Draw then TimeRow would lay the
+// chart out twice, and layout runs the auto-scale walk over every bucket.
 func (h HistoryChart) DrawFrame(s tcell.Screen, r core.Rect) (plot, timeRow core.Rect) {
 	return h.spec().drawFrame(s, r)
 }
 
-// Plot is the rect Draw would plot into for the same r: the data area, without
-// the axis gutter, time row, or legend. A caller hit-testing a drawn chart must
-// ask for this rather than recompute it, or the two disagree when the chrome
-// changes.
+// Plot is the rect Draw would plot into for the same r: the data area without
+// axis gutter, time row or legend. Hit-testing callers must ask for this rather
+// than recompute it.
 func (h HistoryChart) Plot(r core.Rect) core.Rect { return h.spec().plotRect(r) }
 
 // TimeRow is the row Draw writes the time scale on for the same r, zero-sized
-// when the chart was too short for one. A caller marking a column on that scale
-// must ask for this for the reason Plot exists.
+// when the chart is too short. Callers marking a column on it ask for this, as
+// with Plot.
 func (h HistoryChart) TimeRow(r core.Rect) core.Rect { return h.spec().timeRowRect(r) }
 
 // drawColumns plots every visible bucket, tallest series first within each
@@ -157,9 +153,8 @@ func ColumnAt(plot core.Rect, idx, buckets int) int {
 	return x
 }
 
-// BucketCount is how many time buckets a set of series plots — the length
-// of its longest member, since a metric still filling its buffer reads as
-// zero rather than shortening the chart.
+// BucketCount is how many buckets a set of series plots: its longest member's
+// length, since a metric still filling its buffer reads as zero.
 func BucketCount(series []Series) int { return maxLen(series) }
 
 // legendRowsFor resolves a chart's LegendRows field: negative suppresses

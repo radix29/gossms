@@ -46,15 +46,14 @@ func DrawTextClipped(s tcell.Screen, x, y, maxW int, style tcell.Style, text str
 }
 
 // DrawTextLine draws what DrawTextClipped(s, x, y, maxW, style,
-// TruncateLine(text, maxW)) draws — line breaks and tabs as one space, "…"
-// in the last column when text does not fit — without building the
-// truncated string. A grid draws every visible cell every frame, and a clipped
-// cell's TruncateLine was an allocation each time.
+// TruncateLine(text, maxW)) draws (line breaks and tabs as one space, "…" in the
+// last column on overflow) without building the string: a grid draws every
+// visible cell every frame.
 //
 // One pass: graphemes are drawn while they fit maxW-1 columns. The first that
-// does not is where "…" goes if text overflows, and what follows it fits in
-// at most the two columns that grapheme's width allows, so up to two are held
-// back until the overflow question is answered.
+// doesn't is where "…" goes if text overflows, and what follows fits in at most
+// the two columns its width allows, so up to two are held back until the
+// overflow question is answered.
 func DrawTextLine(s tcell.Screen, x, y, maxW int, style tcell.Style, text string) {
 	if maxW <= 0 {
 		return
@@ -109,11 +108,9 @@ func heldWidth(held []heldGrapheme) int {
 	return w
 }
 
-// DrawTextOffset draws text horizontally scrolled by startCol display columns:
-// graphemes whose virtual column falls before startCol are skipped, then up to
-// maxW columns are drawn from (x,y). A grapheme straddling startCol is dropped
-// rather than partially rendered, as DrawTextClipped treats the maxW boundary.
-// Used for content, like a TreeView row, that scrolls sideways.
+// DrawTextOffset draws text scrolled by startCol display columns: graphemes
+// before startCol are skipped, then up to maxW columns drawn. A grapheme
+// straddling startCol is dropped, as DrawTextClipped treats the maxW boundary.
 func DrawTextOffset(s tcell.Screen, x, y, startCol, maxW int, style tcell.Style, text string) {
 	if maxW <= 0 {
 		return
@@ -155,14 +152,12 @@ func DrawTextRight(s tcell.Screen, x, y, w int, style tcell.Style, text string) 
 	}
 }
 
-// putGrapheme writes a (possibly multi-rune) grapheme cluster starting at
-// (x,y). Wide graphemes (width 2) occupy two cells; the second is left for the
-// terminal to render as part of the wide glyph, so only the first receives
-// content.
+// putGrapheme writes a grapheme cluster at (x,y). Wide graphemes occupy two
+// cells; only the first receives content, the terminal renders the glyph across
+// both.
 //
-// Put, not SetContent: SetContent re-packs its rune and combining runes into a
-// string for Put, an allocation per visible cell per frame, and splitting the
-// grapheme into runes for it was another.
+// Put, not SetContent: SetContent re-packs its runes into a string for Put, an
+// allocation per visible cell per frame.
 func putGrapheme(s tcell.Screen, x, y int, grapheme string, style tcell.Style) {
 	if grapheme == "" {
 		return
@@ -170,9 +165,9 @@ func putGrapheme(s tcell.Screen, x, y int, grapheme string, style tcell.Style) {
 	s.Put(x, y, grapheme, style)
 }
 
-// PutRune writes the single-rune grapheme r at (x,y): SetContent(x, y, r, nil,
-// style) without its allocation (see putGrapheme). tuikit cell drawing goes
-// through here or putGrapheme, never SetContent.
+// PutRune writes the single-rune grapheme r at (x,y): SetContent without its
+// allocation. tuikit cell drawing goes through here or putGrapheme, never
+// SetContent.
 func PutRune(s tcell.Screen, x, y int, r rune, style tcell.Style) {
 	s.Put(x, y, RuneString(r), style)
 }
@@ -206,10 +201,8 @@ func RuneString(r rune) string {
 	return string(r)
 }
 
-// FillRect fills a rectangle with the given rune and style.
-//
-// One Put per cell rather than tcell's FillArea, which converts the rune to a
-// string for every cell where Put takes the one string built here.
+// FillRect fills a rectangle with the given rune and style. One Put per cell
+// rather than tcell's FillArea, which converts the rune to a string per cell.
 func FillRect(s tcell.Screen, r Rect, ch rune, style tcell.Style) {
 	str := RuneString(ch)
 	for row := r.Y; row < r.Y+r.H; row++ {
@@ -219,11 +212,10 @@ func FillRect(s tcell.Screen, r Rect, ch rune, style tcell.Style) {
 	}
 }
 
-// DimArea fades every cell within r in place by blending its foreground and
-// background toward overlay at strength num/den (0 = unchanged, den = fully
-// overlay). It reads the drawn content with Screen.Get and rewrites each cell
-// keeping its rune, so the UI stays visible but dimmed rather than wiped by a
-// solid fill. Cells with the terminal default (unset) colour are untouched.
+// DimArea fades every cell within r in place by blending its colours toward
+// overlay at strength num/den (0 = unchanged, den = fully overlay), keeping each
+// rune so the UI stays visible. Cells with the terminal default colour are
+// untouched.
 func DimArea(s tcell.Screen, r Rect, overlay tcell.Color, num, den int) {
 	if num <= 0 || den <= 0 {
 		return
@@ -348,21 +340,18 @@ func DrawScrollbar(s tcell.Screen, x, y, h, total, visible, offset int, style, t
 // scrollThumb returns the thumb's length and its start within a track of length
 // n, for total > visible. The start spans the free track, n-length, in step
 // with offset's span, total-visible, so the last offset puts the thumb's end on
-// the track's last cell. Placing it at offset*n/total left rounding to decide,
-// and the thumb stopped short of the bottom (a 10-row track over 30 rows, 10
-// visible, ended at row 8).
+// Placing it at offset*n/total left rounding to decide and stopped short of the
+// bottom (a 10-row track over 30 rows, 10 visible, ended at row 8).
 func scrollThumb(n, total, visible, offset int) (length, start int) {
 	length = Clamp(n*visible/total, 1, n)
 	return length, Clamp(offset, 0, total-visible) * (n - length) / (total - visible)
 }
 
 // ScrollOffsetForDrag returns the scroll offset a click or drag at
-// track-relative row y (0 at the track's first row, matching the y..y+h span
-// DrawScrollbar was given) should jump the view to, given the same
-// h/total/visible: the track's first row is offset 0 and its last the final
-// offset, as scrollThumb draws them. HandleScrollbarDrag is the higher-level
-// helper most callers want; this is exposed for callers needing the offset math
-// without the button/latch handling.
+// track-relative row y (0 at the track's first row) should jump the view to:
+// the first row is offset 0, the last the final offset, as scrollThumb draws
+// them. HandleScrollbarDrag is the higher-level helper; this is for callers
+// needing the offset math alone.
 func ScrollOffsetForDrag(y, h, total, visible int) int {
 	if h <= 0 || total <= visible {
 		return 0
@@ -370,9 +359,8 @@ func ScrollOffsetForDrag(y, h, total, visible int) int {
 	if h == 1 {
 		return 0
 	}
-	// Linear from the first row to the last. y*total/h topped out at
-	// (h-1)*total/h (900 of 995 on a 10-row track over 1000 rows), making the end
-	// of a long list unreachable by drag.
+	// Linear first row to last. y*total/h topped out at (h-1)*total/h (900 of 995 on
+	// a 10-row track over 1000 rows), making the end of a long list unreachable.
 	return Clamp(y, 0, h-1) * (total - visible) / (h - 1)
 }
 
@@ -394,20 +382,17 @@ func DrawScrollbarH(s tcell.Screen, x, y, w, total, visible, offset int, style, 
 }
 
 // HandleScrollbarDrag is the mouse-side counterpart of DrawScrollbar: given the
-// same x/y/h/total a caller passed to DrawScrollbar, it handles a Button1 press
-// or drag on that bar. Unlike DrawScrollbar it takes a single h as both track
-// length and visible count (every current caller passes the same value for
-// both); a caller with a genuinely different visible count needs its own drag
-// math.
+// same x/y/h/total, it handles a Button1 press or drag on the bar. It takes one
+// h as both track length and visible count (every caller passes the same); a
+// caller with a different visible count needs its own drag math.
 //
-// *dragging latches for the whole gesture: set true on the qualifying initial
-// press and left untouched after, so every call while the button stays down
-// keeps controlling *scroll even once the mouse drifts off the bar's column.
-// The caller clears *dragging on release (typically with its other latches, e.g.
-// DataGrid/TreeView/ListBox/Editor's mouseDragging, or
-// ModalDialog.ConsumeOutsideClick for every embedding dialog). Returns false
-// (writing nothing) for anything but a qualifying Button1 event, so callers can
-// chain it before their own hit-testing.
+// *dragging latches for the whole gesture: set on the qualifying initial press,
+// so every call while the button stays down controls *scroll even once the mouse
+// drifts off the bar's column. The caller clears it on release (with its other
+// latches, e.g. DataGrid/TreeView/ListBox/Editor's mouseDragging, or
+// ModalDialog.ConsumeOutsideClick). Returns false, writing nothing, for anything
+// but a qualifying Button1 event, so callers can chain it before their own
+// hit-testing.
 func HandleScrollbarDrag(ev *tcell.EventMouse, x, y, h, total int, dragging *bool, scroll *int) bool {
 	if ev.Buttons() != tcell.Button1 || total <= h || h <= 0 {
 		return false

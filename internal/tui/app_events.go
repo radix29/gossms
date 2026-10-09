@@ -366,22 +366,20 @@ const (
 	ownerPanels
 )
 
-// routeRelease handles a Button1 release. Unlike other events it can't stop at
-// the first taker: it resets per-widget mouseDragging latches, and the latch
-// holder often isn't where the release would route.
+// routeRelease handles a Button1 release. Unlike other events it can't stop at the
+// first taker: it resets per-widget mouseDragging latches, and the latch holder
+// often isn't where the release would route.
 //
 // Dialogs open on the press, so they're on the stack when the release arrives.
-// Returning early there left MenuBar's and Toolbar's latches armed, so the next
-// click read as a resend (the first toolbar click after a dialog-opening one
-// did nothing; the first menu header click didn't open). Same for editor, grid
-// or tree latches when an alert pops mid-drag. It's ModalDialog's "a latch must
-// not survive into the next showing" rule one layer up.
+// Returning early there would leave MenuBar's and Toolbar's latches armed, so the
+// next click reads as a resend (same for editor, grid or tree latches when an
+// alert pops mid-drag). It's ModalDialog's "a latch must not survive into the
+// next showing" rule one layer up.
 //
 // So the top overlay gets the release first, then every latch owner regardless.
-// Off-bounds, each only resets: MenuBar/Toolbar clear their flag off-row;
-// Splitter clears dragging; TreeView clears its latch before its bounds check
-// and acts only on Button1/Button2; PanelManager forwards any release to the
-// active panel.
+// Off-bounds, each only resets: MenuBar/Toolbar clear their flag off-row; Splitter
+// clears dragging; TreeView clears its latch before its bounds check and acts only
+// on Button1/Button2; PanelManager forwards any release to the active panel.
 func (a *App) routeRelease(ev *tcell.EventMouse) {
 	// Every open dialog gets the release, bottom to top, not only the front one. A
 	// dialog's button latch (dialogs.ModalDialog.mouseDragging) is cleared by the

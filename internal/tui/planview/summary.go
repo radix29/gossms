@@ -13,8 +13,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// summarySort selects which column the operator summary table (the
-// bottom section's "Summary" mode) is sorted by, descending.
+// summarySort selects the operator summary table's descending sort column.
 type summarySort int
 
 const (
@@ -25,18 +24,17 @@ const (
 
 var summaryColumns = []string{"Cost%", "Rows", "Time", "Operator", "Object", "Status"}
 
-// summaryState holds the operator summary table's own grid, sort mode,
-// and the node list backing it (parallel to the grid's rows, so Enter
-// can resolve a selected row back to a *showplan.Node).
+// summaryState holds the operator summary table's grid, sort mode, and the node
+// list backing it (parallel to the grid's rows, so Enter resolves a row to a
+// *showplan.Node).
 type summaryState struct {
 	grid *controls.DataGrid
 	sort summarySort
 	rows []*showplan.Node
 }
 
-// rebuildSummaryRows re-sorts and re-renders the operator summary table
-// for the current statement — called on load, statement switch, and
-// whenever the sort mode changes.
+// rebuildSummaryRows re-sorts and re-renders the summary table for the current
+// statement (on load, statement switch and sort change).
 func (v *PlanView) rebuildSummaryRows() {
 	st := v.currentStatement()
 	if st == nil || st.Root == nil {
@@ -91,8 +89,7 @@ func nodeRows(n *showplan.Node) int64 {
 	return int64(n.EstRows)
 }
 
-// nodeTime returns actual elapsed time when available, else 0 (an
-// estimated-only plan has no time metric).
+// nodeTime returns actual elapsed time when available, else 0.
 func nodeTime(n *showplan.Node) int64 {
 	if n.Runtime != nil {
 		return n.Runtime.ElapsedMS
@@ -100,28 +97,24 @@ func nodeTime(n *showplan.Node) int64 {
 	return 0
 }
 
-// drawSummary draws the operator summary grid into the Tree tab's bottom
-// section (its only caller; the Plan tab's detail strip shows Properties
-// only, see graph.go). The grid's bounds come from layoutTree, not from
-// here — see the note there.
+// drawSummary draws the summary grid into the Tree tab's bottom section (the
+// Plan tab's strip shows Properties only, see graph.go). The grid's bounds come
+// from layoutTree; see the note there.
 func (v *PlanView) drawSummary(s tcell.Screen, rect core.Rect) {
 	v.summarySt.grid.SetBounds(rect.X, rect.Y, rect.W, rect.H)
 	v.summarySt.grid.Draw(s)
 }
 
-// The summary grid is a controls.DataGrid with the cell cursor enabled
-// (see New), so it carries that widget's right-click menu and "Show Value"
-// popup, reachable through HandleMouse's Button2 data-cell case and
-// HandleKey's Ctrl+Space. Both float free of the grid's own rect, so the
-// hooks below exist to satisfy DataGrid.OverlayActive's contract: an
-// overlay nothing draws is worse than no overlay at all — it opens
-// invisibly and then swallows every key and mouse event until dismissed.
+// The summary grid is a controls.DataGrid with the cell cursor enabled (see
+// New), so it carries that widget's right-click menu and "Show Value" popup
+// (HandleMouse's Button2 data-cell case, HandleKey's Ctrl+Space). Both float
+// free of the grid's rect, so the hooks below satisfy DataGrid.OverlayActive's
+// contract: an undrawn overlay opens invisibly and swallows every key and
+// mouse event until dismissed.
 
-// summaryVisible reports whether the operator summary table is currently on
-// screen — it lives only in the Tree tab's bottom section, in bottomSummary
-// mode (see cycleBottomMode). Both overlay hooks below gate on it, so the
-// grid's popups can't be reached, or drawn, from a tab that isn't showing
-// it.
+// summaryVisible reports whether the summary table is on screen (Tree tab,
+// bottomSummary mode; see cycleBottomMode). Both overlay hooks gate on it, so
+// the popups can't be reached or drawn from a tab not showing the table.
 func (v *PlanView) summaryVisible() bool {
 	return v.activeTab == TabTree && v.bottomMode == bottomSummary
 }
@@ -132,18 +125,16 @@ func (v *PlanView) summaryOverlayActive() bool {
 	return v.summaryVisible() && v.summarySt.grid.OverlayActive()
 }
 
-// drawSummaryOverlay paints the summary grid's popups. Called from
-// PlanView.DrawOverlay, never from drawSummary — they have to land after
-// every other widget in the frame has drawn (see the "overlays drawn last"
-// rule in tuikit/README.md), and the grid draws mid-frame.
+// drawSummaryOverlay paints the grid's popups. Called from
+// PlanView.DrawOverlay, never drawSummary: they must land after every other
+// widget (see the "overlays drawn last" rule in tuikit/README.md).
 func (v *PlanView) drawSummaryOverlay(s tcell.Screen) {
 	if v.summaryVisible() {
 		v.summarySt.grid.DrawOverlay(s)
 	}
 }
 
-// summaryHeaderStyleAndText builds the Operator Summary header's style and
-// title, varying with whether the table currently has keyboard focus.
+// summaryHeaderStyleAndText builds the header's style and title by focus.
 func (v *PlanView) summaryHeaderStyleAndText() (tcell.Style, string) {
 	hs := theme.StyleMenuBar()
 	title := "Operator Summary  ('o' to cycle, c/r/t to sort, Tab to focus)"
@@ -155,10 +146,8 @@ func (v *PlanView) summaryHeaderStyleAndText() (tcell.Style, string) {
 	return hs, title
 }
 
-// trySummarySort applies a sort-column key (c/r/t) if ev is one,
-// regardless of whether the summary table currently has focus — these
-// don't collide with anything the tree itself binds, so there's no
-// reason to require Tab-ing into the table first just to re-sort it.
+// trySummarySort applies a sort-column key (c/r/t) if ev is one, with or
+// without table focus: they collide with nothing the tree binds.
 func (v *PlanView) trySummarySort(ev *tcell.EventKey) bool {
 	switch core.EvRune(ev) {
 	case 'c':
@@ -174,32 +163,27 @@ func (v *PlanView) trySummarySort(ev *tcell.EventKey) bool {
 	return true
 }
 
-// syncSummaryCopyHook mirrors v.OnCopyRequest onto the grid, and must run
-// before anything that can open the grid's context menu. DataGrid offers its
-// "Copy" item only when its own hook is set, so wiring an unconditional
-// forwarder at construction would offer Copy even to a host that never asked
-// for one — a menu entry that silently does nothing when chosen. Both input
-// handlers call this, since either can open the menu.
+// syncSummaryCopyHook mirrors v.OnCopyRequest onto the grid and must run
+// before anything that can open its context menu. DataGrid offers "Copy" only
+// when its hook is set; an unconditional forwarder would offer a Copy that does
+// nothing. Both input handlers call this.
 func (v *PlanView) syncSummaryCopyHook() {
 	v.summarySt.grid.OnCopyRequest = v.OnCopyRequest
 }
 
-// handleSummaryOverlayKey forwards straight to the grid, deliberately
-// bypassing handleSummaryKey's own Enter handling below: while one of the
-// grid's popups is open, Enter belongs to it — activating the highlighted
-// menu item — not to the jump-to-tree-node shortcut. Routing the overlay
-// through handleSummaryKey instead made Enter jump the tree and leave the
-// menu open behind it, so "Show Value" could never be chosen with the
-// keyboard.
+// handleSummaryOverlayKey forwards straight to the grid, bypassing
+// handleSummaryKey's Enter handling: with a popup open Enter activates the
+// highlighted menu item, not the jump-to-tree-node shortcut. Going through
+// handleSummaryKey made Enter jump the tree and leave the menu open, so "Show
+// Value" could not be chosen by keyboard.
 func (v *PlanView) handleSummaryOverlayKey(ev *tcell.EventKey) bool {
 	v.syncSummaryCopyHook()
 	return v.summarySt.grid.HandleKey(ev)
 }
 
-// handleSummaryKey drives the summary grid while it has focus (see
-// bottomFocused): Enter jumps the tree selection to the activated row
-// and returns focus to the tree; anything else forwards to the grid
-// itself (arrow-key/PgUp/PgDn navigation, Ctrl+Space for the cell menu).
+// handleSummaryKey drives the grid while focused (see bottomFocused): Enter
+// jumps the tree selection to the row and returns focus to the tree; anything
+// else forwards to the grid.
 func (v *PlanView) handleSummaryKey(ev *tcell.EventKey) bool {
 	v.syncSummaryCopyHook()
 	if ev.Key() == tcell.KeyEnter {

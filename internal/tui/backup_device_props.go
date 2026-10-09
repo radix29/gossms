@@ -10,15 +10,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// backupDevicePropPages builds the page set for Backup Device Properties:
-// General and Media Contents, both read-only, as SSMS's own dialog is.
+// backupDevicePropPages builds the page set for Backup Device Properties: General
+// and Media Contents, both read-only, as SSMS's own dialog is.
 //
-// Nothing here writes, and that is the object's shape rather than an omission:
-// sp_addumpdevice and sp_dropdevice are a backup device's whole write surface,
-// so its name, type and path are fixed at creation. Changing one means
-// dropping the device and adding it again, which is Delete's job. Neither page
-// declares requires for that reason — both are named in
-// prop_page_requires_test.go's pagesThatOnlyRead.
+// Nothing here writes, by the object's shape: sp_addumpdevice and sp_dropdevice
+// are a backup device's whole write surface, so its name, type and path are fixed
+// at creation. Changing one means dropping and re-adding the device, which is
+// Delete's job. Neither page declares requires for that reason — both are named
+// in prop_page_requires_test.go's pagesThatOnlyRead.
 func backupDevicePropPages(sc *db.ServerConn, devName string) []propPage {
 	return []propPage{
 		pageBackupDeviceGeneral(sc, devName),
@@ -47,18 +46,17 @@ func pageBackupDeviceGeneral(sc *db.ServerConn, devName string) propPage {
 	}
 }
 
-// pageBackupDeviceMediaContents is Backup Device Properties > Media Contents:
-// the backup sets the device holds, as RESTORE HEADERONLY reports them.
+// pageBackupDeviceMediaContents is Backup Device Properties > Media Contents: the
+// backup sets the device holds, as RESTORE HEADERONLY reports them.
 //
-// The read is addressed to the *logical device*, not to its physical path —
-// that is what gosmo's BackupTarget exists for, and reading by path would go
-// behind the alias the page is about.
+// The read is addressed to the *logical device*, not its physical path (what
+// gosmo's BackupTarget is for); reading by path would go behind the alias the page
+// is about.
 //
-// A media read that fails is shown on the page rather than failing it. Opening
-// the media is the one thing here that touches the outside world: the file may
-// be gone, the tape offline, the share unreachable, and none of that makes the
-// device itself unreadable — the General page above still has everything the
-// catalog knows.
+// A media read that fails is shown on the page rather than failing it: the file
+// may be gone, the tape offline, the share unreachable, and none of that makes the
+// device itself unreadable. The General page still has everything the catalog
+// knows.
 func pageBackupDeviceMediaContents(sc *db.ServerConn, devName string) propPage {
 	return propPage{
 		title: "Media Contents",

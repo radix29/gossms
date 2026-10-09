@@ -1,8 +1,7 @@
 package db
 
-// entra.go is gossms's Microsoft Entra sign-in: the process-wide
-// gosmo.EntraCache, the TUI's device-code prompt, and ConnectContext's pre-dial
-// sign-in phase.
+// entra.go is Microsoft Entra sign-in: the process-wide gosmo.EntraCache, the
+// device-code prompt, and ConnectContext's pre-dial sign-in phase.
 
 import (
 	"context"
@@ -16,15 +15,13 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// entraCache is shared by every connection. Each ConnectContext opens its own
-// pool (Object Explorer, each query window, Activity Monitor, AG peers); a
-// cache per pool would open an MFA browser per window. Keyed by identity, so
-// one sign-in covers every server in the tenant.
+// entraCache is shared by every connection: each ConnectContext opens its own
+// pool, and a cache per pool would open an MFA browser per window. Keyed by
+// identity, so one sign-in covers every server in the tenant.
 var entraCache = gosmo.NewEntraCache()
 
-// entraUsed is whether entraCache may hold a sign-in: set by any Entra attempt,
-// cleared by ClearEntraSignIns. It only gates the menu item, so a race just
-// greys it until the next Entra connection.
+// entraUsed is whether entraCache may hold a sign-in. It only gates a menu
+// item, so a race merely greys it until the next Entra connection.
 var entraUsed atomic.Bool
 
 // HasEntraSignIns reports whether any Microsoft Entra sign-in may be held.
@@ -32,7 +29,7 @@ func HasEntraSignIns() bool { return entraUsed.Load() }
 
 // ClearEntraSignIns forgets every Entra sign-in and token, so the next Entra
 // connection signs in again (how to switch accounts). Open pools keep their
-// connections, but new physical connections sign in again.
+// connections; new physical ones sign in again.
 func ClearEntraSignIns() {
 	entraCache.Clear()
 	entraUsed.Store(false)
@@ -45,8 +42,7 @@ type DeviceCodePrompt func(ctx context.Context, m gosmo.DeviceCodeMessage) error
 
 var deviceCodePrompt atomic.Pointer[DeviceCodePrompt]
 
-// SetDeviceCodePrompt installs the process-wide prompt (a credential shared
-// through entraCache uses whichever prompt its latest connection passed).
+// SetDeviceCodePrompt installs the process-wide prompt.
 func SetDeviceCodePrompt(p DeviceCodePrompt) {
 	deviceCodePrompt.Store(&p)
 }
@@ -74,8 +70,8 @@ func NeedsSignIn(m config.AuthMethod) bool {
 // under ctx and at most SignInTimeout, keeping the token for the dial. Anything
 // else, or an existing sign-in, returns nil at once.
 //
-// First gosmo opens and abandons a login to learn the server's tenant and token
-// (once per server per process; Azure logs Error 33155), so a sign-in without
+// gosmo first opens and abandons a login to learn the server's tenant (once
+// per server per process; Azure logs Error 33155), so a sign-in without
 // TenantID reaches the server's tenant as in SSMS instead of azidentity's
 // "organizations", which refuses personal accounts. An unreachable server
 // therefore fails here.

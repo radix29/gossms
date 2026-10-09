@@ -18,8 +18,8 @@ const (
 	rmToolErrors
 )
 
-// buildTools makes the toolbar cells. Labels carry the selection, so they
-// are refreshed on every draw (refreshToolLabels).
+// buildTools makes the toolbar cells. Labels carry the selection, so they are
+// refreshed every draw (refreshToolLabels).
 func (p *ReplicationMonitorPanel) buildTools() {
 	p.tools.Cells = []controls.ToolCell{
 		rmToolRefresh: {Action: p.Refresh},
@@ -43,7 +43,7 @@ func (p *ReplicationMonitorPanel) refreshToolLabels() {
 }
 
 // toolDisabled is the one gate the row has: Refresh while a read is out. The
-// selectors stay live — a choice made mid-read takes effect on the next.
+// selectors stay live; a choice made mid-read takes effect on the next.
 func (p *ReplicationMonitorPanel) toolDisabled(i int) bool { return i == rmToolRefresh && p.busy }
 
 func (p *ReplicationMonitorPanel) toolReason(int) string { return "" }
@@ -113,15 +113,15 @@ func (p *ReplicationMonitorPanel) Draw(s tcell.Screen) {
 	for _, g := range grids {
 		g.Draw(s)
 	}
-	// Last, over every grid: a cell's menu or value popup draws outside its
-	// grid, and undrawn it still eats every key until Escape.
+	// Last, over every grid: a cell's menu or value popup draws outside its grid, and
+	// undrawn it still eats every key until Escape.
 	for _, g := range grids {
 		g.DrawOverlay(s)
 	}
 }
 
-// drawToolRow paints the toolbar in Query Store's scheme, dimming Refresh
-// while a read is out — the same predicate runTool refuses on.
+// drawToolRow paints the toolbar in Query Store's scheme, dimming Refresh while a
+// read is out: the predicate runTool refuses on.
 func (p *ReplicationMonitorPanel) drawToolRow(s tcell.Screen) {
 	r := p.toolRect
 	if r.H != 1 {

@@ -2,9 +2,8 @@ package query
 
 import "unsafe"
 
-// cellArena chunk sizes: small wastes less chunk tail, large saves more
-// allocations. At these sizes waste is bounded to a few tens of KiB per result
-// set.
+// cellArena chunk sizes: small wastes less tail, large saves more allocations.
+// Waste is bounded to a few tens of KiB per result set.
 const (
 	arenaTextChunk = 64 << 10 // bytes of cell text per allocation
 	arenaRowChunk  = 4 << 10  // cell slots per allocation
@@ -16,9 +15,9 @@ const (
 // Safe because rows are never revisited and strings never mutated; worthwhile
 // because an uncapped result can hold tens of millions of cells, where
 // per-allocation overhead exceeds the text (a 3-byte cell costs a 16-byte heap
-// object plus a header in a separately allocated row slice).
+// object plus a row slice header).
 //
-// The zero value is ready. Not concurrency-safe; one arena per scanning
+// The zero value is ready. Not concurrency-safe: one arena per scanning
 // goroutine.
 type cellArena struct {
 	text []byte   // current text chunk; handed-out strings point into it

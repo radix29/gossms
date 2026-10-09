@@ -13,16 +13,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// key_signatures_page.go is the Signatures page of Certificate and Asymmetric
-// Key Properties — the modules the object signs, with Add and Remove — and
-// the "Signed by" rows a module's Details pane shows.
+// key_signatures_page.go is the Signatures page of Certificate and Asymmetric Key
+// Properties — the modules the object signs, with Add and Remove — and the
+// "Signed by" rows a module's Details pane shows.
 //
-// Rights, probed on 13 and 17 (2026-09-22), identical: ADD SIGNATURE needs
-// CONTROL on the signer and ALTER on the module; DROP SIGNATURE needs only
-// ALTER on the module. The page is gated on CONTROL on the signer or the
-// database-wide rights that carry ALTER on every module — either lets part of
-// it work — and the module half is left to the server (Msg 15151). Counter
-// signatures are listed and can be removed, but not added here.
+// Rights, probed on 13 and 17, identical: ADD SIGNATURE needs CONTROL on the
+// signer and ALTER on the module; DROP SIGNATURE needs only ALTER on the module.
+// The page is gated on CONTROL on the signer or the database-wide rights that
+// carry ALTER on every module — either lets part of it work — and the module half
+// is left to the server (Msg 15151). Counter signatures are listed and can be
+// removed, but not added here.
 
 // keySignatureColumns is the Signatures grid's header.
 var keySignatureColumns = []string{"Module", "Type", "Signature"}

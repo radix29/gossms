@@ -11,22 +11,21 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// new_fulltext_index_dialog.go is New Full-Text Index — the table menu's
-// Full-Text index ▸ Define Full-Text Index…, SSMS's wizard as one dialog of two
+// new_fulltext_index_dialog.go is New Full-Text Index: the table menu's
+// Full-Text index > Define Full-Text Index..., SSMS's wizard as one dialog of two
 // pages: General (key index, catalog, filegroup, change tracking, stoplist,
 // property list) and Columns (fulltext_index_props.go's column editor).
 //
 // The rights are two halves (2026-10-08 probe, majors 14 and 17): ALTER on the
-// table, which gates the menu item like the rest of the cascade, and
-// REFERENCES on the catalog and on a user stoplist or property list named,
-// which preflight asks once they are chosen. ALTER on the database and ALTER
-// ANY FULLTEXT CATALOG read 0 for REFERENCES and are refused (Msg 7666), so the
-// menu offering Define to them is not enough.
+// table, which gates the menu item like the rest of the cascade, and REFERENCES
+// on the catalog and on a user stoplist or property list named, which preflight
+// asks once they are chosen. ALTER on the database and ALTER ANY FULLTEXT
+// CATALOG read 0 for REFERENCES and are refused (Msg 7666), so the menu offering
+// Define to them is not enough.
 
 // nftIndexPrefetch is what the dialog reads before it opens.
 type nftIndexPrefetch struct {
-	// existing is the table's full-text index, nil when it has none — a
-	// table has at most one.
+	// existing is the table's full-text index, nil when it has none (at most one).
 	existing   *gosmo.FullTextIndex
 	keyIndexes []string
 	catalogs   []string
@@ -56,8 +55,8 @@ func NewNewFullTextIndexDialog(app *App) *NewFullTextIndexDialog {
 		pages: []string{"General", "Columns"},
 		fetch: d.fetchPrefetch,
 		build: d.buildPages,
-		// The index has no node of its own: what shows it is the catalogs'
-		// Details, as after the cascade's writes.
+		// The index has no node of its own: what shows it is the catalogs' Details, as
+		// after the cascade's writes.
 		refresh: func(sc *db.ServerConn) { d.app.refreshFullTextDetails(sc, d.dbName) },
 	})
 	return d
@@ -72,10 +71,9 @@ func (d *NewFullTextIndexDialog) show(sc *db.ServerConn, node *explorerNode) {
 	d.SetHeader("Database: "+d.dbName, "Table: "+fqn(d.schema, d.table))
 }
 
-// fullTextKeyIndexes are the indexes CREATE FULLTEXT INDEX accepts as its
-// KEY INDEX: unique, enabled, unfiltered, rowstore, on one non-nullable
-// column. The server refuses any other (Msg 7653, 7655), so they are not
-// offered.
+// fullTextKeyIndexes are the indexes CREATE FULLTEXT INDEX accepts as its KEY
+// INDEX: unique, enabled, unfiltered, rowstore, on one non-nullable column. The
+// server refuses any other (Msg 7653, 7655), so they are not offered.
 func fullTextKeyIndexes(idx []*gosmo.Index, cols []*gosmo.Column) []string {
 	nullable := map[string]bool{}
 	for _, c := range cols {
@@ -114,8 +112,7 @@ func (d *NewFullTextIndexDialog) fetchPrefetch(ctx context.Context, sc *db.Serve
 		return nil, err
 	}
 	pf.keyIndexes = fullTextKeyIndexes(idx, pf.columns)
-	// The primary key first: it is what SSMS proposes, and nearly always the
-	// right answer.
+	// The primary key first: SSMS proposes it and it is nearly always right.
 	for _, i := range idx {
 		if k := slices.Index(pf.keyIndexes, i.Name); i.IsPrimaryKey && k > 0 {
 			pf.keyIndexes[0], pf.keyIndexes[k] = pf.keyIndexes[k], pf.keyIndexes[0]
@@ -191,8 +188,8 @@ func (d *NewFullTextIndexDialog) buildPages(pf *nftIndexPrefetch) {
 		general = append(general, propsheet.Note("This table has no index a full-text index can key on: "+
 			"it needs a unique, single-column, non-nullable index, such as a primary key on one column."))
 	case len(pf.catalogs) == 0:
-		// The catalog view lists only what the login holds a permission on,
-		// so "none" can mean "none visible to you".
+		// The catalog view lists only what the login holds a permission on, so "none"
+		// can mean "none visible to you".
 		general = append(general, propsheet.Note("No full-text catalog in this database is visible to this login — "+
 			"create one under Storage > Full Text Catalogs, or ask for REFERENCES on an existing one."))
 	}
@@ -256,8 +253,8 @@ func (d *NewFullTextIndexDialog) buildPages(pf *nftIndexPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		// A TableRef: every write addresses the table by name, and the
-		// by-name read would not work under Script Changes.
+		// A TableRef: every write addresses the table by name, and the by-name read
+		// would not work under Script Changes.
 		_, err := sc.Server.DatabaseRef(dbName).TableRef(schema, table).CreateFullTextIndex(ctx, req)
 		return err
 	}

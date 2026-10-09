@@ -8,12 +8,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// Draw renders the data grid. If the built-in cell-content popup is open,
-// call DrawOverlay afterward — once every other widget in the same frame
-// has drawn — so the popup isn't painted over.
+// Draw renders the data grid. If the cell-content popup is open, call
+// DrawOverlay afterwards, once every other widget in the frame has drawn.
 func (g *DataGrid) Draw(s tcell.Screen) {
-	// A RefreshColumnWidths since the last frame only takes effect now —
-	// see there for why it defers instead of recomputing on the spot.
+	// A RefreshColumnWidths since the last frame takes effect now (see there).
 	if g.widthsDirty {
 		g.computeColWidths()
 	}
@@ -89,10 +87,9 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 	if x, y, w, total, visible, offset, ok := g.hScrollbar(); ok {
 		hStyle := sbStyle
 		if g.hasStatusStyle {
-			// The status row is the grid's own colour only when it hasn't
-			// been overridden (the query-results grid paints it yellow);
-			// keep the track on whatever that row actually is so the bar
-			// doesn't sit in a stripe of its own.
+			// The status row is the grid's own colour only when not overridden (the
+			// query-results grid paints it yellow); keep the track on whatever the row is so
+			// the bar doesn't sit in a stripe of its own.
 			hStyle = statusStyle.Foreground(p.Border)
 		}
 		core.DrawScrollbarH(s, x, y, w, total, visible, offset, hStyle, sbThumb)
@@ -100,14 +97,13 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 }
 
 // hScrollbar returns the horizontal scrollbar's screen span and the
-// character-space total/visible/offset describing it, or ok false when
-// every column already fits (or there's no room to draw one).
+// character-space total/visible/offset describing it, or ok false when every
+// column fits (or there's no room).
 //
-// It shares the status row rather than taking a data row: the status text
-// is right-aligned, so the left of that row is free, and the grid's own
-// bottom edge is where a horizontal bar belongs. The measurements are in
-// characters, not column counts — columns differ in width, so a
-// column-counting thumb would jump around as it passed a wide one.
+// It shares the status row rather than taking a data row: the status text is
+// right-aligned, so the row's left is free, and the grid's bottom edge is where a
+// horizontal bar belongs. Measurements are in characters, not column counts:
+// columns differ in width, so a column-counting thumb would jump past a wide one.
 func (g *DataGrid) hScrollbar() (x, y, w, total, visible, offset int, ok bool) {
 	if g.rect.H < 3 || len(g.colWidths) == 0 {
 		return 0, 0, 0, 0, 0, 0, false
@@ -133,14 +129,12 @@ func (g *DataGrid) hScrollbar() (x, y, w, total, visible, offset int, ok bool) {
 	return x, y, w, total, visible, offset, true
 }
 
-// hScrollbarMinWidth is the narrowest track worth drawing — below this the
-// thumb can't say anything useful about position, and the status text is
-// the better use of the row.
+// hScrollbarMinWidth is the narrowest track worth drawing: below it the thumb
+// says nothing useful and the status text is the better use of the row.
 const hScrollbarMinWidth = 8
 
-// drawGutterCell renders one row-number column cell (or the blank header
-// cell above it) at y. text is right-aligned; the column is styled dim
-// since — unlike every data column — it's never selectable.
+// drawGutterCell renders one row-number column cell (or the blank header cell)
+// at y: right-aligned and dim, since unlike data columns it is never selectable.
 func (g *DataGrid) drawGutterCell(s tcell.Screen, y int, text string, style tcell.Style) {
 	w := g.gutterWidth()
 	p := theme.Active()
@@ -150,13 +144,11 @@ func (g *DataGrid) drawGutterCell(s tcell.Screen, y int, text string, style tcel
 	core.PutRune(s, g.rect.X+w-1, y, '|', style.Foreground(p.GridBorder))
 }
 
-// drawRow renders cells starting at the grid's scrollCol-th column, at
-// screen x xOffset+g.rect.X — xOffset reserves room for the row-number
-// gutter (0 when it's off), and scrollCol implements horizontal scrolling:
-// like scrollRow, it's a data index (how many leading columns are hidden),
-// not a pixel offset, so a scrolled grid's columns still start flush left
-// and column boundaries never split mid-cell. row is the data row, for nulls
-// (nil when the source has none, as for the header row).
+// drawRow renders cells starting at the scrollCol-th column, at screen x
+// xOffset+g.rect.X (xOffset reserves the row-number gutter, 0 when off).
+// scrollCol, like scrollRow, is a data index (leading columns hidden), not a
+// pixel offset, so a scrolled grid's columns start flush left and boundaries
+// never split mid-cell. row is the data row, for nulls (nil for the header row).
 func (g *DataGrid) drawRow(s tcell.Screen, y, row int, cells []string, nulls NullSource, style tcell.Style, xOffset int) {
 	p := theme.Active()
 	col := g.rect.X + xOffset
@@ -180,12 +172,11 @@ func (g *DataGrid) drawRow(s tcell.Screen, y, row int, cells []string, nulls Nul
 	}
 }
 
-// drawGroupRow renders a RowGroup row at y: its first cell a label, not
-// scrolled with the columns, spilling across the empty cells to its right as a
+// drawGroupRow renders a RowGroup row at y: its first cell a label, not scrolled
+// with the columns, spilling across the empty cells to its right as a
 // spreadsheet's text does. It stops at the first non-empty cell on screen,
-// clipped with "…"; from that cell on the cells draw as an ordinary row's,
-// scrolled with their columns. selected highlights the row whole, dimmed like
-// a cell selection while the grid is unfocused.
+// clipped with "…"; from there cells draw as an ordinary row's, scrolled with
+// their columns. selected highlights the row whole, dimmed while unfocused.
 func (g *DataGrid) drawGroupRow(s tcell.Screen, y int, cells []string, xOffset int, selected bool) {
 	st := theme.StyleGridHeader()
 	if selected {
@@ -238,10 +229,10 @@ func (g *DataGrid) drawGroupRow(s tcell.Screen, y int, cells []string, xOffset i
 	}
 }
 
-// drawCellSelection highlights the selected block's cells in the row drawn at
-// screen row y, whose cells the caller passes — every column in [c0,c1] that's
-// actually on screen (scrollCol onward). A single selected cell is just the
-// c0 == c1 == selCol case. A NULL cell (nulls, as in drawRow) is dimmed.
+// drawCellSelection highlights the selected block's cells in the row at screen
+// row y, whose cells the caller passes: every column in [c0,c1] on screen
+// (scrollCol onward). A single cell is c0 == c1 == selCol. A NULL cell (nulls,
+// as in drawRow) is dimmed.
 func (g *DataGrid) drawCellSelection(s tcell.Screen, y, row int, cells []string, nulls NullSource, xOffset, c0, c1 int) {
 	p := theme.Active()
 	st := theme.StyleGridSelected()

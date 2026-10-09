@@ -15,12 +15,11 @@ import (
 // database_audit_specification_props.go is Database Audit Specification
 // Properties — the database-scope twin of audit_specification_props.go.
 //
-// It is not the same page with a different noun. A database specification
-// records individual actions on securables as well as action groups, so the
-// page carries a second grid for what it already records and a small row of
-// fields for adding one more. Everything else — the static name, the one
-// page, the single disable window around the whole apply — follows the server
-// half for the same reasons its comments give.
+// Not the same page with a different noun: a database specification records
+// individual actions on securables as well as action groups, so the page carries a
+// second grid for what it already records and a small row of fields for adding
+// one more. Everything else — the static name, the one page, the single disable
+// window around the whole apply — follows the server half for the same reasons.
 
 // databaseAuditSpecificationPropPages builds the page set for Database Audit
 // Specification Properties.

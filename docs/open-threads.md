@@ -128,7 +128,7 @@ None open.
   query shows).
 - **V7 — Replication reads (gosmo `replication*.go`) met real rows on 17
   only.** The fixture is on win10cli (2025). win10cli\SQL2016 and
-  win10cli\SQL2017 (checked 2026-10-08: `sp_adddistributor` fails Msg 21028,
+  win10cli\SQL2017 (`sp_adddistributor` fails Msg 21028,
   no `Replication` registry key) have **replication components not
   installed** (`sp_addpullsubscription` fails Msg 21028 on 2016), so on 2016 only the subscriber-side transactional read ran, against
   tables made by `sp_MScreate_sub_tables` in a throwaway database; the
@@ -152,9 +152,7 @@ None open.
   `FULLTEXTSERVICEPROPERTY`/`sys.fulltext_document_types` on Azure SQL
   Database (assumed); whether its `HAS_PERMS_BY_NAME` accepts the class words
   for 23/29/31 (a rejection would fail the whole database probe, not just
-  these rows). Seen live on 17 (2026-10-08, 1.5M-row table): a running population's row on
-  the General page, status 5 in the page and the follow's message (PAUSE sent
-  to a busy index), and RESUME on it. Still never seen: a
+  these rows). Still never seen: a
   `STATISTICAL_SEMANTICS` column — win10cli has no semantic language database.
   The follow's read was picked as a deadlock victim (Msg 1205) mid-crawl and
   ended the task; it now retries `fullTextFollowReadRetries` reads, with no

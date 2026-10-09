@@ -14,16 +14,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// log_search_dialog.go is the Log File Viewer's server-side search — SSMS's
-// "Filter..." on the same panel. It edits the four arguments xp_readerrorlog
-// takes (two substrings and a date range) and hands them back for the next
-// read.
+// log_search_dialog.go is the Log File Viewer's server-side search (SSMS's
+// "Filter..."). It edits the four arguments xp_readerrorlog takes (two
+// substrings and a date range) and hands them back for the next read.
 //
-// This is not the panel's Filter box, and the two are deliberately different
-// things: the filter narrows what was already read, instantly and with no
-// round trip, and says how much of the file it is showing. A search here
-// changes what the *server* returns, which is what a log too large to read in
-// one go needs.
+// This is not the panel's Filter box: that narrows what was already read,
+// instantly, with no round trip. A search here changes what the *server*
+// returns, which a log too large to read in one go needs.
 
 const (
 	logSearchDialogW = 62
@@ -71,8 +68,7 @@ func NewLogSearchDialog(app *App) *LogSearchDialog {
 }
 
 // ShowLogSearch opens the dialog seeded with the search currently in force,
-// so reopening it shows what the panel is reading with rather than a blank
-// form.
+// not a blank form.
 func (d *LogSearchDialog) ShowLogSearch(current gosmo.LogSearch, onApply func(gosmo.LogSearch)) {
 	d.onApply = onApply
 	d.fText1.SetValue(current.Text1)
@@ -105,9 +101,8 @@ func (d *LogSearchDialog) syncFocus() {
 	}
 }
 
-// btnFocus is the focused button's index, or 0 (Search) while focus is still
-// in the fields — so Enter from a field searches, which is what typing into
-// this dialog is for.
+// btnFocus is the focused button's index, or 0 (Search) while focus is in the
+// fields, so Enter from a field searches.
 func (d *LogSearchDialog) btnFocus() int {
 	if i := d.focusIdx - len(d.fields()); i >= 0 {
 		return i
@@ -130,9 +125,8 @@ func (d *LogSearchDialog) Draw(s tcell.Screen) {
 	for _, f := range d.inputFields() {
 		f.Draw(s)
 	}
-	// Two short lines rather than one long one: the dialog is 62 columns and
-	// DrawTextClipped truncates without saying so — the single-line form lost
-	// the second half of the date format, which is the part nobody can guess.
+	// Two short lines: the dialog is 62 columns and DrawTextClipped truncates
+	// silently; one line lost the second half of the date format.
 	core.DrawTextClipped(s, inner.X+1, d.statusY-2, inner.W-2, hint,
 		"Both texts must appear in the same entry.")
 	core.DrawTextClipped(s, inner.X+1, d.statusY-1, inner.W-2, hint,
@@ -187,9 +181,8 @@ func (d *LogSearchDialog) HandleKey(ev *tcell.EventKey) bool {
 	return true
 }
 
-// HandleMouse routes mouse events — the same shape as FindReplaceDialog's,
-// including the release that must reach a latch-bearing field wherever it
-// lands.
+// HandleMouse routes mouse events like FindReplaceDialog's, including the
+// release that must reach a latch-bearing field wherever it lands.
 func (d *LogSearchDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
@@ -235,9 +228,8 @@ func (d *LogSearchDialog) pressButton(i int) {
 		}
 		d.deliver(search)
 	case "Clear":
-		// Clears the fields as well as the search: the dialog is seeded from
-		// what is in force, so leaving them filled would re-apply the search
-		// the user just cleared on the next Enter.
+		// Clears the fields too: the dialog is seeded from what is in force, so
+		// leaving them filled would re-apply the cleared search on the next Enter.
 		for _, f := range d.inputFields() {
 			f.SetValue("")
 		}
@@ -248,7 +240,7 @@ func (d *LogSearchDialog) pressButton(i int) {
 }
 
 // deliver hands the search to the panel and closes. onApply is read and
-// cleared first, the way ConfirmDialog.finish does: it starts a read that can
+// cleared first, as ConfirmDialog.finish does: it starts a read that can
 // itself report back into the UI.
 func (d *LogSearchDialog) deliver(search gosmo.LogSearch) {
 	onApply := d.onApply
@@ -264,11 +256,10 @@ func (d *LogSearchDialog) dismiss() {
 }
 
 // parse turns the four fields into a LogSearch, rejecting an unparseable date
-// rather than sending it to a server that answers with a formatting lecture.
+// rather than sending it to the server.
 func (d *LogSearchDialog) parse() (gosmo.LogSearch, error) {
-	// These three are capitalized on purpose: the dialog draws err.Error()
-	// verbatim as its status line, so the leading word is the field's own
-	// label as the user sees it. Nothing wraps them into a larger sentence.
+	// Capitalized on purpose: the dialog draws err.Error() verbatim as its status
+	// line, so the leading word is the field's label. Nothing wraps them.
 	from, err := parseLogSearchTime(d.fFrom.Value())
 	if err != nil {
 		//lint:ignore ST1005 the capital is the "From" field's label

@@ -12,9 +12,8 @@ import (
 // ---------------------------------------------------------------------------
 // Generic completion ("IntelliSense") popup for Editor. Editor knows nothing
 // about SQL: it calls the provider after every buffer- or cursor-affecting key
-// and draws whatever comes back. Only the SQL query editor sets a provider (see
-// internal/tui/completion_provider.go), so this is a no-op for every other
-// Editor.
+// and draws what comes back. Only the SQL query editor sets a provider (see
+// internal/tui/completion_provider.go), so this is a no-op for every other Editor.
 // ---------------------------------------------------------------------------
 
 // CompletionItem is one candidate offered by a CompletionProvider.
@@ -22,9 +21,8 @@ type CompletionItem struct {
 	// Text is what gets inserted on commit, replacing the span the provider
 	// reported via replaceFrom.
 	Text string
-	// Label is the left column shown in the popup — usually Text, but a
-	// provider may show something more readable, such as a plain Label for a
-	// bracket-quoted Text.
+	// Label is the left column shown in the popup: usually Text, but a provider may
+	// show something more readable (a plain Label for a bracket-quoted Text).
 	Label string
 	// Detail is an optional right-aligned, dimmed column ("table", "int, not
 	// null").
@@ -35,30 +33,29 @@ type CompletionItem struct {
 	// Placeholder marks a row shown but not navigable or committable — a
 	// "Loading suggestions..." entry while a provider's data isn't ready.
 	Placeholder bool
-	// Partial marks a candidate that matched the typed text somewhere other than
-	// its start ("ord" in CustomerOrders). A popup the user didn't ask for with
+	// Partial marks a candidate that matched the typed text somewhere other than its
+	// start ("ord" in CustomerOrders). A popup the user didn't ask for with
 	// Ctrl+Space, holding only partial matches, opens with nothing selected: Enter
-	// and Tab keep their plain meaning, so a keyword typed in full ("BY", "AND")
-	// is never swapped for a column that merely contains it (CreatedBy,
-	// BrandName). Up/Down select one as usual.
+	// and Tab keep their plain meaning, so a keyword typed in full ("BY", "AND") is
+	// never swapped for a column that merely contains it (CreatedBy, BrandName).
+	// Up/Down select one as usual.
 	Partial bool
 }
 
 // TextRevision identifies the revision of the text a CompletionRequest carries,
 // so a provider caching across calls can tell whether it may resume. Same key
-// prefixStates uses: Doc pins which buffer the version counts (two buffers
-// number versions independently from zero), and DirtyFrom describes one
-// mutation only, so a cache more than one version behind must start over.
-//
-// Doc is opaque on purpose: a provider compares it for identity only.
+// prefixStates uses: Doc pins which buffer the version counts (two buffers number
+// versions independently from zero), and DirtyFrom describes one mutation only,
+// so a cache more than one version behind must start over. Doc is opaque: a
+// provider compares it for identity only.
 type TextRevision struct {
 	// Doc identifies the buffer. Compare it, don't dereference it.
 	Doc any
 	// Version is the buffer's mutation counter.
 	Version uint64
-	// DirtyFrom is the lowest line index the last mutation could have changed
-	// the meaning of. Meaningful only when Version is exactly one ahead of what
-	// the provider last saw for the same Doc.
+	// DirtyFrom is the lowest line index the last mutation could have changed the
+	// meaning of. Meaningful only when Version is exactly one ahead of what the
+	// provider last saw for the same Doc.
 	DirtyFrom int
 }
 
@@ -76,12 +73,12 @@ type CompletionRequest struct {
 // CompletionProvider returns the candidates for the identifier being typed at
 // (Row, Col) in Lines, and the column that identifier starts at (the span
 // [replaceFrom, Col) is replaced when an item commits). An empty items slice
-// means there is nothing to offer here (inside a string literal or comment),
-// and Editor closes any open popup.
+// means nothing to offer here (inside a string literal or comment), and Editor
+// closes any open popup.
 //
-// Called after every key that could affect the result. A provider may answer
-// each call from scratch; one that caches must key the cache on req.Text and
-// rebuild whenever that key cannot justify a resume.
+// Called after every key that could affect the result. A provider may answer each
+// call from scratch; one that caches must key the cache on req.Text and rebuild
+// whenever that key cannot justify a resume.
 type CompletionProvider func(req CompletionRequest) (items []CompletionItem, replaceFrom int)
 
 // maxCompletionRows caps the popup's visible height; more candidates scroll.
@@ -94,17 +91,16 @@ const (
 	maxCompletionDetailW = 24
 )
 
-// SetCompletionProvider installs p as the source of completion candidates. nil
-// (the default) disables completion, and Ctrl+Space then opens OnRightClick's
-// context menu instead.
+// SetCompletionProvider installs p as the source of candidates. nil (the
+// default) disables completion, and Ctrl+Space then opens OnRightClick's menu.
 func (e *Editor) SetCompletionProvider(p CompletionProvider) {
 	e.completionProvider = p
 	e.closeCompletion()
 }
 
 // CompletionActive reports whether the popup is open. A host laying the editor
-// out beside another focusable widget must give the editor first refusal of
-// every key and mouse event while true, as with DataGrid.OverlayActive.
+// out beside another focusable widget must give it first refusal of every key and
+// mouse event while true, as with DataGrid.OverlayActive.
 func (e *Editor) CompletionActive() bool { return e.completionOpen }
 
 // RefreshCompletion re-queries the provider at the cursor if the popup is open,
@@ -117,8 +113,8 @@ func (e *Editor) RefreshCompletion() {
 }
 
 // CloseCompletion closes the popup, for a host action that is not a completion
-// gesture, such as running the script. A later RefreshCompletion leaves it
-// closed; unlike Escape it doesn't suppress the token, so typing reopens it.
+// gesture (e.g. running the script). A later RefreshCompletion leaves it closed;
+// unlike Escape it doesn't suppress the token, so typing reopens it.
 func (e *Editor) CloseCompletion() { e.closeCompletion() }
 
 // closeCompletion hides the popup, if open. Safe to call unconditionally.
@@ -132,9 +128,9 @@ func (e *Editor) closeCompletion() {
 	e.completionSbDragging = false
 }
 
-// completionRequest packages the cursor position and the buffer's current
-// revision for a provider call. Both call sites go through it so they cannot
-// disagree about which revision the lines belong to.
+// completionRequest packages the cursor position and the buffer's revision for a
+// provider call. Both call sites use it so they can't disagree about which
+// revision the lines belong to.
 func (e *Editor) completionRequest() CompletionRequest {
 	return CompletionRequest{
 		Lines: e.doc.all(),
@@ -148,10 +144,9 @@ func (e *Editor) completionRequest() CompletionRequest {
 	}
 }
 
-// updateCompletion re-queries the provider at the cursor and opens, refreshes
-// or closes the popup to match. Called after every key that reached Editor's
-// normal handling, so typing, deleting and cursor movement keep the popup in
-// sync without per-key special-casing.
+// updateCompletion re-queries the provider at the cursor and opens, refreshes or
+// closes the popup to match. Called after every key that reached Editor's normal
+// handling, keeping the popup in sync without per-key special-casing.
 func (e *Editor) updateCompletion() {
 	if e.completionProvider == nil || e.readOnly {
 		return
@@ -195,14 +190,14 @@ func hasPrefixCompletion(items []CompletionItem) bool {
 	return false
 }
 
-// canAutoOpenCompletion reports whether the text left of the cursor begins a
-// word being typed: the gate HandleKey applies, with typedChar, before a typed
+// canAutoOpenCompletion reports whether the text left of the cursor begins a word
+// being typed: the gate HandleKey applies, with typedChar, before a typed
 // character opens the popup from closed. The fragment touching the cursor must
 // start with a letter or a sigil a name can open with: '[' for a quoted
 // identifier, '#' or '@' for a name a host's provider may bind. Each sigil also
-// opens the popup on its own, as the name it introduces has no other first
-// keystroke. A space, '.', a digit starting a numeric literal or an empty line
-// never auto-opens it; Ctrl+Space always can.
+// opens the popup on its own, as a name has no other first keystroke. A space,
+// '.', a digit starting a numeric literal or an empty line never auto-opens it;
+// Ctrl+Space always can.
 //
 // What a sigil means is the provider's business; this only decides that a name
 // may be starting, and a provider with nothing to offer closes the popup on the
@@ -222,13 +217,13 @@ func (e *Editor) canAutoOpenCompletion() bool {
 	return unicode.IsLetter(line[start]) || (start > 0 && isNameSigil(line[start-1]))
 }
 
-// isNameSigil reports whether r can introduce a name the completion provider
-// might know: a bracket-quoted identifier, or T-SQL's '#'/'@'.
+// isNameSigil reports whether r can introduce a name the provider might know: a
+// bracket-quoted identifier, or T-SQL's '#'/'@'.
 func isNameSigil(r rune) bool { return r == '[' || r == '#' || r == '@' }
 
 // currentTokenStart returns the column where the identifier touching the cursor
-// begins — used only to recognise that the cursor is still on the token Escape
-// was pressed at. A commit's replace span comes from the provider.
+// begins, used only to recognise that the cursor is still on the token Escape was
+// pressed at. A commit's replace span comes from the provider.
 func (e *Editor) currentTokenStart() int {
 	if e.cursorRow >= e.doc.Len() {
 		return e.cursorCol
@@ -238,11 +233,10 @@ func (e *Editor) currentTokenStart() int {
 }
 
 // triggerCompletionExplicit is Ctrl+Space: query immediately and, if a word has
-// been started and exactly one real candidate matches it at its start, commit
-// it instead of opening the popup (SSMS's "complete word"). With nothing typed
-// the popup always opens, even over a single candidate. The popup stays
-// explicit until it closes, so partial matches keep a selection while typing
-// narrows it.
+// been started and exactly one real candidate matches it at its start, commit it
+// instead of opening the popup (SSMS's "complete word"). With nothing typed the
+// popup always opens, even over a single candidate. The popup stays explicit until
+// it closes, so partial matches keep a selection while typing narrows it.
 func (e *Editor) triggerCompletionExplicit() {
 	if e.completionProvider == nil || e.readOnly {
 		return
@@ -276,9 +270,9 @@ func (e *Editor) triggerCompletionExplicit() {
 	e.ensureCompletionVisible()
 }
 
-// firstSelectableCompletion scans completionItems from start in direction dir
-// for the first non-Placeholder row, wrapping once. Returns start unchanged
-// when every item is a placeholder.
+// firstSelectableCompletion scans completionItems from start in direction dir for
+// the first non-Placeholder row, wrapping once. Returns start unchanged when every
+// item is a placeholder.
 func (e *Editor) firstSelectableCompletion(start, dir int) int {
 	n := len(e.completionItems)
 	if n == 0 {
@@ -349,8 +343,8 @@ func (e *Editor) dismissCompletion() {
 }
 
 // handleCompletionKey gives the open popup first refusal of a key: list
-// navigation, commit and dismiss are consumed here; everything else falls
-// through to HandleKey's normal processing, which calls updateCompletion after.
+// navigation, commit and dismiss are consumed here; everything else falls through
+// to HandleKey, which calls updateCompletion after.
 func (e *Editor) handleCompletionKey(ev *tcell.EventKey) bool {
 	// A modified key is never popup navigation: Ctrl+Up/Down resize the host's
 	// panels, Ctrl+Shift+Up/Down move lines, Shift+arrows extend a selection.
@@ -428,8 +422,8 @@ func (e *Editor) ensureCompletionVisible() {
 // ---------------------------------------------------------------------------
 
 // handleCompletionMouse gives the open popup first refusal of a mouse event. A
-// click outside closes it but returns false, so the click still reaches whatever
-// is underneath — as widgets.DropDown does.
+// click outside closes it but returns false, so the click still reaches what is
+// underneath, as widgets.DropDown does.
 func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 	rect := e.completionRect()
 	mx, my := ev.Position()
@@ -438,9 +432,8 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 		e.completionSbDragging = false
 	}
 
-	// Scrollbar drag/click takes priority over item hit-testing below: the bar is
-	// drawn over the rightmost popup column, which would read as a click on
-	// whatever item sits in that row.
+	// Scrollbar drag/click outranks item hit-testing: the bar is drawn over the
+	// rightmost popup column and would read as a click on the item in that row.
 	if core.HandleScrollbarDrag(ev, rect.Right()-1, rect.Y, rect.H, len(e.completionItems), &e.completionSbDragging, &e.completionScroll) {
 		return true
 	}
@@ -451,8 +444,8 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 			e.moveCompletionSel(-1)
 			return true
 		}
-		// Wheel outside the popup scrolls the editor; close first so the popup
-		// doesn't ride along anchored to a cursor scrolling out of view.
+		// Wheel outside the popup scrolls the editor; close first so the popup doesn't
+		// ride along anchored to a cursor scrolling out of view.
 		e.closeCompletion()
 	case tcell.WheelDown:
 		if rect.Contains(mx, my) {
@@ -461,8 +454,8 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 		}
 		e.closeCompletion()
 	case tcell.Button2:
-		// Right-click: close the popup and let the click fall through to the
-		// context menu rather than stacking one overlay on the other.
+		// Right-click: close the popup and let the click fall through to the context
+		// menu rather than stacking one overlay on the other.
 		e.closeCompletion()
 	case tcell.Button1:
 		if !rect.Contains(mx, my) {
@@ -470,7 +463,7 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 			return false
 		}
 		if e.completionMouseDown {
-			// Still the same physical press — don't re-commit on every resend.
+			// Same physical press: don't re-commit on every resend.
 			return true
 		}
 		e.completionMouseDown = true
@@ -493,8 +486,8 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 // ---------------------------------------------------------------------------
 
 // completionColumnWidths computes the label and detail column widths for the
-// current completionItems, shared by completionRect and DrawOverlay so they
-// can't disagree about how much space detail got.
+// current items, shared by completionRect and DrawOverlay so they agree on the
+// space detail got.
 func (e *Editor) completionColumnWidths() (labelW, detailW int) {
 	for _, it := range e.completionItems {
 		if w := core.DisplayWidth(it.Label); w > labelW {
@@ -544,9 +537,9 @@ func (e *Editor) completionRect() core.Rect {
 	return core.Rect{X: x, Y: y, W: w, H: h}
 }
 
-// DrawOverlay renders the open popup, if any. The popup floats independently of
-// the editor's rect, so a host laying the editor out alongside another widget
-// must draw this last, as with DataGrid.DrawOverlay.
+// DrawOverlay renders the open popup, if any. It floats independently of the
+// editor's rect, so a host laying the editor out beside another widget must draw
+// this last, as with DataGrid.DrawOverlay.
 func (e *Editor) DrawOverlay(s tcell.Screen) {
 	if !e.completionOpen {
 		return

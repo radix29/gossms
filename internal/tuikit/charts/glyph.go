@@ -1,11 +1,8 @@
 package charts
 
-// Block glyph ramps. Index is the number of eighths filled, 0..8, so a
-// value can be looked up directly by its filled fraction.
-//
-// Vertical blocks fill a cell from the bottom up, horizontal ones from the
-// left. Both ramps end at the full block, which is why a fully filled cell
-// and a fully filled eighth are the same glyph.
+// Block glyph ramps, indexed by eighths filled (0..8). Vertical blocks fill a
+// cell from the bottom up, horizontal from the left; both end at the full
+// block.
 var (
 	vBlocks = [9]rune{' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 	hBlocks = [9]rune{' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'}
@@ -41,14 +38,10 @@ func clampEighths(e int) int {
 	return e
 }
 
-// eighths converts a length in cells to whole cells plus a remainder in
-// eighths of a cell.
-//
-// A non-zero length never yields zero cells and zero eighths: a value too
-// small to fill an eighth is promoted to one, so a real but tiny metric
-// still shows a sliver instead of vanishing into the axis. Rounding
-// otherwise is to nearest, which keeps a bar's drawn length within half an
-// eighth of its true value.
+// eighths converts a length in cells to whole cells plus a remainder in eighths.
+// A non-zero length never yields zero cells and zero eighths: a tiny but real
+// metric is promoted to one eighth so it shows a sliver. Otherwise it rounds to
+// nearest, within half an eighth of the true value.
 func eighths(cells float64) (whole, rem int) {
 	if cells <= 0 {
 		return 0, 0

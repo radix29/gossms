@@ -7,10 +7,10 @@ import (
 	"github.com/radix29/gossms/internal/query"
 )
 
-// columnMetaMessages renders the "Output Column Metadata" block appended to
-// the Messages tab when the Meta toggle is on (see App.metaEnabled): one
-// "Result N" heading per result set, then one line per column naming its
-// declared SQL Server type.
+// columnMetaMessages renders the "Output Column Metadata" block appended to the
+// Messages tab when the Meta toggle is on (see App.metaEnabled): one "Result N"
+// heading per result set, then one line per column naming its declared SQL Server
+// type.
 //
 //	Result 1
 //	[col1] nvarchar(50)
@@ -20,15 +20,14 @@ import (
 //	[sql text] xml
 //	2 datetime
 //
-// Names are bracket-quoted (with any ']' doubled) so a column named with a
-// space or a keyword reads as one identifier, and can be pasted straight into
-// a query. A column the query didn't name — a bare expression, "SELECT 1+1" —
-// shows its unbracketed 1-based position instead, since an empty name would
-// leave the type line starting with a space and reading as if it belonged to
-// the one above, and a position is not an identifier to quote.
+// Names are bracket-quoted (with any ']' doubled) so a column named with a space
+// or a keyword reads as one identifier and can be pasted into a query. A column
+// the query didn't name (a bare expression, "SELECT 1+1") shows its unbracketed
+// 1-based position instead: an empty name would leave the type line starting with
+// a space, and a position is not an identifier to quote.
 //
-// Returns nil when there are no result sets, so a script that only ran DML
-// gets no empty block.
+// Returns nil when there are no result sets, so a script that only ran DML gets no
+// empty block.
 func columnMetaMessages(sets []query.ResultSet) []query.Message {
 	if len(sets) == 0 {
 		return nil

@@ -9,16 +9,14 @@ import (
 
 // ---------------------------------------------------------------------------
 // Notepad++/Scintilla-style line and block actions for Editor. Every exported
-// method here is self-contained (it pushes its own undo step and leaves the
-// cursor clamped and visible) because each is invoked both from
-// Editor.HandleKey and directly from a Menu action closure, which bypasses
-// HandleKey.
+// method here is self-contained (pushes its own undo step, leaves the cursor
+// clamped and visible) because each is invoked from Editor.HandleKey and
+// directly from a Menu action closure, which bypasses HandleKey.
 // ---------------------------------------------------------------------------
 
 // affectedLineRange returns the row range a line/block action applies to: the
-// current selection's row span if there is one (selectionBounds' row component
-// is min/max regardless of anchor vs. cursor, so it is right for linear and
-// block modes), else the cursor's own line.
+// selection's row span if any (selectionBounds' rows are min/max regardless of
+// anchor vs. cursor, right for linear and block modes), else the cursor's line.
 func (e *Editor) affectedLineRange() (startRow, endRow int) {
 	if e.HasSelection() {
 		sr, _, er, _ := e.selectionBounds()
@@ -36,14 +34,14 @@ func (e *Editor) SelectAll() {
 	e.cursorCol = len(e.doc.Line(e.cursorRow))
 }
 
-// Undo and Redo expose the existing undo/redo stack for callers outside
-// this package (the Edit menu), which can't reach the unexported undo/redo.
+// Undo and Redo expose the undo/redo stack to callers outside this package (the
+// Edit menu).
 func (e *Editor) Undo() { e.undo() }
 func (e *Editor) Redo() { e.redo() }
 
 // DuplicateLines copies the current line (or every line spanned by the
-// selection) immediately below itself, moving the cursor into the copy.
-// Any active selection collapses.
+// selection) below itself, moving the cursor into the copy. Any selection
+// collapses.
 func (e *Editor) DuplicateLines() {
 	e.pushUndo()
 	sr, er := e.affectedLineRange()
@@ -87,9 +85,9 @@ func (e *Editor) DeleteLines() {
 	e.ensureCursorVisible()
 }
 
-// MoveLinesUp swaps the current line (or every line spanned by the
-// selection) with the line above it. No-op at the top of the buffer. Any
-// active selection is preserved and shifts with the moved lines.
+// MoveLinesUp swaps the current line (or every line spanned by the selection)
+// with the line above. No-op at the top. Any selection is preserved and shifts
+// with the moved lines.
 func (e *Editor) MoveLinesUp() {
 	sr, er := e.affectedLineRange()
 	if sr == 0 {
@@ -132,24 +130,22 @@ func (e *Editor) MoveLinesDown() {
 	e.ensureCursorVisible()
 }
 
-// DefaultIndentWidth is how many spaces IndentLines and the Tab key insert in
-// an Editor whose width has not been set. Tabs are never inserted, only
-// converted away by DedentLines/dedentAmount, since Editor's rendering has no
-// tab-stop expansion.
-//
-// internal/config declares a constant that must agree with this one;
+// DefaultIndentWidth is how many spaces IndentLines and the Tab key insert in an
+// Editor whose width has not been set. Tabs are never inserted, only converted
+// away by DedentLines/dedentAmount, since Editor's rendering has no tab-stop
+// expansion. internal/config declares a constant that must agree with this one;
 // TestIndentWidthDefaultsAgree in internal/tui holds them together.
 const DefaultIndentWidth = 4
 
-// defaultIndentWidth is what NewEditor seeds e.indentWidth with. It exists so
-// editors built where the application config is out of reach (property-sheet
-// T-SQL rows, the Agent job-step command box) still honour the user's indent
-// size; editors that can reach the config call SetIndentWidth instead.
+// defaultIndentWidth is what NewEditor seeds e.indentWidth with, so editors built
+// where the application config is out of reach (property-sheet T-SQL rows, the
+// Agent job-step command box) still honour the user's indent size; editors that
+// can reach the config call SetIndentWidth instead.
 var defaultIndentWidth = DefaultIndentWidth
 
-// SetDefaultIndentWidth sets the width newly created Editors start with.
-// Values outside 1..MaxIndentWidth are ignored. Existing editors keep theirs —
-// use SetIndentWidth for those.
+// SetDefaultIndentWidth sets the width newly created Editors start with. Values
+// outside 1..MaxIndentWidth are ignored. Existing editors keep theirs; use
+// SetIndentWidth.
 func SetDefaultIndentWidth(n int) {
 	if n < 1 || n > MaxIndentWidth {
 		return
@@ -157,17 +153,17 @@ func SetDefaultIndentWidth(n int) {
 	defaultIndentWidth = n
 }
 
-// MaxIndentWidth is the sanity ceiling SetIndentWidth and
-// SetDefaultIndentWidth enforce; internal/config clamps to the same range.
+// MaxIndentWidth is the sanity ceiling SetIndentWidth and SetDefaultIndentWidth
+// enforce; internal/config clamps to the same range.
 const MaxIndentWidth = 16
 
 // SetIndentWidth sets how many spaces Tab, IndentLines, DedentLines and tab
 // expansion use in this editor. Values outside 1..MaxIndentWidth are ignored.
 //
-// Call it at construction, before any SetText: SetText expands tabs at the
-// editor's current width, and a caller that snapshots Text() afterwards (see
-// docs/ui-rules.md § Editor) would read a later width change as a user edit.
-// Changing the width at runtime deliberately does not re-expand existing text.
+// Call it at construction, before any SetText: SetText expands tabs at the current
+// width, and a caller that snapshots Text() afterwards (see docs/ui-rules.md §
+// Editor) would read a later width change as a user edit. Changing the width at
+// runtime deliberately does not re-expand existing text.
 func (e *Editor) SetIndentWidth(n int) {
 	if n < 1 || n > MaxIndentWidth {
 		return
@@ -178,32 +174,30 @@ func (e *Editor) SetIndentWidth(n int) {
 // IndentWidth returns the editor's indent width in spaces.
 func (e *Editor) IndentWidth() int { return e.indentWidth }
 
-// expandTabs replaces every literal tab in text with e.indentWidth spaces, so
-// loaded or pasted content renders like typed indentation (Editor has no
-// tab-stop expansion, so a raw tab would draw as one narrow column).
+// expandTabs replaces every literal tab in text with e.indentWidth spaces so
+// loaded or pasted content renders like typed indentation (a raw tab would draw
+// as one narrow column).
 func (e *Editor) expandTabs(text string) string {
 	return strings.ReplaceAll(text, "\t", strings.Repeat(" ", e.indentWidth))
 }
 
 // sqlIndentKeywords are the clause keywords that, as the last token on a line,
-// open a block the next line belongs inside. Only these three, and deliberately
-// not BEGIN/END or JOIN: anything needing matching to a closer needs a parser,
-// and a half-done one indents wrongly more often than not.
+// open a block the next line belongs inside. Only these three, deliberately not
+// BEGIN/END or JOIN: anything needing matching to a closer needs a parser, and a
+// half-done one indents wrongly more often than not.
 var sqlIndentKeywords = map[string]bool{"select": true, "from": true, "where": true}
 
-// SetSmartIndent turns on the extra indent level smartIndentBonus describes.
-// Off by default: SELECT/FROM/WHERE mean nothing in the plain multi-line text
-// boxes that also use Editor, so only the SQL editors ask for it.
+// SetSmartIndent turns on the extra indent level smartIndentBonus describes. Off
+// by default: SELECT/FROM/WHERE mean nothing in the plain multi-line text boxes
+// that also use Editor, so only the SQL editors ask for it.
 func (e *Editor) SetSmartIndent(v bool) { e.smartIndent = v }
 
-// smartIndentBonus reports the extra indent Enter adds beyond the current
-// line's own leading whitespace: one level when the text left of the cursor
-// ends with an open parenthesis, or with one of sqlIndentKeywords as its last
-// token.
-//
-// "Last token" keeps indentation from drifting right across a query: `SELECT`
-// alone indents the column list that follows, `SELECT a, b` does not, so the
-// next clause starts at the same column as the one above it.
+// smartIndentBonus reports the extra indent Enter adds beyond the line's own
+// leading whitespace: one level when the text left of the cursor ends with an
+// open parenthesis or with one of sqlIndentKeywords as its last token. "Last
+// token" keeps indentation from drifting right across a query: `SELECT` alone
+// indents the column list that follows, `SELECT a, b` does not, so the next
+// clause starts at the same column as the one above.
 func (e *Editor) smartIndentBonus() int {
 	if !e.smartIndent || e.cursorRow < 0 || e.cursorRow >= e.doc.Len() {
 		return 0
@@ -216,19 +210,19 @@ func (e *Editor) smartIndentBonus() int {
 	if left[len(left)-1] == '(' {
 		return e.indentWidth
 	}
-	// The token is whatever follows the last separator; a leading "(" counts as
-	// one so "VALUES (SELECT" reads as "SELECT".
+	// The token is whatever follows the last separator; a leading "(" counts as one
+	// so "VALUES (SELECT" reads as "SELECT".
 	if i := strings.LastIndexAny(left, " \t("); sqlIndentKeywords[strings.ToLower(left[i+1:])] {
 		return e.indentWidth
 	}
 	return 0
 }
 
-// leadingIndentForNewLine reports how many leading whitespace runes the
-// cursor's line starts with, clamped to the cursor column so that splitting
-// inside the indentation copies only what is left of the cursor (SSMS's smart
-// indenting). Tabs cannot occur in the buffer (expandTabs), but one counts as a
-// rune anyway, mirroring dedentAmount.
+// leadingIndentForNewLine reports how many leading whitespace runes the cursor's
+// line starts with, clamped to the cursor column so splitting inside the
+// indentation copies only what is left of the cursor (SSMS's smart indenting).
+// Tabs can't occur in the buffer (expandTabs) but one counts as a rune anyway,
+// mirroring dedentAmount.
 func (e *Editor) leadingIndentForNewLine() int {
 	if e.cursorRow < 0 || e.cursorRow >= e.doc.Len() {
 		return 0
@@ -243,9 +237,8 @@ func (e *Editor) leadingIndentForNewLine() int {
 }
 
 // IndentLines inserts e.indentWidth spaces at column 0 of the current line (or
-// every line spanned by the selection). An active selection is preserved,
-// its columns shifted right by e.indentWidth on whichever row(s) the
-// anchor/cursor sit.
+// every line spanned by the selection). An active selection is preserved, its
+// columns shifted right on whichever row(s) the anchor/cursor sit.
 func (e *Editor) IndentLines() {
 	e.pushUndo()
 	sr, er := e.affectedLineRange()
@@ -270,8 +263,7 @@ func (e *Editor) IndentLines() {
 
 // DedentLines removes one leading tab, or up to e.indentWidth leading spaces,
 // from the current line (or every line spanned by the selection). An active
-// selection is preserved, its columns shifted left by however much was
-// actually removed from that row.
+// selection is preserved, its columns shifted left by what was removed per row.
 func (e *Editor) DedentLines() {
 	e.pushUndo()
 	sr, er := e.affectedLineRange()
@@ -295,9 +287,9 @@ func (e *Editor) DedentLines() {
 	e.ensureCursorVisible()
 }
 
-// dedentAmount reports how many leading runes DedentLines should strip from
-// line: one leading tab (from content written before tabs were converted, or
-// pasted in), else up to e.indentWidth leading spaces.
+// dedentAmount reports how many leading runes DedentLines should strip: one
+// leading tab (content from before tabs were converted, or pasted in), else up to
+// e.indentWidth leading spaces.
 func (e *Editor) dedentAmount(line []rune) int {
 	if len(line) > 0 && line[0] == '\t' {
 		return 1
@@ -309,8 +301,8 @@ func (e *Editor) dedentAmount(line []rune) int {
 	return n
 }
 
-// isCommentedLine reports whether line, after its leading whitespace,
-// starts with the SQL line-comment token "--".
+// isCommentedLine reports whether line, after leading whitespace, starts with
+// the SQL line-comment token "--".
 func isCommentedLine(line []rune) bool {
 	i := 0
 	for i < len(line) && unicode.IsSpace(line[i]) {
@@ -319,8 +311,8 @@ func isCommentedLine(line []rune) bool {
 	return i+1 < len(line) && line[i] == '-' && line[i+1] == '-'
 }
 
-// commentLine inserts "-- " at line's first non-whitespace column (or
-// appends it if the line is blank).
+// commentLine inserts "-- " at line's first non-whitespace column (or appends it
+// if the line is blank).
 func commentLine(line []rune) []rune {
 	i := 0
 	for i < len(line) && unicode.IsSpace(line[i]) {
@@ -334,8 +326,8 @@ func commentLine(line []rune) []rune {
 	return nl
 }
 
-// uncommentLine strips a leading "--" (and one following space, if
-// present) from line. No-op if line isn't commented.
+// uncommentLine strips a leading "--" (and one following space) from line. No-op
+// if line isn't commented.
 func uncommentLine(line []rune) []rune {
 	if !isCommentedLine(line) {
 		return line
@@ -356,11 +348,10 @@ func uncommentLine(line []rune) []rune {
 
 // ToggleLineComments comments or uncomments the current line (or every line
 // spanned by the selection): uncomments only if every affected line is already
-// commented, otherwise comments every affected line (a blank line in range
-// counts as "not commented", so it gets "-- " too when the range is commented).
-// An active selection is preserved, its columns approximately shifted by the
-// net length change on the anchor/cursor rows (a cursor inside leading
-// whitespace can drift a column or two; accepted).
+// commented, else comments every affected line (a blank line counts as "not
+// commented", so it gets "-- " too). An active selection is preserved, its
+// columns approximately shifted by the net length change on the anchor/cursor rows
+// (a cursor inside leading whitespace can drift a column or two; accepted).
 func (e *Editor) ToggleLineComments() {
 	sr, er := e.affectedLineRange()
 	allCommented := true
@@ -390,14 +381,12 @@ func (e *Editor) ToggleLineComments() {
 	e.ensureCursorVisible()
 }
 
-// transformSelection applies fn to every rune in the current selection, in
-// place, branching on selBlock as SelectedText does. No-op with no selection.
-//
-// The rewritten lines go back through setLine even though the runes changed in
-// place and the slice header is unchanged: the version counter is what tells
-// the highlighters and wrap cache the text moved, and skipping it would leave
-// an uppercased keyword with its old non-keyword colour until some unrelated
-// edit bumped the version.
+// transformSelection applies fn to every rune in the selection, in place,
+// branching on selBlock as SelectedText does. No-op with no selection. The
+// rewritten lines go back through setLine even though the slice header is
+// unchanged: the version counter tells the highlighters and wrap cache the text
+// moved, and skipping it would leave an uppercased keyword in its old
+// non-keyword colour until some unrelated edit bumped the version.
 func (e *Editor) transformSelection(fn func(rune) rune) {
 	if !e.HasSelection() {
 		return
@@ -433,14 +422,13 @@ func (e *Editor) transformSelection(fn func(rune) rune) {
 	}
 }
 
-// UppercaseSelection and LowercaseSelection convert the case of every rune
-// in the current selection, in place. No-op if there's no selection.
+// UppercaseSelection and LowercaseSelection convert the case of every rune in
+// the selection, in place. No-op without a selection.
 func (e *Editor) UppercaseSelection() { e.transformSelection(unicode.ToUpper) }
 func (e *Editor) LowercaseSelection() { e.transformSelection(unicode.ToLower) }
 
-// deleteWordLeft removes the word to the left of the cursor (Ctrl+
-// Backspace), or merges with the previous line at column 0. Caller
-// (HandleKey) is responsible for pushUndo.
+// deleteWordLeft removes the word to the left of the cursor (Ctrl+Backspace), or
+// merges with the previous line at column 0. The caller (HandleKey) pushes undo.
 func (e *Editor) deleteWordLeft() {
 	if e.cursorCol == 0 {
 		if e.cursorRow > 0 {
@@ -454,9 +442,8 @@ func (e *Editor) deleteWordLeft() {
 	e.cursorCol = left
 }
 
-// deleteWordRight removes the word to the right of the cursor (Ctrl+
-// Delete), or merges with the next line at end-of-line. Caller (HandleKey)
-// is responsible for pushUndo.
+// deleteWordRight removes the word to the right of the cursor (Ctrl+Delete), or
+// merges with the next line at end-of-line. The caller (HandleKey) pushes undo.
 func (e *Editor) deleteWordRight() {
 	line := e.doc.Line(e.cursorRow)
 	if e.cursorCol >= len(line) {
