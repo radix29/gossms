@@ -546,10 +546,10 @@ func buildNewLoginStatusPage(sc *db.ServerConn, loginName func() string) (*props
 	apply := func(ctx context.Context) error {
 		name := loginName()
 		// Default is a no-op here: a new login has no explicit entry to
-		// revoke.
-		if connectRow.Dirty() && connectRow.Selected() != 2 {
-			verb := connectPermissionVerbs[connectRow.Selected()]
-			if err := serverPermApply(sc.Server)(ctx, verb, gosmo.PermissionOptions{}, "CONNECT SQL", name); err != nil {
+		// revoke, and applyPermChange sends nothing for none -> none.
+		if connectRow.Dirty() {
+			current := connectPermissionState(permStateNone, connectRow.Selected())
+			if err := applyPermChange(ctx, serverPermApply(sc.Server), permStateNone, current, "CONNECT SQL", name); err != nil {
 				return err
 			}
 		}

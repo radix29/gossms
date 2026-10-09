@@ -80,7 +80,7 @@ func (s LiveState) String() string {
 }
 
 // LiveCounters is one operator's counters so far, merged over its threads.
-// Rows, estimates and reads are summed; ElapsedMS and CPUMS come from the
+// Rows, estimates, reads and CPUMS are summed and ElapsedMS comes from the
 // slowest thread, as Runtime's do, so the figures do not jump when the live
 // view gives way to the actual plan.
 type LiveCounters struct {
@@ -133,7 +133,7 @@ func MergeProfiles(rows []ProfileRow) map[int]LiveCounters {
 		c.Rewinds += r.RewindCount
 		c.EndOfScans += r.EndOfScanCount
 		c.ElapsedMS = max(c.ElapsedMS, r.ElapsedMs)
-		c.CPUMS = max(c.CPUMS, r.CPUMs)
+		c.CPUMS += r.CPUMs
 		c.ScanCount += r.ScanCount
 		c.LogicalReads += r.LogicalReads
 		c.PhysicalReads += r.PhysicalReads

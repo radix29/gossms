@@ -89,7 +89,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 			} else if len(hist) == 0 {
 				d.setStatusMsg("No backup history for "+dbName, true)
 			} else {
-				d.setStatusMsg(d.restingStatus(), false)
+				d.setRestingStatus()
 			}
 		})
 	})
@@ -349,7 +349,7 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 			d.headers, d.files, d.inspectDevs = headers, files, src.devices
 			d.headerIdx = idx
 			d.autoFillTarget(headers[idx].DatabaseName)
-			d.setStatusMsg(d.restingStatus(), false)
+			d.setRestingStatus()
 			if next == restoreModeFiles {
 				d.enterFilesMode()
 				return
@@ -389,7 +389,7 @@ func (d *RestoreDialog) startRestore() {
 				d.setStatusMsg(fmt.Sprintf("Check target database: %v", err), true)
 				return
 			}
-			d.setStatusMsg(d.restingStatus(), false)
+			d.setRestingStatus()
 			existing := newNameSet(serverCollation(sc))
 			for _, dbo := range dbs {
 				existing.Add(dbo.Name)
@@ -536,8 +536,10 @@ func buildRestoreOptions(ctx context.Context, srv *gosmo.Server, req restoreRequ
 		return gosmo.RestoreOptions{}, fmt.Errorf("backup set %d is no longer on %s", req.fileNumber, sourceLabel(req.src.devices))
 	}
 
+	// Only a set that lays the files down takes MOVE clauses (FromHeader), so
+	// only its file list is worth reading.
 	var files []*gosmo.BackupFile
-	if req.plan.NeedsFileList(h.DatabaseName, req.target) {
+	if h.SetType.PlacesFiles() && req.plan.NeedsFileList(h.DatabaseName, req.target) {
 		// The file list must name the same set as WITH FILE. Asking for the
 		// device without one describes set 1, whose logical file names belong
 		// to a different database whenever backups were appended, and MOVE
@@ -604,7 +606,7 @@ func (d *RestoreDialog) script() {
 				d.setStatusMsg(err.Error(), true)
 				return
 			}
-			d.setStatusMsg(d.restingStatus(), false)
+			d.setRestingStatus()
 			app.openQueryWithText(sc, "", stmt)
 		})
 	})

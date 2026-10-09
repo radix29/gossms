@@ -252,6 +252,9 @@ func backupHistoryQuery(dbName string) string {
            WHEN 'I' THEN 'Differential'
            WHEN 'L' THEN 'Transaction Log'
            WHEN 'F' THEN 'File/Filegroup'
+           WHEN 'G' THEN 'Differential File'
+           WHEN 'P' THEN 'Partial'
+           WHEN 'Q' THEN 'Differential Partial'
            ELSE bs.type
        END                       AS [Type],
        bs.backup_size / 1048576.0 AS [Size (MB)],

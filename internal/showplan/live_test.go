@@ -51,10 +51,12 @@ func TestMergeProfilesParallelThreads(t *testing.T) {
 	if len(m) != 7 {
 		t.Fatalf("got %d nodes, want 7", len(m))
 	}
+	// Elapsed is the slowest thread's, CPU the sum over threads: the four
+	// workers' 102+217+214+188 ms, not the busiest one's 217.
 	c := m[2]
 	want := LiveCounters{
 		NodeID: 2, PhysicalOp: "Parallelism", State: LiveRunning, Threads: 4, Timed: true,
-		Rows: 8478846, EstRows: 3000, ElapsedMS: 3166, CPUMS: 217,
+		Rows: 8478846, EstRows: 3000, ElapsedMS: 3166, CPUMS: 721,
 	}
 	if c != want {
 		t.Errorf("node 2 = %+v\nwant     %+v", c, want)

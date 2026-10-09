@@ -70,10 +70,28 @@ step lands.
   `TestLiveBackupReads`, `TestLiveRestorePlan*` green on 17, 14, 13. tmux on
   17: Media Contents and the Restore Backup Set list name all seven set
   types; Script on a log set writes `RESTORE LOG … WITH FILE = 2`.
-- **S3 — gosmo Agent.** K7 (step reorder self-reference).
-- **S4 — gosmo Query Store.** K4 (all-category wait fan-out).
-- **S5 — gossms.** K6 dialog half, K2's `backupHistoryQuery` CASE arms, K3
-  (plan CPU), K8 (CONNECT SQL CASCADE), K10 display. tmux checks per item.
+- **S3 — gosmo Agent. Done 2026-10-09** (uncommitted, gosmo). K7. Live:
+  `TestLiveJobReorder*` (one new) and `TestLiveAtomicBatch*` green on 17,
+  14, 13; the new unit and live tests both fail with the fix reverted (live:
+  Msg 14235).
+- **S4 — gosmo Query Store. Done 2026-10-09** (uncommitted, gosmo). K4.
+  Live: `TestLiveQueryStore*` (one new) green on 17 and 14; on 13 the new
+  test skips (no wait stats before 2017), the rest green. The new unit and
+  live tests both fail with the fix reverted (live: exec count 6, want 3;
+  Avg 269, want 538).
+- **S5 — gossms. Done 2026-10-09** (uncommitted, gossms + a gosmo doc
+  comment). K6 dialog half, K2's `backupHistoryQuery` CASE arms, K3, K8, K10
+  display. Every new test fails with its fix reverted. tmux on 17 against a
+  throwaway database holding all seven set types on one device and a
+  throwaway login granted CONNECT SQL WITH GRANT OPTION (both dropped, with
+  their backup history and file): View Backup History names all seven; the
+  Restore dialog's status line per set type; Full → Differential → Log
+  restored from the dialog onto a renamed target (D 1, I 3, L 8 in
+  `restorehistory`, ONLINE, all rows present); Login Status Deny applied
+  (now `DENY`), Bad password time "-"; an actual plan's DOP-4 Nested Loops
+  shows 17476 ms CPU against the statement's 19205 ms. gofmt, vet (also
+  `-tags livedb`), `go test -race -count=1 ./...` green; gosmo vet/test green.
+  One new finding is under § Left over.
 
 S5 depends on S1 and S2; the rest are independent.
 
@@ -151,6 +169,10 @@ methods), `TestBackupHistoryScansNullColumns` (copy-only, NULL type),
 history, on 17, 14, 13). **Left for S5:** `backupHistoryQuery`'s CASE arms
 for `G/P/Q`.
 
+**Done (S5).** `backupHistoryQuery` names `G`/`P`/`Q` "Differential File",
+"Partial", "Differential Partial" (Media Contents' names). Test:
+`TestBackupHistoryQueryNamesEverySetType`. tmux: all seven named on 17.
+
 ### K3 — Operator CPU in actual and live plans is the busiest thread's, not the operator's — gossms — *confirmed live*
 
 `decodeRuntime` (`internal/showplan/parse.go:406`) and `MergeProfiles`
@@ -168,6 +190,14 @@ Update the two doc comments ("times from the slowest thread"). **Test.**
 Parse fixture with a multi-thread RelOp: CPU is the sum, elapsed the max;
 `MergeProfiles` likewise. **tmux.** Run the probe query with Include Actual
 Plan: the top Stream Aggregate's CPU ≈ the statement's CPU time.
+
+**Done (S5).** `decodeRuntime` and `MergeProfiles` sum CPU over threads,
+elapsed stays the max; the doc comments on `Runtime` and `LiveCounters` say
+why. Tests: `TestParse_RuntimeSumsCPUAndTakesTheSlowestElapsed` (the four
+thread figures above: 117546, elapsed the slowest); `TestMergeProfilesParallelThreads`
+now expects node 2's 721 ms (sum), not 217. tmux on 17 (DOP-4 cross join of
+a 6000-row `#t`): Nested Loops Actual CPU 17476 ms, Duration 5305 ms,
+statement CPU 19205 ms.
 
 ### K4 — `QueryStoreWaitingQueries` with no category multiplies executions by the number of wait categories — gosmo — *confirmed in code*
 
@@ -188,6 +218,19 @@ in a derived table before the join; refuse Min/Max/Std dev there with
 **Test.** SQL-shape test that the empty-category form has no fan-out join.
 **Live.** Throwaway database with Query Store and a query that waits in two
 categories; its exec count matches `sys.query_store_runtime_stats`.
+
+**Done (S4, gosmo).** `qsWaitFrom` became a function of its wait-stats
+source: `QueryStoreWaitCategories` and the named-category form pass the bare
+view; the empty-category form passes `qsWaitStatsAcrossCategories`, a derived
+table summing `total_query_wait_time_ms` per (plan, interval, execution
+type), so each runtime-stats row joins once. Min/Max/Std dev there return
+`ErrInvalidRequest` before any query is sent; the doc comment says so.
+Tests: `TestQueryStoreWaitingQueriesAcrossCategoriesDoesNotFanOut` (SQL
+shape for Avg/Total, refusal for the other three, categories report
+unchanged); `TestLiveQueryStoreWaitingQueriesAcrossCategoriesCountsEachExecutionOnce`
+— a probe `SELECT` blocked on a row lock, then its 4-MB result read slowly
+(Lock + Network IO, plus a third category on 17), three runs; exec count and
+Avg/Total match `sys.query_store_runtime_stats`/`wait_stats` read directly.
 
 ### K5 — Histogram RANGE_HI_KEY renders decimal, money, GUID and date keys wrongly — gosmo — *confirmed by repro*
 
@@ -251,6 +294,20 @@ log/differential set when `NeedsFileList` says so (wasted read, harmless —
 skip it when `!h.SetType.PlacesFiles()`); the gossms test and the
 from-the-dialog live restore.
 
+**Done (S5), narrower and broader than planned.** The status line's resting
+message (`restoreSequenceHint`) names a log or differential set (any of the
+three) and says the target must already be RESTORING — *whichever* Recovery
+option is picked, since the requirement does not depend on it; not for a
+file set, which Enterprise restores online. The set is the one a restore
+would read (`selectedSetType`: the analyzed header for the same devices, by
+`fileNumberFor`'s rule, else the history entry); a typed path says nothing
+until analyzed. A new `statusResting` flag lets `applyDeviceRules` refresh
+it as the selection changes (it compared strings before); `backToForm`
+refreshes it after the inspect view's ←/→. `buildRestoreOptions` skips the
+file list unless `PlacesFiles()`. Tests: `TestBuildRestoreOptionsForALogSet`
+(RESTORE LOG, FILE = 2, no MOVE, no FILELISTONLY read),
+`TestRestoreStatusNamesARestoreSequenceSet`. tmux: see S5.
+
 ### K7 — Moving a job step fails when its old "go to step N" equals its new position — gosmo — *confirmed in code*
 
 `Job.ReorderSteps` deletes a moved step and re-adds it at its target position
@@ -274,6 +331,20 @@ whose original action is goto, writes the real targets. Correct the comment.
 **Live.** Throwaway job, three steps, step 3 → "on success go to step 1";
 move it to the top; flow reads step 1 → "go to step 2".
 
+**Done (S3, gosmo).** A moved step is re-added with each "go to step N"
+action as "go to the next step" (3, step id 0 — `sp_verify_jobstep` checks
+nothing for action 3) by the new `reAddRequest`, which absorbs
+`stepRequestFrom` (its only caller); the existing repair pass writes the real
+actions and targets. The comments on `InsertStep`, `MoveStep`, the
+`ReorderSteps` body and the live test's header are corrected from
+`sp_delete_jobstep`'s text (read on 17): it decrements references to later
+steps and resets references to the deleted step only — on success to "quit
+with success", on failure to "quit with **failure**" (the old comment said
+success for both). Tests: `TestReorderStepsReAddsWithoutGoToStep` (no action
+4 in the re-add; the repair restores both targets);
+`TestLiveJobReorderMovesAStepOntoItsOwnTarget` (fixture step "three", on
+failure → step 1, moved to the top) on 17, 14, 13.
+
 ### K8 — Login Status: changing CONNECT SQL away from a grant WITH GRANT OPTION is refused — gossms — *confirmed in code*
 
 `pageLoginStatus` (`login_props.go:680`) sends DENY/REVOKE CONNECT SQL with
@@ -286,6 +357,17 @@ empty options. When the stored state is `GRANT_WITH_GRANT_OPTION` (shown as
 change. **Test.** Unit test of the page's transition from
 `GRANT_WITH_GRANT_OPTION` to Deny and Default. **tmux.** Throwaway login
 granted CONNECT SQL WITH GRANT OPTION; set Deny; Apply succeeds.
+
+**Done (S5).** `connectPermissionState(orig, choice)` replaces the
+`connectPermissionVerbs` table: "Grant" over a loaded
+`GRANT_WITH_GRANT_OPTION` is that state, so no REVOKE GRANT OPTION FOR.
+Both the Status page and New Login's Status page (orig none) apply through
+`applyPermChange`, which adds CASCADE. gosmo: `LoginDetails.ConnectSQLState`'s
+comment now lists `GRANT_WITH_GRANT_OPTION` (doc only). Tests:
+`TestLoginStatusConnectPermissionFromGrantWithGrantOption` (Deny/Default
+carry CASCADE); `TestLoginStatusConnectPermissionWritesTheStateItShows`
+now loads the state each case moves from instead of moving the baseline
+(its Default case had relied on that, and would now send nothing).
 
 ### K9 — View Dependencies misses procedures that name the object without a schema — gosmo — *plausible*
 
@@ -343,6 +425,22 @@ on the field), for `PasswordLastSetTime` too. **Test.** Decode test.
 three instances). Tests: `TestLoginPropertyTimeDropsTheSentinel`;
 `TestLiveKReads/bad_password_sentinel` on 17, 14, 13. The gossms display
 check stays in S5 (the existing "-" fallback should now apply unchanged).
+
+**Done (S5).** No code change: tmux on 17, a fresh login (server value
+`1900-01-01 02:00`) shows Bad password time "-".
+
+---
+
+## Left over
+
+- **Restore's Confirm Overwrite for a sequence step.** Restoring a log or
+  differential set onto the existing RESTORING target (the normal second
+  step) still asks to type the name because "Restoring will overwrite it"
+  — untrue for those sets, which never overwrite. Seen in the S5 tmux run;
+  not fixed. The overwrite check could skip, or reword, when the selected
+  set does not `PlacesFiles()`.
+- From S1: `TestLiveScriptDatabaseOptionsRoundTrip` on 13 (not
+  investigated) and one unreproduced `internal/tui` `-race` failure.
 
 ---
 

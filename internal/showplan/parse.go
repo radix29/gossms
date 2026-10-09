@@ -384,7 +384,8 @@ func warnString(el xml.StartElement) string {
 	return el.Name.Local + " (" + strings.Join(attrs, ", ") + ")"
 }
 
-// decodeRuntime consumes <RunTimeInformation>, aggregating per-thread counters.
+// decodeRuntime consumes <RunTimeInformation>, aggregating per-thread counters
+// as Runtime documents.
 func decodeRuntime(dec *xml.Decoder) (*Runtime, error) {
 	rt := &Runtime{}
 	depth := 0
@@ -403,7 +404,7 @@ func decodeRuntime(dec *xml.Decoder) (*Runtime, error) {
 				rt.LogicalReads += attrI(t, "ActualLogicalReads")
 				rt.PhysicalReads += attrI(t, "ActualPhysicalReads")
 				rt.ElapsedMS = max(rt.ElapsedMS, attrI(t, "ActualElapsedms"))
-				rt.CPUMS = max(rt.CPUMS, attrI(t, "ActualCPUms"))
+				rt.CPUMS += attrI(t, "ActualCPUms")
 			}
 			depth++
 		case xml.EndElement:

@@ -227,3 +227,97 @@ func TestRestoreKeepsTheServerItStartedOn(t *testing.T) {
 		t.Errorf("the server the dialog was reopened on got the restore's reads: %q", got)
 	}
 }
+
+// A log set picked from history restores with RESTORE LOG and no MOVE, even
+// onto a renamed target: the files were placed by the restore before it.
+// Its file list is not read either — nothing it could say goes into the
+// statement.
+func TestBuildRestoreOptionsForALogSet(t *testing.T) {
+	finish := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	sc, inst := newFakeConn(t,
+		headerOnlyResponse(
+			[]driver.Value{"full", int64(1), int64(1), "AppDB", "SRV", finish, int64(1024)},
+			[]driver.Value{"log", int64(2), int64(2), "AppDB", "SRV", finish, int64(1024)},
+		),
+		fileListOnlyResponse(
+			[]driver.Value{"AppDB", `D:\SQL\AppDB.mdf`, "D", "PRIMARY", int64(1), int64(0)},
+			[]driver.Value{"AppDB_log", `D:\SQL\AppDB_log.ldf`, "L", "", int64(1), int64(0)},
+		),
+	)
+	d := restoreFormWithOptions()
+	d.sc = sc
+	full := &gosmo.BackupInfo{DeviceName: `E:\b\app.bak`, Position: 1, SetType: gosmo.BackupSetDatabase}
+	log := &gosmo.BackupInfo{DeviceName: `E:\b\app.bak`, Position: 2, SetType: gosmo.BackupSetLog}
+	pickHistory(d, []*gosmo.BackupInfo{full, log}, 1)
+	d.rbReloc.SetSelected(relocAuto)
+
+	req := d.restoreRequest(d.sourceForRestore(), "AppDB_Copy")
+	ropts, err := buildRestoreOptions(context.Background(), sc.Server, req)
+	if err != nil {
+		t.Fatalf("buildRestoreOptions: %v", err)
+	}
+	stmt, err := sc.Server.BuildRestoreStatement(ropts)
+	if err != nil {
+		t.Fatalf("BuildRestoreStatement: %v", err)
+	}
+	if !strings.Contains(stmt, "RESTORE LOG [AppDB_Copy]") || !strings.Contains(stmt, "FILE = 2") {
+		t.Errorf("restore statement is not RESTORE LOG of set 2:\n%s", stmt)
+	}
+	if strings.Contains(stmt, "MOVE") {
+		t.Errorf("a log restore carries MOVE clauses:\n%s", stmt)
+	}
+	if got := inst.Reads("RESTORE FILELISTONLY"); len(got) != 0 {
+		t.Errorf("the file list of a log set was read: %q", got)
+	}
+}
+
+// The status line says a log or differential set needs a RESTORING target,
+// for the set the restore would actually read: the history entry picked, or
+// the analyzed header of those same devices.
+func TestRestoreStatusNamesARestoreSequenceSet(t *testing.T) {
+	const dev = `E:\b\app.bak`
+	full := &gosmo.BackupInfo{DeviceName: dev, Position: 1, SetType: gosmo.BackupSetDatabase}
+	diff := &gosmo.BackupInfo{DeviceName: dev, Position: 2, SetType: gosmo.BackupSetDifferential}
+	log := &gosmo.BackupInfo{DeviceName: dev, Position: 3, SetType: gosmo.BackupSetLog}
+	file := &gosmo.BackupInfo{DeviceName: dev, Position: 4, SetType: gosmo.BackupSetFile}
+	hist := []*gosmo.BackupInfo{full, diff, log, file}
+
+	for _, tc := range []struct {
+		pick int
+		want string
+	}{
+		{0, "Ready"},
+		{1, "Differential backup: the target must be RESTORING"},
+		{2, "Transaction Log backup: the target must be RESTORING"},
+		// A file restore onto an online database is allowed (Enterprise's
+		// online restore); it needs no hint.
+		{3, "Ready"},
+	} {
+		d := restoreForm()
+		pickHistory(d, hist, tc.pick)
+		if got := d.restingStatus(); !strings.HasPrefix(got, tc.want) {
+			t.Errorf("history set %d: status %q, want it to start %q", tc.pick+1, got, tc.want)
+		}
+	}
+
+	// A typed path says nothing until analyzed; then the arrowed-to header
+	// decides, and only while the path still names the analyzed device.
+	d := restoreForm()
+	d.fFile.SetValue(dev)
+	if got := d.restingStatus(); got != "Ready" {
+		t.Errorf("unanalyzed path: status %q, want Ready", got)
+	}
+	d.headers = []*gosmo.BackupHeader{
+		{Position: 1, SetType: gosmo.BackupSetDatabase},
+		{Position: 2, SetType: gosmo.BackupSetLog},
+	}
+	d.inspectDevs = []string{dev}
+	d.headerIdx = 1 // what ←/→ in the inspect view moves
+	if got := d.restingStatus(); !strings.HasPrefix(got, "Transaction Log backup:") {
+		t.Errorf("analyzed log set: status %q, want the RESTORING hint", got)
+	}
+	d.fFile.SetValue(`E:\b\other.bak`)
+	if got := d.restingStatus(); got != "Ready" {
+		t.Errorf("path changed after analyze: status %q, want Ready", got)
+	}
+}

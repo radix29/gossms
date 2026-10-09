@@ -34,26 +34,22 @@ func loginResponses() []fakeResponse {
 // disabled, so getting it backwards is the kind of mistake that is noticed by
 // the person who can no longer connect.
 func TestLoginStatusConnectPermissionWritesTheStateItShows(t *testing.T) {
-	for _, tc := range []struct{ option, want string }{
-		{"Grant", "GRANT CONNECT SQL TO [appuser]"},
-		{"Deny", "DENY CONNECT SQL TO [appuser]"},
+	for _, tc := range []struct{ loaded, option, want string }{
+		{"", "Grant", "GRANT CONNECT SQL TO [appuser]"},
+		{"", "Deny", "DENY CONNECT SQL TO [appuser]"},
 		// REVOKE takes FROM, not TO — a difference gosmo owns, restated here
-		// only so the three arms are compared against real statements.
-		{"Default", "REVOKE CONNECT SQL FROM [appuser]"},
+		// only so the three arms are compared against real statements. The
+		// login loads granted, so Default is a real change from what it has.
+		{"GRANT", "Default", "REVOKE CONNECT SQL FROM [appuser]"},
 	} {
 		t.Run(tc.option, func(t *testing.T) {
+			resp := loginResponses()
+			resp[1].rows[0][11] = tc.loaded
 			name := "appuser"
-			sc, inst := newFakeConn(t, loginResponses()...)
+			sc, inst := newFakeConn(t, resp...)
 			form, apply := loadPage(t, pageLoginStatus(sc, &name), inst)
 
-			// The scripted login has no CONNECT SQL entry, so the page opens
-			// on Default — move off it first for the case under test to be a
-			// real edit in every direction.
-			const connectLabel = "Permission to connect to database engine"
-			if tc.option == "Default" {
-				radioRow(t, form, connectLabel).SetSelected(0)
-			}
-			editRadio(t, form, connectLabel, tc.option)
+			editRadio(t, form, "Permission to connect to database engine", tc.option)
 
 			if err := apply(context.Background()); err != nil {
 				t.Fatalf("apply: %v", err)
@@ -68,6 +64,43 @@ func TestLoginStatusConnectPermissionWritesTheStateItShows(t *testing.T) {
 				t.Errorf("%q wrote:\n%s\nwant it to contain: %s", tc.option, stmts[0], tc.want)
 			}
 		})
+	}
+}
+
+// A login granted CONNECT SQL WITH GRANT OPTION shows as "Grant" (the page
+// has no fourth choice). Moving it to Deny or Default must carry CASCADE —
+// SQL Server refuses either without it (Msg 4611). And "Grant" there stands
+// for the state the login has, not a plain GRANT: read as GRANT it would turn
+// into REVOKE GRANT OPTION FOR, quietly taking away a right the user never saw.
+func TestLoginStatusConnectPermissionFromGrantWithGrantOption(t *testing.T) {
+	const connectLabel = "Permission to connect to database engine"
+	for _, tc := range []struct{ option, want string }{
+		{"Deny", "DENY CONNECT SQL TO [appuser] CASCADE"},
+		{"Default", "REVOKE CONNECT SQL FROM [appuser] CASCADE"},
+	} {
+		t.Run(tc.option, func(t *testing.T) {
+			resp := loginResponses()
+			resp[1].rows[0][11] = "GRANT_WITH_GRANT_OPTION"
+			name := "appuser"
+			sc, inst := newFakeConn(t, resp...)
+			form, apply := loadPage(t, pageLoginStatus(sc, &name), inst)
+
+			editRadio(t, form, connectLabel, tc.option)
+
+			if err := apply(context.Background()); err != nil {
+				t.Fatalf("apply: %v", err)
+			}
+			stmts := inst.Statements()
+			if len(stmts) != 1 {
+				t.Fatalf("want exactly one statement, got %d: %q", len(stmts), stmts)
+			}
+			if !strings.Contains(stmts[0], tc.want) {
+				t.Errorf("%q wrote:\n%s\nwant it to contain: %s", tc.option, stmts[0], tc.want)
+			}
+		})
+	}
+	if got := connectPermissionState(permStateGrantWith, 0); got != permStateGrantWith {
+		t.Errorf("Grant over a grant WITH GRANT OPTION reads as %q, want it unchanged", got)
 	}
 }
 

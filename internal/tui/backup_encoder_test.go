@@ -252,6 +252,18 @@ func TestBackupHistoryQueryQuotesTheDatabaseName(t *testing.T) {
 	}
 }
 
+// "View Backup History" names every backupset.type msdb writes. G, P and Q
+// (differential file, partial, differential partial) once fell through to the
+// raw letter.
+func TestBackupHistoryQueryNamesEverySetType(t *testing.T) {
+	q := backupHistoryQuery("AppDB")
+	for _, letter := range []string{"D", "I", "L", "F", "G", "P", "Q"} {
+		if !strings.Contains(q, "WHEN '"+letter+"' THEN '") {
+			t.Errorf("backupHistoryQuery has no CASE arm for backupset.type %q:\n%s", letter, q)
+		}
+	}
+}
+
 // sqlServerProductName turns a backup header's version major into the name
 // the Inspect view shows. The mapping is not arithmetic — SQL Server skipped
 // major 11's usual naming and there is no 2010 — so it is a table, and a

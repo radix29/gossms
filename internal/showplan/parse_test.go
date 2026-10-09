@@ -211,6 +211,43 @@ func TestParse_BooleanAttrsAcceptXSDOneZeroForm(t *testing.T) {
 	}
 }
 
+// A parallel operator's CPU is the sum over its threads and its elapsed time
+// the slowest thread's. Thread figures from a DOP-4 Stream Aggregate on 17
+// (2026-10-09), whose statement CpuTime was 117551: the max alone said 32250.
+func TestParse_RuntimeSumsCPUAndTakesTheSlowestElapsed(t *testing.T) {
+	const xmlDoc = `<ShowPlanXML Version="1.599" Build="17.0.4055.5">
+<BatchSequence><Batch><Statements>
+<StmtSimple StatementText="x">
+<QueryPlan><RelOp NodeId="0" PhysicalOp="Stream Aggregate" LogicalOp="Aggregate" Parallel="1">
+<RunTimeInformation>
+<RunTimeCountersPerThread Thread="1" ActualRows="1" ActualExecutions="1" ActualElapsedms="33010" ActualCPUms="32250"/>
+<RunTimeCountersPerThread Thread="2" ActualRows="1" ActualExecutions="1" ActualElapsedms="33400" ActualCPUms="27646"/>
+<RunTimeCountersPerThread Thread="3" ActualRows="1" ActualExecutions="1" ActualElapsedms="33120" ActualCPUms="28583"/>
+<RunTimeCountersPerThread Thread="4" ActualRows="1" ActualExecutions="1" ActualElapsedms="33050" ActualCPUms="29067"/>
+</RunTimeInformation>
+</RelOp></QueryPlan>
+</StmtSimple>
+</Statements></Batch></BatchSequence></ShowPlanXML>`
+
+	plan, err := Parse([]byte(xmlDoc))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rt := plan.Statements[0].Root.Runtime
+	if rt == nil {
+		t.Fatal("Root.Runtime = nil")
+	}
+	if rt.CPUMS != 117546 {
+		t.Errorf("CPUMS = %d, want 117546 (the four threads' sum)", rt.CPUMS)
+	}
+	if rt.ElapsedMS != 33400 {
+		t.Errorf("ElapsedMS = %d, want 33400 (the slowest thread)", rt.ElapsedMS)
+	}
+	if rt.Threads != 4 || rt.Rows != 4 {
+		t.Errorf("Threads, Rows = %d, %d, want 4, 4", rt.Threads, rt.Rows)
+	}
+}
+
 func TestParse_InvalidDocument(t *testing.T) {
 	if _, err := Parse([]byte("<NotAPlan/>")); err == nil {
 		t.Error("Parse(garbage) returned nil error, want an error")

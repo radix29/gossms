@@ -605,10 +605,26 @@ func pageLoginSecurables(sc *db.ServerConn, loginName *string) propPage {
 
 var connectPermissionItems = []string{"Grant", "Deny", "Default"}
 
-// connectPermissionVerbs is the statement each connectPermissionItems choice
-// issues for CONNECT SQL; Default is the REVOKE that removes the explicit
-// entry.
-var connectPermissionVerbs = []gosmo.PermissionVerb{gosmo.VerbGrant, gosmo.VerbDeny, gosmo.VerbRevoke}
+// connectPermissionState is the permission state a connectPermissionItems
+// choice stands for, given the state CONNECT SQL loaded with. The page has no
+// "Grant With Grant" choice, so "Grant" over a loaded GRANT_WITH_GRANT_OPTION
+// is that state unchanged — it must not issue REVOKE GRANT OPTION FOR. Apply
+// goes through applyPermChange with the loaded state as orig: a DENY or REVOKE
+// away from a grant WITH GRANT OPTION needs CASCADE (Msg 4611 without it),
+// which a bare verb per choice did not send.
+func connectPermissionState(orig string, selected int) string {
+	switch selected {
+	case 0:
+		if orig == permStateGrantWith {
+			return permStateGrantWith
+		}
+		return permStateGrant
+	case 1:
+		return permStateDeny
+	default:
+		return permStateNone
+	}
+}
 
 func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
@@ -642,11 +658,12 @@ func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 				}
 			}
 
+			connectOrig := det.ConnectSQLState
 			connectIdx := 2 // Default
-			switch det.ConnectSQLState {
-			case "GRANT", "GRANT_WITH_GRANT_OPTION":
+			switch connectOrig {
+			case permStateGrant, permStateGrantWith:
 				connectIdx = 0
-			case "DENY":
+			case permStateDeny:
 				connectIdx = 1
 			}
 			connectRow := propsheet.Radio("Permission to connect to database engine", connectPermissionItems, connectIdx)
@@ -676,8 +693,8 @@ func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 					return err
 				}
 				if connectRow.Dirty() {
-					verb := connectPermissionVerbs[connectRow.Selected()]
-					if err := serverPermApply(sc.Server)(ctx, verb, gosmo.PermissionOptions{}, "CONNECT SQL", *loginName); err != nil {
+					current := connectPermissionState(connectOrig, connectRow.Selected())
+					if err := applyPermChange(ctx, serverPermApply(sc.Server), connectOrig, current, "CONNECT SQL", *loginName); err != nil {
 						return err
 					}
 				}

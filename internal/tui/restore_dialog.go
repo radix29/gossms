@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -105,6 +106,10 @@ type RestoreDialog struct {
 
 	status    string
 	statusErr bool
+	// statusResting marks status as restingStatus's, which applyDeviceRules
+	// may replace as the form changes; any other message stays until the
+	// next one.
+	statusResting bool
 
 	// Label rows computed by layoutForm, read by Draw.
 	sourceLabelY int
@@ -333,7 +338,13 @@ func (d *RestoreDialog) focusTo(w focusable) {
 }
 
 func (d *RestoreDialog) setStatusMsg(msg string, isErr bool) {
-	d.status, d.statusErr = msg, isErr
+	d.status, d.statusErr, d.statusResting = msg, isErr, false
+}
+
+// setRestingStatus puts the status line back to restingStatus.
+func (d *RestoreDialog) setRestingStatus() {
+	d.setStatusMsg(d.restingStatus(), false)
+	d.statusResting = true
 }
 
 // syncSourceState reacts to input that changed the Restore From radio or the
@@ -378,10 +389,47 @@ const restoreURLHint = "From URL: the container needs a credential named for it.
 
 // restingStatus is the status line when nothing has gone wrong.
 func (d *RestoreDialog) restingStatus() string {
+	if t, ok := d.selectedSetType(); ok {
+		if hint := restoreSequenceHint(t); hint != "" {
+			return hint
+		}
+	}
 	if gosmo.IsBackupURL(d.deviceForRestore()) {
 		return restoreURLHint
 	}
 	return "Ready"
+}
+
+// selectedSetType is the type of the backup set a restore would read, when
+// the dialog knows it: the analyzed header's for the devices the inspect view
+// read (fileNumberFor's rule for which set that is), else the picked history
+// entry's. ok is false for a typed path not yet analyzed.
+func (d *RestoreDialog) selectedSetType() (gosmo.BackupSetType, bool) {
+	src := d.sourceForRestore()
+	if len(src.devices) == 0 {
+		return "", false
+	}
+	if h := d.selectedHeader(); h != nil && slices.Equal(d.inspectDevs, src.devices) {
+		return h.SetType, true
+	}
+	if d.rbSource.Selected() == 1 {
+		if i := d.ddHistSet.Selected(); i >= 0 && i < len(d.history) {
+			return d.history[i].SetType, true
+		}
+	}
+	return "", false
+}
+
+// restoreSequenceHint says, for a log or differential set, that it restores
+// only onto a database an earlier restore left RESTORING — whichever Recovery
+// option is picked. Onto an online database (or none) the server refuses it
+// with a message about files not ready to roll forward, which never says why.
+// "" for a set that starts a restore sequence.
+func restoreSequenceHint(t gosmo.BackupSetType) string {
+	if t != gosmo.BackupSetLog && !t.IsDifferential() {
+		return ""
+	}
+	return backupSetTypeName(t) + " backup: the target must be RESTORING, left so by an earlier restore WITH NORECOVERY."
 }
 
 // applyDeviceRules switches off what the source device cannot offer, the
@@ -396,8 +444,8 @@ func (d *RestoreDialog) restingStatus() string {
 // SQL Managed Instance.
 func (d *RestoreDialog) applyDeviceRules() {
 	d.btnBrowse.SetEnabled(!serverIsAzure(d.sc) && !gosmo.IsBackupURL(d.deviceForRestore()))
-	if !d.statusErr && (d.status == "" || d.status == "Ready" || d.status == restoreURLHint) {
-		d.setStatusMsg(d.restingStatus(), false)
+	if !d.statusErr && (d.status == "" || d.status == "Ready" || d.statusResting) {
+		d.setRestingStatus()
 	}
 }
 
@@ -470,6 +518,8 @@ func (d *RestoreDialog) backToForm() {
 	// Into the field the form was left from, even if the view being left had focus
 	// on its buttons.
 	d.setFocus(d.focusIdx)
+	// The inspect view's ←/→ may have picked a set of another type.
+	d.applyDeviceRules()
 }
 
 func (d *RestoreDialog) doProgressButton() {
