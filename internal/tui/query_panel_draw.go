@@ -53,6 +53,9 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 // out at the end: it holds locks, and closing the window rolls it back.
 func (p *QueryPanel) connInfoText() string {
 	if p.connectingTo != "" {
+		if p.connectingDB != "" {
+			return fmt.Sprintf("Connecting to %s | %s...", p.connectingTo, p.connectingDB)
+		}
 		return fmt.Sprintf("Connecting to %s...", p.connectingTo)
 	}
 	if p.conn == nil {

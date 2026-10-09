@@ -103,6 +103,7 @@ func (c *fullTextCopySource) choose(dbName string) {
 // answers Accessible and lets the read report what it finds.
 func (c *fullTextCopySource) fetch(ctx context.Context, dbName string) ([]string, error) {
 	if !c.sc.DatabaseCapabilities(ctx, dbName).Accessible {
+		//lint:ignore ST1005 a sentence under accessDeniedLabel, worded like the explorer's
 		return nil, fmt.Errorf("%sCONNECT permission on %s is required to copy from it.", accessDeniedLabel, dbName)
 	}
 	lists, err := c.read(ctx, c.sc.Server.DatabaseRef(dbName))

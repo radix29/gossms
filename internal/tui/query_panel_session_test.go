@@ -166,3 +166,59 @@ func TestConnInfoShowsSPIDAndOpenTransactions(t *testing.T) {
 		t.Errorf("connInfoText() = %q, want the open transactions called out", got)
 	}
 }
+
+// L5: a connect that fails or is cancelled keeps the panel's previous
+// connection, so it must keep that connection's database too — Reconnect,
+// IntelliSense and the next Connect prompt all pair the two.
+func TestFailedQueryPanelDialKeepsTheDatabase(t *testing.T) {
+	for _, wanted := range []bool{true, false} {
+		a := newTestApp()
+		a.alertDialog = dialogs.NewAlertDialog(a.screen)
+		qp, _ := hostedSessionPanel(t, a, 0)
+		qp.closeConnection()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // the dial fails at once, without touching the network
+		answered := false
+		a.dialQueryPanel(ctx, qp, config.Connection{Server: "elsewhere", Database: "OtherDB"},
+			nil, func(error) bool { answered = true; return wanted }, nil)
+		if got, want := qp.connInfoText(), "Connecting to elsewhere | OtherDB..."; got != want {
+			t.Errorf("connInfoText() while dialling = %q, want %q", got, want)
+		}
+		drainUntil(t, a, func() bool { return answered && qp.connectingTo == "" }, "the dial to come back")
+		if qp.database != "master" {
+			t.Errorf("wanted = %v: database = %q after a failed dial, want the previous %q", wanted, qp.database, "master")
+		}
+		if got := qp.connInfoText(); !strings.HasPrefix(got, "fake |") || !strings.HasSuffix(got, "| master (disconnected)") {
+			t.Errorf("wanted = %v: connInfoText() = %q, want the previous server and database", wanted, got)
+		}
+	}
+}
+
+// L9: a COMMIT that failed because the connection dropped cannot be retried —
+// the server rolled the transaction back — so the panel goes disconnected and
+// the alert says so, instead of "the transaction is still there".
+func TestCommitFailedOnALostSessionDisconnectsThePanel(t *testing.T) {
+	a := newTestApp()
+	a.alertDialog = dialogs.NewAlertDialog(a.screen)
+	qp, _ := hostedSessionPanel(t, a, 1,
+		fakeResponse{match: "COMMIT TRANSACTION", err: errors.New("connection reset"), dropsConn: true})
+
+	a.requestClosePanel(0)
+	answer(a, 0)
+	drainUntil(t, a, func() bool { return !qp.executing }, "the commit to come back")
+	if !a.panelHosted(qp) {
+		t.Fatal("the panel was closed after its commit failed")
+	}
+	if qp.connected() || qp.session != nil || qp.tranCount != 0 {
+		t.Errorf("connected = %v, session = %v, tranCount = %d; want a disconnected panel",
+			qp.connected(), qp.session, qp.tranCount)
+	}
+	if !a.alertDialog.Visible() {
+		t.Fatal("a failed commit was not reported")
+	}
+	msg := a.alertDialog.Message()
+	if !strings.Contains(msg, "rolled the transactions back") || strings.Contains(msg, "still there") {
+		t.Errorf("alert = %q, want it to say the server rolled the work back", msg)
+	}
+}

@@ -125,8 +125,10 @@ const endTransactionsTimeout = 30 * time.Second
 // endTransactions commits or rolls back the session's open transactions in the
 // background, then runs then on the UI goroutine, unless a commit failed: that
 // leaves the panel open with the transaction and an alert, since then would
-// close the session and roll back the work the user asked to keep. A failed
-// rollback goes on to then regardless (ending the session rolls back anyway).
+// close the session and roll back the work the user asked to keep. A commit
+// that failed because the session was lost leaves the panel open too, but
+// disconnected, saying the server rolled the work back. A failed rollback goes
+// on to then regardless (ending the session rolls back anyway).
 //
 // The run latch is held throughout, so nothing else reaches the session.
 func (p *QueryPanel) endTransactions(commit bool, then func()) {
@@ -144,6 +146,16 @@ func (p *QueryPanel) endTransactions(commit bool, then func()) {
 		err := sess.EndTransactions(ctx, commit)
 		p.app.postAndWake(func() {
 			p.executing = false
+			if err != nil && commit && sess.Lost() {
+				// The connection went with the commit: the server rolled the
+				// transaction back, so there is nothing left to retry, and the
+				// panel shows as disconnected like any run that lost its session.
+				p.closeConnection()
+				p.app.setStatus("Connection lost — the session's state is gone; use Query > Reconnect")
+				p.app.alertDialog.ShowAlert("Commit Failed",
+					fmt.Sprintf("The open transactions in %s could not be committed: %v\n\nThe connection to the server was lost, and the server rolled the transactions back. The window was left open; use Query > Reconnect to start a new session.", p.Title(), err))
+				return
+			}
 			if err != nil && commit {
 				p.app.setStatus("Commit failed — " + p.Title() + " was left open")
 				p.app.alertDialog.ShowAlert("Commit Failed",

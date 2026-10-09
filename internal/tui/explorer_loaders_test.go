@@ -254,8 +254,8 @@ func TestObjectContextMenuBuildsCorrectFQN(t *testing.T) {
 	if want := "SELECT TOP 1000 *\nFROM [dbo].[Orders]"; qp.editor.Text() != want {
 		t.Errorf("Select Top 1000 Rows SQL = %q, want %q", qp.editor.Text(), want)
 	}
-	if qp.database != "AdventureWorks" {
-		t.Errorf("panel database = %q, want AdventureWorks", qp.database)
+	if qp.connectingDB != "AdventureWorks" {
+		t.Errorf("panel connecting to database %q, want AdventureWorks", qp.connectingDB)
 	}
 
 	view := &explorerNode{

@@ -85,6 +85,12 @@ type fakeResponse struct {
 	// meant for a read cannot fail an exec that happens to contain its match.
 	err error
 
+	// dropsConn, with err, also leaves the connection that ran the failing
+	// write invalid (driver.Validator), the way go-mssqldb reports a session
+	// killed or a link dropped mid-statement — the seam for query.Session
+	// finding itself lost.
+	dropsConn bool
+
 	// block holds a matching query inside the driver until it is closed, so a
 	// test can act while the read is genuinely in flight. Without it this
 	// driver answers instantly and every read has finished — and been
@@ -229,10 +235,11 @@ func (f *fakeInstance) respond(ctx context.Context, q, curDB string, args []driv
 	return nil, false
 }
 
-// execError fails a matching write — see fakeResponse.err. Only a response
+// execError fails a matching write — see fakeResponse.err — reporting whether
+// it also drops the connection (fakeResponse.dropsConn). Only a response
 // carrying an err is consulted, so the read answers a page also scripted stay
 // out of its writes.
-func (f *fakeInstance) execError(q, curDB string, args []driver.NamedValue) error {
+func (f *fakeInstance) execError(q, curDB string, args []driver.NamedValue) (dropsConn bool, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for i := range f.responses {
@@ -247,10 +254,10 @@ func (f *fakeInstance) execError(q, curDB string, args []driver.NamedValue) erro
 			continue
 		}
 		if strings.Contains(q, r.match) {
-			return r.err
+			return r.dropsConn, r.err
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // execBlock is the blockExec channel of the response matching a write, if any.
@@ -412,10 +419,14 @@ func (fakeDriver) Open(dsn string) (driver.Conn, error) {
 // connection it has pinned for exactly that reason — usually as one batch,
 // sometimes as two statements.
 type fakeConn struct {
-	inst  *fakeInstance
-	curDB string
-	tx    int // the open transaction's number, 0 for none
+	inst    *fakeInstance
+	curDB   string
+	tx      int  // the open transaction's number, 0 for none
+	dropped bool // a fakeResponse.dropsConn write failed on it
 }
+
+// IsValid is driver.Validator: false once a dropsConn write failed here.
+func (c *fakeConn) IsValid() bool { return !c.dropped }
 
 // ResetSession is called by database/sql when this connection is handed back
 // out of the pool, and clearing the pinned database there is what stops one
@@ -465,7 +476,8 @@ func (c *fakeConn) ExecContext(ctx context.Context, q string, args []driver.Name
 			return nil, ctx.Err()
 		}
 	}
-	if err := c.inst.execError(q, c.curDB, args); err != nil {
+	if drops, err := c.inst.execError(q, c.curDB, args); err != nil {
+		c.dropped = drops
 		return nil, err
 	}
 	if m := bareUSE.FindStringSubmatch(strings.TrimSpace(q)); m != nil {

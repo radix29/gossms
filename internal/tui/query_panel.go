@@ -61,6 +61,10 @@ type QueryPanel struct {
 	// Reconnect starts a second dial whose connection the first one's result
 	// overwrites.
 	connectingTo string
+	// connectingDB is the database that dial asked for ("" for the login's
+	// default), cleared with connectingTo. qp.database stays the previous
+	// connection's until the dial succeeds.
+	connectingDB string
 
 	// tranCount is the session's @@TRANCOUNT as its last run left it, deciding
 	// whether closing, reconnecting or quitting must first ask to commit. Nothing

@@ -197,8 +197,11 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 // alert as well as the status bar.
 func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Connection,
 	phase func(label string), done func(err error) bool, onConnected func()) {
-	qp.database = opts.Database
-	qp.connectingTo = opts.Server
+	// qp.database is left alone until the dial succeeds: a failed or cancelled
+	// attempt keeps the previous connection, and pairing it with the attempt's
+	// database would send Reconnect, IntelliSense and the next Connect prompt
+	// to the old server in a database it may not have.
+	qp.connectingTo, qp.connectingDB = opts.Server, opts.Database
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 
 	a.safego("connecting the query panel", func() {
@@ -222,7 +225,7 @@ func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Co
 			}
 		}
 		a.postAndWake(func() {
-			qp.connectingTo = ""
+			qp.connectingTo, qp.connectingDB = "", ""
 			wanted := true
 			if done != nil {
 				wanted = done(err)
