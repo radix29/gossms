@@ -178,3 +178,82 @@ func TestChangeTrackingWritesNothingWhenUntouched(t *testing.T) {
 		t.Fatalf("an untouched page wrote:\n%s", strings.Join(stmts, "\n"))
 	}
 }
+
+// TestChangeTrackingOffUnticksTheTablesFirst. Switching a tracked database off
+// and unticking its tables in one Apply is the only way this page turns a
+// database off, and the server refuses the database half while any table is
+// still tracked (Msg 22115) — so the page wrote the database first, failed,
+// and never reached the tables. Off is tables first, then the database.
+func TestChangeTrackingOffUnticksTheTablesFirst(t *testing.T) {
+	sc, inst := newFakeConn(t, changeTrackingResponses()...)
+	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+
+	tg := toggleGrid(t, form)
+	toggleByName(t, tg, "dbo.Customers", 0)
+	toggleByName(t, tg, "dbo.Orders", 0)
+	editSelect(t, form, "Change tracking", "OFF")
+
+	if err := form.Validate(); err != nil {
+		t.Fatalf("validate refused a consistent edit: %v", err)
+	}
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stmts := inst.Statements()
+	if len(stmts) != 3 {
+		t.Fatalf("want two table statements and the database's, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
+	}
+	for _, s := range stmts[:2] {
+		if !strings.Contains(s, "DISABLE CHANGE_TRACKING") {
+			t.Errorf("a table write came after the database's, or is not a disable:\n%s", strings.Join(stmts, "\n"))
+		}
+	}
+	if !strings.Contains(stmts[2], "CHANGE_TRACKING = OFF") {
+		t.Errorf("the database was not switched off last:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// TestChangeTrackingOnStillWritesTheDatabaseFirst is the other direction, which
+// the reorder must leave alone: a table can be tracked only once its database
+// is.
+func TestChangeTrackingOnStillWritesTheDatabaseFirst(t *testing.T) {
+	r := changeTrackingResponses()
+	r[1].rows = [][]driver.Value{{int64(0), false, int64(0), ""}} // not tracked: the LEFT JOIN's ISNULLs
+	r[2].rows = [][]driver.Value{{"dbo", "Customers", int64(0), false}}
+	sc, inst := newFakeConn(t, r...)
+	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+
+	editSelect(t, form, "Change tracking", "ON")
+	editText(t, form, "Retention period", "2")
+	toggleByName(t, toggleGrid(t, form), "dbo.Customers", 0)
+
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stmts := inst.Statements()
+	if len(stmts) != 2 || !strings.Contains(stmts[0], "ALTER DATABASE") || !strings.Contains(stmts[1], "ENABLE CHANGE_TRACKING") {
+		t.Errorf("want the database enabled, then the table:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// TestChangeTrackingOffWithATableLeftTrackedIsRefused. The server would refuse
+// the database half anyway, but only after the table writes before it had
+// landed; the form says which table first and nothing is written.
+func TestChangeTrackingOffWithATableLeftTrackedIsRefused(t *testing.T) {
+	sc, inst := newFakeConn(t, changeTrackingResponses()...)
+	form, _ := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+
+	toggleByName(t, toggleGrid(t, form), "dbo.Customers", 0)
+	editSelect(t, form, "Change tracking", "OFF")
+
+	err := form.Validate()
+	if err == nil {
+		t.Fatal("switching the database off with dbo.Orders still tracked was accepted")
+	}
+	if !strings.Contains(err.Error(), "dbo.Orders") || strings.Contains(err.Error(), "dbo.Customers") {
+		t.Errorf("the refusal should name exactly the table still ticked: %v", err)
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Errorf("wrote:\n%s", strings.Join(stmts, "\n"))
+	}
+}

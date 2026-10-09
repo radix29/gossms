@@ -108,6 +108,69 @@ func TestFilesPageWritesNothingWhenNothingChanged(t *testing.T) {
 	}
 }
 
+// nonWholeMBFilesResponses is filesPageResponses with a data file sized off a
+// whole MB in all three amounts: 9016 KB, growing by 64 KB (8 pages), capped
+// at 16 000 KB (2000 pages). Size is KB already — gosmo's select multiplies
+// it; growth and max size come back in pages. Every file that has grown by a
+// percentage looks like this, and the Files page's spinners are whole MB.
+func nonWholeMBFilesResponses() []fakeResponse {
+	r := filesPageResponses()
+	r[3].rows[0] = []driver.Value{int64(1), "appdb", `C:\data\appdb.mdf`, "ROWS", "PRIMARY", "ONLINE", int64(9016), int64(2000), int64(8), false}
+	return r
+}
+
+// TestFilesPageOKOnAFileOffAWholeMBWritesNothing. The commit hook ran on
+// every OK and copied the whole-MB spinners back unconditionally, so this
+// file — untouched — came back as 8192 KB / growth 0 / cap 15 MB and Apply sent
+// MODIFY FILE (SIZE = 8192KB, FILEGROWTH = 0, ...): a shrink the server
+// refuses, or, on a file whose size happened to be whole MB, autogrowth
+// silently switched off. TestFilesPageWritesNothingWhenNothingChanged runs the
+// same hook but on a whole-MB fixture, where the round trip is exact.
+func TestFilesPageOKOnAFileOffAWholeMBWritesNothing(t *testing.T) {
+	sc, inst := newFakeConn(t, nonWholeMBFilesResponses()...)
+	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+
+	if form.Commit(); form.Dirty() {
+		t.Error("the commit hook alone made an untouched page dirty")
+	}
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Errorf("an untouched page wrote %d statements: %q", len(stmts), stmts)
+	}
+	// The grid says what the file is, not the spinner's whole-MB reading.
+	row := plainGrid(t, form).Row(0)
+	if row[3] != "9016 KB" || row[4] != "64 KB" || row[5] != "16000 KB" {
+		t.Errorf("the grid shows size/growth/max %q/%q/%q, want 9016 KB/64 KB/16000 KB", row[3], row[4], row[5])
+	}
+}
+
+// TestFilesPageWritesOnlyTheGrowthItWasGiven: on the same off-MB file,
+// switching autogrowth to 10 percent sends that and nothing else — the size
+// and cap spinners, which read 8 and 15, stay out of the statement.
+func TestFilesPageWritesOnlyTheGrowthItWasGiven(t *testing.T) {
+	sc, inst := newFakeConn(t, nonWholeMBFilesResponses()...)
+	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+
+	editRadio(t, form, "Growth by", "Percent")
+	editText(t, form, "Growth amount", "10")
+
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stmts := inst.Statements()
+	if len(stmts) != 1 {
+		t.Fatalf("want exactly one statement, got %d: %q", len(stmts), stmts)
+	}
+	if !strings.Contains(stmts[0], "FILEGROWTH = 10%") {
+		t.Errorf("the percentage growth did not reach the statement:\n%s", stmts[0])
+	}
+	if strings.Contains(stmts[0], "SIZE") {
+		t.Errorf("an unedited size or max size was sent:\n%s", stmts[0])
+	}
+}
+
 // TestFilesPageRenamesByTheOldName pins the addressing rule: a rename goes
 // out as NEWNAME on a MODIFY FILE that still names the file by the name the
 // server currently knows it by. Addressing it by the new name targets a file

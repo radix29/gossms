@@ -265,6 +265,10 @@ func TestGrowthAndMaxSizeText(t *testing.T) {
 		// zero is being read, so a stale losing half cannot make it look set.
 		{false, 0, 10, "None"},
 		{true, 64 * mb, 0, "None"},
+		// Under or off a whole MB: truncated, 64 KB read "0 MB" beside an
+		// autogrowth that is on.
+		{false, 64, 0, "64 KB"},
+		{false, 1536, 0, "1536 KB"},
 	} {
 		if got := growthText(tc.isPercent, tc.growthKB, tc.growthPercent); got != tc.want {
 			t.Errorf("growthText(%v, %d, %d) = %q, want %q", tc.isPercent, tc.growthKB, tc.growthPercent, got, tc.want)
@@ -278,6 +282,7 @@ func TestGrowthAndMaxSizeText(t *testing.T) {
 		{-1, "Unlimited"},
 		{500 * mb, "500 MB"},
 		{0, "0 MB"},
+		{2*mb + 512, "2560 KB"},
 	} {
 		if got := maxSizeText(tc.maxSizeKB); got != tc.want {
 			t.Errorf("maxSizeText(%d) = %q, want %q", tc.maxSizeKB, got, tc.want)

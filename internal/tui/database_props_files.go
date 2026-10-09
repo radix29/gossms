@@ -14,7 +14,7 @@ import (
 
 // databaseFileColumns heads the Files page grid, rebuilt from four call sites
 // and read back by column index.
-var databaseFileColumns = []string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}
+var databaseFileColumns = []string{"Logical name", "Type", "Filegroup", "Size", "Autogrowth", "Max size", "Path"}
 
 // logFileType is sys.database_files' type_desc for a transaction log file,
 // the one file type that belongs to no filegroup.
@@ -196,14 +196,24 @@ func growthText(isPercent bool, growthKB int64, growthPercent int) string {
 	if growthKB == 0 {
 		return "None"
 	}
-	return strconv.FormatInt(growthKB/1024, 10) + " MB"
+	return fileSizeText(growthKB)
 }
 
 func maxSizeText(maxSizeKB int64) string {
 	if maxSizeKB < 0 {
 		return "Unlimited"
 	}
-	return strconv.FormatInt(maxSizeKB/1024, 10) + " MB"
+	return fileSizeText(maxSizeKB)
+}
+
+// fileSizeText shows a file amount in MB where it is whole MB and in KB where it
+// is not. Truncated to MB, a 64 KB growth read "0 MB" and a 9016 KB file 8 MB:
+// the grid stated a value the file does not have.
+func fileSizeText(kb int64) string {
+	if kb%1024 != 0 {
+		return strconv.FormatInt(kb, 10) + " KB"
+	}
+	return strconv.FormatInt(kb/1024, 10) + " MB"
 }
 
 func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
@@ -251,7 +261,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				for i, e := range vis {
 					rows[i] = []string{
 						e.name, e.fileType, e.fileGroup,
-						strconv.FormatInt(e.sizeKB/1024, 10),
+						fileSizeText(e.sizeKB),
 						growthText(e.isPercentGrowth, e.growthKB, e.growthPercent),
 						maxSizeText(e.maxSizeKB), e.path,
 					}
@@ -356,21 +366,36 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					current.fileType = effectiveType(typeSelect.Value(), current.fileGroup)
 					current.path = pathField.Value()
 				}
-				if n, err := sizeField.IntValue(); err == nil {
-					current.sizeKB = n * 1024
-				}
-				current.isPercentGrowth = growthKind.Selected() == 1
-				if n, err := growthField.IntValue(); err == nil {
-					if current.isPercentGrowth {
-						current.growthPercent = int(n)
-					} else {
-						current.growthKB = n * 1024
+				// The spinners are whole MB, so each reads back only once the user has
+				// edited it (Dirty is "since this file was selected": syncFieldsFromSelection
+				// resets each baseline). Copied back unconditionally, a file not sized in
+				// whole MB — any that grew by a percentage or by a KB amount — came back
+				// rounded down on every OK of a page nobody touched: a smaller SIZE the
+				// server refuses, a cap lowered, and a growth under 1 MB read as 0, which
+				// growthOff sends as FILEGROWTH = 0 — autogrowth silently switched off.
+				if sizeField.Dirty() {
+					if n, err := sizeField.IntValue(); err == nil {
+						current.sizeKB = n * 1024
 					}
 				}
-				if maxKind.Selected() == 0 {
-					current.maxSizeKB = -1
-				} else if n, err := maxField.IntValue(); err == nil {
-					current.maxSizeKB = n * 1024
+				// The radio and the amount travel together: switching the unit alone must
+				// re-read the amount in the new one.
+				if growthKind.Dirty() || growthField.Dirty() {
+					current.isPercentGrowth = growthKind.Selected() == 1
+					if n, err := growthField.IntValue(); err == nil {
+						if current.isPercentGrowth {
+							current.growthPercent = int(n)
+						} else {
+							current.growthKB = n * 1024
+						}
+					}
+				}
+				if maxKind.Dirty() || maxField.Dirty() {
+					if maxKind.Selected() == 0 {
+						current.maxSizeKB = -1
+					} else if n, err := maxField.IntValue(); err == nil {
+						current.maxSizeKB = n * 1024
+					}
 				}
 			}
 			syncFieldsFromSelection := func() {

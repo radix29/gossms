@@ -55,9 +55,10 @@ type term struct {
 
 // ParseFilter parses s. An empty s is a nil filter, which matches everything.
 // Text that is not a valid expression is free text, unless it uses a comparison
-// symbol (= < > ! ~), which only an expression would: then the parse error is
-// returned, since someone who typed `duration >` meant a filter and matching
-// the literal text would silently show nothing.
+// symbol (= < > ~, and so != and !~), which only an expression would: then the
+// parse error is returned, since someone who typed `duration >` meant a filter
+// and matching the literal text would silently show nothing. A '!' alone is
+// not a symbol, so `hello!` is free text.
 func ParseFilter(s string) (*Filter, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -67,7 +68,7 @@ func ParseFilter(s string) (*Filter, error) {
 	if err == nil {
 		return &Filter{text: s, groups: groups}, nil
 	}
-	if strings.ContainsAny(s, "=<>!~") {
+	if strings.ContainsAny(s, "=<>~") {
 		return nil, err
 	}
 	return &Filter{text: s, needle: strings.ToLower(s)}, nil
@@ -430,13 +431,21 @@ func tokenize(s string) ([]token, error) {
 			if matched {
 				continue
 			}
+			// A '!' ends a word only where it opens != or !~; anywhere else it
+			// is a word character. Ending the word at every '!' made a lone
+			// one (hello!) an empty word that never advanced i (M1: the
+			// filter prompt hung the UI, appending empty tokens forever).
 			j := i
 			for j < len(s) {
 				c, size := utf8.DecodeRuneInString(s[j:])
-				if unicode.IsSpace(c) || strings.ContainsRune("=<>!~'\"", c) {
+				if unicode.IsSpace(c) || strings.ContainsRune("=<>~'\"", c) ||
+					strings.HasPrefix(s[j:], "!=") || strings.HasPrefix(s[j:], "!~") {
 					break
 				}
 				j += size
+			}
+			if j == i {
+				return nil, fmt.Errorf("unexpected %q", s[i:i+1])
 			}
 			out = append(out, token{tokWord, s[i:j]})
 			i = j

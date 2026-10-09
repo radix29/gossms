@@ -55,6 +55,44 @@ func TestFilterMatchDoesNotAllocate(t *testing.T) {
 	}
 }
 
+// TestFilterLoneBang pins M1: a '!' that opens neither != nor !~ is a word
+// character. It made an empty word the tokenizer never advanced past, so
+// ParseFilter("hello!") never returned and the filter prompt hung the UI.
+func TestFilterLoneBang(t *testing.T) {
+	e := ev("error_reported", 1, "message", "hello! x ! 5", "a!b", "1")
+	for _, c := range []struct {
+		expr     string
+		freeText bool
+	}{
+		{"hello!", true},
+		{"error!", true},
+		{"x ! 5", true},
+		{"!", true},
+		{"message != 'nope'", false},
+		{"message !~ nope", false},
+		{"message~hello!", false},
+		{"a!b = 1", false},
+		{"message contains 'hello!'", false},
+	} {
+		f, err := ParseFilter(c.expr)
+		if err != nil {
+			t.Errorf("%q: %v", c.expr, err)
+			continue
+		}
+		if f.IsFreeText() != c.freeText {
+			t.Errorf("%q: free text %v, want %v", c.expr, f.IsFreeText(), c.freeText)
+		}
+		if c.expr != "error!" && c.expr != "!" && !f.Match(&e) {
+			t.Errorf("%q does not match its event", c.expr)
+		}
+	}
+	// != and !~ still split a word they touch.
+	f, err := ParseFilter("message!=nope")
+	if err != nil || f.IsFreeText() || !f.Match(&e) {
+		t.Errorf("message!=nope: %v, %v", f, err)
+	}
+}
+
 // TestParseNumberMatchesParseFloat pins parseNumber's early refusal to text
 // ParseFloat would refuse anyway: every float spelling it accepts still parses.
 func TestParseNumberMatchesParseFloat(t *testing.T) {
