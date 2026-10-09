@@ -83,7 +83,7 @@ func pageBackupDeviceMediaContents(sc *db.ServerConn, devName string) propPage {
 				rows[i] = []string{
 					strconv.Itoa(h.Position),
 					h.BackupName,
-					backupSetTypeName(h.BackupType),
+					backupSetTypeName(h.SetType),
 					h.DatabaseName,
 					h.ServerName,
 					formatSQLDate(h.BackupFinish),
@@ -106,15 +106,23 @@ func pageBackupDeviceMediaContents(sc *db.ServerConn, devName string) propPage {
 
 // backupSetTypeName names a backup set's type the way SSMS's Media Contents
 // grid does.
-func backupSetTypeName(a gosmo.BackupAction) string {
-	switch a {
-	case gosmo.BackupActionLog:
-		return "Transaction Log"
-	case gosmo.BackupActionDifferential:
-		return "Differential"
-	case gosmo.BackupActionFiles:
-		return "File or Filegroup"
-	default:
+func backupSetTypeName(t gosmo.BackupSetType) string {
+	switch t {
+	case gosmo.BackupSetDatabase:
 		return "Database"
+	case gosmo.BackupSetLog:
+		return "Transaction Log"
+	case gosmo.BackupSetDifferential:
+		return "Differential"
+	case gosmo.BackupSetFile:
+		return "File or Filegroup"
+	case gosmo.BackupSetDifferentialFile:
+		return "Differential File"
+	case gosmo.BackupSetPartial:
+		return "Partial"
+	case gosmo.BackupSetDifferentialPartial:
+		return "Differential Partial"
+	default:
+		return "Unknown"
 	}
 }

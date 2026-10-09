@@ -77,7 +77,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 			labels := make([]string, len(hist))
 			for i, b := range hist {
 				labels[i] = b.BackupFinish.Format("2006-01-02 15:04") + "  " +
-					core.PadRight(backupTypeLabel(b.BackupType), 15) + " " + historyDeviceLabel(historyDevices(b))
+					core.PadRight(backupSetLabel(b.SetType), 15) + " " + historyDeviceLabel(historyDevices(b))
 			}
 			d.ddHistSet = widgets.NewDropDown("Backup Set: ", labels, histSetWidth)
 			d.rebuildFocusable()

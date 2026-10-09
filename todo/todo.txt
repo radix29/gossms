@@ -1,4 +1,4 @@
-script database securitx
+script database security
 
  enable MI / shutdown MI
 
@@ -27,6 +27,8 @@ ask questions and then write the implementation order list
 /effort
 
 review both projects and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. you can change gosmo and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them
+
+ review both projects and check for bugs. try to find 10 bugs. you can change gosmo and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them
 
 show me the top 20 know bugs,issues etc if thre are any in both projects. show only issues that can be fixed. create a plan file in docs/ to fix them
 

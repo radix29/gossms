@@ -179,6 +179,32 @@ func backupTypeLabel(a gosmo.BackupAction) string {
 	}
 }
 
+// backupSetLabel names a backup set's type the way the Restore dialog lists
+// it — backupTypeLabel's names where the two overlap, short enough for the
+// Backup Set list's 15-column field. A set type gosmo cannot name says so
+// rather than passing for a full backup, which it was read as until
+// 2026-10-09 and then offered for restore as one.
+func backupSetLabel(t gosmo.BackupSetType) string {
+	switch t {
+	case gosmo.BackupSetDatabase:
+		return "Full"
+	case gosmo.BackupSetLog:
+		return "Transaction Log"
+	case gosmo.BackupSetDifferential:
+		return "Differential"
+	case gosmo.BackupSetFile:
+		return "Files"
+	case gosmo.BackupSetDifferentialFile:
+		return "Diff. Files"
+	case gosmo.BackupSetPartial:
+		return "Partial"
+	case gosmo.BackupSetDifferentialPartial:
+		return "Diff. Partial"
+	default:
+		return "Unknown"
+	}
+}
+
 // sqlServerProductName maps a backup header's SoftwareVersionMajor to the
 // marketing name of the SQL Server release that wrote it.
 func sqlServerProductName(major int) string {

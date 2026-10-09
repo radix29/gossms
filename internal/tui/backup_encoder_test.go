@@ -40,8 +40,7 @@ func TestBackupTypeRadioMatchesItsAction(t *testing.T) {
 		{"Transaction Log", gosmo.BackupActionLog},
 	}
 	// Files backups have a label but no radio entry — this dialog cannot
-	// take one, and gosmo's action still has to be named for the Restore
-	// dialog's Inspect view, which reads the type off a backup header.
+	// take one, but a caller handing it a Files action still gets it named.
 	if got := backupTypeLabel(gosmo.BackupActionFiles); got != "Files" {
 		t.Errorf("backupTypeLabel(Files) = %q, want \"Files\"", got)
 	}

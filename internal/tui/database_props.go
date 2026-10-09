@@ -98,16 +98,16 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			slices.Sort(loginNames)
 			lastFull, lastDiff, lastLog := "Never", "Never", "Never"
 			for _, b := range history {
-				switch b.BackupType {
-				case gosmo.BackupActionDatabase:
+				switch b.SetType {
+				case gosmo.BackupSetDatabase:
 					if lastFull == "Never" {
 						lastFull = formatSQLDate(b.BackupFinish)
 					}
-				case gosmo.BackupActionDifferential:
+				case gosmo.BackupSetDifferential:
 					if lastDiff == "Never" {
 						lastDiff = formatSQLDate(b.BackupFinish)
 					}
-				case gosmo.BackupActionLog:
+				case gosmo.BackupSetLog:
 					if lastLog == "Never" {
 						lastLog = formatSQLDate(b.BackupFinish)
 					}

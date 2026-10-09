@@ -138,7 +138,7 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 	}
 	lines := []string{
 		"Database      : " + h.DatabaseName,
-		"Backup Type   : " + backupTypeLabel(h.BackupType),
+		"Backup Type   : " + backupSetLabel(h.SetType),
 		"Backup Date   : " + formatSQLDate(h.BackupFinish),
 		"SQL Version   : " + sqlServerProductName(h.SoftwareVersionMajor),
 		"Size          : " + size,
