@@ -67,8 +67,14 @@ func pageStatisticGeneral(sc *db.ServerConn, dbName, schema, table, name string)
 				createdBy = "User"
 			}
 			samplingRate := "n/a"
-			if st.TotalRows > 0 {
+			if !sc.IsFabricDW && st.TotalRows > 0 {
 				samplingRate = fmt.Sprintf("%.1f %%", float64(st.RowsSampled)/float64(st.TotalRows)*100)
+			}
+			metadataCount := func(n int64) string {
+				if sc.IsFabricDW {
+					return "n/a"
+				}
+				return strconv.FormatInt(n, 10)
 			}
 
 			f := propsheet.NewForm(
@@ -85,12 +91,12 @@ func pageStatisticGeneral(sc *db.ServerConn, dbName, schema, table, name string)
 				propsheet.Static("Object type", ownerKind),
 				propsheet.Section("Current statistics metadata"),
 				propsheet.Static("Last updated", formatSQLDate(st.LastUpdated)),
-				propsheet.Static("Rows", strconv.FormatInt(st.TotalRows, 10)),
-				propsheet.Static("Rows sampled", strconv.FormatInt(st.RowsSampled, 10)),
+				propsheet.Static("Rows", metadataCount(st.TotalRows)),
+				propsheet.Static("Rows sampled", metadataCount(st.RowsSampled)),
 				propsheet.Static("Sampling rate", samplingRate),
-				propsheet.Static("Steps", strconv.Itoa(st.Steps)),
-				propsheet.Static("Unfiltered rows", strconv.FormatInt(st.UnfilteredRows, 10)),
-				propsheet.Static("Modification counter", strconv.FormatInt(st.ModificationCounter, 10)),
+				propsheet.Static("Steps", metadataCount(int64(st.Steps))),
+				propsheet.Static("Unfiltered rows", metadataCount(st.UnfilteredRows)),
+				propsheet.Static("Modification counter", metadataCount(st.ModificationCounter)),
 			)
 			return f, nil, nil
 		},

@@ -216,6 +216,7 @@ const (
 	NodeFullTextStoplist
 	NodeSearchPropertyLists
 	NodeSearchPropertyList
+	NodeExternalFunctions
 	// NodeViewColumns and NodeViewColumn are a view's Columns folder and its
 	// columns: types of their own, not NodeColumns/NodeColumn, because every
 	// table-column action (Delete, Rename) is ALTER TABLE, which a view refuses.
@@ -238,7 +239,7 @@ func isContainerNode(t NodeType) bool {
 		NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables,
 		NodeColumns, NodeViewColumns, NodeKeys, NodeIndexes,
 		NodeStatistics, NodeViews, NodeSystemViews,
-		NodeStoredProcedures, NodeSystemProcedures, NodeFunctions, NodeSystemFunctions,
+		NodeStoredProcedures, NodeSystemProcedures, NodeFunctions, NodeSystemFunctions, NodeExternalFunctions,
 		NodeSecurity, NodeLogins,
 		NodeServerRoles, NodeCredentials, NodeCryptographicProviders,
 		NodeAudits, NodeServerAuditSpecifications,
@@ -292,6 +293,8 @@ func nodeTypeName(t NodeType) string {
 		return "Stored Procedure"
 	case NodeFunction:
 		return "Function"
+	case NodeExternalFunctions:
+		return "External Functions"
 	case NodeLogin:
 		return "Login"
 	case NodeUser:
@@ -553,8 +556,8 @@ type nodeData struct {
 	AGLocalSecondary bool
 	AGLocalJoined    bool
 
-	// FuncType is a NodeFunction's sys.objects type (T-SQL or CLR, scalar or
-	// table-valued). Read at load time because the "Script Function as SELECT"
+	// FuncType is a NodeFunction's sys.objects type (T-SQL, CLR or external).
+	// Read at load time because the "Script Function as SELECT"
 	// template differs between them (a scalar function is selected, a
 	// table-valued one selected *from*) and the label doesn't carry it.
 	FuncType gosmo.FunctionType

@@ -3,7 +3,9 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,6 +206,144 @@ func TestExternalLibrariesFolderIsAbsentBefore2017(t *testing.T) {
 	if !slices.Contains(labels, "External Libraries") {
 		t.Errorf("External Resources on major 14 = %v, with no External Libraries", labels)
 	}
+}
+
+func TestFabricDWExternalDataSourcesAreDirectDatabaseChildren(t *testing.T) {
+	responses := append(capabilityResponses(true, nil, nil, nil, nil),
+		treeFamilyDatabaseRow(),
+		fakeResponse{match: "FROM   sys.external_data_sources", cols: 10, rows: [][]driver.Value{
+			{"LakeSource", int64(1), "https://storage.example.com", "BLOB_STORAGE", "", "",
+				"", "", "", false},
+		}})
+	sc, _ := newFakeConn(t, responses...)
+	sc.IsFabricDW = true
+	children := loadFamily(t, sc, NodeDatabase)
+	want := []string{"Tables", "Views", "External Data Sources", "Programmability", "Security"}
+	if got := labelsOfNodes(children); !slices.Equal(got, want) {
+		t.Fatalf("Fabric DW database folders = %v, want %v", got, want)
+	}
+	sources := children[slices.Index(want, "External Data Sources")]
+	if sources.data.Type != NodeExternalDataSources || sources.data.DBName != "appdb" || sources.data.conn != sc {
+		t.Fatalf("direct External Data Sources node lost its identity: %+v", sources.data)
+	}
+	listed, err := childLoaders[sources.data.Type](loaderCtx{ctx: context.Background(), sc: sc}, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := labelsOfNodes(listed); !slices.Equal(got, []string{"LakeSource"}) {
+		t.Fatalf("direct folder expanded to %v, want its data sources", got)
+	}
+	assertCarriesDatabase(t, listed, NodeExternalDataSource)
+	var objs []nodeData
+	cols, rows, err := fetchNodeDetails(context.Background(), sc, sources, &objs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(cols, "Location") || len(rows) != 1 || rows[0][0] != "LakeSource" ||
+		len(objs) != 1 || objs[0].Type != NodeExternalDataSource || objs[0].DBName != "appdb" {
+		t.Fatalf("direct data-source details = %v %v with %v objects", cols, rows, len(objs))
+	}
+}
+
+func TestFabricDWExternalFunctionsUseTheFunctionListing(t *testing.T) {
+	sc, inst := newFakeConn(t, treeFamilyDatabaseRow(),
+		fakeResponse{match: "WHERE  o.type IN ('FN','TF','IF','FS','FT')", cols: 6, rows: [][]driver.Value{
+			{int64(1), "dbo", "Regular", treeFamilyCreated, treeFamilyCreated, "FN"},
+		}},
+		fakeResponse{match: "WHERE  o.type = 'XF'", cols: 6, rows: [][]driver.Value{
+			{int64(2), "analytics", "Predict", treeFamilyCreated, treeFamilyCreated, "XF"},
+			{int64(3), "dbo", "Normalize", treeFamilyCreated, treeFamilyCreated, "XF"},
+		}})
+	sc.IsFabricDW = true
+	folders := loadFamily(t, sc, NodeProgrammability)
+	at := slices.Index(labelsOfNodes(folders), "External Functions")
+	if at < 0 {
+		t.Fatal("Programmability has no External Functions folder")
+	}
+	external := folders[at]
+	if external.data.Type != NodeExternalFunctions || external.data.DBName != "appdb" || external.data.conn != sc {
+		t.Fatalf("External Functions lost its folder identity: %+v", external.data)
+	}
+	if got := labelsOfNodes(loadFamily(t, sc, NodeFunctions)); !slices.Equal(got, []string{"System Functions", "dbo.Regular"}) {
+		t.Fatalf("regular Functions = %v, want only its existing system folder and regular functions", got)
+	}
+	a := newTestApp()
+	children := a.fetchChildren(context.Background(), external)
+	want := []string{"analytics.Predict", "dbo.Normalize"}
+	if got := labelsOfNodes(children); !slices.Equal(got, want) {
+		t.Fatalf("External Functions = %v, want %v", got, want)
+	}
+	assertCarriesDatabase(t, children, NodeFunction)
+	for _, child := range children {
+		if child.data.FuncType != "XF" || child.data.IsSystem || child.data.conn != sc ||
+			!child.data.CreateDate.Equal(treeFamilyCreated) {
+			t.Errorf("external function lost function metadata: %+v", child.data)
+		}
+	}
+	if children[0].data.Schema != "analytics" || children[0].data.Name != "Predict" {
+		t.Errorf("external function lost its schema/name: %+v", children[0].data)
+	}
+
+	props := filterProps(NodeExternalFunctions)
+	if len(props) != 3 || props[0].id != fpName || props[1].id != fpSchema || props[2].id != fpCreationDate {
+		t.Fatalf("External Functions filter properties = %v, want Name, Schema, Creation Date", props)
+	}
+	external.data.Filter = &nodeFilter{criteria: []filterCriterion{
+		{prop: props[1], op: opEquals, value: "analytics"},
+	}}
+	filtered := a.fetchChildren(context.Background(), external)
+	if got := labelsOfNodes(filtered); !slices.Equal(got, want[:1]) {
+		t.Fatalf("filtered external function tree = %v, want %v", got, want[:1])
+	}
+	var objs []nodeData
+	cols, rows, err := fetchNodeDetails(context.Background(), sc, external, &objs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cols, []string{"Name"}) || len(rows) != 1 || rows[0][0] != want[0] ||
+		len(objs) != 1 || objs[0] != filtered[0].data {
+		t.Fatalf("filtered external function details = %v %v, objects = %+v", cols, rows, objs)
+	}
+	queries := inst.Reads("WHERE  o.type = 'XF'")
+	if len(queries) != 3 || !strings.Contains(queries[2], "LOWER(SCHEMA_NAME(o.schema_id) COLLATE DATABASE_DEFAULT) = LOWER(@p1)") {
+		t.Errorf("external function listings lost the XF restriction or filter pushdown: %v", queries)
+	}
+}
+
+func TestExternalFunctionsShowEmptyListsAndReturnLoadErrors(t *testing.T) {
+	loadErr := errors.New("external function catalog unavailable")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "empty"},
+		{name: "failed", err: loadErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sc, _ := newFakeConn(t, treeFamilyDatabaseRow(),
+				fakeResponse{match: "WHERE  o.type = 'XF'", cols: 6, err: tc.err})
+			sc.IsFabricDW = true
+			node := &explorerNode{data: nodeData{Type: NodeExternalFunctions, DBName: "appdb", conn: sc}}
+			children, err := childLoaders[NodeExternalFunctions](loaderCtx{ctx: context.Background(), sc: sc}, node)
+			if !errors.Is(err, tc.err) || len(children) != 0 {
+				t.Errorf("external function tree = %v, %v, want an empty result and %v", children, err, tc.err)
+			}
+			var objs []nodeData
+			_, rows, err := fetchNodeDetails(context.Background(), sc, node, &objs)
+			if !errors.Is(err, tc.err) || len(rows) != 0 || len(objs) != 0 {
+				t.Errorf("external function details = %v, %v, want an empty result and %v", rows, err, tc.err)
+			}
+		})
+	}
+}
+
+func TestFabricDWExternalResourcesHideFormatsAndLibraries(t *testing.T) {
+	sc := &db.ServerConn{IsFabricDW: true}
+	children := loadFamily(t, sc, NodeExternalResources)
+	if got := labelsOfNodes(children); !slices.Equal(got, []string{"External Data Sources"}) {
+		t.Fatalf("Fabric DW external families = %v, want only External Data Sources", got)
+	}
+	assertCarriesDatabase(t, children, NodeExternalDataSources)
 }
 
 // ============================================================

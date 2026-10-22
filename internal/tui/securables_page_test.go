@@ -194,3 +194,37 @@ func TestSecurablesListAndRevokeAProcedureGrant(t *testing.T) {
 	}
 	assertOneStatementIn(t, inst, secDatabase, "REVOKE EXECUTE ON [sales].[PlaceOrder] FROM [appwriter]")
 }
+
+func TestFabricDWExternalFunctionPermissionsCanBeRevoked(t *testing.T) {
+	for _, principal := range []string{"fabric_user", "fabric_role"} {
+		for _, state := range []struct{ sql, label string }{{"GRANT", "Grant"}, {"DENY", "Deny"}} {
+			t.Run(principal+"/"+state.sql, func(t *testing.T) {
+				responses := securableResponses()
+				responses[1].rows = append(responses[1].rows,
+					[]driver.Value{"OBJECT_OR_COLUMN", "EXECUTE", state.sql, "analytics", "external_sf", "XF"},
+				)
+				sc, inst := newFakeConn(t, responses...)
+				sc.IsFabricDW = true
+				d, _ := newFakeDialog(t)
+				form, apply := loadPage(t, pageDatabasePrincipalSecurables(d, sc, secDatabase, &principal), inst)
+
+				secs, perms, _ := securableGrids(t, form)
+				selectGridRow(t, secs, 0, "[analytics].[external_sf]")
+				if got := secs.Row(secs.SelectedRow())[1]; got != "SCALAR FUNCTION" {
+					t.Fatalf("external function type = %q, want SCALAR FUNCTION", got)
+				}
+				row := permRowIndex(t, perms, "EXECUTE")
+				if got := perms.Grid.Row(row)[1]; got != state.label {
+					t.Fatalf("EXECUTE state = %q, want %q", got, state.label)
+				}
+				cyclePermTo(t, perms, row, "(none)")
+
+				if err := apply(context.Background()); err != nil {
+					t.Fatalf("apply: %v", err)
+				}
+				assertOneStatementIn(t, inst, secDatabase,
+					"REVOKE EXECUTE ON [analytics].[external_sf] FROM ["+principal+"]")
+			})
+		}
+	}
+}

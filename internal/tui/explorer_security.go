@@ -11,14 +11,19 @@ import (
 // Logins, Server Roles, Credentials, Cryptographic Providers, Audits and
 // Server Audit Specifications, in SSMS's order.
 func loadSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return []*explorerNode{
+	folders := []*explorerNode{
 		l.node("Logins", NodeLogins, "", "", ""),
 		l.node("Server Roles", NodeServerRoles, "", "", ""),
+	}
+	if l.sc != nil && l.sc.IsFabricDW {
+		return folders, nil
+	}
+	return append(folders,
 		l.node("Credentials", NodeCredentials, "", "", ""),
 		l.node("Cryptographic Providers", NodeCryptographicProviders, "", "", ""),
 		l.node("Audits", NodeAudits, "", "", ""),
 		l.node("Server Audit Specifications", NodeServerAuditSpecifications, "", "", ""),
-	}, nil
+	), nil
 }
 
 func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {

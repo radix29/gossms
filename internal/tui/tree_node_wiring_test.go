@@ -88,6 +88,7 @@ var nodeTypeWiring = map[NodeType]nodeWiring{
 	NodeFunctions:                   {class: classFolder, filterable: true},
 	NodeFunction:                    {class: classObject},
 	NodeSystemFunctions:             {class: classFolder, filterable: true},
+	NodeExternalFunctions:           {class: classFolder, filterable: true},
 	NodeSecurity:                    {class: classFolder},
 	NodeLogins:                      {class: classFolder, filterable: true},
 	NodeLogin:                       {class: classObject},

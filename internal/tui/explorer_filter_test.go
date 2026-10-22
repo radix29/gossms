@@ -158,7 +158,7 @@ func TestFilterChildrenKeepsFoldersAndErrors(t *testing.T) {
 // populates.
 var filterableFolders = []NodeType{
 	NodeTables, NodeViews, NodeSystemViews, NodeStoredProcedures, NodeSystemProcedures,
-	NodeFunctions, NodeSystemFunctions, NodeSequences, NodeSynonyms, NodeTriggers,
+	NodeFunctions, NodeSystemFunctions, NodeExternalFunctions, NodeSequences, NodeSynonyms, NodeTriggers,
 	NodeDatabases, NodeSystemDatabases, NodeLogins, NodeUsers, NodeDatabaseRoles,
 	NodeSchemas, NodeServerRoles,
 	NodeCredentials, NodeAudits, NodeServerAuditSpecifications,

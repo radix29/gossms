@@ -155,6 +155,26 @@ method does not use are greyed out.
 Sessions appear on the server as `goSSMS`, `goSSMS - Query` and
 `goSSMS - Activity Monitor`.
 
+Connections whose hostname ends in `datawarehouse.fabric.microsoft.com` use
+a Fabric Data Warehouse tree layout: only **Databases** and **Security** at the
+server root. Server **Security** contains only **Logins** and **Server Roles**.
+**Tables** lists user tables without System Tables, FileTables, External Tables,
+or Graph Tables folders; individual tables omit Triggers and Indexes.
+**External Data Sources** appears directly under each database instead of
+**External Resources**, without External File Formats or External Libraries.
+**Programmability** contains only Stored Procedures, Functions, and External
+Functions. **External Functions** lists `sys.objects` entries of type `XF`.
+Databases omit Query Store, Service Broker, and Storage; database **Security**
+contains only Users, Roles, and Schemas. This layout is per connection; other
+connected servers keep their usual folders.
+
+Fabric statistics lists use `sys.stats` and `STATS_DATE`, without the unsupported
+`sys.dm_db_stats_properties` DMV. Selecting a statistic shows its
+`DBCC SHOW_STATISTICS ... WITH STAT_HEADER` results in Object Explorer Details,
+without opening a query tab.
+Unavailable DMV counters in General properties appear as `n/a`; DBCC-backed
+Details, Histogram, and Density Vector pages remain available.
+
 Always On peer discovery uses each replica's registered connection: one you
 have connected to through **File > Connect** or the prompt below. A unique
 short-name alias still uses the original saved address; ambiguous aliases are

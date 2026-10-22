@@ -234,12 +234,17 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	if hasChildren(node.data.Type) {
 		return fetchChildObjectsDetail(ctx, sc, node, objs)
 	}
+	cols, rows := leafIdentityDetails(node)
+	return cols, rows, nil
+}
+
+func leafIdentityDetails(node *explorerNode) ([]string, [][]string) {
 	return []string{"Property", "Value"}, [][]string{
 		{"Name", node.label},
 		{"Type", nodeTypeName(node.data.Type)},
 		{"Database", node.data.DBName},
 		{"Schema", node.data.Schema},
-	}, nil
+	}
 }
 
 // detailLoader builds the Details grid for one node type. objs is the
@@ -405,6 +410,7 @@ var detailLoaders = map[NodeType]detailLoader{
 	NodeStoredProcedure: nodeDetail(moduleDetail),
 	NodeFunction:        nodeDetail(moduleDetail),
 	NodeTrigger:         nodeDetail(moduleDetail),
+	NodeStatistic:       nodeDetail(statisticDetail),
 }
 
 func systemDatabasesDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {

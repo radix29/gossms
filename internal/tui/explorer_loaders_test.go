@@ -2,8 +2,10 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -146,6 +148,117 @@ func TestSQLServerAgentIsSiblingOfDatabases(t *testing.T) {
 		if c.label == "SQL Server Agent" {
 			t.Error(`Server Objects folder still contains "SQL Server Agent" — it should only be under the server root now`)
 		}
+	}
+}
+
+func TestFabricDWServerFoldersAreConnectionScoped(t *testing.T) {
+	fabric := &db.ServerConn{IsFabricDW: true}
+	sql := &db.ServerConn{}
+	for _, sc := range []*db.ServerConn{fabric, sql, fabric, sql} {
+		children, err := loadServerChildren(loaderCtx{ctx: context.Background(), sc: sc},
+			&explorerNode{data: nodeData{Type: NodeServer, conn: sc}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"Databases", "Security"}
+		if !sc.IsFabricDW {
+			want = append(want, "Server Objects", "Replication", "Management", alwaysOnRootLabel, agentRootLabel)
+		}
+		if got := labelsOfNodes(children); !slices.Equal(got, want) {
+			t.Errorf("IsFabricDW = %v: root folders = %v, want %v", sc.IsFabricDW, got, want)
+		}
+		for _, child := range children {
+			if child.data.conn != sc {
+				t.Errorf("%q lost its own connection", child.label)
+			}
+		}
+	}
+}
+
+func TestFabricDWObjectFoldersAreConnectionScoped(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		typ      NodeType
+		dbName   string
+		fabric   []string
+		standard []string
+	}{
+		{
+			name: "server security", typ: NodeSecurity,
+			fabric:   []string{"Logins", "Server Roles"},
+			standard: []string{"Logins", "Server Roles", "Credentials", "Cryptographic Providers", "Audits", "Server Audit Specifications"},
+		},
+		{
+			name: "database", typ: NodeDatabase, dbName: "appdb",
+			fabric:   []string{"Tables", "Views", "External Data Sources", "Programmability", "Security"},
+			standard: []string{"Tables", "Views", "External Resources", "Programmability", "Query Store", "Service Broker", "Security", "Storage"},
+		},
+		{
+			name: "table", typ: NodeTable, dbName: "appdb",
+			fabric:   []string{"Columns", "Keys", "Constraints", "Statistics"},
+			standard: []string{"Columns", "Keys", "Constraints", "Triggers", "Indexes", "Statistics"},
+		},
+		{
+			name: "programmability", typ: NodeProgrammability, dbName: "appdb",
+			fabric:   []string{"Stored Procedures", "Functions", "External Functions"},
+			standard: []string{"Stored Procedures", "Functions", "Database Triggers", "Assemblies", "Types", "Rules", "Defaults", "Plan Guides", "Sequences", "Synonyms"},
+		},
+		{
+			name: "database security", typ: NodeDatabaseSecurity, dbName: "appdb",
+			fabric:   []string{"Users", "Roles", "Schemas"},
+			standard: []string{"Users", "Roles", "Schemas", "Asymmetric Keys", "Certificates", "Symmetric Keys", "Database Audit Specifications", "Database Scoped Credentials", "Security Policies", "Always Encrypted Keys"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fabric, _ := newFakeConn(t, capabilityResponses(true, nil, nil, nil, nil)...)
+			fabric.IsFabricDW = true
+			standard, _ := newFakeConn(t, capabilityResponses(true, nil, nil, nil, nil)...)
+			for _, sc := range []*db.ServerConn{fabric, standard, fabric, standard} {
+				node := &explorerNode{data: nodeData{Type: tc.typ, DBName: tc.dbName, conn: sc}}
+				if tc.typ == NodeTable {
+					node.data.Schema, node.data.Name = "sales", "Orders"
+				}
+				children, err := childLoaders[tc.typ](loaderCtx{ctx: context.Background(), sc: sc}, node)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := tc.standard
+				if sc.IsFabricDW {
+					want = tc.fabric
+				}
+				if got := labelsOfNodes(children); !slices.Equal(got, want) {
+					t.Errorf("IsFabricDW = %v: folders = %v, want %v", sc.IsFabricDW, got, want)
+				}
+				for _, child := range children {
+					if child.data.conn != sc || child.data.DBName != tc.dbName ||
+						child.data.Schema != node.data.Schema || child.data.Name != node.data.Name {
+						t.Errorf("IsFabricDW = %v: %q lost its owning connection/database/object: %+v",
+							sc.IsFabricDW, child.label, child.data)
+					}
+				}
+				if tc.typ == NodeDatabase {
+					continue // A database has a property detail view, not a folder list.
+				}
+				var objs []nodeData
+				_, rows, err := fetchNodeDetails(context.Background(), sc, node, &objs)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var labels []string
+				for _, row := range rows {
+					labels = append(labels, row[0])
+				}
+				if !slices.Equal(labels, want) || len(objs) != len(children) {
+					t.Fatalf("IsFabricDW = %v: detail folders = %v (%d objects), want %v",
+						sc.IsFabricDW, labels, len(objs), want)
+				}
+				for i, obj := range objs {
+					if obj != children[i].data {
+						t.Errorf("detail folder %q lost its tree identity", labels[i])
+					}
+				}
+			}
+		})
 	}
 }
 

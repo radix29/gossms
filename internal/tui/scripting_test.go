@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql/driver"
 	"os"
 	"path/filepath"
 	"slices"
@@ -190,6 +191,71 @@ func TestScriptToFileAndClipboardOpensInTheObjectsDatabase(t *testing.T) {
 			t.Errorf("file text does not open with %q:\n%s", want, text)
 		}
 	})
+}
+
+func TestFabricDWExternalFunctionScriptMenuUsesStoredDefinition(t *testing.T) {
+	const options = "SET ANSI_NULLS ON;\nGO\nSET QUOTED_IDENTIFIER ON;\nGO\n"
+	const drop = "DROP FUNCTION IF EXISTS [analytics].[Predict];\nGO\n"
+	const body = " FUNCTION [analytics].[Predict] AS EXTERNAL FUNCTION [Functions].[PredictPython];"
+	for _, tc := range []struct{ name, definition, create, alter string }{
+		{"create", "CREATE" + body, "CREATE" + body, "ALTER" + body},
+		{"stored alter", "ALTER" + body, "CREATE" + body, "ALTER" + body},
+		{"commented create", "CREATE/* proxy */" + body, "CREATE/* proxy */" + body, "ALTER/* proxy */" + body},
+		{"commented create or alter", "CREATE OR/* proxy */ALTER" + body, "CREATE OR/* proxy */ALTER" + body, "CREATE OR/* proxy */ALTER" + body},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sc, inst := newFakeConn(t, treeFamilyDatabaseRow(),
+				fakeResponse{match: "WHERE  o.type = 'XF'", cols: 6, rows: [][]driver.Value{
+					{int64(42), "analytics", "Predict", treeFamilyCreated, treeFamilyCreated, "XF"},
+				}},
+				fakeResponse{match: "o.type IN ('FN','TF','IF','FS','FT','XF')", cols: 6, rows: [][]driver.Value{
+					{tc.definition, true, true, false, int64(42), "XF"},
+				}},
+				fakeResponse{match: "FROM   sys.extended_properties ep", cols: 11},
+				fakeResponse{match: "FROM   sys.parameters p", cols: 15, rows: [][]driver.Value{
+					{"@input", int64(1), "int", int64(4), int64(10), int64(0), false, false,
+						"sys", false, "", "", false, int64(0), ""},
+				}},
+			)
+			sc.IsFabricDW = true
+			functions := loadFamily(t, sc, NodeExternalFunctions)
+			if len(functions) != 1 {
+				t.Fatalf("external functions = %v, want one function", labelsOfNodes(functions))
+			}
+			node := functions[0]
+			menu := (&App{}).scriptMenuItems(node)
+			if len(menu) != 1 || menu[0].Label != "Script Function as" {
+				t.Fatalf("external function script menu = %v", labelsOf(menu))
+			}
+			want := map[string]string{
+				"CREATE To":          options + tc.create + "\nGO\n",
+				"ALTER To":           options + tc.alter + "\nGO\n",
+				"DROP To":            drop,
+				"DROP And CREATE To": drop + "\n" + options + tc.create + "\nGO\n",
+				"SELECT To":          "SELECT [analytics].[Predict](<input, int,>) AS N'Predict';\nGO\n",
+			}
+			verbs := scriptables[node.data.Type].verbs
+			if len(verbs) != len(want) || len(menu[0].Sub) != len(want) {
+				t.Fatalf("external function offers %d generators and %d menu verbs, want %d", len(verbs), len(menu[0].Sub), len(want))
+			}
+			for _, verb := range verbs {
+				text, err := verb.gen(t.Context(), sc, node.data)
+				expected, ok := want[verb.label]
+				if !ok || err != nil || text != "USE [appdb];\nGO\n"+expected {
+					t.Errorf("%s: script = %q, error = %v; want database context and %q", verb.label, text, err, expected)
+				}
+			}
+			if len(inst.Reads("p.vector_base_type_desc = N'float16'")) != 0 ||
+				len(inst.Reads("sys.assembly_modules")) != 0 || len(inst.Statements()) != 0 {
+				t.Error("scripting an external function queried vector/CLR metadata or executed a write")
+			}
+			inst.mu.Lock()
+			defer inst.mu.Unlock()
+			if len(inst.unmatched) != 0 {
+				t.Errorf("script menu made unexpected reads:\n%s", strings.Join(inst.unmatched, "\n"))
+			}
+		})
+	}
 }
 
 // A server-scoped object belongs to no database, so its script takes no USE:

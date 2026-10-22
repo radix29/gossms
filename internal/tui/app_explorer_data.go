@@ -127,6 +127,11 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 
 func (a *App) onNodeSelected(node *explorerNode) {
 	a.setStatus(FormatNodePath(node))
+	if node.data.Type == NodeStatistic {
+		if sc := resolveConn(node); sc != nil && sc.IsFabricDW {
+			a.activateObjectExplorerDetails()
+		}
+	}
 	a.primeDatabaseCapabilities(node)
 	a.detailBrowser.ShowNodeDetails(a, node)
 }

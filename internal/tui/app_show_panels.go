@@ -15,6 +15,11 @@ import (
 // showObjectExplorerDetails runs View > Object Explorer Details, reopening the
 // DetailBrowser panel if it was closed.
 func (a *App) showObjectExplorerDetails() {
+	a.activateObjectExplorerDetails()
+	a.focusPanels()
+}
+
+func (a *App) activateObjectExplorerDetails() {
 	idx := a.panels.FindIndex(func(p layout.Panel) bool {
 		_, ok := p.(*DetailBrowser)
 		return ok
@@ -24,7 +29,7 @@ func (a *App) showObjectExplorerDetails() {
 		idx = a.panels.AddPanel(a.detailBrowser)
 	}
 	a.panels.SetActive(idx)
-	a.focusPanels()
+	a.syncActivePanelFocus()
 }
 
 // showQueryList runs Tools > Query List.

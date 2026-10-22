@@ -109,7 +109,7 @@ func filterProps(t NodeType) []filterProp {
 		return []filterProp{name, schema, created, memOpt}
 	case NodeViews, NodeSystemViews,
 		NodeStoredProcedures, NodeSystemProcedures,
-		NodeFunctions, NodeSystemFunctions:
+		NodeFunctions, NodeSystemFunctions, NodeExternalFunctions:
 		return []filterProp{name, schema, created}
 	case NodeSequences, NodeSynonyms:
 		return []filterProp{name, schema}

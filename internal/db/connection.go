@@ -83,6 +83,9 @@ type ServerConn struct {
 	Opts   config.Connection
 	Server *gosmo.Server
 
+	// IsFabricDW is fixed at connect time from the endpoint hostname.
+	IsFabricDW bool
+
 	// closed is atomic: Close runs on the UI goroutine while Peer's cache
 	// lookups call IsOpen from loader goroutines. Not derived from
 	// Server.Context(), so a bare &ServerConn{} (tests) reads open.
@@ -147,7 +150,16 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 // other roles would pay a round trip for an answer nothing reads. AG peers
 // inherit RoleExplorer, so they still probe.
 func newServerConn(ctx context.Context, opts config.Connection, srv *gosmo.Server, role Role) *ServerConn {
-	sc := &ServerConn{Opts: opts, Server: srv, role: role}
+	const fabricDWDomain = "datawarehouse.fabric.microsoft.com"
+	host, _, _ := gosmo.ParseServerAddress(strings.TrimSpace(opts.Server))
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	sc := &ServerConn{
+		Opts: opts, Server: srv, role: role,
+		IsFabricDW: strings.HasSuffix(host, fabricDWDomain),
+	}
+	if srv != nil {
+		srv.IsFabricDW = sc.IsFabricDW
+	}
 	if role == RoleExplorer {
 		sc.ProbeCapabilitiesContext(ctx)
 	}

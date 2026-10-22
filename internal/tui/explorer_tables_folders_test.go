@@ -99,6 +99,28 @@ func TestTablesFolderListsItsSubFoldersFirst(t *testing.T) {
 	assertCarriesDatabase(t, children[4:], NodeTable)
 }
 
+func TestFabricDWTablesHideUnsupportedFamiliesWithoutProbingThem(t *testing.T) {
+	for _, fabric := range []bool{true, false} {
+		sc, inst := newFakeConn(t, treeFamilyDatabaseRow(),
+			tablesPresenceResp(true, true, true, true), tablesListResp(tableRow(1, "dbo", "Orders")))
+		sc.IsFabricDW = fabric
+		children := loadFamily(t, sc, NodeTables)
+		want := []string{"dbo.Orders"}
+		wantProbes := 0
+		if !fabric {
+			want = append([]string{"System Tables", "FileTables", "External Tables", "Graph Tables"}, want...)
+			wantProbes = 1
+		}
+		if got := labelsOfNodes(children); !slices.Equal(got, want) {
+			t.Fatalf("IsFabricDW = %v: Tables = %v, want %v", fabric, got, want)
+		}
+		if got := len(inst.Reads("MAX(CASE WHEN t.is_ms_shipped = 1")); got != wantProbes {
+			t.Errorf("IsFabricDW = %v: table-family presence reads = %d, want %d", fabric, got, wantProbes)
+		}
+		assertCarriesDatabase(t, children[len(children)-1:], NodeTable)
+	}
+}
+
 // External Tables is PolyBase-specific and empty on every instance without
 // it. SSMS lists it only where the database has one, and that is what the
 // presence read is for — the folder must follow the answer, both ways.

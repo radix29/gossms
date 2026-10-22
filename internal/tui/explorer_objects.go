@@ -44,6 +44,9 @@ func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 // folder's own loader lists it once expanded.
 func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]*explorerNode, error) {
 	dbName := node.data.DBName
+	if l.sc != nil && l.sc.IsFabricDW {
+		return nil, nil
+	}
 	folders := []*explorerNode{
 		l.node("System Tables", NodeSystemTables, "", "", dbName),
 		l.node("FileTables", NodeFileTables, "", "", dbName),
@@ -122,14 +125,18 @@ func tablesOfKindLoader(kind gosmo.TableKind, system bool) childLoader {
 // knows which table to query.
 func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
-	return []*explorerNode{
+	folders := []*explorerNode{
 		l.node("Columns", NodeColumns, schema, name, dbName),
 		l.node("Keys", NodeKeys, schema, name, dbName),
 		l.node("Constraints", NodeChecks, schema, name, dbName),
-		l.node("Triggers", NodeTriggers, schema, name, dbName),
-		l.node("Indexes", NodeIndexes, schema, name, dbName),
-		l.node("Statistics", NodeStatistics, schema, name, dbName),
-	}, nil
+	}
+	if l.sc == nil || !l.sc.IsFabricDW {
+		folders = append(folders,
+			l.node("Triggers", NodeTriggers, schema, name, dbName),
+			l.node("Indexes", NodeIndexes, schema, name, dbName),
+		)
+	}
+	return append(folders, l.node("Statistics", NodeStatistics, schema, name, dbName)), nil
 }
 
 // loadViewChildren returns one view's object-family folders, in SSMS's order:
@@ -438,6 +445,13 @@ func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	return loadFunctionNodes(l, node, true,
 		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
 			return d.SystemFunctions(l.ctx, serverFilter(node.data.Filter))
+		})
+}
+
+func loadExternalFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	return loadFunctionNodes(l, node, false,
+		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
+			return d.ExternalFunctions(l.ctx, serverFilter(node.data.Filter))
 		})
 }
 

@@ -29,8 +29,11 @@ func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 	out := []*explorerNode{
 		l.node("Databases", NodeDatabases, "", "", ""),
 		l.node("Security", NodeSecurity, "", "", ""),
-		l.node("Server Objects", NodeServerObjects, "", "", ""),
 	}
+	if l.sc != nil && l.sc.IsFabricDW {
+		return out, nil
+	}
+	out = append(out, l.node("Server Objects", NodeServerObjects, "", "", ""))
 	if l.sc == nil || l.sc.Server == nil || !replicationHidden(l.sc.Server.Info()) {
 		out = append(out, l.node("Replication", NodeReplication, "", "", ""))
 	}
@@ -196,15 +199,25 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		return []*explorerNode{l.node(accessDeniedLabel+"CONNECT permission on this database is required.",
 			NodeError, "", "", dbName)}, nil
 	}
+	externalLabel, externalType := "External Resources", NodeExternalResources
+	if l.sc != nil && l.sc.IsFabricDW {
+		externalLabel, externalType = "External Data Sources", NodeExternalDataSources
+	}
 	folders := []*explorerNode{
 		l.node("Tables", NodeTables, "", "", dbName),
 		l.node("Views", NodeViews, "", "", dbName),
-		l.node("External Resources", NodeExternalResources, "", "", dbName),
+		l.node(externalLabel, externalType, "", "", dbName),
 		l.node("Programmability", NodeProgrammability, "", "", dbName),
-		l.node("Query Store", NodeQueryStore, "", "", dbName),
-		l.node("Service Broker", NodeServiceBroker, "", "", dbName),
-		l.node("Security", NodeDatabaseSecurity, "", "", dbName),
-		l.node("Storage", NodeStorage, "", "", dbName),
+	}
+	if l.sc == nil || !l.sc.IsFabricDW {
+		folders = append(folders,
+			l.node("Query Store", NodeQueryStore, "", "", dbName),
+			l.node("Service Broker", NodeServiceBroker, "", "", dbName),
+		)
+	}
+	folders = append(folders, l.node("Security", NodeDatabaseSecurity, "", "", dbName))
+	if l.sc == nil || !l.sc.IsFabricDW {
+		folders = append(folders, l.node("Storage", NodeStorage, "", "", dbName))
 	}
 	// Azure SQL Database's event sessions are the database's own, and SSMS
 	// files them here — see explorer_xevents.go.
@@ -225,9 +238,14 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 // own Triggers folder, as in SSMS.
 func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbName := node.data.DBName
-	return []*explorerNode{
+	folders := []*explorerNode{
 		l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
 		l.node("Functions", NodeFunctions, "", "", dbName),
+	}
+	if l.sc != nil && l.sc.IsFabricDW {
+		return append(folders, l.node("External Functions", NodeExternalFunctions, "", "", dbName)), nil
+	}
+	return append(folders,
 		l.node("Database Triggers", NodeDatabaseTriggers, "", "", dbName),
 		l.node("Assemblies", NodeAssemblies, "", "", dbName),
 		l.node("Types", NodeTypes, "", "", dbName),
@@ -236,7 +254,7 @@ func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 		l.node("Plan Guides", NodePlanGuides, "", "", dbName),
 		l.node("Sequences", NodeSequences, "", "", dbName),
 		l.node("Synonyms", NodeSynonyms, "", "", dbName),
-	}, nil
+	), nil
 }
 
 // loadDatabaseTriggersChildren lists a database's DDL triggers, each labelled
@@ -272,10 +290,15 @@ func loadQueryStoreChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 // loadDatabaseSecurityChildren returns a database's security folders, in
 // SSMS's order.
 func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return []*explorerNode{
+	folders := []*explorerNode{
 		l.node("Users", NodeUsers, "", "", node.data.DBName),
 		l.node("Roles", NodeDatabaseRoles, "", "", node.data.DBName),
 		l.node("Schemas", NodeSchemas, "", "", node.data.DBName),
+	}
+	if l.sc != nil && l.sc.IsFabricDW {
+		return folders, nil
+	}
+	return append(folders,
 		l.node("Asymmetric Keys", NodeAsymmetricKeys, "", "", node.data.DBName),
 		l.node("Certificates", NodeCertificates, "", "", node.data.DBName),
 		l.node("Symmetric Keys", NodeSymmetricKeys, "", "", node.data.DBName),
@@ -283,7 +306,7 @@ func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 		l.node("Database Scoped Credentials", NodeDatabaseScopedCredentials, "", "", node.data.DBName),
 		l.node("Security Policies", NodeSecurityPolicies, "", "", node.data.DBName),
 		l.node("Always Encrypted Keys", NodeAlwaysEncryptedKeys, "", "", node.data.DBName),
-	}, nil
+	), nil
 }
 
 // loadDatabaseAuditSpecificationsChildren lists a database's audit

@@ -22,8 +22,11 @@ func loadExternalResourcesChildren(l loaderCtx, node *explorerNode) ([]*explorer
 	dbName := node.data.DBName
 	out := []*explorerNode{
 		l.node("External Data Sources", NodeExternalDataSources, "", "", dbName),
-		l.node("External File Formats", NodeExternalFileFormats, "", "", dbName),
 	}
+	if l.sc != nil && l.sc.IsFabricDW {
+		return out, nil
+	}
+	out = append(out, l.node("External File Formats", NodeExternalFileFormats, "", "", dbName))
 	if major := serverMajor(l.sc); major == 0 || major >= int(gosmo.SQLServer2017) {
 		out = append(out, l.node("External Libraries", NodeExternalLibraries, "", "", dbName))
 	}

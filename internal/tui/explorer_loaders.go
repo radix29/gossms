@@ -98,6 +98,8 @@ var childLoaders = map[NodeType]childLoader{
 	NodeSequences:        loadSequencesChildren,
 	NodeSynonyms:         loadSynonymsChildren,
 
+	NodeExternalFunctions: loadExternalFunctionsChildren,
+
 	NodeTypes:                 loadTypesChildren,
 	NodeSystemDataTypes:       loadSystemDataTypesChildren,
 	NodeUserDefinedDataTypes:  loadUserDefinedDataTypesChildren,

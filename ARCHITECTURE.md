@@ -322,6 +322,7 @@ gossms/
 │       ├── detail_browser_databases.go  # Databases folder: name/state/recovery, then per-database size backfill
 │       ├── detail_browser_logins.go     # Logins folder
 │       ├── detail_browser_tables.go     # Tables folder: name, then per-table row count/space backfill
+│       ├── detail_browser_statistics.go # Fabric statistic: DBCC SHOW_STATISTICS header in the Details grid
 │       ├── detail_browser_storage.go    # Storage folders: partition functions and schemes
 │       ├── detail_browser_security.go   # server Security families that are not logins: Credentials, Audits, Server Audit Specifications
 │       ├── detail_browser_programmability.go # Programmability families: the Types folders and members, Assemblies, Rules, Defaults, Plan Guides
