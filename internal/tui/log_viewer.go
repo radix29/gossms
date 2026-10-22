@@ -128,7 +128,7 @@ type LogViewer struct {
 	shown   []logRow
 
 	// mailOwnOnly is the last read's answer to whether this login sees only its
-	// own mail items' Database Mail entries (gosmo.Server.MailVisibility), said in
+	// own mail items' Database Mail entries (gosmo.Mail.Visibility), said in
 	// the status line and the Delete warning, since the purge is of every entry.
 	// Asked only when the selection holds the Database Mail log.
 	mailOwnOnly bool

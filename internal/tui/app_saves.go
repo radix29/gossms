@@ -53,6 +53,21 @@ func (a *App) saveConfig(done func(error)) {
 	}
 }
 
+// resealLegacyPasswords saves once at startup when Load opened a password
+// sealed under an earlier binding (config.NeedsReseal): Save rewrites every
+// one it opens under the current one, and a session that changes nothing would
+// otherwise leave the weaker ciphertext on disk for good.
+func (a *App) resealLegacyPasswords() {
+	if a.cfg == nil || !a.cfg.NeedsReseal() {
+		return
+	}
+	a.saveConfig(func(err error) {
+		if err != nil {
+			a.logStatus("save config: %v", err)
+		}
+	})
+}
+
 // startConfigSave runs one config save for every caller waiting.
 func (a *App) startConfigSave() {
 	s := &a.saves

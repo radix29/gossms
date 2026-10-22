@@ -316,6 +316,19 @@ func (g *DataGrid) SetBounds(x, y, w, h int) {
 // to know where the split actually landed.
 func (g *DataGrid) Bounds() core.Rect { return g.rect }
 
+// dataRows is how many data rows the viewport shows: the rect less the header,
+// its separator and the status row. It is negative for a rect under three rows,
+// so callers that use it as a count or a bound check it.
+func (g *DataGrid) dataRows() int { return g.rect.H - 3 }
+
+// showsVScrollbar reports whether Draw paints the vertical scrollbar, which
+// overdraws the rightmost column: hScrollbar must agree, or a scroll that fits
+// the last column into the full width still hides its right edge.
+func (g *DataGrid) showsVScrollbar() bool {
+	dataH := g.dataRows()
+	return dataH > 0 && g.rows.Len() > dataH
+}
+
 // SetData populates the grid from a fully materialized slice of rows — a thin
 // wrapper over SetSource for callers with no custom RowSource.
 func (g *DataGrid) SetData(columns []string, rows [][]string) {
@@ -451,7 +464,7 @@ func (g *DataGrid) SetScroll(row, col int) {
 	// shrank the list leave a two-row grid scrolled one row down, blank line above
 	// its only visible row. Columns keep scrollColBy's bound: varying widths give no
 	// "last column that fits".
-	g.scrollRow = core.Clamp(row, 0, max(0, g.rows.Len()-(g.rect.H-3)))
+	g.scrollRow = core.Clamp(row, 0, max(0, g.rows.Len()-g.dataRows()))
 	g.scrollCol = core.Clamp(col, 0, max(0, len(g.columns)-1))
 }
 
@@ -462,7 +475,7 @@ func (g *DataGrid) SetSelectedRow(i int) {
 		return
 	}
 	g.selRow = core.Clamp(i, 0, g.rows.Len()-1)
-	g.ensureVisible(g.rect.H - 3)
+	g.ensureVisible(g.dataRows())
 }
 
 // SetSelectedCell sets the selected row and column (both clamped) and scrolls
@@ -475,7 +488,7 @@ func (g *DataGrid) SetSelectedCell(row, col int) {
 	}
 	g.selRow = core.Clamp(row, 0, g.rows.Len()-1)
 	g.selCol = core.Clamp(col, 0, max(0, len(g.columns)-1))
-	g.ensureVisible(g.rect.H - 3)
+	g.ensureVisible(g.dataRows())
 	g.ensureVisibleCol()
 }
 

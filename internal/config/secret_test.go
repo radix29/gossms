@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -287,6 +288,123 @@ func TestEmptyEncryptModeSealsAsOptional(t *testing.T) {
 	c.Password, c.Encrypt = enc, EncryptOptional
 	if got, ok := decryptPassword(key, c); !ok || got != "s3cr3t!" {
 		t.Errorf("decryptPassword with Encrypt read back as Optional = (%q, %v), want (s3cr3t!, true)", got, ok)
+	}
+}
+
+// A config holding passwords under every earlier binding reports NeedsReseal,
+// and one save leaves all of them under aadPrefix: the app makes that save at
+// startup, so a session that changes nothing still retires an unprefixed,
+// transplantable blob. A ciphertext that fails to open does not count and is
+// written back verbatim; a config already current does not ask for a save.
+func TestLoadFlagsLegacyPasswordsAndOneSaveResealsThem(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "gossms")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i * 7)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, keyFileName), key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := func(user string) Connection {
+		c := testConn("")
+		c.User = user
+		c.Name = c.GeneratedName()
+		return c
+	}
+	seal := func(c Connection, plain string, sealer func(Connection) (string, error)) Connection {
+		t.Helper()
+		c.Password = plain
+		enc, err := sealer(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Password = enc
+		return c
+	}
+	unprefixed := seal(entry("u1"), "pw-legacy", func(c Connection) (string, error) { return sealLegacyForTest(key, c.Password) })
+	v2 := seal(entry("u2"), "pw-v2", func(c Connection) (string, error) { return sealV2ForTest(key, c, c.Password) })
+	v3 := seal(entry("u3"), "pw-v3", func(c Connection) (string, error) {
+		return sealWithForTest(key, aadPrefixV3, connectionAADv3(c), c.Password)
+	})
+	v4 := seal(entry("u4"), "pw-v4", func(c Connection) (string, error) { return encryptPassword(key, c) })
+	broken := entry("u5")
+	broken.Password = aadPrefixV2 + "bm90IGEgY2lwaGVydGV4dA=="
+
+	writeConns := func(conns ...Connection) {
+		t.Helper()
+		data, err := json.Marshal(&Config{Connections: conns})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	onDisk := func() map[string]string {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join(cfgDir, "config.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var c Config
+		if err := json.Unmarshal(raw, &c); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, conn := range c.Connections {
+			out[conn.User] = conn.Password
+		}
+		return out
+	}
+
+	writeConns(v4, broken)
+	if Load().NeedsReseal() {
+		t.Error("NeedsReseal with only current and unopenable passwords, want false")
+	}
+
+	writeConns(unprefixed, v2, v3, v4, broken)
+	cfg := Load()
+	if !cfg.NeedsReseal() {
+		t.Fatal("NeedsReseal = false with legacy passwords loaded, want true")
+	}
+	want := map[string]string{"u1": "pw-legacy", "u2": "pw-v2", "u3": "pw-v3", "u4": "pw-v4", "u5": ""}
+	for _, c := range cfg.Connections {
+		if c.Password != want[c.User] {
+			t.Errorf("%s: loaded password %q, want %q", c.User, c.Password, want[c.User])
+		}
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if cfg.NeedsReseal() {
+		t.Error("NeedsReseal still true after a save")
+	}
+	for user, pw := range onDisk() {
+		if user == "u5" {
+			if pw != broken.Password {
+				t.Errorf("unopenable ciphertext rewritten: %q, want %q", pw, broken.Password)
+			}
+			continue
+		}
+		if !strings.HasPrefix(pw, aadPrefix) {
+			t.Errorf("%s: on disk %q after save, want the %q prefix", user, pw, aadPrefix)
+		}
+	}
+
+	reloaded := Load()
+	if reloaded.NeedsReseal() {
+		t.Error("NeedsReseal after reloading the re-sealed config, want false")
+	}
+	for _, c := range reloaded.Connections {
+		if c.Password != want[c.User] {
+			t.Errorf("%s: reloaded password %q, want %q", c.User, c.Password, want[c.User])
+		}
 	}
 }
 

@@ -26,6 +26,17 @@ const (
 	maxIdleConns = 10
 )
 
+// connMaxIdleTime evicts a pooled connection idle this long. A database-scoped
+// read leaves its connection inside that database until the next checkout
+// resets it, holding a shared database lock: gosmo's 5-minute default made
+// someone else's RESTORE, SET OFFLINE or SET SINGLE_USER fail with "Exclusive
+// access could not be obtained" for that long after a gossms user merely
+// expanded the database, and kept an AUTO_CLOSE database open. The cost is one
+// re-login after a minute idle (~25 ms measured). ReleaseIdleConnections still
+// covers gossms's own exclusive writes. A query panel's pinned session
+// (gosmo.AcquireConn) is checked out, so this never closes it.
+const connMaxIdleTime = 60 * time.Second
+
 // connectTimeout bounds one connection attempt (dial, TLS, login, gosmo's
 // server-info read). Also written into the DSN, so the driver's limit agrees.
 const connectTimeout = 30 * time.Second
@@ -182,6 +193,7 @@ func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions,
 		ConnectTimeout:         connectTimeout,
 		MaxOpenConns:           maxOpenConns,
 		MaxIdleConns:           maxIdleConns,
+		ConnMaxIdleTime:        connMaxIdleTime,
 	}
 	switch opts.AuthMethod {
 	case config.AuthEntraMSI:

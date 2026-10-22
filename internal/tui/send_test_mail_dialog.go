@@ -49,13 +49,13 @@ type sendTestMailPrefetch struct {
 
 func fetchSendTestMail(ctx context.Context, sc *db.ServerConn) (*sendTestMailPrefetch, error) {
 	pf := &sendTestMailPrefetch{defaultProfile: -1}
-	switch st, err := sc.Server.MailStatus(ctx); {
+	switch st, err := sc.Server.Mail().Status(ctx); {
 	case err == nil:
 		pf.state, pf.stateKnown = st, true
 	case !isRefusal(err):
 		return nil, err
 	}
-	profiles, err := sc.Server.MailProfiles(ctx)
+	profiles, err := sc.Server.Mail().Profiles(ctx)
 	switch {
 	case isRefusal(err):
 		return pf, nil
@@ -240,7 +240,7 @@ func (d *SendTestMailDialog) send(closeOnQueued bool) {
 	}, func() {
 		defer close(done)
 		defer stop()
-		id, err := sc.Server.SendMail(runCtx, req)
+		id, err := sc.Server.Mail().Send(runCtx, req)
 		if err != nil || closeOnQueued {
 			d.app.postAndWake(func() {
 				d.SetApplying(false)
@@ -322,7 +322,7 @@ func (d *SendTestMailDialog) script() {
 		return
 	}
 	text, err := collectScript(d.ctx, func(ctx context.Context) error {
-		_, err := d.sc.Server.SendMail(ctx, req)
+		_, err := d.sc.Server.Mail().Send(ctx, req)
 		return err
 	})
 	if err != nil {
@@ -360,7 +360,7 @@ func waitForTestMail(ctx context.Context, sc *db.ServerConn, id int, wait, every
 	res := mailTestResult{id: id}
 	deadline := time.Now().Add(wait)
 	for {
-		item, err := sc.Server.MailItemByID(ctx, id)
+		item, err := sc.Server.Mail().ItemByID(ctx, id)
 		if err != nil {
 			if ctx.Err() != nil {
 				res.stopped = true
@@ -373,7 +373,7 @@ func waitForTestMail(ctx context.Context, sc *db.ServerConn, id int, wait, every
 		if res.status == gosmo.MailSent {
 			return res
 		}
-		events, err := sc.Server.MailEvents(ctx, gosmo.MailEventFilter{MailItemID: id, EventType: gosmo.MailEventError, Max: 1})
+		events, err := sc.Server.Mail().Events(ctx, gosmo.MailEventFilter{MailItemID: id, EventType: gosmo.MailEventError, Max: 1})
 		if err == nil && len(events) > 0 {
 			res.logged = mailErrorSummary(events[0].Description)
 			return res

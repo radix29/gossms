@@ -141,7 +141,7 @@ func (p *QueryStorePanel) load(keepView bool) {
 	// selector and Refresh would sit inert until the panel was closed.
 	p.app.safegoRepair("running a Query Store report", func() { p.readPanicked(seq) }, func() {
 		d := sc.Server.DatabaseRef(dbName)
-		info, infoErr := d.QueryStore(ctx)
+		info, infoErr := d.QueryStore().Options(ctx)
 		var res qsResult
 		var err error
 		switch {
@@ -313,7 +313,7 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 	// else writes the pane until another query is selected, so it would claim to be
 	// reading a query it gave up on.
 	p.app.safegoRepair("reading Query Store plans", func() { p.plansPanicked(seq) }, func() {
-		plans, err := sc.Server.DatabaseRef(dbName).QueryStorePlans(ctx, queryID, opts)
+		plans, err := sc.Server.DatabaseRef(dbName).QueryStore().Plans(ctx, queryID, opts)
 		p.app.postAndWake(func() {
 			if !p.planRead.Done(seq) {
 				return

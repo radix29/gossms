@@ -36,33 +36,33 @@ func xeScopeOf(n nodeData) xeScope { return xeScope{db: n.DBName} }
 // ref is a lookup-free handle on the session named name in this scope.
 func (s xeScope) ref(sc *db.ServerConn, name string) *gosmo.EventSession {
 	if s.db != "" {
-		return sc.Server.DatabaseRef(s.db).EventSessionRef(name)
+		return sc.Server.DatabaseRef(s.db).XEvents().SessionRef(name)
 	}
-	return sc.Server.EventSessionRef(name)
+	return sc.Server.XEvents().SessionRef(name)
 }
 
 // byName reads the session named name in this scope.
 func (s xeScope) byName(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.EventSession, error) {
 	if s.db != "" {
-		return sc.Server.DatabaseRef(s.db).EventSessionByName(ctx, name)
+		return sc.Server.DatabaseRef(s.db).XEvents().SessionByName(ctx, name)
 	}
-	return sc.Server.EventSessionByName(ctx, name)
+	return sc.Server.XEvents().SessionByName(ctx, name)
 }
 
 // list reads every session of this scope.
 func (s xeScope) list(ctx context.Context, sc *db.ServerConn) ([]*gosmo.EventSession, error) {
 	if s.db != "" {
-		return sc.Server.DatabaseRef(s.db).EventSessions(ctx)
+		return sc.Server.DatabaseRef(s.db).XEvents().Sessions(ctx)
 	}
-	return sc.Server.EventSessions(ctx)
+	return sc.Server.XEvents().Sessions(ctx)
 }
 
 // create writes CREATE EVENT SESSION in this scope.
 func (s xeScope) create(ctx context.Context, sc *db.ServerConn, spec gosmo.EventSessionSpec) (*gosmo.EventSession, error) {
 	if s.db != "" {
-		return sc.Server.DatabaseRef(s.db).CreateEventSession(ctx, spec)
+		return sc.Server.DatabaseRef(s.db).XEvents().CreateSession(ctx, spec)
 	}
-	return sc.Server.CreateEventSession(ctx, spec)
+	return sc.Server.XEvents().CreateSession(ctx, spec)
 }
 
 // right is the right a verb needs in this scope: r itself on the server, and

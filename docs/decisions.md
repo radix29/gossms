@@ -582,7 +582,7 @@ Peer credentials, easy to undo:
 - **No "Configure" button** — settings are a Database Properties page (folder
   menu opens it), as in SSMS.
 - **Plot History doesn't dim Top or the execution floor.** gosmo's
-  `QueryStoreTrackedQuery` ignores `Top`, `MinExecCount`, `MinRegressionPct`,
+  `QueryStore.TrackedQuery` ignores `Top`, `MinExecCount`, `MinRegressionPct`,
   `QueryIDs`, but the report grid below still honours them. The chart title
   names the metric and statistic, the two that reach it.
 - **Reads on demand only** — no auto-refresh; each read is one-shot and bounded.
@@ -927,7 +927,9 @@ MI).
   read the current sealing prefix (`v4:` since Entra tenant/client binding;
   `v3:` before) as unprefixed and keep it sealed. Pre-v3 also drops
   `encrypt_mode` on save (Strict → Mandatory, a different AAD, so re-enter).
-  The `encrypt` boolean is still written so old releases can read the file.
+  The upgrade side is immediate: the first launch re-seals every older-format
+  password (`Config.NeedsReseal`), so even a newer release that was only
+  started once leaves passwords an older one cannot open. The `encrypt` boolean is still written so old releases can read the file.
 
 ## Connect dialog: what the SSMS 21 redesign settled — do not re-raise
 
@@ -974,7 +976,7 @@ String). Not to be reopened without asking the author:
 ## Extended Events: what the design settled — do not re-raise
 
 gosmo holds the model, DDL, scripter and readers
-(`EventSession`, `ReadEventFile`, `ReadRingBuffer`, `DecodeEventXML`).
+(`EventSession`, `XEvents.ReadFile`, `ReadRingBuffer`, `DecodeEventXML`).
 
 - **Live data is polled from a target, never read from the XE stream.**
   SSMS's Watch Live Data uses `sys.fn_MSxe_read_event_stream`, undocumented
@@ -991,7 +993,7 @@ gosmo holds the model, DDL, scripter and readers
   too, as the audit's disable window does. The price is that a `ring_buffer`
   loses its contents; a caller doing it by hand would get the failure path
   wrong instead.
-- **`XEObjects` carries `OPTION (HASH JOIN)`.** The `sys.dm_xe_*` DMVs have no
+- **`XEvents.Objects` carries `OPTION (HASH JOIN)`.** The `sys.dm_xe_*` DMVs have no
   indexes; the plan the optimizer picks unhinted took 7 s for the event list,
   the hinted one 0.4 s (17 and 13).
 - **A session verb's right is the wide name with the 2022 granular one as
@@ -1051,7 +1053,7 @@ gosmo holds the model, DDL, scripter and readers
 - **XEvent Profiler sits under Extended Events, beside Sessions**, not off the
   server node as in SSMS — beside the sessions it creates.
 - **View Target Data reads an `event_file` set newest file first** when the
-  files can be listed (`gosmo.Server.EventFiles`), going back until the store's
+  files can be listed (`gosmo.XEvents.Files`), going back until the store's
   capacity is covered, and says how many older files it didn't read. Measured
   on 2016's `system_health`: counting events per file first costs ~60 s of the
   102 s full read (the server parses every buffer to count), and a byte offset
@@ -1137,7 +1139,7 @@ gosmo holds the model, DDL, scripter and readers
   and the table name to the user, and needs no write right in the viewer.
 - **Merge Extended Event Files reads server-side files matching a wildcard
   pattern**, never a local `.xel` (no public decoder), lists them
-  (`EventFiles`), reads each whole and posts all events once sorted by
+  (`XEvents.Files`), reads each whole and posts all events once sorted by
   timestamp — files of different sessions interleave in time. Past twice the
   store's capacity the oldest are dropped as it goes and counted, so memory
   stays bounded. No right is gated: reading needs VIEW SERVER STATE, which the
@@ -1273,7 +1275,7 @@ Unverified on Managed Instance and on non-Enterprise editions:
   (live there). A DatabaseMailUserRole member still reads its
   own items only, and Details ("Your failed items") and the Log Viewer's
   status line ("only your mail items' entries") say so from
-  `Server.MailVisibility`, the same test the reads branch on — not from role
+  `Mail.Visibility`, the same test the reads branch on — not from role
   probes, which a DENY on the table would contradict.
 - **The Database Mail log is a third Log Viewer family**, with **Delete...**
   (rows older than a date) in place of Recycle — the log has no files to
@@ -1807,6 +1809,13 @@ Neither repo has, or should get, a top-level plan file. State and package map:
 - **A write is a method on its handle**: `Table.SetChangeTracking`/
   `ChangeTracking`, and `AddSignature`/`DropSignature` on `StoredProcedure`,
   `UserDefinedFunction` and `Trigger`; `Database` has no such forms.
+- **gosmo stays one package; features are facets, not sub-packages.** Moving
+  families such as Agent, Mail or XEvents into `agent/`, `mail/`, `xevents/`
+  would mean exporting `exec`, `query`, `Scripting`, `createdObject` and the
+  retry/observer plumbing through an `internal/` package, and moving every
+  family's tests away from the shared fakes. The facets (`d.QueryStore()`,
+  `s.Mail()`, `s.XEvents()`/`d.XEvents()`; rule in `~/go/gosmo/CLAUDE.md`
+  § Conventions) give the same discoverability without that.
 
 ## File modes: new files honour the umask — settled, do not re-raise
 

@@ -195,7 +195,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 	return propPage{
 		title: "Accounts",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			accounts, err := sc.Server.MailAccounts(ctx)
+			accounts, err := sc.Server.Mail().Accounts(ctx)
 			if isRefusal(err) {
 				return mailNotVisibleForm("Accounts"), nil, nil
 			}
@@ -436,12 +436,12 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 							return fmt.Errorf("account %s: %w", e.cur.name, err)
 						}
 						plan.add(mailPhaseCreateAccounts, func(ctx context.Context) error {
-							_, err := sc.Server.CreateMailAccount(ctx, req)
+							_, err := sc.Server.Mail().CreateAccount(ctx, req)
 							return err
 						})
 					case e.removing:
 						plan.add(mailPhaseDropAccounts, func(ctx context.Context) error {
-							return sc.Server.MailAccountRef(name).Drop(ctx)
+							return sc.Server.Mail().AccountRef(name).Drop(ctx)
 						})
 					case e.cur != e.orig || e.password != "" || e.confirm != "":
 						o, err := e.options()
@@ -449,7 +449,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 							return fmt.Errorf("account %s: %w", name, err)
 						}
 						plan.add(mailPhaseAlterAccounts, func(ctx context.Context) error {
-							return sc.Server.MailAccountRef(name).Alter(ctx, o)
+							return sc.Server.Mail().AccountRef(name).Alter(ctx, o)
 						})
 					}
 				}

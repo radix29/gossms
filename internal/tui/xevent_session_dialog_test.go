@@ -20,7 +20,7 @@ import (
 // sql_text, and sql_batch_completed) — every edit lands on the second event,
 // so a page ignoring the selection fails.
 
-// xeObjectRow is one row of gosmo's XEObjects read.
+// xeObjectRow is one row of gosmo's XEvents.Objects read.
 func xeObjectRow(pkg, name, kind, desc, channel, keyword, typeName string) []driver.Value {
 	return []driver.Value{pkg, name, kind, desc, "", channel, keyword, typeName}
 }
@@ -29,33 +29,33 @@ func xeObjectRow(pkg, name, kind, desc, channel, keyword, typeName string) []dri
 func xeCatalogResponses() []fakeResponse {
 	const q = "FROM   sys.dm_xe_objects o"
 	return []fakeResponse{
-		{match: q, arg: gosmo.XEObjectEvent, cols: 8, rows: [][]driver.Value{
+		{match: q, arg: string(gosmo.XEObjectEvent), cols: 8, rows: [][]driver.Value{
 			xeObjectRow("sqlserver", "attention", "event", "Client attention", "Analytic", "execution", ""),
 			xeObjectRow("sqlserver", "rpc_completed", "event", "RPC done", "Analytic", "execution", ""),
 			xeObjectRow("sqlserver", "sql_batch_completed", "event", "Batch done", "Analytic", "execution", ""),
 			xeObjectRow("sqlserver", "xml_deadlock_report", "event", "Deadlock graph", "Admin", "deadlock_monitor", ""),
 		}},
-		{match: q, arg: gosmo.XEObjectAction, cols: 8, rows: [][]driver.Value{
+		{match: q, arg: string(gosmo.XEObjectAction), cols: 8, rows: [][]driver.Value{
 			xeObjectRow("package0", "event_sequence", "action", "Sequence", "", "", ""),
 			xeObjectRow("sqlserver", "client_app_name", "action", "App", "", "", ""),
 			xeObjectRow("sqlserver", "sql_text", "action", "Text", "", "", ""),
 		}},
-		{match: q, arg: gosmo.XEObjectPredSource, cols: 8, rows: [][]driver.Value{
+		{match: q, arg: string(gosmo.XEObjectPredSource), cols: 8, rows: [][]driver.Value{
 			xeObjectRow("sqlserver", "database_name", "pred_source", "", "", "", "unicode_string"),
 			xeObjectRow("sqlserver", "session_id", "pred_source", "", "", "", "uint16"),
 		}},
-		{match: q, arg: gosmo.XEObjectTarget, cols: 8, rows: [][]driver.Value{
+		{match: q, arg: string(gosmo.XEObjectTarget), cols: 8, rows: [][]driver.Value{
 			xeObjectRow("package0", "event_file", "target", "", "", "", ""),
 			xeObjectRow("package0", "histogram", "target", "", "", "", ""),
 			xeObjectRow("package0", "ring_buffer", "target", "", "", "", ""),
 		}},
-		{match: q, arg: gosmo.XEObjectMap, cols: 8, rows: [][]driver.Value{
+		{match: q, arg: string(gosmo.XEObjectMap), cols: 8, rows: [][]driver.Value{
 			xeObjectRow("sqlos", "wait_types", "map", "", "", "", ""),
 		}},
 	}
 }
 
-// xeColumnsResponse scripts XEObjectColumns for one object: name, id, type,
+// xeColumnsResponse scripts XEvents.ObjectColumns for one object: name, id, type,
 // column type, default, description, mandatory.
 func xeColumnsResponse(object string, rows ...[]driver.Value) fakeResponse {
 	return fakeResponse{match: "FROM   sys.dm_xe_object_columns c", arg: object, cols: 7, rows: rows}

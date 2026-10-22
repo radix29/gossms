@@ -63,14 +63,14 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 	return propPage{
 		title: "Profiles",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			profiles, err := sc.Server.MailProfiles(ctx)
+			profiles, err := sc.Server.Mail().Profiles(ctx)
 			if isRefusal(err) {
 				return mailNotVisibleForm("Profiles"), nil, nil
 			}
 			if err != nil {
 				return nil, nil, err
 			}
-			accounts, err := sc.Server.MailAccounts(ctx)
+			accounts, err := sc.Server.Mail().Accounts(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -332,22 +332,22 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					case e.isNew:
 						name, desc := e.name, e.desc
 						plan.add(mailPhaseCreateProfiles, func(ctx context.Context) error {
-							_, err := sc.Server.CreateMailProfile(ctx, gosmo.CreateMailProfileRequest{Name: name, Description: desc})
+							_, err := sc.Server.Mail().CreateProfile(ctx, gosmo.CreateMailProfileRequest{Name: name, Description: desc})
 							return err
 						})
 						if len(accts) > 0 {
 							plan.add(mailPhaseProfileAccounts, func(ctx context.Context) error {
-								return sc.Server.MailProfileRef(name).SetAccounts(ctx, accts)
+								return sc.Server.Mail().ProfileRef(name).SetAccounts(ctx, accts)
 							})
 						}
 					case e.removing:
 						plan.add(mailPhaseDropProfiles, func(ctx context.Context) error {
-							return sc.Server.MailProfileRef(name).Drop(ctx)
+							return sc.Server.Mail().ProfileRef(name).Drop(ctx)
 						})
 					default:
 						if !slices.Equal(accts, e.origAccounts) {
 							plan.add(mailPhaseProfileAccounts, func(ctx context.Context) error {
-								return sc.Server.MailProfileRef(name).SetAccounts(ctx, accts)
+								return sc.Server.Mail().ProfileRef(name).SetAccounts(ctx, accts)
 							})
 						}
 						var o gosmo.MailProfileOptions
@@ -359,7 +359,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 						}
 						if o.Name != nil || o.Description != nil {
 							plan.add(mailPhaseAlterProfiles, func(ctx context.Context) error {
-								return sc.Server.MailProfileRef(name).Alter(ctx, o)
+								return sc.Server.Mail().ProfileRef(name).Alter(ctx, o)
 							})
 						}
 					}
@@ -472,7 +472,7 @@ func mailGrantWrites(sc *db.ServerConn, orig, cur mailGrants, profiles []string)
 	for _, p := range orig.principals(cur) {
 		for _, prof := range profiles {
 			o, c := orig.get(p, prof), cur.get(p, prof)
-			ref := sc.Server.MailProfileRef(prof)
+			ref := sc.Server.Mail().ProfileRef(prof)
 			def := gosmo.MailNotDefaultProfile
 			if c.isDefault {
 				def = gosmo.MailDefaultProfile
@@ -531,14 +531,14 @@ func pageMailSecurity(sc *db.ServerConn, model *mailModel) propPage {
 	return propPage{
 		title: "Profile Security",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			profiles, err := sc.Server.MailProfiles(ctx)
+			profiles, err := sc.Server.Mail().Profiles(ctx)
 			if isRefusal(err) {
 				return mailNotVisibleForm("Profile security"), nil, nil
 			}
 			if err != nil {
 				return nil, nil, err
 			}
-			grants, err := sc.Server.MailPrincipalProfiles(ctx)
+			grants, err := sc.Server.Mail().PrincipalProfiles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

@@ -83,7 +83,7 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 		tcell.KeyPgUp, tcell.KeyPgDn, tcell.KeyHome, tcell.KeyEnd:
 		g.ClearMarkedRows()
 	}
-	dataH := g.rect.H - 3
+	dataH := g.dataRows()
 	// The four whole-list jumps do nothing on an empty grid (the guard
 	// SetSelectedRow/SetSelectedCell carry). PgDn and End derive selRow from
 	// rows.Len()-1, -1 with no rows; ensureVisible copies that into scrollRow, and
@@ -211,7 +211,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	if !g.rect.Contains(mx, my) {
 		return false
 	}
-	dataH := g.rect.H - 3
+	dataH := g.dataRows()
 
 	// Scrollbar drag/click outranks row/cell hit-testing: the bar is drawn at
 	// rect.Right()-1 and would read as a click on the cell in that column.
@@ -459,7 +459,7 @@ func (g *DataGrid) sepPressIsDouble(col int, at time.Time) bool {
 // rowAtY returns the data row drawn at screen row y, or -1 for the header,
 // separator, status bar and blank filler below the last row.
 func (g *DataGrid) rowAtY(y int) int {
-	dataH := g.rect.H - 3
+	dataH := g.dataRows()
 	line := y - g.rect.Y - 2
 	if line < 0 || line >= dataH {
 		return -1

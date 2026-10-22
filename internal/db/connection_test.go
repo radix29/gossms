@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/microsoft/go-mssqldb/azuread"
 	"github.com/microsoft/go-mssqldb/msdsn"
@@ -315,6 +316,18 @@ func TestRoleSetsTheApplicationName(t *testing.T) {
 		if co.ApplicationName != want {
 			t.Errorf("role %d: ApplicationName = %q, want %q", role, co.ApplicationName, want)
 		}
+	}
+}
+
+// gosmo's 5-minute default would let an idle pooled connection hold the last
+// database it read open for that long (connMaxIdleTime).
+func TestPooledConnectionsAreEvictedAfterAMinuteIdle(t *testing.T) {
+	co, err := toGosmoOptions(config.Connection{Server: "s"}, RoleExplorer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if co.ConnMaxIdleTime != time.Minute {
+		t.Errorf("ConnMaxIdleTime = %v, want 1m", co.ConnMaxIdleTime)
 	}
 }
 

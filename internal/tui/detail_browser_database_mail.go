@@ -43,7 +43,7 @@ func databaseMailDetail(ctx context.Context, sc *dbconn.ServerConn) ([]string, [
 	var pairs []string
 	add := func(kv ...string) { pairs = append(pairs, kv...) }
 
-	switch st, err := sc.Server.MailStatus(ctx); {
+	switch st, err := sc.Server.Mail().Status(ctx); {
 	case err == nil:
 		add("Status", st.String())
 		xps := "1"
@@ -52,14 +52,14 @@ func databaseMailDetail(ctx context.Context, sc *dbconn.ServerConn) ([]string, [
 		}
 		add("Database Mail XPs", xps)
 	case isRefusal(err):
-		// MailStatus reads 'Database Mail XPs' first and calls the refused
+		// Mail.Status reads 'Database Mail XPs' first and calls the refused
 		// procedure only when it is 1, so a refusal says it is on.
 		add("Status", mailItemsNotVisible, "Database Mail XPs", "1")
 	default:
 		return nil, nil, err
 	}
 
-	switch queues, err := sc.Server.MailQueues(ctx); {
+	switch queues, err := sc.Server.Mail().Queues(ctx); {
 	case err == nil:
 		for _, q := range queues {
 			add(mailQueueLabel(q.Type), mailQueueText(q))
@@ -74,7 +74,7 @@ func databaseMailDetail(ctx context.Context, sc *dbconn.ServerConn) ([]string, [
 		return nil, nil, err
 	}
 
-	switch profiles, err := sc.Server.MailProfiles(ctx); {
+	switch profiles, err := sc.Server.Mail().Profiles(ctx); {
 	case err == nil:
 		add("Profiles", strconv.Itoa(len(profiles)))
 		for _, p := range profiles {
@@ -86,7 +86,7 @@ func databaseMailDetail(ctx context.Context, sc *dbconn.ServerConn) ([]string, [
 		return nil, nil, err
 	}
 
-	switch accounts, err := sc.Server.MailAccounts(ctx); {
+	switch accounts, err := sc.Server.Mail().Accounts(ctx); {
 	case err == nil:
 		add("Accounts", strconv.Itoa(len(accounts)))
 		for _, a := range accounts {
@@ -102,7 +102,7 @@ func databaseMailDetail(ctx context.Context, sc *dbconn.ServerConn) ([]string, [
 	if !mailVisibility(ctx, sc).AllItems {
 		heading = fmt.Sprintf("Your failed items (latest %d)", databaseMailFailedItems)
 	}
-	switch items, err := sc.Server.MailItems(ctx, gosmo.MailItemFilter{Status: gosmo.MailFailed, Max: databaseMailFailedItems}); {
+	switch items, err := sc.Server.Mail().Items(ctx, gosmo.MailItemFilter{Status: gosmo.MailFailed, Max: databaseMailFailedItems}); {
 	case err == nil:
 		add(heading, strconv.Itoa(len(items)))
 		for _, m := range items {
@@ -123,7 +123,7 @@ func databaseMailDetail(ctx context.Context, sc *dbconn.ServerConn) ([]string, [
 // events (docs/decisions.md). A failed read is not presumed limited — the same answer as
 // before the question was asked.
 func mailVisibility(ctx context.Context, sc *dbconn.ServerConn) gosmo.MailVisibility {
-	v, err := sc.Server.MailVisibility(ctx)
+	v, err := sc.Server.Mail().Visibility(ctx)
 	if err != nil {
 		return gosmo.MailVisibility{AllItems: true, AllEvents: true}
 	}

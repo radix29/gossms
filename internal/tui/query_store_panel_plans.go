@@ -48,9 +48,9 @@ func (p *QueryStorePanel) setPlanForced(force bool) {
 		}, func(ctx context.Context, _ progressReport) error {
 			d := sc.Server.DatabaseRef(dbName)
 			if force {
-				return d.QueryStoreForcePlan(ctx, queryID, planID)
+				return d.QueryStore().ForcePlan(ctx, queryID, planID)
 			}
-			return d.QueryStoreUnforcePlan(ctx, queryID, planID)
+			return d.QueryStore().UnforcePlan(ctx, queryID, planID)
 		}, func(err error, cancelled bool) {
 			p.busy = false
 			switch {
@@ -189,9 +189,9 @@ func (p *QueryStorePanel) scriptPlanForce() {
 	// text needs.
 	script, err := collectScript(p.conn.Server.Context(), func(ctx context.Context) error {
 		if force {
-			return d.QueryStoreForcePlan(ctx, plan.QueryID, plan.PlanID)
+			return d.QueryStore().ForcePlan(ctx, plan.QueryID, plan.PlanID)
 		}
-		return d.QueryStoreUnforcePlan(ctx, plan.QueryID, plan.PlanID)
+		return d.QueryStore().UnforcePlan(ctx, plan.QueryID, plan.PlanID)
 	})
 	if err != nil {
 		p.setStatus(fmt.Sprintf("Script failed: %v", err))

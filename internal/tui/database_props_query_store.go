@@ -24,7 +24,7 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			qs, err := d.QueryStore(ctx)
+			qs, err := d.QueryStore().Options(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -180,17 +180,17 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 						opts.CapturePolicyExecCPUMs = execCPU
 						opts.CapturePolicyStaleHours = int(staleHours)
 					}
-					if err := d.SetQueryStoreOptions(ctx, opts); err != nil {
+					if err := d.QueryStore().SetOptions(ctx, opts); err != nil {
 						return err
 					}
 				}
 				if flushCheck.Checked() {
-					if err := d.FlushQueryStore(ctx); err != nil {
+					if err := d.QueryStore().Flush(ctx); err != nil {
 						return err
 					}
 				}
 				if clearCheck.Checked() {
-					if err := d.ClearQueryStore(ctx); err != nil {
+					if err := d.QueryStore().Clear(ctx); err != nil {
 						return err
 					}
 				}
