@@ -328,6 +328,41 @@ func TestHScrollbarDragScrollsColumns(t *testing.T) {
 	}
 }
 
+// TestHScrollbarDragToEndShowsLastColumn pins the reported bug: dragging the
+// thumb to the track's end left the last columns cut off, reachable only with
+// the arrow keys. colAtOffset rounded the end offset down to the column before
+// it, and the vertical bar overdrew the rightmost cell. Column widths are
+// uneven so no column boundary lands on the end offset.
+func TestHScrollbarDragToEndShowsLastColumn(t *testing.T) {
+	for _, tall := range []bool{false, true} {
+		g := newTestDataGrid() // 40 wide, 10 high
+		cols := []string{"a", "bbbbbbbbbbbbbbbbbbbbb", "c", "dddddddddddd", "eeeeeeeeeeeeeeeeeee", "f"}
+		n := 1
+		if tall {
+			n = 50 // enough rows for the vertical bar
+		}
+		rows := make([][]string, n)
+		for i := range rows {
+			rows[i] = []string{"1", "2", "3", "4", "5", "6"}
+		}
+		g.SetData(cols, rows)
+		g.SetStatus("")
+		x, y, w, _, visible, _, ok := g.hScrollbar()
+		if !ok {
+			t.Fatalf("tall=%v: hScrollbar ok = false, want an overflowing grid", tall)
+		}
+		g.hScrollbarDrag(tcell.NewEventMouse(x+w-1, y, tcell.Button1, tcell.ModNone))
+		rest := 0
+		for _, cw := range g.colWidths[g.scrollCol:] {
+			rest += cw
+		}
+		if rest > visible {
+			t.Errorf("tall=%v: at the track's end scrollCol=%d leaves %d characters of columns for %d on screen; the last column is cut off",
+				tall, g.scrollCol, rest, visible)
+		}
+	}
+}
+
 // TestClickOnStatusRowDoesNotSelectOffscreenRow pins down that the grid's
 // bottom row belongs to the status bar (and the horizontal scrollbar
 // sharing it), not to the data: rect covers the header, its separator and

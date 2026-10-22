@@ -387,7 +387,7 @@ func (g *DataGrid) hScrollbarDrag(ev *tcell.EventMouse) bool {
 	}
 	g.sbDraggingH = true
 	// ScrollOffsetForDrag gives the character offset the track position asks for,
-	// clamped so the last screenful can't be scrolled past; colAtOffset rounds it to
+	// clamped so the last screenful can't be scrolled past; colAtOffset rounds it up to
 	// a column boundary since Draw never splits a cell.
 	g.scrollCol = g.colAtOffset(core.ScrollOffsetForDrag(mx-x, w, total, visible))
 	return true
@@ -471,18 +471,21 @@ func (g *DataGrid) rowAtY(y int) int {
 	return row
 }
 
-// colAtOffset returns the last column starting at or before character offset
-// off: the inverse of the running sum hScrollbar reports.
+// colAtOffset returns the first column starting at or after character offset
+// off: the inverse of the running sum hScrollbar reports. It rounds up, not
+// down: the track's end asks for offset total-visible, and the column starting
+// before it left the last columns cut off, reachable only with the arrow keys.
+// Rounding up there leaves at most visible characters to the right, so the
+// last column ends on screen.
 func (g *DataGrid) colAtOffset(off int) int {
-	acc, col := 0, 0
+	acc := 0
 	for i, cw := range g.colWidths {
-		if acc > off {
-			break
+		if acc >= off {
+			return i
 		}
-		col = i
 		acc += cw
 	}
-	return core.Clamp(col, 0, max(0, len(g.colWidths)-1))
+	return max(0, len(g.colWidths)-1)
 }
 
 // colAt returns the column whose cell contains screen x in cell-cursor mode,

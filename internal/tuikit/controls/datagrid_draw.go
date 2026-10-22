@@ -110,6 +110,11 @@ func (g *DataGrid) hScrollbar() (x, y, w, total, visible, offset int, ok bool) {
 	}
 	gutter := g.gutterWidth()
 	visible = g.rect.W - gutter
+	if dataH := g.rect.H - 3; dataH > 0 && g.rows.Len() > dataH {
+		// The vertical bar overdraws the rightmost column (see Draw), so a scroll
+		// that fits the last column into the full width still hid its right edge.
+		visible--
+	}
 	for i, cw := range g.colWidths {
 		total += cw
 		if i < g.scrollCol {
