@@ -106,6 +106,7 @@ func (p *QueryPanel) Close() {
 	}
 	p.stopLiveStats()
 	p.textRun.Cancel()
+	p.sortRun.Abandon()
 	p.formatRun.Abandon()
 	p.closeConnection()
 }
@@ -192,6 +193,7 @@ func (p *QueryPanel) clearResults() {
 	// one is hundreds of megabytes of runes), as is any run still formatting it.
 	p.textRun.Abandon()
 	p.textMemo.key, p.textMemo.lines = textKey{}, nil
+	p.sortRun.Abandon()
 	p.messages.SetText("")
 	p.messageErrorLines = nil
 	p.messageLines = nil

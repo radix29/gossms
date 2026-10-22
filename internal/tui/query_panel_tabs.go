@@ -200,8 +200,7 @@ func (p *QueryPanel) renderActiveTab() {
 		p.showResultsText(set)
 		return
 	}
-	// The set itself, not its Rows: it is the grid's NullSource.
-	p.results.SetSource(set.Columns, set)
+	p.showResultSet(set)
 }
 
 // setMessages installs msgs into the Messages tab's read-only editor. A message's

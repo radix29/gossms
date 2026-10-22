@@ -251,6 +251,7 @@ gossms/
 │       ├── query_panel_plan.go   # Estimated/Actual Execution Plan tabs, backed by planview.PlanView
 │       ├── query_panel_live.go   # Live Query Statistics: the toggle's run, DMV poller, live tab → actual plan
 │       ├── query_panel_export.go # Results To File (Text/Grid/File modes)
+│       ├── query_panel_sort.go   # header-click column sort of a result set's grid, by declared type, display order only
 │       ├── column_meta.go        # the Output Column Metadata block folded into a result's Messages
 │       ├── cell_value.go         # classifies a grid cell as plain/XML/JSON and routes the last two to their own panel
 │       ├── plan_panel.go         # pops an Execution Plan tab out into its own closable panel
