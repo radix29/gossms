@@ -24,7 +24,7 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 		g.drawGutterCell(s, g.rect.Y, "", theme.StyleGridHeader())
 	}
 	nulls, _ := g.rows.(NullSource)
-	g.drawRow(s, g.rect.Y, -1, g.columns, nil, theme.StyleGridHeader(), gw)
+	g.drawRow(s, g.rect.Y, -1, g.headerCells(), nil, theme.StyleGridHeader(), gw)
 	sep := tcell.StyleDefault.Background(theme.Active().GridHeader).Foreground(theme.Active().GridBorder)
 	core.DrawHLine(s, g.rect.X, g.rect.Y+1, g.rect.W, sep)
 

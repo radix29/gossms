@@ -163,8 +163,7 @@ func (db *DetailBrowser) postPartialObjects(app *App, seq int, cols []string, ro
 		}
 		db.grid.SetFillLastColumn(isPropertyValueColumns(cols))
 		db.setCharts(nil)
-		db.grid.SetData(cols, rows)
-		db.setRowObjects(rows, objs)
+		db.showRows(cols, rows, objs)
 	})
 }
 
@@ -189,12 +188,16 @@ func (db *DetailBrowser) postFinalResult(app *App, node *explorerNode, seq int, 
 // cacheOnlyObjects caches the completed result without touching the grid: a
 // progressive loader's last stage, where every row is already updated in place
 // and postFinal's SetData would reset the scroll position. Gated by pending like
-// postFinal. The objs mapping is cached with the rows so a reselect, served
+// postFinal. A sorted view is re-sorted, as its figures have only now landed and
+// the order it was sorted into was the placeholders'. The objs mapping is cached with the rows so a reselect, served
 // from the cache, still offers Delete; pass nil for a view whose rows are not
 // objects.
 func (db *DetailBrowser) cacheOnlyObjects(app *App, node *explorerNode, seq int, cols []string, rows [][]string, objs []nodeData, err error) {
 	app.postAndWake(func() {
 		db.cacheIfCurrent(node, seq, &detailResult{cols: cols, rows: rows, objs: objs, err: err})
+		if db.run.Current(seq) && db.sort.col != "" {
+			db.resort()
+		}
 	})
 }
 

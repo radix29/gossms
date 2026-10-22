@@ -109,6 +109,10 @@ type QueryPanel struct {
 	activeTab int           // 0..len(result.Sets)-1 = result grids; len(result.Sets) = Messages
 	tabRect   core.Rect     // results tab bar row; zero rect while hidden
 
+	// sorts is the column order picked for each grid tab of result, with a header
+	// click or the cell menu (query_panel_sort.go).
+	sorts resultSorts
+
 	// textMemo is the last Results to Text rendering and what it was rendered from,
 	// so switching back to a set already seen reuses it (formatting is a pass over
 	// every cell). A result's sets never change once setResult installs it, so
@@ -122,6 +126,11 @@ type QueryPanel struct {
 	// is the rendering it is producing; see showResultsText.
 	textRun    latest
 	textRunKey textKey
+
+	// sortRun sorts a set too large to sort on the UI goroutine, and sortRunKey is
+	// the order it is producing; see setResultSort.
+	sortRun    latest
+	sortRunKey sortRunKey
 
 	// formatRun is a Format Document too large to run on the UI goroutine;
 	// see formatActiveDocument.
@@ -258,6 +267,8 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	results.OnShowValue = func(col int, column, value string) bool {
 		return app.openCellValuePanel(p.columnType(col), column, value)
 	}
+	results.OnHeaderClick = p.sortResultsByColumn
+	results.OnMenuItems = p.resultSortMenuItems
 	p.editor.OnRightClick = func(x, y int) { app.showEditorContextMenu(x, y) }
 	p.editor.SetCompletionProvider(p.newCompletionProvider())
 	return p

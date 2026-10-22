@@ -216,5 +216,8 @@ func (p *QueryPanel) statusDetailText() string {
 		r, c := p.results.SelectedCell()
 		row, col = r+1, c+1
 	}
+	if p.sorting() {
+		return fmt.Sprintf("%s | Row: %d, Col: %d | %d rows | Sorting...", elapsed, row, col, len(set.Rows))
+	}
 	return fmt.Sprintf("%s | Row: %d, Col: %d | %d rows", elapsed, row, col, len(set.Rows))
 }
