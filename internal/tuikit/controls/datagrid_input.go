@@ -194,6 +194,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		g.sbDragging = false
 		g.sbDraggingH = false
 		g.colResizing = false
+		g.headerPressed = false
 	}
 	mx, my := ev.Position()
 	// A column-resize drag, like the horizontal scrollbar's, keeps control once
@@ -216,6 +217,10 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	// Scrollbar drag/click outranks row/cell hit-testing: the bar is drawn at
 	// rect.Right()-1 and would read as a click on the cell in that column.
 	if core.HandleScrollbarDrag(ev, g.rect.Right()-1, g.rect.Y+2, dataH, g.rows.Len(), &g.sbDragging, &g.scrollRow) {
+		return true
+	}
+
+	if g.headerClick(ev) {
 		return true
 	}
 
@@ -353,6 +358,29 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		g.scrollColBy(-horizontalWheelCols)
 	case tcell.WheelRight:
 		g.scrollColBy(horizontalWheelCols)
+	}
+	return true
+}
+
+// headerClick handles a Button1 press on the header row, firing OnHeaderClick
+// for the column under it once per press, and swallows the rest of that gesture
+// (headerPressed). The separator glyphs are resizeDrag's, which runs first. A
+// drag begun on a data cell that crosses the header is the cell selection's,
+// not a click. Returns false for anything that doesn't qualify.
+func (g *DataGrid) headerClick(ev *tcell.EventMouse) bool {
+	if ev.Buttons() != tcell.Button1 {
+		return false
+	}
+	if g.headerPressed {
+		return true
+	}
+	mx, my := ev.Position()
+	if g.OnHeaderClick == nil || my != g.rect.Y || g.mouseDragging || g.sbDragging {
+		return false
+	}
+	g.headerPressed = true
+	if col, ok := g.colAt(mx); ok && !g.errorMode && col < len(g.columns) {
+		g.OnHeaderClick(col)
 	}
 	return true
 }

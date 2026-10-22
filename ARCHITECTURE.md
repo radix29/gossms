@@ -335,6 +335,7 @@ gossms/
 │       ├── detail_browser_xevents.go    # Extended Events: the Sessions folder (state, startup, events, targets, dropped), one session's events + targets, one target's settings + runtime counters
 │       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
+│       ├── detail_browser_sort.go       # header-click column sort of list views: the pane reorders rows and row objects together, numbers by value, placeholders last
 │       │
 │       │  ── SQL Server Agent ──
 │       ├── agent_common.go              # shared Job/Alert/Notify enum formatters, generic async enable/disable/delete plumbing for every Agent entity

@@ -1,6 +1,4 @@
 
-sort (asc,desc) database and tables by columns "Row Count", "Data (MB), etc.;.  sorting happens in TUI.
-
 add command line parameters for agentic use.
 all functionality of the application should be accessible as command line parameters with formatted text output
 gossms get propery maxdop -conn win10cli

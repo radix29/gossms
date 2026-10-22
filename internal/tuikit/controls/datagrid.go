@@ -231,6 +231,18 @@ type DataGrid struct {
 	// otherwise land on the grid underneath as fresh cell clicks.
 	viewDismissing bool
 
+	// sortCol and sortDesc are the header's sort indicator (SetSortIndicator),
+	// sortCol -1 for none. The grid never reorders rows itself: only the host knows
+	// what its row indices stand for (the Details pane's row objects), so the host
+	// sorts and the grid draws the arrow.
+	sortCol  int
+	sortDesc bool
+
+	// headerPressed latches a press on the header row from press to release, so
+	// tcell's Button1 resends fire OnHeaderClick once per click and a drag begun on
+	// the header never reaches cell selection.
+	headerPressed bool
+
 	// browseOnly makes an editable grid behave as a read-only one for the
 	// moment: OnActivateCell is never called, and the grid gets the read-only
 	// grid's block selection and Copy / Show Value menu instead. See
@@ -263,11 +275,16 @@ type DataGrid struct {
 	// on — whatever the selection is at that moment. A grid the host has given
 	// no actions leaves it nil and the menu is the built-in pair.
 	OnMenuItems func() []MenuItem
+
+	// OnHeaderClick fires once per Button1 press on a column's header cell (not
+	// its separator, which resizes the column), handed the column index. nil
+	// leaves the header inert.
+	OnHeaderClick func(col int)
 }
 
 // NewDataGrid creates a DataGrid.
 func NewDataGrid() *DataGrid {
-	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil), lastSepPressCol: -1})
+	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil), lastSepPressCol: -1, sortCol: -1})
 }
 
 // SetBrowseOnly lets the grid be looked at but not edited: navigation,
@@ -343,6 +360,9 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.errorMode = false
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
+	g.headerPressed = false
+	// The indicator names a column of the old set; a host that sorted re-sets it.
+	g.sortCol, g.sortDesc = -1, false
 	// Row indices from the old set name different objects in this one.
 	g.ClearMarkedRows()
 	// The dragged widths belong to the old columns; this result set's column 2
@@ -376,7 +396,9 @@ func (g *DataGrid) SetSourcePreservingView(columns []string, rows RowSource) {
 	selRow, selCol := g.SelectedCell()
 	scrollRow, scrollCol := g.scrollRow, g.scrollCol
 	widths := g.ColumnWidthOverrides()
+	sortCol, sortDesc := g.sortCol, g.sortDesc
 	g.SetSource(columns, rows)
+	g.sortCol, g.sortDesc = sortCol, sortDesc
 	g.restoreOverrideWidths(widths)
 	g.SetScroll(scrollRow, scrollCol)
 	g.SetSelectedCell(selRow, selCol)
@@ -409,6 +431,8 @@ func (g *DataGrid) SetError(err error) {
 	g.errorMode = true
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
+	g.headerPressed = false
+	g.sortCol, g.sortDesc = -1, false
 	g.ClearMarkedRows()
 	g.colWidthOverride, g.colResizing = nil, false
 	// See SetSource: an open viewer would strand itself over stale text.
@@ -705,6 +729,53 @@ func (g *DataGrid) ColumnIndex(name string) int {
 	return slices.Index(g.columns, name)
 }
 
+// sortAscGlyph and sortDescGlyph follow the sorted column's header label.
+const (
+	sortAscGlyph  = " ▲"
+	sortDescGlyph = " ▼"
+)
+
+// SetSortIndicator draws an ascending or descending arrow after column col's
+// header label; col -1 (or out of range) removes it. It draws only: the host
+// sorts the rows it hands SetData. SetData and SetSource clear it, as it names a
+// column of the old set; SetDataPreservingView keeps it.
+func (g *DataGrid) SetSortIndicator(col int, desc bool) {
+	if col < 0 || col >= len(g.columns) {
+		col, desc = -1, false
+	}
+	g.sortCol, g.sortDesc = col, desc
+	// The arrow widens the header label, which may widen the column.
+	g.widthsDirty = true
+}
+
+// SortIndicator is the column SetSortIndicator marked and its direction, col -1
+// for none.
+func (g *DataGrid) SortIndicator() (col int, desc bool) { return g.sortCol, g.sortDesc }
+
+// headerLabel is column i's header as drawn: its name, plus the sort arrow on
+// the sorted column.
+func (g *DataGrid) headerLabel(i int) string {
+	if i != g.sortCol {
+		return g.columns[i]
+	}
+	if g.sortDesc {
+		return g.columns[i] + sortDescGlyph
+	}
+	return g.columns[i] + sortAscGlyph
+}
+
+// headerCells is the header row as drawn (see headerLabel). The column names
+// themselves are returned while nothing is sorted, so an unsorted grid's frame
+// allocates nothing for it.
+func (g *DataGrid) headerCells() []string {
+	if g.sortCol < 0 || g.sortCol >= len(g.columns) {
+		return g.columns
+	}
+	cells := slices.Clone(g.columns)
+	cells[g.sortCol] = g.headerLabel(g.sortCol)
+	return cells
+}
+
 // computeColWidths sizes columns from their header plus up to colWidthSampleRows
 // data rows, so a huge result set doesn't slow SetSource. A cell is measured only
 // as far as the clamp can see: past max(maxW, 6) columns every width clamps to
@@ -721,8 +792,8 @@ func (g *DataGrid) computeColWidths() {
 		return
 	}
 	g.colWidths = make([]int, len(g.columns))
-	for i, col := range g.columns {
-		g.colWidths[i] = core.DisplayWidth(col) + 2
+	for i := range g.columns {
+		g.colWidths[i] = core.DisplayWidth(g.headerLabel(i)) + 2
 	}
 	maxW := g.maxCellWidthOrDefault()
 	cellLimit := max(maxW, 6) - 2

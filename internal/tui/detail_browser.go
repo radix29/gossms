@@ -69,6 +69,22 @@ type DetailBrowser struct {
 	// nil when none shows — see detail_browser_charts.go.
 	tooltip *detailTooltip
 
+	// sort is the column order the user picked with a header click
+	// (detail_browser_sort.go) for the node on screen, and sorts the order picked
+	// for every node, so reselecting one (a cache hit or a refetch) and a Refresh
+	// keep it. Keyed by what the node stands for, not its pointer: a folder reload
+	// replaces its children with new nodes, and the sort carries over to them
+	// (Forget leaves it). The entries go with their connection (PurgeConn); a
+	// node never sorted has none.
+	sort  detailSort
+	sorts map[nodeSortKey]detailSort
+
+	// base is the list view on screen in its loader's order, and perm[i] the
+	// base index of grid row i: what a re-sort reorders and where the cursor's
+	// row went. Reset with rowObjs.
+	base detailRows
+	perm []int
+
 	// run is the fetch lifecycle: which run's result is still wanted, and the
 	// cancel that stops a superseded one's reads.
 	run detailRuns
@@ -93,12 +109,16 @@ type detailResult struct {
 func NewDetailBrowser(title string) *DetailBrowser {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
-	return new(DetailBrowser{
+	db := new(DetailBrowser{
 		title: title,
 		grid:  grid,
 		cache: make(map[*explorerNode]*detailResult),
+		sorts: make(map[nodeSortKey]detailSort),
 		run:   detailRuns{pending: make(map[*explorerNode]int)},
 	})
+	// Here, not in App.newDetailBrowser: sorting is the pane's own, needing no app.
+	grid.OnHeaderClick = db.sortByColumn
+	return db
 }
 
 // Title returns the panel title (Panel interface).
@@ -148,6 +168,7 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	db.run.supersede()
 	prev := db.currentNode
 	db.currentNode = node
+	db.sort = db.sorts[sortKeyOf(node)]
 
 	if node == nil {
 		db.showEmpty()
@@ -211,6 +232,7 @@ func (db *DetailBrowser) showEmpty() {
 // else clears.
 func (db *DetailBrowser) resetForNewNode() {
 	db.rowObjs, db.rowObjsNode = nil, nil
+	db.clearRows()
 	db.setCharts(nil)
 }
 
@@ -218,14 +240,14 @@ func (db *DetailBrowser) resetForNewNode() {
 func (db *DetailBrowser) applyResult(r *detailResult) {
 	if r.err != nil {
 		db.setRowObjects(nil, nil)
+		db.clearRows()
 		db.setCharts(nil)
 		db.grid.SetError(displayError(r.err))
 		return
 	}
 	db.grid.SetFillLastColumn(isPropertyValueColumns(r.cols))
 	db.setCharts(r.charts)
-	db.grid.SetData(r.cols, r.rows)
-	db.setRowObjects(r.rows, r.objs)
+	db.showRows(r.cols, r.rows, r.objs)
 }
 
 // setCharts installs the chart strip for what is now on screen and re-splits
@@ -354,6 +376,11 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 			delete(db.cache, node)
 		}
 	}
+	for k := range db.sorts {
+		if k.conn == sc {
+			delete(db.sorts, k)
+		}
+	}
 	for node := range db.run.pending {
 		if resolveConn(node) == sc {
 			db.run.forget(node)
@@ -477,15 +504,25 @@ func (db *DetailBrowser) SelectAll()           { db.grid.SelectAll() }
 
 // newDetailBrowser builds the Object Explorer Details panel wired to this
 // app: the title bar's refresh button, the Query Store reports' "Query" column
-// opening its full statement in a query panel, and the cell menu's Delete over
-// the selected rows (detail_browser_ops.go).
+// opening its full statement in a query panel, the cell menu's Delete over
+// the selected rows (detail_browser_ops.go) and, above it, the sort items
+// (detail_browser_sort.go).
 func (a *App) newDetailBrowser() *DetailBrowser {
 	db := NewDetailBrowser("Object Explorer Details")
 	db.OnRefresh = func() { db.RefreshCurrent(a) }
 	db.grid.OnShowValue = func(col int, column, value string) bool {
 		return db.showQueryStoreValue(a, col, column, value)
 	}
-	db.grid.OnMenuItems = func() []controls.MenuItem { return a.detailMenuItems(db) }
+	db.grid.OnMenuItems = func() []controls.MenuItem {
+		items := db.sortMenuItems()
+		if ops := a.detailMenuItems(db); len(ops) > 0 {
+			if len(items) > 0 {
+				items = append(items, controls.MenuItem{Divider: true})
+			}
+			items = append(items, ops...)
+		}
+		return items
+	}
 	return db
 }
 
