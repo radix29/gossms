@@ -54,7 +54,7 @@ func TestLiveConnectReportsTheRoleAsProgramName(t *testing.T) {
 	for role, want := range map[Role]string{
 		RoleExplorer: "goSSMS", RoleQuery: "goSSMS - Query", RoleActivityMonitor: "goSSMS - Activity Monitor", RoleXEventProfiler: "goSSMS - XEvent Profiler",
 	} {
-		sc, err := ConnectContext(context.Background(), opts, role)
+		sc, err := Connect(context.Background(), opts, role)
 		if err != nil {
 			t.Fatalf("role %d: %v", role, err)
 		}
@@ -75,7 +75,7 @@ func TestLiveConnectEncryptModeReachesTheServer(t *testing.T) {
 		config.EncryptOptional: false, config.EncryptMandatory: true,
 	} {
 		opts.Encrypt = mode
-		sc, err := ConnectContext(context.Background(), opts, RoleExplorer)
+		sc, err := Connect(context.Background(), opts, RoleExplorer)
 		if err != nil {
 			t.Fatalf("%s: %v", mode, err)
 		}
@@ -101,7 +101,7 @@ func TestLiveConnectExtraPropertiesReachTheServer(t *testing.T) {
 	opts := liveConnectOpts(t)
 	opts.Encrypt = config.EncryptOptional
 	opts.ExtraProperties = "packet size=16000"
-	sc, err := ConnectContext(context.Background(), opts, RoleExplorer)
+	sc, err := Connect(context.Background(), opts, RoleExplorer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestLiveConnectCancelAbortsTheDial(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(300*time.Millisecond, cancel)
 	start := time.Now()
-	_, err := ConnectContext(ctx, opts, RoleExplorer)
+	_, err := Connect(ctx, opts, RoleExplorer)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("connected to an unroutable address")

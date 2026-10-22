@@ -51,10 +51,7 @@ func (m MissingIndex) Script() string {
 // qualifiedTable is "[schema].[table]"; CREATE INDEX doesn't accept a
 // three-part name, so the database goes in the USE.
 func (m MissingIndex) qualifiedTable() string {
-	if m.Schema == "" {
-		return tsql.QuoteName(m.Table)
-	}
-	return tsql.QuoteName(m.Schema) + "." + tsql.QuoteName(m.Table)
+	return tsql.QualifiedName(m.Schema, m.Table)
 }
 
 // MissingIndexScript joins one statement's suggestions into one script, in

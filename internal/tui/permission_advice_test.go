@@ -281,7 +281,7 @@ func TestWithPermissionAdviceAddsToTheFailureRatherThanReplacingIt(t *testing.T)
 func TestLegacyListingRefusalIsClaimedOnlyWhenAllThreeFactsHold(t *testing.T) {
 	legacyDenied := func(t *testing.T) *db.ServerConn {
 		sc, _ := newFakeConnAtVersion(t, "13.0.5026.0", capabilityResponses(true, nil, nil, nil, nil)...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 		return sc
 	}
 
@@ -298,7 +298,7 @@ func TestLegacyListingRefusalIsClaimedOnlyWhenAllThreeFactsHold(t *testing.T) {
 
 	// 2017 and later never take that path, so an empty listing means empty.
 	modern, _ := newFakeConnAtVersion(t, "16.0.4085.2", capabilityResponses(true, nil, nil, nil, nil)...)
-	modern.ProbeCapabilities()
+	modern.ProbeCapabilities(modern.Server.Context())
 	if err := legacyListingRefusal(modern, nil); err != nil {
 		t.Errorf("a modern instance claimed the xp_dirtree refusal: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestLegacyListingRefusalIsClaimedOnlyWhenAllThreeFactsHold(t *testing.T) {
 
 	// A sysadmin's empty listing is an empty directory.
 	admin, _ := newFakeConnAtVersion(t, "13.0.5026.0", sysadminCapabilityResponses()...)
-	admin.ProbeCapabilities()
+	admin.ProbeCapabilities(admin.Server.Context())
 	if err := legacyListingRefusal(admin, nil); err != nil {
 		t.Errorf("a sysadmin's empty directory was reported as a refusal: %v", err)
 	}

@@ -235,7 +235,7 @@ func findIndexed(ctx context.Context, sc *db.ServerConn, dbName, schema, name st
 	}
 	v, err := d.ViewByName(ctx, schema, name)
 	if errors.Is(err, gosmo.ErrNotFound) {
-		return nil, fmt.Errorf("no table or view %s in %q: %w", fqn(schema, name), dbName, err)
+		return nil, fmt.Errorf("no table or view %s in %q: %w", gosmo.QualifiedName(schema, name), dbName, err)
 	}
 	if err != nil {
 		return nil, err

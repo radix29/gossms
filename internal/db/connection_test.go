@@ -369,9 +369,9 @@ func TestExtraPropertiesReachTheDialledDSN(t *testing.T) {
 		} else if strings.Contains(err.Error(), "ConnectionOptions") {
 			t.Errorf("preview with %q: %q speaks gosmo's API, not the dialog's", extra, err)
 		}
-		_, err = ConnectContext(context.Background(), opts, RoleExplorer)
+		_, err = Connect(context.Background(), opts, RoleExplorer)
 		if _, ok := errors.AsType[*ConnectionError](err); !ok {
-			t.Errorf("ConnectContext with %q: err = %v, want a *ConnectionError before anything is dialled", extra, err)
+			t.Errorf("Connect with %q: err = %v, want a *ConnectionError before anything is dialled", extra, err)
 		}
 	}
 }
@@ -533,7 +533,7 @@ func TestUnknownAuthMethodIsRefused(t *testing.T) {
 	if s, err := BuildConnectionString(opts); err == nil || !strings.Contains(err.Error(), "unknown authentication method 7") {
 		t.Errorf("BuildConnectionString = %q, %v; want the unknown method refused", s, err)
 	}
-	if sc, err := ConnectContext(context.Background(), opts, RoleExplorer); sc != nil || err == nil || !strings.Contains(err.Error(), "unknown authentication method 7") {
-		t.Errorf("ConnectContext = %v, %v; want the unknown method refused before dialling", sc, err)
+	if sc, err := Connect(context.Background(), opts, RoleExplorer); sc != nil || err == nil || !strings.Contains(err.Error(), "unknown authentication method 7") {
+		t.Errorf("Connect = %v, %v; want the unknown method refused before dialling", sc, err)
 	}
 }

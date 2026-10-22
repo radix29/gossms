@@ -7,21 +7,6 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-func TestFQN(t *testing.T) {
-	tests := []struct {
-		schema, name, want string
-	}{
-		{"dbo", "Orders", "[dbo].[Orders]"},
-		{"", "Orders", "[Orders]"},
-		{"my]schema", "a]b", "[my]]schema].[a]]b]"},
-	}
-	for _, tt := range tests {
-		if got := fqn(tt.schema, tt.name); got != tt.want {
-			t.Errorf("fqn(%q, %q) = %q, want %q", tt.schema, tt.name, got, tt.want)
-		}
-	}
-}
-
 // The registry's static loaders (folders whose children are fixed labels,
 // not a database query) must propagate Type/DBName correctly to every
 // child — that's the wiring most likely to break silently when a new

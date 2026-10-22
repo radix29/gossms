@@ -24,7 +24,7 @@ func secPolicyConn(t *testing.T, dbGranted, schemaGranted, schemaDenied, denySch
 	}
 	responses := capabilityResponsesWithSchemas(true, nil, nil, dbGranted, dbDenied, schemaGranted, schemaDenied)
 	sc, _ := newFakeConn(t, withDeniedSchemas(responses, denySchemas...)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return sc
 }

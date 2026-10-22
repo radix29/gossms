@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
@@ -57,7 +58,7 @@ func storageSecurityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 			return nil, nil, err
 		}
 		rows := [][]string{
-			{"Name", fqn(p.Schema, p.Name)},
+			{"Name", gosmo.QualifiedName(p.Schema, p.Name)},
 			{"Enabled", boolStr(p.IsEnabled)},
 			{"Schema bound", boolStr(p.IsSchemaBound)},
 			{"Not for replication", boolStr(p.IsNotForReplication)},
@@ -65,7 +66,7 @@ func storageSecurityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 		}
 		for i, pred := range p.Predicates {
 			label := fmt.Sprintf("%s predicate %d", pred.PredicateType, i+1)
-			value := fmt.Sprintf("%s ON %s", pred.PredicateDefinition, fqn(pred.TargetSchema, pred.TargetTable))
+			value := fmt.Sprintf("%s ON %s", pred.PredicateDefinition, gosmo.QualifiedName(pred.TargetSchema, pred.TargetTable))
 			if pred.Operation != "" {
 				value += " " + pred.Operation
 			}

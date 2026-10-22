@@ -256,7 +256,7 @@ func TestMailCredentialFieldsNeedAlterAnyCredential(t *testing.T) {
 	responses := append(capabilityResponses(true, nil, []string{"ALTER ANY CREDENTIAL", "CONTROL SERVER"}, nil, nil),
 		mailPageReads()...)
 	sc, inst := newFakeConn(t, responses...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	forms, applies := mailPages(t, sc, inst)
 	a := forms[mailPageAccounts]
 	selectGridRow(t, plainGrid(t, a), 0, "relay2")
@@ -270,7 +270,7 @@ func TestMailCredentialFieldsNeedAlterAnyCredential(t *testing.T) {
 	}
 	// Another account's settings still apply.
 	sc2, inst2 := newFakeConn(t, responses...)
-	sc2.ProbeCapabilities()
+	sc2.ProbeCapabilities(sc2.Server.Context())
 	forms, applies = mailPages(t, sc2, inst2)
 	a = forms[mailPageAccounts]
 	selectGridRow(t, plainGrid(t, a), 0, "relay2")
@@ -292,7 +292,7 @@ func TestMailBasicAccountUntouchableWithoutAlterAnyCredential(t *testing.T) {
 		mailPageReads()...)
 	t.Run("other setting", func(t *testing.T) {
 		sc, inst := newFakeConn(t, responses...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 		forms, applies := mailPages(t, sc, inst)
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
@@ -305,7 +305,7 @@ func TestMailBasicAccountUntouchableWithoutAlterAnyCredential(t *testing.T) {
 	})
 	t.Run("remove", func(t *testing.T) {
 		sc, inst := newFakeConn(t, responses...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 		forms, applies := mailPages(t, sc, inst)
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")

@@ -309,7 +309,7 @@ func (oe *ObjectExplorer) Reload(n *explorerNode) {
 			oe.app.primeDatabaseCapabilities(sel)
 		}
 		if sc.Server != nil {
-			oe.app.safego("re-reading server capabilities", sc.ProbeCapabilities)
+			oe.app.safego("re-reading server capabilities", func() { sc.ProbeCapabilities(sc.Server.Context()) })
 		}
 	}
 	forgetPeerFailuresForRefresh(sc, n)

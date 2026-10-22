@@ -519,7 +519,7 @@ func pushdownDateOp(op filterOp) (gosmo.DateOp, bool) {
 	return 0, false
 }
 
-// serverFilter is what a loader passes to a *FilteredContext listing: f's
+// serverFilter is what a loader passes to a listing taking an ObjectFilter: f's
 // translation, or an empty filter when it can't be pushed down, in which case
 // the whole folder is read and filterChildren/filterObjects narrow it.
 func serverFilter(f *nodeFilter) gosmo.ObjectFilter {

@@ -44,7 +44,7 @@ a sentence and link.
 ## How a query runs
 
 1. **`internal/db`** (`connection.go`) owns connection *lifetime*.
-   `ConnectContext(ctx, opts, role)` maps `config.Connection` onto
+   `Connect(ctx, opts, role)` maps `config.Connection` onto
    `gosmo.ConnectionOptions` in `toGosmoOptions` — the Connect dialog's masked
    preview (`BuildConnectionString`) goes through it too, so the preview is the
    DSN dialled — and returns a `ServerConn` wrapping a `gosmo.Server`. `Role`

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -54,10 +55,10 @@ func isDraggableNode(t NodeType) bool {
 // explorerDragText returns the quoted T-SQL identifier to insert into a query
 // editor when n is dropped there. Tables, views, stored procedures, functions,
 // sequences, synonyms, and triggers are addressable as schema.name in T-SQL (e.g.
-// "DROP TRIGGER dbo.MyTrigger"), so those get the full two-part fqn; everything
-// else (databases, schemas, columns, keys, indexes, statistics, foreign keys,
-// checks, logins, users, roles, agent jobs, linked servers) is quoted as a single
-// bare name. For the table-nested detail types (column, key, index, statistic,
+// "DROP TRIGGER dbo.MyTrigger"), so those get the full two-part name
+// (gosmo.QualifiedName); everything else (databases, schemas, columns, keys,
+// indexes, statistics, foreign keys, checks, logins, users, roles, agent jobs,
+// linked servers) is quoted as a single bare name. For the table-nested detail types (column, key, index, statistic,
 // foreign key, check), n.data.Schema holds the *owning table's* schema, not one
 // this object is addressed by — qualifying with it would produce a misleading
 // (and invalid) two-part name.
@@ -76,9 +77,9 @@ func explorerDragText(n *explorerNode) string {
 		// database-scoped and fall through to the bare name, and so does a
 		// route, whose name is not a schema object's at all.
 		NodeBrokerQueue:
-		return fqn(n.data.Schema, n.data.Name)
+		return gosmo.QualifiedName(n.data.Schema, n.data.Name)
 	default:
-		return fqn("", n.data.Name)
+		return gosmo.QualifiedName("", n.data.Name)
 	}
 }
 

@@ -215,7 +215,7 @@ func (d *NewIndexDialog) generalForm(pf *nidxPrefetch) *propsheet.Form {
 		propsheet.Section("Index"),
 		d.rows.name,
 		propsheet.Static("Index type", indexTypeName(d.kind.typ)),
-		propsheet.Static(ownerNoun(d.onView), fqn(d.schema, d.table)),
+		propsheet.Static(ownerNoun(d.onView), gosmo.QualifiedName(d.schema, d.table)),
 	}
 
 	switch {

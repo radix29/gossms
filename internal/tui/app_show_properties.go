@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
@@ -132,7 +133,7 @@ func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
 // showTablePropertiesFor opens Table Properties for a known connection,
 // database, and schema-qualified table, from the Object Explorer context menu.
 func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Table Properties", "Table: "+fqn(schema, name), "Database: "+dbName,
+	a.propDialog.show(sc, dbName, "Table Properties", "Table: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return tablePropPages(sc, dbName, schema, name) })
 }
 
@@ -140,7 +141,7 @@ func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name str
 // database, and schema-qualified table/index, from the context menu. onView
 // says table names a view (nodeData.OnView).
 func (a *App) showIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table, index string, onView bool) {
-	a.propDialog.show(sc, dbName, "Index Properties", "Index: "+index, ownerHeader(onView)+fqn(schema, table),
+	a.propDialog.show(sc, dbName, "Index Properties", "Index: "+index, ownerHeader(onView)+gosmo.QualifiedName(schema, table),
 		func() []propPage { return indexPropPages(a.propDialog, sc, dbName, schema, table, index, onView) })
 }
 
@@ -148,7 +149,7 @@ func (a *App) showIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table, i
 // connection, database, and schema-qualified table/statistic; onView as for
 // showIndexPropertiesFor.
 func (a *App) showStatisticPropertiesFor(sc *db.ServerConn, dbName, schema, table, stat string, onView bool) {
-	a.propDialog.show(sc, dbName, "Statistics Properties", "Statistic: "+stat, ownerHeader(onView)+fqn(schema, table),
+	a.propDialog.show(sc, dbName, "Statistics Properties", "Statistic: "+stat, ownerHeader(onView)+gosmo.QualifiedName(schema, table),
 		func() []propPage { return statisticPropPages(a.propDialog, sc, dbName, schema, table, stat, onView) })
 }
 
@@ -166,7 +167,7 @@ func ownerNoun(onView bool) string {
 // showForeignKeyPropertiesFor opens the read-only Foreign Key Properties for a
 // known connection, database, and schema-qualified table/foreign key.
 func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, fk string) {
-	a.propDialog.show(sc, dbName, "Foreign Key Properties", "Key: "+fk, "Table: "+fqn(schema, table),
+	a.propDialog.show(sc, dbName, "Foreign Key Properties", "Key: "+fk, "Table: "+gosmo.QualifiedName(schema, table),
 		func() []propPage { return fkPropPages(sc, dbName, schema, table, fk) })
 }
 
@@ -176,7 +177,7 @@ func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, tab
 func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key string, isPrimaryKey bool) {
 	title := keyTypeName(isPrimaryKey) + " Properties"
 	// A key is listed twice: under Keys, and its backing index under Indexes.
-	a.propDialog.showReloading(sc, dbName, title, "Key: "+key, "Table: "+fqn(schema, table),
+	a.propDialog.showReloading(sc, dbName, title, "Key: "+key, "Table: "+gosmo.QualifiedName(schema, table),
 		func() []propPage { return keyPropPages(a.propDialog, sc, dbName, schema, table, key) },
 		func(d nodeData) bool {
 			return (d.Type == NodeKeys || d.Type == NodeIndexes) &&
@@ -348,7 +349,7 @@ func (a *App) showPartitionSchemePropertiesFor(sc *db.ServerConn, dbName, name s
 // showSecurityPolicyPropertiesFor opens the read-only Security Policy
 // Properties.
 func (a *App) showSecurityPolicyPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Security Policy Properties", "Policy: "+fqn(schema, name), "Database: "+dbName,
+	a.propDialog.show(sc, dbName, "Security Policy Properties", "Policy: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return securityPolicyPropPages(sc, dbName, schema, name) })
 }
 
@@ -377,7 +378,7 @@ func (a *App) showColumnEncryptionKeyPropertiesFor(sc *db.ServerConn, dbName, na
 // alias type.
 func (a *App) showUserDefinedDataTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
 	a.propDialog.show(sc, dbName, "User-Defined Data Type Properties",
-		"Type: "+fqn(schema, name), "Database: "+dbName,
+		"Type: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return userDefinedDataTypePropPages(sc, dbName, schema, name) })
 }
 
@@ -385,14 +386,14 @@ func (a *App) showUserDefinedDataTypePropertiesFor(sc *db.ServerConn, dbName, sc
 // table type.
 func (a *App) showUserDefinedTableTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
 	a.propDialog.show(sc, dbName, "User-Defined Table Type Properties",
-		"Type: "+fqn(schema, name), "Database: "+dbName,
+		"Type: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return userDefinedTableTypePropPages(sc, dbName, schema, name) })
 }
 
 // showClrTypePropertiesFor opens the read-only Properties for a CLR type.
 func (a *App) showClrTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
 	a.propDialog.show(sc, dbName, "User-Defined Type Properties",
-		"Type: "+fqn(schema, name), "Database: "+dbName,
+		"Type: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return clrTypePropPages(sc, dbName, schema, name) })
 }
 
@@ -400,7 +401,7 @@ func (a *App) showClrTypePropertiesFor(sc *db.ServerConn, dbName, schema, name s
 // XML schema collection.
 func (a *App) showXMLSchemaCollectionPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
 	a.propDialog.show(sc, dbName, "XML Schema Collection Properties",
-		"Collection: "+fqn(schema, name), "Database: "+dbName,
+		"Collection: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return xmlSchemaCollectionPropPages(sc, dbName, schema, name) })
 }
 
@@ -412,7 +413,7 @@ func (a *App) showAssemblyPropertiesFor(sc *db.ServerConn, dbName, name string) 
 
 // showRulePropertiesFor opens the read-only Properties for a standalone rule.
 func (a *App) showRulePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Rule Properties", "Rule: "+fqn(schema, name), "Database: "+dbName,
+	a.propDialog.show(sc, dbName, "Rule Properties", "Rule: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return rulePropPages(sc, dbName, schema, name) })
 }
 
@@ -420,7 +421,7 @@ func (a *App) showRulePropertiesFor(sc *db.ServerConn, dbName, schema, name stri
 // default, never a table's DF_... constraint (a different family under the same
 // sys.objects type code).
 func (a *App) showDefaultPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Default Properties", "Default: "+fqn(schema, name), "Database: "+dbName,
+	a.propDialog.show(sc, dbName, "Default Properties", "Default: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return defaultPropPages(sc, dbName, schema, name) })
 }
 
@@ -489,7 +490,7 @@ func (a *App) showContractPropertiesFor(sc *db.ServerConn, dbName, name string) 
 // writes the queue's status, retention, poison-message handling and
 // activation.
 func (a *App) showBrokerQueuePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.showReloading(sc, dbName, "Queue Properties", "Queue: "+fqn(schema, name), "Database: "+dbName,
+	a.propDialog.showReloading(sc, dbName, "Queue Properties", "Queue: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return brokerQueuePropPages(sc, dbName, schema, name) }, folderOf(dbName, NodeBrokerQueues))
 }
 
@@ -593,7 +594,7 @@ func (a *App) showSearchPropertyListPropertiesFor(sc *db.ServerConn, dbName, nam
 // (fulltext_index_props.go) — the table menu's Full-Text index cascade. A
 // table without one says so on each page (noFullTextIndexForm).
 func (a *App) showFullTextIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table string) {
-	a.propDialog.show(sc, dbName, "Full-Text Index Properties", "Table: "+fqn(schema, table), "Database: "+dbName,
+	a.propDialog.show(sc, dbName, "Full-Text Index Properties", "Table: "+gosmo.QualifiedName(schema, table), "Database: "+dbName,
 		func() []propPage { return fullTextIndexPropPages(sc, dbName, schema, table) })
 }
 

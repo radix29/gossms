@@ -88,7 +88,7 @@ type ServerConn struct {
 	// Server.Context(), so a bare &ServerConn{} (tests) reads open.
 	closed atomic.Bool
 
-	// role is what ConnectContext opened this connection for; peers inherit
+	// role is what Connect opened this connection for; peers inherit
 	// it, so AG replica reads report Object Explorer's program_name.
 	role Role
 
@@ -100,7 +100,7 @@ type ServerConn struct {
 	capabilityFields
 }
 
-// ConnectContext opens a connection for role. Cancelling ctx aborts the attempt
+// Connect opens a connection for role. Cancelling ctx aborts the attempt
 // in flight; connectTimeout always applies too. ctx covers only the attempt; the
 // connection lives until Close.
 //
@@ -110,7 +110,7 @@ type ServerConn struct {
 // Failures are *ConnectionError, including option errors before dialling (an
 // unknown auth method, a malformed Extra Properties entry, or one naming a
 // dialog-owned setting).
-func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*ServerConn, error) {
+func Connect(ctx context.Context, opts config.Connection, role Role) (*ServerConn, error) {
 	co, err := toGosmoOptions(opts, role)
 	if err != nil {
 		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error(), Err: err}
@@ -140,7 +140,7 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	return newServerConn(parent, opts, srv, role), nil
 }
 
-// newServerConn is ConnectContext's tail over a connected srv; ctx is the
+// newServerConn is Connect's tail over a connected srv; ctx is the
 // caller's, for the capability probe.
 //
 // Only Object Explorer's connection gates on the server-scope capability set;
@@ -149,7 +149,7 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 func newServerConn(ctx context.Context, opts config.Connection, srv *gosmo.Server, role Role) *ServerConn {
 	sc := &ServerConn{Opts: opts, Server: srv, role: role}
 	if role == RoleExplorer {
-		sc.ProbeCapabilitiesContext(ctx)
+		sc.ProbeCapabilities(ctx)
 	}
 	return sc
 }
@@ -371,9 +371,9 @@ func toGosmoAuth(m config.AuthMethod) (gosmo.AuthMethod, error) {
 	}
 }
 
-// BuildConnectionString renders the DSN ConnectContext would dial for opts
+// BuildConnectionString renders the DSN Connect would dial for opts
 // (Object Explorer role), via the same toGosmoOptions and gosmo builder, with
-// passwords, secrets and tokens masked. Settings ConnectContext would refuse
+// passwords, secrets and tokens masked. Settings Connect would refuse
 // return the same error, which the dialog preview shows.
 func BuildConnectionString(opts config.Connection) (string, error) {
 	co, err := toGosmoOptions(opts, RoleExplorer)

@@ -370,7 +370,7 @@ func programmabilityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 }
 
 // dottedName is a schema-qualified name for display — the same "dbo.Phone"
-// the tree's labels carry. fqn is the bracket-quoted form and belongs in
+// the tree's labels carry. gosmo.QualifiedName is the bracket-quoted form and belongs in
 // generated T-SQL, not in a grid cell or a property row the user reads.
 func dottedName(schema, name string) string {
 	if schema == "" {

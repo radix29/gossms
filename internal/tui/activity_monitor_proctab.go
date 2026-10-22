@@ -191,10 +191,10 @@ func (pt *amProcTab) activate() {
 	// § Threading model: closing the Activity Monitor's connection aborts this
 	// clone's attempt rather than leaving it to the 15 s connect timeout. The
 	// tab's own connection is unaffected once the dial has returned —
-	// ConnectContext roots it at Background.
+	// Connect roots it at Background.
 	parent := pt.am.conn.Server.Context()
 	pt.am.app.safegoRepair("connecting Activity Monitor "+pt.proc.MasterName+" tab", pt.panicRepair, func() {
-		conn, err := db.ConnectContext(parent, opts, db.RoleActivityMonitor)
+		conn, err := db.Connect(parent, opts, db.RoleActivityMonitor)
 		pt.am.app.postAndWake(func() { pt.connected(conn, err) })
 	})
 }

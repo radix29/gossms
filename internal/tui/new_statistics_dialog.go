@@ -85,7 +85,7 @@ func (d *NewStatisticsDialog) show(sc *db.ServerConn, node *explorerNode) {
 	d.scriptDatabase = d.dbName
 	d.columns = nil
 	d.newObjectDialog.show(sc)
-	d.SetHeader("Database: "+d.dbName, ownerHeader(d.onView)+fqn(d.schema, d.table))
+	d.SetHeader("Database: "+d.dbName, ownerHeader(d.onView)+gosmo.QualifiedName(d.schema, d.table))
 }
 
 func (d *NewStatisticsDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*nstatPrefetch, error) {
@@ -127,7 +127,7 @@ func (d *NewStatisticsDialog) buildPages(pf *nstatPrefetch) {
 	rows := []propsheet.Row{
 		propsheet.Section("Statistics"),
 		d.name,
-		propsheet.Static(ownerNoun(d.onView), fqn(d.schema, d.table)),
+		propsheet.Static(ownerNoun(d.onView), gosmo.QualifiedName(d.schema, d.table)),
 	}
 	rows = append(rows, orderedColumnRows(&d.columns, nidxColumnNames(pf.columns),
 		"Columns", "This table has no columns.")...)
@@ -155,13 +155,13 @@ func (d *NewStatisticsDialog) buildPages(pf *nstatPrefetch) {
 			return fmt.Errorf("statistics name is required")
 		}
 		if pf.existingNames.Has(name) {
-			return fmt.Errorf("a statistics object named %q already exists on %s", name, fqn(d.schema, d.table))
+			return fmt.Errorf("a statistics object named %q already exists on %s", name, gosmo.QualifiedName(d.schema, d.table))
 		}
 		if len(d.columns) == 0 {
 			return fmt.Errorf("add at least one column")
 		}
 		if pf.unindexedView {
-			return fmt.Errorf("%s has no unique clustered index — statistics can be created only on an indexed view", fqn(d.schema, d.table))
+			return fmt.Errorf("%s has no unique clustered index — statistics can be created only on an indexed view", gosmo.QualifiedName(d.schema, d.table))
 		}
 		return nil
 	}

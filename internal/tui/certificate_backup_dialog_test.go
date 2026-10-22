@@ -154,7 +154,7 @@ func keyMenuNode(t *testing.T, typ NodeType, alter, hasKey bool) *explorerNode {
 	responses := withSecurablePermAnswers(capabilityResponses(true, nil, nil, nil, []string{"ALTER", "CONTROL"}),
 		"ALTER", map[string]bool{gosmo.DatabaseSecurableKey(kind, "", "c1"): alter})
 	sc, _ := newFakeConn(t, responses...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return &explorerNode{data: nodeData{Type: typ, DBName: "appdb", Name: "c1", conn: sc, HasPrivateKey: hasKey}}
 }

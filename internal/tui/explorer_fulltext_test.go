@@ -500,7 +500,7 @@ func TestFullTextDeleteGateMatchesWhatTheServerAllowed(t *testing.T) {
 			responses := withSecurableAnswers(capabilityResponses(true, nil, nil, tc.granted, denied),
 				map[string]bool{gosmo.DatabaseSecurableKey(l.kind, "", "f1"): tc.control})
 			sc, _ := newFakeConn(t, responses...)
-			sc.ProbeCapabilities()
+			sc.ProbeCapabilities(sc.Server.Context())
 			sc.DatabaseCapabilities(context.Background(), "appdb")
 			node := &explorerNode{data: nodeData{Type: l.nt, DBName: "appdb", Name: "f1", conn: sc}}
 			var found bool

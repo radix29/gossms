@@ -466,7 +466,7 @@ func TestPreflightRefusesAPeerThatMayNotJoin(t *testing.T) {
 	responses := append(agPeerResponses("ubusql2", true, "AGEP", 5022, "STARTED"),
 		capabilityResponses(true, nil, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil)...)
 	peer, _ := newFakeConnFrom(t, responses)
-	peer.ProbeCapabilities()
+	peer.ProbeCapabilities(peer.Server.Context())
 
 	d := agDialogWithPeer(t, local, peer)
 	err := d.preflightReplicas(context.Background(), agTestRequest(t, d))

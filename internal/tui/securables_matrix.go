@@ -38,7 +38,7 @@ func (s securable) label() string {
 	// gosmo owns which classes live in a schema: a class added there later
 	// labels by its own rule, not as [].[name].
 	if s.Type.SchemaScoped() {
-		return gosmo.QuoteName(s.Schema) + "." + gosmo.QuoteName(s.Name)
+		return gosmo.QualifiedName(s.Schema, s.Name)
 	}
 	return gosmo.QuoteName(s.Name)
 }
@@ -150,7 +150,7 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 				}
 				out := make([]securable, len(refs))
 				for i, r := range refs {
-					out[i] = securable{Type: r.Type, Schema: r.Schema, Name: r.Name}
+					out[i] = securable{Type: r.Class, Schema: r.Schema, Name: r.Name}
 				}
 				return out, nil
 			}

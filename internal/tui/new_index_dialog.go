@@ -111,7 +111,7 @@ func (d *NewIndexDialog) show(sc *db.ServerConn, node *explorerNode, kind newInd
 	d.rows = nidxRows{}
 	d.pages = nidxPagesFor(kind.typ, d.onView)
 	d.newObjectDialog.show(sc)
-	d.SetHeader("Database: "+d.dbName, kind.noun+" on "+fqn(d.schema, d.table))
+	d.SetHeader("Database: "+d.dbName, kind.noun+" on "+gosmo.QualifiedName(d.schema, d.table))
 }
 
 // nidxPagesFor is the page set one index type needs. Every page named here is
@@ -332,21 +332,21 @@ func (d *NewIndexDialog) checkRequest(pf *nidxPrefetch) error {
 		return fmt.Errorf("index name is required")
 	}
 	if pf.existingNames.Has(name) && (d.rows.dropExisting == nil || !d.rows.dropExisting.Checked()) {
-		return fmt.Errorf("an index named %q already exists on %s — tick Drop existing index to replace it", name, fqn(d.schema, d.table))
+		return fmt.Errorf("an index named %q already exists on %s — tick Drop existing index to replace it", name, gosmo.QualifiedName(d.schema, d.table))
 	}
 	if err := d.checkViewRules(pf); err != nil {
 		return err
 	}
 	if nidxNeedsOneColumn(d.kind.typ) && d.rows.singleColumn == nil {
 		return fmt.Errorf("%s has no %s column, which a %s needs",
-			fqn(d.schema, d.table), nidxColumnKind(d.kind.typ), strings.ToLower(d.kind.noun))
+			gosmo.QualifiedName(d.schema, d.table), nidxColumnKind(d.kind.typ), strings.ToLower(d.kind.noun))
 	}
 	if d.kind.typ != gosmo.IndexTypeClusteredColumnStore && !nidxNeedsOneColumn(d.kind.typ) && len(d.keyColumns) == 0 {
 		return fmt.Errorf("add at least one key column")
 	}
 	if r := d.rows.xmlPrimary; r != nil && r.Selected() == 1 && d.rows.xmlParent == nil {
 		return fmt.Errorf("a secondary XML index is built over a primary XML index, and %s has none yet",
-			fqn(d.schema, d.table))
+			gosmo.QualifiedName(d.schema, d.table))
 	}
 	if r := d.rows.tessellation; r != nil && gosmo.SpatialTessellation(r.Value()).IsGeometry() {
 		for i, label := range nidxBoundingBoxLabels {
@@ -369,7 +369,7 @@ func (d *NewIndexDialog) checkViewRules(pf *nidxPrefetch) error {
 	if !pf.onView {
 		return nil
 	}
-	view := fqn(d.schema, d.table)
+	view := gosmo.QualifiedName(d.schema, d.table)
 	switch {
 	case !pf.schemaBound:
 		return fmt.Errorf("%s is not schema-bound — only a view created WITH SCHEMABINDING can be indexed", view)

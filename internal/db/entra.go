@@ -1,7 +1,7 @@
 package db
 
 // entra.go is Microsoft Entra sign-in: the process-wide gosmo.EntraCache, the
-// device-code prompt, and ConnectContext's pre-dial sign-in phase.
+// device-code prompt, and Connect's pre-dial sign-in phase.
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// entraCache is shared by every connection: each ConnectContext opens its own
+// entraCache is shared by every connection: each Connect opens its own
 // pool, and a cache per pool would open an MFA browser per window. Keyed by
 // identity, so one sign-in covers every server in the tenant.
 var entraCache = gosmo.NewEntraCache()
@@ -61,7 +61,7 @@ func promptDeviceCode(ctx context.Context, m gosmo.DeviceCodeMessage) error {
 const SignInTimeout = 5 * time.Minute
 
 // NeedsSignIn reports whether m signs a person in (MFA browser, Device Code);
-// ConnectContext runs that as its own phase under SignInTimeout.
+// Connect runs that as its own phase under SignInTimeout.
 func NeedsSignIn(m config.AuthMethod) bool {
 	return m == config.AuthEntraInteractive || m == config.AuthEntraDeviceCode
 }
@@ -76,7 +76,7 @@ func NeedsSignIn(m config.AuthMethod) bool {
 // "organizations", which refuses personal accounts. An unreachable server
 // therefore fails here.
 //
-// ConnectContext calls it; the Connect dialog calls it first to show the phase.
+// Connect calls it; the Connect dialog calls it first to show the phase.
 // Errors are *ConnectionError, wrapping context.Canceled on cancel.
 func SignIn(ctx context.Context, opts config.Connection) error {
 	if !NeedsSignIn(opts.AuthMethod) {

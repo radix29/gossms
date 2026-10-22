@@ -352,7 +352,7 @@ func TestSymmetricKeyEncryptionPageIsGated(t *testing.T) {
 			map[string]bool{key: tc.control})
 		responses = withSecurablePermAnswers(responses, "ALTER", map[string]bool{key: tc.alter})
 		sc, _ := newFakeConn(t, responses...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 
 		p := symmetricKeyPropPages(sc, "appdb", "k1")[1]
 		if p.requiresIn != "appdb" || p.requiresObject != "k1" {

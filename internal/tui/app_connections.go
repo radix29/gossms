@@ -35,7 +35,7 @@ func (a *App) connectServer(ctx context.Context, opts config.Connection, phase f
 		var sc *db.ServerConn
 		err := a.signInPhase(ctx, opts, phase)
 		if err == nil {
-			sc, err = db.ConnectContext(ctx, opts, db.RoleExplorer)
+			sc, err = db.Connect(ctx, opts, db.RoleExplorer)
 		}
 		a.postAndWake(func() {
 			wanted := true
@@ -120,7 +120,7 @@ func (a *App) registerPeer(ctx context.Context, opts config.Connection, phase fu
 		err := a.signInPhase(ctx, opts, phase)
 		if err == nil {
 			var sc *db.ServerConn
-			if sc, err = db.ConnectContext(ctx, opts, db.RoleExplorer); err == nil {
+			if sc, err = db.Connect(ctx, opts, db.RoleExplorer); err == nil {
 				sc.Close()
 			}
 		}
@@ -232,7 +232,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	// The dial is scoped to the connection it is cloned from (ARCHITECTURE.md §
 	// Threading model): disconnecting the Object Explorer node aborts a reconnect
 	// still in flight instead of leaving it to the 15 s connect timeout. Only the
-	// attempt is scoped; ConnectContext roots the new connection's own context at
+	// attempt is scoped; Connect roots the new connection's own context at
 	// Background, so the panel's connection still outlives sc.
 	//
 	// Except when sc is already closed: Reconnect hands in the panel's own connection,
@@ -270,7 +270,7 @@ func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Co
 		}
 		var newConn *db.ServerConn
 		if err == nil {
-			newConn, err = db.ConnectContext(ctx, opts, db.RoleQuery)
+			newConn, err = db.Connect(ctx, opts, db.RoleQuery)
 		}
 		var sess *query.Session
 		var state query.SessionState
@@ -334,7 +334,7 @@ func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) 
 	// connectForQueryPanel is.
 	parent := sc.Server.Context()
 	a.safego("connecting Activity Monitor", func() {
-		newConn, err := db.ConnectContext(parent, opts, db.RoleActivityMonitor)
+		newConn, err := db.Connect(parent, opts, db.RoleActivityMonitor)
 		a.postAndWake(func() {
 			if err != nil {
 				// Both feeds: neither collector will start, and TempDB would

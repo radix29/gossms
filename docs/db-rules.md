@@ -140,8 +140,8 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   `filterChildren` in `fetchChildren`. Pane loaders (`detail_browser_*.go`) use
   `filterObjects` on the gosmo collection *before* building rows — a
   progressive loader backfills by index, so filtering rows later misaligns
-  counts and sizes. **Both also push the filter into gosmo's
-  `...FilteredContext` listing — an optimisation, never the meaning.**
+  counts and sizes. **Both also push the filter into the gosmo
+  listing, which takes an `ObjectFilter` — an optimisation, never the meaning.**
   `filterChildren`/`filterObjects` stay authoritative, so `nodeFilter.pushdown`
   either reproduces their comparison exactly (trimmed like `matchText`, whole
   days like `matchDate`) or refuses (`serverFilter` then reads the whole

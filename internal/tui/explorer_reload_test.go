@@ -231,7 +231,7 @@ func TestDetailPendingEndsWhenResultIsCached(t *testing.T) {
 func capsConn(t *testing.T, a *App, granted, denied, dbGranted, dbDenied []string) (*db.ServerConn, *fakeInstance, *explorerNode) {
 	t.Helper()
 	sc, inst := newFakeConn(t, capabilityResponses(true, granted, denied, dbGranted, dbDenied)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	a.connections = append(a.connections, sc)
 	root := a.explorer.AddRoot("capsrv", sc)
 	return sc, inst, root

@@ -596,8 +596,8 @@ Peer credentials, easy to undo:
 ## Object Explorer folder filter: what is deliberately out of it
 
 - **Only seven families push down** — Tables, Views, Stored Procedures,
-  Functions and their three System variants (gosmo `ObjectFilter`,
-  `…FilteredContext`). The rest (sequences, synonyms, both trigger families,
+  Functions and their three System variants (gosmo listings
+  taking an `ObjectFilter`). The rest (sequences, synonyms, both trigger families,
   databases, logins, users, roles, schemas, partition functions/schemes, AE
   keys, security policies) stay client-side: small, and the clause builder is
   family-agnostic if that changes. Push-down rules: `docs/db-rules.md`.

@@ -101,7 +101,7 @@ func (a *App) connectXEventViewer(v *XEventViewer) {
 	v.feed.connecting = true
 	v.updateStatus()
 	a.safego("connecting the Extended Events viewer", func() {
-		conn, err := db.ConnectContext(parent, opts, db.RoleXEventProfiler)
+		conn, err := db.Connect(parent, opts, db.RoleXEventProfiler)
 		a.postAndWake(func() {
 			v.feed.connecting = false
 			if err != nil {

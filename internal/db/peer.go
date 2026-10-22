@@ -152,7 +152,7 @@ func (sc *ServerConn) dialPeer(ctx context.Context, opts config.Connection, key 
 
 // connectPeer is Peer's dial; a variable so tests can count and hold dials
 // without a server.
-var connectPeer = ConnectContext
+var connectPeer = Connect
 
 // peerFailureTTL is how long a failed connect answers for its instance. Short:
 // it only collapses bursts (three folders of one group asking for the same

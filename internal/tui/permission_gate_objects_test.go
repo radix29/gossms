@@ -145,7 +145,7 @@ func deniedObjectConn(t *testing.T, dbName string, objDenied []string, sysadmin 
 		res[i] = r
 	}
 	sc, _ := newFakeConn(t, res...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), dbName)
 	return sc
 }

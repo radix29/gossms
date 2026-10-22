@@ -68,7 +68,7 @@ func (d *NewFullTextIndexDialog) show(sc *db.ServerConn, node *explorerNode) {
 	d.dbName, d.schema, d.table = node.data.DBName, node.data.Schema, node.data.Name
 	d.scriptDatabase = d.dbName
 	d.newObjectDialog.show(sc)
-	d.SetHeader("Database: "+d.dbName, "Table: "+fqn(d.schema, d.table))
+	d.SetHeader("Database: "+d.dbName, "Table: "+gosmo.QualifiedName(d.schema, d.table))
 }
 
 // fullTextKeyIndexes are the indexes CREATE FULLTEXT INDEX accepts as its KEY
@@ -169,7 +169,7 @@ func (d *NewFullTextIndexDialog) buildPages(pf *nftIndexPrefetch) {
 
 	general := []propsheet.Row{
 		propsheet.Section("Index"),
-		propsheet.Static("Table", fqn(schema, table)),
+		propsheet.Static("Table", gosmo.QualifiedName(schema, table)),
 		keyIndex,
 		catalog,
 		fileGroup,
@@ -203,13 +203,13 @@ func (d *NewFullTextIndexDialog) buildPages(pf *nftIndexPrefetch) {
 		"holds documents and needs a type column naming each row's file type.")...)
 
 	var req gosmo.CreateFullTextIndexRequest
-	d.objectName = func() string { return fqn(schema, table) }
+	d.objectName = func() string { return gosmo.QualifiedName(schema, table) }
 	d.preflight = func() error {
 		switch {
 		case pf.existing != nil:
-			return fmt.Errorf("%s already has a full-text index", fqn(schema, table))
+			return fmt.Errorf("%s already has a full-text index", gosmo.QualifiedName(schema, table))
 		case len(pf.keyIndexes) == 0:
-			return fmt.Errorf("%s has no unique, single-column, non-nullable index to key on", fqn(schema, table))
+			return fmt.Errorf("%s has no unique, single-column, non-nullable index to key on", gosmo.QualifiedName(schema, table))
 		case len(pf.catalogs) == 0:
 			return fmt.Errorf("no full-text catalog is visible to this login — create one, or ask for REFERENCES on one")
 		}

@@ -18,7 +18,7 @@ import (
 func probedConn(t *testing.T, dbName string, granted, denied, dbGranted, dbDenied []string) *db.ServerConn {
 	t.Helper()
 	sc, _ := newFakeConn(t, capabilityResponses(true, granted, denied, dbGranted, dbDenied)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	if dbName != "" {
 		sc.DatabaseCapabilities(context.Background(), dbName)
 	}
@@ -73,7 +73,7 @@ func TestAnyOneRightIsEnough(t *testing.T) {
 // the databases the login cannot open at all.
 func TestAnInaccessibleDatabaseDeniesEveryDatabaseRight(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "backup_test")
 
 	if gate.Allows(sc, "backup_test", gate.BackupDatabase) {
@@ -90,7 +90,7 @@ func TestAnInaccessibleDatabaseDeniesEveryDatabaseRight(t *testing.T) {
 // slow server. The gate must read the cache and nothing else.
 func TestADatabaseGateNeverProbes(t *testing.T) {
 	sc, inst := newFakeConn(t, capabilityResponses(true, nil, nil, nil, []string{"BACKUP DATABASE"})...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	before := inst.QueryCount()
 	if !gate.Allows(sc, "appdb", gate.BackupDatabase) {
@@ -369,7 +369,7 @@ func TestPageReadOnlyReasonNamesTheRight(t *testing.T) {
 // worst combination on offer.
 func TestADatabasePageIsReadOnlyOnAnInaccessibleDatabase(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponses(false, nil, []string{"ALTER ANY DATABASE"}, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	page := withRequires(propPage{title: "Options"}, "backup_test", gate.DatabaseWriteRights()...)
 	if got := pageReadOnlyReason(context.Background(), sc, page); got == "" {
@@ -380,7 +380,7 @@ func TestADatabasePageIsReadOnlyOnAnInaccessibleDatabase(t *testing.T) {
 	// login cannot connect to — ALTER DATABASE ... SET OFFLINE needs no
 	// CONNECT — so holding it must keep the page writable.
 	held, _ := newFakeConn(t, capabilityResponses(false, []string{"ALTER ANY DATABASE"}, nil, nil, nil)...)
-	held.ProbeCapabilities()
+	held.ProbeCapabilities(held.Server.Context())
 	if got := pageReadOnlyReason(context.Background(), held, page); got != "" {
 		t.Errorf("reason = %q though the login holds ALTER ANY DATABASE", got)
 	}
@@ -493,7 +493,7 @@ func TestAnAlternateSatisfiesADatabaseRight(t *testing.T) {
 	// nothing at all, so an unknown alternate must not reopen what Permits
 	// closed on the named right.
 	sc, _ := newFakeConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	if gate.Allows(sc, "appdb", split) {
 		t.Error("an alternate permission reopened an action on a database the login cannot open")
@@ -506,7 +506,7 @@ func schemaProbedConn(t *testing.T, dbName string, schemaGranted, schemaDenied [
 	t.Helper()
 	sc, _ := newFakeConn(t, capabilityResponsesWithSchemas(true, nil, nil, nil,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}, schemaGranted, schemaDenied)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), dbName)
 	return sc
 }
@@ -611,7 +611,7 @@ func TestTheMenuItemsThemselvesFollowTheSchemaGrant(t *testing.T) {
 // right needs it as much as the database-wide ones do.
 func TestAnInaccessibleDatabaseWithholdsTheSchemaScopedRightToo(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponsesWithSchemas(false, nil, nil, nil, nil, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "shut")
 
 	if gate.AllowsOn(sc, "shut", "Sales", "Orders", gate.AlterOnSchema) {
@@ -627,7 +627,7 @@ func TestAnInaccessibleDatabaseWithholdsTheSchemaScopedRightToo(t *testing.T) {
 func agentConn(t *testing.T, granted, denied, roleIn, roleNotIn []string) *db.ServerConn {
 	t.Helper()
 	sc, _ := newFakeConn(t, capabilityResponsesWithRoles(true, granted, denied, roleIn, roleNotIn)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "msdb")
 	return sc
 }
@@ -645,7 +645,7 @@ func TestAnUnprobedMsdbKeepsEverySQLAgentAction(t *testing.T) {
 	// Probed at server scope and denied everything there, so nothing but the
 	// membership rights can be what keeps the action.
 	sc, _ := newFakeConn(t, capabilityResponses(true, nil, []string{"CONTROL SERVER"}, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	if !gate.Allows(sc, "", gate.AgentWriteRights()...) {
 		t.Error("a connection whose msdb probe has not run lost every SQL Agent action")
@@ -794,7 +794,7 @@ func objectProbedConn(t *testing.T, dbName string, objGranted, objDenied []strin
 	sc, _ := newFakeConn(t, capabilityResponsesWithObjects(true,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
 		[]string{"Sales", "dbo"}, objGranted, objDenied)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), dbName)
 	return sc
 }
@@ -928,7 +928,7 @@ func TestAnObjectScopedPageAnswersForTheObject(t *testing.T) {
 
 	denied := []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}
 	granted, _ := newFakeConn(t, capabilityResponsesWithObjects(true, denied, []string{"dbo"}, []string{"dbo.Patient"}, nil)...)
-	granted.ProbeCapabilities()
+	granted.ProbeCapabilities(granted.Server.Context())
 	if got := pageReadOnlyReason(ctx, granted, page); got != "" {
 		t.Errorf("reason = %q though the login holds ALTER on dbo.Patient", got)
 	}
@@ -941,7 +941,7 @@ func TestAnObjectScopedPageAnswersForTheObject(t *testing.T) {
 	}
 
 	elsewhere, _ := newFakeConn(t, capabilityResponsesWithObjects(true, denied, []string{"dbo"}, nil, []string{"dbo.Patient"})...)
-	elsewhere.ProbeCapabilities()
+	elsewhere.ProbeCapabilities(elsewhere.Server.Context())
 	if got := pageReadOnlyReason(ctx, elsewhere, page); got == "" {
 		t.Error("a page on an object the login is denied ALTER on is still writable")
 	}
@@ -956,13 +956,13 @@ func TestAnAgentPageAnswersForMsdbMembership(t *testing.T) {
 	page := withRequires(propPage{title: "General"}, "", gate.AgentWriteRights()...)
 
 	member, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, []string{"SQLAgentUserRole"}, []string{"db_owner"})...)
-	member.ProbeCapabilities()
+	member.ProbeCapabilities(member.Server.Context())
 	if got := pageReadOnlyReason(ctx, member, page); got != "" {
 		t.Errorf("reason = %q for a member of SQLAgentUserRole", got)
 	}
 
 	outsider, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, nil, []string{"SQLAgentUserRole", "db_owner"})...)
-	outsider.ProbeCapabilities()
+	outsider.ProbeCapabilities(outsider.Server.Context())
 	if got := pageReadOnlyReason(ctx, outsider, page); got == "" {
 		t.Error("an Agent page is writable for a login in neither msdb role and denied CONTROL SERVER")
 	}
@@ -987,7 +987,7 @@ func serverRoleConn(t *testing.T, granted, denied, roleIn, roleNotIn []string) *
 		resp[i] = r
 	}
 	sc, _ := newFakeConn(t, resp...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	return sc
 }
 
@@ -1128,7 +1128,7 @@ func deniedEverythingConn(t *testing.T) *db.ServerConn {
 		resp[i] = r
 	}
 	sc, _ := newFakeConn(t, resp...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "msdb")
 	return sc
 }
@@ -1271,7 +1271,7 @@ func TestSchemalessDatabaseOpsAreGated(t *testing.T) {
 		}
 		sc, _ := newFakeConn(t, withSecurableAnswers(
 			capabilityResponses(true, nil, serverZero, []string{"ALTER ANY SCHEMA"}, zero), securables)...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		if gate.AllowsOn(sc, "appdb", "", "obj", rights...) {
 			t.Errorf("%v offers Delete to a principal holding only ALTER ANY SCHEMA", nodeType)
@@ -1329,7 +1329,7 @@ func TestAPlanGuidesDeleteFollowsItsScope(t *testing.T) {
 			}
 		}
 		sc, _ := newFakeConn(t, responses...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		return sc
 	}
@@ -1431,7 +1431,7 @@ func columnDeniedConn(t *testing.T, dbName string, objGranted, colDenied []strin
 	sc, _ := newFakeConn(t, withDeniedColumns(capabilityResponsesWithObjects(true,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
 		[]string{"Sales", "dbo"}, objGranted, nil), colDenied...)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), dbName)
 	return sc
 }
@@ -1480,7 +1480,7 @@ func TestADenyOnAColumnWithholdsTheObjectOps(t *testing.T) {
 func TestADenyOnASchemaWithholdsTheObjectOps(t *testing.T) {
 	sc, _ := newFakeConn(t, withDeniedSchemas(capabilityResponsesWithObjects(true,
 		nil, nil, nil, nil), "Sales")...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	if gate.AllowsOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...) {
@@ -1511,7 +1511,7 @@ func TestADenyOnASchemaWithholdsTheObjectOps(t *testing.T) {
 // schema question for the same reason it covers the object one.
 func TestASysadminIsExemptFromASchemaDenial(t *testing.T) {
 	sc, _ := newFakeConn(t, withDeniedSchemas(sysadminCapabilityResponses(), "Sales")...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	if _, _, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...); denied {
@@ -1536,7 +1536,7 @@ func TestADatabaseDenialWithholdsAnObjectGrant(t *testing.T) {
 	sc, _ := newFakeConn(t, withDatabaseDenials(capabilityResponsesWithObjects(true,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
 		[]string{"Sales", "dbo"}, []string{"Sales.Orders"}, nil), "ALTER")...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	// Without the database arm this is the object arm answering yes on
@@ -1564,7 +1564,7 @@ func TestNotHoldingADatabaseRightIsNotADenial(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponsesWithObjects(true,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
 		[]string{"Sales", "dbo"}, []string{"Sales.Orders"}, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	if _, _, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...); denied {
@@ -1581,7 +1581,7 @@ func TestNotHoldingADatabaseRightIsNotADenial(t *testing.T) {
 // database question for the same reason it covers the object and schema ones.
 func TestASysadminIsExemptFromADatabaseDenial(t *testing.T) {
 	sc, _ := newFakeConn(t, withDatabaseDenials(sysadminCapabilityResponses(), "ALTER")...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	if _, _, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...); denied {
@@ -1602,7 +1602,7 @@ func TestTheMenuNoteNamesTheDatabaseDenial(t *testing.T) {
 	sc, _ := newFakeConn(t, withDatabaseDenials(capabilityResponsesWithObjects(true,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
 		[]string{"Sales", "dbo"}, []string{"Sales.Orders"}, nil), "ALTER")...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	app := &App{}
@@ -1678,7 +1678,7 @@ func principalDeniedConn(t *testing.T, denied ...string) *db.ServerConn {
 		capabilityResponses(true, nil, nil,
 			[]string{"ALTER ANY USER", "ALTER ANY ROLE"}, []string{"ALTER", "CONTROL"}),
 		"ALTER", denied...)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return sc
 }
@@ -1845,7 +1845,7 @@ func serverDeniedConn(t *testing.T, kind gosmo.ServerSecurableKind, denied ...st
 		capabilityResponses(true,
 			[]string{"ALTER ANY LOGIN", "ALTER ANY SERVER ROLE", "ALTER ANY ENDPOINT"}, nil, nil, nil),
 		kind, "ALTER", denied...)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	return sc
 }
 
@@ -1963,7 +1963,7 @@ func TestASysadminIsNotWithheldByAServerDenial(t *testing.T) {
 		}
 	}
 	sc, _ := newFakeConn(t, responses...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	if !gate.AllowsOn(sc, "", "", "gate_login", gate.AlterAnyLogin) {
 		t.Error("a sysadmin was withheld by a server-class DENY the server ignores for them")
@@ -2057,7 +2057,7 @@ func TestAnAvailabilityGroupDenialWithholdsEveryGroupWrite(t *testing.T) {
 	sc, _ := newFakeConn(t, withAGAnswers(
 		capabilityResponses(true, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil, nil),
 		[]string{"AAG2"}, []string{"AAG1"})...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	if !gate.Allows(sc, "", gate.AlterAnyAG) {
 		t.Fatal("the server-wide grant did not read back; this fixture no longer isolates the DENY")
@@ -2085,7 +2085,7 @@ func TestAGroupIsNotDeniedWhenTheWideRightIsMissing(t *testing.T) {
 	sc, _ := newFakeConn(t, withAGAnswers(
 		capabilityResponses(true, nil, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil),
 		nil, []string{"AAG1"})...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	if _, _, denied := gate.DeniedOn(sc, "", "", "AAG1", gate.AlterAnyAG); denied {
 		t.Error("a login holding no availability-group right was told the group is denied")
@@ -2103,7 +2103,7 @@ func TestTheMenuNoteNamesTheDeniedAvailabilityGroup(t *testing.T) {
 	sc, _ := newFakeConn(t, withAGAnswers(
 		capabilityResponses(true, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil, nil),
 		nil, []string{"AAG1"})...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	item := gate.ItemOn(controls.MenuItem{Label: "Delete Availability Group..."}, sc, "", "", "AAG1", gate.AlterAnyAG)
 	if want := "ALTER denied on availability group AAG1"; item.Note != want {

@@ -367,7 +367,7 @@ func TestFullTextReferencesRefusal(t *testing.T) {
 			gosmo.DatabaseSecurableKey(gosmo.DatabaseSecurableFullTextStoplist, "", "plain"): false,
 		})
 	sc, _ := newFakeConn(t, responses...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	if err := fullTextReferencesRefusal(sc, "appdb", gate.ReferencesOnFullTextStoplist, "stoplist", "plain"); err == nil ||
 		!strings.Contains(err.Error(), "needs REFERENCES") {
@@ -683,7 +683,7 @@ func TestFullTextNewItemsAreGatedOnCreateFullTextCatalog(t *testing.T) {
 			denied = []string{"CREATE FULLTEXT CATALOG"}
 		}
 		sc, _ := newFakeConn(t, capabilityResponses(true, nil, nil, granted, denied)...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		node := &explorerNode{data: nodeData{DBName: "appdb", conn: sc}}
 		var newQuery, refresh controls.MenuItem

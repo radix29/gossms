@@ -506,7 +506,7 @@ func loadSynonymsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 // (explorer_loaders.go).
 
 func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	tableFQN := fqn(node.data.Schema, node.data.Name)
+	tableFQN := gosmo.QualifiedName(node.data.Schema, node.data.Name)
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
@@ -529,7 +529,7 @@ func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 }
 
 func viewMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	viewFQN := fqn(node.data.Schema, node.data.Name)
+	viewFQN := gosmo.QualifiedName(node.data.Schema, node.data.Name)
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
@@ -570,7 +570,7 @@ func indexesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, r
 		{Divider: true},
 		{Label: "Rebuild All Indexes", Action: func() {
 			a.openQueryWithText(sc, node.data.DBName,
-				"ALTER INDEX ALL ON "+fqn(node.data.Schema, node.data.Name)+" REBUILD")
+				"ALTER INDEX ALL ON "+gosmo.QualifiedName(node.data.Schema, node.data.Name)+" REBUILD")
 		}},
 		{Divider: true},
 		refresh,
@@ -603,7 +603,7 @@ func statisticMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 }
 
 func storedProcedureMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	procFQN := fqn(node.data.Schema, node.data.Name)
+	procFQN := gosmo.QualifiedName(node.data.Schema, node.data.Name)
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},

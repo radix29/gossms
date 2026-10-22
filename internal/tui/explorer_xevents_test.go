@@ -201,7 +201,7 @@ func TestEventSessionVerbsGateOnEitherPermissionSet(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
 			sc, _ := newFakeConn(t, capabilityResponses(true, c.granted, c.denied, nil, nil)...)
-			sc.ProbeCapabilities()
+			sc.ProbeCapabilities(sc.Server.Context())
 			stopped := &explorerNode{data: nodeData{Type: NodeEventSession, Name: "zz_trace", conn: sc}}
 			running := &explorerNode{data: nodeData{Type: NodeEventSession, Name: "zz_trace", IsEnabled: true, conn: sc}}
 			if got := eventSessionMenuItem(t, a, stopped, "Start Session").Enabled(); got != c.start {

@@ -70,7 +70,7 @@ func classOneConn(t *testing.T, dbGranted []string, alterOnSchema bool, objRows 
 		resp[i] = r
 	}
 	sc, _ := newFakeConn(t, resp...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return sc
 }

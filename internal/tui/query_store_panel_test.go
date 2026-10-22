@@ -2040,7 +2040,7 @@ func TestScriptIsOfferedToALoginThatCannotForce(t *testing.T) {
 		res[i] = r
 	}
 	sc, _ := newFakeConn(t, res...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	a := newTestApp()

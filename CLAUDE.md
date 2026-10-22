@@ -90,6 +90,8 @@ gossms's back end). Dead code inside gossms is ordinary cleanup.
 - Match surrounding comment density. The long "why" comments in `app.go`,
   `datagrid.go`, `secret.go` and `propsheet/common.go` each name a shipped bug
   a plausible simplification would bring back — not a cleanup target.
+- `internal/db` follows gosmo's one-form rule: context first, no
+  `Foo`/`FooContext` pairs.
 - Go 1.27 (tracks the latest release): `new(T{...})`, `slices`, `errors.AsType`.
 - `core.DisplayWidth(s)`, never `len(s)`, for column-position math.
 - **Property-sheet labels must fit `propsheet.LabelWidth` (30).** Rows

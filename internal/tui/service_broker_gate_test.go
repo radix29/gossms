@@ -135,7 +135,7 @@ func TestAQueuesAlterAndDropTakeDifferentRights(t *testing.T) {
 	// this test pass for the wrong reason.
 	sc, _ := newFakeConn(t, capabilityResponsesWithObjects(true,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}, []string{"dbo"}, []string{"dbo.ClaimQueue"}, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	if !gate.AllowsOn(sc, "appdb", "dbo", "ClaimQueue", gate.QueueAlterRights()...) {
@@ -155,7 +155,7 @@ func TestAQueuesAlterAndDropTakeDifferentRights(t *testing.T) {
 func TestAQueuesDropFollowsItsSchema(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponsesWithSchemas(true, nil, nil, nil,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}, []string{"dbo"}, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
 	if !gate.AllowsOn(sc, "appdb", "dbo", "ClaimQueue", gate.QueueDropRights()...) {

@@ -264,7 +264,7 @@ func (a *App) showDependencies(node *explorerNode) {
 // refreshed.
 func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
 	dbName, schema := node.data.DBName, node.data.Schema
-	display := fqn(schema, node.data.Name)
+	display := gosmo.QualifiedName(schema, node.data.Name)
 	a.toggleEnabledState(sc, node, "security policy", display,
 		"Disable Security Policy",
 		fmt.Sprintf("Disable %s? Its filter and block predicates stop applying, and every row of the tables it protects becomes visible.", display),

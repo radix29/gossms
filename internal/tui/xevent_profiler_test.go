@@ -304,7 +304,7 @@ func TestWatchingASessionWithNoTargetOffersToAddOne(t *testing.T) {
 
 	a = newTestApp()
 	sc, inst = newFakeConn(t, capabilityResponses(true, nil, []string{"ALTER ANY EVENT SESSION", "ALTER ANY EVENT SESSION ADD TARGET"}, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	v = NewXEventViewer(a, sc, "zz_bare", "", true)
 	a.panels.AddPanel(v)
 	task, _ = a.startTask(context.Background(), "watch")
@@ -348,7 +348,7 @@ func TestLaunchSessionNeedsCreateAndStart(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
 			sc, inst := newFakeConn(t, capabilityResponses(true, c.granted, c.denied, nil, nil)...)
-			sc.ProbeCapabilities()
+			sc.ProbeCapabilities(sc.Server.Context())
 			node := &explorerNode{data: nodeData{Type: NodeXEventProfilerSession, Name: "Standard", conn: sc}}
 			items := xeventProfilerMenuItems(a, sc, node, controls.MenuItem{}, controls.MenuItem{})
 			if got := items[0].Enabled(); got != c.want {

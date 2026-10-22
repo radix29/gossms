@@ -32,7 +32,7 @@ func securityPolicyPropPages(sc *db.ServerConn, dbName, schema, name string) []p
 			}
 			rows := make([][]string, len(p.Predicates))
 			for i, pred := range p.Predicates {
-				rows[i] = []string{pred.PredicateType, fqn(pred.TargetSchema, pred.TargetTable),
+				rows[i] = []string{pred.PredicateType, gosmo.QualifiedName(pred.TargetSchema, pred.TargetTable),
 					pred.Operation, pred.PredicateDefinition}
 			}
 			grid := controls.NewDataGrid()

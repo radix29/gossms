@@ -52,7 +52,7 @@ func (a *App) runFullTextIndexOp(sc *db.ServerConn, node *explorerNode, op fullT
 		return
 	}
 	dbName, schema, table := node.data.DBName, node.data.Schema, node.data.Name
-	display := fqn(schema, table)
+	display := gosmo.QualifiedName(schema, table)
 	a.safego("reading a full-text index", func() {
 		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
 		defer cancel()
@@ -146,7 +146,7 @@ const fullTextFollowReadRetries = 3
 // AUTO and MANUAL change tracking, so a Cancel that sent it would claim to stop
 // what it did not.
 func (a *App) watchFullTextPopulation(sc *db.ServerConn, dbName, schema, table string, before time.Time, label string, maybe bool) {
-	label = label + " — " + fqn(schema, table)
+	label = label + " — " + gosmo.QualifiedName(schema, table)
 	follow := func(task *Task, ctx context.Context, tbl *gosmo.Table) {
 		a.safegoRepair("following a full-text population", func() { a.markTaskDone(task, errTaskPanicked) }, func() {
 			a.followFullTextPopulation(ctx, task, tbl.FullName(), tbl.FullTextIndex, before)

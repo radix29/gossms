@@ -101,7 +101,7 @@ func TestAnOrdinaryFailureIsNotReportedAsAccessDenied(t *testing.T) {
 // call stack. One honest line replaces them.
 func TestAnInaccessibleDatabaseExpandsToOneLine(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	node := &explorerNode{label: "backup_test", data: nodeData{Type: NodeDatabase, DBName: "backup_test", conn: sc}}
 	children, err := loadDatabaseChildren(loaderCtx{ctx: context.Background(), sc: sc}, node)
@@ -123,7 +123,7 @@ func TestAnInaccessibleDatabaseExpandsToOneLine(t *testing.T) {
 // not cost every login its folders. HAS_DBACCESS answering 1 keeps them.
 func TestAnAccessibleDatabaseStillExpands(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponses(true, nil, nil, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	node := &explorerNode{label: "appdb", data: nodeData{Type: NodeDatabase, DBName: "appdb", conn: sc}}
 	children, err := loadDatabaseChildren(loaderCtx{ctx: context.Background(), sc: sc}, node)
@@ -290,7 +290,7 @@ func TestNumberOfUsersIsUnreadableWithoutViewDefinition(t *testing.T) {
 	responses := append(databaseGeneralResponses("appuser"),
 		capabilityResponses(true, nil, nil, nil, []string{"VIEW DEFINITION"})...)
 	sc, inst := newFakeConn(t, responses...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	form, _ := loadPage(t, pageDatabaseGeneral(sc, genDatabase), inst)
 
 	if got, _ := findStatic(form, "Number of users"); got != unreadableValue {
@@ -302,7 +302,7 @@ func TestNumberOfUsersIsUnreadableWithoutViewDefinition(t *testing.T) {
 	granted := append(databaseGeneralResponses("appuser"),
 		capabilityResponses(true, nil, nil, []string{"VIEW DEFINITION"}, nil)...)
 	okSC, okInst := newFakeConn(t, granted...)
-	okSC.ProbeCapabilities()
+	okSC.ProbeCapabilities(okSC.Server.Context())
 	okForm, _ := loadPage(t, pageDatabaseGeneral(okSC, genDatabase), okInst)
 	if got, _ := findStatic(okForm, "Number of users"); got != "1" {
 		t.Errorf("Number of users = %q with VIEW DEFINITION, want the scripted count", got)
@@ -326,7 +326,7 @@ func TestAFilteredPermissionsGridSaysSo(t *testing.T) {
 	denied := append(serverPermissionsResponses(),
 		capabilityResponses(true, nil, []string{"VIEW ANY DEFINITION"}, nil, nil)...)
 	sc, inst := newFakeConn(t, denied...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	form, _ := loadPage(t, pageServerPermissions(sc), inst)
 	if !hasNoteMentioning(form, "VIEW ANY DEFINITION") {
 		t.Error("a login that cannot see every permission is not told so")
@@ -335,7 +335,7 @@ func TestAFilteredPermissionsGridSaysSo(t *testing.T) {
 	granted := append(serverPermissionsResponses(),
 		capabilityResponses(true, []string{"VIEW ANY DEFINITION"}, nil, nil, nil)...)
 	okSC, okInst := newFakeConn(t, granted...)
-	okSC.ProbeCapabilities()
+	okSC.ProbeCapabilities(okSC.Server.Context())
 	okForm, _ := loadPage(t, pageServerPermissions(okSC), okInst)
 	if hasNoteMentioning(okForm, "VIEW ANY DEFINITION") {
 		t.Error("a login that can see everything is warned anyway")

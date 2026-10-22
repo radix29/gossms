@@ -138,7 +138,7 @@ func TestDatabaseScopedSessionVerbsGateOnTheDatabaseRight(t *testing.T) {
 			granted = []string{"ALTER ANY EVENT SESSION"}
 		}
 		sc, _ := newFakeConnOnAzureSQLDB(t, capabilityResponses(true, granted, denied, dbGranted, dbDenied)...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 
 		stopped := &explorerNode{data: nodeData{Type: NodeEventSession, Name: "zz_trace", DBName: "appdb", conn: sc}}
@@ -171,7 +171,7 @@ func gate0(pages []propPage) string {
 func TestXEventProfilerIsNotOfferedOnAzureSQLDatabase(t *testing.T) {
 	a := newTestApp()
 	sc, inst := newFakeConnOnAzureSQLDB(t, capabilityResponses(true, []string{"ALTER ANY EVENT SESSION"}, nil, nil, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	if xeProfilerAllowed(sc) {
 		t.Error("XEvent Profiler allowed on Azure SQL Database, which has no server-scoped sessions")
 	}

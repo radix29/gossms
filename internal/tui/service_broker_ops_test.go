@@ -245,7 +245,7 @@ func probedConnWithObject(t *testing.T, dbName, object, permission string) *db.S
 		}
 	}
 	sc, _ := newFakeConn(t, resp...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), dbName)
 	return sc
 }

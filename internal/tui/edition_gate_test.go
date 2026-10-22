@@ -20,7 +20,7 @@ func probedAzureConn(t *testing.T, dbName string) *db.ServerConn {
 	sc, _ := newFakeConnOnAzureMI(t, capabilityResponses(true,
 		[]string{"ALTER ANY DATABASE", "CREATE ANY DATABASE", "CONTROL SERVER"}, nil,
 		[]string{"BACKUP DATABASE", "ALTER", "CONTROL"}, nil)...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	if dbName != "" {
 		sc.DatabaseCapabilities(context.Background(), dbName)
 	}

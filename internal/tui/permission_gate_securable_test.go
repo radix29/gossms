@@ -55,7 +55,7 @@ func securableConn(t *testing.T, f securableFamily, dbGranted []string, alterOnS
 		capabilityResponsesWithSchemas(true, nil, nil, dbGranted, dbDenied, schemaGranted, schemaDenied),
 		map[string]bool{gosmo.DatabaseSecurableKey(f.kind, f.schema, f.name): control})
 	sc, _ := newFakeConn(t, responses...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return sc
 }
@@ -178,7 +178,7 @@ func TestATypeIsNotAnsweredByATableOfTheSameName(t *testing.T) {
 				[]string{f.schema}, objGranted, objDenied),
 			map[string]bool{gosmo.DatabaseSecurableKey(f.kind, f.schema, f.name): control})
 		sc, _ := newFakeConn(t, responses...)
-		sc.ProbeCapabilities()
+		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		return sc
 	}

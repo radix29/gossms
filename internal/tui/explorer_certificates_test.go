@@ -170,7 +170,7 @@ func certGateConn(t *testing.T, granted []string, control bool) *explorerNode {
 	responses := withSecurableAnswers(capabilityResponses(true, nil, nil, granted, denied),
 		map[string]bool{gosmo.DatabaseSecurableKey(gosmo.DatabaseSecurableCertificate, "", "c1"): control})
 	sc, _ := newFakeConn(t, responses...)
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return &explorerNode{data: nodeData{Type: NodeCertificate, DBName: "appdb", Name: "c1", conn: sc}}
 }

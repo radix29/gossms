@@ -417,15 +417,3 @@ func disabledLabel(name string, enabled bool) string {
 	}
 	return name + " (Disabled)"
 }
-
-// fqn brackets a schema-qualified SQL Server identifier for use in
-// generated T-SQL ("SELECT TOP 1000 * FROM "+fqn(schema, name)). schema=""
-// (e.g. a server-level object) omits the schema part entirely rather than
-// emitting an empty "[]." prefix. Embedded "]" characters are doubled,
-// same escaping rule SQL Server itself uses for bracketed identifiers.
-func fqn(schema, name string) string {
-	if schema == "" {
-		return gosmo.QuoteName(name)
-	}
-	return gosmo.QuoteName(schema) + "." + gosmo.QuoteName(name)
-}

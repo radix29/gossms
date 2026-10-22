@@ -100,9 +100,9 @@ func TestLogViewerOffersDeleteInsteadOfRecycleOnTheMailLog(t *testing.T) {
 func TestLogViewerMailLogDeleteIsGatedOnMsdbRights(t *testing.T) {
 	a := newTestApp()
 	owner, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, []string{"db_owner"}, nil)...)
-	owner.ProbeCapabilities()
+	owner.ProbeCapabilities(owner.Server.Context())
 	outsider, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, nil, []string{"db_owner"})...)
-	outsider.ProbeCapabilities()
+	outsider.ProbeCapabilities(outsider.Server.Context())
 	// The msdb answers are cached the way selecting the Database Mail node
 	// primes them; unprobed, a membership right fails open.
 	for _, sc := range []*db.ServerConn{owner, outsider} {

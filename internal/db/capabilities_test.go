@@ -168,7 +168,7 @@ func capTestConnection(t *testing.T, s *capTestScript) *ServerConn {
 		t.Fatalf("gosmo.NewServer: %v", err)
 	}
 	sc := &ServerConn{Server: srv}
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 	return sc
 }
 
@@ -286,17 +286,17 @@ func TestFailedReprobeKeepsPreviousServerCapabilities(t *testing.T) {
 	script.mu.Lock()
 	script.srvFail = true
 	script.mu.Unlock()
-	sc.ProbeCapabilities()
+	sc.ProbeCapabilities(sc.Server.Context())
 
 	if got := sc.Capabilities().Permission("VIEW SERVER STATE"); got != gosmo.CapabilityDenied {
 		t.Errorf("VIEW SERVER STATE after a failed re-probe = %v, want the earlier denied", got)
 	}
 }
 
-// ConnectContext probes under the dial's ctx (K11): cancelling it during the
+// Connect probes under the dial's ctx (K11): cancelling it during the
 // probe must return at once, not wait out capabilityProbeTimeout, and keep the
 // earlier answer.
-func TestProbeCapabilitiesContextStopsAtTheCallersCancel(t *testing.T) {
+func TestProbeCapabilitiesStopsAtTheCallersCancel(t *testing.T) {
 	script := &capTestScript{access: 1}
 	sc := capTestConnection(t, script)
 
@@ -306,7 +306,7 @@ func TestProbeCapabilitiesContextStopsAtTheCallersCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(50*time.Millisecond, cancel)
 	start := time.Now()
-	sc.ProbeCapabilitiesContext(ctx)
+	sc.ProbeCapabilities(ctx)
 	if d := time.Since(start); d > capabilityProbeTimeout/2 {
 		t.Errorf("probe returned after %v; the caller's cancel was ignored", d)
 	}
