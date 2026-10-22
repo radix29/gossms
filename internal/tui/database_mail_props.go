@@ -245,7 +245,7 @@ func pageMailGeneral(sc *db.ServerConn) propPage {
 				return nil, nil, err
 			}
 			status := "Disabled"
-			switch st, err := sc.Server.MailStatus(ctx); {
+			switch st, err := sc.Server.Mail().Status(ctx); {
 			case err == nil:
 				status = st.String()
 			case isRefusal(err):
@@ -302,7 +302,7 @@ func pageMailParameters(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "System Parameters",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			cfg, err := sc.Server.MailConfiguration(ctx)
+			cfg, err := sc.Server.Mail().Configuration(ctx)
 			if isRefusal(err) {
 				return mailNotVisibleForm("System parameters"), nil, nil
 			}
@@ -370,7 +370,7 @@ func pageMailParameters(sc *db.ServerConn) propPage {
 					o.LoggingLevel = new(gosmo.MailLoggingLevel(i + 1))
 				}
 				plan.add(mailPhaseParameters, func(ctx context.Context) error {
-					return sc.Server.SetMailConfiguration(ctx, o)
+					return sc.Server.Mail().SetConfiguration(ctx, o)
 				})
 				return nil
 			}

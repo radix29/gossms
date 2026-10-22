@@ -96,7 +96,7 @@ type xeFeedState struct {
 // connectXEventViewer opens the panel's connection and starts its read — the
 // Activity Monitor pattern (connectForActivityMonitor).
 func (a *App) connectXEventViewer(v *XEventViewer) {
-	opts := v.host.Opts
+	opts := v.host.CloneOpts()
 	parent := v.host.Server.Context()
 	v.feed.connecting = true
 	v.updateStatus()
@@ -429,7 +429,7 @@ func (r *xeReader) readEventFile(ctx context.Context) (xeBatch, bool, error) {
 			}
 		}
 	}
-	evs, next, err := r.sc.Server.ReadEventFile(ctx, pattern, r.cursor, xeReadChunk)
+	evs, next, err := r.sc.Server.XEvents().ReadFile(ctx, pattern, r.cursor, xeReadChunk)
 	if r.live && errors.Is(err, gosmo.ErrEventFileGone) {
 		// Rollover deleted the file the cursor was in before the reader got
 		// to its end — a session writing faster than one read a poll. The
@@ -467,7 +467,7 @@ func (r *xeReader) plan(ctx context.Context) {
 	if xeReadsOnlyByPattern(r.sc, r.pattern) {
 		return
 	}
-	files, err := r.sc.Server.EventFiles(ctx, r.pattern)
+	files, err := r.sc.Server.XEvents().Files(ctx, r.pattern)
 	if err != nil || len(files) < 2 {
 		return
 	}
@@ -486,7 +486,7 @@ func (r *xeReader) plan(ctx context.Context) {
 func (r *xeReader) readNewestFirst(ctx context.Context) (xeBatch, bool, error) {
 	b := xeBatch{source: r.source}
 	file := r.backlog[len(r.backlog)-1]
-	evs, next, err := r.sc.Server.ReadEventFile(ctx, file, r.cursor, xeReadChunk)
+	evs, next, err := r.sc.Server.XEvents().ReadFile(ctx, file, r.cursor, xeReadChunk)
 	if err != nil {
 		if r.stacked == 0 && len(r.fileEvents) == 0 {
 			return b, false, err

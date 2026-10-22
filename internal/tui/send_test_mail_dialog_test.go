@@ -24,7 +24,7 @@ const (
 	mailSendCall     = "sp_send_dbmail"
 )
 
-// mailItem answers MailItemByID with item 42 in status.
+// mailItem answers Mail.ItemByID with item 42 in status.
 func mailItem(status string) fakeResponse {
 	at := time.Date(2026, 10, 1, 9, 30, 0, 0, time.UTC)
 	return fakeResponse{match: mailItemByIDRead, cols: 17, rows: [][]driver.Value{

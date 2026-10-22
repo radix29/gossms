@@ -58,7 +58,7 @@ func databaseMailState(ctx context.Context, sc *db.ServerConn) mailNodeState {
 	if sc == nil || sc.Server == nil {
 		return bare
 	}
-	st, err := sc.Server.MailStatus(ctx)
+	st, err := sc.Server.Mail().Status(ctx)
 	if err != nil {
 		return bare
 	}
@@ -184,7 +184,7 @@ func mailWithheld(item controls.MenuItem, note string) controls.MenuItem {
 // starts no process either — DatabaseMail.exe starts on the first message.
 func (a *App) startDatabaseMail(sc *db.ServerConn, node *explorerNode) {
 	a.runDatabaseMailCommand(sc, node, "Start Database Mail", "Starting Database Mail...", "Database Mail started",
-		func(ctx context.Context) error { return sc.Server.StartDatabaseMail(ctx) })
+		func(ctx context.Context) error { return sc.Server.Mail().Start(ctx) })
 }
 
 // stopDatabaseMail stops the mail queue, confirmed: sp_send_dbmail then
@@ -196,7 +196,7 @@ func (a *App) stopDatabaseMail(sc *db.ServerConn, node *explorerNode) {
 		func(ok bool) {
 			if ok {
 				a.runDatabaseMailCommand(sc, node, "Stop Database Mail", "Stopping Database Mail...", "Database Mail stopped",
-					func(ctx context.Context) error { return sc.Server.StopDatabaseMail(ctx) })
+					func(ctx context.Context) error { return sc.Server.Mail().Stop(ctx) })
 			}
 		})
 }

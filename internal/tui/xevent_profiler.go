@@ -178,9 +178,9 @@ func (a *App) launchXEventProfiler(sc *db.ServerConn, k xeProfilerKind) {
 		what:    "launching the XEvent Profiler",
 		sc:      sc,
 	}, func(ctx context.Context, _ progressReport) error {
-		es, err := sc.Server.EventSessionByName(ctx, k.session)
+		es, err := sc.Server.XEvents().SessionByName(ctx, k.session)
 		if errors.Is(err, gosmo.ErrNotFound) {
-			es, err = sc.Server.CreateEventSession(ctx, k.spec(azure))
+			es, err = sc.Server.XEvents().CreateSession(ctx, k.spec(azure))
 			changed = err == nil
 		}
 		if err != nil {
@@ -258,7 +258,7 @@ func (a *App) stopXEventProfilerSession(sc *db.ServerConn, session string) {
 		what:    "stopping an XEvent Profiler session",
 		sc:      sc,
 	}, func(ctx context.Context, _ progressReport) error {
-		return sc.Server.EventSessionRef(session).Stop(ctx)
+		return sc.Server.XEvents().SessionRef(session).Stop(ctx)
 	}, func(err error, cancelled bool) {
 		a.explorer.ReloadFolders(sc, folderOf("", NodeEventSessions))
 		switch {

@@ -186,7 +186,7 @@ func (pt *amProcTab) activate() {
 	pt.setStatus("Connecting...")
 	pt.am.buildTools()
 
-	opts := pt.am.conn.Opts
+	opts := pt.am.conn.CloneOpts()
 	// The dial is scoped to the panel's connection, per ARCHITECTURE.md
 	// § Threading model: closing the Activity Monitor's connection aborts this
 	// clone's attempt rather than leaving it to the 15 s connect timeout. The

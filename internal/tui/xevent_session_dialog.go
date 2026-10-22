@@ -48,7 +48,7 @@ func (c *xeCatalog) isMap(typeName string) bool {
 func loadXECatalog(ctx context.Context, sc *db.ServerConn) (*xeCatalog, error) {
 	c := &xeCatalog{}
 	for _, k := range []struct {
-		kind string
+		kind gosmo.XEObjectKind
 		dst  *[]gosmo.XEObject
 	}{
 		{gosmo.XEObjectEvent, &c.events},
@@ -57,7 +57,7 @@ func loadXECatalog(ctx context.Context, sc *db.ServerConn) (*xeCatalog, error) {
 		{gosmo.XEObjectTarget, &c.targets},
 		{gosmo.XEObjectMap, &c.maps},
 	} {
-		objs, err := sc.Server.XEObjects(ctx, k.kind)
+		objs, err := sc.Server.XEvents().Objects(ctx, k.kind)
 		if err != nil {
 			return nil, err
 		}
@@ -116,7 +116,7 @@ func (h xeHost) columns(run *latest, pkg, name string, done func([]gosmo.XEObjec
 	ctx, token := run.BeginTimeout(parent, propFetchTimeout)
 	sc := h.sc
 	h.app.safego("reading Extended Events columns", func() {
-		cols, err := sc.Server.XEObjectColumns(ctx, pkg, name)
+		cols, err := sc.Server.XEvents().ObjectColumns(ctx, pkg, name)
 		h.app.postAndWake(func() {
 			if run.Done(token) {
 				done(cols, err)
@@ -132,7 +132,7 @@ func xeReadColumns[T any](ctx context.Context, h xeHost, list []T, name func(T) 
 	out := make(map[string][]gosmo.XEObjectColumn, len(list))
 	for _, v := range list {
 		pkg, n := name(v)
-		cols, err := h.sc.Server.XEObjectColumns(ctx, pkg, n)
+		cols, err := h.sc.Server.XEvents().ObjectColumns(ctx, pkg, n)
 		if err != nil {
 			return nil, err
 		}

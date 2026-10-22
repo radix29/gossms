@@ -225,7 +225,7 @@ func tidyErrorText(msg string) string {
 // reads never queue behind a query. The panel starts in the session's
 // DB_NAME(), the login default if none was asked.
 func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database string, onConnected func()) {
-	opts := sc.Opts
+	opts := sc.CloneOpts()
 	if database != "" {
 		opts.Database = database
 	}
@@ -329,7 +329,7 @@ func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Co
 // like connectForQueryPanel) and starts the collector. The panel owns and
 // closes it; frequent DMV reads mustn't queue ahead of Object Explorer's work.
 func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) {
-	opts := sc.Opts
+	opts := sc.CloneOpts()
 	// Scoped to sc for the duration of the dial only, exactly as
 	// connectForQueryPanel is.
 	parent := sc.Server.Context()

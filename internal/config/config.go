@@ -378,6 +378,10 @@ type Config struct {
 	// base (this process changed it); otherwise it keeps the file's value, which
 	// another instance may have changed.
 	base *Config
+
+	// legacySealed is set when Load opened a password sealed under an earlier
+	// binding than aadPrefix (see NeedsReseal), and cleared by the next save.
+	legacySealed bool
 }
 
 // connOp is one recorded change to Connections: an AddOrUpdate of add, or a
@@ -607,14 +611,19 @@ func parseConfig(path string, data []byte) (*Config, error) {
 }
 
 // openPasswords decrypts every connection's password in place. One that won't
-// open keeps its ciphertext in sealed, so Save writes it back unchanged.
+// open keeps its ciphertext in sealed, so Save writes it back unchanged. One
+// that opens under an earlier binding sets legacySealed.
 func (c *Config) openPasswords(key []byte, path string) {
 	failed := 0
 	for i := range c.Connections {
+		stored := c.Connections[i].Password
 		plain, ok := decryptPassword(key, c.Connections[i])
-		if !ok {
-			c.Connections[i].sealed = c.Connections[i].Password
+		switch {
+		case !ok:
+			c.Connections[i].sealed = stored
 			failed++
+		case stored != "" && !strings.HasPrefix(stored, aadPrefix):
+			c.legacySealed = true
 		}
 		c.Connections[i].Password = plain
 	}
@@ -629,6 +638,7 @@ func (c *Config) openPasswords(key []byte, path string) {
 func (c *Config) settingsSnapshot() *Config {
 	snap := *c
 	snap.Connections, snap.ops, snap.base, snap.unreadable = nil, nil, nil, nil
+	snap.legacySealed = false
 	return &snap
 }
 
@@ -746,7 +756,19 @@ func (c *Config) EndSave(j *SaveJob) {
 	c.Connections = conns
 	c.ops = later
 	c.base = j.settings
+	// mergeAndWrite re-sealed every password it could open under aadPrefix.
+	c.legacySealed = false
 }
+
+// NeedsReseal reports whether Load opened a password sealed under an earlier,
+// weaker binding than the current one (secret.go's aadPrefixV3, aadPrefixV2 or
+// no prefix), which only a save rewrites. An unprefixed one carries no AAD at
+// all: write access to config.json can transplant it onto an entry pointing
+// elsewhere, the attack connectionAAD exists to stop. A config that is loaded
+// and never saved would keep it indefinitely, so the app saves once at startup
+// when this is true. A password that failed to open is not counted: Save
+// writes it back as it was.
+func (c *Config) NeedsReseal() bool { return c.legacySealed }
 
 // applyTo replays op on a connection list.
 func (op connOp) applyTo(list []Connection) []Connection {

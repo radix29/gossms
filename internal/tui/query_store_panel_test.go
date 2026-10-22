@@ -25,7 +25,7 @@ func qsReportResponse(rows ...[]driver.Value) fakeResponse {
 	return fakeResponse{match: "FROM   sys.query_store_query ", cols: 12, rows: rows}
 }
 
-// qsPlanRow is one row of the fourteen-column shape QueryStorePlans
+// qsPlanRow is one row of the fourteen-column shape QueryStore.Plans
 // returns — see gosmo's QSPlan scan.
 func qsPlanRow(planID, queryID int64, forced bool, xml string, execs int64, value float64) []driver.Value {
 	return []driver.Value{

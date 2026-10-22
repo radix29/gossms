@@ -253,6 +253,7 @@ func (a *App) Run() error {
 	a.buildUI()
 	a.layoutAll()
 	installEntraSignIn(a)
+	a.resealLegacyPasswords()
 	// Open Connect on startup — nothing works without a server. syncDialogStack
 	// must run before the first draw: draw() renders from dialogStack, which is
 	// otherwise synced only inside the event loop, so the dialog wouldn't

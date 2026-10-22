@@ -363,6 +363,51 @@ func TestHScrollbarDragToEndShowsLastColumn(t *testing.T) {
 	}
 }
 
+// TestHScrollbarAgreesWithTheDrawnVerticalBar pins the two places that ask
+// whether the vertical bar shows: Draw paints it over the rightmost column, and
+// hScrollbar must take that column out of the visible width exactly then. At
+// rows == data rows the bar is absent, one more row brings it; a grid with no
+// data rows never has one.
+func TestHScrollbarAgreesWithTheDrawnVerticalBar(t *testing.T) {
+	cols := []string{"a", "bbbbbbbbbbbbbbbbbbbbb", "c", "dddddddddddd", "eeeeeeeeeeeeeeeeeee", "f"}
+	for _, tc := range []struct {
+		h, rows int
+		bar     bool
+	}{
+		{10, 7, false}, // 7 data rows, all shown
+		{10, 8, true},
+		{3, 5, false}, // no data rows: nothing to scroll a bar over
+	} {
+		g := NewDataGrid()
+		g.SetBounds(0, 0, 40, tc.h)
+		rows := make([][]string, tc.rows)
+		for i := range rows {
+			rows[i] = []string{"1", "2", "3", "4", "5", "6"}
+		}
+		g.SetData(cols, rows)
+		g.SetStatus("")
+		s := mockScreen(t, 40, tc.h)
+		g.Draw(s)
+
+		drawn := false
+		if tc.h > 3 {
+			str, _, _ := s.Get(39, 2)
+			drawn = str == "│" || str == "█"
+		}
+		if drawn != tc.bar {
+			t.Errorf("h=%d rows=%d: vertical bar drawn = %v, want %v", tc.h, tc.rows, drawn, tc.bar)
+		}
+		_, _, _, _, visible, _, ok := g.hScrollbar()
+		want := 40
+		if tc.bar {
+			want--
+		}
+		if !ok || visible != want {
+			t.Errorf("h=%d rows=%d: hScrollbar visible = %d (ok %v), want %d", tc.h, tc.rows, visible, ok, want)
+		}
+	}
+}
+
 // TestClickOnStatusRowDoesNotSelectOffscreenRow pins down that the grid's
 // bottom row belongs to the status bar (and the horizontal scrollbar
 // sharing it), not to the data: rect covers the header, its separator and

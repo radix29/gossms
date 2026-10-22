@@ -304,8 +304,8 @@ type peerFields struct {
 	// peerFails holds each instance's last connect failure so it isn't
 	// re-dialled for peerFailureTTL. Guarded by peerMu.
 	peerFails map[string]peerFailure
-	// creds resolves an instance to its saved connection; nil means every peer
-	// uses this connection's settings. Guarded by peerMu.
+	// creds resolves an instance to its saved connection; nil refuses every
+	// peer (PeerNotRegisteredError). Guarded by peerMu.
 	creds PeerCredentials
 }
 

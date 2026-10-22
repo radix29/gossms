@@ -57,7 +57,7 @@ func pageAgentAlertSystem(sc *db.ServerConn) propPage {
 				return nil, nil, err
 			}
 			var names []string
-			profiles, err := sc.Server.MailProfiles(ctx)
+			profiles, err := sc.Server.Mail().Profiles(ctx)
 			listed := err == nil
 			switch {
 			case listed:

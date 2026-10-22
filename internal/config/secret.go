@@ -111,7 +111,8 @@ func readKey(path string) ([]byte, error) {
 // aadPrefix marks a stored password sealed with the current connection-binding
 // AAD, connectionAAD. Values behind aadPrefixV3 or aadPrefixV2, or with no
 // prefix at all, are earlier formats and are still readable (see
-// decryptPassword) — Save rewrites them under aadPrefix on the next write.
+// decryptPassword) — Save rewrites them under aadPrefix on the next write,
+// which the app makes at startup when Load opened one (Config.NeedsReseal).
 const (
 	aadPrefix   = "v4:"
 	aadPrefixV3 = "v3:"
@@ -209,7 +210,8 @@ func encryptPassword(key []byte, c Connection) (string, error) {
 // the v3 AAD, one behind aadPrefixV2 predates transport binding and is opened
 // with the v2 AAD, and one with no prefix at all predates connection binding
 // and is opened without AAD. So an existing config keeps working across each upgrade,
-// and the next Save rewrites it under the current binding. Such a value is
+// and the next Save, made at startup for this (Config.NeedsReseal), rewrites
+// it under the current binding. Such a value is
 // exactly what the newer binding defends against, so this fallback is the cost
 // of not silently discarding every saved password once — it narrows as
 // configs get rewritten. The reverse does not hold: a release that predates a

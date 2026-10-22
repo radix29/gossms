@@ -776,7 +776,7 @@ All six direct requires in `go.mod`:
 |---------|---------|
 | [github.com/gdamore/tcell/v3](https://github.com/gdamore/tcell) | Terminal rendering, keyboard & mouse events |
 | [github.com/radix29/gosmo](https://github.com/radix29/gosmo) | SQL Server management objects |
-| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver, plus `batch` for `GO` splitting — `internal/query` |
+| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver, which gosmo connects through; `internal/query` imports it only for `NullUniqueIdentifier`. `GO` splitting is `sqltext.SplitBatches` |
 | [github.com/golang-sql/sqlexp](https://github.com/golang-sql/sqlexp) | Interleaved result-set/message stream, so PRINT and errors arrive in order — `internal/query` |
 | [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width behind `core.DisplayWidth` — one of `tuikit`'s two external modules |
 | [github.com/pkg/browser](https://github.com/pkg/browser) | Opens the Entra sign-in page. `installEntraSignIn` sends its `Stdout`/`Stderr` to `io.Discard` — output would land on tcell's terminal |

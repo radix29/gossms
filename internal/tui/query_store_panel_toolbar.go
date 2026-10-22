@@ -361,7 +361,7 @@ func qsIndexes(n int) []int {
 // lacks is never offered.
 func (p *QueryStorePanel) availableMetrics() []gosmo.QSMetric {
 	if d := p.database(); d != nil {
-		if ms := d.QueryStoreMetrics(); len(ms) > 0 {
+		if ms := d.QueryStore().Metrics(); len(ms) > 0 {
 			return ms
 		}
 	}

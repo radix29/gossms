@@ -125,7 +125,7 @@ func (r *xeReader) readMerged(ctx context.Context) (xeBatch, bool, error) {
 		r.planned = true
 		var files []string
 		if !xeReadsOnlyByPattern(r.sc, r.pattern) {
-			files, _ = r.sc.Server.EventFiles(ctx, r.pattern)
+			files, _ = r.sc.Server.XEvents().Files(ctx, r.pattern)
 		}
 		if len(files) == 0 {
 			files = []string{r.pattern}
@@ -137,7 +137,7 @@ func (r *xeReader) readMerged(ctx context.Context) (xeBatch, bool, error) {
 		return r.flushMerged(b), false, nil
 	}
 	file := r.backlog[0]
-	evs, next, err := r.sc.Server.ReadEventFile(ctx, file, r.cursor, xeReadChunk)
+	evs, next, err := r.sc.Server.XEvents().ReadFile(ctx, file, r.cursor, xeReadChunk)
 	if err != nil {
 		return b, false, fmt.Errorf("%s: %w", file, err)
 	}

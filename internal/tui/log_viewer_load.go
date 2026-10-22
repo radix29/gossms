@@ -318,7 +318,7 @@ func (lv *LogViewer) deleteMailLog() {
 }
 
 // parseMailLogCutoff reads the Delete prompt's value: a time, or
-// mailLogDeleteAll for the zero time, which DeleteMailLog takes as "no bound".
+// mailLogDeleteAll for the zero time, which Mail.DeleteLog takes as "no bound".
 func parseMailLogCutoff(v string) (time.Time, error) {
 	if strings.EqualFold(strings.TrimSpace(v), mailLogDeleteAll) {
 		return time.Time{}, nil
@@ -361,7 +361,7 @@ func (lv *LogViewer) confirmDeleteMailLog(before time.Time) {
 				timeout: logReadTimeout,
 				repair:  lv.deletePanicked,
 			}, func(ctx context.Context, _ progressReport) error {
-				return sc.Server.DeleteMailLog(ctx, before, "")
+				return sc.Server.Mail().DeleteLog(ctx, before, "")
 			}, func(err error, cancelled bool) {
 				lv.busy = false
 				switch {

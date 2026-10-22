@@ -26,6 +26,17 @@ const (
 	maxIdleConns = 10
 )
 
+// connMaxIdleTime evicts a pooled connection idle this long. A database-scoped
+// read leaves its connection inside that database until the next checkout
+// resets it, holding a shared database lock: gosmo's 5-minute default made
+// someone else's RESTORE, SET OFFLINE or SET SINGLE_USER fail with "Exclusive
+// access could not be obtained" for that long after a gossms user merely
+// expanded the database, and kept an AUTO_CLOSE database open. The cost is one
+// re-login after a minute idle (~25 ms measured). ReleaseIdleConnections still
+// covers gossms's own exclusive writes. A query panel's pinned session
+// (gosmo.AcquireConn) is checked out, so this never closes it.
+const connMaxIdleTime = 60 * time.Second
+
 // connectTimeout bounds one connection attempt (dial, TLS, login, gosmo's
 // server-info read). Also written into the DSN, so the driver's limit agrees.
 const connectTimeout = 30 * time.Second
@@ -182,6 +193,7 @@ func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions,
 		ConnectTimeout:         connectTimeout,
 		MaxOpenConns:           maxOpenConns,
 		MaxIdleConns:           maxIdleConns,
+		ConnMaxIdleTime:        connMaxIdleTime,
 	}
 	switch opts.AuthMethod {
 	case config.AuthEntraMSI:
@@ -287,6 +299,21 @@ func (sc *ServerConn) Close() {
 		sc.Server.Close()
 	}
 	sc.closePeers()
+}
+
+// CloneOpts is Opts for another connection to the same instance (a query
+// window, the Activity Monitor, an Extended Events viewer). A named database
+// is the one sc's pool logs in to now: gosmo moves the pool off its login
+// database when a write through sc drops, detaches, takes offline or renames
+// it (gosmo.Server.InitialDatabase), and a clone still naming it would be
+// refused at login ("Cannot open database "X" requested by the login").
+// An empty Database stays empty, as sc was given it.
+func (sc *ServerConn) CloneOpts() config.Connection {
+	opts := sc.Opts
+	if opts.Database != "" && sc.Server != nil {
+		opts.Database = cmp.Or(sc.Server.InitialDatabase(), opts.Database)
+	}
+	return opts
 }
 
 // IsOpen reports whether sc is non-nil and not yet closed. Safe from any

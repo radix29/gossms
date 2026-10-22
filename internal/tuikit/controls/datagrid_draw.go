@@ -29,7 +29,7 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 	core.DrawHLine(s, g.rect.X, g.rect.Y+1, g.rect.W, sep)
 
 	r0, c0, r1, c1 := g.selectionBounds()
-	dataH := g.rect.H - 3
+	dataH := g.dataRows()
 	for row := range dataH {
 		dataIdx := g.scrollRow + row
 		y := g.rect.Y + 2 + row
@@ -80,7 +80,7 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 	// Scrollbars
 	sbStyle := tcell.StyleDefault.Background(p.GridHeader).Foreground(p.Border)
 	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
-	if g.rows.Len() > dataH && dataH > 0 {
+	if g.showsVScrollbar() {
 		core.DrawScrollbar(s, g.rect.Right()-1, g.rect.Y+2, dataH,
 			g.rows.Len(), dataH, g.scrollRow, sbStyle, sbThumb)
 	}
@@ -110,7 +110,7 @@ func (g *DataGrid) hScrollbar() (x, y, w, total, visible, offset int, ok bool) {
 	}
 	gutter := g.gutterWidth()
 	visible = g.rect.W - gutter
-	if dataH := g.rect.H - 3; dataH > 0 && g.rows.Len() > dataH {
+	if g.showsVScrollbar() {
 		// The vertical bar overdraws the rightmost column (see Draw), so a scroll
 		// that fits the last column into the full width still hid its right edge.
 		visible--
