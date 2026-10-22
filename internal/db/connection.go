@@ -289,6 +289,21 @@ func (sc *ServerConn) Close() {
 	sc.closePeers()
 }
 
+// CloneOpts is Opts for another connection to the same instance (a query
+// window, the Activity Monitor, an Extended Events viewer). A named database
+// is the one sc's pool logs in to now: gosmo moves the pool off its login
+// database when a write through sc drops, detaches, takes offline or renames
+// it (gosmo.Server.InitialDatabase), and a clone still naming it would be
+// refused at login ("Cannot open database "X" requested by the login").
+// An empty Database stays empty, as sc was given it.
+func (sc *ServerConn) CloneOpts() config.Connection {
+	opts := sc.Opts
+	if opts.Database != "" && sc.Server != nil {
+		opts.Database = cmp.Or(sc.Server.InitialDatabase(), opts.Database)
+	}
+	return opts
+}
+
 // IsOpen reports whether sc is non-nil and not yet closed. Safe from any
 // goroutine.
 func (sc *ServerConn) IsOpen() bool {

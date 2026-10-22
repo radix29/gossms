@@ -96,7 +96,7 @@ type xeFeedState struct {
 // connectXEventViewer opens the panel's connection and starts its read — the
 // Activity Monitor pattern (connectForActivityMonitor).
 func (a *App) connectXEventViewer(v *XEventViewer) {
-	opts := v.host.Opts
+	opts := v.host.CloneOpts()
 	parent := v.host.Server.Context()
 	v.feed.connecting = true
 	v.updateStatus()
