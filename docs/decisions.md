@@ -1564,6 +1564,16 @@ it from the string 'NULL'.
   `Result.Sets`, which `ExecuteToSink` leaves empty (and `RowSink.BeginSet`
   lacks types); it takes effect on the *next* run. Don't thread `ColumnTypes`
   through the sink.
+- **Results To File writes the destination only for a clean run** — a run
+  that is stopped, or reports any error (one failing statement among many, or
+  the last batch), discards everything streamed and leaves the file as it was
+  (`csvSink.finish`, `internal/tui/query_panel_export.go`;
+  `TestCSVSinkFinishKeepsTheFileOnStopOrError`), unlike SSMS, which keeps what
+  it wrote. This was the v0.1.0 fix for a destination replaced by partial
+  output: the user agreed to overwrite with *the results*, and a partial CSV
+  looks complete to whatever reads it next. The Max fetch rows cap is a notice,
+  not an error, so a capped run is still written. Don't make finish commit on
+  error or on Stop.
 - **The DataGrid cell-viewer popup is unhighlighted.** Values bracketed by
   `<>`, `{}` or JSON-shaped `[]` open in their own panel with
   `XMLHighlighter`/`JSONHighlighter` (`internal/tui/cell_value.go`); the rest

@@ -23,7 +23,7 @@ import (
 type jobStepPanel struct {
 	// sentinel leads the Database dropdown (unchangedDatabaseItem or
 	// defaultDatabaseItem); both mean "send no @database_name" (empty in
-	// JobStepRequest).
+	// JobStepDefinition).
 	sentinel string
 	dbNames  []string
 

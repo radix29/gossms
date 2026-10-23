@@ -109,7 +109,8 @@ func TestAttachFilePaths(t *testing.T) {
 // The statement that reaches the server, for the ordinary case: a file list
 // read back, one path corrected by hand, and an owner.
 func TestAttachWritesTheCorrectedFileList(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newFakeConn(t,
+		attachReadBackResponse("AppDB_Restored"))
 	files := attachEditableFiles(&gosmo.DetachedDatabase{Name: "AppDB", Files: attachTestFiles()},
 		`D:\Moved\AppDB.mdf`)
 	d := attachTestDialog(t, sc, files)
@@ -159,7 +160,8 @@ func TestAttachWritesTheCorrectedFileList(t *testing.T) {
 // and the missing log file. Naming the log alongside ATTACH_REBUILD_LOG is
 // rejected by SQL Server.
 func TestAttachRebuildLogDropsTheLogFile(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newFakeConn(t,
+		attachReadBackResponse("AppDB"))
 	d := attachTestDialog(t, sc, attachTestFiles())
 	f := d.forms[0]
 
@@ -182,7 +184,8 @@ func TestAttachRebuildLogDropsTheLogFile(t *testing.T) {
 // A read that was refused (no DBCC rights) must still leave an attach that can
 // be made: only the ability to correct a path is lost.
 func TestAttachWithNoFileListUsesThePrimaryFileAlone(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newFakeConn(t,
+		attachReadBackResponse("AppDB"))
 	d := attachTestDialog(t, sc, nil)
 	f := d.forms[0]
 
@@ -272,6 +275,7 @@ func TestAttachRefusesFilesThatAreNotOnTheServer(t *testing.T) {
 // The check must not stand between a complete request and the server.
 func TestAttachProceedsWhenEveryFileIsThere(t *testing.T) {
 	sc, inst := newFakeConn(t,
+		attachReadBackResponse("AppDB"),
 		attachExistsResponse(`D:\Moved\AppDB.mdf`, true),
 		attachExistsResponse(`C:\Old\AppDB_2.ndf`, true),
 		attachExistsResponse(`C:\Old\AppDB_log.ldf`, true),
@@ -292,7 +296,8 @@ func TestAttachProceedsWhenEveryFileIsThere(t *testing.T) {
 // scripted here, so the probe fails the way a denied one does. An unmeasured
 // answer is not a refusal.
 func TestAttachIsSentWhenTheFileCheckCannotRun(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newFakeConn(t,
+		attachReadBackResponse("AppDB"))
 	files := attachEditableFiles(&gosmo.DetachedDatabase{Name: "AppDB", Files: attachTestFiles()},
 		`D:\Moved\AppDB.mdf`)
 	d := attachTestDialog(t, sc, files)
@@ -330,4 +335,12 @@ func TestAttachScriptingDoesNotCheckTheFiles(t *testing.T) {
 	if n := inst.QueryCount() - before; n != 0 {
 		t.Errorf("scripting ran %d queries, want none — the files were not probed", n)
 	}
+}
+
+// attachReadBackResponse is the sys.databases row AttachDatabase reads the
+// attached database back from.
+func attachReadBackResponse(name string) fakeResponse {
+	return fakeResponse{match: "FROM sys.databases", arg: name, cols: 11, rows: [][]driver.Value{
+		{name, int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch, int64(0), false},
+	}}
 }

@@ -620,7 +620,7 @@ func pageXESessionEvents(h xeHost, name string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			m := newXESessionModel(es.Spec())
+			m := newXESessionModel(es.Definition())
 			e := newXEEventsEditor(h, cat, m, cols)
 			apply := func(ctx context.Context) error {
 				if !m.eventsDirty() {
@@ -630,7 +630,7 @@ func pageXESessionEvents(h xeHost, name string) propPage {
 					return fmt.Errorf("a session needs at least one event")
 				}
 				events := cloneXEEvents(m.events)
-				return alterXESession(ctx, h.sc, h.scope, name, func(s *gosmo.EventSessionSpec) { s.Events = events })
+				return alterXESession(ctx, h.sc, h.scope, name, func(s *gosmo.EventSessionDefinition) { s.Events = events })
 			}
 			return e.form(), apply, nil
 		},

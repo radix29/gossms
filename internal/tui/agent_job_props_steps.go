@@ -87,7 +87,7 @@ func jobStepEditFromStep(s *gosmo.JobStep) *jobStepEdit {
 }
 
 // editable reports whether the page may write the step back: T-SQL only. The
-// panel has no CmdExec/PowerShell/SSIS fields and JobStepRequest carries a
+// panel has no CmdExec/PowerShell/SSIS fields and JobStepDefinition carries a
 // subsystem, so writing another type back would run its command text as T-SQL.
 func (e *jobStepEdit) editable() bool {
 	return e.isNew || e.subsystem == tsqlSubsystem
@@ -109,12 +109,12 @@ func (e *jobStepEdit) reset() {
 	e.retryAttempts, e.retryInterval, e.outputFileName = e.origRetryAttempts, e.origRetryInterval, e.origOutputFileName
 }
 
-func (e *jobStepEdit) request() gosmo.JobStepRequest {
+func (e *jobStepEdit) request() gosmo.JobStepDefinition {
 	sub := e.subsystem
 	if sub == "" {
 		sub = tsqlSubsystem
 	}
-	return gosmo.JobStepRequest{
+	return gosmo.JobStepDefinition{
 		Name: e.name, Subsystem: sub, Command: e.command, Database: e.database,
 		OnSuccessAction: e.onSuccessAction, OnSuccessStepID: e.onSuccessStepID,
 		OnFailAction: e.onFailAction, OnFailStepID: e.onFailStepID,

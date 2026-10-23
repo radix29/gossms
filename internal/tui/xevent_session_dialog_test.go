@@ -409,7 +409,7 @@ func TestNewXESessionTemplateCreatesAndStarts(t *testing.T) {
 // A login that may create but not start a session gets neither box.
 func TestNewXESessionWithoutStartRightNeitherStartsNorWatches(t *testing.T) {
 	g := newXENewGeneral(&nxeSessionPrefetch{cat: &xeCatalog{}, mayStart: false},
-		newXESessionModel(gosmo.EventSessionSpec{}), newXEOptionRows(xeNewSessionDefaults(), 17, false))
+		newXESessionModel(gosmo.EventSessionDefinition{}), newXEOptionRows(xeNewSessionDefaults(), 17, false))
 	g.start.SetChecked(true)
 	g.watch.SetChecked(true)
 	if g.startNow() || g.watchNow() {

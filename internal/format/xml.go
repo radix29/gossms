@@ -282,7 +282,7 @@ type xmlNode struct {
 // xmlTree nests toks under a synthetic root, matching each end tag to its
 // start tag — the check RawToken leaves out.
 func xmlTree(src string, toks []xmlTok) (*xmlNode, error) {
-	root := &xmlNode{xmlTok: xmlTok{kind: xmlStart}}
+	root := &xmlNode{kind: xmlStart}
 	stack := []*xmlNode{root}
 	errAt := func(off int, msg string) error {
 		line, col := position(src, off)
@@ -373,11 +373,11 @@ const xmlSpace = " \t\r\n"
 
 // preservesSpace reports whether a start tag carries xml:space="preserve".
 func preservesSpace(tag string) bool {
-	i := strings.Index(tag, "xml:space")
-	if i < 0 {
+	_, after, ok := strings.Cut(tag, "xml:space")
+	if !ok {
 		return false
 	}
-	rest := strings.TrimLeft(tag[i+len("xml:space"):], xmlSpace)
+	rest := strings.TrimLeft(after, xmlSpace)
 	if !strings.HasPrefix(rest, "=") {
 		return false
 	}

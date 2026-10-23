@@ -63,7 +63,7 @@ func newXENewGeneral(pf *nxeSessionPrefetch, m *xeSessionModel, adv *xeOptionRow
 			g.desc.SetText(xeNoTemplateNote)
 			return
 		}
-		spec := templates[i].Spec()
+		spec := templates[i].Definition()
 		left := xeApplyTemplate(m, spec, pf.cat)
 		adv.set(spec)
 		g.causality.Edit(spec.TrackCausality)
@@ -80,7 +80,7 @@ func newXENewGeneral(pf *nxeSessionPrefetch, m *xeSessionModel, adv *xeOptionRow
 // xeApplyTemplate replaces m's events and targets with spec's, less whatever
 // the server's catalog lacks — an event or a global field an older version
 // does not have would fail the whole CREATE. It returns what it left out.
-func xeApplyTemplate(m *xeSessionModel, spec gosmo.EventSessionSpec, cat *xeCatalog) []string {
+func xeApplyTemplate(m *xeSessionModel, spec gosmo.EventSessionDefinition, cat *xeCatalog) []string {
 	var left []string
 	var events []gosmo.SessionEvent
 	for _, e := range cloneXEEvents(spec.Events) {
@@ -112,7 +112,7 @@ func (g *xeNewGeneral) name() string { return strings.TrimSpace(g.nameRow.Value(
 func (g *xeNewGeneral) startNow() bool { return g.mayStart && g.start.Checked() }
 func (g *xeNewGeneral) watchNow() bool { return g.startNow() && g.watch.Checked() }
 
-func (g *xeNewGeneral) applyTo(spec *gosmo.EventSessionSpec) {
+func (g *xeNewGeneral) applyTo(spec *gosmo.EventSessionDefinition) {
 	spec.StartupState = g.startup.Checked()
 	spec.TrackCausality = g.causality.Checked()
 }
@@ -180,7 +180,7 @@ func pageXESessionGeneral(sc *db.ServerConn, scope xeScope, name string) propPag
 				if !startup.Dirty() && !causality.Dirty() {
 					return nil
 				}
-				return alterXESession(ctx, sc, scope, name, func(s *gosmo.EventSessionSpec) {
+				return alterXESession(ctx, sc, scope, name, func(s *gosmo.EventSessionDefinition) {
 					s.StartupState = startup.Checked()
 					s.TrackCausality = causality.Checked()
 				})
