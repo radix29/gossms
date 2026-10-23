@@ -1,4 +1,7 @@
 
+check the go-mssqldb and tcell library for changes in the latest versions and check if these changes can improve the current implementation of gossms and gomo. create a plan file if there anre findings.
+
+
 add command line parameters for agentic use.
 all functionality of the application should be accessible as command line parameters with formatted text output
 gossms get propery maxdop -conn win10cli

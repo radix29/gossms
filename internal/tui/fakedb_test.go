@@ -332,6 +332,26 @@ func (f *fakeInstance) recordExec(db string, tx int, q string, args []driver.Nam
 // hide the whole statement rather than the plumbing in front of it.
 var bareUSE = regexp.MustCompile(`^USE \[([^\]]*)\]$`)
 
+// unwrapProcRead undoes gosmo's procRead — a pooled database-scoped read sent
+// as an RPC call of [db].sys.sp_executesql with the query, its declarations
+// and its arguments — into the database (unbracketed, as bareUSE captures
+// it), the query and that query's own arguments, numbered from 1 again.
+func unwrapProcRead(q string, args []driver.NamedValue) (db, inner string, innerArgs []driver.NamedValue, ok bool) {
+	name, found := strings.CutSuffix(q, ".sys.sp_executesql")
+	if !found || len(args) == 0 || !strings.HasPrefix(name, "[") || !strings.HasSuffix(name, "]") {
+		return "", q, args, false
+	}
+	inner, _ = args[0].Value.(string)
+	if len(args) > 2 {
+		innerArgs = make([]driver.NamedValue, len(args)-2)
+		for i, a := range args[2:] {
+			a.Ordinal = i + 1
+			innerArgs[i] = a
+		}
+	}
+	return strings.ReplaceAll(name[1:len(name)-1], "]]", "]"), inner, innerArgs, true
+}
+
 // batchedUSE matches the USE gosmo sends as the head of a database-scoped read
 // itself (gosmo's Database.useBatch): one batch, the switch guarded so a
 // failed one stops it, then the query. The bare form above is what the read
@@ -415,9 +435,10 @@ func (fakeDriver) Open(dsn string) (driver.Conn, error) {
 }
 
 // fakeConn is one pooled connection. It tracks the database a USE has pinned
-// it to, because gosmo runs a database-scoped read as USE-then-query on a
-// connection it has pinned for exactly that reason — usually as one batch,
-// sometimes as two statements.
+// it to, because gosmo runs a database-scoped write, and a read inside
+// InTransaction, as USE-then-query on a connection it has pinned for exactly
+// that reason. A pooled read (procRead) names its database in the call and
+// pins nothing.
 type fakeConn struct {
 	inst    *fakeInstance
 	curDB   string
@@ -487,14 +508,19 @@ func (c *fakeConn) ExecContext(ctx context.Context, q string, args []driver.Name
 }
 
 func (c *fakeConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	db := c.curDB
 	if m := batchedUSE.FindStringSubmatch(q); m != nil {
 		c.curDB, q = m[1], q[len(m[0]):]
+		db = c.curDB
+	} else if procDB, inner, innerArgs, ok := unwrapProcRead(q, args); ok {
+		// A pooled read runs in its database for this call only.
+		db, q, args = procDB, inner, innerArgs
 	}
 	// What gosmo's InTransaction asks as it begins.
 	if q == "SELECT DB_NAME()" {
-		return &fakeRows{resp: &fakeResponse{match: q, cols: 1, rows: [][]driver.Value{{cmp.Or(c.curDB, "master")}}}}, nil
+		return &fakeRows{resp: &fakeResponse{match: q, cols: 1, rows: [][]driver.Value{{cmp.Or(db, "master")}}}}, nil
 	}
-	r, ok := c.inst.respond(ctx, q, c.curDB, args)
+	r, ok := c.inst.respond(ctx, q, db, args)
 	if !ok {
 		return nil, fmt.Errorf("fakedb: no scripted response for query:\n%s", q)
 	}
