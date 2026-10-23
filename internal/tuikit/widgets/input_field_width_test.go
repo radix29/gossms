@@ -42,6 +42,10 @@ func (s *fieldScreen) Put(x, y int, str string, style tcell.Style) (string, int)
 	s.SetContent(x, y, r, nil, style)
 	return str[n:], 1
 }
+
+func (s *fieldScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
 func (s *fieldScreen) ShowCursor(x, y int) {}
 
 // TestInputFieldDrawsWideRunesInTwoColumns: with a rune-per-column model the

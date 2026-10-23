@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // runeScreen captures the runes a Draw painted, so a test can assert a row's
@@ -30,6 +31,11 @@ func (s *runeScreen) Put(x, y int, str string, style tcell.Style) (string, int) 
 	s.SetContent(x, y, r, nil, style)
 	return str[n:], 1
 }
+
+func (s *runeScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 func (s *runeScreen) ShowCursor(x, y int) {}
 
 // text returns everything painted, one string per row.

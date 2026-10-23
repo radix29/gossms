@@ -36,6 +36,10 @@ func (s *comboScreen) Put(x, y int, str string, style tcell.Style) (string, int)
 	return str[n:], 1
 }
 
+func (s *comboScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 // row returns the text painted on row y between columns [x, x+w).
 func (s *comboScreen) row(x, y, w int) string {
 	var b strings.Builder

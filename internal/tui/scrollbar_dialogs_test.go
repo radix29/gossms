@@ -32,6 +32,10 @@ func (s *fakeSizedScreen) Put(_, _ int, str string, _ tcell.Style) (string, int)
 	return str, 1
 }
 
+// FillArea is stubbed for the same reason: core.FillRect (every dialog
+// background) fills through it.
+func (s *fakeSizedScreen) FillArea(int, int, int, int, rune, tcell.Style) {}
+
 // TestQueryListDialogScrollbarDragScrolls confirms dragging the query list's
 // scrollbar scrolls it instead of being read as a click that switches to
 // (and closes the dialog on) whatever row sits under it — QueryListDialog's

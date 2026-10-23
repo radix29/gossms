@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
@@ -55,9 +54,8 @@ func TestDeviceCodeDialogIgnoresTheEndOfAnEarlierSignIn(t *testing.T) {
 	a.drainPending()
 
 	cancelFirst()
-	// The first sign-in's end is posted by a goroutine; give it the chance.
-	time.Sleep(20 * time.Millisecond)
-	a.drainPending()
+	// The first sign-in's end is posted by a goroutine; wait for it to land.
+	waitAndDrain(t, a)
 	if d := a.deviceCodeDialog; !d.Visible() || d.msg.UserCode != "SECOND" {
 		t.Errorf("after the first sign-in ended: visible %v, code %q; want the second still showing", d.Visible(), d.msg.UserCode)
 	}

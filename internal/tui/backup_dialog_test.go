@@ -158,8 +158,7 @@ func TestBackupHideAbandonsTheDestCheck(t *testing.T) {
 	if !d.destCheck.Idle() {
 		t.Error("Hide left the destination check running")
 	}
-	time.Sleep(20 * time.Millisecond)
-	a.drainPending()
+	waitAndDrain(t, a) // the probe always posts its answer; Done(tok) must drop it
 	if ran {
 		t.Error("a destination check that landed after Hide started the backup")
 	}

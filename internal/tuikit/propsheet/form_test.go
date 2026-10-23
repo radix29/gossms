@@ -8,6 +8,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 func key(k tcell.Key, mod tcell.ModMask) *tcell.EventKey {
@@ -36,6 +37,10 @@ func (s *fakeScreen) Put(x, y int, str string, style tcell.Style) (string, int) 
 	r, n := utf8.DecodeRuneInString(str)
 	s.SetContent(x, y, r, nil, style)
 	return str[n:], 1
+}
+
+func (s *fakeScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
 }
 
 // line returns the text drawn on row y, trailing blanks trimmed.

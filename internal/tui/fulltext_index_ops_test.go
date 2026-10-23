@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
@@ -263,20 +264,22 @@ func TestFullTextStartFollowsThePopulationToItsEnd(t *testing.T) {
 
 // After an ENABLE nothing populates under OFF tracking: no task is listed.
 func TestFullTextEnableListsNoTaskWhenNothingPopulates(t *testing.T) {
-	a := ftTestApp()
-	s := ftIdle()
-	s.enabled, s.tracking = false, "OFF"
-	inst, node := ftOpConn(t, s)
-	a.runFullTextIndexOp(node.data.conn, node, fullTextEnableOp())
-	waitAndDrain(t, a)
-	assertOneStatementIn(t, inst, "appdb", "ALTER FULLTEXT INDEX ON [dbo].[Notes] ENABLE")
-	// The check for a population posts nothing when it finds none; give it
-	// the time a post would take.
-	time.Sleep(50 * time.Millisecond)
-	a.drainPending()
-	if len(a.tasks) != 0 {
-		t.Errorf("tasks = %d, want none", len(a.tasks))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		a := ftTestApp()
+		s := ftIdle()
+		s.enabled, s.tracking = false, "OFF"
+		inst, node := ftOpConn(t, s)
+		a.runFullTextIndexOp(node.data.conn, node, fullTextEnableOp())
+		waitAndDrain(t, a)
+		assertOneStatementIn(t, inst, "appdb", "ALTER FULLTEXT INDEX ON [dbo].[Notes] ENABLE")
+		// The check for a population posts nothing when it finds none. Wait
+		// returns once its goroutine has exited, so a post it made is queued.
+		synctest.Wait()
+		a.drainPending()
+		if len(a.tasks) != 0 {
+			t.Errorf("tasks = %d, want none", len(a.tasks))
+		}
+	})
 }
 
 // A failed read is retried (the poll can lose a deadlock to the crawl, Msg

@@ -4,7 +4,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
-	"time"
+	"testing/synctest"
 )
 
 // safego reports a panic and stops there, which is all that's needed for work
@@ -31,24 +31,24 @@ func TestSafegoRepairReleasesTheLatchAndStillReportsThePanic(t *testing.T) {
 // normally clears its own latch in its own callback, and running the repair
 // as well would clear one a newer operation had since taken for itself.
 func TestSafegoRepairDoesNotRunWhenNothingPanicked(t *testing.T) {
-	a := newTestApp()
-	repaired := false
-	done := make(chan struct{})
+	synctest.Test(t, func(t *testing.T) {
+		a := newTestApp()
+		repaired := false
 
-	a.safegoRepair("reading the thing", func() { repaired = true }, func() { close(done) })
+		a.safegoRepair("reading the thing", func() { repaired = true }, func() {})
 
-	<-done
-	// Give a repair that should not have been queued time to be queued, so
-	// this fails rather than passing on timing.
-	time.Sleep(50 * time.Millisecond)
-	a.drainPending()
+		// Wait returns once the goroutine has exited, so a repair it queued is
+		// queued by now.
+		synctest.Wait()
+		a.drainPending()
 
-	if repaired {
-		t.Error("the repair step ran after a clean return")
-	}
-	if a.statusText != "" {
-		t.Errorf("statusText = %q, want empty — nothing failed", a.statusText)
-	}
+		if repaired {
+			t.Error("the repair step ran after a clean return")
+		}
+		if a.statusText != "" {
+			t.Errorf("statusText = %q, want empty — nothing failed", a.statusText)
+		}
+	})
 }
 
 // The stack reportPanic logs is the only record of what a background

@@ -226,7 +226,15 @@ func TestTrackedReadersDoNotWaitOnASave(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- tq.Save() }()
-	time.Sleep(20 * time.Millisecond)
+	// Save holds saveMu from its start to its return, so once TryLock fails
+	// it is under way — past its brief hold of mu, waiting on the lock file.
+	for deadline := time.Now().Add(2 * time.Second); tq.saveMu.TryLock(); {
+		tq.saveMu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("Save never started")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	start := time.Now()
 	tq.IsTracked("srv", "db", 1)

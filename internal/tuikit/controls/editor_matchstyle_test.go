@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -35,6 +36,11 @@ func (s *styleScreen) Put(x, y int, str string, style tcell.Style) (string, int)
 	s.SetContent(x, y, r, nil, style)
 	return str[n:], 1
 }
+
+func (s *styleScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 func (s *styleScreen) ShowCursor(int, int) {}
 
 // marks reads row y back as one character per column: 'm' for the search

@@ -1,5 +1,5 @@
 
-check the go-mssqldb and tcell library for changes in the latest versions and check if these changes can improve the current implementation of gossms and gomo. create a plan file if there anre findings.
+
 
 
 add command line parameters for agentic use.
@@ -44,6 +44,8 @@ optimize and compact claude.md , architecture.md, etc in both projects
 
 go over the source files code comments and compact them. make them concise. throw unnecessary wording. do not keep history in comments only the actual state, unless necessary.
 
+check the go-mssqldb,tcell library and golang 1.27.3 for changes in the latest versions and check if these changes can improve the current implementation of gossms and gomo. create a plan file if there anre findings.
+Watch upstream (unreleased)
 
 --- prepare for release -------------------------------------------------
 

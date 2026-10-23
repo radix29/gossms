@@ -53,6 +53,10 @@ func (s *glyphScreen) Put(x, y int, str string, style tcell.Style) (string, int)
 	s.SetContent(x, y, r, comb, style)
 	return "", 1
 }
+
+func (s *glyphScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
 func (s *glyphScreen) ShowCursor(x, y int) { s.curX, s.curY, s.curSet = x, y, true }
 
 // row reads back a screen row as a string, from x for w columns. A wide

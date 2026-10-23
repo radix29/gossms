@@ -7,6 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 func newTestEditor(text string) *Editor {
@@ -1138,6 +1139,11 @@ func (s *recordingScreen) Put(x, y int, str string, style tcell.Style) (string, 
 	s.SetContent(x, y, r, nil, style)
 	return str[n:], 1
 }
+
+func (s *recordingScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 func (s *recordingScreen) ShowCursor(x, y int) {}
 
 // markerHighlighter colours exactly the rune range [start,end) of every line

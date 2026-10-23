@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -39,6 +40,10 @@ func (s *cellScreen) Put(x, y int, str string, st tcell.Style) (string, int) {
 	r := []rune(str)
 	s.SetContent(x, y, r[0], nil, st)
 	return string(r[1:]), 1
+}
+
+func (s *cellScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
 }
 
 // row is line y as drawn, one rune per column — so a column is an index into

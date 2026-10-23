@@ -189,6 +189,10 @@ func (s *putLog) Put(x, y int, str string, _ tcell.Style) (string, int) {
 	return "", 1
 }
 
+func (s *putLog) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 // drawTextLineCases are cells chosen to land the cut on every kind of
 // grapheme: wide, combining, a ZWJ sequence, a line break, a tab.
 var drawTextLineCases = []string{

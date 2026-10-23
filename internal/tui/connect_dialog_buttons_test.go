@@ -7,6 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -28,6 +29,11 @@ func (s *recordingScreen) Put(x, y int, str string, style tcell.Style) (string, 
 	s.SetContent(x, y, r, nil, style)
 	return str[n:], 1
 }
+
+func (s *recordingScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 func (s *recordingScreen) ShowCursor(int, int) {}
 
 // drawnFieldText reads back the text a field actually painted into its box —

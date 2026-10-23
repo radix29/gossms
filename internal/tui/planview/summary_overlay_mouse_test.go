@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // overlayScreen is a tcell.Screen fake with just enough surface to run
@@ -25,6 +26,11 @@ func (s *overlayScreen) Get(x, y int) (string, tcell.Style, int) {
 func (s *overlayScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
 	return str, 1
 }
+
+func (s *overlayScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 func (s *overlayScreen) SetContent(x, y int, primary rune, combining []rune, style tcell.Style) {}
 func (s *overlayScreen) ShowCursor(x, y int)                                                    {}
 
