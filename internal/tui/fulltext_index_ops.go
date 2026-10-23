@@ -130,7 +130,9 @@ const fullTextNoPopulationPolls = 3
 // follow gives up. The crawl holds locks on the very catalog views the poll
 // reads, and the poll can be picked as a deadlock victim (Msg 1205, seen on 17
 // against a 1.5M-row population): the population is unharmed, so one lost
-// read must not end the follow.
+// read must not end the follow. gosmo already re-runs a 1205 read up to three
+// times (gosmo.IsTransient); this counts reads that lost all of those, a
+// longer contention than one unlucky poll.
 const fullTextFollowReadRetries = 3
 
 // watchFullTextPopulation follows the population an action started on the table: a

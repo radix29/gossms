@@ -44,6 +44,12 @@ reload, a showing's several loads), wait on the outcome with
 `drainUntil(t, a, cond, what)` instead — two `-race`-only flakes came from
 this.
 
+**A test package that can save config sandboxes `os.UserConfigDir` in
+`TestMain`** (`internal/tui/main_test.go` sets `XDG_CONFIG_HOME`, `HOME`,
+`AppData` to a temp dir). Without it, any `saveConfig` writes the developer's
+real `config.json`. `TestOptionsApplySwitchesColorTheme` flipped the user's
+theme to Light on every `go test ./...`.
+
 **A timing test over pure channels and timers runs in `synctest.Test`.** The
 bubble's clock is fake, so a window holds exactly the ticks the schedule
 predicts: assert exact counts and wait with `synctest.Sleep`, not a

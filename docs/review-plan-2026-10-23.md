@@ -115,7 +115,18 @@ offsets compare by local wall time, not by instant.
 
 Low severity. Do it while B1 has the sort code open.
 
-### B3 — gosmo: read retries skip deadlock victims and Azure transient errors
+### B3 — gosmo: read retries skip deadlock victims and Azure transient errors — ✅ DONE 2026-10-23
+
+**Done:** gosmo `retry.go` adds `isTransientServerError` (the listed numbers,
+matched on the error and every `All` entry) and exports `IsTransient` =
+`IsRetryable` || it; `withRetry` and `AcquireConn`'s prologue retry on
+`IsTransient`, `IsRetryable` keeps its meaning. 1222 deliberately absent.
+`TestIsTransient` and `TestDeadlockVictimReadIsRetriedOutsideTransactionOnly`
+(fake driver raising `mssql.Error{Number: 1205}`: three tries on
+`Server.query`/`queryRow`, `Database.query`, `AcquireConn`; one inside
+`InTransaction`) fail with the rule routed back to `IsRetryable`. gosmo
+`ARCHITECTURE.md` updated. gossms keeps the full-text follow tolerance; its
+comment now says it counts reads that lost all of gosmo's retries.
 
 `withRetry` (`~/go/gosmo/retry.go:78`) retries a read only when `IsRetryable`
 (`:46`) says so, and `IsRetryable` recognises connection-level failures only.
@@ -290,19 +301,19 @@ to get explicit values or a string type, do it before that tag.
 
 ## Docs
 
-- **D1 — `docs/decisions.md:1555` forbids what shipped.** "A Grid/Text result
+- **D1 — ✅ DONE 2026-10-23. `docs/decisions.md:1555` forbids what shipped.** "A Grid/Text result
   can exhaust memory — no Max Result Rows, no `maxRows` … Don't add a cap."
   But Max fetch rows shipped on 2026-10-22 (a715e99): `config.MaxFetchRows`,
   `query.WithMaxRows`, and the `docs/db-rules.md:175` rule on cancelling a cut
   set. Rewrite the bullet to say what is now settled: unlimited by default, as
   SSMS; an opt-in cap per result set that cancels the rest of the script; and
   Results To File bounded by the file whatever the cap.
-- **D2 — `docs/decisions.md:1444` says Shrink's Locking rows are "SQL
+- **D2 — ✅ DONE 2026-10-23. `docs/decisions.md:1444` says Shrink's Locking rows are "SQL
   2025+".** The code gates them at 2022 (`ServerInfo.SupportsShrinkLowPriority`
   in gosmo `types.go`; `internal/tui/shrink_database_dialog.go:72`), and
   `WAIT_AT_LOW_PRIORITY` on `DBCC SHRINKDATABASE`/`SHRINKFILE` is documented
   from SQL Server 2022. Change it to 2022+.
-- **D3 — `ARCHITECTURE.md` § Latest-only loads reads as a complete owner
+- **D3 — ✅ DONE 2026-10-23 ("among them"). `ARCHITECTURE.md` § Latest-only loads reads as a complete owner
   list, and isn't one.** It is missing at least the result-grid sort
   (`sortRun`), the Live Query Statistics run, the Replication Monitor reads,
   the Extended Events feed and column reads, the linked-server and
@@ -346,8 +357,8 @@ spike comes after that, and the release last, only on request.
 |---|------|------|----------|
 | 1 | ✅ **B1** unit-aware detail sort (done) | gossms | The only shipped user-visible bug; small, offline-testable; one tmux drive of SQL Server Logs. |
 | 2 | ✅ **B2** exact decimal and `datetimeoffset` keys, + **D4** (done) | gossms | Same code as B1, still open; the comment fix rides along. |
-| 3 | **D1, D2, D3** | gossms | Pure doc corrections; no dependency, so do them at once. |
-| 4 | **B3** transient-error read retry | gosmo → gossms | Additive and behaviour-only; fake-driver test; then reconsider whether gossms needs its own 1205 note. |
+| 3 | ✅ **D1, D2, D3** (done) | gossms | Pure doc corrections; no dependency, so do them at once. |
+| 4 | ✅ **B3** transient-error read retry (done) | gosmo → gossms | Additive and behaviour-only; fake-driver test; then reconsider whether gossms needs its own 1205 note. |
 | 5 | **C1, C2, C3** renames | gosmo → gossms | Breaking; one sitting, then `go vet -tags livedb` in gosmo and a full build and test of gossms with `replace` active. |
 | 6 | **C4** `UserDefinedFunctionByName`, `TriggerByName` | gosmo | Only with step 5, while gosmo is open; otherwise skip. |
 | 7 | **A1** pool-camping spike | gosmo | Needs live servers (13, 14, 17) and the version sweep; go/no-go recorded in `~/go/gosmo/OPEN-THREADS.md`. |

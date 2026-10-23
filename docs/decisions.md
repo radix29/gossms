@@ -1441,7 +1441,7 @@ it from the string 'NULL'.
   target. Microsoft's dialog page, which equates unticked with
   `TRUNCATEONLY`, is wrong; gosmo's `ShrinkDatabaseOptions` zero value is
   right. SSMS 21 has no WAIT_AT_LOW_PRIORITY option there — gossms's Locking
-  rows (SQL 2025+) are an extra.
+  rows (SQL 2022+) are an extra.
 - **Format Document upper-cases table hints only inside `WITH (…)`**: the
   legacy `JOIN log (nolock)` form stays as typed, since `(…)` after an
   unqualified name there may be a TVF's arguments (`CROSS APPLY f(nolock)`
@@ -1552,11 +1552,14 @@ it from the string 'NULL'.
   `replace` are release steps (ARCHITECTURE.md § Developing against a local
   gosmo checkout). A CI release build failing to resolve gosmo mid-development
   is expected.
-- **A Grid/Text result can exhaust memory** — no Max Result Rows, no `maxRows`:
-  results are retained in full, as SSMS ("you get what you asked for"). Storage
-  is already compact (`internal/query/arena.go`; the floor is the 16-byte string
-  header per cell of `ResultSet.Rows [][]string`). Results To File retains
-  nothing. Don't add a cap.
+- **A Grid/Text result is unlimited by default and can exhaust memory** — as
+  SSMS ("you get what you asked for"). Storage is already compact
+  (`internal/query/arena.go`; the floor is the 16-byte string header per cell
+  of `ResultSet.Rows [][]string`). The one bound is opt-in: Tools > Options'
+  Max fetch rows (`config.MaxFetchRows`, `query.WithMaxRows`) keeps at most N
+  rows per result set in every results mode and cancels the rest of the script
+  (docs/db-rules.md § Query execution). Results To File retains nothing, so its
+  memory is bounded whatever the cap. Don't make the cap a default.
 - **The `Meta` (Output Column Metadata) block is grid-only** — it reads
   `Result.Sets`, which `ExecuteToSink` leaves empty (and `RowSink.BeginSet`
   lacks types); it takes effect on the *next* run. Don't thread `ColumnTypes`
