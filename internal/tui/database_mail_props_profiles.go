@@ -350,7 +350,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 								return sc.Server.Mail().ProfileRef(name).SetAccounts(ctx, accts)
 							})
 						}
-						var o gosmo.MailProfileOptions
+						var o gosmo.MailProfileChanges
 						if e.name != e.origName {
 							o.Name = new(e.name)
 						}

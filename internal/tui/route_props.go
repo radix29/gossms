@@ -69,7 +69,7 @@ func pageRouteGeneral(sc *db.ServerConn, dbName, name string) propPage {
 			)
 
 			apply := func(ctx context.Context) error {
-				s := gosmo.RouteSettings{}
+				s := gosmo.RouteChanges{}
 				dirty := false
 				set := func(row *propsheet.TextRow, label string, dst **string) error {
 					if !row.Dirty() {

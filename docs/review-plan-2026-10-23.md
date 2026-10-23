@@ -171,7 +171,9 @@ change to the SQL. Do them in one sitting, so one tag carries them. Then run
 `go vet -tags livedb ./...` and update `~/go/gosmo/ARCHITECTURE.md`'s feature
 map.
 
-### C1 — gosmo: patch structs use three names for one idea
+### C1 — gosmo: patch structs use three names for one idea — ✅ DONE 2026-10-23
+
+**Done (C1–C3, hard break, no aliases):** `MailAccountChanges`, `MailProfileChanges`, `QueueChanges` (helper `mirrorQueueChanges`), `RouteChanges`, `DatabaseFileChanges` (doc now states its zero-means-unchanged rule), `ServerAuditDefinition`, `Database.Roles`, `Login.AddToServerRole`/`RemoveFromServerRole`. gosmo `CLAUDE.md` § Conventions: the `Spec` rule became `XDefinition`, plus a new `XChanges` rule; gosmo `ARCHITECTURE.md` and gossms `docs/decisions.md` follow, and a stale `srv.Add|RemoveServerRoleMember` row now names the real methods. CHANGELOGs untouched (H1 lists these under Migrating). gosmo build/vet/`-tags livedb` vet/test and gossms build/vet/test clean; gofmt empty. No behaviour change, so no tmux drive.
 
 An `Alter` argument whose nil fields mean "leave as stored" is called
 `…Changes` in the Agent family (`JobChanges`, `AlertChanges`,
@@ -202,7 +204,7 @@ Leave these alone, because they are not patches:
 
 gossms call sites: about 14 in all (`grep -rw` for each name).
 
-### C2 — gosmo: `ServerAuditSpec` is not a server audit specification
+### C2 — gosmo: `ServerAuditSpec` is not a server audit specification — ✅ DONE 2026-10-23
 
 `ServerAuditSpec` (`~/go/gosmo/audit.go:189`) describes a **server audit**: it
 is what `CreateServerAudit` takes and what `ServerAudit.Alter` takes. But
@@ -214,7 +216,7 @@ wrong type.
 **Fix:** rename `ServerAuditSpec` to `ServerAuditDefinition`. Two gossms call
 sites. `EventSessionSpec` doesn't collide with anything and stays.
 
-### C3 — gosmo: role membership and the database role listing
+### C3 — gosmo: role membership and the database role listing — ✅ DONE 2026-10-23
 
 - `Database.DatabaseRoles` (`~/go/gosmo/database_role.go:29`) is the only
   `Database` listing that repeats its receiver. Its siblings are already
@@ -228,7 +230,9 @@ sites. `EventSessionSpec` doesn't collide with anything and stays.
   `ServerRole.AddMember`. Rename them to `AddToServerRole`/
   `RemoveFromServerRole` (3 gossms call sites).
 
-### C4 — gosmo: two families have no `*ByName` (additive, low value)
+### C4 — gosmo: two families have no `*ByName` (additive, low value) — ✅ DONE 2026-10-23
+
+**Done:** `Database.UserDefinedFunctionByName` (`function.go`) and `Database.TriggerByName` (`trigger.go`). Built on the listings' own queries (`moduleListWhere`, `triggersWhere`) as `StoredProcedureByName` is, not on `readByName` — the trigger listing's events column has no single-row form, and one query per family can't drift. Offline row-serving test `module_byname_test.go`; both added to `schema_required_test.go` and the collation by-name test (a missing `COLLATE` mutation fails it); hand-driven lines plus `sweepMustCall` entries in the version sweep; gosmo `ARCHITECTURE.md` feature map rows. gosmo build/vet/`-tags livedb` vet/staticcheck/test clean; `TestLiveVersionSweep` on win10cli\SQL2016 (13.0.6500.1): 402 calls, 0 failed. gossms build/vet/test clean with `replace` active. gossms doesn't call them; no tmux drive (no gossms change).
 
 Every `Database` family pairs its listing with `*ByName` and `*Ref`, except:
 
@@ -359,8 +363,8 @@ spike comes after that, and the release last, only on request.
 | 2 | ✅ **B2** exact decimal and `datetimeoffset` keys, + **D4** (done) | gossms | Same code as B1, still open; the comment fix rides along. |
 | 3 | ✅ **D1, D2, D3** (done) | gossms | Pure doc corrections; no dependency, so do them at once. |
 | 4 | ✅ **B3** transient-error read retry (done) | gosmo → gossms | Additive and behaviour-only; fake-driver test; then reconsider whether gossms needs its own 1205 note. |
-| 5 | **C1, C2, C3** renames | gosmo → gossms | Breaking; one sitting, then `go vet -tags livedb` in gosmo and a full build and test of gossms with `replace` active. |
-| 6 | **C4** `UserDefinedFunctionByName`, `TriggerByName` | gosmo | Only with step 5, while gosmo is open; otherwise skip. |
+| 5 | ✅ **C1, C2, C3** renames (done) | gosmo → gossms | Breaking; one sitting, then `go vet -tags livedb` in gosmo and a full build and test of gossms with `replace` active. |
+| 6 | ✅ **C4** `UserDefinedFunctionByName`, `TriggerByName` (done) | gosmo | Only with step 5, while gosmo is open; otherwise skip. |
 | 7 | **A1** pool-camping spike | gosmo | Needs live servers (13, 14, 17) and the version sweep; go/no-go recorded in `~/go/gosmo/OPEN-THREADS.md`. |
 | 8 | **H1** changelog, optional `TableKind` hardening, tags | gosmo → gossms | Only when a release is asked for; list C1–C4 under Migrating. |
 

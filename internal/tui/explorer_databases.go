@@ -458,7 +458,7 @@ func loadUsersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 }
 
 func loadDatabaseRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listDatabaseChildren(l, node, (*gosmo.Database).DatabaseRoles,
+	return listDatabaseChildren(l, node, (*gosmo.Database).Roles,
 		func(r *gosmo.DatabaseRole) *explorerNode {
 			n := l.node(r.Name, NodeDatabaseRole, "", r.Name, node.data.DBName)
 			n.data.IsSystem = isSystemDatabaseRole(r)

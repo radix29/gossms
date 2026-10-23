@@ -135,10 +135,10 @@ Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
     into Route Properties, which gets the server's clear message. Gating one
     value of a free-text field per edition isn't a shape `edition_gate.go` has.
   - Both writable pages (and any future New-X) respect: nil field = leave
-    alone, only changes are sent; `QueueSettings.Activation` is restated in full
+    alone, only changes are sent; `QueueChanges.Activation` is restated in full
     (the server refuses a partial ACTIVATION on a queue without one), so an
     emptied procedure name maps to `ACTIVATION (DROP)` and is an error on a
-    queue with no activation; **`RouteSettings` can change but never clear** a
+    queue with no activation; **`RouteChanges` can change but never clear** a
     setting (`= NULL` doesn't parse, empty is refused — drop and recreate), so
     Route Properties refuses an emptied row with a message.
 - **System Data Types has no Properties dialog** (SSMS has none; `int` says it

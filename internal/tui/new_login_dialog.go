@@ -69,7 +69,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 	// (offline or unreadable) has no roles or schemas to offer, as the User Mapping
 	// page already shows for an offline one.
 	dbRoles, err := eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (nloginDBRoles, error) {
-		roles, err := d.DatabaseRoles(ctx)
+		roles, err := d.Roles(ctx)
 		if err != nil {
 			return nloginDBRoles{}, err
 		}

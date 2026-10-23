@@ -39,8 +39,8 @@ func TestFileEditFromInfoIsUnchanged(t *testing.T) {
 	if e.origName != "AdventureWorks_Data" {
 		t.Errorf("origName = %q — apply addresses the file by it, so a rename must not overwrite it", e.origName)
 	}
-	if got := e.modify(); got != (gosmo.FileModify{}) {
-		t.Errorf("modify() = %+v for an untouched file, want the zero FileModify so gosmo emits no statement", got)
+	if got := e.modify(); got != (gosmo.DatabaseFileChanges{}) {
+		t.Errorf("modify() = %+v for an untouched file, want the zero DatabaseFileChanges so gosmo emits no statement", got)
 	}
 }
 
@@ -291,8 +291,8 @@ func TestGrowthAndMaxSizeText(t *testing.T) {
 }
 
 // TestTurningAutogrowthOffIsNotAZeroGrowthAmount is the whole point of
-// fileEdit.growthOff and gosmo's FileModify.DisableGrowth. A growth of zero
-// is how SQL Server records autogrowth-off, and it is also FileModify's
+// fileEdit.growthOff and gosmo's DatabaseFileChanges.DisableGrowth. A growth of zero
+// is how SQL Server records autogrowth-off, and it is also DatabaseFileChanges's
 // "leave FILEGROWTH alone", so the two have to be told apart before the
 // statement is built. They were not: the ALTER came out with no FILEGROWTH
 // clause, and where growth was the only edit the whole statement collapsed to

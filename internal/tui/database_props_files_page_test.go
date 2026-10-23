@@ -99,7 +99,7 @@ func TestFilesPageWritesTheAutogrowthItWasGiven(t *testing.T) {
 //
 // Two guards have to fail together for this to fire, which is why mutating
 // either one alone leaves it green: apply skips a file whose changed() is
-// false, and gosmo builds no statement from a FileModify that carries only
+// false, and gosmo builds no statement from a DatabaseFileChanges that carries only
 // the identifying NAME. Defeating just the first costs a round trip and
 // writes nothing; defeating just the second never gets past the first. Both
 // gone, an untouched page resends every file its own current SIZE — which

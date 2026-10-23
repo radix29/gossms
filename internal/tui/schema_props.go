@@ -50,7 +50,7 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRoles(ctx)
+			roles, err := d.Roles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -170,7 +170,7 @@ func pageSchemaPermissions(sc *db.ServerConn, dbName, schemaName string) propPag
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRoles(ctx)
+			roles, err := d.Roles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
