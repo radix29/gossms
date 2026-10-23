@@ -124,10 +124,12 @@ behind the mouse and async rules.
 - **Draw a cell with `core.PutRune` or `Screen.Put`, never `SetContent`.**
   tcell's `SetContent` re-packs its rune into a string per call: two
   allocations per visible cell per frame before W24 (a full-screen grid went
-  from 25,028 to 393 allocations a frame). `FillArea` has the same cost
-  per cell, so `core.FillRect` puts one prebuilt string. A test screen fake
-  that embeds a nil `tcell.Screen` needs a `Put` that forwards to its
-  `SetContent`.
+  from 25,028 to 393 allocations a frame). Fill a rect with `core.FillRect`,
+  which calls `Screen.FillArea`: since tcell 3.6 that converts the rune once
+  and takes the screen lock once, ~7x faster than a `Put` per cell (one lock
+  each). A test screen fake that embeds a nil `tcell.Screen` needs a `Put`
+  that forwards to its `SetContent`, and a `FillArea` that calls
+  `core.FillAreaByPut` (or does nothing, for a fake that discards cells).
 - **Setting a value programmatically drops the selection** — an anchor past a
   shorter new value paints blanks as selected. `SetValue` clears `selecting`
   and re-anchors on the caret; a new `SetXxx` does the same.

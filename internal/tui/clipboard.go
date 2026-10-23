@@ -169,9 +169,32 @@ func (a *App) writeClipboard(text string) {
 		a.postAndWake(func() {
 			if a.clipWriteSeq.Load() == seq {
 				a.screen.SetClipboard([]byte(text))
+				// OSC 52 has no acknowledgement, so the caller's "Copied to
+				// clipboard" may be false: VTE (xfce4-terminal, GNOME Terminal)
+				// ignores OSC 52 writes. Overwrites the caller's status, which
+				// it set synchronously, before this ran.
+				if !terminalClipboardLikely(a.screen) {
+					a.setStatus("Copied via terminal (may be unsupported)")
+				}
 			}
 		})
 	})
+}
+
+// terminalClipboardLikely reports whether an OSC 52 write probably reached
+// the clipboard: the terminal advertised it in its DA1 reply (attribute 52),
+// or it is tmux, which forwards OSC 52 to the outer terminal (set-clipboard
+// on/external) but answers DA1 itself without 52 (3.6: "?1;2;4c"), so
+// HasClipboard alone would flag every copy over SSH-in-tmux. tmux is known
+// by its XTVERSION reply ("tmux 3.6"). GNU screen answers no XTVERSION, and
+// passes OSC 52 through only when wrapped in DCS, which tcell doesn't do —
+// so the hedge is right there.
+func terminalClipboardLikely(s tcell.Screen) bool {
+	if s.HasClipboard() {
+		return true
+	}
+	name, _ := s.Terminal()
+	return name == "tmux"
 }
 
 // clipboardWriter is osClipboardWrite, swapped by tests.

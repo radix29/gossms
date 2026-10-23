@@ -36,7 +36,7 @@ func TestJobStepEditFromStepIsUnchangedAndCarriesEveryField(t *testing.T) {
 		t.Error("orig must point at the loaded step — Update and Delete both need it")
 	}
 
-	want := gosmo.JobStepRequest{
+	want := gosmo.JobStepDefinition{
 		Name: s.Name, Subsystem: s.Subsystem, Command: s.Command, Database: s.Database,
 		OnSuccessAction: s.OnSuccessAction, OnSuccessStepID: s.OnSuccessStepID,
 		OnFailAction: s.OnFailAction, OnFailStepID: s.OnFailStepID,
@@ -157,7 +157,7 @@ func TestStepNumberText(t *testing.T) {
 // jobStepOnActionItems' index is the action code minus one. The two halves
 // cancel in a round trip, so a reordered list would store the wrong action
 // silently; naming the pairs catches it. Codes per
-// gosmo.JobStepRequest.OnSuccessAction.
+// gosmo.JobStepDefinition.OnSuccessAction.
 func TestJobStepOnActionLabelsMatchTheirCodes(t *testing.T) {
 	want := []struct {
 		label string

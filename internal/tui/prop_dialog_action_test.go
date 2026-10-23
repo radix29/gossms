@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/radix29/gossms/internal/db"
@@ -31,56 +32,58 @@ func drainUntil(t *testing.T, a *App, cond func() bool, what string) {
 // which can be the older request. The latch must also clear afterwards, or
 // the button is dead for the rest of the dialog's life.
 func TestPageActionLatchBlocksSecondClickAndClears(t *testing.T) {
-	a := &App{}
-	d := &PropDialog{app: a, ctx: context.Background()}
+	synctest.Test(t, func(t *testing.T) {
+		a := &App{}
+		d := &PropDialog{app: a, ctx: context.Background()}
 
-	var busy bool
-	started := make(chan struct{}, 4)
-	release := make(chan struct{})
-	dones := 0
+		var busy bool
+		started := make(chan struct{}, 4)
+		release := make(chan struct{})
+		dones := 0
 
-	click := func() {
-		d.runPageActionOnce(&busy, func(context.Context) error {
-			started <- struct{}{}
-			<-release
-			return nil
-		}, func(error) { dones++ })
-	}
+		click := func() {
+			d.runPageActionOnce(&busy, func(context.Context) error {
+				started <- struct{}{}
+				<-release
+				return nil
+			}, func(error) { dones++ })
+		}
 
-	click()
-	select {
-	case <-started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("the first click never ran its action")
-	}
+		click()
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("the first click never ran its action")
+		}
 
-	click()
-	// The second click must not have launched anything. Give a goroutine
-	// that should not exist time to signal, so this fails rather than
-	// passing on timing.
-	time.Sleep(50 * time.Millisecond)
-	select {
-	case <-started:
-		t.Fatal("a second click ran while the first was still in flight")
-	default:
-	}
+		click()
+		// The second click must not have launched anything. Wait returns once
+		// every goroutine in the bubble is blocked: the first action on release,
+		// and a second one, if it exists, there too with its send already made.
+		synctest.Wait()
+		select {
+		case <-started:
+			t.Fatal("a second click ran while the first was still in flight")
+		default:
+		}
 
-	close(release)
-	drainUntil(t, a, func() bool { return dones == 1 }, "the first action to report back")
-	if busy {
-		t.Fatal("the latch survived the action, so the button is now dead")
-	}
+		close(release)
+		drainUntil(t, a, func() bool { return dones == 1 }, "the first action to report back")
+		if busy {
+			t.Fatal("the latch survived the action, so the button is now dead")
+		}
 
-	// A fresh gesture after the first completed must run.
-	release = make(chan struct{})
-	close(release)
-	click()
-	select {
-	case <-started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("a click after the first action completed did nothing")
-	}
-	drainUntil(t, a, func() bool { return dones == 2 }, "the second action to report back")
+		// A fresh gesture after the first completed must run.
+		release = make(chan struct{})
+		close(release)
+		click()
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("a click after the first action completed did nothing")
+		}
+		drainUntil(t, a, func() bool { return dones == 2 }, "the second action to report back")
+	})
 }
 
 // The latch has to clear on the failure path too — an action that errors

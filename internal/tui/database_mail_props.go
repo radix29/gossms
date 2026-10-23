@@ -330,7 +330,7 @@ func pageMailParameters(sc *db.ServerConn) propPage {
 				if err != nil {
 					return err
 				}
-				var o gosmo.MailConfigurationOptions
+				var o gosmo.MailConfigurationChanges
 				intOpt := func(row *propsheet.TextRow) (*int, error) {
 					if !row.Dirty() {
 						return nil, nil

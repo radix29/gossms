@@ -156,7 +156,7 @@ type xeSessionModel struct {
 	listeners   []func()
 }
 
-func newXESessionModel(spec gosmo.EventSessionSpec) *xeSessionModel {
+func newXESessionModel(spec gosmo.EventSessionDefinition) *xeSessionModel {
 	return &xeSessionModel{
 		events: cloneXEEvents(spec.Events), origEvents: cloneXEEvents(spec.Events),
 		targets: cloneXETargets(spec.Targets), origTargets: cloneXETargets(spec.Targets),
@@ -293,12 +293,12 @@ func xeFieldsSummary(fields []gosmo.SessionField) string {
 // applied: read it, let edit replace the page's part, and let gosmo's Alter
 // write the difference. The read is the server's definition now, not the one
 // the page loaded — a sibling page applied a moment earlier is part of it.
-func alterXESession(ctx context.Context, sc *db.ServerConn, scope xeScope, name string, edit func(*gosmo.EventSessionSpec)) error {
+func alterXESession(ctx context.Context, sc *db.ServerConn, scope xeScope, name string, edit func(*gosmo.EventSessionDefinition)) error {
 	es, err := scope.byName(ctx, sc, name)
 	if err != nil {
 		return err
 	}
-	spec := es.Spec()
+	spec := es.Definition()
 	edit(&spec)
 	return es.Alter(ctx, spec)
 }
@@ -432,7 +432,7 @@ func (a *App) showNewXESessionDialog(sc *db.ServerConn, scope xeScope) {
 func (d *NewXESessionDialog) buildPages(pf *nxeSessionPrefetch) {
 	sc, scope := d.sc, d.scope
 	host := xeHost{app: d.app, sc: sc, scope: scope, ctx: func() context.Context { return d.ctx }}
-	m := newXESessionModel(gosmo.EventSessionSpec{})
+	m := newXESessionModel(gosmo.EventSessionDefinition{})
 
 	adv := newXEOptionRows(xeNewSessionDefaults(), pf.major, pf.azure)
 	gen := newXENewGeneral(pf, m, adv)
@@ -463,7 +463,7 @@ func (d *NewXESessionDialog) buildPages(pf *nxeSessionPrefetch) {
 		return adv.validate()
 	}
 	d.applyFns[nxePageGeneral] = func(ctx context.Context) error {
-		spec := gosmo.EventSessionSpec{
+		spec := gosmo.EventSessionDefinition{
 			Name:    gen.name(),
 			Events:  cloneXEEvents(m.events),
 			Targets: cloneXETargets(m.targets),

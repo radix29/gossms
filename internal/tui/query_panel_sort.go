@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -19,10 +20,13 @@ import (
 // the server returned it in, which Results to Text and a re-run still show.
 //
 // Unlike the Details pane's cells, a result set's carry their declared type, so a
-// column is compared by it: numeric types by value, NULL last in either
-// direction (as the Details pane's blanks, not as ORDER BY), everything
-// else as case-insensitive text (the default collations' order; the formats the
-// date/time types render in sort as text).
+// column is compared by it: numeric types by value (decimal and money exactly,
+// by their digits), datetimeoffset by instant, NULL last in either direction
+// (as the Details pane's blanks, not as ORDER BY), everything else as
+// case-insensitive code-point order. That is not a collation's order: é sorts
+// after z, not beside e, and a hyphen a Windows collation's word sort ignores
+// counts here. The formats the other date/time types render in sort correctly
+// as text.
 
 // resultSort is one result set's order: the column, its direction, and perm,
 // where perm[i] is the set's index of the i-th row shown.
@@ -190,12 +194,18 @@ func (p *QueryPanel) resultSortMenuItems() []controls.MenuItem {
 }
 
 // resultSortKind is how a column's cells compare, from its declared type.
-type resultSortKind int
+type resultSortKind uint8
 
 const (
 	sortAsText resultSortKind = iota
 	sortAsInt
 	sortAsFloat
+	// sortAsDecimal compares the cell's digits exactly: decimal(38, s) has 38
+	// significant digits and money 19, past a float64's 15-17.
+	sortAsDecimal
+	// sortAsInstant compares a datetimeoffset by the instant it names, not by its
+	// wall time in its own offset.
+	sortAsInstant
 )
 
 // resultSortKindOf reads a declared type as columnTypeName renders it
@@ -206,18 +216,25 @@ func resultSortKindOf(typ string) resultSortKind {
 	switch name {
 	case "bigint", "int", "smallint", "tinyint", "bit":
 		return sortAsInt
-	case "decimal", "numeric", "money", "smallmoney", "float", "real":
+	case "decimal", "numeric", "money", "smallmoney":
+		return sortAsDecimal
+	case "float", "real":
 		return sortAsFloat
+	case "datetimeoffset":
+		return sortAsInstant
 	}
 	return sortAsText
 }
 
 // resultSortKey is one cell read for sorting, and row the set's index of its
-// row. A cell of a numeric column that does not parse (none should) falls back
-// to text, after every number.
+// row. typed is set when the cell read as its column's kind; a cell that does
+// not (none should) falls back to text, after every typed one. A decimal key is
+// decimalSortKey's; an instant key holds Unix seconds in i and the nanoseconds
+// in f.
 type resultSortKey struct {
 	null  bool
-	isNum bool
+	typed bool
+	kind  resultSortKind
 	row   int
 	i     int64
 	f     float64
@@ -269,11 +286,21 @@ func newResultSortKey(cell string, kind resultSortKind) resultSortKey {
 	switch kind {
 	case sortAsInt:
 		if n, err := strconv.ParseInt(cell, 10, 64); err == nil {
-			return resultSortKey{isNum: true, i: n, f: float64(n)}
+			return resultSortKey{typed: true, kind: kind, i: n, f: float64(n)}
 		}
 	case sortAsFloat:
 		if n, err := strconv.ParseFloat(cell, 64); err == nil {
-			return resultSortKey{isNum: true, f: n}
+			return resultSortKey{typed: true, kind: kind, f: n}
+		}
+	case sortAsDecimal:
+		if rank, digits, ok := decimalSortKey(cell); ok {
+			return resultSortKey{typed: true, kind: kind, i: rank, text: digits}
+		}
+	case sortAsInstant:
+		// The executor's layout without the fraction: Parse accepts one after
+		// the seconds anyway, so this reads every scale.
+		if t, err := time.Parse("2006-01-02 15:04:05 -07:00", cell); err == nil {
+			return resultSortKey{typed: true, kind: kind, i: t.Unix(), f: float64(t.Nanosecond())}
 		}
 	}
 	// ToLower returns an already-lower ASCII cell as is, without allocating.
@@ -282,9 +309,10 @@ func newResultSortKey(cell string, kind resultSortKind) resultSortKey {
 
 // compareResultSortKeys orders a before b ascending, or the reverse for desc:
 // numbers by value (integers exactly: a bigint past 2^53 is not exact as a
-// float64), then text. NULL sorts last either way, as the Details pane's blanks
-// do (compareDetailSortKeys), so reversing a column doesn't bring every NULL to
-// the top.
+// float64, nor are decimals past 15 digits), datetimeoffsets by instant, then
+// text. NULL sorts last either way, as the Details pane's blanks do
+// (compareDetailSortKeys), so reversing a column doesn't bring every NULL to the
+// top.
 func compareResultSortKeys(a, b resultSortKey, desc bool) int {
 	if a.null || b.null {
 		return cmp.Compare(boolRank(a.null), boolRank(b.null))
@@ -299,16 +327,73 @@ func compareResultSortKeys(a, b resultSortKey, desc bool) int {
 // compareResultValues orders two non-NULL keys ascending.
 func compareResultValues(a, b resultSortKey) int {
 	switch {
-	case a.isNum && b.isNum:
+	case a.typed && b.typed:
+		switch a.kind {
+		case sortAsDecimal:
+			if c := cmp.Compare(a.i, b.i); c != 0 || a.i == 0 {
+				return c
+			}
+			// One sign, one integer length: the digits decide, the larger
+			// magnitude the smaller value below zero.
+			c := strings.Compare(a.text, b.text)
+			if a.i < 0 {
+				return -c
+			}
+			return c
+		case sortAsInstant:
+			return cmp.Or(cmp.Compare(a.i, b.i), cmp.Compare(a.f, b.f))
+		}
 		// i is 0 for both outside an integer column.
 		if c := cmp.Compare(a.f, b.f); c != 0 {
 			return c
 		}
 		return cmp.Compare(a.i, b.i)
-	case a.isNum != b.isNum:
-		return cmp.Compare(boolRank(!a.isNum), boolRank(!b.isNum))
+	case a.typed != b.typed:
+		return cmp.Compare(boolRank(!a.typed), boolRank(!b.typed))
 	}
 	return strings.Compare(a.text, b.text)
+}
+
+// decimalSortKey reads cell, as the executor renders a decimal or money column
+// (-?digits(.digits)?, decimalLike), into a key that orders it exactly, decimal(38,
+// s) having 38 significant digits and money 19, past a float64's 15-17. rank is
+// 0 for zero, otherwise the integer part's length past its leading zeros, plus
+// one, negated below zero: so the sign and then the magnitude's size order two
+// cells first. digits is the cell's digits without its sign, leading zeros,
+// trailing fraction zeros or a dot left bare, a substring of cell: at one rank
+// the dots line up and its bytes order the magnitudes (0.05 < 0.1 < 0.12). ok is
+// false when cell is not in that form.
+//
+// Read once per cell rather than per compare: splitting the cell on every
+// compare sorted a million rows 3.5 times slower than a float column.
+func decimalSortKey(cell string) (rank int64, digits string, ok bool) {
+	neg := strings.HasPrefix(cell, "-")
+	s := strings.TrimPrefix(cell, "-")
+	intPart, frac, hasDot := strings.Cut(s, ".")
+	if intPart == "" || hasDot && frac == "" || !allDigits(intPart) || !allDigits(frac) {
+		return 0, "", false
+	}
+	s = strings.TrimLeft(s, "0")
+	if hasDot {
+		s = strings.TrimSuffix(strings.TrimRight(s, "0"), ".")
+	}
+	if s == "" {
+		return 0, "", true
+	}
+	rank = int64(len(strings.TrimLeft(intPart, "0"))) + 1
+	if neg {
+		rank = -rank
+	}
+	return rank, s, true
+}
+
+func allDigits(s string) bool {
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func boolRank(b bool) int {

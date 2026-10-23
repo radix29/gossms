@@ -135,10 +135,10 @@ Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
     into Route Properties, which gets the server's clear message. Gating one
     value of a free-text field per edition isn't a shape `edition_gate.go` has.
   - Both writable pages (and any future New-X) respect: nil field = leave
-    alone, only changes are sent; `QueueSettings.Activation` is restated in full
+    alone, only changes are sent; `QueueChanges.Activation` is restated in full
     (the server refuses a partial ACTIVATION on a queue without one), so an
     emptied procedure name maps to `ACTIVATION (DROP)` and is an error on a
-    queue with no activation; **`RouteSettings` can change but never clear** a
+    queue with no activation; **`RouteChanges` can change but never clear** a
     setting (`= NULL` doesn't parse, empty is refused — drop and recreate), so
     Route Properties refuses an emptied row with a message.
 - **System Data Types has no Properties dialog** (SSMS has none; `int` says it
@@ -1441,7 +1441,7 @@ it from the string 'NULL'.
   target. Microsoft's dialog page, which equates unticked with
   `TRUNCATEONLY`, is wrong; gosmo's `ShrinkDatabaseOptions` zero value is
   right. SSMS 21 has no WAIT_AT_LOW_PRIORITY option there — gossms's Locking
-  rows (SQL 2025+) are an extra.
+  rows (SQL 2022+) are an extra.
 - **Format Document upper-cases table hints only inside `WITH (…)`**: the
   legacy `JOIN log (nolock)` form stays as typed, since `(…)` after an
   unqualified name there may be a TVF's arguments (`CROSS APPLY f(nolock)`
@@ -1552,15 +1552,28 @@ it from the string 'NULL'.
   `replace` are release steps (ARCHITECTURE.md § Developing against a local
   gosmo checkout). A CI release build failing to resolve gosmo mid-development
   is expected.
-- **A Grid/Text result can exhaust memory** — no Max Result Rows, no `maxRows`:
-  results are retained in full, as SSMS ("you get what you asked for"). Storage
-  is already compact (`internal/query/arena.go`; the floor is the 16-byte string
-  header per cell of `ResultSet.Rows [][]string`). Results To File retains
-  nothing. Don't add a cap.
+- **A Grid/Text result is unlimited by default and can exhaust memory** — as
+  SSMS ("you get what you asked for"). Storage is already compact
+  (`internal/query/arena.go`; the floor is the 16-byte string header per cell
+  of `ResultSet.Rows [][]string`). The one bound is opt-in: Tools > Options'
+  Max fetch rows (`config.MaxFetchRows`, `query.WithMaxRows`) keeps at most N
+  rows per result set in every results mode and cancels the rest of the script
+  (docs/db-rules.md § Query execution). Results To File retains nothing, so its
+  memory is bounded whatever the cap. Don't make the cap a default.
 - **The `Meta` (Output Column Metadata) block is grid-only** — it reads
   `Result.Sets`, which `ExecuteToSink` leaves empty (and `RowSink.BeginSet`
   lacks types); it takes effect on the *next* run. Don't thread `ColumnTypes`
   through the sink.
+- **Results To File writes the destination only for a clean run** — a run
+  that is stopped, or reports any error (one failing statement among many, or
+  the last batch), discards everything streamed and leaves the file as it was
+  (`csvSink.finish`, `internal/tui/query_panel_export.go`;
+  `TestCSVSinkFinishKeepsTheFileOnStopOrError`), unlike SSMS, which keeps what
+  it wrote. This was the v0.1.0 fix for a destination replaced by partial
+  output: the user agreed to overwrite with *the results*, and a partial CSV
+  looks complete to whatever reads it next. The Max fetch rows cap is a notice,
+  not an error, so a capped run is still written. Don't make finish commit on
+  error or on Stop.
 - **The DataGrid cell-viewer popup is unhighlighted.** Values bracketed by
   `<>`, `{}` or JSON-shaped `[]` open in their own panel with
   `XMLHighlighter`/`JSONHighlighter` (`internal/tui/cell_value.go`); the rest

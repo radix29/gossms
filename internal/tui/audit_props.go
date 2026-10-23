@@ -192,7 +192,7 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 						// Every field goes into the spec, dirty or not: ALTER
 						// SERVER AUDIT replaces the whole setting block, so a
 						// value left out is a value cleared.
-						spec := gosmo.ServerAuditSpec{
+						spec := gosmo.ServerAuditDefinition{
 							Name:       *auditName,
 							Type:       auditDestinationValues[destRow.Selected()],
 							QueueDelay: int(delay),

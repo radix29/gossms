@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // rowRecordingScreen records which screen row each drawn cell landed on, so a
@@ -30,6 +31,10 @@ func (s *rowRecordingScreen) Put(x, y int, str string, _ tcell.Style) (string, i
 	}
 	s.cells[[2]int{x, y}] = str
 	return str, 1
+}
+
+func (s *rowRecordingScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
 }
 
 // rowOf answers the screen row whose text contains want, or -1.

@@ -44,12 +44,27 @@ reload, a showing's several loads), wait on the outcome with
 `drainUntil(t, a, cond, what)` instead — two `-race`-only flakes came from
 this.
 
+**A test package that can save config sandboxes `os.UserConfigDir` in
+`TestMain`** (`internal/tui/main_test.go` sets `XDG_CONFIG_HOME`, `HOME`,
+`AppData` to a temp dir). Without it, any `saveConfig` writes the developer's
+real `config.json`. `TestOptionsApplySwitchesColorTheme` flipped the user's
+theme to Light on every `go test ./...`.
+
 **A timing test over pure channels and timers runs in `synctest.Test`.** The
 bubble's clock is fake, so a window holds exactly the ticks the schedule
 predicts: assert exact counts and wait with `synctest.Sleep`, not a
 `time.Sleep` poll loop (`internal/activity/collector_test.go`). Only for code
 that does no real I/O — a goroutine blocked on a tty, socket or live server is
 not "durably blocked", so screen and live tests can't move.
+
+**"Give it time, then assert nothing happened" is `synctest.Wait()`, not a
+sleep.** A too-short sleep never fails such a test — it passes without having
+checked anything. In a bubble, `Wait` returns once every goroutine is blocked
+or gone, so a post or a goroutine that should not exist has shown itself
+(`safego_test.go`, `prop_dialog_pageruns_test.go`; the `fakedb` driver works
+in a bubble). If the goroutine always posts and the post must be *ignored*,
+`waitAndDrain` for it instead. A goroutine parked on a `sync.Mutex` is not
+durably blocked, so `Wait` hangs on it (`clipboard_test.go` keeps its sleeps).
 
 **A `-race`-only failure can be a stale build cache.** After a mutation check
 edited and restored a file, `go test -race` kept failing on byte-identical

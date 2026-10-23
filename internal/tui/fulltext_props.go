@@ -132,7 +132,7 @@ func fullTextOwnerItems(ctx context.Context, d *gosmo.Database) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	roles, err := d.DatabaseRoles(ctx)
+	roles, err := d.Roles(ctx)
 	if err != nil {
 		return nil, err
 	}

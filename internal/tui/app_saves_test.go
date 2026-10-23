@@ -141,6 +141,10 @@ func TestTrackedSaveDoesNotBlockTheUI(t *testing.T) {
 	reported := false
 	start := time.Now()
 	a.saveTracked(func(err error) { saveErr, reported = err, true })
+	// Let the save reach the lock file. Nothing here can see that it has, but
+	// a sleep too short only makes the reads below early, never failing; the
+	// exact version of the reader check is config's
+	// TestTrackedReadersDoNotWaitOnASave.
 	time.Sleep(20 * time.Millisecond)
 	tracked := tq.IsTracked("srv", "db", 7)
 	if waited := time.Since(start); waited > 500*time.Millisecond {

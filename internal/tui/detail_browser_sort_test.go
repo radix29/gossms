@@ -212,3 +212,19 @@ func TestParseDetailNumber(t *testing.T) {
 		}
 	}
 }
+
+// formatBytes picks its unit per cell, so a Size column mixes units: the sort
+// has to compare bytes, not mantissas.
+func TestDetailSortScalesByteUnits(t *testing.T) {
+	cells := []string{"3.0 GB", "1.2 MB", "4.0 KB", "512 B", "1023 B"}
+	slices.SortFunc(cells, func(a, b string) int {
+		return compareDetailSortKeys(newDetailSortKey(a), newDetailSortKey(b), false)
+	})
+	if want := []string{"512 B", "1023 B", "4.0 KB", "1.2 MB", "3.0 GB"}; !slices.Equal(cells, want) {
+		t.Errorf("sorted = %v, want %v", cells, want)
+	}
+	// Non-byte units are stripped, not scaled.
+	if n, _ := parseDetailNumber("250 ms"); n != 250 {
+		t.Errorf(`parseDetailNumber("250 ms") = %v, want 250`, n)
+	}
+}

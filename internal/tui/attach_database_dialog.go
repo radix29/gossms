@@ -226,12 +226,13 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 				return err
 			}
 		}
-		return sc.Server.AttachDatabase(ctx, gosmo.AttachSpec{
+		_, err := sc.Server.AttachDatabase(ctx, gosmo.AttachDatabaseRequest{
 			Name:       d.objectName(),
 			Files:      paths,
 			Owner:      strings.TrimSpace(ownerRow.Value()),
 			RebuildLog: rebuildRow.Checked(),
 		})
+		return err
 	}
 }
 

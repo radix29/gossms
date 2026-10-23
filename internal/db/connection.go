@@ -27,14 +27,16 @@ const (
 )
 
 // connMaxIdleTime evicts a pooled connection idle this long. A database-scoped
-// read leaves its connection inside that database until the next checkout
+// write leaves its connection inside that database until the next checkout
 // resets it, holding a shared database lock: gosmo's 5-minute default made
 // someone else's RESTORE, SET OFFLINE or SET SINGLE_USER fail with "Exclusive
-// access could not be obtained" for that long after a gossms user merely
-// expanded the database, and kept an AUTO_CLOSE database open. The cost is one
-// re-login after a minute idle (~25 ms measured). ReleaseIdleConnections still
-// covers gossms's own exclusive writes. A query panel's pinned session
-// (gosmo.AcquireConn) is checked out, so this never closes it.
+// access could not be obtained" for that long after a gossms user changed
+// something in the database, and kept an AUTO_CLOSE database open. A read no
+// longer does (gosmo's procRead, 2026-10-23), so merely expanding the database
+// is safe; writes are why this stays. The cost is one re-login after a minute
+// idle (~25 ms measured). ReleaseIdleConnections still covers gossms's own
+// exclusive writes. A query panel's pinned session (gosmo.AcquireConn) is
+// checked out, so this never closes it.
 const connMaxIdleTime = 60 * time.Second
 
 // connectTimeout bounds one connection attempt (dial, TLS, login, gosmo's
@@ -304,8 +306,10 @@ func (sc *ServerConn) Close() {
 // CloneOpts is Opts for another connection to the same instance (a query
 // window, the Activity Monitor, an Extended Events viewer). A named database
 // is the one sc's pool logs in to now: gosmo moves the pool off its login
-// database when a write through sc drops, detaches, takes offline or renames
-// it (gosmo.Server.InitialDatabase), and a clone still naming it would be
+// database when that database stops accepting logins — a write through sc
+// drops, detaches, renames, takes offline, restores WITH NORECOVERY or sets it
+// SINGLE_USER, or a dial finds it refused for any other reason
+// (gosmo.Server.InitialDatabase) — and a clone still naming it would be
 // refused at login ("Cannot open database "X" requested by the login").
 // An empty Database stays empty, as sc was given it.
 func (sc *ServerConn) CloneOpts() config.Connection {

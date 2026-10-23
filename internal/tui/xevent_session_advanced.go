@@ -30,8 +30,8 @@ var (
 // xeNewSessionDefaults are the options New Session opens with — SSMS's New
 // Session defaults, written out in the CREATE rather than left to the server,
 // so the script says what the session is.
-func xeNewSessionDefaults() gosmo.EventSessionSpec {
-	return gosmo.EventSessionSpec{
+func xeNewSessionDefaults() gosmo.EventSessionDefinition {
+	return gosmo.EventSessionDefinition{
 		RetentionMode:       gosmo.XERetentionAllowSingleEventLoss,
 		MaxDispatchLatency:  30 * time.Second,
 		MaxMemory:           4096,
@@ -48,7 +48,7 @@ type xeOptionRows struct {
 	maxDuration                      *propsheet.TextRow
 }
 
-func newXEOptionRows(spec gosmo.EventSessionSpec, major int, azure bool) *xeOptionRows {
+func newXEOptionRows(spec gosmo.EventSessionDefinition, major int, azure bool) *xeOptionRows {
 	r := &xeOptionRows{
 		retention:    propsheet.Select("Event retention mode", xeRetentionItems, 0),
 		partition:    propsheet.Select("Memory partition mode", xePartitionItems, 0),
@@ -65,7 +65,7 @@ func newXEOptionRows(spec gosmo.EventSessionSpec, major int, azure bool) *xeOpti
 
 // set shows spec's options and makes them the rows' baseline — on load, and
 // when a New Session template replaces them.
-func (r *xeOptionRows) set(spec gosmo.EventSessionSpec) {
+func (r *xeOptionRows) set(spec gosmo.EventSessionDefinition) {
 	r.retention.SetSelected(max(slices.Index(xeRetentionValues, spec.RetentionMode), 0))
 	r.partition.SetSelected(max(slices.Index(xePartitionValues, spec.MemoryPartitionMode), 0))
 	latency := int64(0) // XEInfinite
@@ -82,7 +82,7 @@ func (r *xeOptionRows) set(spec gosmo.EventSessionSpec) {
 
 // apply writes the rows into spec. Rows that don't parse have already been
 // refused by validate; a zero written here is then never a typo's.
-func (r *xeOptionRows) apply(spec *gosmo.EventSessionSpec) {
+func (r *xeOptionRows) apply(spec *gosmo.EventSessionDefinition) {
 	spec.RetentionMode = xeRetentionValues[r.retention.Selected()]
 	spec.MemoryPartitionMode = xePartitionValues[r.partition.Selected()]
 	spec.MaxDispatchLatency = gosmo.XEInfinite
@@ -153,7 +153,7 @@ func pageXESessionAdvanced(sc *db.ServerConn, scope xeScope, name string) propPa
 			if err != nil {
 				return nil, nil, err
 			}
-			rows := newXEOptionRows(es.Spec(), serverMajor(sc), sc.Server.Info().IsAzure())
+			rows := newXEOptionRows(es.Definition(), serverMajor(sc), sc.Server.Info().IsAzure())
 			running := es.IsRunning
 			apply := func(ctx context.Context) error {
 				return alterXESession(ctx, sc, scope, name, rows.apply)

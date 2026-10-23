@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
@@ -54,29 +55,32 @@ func awaitDone(t *testing.T, ctx context.Context, what string) {
 // flight, each holding a pooled connection for up to propFetchTimeout, with
 // the read the user is actually waiting for queued behind all of them.
 func TestPropDialogRefreshDuringALoadStartsNothing(t *testing.T) {
-	a := newTestApp()
-	sc, _ := newFakeConn(t)
-	d := NewPropDialog(a)
+	synctest.Test(t, func(t *testing.T) {
+		a := newTestApp()
+		sc, _ := newFakeConn(t)
+		d := NewPropDialog(a)
 
-	seen := make(chan context.Context, 4)
-	release := make(chan struct{})
-	defer close(release)
-	d.show(sc, "", "Properties", "", "", ctxPage(seen, release))
-	awaitCtx(t, seen, "the first load to start")
+		seen := make(chan context.Context, 4)
+		release := make(chan struct{})
+		defer close(release)
+		d.show(sc, "", "Properties", "", "", ctxPage(seen, release))
+		awaitCtx(t, seen, "the first load to start")
 
-	d.Refresh(0)
-	d.Refresh(0)
-	// A load that should not exist needs time to reach the channel, so this
-	// fails rather than passing on timing.
-	time.Sleep(50 * time.Millisecond)
-	select {
-	case <-seen:
-		t.Fatal("Refresh started a second load for a page that was already loading")
-	default:
-	}
-	if st := d.PageState(0); st != propsheet.PageLoading {
-		t.Fatalf("PageState(0) = %v, want still PageLoading", st)
-	}
+		d.Refresh(0)
+		d.Refresh(0)
+		// Wait returns once every goroutine in the bubble is blocked: the first
+		// load on release, and a second, if it exists, there too with its context
+		// already on seen.
+		synctest.Wait()
+		select {
+		case <-seen:
+			t.Fatal("Refresh started a second load for a page that was already loading")
+		default:
+		}
+		if st := d.PageState(0); st != propsheet.PageLoading {
+			t.Fatalf("PageState(0) = %v, want still PageLoading", st)
+		}
+	})
 }
 
 // The cancel half of the latest-only contract: a load that supersedes another

@@ -99,7 +99,7 @@ func pageBrokerQueueGeneral(sc *db.ServerConn, dbName, schema, name string) prop
 			)
 
 			apply := func(ctx context.Context) error {
-				s := gosmo.QueueSettings{}
+				s := gosmo.QueueChanges{}
 				dirty := false
 				if status.Dirty() {
 					v := status.Checked()

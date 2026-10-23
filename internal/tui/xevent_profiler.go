@@ -32,7 +32,7 @@ import (
 type xeProfilerKind struct {
 	label    string // the leaf's label and the Tools submenu's item
 	session  string // the session gossms creates for it
-	template func() gosmo.EventSessionSpec
+	template func() gosmo.EventSessionDefinition
 }
 
 var xeProfilerKinds = []xeProfilerKind{
@@ -65,7 +65,7 @@ const (
 // a target the viewer reads. A Managed Instance refuses an event_file without
 // a blob URL (Msg 40538), so there it is a ring_buffer — Phase G's default,
 // pulled forward.
-func (k xeProfilerKind) spec(azure bool) gosmo.EventSessionSpec {
+func (k xeProfilerKind) spec(azure bool) gosmo.EventSessionDefinition {
 	spec := k.template()
 	spec.Name = k.session
 	spec.MaxDispatchLatency = xeProfilerLatency

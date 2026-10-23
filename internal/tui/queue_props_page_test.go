@@ -27,7 +27,7 @@ func loadQueuePage(t *testing.T, name string, row int) (*fakeInstance, propApply
 	return inst, apply, form
 }
 
-// TestQueuePageSendsOnlyTheSettingThatChanged. A nil field in QueueSettings
+// TestQueuePageSendsOnlyTheSettingThatChanged. A nil field in QueueChanges
 // means "leave this alone", and a page restating everything it read would
 // rewrite an activation block the user never touched — over any change another
 // session made between the load and the apply.

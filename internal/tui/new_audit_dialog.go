@@ -121,7 +121,7 @@ func (d *NewAuditDialog) buildPages(pf *nauditPrefetch) {
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
 		delay, _ := delayField.IntValue()
-		spec := gosmo.ServerAuditSpec{
+		spec := gosmo.ServerAuditDefinition{
 			Name:       d.objectName(),
 			Type:       auditDestinationValues[destField.Selected()],
 			QueueDelay: int(delay),

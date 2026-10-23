@@ -262,7 +262,11 @@ func TestQuickCopiesLeaveTheLastOnTheClipboard(t *testing.T) {
 	<-entered // A's tool is running
 	a.writeClipboard("B")
 	a.writeClipboard("C")
-	time.Sleep(20 * time.Millisecond) // let B and C reach the tool, if they can
+	// Let B and C queue behind A. Fixed sleeps, not synctest: a goroutine
+	// parked on clipWriteMu (a sync.Mutex) is not durably blocked, so
+	// synctest.Wait would hang. Too short only weakens the test — B and C
+	// arrive after A, and B is still superseded — it never fails it.
+	time.Sleep(20 * time.Millisecond)
 	close(release)
 	select {
 	case <-done:
@@ -346,5 +350,55 @@ func TestCopyFromEmptyResultsGridLeavesClipboardAlone(t *testing.T) {
 	}
 	if a.statusText != status {
 		t.Errorf("status = %q, want it left at %q", a.statusText, status)
+	}
+}
+
+// osc52Screen is a screen whose DA1/XTVERSION replies are set by the test,
+// for the OSC 52 fallback's status message.
+type osc52Screen struct {
+	tcell.Screen
+	da52     bool
+	termName string
+	got      []byte
+}
+
+// EventQ takes postAndWake's interrupt; the test drains a.wake itself.
+func (s *osc52Screen) EventQ() chan tcell.Event   { return make(chan tcell.Event, 1) }
+func (s *osc52Screen) SetClipboard(b []byte)      { s.got = b }
+func (s *osc52Screen) HasClipboard() bool         { return s.da52 }
+func (s *osc52Screen) Terminal() (string, string) { return s.termName, "" }
+
+// A copy that fell back to OSC 52 says it may not have worked when the
+// terminal neither advertised OSC 52 nor is tmux: VTE (xfce4-terminal,
+// Terminator) answers DA1 with "?61;1;21;22;28c" and ignores the write, while
+// tmux 3.6 answers "?1;2;4c" yet forwards it to the outer terminal.
+func TestOSC52CopyStatusHedgesOnlyWhenUnadvertised(t *testing.T) {
+	old := clipboardWriter
+	clipboardWriter = func(string) bool { return false } // no native tool
+	defer func() { clipboardWriter = old }()
+
+	for _, tc := range []struct {
+		name     string
+		da52     bool
+		termName string
+		want     string
+	}{
+		{"VTE", false, "", "Copied via terminal (may be unsupported)"},
+		{"advertises 52", true, "", "Copied to clipboard"},
+		{"tmux", false, "tmux", "Copied to clipboard"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestApp()
+			s := &osc52Screen{da52: tc.da52, termName: tc.termName}
+			a.screen = s
+			a.copyWithStatus("SELECT 1")
+			waitAndDrain(t, a)
+			if string(s.got) != "SELECT 1" {
+				t.Fatalf("OSC 52 write = %q, want the copied text", s.got)
+			}
+			if a.statusText != tc.want {
+				t.Errorf("status = %q, want %q", a.statusText, tc.want)
+			}
+		})
 	}
 }

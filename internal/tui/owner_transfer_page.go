@@ -221,7 +221,7 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRoles(ctx)
+			roles, err := d.Roles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

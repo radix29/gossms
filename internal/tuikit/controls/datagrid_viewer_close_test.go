@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // viewerScreen is a tcell.Screen fake with just enough surface to run
@@ -22,6 +23,11 @@ func (s *viewerScreen) Get(x, y int) (string, tcell.Style, int) {
 func (s *viewerScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
 	return str, 1
 }
+
+func (s *viewerScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 func (s *viewerScreen) SetContent(x, y int, primary rune, combining []rune, style tcell.Style) {}
 func (s *viewerScreen) ShowCursor(x, y int)                                                    {}
 

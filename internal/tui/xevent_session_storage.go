@@ -516,7 +516,7 @@ func pageXESessionStorage(h xeHost, name string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			m := newXESessionModel(es.Spec())
+			m := newXESessionModel(es.Definition())
 			s := newXEStorageEditor(h, cat, m, func() string { return name }, cols, serverIsAzure(h.sc), xeBlobContainers(ctx, h))
 			apply := func(ctx context.Context) error {
 				if !m.targetsDirty() {
@@ -526,7 +526,7 @@ func pageXESessionStorage(h xeHost, name string) propPage {
 					return err
 				}
 				targets := cloneXETargets(m.targets)
-				return alterXESession(ctx, h.sc, h.scope, name, func(sp *gosmo.EventSessionSpec) { sp.Targets = targets })
+				return alterXESession(ctx, h.sc, h.scope, name, func(sp *gosmo.EventSessionDefinition) { sp.Targets = targets })
 			}
 			return s.form(), apply, nil
 		},

@@ -91,6 +91,19 @@ work; close an item by deleting it when fixed.
 
 ### Bugs and suspected defects
 
+- **B28 — Restrict access back to MULTI_USER failed once, Msg 5064.**
+  Seen 2026-10-23 driving B1 of the review plan on 17: SINGLE_USER through
+  Database Properties ▸ Options, 70 s idle, expand the database, then
+  MULTI_USER → "Changes to the state or options of database … cannot be made
+  at this time. The database is in single-user mode, and a user is currently
+  connected to it." A goSSMS session sat idle in the database. OK again a
+  minute later succeeded, and a second identical pass did not reproduce it.
+  Live probes in gosmo (`ALTER … SET MULTI_USER WITH ROLLBACK IMMEDIATE`
+  from a second pooled session while the holder idles in the database)
+  succeed every time, so an idle holder alone is not the cause. Suspected: a
+  concurrent goSSMS read (the Details pane, a fan-out) entering the database
+  as the ALTER ran. Unfixed; needs a reproduction first.
+
 ### Verification gaps
 
 - **V2 — Azure Extended Events not run end to end.** Azure SQL Database's database-scoped sessions

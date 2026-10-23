@@ -77,7 +77,7 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 	for _, u := range users {
 		pf.existingNames.Add(u.Name)
 	}
-	roles, err := d.DatabaseRoles(ctx)
+	roles, err := d.Roles(ctx)
 	if err != nil {
 		return nil, err
 	}

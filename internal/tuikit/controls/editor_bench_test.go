@@ -37,6 +37,7 @@ func benchScript(n int) string {
 	return sb.String()
 }
 func (s *discardScreen) Put(_, _ int, str string, _ tcell.Style) (string, int) { return "", 1 }
+func (s *discardScreen) FillArea(int, int, int, int, rune, tcell.Style)        {}
 
 // BenchmarkEditorDrawHighlighted10k is the measurement behind the
 // prefix-state cache: a Draw pass over a 40-row viewport scrolled to the

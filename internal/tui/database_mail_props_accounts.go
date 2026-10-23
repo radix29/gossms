@@ -117,11 +117,11 @@ func (e *mailAccountEdit) credentialRefusal() string {
 	return ""
 }
 
-// options is the MailAccountOptions for every setting cur differs from orig
+// options is the MailAccountChanges for every setting cur differs from orig
 // in.
-func (e *mailAccountEdit) options() (gosmo.MailAccountOptions, error) {
+func (e *mailAccountEdit) options() (gosmo.MailAccountChanges, error) {
 	c, b := e.cur, e.orig
-	var o gosmo.MailAccountOptions
+	var o gosmo.MailAccountChanges
 	str := func(cur, base string) *string {
 		if cur == base {
 			return nil

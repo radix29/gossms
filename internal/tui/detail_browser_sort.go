@@ -215,10 +215,20 @@ func newDetailSortKey(cell string) detailSortKey {
 }
 
 // parseDetailNumber reads a cell rendered from a number: formatMB's "12,345 MB",
-// FormatThousands' "1,234", a percentage. Anything else (a name, a date, a
-// version such as 16.0.4135.4) is not a number, so it sorts as text.
+// formatBytes' "4.0 KB", FormatThousands' "1,234", a percentage. Anything else
+// (a name, a date, a version such as 16.0.4135.4) is not a number, so it sorts
+// as text.
+//
+// A byte unit scales the value to bytes: formatBytes picks its unit per cell,
+// so the SQL Server Logs Size column mixes "512 B", "4.0 KB" and "1.2 MB", and
+// comparing the bare mantissas put 4.0 KB before 512 B. Other units (ms, rows)
+// are only stripped.
 func parseDetailNumber(s string) (float64, bool) {
+	scale := 1.0
 	if i := strings.LastIndexByte(s, ' '); i > 0 && isUnitSuffix(s[i+1:]) {
+		if f, ok := byteUnitScale[s[i+1:]]; ok {
+			scale = f
+		}
 		s = s[:i]
 	}
 	s = strings.TrimSuffix(s, "%")
@@ -229,7 +239,13 @@ func parseDetailNumber(s string) (float64, bool) {
 		return 0, false
 	}
 	n, err := strconv.ParseFloat(s, 64)
-	return n, err == nil
+	return n * scale, err == nil
+}
+
+// byteUnitScale is the factor to bytes of each binary unit formatBytes writes.
+var byteUnitScale = map[string]float64{
+	"B": 1, "KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30,
+	"TB": 1 << 40, "PB": 1 << 50, "EB": 1 << 60,
 }
 
 // isUnitSuffix reports whether s reads as a short unit after a number (MB, KB,

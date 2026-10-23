@@ -111,8 +111,8 @@ func (e *fileEdit) reset() {
 // that has since grown past its recorded size would fail with "MODIFY FILE failed.
 // Specified size is less than or equal to current size". For the same reason a
 // smaller size is not sent here at all (Msg 5039): it is a shrink (see shrinks).
-func (e *fileEdit) modify() gosmo.FileModify {
-	var m gosmo.FileModify
+func (e *fileEdit) modify() gosmo.DatabaseFileChanges {
+	var m gosmo.DatabaseFileChanges
 	if e.name != e.origName {
 		m.NewName = e.name
 	}

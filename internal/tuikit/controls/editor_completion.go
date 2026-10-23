@@ -407,11 +407,8 @@ func (e *Editor) ensureCompletionVisible() {
 		e.completionScroll = 0
 		return
 	}
-	e.completionScroll = min(e.completionScroll,
+	e.completionScroll = min(e.completionSel, e.completionScroll,
 		max(0, len(e.completionItems)-maxCompletionRows))
-	if e.completionSel < e.completionScroll {
-		e.completionScroll = e.completionSel
-	}
 	if e.completionSel >= e.completionScroll+maxCompletionRows {
 		e.completionScroll = e.completionSel - maxCompletionRows + 1
 	}

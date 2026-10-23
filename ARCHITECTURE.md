@@ -711,8 +711,8 @@ then assert the *next* one still runs — a flag check passes on a dead latch.
 ## Latest-only loads: latest
 
 `internal/tui/latest.go` owns "start a load, cancel the one it replaces, drop
-stale results". Almost every async read is latest-only, and each of these owns
-a `latest`: an Object Explorer node's children (`object_explorer.go`), the
+stale results". Almost every async read is latest-only, and many sites own a
+`latest` — among them an Object Explorer node's children (`object_explorer.go`), the
 completion inventory, the Query Store panel's report/plan pane/series, the Log
 File Viewer's read, a `newObjectDialog` prefetch, the Detail Browser fetch,
 Object Dependencies, the full-text New dialogs' copy-from list read, each kind of load in Back Up and Restore (one `latest` per

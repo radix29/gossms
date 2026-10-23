@@ -207,6 +207,10 @@ func (s *drawScreen) Put(x, y int, str string, style tcell.Style) (string, int) 
 	return string(r[1:]), 1
 }
 
+func (s *drawScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
+}
+
 func (s *drawScreen) at(x, y int) rune { return s.cells[[2]int{x, y}] }
 
 // A dialog laid out for 78x20 and clamped onto a 30x8 terminal draws its

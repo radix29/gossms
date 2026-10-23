@@ -51,7 +51,7 @@ func keyOwnerRow(ctx context.Context, sc *db.ServerConn, dbName, current string,
 	}
 	var roles []*gosmo.DatabaseRole
 	if withRoles {
-		if roles, err = d.DatabaseRoles(ctx); err != nil {
+		if roles, err = d.Roles(ctx); err != nil {
 			return nil, err
 		}
 	}

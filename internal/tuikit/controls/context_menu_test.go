@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // fakeMenuScreen is a minimal tcell.Screen fake for ContextMenu tests: Size()
@@ -27,6 +28,10 @@ func (s *fakeMenuScreen) Put(x, y int, str string, style tcell.Style) (string, i
 	r, n := utf8.DecodeRuneInString(str)
 	s.SetContent(x, y, r, nil, style)
 	return str[n:], 1
+}
+
+func (s *fakeMenuScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(s, x, y, w, h, ch, style)
 }
 
 func TestContextMenuClickNearRightEdgeHitsClampedItem(t *testing.T) {

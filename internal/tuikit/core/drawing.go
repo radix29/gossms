@@ -201,12 +201,26 @@ func RuneString(r rune) string {
 	return string(r)
 }
 
-// FillRect fills a rectangle with the given rune and style. One Put per cell
-// rather than tcell's FillArea, which converts the rune to a string per cell.
+// FillRect fills a rectangle with the given rune and style via the screen's
+// FillArea: one lock for the whole rect where a Put per cell takes one per cell
+// (~7x faster on a full screen). For a width-1 rune the cells end up exactly as
+// a Put per cell leaves them — same ColorNone handling, same result where the
+// rect edge cuts a wide glyph (tcell 3.6 cell.go put vs FillArea). Every cell
+// gets width 1, so ch must be a width-1 rune.
 func FillRect(s tcell.Screen, r Rect, ch rune, style tcell.Style) {
+	if r.W <= 0 || r.H <= 0 {
+		return
+	}
+	s.FillArea(r.X, r.Y, r.W, r.H, ch, style)
+}
+
+// FillAreaByPut fills the w×h area at (x,y) with one s.Put per cell. It is the
+// FillArea of a tcell.Screen test fake that overrides only Put, so FillRect's
+// fill reaches the fake's Put rather than its (often nil) embedded Screen.
+func FillAreaByPut(s tcell.Screen, x, y, w, h int, ch rune, style tcell.Style) {
 	str := RuneString(ch)
-	for row := r.Y; row < r.Y+r.H; row++ {
-		for col := r.X; col < r.X+r.W; col++ {
+	for row := y; row < y+h; row++ {
+		for col := x; col < x+w; col++ {
 			s.Put(col, row, str, style)
 		}
 	}

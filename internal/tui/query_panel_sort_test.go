@@ -201,3 +201,71 @@ func TestResultsSortsALargeSetOffTheUIGoroutine(t *testing.T) {
 		t.Errorf("the new run shows %q first, want the server's order", got)
 	}
 }
+
+// sortedColumn sorts a one-column set of type typ ascending and returns the
+// cells in the order shown.
+func sortedColumn(t *testing.T, typ string, cells ...string) []string {
+	t.Helper()
+	set := query.ResultSet{Columns: []string{"c"}, ColumnTypes: []string{typ}}
+	for _, c := range cells {
+		set.Rows = append(set.Rows, []string{c})
+	}
+	perm, err := sortResultSet(t.Context(), set, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, len(perm))
+	for i, r := range perm {
+		out[i] = cells[r]
+	}
+	return out
+}
+
+// Decimal and money cells compare by their digits, exactly: values a float64
+// rounds to one (decimal(38,0) differing in the last digit, money at its
+// maximum) still order, and equal values written differently (-0, trailing
+// fraction zeros) tie, keeping the server's order.
+func TestResultsSortComparesDecimalsExactly(t *testing.T) {
+	for _, tc := range []struct {
+		typ   string
+		cells []string
+		want  []string
+	}{
+		{"decimal(38,0)",
+			[]string{"99999999999999999999999999999999999999", "99999999999999999999999999999999999998", "-99999999999999999999999999999999999999", "-99999999999999999999999999999999999998"},
+			[]string{"-99999999999999999999999999999999999999", "-99999999999999999999999999999999999998", "99999999999999999999999999999999999998", "99999999999999999999999999999999999999"}},
+		{"decimal(10,3)",
+			[]string{"10.000", "-0.500", "9.999", "0.050", "-12.000", "0.100", "0.000", "-0.000", "0.120"},
+			[]string{"-12.000", "-0.500", "0.000", "-0.000", "0.050", "0.100", "0.120", "9.999", "10.000"}},
+		{"money",
+			[]string{"922337203685477.5807", "922337203685477.5806", "-922337203685477.5808", "12.50", "12.5"},
+			[]string{"-922337203685477.5808", "12.50", "12.5", "922337203685477.5806", "922337203685477.5807"}},
+		{"numeric(5,0)", []string{"7", "not a number", "-7"}, []string{"-7", "7", "not a number"}},
+	} {
+		if got := sortedColumn(t, tc.typ, tc.cells...); !slices.Equal(got, tc.want) {
+			t.Errorf("%s ascending = %v, want %v", tc.typ, got, tc.want)
+		}
+	}
+}
+
+// datetimeoffset cells compare by instant, not by their wall time: 10:00 +02:00
+// is before 09:00 +00:00. The same instant in two offsets ties, as ORDER BY has
+// it, and every scale parses.
+func TestResultsSortComparesDatetimeoffsetByInstant(t *testing.T) {
+	got := sortedColumn(t, "datetimeoffset(7)",
+		"2026-10-23 09:00:00.0000000 +00:00",
+		"2026-10-23 10:00:00.0000000 +02:00",
+		"2026-10-23 08:00:00.0000000 +00:00",
+		"2026-10-23 08:30:00.5 -01:00",
+		"2026-10-23 03:00:00 -05:00")
+	want := []string{
+		"2026-10-23 10:00:00.0000000 +02:00",
+		"2026-10-23 08:00:00.0000000 +00:00",
+		"2026-10-23 03:00:00 -05:00",
+		"2026-10-23 09:00:00.0000000 +00:00",
+		"2026-10-23 08:30:00.5 -01:00",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("datetimeoffset ascending =\n%v\nwant\n%v", got, want)
+	}
+}

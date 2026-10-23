@@ -79,7 +79,12 @@ func (c *capTestConn) ExecContext(context.Context, string, []driver.NamedValue) 
 	return driver.ResultNoRows, nil
 }
 
-func (c *capTestConn) QueryContext(ctx context.Context, q string, _ []driver.NamedValue) (driver.Rows, error) {
+func (c *capTestConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	// A database-scoped read is a call of [db].sys.sp_executesql with the
+	// query as its first argument (gosmo's procRead).
+	if strings.HasSuffix(q, ".sys.sp_executesql") && len(args) > 0 {
+		q, _ = args[0].Value.(string)
+	}
 	s := capTestCurrent
 	switch {
 	case strings.Contains(q, "HAS_DBACCESS"):

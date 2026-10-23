@@ -30,6 +30,10 @@ func (r *recordScreen) Put(x, y int, str string, style tcell.Style) (string, int
 	return str[n:], 1
 }
 
+func (r *recordScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+	core.FillAreaByPut(r, x, y, w, h, ch, style)
+}
+
 func (r *recordScreen) at(x, y int) rune { return r.cells[[2]int{x, y}] }
 
 func TestCanvasSetContentAndRow(t *testing.T) {

@@ -263,7 +263,7 @@ func buildNewLoginServerRolesPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 			if !v[0] {
 				continue
 			}
-			if err := l.AddServerRoleMember(ctx, toggleable[i].Name); err != nil {
+			if err := l.AddToServerRole(ctx, toggleable[i].Name); err != nil {
 				return err
 			}
 		}

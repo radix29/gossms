@@ -355,11 +355,11 @@ func pageLoginServerRoles(sc *db.ServerConn, loginName *string) propPage {
 						continue
 					}
 					if member {
-						if err := l.AddServerRoleMember(ctx, roles[i].Name); err != nil {
+						if err := l.AddToServerRole(ctx, roles[i].Name); err != nil {
 							return err
 						}
 					} else {
-						if err := l.RemoveServerRoleMember(ctx, roles[i].Name); err != nil {
+						if err := l.RemoveFromServerRole(ctx, roles[i].Name); err != nil {
 							return err
 						}
 					}
@@ -446,7 +446,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 						schema = m.DefaultSchema
 					}
 				}
-				roles, err := d.DatabaseRoles(ctx)
+				roles, err := d.Roles(ctx)
 				if err != nil {
 					return nil, err
 				}

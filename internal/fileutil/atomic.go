@@ -224,8 +224,8 @@ func allDigits(s string) bool {
 // isTempName reports whether name is a WriteAtomic/CreateAtomic temp file,
 // possibly one still being written.
 func isTempName(name string) bool {
-	i := strings.LastIndex(name, ".tmp")
-	return i >= 0 && allDigits(name[i+len(".tmp"):])
+	_, after, ok := strings.CutLast(name, ".tmp")
+	return ok && allDigits(after)
 }
 
 // KeepCorrupt saves data — path's contents, which did not parse — beside it as

@@ -337,7 +337,7 @@ func pageTablePermissions(sc *db.ServerConn, dbName, schema, name string) propPa
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRoles(ctx)
+			roles, err := d.Roles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

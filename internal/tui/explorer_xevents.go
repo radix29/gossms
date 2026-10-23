@@ -58,7 +58,7 @@ func (s xeScope) list(ctx context.Context, sc *db.ServerConn) ([]*gosmo.EventSes
 }
 
 // create writes CREATE EVENT SESSION in this scope.
-func (s xeScope) create(ctx context.Context, sc *db.ServerConn, spec gosmo.EventSessionSpec) (*gosmo.EventSession, error) {
+func (s xeScope) create(ctx context.Context, sc *db.ServerConn, spec gosmo.EventSessionDefinition) (*gosmo.EventSession, error) {
 	if s.db != "" {
 		return sc.Server.DatabaseRef(s.db).XEvents().CreateSession(ctx, spec)
 	}

@@ -196,7 +196,7 @@ func TestXEBlobFilename(t *testing.T) {
 
 // xeTestStorage is a Data Storage editor over a catalog of two targets whose
 // columns are already in hand, so nothing is read.
-func xeTestStorage(spec gosmo.EventSessionSpec, azure bool, containers []string) (*xeStorageEditor, *xeSessionModel) {
+func xeTestStorage(spec gosmo.EventSessionDefinition, azure bool, containers []string) (*xeStorageEditor, *xeSessionModel) {
 	cat := &xeCatalog{targets: []gosmo.XEObject{
 		{Package: "package0", Name: "event_file"}, {Package: "package0", Name: "ring_buffer"},
 	}}
@@ -207,7 +207,7 @@ func xeTestStorage(spec gosmo.EventSessionSpec, azure bool, containers []string)
 
 func TestAnAzureEventFileIsABlobInThePickedContainer(t *testing.T) {
 	const a, b = "https://acct.blob.core.windows.net/a", "https://acct.blob.core.windows.net/b"
-	s, m := xeTestStorage(gosmo.EventSessionSpec{}, true, []string{a, b})
+	s, m := xeTestStorage(gosmo.EventSessionDefinition{}, true, []string{a, b})
 	s.add()
 	if got := xeFieldValue(m.targets[0].Fields, "filename"); got != a+"/trace.xel" {
 		t.Fatalf("added event_file's filename = %q", got)
@@ -226,7 +226,7 @@ func TestAnAzureEventFileIsABlobInThePickedContainer(t *testing.T) {
 
 	// No credential names a container: the filename is left to be typed, and
 	// until it is a URL the target is refused.
-	s, m = xeTestStorage(gosmo.EventSessionSpec{}, true, nil)
+	s, m = xeTestStorage(gosmo.EventSessionDefinition{}, true, nil)
 	s.add()
 	if got := xeFieldValue(m.targets[0].Fields, "filename"); got != "" {
 		t.Errorf("with no container, filename = %q, want it left empty", got)
@@ -236,7 +236,7 @@ func TestAnAzureEventFileIsABlobInThePickedContainer(t *testing.T) {
 	}
 
 	// Off Azure nothing changes: a bare name, the error-log directory's.
-	s, m = xeTestStorage(gosmo.EventSessionSpec{}, false, nil)
+	s, m = xeTestStorage(gosmo.EventSessionDefinition{}, false, nil)
 	s.add()
 	if got := xeFieldValue(m.targets[0].Fields, "filename"); got != "trace" || s.containerRow != nil || s.validate() != nil {
 		t.Errorf("on-prem event_file filename %q, container row %v, validate %v", got, s.containerRow != nil, s.validate())
@@ -246,7 +246,7 @@ func TestAnAzureEventFileIsABlobInThePickedContainer(t *testing.T) {
 // A Managed Instance's own system_health writes a local file; editing the
 // session's other targets must not be refused over the one it already had.
 func TestAnAzureSessionsOwnLocalEventFileIsLeftAlone(t *testing.T) {
-	spec := gosmo.EventSessionSpec{Targets: []gosmo.SessionTarget{
+	spec := gosmo.EventSessionDefinition{Targets: []gosmo.SessionTarget{
 		{Package: "package0", Name: "event_file", Fields: []gosmo.SessionField{{Name: "filename", Value: "system_health.xel", IsString: true}}},
 	}}
 	s, m := xeTestStorage(spec, true, nil)

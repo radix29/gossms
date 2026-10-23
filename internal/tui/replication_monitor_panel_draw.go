@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -129,7 +131,7 @@ func (p *ReplicationMonitorPanel) drawToolRow(s tcell.Screen) {
 	}
 	pal := theme.Active()
 	core.FillRect(s, r, ' ', theme.StyleMenuBar())
-	cells := append(p.tools.Cells[:len(p.tools.Cells):len(p.tools.Cells)], p.tools.More)
+	cells := append(slices.Clip(p.tools.Cells), p.tools.More)
 	for i, t := range cells {
 		if t.Rect.IsZero() {
 			continue

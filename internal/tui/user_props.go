@@ -74,7 +74,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRoles(ctx)
+			roles, err := d.Roles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -259,7 +259,7 @@ func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) prop
 			if err != nil {
 				return nil, nil, err
 			}
-			allRoles, err := d.DatabaseRoles(ctx)
+			allRoles, err := d.Roles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
