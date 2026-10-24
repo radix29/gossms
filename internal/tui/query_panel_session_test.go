@@ -222,3 +222,29 @@ func TestCommitFailedOnALostSessionDisconnectsThePanel(t *testing.T) {
 		t.Errorf("alert = %q, want it to say the server rolled the work back", msg)
 	}
 }
+
+// B4 (review 2026-10-24): Stop while a close prompt's COMMIT or ROLLBACK runs
+// says it cannot be stopped, not that nothing is executing, and cancels nothing.
+func TestCancelDuringEndTransactionsSaysItCannotStop(t *testing.T) {
+	for _, c := range []struct {
+		commit bool
+		want   string
+	}{
+		{true, "Committing open transactions — this cannot be stopped"},
+		{false, "Rolling back open transactions — this cannot be stopped"},
+	} {
+		a := newTestApp()
+		qp, _ := hostedSessionPanel(t, a, 1)
+		done := false
+		qp.endTransactions(c.commit, func() { done = true })
+		qp.CancelExecution()
+		if a.statusText != c.want {
+			t.Errorf("commit=%v: status = %q, want %q", c.commit, a.statusText, c.want)
+		}
+		drainUntil(t, a, func() bool { return done }, "the transactions to end")
+		qp.CancelExecution()
+		if a.statusText != "No query is currently executing" {
+			t.Errorf("commit=%v: after the end, status = %q, want no query executing", c.commit, a.statusText)
+		}
+	}
+}

@@ -1451,6 +1451,18 @@ it from the string 'NULL'.
   a log reopens as Limited to 2097152 MB. SSMS 21 shows the same. Mapping
   LOG/268435456 to Unlimited would lose nothing (2 TB is the log ceiling), but
   it would break parity.
+- **The Details pane caches every node it has shown, for the connection's
+  life, with no cap or age limit** (decided 2026-10-24). `db.cache[node]`
+  (`internal/tui/detail_browser_runs.go`) makes reselecting a node instant, as
+  in SSMS; a revisited node shows data as old as its first fetch until Refresh
+  (`Invalidate`, the title bar's refresh button), a write that calls
+  `Invalidate`/`InvalidateWhere`, a Reload (`Forget`) or disconnect
+  (`PurgeConn`). Arrowing through a large server holds every grid seen; that
+  memory is accepted.
+- **Agent ▸ Job History shows the 100 most recent job-level runs across all
+  jobs, not each job's latest run** (decided 2026-10-24). One job on a
+  frequent schedule can crowd the others out of the list; the Jobs folder
+  already shows each job's last outcome, so a per-job read would duplicate it.
 - **Format Document upper-cases table hints only inside `WITH (…)`**: the
   legacy `JOIN log (nolock)` form stays as typed, since `(…)` after an
   unqualified name there may be a TVF's arguments (`CROSS APPLY f(nolock)`

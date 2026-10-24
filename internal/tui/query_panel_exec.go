@@ -44,9 +44,14 @@ func (p *QueryPanel) ExecuteSelection() {
 	p.app.setStatus("No selection to execute")
 }
 
-// CancelExecution cancels the in-flight query, if one is running.
+// CancelExecution cancels the in-flight query, if one is running. A COMMIT or
+// ROLLBACK from endTransactions holds the latch with no cancel: an attention
+// mid-COMMIT would leave its outcome unknown, so it is said to be unstoppable
+// rather than absent.
 func (p *QueryPanel) CancelExecution() {
-	if p.executing && p.cancel != nil {
+	if p.executing && p.ending != "" {
+		p.app.setStatus(p.ending + " open transactions — this cannot be stopped")
+	} else if p.executing && p.cancel != nil {
 		p.cancel()
 		p.app.setStatus("Cancelling query...")
 	} else {
@@ -146,14 +151,14 @@ func (p *QueryPanel) endTransactions(commit bool, then func()) {
 	if commit {
 		verb = "Committing"
 	}
-	p.executing = true
+	p.executing, p.ending = true, verb
 	p.execStart = time.Now()
 	p.app.setStatus(fmt.Sprintf("%s open transactions in %s...", verb, p.Title()))
 	p.app.safegoRepair("ending a query window's transactions", p.execPanicked, func() {
 		defer cancel()
 		err := sess.EndTransactions(ctx, commit)
 		p.app.postAndWake(func() {
-			p.executing = false
+			p.executing, p.ending = false, ""
 			if err != nil && commit && sess.Lost() {
 				// The connection went with the commit: the server rolled the transaction back, so
 				// there is nothing left to retry, and the panel shows as disconnected like any run

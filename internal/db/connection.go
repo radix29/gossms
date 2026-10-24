@@ -21,23 +21,20 @@ import (
 // fan out one connection per row; gosmo's default MaxIdleConns (2) would close
 // them again and pay full setup on every refresh. sql.DB queues past
 // MaxOpenConns rather than erroring.
+//
+// ConnMaxIdleTime is left at gosmo's default (5 minutes). gossms held it at
+// 60 s while a database-scoped write left its pooled session inside the
+// database, holding a shared lock until the next checkout reset it: someone
+// else's RESTORE, SET OFFLINE or SET SINGLE_USER failed "Exclusive access
+// could not be obtained" meanwhile, and an AUTO_CLOSE database stayed open.
+// Since gosmo's procRead (reads, 2026-10-23) and execIn (writes, 2026-10-24)
+// a pooled session never leaves its login database, so an idle one holds
+// nothing. A query panel's session (gosmo.AcquireConn) is discarded on close,
+// not pooled.
 const (
 	maxOpenConns = 20
 	maxIdleConns = 10
 )
-
-// connMaxIdleTime evicts a pooled connection idle this long. A database-scoped
-// write leaves its connection inside that database until the next checkout
-// resets it, holding a shared database lock: gosmo's 5-minute default made
-// someone else's RESTORE, SET OFFLINE or SET SINGLE_USER fail with "Exclusive
-// access could not be obtained" for that long after a gossms user changed
-// something in the database, and kept an AUTO_CLOSE database open. A read no
-// longer does (gosmo's procRead, 2026-10-23), so merely expanding the database
-// is safe; writes are why this stays. The cost is one re-login after a minute
-// idle (~25 ms measured). ReleaseIdleConnections still covers gossms's own
-// exclusive writes. A query panel's pinned session (gosmo.AcquireConn) is
-// checked out, so this never closes it.
-const connMaxIdleTime = 60 * time.Second
 
 // connectTimeout bounds one connection attempt (dial, TLS, login, gosmo's
 // server-info read). Also written into the DSN, so the driver's limit agrees.
@@ -195,7 +192,6 @@ func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions,
 		ConnectTimeout:         connectTimeout,
 		MaxOpenConns:           maxOpenConns,
 		MaxIdleConns:           maxIdleConns,
-		ConnMaxIdleTime:        connMaxIdleTime,
 	}
 	switch opts.AuthMethod {
 	case config.AuthEntraMSI:

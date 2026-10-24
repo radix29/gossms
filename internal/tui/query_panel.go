@@ -208,6 +208,9 @@ type QueryPanel struct {
 
 	executing bool
 	cancel    context.CancelFunc
+	// ending is "Committing" or "Rolling back" while endTransactions holds the
+	// latch (executing, no cancel), "" otherwise; CancelExecution reads it.
+	ending string
 
 	// liveRun is the in-flight run's Live Query Statistics poller, idle when the run
 	// has none. See query_panel_live.go.

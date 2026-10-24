@@ -63,10 +63,11 @@ a sentence and link.
    window runs on a **`Session`**: one `*sql.Conn` from `gosmo.AcquireConn` (up
    to 3 attempts on transient liveness failures, linear backoff) held for the
    panel's lifetime, so temp tables, SET options, `USE` and open transactions
-   persist between runs, as in SSMS. Package-level `Execute`/`ExecuteWithPlan`
-   check out a pooled connection per call — which database/sql resets on next
-   checkout — so they suit one-shot callers only (Activity Monitor's procedure
-   tab). Both share `runScript`: optional `SET STATISTICS XML`/`SHOWPLAN_XML`,
+   persist between runs, as in SSMS. Package-level `Execute` checks out a
+   pooled connection per call — which database/sql resets on next checkout —
+   so it suits one-shot callers only (Activity Monitor's procedure tab). Both
+   share `runScript`: optional `SET STATISTICS XML`/`SHOWPLAN_XML` (plan capture
+   and row sinks are Session-only, so reached only from a `Session`),
    `GO`-splitting via `sqltext.SplitBatches`
    (`internal/tuikit/sqltext/split.go`), `runBatch` per batch, all into one
    `Result` (result sets, messages, plan XML; for a Session also `DB_NAME()`,

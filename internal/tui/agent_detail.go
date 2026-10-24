@@ -224,8 +224,9 @@ func agentJobActivityDetail(ctx context.Context, sc *db.ServerConn) ([]string, [
 	return []string{"Job Name", "Status", "Last Outcome", "Last Run", "Next Run"}, rows, nil
 }
 
-// agentJobHistoryDetail builds the Job History leaf: the latest job-level
-// outcome of every job.
+// agentJobHistoryDetail builds the Job History leaf: the 100 most recent
+// job-level runs, across all jobs (so a frequently scheduled job can crowd the
+// others out; the Jobs folder shows each job's last outcome).
 func agentJobHistoryDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	history, err := sc.Server.JobHistory(ctx, 100)
 	if err != nil {
