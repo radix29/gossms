@@ -31,10 +31,10 @@ const permDatabase = "appdb"
 // entirely would pass against a one-principal fake.
 func permPrincipalResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "WHERE  type IN ('S','U','G','E','X','C','K')", db: permDatabase, cols: 7, rows: [][]driver.Value{
-			{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
-			{"appwriter", int64(6), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
-		}},
+		{match: usersListRead, db: permDatabase, cols: 11, rows: userListRows(
+			[]driver.Value{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
+			[]driver.Value{"appwriter", int64(6), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
+		)},
 		{match: "WHERE  r.type = 'R'", db: permDatabase, cols: 5, rows: [][]driver.Value{
 			{"db_datareader", int64(7), true, "dbo", nil},
 			{"reporting", int64(8), false, "dbo", nil},

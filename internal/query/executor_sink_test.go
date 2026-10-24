@@ -57,9 +57,12 @@ type fakeMsgConn struct {
 	tranCount int64
 	resets    int
 	closed    bool
-	invalid   bool
-	failExec  string
-	execs     []string
+	// dbAfterBatch, if set, is the database a scripted batch leaves the
+	// session in, as a USE in the script would.
+	dbAfterBatch string
+	invalid      bool
+	failExec     string
+	execs        []string
 	// batchTexts is the text of every scripted batch QueryContext served, in order.
 	batchTexts []string
 }
@@ -119,6 +122,9 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 	}
 	script := c.batches[c.next]
 	c.next++
+	if c.dbAfterBatch != "" {
+		c.dbName = c.dbAfterBatch
+	}
 	c.batchTexts = append(c.batchTexts, q)
 
 	rows := &fakeMsgRows{}

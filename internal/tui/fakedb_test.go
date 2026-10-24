@@ -325,8 +325,8 @@ func (f *fakeInstance) recordExec(db string, tx int, q string, args []driver.Nam
 	f.execs = append(f.execs, fakeExec{db: db, sql: q, args: vals, tx: tx})
 }
 
-// bareUSE matches the standalone "USE [db]" gosmo issues on the pinned
-// connection ahead of each database-scoped read. It anchors to the end on
+// bareUSE matches the standalone "USE [db]" gosmo issues on a transaction's
+// connection ahead of a database-scoped call. It anchors to the end on
 // purpose: several server-scoped writes begin a batch with "USE master;"
 // because SQL Server only accepts them from master, and dropping those would
 // hide the whole statement rather than the plumbing in front of it.
@@ -435,10 +435,10 @@ func (fakeDriver) Open(dsn string) (driver.Conn, error) {
 }
 
 // fakeConn is one pooled connection. It tracks the database a USE has pinned
-// it to, because gosmo runs a database-scoped write, and a read inside
-// InTransaction, as USE-then-query on a connection it has pinned for exactly
-// that reason. A pooled read (procRead) names its database in the call and
-// pins nothing.
+// it to, because gosmo runs a database-scoped call inside InTransaction as
+// USE-then-statement on the transaction's connection. A pooled read
+// (procRead) or write (execIn) names its database in the call and pins
+// nothing.
 type fakeConn struct {
 	inst    *fakeInstance
 	curDB   string
@@ -486,18 +486,24 @@ func (t fakeTx) Commit() error   { return t.end("COMMIT") }
 func (t fakeTx) Rollback() error { return t.end("ROLLBACK") }
 
 func (c *fakeConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
+	db := c.curDB
+	if procDB, inner, innerArgs, ok := unwrapProcRead(q, args); ok {
+		// A pooled write runs in its database for this call only (gosmo's
+		// execIn), as a pooled read does.
+		db, q, args = procDB, inner, innerArgs
+	}
 	// Recorded before the failure check: the statement was attempted, and a
 	// test asserting which writes an aborted apply got as far as needs to see
 	// the one that failed.
-	c.inst.recordExec(c.curDB, c.tx, q, args)
-	if b := c.inst.execBlock(q, c.curDB, args); b != nil {
+	c.inst.recordExec(db, c.tx, q, args)
+	if b := c.inst.execBlock(q, db, args); b != nil {
 		select {
 		case <-b:
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
-	if drops, err := c.inst.execError(q, c.curDB, args); err != nil {
+	if drops, err := c.inst.execError(q, db, args); err != nil {
 		c.dropped = drops
 		return nil, err
 	}

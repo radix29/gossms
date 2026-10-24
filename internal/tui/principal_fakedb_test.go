@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
+	"slices"
 	"time"
 )
 
@@ -26,14 +27,29 @@ const (
 
 var principalEpoch = time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
 
-// databaseUsersResponse is the 7-column user list every page on these dialogs
-// draws its principal picker from.
+// usersListRead matches Database.Users and not UserByName, whose WHERE goes
+// on to "AND dp.name".
+const usersListRead = "WHERE  dp.type IN ('S','U','G','E','X','C','K')\nORDER"
+
+// userListRows pads 7-column user rows (name through authentication type)
+// with the SID, login, disabled and mapped-object columns Users also reads,
+// all NULL — a user list read whose users map to no login.
+func userListRows(rows ...[]driver.Value) [][]driver.Value {
+	out := make([][]driver.Value, len(rows))
+	for i, r := range rows {
+		out[i] = append(slices.Clone(r), nil, nil, nil, nil)
+	}
+	return out
+}
+
+// databaseUsersResponse is the user list every page on these dialogs draws
+// its principal picker from.
 func databaseUsersResponse() fakeResponse {
-	return fakeResponse{match: "FROM   sys.database_principals\nWHERE  type IN ('S','U','G','E','X','C','K')", cols: 7, rows: [][]driver.Value{
-		{principalUser, int64(5), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
-		{"dbo", int64(1), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
-		{"reporting", int64(6), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
-	}}
+	return fakeResponse{match: usersListRead, cols: 11, rows: userListRows(
+		[]driver.Value{principalUser, int64(5), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
+		[]driver.Value{"dbo", int64(1), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
+		[]driver.Value{"reporting", int64(6), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
+	)}
 }
 
 // userByNameResponse answers the by-name user read, which carries the SID and

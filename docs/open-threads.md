@@ -102,7 +102,8 @@ work; close an item by deleting it when fixed.
   from a second pooled session while the holder idles in the database)
   succeed every time, so an idle holder alone is not the cause. Suspected: a
   concurrent goSSMS read (the Details pane, a fan-out) entering the database
-  as the ALTER ran. Unfixed; needs a reproduction first.
+  as the ALTER ran. Dropping the 60 s `ConnMaxIdleTime` override (2026-10-24)
+  does not touch that cause. Unfixed; needs a reproduction first.
 
 ### Verification gaps
 

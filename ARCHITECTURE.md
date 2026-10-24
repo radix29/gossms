@@ -63,10 +63,11 @@ a sentence and link.
    window runs on a **`Session`**: one `*sql.Conn` from `gosmo.AcquireConn` (up
    to 3 attempts on transient liveness failures, linear backoff) held for the
    panel's lifetime, so temp tables, SET options, `USE` and open transactions
-   persist between runs, as in SSMS. Package-level `Execute`/`ExecuteWithPlan`
-   check out a pooled connection per call — which database/sql resets on next
-   checkout — so they suit one-shot callers only (Activity Monitor's procedure
-   tab). Both share `runScript`: optional `SET STATISTICS XML`/`SHOWPLAN_XML`,
+   persist between runs, as in SSMS. Package-level `Execute` checks out a
+   pooled connection per call — which database/sql resets on next checkout —
+   so it suits one-shot callers only (Activity Monitor's procedure tab). Both
+   share `runScript`: optional `SET STATISTICS XML`/`SHOWPLAN_XML` (plan capture
+   and row sinks are Session-only, so reached only from a `Session`),
    `GO`-splitting via `sqltext.SplitBatches`
    (`internal/tuikit/sqltext/split.go`), `runBatch` per batch, all into one
    `Result` (result sets, messages, plan XML; for a Session also `DB_NAME()`,
@@ -200,8 +201,9 @@ gossms/
 │       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help), context-gated via each MenuItem's Enabled predicate, + About dialog
 │       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row, same Enabled-predicate gating
-│       ├── tree_node.go          # NodeType enum, nodeData, isContainerNode, hasChildren, name lookup
-│       ├── tree_node_icons.go    # style-aware icon lookup (Emoji/Symbols/Portable/None): nodeIcon and the per-style glyph tables
+│       ├── tree_node.go          # NodeType enum, nodeData
+│       ├── tree_node_kinds.go    # nodeKinds: one row per NodeType — folder/leaf/expandable, display name, Emoji and Symbols glyphs — behind isContainerNode, hasChildren, nodeTypeName
+│       ├── tree_node_icons.go    # style-aware icon lookup (Emoji/Symbols/Portable/None): nodeIcon and its state substitutions (offline database, stopped session, publication kind)
 │       ├── object_explorer.go    # owns the SQL Server tree model; drives controls.TreeView
 │       ├── explorer_loaders.go   # childLoader and nodeMenus registries (NodeType → fetch func, NodeType → menu builder) + shared loader helpers
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
@@ -568,8 +570,8 @@ the name as a `*string` shared across pages, or later pages use the stale one.
 
 ### Adding an Object Explorer node type
 
-Add the `NodeType` and name in `tree_node.go` and its icons in
-`tree_node_icons.go`; register a `childLoader` in `explorer_loaders.go`'s
+Add the `NodeType` in `tree_node.go` and its row (class, name, glyphs) in
+`tree_node_kinds.go`'s `nodeKinds`; register a `childLoader` in `explorer_loaders.go`'s
 `childLoaders` (it gets a `loaderCtx` and the node, runs
 off the UI goroutine) and put the loader with its peers (`explorer_*.go`). Its
 context menu is a `menuBuilder` in the same file's `nodeMenus`, written beside

@@ -44,9 +44,19 @@ func (p *QueryPanel) ExecuteSelection() {
 	p.app.setStatus("No selection to execute")
 }
 
-// CancelExecution cancels the in-flight query, if one is running.
+// cancellable reports whether CancelExecution would cancel something: a run is
+// in flight and it is not endTransactions' COMMIT or ROLLBACK. Cancel Executing
+// Query and Stop Execution are enabled by it.
+func (p *QueryPanel) cancellable() bool { return p.executing && p.ending == "" }
+
+// CancelExecution cancels the in-flight query, if one is running. A COMMIT or
+// ROLLBACK from endTransactions holds the latch with no cancel: an attention
+// mid-COMMIT would leave its outcome unknown, so it is said to be unstoppable
+// rather than absent.
 func (p *QueryPanel) CancelExecution() {
-	if p.executing && p.cancel != nil {
+	if p.executing && p.ending != "" {
+		p.app.setStatus(p.ending + " open transactions — this cannot be stopped")
+	} else if p.executing && p.cancel != nil {
 		p.cancel()
 		p.app.setStatus("Cancelling query...")
 	} else {
@@ -146,14 +156,14 @@ func (p *QueryPanel) endTransactions(commit bool, then func()) {
 	if commit {
 		verb = "Committing"
 	}
-	p.executing = true
+	p.executing, p.ending = true, verb
 	p.execStart = time.Now()
 	p.app.setStatus(fmt.Sprintf("%s open transactions in %s...", verb, p.Title()))
 	p.app.safegoRepair("ending a query window's transactions", p.execPanicked, func() {
 		defer cancel()
 		err := sess.EndTransactions(ctx, commit)
 		p.app.postAndWake(func() {
-			p.executing = false
+			p.executing, p.ending = false, ""
 			if err != nil && commit && sess.Lost() {
 				// The connection went with the commit: the server rolled the transaction back, so
 				// there is nothing left to retry, and the panel shows as disconnected like any run
@@ -407,14 +417,16 @@ func closedPanelResultStatus(title string, cancelled bool) string {
 	return fmt.Sprintf("%s was closed — its query finished, results discarded", title)
 }
 
-// execPanicked releases the single-flight latch after a panic on an execute or
-// estimated-plan goroutine (the App.safegoRepair step for both). Otherwise
-// p.executing stays set for the panel's lifetime and every later Execute is
-// refused. No seq guard, unlike LogViewer.readPanicked: p.executing itself stops
+// execPanicked releases the single-flight latch after a panic on an execute,
+// estimated-plan or endTransactions goroutine (the App.safegoRepair step for
+// all three). Otherwise p.executing stays set for the panel's lifetime and every
+// later Execute is refused; a stale p.ending would make every later Cancel say
+// the run cannot be stopped. No seq guard, unlike LogViewer.readPanicked: p.executing itself stops
 // a second run starting.
 func (p *QueryPanel) execPanicked() {
 	p.stopLiveStats()
 	p.executing = false
+	p.ending = ""
 	p.cancel = nil
 	p.progress = nil
 	p.resultsNotice = "Execution stopped unexpectedly — see the log for details."

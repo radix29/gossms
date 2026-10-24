@@ -124,7 +124,7 @@ func pageDatabaseChangeTracking(sc *db.ServerConn, dbName string) propPage {
 						if v[0] == t.Enabled && (v[1] == t.TrackColumnsUpdated || !v[0]) {
 							continue
 						}
-						if err := d.TableRef(t.Schema, t.Name).SetChangeTracking(ctx, v[0], v[1]); err != nil {
+						if err := d.TableRef(t.Schema, t.Name).SetChangeTracking(ctx, gosmo.TableChangeTrackingOptions{Enabled: v[0], TrackColumnsUpdated: v[1]}); err != nil {
 							return err
 						}
 					}

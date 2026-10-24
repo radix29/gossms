@@ -45,12 +45,12 @@ func mailPageReads(created ...string) []fakeResponse {
 		fakeResponse{match: mailGrantRead, cols: 5, rows: [][]driver.Value{
 			{int64(1), "ops", []byte{0}, "public", true},
 		}},
-		fakeResponse{match: mailUsersRead, db: "msdb", cols: 7, rows: [][]driver.Value{
-			{"##MS_PolicyEventProcessingLogin##", int64(4), "SQL_USER", "dbo", at, at, "INSTANCE"},
-			{"app_sender", int64(5), "SQL_USER", "dbo", at, at, "INSTANCE"},
-			{"guest", int64(2), "SQL_USER", nil, at, at, "NONE"},
-			{"report_user", int64(6), "SQL_USER", "dbo", at, at, "INSTANCE"},
-		}},
+		fakeResponse{match: mailUsersRead, db: "msdb", cols: 11, rows: userListRows(
+			[]driver.Value{"##MS_PolicyEventProcessingLogin##", int64(4), "SQL_USER", "dbo", at, at, "INSTANCE"},
+			[]driver.Value{"app_sender", int64(5), "SQL_USER", "dbo", at, at, "INSTANCE"},
+			[]driver.Value{"guest", int64(2), "SQL_USER", nil, at, at, "NONE"},
+			[]driver.Value{"report_user", int64(6), "SQL_USER", "dbo", at, at, "INSTANCE"},
+		)},
 		fakeResponse{match: mailParamRead, cols: 2, rows: [][]driver.Value{
 			{"AccountRetryAttempts", "1"}, {"AccountRetryDelay", "60"},
 			{"DatabaseMailExeMinimumLifeTime", "600"}, {"DefaultAttachmentEncoding", "MIME"},

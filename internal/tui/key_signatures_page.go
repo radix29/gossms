@@ -286,7 +286,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 }
 
 // moduleDetail is the Details pane's view of a stored procedure, function or
-// DML trigger: the default Property/Value rows, plus one "Signed by" row per
+// DML trigger: basicDetailRows, plus one "Signed by" row per
 // signature on it. These families have no Properties dialog, so this is where
 // a module's signers are shown.
 func moduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
@@ -298,12 +298,7 @@ func moduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([
 	if err != nil {
 		return nil, nil, err
 	}
-	rows := [][]string{
-		{"Name", node.label},
-		{"Type", nodeTypeName(node.data.Type)},
-		{"Database", node.data.DBName},
-		{"Schema", node.data.Schema},
-	}
+	rows := basicDetailRows(node)
 	if len(sigs) == 0 {
 		rows = append(rows, []string{"Signed by", "(not signed)"})
 	}
