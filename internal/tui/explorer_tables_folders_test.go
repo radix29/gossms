@@ -19,25 +19,6 @@ import (
 // only the plain ones, and a mistake there shows up as a table listed twice
 // or not at all.
 
-// folderName names a folder node type for a test message. nodeTypeName
-// answers "Object" for a folder — it is written for leaves — so the four
-// under test are spelled out here.
-func folderName(t NodeType) string {
-	switch t {
-	case NodeTables:
-		return "Tables"
-	case NodeSystemTables:
-		return "System Tables"
-	case NodeFileTables:
-		return "FileTables"
-	case NodeExternalTables:
-		return "External Tables"
-	case NodeGraphTables:
-		return "Graph Tables"
-	}
-	return nodeTypeName(t)
-}
-
 // tablesPresenceResp answers Database.TableKindsPresent. It is matched
 // on the aggregate's own text and must be scripted *before* the listing
 // answer: responses match by substring in order, and both queries read
@@ -174,7 +155,7 @@ func TestTableSubFolderLoaders(t *testing.T) {
 		{NodeExternalTables, "t.is_external = 1", tableRow(3, "ext", "Remote", false, false, true), "ext.Remote", false},
 		{NodeGraphTables, "t.is_node = 1", tableRow(4, "dbo", "Person", false, false, false, true), "dbo.Person (node)", false},
 	} {
-		t.Run(folderName(c.folder), func(t *testing.T) {
+		t.Run(nodeTypeName(c.folder), func(t *testing.T) {
 			sc, inst := newFakeConn(t, treeFamilyDatabaseRow(), tablesListResp(c.row))
 			children := loadFamily(t, sc, c.folder)
 			if got := labelsOfNodes(children); !slices.Equal(got, []string{c.wantName}) {
@@ -217,12 +198,12 @@ func TestTableSubFoldersOfferTheSameFilterAsTables(t *testing.T) {
 	for _, folder := range []NodeType{NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables} {
 		got := filterProps(folder)
 		if len(got) != len(want) {
-			t.Errorf("%s offers %d filter properties, want %d", folderName(folder), len(got), len(want))
+			t.Errorf("%s offers %d filter properties, want %d", nodeTypeName(folder), len(got), len(want))
 			continue
 		}
 		for i := range got {
 			if got[i].id != want[i].id {
-				t.Errorf("%s filter property %d = %v, want %v", folderName(folder), i, got[i].name, want[i].name)
+				t.Errorf("%s filter property %d = %v, want %v", nodeTypeName(folder), i, got[i].name, want[i].name)
 			}
 		}
 	}
@@ -239,7 +220,7 @@ func TestDetailBrowserAsksForTheFolderSOwnKind(t *testing.T) {
 		NodeGraphTables:    "graph",
 	} {
 		if got := tableKindForNode(folder).String(); got != want {
-			t.Errorf("%s shows the %s tables, want %s", folderName(folder), got, want)
+			t.Errorf("%s shows the %s tables, want %s", nodeTypeName(folder), got, want)
 		}
 	}
 }

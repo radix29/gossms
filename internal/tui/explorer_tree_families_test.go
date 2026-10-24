@@ -525,8 +525,7 @@ func TestNewFamilyLeavesHaveAnIconInEveryStyle(t *testing.T) {
 	}
 }
 
-// nodeTypeName's "Object" default is what the Script and Delete menus would
-// say instead of the family's name.
+// The family's nouns, as the Details pane names them.
 func TestNewFamilyLeavesAreNamed(t *testing.T) {
 	want := map[NodeType]string{
 		NodeSystemDataType:       "System Data Type",

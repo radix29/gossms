@@ -182,6 +182,37 @@ func TestFetchNodeDetailsLeafKeepsPropertyValue(t *testing.T) {
 	}
 }
 
+// The fallback grid names the leaf's own type — it said "Object" for most of
+// them — and leaves out the Database and Schema rows a server-scoped object
+// can never fill.
+func TestFetchNodeDetailsLeafRows(t *testing.T) {
+	sc := &dbconn.ServerConn{}
+	for _, tc := range []struct {
+		node *explorerNode
+		want [][]string
+	}{
+		{&explorerNode{label: "##MS_DatabaseConnector##", data: nodeData{Type: NodeServerRole}},
+			[][]string{{"Name", "##MS_DatabaseConnector##"}, {"Type", "Server Role"}}},
+		{&explorerNode{label: "IX_a", data: nodeData{Type: NodeIndex, DBName: "appdb", Schema: "dbo"}},
+			[][]string{{"Name", "IX_a"}, {"Type", "Index"}, {"Database", "appdb"}, {"Schema", "dbo"}}},
+		{&explorerNode{label: "app", data: nodeData{Type: NodeSchema, DBName: "appdb"}},
+			[][]string{{"Name", "app"}, {"Type", "Schema"}, {"Database", "appdb"}}},
+		{&explorerNode{label: "PK_t", data: nodeData{Type: NodeKey, DBName: "appdb", Schema: "dbo", IsPrimaryKey: true}},
+			[][]string{{"Name", "PK_t"}, {"Type", "Primary Key"}, {"Database", "appdb"}, {"Schema", "dbo"}}},
+		{&explorerNode{label: "UQ_t", data: nodeData{Type: NodeKey, DBName: "appdb", Schema: "dbo"}},
+			[][]string{{"Name", "UQ_t"}, {"Type", "Unique Key"}, {"Database", "appdb"}, {"Schema", "dbo"}}},
+	} {
+		tc.node.data.conn = sc
+		_, rows, err := fetchNodeDetails(context.Background(), sc, tc.node, new([]nodeData))
+		if err != nil {
+			t.Fatalf("%s: fetchNodeDetails: %v", tc.node.label, err)
+		}
+		if !slices.EqualFunc(rows, tc.want, slices.Equal) {
+			t.Errorf("%s: rows = %q, want %q", tc.node.label, rows, tc.want)
+		}
+	}
+}
+
 func TestShowNodeDetailsNotConnected(t *testing.T) {
 	a := newTestApp()
 	sc := &dbconn.ServerConn{}
@@ -558,7 +589,7 @@ func TestDetailLoadersCoverage(t *testing.T) {
 		if slices.Contains(progressive, names[nt]) {
 			t.Errorf("%s is in detailLoaders, but DetailBrowser.fetch handles it itself — the entry never runs", names[nt])
 		}
-		if nodeTypeWiring[nt].class == classInternal {
+		if nodeKinds[nt].class == kindPlaceholder {
 			t.Errorf("%s is a placeholder type with a detailLoaders entry", names[nt])
 		}
 	}

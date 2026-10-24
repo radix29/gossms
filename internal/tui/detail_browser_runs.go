@@ -237,12 +237,25 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	if hasChildren(node.data.Type) {
 		return fetchChildObjectsDetail(ctx, sc, node, objs)
 	}
-	return []string{"Property", "Value"}, [][]string{
+	return []string{"Property", "Value"}, basicDetailRows(node), nil
+}
+
+// basicDetailRows is the Property/Value grid a leaf with no detailLoaders
+// entry gets, and what moduleDetail adds signers to. Database and Schema are
+// left out when empty: a server-scoped object has neither, and a blank row
+// reads as a value that failed to load.
+func basicDetailRows(node *explorerNode) [][]string {
+	rows := [][]string{
 		{"Name", node.label},
-		{"Type", nodeTypeName(node.data.Type)},
-		{"Database", node.data.DBName},
-		{"Schema", node.data.Schema},
-	}, nil
+		{"Type", nodeDisplayType(node.data)},
+	}
+	if node.data.DBName != "" {
+		rows = append(rows, []string{"Database", node.data.DBName})
+	}
+	if node.data.Schema != "" {
+		rows = append(rows, []string{"Schema", node.data.Schema})
+	}
+	return rows
 }
 
 // detailLoader builds the Details grid for one node type. objs is the

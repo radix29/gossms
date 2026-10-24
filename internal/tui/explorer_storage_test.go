@@ -70,7 +70,7 @@ func TestNewNodeTypesAreFoldersOrLeavesConsistently(t *testing.T) {
 }
 
 // Each new family is scriptable and deletable, and every one of them names
-// itself rather than falling back to the generic "Object".
+// itself.
 func TestNewFamiliesAreScriptableAndDeletable(t *testing.T) {
 	for _, nt := range []NodeType{NodePartitionFunction, NodePartitionScheme,
 		NodeSecurityPolicy, NodeColumnMasterKey, NodeColumnEncryptionKey} {
@@ -81,7 +81,7 @@ func TestNewFamiliesAreScriptableAndDeletable(t *testing.T) {
 		if op == nil || op.drop == nil {
 			t.Errorf("node type %d cannot be deleted", nt)
 		}
-		if nodeTypeName(nt) == "Object" {
+		if nodeTypeName(nt) == "" {
 			t.Errorf("node type %d has no display name", nt)
 		}
 	}

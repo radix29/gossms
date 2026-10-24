@@ -23,10 +23,9 @@ func filesPageResponses() []fakeResponse {
 		{match: "page_verify_option_desc", cols: 35, rows: [][]driver.Value{
 			append(append(append([]driver.Value{"sa", "CHECKSUM", "MULTI_USER", "NONE", false, "OFF"}, falses(19)...), "OFF", ""), optionsRowTail()...),
 		}},
-		// First: FileGroups' select names the file columns too, so the Files
-		// answer below would serve it.
-		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 13, rows: [][]driver.Value{
-			{"PRIMARY", gosmo.RowsFileGroup, true, false, int64(1), "appdb", `C:\data\appdb.mdf`, "ROWS", "ONLINE", int64(204800), int64(-1), int64(8192), false},
+		// FileGroups reads these, then the Files answer below.
+		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 4, rows: [][]driver.Value{
+			{"PRIMARY", gosmo.RowsFileGroup, true, false},
 		}},
 		{match: "df.file_id, df.name, df.physical_name", cols: 11, rows: [][]driver.Value{
 			{int64(1), "appdb", `C:\data\appdb.mdf`, "ROWS", "PRIMARY", "ONLINE", int64(204800), int64(-1), int64(8192), false, int64(2816)},
@@ -217,7 +216,7 @@ func filestreamFilesResponses() []fakeResponse {
 		int64(3), "appdb_fs", `C:\data\appdb_fs`, "FILESTREAM", "fsgroup", "ONLINE", int64(0), int64(-1), int64(0), false, int64(0),
 	})
 	r[2].rows = append(r[2].rows, []driver.Value{
-		"fsgroup", gosmo.FileStreamFileGroup, true, false, int64(65537), "appdb_fs", `C:\data\appdb_fs`, "FILESTREAM", "ONLINE", int64(0), int64(-1), int64(0), false,
+		"fsgroup", gosmo.FileStreamFileGroup, true, false,
 	})
 	return r
 }

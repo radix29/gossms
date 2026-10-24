@@ -14,24 +14,32 @@ import (
 // file), ARCHIVE (read-only, one file) and STAGING (one file) — so the page
 // has a row in each toggle state and more than one row to get wrong.
 //
-// FileGroups returns one row per file joined to its filegroup, ordered
-// by filegroup name, and folds them into groups.
+// FileGroups reads sys.filegroups, then Files, and groups the files by their
+// filegroup's name.
 func filegroupsPageResponses() []fakeResponse {
-	fg := func(name string, isDefault, readOnly bool, file string, primary bool) []driver.Value {
+	fg := func(name string, isDefault, readOnly bool) []driver.Value {
+		return []driver.Value{name, gosmo.RowsFileGroup, isDefault, readOnly}
+	}
+	file := func(group, file string, primary bool) []driver.Value {
 		id := int64(3)
 		if primary {
 			id = 1
 		}
-		return []driver.Value{name, gosmo.RowsFileGroup, isDefault, readOnly, id, file, `C:\data\` + file + ".ndf",
-			"ROWS", "ONLINE", int64(204800), int64(-1), int64(8192), false}
+		return []driver.Value{id, file, `C:\data\` + file + ".ndf", "ROWS", group, "ONLINE",
+			int64(204800), int64(-1), int64(8192), false, int64(2816)}
 	}
 	return []fakeResponse{
 		{match: "compatibility_level, collation_name", cols: 11, rows: [][]driver.Value{{
 			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0), false}}},
-		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 13, rows: [][]driver.Value{
-			fg("ARCHIVE", false, true, "appdb_archive", false),
-			fg("PRIMARY", true, false, "appdb", true),
-			fg("STAGING", false, false, "appdb_staging", false),
+		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 4, rows: [][]driver.Value{
+			fg("ARCHIVE", false, true),
+			fg("PRIMARY", true, false),
+			fg("STAGING", false, false),
+		}},
+		{match: "df.file_id, df.name, df.physical_name", cols: 11, rows: [][]driver.Value{
+			file("PRIMARY", "appdb", true),
+			file("ARCHIVE", "appdb_archive", false),
+			file("STAGING", "appdb_staging", false),
 		}},
 	}
 }

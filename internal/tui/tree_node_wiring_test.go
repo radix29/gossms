@@ -11,251 +11,92 @@ import (
 )
 
 // A1: adding an Object Explorer family means touching a dozen switches and
-// maps, and what pinned that was a hand-written slice of the leaves each
-// batch added — the same act of memory the tests exist to replace. This is
-// the exhaustive form: every NodeType from 0 to nodeTypeCount must declare
-// one classification here, and the classification implies the wiring the
-// type must have. A new NodeType fails this test by construction, because it
-// has no entry; extending the table is the moment to notice the switch you
-// have not touched yet.
+// maps. nodeKinds (tree_node_kinds.go) holds what a type is, one row per
+// type; this test checks every row is filled and agrees with the tables that
+// stay in feature files — childLoaders and filterProps. A new NodeType fails
+// it by construction: its row is zero.
 //
-// It does not check what the switches *say* — that a queue's glyph is a queue
-// — only that each type is wired at all. TestNewFamilyLeavesAreNamed and its
+// It does not check what the row *says* — that a queue's glyph is a queue —
+// only that each type is wired at all. TestNewFamilyLeavesAreNamed and its
 // siblings pin the values for the families they cover.
 
-type nodeClass int
-
-const (
-	// classObject is a node that stands for a SQL Server object: it draws an
-	// object glyph, never the folder one. expandable says whether it also has
-	// children (a Database, a Table), which must agree with hasChildren and
-	// with having a childLoaders entry.
-	classObject nodeClass = iota
-	// classFolder is a container: the folder glyph, an expand arrow, and a
-	// childLoaders entry. filterable says whether its Filter menu offers
-	// anything, which is false for every folder of folders and for the few
-	// object folders that deliberately offer no filter (Columns, Keys,
-	// Indexes, Statistics, Checks, and the Agent and Always On folders).
-	classFolder
-	// classInternal is NodeLoading and NodeError — placeholders, not objects:
-	// no name, no children, no loader.
-	classInternal
-)
-
-type nodeWiring struct {
-	class      nodeClass
-	filterable bool
-	expandable bool
-	// unnamed records a type nodeTypeName has no case for, so it reads
-	// "Object". It surfaces only in the Details pane's fallback Property/Value
-	// grid (the "Type" row), which a type with a purpose-built detail view
-	// never reaches — which is why these are tolerated rather than fixed here.
-	// A *new* type is not on this list and must be named.
-	unnamed bool
-	// portableBullet records the types whose Portable glyph is the shared
-	// bullet on purpose: NodeColumn and NodeViewColumn, because '⁞' is not
-	// guaranteed to render everywhere (see objectIconPortable).
-	portableBullet bool
+// filterableFolderSet is every folder whose Filter menu offers something. A
+// folder not listed declares no filter properties: every folder of folders,
+// and the few object folders that deliberately offer no filter (Columns,
+// Keys, Indexes, Statistics, Checks, and the Agent and Always On folders).
+var filterableFolderSet = map[NodeType]bool{
+	NodeDatabases:                   true,
+	NodeSystemDatabases:             true,
+	NodeDatabaseSnapshots:           true,
+	NodeTables:                      true,
+	NodeSystemTables:                true,
+	NodeFileTables:                  true,
+	NodeExternalTables:              true,
+	NodeGraphTables:                 true,
+	NodeViews:                       true,
+	NodeSystemViews:                 true,
+	NodeStoredProcedures:            true,
+	NodeSystemProcedures:            true,
+	NodeFunctions:                   true,
+	NodeSystemFunctions:             true,
+	NodeLogins:                      true,
+	NodeServerRoles:                 true,
+	NodeCredentials:                 true,
+	NodeAudits:                      true,
+	NodeServerAuditSpecifications:   true,
+	NodeBackupDevices:               true,
+	NodeServerTriggers:              true,
+	NodeEndpoints:                   true,
+	NodeEventSessions:               true,
+	NodeUsers:                       true,
+	NodeDatabaseRoles:               true,
+	NodeSchemas:                     true,
+	NodeTriggers:                    true,
+	NodeDatabaseTriggers:            true,
+	NodeSequences:                   true,
+	NodeSynonyms:                    true,
+	NodeSystemDataTypes:             true,
+	NodeUserDefinedDataTypes:        true,
+	NodeUserDefinedTableTypes:       true,
+	NodeUserDefinedTypes:            true,
+	NodeXMLSchemaCollections:        true,
+	NodeAssemblies:                  true,
+	NodeRules:                       true,
+	NodeDefaults:                    true,
+	NodePlanGuides:                  true,
+	NodeMessageTypes:                true,
+	NodeContracts:                   true,
+	NodeBrokerQueues:                true,
+	NodeBrokerServices:              true,
+	NodeRoutes:                      true,
+	NodeRemoteServiceBindings:       true,
+	NodeBrokerPriorities:            true,
+	NodeExternalDataSources:         true,
+	NodeExternalFileFormats:         true,
+	NodeExternalLibraries:           true,
+	NodePartitionFunctions:          true,
+	NodePartitionSchemes:            true,
+	NodeDatabaseAuditSpecifications: true,
+	NodeDatabaseScopedCredentials:   true,
+	NodeAsymmetricKeys:              true,
+	NodeCertificates:                true,
+	NodeSymmetricKeys:               true,
+	NodeSecurityPolicies:            true,
+	NodeColumnMasterKeys:            true,
+	NodeColumnEncryptionKeys:        true,
+	NodeResourcePools:               true,
+	NodeWorkloadGroups:              true,
+	NodeExternalResourcePools:       true,
+	NodeFullTextCatalogs:            true,
+	NodeFullTextStoplists:           true,
+	NodeSearchPropertyLists:         true,
 }
 
-var nodeTypeWiring = map[NodeType]nodeWiring{
-	NodeServer:                      {class: classObject, expandable: true},
-	NodeDatabases:                   {class: classFolder, filterable: true},
-	NodeSystemDatabases:             {class: classFolder, filterable: true},
-	NodeDatabaseSnapshots:           {class: classFolder, filterable: true},
-	NodeDatabaseSnapshot:            {class: classObject, expandable: true},
-	NodeDatabase:                    {class: classObject, expandable: true},
-	NodeTables:                      {class: classFolder, filterable: true},
-	NodeSystemTables:                {class: classFolder, filterable: true},
-	NodeFileTables:                  {class: classFolder, filterable: true},
-	NodeExternalTables:              {class: classFolder, filterable: true},
-	NodeGraphTables:                 {class: classFolder, filterable: true},
-	NodeTable:                       {class: classObject, expandable: true},
-	NodeColumns:                     {class: classFolder},
-	NodeColumn:                      {class: classObject, unnamed: true, portableBullet: true},
-	NodeKeys:                        {class: classFolder},
-	NodeKey:                         {class: classObject, unnamed: true},
-	NodeIndexes:                     {class: classFolder},
-	NodeIndex:                       {class: classObject, unnamed: true},
-	NodeStatistics:                  {class: classFolder},
-	NodeStatistic:                   {class: classObject, unnamed: true},
-	NodeViews:                       {class: classFolder, filterable: true},
-	NodeView:                        {class: classObject, expandable: true},
-	NodeSystemViews:                 {class: classFolder, filterable: true},
-	NodeStoredProcedures:            {class: classFolder, filterable: true},
-	NodeStoredProcedure:             {class: classObject},
-	NodeSystemProcedures:            {class: classFolder, filterable: true},
-	NodeFunctions:                   {class: classFolder, filterable: true},
-	NodeFunction:                    {class: classObject},
-	NodeSystemFunctions:             {class: classFolder, filterable: true},
-	NodeSecurity:                    {class: classFolder},
-	NodeLogins:                      {class: classFolder, filterable: true},
-	NodeLogin:                       {class: classObject},
-	NodeServerRoles:                 {class: classFolder, filterable: true},
-	NodeServerRole:                  {class: classObject, unnamed: true},
-	NodeCredentials:                 {class: classFolder, filterable: true},
-	NodeCredential:                  {class: classObject},
-	NodeCryptographicProviders:      {class: classFolder},
-	NodeCryptographicProvider:       {class: classObject},
-	NodeAudits:                      {class: classFolder, filterable: true},
-	NodeAudit:                       {class: classObject},
-	NodeServerAuditSpecifications:   {class: classFolder, filterable: true},
-	NodeServerAuditSpecification:    {class: classObject},
-	NodeServerObjects:               {class: classFolder},
-	NodeBackupDevices:               {class: classFolder, filterable: true},
-	NodeBackupDevice:                {class: classObject},
-	NodeServerTriggers:              {class: classFolder, filterable: true},
-	NodeServerTrigger:               {class: classObject},
-	NodeEndpoints:                   {class: classFolder, filterable: true},
-	NodeEndpoint:                    {class: classObject},
-	NodeManagement:                  {class: classFolder},
-	NodeSQLServerLogs:               {class: classFolder},
-	NodeSQLServerLog:                {class: classObject},
-	NodeExtendedEvents:              {class: classFolder},
-	NodeEventSessions:               {class: classFolder, filterable: true},
-	NodeEventSession:                {class: classObject, expandable: true},
-	NodeEventTarget:                 {class: classObject},
-	NodeXEventProfiler:              {class: classFolder},
-	NodeXEventProfilerSession:       {class: classObject},
-	NodeAgentJobs:                   {class: classFolder},
-	NodeAgentJobsFolder:             {class: classFolder},
-	NodeAgentUserJobs:               {class: classFolder},
-	NodeAgentSystemJobs:             {class: classFolder},
-	NodeAgentJob:                    {class: classObject, unnamed: true},
-	NodeAgentJobActivity:            {class: classObject, unnamed: true},
-	NodeAgentJobHistory:             {class: classObject, unnamed: true},
-	NodeAgentJobCategories:          {class: classObject, unnamed: true},
-	NodeAgentSchedules:              {class: classFolder},
-	NodeAgentSchedule:               {class: classObject, unnamed: true},
-	NodeAgentAlerts:                 {class: classFolder},
-	NodeAgentEventAlerts:            {class: classFolder},
-	NodeAgentAlert:                  {class: classObject, unnamed: true},
-	NodeAgentAlertCategories:        {class: classObject, unnamed: true},
-	NodeAgentOperators:              {class: classFolder},
-	NodeAgentOperator:               {class: classObject, unnamed: true},
-	NodeAgentAdmin:                  {class: classFolder},
-	NodeAgentReport:                 {class: classObject, unnamed: true},
-	NodeAgentErrorLogs:              {class: classFolder},
-	NodeAgentErrorLog:               {class: classObject},
-	NodeLinkedServers:               {class: classFolder},
-	NodeLinkedServer:                {class: classObject, unnamed: true},
-	NodeAlwaysOn:                    {class: classFolder},
-	NodeAvailabilityGroups:          {class: classFolder},
-	NodeAvailabilityGroup:           {class: classObject, expandable: true},
-	NodeAvailabilityReplicas:        {class: classFolder},
-	NodeAvailabilityReplica:         {class: classObject},
-	NodeAvailabilityDatabases:       {class: classFolder},
-	NodeAvailabilityDatabase:        {class: classObject},
-	NodeAGListeners:                 {class: classFolder},
-	NodeAGListener:                  {class: classObject},
-	NodeDatabaseSecurity:            {class: classFolder},
-	NodeUsers:                       {class: classFolder, filterable: true},
-	NodeUser:                        {class: classObject},
-	NodeDatabaseRoles:               {class: classFolder, filterable: true},
-	NodeDatabaseRole:                {class: classObject, unnamed: true},
-	NodeSchemas:                     {class: classFolder, filterable: true},
-	NodeSchema:                      {class: classObject, unnamed: true},
-	NodeTriggers:                    {class: classFolder, filterable: true},
-	NodeTrigger:                     {class: classObject, unnamed: true},
-	NodeProgrammability:             {class: classFolder},
-	NodeDatabaseTriggers:            {class: classFolder, filterable: true},
-	NodeDatabaseTrigger:             {class: classObject},
-	NodeSequences:                   {class: classFolder, filterable: true},
-	NodeSequence:                    {class: classObject, unnamed: true},
-	NodeSynonyms:                    {class: classFolder, filterable: true},
-	NodeSynonym:                     {class: classObject, unnamed: true},
-	NodeTypes:                       {class: classFolder},
-	NodeSystemDataTypes:             {class: classFolder, filterable: true},
-	NodeSystemDataType:              {class: classObject},
-	NodeUserDefinedDataTypes:        {class: classFolder, filterable: true},
-	NodeUserDefinedDataType:         {class: classObject},
-	NodeUserDefinedTableTypes:       {class: classFolder, filterable: true},
-	NodeUserDefinedTableType:        {class: classObject},
-	NodeUserDefinedTypes:            {class: classFolder, filterable: true},
-	NodeUserDefinedType:             {class: classObject},
-	NodeXMLSchemaCollections:        {class: classFolder, filterable: true},
-	NodeXMLSchemaCollection:         {class: classObject},
-	NodeAssemblies:                  {class: classFolder, filterable: true},
-	NodeAssembly:                    {class: classObject},
-	NodeRules:                       {class: classFolder, filterable: true},
-	NodeRule:                        {class: classObject},
-	NodeDefaults:                    {class: classFolder, filterable: true},
-	NodeDefault:                     {class: classObject},
-	NodePlanGuides:                  {class: classFolder, filterable: true},
-	NodePlanGuide:                   {class: classObject},
-	NodeServiceBroker:               {class: classFolder},
-	NodeMessageTypes:                {class: classFolder, filterable: true},
-	NodeMessageType:                 {class: classObject},
-	NodeContracts:                   {class: classFolder, filterable: true},
-	NodeContract:                    {class: classObject},
-	NodeBrokerQueues:                {class: classFolder, filterable: true},
-	NodeBrokerQueue:                 {class: classObject},
-	NodeBrokerServices:              {class: classFolder, filterable: true},
-	NodeBrokerService:               {class: classObject},
-	NodeRoutes:                      {class: classFolder, filterable: true},
-	NodeRoute:                       {class: classObject},
-	NodeRemoteServiceBindings:       {class: classFolder, filterable: true},
-	NodeRemoteServiceBinding:        {class: classObject},
-	NodeBrokerPriorities:            {class: classFolder, filterable: true},
-	NodeBrokerPriority:              {class: classObject},
-	NodeExternalResources:           {class: classFolder},
-	NodeExternalDataSources:         {class: classFolder, filterable: true},
-	NodeExternalDataSource:          {class: classObject},
-	NodeExternalFileFormats:         {class: classFolder, filterable: true},
-	NodeExternalFileFormat:          {class: classObject},
-	NodeExternalLibraries:           {class: classFolder, filterable: true},
-	NodeExternalLibrary:             {class: classObject},
-	NodeForeignKey:                  {class: classObject, unnamed: true},
-	NodeChecks:                      {class: classFolder},
-	NodeCheck:                       {class: classObject, unnamed: true},
-	NodeStorage:                     {class: classFolder},
-	NodePartitionFunctions:          {class: classFolder, filterable: true},
-	NodePartitionFunction:           {class: classObject},
-	NodePartitionSchemes:            {class: classFolder, filterable: true},
-	NodePartitionScheme:             {class: classObject},
-	NodeDatabaseAuditSpecifications: {class: classFolder, filterable: true},
-	NodeDatabaseAuditSpecification:  {class: classObject},
-	NodeDatabaseScopedCredentials:   {class: classFolder, filterable: true},
-	NodeDatabaseScopedCredential:    {class: classObject},
-	NodeAsymmetricKeys:              {class: classFolder, filterable: true},
-	NodeAsymmetricKey:               {class: classObject},
-	NodeCertificates:                {class: classFolder, filterable: true},
-	NodeCertificate:                 {class: classObject},
-	NodeSymmetricKeys:               {class: classFolder, filterable: true},
-	NodeSymmetricKey:                {class: classObject},
-	NodeMasterKey:                   {class: classObject},
-	NodeSecurityPolicies:            {class: classFolder, filterable: true},
-	NodeSecurityPolicy:              {class: classObject},
-	NodeAlwaysEncryptedKeys:         {class: classFolder},
-	NodeQueryStore:                  {class: classFolder},
-	NodeQueryStoreReport:            {class: classObject},
-	NodeColumnMasterKeys:            {class: classFolder, filterable: true},
-	NodeColumnMasterKey:             {class: classObject},
-	NodeColumnEncryptionKeys:        {class: classFolder, filterable: true},
-	NodeColumnEncryptionKey:         {class: classObject},
-	NodeResourceGovernor:            {class: classObject, expandable: true},
-	NodeResourcePools:               {class: classFolder, filterable: true},
-	NodeResourcePool:                {class: classObject, expandable: true},
-	NodeWorkloadGroups:              {class: classFolder, filterable: true},
-	NodeWorkloadGroup:               {class: classObject},
-	NodeExternalResourcePools:       {class: classFolder, filterable: true},
-	NodeExternalResourcePool:        {class: classObject},
-	NodeDatabaseMail:                {class: classObject},
-	NodeReplication:                 {class: classFolder},
-	NodeLocalPublications:           {class: classFolder},
-	NodePublication:                 {class: classObject},
-	NodeLocalSubscriptions:          {class: classFolder},
-	NodeLocalSubscription:           {class: classObject},
-	NodeFullTextCatalogs:            {class: classFolder, filterable: true},
-	NodeFullTextCatalog:             {class: classObject},
-	NodeFullTextStoplists:           {class: classFolder, filterable: true},
-	NodeFullTextStoplist:            {class: classObject},
-	NodeSearchPropertyLists:         {class: classFolder, filterable: true},
-	NodeSearchPropertyList:          {class: classObject},
-	NodeViewColumns:                 {class: classFolder},
-	NodeViewColumn:                  {class: classObject, portableBullet: true},
-	NodeLoading:                     {class: classInternal},
-	NodeError:                       {class: classInternal},
+// portableBullet is the types whose Portable glyph is the shared bullet on
+// purpose: '⁞' is not guaranteed to render everywhere (see objectIconPortable).
+var portableBullet = map[NodeType]bool{
+	NodeColumn:     true,
+	NodeViewColumn: true,
 }
 
 // nodeTypeNames reads the constant names out of tree_node.go's iota block, in
@@ -300,30 +141,44 @@ func TestEveryNodeTypeIsWired(t *testing.T) {
 	}
 	// Safe to index: the count check above pins len(names) to nodeTypeCount.
 	name := func(nt NodeType) string { return names[nt] }
+	objectNames := map[string]NodeType{}
 	for nt := range nodeTypeCount {
-		w, ok := nodeTypeWiring[nt]
-		if !ok {
-			t.Errorf("%s has no entry in nodeTypeWiring — a new type is wired nowhere "+
-				"until it is classified here; add it, and check every switch the class implies", name(nt))
+		k := nodeKinds[nt]
+		if k.class == 0 {
+			t.Errorf("%s has no nodeKinds row — a new type is wired nowhere until it has one; "+
+				"add it, and check every table its class implies", name(nt))
 			continue
 		}
+		if k.name == "" {
+			t.Errorf("%s has no name in nodeKinds — the Details pane's Type row would be blank", name(nt))
+		}
 		_, hasLoader := childLoaders[nt]
-		switch w.class {
-		case classFolder:
-			if !isContainerNode(nt) {
-				t.Errorf("%s is declared a folder but isContainerNode says no — it would "+
-					"draw an object glyph and refuse to expand", name(nt))
+		props := filterProps(nt)
+		if k.class != kindFolder {
+			if filterableFolderSet[nt] {
+				t.Errorf("%s is listed in filterableFolderSet but is not a folder", name(nt))
 			}
-			if !hasChildren(nt) {
-				t.Errorf("%s is a folder with hasChildren false — no expand arrow", name(nt))
+			if len(props) != 0 {
+				t.Errorf("%s declares filter properties but is not a folder", name(nt))
 			}
+			// Two object types sharing a noun read as one type in the Details pane;
+			// folders legitimately share labels ("Triggers", "Security").
+			if prev, dup := objectNames[k.name]; dup {
+				t.Errorf("%s and %s are both named %q", name(prev), name(nt), k.name)
+			}
+			objectNames[k.name] = nt
+		}
+		switch k.class {
+		case kindFolder:
 			if !hasLoader {
 				t.Errorf("%s is a folder with no childLoaders entry — it expands to nothing", name(nt))
 			}
-			props := filterProps(nt)
-			if w.filterable {
+			if k.emoji != 0 || k.symbol != 0 {
+				t.Errorf("%s is a folder with object glyphs — nodeIcon never draws them", name(nt))
+			}
+			if filterableFolderSet[nt] {
 				if len(props) == 0 {
-					t.Errorf("%s is declared filterable and declares no filter properties — "+
+					t.Errorf("%s is listed filterable and declares no filter properties — "+
 						"its Filter menu offers nothing", name(nt))
 					break
 				}
@@ -335,46 +190,31 @@ func TestEveryNodeTypeIsWired(t *testing.T) {
 					t.Errorf("%s filter properties = %v, with no Name", name(nt), propNames)
 				}
 			} else if len(props) != 0 {
-				t.Errorf("%s declares filter properties but is not declared filterable — "+
-					"flip filterable so the Name check applies to it", name(nt))
+				t.Errorf("%s declares filter properties but is not in filterableFolderSet — "+
+					"add it so the Name check applies to it", name(nt))
 			}
-		case classObject:
-			if isContainerNode(nt) {
-				t.Errorf("%s is declared an object but isContainerNode says yes — it would "+
-					"draw a folder glyph", name(nt))
-			}
-			if hasChildren(nt) != w.expandable {
-				t.Errorf("%s: hasChildren = %v, declared expandable = %v", name(nt),
-					hasChildren(nt), w.expandable)
-			}
-			if hasLoader != w.expandable {
-				t.Errorf("%s: childLoaders entry = %v, declared expandable = %v — an "+
+		case kindLeaf, kindExpandable:
+			if expandable := k.class == kindExpandable; hasLoader != expandable {
+				t.Errorf("%s: childLoaders entry = %v, expandable = %v — an "+
 					"expandable object with no loader shows an arrow that leads nowhere, and a "+
-					"leaf with one contradicts hasChildren", name(nt), hasLoader, w.expandable)
+					"leaf with one never shows its children", name(nt), hasLoader, expandable)
 			}
-			assertGlyphs(t, name(nt), nt, w)
-			if !w.unnamed && nodeTypeName(nt) == "Object" {
-				t.Errorf("%s falls to nodeTypeName's \"Object\" default — the Details "+
-					"pane would name it that", name(nt))
+			assertGlyphs(t, name(nt), nt)
+		case kindPlaceholder:
+			if hasLoader {
+				t.Errorf("%s is a placeholder with a childLoaders entry", name(nt))
 			}
-		case classInternal:
-			if isContainerNode(nt) || hasChildren(nt) || hasLoader {
-				t.Errorf("%s is a placeholder but is wired as something expandable", name(nt))
-			}
-			assertGlyphs(t, name(nt), nt, w)
-		}
-	}
-	for nt := range nodeTypeWiring {
-		if nt >= nodeTypeCount {
-			t.Errorf("nodeTypeWiring has an entry for %d, past nodeTypeCount (%d)", nt, nodeTypeCount)
+			assertGlyphs(t, name(nt), nt)
+		default:
+			t.Errorf("%s has class %d, which is none of the four", name(nt), k.class)
 		}
 	}
 }
 
-// assertGlyphs checks all three icon switches answer for nt. They are three
-// separate switches, so a type added to one draws the shared bullet in the
-// others — which is a glyph, and so invisible to a nil check.
-func assertGlyphs(t *testing.T, name string, nt NodeType, w nodeWiring) {
+// assertGlyphs checks every icon style answers for nt with its own glyph, not
+// the shared bullet objectIcon falls back to — which is a glyph, and so
+// invisible to a nil check.
+func assertGlyphs(t *testing.T, name string, nt NodeType) {
 	t.Helper()
 	styles := []struct {
 		name   string
@@ -383,7 +223,7 @@ func assertGlyphs(t *testing.T, name string, nt NodeType, w nodeWiring) {
 	}{
 		{"Emoji", config.IconStyleEmoji, false},
 		{"Symbols", config.IconStyleSymbols, false},
-		{"Portable", config.IconStylePortable, w.portableBullet},
+		{"Portable", config.IconStylePortable, portableBullet[nt]},
 	}
 	for _, style := range styles {
 		got := objectIcon(nt, style.s)
