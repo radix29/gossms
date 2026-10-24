@@ -41,11 +41,11 @@ func membershipResponses() []fakeResponse {
 		{match: "FROM   sys.database_role_members rm", db: "appdb", cols: 2, rows: [][]driver.Value{
 			{"alice", "SQL_USER"}, {"bob", "SQL_USER"},
 		}},
-		{match: "name, principal_id, type_desc, default_schema_name", db: "appdb", cols: 7, rows: [][]driver.Value{
-			{"alice", int64(5), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
-			{"bob", int64(6), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
-			{"carol", int64(7), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
-		}},
+		{match: usersListRead, db: "appdb", cols: 11, rows: userListRows(
+			[]driver.Value{"alice", int64(5), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
+			[]driver.Value{"bob", int64(6), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
+			[]driver.Value{"carol", int64(7), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
+		)},
 
 		// The server's roles, its role members, and its logins — same
 		// ordering rule as the database half above.

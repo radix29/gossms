@@ -1442,6 +1442,15 @@ it from the string 'NULL'.
   `TRUNCATEONLY`, is wrong; gosmo's `ShrinkDatabaseOptions` zero value is
   right. SSMS 21 has no WAIT_AT_LOW_PRIORITY option there — gossms's Locking
   rows (SQL 2022+) are an extra.
+- **A log's UNLIMITED max size shows as 2097152 MB, not Unlimited**
+  (checked against SSMS 21, 2026-10-24). SQL Server stores a log's unlimited
+  `max_size` as 268435456 pages (2 TB), not -1, both for the default and
+  after `MODIFY FILE (… MAXSIZE = UNLIMITED)`; only data files keep -1.
+  gosmo's `normalizeFileGrowth` maps only -1 to `MaxSizeKB = -1`, so
+  Database Properties ▸ Files shows "2097152 MB", and choosing Unlimited for
+  a log reopens as Limited to 2097152 MB. SSMS 21 shows the same. Mapping
+  LOG/268435456 to Unlimited would lose nothing (2 TB is the log ceiling), but
+  it would break parity.
 - **Format Document upper-cases table hints only inside `WITH (…)`**: the
   legacy `JOIN log (nolock)` form stays as typed, since `(…)` after an
   unqualified name there may be a TVF's arguments (`CROSS APPLY f(nolock)`

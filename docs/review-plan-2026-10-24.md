@@ -339,9 +339,9 @@ under **Migrating**. Only when a release is asked for.
 |---|------|------|----------|
 | 1 | ✅ **B2** `FileGroups` from `Files`, + **B3** stale test, + **D2** — done 2026-10-24 | gosmo | Clears two of the three live failures, so the `livedb` suite is green again before A1 leans on it. |
 | 2 | ✅ **B1** Details pane type names, with **A2** (`nodeKinds` in `internal/tui/tree_node_kinds.go`) — done 2026-10-24 | gossms | Visible on most leaves, confirmed live; decide A2 first, since it changes how B1 is done. |
-| 3 | **Q4** log Unlimited max size, once answered | gosmo → gossms | Same file as B2 if it goes ahead; one function. |
-| 4 | **C1** typed change-tracking and password-policy arguments | gosmo → gossms | Breaking and mechanical; one sitting, one tag's worth of Migrating notes. |
-| 5 | **C2** `JobName` + the rule (**D3**), after **Q2** is answered | gosmo | Rule first, so A1 and later work follow it. |
+| 3 | ✅ **Q4** log Unlimited max size — SSMS 21 parity kept: a `docs/decisions.md` § By design line, comments on `normalizeFileGrowth` and `maxSizeText`, no code change — done 2026-10-24 | gosmo → gossms | Same file as B2 if it goes ahead; one function. |
+| 4 | ✅ **C1** typed change-tracking and password-policy arguments — `Table.SetChangeTracking(ctx, TableChangeTrackingOptions{Enabled, TrackColumnsUpdated})` (`TableChangeTracking` is already the read type) and `Login.SetPasswordPolicy(ctx, PasswordPolicy{CheckPolicy, CheckExpiration})` (field names as `ChangePasswordOptions`); Migrating note waits for H1 — done 2026-10-24 | gosmo → gossms | Breaking and mechanical; one sitting, one tag's worth of Migrating notes. |
+| 5 | ✅ **C2** `JobName` + the rule (**D3**) — `Job.History` sets `JobName`; `Users` and `UserByName` share one select (`userSelect`), so a listing fills `SID`, `LoginName`, `LoginDisabled` and `MappedObject` too, the login pair left "" on Azure SQL Database (Q2 (a)); rule in gosmo `CLAUDE.md` § Conventions after the `Ref` bullet — done 2026-10-24 | gosmo | Rule first, so A1 and later work follow it. |
 | 6 | **A1** RPC writes spike | gosmo → gossms | Largest change; needs the green `livedb` suite from step 2 and the sweep on 13. |
 | 7 | **S1** `procParamType` fast path | gosmo | Trivial; any commit touching `proc_read.go` (A1 does). |
 | 8 | **B4**, **C3**, **D1** | gossms | Small, independent; any time. |

@@ -207,6 +207,9 @@ func growthText(isPercent bool, growthKB int64, growthPercent int) string {
 	return fileSizeText(growthKB)
 }
 
+// maxSizeText shows a log's UNLIMITED max size as 2097152 MB, not Unlimited:
+// the server stores it as 268435456 pages and SSMS 21 shows the same
+// (docs/decisions.md § By design).
 func maxSizeText(maxSizeKB int64) string {
 	if maxSizeKB < 0 {
 		return "Unlimited"

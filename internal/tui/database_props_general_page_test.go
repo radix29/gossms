@@ -42,9 +42,9 @@ func databaseGeneralResponses(owner string) []fakeResponse {
 			"OFF", "",
 			false, false, false, false, "DISABLED", int64(60), false, false,
 		}}},
-		{match: "WHERE  type IN ('S','U','G','E','X','C','K')", db: genDatabase, cols: 7, rows: [][]driver.Value{
-			{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
-		}},
+		{match: usersListRead, db: genDatabase, cols: 11, rows: userListRows(
+			[]driver.Value{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
+		)},
 		{match: "msdb.dbo.backupset", cols: 12, rows: nil},
 		loginListResponse(),
 	}

@@ -230,7 +230,10 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 						return err
 					}
 				case isSQLLogin && policyDirty:
-					if err := l.SetPasswordPolicy(ctx, policyRow.Checked(), expirationRow.Checked()); err != nil {
+					if err := l.SetPasswordPolicy(ctx, gosmo.PasswordPolicy{
+						CheckPolicy:     policyRow.Checked(),
+						CheckExpiration: expirationRow.Checked(),
+					}); err != nil {
 						return err
 					}
 				}

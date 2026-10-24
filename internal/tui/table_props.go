@@ -314,7 +314,10 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 				if err != nil {
 					return err
 				}
-				return d.TableRef(schema, name).SetChangeTracking(ctx, enabledRow.Selected() == 1, trackColsRow.Selected() == 1)
+				return d.TableRef(schema, name).SetChangeTracking(ctx, gosmo.TableChangeTrackingOptions{
+					Enabled:             enabledRow.Selected() == 1,
+					TrackColumnsUpdated: trackColsRow.Selected() == 1,
+				})
 			}
 			return f, apply, nil
 		},
