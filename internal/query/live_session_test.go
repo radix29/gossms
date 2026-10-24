@@ -65,10 +65,12 @@ func TestLiveSessionPooledExecuteLosesState(t *testing.T) {
 	defer done()
 	db.SetMaxOpenConns(1) // the same physical session both times
 
-	if res := Execute(ctx, db, "tempdb", "CREATE TABLE #t (i int)"); res.HasErrors() {
+	// No database: Execute discards a connection it switched, and a fresh
+	// session would lose #t with no reset at all.
+	if res := Execute(ctx, db, "", "CREATE TABLE #t (i int)"); res.HasErrors() {
 		t.Fatalf("create: %v", messageTexts(res))
 	}
-	res := Execute(ctx, db, "tempdb", "SELECT * FROM #t")
+	res := Execute(ctx, db, "", "SELECT * FROM #t")
 	if !res.HasErrors() {
 		t.Error("the pooled Execute kept #t — the reset this package works around is not happening")
 	}

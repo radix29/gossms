@@ -237,6 +237,9 @@ func TestCancelDuringEndTransactionsSaysItCannotStop(t *testing.T) {
 		qp, _ := hostedSessionPanel(t, a, 1)
 		done := false
 		qp.endTransactions(c.commit, func() { done = true })
+		if qp.cancellable() {
+			t.Errorf("commit=%v: cancellable() = true while ending transactions; Cancel and Stop must be disabled", c.commit)
+		}
 		qp.CancelExecution()
 		if a.statusText != c.want {
 			t.Errorf("commit=%v: status = %q, want %q", c.commit, a.statusText, c.want)
@@ -246,5 +249,24 @@ func TestCancelDuringEndTransactionsSaysItCannotStop(t *testing.T) {
 		if a.statusText != "No query is currently executing" {
 			t.Errorf("commit=%v: after the end, status = %q, want no query executing", c.commit, a.statusText)
 		}
+	}
+}
+
+// A panic on endTransactions' goroutine clears ending with the latch, so the next
+// run's Cancel cancels it rather than saying a COMMIT cannot be stopped.
+func TestExecPanickedClearsEnding(t *testing.T) {
+	a := newTestApp()
+	qp, _ := hostedSessionPanel(t, a, 1)
+	qp.executing, qp.ending = true, "Committing"
+	qp.execPanicked()
+
+	cancelled := false
+	qp.executing, qp.cancel = true, func() { cancelled = true }
+	if !qp.cancellable() {
+		t.Error("cancellable() = false for a run after the panic, want true")
+	}
+	qp.CancelExecution()
+	if !cancelled || a.statusText != "Cancelling query..." {
+		t.Errorf("cancelled = %v, status = %q; want the run cancelled", cancelled, a.statusText)
 	}
 }

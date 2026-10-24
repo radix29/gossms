@@ -71,6 +71,33 @@ func TestPooledExecuteResetsTheConnectionBetweenCalls(t *testing.T) {
 	}
 }
 
+// A pooled Execute's connection goes back to the pool only when the run ends in
+// the database an unswitched checkout started in: pooled inside another, an idle
+// session holds a shared database lock that fails someone else's RESTORE, SET
+// OFFLINE or SET SINGLE_USER (review 2026-10-24).
+func TestPooledExecuteDiscardsAConnectionLeftInAnotherDatabase(t *testing.T) {
+	for _, c := range []struct {
+		name, database, endDB string
+		wantPooled            bool
+	}{
+		{"unswitched, ends where it started", "", "testdb", true},
+		{"switched by Execute's database", "otherdb", "testdb", false},
+		{"switched by the script's USE", "", "otherdb", false},
+	} {
+		fc := &fakeMsgConnector{conn: &fakeMsgConn{batches: [][]fakeMsg{oneRow("x")}, dbName: "testdb"}}
+		db := sql.OpenDB(fc)
+		db.SetMaxOpenConns(1)
+		fc.conn.dbAfterBatch = c.endDB
+		if res := Execute(context.Background(), db, c.database, "SELECT 1"); res.HasErrors() {
+			t.Fatalf("%s: Execute: %v", c.name, messageTexts(res))
+		}
+		if pooled := !fc.conn.closed; pooled != c.wantPooled {
+			t.Errorf("%s: pooled = %v, want %v", c.name, pooled, c.wantPooled)
+		}
+		db.Close()
+	}
+}
+
 // The database is wherever the last run left it (no USE), and the transaction
 // count comes back after each run.
 func TestSessionReportsStateAfterEachRun(t *testing.T) {

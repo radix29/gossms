@@ -25,7 +25,7 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Icon: "▷", Tooltip: "Execute Selection", Action: func() { a.executeSelectedQuery() }, DropRank: 3,
 			Enabled: func() bool { return a.activeQueryPanel() != nil }},
 		{Icon: "■", Tooltip: "Stop Execution", Action: func() { a.cancelExecutingQuery() }, DropRank: 1,
-			Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.executing }},
+			Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.cancellable() }},
 		{Divider: true, Icon: "|"},
 		{Icon: "Est.Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() }, DropRank: 5,
 			Enabled: func() bool { return a.activeQueryPanel() != nil }},

@@ -5,7 +5,8 @@
 //
 // A Session keeps its connection across scripts and is the only path offering
 // plan capture and row sinks; package-level Execute checks a connection out of
-// the pool per call, and the pool resets it before reuse.
+// the pool per call, and the pool resets it before reuse (or Execute discards
+// it, when the run left it in another database).
 package query
 
 import (
@@ -276,7 +277,8 @@ func WithMaxRows(n int) Option {
 }
 
 // Execute runs script against db, SSMS-style. A non-empty database is switched
-// to first (USE). The script is split on GO; a failing batch is reported in
+// to first (USE), and the connection is then discarded rather than pooled, as
+// it is when the script leaves its database or the run fails or is cancelled. The script is split on GO; a failing batch is reported in
 // Messages and execution continues. Cancelling ctx stops between and inside
 // batches, returning the partial Result. Every row is retained in Result.Sets,
 // uncapped unless WithMaxRows says otherwise; see cellArena.
@@ -290,7 +292,22 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...O
 		res.Elapsed = time.Since(start)
 		return res
 	}
-	defer conn.Close()
+	// The pool's reset on next checkout clears SET options and transactions but
+	// not the session's database: pooled inside one, an idle session holds a
+	// shared database lock for up to ConnMaxIdleTime, failing someone else's
+	// RESTORE, SET OFFLINE or SET SINGLE_USER. So the connection goes back to
+	// the pool only when the run ends where an unswitched checkout started.
+	var startDB string
+	if database == "" {
+		startDB, _ = currentDatabase(ctx, conn)
+	}
+	endDB := ""
+	defer func() {
+		if startDB == "" || endDB != startDB {
+			discardConn(conn)
+		}
+		conn.Close()
+	}()
 
 	// Plan capture and row sinks are Session-only (both need a connection that
 	// survives the run), so the capture-off failure a Session treats as fatal
@@ -300,7 +317,7 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...O
 			res.Messages = append(res.Messages, cancelledMessage)
 		} else {
 			if name, err := currentDatabase(ctx, conn); err == nil {
-				res.Database = name
+				res.Database, endDB = name, name
 			}
 			if res.shouldReportSuccess(planCaptureNone) {
 				res.addNotice("Commands completed successfully.")

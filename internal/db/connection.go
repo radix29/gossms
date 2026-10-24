@@ -30,7 +30,8 @@ import (
 // Since gosmo's procRead (reads, 2026-10-23) and execIn (writes, 2026-10-24)
 // a pooled session never leaves its login database, so an idle one holds
 // nothing. A query panel's session (gosmo.AcquireConn) is discarded on close,
-// not pooled.
+// not pooled, and query.Execute discards a connection its run left in another
+// database.
 const (
 	maxOpenConns = 20
 	maxIdleConns = 10

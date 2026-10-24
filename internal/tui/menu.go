@@ -109,7 +109,7 @@ func (a *App) buildMenus() []controls.Menu {
 				a.editorAction(func(e *controls.Editor) { e.SelectStatementAtCursor() })
 			}, Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: "Cancel Executing Query", Action: func() { a.cancelExecutingQuery() },
-				Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.executing }},
+				Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.cancellable() }},
 			{Label: "Reconnect", Action: func() { a.reconnectActiveQuery() },
 				Enabled: func() bool {
 					qp := a.activeQueryPanel()
