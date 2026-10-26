@@ -346,7 +346,7 @@ func pageTablePermissions(sc *db.ServerConn, dbName, schema, name string) propPa
 			}
 
 			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.SecurableTable.PermissionNames(),
-				objectPermEntries(perms), 8, 12,
+				objectPermEntries(perms),
 				securablePermApply(d, gosmo.Securable{Class: gosmo.SecurableTable, Schema: schema, Name: name}))
 			return f, apply, nil
 		},

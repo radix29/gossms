@@ -74,7 +74,7 @@ func connectedLoginIndex(sc *db.ServerConn, names []string) int {
 // jobStepOnActionItems/stepNumberText; every row is new. "Start at Step" is
 // dropped (nothing to start yet).
 func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string, indentWidth int) (*propsheet.Form, propApply, func() int) {
-	edits := newJobStepEdits(serverCollation(sc), nil)
+	edits := newJobStepEdits(pf.msdbCollation, nil)
 	visible := edits.visible
 	cols := []string{"Step", "Name", "Database"}
 	rowsFor := func() [][]string {

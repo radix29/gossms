@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/radix29/gosmo"
 )
 
 // "Script Database Security" opens the generator in a new query window for
@@ -49,5 +51,20 @@ func TestDatabaseSecurityScriptOwnershipAndWindowsUsers(t *testing.T) {
 	forLogin := strings.Index(body, "ELSE N' FOR LOGIN '")
 	if windows < 0 || forLogin < 0 || windows > forLogin {
 		t.Error("a Windows user named as its account is not scripted without FOR LOGIN ahead of the FOR LOGIN arm")
+	}
+}
+
+// Contained users and application roles are scripted with gosmo's password
+// placeholder. The generator's own N'ChangeMe123!' passed Windows complexity,
+// so running the output unread created every such principal with a password
+// published in this source, even on a host that enforces policy.
+func TestDatabaseSecurityScriptUsesThePasswordPlaceholder(t *testing.T) {
+	body := databaseSecurityScript("db")
+	want := "DECLARE @password nvarchar(128) = N'" + gosmo.PasswordPlaceholder + "';"
+	if !strings.Contains(body, want) {
+		t.Errorf("@password is not declared as gosmo's placeholder; want %q", want)
+	}
+	if strings.Contains(body, "ChangeMe") {
+		t.Error("the generator still carries a working placeholder password")
 	}
 }

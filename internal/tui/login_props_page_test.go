@@ -335,3 +335,29 @@ func TestLoginAuthLabelNamesEachLoginType(t *testing.T) {
 		t.Errorf("loginAuthLabel of an unknown type = %q", got)
 	}
 }
+
+// TestLoginStatusCountsSessionsUnderTheServerCollation pins B2: a Windows
+// session can report its login in a different case from the one
+// sys.server_principals holds, and on a case-insensitive server it is still
+// that login's session; on a case-sensitive one it is not.
+func TestLoginStatusCountsSessionsUnderTheServerCollation(t *testing.T) {
+	session := func(id int64, login string) []driver.Value {
+		return []driver.Value{id, login, "host", "app", "master", "sleeping",
+			int64(0), int64(0), int64(0), nil, nil, int64(0), nil, int64(0)}
+	}
+	for _, tc := range []struct{ collation, want string }{
+		{"SQL_Latin1_General_CP1_CI_AS", "2"},
+		{"Latin1_General_CS_AS", "1"},
+	} {
+		resp := loginResponses()
+		resp[2].rows = [][]driver.Value{session(51, "appuser"), session(52, "APPUSER"), session(53, "other")}
+		info := serverInfoResponse()
+		info.rows[0][4] = tc.collation
+		sc, inst := newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, resp...))
+		name := "appuser"
+		form, _ := loadPage(t, pageLoginStatus(sc, &name), inst)
+		if got := staticValue(t, form, "Active sessions"); got != tc.want {
+			t.Errorf("%s: Active sessions = %s, want %s", tc.collation, got, tc.want)
+		}
+	}
+}

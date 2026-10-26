@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/radix29/gossms/internal/db"
 )
 
 func TestPendingNameIndex(t *testing.T) {
@@ -58,21 +60,56 @@ func TestFilegroupAddFollowsTheDatabaseCollation(t *testing.T) {
 	}
 }
 
-// TestMailProfileAddFollowsTheServerCollation: Database Mail lives in msdb,
-// whose collation the server's stands in for.
-func TestMailProfileAddFollowsTheServerCollation(t *testing.T) {
+// msdbOpposite is the server collation that disagrees with msdb's: each
+// msdb-scoped page test runs its server under it, so a page comparing under
+// the server's collation instead of msdb's gets the wrong answer in both runs.
+func msdbOpposite(msdb string) string {
+	if msdb == pendingAddCollations[0].collation {
+		return pendingAddCollations[1].collation
+	}
+	return pendingAddCollations[0].collation
+}
+
+// msdbResponse answers DatabaseByName("msdb") with collation, ahead of any
+// broader sys.databases read in the script.
+func msdbResponse(collation string) fakeResponse {
+	r := dbByNameResp("msdb", 4)
+	r.rows[0][5], r.rows[0][6] = collation, collation
+	return r
+}
+
+// fakeConnWithMsdb is newFakeConn on a server whose collation is the opposite
+// of msdb's (msdbOpposite), with msdb's read answered first.
+func fakeConnWithMsdb(t *testing.T, msdb string, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+	t.Helper()
+	info := serverInfoResponse()
+	info.rows[0][4] = msdbOpposite(msdb)
+	return newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse(), msdbResponse(msdb)}, responses...))
+}
+
+// TestMailProfileAndAccountAddFollowTheMsdbCollation: Database Mail profiles
+// and accounts live in msdb, so its collation decides a duplicate, not the
+// server's (C1 of the 2026-10-26 review).
+func TestMailProfileAndAccountAddFollowTheMsdbCollation(t *testing.T) {
 	for _, tt := range pendingAddCollations {
-		info := serverInfoResponse()
-		info.rows[0][4] = tt.collation
-		sc, inst := newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, mailPageReads()...))
-		form, _ := loadPage(t, pageMailProfiles(sc, &mailModel{}), inst)
+		for _, c := range []struct {
+			page       func(*db.ServerConn) propPage
+			row, typed string
+			beside     string
+		}{
+			{func(sc *db.ServerConn) propPage { return pageMailProfiles(sc, &mailModel{}) }, "New profile name", "OPS", "ops"},
+			{func(sc *db.ServerConn) propPage { return pageMailAccounts(sc, &mailModel{}) }, "New account name", "RELAY1", "relay1"},
+		} {
+			sc, inst := fakeConnWithMsdb(t, tt.collation, mailPageReads()...)
+			form, _ := loadPage(t, c.page(sc), inst)
 
-		textRow(t, form, "New profile name").Edit("OPS")
-		clickButton(t, form, "Add")
+			textRow(t, form, c.row).Edit(c.typed)
+			clickButton(t, form, "Add")
 
-		hint := hintText(t, form)
-		if got := strings.Contains(hint, "already listed"); got != tt.refused {
-			t.Errorf("%s: \"OPS\" beside ops refused = %v (hint %q), want %v", tt.collation, got, hint, tt.refused)
+			hint := hintText(t, form)
+			if got := strings.Contains(hint, "already listed"); got != tt.refused {
+				t.Errorf("msdb %s: %q beside %s refused = %v (hint %q), want %v", tt.collation, c.typed, c.beside, got, hint, tt.refused)
+			}
 		}
 	}
 }

@@ -18,6 +18,7 @@ import (
 // njobPrefetch holds the one fetch every New Job page is built from.
 type njobPrefetch struct {
 	existingNames *nameSet
+	msdbCollation string // Agent names (jobs, steps) compare under msdb's
 	loginNames    []string
 	categories    []string
 	dbNames       []string
@@ -30,7 +31,8 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	if err != nil {
 		return nil, err
 	}
-	existing := newNameSet(msdbCollation(ctx, sc))
+	msdbColl := msdbCollation(ctx, sc)
+	existing := newNameSet(msdbColl)
 	for _, j := range jobs {
 		existing.Add(j.Name)
 	}
@@ -67,7 +69,7 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 		opNames[i] = o.Name
 	}
 	return &njobPrefetch{
-		existingNames: existing, loginNames: loginNames, categories: catNames,
+		existingNames: existing, msdbCollation: msdbColl, loginNames: loginNames, categories: catNames,
 		dbNames: dbNames, schedules: scheds, operatorNames: opNames,
 	}, nil
 }

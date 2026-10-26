@@ -30,9 +30,11 @@ func findPublication(ctx context.Context, sc *db.ServerConn, dbName, name string
 // findLocalSubscription resolves the subscription dbName holds to publisher's
 // publication pub in publisherDB. A database can subscribe to same-named
 // publications of two publishers, so all three name it (the three the tree node's
-// key carries). Server and database names compare without regard to case: the
-// fixture's subscriber stores its publisher as WIN10CLI in one table and win10cli
-// in another.
+// key carries). An exact match wins; otherwise the names compare without regard
+// to case (the fixture's subscriber stores its publisher as WIN10CLI in one table
+// and win10cli in another), but only a single such match is taken: on a _CS_
+// server two publications differing only in case are two subscriptions, and
+// picking either would open the wrong one (gosmo's matchName rule).
 func findLocalSubscription(ctx context.Context, sc *db.ServerConn, dbName, publisher, publisherDB, pub string) (*gosmo.LocalSubscription, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
@@ -42,13 +44,24 @@ func findLocalSubscription(ctx context.Context, sc *db.ServerConn, dbName, publi
 	if err != nil {
 		return nil, err
 	}
+	var folded []*gosmo.LocalSubscription
 	for _, s := range subs {
-		if strings.EqualFold(s.Publisher, publisher) && strings.EqualFold(s.PublisherDB, publisherDB) &&
-			strings.EqualFold(s.Publication, pub) {
+		if s.Publisher == publisher && s.PublisherDB == publisherDB && s.Publication == pub {
 			return s, nil
 		}
+		if strings.EqualFold(s.Publisher, publisher) && strings.EqualFold(s.PublisherDB, publisherDB) &&
+			strings.EqualFold(s.Publication, pub) {
+			folded = append(folded, s)
+		}
 	}
-	return nil, fmt.Errorf("no subscription in database %q to [%s].[%s]: %s", dbName, publisher, publisherDB, pub)
+	switch len(folded) {
+	case 0:
+		return nil, fmt.Errorf("no subscription in database %q to [%s].[%s]: %s", dbName, publisher, publisherDB, pub)
+	case 1:
+		return folded[0], nil
+	}
+	return nil, fmt.Errorf("subscription in database %q to [%s].[%s]: %s: %w: %d subscriptions match it ignoring case",
+		dbName, publisher, publisherDB, pub, gosmo.ErrAmbiguous, len(folded))
 }
 
 // -- Publication ----------------------------------------------------------------

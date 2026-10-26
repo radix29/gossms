@@ -212,8 +212,7 @@ func (p *jobStepPanel) addStep(grid *controls.DataGrid, hint *propsheet.HintRow,
 }
 
 // newJobStepEdits is both Steps pages' pending-edit list. collation decides
-// whether a typed name duplicates a listed one — the server's, standing in
-// for msdb's.
+// whether a typed name duplicates a listed one: msdb's, which holds the steps.
 func newJobStepEdits(collation string, loaded []*jobStepEdit) *pendingEdits[*jobStepEdit] {
 	return newPendingEdits(collation, loaded,
 		func(e *jobStepEdit) string { return e.name }, (*jobStepEdit).changed, (*jobStepEdit).reset)

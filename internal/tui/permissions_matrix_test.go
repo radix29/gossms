@@ -96,7 +96,7 @@ func threePrincipalMatrix(t *testing.T, rec *recorder) (propApply, matrixParts) 
 	entries := []permEntry{
 		{Principal: "a", Permission: permA, State: permStateGrantWith},
 	}
-	f, apply := buildPermissionsMatrix(principals, []string{permA, permB}, entries, 8, 8, rec.fn())
+	f, apply := buildPermissionsMatrix(principals, []string{permA, permB}, entries, rec.fn())
 	p := matrixPartsOf(t, f)
 
 	// a: Grant With Grant -> Deny -> (none) -> Grant.
@@ -158,7 +158,7 @@ func TestPermissionsMatrixPartlyAppliedReloads(t *testing.T) {
 		loads++
 		principals := []permPrincipal{{Name: "a", Type: "SQL_LOGIN"}, {Name: "b", Type: "SQL_LOGIN"}, {Name: "c", Type: "SQL_LOGIN"}}
 		entries := []permEntry{{Principal: "a", Permission: permA, State: permStateGrantWith}}
-		f, apply := buildPermissionsMatrix(principals, []string{permA, permB}, entries, 8, 8, serverPermApply(sc.Server))
+		f, apply := buildPermissionsMatrix(principals, []string{permA, permB}, entries, serverPermApply(sc.Server))
 		if d.SetPageForm(page, seq, f) {
 			d.applyFn[page] = apply
 		}
@@ -227,7 +227,7 @@ func TestPermissionsMatrixScriptingLeavesPageDirty(t *testing.T) {
 func TestPermissionsMatrixEmptyFilterClearsSelection(t *testing.T) {
 	rec := &recorder{}
 	principals := []permPrincipal{{Name: "a", Type: "SQL_LOGIN"}}
-	f, apply := buildPermissionsMatrix(principals, []string{permA, permB}, nil, 8, 8, rec.fn())
+	f, apply := buildPermissionsMatrix(principals, []string{permA, permB}, nil, rec.fn())
 	p := matrixPartsOf(t, f)
 
 	p.perms.OnActivateCell(0, 1) // (none) -> Grant on principal a

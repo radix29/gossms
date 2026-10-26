@@ -40,7 +40,7 @@ func pageServerPermissions(sc *db.ServerConn) propPage {
 				principals = append(principals, permPrincipal{Name: r.Name, Type: gosmo.PrincipalServerRole})
 			}
 
-			f, apply := buildPermissionsMatrix(principals, gosmo.ServerPermissionNames(), entries, 8, 12,
+			f, apply := buildPermissionsMatrix(principals, gosmo.ServerPermissionNames(), entries,
 				serverPermApply(sc.Server))
 			// sys.server_permissions and sys.server_principals are both
 			// metadata-visibility filtered, so without VIEW ANY DEFINITION a

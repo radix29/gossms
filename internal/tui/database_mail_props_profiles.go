@@ -91,7 +91,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				loaded[i] = &mailProfileEdit{origName: p.Name, name: p.Name, origDesc: p.Description, desc: p.Description,
 					origAccounts: names, accounts: slices.Clone(names)}
 			}
-			edits := newPendingEdits(serverCollation(sc), loaded,
+			edits := newPendingEdits(msdbCollation(ctx, sc), loaded,
 				func(e *mailProfileEdit) string { return e.name }, (*mailProfileEdit).changed,
 				func(e *mailProfileEdit) {
 					e.name, e.desc, e.accounts = e.origName, e.origDesc, slices.Clone(e.origAccounts)

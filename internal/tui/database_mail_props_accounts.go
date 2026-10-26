@@ -214,7 +214,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				v := mailAccountValuesOf(a)
 				loaded[i] = &mailAccountEdit{orig: v, cur: v}
 			}
-			edits := newPendingEdits(serverCollation(sc), loaded,
+			edits := newPendingEdits(msdbCollation(ctx, sc), loaded,
 				func(e *mailAccountEdit) string { return e.cur.name }, (*mailAccountEdit).changed,
 				func(e *mailAccountEdit) { e.cur, e.password, e.confirm = e.orig, "", "" })
 			model.setAccounts(mailPublishedAccounts(edits.all()))

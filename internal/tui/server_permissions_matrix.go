@@ -68,6 +68,13 @@ func objectPermEntries(perms []*gosmo.PermissionEntry) []permEntry {
 	return entries
 }
 
+// The Permissions page's two grids' heights, in rows: every scope's page uses
+// the same layout.
+const (
+	permPrincipalsHeight = 8
+	permCatalogHeight    = 12
+)
+
 // buildPermissionsMatrix builds the Permissions page's two-pane editor: a
 // principal list (top grid) and, for the selected principal, the full catalog
 // of grantable permissions at this scope (bottom grid), not just those with an
@@ -79,7 +86,6 @@ func objectPermEntries(perms []*gosmo.PermissionEntry) []permEntry {
 // GRANT/DENY/REVOKE) the caller needs.
 func buildPermissionsMatrix(
 	principals []permPrincipal, catalog []string, entries []permEntry,
-	principalsHeight, permsHeight int,
 	applyFn permApplyFn,
 ) (*propsheet.Form, propApply) {
 	type entryKey struct{ principal, permission string }
@@ -211,8 +217,8 @@ func buildPermissionsMatrix(
 		}
 	})
 
-	principalsRow := propsheet.NewGridRow(principalGrid, principalsHeight)
-	permsRow := propsheet.NewGridRow(permGrid, permsHeight)
+	principalsRow := propsheet.NewGridRow(principalGrid, permPrincipalsHeight)
+	permsRow := propsheet.NewGridRow(permGrid, permCatalogHeight)
 	permsRow.DirtyFn = func() bool {
 		for _, edits := range editsByPrincipal {
 			for _, e := range edits {

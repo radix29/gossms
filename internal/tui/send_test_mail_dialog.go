@@ -155,22 +155,22 @@ func (d *SendTestMailDialog) build(pf *sendTestMailPrefetch) *propsheet.Form {
 		}
 	}
 
-	var profile func() (string, error)
+	// profile reads the chosen profile; nil when none exists to send through.
+	var profile func() string
 	switch {
 	case pf.profiles == nil:
 		typed := propsheet.Text("Profile", "", 40)
 		rows = append(rows, typed, propsheet.Note(
 			"This login may not list profiles. Leave Profile blank to send through your default profile, or type one granted to you."))
-		profile = func() (string, error) { return strings.TrimSpace(typed.Value()), nil }
+		profile = func() string { return strings.TrimSpace(typed.Value()) }
 	case len(pf.profiles) == 0:
 		rows = append(rows, propsheet.Static("Profile", "(none)"), propsheet.Note(
 			"No Database Mail profile exists. Create an account and a profile in Configure Database Mail first."))
-		profile = func() (string, error) { return "", errors.New("no Database Mail profile exists to send through") }
 	default:
 		sel := max(pf.defaultProfile, 0)
 		pick := propsheet.Select("Profile", pf.profiles, sel)
 		rows = append(rows, pick)
-		profile = func() (string, error) { return pick.Value(), nil }
+		profile = pick.Value
 	}
 
 	server := d.sc.Opts.Server
@@ -190,11 +190,10 @@ func (d *SendTestMailDialog) build(pf *sendTestMailPrefetch) *propsheet.Form {
 	)
 
 	d.request = func() (gosmo.MailMessage, error) {
-		p, err := profile()
-		if err != nil {
-			return gosmo.MailMessage{}, err
+		if profile == nil {
+			return gosmo.MailMessage{}, errors.New("no Database Mail profile exists to send through")
 		}
-		r := gosmo.MailMessage{Profile: p, To: strings.TrimSpace(to.Value()), Subject: subject.Value(), Body: body.Value()}
+		r := gosmo.MailMessage{Profile: profile(), To: strings.TrimSpace(to.Value()), Subject: subject.Value(), Body: body.Value()}
 		if r.To == "" {
 			//lint:ignore ST1005 the capital is the "To" field's label
 			return gosmo.MailMessage{}, errors.New("To is required")

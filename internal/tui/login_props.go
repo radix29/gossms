@@ -688,9 +688,11 @@ func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			activeSessions := 0
+			// A Windows session can report its login in a different case from
+			// sys.server_principals (connectedLoginIndex), so compare as the server does.
+			activeSessions, collation := 0, serverCollation(sc)
 			for _, s := range sessions {
-				if s.LoginName == *loginName {
+				if gosmo.SameName(collation, s.LoginName, *loginName) {
 					activeSessions++
 				}
 			}

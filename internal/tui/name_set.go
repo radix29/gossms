@@ -103,8 +103,9 @@ func instanceCollation(s *gosmo.Server) string {
 	return s.Info().Collation
 }
 
-// msdbCollation is msdb's collation, which governs Agent object names (jobs,
-// schedules, operators, alerts). It normally equals the server's, and a failed
+// msdbCollation is msdb's collation, which governs the names msdb holds: Agent
+// objects (jobs, job steps, schedules, operators, alerts) and Database Mail
+// profiles and accounts. It normally equals the server's, and a failed
 // read falls back to it rather than failing the dialog.
 func msdbCollation(ctx context.Context, sc *db.ServerConn) string {
 	if d, err := sc.Server.DatabaseByName(ctx, "msdb"); err == nil && d.Collation != "" {

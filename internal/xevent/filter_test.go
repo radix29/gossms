@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestFoldedComparisonsMatchToLower pins containsLower, cutLowerPrefix and
+// TestFoldedComparisonsMatchToLower pins containsLower, hasLowerPrefix and
 // compareLower to the strings.ToLower forms they replaced, over the cases
 // where lowering is not byte-for-byte: multi-byte letters, a rune whose
 // lowercase is shorter or longer in UTF-8 (the Kelvin sign, dotted I),
@@ -24,8 +24,8 @@ func TestFoldedComparisonsMatchToLower(t *testing.T) {
 			if got, want := containsLower(s, lb), strings.Contains(ls, lb); got != want {
 				t.Errorf("containsLower(%q, %q) = %v, want %v", s, lb, got, want)
 			}
-			if _, got := cutLowerPrefix(s, lb); got != strings.HasPrefix(ls, lb) {
-				t.Errorf("cutLowerPrefix(%q, %q) = %v, want %v", s, lb, got, !got)
+			if got := hasLowerPrefix(s, lb); got != strings.HasPrefix(ls, lb) {
+				t.Errorf("hasLowerPrefix(%q, %q) = %v, want %v", s, lb, got, !got)
 			}
 			if got, want := compareLower(s, lb), strings.Compare(ls, lb); got != want {
 				t.Errorf("compareLower(%q, %q) = %d, want %d", s, lb, got, want)

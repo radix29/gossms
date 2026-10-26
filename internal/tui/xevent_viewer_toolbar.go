@@ -185,16 +185,15 @@ func (v *XEventViewer) toolReason(i int) string {
 }
 
 // runTool invokes cell i's action, or says why it did not.
-func (v *XEventViewer) runTool(i int) bool {
+func (v *XEventViewer) runTool(i int) {
 	if i < 0 || i >= len(v.tools.Cells) {
-		return false
+		return
 	}
 	if r := v.toolReason(i); r != "" {
 		v.app.setStatus(v.tools.Cells[i].Label + ": " + r)
-		return false
+		return
 	}
 	v.tools.Cells[i].Action()
-	return true
 }
 
 // runToolByID runs the cell named id, for a key binding. A mode without the

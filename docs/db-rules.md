@@ -31,9 +31,9 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   a separate map): every gated action touches the whole object, so one denied
   column withholds it.
 - **A right set is what the server checks, not the family's usual shape.**
-  Don't add `rightAlterDatabase` "for symmetry": database-scoped credentials
+  Don't add `gate.AlterDatabase` "for symmetry": database-scoped credentials
   work under `GRANT CONTROL ON DATABASE` and are refused under `GRANT ALTER`,
-  so `dbScopedCredentialRights` is `CONTROL` alone. Probe with a `WITHOUT LOGIN`
+  so `gate.DBScopedCredentialRights` is `CONTROL` alone. Probe with a `WITHOUT LOGIN`
   user before writing a set. A *server*-scope permission asked of a database
   via `HAS_PERMS_BY_NAME` returns **NULL, not 0** (`ALTER ANY CREDENTIAL`),
   which gates as `CapabilityUnknown` forever.
@@ -46,14 +46,14 @@ Object Explorer filters, query execution. Each is a bug that shipped.
 - **ALTER and DROP can take different rights — then they get different
   entries.** A Service Broker queue (majors 13, 14, 17): `ALTER ON
   OBJECT::<queue>` alters but can't drop (Msg 15151; drop needs CONTROL on the
-  queue or ALTER on its schema), so `queueAlterRights` gates Properties and
-  `queueDropRights` Delete; Move to Schema is a third set
-  (`classOneTransferRights`). Probe per verb, not per family.
-- **`rightAlterOnObject` means ALTER *or* CONTROL; `rightControlOnObject` means
+  queue or ALTER on its schema), so `gate.QueueAlterRights` gates Properties and
+  `gate.QueueDropRights` Delete; Move to Schema is a third set
+  (`gate.ClassOneTransferRights`). Probe per verb, not per family.
+- **`gate.AlterOnObject` means ALTER *or* CONTROL; `gate.ControlOnObject` means
   CONTROL** (object owner included). gosmo's object block matches `CONTROL`
   alongside the named permission, so the `O:ALTER` map reads 1 for either —
   right for rename/drop, wrong for `ALTER SCHEMA ... TRANSFER`. Gate transfers
-  and anything else needing CONTROL on `rightControlOnObject`.
+  and anything else needing CONTROL on `gate.ControlOnObject`.
 - **Probing trap: a transfer or ownership change deletes the object's explicit
   permissions.** A script that grants CONTROL to several users then transfers
   once finds every later grantee refused, which looks like "CONTROL is not
@@ -80,7 +80,7 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   collections (class 6/10) use `securableTransferRights`; every other
   transferable family — table, view, procedure, function, sequence, synonym,
   rule, default, queue — is a class-1 `sys.objects` row sharing
-  `classOneTransferRights`. **A DENY of ALTER does not withhold the move**
+  `gate.ClassOneTransferRights`. **A DENY of ALTER does not withhold the move**
   (CONTROL granted + ALTER denied reads `O:ALTER` 0, `O:CONTROL` 1 and
   transfers; probed 2026-09-17), a DENY of CONTROL does. ALTER-denial tests
   exempt Move to Schema, pointing at

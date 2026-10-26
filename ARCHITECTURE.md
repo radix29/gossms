@@ -598,11 +598,13 @@ onto a latch-owning widget as a fresh-looking `Button1`. So routers keep a
 gesture-wide flag (`App.mouseButtonDown`, set/cleared from the raw event before
 positional branching) to tell fresh from continuation — and, since that doesn't
 say where the continuation goes, **a press claims the gesture**: the router
-records the claiming region and replays to it until release. Three routers,
-one shape — `App.gestureOwner` (`app_events.go`), `QueryPanel.dragZone`
-(`query_panel.go`), `propsheet.PropertySheet.dragZone` (`sheet_input.go`) —
-each `armGesture`/`armDrag` at every claiming branch plus `routeGesture`/
-`routeDrag`. Regions that already acted swallow repeats. `Splitter` starts a
+records the claiming region and replays to it until release. Nine routers,
+one shape — `App.gestureOwner` (`app_events.go`), `propsheet.PropertySheet`
+(`sheet_input.go`), and the `dragZone` of `QueryPanel`, `LogViewer`,
+`XEventViewer`, `QueryStorePanel`, `ReplicationMonitorPanel`,
+`PlanComparePanel` and `ActivityMonitor` (each in its `_input.go`, or
+`plan_compare_panel.go`) — each `armGesture`/`armDrag` at every claiming branch
+plus `routeGesture`/`routeDrag`. Regions that already acted swallow repeats. `Splitter` starts a
 resize only from a press on its bar, so a selection drag crossing it doesn't
 grab it.
 
@@ -705,7 +707,8 @@ call the UI directly, no second `postAndWake` (`App.markTaskDone` is
 A resource the same panic would leak — a `CancelFunc`, a channel a ticker
 selects on — is released by `defer` *inside* `fn`, not by `repair`.
 `QueryPanel.startRun` is the example: `defer cancel()` and `defer close(done)`
-on entry, else `tickExecuting` wakes the loop every second forever.
+on entry, else the elapsed-time redraw (`App.animateUntil`) wakes the loop
+every second forever.
 
 Test like `TestPageActionLatchClearsWhenTheActionPanics`: panic the action,
 then assert the *next* one still runs — a flag check passes on a dead latch.

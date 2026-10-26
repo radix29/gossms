@@ -192,8 +192,7 @@ func compare(a string, op Op, b string) bool {
 	case OpNotContains:
 		return !containsLower(a, lb)
 	case OpStartsWith:
-		_, ok := cutLowerPrefix(a, lb)
-		return ok
+		return hasLowerPrefix(a, lb)
 	}
 	var c int
 	if nb, ok := parseNumber(b); ok {
@@ -222,10 +221,8 @@ func parseNumber(s string) (float64, bool) {
 	if c := t[0]; (c < '0' || c > '9') && c != '.' {
 		// Past a sign, only a digit, a point, or inf/infinity/nan in any
 		// case starts a float.
-		if _, ok := cutLowerPrefix(t, "inf"); !ok {
-			if _, ok := cutLowerPrefix(t, "nan"); !ok {
-				return 0, false
-			}
+		if !hasLowerPrefix(t, "inf") && !hasLowerPrefix(t, "nan") {
+			return 0, false
 		}
 	}
 	f, err := strconv.ParseFloat(s, 64)
@@ -236,7 +233,7 @@ func parseNumber(s string) (float64, bool) {
 // lowercase lower, without the lowered copy.
 func containsLower(s, lower string) bool {
 	for i := 0; ; {
-		if _, ok := cutLowerPrefix(s[i:], lower); ok {
+		if hasLowerPrefix(s[i:], lower) {
 			return true
 		}
 		if i == len(s) {
@@ -247,22 +244,22 @@ func containsLower(s, lower string) bool {
 	}
 }
 
-// cutLowerPrefix reports whether strings.ToLower(s) starts with lower, and
-// returns the rest of s. It lowers rune by rune as ToLower does, so an invalid
-// byte compares as utf8.RuneError either way.
-func cutLowerPrefix(s, lower string) (string, bool) {
+// hasLowerPrefix reports whether strings.ToLower(s) starts with lower. It
+// lowers rune by rune as ToLower does, so an invalid byte compares as
+// utf8.RuneError either way.
+func hasLowerPrefix(s, lower string) bool {
 	for lower != "" {
 		if s == "" {
-			return s, false
+			return false
 		}
 		r, n := utf8.DecodeRuneInString(s)
 		l, m := utf8.DecodeRuneInString(lower)
 		if unicode.ToLower(r) != l {
-			return s, false
+			return false
 		}
 		s, lower = s[n:], lower[m:]
 	}
-	return s, true
+	return true
 }
 
 // compareLower is strings.Compare(strings.ToLower(a), lower) for an already
