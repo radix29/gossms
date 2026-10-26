@@ -48,8 +48,15 @@ func (d *RestoreDialog) Draw(s tcell.Screen) {
 	d.cbReplace.Draw(s)
 	d.cbVerify.Draw(s)
 	d.cbClose.Draw(s)
+	if d.rbRecovery.Selected() == recoverStandby {
+		d.fStandby.Draw(s)
+	}
+	d.fStopAt.Draw(s)
+	hx := d.fStopAt.InputX() + d.fStopAt.Width() + 3 // past both brackets and a gap
+	core.DrawTextClipped(s, hx, d.fStopAt.RectY(), inner.X+inner.W-1-hx,
+		tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim), stopAtHint)
 
-	// Two lines: the form's last row (cbClose) leaves exactly that much room above the
+	// Two lines: the form's last row (fStopAt) leaves that much room above the
 	// separator.
 	d.drawStatus(s, 2)
 	d.DrawSeparator(s)
@@ -86,14 +93,21 @@ func (d *RestoreDialog) layoutForm() {
 	row++
 	d.fTarget.SetBounds(lx, row)
 	row += 2
+	// The checkboxes stand beside the recovery options, a row each, so the third
+	// option and the two fields below fit without growing the dialog.
 	d.rbRecovery.SetBounds(lx, row)
+	for i, cb := range []interface{ SetBounds(x, y int) }{d.cbReplace, d.cbVerify, d.cbClose} {
+		cb.SetBounds(lx+restoreOptionsColX, row+1+i)
+	}
 	row += d.rbRecovery.Height() + 1
-	d.cbReplace.SetBounds(lx, row)
+	d.fStandby.SetBounds(lx, row)
 	row++
-	d.cbVerify.SetBounds(lx, row)
-	row++
-	d.cbClose.SetBounds(lx, row)
+	d.fStopAt.SetBounds(lx, row)
 }
+
+// restoreOptionsColX is the checkbox column's offset from the form's left edge:
+// past the widest recovery option, "(o) WITH NORECOVERY", with a gap.
+const restoreOptionsColX = 22
 
 // drawStatus renders the status line, growing *upward* from the row above the
 // separator so a wrapped server error uses the rows the mode leaves free above it

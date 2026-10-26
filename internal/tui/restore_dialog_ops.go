@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -372,6 +373,9 @@ func (d *RestoreDialog) startRestore() {
 		d.setStatusMsg("Target database name is required.", true)
 		return
 	}
+	if !d.checkRecoveryFields() {
+		return
+	}
 
 	d.setStatusMsg("Checking target database...", false)
 	app, sc := d.app, d.sc
@@ -453,9 +457,14 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 // restoreRequest is everything a restore reads off the form, snapshotted on the
 // UI goroutine for runRestore and script(), which run on another.
 type restoreRequest struct {
-	src                                   restoreSource
-	target                                string
-	recovery, replace, verify, closeConns bool
+	src                         restoreSource
+	target                      string
+	replace, verify, closeConns bool
+	recovery                    gosmo.RestoreRecovery
+	// standbyFile is WITH STANDBY's undo file, "" for any other recovery.
+	standbyFile string
+	// stopAt is the point in time to stop a log restore at, nil for the whole log.
+	stopAt *time.Time
 	// fileNumber is the backup set to restore (WITH FILE = n), 0 for the first; see
 	// fileNumberFor.
 	fileNumber int
@@ -463,17 +472,24 @@ type restoreRequest struct {
 }
 
 // restoreRequest snapshots the form for a restore or script of src into target.
-// verify is left for the caller: only a real restore verifies.
+// verify is left for the caller: only a real restore verifies. The recovery
+// fields are checkRecoveryFields', already passed: an unparsable point in time
+// cannot reach here.
 func (d *RestoreDialog) restoreRequest(src restoreSource, target string) restoreRequest {
-	return restoreRequest{
+	req := restoreRequest{
 		src:        src,
 		target:     target,
-		recovery:   d.rbRecovery.Selected() == 0,
+		recovery:   recoveryStates[d.rbRecovery.Selected()],
 		replace:    d.cbReplace.Checked(),
 		closeConns: d.cbClose.Checked(),
 		fileNumber: d.fileNumberFor(src),
 		plan:       d.relocation(),
 	}
+	if req.recovery == gosmo.RestoreWithStandBy {
+		req.standbyFile = strings.TrimSpace(d.fStandby.Value())
+	}
+	req.stopAt, _ = parseStopAt(d.fStopAt.Value())
+	return req
 }
 
 // runRestore is the background body of startRestore: verify (optional), read
@@ -548,6 +564,14 @@ func restoreSet(ctx context.Context, srv *gosmo.Server, req restoreRequest) (*go
 	if h == nil {
 		return nil, fmt.Errorf("backup set %d is no longer on %s", req.fileNumber, sourceLabel(req.src.devices))
 	}
+	// Refused here, before Verify: a full or differential set read with STOPAT
+	// either fails (the point is before it) or ignores it, and neither is the
+	// point-in-time restore asked for. A restore sequence takes its point on the
+	// log that holds it.
+	if req.stopAt != nil && h.SetType != gosmo.BackupSetLog {
+		return nil, fmt.Errorf("a point in time applies to a transaction log backup, and the set restored is a %s backup",
+			strings.ToLower(backupSetTypeName(h.SetType)))
+	}
 	return h, nil
 }
 
@@ -568,24 +592,17 @@ func restoreOptionsFor(ctx context.Context, srv *gosmo.Server, req restoreReques
 	}
 
 	opts := gosmo.RestoreOptions{
-		Database: req.target,
-		Devices:  req.src.targets(),
-		Recovery: recoveryFor(req.recovery),
-		Replace:  req.replace,
+		Database:    req.target,
+		Devices:     req.src.targets(),
+		Recovery:    req.recovery,
+		StandByFile: req.standbyFile,
+		StopAt:      req.stopAt,
+		Replace:     req.replace,
 
 		CloseExistingConnections: req.closeConns,
 	}
 	opts.FromHeader(h, files, req.plan)
 	return opts, nil
-}
-
-// recoveryFor maps the dialog's two-way Recovery Options radio box onto gosmo's
-// recovery state.
-func recoveryFor(recovery bool) gosmo.RestoreRecovery {
-	if recovery {
-		return gosmo.RestoreWithRecovery
-	}
-	return gosmo.RestoreWithNoRecovery
 }
 
 // script builds the RESTORE statement's T-SQL, including the file relocation this
@@ -600,6 +617,9 @@ func (d *RestoreDialog) script() {
 	}
 	if target == "" {
 		d.setStatusMsg("Target database name is required.", true)
+		return
+	}
+	if !d.checkRecoveryFields() {
 		return
 	}
 	req := d.restoreRequest(src, target) // snapshots on the UI goroutine — see beginRestore

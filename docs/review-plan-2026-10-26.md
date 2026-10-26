@@ -474,6 +474,17 @@ gosmo `HEAD` is 26 commits past `v0.1.0`, and gossms 41 past its tag. The
 breaking renames of the 10-22 and 10-24 passes have no **Migrating** notes in
 gosmo's CHANGELOG yet. Only when a release is asked for.
 
+Step 8 (Q2) adds one: `Job.SetDescription`/`SetCategory`/`SetOwner`/
+`SetStartStep`/`SetEmailNotify`/`SetDeleteLevel`, `Alert.SetTrigger`/
+`SetDatabase`/`SetDelay`/`SetNotificationMessage`/`SetCategory`/
+`SetJobResponse`, `Operator.SetEmailAddress`/`SetCategory` and
+`Schedule.SetFrequency`/`SetActiveRange`/`SetOwner` are removed.
+**Migrating:** set the matching `JobChanges`/`AlertChanges`/
+`OperatorChanges`/`ScheduleChanges` field and call `Alter` (`SetTrigger(e, s)`
+is `ErrorNumber` and `Severity` together; `SetActiveRange` is
+`Range: &ScheduleActiveRange{…}`). S2 changes no signature: Agent procedure
+strings are now bound, and scripts show them as before.
+
 ---
 
 ## Recommended implementation order

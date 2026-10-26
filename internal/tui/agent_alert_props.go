@@ -215,7 +215,9 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 					}
 				}
 				if responseJobSelect.Dirty() {
-					if err := al.SetJobResponse(ctx, preservedValue(responseJobSelect, noneItem)); err != nil {
+					// "" is sp_update_alert's own "no job response".
+					job := preservedValue(responseJobSelect, noneItem)
+					if err := al.Alter(ctx, gosmo.AlertChanges{JobName: &job}); err != nil {
 						return err
 					}
 				}
