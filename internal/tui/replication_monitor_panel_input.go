@@ -9,7 +9,7 @@ import (
 // mouse handling, with the gesture routing of ARCHITECTURE.md § The
 // mouseDragging idiom.
 
-// HandleKey: F5 refreshes, Tab walks the four grids and then leaves (false,
+// HandleKey routes a key: F5 refreshes, Tab walks the four grids and then leaves (false,
 // so App moves focus on), Ctrl+Up/Down resize the panes, and the rest goes to
 // the focused grid.
 func (p *ReplicationMonitorPanel) HandleKey(ev *tcell.EventKey) bool {

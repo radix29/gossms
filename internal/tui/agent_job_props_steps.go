@@ -246,7 +246,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			for i, s := range steps {
 				loaded[i] = jobStepEditFromStep(s)
 			}
-			edits := newJobStepEdits(serverCollation(sc), loaded)
+			edits := newJobStepEdits(msdbCollation(ctx, sc), loaded)
 			visible := edits.visible
 			cols := []string{"Step", "Name", "Type", "Database"}
 			rowsFor := func() [][]string {

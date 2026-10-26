@@ -216,7 +216,7 @@ behind the mouse and async rules.
   `OnShowValue`'s first parameter is the **column**; the row is
   `grid.SelectedRow()`. `QueryStorePanel.showValue` uses `qsResultRow.queryText`;
   `DetailBrowser.showQueryStoreValue` (shared `[][]string` grid) re-reads by
-  `Query ID` via `gosmo.QueryStoreQueryText`. Test the bound id with
+  `Query ID` via `QueryStore().QueryText`. Test the bound id with
   `fakeInstance.ReadArgs` — the fake answers every id alike.
 
 ## Mouse, overlays, and async UI

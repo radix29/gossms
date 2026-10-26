@@ -151,7 +151,7 @@ Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
   OBJECT::<queue>` alters and is refused the drop (Msg 15151; drop needs
   CONTROL on the queue or ALTER on its schema). `gate.QueueAlterRights` is
   `gate.ObjectWriteRights()`; `gate.QueueDropRights` is that minus the object ALTER.
-  They're told apart by `rightControlOnObject` (gosmo's
+  They're told apart by `gate.ControlOnObject` (gosmo's
   `ProbedObjectPermissions` `O:CONTROL` beside `O:ALTER`; ALTER reads 1 for
   either grant, CONTROL only for a CONTROL grant or the owner).
 - **Move to Schema on every class-1 family is gated on CONTROL on the object;
@@ -292,7 +292,7 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   is `ALTER` (not column-grantable), so `ColumnPermissions` is always empty and
   `DeniedOnAnyColumn` never fires. Adding `SELECT` wouldn't help:
   `gate.ObjectDenial` asks columns only for rights an action lists, and the only
-  object right declared is `rightAlterOnObject`. Firing it needs an action gated
+  object right declared is `gate.AlterOnObject`. Firing it needs an action gated
   on object `SELECT`; Select Top 1000 Rows runs ungated and leaves a
   missing `SELECT` to the server's own error. The machinery
   stays, T-SQL-verified. For whoever picks it up: `SELECT` in the probe brings
@@ -742,7 +742,7 @@ Peer credentials, easy to undo:
 - **CONTROL on the database is the whole right set; `ALTER` is deliberately
   not beside it.** Probed with a `WITHOUT LOGIN` user: CREATE/ALTER/DROP work
   under `GRANT CONTROL ON DATABASE`, all refused under `GRANT ALTER`. Adding
-  `rightAlterDatabase` "for symmetry" offers actions the server refuses. `ALTER
+  `gate.AlterDatabase` "for symmetry" offers actions the server refuses. `ALTER
   ANY CREDENTIAL` is server-scope, and `HAS_PERMS_BY_NAME` on a database
   returns NULL for it ("unknown" forever). See `gate.DBScopedCredentialRights`.
 - **No ALTER script verb, no rename.** The secret is unreadable, so scripts

@@ -222,6 +222,7 @@ gossms/
 │       ├── explorer_service_broker.go # loaders: a database's Service Broker folder — Message Types, Contracts, Queues, Services, Routes, Remote Service Bindings, Broker Priorities (listed whether or not the broker is enabled)
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
+│       ├── explorer_index_actions.go # an index node's Rebuild / Reorganize / Disable: state-dependent menu, gate on the parent, confirmation saying what a clustered index takes offline
 │       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: the per-NodeType drop/rename table and the gosmo adapters behind it
 │       ├── explorer_object_menu.go # the Rename/Delete menu pair a node offers, and the schema/object name a gate question is scoped by
 │       ├── explorer_object_rights.go # what permits Rename/Move/Delete per NodeType: the securable, principal, database- and server-scoped right tables
@@ -276,7 +277,7 @@ gossms/
 │       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
 │       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
 │       ├── chart_tooltip.go      # the pinned chart readout box itself, shared by Activity Monitor and the Detail Browser's disk-usage strip
-│       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid
+│       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid, Kill Process
 │       │
 │       │  ── Log File Viewer ──
 │       ├── log_viewer.go              # LogViewer state, construction and layout: the selectors, the filter field and the grid; implements layout.Panel
@@ -598,11 +599,13 @@ onto a latch-owning widget as a fresh-looking `Button1`. So routers keep a
 gesture-wide flag (`App.mouseButtonDown`, set/cleared from the raw event before
 positional branching) to tell fresh from continuation — and, since that doesn't
 say where the continuation goes, **a press claims the gesture**: the router
-records the claiming region and replays to it until release. Three routers,
-one shape — `App.gestureOwner` (`app_events.go`), `QueryPanel.dragZone`
-(`query_panel.go`), `propsheet.PropertySheet.dragZone` (`sheet_input.go`) —
-each `armGesture`/`armDrag` at every claiming branch plus `routeGesture`/
-`routeDrag`. Regions that already acted swallow repeats. `Splitter` starts a
+records the claiming region and replays to it until release. Nine routers,
+one shape — `App.gestureOwner` (`app_events.go`), `propsheet.PropertySheet`
+(`sheet_input.go`), and the `dragZone` of `QueryPanel`, `LogViewer`,
+`XEventViewer`, `QueryStorePanel`, `ReplicationMonitorPanel`,
+`PlanComparePanel` and `ActivityMonitor` (each in its `_input.go`, or
+`plan_compare_panel.go`) — each `armGesture`/`armDrag` at every claiming branch
+plus `routeGesture`/`routeDrag`. Regions that already acted swallow repeats. `Splitter` starts a
 resize only from a press on its bar, so a selection drag crossing it doesn't
 grab it.
 
@@ -705,7 +708,8 @@ call the UI directly, no second `postAndWake` (`App.markTaskDone` is
 A resource the same panic would leak — a `CancelFunc`, a channel a ticker
 selects on — is released by `defer` *inside* `fn`, not by `repair`.
 `QueryPanel.startRun` is the example: `defer cancel()` and `defer close(done)`
-on entry, else `tickExecuting` wakes the loop every second forever.
+on entry, else the elapsed-time redraw (`App.animateUntil`) wakes the loop
+every second forever.
 
 Test like `TestPageActionLatchClearsWhenTheActionPanics`: panic the action,
 then assert the *next* one still runs — a flag check passes on a dead latch.

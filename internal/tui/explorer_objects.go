@@ -290,6 +290,9 @@ func loadIndexesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 		n := l.node(indexNodeLabel(idx), NodeIndex, node.data.Schema, idx.Name, node.data.DBName)
 		n.data.TableName = node.data.Name
 		n.data.OnView = node.data.OnView
+		n.data.IsEnabled = !idx.IsDisabled
+		n.data.IndexType = idx.Type
+		n.data.IsHypothetical = idx.IsHypothetical
 		out = append(out, n)
 	}
 	return out, nil
@@ -303,7 +306,8 @@ func loadIndexesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 //
 // A hypothetical (tuning advisor) index is listed, marked, rather than hidden:
 // it has no data, and dropping the advisor's leftovers is the usual reason to
-// look for one.
+// look for one. A disabled index is marked too: it holds no data and no query
+// uses it, and its menu offers Rebuild only (indexMenuItems).
 func indexNodeLabel(idx *gosmo.Index) string {
 	kind := indexTypeName(idx.Type)
 	if idx.IsUnique {
@@ -311,6 +315,9 @@ func indexNodeLabel(idx *gosmo.Index) string {
 	}
 	if idx.IsHypothetical {
 		kind += ", Hypothetical"
+	}
+	if idx.IsDisabled {
+		kind += ", Disabled"
 	}
 	return fmt.Sprintf("%s (%s)", idx.Name, kind)
 }
@@ -484,7 +491,12 @@ func loadTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 			return dbObj.ObjectTriggers(l.ctx, node.data.Schema, node.data.Name)
 		},
 		func(t *gosmo.Trigger) *explorerNode {
-			return l.node(t.Name, NodeTrigger, node.data.Schema, t.Name, node.data.DBName)
+			// A disabled trigger fires on nothing, and nothing else in the row
+			// says so. TableName is what Enable/Disable is gated on.
+			n := l.node(disabledLabel(t.Name, t.IsEnabled), NodeTrigger, node.data.Schema, t.Name, node.data.DBName)
+			n.data.TableName = t.TableName
+			n.data.IsEnabled = t.IsEnabled
+			return n
 		})
 }
 
@@ -555,12 +567,6 @@ func foreignKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 	})
 }
 
-func indexMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return propertiesOnlyMenu(newQuery, refresh, func() {
-		a.showIndexPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name, node.data.OnView)
-	})
-}
-
 func indexesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return []controls.MenuItem{
 		newQuery,
@@ -599,6 +605,28 @@ func statisticMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 		{Label: "Properties...", Action: func() {
 			a.showStatisticPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name, node.data.OnView)
 		}},
+	}
+}
+
+// triggerMenuItems is a DML trigger's menu. Enable/Disable is gated on ALTER
+// on the table or view it is on, which is what ENABLE/DISABLE TRIGGER checks:
+// probed on majors 13 and 17 with a WITHOUT LOGIN user per case, ALTER or
+// CONTROL on the parent, ALTER on its schema, ALTER ANY SCHEMA, db_ddladmin and
+// ALTER or CONTROL on the database each permitted both verbs on a table and on a
+// view, while no right, and ALTER on the parent beside DENY ALTER on its
+// schema, were refused (Msg 1088): gate.ObjectWriteRights() on the parent.
+func triggerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	toggle := "Disable"
+	if !node.data.IsEnabled {
+		toggle = "Enable"
+	}
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate.ItemOn(controls.MenuItem{Label: toggle, Action: func() { a.toggleTrigger(sc, node) }},
+			sc, node.data.DBName, node.data.Schema, node.data.TableName, gate.ObjectWriteRights()...),
+		{Divider: true},
+		refresh,
 	}
 }
 

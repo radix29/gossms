@@ -157,7 +157,7 @@ func (f *fakeInstance) StatementsInTx() []string {
 	var out []string
 	for _, e := range f.execs {
 		if e.tx != 0 && !bareUSE.MatchString(strings.TrimSpace(e.sql)) {
-			out = append(out, e.sql)
+			out = append(out, e.bound())
 		}
 	}
 	return out
@@ -315,6 +315,41 @@ type fakeExec struct {
 	tx int
 }
 
+// fakePlaceholder is the driver's positional parameter, @p1 upward.
+var fakePlaceholder = regexp.MustCompile(`@p([0-9]+)`)
+
+// bound is the statement with each @pN replaced by the literal its argument
+// would be written as: what the statement amounts to, as gosmo's statement
+// observer and a captured script show it. gosmo binds the string arguments
+// of every msdb Agent procedure rather than splicing them, so the raw text
+// reads "@job_name = @p1" and only this form says which job. A placeholder
+// with no argument, or one of a type with no literal here, is left as is.
+func (e fakeExec) bound() string {
+	if len(e.args) == 0 {
+		return e.sql
+	}
+	return fakePlaceholder.ReplaceAllStringFunc(e.sql, func(m string) string {
+		n, err := strconv.Atoi(m[2:])
+		if err != nil || n < 1 || n > len(e.args) {
+			return m
+		}
+		switch v := e.args[n-1].(type) {
+		case nil:
+			return "NULL"
+		case string:
+			return "N'" + strings.ReplaceAll(v, "'", "''") + "'"
+		case bool:
+			if v {
+				return "1"
+			}
+			return "0"
+		case int64, int32, int, float64:
+			return fmt.Sprint(v)
+		}
+		return m
+	})
+}
+
 func (f *fakeInstance) recordExec(db string, tx int, q string, args []driver.NamedValue) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -360,14 +395,16 @@ var batchedUSE = regexp.MustCompile(`^USE \[([^\]]*)\]; IF @@ERROR <> 0 RETURN; 
 
 // Statements returns every statement the page executed, with that plumbing
 // dropped — it is not a write, and it would otherwise drown the one statement
-// a test cares about.
+// a test cares about. Each is bound (fakeExec.bound): its @pN read as the
+// literals they carried, so a bound Agent write and a spliced one assert
+// alike. ExecArgs has the raw arguments.
 func (f *fakeInstance) Statements() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []string
 	for _, e := range f.execs {
 		if !bareUSE.MatchString(strings.TrimSpace(e.sql)) {
-			out = append(out, e.sql)
+			out = append(out, e.bound())
 		}
 	}
 	return out
@@ -398,7 +435,7 @@ func (f *fakeInstance) StatementsIn(db string) []string {
 	var out []string
 	for _, e := range f.execs {
 		if e.db == db && !bareUSE.MatchString(strings.TrimSpace(e.sql)) {
-			out = append(out, e.sql)
+			out = append(out, e.bound())
 		}
 	}
 	return out

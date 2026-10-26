@@ -282,8 +282,15 @@ type nodeData struct {
 	// a security policy, an endpoint (STARTED), and an event session (running;
 	// nodeIcon draws a stopped one hollow). Set at load time so the context menu
 	// can offer a single "Enable"/"Disable" toggle (see nodeIcon's IsOffline for
-	// the same one-flag idiom).
+	// the same one-flag idiom). A NodeIndex sets it when the index is not
+	// disabled.
 	IsEnabled bool
+
+	// IndexType and IsHypothetical are a NodeIndex's kind as read: a clustered
+	// index's Disable takes its data offline, and a hypothetical or hash index
+	// is offered no maintenance (indexMenuItems).
+	IndexType      gosmo.IndexType
+	IsHypothetical bool
 
 	// HasPrivateKey is whether a NodeCertificate or NodeAsymmetricKey holds its
 	// private key, read at load time: Remove Private Key is withheld without one,

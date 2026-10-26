@@ -120,6 +120,11 @@ var (
 	// it. VIEW SERVER STATE does not imply it.
 	ViewAnyDefinition = Right{Name: "VIEW ANY DEFINITION", Role: "sysadmin"}
 	AlterSettings     = Right{Name: "ALTER SETTINGS", Role: "serveradmin"}
+	// AlterAnyConnection is KILL's right (Activity Monitor's Kill Process).
+	// Probed on majors 13 and 17 with a throwaway login: the grant and
+	// processadmin each permitted KILL, nothing and a DENY beside the role
+	// were refused (Msg 6102), and HAS_PERMS_BY_NAME agreed every time.
+	AlterAnyConnection = Right{Name: "ALTER ANY CONNECTION", Role: "processadmin"}
 	// The login's class-101 DENY is all-or-nothing, so one arm on one right covers
 	// Login Properties, Rename and Delete alike: DENY ALTER ON LOGIN::x withholds
 	// ALTER LOGIN (rename and password) and DROP LOGIN, every refusal Msg 15151.

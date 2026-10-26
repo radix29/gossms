@@ -27,22 +27,28 @@ func (a *App) scriptDatabaseSecurity(sc *db.ServerConn, dbName string) {
 // be re-run against a database that already holds part of it — the usual
 // case after a restore onto another server. Contained users and application
 // roles get @password as a placeholder: their real passwords are not
-// readable. It targets SQL Server 2016+ (authentication_type, ALTER ROLE ...
-// ADD MEMBER) and Azure SQL Database, where EngineEdition 5 makes an Entra
-// user FROM EXTERNAL PROVIDER even if a login of its SID were visible.
+// readable, so it is gosmo.PasswordPlaceholder, as gosmo's scripter uses. It
+// fails Windows complexity (no upper case, no digit) where the host enforces
+// it; N'ChangeMe123!', used until 2026-10, passed. A host with no policy (a
+// standalone workstation, live) accepts any literal, so the placeholder only
+// keeps the output from planting a password that looks deliberate.
+// It targets SQL Server 2016+ (authentication_type, ALTER ROLE ... ADD
+// MEMBER) and Azure SQL Database, where EngineEdition 5 makes an Entra user
+// FROM EXTERNAL PROVIDER even if a login of its SID were visible.
 func databaseSecurityScript(dbName string) string {
 	return "USE " + gosmo.QuoteName(dbName) + ";\nGO\n" + databaseSecurityScriptBody
 }
 
-const databaseSecurityScriptBody = `
+var databaseSecurityScriptBody = `
 -- Script Database Security: run this (F5) and copy the [Script] column.
 -- It only reads the catalog; the statements it returns are not executed.
 
 SET NOCOUNT ON;
 
 -- Placeholder for contained users and application roles, whose passwords
--- cannot be read back. Each line that uses it is marked for review.
-DECLARE @password nvarchar(128) = N'ChangeMe123!';
+-- cannot be read back. Replace it on each line marked "set the real
+-- password" before running the output.
+DECLARE @password nvarchar(128) = ` + gosmo.QuoteLiteral(gosmo.PasswordPlaceholder) + `;
 DECLARE @azure bit = CASE WHEN SERVERPROPERTY('EngineEdition') = 5 THEN 1 ELSE 0 END;
 
 IF OBJECT_ID('tempdb..#script') IS NOT NULL DROP TABLE #script;

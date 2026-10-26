@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -244,5 +245,34 @@ func TestLocalPublicationsDetailExplainsAnEmptyList(t *testing.T) {
 				t.Errorf("rows = %v, want [%s]", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestSubscriptionMatchPrefersExactThenOneCaseVariant: on a _CS_ server two
+// publications differing only in case are two subscriptions, so the exact one
+// wins, a case variant is taken only when it is the one such row, and two
+// variants are ErrAmbiguous rather than whichever was listed first (C2).
+func TestSubscriptionMatchPrefersExactThenOneCaseVariant(t *testing.T) {
+	resp := []fakeResponse{
+		dbByNameResp("SubDB", 9),
+		{match: replTablesRead, db: "SubDB", cols: 4, rows: [][]driver.Value{{true, true, false, false}}},
+		{match: replLocalSubsRead, db: "SubDB", cols: 11, rows: [][]driver.Value{
+			{"PUB1", "SalesDB", "pubA", int64(1), "lower", nil, "job1", true, int64(0), int64(0), "DIST1"},
+			{"PUB1", "SalesDB", "PubA", int64(1), "upper", nil, "job2", true, int64(0), int64(0), "DIST1"},
+			{"PUB1", "SalesDB", "pubB", int64(1), "only", nil, "job3", true, int64(0), int64(0), "DIST1"},
+		}},
+	}
+	sc, _ := newFakeConn(t, resp...)
+	ctx := context.Background()
+	for _, tc := range []struct{ pub, want string }{
+		{"pubA", "lower"}, {"PubA", "upper"}, {"PUBB", "only"},
+	} {
+		s, err := findLocalSubscription(ctx, sc, "SubDB", "PUB1", "SalesDB", tc.pub)
+		if err != nil || s.Description != tc.want {
+			t.Errorf("%s: got %+v, %v; want the %q subscription", tc.pub, s, err, tc.want)
+		}
+	}
+	if s, err := findLocalSubscription(ctx, sc, "SubDB", "PUB1", "SalesDB", "PUBA"); !errors.Is(err, gosmo.ErrAmbiguous) {
+		t.Errorf("PUBA beside pubA and PubA: got %+v, %v; want ErrAmbiguous", s, err)
 	}
 }

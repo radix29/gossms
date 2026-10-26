@@ -128,9 +128,9 @@ func (e *symKeyEncEdit) cells() []string {
 	return []string{kind, e.name}
 }
 
-// encryptor is the edit as gosmo's ENCRYPTION BY item. A password is replaced
-// by its placeholder under Script Changes.
-func (e *symKeyEncEdit) encryptor(ctx context.Context) gosmo.SymmetricKeyEncryptor {
+// encryptor is the edit as gosmo's ENCRYPTION BY item. The password goes in
+// as typed: gosmo redacts it to its placeholder in a captured script.
+func (e *symKeyEncEdit) encryptor() gosmo.SymmetricKeyEncryptor {
 	enc := gosmo.SymmetricKeyEncryptor{Kind: e.kind, Name: e.name, Open: e.open}
 	if e.kind == gosmo.SymmetricKeyByPassword {
 		enc.Name = ""
@@ -543,12 +543,12 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 			removes = append(slices.Delete(removes, i, i+1), last)
 		}
 		for _, e := range adds {
-			if err := ref.AddEncryption(ctx, e.encryptor(ctx), dec); err != nil {
+			if err := ref.AddEncryption(ctx, e.encryptor(), dec); err != nil {
 				return err
 			}
 		}
 		for _, e := range removes {
-			if err := ref.DropEncryption(ctx, e.encryptor(ctx), dec); err != nil {
+			if err := ref.DropEncryption(ctx, e.encryptor(), dec); err != nil {
 				return err
 			}
 		}

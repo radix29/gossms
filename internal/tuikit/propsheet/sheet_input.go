@@ -20,12 +20,13 @@ func (p *PropertySheet) focusedRowHandles(ev *tcell.EventKey) bool {
 	return ok && kh.HandleKey(ev)
 }
 
-// While an Apply, OK or Script Changes is in flight the form takes no input (keys,
-// mouse, paste, Refresh, Revert): the page's apply runs on the pipeline goroutine
-// and reads the form's rows, so a concurrent edit would race it and could reach
-// the server unvalidated. Apply reloads the page afterwards, so nothing typed
-// then would survive anyway. The page list, the button row (only Cancel acts) and
-// Escape still work. See formLocked.
+// HandleKey routes a key to the sheet. While an Apply, OK or Script Changes is
+// in flight the form takes no input (keys, mouse, paste, Refresh, Revert): the
+// page's apply runs on the pipeline goroutine and reads the form's rows, so a
+// concurrent edit would race it and could reach the server unvalidated. Apply
+// reloads the page afterwards, so nothing typed then would survive anyway. The
+// page list, the button row (only Cancel acts) and Escape still work. See
+// formLocked.
 func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 	if !p.Visible() {
 		return false

@@ -17,10 +17,12 @@ import (
 // request snapshots.
 func restoreFormWithOptions() *RestoreDialog {
 	d := restoreForm()
-	d.rbRecovery = widgets.NewRadioBox("Recovery Options:", []string{"WITH RECOVERY", "WITH NORECOVERY"})
+	d.rbRecovery = widgets.NewRadioBox("Recovery Options:", []string{"WITH RECOVERY", "WITH NORECOVERY", "WITH STANDBY"})
 	d.cbReplace = widgets.NewCheckBox("Replace")
 	d.cbVerify = widgets.NewCheckBox("Verify")
 	d.cbClose = widgets.NewCheckBox("Close")
+	d.fStandby = widgets.NewInputField("Standby file: ", 40, false)
+	d.fStopAt = widgets.NewInputField("Point in time:", 19, false)
 	return d
 }
 

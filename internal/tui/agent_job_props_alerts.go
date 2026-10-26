@@ -128,7 +128,7 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 					if e.linked {
 						target = *jobName
 					}
-					if err := e.alert.SetJobResponse(ctx, target); err != nil {
+					if err := e.alert.Alter(ctx, gosmo.AlertChanges{JobName: &target}); err != nil {
 						return err
 					}
 				}
@@ -200,20 +200,23 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 				if err != nil {
 					return err
 				}
-				// Each write is gated on its own rows being dirty (DirtyPages
-				// is page-level only), so editing Delete Job alone doesn't
-				// rewrite the e-mail operator.
+				// Each field is sent only when its own rows are dirty
+				// (DirtyPages is page-level only), so editing Delete Job alone
+				// doesn't rewrite the e-mail operator. Both go in one
+				// sp_update_job; an empty JobChanges sends nothing.
+				var ch gosmo.JobChanges
 				if emailCheck.Dirty() || operatorSelect.Dirty() || conditionSelect.Dirty() {
 					emailLevel := gosmo.NotifyNever
 					if emailCheck.Checked() {
 						emailLevel = notifyConditionLevels[conditionSelect.Selected()]
 					}
-					// preservedValue maps noneItem to "", which SetEmailNotify
-					// treats as "leave the operator unchanged" (sp_update_job
-					// can't clear one). Otherwise ticking E-mail with no
-					// operator would send to the first operator.
-					if err := j.SetEmailNotify(ctx, preservedValue(operatorSelect, noneItem), emailLevel); err != nil {
-						return err
+					ch.NotifyLevelEmail = &emailLevel
+					// preservedValue maps noneItem to "", sent as no operator at
+					// all — "leave it unchanged", since sp_update_job can't clear
+					// one. Otherwise ticking E-mail with no operator would send to
+					// the first operator.
+					if op := preservedValue(operatorSelect, noneItem); op != "" {
+						ch.NotifyEmailOperatorName = &op
 					}
 				}
 				if deleteCheck.Dirty() || deleteConditionSelect.Dirty() {
@@ -221,11 +224,9 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 					if deleteCheck.Checked() {
 						deleteLevel = notifyConditionLevels[deleteConditionSelect.Selected()]
 					}
-					if err := j.SetDeleteLevel(ctx, deleteLevel); err != nil {
-						return err
-					}
+					ch.DeleteLevel = &deleteLevel
 				}
-				return nil
+				return j.Alter(ctx, ch)
 			}
 			return f, apply, nil
 		},

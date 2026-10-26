@@ -432,3 +432,37 @@ func TestJobStepsGridShowsTheEditOnceMovedOff(t *testing.T) {
 		t.Error("the renamed step is not on its row")
 	}
 }
+
+// TestJobStepNamesFollowTheMsdbCollation: steps live in msdb, so a rename onto
+// another step's name differing only in case is a duplicate under a _CI_ msdb
+// and a new name under a _CS_ one, whatever the server's collation (C1). Both
+// Steps pages: Job Properties' reads msdb's collation itself, New Job's takes
+// the one its prefetch read.
+func TestJobStepNamesFollowTheMsdbCollation(t *testing.T) {
+	for _, tt := range pendingAddCollations {
+		job := jobRow(agentJobName, "Database Maintenance", "appuser", true, 0, 0, "")
+		responses := append(agentJobResponses(job), jobStepsResponse(), agentDatabaseListResponse())
+		sc, inst := fakeConnWithMsdb(t, tt.collation, responses...)
+		dialog, _ := newFakeDialog(t)
+		name := agentJobName
+		form, _ := loadPage(t, pageJobSteps(dialog, sc, &name), inst)
+		selectGridRow(t, plainGrid(t, form), stepNameCol, "Check integrity")
+		editText(t, form, "Step name", "REBUILD INDEXES")
+		form.Commit()
+		if err := form.Validate(); (err != nil) != tt.refused {
+			t.Errorf("Job Properties, msdb %s: rename onto a case variant: validate = %v, want refused %v", tt.collation, err, tt.refused)
+		}
+
+		info := serverInfoResponse()
+		info.rows[0][4] = msdbOpposite(tt.collation)
+		sc, _ = newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse()})
+		form, _, _ = buildNewJobStepsPage(sc, &njobPrefetch{msdbCollation: tt.collation}, func() string { return "j" }, 4)
+		editText(t, form, "Step name", "Purge")
+		clickButton(t, form, "New")
+		editText(t, form, "Step name", "PURGE")
+		clickButton(t, form, "New")
+		if got := strings.Contains(hintText(t, form), "already listed"); got != tt.refused {
+			t.Errorf("New Job, msdb %s: PURGE beside Purge refused = %v (hint %q), want %v", tt.collation, got, hintText(t, form), tt.refused)
+		}
+	}
+}

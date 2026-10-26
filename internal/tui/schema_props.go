@@ -176,7 +176,7 @@ func pageSchemaPermissions(sc *db.ServerConn, dbName, schemaName string) propPag
 			}
 
 			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.SecurableSchema.PermissionNames(),
-				objectPermEntries(perms), 8, 12,
+				objectPermEntries(perms),
 				securablePermApply(d, gosmo.Securable{Class: gosmo.SecurableSchema, Name: schemaName}))
 			return f, apply, nil
 		},

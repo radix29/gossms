@@ -34,7 +34,7 @@ func TestSessionIDIn(t *testing.T) {
 }
 
 // Both procedure tabs offer the selected row's session; a row naming none
-// gets the item disabled, not left off.
+// gets the items disabled, not left off.
 func TestProcTabOffersShowLiveExecutionPlan(t *testing.T) {
 	am := hostedProcMonitor(t, amTabBlock)
 	am.conn = &db.ServerConn{Server: new(gosmo.Server)}
@@ -46,7 +46,7 @@ func TestProcTabOffersShowLiveExecutionPlan(t *testing.T) {
 		t.Fatalf("Block row 1: session %d, %v; want 57", spid, ok)
 	}
 	items := pt.menuItems()
-	if len(items) != 1 || items[0].Label != "Show Live Execution Plan" || items[0].Action == nil {
+	if len(items) != 2 || items[0].Label != "Show Live Execution Plan" || items[0].Action == nil {
 		t.Fatalf("menu = %+v, want an enabled Show Live Execution Plan", items)
 	}
 
@@ -65,8 +65,13 @@ func TestProcTabOffersShowLiveExecutionPlan(t *testing.T) {
 		Columns: []string{"x"}, Rows: [][]string{{"1"}},
 	}}})
 	items = pt.menuItems()
-	if len(items) != 1 || items[0].Enabled == nil || items[0].Enabled() || items[0].Note == "" {
-		t.Fatalf("menu without a session column = %+v, want the item disabled with a note", items)
+	if len(items) != 2 {
+		t.Fatalf("menu without a session column = %+v, want both items", items)
+	}
+	for _, it := range items {
+		if it.Enabled == nil || it.Enabled() || it.Note == "" {
+			t.Errorf("menu without a session column: %+v, want it disabled with a note", it)
+		}
 	}
 }
 

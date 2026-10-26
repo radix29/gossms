@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -76,5 +77,41 @@ func TestWrapHelpLinesKeepsStyleOfSourceLine(t *testing.T) {
 	want := []bool{true, true, false, false}
 	if !slices.Equal(heads, want) {
 		t.Errorf("heads %v for rows %q, want %v", heads, got, want)
+	}
+}
+
+// TestHelpListsEveryMenuShortcut pins D2: F1 help is the keyboard reference,
+// so every Shortcut a menu item shows is in helpLines. A help key may abbreviate
+// a family with slashes — "Ctrl+C/X/V", "Ctrl+PgUp/PgDn" — and each later part
+// replaces the first's last key. Keys are matched whole, so "Ctrl+D" is not
+// satisfied by "Ctrl+Down".
+func TestHelpListsEveryMenuShortcut(t *testing.T) {
+	keys := map[string]bool{}
+	for _, l := range helpLines {
+		for _, f := range strings.Fields(l) {
+			f = strings.TrimLeft(strings.TrimRight(f, ",;:)"), "(")
+			keys[f] = true
+			first, rest, ok := strings.Cut(f, "/")
+			if !ok || rest == "" {
+				continue
+			}
+			base := first[:strings.LastIndex(first, "+")+1]
+			keys[first] = true
+			for p := range strings.SplitSeq(rest, "/") {
+				keys[base+p] = true
+			}
+		}
+	}
+	var walk func(path string, items []controls.MenuItem)
+	walk = func(path string, items []controls.MenuItem) {
+		for _, it := range items {
+			if it.Shortcut != "" && !keys[it.Shortcut] {
+				t.Errorf("%s > %s: shortcut %s is not in helpLines", path, it.Label, it.Shortcut)
+			}
+			walk(path+" > "+it.Label, it.Sub)
+		}
+	}
+	for _, m := range newTestApp().buildMenus() {
+		walk(m.Label, m.Items)
 	}
 }

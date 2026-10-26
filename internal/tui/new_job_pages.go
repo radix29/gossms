@@ -74,7 +74,7 @@ func connectedLoginIndex(sc *db.ServerConn, names []string) int {
 // jobStepOnActionItems/stepNumberText; every row is new. "Start at Step" is
 // dropped (nothing to start yet).
 func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string, indentWidth int) (*propsheet.Form, propApply, func() int) {
-	edits := newJobStepEdits(serverCollation(sc), nil)
+	edits := newJobStepEdits(pf.msdbCollation, nil)
 	visible := edits.visible
 	cols := []string{"Step", "Name", "Database"}
 	rowsFor := func() [][]string {
@@ -239,21 +239,18 @@ func buildNewJobNotificationsPage(sc *db.ServerConn, pf *njobPrefetch, jobName f
 		if err != nil {
 			return err
 		}
+		var ch gosmo.JobChanges
 		if emailCheck.Checked() {
 			if len(pf.operatorNames) == 0 {
 				return fmt.Errorf("no operators exist to notify — create one first, or clear E-mail")
 			}
-			opName := pf.operatorNames[operatorSelect.Selected()]
-			if err := j.SetEmailNotify(ctx, opName, notifyConditionLevels[conditionSelect.Selected()]); err != nil {
-				return err
-			}
+			ch.NotifyEmailOperatorName = new(pf.operatorNames[operatorSelect.Selected()])
+			ch.NotifyLevelEmail = new(notifyConditionLevels[conditionSelect.Selected()])
 		}
 		if deleteCheck.Checked() {
-			if err := j.SetDeleteLevel(ctx, notifyConditionLevels[deleteConditionSelect.Selected()]); err != nil {
-				return err
-			}
+			ch.DeleteLevel = new(notifyConditionLevels[deleteConditionSelect.Selected()])
 		}
-		return nil
+		return j.Alter(ctx, ch)
 	}
 	return f, apply
 }

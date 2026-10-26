@@ -244,7 +244,7 @@ func pageMailGeneral(sc *db.ServerConn) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			status := "Disabled"
+			var status string
 			switch st, err := sc.Server.Mail().Status(ctx); {
 			case err == nil:
 				status = st.String()

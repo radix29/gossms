@@ -368,8 +368,12 @@ func TestNewScheduleWeeklyTicksTheDayItIsLabelled(t *testing.T) {
 		t.Fatalf("sp_add_schedule sent %d times, want 1", len(adds))
 	}
 	stmt := adds[0]
+	// The name is bound (gosmo binds every Agent procedure's strings).
+	if args, _ := inst.ReadArgs("sp_add_schedule"); len(args) == 0 || args[0].Value != newScheduleName {
+		t.Errorf("sp_add_schedule args = %v, want the name %q first", args, newScheduleName)
+	}
 	assertStatementHas(t, stmt,
-		"@schedule_name = N'"+newScheduleName+"'",
+		"@schedule_name = @p1",
 		"@freq_type = 8",     // FreqWeekly
 		"@freq_interval = 8", // Wednesday
 	)

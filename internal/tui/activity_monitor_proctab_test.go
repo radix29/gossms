@@ -2,13 +2,18 @@ package tui
 
 import (
 	"database/sql/driver"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/dialogs"
 )
 
 // procResult is one run shaped like sp_block's.
@@ -313,5 +318,142 @@ func TestActivityMonitorProcTabUpdateInMasterNeedsControlServer(t *testing.T) {
 				t.Errorf("Update in master offered = %v, want %v", got, tc.granted)
 			}
 		})
+	}
+}
+
+// killTarget is the Block tab of a hosted panel with row 1 (session 57)
+// selected, its own connection answering the session read with session.
+func killTarget(t *testing.T, session []driver.Value) (*ActivityMonitor, *amProcTab, *fakeInstance) {
+	t.Helper()
+	am := hostedProcMonitor(t, amTabBlock)
+	am.app.alertDialog = dialogs.NewAlertDialog(nil)
+	am.conn = probedConn(t, "", []string{"ALTER ANY CONNECTION"}, nil, nil, nil)
+	var rows [][]driver.Value
+	if session != nil {
+		rows = [][]driver.Value{session}
+	}
+	sc, inst := newFakeConn(t, fakeResponse{match: "WHERE  s.session_id = @p1", arg: "57", cols: 16, rows: rows})
+	pt := am.procTab()
+	pt.conn = sc
+	pt.loc = activity.ProcTempDB
+	pt.applyResult(procResult())
+	pt.grid.SetSelectedRow(1)
+	return am, pt, inst
+}
+
+// sessionRow is a session read row: id 57 from program, client process pid,
+// on the reading connection's host.
+func sessionRow(program string, pid int) []driver.Value {
+	return []driver.Value{int64(57), "appuser", "ws7", program, "appdb", "sleeping",
+		int64(0), int64(0), int64(0), nil, nil, int64(0), nil, int64(0), int64(pid), true}
+}
+
+// killItem is the grid menu's Kill Process item.
+func killItem(t *testing.T, pt *amProcTab) controls.MenuItem {
+	t.Helper()
+	for _, it := range pt.menuItems() {
+		if it.Label == "Kill Process..." {
+			return it
+		}
+	}
+	t.Fatal("no Kill Process item")
+	return controls.MenuItem{}
+}
+
+func killStatements(inst *fakeInstance) []string {
+	return slices.DeleteFunc(inst.Statements(), func(s string) bool { return !strings.Contains(s, "KILL") })
+}
+
+// KILL needs ALTER ANY CONNECTION, which processadmin carries; a login
+// without it gets the item disabled and told what is missing.
+func TestKillProcessIsGatedOnAlterAnyConnection(t *testing.T) {
+	_, pt, _ := killTarget(t, nil)
+	if it := killItem(t, pt); it.Enabled != nil && !it.Enabled() {
+		t.Error("Kill Process withheld from a login holding ALTER ANY CONNECTION")
+	}
+	pt.am.conn = probedConn(t, "", nil, []string{"ALTER ANY CONNECTION"}, nil, nil)
+	it := killItem(t, pt)
+	if it.Enabled == nil || it.Enabled() {
+		t.Error("Kill Process offered to a login without ALTER ANY CONNECTION")
+	}
+	if it.Note != "needs ALTER ANY CONNECTION" {
+		t.Errorf("note = %q", it.Note)
+	}
+}
+
+// The confirmation names the session the server reports now, opens on No,
+// and Yes sends KILL for the selected row's session.
+func TestKillProcessConfirmsThenKills(t *testing.T) {
+	am, pt, inst := killTarget(t, sessionRow("SSMS", 4242))
+	a := am.app
+	killItem(t, pt).Action()
+	drainUntil(t, a, a.confirmDialog.Visible, "the kill confirmation")
+	for _, want := range []string{"session 57", "appuser", "ws7", "appdb"} {
+		if !strings.Contains(a.confirmDialog.Message(), want) {
+			t.Errorf("confirmation %q does not name %q", a.confirmDialog.Message(), want)
+		}
+	}
+	answerConfirm(t, a, false) // Enter on the opening focus
+	if got := killStatements(inst); len(got) != 0 {
+		t.Fatalf("Enter on the opening focus killed: %q; No must be the default", got)
+	}
+
+	killItem(t, pt).Action()
+	drainUntil(t, a, a.confirmDialog.Visible, "the kill confirmation")
+	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
+	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	drainUntil(t, a, func() bool { return a.statusText == "Session 57 killed" }, "the kill to finish")
+	if got := killStatements(inst); len(got) != 1 || got[0] != "KILL 57" {
+		t.Errorf("statements = %q, want KILL 57", got)
+	}
+}
+
+// The panel's own connections are refused before the server's Msg 6104 —
+// and so is any other Activity Monitor connection of this process, whose
+// loss would break a tab. The same program from another process is fair game.
+func TestKillProcessRefusesTheMonitorsOwnSession(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		session []driver.Value
+		refused bool
+	}{
+		{"own", sessionRow(db.RoleActivityMonitor.ApplicationName(), os.Getpid()), true},
+		{"another gossms", sessionRow(db.RoleActivityMonitor.ApplicationName(), os.Getpid()+1), false},
+		{"own query window", sessionRow(db.RoleQuery.ApplicationName(), os.Getpid()), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			am, pt, inst := killTarget(t, c.session)
+			a := am.app
+			killItem(t, pt).Action()
+			drainUntil(t, a, func() bool { return a.alertDialog.Visible() || a.confirmDialog.Visible() }, "an answer")
+			if got := a.alertDialog.Visible(); got != c.refused {
+				t.Errorf("refused = %v, want %v (alert %q)", got, c.refused, a.alertDialog.Message())
+			}
+			if len(killStatements(inst)) != 0 {
+				t.Error("KILL sent before a confirmation")
+			}
+		})
+	}
+
+	// From another host the same pid is another process.
+	other := sessionRow(db.RoleActivityMonitor.ApplicationName(), os.Getpid())
+	other[15] = false
+	am, pt, _ := killTarget(t, other)
+	killItem(t, pt).Action()
+	drainUntil(t, am.app, am.app.confirmDialog.Visible, "the kill confirmation")
+}
+
+// A session that ended since the grid was filled is said so, not killed —
+// its id may be reused by the time anyone answers.
+func TestKillProcessOfAnEndedSession(t *testing.T) {
+	am, pt, inst := killTarget(t, nil)
+	a := am.app
+	killItem(t, pt).Action()
+	drainUntil(t, a, a.alertDialog.Visible, "the ended-session alert")
+	if !strings.Contains(a.alertDialog.Message(), "Session 57 has ended") {
+		t.Errorf("alert = %q", a.alertDialog.Message())
+	}
+	if a.confirmDialog.Visible() || len(killStatements(inst)) != 0 {
+		t.Error("an ended session was offered for killing")
 	}
 }

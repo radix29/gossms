@@ -46,7 +46,7 @@ func masterKeyOpenRows(m *gosmo.MasterKey, openPass *propsheet.TextRow) []propsh
 
 // masterKeyOpenPassword is the open password to pass gosmo, or an error when
 // one is needed and missing.
-func masterKeyOpenPassword(ctx context.Context, m *gosmo.MasterKey, openPass *propsheet.TextRow) (string, error) {
+func masterKeyOpenPassword(m *gosmo.MasterKey, openPass *propsheet.TextRow) (string, error) {
 	if m.EncryptedByServer {
 		return "", nil
 	}
@@ -130,7 +130,7 @@ func (d *BackupMasterKeyDialog) buildPages(pf *masterKeyPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		open, err := masterKeyOpenPassword(ctx, pf.key, openPass)
+		open, err := masterKeyOpenPassword(pf.key, openPass)
 		if err != nil {
 			return err
 		}
@@ -198,7 +198,7 @@ func (d *RegenerateMasterKeyDialog) buildPages(pf *masterKeyPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		open, err := masterKeyOpenPassword(ctx, pf.key, openPass)
+		open, err := masterKeyOpenPassword(pf.key, openPass)
 		if err != nil {
 			return err
 		}

@@ -188,6 +188,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if d.rbRecovery.HandleMouse(ev) {
 		d.focusTo(d.rbRecovery)
+		d.syncSourceState()
 		return true
 	}
 
@@ -198,9 +199,12 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 	}
 	mx, my := ev.Position()
-	fields := []*widgets.InputField{d.fTarget}
+	fields := []*widgets.InputField{d.fTarget, d.fStopAt}
 	if !histMode {
 		fields = append(fields, d.fFile)
+	}
+	if d.rbRecovery.Selected() == recoverStandby {
+		fields = append(fields, d.fStandby)
 	}
 	for _, f := range fields {
 		if f.HitTest(mx, my) {

@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -35,6 +37,20 @@ const (
 	// whether or not the database is being renamed.
 	relocFolder
 )
+
+// Recovery Options radio entries, in the order it lists them; recoveryStates maps
+// each onto gosmo's recovery state.
+const (
+	recoverOnline = iota
+	recoverNoRecovery
+	recoverStandby
+)
+
+var recoveryStates = []gosmo.RestoreRecovery{
+	recoverOnline:     gosmo.RestoreWithRecovery,
+	recoverNoRecovery: gosmo.RestoreWithNoRecovery,
+	recoverStandby:    gosmo.RestoreWithStandBy,
+}
 
 const (
 	restoreDialogW = 72
@@ -86,6 +102,10 @@ type RestoreDialog struct {
 	cbReplace  *widgets.CheckBox
 	cbVerify   *widgets.CheckBox
 	cbClose    *widgets.CheckBox
+	// fStandby is WITH STANDBY's undo file, in the form only while that option is
+	// picked; fStopAt is the optional point in time (STOPAT) for a log set.
+	fStandby *widgets.InputField
+	fStopAt  *widgets.InputField
 
 	// Files view (restoreModeFiles): where the restored database's files land, and
 	// the folders relocFolder puts them in.
@@ -115,12 +135,16 @@ type RestoreDialog struct {
 
 	// Source-change detection (syncSourceState): prevSource tracks the Restore From
 	// radio, prevHistDB the history-database dropdown.
-	prevSource int
-	prevHistDB string
+	prevSource   int
+	prevHistDB   string
+	prevRecovery int
 
 	// lastAutoTarget mirrors BackupDialog.lastAutoDest: the target name the dialog
 	// filled in itself, so it only overwrites an unedited field.
 	lastAutoTarget string
+	// lastAutoStandby is the same for the standby file: the default autoFillStandby
+	// last put there, followed while unedited.
+	lastAutoStandby string
 
 	// histLoaded records that the history-database list fetch has been kicked off for
 	// this show(); history holds the selected database's backup sets, in the Backup
@@ -206,12 +230,16 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.ddHistSet = widgets.NewDropDown("Backup Set: ", nil, histSetWidth)
 	// As wide as the Backup File row above it: its field, the gap and Browse.
 	d.fTarget = widgets.NewInputField("", d.fileFieldWidth()+1+d.btnBrowse.Width(), false)
-	d.rbRecovery = widgets.NewRadioBox("Recovery Options:", []string{"WITH RECOVERY", "WITH NORECOVERY"})
+	d.rbRecovery = widgets.NewRadioBox("Recovery Options:", []string{"WITH RECOVERY", "WITH NORECOVERY", "WITH STANDBY"})
 	d.cbReplace = widgets.NewCheckBox("Replace existing database (WITH REPLACE)")
 	d.cbVerify = widgets.NewCheckBox("Verify backup before restore")
 	d.cbVerify.SetChecked(true)
 	d.cbClose = widgets.NewCheckBox("Close existing connections")
 	d.cbClose.SetChecked(true)
+	d.fStandby = widgets.NewInputField("Standby file: ", standbyFieldWidth, false)
+	d.fStopAt = widgets.NewInputField("Point in time:", stopAtFieldWidth, false)
+	d.prevRecovery = recoverOnline
+	d.lastAutoStandby = ""
 
 	d.rbReloc = widgets.NewRadioBox("File Locations:", []string{
 		"Relocate to the default folders when renaming the database",
@@ -263,20 +291,28 @@ func (d *RestoreDialog) fileFieldWidth() int {
 	return restoreDialogW - 2 /*border*/ - 2 /*margins*/ - 2 /*brackets*/ - 1 /*gap*/ - d.btnBrowse.Width()
 }
 
-// rebuildFocusable assembles the Tab cycle for the current source mode: the file
-// input + Browse button, or the two history dropdowns.
+// Content widths of the standby-file and point-in-time inputs. The standby file
+// runs to the right margin past its 14-column label; the point in time holds
+// "YYYY-MM-DD HH:MM:SS" and leaves room for stopAtHint beside it.
+const (
+	standbyFieldWidth = restoreDialogW - 2 /*border*/ - 2 /*margins*/ - 15 /*label + gap*/ - 2 /*brackets*/
+	stopAtFieldWidth  = 19
+)
+
+// rebuildFocusable assembles the Tab cycle for the current source mode (the file
+// input + Browse button, or the two history dropdowns) and recovery option (the
+// standby file only for WITH STANDBY).
 func (d *RestoreDialog) rebuildFocusable() {
 	if d.rbSource.Selected() == 0 {
-		d.focusable = []focusable{
-			d.rbSource, d.fFile, d.btnBrowse, d.fTarget,
-			d.rbRecovery, d.cbReplace, d.cbVerify, d.cbClose,
-		}
+		d.focusable = []focusable{d.rbSource, d.fFile, d.btnBrowse, d.fTarget}
 	} else {
-		d.focusable = []focusable{
-			d.rbSource, d.ddHistDB, d.ddHistSet, d.fTarget,
-			d.rbRecovery, d.cbReplace, d.cbVerify, d.cbClose,
-		}
+		d.focusable = []focusable{d.rbSource, d.ddHistDB, d.ddHistSet, d.fTarget}
 	}
+	d.focusable = append(d.focusable, d.rbRecovery, d.cbReplace, d.cbVerify, d.cbClose)
+	if d.rbRecovery.Selected() == recoverStandby {
+		d.focusable = append(d.focusable, d.fStandby)
+	}
+	d.focusable = append(d.focusable, d.fStopAt)
 	if d.focusIdx >= len(d.focusable) {
 		d.focusIdx = 0
 	}
@@ -345,10 +381,10 @@ func (d *RestoreDialog) setRestingStatus() {
 	d.statusResting = true
 }
 
-// syncSourceState reacts to input that changed the Restore From radio or the
-// history-database selection: it swaps the Tab cycle, kicks off the lazy history
-// fetches, and keeps an unedited target-database field following the picked
-// source database.
+// syncSourceState reacts to input that changed the Restore From radio, the
+// history-database selection or the Recovery Options radio: it swaps the Tab
+// cycle, kicks off the lazy history fetches, and keeps an unedited
+// target-database field following the picked source database.
 func (d *RestoreDialog) syncSourceState() {
 	if d.mode != restoreModeForm {
 		return
@@ -369,6 +405,14 @@ func (d *RestoreDialog) syncSourceState() {
 			d.autoFillTarget(dbName)
 		}
 	}
+	if rec := d.rbRecovery.Selected(); rec != d.prevRecovery {
+		d.prevRecovery = rec
+		d.rebuildFocusable()
+		d.refocus()
+		if rec == recoverStandby {
+			d.autoFillStandby()
+		}
+	}
 	d.applyDeviceRules()
 }
 
@@ -379,6 +423,67 @@ func (d *RestoreDialog) autoFillTarget(name string) {
 		d.lastAutoTarget = name
 		d.fTarget.SetValue(name)
 	}
+}
+
+// autoFillStandby puts SSMS's default undo file, ROLLBACK_UNDO_<target>.BAK in
+// the server's default backup folder, into an empty or unedited standby-file
+// field. It is the server's folder because RESTORE writes the file there.
+func (d *RestoreDialog) autoFillStandby() {
+	if d.sc == nil {
+		return
+	}
+	cur := d.fStandby.Value()
+	if strings.TrimSpace(cur) != "" && cur != d.lastAutoStandby {
+		return
+	}
+	name := "ROLLBACK_UNDO_" + strings.TrimSpace(d.fTarget.Value()) + ".BAK"
+	d.lastAutoStandby = gosmo.JoinServerPath(d.sc.Server.Info().DefaultBackupPath, name)
+	d.fStandby.SetValue(d.lastAutoStandby)
+}
+
+// stopAtLayouts are what the point in time may be typed as. Go accepts
+// fractional seconds after the seconds field without a layout for them, so
+// "…:05.250" parses too; gosmo sends the milliseconds.
+var stopAtLayouts = []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02 15:04"}
+
+// stopAtHint follows the point-in-time field.
+const stopAtHint = "(server time, log backups only)"
+
+// parseStopAt parses the point-in-time field: nil for an empty one, which
+// restores the whole log. The time is the server's local wall clock, as
+// gosmo.RestoreOptions.StopAt reads it, so it is parsed with no zone at all.
+func parseStopAt(s string) (*time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	for _, layout := range stopAtLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return &t, nil
+		}
+	}
+	return nil, errors.New("expected YYYY-MM-DD HH:MM:SS")
+}
+
+// checkRecoveryFields refuses a STANDBY with no undo file and a point in time
+// that does not parse, before any read: it reports on the form, whichever view
+// Restore was pressed in, and focuses the field to fix.
+func (d *RestoreDialog) checkRecoveryFields() bool {
+	refuse := func(msg string, f focusable) bool {
+		if d.mode != restoreModeForm {
+			d.backToForm()
+		}
+		d.setStatusMsg(msg, true)
+		d.focusTo(f)
+		return false
+	}
+	if d.rbRecovery.Selected() == recoverStandby && strings.TrimSpace(d.fStandby.Value()) == "" {
+		return refuse("WITH STANDBY needs a standby file.", d.fStandby)
+	}
+	if _, err := parseStopAt(d.fStopAt.Value()); err != nil {
+		return refuse("Point in time: "+err.Error()+".", d.fStopAt)
+	}
+	return true
 }
 
 // restoreURLHint is the resting status line for a blob source: the RESTORE half

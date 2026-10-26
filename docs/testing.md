@@ -126,6 +126,10 @@ reason:
   contains `FROM sys.databases`.
 - **Assert with `StatementsIn(db)`, not `Statements()`,** for database-scoped
   writes (the bare `USE` is stripped); pair with `assertNoStatementsIn`.
+- **Both return the statement with its `@pN` bound** (`fakeExec.bound`), as
+  gosmo's observer shows it: gosmo binds every Agent procedure's strings, so
+  the raw text says only `@job_name = @p1`. `Reads` is raw — check a read's
+  values with `ReadArgs`.
 - `eachDatabase` (`db_scan.go`) and gosmo's `userMappingsIn` skip a database
   whose read fails, so an under-scripted fake gives an empty grid and a no-op
   apply. Assert rows loaded first.
