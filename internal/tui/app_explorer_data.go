@@ -305,6 +305,21 @@ func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
 		})
 }
 
+// toggleTrigger enables or disables a DML trigger on a table or view.
+// Disabling (confirmed) stops it firing on that object's writes. State is in
+// the label (loadTriggersChildren), so the parent is refreshed. The handle
+// looks up the parent the statement names.
+func (a *App) toggleTrigger(sc *db.ServerConn, node *explorerNode) {
+	dbName, schema := node.data.DBName, node.data.Schema
+	display := gosmo.QualifiedName(schema, node.data.Name)
+	a.toggleEnabledState(sc, node, "trigger", display,
+		"Disable Trigger",
+		fmt.Sprintf("Disable %s? It stops firing on writes to %s.", display, gosmo.QualifiedName(schema, node.data.TableName)),
+		func(ctx context.Context, name string, on bool) error {
+			return sc.Server.DatabaseRef(dbName).TriggerRef(schema, name).SetEnabled(ctx, on)
+		})
+}
+
 // auditToggleLabel is the Enable/Disable wording for an audit or server audit
 // specification, from cached state.
 func auditToggleLabel(node *explorerNode) string {
@@ -351,7 +366,7 @@ func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorer
 }
 
 // toggleEnabledState is the shared Enable/Disable toggle for security policies,
-// triggers (both scopes), audits, audit specifications and plan guides, which
+// triggers (all three scopes), audits, audit specifications and plan guides, which
 // differ only in wording and gosmo call. display is the name as shown
 // (schema-qualified for policies); prompt is the formatted confirmation.
 // Disabling is confirmed, enabling isn't; the parent folder is refreshed

@@ -2,15 +2,19 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -95,21 +99,131 @@ func (pt *amProcTab) newGrid() *controls.DataGrid {
 	return g
 }
 
-// menuItems is the grid's own part of its cell menu: Show Live Execution
-// Plan for the selected row's session, disabled with a note on a row that
-// names none. Offered whatever the session is doing — whether its query is
-// profiled is only known by asking, and the plan panel says why it is empty.
+// menuItems is the grid's own part of its cell menu, for the selected row's
+// session: Show Live Execution Plan, and Kill Process. Both are disabled with a
+// note on a row that names none. The plan is offered whatever the session is
+// doing — whether its query is profiled is only known by asking, and the plan
+// panel says why it is empty.
 func (pt *amProcTab) menuItems() []controls.MenuItem {
 	spid, ok := pt.selectedSession()
-	item := controls.MenuItem{Label: "Show Live Execution Plan"}
+	plan := controls.MenuItem{Label: "Show Live Execution Plan"}
+	kill := controls.MenuItem{Label: "Kill Process..."}
 	sc := pt.am.conn
 	if !ok || sc == nil || sc.Server == nil {
-		item.Enabled = func() bool { return false }
-		item.Note = "no session"
-		return []controls.MenuItem{item}
+		for _, it := range []*controls.MenuItem{&plan, &kill} {
+			it.Enabled = func() bool { return false }
+			it.Note = "no session"
+		}
+		return []controls.MenuItem{plan, kill}
 	}
-	item.Action = func() { pt.am.app.openLivePlanPanel(sc, spid) }
-	return []controls.MenuItem{item}
+	plan.Action = func() { pt.am.app.openLivePlanPanel(sc, spid) }
+	kill.Action = func() { pt.lookUpSessionToKill(spid) }
+	// Gated on the panel's connection, whose capabilities the app probed; the
+	// tab's own, which the KILL is sent on, is the same login.
+	return []controls.MenuItem{plan, gate.Item(kill, sc, "", gate.AlterAnyConnection)}
+}
+
+// lookUpSessionToKill reads the session afresh before asking: the grid may be
+// minutes old and a session id is reused once its session ends, so the
+// confirmation names the login, host and database the KILL will actually hit.
+// Block's grid has no login or database column anyway. It runs on the tab's
+// own connection, which is also the one the KILL is sent on.
+func (pt *amProcTab) lookUpSessionToKill(spid int) {
+	conn := pt.conn
+	if conn == nil || conn.Server == nil {
+		return
+	}
+	pt.am.app.setStatus(fmt.Sprintf("Reading session %d...", spid))
+	pt.am.app.safego("reading session "+strconv.Itoa(spid), func() {
+		ctx, cancel := context.WithTimeout(conn.Server.Context(), procRunTimeout)
+		defer cancel()
+		as, err := conn.Server.SessionByID(ctx, spid)
+		pt.am.app.postAndWake(func() { pt.confirmKill(spid, as, err) })
+	})
+}
+
+// confirmKill asks before the KILL, or says why there is none to ask about.
+func (pt *amProcTab) confirmKill(spid int, as *gosmo.ActiveSession, err error) {
+	if !pt.am.app.panelHosted(pt.am) || pt.conn == nil {
+		return
+	}
+	app := pt.am.app
+	app.setStatus("")
+	switch {
+	case errors.Is(err, gosmo.ErrNotFound):
+		app.alertDialog.ShowAlert("Kill Process", fmt.Sprintf("Session %d has ended.", spid))
+		pt.refresh()
+		return
+	case err != nil:
+		app.alertDialog.ShowAlert("Kill Process", fmt.Sprintf("Session %d could not be read: %v", spid, err))
+		return
+	case isOwnActivityMonitorSession(as):
+		// Every Activity Monitor connection of this process, not only the one
+		// the KILL would go out on: the server refuses that one (Msg 6104), and
+		// killing another leaves a tab or the dashboard failing on its next run.
+		app.alertDialog.ShowAlert("Kill Process", fmt.Sprintf(
+			"Session %d is this Activity Monitor's own connection and cannot be killed from here.", spid))
+		return
+	}
+	app.confirmDialog.ShowConfirmDefaultNo("Kill Process", killPrompt(as), func(confirmed bool) {
+		if confirmed {
+			pt.kill(spid)
+		}
+	})
+}
+
+// isOwnActivityMonitorSession reports whether as is one of this process's
+// Activity Monitor connections: the program name the role reports, from this
+// process id on the reading connection's own host (gosmo.BlockedRequests
+// identifies a client process the same way).
+func isOwnActivityMonitorSession(as *gosmo.ActiveSession) bool {
+	return as.ProgramName == db.RoleActivityMonitor.ApplicationName() &&
+		as.HostProcessID == os.Getpid() && as.FromCallerHost
+}
+
+// killPrompt names what is about to be killed. A system session (no login)
+// says so rather than showing blanks.
+func killPrompt(as *gosmo.ActiveSession) string {
+	orNone := func(s string) string {
+		if s == "" {
+			return "(none)"
+		}
+		return s
+	}
+	return fmt.Sprintf("Kill session %d?\n\nLogin: %s\nHost: %s\nProgram: %s\nDatabase: %s\n\n"+
+		"Any open transaction it has is rolled back, which can take as long as the work it undoes.",
+		as.SessionID, orNone(as.LoginName), orNone(as.HostName), orNone(as.ProgramName), orNone(as.DatabaseName))
+}
+
+// kill sends KILL on the tab's connection, then refreshes the tab.
+func (pt *amProcTab) kill(spid int) {
+	conn := pt.conn
+	if conn == nil || conn.Server == nil {
+		return
+	}
+	pt.am.app.runWithProgress(progressJob{
+		title:   "Kill Process",
+		message: fmt.Sprintf("Killing session %d...", spid),
+		what:    "killing session " + strconv.Itoa(spid),
+		sc:      conn,
+	}, func(ctx context.Context, _ progressReport) error {
+		return conn.Server.KillSession(ctx, spid)
+	}, func(err error, cancelled bool) {
+		if !pt.am.app.panelHosted(pt.am) {
+			return
+		}
+		switch {
+		case cancelled:
+			// The KILL may have reached the server before the cancel; the
+			// refresh shows which.
+			pt.am.app.setStatus(fmt.Sprintf("Kill of session %d cancelled", spid))
+		case err != nil:
+			pt.am.app.setStatus(fmt.Sprintf("Failed to kill session %d: %v", spid, err))
+		default:
+			pt.am.app.setStatus(fmt.Sprintf("Session %d killed", spid))
+		}
+		pt.refresh()
+	})
 }
 
 // selectedSession is the session id of the grid's selected row: Sessions'

@@ -22,7 +22,7 @@ func loginResponses() []fakeResponse {
 			int64(0), int64(0), int64(0), true, false,
 			time.Now(), nil, int64(0), nil, "us_english", "", "",
 		}}},
-		{match: "sys.dm_exec_sessions s", cols: 14, rows: nil},
+		{match: "sys.dm_exec_sessions s", cols: 16, rows: nil},
 	}
 }
 
@@ -343,7 +343,7 @@ func TestLoginAuthLabelNamesEachLoginType(t *testing.T) {
 func TestLoginStatusCountsSessionsUnderTheServerCollation(t *testing.T) {
 	session := func(id int64, login string) []driver.Value {
 		return []driver.Value{id, login, "host", "app", "master", "sleeping",
-			int64(0), int64(0), int64(0), nil, nil, int64(0), nil, int64(0)}
+			int64(0), int64(0), int64(0), nil, nil, int64(0), nil, int64(0), int64(0), false}
 	}
 	for _, tc := range []struct{ collation, want string }{
 		{"SQL_Latin1_General_CP1_CI_AS", "2"},
