@@ -4,6 +4,73 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.1.1] - 2026-10-27
+
+A feature and hardening release: Format Document, shrink and restore dialogs,
+index and trigger maintenance, sorting, a light theme, and stricter connection
+defaults. Built on gosmo v0.1.1.
+
+### Added
+
+- **Format Document** (Alt+Shift+F) for SQL, JSON and XML: the selection's
+  lines or the whole text, in one undo step; a selection inside a string or
+  comment is refused with a message.
+- **Editor**: Execute at Cursor (Ctrl+Enter), Find and Replace, F3 / Shift+F3,
+  comment toggle, duplicate/delete/move line, upper/lower case; the help
+  dialog lists them.
+- **Light color theme** (Tools > Options > Color Theme).
+- **Shrink Database and Shrink Files dialogs**; a log file's minimum is shown
+  as a lower bound.
+- **Restore**: `WITH STANDBY` with its undo file, and point-in-time (stop at),
+  validated, with a restore plan built from backup history.
+- **DML triggers**: enable or disable from the Explorer, with confirmation and
+  permission checks; the Explorer shows each trigger's state.
+- **Index maintenance**: Rebuild, Reorganize and Disable on indexes, gated by
+  the parent table's permissions; a disabled index offers Rebuild only.
+- **Column sorting** in Object Explorer details and query results (header
+  click, Ctrl+Space menu), with mixed-unit sizes and decimals ordered by value.
+- **Max fetch rows** (Tools > Options): caps rows kept per result set;
+  reaching it cancels the rest of the script and the status line says so.
+- **Indexed views** in the index and statistics dialogs; **database security
+  script** (roles, users, permissions).
+- **Always On peer prompts**: actions needing a replica with no saved
+  connection open a pre-filled Connect dialog.
+- **Unsupported-version warning** when connecting to SQL Server older than 2016
+  SP1.
+- **Node-type table** (`tree_node_kinds.go`) gives each Explorer node its
+  kind, display name and glyph, so the Details pane no longer says "Object".
+- **`core.Gesture`**: one record of a mouse press's claim on a gesture, used by
+  the Extended Events viewer and property sheets in place of drag zones.
+
+### Fixed
+
+- **Trust Server Certificate is off by default**: server certificates are
+  validated; existing saved connections keep their setting, and a certificate
+  error hints at the option.
+- **Peer credentials** are pinned to the registered destination; a failed peer
+  connection never retries with another server's credentials.
+- **Grid scrolling** keeps the last column visible with the horizontal and
+  vertical scrollbars.
+- **Cancel** is gated during COMMIT; a panic clears the running state;
+  Execute connections outside the login database are discarded.
+- **Database-scoped reads and writes** keep the right database context on
+  pooled connections.
+- **Read-only properties** show long values whole.
+- **Windows file names**: reserved device names and over-long names are made
+  safe.
+- **Clipboard** status messages match what the terminal supports.
+- **Subscription matching** prefers an exact publication name over case
+  variants; Send Test Mail handles no selected profile.
+- **Extended Events filters** compare case-insensitively.
+
+### Changed
+
+- `gosmo` v0.1.1 (handle types for Query Store, Mail and Extended Events;
+  one listing method per family; typed enums), `golang.org/x/net` v0.62.0.
+- Faster drawing (`core.FillRect`), asynchronous config saves, DataGrid column
+  and selection code split into their own files, new logo.
+- Wiki split into 25 pages; the old single page and screenshots removed.
+
 ## [0.1.0] - 2026-10-20
 
 The first minor release: a hardening pass over the whole tool. Backup and

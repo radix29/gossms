@@ -1,6 +1,4 @@
-
-
-
+group by schema
 
 add command line parameters for agentic use.
 all functionality of the application should be accessible as command line parameters with formatted text output
@@ -11,8 +9,6 @@ new sql formatting designs
 new tab: waits
 at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width
 
-
-group by schema
 
 keyboard shortcuts for mac (platform dependednt)?
 
@@ -52,12 +48,12 @@ Watch upstream (unreleased)
 check for go.mod updates
 commit before both projects
 
-prepare gosmo for release v0.1.0 . Update readme.md, release.md, changelog.md, and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
+prepare gosmo for release v0.1.1. Update readme.md, release.md, changelog.md, and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
 do not commit or tag anything to git. 
 
 fix go.mod before, reference the new :
 
-prepare gossms for release v0.1.0. Update readme.md, release.md, changelog.md, and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
+prepare gossms for release v0.1.1. Update readme.md, release.md, changelog.md, and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
 do not commit or tag anything to git. 
 make the text in the RELEASE.md shorter and conciser. the long explanation is in CHANGELOG.md
 update the docs/dicord.md file for this release. it should be below 2000 characters.
