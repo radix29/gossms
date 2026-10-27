@@ -50,7 +50,7 @@ func objectDataName(n nodeData) string {
 func (a *App) deleteObject(node *explorerNode) {
 	sc := resolveConn(node)
 	a.confirmDeleteObjects(sc, []nodeData{node.data}, func() {
-		a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+		a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 	})
 }
 
@@ -383,12 +383,13 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 		switch {
 		case cancelled:
 			a.setStatus(fmt.Sprintf("Rename of %s %q cancelled", strings.ToLower(op.noun), oldName))
-			a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+			a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 		case err != nil:
 			a.setStatus(fmt.Sprintf("Rename failed: %v", withPermissionAdvice(err)))
 		default:
 			a.setStatus(fmt.Sprintf("%s %q renamed to %q", op.noun, oldName, newName))
-			a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+			a.explorer.Follow(node, renamedKey(data, newName))
+			a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 		}
 	})
 }
@@ -476,12 +477,15 @@ func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *obj
 				switch {
 				case cancelled:
 					a.setStatus(fmt.Sprintf("Move of %s %q cancelled", strings.ToLower(op.noun), name))
-					a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+					a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 				case err != nil:
 					a.setStatus(fmt.Sprintf("Move failed: %v", withPermissionAdvice(err)))
 				default:
 					a.setStatus(fmt.Sprintf("%s %q moved to schema %q", op.noun, name, target))
-					a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+					to := data.key()
+					to.Schema = target
+					a.explorer.Follow(node, to)
+					a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 				}
 			})
 		})

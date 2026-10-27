@@ -221,6 +221,11 @@ const (
 	// table-column action (Delete, Rename) is ALTER TABLE, which a view refuses.
 	NodeViewColumns
 	NodeViewColumn
+	// NodeSchemaGroup is one schema's bucket under a folder in Group by Schema
+	// mode: a folder built by regrouping the folder's loaded children, never by a
+	// query, so it has no childLoaders entry and is created Loaded. Schema is the
+	// schema and GroupOf the folder type it groups (groupedFolderTypes).
+	NodeSchemaGroup
 	NodeLoading
 	NodeError
 
@@ -302,6 +307,11 @@ type nodeData struct {
 	// label is the snapshot's own name, so nothing downstream can recover it. Empty
 	// when the source has since been dropped, leaving the snapshot unusable.
 	SourceDatabase string
+
+	// GroupOf is, on a NodeSchemaGroup, the type of the folder it groups
+	// (NodeTables, NodeViews, …): what its children are, for the Details pane
+	// and menus. Zero (NodeServer) on every other node.
+	GroupOf NodeType
 
 	// ScopeSchema and ScopeName are the routine an OBJECT-scoped NodePlanGuide is
 	// bound to, empty for SQL and TEMPLATE scopes. The guide's Delete is permitted

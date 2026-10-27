@@ -166,6 +166,15 @@ to …)" note), goSSMS opens the Connect dialog for it, pre-filled from the conn
 you started from; nothing is sent to that instance until you press Connect. A
 failed peer connection never retries with another server's credentials.
 
+## Object Explorer
+
+**Group by Schema** (View menu, **Alt+G**, or the `[S]` button at the right
+end of the Object Explorer title) lists Tables, Views, Synonyms, Stored
+Procedures and Functions under one node per schema, as SSMS does. It applies
+to every connected server, keeps expanded nodes open, and is off at each
+start. Names keep their `schema.` prefix; dragging a schema node into a query
+inserts `[schema]`. Press **F1** for the full keyboard reference.
+
 ## Supported SQL Server versions
 
 goSSMS supports **SQL Server 2016 SP1 (13.0.4001) and later** on Windows and

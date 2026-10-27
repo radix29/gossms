@@ -401,12 +401,12 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, di
 				// Re-read rather than assumed: the cancel may have arrived
 				// after the commit.
 				a.setStatus(fmt.Sprintf("%s %q cancelled", doing, display))
-				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, display, err))
 			default:
 				node.data.IsEnabled = enable
-				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("%s %q is now %sd", strings.ToUpper(noun[:1])+noun[1:], display, word))
 			}
@@ -472,12 +472,12 @@ func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosm
 			switch {
 			case cancelled:
 				a.setStatus(fmt.Sprintf("Setting %q to %s cancelled", name, state))
-				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Failed to set %q to %s: %v", name, state, err))
 			default:
 				node.data.IsEnabled = state == gosmo.EndpointStarted
-				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("Endpoint %q is now %s", name, endpointStateLabel(state)))
 			}

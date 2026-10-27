@@ -179,6 +179,8 @@ var helpLines = []string{
 	"  Enter/+     Expand node",
 	"  -/Backspace Collapse node",
 	"  F5          Refresh node",
+	"  Alt+G       Group by Schema on/off: tables, views, synonyms,",
+	"              procedures and functions under one node per schema",
 	"  Right click Context menu (also Shift+F10, Menu key, Ctrl+Space)",
 	"  Ctrl+Left   Shrink explorer",
 	"  Ctrl+Right  Grow explorer",

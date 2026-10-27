@@ -202,6 +202,12 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 				a.launchXEventProfilerActive(xeProfilerKinds[0])
 				return false
 			}
+			// Alt+G is View > Group by Schema, whatever has focus — SSMS
+			// has no key for it; G for Group.
+			if r := core.EvRune(ev); r == 'g' || r == 'G' {
+				a.toggleGroupBySchema()
+				return false
+			}
 		}
 		// Ctrl+0..9 jumps to panel N from the left (Object Explorer Details is
 		// 0), only while a panel has focus.

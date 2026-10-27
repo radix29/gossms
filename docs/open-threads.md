@@ -81,6 +81,23 @@ Settled design: `docs/decisions.md` § Format Document.
   the end offset of the highest active VLF. Showing that needs a gosmo read
   and a version gate for 2016 RTM/SP1.
 
+## Group by Schema: what is left
+
+- **Only the five main families group** (deferred scope, decided for the first
+  cut). Tables (the folder's own user tables), Views, Synonyms, Stored
+  Procedures and Functions; the System/File/External/Graph Tables
+  sub-folders, System Views/Procedures/Functions, Sequences, Types and every
+  other schema-scoped family stay flat. Extending it is one entry in
+  `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
+  (`detail_browser_group_schema.go`) per family.
+- **No hover tooltip on the Object Explorer's `[S]` title button.** The plan
+  wanted `Group by Schema (Alt+G)` on hover, but nothing hit-tests hover on a
+  panel border: `Toolbar` keeps its own hover for its row, and the chart
+  tooltips are pinned readouts. The View menu item and F1 help carry the
+  name and key instead. Adding it means hover tracking in
+  `controls.TreeView` (`SetTitleButton`) plus a host-drawn overlay, as the
+  toolbar's.
+
 ## Fix order
 
 Outstanding work by priority within each subsection. Each item points to where

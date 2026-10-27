@@ -20,6 +20,13 @@ type explorerNode struct {
 	parent   *explorerNode
 	children []*explorerNode
 
+	// flat and groups are a groupedFolderTypes folder's Group by Schema state:
+	// flat is its loaded children in the loader's order, the source children is
+	// derived from, and groups the schema nodes last built from it, kept once
+	// retired so a rebuilt group comes back expanded. See applyGrouping.
+	flat   []*explorerNode
+	groups []*explorerNode
+
 	// load guards this node's in-flight fetch of its children (App.loadChildren): a
 	// result arriving after a newer fetch started drops itself, and the superseded
 	// fetch is cancelled outright. See latest.
@@ -69,6 +76,10 @@ type ObjectExplorer struct {
 	// moved by itself from one the user made.
 	reselectFrom *explorerNode
 
+	// follow is a rename's or Move to Schema's forwarding address (see Follow),
+	// pending until the reload of the folder it names lands.
+	follow *followHint
+
 	// retired is every node a Reload replaced whose rows may still be on screen.
 	// They stay in byID until the next rebuild takes them off (the stale rows are
 	// still clickable and Selected() has to answer for them) and are released there
@@ -84,6 +95,11 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 		byID: make(map[int]*explorerNode),
 	}
 	oe.view.SetTitle("Object Explorer")
+	// The mouse surface of Group by Schema (Alt+G, View menu), drawn in the
+	// selection style while it is on.
+	oe.view.SetTitleButton("S",
+		func() bool { return app.groupBySchema },
+		func() { app.toggleGroupBySchema() })
 	oe.view.OnExpand = oe.handleExpand
 	oe.view.OnCollapse = oe.handleCollapse
 	oe.view.OnSelect = oe.handleSelect
@@ -299,6 +315,11 @@ func (oe *ObjectExplorer) RefreshSelected() {
 // refreshDatabaseMailLabel), or a change from a query window would show only
 // after a Refresh of Management.
 func (oe *ObjectExplorer) Reload(n *explorerNode) {
+	if n != nil && n.data.Type == NodeSchemaGroup {
+		// A schema group is a regrouping of its folder's children with no loader
+		// of its own: its Refresh (F5 included) is the folder's.
+		n = n.parent
+	}
 	if n == nil || n.retired {
 		return
 	}
@@ -347,6 +368,7 @@ func (oe *ObjectExplorer) dropChildren(n *explorerNode) {
 		retire(c)
 	}
 	n.children = nil
+	n.flat = nil
 }
 
 // releaseRetired drops the nodes dropChildren retired from byID and the Detail
@@ -382,7 +404,83 @@ func (oe *ObjectExplorer) SetChildren(n *explorerNode, children []*explorerNode)
 	}
 	n.children = children
 	n.data.Loaded = true
+	if groupedFolderTypes[n.data.Type] {
+		n.flat = children
+		oe.applyGrouping(n)
+	}
+	f := oe.follow
+	if f != nil && n.data.key() == f.folder && resolveConn(n) == f.conn {
+		f.reveal(children)
+		defer func() { oe.follow = nil }() // this was the reload it waited for
+	}
 	oe.rebuild()
+}
+
+// followHint is where a selection on a renamed or moved object goes when the
+// folder reload the write started replaces its node: survivor matches by
+// nodeKey, which the new name or schema no longer satisfies, so the selection
+// fell to the folder (or the schema group) and the next keyboard action went to
+// it.
+type followHint struct {
+	from   *explorerNode // the node the write ran on, retired by the reload
+	to     nodeKey       // the object's key after the write
+	folder nodeKey       // the listing folder whose reload carries it
+	conn   *db.ServerConn
+	// parked is where reselect put the selection when a rebuild between the
+	// Reload and its load landing (the folder shows "Loading...") took it off
+	// from: the selection is still from's while it sits there untouched.
+	parked *explorerNode
+}
+
+// Follow records that n's object now has key to, for the reload of n's listing
+// folder that the caller starts next: if the selection is still on n when that
+// reload lands, it moves to the node standing for to, not to the folder. It is
+// dropped when that folder's load lands, or when the user selects a node.
+func (oe *ObjectExplorer) Follow(n *explorerNode, to nodeKey) {
+	folder := n.listingParent()
+	if folder == nil {
+		return
+	}
+	oe.follow = &followHint{from: n, to: to, folder: folder.data.key(), conn: resolveConn(n)}
+}
+
+// reveal expands the schema group holding the followed object among the
+// folder's freshly loaded children: Move to Schema lands it in a group that may
+// be collapsed, and a hidden node can't take the selection.
+func (f *followHint) reveal(children []*explorerNode) {
+	for _, c := range children {
+		if c.data.key() == f.to {
+			if g := c.parent; g != nil && g.data.Type == NodeSchemaGroup {
+				g.expanded = true
+			}
+			return
+		}
+	}
+}
+
+// target is the shown node f forwards a selection on prev to, or nil when prev
+// isn't the followed selection or the object isn't on screen.
+func (f *followHint) target(prev *explorerNode, shown map[*explorerNode]bool) *explorerNode {
+	if f == nil || prev != f.from && prev != f.parked {
+		return nil
+	}
+	for n := range shown {
+		if n.data.key() == f.to && !n.retired && resolveConn(n) == f.conn {
+			return n
+		}
+	}
+	return nil
+}
+
+// renamedKey is n's key once its object is renamed to newName. A database
+// node carries its name in DBName too.
+func renamedKey(n nodeData, newName string) nodeKey {
+	k := n.key()
+	k.Name = newName
+	if n.Type == NodeDatabase {
+		k.DBName = newName
+	}
+	return k
 }
 
 // rebuild flattens the explorer tree into the controls.TreeView's node list,
@@ -430,10 +528,20 @@ func (oe *ObjectExplorer) reselect(prev *explorerNode, onPlaceholder bool, flat 
 			placeholderShown = placeholderShown || tag.owner == prev
 		}
 	}
+	if t := oe.follow.target(prev, shown); t != nil && t != prev {
+		oe.follow = nil
+		oe.reselectFrom = prev
+		oe.view.SelectID(t.id)
+		oe.reselectFrom = nil
+		return
+	}
 	if onPlaceholder && placeholderShown || !onPlaceholder && shown[prev] {
 		return // still on screen, and SetNodes kept it selected
 	}
 	target := survivor(prev, shown)
+	if f := oe.follow; f != nil && prev == f.from {
+		f.parked = target
+	}
 	if target == nil {
 		// prev's whole root is gone (a disconnect): nothing is related to it, so report
 		// whichever node SetNodes' clamp left selected.
@@ -591,7 +699,7 @@ func (oe *ObjectExplorer) handleActivate(id controls.TreeNodeID) bool {
 		// The note's loader is its parent's; re-running it follows the primary
 		// through the connection just registered. Matched by key, not pointer:
 		// a Refresh while the prompt was open replaces the parent.
-		parent := sameNodeAs(n.parent)
+		parent := sameNodeAs(n.listingParent())
 		return oe.app.offerPeerConnect(sc, &db.PeerNotRegisteredError{Server: n.data.UnregisteredPeer}, func() {
 			oe.ReloadFolders(sc, parent)
 		})
@@ -613,6 +721,7 @@ func (oe *ObjectExplorer) handleSelect(id controls.TreeNodeID) {
 	case oe.reselectFrom != nil:
 		oe.app.onNodeReselected(oe.reselectFrom, n)
 	default:
+		oe.follow = nil // the user moved on; the selection is no longer the write's
 		oe.app.onNodeSelected(n)
 	}
 }

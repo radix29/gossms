@@ -87,6 +87,8 @@ var readTimeoutSites = map[string]int{
 	// own properties-plus-disk-usage fetch.
 	"detail_browser_databases.go": 2,
 	"detail_browser_logins.go":    1,
+	// 2: a schema group's narrowed folder listing, a grouped folder's schema counts.
+	"detail_browser_group_schema.go": 2,
 	// The node-detail fetch — see DetailBrowser.fetch.
 	"detail_browser_runs.go":   1,
 	"detail_browser_server.go": 1,

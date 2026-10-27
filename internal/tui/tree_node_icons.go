@@ -16,7 +16,8 @@ import (
 // different glyph open vs. closed. style == config.IconStyleNone always
 // returns 0 (no icon), which TreeView's Draw treats as "don't draw one".
 // NodeAgentJobs (the "SQL Server Agent" node) gets a fixed stopwatch glyph
-// rather than the generic folder icon its container status would give it.
+// rather than the generic folder icon its container status would give it, and
+// a NodeSchemaGroup the schema glyph.
 // d.IsPrimaryKey overrides the normal NodeColumn glyph with the primary-key
 // glyph, since that's per-column data, not something Type alone expresses.
 func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
@@ -25,6 +26,9 @@ func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	}
 	if d.Type == NodeAgentJobs {
 		return '⏱'
+	}
+	if d.Type == NodeSchemaGroup {
+		return objectIcon(NodeSchema, style)
 	}
 	if isContainerNode(d.Type) {
 		return folderIcon(style, expanded)

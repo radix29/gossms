@@ -34,7 +34,8 @@ tuikit/
 │             — menu_bar.go, context_menu.go, menu_item.go (shared types),
 │               menu_cascade.go (submenu chain draw/hit-test/keys for both hosts),
 │               toolbar.go, tool_row.go (a panel's text toolbar: layout,
-│               hit-test, "More ▾"; drawn by the host), treeview.go, listbox.go,
+│               hit-test, "More ▾"; drawn by the host), treeview.go (with an
+│               optional top-border action, SetTitleButton), listbox.go,
 │               tabstrip.go;
 │               DataGrid: datagrid.go (state/source/widths), _draw, _input,
 │               _overlay (right-click menu, "Show Value" popup);
