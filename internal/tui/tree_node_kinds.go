@@ -54,6 +54,17 @@ func hasChildren(t NodeType) bool {
 	return c == kindFolder || c == kindExpandable
 }
 
+// groupedFolderTypes are the folders Group by Schema regroups into one
+// NodeSchemaGroup per schema: the main object families only. The System *
+// folders, Sequences, Types and the rest stay flat (decided scope).
+var groupedFolderTypes = map[NodeType]bool{
+	NodeTables:           true,
+	NodeViews:            true,
+	NodeSynonyms:         true,
+	NodeStoredProcedures: true,
+	NodeFunctions:        true,
+}
+
 // nodeTypeName returns the node type's display name.
 func nodeTypeName(t NodeType) string { return kindOf(t).name }
 
@@ -267,6 +278,7 @@ var nodeKinds = [nodeTypeCount]nodeKind{
 	NodeSearchPropertyList:          {kindLeaf, "Search Property List", '🗒', '≔'},
 	NodeViewColumns:                 {kindFolder, "Columns", 0, 0},
 	NodeViewColumn:                  {kindLeaf, "View Column", '🏷', '⁞'},
+	NodeSchemaGroup:                 {kindFolder, "Schema Group", 0, 0},
 	NodeLoading:                     {kindPlaceholder, "Loading", '⏳', '…'},
 	NodeError:                       {kindPlaceholder, "Error", '⚠', '✗'},
 }

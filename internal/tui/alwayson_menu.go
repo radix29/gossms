@@ -273,7 +273,7 @@ func (a *App) removeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 				title:   "Remove Database from Group",
 				what:    fmt.Sprintf("remove database %q from %q", dbName, agName),
 				done:    fmt.Sprintf("Database %q removed from availability group %q", dbName, agName),
-				refresh: node.parent,
+				refresh: node.listingParent(),
 				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
 					return ag.RemoveDatabase(ctx, dbName)
 				},
@@ -293,7 +293,7 @@ func (a *App) joinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 		title:   "Join to Availability Group",
 		what:    fmt.Sprintf("join database %q to %q", dbName, agName),
 		done:    fmt.Sprintf("Database %q on %s joined availability group %q", dbName, sc.Opts.Server, agName),
-		refresh: node.parent,
+		refresh: node.listingParent(),
 		onLocal: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
 			return ag.JoinDatabase(ctx, dbName)
 		},
@@ -317,7 +317,7 @@ func (a *App) unjoinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 				title:   "Remove Secondary Database from Group",
 				what:    fmt.Sprintf("remove %s's copy of %q from %q", sc.Opts.Server, dbName, agName),
 				done:    fmt.Sprintf("Database %q on %s removed from availability group %q", dbName, sc.Opts.Server, agName),
-				refresh: node.parent,
+				refresh: node.listingParent(),
 				onLocal: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
 					return ag.UnjoinDatabase(ctx, dbName)
 				},
@@ -356,7 +356,7 @@ func (a *App) suspendAGDatabase(sc *db.ServerConn, node *explorerNode) {
 						title:   "Suspend Data Movement",
 						what:    fmt.Sprintf("suspend data movement for %q", dbName),
 						done:    fmt.Sprintf("Data movement suspended for %q on %s", dbName, sc.Opts.Server),
-						refresh: node.parent,
+						refresh: node.listingParent(),
 						onLocal: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
 							return ag.SuspendDatabase(ctx, dbName)
 						},
@@ -380,7 +380,7 @@ func (a *App) resumeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 		title:   "Resume Data Movement",
 		what:    fmt.Sprintf("resume data movement for %q", dbName),
 		done:    fmt.Sprintf("Data movement resumed for %q on %s", dbName, sc.Opts.Server),
-		refresh: node.parent,
+		refresh: node.listingParent(),
 		onLocal: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
 			return ag.ResumeDatabase(ctx, dbName)
 		},
@@ -404,7 +404,7 @@ func (a *App) removeAGReplica(sc *db.ServerConn, node *explorerNode) {
 				title:   "Remove Replica from Group",
 				what:    fmt.Sprintf("remove replica %q from %q", replica, agName),
 				done:    fmt.Sprintf("Replica %q removed from availability group %q", replica, agName),
-				refresh: node.parent,
+				refresh: node.listingParent(),
 				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
 					return ag.RemoveReplica(ctx, replica)
 				},
@@ -436,7 +436,7 @@ func (a *App) failoverToReplica(sc *db.ServerConn, node *explorerNode, force boo
 				a.alertDialog.ShowAlert("Failover", reason)
 				return
 			}
-			a.confirmFailover(sc, node.parent, agName, replica, force)
+			a.confirmFailover(sc, node.listingParent(), agName, replica, force)
 		})
 	})
 }
@@ -547,7 +547,7 @@ func (a *App) removeAGListener(sc *db.ServerConn, node *explorerNode) {
 				title:   "Remove Listener",
 				what:    fmt.Sprintf("remove listener %q from %q", dnsName, agName),
 				done:    fmt.Sprintf("Listener %q removed from availability group %q", dnsName, agName),
-				refresh: node.parent,
+				refresh: node.listingParent(),
 				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
 					return ag.RemoveListener(ctx, dnsName)
 				},
@@ -573,7 +573,7 @@ func (a *App) deleteAvailabilityGroup(sc *db.ServerConn, node *explorerNode) {
 				title:   "Delete Availability Group",
 				what:    fmt.Sprintf("delete availability group %q", agName),
 				done:    fmt.Sprintf("Availability group %q deleted", agName),
-				refresh: node.parent,
+				refresh: node.listingParent(),
 				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
 					return ag.Drop(ctx)
 				},

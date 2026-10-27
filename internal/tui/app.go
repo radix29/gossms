@@ -92,6 +92,12 @@ type App struct {
 	// new ones by NewQueryPanel. Per session, like the two toggles above.
 	wordWrap bool
 
+	// groupBySchema is View > Group by Schema, off at startup and never saved:
+	// Object Explorer lists the main object folders one schema node per schema
+	// (explorer_group_schema.go). Global to every server in the tree, as in SSMS.
+	// Flipped by toggleGroupBySchema (View menu, Alt+G).
+	groupBySchema bool
+
 	connectDialog               *ConnectDialog
 	findDialog                  *FindReplaceDialog
 	helpDialog                  *HelpDialog

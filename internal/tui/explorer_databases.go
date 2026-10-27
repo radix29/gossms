@@ -816,6 +816,14 @@ func schemaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, re
 	})
 }
 
+// schemaGroupMenuItems is a Group by Schema bucket's menu: New Query and
+// Refresh only, as Security > Schemas owns the schema itself. Refresh reloads
+// the folder the group was built from: Reload redirects a group there, as the
+// group has no loader and reloading it would drop its children for good.
+func schemaGroupMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{newQuery, {Divider: true}, refresh}
+}
+
 func securityPolicyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	toggleLabel := "Disable"
 	if !node.data.IsEnabled {

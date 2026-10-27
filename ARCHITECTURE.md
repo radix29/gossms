@@ -221,6 +221,7 @@ gossms/
 │       ├── explorer_external.go  # loaders: External Resources — External Data Sources, File Formats, Libraries (Libraries omitted before 2017)
 │       ├── explorer_service_broker.go # loaders: a database's Service Broker folder — Message Types, Contracts, Queues, Services, Routes, Remote Service Bindings, Broker Priorities (listed whether or not the broker is enabled)
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
+│       ├── explorer_group_schema.go # Group by Schema: a main object folder's loaded children regrouped under one NodeSchemaGroup per schema, locally (no query), losslessly on toggle (explorerNode.flat)
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
 │       ├── explorer_index_actions.go # an index node's Rebuild / Reorganize / Disable: state-dependent menu, gate on the parent, confirmation saying what a clustered index takes offline
 │       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: the per-NodeType drop/rename table and the gosmo adapters behind it
@@ -326,6 +327,7 @@ gossms/
 │       ├── detail_browser_databases.go  # Databases folder: name/state/recovery, then per-database size backfill
 │       ├── detail_browser_logins.go     # Logins folder
 │       ├── detail_browser_tables.go     # Tables folder: name, then per-table row count/space backfill
+│       ├── detail_browser_group_schema.go # Group by Schema in Details: a grouped folder's schemas with object counts, a schema group's objects (the folder's query narrowed)
 │       ├── detail_browser_storage.go    # Storage folders: partition functions and schemes
 │       ├── detail_browser_security.go   # server Security families that are not logins: Credentials, Audits, Server Audit Specifications
 │       ├── detail_browser_programmability.go # Programmability families: the Types folders and members, Assemblies, Rules, Defaults, Plan Guides

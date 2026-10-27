@@ -271,7 +271,7 @@ func (a *App) setEventSessionState(sc *db.ServerConn, node *explorerNode, start 
 		}, func(err error, cancelled bool) {
 			// The folder, not the node: the icon is drawn from IsEnabled, which
 			// the folder's listing sets.
-			reload := func() { a.explorer.ReloadFolders(sc, sameNodeAs(node.parent)) }
+			reload := func() { a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent())) }
 			switch {
 			case cancelled:
 				a.setStatus(fmt.Sprintf("%s of %q cancelled", verb, name))

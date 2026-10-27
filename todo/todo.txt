@@ -1,4 +1,3 @@
-group by schema
 
 add command line parameters for agentic use.
 all functionality of the application should be accessible as command line parameters with formatted text output

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 func newTestTreeView() *TreeView {
@@ -668,4 +669,130 @@ func TestTreeViewDrawsItsTitle(t *testing.T) {
 	if row := topRow(tv); !strings.Contains(row, " Registered Servers ") {
 		t.Errorf("border = %q, want the title in it", row)
 	}
+}
+
+// treeTopRow renders tv and returns its top border row and the style of each
+// cell in it.
+func treeTopRow(t *testing.T, tv *TreeView) (string, []tcell.Style) {
+	t.Helper()
+	s := nullTestScreen(t)
+	tv.Draw(s)
+	var b strings.Builder
+	var styles []tcell.Style
+	for x := range tv.rect.W {
+		str, st, _ := s.Get(x, 0)
+		b.WriteString(str)
+		styles = append(styles, st)
+	}
+	return b.String(), styles
+}
+
+// The title button is "[label]" just inside the top-right corner; its label
+// wears the selection style only while on reports true, the brackets the
+// border's.
+func TestTreeViewTitleButtonDrawsRightAligned(t *testing.T) {
+	tv := newTestTreeView()
+	tv.SetTitle("Object Explorer")
+	on := false
+	tv.SetTitleButton("S", func() bool { return on }, nil)
+
+	row, styles := treeTopRow(t, tv)
+	if !strings.HasSuffix(row, "─[S]┐") || !strings.Contains(row, " Object Explorer ") {
+		t.Fatalf("border = %q, want the title and \"[S]\" before the corner", row)
+	}
+	sx := tv.rect.W - 3
+	if styles[sx] != theme.StylePanel() {
+		t.Errorf("OFF label style = %v, want the panel style", styles[sx])
+	}
+	if styles[sx-1] != theme.StyleBorder() || styles[sx+1] != theme.StyleBorder() {
+		t.Errorf("bracket styles = %v / %v, want the border style", styles[sx-1], styles[sx+1])
+	}
+	on = true
+	if _, styles = treeTopRow(t, tv); styles[sx] != theme.StyleSelected() {
+		t.Errorf("ON label style = %v, want the selection style", styles[sx])
+	}
+
+	tv.SetTitleButton("", nil, nil)
+	if row, _ = treeTopRow(t, tv); strings.Contains(row, "[S]") {
+		t.Errorf("border = %q after removing the button", row)
+	}
+}
+
+// The button hides rather than truncate the title: it shows only with at
+// least one border cell between the centred title and itself, and a click
+// where a hidden button would be does nothing.
+func TestTreeViewTitleButtonHidesWhenTooNarrow(t *testing.T) {
+	fired := 0
+	for _, tc := range []struct {
+		w    int
+		show bool
+	}{
+		// " Object Explorer " is 17 wide; centred in 26 it spans columns 4–20,
+		// leaving column 21 as border before "[S]" at 22–24.
+		{26, true},
+		{25, false},
+		{20, false},
+	} {
+		tv := NewTreeView()
+		tv.SetBounds(0, 0, tc.w, 10)
+		tv.SetTitle("Object Explorer")
+		tv.SetTitleButton("S", nil, func() { fired++ })
+		row, _ := treeTopRow(t, tv)
+		if got := strings.Contains(row, "[S]"); got != tc.show {
+			t.Errorf("width %d: border = %q, button shown = %v, want %v", tc.w, row, got, tc.show)
+		}
+		if !strings.Contains(row, " Object Explorer ") {
+			t.Errorf("width %d: border = %q, title truncated", tc.w, row)
+		}
+		if !tc.show {
+			clickRow(tv, tc.w-3, 0)
+			if fired != 0 {
+				t.Errorf("width %d: a click where the hidden button would be fired it", tc.w)
+			}
+		}
+	}
+}
+
+// A click on the button runs its action once and nothing else: no select,
+// expand or OnSelect, and no node under it for a host to arm a drag from.
+// Resends of the held press don't refire; the next press does.
+func TestTreeViewTitleButtonClickRunsActionOnly(t *testing.T) {
+	tv := newTestTreeViewExpandable()
+	tv.SetTitle("Object Explorer")
+	fired := 0
+	tv.SetTitleButton("S", nil, func() { fired++ })
+	tv.OnSelect = func(TreeNodeID) { t.Error("a title-button click fired OnSelect") }
+	tv.OnExpand = func(TreeNodeID) { t.Error("a title-button click expanded a node") }
+
+	bx := tv.rect.W - 3
+	if _, ok := tv.NodeIDAt(bx, 0); ok {
+		t.Error("NodeIDAt reports a node under the title button")
+	}
+	press := tcell.NewEventMouse(bx, 0, tcell.Button1, tcell.ModNone)
+	if !tv.HandleMouse(press) {
+		t.Error("HandleMouse didn't claim a press on the title button")
+	}
+	tv.HandleMouse(press)
+	tv.HandleMouse(tcell.NewEventMouse(bx-1, 0, tcell.Button1, tcell.ModNone))
+	if fired != 1 {
+		t.Fatalf("action ran %d times over one held press, want 1", fired)
+	}
+	tv.HandleMouse(tcell.NewEventMouse(bx, 0, tcell.ButtonNone, tcell.ModNone))
+	clickRow(tv, bx, 0)
+	if fired != 2 {
+		t.Errorf("action ran %d times after a second click, want 2", fired)
+	}
+	if tv.nodes[0].Expanded || tv.sel != 0 {
+		t.Errorf("tree changed: expanded = %v, sel = %d", tv.nodes[0].Expanded, tv.sel)
+	}
+}
+
+// A hold that began on a row and drifts onto the button (the start of a drag
+// toward the editor) is not a click on it.
+func TestTreeViewHoldDriftingOntoTitleButtonDoesNotFire(t *testing.T) {
+	tv := newTestTreeView()
+	tv.SetTitle("Object Explorer")
+	tv.SetTitleButton("S", nil, func() { t.Error("a hold from a row fired the title button") })
+	tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.Button1, tcell.ModNone))
+	tv.HandleMouse(tcell.NewEventMouse(tv.rect.W-3, 0, tcell.Button1, tcell.ModNone))
 }

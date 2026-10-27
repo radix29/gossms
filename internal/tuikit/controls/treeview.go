@@ -62,6 +62,10 @@ type TreeView struct {
 	// title is drawn in the top border; empty draws a plain box.
 	title string
 
+	// titleButton is the action pinned to the right end of the top border (see
+	// SetTitleButton); an empty label draws none.
+	titleButton titleButton
+
 	// lastClickIdx/lastClickAt time consecutive presses on one row to recognise a
 	// double-click (the mouse spelling of Enter's default action). A zero
 	// lastClickAt means "no press to pair with" and is how a completed
@@ -92,6 +96,13 @@ type TreeView struct {
 	OnRightClick func(nodeID TreeNodeID, x, y int)
 }
 
+// titleButton is a TreeView's top-border action: "[label]", run by a click.
+type titleButton struct {
+	label  string
+	on     func() bool
+	action func()
+}
+
 // NewTreeView creates a TreeView.
 func NewTreeView() *TreeView {
 	return new(TreeView{})
@@ -99,6 +110,40 @@ func NewTreeView() *TreeView {
 
 // SetTitle sets the text drawn in the tree's top border.
 func (tv *TreeView) SetTitle(title string) { tv.title = title }
+
+// SetTitleButton pins a clickable "[label]" to the right end of the top
+// border, just inside the corner. A click on it runs action; while on reports
+// true (nil: never) the label draws in the selection style, so a toggle shows
+// its state. An empty label removes it. The button shows only while the
+// centred title ends at least one border cell before it: on a narrower tree it
+// hides rather than truncate the title.
+func (tv *TreeView) SetTitleButton(label string, on func() bool, action func()) {
+	tv.titleButton = titleButton{label: label, on: on, action: action}
+}
+
+// titleButtonRect returns where the title button is drawn, and whether it
+// shows at all at the current bounds and title (see SetTitleButton). Draw and
+// HandleMouse both go through it, so what is drawn is exactly what is
+// clickable.
+func (tv *TreeView) titleButtonRect() (core.Rect, bool) {
+	b := tv.titleButton
+	if b.label == "" || tv.rect.H < 1 {
+		return core.Rect{}, false
+	}
+	w := core.DisplayWidth(b.label) + 2
+	x := tv.rect.Right() - 1 - w
+	// The first column past the title, laid out as DrawBoxTitle centres it; with
+	// no title, the one past the top-left corner.
+	titleEnd := tv.rect.X + 1
+	if tv.title != "" {
+		tw := core.DisplayWidth(" " + tv.title + " ")
+		titleEnd = max(tv.rect.X+(tv.rect.W-tw)/2, tv.rect.X+1) + tw
+	}
+	if x <= titleEnd {
+		return core.Rect{}, false
+	}
+	return core.Rect{X: x, Y: tv.rect.Y, W: w, H: 1}, true
+}
 
 // SetBounds positions the tree view.
 func (tv *TreeView) SetBounds(x, y, w, h int) {
@@ -196,6 +241,15 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 	titleStyle := tcell.StyleDefault.Background(p.PanelBg).Foreground(p.TextHighlight).Bold(true)
 	core.FillRect(s, tv.rect, ' ', theme.StylePanel())
 	core.DrawBoxTitle(s, tv.rect, tv.title, borderStyle, titleStyle)
+	if btn, ok := tv.titleButtonRect(); ok {
+		labelStyle := theme.StylePanel()
+		if on := tv.titleButton.on; on != nil && on() {
+			labelStyle = theme.StyleSelected()
+		}
+		core.PutRune(s, btn.X, btn.Y, '[', borderStyle)
+		core.DrawText(s, btn.X+1, btn.Y, labelStyle, tv.titleButton.label)
+		core.PutRune(s, btn.Right()-1, btn.Y, ']', borderStyle)
+	}
 
 	inner := tv.rect.Inner(1)
 
@@ -352,6 +406,21 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if core.HandleScrollbarDragH(ev, inner.X, tv.rect.Bottom()-1, inner.W, tv.contentW, &tv.sbDraggingX, &tv.scrollX) {
+		return true
+	}
+
+	// The title button sits on the top border, outside every row, so a press there
+	// never selects, expands or arms a drag (hosts arm from NodeIDAt, which
+	// rejects the border). Checked after the scrollbars: a thumb drag drifting up
+	// onto it is still that drag. A fresh press runs the action once; resends of
+	// the same hold, or a hold that began on a row and drifted here, don't.
+	if btn, ok := tv.titleButtonRect(); ok && btn.Contains(mx, my) && ev.Buttons() == tcell.Button1 {
+		if !tv.mouseDragging {
+			tv.mouseDragging = true
+			if tv.titleButton.action != nil {
+				tv.titleButton.action()
+			}
+		}
 		return true
 	}
 

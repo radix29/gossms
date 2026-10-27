@@ -199,6 +199,7 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeUser:              userMenuItems,
 	NodeDatabaseRole:      databaseRoleMenuItems,
 	NodeSchema:            schemaMenuItems,
+	NodeSchemaGroup:       schemaGroupMenuItems,
 	NodeDatabaseTrigger:   databaseTriggerMenuItems,
 	NodeSecurityPolicy:    securityPolicyMenuItems,
 

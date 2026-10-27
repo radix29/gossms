@@ -97,6 +97,8 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Prev Panel", Shortcut: "Ctrl+Shift+Left", Action: func() { a.prevPanel() },
 				Enabled: func() bool { return a.panels.Count() > 1 }},
 			{Divider: true},
+			{Label: groupBySchemaMenuLabel(a.groupBySchema), Shortcut: "Alt+G", Action: func() { a.toggleGroupBySchema() }},
+			{Divider: true},
 			{Label: "Refresh", Shortcut: "F5", Action: func() { a.refreshSelected() },
 				Enabled: func() bool { return a.explorer.Selected() != nil }},
 		}},
@@ -205,6 +207,15 @@ func wordWrapMenuLabel(on bool) string {
 		return "Word Wrap (ON)"
 	}
 	return "Word Wrap (OFF)"
+}
+
+// groupBySchemaMenuLabel folds View > Group by Schema's state into its label,
+// for the same reason as actualExecutionPlanMenuLabel.
+func groupBySchemaMenuLabel(on bool) string {
+	if on {
+		return "Group by Schema (ON)"
+	}
+	return "Group by Schema (OFF)"
 }
 
 // editorAction runs fn against the active query panel's editor, if any. For

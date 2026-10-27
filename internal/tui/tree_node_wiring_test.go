@@ -170,8 +170,11 @@ func TestEveryNodeTypeIsWired(t *testing.T) {
 		}
 		switch k.class {
 		case kindFolder:
-			if !hasLoader {
-				t.Errorf("%s is a folder with no childLoaders entry — it expands to nothing", name(nt))
+			// NodeSchemaGroup's children come from regrouping its folder's, never
+			// from a loader.
+			if hasLoader == (nt == NodeSchemaGroup) {
+				t.Errorf("%s: childLoaders entry = %v — a folder needs one or it expands to "+
+					"nothing; a schema group must have none", name(nt), hasLoader)
 			}
 			if k.emoji != 0 || k.symbol != 0 {
 				t.Errorf("%s is a folder with object glyphs — nodeIcon never draws them", name(nt))

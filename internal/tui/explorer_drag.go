@@ -40,8 +40,12 @@ func (a *App) dragPastThreshold(mx, my int) bool {
 // isDraggableNode reports whether t is a concrete SQL Server object that can
 // be dragged from Object Explorer into a query editor — every node except
 // grouping ("folder") nodes, the server root (no name of its own to drop),
-// and the synthetic Loading/Error placeholder rows.
+// and the synthetic Loading/Error placeholder rows. A Group by Schema node is
+// the one folder that drags: it stands for its schema, which has a name.
 func isDraggableNode(t NodeType) bool {
+	if t == NodeSchemaGroup {
+		return true
+	}
 	if isContainerNode(t) {
 		return false
 	}
@@ -78,6 +82,9 @@ func explorerDragText(n *explorerNode) string {
 		// route, whose name is not a schema object's at all.
 		NodeBrokerQueue:
 		return gosmo.QualifiedName(n.data.Schema, n.data.Name)
+	case NodeSchemaGroup:
+		// A group's name is its schema; data.Name is empty.
+		return gosmo.QualifiedName("", n.data.Schema)
 	default:
 		return gosmo.QualifiedName("", n.data.Name)
 	}

@@ -143,6 +143,97 @@ func TestExplorerSelectionFollowsRecreatedNode(t *testing.T) {
 	}
 }
 
+// A rename changes the object's key, so survivor can't recognise the node the
+// folder reload re-creates for it, and the selection fell to the folder: the
+// next Delete or Properties went to Logins. Follow, set by the rename, forwards
+// it to the renamed node.
+func TestExplorerSelectionFollowsRenamedObject(t *testing.T) {
+	renamed := func(st *selectionTree) []*explorerNode {
+		return []*explorerNode{testLogin(st.sc, "alice"), testLogin(st.sc, "carol"), testLogin(st.sc, "robert")}
+	}
+	check := func(t *testing.T, st *selectionTree) {
+		t.Helper()
+		got := st.a.explorer.Selected()
+		if got == nil || got.data.Name != "robert" || got.retired {
+			t.Fatalf("Selected() after the rename's reload = %v, want the renamed robert", got)
+		}
+		if n := len(st.selects); n == 0 || st.selects[n-1] != got {
+			t.Errorf("OnSelect reported %v, want robert last", st.selects)
+		}
+		if st.a.explorer.follow != nil {
+			t.Error("the follow hint outlived the reload it was for")
+		}
+	}
+
+	t.Run("reload lands", func(t *testing.T) {
+		st := newSelectionTree(t)
+		st.selectNode(t, st.bob)
+		st.a.explorer.Follow(st.bob, renamedKey(st.bob.data, "robert"))
+		st.reload(st.logins, renamed(st)...)
+		check(t, st)
+	})
+	t.Run("a rebuild while Loading... parks it on the folder", func(t *testing.T) {
+		st := newSelectionTree(t)
+		st.selectNode(t, st.bob)
+		st.a.explorer.Follow(st.bob, renamedKey(st.bob.data, "robert"))
+		st.logins.data.Loaded = false
+		st.a.explorer.dropChildren(st.logins)
+		st.a.explorer.rebuild()
+		if got := st.a.explorer.Selected(); got != st.logins {
+			t.Fatalf("setup: Selected() while loading = %v, want Logins", got)
+		}
+		st.a.explorer.SetChildren(st.logins, renamed(st))
+		check(t, st)
+	})
+	t.Run("the user moved on first", func(t *testing.T) {
+		st := newSelectionTree(t)
+		st.selectNode(t, st.bob)
+		st.a.explorer.Follow(st.bob, renamedKey(st.bob.data, "robert"))
+		st.selectNode(t, st.alice)
+		st.reload(st.logins, renamed(st)...)
+		if got := st.a.explorer.Selected(); got == nil || got.data.Name != "alice" {
+			t.Errorf("Selected() = %v, want the re-created alice the user picked", got)
+		}
+	})
+	t.Run("the user left the parked folder and came back", func(t *testing.T) {
+		st := newSelectionTree(t)
+		st.selectNode(t, st.bob)
+		st.a.explorer.Follow(st.bob, renamedKey(st.bob.data, "robert"))
+		st.logins.data.Loaded = false
+		st.a.explorer.dropChildren(st.logins)
+		st.a.explorer.rebuild() // parks on Logins
+		st.selectNode(t, st.dbs)
+		st.selectNode(t, st.logins)
+		st.a.explorer.SetChildren(st.logins, renamed(st))
+		if got := st.a.explorer.Selected(); got != st.logins {
+			t.Errorf("Selected() = %v, want Logins, which the user picked", got)
+		}
+	})
+	t.Run("selection elsewhere: the hint still ends with the reload", func(t *testing.T) {
+		st := newSelectionTree(t)
+		st.selectNode(t, st.dbs)
+		st.a.explorer.Follow(st.bob, renamedKey(st.bob.data, "robert"))
+		st.reload(st.logins, renamed(st)...)
+		if got := st.a.explorer.Selected(); got != st.dbs {
+			t.Errorf("Selected() = %v, want Databases untouched", got)
+		}
+		if st.a.explorer.follow != nil {
+			t.Error("the follow hint outlived its folder's reload; a later Refresh would jump to robert")
+		}
+	})
+}
+
+func TestRenamedKey(t *testing.T) {
+	d := nodeData{Type: NodeDatabase, DBName: "old", Name: "old"}
+	if k := renamedKey(d, "new"); k.DBName != "new" || k.Name != "new" {
+		t.Errorf("database: %+v, want DBName and Name renamed", k)
+	}
+	tb := nodeData{Type: NodeTable, DBName: "db1", Schema: "dbo", Name: "t"}
+	if k := renamedKey(tb, "u"); k.DBName != "db1" || k.Schema != "dbo" || k.Name != "u" {
+		t.Errorf("table: %+v, want only Name renamed", k)
+	}
+}
+
 // Schedule names are not unique. Matched by name, a reload moved the
 // selection from the second of two schedules named Daily to the first, and
 // Delete, Enable/Disable and Properties then acted on the one not picked.

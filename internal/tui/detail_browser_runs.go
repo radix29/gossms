@@ -99,7 +99,13 @@ func (r *detailRuns) forget(node *explorerNode) { delete(r.pending, node) }
 // loader derives each read's timeout from it, never from sc.Server.Context(),
 // or cancelling it would stop nothing.
 func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+	if app.groupBySchema && groupedFolderTypes[node.data.Type] {
+		db.loadGroupedFolderDetails(fetchCtx, app, sc, node, seq)
+		return
+	}
 	switch node.data.Type {
+	case NodeSchemaGroup:
+		db.loadSchemaGroupDetails(fetchCtx, app, sc, node, seq)
 	case NodeServer:
 		db.loadServerDetails(fetchCtx, app, sc, node, seq)
 	case NodeDatabases:
@@ -109,7 +115,7 @@ func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.Se
 	case NodeDatabase:
 		db.loadDatabaseDetails(fetchCtx, app, sc, node, seq)
 	case NodeTables, NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables:
-		db.loadTablesFolderDetails(fetchCtx, app, sc, node, seq)
+		db.loadTablesFolderDetails(fetchCtx, app, sc, node, node.data, "", seq)
 	default:
 		// The fetch reads a snapshot, never the live node (see explorerNode.snapshot).
 		// node stays as the identity postFinal and panicRepair key off, both on the UI

@@ -144,11 +144,11 @@ func (a *App) maintainIndex(sc *db.ServerConn, node *explorerNode, verb indexVer
 				// Re-read rather than assumed: the cancel may have arrived
 				// after the statement finished.
 				a.setStatus(fmt.Sprintf("%s index %s cancelled", doing, display))
-				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Failed: %s index %s: %v", doing, display, err))
 			default:
-				a.explorer.ReloadFolders(sc, sameNodeAs(node.parent))
+				a.explorer.ReloadFolders(sc, sameNodeAs(node.listingParent()))
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("Index %s on %s %s", display, gosmo.QualifiedName(d.Schema, d.TableName), done))
 			}
