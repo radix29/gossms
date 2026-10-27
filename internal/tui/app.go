@@ -50,14 +50,14 @@ type App struct {
 	// elsewhere and drifted across the status row from a fresh press there.
 	mouseButtonDown bool
 
-	// gestureOwner is the region that claimed the Button1 press currently held,
-	// ownerNone between gestures — the App-level counterpart of
+	// gestureOwner is the region that claimed the Button1 press currently held —
+	// the App-level counterpart of
 	// propsheet.PropertySheet.dragZone and QueryPanel.dragZone. Without it a
 	// drag that wanders out of its region is handed to whatever it wanders
 	// over: leftward out of a query editor arms an Object Explorer drop that
 	// pastes a node's SQL on release, and crossing the splitter resizes the
-	// panes. Cleared on release.
-	gestureOwner appGestureOwner
+	// panes. Released on ButtonNone.
+	gestureOwner core.Gesture[appGestureOwner]
 
 	// gestureOverlay is the modal layer as it stood when the current gesture
 	// began, so handleMouse can tell a dialog, context menu or menu dropdown

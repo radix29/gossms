@@ -181,13 +181,12 @@ type QueryPanel struct {
 	// steals Ctrl+Up/Down from the editor.
 	resultsFocused bool
 
-	// dragZone is the sub-region that claimed the Button1 press being held, or
-	// qZoneNone between gestures. tcell resends Button1 on every motion while the
+	// dragZone is the sub-region that claimed the Button1 press being held. tcell resends Button1 on every motion while the
 	// button is down, and the results tab bar sits a row below the splitter, itself
 	// directly below the editor, so a text-selection drag heading down out of the
 	// editor would grab the splitter and then flip the active tab on every motion.
-	// Mirrors propsheet.PropertySheet.dragZone; cleared on the release.
-	dragZone queryDragZone
+	// Mirrors propsheet.PropertySheet.dragZone; released on ButtonNone.
+	dragZone core.Gesture[queryDragZone]
 
 	// completionBuf is the flattened editor text sqlCompletionCandidates scans, kept
 	// across keystrokes so a large script isn't re-copied on each one (see
@@ -228,8 +227,7 @@ type QueryPanel struct {
 type queryDragZone int
 
 const (
-	qZoneNone queryDragZone = iota // no gesture in progress
-	qZoneSplitter
+	qZoneSplitter queryDragZone = iota
 	qZoneTabs
 	qZoneEditor
 	qZoneResults

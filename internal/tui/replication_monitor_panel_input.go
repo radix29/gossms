@@ -74,13 +74,11 @@ func (p *ReplicationMonitorPanel) HandleMouse(ev *tcell.EventMouse) bool {
 				handled = true
 			}
 		}
-		p.dragZone, p.dragGrid = rmZoneNone, nil
+		p.dragZone.Release()
+		p.dragGrid = nil
 		return handled
 	}
-	if p.dragZone != rmZoneNone {
-		if ev.Buttons() == tcell.Button1 {
-			return p.routeDrag(ev)
-		}
+	if p.dragZone.Route(ev, p.routeDrag) {
 		return true
 	}
 	if !p.rect.Contains(mx, my) {
@@ -89,7 +87,7 @@ func (p *ReplicationMonitorPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	for i, sp := range p.splits {
 		if sp.HandleMouse(ev) {
 			p.layoutChildren()
-			p.armDrag(ev, rmZoneSplit)
+			p.dragZone.Arm(ev, rmZoneSplit)
 			p.dragSplit = i
 			return true
 		}
@@ -100,19 +98,19 @@ func (p *ReplicationMonitorPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		} else if i := p.tools.CellAt(mx, my); i >= 0 {
 			p.runTool(i)
 		}
-		p.armDrag(ev, rmZoneToolbar)
+		p.dragZone.Arm(ev, rmZoneToolbar)
 		return true
 	}
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {
 		for i, g := range p.grids() {
 			if g.Bounds().Contains(mx, my) && g.HandleMouse(ev) {
-				p.armDrag(ev, rmZoneGrid)
+				p.dragZone.Arm(ev, rmZoneGrid)
 				p.dragGrid = g
 				p.setFocus(rmFocus(i))
 				return true
 			}
 		}
-		p.armDrag(ev, rmZoneUnclaimed)
+		p.dragZone.Arm(ev, rmZoneUnclaimed)
 		return false
 	}
 	// The wheel: the grid under the pointer.
@@ -124,16 +122,10 @@ func (p *ReplicationMonitorPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	return false
 }
 
-func (p *ReplicationMonitorPanel) armDrag(ev *tcell.EventMouse, zone rmDragZone) {
-	if ev.Buttons() == tcell.Button1 {
-		p.dragZone = zone
-	}
-}
-
 // routeDrag delivers a held-Button1 event to whatever claimed the gesture;
 // the toolbar and an unclaimed press swallow it.
-func (p *ReplicationMonitorPanel) routeDrag(ev *tcell.EventMouse) bool {
-	switch p.dragZone {
+func (p *ReplicationMonitorPanel) routeDrag(ev *tcell.EventMouse, zone rmDragZone) {
+	switch zone {
 	case rmZoneSplit:
 		if p.splits[p.dragSplit].HandleMouse(ev) {
 			p.layoutChildren()
@@ -143,7 +135,6 @@ func (p *ReplicationMonitorPanel) routeDrag(ev *tcell.EventMouse) bool {
 			p.dragGrid.HandleMouse(ev)
 		}
 	}
-	return true
 }
 
 // HasSelection and the rest of clipboardTarget forward to the focused grid.

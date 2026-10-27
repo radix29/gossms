@@ -60,7 +60,7 @@ func TestSheetSwallowsWheelDuringADrag(t *testing.T) {
 	// Press inside the form to arm the gesture.
 	inner := f.rect
 	p.HandleMouse(tcell.NewEventMouse(inner.X+2, inner.Y+2, tcell.Button1, tcell.ModNone))
-	if p.dragZone == zoneNone {
+	if _, held := p.dragZone.Owner(); !held {
 		t.Fatal("press inside the form did not arm dragZone")
 	}
 	p.setZone(zoneButtons) // whatever the drag is, the zone must not move under it
@@ -78,7 +78,7 @@ func TestSheetSwallowsWheelDuringADrag(t *testing.T) {
 	if p.zone != zoneButtons {
 		t.Errorf("focus zone moved to %v during a drag, want it left at zoneButtons", p.zone)
 	}
-	if p.dragZone == zoneNone {
+	if _, held := p.dragZone.Owner(); !held {
 		t.Error("the wheel tick cleared dragZone; only a release may do that")
 	}
 }
@@ -92,7 +92,7 @@ func TestSheetWheelWorksAgainAfterTheRelease(t *testing.T) {
 
 	p.HandleMouse(tcell.NewEventMouse(inner.X+2, inner.Y+2, tcell.Button1, tcell.ModNone))
 	p.HandleMouse(tcell.NewEventMouse(inner.X+2, inner.Y+2, tcell.ButtonNone, tcell.ModNone))
-	if p.dragZone != zoneNone {
+	if _, held := p.dragZone.Owner(); held {
 		t.Fatal("release did not clear dragZone")
 	}
 

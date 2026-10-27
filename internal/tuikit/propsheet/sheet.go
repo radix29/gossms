@@ -46,10 +46,6 @@ const (
 	zoneButtons
 )
 
-// zoneNone is not a focusable zone: PropertySheet.dragZone's "no gesture in
-// progress" value.
-const zoneNone focusZone = -1
-
 var sheetButtonLabels = []string{"OK", "Cancel", "Apply", "Script Changes"}
 
 // readOnlyButtonLabels is the row a page that cannot be written shows. OK and
@@ -101,13 +97,12 @@ type PropertySheet struct {
 	zone     focusZone
 	btnFocus int
 
-	// dragZone is the zone that claimed the Button1 press being held, or zoneNone
-	// between gestures. tcell resends Button1 on every motion while held, so
+	// dragZone is the zone that claimed the Button1 press being held. tcell resends Button1 on every motion while held, so
 	// without this a drag armed in the form (its scrollbar thumb, a GridRow's
 	// selection) that wanders onto the button row would activate OK/Cancel/Apply
 	// mid-gesture. ModalDialog's mouseDragging can't stop that: a press on a button
-	// arms it. Cleared on the ButtonNone release.
-	dragZone focusZone
+	// arms it. Released on ButtonNone.
+	dragZone core.Gesture[focusZone]
 
 	// scriptOnly swaps the button row for scriptOnlyButtonLabels on every page;
 	// see SetScriptOnly.
@@ -152,7 +147,7 @@ type PropertySheet struct {
 // NewPropertySheet creates an empty PropertySheet. Call SetPages, SetHeader and
 // wire the On* callbacks before the first Show.
 func NewPropertySheet(s tcell.Screen, title string) *PropertySheet {
-	p := &PropertySheet{screen: s, current: -1, hints: defaultHints, dragZone: zoneNone}
+	p := &PropertySheet{screen: s, current: -1, hints: defaultHints}
 	p.InitModal(s, title, 90, 28)
 	p.pageList = controls.NewListBox()
 	p.pageList.OnSelect = func(i int) { p.SelectPage(i) }
@@ -196,7 +191,7 @@ func (p *PropertySheet) Show() {
 	p.message = ""
 	// A button action that hides the sheet (OK) leaves the gesture armed: the
 	// release lands while invisible and HandleMouse returns early.
-	p.dragZone = zoneNone
+	p.dragZone.Release()
 	p.pageList.Focus(true)
 	p.ModalDialog.Show()
 	if len(p.pages) > 0 {

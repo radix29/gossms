@@ -224,9 +224,11 @@ behind the mouse and async rules.
 **Read `ARCHITECTURE.md` § The mouseDragging idiom before touching any
 `HandleMouse`.** Invariants:
 
-1. A gesture belongs to what claimed its first press until release —
-   `App.gestureOwner`, `QueryPanel.dragZone`, `PropertySheet.dragZone`, each
-   `armGesture`/`armDrag` + `routeGesture`/`routeDrag`.
+1. A gesture belongs to what claimed its first press until release — a
+   `core.Gesture[Z]` per router (`App.gestureOwner`, each panel's and
+   `PropertySheet`'s `dragZone`): `Release` on `ButtonNone`, `Route` before
+   hit-testing, `Arm` at every claiming branch. A new router holds one, never
+   a hand-rolled zone field.
 2. `App` snapshots the modal layer (`gestureOverlay`/`overlaySnapshot`) and
    drops held events across a change.
 3. A widget acting on `Button1` has a `mouseDragging` latch, set on press,

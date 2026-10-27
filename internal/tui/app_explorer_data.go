@@ -180,9 +180,9 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 	items := a.nodeMenuItems(node)
 	scripts := a.scriptMenuItems(node)
 	if node.data.Type == NodeDatabase {
-		// Joins the cascade's group. It opens a script and runs nothing, so
-		// it is not gated: what the login cannot see, the script's output
-		// simply leaves out.
+		// Joins the cascade's group. It reads the catalog, opens a script and
+		// runs nothing, so it is not gated: what the login cannot see, the
+		// script simply leaves out.
 		sc := resolveConn(node)
 		scripts = append(scripts, controls.MenuItem{Label: "Script Database Security", Action: func() {
 			a.scriptDatabaseSecurity(sc, node.data.DBName)

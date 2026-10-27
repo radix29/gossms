@@ -137,7 +137,7 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 			f.HandleMouse(ev)
 		}
 		p.pageList.HandleMouse(ev)
-		p.dragZone = zoneNone
+		p.dragZone.Release()
 	}
 	// Everything from the press that armed dragZone through its release belongs to
 	// the zone that claimed it, wherever the pointer drifted, including outside the
@@ -149,10 +149,7 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	// App.handleMouse's gestureOwner (internal/tui/app_events.go); App can't cover
 	// this one since it dispatches the top dialog before its gesture check and
 	// never arms a gesture for a dialog click.
-	if p.dragZone != zoneNone {
-		if ev.Buttons() == tcell.Button1 {
-			p.routeDrag(ev)
-		}
+	if p.dragZone.Route(ev, p.routeDrag) {
 		return true
 	}
 	if p.ConsumeOutsideClick(ev) {
@@ -161,12 +158,12 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	if p.formLocked() {
 		// The button row and page list only; see HandleKey.
 		if i := p.ButtonClicked(ev, p.buttonLabels()); i >= 0 {
-			p.armDrag(ev, zoneButtons)
+			p.dragZone.Arm(ev, zoneButtons)
 			p.setZone(zoneButtons)
 			p.btnFocus = i
 			p.activateButton(i)
 		} else if p.pageList.HandleMouse(ev) {
-			p.armDrag(ev, zonePages)
+			p.dragZone.Arm(ev, zonePages)
 			p.setZone(zonePages)
 		}
 		return true
@@ -177,25 +174,25 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	// as DataGrid.OverlayActive()/QueryPanel do one level down.
 	if f := p.PageForm(p.current); f != nil && f.OverlayActive() {
 		if f.HandleMouse(ev) {
-			p.armDrag(ev, zoneForm)
+			p.dragZone.Arm(ev, zoneForm)
 			p.setZone(zoneForm)
 			return true
 		}
 	}
 	if i := p.ButtonClicked(ev, p.buttonLabels()); i >= 0 {
-		p.armDrag(ev, zoneButtons)
+		p.dragZone.Arm(ev, zoneButtons)
 		p.setZone(zoneButtons)
 		p.btnFocus = i
 		p.activateButton(i)
 		return true
 	}
 	if p.pageList.HandleMouse(ev) {
-		p.armDrag(ev, zonePages)
+		p.dragZone.Arm(ev, zonePages)
 		p.setZone(zonePages)
 		return true
 	}
 	if f := p.PageForm(p.current); f != nil && f.HandleMouse(ev) {
-		p.armDrag(ev, zoneForm)
+		p.dragZone.Arm(ev, zoneForm)
 		p.setZone(zoneForm)
 		return true
 	}
@@ -206,20 +203,12 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 // HandleKey.
 func (p *PropertySheet) formLocked() bool { return p.applying }
 
-// armDrag records that zone consumed a Button1 press, so every event until the
-// release goes back to it (see dragZone).
-func (p *PropertySheet) armDrag(ev *tcell.EventMouse, zone focusZone) {
-	if ev.Buttons() == tcell.Button1 {
-		p.dragZone = zone
-	}
-}
-
 // routeDrag delivers a held-Button1 event to the zone that armed the gesture.
 // zoneButtons swallows it: ModalDialog.ButtonClicked already fired on the press
 // and its mouseDragging latch suppresses repeats; the point is that no other
 // zone sees them.
-func (p *PropertySheet) routeDrag(ev *tcell.EventMouse) {
-	switch p.dragZone {
+func (p *PropertySheet) routeDrag(ev *tcell.EventMouse, zone focusZone) {
+	switch zone {
 	case zoneForm:
 		if f := p.PageForm(p.current); f != nil && !p.formLocked() {
 			f.HandleMouse(ev)

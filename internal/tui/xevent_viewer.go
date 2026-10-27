@@ -100,7 +100,7 @@ type XEventViewer struct {
 
 	feed xeFeedState
 
-	dragZone xeDragZone
+	dragZone core.Gesture[xeDragZone]
 }
 
 // xeDragZone names the sub-region owning the mouse gesture in progress — see
@@ -108,8 +108,7 @@ type XEventViewer struct {
 type xeDragZone int
 
 const (
-	xZoneNone xeDragZone = iota
-	xZoneSplitter
+	xZoneSplitter xeDragZone = iota
 	xZoneGrid
 	xZoneToolbar
 	xZoneUnclaimed

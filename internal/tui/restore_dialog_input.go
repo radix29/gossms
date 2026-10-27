@@ -109,6 +109,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.cbReplace.HandleMouse(ev)
 		d.cbVerify.HandleMouse(ev)
 		d.cbClose.HandleMouse(ev)
+		d.cbTail.HandleMouse(ev)
 		// Terminate a text-selection drag in the field that claimed the press, wherever
 		// the release landed. Done before ConsumeOutsideClick and the mode switch below,
 		// both of which return early: exactly the cases that would strand the latch.
@@ -192,9 +193,15 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	for _, cb := range []*widgets.CheckBox{d.cbReplace, d.cbVerify, d.cbClose} {
+	boxes := []*widgets.CheckBox{d.cbReplace, d.cbVerify, d.cbClose}
+	if d.planPicked() {
+		boxes = append(boxes, d.cbTail)
+	}
+	for _, cb := range boxes {
 		if cb.HandleMouse(ev) {
 			d.focusTo(cb)
+			// The tail-log box changes the plan the status line describes.
+			d.applyDeviceRules()
 			return true
 		}
 	}

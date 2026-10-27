@@ -209,7 +209,7 @@ func TestLogViewerBusyToolbarIsInert(t *testing.T) {
 		t.Fatal("toolsEnabled() is true while busy — the toolbar draws dimmed on the same answer")
 	}
 	lv.HandleMouse(click)
-	lv.dragZone = lZoneNone // the press armed the gesture; clear it for the idle click below
+	lv.dragZone.Release() // the press armed the gesture; clear it for the idle click below
 	if !lv.HandleKey(f5) {
 		t.Error("F5 while busy returned false — the key belongs to the panel even when it does nothing")
 	}
@@ -219,7 +219,7 @@ func TestLogViewerBusyToolbarIsInert(t *testing.T) {
 
 	lv.busy = false
 	lv.HandleMouse(click)
-	lv.dragZone = lZoneNone
+	lv.dragZone.Release()
 	lv.HandleKey(f5)
 	if fired != 2 {
 		t.Errorf("Refresh ran %d times when idle, want 2 (one click, one F5)", fired)

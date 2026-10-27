@@ -79,7 +79,7 @@ type AGDashboard struct {
 	// mouseDragging idiom; Activity Monitor's dragZone). Positional routing left
 	// the top grid latched in column-resize mode when the release landed over
 	// the bottom one.
-	dragZone agDragZone
+	dragZone core.Gesture[agDragZone]
 
 	// deferred holds a reading that arrived while a grid's cell menu or value
 	// popup was open: applying it would rebuild the grid under the overlay and
@@ -139,8 +139,7 @@ type agReading struct {
 type agDragZone int
 
 const (
-	agZoneNone agDragZone = iota
-	agZoneTop
+	agZoneTop agDragZone = iota
 	agZoneBottom
 )
 
@@ -592,31 +591,28 @@ func (d *AGDashboard) HandleMouse(ev *tcell.EventMouse) bool {
 		// see it (ARCHITECTURE.md § The mouseDragging idiom, invariant 5).
 		d.topGrid.HandleMouse(ev)
 		d.bottomGrid.HandleMouse(ev)
-		d.dragZone = agZoneNone
+		d.dragZone.Release()
 		return false
 	}
 	if g := d.overlayGrid(); g != nil {
 		return d.overlayRouted(g.HandleMouse(ev))
 	}
-	switch d.dragZone {
-	case agZoneTop:
-		return d.topGrid.HandleMouse(ev)
-	case agZoneBottom:
+	// The owning grid takes every button mid-gesture, the wheel included.
+	if zone, held := d.dragZone.Owner(); held {
+		if zone == agZoneTop {
+			return d.topGrid.HandleMouse(ev)
+		}
 		return d.bottomGrid.HandleMouse(ev)
 	}
 	x, y := ev.Position()
 	switch {
 	case d.topRect.Contains(x, y):
 		d.focusBottom = false
-		if ev.Buttons() == tcell.Button1 {
-			d.dragZone = agZoneTop
-		}
+		d.dragZone.Arm(ev, agZoneTop)
 		return d.topGrid.HandleMouse(ev)
 	case d.bottomRect.Contains(x, y):
 		d.focusBottom = true
-		if ev.Buttons() == tcell.Button1 {
-			d.dragZone = agZoneBottom
-		}
+		d.dragZone.Arm(ev, agZoneBottom)
 		return d.bottomGrid.HandleMouse(ev)
 	}
 	return false

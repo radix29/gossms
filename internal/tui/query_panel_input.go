@@ -160,7 +160,7 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		if p.planView != nil && p.planView.HandleMouse(ev) {
 			handled = true
 		}
-		p.dragZone = qZoneNone
+		p.dragZone.Release()
 		return handled
 	}
 	// Everything from the press that armed dragZone through its release belongs to
@@ -175,10 +175,7 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	// this column) swallows it one level up today, so this is belt-and-braces, but
 	// the invariant belongs to whoever owns the gesture, not a caller that might stop
 	// arming one.
-	if p.dragZone != qZoneNone {
-		if ev.Buttons() == tcell.Button1 {
-			return p.routeDrag(ev)
-		}
+	if p.dragZone.Route(ev, p.routeDrag) {
 		return true
 	}
 	if mx < p.rect.X || mx >= p.rect.X+p.rect.W {
@@ -186,11 +183,11 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if p.resultsShown && p.splitter.HandleMouse(ev) {
 		p.layoutChildren()
-		p.armDrag(ev, qZoneSplitter)
+		p.dragZone.Arm(ev, qZoneSplitter)
 		return true
 	}
 	if p.tabRect.H == 1 && my == p.tabRect.Y && ev.Buttons() == tcell.Button1 {
-		p.armDrag(ev, qZoneTabs)
+		p.dragZone.Arm(ev, qZoneTabs)
 		if i := p.tabAt(mx); i >= 0 {
 			p.setActiveTab(i)
 		}
@@ -201,19 +198,19 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	// into the results grid (Escape is the way out, see HandleKey).
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {
 		if p.editor.HandleMouse(ev) {
-			p.armDrag(ev, qZoneEditor)
+			p.dragZone.Arm(ev, qZoneEditor)
 			p.setResultsFocused(false)
 			return true
 		}
 		p.wentToLine = false
 		if p.resultsShown && p.resultsHandleMouse(ev) {
-			p.armDrag(ev, qZoneResults)
+			p.dragZone.Arm(ev, qZoneResults)
 			// Except the double-click on an error in Messages that just sent the caret to
 			// its line: that hands focus to the editor, and this click must not take it back.
 			p.setResultsFocused(!p.wentToLine)
 			return true
 		}
-		p.armDrag(ev, qZoneUnclaimed)
+		p.dragZone.Arm(ev, qZoneUnclaimed)
 		return false
 	}
 	if p.editor.HandleMouse(ev) {
@@ -249,20 +246,12 @@ func (p *QueryPanel) resultsHandleMouse(ev *tcell.EventMouse) bool {
 	}
 }
 
-// armDrag records that zone consumed a Button1 press, so every further event
-// until the release goes back to it (dragZone).
-func (p *QueryPanel) armDrag(ev *tcell.EventMouse, zone queryDragZone) {
-	if ev.Buttons() == tcell.Button1 {
-		p.dragZone = zone
-	}
-}
-
 // routeDrag delivers a held-Button1 event to the sub-region that armed the
 // gesture. qZoneTabs and qZoneUnclaimed swallow it: the tab switch already
 // happened on the press, and the point is only that no other sub-region sees the
 // repeats.
-func (p *QueryPanel) routeDrag(ev *tcell.EventMouse) bool {
-	switch p.dragZone {
+func (p *QueryPanel) routeDrag(ev *tcell.EventMouse, zone queryDragZone) {
+	switch zone {
 	case qZoneSplitter:
 		if p.splitter.HandleMouse(ev) {
 			p.layoutChildren()
@@ -272,5 +261,4 @@ func (p *QueryPanel) routeDrag(ev *tcell.EventMouse) bool {
 	case qZoneResults:
 		p.resultsHandleMouse(ev)
 	}
-	return true
 }

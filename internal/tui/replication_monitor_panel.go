@@ -80,8 +80,7 @@ const (
 type rmDragZone int
 
 const (
-	rmZoneNone rmDragZone = iota
-	rmZoneSplit
+	rmZoneSplit rmDragZone = iota
 	rmZoneGrid
 	rmZoneToolbar
 	// rmZoneUnclaimed is a press nothing wanted; it still owns the gesture so the
@@ -147,7 +146,7 @@ type ReplicationMonitorPanel struct {
 	// ticker is the refresh timer's run; Abandon stops it.
 	ticker latest
 
-	dragZone  rmDragZone
+	dragZone  core.Gesture[rmDragZone]
 	dragSplit int
 	dragGrid  *controls.DataGrid
 }

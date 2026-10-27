@@ -48,6 +48,9 @@ func (d *RestoreDialog) Draw(s tcell.Screen) {
 	d.cbReplace.Draw(s)
 	d.cbVerify.Draw(s)
 	d.cbClose.Draw(s)
+	if d.planPicked() {
+		d.cbTail.Draw(s)
+	}
 	if d.rbRecovery.Selected() == recoverStandby {
 		d.fStandby.Draw(s)
 	}
@@ -96,7 +99,8 @@ func (d *RestoreDialog) layoutForm() {
 	// The checkboxes stand beside the recovery options, a row each, so the third
 	// option and the two fields below fit without growing the dialog.
 	d.rbRecovery.SetBounds(lx, row)
-	for i, cb := range []interface{ SetBounds(x, y int) }{d.cbReplace, d.cbVerify, d.cbClose} {
+	// The tail-log box, a plan's only, takes the row under the radio's last option.
+	for i, cb := range []interface{ SetBounds(x, y int) }{d.cbReplace, d.cbVerify, d.cbClose, d.cbTail} {
 		cb.SetBounds(lx+restoreOptionsColX, row+1+i)
 	}
 	row += d.rbRecovery.Height() + 1

@@ -169,7 +169,7 @@ gossms/
 │   │
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
 │   │   ├── theme/                # colour palette + derived tcell.Style helpers
-│   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers, ClipScreen, the ClipboardTarget/ClipboardHost contract
+│   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers, ClipScreen, the ClipboardTarget/ClipboardHost contract, Gesture (a router's press-claims-the-gesture record)
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox, Spinner (a busy indicator as a pure function of elapsed time)
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/Progress/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
@@ -228,7 +228,7 @@ gossms/
 │       ├── explorer_object_rights.go # what permits Rename/Move/Delete per NodeType: the securable, principal, database- and server-scoped right tables
 │       ├── explorer_object_actions.go # the flows themselves: confirmation (incl. the cascade checkbox), script-instead-of-run, the prompt, and the parent-folder refresh
 │       ├── scripting.go          # Object Explorer's "Script <Noun> as ▸" cascade: which verbs each NodeType offers, how each is generated, and the three destinations
-│       ├── database_security_script.go # database node's "Script Database Security": the catalog query that generates a database's roles, users, schemas, memberships and permissions as T-SQL, opened unexecuted
+│       ├── database_security_script.go # database node's "Script Database Security": gosmo's ScriptDatabaseSecurity (owner, roles, users, schemas, memberships, permissions), read in the background and opened unexecuted
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
@@ -530,6 +530,7 @@ gossms/
 │       ├── restore_dialog_draw.go  # Restore Database rendering
 │       ├── restore_dialog_input.go # Restore Database HandleKey/HandleMouse
 │       ├── restore_dialog_ops.go # Restore Database's background-task execution + history/file-list lookups
+│       ├── restore_dialog_plan.go # Restore's plan from history: the plan entry, its preview, the optional tail-log backup, and running or scripting the full → differential → log sequence
 │       └── restore_dialog_files.go # Restore's File Locations view: the three relocation choices, the per-file preview and the MOVE clauses behind it
 ```
 
@@ -599,13 +600,18 @@ onto a latch-owning widget as a fresh-looking `Button1`. So routers keep a
 gesture-wide flag (`App.mouseButtonDown`, set/cleared from the raw event before
 positional branching) to tell fresh from continuation — and, since that doesn't
 say where the continuation goes, **a press claims the gesture**: the router
-records the claiming region and replays to it until release. Nine routers,
-one shape — `App.gestureOwner` (`app_events.go`), `propsheet.PropertySheet`
-(`sheet_input.go`), and the `dragZone` of `QueryPanel`, `LogViewer`,
-`XEventViewer`, `QueryStorePanel`, `ReplicationMonitorPanel`,
-`PlanComparePanel` and `ActivityMonitor` (each in its `_input.go`, or
-`plan_compare_panel.go`) — each `armGesture`/`armDrag` at every claiming branch
-plus `routeGesture`/`routeDrag`. Regions that already acted swallow repeats. `Splitter` starts a
+records the claiming region and replays to it until release. That record is
+one type, `core.Gesture[Z]` (`tuikit/core/gesture.go`), held by every router:
+`App.gestureOwner` (`app_events.go`), `propsheet.PropertySheet` (`sheet_input.go`),
+and the `dragZone` of `QueryPanel`, `LogViewer`, `XEventViewer`,
+`QueryStorePanel`, `ReplicationMonitorPanel`, `PlanComparePanel`,
+`ActivityMonitor`, `DetailBrowser` and `AGDashboard`. Each host calls
+`Release` on `ButtonNone` (beside forwarding the release to its latch-bearing
+children), `Route(ev, routeDrag)` ahead of any bounds check, and `Arm` at every
+claiming branch, and keeps only its zone enum and `routeDrag`'s `switch`.
+`Route` swallows a mid-gesture wheel tick; `ActivityMonitor`, `DetailBrowser`
+and `AGDashboard` read `Owner()` instead, because their grids take the wheel
+mid-gesture. Regions that already acted swallow repeats. `Splitter` starts a
 resize only from a press on its bar, so a selection drag crossing it doesn't
 grab it.
 

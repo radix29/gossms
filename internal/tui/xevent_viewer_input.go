@@ -104,13 +104,10 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 		if v.grid.HandleMouse(ev) {
 			handled = true
 		}
-		v.dragZone = xZoneNone
+		v.dragZone.Release()
 		return handled
 	}
-	if v.dragZone != xZoneNone {
-		if ev.Buttons() == tcell.Button1 {
-			return v.routeDrag(ev)
-		}
+	if v.dragZone.Route(ev, v.routeDrag) {
 		return true
 	}
 	if !v.rect.Contains(mx, my) {
@@ -128,12 +125,12 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if v.splitter.HandleMouse(ev) {
 		v.layoutChildren()
-		v.armDrag(ev, xZoneSplitter)
+		v.dragZone.Arm(ev, xZoneSplitter)
 		return true
 	}
 	if v.toolRect.H == 1 && my == v.toolRect.Y && ev.Buttons() == tcell.Button1 {
 		// The action runs on the press; xZoneToolbar swallows the repeats.
-		v.armDrag(ev, xZoneToolbar)
+		v.dragZone.Arm(ev, xZoneToolbar)
 		if i := v.tools.CellAt(mx, my); i >= 0 {
 			v.runTool(i)
 		} else if v.tools.More.Rect.Contains(mx, my) {
@@ -144,7 +141,7 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {
 		beforeRow := v.grid.SelectedRow()
 		if v.grid.HandleMouse(ev) {
-			v.armDrag(ev, xZoneGrid)
+			v.dragZone.Arm(ev, xZoneGrid)
 			if v.grid.SelectedRow() != beforeRow {
 				v.detailScroll = 0
 			}
@@ -153,22 +150,15 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 			return true
 		}
-		v.armDrag(ev, xZoneUnclaimed)
+		v.dragZone.Arm(ev, xZoneUnclaimed)
 		return false
 	}
 	return v.grid.HandleMouse(ev)
 }
 
-// armDrag records that zone took a Button1 press.
-func (v *XEventViewer) armDrag(ev *tcell.EventMouse, zone xeDragZone) {
-	if ev.Buttons() == tcell.Button1 {
-		v.dragZone = zone
-	}
-}
-
 // routeDrag delivers a held-Button1 event to the zone that armed the gesture.
-func (v *XEventViewer) routeDrag(ev *tcell.EventMouse) bool {
-	switch v.dragZone {
+func (v *XEventViewer) routeDrag(ev *tcell.EventMouse, zone xeDragZone) {
+	switch zone {
 	case xZoneSplitter:
 		if v.splitter.HandleMouse(ev) {
 			v.layoutChildren()
@@ -176,7 +166,6 @@ func (v *XEventViewer) routeDrag(ev *tcell.EventMouse) bool {
 	case xZoneGrid:
 		v.grid.HandleMouse(ev)
 	}
-	return true
 }
 
 // handleGroupKey is the keyboard on a group row: Enter or Space toggles it,

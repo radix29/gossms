@@ -8,12 +8,11 @@ import (
 // amDragZone is the sub-region that claimed the held Button1 press. tcell
 // resends Button1 on every motion while held, so without an owner a twitching
 // click re-fires its tab, and a scrollbar drag crossing the tab row switches
-// tabs. Mirrors QueryPanel.dragZone; cleared on release.
+// tabs. Mirrors QueryPanel.dragZone; released on ButtonNone.
 type amDragZone int
 
 const (
-	amZoneNone amDragZone = iota
-	amZoneTabs
+	amZoneTabs amDragZone = iota
 	amZoneTools
 	amZoneVBar
 	amZoneHBar
@@ -133,7 +132,7 @@ func (am *ActivityMonitor) HandleMouse(ev *tcell.EventMouse) bool {
 				pt.grid.HandleMouse(ev)
 			}
 		}
-		am.dragZone = amZoneNone
+		am.dragZone.Release()
 		am.vDragging = false
 		am.hDragging = false
 		return false
@@ -146,8 +145,10 @@ func (am *ActivityMonitor) HandleMouse(ev *tcell.EventMouse) bool {
 		return pt.grid.HandleMouse(ev)
 	}
 
-	if am.dragZone != amZoneNone {
-		return am.routeDrag(ev)
+	// Every button goes to the owner, the wheel included, not only Button1 as
+	// core.Gesture.Route would: a grid gesture hands the grid its wheel ticks.
+	if zone, held := am.dragZone.Owner(); held {
+		return am.routeDrag(ev, zone)
 	}
 
 	// The grid owns everything below the toolbar for every button (right-click
@@ -155,9 +156,7 @@ func (am *ActivityMonitor) HandleMouse(ev *tcell.EventMouse) bool {
 	// hit-test the grid's own rect.
 	if pt != nil && pt.grid != nil {
 		if mx, my := ev.Position(); pt.gridRect.Contains(mx, my) {
-			if ev.Buttons() == tcell.Button1 {
-				am.dragZone = amZoneProcGrid
-			}
+			am.dragZone.Arm(ev, amZoneProcGrid)
 			return pt.grid.HandleMouse(ev)
 		}
 	}
@@ -193,7 +192,7 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 
 	if am.tabRect.Contains(mx, my) {
-		am.dragZone = amZoneTabs
+		am.dragZone.Arm(ev, amZoneTabs)
 		tabs := am.visibleTabs()
 		for i, seg := range am.tabSegments() {
 			if i < len(tabs) && mx >= seg[0].X && mx < seg[0].X+seg[0].W {
@@ -204,7 +203,7 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if am.toolRect.Contains(mx, my) {
-		am.dragZone = amZoneTools
+		am.dragZone.Arm(ev, amZoneTools)
 		if i := am.tools.CellAt(mx, my); i >= 0 {
 			am.runTool(i)
 		} else if am.tools.More.Rect.Contains(mx, my) {
@@ -219,7 +218,7 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 		}
 		if am.viewRect.Contains(mx, my) {
 			// Claimed so a drag wandering onto the tab row doesn't switch tabs.
-			am.dragZone = amZonePlot
+			am.dragZone.Arm(ev, amZonePlot)
 			// A showing tooltip is dismissed by the next click, which does
 			// nothing else, so one click never closes one box and opens
 			// another.
@@ -237,12 +236,12 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 // routeDrag replays a held Button1 to the zone that claimed the press. Only
 // scrollbars (and the grid) use the rest of a gesture; tab bar and toolbar fire
 // once on the press.
-func (am *ActivityMonitor) routeDrag(ev *tcell.EventMouse) bool {
-	if am.dragZone == amZoneVBar || am.dragZone == amZoneHBar {
+func (am *ActivityMonitor) routeDrag(ev *tcell.EventMouse, zone amDragZone) bool {
+	if zone == amZoneVBar || zone == amZoneHBar {
 		return am.scrollbarDrag(ev)
 	}
 	// The grid extends a block selection, so it needs every held event.
-	if am.dragZone == amZoneProcGrid {
+	if zone == amZoneProcGrid {
 		if pt := am.procTab(); pt != nil && pt.grid != nil {
 			return pt.grid.HandleMouse(ev)
 		}
@@ -259,13 +258,13 @@ func (am *ActivityMonitor) scrollbarDrag(ev *tcell.EventMouse) bool {
 	cw, ch := am.canvasSize()
 	sy := am.scrollY[am.tab]
 	if core.HandleScrollbarDrag(ev, am.viewRect.Right(), am.viewRect.Y, am.viewRect.H, ch, &am.vDragging, &sy) {
-		am.dragZone = amZoneVBar
+		am.dragZone.Arm(ev, amZoneVBar)
 		am.scrollTo(am.scrollX[am.tab], sy)
 		return true
 	}
 	sx := am.scrollX[am.tab]
 	if core.HandleScrollbarDragH(ev, am.viewRect.X, am.viewRect.Bottom(), am.viewRect.W, cw, &am.hDragging, &sx) {
-		am.dragZone = amZoneHBar
+		am.dragZone.Arm(ev, amZoneHBar)
 		am.scrollTo(sx, am.scrollY[am.tab])
 		return true
 	}

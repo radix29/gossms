@@ -268,8 +268,8 @@ func TestQueryPanelEditorDragDoesNotStealSplitterOrTabs(t *testing.T) {
 	barY := qp.splitter.SplitPos()
 
 	qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, editorRect.Y, tcell.Button1, tcell.ModNone))
-	if qp.dragZone != qZoneEditor {
-		t.Fatalf("dragZone = %v after pressing in the editor, want qZoneEditor", qp.dragZone)
+	if z, held := qp.dragZone.Owner(); !held || z != qZoneEditor {
+		t.Fatalf("dragZone = %v (held %v) after pressing in the editor, want qZoneEditor", z, held)
 	}
 	// Drag on down across the splitter bar and the tab row below it.
 	for _, y := range []int{barY - 1, barY, qp.tabRect.Y, qp.tabRect.Y + 2} {
@@ -286,8 +286,8 @@ func TestQueryPanelEditorDragDoesNotStealSplitterOrTabs(t *testing.T) {
 	if qp.resultsFocused {
 		t.Errorf("resultsFocused = true after a drag that started in the editor, want false")
 	}
-	if qp.dragZone != qZoneNone {
-		t.Errorf("dragZone = %v after the release, want qZoneNone", qp.dragZone)
+	if z, held := qp.dragZone.Owner(); held {
+		t.Errorf("dragZone = %v after the release, want none held", z)
 	}
 }
 
@@ -317,8 +317,8 @@ func TestQueryPanelSwallowsWheelDuringADrag(t *testing.T) {
 
 	editorRect := qp.splitter.FirstRect()
 	qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, editorRect.Y, tcell.Button1, tcell.ModNone))
-	if qp.dragZone != qZoneEditor {
-		t.Fatalf("dragZone = %v after pressing in the editor, want qZoneEditor", qp.dragZone)
+	if z, held := qp.dragZone.Owner(); !held || z != qZoneEditor {
+		t.Fatalf("dragZone = %v (held %v) after pressing in the editor, want qZoneEditor", z, held)
 	}
 	scrollBefore := qp.results.ScrollRow()
 
@@ -332,14 +332,14 @@ func TestQueryPanelSwallowsWheelDuringADrag(t *testing.T) {
 	if got := qp.results.ScrollRow(); got != scrollBefore {
 		t.Errorf("results grid scrolled %d -> %d during an editor drag, want it unchanged", scrollBefore, got)
 	}
-	if qp.dragZone != qZoneEditor {
-		t.Errorf("dragZone = %v after a mid-drag wheel, want it still qZoneEditor", qp.dragZone)
+	if z, held := qp.dragZone.Owner(); !held || z != qZoneEditor {
+		t.Errorf("dragZone = %v (held %v) after a mid-drag wheel, want it still qZoneEditor", z, held)
 	}
 
 	// The release ends the gesture, so the swallow is scoped to it.
 	qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, qp.tabRect.Y+3, tcell.ButtonNone, tcell.ModNone))
-	if qp.dragZone != qZoneNone {
-		t.Errorf("dragZone = %v after the release, want qZoneNone", qp.dragZone)
+	if z, held := qp.dragZone.Owner(); held {
+		t.Errorf("dragZone = %v after the release, want none held", z)
 	}
 }
 

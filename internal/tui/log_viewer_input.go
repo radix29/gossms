@@ -137,16 +137,13 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 		if lv.grid.HandleMouse(ev) {
 			handled = true
 		}
-		lv.dragZone = lZoneNone
+		lv.dragZone.Release()
 		return handled
 	}
 	// Everything from the press that armed dragZone to its release belongs to the
 	// sub-region that claimed it, wherever the pointer drifted, hence this
 	// outranks the bounds check. A wheel tick mid-gesture is swallowed, not routed.
-	if lv.dragZone != lZoneNone {
-		if ev.Buttons() == tcell.Button1 {
-			return lv.routeDrag(ev)
-		}
+	if lv.dragZone.Route(ev, lv.routeDrag) {
 		return true
 	}
 	if mx < lv.rect.X || mx >= lv.rect.X+lv.rect.W {
@@ -166,15 +163,15 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if lv.splitter.HandleMouse(ev) {
 		lv.layoutChildren()
-		lv.armDrag(ev, lZoneSplitter)
+		lv.dragZone.Arm(ev, lZoneSplitter)
 		return true
 	}
 	if lv.toolRect.H == 1 && my == lv.toolRect.Y && ev.Buttons() == tcell.Button1 {
-		lv.armDrag(ev, lZoneToolbar)
+		lv.dragZone.Arm(ev, lZoneToolbar)
 		if lv.filterVisible() && lv.filter.HitTest(mx, my) {
 			lv.setFilterFocused(true)
 			lv.filter.HandleMouse(ev)
-			lv.dragZone = lZoneFilter
+			lv.dragZone.Arm(ev, lZoneFilter)
 			return true
 		}
 		// The action runs on the press, so tcell's repeats while the button is down
@@ -194,33 +191,25 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {
 		beforeRow := lv.grid.SelectedRow()
 		if lv.grid.HandleMouse(ev) {
-			lv.armDrag(ev, lZoneGrid)
+			lv.dragZone.Arm(ev, lZoneGrid)
 			lv.setFilterFocused(false)
 			if lv.grid.SelectedRow() != beforeRow {
 				lv.detailScroll = 0
 			}
 			return true
 		}
-		lv.armDrag(ev, lZoneUnclaimed)
+		lv.dragZone.Arm(ev, lZoneUnclaimed)
 		return false
 	}
 	return lv.grid.HandleMouse(ev)
-}
-
-// armDrag records that zone consumed a Button1 press, so further events until
-// the release go back to it (dragZone).
-func (lv *LogViewer) armDrag(ev *tcell.EventMouse, zone logDragZone) {
-	if ev.Buttons() == tcell.Button1 {
-		lv.dragZone = zone
-	}
 }
 
 // routeDrag delivers a held-Button1 event to the sub-region that armed the
 // gesture. lZoneToolbar and lZoneUnclaimed swallow it: the action already ran
 // on the press, and owning the gesture only keeps other regions from seeing
 // the repeats.
-func (lv *LogViewer) routeDrag(ev *tcell.EventMouse) bool {
-	switch lv.dragZone {
+func (lv *LogViewer) routeDrag(ev *tcell.EventMouse, zone logDragZone) {
+	switch zone {
 	case lZoneSplitter:
 		if lv.splitter.HandleMouse(ev) {
 			lv.layoutChildren()
@@ -230,5 +219,4 @@ func (lv *LogViewer) routeDrag(ev *tcell.EventMouse) bool {
 	case lZoneFilter:
 		lv.filter.HandleMouse(ev)
 	}
-	return true
 }

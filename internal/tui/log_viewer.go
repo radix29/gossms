@@ -172,7 +172,7 @@ type LogViewer struct {
 	read latest
 	busy bool
 
-	dragZone logDragZone
+	dragZone core.Gesture[logDragZone]
 }
 
 // logDragZone names the LogViewer sub-region that owns the in-progress mouse
@@ -180,8 +180,7 @@ type LogViewer struct {
 type logDragZone int
 
 const (
-	lZoneNone logDragZone = iota // no gesture in progress
-	lZoneSplitter
+	lZoneSplitter logDragZone = iota
 	lZoneGrid
 	lZoneFilter
 	lZoneToolbar

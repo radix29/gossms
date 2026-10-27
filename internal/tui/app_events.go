@@ -245,7 +245,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		a.mouseButtonDown = true
 	case tcell.ButtonNone:
 		a.mouseButtonDown = false
-		a.gestureOwner = ownerNone
+		a.gestureOwner.Release()
 	}
 
 	// An overlay that opened or closed mid-press must not get that button:
@@ -300,10 +300,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	// claimed it, wherever the pointer goes. A mid-gesture wheel tick is swallowed
 	// rather than routed to whatever the pointer is over (wheeling while dragging
 	// the splitter would scroll the panels).
-	if a.gestureOwner != ownerNone {
-		if ev.Buttons() == tcell.Button1 {
-			a.routeGesture(ev)
-		}
+	if a.gestureOwner.Route(ev, a.routeGesture) {
 		return
 	}
 
@@ -311,7 +308,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		// The toolbar sits at the right end of MenuBar's row. MenuBar still
 		// sees every event first, so its hover clears when moving onto the
 		// toolbar.
-		a.armGesture(ev, ownerMenuRow)
+		a.gestureOwner.Arm(ev, ownerMenuRow)
 		a.menuBar.HandleMouse(ev)
 		a.toolbar.HandleMouse(ev)
 		return
@@ -320,7 +317,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	if my == h-1 {
 		// freshPress, so a drag drifting across the status row doesn't pop the
 		// dialog.
-		a.armGesture(ev, ownerStatusRow)
+		a.gestureOwner.Arm(ev, ownerStatusRow)
 		if freshPress {
 			a.statusHistoryDialog.Show()
 		}
@@ -329,14 +326,14 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 
 	// Explorer/panel splitter drag.
 	if a.explorerSplit.HandleMouse(ev) {
-		a.armGesture(ev, ownerSplitter)
+		a.gestureOwner.Arm(ev, ownerSplitter)
 		a.layoutAll()
 		return
 	}
 
 	left := a.explorerSplit.FirstRect()
 	if mx < left.Right() {
-		a.armGesture(ev, ownerExplorer)
+		a.gestureOwner.Arm(ev, ownerExplorer)
 		if a.focus != focusOnExplorer {
 			a.focusExplorer()
 		}
@@ -354,7 +351,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		}
 		return
 	}
-	a.armGesture(ev, ownerPanels)
+	a.gestureOwner.Arm(ev, ownerPanels)
 	if a.focus != focusOnPanels {
 		a.focusPanels()
 	}
@@ -366,8 +363,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 type appGestureOwner int
 
 const (
-	ownerNone    appGestureOwner = iota // no gesture in progress
-	ownerMenuRow                        // menu bar / toolbar (row 0)
+	ownerMenuRow appGestureOwner = iota // menu bar / toolbar (row 0)
 	ownerStatusRow
 	ownerSplitter
 	ownerExplorer
@@ -430,19 +426,11 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	a.panels.HandleMouse(base)
 }
 
-// armGesture records that region consumed a Button1 press, so events until the
-// release return to it.
-func (a *App) armGesture(ev *tcell.EventMouse, region appGestureOwner) {
-	if ev.Buttons() == tcell.Button1 {
-		a.gestureOwner = region
-	}
-}
-
 // routeGesture delivers a held-Button1 event to the arming region. ownerMenuRow
 // and ownerStatusRow swallow it: MenuBar and Toolbar acted on the press and
 // latch against repeats, and the status row acts only on fresh presses.
-func (a *App) routeGesture(ev *tcell.EventMouse) {
-	switch a.gestureOwner {
+func (a *App) routeGesture(ev *tcell.EventMouse, region appGestureOwner) {
+	switch region {
 	case ownerSplitter:
 		if a.explorerSplit.HandleMouse(ev) {
 			a.layoutAll()

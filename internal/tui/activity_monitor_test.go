@@ -282,7 +282,7 @@ func TestActivityMonitorHeldClickFiresOnce(t *testing.T) {
 	}
 
 	am.HandleMouse(tcell.NewEventMouse(4, am.tabRect.Y, tcell.ButtonNone, tcell.ModNone))
-	if am.dragZone != amZoneNone {
+	if _, held := am.dragZone.Owner(); held {
 		t.Error("the release didn't end the gesture")
 	}
 }

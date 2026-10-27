@@ -464,8 +464,8 @@ func TestAGDashboardDragFollowsTheGridThatClaimedThePress(t *testing.T) {
 		t.Error("motion over the bottom grid moved keyboard focus mid-gesture")
 	}
 	d.HandleMouse(tcell.NewEventMouse(sep+4, bottom.Y+2, tcell.ButtonNone, 0))
-	if d.dragZone != agZoneNone {
-		t.Fatalf("dragZone = %v after the release, want none", d.dragZone)
+	if z, held := d.dragZone.Owner(); held {
+		t.Fatalf("dragZone = %v after the release, want none", z)
 	}
 	// A fresh press on a top-grid row selects it rather than resizing.
 	resized := d.topGrid.ColumnWidth(0)

@@ -101,16 +101,13 @@ func (p *QueryStorePanel) HandleMouse(ev *tcell.EventMouse) bool {
 		if p.plansGrid.HandleMouse(ev) {
 			handled = true
 		}
-		p.dragZone = qsZoneNone
+		p.dragZone.Release()
 		return handled
 	}
 	// Everything from the press that armed dragZone to its release belongs to the
 	// sub-region that claimed it, wherever the pointer drifted, hence this outranks
 	// the bounds check. A wheel tick mid-gesture is swallowed, not routed.
-	if p.dragZone != qsZoneNone {
-		if ev.Buttons() == tcell.Button1 {
-			return p.routeDrag(ev)
-		}
+	if p.dragZone.Route(ev, p.routeDrag) {
 		return true
 	}
 	if mx < p.rect.X || mx >= p.rect.X+p.rect.W {
@@ -118,30 +115,30 @@ func (p *QueryStorePanel) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if p.chartSplit.HandleMouse(ev) {
 		p.layoutChildren()
-		p.armDrag(ev, qsZoneChartSplit)
+		p.dragZone.Arm(ev, qsZoneChartSplit)
 		return true
 	}
 	if p.planSplit.HandleMouse(ev) {
 		p.layoutChildren()
-		p.armDrag(ev, qsZonePlanSplit)
+		p.dragZone.Arm(ev, qsZonePlanSplit)
 		return true
 	}
 	if ev.Buttons() == tcell.Button1 && p.handleToolbarPress(mx, my) {
-		p.armDrag(ev, qsZoneToolbar)
+		p.dragZone.Arm(ev, qsZoneToolbar)
 		return true
 	}
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {
 		if p.plansGrid.HandleMouse(ev) {
-			p.armDrag(ev, qsZonePlans)
+			p.dragZone.Arm(ev, qsZonePlans)
 			p.setFocus(qsFocusPlans)
 			return true
 		}
 		if p.grid.HandleMouse(ev) {
-			p.armDrag(ev, qsZoneGrid)
+			p.dragZone.Arm(ev, qsZoneGrid)
 			p.setFocus(qsFocusReport)
 			return true
 		}
-		p.armDrag(ev, qsZoneUnclaimed)
+		p.dragZone.Arm(ev, qsZoneUnclaimed)
 		return false
 	}
 	if p.plansGrid.HandleMouse(ev) {
@@ -179,20 +176,12 @@ func (p *QueryStorePanel) handleToolbarPress(mx, my int) bool {
 	return false
 }
 
-// armDrag records that zone consumed a Button1 press, so further events until
-// the release go back to it (dragZone).
-func (p *QueryStorePanel) armDrag(ev *tcell.EventMouse, zone qsDragZone) {
-	if ev.Buttons() == tcell.Button1 {
-		p.dragZone = zone
-	}
-}
-
 // routeDrag delivers a held-Button1 event to the sub-region that armed the
 // gesture. qsZoneToolbar and qsZoneUnclaimed swallow it: the action already ran on
 // the press, and owning the gesture only keeps other regions from seeing the
 // repeats.
-func (p *QueryStorePanel) routeDrag(ev *tcell.EventMouse) bool {
-	switch p.dragZone {
+func (p *QueryStorePanel) routeDrag(ev *tcell.EventMouse, zone qsDragZone) {
+	switch zone {
 	case qsZoneChartSplit:
 		if p.chartSplit.HandleMouse(ev) {
 			p.layoutChildren()
@@ -206,7 +195,6 @@ func (p *QueryStorePanel) routeDrag(ev *tcell.EventMouse) bool {
 	case qsZonePlans:
 		p.plansGrid.HandleMouse(ev)
 	}
-	return true
 }
 
 // HasSelection and the SelectedText, Cut, Paste and SelectAll beside it implement

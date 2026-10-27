@@ -180,7 +180,7 @@ type ActivityMonitor struct {
 	// redraws, so a paused dashboard keeps it.
 	tooltip *amTooltip
 
-	dragZone  amDragZone
+	dragZone  core.Gesture[amDragZone]
 	vDragging bool
 	hDragging bool
 }

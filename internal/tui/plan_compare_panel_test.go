@@ -198,22 +198,22 @@ func TestAGestureStaysWithThePaneThatClaimedIt(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name+" keeps the gesture it claimed", func(t *testing.T) {
 			press(5, tc.y, tcell.Button1)
-			if p.dragZone != tc.want {
-				t.Fatalf("dragZone = %d after a press in %s, want %d", p.dragZone, tc.name, tc.want)
+			if z, held := p.dragZone.Owner(); !held || z != tc.want {
+				t.Fatalf("dragZone = %d (held %v) after a press in %s, want %d", z, held, tc.name, tc.want)
 			}
 			// The pointer crosses into another region with the button down.
 			ratio := p.split.Ratio()
 			press(5, bar+2, tcell.Button1)
-			if p.dragZone != tc.want {
-				t.Errorf("dragZone = %d mid-drag, want %s to still own the gesture", p.dragZone, tc.name)
+			if z, held := p.dragZone.Owner(); !held || z != tc.want {
+				t.Errorf("dragZone = %d (held %v) mid-drag, want %s to still own the gesture", z, held, tc.name)
 			}
 			if moved := p.split.Ratio() != ratio; moved != (tc.want == pcZoneSplit) {
 				t.Errorf("splitter moved = %v during a gesture owned by %s, want %v",
 					moved, tc.name, tc.want == pcZoneSplit)
 			}
 			press(5, bar+2, tcell.ButtonNone)
-			if p.dragZone != pcZoneNone {
-				t.Errorf("dragZone = %d after the release, want pcZoneNone", p.dragZone)
+			if z, held := p.dragZone.Owner(); held {
+				t.Errorf("dragZone = %d after the release, want none held", z)
 			}
 			p.split.SetRatio(0.4)
 			p.layoutChildren()

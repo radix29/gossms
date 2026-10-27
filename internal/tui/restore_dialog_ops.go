@@ -51,7 +51,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 // loadHistory fetches dbName's msdb backup history into the Backup Set
 // dropdown, most recent first, capped at maxHistorySets.
 func (d *RestoreDialog) loadHistory(dbName string) {
-	d.history = nil
+	d.history, d.allHistory, d.planOffered = nil, nil, false
 	d.ddHistSet = widgets.NewDropDown("Backup Set: ", nil, histSetWidth)
 	d.rebuildFocusable()
 	if dbName == "" {
@@ -71,14 +71,19 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 				return
 			}
 			hist, deviceless := restorableHistory(hist)
+			d.allHistory = hist
+			d.planOffered = slices.ContainsFunc(hist, func(b *gosmo.BackupInfo) bool { return b.SetType == gosmo.BackupSetDatabase })
 			if len(hist) > maxHistorySets {
 				hist = hist[:maxHistorySets]
 			}
 			d.history = hist
-			labels := make([]string, len(hist))
-			for i, b := range hist {
-				labels[i] = b.BackupFinish.Format("2006-01-02 15:04") + "  " +
-					core.PadRight(backupSetLabel(b.SetType), 15) + " " + historyDeviceLabel(historyDevices(b))
+			var labels []string
+			if d.planOffered {
+				labels = append(labels, planEntryLabel)
+			}
+			for _, b := range hist {
+				labels = append(labels, b.BackupFinish.Format("2006-01-02 15:04")+"  "+
+					core.PadRight(backupSetLabel(b.SetType), 15)+" "+historyDeviceLabel(historyDevices(b)))
 			}
 			d.ddHistSet = widgets.NewDropDown("Backup Set: ", labels, histSetWidth)
 			d.rebuildFocusable()
@@ -183,7 +188,9 @@ func historyDevices(b *gosmo.BackupInfo) []string {
 }
 
 // sourceForRestore returns the backup the current form selects: the typed
-// file path, or the picked history entry's devices and position.
+// file path, or the picked history entry's devices and position. For a plan it
+// is the previewed plan's full backup, the set Analyze and Files show — the only
+// one that places the database's files — and nothing when there is no plan.
 func (d *RestoreDialog) sourceForRestore() restoreSource {
 	if d.rbSource.Selected() == 0 {
 		if dev := strings.TrimSpace(d.fFile.Value()); dev != "" {
@@ -191,8 +198,13 @@ func (d *RestoreDialog) sourceForRestore() restoreSource {
 		}
 		return restoreSource{}
 	}
-	if i := d.ddHistSet.Selected(); i >= 0 && i < len(d.history) {
-		b := d.history[i]
+	b := d.historyPick()
+	if d.planPicked() {
+		if plan, err := d.previewPlan(); err == nil {
+			b = plan.Sets[0]
+		}
+	}
+	if b != nil {
 		return restoreSource{devices: historyDevices(b), setNumber: b.SetNumber()}
 	}
 	return restoreSource{}
@@ -373,7 +385,7 @@ func (d *RestoreDialog) startRestore() {
 		d.setStatusMsg("Target database name is required.", true)
 		return
 	}
-	if !d.checkRecoveryFields() {
+	if !d.checkRecoveryFields() || d.planPicked() && !d.checkPlanFields(target) {
 		return
 	}
 
@@ -440,13 +452,21 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 	d.task = task
 	d.taskTarget = target
 	d.taskSource = sourceLabel(src.devices)
+	if req.plan != nil {
+		d.taskSource = "restore plan from " + req.plan.database + "'s backup history"
+	}
 	d.mode = restoreModeProgress
 	d.btnFocus = 0
 	d.SetTitle("Restore Database - Progress")
 
 	// safegoRepair for the same reason as startBackup's.
 	app.safegoRepair("the restore", func() { app.markTaskDone(task, errTaskPanicked) }, func() {
-		err := runRestore(ctx, app, sc.Server, task, req)
+		var err error
+		if req.plan != nil {
+			err = runRestorePlan(ctx, app, sc.Server, task, req)
+		} else {
+			err = runRestore(ctx, app, sc.Server, task, req)
+		}
 		if err == nil {
 			app.postAndWake(func() { app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) })
 		}
@@ -468,7 +488,10 @@ type restoreRequest struct {
 	// fileNumber is the backup set to restore (WITH FILE = n), 0 for the first; see
 	// fileNumberFor.
 	fileNumber int
-	plan       gosmo.RestoreRelocation
+	reloc      gosmo.RestoreRelocation
+	// plan restores a plan from history instead of src (planRequest), nil for one
+	// set.
+	plan *planRequest
 }
 
 // restoreRequest snapshots the form for a restore or script of src into target.
@@ -483,7 +506,13 @@ func (d *RestoreDialog) restoreRequest(src restoreSource, target string) restore
 		replace:    d.cbReplace.Checked(),
 		closeConns: d.cbClose.Checked(),
 		fileNumber: d.fileNumberFor(src),
-		plan:       d.relocation(),
+		reloc:      d.relocation(),
+	}
+	if d.planPicked() {
+		req.plan = &planRequest{database: d.ddHistDB.Value()}
+		if d.cbTail.Checked() && d.sc != nil {
+			req.plan.tailDevice = tailLogDevice(d.sc.Server.Info().DefaultBackupPath, req.plan.database, time.Now())
+		}
 	}
 	if req.recovery == gosmo.RestoreWithStandBy {
 		req.standbyFile = strings.TrimSpace(d.fStandby.Value())
@@ -580,7 +609,7 @@ func restoreOptionsFor(ctx context.Context, srv *gosmo.Server, req restoreReques
 	// Only a set that lays the files down takes MOVE clauses (FromHeader), so only its
 	// file list is worth reading.
 	var files []*gosmo.BackupFile
-	if h.SetType.PlacesFiles() && req.plan.NeedsFileList(h.DatabaseName, req.target) {
+	if h.SetType.PlacesFiles() && req.reloc.NeedsFileList(h.DatabaseName, req.target) {
 		// The file list must name the same set as WITH FILE. Asking for the device without
 		// one describes set 1, whose logical file names belong to a different database
 		// whenever backups were appended, and MOVE clauses naming files the restored set
@@ -601,7 +630,7 @@ func restoreOptionsFor(ctx context.Context, srv *gosmo.Server, req restoreReques
 
 		CloseExistingConnections: req.closeConns,
 	}
-	opts.FromHeader(h, files, req.plan)
+	opts.FromHeader(h, files, req.reloc)
 	return opts, nil
 }
 
@@ -619,7 +648,7 @@ func (d *RestoreDialog) script() {
 		d.setStatusMsg("Target database name is required.", true)
 		return
 	}
-	if !d.checkRecoveryFields() {
+	if !d.checkRecoveryFields() || d.planPicked() && !d.checkPlanFields(target) {
 		return
 	}
 	req := d.restoreRequest(src, target) // snapshots on the UI goroutine — see beginRestore
@@ -628,9 +657,13 @@ func (d *RestoreDialog) script() {
 	app, sc := d.app, d.sc
 	ctx, seq := d.scriptRun.BeginTimeout(sc.Server.Context(), childFetchTimeout)
 	app.safego("scripting the restore", func() {
-		ropts, err := buildRestoreOptions(ctx, sc.Server, req)
 		var stmt string
-		if err == nil {
+		var err error
+		if req.plan != nil {
+			stmt, err = planScript(ctx, sc.Server, req)
+		} else if ropts, berr := buildRestoreOptions(ctx, sc.Server, req); berr != nil {
+			err = berr
+		} else {
 			// The instance's own form: on a Managed Instance, closing connections is KILLs
 			// rather than the SINGLE_USER it refuses.
 			stmt, err = sc.Server.BuildRestoreStatement(ropts)

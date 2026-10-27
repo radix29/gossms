@@ -37,7 +37,7 @@ type DetailBrowser struct {
 	// mouseDragging idiom). Hit-testing each event instead let a grid drag
 	// released over the strip leave the grid latched, and a held grid press
 	// drifting onto the strip pin a readout.
-	dragZone dbDragZone
+	dragZone core.Gesture[dbDragZone]
 
 	// currentNode is the node ShowNodeDetails last displayed, so Invalidate can
 	// tell whether to refetch immediately or just drop the cache entry.
@@ -435,9 +435,8 @@ func (db *DetailBrowser) HandleKey(ev *tcell.EventKey) bool {
 type dbDragZone int
 
 const (
-	dbZoneNone dbDragZone = iota
-	dbZoneGrid
-	dbZonePanel // the panel acted on the press; the rest of the gesture is swallowed
+	dbZoneGrid  dbDragZone = iota
+	dbZonePanel            // the panel acted on the press; the rest of the gesture is swallowed
 )
 
 // HandleMouse fires OnRefresh for a press on the title bar's refresh button,
@@ -447,7 +446,7 @@ func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		// The release reaches the grid wherever it lands, strip and refresh
 		// button included, so its latch can't stick (invariant 5).
-		db.dragZone = dbZoneNone
+		db.dragZone.Release()
 		return db.grid.HandleMouse(ev)
 	}
 	// The grid's "Show Value" viewer and cell menu open over the whole panel,
@@ -455,11 +454,9 @@ func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 	if db.grid.OverlayActive() {
 		return db.grid.HandleMouse(ev)
 	}
-	switch db.dragZone {
-	case dbZoneGrid:
-		return db.grid.HandleMouse(ev)
-	case dbZonePanel:
-		return true
+	if zone, held := db.dragZone.Owner(); held {
+		// The grid takes every button mid-gesture, the wheel included.
+		return zone == dbZonePanel || db.grid.HandleMouse(ev)
 	}
 	mx, my := ev.Position()
 	strip := db.chartsRect()
@@ -468,21 +465,21 @@ func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 		case db.tooltip != nil:
 			// A showing box is dismissed by the next click wherever it lands, so one
 			// click never both closes a box and opens another.
-			db.dragZone = dbZonePanel
+			db.dragZone.Arm(ev, dbZonePanel)
 			db.tooltip = nil
 			return true
 		case strip.Contains(mx, my):
-			db.dragZone = dbZonePanel
+			db.dragZone.Arm(ev, dbZonePanel)
 			db.tooltip = db.pinChartTooltip(mx, my)
 			return true
 		case db.refreshRect.Contains(mx, my):
-			db.dragZone = dbZonePanel
+			db.dragZone.Arm(ev, dbZonePanel)
 			if db.OnRefresh != nil {
 				db.OnRefresh()
 			}
 			return true
 		}
-		db.dragZone = dbZoneGrid
+		db.dragZone.Arm(ev, dbZoneGrid)
 		return db.grid.HandleMouse(ev)
 	}
 	if strip.Contains(mx, my) {

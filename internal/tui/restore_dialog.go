@@ -102,6 +102,9 @@ type RestoreDialog struct {
 	cbReplace  *widgets.CheckBox
 	cbVerify   *widgets.CheckBox
 	cbClose    *widgets.CheckBox
+	// cbTail backs up the tail of the log before a plan's restore, in the form
+	// only while the plan entry is picked (planPicked).
+	cbTail *widgets.CheckBox
 	// fStandby is WITH STANDBY's undo file, in the form only while that option is
 	// picked; fStopAt is the optional point in time (STOPAT) for a log set.
 	fStandby *widgets.InputField
@@ -138,6 +141,7 @@ type RestoreDialog struct {
 	prevSource   int
 	prevHistDB   string
 	prevRecovery int
+	prevPlan     bool
 
 	// lastAutoTarget mirrors BackupDialog.lastAutoDest: the target name the dialog
 	// filled in itself, so it only overwrites an unedited field.
@@ -151,6 +155,12 @@ type RestoreDialog struct {
 	// Set dropdown's order.
 	histLoaded bool
 	history    []*gosmo.BackupInfo
+	// allHistory is the selected database's restorable history uncapped, what a
+	// plan is previewed from; planOffered puts the plan entry (planEntryLabel)
+	// first in the Backup Set dropdown, ahead of history, when it holds a full
+	// backup to start one.
+	allHistory  []*gosmo.BackupInfo
+	planOffered bool
 
 	// One latest per kind of load, so a newer load supersedes and cancels only its own
 	// kind: a single shared token let a history load started during "Checking target
@@ -210,7 +220,7 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.task = nil
 	d.headers, d.files, d.inspectDevs = nil, nil, nil
 	d.headerIdx = 0
-	d.history = nil
+	d.history, d.allHistory, d.planOffered = nil, nil, false
 	d.histLoaded = false
 	d.abandonLoads()
 	d.SetTitle("Restore Database")
@@ -236,9 +246,11 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.cbVerify.SetChecked(true)
 	d.cbClose = widgets.NewCheckBox("Close existing connections")
 	d.cbClose.SetChecked(true)
+	d.cbTail = widgets.NewCheckBox("Tail-log backup first")
 	d.fStandby = widgets.NewInputField("Standby file: ", standbyFieldWidth, false)
 	d.fStopAt = widgets.NewInputField("Point in time:", stopAtFieldWidth, false)
 	d.prevRecovery = recoverOnline
+	d.prevPlan = false
 	d.lastAutoStandby = ""
 
 	d.rbReloc = widgets.NewRadioBox("File Locations:", []string{
@@ -309,6 +321,9 @@ func (d *RestoreDialog) rebuildFocusable() {
 		d.focusable = []focusable{d.rbSource, d.ddHistDB, d.ddHistSet, d.fTarget}
 	}
 	d.focusable = append(d.focusable, d.rbRecovery, d.cbReplace, d.cbVerify, d.cbClose)
+	if d.planPicked() {
+		d.focusable = append(d.focusable, d.cbTail)
+	}
 	if d.rbRecovery.Selected() == recoverStandby {
 		d.focusable = append(d.focusable, d.fStandby)
 	}
@@ -405,6 +420,11 @@ func (d *RestoreDialog) syncSourceState() {
 			d.autoFillTarget(dbName)
 		}
 	}
+	if plan := d.planPicked(); plan != d.prevPlan {
+		d.prevPlan = plan
+		d.rebuildFocusable()
+		d.refocus()
+	}
 	if rec := d.rbRecovery.Selected(); rec != d.prevRecovery {
 		d.prevRecovery = rec
 		d.rebuildFocusable()
@@ -447,7 +467,7 @@ func (d *RestoreDialog) autoFillStandby() {
 var stopAtLayouts = []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006-01-02 15:04"}
 
 // stopAtHint follows the point-in-time field.
-const stopAtHint = "(server time, log backups only)"
+const stopAtHint = "(server time; log set or plan)"
 
 // parseStopAt parses the point-in-time field: nil for an empty one, which
 // restores the whole log. The time is the server's local wall clock, as
@@ -492,6 +512,9 @@ const restoreURLHint = "From URL: the container needs a credential named for it.
 
 // restingStatus is the status line when nothing has gone wrong.
 func (d *RestoreDialog) restingStatus() string {
+	if d.planPicked() {
+		return d.planSummary()
+	}
 	if t, ok := d.selectedSetType(); ok {
 		if hint := restoreSequenceHint(t); hint != "" {
 			return hint
@@ -516,8 +539,8 @@ func (d *RestoreDialog) selectedSetType() (gosmo.BackupSetType, bool) {
 		return h.SetType, true
 	}
 	if d.rbSource.Selected() == 1 {
-		if i := d.ddHistSet.Selected(); i >= 0 && i < len(d.history) {
-			return d.history[i].SetType, true
+		if b := d.historyPick(); b != nil {
+			return b.SetType, true
 		}
 	}
 	return "", false

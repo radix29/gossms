@@ -73,15 +73,14 @@ type PlanComparePanel struct {
 	// selection dragged in the properties grid was taken over by the splitter the
 	// moment the pointer crossed it. A gesture belongs to whatever claimed its
 	// first press until the release; see ARCHITECTURE.md § The mouseDragging idiom.
-	dragZone pcDragZone
+	dragZone core.Gesture[pcDragZone]
 }
 
 // pcDragZone names the sub-region owning a gesture between press and release.
 type pcDragZone int
 
 const (
-	pcZoneNone pcDragZone = iota
-	pcZoneSplit
+	pcZoneSplit pcDragZone = iota
 	pcZoneOps
 	pcZoneProps
 	pcZoneToolbar
@@ -583,13 +582,10 @@ func (p *PlanComparePanel) HandleMouse(ev *tcell.EventMouse) bool {
 		if p.ops.HandleMouse(ev) {
 			handled = true
 		}
-		p.dragZone = pcZoneNone
+		p.dragZone.Release()
 		return handled
 	}
-	if p.dragZone != pcZoneNone {
-		if ev.Buttons() == tcell.Button1 {
-			return p.routeDrag(ev)
-		}
+	if p.dragZone.Route(ev, p.routeDrag) {
 		return true
 	}
 	mx, _ := ev.Position()
@@ -600,37 +596,31 @@ func (p *PlanComparePanel) HandleMouse(ev *tcell.EventMouse) bool {
 		if i := p.pickers.CellAt(mx, my); i >= 0 {
 			p.runPicker(i)
 		}
-		p.armDrag(ev, pcZoneToolbar)
+		p.dragZone.Arm(ev, pcZoneToolbar)
 		return true
 	}
 	if p.split.HandleMouse(ev) {
 		p.layoutChildren()
-		p.armDrag(ev, pcZoneSplit)
+		p.dragZone.Arm(ev, pcZoneSplit)
 		return true
 	}
 	if p.ops.HandleMouse(ev) {
-		p.armDrag(ev, pcZoneOps)
+		p.dragZone.Arm(ev, pcZoneOps)
 		p.setFocus(true)
 		return true
 	}
 	if p.props.HandleMouse(ev) {
-		p.armDrag(ev, pcZoneProps)
+		p.dragZone.Arm(ev, pcZoneProps)
 		p.setFocus(false)
 		return true
 	}
 	return false
 }
 
-func (p *PlanComparePanel) armDrag(ev *tcell.EventMouse, zone pcDragZone) {
-	if ev.Buttons() == tcell.Button1 {
-		p.dragZone = zone
-	}
-}
-
 // routeDrag delivers a held-Button1 event to the sub-region that armed the
 // gesture and nothing else: no other sub-region sees the repeats.
-func (p *PlanComparePanel) routeDrag(ev *tcell.EventMouse) bool {
-	switch p.dragZone {
+func (p *PlanComparePanel) routeDrag(ev *tcell.EventMouse, zone pcDragZone) {
+	switch zone {
 	case pcZoneSplit:
 		if p.split.HandleMouse(ev) {
 			p.layoutChildren()
@@ -643,7 +633,6 @@ func (p *PlanComparePanel) routeDrag(ev *tcell.EventMouse) bool {
 		// The picker acted on the press; tcell's repeats while the button is held must
 		// not open its menu again.
 	}
-	return true
 }
 
 // HasSelection and the SelectedText, Cut, Paste and SelectAll beside it

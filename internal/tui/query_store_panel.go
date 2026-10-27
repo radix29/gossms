@@ -189,7 +189,7 @@ type QueryStorePanel struct {
 	// another.
 	seriesRead latest
 
-	dragZone qsDragZone
+	dragZone core.Gesture[qsDragZone]
 }
 
 // qsDragZone names the sub-region that owns the in-progress mouse gesture; see
@@ -197,8 +197,7 @@ type QueryStorePanel struct {
 type qsDragZone int
 
 const (
-	qsZoneNone qsDragZone = iota
-	qsZoneChartSplit
+	qsZoneChartSplit qsDragZone = iota
 	qsZonePlanSplit
 	qsZoneGrid
 	qsZonePlans
