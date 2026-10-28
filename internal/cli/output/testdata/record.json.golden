@@ -5,6 +5,8 @@
   "server": null,
   "database": null,
   "durationMs": 0,
+  "rowsAffected": null,
+  "outFile": null,
   "data": {
     "version": "v0.2.0",
     "commit": "72a0e3c",

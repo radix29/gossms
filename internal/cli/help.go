@@ -25,7 +25,7 @@ const agentLine = "AI agents: run `gossms help <command>` for any command's usag
 func showHelp(env Env, tree *spec.Tree, format output.Format, invoked string, cmd *spec.Command) int {
 	if format != output.FormatText {
 		return finish(env, &output.Result{Command: invoked, Errors: []*output.Error{output.NewError(output.CodeUsageError,
-			"help is available as text only", "Run the same command without --output.")}}, format, false)
+			"help is available as text only", "Run the same command without --output.")}}, output.DefaultOptions(format), nil)
 	}
 	var text string
 	switch {

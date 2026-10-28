@@ -36,7 +36,7 @@ var goldenCases = map[string]*Result{
 					{str("multi\r\nline\there"), str("<a & b>")},
 					{str("short")},
 				},
-				TotalRowCount: 18432, Truncated: true,
+				TotalRowCount: 18432, Truncated: true, TruncatedBy: TruncatedByMaxRows,
 			},
 			{
 				Columns:       []Column{{"n", "", false}},
@@ -47,6 +47,26 @@ var goldenCases = map[string]*Result{
 		},
 		Messages: []Message{{"info", "(1 row affected)"}},
 		Warnings: []string{"a warning\nspanning lines"},
+	},
+	// Typed columns, a SQL error, rows affected, a long cell, markdown's
+	// specials and a jsonl key clash.
+	"typed": {
+		Status: StatusError, Command: "query run", Server: "srv", Database: "db",
+		Duration: 5 * time.Millisecond, RowsAffected: new(int64(3)),
+		Sets: []Set{{
+			Columns: []Column{{"id", "int", false}, {"ok", "bit", true}, {"f", "float", true},
+				{"amount", "decimal(18,2)", true}, {"", "nvarchar(max)", true}, {"id", "bigint", false},
+				{"_summary", "nvarchar(10)", true}},
+			Rows: [][]*string{
+				{str("1"), str("1"), str("1E+300"), str("12.50"), str("a|b\\c\nd"), str("-9"), str("x")},
+				{str("2"), str("0"), str("-0.5"), nil, str(strings.Repeat("é", 300)), str("0"), nil},
+				{str("3"), nil, nil, str("0.00"), str(""), str("12"), str("")},
+			},
+			TotalRowCount: 3,
+		}},
+		Messages: []Message{{"info", "(3 rows affected)"}},
+		Errors: []*Error{{Code: CodeSQLError, SQL: &SQLError{Number: 208, Severity: 16, State: 1, Line: 4},
+			Message: "Invalid object name 'Sales.Customers'.", Hint: "Check the name."}},
 	},
 	// A usage error, as Main renders a parse failure.
 	"error": {
@@ -71,12 +91,18 @@ func TestGolden(t *testing.T) {
 		{"txt", FormatText, false},
 		{"quiet.txt", FormatText, true},
 		{"json", FormatJSON, false},
+		{"jsonl", FormatJSONL, false},
+		{"md", FormatMarkdown, false},
+		{"csv", FormatCSV, false},
+		{"tsv", FormatTSV, false},
 	}
 	for name, r := range goldenCases {
 		for _, v := range variants {
 			t.Run(name+"."+v.name, func(t *testing.T) {
 				var buf bytes.Buffer
-				if err := Render(&buf, v.format, r, v.quiet); err != nil {
+				o := DefaultOptions(v.format)
+				o.Quiet = v.quiet
+				if err := Render(&buf, r, o); err != nil {
 					t.Fatal(err)
 				}
 				path := filepath.Join("testdata", name+"."+v.name+".golden")
@@ -102,12 +128,12 @@ func TestGolden(t *testing.T) {
 // Fields order rather than encoding/json's sorted map order.
 func TestJSONKeyOrder(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Render(&buf, FormatJSON, goldenCases["record"], false); err != nil {
+	if err := Render(&buf, goldenCases["record"], DefaultOptions(FormatJSON)); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
 	order := []string{`"schemaVersion"`, `"status"`, `"command"`, `"server"`, `"database"`, `"durationMs"`,
-		`"data"`, `"version"`, `"commit"`, `"cliSchema"`, `"resultSets"`, `"messages"`, `"warnings"`, `"errors"`}
+		`"rowsAffected"`, `"outFile"`, `"data"`, `"version"`, `"commit"`, `"cliSchema"`, `"resultSets"`, `"messages"`, `"warnings"`, `"errors"`}
 	last := -1
 	for _, k := range order {
 		i := strings.Index(out[last+1:], k+":")
@@ -132,7 +158,7 @@ func TestJSONKeyOrder(t *testing.T) {
 func TestJSONDataOnlyForRecords(t *testing.T) {
 	for name, r := range goldenCases {
 		var buf bytes.Buffer
-		if err := Render(&buf, FormatJSON, r, false); err != nil {
+		if err := Render(&buf, r, DefaultOptions(FormatJSON)); err != nil {
 			t.Fatal(err)
 		}
 		if has := strings.Contains(buf.String(), `"data"`); has != (len(r.Fields) > 0) {
@@ -173,7 +199,7 @@ func TestHelpers(t *testing.T) {
 }
 
 func TestRenderUnknownFormat(t *testing.T) {
-	if err := Render(&bytes.Buffer{}, "csv", &Result{}, false); err == nil {
-		t.Error("csv rendered; want an error until its renderer exists")
+	if err := Render(&bytes.Buffer{}, &Result{}, DefaultOptions("parquet")); err == nil {
+		t.Error("parquet rendered; want an error for a format with no renderer")
 	}
 }

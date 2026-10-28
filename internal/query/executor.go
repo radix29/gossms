@@ -10,13 +10,9 @@
 package query
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
-	"math"
-	"strconv"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -83,6 +79,28 @@ type Message struct {
 	// function or trigger (its line is in that module), or one from
 	// ErrorMessages, which has no script to count in.
 	Line int
+
+	// SQL is the structured SQL Server error on an error's first line (the "Msg
+	// 208, Level 16, …" header), nil on every other message. Its LineNo is the
+	// script line when Line is set, else the server's (a module's own line, or
+	// counted from the batch's start for ErrorMessages).
+	SQL *gosmo.SQLError
+
+	// RowsAffected is set on a "(n rows affected)" message, nil on every other.
+	RowsAffected *RowCount
+}
+
+// RowCount is a statement's structured row count, the number behind "(n rows
+// affected)".
+type RowCount struct {
+	N int64
+
+	// AfterSet reports that the statement returned a result set before its count:
+	// a SELECT's rows, or a DML statement's OUTPUT rows — the protocol message
+	// does not say which (go-mssqldb drops the DONE token's command). False is a
+	// statement that returned no rows: INSERT, UPDATE, DELETE, MERGE, SELECT INTO.
+	// SQL Server sends no count at all under SET NOCOUNT ON.
+	AfterSet bool
 }
 
 // Result is everything one Execute call produced, across all GO batches.
@@ -136,6 +154,14 @@ type Result struct {
 	// plan capture couldn't be switched off), taking its temp tables, SET options
 	// and transactions; later runs fail at once. Always false outside a Session.
 	SessionLost bool
+
+	// StoppedOnError reports that WithStopOnError ended the run after a failing
+	// batch, so later batches (or repetitions of a GO n) were not sent.
+	StoppedOnError bool
+
+	// stopOnError and noSinkNotices are WithStopOnError and WithoutSinkNotices.
+	stopOnError   bool
+	noSinkNotices bool
 }
 
 // MaxRows is the WithMaxRows cap the run used, 0 for none.
@@ -158,6 +184,18 @@ func (r *Result) HasErrors() bool {
 		}
 	}
 	return false
+}
+
+// errorCount counts the error messages so far; runScript compares it across a
+// batch for WithStopOnError.
+func (r *Result) errorCount() int {
+	n := 0
+	for _, m := range r.Messages {
+		if m.IsError {
+			n++
+		}
+	}
+	return n
 }
 
 func (r *Result) addError(err error) {
@@ -192,7 +230,7 @@ func batchErrorMessages(err error, firstLine int) []Message {
 			se.LineNo += int32(firstLine)
 			line = int(se.LineNo)
 		}
-		msgs := []Message{{Text: se.Header(), IsError: true, Line: line}}
+		msgs := []Message{{Text: se.Header(), IsError: true, Line: line, SQL: se}}
 		if se.Message != "" {
 			msgs = append(msgs, Message{Text: se.Message, IsError: true, Line: line})
 		}
@@ -276,6 +314,22 @@ func WithMaxRows(n int) Option {
 	return func(res *Result) { res.maxRows = max(n, 0) }
 }
 
+// WithStopOnError ends the run after the first batch that reports an error:
+// later GO batches, and further repetitions of a GO n, are not sent, and
+// Result.StoppedOnError says so. Within a batch SQL Server decides whether the
+// statements after an error run. Without it every batch runs, as in SSMS.
+func WithStopOnError() Option {
+	return func(res *Result) { res.stopOnError = true }
+}
+
+// WithoutSinkNotices leaves out the Messages lines the RowSink path adds in the
+// TUI's wording — "(n row(s) written)" and the Max fetch rows notices — for a
+// caller that reports rows and truncation itself. The server's messages are
+// unaffected.
+func WithoutSinkNotices() Option {
+	return func(res *Result) { res.noSinkNotices = true }
+}
+
 // Execute runs script against db, SSMS-style. A non-empty database is switched
 // to first (USE), and the connection is then discarded rather than pooled, as
 // it is when the script leaves its database or the run fails or is cancelled. The script is split on GO; a failing batch is reported in
@@ -333,7 +387,8 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...O
 //
 // BeginSet is called before a set's first row, EndSet after its last with the
 // row count. A returned error aborts that set and is reported in Messages; the
-// script continues.
+// script continues. A sink that also implements TypedRowSink gets BeginTypedSet
+// instead of BeginSet.
 //
 // EndSet is called for every set BeginSet was called for, including sets
 // abandoned by a Row error or whose BeginSet failed, so it's the one place to
@@ -347,6 +402,15 @@ type RowSink interface {
 	BeginSet(columns []string) error
 	Row(cells []string, isNull []bool) error
 	EndSet(rows int) error
+}
+
+// TypedRowSink is a RowSink that also wants each set's column types. types holds
+// the declared types as ResultSet.ColumnTypes does ("nvarchar(50)"), nullable
+// whether the column admits NULL as the server describes it; both parallel
+// columns. Asserted per set, so a plain RowSink is unaffected.
+type TypedRowSink interface {
+	RowSink
+	BeginTypedSet(columns, types []string, nullable []bool) error
 }
 
 // cancelledMessage ends the Messages of a cancelled run.
@@ -379,10 +443,14 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 
 	for _, b := range sqltext.SplitBatches(script) {
 		for range b.Count {
-			if ctx.Err() != nil || res.cut {
+			if ctx.Err() != nil || res.cut || res.StoppedOnError {
 				return true, nil
 			}
+			errsBefore := res.errorCount()
 			runBatch(ctx, conn, b.Text, res.lineOffset+b.StartLine, res, sink)
+			if res.stopOnError && res.errorCount() > errsBefore {
+				res.StoppedOnError = true
+			}
 		}
 		if b.Count > 1 {
 			res.addNotice(fmt.Sprintf("Batch execution completed %d times.", b.Count))
@@ -412,6 +480,10 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 	}
 	defer rows.Close()
 
+	// afterSet mirrors the driver's own colsReceived: a set was announced since the
+	// last DONE token, each of which the driver follows with MsgNextResultSet. A
+	// count arriving meanwhile closes the statement that returned the set.
+	afterSet := false
 	for active := true; active; {
 		switch m := retmsg.Message(ctx).(type) {
 		case sqlexp.MsgNotice:
@@ -419,15 +491,16 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 		case sqlexp.MsgError:
 			res.addBatchError(m.Error, firstLine)
 		case sqlexp.MsgRowsAffected:
+			text := fmt.Sprintf("(%d rows affected)", m.Count)
 			if m.Count == 1 {
-				res.addNotice("(1 row affected)")
-			} else {
-				res.addNotice(fmt.Sprintf("(%d rows affected)", m.Count))
+				text = "(1 row affected)"
 			}
+			res.Messages = append(res.Messages, Message{Text: text, RowsAffected: &RowCount{N: m.Count, AfterSet: afterSet}})
 		case sqlexp.MsgNext:
+			afterSet = true
 			if scanNext(rows, res, sink) {
 				if res.cut {
-					cancelBatch(rows, res)
+					cancelBatch(rows, res, sink)
 					return
 				}
 				// scanNext abandoned the set with rows pending, and the message loop
@@ -437,6 +510,7 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 				}
 			}
 		case sqlexp.MsgNextResultSet:
+			afterSet = false
 			active = rows.NextResultSet()
 		case sqlexp.MsgLastInsertID:
 			// sqlexp's sixth type, never enqueued by go-mssqldb: SQL Server reports an
@@ -463,9 +537,12 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 // stays usable. The batch's trailing rows.Err() is skipped: the cancellation is
 // not a failure. A Close error means the confirmation never came and the
 // connection is likely gone.
-func cancelBatch(rows *sql.Rows, res *Result) {
+func cancelBatch(rows *sql.Rows, res *Result, sink RowSink) {
 	if err := rows.Close(); err != nil {
 		res.addError(err)
+	}
+	if sink != nil && res.noSinkNotices {
+		return
 	}
 	res.addNotice("The rest of the script was cancelled at Max fetch rows; its remaining statements and batches did not run.")
 }
@@ -475,6 +552,7 @@ func cancelBatch(rows *sql.Rows, res *Result) {
 type rowScanner struct {
 	cols        []string
 	types       []string
+	nullable    []bool
 	vals        []any
 	ptrs        []any
 	guids       []*mssql.NullUniqueIdentifier
@@ -523,6 +601,7 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	sc := &rowScanner{
 		cols:        cols,
 		types:       columnTypeNames(types),
+		nullable:    make([]bool, len(cols)),
 		vals:        make([]any, len(cols)),
 		ptrs:        make([]any, len(cols)),
 		guids:       make([]*mssql.NullUniqueIdentifier, len(cols)),
@@ -534,6 +613,12 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 		isNull:      make([]bool, len(cols)),
 	}
 	for i := range cols {
+		// go-mssqldb answers from the column metadata's nullable flag for every
+		// column; one it could not describe reads as nullable, the safe side for a
+		// TypedRowSink that would skip NULL handling on a NOT NULL column.
+		if n, ok := types[i].Nullable(); n || !ok {
+			sc.nullable[i] = true
+		}
 		typeName := types[i].DatabaseTypeName()
 		switch typeName {
 		case "UNIQUEIDENTIFIER":
@@ -656,7 +741,12 @@ func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress, maxRows int) 
 			err = endErr
 		}
 	}()
-	if err = sink.BeginSet(sc.cols); err != nil {
+	if ts, ok := sink.(TypedRowSink); ok {
+		err = ts.BeginTypedSet(sc.cols, sc.types, sc.nullable)
+	} else {
+		err = sink.BeginSet(sc.cols)
+	}
+	if err != nil {
 		return 0, false, err
 	}
 	// One row buffer for the set: sink.Row must consume it before returning.
@@ -715,10 +805,14 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 			res.addError(err)
 			return !exhausted
 		}
-		res.addNotice(fmt.Sprintf("(%d row(s) written)", n))
+		if !res.noSinkNotices {
+			res.addNotice(fmt.Sprintf("(%d row(s) written)", n))
+		}
 		if !exhausted {
 			res.SinkSetsTruncated++
-			res.addNotice(truncatedNotice(res.sinkSets, res.maxRows))
+			if !res.noSinkNotices {
+				res.addNotice(truncatedNotice(res.sinkSets, res.maxRows))
+			}
 			res.cut = true
 		}
 		return !exhausted
@@ -767,189 +861,4 @@ func scanPlanXML(rows *sql.Rows) (plans []string, exhausted bool, err error) {
 		}
 	}
 	return plans, true, rows.Err()
-}
-
-// appendGUID appends a uniqueidentifier as SSMS renders it: NULL or uppercase
-// dashed.
-func appendGUID(dst []byte, g mssql.NullUniqueIdentifier) []byte {
-	if !g.Valid {
-		return append(dst, "NULL"...)
-	}
-	return append(dst, g.UUID.String()...)
-}
-
-// defaultTimeLayout is for a time.Time from a column with no known layout;
-// matches plain "datetime". (A sql_variant's goes through appendVariant.)
-const defaultTimeLayout = "2006-01-02 15:04:05.000"
-
-// timeLayout returns SSMS's grid layout for a date/time column type, or "" for
-// other types. Each type shows exactly the parts it stores — a single datetime
-// layout would invent "00:00:00.000" for dates and truncate datetime2.
-//
-// datetime2, time and datetimeoffset have a scale (0-7) for fractional digits,
-// from DecimalSize; unknown scale uses 7. Other types have fixed precision.
-func timeLayout(databaseTypeName string, scale int, scaleKnown bool) string {
-	if !scaleKnown {
-		scale = 7
-	}
-	switch databaseTypeName {
-	case "DATE":
-		return "2006-01-02"
-	case "TIME":
-		return "15:04:05" + fracLayout(scale)
-	case "SMALLDATETIME":
-		return "2006-01-02 15:04:05"
-	case "DATETIME":
-		return defaultTimeLayout
-	case "DATETIME2":
-		return "2006-01-02 15:04:05" + fracLayout(scale)
-	case "DATETIMEOFFSET":
-		return "2006-01-02 15:04:05" + fracLayout(scale) + " -07:00"
-	}
-	return ""
-}
-
-// fracLayout returns the fractional-second layout fragment for scale; "" at 0
-// (no decimal point, as SSMS shows time(0)).
-func fracLayout(scale int) string {
-	if scale <= 0 {
-		return ""
-	}
-	return "." + strings.Repeat("0", min(scale, 7))
-}
-
-// appendValue renders a cell as SSMS does: NULL for nil, 1/0 for bit, 0x… for
-// binary, date/time in its column's layout. isDecimalLike marks a []byte
-// holding decoded decimal/money digits (render as text, not hex). layout is
-// empty for non-date/time columns. Append form, so cells render through one
-// reused buffer.
-func appendValue(dst []byte, v any, isDecimalLike bool, layout string) []byte {
-	switch x := v.(type) {
-	case nil:
-		return append(dst, "NULL"...)
-	case bool:
-		if x {
-			return append(dst, '1')
-		}
-		return append(dst, '0')
-	case []byte:
-		if isDecimalLike {
-			return append(dst, x...)
-		}
-		return appendHexUpper(dst, x)
-	case time.Time:
-		if layout == "" {
-			layout = defaultTimeLayout
-		}
-		return x.AppendFormat(dst, layout)
-	case float64:
-		return appendFloat(dst, x, 64)
-	case float32:
-		return appendFloat(dst, float64(x), 32)
-	case string:
-		return append(dst, x...)
-	case int64:
-		// go-mssqldb returns every integer type as int64, the commonest cell;
-		// strconv is ~4x faster than %v.
-		return strconv.AppendInt(dst, x, 10)
-	default:
-		return fmt.Appendf(dst, "%v", x)
-	}
-}
-
-// appendMoney renders money/smallmoney digits as SSMS does, SqlMoney's
-// "#0.00##": at least two decimals, at most four, trailing zeros past the
-// second dropped (12.5000 -> 12.50, 12.1230 -> 12.123). The driver always
-// sends four; the padding covers anything shorter.
-func appendMoney(dst []byte, digits []byte) []byte {
-	intPart, frac, _ := bytes.Cut(digits, []byte{'.'})
-	frac = bytes.TrimRight(frac, "0")
-	dst = append(dst, intPart...)
-	dst = append(dst, '.')
-	dst = append(dst, frac...)
-	for range 2 - len(frac) {
-		dst = append(dst, '0')
-	}
-	return dst
-}
-
-// appendVariant renders a sql_variant cell. go-mssqldb decodes the variant's
-// inner type and then drops it: decimal, numeric and money arrive as ASCII
-// digits in a []byte, a uniqueidentifier as its 16 wire bytes, and every
-// temporal type as a bare time.Time. So the value has to say what it was:
-//
-//   - a []byte that is exactly a decimal literal is decimal or money digits,
-//     shown as text. A varbinary variant whose bytes spell one shows as text too
-//     — rare, accepted (docs/decisions.md);
-//   - a time.Time in a nameless fixed zone is a datetimeoffset, the only type
-//     the driver decodes into one (the others get the connection's zone), and
-//     keeps its offset;
-//   - fractional seconds show three digits, as datetime does, and more only when
-//     the value carries them.
-//
-// A date or time variant still shows as a datetime, and a GUID as hex: the value
-// alone can't tell them from a datetime at midnight or a binary(16).
-func appendVariant(dst []byte, v any) []byte {
-	switch x := v.(type) {
-	case []byte:
-		if isDecimalLiteral(x) {
-			return append(dst, x...)
-		}
-	case time.Time:
-		dst = x.AppendFormat(dst, "2006-01-02 15:04:05.0000000")
-		for n := 7; n > 3 && dst[len(dst)-1] == '0'; n-- {
-			dst = dst[:len(dst)-1]
-		}
-		if x.Location().String() == "" {
-			dst = x.AppendFormat(dst, " -07:00")
-		}
-		return dst
-	}
-	return appendValue(dst, v, false, "")
-}
-
-// isDecimalLiteral reports whether b is -?digits(.digits)?, the form the
-// driver gives decimal and money digits in.
-func isDecimalLiteral(b []byte) bool {
-	if len(b) > 0 && b[0] == '-' {
-		b = b[1:]
-	}
-	intPart, frac, hasDot := bytes.Cut(b, []byte{'.'})
-	return allDigits(intPart) && (!hasDot || allDigits(frac))
-}
-
-func allDigits(b []byte) bool {
-	if len(b) == 0 {
-		return false
-	}
-	for _, c := range b {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// appendHexUpper appends b as SSMS's "0x…" uppercase hex in one pass.
-func appendHexUpper(dst []byte, b []byte) []byte {
-	dst = append(dst, '0', 'x')
-	for _, c := range b {
-		dst = append(dst, hexUpperDigits[c>>4], hexUpperDigits[c&0x0f])
-	}
-	return dst
-}
-
-const hexUpperDigits = "0123456789ABCDEF"
-
-// appendFloat renders float/real as SSMS's grid does: plain decimal in the
-// readable range, scientific outside it with SSMS's upper-case "E+300" (Go's
-// %g would show 1000000 as "1e+06"); the cut-offs match SSMS 21/22. Shortest
-// round-trip precision, so pasted-back text reparses to the same float64
-// (SSMS rounds to 15 significant digits; deliberately not copied).
-func appendFloat(dst []byte, f float64, bits int) []byte {
-	abs := math.Abs(f)
-	if f != 0 && !math.IsInf(f, 0) && !math.IsNaN(f) && (abs < 1e-4 || abs >= 1e15) {
-		return strconv.AppendFloat(dst, f, 'E', -1, bits)
-	}
-	return strconv.AppendFloat(dst, f, 'f', -1, bits)
 }

@@ -105,10 +105,17 @@ type Invocation struct {
 	// profile is only what the caller asked for.
 	Given map[string]bool
 
-	// Stdin and Getenv are the process's, as Main was given them
-	// (--password-stdin, --password-env). Nil reads nothing.
-	Stdin  io.Reader
-	Getenv func(string) string
+	// Stdin, Getenv and ReadFile are the process's, as Main was given them
+	// (--password-stdin, --password-env, --file). Nil reads nothing.
+	Stdin    io.Reader
+	Getenv   func(string) string
+	ReadFile func(string) ([]byte, error)
+
+	// Sink receives the rows of a command that streams them (internal/query's
+	// RowSink), made by Main from the output options before the handler runs.
+	// A handler that builds its sets itself returns them in Result.Sets
+	// instead; Main passes those through the same Sink.
+	Sink *output.Sink
 }
 
 // Lookup is the command whose Path is path, or nil.

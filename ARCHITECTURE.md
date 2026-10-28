@@ -173,7 +173,9 @@ gossms/
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
 │   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
-│   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
+│   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names; cells.go: each type's cell text as SSMS's grid shows it
+│   │                        #   for the command line, structured halves of the messages (Message.SQL, Message.RowsAffected), TypedRowSink, WithStopOnError, WithoutSinkNotices
+│   ├── export/              # delimited result text (RecordWriter: CSV, TSV) with the settled NULL convention — the one writer behind Results To File and the command line's csv/tsv. Stdlib only
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan); live.go merges per-thread query-profile rows into Live Query Statistics counters and progress. No TUI/DB deps
 │   ├── xevent/              # Extended Events viewer's event store: bounded ring, column registry, ring_buffer dedupe, the client-side filter expression, grouping and aggregation. No TUI/DB deps
 │   ├── format/              # Edit > Format Document's engine: Language (what a query panel's text is written in; picks its highlighter, and by extension only, never content), the per-language Style registry, the SQL Standard style (sql*.go: a layout pass over sqltext's tokens with a block/paren frame stack, not a parser; statements it has no rules for keep their line breaks), the JSON formatter (json.Indent, never Marshal), the XML raw-text re-indenter (tags, CDATA, comments emitted verbatim; never encoding/xml's Encoder) and the token-equivalence guard every result passes. Pure text, stdlib + tuikit/sqltext only
@@ -184,6 +186,7 @@ gossms/
 │   │   ├── spec/                # the command tree as data: Command, Arg, Option, Class, Handler, Invocation. Parser, help (and later agent schema/guide) read it — one source
 │   │   ├── args/                # the parser over spec: options, response files, did-you-mean; no I/O (ReadFile/Getenv injected)
 │   │   ├── connect/             # a command line → a connection: the connection options, profile + overrides + password sources (Resolve; drops a saved password an override would redirect), the dial as db.RoleCLI and its failure → exit code (Open, Classify)
+│   │   ├── safety/              # the T-SQL statement classifier (Classify: read|write|ddl|admin per statement, fails closed) over tuikit/sqltext, and the flags the safety checks read
 │   │   ├── cmd/                 # the command handlers, one file per group (profile.go); Deps injects the config load and the dial
 │   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), and one renderer per --output format (text, json)
 │   │

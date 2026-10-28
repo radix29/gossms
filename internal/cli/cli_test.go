@@ -158,7 +158,7 @@ func TestHelp(t *testing.T) {
 	if top.exit != 0 || !strings.HasPrefix(top.stdout, agentLine+"\n") {
 		t.Fatalf("--help: exit %d\n%s", top.exit, top.stdout)
 	}
-	for _, s := range []string{"Commands:\n", "  version  ", "  help     ", "Global options:\n", "  -o, --output <text|json>  Output format (default: text)\n", "      --verbose"} {
+	for _, s := range []string{"Commands:\n", "  version  ", "  help     ", "Global options:\n", "  -o, --output <text|json|jsonl|csv|tsv|markdown>  Output format (default: text)\n", "      --verbose"} {
 		if !strings.Contains(top.stdout, s) {
 			t.Errorf("--help lacks %q:\n%s", s, top.stdout)
 		}

@@ -12,6 +12,7 @@ Customer         | 日本語
 Café             | NULL
 multi  line here | <a & b>
 short            |
+NOTE: Output truncated by --max-rows 200. Use --max-rows 0 or --out-file to get all rows.
 
 === RESULT 2 (1 row, truncated: no) ===
 n

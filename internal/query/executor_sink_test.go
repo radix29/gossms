@@ -29,6 +29,7 @@ const (
 	msgAffected
 	msgLastInsertID // sqlexp's sixth type; go-mssqldb never sends one
 	msgBreak        // breaks the connection, as a killed session or a failover does
+	msgDone         // a statement's DONE with count and no set: MsgRowsAffected, then MsgNextResultSet
 )
 
 type fakeMsg struct {
@@ -38,6 +39,13 @@ type fakeMsg struct {
 	count int64
 	cols  []string
 	rows  [][]driver.Value
+
+	// For a msgSet: counted sends count as the set's DONE count, between its
+	// MsgNext and MsgNextResultSet as go-mssqldb does; types and nullable answer
+	// the column-type probes (nil: unreported).
+	counted  bool
+	types    []string
+	nullable []bool
 }
 
 // fakeMsgConn replays one scripted batch per QueryContext call carrying a
@@ -130,7 +138,7 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 	rows := &fakeMsgRows{}
 	for _, m := range script {
 		switch m.kind {
-		case msgSet:
+		case msgSet, msgDone:
 			rows.sets = append(rows.sets, m)
 		}
 	}
@@ -150,6 +158,9 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 			// MsgNext announces a set; the closing MsgNextResultSet makes the
 			// client call rows.NextResultSet.
 			err = enqueue(sqlexp.MsgNext{})
+			if err == nil && m.counted {
+				err = enqueue(sqlexp.MsgRowsAffected{Count: m.count})
+			}
 			if err == nil {
 				err = enqueue(sqlexp.MsgNextResultSet{})
 			}
@@ -161,6 +172,11 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 			err = enqueue(sqlexp.MsgRowsAffected{Count: m.count})
 		case msgLastInsertID:
 			err = enqueue(sqlexp.MsgLastInsertID{Value: m.count})
+		case msgDone:
+			err = enqueue(sqlexp.MsgRowsAffected{Count: m.count})
+			if err == nil {
+				err = enqueue(sqlexp.MsgNextResultSet{})
+			}
 		case msgBreak:
 			c.invalid = true
 		}
@@ -188,6 +204,20 @@ type fakeMsgRows struct {
 
 func (r *fakeMsgRows) Columns() []string { return r.sets[r.set].cols }
 func (r *fakeMsgRows) Close() error      { return nil }
+
+func (r *fakeMsgRows) ColumnTypeDatabaseTypeName(i int) string {
+	if t := r.sets[r.set].types; t != nil {
+		return t[i]
+	}
+	return ""
+}
+
+func (r *fakeMsgRows) ColumnTypeNullable(i int) (nullable, ok bool) {
+	if n := r.sets[r.set].nullable; n != nil {
+		return n[i], true
+	}
+	return false, false
+}
 
 func (r *fakeMsgRows) Next(dest []driver.Value) error {
 	s := r.sets[r.set]

@@ -5,6 +5,8 @@
   "server": null,
   "database": null,
   "durationMs": 0,
+  "rowsAffected": null,
+  "outFile": null,
   "resultSets": [],
   "messages": [],
   "warnings": [],

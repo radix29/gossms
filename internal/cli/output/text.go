@@ -11,9 +11,6 @@ import (
 	"github.com/clipperhouse/displaywidth"
 )
 
-// nullText is how text shows a NULL cell (--null-text arrives in phase 2).
-const nullText = "NULL"
-
 // renderText writes the text format: KEY: value header lines, a blank line
 // before each further section, fixed === markers an agent can split on.
 //
@@ -26,6 +23,7 @@ const nullText = "NULL"
 //	=== RESULT 1 (5 rows, truncated: no) ===
 //	name | create_date       Sets, aligned by display width
 //	-----+------------
+//	NOTE: …                  when the set was truncated
 //
 //	=== MESSAGES ===  /  === WARNINGS ===
 //
@@ -34,11 +32,22 @@ const nullText = "NULL"
 //	HINT: …
 //
 // Every value is one line: a line break or tab inside it prints as a space,
-// so no value can forge a header or marker line.
-func renderText(w io.Writer, r *Result, quiet bool) error {
-	bw := bufio.NewWriter(w)
+// so no value can forge a header or marker line. tables false prints each
+// set as its marker and note only: csv's and tsv's summary on stderr.
+func renderText(w io.Writer, r *Result, o Options, tables bool) error {
+	return writeSections(w, textSections(r, o, func(n int, s Set) []string {
+		if !tables {
+			return setHead(n, s, o)
+		}
+		return textSet(n, s, o)
+	}))
+}
+
+// textSections is the envelope as sections of lines, each set drawn by set.
+// Markdown shares it, with its own tables.
+func textSections(r *Result, o Options, set func(n int, s Set) []string) [][]string {
 	var sections [][]string
-	if !quiet {
+	if !o.Quiet {
 		h := []string{
 			keyValue("STATUS", strings.ToUpper(string(r.Status))),
 			keyValue("COMMAND", r.Command),
@@ -50,6 +59,12 @@ func renderText(w io.Writer, r *Result, quiet bool) error {
 			h = append(h, keyValue("DATABASE", r.Database))
 		}
 		h = append(h, keyValue("DURATION_MS", strconv.FormatInt(r.Duration.Milliseconds(), 10)))
+		if r.RowsAffected != nil {
+			h = append(h, keyValue("ROWS_AFFECTED", strconv.FormatInt(*r.RowsAffected, 10)))
+		}
+		if r.OutFile != "" {
+			h = append(h, keyValue("OUT_FILE", r.OutFile))
+		}
 		if len(r.Sets) > 0 {
 			h = append(h, keyValue("RESULT_SETS", strconv.Itoa(len(r.Sets))))
 		}
@@ -63,7 +78,7 @@ func renderText(w io.Writer, r *Result, quiet bool) error {
 		sections = append(sections, f)
 	}
 	for i, s := range r.Sets {
-		sections = append(sections, textSet(i+1, s))
+		sections = append(sections, set(i+1, s))
 	}
 	if len(r.Messages) > 0 {
 		m := []string{"=== MESSAGES ==="}
@@ -76,12 +91,28 @@ func renderText(w io.Writer, r *Result, quiet bool) error {
 		sections = append(sections, append([]string{"=== WARNINGS ==="}, mapLines(r.Warnings)...))
 	}
 	for _, e := range r.Errors {
-		b := []string{keyValue("ERROR_CODE", string(e.Code)), keyValue("MESSAGE", e.Message)}
+		b := []string{keyValue("ERROR_CODE", string(e.Code))}
+		if q := e.SQL; q != nil {
+			b = append(b,
+				keyValue("SQL_ERROR_NUMBER", strconv.FormatInt(int64(q.Number), 10)),
+				keyValue("SEVERITY", strconv.Itoa(int(q.Severity))),
+				keyValue("STATE", strconv.Itoa(int(q.State))),
+				keyValue("LINE", strconv.Itoa(q.Line)))
+			if q.Procedure != "" {
+				b = append(b, keyValue("PROCEDURE", q.Procedure))
+			}
+		}
+		b = append(b, keyValue("MESSAGE", e.Message))
 		if e.Hint != "" {
 			b = append(b, keyValue("HINT", e.Hint))
 		}
 		sections = append(sections, b)
 	}
+	return sections
+}
+
+func writeSections(w io.Writer, sections [][]string) error {
+	bw := bufio.NewWriter(w)
 	for i, s := range sections {
 		if i > 0 {
 			bw.WriteByte('\n')
@@ -94,16 +125,12 @@ func renderText(w io.Writer, r *Result, quiet bool) error {
 	return bw.Flush()
 }
 
-// textSet is one result set: its marker line, then the column names and rows
-// as a table whose columns align by display width (displaywidth.String, the
-// function core.DisplayWidth wraps — tuikit/core imports tcell, which
-// internal/cli must not reach). The last column is not padded, so no line
-// ends in spaces.
-func textSet(n int, s Set) []string {
-	rows := fmt.Sprintf("%s rows", thousands(len(s.Rows)))
-	if len(s.Rows) == 1 {
-		rows = "1 row"
+// setMarker is a set's "=== RESULT n (…) ===" line.
+func setMarker(n int, s Set) string {
+	if s.InFile {
+		return fmt.Sprintf("=== RESULT %d (%s, sent to --out-file) ===", n, rowCount(s.TotalRowCount))
 	}
+	rows := rowCount(len(s.Rows))
 	if s.Truncated {
 		rows = fmt.Sprintf("%s of %s rows", thousands(len(s.Rows)), thousands(s.TotalRowCount))
 	}
@@ -111,37 +138,83 @@ func textSet(n int, s Set) []string {
 	if s.Truncated {
 		truncated = "yes"
 	}
-	out := []string{fmt.Sprintf("=== RESULT %d (%s, truncated: %s) ===", n, rows, truncated)}
-	if len(s.Columns) == 0 {
-		return out
-	}
+	return fmt.Sprintf("=== RESULT %d (%s, truncated: %s) ===", n, rows, truncated)
+}
 
-	cells := make([][]string, 0, len(s.Rows)+1)
-	head := make([]string, len(s.Columns))
-	for i, c := range s.Columns {
-		head[i] = oneLine(c.Name)
+func rowCount(n int) string {
+	if n == 1 {
+		return "1 row"
 	}
-	cells = append(cells, head)
+	return thousands(n) + " rows"
+}
+
+// truncationNote says which limit cut a set and how to get every row; empty
+// when nothing did.
+func truncationNote(s Set, o Options) string {
+	switch {
+	case !s.Truncated:
+		return ""
+	case s.TruncatedBy == TruncatedByMaxOutputBytes:
+		return fmt.Sprintf("NOTE: Output truncated by --max-output-bytes %d. Raise it, or use --out-file to get all rows.", o.MaxOutputBytes)
+	}
+	return fmt.Sprintf("NOTE: Output truncated by --max-rows %d. Use --max-rows 0 or --out-file to get all rows.", o.MaxRows)
+}
+
+// setHead is a set's marker and its truncation note, without the table.
+func setHead(n int, s Set, o Options) []string {
+	out := []string{setMarker(n, s)}
+	if note := truncationNote(s, o); note != "" {
+		out = append(out, note)
+	}
+	return out
+}
+
+// textCells is a set's header (nil under NoHeaders) and rows as display
+// strings: NULL as NullText, every cell clipped and made one line.
+func textCells(s Set, o Options, line func(string) string) (head []string, rows [][]string) {
+	if !o.NoHeaders {
+		head = make([]string, len(s.Columns))
+		for i, c := range s.Columns {
+			head[i] = line(c.Name)
+		}
+	}
 	for _, row := range s.Rows {
-		line := make([]string, len(s.Columns))
-		for i := range line {
+		cells := make([]string, len(s.Columns))
+		for i := range cells {
 			switch {
 			case i >= len(row):
 			case row[i] == nil:
-				line[i] = nullText
+				cells[i] = line(o.NullText)
 			default:
-				line[i] = oneLine(*row[i])
+				cells[i] = line(clip(*row[i], o.MaxColWidth))
 			}
 		}
-		cells = append(cells, line)
+		rows = append(rows, cells)
 	}
-	widths := make([]int, len(s.Columns))
-	for _, line := range cells {
-		for i, c := range line {
-			widths[i] = max(widths[i], displaywidth.String(c))
-		}
-	}
+	return head, rows
+}
 
+// textSet is one result set: its marker line, then the column names and rows
+// as a table whose columns align by display width (displaywidth.String, the
+// function core.DisplayWidth wraps — tuikit/core imports tcell, which
+// internal/cli must not reach), then its truncation note. The last column is
+// not padded, so no line ends in spaces.
+func textSet(n int, s Set, o Options) []string {
+	out := []string{setMarker(n, s)}
+	if len(s.Columns) > 0 && !s.InFile {
+		head, rows := textCells(s, o, oneLine)
+		out = append(out, alignedTable(head, rows, len(s.Columns))...)
+	}
+	if note := truncationNote(s, o); note != "" {
+		out = append(out, note)
+	}
+	return out
+}
+
+// alignedTable is head (when non-nil), a -+- rule and rows, " | "-separated
+// and padded to each column's display width.
+func alignedTable(head []string, rows [][]string, ncols int) []string {
+	widths := columnWidths(head, rows, ncols)
 	join := func(line []string) string {
 		var b strings.Builder
 		for i, c := range line {
@@ -158,16 +231,30 @@ func textSet(n int, s Set) []string {
 		}
 		return b.String()
 	}
-	out = append(out, join(head))
-	rule := make([]string, len(widths))
-	for i, wd := range widths {
-		rule[i] = strings.Repeat("-", wd)
+	var out []string
+	if head != nil {
+		out = append(out, join(head))
+		rule := make([]string, len(widths))
+		for i, wd := range widths {
+			rule[i] = strings.Repeat("-", wd)
+		}
+		out = append(out, strings.Join(rule, "-+-"))
 	}
-	out = append(out, strings.Join(rule, "-+-"))
-	for _, line := range cells[1:] {
+	for _, line := range rows {
 		out = append(out, join(line))
 	}
 	return out
+}
+
+// columnWidths is each column's widest display width over head and rows.
+func columnWidths(head []string, rows [][]string, ncols int) []int {
+	widths := make([]int, ncols)
+	for _, line := range append([][]string{head}, rows...) {
+		for i, c := range line {
+			widths[i] = max(widths[i], displaywidth.String(c))
+		}
+	}
+	return widths
 }
 
 // keyValue is one "KEY: value" line; "KEY:" alone for an empty value, so no
