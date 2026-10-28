@@ -99,7 +99,7 @@ func Parse(tree *spec.Tree, argv []string, opts Options) (*spec.Invocation, erro
 			return nil, err
 		}
 	}
-	return &spec.Invocation{Command: cmd, Args: positional, Values: p.values}, nil
+	return &spec.Invocation{Command: cmd, Args: positional, Values: p.values, Given: p.given}, nil
 }
 
 // --- Response files ---------------------------------------------------------
@@ -292,7 +292,7 @@ type parser struct {
 	tree   *spec.Tree
 	cmd    *spec.Command
 	opts   Options
-	given  map[string]bool // long names set on the command line
+	given  map[string]bool // long names set on the command line or by their environment variable
 	values map[string]any
 }
 
@@ -452,6 +452,7 @@ func (p *parser) applyDefaults() error {
 		if o.Env != "" && p.opts.Getenv != nil {
 			if env := p.opts.Getenv(o.Env); env != "" {
 				raw, as = env, o.Env
+				p.given[o.Name] = true
 			}
 		}
 		if raw == "" {

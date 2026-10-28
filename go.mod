@@ -5,6 +5,7 @@ go 1.27
 toolchain go1.27.3
 
 require (
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/gdamore/tcell/v3 v3.6.0
 	github.com/golang-sql/sqlexp v0.1.0

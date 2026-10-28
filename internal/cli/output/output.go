@@ -67,9 +67,9 @@ type Field struct {
 // Set is one result set. A cell is the grid's text (internal/query renders
 // every value as SSMS's grid does), nil for NULL.
 //
-// Phase 0 produces no sets; the renderers already handle them so the format
-// is pinned before `query run` fills it. Typed JSON cells (numbers, bools)
-// arrive with the column types in phase 2.
+// `profile list` builds its set by hand; `query run` will fill sets from the
+// executor. Typed JSON cells (numbers, bools) arrive with the column types in
+// phase 2.
 type Set struct {
 	Columns       []Column
 	Rows          [][]*string

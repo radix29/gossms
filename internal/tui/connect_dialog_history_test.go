@@ -43,6 +43,11 @@ func TestMatchLabelClipsServerAndDatabase(t *testing.T) {
 			"sql01.corp.ex…,1444,Adventu…,sa"},
 		{config.Connection{Server: "12345678901234", Database: "12345678", User: "sa"},
 			"12345678901234,1433,12345678,sa"},
+		// A profile name leads, and the server gives up its width.
+		{config.Connection{Profile: "dev", Server: "win10cli.fritz.box", Database: "HealthClinic", User: "sa"},
+			"[dev] win10cl…,1433,HealthC…,sa"},
+		{config.Connection{Profile: "a-very-long-profile", Server: "srv", User: "sa"},
+			"[a-very-lo…] srv,1433,,sa"},
 	}
 	for _, c := range cases {
 		if got := matchLabel(c.c); got != c.want {

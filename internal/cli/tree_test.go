@@ -148,6 +148,10 @@ func checkCommandLine(tree *spec.Tree, line string) string {
 			}
 			path = append(path, w)
 		}
+		// `gossms help <group> <command>` names the group as a help topic.
+		if len(path) > 1 && slices.Equal(path[:1], helpCommand(tree).Path) {
+			path = path[1:]
+		}
 		if len(path) > 0 && tree.Lookup(path) == nil {
 			return "names a command the tree lacks"
 		}
@@ -251,19 +255,23 @@ func TestCommandMentionsParse(t *testing.T) {
 func TestCheckMentions(t *testing.T) {
 	tree := commandTree()
 	for line, ok := range map[string]bool{
-		"gossms help":                true,
-		"gossms help version":        true,
-		"gossms version -o json":     true,
-		"gossms --version":           true,
-		"gossms help <command>":      true,
-		"gossms help %s":             true,
-		"gossms <command> --help":    true,
-		"gossms agent guide":         false,
-		"gossms help agent":          false,
-		"gossms agent <topic>":       false,
-		"gossms version --bogus":     false,
-		"gossms -p dev":              false,
-		"gossms version -o markdown": false,
+		"gossms help":                   true,
+		"gossms help version":           true,
+		"gossms version -o json":        true,
+		"gossms --version":              true,
+		"gossms help <command>":         true,
+		"gossms help %s":                true,
+		"gossms <command> --help":       true,
+		"gossms agent guide":            false,
+		"gossms help agent":             false,
+		"gossms agent <topic>":          false,
+		"gossms version --bogus":        false,
+		"gossms -p dev":                 false,
+		"gossms version -o markdown":    false,
+		"gossms help profile <command>": true,
+		"gossms help agent <command>":   false,
+		"gossms profile test dev":       true,
+		"gossms profile show":           false, // <name> is required
 	} {
 		if got := checkCommandLine(tree, line) == ""; got != ok {
 			t.Errorf("checkCommandLine(%q) ok = %v, want %v", line, got, ok)

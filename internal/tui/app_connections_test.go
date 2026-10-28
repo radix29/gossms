@@ -29,6 +29,8 @@ func newTestApp() *App {
 	a.contextMenu = new(controls.ContextMenu{})
 	// An Execute with no connection opens it (QueryPanel.runRefused).
 	a.connectDialog = NewConnectDialog(a)
+	// The Connect dialog's Profile... button opens it.
+	a.profileDialog = NewProfileDialog(nil)
 	return a
 }
 
