@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "1.0",
+  "status": "error",
+  "command": "query run",
+  "server": "srv",
+  "database": "db",
+  "durationMs": 5,
+  "rowsAffected": 3,
+  "outFile": null,
+  "resultSets": [
+    {
+      "columns": [
+        {
+          "name": "id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "ok",
+          "type": "bit",
+          "nullable": true
+        },
+        {
+          "name": "f",
+          "type": "float",
+          "nullable": true
+        },
+        {
+          "name": "amount",
+          "type": "decimal(18,2)",
+          "nullable": true
+        },
+        {
+          "name": "",
+          "type": "nvarchar(max)",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "_summary",
+          "type": "nvarchar(10)",
+          "nullable": true
+        }
+      ],
+      "rows": [
+        [
+          1,
+          true,
+          1E+300,
+          "12.50",
+          "a|b\\c\nd",
+          -9,
+          "x"
+        ],
+        [
+          2,
+          false,
+          -0.5,
+          null,
+          "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…[+44 chars]",
+          0,
+          null
+        ],
+        [
+          3,
+          null,
+          null,
+          "0.00",
+          "",
+          12,
+          ""
+        ]
+      ],
+      "rowCount": 3,
+      "totalRowCount": 3,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": null
+    }
+  ],
+  "messages": [
+    {
+      "type": "info",
+      "text": "(3 rows affected)"
+    }
+  ],
+  "warnings": [],
+  "errors": [
+    {
+      "code": "SQL_ERROR",
+      "sqlErrorNumber": 208,
+      "severity": 16,
+      "state": 1,
+      "line": 4,
+      "procedure": null,
+      "message": "Invalid object name 'Sales.Customers'.",
+      "hint": "Check the name."
+    }
+  ]
+}

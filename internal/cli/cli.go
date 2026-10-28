@@ -67,12 +67,16 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 				res.Command = perr.Command.Name()
 			}
 		}
-		return finish(env, res, format, false)
+		return finish(env, res, output.DefaultOptions(format), nil)
 	}
-	inv.Stdin, inv.Getenv = env.Stdin, env.Getenv
+	inv.Stdin, inv.Getenv, inv.ReadFile = env.Stdin, env.Getenv, env.ReadFile
 	format = output.Format(inv.Values["output"].(string))
-	quiet := inv.Values["quiet"].(bool)
 	cmd := inv.Command
+	o, oerr := renderOptions(inv)
+	if oerr != nil {
+		o = output.DefaultOptions(format)
+	}
+	o.Quiet = inv.Values["quiet"].(bool)
 
 	if inv.Values[args.HelpOption].(bool) {
 		return showHelp(env, tree, format, cmd.Name(), cmd)
@@ -83,7 +87,7 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 		}
 		target := tree.Lookup(inv.Args)
 		if target == nil {
-			return finish(env, &output.Result{Command: cmd.Name(), Errors: []*output.Error{unknownHelpTopic(tree, inv.Args)}}, format, quiet)
+			return finish(env, &output.Result{Command: cmd.Name(), Errors: []*output.Error{unknownHelpTopic(tree, inv.Args)}}, o, nil)
 		}
 		return showHelp(env, tree, format, cmd.Name(), target)
 	}
@@ -93,8 +97,18 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 			e = output.NewError(output.CodeUsageError, cmd.Name()+": a command is required",
 				fmt.Sprintf("Commands: %s. Run `gossms help %s` for usage.", commandNames(subs), cmd.Name()))
 		}
-		return finish(env, &output.Result{Command: cmd.Name(), Errors: []*output.Error{e}}, format, quiet)
+		return finish(env, &output.Result{Command: cmd.Name(), Errors: []*output.Error{e}}, o, nil)
 	}
+	if oerr != nil {
+		return finish(env, &output.Result{Command: cmd.Name(), Errors: []*output.Error{oerr.(*output.Error)}}, o, nil)
+	}
+	// The Sink exists before the handler runs: an --out-file that cannot be
+	// written fails before anything connects.
+	sink, err := output.NewSink(env.Stdout, o)
+	if err != nil {
+		return finish(env, &output.Result{Command: cmd.Name(), Errors: []*output.Error{err.(*output.Error)}}, o, nil)
+	}
+	inv.Sink = sink
 
 	// Ctrl+C (os.Interrupt is Ctrl+C on Windows too) cancels the context; the
 	// first one only, so a second still kills a handler that ignores it.
@@ -121,7 +135,7 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 		}
 		res.Errors = append(res.Errors, e)
 	}
-	return finish(env, res, format, quiet)
+	return finish(env, res, o, sink)
 }
 
 // call runs the handler, recovering a panic into GENERAL_ERROR. The stack goes
@@ -141,10 +155,24 @@ func call(ctx context.Context, inv *spec.Invocation, verbose bool, stderr io.Wri
 	return inv.Command.Run(ctx, inv)
 }
 
-// finish sets the result's status from its errors, renders it to stdout, and
-// on an error writes the one-line summary to stderr. It returns the exit code:
-// the first error's, else 0.
-func finish(env Env, res *output.Result, format output.Format, quiet bool) int {
+// finish completes the Sink (made from o when the command had none) with the
+// sets the handler built itself, sets the result's status from its errors and
+// renders it to stdout. stderr gets one line for an error — or, for csv and
+// tsv, whose stdout is rows only, the whole summary. It returns the exit
+// code: the first error's, else 0.
+func finish(env Env, res *output.Result, o output.Options, sink *output.Sink) int {
+	if sink == nil {
+		o.OutFile = ""
+		sink, _ = output.NewSink(env.Stdout, o)
+	}
+	sink.Add(res.Sets)
+	if err := sink.Finish(res, len(res.Errors) > 0); err != nil {
+		e, ok := errors.AsType[*output.Error](err)
+		if !ok {
+			e = output.NewError(output.CodeGeneralError, err.Error(), "")
+		}
+		res.Errors = append(res.Errors, e)
+	}
 	exit := 0
 	if len(res.Errors) > 0 {
 		e := res.Errors[0]
@@ -161,11 +189,14 @@ func finish(env Env, res *output.Result, format output.Format, quiet bool) int {
 	} else if res.Status == "" {
 		res.Status = output.StatusOK
 	}
-	if err := output.Render(env.Stdout, format, res, quiet); err != nil {
+	if err := output.Render(env.Stdout, res, o); err != nil {
 		fmt.Fprintf(env.Stderr, "gossms: %s: writing output: %v\n", output.CodeGeneralError, err)
 		return max(exit, 1)
 	}
-	if len(res.Errors) > 0 {
+	switch {
+	case o.Format.RowsOnly():
+		output.RenderSummary(env.Stderr, res, o)
+	case len(res.Errors) > 0:
 		fmt.Fprintf(env.Stderr, "gossms: %s: %s\n", res.Errors[0].Code, res.Errors[0].Message)
 	}
 	return exit

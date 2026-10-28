@@ -8,8 +8,7 @@ import (
 
 // jsonEnvelope is the JSON format. Struct field order is output order, and
 // every key but "data" is always present (null or [] when empty) so a parser
-// can rely on the shape; "data" appears only for a record answer, in place of
-// rows in "resultSets".
+// can rely on the shape; "data" appears only for a record answer.
 type jsonEnvelope struct {
 	SchemaVersion string        `json:"schemaVersion"`
 	Status        Status        `json:"status"`
@@ -17,19 +16,33 @@ type jsonEnvelope struct {
 	Server        *string       `json:"server"`
 	Database      *string       `json:"database"`
 	DurationMs    int64         `json:"durationMs"`
+	RowsAffected  *int64        `json:"rowsAffected"`
+	OutFile       *string       `json:"outFile"`
 	Data          jsonFields    `json:"data,omitempty"`
-	ResultSets    []jsonSet     `json:"resultSets"`
+	ResultSets    []any         `json:"resultSets"` // jsonSet, or jsonSetSummary in jsonl's summary
 	Messages      []jsonMessage `json:"messages"`
 	Warnings      []string      `json:"warnings"`
-	Errors        []jsonError   `json:"errors"`
+	Errors        []any         `json:"errors"` // jsonError or jsonSQLError
 }
 
 type jsonSet struct {
 	Columns       []jsonColumn `json:"columns"`
-	Rows          [][]*string  `json:"rows"`
+	Rows          [][]any      `json:"rows"`
 	RowCount      int          `json:"rowCount"`
 	TotalRowCount int          `json:"totalRowCount"`
 	Truncated     bool         `json:"truncated"`
+	TruncatedBy   *string      `json:"truncatedBy"`
+	RowsAffected  *int64       `json:"rowsAffected"`
+}
+
+// jsonSetSummary is a set in jsonl's _summary line: everything but the rows,
+// which are the lines before it.
+type jsonSetSummary struct {
+	Columns       []jsonColumn `json:"columns"`
+	RowCount      int          `json:"rowCount"`
+	TotalRowCount int          `json:"totalRowCount"`
+	Truncated     bool         `json:"truncated"`
+	TruncatedBy   *string      `json:"truncatedBy"`
 	RowsAffected  *int64       `json:"rowsAffected"`
 }
 
@@ -48,6 +61,19 @@ type jsonError struct {
 	Code    Code    `json:"code"`
 	Message string  `json:"message"`
 	Hint    *string `json:"hint"`
+}
+
+// jsonSQLError is an error with a SQL Server error behind it: jsonError's
+// keys plus the server's fields, in the order docs/cli.md § Errors shows.
+type jsonSQLError struct {
+	Code           Code    `json:"code"`
+	SQLErrorNumber int32   `json:"sqlErrorNumber"`
+	Severity       uint8   `json:"severity"`
+	State          uint8   `json:"state"`
+	Line           int     `json:"line"`
+	Procedure      *string `json:"procedure"`
+	Message        string  `json:"message"`
+	Hint           *string `json:"hint"`
 }
 
 // jsonFields is Result.Fields as one JSON object, keys in Fields order
@@ -78,9 +104,29 @@ func (f jsonFields) MarshalJSON() ([]byte, error) {
 }
 
 // renderJSON writes r as one indented JSON object and a trailing newline.
-// HTML escaping is off: SQL text is full of <, > and &, and < helps no
-// reader.
-func renderJSON(w io.Writer, r *Result) error {
+func renderJSON(w io.Writer, r *Result, o Options) error {
+	env := newEnvelope(r)
+	for _, s := range r.Sets {
+		js := jsonSet{
+			Columns:       jsonColumns(s.Columns),
+			Rows:          [][]any{},
+			RowCount:      len(s.Rows),
+			TotalRowCount: s.TotalRowCount,
+			Truncated:     s.Truncated,
+			TruncatedBy:   nullable(s.TruncatedBy),
+			RowsAffected:  s.RowsAffected,
+		}
+		k := kinds(s.Columns)
+		for _, row := range s.Rows {
+			js.Rows = append(js.Rows, jsonRow(row, k, o.MaxColWidth))
+		}
+		env.ResultSets = append(env.ResultSets, js)
+	}
+	return encodeJSON(w, env, "  ")
+}
+
+// newEnvelope is r's envelope without its result sets.
+func newEnvelope(r *Result) jsonEnvelope {
 	env := jsonEnvelope{
 		SchemaVersion: SchemaVersion,
 		Status:        r.Status,
@@ -88,42 +134,61 @@ func renderJSON(w io.Writer, r *Result) error {
 		Server:        nullable(r.Server),
 		Database:      nullable(r.Database),
 		DurationMs:    r.Duration.Milliseconds(),
+		RowsAffected:  r.RowsAffected,
+		OutFile:       nullable(r.OutFile),
 		Data:          jsonFields(r.Fields),
-		ResultSets:    []jsonSet{},
+		ResultSets:    []any{},
 		Messages:      []jsonMessage{},
 		Warnings:      r.Warnings,
-		Errors:        []jsonError{},
+		Errors:        []any{},
 	}
 	if env.Warnings == nil {
 		env.Warnings = []string{}
-	}
-	for _, s := range r.Sets {
-		js := jsonSet{
-			Columns:       []jsonColumn{},
-			Rows:          s.Rows,
-			RowCount:      len(s.Rows),
-			TotalRowCount: s.TotalRowCount,
-			Truncated:     s.Truncated,
-			RowsAffected:  s.RowsAffected,
-		}
-		if js.Rows == nil {
-			js.Rows = [][]*string{}
-		}
-		for _, c := range s.Columns {
-			js.Columns = append(js.Columns, jsonColumn{Name: c.Name, Type: nullable(c.Type), Nullable: c.Nullable})
-		}
-		env.ResultSets = append(env.ResultSets, js)
 	}
 	for _, m := range r.Messages {
 		env.Messages = append(env.Messages, jsonMessage(m))
 	}
 	for _, e := range r.Errors {
+		if q := e.SQL; q != nil {
+			env.Errors = append(env.Errors, jsonSQLError{Code: e.Code, SQLErrorNumber: q.Number, Severity: q.Severity,
+				State: q.State, Line: q.Line, Procedure: nullable(q.Procedure), Message: e.Message, Hint: nullable(e.Hint)})
+			continue
+		}
 		env.Errors = append(env.Errors, jsonError{Code: e.Code, Message: e.Message, Hint: nullable(e.Hint)})
 	}
+	return env
+}
+
+func jsonColumns(cols []Column) []jsonColumn {
+	out := []jsonColumn{}
+	for _, c := range cols {
+		out = append(out, jsonColumn{Name: c.Name, Type: nullable(c.Type), Nullable: c.Nullable})
+	}
+	return out
+}
+
+// jsonRow is one row's cells as JSON values; a short row is padded with
+// nulls, so every row has one value per column.
+func jsonRow(row []*string, k []cellKind, width int) []any {
+	out := make([]any, len(k))
+	for i := range k {
+		if i < len(row) {
+			out[i] = jsonCell(row[i], k[i], width)
+		}
+	}
+	return out
+}
+
+// encodeJSON writes v and a newline, indented by indent ("" for one line).
+// HTML escaping is off: SQL text is full of <, > and &, and \u003c helps no
+// reader.
+func encodeJSON(w io.Writer, v any, indent string) error {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	return enc.Encode(env)
+	if indent != "" {
+		enc.SetIndent("", indent)
+	}
+	return enc.Encode(v)
 }
 
 // nullable is nil for "", so JSON says null rather than an empty string that

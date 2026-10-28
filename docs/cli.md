@@ -7,14 +7,16 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (phase 1) the commands are `version`, `help` and `profile
-list/show/test`, the formats `text` and `json`; `profile test` is the only
-command that connects to a server.
+them. Today (phase 2, in progress) the commands are `version`, `help`, `profile
+list/show/test` and `query classify`; the formats `text`, `json`, `jsonl`,
+`csv`, `tsv` and `markdown`; `profile test` is the only command that connects
+to a server.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
 parser), `internal/cli/output` (envelope, renderers, exit codes),
 `internal/cli/connect` (connection options and resolution),
+`internal/cli/safety` (the T-SQL classifier and its check),
 `internal/cli/cmd` (the handlers). The command tree itself is
 `internal/cli/tree.go`.
 
@@ -97,11 +99,24 @@ close (edit distance ≤ 2), the hint is a did-you-mean: `Did you mean
 
 | Option | Alias | |
 |---|---|---|
-| `--output <text\|json>` | `-o` | Output format (default `text`). The list grows only as renderers are implemented — a format is never advertised before it works |
-| `--quiet` | `-q` | Text only: leave out the header block. A JSON envelope is always whole |
+| `--output <text\|json\|jsonl\|csv\|tsv\|markdown>` | `-o` | Output format (default `text`). The list grows only as renderers are implemented — a format is never advertised before it works |
+| `--quiet` | `-q` | Text and markdown: leave out the header block. A JSON envelope is always whole |
 | `--verbose` | | Diagnostic logging to stderr. No short alias: `-v` is `--version` |
 | `--no-color` | | Accepted; nothing is coloured yet |
 | `--help` | `-h` | The command's help (text) |
+| `--max-rows <n>` | | Rows kept per result set on stdout (default 200; `0` keeps all) |
+| `--max-col-width <n>` | | Characters kept per cell (default 256; `0` keeps all) |
+| `--max-output-bytes <n>` | | Cap on stdout (default 1048576; `0` is no cap) |
+| `--null-text <text>` | | How text and markdown show NULL (default `NULL`) |
+| `--no-headers` | | Leave out column headers (text, csv, tsv) |
+| `--no-messages` | | Leave out PRINT and informational messages |
+| `--out-file <path>` | | Write every row to a file; stdout gets the summary |
+| `--force` | | Replace an existing `--out-file` |
+
+The output options are global: every command's answer goes through the same
+limits, so `profile list --max-rows 5` is cut like a query's result
+(§ Limits). `--headers` and `--messages` are the positive spellings; there is
+no `--include-messages`.
 
 ## Help
 
@@ -214,8 +229,9 @@ every OS, independent of the locale. Library logging is discarded unless
 ### The envelope
 
 Every command returns the same envelope: a header (status, command, server,
-database, duration), then **either** a record (`data`, for answers such as
-`version`) **or** result sets, then messages, warnings and errors.
+database, duration, rows affected, out file), then a record (`data`, for
+answers such as `version`), result sets, or both (`query classify`: a summary
+record and one row per statement), then messages, warnings and errors.
 
 `status` is `ok`, `error`, `blocked` or `cancelled`. The first error decides
 the exit code.
@@ -235,15 +251,20 @@ COMMIT: 72a0e3c
 CLI_SCHEMA: 1.0
 ```
 
-- `SERVER` and `DATABASE` appear only when set; `RESULT_SETS: n` only when
-  there are sets.
+- `SERVER` and `DATABASE` appear only when set; `ROWS_AFFECTED` only when the
+  server reported a count, `OUT_FILE` only with `--out-file`; `RESULT_SETS: n`
+  only when there are sets.
 - A record prints as `KEY: value` lines; the key is the JSON key in
   `UPPER_SNAKE` (`cliSchema` → `CLI_SCHEMA`).
 - A result set is `=== RESULT n (r rows, truncated: no) ===` (or `r of t rows,
   truncated: yes`), a header row, a `-+-` rule and the rows, aligned by
-  display width; the last column is unpadded. NULL prints `NULL`.
+  display width; the last column is unpadded. NULL prints `--null-text`. A
+  set cut by a limit is followed by its `NOTE:` line (§ Limits); a set sent to
+  `--out-file` is its marker only, `(n rows, sent to --out-file)`.
 - Then `=== MESSAGES ===` and `=== WARNINGS ===` when non-empty, and each error
-  as an `ERROR_CODE:` / `MESSAGE:` / `HINT:` block.
+  as an `ERROR_CODE:` / `MESSAGE:` / `HINT:` block; a SQL Server error adds
+  `SQL_ERROR_NUMBER:`, `SEVERITY:`, `STATE:`, `LINE:` and (inside a module)
+  `PROCEDURE:` after `ERROR_CODE:`.
 - Every value is one line: line breaks and tabs become spaces, so no value can
   forge a marker. An empty value prints `KEY:` — no line ends in a space.
 
@@ -257,6 +278,8 @@ CLI_SCHEMA: 1.0
   "server": null,
   "database": null,
   "durationMs": 0,
+  "rowsAffected": null,
+  "outFile": null,
   "data": {
     "version": "v0.2.0",
     "commit": "72a0e3c",
@@ -272,17 +295,100 @@ CLI_SCHEMA: 1.0
 - Keys always appear in this order, and every key is always present (`null` or
   `[]`) — except `data`, which appears only for a record answer, its fields in
   the command's fixed order.
+- `rowsAffected` is the sum of the DML row counts the server reported, `null`
+  when it reported none; `outFile` the `--out-file` written, else `null`.
 - An error is `{"code", "message", "hint"}`; a message `{"type", "text"}`; a
-  warning a string.
+  warning a string. An error with a SQL Server error behind it is `{"code",
+  "sqlErrorNumber", "severity", "state", "line", "procedure", "message",
+  "hint"}` (`procedure` `null` outside a module).
 - A result set is `{"columns": [{"name", "type", "nullable"}], "rows",
-  "rowCount", "totalRowCount", "truncated", "rowsAffected"}`; a cell is its
-  grid text, or `null`.
+  "rowCount", "totalRowCount", "truncated", "truncatedBy", "rowsAffected"}`.
+  `rowCount` is the rows in this output, `totalRowCount` the rows the server
+  returned; `truncatedBy` is `max-rows` or `max-output-bytes` (the last limit
+  that removed rows), `null` when whole. With `--out-file` the rows are in the
+  file and `rows` is `[]`.
+- A cell is typed by its column's SQL type: `int`, `bigint`, `smallint`,
+  `tinyint`, `real`, `float` a number; `bit` `true`/`false`; NULL `null`;
+  everything else — `decimal`, `numeric` and `money` included, which most
+  parsers would round as a float — the grid's text as a string.
 - Two-space indent, no HTML escaping, one trailing newline.
 - `schemaVersion` (also `gossms version`'s `cliSchema`) changes only when the
   structure breaks compatibility.
 
-A usage error is rendered in JSON when the raw command line asks for
-`-o json` / `--output json`, although parsing failed.
+A usage error is rendered in the format the raw command line asks for
+(`-o json`), although parsing failed.
+
+### `jsonl`
+
+One JSON object per line, written as the rows arrive:
+
+```text
+{"_resultSet":{"index":1,"columns":[{"name":"id","key":"id","type":"int","nullable":false}]}}
+{"id":1}
+{"id":2}
+{"_summary":{"schemaVersion":"1.0","status":"ok",…,"resultSets":[{"columns":[…],"rowCount":2,"totalRowCount":2,"truncated":false,"truncatedBy":null,"rowsAffected":null}],…}}
+```
+
+- Each set starts with a `_resultSet` line; each row is an object keyed by
+  column, its values typed as in `json`. A key is the column name; a nameless
+  column is `column<n>`, and a duplicate (or a name that would read as
+  `_resultSet`/`_summary`) gets `_<n>` appended, `n` its 1-based position —
+  the `_resultSet` line maps every name to its key.
+- The last line is `_summary`: the `json` envelope with each set's rows left
+  out. It is always written, also on an error or a cancel.
+
+### `csv` and `tsv`
+
+Rows only on stdout, written by the TUI's Results To File writer: RFC 4180,
+NULL an empty field, the empty string `""` (`docs/decisions.md` § SQL NULL in
+results), every set (header row, then rows) separated by a blank line. TSV is
+the same with a tab, quoting a field that holds a tab, quote or line break.
+Cells are never clipped. Everything else — the header block, each set's
+marker and truncation note, messages, warnings, errors — goes to **stderr** as
+the text format's summary, on success too; the exit code carries the status.
+
+### `markdown`
+
+The text envelope with each set as a GitHub table, after a blank line: `|`
+and `\` escaped, line breaks as `<br>`. `--no-headers` does not apply (a
+GitHub table needs its header row).
+
+### Limits
+
+Rows past a limit are dropped from the output, never from the run: the whole
+script runs, and `totalRowCount` stays exact.
+
+- **`--max-rows n`** keeps each set's first `n` rows on stdout and counts the
+  rest. The rows kept are held in memory until the command ends, so `0` on a
+  large result holds every row; `--out-file` and `-o jsonl` keep none.
+  `NOTE: Output truncated by --max-rows 200. Use --max-rows 0 or --out-file to
+  get all rows.`
+- **`--max-col-width n`** cuts a cell to `n` characters (Unicode code points)
+  and marks the rest: `…[+12,345 chars]`. Text, markdown, json and jsonl only;
+  csv, tsv and `--out-file` are lossless. A typed number or bit is never cut.
+- **`--max-output-bytes n`** caps stdout. Text, json, markdown, csv and tsv
+  drop whole trailing rows — the last set's first — until the document fits,
+  so JSON is never cut inside a value; `NOTE: Output truncated by
+  --max-output-bytes …`. If even no rows fit (a huge message), the rowless
+  document is written anyway, with a warning. `jsonl` stops writing rows at
+  the cap; its `_summary` line is exempt.
+
+### `--out-file`
+
+`--out-file <path>` writes every row — no row, column-width or byte limit — to
+the file, in the format its extension names: `.csv`, `.tsv`, `.jsonl` (rows,
+then the summary line), `.json`, `.md`, `.txt` (the whole envelope); anything
+else is a usage error. `--null-text`, `--no-headers` and `--no-messages` apply
+as on stdout. stdout gets the summary in the `-o` format, its sets with no rows
+and `outFile` naming the path.
+
+- It is checked before the command runs: an unknown extension, a directory, or
+  an existing file without `--force` is `USAGE_ERROR` (never a prompt).
+- The rows go to a temporary file beside the target, renamed over it only when
+  the command succeeds. On an error or a cancel the destination is left as it
+  was, and a warning says so.
+- A `.json`, `.md` or `.txt` file is rendered at the end, so its rows are held
+  in memory; prefer `.csv`, `.tsv` or `.jsonl` for large results.
 
 ## Exit codes
 
@@ -303,7 +409,7 @@ A usage error is rendered in JSON when the raw command line asks for
 | 130 | `CANCELLED` | Ctrl+C or SIGINT |
 
 All are defined now so a caller's handling never depends on the phase it met;
-today's commands produce 0, 1, 2, 3, 4, 6, 8 and 130. The table is `output.ExitCodes`, the one
+today's commands produce 0, 1, 2, 3, 4, 6, 7, 8 and 130. The table is `output.ExitCodes`, the one
 place a code's number is spelled.
 
 **Ctrl+C** (also on Windows) cancels the running command's context: the result
@@ -320,7 +426,49 @@ second Ctrl+C kills the process.
 | `profile show <name>` | Record: `name`, `kind`, `generatedName`, `server`, `port`, `database`, `auth`, `user`, `tenantId`, `clientId`, `encrypt`, `trustServerCertificate`, `hostNameInCertificate`, `extraProperties` (keys only — a value may be a secret), `maxAllow`, `password`. A password that cannot be opened adds a warning |
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
 
+| `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
+
 No command ever prints a password or secret.
+
+### T-SQL input
+
+Every `query` command takes its script from exactly one of:
+
+| Option | Alias | |
+|---|---|---|
+| `--sql <text>` | `-Q` | Inline T-SQL |
+| `--file <path>` | `-i` | A file; `-` reads stdin. UTF-8 (a BOM is dropped), or UTF-16 with a byte-order mark |
+| `--sql-base64 <b64>` | | Base64 of the UTF-8 text, padded or not |
+
+None, or more than one, is `USAGE_ERROR`; so are an unreadable file, text
+that is not valid UTF-8 (or UTF-16 with an unpaired surrogate), and a script
+over 64 MB. `--file -` with `--password-stdin` is refused: both read stdin.
+Prefer `--file -` or `--sql-base64` to `--sql` for anything but one line — no
+shell quoting can damage them.
+
+## Safety
+
+`internal/cli/safety` puts every statement into an operation class — `read`,
+`write`, `ddl`, `admin` — by its leading keywords over gossms's one lexer
+(`tuikit/sqltext`), so a keyword in a comment, literal or quoted identifier
+means nothing. It fails closed: an unrecognised statement, dynamic SQL and a
+procedure not on the read allow-list are `write` at least, and a class keyword
+anywhere in a statement raises it (`SELECT 1` followed by `DISABLE TRIGGER`
+on the next line, which the statement splitter merges, is `ddl`). It is a
+guardrail, not the security boundary: that is the login's permissions.
+
+A run's check refuses, in this order, the first of:
+
+1. a script above the allowed class — the lower of `--allow` and the profile's
+   ceiling (`max_allow`, which no `--allow` raises). The refusal names the
+   statements above it: `STATEMENTS: UPDATE Sales.Customer (line 1)`;
+2. `SET PARSEONLY`, `SET NOEXEC` or `SET SHOWPLAN_*` `ON`: modes the command
+   line runs itself.
+
+A refusal is `STATUS: BLOCKED`, `ERROR_CODE: BLOCKED`, exit 7, with
+`DETECTED_CLASS`, `ALLOWED_CLASS` and `STATEMENTS` among the record's fields
+and a hint naming the `--allow` that would do — or saying that the profile's
+ceiling is what refuses.
 
 ## The import rule
 

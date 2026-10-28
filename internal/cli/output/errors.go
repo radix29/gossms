@@ -61,9 +61,22 @@ func (c Code) Exit() int {
 // Error is one entry of a Result's errors, and an error a handler can return
 // to choose the code.
 type Error struct {
-	Code    Code
+	Code Code
+	// SQL is the SQL Server error behind a SQL_ERROR (and the codes a SQL
+	// error maps to); nil for every other error.
+	SQL     *SQLError
 	Message string
 	Hint    string // the next thing to try; empty when there is none
+}
+
+// SQLError is a SQL Server error's structured fields, as the driver reports
+// them.
+type SQLError struct {
+	Number    int32
+	Severity  uint8
+	State     uint8
+	Line      int    // the script line; the module's own line inside a procedure
+	Procedure string // empty outside a module
 }
 
 // NewError is an *Error for code.

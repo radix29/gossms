@@ -5,6 +5,8 @@
   "server": "localhost\\SQL2022",
   "database": "AdventureWorks",
   "durationMs": 38,
+  "rowsAffected": null,
+  "outFile": null,
   "resultSets": [
     {
       "columns": [
@@ -33,12 +35,14 @@
           "<a & b>"
         ],
         [
-          "short"
+          "short",
+          null
         ]
       ],
       "rowCount": 4,
       "totalRowCount": 18432,
       "truncated": true,
+      "truncatedBy": "max-rows",
       "rowsAffected": null
     },
     {
@@ -57,6 +61,7 @@
       "rowCount": 1,
       "totalRowCount": 1,
       "truncated": false,
+      "truncatedBy": null,
       "rowsAffected": 1
     },
     {
@@ -71,6 +76,7 @@
       "rowCount": 0,
       "totalRowCount": 0,
       "truncated": false,
+      "truncatedBy": null,
       "rowsAffected": null
     }
   ],

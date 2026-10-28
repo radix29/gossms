@@ -39,35 +39,37 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 			{Name: "help", Short: "h", Type: spec.TypeBool,
 				Help: "Show help for the command", Global: true},
 		},
-		Commands: []*spec.Command{
-			{
-				Path:        []string{"version"},
-				Summary:     "Show the gossms version and the command-line schema version",
-				Description: "Prints the build metadata `gossms --version` shows, plus the schema version of this command line's output.",
-				Class:       spec.ClassRead,
-				Run:         runVersion,
-				Examples: []string{
-					"gossms version",
-					"gossms version -o json",
-				},
+	}
+	tree.Globals = append(tree.Globals, outputOptions()...)
+	tree.Commands = []*spec.Command{
+		{
+			Path:        []string{"version"},
+			Summary:     "Show the gossms version and the command-line schema version",
+			Description: "Prints the build metadata `gossms --version` shows, plus the schema version of this command line's output.",
+			Class:       spec.ClassRead,
+			Run:         runVersion,
+			Examples: []string{
+				"gossms version",
+				"gossms version -o json",
 			},
-			{
-				Path:        []string{"help"},
-				Summary:     "Show help for gossms, a command group or a command",
-				Description: "With no argument, lists the command groups. With a group, lists its commands; with a group and a command, shows that command's usage, options and examples, as `<command> --help` does.",
-				Args: []spec.Arg{
-					{Name: "group", Help: "A command group, or a depth-1 command such as version"},
-					{Name: "command", Help: "A command in the group"},
-				},
-				Class: spec.ClassRead,
-				Examples: []string{
-					"gossms help",
-					"gossms help version",
-				},
+		},
+		{
+			Path:        []string{"help"},
+			Summary:     "Show help for gossms, a command group or a command",
+			Description: "With no argument, lists the command groups. With a group, lists its commands; with a group and a command, shows that command's usage, options and examples, as `<command> --help` does.",
+			Args: []spec.Arg{
+				{Name: "group", Help: "A command group, or a depth-1 command such as version"},
+				{Name: "command", Help: "A command in the group"},
+			},
+			Class: spec.ClassRead,
+			Examples: []string{
+				"gossms help",
+				"gossms help version",
 			},
 		},
 	}
 	tree.Commands = append(tree.Commands, cmd.ProfileCommands(d)...)
+	tree.Commands = append(tree.Commands, cmd.QueryCommands(d)...)
 	return tree
 }
 

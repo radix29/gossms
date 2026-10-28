@@ -267,7 +267,7 @@ func TestCheckMentions(t *testing.T) {
 		"gossms agent <topic>":          false,
 		"gossms version --bogus":        false,
 		"gossms -p dev":                 false,
-		"gossms version -o markdown":    false,
+		"gossms version -o parquet":     false,
 		"gossms help profile <command>": true,
 		"gossms help agent <command>":   false,
 		"gossms profile test dev":       true,

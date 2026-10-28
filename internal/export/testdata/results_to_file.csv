@@ -1,0 +1,22 @@
+id,text,note
+1,,x
+2,"",y
+3,NULL,'NULL' string
+4,"\.",""
+5," lead","a,b"
+6,"q""uote","line
+break"
+7,"crx",tab	x
+8,é ünï 日本," nbsp"
+,z,w
+10,"	lead tab",\.x
+
+only
+""
+""
+v
+
+a b,"c,d"," ""q"""
+
+after empty
+x
