@@ -8,9 +8,9 @@ commit.
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
 them. Today (phase 2, in progress) the commands are `version`, `help`, `profile
-list/show/test` and `query classify`; the formats `text`, `json`, `jsonl`,
-`csv`, `tsv` and `markdown`; `profile test` is the only command that connects
-to a server.
+list/show/test` and `query classify/run/parse`; the formats `text`, `json`,
+`jsonl`, `csv`, `tsv` and `markdown`. `profile test`, `query run` and `query
+parse` connect to a server.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
@@ -167,8 +167,14 @@ unreadable`). A `config.json` that exists but cannot be read or parsed is
 
 ## Connecting
 
-A command that connects takes these options (today: `profile test`). The
-precedence is **command line > environment variable > profile > default**.
+A command that connects takes these options (`profile test`, `query run`,
+`query parse`). The precedence is **command line > environment variable >
+profile > default**.
+
+`query run` and `query parse` name the profile with `--profile <name>` (`-p`,
+env `GOSSMS_PROFILE`); `profile test` takes it positionally. Without one the
+call is ad hoc: `--server` is required and there is no ceiling beyond
+`--allow`.
 
 | Option | Alias | Env variable | |
 |---|---|---|---|
@@ -409,7 +415,7 @@ and `outFile` naming the path.
 | 130 | `CANCELLED` | Ctrl+C or SIGINT |
 
 All are defined now so a caller's handling never depends on the phase it met;
-today's commands produce 0, 1, 2, 3, 4, 6, 7, 8 and 130. The table is `output.ExitCodes`, the one
+today's commands produce all of them except 11 (`UNSUPPORTED`). The table is `output.ExitCodes`, the one
 place a code's number is spelled.
 
 **Ctrl+C** (also on Windows) cancels the running command's context: the result
@@ -425,7 +431,8 @@ second Ctrl+C kills the process.
 | `profile list [--all]` | Set: `name`, `kind` (`profile`, or `recent` with `--all`), `server`, `port` (NULL when not set), `database`, `auth` (the `--auth` spelling), `user`, `max_allow` (NULL for a recent connection), `password` (`saved`, `none`, `unreadable`). Profiles sorted by name, then recent connections most recent first. An empty list carries a message saying how to make a profile |
 | `profile show <name>` | Record: `name`, `kind`, `generatedName`, `server`, `port`, `database`, `auth`, `user`, `tenantId`, `clientId`, `encrypt`, `trustServerCertificate`, `hostNameInCertificate`, `extraProperties` (keys only — a value may be a secret), `maxAllow`, `password`. A password that cannot be opened adds a warning |
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
-
+| `query run` (T-SQL input) `[-p <profile>] [connection options] [run options]` | The script's result sets, then messages; `ROWS_AFFECTED` in the header. A wrapped run (§ Transactions) adds a record: `maxRowsAffected` (with `--max-rows-affected`), `transaction`. A refused script is BLOCKED with the record `detectedClass`, `allowedClass`, `statements`. `--dry-run` answers as `query classify --allow` (§ Running T-SQL) |
+| `query parse` (T-SQL input) `[-p <profile>] [connection options] [--timeout <sec>]` | Record: `valid`, `batchCount` (batches sent, each `GO n` repetition counted), `detectedClass`; each syntax error is a `SQL_ERROR` with its script line (§ Running T-SQL) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
 No command ever prints a password or secret.
@@ -446,6 +453,84 @@ over 64 MB. `--file -` with `--password-stdin` is refused: both read stdin.
 Prefer `--file -` or `--sql-base64` to `--sql` for anything but one line — no
 shell quoting can damage them.
 
+## Running T-SQL
+
+`query run` runs the script on **one session**, as a query window does: temp
+tables, `SET` options and `USE` carry across its `GO` batches; nothing carries
+across calls. The order is fixed: read and classify the script, check it
+against `--allow` and the profile's ceiling (§ Safety) — a refusal is exit 7
+**before anything connects** — then connect, run, and answer.
+
+| Option | |
+|---|---|
+| `--allow <read\|write\|ddl\|admin>` | Highest class the script may reach (default `read`); the profile's ceiling caps it |
+| `--dry-run` | Classify and check without connecting: `query classify`'s answer with `allowedClass` (the effective class); exit 7 when a run would be refused |
+| `--transaction <auto\|commit\|rollback>` | § Transactions (default `auto`: each statement commits itself) |
+| `--max-rows-affected <n>` | § Transactions |
+| `--continue-on-error` | Send every batch even after one fails. The default stops after the first failing batch (within a batch SQL Server decides), with a warning naming how many batches were sent |
+| `--timeout <sec>` | How long the script may run (default 60, `0` no limit); `--connect-timeout` bounds the connect. Past it the run is cancelled: `TIMEOUT`, exit 6 |
+| `--statistics <io,time>` | `SET STATISTICS IO`/`TIME ON` for the run; their output is in `messages` |
+
+Every row goes through the output options (§ Output): the whole script runs
+whatever `--max-rows` keeps, so a later `UPDATE` still runs and
+`totalRowCount` stays exact.
+
+- **Errors.** A SQL Server error of severity 11 or more goes to `errors` with
+  its number, severity, state, script line and procedure, not to `messages`.
+  It is `SQL_ERROR` (exit 5) — `PERMISSION_DENIED` (exit 9) when the server
+  says the login lacks a permission. A missing object stays `SQL_ERROR`:
+  `NOT_FOUND` is for what the command line names. With
+  `--continue-on-error`, some batches failing and some succeeding is
+  `PARTIAL` (exit 10), listed first. A connection lost mid-run is
+  `CONNECTION_FAILED` (exit 3).
+- **Rows affected.** `rowsAffected` sums the counts of statements that
+  returned no rows (`INSERT`, `UPDATE`, `DELETE`, `MERGE`, `SELECT INTO`,
+  triggers' statements). A `SELECT`'s count is not a change, and neither —
+  the protocol cannot tell them apart — is a DML statement's with an `OUTPUT`
+  clause. `SET NOCOUNT ON` sends no counts. Each count is also a message.
+- **Ctrl+C** cancels the run and closes the session; the server rolls back an
+  open transaction. Exit 130.
+
+`query parse` sends `SET PARSEONLY ON`, then every batch (so every syntax
+error is reported in one call), then `OFF`. The server checks syntax and runs
+nothing, so it needs no `--allow`. **Names are not resolved**: a missing
+table or column is no error here, only at run time. A script naming
+`PARSEONLY`, `NOEXEC` or `SHOWPLAN_*` anywhere outside literals and comments —
+`OFF` included, which would switch the mode off and run the rest — is
+BLOCKED, exit 7.
+
+### Transactions
+
+`--transaction rollback`, `--transaction commit` and `--max-rows-affected`
+wrap the whole script — every batch, one session — in one transaction:
+`SET XACT_ABORT ON; BEGIN TRANSACTION` first, then the script, which stops at
+the first failing batch (`--continue-on-error` is refused, exit 2: an error
+under `XACT_ABORT` rolls the transaction back, and the later batches would
+commit on their own). The record's `transaction` says how it ended:
+
+| `transaction` | When |
+|---|---|
+| `rolled-back` | `rollback`; any error; `--max-rows-affected` exceeded; a timeout or Ctrl+C |
+| `committed` | `commit`, or `--max-rows-affected` within the limit, and every batch succeeded |
+| `ended-by-script` | The transaction was gone when the script finished: a procedure or dynamic SQL committed or rolled it back (Msg 266) |
+
+- The check refuses (exit 7) a script that controls transactions itself
+  (`BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `SAVE TRAN`, `SET
+  IMPLICIT_TRANSACTIONS ON`) or holds a statement SQL Server refuses inside
+  one (`ALTER DATABASE`, `BACKUP`, `RESTORE`, …).
+- **The guarantee covers the script's own statements, not procedure
+  bodies.** A procedure's `COMMIT` ends the wrapper and commits what came
+  before it, and what follows runs in autocommit. This is found afterwards
+  and reported as `SQL_ERROR` "the script ended the wrapping transaction"
+  (exit 5): check the data.
+- `--max-rows-affected <n>` commits only when `rowsAffected` stays at or
+  under `n`; over it the transaction is rolled back and the answer is
+  BLOCKED, exit 7. With `--transaction rollback` it rolls back either way.
+  It can only trust what the server counts, so it refuses (exit 7, before
+  connecting) a script with `SET NOCOUNT ON`, dynamic SQL, a procedure call
+  not on the read allow-list or an `OUTPUT` clause. Triggers' counts are
+  included: it over-counts rather than under-counts.
+
 ## Safety
 
 `internal/cli/safety` puts every statement into an operation class — `read`,
@@ -463,7 +548,9 @@ A run's check refuses, in this order, the first of:
    ceiling (`max_allow`, which no `--allow` raises). The refusal names the
    statements above it: `STATEMENTS: UPDATE Sales.Customer (line 1)`;
 2. `SET PARSEONLY`, `SET NOEXEC` or `SET SHOWPLAN_*` `ON`: modes the command
-   line runs itself.
+   line runs itself;
+3. with a transaction, and with `--max-rows-affected`, what it cannot hold or
+   count (§ Transactions).
 
 A refusal is `STATUS: BLOCKED`, `ERROR_CODE: BLOCKED`, exit 7, with
 `DETECTED_CLASS`, `ALLOWED_CLASS` and `STATEMENTS` among the record's fields

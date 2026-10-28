@@ -18,7 +18,7 @@ import (
 // help has no Run: Main answers it (and every --help) itself, since help is
 // text for people rather than a result in the envelope.
 func commandTree() *spec.Tree {
-	return newCommandTree(cmd.Deps{LoadConfig: config.LoadReadOnly, Connect: db.Connect})
+	return newCommandTree(cmd.Deps{LoadConfig: config.LoadReadOnly, Connect: db.Connect, OpenSession: cmd.OpenQuerySession})
 }
 
 // newCommandTree is commandTree over d, so tests can stand in for the config

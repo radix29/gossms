@@ -143,6 +143,9 @@ func TestStopOnErrorEndsTheRunAfterTheFailingBatch(t *testing.T) {
 	if !res.StoppedOnError {
 		t.Error("StoppedOnError = false, want true")
 	}
+	if res.Batches != 2 || res.FailedBatches != 1 {
+		t.Errorf("Batches %d, FailedBatches %d; want 2, 1", res.Batches, res.FailedBatches)
+	}
 	s.Close()
 
 	s, fc, _ = openFakeSession(t, nil, failing, failing, failing, nil)
@@ -152,6 +155,9 @@ func TestStopOnErrorEndsTheRunAfterTheFailingBatch(t *testing.T) {
 	}
 	if res.StoppedOnError {
 		t.Error("StoppedOnError = true without the option")
+	}
+	if res.Batches != 5 || res.FailedBatches != 3 {
+		t.Errorf("Batches %d, FailedBatches %d; want 5, 3 (each GO 3 repetition counts)", res.Batches, res.FailedBatches)
 	}
 	s.Close()
 

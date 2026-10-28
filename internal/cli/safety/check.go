@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/tuikit/sqltext"
 )
 
 // Policy is what a run of a classified script is allowed to do.
@@ -34,6 +35,9 @@ type Blocked struct {
 	Hint       string
 }
 
+// Allowed is the class p lets a script reach: the lower of Allow and Ceiling.
+func (p Policy) Allowed() spec.Class { return effective(p.Allow, p.Ceiling) }
+
 // effective is the lower of allow and ceiling; an empty ceiling is admin.
 func effective(allow, ceiling spec.Class) spec.Class {
 	if ceiling != "" && Rank(ceiling) < Rank(allow) {
@@ -48,7 +52,7 @@ func effective(allow, ceiling spec.Class) spec.Class {
 // PARSEONLY, NOEXEC, SHOWPLAN_*), then what a wrapping transaction cannot hold,
 // then what --max-rows-affected cannot count.
 func Check(sc *Script, p Policy) *Blocked {
-	allowed := effective(p.Allow, p.Ceiling)
+	allowed := p.Allowed()
 	b := &Blocked{Detected: sc.Class, Allowed: allowed}
 
 	if Rank(sc.Class) > Rank(allowed) {
@@ -136,4 +140,22 @@ func (b *Blocked) Describe() string {
 		parts[i] = st.Describe()
 	}
 	return strings.Join(parts, "; ")
+}
+
+// ModeWords is the script lines naming PARSEONLY, NOEXEC or a SHOWPLAN_*
+// option anywhere outside literals, comments and quoted identifiers, in
+// order. query parse refuses them all, OFF included: under its PARSEONLY, a
+// SET PARSEONLY OFF in the script would run what follows. Check's mode rule
+// refuses only ON, since a run's OFF is a no-op scripts often end with.
+func ModeWords(script string) []int {
+	var lines []int
+	for _, b := range sqltext.SplitBatches(script) {
+		toks, _ := lexBatch(b.Text, b.StartLine)
+		for _, tk := range toks {
+			if tk.kind == sqltext.KindWord && (tk.word == "PARSEONLY" || tk.word == "NOEXEC" || strings.HasPrefix(tk.word, "SHOWPLAN_")) {
+				lines = append(lines, tk.line)
+			}
+		}
+	}
+	return lines
 }
