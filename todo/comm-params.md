@@ -1527,11 +1527,50 @@ Phases are ordered so each one ships something usable and testable on its own, a
 
 ### Phase 1 — Profiles
 
+✅ **Done 2026-10-28** (Linux; the Windows runs owed since 0.i still are — see 1.h).
+
 - `config`: `Profile`, `MaxAllow`, carry-over in `AddOrUpdate`, trim exemption, set-profile `connOp`, `LoadReadOnly`, `ProfileByName`.
 - TUI: Connect dialog **Profile…** dialog; History shows names; F1 help; README.
 - `db.RoleCLI`. CLI connection resolution: profile + overrides + env + password sources, Entra method refusals.
 - Commands: `profile list/show/test`.
 - **Done when:** a profile named in the TUI is usable from the CLI, survives 30 more connects and a reconnect, a sealed password still opens after renaming, and a running TUI is undisturbed by CLI calls (§14.7).
+
+#### Phase 1 analysis (2026-10-28, against 90beff8)
+
+**Source facts that change the scope**
+
+| # | Fact | Consequence |
+|---|---|---|
+| P1-1 | `AddOrUpdate` records its op and `Save` replays it onto the file as it is then (another instance may have saved) | The carry-over lives in the list function `addOrUpdate`, not in `AddOrUpdate`: the recorded op holds no profile, so its replay carries over whatever name the *file* holds, including one another instance set meanwhile |
+| P1-2 | `parseConfig` copies a corrupt file aside (`keepCorrupt`) and `Load` sweeps temps and creates the key | `LoadReadOnly` needs a parse without the copy: split into `decodeConfig` (shared) and `parseConfig` (adds the copy). A corrupt or unreadable file is an error for the CLI, not an empty list |
+| P1-3 | A profile name is typed on command lines; the parser reads a token starting `-` as an option | Names start with a letter or digit (`-dev` would be `gossms profile show -dev` → unknown option) |
+| P1-4 | "An option is in the spec only when it works", and only `profile test` connects in phase 1 | Connection options are **options of the commands that connect** (a shared `connect.Options()`), not globals: `version --server x` is an unknown option. `--profile`/`-p` itself arrives with the first command that takes it (phase 2's `query run`); `profile test` takes the name positionally |
+| P1-5 | An override must be distinguishable from a default (`--no-trust-server-certificate` vs. absent) | `spec.Invocation.Given` (options set on the command line or by their env variable); the parser fills it |
+| P1-6 | Handlers need stdin and env (`--password-stdin`/`--password-env`) and a config/dial they can be tested without | `Invocation.Stdin/Getenv` (Main fills them); `cmd.Deps{LoadConfig, Connect}`, `newCommandTree(deps)` for tests |
+| P1-7 | `db.Connect` bounds every attempt at 30 s (`connectTimeout`, also in the DSN) | `--connect-timeout` is 1–30 (default 15) via the dial's context, rather than a db API change; a value above 30 would be a promise nothing keeps |
+| P1-8 | Live: "Cannot open database" arrives as **Msg 4063** (fallback to the login's default database), not 4060, on 13, 14 and 17 | Both map to `NOT_FOUND`; unit tests had passed with 4060 only |
+
+**Decisions** (made in implementation, recorded for review)
+
+- **D1 — `MaxAllow` unknown value:** reads as `read` (fails closed); missing is `admin` (author's decision, §6.2).
+- **D2 — name collision across instances:** a replayed set-profile op whose name another instance gave a different entry moves the name (later save wins), so names stay unique on disk. `ProfileByName` prefers the most recent entry should a hand edit duplicate one.
+- **D3 — password drop rule (§3.1):** server compared ignoring case; port by `DialPort` (1433 = none); user, method, tenant, client exact; TLS weakened = `--encrypt` lower than saved, trust turned on, a different `--host-name-in-certificate`. Database, a stronger `--encrypt`, `--no-trust-server-certificate`, `--application-intent` keep it. Env variables count as overrides.
+- **D4 — `--auth` enum lists `entra-interactive`/`entra-device-code`** so asking for them gets the refusal's reason (`AUTH_FAILED`, exit 4, §3.1) instead of "not a valid value".
+- **D5 — `profile show` prints Extra Properties keys only:** a value may be anything the user put there.
+- **D6 — the History label** leads with `[name]`, the server budget shrinks by the prefix width.
+
+**Substeps**
+
+- ✅ **1.a `config`** (`profile.go`, `config.go`, `config_save.go`): `Connection.Profile`/`MaxAllow` (`AllowClass`, `Ceiling()`), outside `connectionAAD`; carry-over in `addOrUpdate`; `trimUnnamed` (named entries uncounted, never trimmed); `SetProfile` + `profileOp` replay; `Profiles`, `ProfileByName`, `ValidateProfileName`; `LoadReadOnly` (no key creation, sweep, corrupt copy or save — `Config.readOnly` makes `Save` refuse). Tests incl. two-instance replay and a mutation check of carry-over and trim.
+- ✅ **1.b `db.RoleCLI`** (`goSSMS - CLI`, no capability probe). Verified live: `TestLiveConnectReportsTheRoleAsProgramName` (livedb) against 17.
+- ✅ **1.c `internal/cli/connect`**: `Options()`, `Resolve` (precedence, overrides, D3, password sources, refusals, missing-password check before dialling), `Open` (dial as `RoleCLI` under `--connect-timeout`), `Classify` (18456 family / Entra `AuthenticationFailedError` → 4, 4060/4063 → 8, timeouts → 6, else 3; by type and number). Table tests through the real parser; mutation-checked.
+- ✅ **1.d `internal/cli/cmd` + tree**: `profile` group, `list [--all]`, `show <name>`, `test <name> [connection options]`; `spec.Invocation.Given/Stdin/Getenv`. In-process tests through `Main` (exit 0, 1, 2, 3, 4, 8; no secret in any output). `checkCommandLine` learned `gossms help <group> <command>`.
+- ✅ **1.e TUI**: `profile_dialog.go` (name, Allowed Operations, OK/Cancel; Tab reaches the buttons; clipboard host); Connect dialog **Profile...** beside Delete, gated like it; History label; F1 help. Tests: names the selected (non-first) row and saves, refuses bad/duplicate names in place, clears, gated without a row, keyboard button row, clipboard target.
+- ✅ **1.f Docs**: `docs/cli.md` § Profiles, § Connecting, the three commands, exit codes produced; `README.md` § Command line (the full usage R19 promised for phase 1); `ARCHITECTURE.md` rows for `config/profile.go`, `cli/connect/`, `cli/cmd/`, `tui/profile_dialog.go`; open threads in `docs/open-threads.md` § Command line.
+- ✅ **1.g Verification on Linux (driven binary, scratch `XDG_CONFIG_HOME`)**: TUI connect with Remember Password → named `dev`/Read through Profile... → `profile list/show/test` read it, password source `profile` (the sealed password opens after naming); the config directory byte-identical before/after CLI calls; 31 further TUI connects (server-case variants) with `profile list` every fifth one, no failure: `dev` kept, unnamed trimmed to exactly 30; a reconnect from the `[dev]` History row kept name and ceiling and made it most recent; no key file → `password: unreadable`, `profile test` refused (exit 4) and no key created. Live exit codes: 18456 → 4, unknown profile → 8 with did-you-mean, `-d nope` → 8 (4063), closed port → 3, unroutable host `--connect-timeout 2` → 6, overridden server without a password → 4, `entra-device-code` → 4. Majors 13 (`win10cli\sql2016,50110`, `--password-env`), 14 (`win10cli\sql2017,55253`, `--password-stdin`) and 17 connect; `GOSSMS_DATABASE` overrides and keeps the saved password. `gofmt`, `go vet` (linux/windows/darwin), `staticcheck`, `go test ./...` clean.
+- ◐ **1.h Owed**: every Windows run (as 0.i); `--application-intent readonly` through the AAG listener connected but landed on the primary (`ubusql1`) for both intents — the group has no read-only routing list, so routing itself is unverified; Entra methods live (no Azure instance available).
+
+**Not in phase 1**: `--profile/-p` (phase 2, with `query run`), `--allow` and enforcing the ceiling (phase 2), ad-hoc connections without a profile (resolution supports them; no command takes them yet).
 
 ### Phase 2 — `query` and the safety model (the core agent loop)
 

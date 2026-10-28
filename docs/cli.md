@@ -7,13 +7,16 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (phase 0) the commands are `version` and `help`, the formats `text`
-and `json`, and nothing connects to a server.
+them. Today (phase 1) the commands are `version`, `help` and `profile
+list/show/test`, the formats `text` and `json`; `profile test` is the only
+command that connects to a server.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
-parser), `internal/cli/output` (envelope, renderers, exit codes). The command
-tree itself is `internal/cli/tree.go`.
+parser), `internal/cli/output` (envelope, renderers, exit codes),
+`internal/cli/connect` (connection options and resolution),
+`internal/cli/cmd` (the handlers). The command tree itself is
+`internal/cli/tree.go`.
 
 ## Modes
 
@@ -116,6 +119,90 @@ Help as JSON will be the command schema (`agent schema`). Until that exists,
 help with `--output json` is refused (`USAGE_ERROR`) rather than emitting a
 partial catalog an agent would trust.
 
+## Profiles
+
+A profile is a saved connection the user has named in the TUI: the Connect
+dialog's **Profile...** button, on the History row selected, sets
+
+- **Profile Name** — letters, digits, `-`, `_`, `.`, starting with a letter or
+  digit (a leading `-` would read as an option), at most 64 characters, unique
+  ignoring case. Clearing it makes the entry a plain recent connection again.
+- **Allowed Operations** — the ceiling (`max_allow`): `read`, `write`, `ddl`
+  or `admin` (the default, and what a missing field means). The safety model
+  that enforces it arrives with `query run`; a value this build does not know
+  reads as `read`.
+
+Both are stored on the connection in `config.json` (`profile`, `max_allow`),
+outside the data a saved password is sealed to, so naming a connection never
+invalidates its password. A named connection is exempt from the 30-entry
+recent-connections trim, and reconnecting through the Connect dialog keeps its
+name and ceiling.
+
+A command takes the profile **name**, ignoring case; the generated name of an
+unnamed recent connection (`server,port,database,user`, as `profile list --all`
+shows it) is accepted too, so a connection can be used before it is named.
+
+**The command line only reads the configuration** (`config.LoadReadOnly`): it
+never writes `config.json`, never creates `gossms.key`, never sweeps temp
+files, never re-seals a password, and never opens `gossms.log`. A running TUI
+writes `config.json` atomically, so a command sees the old file or the new one.
+Without the key file every saved password stays sealed (`password:
+unreadable`). A `config.json` that exists but cannot be read or parsed is
+`GENERAL_ERROR`, not an empty list.
+
+## Connecting
+
+A command that connects takes these options (today: `profile test`). The
+precedence is **command line > environment variable > profile > default**.
+
+| Option | Alias | Env variable | |
+|---|---|---|---|
+| `--server <host[\instance][,port]>` | `-S` | `GOSSMS_SERVER` | The Connect dialog's syntax |
+| `--port <n>` | | | When `--server` names none; naming two different ports is a usage error |
+| `--database <name>` | `-d` | `GOSSMS_DATABASE` | Initial database |
+| `--auth <method>` | | `GOSSMS_AUTH` | `sql`, `windows`, `entra-default`, `entra-password`, `entra-msi`, `entra-sp`, `entra-azcli`; `entra-interactive` and `entra-device-code` are refused |
+| `--user <name>` | `-U` | `GOSSMS_USER` | Login (sql, windows, entra-password) |
+| `--tenant-id <id>` | | `GOSSMS_TENANT_ID` | Entra tenant |
+| `--client-id <id>` | | `GOSSMS_CLIENT_ID` | Entra client: service principal, user-assigned managed identity |
+| `--password-env <VAR>` | | | Name of the variable holding the password or client secret |
+| `--password-stdin` | | | First line of stdin is the password or client secret |
+| `--encrypt <optional\|mandatory\|strict>` | | `GOSSMS_ENCRYPT` | Connection encryption |
+| `--trust-server-certificate` | | | Skip certificate validation (development only) |
+| `--host-name-in-certificate <name>` | | | Name the certificate must carry |
+| `--application-intent <readwrite\|readonly>` | | | Written into the connection's extra properties |
+| `--connect-timeout <sec>` | | | 1 to 30, default 15 |
+
+They are options of the commands that connect, not globals: `gossms version
+--server x` is an unknown option.
+
+- **No password on the command line, ever** — it would reach process lists,
+  shell history and agent logs. A profile's saved password (Remember
+  Password) is used as the TUI uses it; otherwise `--password-env` or
+  `--password-stdin` (not both). SQL Server Authentication, Entra Password and
+  Entra Service Principal with no password are refused before dialling
+  (`AUTH_FAILED`, a hint naming both options). Windows Authentication without
+  one is integrated sign-in.
+- **A saved password goes only where it was saved for.** An override of the
+  server (ignoring case), port, user, authentication method, Entra tenant or
+  client — from an option or its environment variable — or one that weakens
+  TLS (`--encrypt` lower than saved, `--trust-server-certificate` turned on,
+  another `--host-name-in-certificate`) leaves the saved password out. The
+  database, a stronger `--encrypt`, `--no-trust-server-certificate` and
+  `--application-intent` keep it.
+- A field the method does not read is not sent, as in the Connect dialog
+  (`--tenant-id` with `entra-msi` is dropped).
+- **Entra MFA and Device Code are refused** (`AUTH_FAILED`): they prompt a
+  person, and the token cache lives one process, so every call would prompt
+  again.
+- The session's `program_name` is `goSSMS - CLI`.
+
+A failed connect maps to an exit code by error type and number, never by
+message text: the server refusing the login (Msg 18456 and its relatives) or
+Entra refusing the credential is `AUTH_FAILED`; a database the login cannot
+open (Msg 4060, or 4063 when the server falls back to the login's default
+database) `NOT_FOUND`; the attempt outliving `--connect-timeout` (or a
+network timeout) `TIMEOUT`; anything else `CONNECTION_FAILED`.
+
 ## Output
 
 Results go to **stdout** in the `--output` format; errors too, so the caller
@@ -216,7 +303,7 @@ A usage error is rendered in JSON when the raw command line asks for
 | 130 | `CANCELLED` | Ctrl+C or SIGINT |
 
 All are defined now so a caller's handling never depends on the phase it met;
-phase 0 produces only 0, 1, 2 and 130. The table is `output.ExitCodes`, the one
+today's commands produce 0, 1, 2, 3, 4, 6, 8 and 130. The table is `output.ExitCodes`, the one
 place a code's number is spelled.
 
 **Ctrl+C** (also on Windows) cancels the running command's context: the result
@@ -229,6 +316,11 @@ second Ctrl+C kills the process.
 |---|---|
 | `version` | Record: `version`, `commit`, `built`, `platform`, `license`, `gosmo` — the fields `gossms --version` prints — plus `cliSchema` |
 | `help [<group>] [<command>]` | Help text (§ Help) |
+| `profile list [--all]` | Set: `name`, `kind` (`profile`, or `recent` with `--all`), `server`, `port` (NULL when not set), `database`, `auth` (the `--auth` spelling), `user`, `max_allow` (NULL for a recent connection), `password` (`saved`, `none`, `unreadable`). Profiles sorted by name, then recent connections most recent first. An empty list carries a message saying how to make a profile |
+| `profile show <name>` | Record: `name`, `kind`, `generatedName`, `server`, `port`, `database`, `auth`, `user`, `tenantId`, `clientId`, `encrypt`, `trustServerCertificate`, `hostNameInCertificate`, `extraProperties` (keys only — a value may be a secret), `maxAllow`, `password`. A password that cannot be opened adds a warning |
+| `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
+
+No command ever prints a password or secret.
 
 ## The import rule
 

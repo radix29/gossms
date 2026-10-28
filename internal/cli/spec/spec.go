@@ -10,6 +10,7 @@ package spec
 
 import (
 	"context"
+	"io"
 	"slices"
 	"strings"
 
@@ -99,6 +100,15 @@ type Invocation struct {
 	// name, after defaults and environment variables, typed by Option.Type:
 	// bool, string (string and enum), int, []string (list).
 	Values map[string]any
+	// Given is the options whose value came from the command line or their
+	// environment variable rather than a default: an override of a saved
+	// profile is only what the caller asked for.
+	Given map[string]bool
+
+	// Stdin and Getenv are the process's, as Main was given them
+	// (--password-stdin, --password-env). Nil reads nothing.
+	Stdin  io.Reader
+	Getenv func(string) string
 }
 
 // Lookup is the command whose Path is path, or nil.

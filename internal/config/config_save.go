@@ -44,6 +44,7 @@ func (c *Config) Save() error {
 type SaveJob struct {
 	path       string
 	unreadable error
+	readOnly   bool
 	// settings is the Config's settings when the job began, and base the baseline
 	// they are compared with; the maps they share with the Config are replaced
 	// there, never written into (see XEventHiddenColumns).
@@ -61,6 +62,7 @@ func (c *Config) BeginSave() *SaveJob {
 	return &SaveJob{
 		path:       configPath(),
 		unreadable: c.unreadable,
+		readOnly:   c.readOnly,
 		settings:   c.settingsSnapshot(),
 		base:       c.base,
 		ops:        slices.Clone(c.ops),
@@ -70,6 +72,9 @@ func (c *Config) BeginSave() *SaveJob {
 // Run writes the job's changes to the file, as Save describes. It reads
 // nothing from the Config it came from, so it may run on any goroutine.
 func (j *SaveJob) Run() error {
+	if j.readOnly {
+		return fmt.Errorf("config: not saving %s — loaded read-only", j.path)
+	}
 	if j.unreadable != nil {
 		// Load never saw this file's contents; writing c would replace them
 		// with emptiness.
@@ -126,6 +131,9 @@ func (c *Config) NeedsReseal() bool { return c.legacySealed }
 func (op connOp) applyTo(list []Connection) []Connection {
 	if op.add != nil {
 		return addOrUpdate(list, *op.add)
+	}
+	if op.profile != nil {
+		return op.profile.applyTo(list)
 	}
 	list, _ = removeConnection(list, op.remove)
 	return list

@@ -151,6 +151,7 @@ type App struct {
 	filterDialog                *FilterDialog
 	logSearchDialog             *LogSearchDialog
 	promptDialog                *dialogs.PromptDialog
+	profileDialog               *ProfileDialog
 	tasksDialog                 *TasksDialog
 	confirmDialog               *dialogs.ConfirmDialog
 	confirmTypedDialog          *dialogs.TypedConfirmDialog
@@ -583,6 +584,7 @@ func (a *App) buildUI() {
 	a.tasksDialog = registerDialog(a, NewTasksDialog(a))
 	a.filterDialog = registerDialog(a, NewFilterDialog(a))
 	a.promptDialog = registerDialog(a, dialogs.NewPromptDialog(a.screen))
+	a.profileDialog = registerDialog(a, NewProfileDialog(a.screen))
 	a.confirmDialog = registerDialog(a, dialogs.NewConfirmDialog(a.screen))
 	a.confirmTypedDialog = registerDialog(a, dialogs.NewTypedConfirmDialog(a.screen))
 	a.alertDialog = registerDialog(a, dialogs.NewAlertDialog(a.screen))

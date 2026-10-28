@@ -52,7 +52,7 @@ func liveSession(t *testing.T, sc *ServerConn) (program string, encrypted bool, 
 func TestLiveConnectReportsTheRoleAsProgramName(t *testing.T) {
 	opts := liveConnectOpts(t)
 	for role, want := range map[Role]string{
-		RoleExplorer: "goSSMS", RoleQuery: "goSSMS - Query", RoleActivityMonitor: "goSSMS - Activity Monitor", RoleXEventProfiler: "goSSMS - XEvent Profiler",
+		RoleExplorer: "goSSMS", RoleQuery: "goSSMS - Query", RoleActivityMonitor: "goSSMS - Activity Monitor", RoleXEventProfiler: "goSSMS - XEvent Profiler", RoleCLI: "goSSMS - CLI",
 	} {
 		sc, err := Connect(context.Background(), opts, role)
 		if err != nil {

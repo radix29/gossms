@@ -57,6 +57,9 @@ const (
 	// Data, View Target Data) — SSMS's own name for its XEvent Profiler
 	// connection.
 	RoleXEventProfiler
+	// RoleCLI is a command-line call's connection (internal/cli): one per
+	// process, so agents' sessions are told apart from the TUI's in DMVs.
+	RoleCLI
 )
 
 // ApplicationName returns the program_name a connection in role r reports.
@@ -68,6 +71,8 @@ func (r Role) ApplicationName() string {
 		return "goSSMS - Activity Monitor"
 	case RoleXEventProfiler:
 		return "goSSMS - XEvent Profiler"
+	case RoleCLI:
+		return "goSSMS - CLI"
 	default:
 		return "goSSMS"
 	}

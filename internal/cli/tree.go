@@ -3,8 +3,11 @@ package cli
 import (
 	"context"
 
+	"github.com/radix29/gossms/internal/cli/cmd"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/version"
 )
 
@@ -15,7 +18,13 @@ import (
 // help has no Run: Main answers it (and every --help) itself, since help is
 // text for people rather than a result in the envelope.
 func commandTree() *spec.Tree {
-	return &spec.Tree{
+	return newCommandTree(cmd.Deps{LoadConfig: config.LoadReadOnly, Connect: db.Connect})
+}
+
+// newCommandTree is commandTree over d, so tests can stand in for the config
+// directory and the server.
+func newCommandTree(d cmd.Deps) *spec.Tree {
+	tree := &spec.Tree{
 		Globals: []spec.Option{
 			{Name: "output", Short: "o", Type: spec.TypeEnum, Enum: output.Formats, Default: "text",
 				Help: "Output format", Global: true},
@@ -58,6 +67,8 @@ func commandTree() *spec.Tree {
 			},
 		},
 	}
+	tree.Commands = append(tree.Commands, cmd.ProfileCommands(d)...)
+	return tree
 }
 
 // runVersion is `gossms version`: the fields `gossms --version` prints, keyed

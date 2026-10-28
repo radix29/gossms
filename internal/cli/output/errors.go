@@ -28,8 +28,9 @@ type ExitCode struct {
 }
 
 // ExitCodes is every exit code, in number order. All are defined although
-// phase 0 produces only 0, 1, 2 and 130: `agent schema` will list this table,
-// and an agent's handling must not depend on which phase it met.
+// today's commands produce only some (docs/cli.md § Exit codes): `agent
+// schema` will list this table, and an agent's handling must not depend on
+// which phase it met.
 var ExitCodes = []ExitCode{
 	{0, CodeOK, "Success (output may still be truncated; check truncated)"},
 	{1, CodeGeneralError, "Unexpected or internal error"},

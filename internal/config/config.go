@@ -184,6 +184,16 @@ type Connection struct {
 	// (secret.go).
 	RememberPassword bool `json:"remember_password"`
 
+	// Profile is the name the command line addresses this connection by
+	// (`gossms profile test <name>`), set in the Connect dialog's Profile dialog; empty
+	// for a plain recent connection. MaxAllow is the highest operation class
+	// the command line may run through it, "" meaning AllowAdmin (see
+	// Connection.Ceiling). Both survive a reconnect (addOrUpdate) and exempt the
+	// entry from the MaxSavedConnections trim. Absent from connectionAAD:
+	// naming a connection must not invalidate its sealed password.
+	Profile  string     `json:"profile,omitempty"`
+	MaxAllow AllowClass `json:"max_allow,omitempty"`
+
 	// sealed is the on-disk ciphertext Load could not open (replaced key file,
 	// hand-edited server/user bound into the AAD, truncated write). Save writes it
 	// back verbatim instead of encrypting the "" Password. Unexported, so JSON
@@ -382,13 +392,18 @@ type Config struct {
 	// legacySealed is set when Load opened a password sealed under an earlier
 	// binding than aadPrefix (see NeedsReseal), and cleared by the next save.
 	legacySealed bool
+
+	// readOnly is set by LoadReadOnly: Save refuses, so the command line can
+	// never write config.json behind a running TUI.
+	readOnly bool
 }
 
-// connOp is one recorded change to Connections: an AddOrUpdate of add, or a
-// RemoveConnection of remove.
+// connOp is one recorded change to Connections: an AddOrUpdate of add, a
+// RemoveConnection of remove, or a SetProfile of profile.
 type connOp struct {
-	add    *Connection
-	remove string
+	add     *Connection
+	remove  string
+	profile *profileOp
 }
 
 // DefaultMaxCellLength is how many characters a result-grid cell shows before
@@ -586,15 +601,25 @@ var keepCorrupt = fileutil.KeepCorrupt
 // that copy could not be made: the bytes then exist nowhere else, and the caller
 // must not write over path.
 func parseConfig(path string, data []byte) (*Config, error) {
-	cfg := new(Config)
+	cfg, err := decodeConfig(data)
 	var keepErr error
-	if err := json.Unmarshal(data, cfg); err != nil {
-		cfg = new(Config)
+	if err != nil {
 		if kept, kerr := keepCorrupt(path, data, time.Now()); kerr != nil {
 			keepErr = fmt.Errorf("%s did not parse (%v) and could not be kept aside: %w", path, err, kerr)
 		} else {
 			log.Printf("config: %s did not parse (%v); kept as %s", path, err, kept)
 		}
+	}
+	return cfg, keepErr
+}
+
+// decodeConfig is parseConfig without the corrupt-file copy: bytes that do
+// not parse give an empty, clamped Config and the error.
+func decodeConfig(data []byte) (*Config, error) {
+	cfg := new(Config)
+	err := json.Unmarshal(data, cfg)
+	if err != nil {
+		cfg = new(Config)
 	}
 	if cfg.MaxCellLength <= 0 {
 		cfg.MaxCellLength = DefaultMaxCellLength
@@ -607,7 +632,7 @@ func parseConfig(path string, data []byte) (*Config, error) {
 	}
 	cfg.XEventStoreCapacity = ClampXEventStoreCapacity(cfg.XEventStoreCapacity)
 	cfg.MaxFetchRows = max(cfg.MaxFetchRows, 0)
-	return cfg, keepErr
+	return cfg, err
 }
 
 // openPasswords decrypts every connection's password in place. One that won't
@@ -638,7 +663,7 @@ func (c *Config) openPasswords(key []byte, path string) {
 func (c *Config) settingsSnapshot() *Config {
 	snap := *c
 	snap.Connections, snap.ops, snap.base, snap.unreadable = nil, nil, nil, nil
-	snap.legacySealed = false
+	snap.legacySealed, snap.readOnly = false, false
 	return &snap
 }
 
@@ -662,13 +687,15 @@ func mergeSettings(cur, base, dst *Config) {
 }
 
 // MaxSavedConnections caps saved recent connections. Connect saves each
-// successful connection automatically.
+// successful connection automatically. Named connections (Profile set) are not
+// counted and never trimmed: the user chose to keep them.
 const MaxSavedConnections = 30
 
 // AddOrUpdate saves a successful connection. Name is set to
-// conn.GeneratedName(), the dedup key: a match is replaced, otherwise added. The
-// entry moves to the end (most recent) and the list is trimmed from the front to
-// MaxSavedConnections. conn is taken by value.
+// conn.GeneratedName(), the dedup key: a match is replaced, otherwise added, and
+// a replaced entry's Profile and MaxAllow carry over (the Connect dialog's form
+// has neither). The entry moves to the end (most recent) and the oldest unnamed
+// entries are trimmed to MaxSavedConnections. conn is taken by value.
 func (c *Config) AddOrUpdate(conn Connection) {
 	conn.Name = conn.GeneratedName()
 	// Remember Password off: the entry is saved without a password, and the
@@ -682,13 +709,42 @@ func (c *Config) AddOrUpdate(conn Connection) {
 }
 
 // addOrUpdate is AddOrUpdate on a list, for Save to replay onto the file's.
+//
+// The carry-over happens here, not in AddOrUpdate, so the op AddOrUpdate
+// records holds no profile: replayed onto the file it carries over whatever
+// name the file holds then, which another instance may have changed.
 func addOrUpdate(list []Connection, conn Connection) []Connection {
+	if conn.Profile == "" {
+		if i := slices.IndexFunc(list, func(e Connection) bool {
+			return e.Profile != "" && (e.Name == conn.Name || e.GeneratedName() == conn.Name)
+		}); i >= 0 {
+			conn.Profile, conn.MaxAllow = list[i].Profile, list[i].MaxAllow
+		}
+	}
 	list, _ = removeConnection(list, conn.Name)
 	list = append(list, conn)
-	if len(list) > MaxSavedConnections {
-		list = list[len(list)-MaxSavedConnections:]
+	return trimUnnamed(list)
+}
+
+// trimUnnamed drops the oldest unnamed entries past MaxSavedConnections;
+// named ones stay wherever they are.
+func trimUnnamed(list []Connection) []Connection {
+	excess := -MaxSavedConnections
+	for _, e := range list {
+		if e.Profile == "" {
+			excess++
+		}
 	}
-	return list
+	if excess <= 0 {
+		return list
+	}
+	return slices.DeleteFunc(list, func(e Connection) bool {
+		if e.Profile != "" || excess == 0 {
+			return false
+		}
+		excess--
+		return true
+	})
 }
 
 // RemoveConnection deletes the saved connection whose name matches, and reports

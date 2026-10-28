@@ -123,6 +123,8 @@ func (d *ConnectDialog) doButton() {
 		d.resetForm()
 	case connectBtnDelete:
 		d.deleteSelectedHistory()
+	case connectBtnProfile:
+		d.profileSelectedHistory()
 	case connectBtnCancel:
 		d.Hide()
 	}

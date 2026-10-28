@@ -69,6 +69,7 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 		}
 		return finish(env, res, format, false)
 	}
+	inv.Stdin, inv.Getenv = env.Stdin, env.Getenv
 	format = output.Format(inv.Values["output"].(string))
 	quiet := inv.Values["quiet"].(bool)
 	cmd := inv.Command

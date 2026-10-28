@@ -5,6 +5,7 @@ go 1.27
 toolchain go1.27.3
 
 require (
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/gdamore/tcell/v3 v3.6.0
 	github.com/golang-sql/sqlexp v0.1.0
@@ -16,7 +17,6 @@ require (
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.10.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect

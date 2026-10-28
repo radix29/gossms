@@ -105,7 +105,8 @@ chmod +x ./gossms
 without starting the interface — quote it when reporting a bug.
 
 Any other argument runs the command-line mode instead of the interface (start
-with `gossms help`); bare `gossms` needs a terminal on both stdin and stdout.
+with `gossms help`; see [Command line](#command-line)); bare `gossms` needs a
+terminal on both stdin and stdout.
 
 You need a modern terminal with UTF-8 and 256-colour support, plus network access
 to a SQL Server instance.
@@ -118,8 +119,9 @@ about 96 columns History is hidden and the form fills the dialog.
 
 The form has two tabs, **Connection Properties** and **Connection String**
 (Ctrl+PgUp/PgDn). **Reset** restores defaults; **Delete** removes the selected
-history entry and its saved password. Tab reaches the buttons after the last
-field; Left/Right move along them.
+history entry and its saved password; **Profile...** names it for the
+[command line](#command-line). Tab reaches the buttons after the last field;
+Left/Right move along them.
 
 Choose SQL Server, Windows Integrated, or a Microsoft Entra ID method. Fields the
 method does not use are greyed out.
@@ -199,9 +201,44 @@ runs and returns its actual plan, but shows no live view.
 Where a permission is missing, the action is disabled, the page opens read-only,
 or values show as `N/A`.
 
+## Command line
+
+`gossms <group> <command> [arguments] [options]` runs one command and exits,
+without the interface: for scripts and AI agents. Results go to stdout as text
+or, with `-o json`, a JSON envelope; errors too, with a one-line summary on
+stderr and an exit code that names the failure (`docs/cli.md` has the whole
+contract). `gossms help` lists the commands; `gossms help <group> <command>`
+shows one with examples.
+
+The command line connects through **profiles**: saved connections you name in
+the interface. In the Connect dialog select a connection under History,
+choose **Profile...**, and give it a name (`dev`, `prod-ro`) and the
+**Allowed Operations** — the highest class of statement the command line may
+run through it (Read, Write, DDL or Admin, the default). A named connection
+shows its name in History, is never dropped from the 30-entry list, and keeps
+its name when you reconnect.
+
+```bash
+gossms profile list                  # named profiles; --all adds recent connections
+gossms profile show dev              # its settings, ceiling, whether its password opens
+gossms profile test dev              # connect: version, edition, login, latency
+gossms profile test dev -d master -o json
+```
+
+The command line only reads the configuration: it never writes `config.json`
+or creates the key file, so it is safe to run beside the interface. A
+profile's saved password (Remember Password) is used as the interface uses
+it. Passwords are never taken on the command line itself — for a profile
+without one, pass `--password-env <VAR>` (the name of a variable holding it)
+or `--password-stdin`. Overriding the server, port, login, authentication or
+Entra tenant/client, or weakening encryption, does not send the saved
+password. Entra MFA and Device Code prompt, so the command line refuses them;
+use Entra Default, Azure CLI, Service Principal or Managed Identity.
+
 ## Configuration
 
-Settings and the 30 most recent connections are saved automatically in:
+Settings and the 30 most recent connections (named profiles are kept on top
+of those) are saved automatically in:
 
 - Linux/macOS: `~/.config/gossms/config.json`
 - Windows: `%APPDATA%\gossms\config.json`

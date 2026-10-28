@@ -192,7 +192,7 @@ func (d *ConnectDialog) drawSection(s tcell.Screen, title string, y int) {
 	core.DrawText(s, d.rightX+1, y, titleStyle, " "+title+" ")
 }
 
-// drawConnecting paints the spinner and its label in the gap between Delete
+// drawConnecting paints the spinner and its label in the gap between Profile...
 // and the right-hand button group.
 //
 // The label is clipped to what is left before that group. A one-pane dialog is
@@ -203,7 +203,7 @@ func (d *ConnectDialog) drawConnecting(s tcell.Screen, style tcell.Style) {
 	if !d.connecting {
 		return
 	}
-	// Between the two groups: Delete holds the left end of the row.
+	// Between the two groups: Delete and Profile... hold the left end of the row.
 	x := d.buttonRowLeftX() + d.ButtonRowWidth(connectLeftButtons) + 2
 	y := d.ButtonRowY()
 	connectSpinner.DrawSince(s, x, y, style, d.connectStarted)

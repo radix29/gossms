@@ -98,6 +98,25 @@ Settled design: `docs/decisions.md` § Format Document.
   `controls.TreeView` (`SetTitleButton`) plus a host-drawn overlay, as the
   toolbar's.
 
+## Command line: what is left
+
+The phase plan and its as-built record are `todo/comm-params.md` § 15.
+
+- **Windows never driven** (phases 0 and 1): cmd, PowerShell, Git Bash on
+  win10cli — there is no interactive shell there from this machine. Only
+  `GOOS=windows go vet`/`go build` have run.
+- **`--application-intent readonly` routing unverified.** Through the AAG
+  listener (`ubuaag`) both intents landed on the primary: `AAG1` has no
+  read-only routing list, so the run proves the parameter is accepted, not
+  that a read-only connection reaches a secondary.
+- **Entra methods through the command line not run live** — no Azure instance
+  is available; resolution and refusals are unit-tested only.
+- **A History row can clip the login off** (pre-existing). The label budgets
+  (`matchServerWidth` 14, `matchDatabaseWidth` 8) fill the 30-column pane
+  without the ListBox's two-column marker, so a long server *and* database
+  (`win10cli.fritz.box`, `HealthClinic`) cut `,sa` — the thing that tells two
+  entries for one server apart.
+
 ## Fix order
 
 Outstanding work by priority within each subsection. Each item points to where

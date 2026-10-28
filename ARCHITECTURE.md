@@ -163,7 +163,7 @@ gossms/
 │   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
 ├── packaging/linux/         # gossms.desktop launcher; the release job ships it with docs/ico/linux's hicolor icons in the Linux archives, the Homebrew formula and the .deb
 ├── internal/
-│   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json; address.go is the one address fold (DialPort, ResolveServer, InstanceKey, ConnectionAddress, Connection.IdentityKey) that peers, saved credentials, tracked queries and the per-identity IntelliSense and OE-filter caches key by
+│   ├── config/              # saved connections (JSON, in $XDG_CONFIG_HOME/gossms/); profile.go: a profile is a saved connection named in the TUI (Profile, MaxAllow; SetProfile, ProfileByName) and LoadReadOnly, the command line's load that writes nothing; tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json; address.go is the one address fold (DialPort, ResolveServer, InstanceKey, ConnectionAddress, Connection.IdentityKey) that peers, saved credentials, tracked queries and the per-identity IntelliSense and OE-filter caches key by
 │   ├── db/                  # gosmo connection wrapper: config.Connection → gosmo.ConnectionOptions (toGosmoOptions), per-role application name, masked preview
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
@@ -183,6 +183,8 @@ gossms/
 │   ├── cli/                 # the command line (`gossms <command> …`; contract: docs/cli.md): Main parses, dispatches, renders and maps the outcome to an exit code; tree.go is the command tree, help.go the generated help. Never imports tui, tcell or a tuikit package but sqltext — see § Why split this way
 │   │   ├── spec/                # the command tree as data: Command, Arg, Option, Class, Handler, Invocation. Parser, help (and later agent schema/guide) read it — one source
 │   │   ├── args/                # the parser over spec: options, response files, did-you-mean; no I/O (ReadFile/Getenv injected)
+│   │   ├── connect/             # a command line → a connection: the connection options, profile + overrides + password sources (Resolve; drops a saved password an override would redirect), the dial as db.RoleCLI and its failure → exit code (Open, Classify)
+│   │   ├── cmd/                 # the command handlers, one file per group (profile.go); Deps injects the config load and the dial
 │   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), and one renderer per --output format (text, json)
 │   │
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
@@ -388,6 +390,7 @@ gossms/
 │       ├── connect_dialog.go     # Connect dialog — state, focus ring, History pane, options/prefill, connect lifecycle
 │       ├── connect_dialog_draw.go  # Connect dialog — two-pane/one-pane layout, tab bar, History pane and section rules
 │       ├── connect_dialog_input.go # Connect dialog — keys, buttons and the mouse ordering (overlays, tabs, then panes)
+│       ├── profile_dialog.go     # Connection Profile dialog (Connect dialog's Profile... button): the name the command line addresses a saved connection by, and its operation ceiling
 │       ├── device_code_dialog.go # Microsoft Entra Device Code sign-in: the code + URL, open for exactly as long as the sign-in
 │       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over controls.Editor's search engine
 │       ├── filter_dialog.go      # Object Explorer > Filter Settings — one operator/value row per filterable property

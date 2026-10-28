@@ -50,10 +50,12 @@ var connectTabLabels = [...]string{"Connection Properties", "Connection String"}
 // drawing, gating and hit-testing all use the two label lists so a click
 // never lands one button off.
 //
-// Delete sits alone at the left end: it destroys a saved connection and its
-// password, and a misclick beside Connect cannot be undone.
+// Delete and Profile... act on the History row selected, so they sit at the
+// left end under it, away from Connect: Delete destroys a saved connection and
+// its password, and a misclick beside Connect cannot be undone.
 const (
 	connectBtnDelete = iota
+	connectBtnProfile
 	connectBtnReset
 	connectBtnConnect
 	connectBtnCancel
@@ -61,7 +63,7 @@ const (
 )
 
 var (
-	connectLeftButtons  = []string{"Delete"}
+	connectLeftButtons  = []string{"Delete", "Profile..."}
 	connectRightButtons = []string{"Reset", "Connect", "Cancel"}
 )
 
@@ -437,6 +439,7 @@ func (d *ConnectDialog) syncHistorySelection() {
 func (d *ConnectDialog) buttonsDisabled() []bool {
 	gated := make([]bool, connectButtonCount)
 	gated[connectBtnDelete] = d.connecting || d.history.Selected() < 0
+	gated[connectBtnProfile] = gated[connectBtnDelete]
 	gated[connectBtnReset] = d.connecting
 	gated[connectBtnConnect] = !d.canConnect() || d.connecting
 	gated[connectBtnCancel] = false
@@ -507,6 +510,38 @@ func (d *ConnectDialog) deleteSelectedHistory() {
 			d.history.SetSelected(next)
 			d.applyHistory(next)
 		})
+}
+
+// profileSelectedHistory opens the Profile dialog on the highlighted saved
+// connection: the name the command line addresses it by, and its operation
+// ceiling (config.Config.SetProfile). The highlight stays on the same entry,
+// which reloadHistory may renumber.
+func (d *ConnectDialog) profileSelectedHistory() {
+	i := d.history.Selected()
+	if i < 0 || i >= len(d.historyConns) || d.app == nil || d.app.cfg == nil {
+		return
+	}
+	conn := d.historyConns[i]
+	key := conn.GeneratedName()
+	d.app.profileDialog.ShowProfile(conn, func(name string, allow config.AllowClass) error {
+		if err := d.app.cfg.SetProfile(key, name, allow); err != nil {
+			return err
+		}
+		d.app.saveConfig(func(err error) {
+			if err != nil {
+				d.app.alertDialog.ShowAlert("Connection Profile",
+					"Named, but the configuration could not be saved: "+err.Error())
+			}
+		})
+		d.reloadHistory()
+		for j, c := range d.historyConns {
+			if c.GeneratedName() == key {
+				d.history.SetSelected(j)
+				break
+			}
+		}
+		return nil
+	})
 }
 
 // reloadHistory refills the History pane from the saved connections, most
@@ -622,14 +657,23 @@ const (
 	matchDatabaseWidth = 8
 )
 
+// matchProfileWidth is the budget for a profile name in a History row.
+const matchProfileWidth = 10
+
 // matchLabel is a saved connection's History name: GeneratedName with
 // server and database clipped (ellipsis) to matchServerWidth and
-// matchDatabaseWidth so a long FQDN does not push the user off the row.
-// Display only: the stored Name is the dedup key and stays whole.
+// matchDatabaseWidth so a long FQDN does not push the user off the row. A
+// named connection leads with its profile name in brackets — the name is what
+// the user chose — and the server gives up that much room, for the same
+// reason. Display only: the stored Name is the dedup key and stays whole.
 func matchLabel(c config.Connection) string {
-	c.Server = core.Truncate(c.Server, matchServerWidth)
+	prefix := ""
+	if c.Profile != "" {
+		prefix = "[" + core.Truncate(c.Profile, matchProfileWidth) + "] "
+	}
+	c.Server = core.Truncate(c.Server, max(4, matchServerWidth-core.DisplayWidth(prefix)))
 	c.Database = core.Truncate(c.Database, matchDatabaseWidth)
-	return c.GeneratedName()
+	return prefix + c.GeneratedName()
 }
 
 // serverParts splits the Server Name field into the server (host plus named
