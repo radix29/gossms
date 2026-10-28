@@ -1,7 +1,13 @@
+Results:
+-	Images
+-	Geo/GIS data?
 
-add command line parameters for agentic use.
-all functionality of the application should be accessible as command line parameters with formatted text output
-gossms get propery maxdop -conn win10cli
+-	Schema compare -> diff script?
+
+-	Charts? Query result
+-	Filter record set in app ?
+-	Export data as xml / json
+
 
 new sql formatting designs
     

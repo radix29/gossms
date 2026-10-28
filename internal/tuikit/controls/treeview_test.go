@@ -687,14 +687,14 @@ func treeTopRow(t *testing.T, tv *TreeView) (string, []tcell.Style) {
 	return b.String(), styles
 }
 
-// The title button is "[label]" just inside the top-right corner; its label
-// wears the selection style only while on reports true, the brackets the
-// border's.
+// The title button is "[label]" just inside the top-right corner; while on
+// reports true it shows "[onLabel]". The label keeps the panel style in both
+// states (no selection background), the brackets the border's.
 func TestTreeViewTitleButtonDrawsRightAligned(t *testing.T) {
 	tv := newTestTreeView()
 	tv.SetTitle("Object Explorer")
 	on := false
-	tv.SetTitleButton("S", func() bool { return on }, nil)
+	tv.SetTitleButton("S", "G", func() bool { return on }, nil)
 
 	row, styles := treeTopRow(t, tv)
 	if !strings.HasSuffix(row, "─[S]┐") || !strings.Contains(row, " Object Explorer ") {
@@ -708,11 +708,14 @@ func TestTreeViewTitleButtonDrawsRightAligned(t *testing.T) {
 		t.Errorf("bracket styles = %v / %v, want the border style", styles[sx-1], styles[sx+1])
 	}
 	on = true
-	if _, styles = treeTopRow(t, tv); styles[sx] != theme.StyleSelected() {
-		t.Errorf("ON label style = %v, want the selection style", styles[sx])
+	if row, styles = treeTopRow(t, tv); !strings.HasSuffix(row, "─[G]┐") {
+		t.Errorf("ON border = %q, want \"[G]\" before the corner", row)
+	}
+	if styles[sx] != theme.StylePanel() {
+		t.Errorf("ON label style = %v, want the panel style", styles[sx])
 	}
 
-	tv.SetTitleButton("", nil, nil)
+	tv.SetTitleButton("", "", nil, nil)
 	if row, _ = treeTopRow(t, tv); strings.Contains(row, "[S]") {
 		t.Errorf("border = %q after removing the button", row)
 	}
@@ -736,7 +739,7 @@ func TestTreeViewTitleButtonHidesWhenTooNarrow(t *testing.T) {
 		tv := NewTreeView()
 		tv.SetBounds(0, 0, tc.w, 10)
 		tv.SetTitle("Object Explorer")
-		tv.SetTitleButton("S", nil, func() { fired++ })
+		tv.SetTitleButton("S", "S", nil, func() { fired++ })
 		row, _ := treeTopRow(t, tv)
 		if got := strings.Contains(row, "[S]"); got != tc.show {
 			t.Errorf("width %d: border = %q, button shown = %v, want %v", tc.w, row, got, tc.show)
@@ -760,7 +763,7 @@ func TestTreeViewTitleButtonClickRunsActionOnly(t *testing.T) {
 	tv := newTestTreeViewExpandable()
 	tv.SetTitle("Object Explorer")
 	fired := 0
-	tv.SetTitleButton("S", nil, func() { fired++ })
+	tv.SetTitleButton("S", "S", nil, func() { fired++ })
 	tv.OnSelect = func(TreeNodeID) { t.Error("a title-button click fired OnSelect") }
 	tv.OnExpand = func(TreeNodeID) { t.Error("a title-button click expanded a node") }
 
@@ -792,7 +795,7 @@ func TestTreeViewTitleButtonClickRunsActionOnly(t *testing.T) {
 func TestTreeViewHoldDriftingOntoTitleButtonDoesNotFire(t *testing.T) {
 	tv := newTestTreeView()
 	tv.SetTitle("Object Explorer")
-	tv.SetTitleButton("S", nil, func() { t.Error("a hold from a row fired the title button") })
+	tv.SetTitleButton("S", "S", nil, func() { t.Error("a hold from a row fired the title button") })
 	tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.Button1, tcell.ModNone))
 	tv.HandleMouse(tcell.NewEventMouse(tv.rect.W-3, 0, tcell.Button1, tcell.ModNone))
 }

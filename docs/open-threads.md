@@ -90,7 +90,7 @@ Settled design: `docs/decisions.md` § Format Document.
   other schema-scoped family stay flat. Extending it is one entry in
   `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
   (`detail_browser_group_schema.go`) per family.
-- **No hover tooltip on the Object Explorer's `[S]` title button.** The plan
+- **No hover tooltip on the Object Explorer's `[⋮]`/`[Σ]` title button.** The plan
   wanted `Group by Schema (Alt+G)` on hover, but nothing hit-tests hover on a
   panel border: `Toolbar` keeps its own hover for its row, and the chart
   tooltips are pinned readouts. The View menu item and F1 help carry the

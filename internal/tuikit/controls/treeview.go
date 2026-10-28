@@ -98,9 +98,17 @@ type TreeView struct {
 
 // titleButton is a TreeView's top-border action: "[label]", run by a click.
 type titleButton struct {
-	label  string
-	on     func() bool
-	action func()
+	label, onLabel string
+	on             func() bool
+	action         func()
+}
+
+// text is the label the button shows in its current state.
+func (b titleButton) text() string {
+	if b.on != nil && b.on() {
+		return b.onLabel
+	}
+	return b.label
 }
 
 // NewTreeView creates a TreeView.
@@ -113,12 +121,12 @@ func (tv *TreeView) SetTitle(title string) { tv.title = title }
 
 // SetTitleButton pins a clickable "[label]" to the right end of the top
 // border, just inside the corner. A click on it runs action; while on reports
-// true (nil: never) the label draws in the selection style, so a toggle shows
-// its state. An empty label removes it. The button shows only while the
+// true (nil: never) it shows "[onLabel]" instead, so a toggle shows its state
+// by its label alone. An empty label removes it. The button shows only while the
 // centred title ends at least one border cell before it: on a narrower tree it
 // hides rather than truncate the title.
-func (tv *TreeView) SetTitleButton(label string, on func() bool, action func()) {
-	tv.titleButton = titleButton{label: label, on: on, action: action}
+func (tv *TreeView) SetTitleButton(label, onLabel string, on func() bool, action func()) {
+	tv.titleButton = titleButton{label: label, onLabel: onLabel, on: on, action: action}
 }
 
 // titleButtonRect returns where the title button is drawn, and whether it
@@ -130,7 +138,7 @@ func (tv *TreeView) titleButtonRect() (core.Rect, bool) {
 	if b.label == "" || tv.rect.H < 1 {
 		return core.Rect{}, false
 	}
-	w := core.DisplayWidth(b.label) + 2
+	w := core.DisplayWidth(b.text()) + 2
 	x := tv.rect.Right() - 1 - w
 	// The first column past the title, laid out as DrawBoxTitle centres it; with
 	// no title, the one past the top-left corner.
@@ -242,12 +250,8 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 	core.FillRect(s, tv.rect, ' ', theme.StylePanel())
 	core.DrawBoxTitle(s, tv.rect, tv.title, borderStyle, titleStyle)
 	if btn, ok := tv.titleButtonRect(); ok {
-		labelStyle := theme.StylePanel()
-		if on := tv.titleButton.on; on != nil && on() {
-			labelStyle = theme.StyleSelected()
-		}
 		core.PutRune(s, btn.X, btn.Y, '[', borderStyle)
-		core.DrawText(s, btn.X+1, btn.Y, labelStyle, tv.titleButton.label)
+		core.DrawText(s, btn.X+1, btn.Y, theme.StylePanel(), tv.titleButton.text())
 		core.PutRune(s, btn.Right()-1, btn.Y, ']', borderStyle)
 	}
 

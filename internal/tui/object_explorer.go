@@ -95,9 +95,9 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 		byID: make(map[int]*explorerNode),
 	}
 	oe.view.SetTitle("Object Explorer")
-	// The mouse surface of Group by Schema (Alt+G, View menu), drawn in the
-	// selection style while it is on.
-	oe.view.SetTitleButton("S",
+	// The mouse surface of Group by Schema (Alt+G, View menu): "[⋮]" for the
+	// flat list, "[Σ]" while grouped.
+	oe.view.SetTitleButton("⋮", "Σ",
 		func() bool { return app.groupBySchema },
 		func() { app.toggleGroupBySchema() })
 	oe.view.OnExpand = oe.handleExpand

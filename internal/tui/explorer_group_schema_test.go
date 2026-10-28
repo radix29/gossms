@@ -528,7 +528,7 @@ func TestSchemaGroupDrag(t *testing.T) {
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.ButtonNone, tcell.ModNone))
 }
 
-// TestGroupBySchemaTitleButton: the "[S]" on the Object Explorer's top border
+// TestGroupBySchemaTitleButton: the "[⋮]"/"[Σ]" on the Object Explorer's top border
 // is the mouse surface of Alt+G. A click toggles once per press, never arms an
 // explorer drag (the press is on the border, not a row) and leaves a visible
 // selection where it was; the button shows the state.
@@ -541,14 +541,14 @@ func TestGroupBySchemaTitleButton(t *testing.T) {
 	a.explorer.SetChildren(folder, []*explorerNode{t1})
 	a.explorer.view.SelectID(t1.id)
 
-	// "[S]" sits just inside the top-right corner of the explorer pane.
+	// The button sits just inside the top-right corner of the explorer pane.
 	bx, by := dragTestSplitX-1-3+1, 1
 	press := func(step string, wantOn bool) {
 		t.Helper()
 		a.handleMouse(tcell.NewEventMouse(bx, by, tcell.Button1, tcell.ModNone))
 		a.handleMouse(tcell.NewEventMouse(bx, by, tcell.Button1, tcell.ModNone)) // a resend of the hold
 		if a.drag.node != nil {
-			t.Fatalf("%s: a press on [S] armed a drag of %q", step, a.drag.node.label)
+			t.Fatalf("%s: a press on the button armed a drag of %q", step, a.drag.node.label)
 		}
 		a.handleMouse(tcell.NewEventMouse(bx, by, tcell.ButtonNone, tcell.ModNone))
 		if a.groupBySchema != wantOn {
