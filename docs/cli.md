@@ -7,7 +7,7 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (phase 2, in progress) the commands are `version`, `help`, `profile
+them. Today (through phase 2) the commands are `version`, `help`, `profile
 list/show/test` and `query classify/run/parse`; the formats `text`, `json`,
 `jsonl`, `csv`, `tsv` and `markdown`. `profile test`, `query run` and `query
 parse` connect to a server.
@@ -431,7 +431,7 @@ second Ctrl+C kills the process.
 | `profile list [--all]` | Set: `name`, `kind` (`profile`, or `recent` with `--all`), `server`, `port` (NULL when not set), `database`, `auth` (the `--auth` spelling), `user`, `max_allow` (NULL for a recent connection), `password` (`saved`, `none`, `unreadable`). Profiles sorted by name, then recent connections most recent first. An empty list carries a message saying how to make a profile |
 | `profile show <name>` | Record: `name`, `kind`, `generatedName`, `server`, `port`, `database`, `auth`, `user`, `tenantId`, `clientId`, `encrypt`, `trustServerCertificate`, `hostNameInCertificate`, `extraProperties` (keys only — a value may be a secret), `maxAllow`, `password`. A password that cannot be opened adds a warning |
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
-| `query run` (T-SQL input) `[-p <profile>] [connection options] [run options]` | The script's result sets, then messages; `ROWS_AFFECTED` in the header. A wrapped run (§ Transactions) adds a record: `maxRowsAffected` (with `--max-rows-affected`), `transaction`. A refused script is BLOCKED with the record `detectedClass`, `allowedClass`, `statements`. `--dry-run` answers as `query classify --allow` (§ Running T-SQL) |
+| `query run` (T-SQL input) `[-p <profile>] [connection options] [run options]` | The script's result sets, then messages; `ROWS_AFFECTED` in the header. `--param` sends it through `sp_executesql` (§ Parameters). A wrapped run (§ Transactions) adds a record: `maxRowsAffected` (with `--max-rows-affected`), `transaction`. A refused script is BLOCKED with the record `detectedClass`, `allowedClass`, `statements`. `--dry-run` answers as `query classify --allow` (§ Running T-SQL) |
 | `query parse` (T-SQL input) `[-p <profile>] [connection options] [--timeout <sec>]` | Record: `valid`, `batchCount` (batches sent, each `GO n` repetition counted), `detectedClass`; each syntax error is a `SQL_ERROR` with its script line (§ Running T-SQL) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
@@ -470,6 +470,7 @@ against `--allow` and the profile's ceiling (§ Safety) — a refusal is exit 7
 | `--continue-on-error` | Send every batch even after one fails. The default stops after the first failing batch (within a batch SQL Server decides), with a warning naming how many batches were sent |
 | `--timeout <sec>` | How long the script may run (default 60, `0` no limit); `--connect-timeout` bounds the connect. Past it the run is cancelled: `TIMEOUT`, exit 6 |
 | `--statistics <io,time>` | `SET STATISTICS IO`/`TIME ON` for the run; their output is in `messages` |
+| `--param <name>=<value>:<type>` | § Parameters; repeat for each parameter |
 
 Every row goes through the output options (§ Output): the whole script runs
 whatever `--max-rows` keeps, so a later `UPDATE` still runs and
@@ -498,6 +499,41 @@ table or column is no error here, only at run time. A script naming
 `PARSEONLY`, `NOEXEC` or `SHOWPLAN_*` anywhere outside literals and comments —
 `OFF` included, which would switch the mode off and run the rest — is
 BLOCKED, exit 7.
+
+### Parameters
+
+`--param name=value:type` (repeatable) runs the script through
+`sp_executesql` with `@name` declared as `type`, so a value is never pasted
+into the T-SQL:
+
+```bash
+gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:nvarchar(50)"
+# sends: EXEC sp_executesql N'<by-id.sql>', N'@id int, @who nvarchar(50)', @id = N'42', @who = N'O''Brien';
+```
+
+- The name runs to the first `=`, the type starts after the last `:`, so a
+  value may contain both (`at=12:30:00:time(0)`) and commas. A leading `@` on
+  the name is optional.
+- **Names and types are matched, never escaped** — they are T-SQL in the
+  declaration list. A name is a regular identifier (no `@@`, no brackets). A
+  type is a system type from a closed list, with its own argument form:
+  `bigint int smallint tinyint bit money smallmoney real date datetime
+  smalldatetime uniqueidentifier xml sql_variant sysname`; `decimal(p[,s])`,
+  `numeric(p[,s])`; `float(n)`, `time(n)`, `datetime2(n)`,
+  `datetimeoffset(n)`; `char nchar varchar nvarchar binary varbinary` with
+  `(n)` or `(max)`. Anything else — a user type, `OUTPUT`, a second
+  declaration — is `USAGE_ERROR`.
+- The value is sent as a Unicode string literal and the server converts it to
+  the declared type, as it does a client's string parameter; a value that
+  does not convert is `SQL_ERROR` (Msg 8114, line 0 as the server reports
+  it). `binary`/`varbinary` take `0x` and hex digits instead (nvarchar does
+  not convert to binary). There is no NULL value: write `NULL` in the script.
+- The script must be **one batch, sent once** (no `GO`, no `GO n`):
+  `sp_executesql` runs a single batch. Inside it, as in any dynamic SQL, `USE`
+  and `SET` last only until the script ends, and a `#temp` table it creates is
+  gone afterwards. An error inside it still names its script line.
+- The script is **classified as written**, not as the `sp_executesql` that
+  carries it (which alone would fail closed to `write`).
 
 ### Transactions
 
@@ -533,9 +569,19 @@ commit on their own). The record's `transaction` says how it ended:
 
 ## Safety
 
-`internal/cli/safety` puts every statement into an operation class — `read`,
-`write`, `ddl`, `admin` — by its leading keywords over gossms's one lexer
-(`tuikit/sqltext`), so a keyword in a comment, literal or quoted identifier
+`internal/cli/safety` puts every statement into an operation class by its
+leading keywords:
+
+| Class | Examples | Needs |
+|---|---|---|
+| `read` | `SELECT`, `USE`, `SET` session options, `DECLARE`, `PRINT`, `EXECUTE AS`, catalog procedures on the read allow-list (`sp_help`, `sp_helptext`, `sp_spaceused`, `sp_who2`, …), `DBCC SHOW_STATISTICS`/`SQLPERF`/`OPENTRAN`/`INPUTBUFFER`/`TRACESTATUS`/`USEROPTIONS` | nothing (the default) |
+| `write` | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, transaction control (`BEGIN TRAN`, `COMMIT`, …), a procedure not on the read allow-list, dynamic SQL, `OPENQUERY`/`OPENROWSET` | `--allow write` |
+| `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `UPDATE STATISTICS` | `--allow ddl` |
+| `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `sp_configure`, `xp_` and msdb procedures not on the read list, `DBCC` not on the read list | `--allow admin` |
+
+`query classify --file <path>` shows each statement's class and why. The
+classifier reads the script with gossms's one lexer (`tuikit/sqltext`), so a
+keyword in a comment, literal or quoted identifier
 means nothing. It fails closed: an unrecognised statement, dynamic SQL and a
 procedure not on the read allow-list are `write` at least, and a class keyword
 anywhere in a statement raises it (`SELECT 1` followed by `DISABLE TRIGGER`

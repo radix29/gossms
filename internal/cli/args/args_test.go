@@ -36,6 +36,7 @@ func testTree() *spec.Tree {
 				{Name: "more", Repeat: true},
 			}, Options: []spec.Option{
 				{Name: "file", Type: spec.TypeString, Help: "h"},
+				{Name: "param", Type: spec.TypeRepeat, Help: "h"},
 			}},
 		},
 	}
@@ -76,6 +77,9 @@ func TestParse(t *testing.T) {
 		if _, ok := m["file"]; !ok {
 			m["file"] = ""
 		}
+		if _, ok := m["param"]; !ok {
+			m["param"] = []string(nil)
+		}
 		return m
 	}
 
@@ -110,6 +114,9 @@ func TestParse(t *testing.T) {
 		{[]string{"object", "list", "--no-system"}, "object list", nil, listDefaults(map[string]any{"system": false})},
 		{[]string{"object", "show", "a"}, "object show", []string{"a"}, showDefaults(nil)},
 		{[]string{"object", "show", "a", "b", "c"}, "object show", []string{"a", "b", "c"}, showDefaults(nil)},
+		// A repeat option keeps each value whole: no comma split, no trim.
+		{[]string{"object", "show", "a", "--param", "p=1,5:decimal(9,2)", "--param= x , y"}, "object show", []string{"a"},
+			showDefaults(map[string]any{"param": []string{"p=1,5:decimal(9,2)", " x , y"}})},
 		// "-" is a value and a positional, never an option.
 		{[]string{"object", "show", "-", "--file", "-"}, "object show", []string{"-"}, showDefaults(map[string]any{"file": "-"})},
 		// "--" ends the options.

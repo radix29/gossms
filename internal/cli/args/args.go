@@ -54,7 +54,7 @@ const (
 	KindUnknownOption              // --x / -x not defined for the command or globally
 	KindMissingValue               // an option that takes a value without one
 	KindBadValue                   // a value the option's type rejects, or a value on a bool
-	KindRepeated                   // a non-list option given twice
+	KindRepeated                   // a non-list, non-repeat option given twice
 	KindMissingArg                 // a required positional argument is absent
 	KindExtraArg                   // more positional arguments than the command takes
 	KindResponseFile               // an @file that cannot be read
@@ -387,7 +387,8 @@ func findOption(opts []spec.Option, name string) (spec.Option, bool) {
 // set records one occurrence of o, spelled as `as` (for errors), with the raw
 // value text.
 func (p *parser) set(o spec.Option, as, raw string) error {
-	if p.given[o.Name] && o.Type != spec.TypeList {
+	multi := o.Type == spec.TypeList || o.Type == spec.TypeRepeat
+	if p.given[o.Name] && !multi {
 		return p.errorf(KindRepeated, "", "--%s given more than once", o.Name)
 	}
 	p.given[o.Name] = true
@@ -395,7 +396,7 @@ func (p *parser) set(o spec.Option, as, raw string) error {
 	if err != nil {
 		return err
 	}
-	if o.Type == spec.TypeList {
+	if multi {
 		prev, _ := p.values[o.Name].([]string)
 		v = append(prev, v.([]string)...)
 	}
@@ -434,6 +435,8 @@ func (p *parser) convert(o spec.Option, as, raw string) (any, error) {
 			items = append(items, item)
 		}
 		return items, nil
+	case spec.TypeRepeat:
+		return []string{raw}, nil
 	default:
 		return raw, nil
 	}
@@ -474,7 +477,7 @@ func zeroValue(t spec.OptionType) any {
 		return false
 	case spec.TypeInt:
 		return 0
-	case spec.TypeList:
+	case spec.TypeList, spec.TypeRepeat:
 		return []string(nil)
 	default:
 		return ""

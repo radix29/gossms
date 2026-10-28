@@ -151,6 +151,9 @@ func writeOptions(b *strings.Builder, opts []spec.Option) {
 		if o.Default != "" && o.Type != spec.TypeBool {
 			help += " (default: " + o.Default + ")"
 		}
+		if o.Type == spec.TypeRepeat {
+			help += " (repeatable)"
+		}
 		if o.Env != "" {
 			help += " [env " + o.Env + "]"
 		}

@@ -107,7 +107,8 @@ func QueryCommands(d Deps) []*spec.Command {
 				"the whole script in one transaction under SET XACT_ABORT ON and rolls it back, to measure rowsAffected " +
 				"without keeping the change; commit commits it only when every batch succeeded; --max-rows-affected " +
 				"commits only when the rows changed stay at or under the limit. --dry-run classifies and checks without " +
-				"connecting.",
+				"connecting. --param name=value:type runs the script (one batch) through sp_executesql with @name as a " +
+				"typed parameter, so a value is never pasted into the T-SQL; the script is classified as written.",
 			Options: append(append(append(sqlInputOptions(), profileOption()), connect.Options()...),
 				spec.Option{Name: optAllow, Type: spec.TypeEnum, Enum: classNames(), Default: string(spec.ClassRead),
 					Help: "Highest operation class the script may reach; the profile's ceiling (max_allow) caps it"},
@@ -123,6 +124,8 @@ func QueryCommands(d Deps) []*spec.Command {
 				timeoutOption(),
 				spec.Option{Name: optStatistics, Type: spec.TypeList,
 					Help: "io, time: SET STATISTICS IO / TIME ON for the run; their output goes to messages"},
+				spec.Option{Name: optParam, Type: spec.TypeRepeat,
+					Help: "name=value:type, e.g. id=42:int: run the script through sp_executesql with @name declared as type; one batch only"},
 			),
 			Class: spec.ClassRead,
 			Run:   d.queryRun,
@@ -133,6 +136,7 @@ func QueryCommands(d Deps) []*spec.Command {
 				"gossms query run -p dev --file fix.sql --allow write --max-rows-affected 10",
 				"gossms query run -p dev --file fix.sql --allow write --dry-run",
 				"gossms query run -p dev --file big.sql --out-file rows.csv",
+				"gossms query run -p dev --file by-id.sql --param id=42:int --param since=2026-01-01:date",
 			},
 		},
 		{
@@ -527,6 +531,16 @@ func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	if err != nil {
 		return nil, err
 	}
+	// What is sent: the script, or the script inside sp_executesql when it
+	// has parameters. The classifier reads the script either way.
+	send := script
+	if params, err := readParams(inv.Values[optParam].([]string)); err != nil {
+		return nil, err
+	} else if params != nil {
+		if send, err = parameterize(script, params); err != nil {
+			return nil, err
+		}
+	}
 	cfg, profile, ceiling, err := d.profileCeiling(inv)
 	if err != nil {
 		return nil, err
@@ -580,7 +594,7 @@ func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	if !run.continueOnError {
 		opts = append(opts, query.WithStopOnError())
 	}
-	qr := c.sess.ExecuteToSink(rctx, script, inv.Sink, opts...)
+	qr := c.sess.ExecuteToSink(rctx, send, inv.Sink, opts...)
 	collect(res, qr, rctx.Err() != nil)
 	if qr.Database != "" {
 		res.Database = qr.Database
@@ -607,7 +621,7 @@ func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Resul
 				fmt.Sprintf("%d of %d batches failed", qr.FailedBatches, qr.Batches),
 				"The batches that succeeded kept their changes; see errors for the failures.")}, res.Errors...)
 		}
-		if total := batchCount(script); qr.StoppedOnError && qr.Batches < total {
+		if total := batchCount(send); qr.StoppedOnError && qr.Batches < total {
 			res.Warnings = append(res.Warnings, fmt.Sprintf(
 				"The run stopped after the failing batch: %d of %d batches were sent, later ones did not run.", qr.Batches, total))
 		}

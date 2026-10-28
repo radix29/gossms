@@ -104,6 +104,48 @@ queue behind a query. A lost session closes the panel's connection (Query >
 Reconnect opens a new one); closing, reconnecting or quitting with
 `@@TRANCOUNT > 0` asks to commit first (`confirmOpenTransactions`).
 
+## How a CLI call runs
+
+`gossms <command> …` (`internal/cli`, contract `docs/cli.md`) is one process,
+one command, one exit code. `cli.Main` (`cli.go`) owns the order; a handler
+(`internal/cli/cmd`) only builds an `output.Result`.
+
+1. **Parse.** `args.Parse` over the tree (`tree.go`, data in
+   `internal/cli/spec`) gives an `Invocation`: typed option values, which
+   were given, and the process's stdin/env/file reader. A usage error is
+   rendered in the `-o` format scanned before parsing.
+2. **Output first.** `renderOptions` (`render.go`) reads the global output
+   options, and `output.NewSink` is made **before the handler runs**, so an
+   `--out-file` that cannot be written fails before anything connects. The
+   Sink is the handler's `query.TypedRowSink`: it keeps the first `--max-rows`
+   cells per set (copied — the executor reuses its slices), counts the rest,
+   and streams `jsonl` lines or file rows as they arrive.
+3. **Classify and check, offline.** `query run` reads the script
+   (`readSQL`), classifies it (`safety.Classify`) and checks it
+   (`safety.Check`) against `--allow` and the profile's ceiling, read from
+   the profile alone — a refusal (exit 7) needs no password and no server.
+   `--param` wraps the checked script in `sp_executesql` (`cmd/param.go`);
+   the class is the script's, not the wrapper's.
+4. **Connect.** `connect.Resolve` (profile + overrides + password source) and
+   `connect.Open` dial as `db.RoleCLI` (`program_name` `goSSMS - CLI`);
+   `Deps.OpenSession` opens one `query.Session` — the query window's type —
+   for the whole script. Both are closed on return; `Session.Close` discards
+   the connection, so a still-open transaction is rolled back by the server.
+5. **Run.** Setup batches (`SET STATISTICS`, `SET XACT_ABORT ON; BEGIN
+   TRANSACTION`) via `Execute`, then `ExecuteToSink(script, inv.Sink,
+   WithoutSinkNotices, WithStopOnError)` under `--timeout`'s context.
+   `collect` turns the executor's messages into envelope errors (structured
+   `SQLError`), messages and `rowsAffected`; `endTransaction` commits or rolls
+   back by outcome and `@@TRANCOUNT`.
+6. **Finish.** Main stamps command and duration, turns a cancelled context
+   into `CANCELLED` (130) whatever the handler returned, replays sets a
+   handler built itself through the same Sink (`Sink.Add`), commits or
+   discards the `--out-file` (`Sink.Finish`), renders, and exits with the
+   first error's code (`output.ExitCodes`).
+
+Ctrl+C cancels the one context every step derives from
+(`signal.NotifyContext`); the first only, so a second kills the process.
+
 ## Threading model
 
 **All UI and widget state belongs to the UI goroutine** (the one in
@@ -186,9 +228,12 @@ gossms/
 │   │   ├── spec/                # the command tree as data: Command, Arg, Option, Class, Handler, Invocation. Parser, help (and later agent schema/guide) read it — one source
 │   │   ├── args/                # the parser over spec: options, response files, did-you-mean; no I/O (ReadFile/Getenv injected)
 │   │   ├── connect/             # a command line → a connection: the connection options, profile + overrides + password sources (Resolve; drops a saved password an override would redirect), the dial as db.RoleCLI and its failure → exit code (Open, Classify)
-│   │   ├── safety/              # the T-SQL statement classifier (Classify: read|write|ddl|admin per statement, fails closed) over tuikit/sqltext, and the flags the safety checks read
-│   │   ├── cmd/                 # the command handlers, one file per group (profile.go); Deps injects the config load and the dial
-│   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), and one renderer per --output format (text, json)
+│   │   ├── safety/              # the T-SQL statement classifier (Classify: read|write|ddl|admin per statement, fails closed) over tuikit/sqltext, its flags, and Check: the refusals of a run (class vs --allow and the ceiling, mode options, what a transaction or --max-rows-affected cannot hold)
+│   │   ├── cmd/                 # the command handlers, one file per group; Deps injects the config load, the dial and the query session
+│   │   │   ├── profile.go           # profile list/show/test
+│   │   │   ├── query.go             # query classify/run/parse: the T-SQL input options, the offline check, the run, transactions, SQL errors → envelope
+│   │   │   └── param.go             # query run --param: name/type checked against closed forms, the script wrapped in sp_executesql
+│   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), the Sink (rows kept, streamed or sent to --out-file) and one renderer per --output format (text, json, jsonl, csv, tsv, markdown); the --max-output-bytes cap
 │   │
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
 │   │   ├── theme/                # colour palette + derived tcell.Style helpers
