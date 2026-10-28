@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -11,22 +13,28 @@ import (
 	"syscall"
 	"time"
 
-	gosmoversion "github.com/radix29/gosmo/version"
+	"golang.org/x/term"
 
+	"github.com/radix29/gossms/internal/cli"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tui"
 	"github.com/radix29/gossms/internal/version"
 )
 
 func main() {
-	// Handled before anything opens a file or a tcell screen: `brew test` and CI
-	// run without a TTY, where App.Run cannot start.
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "--version", "-version", "-v":
-			printVersion()
-			return
-		}
+	// Decided before anything opens a file or a tcell screen: `brew test` and CI
+	// run without a TTY, where App.Run cannot start, and the command line must
+	// never open the TUI's log file (two processes would share it).
+	switch selectMode(os.Args[1:], int(os.Stdin.Fd()), int(os.Stdout.Fd())) {
+	case modeVersion:
+		printVersion(os.Stdout)
+		return
+	case modeCLI:
+		os.Exit(cli.Main(context.Background(), os.Args[1:],
+			cli.Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv}))
+	case modeNoTerminal:
+		fmt.Fprintln(os.Stderr, noTerminalMessage)
+		os.Exit(1)
 	}
 
 	if logFile, err := config.OpenLogFile(); err == nil {
@@ -50,6 +58,44 @@ func main() {
 		}
 		log.Fatalf("gossms error: %v", err)
 	}
+}
+
+// mode is what main runs for a given command line.
+type mode int
+
+const (
+	modeTUI        mode = iota // bare gossms on a terminal
+	modeVersion                // --version, -version, -v: the shipped version block
+	modeCLI                    // any other argument: internal/cli
+	modeNoTerminal             // bare gossms with stdin or stdout not a terminal
+)
+
+// noTerminalMessage is bare gossms's refusal when stdio is redirected. It names
+// `gossms help` until `agent guide` exists (comm-params phase 0 D1).
+const noTerminalMessage = "gossms: the interactive UI needs a terminal on stdin and stdout; " +
+	"for scripted use run `gossms help`"
+
+// isTerminal is term.IsTerminal, a variable so TestSelectMode can decide
+// without a tty.
+var isTerminal = term.IsTerminal
+
+// selectMode is the mode rule: no arguments means the TUI, any argument the
+// command line, the version flags being the one shipped exception. Bare gossms
+// also needs both stdin and stdout on a terminal: with them piped inside a
+// terminal session tcell would still open /dev/tty (CONIN$ on Windows) and the
+// TUI would start and wait for keys no one sends.
+func selectMode(args []string, stdin, stdout int) mode {
+	if len(args) > 0 {
+		switch args[0] {
+		case "--version", "-version", "-v":
+			return modeVersion
+		}
+		return modeCLI
+	}
+	if !isTerminal(stdin) || !isTerminal(stdout) {
+		return modeNoTerminal
+	}
+	return modeTUI
 }
 
 // errPanicked marks run's error for a recovered panic, which run reports to
@@ -94,15 +140,15 @@ func watchdog(sigs <-chan os.Signal, returned <-chan struct{}, save func(os.Sign
 	}
 }
 
-// printVersion writes the build metadata Help > About shows. Keep in step with
-// newAboutRows in internal/tui/menu.go.
-func printVersion() {
-	fmt.Printf("%s %s\n", version.Name, version.Version)
-	fmt.Printf("Commit:   %s\n", version.Commit)
-	fmt.Printf("Built:    %s\n", version.Date)
-	fmt.Printf("Platform: %s\n", version.Runtime())
-	fmt.Printf("License:  %s\n", version.License)
-	fmt.Printf("gosmo:    %s\n", gosmoversion.Version)
+// printVersion writes version.Fields as `gossms --version` always has: the
+// name line, then aligned "Label: value" lines. The bytes are a contract (the
+// Homebrew test in release.yml matches them), so TestPrintVersionFormat pins them.
+func printVersion(w io.Writer) {
+	fields := version.Fields()
+	fmt.Fprintf(w, "%s %s\n", version.Name, fields[0].Value)
+	for _, f := range fields[1:] {
+		fmt.Fprintf(w, "%-10s%s\n", f.Label+":", f.Value)
+	}
 }
 
 // run reports a UI-goroutine panic instead of letting it vanish: a trace

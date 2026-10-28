@@ -17,6 +17,8 @@ package version
 import (
 	"runtime"
 	"runtime/debug"
+
+	gosmoversion "github.com/radix29/gosmo/version"
 )
 
 // Name is gossms's program name, for display purposes.
@@ -74,4 +76,24 @@ func init() {
 // Runtime returns the "GOOS/GOARCH" pair the binary was built for.
 func Runtime() string {
 	return runtime.GOOS + "/" + runtime.GOARCH
+}
+
+// Field is one line of build metadata: Key is the stable machine name (the
+// command line's JSON key), Label the human one.
+type Field struct {
+	Key, Label, Value string
+}
+
+// Fields returns the build metadata `gossms --version` prints and the command
+// line's `version` reports, in output order. Keep in step with App.showAbout in
+// internal/tui/menu.go, which shows the same values with more context.
+func Fields() []Field {
+	return []Field{
+		{"version", "Version", Version},
+		{"commit", "Commit", Commit},
+		{"built", "Built", Date},
+		{"platform", "Platform", Runtime()},
+		{"license", "License", License},
+		{"gosmo", "gosmo", gosmoversion.Version},
+	}
 }
