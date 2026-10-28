@@ -159,6 +159,11 @@ type Result struct {
 	// batch, so later batches (or repetitions of a GO n) were not sent.
 	StoppedOnError bool
 
+	// Batches counts the batches sent, each repetition of a GO n separately, and
+	// FailedBatches those of them that reported an error: a caller tells "some
+	// batches failed" from "all did" without mapping error lines to batches.
+	Batches, FailedBatches int
+
 	// stopOnError and noSinkNotices are WithStopOnError and WithoutSinkNotices.
 	stopOnError   bool
 	noSinkNotices bool
@@ -448,8 +453,12 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 			}
 			errsBefore := res.errorCount()
 			runBatch(ctx, conn, b.Text, res.lineOffset+b.StartLine, res, sink)
-			if res.stopOnError && res.errorCount() > errsBefore {
-				res.StoppedOnError = true
+			res.Batches++
+			if res.errorCount() > errsBefore {
+				res.FailedBatches++
+				if res.stopOnError {
+					res.StoppedOnError = true
+				}
 			}
 		}
 		if b.Count > 1 {

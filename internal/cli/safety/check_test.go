@@ -1,6 +1,7 @@
 package safety
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,5 +135,16 @@ func TestCheckOrder(t *testing.T) {
 	b := Check(Classify("SET NOCOUNT ON\nBEGIN TRAN\nUPDATE t SET a = 1"), Policy{Allow: read, Transaction: true, MaxRowsAffected: true})
 	if b == nil || !strings.Contains(b.Message, "allowed class") {
 		t.Fatalf("%+v", b)
+	}
+}
+
+// query parse refuses every mention of the modes, OFF included, but not one in
+// a literal, comment or quoted identifier.
+func TestModeWords(t *testing.T) {
+	if got := ModeWords("SELECT 1\nGO\nset parseonly off\nSET SHOWPLAN_TEXT ON"); !slices.Equal(got, []int{3, 4}) {
+		t.Errorf("lines %v, want [3 4]", got)
+	}
+	if got := ModeWords("SELECT 'NOEXEC' AS [parseonly] -- SET NOEXEC ON\n/* SHOWPLAN_XML */"); len(got) != 0 {
+		t.Errorf("lines %v, want none", got)
 	}
 }

@@ -27,6 +27,9 @@ type Deps struct {
 	LoadConfig func() (*config.Config, error)
 	// Connect dials (db.Connect).
 	Connect connect.ConnectFunc
+	// OpenSession opens the one query session a query command runs its
+	// script on (OpenQuerySession).
+	OpenSession func(ctx context.Context, sc *db.ServerConn, database string) (Session, error)
 }
 
 // ProfileCommands is the profile group: its node and its commands.
