@@ -22,6 +22,19 @@ go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/tuikit/... |
 must print exactly `github.com/gdamore/tcell/v3`,
 `github.com/gdamore/tcell/v3/color`, `github.com/clipperhouse/displaywidth`.
 
+**Invariant: `internal/cli` must not reach `internal/tui`, tcell, or any
+`internal/tuikit` package except the stdlib-only `tuikit/sqltext`.** The
+command line runs without a screen, and `tuikit/core` is not the leaf it looks
+like — it imports tcell — so the CLI measures display width with
+`displaywidth.String` directly (the function `core.DisplayWidth` wraps).
+`TestNoTUIImports` (`internal/cli/imports_test.go`) runs
+
+```bash
+cd internal/cli && go list -deps ./... | grep -E 'internal/tui|tcell'
+```
+
+and fails on any match but `internal/tuikit/sqltext`, naming the import chain.
+
 ## Which document owns what
 
 A rule stated twice drifts. State it once, in its owner; elsewhere summarize in
@@ -33,6 +46,7 @@ a sentence and link.
 | `docs/ui-rules.md` | The enforceable form of every `internal/tui`/`tuikit` idiom: widgets, grids, dialogs, clipboard, toolbars, mouse, async |
 | `docs/db-rules.md` | Permission gating, emitted T-SQL, Object Explorer filters, query execution |
 | `docs/testing.md` | What counts as verification: tmux and live-server harnesses, `fakedb_test.go` rules |
+| `docs/cli.md` | The command-line contract: syntax, output formats, exit codes, safety classes |
 | `ARCHITECTURE.md` | Package map, layering, data flow, threading, and the long-form *why* behind each idiom |
 | `internal/tuikit/README.md` | Everything inside `internal/tuikit` |
 | `docs/open-threads.md` | Work knowingly left undone: bugs, deferred scope, release blockers |
@@ -143,7 +157,7 @@ or `App`. See § Why the permission gate is its own package.
 ```
 gossms/
 ├── cmd/
-│   ├── gossms/               # main entry point
+│   ├── gossms/               # main entry point; selectMode: no argument → the TUI (only with stdin and stdout on a terminal), --version/-version/-v → the version block, any other argument → internal/cli (docs/cli.md § Modes)
 │   ├── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file, or -live replays a recorded Live Query Statistics run (not part of the release build)
 │   ├── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
 │   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
@@ -165,7 +179,11 @@ gossms/
 │   ├── format/              # Edit > Format Document's engine: Language (what a query panel's text is written in; picks its highlighter, and by extension only, never content), the per-language Style registry, the SQL Standard style (sql*.go: a layout pass over sqltext's tokens with a block/paren frame stack, not a parser; statements it has no rules for keep their line breaks), the JSON formatter (json.Indent, never Marshal), the XML raw-text re-indenter (tags, CDATA, comments emitted verbatim; never encoding/xml's Encoder) and the token-equivalence guard every result passes. Pure text, stdlib + tuikit/sqltext only
 │   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export; WithLock: the lock file around config.json's and tracked_queries.json's read-merge-write
 │   │                        #   keeps an existing file's narrower mode (perm is a ceiling) and writes through a symlink, dangling or not
-│   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X
+│   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X; Fields is the one ordered list `gossms --version`, `gossms version` and Help > About print
+│   ├── cli/                 # the command line (`gossms <command> …`; contract: docs/cli.md): Main parses, dispatches, renders and maps the outcome to an exit code; tree.go is the command tree, help.go the generated help. Never imports tui, tcell or a tuikit package but sqltext — see § Why split this way
+│   │   ├── spec/                # the command tree as data: Command, Arg, Option, Class, Handler, Invocation. Parser, help (and later agent schema/guide) read it — one source
+│   │   ├── args/                # the parser over spec: options, response files, did-you-mean; no I/O (ReadFile/Getenv injected)
+│   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), and one renderer per --output format (text, json)
 │   │
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
 │   │   ├── theme/                # colour palette + derived tcell.Style helpers

@@ -33,6 +33,7 @@ Read the named section, only when the task touches it.
 | A goroutine delivering a result to the UI | `ARCHITECTURE.md` § Async result delivery: postAndWake |
 | An async load a newer one supersedes | `ARCHITECTURE.md` § Latest-only loads: latest |
 | Permission gating, emitted T-SQL, OE filters, query execution | `docs/db-rules.md` |
+| The command line (`internal/cli`, `gossms <command>`) | `docs/cli.md` |
 | Writing/running tests, or calling anything done | `docs/testing.md` |
 | `internal/tuikit/**` | `internal/tuikit/README.md` § Design principles (new control/dialog: § Adding a new control) |
 | gosmo changes / the `replace` directive | the `dev-with-local-gosmo` skill; `~/go/gosmo/CLAUDE.md` |
@@ -93,7 +94,8 @@ gossms's back end). Dead code inside gossms is ordinary cleanup.
 - `internal/db` follows gosmo's one-form rule: context first, no
   `Foo`/`FooContext` pairs.
 - Go 1.27 (tracks the latest release): `new(T{...})`, `slices`, `errors.AsType`.
-- `core.DisplayWidth(s)`, never `len(s)`, for column-position math.
+- `core.DisplayWidth(s)`, never `len(s)`, for column-position math
+  (`internal/cli`: `displaywidth.String`, core pulls tcell).
 - **Property-sheet labels must fit `propsheet.LabelWidth` (30).** Rows
   hard-clip with no ellipsis, so an over-long label silently renders as a
   different one. `TestNoPropertySheetLabelIsTruncated` enforces it; shorten the

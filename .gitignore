@@ -1,6 +1,6 @@
 # Build output
 dist/
-gossms
+/gossms
 gossms.exe
 gossms-linux
 gossms-darwin

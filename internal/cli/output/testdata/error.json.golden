@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "status": "error",
+  "command": "",
+  "server": null,
+  "database": null,
+  "durationMs": 0,
+  "resultSets": [],
+  "messages": [],
+  "warnings": [],
+  "errors": [
+    {
+      "code": "USAGE_ERROR",
+      "message": "unknown command \"verison\"",
+      "hint": "Did you mean `gossms version`?"
+    }
+  ]
+}

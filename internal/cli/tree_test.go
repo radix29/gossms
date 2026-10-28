@@ -1,15 +1,23 @@
 package cli
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/spec"
 )
 
 // TestCommandTreeWellFormed checks the shape rules spec documents but its
-// types cannot enforce. (Phase 0.g adds the examples-parse drift guard.)
+// types cannot enforce. TestCommandMentionsParse is the drift guard on the
+// text around them.
 func TestCommandTreeWellFormed(t *testing.T) {
 	tree := commandTree()
 	checkOption := func(where string, o spec.Option) {
@@ -101,6 +109,164 @@ func TestCommandTreeWellFormed(t *testing.T) {
 	for _, c := range tree.Commands {
 		if len(c.Path) == 2 && !paths[c.Path[0]] {
 			t.Errorf("%q: no group node %q", strings.Join(c.Path, " "), c.Path[0])
+		}
+	}
+}
+
+// mentionRE finds a command line quoted in text: `gossms …` in backticks.
+var mentionRE = regexp.MustCompile("`(gossms(?: [^`]*)?)`")
+
+// checkMentions fails for every `gossms …` in text that names a command the
+// tree lacks (docs/cli.md § Help). A mention with a placeholder
+// (<command>, [x], %s, ...) is checked up to it: `gossms help <command>` needs
+// `help`; one without must parse whole, and `gossms help <topic>` must name a
+// command.
+func checkMentions(t *testing.T, tree *spec.Tree, where, text string) {
+	t.Helper()
+	for _, m := range mentionRE.FindAllStringSubmatch(text, -1) {
+		if err := checkCommandLine(tree, m[1]); err != "" {
+			t.Errorf("%s: %q %s", where, m[1], err)
+		}
+	}
+}
+
+// checkCommandLine is checkMentions for one line starting "gossms"; it
+// returns why the line is wrong, or "".
+func checkCommandLine(tree *spec.Tree, line string) string {
+	words := strings.Fields(line)[1:]
+	if len(words) > 0 && slices.Contains([]string{"--version", "-version", "-v"}, words[0]) {
+		return "" // answered by cmd/gossms before the command line
+	}
+	placeholder := slices.IndexFunc(words, func(w string) bool {
+		return strings.ContainsAny(w, "<>[]%") || strings.Contains(w, "...") || strings.Contains(w, "…")
+	})
+	if placeholder >= 0 {
+		var path []string
+		for _, w := range words[:placeholder] {
+			if strings.HasPrefix(w, "-") {
+				break
+			}
+			path = append(path, w)
+		}
+		if len(path) > 0 && tree.Lookup(path) == nil {
+			return "names a command the tree lacks"
+		}
+		return ""
+	}
+	inv, err := args.Parse(tree, words, args.Options{})
+	if err != nil {
+		return "does not parse: " + err.Error()
+	}
+	if inv.Command == helpCommand(tree) && len(inv.Args) > 0 && tree.Lookup(inv.Args) == nil {
+		return "names a help topic the tree lacks"
+	}
+	return ""
+}
+
+// TestCommandMentionsParse is phase 0 D1's drift guard: every example parses,
+// and every `gossms …` named in the tree's text, in the rendered help, or in a
+// string literal of the command line's source (hints, usage, the TTY refusal
+// in cmd/gossms) names a command that exists. A pointer to a command that
+// answers "unknown command" is the worst first contact; when `agent guide`
+// lands, the wording has to change with it.
+func TestCommandMentionsParse(t *testing.T) {
+	tree := commandTree()
+	for _, c := range tree.Commands {
+		where := c.Name()
+		for _, ex := range c.Examples {
+			if err := checkCommandLine(tree, ex); err != "" {
+				t.Errorf("%s: example %q %s", where, ex, err)
+			}
+			if strings.ContainsAny(ex, "<>[]%") {
+				t.Errorf("%s: example %q has a placeholder; examples are runnable lines", where, ex)
+			}
+		}
+		texts := []string{c.Summary, c.Description}
+		for _, a := range c.Args {
+			texts = append(texts, a.Help)
+		}
+		for _, o := range c.Options {
+			texts = append(texts, o.Help)
+		}
+		checkMentions(t, tree, where, strings.Join(texts, "\n"))
+	}
+	for _, o := range tree.Globals {
+		checkMentions(t, tree, "global --"+o.Name, o.Help)
+	}
+
+	// The rendered help, for every topic.
+	helpArgv := [][]string{{"--help"}}
+	for _, c := range tree.Commands {
+		helpArgv = append(helpArgv, append([]string{"help"}, c.Path...))
+	}
+	for _, argv := range helpArgv {
+		r := runMain(t, argv...)
+		if r.exit != 0 {
+			t.Errorf("%v: exit %d", argv, r.exit)
+		}
+		checkMentions(t, tree, strings.Join(argv, " "), r.stdout)
+	}
+
+	// String literals in the source: the fixed hints and messages. Hints
+	// built at run time are checked where tests produce them (TestUsageErrors).
+	files, _ := filepath.Glob("*.go")
+	for _, dir := range []string{"args", "output", "spec"} {
+		more, _ := filepath.Glob(filepath.Join(dir, "*.go"))
+		files = append(files, more...)
+	}
+	files = append(files, filepath.Join("..", "..", "cmd", "gossms", "main.go"))
+	fset := token.NewFileSet()
+	literals := 0
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			s, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				t.Fatalf("%s: %v", fset.Position(lit.Pos()), err)
+			}
+			if mentionRE.MatchString(s) {
+				literals++
+			}
+			checkMentions(t, tree, fset.Position(lit.Pos()).String(), s)
+			return true
+		})
+	}
+	if literals == 0 {
+		t.Error("no `gossms …` literal found in the source: the scan is not reading it")
+	}
+}
+
+// TestCheckMentions pins the checker itself, so a broken checker cannot pass
+// every mention.
+func TestCheckMentions(t *testing.T) {
+	tree := commandTree()
+	for line, ok := range map[string]bool{
+		"gossms help":                true,
+		"gossms help version":        true,
+		"gossms version -o json":     true,
+		"gossms --version":           true,
+		"gossms help <command>":      true,
+		"gossms help %s":             true,
+		"gossms <command> --help":    true,
+		"gossms agent guide":         false,
+		"gossms help agent":          false,
+		"gossms agent <topic>":       false,
+		"gossms version --bogus":     false,
+		"gossms -p dev":              false,
+		"gossms version -o markdown": false,
+	} {
+		if got := checkCommandLine(tree, line) == ""; got != ok {
+			t.Errorf("checkCommandLine(%q) ok = %v, want %v", line, got, ok)
 		}
 	}
 }

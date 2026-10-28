@@ -1816,6 +1816,14 @@ succeeds, because it resolves the name within the job.
   gossms keeps the refusal because an identical name is almost always a
   mistake.
 
+## Command-line argument parser: hand-written — settled, do not re-raise
+
+`internal/cli/args` is a small parser over `internal/cli/spec`, not Cobra or
+another library. The command definitions it reads are the same data help and
+`agent schema` print, so the grammar, the help and the schema cannot drift
+apart, and no dependency tree arrives whose flag model would still need mapping
+onto the schema. The grammar is `docs/cli.md` § Syntax.
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

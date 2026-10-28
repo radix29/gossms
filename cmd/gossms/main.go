@@ -31,7 +31,7 @@ func main() {
 		return
 	case modeCLI:
 		os.Exit(cli.Main(context.Background(), os.Args[1:],
-			cli.Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv}))
+			cli.Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv, ReadFile: os.ReadFile}))
 	case modeNoTerminal:
 		fmt.Fprintln(os.Stderr, noTerminalMessage)
 		os.Exit(1)
@@ -71,7 +71,7 @@ const (
 )
 
 // noTerminalMessage is bare gossms's refusal when stdio is redirected. It names
-// `gossms help` until `agent guide` exists (comm-params phase 0 D1).
+// `gossms help` until `agent guide` exists (docs/cli.md § Help).
 const noTerminalMessage = "gossms: the interactive UI needs a terminal on stdin and stdout; " +
 	"for scripted use run `gossms help`"
 

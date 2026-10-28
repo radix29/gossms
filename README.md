@@ -104,6 +104,9 @@ chmod +x ./gossms
 `gossms --version` prints the version, commit, build date and licence and exits,
 without starting the interface — quote it when reporting a bug.
 
+Any other argument runs the command-line mode instead of the interface (start
+with `gossms help`); bare `gossms` needs a terminal on both stdin and stdout.
+
 You need a modern terminal with UTF-8 and 256-colour support, plus network access
 to a SQL Server instance.
 

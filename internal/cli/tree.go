@@ -1,16 +1,23 @@
 package cli
 
-import "github.com/radix29/gossms/internal/cli/spec"
+import (
+	"context"
+
+	"github.com/radix29/gossms/internal/cli/output"
+	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/version"
+)
 
 // commandTree assembles the command line. An option or command is here only
 // once it works: connection and safety globals arrive with the phases that
 // implement them, and --output lists only the formats a renderer exists for.
 //
-// The handlers are wired in phase 0.f; until then Run is nil.
+// help has no Run: Main answers it (and every --help) itself, since help is
+// text for people rather than a result in the envelope.
 func commandTree() *spec.Tree {
 	return &spec.Tree{
 		Globals: []spec.Option{
-			{Name: "output", Short: "o", Type: spec.TypeEnum, Enum: []string{"text", "json"}, Default: "text",
+			{Name: "output", Short: "o", Type: spec.TypeEnum, Enum: output.Formats, Default: "text",
 				Help: "Output format", Global: true},
 			{Name: "quiet", Short: "q", Type: spec.TypeBool,
 				Help: "Results only, no envelope header", Global: true},
@@ -29,6 +36,7 @@ func commandTree() *spec.Tree {
 				Summary:     "Show the gossms version and the command-line schema version",
 				Description: "Prints the build metadata `gossms --version` shows, plus the schema version of this command line's output.",
 				Class:       spec.ClassRead,
+				Run:         runVersion,
 				Examples: []string{
 					"gossms version",
 					"gossms version -o json",
@@ -50,4 +58,15 @@ func commandTree() *spec.Tree {
 			},
 		},
 	}
+}
+
+// runVersion is `gossms version`: the fields `gossms --version` prints, keyed
+// for JSON, plus the envelope's schema version.
+func runVersion(context.Context, *spec.Invocation) (*output.Result, error) {
+	var fields []output.Field
+	for _, f := range version.Fields() {
+		fields = append(fields, output.Field{Key: f.Key, Value: f.Value})
+	}
+	fields = append(fields, output.Field{Key: "cliSchema", Value: output.SchemaVersion})
+	return &output.Result{Fields: fields}, nil
 }

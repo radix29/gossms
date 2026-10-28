@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "status": "cancelled",
+  "command": "version",
+  "server": null,
+  "database": null,
+  "durationMs": 0,
+  "resultSets": [],
+  "messages": [],
+  "warnings": [],
+  "errors": [
+    {
+      "code": "CANCELLED",
+      "message": "cancelled by interrupt",
+      "hint": null
+    }
+  ]
+}
