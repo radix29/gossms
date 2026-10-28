@@ -38,6 +38,10 @@ const (
 	TypeInt    OptionType = "int"    // a base-10 integer
 	TypeEnum   OptionType = "enum"   // one of Option.Enum
 	TypeList   OptionType = "list"   // repeated and/or comma-separated text
+	// TypeRepeat is given once per item and takes each value whole, commas
+	// included: for values (a T-SQL literal, decimal(10,2)) a comma split
+	// would cut.
+	TypeRepeat OptionType = "repeat"
 )
 
 // Tree is the whole command line: the global options every command accepts,
@@ -98,7 +102,7 @@ type Invocation struct {
 	Args    []string // positional arguments, in Command.Args order
 	// Values holds every option of Command.Options and Tree.Globals by long
 	// name, after defaults and environment variables, typed by Option.Type:
-	// bool, string (string and enum), int, []string (list).
+	// bool, string (string and enum), int, []string (list, repeat).
 	Values map[string]any
 	// Given is the options whose value came from the command line or their
 	// environment variable rather than a default: an override of a saved

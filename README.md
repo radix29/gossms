@@ -235,6 +235,26 @@ Entra tenant/client, or weakening encryption, does not send the saved
 password. Entra MFA and Device Code prompt, so the command line refuses them;
 use Entra Default, Azure CLI, Service Principal or Managed Identity.
 
+`query` runs T-SQL. Every script is classified first — `read`, `write`,
+`ddl` or `admin` — and refused before anything connects when it is above
+`--allow` (default `read`) or the profile's Allowed Operations:
+
+```bash
+gossms query run -p dev -Q "SELECT TOP 5 name FROM sys.tables"
+cat fix.sql | gossms query run -p dev --file - --allow write --transaction rollback  # measure, keep nothing
+gossms query run -p dev --file fix.sql --allow write --max-rows-affected 10          # commit only if ≤ 10 rows
+gossms query run -p dev --file by-id.sql --param id=42:int                           # through sp_executesql
+gossms query run -p dev --file big.sql --out-file rows.csv                           # every row, no limits
+gossms query classify --file fix.sql                                                 # the class, no server
+gossms query parse -p dev --file fix.sql                                             # syntax only
+```
+
+Output is `text` (default), `json`, `jsonl`, `csv`, `tsv` or `markdown`
+(`-o`); stdout is capped (`--max-rows`, `--max-col-width`,
+`--max-output-bytes`) and says when it was cut. The classifier is a
+guardrail, not the security boundary: give an agent's profile a login with
+only the rights it needs.
+
 ## Configuration
 
 Settings and the 30 most recent connections (named profiles are kept on top

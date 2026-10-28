@@ -380,3 +380,43 @@ func TestQueryParse(t *testing.T) {
 		t.Errorf("SET PARSEONLY OFF: exit %d, dialled %d\n%s", r.exit, *dialled, r.stdout)
 	}
 }
+
+// --param sends the script inside sp_executesql, classified as written: a
+// SELECT stays read although sp_executesql alone would be write.
+func TestQueryRunParams(t *testing.T) {
+	sess := &fakeSession{t: t}
+	d, _ := queryDeps(t, sess)
+	r := runQuery(t, d, "query", "run", "-p", "dev", "--sql", "SELECT * FROM t WHERE id = @id",
+		"--param", "id=42:int", "--param", "n=a,b:nvarchar(5)")
+	if r.exit != 0 {
+		t.Fatalf("exit %d\n%s%s", r.exit, r.stdout, r.stderr)
+	}
+	want := "EXEC sp_executesql N'SELECT * FROM t WHERE id = @id', N'@id int, @n nvarchar(5)', @id = N'42', @n = N'a,b';"
+	if len(sess.executed) != 1 || sess.executed[0] != want {
+		t.Errorf("sent %q", sess.executed)
+	}
+
+	// The class is the script's: an UPDATE needs --allow write as without
+	// parameters, refused before connecting.
+	sess = &fakeSession{t: t}
+	d, dialled := queryDeps(t, sess)
+	r = runQuery(t, d, "query", "run", "-p", "dev", "--sql", "UPDATE t SET a = @a", "--param", "a=1:int")
+	if r.exit != 7 || *dialled != 0 {
+		t.Errorf("update: exit %d, dialled %d\n%s", r.exit, *dialled, r.stdout)
+	}
+
+	// Usage errors, before connecting, a dry run included.
+	for _, argv := range [][]string{
+		{"--sql", "SELECT @a\nGO\nSELECT 1", "--param", "a=1:int"},
+		{"--sql", "SELECT @a", "--param", "a=1:int; DROP TABLE t"},
+		{"--sql", "SELECT @a", "--param", "a=1:int", "--param", "a=2:int"},
+		{"--sql", "SELECT @a\nGO\nSELECT 1", "--param", "a=1:int", "--dry-run"},
+	} {
+		sess = &fakeSession{t: t}
+		d, dialled = queryDeps(t, sess)
+		r = runQuery(t, d, append([]string{"query", "run", "-p", "dev"}, argv...)...)
+		if r.exit != 2 || *dialled != 0 {
+			t.Errorf("%v: exit %d, dialled %d\n%s", argv, r.exit, *dialled, r.stdout)
+		}
+	}
+}

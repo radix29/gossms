@@ -1824,6 +1824,45 @@ another library. The command definitions it reads are the same data help and
 apart, and no dependency tree arrives whose flag model would still need mapping
 onto the schema. The grammar is `docs/cli.md` § Syntax.
 
+## Command-line safety and output: what phase 2 settled — do not re-raise
+
+The contract is `docs/cli.md`; these are the alternatives turned down.
+
+- **Classifier = leader rule + keyword floor (D1).** A statement's class
+  comes from its leading keywords, then is raised to the highest class of any
+  word token in it found in a floor table (`INSERT/UPDATE/DELETE/MERGE` →
+  write, `CREATE/ALTER/DROP/TRUNCATE/DISABLE/ENABLE` → ddl, `KILL`, `BACKUP`,
+  `GRANT`, … → admin), outside literals, comments and quoted identifiers.
+  The statement splitter (`StatementCutter`) cuts only at known leaders, so
+  `SELECT 1` and a `DISABLE TRIGGER` on the next line are one statement: by
+  leader alone the classifier would fail *open*. Over-classification (a
+  column named `kill`) is accepted, and the output names the word. Not
+  done: extending `statementLeaders` — it would change Ctrl+Enter selection
+  and Format Document too. `LOGIN` is not a bare floor word (a common column
+  name); `CREATE/ALTER/DROP` before an administration object is admin
+  wherever it stands.
+- **The rollback hole is reported, not refused (D3).** `--transaction
+  rollback` cannot stop a called procedure's `COMMIT` from ending the
+  wrapping transaction. After the run, `@@TRANCOUNT 0` with a clean run or
+  Msg 266 is `SQL_ERROR` "the script ended the wrapping transaction".
+  Refusing every `EXEC` under `--transaction rollback` would make it useless
+  for testing procedures; the guarantee is stated as covering the script's
+  own statements.
+- **csv/tsv carry no envelope (D6).** stdout gets rows only, so it pipes into
+  any CSV reader; the summary — errors, truncation notes — goes to stderr in
+  full, and the exit code carries the status. csv/tsv write every result set
+  in Results To File's layout (§ SQL NULL in results), not the first only, so
+  the CLI's file and the TUI's compare byte for byte. TSV is CSV's quoting
+  with a tab separator, not PostgreSQL TEXT's `\t` escapes — spreadsheets do
+  not read those.
+- **`--out-file` (D7).** Its format comes from the extension (`.csv .tsv
+  .jsonl .json .md .txt`, anything else exit 2), independent of `-o`, which
+  governs the stdout summary. The file has no row or column limits — exports
+  are lossless. It is written through a temporary file and discarded on error
+  or cancel, as Results To File is, so the destination is never half
+  written; an existing file is refused without `--force`, since the command
+  line never prompts.
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:
