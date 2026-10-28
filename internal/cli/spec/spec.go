@@ -3,13 +3,15 @@
 // parser, --help and (later) `agent schema` all read the same values, so none
 // of them can drift from the others.
 //
-// spec holds types only and imports no handler package: the tree itself is
-// assembled in internal/cli (tree.go), with no init() registration, so a
-// command package can import spec without a cycle.
+// spec holds types, and lookups over them, and imports no handler package:
+// the tree itself is assembled in internal/cli (tree.go), with no init()
+// registration, so a command package can import spec without a cycle.
 package spec
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/radix29/gossms/internal/cli/output"
 )
@@ -98,3 +100,28 @@ type Invocation struct {
 	// bool, string (string and enum), int, []string (list).
 	Values map[string]any
 }
+
+// Lookup is the command whose Path is path, or nil.
+func (t *Tree) Lookup(path []string) *Command {
+	for _, c := range t.Commands {
+		if slices.Equal(c.Path, path) {
+			return c
+		}
+	}
+	return nil
+}
+
+// Children is every command one level below path (nil path: the top level),
+// in tree order. A command with children is a group node.
+func (t *Tree) Children(path []string) []*Command {
+	var out []*Command
+	for _, c := range t.Commands {
+		if len(c.Path) == len(path)+1 && slices.Equal(c.Path[:len(path)], path) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// Name is the command's path as typed: "version", "object list".
+func (c *Command) Name() string { return strings.Join(c.Path, " ") }

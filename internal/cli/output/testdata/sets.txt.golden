@@ -1,0 +1,29 @@
+STATUS: OK
+COMMAND: query run
+SERVER: localhost\SQL2022
+DATABASE: AdventureWorks
+DURATION_MS: 38
+RESULT_SETS: 3
+
+=== RESULT 1 (4 of 18,432 rows, truncated: yes) ===
+name             | note
+-----------------+--------
+Customer         | 日本語
+Café             | NULL
+multi  line here | <a & b>
+short            |
+
+=== RESULT 2 (1 row, truncated: no) ===
+n
+-
+1
+
+=== RESULT 3 (0 rows, truncated: no) ===
+empty
+-----
+
+=== MESSAGES ===
+(1 row affected)
+
+=== WARNINGS ===
+a warning spanning lines

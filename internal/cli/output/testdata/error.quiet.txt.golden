@@ -1,0 +1,3 @@
+ERROR_CODE: USAGE_ERROR
+MESSAGE: unknown command "verison"
+HINT: Did you mean `gossms version`?
