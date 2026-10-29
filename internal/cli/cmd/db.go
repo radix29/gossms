@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,12 +35,12 @@ func stateNames() []string {
 	return out
 }
 
-// DBCommands is the db group: its node and its read commands.
+// DBCommands is the db group: its node and its commands.
 func DBCommands(d Deps) []*spec.Command {
-	return []*spec.Command{
+	return slices.Concat([]*spec.Command{
 		{
 			Path:    []string{"db"},
-			Summary: "List databases, show one database's properties, its files, its space, its log usage and its largest tables",
+			Summary: "List databases, show one database's properties, its files, its space, its log usage and its largest tables, change its options, and list and change its scoped configurations",
 			Class:   spec.ClassRead,
 		},
 		{
@@ -82,7 +83,8 @@ func DBCommands(d Deps) []*spec.Command {
 		dbSpaceCommand(d),
 		dbLogUsageCommand(d),
 		dbTableSizesCommand(d),
-	}
+		dbSetCommand(d),
+	}, dbScopedConfigCommands(d))
 }
 
 func boolText(b bool) string { return strconv.FormatBool(b) }

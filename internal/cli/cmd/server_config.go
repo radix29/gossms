@@ -587,8 +587,15 @@ func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool)
 	for i, c := range changes {
 		batch[i] = gosmo.ConfigChange{Name: c.opt.Name, Value: c.value}
 	}
+	// sp_configure's refusal without ALTER SETTINGS (Msg 15247, live on 17)
+	// reads "missing or denied"; the options were just read, so it is denied.
 	apply := func(ctx context.Context) error {
-		return w.ApplyConfiguration(ctx, batch, gosmo.ConfigApplyOptions{Override: inv.Values[optOverride].(bool)})
+		err := w.ApplyConfiguration(ctx, batch, gosmo.ConfigApplyOptions{Override: inv.Values[optOverride].(bool)})
+		if gosmo.IsMissingOrDenied(err) {
+			return output.NewError(output.CodePermissionDenied, err.Error(),
+				"sp_configure and RECONFIGURE need ALTER SETTINGS (serveradmin has it). Use a login that has it, or have it granted.")
+		}
+		return err
 	}
 	if dryRun(inv) {
 		res.Sets = []output.Set{plannedSet(opts, changes)}
@@ -601,9 +608,9 @@ func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool)
 		return res, applyWrite(ctx, inv, res, apply)
 	}
 
-	// A failed batch may still have installed some changes (it has no
-	// TRY/CATCH), so the second read runs either way and the change set shows
-	// what landed.
+	// A failed batch may still have installed some changes (a failed
+	// sp_configure does not stop it), so the second read runs either way and
+	// the change set shows what landed.
 	werr := applyWrite(ctx, inv, res, apply)
 	after, err := cat.Configurations(ctx)
 	if err != nil {
@@ -616,12 +623,22 @@ func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool)
 	}
 	set, warnings := changeSet(after, changes)
 	res.Sets, res.Warnings = []output.Set{set}, append(res.Warnings, warnings...)
-	if e, ok := errors.AsType[*output.Error](werr); ok && pending(after, changes) {
-		// A refused RECONFIGURE (a value outside the recommended range)
-		// leaves every sp_configure of the batch configured but not
-		// running, found live on 17.
-		e.Hint = "The changes are configured but not running (the change set): the next RECONFIGURE installs them. " +
-			"Re-run with --override to install them, or set them back to their before values."
+	if e, ok := errors.AsType[*output.Error](werr); ok {
+		switch {
+		case pending(after, changes):
+			// A refused RECONFIGURE (a value outside the recommended range)
+			// leaves every sp_configure of the batch configured but not
+			// running, found live on 17.
+			e.Hint = "The changes are configured but not running (the change set): the next RECONFIGURE installs them. " +
+				"Re-run with --override to install them, or set them back to their before values."
+		case e.SQL != nil && e.SQL.Number == 5807:
+			// Refused before any change was configured: RECONFIGURE checks
+			// every running value, so one installed earlier under --override
+			// fails each plain RECONFIGURE, even the reset of that value
+			// (found live on 13).
+			e.Hint = "SQL Server refuses a plain RECONFIGURE while any option on the server runs outside its recommended range, " +
+				"one installed earlier with --override included. Re-run with --override if the change is intended."
+		}
 	}
 	return res, werr
 }

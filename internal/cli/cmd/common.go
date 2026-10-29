@@ -116,6 +116,12 @@ type Catalog interface {
 	TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error)
 	LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error)
 
+	// db scoped-config: sys.database_scoped_configurations, read inside the
+	// database.
+	DatabaseScopedConfigs(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseScopedConfig, error)
+	// db set QUERY_STORE: sys.database_query_store_options.
+	QueryStoreOptions(ctx context.Context, d *gosmo.Database) (*gosmo.QueryStoreInfo, error)
+
 	// server info / memory and server config: the sys.dm_os_* reads and
 	// sys.configurations.
 	ProcessorInfo(ctx context.Context) (*gosmo.ProcessorInfo, error)
@@ -125,6 +131,10 @@ type Catalog interface {
 	PerformanceCounters(ctx context.Context, counters, instances []string) ([]gosmo.PerformanceCounter, error)
 	Configurations(ctx context.Context) ([]*gosmo.ConfigurationOption, error)
 	TraceFlags(ctx context.Context) ([]gosmo.TraceFlag, error)
+
+	// server log: one log file, filtered at the server, and the files kept.
+	ReadLog(ctx context.Context, t gosmo.ErrorLogType, archive int, search gosmo.LogSearch) ([]*gosmo.ErrorLogEntry, error)
+	EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -422,6 +432,22 @@ func (c serverCatalog) Configurations(ctx context.Context) ([]*gosmo.Configurati
 
 func (c serverCatalog) TraceFlags(ctx context.Context) ([]gosmo.TraceFlag, error) {
 	return c.s.TraceFlags(ctx)
+}
+
+func (serverCatalog) DatabaseScopedConfigs(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseScopedConfig, error) {
+	return d.DatabaseScopedConfigs(ctx)
+}
+
+func (serverCatalog) QueryStoreOptions(ctx context.Context, d *gosmo.Database) (*gosmo.QueryStoreInfo, error) {
+	return d.QueryStore().Options(ctx)
+}
+
+func (c serverCatalog) ReadLog(ctx context.Context, t gosmo.ErrorLogType, archive int, search gosmo.LogSearch) ([]*gosmo.ErrorLogEntry, error) {
+	return c.s.ReadLog(ctx, t, archive, search)
+}
+
+func (c serverCatalog) EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error) {
+	return c.s.EnumErrorLogs(ctx, t)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,8 +41,10 @@ func (c *contextFake) DatabaseAccess(context.Context) (map[int]bool, error) { re
 
 // newContextFake is a db_datareader login on a 2017 instance: no VIEW
 // SERVER STATE (its 2022 alternative unknown), VIEW ANY DEFINITION denied but
-// ALTER ANY DATABASE held, no VIEW DEFINITION in the database, VIEW DATABASE
-// STATE denied with its 2022 alternative granted.
+// ALTER ANY DATABASE held, ALTER SETTINGS denied, no role but public; no VIEW
+// DEFINITION or ALTER in the database (ALTER ANY DATABASE SCOPED
+// CONFIGURATION unknown), VIEW DATABASE STATE denied with its 2022
+// alternative granted.
 func newContextFake() *contextFake {
 	return &contextFake{
 		fakeCatalog: newFakeCatalog(),
@@ -54,6 +57,7 @@ func newContextFake() *contextFake {
 				"VIEW ANY DEFINITION": gosmo.CapabilityDenied,
 				"ALTER ANY DATABASE":  gosmo.CapabilityGranted,
 				"VIEW ANY DATABASE":   gosmo.CapabilityGranted,
+				"ALTER SETTINGS":      gosmo.CapabilityDenied,
 			},
 		},
 		dbc: &gosmo.DatabaseCapabilities{
@@ -63,6 +67,7 @@ func newContextFake() *contextFake {
 				"VIEW DEFINITION":                 gosmo.CapabilityDenied,
 				"VIEW DATABASE STATE":             gosmo.CapabilityDenied,
 				"VIEW DATABASE PERFORMANCE STATE": gosmo.CapabilityGranted,
+				"ALTER":                           gosmo.CapabilityDenied,
 			},
 		},
 		access: map[int]bool{5: true, 6: false, 1: true, 8: false},
@@ -120,9 +125,14 @@ func TestAgentContext(t *testing.T) {
 		missing = append(missing, r[0].(string)+" @ "+r[1].(string)+" → "+r[2].(string))
 	}
 	want := []string{
-		"VIEW SERVER STATE @ server → object indexes, db files, db space, db log-usage, server volumes",
+		"VIEW SERVER STATE @ server → object indexes, db files, db space, db log-usage, server volumes, " +
+			"server memory, server info, server config get, server config set",
+		"ALTER SETTINGS @ server → server config set, server config reset",
+		"sysadmin (role) @ server → server traceflag on, server traceflag off",
+		"securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG @ server → server log",
 		"VIEW DEFINITION @ database [app] → object list, object search, object describe, object definition, " +
 			"object dependencies, object indexes, object stats",
+		"ALTER @ database [app] → db set",
 	}
 	if strings.Join(missing, "\n") != strings.Join(want, "\n") {
 		t.Errorf("missing_permissions:\n%s\nwant:\n%s", strings.Join(missing, "\n"), strings.Join(want, "\n"))
@@ -161,6 +171,35 @@ func TestAgentContextFailedProbes(t *testing.T) {
 	}
 }
 
+// A need met by a role: a member is not missing it, and an unprobed role
+// list (ServerRoles nil) is not a lack.
+func TestAgentContextRoleNeeds(t *testing.T) {
+	permissions := func(cat *contextFake) []string {
+		r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)), "agent", "context", "-p", "dev", "-o", "json")
+		var out []string
+		for _, row := range contextSet(t, envelope(t, r.stdout), "missing_permissions") {
+			out = append(out, row[0].(string))
+		}
+		return out
+	}
+	cat := newContextFake()
+	cat.srv.ServerRoles["securityadmin"] = true
+	if got := permissions(cat); slices.Contains(got, "securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG") ||
+		!slices.Contains(got, "sysadmin (role)") {
+		t.Errorf("securityadmin member: %q", got)
+	}
+	cat = newContextFake()
+	cat.srv.ServerRoles = nil
+	got := permissions(cat)
+	if slices.Contains(got, "sysadmin (role)") {
+		t.Errorf("unprobed roles read as a lack: %q", got)
+	}
+	// VIEW SERVER STATE still answers for the error log.
+	if !slices.Contains(got, "securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG") {
+		t.Errorf("unprobed roles hid the denied VIEW SERVER STATE: %q", got)
+	}
+}
+
 // Every command missing_permissions names is one the tree has.
 func TestAgentContextNamesOnlyCommands(t *testing.T) {
 	tree := commandTree()
@@ -183,7 +222,7 @@ func TestAgentGuideEnvironment(t *testing.T) {
 		t.Fatalf("no environment section:\n%s", r.stdout)
 	}
 	for _, want := range []string{"- login: reader", "- maxAllow: write", "### missing_permissions",
-		"| VIEW SERVER STATE | server | object indexes, db files, db space, db log-usage, server volumes |", "### profiles"} {
+		"| VIEW SERVER STATE | server | object indexes, db files, db space, db log-usage, server volumes, server memory, ", "### profiles"} {
 		if !strings.Contains(env, want) {
 			t.Errorf("environment lacks %q:\n%s", want, env)
 		}

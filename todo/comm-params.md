@@ -143,9 +143,10 @@ The options `--server`, `--database`, `--auth`, `--user` and the TLS options are
 
 | Option | Description |
 |--------|-------------|
-| `--allow <read\|write\|ddl\|admin>` | Highest permitted operation class (default: `read`). See §6 |
-| `--dry-run` | Generate and print the T-SQL but do not run it |
-| `--confirm <token>` | Required for destructive operations. The token must equal the target object name (see §6.3) |
+| `--allow <read\|write\|ddl\|admin>` | Highest permitted operation class (default: `read`). See §6. **Per command, not global** (phase 5 D1): only `query run` and the writing commands take it |
+| `--dry-run` | Generate and print the T-SQL but do not run it. **Per command** as `--allow`; a writing command's dry run is still gated (`--allow admin`) |
+| `--confirm <token>` | Required for destructive operations. The token must equal the target object name (see §6.3). Per command (`db set --rollback-immediate`) |
+| `--accept-risk` | `server config set/reset` only: proceed past a blocked value (§4.2). Unrelated to the global `--force` (phase 5 D3) |
 | `--transaction <auto\|commit\|rollback>` | `rollback` runs the statement in a transaction and then rolls it back. Useful for testing DML. Restrictions in §6.4 |
 | `--timeout <sec>` | Command timeout (default 60, `0` = unlimited) |
 | `--override` | `server config set/reset` only: `RECONFIGURE WITH OVERRIDE` (gosmo `ConfigApplyOptions.Override`), for values SQL Server's plain `RECONFIGURE` refuses. Unrelated to `--force` |
@@ -226,12 +227,12 @@ gossms profile test dev
 | `server info` | Version, edition, collation, HADR, uptime, logical CPUs, NUMA nodes, physical memory |
 | `server config list [--name <pattern>] [--non-default] [--advanced]` | `sp_configure` values: configured, running, default, min/max, dynamic, advanced. `--non-default` shows only settings that differ from the default. The default comes from a per-major table added to gosmo (`sys.configurations` has none, R11) |
 | `server config get <name\|alias> [<name\|alias> …]` | One or more settings, plus related context (e.g. CPUs and NUMA nodes for MAXDOP, physical memory for memory settings) |
-| `server config set <name\|alias> <value> [<name\|alias> <value> …] [--force] [--override]` | Change one or more settings (`--allow admin`) through `gosmo.Server.ApplyConfiguration`: one batch that turns `show advanced options` on only if needed (decided server-side), runs every `sp_configure`, one `RECONFIGURE`, and restores `show advanced options`. Reports before/after (re-read from `sys.configurations`) and whether a restart is required (`is_dynamic`) |
+| `server config set <name\|alias> <value> [<name\|alias> <value> …] [--accept-risk] [--override]` | Change one or more settings (`--allow admin`) through `gosmo.Server.ApplyConfiguration`: one batch that turns `show advanced options` on only if needed (decided server-side), runs every `sp_configure`, one `RECONFIGURE`, and restores `show advanced options`. Reports before/after (re-read from `sys.configurations`) and whether a restart is required (running ≠ configured after the batch) |
 | `server config reset <name\|alias> […]` | Set settings back to their default (`--allow admin`) |
 | `server memory` | Memory overview: physical and available memory, min/max server memory, committed and target memory, page life expectancy, pending memory grants, top memory clerks (gosmo `MemoryStats`, `MemoryClerks`, `PerformanceCounters`) |
 | `server volumes [--unit …]` | Disks and mount points that hold database files: total, free, free %, and the number of files per volume (gosmo `FileVolumes` — `DiskVolumes` has no file count, phase 4 P4-2) |
-| `server traceflag list` / `on <flag>` / `off <flag>` `[--global]` | Trace flags (`DBCC TRACESTATUS/TRACEON/TRACEOFF`, new in gosmo). `on`/`off` need `--allow admin` |
-| `server log [--lines 100] [--search <text>] [--since <iso>] [--agent]` | SQL Server error log (gosmo `ReadLog` with `LogSearch`); `--agent` reads the SQL Server Agent log |
+| `server traceflag list` / `on <flag>...` / `off <flag>...` | Trace flags (`DBCC TRACESTATUS/TRACEON/TRACEOFF`, new in gosmo). `on`/`off` need `--allow admin` and are always global (`-1`): there is no `--global`, a session flag would die with the command's connection (D6) |
+| `server log [--lines 100] [--search <text>]... [--since <YYYY-MM-DD[THH:MM[:SS]]>] [--archive <n>] [--agent]` | SQL Server error log (gosmo `ReadLog` with `LogSearch`); `--agent` reads the SQL Server Agent log |
 
 **Setting aliases.** Agents can use short aliases instead of the full `sp_configure` names. This avoids quoting names that contain spaces and brackets. Full names always work too.
 
@@ -252,9 +253,9 @@ gossms profile test dev
 
 Value rules for `server config set`:
 
-- Values without a unit use the setting's native unit (MB for memory). Memory values also accept `MB`, `GB` and `TB` suffixes (`56GB` → `57344`). The output always shows the converted value.
+- Values without a unit use the setting's native unit (MB for memory). An option whose name ends `(MB)` also accepts `MB`, `GB` and `TB` suffixes (`56GB` → `57344`), one ending `(KB)` `KB` and `MB`; the result must be whole (`1.3MB` is exit 2). The output always shows the converted value (`requested`).
 - Values outside the setting's min/max are a usage error (exit 2).
-- Obviously risky values are blocked (exit 7) unless `--force` is given. Examples: `max-memory` above physical memory, or `max-memory` below `min-memory`. `--force` only lifts gossms's own check; `--override` is what SQL Server's `RECONFIGURE WITH OVERRIDE` needs.
+- Obviously risky values are blocked (exit 7, `BLOCKED`) unless `--accept-risk` is given: `max-memory` or `min-memory` above physical memory, `max-memory` below `min-memory`, `maxdop` above the logical CPUs, and any of these when the figure cannot be read. A value equal to the default never is. `--accept-risk` only lifts gossms's own check; `--override` is what SQL Server's `RECONFIGURE WITH OVERRIDE` needs.
 - `--dry-run` prints gosmo's batch exactly as it would run (captured under `gosmo.WithScript`) and the planned change, without running anything. The batch is the same whatever the server's state; the planned-change table says whether the `show advanced options` step will fire, read from `sys.configurations` at dry-run time.
 
 ### 4.3 `db`: databases
@@ -805,16 +806,17 @@ SERVER: sql-prod-01
 DURATION_MS: 11
 RESULT_SETS: 1
 
-=== RESULT 1 (1 row, truncated: no) ===
-name                      | alias  | configured | running | default | min | max   | dynamic | advanced
---------------------------+--------+------------+---------+---------+-----+-------+---------+---------
-max degree of parallelism | maxdop | 0          | 0       | 0       | 0   | 32767 | yes     | yes
-
-=== CONTEXT ===
 LOGICAL_CPUS: 16
 NUMA_NODES: 2
 LOGICAL_CPUS_PER_NUMA_NODE: 8
+
+=== RESULT 1 (1 row, truncated: no) ===
+name                      | alias  | configured | running | default | min | max   | dynamic | advanced
+--------------------------+--------+------------+---------+---------+-----+-------+---------+---------
+max degree of parallelism | maxdop | 0          | 0       | 0       | 0   | 32767 | 1       | 1
 ```
+
+The context is the record's fields, printed before the set (phase 5 D2); a `bit` column is `1`/`0` as in every set.
 
 **Preview a change, then apply it:**
 
@@ -823,34 +825,53 @@ gossms server config set maxdop 8 -p dev --allow admin --dry-run
 ```
 
 ```text
-STATUS: DRY_RUN
+STATUS: OK
 COMMAND: server config set
 SERVER: sql-dev-01
-OPERATION_CLASS: admin
+DURATION_MS: 14
+RESULT_SETS: 1
 
-=== T-SQL ===
+DRY_RUN: true
+
+=== TSQL (30 lines) ===
 DECLARE @show_advanced_enabled bit = 0;
 DECLARE @show_advanced_value int = (SELECT CONVERT(int, value) FROM sys.configurations WHERE name = N'show advanced options');
 IF EXISTS (SELECT 1 FROM sys.configurations WHERE name = N'show advanced options' AND value_in_use = 0)
    AND EXISTS (SELECT 1 FROM sys.configurations WHERE is_advanced = 1 AND name IN (N'max degree of parallelism'))
 BEGIN
     EXEC sys.sp_configure N'show advanced options', 1;
-    RECONFIGURE;
+    BEGIN TRY
+        RECONFIGURE;
+    END TRY
+    BEGIN CATCH
+        EXEC sys.sp_configure N'show advanced options', @show_advanced_value;
+        THROW;
+    END CATCH;
     SET @show_advanced_enabled = 1;
 END;
 EXEC sys.sp_configure N'max degree of parallelism', 8;
-RECONFIGURE;
+BEGIN TRY
+    RECONFIGURE;
+END TRY
+BEGIN CATCH
+    IF @show_advanced_enabled = 1
+        EXEC sys.sp_configure N'show advanced options', @show_advanced_value;
+    THROW;
+END CATCH;
 IF @show_advanced_enabled = 1
 BEGIN
     EXEC sys.sp_configure N'show advanced options', @show_advanced_value;
     RECONFIGURE;
 END;
+GO
 
-=== PLANNED CHANGE ===
+=== RESULT 1: planned_change (1 row, truncated: no) ===
 name                      | current | new | dynamic | advanced | enables_show_advanced
 --------------------------+---------+-----+---------+----------+----------------------
-max degree of parallelism | 0       | 8   | yes     | yes      | yes
+max degree of parallelism | 0       | 8   | 1       | 1        | 1
 ```
+
+A dry run is `STATUS: OK` with `DRY_RUN: true`, not a status of its own (phase 5 D2); it still needs `--allow admin`.
 
 The batch is `gosmo.Server.ApplyConfiguration`'s, captured under `WithScript`. It is the same on every server; `enables_show_advanced` says whether its first step will fire here (R10).
 
@@ -862,12 +883,15 @@ gossms server config set maxdop 8 -p dev --allow admin
 STATUS: OK
 COMMAND: server config set
 SERVER: sql-dev-01
-OPERATION_CLASS: admin
+DURATION_MS: 38
+RESULT_SETS: 1
 
-=== CHANGE ===
-name                      | before | after (running) | restart_required
---------------------------+--------+-----------------+-----------------
-max degree of parallelism | 0      | 8               | no
+DRY_RUN: false
+
+=== RESULT 1: change (1 row, truncated: no) ===
+name                      | before | requested | after_configured | after_running | restart_required
+--------------------------+--------+-----------+------------------+---------------+-----------------
+max degree of parallelism | 0      | 8         | 8                | 8             | 0
 ```
 
 **Reset to the default:**
@@ -880,11 +904,18 @@ gossms server config reset maxdop -p dev --allow admin
 
 ```text
 STATUS: BLOCKED
-ERROR_CODE: OPERATION_NOT_ALLOWED
+COMMAND: server config set
+DURATION_MS: 1
+
 DETECTED_CLASS: admin
 ALLOWED_CLASS: read
-HINT: Re-run with --allow admin. Use --dry-run first to see the T-SQL.
+
+ERROR_CODE: BLOCKED
+MESSAGE: server config set is admin; the allowed class is read
+HINT: Re-run with --allow admin if the change is intended.
 ```
+
+It is refused before connecting, `--dry-run` included.
 
 ### 10.2 MAXDOP (database level)
 
@@ -925,24 +956,26 @@ SERVER: sql-prod-01
 DURATION_MS: 24
 RESULT_SETS: 2
 
-=== RESULT 1 (1 row, truncated: no) ===
+=== RESULT 1: memory (1 row, truncated: no) ===
 physical_mb | available_os_mb | max_server_memory_mb | min_server_memory_mb | committed_mb | target_mb | page_life_expectancy_s | memory_grants_pending
 ------------+-----------------+----------------------+----------------------+--------------+-----------+------------------------+----------------------
 65536       | 1840            | 2147483647           | 0                    | 61210        | 62004     | 412                    | 0
 
-=== RESULT 2 (5 rows, truncated: no) ===
-clerk                       | size_mb
-----------------------------+--------
-MEMORYCLERK_SQLBUFFERPOOL   | 52108
-CACHESTORE_SQLCP            | 4210
-CACHESTORE_OBJCP            | 1022
-MEMORYCLERK_SQLQERESERVATIONS | 640
-OBJECTSTORE_LOCK_MANAGER    | 312
+=== RESULT 2: clerks (5 rows, truncated: no) ===
+clerk                         | size_mb
+------------------------------+---------
+MEMORYCLERK_SQLBUFFERPOOL     | 52108.00
+CACHESTORE_SQLCP              | 4210.25
+CACHESTORE_OBJCP              | 1022.50
+MEMORYCLERK_SQLQERESERVATIONS | 640.00
+OBJECTSTORE_LOCK_MANAGER      | 312.13
 
 === WARNINGS ===
 max server memory (MB) is at the default (2147483647 = unlimited).
-Available OS memory is 1840 MB.
+Available OS memory is 1840 MB (2.81 % of physical memory, under 5 %).
 ```
+
+The real `clerks` set is the top 10.
 
 Warnings report facts only. The agent decides what to recommend.
 
@@ -959,26 +992,29 @@ gossms server config set max-memory 56GB -p dev --allow admin --dry-run
 ```
 
 ```text
-STATUS: DRY_RUN
+STATUS: OK
 COMMAND: server config set
 SERVER: sql-dev-01
-OPERATION_CLASS: admin
+DURATION_MS: 15
+RESULT_SETS: 1
 
-=== T-SQL ===
+DRY_RUN: true
+
+=== TSQL (30 lines) ===
 (the ApplyConfiguration batch, as in §10.1, with N'max server memory (MB)', 57344)
 
-=== PLANNED CHANGE ===
+=== RESULT 1: planned_change (1 row, truncated: no) ===
 name                   | current    | new   | dynamic | advanced | enables_show_advanced
 -----------------------+------------+-------+---------+----------+----------------------
-max server memory (MB) | 2147483647 | 57344 | yes     | yes      | no
+max server memory (MB) | 2147483647 | 57344 | 1       | 1        | 0
 
 === WARNINGS ===
 New value is below currently committed memory (61210 MB). SQL Server will release memory after RECONFIGURE.
 ```
 
-`enables_show_advanced: no` because `show advanced options` is already on on this server; the batch is the same either way.
+`enables_show_advanced` 0 because `show advanced options` is already on on this server; the batch is the same either way.
 
-**Risky value.** It is blocked unless `--force` is given:
+**Risky value.** It is blocked unless `--accept-risk` is given (`--force` is the global out-file flag, phase 5 D3):
 
 ```bash
 gossms server config set max-memory 80GB -p dev --allow admin
@@ -986,9 +1022,13 @@ gossms server config set max-memory 80GB -p dev --allow admin
 
 ```text
 STATUS: BLOCKED
-ERROR_CODE: RISKY_VALUE
+COMMAND: server config set
+SERVER: sql-dev-01
+DURATION_MS: 12
+
+ERROR_CODE: BLOCKED
 MESSAGE: max server memory (81920 MB) is above physical memory (65536 MB).
-HINT: Choose a lower value, or re-run with --force if this is intended.
+HINT: Choose another value, or re-run with --accept-risk if it is intended (it lifts only gossms's own checks).
 ```
 
 **Set min server memory:**
@@ -1004,7 +1044,7 @@ gossms server config set min-memory 8GB -p dev --allow admin
 gossms server config list --non-default -p prod-ro
 
 # Search settings by name
-gossms server config list --name "*backup*" -p prod-ro
+gossms server config list --name backup -p prod-ro
 
 # Optimize for ad hoc workloads
 gossms server config set adhoc 1 -p dev --allow admin
@@ -1026,24 +1066,25 @@ gossms server config get "cost threshold for parallelism" -p prod-ro
 **A setting that needs a restart** is applied to the configured value only. The output says so:
 
 ```text
-=== CHANGE ===
-name            | before | after (configured) | after (running) | restart_required
-----------------+--------+--------------------+-----------------+-----------------
-fill factor (%) | 0      | 90                 | 0               | yes
+=== RESULT 1: change (1 row, truncated: no) ===
+name            | before | requested | after_configured | after_running | restart_required
+----------------+--------+-----------+------------------+---------------+-----------------
+fill factor (%) | 0      | 90        | 90               | 0             | 1
 
-NOTE: The running value changes after the SQL Server service is restarted.
+=== WARNINGS ===
+fill factor (%) is configured 90 but runs 0 until the SQL Server service restarts.
 ```
 
 ### 10.6 Trace flags
 
 ```bash
 gossms server traceflag list -p prod-ro
-gossms server traceflag on 7745 --global -p dev --allow admin --dry-run
-# T-SQL: DBCC TRACEON (7745, -1);
-gossms server traceflag off 7745 --global -p dev --allow admin
+gossms server traceflag on 7745 -p dev --allow admin --dry-run
+# T-SQL: DBCC TRACEON(7745, -1) WITH NO_INFOMSGS
+gossms server traceflag off 7745 -p dev --allow admin
 ```
 
-Trace flags set this way are lost at restart. The `on` output includes a note that startup flags are configured in the SQL Server service settings.
+Always global (`-1`): there is no `--global`, since a session flag would die with the command's connection (phase 5 D6). Trace flags set this way are lost at restart. The `on` output warns so and names the lasting form (`-T` in the service's settings, or `mssql-conf traceflag` on Linux). A startup-only flag (834) is not set and gets a warning.
 
 ### 10.7 Database settings
 
@@ -1276,11 +1317,13 @@ SQL
 
 ```bash
 # Failed logins in the last day
-gossms server log --search "Login failed" --since 2026-10-27T00:00:00Z -p prod-ro
+gossms server log --search Login --search failed --since 2026-10-27 -p prod-ro
 
 # Last 50 entries
 gossms server log --lines 50 -p prod-ro
 ```
+
+`--since` is the server's local time with no zone (the log records none; a `Z` or an offset is exit 2). Two `--search` texts must both appear (xp_readerrorlog's AND); one text with a space needs shell quoting. One log file per run: an earlier day may need `--archive 1` (phase 5 D7).
 
 ---
 
@@ -1754,7 +1797,7 @@ Phases are ordered so each one ships something usable and testable on its own, a
 |---|---|---|
 | P5-1 | Phase 5 brings the CLI's **first gosmo-backed writes**. Today `--allow` and `--dry-run` are `query run`'s own options (`cmd/query.go`), `Main` never gates on `Command.Class` (every command so far is `read`), `gosmo.WithScript` is used nowhere in `internal/cli`, and the envelope has no dry-run status and no `CONTEXT` section (`output.Status` = ok/error/blocked/cancelled; `Result` has `Fields` and `Sets`) | A shared write layer comes before any write command (5.b): D1, D2 |
 | P5-2 | `--force` is already a **global** option, "Replace an existing --out-file" (`render.go`) | §4.2's `server config set --force` collides with it: D3 |
-| P5-3 | `ApplyConfiguration` takes exact `sys.configurations` names and has no TRY/CATCH: a bad name or out-of-range value fails only its own `sp_configure`, the `RECONFIGURE` still installs the rest, and the error names the failures. `Configurations` is one read with min/max/`is_dynamic`/`is_advanced`, and lists advanced options whatever `show advanced options` is set to | The CLI resolves aliases and names and checks min/max against one `Configurations` read **before** the batch (exit 2, nothing runs), so a partial apply can only come from the server. After the batch it reads again: before/after come from the two reads, and `restart_required` = `value ≠ value_in_use` in the second read, not `is_dynamic` alone (that also catches a dynamic option `RECONFIGURE` refused). A partial failure exits 5 and still prints the CHANGE table of what landed |
+| P5-3 | `ApplyConfiguration` takes exact `sys.configurations` names; a bad name or out-of-range value fails only its own `sp_configure`, the `RECONFIGURE` still installs the rest, and the error names the failures. `Configurations` is one read with min/max/`is_dynamic`/`is_advanced`, and lists advanced options whatever `show advanced options` is set to | The CLI resolves aliases and names and checks min/max against one `Configurations` read **before** the batch (exit 2, nothing runs), so a partial apply can only come from the server. After the batch it reads again: before/after come from the two reads, and `restart_required` = `value ≠ value_in_use` in the second read, not `is_dynamic` alone (that also catches a dynamic option `RECONFIGURE` refused). A partial failure exits 5 and still prints the CHANGE table of what landed |
 | P5-4 | There are no defaults anywhere (R11). The engine defaults are not what Setup writes: since 2019 Setup recommends MAXDOP and max server memory (and `mssql-conf` on Linux), Agent turns `Agent XPs` on itself, and CUs add options (2022 and 2025 added several) | D4 |
 | P5-5 | `ServerInfo` (cached at connect, no round trip) holds version, level, edition, engine edition, platform, collation, clustered, HADR, default paths, login, and physical memory + logical CPUs (`SysInfoUnavailable` without VIEW SERVER STATE). gosmo never reads `sqlserver_start_time`, so there is no uptime. The NUMA node count is `ProcessorInfo` (`dm_os_schedulers`, VIEW SERVER STATE) | `server info` = `ServerInfo` + `ProcessorInfo` + one new gosmo read (D5). Without VIEW SERVER STATE those fields are NULL with one warning, exit 0 (phase 4 D7: the rest of the record stands) |
 | P5-6 | Every `server memory` source exists: `MemoryStats` (physical, available, target, total), `MemoryClerks` (per type), `PerformanceCounters` (Buffer Manager *Page life expectancy*, Memory Manager *Memory Grants Pending*), and min/max from `Configurations`. `internal/activity/memory.go` folds clerks into display groups for the TUI chart | The CLI lists raw clerk types, top 10 by size (§10.4), and does not reuse activity's grouping. Every source except min/max is a DMV, so without VIEW SERVER STATE the command fails with exit 9, like `server volumes`. PLE is the instance-wide Buffer Manager row, not the per-node Buffer Node rows |
@@ -1787,11 +1830,11 @@ Phases are ordered so each one ships something usable and testable on its own, a
 - ✅ **Done 2026-10-29.** **5.d `server config list/get`** (`cmd/server_config.go`): D9, `--non-default` (D4), the columns of §10.1, and the CONTEXT fields: CPUs/NUMA for maxdop and cost-threshold; physical/committed memory for the memory options. *(As built: `server config` is the CLI's first **sub-group** (depth-3 paths); `TestCommandTreeWellFormed` now allows depth 1–3 with every parent a node, `help`/`agent schema` take `<command>...` (Repeat) so `gossms help server config get` works, and `--topic server` lists a sub-group's commands (`runnable`, not `Children`). **Brief-guide cap decided (user, 2026-10-29): the brief command index is one row per group** — `| Group | Commands | Covers |`, the commands named (`config list, config get`), a non-read one marked `(admin)`, the group's summary; the full guide keeps a row per command. Brief guide 6032 → 4121 bytes, room through phase 13; `TestAgentGuideSections` checks both forms. Columns `name alias configured running default min max dynamic advanced` (`bit` 1/0 as every set, not §10.1's yes/no; `default` NULL where `HasDefault` is false). Rows by name, case-insensitive. `--non-default` compares **configured** (`value`) to the default, so min server memory 0-running-16 is not listed; options with no default are left out. One missing-default warning names them, leaving out `version high/low part of SQL Server`; a server with no defaults at all (Azure, a newer major) gets one sentence instead. `resolveConfig(opts, name)` — alias, then exact name, ignoring case; NOT_FOUND exit 8 with up to 3 names/aliases containing it — is for 5.e to reuse. `get` keeps argument order and drops repeats. Context record: `logicalCpus numaNodes logicalCpusPerNumaNode` (ServerInfo + ProcessorInfo; two decimals when uneven) for MAXDOP/cost threshold, `physicalMemoryMb committedMemoryMb` (ServerInfo + MemoryStats' Total Server Memory) for max/min server memory, none otherwise; without VIEW SERVER STATE null + one warning, exit 0. Tests `server_config_test.go`; `TestHelpSubGroupCommand`. Driven on 17, 14, 13 (win10cli): every `list` row equal to `sys.configurations` through `query run` (106/77/76 rows, 0 diffs); every alias resolves on all three; 17's `--non-default` = the 7 differences 5.a explained; 17's warning names exactly 5.a's seven options; the context equal to `dm_os_sys_info`/`dm_os_schedulers`/the Total Server Memory counter; a throwaway login without VIEW SERVER STATE on 17 and 14: 5 nulls + one warning, exit 0; logins dropped, 0 left. `docs/cli.md` rows + Help/Agent-guide wording and the ARCHITECTURE package-map row added. `gofmt`, `go vet` (3 GOOS), `staticcheck`, `go test ./...` green.)*
 - ✅ **Done 2026-10-29.** **5.e `server config set/reset`:** P5-3 (resolve, range, one batch, read again), D10 (units, blocks, `--accept-risk`), `--override`, dry-run PLANNED CHANGE with `enables_show_advanced` from the first read, CHANGE with `after (configured)`/`after (running)`/`restart_required` (§10.5), partial failure → exit 5. `reset` = set to `Default` (D4). *(As built, in `cmd/server_config.go` (now 770 lines): both `ClassAdmin`, options = connect + `writeOptions` + `--accept-risk` + `--override`, through `connectWriter`/`applyWrite`. `set` takes `<name> <value>...` (an odd count is exit 2 before connecting); a negative value needs `--` before it (the parser reads `-1` as an option). Order: gate → one `Configurations` read → resolve (`resolveConfig`, exit 8) / parse / range (exit 2; a setting named twice is exit 2, `reset` drops repeats) → blocks → warnings → the batch → a second read. **Range:** `inRange` lets an option's own default through (5.a's self-configuring 0 below `minimum`). **Units:** `(MB)` names take MB/GB/TB, `(KB)` KB/MB, exact via `big.Rat` (`1.5GB` = 1536; `1.3MB`, `1e3GB`, `.5GB`, a unit on another option → exit 2). **Blocks** (D10) are BLOCKED exit 7, not §10.4's `RISKY_VALUE` code (no new code), all risks joined in one message, hint naming `--accept-risk`; **a value equal to the option's default is never risky** (else `reset max-memory` would block on 2147483647 > physical). **Sets:** dry run → `planned_change` (`name current new dynamic advanced enables_show_advanced`; the last = advanced ∧ show advanced options `value_in_use` 0, the batch's own test) + `tsql`; run → `change` (`name before requested after_configured after_running restart_required`) — `requested` added to §10.5's columns so the converted value shows and a partial failure is readable; snake_case, not `after (configured)`. `restart_required` = value ≠ value_in_use except min server memory 0 (runs 16, 5.c). Warnings: committed memory (§10.4's wording; a MemoryStats refusal is its own warning), dry-run non-dynamic restart, run: not taken / restart / pending. **Found live (17):** a refused `RECONFIGURE` (`recovery interval (min)` 120, Msg 5807) leaves **every** change of the batch configured but not running — pending for anyone's next RECONFIGURE; the change set shows it, the warning says so and the exit-5 hint names `--override` or setting them back. `--override` installed it. `reset` of an option without a default → UNSUPPORTED exit 11. Test-side: `serverInfoCatalog.Configurations` returns copies (as two server reads would); `guide_test` accepted the brief index's `(admin)` marker (5.d added it, no admin command existed to test it); the `server` and `server config` summaries widened; agent-schema golden updated. Tests `server_config_set_test.go` (set/override, gate, value parsing, argument errors, every block ± `--accept-risk`, default exemption, unknown figures fail closed, committed warning, dry run's batch/planned set/no write, restart, partial failure, refused RECONFIGURE, reset/exit 11); mutations (default exemption, min-memory 16, self-configuring 0, dry-run branch, enables_show_advanced, the second read on failure) each fail them. **Driven** on 17 (maxdop/cost threshold set + verified through `query run` + restored; `fill factor (%)` 90 → restart_required 1, reset; blocks for 8GB > 6498 MB and maxdop 8 > 4 CPUs; `1.3MB` exit 2; no `--allow` exit 7 with no dial; version part reset exit 11; the refused RECONFIGURE and `--override`), and 14 and 13 with `show advanced options` 0 (`enables_show_advanced` 1 for maxdop, 0 for backup compression; maxdop, backup compression, `min memory per query (KB)` 2MB → 2048 set, verified, reset; show advanced options still 0 after). Every setting checked back at its starting value on all three. Left to 5.k: ubusql1, the read-only login, a real sp_configure-level partial failure. **For 5.j:** §10.1/§10.4/§10.5's CHANGE columns and `RISKY_VALUE`/`--force` → this shape, BLOCKED and `--accept-risk`. `docs/cli.md` rows + ARCHITECTURE row updated. `gofmt`, `go vet` (3 GOOS), `staticcheck`, `go test ./...` green.)*
 - ✅ **Done 2026-10-29.** **5.f `server traceflag list/on/off`** (`cmd/server_traceflag.go`): D6. `list` is read; `on`/`off` are admin through the 5.b gate. *(As built: `server traceflag` is a sub-group like `server config`; `Catalog` gains `TraceFlags`. **list**: set `flag int`, `global bit`, `session bit` by flag; none on is an empty set. TRACESTATUS needs no permission (verified live with a bare login). **on/off** take `<flag>...` (applied in order, a repeat once; not a positive whole number → exit 2 before connecting); no `--global` (D6). Order: parse → gate → TRACESTATUS → one `SetTraceFlag` per flag inside `applyWrite` (the first failure stops) → TRACESTATUS again. Dry run: set `planned_change` (`flag current new`) + `tsql`; run: set `change` (`flag before requested after`, from the two reads' `Global`), read back on a failure too (exit 5 with what the earlier flags did). Warnings: §10.6's restart note on `on` (dry run, or a run where a flag is on afterwards — not when none took); a flag not taken (`on`: "the server skips a startup-only flag"; `off`: still on). **Found live:** the highest flag TRACEON accepts is version-dependent (17698 on 17; 32767 is Msg 2560), so the CLI sets no upper bound and Msg 2560 gets a hint; **Msg 2571** ("does not have permission to run DBCC TRACEON", live-captured with a bare login) was not in gosmo's refusal map — **added to gosmo** (`refusalNumbers`, `errors.go`, + `TestClassifyRefusalKinds`' list; untagged), so it is PERMISSION_DENIED exit 9; the hint names sysadmin (the message does not). Tests `server_traceflag_test.go` (list order/empty, on/off rows, the gate with no dial, argument errors, dry run's DBCC order and no write, startup-only and still-on warnings, no restart note when none took, partial failure + 2560 hint, 2571 → exit 9 + sysadmin hint, a failed read-back). agent-schema golden updated; `server` group summary widened; `docs/cli.md` rows (and the two "only admin commands" sentences) and the ARCHITECTURE package-map row. **Driven** on 17, 14 and 13 (win10cli): list; on 7745 + 834 (7745 on, 834 not taken with the warning, equal to `DBCC TRACESTATUS(-1)` through `query run`); on 3226 98765 1222 (3226 on, stopped at 98765, exit 5 + hint); 99999 → exit 5; off dry run (`DBCC TRACEOFF(7745, -1) WITH NO_INFOMSGS`) and real; `-o json`; no `--allow` exit 7 with no dial; a throwaway login: on/off exit 9 with the sysadmin hint, list exit 0 (login dropped, 0 left). **No trace flag left on** on any of the three. `permissionNeeds` row (sysadmin → `traceflag on/off`) stays with 5.j. `gofmt`, `go vet` (3 GOOS), `staticcheck`, `go test ./...` green in gossms; gosmo `go test` green.)*
-- **5.g `server log`** (`cmd/server_log.go`): D7, `--agent`, the permission verified live (P5-12).
-- **5.h `db scoped-config list/get/set`** (`cmd/db_settings.go`): P5-9, `--for-secondary`, before/after from a second read. **Verify live** that `FOR SECONDARY` is accepted on a database outside an AG (on 17 and 13) and that it takes effect on ubusql2 as a readable secondary.
-- **5.i `db set --option`:** D8, `--rollback-immediate` + `--confirm`, before/after.
-- **5.j Agent and docs:** `permissionNeeds` rows (P5-12) with `TestAgentContextNamesOnlyCommands` green; guide recipe "Review and change server settings" (`config list --non-default`, `config get maxdop`, `set … --dry-run`), passing `checkMentions`; `docs/cli.md` § Writes (gate, dry-run, `--accept-risk`, `--override`, `--confirm`) and § Server configuration (aliases, units, blocks, defaults' source); README example; `docs/decisions.md` entries for D1, D2, D3, D4, D8; this file's §3.2 (`--allow`/`--dry-run` are per command), §4.2 (`--accept-risk`, no `--global`), §10.1/§10.4 (no DRY_RUN status), §10.5 (`--name backup`), §10.6, §10.14 corrected.
-- **5.k Verification (driven binary)** on 17, 14 and 13 (win10cli) and ubusql1 (Linux): every §10.1–§10.7 example as corrected; before/after compared with `sp_configure` / `sys.configurations` / `sys.database_scoped_configurations` / `sys.databases` through `gossms query run` on the same connection; `show advanced options` restored to both 0 and 1 starting states (the §13 criterion); risky blocks; `--override`; a restart-only option (`fill factor (%)`) set and reset; a partial failure; trace flag on/off; the read-only login for every refusal (7, 9); `--for-secondary` on the AAG. A disposable database for `db set`/`scoped-config`. **Every server setting and trace flag changed is restored and checked afterwards** (they are not disposable objects). `gofmt`, `go vet` (3 GOOS), `staticcheck`, `go test ./...` in both repos.
+- ✅ **Done 2026-10-29.** **5.g `server log`** (`cmd/server_log.go`): D7, `--agent`, the permission verified live (P5-12). *(As built: `server log` in `ServerCommands` (read), the `server` summary widened; `Catalog` gains `ReadLog` + `EnumErrorLogs`. Options as D7: `--lines` (default 100, 0 all; a tail taken in Go after the server's filter), `--search` (`TypeRepeat`, up to 2 → Text1 AND Text2; a third or an empty one exit 2), `--since` (`YYYY-MM-DD`, `…THH:MM`, `…THH:MM:SS`, zoneless in `time.UTC` as gosmo carries the log; a `Z`/offset is exit 2 naming the reason, any other form "not a date"), `--archive` (default 0), `--agent`. All argument errors before connecting. Set: `date` (`datetime`, `gridTime`), `process nvarchar(100)` | `level int` (Agent: 1 error, 2 warning, 3 info), `text nvarchar(max)`, oldest first; `TotalRowCount` = rows kept, as `db table-sizes --top` (no "more entries" signal). **Missing archive:** `xp_readerrorlog` says only Msg 22004 "cannot find the file"; on a failed read of archive > 0 the command lists `EnumErrorLogs` and, when the number is not there, is NOT_FOUND exit 8 with "archives 1 to N" (an enum failure keeps the read's error). **Permission, verified live on 17, 14, 13:** `xp_readerrorlog` itself is **sysadmin only** — securityadmin and VIEW SERVER STATE both get Msg 229. `sp_readerrorlog` admits securityadmin, VIEW SERVER STATE and (17's definition) VIEW ANY ERROR LOG, refusing others with **Msg 27219**, but passes on only the two strings, no dates. **gosmo changed (untagged):** `ReadLog` falls back to `sp_readerrorlog` on a PermissionDenied refusal and applies From/To in Go (`filterLogDates`: inclusive, cut to the second — xp_readerrorlog's bounds, measured live), 27219 added to `refusalNumbers`; offline tests (proc call shape, date filter, a fake driver for sysadmin / fallback / refused-both; mutations of the fallback and the date filter fail them), `TestLiveReadLogWithoutSysadmin` (27219 with nothing; with VIEW SERVER STATE the same entries as sa's server-filtered read) green on 17, 14, 13; gosmo ARCHITECTURE § Error log says so. The TUI log viewer gains the fallback too (non-sysadmin logins could not open it before). So **5.j's `permissionNeeds` row:** securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG (2022+) → `server log` (exit 9 without; non-sysadmin reads the whole file before `--since`). §10.14's example is still to fix in 5.j (`--since 2026-10-27`, and `--search` with spaces needs shell quoting — the guide's `checkMentions` splits on whitespace, so the command's own example uses `--search Login --search failed`). Tests `server_log_test.go` (rows/format/defaults, tail incl. default 100, search/since forms, agent column, every argument error with no dial, 27219 → exit 9 + hint, missing archive → exit 8 with the range or "no archived", listed archive / enum failure / archive 0 keep SQL_ERROR); mutations (head instead of tail, no archive lookup) fail them. agent-schema golden updated; `docs/cli.md` row; ARCHITECTURE package-map row. **Driven** on 17, 14, 13 (win10cli): `--lines 3`, `--agent`, `--search Login --search sa`, `--archive 99` → exit 8 "archives 1 to 6"; a throwaway login: nothing → exit 9 with the hint; VIEW SERVER STATE, then securityadmin alone: `--archive 1 --since <mid-file> --search a` **row-for-row equal** to sa's (1700/1848/1055 rows), and the Agent log readable; sa's 1700 = raw `xp_readerrorlog 1,1,'a',NULL,…` through sqlcmd; `--since …Z` exit 2. Logins dropped, 0 left.)*
+- ✅ **Done 2026-10-29.** **5.h `db scoped-config list/get/set`** (`cmd/db_settings.go`): P5-9, `--for-secondary`, before/after from a second read. **Verify live** that `FOR SECONDARY` is accepted on a database outside an AG (on 17 and 13) and that it takes effect on ubusql2 as a readable secondary. *(As built: `db scoped-config` is a sub-group of `db` (`DBCommands` now `slices.Concat`s it; the `db` summary widened); `Catalog` gains `DatabaseScopedConfigs`. The database goes through `storageDatabase` + `unreadableError` (unknown/not ONLINE exit 8, no user exit 9) before the view is read. **list/get**: set by name (case-insensitive sort), `name value value_for_secondary is_default type` — values raw as the view holds them (bit `1`/`0`), `value_for_secondary` NULL = follows the primary, `type` the sql_variant base type; `is_default` NULL when the server is 13 (`scopedDefaultKnown`: VersionMajor ≥ 14, 0 or Azure, as gosmo's gates). `get` takes `<setting>...` (order kept, a repeat once); unknown → NOT_FOUND exit 8 with up to 3 names containing it. **set** `<db> <setting> <value> [--for-secondary]`, `ClassAdmin` through `connectWriter`/`applyWrite`: the value is checked by `type` after the read (exit 2, nothing runs): bit takes ON/OFF/1/0 and **sends ON/OFF** — **found live on 13 and 17: `= 1` is Msg 102**, so P5-9's "as typed" was wrong; a number is a whole number ≥ 0 (range is the server's, Msg 12108 exit 5); a keyword is letters/digits/_ upper-cased (a quoted URL, e.g. `LEDGER_DIGEST_STORAGE_ENDPOINT`, exit 2 pointing at `query run`); `PRIMARY` only with `--for-secondary` (Msg 12109 otherwise, caught in the CLI). Sets in the statement's spelling (ON/OFF; a NULL secondary value is PRIMARY): dry run `planned_change` (`name replica current new`) + `tsql` (`USE [db];` GO + the ALTER); run `change` (`name replica before requested after`) from the second read, a mismatch is a warning; one statement, so a failure is not read back. Refusals, **live-captured**: no ALTER ANY DATABASE SCOPED CONFIGURATION is **Msg 15247**, which gosmo classes MissingOrDenied (→ NOT_FOUND) — the name was just read, so the command maps it to PERMISSION_DENIED exit 9 with the permission hint (on 17 and 13); FOR SECONDARY of a primary-only option is Msg 12110 on 17 and 14 (hint; 13 says Msg 102); `set` run on a readable secondary is **Msg 3906** "read-only" (hint: run it on the primary). **Verified live:** `FOR SECONDARY` is accepted outside an AG on 17, 14 and 13; on AAG1, `set testdb_1 MAXDOP 1 --for-secondary` on ubusql1 shows `value_for_secondary` 1 on ubusql2 and drops ubusql2's `EstimatedAvailableDegreeOfParallelism` 2 → 1 (the primary's stays 2), restored with `PRIMARY` and checked (NULL, 2 again). Tests `db_settings_test.go` (list order/raw values/13 NULL/Azure, get order + not-found hints, unreadable databases with no read, set per type and replica incl. PRIMARY ↔ NULL, the gate with no dial, every value error before a write, dry-run tsql/set/no write/one read, not-taken warning, 15247 → exit 9, 12110 and 3906 hints, a failed read-back); mutations (1→ON, PRIMARY check, dry-run branch, the 2016 and Azure rules, NULL→PRIMARY, 15247 mapping, negative numbers) each fail them. agent-schema golden updated; `docs/cli.md` rows and the Discovery "admin" sentence; ARCHITECTURE package-map row. **Driven** on 17, 14, 13 (win10cli) in a disposable `gossms_p5h_sc`: list/get equal to `sys.database_scoped_configurations` through sqlcmd; MAXDOP, PARAMETER_SNIFFING 0, ELEVATE_ONLINE WHEN_SUPPORTED (17), FOR SECONDARY MAXDOP 2 / LEGACY_CARDINALITY_ESTIMATION 1, each set back; no `--allow` exit 7; `PRIMARY` without the flag exit 2; MAXDOP 99999 exit 5; a throwaway db_datareader login: get exit 0, set exit 9; a database with no user exit 9, an OFFLINE one exit 8. Databases and logins dropped, 0 left. `permissionNeeds` row (ALTER ANY DATABASE SCOPED CONFIGURATION → `scoped-config set`) is for 5.j, as is §10.2's example (`--allow admin` is already there). `gofmt`, `go vet` (3 GOOS), `staticcheck`, `go test ./...` green.)*
+- ✅ **Done 2026-10-29.** **5.i `db set --option`:** D8, `--rollback-immediate` + `--confirm`, before/after. *(As built, in `cmd/db_settings.go` (now 839 lines): `db set <name> --option KEY=VALUE...` (`TypeRepeat`), `ClassAdmin` through `connectWriter`/`applyWrite`; the `db` summary widened; `Catalog` gains `QueryStoreOptions`; `namedDatabase` factored out of `storageDatabase` (header + NOT_FOUND exit 8). **Key table** `dbSetKeys`: SetDatabaseOption's 21 (PAGE_VERIFY CHECKSUM/TORN_PAGE_DETECTION/NONE, CURSOR_DEFAULT LOCAL/GLOBAL, CONTAINMENT NONE/PARTIAL, the rest ON/OFF — no 1/0), RECOVERY, COMPATIBILITY_LEVEL (≥100, step 10 before connecting; ≤ major×10 after, Azure/unread left to the server), READ_ONLY, QUERY_STORE ON(=READ_WRITE)/READ_WRITE/READ_ONLY/OFF (QueryStore options read and re-sent with the new state). Keys/values ignore case; unknown key (hint lists them), bad value, a key twice → exit 2 before connecting. **Termination:** `--rollback-immediate` applies only to the exclusive keys (gosmo's `NeedsExclusiveAccess` + READ_ONLY; others always TerminationNone — ALLOW_SNAPSHOT_ISOLATION refuses the clause) and is exit 2 with none of them; it needs `--confirm` equal to `<name>` exactly, else BLOCKED exit 7 before connecting; `--confirm` alone exit 2. `--timeout` (default 60) bounds the writes; a cut wait is TIMEOUT exit 6 naming `--rollback-immediate --confirm <db>` for an exclusive key. **Sets:** dry run `planned_change` (`option current new`) + `tsql`, a warning for an exclusive key that would wait; run `change` (`option before requested after`) from `DatabaseByName` + `Options` (+ QS) read again — also after a failure (exit 5, a warning naming the keys not attempted); after ≠ requested and QS actual ≠ desired are warnings. **Refusals:** Msg 5011 (gosmo MissingOrDenied) → PERMISSION_DENIED exit 9 (live, a db_datareader login on 17); 5061 → hint `--rollback-immediate`; **3906 found live on 14** (READ_ONLY=ON then COMPATIBILITY_LEVEL in one run) → hint on order. **Found live (17):** a refused ALTER DATABASE ends with the contentless **Msg 5069** "ALTER DATABASE statement failed.", hiding the cause (CONTAINMENT=PARTIAL's Msg 12824) — `writeError` now reports the batch's first error in its place (`alterCause`, `write.go`; shared by every write). **RECOVERY on an OFFLINE database succeeds** (17), so `db set` makes no state check: the server answers. Tests (`db_settings_test.go`): run order/values/QS options kept, every argument error and both BLOCKED cases with no dial, the gate, unknown db/compat-above-server/Azure, termination per key, dry run's statements/no write/one read/wait warning/WITH ROLLBACK IMMEDIATE, partial failure (5069→12824), read-back failures, 5011/5061/3906, timeout, not-taken; mutations (termination to every key, ON→READ_WRITE, case-folded confirm, dry-run branch, 5011 mapping, not-taken warning, timeout detection, QS options dropped, compat top, 5069 cause) each fail them. agent-schema golden updated; `docs/cli.md` row + Discovery sentence; ARCHITECTURE row widened. **Driven** on 17, 14, 13 (win10cli) in a disposable `gossms_p5i`: 7-key run equal to `sys.databases`/`sys.database_query_store_options` through sqlcmd; dry run's batch (13 without WAIT_STATS_CAPTURE_MODE); QS ON/READ_ONLY/OFF keeping the other options; RCSI behind a session in the database → TIMEOUT exit 6 at `--timeout 3` with the earlier key applied, no `--confirm` exit 7, `--rollback-immediate --confirm` killed the session and set it; READ_ONLY on/off; compat 180 (17) / 140 (13) exit 2; CONTAINMENT exit 5 with 12824; the read-only login exit 9. Databases and the login dropped, 0 left. `permissionNeeds` row (ALTER on the database → `db set`) and §10.7's examples (they run as written) are for 5.j. `gofmt`, `go vet` (3 GOOS), `staticcheck`, `go test ./...` green.)*
+- ✅ **Done 2026-10-29.** **5.j Agent and docs:** `permissionNeeds` rows (P5-12) with `TestAgentContextNamesOnlyCommands` green; guide recipe "Review and change server settings" (`config list --non-default`, `config get maxdop`, `set … --dry-run`), passing `checkMentions`; `docs/cli.md` § Writes (gate, dry-run, `--accept-risk`, `--override`, `--confirm`) and § Server configuration (aliases, units, blocks, defaults' source); README example; `docs/decisions.md` entries for D1, D2, D3, D4, D8; this file's §3.2 (`--allow`/`--dry-run` are per command), §4.2 (`--accept-risk`, no `--global`), §10.1/§10.4 (no DRY_RUN status), §10.5 (`--name backup`), §10.6, §10.14 corrected. *(As built: `permissionNeed` gains `roles` (fixed server roles; a member is not missing it, and an unprobed role list — `ServerRoles` nil — is no lack). Rows: VIEW SERVER STATE widened to `server memory` (exit 9), `server info`, `server config get` (NULL fields) and `server config set` (blocks a memory/maxdop value it cannot check); ALTER SETTINGS → `server config set/reset`; `sysadmin (role)` → `server traceflag on/off`; `securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG` (roles securityadmin/sysadmin) → `server log` — sp_readerrorlog's own check, read from 17's definition; database ALTER → `db set`; database ALTER ANY DATABASE SCOPED CONFIGURATION → `db scoped-config set`. **gosmo changed (untagged):** `VIEW ANY ERROR LOG` added to `ProbedServerPermissions` (2022+; NULL on 13/14, so `live_probednames_test`'s 2022-only set) and `ALTER ANY DATABASE SCOPED CONFIGURATION` to `ProbedDatabasePermissions` — without them a login holding only those would be listed as lacking them. Checked live with a throwaway login on 17: VIEW SERVER STATE does not imply VIEW ANY ERROR LOG; ALTER implies the scoped-config right, not the reverse. `TestLiveEveryProbedPermissionNameIsOneTheServerDefines` green on 17, 14, 13. **Bug found live and fixed:** `server config set/reset` without ALTER SETTINGS was `NOT_FOUND` exit 8 (sp_configure's Msg 15247 is gosmo's MissingOrDenied); it now maps to PERMISSION_DENIED exit 9 with an ALTER SETTINGS hint, as `db scoped-config set` does (`TestServerConfigSetRefused`; the rule is in `docs/cli.md` § Writes). Tests: `TestAgentContext` (fake gains ALTER SETTINGS and database ALTER denied; six rows), `TestAgentContextRoleNeeds` (securityadmin member, unprobed roles); mutations (roles counted when unprobed, membership ignored) fail them. **Driven** on 17 with a bare throwaway login: `agent context` lists the nine rows; config set/reset exit 9 + hint, config set `--dry-run` exit 0, `server log` exit 9, `scoped-config set` exit 9, `db set` exit 9 / dry run exit 0, traceflag on exit 9 — each as its row's effect says; sa on 17 and 13 lists none; login dropped, 0 left; cost threshold still 5. The recipe's read/dry-run lines and every README line (writes as dry runs; `max-memory 12GB` BLOCKED on 17's 6498 MB) run as written on 17. §10.1–§10.6 output blocks rewritten to the real shapes (record fields before the set, `bit` 1/0, `DRY_RUN: true`, `TSQL`/`planned_change`/`change` set names, `BLOCKED` with `--accept-risk`, the restart warning); §10.2 and §10.7 already ran as written. `docs/cli.md`'s intro now says "through phase 5". `gofmt`, `go vet` (3 GOOS), `staticcheck`, `go test ./...` green in gossms; gosmo `go test`, `vet`, `staticcheck` green.)*
+- ✅ **Done 2026-10-29.** **5.k Verification (driven binary)** on 17, 14 and 13 (win10cli) and ubusql1 (Linux): every §10.1–§10.7 example as corrected; before/after compared with `sp_configure` / `sys.configurations` / `sys.database_scoped_configurations` / `sys.databases` through `gossms query run` on the same connection; `show advanced options` restored to both 0 and 1 starting states (the §13 criterion); risky blocks; `--override`; a restart-only option (`fill factor (%)`) set and reset; a partial failure; trace flag on/off; the read-only login for every refusal (7, 9); `--for-secondary` on the AAG. A disposable database for `db set`/`scoped-config`. **Every server setting and trace flag changed is restored and checked afterwards** (they are not disposable objects). `gofmt`, `go vet` (3 GOOS), `staticcheck`, `go test ./...` in both repos. *(As driven against a fresh build on 17, 14, 13 (win10cli), ubusql1 (primary) and ubusql2 (secondary), sa unless named. Starting state snapshotted first (all of `sys.configurations`, `server traceflag list`): `show advanced options` 1 on 17/ubusql1, 0 on 14/13/ubusql2, so both §13 starting states were run on Windows and Linux. **§10.1** maxdop get (CPU/NUMA fields) / dry run / set / reset / no `--allow` exit 7 on all five, each step equal to `sys.configurations` through `query run`, `enables_show_advanced` 1 exactly where show advanced was 0, which stayed 0 or 1 throughout. **§10.3–§10.5** on 17, 14, 13, ubusql1, ubusql2: cost-threshold get/dry run, `-o json` get (valid, fields + 2 rows), `server memory`, max/min-memory get, `1.5GB` → 1536, `80GB` BLOCKED exit 7, `min-memory 1GB` set (1024/1024) and reset (0/16, restart_required 0), `--non-default`, `--name backup`, adhoc/backup-compression/backup-checksum/remote-dac/blocked-threshold set + reset, the full sp_configure name, `fill factor (%)` 90 → running 0, restart_required 1 + warning, reset; every value checked in `sys.configurations`. Blocks on ubusql1 (2 CPUs, 2344 MB): maxdop 4, max < min in one call, min above physical, two risks joined in one message; `--accept-risk --dry-run` passes; BLOCKED in json. **Partial failure (sp_configure level):** `set cost-threshold 50 xp_cmdshell 1` on ubusql2 and ubusql1 — Msg 15392 (no xp_cmdshell on Linux) exit 5, cost threshold installed 50/50, xp_cmdshell row + "configured 0, not the 1 requested" warning, show advanced back to 0 (ubusql2) / 1 (ubusql1); restored. **Bug found and fixed — gosmo `ApplyConfiguration` (untagged):** a refused RECONFIGURE (`recovery interval (min)` 120, Msg 5807) **ends the batch** (checked with a bare sqlcmd batch: a `PRINT` after it never runs), so step 4 never ran and on 13 `show advanced options` was left **1/1** — the §13 criterion broken. The batch now puts each RECONFIGURE after step 1 in TRY/CATCH; the CATCH sp_configures show advanced options back to its configured value and THROWs (5807 is still what the caller gets). Its own RECONFIGURE would be refused the same way, so it is configured back but running 1 until the next RECONFIGURE — pending with the rest, which `--override` installs. The doc comment's "no TRY/CATCH … step 4 still runs" corrected; `TestWithScriptApplyConfigurationBatchShape` pins both CATCH blocks (a mutation dropping the restore fails it). Prototyped by hand on 13 first, then re-driven on 13 (show advanced 0 → configured 0/running 1 after the refusal → `--override` → 0/0) and 17 (1 throughout). **Second finding:** once a value runs outside the recommended range (installed by `--override`), SQL Server refuses **every** plain RECONFIGURE, so `reset` of that value fails 5807 at step 1 with nothing configured and no hint; `server config set/reset` now hints `--override` for a 5807 with nothing pending (`TestServerConfigSetReconfigureRefusedNothingPending`, mutation-checked); `TestServerConfigSetPartialFailure` now fails with 15392, since a 5807 cannot leave that state. Test-side: `internal/tui/server_props_config_pages_test.go`'s `configWrites` looked for the RECONFIGURE at column 0; it now looks after the last change. `--override` driven on 13 and 17 (set 120 → exit 5 pending + hint; `--override` → 120/120; reset → exit 5 + the new hint on 13; reset `--override` → 0/0). **§10.6** list / on 7745 dry run (`DBCC TRACEON(7745, -1) WITH NO_INFOMSGS`) / on (restart warning) / off / no `--allow` exit 7 on 17, 14, 13, ubusql1; on/off checked with `DBCC TRACESTATUS(-1)` through `query run --allow admin`. **Read-only login** (`gossms_p5k_ro`, db_datareader in disposable `gossms_p5k`) on 17, 14, 13, ubusql1, identical: config get / traceflag list / scoped-config get / `db set --dry-run` / `config set cost-threshold --dry-run` exit 0; no `--allow` exit 7; `config set maxdop` BLOCKED exit 7 (CPU count unreadable without VIEW SERVER STATE, fail closed) and exit 9 with `--accept-risk`; config set cost-threshold / reset, `server memory`, `server log`, traceflag on/off, scoped-config set, `db set` exit 9, each with its permission hint. **§10.2/§10.7** in `gossms_p5k` on all four: scoped-config get / dry run / set MAXDOP 4 / `--for-secondary` 2 / back to 0 and PRIMARY, equal to `sys.database_scoped_configurations` (4/2, then 0/NULL); `db list`; `db set` COMPATIBILITY_LEVEL dry run, RECOVERY + COMPATIBILITY_LEVEL in one call, QUERY_STORE=ON, AUTO_UPDATE_STATISTICS_ASYNC + PAGE_VERIFY, equal to `sys.databases` / `sys.database_query_store_options`; scoped-config list; `db files tempdb`. **AAG:** `scoped-config set testdb_1 MAXDOP 1 --for-secondary` on ubusql1 → ubusql2 reads `value_for_secondary` 1; set run on ubusql2 → exit 5 with the read-only hint; restored with PRIMARY, NULL on ubusql2. **Afterwards:** `sys.configurations` and the trace-flag list byte-identical to the starting snapshot on all five; `gossms_p5k` and its login dropped, 0 left. `gofmt`, `go vet` (linux/darwin/windows), `staticcheck`, `go test ./...` green in both repos.)*
 
 **Not in phase 5:** restarting the service; startup trace flags and startup parameters (Configuration Manager / `mssql-conf`); `ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE`; USER_ACCESS, OFFLINE and ONLINE (phase 8); Query Store options other than its state; the audit log (phase 8); changing the TUI's Server Properties to show defaults (possible once D4 lands, not asked).
 

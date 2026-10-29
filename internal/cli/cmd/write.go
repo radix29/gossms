@@ -159,9 +159,30 @@ func writeError(err error) *output.Error {
 		return usageError(err.Error(), "")
 	}
 	e := readError(err)
+	if se, ok := gosmo.AsSQLError(err); ok && e.SQL != nil && se.Number == alterDatabaseFailed {
+		c := alterCause(se)
+		e.Message = c.Message
+		e.SQL = &output.SQLError{Number: c.Number, Severity: c.Class, State: c.State, Line: int(c.LineNo), Procedure: c.ProcName}
+	}
 	if e.Code == output.CodePermissionDenied && e.SQL != nil {
 		e.Hint = "The login lacks a permission this change needs: the message names it. " +
 			"Use a login that has it, or have it granted."
 	}
 	return e
+}
+
+// alterDatabaseFailed is SQL Server's "ALTER DATABASE statement failed.",
+// which ends a refused ALTER DATABASE after the message that says why.
+const alterDatabaseFailed = 5069
+
+// alterCause is the first error of se's batch that is not the contentless
+// Msg 5069 — the one that names the cause (CONTAINMENT = PARTIAL's Msg
+// 12824, live on 17) — or se when there is none.
+func alterCause(se *gosmo.SQLError) *gosmo.SQLError {
+	for _, m := range se.All {
+		if m.IsError() && m.Number != alterDatabaseFailed {
+			return &m
+		}
+	}
+	return se
 }
