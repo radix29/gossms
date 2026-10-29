@@ -179,16 +179,26 @@ func databaseAccess(ctx context.Context, cat Catalog, res *output.Result) map[in
 // storageDatabase is the database name names, with its readability. Not on
 // the server is NOT_FOUND, as db info answers it.
 func storageDatabase(ctx context.Context, cat Catalog, name string, res *output.Result) (storageDB, error) {
+	d, err := namedDatabase(ctx, cat, name, res)
+	if err != nil {
+		return storageDB{}, err
+	}
+	return storageDBOf(d, databaseAccess(ctx, cat, res)), nil
+}
+
+// namedDatabase is the database name names, res's header naming it. Not on
+// the server is NOT_FOUND.
+func namedDatabase(ctx context.Context, cat Catalog, name string, res *output.Result) (*gosmo.Database, error) {
 	d, err := cat.DatabaseByName(ctx, name)
 	if errors.Is(err, gosmo.ErrNotFound) {
-		return storageDB{}, output.NewError(output.CodeNotFound, fmt.Sprintf("no database %s on the server", gosmo.QuoteName(name)),
+		return nil, output.NewError(output.CodeNotFound, fmt.Sprintf("no database %s on the server", gosmo.QuoteName(name)),
 			"Run `gossms db list --include-system` for the databases the login can see.")
 	}
 	if err != nil {
-		return storageDB{}, readError(err)
+		return nil, readError(err)
 	}
 	res.Database = d.Name
-	return storageDBOf(d, databaseAccess(ctx, cat, res)), nil
+	return d, nil
 }
 
 // storageDatabases is --all's databases, system ones included, in the

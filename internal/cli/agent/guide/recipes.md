@@ -44,6 +44,25 @@ what is worth a look (fixed thresholds, each command's help lists them).
 Sizes are in MB; `--unit kb` matches `sp_spaceused` and the DMVs exactly.
 `db log-usage` and `server volumes` need VIEW SERVER STATE (exit 9 without).
 
+### Review and change server settings
+
+Only with the user's approval of the change.
+
+```bash
+gossms server config list -p dev --non-default
+gossms server config get -p dev maxdop cost-threshold
+gossms server config set -p dev maxdop 4 cost-threshold 50 --allow admin --dry-run
+gossms server config set -p dev maxdop 4 cost-threshold 50 --allow admin
+```
+
+`--non-default` compares the configured value to the engine default, not
+Setup's recommendation. `get` adds the CPU or memory figures the setting is
+judged by. The dry run prints the exact batch and a `planned_change` set and
+changes nothing; show it to the user. The real run's `change` set is read
+back from the server: `restart_required` 1 means the value waits for a
+service restart. A value above physical memory or the CPU count is blocked
+(exit 7); `--accept-risk` lifts it only when the user means it.
+
 ### Make a safe data fix
 
 Only with the user's approval of the change. Write the T-SQL to a file, then:

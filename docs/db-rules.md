@@ -164,6 +164,14 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   — W18's tests were green and the drive used a MANUAL table). Read the
   state first and refuse what the server would ignore
   (`fulltext_index_ops.go`), or compare a stamp before and after.
+- **Some severity-16 errors end the batch — check before relying on "the rest
+  still runs".** A failed `sp_configure` (Msg 15392, 15123) lets the batch go
+  on; a refused `RECONFIGURE` (Msg 5807) ends it, so a cleanup step after it
+  never ran and `show advanced options` was left on (13, 2026-10-29). Prove it
+  with a `PRINT` after the statement; put cleanup in a `CATCH` that
+  `THROW`s, as gosmo's `ApplyConfiguration` now does. Once a value runs
+  outside the recommended range, every plain `RECONFIGURE` on that server is
+  refused, even one undoing it.
 
 ## Query execution
 

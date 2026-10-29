@@ -170,8 +170,12 @@ func configWrites(t *testing.T, stmts []string) []string {
 	if len(stmts) != 1 {
 		t.Fatalf("want one ApplyConfiguration batch, got %d statements:\n%s", len(stmts), strings.Join(stmts, "\n"))
 	}
-	if !strings.Contains(stmts[0], "\nRECONFIGURE;") {
-		t.Fatalf("the batch has no RECONFIGURE:\n%s", stmts[0])
+	// The RECONFIGURE after the changes sits in a TRY block when the batch
+	// may restore show advanced options, so it is looked for after the last
+	// change rather than at column 0.
+	changes := spConfigureChange.FindAllStringSubmatchIndex(stmts[0], -1)
+	if len(changes) == 0 || !strings.Contains(stmts[0][changes[len(changes)-1][1]:], "RECONFIGURE;") {
+		t.Fatalf("the batch has no RECONFIGURE after its changes:\n%s", stmts[0])
 	}
 	var out []string
 	for _, m := range spConfigureChange.FindAllStringSubmatch(stmts[0], -1) {

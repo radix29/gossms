@@ -273,6 +273,22 @@ gossms db table-sizes -p dev Sales --top 10        # largest tables
 gossms server volumes -p dev                       # free space per disk
 ```
 
+`server` reads the instance — facts, memory, the error log, trace flags and
+the `sp_configure` settings beside their engine defaults — and changes
+settings, trace flags and database options through the same `--allow`: each
+change needs `--allow admin`, `--dry-run` prints the exact T-SQL without
+running it, and a real run reports before and after as the server reads them
+back:
+
+```bash
+gossms server info -p dev                                          # version, uptime, CPUs, memory
+gossms server config list -p dev --non-default                     # what differs from the defaults
+gossms server config set -p dev maxdop 4 cost-threshold 50 --allow admin --dry-run
+gossms server config set -p dev max-memory 12GB --allow admin      # blocked above physical memory
+gossms server log -p dev --search Login --search failed --since 2026-10-27
+gossms db set -p dev Sales --option RECOVERY=FULL --allow admin
+```
+
 For an AI agent, `gossms agent guide --brief -p dev` is the manual to put in
 its system prompt — rules, output contract, the command index, and what the
 profile's login can see; `gossms agent schema` is the same catalog as JSON

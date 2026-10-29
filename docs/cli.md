@@ -7,9 +7,11 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 4) the commands are `version`, `help`, `agent
+them. Today (through phase 5) the commands are `version`, `help`, `agent
 guide/schema/context`, `profile list/show/test`, `db
-list/info/files/space/log-usage/table-sizes`, `server info/memory/volumes/config list/get/set/reset`, `object
+list/info/files/space/log-usage/table-sizes/set`, `db scoped-config
+list/get/set`, `server info/memory/volumes/log`, `server config
+list/get/set/reset`, `server traceflag list/on/off`, `object
 list/search/describe/definition/dependencies/indexes/stats` and `query
 classify/run/parse`; the formats `text`, `json`, `jsonl`, `csv`, `tsv` and
 `markdown`. `profile test`, `agent context`, every `db`, `server` and `object` command,
@@ -532,7 +534,7 @@ second Ctrl+C kills the process.
 | `help [<group>] [<command>...]` | Help text (§ Help) |
 | `agent guide [--brief] [--topic <topic>] [-p <profile>] [connection options]` | The manual for AI agents, outside the envelope (§ Agent guide) |
 | `agent schema [<group>] [<command>...]` | The command catalog as JSON, outside the envelope (§ Agent schema) |
-| `agent context [-p <profile>] [connection options]` | Connects (§ Connecting). Header `DATABASE` is the connection's. Record: `profile` (null ad hoc), `serverName`, `productVersion`, `majorVersion`, `edition`, `login`, `isSysadmin` (null when the server permissions were not probed), `database`, `databaseRoles` (the fixed roles held there, comma-separated), `defaultAllow` (`read`), `maxAllow` (the ceiling `--allow` cannot pass; `admin` ad hoc), `maxAllowSource` (`profile`, `default` — the profile sets none —, or ad hoc). Named sets — `databases`: `name`, `state`, `accessible` (HAS_DBACCESS: false for a database not ONLINE, whoever asks; NULL when the server does not say), `is_system`; `missing_permissions`: `permission`, `scope` (`server`, or `database [name]`), `commands`, `effect` — each permission a command needs that the login is known to lack (an alternative granted counts: 2022's VIEW SERVER/DATABASE PERFORMANCE STATE, CREATE/ALTER ANY DATABASE for the files' visibility); one the server answers nothing for is left out; `profiles`: `name`, `server`, `database`, `max_allow`. A probe or read that fails is a warning, not an error |
+| `agent context [-p <profile>] [connection options]` | Connects (§ Connecting). Header `DATABASE` is the connection's. Record: `profile` (null ad hoc), `serverName`, `productVersion`, `majorVersion`, `edition`, `login`, `isSysadmin` (null when the server permissions were not probed), `database`, `databaseRoles` (the fixed roles held there, comma-separated), `defaultAllow` (`read`), `maxAllow` (the ceiling `--allow` cannot pass; `admin` ad hoc), `maxAllowSource` (`profile`, `default` — the profile sets none —, or ad hoc). Named sets — `databases`: `name`, `state`, `accessible` (HAS_DBACCESS: false for a database not ONLINE, whoever asks; NULL when the server does not say), `is_system`; `missing_permissions`: `permission`, `scope` (`server`, or `database [name]`), `commands`, `effect` — each permission a command needs that the login is known to lack (an alternative granted counts: 2022's VIEW SERVER/DATABASE PERFORMANCE STATE, CREATE/ALTER ANY DATABASE for the files' visibility; for `server log` and `server traceflag on/off`, membership in securityadmin or sysadmin); one the server answers nothing for is left out; `profiles`: `name`, `server`, `database`, `max_allow`. A probe or read that fails is a warning, not an error |
 | `profile list [--all]` | Set: `name`, `kind` (`profile`, or `recent` with `--all`), `server`, `port` (NULL when not set), `database`, `auth` (the `--auth` spelling), `user`, `max_allow` (NULL for a recent connection), `password` (`saved`, `none`, `unreadable`). Profiles sorted by name, then recent connections most recent first. An empty list carries a message saying how to make a profile |
 | `profile show <name>` | Record: `name`, `kind`, `generatedName`, `server`, `port`, `database`, `auth`, `user`, `tenantId`, `clientId`, `encrypt`, `trustServerCertificate`, `hostNameInCertificate`, `extraProperties` (keys only — a value may be a secret), `maxAllow`, `password`. A password that cannot be opened adds a warning |
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
@@ -542,15 +544,20 @@ second Ctrl+C kills the process.
 | `db space <name>\|--all [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, one row per database: `database`, `total_<u>`, `data_size_<u>`, `data_used_<u>`, `unallocated_<u>`, `reserved_<u>`, `data_<u>`, `index_<u>`, `unused_<u>` — `sp_spaceused`'s figures and arithmetic, equal to its output in KB — then `log_size_<u>`, `log_used_<u>`, `log_used_pct` from `sys.dm_db_log_space_usage` (as `db log-usage` shows them; NULL with one warning without VIEW SERVER STATE). A snapshot shows its source's figures as of creation, log NULL, with a warning |
 | `db log-usage <name>\|--all [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, one row per database: `database`, `log_size_<u>`, `log_used_<u>`, `log_used_pct` (`sys.dm_db_log_space_usage`'s), `log_reuse_wait_desc`, `vlf_count`, `vlf_active` (`sys.dm_db_log_info`, from 2016 SP2; NULL with a warning before). Without VIEW SERVER STATE: `PERMISSION_DENIED`, exit 9. `--all` skips snapshots (no log); a named snapshot is `NOT_FOUND`, exit 8 |
 | `db table-sizes <name> [--top <n>] [--schema <s>] [--sort-by reserved\|rows\|data\|index\|unused] [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, largest first (default `reserved`; schema, then name break ties): `schema`, `table`, `rows`, `reserved_<u>`, `data_<u>`, `index_<u>`, `unused_<u>` — each row equal to `EXEC sp_spaceused 'schema.table'` in KB, internal tables (XML, spatial, full-text indexes) included. `--top` default 20, 0 for every table (a cut, not a truncation). Needs no VIEW DATABASE STATE. A memory-optimized table's sizes are NULL with a warning |
+| `db set <name> --option <KEY=VALUE>... [--timeout <sec>] [--rollback-immediate --confirm <name>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, gated as `config set`. Header `DATABASE` is `<name>` (not on the server: exit 8). One `ALTER DATABASE … SET` per `--option`, in the order given, through gosmo: `RECOVERY=FULL\|SIMPLE\|BULK_LOGGED` (`SetRecoveryModel`), `COMPATIBILITY_LEVEL=<n>` (`SetCompatibilityLevel`; 100 up to the server's major × 10, steps of 10 — Azure and an unread version are left to the server), `READ_ONLY=ON\|OFF` (`SetReadOnly`), `QUERY_STORE=ON\|READ_WRITE\|READ_ONLY\|OFF` (`ON` is `READ_WRITE`; the Query Store options read are re-sent with the new state, so nothing else changes), and `SetDatabaseOption`'s 21: `PAGE_VERIFY=CHECKSUM\|TORN_PAGE_DETECTION\|NONE`, `CURSOR_DEFAULT=LOCAL\|GLOBAL`, `CONTAINMENT=NONE\|PARTIAL`, the rest `ON\|OFF`. Keys and values ignore case; an unknown key (the hint lists them), a value the key does not take, a key given twice or a level above the server's is exit 2 before anything runs. No transaction (ALTER DATABASE cannot run in one): the first failure stops the run, the changes before it stay, the `change` set shows every key with its `after`, a warning names those not attempted, exit 5. `READ_COMMITTED_SNAPSHOT`, `CONTAINMENT` and `READ_ONLY` need the database to themselves and wait for its other sessions, bounded by `--timeout` (default 60, 0 none; `TIMEOUT`, exit 6, the hint naming `--rollback-immediate`); `--rollback-immediate` (only with one of them, else exit 2) sends `WITH ROLLBACK IMMEDIATE` to those and needs `--confirm` equal to `<name>` as given (`BLOCKED`, exit 7, without — §6.3); `--confirm` alone is exit 2. Needs ALTER on the database (Msg 5011: `PERMISSION_DENIED`, exit 9). `--dry-run`: `dryRun: "true"`, `tsql`; set `planned_change`: `option`, `current`, `new` (a warning for a key that would wait). A run: `dryRun: "false"`; set `change`: `option`, `before`, `requested`, `after`, from `sys.databases` (+ `sys.database_query_store_options`) read before and after — values spelled as the statement takes them; an `after` that is not the `requested`, and Query Store's actual state differing from the desired one, are warnings. `USER_ACCESS`, `OFFLINE`, `ONLINE` are not offered |
+| `db scoped-config list <name> [-p <profile>] [connection options]` | Header `DATABASE` is `<name>`. Set, by name: `name`, `value`, `value_for_secondary`, `is_default`, `type` — `sys.database_scoped_configurations` read inside the database, values as the view holds them, as text: a switch (`type` `bit`) reads `1`/`0`, a number its digits, a keyword (`nvarchar`) the keyword. `value_for_secondary` is NULL where readable secondaries use the primary's value; `is_default` is NULL on 2016 (no `is_value_default`). The database must be ONLINE (exit 8) and the login need a user in it (exit 9), as `db table-sizes` |
+| `db scoped-config get <name> <setting>... [-p <profile>] [connection options]` | The list's row for each setting, in the order given (a repeat once); a name ignores case, an unknown one is `NOT_FOUND`, exit 8, the hint naming up to 3 that contain it |
+| `db scoped-config set <name> <setting> <value> [--for-secondary] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, gated as `config set`. `ALTER DATABASE SCOPED CONFIGURATION [FOR SECONDARY] SET <setting> = <value>` inside the database (gosmo `SetDatabaseScopedConfig`). The value is checked against the setting's `type` before anything runs (exit 2): a switch takes `ON`/`OFF` (`1`/`0` are sent as `ON`/`OFF` — the statement refuses a number there, Msg 102), a number a whole number ≥ 0 (its range is the server's: Msg 12108, exit 5), a keyword letters, digits and `_` (a quoted value — a URL — is not supported). `PRIMARY` only with `--for-secondary` (the server's Msg 12109 otherwise), making secondaries follow the primary. `--for-secondary` is accepted for a database in no availability group (stored, used once it is a readable secondary); a setting with no secondary value is Msg 12110, exit 5, with a hint. Needs ALTER ANY DATABASE SCOPED CONFIGURATION (Msg 15247: `PERMISSION_DENIED`, exit 9); on a readable secondary the database is read-only (Msg 3906, exit 5; the hint sends the change to the primary). `--dry-run`: record `dryRun: "true"`, `tsql` (`USE` + the statement); set `planned_change`: `name`, `replica` (`primary`\|`secondary`), `current`, `new`. A run: record `dryRun: "false"`; set `change`, from the view read before and after: `name`, `replica`, `before`, `requested`, `after`. Both sets spell values as the statement does (`ON`/`OFF`, `PRIMARY` for a NULL secondary value); an `after` that is not the `requested` is a warning |
 | `server info [-p <profile>] [connection options]` | Record: `serverName`, `productVersion`, `majorVersion`, `edition` (as `agent context`), `productLevel`, `engineEdition`, `platform` (null when `@@VERSION` names none), `collation`, `isClustered`, `isHadrEnabled`, `startTime` (the server's local wall clock, no zone), `uptimeSeconds` (by the server's clock), `logicalCpus`, `numaNodes`, `physicalMemoryMb`, `defaultDataPath`, `defaultLogPath`, `defaultBackupPath`. `startTime` through `physicalMemoryMb` need VIEW SERVER STATE (2022+: VIEW SERVER PERFORMANCE STATE): without it they are null with one warning, exit 0 |
 | `server memory [-p <profile>] [connection options]` | Named sets — `memory`, one row: `physical_mb`, `available_os_mb` (`sys.dm_os_sys_memory`), `max_server_memory_mb`, `min_server_memory_mb` (the running values), `committed_mb`, `target_mb` (Memory Manager's Total and Target Server Memory), `page_life_expectancy_s` (Buffer Manager's, instance-wide), `memory_grants_pending` (both null when the server does not publish the counter); `clerks`: `clerk`, `size_mb`, the 10 clerk types holding the most, largest first. Warnings: max server memory unlimited, available OS memory under 5 % of physical, memory grants pending. Without VIEW SERVER STATE: `PERMISSION_DENIED`, exit 9 |
 | `server traceflag list [-p <profile>] [connection options]` | Set, by flag: `flag`, `global`, `session` — every trace flag on now (`DBCC TRACESTATUS(-1)`, which any login may run). A startup flag (`-T`) shows as `global`, the DBCC does not tell them apart; `session` is this command's own session, so 0 for another session's flag. None on is an empty set |
 | `server traceflag on <flag>... --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, gated as `config set`. `DBCC TRACEON(<flag>, -1)` for each flag in order (a repeat once): always global, since a session flag would die with the command's connection — there is no `--global`. A flag that is not a positive whole number is exit 2 before connecting; the upper bound is the server's (Msg 2560, exit 5, with a hint; 17698 on 17). Needs sysadmin: Msg 2571 is `PERMISSION_DENIED`, exit 9. `--dry-run`: record `dryRun: "true"`, `tsql`; set `planned_change`: `flag`, `current`, `new`. A run: record `dryRun: "false"`; set `change`, from `TRACESTATUS` read before and after: `flag`, `before`, `requested`, `after`. The first refused flag stops the run (exit 5) with the `change` set still read back. Warnings: the flag is lost at restart (a lasting one is a startup parameter, `-T` or `mssql-conf traceflag`), when one is on; a flag the second read does not show — the server skips a startup-only flag (834) with no error |
 | `server traceflag off <flag>... --allow admin [--dry-run] [-p <profile>] [connection options]` | `DBCC TRACEOFF(<flag>, -1)`; otherwise as `traceflag on`. A flag still on afterwards is a warning; one set at startup comes back at the next restart |
+| `server log [--lines <n>] [--search <text>]... [--since <time>] [--archive <n>] [--agent] [-p <profile>] [connection options]` | Set, oldest first: `date` (the server's local time, no zone: the log records none), `process` (`level` with `--agent`: 1 error, 2 warning, 3 information), `text` — one log file read by `xp_readerrorlog`, filtered on the server. `--search` (up to twice) keeps entries holding the text, case-insensitively, both when given twice (AND). `--since` is `YYYY-MM-DD[THH:MM[:SS]]` in the server's local time; a `Z` or an offset is exit 2. `--lines` keeps the last *n* matching entries (default 100, 0 for all). `--archive` picks the file (0 current, 1 the one before…), one per run: a `--since` before the file's start needs a higher one; an archive the server does not keep is exit 8, the hint naming the range. A sysadmin reads through `xp_readerrorlog`; any other login through `sp_readerrorlog` (gosmo falls back on the refusal), which needs securityadmin, VIEW SERVER STATE or (2022 on) VIEW ANY ERROR LOG — else exit 9 — and reads the whole file before `--since` applies |
 | `server volumes [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, by volume: `volume` (mount point, else OS label, else the lowest file path), `total_<u>`, `free_<u>`, `free_pct`, `db_files` — every volume holding a database file of any database (`sys.master_files` × `sys.dm_os_volume_stats`). Implausible figures (total 0, free over total) are left out with a warning. Without VIEW SERVER STATE: `PERMISSION_DENIED`, exit 9 |
 | `server config list [--name <text>] [--non-default] [--advanced] [-p <profile>] [connection options]` | Set, by name (case-insensitive): `name`, `alias` (the short name `config get` takes; NULL for none), `configured` (`value`), `running` (`value_in_use`), `default`, `min`, `max`, `dynamic`, `advanced` — every `sys.configurations` row, advanced ones whatever `show advanced options` is. `default` is the engine's default on the server's major (gosmo's table, from Microsoft's `sp_configure` reference), not what Setup or `mssql-conf` writes; NULL where gosmo has none (an option a CU added, Azure), with one warning naming them (the engine-written `version high/low part of SQL Server` aside). `--name` contains, case-insensitive, no wildcards; `--advanced` keeps advanced options; `--non-default` keeps those whose **configured** value differs from the default (min server memory configured 0 runs as 16 and is not listed), leaving out an option with no default |
 | `server config get <name>... [-p <profile>] [connection options]` | `config list`'s set for each setting named, in the order given (a repeat once). A name is an alias — `maxdop`, `cost-threshold`, `max-memory`, `min-memory`, `adhoc`, `backup-compression`, `backup-checksum`, `remote-dac`, `clr`, `xp-cmdshell`, `contained-auth`, `blocked-threshold` — or a full `sys.configurations` name, both case-insensitive; anything else is `NOT_FOUND`, exit 8, the hint naming up to 3 names or aliases containing it. Record (context): `logicalCpus`, `numaNodes`, `logicalCpusPerNumaNode` (two decimals when uneven) for MAXDOP and cost threshold; `physicalMemoryMb`, `committedMemoryMb` (Total Server Memory) for max/min server memory; none for other settings. Without VIEW SERVER STATE they are null with one warning, exit 0 |
-| `server config set <name> <value> [<name> <value>…] --allow admin [--dry-run] [--accept-risk] [--override] [-p <profile>] [connection options]` | Class `admin` (as `traceflag on/off`; every other `server` command is `read`): refused before connecting without `--allow admin`, `--dry-run` included (BLOCKED, exit 7, record `detectedClass`, `allowedClass`). A name as in `config get`; a negative value follows `--`. A value is a whole number in the option's unit; an option whose name ends `(MB)` also takes `MB`/`GB`/`TB`, one ending `(KB)` `KB`/`MB` (case-insensitive; `1.5GB` = 1536, `1.3MB` is refused). Exit 2 before anything runs: an odd argument count, a setting named twice, a unit elsewhere, a value outside `min`–`max` (the option's default aside: a self-configuring option's 0 lies below its reported minimum). Blocked (exit 7) unless `--accept-risk`: max or min server memory above physical memory, max below min server memory (values set in the same call count), MAXDOP above the logical CPUs, and any of these when the figure is unreadable (no VIEW SERVER STATE); a value equal to the default never is. All changes go in one `gosmo` `ApplyConfiguration` batch (`show advanced options` enabled only when needed and restored; one `RECONFIGURE`, `WITH OVERRIDE` under `--override`). `--dry-run`: record `dryRun: "true"`, `tsql` (the batch, verbatim); set `planned_change`: `name`, `current`, `new`, `dynamic`, `advanced`, `enables_show_advanced` (whether the batch's first step fires here). A run: record `dryRun: "false"`; set `change`, read back from `sys.configurations`: `name`, `before`, `requested`, `after_configured`, `after_running`, `restart_required` (running ≠ configured; min server memory 0 running 16 aside). Warnings: new max server memory below committed memory, a value waiting for a restart, a value not taken. A failed batch is exit 5 with the `change` set still read back; a refused `RECONFIGURE` leaves every change configured but not running — pending for the next `RECONFIGURE` — and the hint says so |
+| `server config set <name> <value> [<name> <value>…] --allow admin [--dry-run] [--accept-risk] [--override] [-p <profile>] [connection options]` | Class `admin` (as `traceflag on/off`; every other `server` command is `read`): refused before connecting without `--allow admin`, `--dry-run` included (BLOCKED, exit 7, record `detectedClass`, `allowedClass`). A name as in `config get`; a negative value follows `--`. A value is a whole number in the option's unit; an option whose name ends `(MB)` also takes `MB`/`GB`/`TB`, one ending `(KB)` `KB`/`MB` (case-insensitive; `1.5GB` = 1536, `1.3MB` is refused). Exit 2 before anything runs: an odd argument count, a setting named twice, a unit elsewhere, a value outside `min`–`max` (the option's default aside: a self-configuring option's 0 lies below its reported minimum). Blocked (exit 7) unless `--accept-risk`: max or min server memory above physical memory, max below min server memory (values set in the same call count), MAXDOP above the logical CPUs, and any of these when the figure is unreadable (no VIEW SERVER STATE); a value equal to the default never is. All changes go in one `gosmo` `ApplyConfiguration` batch (`show advanced options` enabled only when needed and restored; one `RECONFIGURE`, `WITH OVERRIDE` under `--override`). Needs ALTER SETTINGS (Msg 15247: `PERMISSION_DENIED`, exit 9). `--dry-run`: record `dryRun: "true"`, `tsql` (the batch, verbatim); set `planned_change`: `name`, `current`, `new`, `dynamic`, `advanced`, `enables_show_advanced` (whether the batch's first step fires here). A run: record `dryRun: "false"`; set `change`, read back from `sys.configurations`: `name`, `before`, `requested`, `after_configured`, `after_running`, `restart_required` (running ≠ configured; min server memory 0 running 16 aside). Warnings: new max server memory below committed memory, a value waiting for a restart, a value not taken. A failed batch is exit 5 with the `change` set still read back; a refused `RECONFIGURE` leaves every change configured but not running — pending for the next `RECONFIGURE` — and the hint says so |
 | `server config reset <name>... --allow admin [--dry-run] [--override] [-p <profile>] [connection options]` | `config set` to each setting's `default` (as `config list` shows it; a repeat once). A setting with no default (`default` NULL) is `UNSUPPORTED`, exit 11, hint: use `config set`. Output, gate and blocks as `config set` |
 | `object list [-p <profile>] [connection options] [--type <kind>,…] [--schema <s>] [--name <text>] [--include-system]` | Set, by kind (in `--type`'s order: `table`, `view`, `procedure`, `function`, `trigger`, `synonym`, `sequence`, `type`, `schema`), then schema and name, case-insensitively: `schema` (NULL for a schema row), `name`, `type`, `is_system`. The objects of the connection's database (`-d`, or the profile's). `--schema` is equal and `--name` contains, both case-insensitive and without wildcards (Object Explorer's filter); a schema row matches either by its own name. A trigger is a table's or view's DML trigger; a type is an alias, table or CLR type. Without `--include-system`, what SQL Server ships is left out: system tables, the `sys` schema's views, procedures, functions and CLR types (geography, geometry, hierarchyid), and the system schemas (guest, INFORMATION_SCHEMA, sys, the fixed roles') |
 | `object search <text> [-p <profile>] [connection options] [--in name\|definition\|column]` | Set: `schema`, `name`, `type`, and with `--in column` `column`, `data_type`. Case-insensitive, `%`/`_`/`[` literal. `name` (default): tables, views, procedures, functions and triggers whose name contains the text. `definition`: the modules whose T-SQL contains it — an encrypted or CLR module has none. `column`: the columns of tables and views whose name contains it. Empty text is a usage error |
@@ -584,8 +591,8 @@ shell quoting can damage them.
 ## Discovery
 
 The `db`, `object` and `server` commands read the catalog; they are all `read` and
-never take `--allow` — except `server config set/reset` and `server traceflag
-on/off`, which are `admin`.
+never take `--allow` — except `server config set/reset`, `server traceflag
+on/off`, `db set` and `db scoped-config set`, which are `admin`.
 
 - **Where they look.** An `object` command reads the connection's database —
   the profile's, or `-d/--database` — and the header's `DATABASE` names it.
@@ -647,6 +654,70 @@ allocation-unit type instead, so their data and index figures can differ.
   despite their names — and fail, exit 9, without it. `db files`'
   `volume_free_pct` and `db space`'s log columns are NULL with a warning
   instead. `agent context` lists both.
+
+## Server configuration
+
+`server config list/get/set/reset` read and change the `sp_configure`
+settings (`sys.configurations`). `list` and `get` are `read`; `set` and
+`reset` are `admin` and go through § Writes.
+
+- **Names.** A setting is an alias or a full `sys.configurations` name, both
+  ignoring case, the alias tried first. A full name with spaces is one
+  argument, so the shell needs quotes: `"max worker threads"`. An unknown name
+  is `NOT_FOUND`, exit 8, the hint naming up to 3 names or aliases that
+  contain it. The aliases:
+
+  | Alias | Setting |
+  |---|---|
+  | `maxdop` | `max degree of parallelism` |
+  | `cost-threshold` | `cost threshold for parallelism` |
+  | `max-memory` | `max server memory (MB)` |
+  | `min-memory` | `min server memory (MB)` |
+  | `adhoc` | `optimize for ad hoc workloads` |
+  | `backup-compression` | `backup compression default` |
+  | `backup-checksum` | `backup checksum default` |
+  | `remote-dac` | `remote admin connections` |
+  | `clr` | `clr enabled` |
+  | `xp-cmdshell` | `xp_cmdshell` |
+  | `contained-auth` | `contained database authentication` |
+  | `blocked-threshold` | `blocked process threshold (s)` |
+
+- **Defaults.** `default` is the engine's own default on the server's major
+  version: gosmo's table, built from Microsoft's `sp_configure` reference and
+  checked against live 2016, 2017 and 2025 instances. It is not what Setup or
+  `mssql-conf` writes (Setup recommends MAXDOP and max server memory since
+  2019), nor what an instance was installed with. It is NULL where gosmo has
+  no entry (an option a CU added, Azure), with one warning naming those
+  options; such an option is left out of `--non-default`, and `reset` refuses
+  it (`UNSUPPORTED`, exit 11: use `set`). `--non-default` compares the
+  configured value (`value`), not the running one.
+- **Units.** A value is a whole number in the option's own unit. An option
+  whose name ends `(MB)` also takes `MB`, `GB` or `TB`; one ending `(KB)`,
+  `KB` or `MB` (case-insensitive). The result must be whole: `1.5GB` is 1536,
+  `1.3MB` is exit 2, as is a unit on any other option. A negative value
+  follows `--` (`-1` would read as an option).
+- **Range.** A value outside `min`–`max` is exit 2 before anything runs,
+  except the option's default: a self-configuring option's 0 (`max worker
+  threads`, `locks`) lies below the minimum the server reports.
+- **Blocks.** Exit 7 (`BLOCKED`) unless `--accept-risk`, a fixed list: max or
+  min server memory above physical memory; max below min server memory
+  (values set in the same call count); MAXDOP above the logical CPUs; and
+  any of these when the figure cannot be read (no VIEW SERVER STATE: it fails
+  closed). A value equal to the option's default is never blocked, so `reset
+  max-memory` goes through. Warnings, facts only: a new max server memory
+  below the memory committed now, a value that waits for a restart.
+- **One batch.** Every change of a call runs in one gosmo
+  `ApplyConfiguration` batch: `show advanced options` turned on only if an
+  advanced option needs it and put back after, each `sp_configure`, one
+  `RECONFIGURE` (`WITH OVERRIDE` under `--override`, for a value the plain
+  form refuses, such as `recovery interval (min)` above 60). A refused
+  `RECONFIGURE` leaves every change of the batch configured but not
+  running, pending for anyone's next `RECONFIGURE`; the change set shows it
+  and the hint says so.
+- **Restart.** `restart_required` is 1 when the running value is not the
+  configured one after the batch — a non-dynamic option, or one `RECONFIGURE`
+  did not install. `min server memory (MB)` configured 0 runs as 16 and is not
+  flagged.
 
 ## Running T-SQL
 
@@ -797,6 +868,55 @@ A refusal is `STATUS: BLOCKED`, `ERROR_CODE: BLOCKED`, exit 7, with
 `DETECTED_CLASS`, `ALLOWED_CLASS` and `STATEMENTS` among the record's fields
 and a hint naming the `--allow` that would do — or saying that the profile's
 ceiling is what refuses.
+
+## Writes
+
+The commands that change a server through gosmo — `server config
+set/reset`, `server traceflag on/off`, `db set` and `db scoped-config set` —
+share one layer (`internal/cli/cmd/write.go`). Each is class `admin`.
+
+- **The gate.** `--allow` and `--dry-run` are options of the writing
+  commands and `query run`, not global ones: a read command does not take
+  them. Before connecting, the command's class is checked against `--allow`
+  (default `read`) capped by the profile's `max_allow`, with `query run`'s
+  wording: a refusal is `BLOCKED`, exit 7, with `detectedClass` and
+  `allowedClass` and a hint naming the `--allow` that would do, or the
+  ceiling that refuses. Nothing is dialed. A dry run is gated too, so
+  `--dry-run` still needs `--allow admin`.
+- **Dry run.** `--dry-run` connects and reads what the command checks, then
+  runs the write under gosmo's `WithScript`, which captures the statements
+  instead of sending them. The status stays `OK`; the record gains `dryRun:
+  "true"` and `tsql`, gosmo's exact batch (verbatim in text), and the set is
+  `planned_change`. Every writing run carries `dryRun`, `"false"` on a real
+  one, after the command's own fields.
+- **Before and after.** A real run reads the state again after writing and
+  reports a `change` set — `before`, `requested`, `after` — so the answer is
+  the server's, not the request echoed. An `after` that is not the requested
+  value is a warning.
+- **Failures.** A write the server refuses is exit 5 (`SQL_ERROR`) with the
+  `change` set still read back, so what landed shows; the first failure stops
+  a multi-step run. A refusal for permission is `PERMISSION_DENIED`, exit 9,
+  with a hint naming the permission — Msg 15247 included, which gosmo reads
+  as "missing or denied" (`NOT_FOUND` for a read): a writing command has just
+  read the name, so each maps it to `PERMISSION_DENIED` itself (`server config
+  set` once did not, and answered exit 8). A refused `ALTER DATABASE` reports the
+  error that says why, not the contentless Msg 5069 that ends it. A value
+  gosmo refuses before sending is exit 2.
+- **Flags that lift a check** are per command and lift only gossms's own
+  checks, never the server's:
+  - `--accept-risk` (`server config set/reset`): past a blocked value
+    (§ Server configuration).
+  - `--override` (`server config set/reset`): `RECONFIGURE WITH OVERRIDE`.
+  - `--confirm <name>` (`db set`, with `--rollback-immediate`): the database's
+    name exactly as given. `--rollback-immediate` rolls back and disconnects
+    every other session in the database, so without a matching `--confirm`
+    it is `BLOCKED`, exit 7, before connecting.
+
+  The global `--force` keeps its one meaning: replace an existing
+  `--out-file`.
+- **Permissions.** `agent context` lists ALTER SETTINGS, sysadmin, ALTER and
+  ALTER ANY DATABASE SCOPED CONFIGURATION when the login is known to lack
+  them, with the commands each breaks.
 
 ## The import rule
 

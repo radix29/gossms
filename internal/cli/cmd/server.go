@@ -19,12 +19,13 @@ func ServerCommands(d Deps) []*spec.Command {
 	return slices.Concat([]*spec.Command{
 		{
 			Path:    []string{"server"},
-			Summary: "Show the server's facts and memory, list and change its sp_configure settings and trace flags, and show the free space on the volumes holding its files",
+			Summary: "Show the server's facts and memory, list and change its sp_configure settings and trace flags, read its error log, and show the free space on the volumes holding its files",
 			Class:   spec.ClassRead,
 		},
 		serverInfoCommand(d),
 		serverMemoryCommand(d),
 		serverVolumesCommand(d),
+		serverLogCommand(d),
 	}, serverConfigCommands(d), serverTraceFlagCommands(d))
 }
 

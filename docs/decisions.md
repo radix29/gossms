@@ -1919,6 +1919,52 @@ alternatives turned down.
   rows the filters keep. A `--warn-free-pct` was an option nobody asked for;
   `--max-free-pct` is the filter that answers "which files are nearly full".
 
+## Command-line writes and server configuration: what phase 5 settled — do not re-raise
+
+The contract is `docs/cli.md` § Server configuration, § Writes and
+§ Commands; these are the alternatives turned down.
+
+- **`--allow` and `--dry-run` belong to the writing commands, not the global
+  options (D1).** `writeOptions()` adds them to `server config set/reset`,
+  `server traceflag on/off`, `db set` and `db scoped-config set` (and
+  `query run` has its own), and the gate runs before connecting with
+  `query run`'s refusal wording — `BLOCKED`, exit 7, `detectedClass`/
+  `allowedClass`. Global flags would make every read command accept one that
+  does nothing, and `agent schema` would advertise it there. A dry run is
+  gated too: it reads the server, so it still needs `--allow admin`.
+- **A dry run is `STATUS: OK` with `dryRun: "true"`, not a new status (D2).**
+  The T-SQL is one verbatim `tsql` field — gosmo's exact batch, captured by
+  `WithScript` — and the planned change a `planned_change` set. A
+  `DRY_RUN` status would touch every renderer and the schema's status enum,
+  and `query run --dry-run` (status ok) would disagree with it. Every writing
+  run carries `dryRun` (`"false"` on a real one) so a caller reads one shape;
+  data fields are strings, so it is `"true"`, not `true`.
+- **The risky-value override is `--accept-risk` on `server config
+  set/reset`, not `--force` (D3).** `--force` is already global, "replace an
+  existing `--out-file`"; one flag lifting two unrelated checks is how an
+  agent overwrites a file it only meant to accept a memory value for. A
+  blocked value is `BLOCKED` (exit 7), not a new `RISKY_VALUE` code.
+- **Defaults are the engine's, from a per-major table in gosmo (D4)** —
+  `ConfigurationOption.Default`/`HasDefault`, built from Microsoft's
+  `sp_configure` reference and checked against the 13, 14 and 17 instances —
+  not Setup's recommendation (MAXDOP and max server memory since 2019,
+  `mssql-conf` on Linux) and not a table in gossms (gosmo-first; the TUI can
+  share it). An option the table lacks (a CU's, the version parts, Azure) has
+  `default` NULL with one warning, is left out of `--non-default`, and
+  `reset` refuses it (exit 11). `--non-default` compares the configured value,
+  so `min server memory` 0 running 16 is not reported.
+- **`db set` maps each key to its gosmo call through a fixed table (D8)** —
+  `SetDatabaseOption`'s 21 keys, `RECOVERY`, `COMPATIBILITY_LEVEL`,
+  `READ_ONLY` and `QUERY_STORE` (its options read and re-sent with the new
+  state, a no-op for the rest on 13, 14 and 17) — not `KEY=VALUE` passed
+  through as raw `ALTER DATABASE … SET` text, which bypasses gosmo's
+  allowlists and `WithScript`. Keys apply in order, one statement each, no
+  transaction (ALTER DATABASE cannot run in one); the first failure stops the
+  run (exit 5) with what landed reported. Exclusive-access keys wait, bounded
+  by `--timeout`; `--rollback-immediate` kills sessions, so it needs
+  `--confirm <db>`. `USER_ACCESS`, `OFFLINE` and `ONLINE` are left to the
+  administration commands.
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

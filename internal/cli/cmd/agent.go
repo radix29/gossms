@@ -37,12 +37,14 @@ func AgentContextCommand(d Deps) *spec.Command {
 }
 
 // permissionNeed is one permission a command needs, for missing_permissions.
-// It is missing when the server answers for at least one of anyOf and grants
-// none of them: a probe that answered nothing (Unknown) is not a lack.
+// It is missing when the server answers for at least one of anyOf and roles
+// and grants none of them: a probe that answered nothing (Unknown) is not a
+// lack.
 type permissionNeed struct {
 	permission string
 	database   bool     // database scope (the connection's database), else server
 	anyOf      []string // granted any: not missing
+	roles      []string // fixed server roles, a member of any: not missing (server scope only)
 	commands   []string // the command paths it breaks, as typed
 	effect     string
 }
@@ -56,10 +58,37 @@ var permissionNeeds = []permissionNeed{
 		// sys.dm_db_log_space_usage and dm_db_log_info are server-scoped
 		// despite their names: VIEW DATABASE STATE alone is refused (Msg 300),
 		// checked on 13 and 17.
-		anyOf:    []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"},
-		commands: []string{"object indexes", "db files", "db space", "db log-usage", "server volumes"},
-		effect: "db log-usage and server volumes fail (exit 9); columns read NULL (with a warning): index " +
-			"usage (object indexes), volume_free_pct (db files), the log columns (db space)",
+		anyOf: []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"},
+		commands: []string{"object indexes", "db files", "db space", "db log-usage", "server volumes",
+			"server memory", "server info", "server config get", "server config set"},
+		effect: "db log-usage, server volumes and server memory fail (exit 9); columns read NULL (with a " +
+			"warning): index usage (object indexes), volume_free_pct (db files), the log columns (db space), " +
+			"the start time, uptime and CPU/memory facts (server info), the CPU/memory context (server config " +
+			"get); server config set blocks a memory or maxdop value it cannot check (exit 7) unless --accept-risk",
+	},
+	{
+		permission: "ALTER SETTINGS",
+		// serveradmin and sysadmin hold it.
+		anyOf:    []string{"ALTER SETTINGS"},
+		commands: []string{"server config set", "server config reset"},
+		effect:   "fail (exit 9); --dry-run still prints the batch",
+	},
+	{
+		permission: "sysadmin (role)",
+		// DBCC TRACEON/TRACEOFF check the role, not a permission (Msg 2571).
+		roles:    []string{"sysadmin"},
+		commands: []string{"server traceflag on", "server traceflag off"},
+		effect:   "fail (exit 9); server traceflag list needs no permission",
+	},
+	{
+		permission: "securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG",
+		// sp_readerrorlog's own check (17's definition; 2016–2019 have no VIEW
+		// ANY ERROR LOG). xp_readerrorlog itself is sysadmin only.
+		anyOf:    []string{"VIEW SERVER STATE", "VIEW ANY ERROR LOG"},
+		roles:    []string{"securityadmin", "sysadmin"},
+		commands: []string{"server log"},
+		effect: "fails (exit 9); without sysadmin it reads through sp_readerrorlog, which reads the whole " +
+			"file before --since filters it",
 	},
 	{
 		permission: "VIEW ANY DATABASE",
@@ -93,11 +122,34 @@ var permissionNeeds = []permissionNeed{
 		commands:   []string{"object indexes"},
 		effect:     "--fragmentation fails (exit 9) unless the login has CONTROL on the object",
 	},
+	{
+		permission: "ALTER",
+		database:   true,
+		// ALTER ANY DATABASE on the server covers it.
+		anyOf:    []string{"ALTER"},
+		commands: []string{"db set"},
+		effect:   "fails on this database (exit 9); --dry-run still prints the statements",
+	},
+	{
+		permission: "ALTER ANY DATABASE SCOPED CONFIGURATION",
+		database:   true,
+		// ALTER and CONTROL on the database cover it.
+		anyOf:    []string{"ALTER ANY DATABASE SCOPED CONFIGURATION"},
+		commands: []string{"db scoped-config set"},
+		effect:   "fails in this database (exit 9); db scoped-config list and get need only a user",
+	},
 }
 
-// missing reports whether the need is known to be unmet under state.
-func (n permissionNeed) missing(state func(string) gosmo.CapabilityState) bool {
+// missing reports whether the need is known to be unmet under state and, for
+// a need with roles, the server probe srv.
+func (n permissionNeed) missing(state func(string) gosmo.CapabilityState, srv *gosmo.Capabilities) bool {
 	answered := false
+	if len(n.roles) > 0 && srv.Probed() {
+		if slices.ContainsFunc(n.roles, srv.InServerRole) {
+			return false
+		}
+		answered = true
+	}
 	for _, p := range n.anyOf {
 		switch state(p) {
 		case gosmo.CapabilityGranted:
@@ -217,7 +269,7 @@ func missingPermissions(srv *gosmo.Capabilities, dbc *gosmo.DatabaseCapabilities
 		if n.database {
 			state, scope = dbc.Permission, "database "+gosmo.QuoteName(database)
 		}
-		if n.missing(state) {
+		if n.missing(state, srv) {
 			set.Rows = append(set.Rows, []*string{ptr(n.permission), ptr(scope),
 				ptr(strings.Join(n.commands, ", ")), ptr(n.effect)})
 		}

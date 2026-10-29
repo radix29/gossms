@@ -313,7 +313,7 @@ func TestServerConfigSetDryRun(t *testing.T) {
 	}
 	tsql := fieldValue(res, "tsql")
 	for _, want := range []string{"name IN (N'max degree of parallelism', N'backup compression default')",
-		"EXEC sys.sp_configure N'max degree of parallelism', 4;", "EXEC sys.sp_configure N'backup compression default', 1;\nRECONFIGURE;"} {
+		"EXEC sys.sp_configure N'max degree of parallelism', 4;", "EXEC sys.sp_configure N'backup compression default', 1;\nBEGIN TRY\n    RECONFIGURE;"} {
 		if !strings.Contains(tsql, want) {
 			t.Errorf("tsql lacks %q:\n%s", want, tsql)
 		}
@@ -379,8 +379,10 @@ func TestServerConfigSetRestart(t *testing.T) {
 // A batch that fails part way still reports what landed, and exits 5.
 func TestServerConfigSetPartialFailure(t *testing.T) {
 	cat := newConfigSetCatalog()
+	// Msg 15392 is sp_configure refusing an option the edition lacks
+	// (xp_cmdshell on Linux, live on ubusql1/2): the rest of the batch runs.
 	w := &configWriter{applied: 1, err: fmt.Errorf("gosmo: apply configuration: %w",
-		mssql.Error{Number: 5807, Class: 16, Message: "Recovery intervals above 10 minutes not recommended."})}
+		mssql.Error{Number: 15392, Class: 16, Message: "The specified option is not supported by this edition of SQL Server."})}
 	res, _, err := runConfigWrite(t, cat, w, "set maxdop 4 cost-threshold 50 --allow admin")
 	e, ok := errors.AsType[*output.Error](err)
 	if !ok || e.Exit() != 5 {
@@ -418,6 +420,36 @@ func TestServerConfigSetReconfigureRefused(t *testing.T) {
 	}
 	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "the next RECONFIGURE on this server, anyone's, will") {
 		t.Errorf("warnings %q", res.Warnings)
+	}
+}
+
+// A RECONFIGURE refused before any change was configured — a value running
+// outside the recommended range from an earlier --override fails every
+// plain RECONFIGURE — names --override, not the pending changes.
+func TestServerConfigSetReconfigureRefusedNothingPending(t *testing.T) {
+	cat := newConfigSetCatalog()
+	w := &configWriter{applied: 0, err: fmt.Errorf("gosmo: apply configuration: %w",
+		mssql.Error{Number: 5807, Class: 16, Message: "Recovery intervals above 60 minutes not recommended."})}
+	_, _, err := runConfigWrite(t, cat, w, "set cost-threshold 50 --allow admin")
+	e, ok := errors.AsType[*output.Error](err)
+	if !ok || e.Exit() != 5 || !strings.Contains(e.Hint, "Re-run with --override") || strings.Contains(e.Hint, "configured but not running") {
+		t.Fatalf("%v (hint %q), want exit 5 hinting --override", err, e.Hint)
+	}
+}
+
+// sp_configure's refusal is Msg 15247, gosmo's "missing or denied": the
+// option was just read, so it is PERMISSION_DENIED, not NOT_FOUND.
+func TestServerConfigSetRefused(t *testing.T) {
+	cat := newConfigSetCatalog()
+	w := &configWriter{err: fmt.Errorf("gosmo: apply configuration: %w",
+		mssql.Error{Number: 15247, Class: 16, Message: "User does not have permission to perform this action."})}
+	res, _, err := runConfigWrite(t, cat, w, "set cost-threshold 50 --allow admin")
+	e, ok := errors.AsType[*output.Error](err)
+	if !ok || e.Code != output.CodePermissionDenied || e.Exit() != 9 || !strings.Contains(e.Hint, "ALTER SETTINGS") {
+		t.Fatalf("%v, want PERMISSION_DENIED exit 9 naming ALTER SETTINGS", err)
+	}
+	if len(res.Sets) != 1 || res.Sets[0].Name != "change" {
+		t.Errorf("sets %+v, want the change set read back", res.Sets)
 	}
 }
 
