@@ -157,13 +157,6 @@ func QueryCommands(d Deps) []*spec.Command {
 	}
 }
 
-// profileOption is --profile, the saved connection a command connects
-// through; the connection options override its values.
-func profileOption() spec.Option {
-	return spec.Option{Name: optProfile, Short: "p", Type: spec.TypeString, Env: "GOSSMS_PROFILE",
-		Help: "Saved connection profile (gossms profile list); connection options override its values"}
-}
-
 func timeoutOption() spec.Option {
 	return spec.Option{Name: optTimeout, Type: spec.TypeInt, Default: strconv.Itoa(defaultTimeout),
 		Help: "Seconds the script may run (the connect has --connect-timeout); 0 is no limit"}
@@ -488,16 +481,7 @@ func (c *connected) close() {
 // connectSession connects as inv asks and opens the query session; res's
 // header names the target from the start, so a failure says where it failed.
 func (d Deps) connectSession(ctx context.Context, inv *spec.Invocation, cfg *config.Config, profile string, res *output.Result) (*connected, error) {
-	t, err := connect.Resolve(inv, cfg, profile)
-	if err != nil {
-		return nil, err
-	}
-	res.Server, res.Database = connect.Address(t.Conn), t.Conn.Database
-	if t.SavedPasswordDropped {
-		res.Warnings = append(res.Warnings,
-			"The profile's saved password was not sent: an override changed the server, login, authentication or TLS.")
-	}
-	sc, err := connect.Open(ctx, t, d.Connect)
+	t, sc, err := d.dial(ctx, inv, cfg, profile, res)
 	if err != nil {
 		return nil, err
 	}
