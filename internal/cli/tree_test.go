@@ -66,8 +66,9 @@ func TestCommandTreeWellFormed(t *testing.T) {
 	paths := map[string]bool{}
 	for _, c := range tree.Commands {
 		where := strings.Join(c.Path, " ")
-		if len(c.Path) < 1 || len(c.Path) > 2 {
-			t.Errorf("%q: path depth %d, want 1 or 2", where, len(c.Path))
+		// Depth 3 is a sub-group's command, as server config list.
+		if len(c.Path) < 1 || len(c.Path) > 3 {
+			t.Errorf("%q: path depth %d, want 1 to 3", where, len(c.Path))
 		}
 		if paths[where] {
 			t.Errorf("%q: defined twice", where)
@@ -105,10 +106,11 @@ func TestCommandTreeWellFormed(t *testing.T) {
 			}
 		}
 	}
-	// Every depth-2 command sits under a group node.
+	// Every deeper command sits under a group node, and a sub-group under
+	// its group.
 	for _, c := range tree.Commands {
-		if len(c.Path) == 2 && !paths[c.Path[0]] {
-			t.Errorf("%q: no group node %q", strings.Join(c.Path, " "), c.Path[0])
+		if parent := strings.Join(c.Path[:len(c.Path)-1], " "); len(c.Path) > 1 && !paths[parent] {
+			t.Errorf("%q: no group node %q", strings.Join(c.Path, " "), parent)
 		}
 	}
 }

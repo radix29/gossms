@@ -7,6 +7,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/connect"
@@ -114,6 +115,15 @@ type Catalog interface {
 	SpaceReport(ctx context.Context, d *gosmo.Database) (gosmo.SpaceReport, error)
 	TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error)
 	LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error)
+
+	// server info / memory and server config: the sys.dm_os_* reads and
+	// sys.configurations.
+	ProcessorInfo(ctx context.Context) (*gosmo.ProcessorInfo, error)
+	StartTime(ctx context.Context) (start time.Time, uptime time.Duration, err error)
+	MemoryStats(ctx context.Context) (*gosmo.ServerMemoryStats, error)
+	MemoryClerks(ctx context.Context) ([]gosmo.MemoryClerk, error)
+	PerformanceCounters(ctx context.Context, counters, instances []string) ([]gosmo.PerformanceCounter, error)
+	Configurations(ctx context.Context) ([]*gosmo.ConfigurationOption, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -383,6 +393,30 @@ func (serverCatalog) TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosm
 
 func (serverCatalog) LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error) {
 	return d.LogSpace(ctx)
+}
+
+func (c serverCatalog) ProcessorInfo(ctx context.Context) (*gosmo.ProcessorInfo, error) {
+	return c.s.ProcessorInfo(ctx)
+}
+
+func (c serverCatalog) StartTime(ctx context.Context) (time.Time, time.Duration, error) {
+	return c.s.StartTime(ctx)
+}
+
+func (c serverCatalog) MemoryStats(ctx context.Context) (*gosmo.ServerMemoryStats, error) {
+	return c.s.MemoryStats(ctx)
+}
+
+func (c serverCatalog) MemoryClerks(ctx context.Context) ([]gosmo.MemoryClerk, error) {
+	return c.s.MemoryClerks(ctx)
+}
+
+func (c serverCatalog) PerformanceCounters(ctx context.Context, counters, instances []string) ([]gosmo.PerformanceCounter, error) {
+	return c.s.PerformanceCounters(ctx, counters, instances)
+}
+
+func (c serverCatalog) Configurations(ctx context.Context) ([]*gosmo.ConfigurationOption, error) {
+	return c.s.Configurations(ctx)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

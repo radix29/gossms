@@ -22,7 +22,7 @@ import (
 // context's.
 func commandTree() *spec.Tree {
 	return newCommandTree(cmd.Deps{LoadConfig: config.LoadReadOnly, Connect: db.Connect, OpenSession: cmd.OpenQuerySession,
-		Catalog: cmd.ServerCatalog})
+		Catalog: cmd.ServerCatalog, Writer: cmd.ServerWriter})
 }
 
 // newCommandTree is commandTree over d, so tests can stand in for the config
@@ -60,10 +60,10 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 		{
 			Path:        []string{"help"},
 			Summary:     "Show help for gossms, a command group or a command",
-			Description: "With no argument, lists the command groups. With a group, lists its commands; with a group and a command, shows that command's usage, options and examples, as `<command> --help` does.",
+			Description: "With no argument, lists the command groups. With a group (or a sub-group such as server config), lists its commands; with a group and a command, shows that command's usage, options and examples, as `<command> --help` does.",
 			Args: []spec.Arg{
 				{Name: "group", Help: "A command group, or a depth-1 command such as version"},
-				{Name: "command", Help: "A command in the group"},
+				{Name: "command", Help: "A command in the group; under a sub-group such as server config, the sub-group then its command", Repeat: true},
 			},
 			Class: spec.ClassRead,
 			Examples: []string{
@@ -78,7 +78,7 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 		},
 		{
 			Path:    []string{"agent", "guide"},
-			Summary: "Print the usage manual for AI agents: rules, call pattern, output contract, exit codes, commands, recipes",
+			Summary: "Print the manual for AI agents: rules, output contract, exit codes, commands, recipes",
 			Description: "What an agent reads before its first call: what gossms is, the rules it must follow, how to " +
 				"call it, the output contract, the exit codes, the command index and recipes. The command index and the " +
 				"group topics are generated from the command tree; the rules and recipes are hand-written. It is " +
@@ -105,7 +105,7 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 		},
 		{
 			Path:    []string{"agent", "schema"},
-			Summary: "Print the JSON catalog of every command, argument, option, exit code and output format",
+			Summary: "Print every command, argument, option, exit code and output format as JSON",
 			Description: "The machine-readable catalog an agent builds tool definitions from and checks a call " +
 				"against: each command's path, summary, operation class, arguments, options (type, enum, typed " +
 				"default, environment variable) and examples, plus the global options, the exit codes and the " +
@@ -114,7 +114,7 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 				"group and a command, narrows it to the commands under them.",
 			Args: []spec.Arg{
 				{Name: "group", Help: "A command group, or a depth-1 command such as version"},
-				{Name: "command", Help: "A command in the group"},
+				{Name: "command", Help: "A command in the group; under a sub-group such as server config, the sub-group then its command", Repeat: true},
 			},
 			Class: spec.ClassRead,
 			Examples: []string{
