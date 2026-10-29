@@ -85,6 +85,19 @@ type Catalog interface {
 	// object definition: the module's T-SQL text, "" when it has none to
 	// read (encrypted, CLR).
 	ModuleDefinition(ctx context.Context, d *gosmo.Database, kind ModuleKind, schema, name string) (string, error)
+
+	// object dependencies: the edges out of and into schema.name.
+	Dependencies(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error)
+	Dependents(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error)
+
+	// object indexes / stats, on a table or an indexed view.
+	TableIndexUsage(ctx context.Context, t *gosmo.Table) ([]*gosmo.IndexUsage, error)
+	ViewIndexUsage(ctx context.Context, v *gosmo.View) ([]*gosmo.IndexUsage, error)
+	TableFragmentation(ctx context.Context, t *gosmo.Table, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error)
+	ViewFragmentation(ctx context.Context, v *gosmo.View, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error)
+	TableStatistics(ctx context.Context, t *gosmo.Table) ([]*gosmo.Statistic, error)
+	ViewStatistics(ctx context.Context, v *gosmo.View) ([]*gosmo.Statistic, error)
+	StatisticColumns(ctx context.Context, st *gosmo.Statistic) ([]string, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -282,6 +295,42 @@ func (serverCatalog) ModuleDefinition(ctx context.Context, d *gosmo.Database, ki
 	return "", fmt.Errorf("module kind %d has no definition read", kind)
 }
 
+func (serverCatalog) Dependencies(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error) {
+	return d.Dependencies(ctx, schema, name)
+}
+
+func (serverCatalog) Dependents(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error) {
+	return d.Dependents(ctx, schema, name)
+}
+
+func (serverCatalog) TableIndexUsage(ctx context.Context, t *gosmo.Table) ([]*gosmo.IndexUsage, error) {
+	return t.IndexUsage(ctx)
+}
+
+func (serverCatalog) ViewIndexUsage(ctx context.Context, v *gosmo.View) ([]*gosmo.IndexUsage, error) {
+	return v.IndexUsage(ctx)
+}
+
+func (serverCatalog) TableFragmentation(ctx context.Context, t *gosmo.Table, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error) {
+	return t.FragmentationStats(ctx, mode)
+}
+
+func (serverCatalog) ViewFragmentation(ctx context.Context, v *gosmo.View, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error) {
+	return v.FragmentationStats(ctx, mode)
+}
+
+func (serverCatalog) TableStatistics(ctx context.Context, t *gosmo.Table) ([]*gosmo.Statistic, error) {
+	return t.Statistics(ctx)
+}
+
+func (serverCatalog) ViewStatistics(ctx context.Context, v *gosmo.View) ([]*gosmo.Statistic, error) {
+	return v.Statistics(ctx)
+}
+
+func (serverCatalog) StatisticColumns(ctx context.Context, st *gosmo.Statistic) ([]string, error) {
+	return st.Columns(ctx)
+}
+
 // dial resolves and opens the connection inv asks for through profile (empty
 // ad hoc) in cfg. res's header names the target from the start, so a failure
 // says where it failed.
@@ -358,7 +407,13 @@ func readError(err error) *output.Error {
 			"The server does not say which: the object is missing, or the login may not see it.")
 	}
 	if se, ok := gosmo.AsSQLError(err); ok {
-		return sqlError(se)
+		e := sqlError(se)
+		if e.Code == output.CodePermissionDenied {
+			// sqlError's hint is query run's, about a script.
+			e.Hint = "The login lacks a permission this read needs: the message names the object. " +
+				"Use a login that has it, or have it granted."
+		}
+		return e
 	}
 	if _, ok := errors.AsType[net.Error](err); ok {
 		return output.NewError(output.CodeConnectionFailed, msg, "")

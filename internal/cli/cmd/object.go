@@ -159,6 +159,9 @@ func ObjectCommands(d Deps) []*spec.Command {
 				"gossms object definition -p dev dbo.uspGetBillOfMaterials -o json",
 			},
 		},
+		d.objectDependenciesCommand(nameArg),
+		d.objectIndexesCommand(),
+		d.objectStatsCommand(),
 	}
 }
 
