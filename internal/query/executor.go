@@ -101,6 +101,11 @@ type RowCount struct {
 	// statement that returned no rows: INSERT, UPDATE, DELETE, MERGE, SELECT INTO.
 	// SQL Server sends no count at all under SET NOCOUNT ON.
 	AfterSet bool
+
+	// AfterPlan reports that the set before the count was a captured plan
+	// (Result.PlanXML), not rows: under SET STATISTICS XML ON each executed
+	// statement's plan arrives as a one-row set with a count of its own.
+	AfterPlan bool
 }
 
 // Result is everything one Execute call produced, across all GO batches.
@@ -492,7 +497,7 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 	// afterSet mirrors the driver's own colsReceived: a set was announced since the
 	// last DONE token, each of which the driver follows with MsgNextResultSet. A
 	// count arriving meanwhile closes the statement that returned the set.
-	afterSet := false
+	afterSet, afterPlan := false, false
 	for active := true; active; {
 		switch m := retmsg.Message(ctx).(type) {
 		case sqlexp.MsgNotice:
@@ -504,10 +509,13 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 			if m.Count == 1 {
 				text = "(1 row affected)"
 			}
-			res.Messages = append(res.Messages, Message{Text: text, RowsAffected: &RowCount{N: m.Count, AfterSet: afterSet}})
+			res.Messages = append(res.Messages, Message{Text: text, RowsAffected: &RowCount{N: m.Count, AfterSet: afterSet, AfterPlan: afterPlan}})
 		case sqlexp.MsgNext:
 			afterSet = true
-			if scanNext(rows, res, sink) {
+			plans := len(res.PlanXML)
+			abandoned := scanNext(rows, res, sink)
+			afterPlan = len(res.PlanXML) > plans
+			if abandoned {
 				if res.cut {
 					cancelBatch(rows, res, sink)
 					return
@@ -519,7 +527,7 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 				}
 			}
 		case sqlexp.MsgNextResultSet:
-			afterSet = false
+			afterSet, afterPlan = false, false
 			active = rows.NextResultSet()
 		case sqlexp.MsgLastInsertID:
 			// sqlexp's sixth type, never enqueued by go-mssqldb: SQL Server reports an

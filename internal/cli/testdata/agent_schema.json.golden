@@ -212,7 +212,7 @@
       "default": false,
       "negation": "--no-force",
       "env": null,
-      "help": "Replace an existing --out-file"
+      "help": "Replace an existing --out-file or --plan-file"
     }
   ],
   "groups": [
@@ -251,6 +251,10 @@
     {
       "name": "query",
       "summary": "Run, parse and classify T-SQL"
+    },
+    {
+      "name": "plan",
+      "summary": "Show execution plans"
     }
   ],
   "commands": [
@@ -327,7 +331,8 @@
             "server",
             "db",
             "object",
-            "query"
+            "query",
+            "plan"
           ],
           "default": null,
           "negation": null,
@@ -7396,6 +7401,587 @@
       "examples": [
         "gossms query parse -p dev --file fix.sql",
         "gossms query parse -p dev --file - -o json"
+      ]
+    },
+    {
+      "path": "plan estimated",
+      "summary": "Show the estimated execution plan of T-SQL without running it (SET SHOWPLAN_XML ON)",
+      "description": "Compiles every batch under SET SHOWPLAN_XML ON on one session: the server returns each statement's plan and runs nothing, so no --allow is needed whatever the script does. Because nothing runs, a statement that uses a #temp table the script creates earlier fails to compile (Msg 208), as in SSMS. The login needs SHOWPLAN in the database (exit 9 without it) and rights on the objects. SET PARSEONLY, NOEXEC and SHOWPLAN_* in the script are refused (exit 7). --plan-format summary (default) answers sets statements (cost, rows, DOP, memory grant), operators (the --top costliest by own estimated cost across statements, cost_pct its share of its statement), missing_indexes (with a CREATE INDEX to review) and warnings; tree is every operator in preorder with its depth; xml is the plan document itself. --plan-file writes that document, as the query editor's Save Execution Plan As does (UTF-8), for SSMS or the plan viewer to open; an existing file needs --force. There is no --param: under SHOWPLAN_XML the server plans an sp_executesql call as the EXEC alone, not the statement inside (found live on 17); write the values into the script.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--sql",
+          "short": "-Q",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Inline T-SQL (fine for a short query)"
+        },
+        {
+          "name": "--file",
+          "short": "-i",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL file; - reads stdin. GO separates batches. UTF-8, or UTF-16 with a byte-order mark"
+        },
+        {
+          "name": "--sql-base64",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL as Base64 of its UTF-8 text, safe from any shell quoting"
+        },
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--plan-format",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "summary",
+            "tree",
+            "xml"
+          ],
+          "default": "summary",
+          "negation": null,
+          "env": null,
+          "help": "summary: statements, costliest operators, missing indexes, warnings; tree: every operator; xml: the plan document"
+        },
+        {
+          "name": "--top",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 10,
+          "negation": null,
+          "env": null,
+          "help": "Operators the summary keeps, costliest first; 0 for every one"
+        },
+        {
+          "name": "--plan-file",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Also write the plan document to this file (.sqlplan opens in SSMS); --force replaces one"
+        },
+        {
+          "name": "--timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 60,
+          "negation": null,
+          "env": null,
+          "help": "Seconds the script may run (the connect has --connect-timeout); 0 is no limit"
+        }
+      ],
+      "examples": [
+        "gossms plan estimated -p dev --file report.sql",
+        "gossms plan estimated -p dev --file - -o json",
+        "gossms plan estimated -p dev --file report.sql --plan-format tree",
+        "gossms plan estimated -p dev --file report.sql --plan-format xml --plan-file report.sqlplan"
+      ]
+    },
+    {
+      "path": "plan actual",
+      "summary": "Run T-SQL and show its actual execution plan (SET STATISTICS XML ON)",
+      "description": "Runs the script as query run does — the same --allow check and ceiling, --transaction, --max-rows-affected, --param, stop on the first failing batch unless --continue-on-error, --timeout, --dry-run — under SET STATISTICS XML ON, and answers each executed statement's plan with its actual rows, executions and times. The script really runs: a write needs --allow write, and --transaction rollback measures it without keeping the change. Its rows are counted, not returned: set result_sets has each set's columns and row count (query run returns the rows). The login needs SHOWPLAN in the database (exit 9 without it). SET STATISTICS XML in the script is refused (exit 7), as are SET PARSEONLY, NOEXEC and SHOWPLAN_* ON. --plan-format, --top and --plan-file as for plan estimated; the summary's actual columns (actual_rows, elapsed_ms, cpu_ms, misestimate) are filled. A failed or timed-out run still answers the plans the server sent before it stopped; a batch cut by --timeout loses its own, which the server had not yet sent.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--sql",
+          "short": "-Q",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Inline T-SQL (fine for a short query)"
+        },
+        {
+          "name": "--file",
+          "short": "-i",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL file; - reads stdin. GO separates batches. UTF-8, or UTF-16 with a byte-order mark"
+        },
+        {
+          "name": "--sql-base64",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL as Base64 of its UTF-8 text, safe from any shell quoting"
+        },
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--allow",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "read",
+            "write",
+            "ddl",
+            "admin"
+          ],
+          "default": "read",
+          "negation": null,
+          "env": null,
+          "help": "Highest operation class the script may reach; the profile's ceiling (max_allow) caps it"
+        },
+        {
+          "name": "--dry-run",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-dry-run",
+          "env": null,
+          "help": "Classify and check the script as a run would, without connecting or running anything"
+        },
+        {
+          "name": "--transaction",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "auto",
+            "commit",
+            "rollback"
+          ],
+          "default": "auto",
+          "negation": null,
+          "env": null,
+          "help": "auto: each statement commits itself; rollback: run in one transaction and roll it back; commit: commit it only if every batch succeeded"
+        },
+        {
+          "name": "--max-rows-affected",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Run in one transaction and commit only if the rows changed stay at or under this; otherwise roll back (exit 7)"
+        },
+        {
+          "name": "--continue-on-error",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-continue-on-error",
+          "env": null,
+          "help": "Run every batch even after one fails (exit 10 when some succeeded); refused with a transaction"
+        },
+        {
+          "name": "--timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 60,
+          "negation": null,
+          "env": null,
+          "help": "Seconds the script may run (the connect has --connect-timeout); 0 is no limit"
+        },
+        {
+          "name": "--param",
+          "short": null,
+          "type": "repeat",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "name=value:type, e.g. id=42:int: run the script through sp_executesql with @name declared as type; one batch only"
+        },
+        {
+          "name": "--plan-format",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "summary",
+            "tree",
+            "xml"
+          ],
+          "default": "summary",
+          "negation": null,
+          "env": null,
+          "help": "summary: statements, costliest operators, missing indexes, warnings; tree: every operator; xml: the plan document"
+        },
+        {
+          "name": "--top",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 10,
+          "negation": null,
+          "env": null,
+          "help": "Operators the summary keeps, costliest first; 0 for every one"
+        },
+        {
+          "name": "--plan-file",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Also write the plan document to this file (.sqlplan opens in SSMS); --force replaces one"
+        }
+      ],
+      "examples": [
+        "gossms plan actual -p dev --file report.sql",
+        "gossms plan actual -p dev --file fix.sql --allow write --transaction rollback",
+        "gossms plan actual -p dev --file by-id.sql --param id=42:int --plan-format tree",
+        "gossms plan actual -p dev --file report.sql --plan-format xml --plan-file report.sqlplan"
       ]
     }
   ]

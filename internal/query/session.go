@@ -108,6 +108,14 @@ func (s *Session) ExecuteToSink(ctx context.Context, script string, sink RowSink
 	return s.execute(ctx, script, planCaptureNone, sink, opts...)
 }
 
+// ExecuteToSinkWithPlan is ExecuteToSink under mode's plan capture: rows stream
+// to sink and the plans go to Result.PlanXML, never through sink. Under
+// gosmo.PlanEstimated nothing runs, so sink sees no set at all. Unlike
+// ExecuteWithPlan it retains no rows, so a large result costs no memory.
+func (s *Session) ExecuteToSinkWithPlan(ctx context.Context, script string, mode gosmo.PlanMode, sink RowSink, opts ...Option) *Result {
+	return s.execute(ctx, script, mode, sink, opts...)
+}
+
 func (s *Session) execute(ctx context.Context, script string, capture planCapture, sink RowSink, opts ...Option) *Result {
 	start := time.Now()
 	res := newResult(opts)

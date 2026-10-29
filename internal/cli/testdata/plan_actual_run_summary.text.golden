@@ -1,0 +1,48 @@
+STATUS: OK
+COMMAND: plan actual
+SERVER: devsrv,1500
+DATABASE: app
+DURATION_MS: 0
+ROWS_AFFECTED: 3
+RESULT_SETS: 5
+
+PLAN_TYPE: actual
+DETECTED_CLASS: read
+STATEMENT_COUNT: 1
+
+=== RESULT 1: statements (1 row, truncated: no) ===
+n | type   | cost      | est_rows | actual_rows | elapsed_ms | cpu_ms | dop | grant_kb | warnings | text
+--+--------+-----------+----------+-------------+------------+--------+-----+----------+----------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1 | SELECT | 0.0188341 | 9        | 9           | 0          | 0      | 1   | 0        | 0        | SELECT TOP (1000) [PatientID] ,[PatientName] ,[AppointmentID] ,[ScheduledAt] ,[DoctorName] ,[SpecializationName] ,[Diagnosis] ,[Treatment] FROM [HealthClinic].[dbo].[vw_PatientHistory]
+
+=== RESULT 2: operators (10 rows, truncated: no) ===
+stmt | node | physical             | logical              | object                                   | cost_pct | est_rows | actual_rows | elapsed_ms | parallel | mode | warnings | misestimate
+-----+------+----------------------+----------------------+------------------------------------------+----------+----------+-------------+------------+----------+------+----------+------------
+1    | 8    | Clustered Index Seek | Clustered Index Seek | dbo.Doctors [PK_Doctors]                 | 20.8     | 1        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 9    | Clustered Index Seek | Clustered Index Seek | dbo.Patients [PK_Patients]               | 20.8     | 1        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 10   | Clustered Index Seek | Clustered Index Seek | dbo.Specializations [PK_Specializations] | 20.8     | 1        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 11   | Clustered Index Scan | Clustered Index Scan | dbo.MedicalRecords [PK_MedicalRecords]   | 19.2     | 5        | 25          | 0          | 0        | Row  | NULL     | 0
+1    | 7    | Clustered Index Scan | Clustered Index Scan | dbo.Appointments [PK_Appointments]       | 17.5     | 5        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 1    | Nested Loops         | Left Outer Join      | NULL                                     | 0.6      | 9        | 9           | 0          | 0        | Row  | NULL     | 0
+1    | 4    | Nested Loops         | Inner Join           | NULL                                     | 0.1      | 5        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 2    | Nested Loops         | Inner Join           | NULL                                     | 0.1      | 5        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 6    | Nested Loops         | Inner Join           | NULL                                     | 0.1      | 5        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 0    | Top                  | Top                  | NULL                                     | 0.0      | 9        | 9           | 0          | 0        | Row  | NULL     | 0
+
+=== RESULT 3: missing_indexes (0 rows, truncated: no) ===
+stmt | impact | database | table | equality | inequality | include | create_statement
+-----+--------+----------+-------+----------+------------+---------+-----------------
+
+=== RESULT 4: warnings (0 rows, truncated: no) ===
+stmt | node | operator | warning
+-----+------+----------+--------
+
+=== RESULT 5: result_sets (2 rows, truncated: no) ===
+n | rows | columns
+--+------+---------
+1 | 2    | id, name
+2 | 0    | total
+
+=== MESSAGES ===
+(2 rows affected)
+(3 rows affected)

@@ -1,0 +1,30 @@
+STATUS: OK
+COMMAND: plan estimated
+SERVER: devsrv,1500
+DATABASE: app
+DURATION_MS: 0
+RESULT_SETS: 4
+
+PLAN_TYPE: estimated
+DETECTED_CLASS: read
+STATEMENT_COUNT: 1
+
+=== RESULT 1: statements (1 row, truncated: no) ===
+n | type   | cost   | est_rows | actual_rows | elapsed_ms | cpu_ms | dop | grant_kb | warnings | text
+--+--------+--------+----------+-------------+------------+--------+-----+----------+----------+-----------------------------------------------------------------------------------------------------------
+1 | SELECT | 0.0065 | 5        | NULL        | NULL       | NULL   | 1   | 512      | 1        | SELECT TOP (5) [DoctorID], [FirstName], [LastName] FROM [HealthClinic].[dbo].[Doctors] ORDER BY [LastName]
+
+=== RESULT 2: operators (2 rows, truncated: no) ===
+stmt | node | physical             | logical              | object                   | cost_pct | est_rows | actual_rows | elapsed_ms | parallel | mode | warnings                | misestimate
+-----+------+----------------------+----------------------+--------------------------+----------+----------+-------------+------------+----------+------+-------------------------+------------
+1    | 1    | Clustered Index Scan | Clustered Index Scan | dbo.Doctors [PK_Doctors] | 98.5     | 409      | NULL        | NULL       | 0        | Row  | ColumnsWithNoStatistics | NULL
+1    | 0    | Top                  | Top                  | NULL                     | 1.5      | 5        | NULL        | NULL       | 0        | Row  | NULL                    | NULL
+
+=== RESULT 3: missing_indexes (0 rows, truncated: no) ===
+stmt | impact | database | table | equality | inequality | include | create_statement
+-----+--------+----------+-------+----------+------------+---------+-----------------
+
+=== RESULT 4: warnings (1 row, truncated: no) ===
+stmt | node | operator             | warning
+-----+------+----------------------+------------------------
+1    | 1    | Clustered Index Scan | ColumnsWithNoStatistics

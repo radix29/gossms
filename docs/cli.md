@@ -7,16 +7,16 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 5) the commands are `version`, `help`, `agent
+them. Today (through phase 5, and phase 6's `plan estimated/actual`) the commands are `version`, `help`, `agent
 guide/schema/context`, `profile list/show/test`, `db
 list/info/files/space/log-usage/table-sizes/set`, `db scoped-config
 list/get/set`, `server info/memory/volumes/log`, `server config
 list/get/set/reset`, `server traceflag list/on/off`, `object
-list/search/describe/definition/dependencies/indexes/stats` and `query
-classify/run/parse`; the formats `text`, `json`, `jsonl`, `csv`, `tsv` and
-`markdown`. `profile test`, `agent context`, every `db`, `server` and `object` command,
-`query run` and `query parse` connect to a server, and so does `agent guide`
-given a profile.
+list/search/describe/definition/dependencies/indexes/stats`, `query
+classify/run/parse` and `plan estimated/actual`; the formats `text`, `json`, `jsonl`,
+`csv`, `tsv` and `markdown`. `profile test`, `agent context`, every `db`,
+`server` and `object` command, `query run`, `query parse` and `plan
+estimated/actual` connect to a server, and so does `agent guide` given a profile.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
@@ -120,7 +120,7 @@ close (edit distance ≤ 2), the hint is a did-you-mean: `Did you mean
 | `--no-headers` | | Leave out column headers (text, csv, tsv) |
 | `--no-messages` | | Leave out PRINT and informational messages |
 | `--out-file <path>` | | Write every row to a file; stdout gets the summary |
-| `--force` | | Replace an existing `--out-file` |
+| `--force` | | Replace an existing `--out-file`, or a `plan` command's `--plan-file` |
 
 The output options are global: every command's answer goes through the same
 limits, so `profile list --max-rows 5` is cut like a query's result
@@ -568,6 +568,8 @@ second Ctrl+C kills the process.
 | `object stats <object> [-p <profile>] [connection options]` | A table or view. Record: `schema`, `name`, `type`. Set `statistics`, by name: `name`, `stats_id`, `columns`, `origin` (`index`, `auto`, `user`), `filter`, `last_updated`, `rows`, `rows_sampled`, `sample_pct`, `steps`, `modification_counter`, `no_recompute`, `incremental`. A statistic never computed, or one the login may not read (`sys.dm_db_stats_properties` needs SELECT on the columns or ownership), has `last_updated` through `modification_counter` NULL, counted in a warning |
 | `query run` (T-SQL input) `[-p <profile>] [connection options] [run options]` | The script's result sets, then messages; `ROWS_AFFECTED` in the header. `--param` sends it through `sp_executesql` (§ Parameters). A wrapped run (§ Transactions) adds a record: `maxRowsAffected` (with `--max-rows-affected`), `transaction`. A refused script is BLOCKED with the record `detectedClass`, `allowedClass`, `statements`. `--dry-run` answers as `query classify --allow` (§ Running T-SQL) |
 | `query parse` (T-SQL input) `[-p <profile>] [connection options] [--timeout <sec>]` | Record: `valid`, `batchCount` (batches sent, each `GO n` repetition counted), `detectedClass`; each syntax error is a `SQL_ERROR` with its script line (§ Running T-SQL) |
+| `plan estimated` (T-SQL input) `[-p <profile>] [connection options] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>] [--timeout <sec>]` | Record: `planType` (`estimated`), `detectedClass`, `statementCount`, `planFile` when written; `--plan-format xml` adds the verbatim `planXml`. Named sets per format (§ Execution plans) |
+| `plan actual` (T-SQL input) `[-p <profile>] [connection options] [run options but --statistics] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>]` | Runs the script as `query run` does, under `SET STATISTICS XML ON`. Record: `planType` (`actual`), `detectedClass`, `statementCount`, `planXml`/`planFile` as for `plan estimated`, then a wrapped run's `maxRowsAffected`, `transaction`; `ROWS_AFFECTED` in the header. The format's sets, then `result_sets`: one row per set the script returned, its rows counted, not returned (§ Execution plans). Refused, blocked and `--dry-run` answers as `query run`'s |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
 No command ever prints a password or secret.
@@ -832,6 +834,87 @@ commit on their own). The record's `transaction` says how it ended:
   connecting) a script with `SET NOCOUNT ON`, dynamic SQL, a procedure call
   not on the read allow-list or an `OUTPUT` clause. Triggers' counts are
   included: it over-counts rather than under-counts.
+
+## Execution plans
+
+`plan estimated` sends every batch under `SET SHOWPLAN_XML ON` on one
+session: the server compiles each statement, returns its plan and runs
+nothing. So it needs no `--allow` and the profile's ceiling does not apply,
+whatever the script does; `detectedClass` says what running it would need.
+
+- **Refusals.** `PARSEONLY`, `NOEXEC` or `SHOWPLAN_*` anywhere in the
+  script, `OFF` included, is BLOCKED, exit 7, before connecting (as `query
+  parse`). Without SHOWPLAN in the database the server answers Msg 262:
+  `PERMISSION_DENIED`, exit 9, with a hint naming the grant. A statement that
+  uses a `#temp` table (or any object) the script creates earlier fails with
+  Msg 208, as in SSMS — nothing ran to create it; the error's hint says so.
+  Every batch is sent, so every compile error is reported in one call; the
+  plans of the batches that compiled are still returned.
+- **No `--param`.** Under SHOWPLAN_XML the server plans an `sp_executesql`
+  call as the `EXEC` alone (one `EXECUTE PROC` statement, no operators), not
+  the statement inside, so a parameterized plan would be empty.
+- **`--plan-format summary`** (default), four named sets:
+  `statements` — `n`, `type`, `cost` (estimated subtree cost), `est_rows`,
+  `actual_rows`, `elapsed_ms`, `cpu_ms`, `dop`, `grant_kb`, `warnings` (the
+  statement's and its operators'), `text` (one line, cut to 200 characters);
+  `operators` — the `--top` (default 10, `0` for all) operators with the
+  highest own estimated cost across all statements (the plan viewer's
+  ranking; a trivial statement's lone operator, 100% of its statement, does
+  not outrank a costly scan elsewhere): `stmt`, `node`, `physical`,
+  `logical`, `object`, `cost_pct` (share of its statement, as the plan viewer
+  shows it), `est_rows` (per execution), `actual_rows`, `elapsed_ms`, `parallel`, `mode`,
+  `warnings`, `misestimate` (actual rows over all executions more than 10×
+  the estimate for as many, either way; NULL when the operator did not run);
+  `missing_indexes` — `stmt`, `impact`, `database`, `table`, `equality`,
+  `inequality`, `include`, `create_statement` (the plan viewer's one-line
+  `CREATE NONCLUSTERED INDEX`, its name a placeholder); `warnings` — `stmt`,
+  `node`, `operator` (both NULL for a statement's own), `warning`. The actual
+  columns are NULL on an estimated plan.
+- **`tree`**: one set, `tree`, every operator in preorder statement by
+  statement, with `depth` and `parent` (node id) before the operator columns
+  — a column, since text keeps each row on one line.
+- **`xml`**: the plan document as the verbatim field `planXml` — one
+  `ShowPlanXML` document per batch, joined by a line break, as the plan viewer
+  holds it.
+- **`--plan-file <path>`** writes that document, UTF-8, exactly as the query
+  editor's File > Save Execution Plan As does; `.sqlplan` opens in SSMS and
+  in gossms's plan viewer. An existing file is `USAGE_ERROR` before
+  connecting unless `--force`. It is written only when the command
+  succeeds; otherwise a warning says it was not.
+- A row count the server sends for the showplan set is dropped: nothing ran.
+
+`plan actual` runs the script — it is `query run` with the plan captured
+(`SET STATISTICS XML ON` around the script, on the same session). Everything
+`query run` checks applies unchanged: the class against `--allow` and the
+ceiling, `--transaction`, `--max-rows-affected`, `--param`,
+`--continue-on-error`, `--timeout`, `--dry-run` (§ Running T-SQL, §
+Transactions); only `--statistics` is `query run`'s alone. A write needs
+`--allow write`; `--transaction rollback` gives a write's real plan without
+keeping the change.
+
+- **Refusals.** As `query run`'s, plus `SET STATISTICS XML` anywhere in the
+  script, `ON` or `OFF` (in a list too: `SET STATISTICS IO, XML ON`):
+  BLOCKED, exit 7, before connecting — the script's `OFF` would lose the
+  plans of what follows. Without SHOWPLAN in the database the run fails with
+  Msg 262: `PERMISSION_DENIED`, exit 9, with a hint naming the grant (found
+  live on 17: the statement does not run).
+- **Rows are counted, not returned.** Set `result_sets`, after the format's
+  sets: `n`, `rows`, `columns` (the names, comma-separated), one row per set
+  the script returned, empty ones included. `query run` is for the rows.
+  `ROWS_AFFECTED` and the messages are `query run`'s, less the count the
+  server sends for each plan set.
+- **Plans.** One per statement that ran a query plan, in the order they ran:
+  a trivial `SELECT 1` or a `PRINT` has none (no plan at all: a warning,
+  `statementCount` 0). The formats are `plan estimated`'s; on an actual plan
+  the actual columns are filled — `statements` `actual_rows`, `elapsed_ms`,
+  `cpu_ms`; `operators` and `tree` `actual_rows` (over all executions),
+  `elapsed_ms` (the operator's, which in row mode includes its children's)
+  and `misestimate`. An operator the server reports no runtime for (a
+  Compute Scalar folded into its parent) has them NULL.
+- **A failed run** answers the plans the server sent before it stopped, with
+  the error; a batch cut by `--timeout` loses its own plans (the server had
+  not yet sent them), earlier batches' stay. `--plan-file` is written only
+  when the command succeeds.
 
 ## Safety
 

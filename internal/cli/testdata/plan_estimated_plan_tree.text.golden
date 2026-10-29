@@ -1,0 +1,16 @@
+STATUS: OK
+COMMAND: plan estimated
+SERVER: devsrv,1500
+DATABASE: app
+DURATION_MS: 0
+RESULT_SETS: 1
+
+PLAN_TYPE: estimated
+DETECTED_CLASS: read
+STATEMENT_COUNT: 1
+
+=== RESULT 1: tree (2 rows, truncated: no) ===
+stmt | node | depth | parent | physical             | logical              | object                   | cost_pct | est_rows | actual_rows | elapsed_ms | parallel | mode | warnings                | misestimate
+-----+------+-------+--------+----------------------+----------------------+--------------------------+----------+----------+-------------+------------+----------+------+-------------------------+------------
+1    | 0    | 0     | NULL   | Top                  | Top                  | NULL                     | 1.5      | 5        | NULL        | NULL       | 0        | Row  | NULL                    | NULL
+1    | 1    | 1     | 0      | Clustered Index Scan | Clustered Index Scan | dbo.Doctors [PK_Doctors] | 98.5     | 409      | NULL        | NULL       | 0        | Row  | ColumnsWithNoStatistics | NULL

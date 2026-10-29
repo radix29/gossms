@@ -17,8 +17,12 @@ import (
 // fakeSession stands in for query.Session: Execute (the command's own setup
 // batches) succeeds, and ExecuteToSink (the script) answers run.
 type fakeSession struct {
-	t        *testing.T
-	run      func(ctx context.Context, script string, sink query.RowSink) *query.Result
+	t   *testing.T
+	run func(ctx context.Context, script string, sink query.RowSink) *query.Result
+	// estimated answers ExecuteEstimatedPlan; nil fails the test.
+	estimated func(ctx context.Context, script string) *query.Result
+	// withPlan answers ExecuteToSinkWithPlan; nil fails the test.
+	withPlan func(ctx context.Context, script string, mode gosmo.PlanMode, sink query.RowSink) *query.Result
 	executed []string // every script, setup batches included, in order
 	ended    []bool   // EndTransactions' commit arguments
 	closed   bool
@@ -35,6 +39,24 @@ func (f *fakeSession) ExecuteToSink(ctx context.Context, script string, sink que
 		return &query.Result{Batches: 1, State: &query.SessionState{TranCount: 0}}
 	}
 	return f.run(ctx, script, sink)
+}
+
+func (f *fakeSession) ExecuteEstimatedPlan(ctx context.Context, script string, _ ...query.Option) *query.Result {
+	f.executed = append(f.executed, script)
+	if f.estimated == nil {
+		f.t.Fatalf("unexpected ExecuteEstimatedPlan(%q)", script)
+		return nil
+	}
+	return f.estimated(ctx, script)
+}
+
+func (f *fakeSession) ExecuteToSinkWithPlan(ctx context.Context, script string, mode gosmo.PlanMode, sink query.RowSink, _ ...query.Option) *query.Result {
+	f.executed = append(f.executed, script)
+	if f.withPlan == nil {
+		f.t.Fatalf("unexpected ExecuteToSinkWithPlan(%q)", script)
+		return nil
+	}
+	return f.withPlan(ctx, script, mode, sink)
 }
 
 func (f *fakeSession) EndTransactions(_ context.Context, commit bool) error {

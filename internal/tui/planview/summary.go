@@ -1,9 +1,7 @@
 package planview
 
 import (
-	"cmp"
 	"fmt"
-	"slices"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
@@ -13,13 +11,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// summarySort selects the operator summary table's descending sort column.
-type summarySort int
+// summarySort selects the operator summary table's descending sort column:
+// showplan's ranking, shared with the CLI's plan digest.
+type summarySort = showplan.RankBy
 
 const (
-	sortByCost summarySort = iota
-	sortByRows
-	sortByTime
+	sortByCost = showplan.RankByCost
+	sortByRows = showplan.RankByRows
+	sortByTime = showplan.RankByTime
 )
 
 var summaryColumns = []string{"Cost%", "Rows", "Time", "Operator", "Object", "Status"}
@@ -42,17 +41,7 @@ func (v *PlanView) rebuildSummaryRows() {
 		v.summarySt.grid.SetData(summaryColumns, nil)
 		return
 	}
-	nodes := st.Nodes()
-	slices.SortStableFunc(nodes, func(a, b *showplan.Node) int {
-		switch v.summarySt.sort {
-		case sortByRows:
-			return cmp.Compare(nodeRows(b), nodeRows(a))
-		case sortByTime:
-			return cmp.Compare(nodeTime(b), nodeTime(a))
-		default:
-			return cmp.Compare(b.Cost(st.SubTreeCost), a.Cost(st.SubTreeCost))
-		}
-	})
+	nodes := st.Rank(v.summarySt.sort)
 	v.summarySt.rows = nodes
 	rows := make([][]string, len(nodes))
 	for i, n := range nodes {
@@ -73,28 +62,12 @@ func summaryRow(n *showplan.Node, stmtTotal float64) []string {
 	}
 	return []string{
 		fmt.Sprintf("%.1f", n.Cost(stmtTotal)*100),
-		fmt.Sprintf("%d", nodeRows(n)),
-		fmt.Sprintf("%d ms", nodeTime(n)),
+		fmt.Sprintf("%d", n.Rows()),
+		fmt.Sprintf("%d ms", n.ElapsedMS()),
 		n.PhysicalOp,
 		obj,
 		status,
 	}
-}
-
-// nodeRows returns actual rows when available, else the estimate.
-func nodeRows(n *showplan.Node) int64 {
-	if n.Runtime != nil {
-		return n.Runtime.Rows
-	}
-	return int64(n.EstRows)
-}
-
-// nodeTime returns actual elapsed time when available, else 0.
-func nodeTime(n *showplan.Node) int64 {
-	if n.Runtime != nil {
-		return n.Runtime.ElapsedMS
-	}
-	return 0
 }
 
 // drawSummary draws the summary grid into the Tree tab's bottom section (the
