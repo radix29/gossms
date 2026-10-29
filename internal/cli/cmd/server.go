@@ -13,19 +13,19 @@ import (
 	"github.com/radix29/gossms/internal/cli/spec"
 )
 
-// ServerCommands is the server group: its node and its read commands. Its
+// ServerCommands is the server group: its node and its commands. Its
 // summary names only what exists.
 func ServerCommands(d Deps) []*spec.Command {
 	return slices.Concat([]*spec.Command{
 		{
 			Path:    []string{"server"},
-			Summary: "Show the server's facts, its memory, its sp_configure settings, and the free space on the volumes holding its files",
+			Summary: "Show the server's facts and memory, list and change its sp_configure settings and trace flags, and show the free space on the volumes holding its files",
 			Class:   spec.ClassRead,
 		},
 		serverInfoCommand(d),
 		serverMemoryCommand(d),
 		serverVolumesCommand(d),
-	}, serverConfigCommands(d))
+	}, serverConfigCommands(d), serverTraceFlagCommands(d))
 }
 
 // --- server volumes ---------------------------------------------------------
