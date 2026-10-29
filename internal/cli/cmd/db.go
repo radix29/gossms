@@ -39,7 +39,7 @@ func DBCommands(d Deps) []*spec.Command {
 	return []*spec.Command{
 		{
 			Path:    []string{"db"},
-			Summary: "List databases and show one database's properties",
+			Summary: "List databases, show one database's properties and its files",
 			Class:   spec.ClassRead,
 		},
 		{
@@ -78,6 +78,7 @@ func DBCommands(d Deps) []*spec.Command {
 				"gossms db info -p dev tempdb -o json",
 			},
 		},
+		dbFilesCommand(d),
 	}
 }
 

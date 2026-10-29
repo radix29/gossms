@@ -111,13 +111,13 @@ func serverDiskSpaceRows(ctx context.Context, sc *dbconn.ServerConn) [][2]string
 // *and* byte counts, so a host answering with a different available_bytes per file
 // (an Azure Managed Instance does, twice for C:\) yields several rows for one
 // volume. A total of zero, or an available figure larger than the total, is the
-// host reporting a volume it does not own; "65,344 MB free of 192 MB" is worse
-// than saying nothing.
+// host reporting a volume it does not own (gosmo's DiskVolumeInfo.Plausible,
+// shared with the CLI's FileVolumes rows).
 func usableDiskVolumes(vols []gosmo.DiskVolumeInfo) []gosmo.DiskVolumeInfo {
 	seen := make(map[string]bool, len(vols))
 	out := make([]gosmo.DiskVolumeInfo, 0, len(vols))
 	for _, v := range vols {
-		if v.TotalMB <= 0 || v.AvailableMB > v.TotalMB {
+		if !v.Plausible() {
 			continue
 		}
 		// A volume the host names neither way can't be deduped — the sample
