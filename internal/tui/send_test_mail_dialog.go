@@ -10,6 +10,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/scripting"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -320,7 +321,7 @@ func (d *SendTestMailDialog) script() {
 	if !ok {
 		return
 	}
-	text, err := collectScript(d.ctx, func(ctx context.Context) error {
+	text, err := scripting.Collect(d.ctx, func(ctx context.Context) error {
 		_, err := d.sc.Server.Mail().Send(ctx, req)
 		return err
 	})

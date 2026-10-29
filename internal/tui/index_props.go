@@ -2,13 +2,13 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/scripting"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
@@ -216,31 +216,17 @@ type indexedObject interface {
 }
 
 // findIndexed resolves dbName/schema/name to the table or view an index or a
-// statistic is on. Tables and views share one namespace, so a name that is
-// no table is read as a view: one read for a table, two for a view. The
-// pages and dialogs are handed names, not a node, which is why they resolve
-// this way rather than by nodeData.OnView; the tree's loaders, which have the
-// node, use indexedFor.
+// statistic is on (scripting.FindIndexed: a name that is no table is read as a
+// view). The pages and dialogs are handed names, not a node, which is why they
+// resolve this way rather than by nodeData.OnView; the tree's loaders, which
+// have the node, use indexedFor.
 func findIndexed(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (indexedObject, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
+	o, err := scripting.FindIndexed(ctx, sc.Server, dbName, schema, name)
 	if err != nil {
 		return nil, err
 	}
-	t, err := d.TableByName(ctx, schema, name)
-	if err == nil {
-		return t, nil
-	}
-	if !errors.Is(err, gosmo.ErrNotFound) {
-		return nil, err
-	}
-	v, err := d.ViewByName(ctx, schema, name)
-	if errors.Is(err, gosmo.ErrNotFound) {
-		return nil, fmt.Errorf("no table or view %s in %q: %w", gosmo.QualifiedName(schema, name), dbName, err)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return v, nil
+	// Always a *gosmo.Table or *gosmo.View, both of which are indexedObjects.
+	return o.(indexedObject), nil
 }
 
 // indexedOwner is what idx or st is on, as an indexedObject: its view, or its

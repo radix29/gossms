@@ -7,16 +7,16 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 5, and phase 6's `plan estimated/actual`) the commands are `version`, `help`, `agent
+them. Today (through phase 5, and phase 6's `plan estimated/actual`, `script object/db` and `data top/count`) the commands are `version`, `help`, `agent
 guide/schema/context`, `profile list/show/test`, `db
 list/info/files/space/log-usage/table-sizes/set`, `db scoped-config
 list/get/set`, `server info/memory/volumes/log`, `server config
 list/get/set/reset`, `server traceflag list/on/off`, `object
 list/search/describe/definition/dependencies/indexes/stats`, `query
-classify/run/parse` and `plan estimated/actual`; the formats `text`, `json`, `jsonl`,
+classify/run/parse`, `plan estimated/actual`, `script object/db` and `data top/count`; the formats `text`, `json`, `jsonl`,
 `csv`, `tsv` and `markdown`. `profile test`, `agent context`, every `db`,
-`server` and `object` command, `query run`, `query parse` and `plan
-estimated/actual` connect to a server, and so does `agent guide` given a profile.
+`server` and `object` command, `query run`, `query parse`, `plan
+estimated/actual`, `script object/db` and `data top/count` connect to a server, and so does `agent guide` given a profile.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
@@ -120,7 +120,7 @@ close (edit distance ≤ 2), the hint is a did-you-mean: `Did you mean
 | `--no-headers` | | Leave out column headers (text, csv, tsv) |
 | `--no-messages` | | Leave out PRINT and informational messages |
 | `--out-file <path>` | | Write every row to a file; stdout gets the summary |
-| `--force` | | Replace an existing `--out-file`, or a `plan` command's `--plan-file` |
+| `--force` | | Replace an existing `--out-file`, a `plan` command's `--plan-file` or a `script` command's `--script-file` |
 
 The output options are global: every command's answer goes through the same
 limits, so `profile list --max-rows 5` is cut like a query's result
@@ -570,6 +570,10 @@ second Ctrl+C kills the process.
 | `query parse` (T-SQL input) `[-p <profile>] [connection options] [--timeout <sec>]` | Record: `valid`, `batchCount` (batches sent, each `GO n` repetition counted), `detectedClass`; each syntax error is a `SQL_ERROR` with its script line (§ Running T-SQL) |
 | `plan estimated` (T-SQL input) `[-p <profile>] [connection options] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>] [--timeout <sec>]` | Record: `planType` (`estimated`), `detectedClass`, `statementCount`, `planFile` when written; `--plan-format xml` adds the verbatim `planXml`. Named sets per format (§ Execution plans) |
 | `plan actual` (T-SQL input) `[-p <profile>] [connection options] [run options but --statistics] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>]` | Runs the script as `query run` does, under `SET STATISTICS XML ON`. Record: `planType` (`actual`), `detectedClass`, `statementCount`, `planXml`/`planFile` as for `plan estimated`, then a wrapped run's `maxRowsAffected`, `transaction`; `ROWS_AFFECTED` in the header. The format's sets, then `result_sets`: one row per set the script returned, its rows counted, not returned (§ Execution plans). Refused, blocked and `--dry-run` answers as `query run`'s |
+| `script object <object> [-p <profile>] [connection options] [--as <verb>] [--script-file <path>]` | `<object>` as for `object describe`. Record: `object` (`[schema].[name]`), `type`, `verb`, `script` (verbatim), `scriptFile` when written (§ Scripting) |
+| `script db <name> [-p <profile>] [connection options] [--as create\|drop\|drop-and-create] [--script-file <path>]` | Record: `database`, `verb`, `script` (verbatim), `scriptFile` when written (§ Scripting) |
+| `data top <object> [-p <profile>] [connection options] [--rows <n>] [--columns <list>] [--where <expr>] [--order-by <list>] [--timeout <sec>]` | `<object>` a table or view, as for `object describe`. Record: `object` (`[schema].[name]`), `type`, `tsql` (verbatim: the SELECT sent); then its rows (§ Data) |
+| `data count <object> [-p <profile>] [connection options] [--where <expr>] [--approximate] [--timeout <sec>]` | Record: `object`, `type`, `rows` (NULL when the count failed), `method` (`exact`, `approximate`), `tsql` for an exact count (§ Data) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
 No command ever prints a password or secret.
@@ -915,6 +919,77 @@ keeping the change.
   the error; a batch cut by `--timeout` loses its own plans (the server had
   not yet sent them), earlier batches' stay. `--plan-file` is written only
   when the command succeeds.
+
+## Scripting
+
+`script object` and `script db` answer the text Object Explorer's Script As
+generates — the same table (`internal/scripting`) and gosmo's default script
+options (headers, schema-qualified names, `IF NOT EXISTS` guards,
+`ANSI_PADDING`, extended properties) — so the script equals what the TUI's
+Script <Object> as ▸ <verb> ▸ File... writes for the same object. Nothing is
+run; both are class `read`.
+
+- **Kinds** (`script object`): table, view, procedure (T-SQL or CLR),
+  function, DML trigger, sequence, synonym — the objects `object describe`
+  resolves that Object Explorer scripts. A constraint, default or other
+  child of a table is a usage error, exit 2, whose hint names the table to
+  script instead (its CREATE carries it); an object SQL Server ships is exit
+  2. Database- and server-level objects (users, roles, schemas, types, logins
+  …) are not covered.
+- **`--as`** (default `create`): `create`, `alter`, `drop`,
+  `drop-and-create`, `select`, `insert`, `update`, `delete`, `execute`, each
+  where Object Explorer offers it — every kind `create`, `drop`,
+  `drop-and-create`; `alter` a view, procedure, function or trigger;
+  `select`/`insert`/`update`/`delete` a table or view; `execute` a procedure;
+  `select` a function. A verb the kind lacks is exit 2, the message listing
+  the kind's verbs. `script db` takes `create`, `drop`, `drop-and-create`.
+- **Output.** The object's script opens with `USE [database]`; a database's
+  own script runs in master and has none. In text the script prints after the
+  record under `=== SCRIPT (n lines) ===`, line breaks kept and uncut by
+  `--max-col-width`; in JSON it is one string.
+- **Refusals.** A definition the login cannot read — a module's text, or a
+  table's default, check or computed-column expression, all NULL without VIEW
+  DEFINITION (SELECT or EXECUTE alone does not give it) — is
+  `PERMISSION_DENIED`, exit 9: gosmo refuses rather than script `DEFAULT`
+  followed by nothing. A table's DROP reads its schema-bound dependents from
+  `sys.sql_expression_dependencies`, which such a login is refused (Msg 229,
+  exit 9). An encrypted module has no text to restate: `create`, `alter` and
+  `drop-and-create` are `UNSUPPORTED`, exit 11; `drop` works.
+- **`--script-file <path>`** also writes the script, as the TUI's File...
+  does: the text exactly, UTF-8, LF line ends, replaced atomically. An
+  existing file is `USAGE_ERROR` before connecting unless `--force`; nothing
+  is written when the script fails. It is not `--out-file`, which is for
+  rows.
+
+## Data
+
+`data top` and `data count` compose one SELECT over a table or view and run
+it on a query session, as `query run` would: cells are the grid's text, JSON
+types them, `--max-rows` and `--out-file` apply. Both are class `read`; the
+login needs SELECT on the object (Msg 229 is `PERMISSION_DENIED`, exit 9).
+A procedure, function, synonym or other kind is exit 2 (a synonym's hint
+names its base object).
+
+- **`data top`** is the TUI's Select Top 1000 Rows: `SELECT TOP (n) *` with
+  `--rows` (default 100; 0 returns the columns alone). `--columns a,[b c]`
+  lists column names, bracketed where needed; each is matched to the
+  object's columns (exactly, else ignoring case when that finds one) and
+  sent bracketed in the catalog's spelling, never as written. An unknown
+  column is `NOT_FOUND`, exit 8, naming columns that contain it; a column
+  named twice, or anything but names and commas, is exit 2. `--rows` above
+  `--max-rows` needs `--max-rows 0` or `--out-file` to show every row.
+- **`data count`** is `SELECT COUNT_BIG(*)`, exact. `--approximate` reads
+  the table's partition statistics (no scan, no session) and refuses
+  `--where`, and a view (exit 2).
+- **Fragments.** `--where` is spliced as `WHERE (<expr>` + line break + `)`,
+  `--order-by` (top only) as `ORDER BY <list>` + line break, so a trailing
+  `--` comment ends at its line. A fragment that is blank or leaves a
+  string, quoted name or block comment open is exit 2. The composed SELECT
+  must classify as one read `SELECT` in one batch with no `;` outside a
+  literal or comment and no flag (dynamic SQL, a procedure call), else
+  `BLOCKED`, exit 7, before connecting — the record names the statements
+  found. The check keeps a fragment from adding a statement; what the
+  condition reads is the login's permissions' business.
 
 ## Safety
 

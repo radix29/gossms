@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/scripting"
 	"github.com/radix29/gossms/internal/showplan"
 )
 
@@ -187,7 +188,7 @@ func (p *QueryStorePanel) scriptPlanForce() {
 	// WithScript intercepts the exec, so this runs against the same lightweight
 	// handle the real write uses and reaches the server no more than the statement
 	// text needs.
-	script, err := collectScript(p.conn.Server.Context(), func(ctx context.Context) error {
+	script, err := scripting.Collect(p.conn.Server.Context(), func(ctx context.Context) error {
 		if force {
 			return d.QueryStore().ForcePlan(ctx, plan.QueryID, plan.PlanID)
 		}

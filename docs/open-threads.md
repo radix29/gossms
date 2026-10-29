@@ -123,6 +123,18 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   fine and gets an empty set: metadata visibility hides the edges, no error.
   The exit 9 that 3.f recorded on 17 came from some other setup (an explicit
   DENY?). Re-check which login gets exit 9, then fix the hint and the row.
+- **No Generate Scripts wizard** (phase 6, D7): `script db` is the
+  database's own CREATE, not its objects. Scripting every object in
+  dependency order (`--objects`, `--include-permissions`) needs
+  dependency-ordered scripting in gosmo first — SCHEMABINDING, cycles — a
+  feature the size of a phase. Neither the TUI nor the command line has it.
+- **`object describe`'s `filter` is empty, not NULL, for a hidden filter**
+  (found 2026-10-29 in phase 6.e). Without VIEW DEFINITION
+  `sys.indexes.filter_definition` is NULL while `has_filter` is 1; gosmo now
+  reports it (`Index.IsFilterHidden`) and refuses to script such an index,
+  but `describe`'s `indexes` set, and `object indexes`, still show the
+  filter as empty — indistinguishable from an unfiltered index — with no
+  warning, unlike a hidden default or check.
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.

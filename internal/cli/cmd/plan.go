@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,7 +23,7 @@ import (
 const (
 	optPlanFormat = "plan-format"
 	optPlanFile   = "plan-file"
-	optForce      = "force" // the global option, which also covers --plan-file
+	optForce      = "force" // the global option, which also covers --plan-file and --script-file
 )
 
 // --plan-format's values; the first is the default.
@@ -137,26 +136,11 @@ func readPlanSettings(inv *spec.Invocation) (planSettings, error) {
 		return p, usageError(fmt.Sprintf("--top: %d is negative", p.top),
 			"Give the number of operators to keep, or --top 0 for every one.")
 	}
-	if !inv.Given[optPlanFile] {
-		return p, nil
-	}
-	if p.file = inv.Values[optPlanFile].(string); p.file == "" {
-		return p, usageError("--plan-file: empty path", "")
-	}
 	// Checked before connecting, as --out-file is: a plan the caller cannot
 	// keep should not cost a compile.
-	if fi, err := os.Stat(p.file); err == nil {
-		if fi.IsDir() {
-			return p, usageError(fmt.Sprintf("--plan-file %s: is a directory", p.file), "")
-		}
-		if force, _ := inv.Values[optForce].(bool); !force {
-			return p, usageError(fmt.Sprintf("--plan-file %s: the file exists", p.file),
-				"Add --force to replace it, or choose another path.")
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return p, usageError(fmt.Sprintf("--plan-file %s: %v", p.file, err), "")
-	}
-	return p, nil
+	var err error
+	p.file, err = writableFile(inv, optPlanFile)
+	return p, err
 }
 
 func (d Deps) planEstimated(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
