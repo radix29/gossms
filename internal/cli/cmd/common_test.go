@@ -117,6 +117,10 @@ func TestReadError(t *testing.T) {
 			t.Errorf("%s: %s, want %s", tt.name, got, tt.want)
 		}
 	}
+	// A read's permission error gets a read's hint, not query run's.
+	if h := readError(sqlErr(229)).Hint; !strings.Contains(h, "this read needs") || strings.Contains(h, "script") {
+		t.Errorf("permission hint %q", h)
+	}
 }
 
 // dbCatalog is objectCatalog with the two reads connectDatabase makes.
