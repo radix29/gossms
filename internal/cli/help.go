@@ -1,7 +1,11 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/clipperhouse/displaywidth"
@@ -69,11 +73,45 @@ func showSchema(env Env, tree *spec.Tree, format output.Format, o output.Options
 // the envelope. Markdown unless --output is given (D6): -o text is the same
 // content as plain lines, -o markdown markdown, -o json the sections as a
 // JSON document; the row formats are refused.
-func showGuide(env Env, tree *spec.Tree, format output.Format, o output.Options, inv *spec.Invocation) int {
+//
+// Given a profile or --server (from the command line or GOSSMS_PROFILE), it
+// runs `agent context` over the same options and adds its answer as the last
+// section. When that fails the guide still prints, the section names the
+// error, and the exit code is the error's: an agent must not take a guide
+// without its environment for one with it.
+func showGuide(ctx context.Context, env Env, tree *spec.Tree, format output.Format, o output.Options, inv *spec.Invocation) int {
 	if !inv.Given["output"] {
 		format = output.FormatMarkdown
 	}
+	if format != output.FormatMarkdown && format != output.FormatText && format != output.FormatJSON {
+		return finish(env, &output.Result{Command: inv.Command.Name(), Errors: []*output.Error{output.NewError(output.CodeUsageError,
+			"agent guide is printed as markdown, text or json only", "Run the same command without --output.")}}, o, nil)
+	}
 	g := agent.BuildGuide(tree, version.Version, inv.Values["topic"].(string), inv.Values["brief"].(bool))
+	var failed *output.Error
+	if inv.Given["profile"] || inv.Given["server"] {
+		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+		defer stop()
+		res, err := call(ctx, inv, inv.Values["verbose"].(bool), env.Stderr, contextCommand(tree).Run)
+		if res == nil {
+			res = &output.Result{}
+		}
+		switch {
+		case ctx.Err() != nil:
+			failed = output.NewError(output.CodeCancelled, "cancelled by interrupt", "")
+		case err != nil:
+			e, ok := errors.AsType[*output.Error](err)
+			if !ok {
+				e = output.NewError(output.CodeGeneralError, err.Error(), "")
+			}
+			failed = e
+		}
+		if failed != nil {
+			res.Errors = []*output.Error{failed}
+		}
+		profile, _ := inv.Values["profile"].(string)
+		g.Sections = append(g.Sections, agent.Environment(res, profile, g.Brief))
+	}
 	var err error
 	switch format {
 	case output.FormatMarkdown:
@@ -82,13 +120,14 @@ func showGuide(env Env, tree *spec.Tree, format output.Format, o output.Options,
 		_, err = fmt.Fprint(env.Stdout, g.Text())
 	case output.FormatJSON:
 		err = g.WriteJSON(env.Stdout)
-	default:
-		return finish(env, &output.Result{Command: inv.Command.Name(), Errors: []*output.Error{output.NewError(output.CodeUsageError,
-			"agent guide is printed as markdown, text or json only", "Run the same command without --output.")}}, o, nil)
 	}
 	if err != nil {
 		fmt.Fprintf(env.Stderr, "gossms: %s: writing output: %v\n", output.CodeGeneralError, err)
 		return 1
+	}
+	if failed != nil {
+		fmt.Fprintf(env.Stderr, "gossms: %s: %s\n", failed.Code, failed.Message)
+		return failed.Exit()
 	}
 	return 0
 }
@@ -247,6 +286,10 @@ func helpCommand(tree *spec.Tree) *spec.Command { return tree.Lookup([]string{"h
 // guideCommand is the tree's `agent guide` command, which Main answers
 // itself: the guide is printed outside the envelope.
 func guideCommand(tree *spec.Tree) *spec.Command { return tree.Lookup([]string{"agent", "guide"}) }
+
+// contextCommand is the tree's `agent context` command, whose handler the
+// guide's environment section runs.
+func contextCommand(tree *spec.Tree) *spec.Command { return tree.Lookup([]string{"agent", "context"}) }
 
 // schemaCommand is the tree's `agent schema` command, which Main answers
 // itself: the catalog is printed outside the envelope.

@@ -116,6 +116,13 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   without the ListBox's two-column marker, so a long server *and* database
   (`win10cli.fritz.box`, `HealthClinic`) cut `,sa` — the thing that tells two
   entries for one server apart.
+- **`object dependencies`' permission hint may be wrong** (found 2026-10-29
+  in phase 3.i). Its PERMISSION_DENIED hint and `docs/cli.md` § Commands say
+  SELECT on `sys.sql_expression_dependencies` is db_owner's only by default.
+  On majors 14 and 17 a db_datareader login (no VIEW DEFINITION) reads it
+  fine and gets an empty set: metadata visibility hides the edges, no error.
+  The exit 9 that 3.f recorded on 17 came from some other setup (an explicit
+  DENY?). Re-check which login gets exit 9, then fix the hint and the row.
 
 ## Fix order
 

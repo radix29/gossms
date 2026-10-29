@@ -211,10 +211,10 @@ func ftTableColumnsResp(cols ...ftCol) fakeResponse {
 			int64(0), false,
 			"", "", "",
 			"", "", false, int64(0), "",
-			"", "", "", "",
+			"", "", "", "", false,
 		}
 	}
-	return fakeResponse{match: "FROM   sys.columns c", db: "AppDB", cols: 41, rows: rows}
+	return fakeResponse{match: "FROM   sys.columns c", db: "AppDB", cols: 42, rows: rows}
 }
 
 // ftStoplistsResp answers FullTextStoplists with names, ids from 1.

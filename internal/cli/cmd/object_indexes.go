@@ -32,7 +32,7 @@ func (d Deps) objectIndexesCommand() *spec.Command {
 			"counts from sys.dm_db_index_physical_stats in that mode — it reads the index, so it is off by default: " +
 			"limited reads the pages above the leaf and has no page fullness; sampled and detailed read the leaf.",
 		Args: []spec.Arg{tableOrViewArg},
-		Options: append(connectOptions(),
+		Options: append(ConnectOptions(),
 			spec.Option{Name: optFragmentation, Type: spec.TypeEnum, Enum: []string{"limited", "sampled", "detailed"},
 				Help: "Also read fragmentation, scanning in this mode"},
 		),
@@ -54,7 +54,7 @@ func (d Deps) objectStatsCommand() *spec.Command {
 			"rows in the table then and how many were sampled, the histogram steps, and the modifications counted " +
 			"since. A statistic never computed — or one the login may see but not read — has those columns NULL.",
 		Args:    []spec.Arg{tableOrViewArg},
-		Options: connectOptions(),
+		Options: ConnectOptions(),
 		Class:   spec.ClassRead,
 		Run:     d.objectStats,
 		Examples: []string{

@@ -7,17 +7,21 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 2) the commands are `version`, `help`, `profile
-list/show/test` and `query classify/run/parse`; the formats `text`, `json`,
-`jsonl`, `csv`, `tsv` and `markdown`. `profile test`, `query run` and `query
-parse` connect to a server.
+them. Today (through phase 3) the commands are `version`, `help`, `agent
+guide/schema/context`, `profile list/show/test`, `db list/info`, `object
+list/search/describe/definition/dependencies/indexes/stats` and `query
+classify/run/parse`; the formats `text`, `json`, `jsonl`, `csv`, `tsv` and
+`markdown`. `profile test`, `agent context`, every `db` and `object` command,
+`query run` and `query parse` connect to a server, and so does `agent guide`
+given a profile.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
 parser), `internal/cli/output` (envelope, renderers, exit codes),
 `internal/cli/connect` (connection options and resolution),
 `internal/cli/safety` (the T-SQL classifier and its check),
-`internal/cli/cmd` (the handlers). The command tree itself is
+`internal/cli/cmd` (the handlers), `internal/cli/agent` (`agent guide` and
+`agent schema`, built from the tree). The command tree itself is
 `internal/cli/tree.go`.
 
 ## Modes
@@ -164,8 +168,18 @@ cached guide can be told stale.
 | `-o text` | The same content as plain lines: headings underlined, tables aligned, code indented, no markup |
 | `-o json` | `{"schemaVersion", "gossmsVersion", "title", "brief", "topic", "sections": [{"id", "title", "body"}]}`, `body` in markdown, `topic` null for the whole guide. Not the envelope: its `data` holds only strings |
 
-`jsonl`, `csv` and `tsv` are refused (`USAGE_ERROR`). The environment section
-(`-p <profile>`) arrives with `agent context`.
+`jsonl`, `csv` and `tsv` are refused (`USAGE_ERROR`).
+
+**Your environment.** Given a profile or `--server` — on the command line or
+through `GOSSMS_PROFILE` — the guide takes every connection option, connects,
+and adds a last section, id `environment`, titled `Your environment (profile:
+<name>)`: `agent context`'s answer for the same connection, its record as a
+list and each set as a table (in `--brief`, each table's first 15 rows and a
+count of the rest). It is added after a `--topic`'s section too. When the
+context fails the guide still prints, the section names the error code,
+message and hint, the summary line goes to stderr and the exit code is the
+error's — an agent never takes a guide without its environment for one with
+it.
 
 Only the rules and the recipes are prose that can go stale, and
 `TestAgentGuideMentionsParse` renders every topic, brief and full, and fails
@@ -238,12 +252,13 @@ unreadable`). A `config.json` that exists but cannot be read or parsed is
 
 ## Connecting
 
-A command that connects takes these options (`profile test`, `query run`,
-`query parse`). The precedence is **command line > environment variable >
-profile > default**.
+A command that connects takes these options (`profile test`, `agent
+context`, `agent guide`, the `db` and `object` commands, `query run`, `query
+parse`). The precedence is **command line > environment variable > profile >
+default**.
 
-`query run` and `query parse` name the profile with `--profile <name>` (`-p`,
-env `GOSSMS_PROFILE`); `profile test` takes it positionally. Without one the
+Every one but `profile test` names the profile with `--profile <name>`
+(`-p`, env `GOSSMS_PROFILE`); `profile test` takes it positionally. Without one the
 call is ad hoc: `--server` is required and there is no ceiling beyond
 `--allow`.
 
@@ -498,7 +513,8 @@ and `outFile` naming the path.
 | 130 | `CANCELLED` | Ctrl+C or SIGINT |
 
 All are defined now so a caller's handling never depends on the phase it met;
-today's commands produce all of them except 11 (`UNSUPPORTED`). The table is `output.ExitCodes`, the one
+today's commands produce every one, 11 (`UNSUPPORTED`) only where a catalog
+read refuses the server's version. The table is `output.ExitCodes`, the one
 place a code's number is spelled.
 
 **Ctrl+C** (also on Windows) cancels the running command's context: the result
@@ -511,8 +527,9 @@ second Ctrl+C kills the process.
 |---|---|
 | `version` | Record: `version`, `commit`, `built`, `platform`, `license`, `gosmo` — the fields `gossms --version` prints — plus `cliSchema` |
 | `help [<group>] [<command>]` | Help text (§ Help) |
-| `agent guide [--brief] [--topic <topic>]` | The manual for AI agents, outside the envelope (§ Agent guide) |
+| `agent guide [--brief] [--topic <topic>] [-p <profile>] [connection options]` | The manual for AI agents, outside the envelope (§ Agent guide) |
 | `agent schema [<group>] [<command>]` | The command catalog as JSON, outside the envelope (§ Agent schema) |
+| `agent context [-p <profile>] [connection options]` | Connects (§ Connecting). Header `DATABASE` is the connection's. Record: `profile` (null ad hoc), `serverName`, `productVersion`, `majorVersion`, `edition`, `login`, `isSysadmin` (null when the server permissions were not probed), `database`, `databaseRoles` (the fixed roles held there, comma-separated), `defaultAllow` (`read`), `maxAllow` (the ceiling `--allow` cannot pass; `admin` ad hoc), `maxAllowSource` (`profile`, `default` — the profile sets none —, or ad hoc). Named sets — `databases`: `name`, `state`, `accessible` (HAS_DBACCESS: false for a database not ONLINE, whoever asks; NULL when the server does not say), `is_system`; `missing_permissions`: `permission`, `scope` (`server`, or `database [name]`), `commands`, `effect` — each permission a command needs that the login is known to lack (an alternative granted counts: 2022's VIEW SERVER/DATABASE PERFORMANCE STATE, CREATE/ALTER ANY DATABASE for the files' visibility); one the server answers nothing for is left out; `profiles`: `name`, `server`, `database`, `max_allow`. A probe or read that fails is a warning, not an error |
 | `profile list [--all]` | Set: `name`, `kind` (`profile`, or `recent` with `--all`), `server`, `port` (NULL when not set), `database`, `auth` (the `--auth` spelling), `user`, `max_allow` (NULL for a recent connection), `password` (`saved`, `none`, `unreadable`). Profiles sorted by name, then recent connections most recent first. An empty list carries a message saying how to make a profile |
 | `profile show <name>` | Record: `name`, `kind`, `generatedName`, `server`, `port`, `database`, `auth`, `user`, `tenantId`, `clientId`, `encrypt`, `trustServerCertificate`, `hostNameInCertificate`, `extraProperties` (keys only — a value may be a secret), `maxAllow`, `password`. A password that cannot be opened adds a warning |
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
@@ -520,7 +537,7 @@ second Ctrl+C kills the process.
 | `db info <name> [-p <profile>] [connection options]` | Header `DATABASE` is `<name>`. Record: `name`, `databaseId`, `state`, `recoveryModel`, `compatibilityLevel`, `collation`, `catalogCollation`, `readOnly`, `created`, `isSystem`, `isDistributor`, `snapshotOf`, `sizeMb`, `dataMb`, `logMb`, `dataUnallocatedMb`, `logAvailableMb`, then the `ALTER DATABASE SET` options: `owner`, `userAccess`, `pageVerify`, `containment`, `snapshotIsolation`, `readCommittedSnapshot`, `autoClose`, `autoShrink`, `autoCreateStats`, `autoUpdateStats`, `autoUpdateStatsAsync`, `parameterization`, `isTrustworthy`, `dbChaining`, `isBrokerEnabled`, `isEncrypted`, `delayedDurability`, `targetRecoveryTimeSeconds`, `acceleratedDatabaseRecovery`, `isLedger`. A part that could not be read is empty with a warning saying why — the space-used pair needs the database ONLINE and enterable; the rest answers from the server catalog in any state. An unknown database is `NOT_FOUND`, exit 8 |
 | `object list [-p <profile>] [connection options] [--type <kind>,…] [--schema <s>] [--name <text>] [--include-system]` | Set, by kind (in `--type`'s order: `table`, `view`, `procedure`, `function`, `trigger`, `synonym`, `sequence`, `type`, `schema`), then schema and name, case-insensitively: `schema` (NULL for a schema row), `name`, `type`, `is_system`. The objects of the connection's database (`-d`, or the profile's). `--schema` is equal and `--name` contains, both case-insensitive and without wildcards (Object Explorer's filter); a schema row matches either by its own name. A trigger is a table's or view's DML trigger; a type is an alias, table or CLR type. Without `--include-system`, what SQL Server ships is left out: system tables, the `sys` schema's views, procedures, functions and CLR types (geography, geometry, hierarchyid), and the system schemas (guest, INFORMATION_SCHEMA, sys, the fixed roles') |
 | `object search <text> [-p <profile>] [connection options] [--in name\|definition\|column]` | Set: `schema`, `name`, `type`, and with `--in column` `column`, `data_type`. Case-insensitive, `%`/`_`/`[` literal. `name` (default): tables, views, procedures, functions and triggers whose name contains the text. `definition`: the modules whose T-SQL contains it — an encrypted or CLR module has none. `column`: the columns of tables and views whose name contains it. Empty text is a usage error |
-| `object describe <object> [-p <profile>] [connection options]` | `<object>` is `schema.name`, a name alone when one schema has it (two or more: usage error listing them; none: `NOT_FOUND` with similar names), or `database.schema.name` for the connection's own database. Record: `schema`, `name`, `type` (the kind word, or the `type_desc` lower-cased for a kind without a folder: `primary_key_constraint`), `typeDesc`, `objectId`, `created`, `modified`, `parent` (a trigger's or constraint's table), then per kind — table `rowCount` (from partition metadata); view `isSchemaBound`; function `returns` (the type, or `TABLE`); trigger `isEnabled`, `events`; synonym `baseObject`; sequence `dataType`, `startValue`, `increment`, `minValue`, `maxValue`, `isCycling`, `cache`, `currentValue`. Named sets — table: `columns`, `keys`, `indexes`, `check_constraints`, `triggers`; view: `columns`, `indexes`, `triggers`; procedure or function: `parameters`. `columns`: `column_id`, `name`, `data_type`, `nullable`, `identity` (`IDENTITY(seed,increment)`; a view's column `IDENTITY`), `computed` (the expression, `PERSISTED` marked), `default`, `collation`, `primary_key`. `keys`: the primary key, unique constraints, then foreign keys — `name`, `type`, `columns`, `references` (`[schema].[table] (cols)`), `on_delete`, `on_update`, `disabled`, `not_trusted`. `indexes`: `name`, `type`, `unique`, `primary_key`, `key_columns` (`DESC` marked), `included_columns`, `filter`, `disabled`. `check_constraints`: `name`, `column` (NULL table-level), `definition`, `disabled`, `not_trusted`. `triggers`: `name`, `enabled`, `events`. `parameters`: `ordinal`, `name`, `data_type`, `is_output`, `has_default` (NULL for a T-SQL module: the catalog records defaults only for CLR ones) |
+| `object describe <object> [-p <profile>] [connection options]` | `<object>` is `schema.name`, a name alone when one schema has it (two or more: usage error listing them; none: `NOT_FOUND` with similar names), or `database.schema.name` for the connection's own database. Record: `schema`, `name`, `type` (the kind word, or the `type_desc` lower-cased for a kind without a folder: `primary_key_constraint`), `typeDesc`, `objectId`, `created`, `modified`, `parent` (a trigger's or constraint's table), then per kind — table `rowCount` (from partition metadata); view `isSchemaBound`; function `returns` (the type, or `TABLE`); trigger `isEnabled`, `events`; synonym `baseObject`; sequence `dataType`, `startValue`, `increment`, `minValue`, `maxValue`, `isCycling`, `cache`, `currentValue`. Named sets — table: `columns`, `keys`, `indexes`, `check_constraints`, `triggers`; view: `columns`, `indexes`, `triggers`; procedure or function: `parameters`. `columns`: `column_id`, `name`, `data_type`, `nullable`, `identity` (`IDENTITY(seed,increment)`; a view's column `IDENTITY`), `computed` (the expression, `PERSISTED` marked), `default`, `collation`, `primary_key`. `keys`: the primary key, unique constraints, then foreign keys — `name`, `type`, `columns`, `references` (`[schema].[table] (cols)`), `on_delete`, `on_update`, `disabled`, `not_trusted`. `indexes`: `name`, `type`, `unique`, `primary_key`, `key_columns` (`DESC` marked), `included_columns`, `filter`, `disabled`. `check_constraints`: `name`, `column` (NULL table-level), `definition`, `disabled`, `not_trusted`. `triggers`: `name`, `enabled`, `events`. `parameters`: `ordinal`, `name`, `data_type`, `is_output`, `has_default` (NULL for a T-SQL module: the catalog records defaults only for CLR ones). A computed, default or check expression the login cannot see (no VIEW DEFINITION) is NULL, counted in a warning; a user-defined type it holds no permission on reads as its base system type (`nvarchar(25)`, empty for a CLR type), counted in a warning — also in `parameters`, `returns`, a sequence's `dataType` and `object search --in column` |
 | `object definition <object> [-p <profile>] [connection options]` | `<object>` as for `describe`. Record: `schema`, `name`, `type`, `definition` — the module's T-SQL as stored, multi-line (§ `text`). A view, procedure, function or DML trigger; any other kind is a usage error, exit 2. An encrypted module (or one the login lacks VIEW DEFINITION on) and a CLR module have `definition` null and a warning, exit 0. The stored text, not a generated script |
 | `object dependencies <object> [--direction uses\|used-by\|both] [--depth n] [-p <profile>] [connection options]` | `<object>` as for `describe`. Record: `schema`, `name`, `type`, `direction` (default `both`), `depth` (default 1, 1–5; outside it a usage error). Set `dependencies`, one row per edge, breadth first, `uses` before `used-by`: `direction`, `level`, `via` (the object at the level before; the root at level 1), `schema`, `name`, `type`, `schema_bound`, `caller_dependent` (an unqualified name resolved as the owner would: its schema, then dbo). An object reached twice is followed once, so a cycle ends; a table's self-reference (its filtered index or statistic) is left out; another database's objects and missing ones are not listed. Needs SELECT on `sys.sql_expression_dependencies` (db_owner by default): without it `PERMISSION_DENIED`, exit 9 |
 | `object indexes <object> [--fragmentation limited\|sampled\|detailed] [-p <profile>] [connection options]` | A table or view (any other kind: usage error, exit 2). Record: `schema`, `name`, `type`, `fragmentationMode` with `--fragmentation`. Set `indexes`, index_id order, a heap first (`name` NULL, `type` `HEAP`): `name`, `index_id`, `type`, `unique`, `primary_key`, `key_columns` (`DESC` marked), `included_columns`, `filter`, `disabled`, `hypothetical`, `user_seeks`, `user_scans`, `user_lookups`, `user_updates`, `last_user_seek/scan/lookup/update` (NULL: none since the server started). Without VIEW SERVER STATE (2022+: VIEW SERVER PERFORMANCE STATE) the usage columns are NULL and a warning says so, exit 0. `--fragmentation` (off by default: it reads the index) adds `avg_fragmentation_pct`, `page_count`, `fragment_count`, `avg_page_space_used_pct` (NULL in `limited`, which does not read the leaf; all four NULL for the heap) |
@@ -546,6 +563,34 @@ that is not valid UTF-8 (or UTF-16 with an unpaired surrogate), and a script
 over 64 MB. `--file -` with `--password-stdin` is refused: both read stdin.
 Prefer `--file -` or `--sql-base64` to `--sql` for anything but one line — no
 shell quoting can damage them.
+
+## Discovery
+
+The `db` and `object` commands read the catalog; they are all `read` and
+never take `--allow`.
+
+- **Where they look.** An `object` command reads the connection's database —
+  the profile's, or `-d/--database` — and the header's `DATABASE` names it.
+  There is no per-command database argument; `db info <name>` names one only
+  because a database is its subject.
+- **Object names.** `<object>` is split with the T-SQL lexer, so a
+  `[bracketed]` or `"quoted"` part keeps its dots and doubled `]]`:
+  `Sales.[Order.Detail]`. Two parts are `schema.name`; three,
+  `database.schema.name`, only when the database is the connection's
+  (compared exactly — another spelling may be another database), else a usage
+  error naming `-d`. Four parts, an empty part (`db..name`), or anything but
+  parts and dots is a usage error.
+- **A name alone** is looked up in every schema: one match is that object; two
+  or more is `USAGE_ERROR` listing them as `schema.name`; none is `NOT_FOUND`
+  with up to five objects whose names contain it in the hint. It never assumes `dbo`. Names
+  compare by the database's catalog collation, so in a `_CS_` one
+  `sales.customer` is not `Sales.Customer` (the hint then names it).
+- **Permissions.** What the login cannot see is left out, as SQL Server's
+  metadata visibility does: a table without VIEW DEFINITION is not listed, not
+  an error. A command whose read the server refuses outright is
+  `PERMISSION_DENIED`, exit 9; a part of an answer that could not be read is
+  NULL with a warning, exit 0. `agent context` lists the permissions the login
+  is known to lack and the commands each one affects.
 
 ## Running T-SQL
 

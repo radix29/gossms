@@ -23,9 +23,9 @@ func profileOption() spec.Option {
 		Help: "Saved connection profile (gossms profile list); connection options override its values"}
 }
 
-// connectOptions is --profile and the connection options: what every command
+// ConnectOptions is --profile and the connection options: what every command
 // that reads the catalog takes.
-func connectOptions() []spec.Option {
+func ConnectOptions() []spec.Option {
 	return append([]spec.Option{profileOption()}, connect.Options()...)
 }
 
@@ -98,6 +98,12 @@ type Catalog interface {
 	TableStatistics(ctx context.Context, t *gosmo.Table) ([]*gosmo.Statistic, error)
 	ViewStatistics(ctx context.Context, v *gosmo.View) ([]*gosmo.Statistic, error)
 	StatisticColumns(ctx context.Context, st *gosmo.Statistic) ([]string, error)
+
+	// agent context: what connect read, and what the login may do.
+	ServerInfo() *gosmo.ServerInfo
+	ServerCapabilities(ctx context.Context) (*gosmo.Capabilities, error)
+	DatabaseCapabilities(ctx context.Context, d *gosmo.Database) (*gosmo.DatabaseCapabilities, error)
+	DatabaseAccess(ctx context.Context) (map[int]bool, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -331,6 +337,20 @@ func (serverCatalog) StatisticColumns(ctx context.Context, st *gosmo.Statistic) 
 	return st.Columns(ctx)
 }
 
+func (c serverCatalog) ServerInfo() *gosmo.ServerInfo { return c.s.Info() }
+
+func (c serverCatalog) ServerCapabilities(ctx context.Context) (*gosmo.Capabilities, error) {
+	return c.s.Capabilities(ctx)
+}
+
+func (serverCatalog) DatabaseCapabilities(ctx context.Context, d *gosmo.Database) (*gosmo.DatabaseCapabilities, error) {
+	return d.Capabilities(ctx)
+}
+
+func (c serverCatalog) DatabaseAccess(ctx context.Context) (map[int]bool, error) {
+	return c.s.DatabaseAccess(ctx)
+}
+
 // dial resolves and opens the connection inv asks for through profile (empty
 // ad hoc) in cfg. res's header names the target from the start, so a failure
 // says where it failed.
@@ -373,18 +393,27 @@ func (d Deps) connectDatabase(ctx context.Context, inv *spec.Invocation, res *ou
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	name, err := cat.CurrentDatabase(ctx)
+	dbase, err := currentDatabase(ctx, cat, res)
 	if err != nil {
 		sc.Close()
-		return nil, nil, nil, readError(err)
+		return nil, nil, nil, err
+	}
+	return sc, cat, dbase, nil
+}
+
+// currentDatabase is the connection's database read from the catalog; res's
+// database becomes its catalog spelling.
+func currentDatabase(ctx context.Context, cat Catalog, res *output.Result) (*gosmo.Database, error) {
+	name, err := cat.CurrentDatabase(ctx)
+	if err != nil {
+		return nil, readError(err)
 	}
 	dbase, err := cat.DatabaseByName(ctx, name)
 	if err != nil {
-		sc.Close()
-		return nil, nil, nil, readError(err)
+		return nil, readError(err)
 	}
 	res.Database = dbase.Name
-	return sc, cat, dbase, nil
+	return dbase, nil
 }
 
 // readError maps a gosmo read's failure to the envelope's code: NOT_FOUND for

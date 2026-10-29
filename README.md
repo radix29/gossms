@@ -249,6 +249,23 @@ gossms query classify --file fix.sql                                            
 gossms query parse -p dev --file fix.sql                                             # syntax only
 ```
 
+`db` and `object` read the catalog — what a database holds, how an object is
+built, what depends on it — without writing T-SQL:
+
+```bash
+gossms db list -p dev                              # databases: state, recovery, sizes
+gossms object list -p dev -d Sales --type table    # one database's tables
+gossms object search -p dev Customer --in column   # columns named like it
+gossms object describe -p dev Sales.Customer       # columns, keys, indexes, triggers
+gossms object definition -p dev dbo.uspGetOrders   # a module's T-SQL
+gossms object dependencies -p dev Sales.Customer --depth 2
+```
+
+For an AI agent, `gossms agent guide --brief -p dev` is the manual to put in
+its system prompt — rules, output contract, the command index, and what the
+profile's login can see; `gossms agent schema` is the same catalog as JSON
+to build tool definitions from.
+
 Output is `text` (default), `json`, `jsonl`, `csv`, `tsv` or `markdown`
 (`-o`); stdout is capped (`--max-rows`, `--max-col-width`,
 `--max-output-bytes`) and says when it was cut. The classifier is a

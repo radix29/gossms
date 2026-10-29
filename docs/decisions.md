@@ -1863,6 +1863,32 @@ The contract is `docs/cli.md`; these are the alternatives turned down.
   written; an existing file is refused without `--force`, since the command
   line never prompts.
 
+## Command-line discovery and the agent guide: what phase 3 settled — do not re-raise
+
+The contract is `docs/cli.md` § Discovery, § Commands and § Agent guide;
+these are the alternatives turned down.
+
+- **A one-part name is resolved across schemas, never as `dbo` (D2).**
+  Exactly one match is that object; several is exit 2 listing every
+  `schema.name`; none is NOT_FOUND with similar names. Assuming `dbo` would
+  be silently wrong in any `Sales.Customer`-style database — an agent would
+  describe the wrong object, or get NOT_FOUND for one that exists. Names
+  compare by the catalog collation server-side, never case-folded in Go.
+- **`object definition` is a record with one verbatim field (D4).** The
+  module text prints after the record as `=== DEFINITION (n lines) ===` and
+  exactly n lines, never single-lined or cut by `--max-col-width`; JSON a
+  string. A one-row result set was turned down: the column-width cap would
+  cut the text and the text format flattens line breaks. The line count is
+  there because a definition can hold a line that looks like a marker. An
+  encrypted or CLR module is `definition: null` with a warning, exit 0 — the
+  object exists, its text is just not available.
+- **The guide's format is `--output`, not a `--format` of its own (D6).**
+  Markdown by default, `-o text` the same content without markup. `-o json`
+  is a JSON document **outside the envelope** (`sections[]{id, title,
+  body}`), like `agent schema`: the envelope's `data` holds only strings, and
+  a result set of sections would be clipped by `--max-col-width`. Keeping a
+  `--format` and rejecting `-o` would be two spellings of one idea.
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

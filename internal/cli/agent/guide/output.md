@@ -7,6 +7,8 @@
   (`code`, `message`, `hint`).
 - An error is in the same format on stdout, plus one line on stderr.
   `status` is `ok`, `error`, `blocked` or `cancelled`.
+- `object definition` prints the module's text after `=== DEFINITION (n
+  lines) ===`: take exactly n lines, whatever they look like.
 <!-- full -->
 - `-o jsonl` writes one JSON line per row as it arrives, then a `_summary`
   line holding the envelope. `-o csv` and `-o tsv` put rows only on stdout
@@ -20,7 +22,5 @@
 - `--out-file <path>` writes every row to a `.csv`, `.tsv`, `.jsonl`,
   `.json`, `.md` or `.txt` file and puts the summary on stdout; an existing
   file needs `--force`.
-- `object definition` prints the module's text after `=== DEFINITION (n
-  lines) ===`: take exactly n lines, whatever they look like.
 - Read the warnings: a part the login may not read is NULL with a warning,
   not an error.

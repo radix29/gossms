@@ -39,7 +39,7 @@ func (d Deps) objectDependenciesCommand(nameArg spec.Arg) *spec.Command {
 			"reference; caller_dependent a one-part name resolved, as the module's owner would, against its " +
 			"schema and then dbo — another caller may get a different object.",
 		Args: []spec.Arg{nameArg},
-		Options: append(connectOptions(),
+		Options: append(ConnectOptions(),
 			spec.Option{Name: optDirection, Type: spec.TypeEnum, Enum: []string{dirUses, dirUsedBy, dirBoth},
 				Default: dirBoth, Help: "Which edges to follow"},
 			spec.Option{Name: optDepth, Type: spec.TypeInt, Default: "1", Help: "Levels to follow, 1 to 5"},
