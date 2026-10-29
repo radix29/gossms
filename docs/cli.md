@@ -7,11 +7,12 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 3) the commands are `version`, `help`, `agent
-guide/schema/context`, `profile list/show/test`, `db list/info`, `object
+them. Today (through phase 4) the commands are `version`, `help`, `agent
+guide/schema/context`, `profile list/show/test`, `db
+list/info/files/space/log-usage/table-sizes`, `server volumes`, `object
 list/search/describe/definition/dependencies/indexes/stats` and `query
 classify/run/parse`; the formats `text`, `json`, `jsonl`, `csv`, `tsv` and
-`markdown`. `profile test`, `agent context`, every `db` and `object` command,
+`markdown`. `profile test`, `agent context`, every `db`, `server` and `object` command,
 `query run` and `query parse` connect to a server, and so does `agent guide`
 given a profile.
 
@@ -253,8 +254,8 @@ unreadable`). A `config.json` that exists but cannot be read or parsed is
 ## Connecting
 
 A command that connects takes these options (`profile test`, `agent
-context`, `agent guide`, the `db` and `object` commands, `query run`, `query
-parse`). The precedence is **command line > environment variable > profile >
+context`, `agent guide`, the `db`, `server` and `object` commands, `query run`,
+`query parse`). The precedence is **command line > environment variable > profile >
 default**.
 
 Every one but `profile test` names the profile with `--profile <name>`
@@ -535,6 +536,11 @@ second Ctrl+C kills the process.
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
 | `db list [-p <profile>] [connection options] [--include-system] [--state <state>]` | Set, by name: `name`, `database_id`, `state`, `recovery_model`, `compatibility_level`, `collation` (NULL for a database not ONLINE), `read_only`, `size_mb`, `data_mb`, `log_mb`, `created`, `is_system`, `snapshot_of` (the source's name; NULL for a database that is not a snapshot). System databases — the four built-ins and a replication distribution database — only with `--include-system`; snapshots are listed. Sizes are allocated file sizes from `sys.master_files`, so they answer in any state (tempdb's are its startup sizes); NULL where the login cannot see the files (VIEW ANY DEFINITION), and a failed size read is a warning, not an error. `--state` is `state_desc` lower-cased |
 | `db info <name> [-p <profile>] [connection options]` | Header `DATABASE` is `<name>`. Record: `name`, `databaseId`, `state`, `recoveryModel`, `compatibilityLevel`, `collation`, `catalogCollation`, `readOnly`, `created`, `isSystem`, `isDistributor`, `snapshotOf`, `sizeMb`, `dataMb`, `logMb`, `dataUnallocatedMb`, `logAvailableMb`, then the `ALTER DATABASE SET` options: `owner`, `userAccess`, `pageVerify`, `containment`, `snapshotIsolation`, `readCommittedSnapshot`, `autoClose`, `autoShrink`, `autoCreateStats`, `autoUpdateStats`, `autoUpdateStatsAsync`, `parameterization`, `isTrustworthy`, `dbChaining`, `isBrokerEnabled`, `isEncrypted`, `delayedDurability`, `targetRecoveryTimeSeconds`, `acceleratedDatabaseRecovery`, `isLedger`. A part that could not be read is empty with a warning saying why — the space-used pair needs the database ONLINE and enterable; the rest answers from the server catalog in any state. An unknown database is `NOT_FOUND`, exit 8 |
+| `db files <name>\|--all [--type data\|log\|filestream\|fulltext] [--filegroup <fg>] [--sort-by name\|size\|used\|free-pct] [--max-free-pct <n>] [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, database then `file_id` order: `database` (with `--all`), `logical_name`, `type`, `filegroup`, `physical_path`, `size_<u>`, `used_<u>`, `free_<u>`, `free_pct`, `growth` (`10 %`, `none`, or a size: KB under `--unit kb`, else MB), `max_size_<u>` (text: `unlimited`, or a size), `volume_free_pct`. Read inside the database (`sys.database_files`, `FILEPROPERTY`), so tempdb's sizes are current; one it cannot read inside is listed from `sys.master_files` (§ Storage). A FILESTREAM or full-text container's used, free, growth and max size are NULL. A snapshot lists its own sparse files. `--max-free-pct` (0–100) keeps files whose free % is known and at most it. `volume_free_pct` needs VIEW SERVER STATE (NULL with a warning without) |
+| `db space <name>\|--all [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, one row per database: `database`, `total_<u>`, `data_size_<u>`, `data_used_<u>`, `unallocated_<u>`, `reserved_<u>`, `data_<u>`, `index_<u>`, `unused_<u>` — `sp_spaceused`'s figures and arithmetic, equal to its output in KB — then `log_size_<u>`, `log_used_<u>`, `log_used_pct` from `sys.dm_db_log_space_usage` (as `db log-usage` shows them; NULL with one warning without VIEW SERVER STATE). A snapshot shows its source's figures as of creation, log NULL, with a warning |
+| `db log-usage <name>\|--all [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, one row per database: `database`, `log_size_<u>`, `log_used_<u>`, `log_used_pct` (`sys.dm_db_log_space_usage`'s), `log_reuse_wait_desc`, `vlf_count`, `vlf_active` (`sys.dm_db_log_info`, from 2016 SP2; NULL with a warning before). Without VIEW SERVER STATE: `PERMISSION_DENIED`, exit 9. `--all` skips snapshots (no log); a named snapshot is `NOT_FOUND`, exit 8 |
+| `db table-sizes <name> [--top <n>] [--schema <s>] [--sort-by reserved\|rows\|data\|index\|unused] [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, largest first (default `reserved`; schema, then name break ties): `schema`, `table`, `rows`, `reserved_<u>`, `data_<u>`, `index_<u>`, `unused_<u>` — each row equal to `EXEC sp_spaceused 'schema.table'` in KB, internal tables (XML, spatial, full-text indexes) included. `--top` default 20, 0 for every table (a cut, not a truncation). Needs no VIEW DATABASE STATE. A memory-optimized table's sizes are NULL with a warning |
+| `server volumes [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, by volume: `volume` (mount point, else OS label, else the lowest file path), `total_<u>`, `free_<u>`, `free_pct`, `db_files` — every volume holding a database file of any database (`sys.master_files` × `sys.dm_os_volume_stats`). Implausible figures (total 0, free over total) are left out with a warning. Without VIEW SERVER STATE: `PERMISSION_DENIED`, exit 9 |
 | `object list [-p <profile>] [connection options] [--type <kind>,…] [--schema <s>] [--name <text>] [--include-system]` | Set, by kind (in `--type`'s order: `table`, `view`, `procedure`, `function`, `trigger`, `synonym`, `sequence`, `type`, `schema`), then schema and name, case-insensitively: `schema` (NULL for a schema row), `name`, `type`, `is_system`. The objects of the connection's database (`-d`, or the profile's). `--schema` is equal and `--name` contains, both case-insensitive and without wildcards (Object Explorer's filter); a schema row matches either by its own name. A trigger is a table's or view's DML trigger; a type is an alias, table or CLR type. Without `--include-system`, what SQL Server ships is left out: system tables, the `sys` schema's views, procedures, functions and CLR types (geography, geometry, hierarchyid), and the system schemas (guest, INFORMATION_SCHEMA, sys, the fixed roles') |
 | `object search <text> [-p <profile>] [connection options] [--in name\|definition\|column]` | Set: `schema`, `name`, `type`, and with `--in column` `column`, `data_type`. Case-insensitive, `%`/`_`/`[` literal. `name` (default): tables, views, procedures, functions and triggers whose name contains the text. `definition`: the modules whose T-SQL contains it — an encrypted or CLR module has none. `column`: the columns of tables and views whose name contains it. Empty text is a usage error |
 | `object describe <object> [-p <profile>] [connection options]` | `<object>` is `schema.name`, a name alone when one schema has it (two or more: usage error listing them; none: `NOT_FOUND` with similar names), or `database.schema.name` for the connection's own database. Record: `schema`, `name`, `type` (the kind word, or the `type_desc` lower-cased for a kind without a folder: `primary_key_constraint`), `typeDesc`, `objectId`, `created`, `modified`, `parent` (a trigger's or constraint's table), then per kind — table `rowCount` (from partition metadata); view `isSchemaBound`; function `returns` (the type, or `TABLE`); trigger `isEnabled`, `events`; synonym `baseObject`; sequence `dataType`, `startValue`, `increment`, `minValue`, `maxValue`, `isCycling`, `cache`, `currentValue`. Named sets — table: `columns`, `keys`, `indexes`, `check_constraints`, `triggers`; view: `columns`, `indexes`, `triggers`; procedure or function: `parameters`. `columns`: `column_id`, `name`, `data_type`, `nullable`, `identity` (`IDENTITY(seed,increment)`; a view's column `IDENTITY`), `computed` (the expression, `PERSISTED` marked), `default`, `collation`, `primary_key`. `keys`: the primary key, unique constraints, then foreign keys — `name`, `type`, `columns`, `references` (`[schema].[table] (cols)`), `on_delete`, `on_update`, `disabled`, `not_trusted`. `indexes`: `name`, `type`, `unique`, `primary_key`, `key_columns` (`DESC` marked), `included_columns`, `filter`, `disabled`. `check_constraints`: `name`, `column` (NULL table-level), `definition`, `disabled`, `not_trusted`. `triggers`: `name`, `enabled`, `events`. `parameters`: `ordinal`, `name`, `data_type`, `is_output`, `has_default` (NULL for a T-SQL module: the catalog records defaults only for CLR ones). A computed, default or check expression the login cannot see (no VIEW DEFINITION) is NULL, counted in a warning; a user-defined type it holds no permission on reads as its base system type (`nvarchar(25)`, empty for a CLR type), counted in a warning — also in `parameters`, `returns`, a sequence's `dataType` and `object search --in column` |
@@ -566,7 +572,7 @@ shell quoting can damage them.
 
 ## Discovery
 
-The `db` and `object` commands read the catalog; they are all `read` and
+The `db`, `object` and `server` commands read the catalog; they are all `read` and
 never take `--allow`.
 
 - **Where they look.** An `object` command reads the connection's database —
@@ -591,6 +597,44 @@ never take `--allow`.
   `PERMISSION_DENIED`, exit 9; a part of an answer that could not be read is
   NULL with a warning, exit 0. `agent context` lists the permissions the login
   is known to lack and the commands each one affects.
+
+## Storage
+
+`db files`, `db space`, `db log-usage`, `db table-sizes` and `server volumes`
+report sizes. They are `read`, and the figures are the server's own: `db space`
+and `db table-sizes` use `sp_spaceused`'s arithmetic, and the log figures are
+`sys.dm_db_log_space_usage`'s, so under `--unit kb` each equals what the
+procedure or DMV prints. The TUI's database and table panes split space by
+allocation-unit type instead, so their data and index figures can differ.
+
+- **Units.** `--unit kb|mb|gb` (lower-case; default `mb`) names the columns —
+  `size_mb` becomes `size_gb` — and sets their text: `kb` integers (`bigint`),
+  `mb`/`gb` two decimals (`decimal(18,2)`, a string in JSON as `db list`'s
+  `size_mb`). `*_pct` columns always have two decimals. Filters and sorting
+  compare the exact KB, never the rounded text.
+- **One database or all.** `db files`, `db space` and `db log-usage` take
+  exactly one of `<name>` or `--all`; neither or both is `USAGE_ERROR`.
+  `--all` walks every database, system ones included, in catalog order, with a
+  `database` column first. `db table-sizes` takes `<name>` only.
+- **A database that cannot be read inside** — not ONLINE, or no user for the
+  login. Named: `db space`, `db log-usage` and `db table-sizes` fail, exit 8
+  (`NOT_FOUND`) for its state and 9 (`PERMISSION_DENIED`) for the login's
+  access; `db files` lists its files from `sys.master_files` with `filegroup`,
+  `used`, `free`, `free_pct` NULL and a warning, exit 0 (the paths are what is
+  needed when a database is in trouble; without VIEW ANY DEFINITION
+  `master_files` shows none, and only the warning remains). Under `--all` each
+  such database is one warning, and the others are reported.
+- **Warnings** have fixed thresholds and no options, and are raised only for the
+  rows shown: a data or log file under 10 % free inside it, at 90 % or more of
+  a capped `max_size`, or growing by a percentage; a file on, or a volume, under
+  10 % free; a log whose `log_reuse_wait_desc` is not `NOTHING` (transient
+  waits such as `CHECKPOINT` included). They are facts to look at, not
+  judgements.
+- **Permissions.** `db log-usage` and `server volumes` need VIEW SERVER STATE
+  (2022+: VIEW SERVER PERFORMANCE STATE) — the log DMVs are server-scoped
+  despite their names — and fail, exit 9, without it. `db files`'
+  `volume_free_pct` and `db space`'s log columns are NULL with a warning
+  instead. `agent context` lists both.
 
 ## Running T-SQL
 

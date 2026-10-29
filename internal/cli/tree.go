@@ -126,6 +126,7 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 	}
 	tree.Commands = append(tree.Commands, cmd.AgentContextCommand(d))
 	tree.Commands = append(tree.Commands, cmd.ProfileCommands(d)...)
+	tree.Commands = append(tree.Commands, cmd.ServerCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.DBCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.ObjectCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.QueryCommands(d)...)

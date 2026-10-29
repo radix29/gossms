@@ -120,7 +120,7 @@ func TestAgentContext(t *testing.T) {
 		missing = append(missing, r[0].(string)+" @ "+r[1].(string)+" → "+r[2].(string))
 	}
 	want := []string{
-		"VIEW SERVER STATE @ server → object indexes",
+		"VIEW SERVER STATE @ server → object indexes, db files, db space, db log-usage, server volumes",
 		"VIEW DEFINITION @ database [app] → object list, object search, object describe, object definition, " +
 			"object dependencies, object indexes, object stats",
 	}
@@ -183,7 +183,7 @@ func TestAgentGuideEnvironment(t *testing.T) {
 		t.Fatalf("no environment section:\n%s", r.stdout)
 	}
 	for _, want := range []string{"- login: reader", "- maxAllow: write", "### missing_permissions",
-		"| VIEW SERVER STATE | server | object indexes |", "### profiles"} {
+		"| VIEW SERVER STATE | server | object indexes, db files, db space, db log-usage, server volumes |", "### profiles"} {
 		if !strings.Contains(env, want) {
 			t.Errorf("environment lacks %q:\n%s", want, env)
 		}

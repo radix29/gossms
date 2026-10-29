@@ -39,7 +39,7 @@ func DBCommands(d Deps) []*spec.Command {
 	return []*spec.Command{
 		{
 			Path:    []string{"db"},
-			Summary: "List databases, show one database's properties and its files",
+			Summary: "List databases, show one database's properties, its files, its space, its log usage and its largest tables",
 			Class:   spec.ClassRead,
 		},
 		{
@@ -79,6 +79,9 @@ func DBCommands(d Deps) []*spec.Command {
 			},
 		},
 		dbFilesCommand(d),
+		dbSpaceCommand(d),
+		dbLogUsageCommand(d),
+		dbTableSizesCommand(d),
 	}
 }
 

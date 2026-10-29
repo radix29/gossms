@@ -54,9 +54,13 @@ var permissionNeeds = []permissionNeed{
 	{
 		permission: "VIEW SERVER STATE",
 		// 2022 split the performance DMVs out under the narrower name.
+		// sys.dm_db_log_space_usage and dm_db_log_info are server-scoped
+		// despite their names: VIEW DATABASE STATE alone is refused (Msg 300),
+		// checked on 13 and 17.
 		anyOf:    []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"},
-		commands: []string{"object indexes"},
-		effect:   "index usage columns read NULL (with a warning)",
+		commands: []string{"object indexes", "db files", "db space", "db log-usage", "server volumes"},
+		effect: "db log-usage and server volumes fail (exit 9); columns read NULL (with a warning): index " +
+			"usage (object indexes), volume_free_pct (db files), the log columns (db space)",
 	},
 	{
 		permission: "VIEW ANY DATABASE",
@@ -68,8 +72,9 @@ var permissionNeeds = []permissionNeed{
 		permission: "VIEW ANY DEFINITION",
 		// sys.master_files shows its rows to any of the three.
 		anyOf:    []string{"VIEW ANY DEFINITION", "CREATE ANY DATABASE", "ALTER ANY DATABASE"},
-		commands: []string{"db list", "db info"},
-		effect:   "database sizes read NULL (sys.master_files hides the files)",
+		commands: []string{"db list", "db info", "db files"},
+		effect: "database sizes read NULL (sys.master_files hides the files); db files lists a database it " +
+			"cannot read inside (not ONLINE, or no user) with no files, only a warning",
 	},
 	{
 		permission: "VIEW DEFINITION",
