@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
@@ -40,7 +42,7 @@ func outputOptions() []spec.Option {
 		{Name: optOutFile, Type: spec.TypeString, Global: true,
 			Help: "Write every row to this file, its format by extension (.csv .tsv .jsonl .json .md .txt); stdout gets the summary"},
 		{Name: optForce, Type: spec.TypeBool, Global: true,
-			Help: "Replace an existing --out-file"},
+			Help: "Replace an existing --out-file or --plan-file"},
 	}
 }
 
@@ -67,7 +69,20 @@ func renderOptions(inv *spec.Invocation) (output.Options, error) {
 		return o, output.NewError(output.CodeUsageError, "--out-file: empty path", "")
 	}
 	if o.Force && o.OutFile == "" {
-		return o, output.NewError(output.CodeUsageError, "--force: only with --out-file", "")
+		targets := []string{"--" + optOutFile}
+		for _, n := range forceFileOptions {
+			if inv.Given[n] {
+				return o, nil
+			}
+			if inv.Command != nil && slices.ContainsFunc(inv.Command.Options, func(op spec.Option) bool { return op.Name == n }) {
+				targets = append(targets, "--"+n)
+			}
+		}
+		return o, output.NewError(output.CodeUsageError, "--force: only with "+strings.Join(targets, " or "), "")
 	}
 	return o, nil
 }
+
+// forceFileOptions is the command options, besides --out-file, that name a
+// file the command writes and that --force lets replace an existing file.
+var forceFileOptions = []string{"plan-file"}

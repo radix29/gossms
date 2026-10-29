@@ -1,0 +1,296 @@
+{
+  "schemaVersion": "1.0",
+  "status": "ok",
+  "command": "plan estimated",
+  "server": "devsrv,1500",
+  "database": "app",
+  "durationMs": 0,
+  "rowsAffected": null,
+  "outFile": null,
+  "data": {
+    "planType": "estimated",
+    "detectedClass": "read",
+    "statementCount": "1"
+  },
+  "resultSets": [
+    {
+      "name": "statements",
+      "columns": [
+        {
+          "name": "n",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "type",
+          "type": null,
+          "nullable": false
+        },
+        {
+          "name": "cost",
+          "type": "float",
+          "nullable": false
+        },
+        {
+          "name": "est_rows",
+          "type": "float",
+          "nullable": false
+        },
+        {
+          "name": "actual_rows",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "elapsed_ms",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "cpu_ms",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "dop",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "grant_kb",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "warnings",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "text",
+          "type": null,
+          "nullable": false
+        }
+      ],
+      "rows": [
+        [
+          1,
+          "SELECT",
+          0.0065,
+          5,
+          null,
+          null,
+          null,
+          1,
+          512,
+          1,
+          "SELECT TOP (5) [DoctorID], [FirstName], [LastName] FROM [HealthClinic].[dbo].[Doctors] ORDER BY [LastName]"
+        ]
+      ],
+      "rowCount": 1,
+      "totalRowCount": 1,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": null
+    },
+    {
+      "name": "operators",
+      "columns": [
+        {
+          "name": "stmt",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "node",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "physical",
+          "type": null,
+          "nullable": false
+        },
+        {
+          "name": "logical",
+          "type": null,
+          "nullable": false
+        },
+        {
+          "name": "object",
+          "type": null,
+          "nullable": true
+        },
+        {
+          "name": "cost_pct",
+          "type": "float",
+          "nullable": false
+        },
+        {
+          "name": "est_rows",
+          "type": "float",
+          "nullable": false
+        },
+        {
+          "name": "actual_rows",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "elapsed_ms",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "parallel",
+          "type": "bit",
+          "nullable": false
+        },
+        {
+          "name": "mode",
+          "type": null,
+          "nullable": true
+        },
+        {
+          "name": "warnings",
+          "type": null,
+          "nullable": true
+        },
+        {
+          "name": "misestimate",
+          "type": "bit",
+          "nullable": true
+        }
+      ],
+      "rows": [
+        [
+          1,
+          1,
+          "Clustered Index Scan",
+          "Clustered Index Scan",
+          "dbo.Doctors [PK_Doctors]",
+          98.5,
+          409,
+          null,
+          null,
+          false,
+          "Row",
+          "ColumnsWithNoStatistics",
+          null
+        ],
+        [
+          1,
+          0,
+          "Top",
+          "Top",
+          null,
+          1.5,
+          5,
+          null,
+          null,
+          false,
+          "Row",
+          null,
+          null
+        ]
+      ],
+      "rowCount": 2,
+      "totalRowCount": 2,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": null
+    },
+    {
+      "name": "missing_indexes",
+      "columns": [
+        {
+          "name": "stmt",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "impact",
+          "type": "float",
+          "nullable": false
+        },
+        {
+          "name": "database",
+          "type": null,
+          "nullable": true
+        },
+        {
+          "name": "table",
+          "type": null,
+          "nullable": false
+        },
+        {
+          "name": "equality",
+          "type": null,
+          "nullable": true
+        },
+        {
+          "name": "inequality",
+          "type": null,
+          "nullable": true
+        },
+        {
+          "name": "include",
+          "type": null,
+          "nullable": true
+        },
+        {
+          "name": "create_statement",
+          "type": null,
+          "nullable": false
+        }
+      ],
+      "rows": [],
+      "rowCount": 0,
+      "totalRowCount": 0,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": null
+    },
+    {
+      "name": "warnings",
+      "columns": [
+        {
+          "name": "stmt",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "node",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "operator",
+          "type": null,
+          "nullable": true
+        },
+        {
+          "name": "warning",
+          "type": null,
+          "nullable": false
+        }
+      ],
+      "rows": [
+        [
+          1,
+          1,
+          "Clustered Index Scan",
+          "ColumnsWithNoStatistics"
+        ]
+      ],
+      "rowCount": 1,
+      "totalRowCount": 1,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": null
+    }
+  ],
+  "messages": [],
+  "warnings": [],
+  "errors": []
+}

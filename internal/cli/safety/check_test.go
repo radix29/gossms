@@ -148,3 +148,19 @@ func TestModeWords(t *testing.T) {
 		t.Errorf("lines %v, want none", got)
 	}
 }
+
+func TestStatisticsXMLWords(t *testing.T) {
+	got := StatisticsXMLWords("SELECT 1\nGO\nset statistics xml off\nSET STATISTICS IO, TIME,\n  XML ON")
+	if !slices.Equal(got, []int{3, 5}) {
+		t.Errorf("lines %v, want [3 5]", got)
+	}
+	for _, s := range []string{
+		"SET STATISTICS IO ON SELECT 'SET STATISTICS XML ON' AS xml -- SET STATISTICS XML ON",
+		"UPDATE STATISTICS dbo.t\nSELECT xml FROM t",
+		"SELECT * FROM sys.stats AS statistics, x AS xml",
+	} {
+		if got := StatisticsXMLWords(s); len(got) != 0 {
+			t.Errorf("%q: lines %v, want none", s, got)
+		}
+	}
+}

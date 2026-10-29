@@ -109,23 +109,11 @@ func QueryCommands(d Deps) []*spec.Command {
 				"commits only when the rows changed stay at or under the limit. --dry-run classifies and checks without " +
 				"connecting. --param name=value:type runs the script (one batch) through sp_executesql with @name as a " +
 				"typed parameter, so a value is never pasted into the T-SQL; the script is classified as written.",
-			Options: append(append(append(sqlInputOptions(), profileOption()), connect.Options()...),
-				spec.Option{Name: optAllow, Type: spec.TypeEnum, Enum: classNames(), Default: string(spec.ClassRead),
-					Help: "Highest operation class the script may reach; the profile's ceiling (max_allow) caps it"},
-				spec.Option{Name: optDryRun, Type: spec.TypeBool,
-					Help: "Classify and check the script as a run would, without connecting or running anything"},
-				spec.Option{Name: optTransaction, Type: spec.TypeEnum, Enum: []string{tranAuto, tranCommit, tranRollback},
-					Default: tranAuto,
-					Help:    "auto: each statement commits itself; rollback: run in one transaction and roll it back; commit: commit it only if every batch succeeded"},
-				spec.Option{Name: optMaxRowsAffected, Type: spec.TypeInt,
-					Help: "Run in one transaction and commit only if the rows changed stay at or under this; otherwise roll back (exit 7)"},
-				spec.Option{Name: optContinueOnError, Type: spec.TypeBool,
-					Help: "Run every batch even after one fails (exit 10 when some succeeded); refused with a transaction"},
+			Options: append(append(append(append(sqlInputOptions(), profileOption()), connect.Options()...), runOptions()...),
 				timeoutOption(),
 				spec.Option{Name: optStatistics, Type: spec.TypeList,
 					Help: "io, time: SET STATISTICS IO / TIME ON for the run; their output goes to messages"},
-				spec.Option{Name: optParam, Type: spec.TypeRepeat,
-					Help: "name=value:type, e.g. id=42:int: run the script through sp_executesql with @name declared as type; one batch only"},
+				paramOption(),
 			),
 			Class: spec.ClassRead,
 			Run:   d.queryRun,
@@ -155,6 +143,30 @@ func QueryCommands(d Deps) []*spec.Command {
 			},
 		},
 	}
+}
+
+// runOptions is the options that gate and wrap a run, query run's and plan
+// actual's: --allow, --dry-run, --transaction, --max-rows-affected and
+// --continue-on-error.
+func runOptions() []spec.Option {
+	return []spec.Option{
+		{Name: optAllow, Type: spec.TypeEnum, Enum: classNames(), Default: string(spec.ClassRead),
+			Help: "Highest operation class the script may reach; the profile's ceiling (max_allow) caps it"},
+		{Name: optDryRun, Type: spec.TypeBool,
+			Help: "Classify and check the script as a run would, without connecting or running anything"},
+		{Name: optTransaction, Type: spec.TypeEnum, Enum: []string{tranAuto, tranCommit, tranRollback},
+			Default: tranAuto,
+			Help:    "auto: each statement commits itself; rollback: run in one transaction and roll it back; commit: commit it only if every batch succeeded"},
+		{Name: optMaxRowsAffected, Type: spec.TypeInt,
+			Help: "Run in one transaction and commit only if the rows changed stay at or under this; otherwise roll back (exit 7)"},
+		{Name: optContinueOnError, Type: spec.TypeBool,
+			Help: "Run every batch even after one fails (exit 10 when some succeeded); refused with a transaction"},
+	}
+}
+
+func paramOption() spec.Option {
+	return spec.Option{Name: optParam, Type: spec.TypeRepeat,
+		Help: "name=value:type, e.g. id=42:int: run the script through sp_executesql with @name declared as type; one batch only"}
 }
 
 func timeoutOption() spec.Option {
@@ -368,6 +380,8 @@ func blockedError(b *safety.Blocked) *output.Error {
 type Session interface {
 	Execute(ctx context.Context, script string, opts ...query.Option) *query.Result
 	ExecuteToSink(ctx context.Context, script string, sink query.RowSink, opts ...query.Option) *query.Result
+	ExecuteEstimatedPlan(ctx context.Context, script string, opts ...query.Option) *query.Result
+	ExecuteToSinkWithPlan(ctx context.Context, script string, mode gosmo.PlanMode, sink query.RowSink, opts ...query.Option) *query.Result
 	EndTransactions(ctx context.Context, commit bool) error
 	Close()
 }
@@ -425,7 +439,8 @@ func readRunSettings(inv *spec.Invocation) (runSettings, error) {
 	if r.timeout, err = readTimeout(inv); err != nil {
 		return r, err
 	}
-	for _, s := range inv.Values[optStatistics].([]string) {
+	stats, _ := inv.Values[optStatistics].([]string) // plan actual has no --statistics
+	for _, s := range stats {
 		switch v := strings.ToUpper(s); v {
 		case "IO", "TIME":
 			if !slices.Contains(r.statistics, v) {
@@ -506,8 +521,56 @@ func timeoutError(d time.Duration) *output.Error {
 		"Raise --timeout (0 is no limit), or narrow the query.")
 }
 
-func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
+// scriptInput is a command's T-SQL as read before anything connects.
+type scriptInput struct {
+	script string         // as given: what the classifier reads
+	send   string         // what the server receives: script, or script inside sp_executesql under --param
+	sc     *safety.Script // script, classified
+}
+
+// readScriptInput reads the one SQL input option and, for a command that has
+// it, --param, and classifies the script.
+func readScriptInput(inv *spec.Invocation) (scriptInput, error) {
 	script, err := readSQL(inv)
+	if err != nil {
+		return scriptInput{}, err
+	}
+	in := scriptInput{script: script, send: script}
+	values, _ := inv.Values[optParam].([]string)
+	if params, err := readParams(values); err != nil {
+		return in, err
+	} else if params != nil {
+		if in.send, err = parameterize(script, params); err != nil {
+			return in, err
+		}
+	}
+	in.sc = safety.Classify(script)
+	return in, nil
+}
+
+// refuseModeWords is the refusal of a command that runs the script under a
+// mode of its own (query parse's PARSEONLY, plan estimated's SHOWPLAN_XML)
+// when the script mentions PARSEONLY, NOEXEC or SHOWPLAN_* anywhere, OFF
+// included: an OFF mid-script would switch the mode off and run what follows.
+// Nil when there is no mention.
+func refuseModeWords(script string, sc *safety.Script, command, hint string) (*output.Result, error) {
+	lines := safety.ModeWords(script)
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	parts := make([]string, len(lines))
+	for i, l := range lines {
+		parts[i] = "line " + strconv.Itoa(l)
+	}
+	return &output.Result{Fields: []output.Field{
+		{Key: "detectedClass", Value: string(sc.Class)},
+		{Key: "statements", Value: strings.Join(parts, "; ")},
+	}}, output.NewError(output.CodeBlocked,
+		"the script sets PARSEONLY, NOEXEC or SHOWPLAN_*, which "+command+" runs under itself", hint)
+}
+
+func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
+	in, err := readScriptInput(inv)
 	if err != nil {
 		return nil, err
 	}
@@ -515,40 +578,48 @@ func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	if err != nil {
 		return nil, err
 	}
-	// What is sent: the script, or the script inside sp_executesql when it
-	// has parameters. The classifier reads the script either way.
-	send := script
-	if params, err := readParams(inv.Values[optParam].([]string)); err != nil {
-		return nil, err
-	} else if params != nil {
-		if send, err = parameterize(script, params); err != nil {
-			return nil, err
-		}
-	}
+	res, _, err := d.runScript(ctx, inv, in, run,
+		func(ctx context.Context, sess Session, send string, opts []query.Option) *query.Result {
+			return sess.ExecuteToSink(ctx, send, inv.Sink, opts...)
+		})
+	return res, err
+}
+
+// runExec sends a run's script on sess with opts: query run streams the rows
+// to the command's sink, plan actual also captures the plans.
+type runExec func(ctx context.Context, sess Session, send string, opts []query.Option) *query.Result
+
+// runScript is the run query run and plan actual share: the check against
+// --allow and the profile's ceiling before anything connects (answering
+// --dry-run), the session's setup (--statistics, the wrapping transaction),
+// the script through exec, then the timeout, stop-on-error and the
+// transaction's end. qr is exec's result, nil when the script was not sent.
+func (d Deps) runScript(ctx context.Context, inv *spec.Invocation, in scriptInput, run runSettings, exec runExec) (res *output.Result, qr *query.Result, err error) {
+	send, sc := in.send, in.sc
 	cfg, profile, ceiling, err := d.profileCeiling(inv)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// The check runs before anything connects: a refused script never reaches
 	// the server, and --dry-run answers the same refusal.
-	sc := safety.Classify(script)
 	policy := safety.Policy{Allow: run.allow, Ceiling: ceiling, Transaction: run.wrapped(), MaxRowsAffected: run.limited}
 	blocked := safety.Check(sc, policy)
 	if run.dryRun {
 		res := classification(sc, policy.Allowed(), blocked)
 		if blocked != nil {
-			return res, blockedError(blocked)
+			return res, nil, blockedError(blocked)
 		}
-		return res, nil
+		return res, nil, nil
 	}
 	if blocked != nil {
-		return blockedResult(blocked)
+		res, err := blockedResult(blocked)
+		return res, nil, err
 	}
 
-	res := &output.Result{}
+	res = &output.Result{}
 	c, err := d.connectSession(ctx, inv, cfg, profile, res)
 	if err != nil {
-		return res, err
+		return res, nil, err
 	}
 	defer c.close()
 
@@ -570,7 +641,7 @@ func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Resul
 			if timedOut() {
 				res.Errors = append([]*output.Error{timeoutError(run.timeout)}, res.Errors...)
 			}
-			return res, nil
+			return res, nil, nil
 		}
 	}
 
@@ -578,7 +649,7 @@ func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	if !run.continueOnError {
 		opts = append(opts, query.WithStopOnError())
 	}
-	qr := c.sess.ExecuteToSink(rctx, send, inv.Sink, opts...)
+	qr = exec(rctx, c.sess, send, opts)
 	collect(res, qr, rctx.Err() != nil)
 	if qr.Database != "" {
 		res.Database = qr.Database
@@ -591,13 +662,13 @@ func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		if run.wrapped() {
 			res.Fields = append(res.Fields, output.Field{Key: "transaction", Value: outcomeRolledBack})
 		}
-		return res, nil
+		return res, qr, nil
 	case timedOut():
 		res.Errors = append([]*output.Error{timeoutError(run.timeout)}, res.Errors...)
 		if run.wrapped() {
 			res.Fields = append(res.Fields, output.Field{Key: "transaction", Value: outcomeRolledBack})
 		}
-		return res, nil
+		return res, qr, nil
 	}
 	if !qr.SessionLost {
 		if run.continueOnError && qr.FailedBatches > 0 && qr.FailedBatches < qr.Batches {
@@ -613,7 +684,7 @@ func (d Deps) queryRun(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	if run.wrapped() {
 		d.endTransaction(ctx, c.sess, qr, run, res)
 	}
-	return res, nil
+	return res, qr, nil
 }
 
 // batchCount is the batches script sends, each repetition of a GO n counted.
@@ -784,21 +855,11 @@ func (d Deps) queryParse(ctx context.Context, inv *spec.Invocation) (*output.Res
 	if err != nil {
 		return nil, err
 	}
-	// Nothing runs, so the class is not checked; but a SET PARSEONLY OFF (or
-	// NOEXEC, SHOWPLAN_*) in the script would switch the mode off mid-script,
-	// and the statements after it would run. Any mention is refused.
+	// Nothing runs, so the class is not checked; but a mode option in the
+	// script is refused (refuseModeWords).
 	sc := safety.Classify(script)
-	if lines := safety.ModeWords(script); len(lines) > 0 {
-		parts := make([]string, len(lines))
-		for i, l := range lines {
-			parts[i] = "line " + strconv.Itoa(l)
-		}
-		return &output.Result{Fields: []output.Field{
-			{Key: "detectedClass", Value: string(sc.Class)},
-			{Key: "statements", Value: strings.Join(parts, "; ")},
-		}}, output.NewError(output.CodeBlocked,
-			"the script sets PARSEONLY, NOEXEC or SHOWPLAN_*, which query parse runs under itself",
-			"Remove those SET statements; query parse needs none.")
+	if res, err := refuseModeWords(script, sc, "query parse", "Remove those SET statements; query parse needs none."); err != nil {
+		return res, err
 	}
 	cfg, profile, _, err := d.profileCeiling(inv)
 	if err != nil {

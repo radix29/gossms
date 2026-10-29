@@ -12,11 +12,13 @@ package query
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-sql/sqlexp"
+	gosmo "github.com/radix29/gosmo"
 )
 
 const livePlanBatch = "SELECT TOP (1) name FROM sys.objects;\n" +
@@ -86,6 +88,70 @@ func TestLivePlanEstimatedIsOneCombinedDocument(t *testing.T) {
 	}
 	if len(res.Sets) != 0 {
 		t.Errorf("Sets = %d, want none: an estimated plan runs nothing", len(res.Sets))
+	}
+}
+
+// ExecuteToSinkWithPlan on a real server: the plan sets never reach the sink
+// and the statements' rows do, in the shape each mode returns plans in.
+func TestLivePlanToSinkKeepsPlansOutOfTheSink(t *testing.T) {
+	db, ctx, done := livePlanDB(t)
+	defer done()
+	s := livePlanSession(t, ctx, db, "master")
+
+	for _, tc := range []struct {
+		mode      gosmo.PlanMode
+		plans     int
+		sinkSets  int
+		sinkTotal int
+	}{
+		{gosmo.PlanActual, 3, 3, 4},    // one plan per statement; TOP 1 + 2 + 1 rows
+		{gosmo.PlanEstimated, 1, 0, 0}, // one combined document; nothing runs
+	} {
+		t.Run(tc.mode.String(), func(t *testing.T) {
+			sink := &recordingSink{}
+			res := s.ExecuteToSinkWithPlan(ctx, livePlanBatch, tc.mode, sink)
+			if res.HasErrors() {
+				t.Fatalf("batch failed: %+v", res.Messages)
+			}
+			if len(res.PlanXML) != tc.plans {
+				t.Fatalf("PlanXML = %d documents, want %d", len(res.PlanXML), tc.plans)
+			}
+			for i, b := range sink.begins {
+				if slices.Contains(b, gosmo.ShowplanColumn) {
+					t.Errorf("sink set %d is a showplan set: %v", i, b)
+				}
+			}
+			if len(sink.begins) != tc.sinkSets || len(sink.rows) != tc.sinkTotal || res.RowsWritten != tc.sinkTotal {
+				t.Errorf("sink saw %d sets, %d rows (RowsWritten %d); want %d, %d",
+					len(sink.begins), len(sink.rows), res.RowsWritten, tc.sinkSets, tc.sinkTotal)
+			}
+			if len(res.Sets) != 0 {
+				t.Errorf("Sets = %d, want none retained", len(res.Sets))
+			}
+			// Under STATISTICS XML each plan set has a count of its own,
+			// marked AfterPlan; a row set's count is not.
+			var counts []RowCount
+			for _, m := range res.Messages {
+				if m.RowsAffected != nil {
+					counts = append(counts, *m.RowsAffected)
+				}
+			}
+			if tc.mode == gosmo.PlanActual {
+				want := []RowCount{
+					{N: 1, AfterSet: true}, {N: 1, AfterSet: true, AfterPlan: true},
+					{N: 2, AfterSet: true}, {N: 1, AfterSet: true, AfterPlan: true},
+					{N: 1, AfterSet: true}, {N: 1, AfterSet: true, AfterPlan: true},
+				}
+				if !slices.Equal(counts, want) {
+					t.Errorf("counts %+v, want %+v", counts, want)
+				}
+			}
+		})
+	}
+	// The capture's SET ... OFF ran: a plain run on the same session returns
+	// rows, not a plan.
+	if res := s.Execute(ctx, "SELECT 1 AS n"); len(res.PlanXML) != 0 || len(res.Sets) != 1 {
+		t.Errorf("after the captures: PlanXML %d, Sets %d; want 0, 1", len(res.PlanXML), len(res.Sets))
 	}
 }
 

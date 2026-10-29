@@ -144,19 +144,22 @@ type Node struct {
 }
 
 // Cost returns the node's own cost as a fraction of stmtTotal (SSMS's
-// per-operator cost): subtree cost minus children's, clamped at zero.
+// per-operator cost), 0 when stmtTotal is not positive.
 func (n *Node) Cost(stmtTotal float64) float64 {
+	if stmtTotal <= 0 {
+		return 0
+	}
+	return n.OwnCost() / stmtTotal
+}
+
+// OwnCost returns the node's own estimated cost: subtree cost minus
+// children's, clamped at zero.
+func (n *Node) OwnCost() float64 {
 	own := n.EstSubtreeCost
 	for _, c := range n.Children {
 		own -= c.EstSubtreeCost
 	}
-	if own < 0 {
-		own = 0
-	}
-	if stmtTotal <= 0 {
-		return 0
-	}
-	return own / stmtTotal
+	return max(own, 0)
 }
 
 // Runtime aggregates RunTimeCountersPerThread: rows, reads and CPU summed,

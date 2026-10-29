@@ -171,3 +171,31 @@ func ModeWords(script string) []int {
 	}
 	return lines
 }
+
+// StatisticsXMLWords is the script lines of a SET STATISTICS list naming XML
+// (SET STATISTICS IO, XML ON), ON or OFF, outside literals, comments and
+// quoted identifiers, in order. plan actual captures under STATISTICS XML
+// itself, so the script's OFF would lose the plans of what follows.
+func StatisticsXMLWords(script string) []int {
+	var lines []int
+	for _, b := range sqltext.SplitBatches(script) {
+		toks, _ := lexBatch(b.Text, b.StartLine)
+		for i, tk := range toks {
+			if tk.kind != sqltext.KindWord || tk.word != "STATISTICS" || i == 0 || toks[i-1].word != "SET" {
+				continue
+			}
+			for _, o := range toks[i+1:] {
+				if o.word == "," {
+					continue
+				}
+				if o.kind != sqltext.KindWord || (o.word != "IO" && o.word != "TIME" && o.word != "PROFILE" && o.word != "XML") {
+					break
+				}
+				if o.word == "XML" {
+					lines = append(lines, o.line)
+				}
+			}
+		}
+	}
+	return lines
+}
