@@ -104,6 +104,16 @@ type Catalog interface {
 	ServerCapabilities(ctx context.Context) (*gosmo.Capabilities, error)
 	DatabaseCapabilities(ctx context.Context, d *gosmo.Database) (*gosmo.DatabaseCapabilities, error)
 	DatabaseAccess(ctx context.Context) (map[int]bool, error)
+
+	// The storage commands: files read inside the database and from the
+	// server catalog, the volume behind every file, and the sp_spaceused and
+	// log figures.
+	Files(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseFileInfo, error)
+	DatabaseFiles(ctx context.Context, name string) ([]*gosmo.DatabaseFileInfo, error)
+	FileVolumes(ctx context.Context) (vols []gosmo.FileVolume, visible bool, err error)
+	SpaceReport(ctx context.Context, d *gosmo.Database) (gosmo.SpaceReport, error)
+	TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error)
+	LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -349,6 +359,30 @@ func (serverCatalog) DatabaseCapabilities(ctx context.Context, d *gosmo.Database
 
 func (c serverCatalog) DatabaseAccess(ctx context.Context) (map[int]bool, error) {
 	return c.s.DatabaseAccess(ctx)
+}
+
+func (serverCatalog) Files(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseFileInfo, error) {
+	return d.Files(ctx)
+}
+
+func (c serverCatalog) DatabaseFiles(ctx context.Context, name string) ([]*gosmo.DatabaseFileInfo, error) {
+	return c.s.DatabaseFiles(ctx, name)
+}
+
+func (c serverCatalog) FileVolumes(ctx context.Context) ([]gosmo.FileVolume, bool, error) {
+	return c.s.FileVolumes(ctx)
+}
+
+func (serverCatalog) SpaceReport(ctx context.Context, d *gosmo.Database) (gosmo.SpaceReport, error) {
+	return d.SpaceReport(ctx)
+}
+
+func (serverCatalog) TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error) {
+	return d.TableSizes(ctx)
+}
+
+func (serverCatalog) LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error) {
+	return d.LogSpace(ctx)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

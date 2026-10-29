@@ -235,6 +235,7 @@ gossms/
 │   │   │   ├── objectname.go        # parseObjectName: an <object> argument → schema and name over the T-SQL lexer (brackets keep their dots); a three-part name only for the connection's database
 │   │   │   ├── profile.go           # profile list/show/test
 │   │   │   ├── db.go                # db list (sizes from sys.master_files, system databases opt-in) / db info (catalog fields, SET options, space used — each part degrading to a warning)
+│   │   │   ├── db_storage.go        # the storage commands' shared layer: --unit (column suffix and cell text; figures filtered in exact KB), <name>-xor---all, the --all walker (state, then HAS_DBACCESS → readable or why not), the fixed-threshold file and log-reuse warnings
 │   │   │   ├── object.go            # object list/search/describe/definition: per-kind listing with the filter pushed to gosmo where it takes one, the describe dispatch on the object's type, the module text as a verbatim field
 │   │   │   ├── object_dependencies.go # object dependencies: breadth-first walk over gosmo Dependencies/Dependents, a visited set per direction, self-edges dropped
 │   │   │   ├── object_indexes.go    # object indexes (structure, usage, --fragmentation) / object stats (statistics with their properties, NULL where unread)
