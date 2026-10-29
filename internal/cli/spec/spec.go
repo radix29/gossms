@@ -83,7 +83,7 @@ type Option struct {
 	Name  string // long name without the leading "--"
 	Short string // one letter without the leading "-"; empty for none
 	Type  OptionType
-	Enum  []string // TypeEnum's values, in the order help lists them
+	Enum  []string // TypeEnum's values, in the order help lists them; on a TypeList, each item's
 	// Default is the value when the option is absent, spelled as on the
 	// command line, so the parser applies it by the same path as a typed
 	// value; empty means none (false for a bool).

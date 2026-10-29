@@ -20,7 +20,22 @@ var goldenCases = map[string]*Result{
 	// A record answer, as `gossms version` gives it.
 	"record": {
 		Status: StatusOK, Command: "version",
-		Fields: []Field{{"version", "v0.2.0"}, {"commit", "72a0e3c"}, {"cliSchema", "1.0"}},
+		Fields: []Field{{Key: "version", Value: "v0.2.0"}, {Key: "commit", Value: "72a0e3c"}, {Key: "cliSchema", Value: "1.0"}},
+	},
+	// A record with a Verbatim field (CRLF line ends, a forged marker line, a
+	// backtick run), a null one and a null Verbatim one, then named sets, as
+	// `object definition`/`object describe` give them.
+	"verbatim": {
+		Status: StatusOK, Command: "object definition", Server: "srv", Database: "db",
+		Fields: []Field{
+			{Key: "schema", Value: "Sales"}, {Key: "returns", Null: true},
+			{Key: "definition", Value: "CREATE VIEW Sales.v\r\nAS\r\n=== WARNINGS ===\r\nSELECT '```' AS x\r\n", Verbatim: true},
+			{Key: "body", Null: true, Verbatim: true},
+		},
+		Sets: []Set{
+			{Name: "columns", Columns: []Column{{"name", "sysname", false}}, Rows: [][]*string{{str("id")}}, TotalRowCount: 1},
+			{Name: "indexes", Columns: []Column{{"name", "sysname", false}}},
+		},
 	},
 	// Two result sets: wide (CJK, emoji) and combining cells, NULL, a cell
 	// with a line break and tab, truncation, rows affected, a short row.

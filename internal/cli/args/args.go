@@ -417,20 +417,21 @@ func (p *parser) convert(o spec.Option, as, raw string) (any, error) {
 		}
 		return n, nil
 	case spec.TypeEnum:
-		if slices.Contains(o.Enum, raw) {
-			return raw, nil
+		if err := p.checkEnum(o, as, raw); err != nil {
+			return nil, err
 		}
-		hint := "One of: " + strings.Join(o.Enum, ", ") + "."
-		if s := Suggest(raw, o.Enum); s != "" {
-			hint = fmt.Sprintf("Did you mean %s? %s", s, hint)
-		}
-		return nil, p.errorf(KindBadValue, hint, "%s: %q is not a valid value", as, raw)
+		return raw, nil
 	case spec.TypeList:
 		var items []string
 		for item := range strings.SplitSeq(raw, ",") {
 			item = strings.TrimSpace(item)
 			if item == "" {
 				return nil, p.errorf(KindBadValue, "", "%s: empty item in %q", as, raw)
+			}
+			if len(o.Enum) > 0 {
+				if err := p.checkEnum(o, as, item); err != nil {
+					return nil, err
+				}
 			}
 			items = append(items, item)
 		}
@@ -440,6 +441,18 @@ func (p *parser) convert(o spec.Option, as, raw string) (any, error) {
 	default:
 		return raw, nil
 	}
+}
+
+// checkEnum refuses v unless it is one of o.Enum, suggesting the closest.
+func (p *parser) checkEnum(o spec.Option, as, v string) error {
+	if slices.Contains(o.Enum, v) {
+		return nil
+	}
+	hint := "One of: " + strings.Join(o.Enum, ", ") + "."
+	if s := Suggest(v, o.Enum); s != "" {
+		hint = fmt.Sprintf("Did you mean %s? %s", s, hint)
+	}
+	return p.errorf(KindBadValue, hint, "%s: %q is not a valid value", as, v)
 }
 
 // applyDefaults fills every option not given on the command line: from its

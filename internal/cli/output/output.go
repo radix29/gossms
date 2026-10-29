@@ -122,12 +122,22 @@ type Result struct {
 type Field struct {
 	Key   string
 	Value string
+	// Null is a value that is not there (JSON null; text prints KEY: as for
+	// an empty one).
+	Null bool
+	// Verbatim is a multi-line value kept whole — a module's definition. Text
+	// and markdown print it after the record as its own section, under an
+	// "=== KEY (n lines) ===" marker, line breaks intact; JSON as a string.
+	Verbatim bool
 }
 
 // Set is one result set. A cell is the grid's text (internal/query renders
 // every value as SSMS's grid does), nil for NULL; JSON types it by the
 // column's Type (typed.go).
 type Set struct {
+	// Name says what the set holds when a command returns several fixed ones
+	// ("columns", "indexes"); empty for a script's sets.
+	Name          string
 	Columns       []Column
 	Rows          [][]*string
 	TotalRowCount int  // rows the server returned; len(Rows) when not truncated

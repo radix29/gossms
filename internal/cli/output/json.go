@@ -26,6 +26,7 @@ type jsonEnvelope struct {
 }
 
 type jsonSet struct {
+	Name          *string      `json:"name"`
 	Columns       []jsonColumn `json:"columns"`
 	Rows          [][]any      `json:"rows"`
 	RowCount      int          `json:"rowCount"`
@@ -38,6 +39,7 @@ type jsonSet struct {
 // jsonSetSummary is a set in jsonl's _summary line: everything but the rows,
 // which are the lines before it.
 type jsonSetSummary struct {
+	Name          *string      `json:"name"`
 	Columns       []jsonColumn `json:"columns"`
 	RowCount      int          `json:"rowCount"`
 	TotalRowCount int          `json:"totalRowCount"`
@@ -91,9 +93,11 @@ func (f jsonFields) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		v, err := json.Marshal(fl.Value)
-		if err != nil {
-			return nil, err
+		v := []byte("null")
+		if !fl.Null {
+			if v, err = json.Marshal(fl.Value); err != nil {
+				return nil, err
+			}
 		}
 		b.Write(k)
 		b.WriteByte(':')
@@ -108,6 +112,7 @@ func renderJSON(w io.Writer, r *Result, o Options) error {
 	env := newEnvelope(r)
 	for _, s := range r.Sets {
 		js := jsonSet{
+			Name:          nullable(s.Name),
 			Columns:       jsonColumns(s.Columns),
 			Rows:          [][]any{},
 			RowCount:      len(s.Rows),

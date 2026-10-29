@@ -20,7 +20,10 @@ import (
 //
 //	VERSION: v0.2.0          Fields, as KEY: value
 //
-//	=== RESULT 1 (5 rows, truncated: no) ===
+//	=== DEFINITION (3 lines) ===   a Verbatim field, its lines as they are
+//	CREATE VIEW …
+//
+//	=== RESULT 1 (5 rows, truncated: no) ===   "RESULT 1: columns (…)" when named
 //	name | create_date       Sets, aligned by display width
 //	-----+------------
 //	NOTE: …                  when the set was truncated
@@ -32,7 +35,9 @@ import (
 //	HINT: …
 //
 // Every value is one line: a line break or tab inside it prints as a space,
-// so no value can forge a header or marker line. tables false prints each
+// so no value can forge a header or marker line. A Verbatim field is the one
+// exception, and its marker says how many lines follow so a reader takes
+// exactly those. tables false prints each
 // set as its marker and note only: csv's and tsv's summary on stderr.
 func renderText(w io.Writer, r *Result, o Options, tables bool) error {
 	return writeSections(w, textSections(r, o, func(n int, s Set) []string {
@@ -40,12 +45,37 @@ func renderText(w io.Writer, r *Result, o Options, tables bool) error {
 			return setHead(n, s, o)
 		}
 		return textSet(n, s, o)
+	}, func(f Field) []string {
+		lines := verbatimLines(f.Value)
+		return append([]string{verbatimMarker(f, len(lines))}, lines...)
 	}))
 }
 
-// textSections is the envelope as sections of lines, each set drawn by set.
-// Markdown shares it, with its own tables.
-func textSections(r *Result, o Options, set func(n int, s Set) []string) [][]string {
+// verbatimLines is a Verbatim value's lines, \r\n and \r read as line ends
+// (output is \n on every OS); no trailing empty line for a final break.
+func verbatimLines(s string) []string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = strings.TrimSuffix(s, "\n")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\n")
+}
+
+// verbatimMarker is a Verbatim field's "=== KEY (n lines) ===" line.
+func verbatimMarker(f Field, n int) string {
+	lines := strconv.Itoa(n) + " lines"
+	if n == 1 {
+		lines = "1 line"
+	}
+	return "=== " + upperSnake(f.Key) + " (" + lines + ") ==="
+}
+
+// textSections is the envelope as sections of lines, each set drawn by set and
+// each non-null Verbatim field by verbatim. Markdown shares it, with its own
+// tables and code blocks.
+func textSections(r *Result, o Options, set func(n int, s Set) []string, verbatim func(f Field) []string) [][]string {
 	var sections [][]string
 	if !o.Quiet {
 		h := []string{
@@ -70,13 +100,20 @@ func textSections(r *Result, o Options, set func(n int, s Set) []string) [][]str
 		}
 		sections = append(sections, h)
 	}
-	if len(r.Fields) > 0 {
-		var f []string
-		for _, fl := range r.Fields {
+	var f []string
+	var blocks [][]string
+	for _, fl := range r.Fields {
+		switch {
+		case !fl.Verbatim:
 			f = append(f, keyValue(upperSnake(fl.Key), fl.Value))
+		case !fl.Null:
+			blocks = append(blocks, verbatim(fl))
 		}
+	}
+	if len(f) > 0 {
 		sections = append(sections, f)
 	}
+	sections = append(sections, blocks...)
 	for i, s := range r.Sets {
 		sections = append(sections, set(i+1, s))
 	}
@@ -128,7 +165,7 @@ func writeSections(w io.Writer, sections [][]string) error {
 // setMarker is a set's "=== RESULT n (…) ===" line.
 func setMarker(n int, s Set) string {
 	if s.InFile {
-		return fmt.Sprintf("=== RESULT %d (%s, sent to --out-file) ===", n, rowCount(s.TotalRowCount))
+		return fmt.Sprintf("=== RESULT %d%s (%s, sent to --out-file) ===", n, setName(s), rowCount(s.TotalRowCount))
 	}
 	rows := rowCount(len(s.Rows))
 	if s.Truncated {
@@ -138,7 +175,15 @@ func setMarker(n int, s Set) string {
 	if s.Truncated {
 		truncated = "yes"
 	}
-	return fmt.Sprintf("=== RESULT %d (%s, truncated: %s) ===", n, rows, truncated)
+	return fmt.Sprintf("=== RESULT %d%s (%s, truncated: %s) ===", n, setName(s), rows, truncated)
+}
+
+// setName is ": name" for a named set, else empty.
+func setName(s Set) string {
+	if s.Name == "" {
+		return ""
+	}
+	return ": " + oneLine(s.Name)
 }
 
 func rowCount(n int) string {

@@ -7,8 +7,8 @@ import (
 	"github.com/clipperhouse/displaywidth"
 )
 
-// renderMarkdown writes the text envelope with each result set as a GitHub
-// table: the marker line, a blank line (a table cannot interrupt a
+// renderMarkdown writes the text envelope with each Verbatim field as a fenced
+// code block under its marker and each result set as a GitHub table: the marker line, a blank line (a table cannot interrupt a
 // paragraph), then the table. A cell's | is escaped and its line breaks are
 // <br>, so a value cannot end its row or the table. --no-headers does not
 // apply: a GitHub table has no form without a header row.
@@ -26,7 +26,27 @@ func renderMarkdown(w io.Writer, r *Result, o Options) error {
 			out = append(out, "", note)
 		}
 		return out
+	}, func(f Field) []string {
+		lines := verbatimLines(f.Value)
+		fence := strings.Repeat("`", max(3, longestRun(f.Value, '`')+1))
+		out := []string{verbatimMarker(f, len(lines)), "", fence}
+		return append(append(out, lines...), fence)
 	}))
+}
+
+// longestRun is the longest run of r in s: a code fence must be longer than
+// any backtick run inside the block, or the block ends early.
+func longestRun(s string, r rune) int {
+	longest, run := 0, 0
+	for _, c := range s {
+		if c != r {
+			run = 0
+			continue
+		}
+		run++
+		longest = max(longest, run)
+	}
+	return longest
 }
 
 // markdownTable is head, the |---| rule and rows, padded to each column's

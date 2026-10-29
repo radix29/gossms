@@ -30,8 +30,8 @@ func TestCommandTreeWellFormed(t *testing.T) {
 		if o.Help == "" {
 			t.Errorf("%s --%s: no help", where, o.Name)
 		}
-		if (o.Type == spec.TypeEnum) != (len(o.Enum) > 0) {
-			t.Errorf("%s --%s: Enum must be set exactly when Type is enum", where, o.Name)
+		if o.Type == spec.TypeEnum && len(o.Enum) == 0 || o.Type != spec.TypeEnum && o.Type != spec.TypeList && len(o.Enum) > 0 {
+			t.Errorf("%s --%s: Enum must be set when Type is enum, and only on an enum or a list", where, o.Name)
 		}
 		if o.Type == spec.TypeEnum && o.Default != "" && !slices.Contains(o.Enum, o.Default) {
 			t.Errorf("%s --%s: default %q is not in %v", where, o.Name, o.Default, o.Enum)

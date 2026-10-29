@@ -143,7 +143,11 @@ func writeOptions(b *strings.Builder, opts []spec.Option) {
 		case spec.TypeInt:
 			left += " <n>"
 		case spec.TypeList:
-			left += " <a,b,...>"
+			if len(o.Enum) > 0 {
+				left += " <" + strings.Join(o.Enum, "|") + ">,..."
+			} else {
+				left += " <a,b,...>"
+			}
 		default:
 			left += " <value>"
 		}

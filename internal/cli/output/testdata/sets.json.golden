@@ -9,6 +9,7 @@
   "outFile": null,
   "resultSets": [
     {
+      "name": null,
       "columns": [
         {
           "name": "name",
@@ -46,6 +47,7 @@
       "rowsAffected": null
     },
     {
+      "name": null,
       "columns": [
         {
           "name": "n",
@@ -65,6 +67,7 @@
       "rowsAffected": 1
     },
     {
+      "name": null,
       "columns": [
         {
           "name": "empty",

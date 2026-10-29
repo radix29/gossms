@@ -9,6 +9,7 @@
   "outFile": null,
   "resultSets": [
     {
+      "name": null,
       "columns": [
         {
           "name": "id",
