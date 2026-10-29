@@ -125,24 +125,25 @@ func (s *Sink) BeginTypedSet(columns, types []string, nullable []bool) error {
 			cols[i].Nullable = nullable[i]
 		}
 	}
-	return s.begin(cols)
+	return s.begin("", cols)
 }
 
-func (s *Sink) begin(cols []Column) error {
-	s.sets = append(s.sets, Set{Columns: cols, InFile: s.file != nil})
+// begin starts a set named name (empty for a script's).
+func (s *Sink) begin(name string, cols []Column) error {
+	s.sets = append(s.sets, Set{Name: name, Columns: cols, InFile: s.file != nil})
 	if f := s.file; f != nil {
 		switch {
 		case f.rec != nil:
 			f.fail(f.rec.beginSet(cols))
 		case f.jsonl != nil:
-			f.jsonl.beginSet(cols)
+			f.jsonl.beginSet(name, cols)
 			f.fail(f.jsonl.writeErr)
 		default:
-			f.sets = append(f.sets, Set{Columns: cols})
+			f.sets = append(f.sets, Set{Name: name, Columns: cols})
 		}
 		return f.err
 	}
-	if s.jsonl != nil && !s.jsonl.beginSet(cols) {
+	if s.jsonl != nil && !s.jsonl.beginSet(name, cols) {
 		// Over --max-output-bytes already: the set's rows are all dropped.
 		s.cur().Truncated = true
 		s.cur().TruncatedBy = TruncatedByMaxOutputBytes
@@ -232,7 +233,7 @@ func (s *Sink) stdoutErr() error {
 // same limits and destinations apply. A set's RowsAffected is kept.
 func (s *Sink) Add(sets []Set) {
 	for _, in := range sets {
-		if s.begin(in.Columns) != nil {
+		if s.begin(in.Name, in.Columns) != nil {
 			return
 		}
 		for _, row := range in.Rows {

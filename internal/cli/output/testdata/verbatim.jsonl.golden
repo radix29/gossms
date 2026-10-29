@@ -1,0 +1,4 @@
+{"_resultSet":{"index":1,"name":"columns","columns":[{"name":"name","key":"name","type":"sysname","nullable":false}]}}
+{"name":"id"}
+{"_resultSet":{"index":2,"name":"indexes","columns":[{"name":"name","key":"name","type":"sysname","nullable":false}]}}
+{"_summary":{"schemaVersion":"1.0","status":"ok","command":"object definition","server":"srv","database":"db","durationMs":0,"rowsAffected":null,"outFile":null,"data":{"schema":"Sales","returns":null,"definition":"CREATE VIEW Sales.v\r\nAS\r\n=== WARNINGS ===\r\nSELECT '```' AS x\r\n","body":null},"resultSets":[{"name":"columns","columns":[{"name":"name","type":"sysname","nullable":false}],"rowCount":1,"totalRowCount":1,"truncated":false,"truncatedBy":null,"rowsAffected":null},{"name":"indexes","columns":[{"name":"name","type":"sysname","nullable":false}],"rowCount":0,"totalRowCount":0,"truncated":false,"truncatedBy":null,"rowsAffected":null}],"messages":[],"warnings":[],"errors":[]}}

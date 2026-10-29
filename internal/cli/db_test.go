@@ -16,8 +16,10 @@ import (
 
 // fakeCatalog answers the catalog reads from its fields. A nil sizes map
 // with sizesErr set is a failed size read; spaceUsed counts the reads that
-// needed the database ONLINE.
+// needed the database ONLINE. The object reads it does not answer panic on
+// the nil Catalog (objectFake answers them).
 type fakeCatalog struct {
+	cmd.Catalog
 	current   string
 	dbs       []*gosmo.Database
 	sizes     map[int]gosmo.DatabaseSize

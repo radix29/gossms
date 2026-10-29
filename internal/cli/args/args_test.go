@@ -30,6 +30,7 @@ func testTree() *spec.Tree {
 				{Name: "limit", Type: spec.TypeInt, Default: "50", Help: "h"},
 				{Name: "database", Short: "d", Type: spec.TypeString, Env: "GOSSMS_DATABASE", Help: "h"},
 				{Name: "system", Type: spec.TypeBool, Default: "true", Help: "h"},
+				{Name: "kind", Type: spec.TypeList, Enum: []string{"table", "view"}, Help: "h"},
 			}},
 			{Path: []string{"object", "show"}, Args: []spec.Arg{
 				{Name: "name", Required: true},
@@ -59,7 +60,7 @@ func TestParse(t *testing.T) {
 	opts := Options{ReadFile: readFile, Getenv: func(k string) string { return env[k] }}
 	listDefaults := func(over map[string]any) map[string]any {
 		m := map[string]any{"output": "text", "quiet": false, "no-color": false, "help": false,
-			"type": []string(nil), "limit": 50, "database": "envdb", "system": true}
+			"type": []string(nil), "kind": []string(nil), "limit": 50, "database": "envdb", "system": true}
 		for k, v := range over {
 			m[k] = v
 		}
@@ -109,6 +110,8 @@ func TestParse(t *testing.T) {
 			listDefaults(map[string]any{"type": []string{"table", "view", "proc"}})},
 		{[]string{"object", "list", "--type= table , view"}, "object list", nil,
 			listDefaults(map[string]any{"type": []string{"table", "view"}})},
+		{[]string{"object", "list", "--kind", "view, table", "--kind", "view"}, "object list", nil,
+			listDefaults(map[string]any{"kind": []string{"view", "table", "view"}})},
 		{[]string{"object", "list", "--limit", "-1", "-d", "x"}, "object list", nil,
 			listDefaults(map[string]any{"limit": -1, "database": "x"})},
 		{[]string{"object", "list", "--no-system"}, "object list", nil, listDefaults(map[string]any{"system": false})},
@@ -173,7 +176,7 @@ func TestResponseFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{"output": "json", "quiet": true, "no-color": false, "help": false,
-		"type": []string{"table", "view"}, "limit": 5, "database": "My Db", "system": true}
+		"type": []string{"table", "view"}, "kind": []string(nil), "limit": 5, "database": "My Db", "system": true}
 	if strings.Join(inv.Command.Path, " ") != "object list" || !reflect.DeepEqual(inv.Values, want) {
 		t.Errorf("got %v %v\nwant %v", inv.Command.Path, inv.Values, want)
 	}
@@ -213,6 +216,7 @@ func TestParseErrors(t *testing.T) {
 		{[]string{"version", "--quiet=true"}, KindBadValue, "--quiet takes no value", ""},
 		{[]string{"object", "list", "--limit", "ten"}, KindBadValue, `"ten" is not an integer`, ""},
 		{[]string{"object", "list", "--type", "a,,b"}, KindBadValue, "empty item", ""},
+		{[]string{"object", "list", "--kind", "table,veiw"}, KindBadValue, `--kind: "veiw" is not a valid value`, "Did you mean view? One of: table, view."},
 		{[]string{"version", "-o", "json", "--output", "text"}, KindRepeated, "--output given more than once", ""},
 		{[]string{"version", "-q", "--no-quiet"}, KindRepeated, "--quiet", ""},
 		{[]string{"object", "show"}, KindMissingArg, "missing argument <name>", "gossms help object show"},

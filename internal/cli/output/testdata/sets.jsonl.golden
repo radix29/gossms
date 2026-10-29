@@ -1,9 +1,9 @@
-{"_resultSet":{"index":1,"columns":[{"name":"name","key":"name","type":"sysname","nullable":false},{"name":"note","key":"note","type":"nvarchar","nullable":true}]}}
+{"_resultSet":{"index":1,"name":null,"columns":[{"name":"name","key":"name","type":"sysname","nullable":false},{"name":"note","key":"note","type":"nvarchar","nullable":true}]}}
 {"name":"Customer","note":"日本語"}
 {"name":"Café","note":null}
 {"name":"multi\r\nline\there","note":"<a & b>"}
 {"name":"short","note":null}
-{"_resultSet":{"index":2,"columns":[{"name":"n","key":"n","type":null,"nullable":false}]}}
+{"_resultSet":{"index":2,"name":null,"columns":[{"name":"n","key":"n","type":null,"nullable":false}]}}
 {"n":"1"}
-{"_resultSet":{"index":3,"columns":[{"name":"empty","key":"empty","type":"int","nullable":true}]}}
-{"_summary":{"schemaVersion":"1.0","status":"ok","command":"query run","server":"localhost\\SQL2022","database":"AdventureWorks","durationMs":38,"rowsAffected":null,"outFile":null,"resultSets":[{"columns":[{"name":"name","type":"sysname","nullable":false},{"name":"note","type":"nvarchar","nullable":true}],"rowCount":4,"totalRowCount":18432,"truncated":true,"truncatedBy":"max-rows","rowsAffected":null},{"columns":[{"name":"n","type":null,"nullable":false}],"rowCount":1,"totalRowCount":1,"truncated":false,"truncatedBy":null,"rowsAffected":1},{"columns":[{"name":"empty","type":"int","nullable":true}],"rowCount":0,"totalRowCount":0,"truncated":false,"truncatedBy":null,"rowsAffected":null}],"messages":[{"type":"info","text":"(1 row affected)"}],"warnings":["a warning\nspanning lines"],"errors":[]}}
+{"_resultSet":{"index":3,"name":null,"columns":[{"name":"empty","key":"empty","type":"int","nullable":true}]}}
+{"_summary":{"schemaVersion":"1.0","status":"ok","command":"query run","server":"localhost\\SQL2022","database":"AdventureWorks","durationMs":38,"rowsAffected":null,"outFile":null,"resultSets":[{"name":null,"columns":[{"name":"name","type":"sysname","nullable":false},{"name":"note","type":"nvarchar","nullable":true}],"rowCount":4,"totalRowCount":18432,"truncated":true,"truncatedBy":"max-rows","rowsAffected":null},{"name":null,"columns":[{"name":"n","type":null,"nullable":false}],"rowCount":1,"totalRowCount":1,"truncated":false,"truncatedBy":null,"rowsAffected":1},{"name":null,"columns":[{"name":"empty","type":"int","nullable":true}],"rowCount":0,"totalRowCount":0,"truncated":false,"truncatedBy":null,"rowsAffected":null}],"messages":[{"type":"info","text":"(1 row affected)"}],"warnings":["a warning\nspanning lines"],"errors":[]}}

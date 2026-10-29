@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1.0",
+  "status": "ok",
+  "command": "object definition",
+  "server": "srv",
+  "database": "db",
+  "durationMs": 0,
+  "rowsAffected": null,
+  "outFile": null,
+  "data": {
+    "schema": "Sales",
+    "returns": null,
+    "definition": "CREATE VIEW Sales.v\r\nAS\r\n=== WARNINGS ===\r\nSELECT '```' AS x\r\n",
+    "body": null
+  },
+  "resultSets": [
+    {
+      "name": "columns",
+      "columns": [
+        {
+          "name": "name",
+          "type": "sysname",
+          "nullable": false
+        }
+      ],
+      "rows": [
+        [
+          "id"
+        ]
+      ],
+      "rowCount": 1,
+      "totalRowCount": 1,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": null
+    },
+    {
+      "name": "indexes",
+      "columns": [
+        {
+          "name": "name",
+          "type": "sysname",
+          "nullable": false
+        }
+      ],
+      "rows": [],
+      "rowCount": 0,
+      "totalRowCount": 0,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": null
+    }
+  ],
+  "messages": [],
+  "warnings": [],
+  "errors": []
+}

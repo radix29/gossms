@@ -60,7 +60,8 @@ gossms <command> --help
   or `-x=value`.
 - A bool is `--name`, or `--no-name` for false; it takes no value
   (`--quiet=yes` is an error).
-- A list option may repeat and/or take comma-separated items.
+- A list option may repeat and/or take comma-separated items; one with a fixed
+  vocabulary (`object list --type`) refuses an item outside it.
 - A non-list option given twice is an error — there is no "last one wins".
 - `-` is a value or a positional argument (stdin where a file is expected),
   never an option. A value may start with `-` but not `--`; spell such a value
@@ -261,9 +262,18 @@ CLI_SCHEMA: 1.0
   server reported a count, `OUT_FILE` only with `--out-file`; `RESULT_SETS: n`
   only when there are sets.
 - A record prints as `KEY: value` lines; the key is the JSON key in
-  `UPPER_SNAKE` (`cliSchema` → `CLI_SCHEMA`).
+  `UPPER_SNAKE` (`cliSchema` → `CLI_SCHEMA`). A null value prints `KEY:`, as
+  an empty one does.
+- A multi-line record value (`object definition`'s `definition`, the only
+  one) is not a `KEY:` line: it follows the record as its own section,
+  `=== DEFINITION (n lines) ===` and then exactly n lines, line breaks kept
+  (`\r\n` printed as `\n`) and never cut by `--max-col-width`. A reader takes
+  the n lines after the marker without scanning them — the text may hold a
+  line that looks like a marker. Markdown fences it as a code block. A null
+  one prints no section.
 - A result set is `=== RESULT n (r rows, truncated: no) ===` (or `r of t rows,
-  truncated: yes`), a header row, a `-+-` rule and the rows, aligned by
+  truncated: yes`); a command that returns several fixed sets names each,
+  `=== RESULT 2: indexes (…) ===`. Then a header row, a `-+-` rule and the rows, aligned by
   display width; the last column is unpadded. NULL prints `--null-text`. A
   set cut by a limit is followed by its `NOTE:` line (§ Limits); a set sent to
   `--out-file` is its marker only, `(n rows, sent to --out-file)`.
@@ -300,15 +310,18 @@ CLI_SCHEMA: 1.0
 
 - Keys always appear in this order, and every key is always present (`null` or
   `[]`) — except `data`, which appears only for a record answer, its fields in
-  the command's fixed order.
+  the command's fixed order. A `data` value is a string, or `null` where the
+  command says so (`object definition` of an encrypted module).
 - `rowsAffected` is the sum of the DML row counts the server reported, `null`
   when it reported none; `outFile` the `--out-file` written, else `null`.
 - An error is `{"code", "message", "hint"}`; a message `{"type", "text"}`; a
   warning a string. An error with a SQL Server error behind it is `{"code",
   "sqlErrorNumber", "severity", "state", "line", "procedure", "message",
   "hint"}` (`procedure` `null` outside a module).
-- A result set is `{"columns": [{"name", "type", "nullable"}], "rows",
+- A result set is `{"name", "columns": [{"name", "type", "nullable"}], "rows",
   "rowCount", "totalRowCount", "truncated", "truncatedBy", "rowsAffected"}`.
+  `name` says what a command's fixed set holds (`object describe`'s
+  `columns`, `keys`, …); `null` for a script's sets.
   `rowCount` is the rows in this output, `totalRowCount` the rows the server
   returned; `truncatedBy` is `max-rows` or `max-output-bytes` (the last limit
   that removed rows), `null` when whole. With `--out-file` the rows are in the
@@ -329,10 +342,10 @@ A usage error is rendered in the format the raw command line asks for
 One JSON object per line, written as the rows arrive:
 
 ```text
-{"_resultSet":{"index":1,"columns":[{"name":"id","key":"id","type":"int","nullable":false}]}}
+{"_resultSet":{"index":1,"name":null,"columns":[{"name":"id","key":"id","type":"int","nullable":false}]}}
 {"id":1}
 {"id":2}
-{"_summary":{"schemaVersion":"1.0","status":"ok",…,"resultSets":[{"columns":[…],"rowCount":2,"totalRowCount":2,"truncated":false,"truncatedBy":null,"rowsAffected":null}],…}}
+{"_summary":{"schemaVersion":"1.0","status":"ok",…,"resultSets":[{"name":null,"columns":[…],"rowCount":2,"totalRowCount":2,"truncated":false,"truncatedBy":null,"rowsAffected":null}],…}}
 ```
 
 - Each set starts with a `_resultSet` line; each row is an object keyed by
@@ -433,6 +446,10 @@ second Ctrl+C kills the process.
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
 | `db list [-p <profile>] [connection options] [--include-system] [--state <state>]` | Set, by name: `name`, `database_id`, `state`, `recovery_model`, `compatibility_level`, `collation` (NULL for a database not ONLINE), `read_only`, `size_mb`, `data_mb`, `log_mb`, `created`, `is_system`, `snapshot_of` (the source's name; NULL for a database that is not a snapshot). System databases — the four built-ins and a replication distribution database — only with `--include-system`; snapshots are listed. Sizes are allocated file sizes from `sys.master_files`, so they answer in any state (tempdb's are its startup sizes); NULL where the login cannot see the files (VIEW ANY DEFINITION), and a failed size read is a warning, not an error. `--state` is `state_desc` lower-cased |
 | `db info <name> [-p <profile>] [connection options]` | Header `DATABASE` is `<name>`. Record: `name`, `databaseId`, `state`, `recoveryModel`, `compatibilityLevel`, `collation`, `catalogCollation`, `readOnly`, `created`, `isSystem`, `isDistributor`, `snapshotOf`, `sizeMb`, `dataMb`, `logMb`, `dataUnallocatedMb`, `logAvailableMb`, then the `ALTER DATABASE SET` options: `owner`, `userAccess`, `pageVerify`, `containment`, `snapshotIsolation`, `readCommittedSnapshot`, `autoClose`, `autoShrink`, `autoCreateStats`, `autoUpdateStats`, `autoUpdateStatsAsync`, `parameterization`, `isTrustworthy`, `dbChaining`, `isBrokerEnabled`, `isEncrypted`, `delayedDurability`, `targetRecoveryTimeSeconds`, `acceleratedDatabaseRecovery`, `isLedger`. A part that could not be read is empty with a warning saying why — the space-used pair needs the database ONLINE and enterable; the rest answers from the server catalog in any state. An unknown database is `NOT_FOUND`, exit 8 |
+| `object list [-p <profile>] [connection options] [--type <kind>,…] [--schema <s>] [--name <text>] [--include-system]` | Set, by kind (in `--type`'s order: `table`, `view`, `procedure`, `function`, `trigger`, `synonym`, `sequence`, `type`, `schema`), then schema and name, case-insensitively: `schema` (NULL for a schema row), `name`, `type`, `is_system`. The objects of the connection's database (`-d`, or the profile's). `--schema` is equal and `--name` contains, both case-insensitive and without wildcards (Object Explorer's filter); a schema row matches either by its own name. A trigger is a table's or view's DML trigger; a type is an alias, table or CLR type. Without `--include-system`, what SQL Server ships is left out: system tables, the `sys` schema's views, procedures, functions and CLR types (geography, geometry, hierarchyid), and the system schemas (guest, INFORMATION_SCHEMA, sys, the fixed roles') |
+| `object search <text> [-p <profile>] [connection options] [--in name\|definition\|column]` | Set: `schema`, `name`, `type`, and with `--in column` `column`, `data_type`. Case-insensitive, `%`/`_`/`[` literal. `name` (default): tables, views, procedures, functions and triggers whose name contains the text. `definition`: the modules whose T-SQL contains it — an encrypted or CLR module has none. `column`: the columns of tables and views whose name contains it. Empty text is a usage error |
+| `object describe <object> [-p <profile>] [connection options]` | `<object>` is `schema.name`, a name alone when one schema has it (two or more: usage error listing them; none: `NOT_FOUND` with similar names), or `database.schema.name` for the connection's own database. Record: `schema`, `name`, `type` (the kind word, or the `type_desc` lower-cased for a kind without a folder: `primary_key_constraint`), `typeDesc`, `objectId`, `created`, `modified`, `parent` (a trigger's or constraint's table), then per kind — table `rowCount` (from partition metadata); view `isSchemaBound`; function `returns` (the type, or `TABLE`); trigger `isEnabled`, `events`; synonym `baseObject`; sequence `dataType`, `startValue`, `increment`, `minValue`, `maxValue`, `isCycling`, `cache`, `currentValue`. Named sets — table: `columns`, `keys`, `indexes`, `check_constraints`, `triggers`; view: `columns`, `indexes`, `triggers`; procedure or function: `parameters`. `columns`: `column_id`, `name`, `data_type`, `nullable`, `identity` (`IDENTITY(seed,increment)`; a view's column `IDENTITY`), `computed` (the expression, `PERSISTED` marked), `default`, `collation`, `primary_key`. `keys`: the primary key, unique constraints, then foreign keys — `name`, `type`, `columns`, `references` (`[schema].[table] (cols)`), `on_delete`, `on_update`, `disabled`, `not_trusted`. `indexes`: `name`, `type`, `unique`, `primary_key`, `key_columns` (`DESC` marked), `included_columns`, `filter`, `disabled`. `check_constraints`: `name`, `column` (NULL table-level), `definition`, `disabled`, `not_trusted`. `triggers`: `name`, `enabled`, `events`. `parameters`: `ordinal`, `name`, `data_type`, `is_output`, `has_default` (NULL for a T-SQL module: the catalog records defaults only for CLR ones) |
+| `object definition <object> [-p <profile>] [connection options]` | `<object>` as for `describe`. Record: `schema`, `name`, `type`, `definition` — the module's T-SQL as stored, multi-line (§ `text`). A view, procedure, function or DML trigger; any other kind is a usage error, exit 2. An encrypted module (or one the login lacks VIEW DEFINITION on) and a CLR module have `definition` null and a warning, exit 0. The stored text, not a generated script |
 | `query run` (T-SQL input) `[-p <profile>] [connection options] [run options]` | The script's result sets, then messages; `ROWS_AFFECTED` in the header. `--param` sends it through `sp_executesql` (§ Parameters). A wrapped run (§ Transactions) adds a record: `maxRowsAffected` (with `--max-rows-affected`), `transaction`. A refused script is BLOCKED with the record `detectedClass`, `allowedClass`, `statements`. `--dry-run` answers as `query classify --allow` (§ Running T-SQL) |
 | `query parse` (T-SQL input) `[-p <profile>] [connection options] [--timeout <sec>]` | Record: `valid`, `batchCount` (batches sent, each `GO n` repetition counted), `detectedClass`; each syntax error is a `SQL_ERROR` with its script line (§ Running T-SQL) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |

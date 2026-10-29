@@ -76,7 +76,7 @@ func rowKeys(cols []Column) []string {
 
 // beginSet writes a set's _resultSet line. It reports whether the line was
 // written (false once the limit is reached).
-func (j *jsonlWriter) beginSet(cols []Column) bool {
+func (j *jsonlWriter) beginSet(name string, cols []Column) bool {
 	j.sets++
 	keys := rowKeys(cols)
 	j.kinds = kinds(cols)
@@ -89,10 +89,11 @@ func (j *jsonlWriter) beginSet(cols []Column) bool {
 	head := struct {
 		Set struct {
 			Index   int           `json:"index"`
+			Name    *string       `json:"name"`
 			Columns []jsonlColumn `json:"columns"`
 		} `json:"_resultSet"`
 	}{}
-	head.Set.Index, head.Set.Columns = j.sets, jc
+	head.Set.Index, head.Set.Name, head.Set.Columns = j.sets, nullable(name), jc
 	j.line.Reset()
 	j.line.Write(j.encode(head))
 	return j.emit()
@@ -146,6 +147,7 @@ func (j *jsonlWriter) summary(r *Result, shown []int) error {
 	env := newEnvelope(r)
 	for i, s := range r.Sets {
 		env.ResultSets = append(env.ResultSets, jsonSetSummary{
+			Name:          nullable(s.Name),
 			Columns:       jsonColumns(s.Columns),
 			RowCount:      shown[i],
 			TotalRowCount: s.TotalRowCount,
@@ -192,7 +194,7 @@ func renderJSONL(w io.Writer, r *Result, o Options) error {
 		if s.InFile {
 			continue
 		}
-		if !j.beginSet(s.Columns) && len(s.Rows) > 0 {
+		if !j.beginSet(s.Name, s.Columns) && len(s.Rows) > 0 {
 			markTruncated(s, TruncatedByMaxOutputBytes)
 			continue
 		}
