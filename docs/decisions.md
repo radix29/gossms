@@ -1889,6 +1889,36 @@ these are the alternatives turned down.
   a result set of sections would be clipped by `--max-col-width`. Keeping a
   `--format` and rejecting `-o` would be two spellings of one idea.
 
+## Command-line storage reporting: what phase 4 settled — do not re-raise
+
+The contract is `docs/cli.md` § Storage and § Commands; these are the
+alternatives turned down.
+
+- **`db space` and `db table-sizes` reproduce `sp_spaceused`, not the TUI's
+  figures (D1).** gosmo's `Database.SpaceReport` and `Database.TableSizes`
+  follow the procedure's arithmetic as read from its source on 13, 14 and 17
+  (in-row `data_pages`, LOB and overflow into data, the rest of `used_pages`
+  into index, internal tables added to reserved/index; 2017+ over
+  `sys.system_internals_partitions` with the memory-optimized checkpoint
+  files). Reusing `SpaceUsed`/`DiskUsage`/`TableSpaceUsedAll` was cheaper,
+  but an agent cross-checking with `sp_spaceused` would see other numbers and
+  no reason. `TableSpaceUsedAll` stays for the TUI's Tables pane; the two
+  differ by design.
+- **Log figures come from `sys.dm_db_log_space_usage` and
+  `sys.dm_db_log_info`, one read inside each database (D2)** — not
+  `DBCC SQLPERF(LOGSPACE)` (one call for all databases, but no reuse wait or
+  VLFs, and a used % that is not the DMV's) nor `DBCC LOGINFO` (undocumented,
+  sysadmin). VLFs need 2016 SP2 (13.0.5026); before it they are NULL with a
+  warning. Both DMVs need **VIEW SERVER STATE**, not VIEW DATABASE STATE
+  (checked live: Msg 300 on 13 and 17 with the database permission), so
+  `db log-usage` fails exit 9 without it.
+- **Warning thresholds are fixed, with no options (D4):** file free < 10 %
+  (data and log), size ≥ 90 % of a capped `max_size`, percentage autogrowth,
+  volume free < 10 %, `log_reuse_wait_desc` ≠ `NOTHING` (transient waits
+  included — a fact, not a judgement). One warning per (row, reason), for the
+  rows the filters keep. A `--warn-free-pct` was an option nobody asked for;
+  `--max-free-pct` is the filter that answers "which files are nearly full".
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

@@ -123,6 +123,9 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   fine and gets an empty set: metadata visibility hides the edges, no error.
   The exit 9 that 3.f recorded on 17 came from some other setup (an explicit
   DENY?). Re-check which login gets exit 9, then fix the hint and the row.
+- **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
+  (phase 4) — every instance here has one volume, and none is older than
+  2016 SP3.
 
 ## Fix order
 

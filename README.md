@@ -261,6 +261,18 @@ gossms object definition -p dev dbo.uspGetOrders   # a module's T-SQL
 gossms object dependencies -p dev Sales.Customer --depth 2
 ```
 
+Sizes come as `sp_spaceused` and the log DMVs report them, with warnings for
+what is worth a look (a file under 10 % free, a log that cannot be reused, a
+volume running out):
+
+```bash
+gossms db files -p dev --all --max-free-pct 10     # files nearly full, every database
+gossms db space -p dev Sales --unit gb             # sp_spaceused's summary + log usage
+gossms db log-usage -p dev --all                   # log used %, reuse wait, VLFs
+gossms db table-sizes -p dev Sales --top 10        # largest tables
+gossms server volumes -p dev                       # free space per disk
+```
+
 For an AI agent, `gossms agent guide --brief -p dev` is the manual to put in
 its system prompt — rules, output contract, the command index, and what the
 profile's login can see; `gossms agent schema` is the same catalog as JSON

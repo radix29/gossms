@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
@@ -254,41 +255,46 @@ func TestFileWarnings(t *testing.T) {
 		what      string
 		f         gosmo.DatabaseFileInfo
 		usedKnown bool
+		snapshot  bool
 		vol       *fileVolume
 		want      []string
 	}{
 		{"healthy", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileRows, SizeKB: 1000, SpaceUsedKB: 500, MaxSizeKB: -1, GrowthKB: 65536},
-			true, &fileVolume{"/var/opt", 50}, nil},
+			true, false, &fileVolume{"/var/opt", 50}, nil},
 		{"under 10 % free", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileRows, SizeKB: 1000, SpaceUsedKB: 950, MaxSizeKB: -1},
-			true, nil, []string{"[app] file [d]: 5.00 % free inside the file (under 10 %)."}},
+			true, false, nil, []string{"[app] file [d]: 5.00 % free inside the file (under 10 %)."}},
 		{"exactly 10 % free", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileLog, SizeKB: 1000, SpaceUsedKB: 900, MaxSizeKB: -1},
-			true, nil, nil},
+			true, false, nil, nil},
 		// The master_files fallback has no used figure: no free warning.
 		{"used unknown", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileRows, SizeKB: 1000, MaxSizeKB: -1},
-			false, nil, nil},
+			false, false, nil, nil},
 		{"at 90 % of max_size", gosmo.DatabaseFileInfo{Name: "l", Type: gosmo.FileLog, SizeKB: 900, SpaceUsedKB: 10, MaxSizeKB: 1000},
-			true, nil, []string{"[app] file [l]: at 90.00 % of its max_size (90 % or more)."}},
+			true, false, nil, []string{"[app] file [l]: at 90.00 % of its max_size (90 % or more)."}},
 		{"no growth (max_size 0)", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileRows, SizeKB: 900, SpaceUsedKB: 10, MaxSizeKB: 0},
-			true, nil, nil},
+			true, false, nil, nil},
 		{"percent growth", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileRows, SizeKB: 1000, SpaceUsedKB: 10, MaxSizeKB: -1,
 			IsPercentGrowth: true, GrowthPercent: 10},
-			true, nil, []string{"[app] file [d]: grows by 10 % (percentage autogrowth)."}},
+			true, false, nil, []string{"[app] file [d]: grows by 10 % (percentage autogrowth)."}},
 		{"volume low", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileRows, SizeKB: 1000, SpaceUsedKB: 10, MaxSizeKB: -1},
-			true, &fileVolume{"C:\\", 4.5}, []string{"[app] file [d]: its volume C:\\ is 4.50 % free (under 10 %)."}},
+			true, false, &fileVolume{"C:\\", 4.5}, []string{"[app] file [d]: its volume C:\\ is 4.50 % free (under 10 %)."}},
 		// A FILESTREAM container has no pages, cap or growth: only the
 		// volume speaks for it.
 		{"filestream", gosmo.DatabaseFileInfo{Name: "fs", Type: gosmo.FileStream, SizeKB: 0, MaxSizeKB: 10, IsPercentGrowth: true},
-			true, &fileVolume{"/fs", 2}, []string{"[app] file [fs]: its volume /fs is 2.00 % free (under 10 %)."}},
+			true, false, &fileVolume{"/fs", 2}, []string{"[app] file [fs]: its volume /fs is 2.00 % free (under 10 %)."}},
 		{"every reason, in order", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileRows, SizeKB: 1000, SpaceUsedKB: 999, MaxSizeKB: 1000,
 			IsPercentGrowth: true, GrowthPercent: 25},
-			true, &fileVolume{"/v", 1}, []string{
+			true, false, &fileVolume{"/v", 1}, []string{
 				"[app] file [d]: 0.10 % free inside the file (under 10 %).",
 				"[app] file [d]: at 100.00 % of its max_size (90 % or more).",
 				"[app] file [d]: grows by 25 % (percentage autogrowth).",
 				"[app] file [d]: its volume /v is 1.00 % free (under 10 %).",
 			}},
+		// A snapshot's sparse file never grows: only the volume speaks for it.
+		{"snapshot", gosmo.DatabaseFileInfo{Name: "d", Type: gosmo.FileRows, SizeKB: 1000, SpaceUsedKB: 999, MaxSizeKB: 1000,
+			IsPercentGrowth: true, GrowthPercent: 10},
+			true, true, &fileVolume{"C:\\", 4.5}, []string{"[app] file [d]: its volume C:\\ is 4.50 % free (under 10 %)."}},
 	} {
-		if got := fileWarnings(db, &tc.f, tc.usedKnown, tc.vol); !slices.Equal(got, tc.want) {
+		if got := fileWarnings(db, &tc.f, tc.usedKnown, tc.snapshot, tc.vol); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %q, want %q", tc.what, got, tc.want)
 		}
 	}
@@ -671,6 +677,356 @@ func TestDBFilesUsage(t *testing.T) {
 		_, err := runDBFiles(t, newFilesCatalog(), argv)
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", argv, err, want)
+		}
+	}
+}
+
+// spaceCatalog answers db space's reads over newStorageCatalog's databases.
+type spaceCatalog struct {
+	*storageCatalog
+	space    map[string]gosmo.SpaceReport
+	logs     map[string]gosmo.LogSpace
+	logErr   error // every LogSpace call's error, when set
+	logsRead []string
+}
+
+func (c *spaceCatalog) SpaceReport(_ context.Context, d *gosmo.Database) (gosmo.SpaceReport, error) {
+	sp, ok := c.space[d.Name]
+	if !ok {
+		return gosmo.SpaceReport{}, fmt.Errorf("gosmo: space report for %q: boom", d.Name)
+	}
+	return sp, nil
+}
+
+func (c *spaceCatalog) LogSpace(_ context.Context, d *gosmo.Database) (gosmo.LogSpace, error) {
+	c.logsRead = append(c.logsRead, d.Name)
+	if c.logErr != nil {
+		return gosmo.LogSpace{}, c.logErr
+	}
+	return c.logs[d.Name], nil
+}
+
+func newSpaceCatalog() *spaceCatalog {
+	return &spaceCatalog{
+		storageCatalog: newStorageCatalog(),
+		space: map[string]gosmo.SpaceReport{
+			"master": {DatabaseSizeKB: 6144, DataFilesKB: 4096, LogFilesKB: 2048, DataUsedKB: 3000,
+				UnallocatedKB: 1000, ReservedKB: 3096, DataKB: 2000, IndexKB: 900, UnusedKB: 196},
+			"app": {DatabaseSizeKB: 16384, DataFilesKB: 8192, LogFilesKB: 8192, DataUsedKB: 5632,
+				UnallocatedKB: 2624, ReservedKB: 5568, DataKB: 3176, IndexKB: 1528, UnusedKB: 864},
+			"app_snap": {DatabaseSizeKB: 16384, DataFilesKB: 8192, LogFilesKB: 8192, DataUsedKB: 4096,
+				UnallocatedKB: 4152, ReservedKB: 4040, DataKB: 2136, IndexKB: 1456, UnusedKB: 448},
+		},
+		logs: map[string]gosmo.LogSpace{
+			"master": {SizeKB: 2040, UsedKB: 900, UsedPercent: 44.1176, ReuseWait: "NOTHING"},
+			"app":    {SizeKB: 8184, UsedKB: 1023, UsedPercent: 12.5049, ReuseWait: "LOG_BACKUP"},
+		},
+	}
+}
+
+// runDBSpace runs db space over cat with argv after "db space".
+func runDBSpace(t *testing.T, cat Catalog, argv string) (*output.Result, error) {
+	t.Helper()
+	d := Deps{
+		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
+			return &db.ServerConn{}, nil
+		},
+		Catalog: func(*db.ServerConn) Catalog { return cat },
+	}
+	tree := &spec.Tree{Commands: DBCommands(d)}
+	inv, err := args.Parse(tree, append([]string{"db", "space", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
+	if err != nil {
+		t.Fatalf("%q: %v", argv, err)
+	}
+	return inv.Command.Run(context.Background(), inv)
+}
+
+func TestDBSpaceOneDatabase(t *testing.T) {
+	res, err := runDBSpace(t, newSpaceCatalog(), "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := res.Sets[0]
+	var names []string
+	for _, c := range set.Columns {
+		names = append(names, c.Name)
+	}
+	if want := []string{"database", "total_mb", "data_size_mb", "data_used_mb", "unallocated_mb", "reserved_mb",
+		"data_mb", "index_mb", "unused_mb", "log_size_mb", "log_used_mb", "log_used_pct"}; !slices.Equal(names, want) {
+		t.Errorf("columns %q, want %q", names, want)
+	}
+	for col, want := range map[string]string{
+		"database": "app", "total_mb": "16.00", "data_size_mb": "8.00", "data_used_mb": "5.50",
+		"unallocated_mb": "2.56", "reserved_mb": "5.44", "data_mb": "3.10", "index_mb": "1.49",
+		"unused_mb": "0.84", "log_size_mb": "7.99", "log_used_mb": "1.00", "log_used_pct": "12.50",
+	} {
+		if got := column(set, col); !slices.Equal(got, []string{want}) {
+			t.Errorf("%s %q, want %q", col, got, want)
+		}
+	}
+	if res.Database != "app" || len(res.Warnings) != 0 {
+		t.Errorf("database %q, warnings %q", res.Database, res.Warnings)
+	}
+}
+
+// --unit kb prints sp_spaceused's own KB figures.
+func TestDBSpaceUnitKB(t *testing.T) {
+	res, err := runDBSpace(t, newSpaceCatalog(), "app --unit kb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for col, want := range map[string]string{"reserved_kb": "5568", "data_kb": "3176", "index_kb": "1528",
+		"unused_kb": "864", "log_used_pct": "12.50"} {
+		if got := column(res.Sets[0], col); !slices.Equal(got, []string{want}) {
+			t.Errorf("%s %q, want %q", col, got, want)
+		}
+	}
+}
+
+// --all lists the readable databases, a snapshot without log figures, and
+// names the unreadable ones under warnings (D3).
+func TestDBSpaceAll(t *testing.T) {
+	cat := newSpaceCatalog()
+	res, err := runDBSpace(t, cat, "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := res.Sets[0]
+	if got := column(set, "database"); !slices.Equal(got, []string{"master", "app", "app_snap"}) {
+		t.Errorf("databases %q", got)
+	}
+	if got := column(set, "log_size_mb"); !slices.Equal(got, []string{"1.99", "7.99", "NULL"}) {
+		t.Errorf("log_size_mb %q", got)
+	}
+	if !slices.Equal(cat.logsRead, []string{"master", "app"}) {
+		t.Errorf("LogSpace read for %q: a snapshot has no log", cat.logsRead)
+	}
+	want := []string{"[archive]: space not read: the database is OFFLINE.", "snapshot", "[hr]: space not read: the login has no access to it."}
+	if len(res.Warnings) != len(want) {
+		t.Fatalf("warnings %q", res.Warnings)
+	}
+	for i, w := range want {
+		if !strings.Contains(res.Warnings[i], w) {
+			t.Errorf("warning %d %q, want %q", i, res.Warnings[i], w)
+		}
+	}
+}
+
+// Without VIEW SERVER STATE the log columns are NULL with one warning, and
+// LogSpace is not asked again for the other databases.
+func TestDBSpaceNoViewServerState(t *testing.T) {
+	cat := newSpaceCatalog()
+	cat.logErr = mssql.Error{Number: 300, Class: 14, Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}
+	res, err := runDBSpace(t, cat, "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := column(res.Sets[0], "log_used_pct"); !slices.Equal(got, []string{"NULL", "NULL", "NULL"}) {
+		t.Errorf("log_used_pct %q", got)
+	}
+	if got := column(res.Sets[0], "reserved_mb"); got[0] == "NULL" {
+		t.Errorf("reserved_mb %q: the rest of the row stands", got)
+	}
+	if len(cat.logsRead) != 1 {
+		t.Errorf("LogSpace read for %q, want once", cat.logsRead)
+	}
+	if n := strings.Count(strings.Join(res.Warnings, "\n"), "VIEW SERVER STATE"); n != 1 {
+		t.Errorf("%d VIEW SERVER STATE warnings in %q, want 1", n, res.Warnings)
+	}
+}
+
+// A named database that cannot be read fails: 8 for its state, 9 for access
+// (D3); a failed SpaceReport fails a named database and is a warning under
+// --all.
+func TestDBSpaceUnreadable(t *testing.T) {
+	for argv, want := range map[string]output.Code{
+		"archive": output.CodeNotFound,
+		"hr":      output.CodePermissionDenied,
+		"nope":    output.CodeNotFound,
+	} {
+		_, err := runDBSpace(t, newSpaceCatalog(), argv)
+		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != want {
+			t.Errorf("%q: %v, want %s", argv, err, want)
+		}
+	}
+	cat := newSpaceCatalog()
+	delete(cat.space, "master")
+	if _, err := runDBSpace(t, cat, "master"); err == nil {
+		t.Error("master: a failed SpaceReport succeeded")
+	}
+	res, err := runDBSpace(t, cat, "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := column(res.Sets[0], "database"); !slices.Equal(got, []string{"app", "app_snap"}) {
+		t.Errorf("databases %q", got)
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "[master]: space not read: gosmo: space report") {
+		t.Errorf("warnings %q", res.Warnings)
+	}
+}
+
+func TestDBSpaceXTPHidden(t *testing.T) {
+	cat := newSpaceCatalog()
+	sp := cat.space["app"]
+	sp.XTPPrecreatedHidden = true
+	cat.space["app"] = sp
+	res, err := runDBSpace(t, cat, "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "PRECREATED") {
+		t.Errorf("warnings %q", res.Warnings)
+	}
+}
+
+// runDBLogUsage runs db log-usage over cat with argv after "db log-usage".
+func runDBLogUsage(t *testing.T, cat Catalog, argv string) (*output.Result, error) {
+	t.Helper()
+	d := Deps{
+		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
+			return &db.ServerConn{}, nil
+		},
+		Catalog: func(*db.ServerConn) Catalog { return cat },
+	}
+	tree := &spec.Tree{Commands: DBCommands(d)}
+	inv, err := args.Parse(tree, append([]string{"db", "log-usage", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
+	if err != nil {
+		t.Fatalf("%q: %v", argv, err)
+	}
+	return inv.Command.Run(context.Background(), inv)
+}
+
+// newLogCatalog is newSpaceCatalog with VLF counts read.
+func newLogCatalog() *spaceCatalog {
+	cat := newSpaceCatalog()
+	for name, l := range cat.logs {
+		l.VLFs, l.ActiveVLFs, l.VLFsKnown = 4, 1, true
+		cat.logs[name] = l
+	}
+	return cat
+}
+
+func TestDBLogUsageOneDatabase(t *testing.T) {
+	res, err := runDBLogUsage(t, newLogCatalog(), "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := res.Sets[0]
+	var names []string
+	for _, c := range set.Columns {
+		names = append(names, c.Name)
+	}
+	if want := []string{"database", "log_size_mb", "log_used_mb", "log_used_pct", "log_reuse_wait_desc",
+		"vlf_count", "vlf_active"}; !slices.Equal(names, want) {
+		t.Errorf("columns %q, want %q", names, want)
+	}
+	for col, want := range map[string]string{
+		"database": "app", "log_size_mb": "7.99", "log_used_mb": "1.00", "log_used_pct": "12.50",
+		"log_reuse_wait_desc": "LOG_BACKUP", "vlf_count": "4", "vlf_active": "1",
+	} {
+		if got := column(set, col); !slices.Equal(got, []string{want}) {
+			t.Errorf("%s %q, want %q", col, got, want)
+		}
+	}
+	if res.Database != "app" || !slices.Equal(res.Warnings, []string{"[app]: log reuse waits on LOG_BACKUP."}) {
+		t.Errorf("database %q, warnings %q", res.Database, res.Warnings)
+	}
+}
+
+// --all skips snapshots silently (no log) and names the unreadable databases
+// under warnings (D3); only a reuse wait other than NOTHING warns.
+func TestDBLogUsageAll(t *testing.T) {
+	cat := newLogCatalog()
+	res, err := runDBLogUsage(t, cat, "--all --unit kb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := res.Sets[0]
+	if got := column(set, "database"); !slices.Equal(got, []string{"master", "app"}) {
+		t.Errorf("databases %q", got)
+	}
+	if got := column(set, "log_used_kb"); !slices.Equal(got, []string{"900", "1023"}) {
+		t.Errorf("log_used_kb %q", got)
+	}
+	if !slices.Equal(cat.logsRead, []string{"master", "app"}) {
+		t.Errorf("LogSpace read for %q", cat.logsRead)
+	}
+	want := []string{"[archive]: log usage not read: the database is OFFLINE.",
+		"[hr]: log usage not read: the login has no access to it.", "[app]: log reuse waits on LOG_BACKUP."}
+	if !slices.Equal(res.Warnings, want) {
+		t.Errorf("warnings %q, want %q", res.Warnings, want)
+	}
+}
+
+// Before 2016 SP2 the VLF columns are NULL with one warning for the server.
+func TestDBLogUsageNoLogInfo(t *testing.T) {
+	res, err := runDBLogUsage(t, newSpaceCatalog(), "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := column(res.Sets[0], "vlf_count"); !slices.Equal(got, []string{"NULL", "NULL"}) {
+		t.Errorf("vlf_count %q", got)
+	}
+	if n := strings.Count(strings.Join(res.Warnings, "\n"), "sys.dm_db_log_info"); n != 1 {
+		t.Errorf("%d dm_db_log_info warnings in %q, want 1", n, res.Warnings)
+	}
+}
+
+// Without VIEW SERVER STATE the command fails at the first refusal, named or
+// --all: the permission is the server's.
+func TestDBLogUsageNoViewServerState(t *testing.T) {
+	for _, argv := range []string{"app", "--all"} {
+		cat := newLogCatalog()
+		cat.logErr = mssql.Error{Number: 300, Class: 14, Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}
+		_, err := runDBLogUsage(t, cat, argv)
+		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != output.CodePermissionDenied || !strings.Contains(e.Hint, "VIEW SERVER STATE") {
+			t.Errorf("%q: %v, want PERMISSION_DENIED naming VIEW SERVER STATE", argv, err)
+		}
+		if len(cat.logsRead) != 1 {
+			t.Errorf("%q: LogSpace read for %q, want once", argv, cat.logsRead)
+		}
+	}
+}
+
+// A named database that cannot be read, or a snapshot, fails: 8 for the
+// state, the snapshot and an unknown name, 9 for access; another LogSpace
+// error fails a named database and is a warning under --all.
+func TestDBLogUsageUnreadable(t *testing.T) {
+	for argv, want := range map[string]output.Code{
+		"archive":  output.CodeNotFound,
+		"app_snap": output.CodeNotFound,
+		"hr":       output.CodePermissionDenied,
+		"nope":     output.CodeNotFound,
+	} {
+		cat := newLogCatalog()
+		_, err := runDBLogUsage(t, cat, argv)
+		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != want {
+			t.Errorf("%q: %v, want %s", argv, err, want)
+		}
+		if len(cat.logsRead) != 0 {
+			t.Errorf("%q: LogSpace read for %q", argv, cat.logsRead)
+		}
+	}
+	cat := newLogCatalog()
+	cat.logErr = errors.New("gosmo: log space for \"x\": boom")
+	if _, err := runDBLogUsage(t, cat, "master"); err == nil {
+		t.Error("master: a failed LogSpace succeeded")
+	}
+	res, err := runDBLogUsage(t, cat, "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Sets[0].Rows) != 0 || !strings.Contains(strings.Join(res.Warnings, "\n"), "[master]: log usage not read: gosmo: log space") {
+		t.Errorf("rows %d, warnings %q", len(res.Sets[0].Rows), res.Warnings)
+	}
+}
+
+func TestDBLogUsageUsage(t *testing.T) {
+	for _, argv := range []string{"", "app --all"} {
+		_, err := runDBLogUsage(t, newLogCatalog(), argv)
+		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != output.CodeUsageError || !strings.HasPrefix(e.Message, "db log-usage:") {
+			t.Errorf("%q: %v, want a usage error naming db log-usage", argv, err)
 		}
 	}
 }

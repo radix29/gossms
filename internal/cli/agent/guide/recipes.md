@@ -29,6 +29,21 @@ SQL
 Select the columns and rows you need: the output is capped, and a `TOP`
 costs the server less than `--max-rows`.
 
+### Check space
+
+```bash
+gossms db files -p dev --all --max-free-pct 10 --sort-by free-pct
+gossms db log-usage -p dev --all
+gossms server volumes -p dev
+gossms db table-sizes -p dev AdventureWorks --top 10
+```
+
+The first lists the files under 10 % free inside them, fullest first;
+`log_reuse_wait_desc` says why a log cannot be reused; the warnings name
+what is worth a look (fixed thresholds, each command's help lists them).
+Sizes are in MB; `--unit kb` matches `sp_spaceused` and the DMVs exactly.
+`db log-usage` and `server volumes` need VIEW SERVER STATE (exit 9 without).
+
 ### Make a safe data fix
 
 Only with the user's approval of the change. Write the T-SQL to a file, then:
