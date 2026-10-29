@@ -121,10 +121,13 @@ func TestUsageErrors(t *testing.T) {
 		// though parsing failed.
 		{[]string{"nope", "-o", "json"}, `unknown command "nope"`, "gossms help", true},
 		{[]string{"--output=json", "-p", "x"}, "no command given", "", true},
-		// Help as JSON is the schema, which does not exist yet.
-		{[]string{"help", "-o", "json"}, "help is available as text only", "", true},
-		{[]string{"version", "--help", "-o", "json"}, "help is available as text only", "", true},
-		{[]string{"--help", "-o", "json"}, "help is available as text only", "", true},
+		// Help as JSON is the schema (TestAgentSchema); no other format.
+		{[]string{"help", "-o", "markdown"}, "help is available as text or json only", "-o json", false},
+		{[]string{"version", "--help", "-o", "markdown"}, "help is available as text or json only", "", false},
+		{[]string{"agent", "schema", "-o", "markdown"}, "agent schema is printed as json only", "-o json", false},
+		{[]string{"agent", "schema", "nope"}, `no agent schema topic "nope"`, "Run `gossms agent schema` for the command list.", false},
+		{[]string{"agent", "schema", "objcet"}, `no agent schema topic "objcet"`, "Did you mean `gossms agent schema object`?", false},
+		{[]string{"agent", "schema", "object", "lsit", "-o", "json"}, `no agent schema topic "object lsit"`, "", true},
 	}
 	for _, tc := range tests {
 		t.Run(strings.Join(tc.argv, " "), func(t *testing.T) {

@@ -1,6 +1,6 @@
 // Package spec is the command line's command tree as data: each command's
 // path, help, arguments, options, operation class, examples and handler. The
-// parser, --help and (later) `agent schema` all read the same values, so none
+// parser, --help and `agent schema` all read the same values, so none
 // of them can drift from the others.
 //
 // spec holds types, and lookups over them, and imports no handler package:

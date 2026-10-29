@@ -191,7 +191,7 @@ func TestParseErrors(t *testing.T) {
 		hint string // substring of Hint
 	}{
 		{nil, KindNoCommand, "no command", "Commands: version, help, object"},
-		{[]string{"--quiet"}, KindNoCommand, "no command", "gossms help"},
+		{[]string{"--quiet"}, KindNoCommand, "no command", "AI agents: `gossms agent guide`"},
 		// -p does not exist: before the command, an unknown option is assumed
 		// to take a value, so "x" is not read as a command.
 		{[]string{"-p", "x"}, KindNoCommand, "no command", ""},

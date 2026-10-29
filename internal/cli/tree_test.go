@@ -134,7 +134,10 @@ func checkMentions(t *testing.T, tree *spec.Tree, where, text string) {
 // returns why the line is wrong, or "".
 func checkCommandLine(tree *spec.Tree, line string) string {
 	words := strings.Fields(line)[1:]
-	if len(words) > 0 && slices.Contains([]string{"--version", "-version", "-v"}, words[0]) {
+	if len(words) == 0 {
+		return "" // bare gossms: the interactive UI
+	}
+	if slices.Contains([]string{"--version", "-version", "-v"}, words[0]) {
 		return "" // answered by cmd/gossms before the command line
 	}
 	placeholder := slices.IndexFunc(words, func(w string) bool {
@@ -161,7 +164,7 @@ func checkCommandLine(tree *spec.Tree, line string) string {
 	if err != nil {
 		return "does not parse: " + err.Error()
 	}
-	if inv.Command == helpCommand(tree) && len(inv.Args) > 0 && tree.Lookup(inv.Args) == nil {
+	if (inv.Command == helpCommand(tree) || inv.Command == schemaCommand(tree)) && len(inv.Args) > 0 && tree.Lookup(inv.Args) == nil {
 		return "names a help topic the tree lacks"
 	}
 	return ""
@@ -256,20 +259,25 @@ func TestCheckMentions(t *testing.T) {
 	tree := commandTree()
 	for line, ok := range map[string]bool{
 		"gossms help":                   true,
+		"gossms":                        true,
 		"gossms help version":           true,
 		"gossms version -o json":        true,
 		"gossms --version":              true,
 		"gossms help <command>":         true,
 		"gossms help %s":                true,
 		"gossms <command> --help":       true,
-		"gossms agent guide":            false,
-		"gossms help agent":             false,
-		"gossms agent <topic>":          false,
+		"gossms agent guide":            true,
+		"gossms agent guide --topic db": true,
+		"gossms agent guide --topic zz": false,
+		"gossms help nope":              false,
+		"gossms nope <topic>":           false,
+		"gossms agent schema object":    true,
+		"gossms agent schema nope":      false,
 		"gossms version --bogus":        false,
 		"gossms -p dev":                 false,
 		"gossms version -o parquet":     false,
 		"gossms help profile <command>": true,
-		"gossms help agent <command>":   false,
+		"gossms help nope <command>":    false,
 		"gossms profile test dev":       true,
 		"gossms profile show":           false, // <name> is required
 	} {
