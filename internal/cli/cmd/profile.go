@@ -30,6 +30,8 @@ type Deps struct {
 	// OpenSession opens the one query session a query command runs its
 	// script on (OpenQuerySession).
 	OpenSession func(ctx context.Context, sc *db.ServerConn, database string) (Session, error)
+	// Catalog is the gosmo reads over a connection (ServerCatalog).
+	Catalog func(sc *db.ServerConn) Catalog
 }
 
 // ProfileCommands is the profile group: its node and its commands.
