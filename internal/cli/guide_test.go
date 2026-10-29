@@ -97,11 +97,39 @@ func TestAgentGuideSections(t *testing.T) {
 		t.Error("the full-only text of a section is not split from its brief text")
 	}
 
-	// The command index is every runnable, non-hidden command.
-	for _, c := range commandTree().Commands {
-		if !c.Hidden && len(commandTree().Children(c.Path)) == 0 && !strings.Contains(brief.stdout, "| "+c.Name()+" | ") {
-			t.Errorf("command index lacks %q", c.Name())
+	// The full command index is every runnable, non-hidden command; the
+	// brief one is a row per group naming each of them, a sub-group's
+	// commands included.
+	tree := commandTree()
+	for _, c := range tree.Commands {
+		if c.Hidden || len(tree.Children(c.Path)) > 0 {
+			continue
 		}
+		if !strings.Contains(full.stdout, "| "+c.Name()+" | ") {
+			t.Errorf("full command index lacks %q", c.Name())
+		}
+		row := ""
+		for l := range strings.Lines(brief.stdout) {
+			if strings.HasPrefix(l, "| "+c.Path[0]+" | ") {
+				row = l
+			}
+		}
+		if name := strings.Join(c.Path[1:], " "); row == "" || name != "" && !strings.Contains(row, " "+name+",") && !strings.Contains(row, " "+name+" |") {
+			t.Errorf("brief command index lacks %q (row %q)", c.Name(), row)
+		}
+	}
+	if strings.Contains(brief.stdout, "| server config |") || strings.Contains(brief.stdout, "| Command | Class |") {
+		t.Error("the brief command index is not one row per group")
+	}
+	// A sub-group's commands are in its group's topic.
+	server := runMain(t, "agent", "guide", "--topic", "server")
+	for _, name := range []string{"server config list", "server config get"} {
+		if !strings.Contains(server.stdout, "\n### "+name+"\n") {
+			t.Errorf("--topic server lacks %q", name)
+		}
+	}
+	if strings.Contains(server.stdout, "\n### server config\n") {
+		t.Error("--topic server lists the server config sub-group as a command")
 	}
 	// A group topic is each of the group's commands, with its examples.
 	obj := runMain(t, "agent", "guide", "--topic", "object")

@@ -79,7 +79,7 @@ func QueryCommands(d Deps) []*spec.Command {
 		},
 		{
 			Path:    []string{"query", "classify"},
-			Summary: "Report the operation class (read, write, ddl, admin) of each statement and of the script",
+			Summary: "Report each statement's operation class (read, write, ddl, admin) and the script's",
 			Description: "Classifies without connecting: one row per statement with its batch, line, class, leading " +
 				"keywords, the object it acts on, why it is above its leader's class, and flags " +
 				"(transaction-control, not-in-transaction, nocount, dynamic-sql, exec, mode-option, output-clause). " +

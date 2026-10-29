@@ -182,7 +182,7 @@ func TestHelp(t *testing.T) {
 			t.Errorf("%v differs from help version:\n%s", argv, r.stdout)
 		}
 	}
-	if r := runMain(t, "help", "help"); !strings.HasPrefix(r.stdout, "Usage: gossms help [<group>] [<command>] [options]\n") {
+	if r := runMain(t, "help", "help"); !strings.HasPrefix(r.stdout, "Usage: gossms help [<group>] [<command>...] [options]\n") {
 		t.Errorf("help help:\n%s", r.stdout)
 	}
 }
@@ -359,5 +359,25 @@ func TestCancelledBeforeRun(t *testing.T) {
 	}
 	if env := envelope(t, r.stdout); env["status"] != "cancelled" || firstError(t, env)["code"] != "CANCELLED" {
 		t.Errorf("envelope %v", env)
+	}
+}
+
+// A sub-group's command is reached by help, --help and agent schema alike.
+func TestHelpSubGroupCommand(t *testing.T) {
+	want := "Usage: gossms server config get <name>... [options]\n"
+	for _, argv := range [][]string{{"help", "server", "config", "get"}, {"server", "config", "get", "--help"}} {
+		if r := runMain(t, argv...); r.exit != 0 || !strings.HasPrefix(r.stdout, want) {
+			t.Errorf("%q: exit %d\n%.200s", argv, r.exit, r.stdout)
+		}
+	}
+	if r := runMain(t, "help", "server", "config"); r.exit != 0 || !strings.Contains(r.stdout, "\n  list  ") {
+		t.Errorf("help server config: exit %d\n%.300s", r.exit, r.stdout)
+	}
+	if r := runMain(t, "agent", "schema", "server", "config", "get"); r.exit != 0 || !strings.Contains(r.stdout, `"path": "server config get"`) ||
+		strings.Contains(r.stdout, `"path": "server config list"`) {
+		t.Errorf("agent schema server config get: exit %d\n%.300s", r.exit, r.stdout)
+	}
+	if r := runMain(t, "help", "server", "config", "gte"); r.exit != 2 || !strings.Contains(r.stdout, "Did you mean `gossms help server config get`?") {
+		t.Errorf("help server config gte: exit %d\n%.400s", r.exit, r.stdout)
 	}
 }

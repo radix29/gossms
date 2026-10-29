@@ -32,6 +32,8 @@ type Deps struct {
 	OpenSession func(ctx context.Context, sc *db.ServerConn, database string) (Session, error)
 	// Catalog is the gosmo reads over a connection (ServerCatalog).
 	Catalog func(sc *db.ServerConn) Catalog
+	// Writer is the gosmo writes over a connection (ServerWriter).
+	Writer func(sc *db.ServerConn) Writer
 }
 
 // ProfileCommands is the profile group: its node and its commands.

@@ -133,25 +133,56 @@ func exitCodesBody(brief bool) string {
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
-// commandsBody is the command index: every runnable command, its operation
-// class and what it returns.
+// commandsBody is the command index. The full guide has a row per runnable
+// command: its operation class and what it returns. The brief one has a row
+// per group, naming its commands, so it stays a system prompt's size as
+// commands are added; a command whose class is not read is marked.
 func commandsBody(tree *spec.Tree, brief bool) string {
 	var b strings.Builder
-	b.WriteString("| Command | Class | Returns |\n|---|---|---|\n")
-	for _, c := range tree.Commands {
-		if hidden(tree, c) || len(tree.Children(c.Path)) > 0 {
-			continue
+	if brief {
+		b.WriteString("| Group | Commands | Covers |\n|---|---|---|\n")
+		for _, g := range tree.Children(nil) {
+			if g.Hidden {
+				continue
+			}
+			names := []string{g.Name()}
+			if subs := runnable(tree, g.Path); len(subs) > 0 {
+				names = names[:0]
+				for _, c := range subs {
+					name := strings.Join(c.Path[1:], " ")
+					if c.Class != spec.ClassRead {
+						name += " (" + string(c.Class) + ")"
+					}
+					names = append(names, name)
+				}
+			}
+			fmt.Fprintf(&b, "| %s | %s | %s |\n", g.Name(), escapeCell(strings.Join(names, ", ")), escapeCell(g.Summary))
 		}
+		b.WriteString("\nEvery command is read unless marked; `query run` is gated by `--allow` on what its script does.\n")
+		b.WriteString("Full guide: `gossms agent guide` · one group in detail: `gossms agent guide --topic <group>` · " +
+			"every option as JSON: `gossms agent schema`.")
+		return b.String()
+	}
+	b.WriteString("| Command | Class | Returns |\n|---|---|---|\n")
+	for _, c := range runnable(tree, nil) {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", c.Name(), c.Class, escapeCell(c.Summary))
 	}
 	b.WriteString("\nThe class is what the command itself does; `query run` is gated by `--allow` on what its script does.\n")
-	if brief {
-		b.WriteString("Full guide: `gossms agent guide` · one group in detail: `gossms agent guide --topic <group>` · " +
-			"every option as JSON: `gossms agent schema`.")
-	} else {
-		b.WriteString("One group in detail: `gossms agent guide --topic <group>` · every option as JSON: `gossms agent schema`.")
-	}
+	b.WriteString("One group in detail: `gossms agent guide --topic <group>` · every option as JSON: `gossms agent schema`.")
 	return b.String()
+}
+
+// runnable is every non-hidden command under path, at any depth, that is a
+// command rather than a group, in tree order.
+func runnable(tree *spec.Tree, path []string) []*spec.Command {
+	var out []*spec.Command
+	for _, c := range tree.Commands {
+		if len(c.Path) > len(path) && slices.Equal(c.Path[:len(path)], path) &&
+			!hidden(tree, c) && len(tree.Children(c.Path)) == 0 {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // groupBody is one group's commands in full: summary, description, usage,
@@ -169,10 +200,7 @@ func groupBody(tree *spec.Tree, group *spec.Command, brief bool) string {
 		b.WriteString("\n\nA command that connects also takes the connection options: " + strings.Join(names, ", ") +
 			". `gossms <command> --help` describes them.")
 	}
-	for _, c := range tree.Children(group.Path) {
-		if c.Hidden {
-			continue
-		}
+	for _, c := range runnable(tree, group.Path) {
 		fmt.Fprintf(&b, "\n\n### %s\n\n", c.Name())
 		if c.Description != "" && !brief {
 			b.WriteString(c.Description)

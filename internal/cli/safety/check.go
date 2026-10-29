@@ -53,24 +53,11 @@ func effective(allow, ceiling spec.Class) spec.Class {
 // then what --max-rows-affected cannot count.
 func Check(sc *Script, p Policy) *Blocked {
 	allowed := p.Allowed()
-	b := &Blocked{Detected: sc.Class, Allowed: allowed}
-
-	if Rank(sc.Class) > Rank(allowed) {
+	if b := p.Refuse("the script", sc.Class); b != nil {
 		b.Statements = matching(sc, func(st Statement) bool { return Rank(st.Class) > Rank(allowed) })
-		b.Message = fmt.Sprintf("the script is %s; the allowed class is %s", sc.Class, allowed)
-		switch {
-		case Rank(sc.Class) <= Rank(p.Allow):
-			// --allow would do; the profile's ceiling is what refuses.
-			b.Hint = fmt.Sprintf("The profile's ceiling (max_allow) is %s, and no --allow raises it. "+
-				"Use a profile whose ceiling allows %s; the ceiling is set in the TUI's Profile... dialog.", p.Ceiling, sc.Class)
-		case p.Ceiling != "" && Rank(sc.Class) > Rank(p.Ceiling):
-			b.Hint = fmt.Sprintf("It needs --allow %s, above the profile's ceiling (max_allow %s); use a profile whose ceiling allows it.",
-				sc.Class, p.Ceiling)
-		default:
-			b.Hint = fmt.Sprintf("Re-run with --allow %s if the change is intended.", sc.Class)
-		}
 		return b
 	}
+	b := &Blocked{Detected: sc.Class, Allowed: allowed}
 	if sc.Flags.Has(FlagModeOption) {
 		b.Statements = flagged(sc, FlagModeOption)
 		b.Message = "SET PARSEONLY, NOEXEC and SHOWPLAN_* are refused: the command line runs these modes itself"
@@ -102,6 +89,31 @@ func Check(sc *Script, p Policy) *Blocked {
 		}
 	}
 	return nil
+}
+
+// Refuse is the class check alone: the refusal of what — "the script", or a
+// command's name — whose class is class, nil when p allows it. A write
+// command has a fixed class and no statements, so its refusal is this one
+// with the same hints a script's gets.
+func (p Policy) Refuse(what string, class spec.Class) *Blocked {
+	allowed := p.Allowed()
+	if Rank(class) <= Rank(allowed) {
+		return nil
+	}
+	b := &Blocked{Detected: class, Allowed: allowed,
+		Message: fmt.Sprintf("%s is %s; the allowed class is %s", what, class, allowed)}
+	switch {
+	case Rank(class) <= Rank(p.Allow):
+		// --allow would do; the profile's ceiling is what refuses.
+		b.Hint = fmt.Sprintf("The profile's ceiling (max_allow) is %s, and no --allow raises it. "+
+			"Use a profile whose ceiling allows %s; the ceiling is set in the TUI's Profile... dialog.", p.Ceiling, class)
+	case p.Ceiling != "" && Rank(class) > Rank(p.Ceiling):
+		b.Hint = fmt.Sprintf("It needs --allow %s, above the profile's ceiling (max_allow %s); use a profile whose ceiling allows it.",
+			class, p.Ceiling)
+	default:
+		b.Hint = fmt.Sprintf("Re-run with --allow %s if the change is intended.", class)
+	}
+	return b
 }
 
 func matching(sc *Script, keep func(Statement) bool) []Statement {

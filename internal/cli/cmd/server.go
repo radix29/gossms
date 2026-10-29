@@ -14,16 +14,18 @@ import (
 )
 
 // ServerCommands is the server group: its node and its read commands. Its
-// summary names only what exists (phase 5 adds server config).
+// summary names only what exists.
 func ServerCommands(d Deps) []*spec.Command {
-	return []*spec.Command{
+	return slices.Concat([]*spec.Command{
 		{
 			Path:    []string{"server"},
-			Summary: "Show the free space on the volumes that hold the server's database files",
+			Summary: "Show the server's facts, its memory, its sp_configure settings, and the free space on the volumes holding its files",
 			Class:   spec.ClassRead,
 		},
+		serverInfoCommand(d),
+		serverMemoryCommand(d),
 		serverVolumesCommand(d),
-	}
+	}, serverConfigCommands(d))
 }
 
 // --- server volumes ---------------------------------------------------------
@@ -31,7 +33,7 @@ func ServerCommands(d Deps) []*spec.Command {
 func serverVolumesCommand(d Deps) *spec.Command {
 	return &spec.Command{
 		Path:    []string{"server", "volumes"},
-		Summary: "List the disks and mount points that hold database files: total, free, free %, number of files",
+		Summary: "List the volumes holding database files: total, free, free %, file count",
 		Description: "One row per volume holding at least one database file of any database, in any state " +
 			"(sys.master_files × sys.dm_os_volume_stats), by volume. volume is the mount point or drive letter, " +
 			"else the OS volume label, else one file's path on it (some container hosts report neither). " +

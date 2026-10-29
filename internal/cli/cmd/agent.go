@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	"strconv"
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -17,9 +17,8 @@ import (
 // adds this command's answer as its last section.
 func AgentContextCommand(d Deps) *spec.Command {
 	return &spec.Command{
-		Path: []string{"agent", "context"},
-		Summary: "Show the environment a profile reaches: server, login, database, operation ceiling, databases, " +
-			"missing permissions, profiles",
+		Path:    []string{"agent", "context"},
+		Summary: "Show what a profile reaches: server, login, database, ceiling, databases, missing permissions, profiles",
 		Description: "Connects as every command will and reports what an agent should know before it acts: the " +
 			"server's version and edition, the login and its roles, the connection's database, the default " +
 			"--allow and the profile's ceiling (max_allow) that caps it, every database the login can see and " +
@@ -160,12 +159,7 @@ func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.R
 	if srvCaps.Probed() {
 		sysadmin.Value = boolText(srvCaps.IsSysadmin())
 	}
-	res.Fields = []output.Field{
-		{Key: "profile", Value: profile, Null: profile == ""},
-		{Key: "serverName", Value: info.Name},
-		{Key: "productVersion", Value: info.ProductVersion},
-		{Key: "majorVersion", Value: strconv.Itoa(info.VersionMajor)},
-		{Key: "edition", Value: info.Edition},
+	res.Fields = slices.Concat([]output.Field{{Key: "profile", Value: profile, Null: profile == ""}}, serverFields(info), []output.Field{
 		{Key: "login", Value: info.Login},
 		sysadmin,
 		{Key: "database", Value: dbase.Name},
@@ -173,7 +167,7 @@ func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.R
 		{Key: "defaultAllow", Value: string(spec.ClassRead)},
 		{Key: "maxAllow", Value: maxAllow},
 		{Key: "maxAllowSource", Value: source},
-	}
+	})
 
 	res.Sets = append(res.Sets, d.contextDatabases(ctx, cat, res), missingPermissions(srvCaps, dbCaps, dbase.Name))
 	profiles, err := d.contextProfiles(cfg, profile)

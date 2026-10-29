@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "status": "ok",
+  "command": "test write",
+  "server": "srv",
+  "database": null,
+  "durationMs": 0,
+  "rowsAffected": null,
+  "outFile": null,
+  "data": {
+    "flag": "3604",
+    "dryRun": "true",
+    "tsql": "DBCC TRACEON(3604, -1) WITH NO_INFOMSGS\nGO\n"
+  },
+  "resultSets": [],
+  "messages": [],
+  "warnings": [],
+  "errors": []
+}
