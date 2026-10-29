@@ -30,10 +30,13 @@ like — it imports tcell — so the CLI measures display width with
 `TestNoTUIImports` (`internal/cli/imports_test.go`) runs
 
 ```bash
-cd internal/cli && go list -deps ./... | grep -E 'internal/tui|tcell'
+cd internal/cli && go list -deps ./... ../scripting | grep -E 'internal/tui|tcell'
 ```
 
 and fails on any match but `internal/tuikit/sqltext`, naming the import chain.
+`internal/scripting` is a root of its own there: it is the Script As table the
+TUI and the command line's script commands share, held headless on its own
+account.
 
 ## Which document owns what
 
@@ -219,6 +222,7 @@ gossms/
 │   │                        #   for the command line, structured halves of the messages (Message.SQL, Message.RowsAffected), TypedRowSink, WithStopOnError, WithoutSinkNotices
 │   ├── export/              # delimited result text (RecordWriter: CSV, TSV) with the settled NULL convention — the one writer behind Results To File and the command line's csv/tsv. Stdlib only
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan); live.go merges per-thread query-profile rows into Live Query Statistics counters and progress. No TUI/DB deps
+│   ├── scripting/           # Script As without a screen: per object family (Family), the verbs it offers in SSMS order and each one's generator over gosmo's Scripter/ServerScripter (USE prefix except on a database, DefaultScriptOptions), the system-object and Azure refusals (Offered, AzureRefuses), Collect (a gosmo write under WithScript). Shared by Object Explorer's Script as and the command line's script commands, so both script an object alike. gosmo + stdlib only (TestNoTUIImports)
 │   ├── xevent/              # Extended Events viewer's event store: bounded ring, column registry, ring_buffer dedupe, the client-side filter expression, grouping and aggregation. No TUI/DB deps
 │   ├── format/              # Edit > Format Document's engine: Language (what a query panel's text is written in; picks its highlighter, and by extension only, never content), the per-language Style registry, the SQL Standard style (sql*.go: a layout pass over sqltext's tokens with a block/paren frame stack, not a parser; statements it has no rules for keep their line breaks), the JSON formatter (json.Indent, never Marshal), the XML raw-text re-indenter (tags, CDATA, comments emitted verbatim; never encoding/xml's Encoder) and the token-equivalence guard every result passes. Pure text, stdlib + tuikit/sqltext only
 │   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export; WithLock: the lock file around config.json's and tracked_queries.json's read-merge-write
@@ -250,6 +254,8 @@ gossms/
 │   │   │   ├── write.go             # the shared write layer: --allow/--dry-run (writeOptions, the writing commands' own), gate (the command's Class vs --allow and the ceiling, BLOCKED before any dial), Writer (the gosmo writes, so tests fake them) and ServerWriter, applyWrite (--dry-run under gosmo.WithScript → dryRun + verbatim tsql fields), writeError
 │   │   │   ├── query.go             # query classify/run/parse: the T-SQL input options (readScriptInput: script, --param wrap, classification), the offline check, the mode-option refusal (refuseModeWords), the run (runScript, shared with plan actual), transactions, SQL errors → envelope
 │   │   │   ├── plan.go              # plan estimated: query parse's shape under SHOWPLAN_XML (no --allow, mode options refused, no --param); plan actual: query run's runScript under STATISTICS XML with a counting sink (result_sets), STATISTICS XML in the script refused; the plan parsed by internal/showplan into summary sets (statements, operators ranked by Plan.Rank, missing_indexes, warnings), a preorder tree set or the verbatim XML; --plan-file as the TUI's Save Execution Plan As writes it
+│   │   │   ├── script.go            # script object / script db: a sys.objects type → internal/scripting family, --as checked against the family's verbs, the text as a verbatim field (Catalog.Script), --script-file as the TUI's Script As ▸ File... writes it; gosmo's ErrDefinitionHidden → exit 9, an encrypted module → 11
+│   │   │   ├── data.go              # data top / count: the table or view resolved as object describe does, one SELECT composed (* or --columns matched to the catalog's columns, --where/--order-by spliced each ending at a line break) and checked as one read SELECT (safety.Classify, no ';', one batch; BLOCKED before connecting), run on a query session to the sink (top) or into a record (count); --approximate = Catalog.RowCount
 │   │   │   └── param.go             # query run --param: name/type checked against closed forms, the script wrapped in sp_executesql
 │   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), the Sink (rows kept, streamed or sent to --out-file) and one renderer per --output format (text, json, jsonl, csv, tsv, markdown); the --max-output-bytes cap
 │   │
@@ -314,7 +320,7 @@ gossms/
 │       ├── explorer_object_menu.go # the Rename/Delete menu pair a node offers, and the schema/object name a gate question is scoped by
 │       ├── explorer_object_rights.go # what permits Rename/Move/Delete per NodeType: the securable, principal, database- and server-scoped right tables
 │       ├── explorer_object_actions.go # the flows themselves: confirmation (incl. the cascade checkbox), script-instead-of-run, the prompt, and the parent-folder refresh
-│       ├── scripting.go          # Object Explorer's "Script <Noun> as ▸" cascade: which verbs each NodeType offers, how each is generated, and the three destinations
+│       ├── scripting.go          # Object Explorer's "Script <Noun> as ▸" cascade over internal/scripting: NodeType → family + noun, the verb labels, the read-right gate, and the three destinations
 │       ├── database_security_script.go # database node's "Script Database Security": gosmo's ScriptDatabaseSecurity (owner, roles, users, schemas, memberships, permissions), read in the background and opened unexecuted
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query

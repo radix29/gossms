@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/scripting"
 )
 
 // profileOption is --profile, the saved connection a command connects
@@ -86,6 +88,9 @@ type Catalog interface {
 	// object definition: the module's T-SQL text, "" when it has none to
 	// read (encrypted, CLR).
 	ModuleDefinition(ctx context.Context, d *gosmo.Database, kind ModuleKind, schema, name string) (string, error)
+
+	// script object / db: Script As's text for one object (internal/scripting).
+	Script(ctx context.Context, f scripting.Family, v scripting.Verb, t scripting.Target) (string, error)
 
 	// object dependencies: the edges out of and into schema.name.
 	Dependencies(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error)
@@ -332,6 +337,10 @@ func (serverCatalog) ModuleDefinition(ctx context.Context, d *gosmo.Database, ki
 	return "", fmt.Errorf("module kind %d has no definition read", kind)
 }
 
+func (c serverCatalog) Script(ctx context.Context, f scripting.Family, v scripting.Verb, t scripting.Target) (string, error) {
+	return scripting.Script(ctx, c.s, f, v, t)
+}
+
 func (serverCatalog) Dependencies(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error) {
 	return d.Dependencies(ctx, schema, name)
 }
@@ -517,7 +526,7 @@ func currentDatabase(ctx context.Context, cat Catalog, res *output.Result) (*gos
 
 // readError maps a gosmo read's failure to the envelope's code: NOT_FOUND for
 // gosmo's ErrNotFound, PERMISSION_DENIED when the server says the login lacks
-// a permission, UNSUPPORTED for a request gosmo or the server's version has
+// a permission or gosmo that a definition is hidden from it, UNSUPPORTED for a request gosmo or the server's version has
 // no form for, SQL_ERROR for any other server error, CONNECTION_FAILED for a
 // broken connection, GENERAL_ERROR otherwise. An *output.Error passes through.
 func readError(err error) *output.Error {
@@ -528,6 +537,11 @@ func readError(err error) *output.Error {
 	switch {
 	case errors.Is(err, gosmo.ErrNotFound):
 		return output.NewError(output.CodeNotFound, msg, "")
+	case errors.Is(err, gosmo.ErrDefinitionHidden):
+		// Checked before ErrUnsupported, which it also wraps: the login
+		// lacks VIEW DEFINITION, and a grant answers it.
+		return output.NewError(output.CodePermissionDenied, msg,
+			"The login cannot read the definition: it needs VIEW DEFINITION on the object, its schema or the database.")
 	case errors.Is(err, gosmo.ErrUnsupported), errors.Is(err, gosmo.ErrUnsupportedVersion):
 		return output.NewError(output.CodeUnsupported, msg, "")
 	case gosmo.IsMissingOrDenied(err):
@@ -547,6 +561,31 @@ func readError(err error) *output.Error {
 		return output.NewError(output.CodeConnectionFailed, msg, "")
 	}
 	return output.NewError(output.CodeGeneralError, msg, "")
+}
+
+// writableFile is the path option opt names, checked as --out-file is: not
+// empty, not a directory, and not an existing file unless --force. "" when
+// opt is not given.
+func writableFile(inv *spec.Invocation, opt string) (string, error) {
+	if !inv.Given[opt] {
+		return "", nil
+	}
+	path := inv.Values[opt].(string)
+	if path == "" {
+		return "", usageError("--"+opt+": empty path", "")
+	}
+	if fi, err := os.Stat(path); err == nil {
+		if fi.IsDir() {
+			return "", usageError(fmt.Sprintf("--%s %s: is a directory", opt, path), "")
+		}
+		if force, _ := inv.Values[optForce].(bool); !force {
+			return "", usageError(fmt.Sprintf("--%s %s: the file exists", opt, path),
+				"Add --force to replace it, or choose another path.")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", usageError(fmt.Sprintf("--%s %s: %v", opt, path, err), "")
+	}
+	return path, nil
 }
 
 // maxSuggestions bounds a did-you-mean list.

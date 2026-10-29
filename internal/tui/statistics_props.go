@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/scripting"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
@@ -224,7 +225,7 @@ func pageStatisticDetails(d *PropDialog, sc *db.ServerConn, dbName, schema, tabl
 				var text string
 				d.runPageAction(func(ctx context.Context) error {
 					var err error
-					text, err = ddl(gosmo.ScriptCreate, scriptStatistic)(ctx, sc,
+					text, err = scriptVerbFor(scripting.Statistic, scripting.Create).gen(ctx, sc,
 						nodeData{DBName: dbName, Schema: schema, TableName: table, Name: st.Name})
 					return err
 				}, func(err error) {
