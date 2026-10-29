@@ -124,6 +124,7 @@ type Catalog interface {
 	MemoryClerks(ctx context.Context) ([]gosmo.MemoryClerk, error)
 	PerformanceCounters(ctx context.Context, counters, instances []string) ([]gosmo.PerformanceCounter, error)
 	Configurations(ctx context.Context) ([]*gosmo.ConfigurationOption, error)
+	TraceFlags(ctx context.Context) ([]gosmo.TraceFlag, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -417,6 +418,10 @@ func (c serverCatalog) PerformanceCounters(ctx context.Context, counters, instan
 
 func (c serverCatalog) Configurations(ctx context.Context) ([]*gosmo.ConfigurationOption, error) {
 	return c.s.Configurations(ctx)
+}
+
+func (c serverCatalog) TraceFlags(ctx context.Context) ([]gosmo.TraceFlag, error) {
+	return c.s.TraceFlags(ctx)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

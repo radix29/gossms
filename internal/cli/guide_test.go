@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/cli/agent"
+	"github.com/radix29/gossms/internal/cli/spec"
 )
 
 // guideRuns is every guide the command line can print: each topic and the
@@ -114,7 +115,12 @@ func TestAgentGuideSections(t *testing.T) {
 				row = l
 			}
 		}
-		if name := strings.Join(c.Path[1:], " "); row == "" || name != "" && !strings.Contains(row, " "+name+",") && !strings.Contains(row, " "+name+" |") {
+		// A command that is not read carries its class: "config set (admin)".
+		name := strings.Join(c.Path[1:], " ")
+		if c.Class != spec.ClassRead {
+			name += " (" + string(c.Class) + ")"
+		}
+		if row == "" || len(c.Path) > 1 && !strings.Contains(row, " "+name+",") && !strings.Contains(row, " "+name+" |") {
 			t.Errorf("brief command index lacks %q (row %q)", c.Name(), row)
 		}
 	}

@@ -73,8 +73,14 @@ func (c *serverInfoCatalog) MemoryClerks(context.Context) ([]gosmo.MemoryClerk, 
 	return c.clerks, c.clerkErr
 }
 
+// Configurations is a copy of opts, as each read of the server is: a write
+// made since does not change what an earlier read returned.
 func (c *serverInfoCatalog) Configurations(context.Context) ([]*gosmo.ConfigurationOption, error) {
-	return c.opts, nil
+	var opts []*gosmo.ConfigurationOption
+	for _, o := range c.opts {
+		opts = append(opts, new(*o))
+	}
+	return opts, nil
 }
 
 // newServerInfoCatalog is a 2025 Linux instance a sysadmin reads: 64 GB with
