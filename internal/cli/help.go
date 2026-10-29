@@ -6,26 +6,34 @@ import (
 
 	"github.com/clipperhouse/displaywidth"
 
+	"github.com/radix29/gossms/internal/cli/agent"
 	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/version"
 )
 
-// agentLine is the first line of the top-level help. It names `gossms help`
-// until `agent guide` exists (docs/cli.md § Help).
-const agentLine = "AI agents: run `gossms help <command>` for any command's usage, options and examples."
+// agentLine is the first line of the top-level help: the pointer for AI
+// agents (docs/cli.md § Help).
+const agentLine = "AI agents: run `gossms agent guide` for complete usage instructions."
 
 // showHelp writes the help for cmd (nil: the top level) to stdout: plain text
 // for people, outside the envelope. invoked is the command line's command, for
 // the envelope of a refusal.
 //
-// Help as JSON is the command schema, which arrives with `agent schema`; until
-// then it is refused rather than emitted as a partial catalog an agent would
-// trust.
+// Help as JSON is the command schema (`agent schema`) of the same topic; the
+// other formats are refused.
 func showHelp(env Env, tree *spec.Tree, format output.Format, invoked string, cmd *spec.Command) int {
+	if format == output.FormatJSON {
+		var topic []string
+		if cmd != nil {
+			topic = cmd.Path
+		}
+		return writeSchema(env, tree, topic)
+	}
 	if format != output.FormatText {
 		return finish(env, &output.Result{Command: invoked, Errors: []*output.Error{output.NewError(output.CodeUsageError,
-			"help is available as text only", "Run the same command without --output.")}}, output.DefaultOptions(format), nil)
+			"help is available as text or json only", "Run the same command without --output, or with -o json for the command schema.")}}, output.DefaultOptions(format), nil)
 	}
 	var text string
 	switch {
@@ -37,6 +45,60 @@ func showHelp(env Env, tree *spec.Tree, format output.Format, invoked string, cm
 		text = commandHelp(tree, cmd)
 	}
 	fmt.Fprint(env.Stdout, text)
+	return 0
+}
+
+// showSchema is `agent schema [<group> [<command>]]`: the catalog as JSON,
+// outside the envelope, for text (the default) or json; any other format is
+// refused rather than ignored.
+func showSchema(env Env, tree *spec.Tree, format output.Format, o output.Options, inv *spec.Invocation) int {
+	refuse := func(e *output.Error) int {
+		return finish(env, &output.Result{Command: inv.Command.Name(), Errors: []*output.Error{e}}, o, nil)
+	}
+	if format != output.FormatText && format != output.FormatJSON {
+		return refuse(output.NewError(output.CodeUsageError, "agent schema is printed as json only",
+			"Run the same command without --output, or with -o json."))
+	}
+	if len(inv.Args) > 0 && tree.Lookup(inv.Args) == nil {
+		return refuse(unknownTopic(tree, inv.Command, inv.Args))
+	}
+	return writeSchema(env, tree, inv.Args)
+}
+
+// showGuide is `agent guide [--brief] [--topic <t>]`: the manual, outside
+// the envelope. Markdown unless --output is given (D6): -o text is the same
+// content as plain lines, -o markdown markdown, -o json the sections as a
+// JSON document; the row formats are refused.
+func showGuide(env Env, tree *spec.Tree, format output.Format, o output.Options, inv *spec.Invocation) int {
+	if !inv.Given["output"] {
+		format = output.FormatMarkdown
+	}
+	g := agent.BuildGuide(tree, version.Version, inv.Values["topic"].(string), inv.Values["brief"].(bool))
+	var err error
+	switch format {
+	case output.FormatMarkdown:
+		_, err = fmt.Fprint(env.Stdout, g.Markdown())
+	case output.FormatText:
+		_, err = fmt.Fprint(env.Stdout, g.Text())
+	case output.FormatJSON:
+		err = g.WriteJSON(env.Stdout)
+	default:
+		return finish(env, &output.Result{Command: inv.Command.Name(), Errors: []*output.Error{output.NewError(output.CodeUsageError,
+			"agent guide is printed as markdown, text or json only", "Run the same command without --output.")}}, o, nil)
+	}
+	if err != nil {
+		fmt.Fprintf(env.Stderr, "gossms: %s: writing output: %v\n", output.CodeGeneralError, err)
+		return 1
+	}
+	return 0
+}
+
+// writeSchema prints the catalog of the commands under topic (nil: all).
+func writeSchema(env Env, tree *spec.Tree, topic []string) int {
+	if err := agent.Build(tree, version.Version, topic).Write(env.Stdout); err != nil {
+		fmt.Fprintf(env.Stderr, "gossms: %s: writing output: %v\n", output.CodeGeneralError, err)
+		return 1
+	}
 	return 0
 }
 
@@ -182,9 +244,17 @@ func writeRows(b *strings.Builder, rows [][2]string) {
 // text for people, not a result in the envelope.
 func helpCommand(tree *spec.Tree) *spec.Command { return tree.Lookup([]string{"help"}) }
 
-// unknownHelpTopic is the usage error for `gossms help <words>` naming no
-// command.
-func unknownHelpTopic(tree *spec.Tree, words []string) *output.Error {
+// guideCommand is the tree's `agent guide` command, which Main answers
+// itself: the guide is printed outside the envelope.
+func guideCommand(tree *spec.Tree) *spec.Command { return tree.Lookup([]string{"agent", "guide"}) }
+
+// schemaCommand is the tree's `agent schema` command, which Main answers
+// itself: the catalog is printed outside the envelope.
+func schemaCommand(tree *spec.Tree) *spec.Command { return tree.Lookup([]string{"agent", "schema"}) }
+
+// unknownTopic is the usage error for `gossms help <words>` (or `agent schema
+// <words>`, the invoked command) naming no command.
+func unknownTopic(tree *spec.Tree, invoked *spec.Command, words []string) *output.Error {
 	// The deepest existing prefix is where the suggestion comes from.
 	parent := words[:0]
 	for len(parent) < len(words)-1 && tree.Lookup(words[:len(parent)+1]) != nil {
@@ -195,12 +265,12 @@ func unknownHelpTopic(tree *spec.Tree, words []string) *output.Error {
 	for _, c := range tree.Children(parent) {
 		names = append(names, c.Path[len(parent)])
 	}
-	hint := "Run `gossms help` for the command list."
+	hint := fmt.Sprintf("Run `gossms %s` for the command list.", invoked.Name())
 	if s := args.Suggest(word, names); s != "" {
-		hint = fmt.Sprintf("Did you mean `gossms help %s`?", strings.Join(append(append([]string{}, parent...), s), " "))
+		hint = fmt.Sprintf("Did you mean `gossms %s %s`?", invoked.Name(), strings.Join(append(append([]string{}, parent...), s), " "))
 	}
 	return output.NewError(output.CodeUsageError,
-		fmt.Sprintf("no help topic %q", strings.Join(words, " ")), hint)
+		fmt.Sprintf("no %s topic %q", invoked.Name(), strings.Join(words, " ")), hint)
 }
 
 // commandNames is the last path word of each command, comma-separated.

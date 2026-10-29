@@ -87,9 +87,15 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 		}
 		target := tree.Lookup(inv.Args)
 		if target == nil {
-			return finish(env, &output.Result{Command: cmd.Name(), Errors: []*output.Error{unknownHelpTopic(tree, inv.Args)}}, o, nil)
+			return finish(env, &output.Result{Command: cmd.Name(), Errors: []*output.Error{unknownTopic(tree, cmd, inv.Args)}}, o, nil)
 		}
 		return showHelp(env, tree, format, cmd.Name(), target)
+	}
+	if cmd == guideCommand(tree) {
+		return showGuide(env, tree, format, o, inv)
+	}
+	if cmd == schemaCommand(tree) {
+		return showSchema(env, tree, format, o, inv)
 	}
 	if cmd.Run == nil {
 		e := output.NewError(output.CodeGeneralError, cmd.Name()+": not implemented", "")

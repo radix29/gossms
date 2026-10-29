@@ -1,0 +1,2973 @@
+{
+  "schemaVersion": "1.0",
+  "gossmsVersion": "test",
+  "formats": [
+    "text",
+    "json",
+    "jsonl",
+    "csv",
+    "tsv",
+    "markdown"
+  ],
+  "exitCodes": [
+    {
+      "exit": 0,
+      "code": "OK",
+      "meaning": "Success (output may still be truncated; check truncated)"
+    },
+    {
+      "exit": 1,
+      "code": "GENERAL_ERROR",
+      "meaning": "Unexpected or internal error"
+    },
+    {
+      "exit": 2,
+      "code": "USAGE_ERROR",
+      "meaning": "Invalid or unknown arguments"
+    },
+    {
+      "exit": 3,
+      "code": "CONNECTION_FAILED",
+      "meaning": "Server unreachable, TLS or network error"
+    },
+    {
+      "exit": 4,
+      "code": "AUTH_FAILED",
+      "meaning": "Login failed or credentials are missing"
+    },
+    {
+      "exit": 5,
+      "code": "SQL_ERROR",
+      "meaning": "The server returned an error (severity 11 or higher)"
+    },
+    {
+      "exit": 6,
+      "code": "TIMEOUT",
+      "meaning": "Command or connect timeout"
+    },
+    {
+      "exit": 7,
+      "code": "BLOCKED",
+      "meaning": "Refused by the safety model or a missing --confirm"
+    },
+    {
+      "exit": 8,
+      "code": "NOT_FOUND",
+      "meaning": "Profile, database or object does not exist"
+    },
+    {
+      "exit": 9,
+      "code": "PERMISSION_DENIED",
+      "meaning": "The login lacks the required permission"
+    },
+    {
+      "exit": 10,
+      "code": "PARTIAL",
+      "meaning": "Some batches succeeded and some failed"
+    },
+    {
+      "exit": 11,
+      "code": "UNSUPPORTED",
+      "meaning": "The server's version or edition does not support the operation"
+    },
+    {
+      "exit": 130,
+      "code": "CANCELLED",
+      "meaning": "Ctrl+C or SIGINT"
+    }
+  ],
+  "globals": [
+    {
+      "name": "--output",
+      "short": "-o",
+      "type": "enum",
+      "enum": [
+        "text",
+        "json",
+        "jsonl",
+        "csv",
+        "tsv",
+        "markdown"
+      ],
+      "default": "text",
+      "negation": null,
+      "env": null,
+      "help": "Output format"
+    },
+    {
+      "name": "--quiet",
+      "short": "-q",
+      "type": "bool",
+      "enum": [],
+      "default": false,
+      "negation": "--no-quiet",
+      "env": null,
+      "help": "Results only, no envelope header"
+    },
+    {
+      "name": "--verbose",
+      "short": null,
+      "type": "bool",
+      "enum": [],
+      "default": false,
+      "negation": "--no-verbose",
+      "env": null,
+      "help": "Diagnostic logging to stderr"
+    },
+    {
+      "name": "--no-color",
+      "short": null,
+      "type": "bool",
+      "enum": [],
+      "default": false,
+      "negation": "--no-no-color",
+      "env": null,
+      "help": "Never colour the output"
+    },
+    {
+      "name": "--help",
+      "short": "-h",
+      "type": "bool",
+      "enum": [],
+      "default": false,
+      "negation": "--no-help",
+      "env": null,
+      "help": "Show help for the command"
+    },
+    {
+      "name": "--max-rows",
+      "short": null,
+      "type": "int",
+      "enum": [],
+      "default": 200,
+      "negation": null,
+      "env": null,
+      "help": "Rows kept per result set on stdout; 0 keeps all (in memory: prefer --out-file or -o jsonl for large results)"
+    },
+    {
+      "name": "--max-col-width",
+      "short": null,
+      "type": "int",
+      "enum": [],
+      "default": 256,
+      "negation": null,
+      "env": null,
+      "help": "Characters kept per cell in text, markdown, json and jsonl, marked …[+N chars]; 0 keeps all"
+    },
+    {
+      "name": "--max-output-bytes",
+      "short": null,
+      "type": "int",
+      "enum": [],
+      "default": 1048576,
+      "negation": null,
+      "env": null,
+      "help": "Cap on stdout in bytes; whole rows are dropped to fit; 0 is no cap"
+    },
+    {
+      "name": "--null-text",
+      "short": null,
+      "type": "string",
+      "enum": [],
+      "default": "NULL",
+      "negation": null,
+      "env": null,
+      "help": "How text and markdown show NULL"
+    },
+    {
+      "name": "--headers",
+      "short": null,
+      "type": "bool",
+      "enum": [],
+      "default": true,
+      "negation": "--no-headers",
+      "env": null,
+      "help": "Column headers in text, csv and tsv; --no-headers leaves them out"
+    },
+    {
+      "name": "--messages",
+      "short": null,
+      "type": "bool",
+      "enum": [],
+      "default": true,
+      "negation": "--no-messages",
+      "env": null,
+      "help": "PRINT and informational messages; --no-messages leaves them out"
+    },
+    {
+      "name": "--out-file",
+      "short": null,
+      "type": "string",
+      "enum": [],
+      "default": null,
+      "negation": null,
+      "env": null,
+      "help": "Write every row to this file, its format by extension (.csv .tsv .jsonl .json .md .txt); stdout gets the summary"
+    },
+    {
+      "name": "--force",
+      "short": null,
+      "type": "bool",
+      "enum": [],
+      "default": false,
+      "negation": "--no-force",
+      "env": null,
+      "help": "Replace an existing --out-file"
+    }
+  ],
+  "groups": [
+    {
+      "name": "agent",
+      "summary": "Describe gossms to an AI agent"
+    },
+    {
+      "name": "profile",
+      "summary": "List, show and test saved connection profiles"
+    },
+    {
+      "name": "db",
+      "summary": "List databases and show one database's properties"
+    },
+    {
+      "name": "object",
+      "summary": "List, find and describe the objects in the connection's database"
+    },
+    {
+      "name": "query",
+      "summary": "Run, parse and classify T-SQL"
+    }
+  ],
+  "commands": [
+    {
+      "path": "version",
+      "summary": "Show the gossms version and the command-line schema version",
+      "description": "Prints the build metadata `gossms --version` shows, plus the schema version of this command line's output.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [],
+      "examples": [
+        "gossms version",
+        "gossms version -o json"
+      ]
+    },
+    {
+      "path": "help",
+      "summary": "Show help for gossms, a command group or a command",
+      "description": "With no argument, lists the command groups. With a group, lists its commands; with a group and a command, shows that command's usage, options and examples, as `<command> --help` does.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "group",
+          "help": "A command group, or a depth-1 command such as version",
+          "format": null,
+          "required": false,
+          "repeat": false
+        },
+        {
+          "name": "command",
+          "help": "A command in the group",
+          "format": null,
+          "required": false,
+          "repeat": false
+        }
+      ],
+      "options": [],
+      "examples": [
+        "gossms help",
+        "gossms help version"
+      ]
+    },
+    {
+      "path": "agent guide",
+      "summary": "Print the usage manual for AI agents: rules, call pattern, output contract, exit codes, commands, recipes",
+      "description": "What an agent reads before its first call: what gossms is, the rules it must follow, how to call it, the output contract, the exit codes, the command index and recipes. The command index and the group topics are generated from the command tree; the rules and recipes are hand-written. It is printed outside the envelope: markdown by default, plain lines with -o text, and a JSON document of the same sections with -o json; any other format is refused. --brief is the condensed version for a system prompt.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--brief",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-brief",
+          "env": null,
+          "help": "The condensed guide for a system prompt: no recipes, the short form of each section"
+        },
+        {
+          "name": "--topic",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "overview",
+            "rules",
+            "calling",
+            "output",
+            "exit-codes",
+            "commands",
+            "recipes",
+            "agent",
+            "profile",
+            "db",
+            "object",
+            "query"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "One section, or one command group's commands in full detail"
+        }
+      ],
+      "examples": [
+        "gossms agent guide",
+        "gossms agent guide --brief",
+        "gossms agent guide --topic rules",
+        "gossms agent guide --topic object -o json"
+      ]
+    },
+    {
+      "path": "agent schema",
+      "summary": "Print the JSON catalog of every command, argument, option, exit code and output format",
+      "description": "The machine-readable catalog an agent builds tool definitions from and checks a call against: each command's path, summary, operation class, arguments, options (type, enum, typed default, environment variable) and examples, plus the global options, the exit codes and the --output formats. It is JSON whatever --output says (text or json; any other format is refused), printed outside the envelope, and the same document `gossms help -o json` prints. A group, or a group and a command, narrows it to the commands under them.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "group",
+          "help": "A command group, or a depth-1 command such as version",
+          "format": null,
+          "required": false,
+          "repeat": false
+        },
+        {
+          "name": "command",
+          "help": "A command in the group",
+          "format": null,
+          "required": false,
+          "repeat": false
+        }
+      ],
+      "options": [],
+      "examples": [
+        "gossms agent schema",
+        "gossms agent schema object",
+        "gossms agent schema query run"
+      ]
+    },
+    {
+      "path": "profile list",
+      "summary": "List the saved profiles: server, database, authentication, ceiling, saved password",
+      "description": "Lists the named profiles, sorted by name. --all adds the unnamed recent connections, most recent first, named by their generated name, which --profile also accepts. Passwords are never shown, only whether one is saved.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--all",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-all",
+          "env": null,
+          "help": "Also list unnamed recent connections"
+        }
+      ],
+      "examples": [
+        "gossms profile list",
+        "gossms profile list --all -o json"
+      ]
+    },
+    {
+      "path": "profile show",
+      "summary": "Show one profile's settings, its operation ceiling and whether its saved password opens",
+      "description": null,
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "name",
+          "help": "Profile name, or a recent connection's generated name",
+          "format": null,
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [],
+      "examples": [
+        "gossms profile show dev",
+        "gossms profile show dev -o json"
+      ]
+    },
+    {
+      "path": "profile test",
+      "summary": "Connect through a profile and report the server version, edition, login and latency",
+      "description": "Connects as every command will: the profile, with any connection option given here laid over it. An option that changes the server, port, login, authentication, Entra tenant or client, or weakens TLS does not send the profile's saved password; pass --password-env or --password-stdin then.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "name",
+          "help": "Profile name, or a recent connection's generated name",
+          "format": null,
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        }
+      ],
+      "examples": [
+        "gossms profile test dev",
+        "gossms profile test dev --database master -o json"
+      ]
+    },
+    {
+      "path": "db list",
+      "summary": "List databases: state, size, recovery model, compatibility level, collation",
+      "description": "One row per database, by name. System databases (master, model, msdb, tempdb and a replication distribution database) are left out unless --include-system; snapshots are listed, with snapshot_of naming their source. Sizes are the allocated file sizes in MB from sys.master_files, so they answer for a database in any state (tempdb's are its startup sizes); they are NULL for a database the login cannot see the files of.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--include-system",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-include-system",
+          "env": null,
+          "help": "Also list the system databases"
+        },
+        {
+          "name": "--state",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "online",
+            "offline",
+            "restoring",
+            "recovering",
+            "recovery_pending",
+            "suspect",
+            "emergency",
+            "copying",
+            "offline_secondary"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Only databases in this state"
+        }
+      ],
+      "examples": [
+        "gossms db list -p dev",
+        "gossms db list -p dev --include-system -o json",
+        "gossms db list -p dev --state offline"
+      ]
+    },
+    {
+      "path": "db info",
+      "summary": "Show one database's properties: state, sizes, recovery, collation, owner and options",
+      "description": "A record of the Database Properties dialog's facts: the sys.databases fields, the allocated data and log sizes, the space used and free inside the files, and the ALTER DATABASE SET options. A database that is not ONLINE still answers what the server catalog holds; what needs the database itself (space used) is named under warnings instead.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "name",
+          "help": "Database name",
+          "format": null,
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        }
+      ],
+      "examples": [
+        "gossms db info -p dev AdventureWorks",
+        "gossms db info -p dev tempdb -o json"
+      ]
+    },
+    {
+      "path": "object list",
+      "summary": "List objects: tables, views, procedures, functions, triggers, synonyms, sequences, types, schemas",
+      "description": "One row per object of the connection's database (-d, or the profile's), by kind as --type lists them, then schema and name. --name keeps the names containing the text and --schema the one schema, both case-insensitively, as Object Explorer's filter does — no wildcards. Objects SQL Server ships (system tables, the sys schema's views, procedures and functions, the system schemas) only with --include-system. A trigger is a table's or view's DML trigger; a type is an alias, table or CLR type.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--type",
+          "short": null,
+          "type": "list",
+          "enum": [
+            "table",
+            "view",
+            "procedure",
+            "function",
+            "trigger",
+            "synonym",
+            "sequence",
+            "type",
+            "schema"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Only these kinds (default: all)"
+        },
+        {
+          "name": "--schema",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Only objects in this schema"
+        },
+        {
+          "name": "--name",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Only names containing this text"
+        },
+        {
+          "name": "--include-system",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-include-system",
+          "env": null,
+          "help": "Also list the objects SQL Server ships"
+        }
+      ],
+      "examples": [
+        "gossms object list -p dev --type table --schema Sales",
+        "gossms object list -p dev --type procedure,function --name order -o json",
+        "gossms object list -p dev -d master --type view --name dm_exec --include-system"
+      ]
+    },
+    {
+      "path": "object search",
+      "summary": "Find objects by name, by text in their T-SQL, or by column name",
+      "description": "Looks in the connection's database for <text>, case-insensitively and literally (% and _ are not wildcards). --in name finds tables, views, procedures, functions and triggers whose name contains it; --in definition finds the modules whose T-SQL contains it (an encrypted or CLR module has none to search); --in column finds the columns of tables and views whose name contains it, adding the column and its data type to each row.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "text",
+          "help": "The text to find",
+          "format": null,
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--in",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "name",
+            "definition",
+            "column"
+          ],
+          "default": "name",
+          "negation": null,
+          "env": null,
+          "help": "Where to look"
+        }
+      ],
+      "examples": [
+        "gossms object search -p dev \"Customer\"",
+        "gossms object search -p dev \"CustomerID\" --in column",
+        "gossms object search -p dev \"GETDATE()\" --in definition -o json"
+      ]
+    },
+    {
+      "path": "object describe",
+      "summary": "Describe one object: columns, keys, indexes, constraints and triggers, or a module's parameters",
+      "description": "A record — schema, name, type, typeDesc, objectId, created, modified, parent, then what the kind adds — and the sets that kind has. A table: rowCount; sets columns, keys (primary key, unique and foreign keys), indexes, check_constraints, triggers. A view: isSchemaBound; sets columns, indexes, triggers. A procedure: set parameters; a function also returns. A trigger: isEnabled and events; a synonym its baseObject; a sequence its type and values. Any other object (a constraint, a rule) is the record alone.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "object",
+          "help": "The object: schema.name, or a name alone when one schema has it",
+          "format": "schema.name",
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        }
+      ],
+      "examples": [
+        "gossms object describe -p dev Sales.SalesOrderHeader",
+        "gossms object describe -p dev Sales.SalesOrderHeader -o json",
+        "gossms object describe -p dev dbo.uspGetBillOfMaterials"
+      ]
+    },
+    {
+      "path": "object definition",
+      "summary": "Show the T-SQL source of a view, procedure, function or trigger",
+      "description": "A record — schema, name, type — and the definition as the server stores it. Text prints it after the record under an === DEFINITION (n lines) === marker, line breaks kept, and --max-col-width does not cut it; JSON gives it as one string. An encrypted module, or a CLR one, has no T-SQL to show: the definition is null with a warning. This is the module's text, not a generated CREATE script.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "object",
+          "help": "The object: schema.name, or a name alone when one schema has it",
+          "format": "schema.name",
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        }
+      ],
+      "examples": [
+        "gossms object definition -p dev Sales.vSalesPerson",
+        "gossms object definition -p dev dbo.uspGetBillOfMaterials -o json"
+      ]
+    },
+    {
+      "path": "object dependencies",
+      "summary": "Show what an object uses and what uses it, as View Dependencies does",
+      "description": "One row per dependency edge. uses: the objects <object>'s own definition references (tables, views, functions, procedures it calls); used-by: the objects whose definition references <object>. --depth n follows the edges n levels out: level 1 is <object>'s own, level 2 those of the objects at level 1, and so on; via names the object at the level before. An object reached twice is followed once, so a cycle ends. Only objects in the connection's database are listed: a reference to another database, or to an object that does not exist, is not. schema_bound marks a WITH SCHEMABINDING reference; caller_dependent a one-part name resolved, as the module's owner would, against its schema and then dbo — another caller may get a different object.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "object",
+          "help": "The object: schema.name, or a name alone when one schema has it",
+          "format": "schema.name",
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--direction",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "uses",
+            "used-by",
+            "both"
+          ],
+          "default": "both",
+          "negation": null,
+          "env": null,
+          "help": "Which edges to follow"
+        },
+        {
+          "name": "--depth",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 1,
+          "negation": null,
+          "env": null,
+          "help": "Levels to follow, 1 to 5"
+        }
+      ],
+      "examples": [
+        "gossms object dependencies -p dev Reporting.usp_MonthlySales --direction uses",
+        "gossms object dependencies -p dev Sales.SalesOrderDetail --direction used-by --depth 3 -o json"
+      ]
+    },
+    {
+      "path": "object indexes",
+      "summary": "List a table's or indexed view's indexes with their columns and usage",
+      "description": "One row per index in index_id order, a heap first as a HEAP row with no name: type, key and included columns, filter, and the user seeks, scans, lookups and updates the server has counted since it started (sys.dm_db_index_usage_stats) with the last time of each. Reading the usage needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE on SQL Server 2022 and later); without it the usage columns are NULL with a warning. --fragmentation adds each index's fragmentation, page and fragment counts from sys.dm_db_index_physical_stats in that mode — it reads the index, so it is off by default: limited reads the pages above the leaf and has no page fullness; sampled and detailed read the leaf.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "object",
+          "help": "The table or view: schema.name, or a name alone when one schema has it",
+          "format": "schema.name",
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--fragmentation",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "limited",
+            "sampled",
+            "detailed"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Also read fragmentation, scanning in this mode"
+        }
+      ],
+      "examples": [
+        "gossms object indexes -p dev Sales.SalesOrderDetail",
+        "gossms object indexes -p dev Sales.SalesOrderDetail --fragmentation limited -o json"
+      ]
+    },
+    {
+      "path": "object stats",
+      "summary": "List a table's or indexed view's statistics and when each was last updated",
+      "description": "One row per statistics object, by name: its columns, origin (index — the statistic an index keeps; auto — created by the optimizer; user — CREATE STATISTICS), filter, last update, the rows in the table then and how many were sampled, the histogram steps, and the modifications counted since. A statistic never computed — or one the login may see but not read — has those columns NULL.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "object",
+          "help": "The table or view: schema.name, or a name alone when one schema has it",
+          "format": "schema.name",
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        }
+      ],
+      "examples": [
+        "gossms object stats -p dev Sales.SalesOrderDetail",
+        "gossms object stats -p dev Sales.SalesOrderDetail -o json"
+      ]
+    },
+    {
+      "path": "query classify",
+      "summary": "Report the operation class (read, write, ddl, admin) of each statement and of the script",
+      "description": "Classifies without connecting: one row per statement with its batch, line, class, leading keywords, the object it acts on, why it is above its leader's class, and flags (transaction-control, not-in-transaction, nocount, dynamic-sql, exec, mode-option, output-clause). Anything unrecognised counts as write. With --allow it also applies the check a run would (SET PARSEONLY, NOEXEC and SHOWPLAN_* are refused too) and answers BLOCKED, exit 7, when the script would be refused.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--sql",
+          "short": "-Q",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Inline T-SQL (fine for a short query)"
+        },
+        {
+          "name": "--file",
+          "short": "-i",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL file; - reads stdin. GO separates batches. UTF-8, or UTF-16 with a byte-order mark"
+        },
+        {
+          "name": "--sql-base64",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL as Base64 of its UTF-8 text, safe from any shell quoting"
+        },
+        {
+          "name": "--allow",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "read",
+            "write",
+            "ddl",
+            "admin"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Check the script against this class, as a run with --allow would"
+        }
+      ],
+      "examples": [
+        "gossms query classify --file fix.sql",
+        "gossms query classify --file - --allow write -o json",
+        "gossms query classify --sql-base64 VVBEQVRFIGRiby50IFNFVCB4ID0gMQ=="
+      ]
+    },
+    {
+      "path": "query run",
+      "summary": "Run T-SQL and return its result sets, messages and rows affected",
+      "description": "Runs the script on one session, as a query window does: temp tables, SET options and USE carry across its GO batches, and nothing carries across calls. The script is classified first and refused (BLOCKED, exit 7, before connecting) when it is above --allow (default read) or the profile's ceiling. The run stops after the first batch that fails unless --continue-on-error. --transaction rollback runs the whole script in one transaction under SET XACT_ABORT ON and rolls it back, to measure rowsAffected without keeping the change; commit commits it only when every batch succeeded; --max-rows-affected commits only when the rows changed stay at or under the limit. --dry-run classifies and checks without connecting. --param name=value:type runs the script (one batch) through sp_executesql with @name as a typed parameter, so a value is never pasted into the T-SQL; the script is classified as written.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--sql",
+          "short": "-Q",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Inline T-SQL (fine for a short query)"
+        },
+        {
+          "name": "--file",
+          "short": "-i",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL file; - reads stdin. GO separates batches. UTF-8, or UTF-16 with a byte-order mark"
+        },
+        {
+          "name": "--sql-base64",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL as Base64 of its UTF-8 text, safe from any shell quoting"
+        },
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--allow",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "read",
+            "write",
+            "ddl",
+            "admin"
+          ],
+          "default": "read",
+          "negation": null,
+          "env": null,
+          "help": "Highest operation class the script may reach; the profile's ceiling (max_allow) caps it"
+        },
+        {
+          "name": "--dry-run",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-dry-run",
+          "env": null,
+          "help": "Classify and check the script as a run would, without connecting or running anything"
+        },
+        {
+          "name": "--transaction",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "auto",
+            "commit",
+            "rollback"
+          ],
+          "default": "auto",
+          "negation": null,
+          "env": null,
+          "help": "auto: each statement commits itself; rollback: run in one transaction and roll it back; commit: commit it only if every batch succeeded"
+        },
+        {
+          "name": "--max-rows-affected",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Run in one transaction and commit only if the rows changed stay at or under this; otherwise roll back (exit 7)"
+        },
+        {
+          "name": "--continue-on-error",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-continue-on-error",
+          "env": null,
+          "help": "Run every batch even after one fails (exit 10 when some succeeded); refused with a transaction"
+        },
+        {
+          "name": "--timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 60,
+          "negation": null,
+          "env": null,
+          "help": "Seconds the script may run (the connect has --connect-timeout); 0 is no limit"
+        },
+        {
+          "name": "--statistics",
+          "short": null,
+          "type": "list",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "io, time: SET STATISTICS IO / TIME ON for the run; their output goes to messages"
+        },
+        {
+          "name": "--param",
+          "short": null,
+          "type": "repeat",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "name=value:type, e.g. id=42:int: run the script through sp_executesql with @name declared as type; one batch only"
+        }
+      ],
+      "examples": [
+        "gossms query run -p dev --file report.sql",
+        "gossms query run -p dev --file - -o json",
+        "gossms query run -p dev --file fix.sql --allow write --transaction rollback",
+        "gossms query run -p dev --file fix.sql --allow write --max-rows-affected 10",
+        "gossms query run -p dev --file fix.sql --allow write --dry-run",
+        "gossms query run -p dev --file big.sql --out-file rows.csv",
+        "gossms query run -p dev --file by-id.sql --param id=42:int --param since=2026-01-01:date"
+      ]
+    },
+    {
+      "path": "query parse",
+      "summary": "Check T-SQL syntax on the server without running it (SET PARSEONLY ON)",
+      "description": "Sends every batch under SET PARSEONLY ON: the server checks the syntax and runs nothing, so no --allow is needed. Syntax errors are SQL_ERROR (exit 5) with their script line. Names are not resolved: a missing table or column is not an error here, only at run time. SET PARSEONLY, NOEXEC and SHOWPLAN_* in the script are refused (exit 7).",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--sql",
+          "short": "-Q",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Inline T-SQL (fine for a short query)"
+        },
+        {
+          "name": "--file",
+          "short": "-i",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL file; - reads stdin. GO separates batches. UTF-8, or UTF-16 with a byte-order mark"
+        },
+        {
+          "name": "--sql-base64",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "T-SQL as Base64 of its UTF-8 text, safe from any shell quoting"
+        },
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 60,
+          "negation": null,
+          "env": null,
+          "help": "Seconds the script may run (the connect has --connect-timeout); 0 is no limit"
+        }
+      ],
+      "examples": [
+        "gossms query parse -p dev --file fix.sql",
+        "gossms query parse -p dev --file - -o json"
+      ]
+    }
+  ]
+}

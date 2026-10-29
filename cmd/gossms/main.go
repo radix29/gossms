@@ -70,10 +70,10 @@ const (
 	modeNoTerminal             // bare gossms with stdin or stdout not a terminal
 )
 
-// noTerminalMessage is bare gossms's refusal when stdio is redirected. It names
-// `gossms help` until `agent guide` exists (docs/cli.md § Help).
+// noTerminalMessage is bare gossms's refusal when stdio is redirected; it
+// points an agent at its manual (docs/cli.md § Modes).
 const noTerminalMessage = "gossms: the interactive UI needs a terminal on stdin and stdout; " +
-	"for scripted use run `gossms help`"
+	"for scripted use run `gossms agent guide`"
 
 // isTerminal is term.IsTerminal, a variable so TestSelectMode can decide
 // without a tty.

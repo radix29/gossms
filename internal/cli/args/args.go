@@ -245,7 +245,7 @@ func findCommand(tree *spec.Tree, tokens []string) (*spec.Command, []int, error)
 	}
 	if cmd == nil {
 		return nil, nil, &Error{Kind: KindNoCommand, Message: "no command given",
-			Hint: "Commands: " + strings.Join(childNames(tree, nil), ", ") + ". Run `gossms help` for usage."}
+			Hint: "Commands: " + strings.Join(childNames(tree, nil), ", ") + ". Run `gossms help` for usage; AI agents: `gossms agent guide`."}
 	}
 	return cmd, pathIdx, nil
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 
+	"github.com/radix29/gossms/internal/cli/agent"
 	"github.com/radix29/gossms/internal/cli/cmd"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
@@ -15,8 +16,9 @@ import (
 // once it works: connection and safety globals arrive with the phases that
 // implement them, and --output lists only the formats a renderer exists for.
 //
-// help has no Run: Main answers it (and every --help) itself, since help is
-// text for people rather than a result in the envelope.
+// help, agent guide and agent schema have no Run: Main answers them (and
+// every --help) itself, since help, the guide and the catalog are printed
+// outside the envelope.
 func commandTree() *spec.Tree {
 	return newCommandTree(cmd.Deps{LoadConfig: config.LoadReadOnly, Connect: db.Connect, OpenSession: cmd.OpenQuerySession,
 		Catalog: cmd.ServerCatalog})
@@ -68,11 +70,61 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 				"gossms help version",
 			},
 		},
+		{
+			Path:    []string{"agent"},
+			Summary: "Describe gossms to an AI agent",
+			Class:   spec.ClassRead,
+		},
+		{
+			Path:    []string{"agent", "guide"},
+			Summary: "Print the usage manual for AI agents: rules, call pattern, output contract, exit codes, commands, recipes",
+			Description: "What an agent reads before its first call: what gossms is, the rules it must follow, how to " +
+				"call it, the output contract, the exit codes, the command index and recipes. The command index and the " +
+				"group topics are generated from the command tree; the rules and recipes are hand-written. It is " +
+				"printed outside the envelope: markdown by default, plain lines with -o text, and a JSON document " +
+				"of the same sections with -o json; any other format is refused. --brief is the condensed version " +
+				"for a system prompt.",
+			Options: []spec.Option{
+				{Name: "brief", Type: spec.TypeBool,
+					Help: "The condensed guide for a system prompt: no recipes, the short form of each section"},
+				// Enum filled in below, once the groups are in the tree.
+				{Name: "topic", Type: spec.TypeEnum,
+					Help: "One section, or one command group's commands in full detail"},
+			},
+			Class: spec.ClassRead,
+			Examples: []string{
+				"gossms agent guide",
+				"gossms agent guide --brief",
+				"gossms agent guide --topic rules",
+				"gossms agent guide --topic object -o json",
+			},
+		},
+		{
+			Path:    []string{"agent", "schema"},
+			Summary: "Print the JSON catalog of every command, argument, option, exit code and output format",
+			Description: "The machine-readable catalog an agent builds tool definitions from and checks a call " +
+				"against: each command's path, summary, operation class, arguments, options (type, enum, typed " +
+				"default, environment variable) and examples, plus the global options, the exit codes and the " +
+				"--output formats. It is JSON whatever --output says (text or json; any other format is refused), " +
+				"printed outside the envelope, and the same document `gossms help -o json` prints. A group, or a " +
+				"group and a command, narrows it to the commands under them.",
+			Args: []spec.Arg{
+				{Name: "group", Help: "A command group, or a depth-1 command such as version"},
+				{Name: "command", Help: "A command in the group"},
+			},
+			Class: spec.ClassRead,
+			Examples: []string{
+				"gossms agent schema",
+				"gossms agent schema object",
+				"gossms agent schema query run",
+			},
+		},
 	}
 	tree.Commands = append(tree.Commands, cmd.ProfileCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.DBCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.ObjectCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.QueryCommands(d)...)
+	guideCommand(tree).Options[1].Enum = agent.Topics(tree)
 	return tree
 }
 

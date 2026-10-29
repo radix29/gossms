@@ -24,7 +24,7 @@ parser), `internal/cli/output` (envelope, renderers, exit codes),
 
 | Invocation | Behaviour |
 |---|---|
-| `gossms` (no argument at all) | Starts the interactive UI — but only with **both stdin and stdout on a terminal**. Otherwise it exits `1` at once, with one stderr line pointing at `gossms help` |
+| `gossms` (no argument at all) | Starts the interactive UI — but only with **both stdin and stdout on a terminal**. Otherwise it exits `1` at once, with one stderr line pointing at `gossms agent guide` |
 | `gossms --version` / `-version` / `-v` | The version block, byte-identical to every earlier release (`release.yml`'s Homebrew test matches it). Extra arguments are ignored |
 | `gossms <anything else>` | The command line. The interactive UI is never started, the TUI's log file is never opened, and the terminal is never put in raw mode |
 
@@ -126,14 +126,84 @@ no `--include-messages`.
 All of it is generated from the command tree: usage line, description,
 arguments, options, global options, examples.
 
-The first line of the top-level help is the pointer for AI agents. It names
-`gossms help` until `gossms agent guide` exists; `TestCommandMentionsParse`
-fails on any `gossms …` named in a hint, help text, example or message that the
-tree cannot parse, so the wording has to change when the command does.
+The first line of the top-level help is the pointer for AI agents: *AI
+agents: run `gossms agent guide` for complete usage instructions.* The
+no-command usage error (`gossms -p dev`) and bare gossms's no-terminal
+refusal name it too. `TestCommandMentionsParse` fails on any `gossms …` named
+in a hint, help text, example or message that the tree cannot parse, so a
+pointer can never name a command that does not exist.
 
-Help as JSON will be the command schema (`agent schema`). Until that exists,
-help with `--output json` is refused (`USAGE_ERROR`) rather than emitting a
-partial catalog an agent would trust.
+Help with `--output json` is the command schema of the same topic — exactly
+what `gossms agent schema [<group> [<command>]]` prints (§ Agent schema).
+Help in any other format is refused (`USAGE_ERROR`).
+
+### Agent guide
+
+`gossms agent guide` is the manual an AI agent reads before its first call,
+printed outside the envelope, exit `0`. Sections, in this fixed order (each id
+is also a `--topic`):
+
+| Id | Section | Source |
+|---|---|---|
+| `overview` | What gossms is | `internal/cli/agent/guide/overview.md` |
+| `rules` | Rules you must follow | `guide/rules.md` |
+| `calling` | How to call it | `guide/calling.md` |
+| `output` | Output contract | `guide/output.md` |
+| `exit-codes` | Exit codes | generated from the exit-code table |
+| `commands` | The command index: command, operation class, summary | generated from the command tree |
+| `recipes` | Explore a schema, read data, make a safe data fix | `guide/recipes.md` |
+
+The first lines are the title and `gossms <version> · CLI schema <n>`, so a
+cached guide can be told stale.
+
+| Option | |
+|---|---|
+| `--brief` | The condensed guide for a system prompt (under 6,000 bytes, about 1,500 tokens): no recipes, each hand-written section up to its `<!-- full -->` line, the exit codes as one line |
+| `--topic <id\|group>` | One section; or a command group (`db`, `object`, `query`, …): each of its commands with description, class, usage, arguments, its own options and examples. The connection options are named once at the top |
+| `-o markdown` | The default for this command (whatever `--output`'s global default is) |
+| `-o text` | The same content as plain lines: headings underlined, tables aligned, code indented, no markup |
+| `-o json` | `{"schemaVersion", "gossmsVersion", "title", "brief", "topic", "sections": [{"id", "title", "body"}]}`, `body` in markdown, `topic` null for the whole guide. Not the envelope: its `data` holds only strings |
+
+`jsonl`, `csv` and `tsv` are refused (`USAGE_ERROR`). The environment section
+(`-p <profile>`) arrives with `agent context`.
+
+Only the rules and the recipes are prose that can go stale, and
+`TestAgentGuideMentionsParse` renders every topic, brief and full, and fails
+on any backticked `gossms …` or code-block line starting `gossms ` that names
+a missing command or does not parse — so a recipe can name only implemented
+commands.
+
+### Agent schema
+
+`gossms agent schema` prints the machine-readable catalog an agent builds tool
+definitions from: JSON, outside the envelope, exit `0`. It is JSON for `-o
+text` (the default) and `-o json`; any other format is `USAGE_ERROR`. The
+output options do not apply. A group, or a group and a command, narrows
+`groups` and `commands` to what is under it; an unknown one is `USAGE_ERROR`
+with a did-you-mean.
+
+| Key | |
+|---|---|
+| `schemaVersion` | The envelope's version (`version`'s `cliSchema`) |
+| `gossmsVersion` | The build's version, so a cached catalog can be told stale |
+| `formats` | The `--output` values |
+| `exitCodes[]` | `exit`, `code`, `meaning` — the whole § Exit codes table |
+| `globals[]` | The global options, shaped as a command's `options[]` |
+| `groups[]` | `name`, `summary` of each command group |
+| `commands[]` | `path` (`"object list"`), `summary`, `description` (null when none), `operationClass` (`read\|write\|ddl\|admin`), `arguments[]` {`name`, `help`, `format`, `required`, `repeat`}, `options[]`, `examples[]` |
+
+An option is `name` (`"--max-rows"`), `short` (`"-o"` or null), `type`
+(`bool\|string\|int\|enum\|list\|repeat`), `enum` (`[]` when none; on a
+list, each item's values), `default` typed by `type` (a bool, a number, a
+string, an array for a list; null when none), `negation` (a bool's
+`--no-<name>`, null otherwise), `env` (null when none) and `help`. Every key
+is always present. Hidden commands are left out.
+
+All of it is generated from the command tree and the exit-code table; nothing
+is hand-written. `TestAgentSchemaListsEveryCommand` fails on a command missing
+from it, and `internal/cli/testdata/agent_schema.json.golden` pins the whole
+document (`go test ./internal/cli -run AgentSchemaGolden -update` once a
+change is meant).
 
 ## Profiles
 
@@ -441,6 +511,8 @@ second Ctrl+C kills the process.
 |---|---|
 | `version` | Record: `version`, `commit`, `built`, `platform`, `license`, `gosmo` — the fields `gossms --version` prints — plus `cliSchema` |
 | `help [<group>] [<command>]` | Help text (§ Help) |
+| `agent guide [--brief] [--topic <topic>]` | The manual for AI agents, outside the envelope (§ Agent guide) |
+| `agent schema [<group>] [<command>]` | The command catalog as JSON, outside the envelope (§ Agent schema) |
 | `profile list [--all]` | Set: `name`, `kind` (`profile`, or `recent` with `--all`), `server`, `port` (NULL when not set), `database`, `auth` (the `--auth` spelling), `user`, `max_allow` (NULL for a recent connection), `password` (`saved`, `none`, `unreadable`). Profiles sorted by name, then recent connections most recent first. An empty list carries a message saying how to make a profile |
 | `profile show <name>` | Record: `name`, `kind`, `generatedName`, `server`, `port`, `database`, `auth`, `user`, `tenantId`, `clientId`, `encrypt`, `trustServerCertificate`, `hostNameInCertificate`, `extraProperties` (keys only — a value may be a secret), `maxAllow`, `password`. A password that cannot be opened adds a warning |
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
