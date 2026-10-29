@@ -40,7 +40,8 @@ type Guide struct {
 }
 
 // sectionIDs is the guide's fixed section order (§8.2); each is also a
-// --topic. The environment section arrives with `agent context`.
+// --topic. The environment section (Environment) follows them, only when
+// the guide was given a connection.
 var sectionIDs = []string{"overview", "rules", "calling", "output", "exit-codes", "commands", "recipes"}
 
 var sectionTitles = map[string]string{
@@ -294,6 +295,81 @@ func optionHelp(o spec.Option) string {
 		h += " [env " + o.Env + "]"
 	}
 	return h
+}
+
+// EnvironmentID is the environment section's id.
+const EnvironmentID = "environment"
+
+// briefRows caps each table of the brief guide's environment section.
+const briefRows = 15
+
+// Environment is the "Your environment" section: res is `agent context`'s
+// answer, its record as a list and each result set as a table, so the
+// section says what that command says. A failed answer is its error, so the
+// guide still prints with the reason the environment is missing.
+func Environment(res *output.Result, profile string, brief bool) Section {
+	s := Section{ID: EnvironmentID, Title: "Your environment"}
+	if profile != "" {
+		s.Title += " (profile: " + profile + ")"
+	}
+	var b strings.Builder
+	if len(res.Errors) > 0 {
+		e := res.Errors[0]
+		fmt.Fprintf(&b, "Not available: `%s` — %s", e.Code, e.Message)
+		if e.Hint != "" {
+			b.WriteString("\n\n" + e.Hint)
+		}
+		s.Body = b.String()
+		return s
+	}
+	for _, f := range res.Fields {
+		v := f.Value
+		switch {
+		case f.Null:
+			v = "NULL"
+		case v == "":
+			v = "(none)"
+		}
+		fmt.Fprintf(&b, "- %s: %s\n", f.Key, v)
+	}
+	for _, set := range res.Sets {
+		fmt.Fprintf(&b, "\n### %s\n\n", set.Name)
+		if len(set.Rows) == 0 {
+			b.WriteString("(none)\n")
+			continue
+		}
+		b.WriteString("|")
+		for _, c := range set.Columns {
+			b.WriteString(" " + c.Name + " |")
+		}
+		b.WriteString("\n|" + strings.Repeat("---|", len(set.Columns)) + "\n")
+		rows := set.Rows
+		if brief && len(rows) > briefRows {
+			rows = rows[:briefRows]
+		}
+		for _, r := range rows {
+			b.WriteString("|")
+			for _, cell := range r {
+				v := "NULL"
+				if cell != nil {
+					v = escapeCell(*cell)
+				}
+				b.WriteString(" " + v + " |")
+			}
+			b.WriteString("\n")
+		}
+		if len(rows) < len(set.Rows) {
+			fmt.Fprintf(&b, "\n%d more: `gossms agent context`\n", len(set.Rows)-len(rows))
+		}
+	}
+	if len(res.Warnings) > 0 {
+		b.WriteString("\nWarnings:\n\n")
+		for _, w := range res.Warnings {
+			b.WriteString("- " + w + "\n")
+		}
+	}
+	s.Body = strings.TrimSpace(b.String())
+	return s
 }
 
 // escapeCell makes s safe inside a markdown table cell.

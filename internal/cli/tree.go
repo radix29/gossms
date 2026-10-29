@@ -18,7 +18,8 @@ import (
 //
 // help, agent guide and agent schema have no Run: Main answers them (and
 // every --help) itself, since help, the guide and the catalog are printed
-// outside the envelope.
+// outside the envelope. The guide's environment section runs agent
+// context's.
 func commandTree() *spec.Tree {
 	return newCommandTree(cmd.Deps{LoadConfig: config.LoadReadOnly, Connect: db.Connect, OpenSession: cmd.OpenQuerySession,
 		Catalog: cmd.ServerCatalog})
@@ -83,18 +84,21 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 				"group topics are generated from the command tree; the rules and recipes are hand-written. It is " +
 				"printed outside the envelope: markdown by default, plain lines with -o text, and a JSON document " +
 				"of the same sections with -o json; any other format is refused. --brief is the condensed version " +
-				"for a system prompt.",
-			Options: []spec.Option{
+				"for a system prompt. With a profile (or --server) it connects and adds \"Your environment\", the " +
+				"answer `gossms agent context` gives for the same connection, as the last section.",
+			// The connection options add `agent context`'s answer as the last
+			// section, "Your environment".
+			Options: append([]spec.Option{
 				{Name: "brief", Type: spec.TypeBool,
 					Help: "The condensed guide for a system prompt: no recipes, the short form of each section"},
 				// Enum filled in below, once the groups are in the tree.
 				{Name: "topic", Type: spec.TypeEnum,
 					Help: "One section, or one command group's commands in full detail"},
-			},
+			}, cmd.ConnectOptions()...),
 			Class: spec.ClassRead,
 			Examples: []string{
 				"gossms agent guide",
-				"gossms agent guide --brief",
+				"gossms agent guide --brief -p dev",
 				"gossms agent guide --topic rules",
 				"gossms agent guide --topic object -o json",
 			},
@@ -120,6 +124,7 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 			},
 		},
 	}
+	tree.Commands = append(tree.Commands, cmd.AgentContextCommand(d))
 	tree.Commands = append(tree.Commands, cmd.ProfileCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.DBCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.ObjectCommands(d)...)

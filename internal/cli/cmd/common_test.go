@@ -142,7 +142,7 @@ func (c *dbCatalog) DatabaseByName(_ context.Context, name string) (*gosmo.Datab
 // connectDatabase reads the connection's database from the server and puts
 // its catalog spelling in the envelope.
 func TestConnectDatabase(t *testing.T) {
-	tree := &spec.Tree{Commands: []*spec.Command{{Path: []string{"x"}, Options: connectOptions()}}}
+	tree := &spec.Tree{Commands: []*spec.Command{{Path: []string{"x"}, Options: ConnectOptions()}}}
 	inv, err := args.Parse(tree, []string{"x", "--server", "srv", "--auth", "windows", "-d", "app"}, args.Options{})
 	if err != nil {
 		t.Fatal(err)

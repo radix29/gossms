@@ -6,6 +6,8 @@ gossms <group> <command> [arguments] -p <profile> [-o text|json]
   bracket a part as in T-SQL: `Sales.[Order Detail]`.
 - Object commands read the profile's database; `-d <database>` picks another.
 - `-o json` is a stable envelope to parse; text, the default, is compact.
+- `gossms agent context -p <profile>` shows the server, login, ceiling,
+  databases and the permissions the login lacks, with what each breaks.
 <!-- full -->
 - `--name value` and `--name=value` are the same; a bool is `--name` or
   `--no-name`; a list repeats or takes commas (`--type table,view`). An

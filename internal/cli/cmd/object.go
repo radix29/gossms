@@ -88,7 +88,7 @@ func ObjectCommands(d Deps) []*spec.Command {
 				"ships (system tables, the sys schema's views, procedures and functions, the system schemas) only " +
 				"with --include-system. A trigger is a table's or view's DML trigger; a type is an alias, table or " +
 				"CLR type.",
-			Options: append(connectOptions(),
+			Options: append(ConnectOptions(),
 				spec.Option{Name: optType, Type: spec.TypeList, Enum: objectKinds, Help: "Only these kinds (default: all)"},
 				spec.Option{Name: optSchema, Type: spec.TypeString, Help: "Only objects in this schema"},
 				spec.Option{Name: optName, Type: spec.TypeString, Help: "Only names containing this text"},
@@ -111,7 +111,7 @@ func ObjectCommands(d Deps) []*spec.Command {
 				"has none to search); --in column finds the columns of tables and views whose name contains it, " +
 				"adding the column and its data type to each row.",
 			Args: []spec.Arg{{Name: "text", Help: "The text to find", Required: true}},
-			Options: append(connectOptions(),
+			Options: append(ConnectOptions(),
 				spec.Option{Name: optIn, Type: spec.TypeEnum, Enum: []string{searchName, searchDefinition, searchColumn},
 					Default: searchName, Help: "Where to look"},
 			),
@@ -133,7 +133,7 @@ func ObjectCommands(d Deps) []*spec.Command {
 				"events; a synonym its baseObject; a sequence its type and values. Any other object (a constraint, " +
 				"a rule) is the record alone.",
 			Args:    []spec.Arg{nameArg},
-			Options: connectOptions(),
+			Options: ConnectOptions(),
 			Class:   spec.ClassRead,
 			Run:     d.objectDescribe,
 			Examples: []string{
@@ -151,7 +151,7 @@ func ObjectCommands(d Deps) []*spec.Command {
 				"has no T-SQL to show: the definition is null with a warning. This is the module's text, not a " +
 				"generated CREATE script.",
 			Args:    []spec.Arg{nameArg},
-			Options: connectOptions(),
+			Options: ConnectOptions(),
 			Class:   spec.ClassRead,
 			Run:     d.objectDefinition,
 			Examples: []string{
@@ -409,6 +409,7 @@ func (d Deps) objectSearch(ctx context.Context, inv *spec.Invocation) (*output.R
 		for _, c := range found {
 			set.Rows = append(set.Rows, []*string{ptr(c.Schema), ptr(c.Object), ptr(kindOfDesc(c.TypeDesc)), ptr(c.Column), ptr(c.DataType)})
 		}
+		hiddenTypes(res, countHidden(found, func(c *gosmo.ColumnSearchResult) bool { return c.IsTypeHidden }))
 	default:
 		search := cat.Search
 		if inv.Values[optIn].(string) == searchDefinition {
@@ -528,7 +529,11 @@ func describeTable(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *g
 	if err != nil {
 		return err
 	}
-	res.Sets = []output.Set{columnsSet(cols), keysSet(idx, fks), indexesSet(idx), checksSet(checks), triggersSet(trs)}
+	colSet, hiddenCols := columnsSet(cols)
+	checkSet, hiddenChecks := checksSet(checks)
+	res.Sets = []output.Set{colSet, keysSet(idx, fks), indexesSet(idx), checkSet, triggersSet(trs)}
+	hiddenDefinitions(res, hiddenCols+hiddenChecks)
+	hiddenTypes(res, countHidden(cols, func(c *gosmo.Column) bool { return c.IsTypeHidden }))
 	return nil
 }
 
@@ -550,14 +555,52 @@ func describeView(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *go
 	if err != nil {
 		return err
 	}
-	res.Sets = []output.Set{columnsSet(cols), indexesSet(idx), triggersSet(trs)}
+	colSet, hidden := columnsSet(cols)
+	res.Sets = []output.Set{colSet, indexesSet(idx), triggersSet(trs)}
+	hiddenDefinitions(res, hidden)
+	hiddenTypes(res, countHidden(cols, func(c *gosmo.Column) bool { return c.IsTypeHidden }))
 	return nil
+}
+
+// hiddenDefinitions warns that n computed-column, default or check
+// expressions read NULL. The catalog views give a login holding SELECT but
+// not VIEW DEFINITION the object and its columns, yet NULL for every
+// definition — gosmo reads that as "", which would print as an empty
+// default or a computed column of nothing but " PERSISTED".
+func hiddenDefinitions(res *output.Result, n int) {
+	if n > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("%d computed, default or check definitions read NULL: "+
+			"the login lacks VIEW DEFINITION on the object.", n))
+	}
+}
+
+// hiddenTypes warns that n data types read as their base system type (or
+// empty, a CLR type's): user-defined types the login holds no permission on
+// are invisible to it, and gosmo names the storage type instead of dropping
+// the column or parameter (gosmo Column.IsTypeHidden).
+func hiddenTypes(res *output.Result, n int) {
+	if n > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("The login cannot see %d user-defined data type(s): "+
+			"each reads as its base system type (empty for a CLR type). It needs REFERENCES or VIEW DEFINITION on the type.", n))
+	}
+}
+
+// countHidden counts the items hidden reports.
+func countHidden[T any](items []T, hidden func(T) bool) int {
+	n := 0
+	for _, it := range items {
+		if hidden(it) {
+			n++
+		}
+	}
+	return n
 }
 
 // tableValued is the function types that return a table, not a scalar.
 var tableValued = []string{"IF", "TF", "FT"}
 
 func describeModule(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
+	hidden := 0 // types the login cannot see, the return type's included
 	if kindOfDesc(o.TypeDesc) == kindFunction {
 		returns := output.Field{Key: "returns", Value: "TABLE"}
 		if !slices.Contains(tableValued, o.Type) {
@@ -569,6 +612,9 @@ func describeModule(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *
 				returns = output.Field{Key: "returns", Null: true}
 			} else {
 				returns.Value = rt.TypeString()
+				if rt.IsTypeHidden {
+					hidden++
+				}
 			}
 		}
 		res.Fields = append(res.Fields, returns)
@@ -591,9 +637,13 @@ func describeModule(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *
 		}
 		set.Rows = append(set.Rows, []*string{ptr(strconv.Itoa(p.Ordinal)), ptr(p.Name), ptr(p.TypeString()),
 			bitCell(p.IsOutput), hasDefault})
+		if p.IsTypeHidden {
+			hidden++
+		}
 	}
 	set.TotalRowCount = len(set.Rows)
 	res.Sets = []output.Set{set}
+	hiddenTypes(res, hidden)
 	return nil
 }
 
@@ -645,17 +695,22 @@ func describeSequence(ctx context.Context, cat Catalog, dbase *gosmo.Database, o
 		output.Field{Key: "cache", Value: cache},
 		output.Field{Key: "currentValue", Value: s.CurrentValue},
 	)
+	if s.IsTypeHidden {
+		hiddenTypes(res, 1)
+	}
 	return nil
 }
 
-// columnsSet is describe's columns set.
-func columnsSet(cols []*gosmo.Column) output.Set {
+// columnsSet is describe's columns set, and how many of its computed and
+// default expressions the server hid (hiddenDefinitions).
+func columnsSet(cols []*gosmo.Column) (output.Set, int) {
 	set := output.Set{Name: "columns", Columns: []output.Column{
 		{Name: "column_id", Type: "int"}, {Name: "name", Type: "sysname"}, {Name: "data_type", Type: "nvarchar(256)"},
 		{Name: "nullable", Type: "bit"}, {Name: "identity", Type: "nvarchar(100)", Nullable: true},
 		{Name: "computed", Type: "nvarchar(max)", Nullable: true}, {Name: "default", Type: "nvarchar(max)", Nullable: true},
 		{Name: "collation", Type: "sysname", Nullable: true}, {Name: "primary_key", Type: "bit"},
 	}}
+	hidden := 0
 	for _, c := range cols {
 		var identity, computed, def *string
 		switch {
@@ -665,21 +720,27 @@ func columnsSet(cols []*gosmo.Column) output.Set {
 		case c.IsIdentity:
 			identity = ptr(fmt.Sprintf("IDENTITY(%s,%s)", c.IdentitySeed, c.IdentityIncrement))
 		}
-		if c.IsComputed {
+		switch {
+		case c.IsComputed && c.ComputedText == "":
+			hidden++
+		case c.IsComputed:
 			text := c.ComputedText
 			if c.IsPersisted {
 				text += " PERSISTED"
 			}
 			computed = &text
 		}
-		if c.DefaultValue != nil {
+		switch {
+		case c.DefaultValue != nil && c.DefaultValue.Definition == "":
+			hidden++
+		case c.DefaultValue != nil:
 			def = ptr(c.DefaultValue.Definition)
 		}
 		set.Rows = append(set.Rows, []*string{ptr(strconv.Itoa(c.OrdinalPosition)), ptr(c.Name), ptr(c.TypeString()),
 			bitCell(c.IsNullable), identity, computed, def, nonEmpty(c.Collation), bitCell(c.IsPrimaryKey)})
 	}
 	set.TotalRowCount = len(set.Rows)
-	return set
+	return set, hidden
 }
 
 // indexColumns is an index's columns as one cell, a descending key marked.
@@ -740,18 +801,23 @@ func indexesSet(idx []*gosmo.Index) output.Set {
 	return set
 }
 
-// checksSet is describe's check_constraints set.
-func checksSet(checks []*gosmo.CheckConstraint) output.Set {
+// checksSet is describe's check_constraints set, and how many definitions
+// the server hid (hiddenDefinitions).
+func checksSet(checks []*gosmo.CheckConstraint) (output.Set, int) {
 	set := output.Set{Name: "check_constraints", Columns: []output.Column{
 		{Name: "name", Type: "sysname"}, {Name: "column", Type: "sysname", Nullable: true},
-		{Name: "definition", Type: "nvarchar(max)"}, {Name: "disabled", Type: "bit"}, {Name: "not_trusted", Type: "bit"},
+		{Name: "definition", Type: "nvarchar(max)", Nullable: true}, {Name: "disabled", Type: "bit"}, {Name: "not_trusted", Type: "bit"},
 	}}
+	hidden := 0
 	for _, c := range checks {
-		set.Rows = append(set.Rows, []*string{ptr(c.Name), nonEmpty(c.Column), ptr(c.Definition),
+		if c.Definition == "" {
+			hidden++
+		}
+		set.Rows = append(set.Rows, []*string{ptr(c.Name), nonEmpty(c.Column), nonEmpty(c.Definition),
 			bitCell(c.IsDisabled), bitCell(c.IsNotTrusted)})
 	}
 	set.TotalRowCount = len(set.Rows)
-	return set
+	return set, hidden
 }
 
 // triggersSet is describe's triggers set.

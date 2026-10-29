@@ -21,6 +21,10 @@ type objectFake struct {
 	*fakeCatalog
 	objects []*gosmo.ObjectInfo
 	filters []gosmo.ObjectFilter
+	// hidden reads every computed, default and check definition as gosmo
+	// does for a login without VIEW DEFINITION: "", and CustomerName's type
+	// as one the login cannot see (Column.IsTypeHidden).
+	hidden bool
 }
 
 func newObjectFake() *objectFake {
@@ -219,14 +223,19 @@ func (c *objectFake) SequenceByName(context.Context, *gosmo.Database, string, st
 }
 
 func (c *objectFake) TableColumns(context.Context, *gosmo.Table) ([]*gosmo.Column, error) {
-	return []*gosmo.Column{
+	cols := []*gosmo.Column{
 		{Name: "id", OrdinalPosition: 1, DataType: "int", IsIdentity: true, IdentitySeed: "1", IdentityIncrement: "1",
 			IsPrimaryKey: true, TypeSchema: "sys"},
 		{Name: "CustomerName", OrdinalPosition: 2, DataType: "nvarchar", MaxLength: 100, IsNullable: true,
 			Collation: "Latin1_General_CI_AS", DefaultValue: &gosmo.ColumnDefault{Name: "DF_n", Definition: "(N'x')"}, TypeSchema: "sys"},
 		{Name: "pct", OrdinalPosition: 3, DataType: "int", IsComputed: true, ComputedText: "([id]*(2))", IsPersisted: true,
 			IsNullable: true, TypeSchema: "sys"},
-	}, nil
+	}
+	if c.hidden {
+		cols[1].DefaultValue.Definition, cols[2].ComputedText = "", ""
+		cols[1].IsTypeHidden, cols[1].IsUserDefinedType, cols[1].TypeSchema = true, true, ""
+	}
+	return cols, nil
 }
 
 var fakeIndexes = []*gosmo.Index{
@@ -249,7 +258,11 @@ func (c *objectFake) ForeignKeys(context.Context, *gosmo.Table) ([]*gosmo.Foreig
 }
 
 func (c *objectFake) CheckConstraints(context.Context, *gosmo.Table) ([]*gosmo.CheckConstraint, error) {
-	return []*gosmo.CheckConstraint{{Name: "CK_pct", Column: "pct", Definition: "([pct]>=(0))"}}, nil
+	check := &gosmo.CheckConstraint{Name: "CK_pct", Column: "pct", Definition: "([pct]>=(0))"}
+	if c.hidden {
+		check.Definition = ""
+	}
+	return []*gosmo.CheckConstraint{check}, nil
 }
 
 func (c *objectFake) TableTriggers(context.Context, *gosmo.Table) ([]*gosmo.Trigger, error) {
@@ -463,6 +476,33 @@ func TestObjectDescribeTable(t *testing.T) {
 	}
 	if got := setRows(t, env, 4); !slices.Equal(got, []string{"trCustomer|true|INSERT, UPDATE"}) {
 		t.Errorf("triggers %q", got)
+	}
+}
+
+// A login with SELECT but not VIEW DEFINITION sees the columns and
+// constraints with every definition NULL: those read NULL, with a warning,
+// not as an empty default or a bare " PERSISTED".
+func TestObjectDescribeHiddenDefinitions(t *testing.T) {
+	cat := newObjectFake()
+	cat.hidden = true
+	exit, env := runObject(t, cat, "describe", "Sales.Customer")
+	if exit != 0 {
+		t.Fatalf("exit %d: %v", exit, env)
+	}
+	if got := setRows(t, env, 0); got[1] != "2|CustomerName|nvarchar(50)|true|NULL|NULL|NULL|Latin1_General_CI_AS|false" ||
+		got[2] != "3|pct|int|true|NULL|NULL|NULL|NULL|false" {
+		t.Errorf("columns\n%s", strings.Join(got, "\n"))
+	}
+	if got := setRows(t, env, 3); !slices.Equal(got, []string{"CK_pct|pct|NULL|false|false"}) {
+		t.Errorf("checks %q", got)
+	}
+	// CustomerName's hidden type reads as its storage type, warned of too.
+	if w := env["warnings"].([]any); len(w) != 2 || !strings.HasPrefix(w[0].(string), "3 computed, default or check definitions read NULL") ||
+		!strings.HasPrefix(w[1].(string), "The login cannot see 1 user-defined data type(s)") {
+		t.Errorf("warnings %v", w)
+	}
+	if _, env := runObject(t, newObjectFake(), "describe", "Sales.Customer"); len(env["warnings"].([]any)) != 0 {
+		t.Errorf("visible definitions warned: %v", env["warnings"])
 	}
 }
 

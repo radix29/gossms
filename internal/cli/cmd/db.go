@@ -50,7 +50,7 @@ func DBCommands(d Deps) []*spec.Command {
 				"with snapshot_of naming their source. Sizes are the allocated file sizes in MB from " +
 				"sys.master_files, so they answer for a database in any state (tempdb's are its startup sizes); " +
 				"they are NULL for a database the login cannot see the files of.",
-			Options: append(connectOptions(),
+			Options: append(ConnectOptions(),
 				spec.Option{Name: optIncludeSystem, Type: spec.TypeBool, Help: "Also list the system databases"},
 				spec.Option{Name: optState, Type: spec.TypeEnum, Enum: stateNames(), Help: "Only databases in this state"},
 			),
@@ -70,7 +70,7 @@ func DBCommands(d Deps) []*spec.Command {
 				"A database that is not ONLINE still answers what the server catalog holds; what needs the database " +
 				"itself (space used) is named under warnings instead.",
 			Args:    []spec.Arg{{Name: "name", Help: "Database name", Required: true}},
-			Options: connectOptions(),
+			Options: ConnectOptions(),
 			Class:   spec.ClassRead,
 			Run:     d.dbInfo,
 			Examples: []string{

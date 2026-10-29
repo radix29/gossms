@@ -92,7 +92,7 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 		return showHelp(env, tree, format, cmd.Name(), target)
 	}
 	if cmd == guideCommand(tree) {
-		return showGuide(env, tree, format, o, inv)
+		return showGuide(ctx, env, tree, format, o, inv)
 	}
 	if cmd == schemaCommand(tree) {
 		return showSchema(env, tree, format, o, inv)
@@ -123,7 +123,7 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 	context.AfterFunc(ctx, stop)
 
 	start := time.Now()
-	res, err := call(ctx, inv, verbose, env.Stderr)
+	res, err := call(ctx, inv, verbose, env.Stderr, inv.Command.Run)
 	if res == nil {
 		res = &output.Result{}
 	}
@@ -144,10 +144,11 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 	return finish(env, res, o, sink)
 }
 
-// call runs the handler, recovering a panic into GENERAL_ERROR. The stack goes
-// to stderr only under --verbose: it is for a bug report, not for the agent
-// reading stdout.
-func call(ctx context.Context, inv *spec.Invocation, verbose bool, stderr io.Writer) (res *output.Result, err error) {
+// call runs handler on inv, recovering a panic into GENERAL_ERROR. The stack
+// goes to stderr only under --verbose: it is for a bug report, not for the
+// agent reading stdout.
+func call(ctx context.Context, inv *spec.Invocation, verbose bool, stderr io.Writer,
+	handler func(context.Context, *spec.Invocation) (*output.Result, error)) (res *output.Result, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			hint := "Re-run with --verbose for the stack trace."
@@ -158,7 +159,7 @@ func call(ctx context.Context, inv *spec.Invocation, verbose bool, stderr io.Wri
 			res, err = nil, output.NewError(output.CodeGeneralError, fmt.Sprintf("internal error: %v", r), hint)
 		}
 	}()
-	return inv.Command.Run(ctx, inv)
+	return handler(ctx, inv)
 }
 
 // finish completes the Sink (made from o when the command had none) with the
