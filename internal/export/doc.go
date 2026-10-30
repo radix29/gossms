@@ -3,6 +3,9 @@
 // File and the command line's csv/tsv output. One writer, so the two produce the
 // same bytes for the same rows.
 //
+// RecordReader reads the format back, for import: the writer's exact inverse,
+// which encoding/csv is not (it cannot tell an empty field from "").
+//
 // The NULL convention is settled (docs/decisions.md § SQL NULL in results): a
 // SQL NULL is an empty field, an empty string is "", the string 'NULL' is NULL.
 //

@@ -26,6 +26,7 @@ const (
 	optWhere       = "where"
 	optOrderBy     = "order-by"
 	optApproximate = "approximate"
+	optTopValues   = "top-values"
 )
 
 // defaultDataRows is data top's --rows default.
@@ -34,6 +35,14 @@ const defaultDataRows = 100
 // dataObjectArg is the table or view a data command reads.
 var dataObjectArg = spec.Arg{Name: "object", Help: "The table or view: schema.name, or a name alone when one schema has it",
 	Format: "schema.name", Required: true}
+
+func rowsOption(help string) spec.Option {
+	return spec.Option{Name: optRows, Type: spec.TypeInt, Default: strconv.Itoa(defaultDataRows), Help: help}
+}
+
+func columnsOption(help string) spec.Option {
+	return spec.Option{Name: optColumns, Type: spec.TypeString, Help: help}
+}
 
 func whereOption() spec.Option {
 	return spec.Option{Name: optWhere, Type: spec.TypeString,
@@ -64,10 +73,8 @@ func DataCommands(d Deps) []*spec.Command {
 				"shows, so --rows above it needs --max-rows 0 or --out-file.",
 			Args: []spec.Arg{dataObjectArg},
 			Options: append(ConnectOptions(),
-				spec.Option{Name: optRows, Type: spec.TypeInt, Default: strconv.Itoa(defaultDataRows),
-					Help: "The rows to select: TOP (n); 0 returns the columns alone"},
-				spec.Option{Name: optColumns, Type: spec.TypeString,
-					Help: "The columns to select, comma-separated, in that order: a,[b c]; default every column"},
+				rowsOption("The rows to select: TOP (n); 0 returns the columns alone"),
+				columnsOption("The columns to select, comma-separated, in that order: a,[b c]; default every column"),
 				whereOption(),
 				spec.Option{Name: optOrderBy, Type: spec.TypeString,
 					Help: "A T-SQL ORDER BY list, without ORDER BY: CreatedAt DESC, id"},
@@ -81,6 +88,28 @@ func DataCommands(d Deps) []*spec.Command {
 				"gossms data top -p dev Sales.Customer --columns CustomerID,AccountNumber --where TerritoryID=4",
 			},
 		},
+		{
+			Path:    []string{"data", "sample"},
+			Summary: "Select random rows of a table or view",
+			Description: "SELECT TOP (--rows) of the object ORDER BY NEWID(): a uniformly random sample, different on " +
+				"every call. It is exact, not TABLESAMPLE's page sample, so it reads every row --where keeps (a full " +
+				"scan of a large table) and sorts them; data top is the cheap look. --columns and --where are data " +
+				"top's. A record — object, type, tsql — then the rows.",
+			Args: []spec.Arg{dataObjectArg},
+			Options: append(ConnectOptions(),
+				rowsOption("The rows to sample: TOP (n); 0 returns the columns alone"),
+				columnsOption("The columns to select, comma-separated, in that order: a,[b c]; default every column"),
+				whereOption(),
+				timeoutOption(),
+			),
+			Class: spec.ClassRead,
+			Run:   d.dataSample,
+			Examples: []string{
+				"gossms data sample -p dev Sales.Customer --rows 20",
+				"gossms data sample -p dev Sales.SalesOrderHeader --where Status=5 -o json",
+			},
+		},
+		dataProfileCommand(d),
 		{
 			Path:    []string{"data", "count"},
 			Summary: "Count a table's or view's rows, exactly or from partition statistics",
@@ -103,6 +132,7 @@ func DataCommands(d Deps) []*spec.Command {
 				"gossms data count -p dev Sales.Customer --where TerritoryID=4 -o json",
 			},
 		},
+		dataExportCommand(d),
 	}
 }
 
@@ -443,6 +473,13 @@ func topStatement(rows int, cols []string, object string, f fragments) string {
 	return fmt.Sprintf("SELECT TOP (%d) %s\nFROM %s", rows, selectList(cols), object) + f.compose()
 }
 
+// sampleStatement is data sample's SELECT: data top's ordered by NEWID(),
+// so TOP keeps a uniformly random n of the rows --where keeps.
+func sampleStatement(rows int, cols []string, object string, f fragments) string {
+	f.orderBy = "NEWID()"
+	return topStatement(rows, cols, object, f)
+}
+
 // countStatement is data count's exact SELECT.
 func countStatement(object string, f fragments) string {
 	return "SELECT COUNT_BIG(*) AS [rows]\nFROM " + object + f.compose()
@@ -454,16 +491,34 @@ func countStatement(object string, f fragments) string {
 const placeholderObject = "[object]"
 
 func (d Deps) dataTop(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
+	return d.dataRows(ctx, inv, topStatement)
+}
+
+func (d Deps) dataSample(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
+	return d.dataRows(ctx, inv, sampleStatement)
+}
+
+// dataRows is data top and data sample: --rows read and checked, then
+// selectRows.
+func (d Deps) dataRows(ctx context.Context, inv *spec.Invocation,
+	compose func(rows int, cols []string, object string, f fragments) string) (*output.Result, error) {
 	rows := inv.Values[optRows].(int)
 	if rows < 0 {
 		return nil, usageError(fmt.Sprintf("--rows: %d is negative", rows), "Give the rows to select, or 0 for the columns alone.")
 	}
-	var names []string
-	if inv.Given[optColumns] {
-		var err error
-		if names, err = parseColumnList(inv.Values[optColumns].(string)); err != nil {
-			return nil, err
-		}
+	return d.selectRows(ctx, inv, func(cols []string, object string, f fragments) string {
+		return compose(rows, cols, object, f)
+	})
+}
+
+// selectRows is data top, sample and export's object form: --columns and the
+// fragments read and checked, the object resolved, and compose's SELECT run
+// to the sink.
+func (d Deps) selectRows(ctx context.Context, inv *spec.Invocation,
+	compose func(cols []string, object string, f fragments) string) (*output.Result, error) {
+	names, err := readColumnNames(inv)
+	if err != nil {
+		return nil, err
 	}
 	frag, err := readFragments(inv)
 	if err != nil {
@@ -474,7 +529,7 @@ func (d Deps) dataTop(ctx context.Context, inv *spec.Invocation) (*output.Result
 		return nil, err
 	}
 	// Checked before connecting: a refused fragment never reaches the server.
-	if res, err := checkOneRead(topStatement(rows, names, placeholderObject, frag)); err != nil {
+	if res, err := checkOneRead(compose(names, placeholderObject, frag)); err != nil {
 		return res, err
 	}
 
@@ -494,7 +549,7 @@ func (d Deps) dataTop(ctx context.Context, inv *spec.Invocation) (*output.Result
 			return res, err
 		}
 	}
-	stmt := topStatement(rows, cols, s.name(), frag)
+	stmt := compose(cols, s.name(), frag)
 	if r, err := checkOneRead(stmt); err != nil {
 		return r, err
 	}
@@ -503,6 +558,14 @@ func (d Deps) dataTop(ctx context.Context, inv *spec.Invocation) (*output.Result
 		return sess.ExecuteToSink(ctx, stmt, inv.Sink, opts...)
 	})
 	return res, err
+}
+
+// readColumnNames is --columns parsed, nil when it is not given.
+func readColumnNames(inv *spec.Invocation) ([]string, error) {
+	if !inv.Given[optColumns] {
+		return nil, nil
+	}
+	return parseColumnList(inv.Values[optColumns].(string))
 }
 
 // runDataSelect opens the session and runs a data command's SELECT through
