@@ -155,12 +155,60 @@ type Target struct {
 // error, NOT_FOUND for an unknown profile, AUTH_FAILED for a refused method or
 // a missing password.
 func Resolve(inv *spec.Invocation, cfg *config.Config, profile string) (*Target, error) {
+	t, base, f, err := resolveConn(inv, cfg, profile)
+	if err != nil {
+		return nil, err
+	}
+	c := t.Conn
+	if profile != "" && redirected(base, c) {
+		t.SavedPasswordDropped = base.Password != "" || base.PasswordUnreadable()
+		c.Password = ""
+	} else if c.Password != "" {
+		t.Password = "profile"
+	}
+	if err := readPassword(inv, f, &c, t); err != nil {
+		return nil, err
+	}
+	if err := missingPassword(c, t); err != nil {
+		return nil, err
+	}
+	t.Conn = c
+	return t, nil
+}
+
+// Describe is where inv would connect, read as Resolve reads it but without
+// reading a password (stdin is the handler's to read): the address, the
+// database and the login — the login name, "(integrated)" for Windows
+// authentication without one, "(entra)" for an Entra method without one. A
+// call Resolve would refuse gets what could be read: empty strings at worst.
+func Describe(inv *spec.Invocation, cfg *config.Config, profile string) (server, database, login string) {
+	t, _, _, err := resolveConn(inv, cfg, profile)
+	if err != nil {
+		return "", "", ""
+	}
+	c := t.Conn
+	switch {
+	case c.User != "":
+		login = c.User
+	case c.AuthMethod == config.AuthWindows:
+		login = "(integrated)"
+	case c.AuthMethod != config.AuthSQLServer:
+		login = "(entra)"
+	}
+	return Address(c), c.Database, login
+}
+
+// resolveConn is Resolve up to the password: the profile with the overrides
+// laid over it, in t.Conn (the profile's saved password still in it), and
+// the profile's own connection and the method's fields Resolve's password
+// steps compare against.
+func resolveConn(inv *spec.Invocation, cfg *config.Config, profile string) (*Target, config.Connection, config.AuthFields, error) {
 	t := &Target{Ceiling: config.AllowAdmin, Password: "none"}
 	var base config.Connection
 	if profile != "" {
 		p, err := cfg.ProfileByName(profile)
 		if err != nil {
-			return nil, profileNotFound(cfg, profile)
+			return nil, base, config.AuthFields{}, profileNotFound(cfg, profile)
 		}
 		base = p
 		t.Profile = cmpOr(p.Profile, p.GeneratedName())
@@ -176,7 +224,7 @@ func Resolve(inv *spec.Invocation, cfg *config.Config, profile string) (*Target,
 	if given(OptServer) {
 		host, instance, port := gosmo.ParseServerAddress(strings.TrimSpace(str(OptServer)))
 		if host == "" {
-			return nil, usage("--server is empty", "")
+			return nil, base, config.AuthFields{}, usage("--server is empty", "")
 		}
 		c.Server = host
 		if instance != "" {
@@ -184,19 +232,19 @@ func Resolve(inv *spec.Invocation, cfg *config.Config, profile string) (*Target,
 		}
 		c.Port = port
 		if given(OptPort) && port != 0 && port != inv.Values[OptPort].(int) {
-			return nil, usage(fmt.Sprintf("--server names port %d and --port %d", port, inv.Values[OptPort].(int)),
+			return nil, base, config.AuthFields{}, usage(fmt.Sprintf("--server names port %d and --port %d", port, inv.Values[OptPort].(int)),
 				"Give the port once.")
 		}
 	}
 	if given(OptPort) {
 		p := inv.Values[OptPort].(int)
 		if p < 1 || p > 65535 {
-			return nil, usage(fmt.Sprintf("--port %d: a port is 1 to 65535", p), "")
+			return nil, base, config.AuthFields{}, usage(fmt.Sprintf("--port %d: a port is 1 to 65535", p), "")
 		}
 		c.Port = p
 	}
 	if c.Server == "" {
-		return nil, usage("no server: give --server, or a profile", "Run `gossms profile list` for the saved profiles.")
+		return nil, base, config.AuthFields{}, usage("no server: give --server, or a profile", "Run `gossms profile list` for the saved profiles.")
 	}
 	if given(OptDatabase) {
 		c.Database = str(OptDatabase)
@@ -225,18 +273,18 @@ func Resolve(inv *spec.Invocation, cfg *config.Config, profile string) (*Target,
 	if given(OptAppIntent) {
 		extra, err := withApplicationIntent(c.ExtraProperties, str(OptAppIntent))
 		if err != nil {
-			return nil, usage(err.Error(), "")
+			return nil, base, config.AuthFields{}, usage(err.Error(), "")
 		}
 		c.ExtraProperties = extra
 	}
 	secs := inv.Values[OptTimeout].(int)
 	if secs < 1 || secs > MaxConnectTimeout {
-		return nil, usage(fmt.Sprintf("--connect-timeout %d: give 1 to %d seconds", secs, MaxConnectTimeout), "")
+		return nil, base, config.AuthFields{}, usage(fmt.Sprintf("--connect-timeout %d: give 1 to %d seconds", secs, MaxConnectTimeout), "")
 	}
 	t.Timeout = time.Duration(secs) * time.Second
 
 	if err := refusedAuth(c.AuthMethod); err != nil {
-		return nil, err
+		return nil, base, config.AuthFields{}, err
 	}
 	// A field the method does not read is not sent, as in the Connect dialog.
 	f := config.FieldsFor(c.AuthMethod)
@@ -250,20 +298,8 @@ func Resolve(inv *spec.Invocation, cfg *config.Config, profile string) (*Target,
 		c.ClientID = ""
 	}
 
-	if profile != "" && redirected(base, c) {
-		t.SavedPasswordDropped = base.Password != "" || base.PasswordUnreadable()
-		c.Password = ""
-	} else if c.Password != "" {
-		t.Password = "profile"
-	}
-	if err := readPassword(inv, f, &c, t); err != nil {
-		return nil, err
-	}
-	if err := missingPassword(c, t); err != nil {
-		return nil, err
-	}
 	t.Conn = c
-	return t, nil
+	return t, base, f, nil
 }
 
 func cmpOr(a, b string) string {

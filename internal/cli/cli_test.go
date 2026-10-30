@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -32,6 +33,7 @@ func runTree(t *testing.T, ctx context.Context, tree *spec.Tree, argv ...string)
 			}
 			return nil, fs.ErrNotExist
 		},
+		AuditPath: filepath.Join(t.TempDir(), "audit.jsonl"),
 	}
 	exit := run(ctx, tree, argv, env)
 	return runResult{exit, stdout.String(), stderr.String()}

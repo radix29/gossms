@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/cli/connect"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/safety"
 	"github.com/radix29/gossms/internal/cli/spec"
@@ -141,14 +142,22 @@ func (d Deps) gate(inv *spec.Invocation, res *output.Result) (*config.Config, st
 
 // gateClass is gate for a command whose class depends on its options
 // (data import --truncate-first is ddl): class in place of the Command's.
+//
+// A command that passes is next checked against the audit log: one that
+// cannot be written refuses the change (and its dry run) before it connects.
 func (d Deps) gateClass(inv *spec.Invocation, res *output.Result, class spec.Class) (*config.Config, string, error) {
+	inv.Audit.Class = class
 	cfg, profile, ceiling, err := d.profileCeiling(inv)
 	if err != nil {
 		return nil, "", err
 	}
+	noteTarget(inv, cfg, profile)
 	p := safety.Policy{Allow: spec.Class(inv.Values[optAllow].(string)), Ceiling: ceiling}
 	b := p.Refuse(inv.Command.Name(), class)
 	if b == nil {
+		if err := checkAudit(inv); err != nil {
+			return nil, "", err
+		}
 		return cfg, profile, nil
 	}
 	res.Fields = append(res.Fields,
@@ -228,4 +237,26 @@ func alterCause(se *gosmo.SQLError) *gosmo.SQLError {
 		}
 	}
 	return se
+}
+
+// noteTarget records in inv's audit facts the profile and where the call
+// would connect, read without connecting: a refused call is logged with them
+// too.
+func noteTarget(inv *spec.Invocation, cfg *config.Config, profile string) {
+	inv.Audit.Profile = profile
+	inv.Audit.Server, inv.Audit.Database, inv.Audit.Login = connect.Describe(inv, cfg, profile)
+}
+
+// checkAudit is the audit log's check before a change (docs/cli.md § Audit
+// log): a log that cannot be written refuses the call, since the guardrail
+// is not optional. Nil when it can, or when there is no log (tests).
+func checkAudit(inv *spec.Invocation) error {
+	if inv.Audit.Check == nil {
+		return nil
+	}
+	if err := inv.Audit.Check(); err != nil {
+		return output.NewError(output.CodeGeneralError, "the audit log cannot be written: "+err.Error(),
+			"Nothing was changed: every change is recorded in the audit log first. Make the file (or its directory) writable.")
+	}
+	return nil
 }

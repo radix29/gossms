@@ -16,6 +16,7 @@ import (
 
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/cli/audit"
 	"github.com/radix29/gossms/internal/cli/connect"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/safety"
@@ -165,7 +166,7 @@ func runOptions() []spec.Option {
 }
 
 func paramOption() spec.Option {
-	return spec.Option{Name: optParam, Type: spec.TypeRepeat,
+	return spec.Option{Name: optParam, Type: spec.TypeRepeat, Audit: spec.AuditHash,
 		Help: "name=value:type, e.g. id=42:int: run the script through sp_executesql with @name declared as type; one batch only"}
 }
 
@@ -181,15 +182,24 @@ func classNames() []string {
 // sqlInputOptions is --sql, --file and --sql-base64.
 func sqlInputOptions() []spec.Option {
 	return []spec.Option{
-		{Name: optSQL, Short: "Q", Type: spec.TypeString, Help: "Inline T-SQL (fine for a short query)"},
+		{Name: optSQL, Short: "Q", Type: spec.TypeString, Audit: spec.AuditHash, Help: "Inline T-SQL (fine for a short query)"},
 		{Name: optFile, Short: "i", Type: spec.TypeString,
 			Help: "T-SQL file; - reads stdin. GO separates batches. UTF-8, or UTF-16 with a byte-order mark"},
-		{Name: optSQLBase64, Type: spec.TypeString, Help: "T-SQL as Base64 of its UTF-8 text, safe from any shell quoting"},
+		{Name: optSQLBase64, Type: spec.TypeString, Audit: spec.AuditHash, Help: "T-SQL as Base64 of its UTF-8 text, safe from any shell quoting"},
 	}
 }
 
-// readSQL is the script from the one SQL input option given.
+// readSQL is the script from the one SQL input option given. Its hash is
+// the audit log's sqlSha256.
 func readSQL(inv *spec.Invocation) (string, error) {
+	script, err := readSQLSource(inv)
+	if err == nil {
+		inv.Audit.SQLSha256 = audit.Hash(script)
+	}
+	return script, err
+}
+
+func readSQLSource(inv *spec.Invocation) (string, error) {
 	var given []string
 	for _, n := range []string{optSQL, optFile, optSQLBase64} {
 		if inv.Given[n] {
@@ -596,14 +606,21 @@ type runExec func(ctx context.Context, sess Session, send string, opts []query.O
 // transaction's end. qr is exec's result, nil when the script was not sent.
 func (d Deps) runScript(ctx context.Context, inv *spec.Invocation, in scriptInput, run runSettings, exec runExec) (res *output.Result, qr *query.Result, err error) {
 	send, sc := in.send, in.sc
+	inv.Audit.Class = sc.Class
 	cfg, profile, ceiling, err := d.profileCeiling(inv)
 	if err != nil {
 		return nil, nil, err
 	}
+	noteTarget(inv, cfg, profile)
 	// The check runs before anything connects: a refused script never reaches
 	// the server, and --dry-run answers the same refusal.
 	policy := safety.Policy{Allow: run.allow, Ceiling: ceiling, Transaction: run.wrapped(), MaxRowsAffected: run.limited}
 	blocked := safety.Check(sc, policy)
+	if blocked == nil && sc.Class != spec.ClassRead {
+		if err := checkAudit(inv); err != nil {
+			return nil, nil, err
+		}
+	}
 	if run.dryRun {
 		res := classification(sc, policy.Allowed(), blocked)
 		if blocked != nil {

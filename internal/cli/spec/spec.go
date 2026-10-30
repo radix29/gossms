@@ -91,7 +91,20 @@ type Option struct {
 	Env     string // environment variable read when the option is absent; empty for none
 	Help    string
 	Global  bool // a Tree.Globals entry, accepted by every command
+	// Audit is how the audit log records the option's value: as given
+	// (AuditPlain), as its SHA-256 (AuditHash: T-SQL text, parameter
+	// values), or not at all (AuditOmit).
+	Audit AuditMode
 }
+
+// AuditMode is how the audit log records an option's value.
+type AuditMode string
+
+const (
+	AuditPlain AuditMode = ""
+	AuditHash  AuditMode = "hash"
+	AuditOmit  AuditMode = "omit"
+)
 
 // Handler runs a parsed command.
 type Handler func(ctx context.Context, inv *Invocation) (*output.Result, error)
@@ -120,6 +133,28 @@ type Invocation struct {
 	// A handler that builds its sets itself returns them in Result.Sets
 	// instead; Main passes those through the same Sink.
 	Sink *output.Sink
+
+	// Audit is what the handler tells the audit log beyond the command line.
+	Audit Audit
+}
+
+// Audit is a call's audit-log facts that only the handler knows. Main writes
+// the log line from them after the handler returns (docs/cli.md § Audit log).
+type Audit struct {
+	// Check reports whether the audit log can be written. Main sets it; a
+	// command that is about to change something calls it first and refuses
+	// to run when it fails. Nil: no audit log (tests).
+	Check func() error
+	// Class is the class the call reached — or, refused, the class detected:
+	// the script's for query run, the command's for a writing command. Empty:
+	// the Command's Class.
+	Class Class
+	// SQLSha256 is the hex SHA-256 of the T-SQL script the call read.
+	SQLSha256 string
+	// Profile, Server, Database and Login are the connection the call
+	// resolved, read without connecting; Main prefers the envelope's
+	// server and database when the call connected.
+	Profile, Server, Database, Login string
 }
 
 // Lookup is the command whose Path is path, or nil.

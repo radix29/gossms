@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	mssql "github.com/microsoft/go-mssqldb"
@@ -241,5 +242,34 @@ func TestOpenTimesOutAndUsesTheCLIRole(t *testing.T) {
 	}
 	if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != output.CodeTimeout {
 		t.Errorf("error %v, want TIMEOUT", err)
+	}
+}
+
+// TestDescribe: the target and login an audit line names, read without a
+// password — --password-stdin's stdin is never touched.
+func TestDescribe(t *testing.T) {
+	cfg := savedConfig(t)
+	for _, c := range []struct {
+		profile             string
+		argv                []string
+		server, dbase, user string
+	}{
+		{"dev", nil, `srv\inst,1500`, "app", "agent"},
+		{"dev", []string{"-d", "other", "-U", "someone", "--password-stdin"}, `srv\inst,1500`, "other", "someone"},
+		{"", []string{"-S", "host", "--auth", "windows"}, "host", "", "(integrated)"},
+		{"", []string{"-S", "host", "--auth", "entra-msi"}, "host", "", "(entra)"},
+		{"", []string{"-S", "host", "--auth", "entra-password", "-U", "a@b"}, "host", "", "a@b"},
+		{"", []string{"-S", "host"}, "host", "", ""},
+		{"", nil, "", "", ""}, // no server: Resolve refuses it
+	} {
+		inv, err := args.Parse(testTree(), append([]string{"t"}, c.argv...), args.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inv.Stdin = iotest.ErrReader(errors.New("stdin read"))
+		server, dbase, user := Describe(inv, cfg, c.profile)
+		if server != c.server || dbase != c.dbase || user != c.user {
+			t.Errorf("%s %q: Describe = %q, %q, %q; want %q, %q, %q", c.profile, c.argv, server, dbase, user, c.server, c.dbase, c.user)
+		}
 	}
 }
