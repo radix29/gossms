@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/args"
@@ -26,6 +27,50 @@ type monitorCatalog struct {
 
 	reads    int
 	gotScope gosmo.SessionScope
+
+	// monitor waits: each WaitStats call serves the next of waits and each
+	// StartTime the next of uptimes, from start.
+	waits     [][]gosmo.WaitStat
+	uptimes   []time.Duration
+	start     time.Time
+	waitReads int
+	upReads   int
+
+	// monitor top-queries / plan cached: TopQueries serves queries (or
+	// fails with topErr), CachedPlan plan (or planErr); each records what
+	// it was asked.
+	queries   []*gosmo.CachedQueryStat
+	topErr    error
+	gotTopOps *gosmo.TopQueriesOptions
+	plan      string
+	planErr   error
+	gotPlan   string // "0x<handle> start end"
+
+	// monitor querystore: see qsFake.
+	qs *qsFake
+
+	// monitor deadlocks: see dlFake.
+	dl *dlFake
+}
+
+func (c *monitorCatalog) TopQueries(_ context.Context, opts gosmo.TopQueriesOptions) ([]*gosmo.CachedQueryStat, error) {
+	c.gotTopOps = &opts
+	return c.queries, c.topErr
+}
+
+func (c *monitorCatalog) CachedPlan(_ context.Context, h []byte, start, end int) (string, error) {
+	c.gotPlan = fmt.Sprintf("0x%X %d %d", h, start, end)
+	return c.plan, c.planErr
+}
+
+func (c *monitorCatalog) WaitStats(context.Context) ([]gosmo.WaitStat, error) {
+	c.waitReads++
+	return c.waits[c.waitReads-1], nil
+}
+
+func (c *monitorCatalog) StartTime(context.Context) (time.Time, time.Duration, error) {
+	c.upReads++
+	return c.start, c.uptimes[c.upReads-1], nil
 }
 
 func (c *monitorCatalog) HasViewServerState(context.Context) (bool, error) { return !c.noVSS, c.vssErr }
@@ -38,6 +83,13 @@ func (c *monitorCatalog) ActiveSessions(_ context.Context, scope gosmo.SessionSc
 
 func runMonitor(t *testing.T, cat *monitorCatalog, argv ...string) (*output.Result, error) {
 	t.Helper()
+	return runGroup(t, cat, "monitor", argv...)
+}
+
+// runGroup runs group's command argv[0] with argv[1:] against cat,
+// connecting with a fixed server and Windows auth.
+func runGroup(t *testing.T, cat *monitorCatalog, group string, argv ...string) (*output.Result, error) {
+	t.Helper()
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
 		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
@@ -45,8 +97,11 @@ func runMonitor(t *testing.T, cat *monitorCatalog, argv ...string) (*output.Resu
 		},
 		Catalog: func(*db.ServerConn) Catalog { return cat },
 	}
-	tree := &spec.Tree{Commands: MonitorCommands(d)}
-	inv, perr := args.Parse(tree, append(append([]string{"monitor"}, argv[0], "--server", "srv", "--auth", "windows"), argv[1:]...), args.Options{})
+	// --force is the CLI's global option (tree.go), which --plan-file and
+	// --deadlock-file follow.
+	tree := &spec.Tree{Commands: slices.Concat(MonitorCommands(d), PlanCommands(d)),
+		Globals: []spec.Option{{Name: optForce, Type: spec.TypeBool}}}
+	inv, perr := args.Parse(tree, append(append([]string{group}, argv[0], "--server", "srv", "--auth", "windows"), argv[1:]...), args.Options{})
 	if perr != nil {
 		t.Fatalf("%q: %v", argv, perr)
 	}
@@ -237,18 +292,199 @@ func TestMonitorSessionsRow(t *testing.T) {
 // Without VIEW SERVER STATE both commands are exit 9 and read no session: the
 // read would come back empty, not refused.
 func TestMonitorNeedsViewServerState(t *testing.T) {
-	for _, c := range []string{"sessions", "blocking"} {
+	for _, c := range []string{"sessions", "blocking", "waits", "top-queries"} {
 		cat := &monitorCatalog{noVSS: true, sessions: []*gosmo.ActiveSession{sess(51, 0)}}
 		_, err := runMonitor(t, cat, c)
 		if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodePermissionDenied {
 			t.Errorf("%s: err = %v, want PERMISSION_DENIED", c, err)
 		}
-		if cat.reads != 0 {
-			t.Errorf("%s: read sessions %d times without the permission", c, cat.reads)
+		if cat.reads+cat.waitReads+cat.upReads != 0 || cat.gotTopOps != nil {
+			t.Errorf("%s: read without the permission", c)
 		}
 	}
 	cat := &monitorCatalog{vssErr: errors.New("connection reset")}
 	if _, err := runMonitor(t, cat, "blocking"); err == nil || cat.reads != 0 {
 		t.Errorf("a failed permission check: err = %v, reads = %d", err, cat.reads)
+	}
+}
+
+// cells is a set's rows as space-joined cells, NULL for a null one.
+func cells(set output.Set) []string {
+	var out []string
+	for _, r := range set.Rows {
+		var row []string
+		for _, c := range r {
+			if c == nil {
+				row = append(row, "NULL")
+			} else {
+				row = append(row, *c)
+			}
+		}
+		out = append(out, strings.Join(row, " "))
+	}
+	return out
+}
+
+func field(res *output.Result, key string) string {
+	for _, f := range res.Fields {
+		if f.Key == key {
+			return f.Value
+		}
+	}
+	return "<missing>"
+}
+
+func ws(waitType string, tasks, ms, signal int64) gosmo.WaitStat {
+	return gosmo.WaitStat{WaitType: waitType, WaitingTasks: tasks, WaitTimeMs: ms, SignalWaitTimeMs: signal}
+}
+
+var waitStart = time.Date(2026, 10, 30, 8, 0, 0, 0, time.UTC)
+
+// The totals since start: benign and empty wait types left out, most wait
+// time first, shares of everything counted, categories summed.
+func TestMonitorWaitsCumulative(t *testing.T) {
+	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour}, waits: [][]gosmo.WaitStat{{
+		ws("LAZYWRITER_SLEEP", 10, 900000, 0),
+		ws("XE_TIMER_EVENT", 10, 800000, 0),
+		ws("LCK_M_X", 4, 600, 0),
+		ws("PAGEIOLATCH_SH", 100, 300, 10),
+		ws("SOS_SCHEDULER_YIELD", 50, 100, 100),
+		ws("LCK_M_S", 0, 0, 0),
+	}}}
+	res, err := runMonitor(t, cat, "waits")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := field(res, "since"); got != "2026-10-30 08:00:00.000" {
+		t.Errorf("since = %q", got)
+	}
+	if got := field(res, "elapsedMs"); got != "3600000" {
+		t.Errorf("elapsedMs = %q", got)
+	}
+	if len(res.Sets) != 2 || res.Sets[0].Name != "waits" || res.Sets[1].Name != "categories" {
+		t.Fatalf("sets = %+v", res.Sets)
+	}
+	want := []string{
+		"LCK_M_X Locking 4 600 0 600 60.00 150.00",
+		"PAGEIOLATCH_SH Disk IO 100 300 10 290 30.00 3.00",
+		"SOS_SCHEDULER_YIELD CPU 50 100 100 0 10.00 2.00",
+	}
+	if got := cells(res.Sets[0]); !slices.Equal(got, want) {
+		t.Errorf("waits =\n%q\nwant\n%q", got, want)
+	}
+	wantCats := []string{
+		"Locking 4 600 0 600 60.00",
+		"Disk IO 100 300 10 290 30.00",
+		"CPU 50 100 100 0 10.00",
+		"Latches 0 0 0 0 0.00",
+		"Memory 0 0 0 0 0.00",
+		"Log 0 0 0 0 0.00",
+		"Network 0 0 0 0 0.00",
+		"Other 0 0 0 0 0.00",
+	}
+	if got := cells(res.Sets[1]); !slices.Equal(got, wantCats) {
+		t.Errorf("categories =\n%q\nwant\n%q", got, wantCats)
+	}
+	if cat.waitReads != 1 {
+		t.Errorf("read wait stats %d times, want 1", cat.waitReads)
+	}
+}
+
+// --all keeps the benign waits; --top cuts the waits set but not the shares
+// or the categories.
+func TestMonitorWaitsAllAndTop(t *testing.T) {
+	stats := []gosmo.WaitStat{ws("LAZYWRITER_SLEEP", 1, 700, 0), ws("LCK_M_X", 1, 200, 0), ws("WRITELOG", 1, 100, 0)}
+	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour}, waits: [][]gosmo.WaitStat{stats}}
+	res, err := runMonitor(t, cat, "waits", "--all", "--top", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cells(res.Sets[0]); !slices.Equal(got, []string{"LAZYWRITER_SLEEP Other 1 700 0 700 70.00 700.00"}) {
+		t.Errorf("waits = %q", got)
+	}
+	if got := cells(res.Sets[1])[0]; got != "Other 1 700 0 700 70.00" {
+		t.Errorf("first category = %q", got)
+	}
+}
+
+// --interval reads twice and reports the difference: since is the server's
+// time at the first read, elapsedMs the server time between; a wait type
+// new in the second read counts from zero, one whose totals fell is left
+// out with a warning; signal time is clamped to the wait time it is part of.
+func TestMonitorWaitsInterval(t *testing.T) {
+	var slept time.Duration
+	defer func(f func(context.Context, time.Duration) error) { sleepCtx = f }(sleepCtx)
+	sleepCtx = func(_ context.Context, d time.Duration) error { slept = d; return nil }
+
+	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour, time.Hour + 5020*time.Millisecond},
+		waits: [][]gosmo.WaitStat{
+			{ws("LCK_M_X", 4, 1000, 0), ws("WRITELOG", 10, 500, 5), ws("CXPACKET", 9, 900, 0)},
+			{ws("LCK_M_X", 6, 1300, 0), ws("WRITELOG", 10, 500, 5), ws("CXPACKET", 1, 10, 0), ws("PAGEIOLATCH_EX", 2, 100, 0),
+				ws("LATCH_EX", 1, 0, 1)},
+		}}
+	res, err := runMonitor(t, cat, "waits", "--interval", "5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slept != 5*time.Second {
+		t.Errorf("slept %v, want 5s", slept)
+	}
+	if got := field(res, "since"); got != "2026-10-30 09:00:00.000" {
+		t.Errorf("since = %q, want the first read's server time", got)
+	}
+	if got := field(res, "elapsedMs"); got != "5020" {
+		t.Errorf("elapsedMs = %q", got)
+	}
+	want := []string{
+		"LCK_M_X Locking 2 300 0 300 75.00 150.00",
+		"PAGEIOLATCH_EX Disk IO 2 100 0 100 25.00 50.00",
+		"LATCH_EX Latches 1 0 0 0 0.00 0.00",
+	}
+	if got := cells(res.Sets[0]); !slices.Equal(got, want) {
+		t.Errorf("waits =\n%q\nwant\n%q", got, want)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "cleared") {
+		t.Errorf("warnings = %q, want one about cleared statistics", res.Warnings)
+	}
+}
+
+// Nothing counted: an empty waits set, every category 0 with a NULL share.
+func TestMonitorWaitsNone(t *testing.T) {
+	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour}, waits: [][]gosmo.WaitStat{{ws("LAZYWRITER_SLEEP", 1, 7, 0)}}}
+	res, err := runMonitor(t, cat, "waits")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Sets[0].Rows) != 0 {
+		t.Errorf("waits = %q, want none", cells(res.Sets[0]))
+	}
+	if got := cells(res.Sets[1])[0]; got != "CPU 0 0 0 0 NULL" {
+		t.Errorf("first category = %q", got)
+	}
+}
+
+// Ctrl+C during the interval ends the command without the second read.
+func TestMonitorWaitsIntervalCancelled(t *testing.T) {
+	defer func(f func(context.Context, time.Duration) error) { sleepCtx = f }(sleepCtx)
+	sleepCtx = func(context.Context, time.Duration) error { return context.Canceled }
+	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour}, waits: [][]gosmo.WaitStat{{}}}
+	if _, err := runMonitor(t, cat, "waits", "--interval", "3"); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+	if cat.waitReads != 1 {
+		t.Errorf("read wait stats %d times, want 1", cat.waitReads)
+	}
+}
+
+func TestMonitorWaitsUsage(t *testing.T) {
+	for _, argv := range [][]string{{"--top", "-1"}, {"--interval", "-1"}, {"--interval", "301"}} {
+		cat := &monitorCatalog{}
+		_, err := runMonitor(t, cat, append([]string{"waits"}, argv...)...)
+		if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeUsageError {
+			t.Errorf("%q: err = %v, want a usage error", argv, err)
+		}
+		if cat.waitReads != 0 {
+			t.Errorf("%q: read before refusing", argv)
+		}
 	}
 }
