@@ -135,6 +135,18 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   but `describe`'s `indexes` set, and `object indexes`, still show the
   filter as empty — indistinguishable from an unfiltered index — with no
   warning, unlike a hidden default or check.
+- **gosmo's `BulkInsert` passes values to go-mssqldb unchecked** (found
+  2026-10-30 in phase 6.i, live on 17 and 13). The driver wraps an int too
+  big for its column (300 into a tinyint loads 44), and sends a Go string
+  for a varchar column as its UTF-8 bytes, which the server reads in the
+  *database's* default code page (INSERT BULK declares the columns without
+  COLLATE) and converts to the column's, `?` for what it lacks. gossms's
+  import goes through `query.NewCellParser`, which checks and encodes, so
+  only other `BulkInsert` callers are exposed. Whether gosmo should convert,
+  refuse or just document this is undecided. The limit that stays: in a
+  database whose default collation is not UTF-8, a varchar column with
+  another code page cannot be bulk-loaded with characters outside the
+  database's code page (the parser refuses them by name).
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.

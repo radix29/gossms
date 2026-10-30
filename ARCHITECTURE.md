@@ -218,9 +218,9 @@ gossms/
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
 │   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
-│   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names; cells.go: each type's cell text as SSMS's grid shows it
+│   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names; cells.go: each type's cell text as SSMS's grid shows it; cellparse.go: the inverse for a bulk load — NewCellParser turns a cell's text into the value go-mssqldb sends for a destination column (range, scale and length checks, char text encoded to the database's code page)
 │   │                        #   for the command line, structured halves of the messages (Message.SQL, Message.RowsAffected), TypedRowSink, WithStopOnError, WithoutSinkNotices
-│   ├── export/              # delimited result text (RecordWriter: CSV, TSV) with the settled NULL convention — the one writer behind Results To File and the command line's csv/tsv. Stdlib only
+│   ├── export/              # delimited result text (RecordWriter: CSV, TSV) with the settled NULL convention — the one writer behind Results To File and the command line's csv/tsv; RecordReader, its exact inverse, for import. Stdlib only
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan); live.go merges per-thread query-profile rows into Live Query Statistics counters and progress. No TUI/DB deps
 │   ├── scripting/           # Script As without a screen: per object family (Family), the verbs it offers in SSMS order and each one's generator over gosmo's Scripter/ServerScripter (USE prefix except on a database, DefaultScriptOptions), the system-object and Azure refusals (Offered, AzureRefuses), Collect (a gosmo write under WithScript). Shared by Object Explorer's Script as and the command line's script commands, so both script an object alike. gosmo + stdlib only (TestNoTUIImports)
 │   ├── xevent/              # Extended Events viewer's event store: bounded ring, column registry, ring_buffer dedupe, the client-side filter expression, grouping and aggregation. No TUI/DB deps
@@ -255,7 +255,9 @@ gossms/
 │   │   │   ├── query.go             # query classify/run/parse: the T-SQL input options (readScriptInput: script, --param wrap, classification), the offline check, the mode-option refusal (refuseModeWords), the run (runScript, shared with plan actual), transactions, SQL errors → envelope
 │   │   │   ├── plan.go              # plan estimated: query parse's shape under SHOWPLAN_XML (no --allow, mode options refused, no --param); plan actual: query run's runScript under STATISTICS XML with a counting sink (result_sets), STATISTICS XML in the script refused; the plan parsed by internal/showplan into summary sets (statements, operators ranked by Plan.Rank, missing_indexes, warnings), a preorder tree set or the verbatim XML; --plan-file as the TUI's Save Execution Plan As writes it
 │   │   │   ├── script.go            # script object / script db: a sys.objects type → internal/scripting family, --as checked against the family's verbs, the text as a verbatim field (Catalog.Script), --script-file as the TUI's Script As ▸ File... writes it; gosmo's ErrDefinitionHidden → exit 9, an encrypted module → 11
-│   │   │   ├── data.go              # data top / count: the table or view resolved as object describe does, one SELECT composed (* or --columns matched to the catalog's columns, --where/--order-by spliced each ending at a line break) and checked as one read SELECT (safety.Classify, no ';', one batch; BLOCKED before connecting), run on a query session to the sink (top) or into a record (count); --approximate = Catalog.RowCount
+│   │   │   ├── data.go              # data top / sample / count: the table or view resolved as object describe does, one SELECT composed (* or --columns matched to the catalog's columns, --where/--order-by spliced each ending at a line break) and checked as one read SELECT (safety.Classify, no ';', one batch; BLOCKED before connecting), run on a query session to the sink (top; sample = top ORDER BY NEWID()) or into a record (count); --approximate = Catalog.RowCount
+│   │   │   ├── data_profile.go      # data profile: the aggregates each column's type admits (profileAggFor, an alias type by its base type; bit via tinyint, LEN for strings, DATALENGTH for binary, none for xml/text/CLR/encrypted), one aggregate SELECT per 100 columns pivoted into set columns, --top-values one GROUP BY per column into set top_values
+│   │   │   ├── data_export.go       # data export: --out-file required; an object's SELECT * (data.go's selectRows, no TOP) or a T-SQL script run as query run's runScript held at read, every row to the sink's --out-file
 │   │   │   └── param.go             # query run --param: name/type checked against closed forms, the script wrapped in sp_executesql
 │   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), the Sink (rows kept, streamed or sent to --out-file) and one renderer per --output format (text, json, jsonl, csv, tsv, markdown); the --max-output-bytes cap
 │   │
@@ -879,13 +881,14 @@ status`/`log`). At release: tag and push gosmo, bump `require`, comment out
 
 ## Dependencies
 
-All six direct requires in `go.mod`:
+Direct requires in `go.mod`:
 
 | Package | Purpose |
 |---------|---------|
 | [github.com/gdamore/tcell/v3](https://github.com/gdamore/tcell) | Terminal rendering, keyboard & mouse events |
 | [github.com/radix29/gosmo](https://github.com/radix29/gosmo) | SQL Server management objects |
-| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver, which gosmo connects through; `internal/query` imports it only for `NullUniqueIdentifier`. `GO` splitting is `sqltext.SplitBatches` |
+| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver, which gosmo connects through; `internal/query` imports it only for `NullUniqueIdentifier` and `UniqueIdentifier` (a GUID's wire bytes in `cellparse.go`). `GO` splitting is `sqltext.SplitBatches` |
 | [github.com/golang-sql/sqlexp](https://github.com/golang-sql/sqlexp) | Interleaved result-set/message stream, so PRINT and errors arrive in order — `internal/query` |
 | [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width behind `core.DisplayWidth` — one of `tuikit`'s two external modules |
+| [golang.org/x/text](https://pkg.go.dev/golang.org/x/text) | Code-page encoders for `internal/query/cellparse.go`: a bulk load's varchar text travels in the database's code page (already in the module graph through go-mssqldb) |
 | [github.com/pkg/browser](https://github.com/pkg/browser) | Opens the Entra sign-in page. `installEntraSignIn` sends its `Stdout`/`Stderr` to `io.Discard` — output would land on tcell's terminal |

@@ -7,16 +7,16 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 5, and phase 6's `plan estimated/actual`, `script object/db` and `data top/count`) the commands are `version`, `help`, `agent
+them. Today (through phase 5, and phase 6's `plan estimated/actual`, `script object/db` and `data top/sample/count/profile/export`) the commands are `version`, `help`, `agent
 guide/schema/context`, `profile list/show/test`, `db
 list/info/files/space/log-usage/table-sizes/set`, `db scoped-config
 list/get/set`, `server info/memory/volumes/log`, `server config
 list/get/set/reset`, `server traceflag list/on/off`, `object
 list/search/describe/definition/dependencies/indexes/stats`, `query
-classify/run/parse`, `plan estimated/actual`, `script object/db` and `data top/count`; the formats `text`, `json`, `jsonl`,
+classify/run/parse`, `plan estimated/actual`, `script object/db` and `data top/sample/count/profile/export`; the formats `text`, `json`, `jsonl`,
 `csv`, `tsv` and `markdown`. `profile test`, `agent context`, every `db`,
 `server` and `object` command, `query run`, `query parse`, `plan
-estimated/actual`, `script object/db` and `data top/count` connect to a server, and so does `agent guide` given a profile.
+estimated/actual`, `script object/db` and `data top/sample/count/profile/export` connect to a server, and so does `agent guide` given a profile.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
@@ -574,6 +574,9 @@ second Ctrl+C kills the process.
 | `script db <name> [-p <profile>] [connection options] [--as create\|drop\|drop-and-create] [--script-file <path>]` | Record: `database`, `verb`, `script` (verbatim), `scriptFile` when written (§ Scripting) |
 | `data top <object> [-p <profile>] [connection options] [--rows <n>] [--columns <list>] [--where <expr>] [--order-by <list>] [--timeout <sec>]` | `<object>` a table or view, as for `object describe`. Record: `object` (`[schema].[name]`), `type`, `tsql` (verbatim: the SELECT sent); then its rows (§ Data) |
 | `data count <object> [-p <profile>] [connection options] [--where <expr>] [--approximate] [--timeout <sec>]` | Record: `object`, `type`, `rows` (NULL when the count failed), `method` (`exact`, `approximate`), `tsql` for an exact count (§ Data) |
+| `data sample <object> [-p <profile>] [connection options] [--rows <n>] [--columns <list>] [--where <expr>] [--timeout <sec>]` | As `data top`, the rows a random sample (§ Data) |
+| `data profile <object> [-p <profile>] [connection options] [--columns <list>] [--where <expr>] [--top-values <n>] [--timeout <sec>]` | Record: `object`, `type`, `tsql` (the aggregate SELECTs, `GO` between); set `columns` (`column type rows nulls null_pct distinct min max min_len max_len`), and with `--top-values` set `top_values` (`column value count`) (§ Data) |
+| `data export <object> \| (T-SQL input) --out-file <path> [-p <profile>] [connection options] [--columns <list>] [--where <expr>] [--order-by <list>] [--param …] [--timeout <sec>]` | Every row to `--out-file` (required; format by extension). Record: object form `object`, `type`, `tsql`; T-SQL form `detectedClass`, `statementCount`; each set's `totalRowCount` and `outFile` (§ Data) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
 No command ever prints a password or secret.
@@ -963,10 +966,11 @@ run; both are class `read`.
 
 ## Data
 
-`data top` and `data count` compose one SELECT over a table or view and run
-it on a query session, as `query run` would: cells are the grid's text, JSON
+`data top`, `data sample`, `data count`, `data profile` and `data export` compose SELECTs
+over a table or view and run them on a query session, as `query run` would: cells are the grid's text, JSON
 types them, `--max-rows` and `--out-file` apply. Both are class `read`; the
-login needs SELECT on the object (Msg 229 is `PERMISSION_DENIED`, exit 9).
+login needs SELECT on the object (Msg 229, or 230 for a denied column, is
+`PERMISSION_DENIED`, exit 9).
 A procedure, function, synonym or other kind is exit 2 (a synonym's hint
 names its base object).
 
@@ -978,9 +982,43 @@ names its base object).
   column is `NOT_FOUND`, exit 8, naming columns that contain it; a column
   named twice, or anything but names and commas, is exit 2. `--rows` above
   `--max-rows` needs `--max-rows 0` or `--out-file` to show every row.
+- **`data sample`** is `data top` with `ORDER BY NEWID()`: a uniformly
+  random `--rows` of the rows `--where` keeps, different on every call. It
+  reads and sorts all of them (a full scan); TABLESAMPLE is not used — it
+  samples pages, returns nothing on a small table and refuses a view.
+- **`data profile`** is one aggregate SELECT (one per 100 columns) answered
+  as set `columns`: `rows` (those `--where` keeps), `nulls`, `null_pct` (two
+  decimals, NULL with no rows), `distinct`, `min`, `max`, `min_len`,
+  `max_len`. What a column gets follows its type — an alias type's base
+  type: numbers, dates and times, strings (`sysname` too), binary, `uniqueidentifier`,
+  `sql_variant`, `hierarchyid` and `rowversion` get `distinct`, `min` and
+  `max` (`bit` as 0/1, since MIN(bit) is refused); strings also get the
+  lengths in characters (`LEN`, trailing spaces not counted), binary in
+  bytes (`DATALENGTH`). `xml`, `text`, `ntext`, `image`, `geography`,
+  `geometry`, `vector`, CLR types and Always Encrypted columns get `rows`
+  and `nulls` alone; what a column does not get is NULL. A graph table's
+  internal columns are left out, and cannot be named in `--columns`.
+  `--top-values n` adds set `top_values`: each column with `distinct`, its
+  `n` most frequent values (NULL counts as one) by count, then value, one
+  `SELECT TOP (n) … GROUP BY` per column. The ANSI warning "Null value is
+  eliminated by an aggregate" is dropped: counting NULLs is the point.
+  `COUNT(DISTINCT)` sorts or hashes every column, so on a large table narrow
+  it with `--columns` or `--where`.
 - **`data count`** is `SELECT COUNT_BIG(*)`, exact. `--approximate` reads
   the table's partition statistics (no scan, no session) and refuses
   `--where`, and a view (exit 2).
+- **`data export`** writes every row to `--out-file`, which it requires
+  (exit 2 without, before connecting); the extension is the format, as for
+  any command (§ `--out-file`), so `.csv`/`.tsv` are the bytes the TUI's
+  Results To File writes for the same rows. Give an object — `SELECT *` of
+  it with `data top`'s `--columns`, `--where` and `--order-by` and no TOP —
+  or the T-SQL in `--sql`/`--file`/`--sql-base64` (with `--param` as
+  `query run`'s), which runs as `query run` held at `read`: a script above
+  read is `BLOCKED`, exit 7, before connecting, its hint pointing at `query
+  run --allow`; mode options are refused as there; the run stops at the
+  first failing batch. Every result set goes to the file. An object together
+  with T-SQL, or `--columns`/`--where`/`--order-by` without an object, is
+  exit 2. A failed export leaves an existing file as it was.
 - **Fragments.** `--where` is spliced as `WHERE (<expr>` + line break + `)`,
   `--order-by` (top only) as `ORDER BY <list>` + line break, so a trailing
   `--` comment ends at its line. A fragment that is blank or leaves a
@@ -988,7 +1026,8 @@ names its base object).
   must classify as one read `SELECT` in one batch with no `;` outside a
   literal or comment and no flag (dynamic SQL, a procedure call), else
   `BLOCKED`, exit 7, before connecting — the record names the statements
-  found. The check keeps a fragment from adding a statement; what the
+  found; `data profile` checks each SELECT it sends. The check keeps a
+  fragment from adding a statement; what the
   condition reads is the login's permissions' business.
 
 ## Safety

@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
@@ -1373,5 +1375,64 @@ func TestCSVSinkFinishKeepsTheFileOnStopOrError(t *testing.T) {
 				t.Errorf("file = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// Results To File and the command line's --out-file .csv (query run, data
+// export) write the same bytes for the same rows (docs/cli.md § csv and tsv):
+// both are export.RecordWriter, and this pins that neither side adds
+// anything of its own — a header option, a BOM, a line ending.
+func TestCSVSinkMatchesCommandLineOutFile(t *testing.T) {
+	type row struct {
+		cells  []string
+		isNull []bool
+	}
+	sets := []struct {
+		cols []string
+		rows []row
+	}{
+		{[]string{"id", "name", "note"}, []row{
+			{[]string{"1", "NULL", ""}, []bool{false, true, false}},
+			{[]string{"2", "NULL", "a,\"b\"\r\nc"}, []bool{false, false, false}},
+			{[]string{"3", "żółw 🐢", " lead"}, nil},
+		}},
+		{[]string{"only"}, []row{
+			{[]string{"NULL"}, []bool{true}},
+			{[]string{""}, []bool{false}},
+			{[]string{"x"}, []bool{false}},
+		}},
+		{[]string{"empty"}, nil},
+	}
+	dir := t.TempDir()
+	tuiPath, cliPath := filepath.Join(dir, "tui.csv"), filepath.Join(dir, "cli.csv")
+
+	ts, err := newCSVSink(tuiPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := output.NewSink(io.Discard, output.Options{Format: output.FormatJSON, OutFile: cliPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, set := range sets {
+		ts.BeginSet(set.cols)
+		cs.BeginTypedSet(set.cols, nil, nil)
+		for _, r := range set.rows {
+			ts.Row(r.cells, r.isNull)
+			cs.Row(r.cells, r.isNull)
+		}
+		ts.EndSet(len(set.rows))
+		cs.EndSet(len(set.rows))
+	}
+	if err := ts.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.Finish(&output.Result{}, false); err != nil {
+		t.Fatal(err)
+	}
+	tuiData, _ := os.ReadFile(tuiPath)
+	cliData, _ := os.ReadFile(cliPath)
+	if len(tuiData) == 0 || string(tuiData) != string(cliData) {
+		t.Errorf("Results To File %q\n--out-file      %q", tuiData, cliData)
 	}
 }
