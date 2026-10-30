@@ -7,16 +7,19 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 5, and phase 6's `plan estimated/actual`, `script object/db` and `data top/sample/count/profile/export/import`) the commands are `version`, `help`, `agent
+them. Today (through phase 7) the commands are `version`, `help`, `agent
 guide/schema/context`, `profile list/show/test`, `db
 list/info/files/space/log-usage/table-sizes/set`, `db scoped-config
 list/get/set`, `server info/memory/volumes/log`, `server config
 list/get/set/reset`, `server traceflag list/on/off`, `object
 list/search/describe/definition/dependencies/indexes/stats`, `query
-classify/run/parse`, `plan estimated/actual`, `script object/db` and `data top/sample/count/profile/export/import`; the formats `text`, `json`, `jsonl`,
-`csv`, `tsv` and `markdown`. `profile test`, `agent context`, every `db`,
-`server` and `object` command, `query run`, `query parse`, `plan
-estimated/actual`, `script object/db` and `data top/sample/count/profile/export/import` connect to a server, and so does `agent guide` given a profile.
+classify/run/parse`, `plan estimated/actual/cached`, `script object/db`,
+`data top/sample/count/profile/export/import`, `monitor
+sessions/blocking/waits/top-queries/querystore/deadlocks/kill` and `xevent
+sessions/capture`; the formats `text`, `json`, `jsonl`, `csv`, `tsv` and
+`markdown`. Every command but `version`, `help`, `agent guide/schema`,
+`profile list/show` and `query classify` connects to a server, and so does
+`agent guide` given a profile.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
@@ -160,7 +163,7 @@ is also a `--topic`):
 | `output` | Output contract | `guide/output.md` |
 | `exit-codes` | Exit codes | generated from the exit-code table |
 | `commands` | The command index: command, operation class, summary. In `--brief`, one row per group naming its commands (a sub-group's as `config list`), a non-`read` one marked with its class, and the group's summary — so the brief guide stays under its cap as commands are added | generated from the command tree |
-| `recipes` | Explore a schema, read data, check space, change server settings, tune a slow query, script and export, make a safe data fix | `guide/recipes.md` |
+| `recipes` | Explore a schema, read data, check space, change server settings, tune a slow query, script and export, make a safe data fix, diagnose a slow server | `guide/recipes.md` |
 
 The first lines are the title and `gossms <version> · CLI schema <n>`, so a
 cached guide can be told stale.
@@ -419,7 +422,10 @@ CLI_SCHEMA: 1.0
 - A cell is typed by its column's SQL type: `int`, `bigint`, `smallint`,
   `tinyint`, `real`, `float` a number; `bit` `true`/`false`; NULL `null`;
   everything else — `decimal`, `numeric` and `money` included, which most
-  parsers would round as a float — the grid's text as a string.
+  parsers would round as a float — the grid's text as a string. A column of
+  type `json` (`xevent capture`'s `data`) holds a document, written as a
+  JSON value and never cut by `--max-col-width`; other formats show its
+  text.
 - Two-space indent, no HTML escaping, one trailing newline.
 - `schemaVersion` (also `gossms version`'s `cliSchema`) changes only when the
   structure breaks compatibility.
@@ -570,6 +576,7 @@ second Ctrl+C kills the process.
 | `query parse` (T-SQL input) `[-p <profile>] [connection options] [--timeout <sec>]` | Record: `valid`, `batchCount` (batches sent, each `GO n` repetition counted), `detectedClass`; each syntax error is a `SQL_ERROR` with its script line (§ Running T-SQL) |
 | `plan estimated` (T-SQL input) `[-p <profile>] [connection options] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>] [--timeout <sec>]` | Record: `planType` (`estimated`), `detectedClass`, `statementCount`, `planFile` when written; `--plan-format xml` adds the verbatim `planXml`. Named sets per format (§ Execution plans) |
 | `plan actual` (T-SQL input) `[-p <profile>] [connection options] [run options but --statistics] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>]` | Runs the script as `query run` does, under `SET STATISTICS XML ON`. Record: `planType` (`actual`), `detectedClass`, `statementCount`, `planXml`/`planFile` as for `plan estimated`, then a wrapped run's `maxRowsAffected`, `transaction`; `ROWS_AFFECTED` in the header. The format's sets, then `result_sets`: one row per set the script returned, its rows counted, not returned (§ Execution plans). Refused, blocked and `--dry-run` answers as `query run`'s |
+| `plan cached <plan_handle> [--statement-start <n>] [--statement-end <n>] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>] [-p <profile>] [connection options]` | Record: `planType` (`cached`), `planHandle` (`0x`, upper-case hex), `statementStart`, `statementEnd`, `statementCount`, `planXml`/`planFile` as for `plan estimated`; the format's sets, the actual columns NULL (§ Execution plans) |
 | `script object <object> [-p <profile>] [connection options] [--as <verb>] [--script-file <path>]` | `<object>` as for `object describe`. Record: `object` (`[schema].[name]`), `type`, `verb`, `script` (verbatim), `scriptFile` when written (§ Scripting) |
 | `script db <name> [-p <profile>] [connection options] [--as create\|drop\|drop-and-create] [--script-file <path>]` | Record: `database`, `verb`, `script` (verbatim), `scriptFile` when written (§ Scripting) |
 | `data top <object> [-p <profile>] [connection options] [--rows <n>] [--columns <list>] [--where <expr>] [--order-by <list>] [--timeout <sec>]` | `<object>` a table or view, as for `object describe`. Record: `object` (`[schema].[name]`), `type`, `tsql` (verbatim: the SELECT sent); then its rows (§ Data) |
@@ -578,6 +585,15 @@ second Ctrl+C kills the process.
 | `data profile <object> [-p <profile>] [connection options] [--columns <list>] [--where <expr>] [--top-values <n>] [--timeout <sec>]` | Record: `object`, `type`, `tsql` (the aggregate SELECTs, `GO` between); set `columns` (`column type rows nulls null_pct distinct min max min_len max_len`), and with `--top-values` set `top_values` (`column value count`) (§ Data) |
 | `data export <object> \| (T-SQL input) --out-file <path> [-p <profile>] [connection options] [--columns <list>] [--where <expr>] [--order-by <list>] [--param …] [--timeout <sec>]` | Every row to `--out-file` (required; format by extension). Record: object form `object`, `type`, `tsql`; T-SQL form `detectedClass`, `statementCount`; each set's `totalRowCount` and `outFile` (§ Data) |
 | `data import <table> --in-file <path\|-> [-p <profile>] [connection options] --allow write [--in-format csv\|tsv\|jsonl] [--truncate-first --confirm <table>] [--no-check-constraints] [--fire-triggers] [--tablock] [--dry-run] [--timeout <sec>]` | Bulk-loads the file into the table; `--truncate-first` needs `--allow ddl`. Record: `object`, `type`, `inFile`, `format`, `truncateFirst`, `rows`, `dryRun`, `tsql` (the TRUNCATE, on a dry run); set `columns` (`file_column column type action`) (§ Data) |
+| `monitor sessions [--active] [--session-database <db>] [--login <l>] [--program <p>] [--include-system] [-p <profile>] [connection options]` | Set `sessions`, by spid (§ Monitoring): `spid`, `login`, `host`, `program`, `database`, `status`, `command`, `open_tran`, `cpu_ms`, `reads`, `writes`, `logical_reads`, `elapsed_ms`, `blocked_by`, `wait_type`, `wait_ms`, `wait_resource`, `text` |
+| `monitor blocking [-p <profile>] [connection options]` | Set `blocking`, in tree order (§ Monitoring): `head`, `depth`, `cycle`, `spid`, `blocked_by`, `wait_type`, `wait_ms`, `wait_resource`, `login`, `host`, `program`, `database`, `open_tran`, `text`. No blocking is an empty set, exit 0 |
+| `monitor waits [--top <n>] [--interval <sec>] [--all] [-p <profile>] [connection options]` | Record: `since`, `elapsedMs`. Sets `waits` (`wait_type`, `category`, `waiting_tasks`, `wait_ms`, `signal_ms`, `resource_ms`, `pct`, `avg_ms`) and `categories` (`category`, `waiting_tasks`, `wait_ms`, `signal_ms`, `resource_ms`, `pct`) (§ Monitoring) |
+| `monitor top-queries [--by cpu\|reads\|writes\|duration\|executions] [--avg] [--top <n>] [--plan-database <db>] [-p <profile>] [connection options]` | Record: `rankedBy`, `ranking` (`total`, `average`). Set `queries`, highest first: `n`, `database`, `executions`, `cpu_ms`, `avg_cpu_ms`, `duration_ms`, `avg_duration_ms`, `logical_reads`, `avg_logical_reads`, `logical_writes`, `avg_logical_writes`, `last_execution`, `cached_at`, `query_hash`, `plan_handle`, `statement_start`, `statement_end`, `text` (§ Monitoring) |
+| `monitor querystore [--report top\|regressed\|variation\|forced\|waits] [--regressed] [--metric <m>] [--stat avg\|max\|min\|stdev\|total] [--since <t>] [--until <t>] [--top <n>] [--min-exec <n>] [--min-regression-pct <n>] [--wait-category <c>] [-p <profile>] [connection options]` | The connection's database. Record: `report`, `from`, `to`, `baselineFrom`/`baselineTo` (regressed), `metric`, `statistic`, `unit`. Set `queries`: `n`, `query_id`, `object`, `executions`, `plans`, `forced_plan_id`, `last_execution`, `value`, + `baseline_value`, `baseline_executions`, `regression`, `regression_pct` (regressed) or `variation` (variation), `text`; `--report waits` puts set `categories` (`category`, `executions`, `value`) first (§ Monitoring) |
+| `monitor deadlocks [--since <t>] [--until <t>] [--top <n>] [--deadlock-format summary\|xml] [--deadlock-file <dir>] [-p <profile>] [connection options]` | Record: `source` (`event_file`, `ring_buffer`), `from`, `to` (UTC), `deadlocksInWindow`; `deadlock1`… (verbatim) with `--deadlock-format xml`; `deadlockFile` when written. Set `deadlocks`: `n`, `time_utc`, `victims`, `processes`, `databases`, `objects`; in `summary` set `processes`: `n`, `spid`, `ecid`, `victim`, `login`, `host`, `program`, `database`, `isolation`, `lock_mode`, `wait_resource`, `transaction`, `statement` (§ Monitoring) |
+| `monitor kill <spid> --confirm <spid> --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`. Record: `dryRun`, `tsql` (dry run), `killed`, `ended` (after a real KILL). Set `session`: the target's `monitor sessions` row (§ Monitoring) |
+| `xevent sessions [-p <profile>] [connection options]` | Set `sessions`, by name: `name`, `scope` (`server`, `database`), `running`, `startup`, `started`, `dropped_events`, `targets`, `events`, `file` (§ Extended Events) |
+| `xevent capture --allow admin [--template <t>] [--duration <sec>] [--max-events <n>] [--session-database <db>] [--login <l>] [--program <p>] [--min-duration-ms <n>] [--dry-run] [-p <profile>] [connection options]` | Class `admin`. Record: `template`, `session`, `durationSeconds`, `dryRun`, `tsql` (dry run), `eventsSeen`, `eventsKept`, `sessionDropped`. Set `events`, oldest first: `time_utc`, `event`, `session_id`, `database`, `login`, `program`, `host`, `duration_ms`, `cpu_ms`, `logical_reads`, `writes`, `row_count`, `result`, `error`, `severity`, `text`, + `data` (type `json`) under `-o jsonl` (§ Extended Events) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
 No command ever prints a password or secret.
@@ -602,7 +618,8 @@ shell quoting can damage them.
 
 The `db`, `object` and `server` commands read the catalog; they are all `read` and
 never take `--allow` — except `server config set/reset`, `server traceflag
-on/off`, `db set` and `db scoped-config set`, which are `admin`.
+on/off`, `db set` and `db scoped-config set`, which are `admin` (as are
+`monitor kill` and `xevent capture`).
 
 - **Where they look.** An `object` command reads the connection's database —
   the profile's, or `-d/--database` — and the header's `DATABASE` names it.
@@ -926,6 +943,18 @@ keeping the change.
   not yet sent them), earlier batches' stay. `--plan-file` is written only
   when the command succeeds.
 
+`plan cached <plan_handle>` reads a plan the server already holds, from
+`sys.dm_exec_text_query_plan` (text: `dm_exec_query_plan` fails on a plan
+nested over 128 levels): the estimated plan it compiled and keeps reusing, no
+runtime figures. The handle and `--statement-start`/`--statement-end` are
+`monitor top-queries`' `plan_handle`, `statement_start`, `statement_end`
+(byte offsets into the batch; 0 and -1, the defaults, are the whole batch).
+`0x` is optional; a handle that is not hex or over 64 bytes, and a bad
+offset, are exit 2 before connecting. A plan that has left the cache, or a
+statement not compiled yet (deferred compile), is `NOT_FOUND`, exit 8, the
+hint saying to rank again, and `--plan-file` is not written. Formats, `--top`
+and `--plan-file` are `plan estimated`'s. Needs VIEW SERVER STATE (exit 9).
+
 ## Scripting
 
 `script object` and `script db` answer the text Object Explorer's Script As
@@ -1091,6 +1120,166 @@ names its base object).
   fragment from adding a statement; what the
   condition reads is the login's permissions' business.
 
+## Monitoring
+
+`monitor` reads what the server is doing — the DMVs behind SSMS's Activity
+Monitor and its performance reports, through gosmo — and `monitor kill` ends
+a session. Every `monitor` command is `read` except `kill`, which is `admin`.
+
+- **Permissions.** Every command but `querystore` asks for VIEW SERVER STATE
+  (2022+: VIEW SERVER PERFORMANCE STATE) before it reads anything, and is
+  `PERMISSION_DENIED`, exit 9, without it: the server would answer the
+  session DMVs with the login's own session only, an empty list that reads as
+  "nothing is running". `plan cached` and `xevent sessions` do the same.
+  `querystore` needs VIEW DATABASE STATE in the database; the server's
+  refusal is exit 9. `agent context` lists all three, and ALTER ANY
+  CONNECTION for `kill`.
+- **No helper procedures.** `sessions` and `blocking` come from gosmo's
+  `ActiveSessions`, never from `sp_WhoIsActive` or `sp_block`, which the
+  TUI's Sessions and Block tabs install: a read command writes nothing, and
+  its columns do not depend on what a server has installed.
+- **`-d` is the connection.** The filters that name a database are
+  `--session-database` (`sessions`) and `--plan-database` (`top-queries`);
+  `querystore` reads the connection's database.
+- **`sessions`.** User sessions, the CLI's own left out; `--include-system`
+  adds the rest. `command`, `wait_*` are the running request's, NULL for an
+  idle session; `cpu_ms`, `reads`, `writes`, `logical_reads` the session's
+  totals since login, the running request's so far included
+  (`sys.dm_exec_sessions` moves them only when a request ends, so alone they
+  showed 0 for a query blocked for minutes); `elapsed_ms` how long the
+  running request has run, NULL for an idle session. `text` is the running request's batch, or for an idle
+  session the batch its connection sent last (what opened an idle session's
+  open transaction), its first 512 characters, auto-parameterized when the
+  server parameterized it. `blocked_by` counts a parallel request's blocked
+  worker, and the `wait_*` columns are then that worker's. `--active`, and
+  `--session-database`, `--login`, `--program` (equal, case-insensitive)
+  filter.
+- **`blocking`.** One `sessions --include-system` read, built into chains in
+  gossms: a head blocks and is not blocked; each chain is the head, then the
+  sessions it blocks, depth first, by spid at each level; chains by head
+  spid. A session blocked by one the read does not show (ended between, or
+  `-2`/`-4`) heads its own chain, `blocked_by` kept. A cycle — a deadlock not
+  resolved yet — is reported once, from its lowest spid, `cycle` 1 on its
+  members only.
+- **`waits`.** `sys.dm_os_wait_stats` is cumulative since the instance
+  started (or the last `DBCC SQLPERF(… CLEAR)`, which the server does not
+  record): the default, `since` the start and `elapsedMs` the uptime.
+  `--interval <sec>` (1–300) reads twice and reports the difference, `since`
+  the first read's server time; Ctrl+C during it is exit 130 with no second
+  read. A wait type new in the second read counts from zero; one whose totals
+  fell (cleared between) is left out with a warning. There is no
+  `--reset-baseline`: the CLEAR resets every other tool's baseline on the
+  server, and `--interval` measures without it. Idle and background waits are
+  left out unless `--all` — the TUI's Waits chart's list (`internal/activity`)
+  — and so are wait types with no time and no task. `signal_ms` is clamped to
+  `wait_ms` (the DMV updates the two apart). `pct` is the share of all wait
+  time counted, not only the `--top` rows shown; `categories` sums all eight
+  categories over every type counted.
+- **`top-queries`.** `sys.dm_exec_query_stats`, one row per cached
+  statement, its totals since `cached_at`: a plan leaves the cache at
+  eviction, recompile or restart, so this is no fixed window — Query Store
+  (`querystore`) is the durable history. Ranked by the total, or with `--avg`
+  per execution (not with `--by executions`: exit 2). `--top` is at least 1
+  (default 20; there is no 0-for-all). Times are ms with three decimals (the
+  DMV keeps µs); handles and `query_hash` are `0x` upper-case hex;
+  `database` is NULL when the plan names none the login can see (the hidden
+  resource database included). An unknown `--plan-database` is exit 8.
+- **`querystore`.** `--report top` (default), `regressed`, `variation`,
+  `forced`, `waits`; `--regressed` is `--report regressed` (with another
+  `--report`: exit 2). The window is `--since`–`--until`, default the 24
+  hours to the server's now: a time with no zone is the server's local wall
+  clock, read in the zone of its `SYSDATETIMEOFFSET`; with `Z` or an offset,
+  that instant (unlike `server log`: Query Store's times are
+  `datetimeoffset`). Every interval that overlaps the window counts whole; an
+  empty window is exit 2. `regressed` compares the window's second half with
+  its first (the TUI's Regressed Queries); a query with no executions in the
+  first half is left out. `--stat` defaults to `total` for `top` and `waits`,
+  `avg` otherwise; `--min-regression-pct` is a whole percentage. `waits`
+  (2017+) refuses `--metric` and `--min-exec`, and a `--stat` other than
+  `avg`/`total` unless `--wait-category` names one; `--metric log-memory` and
+  `tempdb` are 2017+. Before 2017 either is `UNSUPPORTED`, exit 11, before
+  any read. Query Store OFF or in ERROR, or `master`/`tempdb`, is exit 8 with
+  the `db set <db> --option QUERY_STORE=ON` hint; READ_ONLY reads. Plan
+  forcing is not offered.
+- **`deadlocks`.** The `xml_deadlock_report` events of `system_health`: its
+  event_file, the server keeping only those events, else its ring_buffer.
+  `--since`/`--until` are **UTC**, as the events record time: a time with no
+  zone is UTC, one with `Z` or an offset converted; `--until` is exclusive;
+  default the 24 hours to the server's now. The server still parses every
+  event in the files to find them, so on a busy `system_health` the read can
+  take a minute or more (538 000 events on a 2016 instance: 70–80 s, the
+  same through `sqlcmd`). Newest first, `--top` (default 20);
+  `deadlocksInWindow` counts before the cut. A parallel plan's workers share
+  a spid and differ by `ecid`. A report that does not decode is a warning,
+  left out. `--deadlock-file <dir>` writes each graph as
+  `deadlock_<yyyymmdd_hhmmss_mmm>.xdl` (UTC; `_2`… for two in one
+  millisecond), creating the directory; every name is checked first, and an
+  existing file without `--force` is exit 2 with **no** file written.
+  `system_health` missing, stopped, or with no file or ring_buffer target is
+  exit 8, the hint naming the fix.
+- **`kill`.** `KILL <spid>` through gosmo, so `--dry-run` prints it.
+  Before connecting: a spid outside 1–32767 is exit 2; `--confirm` must
+  repeat the spid exactly as given (`087` is not `87`), else `BLOCKED`,
+  exit 7; then the `admin` gate (§ Writes). Connected: VIEW SERVER STATE is
+  asked first (exit 9, nothing sent: without it every other session looks
+  ended), then the session is read and shown as set `session` in every later
+  outcome. Gone is exit 8; a system session exit 7; **any** of this
+  process's connections (client pid and host, not only `@@SPID`: the KILL
+  could travel on another pooled one) exit 2. The server's refusals: Msg 6106
+  (ended in between) → 8, 6107 → 7, 6104 → 2, 6102 → 9 with an ALTER ANY
+  CONNECTION hint. After a real KILL the session is read again: `ended` is
+  true when it is gone or its spid now belongs to another login or process;
+  false while it rolls back, a warning naming `KILL <spid> WITH STATUSONLY`,
+  not waited for.
+
+## Extended Events
+
+- **`xevent sessions`** lists the server's event sessions
+  (`sys.server_event_sessions` with `sys.dm_xe_sessions`); `started` (server
+  local time) and `dropped_events` are a running session's, NULL for a
+  stopped one; `file` is the event_file target's current `.xel`, else its
+  `filename`. Engine-private sessions with no definition
+  (`hkenginexesession`, `sp_server_diagnostics session`) are not listed. On
+  Azure SQL Database it lists the database's sessions, `scope` `database`,
+  and needs no VIEW SERVER STATE.
+- **`xevent capture` is `admin`**: it creates a server object, and one left
+  behind by a killed process is a lasting change. It needs ALTER ANY EVENT
+  SESSION — or, from 2022, CREATE, ALTER … ENABLE, ALTER … DISABLE and DROP
+  ANY EVENT SESSION, all four — and VIEW SERVER STATE (the buffer is read from
+  the DMVs); a known lack is exit 9 with nothing created. Azure SQL Database
+  is exit 11.
+- **One short-lived session per run**, `gossms_cli_<UTC
+  yyyymmddhhmmss>_<4 hex>`: the template's events, one ring_buffer target with
+  `max_events_limit` = `--max-events` (1–100000, default 1000: the buffer keeps
+  the newest), `MAX_DISPATCH_LATENCY = 1 s`, `STARTUP_STATE = OFF`. Create →
+  start → wait `--duration` (1–600, default 30) + 1 s → read → stop and drop,
+  **on every exit path**: a failed step, a CREATE that errored but left the
+  session (looked up by name), and Ctrl+C (exit 130 after the drop), the
+  cleanup under its own 15 s context. A drop that fails is a warning naming
+  the session and the `DROP EVENT SESSION` to run; `sessionDropped` says
+  which. `xevent sessions` lists any `gossms_cli_` session a killed process
+  left.
+- **Templates**, gosmo's SSMS ones by name: `standard`, `tsql`, `batches`
+  (Query Batch Tracking), `statements` (Query Detail Tracking), `waits`
+  (Query Wait Statistics; the CLI adds `session_id > 0`, which the template
+  leaves out, so background waits stay out), `connections`, `deadlocks`; and
+  `errors` (`error_reported`, severity ≥ 11), defined in gossms. Count Query
+  Locks is not offered (a histogram target).
+- **Filters are the server's**, ANDed into every event's predicate:
+  `client_app_name <> 'goSSMS - CLI'` always (this tool's own events),
+  `--session-database`, `--login`, `--program` (exact names), and
+  `--min-duration-ms` on the completed batch, RPC, statement and module
+  events only. The actions that fill the columns are added to every event.
+- **Events**, oldest first (by time, then `event_sequence`): durations and
+  CPU µs → ms with three decimals (`wait_info`'s duration is already ms);
+  `text` is the batch, statement, message, deadlock graph, `sql_text`, else
+  the wait type. Under `-o jsonl` each row adds `data`, `{"fields":{…},
+  "actions":{…}}`, a column of type `json` (§ `json`). Fewer kept than
+  `eventsSeen` (the target's processed count), or a truncated ring buffer
+  (about 4 MB), is a warning: shorten `--duration` or filter tighter.
+- **`--dry-run`** reads and checks as a run does, then prints the CREATE,
+  START, STOP and DROP as `tsql`; nothing is created.
+
 ## Safety
 
 `internal/cli/safety` puts every statement into an operation class by its
@@ -1130,10 +1319,13 @@ ceiling is what refuses.
 ## Writes
 
 The commands that change a server through gosmo — `server config
-set/reset`, `server traceflag on/off`, `db set`, `db scoped-config set` and
-`data import` — share one layer (`internal/cli/cmd/write.go`). Each is class
-`admin`, except `data import` (`write`, `ddl` with `--truncate-first`; its
-answer is a load count, not a before/after change set: § Data).
+set/reset`, `server traceflag on/off`, `db set`, `db scoped-config set`,
+`data import`, `monitor kill` and `xevent capture` — share one layer
+(`internal/cli/cmd/write.go`). Each is class `admin`, except `data import`
+(`write`, `ddl` with `--truncate-first`). `data import` answers a load
+count, `monitor kill` the session and whether it ended, `xevent capture` the
+events it caught — not a before/after change set (§ Data, § Monitoring,
+§ Extended Events).
 
 - **The gate.** `--allow` and `--dry-run` are options of the writing
   commands and `query run`, not global ones: a read command does not take
@@ -1173,12 +1365,15 @@ answer is a load count, not a before/after change set: § Data).
     it is `BLOCKED`, exit 7, before connecting.
   - `--confirm <table>` (`data import`, with `--truncate-first`): the table
     exactly as given, likewise.
+  - `--confirm <spid>` (`monitor kill`, always): the spid exactly as given.
 
-  The global `--force` keeps its one meaning: replace an existing
-  `--out-file`.
-- **Permissions.** `agent context` lists ALTER SETTINGS, sysadmin, ALTER and
-  ALTER ANY DATABASE SCOPED CONFIGURATION when the login is known to lack
-  them, with the commands each breaks.
+  The global `--force` keeps its one meaning: replace an existing file the
+  command writes — `--out-file`, `--plan-file`, `--script-file`, or the
+  files `--deadlock-file` writes.
+- **Permissions.** `agent context` lists ALTER SETTINGS, sysadmin, ALTER,
+  ALTER ANY DATABASE SCOPED CONFIGURATION, ALTER ANY CONNECTION and ALTER ANY
+  EVENT SESSION (met by 2022's four narrow rights together) when the login is
+  known to lack them, with the commands each breaks.
 
 ## The import rule
 

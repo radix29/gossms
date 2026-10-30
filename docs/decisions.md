@@ -2023,6 +2023,52 @@ The contract is `docs/cli.md` § Execution plans, § Scripting, § Data and
   `PERMISSION_DENIED`, exit 9. SHOWPLAN (`plan estimated/actual`) and VIEW
   DEFINITION (`script object`) are database-wide and are listed.
 
+## Command-line monitoring and Extended Events: what phase 7 settled — do not re-raise
+
+The contract is `docs/cli.md` § Monitoring, § Extended Events and
+§ Commands; these are the alternatives turned down.
+
+- **`monitor sessions` and `monitor blocking` read gosmo's `ActiveSessions`,
+  never the TUI's helper procedures (D1).** The Sessions and Block tabs run
+  `sp_WhoIsActive` and `sp_block`, which the TUI installs into tempdb or
+  master, and which stay in gossms (sp_WhoIsActive is GPL-3.0). A `read`
+  command must not install a procedure, and calling one only when it is
+  already there was
+  turned down too: the columns would then depend on the server, and the agent
+  guide could not describe them. `ActiveSession` gained what the procedures
+  showed (open transactions, reads/writes, command, wait resource, the
+  connection's most recent batch for an idle head blocker). The chains are a
+  pure function of that one read, built and unit-tested in gossms, not a
+  gosmo `BlockingChains`.
+- **`monitor waits` has no `--reset-baseline` (D3).** It would be
+  `DBCC SQLPERF('sys.dm_os_wait_stats', CLEAR)`, a server-wide `admin` write
+  that wipes the baseline of every other monitoring tool on the server.
+  `--interval <sec>` takes two reads and reports the difference, which
+  answers "what is it waiting on now" with no side effect. The benign-wait
+  list and the categories stay gossms's (`internal/activity`, exported for
+  the CLI), shared with the TUI's Waits chart.
+- **`monitor top-queries` ranks, `plan cached <plan_handle>` fetches one
+  plan (D4)** — not the first design's `plan cached [--top] [--order-by]`, which was
+  top-queries with every plan attached: N plan digests in one answer are
+  mostly noise, and an agent picks one statement and then asks for its plan.
+  The plan is read through `dm_exec_text_query_plan` (`dm_exec_query_plan`
+  fails past 128 nesting levels) and digested as `plan estimated` does.
+- **`xevent capture` is `admin` (D8).** It creates a server object, which
+  the safety model puts in `admin` (`docs/cli.md` § Safety), so a profile capped at `read` cannot capture. A new
+  rule "temporary diagnostics are `read`" was turned down: it weakens
+  "classes follow what the server changes" for one command, and a session
+  left behind by `kill -9` is a lasting change.
+- **`xevent capture` makes its own session per run, ring_buffer only,
+  dropped on every exit path (D9)** — not the TUI Profiler's persistent
+  `gossms_QuickSession*`, and not an event_file (files to clean up on the
+  server, not readable on every platform). The buffer's
+  `max_events_limit` is `--max-events`, so it keeps the newest; truncation is
+  reported, not hidden. Templates are gosmo's SSMS list by name plus
+  `errors` (severity ≥ 11), a gossms opinion that stays out of gosmo's list;
+  Count Query Locks is left out (a histogram target). Filters go into the
+  server-side predicate; a client-side filter language (`internal/xevent`'s)
+  is not offered.
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

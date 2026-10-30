@@ -149,6 +149,8 @@ type Catalog interface {
 	// the sessions.
 	HasViewServerState(ctx context.Context) (bool, error)
 	ActiveSessions(ctx context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error)
+	// monitor kill: one session, the caller's own included.
+	SessionByID(ctx context.Context, sessionID int) (*gosmo.ActiveSession, error)
 	// monitor waits: sys.dm_os_wait_stats, every wait type's totals.
 	WaitStats(ctx context.Context) ([]gosmo.WaitStat, error)
 	// monitor top-queries / plan cached: the plan cache's costliest
@@ -171,6 +173,11 @@ type Catalog interface {
 	EventSessionByName(ctx context.Context, name string) (*gosmo.EventSession, error)
 	ReadFileEvents(ctx context.Context, pattern string, cursor gosmo.EventFileCursor, max int, events []string) ([]gosmo.XEvent, gosmo.EventFileCursor, error)
 	ReadRingBuffer(ctx context.Context, es *gosmo.EventSession) (*gosmo.RingBufferData, error)
+	// xevent sessions: the event sessions with their events and targets —
+	// the server's, or with d (Azure SQL Database) the database's — and a
+	// running one's runtime state.
+	EventSessions(ctx context.Context, d *gosmo.Database) ([]*gosmo.EventSession, error)
+	EventSessionStatus(ctx context.Context, es *gosmo.EventSession) (*gosmo.EventSessionStatus, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -554,8 +561,23 @@ func (serverCatalog) ReadRingBuffer(ctx context.Context, es *gosmo.EventSession)
 	return es.ReadRingBuffer(ctx)
 }
 
+func (c serverCatalog) EventSessions(ctx context.Context, d *gosmo.Database) ([]*gosmo.EventSession, error) {
+	if d != nil {
+		return d.XEvents().Sessions(ctx)
+	}
+	return c.s.XEvents().Sessions(ctx)
+}
+
+func (serverCatalog) EventSessionStatus(ctx context.Context, es *gosmo.EventSession) (*gosmo.EventSessionStatus, error) {
+	return es.Status(ctx)
+}
+
 func (c serverCatalog) ActiveSessions(ctx context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error) {
 	return c.s.ActiveSessions(ctx, scope)
+}
+
+func (c serverCatalog) SessionByID(ctx context.Context, sessionID int) (*gosmo.ActiveSession, error) {
+	return c.s.SessionByID(ctx, sessionID)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

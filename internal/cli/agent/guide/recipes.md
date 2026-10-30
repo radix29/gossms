@@ -42,6 +42,7 @@ gossms plan estimated -p dev --file - <<'SQL'
 EXEC Reporting.usp_MonthlySales @Year = 2026, @Month = 9;
 SQL
 gossms object indexes -p dev Sales.SalesOrderDetail
+gossms monitor querystore -p dev --regressed
 gossms plan actual -p dev --file slow.sql --transaction rollback
 gossms query run -p dev --file fix_index.sql --allow ddl --dry-run
 ```
@@ -52,6 +53,33 @@ run as given. It has no `--param`: write the values into the script.
 `plan actual` runs the script (a write needs `--allow write`; `--transaction
 rollback` undoes it) and adds actual rows and times; `misestimate` flags an
 estimate off by more than 10×. Both need SHOWPLAN (exit 9 without).
+`monitor querystore` is the runtime history Query Store keeps for the
+connection's database; `--regressed` lists what got slower in the last 24
+hours (second half of the window against the first). It needs VIEW DATABASE
+STATE; Query Store OFF is exit 8.
+
+### Diagnose a slow server
+
+```bash
+gossms monitor waits --interval 10 -p dev
+gossms monitor top-queries --by cpu --top 10 -p dev
+gossms plan cached <plan_handle> --statement-start <n> --statement-end <n> -p dev
+gossms monitor blocking -p dev
+gossms monitor sessions --active -p dev
+```
+
+`--interval 10` measures the next 10 seconds; without it the totals since
+the instance started mix in old load. The `categories` set says where the
+time goes: CPU → `top-queries --by cpu`, Disk IO → `--by reads`, Locking →
+`monitor blocking`. A top query's `plan_handle`, `statement_start` and
+`statement_end` go to `plan cached`, which digests its plan as `plan
+estimated` does; the plan cache forgets at eviction or restart, Query Store
+(`monitor querystore`) does not. In `monitor blocking` the head (depth 0) is
+the cause, often an idle session holding an open transaction, its `text` the
+batch it sent last. Ending it (`monitor kill`, `--allow admin`, `--confirm`
+the spid) or capturing events (`xevent capture`, `admin`: it creates a
+short-lived event session) only with the user's approval. All need VIEW
+SERVER STATE (exit 9 without).
 
 ### Script and export
 

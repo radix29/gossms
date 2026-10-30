@@ -15,7 +15,14 @@ const (
 	kindString cellKind = iota
 	kindNumber          // int, bigint, smallint, tinyint, real, float
 	kindBool            // bit
+	kindJSON            // TypeJSON
 )
+
+// TypeJSON is the Type of a column whose cells are JSON documents (an
+// event's fields and actions): JSON and jsonl write a valid one as a value
+// rather than a string, and whole — --max-col-width would cut it into
+// invalid JSON. Text, markdown, csv and tsv show the document's text.
+const TypeJSON = "json"
 
 // kindOf is the kind of a column of SQL type t ("int", "decimal(18,2)").
 // decimal, numeric and money stay strings: most JSON parsers would read them
@@ -27,6 +34,8 @@ func kindOf(t string) cellKind {
 		return kindNumber
 	case "bit":
 		return kindBool
+	case TypeJSON:
+		return kindJSON
 	}
 	return kindString
 }
@@ -39,8 +48,8 @@ func kinds(cols []Column) []cellKind {
 	return out
 }
 
-// jsonCell is one cell as a JSON value: null, a number, a bool, or the text
-// clipped to width. A number or bit whose text is not one (a hand-built set)
+// jsonCell is one cell as a JSON value: null, a number, a bool, a document
+// (TypeJSON), or the text clipped to width. A number or bit whose text is not one (a hand-built set)
 // stays a string, so the output is always valid JSON.
 func jsonCell(c *string, k cellKind, width int) any {
 	switch {
@@ -52,6 +61,8 @@ func jsonCell(c *string, k cellKind, width int) any {
 		return true
 	case k == kindBool && *c == "0":
 		return false
+	case k == kindJSON && json.Valid([]byte(*c)):
+		return json.RawMessage(*c)
 	}
 	return clip(*c, width)
 }

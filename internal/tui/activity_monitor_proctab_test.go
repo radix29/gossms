@@ -332,7 +332,7 @@ func killTarget(t *testing.T, session []driver.Value) (*ActivityMonitor, *amProc
 	if session != nil {
 		rows = [][]driver.Value{session}
 	}
-	sc, inst := newFakeConn(t, fakeResponse{match: "WHERE  s.session_id = @p1", arg: "57", cols: 23, rows: rows})
+	sc, inst := newFakeConn(t, fakeResponse{match: "WHERE  s.session_id = @p1", arg: "57", cols: 29, rows: rows})
 	pt := am.procTab()
 	pt.conn = sc
 	pt.loc = activity.ProcTempDB
@@ -347,7 +347,8 @@ func sessionRow(program string, pid int) []driver.Value {
 	return []driver.Value{int64(57), "appuser", "ws7", program, "appdb", "sleeping",
 		int64(0), int64(0), int64(0), nil, nil, "", "",
 		int64(0), int64(0), int64(0), int64(0),
-		int64(0), nil, int64(0), "", int64(pid), true}
+		int64(0), nil, int64(0), "", int64(pid), true, true,
+		int64(0), int64(0), int64(0), int64(0), int64(0)}
 }
 
 // killItem is the grid menu's Kill Process item.

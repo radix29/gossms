@@ -318,6 +318,18 @@ func TestCells(t *testing.T) {
 	if v := jsonCell(str("1,5"), kindNumber, 0); v != "1,5" {
 		t.Errorf("jsonCell = %#v", v)
 	}
+	// A JSON column's document is a value, never clipped (that would make
+	// it invalid); one that is not valid JSON is clipped text.
+	if kindOf(TypeJSON) != kindJSON {
+		t.Errorf("kindOf(%q) = %v", TypeJSON, kindOf(TypeJSON))
+	}
+	doc := `{"fields":{"a":"` + strings.Repeat("x", 50) + `"}}`
+	if v, ok := jsonCell(str(doc), kindJSON, 10).(json.RawMessage); !ok || string(v) != doc {
+		t.Errorf("jsonCell(document) = %#v", jsonCell(str(doc), kindJSON, 10))
+	}
+	if v := jsonCell(str("{not json"), kindJSON, 3); v != "{no…[+6 chars]" {
+		t.Errorf("jsonCell(invalid) = %#v", v)
+	}
 }
 
 func TestRowKeys(t *testing.T) {

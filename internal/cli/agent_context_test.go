@@ -41,7 +41,9 @@ func (c *contextFake) DatabaseAccess(context.Context) (map[int]bool, error) { re
 
 // newContextFake is a db_datareader login on a 2017 instance: no VIEW
 // SERVER STATE (its 2022 alternative unknown), VIEW ANY DEFINITION denied but
-// ALTER ANY DATABASE held, ALTER SETTINGS denied, no role but public; no VIEW
+// ALTER ANY DATABASE held, ALTER SETTINGS and ALTER ANY CONNECTION denied,
+// ALTER ANY EVENT SESSION denied with all four of 2022's narrow rights a
+// capture needs granted, no role but public; no VIEW
 // DEFINITION or ALTER in the database (ALTER ANY DATABASE SCOPED
 // CONFIGURATION unknown), VIEW DATABASE STATE denied with its 2022
 // alternative granted.
@@ -53,11 +55,17 @@ func newContextFake() *contextFake {
 		srv: &gosmo.Capabilities{
 			ServerRoles: map[string]bool{"sysadmin": false, "public": true},
 			ServerPermissions: map[string]gosmo.CapabilityState{
-				"VIEW SERVER STATE":   gosmo.CapabilityDenied,
-				"VIEW ANY DEFINITION": gosmo.CapabilityDenied,
-				"ALTER ANY DATABASE":  gosmo.CapabilityGranted,
-				"VIEW ANY DATABASE":   gosmo.CapabilityGranted,
-				"ALTER SETTINGS":      gosmo.CapabilityDenied,
+				"VIEW SERVER STATE":               gosmo.CapabilityDenied,
+				"VIEW ANY DEFINITION":             gosmo.CapabilityDenied,
+				"ALTER ANY DATABASE":              gosmo.CapabilityGranted,
+				"VIEW ANY DATABASE":               gosmo.CapabilityGranted,
+				"ALTER SETTINGS":                  gosmo.CapabilityDenied,
+				"ALTER ANY CONNECTION":            gosmo.CapabilityDenied,
+				"ALTER ANY EVENT SESSION":         gosmo.CapabilityDenied,
+				"CREATE ANY EVENT SESSION":        gosmo.CapabilityGranted,
+				"ALTER ANY EVENT SESSION ENABLE":  gosmo.CapabilityGranted,
+				"ALTER ANY EVENT SESSION DISABLE": gosmo.CapabilityGranted,
+				"DROP ANY EVENT SESSION":          gosmo.CapabilityGranted,
 			},
 		},
 		dbc: &gosmo.DatabaseCapabilities{
@@ -124,13 +132,22 @@ func TestAgentContext(t *testing.T) {
 	var missing []string
 	for _, r := range contextSet(t, env, "missing_permissions") {
 		missing = append(missing, r[0].(string)+" @ "+r[1].(string)+" → "+r[2].(string))
+		// An agent reads the rows under the default --max-col-width.
+		for _, cell := range r {
+			if strings.Contains(cell.(string), "…[+") {
+				t.Errorf("missing_permissions cell cut by --max-col-width: %s", cell)
+			}
+		}
 	}
 	want := []string{
 		"VIEW SERVER STATE @ server → object indexes, db files, db space, db log-usage, server volumes, " +
 			"server memory, server info, server config get, server config set",
+		"VIEW SERVER STATE @ server → monitor sessions, monitor blocking, monitor waits, monitor top-queries, " +
+			"monitor deadlocks, monitor kill, plan cached, xevent sessions, xevent capture",
 		"ALTER SETTINGS @ server → server config set, server config reset",
 		"sysadmin (role) @ server → server traceflag on, server traceflag off",
 		"securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG @ server → server log",
+		"ALTER ANY CONNECTION @ server → monitor kill",
 		"VIEW DEFINITION @ database [app] → object list, object search, object describe, object definition, " +
 			"object dependencies, object indexes, object stats, script object",
 		"SHOWPLAN @ database [app] → plan estimated, plan actual",
@@ -199,6 +216,21 @@ func TestAgentContextRoleNeeds(t *testing.T) {
 	// VIEW SERVER STATE still answers for the error log.
 	if !slices.Contains(got, "securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG") {
 		t.Errorf("unprobed roles hid the denied VIEW SERVER STATE: %q", got)
+	}
+}
+
+// ALTER ANY EVENT SESSION denied is a lack only when 2022's narrow rights do
+// not cover every verb a capture runs, as xevent capture's own check.
+func TestAgentContextEventSessionRights(t *testing.T) {
+	cat := newContextFake()
+	cat.srv.ServerPermissions["DROP ANY EVENT SESSION"] = gosmo.CapabilityUnknown
+	r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)), "agent", "context", "-p", "dev", "-o", "json")
+	var got []string
+	for _, row := range contextSet(t, envelope(t, r.stdout), "missing_permissions") {
+		got = append(got, row[0].(string)+" → "+row[2].(string))
+	}
+	if !slices.Contains(got, "ALTER ANY EVENT SESSION → xevent capture") {
+		t.Errorf("three of four narrow rights not reported: %q", got)
 	}
 }
 

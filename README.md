@@ -304,6 +304,24 @@ gossms data export -p dev Sales.Customer --out-file customers.jsonl
 gossms data import -p dev Staging.Customer --in-file customers.jsonl --allow write  # bulk copy, all or nothing
 ```
 
+`monitor` shows what the server is doing — sessions, blocking chains, waits,
+the costliest cached statements and their plans, Query Store's history and
+`system_health`'s deadlocks — and ends a session; `xevent capture` records
+events for a fixed time in a short-lived event session it always drops:
+
+```bash
+gossms monitor blocking -p dev                                     # head blockers and their chains
+gossms monitor waits --interval 10 -p dev                          # what it waits on now
+gossms monitor top-queries --by cpu --top 10 -p dev                # then plan cached <plan_handle>
+gossms monitor querystore -p dev -d Sales --regressed              # slower in the last 24 hours
+gossms monitor deadlocks --deadlock-file ./deadlocks -p dev        # .xdl graphs SSMS opens
+gossms monitor kill 87 --confirm 87 --allow admin -p dev           # the spid, twice
+gossms xevent capture --template batches --duration 60 --allow admin -p dev
+```
+
+They need `VIEW SERVER STATE` (Query Store: `VIEW DATABASE STATE`) and say
+so with exit 9 rather than answering an empty list.
+
 For an AI agent, `gossms agent guide --brief -p dev` is the manual to put in
 its system prompt — rules, output contract, the command index, and what the
 profile's login can see; `gossms agent schema` is the same catalog as JSON

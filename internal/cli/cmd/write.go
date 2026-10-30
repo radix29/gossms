@@ -45,6 +45,14 @@ type Writer interface {
 	ApplyConfiguration(ctx context.Context, changes []gosmo.ConfigChange, opts gosmo.ConfigApplyOptions) error
 	// server traceflag on/off, always global.
 	SetTraceFlag(ctx context.Context, flag int, on bool) error
+	// monitor kill.
+	KillSession(ctx context.Context, sessionID int) error
+	// xevent capture: its server-scoped session, created, started, stopped
+	// and dropped.
+	CreateEventSession(ctx context.Context, spec gosmo.EventSessionDefinition) (*gosmo.EventSession, error)
+	StartEventSession(ctx context.Context, es *gosmo.EventSession) error
+	StopEventSession(ctx context.Context, es *gosmo.EventSession) error
+	DropEventSession(ctx context.Context, es *gosmo.EventSession) error
 
 	// db scoped-config set.
 	SetDatabaseScopedConfig(ctx context.Context, d *gosmo.Database, name, value string, replica gosmo.ScopedConfigReplica) error
@@ -71,6 +79,24 @@ func (w serverWriter) ApplyConfiguration(ctx context.Context, changes []gosmo.Co
 
 func (w serverWriter) SetTraceFlag(ctx context.Context, flag int, on bool) error {
 	return w.s.SetTraceFlag(ctx, flag, on)
+}
+
+func (w serverWriter) KillSession(ctx context.Context, sessionID int) error {
+	return w.s.KillSession(ctx, sessionID)
+}
+
+func (w serverWriter) CreateEventSession(ctx context.Context, spec gosmo.EventSessionDefinition) (*gosmo.EventSession, error) {
+	return w.s.XEvents().CreateSession(ctx, spec)
+}
+
+func (serverWriter) StartEventSession(ctx context.Context, es *gosmo.EventSession) error {
+	return es.Start(ctx)
+}
+func (serverWriter) StopEventSession(ctx context.Context, es *gosmo.EventSession) error {
+	return es.Stop(ctx)
+}
+func (serverWriter) DropEventSession(ctx context.Context, es *gosmo.EventSession) error {
+	return es.Drop(ctx)
 }
 
 func (serverWriter) SetDatabaseScopedConfig(ctx context.Context, d *gosmo.Database, name, value string, replica gosmo.ScopedConfigReplica) error {
