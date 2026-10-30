@@ -1,6 +1,7 @@
 gossms manages Microsoft SQL Server from the command line: run T-SQL, check
-a script before it runs, and explore databases and their objects — tables,
-views, modules, indexes, statistics and dependencies. Every call is stateless
+a script before it runs, read its execution plan, explore databases and their
+objects — tables, views, modules, indexes, statistics and dependencies —
+script them, and read, export and load table data. Every call is stateless
 and non-interactive: it prints one result on stdout and exits with a code
 that says how it went.
 <!-- full -->

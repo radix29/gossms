@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"iter"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -53,6 +54,10 @@ type Writer interface {
 	SetCompatibilityLevel(ctx context.Context, d *gosmo.Database, level gosmo.CompatibilityLevel) error
 	SetReadOnly(ctx context.Context, d *gosmo.Database, readOnly bool, term gosmo.Termination) error
 	SetQueryStoreOptions(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreOptions) error
+
+	// data import: --truncate-first's TRUNCATE TABLE, then the bulk load.
+	TruncateTable(ctx context.Context, t *gosmo.Table) error
+	BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error)
 }
 
 // ServerWriter is Deps.Writer: the writes, made through sc's gosmo Server.
@@ -92,6 +97,12 @@ func (serverWriter) SetQueryStoreOptions(ctx context.Context, d *gosmo.Database,
 	return d.QueryStore().SetOptions(ctx, opts)
 }
 
+func (serverWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error { return t.Truncate(ctx) }
+
+func (serverWriter) BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error) {
+	return d.BulkInsert(ctx, bc, rows)
+}
+
 // gate is a writing command's class check (D1), made before it connects: a
 // refused change never reaches the server, and --dry-run is refused alike.
 // The command's Class is checked against --allow capped by the profile's
@@ -99,12 +110,18 @@ func (serverWriter) SetQueryStoreOptions(ctx context.Context, d *gosmo.Database,
 // and res names the classes; there are no statements to list. It returns
 // the configuration and profile the command then connects through.
 func (d Deps) gate(inv *spec.Invocation, res *output.Result) (*config.Config, string, error) {
+	return d.gateClass(inv, res, inv.Command.Class)
+}
+
+// gateClass is gate for a command whose class depends on its options
+// (data import --truncate-first is ddl): class in place of the Command's.
+func (d Deps) gateClass(inv *spec.Invocation, res *output.Result, class spec.Class) (*config.Config, string, error) {
 	cfg, profile, ceiling, err := d.profileCeiling(inv)
 	if err != nil {
 		return nil, "", err
 	}
 	p := safety.Policy{Allow: spec.Class(inv.Values[optAllow].(string)), Ceiling: ceiling}
-	b := p.Refuse(inv.Command.Name(), inv.Command.Class)
+	b := p.Refuse(inv.Command.Name(), class)
 	if b == nil {
 		return cfg, profile, nil
 	}

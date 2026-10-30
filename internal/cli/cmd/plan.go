@@ -400,6 +400,19 @@ func statementText(s string) string {
 	return string([]rune(s)[:planTextWidth-1]) + "…"
 }
 
+// rowSource is the operator whose actual rows are the statement's: its root,
+// or, while that is a Compute Scalar with no runtime of its own, the one
+// operator below it. The server folds such a Compute Scalar into its parent
+// and reports no counters for it, though it passes every row through — live
+// on 17, a GROUP BY with COUNT(*) has one at its root, and the statement's
+// 100 rows read as NULL.
+func rowSource(n *showplan.Node) *showplan.Node {
+	for n != nil && n.Runtime == nil && n.PhysicalOp == "Compute Scalar" && len(n.Children) == 1 {
+		n = n.Children[0]
+	}
+	return n
+}
+
 func statementsSet(plan *showplan.Plan) output.Set {
 	set := output.Set{Name: "statements", Columns: []output.Column{
 		{Name: "n", Type: "int"}, {Name: "type"}, {Name: "cost", Type: "float"}, {Name: "est_rows", Type: "float"},
@@ -409,8 +422,8 @@ func statementsSet(plan *showplan.Plan) output.Set {
 	}}
 	for i, st := range plan.Statements {
 		var actual, elapsed, cpu, dop, grant *string
-		if st.Root != nil && st.Root.Runtime != nil {
-			actual = int64Cell(st.Root.Runtime.Rows)
+		if root := rowSource(st.Root); root != nil && root.Runtime != nil {
+			actual = int64Cell(root.Runtime.Rows)
 		}
 		if st.TimeStats != nil {
 			elapsed, cpu = int64Cell(st.TimeStats.ElapsedMS), int64Cell(st.TimeStats.CPUMS)

@@ -54,8 +54,8 @@ func DataCommands(d Deps) []*spec.Command {
 	return []*spec.Command{
 		{
 			Path:    []string{"data"},
-			Summary: "Read a table's or view's rows",
-			Description: "Each command composes one SELECT over a table or view and runs it as query run would, so cells " +
+			Summary: "Read a table's or view's rows, export them, load a file into a table",
+			Description: "data import bulk-loads a file into a table; see its help. Every other command composes one SELECT over a table or view and runs it as query run would, so cells " +
 				"are the grid's text, JSON types them, and --max-rows and --out-file apply. --where and --order-by are " +
 				"T-SQL fragments spliced into that SELECT: the composed statement must still be one read statement, " +
 				"or the call is BLOCKED (exit 7) before connecting — a ';', a second statement, GO, a procedure call " +
@@ -133,6 +133,7 @@ func DataCommands(d Deps) []*spec.Command {
 			},
 		},
 		dataExportCommand(d),
+		dataImportCommand(d),
 	}
 }
 

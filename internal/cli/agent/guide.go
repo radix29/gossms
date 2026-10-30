@@ -158,7 +158,7 @@ func commandsBody(tree *spec.Tree, brief bool) string {
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s |\n", g.Name(), escapeCell(strings.Join(names, ", ")), escapeCell(g.Summary))
 		}
-		b.WriteString("\nEvery command is read unless marked; `query run` is gated by `--allow` on what its script does.\n")
+		b.WriteString("\nEvery command is read unless marked; `query run` and `plan actual` are gated by `--allow` on what their script does.\n")
 		b.WriteString("Full guide: `gossms agent guide` · one group in detail: `gossms agent guide --topic <group>` · " +
 			"every option as JSON: `gossms agent schema`.")
 		return b.String()
@@ -167,7 +167,7 @@ func commandsBody(tree *spec.Tree, brief bool) string {
 	for _, c := range runnable(tree, nil) {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", c.Name(), c.Class, escapeCell(c.Summary))
 	}
-	b.WriteString("\nThe class is what the command itself does; `query run` is gated by `--allow` on what its script does.\n")
+	b.WriteString("\nThe class is what the command itself does; `query run` and `plan actual` are gated by `--allow` on what their script does.\n")
 	b.WriteString("One group in detail: `gossms agent guide --topic <group>` · every option as JSON: `gossms agent schema`.")
 	return b.String()
 }

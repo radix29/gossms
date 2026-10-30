@@ -19,15 +19,59 @@ breaks if an object changes.
 ### Read data
 
 ```bash
+gossms data top -p dev Sales.SalesOrderHeader --rows 20 --columns SalesOrderID,OrderDate,TotalDue --order-by "OrderDate DESC"
+gossms data count -p dev Sales.SalesOrderHeader --where "OrderDate >= '2026-01-01'"
+gossms data profile -p dev Sales.Customer --top-values 5
 gossms query run -p dev --file - -o json <<'SQL'
-SELECT TOP (20) SalesOrderID, OrderDate, TotalDue
-FROM Sales.SalesOrderHeader
-ORDER BY OrderDate DESC;
+SELECT TOP (20) h.SalesOrderID, h.OrderDate, c.AccountNumber
+FROM Sales.SalesOrderHeader h JOIN Sales.Customer c ON c.CustomerID = h.CustomerID
+ORDER BY h.OrderDate DESC;
 SQL
 ```
 
 Select the columns and rows you need: the output is capped, and a `TOP`
-costs the server less than `--max-rows`.
+costs the server less than `--max-rows`. `--where` and `--order-by` must
+leave one SELECT (exit 7 otherwise); `data profile` gives null counts,
+distinct counts and min/max per column; joins need `query run`.
+
+### Tune a slow query
+
+```bash
+gossms object definition -p dev Reporting.usp_MonthlySales
+gossms plan estimated -p dev --file - <<'SQL'
+EXEC Reporting.usp_MonthlySales @Year = 2026, @Month = 9;
+SQL
+gossms object indexes -p dev Sales.SalesOrderDetail
+gossms plan actual -p dev --file slow.sql --transaction rollback
+gossms query run -p dev --file fix_index.sql --allow ddl --dry-run
+```
+
+`plan estimated` runs nothing; its `operators` set ranks the costliest
+operators, and `missing_indexes` holds a `CREATE INDEX` to review, not to
+run as given. It has no `--param`: write the values into the script.
+`plan actual` runs the script (a write needs `--allow write`; `--transaction
+rollback` undoes it) and adds actual rows and times; `misestimate` flags an
+estimate off by more than 10×. Both need SHOWPLAN (exit 9 without).
+
+### Script and export
+
+```bash
+gossms script object -p dev Sales.Customer
+gossms script object -p dev Sales.uspGetOrders --as alter --script-file uspGetOrders.sql
+gossms script db -p dev AdventureWorks
+gossms data export -p dev Sales.Customer --where "ModifiedDate >= '2026-01-01'" --out-file customers.csv
+gossms data import -p dev Staging.Customer --in-file customers.csv --allow write --dry-run
+gossms data import -p dev Staging.Customer --in-file customers.csv --allow write
+```
+
+A script is generated, never run: it is the TUI's Script As text. Use
+`--script-file` to save it, not `--out-file` (which is for rows). `data
+export` streams every row, uncapped, to `--out-file` in the format its
+extension names; `.jsonl` keeps types and tells NULL from an empty string
+in every case. `data import` loads such a file in one all-or-nothing batch;
+its dry run converts every cell and loads nothing. Load only with the
+user's approval; `--truncate-first` empties the table first and needs
+`--allow ddl` and `--confirm <table>`.
 
 ### Check space
 

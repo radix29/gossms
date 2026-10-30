@@ -1,8 +1,8 @@
 1. Pass `-p <profile>` to every command that connects. Never put a password
    on the command line: a profile carries its own.
-2. The default is read-only. `query run` refuses a script above `--allow`
-   (default `read`; `write`, `ddl`, `admin`) with exit 7 before connecting,
-   and the profile's ceiling caps `--allow`. Raise it only with the user's
+2. The default is read-only. `query run` and `plan actual` refuse a script
+   above `--allow` (default `read`; `write`, `ddl`, `admin`) with exit 7
+   before connecting, and the profile's ceiling caps `--allow`. Raise it only with the user's
    explicit approval of that change.
 3. Before a change: `--dry-run` (classify only), then `--transaction
    rollback` (run and undo), then the real run, with `--max-rows-affected
