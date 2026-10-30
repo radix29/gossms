@@ -25,6 +25,7 @@ func runWith(t *testing.T, stdin string, files map[string][]byte, argv ...string
 			}
 			return nil, fs.ErrNotExist
 		},
+		AuditPath: filepath.Join(t.TempDir(), "audit.jsonl"),
 	}
 	exit := run(context.Background(), commandTree(), argv, env)
 	return runResult{exit, stdout.String(), stderr.String()}

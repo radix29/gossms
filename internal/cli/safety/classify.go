@@ -699,6 +699,11 @@ func floor(st *Statement, toks []token) {
 			continue
 		case fetch && w == "INTO": // FETCH NEXT FROM c INTO @v
 			continue
+		case w == "UPDATE" && next.is("STATISTICS"):
+			// UPDATE STATISTICS the splitter did not cut at is ddl, as the leader
+			// rule makes it: it changes optimizer state, not rows.
+			st.raise(spec.ClassDDL, "keyword UPDATE STATISTICS"+at)
+			continue
 		case w == "CREATE" || w == "ALTER" || w == "DROP":
 			// A CREATE/ALTER/DROP the splitter did not cut at: an administration
 			// object makes it admin, as the leader rule would.

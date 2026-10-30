@@ -16,6 +16,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/radix29/gossms/internal/cli"
+	"github.com/radix29/gossms/internal/cli/audit"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tui"
 	"github.com/radix29/gossms/internal/version"
@@ -31,7 +32,8 @@ func main() {
 		return
 	case modeCLI:
 		os.Exit(cli.Main(context.Background(), os.Args[1:],
-			cli.Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv, ReadFile: os.ReadFile}))
+			cli.Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv, ReadFile: os.ReadFile,
+				AuditPath: audit.DefaultPath()}))
 	case modeNoTerminal:
 		fmt.Fprintln(os.Stderr, noTerminalMessage)
 		os.Exit(1)

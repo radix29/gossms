@@ -117,6 +117,9 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"DISABLE TRIGGER tr ON t", ddl},
 		{"ENABLE TRIGGER ALL ON t", ddl},
 		{"UPDATE STATISTICS t", ddl},
+		{"update statistics [dbo].[t] ix_a WITH FULLSCAN", ddl},
+		{"IF 1 = 1 UPDATE STATISTICS t WITH SAMPLE 10 PERCENT", ddl},
+		{"BEGIN TRY UPDATE STATISTICS t END TRY BEGIN CATCH END CATCH", ddl},
 		{"ADD SIGNATURE TO p BY CERTIFICATE c", ddl},
 
 		// admin
@@ -198,6 +201,8 @@ func TestClassifyMergedStatementsAreFloored(t *testing.T) {
 		// A CREATE/ALTER/DROP the splitter did not cut at (after AS) still makes
 		// an administration object admin.
 		{"SELECT 1 AS\nDROP DATABASE d", "", admin},
+		// UPDATE STATISTICS is ddl wherever it stands, not UPDATE's write.
+		{"SELECT 1 AS\nUPDATE STATISTICS t", "UPDATE STATISTICS", ddl},
 		{"SELECT kill FROM t", "", admin}, // KILL is a cut: "KILL FROM t" is its own statement
 	} {
 		sc := Classify(tt.script)

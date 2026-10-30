@@ -26,6 +26,7 @@ Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 parser), `internal/cli/output` (envelope, renderers, exit codes),
 `internal/cli/connect` (connection options and resolution),
 `internal/cli/safety` (the T-SQL classifier and its check),
+`internal/cli/audit` (the audit log),
 `internal/cli/cmd` (the handlers), `internal/cli/agent` (`agent guide` and
 `agent schema`, built from the tree). The command tree itself is
 `internal/cli/tree.go`.
@@ -1298,7 +1299,8 @@ keyword in a comment, literal or quoted identifier
 means nothing. It fails closed: an unrecognised statement, dynamic SQL and a
 procedure not on the read allow-list are `write` at least, and a class keyword
 anywhere in a statement raises it (`SELECT 1` followed by `DISABLE TRIGGER`
-on the next line, which the statement splitter merges, is `ddl`). It is a
+on the next line, which the statement splitter merges, is `ddl`; so is a
+merged `UPDATE STATISTICS`, never `UPDATE`'s `write`). It is a
 guardrail, not the security boundary: that is the login's permissions.
 
 A run's check refuses, in this order, the first of:
@@ -1374,6 +1376,42 @@ events it caught — not a before/after change set (§ Data, § Monitoring,
   ALTER ANY DATABASE SCOPED CONFIGURATION, ALTER ANY CONNECTION and ALTER ANY
   EVENT SESSION (met by 2022's four narrow rights together) when the login is
   known to lack them, with the commands each breaks.
+
+## Audit log
+
+Every call that reaches a class above `read`, and every refusal (`BLOCKED`),
+appends one JSON line to `audit.jsonl` beside `config.json`
+(`os.UserConfigDir()/gossms/`), created owner-only (`0600`). Reads are not
+logged. The log is always on: no option, environment variable or profile
+field turns it off (`internal/cli/audit`).
+
+```json
+{"ts":"2026-10-30T09:12:44.031Z","profile":"dev","server":"devsrv,1500","database":"app","login":"agent","command":"query run","class":"write","dryRun":false,"args":["--sql=sha256:5f1c…","--profile=dev","--allow=write"],"sqlSha256":"5f1c…","outcome":"ok","exit":0}
+```
+
+- `class` is what the call reached: the script's class for `query run` and
+  `plan actual`, the command's for a writing command; for a refusal, the
+  class detected. `outcome` is the envelope's status, `exit` the exit code.
+- `server`, `database` and `login` are the connection's, read without
+  connecting, so a refusal has them too: `login` is the login name, or
+  `(integrated)` / `(entra)` for a method without one.
+- `args` is the command line rebuilt from the parse — positional arguments,
+  then each option given (on the command line or by its environment
+  variable) as `--name=value` — so a response file or a short alias records
+  alike. The options that carry T-SQL or data — `--sql`, `--sql-base64`,
+  `--param`, `--where` — are recorded as `sha256:<hex>` of their value;
+  `sqlSha256` is the hash of the script as read (the file's text for
+  `--file`, whose path is recorded as given). A password never reaches the
+  command line (`--password-env` names a variable; `--password-stdin` reads
+  stdin), so it never reaches the log.
+- Lines are appended under the file's lock (`config.json`'s `WithLock`), so
+  calls running at once never interleave.
+- **A change the log cannot record is not made.** Before a call above
+  `read` connects — after its `--allow` check, its dry run included — the
+  log is opened for appending; if that fails the call is refused with
+  `GENERAL_ERROR`, exit 1, naming the reason. Reads still run. Should the
+  append itself then fail, the result carries a warning.
+- The log is never rotated or trimmed by gossms.
 
 ## The import rule
 

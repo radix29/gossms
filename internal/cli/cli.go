@@ -7,6 +7,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/cli/args"
+	"github.com/radix29/gossms/internal/cli/audit"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
 )
@@ -31,6 +33,9 @@ type Env struct {
 	Getenv         func(string) string
 	// ReadFile reads an @file response file (os.ReadFile). Nil refuses them.
 	ReadFile func(string) ([]byte, error)
+	// AuditPath is the audit log (audit.DefaultPath). Empty keeps no log:
+	// for tests only, since the command line offers no way to turn it off.
+	AuditPath string
 }
 
 // Main runs the command line args (os.Args[1:]) and returns the process exit
@@ -70,6 +75,9 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 		return finish(env, res, output.DefaultOptions(format), nil)
 	}
 	inv.Stdin, inv.Getenv, inv.ReadFile = env.Stdin, env.Getenv, env.ReadFile
+	if env.AuditPath != "" {
+		inv.Audit.Check = func() error { return audit.Check(env.AuditPath) }
+	}
 	format = output.Format(inv.Values["output"].(string))
 	cmd := inv.Command
 	o, oerr := renderOptions(inv)
@@ -141,7 +149,54 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 		}
 		res.Errors = append(res.Errors, e)
 	}
-	return finish(env, res, o, sink)
+	exit := settle(res, sink)
+	if env.AuditPath != "" {
+		logCall(env.AuditPath, tree, inv, res, exit, start)
+	}
+	return render(env, res, o, exit)
+}
+
+// logCall appends the call's line to the audit log at path when it is one
+// the log keeps (audit.Logged). A failed append is a warning on the result:
+// the call has already happened, and a change was only made after
+// audit.Check found the log writable.
+func logCall(path string, tree *spec.Tree, inv *spec.Invocation, res *output.Result, exit int, start time.Time) {
+	class := inv.Audit.Class
+	if class == "" && res.Status == output.StatusBlocked {
+		// A refusal made without gating — query classify --allow, a
+		// script that sets SHOWPLAN_* — names the class it detected.
+		for _, f := range res.Fields {
+			if f.Key == "detectedClass" {
+				class = spec.Class(f.Value)
+			}
+		}
+	}
+	if class == "" {
+		class = inv.Command.Class
+	}
+	if !audit.Logged(class, res.Status == output.StatusBlocked) {
+		return
+	}
+	a := inv.Audit
+	profile, _ := inv.Values["profile"].(string)
+	dry, _ := inv.Values["dry-run"].(bool)
+	r := audit.Record{
+		TS:        audit.Timestamp(start),
+		Profile:   cmp.Or(a.Profile, profile),
+		Server:    cmp.Or(res.Server, a.Server),
+		Database:  cmp.Or(res.Database, a.Database),
+		Login:     a.Login,
+		Command:   inv.Command.Name(),
+		Class:     string(class),
+		DryRun:    dry,
+		Args:      audit.Args(tree, inv),
+		SQLSha256: a.SQLSha256,
+		Outcome:   string(res.Status),
+		Exit:      exit,
+	}
+	if err := audit.Append(path, r); err != nil {
+		res.Warnings = append(res.Warnings, "The audit log could not be written: "+err.Error())
+	}
 }
 
 // call runs handler on inv, recovering a panic into GENERAL_ERROR. The stack
@@ -172,6 +227,12 @@ func finish(env Env, res *output.Result, o output.Options, sink *output.Sink) in
 		o.OutFile = ""
 		sink, _ = output.NewSink(env.Stdout, o)
 	}
+	return render(env, res, o, settle(res, sink))
+}
+
+// settle is finish up to rendering: the handler's own sets through sink,
+// the result's status from its errors, and the exit code.
+func settle(res *output.Result, sink *output.Sink) int {
 	sink.Add(res.Sets)
 	if err := sink.Finish(res, len(res.Errors) > 0); err != nil {
 		e, ok := errors.AsType[*output.Error](err)
@@ -196,6 +257,12 @@ func finish(env Env, res *output.Result, o output.Options, sink *output.Sink) in
 	} else if res.Status == "" {
 		res.Status = output.StatusOK
 	}
+	return exit
+}
+
+// render is finish's last step: res on stdout, and stderr's line or
+// summary. It returns exit, or 1 when stdout cannot be written.
+func render(env Env, res *output.Result, o output.Options, exit int) int {
 	if err := output.Render(env.Stdout, res, o); err != nil {
 		fmt.Fprintf(env.Stderr, "gossms: %s: writing output: %v\n", output.CodeGeneralError, err)
 		return max(exit, 1)

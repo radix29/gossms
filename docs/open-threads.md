@@ -158,6 +158,9 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.
+- **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
+  one line per write or refusal for ever. Deferred by decision; a size cap
+  with one `.1` generation, taken under the same lock, is the likely form.
 
 ## Fix order
 

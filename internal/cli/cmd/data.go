@@ -45,7 +45,7 @@ func columnsOption(help string) spec.Option {
 }
 
 func whereOption() spec.Option {
-	return spec.Option{Name: optWhere, Type: spec.TypeString,
+	return spec.Option{Name: optWhere, Type: spec.TypeString, Audit: spec.AuditHash,
 		Help: "A T-SQL search condition, without WHERE; it must leave the statement one SELECT"}
 }
 
