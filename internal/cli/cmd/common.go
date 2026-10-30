@@ -121,6 +121,10 @@ type Catalog interface {
 	TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error)
 	LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error)
 
+	// data import: the code page a char column's collation, or the
+	// database's, stores text in.
+	CollationCodePage(ctx context.Context, collation string) (int, error)
+
 	// db scoped-config: sys.database_scoped_configurations, read inside the
 	// database.
 	DatabaseScopedConfigs(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseScopedConfig, error)
@@ -140,6 +144,11 @@ type Catalog interface {
 	// server log: one log file, filtered at the server, and the files kept.
 	ReadLog(ctx context.Context, t gosmo.ErrorLogType, archive int, search gosmo.LogSearch) ([]*gosmo.ErrorLogEntry, error)
 	EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error)
+
+	// monitor sessions / blocking: whether the login sees every session, and
+	// the sessions.
+	HasViewServerState(ctx context.Context) (bool, error)
+	ActiveSessions(ctx context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -443,6 +452,10 @@ func (c serverCatalog) TraceFlags(ctx context.Context) ([]gosmo.TraceFlag, error
 	return c.s.TraceFlags(ctx)
 }
 
+func (c serverCatalog) CollationCodePage(ctx context.Context, collation string) (int, error) {
+	return c.s.CollationCodePage(ctx, collation)
+}
+
 func (serverCatalog) DatabaseScopedConfigs(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseScopedConfig, error) {
 	return d.DatabaseScopedConfigs(ctx)
 }
@@ -457,6 +470,14 @@ func (c serverCatalog) ReadLog(ctx context.Context, t gosmo.ErrorLogType, archiv
 
 func (c serverCatalog) EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error) {
 	return c.s.EnumErrorLogs(ctx, t)
+}
+
+func (c serverCatalog) HasViewServerState(ctx context.Context) (bool, error) {
+	return c.s.HasViewServerState(ctx)
+}
+
+func (c serverCatalog) ActiveSessions(ctx context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error) {
+	return c.s.ActiveSessions(ctx, scope)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

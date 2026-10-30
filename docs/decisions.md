@@ -1965,6 +1965,64 @@ The contract is `docs/cli.md` § Server configuration, § Writes and
   `--confirm <db>`. `USER_ACCESS`, `OFFLINE` and `ONLINE` are left to the
   administration commands.
 
+## Command-line plans, scripting and data: what phase 6 settled — do not re-raise
+
+The contract is `docs/cli.md` § Execution plans, § Scripting, § Data and
+§ Commands; these are the alternatives turned down.
+
+- **`plan actual` is `query run` with the plan captured, and counts rows
+  instead of returning them (D2).** It takes `query run`'s whole gate
+  (`--allow`, `--transaction`, `--max-rows-affected`, `--param`,
+  `--continue-on-error`, `--timeout`, `--dry-run`) through the same run core,
+  not a copy. Set `result_sets` gives each set's columns and row count:
+  returning rows under `--max-rows` too would double every answer for a
+  caller that asked for the plan, and `query run` is there for the rows.
+  `plan estimated` has no `--param`: SHOWPLAN_XML plans an `sp_executesql`
+  call as the `EXEC` alone (found live on 17).
+- **One Script As, in the headless `internal/scripting` (D5).** The family →
+  gosmo binding, each family's verbs, the `USE` prefix rule, the default
+  script options and the system-object and Azure refusals live there; the TUI
+  keeps its menus and maps `NodeType` → family, the CLI maps the resolved
+  object's type → family. Parity with the TUI holds by construction. Calling
+  gosmo directly from the CLI with a parity test was turned down: two tables
+  to keep in step, and the test would sit in `tui` importing `cli`. `script
+  object` takes no script options — its output is exactly Script As — and
+  writes a file through `--script-file`, not the global `--out-file`
+  (which is for rows). `create-or-alter` and `--include-indexes/-triggers/-fk`
+  have nothing behind them in gosmo's `ScriptOptions` and are not offered.
+- **`script db` is Script Database As, not the Generate Scripts wizard (D7).**
+  Every object in dependency order needs dependency-ordered scripting in
+  gosmo first (SCHEMABINDING, cycles), a feature the size of a phase;
+  deferred in `docs/open-threads.md`.
+- **`--where`/`--order-by` are spliced fragments, then the whole statement is
+  classified (D9).** Each ends at a line break (so a trailing `--` comment
+  cannot swallow the rest), and the composed text must classify as one read
+  SELECT in one batch — a `;`, a second statement, `GO` or dynamic SQL is
+  `BLOCKED`, exit 7, before connecting. `--columns` is parsed as identifiers
+  and matched to the catalog, never spliced as written. Parsing the
+  fragments into an expression grammar was turned down: the classifier is
+  already the guardrail, and the login's permissions the boundary.
+- **`data import` is bulk copy with KEEPNULLS and CHECK_CONSTRAINTS on (D11).**
+  KEEPNULLS always, or a NULL becomes the column's default and the export →
+  import round trip fails; constraints checked by default (bcp's default is
+  off, but an agent should not admit rows an INSERT would reject — and it
+  leaves them untrusted), off only with `--no-check-constraints`. `.csv`,
+  `.tsv` and `.jsonl` only: `.json` is a whole document read into memory, and
+  `.jsonl` is its streaming form. The format comes from the extension, as
+  for `--out-file` — no `--format` (`--in-format` only names stdin's).
+  Computed, `rowversion` and `GENERATED ALWAYS` columns in the file are
+  skipped so an export loads back. The load is one batch, all or nothing;
+  `--truncate-first` cannot share it (TRUNCATE and a bulk load share no
+  transaction), so it is `ddl`, needs `--confirm`, and the hint says a
+  failed load leaves the table empty.
+- **`agent context` does not list the table rights the `data` commands
+  need.** The database-scope probe (`HAS_PERMS_BY_NAME` on the database)
+  reads 0 for a login granted SELECT or INSERT per schema or per table, so a
+  0 is not a known lack, and probing every table would cost a query per
+  object. The commands' help states the rights, and the server's refusal is
+  `PERMISSION_DENIED`, exit 9. SHOWPLAN (`plan estimated/actual`) and VIEW
+  DEFINITION (`script object`) are database-wide and are listed.
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

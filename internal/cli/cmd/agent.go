@@ -51,6 +51,11 @@ type permissionNeed struct {
 
 // permissionNeeds is what the implemented commands need beyond connecting.
 // Every command named here must exist (TestAgentContextNamesOnlyCommands).
+//
+// The table rights the data commands need (SELECT; INSERT and ALTER for data
+// import) are stated in their help, not listed here: the database-scope probe
+// reads 0 for a login granted them per schema or per table, so a 0 is not a
+// known lack, and the server's refusal is exit 9 with a hint anyway.
 var permissionNeeds = []permissionNeed{
 	{
 		permission: "VIEW SERVER STATE",
@@ -109,11 +114,20 @@ var permissionNeeds = []permissionNeed{
 		database:   true,
 		anyOf:      []string{"VIEW DEFINITION"},
 		commands: []string{"object list", "object search", "object describe", "object definition",
-			"object dependencies", "object indexes", "object stats"},
+			"object dependencies", "object indexes", "object stats", "script object"},
 		// Verified on 14 and 17 with a db_datareader login: the dependency
 		// rows are filtered by metadata visibility, not refused.
 		effect: "only objects the login holds a permission on are visible; definitions read null; " +
-			"dependencies read empty (the edges are hidden, not refused)",
+			"dependencies read empty (the edges are hidden, not refused); script object fails (exit 9) on " +
+			"a module, or a table with a default, check, computed column or filtered index",
+	},
+	{
+		permission: "SHOWPLAN",
+		database:   true,
+		// CONTROL on the database and ALTER TRACE on the server imply it.
+		anyOf:    []string{"SHOWPLAN"},
+		commands: []string{"plan estimated", "plan actual"},
+		effect:   "fail in this database (Msg 262, exit 9); plan actual's script does not run either",
 	},
 	{
 		permission: "VIEW DATABASE STATE",

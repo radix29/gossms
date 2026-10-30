@@ -135,16 +135,23 @@ func checkMentions(t *testing.T, tree *spec.Tree, where, text string) {
 // checkCommandLine is checkMentions for one line starting "gossms"; it
 // returns why the line is wrong, or "".
 func checkCommandLine(tree *spec.Tree, line string) string {
-	words := strings.Fields(line)[1:]
+	words, bare := shellWords(line)
+	words, bare = words[1:], bare[1:]
 	if len(words) == 0 {
 		return "" // bare gossms: the interactive UI
 	}
 	if slices.Contains([]string{"--version", "-version", "-v"}, words[0]) {
 		return "" // answered by cmd/gossms before the command line
 	}
-	placeholder := slices.IndexFunc(words, func(w string) bool {
-		return strings.ContainsAny(w, "<>[]%") || strings.Contains(w, "...") || strings.Contains(w, "…")
-	})
+	// Only a word's unquoted text can be a placeholder (or a redirection,
+	// <<'SQL'): a quoted value is as typed ("OrderDate >= '2026-01-01'").
+	placeholder := -1
+	for i, w := range bare {
+		if strings.ContainsAny(w, "<>[]%") || strings.Contains(w, "...") || strings.Contains(w, "…") {
+			placeholder = i
+			break
+		}
+	}
 	if placeholder >= 0 {
 		var path []string
 		for _, w := range words[:placeholder] {
@@ -260,31 +267,66 @@ func TestCommandMentionsParse(t *testing.T) {
 func TestCheckMentions(t *testing.T) {
 	tree := commandTree()
 	for line, ok := range map[string]bool{
-		"gossms help":                   true,
-		"gossms":                        true,
-		"gossms help version":           true,
-		"gossms version -o json":        true,
-		"gossms --version":              true,
-		"gossms help <command>":         true,
-		"gossms help %s":                true,
-		"gossms <command> --help":       true,
-		"gossms agent guide":            true,
-		"gossms agent guide --topic db": true,
-		"gossms agent guide --topic zz": false,
-		"gossms help nope":              false,
-		"gossms nope <topic>":           false,
-		"gossms agent schema object":    true,
-		"gossms agent schema nope":      false,
-		"gossms version --bogus":        false,
-		"gossms -p dev":                 false,
-		"gossms version -o parquet":     false,
-		"gossms help profile <command>": true,
-		"gossms help nope <command>":    false,
-		"gossms profile test dev":       true,
-		"gossms profile show":           false, // <name> is required
+		"gossms help":                              true,
+		"gossms":                                   true,
+		"gossms help version":                      true,
+		"gossms version -o json":                   true,
+		"gossms --version":                         true,
+		"gossms help <command>":                    true,
+		"gossms help %s":                           true,
+		"gossms <command> --help":                  true,
+		"gossms agent guide":                       true,
+		"gossms agent guide --topic db":            true,
+		"gossms agent guide --topic zz":            false,
+		"gossms help nope":                         false,
+		"gossms nope <topic>":                      false,
+		"gossms agent schema object":               true,
+		"gossms agent schema nope":                 false,
+		"gossms version --bogus":                   false,
+		"gossms -p dev":                            false,
+		"gossms version -o parquet":                false,
+		"gossms help profile <command>":            true,
+		"gossms help nope <command>":               false,
+		"gossms profile test dev":                  true,
+		"gossms profile show":                      false, // <name> is required
+		"gossms data top x --where \"a >= 'b c'\"": true,
+		"gossms data top x --where \"a b\" c":      false, // a second <object>
 	} {
 		if got := checkCommandLine(tree, line) == ""; got != ok {
 			t.Errorf("checkCommandLine(%q) ok = %v, want %v", line, got, ok)
 		}
 	}
+}
+
+// shellWords splits line as a POSIX shell would for the guide's examples:
+// on blanks, with '…' and "…" quoting (no escapes inside), the quotes
+// removed. bare[i] is word i's unquoted text alone.
+func shellWords(line string) (words, bare []string) {
+	var b, u strings.Builder
+	in, open := rune(0), false
+	for _, r := range line {
+		switch {
+		case in != 0 && r == in:
+			in = 0
+		case in != 0:
+			b.WriteRune(r)
+		case r == '\'' || r == '"':
+			in, open = r, true
+		case r == ' ' || r == '\t':
+			if open {
+				words, bare = append(words, b.String()), append(bare, u.String())
+				b.Reset()
+				u.Reset()
+				open = false
+			}
+		default:
+			b.WriteRune(r)
+			u.WriteRune(r)
+			open = true
+		}
+	}
+	if open {
+		words, bare = append(words, b.String()), append(bare, u.String())
+	}
+	return words, bare
 }

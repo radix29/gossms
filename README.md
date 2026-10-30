@@ -289,6 +289,21 @@ gossms server log -p dev --search Login --search failed --since 2026-10-27
 gossms db set -p dev Sales --option RECOVERY=FULL --allow admin
 ```
 
+`plan` returns a query's execution plan as a digest — costliest operators,
+missing indexes, warnings, estimated against actual rows — or as the
+`.sqlplan` the plan viewer opens; `script` answers Object Explorer's Script
+As text; `data` reads, profiles, exports and loads table rows:
+
+```bash
+gossms plan estimated -p dev --file slow.sql                       # compiles, runs nothing
+gossms plan actual -p dev --file slow.sql --transaction rollback   # runs it, keeps nothing
+gossms script object -p dev Sales.Customer --as create             # the TUI's Script As text
+gossms data top -p dev Sales.Customer --rows 20 --columns CustomerID,AccountNumber
+gossms data profile -p dev Sales.Customer                          # nulls, distinct, min/max per column
+gossms data export -p dev Sales.Customer --out-file customers.jsonl
+gossms data import -p dev Staging.Customer --in-file customers.jsonl --allow write  # bulk copy, all or nothing
+```
+
 For an AI agent, `gossms agent guide --brief -p dev` is the manual to put in
 its system prompt — rules, output contract, the command index, and what the
 profile's login can see; `gossms agent schema` is the same catalog as JSON

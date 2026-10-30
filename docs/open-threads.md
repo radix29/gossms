@@ -123,6 +123,14 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   fine and gets an empty set: metadata visibility hides the edges, no error.
   The exit 9 that 3.f recorded on 17 came from some other setup (an explicit
   DENY?). Re-check which login gets exit 9, then fix the hint and the row.
+  **Same cause, in scripting** (found 2026-10-30 in phase 6.l, on 17, 14, 13
+  and ubusql1): a table's DROP / DROP AND CREATE (TUI Script As and `script
+  object`) names the modules schema-bound to it in a comment (gosmo
+  `schemaBoundDependents`); a db_datareader login gets no rows and the
+  comment silently goes missing — the script itself is the same, but the
+  warning that its DROP will fail with Msg 3729 is not there. Decide in gosmo:
+  refuse (as a hidden default or filter is refused) when the login lacks VIEW
+  DEFINITION, or say in the comment that dependents could not be read.
 - **No Generate Scripts wizard** (phase 6, D7): `script db` is the
   database's own CREATE, not its objects. Scripting every object in
   dependency order (`--objects`, `--include-permissions`) needs

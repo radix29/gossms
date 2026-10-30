@@ -7,16 +7,16 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 5, and phase 6's `plan estimated/actual`, `script object/db` and `data top/sample/count/profile/export`) the commands are `version`, `help`, `agent
+them. Today (through phase 5, and phase 6's `plan estimated/actual`, `script object/db` and `data top/sample/count/profile/export/import`) the commands are `version`, `help`, `agent
 guide/schema/context`, `profile list/show/test`, `db
 list/info/files/space/log-usage/table-sizes/set`, `db scoped-config
 list/get/set`, `server info/memory/volumes/log`, `server config
 list/get/set/reset`, `server traceflag list/on/off`, `object
 list/search/describe/definition/dependencies/indexes/stats`, `query
-classify/run/parse`, `plan estimated/actual`, `script object/db` and `data top/sample/count/profile/export`; the formats `text`, `json`, `jsonl`,
+classify/run/parse`, `plan estimated/actual`, `script object/db` and `data top/sample/count/profile/export/import`; the formats `text`, `json`, `jsonl`,
 `csv`, `tsv` and `markdown`. `profile test`, `agent context`, every `db`,
 `server` and `object` command, `query run`, `query parse`, `plan
-estimated/actual`, `script object/db` and `data top/sample/count/profile/export` connect to a server, and so does `agent guide` given a profile.
+estimated/actual`, `script object/db` and `data top/sample/count/profile/export/import` connect to a server, and so does `agent guide` given a profile.
 
 Code: `cmd/gossms/main.go` (mode switch), `internal/cli` (`Main`, help),
 `internal/cli/spec` (the command tree as data), `internal/cli/args` (the
@@ -160,7 +160,7 @@ is also a `--topic`):
 | `output` | Output contract | `guide/output.md` |
 | `exit-codes` | Exit codes | generated from the exit-code table |
 | `commands` | The command index: command, operation class, summary. In `--brief`, one row per group naming its commands (a sub-group's as `config list`), a non-`read` one marked with its class, and the group's summary — so the brief guide stays under its cap as commands are added | generated from the command tree |
-| `recipes` | Explore a schema, read data, make a safe data fix | `guide/recipes.md` |
+| `recipes` | Explore a schema, read data, check space, change server settings, tune a slow query, script and export, make a safe data fix | `guide/recipes.md` |
 
 The first lines are the title and `gossms <version> · CLI schema <n>`, so a
 cached guide can be told stale.
@@ -534,7 +534,7 @@ second Ctrl+C kills the process.
 | `help [<group>] [<command>...]` | Help text (§ Help) |
 | `agent guide [--brief] [--topic <topic>] [-p <profile>] [connection options]` | The manual for AI agents, outside the envelope (§ Agent guide) |
 | `agent schema [<group>] [<command>...]` | The command catalog as JSON, outside the envelope (§ Agent schema) |
-| `agent context [-p <profile>] [connection options]` | Connects (§ Connecting). Header `DATABASE` is the connection's. Record: `profile` (null ad hoc), `serverName`, `productVersion`, `majorVersion`, `edition`, `login`, `isSysadmin` (null when the server permissions were not probed), `database`, `databaseRoles` (the fixed roles held there, comma-separated), `defaultAllow` (`read`), `maxAllow` (the ceiling `--allow` cannot pass; `admin` ad hoc), `maxAllowSource` (`profile`, `default` — the profile sets none —, or ad hoc). Named sets — `databases`: `name`, `state`, `accessible` (HAS_DBACCESS: false for a database not ONLINE, whoever asks; NULL when the server does not say), `is_system`; `missing_permissions`: `permission`, `scope` (`server`, or `database [name]`), `commands`, `effect` — each permission a command needs that the login is known to lack (an alternative granted counts: 2022's VIEW SERVER/DATABASE PERFORMANCE STATE, CREATE/ALTER ANY DATABASE for the files' visibility; for `server log` and `server traceflag on/off`, membership in securityadmin or sysadmin); one the server answers nothing for is left out; `profiles`: `name`, `server`, `database`, `max_allow`. A probe or read that fails is a warning, not an error |
+| `agent context [-p <profile>] [connection options]` | Connects (§ Connecting). Header `DATABASE` is the connection's. Record: `profile` (null ad hoc), `serverName`, `productVersion`, `majorVersion`, `edition`, `login`, `isSysadmin` (null when the server permissions were not probed), `database`, `databaseRoles` (the fixed roles held there, comma-separated), `defaultAllow` (`read`), `maxAllow` (the ceiling `--allow` cannot pass; `admin` ad hoc), `maxAllowSource` (`profile`, `default` — the profile sets none —, or ad hoc). Named sets — `databases`: `name`, `state`, `accessible` (HAS_DBACCESS: false for a database not ONLINE, whoever asks; NULL when the server does not say), `is_system`; `missing_permissions`: `permission`, `scope` (`server`, or `database [name]`), `commands`, `effect` — each permission a command needs that the login is known to lack (an alternative granted counts: 2022's VIEW SERVER/DATABASE PERFORMANCE STATE, CREATE/ALTER ANY DATABASE for the files' visibility; for `server log` and `server traceflag on/off`, membership in securityadmin or sysadmin); one the server answers nothing for is left out. The table rights the `data` commands need (SELECT; INSERT, and ALTER for `--truncate-first`) are not listed: the database-scope probe reads 0 for a login granted them per schema or table, so a 0 is no known lack — their help states them, and the server's refusal is exit 9; `profiles`: `name`, `server`, `database`, `max_allow`. A probe or read that fails is a warning, not an error |
 | `profile list [--all]` | Set: `name`, `kind` (`profile`, or `recent` with `--all`), `server`, `port` (NULL when not set), `database`, `auth` (the `--auth` spelling), `user`, `max_allow` (NULL for a recent connection), `password` (`saved`, `none`, `unreadable`). Profiles sorted by name, then recent connections most recent first. An empty list carries a message saying how to make a profile |
 | `profile show <name>` | Record: `name`, `kind`, `generatedName`, `server`, `port`, `database`, `auth`, `user`, `tenantId`, `clientId`, `encrypt`, `trustServerCertificate`, `hostNameInCertificate`, `extraProperties` (keys only — a value may be a secret), `maxAllow`, `password`. A password that cannot be opened adds a warning |
 | `profile test <name> [connection options]` | Connects (§ Connecting). Header `SERVER`/`DATABASE` name the target, also on failure. Record: `profile`, `serverName`, `productVersion`, `productLevel`, `edition`, `platform`, `login`, `connectedDatabase` (the header's `DATABASE` is the one asked for), `auth`, `passwordSource` (`profile`, `env:<VAR>`, `stdin`, `none`), `maxAllow`, `latencyMs` (the whole connect). A dropped saved password adds a warning |
@@ -577,6 +577,7 @@ second Ctrl+C kills the process.
 | `data sample <object> [-p <profile>] [connection options] [--rows <n>] [--columns <list>] [--where <expr>] [--timeout <sec>]` | As `data top`, the rows a random sample (§ Data) |
 | `data profile <object> [-p <profile>] [connection options] [--columns <list>] [--where <expr>] [--top-values <n>] [--timeout <sec>]` | Record: `object`, `type`, `tsql` (the aggregate SELECTs, `GO` between); set `columns` (`column type rows nulls null_pct distinct min max min_len max_len`), and with `--top-values` set `top_values` (`column value count`) (§ Data) |
 | `data export <object> \| (T-SQL input) --out-file <path> [-p <profile>] [connection options] [--columns <list>] [--where <expr>] [--order-by <list>] [--param …] [--timeout <sec>]` | Every row to `--out-file` (required; format by extension). Record: object form `object`, `type`, `tsql`; T-SQL form `detectedClass`, `statementCount`; each set's `totalRowCount` and `outFile` (§ Data) |
+| `data import <table> --in-file <path\|-> [-p <profile>] [connection options] --allow write [--in-format csv\|tsv\|jsonl] [--truncate-first --confirm <table>] [--no-check-constraints] [--fire-triggers] [--tablock] [--dry-run] [--timeout <sec>]` | Bulk-loads the file into the table; `--truncate-first` needs `--allow ddl`. Record: `object`, `type`, `inFile`, `format`, `truncateFirst`, `rows`, `dryRun`, `tsql` (the TRUNCATE, on a dry run); set `columns` (`file_column column type action`) (§ Data) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
 No command ever prints a password or secret.
@@ -917,7 +918,9 @@ keeping the change.
   `cpu_ms`; `operators` and `tree` `actual_rows` (over all executions),
   `elapsed_ms` (the operator's, which in row mode includes its children's)
   and `misestimate`. An operator the server reports no runtime for (a
-  Compute Scalar folded into its parent) has them NULL.
+  Compute Scalar folded into its parent) has them NULL; when it is a
+  statement's root, the statement's `actual_rows` are the operator's below
+  it, which it passes through unchanged.
 - **A failed run** answers the plans the server sent before it stopped, with
   the error; a batch cut by `--timeout` loses its own plans (the server had
   not yet sent them), earlier batches' stay. `--plan-file` is written only
@@ -954,9 +957,11 @@ run; both are class `read`.
   table's default, check or computed-column expression, all NULL without VIEW
   DEFINITION (SELECT or EXECUTE alone does not give it) — is
   `PERMISSION_DENIED`, exit 9: gosmo refuses rather than script `DEFAULT`
-  followed by nothing. A table's DROP reads its schema-bound dependents from
-  `sys.sql_expression_dependencies`, which such a login is refused (Msg 229,
-  exit 9). An encrypted module has no text to restate: `create`, `alter` and
+  followed by nothing. A table's DROP names its schema-bound dependents in a
+  comment, read from `sys.sql_expression_dependencies`; without VIEW
+  DEFINITION that view hides them rather than refusing, so such a login's
+  DROP comes without the comment (exit 0; `docs/open-threads.md`). An
+  encrypted module has no text to restate: `create`, `alter` and
   `drop-and-create` are `UNSUPPORTED`, exit 11; `drop` works.
 - **`--script-file <path>`** also writes the script, as the TUI's File...
   does: the text exactly, UTF-8, LF line ends, replaced atomically. An
@@ -968,7 +973,7 @@ run; both are class `read`.
 
 `data top`, `data sample`, `data count`, `data profile` and `data export` compose SELECTs
 over a table or view and run them on a query session, as `query run` would: cells are the grid's text, JSON
-types them, `--max-rows` and `--out-file` apply. Both are class `read`; the
+types them, `--max-rows` and `--out-file` apply. They are class `read`; the
 login needs SELECT on the object (Msg 229, or 230 for a denied column, is
 `PERMISSION_DENIED`, exit 9).
 A procedure, function, synonym or other kind is exit 2 (a synonym's hint
@@ -1019,6 +1024,62 @@ names its base object).
   first failing batch. Every result set goes to the file. An object together
   with T-SQL, or `--columns`/`--where`/`--order-by` without an object, is
   exit 2. A failed export leaves an existing file as it was.
+- **`data import`** loads `--in-file` into a table through bulk copy
+  (gosmo's `BulkInsert`, the TDS path bcp uses). It is class `write`
+  (`--allow write`, gated before connecting as § Writes); `--truncate-first`
+  makes it `ddl`. The file is what `data export` writes, one result set:
+  `.csv`/`.tsv` with a header row, read with the writer's NULL convention (an
+  empty field NULL, `""` the empty string, a bare `NULL` the string; a UTF-8
+  byte order mark before the header is dropped), or gossms's `.jsonl` (the
+  `_resultSet` line names the columns and their keys; numbers are taken as
+  written, `true`/`false` as a bit; `_summary` ends the rows). `.json` is
+  refused: export to `.jsonl`. `--in-format` names the format for `--in-file
+  -` (stdin, not with `--password-stdin`) or another extension. A blank line
+  followed by more rows (a second set), a row with the wrong field count, or
+  a malformed field is exit 2 naming the line.
+  - **Columns.** Each file column is matched to the table's by name, exactly,
+    else the one match ignoring case; a name the table lacks, or two naming
+    one column, is exit 2. Computed, `rowversion` and `GENERATED ALWAYS`
+    columns in the file are skipped with one warning, so an export of the
+    table loads back into it; the table's columns the file lacks take their
+    defaults. Set `columns` lists each file column with `action` `load` or
+    `skipped (…)`, then the defaulted columns (`file_column` NULL, `default`).
+  - **Conversion.** Each cell is parsed for its column's type (an alias
+    type's base type) before it is sent, and checked as the driver does not:
+    range, precision and scale (more fractional digits than the column keeps
+    is an error, not rounding), length in the column's unit, `char` text
+    encoded to the database's code page and refused by name where it or the
+    column's code page lacks a character. The first cell that fails is exit
+    2, `line n, column [c]: …`. `sql_variant`, CLR types (`geography`,
+    `geometry`, `hierarchyid`), `vector` and Always Encrypted columns are
+    `UNSUPPORTED`, exit 11, before loading. A one-column CSV writes a NULL as
+    `""`, so it loads every `""` as an empty string, with a warning; `.jsonl`
+    keeps them apart.
+  - **The load** is one batch, all or nothing: a bad cell, a constraint the
+    rows break or a cancel leaves the table as it was (`rows` `0`). NULLs stay
+    NULL (KEEPNULLS: a column's default does not replace them); an identity
+    column in the file keeps the file's values. CHECK and FOREIGN KEY
+    constraints are checked unless `--no-check-constraints` (bcp's default,
+    which leaves them untrusted); INSERT triggers fire only with
+    `--fire-triggers`; `--tablock` takes a bulk-update lock. `--timeout`
+    (default 60 s) bounds the load.
+  - **Permissions.** INSERT on the table; ALTER as well to keep identity
+    values, or to load with `--no-check-constraints` (or without
+    `--fire-triggers`) into a table that has constraints (triggers). The
+    server answers a missing INSERT, and a missing ALTER for identity values,
+    with Msg 1088 ("does not exist or you do not have permissions"); the
+    table was just resolved, so it is `PERMISSION_DENIED`, exit 9, as is Msg
+    5304 for the unchecked-constraints case (all live on 17).
+  - **`--truncate-first`** runs `TRUNCATE TABLE` before the load. It needs
+    `--allow ddl`, ALTER on the table (Msg 1088 without, exit 9), and
+    `--confirm` with the table exactly as given (`BLOCKED`, exit 7, before
+    connecting otherwise). A TRUNCATE cannot share the bulk load's
+    transaction, so a load that fails after it leaves the table empty — the
+    hint says so.
+  - **`--dry-run`** reads and converts the whole file (a bad cell fails it as
+    it would the load), counts `rows`, and loads nothing; with
+    `--truncate-first`, `tsql` is the TRUNCATE gosmo would send. A bulk load
+    itself has no T-SQL to show.
 - **Fragments.** `--where` is spliced as `WHERE (<expr>` + line break + `)`,
   `--order-by` (top only) as `ORDER BY <list>` + line break, so a trailing
   `--` comment ends at its line. A fragment that is blank or leaves a
@@ -1069,8 +1130,10 @@ ceiling is what refuses.
 ## Writes
 
 The commands that change a server through gosmo — `server config
-set/reset`, `server traceflag on/off`, `db set` and `db scoped-config set` —
-share one layer (`internal/cli/cmd/write.go`). Each is class `admin`.
+set/reset`, `server traceflag on/off`, `db set`, `db scoped-config set` and
+`data import` — share one layer (`internal/cli/cmd/write.go`). Each is class
+`admin`, except `data import` (`write`, `ddl` with `--truncate-first`; its
+answer is a load count, not a before/after change set: § Data).
 
 - **The gate.** `--allow` and `--dry-run` are options of the writing
   commands and `query run`, not global ones: a read command does not take
@@ -1108,6 +1171,8 @@ share one layer (`internal/cli/cmd/write.go`). Each is class `admin`.
     name exactly as given. `--rollback-immediate` rolls back and disconnects
     every other session in the database, so without a matching `--confirm`
     it is `BLOCKED`, exit 7, before connecting.
+  - `--confirm <table>` (`data import`, with `--truncate-first`): the table
+    exactly as given, likewise.
 
   The global `--force` keeps its one meaning: replace an existing
   `--out-file`.

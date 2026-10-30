@@ -67,10 +67,10 @@ var benignFamilies = []string{
 	"WAIT_XTP_",
 }
 
-// isBenignWait reports a wait left out of the picture: one of benignWaits by
+// IsBenignWait reports a wait left out of the picture: one of benignWaits by
 // name, or of benignFamilies by prefix. Case-insensitive, as the server's
 // collation would be.
-func isBenignWait(waitType string) bool {
+func IsBenignWait(waitType string) bool {
 	w := strings.ToUpper(waitType)
 	if slices.Contains(benignWaits, w) {
 		return true
@@ -86,7 +86,7 @@ func collectWaits(ctx context.Context, src Source) (waitSet, error) {
 	}
 	set := make(waitSet, len(stats))
 	for _, w := range stats {
-		if isBenignWait(w.WaitType) {
+		if IsBenignWait(w.WaitType) {
 			continue
 		}
 		set[w.WaitType] = waitRow{waitMs: w.WaitTimeMs, signalMs: w.SignalWaitTimeMs, tasks: w.WaitingTasks}
@@ -94,10 +94,10 @@ func collectWaits(ctx context.Context, src Source) (waitSet, error) {
 	return set, nil
 }
 
-// categorize maps a wait type to its plot bucket. Prefix-based because waits
+// WaitCategoryOf maps a wait type to its plot bucket. Prefix-based because waits
 // are named by family (PAGELATCH_*, LCK_M_*) and families gain members every
 // release.
-func categorize(waitType string) WaitCategory {
+func WaitCategoryOf(waitType string) WaitCategory {
 	w := strings.ToUpper(waitType)
 	switch {
 	case strings.HasPrefix(w, "LCK_M_"):
@@ -156,7 +156,7 @@ func waitDeltas(prev, cur waitSet, elapsed float64) (byCategory, signalByCategor
 		if s > d {
 			s = d
 		}
-		cat := categorize(name)
+		cat := WaitCategoryOf(name)
 		byCategory[cat] += d / elapsed
 		signalByCategory[cat] += s / elapsed
 		totalMs += d

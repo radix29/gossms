@@ -68,6 +68,7 @@ func newContextFake() *contextFake {
 				"VIEW DATABASE STATE":             gosmo.CapabilityDenied,
 				"VIEW DATABASE PERFORMANCE STATE": gosmo.CapabilityGranted,
 				"ALTER":                           gosmo.CapabilityDenied,
+				"SHOWPLAN":                        gosmo.CapabilityDenied,
 			},
 		},
 		access: map[int]bool{5: true, 6: false, 1: true, 8: false},
@@ -131,7 +132,8 @@ func TestAgentContext(t *testing.T) {
 		"sysadmin (role) @ server → server traceflag on, server traceflag off",
 		"securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG @ server → server log",
 		"VIEW DEFINITION @ database [app] → object list, object search, object describe, object definition, " +
-			"object dependencies, object indexes, object stats",
+			"object dependencies, object indexes, object stats, script object",
+		"SHOWPLAN @ database [app] → plan estimated, plan actual",
 		"ALTER @ database [app] → db set",
 	}
 	if strings.Join(missing, "\n") != strings.Join(want, "\n") {

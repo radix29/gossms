@@ -24,8 +24,8 @@ func TestCategorizeGroupsByWaitFamily(t *testing.T) {
 		"HADR_DATABASE_FLOW_CONTROL":  WaitLog,
 		"HADR_TRANSPORT_FLOW_CONTROL": WaitLog,
 	} {
-		if got := categorize(wait); got != want {
-			t.Errorf("categorize(%q) = %s, want %s", wait, WaitCategoryNames[got], WaitCategoryNames[want])
+		if got := WaitCategoryOf(wait); got != want {
+			t.Errorf("WaitCategoryOf(%q) = %s, want %s", wait, WaitCategoryNames[got], WaitCategoryNames[want])
 		}
 	}
 }
@@ -116,7 +116,7 @@ func TestBackgroundWaitsAreExcluded(t *testing.T) {
 		// Accelerated database recovery's version-store preallocator (2019+).
 		"PVS_PREALLOCATE", "AZURE_IMDS_VERSIONS",
 	} {
-		if !isBenignWait(w) {
+		if !IsBenignWait(w) {
 			t.Errorf("%s is not excluded; it accumulates constantly on an idle server", w)
 		}
 	}
@@ -130,7 +130,7 @@ func TestRealWaitsSurviveTheExclusions(t *testing.T) {
 		// An AG primary's commit and throttling waits.
 		"HADR_SYNC_COMMIT", "HADR_DATABASE_FLOW_CONTROL", "HADR_TRANSPORT_FLOW_CONTROL",
 	} {
-		if isBenignWait(w) {
+		if IsBenignWait(w) {
 			t.Errorf("%s is excluded, but it is a wait worth showing", w)
 		}
 	}

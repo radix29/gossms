@@ -223,3 +223,36 @@ func TestPlanActualNoPlan(t *testing.T) {
 		t.Errorf("result_sets %v", rs)
 	}
 }
+
+// foldedRootDoc is a GROUP BY's actual plan as 17 sends it: the root Compute
+// Scalar has no runtime counters, the aggregate under it produced 100 rows.
+const foldedRootDoc = `<ShowPlanXML Version="1.599" Build="17.0.1145.4"><BatchSequence><Batch><Statements>
+<StmtSimple StatementText="SELECT grp, COUNT(*) FROM dbo.Big GROUP BY grp" StatementType="SELECT" StatementSubTreeCost="2.5" StatementEstRows="87">
+<QueryPlan DegreeOfParallelism="1">
+<RelOp NodeId="0" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="87" EstimatedTotalSubtreeCost="2.5"><ComputeScalar>
+<RelOp NodeId="1" PhysicalOp="Stream Aggregate" LogicalOp="Aggregate" EstimateRows="87" EstimatedTotalSubtreeCost="2.5">
+<RunTimeInformation><RunTimeCountersPerThread Thread="0" ActualRows="100" ActualExecutions="1"/></RunTimeInformation>
+<StreamAggregate/></RelOp></ComputeScalar></RelOp>
+</QueryPlan></StmtSimple>
+</Statements></Batch></BatchSequence></ShowPlanXML>`
+
+// A statement's actual rows come from the operator under a root Compute
+// Scalar the server reports no runtime for; the Compute Scalar's own row
+// stays NULL, as the plan says.
+func TestPlanActualStatementRowsBelowFoldedRoot(t *testing.T) {
+	sess, _ := actualSession(t, 0, foldedRootDoc)
+	d, _ := queryDeps(t, sess)
+	r := runQuery(t, d, "plan", "actual", "-p", "dev", "--sql", "SELECT 1", "-o", "json")
+	if r.exit != 0 {
+		t.Fatalf("exit %d\n%s%s", r.exit, r.stdout, r.stderr)
+	}
+	env := envelope(t, r.stdout)
+	if st := setNamed(t, env, "statements")["rows"].([]any)[0].([]any); st[4] != 100.0 {
+		t.Errorf("statement actual_rows %v, want 100", st[4])
+	}
+	for _, row := range setNamed(t, env, "operators")["rows"].([]any) {
+		if op := row.([]any); op[2] == "Compute Scalar" && op[7] != nil {
+			t.Errorf("Compute Scalar actual_rows %v, want NULL", op[7])
+		}
+	}
+}

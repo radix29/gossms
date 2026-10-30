@@ -332,7 +332,7 @@ func killTarget(t *testing.T, session []driver.Value) (*ActivityMonitor, *amProc
 	if session != nil {
 		rows = [][]driver.Value{session}
 	}
-	sc, inst := newFakeConn(t, fakeResponse{match: "WHERE  s.session_id = @p1", arg: "57", cols: 16, rows: rows})
+	sc, inst := newFakeConn(t, fakeResponse{match: "WHERE  s.session_id = @p1", arg: "57", cols: 23, rows: rows})
 	pt := am.procTab()
 	pt.conn = sc
 	pt.loc = activity.ProcTempDB
@@ -345,7 +345,9 @@ func killTarget(t *testing.T, session []driver.Value) (*ActivityMonitor, *amProc
 // on the reading connection's host.
 func sessionRow(program string, pid int) []driver.Value {
 	return []driver.Value{int64(57), "appuser", "ws7", program, "appdb", "sleeping",
-		int64(0), int64(0), int64(0), nil, nil, int64(0), nil, int64(0), int64(pid), true}
+		int64(0), int64(0), int64(0), nil, nil, "", "",
+		int64(0), int64(0), int64(0), int64(0),
+		int64(0), nil, int64(0), "", int64(pid), true}
 }
 
 // killItem is the grid menu's Kill Process item.
@@ -437,7 +439,7 @@ func TestKillProcessRefusesTheMonitorsOwnSession(t *testing.T) {
 
 	// From another host the same pid is another process.
 	other := sessionRow(db.RoleActivityMonitor.ApplicationName(), os.Getpid())
-	other[15] = false
+	other[22] = false
 	am, pt, _ := killTarget(t, other)
 	killItem(t, pt).Action()
 	drainUntil(t, am.app, am.app.confirmDialog.Visible, "the kill confirmation")
