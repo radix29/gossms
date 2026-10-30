@@ -121,6 +121,13 @@ type Catalog interface {
 	TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error)
 	LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error)
 
+	// db drop: what refuses a drop before it is sent, and the backup the
+	// record names.
+	AvailabilityGroups(ctx context.Context) ([]*gosmo.AvailabilityGroup, error)
+	AvailabilityGroupDatabases(ctx context.Context, ag *gosmo.AvailabilityGroup) ([]*gosmo.AvailabilityDatabase, error)
+	SnapshotsOf(ctx context.Context, database string) ([]*gosmo.DatabaseSnapshot, error)
+	LastBackups(ctx context.Context) ([]*gosmo.DatabaseLastBackups, error)
+
 	// data import: the code page a char column's collation, or the
 	// database's, stores text in.
 	CollationCodePage(ctx context.Context, collation string) (int, error)
@@ -416,6 +423,22 @@ func (serverCatalog) StatisticColumns(ctx context.Context, st *gosmo.Statistic) 
 }
 
 func (c serverCatalog) ServerInfo() *gosmo.ServerInfo { return c.s.Info() }
+
+func (c serverCatalog) AvailabilityGroups(ctx context.Context) ([]*gosmo.AvailabilityGroup, error) {
+	return c.s.AvailabilityGroups(ctx)
+}
+
+func (serverCatalog) AvailabilityGroupDatabases(ctx context.Context, ag *gosmo.AvailabilityGroup) ([]*gosmo.AvailabilityDatabase, error) {
+	return ag.Databases(ctx)
+}
+
+func (c serverCatalog) SnapshotsOf(ctx context.Context, database string) ([]*gosmo.DatabaseSnapshot, error) {
+	return c.s.SnapshotsOf(ctx, database)
+}
+
+func (c serverCatalog) LastBackups(ctx context.Context) ([]*gosmo.DatabaseLastBackups, error) {
+	return c.s.LastBackups(ctx)
+}
 
 func (c serverCatalog) ServerCapabilities(ctx context.Context) (*gosmo.Capabilities, error) {
 	return c.s.Capabilities(ctx)
