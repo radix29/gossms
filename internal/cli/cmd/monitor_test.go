@@ -51,6 +51,9 @@ type monitorCatalog struct {
 
 	// monitor deadlocks: see dlFake.
 	dl *dlFake
+
+	// xevent sessions: see xeFake.
+	xe *xeFake
 }
 
 func (c *monitorCatalog) TopQueries(_ context.Context, opts gosmo.TopQueriesOptions) ([]*gosmo.CachedQueryStat, error) {
@@ -99,7 +102,7 @@ func runGroup(t *testing.T, cat *monitorCatalog, group string, argv ...string) (
 	}
 	// --force is the CLI's global option (tree.go), which --plan-file and
 	// --deadlock-file follow.
-	tree := &spec.Tree{Commands: slices.Concat(MonitorCommands(d), PlanCommands(d)),
+	tree := &spec.Tree{Commands: slices.Concat(MonitorCommands(d), PlanCommands(d), XEventCommands(d)),
 		Globals: []spec.Option{{Name: optForce, Type: spec.TypeBool}}}
 	inv, perr := args.Parse(tree, append(append([]string{group}, argv[0], "--server", "srv", "--auth", "windows"), argv[1:]...), args.Options{})
 	if perr != nil {
@@ -262,30 +265,42 @@ func TestMonitorSessionsFilters(t *testing.T) {
 	}
 }
 
-// An idle session's row shows its connection's last batch; a running one's
-// its request's, and NULL for what it lacks.
+// An idle session's row shows its connection's last batch and no elapsed
+// time; a running one's its request's, its counters the session's totals
+// plus the request's so far (the session's own leave a running request
+// out), and elapsed_ms the request's.
 func TestMonitorSessionsRow(t *testing.T) {
 	idle := &gosmo.ActiveSession{SessionID: 51, LoginName: "app", Status: "sleeping", OpenTransactionCount: 2,
 		RecentText: "BEGIN TRAN", CPUTime: 7, Reads: 1, Writes: 2, LogicalReads: 3, TotalElapsedMS: 40}
-	res, err := runMonitor(t, &monitorCatalog{sessions: []*gosmo.ActiveSession{idle}}, "sessions")
+	running := &gosmo.ActiveSession{SessionID: 52, LoginName: "app", Status: "running", Command: "SELECT",
+		CommandText: "SELECT 1", CPUTime: 7, Reads: 1, Writes: 2, LogicalReads: 3, TotalElapsedMS: 40,
+		RequestCPUTime: 600, RequestElapsedMS: 125000, RequestReads: 10, RequestWrites: 20, RequestLogicalReads: 30}
+	res, err := runMonitor(t, &monitorCatalog{sessions: []*gosmo.ActiveSession{idle, running}}, "sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
 	set := res.Sets[0]
-	var got []string
-	for _, c := range set.Rows[0] {
-		if c == nil {
-			got = append(got, "NULL")
-		} else {
-			got = append(got, *c)
+	row := func(i int) []string {
+		var got []string
+		for _, c := range set.Rows[i] {
+			if c == nil {
+				got = append(got, "NULL")
+			} else {
+				got = append(got, *c)
+			}
 		}
+		return got
 	}
-	want := []string{"51", "app", "", "", "NULL", "sleeping", "NULL", "2", "7", "1", "2", "3", "40", "NULL", "NULL", "0", "NULL", "BEGIN TRAN"}
-	if !slices.Equal(got, want) {
-		t.Errorf("row = %q\nwant  %q", got, want)
-	}
-	if set.Name != "sessions" || len(set.Columns) != len(want) {
-		t.Errorf("set %q has %d columns, want sessions with %d", set.Name, len(set.Columns), len(want))
+	for i, want := range [][]string{
+		{"51", "app", "", "", "NULL", "sleeping", "NULL", "2", "7", "1", "2", "3", "NULL", "NULL", "NULL", "0", "NULL", "BEGIN TRAN"},
+		{"52", "app", "", "", "NULL", "running", "SELECT", "0", "607", "11", "22", "33", "125000", "NULL", "NULL", "0", "NULL", "SELECT 1"},
+	} {
+		if got := row(i); !slices.Equal(got, want) {
+			t.Errorf("row %d = %q\nwant    %q", i, got, want)
+		}
+		if set.Name != "sessions" || len(set.Columns) != len(want) {
+			t.Errorf("set %q has %d columns, want sessions with %d", set.Name, len(set.Columns), len(want))
+		}
 	}
 }
 

@@ -22,7 +22,7 @@ func loginResponses() []fakeResponse {
 			int64(0), int64(0), int64(0), true, false,
 			time.Now(), nil, int64(0), nil, "us_english", "", "",
 		}}},
-		{match: "sys.dm_exec_sessions s", cols: 23, rows: nil},
+		{match: "sys.dm_exec_sessions s", cols: 29, rows: nil},
 	}
 }
 
@@ -345,7 +345,8 @@ func TestLoginStatusCountsSessionsUnderTheServerCollation(t *testing.T) {
 		return []driver.Value{id, login, "host", "app", "master", "sleeping",
 			int64(0), int64(0), int64(0), nil, nil, "", "",
 			int64(0), int64(0), int64(0), int64(0),
-			int64(0), nil, int64(0), "", int64(0), false}
+			int64(0), nil, int64(0), "", int64(0), false, true,
+			int64(0), int64(0), int64(0), int64(0), int64(0)}
 	}
 	for _, tc := range []struct{ collation, want string }{
 		{"SQL_Latin1_General_CP1_CI_AS", "2"},

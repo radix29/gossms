@@ -266,7 +266,11 @@
     },
     {
       "name": "monitor",
-      "summary": "Show the server's sessions, its blocking chains, its waits, its costliest cached statements, Query Store's history and the recorded deadlocks"
+      "summary": "Show the server's sessions, its blocking chains, its waits, its costliest cached statements, Query Store's history and the recorded deadlocks, and end a session"
+    },
+    {
+      "name": "xevent",
+      "summary": "List the server's Extended Events sessions, or capture events for a while"
     }
   ],
   "commands": [
@@ -347,7 +351,8 @@
             "plan",
             "script",
             "data",
-            "monitor"
+            "monitor",
+            "xevent"
           ],
           "default": null,
           "negation": null,
@@ -10156,7 +10161,7 @@
     {
       "path": "monitor sessions",
       "summary": "List the server's sessions: login, host, program, database, request, resource use, blocker and wait",
-      "description": "One row per session (sys.dm_exec_sessions with its request and connection), by spid, the CLI's own left out; user sessions only unless --include-system. command, wait_type and wait_resource are the running request's, NULL for an idle session. text is the running request's batch, or for an idle session the batch its connection sent last — what opened an idle session's open transaction — its first 512 characters, in the server's auto-parameterized form when the server parameterized it. cpu_ms, reads, writes and logical_reads are the session's totals since login. blocked_by is the session one of its requests waits on — a parallel request's blocked worker counts, and then wait_type, wait_ms and wait_resource are that worker's. --active keeps the sessions running a request; --session-database, --login and --program keep the sessions whose value equals the one given, case-insensitively. Needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE from SQL Server 2022): without it, exit 9 — the server would show only the login's own session.",
+      "description": "One row per session (sys.dm_exec_sessions with its request and connection), by spid, the CLI's own left out; user sessions only unless --include-system. command, wait_type and wait_resource are the running request's, NULL for an idle session. text is the running request's batch, or for an idle session the batch its connection sent last — what opened an idle session's open transaction — its first 512 characters, in the server's auto-parameterized form when the server parameterized it. cpu_ms, reads, writes and logical_reads are the session's totals since login, the running request's so far included; elapsed_ms is how long the running request has run, NULL for an idle session. blocked_by is the session one of its requests waits on — a parallel request's blocked worker counts, and then wait_type, wait_ms and wait_resource are that worker's. --active keeps the sessions running a request; --session-database, --login and --program keep the sessions whose value equals the one given, case-insensitively. Needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE from SQL Server 2022): without it, exit 9 — the server would show only the login's own session.",
       "operationClass": "read",
       "arguments": [],
       "options": [
@@ -11539,6 +11544,694 @@
         "gossms monitor deadlocks -p prod-ro",
         "gossms monitor deadlocks --since 2026-10-27T00:00:00Z -p prod-ro",
         "gossms monitor deadlocks --top 1 --deadlock-format xml --deadlock-file ./deadlocks -p prod-ro"
+      ]
+    },
+    {
+      "path": "monitor kill",
+      "summary": "End a session (KILL), rolling back its open transaction",
+      "description": "KILL <spid>. Needs --allow admin and --confirm with the spid exactly as given (missing or different: exit 7, before connecting). The session is read first (as monitor sessions shows it, the session set): one that does not exist → exit 8; a system session → exit 7 and nothing sent (the server would refuse it, Msg 6107); a session of this command's own connections → exit 2. Needs VIEW SERVER STATE to read the session (without it: exit 9, nothing sent) and ALTER ANY CONNECTION for the KILL (without it: exit 9). --dry-run prints the KILL and the session without sending it. After the KILL the session is read again: ended is false while it rolls back an open transaction, which can take as long as the work it undoes; that is a warning and not waited for — KILL <spid> WITH STATUSONLY reports the rollback's progress.",
+      "operationClass": "admin",
+      "arguments": [
+        {
+          "name": "spid",
+          "help": "The session id to end",
+          "format": null,
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--allow",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "read",
+            "write",
+            "ddl",
+            "admin"
+          ],
+          "default": "read",
+          "negation": null,
+          "env": null,
+          "help": "Highest operation class the command may reach; the profile's ceiling (max_allow) caps it"
+        },
+        {
+          "name": "--dry-run",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-dry-run",
+          "env": null,
+          "help": "Read what the change needs and print the T-SQL it would run, without running it"
+        },
+        {
+          "name": "--confirm",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "The spid again, exactly as given: accepts the KILL"
+        }
+      ],
+      "examples": [
+        "gossms monitor kill 87 --confirm 87 -p dev --allow admin --dry-run",
+        "gossms monitor kill 87 --confirm 87 -p dev --allow admin"
+      ]
+    },
+    {
+      "path": "xevent sessions",
+      "summary": "List the Extended Events sessions: running or not, started with the server, their targets and events",
+      "description": "One row per event session defined on the server (sys.server_event_sessions), by name; on Azure SQL Database the database's own sessions (sys.database_event_sessions), scope database. The engine's private sessions that have no definition (hkenginexesession, sp_server_diagnostics session) are not listed. running is whether the session is started now, startup whether it starts with the server. started (server local time) and dropped_events — the events it could not buffer since it started — are a running session's, NULL for a stopped one. targets and events are the session's target and event names. file is the event_file target's file: the .xel being written when the session runs, else the filename the target was given (a relative one lands in the server's log directory); NULL without an event_file target. Needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE from SQL Server 2022): without it, exit 9.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        }
+      ],
+      "examples": [
+        "gossms xevent sessions -p prod-ro",
+        "gossms xevent sessions -p dev -o json"
+      ]
+    },
+    {
+      "path": "xevent capture",
+      "summary": "Capture events for a while with a short-lived Extended Events session, then drop it",
+      "description": "Creates an event session gossms_cli_<yyyymmddhhmmss>_<4 hex> (UTC) from --template, with a ring_buffer target, starts it, waits --duration seconds (1 to 600, default 30) plus its one-second dispatch latency, reads the buffer, then stops and drops the session — on every exit path, a failed step or Ctrl+C included (exit 130 after the drop). A drop that fails is a warning naming the session; xevent sessions lists any gossms_cli_ session left behind (a killed process cannot drop it), and DROP EVENT SESSION removes it. Templates: standard (logins, logouts, attentions and every completed batch and RPC); tsql (every batch and RPC as it starts, with logins and logouts); batches (completed batches and RPCs, attentions and errors); statements (batches and RPCs with every statement and module they ran); waits (every finished wait, with the batches and RPCs around it); connections (logins, logouts and failed logins); deadlocks (every deadlock graph); errors (every error of severity 11 or higher). Events of this command's own connections are left out. --session-database, --login and --program keep only the events of that database, login or client program (exact names, filtered by the server); --min-duration-ms keeps only completed batches, RPCs, statements and modules that ran at least that long, leaving the template's other events alone. Set events, oldest first: time_utc, event, then what the event carries — session_id database login program host, duration_ms and cpu_ms (a wait_info's duration is its wait), logical_reads writes row_count result, error and severity (error_reported), and text: the batch, statement or error message, a deadlock's graph, a wait's type. With -o jsonl each row adds data, an object of every field and action of the event. The buffer keeps the newest --max-events (default 1000) and at most about 4 MB; fields eventsSeen and eventsKept say when it kept fewer than were seen, with a warning. Needs --allow admin (it creates a server object), ALTER ANY EVENT SESSION (from SQL Server 2022 CREATE, ENABLE, DISABLE and DROP ANY EVENT SESSION do) and VIEW SERVER STATE: without them, exit 9 and nothing is created. --dry-run prints the CREATE, START, STOP and DROP without running them. Not on Azure SQL Database (exit 11), which has no server-scoped sessions.",
+      "operationClass": "admin",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--allow",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "read",
+            "write",
+            "ddl",
+            "admin"
+          ],
+          "default": "read",
+          "negation": null,
+          "env": null,
+          "help": "Highest operation class the command may reach; the profile's ceiling (max_allow) caps it"
+        },
+        {
+          "name": "--dry-run",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-dry-run",
+          "env": null,
+          "help": "Read what the change needs and print the T-SQL it would run, without running it"
+        },
+        {
+          "name": "--template",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "standard",
+            "tsql",
+            "batches",
+            "statements",
+            "waits",
+            "connections",
+            "deadlocks",
+            "errors"
+          ],
+          "default": "standard",
+          "negation": null,
+          "env": null,
+          "help": "What to collect"
+        },
+        {
+          "name": "--duration",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 30,
+          "negation": null,
+          "env": null,
+          "help": "Seconds to capture, 1 to 600"
+        },
+        {
+          "name": "--max-events",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 1000,
+          "negation": null,
+          "env": null,
+          "help": "Events the buffer keeps, the newest; 1 to 100000"
+        },
+        {
+          "name": "--session-database",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Keep only the events in this database"
+        },
+        {
+          "name": "--login",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Keep only the events of this login"
+        },
+        {
+          "name": "--program",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Keep only the events of this client program (application name)"
+        },
+        {
+          "name": "--min-duration-ms",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 0,
+          "negation": null,
+          "env": null,
+          "help": "Keep only completed work that ran at least this many milliseconds; 0 keeps all"
+        }
+      ],
+      "examples": [
+        "gossms xevent capture --template batches --duration 60 --min-duration-ms 500 -p dev --allow admin",
+        "gossms xevent capture --template errors --session-database Sales -p dev --allow admin -o jsonl",
+        "gossms xevent capture --template deadlocks --duration 300 -p dev --allow admin --dry-run"
       ]
     }
   ]

@@ -44,6 +44,7 @@ type permissionNeed struct {
 	permission string
 	database   bool     // database scope (the connection's database), else server
 	anyOf      []string // granted any: not missing
+	allOf      []string // granted every one: not missing (a split right's narrow parts)
 	roles      []string // fixed server roles, a member of any: not missing (server scope only)
 	commands   []string // the command paths it breaks, as typed
 	effect     string
@@ -66,10 +67,19 @@ var permissionNeeds = []permissionNeed{
 		anyOf: []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"},
 		commands: []string{"object indexes", "db files", "db space", "db log-usage", "server volumes",
 			"server memory", "server info", "server config get", "server config set"},
-		effect: "db log-usage, server volumes and server memory fail (exit 9); columns read NULL (with a " +
-			"warning): index usage (object indexes), volume_free_pct (db files), the log columns (db space), " +
-			"the start time, uptime and CPU/memory facts (server info), the CPU/memory context (server config " +
-			"get); server config set blocks a memory or maxdop value it cannot check (exit 7) unless --accept-risk",
+		effect: "db log-usage, server volumes, server memory fail (exit 9); NULL, warned: index usage " +
+			"(object indexes), volume_free_pct (db files), log columns (db space), uptime, CPU, memory (server " +
+			"info, config get); config set blocks memory and maxdop values (exit 7)",
+	},
+	{
+		// A row of its own: one list of every command would pass a cell's
+		// 256-character cap (--max-col-width) and reach an agent cut.
+		permission: "VIEW SERVER STATE",
+		anyOf:      []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"},
+		commands: []string{"monitor sessions", "monitor blocking", "monitor waits", "monitor top-queries",
+			"monitor deadlocks", "monitor kill", "plan cached", "xevent sessions", "xevent capture"},
+		effect: "fail (exit 9) before reading anything, so an empty list never means \"not allowed\"; " +
+			"monitor kill and xevent capture send nothing",
 	},
 	{
 		permission: "ALTER SETTINGS",
@@ -94,6 +104,22 @@ var permissionNeeds = []permissionNeed{
 		commands: []string{"server log"},
 		effect: "fails (exit 9); without sysadmin it reads through sp_readerrorlog, which reads the whole " +
 			"file before --since filters it",
+	},
+	{
+		permission: "ALTER ANY CONNECTION",
+		// sysadmin and processadmin hold it.
+		anyOf:    []string{"ALTER ANY CONNECTION"},
+		commands: []string{"monitor kill"},
+		effect:   "the KILL fails (exit 9); --dry-run still prints it",
+	},
+	{
+		permission: "ALTER ANY EVENT SESSION",
+		// 2022's narrow rights do as well when every verb's is granted, as
+		// xevent capture's own check (eventSessionDenied) accepts them.
+		anyOf:    []string{"ALTER ANY EVENT SESSION"},
+		allOf:    eventSessionRights,
+		commands: []string{"xevent capture"},
+		effect:   "fails (exit 9) before any session is created",
 	},
 	{
 		permission: "VIEW ANY DATABASE",
@@ -133,8 +159,9 @@ var permissionNeeds = []permissionNeed{
 		permission: "VIEW DATABASE STATE",
 		database:   true,
 		anyOf:      []string{"VIEW DATABASE STATE", "VIEW DATABASE PERFORMANCE STATE"},
-		commands:   []string{"object indexes"},
-		effect:     "--fragmentation fails (exit 9) unless the login has CONTROL on the object",
+		commands:   []string{"object indexes", "monitor querystore"},
+		effect: "monitor querystore fails in this database (exit 9); object indexes --fragmentation fails " +
+			"(exit 9) unless the login has CONTROL on the object",
 	},
 	{
 		permission: "ALTER",
@@ -158,6 +185,9 @@ var permissionNeeds = []permissionNeed{
 // a need with roles, the server probe srv.
 func (n permissionNeed) missing(state func(string) gosmo.CapabilityState, srv *gosmo.Capabilities) bool {
 	answered := false
+	if len(n.allOf) > 0 && !slices.ContainsFunc(n.allOf, func(p string) bool { return state(p) != gosmo.CapabilityGranted }) {
+		return false
+	}
 	if len(n.roles) > 0 && srv.Probed() {
 		if slices.ContainsFunc(n.roles, srv.InServerRole) {
 			return false

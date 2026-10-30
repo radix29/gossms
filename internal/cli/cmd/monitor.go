@@ -18,7 +18,7 @@ func MonitorCommands(d Deps) []*spec.Command {
 	return []*spec.Command{
 		{
 			Path:    []string{"monitor"},
-			Summary: "Show the server's sessions, its blocking chains, its waits, its costliest cached statements, Query Store's history and the recorded deadlocks",
+			Summary: "Show the server's sessions, its blocking chains, its waits, its costliest cached statements, Query Store's history and the recorded deadlocks, and end a session",
 			Class:   spec.ClassRead,
 		},
 		monitorSessionsCommand(d),
@@ -27,6 +27,7 @@ func MonitorCommands(d Deps) []*spec.Command {
 		monitorTopQueriesCommand(d),
 		monitorQueryStoreCommand(d),
 		monitorDeadlocksCommand(d),
+		monitorKillCommand(d),
 	}
 }
 
@@ -93,7 +94,8 @@ func monitorSessionsCommand(d Deps) *spec.Command {
 			"batch, or for an idle session the batch its connection sent last — what opened an idle session's " +
 			"open transaction — its first 512 characters, in the server's auto-parameterized form when the " +
 			"server parameterized it. cpu_ms, reads, writes and logical_reads are the session's totals since " +
-			"login. blocked_by is the session one of its requests waits on — a parallel request's blocked " +
+			"login, the running request's so far included; elapsed_ms is how long the running request has run, " +
+			"NULL for an idle session. blocked_by is the session one of its requests waits on — a parallel request's blocked " +
 			"worker counts, and then wait_type, wait_ms and wait_resource are that worker's. --active keeps the " +
 			"sessions running a request; --session-database, --login and --program keep the sessions whose " +
 			"value equals the one given, case-insensitively. Needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE " +
@@ -168,17 +170,25 @@ func sessionsSet(sessions []*gosmo.ActiveSession) output.Set {
 		{Name: "database", Type: "nvarchar(128)", Nullable: true}, {Name: "status", Type: "nvarchar(30)"},
 		{Name: "command", Type: "nvarchar(32)", Nullable: true}, {Name: "open_tran", Type: "int"},
 		{Name: "cpu_ms", Type: "int"}, {Name: "reads", Type: "bigint"}, {Name: "writes", Type: "bigint"},
-		{Name: "logical_reads", Type: "bigint"}, {Name: "elapsed_ms", Type: "int"},
+		{Name: "logical_reads", Type: "bigint"}, {Name: "elapsed_ms", Type: "int", Nullable: true},
 		{Name: "blocked_by", Type: "smallint", Nullable: true}, {Name: "wait_type", Type: "nvarchar(60)", Nullable: true},
 		{Name: "wait_ms", Type: "bigint"}, {Name: "wait_resource", Type: "nvarchar(256)", Nullable: true},
 		{Name: "text", Type: "nvarchar(max)", Nullable: true},
 	}}
 	for _, s := range sessions {
+		// dm_exec_sessions' counters move only when a request ends, so the
+		// running request's are added (as sp_who2's sysprocesses does): a
+		// query blocked for minutes showed cpu_ms and elapsed_ms 0 (7.l).
+		var elapsed *string
+		if s.Command != "" {
+			elapsed = int64Cell(s.RequestElapsedMS)
+		}
 		set.Rows = append(set.Rows, []*string{
 			ptr(strconv.Itoa(s.SessionID)), ptr(s.LoginName), ptr(s.HostName), ptr(s.ProgramName),
 			textOrNull(s.DatabaseName), ptr(s.Status), textOrNull(s.Command),
-			ptr(strconv.Itoa(s.OpenTransactionCount)), int64Cell(s.CPUTime), int64Cell(s.Reads),
-			int64Cell(s.Writes), int64Cell(s.LogicalReads), int64Cell(s.TotalElapsedMS),
+			ptr(strconv.Itoa(s.OpenTransactionCount)), int64Cell(s.CPUTime + s.RequestCPUTime),
+			int64Cell(s.Reads + s.RequestReads), int64Cell(s.Writes + s.RequestWrites),
+			int64Cell(s.LogicalReads + s.RequestLogicalReads), elapsed,
 			blockerCell(s.BlockingSessionID), textOrNull(s.WaitType), int64Cell(s.WaitTimeMS),
 			textOrNull(s.WaitResource), textOrNull(sessionText(s)),
 		})
