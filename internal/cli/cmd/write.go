@@ -64,6 +64,10 @@ type Writer interface {
 	SetReadOnly(ctx context.Context, d *gosmo.Database, readOnly bool, term gosmo.Termination) error
 	SetQueryStoreOptions(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreOptions) error
 
+	// db create / db drop.
+	CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error
+	DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error
+
 	// data import: --truncate-first's TRUNCATE TABLE, then the bulk load.
 	TruncateTable(ctx context.Context, t *gosmo.Table) error
 	BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error)
@@ -122,6 +126,15 @@ func (serverWriter) SetReadOnly(ctx context.Context, d *gosmo.Database, readOnly
 
 func (serverWriter) SetQueryStoreOptions(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreOptions) error {
 	return d.QueryStore().SetOptions(ctx, opts)
+}
+
+func (w serverWriter) CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error {
+	_, err := w.s.CreateDatabase(ctx, req)
+	return err
+}
+
+func (serverWriter) DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error {
+	return d.Drop(ctx, term)
 }
 
 func (serverWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error { return t.Truncate(ctx) }

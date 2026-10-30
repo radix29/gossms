@@ -552,6 +552,8 @@ second Ctrl+C kills the process.
 | `db log-usage <name>\|--all [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, one row per database: `database`, `log_size_<u>`, `log_used_<u>`, `log_used_pct` (`sys.dm_db_log_space_usage`'s), `log_reuse_wait_desc`, `vlf_count`, `vlf_active` (`sys.dm_db_log_info`, from 2016 SP2; NULL with a warning before). Without VIEW SERVER STATE: `PERMISSION_DENIED`, exit 9. `--all` skips snapshots (no log); a named snapshot is `NOT_FOUND`, exit 8 |
 | `db table-sizes <name> [--top <n>] [--schema <s>] [--sort-by reserved\|rows\|data\|index\|unused] [--unit kb\|mb\|gb] [-p <profile>] [connection options]` | Set, largest first (default `reserved`; schema, then name break ties): `schema`, `table`, `rows`, `reserved_<u>`, `data_<u>`, `index_<u>`, `unused_<u>` — each row equal to `EXEC sp_spaceused 'schema.table'` in KB, internal tables (XML, spatial, full-text indexes) included. `--top` default 20, 0 for every table (a cut, not a truncation). Needs no VIEW DATABASE STATE. A memory-optimized table's sizes are NULL with a warning |
 | `db set <name> --option <KEY=VALUE>... [--timeout <sec>] [--rollback-immediate --confirm <name>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, gated as `config set`. Header `DATABASE` is `<name>` (not on the server: exit 8). One `ALTER DATABASE … SET` per `--option`, in the order given, through gosmo: `RECOVERY=FULL\|SIMPLE\|BULK_LOGGED` (`SetRecoveryModel`), `COMPATIBILITY_LEVEL=<n>` (`SetCompatibilityLevel`; 100 up to the server's major × 10, steps of 10 — Azure and an unread version are left to the server), `READ_ONLY=ON\|OFF` (`SetReadOnly`), `QUERY_STORE=ON\|READ_WRITE\|READ_ONLY\|OFF` (`ON` is `READ_WRITE`; the Query Store options read are re-sent with the new state, so nothing else changes), and `SetDatabaseOption`'s 21: `PAGE_VERIFY=CHECKSUM\|TORN_PAGE_DETECTION\|NONE`, `CURSOR_DEFAULT=LOCAL\|GLOBAL`, `CONTAINMENT=NONE\|PARTIAL`, the rest `ON\|OFF`. Keys and values ignore case; an unknown key (the hint lists them), a value the key does not take, a key given twice or a level above the server's is exit 2 before anything runs. No transaction (ALTER DATABASE cannot run in one): the first failure stops the run, the changes before it stay, the `change` set shows every key with its `after`, a warning names those not attempted, exit 5. `READ_COMMITTED_SNAPSHOT`, `CONTAINMENT` and `READ_ONLY` need the database to themselves and wait for its other sessions, bounded by `--timeout` (default 60, 0 none; `TIMEOUT`, exit 6, the hint naming `--rollback-immediate`); `--rollback-immediate` (only with one of them, else exit 2) sends `WITH ROLLBACK IMMEDIATE` to those and needs `--confirm` equal to `<name>` as given (`BLOCKED`, exit 7, without — §6.3); `--confirm` alone is exit 2. Needs ALTER on the database (Msg 5011: `PERMISSION_DENIED`, exit 9). `--dry-run`: `dryRun: "true"`, `tsql`; set `planned_change`: `option`, `current`, `new` (a warning for a key that would wait). A run: `dryRun: "false"`; set `change`: `option`, `before`, `requested`, `after`, from `sys.databases` (+ `sys.database_query_store_options`) read before and after — values spelled as the statement takes them; an `after` that is not the `requested`, and Query Store's actual state differing from the desired one, are warnings. `USER_ACCESS`, `OFFLINE`, `ONLINE` are not offered |
+| `db create <name> [--collation <c>] [--recovery simple\|full\|bulk-logged] [--compat <n>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin` (`query run` classes `CREATE DATABASE` so too), gated as `config set`. gosmo `CreateDatabase`: `CREATE DATABASE [<name>] [COLLATE <c>]`, the files model's at the instance's default paths, then `ALTER DATABASE … SET RECOVERY` and `SET COMPATIBILITY_LEVEL` for the options given — not one transaction (CREATE DATABASE cannot run in one): when a `SET` fails the database stays, the record shows it, a warning says so, exit 5. A name already in `sys.databases` (any case, snapshots included) is exit 2 before anything runs; `--compat` is 100 up to the server's major × 10, steps of 10, else exit 2 (Azure and an unread version left to the server). Without CREATE DATABASE / CREATE ANY DATABASE (Msg 262): `PERMISSION_DENIED`, exit 9. Record: `name`, `state`, `recoveryModel`, `compatibilityLevel`, `collation`, `dryRun` — on a real run read back from `sys.databases` (header `DATABASE` is `<name>`; a value other than the one asked for is a warning); on `--dry-run` what the database would be (`state` null; model's recovery model and level, the server's collation, unless given) and `tsql` |
+| `db drop <name> --confirm <name> [--close-connections] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, gated as `config set`. `--confirm` must equal `<name>` exactly as given, else `BLOCKED`, exit 7, before connecting (§6.3; a dry run too). Header `DATABASE` is `<name>` (not on the server: exit 8). Refused before anything is sent: a system database or a replication distribution database (`BLOCKED`, 7); the connection's own database (exit 2: connect with `-d master`); a database in an availability group (7, the hint naming the group's `REMOVE DATABASE`; read only when HADR is enabled); a database with snapshots (7, naming them — `db drop` drops a snapshot like any database). Record, read before the drop: `name`, `databaseId`, `state`, `recoveryModel`, `sizeMb` (`sys.master_files`), `lastFullBackup` (msdb's last full backup, copy-only included; null when none, with a warning, and for a snapshot), `closeConnections`, `dryRun` (+ `tsql`); a real run adds `dropped` (`sys.databases` no longer holds the name). A database not ONLINE is a warning: SQL Server deletes the files of an ONLINE database only. gosmo `Database.Drop`, from master: without `--close-connections` a database in use is Msg 3702 (the server waits ~20 s first), `BLOCKED`, 7, the hint naming `--close-connections`; with it, `SET SINGLE_USER WITH ROLLBACK IMMEDIATE` and the `DROP` in one batch, which disconnects the database's sessions and rolls back their open transactions (put back to its access mode if the drop then fails). Msg 3709 (a snapshot made since) and 3752 (joined to an availability group) are `BLOCKED` too. Without CONTROL on the database / ALTER ANY DATABASE (Msg 3701): `PERMISSION_DENIED`, exit 9 |
 | `db scoped-config list <name> [-p <profile>] [connection options]` | Header `DATABASE` is `<name>`. Set, by name: `name`, `value`, `value_for_secondary`, `is_default`, `type` — `sys.database_scoped_configurations` read inside the database, values as the view holds them, as text: a switch (`type` `bit`) reads `1`/`0`, a number its digits, a keyword (`nvarchar`) the keyword. `value_for_secondary` is NULL where readable secondaries use the primary's value; `is_default` is NULL on 2016 (no `is_value_default`). The database must be ONLINE (exit 8) and the login need a user in it (exit 9), as `db table-sizes` |
 | `db scoped-config get <name> <setting>... [-p <profile>] [connection options]` | The list's row for each setting, in the order given (a repeat once); a name ignores case, an unknown one is `NOT_FOUND`, exit 8, the hint naming up to 3 that contain it |
 | `db scoped-config set <name> <setting> <value> [--for-secondary] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, gated as `config set`. `ALTER DATABASE SCOPED CONFIGURATION [FOR SECONDARY] SET <setting> = <value>` inside the database (gosmo `SetDatabaseScopedConfig`). The value is checked against the setting's `type` before anything runs (exit 2): a switch takes `ON`/`OFF` (`1`/`0` are sent as `ON`/`OFF` — the statement refuses a number there, Msg 102), a number a whole number ≥ 0 (its range is the server's: Msg 12108, exit 5), a keyword letters, digits and `_` (a quoted value — a URL — is not supported). `PRIMARY` only with `--for-secondary` (the server's Msg 12109 otherwise), making secondaries follow the primary. `--for-secondary` is accepted for a database in no availability group (stored, used once it is a readable secondary); a setting with no secondary value is Msg 12110, exit 5, with a hint. Needs ALTER ANY DATABASE SCOPED CONFIGURATION (Msg 15247: `PERMISSION_DENIED`, exit 9); on a readable secondary the database is read-only (Msg 3906, exit 5; the hint sends the change to the primary). `--dry-run`: record `dryRun: "true"`, `tsql` (`USE` + the statement); set `planned_change`: `name`, `replica` (`primary`\|`secondary`), `current`, `new`. A run: record `dryRun: "false"`; set `change`, from the view read before and after: `name`, `replica`, `before`, `requested`, `after`. Both sets spell values as the statement does (`ON`/`OFF`, `PRIMARY` for a NULL secondary value); an `after` that is not the `requested` is a warning |
@@ -619,8 +621,8 @@ shell quoting can damage them.
 
 The `db`, `object` and `server` commands read the catalog; they are all `read` and
 never take `--allow` — except `server config set/reset`, `server traceflag
-on/off`, `db set` and `db scoped-config set`, which are `admin` (as are
-`monitor kill` and `xevent capture`).
+on/off`, `db set`, `db scoped-config set`, `db create` and `db drop`, which
+are `admin` (as are `monitor kill` and `xevent capture`).
 
 - **Where they look.** An `object` command reads the connection's database —
   the profile's, or `-d/--database` — and the header's `DATABASE` names it.
@@ -1322,12 +1324,14 @@ ceiling is what refuses.
 
 The commands that change a server through gosmo — `server config
 set/reset`, `server traceflag on/off`, `db set`, `db scoped-config set`,
-`data import`, `monitor kill` and `xevent capture` — share one layer
+`db create`, `db drop`, `data import`, `monitor kill` and `xevent capture`
+— share one layer
 (`internal/cli/cmd/write.go`). Each is class `admin`, except `data import`
 (`write`, `ddl` with `--truncate-first`). `data import` answers a load
 count, `monitor kill` the session and whether it ended, `xevent capture` the
-events it caught — not a before/after change set (§ Data, § Monitoring,
-§ Extended Events).
+events it caught, `db create` the database read back and `db drop` the
+database as it stood — not a before/after change set (§ Commands, § Data,
+§ Monitoring, § Extended Events).
 
 - **The gate.** `--allow` and `--dry-run` are options of the writing
   commands and `query run`, not global ones: a read command does not take
@@ -1342,7 +1346,15 @@ events it caught — not a before/after change set (§ Data, § Monitoring,
   instead of sending them. The status stays `OK`; the record gains `dryRun:
   "true"` and `tsql`, gosmo's exact batch (verbatim in text), and the set is
   `planned_change`. Every writing run carries `dryRun`, `"false"` on a real
-  one, after the command's own fields.
+  one, after the command's own fields. That `tsql` is what the real run then
+  sends, statement for statement: `TestDryRunFidelity`
+  (`internal/cli/cmd/dryrun_fidelity_test.go`) runs each writer both ways over
+  its fakes and compares the dry run's `tsql` with the script of the real
+  run's writes (and a bulk load's row count with `rows`). A new writing
+  command adds a case to `fidelityCases` — `TestDryRunFidelityCoversEveryWriter`
+  fails on a command with `--dry-run` and none — and a new `Writer` method
+  does not compile until `fidelityWriter` shadows it. `query run` and `plan
+  actual` are exempt: their `--dry-run` classifies and prints no T-SQL.
 - **Before and after.** A real run reads the state again after writing and
   reports a `change` set — `before`, `requested`, `after` — so the answer is
   the server's, not the request echoed. An `after` that is not the requested
@@ -1368,6 +1380,8 @@ events it caught — not a before/after change set (§ Data, § Monitoring,
   - `--confirm <table>` (`data import`, with `--truncate-first`): the table
     exactly as given, likewise.
   - `--confirm <spid>` (`monitor kill`, always): the spid exactly as given.
+  - `--confirm <name>` (`db drop`, always): the database's name exactly as
+    given. `--close-connections` does not stand in for it.
 
   The global `--force` keeps its one meaning: replace an existing file the
   command writes — `--out-file`, `--plan-file`, `--script-file`, or the

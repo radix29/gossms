@@ -161,6 +161,13 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
   one line per write or refusal for ever. Deferred by decision; a size cap
   with one `.1` generation, taken under the same lock, is the likely form.
+- **A `--confirm` refusal's audit line has no target** (phase 8, found in
+  8.e): `db drop`, `db set --rollback-immediate`, `monitor kill` and `data
+  import --truncate-first` check `--confirm` before `gate`, so `noteTarget`
+  never runs and the `BLOCKED` line carries empty `server`, `database` and
+  `login`. Calling `noteTarget` (or the check) ahead of the refusal, or
+  `logCall` filling an empty target through `connect.Describe`, would fix
+  all four at once.
 
 ## Fix order
 

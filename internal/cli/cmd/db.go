@@ -40,7 +40,7 @@ func DBCommands(d Deps) []*spec.Command {
 	return slices.Concat([]*spec.Command{
 		{
 			Path:    []string{"db"},
-			Summary: "List databases, show one database's properties, its files, its space, its log usage and its largest tables, change its options, and list and change its scoped configurations",
+			Summary: "List databases, show one database's properties, its files, its space, its log usage and its largest tables, change its options, list and change its scoped configurations, create and drop databases",
 			Class:   spec.ClassRead,
 		},
 		{
@@ -84,7 +84,7 @@ func DBCommands(d Deps) []*spec.Command {
 		dbLogUsageCommand(d),
 		dbTableSizesCommand(d),
 		dbSetCommand(d),
-	}, dbScopedConfigCommands(d))
+	}, dbCreateCommands(d), dbScopedConfigCommands(d))
 }
 
 func boolText(b bool) string { return strconv.FormatBool(b) }
