@@ -42,7 +42,7 @@ func outputOptions() []spec.Option {
 		{Name: optOutFile, Type: spec.TypeString, Global: true,
 			Help: "Write every row to this file, its format by extension (.csv .tsv .jsonl .json .md .txt); stdout gets the summary"},
 		{Name: optForce, Type: spec.TypeBool, Global: true,
-			Help: "Replace an existing --out-file, --plan-file or --script-file"},
+			Help: "Replace an existing --out-file, --plan-file or --script-file, or the files --deadlock-file writes"},
 	}
 }
 
@@ -84,5 +84,6 @@ func renderOptions(inv *spec.Invocation) (output.Options, error) {
 }
 
 // forceFileOptions is the command options, besides --out-file, that name a
-// file the command writes and that --force lets replace an existing file.
-var forceFileOptions = []string{"plan-file", "script-file"}
+// file the command writes (deadlock-file: a directory of them) and that
+// --force lets replace an existing file.
+var forceFileOptions = []string{"plan-file", "script-file", "deadlock-file"}

@@ -149,6 +149,28 @@ type Catalog interface {
 	// the sessions.
 	HasViewServerState(ctx context.Context) (bool, error)
 	ActiveSessions(ctx context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error)
+	// monitor waits: sys.dm_os_wait_stats, every wait type's totals.
+	WaitStats(ctx context.Context) ([]gosmo.WaitStat, error)
+	// monitor top-queries / plan cached: the plan cache's costliest
+	// statements, and one statement's cached plan.
+	TopQueries(ctx context.Context, opts gosmo.TopQueriesOptions) ([]*gosmo.CachedQueryStat, error)
+	CachedPlan(ctx context.Context, planHandle []byte, stmtStart, stmtEnd int) (string, error)
+	// monitor querystore: the server's clock (its zone is the one a
+	// zoneless --since means), the metrics d's instance has, and d's Query
+	// Store reports.
+	CurrentTime(ctx context.Context) (time.Time, error)
+	QueryStoreMetrics(d *gosmo.Database) []gosmo.QSMetric
+	QSTopResourceQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
+	QSRegressedQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
+	QSHighVariationQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
+	QSForcedPlanQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
+	QSWaitCategories(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSWaitStat, error)
+	QSWaitingQueries(ctx context.Context, d *gosmo.Database, category gosmo.QSWaitCategory, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
+	// monitor deadlocks: an event session with its targets, and its
+	// event_file (the server keeping only the named events) or ring_buffer.
+	EventSessionByName(ctx context.Context, name string) (*gosmo.EventSession, error)
+	ReadFileEvents(ctx context.Context, pattern string, cursor gosmo.EventFileCursor, max int, events []string) ([]gosmo.XEvent, gosmo.EventFileCursor, error)
+	ReadRingBuffer(ctx context.Context, es *gosmo.EventSession) (*gosmo.RingBufferData, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -474,6 +496,62 @@ func (c serverCatalog) EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) 
 
 func (c serverCatalog) HasViewServerState(ctx context.Context) (bool, error) {
 	return c.s.HasViewServerState(ctx)
+}
+
+func (c serverCatalog) WaitStats(ctx context.Context) ([]gosmo.WaitStat, error) {
+	return c.s.WaitStats(ctx)
+}
+
+func (c serverCatalog) TopQueries(ctx context.Context, opts gosmo.TopQueriesOptions) ([]*gosmo.CachedQueryStat, error) {
+	return c.s.TopQueries(ctx, opts)
+}
+
+func (c serverCatalog) CachedPlan(ctx context.Context, planHandle []byte, stmtStart, stmtEnd int) (string, error) {
+	return c.s.CachedPlan(ctx, planHandle, stmtStart, stmtEnd)
+}
+
+func (c serverCatalog) CurrentTime(ctx context.Context) (time.Time, error) {
+	return c.s.CurrentTime(ctx)
+}
+
+func (serverCatalog) QueryStoreMetrics(d *gosmo.Database) []gosmo.QSMetric {
+	return d.QueryStore().Metrics()
+}
+
+func (serverCatalog) QSTopResourceQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
+	return d.QueryStore().TopResourceQueries(ctx, opts)
+}
+
+func (serverCatalog) QSRegressedQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
+	return d.QueryStore().RegressedQueries(ctx, opts)
+}
+
+func (serverCatalog) QSHighVariationQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
+	return d.QueryStore().HighVariationQueries(ctx, opts)
+}
+
+func (serverCatalog) QSForcedPlanQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
+	return d.QueryStore().ForcedPlanQueries(ctx, opts)
+}
+
+func (serverCatalog) QSWaitCategories(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSWaitStat, error) {
+	return d.QueryStore().WaitCategories(ctx, opts)
+}
+
+func (serverCatalog) QSWaitingQueries(ctx context.Context, d *gosmo.Database, category gosmo.QSWaitCategory, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
+	return d.QueryStore().WaitingQueries(ctx, category, opts)
+}
+
+func (c serverCatalog) EventSessionByName(ctx context.Context, name string) (*gosmo.EventSession, error) {
+	return c.s.XEvents().SessionByName(ctx, name)
+}
+
+func (c serverCatalog) ReadFileEvents(ctx context.Context, pattern string, cursor gosmo.EventFileCursor, max int, events []string) ([]gosmo.XEvent, gosmo.EventFileCursor, error) {
+	return c.s.XEvents().ReadFileEvents(ctx, pattern, cursor, max, events)
+}
+
+func (serverCatalog) ReadRingBuffer(ctx context.Context, es *gosmo.EventSession) (*gosmo.RingBufferData, error) {
+	return es.ReadRingBuffer(ctx)
 }
 
 func (c serverCatalog) ActiveSessions(ctx context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error) {

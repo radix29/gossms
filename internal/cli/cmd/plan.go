@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -50,8 +51,9 @@ func PlanCommands(d Deps) []*spec.Command {
 		{
 			Path:    []string{"plan"},
 			Summary: "Show execution plans",
-			Description: "The query editor's Display Estimated Execution Plan and Include Actual Execution Plan. The " +
-				"T-SQL comes as for query run: exactly one of --sql (-Q), --file (-i; - reads stdin) or --sql-base64.",
+			Description: "The query editor's Display Estimated Execution Plan and Include Actual Execution Plan, and " +
+				"a plan from the plan cache. For estimated and actual the T-SQL comes as for query run: exactly one of " +
+				"--sql (-Q), --file (-i; - reads stdin) or --sql-base64.",
 			Class: spec.ClassRead,
 		},
 		{
@@ -120,7 +122,104 @@ func PlanCommands(d Deps) []*spec.Command {
 				"gossms plan actual -p dev --file report.sql --plan-format xml --plan-file report.sqlplan",
 			},
 		},
+		{
+			Path:    []string{"plan", "cached"},
+			Summary: "Show a cached statement's plan, by the plan handle monitor top-queries gives",
+			Description: "Reads one statement's plan from the plan cache (sys.dm_exec_text_query_plan): the estimated " +
+				"plan the server compiled and keeps reusing, with no runtime figures. plan_handle is monitor " +
+				"top-queries' plan_handle (0x and hex; the 0x may be left out), and --statement-start / " +
+				"--statement-end its statement_start and statement_end, the statement's byte offsets in its batch; " +
+				"left out (0 and -1) they give every statement of the batch. A plan that has left the cache, or a " +
+				"statement not compiled yet (a deferred compile, such as one using a #temp table its batch " +
+				"creates), is exit 8. --plan-format, --top and --plan-file as for plan estimated. Needs VIEW SERVER " +
+				"STATE (VIEW SERVER PERFORMANCE STATE from SQL Server 2022): without it, exit 9.",
+			Args: []spec.Arg{{Name: "plan_handle", Help: "The plan handle, as monitor top-queries gives it", Format: "0x<hex>", Required: true}},
+			Options: append(ConnectOptions(),
+				spec.Option{Name: optStatementStart, Type: spec.TypeInt, Default: "0",
+					Help: "The statement's start offset (monitor top-queries' statement_start)"},
+				spec.Option{Name: optStatementEnd, Type: spec.TypeInt, Default: "-1",
+					Help: "The statement's end offset (monitor top-queries' statement_end); -1 for the batch's end"},
+				spec.Option{Name: optPlanFormat, Type: spec.TypeEnum, Enum: []string{planSummary, planTree, planXML},
+					Default: planSummary, Help: "summary: statements, costliest operators, missing indexes, warnings; tree: every operator; xml: the plan document"},
+				spec.Option{Name: optTop, Type: spec.TypeInt, Default: strconv.Itoa(defaultPlanTop),
+					Help: "Operators the summary keeps, costliest first; 0 for every one"},
+				spec.Option{Name: optPlanFile, Type: spec.TypeString,
+					Help: "Also write the plan document to this file (.sqlplan opens in SSMS); --force replaces one"},
+			),
+			Class: spec.ClassRead,
+			Run:   d.planCached,
+			Examples: []string{
+				"gossms plan cached 0x0600050057E1D03290A1C2B4F0020000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 --statement-start 112 --statement-end 418 -p prod-ro",
+				"gossms plan cached 0x0600050057E1D03290A1C2B4F0020000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 -p prod-ro --plan-format xml --plan-file slow.sqlplan",
+			},
+		},
 	}
+}
+
+// plan cached's statement offsets.
+const (
+	optStatementStart = "statement-start"
+	optStatementEnd   = "statement-end"
+)
+
+// parsePlanHandle is a plan handle as monitor top-queries prints it: hex,
+// with or without its 0x. A plan handle is at most 64 bytes.
+func parsePlanHandle(s string) ([]byte, error) {
+	h := s
+	if len(h) >= 2 && (h[:2] == "0x" || h[:2] == "0X") {
+		h = h[2:]
+	}
+	b, err := hex.DecodeString(h)
+	if err != nil || len(b) == 0 || len(b) > 64 {
+		return nil, usageError(fmt.Sprintf("plan_handle %q is not a plan handle", s),
+			"Give the plan_handle monitor top-queries prints: 0x and up to 128 hex digits.")
+	}
+	return b, nil
+}
+
+func (d Deps) planCached(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
+	handle, err := parsePlanHandle(inv.Args[0])
+	if err != nil {
+		return nil, err
+	}
+	start, end := inv.Values[optStatementStart].(int), inv.Values[optStatementEnd].(int)
+	if start < 0 || end < -1 || (end != -1 && end < start) {
+		return nil, usageError(fmt.Sprintf("--statement-start %d --statement-end %d: not a statement's offsets", start, end),
+			"Give monitor top-queries' statement_start and statement_end, or leave both out for the whole batch.")
+	}
+	ps, err := readPlanSettings(inv)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &output.Result{}
+	closeConn, cat, err := d.connectServerState(ctx, inv, res, "plan cached")
+	if err != nil {
+		return res, err
+	}
+	defer closeConn()
+
+	doc, err := cat.CachedPlan(ctx, handle, start, end)
+	if err != nil {
+		e := readError(err)
+		if e.Code == output.CodeNotFound {
+			e.Hint = "The plan has left the cache (evicted, recompiled or the server restarted), or the statement " +
+				"has not been compiled yet. Run monitor top-queries again for a current plan_handle."
+		}
+		planFileNotWritten(res, ps, "there is no plan")
+		return res, e
+	}
+	res.Fields = []output.Field{
+		{Key: "planType", Value: "cached"}, {Key: "planHandle", Value: *hexCell(handle)},
+		{Key: "statementStart", Value: strconv.Itoa(start)}, {Key: "statementEnd", Value: strconv.Itoa(end)},
+	}
+	plan, err := showplan.ParseAll([]string{doc})
+	if err != nil {
+		res.Errors = append(res.Errors, output.NewError(output.CodeGeneralError, "the server's plan could not be read: "+err.Error(), ""))
+		return res, nil
+	}
+	addPlan(res, plan, ps)
+	return res, nil
 }
 
 // planSettings is a plan command's own options, checked.

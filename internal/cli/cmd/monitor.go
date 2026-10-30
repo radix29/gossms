@@ -18,11 +18,15 @@ func MonitorCommands(d Deps) []*spec.Command {
 	return []*spec.Command{
 		{
 			Path:    []string{"monitor"},
-			Summary: "Show the server's sessions and its blocking chains",
+			Summary: "Show the server's sessions, its blocking chains, its waits, its costliest cached statements, Query Store's history and the recorded deadlocks",
 			Class:   spec.ClassRead,
 		},
 		monitorSessionsCommand(d),
 		monitorBlockingCommand(d),
+		monitorWaitsCommand(d),
+		monitorTopQueriesCommand(d),
+		monitorQueryStoreCommand(d),
+		monitorDeadlocksCommand(d),
 	}
 }
 
@@ -38,11 +42,12 @@ const (
 // viewServerStateDenied is a monitor read's refusal without VIEW SERVER
 // STATE. It is asked first (P7-3): without it the session DMVs return only
 // the caller's own session, which ActiveSessions leaves out, so the answer
-// would be an empty list rather than a refusal.
+// would be an empty list rather than a refusal. The other DMVs refuse (Msg
+// 300), but asking first gives every monitor read the one answer.
 func viewServerStateDenied(what string) *output.Error {
-	return output.NewError(output.CodePermissionDenied, what+": the login lacks VIEW SERVER STATE, so the server shows it only its own session",
-		"The session DMVs need VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE from SQL Server 2022). "+
-			"Use a login that has it, or have it granted.")
+	return output.NewError(output.CodePermissionDenied, what+": the login lacks VIEW SERVER STATE",
+		"The server's DMVs need "+serverStateHint+"; without it the session DMVs show a login only its own "+
+			"session. Use a login that has it, or have it granted.")
 }
 
 // connectServerState is connectCatalog for a read that needs VIEW SERVER
