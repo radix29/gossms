@@ -63,10 +63,6 @@ Settled design: `docs/decisions.md` § Format Document.
   Edit > Format Document becomes a cascade (`controls/menu_cascade.go`) with the
   default style marked, and `config.SQLFormatStyle` plus a Tools > Options
   dropdown.
-- **The 5 MB showplan target (< 300 ms) is not met**: ~475 ms on the
-  i5-2500K dev box (`BenchmarkFormatXMLShowplan`). The `xml.Decoder` pass
-  alone is ~310 ms, so meeting it means replacing encoding/xml's
-  well-formedness check with the own lexer's.
 - **Keyword case on a case-sensitive *server* is untried.** Run live in a
   `Latin1_General_CS_AS` database only, where INT, VARCHAR, XML, SYSNAME and
   the built-ins resolve case-insensitively; `sysname` and the CLR types are
@@ -75,52 +71,28 @@ Settled design: `docs/decisions.md` § Format Document.
 ## Shrink: what is left
 
 - **A log file's "Minimum is N MB" is its used space, not its real floor.**
-  A log shrinks no further than its last active VLF, so Shrink > Files now
-  calls the figure a lower bound (`shrink_files_dialog.go`). The real floor
+  A log shrinks no further than its last active VLF, so Shrink > Files labels
+  the figure a lower bound (`shrink_files_dialog.go`). The real floor
   is readable from `sys.dm_db_log_info` (2016 SP2+; `DBCC LOGINFO` before):
   the end offset of the highest active VLF. Showing that needs a gosmo read
   and a version gate for 2016 RTM/SP1.
 
 ## Group by Schema: what is left
 
-- **Only the five main families group** (deferred scope, decided for the first
-  cut). Tables (the folder's own user tables), Views, Synonyms, Stored
+- **Only the five main families group** (deferred scope). Tables (the folder's own user tables), Views, Synonyms, Stored
   Procedures and Functions; the System/File/External/Graph Tables
   sub-folders, System Views/Procedures/Functions, Sequences, Types and every
   other schema-scoped family stay flat. Extending it is one entry in
   `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
   (`detail_browser_group_schema.go`) per family.
-- **No hover tooltip on the Object Explorer's `[⋮]`/`[Σ]` title button.** The plan
-  wanted `Group by Schema (Alt+G)` on hover, but nothing hit-tests hover on a
-  panel border: `Toolbar` keeps its own hover for its row, and the chart
-  tooltips are pinned readouts. The View menu item and F1 help carry the
-  name and key instead. Adding it means hover tracking in
-  `controls.TreeView` (`SetTitleButton`) plus a host-drawn overlay, as the
-  toolbar's.
 
 ## Fix order
 
-Outstanding work by priority within each subsection. Each item points to where
+Outstanding work by priority. Each item points to where
 the reasoning lives. **IDs are permanent, never reused or renumbered** (commit
 messages cite them); a new item takes the next unused number and is inserted by
 priority. **Maintained on request only** — don't regenerate it in ordinary
 work; close an item by deleting it when fixed.
-
-### Bugs and suspected defects
-
-- **B28 — Restrict access back to MULTI_USER failed once, Msg 5064.**
-  Seen 2026-10-23 driving B1 of the review plan on 17: SINGLE_USER through
-  Database Properties ▸ Options, 70 s idle, expand the database, then
-  MULTI_USER → "Changes to the state or options of database … cannot be made
-  at this time. The database is in single-user mode, and a user is currently
-  connected to it." A goSSMS session sat idle in the database. OK again a
-  minute later succeeded, and a second identical pass did not reproduce it.
-  Live probes in gosmo (`ALTER … SET MULTI_USER WITH ROLLBACK IMMEDIATE`
-  from a second pooled session while the holder idles in the database)
-  succeed every time, so an idle holder alone is not the cause. Suspected: a
-  concurrent goSSMS read (the Details pane, a fan-out) entering the database
-  as the ALTER ran. Dropping the 60 s `ConnMaxIdleTime` override (2026-10-24)
-  does not touch that cause. Unfixed; needs a reproduction first.
 
 ### Verification gaps
 

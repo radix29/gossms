@@ -799,3 +799,42 @@ func TestTreeViewHoldDriftingOntoTitleButtonDoesNotFire(t *testing.T) {
 	tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.Button1, tcell.ModNone))
 	tv.HandleMouse(tcell.NewEventMouse(tv.rect.W-3, 0, tcell.Button1, tcell.ModNone))
 }
+
+// The title button's hint shows only while the pointer is on the button, on the
+// row under the border, and goes when the pointer leaves the button or the tree.
+func TestTreeViewTitleButtonTipShowsOnHover(t *testing.T) {
+	tv := newTestTreeView()
+	tv.SetTitle("Object Explorer")
+	tv.SetTitleButton("S", "G", nil, nil)
+	tv.SetTitleButtonTip("Group by Schema")
+	btn, ok := tv.titleButtonRect()
+	if !ok {
+		t.Fatal("title button hidden")
+	}
+	row1 := func() string {
+		s := nullTestScreen(t)
+		tv.DrawOverlay(s)
+		var b strings.Builder
+		for x := range tv.rect.W {
+			str, _, _ := s.Get(x, 1)
+			b.WriteString(str)
+		}
+		return b.String()
+	}
+	if strings.Contains(row1(), "Group by Schema") {
+		t.Fatal("tip drawn with no hover")
+	}
+	tv.HandleMouse(tcell.NewEventMouse(btn.X+1, btn.Y, tcell.ButtonNone, tcell.ModNone))
+	if !strings.Contains(row1(), "Group by Schema") {
+		t.Errorf("no tip while hovering: %q", row1())
+	}
+	tv.HandleMouse(tcell.NewEventMouse(2, btn.Y+1, tcell.ButtonNone, tcell.ModNone))
+	if strings.Contains(row1(), "Group by Schema") {
+		t.Error("tip stayed after the pointer moved onto a row")
+	}
+	tv.HandleMouse(tcell.NewEventMouse(btn.X+1, btn.Y, tcell.ButtonNone, tcell.ModNone))
+	tv.HandleMouse(tcell.NewEventMouse(-1, -1, tcell.ButtonNone, tcell.ModNone))
+	if strings.Contains(row1(), "Group by Schema") {
+		t.Error("tip stayed after the pointer left the tree")
+	}
+}

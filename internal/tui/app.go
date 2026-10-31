@@ -767,6 +767,7 @@ func (a *App) draw() {
 	// menu dropdown and context menu extend into.
 	a.menuBar.DrawOverlay(s)
 	a.toolbar.DrawOverlay(s)
+	a.explorer.DrawOverlay(s)
 	a.contextMenu.Draw(s)
 	a.drawDragGhost(s, w)
 

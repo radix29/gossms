@@ -4,9 +4,19 @@ Settled decisions and deliberate exclusions — what stops a settled question
 being reopened. Each entry names what was decided and why re-raising it costs.
 Work knowingly left undone is in `docs/open-threads.md`.
 
+Sections: Azure SQL Managed Instance; Deferred scope (repeatedly,
+deliberately); Permission gating; gosmo; FILESTREAM; Always On; Always
+Encrypted; Log File Viewer; Query Store; Object Explorer folder filter;
+Delete/Rename; Clipboard in a dialog; Server-level families; Full-Text Search;
+Replication; Database-scoped credentials; Keys and certificates; Database-scope
+DDL triggers; Connection settings; Connect dialog; Extended Events; Resource
+Governor and Database Mail; IntelliSense; T-SQL lexing; SQL NULL in results;
+Format Document; By design; Release workflow; Progress dialog; Details pane;
+Agent schedules; No top-level plan document; gosmo API shape; File modes.
+
 ## Azure SQL Managed Instance
 
-Supported. Live gaps: `docs/open-threads.md` V2–V4, V6.
+Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
 
 - **MI reports `ProductVersion` `12.0.2000.8`** while running engine 18.0, so
   every gosmo `colSince`/`VersionMajor` gate degrades or refuses features it
@@ -315,9 +325,8 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   say: a browsing grid runs pages' commit-the-detail-back `OnSelectRow`
   handlers, and a lossy round trip there must not turn a look into a write.
   Text, check, select and radio rows drawn flat (and a read-only EditorRow)
-  are `Browsable` too, so `Ctrl+C` can copy them — reversed 2026-10-20 at the
-  user's request from "unfocusable, their values are already on screen": a
-  value on screen still could not be copied. Focus is all they get: every key,
+  are `Browsable` too, so `Ctrl+C` can copy them (a value on screen must still
+  be copyable). Focus is all they get: every key,
   click, Cut, Paste and Select All is refused while flat, so nothing can go
   dirty. A long flat value wraps under itself (`drawFlat`) rather than
   clipping, since there is no input box to scroll it.
@@ -493,10 +502,10 @@ Peer credentials, easy to undo:
   refused; an exact registered name still wins.
 - **A peer never retargets registered credentials.** The registered address,
   port, auth and TLS options are kept intact, even for short-name metadata.
-  Unregistered or ambiguous destinations are refused (`db.PeerNotRegisteredError`). A failed peer login reports its own error, never retries
-  with the parent's credentials. This security boundary supersedes the former
-  reachability-first fallback (GitHub issue #3).
-  `loadPeerCredentials` still skips entries whose password can't be decrypted.
+  Unregistered or ambiguous destinations are refused
+  (`db.PeerNotRegisteredError`). A failed peer login reports its own error,
+  never retries with the parent's credentials. This is a security boundary.
+  `loadPeerCredentials` skips entries whose password can't be decrypted.
 - **A refused peer is prompted for, SSMS-style — never silently dialled.**
   Where a refusal lands on the UI goroutine with the user present
   (`newObjectDialog.probe`, `runAGOperation`, the Object Explorer note, a
@@ -891,9 +900,9 @@ MI).
   Server Certificate). On win10cli every Strict attempt fails `TLS Handshake
   failed: EOF` — only SQL Server's self-signed fallback cert, which TDS 8.0
   refuses. Server config, not a defect; don't chase without a real cert.
-- **Trust Server Certificate defaults off beside Mandatory** (#4, PR #5,
-  2026-10-21), as in SSMS 20+: on by default let anyone on the network path
-  impersonate the server and collect a SQL login's password. The cost is
+- **Trust Server Certificate defaults off beside Mandatory**, as in SSMS 20+: on by
+  default let anyone on the network path impersonate the server and collect a
+  SQL login's password. The cost is
   known: Mandatory with Trust off fails on every on-prem instance here (`x509:
   certificate is not valid for any names` — SQL Server's self-signed fallback
   cert), so those need the box ticked, which the label marks as skipping
@@ -929,7 +938,8 @@ MI).
   `encrypt_mode` on save (Strict → Mandatory, a different AAD, so re-enter).
   The upgrade side is immediate: the first launch re-seals every older-format
   password (`Config.NeedsReseal`), so even a newer release that was only
-  started once leaves passwords an older one cannot open. The `encrypt` boolean is still written so old releases can read the file.
+  started once leaves passwords an older one cannot open. The `encrypt` boolean is still written so old releases can read
+  the file.
 
 ## Connect dialog: what the SSMS 21 redesign settled — do not re-raise
 
@@ -1241,10 +1251,6 @@ Unverified on Managed Instance and on non-Enterprise editions:
     rolls back inside a user transaction (probed on 13, 14 and 17). 'Database
     Mail XPs' is sp_configure + RECONFIGURE (Msg 574), so it runs in the last
     phase and follows the COMMIT; a failure there is a committed one.
-  - **Job Properties ▸ Steps is one transaction too**: its update,
-    delete and add passes and the reorder (whose own BEGIN/COMMIT batch
-    nests) commit together, so a failure part-way never leaves the steps
-    renumbered under the page.
 - **Nothing in Database Mail is sysadmin-only.** Configuration is
   `gate.DatabaseMailConfigRights()` = {msdb `db_owner`, CONTROL SERVER};
   sending is `DatabaseMailSendRights()`, adding `DatabaseMailUserRole`. A
@@ -1414,6 +1420,10 @@ it from the string 'NULL'.
   `sqlTableFunctions`, an index/statistics/GRANT `ON`), so `INSERT INTO log
   (msg)` keeps `log`; a missed name position fails safe. Leading commas. `;` is never added or
   removed, and long lines never wrap.
+- **Format Document upper-cases table hints only inside `WITH (…)`**: the
+  legacy `JOIN log (nolock)` form stays as typed, since `(…)` after an
+  unqualified name there may be a TVF's arguments (`CROSS APPLY f(nolock)`
+  can pass a column).
 - **Language comes from the extension or origin only**, never content
   sniffing; Save As to `.sql`/`.xml`/`.json` re-derives it.
 - **One undo step** (`Editor.ReplaceText`/`ReplaceSelectedLines`; `SetText`
@@ -1427,47 +1437,22 @@ it from the string 'NULL'.
 
 ## By design — not issues, do not re-raise
 
-- **Hypothetical (Tuning Advisor) indexes are scripted as a comment and shown
-  marked** (decided 2026-10-21). gosmo's scripter writes `-- hypothetical
-  index [x] on [t] (tuning advisor) not scripted` rather than CREATE INDEX —
-  no documented DDL recreates one, and a real build is what a deployed script
-  would otherwise do. The explorer, Table Properties and Index Properties show
-  them marked, not hidden, and Delete still works: dropping DTA leftovers is
-  the usual cleanup. The full-text key-index picker leaves them out.
-- **Shrink Database's unticked "Reorganize files" scripts the bare
-  `DBCC SHRINKDATABASE (N'db')`** (checked against SSMS 21, 2026-10-21).
-  Ticked with N% it scripts `(N'db', N)`; neither form adds `TRUNCATEONLY` or
-  `NOTRUNCATE`, so both move pages, and the box only adds the free-space
-  target. Microsoft's dialog page, which equates unticked with
-  `TRUNCATEONLY`, is wrong; gosmo's `ShrinkDatabaseOptions` zero value is
-  right. SSMS 21 has no WAIT_AT_LOW_PRIORITY option there — gossms's Locking
-  rows (SQL 2022+) are an extra.
-- **A log's UNLIMITED max size shows as 2097152 MB, not Unlimited**
-  (checked against SSMS 21, 2026-10-24). SQL Server stores a log's unlimited
-  `max_size` as 268435456 pages (2 TB), not -1, both for the default and
-  after `MODIFY FILE (… MAXSIZE = UNLIMITED)`; only data files keep -1.
-  gosmo's `normalizeFileGrowth` maps only -1 to `MaxSizeKB = -1`, so
-  Database Properties ▸ Files shows "2097152 MB", and choosing Unlimited for
-  a log reopens as Limited to 2097152 MB. SSMS 21 shows the same. Mapping
-  LOG/268435456 to Unlimited would lose nothing (2 TB is the log ceiling), but
-  it would break parity.
+### Explorer, Details pane and dialogs
+
 - **The Details pane caches every node it has shown, for the connection's
-  life, with no cap or age limit** (decided 2026-10-24). `db.cache[node]`
+  life, with no cap or age limit.** `db.cache[node]`
   (`internal/tui/detail_browser_runs.go`) makes reselecting a node instant, as
   in SSMS; a revisited node shows data as old as its first fetch until Refresh
   (`Invalidate`, the title bar's refresh button), a write that calls
   `Invalidate`/`InvalidateWhere`, a Reload (`Forget`) or disconnect
   (`PurgeConn`). Arrowing through a large server holds every grid seen; that
   memory is accepted.
-- **Agent ▸ Job History shows the 100 most recent job-level runs across all
-  jobs, not each job's latest run** (decided 2026-10-24). One job on a
-  frequent schedule can crowd the others out of the list; the Jobs folder
-  already shows each job's last outcome, so a per-job read would duplicate it.
-- **Format Document upper-cases table hints only inside `WITH (…)`**: the
-  legacy `JOIN log (nolock)` form stays as typed, since `(…)` after an
-  unqualified name there may be a TVF's arguments (`CROSS APPLY f(nolock)`
-  can pass a column).
-
+- **The Databases folder's per-database round trip is intended** —
+  `FILEPROPERTY` reports only on the current database. One dynamic batch is
+  faster (11-12 ms vs 20-21 ms over four databases) but one unreachable database
+  fails every row, whereas the fan-out (8-wide, `ceil(N/8) × RTT`) degrades to
+  `N/A` in one row. If ever slow, add the batch as a fast path with the fan-out
+  as fallback — never as a replacement.
 - **On a narrow terminal the main toolbar hides buttons; it never overlaps
   the menu labels.** `Toolbar.SetBounds` takes `MenuBar.LabelsEnd()` as a
   hard left limit and hides by `ToolbarButton.DropRank`, highest first:
@@ -1476,45 +1461,6 @@ it from the string 'NULL'.
   because every hidden button keeps a menu entry or key; a divider left
   leading, trailing or doubled is hidden with them. All buttons show from
   ~140 columns.
-- **A combining mark does not shift a row; a tmux capture only looks like
-  it.** Arabic stopwords ending in a shadda (`إنّ`, U+0651) seem to push the
-  grid's and dialog's right border one column, but tcell emits base and mark in
-  one cell write with no cursor move and tmux's cell grid keeps every separator
-  in the header's column; the shift is `capture-pane -p` text read by a viewer
-  that counts the mark as a column. `TestGridCombiningMarkKeepsSeparatorColumn`
-  pins the emitted bytes and separator columns.
-- **A query window's session is SSMS-like, with three deliberate
-  differences.** A panel closed *mid-run* isn't asked about its transaction —
-  the run is cancelled and the session ended (rollback), since its
-  `@@TRANCOUNT` predates the run. A lost session (killed SPID, network drop,
-  failover, a plan capture whose `SET … OFF` failed) disconnects the panel
-  rather than silently reconnecting on F5, since the new session lacks the temp
-  tables and transaction. The commit-on-close loop is bounded by the starting
-  `@@TRANCOUNT`, so a doomed transaction reports and leaves the window open.
-- **A query window's session runs with `ARITHABORT ON`, as SSMS's does**
-  (decided 2026-10-13). go-mssqldb logs in with it OFF (`@@OPTIONS` 5432
-  against SSMS's 5496); `query.Open` sets it before its state read. Results
-  are the same either way (ANSI_WARNINGS ON implies it), but `set_options`
-  keys the plan cache, so OFF would compile and reuse plans an SSMS window
-  never sees — and match an ADO.NET application's instead. Matching SSMS is the
-  choice; `TestLiveSessionOpensWithArithAbortOn` pins it.
-- **Comment prose is not a cleanup target** — the long blocks `CLAUDE.md` §
-  Coding conventions names, and failure-naming comments in
-  `query_store_panel.go`, `prop_grid_helpers.go` and similar. Drift that does
-  recur when *editing* comments: wrong caller after a helper moved, counts,
-  claims about which types implement an interface, wrong-document
-  cross-references, and inverted sentences that read fine either way.
-- **A `sql_variant` cell is rendered from its value, not its inner type**.
-  go-mssqldb v1.11.2 decodes the inner type and drops
-  it, so `query.appendVariant` infers: a `[]byte` spelling a decimal literal is
-  decimal/money digits (a `varbinary` variant that happens to spell one shows
-  as text too — accepted), a nameless fixed zone is a `datetimeoffset`, and
-  fractions show at least three digits. A `date` still shows as a datetime at
-  midnight, a `time` on 0001-01-01, a GUID as its wire bytes in hex, and money
-  with four decimals where SSMS shows `#0.00##` (a money *column* is right —
-  `query.appendMoney`, by its column type) — the driver must return a typed
-  value (or the base type) before those can be right; `TestLiveVariantCells`
-  pins today's text. The complete fix is upstream, not a heuristic here.
 - **Which databases a dropdown offers** is settled in
   `internal/tui/database_list.go`, by when the name is resolved: stored for
   later (job step, alert, login default database, restore history) → every
@@ -1531,18 +1477,6 @@ it from the string 'NULL'.
   New-X defaults; wrong for server-supplied names against a separately read
   list (they vanish if dropped between reads or invisible) — use
   `preservedValue`/`changedTo`. `TestIndexOfSentinelListFallsBackToSentinel`.
-- **A job with a dropped owner login can't be made by dropping the login** —
-  SQL Server refuses to drop a job owner. A **schedule's** owner can be dropped
-  (`SUSER_SNAME(owner_sid)` goes NULL). Orphaned job owners come only from a
-  foreign msdb restore or a Windows principal removed from AD.
-- **Start/Stop Job aren't greyed.** They read state first and refuse in the
-  app's words ("Job X is already running"/"is not running"), refreshing the node
-  — the read is free. Gating would hide a legit Stop for a job started since the
-  folder loaded.
-- **`sp_delete_jobstep` isn't symmetrical with `sp_add_jobstep`** — it resets
-  references to steps at/after the deleted one to "quit with success", hence
-  `ReorderSteps`' repair pass. A test moving the *last* step can't see it; the
-  live test moves a middle one.
 - **Merging the two user-mapping page builders is a non-goal** — the
   duplication that caused a bug was in `wireGridEditor`, now shared; merging the
   builders costs six injection points, two row structs, two applies.
@@ -1558,21 +1492,116 @@ it from the string 'NULL'.
   `widgets.InputField` takes `Ctrl+A`/`Ctrl+U`, not `Ctrl+Z`. A new
   `EditorRow` inherits this; a new row type with its own `Ctrl+Z` and no
   `KeyHandler` needs a different key.
-- **The editor's redo stack is uncapped in bytes, and `applyStep`'s slice is
-  unguarded, deliberately** (`maxUndoSteps`/`applyStep` in
-  `internal/tuikit/controls/editor_undo.go`; `TestEditorRedoStackBound`).
-  Redo is bounded by count (cleared on any edit); `maxUndoBytes` can't reach it
-  because the inverse carries replaced lines (48.4 MB redo vs 46.5 MB undo,
-  measured) — the undo cap bounds it to within one document, and a `redoBytes`
-  cap would silently drop the deepest redo. `applyStep` slicing
-  `[st.row : st.row+st.newLen]` unchecked is intended: a violated
-  `pushUndoSpan` promise means corruption, and a clamp would quietly restore the
-  wrong text. Don't add one.
-- **gosmo untagged past its tag with `replace` active is the development
-  state**, not a release blocker; tagging, bumping `require` and commenting out
-  `replace` are release steps (ARCHITECTURE.md § Developing against a local
-  gosmo checkout). A CI release build failing to resolve gosmo mid-development
-  is expected.
+- **The two search dialogs' key-routing skeleton stays duplicated**
+  (`FindReplaceDialog.HandleKey`, `LogSearchDialog.HandleKey`). Only the
+  Tab/Backtab half is identical; Escape, `F3` and field dispatch differ. A
+  twelve-line helper for two callers isn't worth it — extract for a third
+  dialog or opportunistically. `log_search_dialog.go`'s `HandleMouse` comment
+  ("the same shape as `FindReplaceDialog`'s") goes stale if either moves.
+- **A combining mark does not shift a row; a tmux capture only looks like
+  it.** Arabic stopwords ending in a shadda (`إنّ`, U+0651) seem to push the
+  grid's and dialog's right border one column, but tcell emits base and mark in
+  one cell write with no cursor move and tmux's cell grid keeps every separator
+  in the header's column; the shift is `capture-pane -p` text read by a viewer
+  that counts the mark as a column. `TestGridCombiningMarkKeepsSeparatorColumn`
+  pins the emitted bytes and separator columns.
+
+### Objects, scripting and Restore
+
+- **Hypothetical (Tuning Advisor) indexes are scripted as a comment and shown
+  marked.** gosmo's scripter writes `-- hypothetical index [x] on [t] (tuning
+  advisor) not scripted` rather than CREATE INDEX —
+  no documented DDL recreates one, and a real build is what a deployed script
+  would otherwise do. The explorer, Table Properties and Index Properties show
+  them marked, not hidden, and Delete still works: dropping DTA leftovers is
+  the usual cleanup. The full-text key-index picker leaves them out.
+- **Shrink Database's unticked "Reorganize files" scripts the bare
+  `DBCC SHRINKDATABASE (N'db')`** (checked against SSMS 21).
+  Ticked with N% it scripts `(N'db', N)`; neither form adds `TRUNCATEONLY` or
+  `NOTRUNCATE`, so both move pages, and the box only adds the free-space
+  target. Microsoft's dialog page, which equates unticked with
+  `TRUNCATEONLY`, is wrong; gosmo's `ShrinkDatabaseOptions` zero value is
+  right. SSMS 21 has no WAIT_AT_LOW_PRIORITY option there — gossms's Locking
+  rows (SQL 2022+) are an extra.
+- **A log's UNLIMITED max size shows as 2097152 MB, not Unlimited**
+  (checked against SSMS 21). SQL Server stores a log's unlimited
+  `max_size` as 268435456 pages (2 TB), not -1, both for the default and
+  after `MODIFY FILE (… MAXSIZE = UNLIMITED)`; only data files keep -1.
+  gosmo's `normalizeFileGrowth` maps only -1 to `MaxSizeKB = -1`, so
+  Database Properties ▸ Files shows "2097152 MB", and choosing Unlimited for
+  a log reopens as Limited to 2097152 MB. SSMS 21 shows the same. Mapping
+  LOG/268435456 to Unlimited would lose nothing (2 TB is the log ceiling), but
+  it would break parity.
+- **`masterMappableNames` swallows its two reads' errors** — `sys.certificates`/
+  `sys.asymmetric_keys` need master permission, and ordinary SQL/Windows logins
+  must still be creatable; an empty picker becomes a refusal naming what's
+  missing. Also settled live: `DEFAULT_DATABASE`/`DEFAULT_LANGUAGE` can't be set
+  for certificate- or key-mapped logins (CREATE or ALTER), so the page refuses
+  them up front.
+- **Per-file Restore destinations (SSMS's "Restore As") aren't built** — the
+  folder-level choice covers it. Rules (gosmo's `restore_plan.go`):
+  the backup set number comes only from `BackupHeader.SetNumber` /
+  `BackupInfo.SetNumber` for the restore, the MOVE clauses and Files Included —
+  deriving it separately gave "Logical file 'x' is not part of database 'y'" on
+  appended `.bak`s; the relocation preview and MOVE clauses share
+  `RestoreRelocation.Moves`, and `RestoreOptions.FromHeader` sets both halves
+  from one set.
+- **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix doesn't strand the
+  pooled connection** (gosmo `permission_options.go`, via `server_security.go`).
+  A live A/B showed eight pooled connections on the right database after a
+  GRANT: `database/sql` calls `ResetSession`, which go-mssqldb implements as a
+  TDS reset restoring the connection-string database. A pinned
+  read-switch-restore would cost three round trips for nothing.
+
+### SQL Agent
+
+- **Agent ▸ Job History shows the 100 most recent job-level runs across all
+  jobs, not each job's latest run.** One job on a
+  frequent schedule can crowd the others out of the list; the Jobs folder
+  already shows each job's last outcome, so a per-job read would duplicate it.
+- **A job with a dropped owner login can't be made by dropping the login** —
+  SQL Server refuses to drop a job owner. A **schedule's** owner can be dropped
+  (`SUSER_SNAME(owner_sid)` goes NULL). Orphaned job owners come only from a
+  foreign msdb restore or a Windows principal removed from AD.
+- **Start/Stop Job aren't greyed.** They read state first and refuse in the
+  app's words ("Job X is already running"/"is not running"), refreshing the node
+  — the read is free. Gating would hide a legit Stop for a job started since the
+  folder loaded.
+- **`sp_delete_jobstep` isn't symmetrical with `sp_add_jobstep`** — it resets
+  references to steps at/after the deleted one to "quit with success", hence
+  `ReorderSteps`' repair pass. A test moving the *last* step can't see it; the
+  live test moves a middle one.
+- **Job Properties ▸ Steps is one transaction**: its update, delete and add
+  passes and the reorder (whose own BEGIN/COMMIT batch nests) commit together,
+  so a failure part-way never leaves the steps renumbered under the page.
+
+### Query windows and results
+
+- **A query window's session is SSMS-like, with three deliberate
+  differences.** A panel closed *mid-run* isn't asked about its transaction —
+  the run is cancelled and the session ended (rollback), since its
+  `@@TRANCOUNT` predates the run. A lost session (killed SPID, network drop,
+  failover, a plan capture whose `SET … OFF` failed) disconnects the panel
+  rather than silently reconnecting on F5, since the new session lacks the temp
+  tables and transaction. The commit-on-close loop is bounded by the starting
+  `@@TRANCOUNT`, so a doomed transaction reports and leaves the window open.
+- **A query window's session runs with `ARITHABORT ON`, as SSMS's does.**
+  go-mssqldb logs in with it OFF (`@@OPTIONS` 5432 against SSMS's 5496); `query.Open` sets it before its state read. Results
+  are the same either way (ANSI_WARNINGS ON implies it), but `set_options`
+  keys the plan cache, so OFF would compile and reuse plans an SSMS window
+  never sees — and match an ADO.NET application's instead. Matching SSMS is the
+  choice; `TestLiveSessionOpensWithArithAbortOn` pins it.
+- **A `sql_variant` cell is rendered from its value, not its inner type**.
+  go-mssqldb v1.11.2 decodes the inner type and drops
+  it, so `query.appendVariant` infers: a `[]byte` spelling a decimal literal is
+  decimal/money digits (a `varbinary` variant that happens to spell one shows
+  as text too — accepted), a nameless fixed zone is a `datetimeoffset`, and
+  fractions show at least three digits. A `date` still shows as a datetime at
+  midnight, a `time` on 0001-01-01, a GUID as its wire bytes in hex, and money
+  with four decimals where SSMS shows `#0.00##` (a money *column* is right —
+  `query.appendMoney`, by its column type) — the driver must return a typed
+  value (or the base type) before those can be right; `TestLiveVariantCells`
+  pins today's text. The complete fix is upstream, not a heuristic here.
 - **A Grid/Text result is unlimited by default and can exhaust memory** — as
   SSMS ("you get what you asked for"). Storage is already compact
   (`internal/query/arena.go`; the floor is the 16-byte string header per cell
@@ -1590,9 +1619,8 @@ it from the string 'NULL'.
   the last batch), discards everything streamed and leaves the file as it was
   (`csvSink.finish`, `internal/tui/query_panel_export.go`;
   `TestCSVSinkFinishKeepsTheFileOnStopOrError`), unlike SSMS, which keeps what
-  it wrote. This was the v0.1.0 fix for a destination replaced by partial
-  output: the user agreed to overwrite with *the results*, and a partial CSV
-  looks complete to whatever reads it next. The Max fetch rows cap is a notice,
+  it wrote. The user agreed to overwrite with *the results*, and a
+  partial CSV looks complete to whatever reads it next. The Max fetch rows cap is a notice,
   not an error, so a capped run is still written. Don't make finish commit on
   error or on Stop.
 - **The DataGrid cell-viewer popup is unhighlighted.** Values bracketed by
@@ -1603,18 +1631,37 @@ it from the string 'NULL'.
   SQL's coarse runs, not per-token over a whole XML value. The panel draws
   unwrapped; with Word Wrap (Alt+Z) `drawWrapped` passes only runs overlapping
   each visual row (`runsInSpan`).
-- **The Databases folder's per-database round trip is intended** —
-  `FILEPROPERTY` reports only on the current database. One dynamic batch is
-  faster (11-12 ms vs 20-21 ms over four databases) but one unreachable database
-  fails every row, whereas the fan-out (8-wide, `ceil(N/8) × RTT`) degrades to
-  `N/A` in one row. If ever slow, add the batch as a fast path with the fan-out
-  as fallback — never as a replacement.
-- **Restructuring `internal/tui` is closed**; no split candidates outstanding.
-  The splits that paid (zero references back into `tui`) are done —
-  `sqlparse`, `planview`, `dashboard`, `gate`. File length alone doesn't reopen
-  it: the `agent_*`/`database_props_*`/`new_*` families cut through the `App`
-  dependency, and a `props` package would need a fourth package (41 `propPage`
-  files share 110 references to 44 symbols).
+- **The editor's redo stack is uncapped in bytes, and `applyStep`'s slice is
+  unguarded, deliberately** (`maxUndoSteps`/`applyStep` in
+  `internal/tuikit/controls/editor_undo.go`; `TestEditorRedoStackBound`).
+  Redo is bounded by count (cleared on any edit); `maxUndoBytes` can't reach it
+  because the inverse carries replaced lines (48.4 MB redo vs 46.5 MB undo,
+  measured) — the undo cap bounds it to within one document, and a `redoBytes`
+  cap would silently drop the deepest redo. `applyStep` slicing
+  `[st.row : st.row+st.newLen]` unchecked is intended: a violated
+  `pushUndoSpan` promise means corruption, and a clamp would quietly restore the
+  wrong text. Don't add one.
+- **The editor expands every tab to spaces** (`Editor.expandTabs`,
+  `internal/tuikit/controls/editor_actions.go`, on `SetText`, `Paste`, block
+  insert, Replace) — including in string literals, and Save writes spaces.
+  **Author's call.** No tab-preserving buffer
+  or tab-stop rendering.
+- **`appendValue`'s `case float32` is unreachable but kept** (go-mssqldb returns
+  `float64` for `REAL` and `FLOAT`); correct if that changes.
+- **float/real cells keep shortest round-trip digits, not SSMS's 15**
+  (`appendFloat`). SSMS 21/22 shows `123456789012345.6` as `123456789012346`
+  and `0.1e0+0.2e0` as `0.3`; gossms shows every digit needed to reparse the
+  same float64, so copied grid text doesn't silently change the value
+  (`TestFormatFloatRoundTrips`). The exponent form and its cut-offs (`>= 1e15`,
+  `< 1e-4`, `1E+300`, `1E-05`) do match SSMS, probed.
+- **`scanPlanXML`'s per-set append isn't live-testable**: every showplan result
+  set holds one row (seven batch shapes, both SET options,
+  `TestLivePlanEveryShowplanSetHoldsOneRow`), so only
+  `TestScanNextKeepsEveryShowplanRow` (scripted driver) kills an overwriting
+  mutant.
+
+### Activity Monitor
+
 - **The Block tab listing its own session is intended** — `sp_block` drops only
   idle *and* non-blocking sessions, so an unblocked server shows one row: the
   monitor. `and spr.spid <> @@spid` is **rejected — author's call**.
@@ -1647,20 +1694,16 @@ it from the string 'NULL'.
   "Buffer cache hit ratio is always 99.9%" is the engine's counting, not this
   arithmetic. `TestNeitherCacheHitRatioIsReadAsADelta` pins the readings. Don't
   re-propose a `prev` arm.
-- **`appendValue`'s `case float32` is unreachable but kept** (go-mssqldb returns
-  `float64` for `REAL` and `FLOAT`); correct if that changes.
-- **float/real cells keep shortest round-trip digits, not SSMS's 15**
-  (`appendFloat`). SSMS 21/22 shows `123456789012345.6` as `123456789012346`
-  and `0.1e0+0.2e0` as `0.3`; gossms shows every digit needed to reparse the
-  same float64, so copied grid text doesn't silently change the value
-  (`TestFormatFloatRoundTrips`). The exponent form and its cut-offs (`>= 1e15`,
-  `< 1e-4`, `1E+300`, `1E-05`) do match SSMS, probed.
-- **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix doesn't strand the
-  pooled connection** (gosmo `permission_options.go`, via `server_security.go`).
-  A live A/B showed eight pooled connections on the right database after a
-  GRANT: `database/sql` calls `ResetSession`, which go-mssqldb implements as a
-  TDS reset restoring the connection-string database. A pinned
-  read-switch-restore would cost three round trips for nothing.
+
+### Code and dependency hygiene
+
+- **Splitting `internal/tui` into packages is closed**; no split candidates
+  outstanding. The splits that paid (zero references back into `tui`) are
+  done — `sqlparse`, `planview`, `dashboard`, `gate`. The `agent_*`/
+  `database_props_*`/`new_*` families cut through the `App` dependency, and a
+  `props` package would need a fourth package (41 `propPage` files share 110
+  references to 44 symbols). Splitting an oversized *file* is separate and
+  governed by `CLAUDE.md` § Coding conventions.
 - **`mssql.ServerError` is fatal-only, so gosmo's `IsRetryable` treating it as
   retryable is right.** go-mssqldb v1.11.2 (checked): its doc says
   fatal/severs the connection, and both rows loops routing token errors through
@@ -1682,25 +1725,14 @@ it from the string 'NULL'.
   reader.
 - **`gate.AlterAnyLinkedSrv` and `gate.CreateTable` read as unused**,
   deliberately (the reason is at `AlterAnyLinkedSrv`, `gate/gate.go`).
-- **`scanPlanXML`'s per-set append isn't live-testable**: every showplan result
-  set holds one row (seven batch shapes, both SET options,
-  `TestLivePlanEveryShowplanSetHoldsOneRow`), so only
-  `TestScanNextKeepsEveryShowplanRow` (scripted driver) kills an overwriting
-  mutant.
-- **`masterMappableNames` swallows its two reads' errors** — `sys.certificates`/
-  `sys.asymmetric_keys` need master permission, and ordinary SQL/Windows logins
-  must still be creatable; an empty picker becomes a refusal naming what's
-  missing. Also settled live: `DEFAULT_DATABASE`/`DEFAULT_LANGUAGE` can't be set
-  for certificate- or key-mapped logins (CREATE or ALTER), so the page refuses
-  them up front.
-- **Per-file Restore destinations (SSMS's "Restore As") aren't built** — the
-  folder-level choice covers it. Rules (gosmo's `restore_plan.go`):
-  the backup set number comes only from `BackupHeader.SetNumber` /
-  `BackupInfo.SetNumber` for the restore, the MOVE clauses and Files Included —
-  deriving it separately gave "Logical file 'x' is not part of database 'y'" on
-  appended `.bak`s; the relocation preview and MOVE clauses share
-  `RestoreRelocation.Moves`, and `RestoreOptions.FromHeader` sets both halves
-  from one set.
+- **`fileutil.WithLock`'s stale-lock race is accepted.** Two waiters finding
+  the same stale lock (older than `lockStale`, 10 s) can race; it needs a dead
+  holder plus two saves within one poll, and costs only a lost edit, never
+  corruption (writes stay atomic). Closing it needs flock/`LockFileEx`, a GOOS
+  branch. Documented on `WithLock` (`internal/fileutil/lock.go`).
+
+### Distribution
+
 - **Distribution credentials.** Homebrew: `HOMEBREW_TAP_DEPLOY_KEY` on
   `radix29/gossms`, a write deploy key on `radix29/homebrew-tap` (not a PAT).
   APT: `APT_REPO_DEPLOY_KEY` (write deploy key on `radix29/apt`, GitHub Pages at
@@ -1711,28 +1743,6 @@ it from the string 'NULL'.
   1.22 (24.04) / 1.26 (26.04) vs `go.mod`'s 1.27. Measured: `go mod vendor`
   fully resolves `replace ../gosmo` (+23 MB, builds with `GOPROXY=off` and no
   sibling).
-- **Both repos track the latest Go release** (decided 2026-10-21). The `go`
-  directive and `toolchain` in both `go.mod`s follow the current stable Go, and
-  new standard-library API is used freely (gosmo already relies on Go 1.27's
-  `strings.CutLast`). Lowering the directive so distro Go (Ubuntu 26.04 ships
-  1.26) can build from source was proposed and declined: it would freeze both
-  modules on older APIs for builders who can install a current Go anyway.
-- **The two search dialogs' key-routing skeleton stays duplicated**
-  (`FindReplaceDialog.HandleKey`, `LogSearchDialog.HandleKey`). Only the
-  Tab/Backtab half is identical; Escape, `F3` and field dispatch differ. A
-  twelve-line helper for two callers isn't worth it — extract for a third
-  dialog or opportunistically. `log_search_dialog.go`'s `HandleMouse` comment
-  ("the same shape as `FindReplaceDialog`'s") goes stale if either moves.
-- **`fileutil.WithLock`'s stale-lock race is accepted.** Two waiters finding
-  the same stale lock (older than `lockStale`, 10 s) can race; it needs a dead
-  holder plus two saves within one poll, and costs only a lost edit, never
-  corruption (writes stay atomic). Closing it needs flock/`LockFileEx`, a GOOS
-  branch. Documented on `WithLock` (`internal/fileutil/lock.go`).
-- **The editor expands every tab to spaces** (`Editor.expandTabs`,
-  `internal/tuikit/controls/editor_actions.go`, on `SetText`, `Paste`, block
-  insert, Replace) — including in string literals, and Save writes spaces.
-  **Author's call.** No tab-preserving buffer
-  or tab-stop rendering.
 
 ## Release workflow
 

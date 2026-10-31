@@ -100,6 +100,7 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 	oe.view.SetTitleButton("⋮", "Σ",
 		func() bool { return app.groupBySchema },
 		func() { app.toggleGroupBySchema() })
+	oe.view.SetTitleButtonTip("Group by Schema (Alt+G)")
 	oe.view.OnExpand = oe.handleExpand
 	oe.view.OnCollapse = oe.handleCollapse
 	oe.view.OnSelect = oe.handleSelect
@@ -111,6 +112,7 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 func (oe *ObjectExplorer) SetBounds(x, y, w, h int)              { oe.view.SetBounds(x, y, w, h) }
 func (oe *ObjectExplorer) SetActive(v bool)                      { oe.view.SetActive(v) }
 func (oe *ObjectExplorer) Draw(s tcell.Screen)                   { oe.view.Draw(s) }
+func (oe *ObjectExplorer) DrawOverlay(s tcell.Screen)            { oe.view.DrawOverlay(s) }
 func (oe *ObjectExplorer) HandleKey(ev *tcell.EventKey) bool     { return oe.view.HandleKey(ev) }
 func (oe *ObjectExplorer) HandleMouse(ev *tcell.EventMouse) bool { return oe.view.HandleMouse(ev) }
 

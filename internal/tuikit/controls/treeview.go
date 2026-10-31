@@ -101,6 +101,8 @@ type titleButton struct {
 	label, onLabel string
 	on             func() bool
 	action         func()
+	tip            string // hover hint; see SetTitleButtonTip
+	hover          bool   // pointer is over the button (set by HandleMouse)
 }
 
 // text is the label the button shows in its current state.
@@ -127,6 +129,34 @@ func (tv *TreeView) SetTitle(title string) { tv.title = title }
 // hides rather than truncate the title.
 func (tv *TreeView) SetTitleButton(label, onLabel string, on func() bool, action func()) {
 	tv.titleButton = titleButton{label: label, onLabel: onLabel, on: on, action: action}
+}
+
+// SetTitleButtonTip sets the hint DrawOverlay shows under the title button
+// while the pointer rests on it. Empty (the default) shows none. Call it after
+// SetTitleButton, which resets the button.
+func (tv *TreeView) SetTitleButtonTip(tip string) { tv.titleButton.tip = tip }
+
+// DrawOverlay draws the title button's hover hint, right-aligned to the button
+// on the first row under the border and clamped to the screen. Hosts call it
+// after every panel has drawn, as with Toolbar.DrawOverlay, since the hint
+// overlaps the rows beneath.
+func (tv *TreeView) DrawOverlay(s tcell.Screen) {
+	b := tv.titleButton
+	if !b.hover || b.tip == "" {
+		return
+	}
+	btn, ok := tv.titleButtonRect()
+	if !ok {
+		return
+	}
+	sw, _ := s.Size()
+	w := core.DisplayWidth(b.tip) + 2
+	x := min(btn.Right()-w, sw-w)
+	x = max(x, 0)
+	y := btn.Y + 1
+	st := theme.StyleGridStatus()
+	core.FillRect(s, core.Rect{X: x, Y: y, W: w, H: 1}, ' ', st)
+	core.DrawText(s, x+1, y, st, b.tip)
 }
 
 // titleButtonRect returns where the title button is drawn, and whether it
@@ -398,8 +428,11 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		tv.sbDraggingX = false
 	}
 	if !tv.rect.Contains(mx, my) {
+		tv.titleButton.hover = false
 		return false
 	}
+	btn, onBtn := tv.titleButtonRect()
+	tv.titleButton.hover = onBtn && btn.Contains(mx, my)
 	inner := tv.rect.Inner(1)
 
 	// Scrollbar drag/click takes priority over the row hit-testing below. The
