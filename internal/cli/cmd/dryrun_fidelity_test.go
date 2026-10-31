@@ -322,6 +322,7 @@ var commandGroups = map[string]func(Deps) []*spec.Command{
 	"DataCommands":        DataCommands,
 	"MonitorCommands":     MonitorCommands,
 	"XEventCommands":      XEventCommands,
+	"SecurityCommands":    SecurityCommands,
 }
 
 func fidelityTree(d Deps) *spec.Tree {

@@ -271,6 +271,22 @@
     {
       "name": "xevent",
       "summary": "List the server's Extended Events sessions, or capture events for a while"
+    },
+    {
+      "name": "security",
+      "summary": "List logins, users and roles, a role's members, and a principal's permissions"
+    },
+    {
+      "name": "security logins",
+      "summary": "List the server's logins"
+    },
+    {
+      "name": "security users",
+      "summary": "List a database's users"
+    },
+    {
+      "name": "security roles",
+      "summary": "List a database's or the server's roles"
     }
   ],
   "commands": [
@@ -352,7 +368,8 @@
             "script",
             "data",
             "monitor",
-            "xevent"
+            "xevent",
+            "security"
           ],
           "default": null,
           "negation": null,
@@ -12712,6 +12729,1000 @@
         "gossms xevent capture --template batches --duration 60 --min-duration-ms 500 -p dev --allow admin",
         "gossms xevent capture --template errors --session-database Sales -p dev --allow admin -o jsonl",
         "gossms xevent capture --template deadlocks --duration 300 -p dev --allow admin --dry-run"
+      ]
+    },
+    {
+      "path": "security logins list",
+      "summary": "List the server's logins: type, disabled, default database, password policy",
+      "description": "One row per server login (sys.server_principals), by name: SQL, Windows and Windows-group, Microsoft Entra, and certificate- or asymmetric-key-mapped logins. A disabled login is left out unless --include-disabled. system marks the ##…## logins SQL Server creates for itself. policy_checked and expiration_checked are a SQL login's CHECK_POLICY and CHECK_EXPIRATION, 0 for every other type. A login sees itself and the fixed roles only, unless it has VIEW ANY DEFINITION, ALTER ANY LOGIN or is sysadmin: the list is then short, not refused.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--include-disabled",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-include-disabled",
+          "env": null,
+          "help": "Also list disabled logins"
+        },
+        {
+          "name": "--type",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "windows-group",
+            "external",
+            "external-group",
+            "certificate",
+            "asymmetric-key"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Only logins of this type"
+        }
+      ],
+      "examples": [
+        "gossms security logins list -p prod-ro",
+        "gossms security logins list -p prod-ro --type sql --include-disabled -o json"
+      ]
+    },
+    {
+      "path": "security users list",
+      "summary": "List the connection database's users: type, login, default schema, orphaned",
+      "description": "One row per user of the connection's database (the profile's, or -d), by name — dbo, guest, INFORMATION_SCHEMA and sys included. login is the server login whose SID the user's matches, NULL for none. orphaned is 1 for a SQL user created for a login that no longer matches (authentication INSTANCE, no login), 0 for a user with a login or one that needs none (WITHOUT LOGIN, contained), and NULL where it cannot be told: a Windows user with no login of its own may enter through a Windows group, and Azure SQL Database hides the server's logins from a user database. Without VIEW DEFINITION on the database a user sees only itself, the fixed roles and the built-in users: the list is then short, not refused.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        }
+      ],
+      "examples": [
+        "gossms security users list -p dev -d AdventureWorks",
+        "gossms security users list -p dev -o json"
+      ]
+    },
+    {
+      "path": "security roles list",
+      "summary": "List the roles of the connection database, or of the server: fixed, owner, members",
+      "description": "One row per role, by name: the connection database's roles (the profile's database, or -d), or with --scope server the server roles. members names the role's direct members — a member that is itself a role is not expanded (security role-members shows each member's type). Without VIEW DEFINITION (VIEW ANY DEFINITION for server roles) the login sees only the fixed roles and its own.",
+      "operationClass": "read",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--scope",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "database",
+            "server"
+          ],
+          "default": "database",
+          "negation": null,
+          "env": null,
+          "help": "database: the connection database's roles; server: the server roles"
+        }
+      ],
+      "examples": [
+        "gossms security roles list -p dev -d AdventureWorks",
+        "gossms security roles list -p prod-ro --scope server -o json"
+      ]
+    },
+    {
+      "path": "security role-members",
+      "summary": "List a role's direct members and their types",
+      "description": "The role's direct members, by name, with each member's principal type: a database role of the connection's database, or with --scope server a server role. A member that is itself a role (type DATABASE_ROLE or SERVER_ROLE) is not expanded: ask for its members in turn. The public role lists none, since every principal belongs to it. A role not found in the scope asked is NOT_FOUND, with a hint when the other scope has a role of that name.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "role",
+          "help": "Role name",
+          "format": null,
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--scope",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "database",
+            "server"
+          ],
+          "default": "database",
+          "negation": null,
+          "env": null,
+          "help": "database: a role of the connection database; server: a server role"
+        }
+      ],
+      "examples": [
+        "gossms security role-members sysadmin --scope server -p prod-ro",
+        "gossms security role-members db_owner -p dev -d AdventureWorks -o json"
+      ]
+    },
+    {
+      "path": "security permissions",
+      "summary": "Show a principal's explicit grants and denies, or what it can effectively do",
+      "description": "A database user or role of the connection's database, or with --scope server a login or server role. By default the explicit GRANT and DENY entries recorded for the principal itself: on the database, its schemas, objects, columns, types and certificates (database scope), or on the server (server scope). What it holds through a role is not among them — memberOf names its roles, whose own entries a call per role shows. --effective asks the server which permissions the principal holds on the database itself (or the server) once roles, ownership and DENY are resolved, by impersonating it (EXECUTE AS) around fn_my_permissions: database-level permissions such as CONNECT or CREATE TABLE, not a grant on a schema or object. A role cannot be impersonated, so --effective on one is a usage error. Impersonating needs IMPERSONATE on the user (or db_owner) or on the login (or CONTROL SERVER): without it, exit 9. A principal the login cannot see — without VIEW DEFINITION (VIEW ANY DEFINITION on the server) it sees only itself and the fixed roles — is NOT_FOUND.",
+      "operationClass": "read",
+      "arguments": [
+        {
+          "name": "principal",
+          "help": "User or database role; with --scope server, login or server role",
+          "format": null,
+          "required": true,
+          "repeat": false
+        }
+      ],
+      "options": [
+        {
+          "name": "--profile",
+          "short": "-p",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_PROFILE",
+          "help": "Saved connection profile (gossms profile list); connection options override its values"
+        },
+        {
+          "name": "--server",
+          "short": "-S",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_SERVER",
+          "help": "Server: host, host\\instance, host,port (the Connect dialog's syntax)"
+        },
+        {
+          "name": "--port",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Port, when --server does not name one"
+        },
+        {
+          "name": "--database",
+          "short": "-d",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_DATABASE",
+          "help": "Initial database"
+        },
+        {
+          "name": "--auth",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "sql",
+            "windows",
+            "entra-default",
+            "entra-password",
+            "entra-msi",
+            "entra-sp",
+            "entra-azcli",
+            "entra-interactive",
+            "entra-device-code"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_AUTH",
+          "help": "Authentication method; entra-interactive and entra-device-code prompt, so they are refused"
+        },
+        {
+          "name": "--user",
+          "short": "-U",
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_USER",
+          "help": "Login name (sql, windows, entra-password)"
+        },
+        {
+          "name": "--tenant-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_TENANT_ID",
+          "help": "Microsoft Entra tenant ID"
+        },
+        {
+          "name": "--client-id",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_CLIENT_ID",
+          "help": "Microsoft Entra client ID (service principal, user-assigned managed identity)"
+        },
+        {
+          "name": "--password-env",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Name of the environment variable holding the password or client secret"
+        },
+        {
+          "name": "--password-stdin",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-password-stdin",
+          "env": null,
+          "help": "Read the password or client secret from stdin"
+        },
+        {
+          "name": "--encrypt",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "optional",
+            "mandatory",
+            "strict"
+          ],
+          "default": null,
+          "negation": null,
+          "env": "GOSSMS_ENCRYPT",
+          "help": "Connection encryption"
+        },
+        {
+          "name": "--trust-server-certificate",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-trust-server-certificate",
+          "env": null,
+          "help": "Do not validate the server certificate (development only)"
+        },
+        {
+          "name": "--host-name-in-certificate",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "Host name the server certificate must name"
+        },
+        {
+          "name": "--application-intent",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "readwrite",
+            "readonly"
+          ],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "readonly routes an availability group listener to a readable secondary"
+        },
+        {
+          "name": "--connect-timeout",
+          "short": null,
+          "type": "int",
+          "enum": [],
+          "default": 15,
+          "negation": null,
+          "env": null,
+          "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--scope",
+          "short": null,
+          "type": "enum",
+          "enum": [
+            "database",
+            "server"
+          ],
+          "default": "database",
+          "negation": null,
+          "env": null,
+          "help": "database: a user or role of the connection database; server: a login or server role"
+        },
+        {
+          "name": "--effective",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-effective",
+          "env": null,
+          "help": "What the principal can do after role membership and DENY, instead of its explicit entries (a user or login only)"
+        }
+      ],
+      "examples": [
+        "gossms security permissions app_reader -p prod-ro -d AdventureWorks",
+        "gossms security permissions app_reader -p prod-ro -d AdventureWorks --effective",
+        "gossms security permissions etl_login --scope server -p prod-ro -o json"
       ]
     }
   ]
