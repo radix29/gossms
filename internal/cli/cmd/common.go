@@ -185,6 +185,26 @@ type Catalog interface {
 	// running one's runtime state.
 	EventSessions(ctx context.Context, d *gosmo.Database) ([]*gosmo.EventSession, error)
 	EventSessionStatus(ctx context.Context, es *gosmo.EventSession) (*gosmo.EventSessionStatus, error)
+
+	// security: the server's logins and roles, a database's users and roles,
+	// a role's direct members, and one principal's explicit grants (database
+	// entries, column entries, server entries) or effective permissions
+	// (fn_my_permissions under EXECUTE AS).
+	Logins(ctx context.Context) ([]*gosmo.Login, error)
+	LoginByName(ctx context.Context, name string) (*gosmo.Login, error)
+	ServerRoles(ctx context.Context) ([]*gosmo.ServerRole, error)
+	ServerRoleByName(ctx context.Context, name string) (*gosmo.ServerRole, error)
+	ServerRoleMembers(ctx context.Context, role string) ([]*gosmo.RoleMember, error)
+	Users(ctx context.Context, d *gosmo.Database) ([]*gosmo.User, error)
+	UserByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.User, error)
+	DatabaseRoles(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseRole, error)
+	DatabaseRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.DatabaseRole, error)
+	DatabaseRoleMembers(ctx context.Context, d *gosmo.Database, role string) ([]*gosmo.RoleMember, error)
+	PermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.PrincipalSecurable, error)
+	ColumnPermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.ColumnPermissionEntry, error)
+	ServerPermissions(ctx context.Context) ([]*gosmo.ServerPermissionEntry, error)
+	EffectivePermissions(ctx context.Context, d *gosmo.Database, user string) ([]*gosmo.EffectivePermission, error)
+	EffectiveServerPermissions(ctx context.Context, login string) ([]*gosmo.EffectivePermission, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -601,6 +621,64 @@ func (c serverCatalog) ActiveSessions(ctx context.Context, scope gosmo.SessionSc
 
 func (c serverCatalog) SessionByID(ctx context.Context, sessionID int) (*gosmo.ActiveSession, error) {
 	return c.s.SessionByID(ctx, sessionID)
+}
+
+func (c serverCatalog) Logins(ctx context.Context) ([]*gosmo.Login, error) { return c.s.Logins(ctx) }
+
+func (c serverCatalog) LoginByName(ctx context.Context, name string) (*gosmo.Login, error) {
+	return c.s.LoginByName(ctx, name)
+}
+
+func (c serverCatalog) ServerRoles(ctx context.Context) ([]*gosmo.ServerRole, error) {
+	return c.s.ServerRoles(ctx)
+}
+
+func (c serverCatalog) ServerRoleByName(ctx context.Context, name string) (*gosmo.ServerRole, error) {
+	return c.s.ServerRoleByName(ctx, name)
+}
+
+func (c serverCatalog) ServerRoleMembers(ctx context.Context, role string) ([]*gosmo.RoleMember, error) {
+	return c.s.ServerRoleMembers(ctx, role)
+}
+
+func (serverCatalog) Users(ctx context.Context, d *gosmo.Database) ([]*gosmo.User, error) {
+	return d.Users(ctx)
+}
+
+func (serverCatalog) UserByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.User, error) {
+	return d.UserByName(ctx, name)
+}
+
+func (serverCatalog) DatabaseRoles(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseRole, error) {
+	return d.Roles(ctx)
+}
+
+func (serverCatalog) DatabaseRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.DatabaseRole, error) {
+	return d.RoleByName(ctx, name)
+}
+
+func (serverCatalog) DatabaseRoleMembers(ctx context.Context, d *gosmo.Database, role string) ([]*gosmo.RoleMember, error) {
+	return d.RoleMembers(ctx, role)
+}
+
+func (serverCatalog) PermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.PrincipalSecurable, error) {
+	return d.PermissionsForPrincipal(ctx, principal)
+}
+
+func (serverCatalog) ColumnPermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.ColumnPermissionEntry, error) {
+	return d.ColumnPermissionsForPrincipal(ctx, principal)
+}
+
+func (c serverCatalog) ServerPermissions(ctx context.Context) ([]*gosmo.ServerPermissionEntry, error) {
+	return c.s.ServerPermissions(ctx)
+}
+
+func (serverCatalog) EffectivePermissions(ctx context.Context, d *gosmo.Database, user string) ([]*gosmo.EffectivePermission, error) {
+	return d.EffectivePermissions(ctx, user)
+}
+
+func (c serverCatalog) EffectiveServerPermissions(ctx context.Context, login string) ([]*gosmo.EffectivePermission, error) {
+	return c.s.EffectiveServerPermissions(ctx, login)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty
