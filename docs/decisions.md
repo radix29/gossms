@@ -4,16 +4,6 @@ Settled decisions and deliberate exclusions — what stops a settled question
 being reopened. Each entry names what was decided and why re-raising it costs.
 Work knowingly left undone is in `docs/open-threads.md`.
 
-Sections: Azure SQL Managed Instance; Deferred scope (repeatedly,
-deliberately); Permission gating; gosmo; FILESTREAM; Always On; Always
-Encrypted; Log File Viewer; Query Store; Object Explorer folder filter;
-Delete/Rename; Clipboard in a dialog; Server-level families; Full-Text Search;
-Replication; Database-scoped credentials; Keys and certificates; Database-scope
-DDL triggers; Connection settings; Connect dialog; Extended Events; Resource
-Governor and Database Mail; IntelliSense; T-SQL lexing; SQL NULL in results;
-Format Document; By design; Release workflow; Progress dialog; Details pane;
-Agent schedules; No top-level plan document; gosmo API shape; File modes.
-
 ## Azure SQL Managed Instance
 
 Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
@@ -139,11 +129,10 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
     verbs draw greyed with `N/A`, no submenu arrow, unreachable by key or mouse
     (verified on MI with a fabricated node).
     `TestTheBindingsCreateIsWithheldOnAzure` (`service_broker_ops_test.go`).
-  - **Route Msg 41943 is not gated**: `CREATE`/`ALTER ROUTE` with `ADDRESS =
-    'TRANSPORT'` or any `MIRROR_ADDRESS` on MI (probed on `t-qmi-01`) is
-    a *runtime* refusal. Nothing gossms emits hits it except user text typed
-    into Route Properties, which gets the server's clear message. Gating one
-    value of a free-text field per edition isn't a shape `edition_gate.go` has.
+  - **Route Msg 41943 is not gated** (runtime refusal, `docs/db-rules.md`).
+    Only user text typed into Route Properties hits it, and gets the server's
+    clear message; gating one value of a free-text field per edition isn't a
+    shape `edition_gate.go` has.
   - Both writable pages (and any future New-X) respect: nil field = leave
     alone, only changes are sent; `QueueChanges.Activation` is restated in full
     (the server refuses a partial ACTIVATION on a queue without one), so an
@@ -156,17 +145,11 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
 
 ## Permission gating: what is settled — do not re-raise
 
-- **A queue's Properties and Delete use different rights; the owner is
-  knowingly withheld Delete.** Probed on 13/14/17: `ALTER ON
-  OBJECT::<queue>` alters and is refused the drop (Msg 15151; drop needs
-  CONTROL on the queue or ALTER on its schema). `gate.QueueAlterRights` is
-  `gate.ObjectWriteRights()`; `gate.QueueDropRights` is that minus the object ALTER.
-  They're told apart by `gate.ControlOnObject` (gosmo's
-  `ProbedObjectPermissions` `O:CONTROL` beside `O:ALTER`; ALTER reads 1 for
-  either grant, CONTROL only for a CONTROL grant or the owner).
+- **A queue's Properties and Delete use different rights** (rule and probe:
+  `docs/db-rules.md`). Knowingly excluded: the owner is withheld Delete.
 - **Move to Schema on every class-1 family is gated on CONTROL on the object;
-  one set serves all nine.** `TRANSFER` needs CONTROL on it plus ALTER on the
-  target schema. Probed twice on 17 (queue, table), one
+  one set serves all nine** (rule: `docs/db-rules.md`). `TRANSFER` needs CONTROL
+  plus ALTER on the target schema. Probed twice on 17 (queue, table), one
   `WITHOUT LOGIN` user per right, identical:
 
   | right held | `O:ALTER` | `O:CONTROL` | transfer |
@@ -312,24 +295,16 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   `ProbedDatabasePermissions`, not `ProbedObjectPermissions`, so a new one would
   silently gate nothing.
 - **A read-only Properties page's grids browse; its other rows take focus only
-  to be copied.** A grid is how a page shows *which* row its detail rows describe, so
-  a gated page whose grids refuse focus shows only the first event, target or
-  role. `propsheet.Browsable` rows (`GridRow`, `ToggleGridRow`) keep focus and
-  clicks on a read-only form, and `Form.SetReadOnly` makes their grids
-  browse-only (`controls.DataGrid.SetBrowseOnly`): arrows, PgUp/PgDn,
-  Home/End, click, wheel, Copy and Show Value work and `OnSelectRow` fires;
-  Enter, Space, a cell click never reach `OnActivateCell`, and the host's
-  `OnMenuItems` are left off the menu (the grid can't tell which edit). The
-  gate is the grid's, not a key filter in `GridRow` — the grid knows which of
-  its keys edit. A read-only form is **never** `Dirty()`, whatever its rows
-  say: a browsing grid runs pages' commit-the-detail-back `OnSelectRow`
-  handlers, and a lossy round trip there must not turn a look into a write.
-  Text, check, select and radio rows drawn flat (and a read-only EditorRow)
-  are `Browsable` too, so `Ctrl+C` can copy them (a value on screen must still
-  be copyable). Focus is all they get: every key,
-  click, Cut, Paste and Select All is refused while flat, so nothing can go
-  dirty. A long flat value wraps under itself (`drawFlat`) rather than
-  clipping, since there is no input box to scroll it.
+  to be copied** (rule: `docs/ui-rules.md`). Why: a grid shows *which* row the
+  detail rows describe, so grids refusing focus would show only the first
+  event, target or role. `Form.SetReadOnly` makes `propsheet.Browsable` grids
+  browse-only (`controls.DataGrid.SetBrowseOnly`) — the gate is the grid's,
+  not a key filter in `GridRow`, since the grid knows which keys edit; the
+  host's `OnMenuItems` stay off the menu. A read-only form is **never**
+  `Dirty()`: a browsing grid runs commit-the-detail-back `OnSelectRow`
+  handlers, and a lossy round trip must not turn a look into a write. Flat
+  rows are `Browsable` so `Ctrl+C` copies them; every edit path is refused
+  and a long flat value wraps (`drawFlat`).
 - **A renamed principal's page gate keeps asking about the old name.**
   Login, User, Role and Server Role Properties pass the name the dialog opened
   with to `withRequiresOn`, not the `namePtr` box a rename updates. The gate
@@ -749,11 +724,9 @@ Peer credentials, easy to undo:
 ## Database-scoped credentials: what the design settled
 
 - **CONTROL on the database is the whole right set; `ALTER` is deliberately
-  not beside it.** Probed with a `WITHOUT LOGIN` user: CREATE/ALTER/DROP work
-  under `GRANT CONTROL ON DATABASE`, all refused under `GRANT ALTER`. Adding
-  `gate.AlterDatabase` "for symmetry" offers actions the server refuses. `ALTER
-  ANY CREDENTIAL` is server-scope, and `HAS_PERMS_BY_NAME` on a database
-  returns NULL for it ("unknown" forever). See `gate.DBScopedCredentialRights`.
+  not beside it** (`gate.DBScopedCredentialRights`; probe: `docs/db-rules.md`
+  § Permission gating). CREATE/ALTER/DROP work under `GRANT CONTROL ON DATABASE`, all
+  refused under `GRANT ALTER`.
 - **No ALTER script verb, no rename.** The secret is unreadable, so scripts
   carry `<insert secret here>` — an ALTER verb would silently overwrite the
   secret with the placeholder. No `WITH NAME` and no `sp_rename` class.
@@ -974,14 +947,10 @@ String). Not to be reopened without asking the author:
   Reset under the connection string, Name/Color custom-property rows. The
   connection string stays a live masked preview. The "Server Type" line is
   dropped (one fixed value).
-- **The button row is a Tab stop, not F1.** Connect, Back Up and Restore
-  (form and File Locations views) put their bottom buttons past either end of
-  the Tab ring, crossed with Left/Right, as a Properties dialog's
-  `zoneButtons` is (`buttonRowKey`, `dialog_common.go`). F1 is Help
-  everywhere, never a button cycle. A modifier chord was rejected: Ctrl+Tab and Ctrl+digit arrive without their modifier in
-  VTE terminals. Enter in a field still fires the highlighted default button
-  (Connect, Start Backup, Analyze), and leaving the row puts the highlight back
-  on it.
+- **The button row is a Tab stop, not F1** (rule: `docs/ui-rules.md`). A
+  modifier chord was rejected: Ctrl+Tab and Ctrl+digit arrive without their
+  modifier in VTE terminals. Enter in a field still fires the highlighted
+  default button, and leaving the row puts the highlight back on it.
 
 ## Extended Events: what the design settled — do not re-raise
 
@@ -1270,11 +1239,9 @@ Unverified on Managed Instance and on non-Enterprise editions:
   SMTP error while the item still reads `retrying`, and a 30 s wait for
   `failed` would never report one.
 - **Mail items and the mail log are read from the base tables below
-  sysadmin.** The documented views, `sysmail_allitems` and
-  `sysmail_event_log`, filter on `IS_SRVROLEMEMBER('sysadmin')`, so CONTROL
-  SERVER and msdb db_owner — who configure everything — would see only their
-  own items and those items' events, not even the log's start/stop rows.
-  gosmo reads the undocumented `sysmail_mailitems`/`sysmail_log` when the
+  sysadmin** (the views filter on sysadmin: `docs/db-rules.md`), so CONTROL
+  SERVER and msdb db_owner — who configure everything — would otherwise see
+  only their own items. gosmo reads the undocumented `sysmail_mailitems`/`sysmail_log` when the
   caller is not sysadmin and `HAS_PERMS_BY_NAME` grants SELECT on them
   (msdb db_owner or db_datareader, CONTROL SERVER), the views otherwise, in
   one server-side `IF … ELSE` batch; the tables are unchanged 13 through 17
@@ -1287,12 +1254,10 @@ Unverified on Managed Instance and on non-Enterprise editions:
   (rows older than a date) in place of Recycle — the log has no files to
   cycle.
 - **Agent's mail profile is gated sysadmin or msdb `db_owner`, not
-  CONTROL SERVER** (`gate.AgentPropertiesRights()`). `sp_set_sqlagent_properties`
-  is granted to nobody; under CONTROL SERVER alone it writes the registry and
-  then `sp_sqlagent_notify` refuses Msg 14260 — the change stored, the dialog
-  reporting failure, a running Agent not told. SQLAgent* roles and public get
-  Msg 229. Probed on 17. The read (`xp_instance_regread`) works for
-  public, so every login sees the settings.
+  CONTROL SERVER** (`gate.AgentPropertiesRights()`; why: `docs/db-rules.md`
+  § Permission gating). SQLAgent* roles and public get Msg 229 (probed on 17).
+  The read (`xp_instance_regread`) works for public, so every login sees the
+  settings.
 - **SQL Server Agent Properties is one page, Alert System's mail profile.**
   `@email_profile`/`@email_save_in_sent_folder` are the obsolete SQL Mail
   settings and are not offered. Enabling with no profile is refused on Apply.

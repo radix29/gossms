@@ -348,39 +348,36 @@ type Config struct {
 	XEventStoreCapacity int `json:"xevent_store_capacity"`
 	// MaxFetchRows is how many rows a query window keeps of each result set, in
 	// every results mode (grid, text, file). Reaching it cancels the rest of the
-	// script, later GO batches included (query.WithMaxRows). Zero, the default, means unlimited; Load
-	// turns a negative value into zero.
+	// script, later GO batches included (query.WithMaxRows). Zero, the default,
+	// means unlimited; Load turns a negative value into zero.
 	MaxFetchRows int `json:"max_fetch_rows"`
-	// XEventHiddenColumns is, per event session name, the columns the Extended
-	// Events viewer's Choose Columns has hidden ("name", "timestamp",
-	// "field:<name>", "action:<name>"). Hidden rather than shown, so a field the
-	// session starts collecting later still gets a column. Replace the map, never
-	// write into it: base shares it with this Config, so an in-place write would
-	// compare equal to itself and Save would skip it.
+	// XEventHiddenColumns is, per event session, the columns the Extended Events
+	// viewer hides ("name", "timestamp", "field:<name>", "action:<name>"). Hidden
+	// rather than shown, so a field the session starts collecting later still gets
+	// a column. Replace the map, never write into it: base shares it, so an
+	// in-place write compares equal to itself and Save skips it.
 	XEventHiddenColumns map[string][]string `json:"xevent_hidden_columns,omitempty"`
-	// XEventViewSettings are the Extended Events viewer's saved display
-	// settings, by the name they were saved as — SSMS's .viewsetting files.
-	// Replace the map rather than writing into it, as XEventHiddenColumns.
+	// XEventViewSettings are the viewer's saved display settings by name (SSMS's
+	// .viewsetting files). Replace the map, as XEventHiddenColumns.
 	XEventViewSettings map[string]XEventViewSetting `json:"xevent_view_settings,omitempty"`
 
 	// unreadable is the error Load hit reading an existing config.json. It
 	// write-protects this Config (see Save): writing back would destroy a
-	// likely-intact file. Unexported, so it neither serialises nor survives a copy.
+	// likely-intact file.
 	unreadable error
 
 	// ops is this process's AddOrUpdate/RemoveConnection calls since the last
 	// successful Save, replayed onto the file as it is now. Writing the whole list
-	// would delete what another gossms instance saved meanwhile.
+	// would delete what another instance saved meanwhile.
 	ops []connOp
 
-	// base is the settings as this process last loaded or saved them, nil for a
-	// Config not from Load. Save writes a setting from c only when it differs from
-	// base (this process changed it); otherwise it keeps the file's value, which
-	// another instance may have changed.
+	// base is the settings as last loaded or saved by this process, nil for a
+	// Config not from Load. Save writes a setting only when it differs from base;
+	// otherwise it keeps the file's value, which another instance may have changed.
 	base *Config
 
 	// legacySealed is set when Load opened a password sealed under an earlier
-	// binding than aadPrefix (see NeedsReseal), and cleared by the next save.
+	// binding than aadPrefix (see NeedsReseal); the next save clears it.
 	legacySealed bool
 }
 
@@ -397,8 +394,7 @@ type connOp struct {
 const DefaultMaxCellLength = 24
 
 // DefaultMaxTextColumnLength is SSMS's default for the same cap in Results to
-// Text. It is the only cap there: a text column is as wide as its widest value,
-// so without one a single huge cell padded every row.
+// Text. Without it one huge cell would pad every row to its width.
 const DefaultMaxTextColumnLength = 256
 
 // XEventViewSetting is one saved Extended Events viewer layout: the hidden
@@ -479,9 +475,8 @@ const MaxLogSize = 5 << 20
 //
 // The file is 0600 like the config and key: the log records server names, logins
 // and error text. OpenFile's mode applies only at create, so a log (or its .1)
-// left 0644 by an older build is narrowed here, the cap fileutil's modeFor
-// applies to config.json. On Windows Chmod only toggles read-only, which the
-// owner bits keep as is.
+// left 0644 by an older build is narrowed here. On Windows Chmod only toggles
+// read-only, which the owner bits preserve.
 func OpenLogFile() (*os.File, error) {
 	path, err := LogFilePath()
 	if err != nil {
@@ -668,12 +663,11 @@ const MaxSavedConnections = 30
 // AddOrUpdate saves a successful connection. Name is set to
 // conn.GeneratedName(), the dedup key: a match is replaced, otherwise added. The
 // entry moves to the end (most recent) and the list is trimmed from the front to
-// MaxSavedConnections. conn is taken by value.
+// MaxSavedConnections.
 func (c *Config) AddOrUpdate(conn Connection) {
 	conn.Name = conn.GeneratedName()
 	// Remember Password off: the entry is saved without a password, and the
-	// ciphertext an earlier save left goes with the entry it replaces (this copy
-	// carries neither a password nor a sealed blob).
+	// replaced entry's ciphertext goes with it.
 	if !conn.RememberPassword {
 		conn.Password = ""
 	}
@@ -691,10 +685,9 @@ func addOrUpdate(list []Connection, conn Connection) []Connection {
 	return list
 }
 
-// RemoveConnection deletes the saved connection whose name matches, and reports
-// whether one was found. name is the dedup key AddOrUpdate stores (the
-// GeneratedName); the entry's sealed password goes with it. An entry from an
-// older build may carry a Name that is not its generated one, so the generated
+// RemoveConnection deletes the saved connection named name (the GeneratedName
+// key AddOrUpdate stores) and its sealed password, and reports whether one was
+// found. An older build's entry may carry a different Name, so the generated
 // name is matched too.
 func (c *Config) RemoveConnection(name string) bool {
 	var found bool
@@ -717,8 +710,8 @@ func removeConnection(list []Connection, name string) ([]Connection, bool) {
 }
 
 // MatchByServer returns saved connections whose Server has the given
-// case-insensitive prefix, most recent first. The Connect dialog's History
-// pane calls it with an empty prefix: the ordering is what it is still for.
+// case-insensitive prefix, most recent first. The Connect dialog's History pane
+// passes an empty prefix, for the ordering.
 func (c *Config) MatchByServer(prefix string) []Connection {
 	prefix = strings.ToLower(prefix)
 	var out []Connection

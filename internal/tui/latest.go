@@ -7,10 +7,9 @@ import (
 
 // latest is the "start a load, cancel the one it replaces, drop stale results"
 // lifecycle, owned once instead of hand-rolled per site. Every load where only
-// the newest request's result matters uses it (explorer node children,
-// completion catalogs, Query Store reports, the Log Viewer's read, Back Up's and
-// Restore's loads, file reads, ...); an earlier one should stop taking a pool
-// connection the moment it is superseded.
+// the newest result matters uses it (explorer node children, completion catalogs,
+// Query Store reports, the Log Viewer's read, Back Up's and Restore's loads, file
+// reads, ...); a superseded load should stop holding a pool connection at once.
 //
 // Both halves matter, and every copy that shipped with only the first was a bug:
 //
@@ -18,8 +17,8 @@ import (
 //     the fresher one that replaced it;
 //   - the cancel stops the superseded fetch's queries, so they release their
 //     connection now rather than at their timeout. Without it, holding Down
-//     through a ranking or arrowing through a folder starts one read per row
-//     and the row the user stops on queues behind all of them.
+//     through a ranking or folder starts one read per row and the row the user
+//     stops on queues behind all of them.
 //
 // A site needing more than one run's bookkeeping wraps this rather than growing
 // it: DetailBrowser's detailRuns adds the node each run is for and the per-node

@@ -4,20 +4,19 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// system_principals.go decides which of the principals SQL Server creates for
-// itself the UI treats as built-in: Object Explorer offers neither Delete nor
-// Rename on one (nodeData.IsSystem, gated in objectOpsMenuItems), and the
-// properties pages draw their identity fields read-only.
+// system_principals.go decides which principals SQL Server creates for itself the
+// UI treats as built-in: Object Explorer offers neither Delete nor Rename on one
+// (nodeData.IsSystem, gated in objectOpsMenuItems), and the properties pages draw
+// their identity fields read-only.
 //
-// The Security folders have no "System *" sub-folder to separate them the way
-// Databases, Views, Stored Procedures and Functions do, so every one of these
-// arrives in the same folder as the user's own principals and has to be told
-// apart by what it is rather than by which loader produced it.
+// The Security folders have no "System *" sub-folder (unlike Databases, Views,
+// Stored Procedures and Functions), so these arrive in the same folder as the
+// user's own principals and are told apart by what they are, not by loader.
 //
 // # The rule, and why it isn't "everything SQL Server made"
 //
-// A principal is treated as built-in when the server refuses to drop or rename
-// it, so that the UI never offers an action that cannot work:
+// A principal is built-in when the server refuses to drop or rename it, so the
+// UI never offers an action that cannot work:
 //
 //	dbo, guest, sys, INFORMATION_SCHEMA   both refused, as users and as schemas
 //	the fixed database roles              both refused

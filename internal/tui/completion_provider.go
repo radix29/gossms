@@ -7,39 +7,26 @@ import (
 
 // ---------------------------------------------------------------------------
 // SQL-aware completion.Provider for the query editor, the only caller of
-// controls.Editor.SetCompletionProvider in the app. Resolves the identifier at the
-// cursor against the connected database's completionInventory
-// (completion_inventory.go): schemas, tables, views and columns, with
-// schema/alias/table-dot member lookup and FROM-clause alias resolution.
+// controls.Editor.SetCompletionProvider. Resolves the identifier at the cursor
+// against the connected database's completionInventory (completion_inventory.go):
+// schemas, tables, views and columns, with schema/alias/table-dot member lookup
+// and FROM-clause alias resolution.
 //
 // A lexical approximation, not a full T-SQL parser (same spirit as
-// controls.Editor's SelectStatementAtCursor, tuikit/controls/sql_statement.go). It
-// recognises enough of the grammar (comments, string/quoted-identifier literals,
-// clause keywords, dot-qualified names, CTE bodies, derived tables) to get common
-// queries right; anything genuinely ambiguous offers nothing rather than guessing.
+// controls.Editor's SelectStatementAtCursor). Anything genuinely ambiguous offers
+// nothing rather than guessing; keyword completion is out of scope.
 //
-// In scope: FROM/JOIN/APPLY refs and their aliases; WITH bindings (their own
-// column list or the one their body produces, a CTE built on an earlier CTE, a
-// recursive one without looping); derived tables and sub-SELECTs at any nesting;
-// the clause state of the innermost query rather than the statement, so a cursor
-// inside a CTE body completes against that body; temp tables (#t, ##t) and table
-// variables (@t), resolved from their declaration (CREATE TABLE, DECLARE ...
-// TABLE, SELECT ... INTO) found by scanning the cursor's GO-delimited batch, and
-// temp tables also from the batches above it until a DROP TABLE; PIVOT/UNPIVOT
-// reshaping the reference it follows; and OPENJSON/OPENROWSET/OPENXML resolved
-// from their WITH column list, or OPENJSON's fixed key/value/type shape without
-// one (see sqlparse.ScanBindings, sqlparse.CarryTempBindings, sqlparse.Pivot and
-// sqlparse.Rowset).
+// Covered: FROM/JOIN/APPLY refs and aliases; CTEs (including recursive and
+// chained); derived tables and sub-SELECTs, completing against the innermost
+// query's clause state; temp tables and table variables, resolved from their
+// declaration in the cursor's GO batch (temp tables also from earlier batches until
+// a DROP TABLE); PIVOT/UNPIVOT; and OPENJSON/OPENROWSET/OPENXML (see
+// sqlparse.ScanBindings, CarryTempBindings, Pivot and Rowset).
 //
-// Table-valued functions resolve to their catalog result columns where called,
-// and a three-part name ("Sales.dbo.Orders", "Sales..Orders") against that
-// database's own inventory, loaded on first use (see completion_crossdb.go); so do
-// the qualifier chains that type one ("Sales.", "Sales.dbo."). A linked server's
-// four-part name resolves against the remote database's catalog, read through the
-// linked server (completion_linked.go).
-//
-// Out of scope, answered with nothing rather than a plausible wrong list: keyword
-// completion.
+// Table-valued functions resolve to their catalog result columns. Three-part names
+// ("Sales.dbo.Orders", "Sales..Orders") resolve against that database's own
+// inventory, loaded on first use (completion_crossdb.go); four-part names against
+// the remote catalog via the linked server (completion_linked.go).
 // ---------------------------------------------------------------------------
 
 // newCompletionProvider builds the controls.CompletionProvider installed on

@@ -18,9 +18,8 @@ import (
 // tracked.go holds the Query Store panel's tracked-query sets: per server and
 // database, the query ids pinned to the Tracked Queries view.
 //
-// Kept out of config.json: it's neither profile nor setting, every save would
-// rewrite the file holding encrypted passwords, and losing it costs only a
-// rebuildable list.
+// Kept out of config.json: it's neither profile nor setting, it would make every
+// save rewrite the password file, and losing it costs only a rebuildable list.
 
 // trackedFileName is the file, beside config.json.
 const trackedFileName = "tracked_queries.json"
@@ -28,11 +27,11 @@ const trackedFileName = "tracked_queries.json"
 // TrackedQueries is the tracked-query sets, keyed by server then database. Safe
 // for concurrent use (the Query Store panel and the Detail Browser's loaders).
 type TrackedQueries struct {
-	// mu guards everything below and is never held across file work, so a
-	// save waiting on another instance's lock does not stall a reader.
+	// mu guards everything below and is never held across file work, so a save
+	// waiting on another instance's lock does not stall a reader.
 	mu sync.Mutex
-	// saveMu runs one Save at a time: each adopts the file it wrote and
-	// drops the pending ops it replayed, by position.
+	// saveMu runs one Save at a time: each drops the pending ops it replayed, by
+	// position.
 	saveMu sync.Mutex
 
 	path string
@@ -42,9 +41,8 @@ type TrackedQueries struct {
 	// the set, as Config.unreadable does.
 	unreadable error
 
-	// pending is this process's unsaved Toggles, which Save replays onto the
-	// file as it is now, as Config.ops does: another instance may have saved
-	// since this one loaded.
+	// pending is this process's unsaved Toggles, which Save replays onto the file
+	// as it is now, as Config.ops does.
 	pending []trackOp
 }
 
@@ -132,14 +130,13 @@ func readTrackedFile(path string) (map[string]map[string][]int64, error) {
 	return sets, nil
 }
 
-// serverKey folds a server address by InstanceKey, the rule peers and saved
-// credentials key by: HOST\SQL2022, host\sql2022 and host\sql2022,1500 share a
-// set, as do "host" and "host,1433"; "host,55253" is another instance. Callers
-// pass ConnectionAddress(opts), not opts.Server, which drops a Port-field port.
+// serverKey folds a server address by InstanceKey: HOST\SQL2022, host\sql2022 and
+// host\sql2022,1500 share a set, as do "host" and "host,1433"; "host,55253" is
+// another instance. Callers pass ConnectionAddress(opts), not opts.Server, which
+// drops a Port-field port.
 //
-// The database is deliberately not folded: names come from sys.databases in the
-// server's spelling, and on a case-sensitive collation Sales and sales differ
-// (TestServerIsFoldedAndDatabaseIsNot).
+// The database is deliberately not folded: on a case-sensitive collation Sales
+// and sales differ (TestServerIsFoldedAndDatabaseIsNot).
 func serverKey(server string) string { return InstanceKey(server) }
 
 // SameServer reports whether two addresses name the same instance, by the same

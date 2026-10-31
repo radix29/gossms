@@ -16,38 +16,37 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// resource_governor_props.go is Resource Governor Properties: one dialog for the
-// whole configuration, as SSMS has it, paged: General, Resource Pools, Workload
+// resource_governor_props.go is Resource Governor Properties: one paged dialog
+// for the whole configuration, as in SSMS: General, Resource Pools, Workload
 // Groups (resource_governor_props_groups.go) and External Resource Pools. A pool,
-// group or external pool leaf opens the same dialog on its own page with its row
-// selected; there is no separate Pool Properties.
+// group or external pool leaf opens it on its own page with its row selected;
+// there is no separate Pool Properties.
 //
 // # One Apply, in dependency order, finished once
 //
-// The pages plan their statements rather than send them (applyPlan): a group
-// cannot move into a pool before the pool exists, nor a pool be dropped while a
-// group still uses it, and those edits sit on different pages. The plan runs in
-// rgPhase order, and runResourceGovernorPlan then ends every Apply with exactly
-// one ALTER RESOURCE GOVERNOR RECONFIGURE, or DISABLE when the governor is to stay
-// off: RECONFIGURE enables a disabled governor (W1), and briefly enabling one with
-// a classifier in place would classify every login that arrived meanwhile.
+// Pages plan their statements rather than send them (applyPlan): a group cannot
+// move into a pool before the pool exists, nor a pool be dropped while a group
+// still uses it, and those edits sit on different pages. The plan runs in rgPhase
+// order, and runResourceGovernorPlan ends every Apply with exactly one ALTER
+// RESOURCE GOVERNOR RECONFIGURE, or DISABLE when the governor is to stay off:
+// RECONFIGURE enables a disabled governor (W1), and briefly enabling one with a
+// classifier in place would classify every login that arrived meanwhile.
 //
 // The plan is one transaction (gosmo's InTransaction, W21): pool, group and
 // external-pool DDL, the classifier and the I/O cap are all transactional, so a
-// failure part-way stores nothing and the pages keep their edits to fix and apply
-// again. RECONFIGURE and DISABLE refuse to run inside a user transaction (Msg
-// 574), so they follow the COMMIT; one failing there leaves the plan stored but
-// not in force, and the dialog reloads every page, so what it shows is what the
-// server has. A rolled-back classifier change still sets the governor's pending
-// flag (verified on 17), which the next RECONFIGURE clears without changing
-// anything.
+// failure part-way stores nothing and the pages keep their edits. RECONFIGURE and
+// DISABLE refuse to run inside a user transaction (Msg 574), so they follow the
+// COMMIT; one failing there leaves the plan stored but not in force, and the
+// dialog reloads every page to show what the server has. A rolled-back classifier
+// change still sets the governor's pending flag (verified on 17), which the next
+// RECONFIGURE clears without changing anything.
 //
 // # Pages that see each other's edits
 //
 // A pool added on Resource Pools or External Pools is offered on Workload Groups
-// at once, and one removed there is no longer offered as a group's new pool:
-// creating a pool and a group in it is one Apply, since pools are created first.
-// rgModel carries the names across, as mailModel does for Database Mail.
+// at once, and a removed one no longer is: creating a pool and a group in it is
+// one Apply, since pools are created first. rgModel carries the names across, as
+// mailModel does for Database Mail.
 
 // The pages of Resource Governor Properties, in order: what rgFocus.page selects.
 const (

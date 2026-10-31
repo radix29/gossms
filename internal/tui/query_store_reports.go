@@ -150,10 +150,10 @@ func (r queryStoreReport) honours(f qsFilters) bool { return r.filters&f != 0 }
 // differ from the caller's: Regressed Queries compares the two halves of it; see
 // queryStoreRegressionOptions.
 //
-// Applied by the caller exactly once, not inside the loader. The plan pane and the
-// status line must also know the range the rows cover, and three copies of the
-// rule could disagree. It is not idempotent (a second application splits the
-// recent half again), so the loader takes the window as given.
+// Applied by the caller exactly once, not in the loader: the plan pane and status
+// line need the same range, and three copies of the rule could disagree. Not
+// idempotent (a second application splits the recent half again), so the loader
+// takes the window as given.
 func (r queryStoreReport) effectiveOptions(opts gosmo.QueryStoreReportOptions) gosmo.QueryStoreReportOptions {
 	if r.honours(qsFilterRegression) {
 		return queryStoreRegressionOptions(opts)
@@ -172,15 +172,14 @@ type queryStoreReport struct {
 	Title       string
 	Description string
 
-	// filters are the toolbar controls that change what this report returns. Listed
-	// here rather than the panel switching on title, because the answer is a property
-	// of the query: Overall Resource Consumption groups by interval and Query Wait
-	// Statistics by wait category, so neither has a per-query execution count to
-	// floor.
+	// filters are the toolbar controls that change what this report returns. It is
+	// a property of the query, not a switch on title: Overall Resource Consumption
+	// groups by interval and Query Wait Statistics by wait category, so neither has
+	// a per-query execution count to floor.
 	//
-	// The panel dims every control a report does not honour and says why; a selector
-	// that changes a number the next read ignores is the silent wrong-thing the
-	// context-gating rule exists to prevent.
+	// The panel dims every control a report does not honour and says why; a
+	// selector the next read ignores is the silent wrong-thing the context-gating
+	// rule exists to prevent.
 	filters qsFilters
 
 	// defaultStat is the report's default statistic: Total for the three read as
@@ -330,12 +329,12 @@ func trackedIDsFor(report queryStoreReport, sc *db.ServerConn, dbName string) []
 // trackedQueriesChanged is what a pin or unpin must run: every view showing that
 // database's tracked set on that server is now stale.
 //
-// The tree's Tracked Queries leaf needs it because its rows come from a Detail
-// Browser fetch cached per node, so the old set stays listed until refresh, which
-// reads as the pin not working. Any Query Store panel on the same database is
-// stale too, including the one the toggle came from; they are found by server
-// address, not connection, because that is what the set is keyed by and two
-// connections to one instance share it.
+// The tree's Tracked Queries leaf needs it: its rows come from a per-node cached
+// Detail Browser fetch, so the old set stays listed until refresh, which reads as
+// the pin not working. Any Query Store panel on the same database is stale too,
+// including the one the toggle came from; they are found by server address, not
+// connection, because the set is keyed by it and two connections to one instance
+// share it.
 func (a *App) trackedQueriesChanged(server, dbName string) {
 	a.detailBrowser.InvalidateWhere(a, func(n *explorerNode) bool {
 		return isTrackedQueriesLeaf(n, server, dbName)
@@ -510,10 +509,10 @@ func qsNoTrackedQueriesResult() qsResult {
 // the first, not the whole window against the one before it.
 //
 // gosmo's default baseline is the equally long window immediately *before* From,
-// right for a caller-chosen range, but here the report would need twice its window
-// of Query Store history before showing a row: on a database with two minutes of
-// history the pane stays empty, which reads as a broken report. Splitting keeps
-// the requirement at the window the other six reports need.
+// right for a caller-chosen range, but here the report would need twice its
+// window of history before showing a row: with two minutes of history the pane
+// stays empty and reads as broken. Splitting keeps the requirement at the window
+// the other six reports need.
 func queryStoreRegressionOptions(opts gosmo.QueryStoreReportOptions) gosmo.QueryStoreReportOptions {
 	if opts.To.IsZero() {
 		opts.To = time.Now()

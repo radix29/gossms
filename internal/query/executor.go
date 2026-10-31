@@ -276,12 +276,12 @@ func WithMaxRows(n int) Option {
 	return func(res *Result) { res.maxRows = max(n, 0) }
 }
 
-// Execute runs script against db, SSMS-style. A non-empty database is switched
-// to first (USE), and the connection is then discarded rather than pooled, as
-// it is when the script leaves its database or the run fails or is cancelled. The script is split on GO; a failing batch is reported in
-// Messages and execution continues. Cancelling ctx stops between and inside
-// batches, returning the partial Result. Every row is retained in Result.Sets,
-// uncapped unless WithMaxRows says otherwise; see cellArena.
+// Execute runs script against db, SSMS-style, split on GO. A failing batch is
+// reported in Messages and execution continues. A non-empty database is USEd
+// first; the connection is then discarded rather than pooled, as it is when the
+// script leaves its database. Cancelling ctx stops between and inside batches
+// and returns the partial Result. Every row is retained in Result.Sets unless
+// WithMaxRows caps it; see cellArena.
 func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
 	start := time.Now()
 	res := newResult(opts)
@@ -331,14 +331,13 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...O
 // RowSink receives result rows as scanned instead of retaining them in
 // Result.Sets, so Results To File exports are bounded by the file, not memory.
 //
-// BeginSet is called before a set's first row, EndSet after its last with the
-// row count. A returned error aborts that set and is reported in Messages; the
+// BeginSet runs before a set's first row, EndSet after its last with the row
+// count. A returned error aborts that set and is reported in Messages; the
 // script continues.
 //
-// EndSet is called for every set BeginSet was called for, including sets
-// abandoned by a Row error or whose BeginSet failed, so it's the one place to
-// finalise per-set state. Its count is rows that reached Row (0 if the set never
-// opened).
+// EndSet runs for every set BeginSet was called for, including sets abandoned by
+// a Row error or whose BeginSet failed, so finalise per-set state there. Its
+// count is rows that reached Row (0 if the set never opened).
 //
 // Row's isNull parallels cells and marks SQL NULLs (text "NULL", as in a
 // ResultSet). Both slices are reused for the next row: consume them before
@@ -439,14 +438,12 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 		case sqlexp.MsgNextResultSet:
 			active = rows.NextResultSet()
 		case sqlexp.MsgLastInsertID:
-			// sqlexp's sixth type, never enqueued by go-mssqldb: SQL Server reports an
-			// identity through SCOPE_IDENTITY(), not the protocol. Ignored explicitly
-			// so only an unknown type reaches default.
+			// Never enqueued by go-mssqldb (identity comes via SCOPE_IDENTITY()).
+			// Listed so only an unknown type reaches default.
 		default:
-			// Unreachable: go-mssqldb enqueues only the five types above. A guard
-			// against a driver change; a new type would otherwise spin this loop at
-			// 100% CPU. It ends the batch with an error, truncating the remaining
-			// output, so a type that starts arriving wants its own arm.
+			// Unreachable today: a guard against a driver change, since an unknown
+			// type would otherwise spin this loop at 100% CPU. It ends the batch with
+			// an error, so a type that starts arriving wants its own arm.
 			res.addError(fmt.Errorf("unexpected message type %T from the driver", m))
 			active = false
 		}
@@ -457,12 +454,10 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 }
 
 // cancelBatch ends a batch whose current set reached the WithMaxRows cap, and
-// with it the script (runScript stops on res.cut). Closing
-// rows cancels the driver's request context, which sends the server an attention
-// and reads up to its confirmation, so the connection (and with it the session)
-// stays usable. The batch's trailing rows.Err() is skipped: the cancellation is
-// not a failure. A Close error means the confirmation never came and the
-// connection is likely gone.
+// with it the script (runScript stops on res.cut). Closing rows sends the server
+// an attention and reads up to its confirmation, so the connection stays usable.
+// The trailing rows.Err() is skipped: the cancellation is not a failure. A Close
+// error means the confirmation never came and the connection is likely gone.
 func cancelBatch(rows *sql.Rows, res *Result) {
 	if err := rows.Close(); err != nil {
 		res.addError(err)
@@ -498,19 +493,19 @@ type rowScanner struct {
 // uniqueidentifier scans as 16 raw bytes in the wrong order for hex;
 // NullUniqueIdentifier gives the canonical GUID and preserves NULL.
 //
-// decimal/numeric/money/smallmoney scan as []byte already decoded to ASCII digits
-// ("0.070312"), so render as text, not hex (numeric reports as DECIMAL).
-// money/smallmoney arrive with four decimals; isMoney trims them as SSMS does.
+// decimal/numeric/money/smallmoney scan as []byte of ASCII digits ("0.070312"),
+// so render as text, not hex. money/smallmoney arrive with four decimals; isMoney
+// trims them as SSMS does.
 //
 // real scans as float64(float32); formatting at 64 bits shows widening noise
 // (0.1 -> 0.10000000149011612), so isReal marks those columns for 32-bit.
 //
-// Every date/time type scans as time.Time, so the column type and scale decide
-// what SSMS shows (date without time, datetime2(3) with three digits); layouts
-// holds that per column.
+// Every date/time type scans as time.Time; the column type and scale decide the
+// layout (date without time, datetime2(3) with three digits), held per column in
+// layouts.
 //
-// sql_variant scans as its inner type's value with that type dropped; isVariant
-// routes those columns through appendVariant.
+// sql_variant scans as its inner value with the type dropped; isVariant routes
+// it through appendVariant.
 func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	cols, err := rows.Columns()
 	if err != nil {
@@ -591,17 +586,14 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 
 // scanResultSet reads the current result set into string cells, packed into a
 // cellArena. A positive maxRows stops at that many rows; a further row marks the
-// set Truncated and leaves it pending, for runBatch to cancel. The test
-// is the loop's own Next(), never an extra call on an exhausted set (see
-// runBatch).
+// set Truncated and leaves it pending, for runBatch to cancel. The test is the
+// loop's own Next(), never an extra call on an exhausted set (see runBatch).
 //
-// No trailing rows.Err(), deliberately, and likewise in streamResultSet:
-// runBatch ends the message loop with one, so a truncated set is still reported
-// from there. This keeps the partial set: the user gets the grid *and* the
-// error, as SSMS shows a query that died on row 900. scanPlanXML checks and
-// discards its partial result instead: half a showplan is not a plan. Both are
-// reached only through scanNext, itself reached only from runBatch; a caller
-// outside runBatch must bring its own check.
+// No trailing rows.Err(), deliberately (likewise in streamResultSet): runBatch
+// ends with one, so a truncated set is still reported there while the partial
+// grid is kept, as SSMS shows a query that died on row 900. scanPlanXML instead
+// discards its partial result: half a showplan is not a plan. A caller outside
+// runBatch must bring its own check.
 func scanResultSet(rows *sql.Rows, prog *Progress, maxRows int) (ResultSet, error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
@@ -637,11 +629,10 @@ func scanResultSet(rows *sql.Rows, prog *Progress, maxRows int) (ResultSet, erro
 // costs a message (see scanNext).
 //
 // A positive maxRows stops after that many rows, as scanResultSet: a further row
-// leaves the set pending, reported as exhausted false with a nil err.
+// leaves the set pending (exhausted false, nil err).
 //
-// Like scanResultSet, it ends without rows.Err(): runBatch's trailing one
-// reports a set the server truncated, and rows already handed to the sink stay
-// written.
+// Like scanResultSet, it skips rows.Err(): runBatch's trailing one reports a
+// server-truncated set, and rows already handed to the sink stay written.
 func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress, maxRows int) (n int, exhausted bool, err error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
@@ -691,7 +682,7 @@ func isShowplanResultSet(cols []string) bool {
 // caller may drain. Not "did it fail": streamResultSet's deferred EndSet and
 // scanPlanXML's trailing rows.Err() can fail on a fully read set, and draining
 // that swallows the message retmsg awaits. A set stopped at the WithMaxRows cap
-// is abandoned too, with res.cut set: the caller cancels the batch instead.
+// is abandoned too, with res.cut set; the caller cancels the batch instead.
 func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 	cols, err := rows.Columns()
 	if err != nil {
@@ -746,16 +737,15 @@ func truncatedNotice(nth, limit int) string {
 }
 
 // scanPlanXML reads the current showplan set into one XML document per row.
-// Every probed server sends one row per set; keeping every row is a tolerance so
-// a split set wouldn't lose plans (as in gosmo's capturePlan).
+// Servers send one row per set; keeping every row tolerates a split set (as in
+// gosmo's capturePlan).
 //
 // exhausted reports whether the loop reached the set's end; rows.Err() can't
 // tell a failed end from a clean one, and neither needs draining.
 //
-// Unlike the grid scanners it checks the trailing rows.Err(), so a truncated plan
-// set yields *no* plans (half a showplan is not a plan; a grid cut at row 900 is
-// still 900 rows). runBatch reports the same failure again in Messages, which is
-// accepted.
+// Unlike the grid scanners it checks the trailing rows.Err(), so a truncated
+// set yields *no* plans. runBatch reports the same failure again in Messages,
+// which is accepted.
 func scanPlanXML(rows *sql.Rows) (plans []string, exhausted bool, err error) {
 	for rows.Next() {
 		var xml string

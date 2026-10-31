@@ -9,15 +9,12 @@ import (
 )
 
 // explorer_object_ops.go is Object Explorer's general Delete and Rename: one
-// table of what they mean per node type. A type absent from it offers
-// neither (folders, anything gosmo can't drop).
+// table of what they mean per node type. A type absent from it offers neither
+// (folders, anything gosmo can't drop).
 //
-// The menu pair is in explorer_object_menu.go, what permits each action in
-// explorer_object_rights.go, and the confirm/run/refresh flows around them in
-// explorer_object_actions.go.
-//
-// SQL Server Agent objects are renameable here but keep their own Delete (see
-// agent_menu.go).
+// Menu items: explorer_object_menu.go. Permissions: explorer_object_rights.go.
+// Confirm/run/refresh flows: explorer_object_actions.go. Agent objects are
+// renameable here but keep their own Delete (agent_menu.go).
 
 // objectOp is what Delete and Rename do for one node type. A nil drop or rename
 // means the node doesn't offer that action.
@@ -286,11 +283,9 @@ var objectOps = map[NodeType]objectOp{
 	// Programmability > Types, Rules, Defaults, Assemblies and Plan Guides, plus
 	// External Resources beside Views.
 	//
-	// The type families share one statement — DROP TYPE names an alias, table
-	// or CLR type and nothing in it says which — and one warning: the server
-	// refuses a type anything is typed on, and names the blocker in the
-	// error, so the warning says the drop is refused rather than listing
-	// classes (the same treatment as NodeColumn's).
+	// The type families share one statement (DROP TYPE doesn't say which kind) and
+	// one warning: the server refuses a type anything is typed on and names the
+	// blocker, so the warning just says the drop is refused (as NodeColumn's).
 	NodeUserDefinedDataType: {
 		noun:    "User-Defined Data Type",
 		warning: typeInUseWarning,
@@ -392,9 +387,8 @@ var objectOps = map[NodeType]objectOp{
 	// one ALTER that could, ALTER SERVICE, renames nothing). Only the queue has
 	// a schema to move between.
 	//
-	// Every warning says the drop is refused and leaves the naming to the
-	// server (Msg 3716). A pre-check would duplicate a dependency graph the
-	// server already walks, and ALTER on the database does not override it.
+	// Every warning says the drop is refused and leaves the naming to the server
+	// (Msg 3716): a pre-check would duplicate its dependency graph.
 	NodeMessageType: {
 		noun:    "Message Type",
 		warning: "The drop is refused while a contract names it — the server's error says so.",
@@ -526,9 +520,8 @@ var objectOps = map[NodeType]objectOp{
 		// No rename: no ALTER SYMMETRIC KEY ... WITH NAME, no sp_rename class.
 	},
 	// The three full-text families under Storage. Nothing cascades: the server
-	// refuses a catalog that still holds an index (Msg 7668) and a stoplist or
-	// property list an index uses (Msg 30034, 30036), and its message says
-	// what to do. No rename: none of the three has a WITH NAME or an sp_rename
+	// refuses a catalog holding an index (Msg 7668) and a stoplist or property
+	// list an index uses (Msg 30034, 30036). No rename: no WITH NAME or sp_rename
 	// class.
 	NodeFullTextCatalog: {
 		noun:    "Full-Text Catalog",
@@ -661,17 +654,15 @@ var objectOps = map[NodeType]objectOp{
 		},
 		// No rename: ALTER EVENT SESSION has no WITH NAME.
 	},
-	// Resource Governor. A drop is stored and then applied at once — see
-	// applyResourceGovernor — so the tree and what is in force agree, as
-	// they do after a Properties Apply. The built-ins are IsSystem, which
-	// withholds Delete. No rename: T-SQL has none for any of the three.
+	// Resource Governor. A drop is stored, then applied at once (see
+	// applyResourceGovernor) so the tree matches what is in force. Built-ins are
+	// IsSystem, which withholds Delete. No rename: T-SQL has none.
 	NodeResourcePool: rgObjectOp("Resource Pool",
 		"The drop is refused while a workload group uses it — move or delete its groups first. "+rgDropApplied,
 		func(s *gosmo.Server, name string) rgDroppable { return s.ResourcePoolRef(name) }),
-	// The drop itself is accepted with sessions in the group, and applying it
-	// is what is refused (Msg 10904), so the warning names that. A disabled
-	// governor ends in DISABLE, which applies nothing, so there the refusal
-	// waits for the next Enable — verified live in W7.
+	// The drop is accepted with sessions in the group; applying it is what is
+	// refused (Msg 10904). On a disabled governor nothing is applied, so the
+	// refusal waits for the next Enable (verified live in W7).
 	NodeWorkloadGroup: rgObjectOp("Workload Group",
 		"Applying the drop is refused while a session is in the group: those sessions must end first (on a disabled governor, enabling it is refused until they do). "+rgDropApplied,
 		func(s *gosmo.Server, name string) rgDroppable { return s.WorkloadGroupRef(name) }),
@@ -831,10 +822,9 @@ func renameIn[T interface {
 	}
 }
 
-// transferIn is dropIn for a move to another schema (ALTER SCHEMA ...
-// TRANSFER). The handle's Transfer picks the securable class — TYPE:: for
-// the type families, XML SCHEMA COLLECTION:: for that one — so the choice
-// is not repeated here.
+// transferIn is dropIn for a move to another schema (ALTER SCHEMA ... TRANSFER).
+// The handle's Transfer picks the securable class (TYPE::, XML SCHEMA
+// COLLECTION::).
 func transferIn[T interface {
 	Transfer(context.Context, string) error
 }](ref func(*gosmo.Database, string, string) T) func(context.Context, *db.ServerConn, nodeData, string) error {
@@ -843,9 +833,8 @@ func transferIn[T interface {
 	}
 }
 
-// typeInUseWarning is the delete warning the three type families share. Like
-// NodeColumn's, it says the drop is refused and leaves the naming of the
-// blocker to the server, which names it in the error.
+// typeInUseWarning is the delete warning the three type families share; like
+// NodeColumn's, it leaves naming the blocker to the server.
 const typeInUseWarning = "The drop is refused while a column, parameter, variable or routine is typed on it — the server's error names what blocks it."
 
 // dropConstraint removes a primary key, unique constraint, foreign key, or

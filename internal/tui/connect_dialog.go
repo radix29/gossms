@@ -84,8 +84,7 @@ type ConnectDialog struct {
 	// (Connection.GeneratedName) and config.DialPort's SQL Browser rule key off
 	// it. The fold is presentation only: currentOptions splits it with
 	// gosmo.ParseServerAddress and PreFill re-joins it with config.ResolveServer,
-	// so GeneratedName is unchanged by the round trip and the stored password
-	// still decrypts.
+	// so the round trip changes neither GeneratedName nor the password's AAD.
 	fServer    *widgets.InputField
 	fDatabase  *widgets.InputField
 	fUser      *widgets.InputField
@@ -635,11 +634,11 @@ func matchLabel(c config.Connection) string {
 // serverParts splits the Server Name field into the server (host plus named
 // instance) and the folded-in port, reporting whether the port is usable.
 //
-// An empty port is 0: config.DialPort passes it on as unspecified (a named
-// instance takes its port from SQL Browser). A non-numeric trailing port is
-// left in the host by gosmo.ParseServerAddress and the driver's error
-// surfaces. A numeric port outside 1-65535 is rejected rather than
-// falling back to 1433, which would look like the typo worked.
+// An empty port is 0 (unspecified; a named instance gets its port from SQL
+// Browser). A non-numeric trailing port stays in the host per
+// gosmo.ParseServerAddress and the driver's error surfaces. A numeric port
+// outside 1-65535 is rejected, not defaulted to 1433, which would look like the
+// typo worked.
 func (d *ConnectDialog) serverParts() (server string, port int, ok bool) {
 	host, instance, port := gosmo.ParseServerAddress(strings.TrimSpace(d.fServer.Value()))
 	server = host

@@ -17,11 +17,11 @@ type Right struct {
 	Role string
 	DB   bool // database-scope rather than server-scope
 
-	// Schema narrows the question to the object's schema, asked of gosmo's
-	// per-schema probe. A principal granted ALTER on one schema holds no
-	// database-wide permission, so this is the only right that can speak for it.
-	// It is also how ObjectDenial asks the schema DENY question; only there can a
-	// schema-scoped right *withhold*.
+	// Schema narrows the question to the object's schema (gosmo's per-schema
+	// probe). A principal granted ALTER on one schema holds no database-wide
+	// permission, so only this right can speak for it. It is also how ObjectDenial
+	// asks the schema DENY question; only there can a schema-scoped right
+	// *withhold*.
 	Schema bool
 
 	// Membership makes Name a fixed database *role* to be a member of, in database
@@ -41,14 +41,13 @@ type Right struct {
 	// diskadmin carries and no server permission answers for.
 	//
 	// RightsAllow checks gosmo.Capabilities.Probed before believing a false, and
-	// also asks about sysadmin: it implies no other fixed role, so a sysadmin reads
-	// 0 for diskadmin while being permitted everything it carries.
+	// also asks about sysadmin, which implies no other fixed role: it reads 0 for
+	// diskadmin while being permitted everything it carries.
 	ServerRole bool
 
-	// Object narrows the question to the object itself, asked of gosmo's
-	// per-object probe. It is the only right that can speak for a principal
-	// granted ALTER on one table and nothing else, who reads 0 at schema and
-	// database scope.
+	// Object narrows the question to the object itself (gosmo's per-object probe).
+	// It is the only right that can speak for a principal granted ALTER on one
+	// table and nothing else, who reads 0 at schema and database scope.
 	//
 	// It can only *add* permission. gosmo's ObjectPermissions map holds a row only
 	// for an object explicitly granted, denied or owned, so silence means "no
@@ -56,15 +55,13 @@ type Right struct {
 	Object bool
 
 	// Securable narrows the question to one assembly, user-defined type or XML
-	// schema collection (classes 5, 6, 10), asked of gosmo's per-securable probe.
-	// Object is class 1 only, and no wider right helps: a principal granted
-	// CONTROL on one assembly, or owning it, reads 0 at every database and schema
-	// scope.
+	// schema collection (classes 5, 6, 10; gosmo's per-securable probe). Object is
+	// class 1 only, and no wider right helps: a principal granted CONTROL on one
+	// assembly, or owning it, reads 0 at every database and schema scope.
 	//
-	// Unlike Object it is read Permits-wise and so can withhold: gosmo's map is a
-	// HAS_PERMS_BY_NAME answer with a row for every securable the login can see, so
-	// 0 is the server's answer, not silence. That is what lets it be Move to
-	// Schema's only right.
+	// Unlike Object it can withhold: gosmo's map is a HAS_PERMS_BY_NAME answer with
+	// a row for every securable the login can see, so 0 is the server's answer, not
+	// silence. That is what lets it be Move to Schema's only right.
 	Securable gosmo.DatabaseSecurableKind
 
 	// DeniedOnPrincipal names the DATABASE_PRINCIPAL-scope (class 4) permission
@@ -73,25 +70,23 @@ type Right struct {
 	// while the DENY that beats it sits on the user itself as plain ALTER.
 	//
 	// It also stops the principal arm of ObjectDenial firing on the wrong kind of
-	// node: ObjectDenial is asked about a table by the same name as a denied user
-	// just as readily, and only a right declaring this field makes it ask the
-	// class-4 question.
+	// node (a table can share a name with a denied user): only a right declaring
+	// this field makes it ask the class-4 question.
 	DeniedOnPrincipal string
 
-	// DeniedOnServer is DeniedOnPrincipal's server-scope twin: the server-scope
-	// permission whose explicit DENY withholds this right, or "". ServerSecurable
-	// says which kind of securable that DENY sits on.
+	// DeniedOnServer is DeniedOnPrincipal's server-scope twin: the permission whose
+	// explicit DENY withholds this right, or "". ServerSecurable says which kind of
+	// securable that DENY sits on.
 	//
 	// The kind is declared, not inferred, because ObjectDenial is handed a bare
-	// name; it keeps the arm from firing on the wrong family (a login and an
-	// endpoint of the same name are two securables).
+	// name (a login and an endpoint of the same name are two securables).
 	DeniedOnServer  string
 	ServerSecurable gosmo.ServerSecurableKind
 
 	// DeniedOnAG names the AVAILABILITY GROUP-scope (class 108) permission whose
-	// absence on the group withholds this right, or "". Class 108's major_id is an
-	// internal id no supported view maps to a name, so gosmo asks HAS_PERMS_BY_NAME
-	// per group instead of reading sys.server_permissions.
+	// absence on the group withholds this right, or "". Class 108's major_id maps
+	// to no name in any supported view, so gosmo asks HAS_PERMS_BY_NAME per group
+	// instead of reading sys.server_permissions.
 	//
 	// The answer is read as a *denial* only while the right beside it is held:
 	// HAS_PERMS_BY_NAME reads 0 both for a group carrying DENY ALTER and for a

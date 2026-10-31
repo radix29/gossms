@@ -16,19 +16,18 @@ import (
 // Save writes the config. Passwords are AES-256-GCM encrypted and base64-encoded
 // (see secret.go) on disk only; c keeps plaintext.
 //
-// It re-reads the file and applies this process's own changes to it (connections
-// added or removed, settings changed since Load) rather than writing c whole,
-// since another gossms instance may have saved meanwhile. Afterwards
-// c.Connections is the merged list. Settings in c are not replaced by the file's:
-// a changed setting takes effect when the Options dialog applies it.
+// It re-reads the file and applies this process's own changes (connections added
+// or removed, settings changed since Load) rather than writing c whole, since
+// another instance may have saved meanwhile. Afterwards c.Connections is the
+// merged list; c's settings are not replaced by the file's.
 //
 // An entry whose password could not be opened keeps its ciphertext
 // (Connection.sealed). An unusable key file does not stop the save: stored
-// ciphertexts are written back as they are, and only a password that would need
-// the key to seal is left out, named in the returned error.
+// ciphertexts are written back as they are, and only a password that needs the
+// key to seal is left out, named in the returned error.
 //
-// Save is BeginSave, Run and EndSave on one goroutine. The UI goroutine uses the
-// three halves so the lock wait, key read and fsync run off it.
+// Save is BeginSave, Run and EndSave on one goroutine; the UI uses the three
+// halves so the lock wait, key read and fsync run off it.
 func (c *Config) Save() error {
 	j := c.BeginSave()
 	err := j.Run()
@@ -36,11 +35,10 @@ func (c *Config) Save() error {
 	return err
 }
 
-// SaveJob is one Save split so its file work can run on another goroutine than
-// the one that owns the Config: BeginSave snapshots what to write, Run does the
-// re-read, merge and write touching nothing in the Config, EndSave adopts the
-// result. Only one job per Config may be between BeginSave and EndSave —
-// EndSave drops the ops the job carried by position.
+// SaveJob is one Save split so its file work can run off the Config's goroutine:
+// BeginSave snapshots what to write, Run re-reads, merges and writes without
+// touching the Config, EndSave adopts the result. Only one job per Config may be
+// between BeginSave and EndSave: EndSave drops the job's ops by position.
 type SaveJob struct {
 	path       string
 	unreadable error
@@ -76,9 +74,8 @@ func (j *SaveJob) Run() error {
 		return fmt.Errorf("config: not saving over %s — it could not be read at startup: %w", j.path, j.unreadable)
 	}
 	dir := filepath.Dir(j.path)
-	// 0700, matching loadOrCreateKey's MkdirAll (secret.go). MkdirAll doesn't
-	// chmod an existing directory, so whichever runs first decides; both ask for
-	// owner-only.
+	// 0700, as in loadOrCreateKey (secret.go): MkdirAll doesn't chmod an existing
+	// directory, so whichever runs first decides.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -90,11 +87,10 @@ func (j *SaveJob) Run() error {
 	return fileutil.WithLock(j.path, func() error { return j.mergeAndWrite(key, keyErr) })
 }
 
-// EndSave adopts a job Run has finished, on the goroutine that owns c: the
-// merged connection list (with any AddOrUpdate or RemoveConnection made since
-// BeginSave replayed onto it and still pending) and the settings the job wrote
-// as the new baseline. A job that wrote nothing changes nothing, so its ops stay
-// pending; ending a job twice is a no-op.
+// EndSave adopts a finished job on c's goroutine: the merged connection list
+// (with ops made since BeginSave replayed onto it and still pending) and the
+// written settings as the new baseline. A job that wrote nothing changes nothing,
+// so its ops stay pending; ending a job twice is a no-op.
 func (c *Config) EndSave(j *SaveJob) {
 	if !j.written || j.adopted {
 		return
@@ -113,13 +109,11 @@ func (c *Config) EndSave(j *SaveJob) {
 }
 
 // NeedsReseal reports whether Load opened a password sealed under an earlier,
-// weaker binding than the current one (secret.go's aadPrefixV3, aadPrefixV2 or
-// no prefix), which only a save rewrites. An unprefixed one carries no AAD at
-// all: write access to config.json can transplant it onto an entry pointing
-// elsewhere, the attack connectionAAD exists to stop. A config that is loaded
-// and never saved would keep it indefinitely, so the app saves once at startup
-// when this is true. A password that failed to open is not counted: Save
-// writes it back as it was.
+// weaker binding (secret.go's aadPrefixV3, aadPrefixV2 or no prefix), which only
+// a save rewrites. An unprefixed one carries no AAD: write access to config.json
+// can transplant it onto an entry pointing elsewhere, the attack connectionAAD
+// exists to stop. So the app saves once at startup when this is true. A password
+// that failed to open is not counted: Save writes it back as it was.
 func (c *Config) NeedsReseal() bool { return c.legacySealed }
 
 // applyTo replays op on a connection list.

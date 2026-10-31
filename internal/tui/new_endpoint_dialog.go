@@ -22,16 +22,15 @@ import (
 //
 // # Why it does not copy files
 //
-// Replicas with no domain in common (every Linux deployment) authenticate with
+// Replicas with no common domain (every Linux deployment) authenticate with
 // certificates, and the documented setup is BACKUP CERTIFICATE to a file on each
-// host, copy the files by hand, then CREATE CERTIFICATE FROM FILE. gossms has no
+// host, a manual copy, then CREATE CERTIFICATE FROM FILE. gossms has no
 // filesystem access to either host.
 //
-// Instead each instance keeps its own key pair and gets its peers' *public*
-// certificates, moved as bytes over the two connections gossms already has
-// (gosmo's Certificate.Encoded and CreateCertificateRequest.FromBinary). No
-// private key is read, transmitted or written, which is also why certificates
-// are per-instance: sharing one requires moving its private key.
+// Instead each instance keeps its own key pair and receives its peers' *public*
+// certificates as bytes over the two connections gossms already has (gosmo's
+// Certificate.Encoded and CreateCertificateRequest.FromBinary). No private key
+// is read, transmitted or written, hence certificates are per-instance.
 //
 // Per instance: a database master key in master if none, a certificate of its
 // own if none, then for each peer a login, a user, the peer's public certificate
@@ -162,11 +161,9 @@ func (d *NewEndpointDialog) defaultPeerServer(ctx context.Context, inst *newEndp
 // login and user names the exchange creates.
 //
 // A named instance reports @@SERVERNAME as HOST\INSTANCE, and the backslash
-// makes the raw name unusable: it is how SQL Server spells a Windows principal,
-// and the login created here carries a password, so CREATE LOGIN
-// [HOST\INST_login] WITH PASSWORD is refused (Msg 15006, "not a valid name
-// because it contains invalid characters"). It becomes HOST$INST, the convention
-// of SQL Server's own service accounts (MSSQL$INSTANCE).
+// spells a Windows principal, so CREATE LOGIN [HOST\INST_login] WITH PASSWORD is
+// refused (Msg 15006). It becomes HOST$INST, as in SQL Server's own service
+// accounts (MSSQL$INSTANCE).
 //
 // Not truncated to the host as gosmo's endpointURL does: two named instances on
 // one machine would then share every principal name. A default instance has no
@@ -667,9 +664,8 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		// already loaded on both rows, so this costs no round trip.
 		//
 		// other.cert is dereferenced unguarded on purpose: ensureCertificate sets cert
-		// and encoded together and an empty encoded already returned above, so a nil
-		// here means that invariant broke. A nil check would make this check silently
-		// not run.
+		// and encoded together and an empty encoded returned above, so a nil here
+		// means that invariant broke. A nil check would silently skip this check.
 		if !bytes.Equal(existing.Thumbprint, other.cert.Thumbprint) {
 			return fmt.Errorf("%s already has a different certificate named %s than the one %s presents — drop it there and run this again",
 				p.inst.name, certName, other.inst.name)

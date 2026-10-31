@@ -18,19 +18,19 @@ import (
 // # Creating a group is one statement here and two on every secondary
 //
 // CREATE AVAILABILITY GROUP is only the first. Each secondary must run ALTER
-// AVAILABILITY GROUP ... JOIN against itself (the primary cannot join anything
-// on its behalf) and, to seed automatically, ALTER ... GRANT CREATE ANY
-// DATABASE, without which SEEDING_MODE = AUTOMATIC seeds nothing and reports no
-// error. The connections come from db.ServerConn.Peer, which reuses this
-// connection's credentials; a replica wanting different ones is out of scope
-// and surfaces as a connect error naming the instance.
+// AVAILABILITY GROUP ... JOIN against itself (the primary cannot join on its
+// behalf) and, to seed automatically, ALTER ... GRANT CREATE ANY DATABASE,
+// without which SEEDING_MODE = AUTOMATIC seeds nothing and reports no error.
+// The connections come from db.ServerConn.Peer, which reuses this connection's
+// credentials; a replica needing different ones is out of scope and surfaces as
+// a connect error naming the instance.
 //
 // This dialog deliberately does not create the database mirroring endpoints. An
 // instance can have only one, and creating one means a certificate exchange
-// across every participating instance, enough to have its own dialog
+// across every participating instance: enough for its own dialog
 // (new_endpoint_dialog.go). A missing endpoint is a blocking problem naming the
-// instance and pointing at that dialog, not guessed at here, which would give a
-// group that looks created and never connects.
+// instance and that dialog, not guessed at here, which would give a group that
+// looks created and never connects.
 
 // newAGReplica is one replica of the group being defined. Unlike the
 // Properties pages' agReplicaEdit there are no "orig" fields: nothing exists

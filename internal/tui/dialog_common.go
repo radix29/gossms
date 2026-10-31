@@ -190,33 +190,26 @@ func (a *App) confirmDiscardChanges(proceed func()) {
 
 // forwardReleaseToFocusedField hands a release to the dialog's focused field so a
 // text-selection drag in it ends cleanly wherever the pointer was when the button
-// came up, and reports whether the event was that release — a true answer means
-// HandleMouse is done with it. Invariant 5 in docs/ui-rules.md, "a host that
-// returns early from HandleMouse must still forward ButtonNone to a latch-bearing
-// child": Backup, Restore and Connect all need the same switch.
+// came up, and reports whether the event was that release (true: HandleMouse is
+// done with it). Invariant 5 in docs/ui-rules.md: a host that returns early from
+// HandleMouse must still forward ButtonNone to a latch-bearing child. Backup,
+// Restore and Connect all need the same switch.
 //
-// Call it below ConsumeOutsideClick and below FieldGesture.Release. The live arm
-// is the Editor: an Editor keeps its own latch and is deliberately outside
-// FieldGesture, so nothing above here ends a selection drag started in one.
+// Call it below ConsumeOutsideClick and FieldGesture.Release. The live arm is the
+// Editor, which keeps its own latch outside FieldGesture, so nothing above here
+// ends a selection drag started in one.
 //
-// focused is whatever the dialog's focus ring points at. Only an InputField and an
-// Editor are forwarded to: the checkboxes, radio groups and drop-downs were
-// already given the release above ConsumeOutsideClick, and handing it to one twice
-// would toggle it.
+// Only an InputField and an Editor are forwarded to: checkboxes, radio groups and
+// drop-downs already got the release above ConsumeOutsideClick, and a second one
+// would toggle them. The InputField arm is belt-and-braces: a latched field always
+// has the FieldGesture too, so FieldGesture.Release has already ended it, and
+// FieldGesture.Clear covers a dialog dismissed mid-drag. It stays for a dialog that
+// hit-tests a field itself.
 //
-// The InputField arm is belt-and-braces, not a path these three dialogs take. The
-// only route a press takes to an InputField is FieldGesture.Claim, so a latched
-// field always has the gesture too and FieldGesture.Release (above this) has
-// already ended it; the one way the halves came apart, a dialog dismissed
-// mid-drag and reopened, is closed in FieldGesture.Clear. The arm stays for a
-// fourth caller, or a dialog that hit-tests a field itself.
-//
-// It deliberately does not call FieldGesture.Release or .Replay, and does not
-// answer the non-Button1 question. Their placement differs per dialog —
-// docs/ui-rules.md puts Release above ConsumeOutsideClick and above any mode
-// switch, Replay after it and before any hit-test, and Connect reads the wheel
-// between the two — so a helper that fixed an order would be wrong for dialogs
-// with a mode or a scrollable pane.
+// It deliberately calls neither FieldGesture.Release nor .Replay, nor answers the
+// non-Button1 question: their placement differs per dialog (docs/ui-rules.md; Connect
+// reads the wheel between the two), so a helper fixing an order would be wrong for
+// dialogs with a mode or scrollable pane.
 func forwardReleaseToFocusedField(ev *tcell.EventMouse, focused any) bool {
 	if ev.Buttons() != tcell.ButtonNone {
 		return false

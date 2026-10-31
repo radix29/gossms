@@ -12,38 +12,37 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// database_mail_props.go is Database Mail Properties: the whole Database Mail
-// configuration in one paged dialog: General (status and 'Database Mail XPs'),
-// Accounts (database_mail_props_accounts.go), Profiles and Profile Security
+// database_mail_props.go is Database Mail Properties: the whole configuration in
+// one paged dialog: General (status and 'Database Mail XPs'), Accounts
+// (database_mail_props_accounts.go), Profiles and Profile Security
 // (database_mail_props_profiles.go), and System Parameters. It replaces SSMS's
 // Configure Database Mail wizard (docs/decisions.md): accounts and profiles have
 // no tree nodes, so this is where they are edited.
 //
 // # One Apply, in dependency order
 //
-// The pages refer to each other's objects (a profile lists accounts, a grant names
-// a profile) and either may be new in the same Apply. So the dialog is planned
-// (applyPlan) and statements run in mailPhase order: creations first, then what
-// refers to them, then renames, then drops. Renames follow the profile-account and
-// grant writes because those address existing objects by the names the server
-// still has.
+// Pages refer to each other's objects (a profile lists accounts, a grant names a
+// profile) and any may be new in the same Apply, so the dialog is planned
+// (applyPlan) and statements run in mailPhase order: creations, then what refers
+// to them, then renames, then drops. Renames follow the profile-account and grant
+// writes because those address existing objects by the names the server still has.
 //
 // The msdb writes are one transaction (gosmo's InTransaction, N2): every
-// sysmail_* procedure, the credential an account's password creates included, runs
-// and rolls back cleanly inside one (probed on 13, 14 and 17), so a failure
-// part-way stores nothing and the pages keep their edits. 'Database Mail XPs' is
+// sysmail_* procedure, including the credential an account's password creates,
+// rolls back cleanly inside one (probed on 13, 14 and 17), so a failure part-way
+// stores nothing and the pages keep their edits. 'Database Mail XPs' is
 // sp_configure plus RECONFIGURE, which refuses to run inside a user transaction
 // (Msg 574), so it follows the COMMIT; a failure there leaves the msdb writes
-// stored, and the dialog reloads every page. None of the configuration procedures
-// needs the option on.
+// stored, and the dialog reloads every page. No configuration procedure needs the
+// option on.
 //
 // # Pages that see each other's edits
 //
-// A new account has to be offered on the Profiles page, and a new profile on
-// Profile Security, before Apply: configuring from nothing is one account, one
-// profile and one grant, and three Applies would get in the way. mailModel carries
-// the names across: the owning page publishes, the using page listens. Resource
-// Governor Properties does the same (rgModel).
+// A new account is offered on Profiles, and a new profile on Profile Security,
+// before Apply: configuring from nothing is one account, profile and grant, and
+// three Applies would get in the way. mailModel carries the names across: the
+// owning page publishes, the using page listens. Resource Governor Properties
+// does the same (rgModel).
 
 // The pages of Database Mail Properties, in order.
 const (

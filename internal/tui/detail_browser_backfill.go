@@ -5,39 +5,34 @@ import (
 )
 
 // backfillRows runs fetch for each of n rows on App.fanOut's bounded pool and
-// returns once every one of them has queued its cell writes on the UI goroutine.
-// It is the shared body of the progressive detail loaders
-// (loadDatabasesFolderDetails, loadTablesFolderDetails): show the fast identity
-// columns immediately, then fill the slow per-row ones as they land, so one slow
-// row doesn't hold up the rest.
+// returns once every row has queued its cell writes on the UI goroutine. It is the
+// shared body of the progressive detail loaders (loadDatabasesFolderDetails,
+// loadTablesFolderDetails): show the fast identity columns at once, then fill the
+// slow per-row ones as they land, so one slow row doesn't hold up the rest.
 //
 // fetch runs on a background goroutine with its own per-row context and must not
-// touch DetailBrowser or any other UI state. It returns the closure that writes
-// that row's cells, which backfillRows posts — so every write to the caller's rows
-// slice lands on the UI goroutine rather than racing another row's completion.
+// touch DetailBrowser or other UI state. It returns the closure that writes that
+// row's cells; backfillRows posts it, so every write to the caller's rows slice
+// lands on the UI goroutine.
 //
-// markFailed fills the row's backfilled cells with placeholders for a row that
-// produced nothing. The caller uses it for an ordinary fetch error too;
-// backfillRows queues it only for a panic, as fanOut's onPanic — which runs before
-// fanOut returns, so the caller's cache sees the placeholder, not "…".
+// markFailed fills a row's backfilled cells with placeholders. backfillRows queues
+// it only for a panic (fanOut's onPanic, which runs before fanOut returns, so the
+// caller's cache sees the placeholder rather than "…"); the caller uses it for
+// ordinary fetch errors.
 //
-// The write a fetch queues is unconditional even when seq has moved on: rows
-// belongs to this fetch alone, and whether the caller's cacheOnlyObjects caches it
-// is decided by pending, not seq. Skipping the write for a stale seq would cache a
-// row still showing its "…" placeholder whenever pending still matched —
-// permanently, since reselecting is then a cache hit that never refetches. Only
-// the redraw is conditional.
+// The queued write is unconditional even when seq has moved on: rows belongs to
+// this fetch alone, and whether cacheOnlyObjects caches it is decided by pending,
+// not seq. Skipping a stale write would cache a row still showing "…" for good,
+// since reselecting is then a cache hit that never refetches. Only the redraw is
+// conditional.
 //
-// backfillRows returning means every row's closure has been *queued*, not run, so
-// a caller that caches rows afterwards depends on App.postEvent's queue being
-// FIFO: every row's closure is appended before fanOut returns, so a
-// cacheOnlyObjects posted after this returns drains last.
+// Returning means the closures are *queued*, not run; a caller that caches rows
+// afterwards relies on App.postEvent's queue being FIFO, so a cacheOnlyObjects
+// posted after this returns drains last.
 //
-// fetchCtx is the loader's fetch context (see DetailBrowser.fetch), and each row's
-// timeout is derived from it. Once it is cancelled (the user has moved on) the
-// rows not yet started are skipped outright: nothing this fetch still produces is
-// shown or cached (see cancelInflight), so a skipped row's placeholder is never
-// seen.
+// Each row's timeout derives from fetchCtx (see DetailBrowser.fetch). Once it is
+// cancelled the rows not yet started are skipped: nothing this fetch still
+// produces is shown or cached (see cancelInflight).
 func (db *DetailBrowser) backfillRows(
 	app *App,
 	fetchCtx context.Context,

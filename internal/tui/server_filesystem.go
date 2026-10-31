@@ -12,16 +12,14 @@ import (
 )
 
 // serverFileSystemTimeout bounds a single Browse round-trip. The file dialog
-// calls its FileSystem synchronously, so this is also how long the whole TUI
-// can sit unresponsive on one directory listing: short enough that a wedged or
-// unreachable server can't look like a hang, long enough for a merely big
-// directory.
+// calls its FileSystem synchronously, so this is also how long the TUI can sit
+// unresponsive on one listing: short enough that an unreachable server can't look
+// like a hang, long enough for a merely big directory.
 //
 // 15s deliberately, *not* the 30s of the app's other fetch timeouts
 // (childFetchTimeout, propFetchTimeout, agDashboardTimeout,
-// completionInventoryTimeout). Those bound background work; this bounds a
-// frozen UI, and the freeze should win. Doubling it would double how long an
-// unreachable server looks like a hang, for headroom nothing needs.
+// completionInventoryTimeout). Those bound background work; this bounds a frozen
+// UI, and the freeze should win.
 //
 // Measured on win10cli 2026-08-14, through EnumFileSystem, best of three:
 // C:\Windows\System32 4551 entries in 1.2s, C:\Windows 101 in 35ms,
@@ -31,8 +29,8 @@ import (
 // Don't read the "ten seconds" in ARCHITECTURE.md § The other direction:
 // FileDialog.showBusy as a live figure: it predates gosmo's WHERE level = 0
 // filter on sys.dm_os_enumerate_filesystem, which stops a listing walking the
-// whole subtree. showBusy still earns its place (a second of frozen UI is worth
-// labelling), but the wait it was written for is ~8x smaller.
+// whole subtree. showBusy still earns its place, but the wait it was written for
+// is ~8x smaller.
 const serverFileSystemTimeout = 15 * time.Second
 
 // serverFS browses the SQL Server host's filesystem (the machine the backup

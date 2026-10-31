@@ -283,9 +283,8 @@ func (d *BackupDialog) selectedAction() gosmo.BackupAction {
 // "<db>_FULL_<yyyymmdd_hhmmss>.bak" / "_DIFF_….bak" / "_LOG_….trn".
 //
 // The timestamp is what makes WITH INIT (currentOptions) safe. A fixed
-// "<db>_log.trn" sent every log backup to the same file, and INIT replaced
-// the previous one on disk while msdb still listed it — the second log backup
-// from the dialog broke the restore chain.
+// "<db>_log.trn" sent every log backup to one file; INIT replaced the previous
+// one on disk while msdb still listed it, breaking the restore chain.
 func (d *BackupDialog) autoDest() string {
 	dbName := d.ddDatabase.Value()
 	if dbName == "" {
@@ -476,22 +475,20 @@ func (d *BackupDialog) applyTypeRules() {
 
 // applyDeviceRules switches off what the destination device cannot carry.
 //
-// gosmo picks the device keyword off the path itself (gosmo.IsBackupURL), so a
-// blob destination emits TO URL on any edition. What is needed here is the other
-// half: an Azure engine refuses a DISK device outright —
+// gosmo picks the device keyword off the path (gosmo.IsBackupURL), so a blob
+// destination emits TO URL on any edition. This is the other half: an Azure
+// engine refuses a DISK device outright —
 //
 //	Msg 41902 ... SQL Database Managed Instance supports database restore
 //	from URI backup device only.
 //
 // — and, owning its own backup chain, accepts a backup to URL only as a COPY_ONLY
-// full. Offering a differential, a log backup, or a chain-breaking non-copy-only
-// full there offers something the engine will refuse, so the radio group is
-// pinned to Full and the Copy-only box to checked, both greyed. Browse walks the
-// *server's filesystem*, which a blob container is not, so it goes with any URL
-// destination on any edition.
+// full. So there the radio group is pinned to Full and Copy-only to checked, both
+// greyed. Browse walks the *server's filesystem*, which a blob container is not,
+// so it goes with any URL destination on any edition.
 //
-// Every rule is re-applied on each syncAutoDest pass rather than once at show():
-// the destination is a text field the user can retype into a URL.
+// Rules are re-applied on each syncAutoDest pass, not once at show(): the
+// destination is a text field the user can retype into a URL.
 func (d *BackupDialog) applyDeviceRules() {
 	azure := serverIsAzure(d.sc)
 	d.btnBrowse.SetEnabled(!azure && !gosmo.IsBackupURL(d.fDest.Value()))
@@ -505,9 +502,8 @@ func (d *BackupDialog) applyDeviceRules() {
 }
 
 // applyEditionRules pins what the server's edition cannot do. Express and Web
-// refuse WITH COMPRESSION (Msg 1844), and the dialog used to default to it, so
-// every backup there failed until the user unticked a box nothing pointed at.
-// The dropdown is pinned to the server default — which those editions leave
+// refuse WITH COMPRESSION (Msg 1844), so defaulting to it would fail every
+// backup there with no hint which box to untick. The dropdown is pinned to the server default — which those editions leave
 // uncompressed — and greyed, the way applyDeviceRules pins Azure's type. The
 // edition does not change while the dialog is open, so show() runs it once.
 func (d *BackupDialog) applyEditionRules() {
@@ -601,12 +597,12 @@ func (d *BackupDialog) loadDatabases() {
 // setDatabaseItems replaces the Database dropdown (DropDown items are fixed at
 // construction), preserving the current selection and focus.
 //
-// A selection the incoming list doesn't contain is kept, at the front, rather
-// than dropped. show() seeds the dropdown with the database the dialog was opened
-// on, and backupDatabases filters out ones BACKUP will refuse, so Back Up on
-// an OFFLINE database arrives here with a selection not in the list. Falling
-// through to index 0 would silently retarget the dialog at whichever database
-// sorts first; failing loudly on the picked one is better.
+// A selection missing from the incoming list is kept, at the front, not dropped.
+// show() seeds the dropdown with the database the dialog opened on, and
+// backupDatabases filters out ones BACKUP will refuse, so Back Up on an OFFLINE
+// database arrives with a selection not in the list. Falling to index 0 would
+// silently retarget the dialog at whichever database sorts first; failing loudly
+// on the picked one is better.
 func (d *BackupDialog) setDatabaseItems(names []string) {
 	cur := d.ddDatabase.Value()
 	if cur != "" && !slices.Contains(names, cur) {

@@ -19,9 +19,8 @@ import (
 // look at what precedes idx. nil disables highlighting.
 //
 // A highlighter caching such state must key the cache on doc.Version() and the
-// *Document itself: the version says whether the text changed, the pointer
-// whether it is the same document. Both built-in highlighters do, SQL's through
-// the cache on the Document itself.
+// *Document: the version says whether the text changed, the pointer whether it is
+// the same document. Both built-in highlighters do.
 type Highlighter func(doc *Document, idx int) []ColorRun
 
 // ColorRun describes a coloured segment within an editor line. Start and Len are
@@ -37,10 +36,9 @@ type ColorRun struct {
 // Positions inside the text (cursorCol, the selection anchor, ColorRun bounds,
 // wrap segments) are rune indices. Everything on screen (scrollCol, the cursor's
 // x, a click's x, the horizontal scrollbar) is a terminal column; they differ (a
-// CJK ideograph or emoji takes two columns, a combining mark none). Every
-// conversion goes through core.ColumnOfRune or core.RuneIndexAtColumn; treating a
-// rune index as a column shifts the rest of a line off from where the editor
-// thinks it is.
+// CJK ideograph or emoji takes two columns, a combining mark none). Convert only
+// via core.ColumnOfRune or core.RuneIndexAtColumn; treating a rune index as a
+// column shifts the rest of the line.
 //
 // Block (column) selection stays rune-indexed on purpose, so a block dragged
 // across a line containing a wide rune has a ragged edge (SSMS parity).
@@ -254,18 +252,17 @@ func (e *Editor) wrapWidth() int {
 // the query editor's Word Wrap (Alt+Z). Display only: the document's lines are
 // unchanged. The gutter numbers logical lines, on each one's first visual row.
 //
-// KeyUp/KeyDown/PgUp/PgDn move by wrapped visual rows; Left/Right/Home/End stay
-// logical, and Move Line (Ctrl+Shift+Up/Down) moves whole logical lines. A
-// Highlighter applies in wrap mode too: drawWrapped fetches runs per logical line
-// and resolves each column through styleAt.
+// KeyUp/KeyDown/PgUp/PgDn move by wrapped visual rows; Left/Right/Home/End and
+// Move Line (Ctrl+Shift+Up/Down) stay logical. A Highlighter applies too:
+// drawWrapped fetches runs per logical line and resolves columns through styleAt.
 //
-// Switching mode resets state the modes disagree about: selBlock assumes the fixed
-// rune columns wrap mode breaks (and handleMouseWrapped never sets it, so no click
-// would clear it), scrollCol is meaningful only outside wrap mode, and scrollRow
-// indexes visual rows in wrap mode and logical lines outside it. Setting the
-// current mode is a no-op, so the construction-time call doesn't move the cursor.
-// The cursor is kept and, once laid out, the view scrolls back to it; otherwise a
-// runtime toggle deep in a long script lands on line 1 with the caret off-screen.
+// Switching mode resets state the modes disagree about: selBlock assumes fixed
+// rune columns (and handleMouseWrapped never sets it, so no click would clear
+// it), scrollCol applies only outside wrap mode, and scrollRow indexes visual
+// rows in wrap mode, logical lines outside it. Setting the current mode is a
+// no-op, so the construction-time call doesn't move the cursor. The cursor is
+// kept and the view scrolls back to it once laid out; otherwise a runtime toggle
+// deep in a long script lands on line 1 with the caret off-screen.
 func (e *Editor) SetWrapMode(v bool) {
 	if v == e.wrapMode {
 		return

@@ -56,16 +56,15 @@ func ResolveServer(server string, dialogPort int) string {
 //
 // A named instance is identified by name, so its port is dropped
 // ("host\inst,1500" = "host\inst"). Without a name the port distinguishes
-// instances on one host; a shared key would try the other instance's login,
-// counting toward a CHECK_POLICY lockout. 1433 equals no port.
+// instances on one host; a shared key would try the other's login, counting
+// toward a CHECK_POLICY lockout. 1433 equals no port.
 //
-// "host\MSSQLSERVER" is the default instance's own name (the Browser answers to
-// it), so it keys as a bare host; two keys would split its credentials and
-// count a login attempt against the other key toward a lockout.
+// "host\MSSQLSERVER" is the default instance's own name, so it keys as a bare
+// host; two keys would split its credentials and count attempts toward a lockout.
 //
 // The catalog reports names without ports, so a default instance saved as
-// "host,1500" doesn't answer a peer read for "HOST"; that destination must be
-// registered explicitly rather than guessed from another connection.
+// "host,1500" doesn't answer a peer read for "HOST"; register that destination
+// explicitly rather than guessing it from another connection.
 func InstanceKey(server string) string {
 	host, instance, port := gosmo.ParseServerAddress(strings.TrimSpace(server))
 	key := strings.ToLower(host)

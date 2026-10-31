@@ -157,32 +157,18 @@ func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
 	return v, v != ""
 }
 
-// redrawGrid replaces a grid's rows while leaving the cell cursor, dragged column
-// widths and scroll position where the user put them.
-//
-// DataGrid.SetData resets the cursor to 0,0: right for a fresh result set, wrong
-// for a Properties page re-rendering state the user is navigating. The cursor
-// would jump to the first row, and propsheet.GridRow (which detects movement by
-// diffing SelectedCell around the key) would answer "not handled", so Form moves
-// focus out of the grid on the first arrow key. See wireGridEditor.
-//
-// Restoring the cursor alone doesn't fix the scroll: SetSelectedCell ends in
-// ensureVisible, which scrolls from zero to put the row at the bottom edge, so
-// toggling a State halfway down a long grid would jump the list on every click.
-//
-// This is DataGrid.SetDataPreservingView, which documents the restore order.
+// redrawGrid replaces a grid's rows, keeping the cell cursor, dragged column
+// widths and scroll position. SetData would reset the cursor to 0,0, and
+// propsheet.GridRow (which diffs SelectedCell around the key) would then report
+// the arrow "not handled", so Form moves focus out of the grid. The restore order
+// is documented on DataGrid.SetDataPreservingView.
 func redrawGrid(grid *controls.DataGrid, headers []string, rows [][]string) {
 	grid.SetDataPreservingView(headers, rows)
 }
 
-// resetGrid is redrawGrid for a change that alters the row *set* (Add, Remove,
-// Revert), where the caller selects a row afterwards and the old cursor means
-// nothing.
-//
-// SetData is wrong here too: SetSource clears colWidthOverride, so an Add threw
-// away a column the user had dragged wider. The scroll is restored and then moved
-// by SetSelectedRow's ensureVisible, so appending a row scrolls just far enough
-// to show it.
+// resetGrid is redrawGrid for a change to the row *set* (Add, Remove, Revert):
+// the old cursor means nothing, so row is selected afterwards and scrolled just
+// far enough to show. SetData is wrong here too: it clears dragged column widths.
 func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row int) {
 	grid.SetDataPreservingView(headers, rows)
 	grid.SetSelectedRow(row)
@@ -191,12 +177,9 @@ func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row i
 // wireGridEditor connects a detail editor to a DataGrid's selection (the
 // grid-plus-detail shape of the AG General replica grid, Backup Preferences,
 // Read-Only Routing, User Mapping, Attach and New Index/Statistics/AG pages).
-// Moving off a row commits the editor, loads the new row, and redraws. Returns the
-// redraw a page's RevertFn needs.
-//
-// The selected cell is saved and restored around SetData, which resets it to 0,0
-// from inside OnSelectRow. Without that only the first row is reachable, and
-// GridRow reports arrows unhandled, ejecting focus.
+// Moving off a row commits the editor, loads the new row, and redraws (via
+// redrawGrid, so the cursor survives OnSelectRow; otherwise only the first row is
+// reachable). Returns the redraw a page's RevertFn needs.
 func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [][]string, commitCurrent, syncFromSelection func()) (reload func()) {
 	redraw := func() { redrawGrid(grid, headers, gridRows()) }
 	grid.OnSelectRow = func(int) {

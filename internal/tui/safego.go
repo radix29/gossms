@@ -12,20 +12,17 @@ import (
 // safego runs fn on a new goroutine, turning a panic into a status-bar message and
 // a log entry instead of a process-wide crash.
 //
-// Every background operation in this package goes through it. A panic on a
-// background goroutine is not recoverable by the UI goroutine, so it would take
-// the whole process down, Run's `defer screen.Fini()` never runs, and the
-// terminal is left in raw mode on the alternate screen with the user's unsaved
-// query text gone (the trace disappears with the screen).
+// Every background operation in this package goes through it. The UI goroutine
+// cannot recover a panic on a background one, so it would take the process down:
+// Run's `defer screen.Fini()` never runs, the terminal is left in raw mode on the
+// alternate screen, and the user's unsaved query text and the trace are gone.
 //
-// Not theoretical: go-mssqldb's makeGoLangTypeName panics on a column type ID it
-// doesn't know, and query.scanResultSet calls DatabaseTypeName() on every column
-// of every result set, so one column of a type newer than the pinned driver
-// reaches it.
+// Not theoretical: go-mssqldb's makeGoLangTypeName panics on an unknown column
+// type ID, and query.scanResultSet calls DatabaseTypeName() on every column, so a
+// column type newer than the pinned driver reaches it.
 //
-// The recovered panic is reported like any other background failure, through
-// App.postAndWake onto the UI goroutine. The stack goes to the log file
-// (config.LogFilePath), as the screen has no room for it.
+// The recovered panic is reported through App.postAndWake onto the UI goroutine;
+// the stack goes to the log file (config.LogFilePath), as the screen has no room.
 func (a *App) safego(what string, fn func()) {
 	a.safegoRepair(what, nil, fn)
 }
@@ -48,11 +45,10 @@ func labelGoroutine(what string) {
 //
 // The latch is otherwise cleared by the callback fn posts on finishing, and a
 // panic unwinds past it, so the flag stays set for the object's lifetime: the Log
-// File Viewer's toolbar stays dimmed with Refresh, Export and both selectors dead
-// until the panel closes, an Activity Monitor tab sits at "Running..." forever,
-// IntelliSense reports a catalog still loading that nothing is loading. safego
-// reports the panic either way; what is lost without a repair step is the UI's way
-// out.
+// File Viewer's toolbar stays dimmed until the panel closes, an Activity Monitor
+// tab sits at "Running..." forever, IntelliSense reports a catalog loading that
+// nothing is loading. safego reports the panic either way; without a repair step
+// the UI loses its way out.
 //
 // repair is queued before the panic is reported, so the status bar's last word is
 // the panic rather than whatever repair sets. Same ordering and reason as
@@ -90,22 +86,21 @@ func (a *App) recoverPanic(what string) {
 // what they give by hand: the traceback label and the recover.
 //
 // Each call is recovered on its own: a panic in one item reports and moves on
-// rather than taking its worker, and every item that worker still owes, down.
+// rather than taking down its worker and every item that worker still owes.
 // onPanic (optional) runs on the worker for the panicked item *before* fanOut can
 // return, because a caller acting on the results at once needs the repair already
 // queued. The Detail Browser caches its rows then, and a row whose fetch died
-// would otherwise be cached with its "..." placeholder permanently, since
-// reselecting the node is a cache hit that never refetches.
+// would otherwise stay cached with its "..." placeholder, since reselecting the
+// node is a cache hit that never refetches.
 //
 // The queue is filled and closed before a worker exists, so no send can block on
-// one. Handing indices out from this goroutine would depend on a worker being
-// alive to receive them: if a panic escaped the per-item recovery and took every
-// worker down, the send would block forever and hang the caller. n ints is a few
+// one. Handing indices out from this goroutine would hang the caller forever if a
+// panic escaped the per-item recovery and took every worker down. n ints is a few
 // KB at the largest sizes this runs on.
 //
-// A fixed number of workers pulling indices off a channel, rather than n
-// goroutines each waiting on a token: both bound the work, but the token form
-// parks hundreds of idle goroutines on a folder with hundreds of entries.
+// A fixed set of workers pulling indices off a channel, rather than n goroutines
+// each waiting on a token: the token form parks hundreds of idle goroutines on a
+// folder with hundreds of entries.
 func (a *App) fanOut(n int, what string, work func(i int), onPanic func(i int)) {
 	if n <= 0 {
 		return

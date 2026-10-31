@@ -10,27 +10,23 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// serverRolePropPages builds the page set for Server Role Properties. A
-// server role is a server-level principal (sys.server_principals, type='R'),
-// the server-scope counterpart of rolePropPages' database roles, and reuses
-// that dialog's shape wherever the two scopes match. Two of its pages are
-// dropped: Owned Schemas (schemas are database-scoped, a server role can't
-// own one) and Extended Properties (sp_addextendedproperty rejects both
-// @level0type=N'SERVER ROLE' and N'LOGIN' — server-level principals don't
-// support extended properties at all). Securables reuses
-// pagePrincipalServerPermissions, the same server-scoped GRANT/DENY editor
-// Login Properties' Securables page uses.
+// serverRolePropPages builds the page set for Server Role Properties. A server
+// role is a server-level principal (sys.server_principals, type='R'), the
+// server-scope counterpart of rolePropPages' database roles, and reuses that
+// dialog's shape wherever the scopes match. Two pages are dropped: Owned Schemas
+// (schemas are database-scoped) and Extended Properties (sp_addextendedproperty
+// rejects both @level0type=N'SERVER ROLE' and N'LOGIN': server-level principals
+// take none). Securables reuses pagePrincipalServerPermissions, the server-scoped
+// GRANT/DENY editor of Login Properties' Securables page.
 //
-// Effective Permissions is dropped for the same reason Database Role
-// Properties drops it — a server role cannot be impersonated either
-// (Msg 15406, the server-principal wording of the same error). See
+// Effective Permissions is dropped as in Database Role Properties: a server role
+// cannot be impersonated either (Msg 15406, the server-principal wording). See
 // rolePropPages.
 //
-// roleName is boxed in a *string shared by every page below: renaming a role
-// changes the identity every other page's lookup depends on. The
-// rename is the last write of an Apply/OK run (see propPage.renames),
-// and commitRename then updates the box so PropDialog.InvalidateAll's
-// reload re-fetches under the new name.
+// roleName is boxed in a *string shared by every page: renaming a role changes
+// the identity every page's lookup depends on. The rename is the last write of an
+// Apply/OK run (see propPage.renames); commitRename then updates the box so
+// PropDialog.InvalidateAll's reload re-fetches under the new name.
 func serverRolePropPages(sc *db.ServerConn, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{

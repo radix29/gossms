@@ -290,9 +290,9 @@ func (d *RestoreDialog) restoreFileNumber() int {
 // own position.
 //
 // The inspect view's set only counts for the devices it was read from. Analyze a
-// multi-set file, move to set 3, then pick a history entry on another file, and
-// the restore used to send WITH FILE = 3 against a file that may not have a third
-// set, or has a different backup there.
+// multi-set file, move to set 3, then pick a history entry on another file: its
+// restore must not send WITH FILE = 3 against a file that may lack a third set
+// or hold a different backup there.
 //
 // Set 1 sends no clause, by SetNumber's rule: it is what SQL Server reads without
 // one.
