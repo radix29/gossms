@@ -440,6 +440,7 @@ gossms/
 │       ├── login_props.go        # Login Properties page definitions
 │       ├── table_props.go        # Table Properties page definitions
 │       ├── schema_props.go       # Schema Properties page definitions
+│       ├── new_schema_dialog.go  # New Schema: name, AUTHORIZATION owner, permissions, extended properties
 │       ├── role_props.go         # Database Role Properties page definitions
 │       ├── user_props.go         # Database User Properties page definitions
 │       ├── new_user_dialog.go    # New User: every CREATE USER form (for login, with password, without login, Windows, certificate / asymmetric key, Entra on Azure and 2022+), plus Owned Schemas and Membership

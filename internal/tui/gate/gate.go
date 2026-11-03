@@ -230,6 +230,15 @@ var (
 	//lint:ignore U1000 declared ahead of a New Table feature
 	CreateTable = Right{Name: "CREATE TABLE", Role: "db_ddladmin", DB: true}
 
+	// What CREATE SCHEMA checks. Probed with WITHOUT LOGIN users on majors 13
+	// and 17 (2026-11-03, identical): CREATE SCHEMA, ALTER ANY SCHEMA,
+	// db_ddladmin and ALTER or CONTROL on the database each read 1 for it and
+	// create; a user with none is refused Msg 2759. Naming another principal in
+	// AUTHORIZATION also takes IMPERSONATE on that user (ALTER on a role) — of
+	// the five, only CONTROL on the database carried that — so the gate answers
+	// for the CREATE, and the server's Msg 15151 for the owner.
+	CreateSchema = Right{Name: "CREATE SCHEMA", Role: "db_ddladmin", DB: true}
+
 	AlterAnySchema = Right{Name: "ALTER ANY SCHEMA", Role: "db_ddladmin", DB: true}
 	ViewDBState    = Right{Name: "VIEW DATABASE STATE", Role: "db_owner", DB: true}
 

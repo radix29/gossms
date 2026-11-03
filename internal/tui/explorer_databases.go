@@ -810,6 +810,17 @@ func databaseRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQue
 	})
 }
 
+// schemasMenuItems is the Schemas folder's menu. New Schema asks CREATE SCHEMA,
+// which every right that permits the CREATE reads 1 for (gate.CreateSchema);
+// the wider ones are listed so the note names the narrow right first.
+func schemasMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return folderMenu(newQuery, refresh,
+		gate.Item(controls.MenuItem{Label: "New Schema...",
+			Action: func() { a.showNewSchemaDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateSchema, gate.AlterAnySchema, gate.AlterDatabase, gate.ControlDB),
+	)
+}
+
 func schemaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {
 		a.showSchemaPropertiesFor(sc, node.data.DBName, node.data.Name)

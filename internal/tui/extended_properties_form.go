@@ -44,7 +44,8 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 			if err != nil {
 				return nil, nil, err
 			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, databaseCollation(d), lvl, props)
+			f, apply := buildExtendedPropertiesForm(sc, dbName, databaseCollation(d),
+				func() gosmo.ExtendedPropertyLevel { return lvl }, props)
 			return f, apply, nil
 		},
 	}
@@ -57,8 +58,10 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 // SCHEMA+TABLE for a table, also usable for column-level with SCHEMA+TABLE+COLUMN
 // once a caller needs that). props is whatever the caller already fetched
 // (DatabaseExtendedProperties for database-level, ExtendedProperties(level) for
-// anything narrower); this function only builds the UI and the apply closure.
-func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, level gosmo.ExtendedPropertyLevel, props []*gosmo.ExtendedProperty) (*propsheet.Form, propApply) {
+// anything narrower; nil for an object a New dialog is about to create); this
+// function only builds the UI and the apply closure. level is a closure because
+// a New dialog's object is only named when the user types it.
+func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, level func() gosmo.ExtendedPropertyLevel, props []*gosmo.ExtendedProperty) (*propsheet.Form, propApply) {
 	loaded := make([]*extPropEdit, 0, len(props))
 	for _, p := range props {
 		loaded = append(loaded, &extPropEdit{name: p.Name, origValue: p.Value, value: p.Value})
@@ -179,6 +182,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 		if err != nil {
 			return err
 		}
+		level := level()
 		for _, e := range edits.all() {
 			switch {
 			case e.removing:

@@ -60,7 +60,8 @@ func pageDatabaseExtendedProperties(sc *db.ServerConn, dbName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, databaseCollation(d), gosmo.ExtendedPropertyLevel{}, props)
+			f, apply := buildExtendedPropertiesForm(sc, dbName, databaseCollation(d),
+				func() gosmo.ExtendedPropertyLevel { return gosmo.ExtendedPropertyLevel{} }, props)
 			return f, apply, nil
 		},
 	}
