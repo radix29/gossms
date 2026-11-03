@@ -248,6 +248,17 @@ var (
 	// CONTROL — so, as for CreateSchema, the gate answers for the CREATE and the
 	// server for the owner.
 	CreateRole = Right{Name: "CREATE ROLE", Role: "db_securityadmin", DB: true}
+	// What CREATE/ALTER/DROP APPLICATION ROLE check — there is no CREATE
+	// APPLICATION ROLE permission. Probed with WITHOUT LOGIN users on majors 13
+	// and 17 (2026-11-03, identical): ALTER ANY APPLICATION ROLE,
+	// db_securityadmin, db_owner and ALTER or CONTROL on the database each read 1
+	// and create, rename, re-schema, re-password and drop; ALTER ANY ROLE,
+	// db_accessadmin and db_ddladmin read 0 and are refused (Msg 15247 for the
+	// CREATE, 15151 for the rest). No DeniedOnPrincipal twin: DENY ALTER ON
+	// APPLICATION ROLE::x refuses only DEFAULT_SCHEMA (Msg 15151) — the rename
+	// and the password change still run — so, as for AlterAnyDBRole, declaring
+	// it would refuse what the server allows; the server names the one refusal.
+	AlterAnyApplicationRole = Right{Name: "ALTER ANY APPLICATION ROLE", Role: "db_securityadmin", DB: true}
 
 	AlterAnySchema = Right{Name: "ALTER ANY SCHEMA", Role: "db_ddladmin", DB: true}
 	ViewDBState    = Right{Name: "VIEW DATABASE STATE", Role: "db_owner", DB: true}

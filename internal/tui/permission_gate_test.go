@@ -1168,7 +1168,7 @@ var databaseScopedOpTypes = []NodeType{
 	NodeTrigger, NodeSequence, NodeSynonym, NodeColumn, NodeIndex,
 	NodeStatistic, NodeKey, NodeForeignKey, NodeCheck, NodePartitionFunction,
 	NodePartitionScheme, NodeSecurityPolicy, NodeColumnMasterKey,
-	NodeColumnEncryptionKey, NodeUser, NodeDatabaseRole, NodeSchema,
+	NodeColumnEncryptionKey, NodeUser, NodeDatabaseRole, NodeApplicationRole, NodeSchema,
 	NodeDatabaseAuditSpecification, NodeDatabaseTrigger,
 	NodeDatabaseScopedCredential, NodeCertificate, NodeAsymmetricKey, NodeSymmetricKey,
 	NodeUserDefinedDataType, NodeUserDefinedTableType, NodeUserDefinedType,

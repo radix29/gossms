@@ -109,8 +109,11 @@ const (
 	NodeDatabaseSecurity
 	NodeUsers
 	NodeUser
+	NodeRoles
 	NodeDatabaseRoles
 	NodeDatabaseRole
+	NodeApplicationRoles
+	NodeApplicationRole
 	NodeSchemas
 	NodeSchema
 	NodeTriggers

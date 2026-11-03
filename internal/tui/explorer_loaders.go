@@ -51,7 +51,9 @@ var childLoaders = map[NodeType]childLoader{
 	NodeDatabase:          loadDatabaseChildren,
 	NodeDatabaseSecurity:  loadDatabaseSecurityChildren,
 	NodeUsers:             loadUsersChildren,
+	NodeRoles:             loadRolesChildren,
 	NodeDatabaseRoles:     loadDatabaseRolesChildren,
+	NodeApplicationRoles:  loadApplicationRolesChildren,
 	NodeSchemas:           loadSchemasChildren,
 
 	NodeDatabaseAuditSpecifications: loadDatabaseAuditSpecificationsChildren,
@@ -199,6 +201,8 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeUser:              userMenuItems,
 	NodeDatabaseRoles:     databaseRolesMenuItems,
 	NodeDatabaseRole:      databaseRoleMenuItems,
+	NodeApplicationRoles:  applicationRolesMenuItems,
+	NodeApplicationRole:   applicationRoleMenuItems,
 	NodeSchemas:           schemasMenuItems,
 	NodeSchema:            schemaMenuItems,
 	NodeSchemaGroup:       schemaGroupMenuItems,

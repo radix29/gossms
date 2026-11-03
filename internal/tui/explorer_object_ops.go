@@ -715,6 +715,18 @@ var objectOps = map[NodeType]objectOp{
 			return r.Rename(ctx, newName)
 		},
 	},
+	// An application role that owns a schema is refused the drop by the server,
+	// which names the schema (Msg 15138).
+	NodeApplicationRole: {
+		noun: "Application Role",
+		solo: true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).ApplicationRoleRef(n.Name).Drop(ctx)
+		},
+		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
+			return dbOf(sc, n).ApplicationRoleRef(n.Name).Rename(ctx, newName)
+		},
+	},
 	NodeSchema: {
 		// SQL Server has no schema rename — moving a schema's contents is
 		// ALTER SCHEMA ... TRANSFER — so Rename is deliberately absent.

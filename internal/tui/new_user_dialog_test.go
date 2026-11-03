@@ -231,3 +231,28 @@ func TestNewUserOffersEntraOnlyWhereTheServerTakesIt(t *testing.T) {
 		}
 	}
 }
+
+// The prefetch's name check holds application roles too: they share the
+// principal namespace with users and roles, and CREATE USER over one is
+// Msg 15023.
+func TestNewUserPrefetchHoldsEveryPrincipalName(t *testing.T) {
+	responses := []fakeResponse{csDatabaseRow("appdb"), databaseUsersResponse()}
+	responses = append(responses, databaseRoleResponses()...)
+	responses = append(responses,
+		fakeResponse{match: "WHERE  type = 'A'", cols: 5, rows: [][]driver.Value{
+			{"payroll_app", nil, int64(20), principalEpoch, principalEpoch},
+		}},
+		loginListResponse())
+	responses = append(responses, databaseSchemaResponses()...)
+	sc, _ := newFakeConn(t, responses...)
+	pf, err := fetchNewUserPrefetch(context.Background(), sc, "appdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{principalUser, principalRole, "payroll_app"} {
+		in := nuserInput{req: gosmo.CreateUserRequest{Name: name, Kind: gosmo.UserWithoutLogin}}
+		if err := validateNewUser(in, pf); err == nil || !strings.Contains(err.Error(), "already exists") {
+			t.Errorf("%s passed the name check: %v", name, err)
+		}
+	}
+}

@@ -443,6 +443,8 @@ gossms/
 │       ├── new_schema_dialog.go  # New Schema: name, AUTHORIZATION owner, permissions, extended properties
 │       ├── role_props.go         # Database Role Properties page definitions
 │       ├── new_role_dialog.go    # New Database Role: name, AUTHORIZATION owner, owned schemas, members, securables, extended properties
+│       ├── application_role_props.go # Application Role Properties: General (name, default schema, password)/Owned Schemas/Securables/Extended Properties
+│       ├── new_application_role_dialog.go # New Application Role: name, default schema, password, owned schemas, securables, extended properties
 │       ├── user_props.go         # Database User Properties page definitions
 │       ├── new_user_dialog.go    # New User: every CREATE USER form (for login, with password, without login, Windows, certificate / asymmetric key, Entra on Azure and 2022+), plus Owned Schemas and Membership
 │       ├── server_role_props.go  # Server Role Properties: General/Members/Owned Roles/Securables

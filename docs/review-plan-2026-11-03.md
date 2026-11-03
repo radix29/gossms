@@ -396,11 +396,91 @@ before the next starts.
    - XEvent: "Aggregation: group the events first".
    - Replication Monitor: selectors still act, and Refresh while busy stays
      silent.
-5. **G1 gosmo half**: the `ApplicationRole` family, offline and live tests,
-   and the version sweep on 13.
-6. **B1**: application roles into both `existingNames`. It depends on step 5.
-7. **G1 gossms half**: the Application Roles folder, New Application Role and
-   Properties, with the gate probe live on 13 and 17.
+5. ✅ **DONE: G1 gosmo half**: the `ApplicationRole` family, offline and live
+   tests, and the version sweep on 13. *Done 2026-11-03:* new
+   `application_role.go`, as planned, with one shared select
+   (`applicationRoleSelect`/`scanApplicationRole`). `CreateApplicationRole`
+   and `ChangePassword` go through `execPasswords` and refuse an empty
+   password (`ErrInvalidRequest`). Both have rows in
+   `secret_redaction_test.go`. `ScriptDatabaseSecurity` now reads the public
+   `ApplicationRoles`, and its private type is gone. Also added `ALTER ANY
+   APPLICATION ROLE` to `ProbedDatabasePermissions` for step 7's gate.
+   `TestLiveEveryProbedPermissionNameIsOneTheServerDefines` passes on 13
+   and 17, but the gate's semantics are still step 7's probe. Offline suite
+   `-race`, `go vet` and `go vet -tags livedb` are green. Every statement
+   case was mutation-checked. Live on 13 and 17, both green:
+   - `TestLiveApplicationRoleRoundTrip` (new): create, list, rename, schema,
+     password, drop. It proves the password change by `sp_setapprole`
+     taking the new password and refusing the old one, and was
+     mutation-checked.
+   - `TestLiveCreateReturnsTheCreatedObject`.
+   - `TestLiveScriptDatabaseSecurityRoundTrips`.
+   - The version sweep: 406 calls / 0 failed on 13, 462 / 0 on 17.
+
+   `sp_setapprole` runs only at the ad hoc level (Msg 15422), so it cannot
+   be called with bound parameters.
+6. ✅ **DONE: B1**: application roles into both `existingNames`. It depends on
+   step 5. *Done 2026-11-03:* both prefetches read `Database.ApplicationRoles`.
+   A failure there is fatal, as it is for `Users`/`Roles`, since all three
+   read the same view. `newRolePrefetchFrom` takes the application roles,
+   which go into the name set only: no picker offers them. Both comments now
+   name all three kinds.
+   - Tests: `TestNewRolePreflight` refuses an application-role name, and the
+     new `TestNewUserPrefetchHoldsEveryPrincipalName` drives
+     `fetchNewUserPrefetch` over the fake connection. Dropping either loop
+     fails its test.
+   - Driven on 17 against a throwaway `gossms_b1` holding application role
+     `b1_app` (dropped afterwards). New Database Role refused `B1_APP` inline
+     (CI collation): "a user or role named "B1_APP" already exists in
+     gossms_b1". New User refused `b1_app` the same way.
+7. ✅ **DONE: G1 gossms half**: the Application Roles folder, New Application Role and
+   Properties, with the gate probe live on 13 and 17. *Done 2026-11-03:*
+   Security ▸ Roles is now a folder of two, Database Roles (the old
+   `NodeDatabaseRoles`, relabelled) and Application Roles (`NodeRoles`,
+   `NodeApplicationRoles`, `NodeApplicationRole`). New files:
+   `new_application_role_dialog.go` (General with name, default schema,
+   password and confirm; Owned Schemas; Securables; Extended Properties) and
+   `application_role_props.go` (the same pages; General renames last, and a
+   blank password keeps the current one). The leaf has Rename and Delete, and
+   Properties opens with `showReloading`.
+   - **Gate:** `gate.AlterAnyApplicationRole`. There is no CREATE
+     APPLICATION ROLE permission. Probed with WITHOUT LOGIN users on 13 and
+     17, with identical results: ALTER ANY APPLICATION ROLE,
+     db_securityadmin, db_owner, and ALTER or CONTROL on the database all
+     allow create, rename, schema, password and drop. ALTER ANY ROLE,
+     db_accessadmin and db_ddladmin are refused (Msg 15247/15151). A DENY
+     ALTER on one role refuses only DEFAULT_SCHEMA, so there is no class-4
+     twin, the same as for `AlterAnyDBRole`.
+   - **Tests:** new `new_application_role_dialog_test.go` and
+     `application_role_props_test.go`. Six mutations each fail a test:
+     password write dropped, app-role names dropped from the name set, the
+     menu gate's right swapped, the Delete gate's right swapped, the schema
+     clause dropped, the confirm check dropped.
+   - **Driven on 17** against a throwaway `gossms_g1` (dropped afterwards):
+     - The inline refusal of `EXISTING_APP` (CI collation).
+     - Created `pay]roll` with schema, an owned schema and an extended
+       property; the USER level works for an application role.
+       `sp_setapprole` took the password.
+     - Script Changes shows the password placeholder.
+     - Properties renamed, re-schemaed and re-passworded in one Apply; the
+       folder reloaded, the new password works and the old one is refused.
+     - Delete while owning a schema gets the server's Msg 15138, and
+       succeeds after the transfer.
+     - As a throwaway db_ddladmin login, New Application Role shows "needs
+       ALTER ANY APPLICATION ROLE".
+   - **Driven on 13:** create, then all four Properties pages load.
+   - **Left over:**
+     - No Script menu on the leaf. gosmo has no `ScriptApplicationRole`;
+       Script Database Security emits the one-role form privately.
+     - The owner pickers never offer an application role, though one can
+       own a schema: Owned Schemas' transfer picker, New Schema, and Schema
+       Properties all use `principalNames(users, roles)`.
+     - Database Role Properties renames without `showReloading`, so the tree
+       keeps the old label. It is missing from
+       `TestPropertiesApplyReloadsTheFolderListingTheObject`, a ui-rules
+       miss that predates this step.
+     - A login with no right on an application role doesn't see it listed
+       (catalog visibility), so the folder reads empty for it.
 8. **G2**: New Sequence and Sequence Properties, plus a gosmo
    `Sequence.Alter` if needed (gosmo first).
 9. **G3**: New Synonym. Small once G2's dialog pattern is fresh.

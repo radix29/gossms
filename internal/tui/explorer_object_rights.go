@@ -167,8 +167,9 @@ var securableTransferRights = map[NodeType][]gate.Right{
 // Narrowest first, because gateOn shows only rights[0] in a withheld item's note
 // (see gate.AgentWriteRights).
 var principalOpRights = map[NodeType][]gate.Right{
-	NodeUser:         {gate.AlterAnyUser, gate.AlterDatabase, gate.ControlDB},
-	NodeDatabaseRole: {gate.AlterAnyDBRole, gate.AlterDatabase, gate.ControlDB},
+	NodeUser:            {gate.AlterAnyUser, gate.AlterDatabase, gate.ControlDB},
+	NodeDatabaseRole:    {gate.AlterAnyDBRole, gate.AlterDatabase, gate.ControlDB},
+	NodeApplicationRole: {gate.AlterAnyApplicationRole, gate.AlterDatabase, gate.ControlDB},
 	// A database audit specification is not a class-4 principal but lands here for
 	// the same reason: no schema and no object securable, so
 	// gate.ObjectWriteRights() would ask about neither and offer the drop to a

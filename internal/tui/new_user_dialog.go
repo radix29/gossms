@@ -40,8 +40,8 @@ const nuserDefaultSchema = "(Default)"
 
 // nuserPrefetch is everything the dialog reads before it opens.
 type nuserPrefetch struct {
-	// existingNames holds every database principal's name: a user cannot share one
-	// with a role either.
+	// existingNames holds every database principal's name — users, database
+	// roles and application roles share one namespace (Msg 15023).
 	existingNames *nameSet
 	logins        []string
 	windowsLogins []string
@@ -88,6 +88,13 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 		if r.Name != "public" {
 			pf.roles = append(pf.roles, r.Name)
 		}
+	}
+	appRoles, err := d.ApplicationRoles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range appRoles {
+		pf.existingNames.Add(r.Name)
 	}
 	if pf.schemas, err = d.Schemas(ctx); err != nil {
 		return nil, err

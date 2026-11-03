@@ -36,8 +36,8 @@ func roleMemberEligible(special *nameSet, name string, isFixedRole bool) bool {
 
 // nrolePrefetch is everything the dialog reads before it opens.
 type nrolePrefetch struct {
-	// existingNames holds every database principal's name: a role cannot share
-	// one with a user either.
+	// existingNames holds every database principal's name — users, database
+	// roles and application roles share one namespace (Msg 15023).
 	existingNames *nameSet
 	// owners are the users and roles AUTHORIZATION may name.
 	owners []string
@@ -67,6 +67,10 @@ func fetchNewRolePrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 	if err != nil {
 		return nil, err
 	}
+	appRoles, err := d.ApplicationRoles(ctx)
+	if err != nil {
+		return nil, err
+	}
 	schemas, err := d.Schemas(ctx)
 	if err != nil {
 		return nil, err
@@ -76,13 +80,15 @@ func fetchNewRolePrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 	if err != nil {
 		return nil, err
 	}
-	pf := newRolePrefetchFrom(databaseCollation(d), users, roles, schemas)
+	pf := newRolePrefetchFrom(databaseCollation(d), users, roles, appRoles, schemas)
 	pf.database, pf.securables = d, securables
 	return pf, nil
 }
 
 // newRolePrefetchFrom sorts the database's principals into the pickers.
-func newRolePrefetchFrom(collation string, users []*gosmo.User, roles []*gosmo.DatabaseRole, schemas []*gosmo.Schema) *nrolePrefetch {
+// Application roles only take a name: no picker offers them.
+func newRolePrefetchFrom(collation string, users []*gosmo.User, roles []*gosmo.DatabaseRole,
+	appRoles []*gosmo.ApplicationRole, schemas []*gosmo.Schema) *nrolePrefetch {
 	pf := &nrolePrefetch{existingNames: newNameSet(collation), collation: collation,
 		schemas: schemas, principalType: map[string]gosmo.PrincipalType{}}
 	special := newNameSet(collation, nroleSpecial...)
@@ -91,6 +97,9 @@ func newRolePrefetchFrom(collation string, users []*gosmo.User, roles []*gosmo.D
 		if !special.Has(n) {
 			pf.owners = append(pf.owners, n)
 		}
+	}
+	for _, r := range appRoles {
+		pf.existingNames.Add(r.Name)
 	}
 	for _, u := range users {
 		if roleMemberEligible(special, u.Name, false) {

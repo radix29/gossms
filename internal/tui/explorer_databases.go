@@ -274,7 +274,7 @@ func loadQueryStoreChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
 		l.node("Users", NodeUsers, "", "", node.data.DBName),
-		l.node("Roles", NodeDatabaseRoles, "", "", node.data.DBName),
+		l.node("Roles", NodeRoles, "", "", node.data.DBName),
 		l.node("Schemas", NodeSchemas, "", "", node.data.DBName),
 		l.node("Asymmetric Keys", NodeAsymmetricKeys, "", "", node.data.DBName),
 		l.node("Certificates", NodeCertificates, "", "", node.data.DBName),
@@ -454,6 +454,23 @@ func loadUsersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 			n := l.node(u.Name, NodeUser, "", u.Name, node.data.DBName)
 			n.data.IsSystem = isSystemUser(u.Name)
 			return n
+		})
+}
+
+// loadRolesChildren returns the Roles folder's two folders, as SSMS has them:
+// database roles, which principals are members of, and application roles,
+// which a session takes on with sp_setapprole.
+func loadRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	return []*explorerNode{
+		l.node("Database Roles", NodeDatabaseRoles, "", "", node.data.DBName),
+		l.node("Application Roles", NodeApplicationRoles, "", "", node.data.DBName),
+	}, nil
+}
+
+func loadApplicationRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	return listDatabaseChildren(l, node, (*gosmo.Database).ApplicationRoles,
+		func(r *gosmo.ApplicationRole) *explorerNode {
+			return l.node(r.Name, NodeApplicationRole, "", r.Name, node.data.DBName)
 		})
 }
 
@@ -819,6 +836,23 @@ func databaseRolesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQu
 func databaseRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {
 		a.showRolePropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+// applicationRolesMenuItems is the Application Roles folder's menu. There is no
+// CREATE APPLICATION ROLE permission: the CREATE checks ALTER ANY APPLICATION
+// ROLE, which ALTER and CONTROL on the database imply (gate.AlterAnyApplicationRole).
+func applicationRolesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return folderMenu(newQuery, refresh,
+		gate.Item(controls.MenuItem{Label: "New Application Role...",
+			Action: func() { a.showNewApplicationRoleDialog(sc, node) }},
+			sc, node.data.DBName, gate.AlterAnyApplicationRole, gate.AlterDatabase, gate.ControlDB),
+	)
+}
+
+func applicationRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showApplicationRolePropertiesFor(sc, node.data.DBName, node.data.Name)
 	})
 }
 

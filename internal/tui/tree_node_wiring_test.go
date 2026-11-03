@@ -50,6 +50,7 @@ var filterableFolderSet = map[NodeType]bool{
 	NodeEventSessions:               true,
 	NodeUsers:                       true,
 	NodeDatabaseRoles:               true,
+	NodeApplicationRoles:            true,
 	NodeSchemas:                     true,
 	NodeTriggers:                    true,
 	NodeDatabaseTriggers:            true,

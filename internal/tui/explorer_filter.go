@@ -145,7 +145,7 @@ func filterProps(t NodeType) []filterProp {
 	// A Triggers folder hangs under one table or view, so every row shares that
 	// object's schema: a Schema criterion matches all of them or none.
 	case NodeTriggers,
-		NodeUsers, NodeDatabaseRoles, NodeSchemas, NodeServerRoles,
+		NodeUsers, NodeDatabaseRoles, NodeApplicationRoles, NodeSchemas, NodeServerRoles,
 		NodePartitionFunctions, NodePartitionSchemes,
 		NodeFullTextCatalogs, NodeFullTextStoplists, NodeSearchPropertyLists,
 		NodeColumnMasterKeys, NodeColumnEncryptionKeys:

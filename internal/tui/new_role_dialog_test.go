@@ -31,7 +31,7 @@ func newRoleTestDialog(t *testing.T, responses ...fakeResponse) *NewRoleDialog {
 	d.pages = []string{"General", "Owned Schemas", "Members", "Securables", "Extended Properties"}
 	d.forms = make([]*propsheet.Form, len(d.pages))
 	d.applyFns = make([]propApply, len(d.pages))
-	pf := newRolePrefetchFrom("", nroleTestUsers(), nroleTestRoles(), schemas)
+	pf := newRolePrefetchFrom("", nroleTestUsers(), nroleTestRoles(), nroleTestAppRoles(), schemas)
 	pf.securables = []securable{{Type: gosmo.SecurableTable, Schema: "sales", Name: "Orders"}}
 	d.buildPages(pf)
 	return d
@@ -50,6 +50,12 @@ func nroleTestRoles() []*gosmo.DatabaseRole {
 		{Name: "public"}, {Name: "db_owner", IsFixedRole: true},
 		{Name: "db_datareader", IsFixedRole: true}, {Name: "readers"},
 	}
+}
+
+// nroleTestAppRoles is one application role: it takes a name in the
+// principal namespace but is offered by no picker.
+func nroleTestAppRoles() []*gosmo.ApplicationRole {
+	return []*gosmo.ApplicationRole{{Name: "payroll_app"}}
 }
 
 // runNewRole runs every page under Script Changes, in order.
@@ -131,7 +137,7 @@ func TestNewRoleLaterPagesNameTheNewRole(t *testing.T) {
 // INFORMATION_SCHEMA and public as owner or member, and dbo and every fixed
 // role as a member. guest is accepted as both.
 func TestNewRolePickersLeaveOutSpecialPrincipals(t *testing.T) {
-	pf := newRolePrefetchFrom("", nroleTestUsers(), nroleTestRoles(), nil)
+	pf := newRolePrefetchFrom("", nroleTestUsers(), nroleTestRoles(), nroleTestAppRoles(), nil)
 	if want := []string{"dbo", "guest", "app]user", "db_owner", "db_datareader", "readers"}; !slices.Equal(pf.owners, want) {
 		t.Errorf("owners = %q, want %q", pf.owners, want)
 	}
@@ -141,14 +147,15 @@ func TestNewRolePickersLeaveOutSpecialPrincipals(t *testing.T) {
 }
 
 // A blank name and one any principal already holds (a role cannot share a
-// user's name) are refused before the round trip.
+// user's or an application role's name, Msg 15023) are refused before the
+// round trip.
 func TestNewRolePreflight(t *testing.T) {
 	d := newRoleTestDialog(t)
 	editText(t, d.forms[0], "Role name", "   ")
 	if err := d.preflight(); err == nil {
 		t.Error("a blank name passed the preflight")
 	}
-	for _, taken := range []string{"readers", "guest"} {
+	for _, taken := range []string{"readers", "guest", "payroll_app"} {
 		editText(t, d.forms[0], "Role name", taken)
 		if err := d.preflight(); err == nil || !strings.Contains(err.Error(), "already exists") {
 			t.Errorf("%s passed the preflight: %v", taken, err)
