@@ -481,8 +481,41 @@ before the next starts.
        miss that predates this step.
      - A login with no right on an application role doesn't see it listed
        (catalog visibility), so the folder reads empty for it.
-8. **G2**: New Sequence and Sequence Properties, plus a gosmo
-   `Sequence.Alter` if needed (gosmo first).
+8. ✅ **DONE: G2**: New Sequence and Sequence Properties, plus a gosmo
+   `Sequence.Alter` if needed (gosmo first). *Done 2026-11-03:*
+   - **gosmo:** `Sequence.Alter(ctx, SequenceChanges)` (RestartWith,
+     Increment, MinValue, MaxValue, Cycle, Cache as `*SequenceCache`);
+     `Restart` stays. `CreateSequenceRequest.Precision` (decimal/numeric,
+     written `(p, 0)`). `CREATE SEQUENCE` added to
+     `ProbedSchemaPermissions`. Offline statement tests (7 mutations killed),
+     new `TestLiveSequenceAlterRoundTrip` green on 13 and 17, version sweep on
+     13: 406 calls / 0 failed.
+   - **Gate:** there is no database-scope CREATE SEQUENCE; it is a SCHEMA
+     permission, enough alone (the plan's "plus ALTER on the schema" was
+     wrong). Probed on 13 and 17, identical: ALTER/CONTROL on the schema,
+     ALTER ANY SCHEMA, db_ddladmin, ALTER/CONTROL on the database all create;
+     a schema DENY CREATE SEQUENCE refuses (Msg 15247). `gate.CreateSequence`
+     (schema-scoped) plus `gate.ItemInAnySchema` for the folder; the dialog's
+     preflight refuses a denied schema. Properties: ALTER or CONTROL on the
+     sequence or ALTER on its schema alter it, UPDATE doesn't, DENY ALTER on
+     the sequence refuses (Msg 15151) → `gate.ObjectWriteRights()`.
+   - **gossms:** `new_sequence_dialog.go`, `sequence_props.go` (+ tests, 8
+     mutations killed). Schema picker leaves out sys/INFORMATION_SCHEMA
+     (Msg 2760 even for sa).
+   - **Driven on 17** against a throwaway `gossms_g2` (dropped afterwards):
+     - As sa: created `[s].[ord]]no]` decimal(30,0) with every option;
+       Script Changes correct, catalog matches, folder reloaded. Properties
+       applied restart, increment and no-cache in one ALTER and reloaded.
+     - The drive caught two bugs, both fixed: bigint values truncated in
+       12-wide Int rows (now 22-wide), and sys/INFORMATION_SCHEMA offered.
+     - As a throwaway login holding CREATE SEQUENCE on schema `s` only:
+       New Sequence offered; `dbo` refused inline ("creating a sequence in
+       schema dbo needs CREATE SEQUENCE or ALTER on it"); `s` created.
+   - **Driven on 13:** created a decimal sequence; all three Properties
+     pages load.
+   - **Left over:** values are int64, so a decimal(38,0) sequence's range
+     past bigint can't be written (shown; the validator refuses). No Last
+     used value row (gosmo's `noLastUsed` is unexported).
 9. **G3**: New Synonym. Small once G2's dialog pattern is fresh.
 10. **G4**: the Query Wait Statistics drill-down.
 11. **S3** (gosmo): only if steps 1–10 touched the audit-specification files

@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -113,4 +114,37 @@ func ItemOnAll(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object
 		return allowed()
 	}
 	return item
+}
+
+// ItemInAnySchema gates a folder-level create whose right is granted per schema
+// (CreateSequence): the folder lists every schema's objects and the dialog picks
+// one, so the item is offered while any schema permits r, and withheld only when
+// the probe answered for every schema and none does. A database never probed
+// records no schema and leaves it offered, as every gate fails open.
+func ItemInAnySchema(item controls.MenuItem, sc *db.ServerConn, dbName string, r Right) controls.MenuItem {
+	prev := item.Enabled
+	item.Note = "needs " + r.Name + " on a schema"
+	item.NoteWhen = func() bool { return prev == nil || prev() }
+	item.Enabled = func() bool {
+		if prev != nil && !prev() {
+			return false
+		}
+		return sc == nil || AnySchemaPermits(sc.CachedDatabaseCapabilities(dbName), r)
+	}
+	return item
+}
+
+// AnySchemaPermits reports whether caps leave r permitted on at least one
+// schema — PermitsOnSchema per schema the probe recorded, and true when it
+// recorded none.
+func AnySchemaPermits(caps *gosmo.DatabaseCapabilities, r Right) bool {
+	if caps == nil || len(caps.SchemaPermissions) == 0 {
+		return true
+	}
+	for schema := range caps.SchemaPermissions {
+		if caps.PermitsOnSchema(schema, r.Name) {
+			return true
+		}
+	}
+	return false
 }

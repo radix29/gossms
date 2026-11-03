@@ -245,6 +245,8 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeView:            viewMenuItems,
 	NodeStoredProcedure: storedProcedureMenuItems,
 	NodeTrigger:         triggerMenuItems,
+	NodeSequences:       sequencesMenuItems,
+	NodeSequence:        sequenceMenuItems,
 
 	NodeUserDefinedDataType:  userDefinedDataTypeMenuItems,
 	NodeUserDefinedTableType: userDefinedTableTypeMenuItems,

@@ -436,4 +436,15 @@ var (
 	// schema object. No role carries it: it is granted on the schema itself, and a
 	// principal holding it may hold nothing else.
 	AlterOnSchema = Right{Name: "ALTER", DB: true, Schema: true}
+
+	// CreateSequence is what CREATE SEQUENCE checks: a SCHEMA permission (there
+	// is no database-scope one), enough on its own without ALTER on the schema.
+	// HAS_PERMS_BY_NAME folds the covering rights in — ALTER and CONTROL on the
+	// schema, ALTER ANY SCHEMA, db_ddladmin, ALTER and CONTROL on the database
+	// all read 1 and create — and reads 0 under a schema-scope DENY CREATE
+	// SEQUENCE, which the server refuses (Msg 15247), so the per-schema answer is
+	// the whole rule. Probed with WITHOUT LOGIN users on majors 13 and 17
+	// (2026-11-03). A folder, which has no schema, asks it through
+	// ItemInAnySchema.
+	CreateSequence = Right{Name: "CREATE SEQUENCE", DB: true, Schema: true}
 )

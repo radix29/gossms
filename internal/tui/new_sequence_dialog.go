@@ -1,0 +1,350 @@
+package tui
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+
+	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
+	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/propsheet"
+)
+
+// new_sequence_dialog.go is the New Sequence dialog (a database's Sequences
+// folder), built on newObjectDialog. Three pages, as SSMS has them: General
+// (name, schema, type and every CREATE SEQUENCE option), Permissions
+// (object-scoped GRANT/DENY, Sequence Properties' matrix with no existing
+// entries) and Extended Properties. The last two run after the CREATE, against
+// the typed name.
+
+// nseqTypes are the types CREATE SEQUENCE takes: the integer types, and
+// decimal/numeric at scale 0. A user-defined alias of one is accepted too, and
+// not offered.
+var nseqTypes = []gosmo.DataType{
+	gosmo.DataTypeTinyInt, gosmo.DataTypeSmallInt, gosmo.DataTypeInt, gosmo.DataTypeBigInt,
+	gosmo.DataTypeDecimal, gosmo.DataTypeNumeric,
+}
+
+// The Cache picker's three CACHE forms.
+const (
+	nseqCacheDefault = "Default size"
+	nseqCacheNone    = "No cache"
+	nseqCacheSize    = "Cache size"
+)
+
+var nseqCacheItems = []string{nseqCacheDefault, nseqCacheNone, nseqCacheSize}
+
+// nseqPrefetch is everything the dialog reads before it opens.
+type nseqPrefetch struct {
+	// existing holds every sequence as sequenceKey spells it, under the
+	// database's collation. Only sequences: a table of the same name collides
+	// too, and the server names that one (Msg 2714).
+	existing *nameSet
+	schemas  []string
+	// principals are what the Permissions page may grant to: every user and role.
+	principals []permPrincipal
+	// collation is the database's, for the Extended Properties page's names.
+	collation string
+}
+
+// sequenceKey is one nameSet entry for a schema-scoped name. The NUL cannot
+// occur in an identifier, so two pairs never share a key.
+func sequenceKey(schema, name string) string { return schema + "\x00" + name }
+
+func fetchNewSequencePrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*nseqPrefetch, error) {
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
+	if err != nil {
+		return nil, err
+	}
+	schemas, err := d.Schemas(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seqs, err := d.Sequences(ctx)
+	if err != nil {
+		return nil, err
+	}
+	users, err := d.Users(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roles, err := d.Roles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pf := &nseqPrefetch{existing: newNameSet(databaseCollation(d)), collation: databaseCollation(d),
+		principals: databasePermPrincipals(users, roles)}
+	pf.schemas = sequenceSchemas(databaseCollation(d), schemas)
+	for _, s := range seqs {
+		pf.existing.Add(sequenceKey(s.Schema, s.Name))
+	}
+	return pf, nil
+}
+
+// sequenceSchemas is what the schema picker offers: every schema but sys and
+// INFORMATION_SCHEMA, which refuse CREATE SEQUENCE whoever runs it (Msg 2760,
+// sa included). The db_* role schemas are ordinary schemas.
+func sequenceSchemas(collation string, schemas []*gosmo.Schema) []string {
+	noCreate := newNameSet(collation, nschemaUnownable...)
+	var out []string
+	for _, s := range schemas {
+		if !noCreate.Has(s.Name) {
+			out = append(out, s.Name)
+		}
+	}
+	return out
+}
+
+// NewSequenceDialog is the New Sequence dialog.
+type NewSequenceDialog struct {
+	dbFolderDialog[nseqPrefetch]
+}
+
+// NewNewSequenceDialog creates the dialog and wires its callbacks.
+func NewNewSequenceDialog(app *App) *NewSequenceDialog {
+	d := &NewSequenceDialog{}
+	d.initInFolder(app, newObjectConfig[nseqPrefetch]{
+		title: "New Sequence",
+		noun:  "Sequence",
+		pages: []string{"General", "Permissions", "Extended Properties"},
+		fetch: func(ctx context.Context, sc *db.ServerConn) (*nseqPrefetch, error) {
+			return fetchNewSequencePrefetch(ctx, sc, d.dbName)
+		},
+		build: d.buildPages,
+	})
+	return d
+}
+
+// nseqFields are the General page's rows, which the preflight reads.
+type nseqFields struct {
+	name, start, increment, min, max, precision, cacheSize *propsheet.TextRow
+	schema, dataType, cache                                *propsheet.SelectRow
+	noMin, noMax, cycle                                    *propsheet.CheckRow
+}
+
+func (d *NewSequenceDialog) buildPages(pf *nseqPrefetch) {
+	sc := d.sc
+	dbName := d.dbName
+
+	typeItems := make([]string, len(nseqTypes))
+	for i, t := range nseqTypes {
+		typeItems[i] = string(t)
+	}
+	schema := 0
+	for i, s := range pf.schemas {
+		if s == "dbo" {
+			schema = i
+		}
+	}
+	f := nseqFields{
+		name:      propsheet.Text("Sequence name", "", 30),
+		schema:    propsheet.Select("Sequence schema", pf.schemas, schema),
+		dataType:  propsheet.Select("Data type", typeItems, 3), // bigint, the server's default
+		precision: propsheet.Int("Precision", 18, 1, 38, ""),
+		start:     sequenceValueRow("Start value", 1),
+		increment: sequenceValueRow("Increment by", 1),
+		noMin:     propsheet.Check("No minimum (the type's)", true),
+		min:       sequenceValueRow("Minimum value", 1),
+		noMax:     propsheet.Check("No maximum (the type's)", true),
+		max:       sequenceValueRow("Maximum value", math.MaxInt64),
+		cycle:     propsheet.Check("Cycle", false),
+		cache:     propsheet.Select("Cache", nseqCacheItems, 0),
+		cacheSize: propsheet.Int("Cache size", 50, 1, math.MaxInt32, ""),
+	}
+	sync := func() {
+		dt := gosmo.DataType(f.dataType.Value())
+		f.precision.SetEnabled(dt == gosmo.DataTypeDecimal || dt == gosmo.DataTypeNumeric)
+		f.min.SetEnabled(!f.noMin.Checked())
+		f.max.SetEnabled(!f.noMax.Checked())
+		f.cacheSize.SetEnabled(f.cache.Value() == nseqCacheSize)
+	}
+	f.dataType.SetOnChange(func(string) { sync() })
+	f.noMin.SetOnChange(func(bool) { sync() })
+	f.noMax.SetOnChange(func(bool) { sync() })
+	f.cache.SetOnChange(func(string) { sync() })
+	sync()
+
+	d.forms[0] = propsheet.NewForm(
+		propsheet.Section("Sequence"),
+		f.name,
+		f.schema,
+		propsheet.Static("Database", dbName),
+		propsheet.Section("Type"),
+		f.dataType,
+		f.precision,
+		propsheet.Section("Values"),
+		f.start,
+		f.increment,
+		f.noMin, f.min,
+		f.noMax, f.max,
+		f.cycle,
+		propsheet.Section("Cache"),
+		f.cache,
+		f.cacheSize,
+		propsheet.Note("Creating a sequence in a schema takes CREATE SEQUENCE or ALTER on that schema."),
+	)
+
+	var req gosmo.CreateSequenceRequest
+	d.objectName = func() string { return strings.TrimSpace(f.name.Value()) }
+	d.preflight = func() error {
+		r, err := newSequenceRequest(f, dbName, pf)
+		if err != nil {
+			return err
+		}
+		if !gate.AllowsOn(sc, dbName, r.Schema, "", gate.CreateSequence) {
+			return fmt.Errorf("creating a sequence in schema %s needs CREATE SEQUENCE or ALTER on it", r.Schema)
+		}
+		req = r
+		return nil
+	}
+	d.applyFns[0] = func(ctx context.Context) error {
+		// DatabaseRef, not DatabaseByName: the CREATE addresses the database by name,
+		// and the by-name read would not work under Script Changes.
+		_, err := sc.Server.DatabaseRef(dbName).CreateSequence(ctx, req)
+		return err
+	}
+
+	// The securable is read when apply runs, from the request the preflight built:
+	// the name is only known once typed. Permissions go through DatabaseRef for the
+	// same reason as the CREATE.
+	var noEntries []permEntry
+	d.forms[1], d.applyFns[1] = buildPermissionsMatrix(pf.principals, gosmo.SecurableSequence.PermissionNames(), noEntries,
+		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
+			sec := gosmo.Securable{Class: gosmo.SecurableSequence, Schema: req.Schema, Name: req.Name}
+			return securablePermApply(sc.Server.DatabaseRef(dbName), sec)(ctx, verb, opts, permission, principal)
+		})
+	d.forms[2], d.applyFns[2] = buildExtendedPropertiesForm(sc, dbName, pf.collation, func() gosmo.ExtendedPropertyLevel {
+		return sequencePropertyLevel(req.Schema, req.Name)
+	}, nil)
+}
+
+// sequenceValueRow is one bigint value row: wide enough for all twenty
+// characters of math.MinInt64 (propsheet.Int's twelve showed only a tail).
+func sequenceValueRow(label string, v int64) *propsheet.TextRow {
+	r := propsheet.Text(label, strconv.FormatInt(v, 10), 22)
+	sequenceValue(r, false)
+	return r
+}
+
+// sequencePropertyLevel is where a sequence's extended properties live.
+func sequencePropertyLevel(schema, name string) gosmo.ExtendedPropertyLevel {
+	return gosmo.ExtendedPropertyLevel{
+		Level0Type: "SCHEMA", Level0Name: schema,
+		Level1Type: "SEQUENCE", Level1Name: name,
+	}
+}
+
+// newSequenceRequest reads the General page into a request, refusing, naming
+// the field, what the CREATE would be refused for.
+func newSequenceRequest(f nseqFields, dbName string, pf *nseqPrefetch) (gosmo.CreateSequenceRequest, error) {
+	req := gosmo.CreateSequenceRequest{
+		Schema:   f.schema.Value(),
+		Name:     strings.TrimSpace(f.name.Value()),
+		DataType: gosmo.DataType(f.dataType.Value()),
+		Cycle:    f.cycle.Checked(),
+	}
+	switch {
+	case req.Name == "":
+		return req, fmt.Errorf("sequence name is required")
+	case req.Schema == "":
+		return req, fmt.Errorf("pick a schema")
+	case pf.existing.Has(sequenceKey(req.Schema, req.Name)):
+		return req, fmt.Errorf("a sequence named %s already exists in %s", gosmo.QualifiedName(req.Schema, req.Name), dbName)
+	}
+	num := func(r *propsheet.TextRow) (int64, error) {
+		if err := r.Validate(); err != nil {
+			// A value row's message names its field already (sequenceValue);
+			// propsheet.Int's does not.
+			if label := strings.ToLower(r.Label()); !strings.HasPrefix(err.Error(), label) {
+				return 0, fmt.Errorf("%s %v", label, err)
+			}
+			return 0, err
+		}
+		return r.IntValue()
+	}
+	var err error
+	if f.precision.Enabled() {
+		p, err := num(f.precision)
+		if err != nil {
+			return req, err
+		}
+		req.Precision = int(p)
+	}
+	if req.StartValue, err = num(f.start); err != nil {
+		return req, err
+	}
+	if req.Increment, err = num(f.increment); err != nil {
+		return req, err
+	}
+	if req.Increment == 0 {
+		return req, fmt.Errorf("increment by cannot be 0")
+	}
+	if !f.noMin.Checked() {
+		v, err := num(f.min)
+		if err != nil {
+			return req, err
+		}
+		req.MinValue = &v
+	}
+	if !f.noMax.Checked() {
+		v, err := num(f.max)
+		if err != nil {
+			return req, err
+		}
+		req.MaxValue = &v
+	}
+	if req.MinValue != nil && req.MaxValue != nil && *req.MinValue >= *req.MaxValue {
+		return req, fmt.Errorf("the minimum value must be below the maximum")
+	}
+	if req.MinValue != nil && req.StartValue < *req.MinValue || req.MaxValue != nil && req.StartValue > *req.MaxValue {
+		return req, fmt.Errorf("the start value must lie between the minimum and maximum values")
+	}
+	switch f.cache.Value() {
+	case nseqCacheNone:
+		req.Cache = new(0)
+	case nseqCacheSize:
+		n, err := num(f.cacheSize)
+		if err != nil {
+			return req, err
+		}
+		req.Cache = new(int(n))
+	}
+	return req, nil
+}
+
+// sequencesMenuItems is the Sequences folder's menu. CREATE SEQUENCE is granted
+// per schema, so New Sequence is offered while any schema permits it and the
+// dialog refuses the schema picked if that one does not (gate.CreateSequence).
+func sequencesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return folderMenu(newQuery, refresh,
+		gate.ItemInAnySchema(controls.MenuItem{Label: "New Sequence...",
+			Action: func() { a.showNewSequenceDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateSequence),
+	)
+}
+
+// showNewSequenceDialog is the Sequences folder's entry point.
+func (a *App) showNewSequenceDialog(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newSequenceDialog.show(sc, node)
+}
+
+// formatSequenceType renders a sequence's type as CREATE SEQUENCE spells it:
+// decimal and numeric with their precision (the scale is always 0), an alias
+// type schema-qualified.
+func formatSequenceType(s *gosmo.Sequence) string {
+	t := string(s.DataType)
+	if s.DataType == gosmo.DataTypeDecimal || s.DataType == gosmo.DataTypeNumeric {
+		t += "(" + strconv.Itoa(s.Precision) + ", 0)"
+	}
+	if s.DataTypeSchema != "" && s.DataTypeSchema != "sys" {
+		t = gosmo.QualifiedName(s.DataTypeSchema, t)
+	}
+	return t
+}

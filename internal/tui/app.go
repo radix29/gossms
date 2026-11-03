@@ -138,6 +138,7 @@ type App struct {
 	newSchemaDialog             *NewSchemaDialog
 	newRoleDialog               *NewRoleDialog
 	newApplicationRoleDialog    *NewApplicationRoleDialog
+	newSequenceDialog           *NewSequenceDialog
 	newAsymmetricKeyDialog      *NewAsymmetricKeyDialog
 	newSymmetricKeyDialog       *NewSymmetricKeyDialog
 	backupCertificateDialog     *BackupCertificateDialog
@@ -561,6 +562,7 @@ func (a *App) buildUI() {
 	a.newSchemaDialog = registerDialog(a, NewNewSchemaDialog(a))
 	a.newRoleDialog = registerDialog(a, NewNewRoleDialog(a))
 	a.newApplicationRoleDialog = registerDialog(a, NewNewApplicationRoleDialog(a))
+	a.newSequenceDialog = registerDialog(a, NewNewSequenceDialog(a))
 	a.newAsymmetricKeyDialog = registerDialog(a, NewNewAsymmetricKeyDialog(a))
 	a.newSymmetricKeyDialog = registerDialog(a, NewNewSymmetricKeyDialog(a))
 	a.backupCertificateDialog = registerDialog(a, NewBackupCertificateDialog(a))
