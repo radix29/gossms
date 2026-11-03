@@ -4,6 +4,56 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.1.2] - 2026-11-03
+
+A creation-dialog and navigation release: five new object dialogs, Group by
+Schema in the Object Explorer, double-click navigation, and a Query Store
+wait-category drill-down. Built on gosmo v0.1.2.
+
+### Added
+
+- **Group by Schema** (View menu, Alt+G, or the button at the right end of the
+  Object Explorer title; a hover tooltip names it): Tables, Views, Synonyms,
+  Stored Procedures and Functions sit under one node per schema, as in SSMS.
+  It applies to every connected server, keeps expanded nodes open across
+  toggles and refreshes, and is off at each start. The Details pane groups the
+  same way.
+- **New Schema**, **New Database Role**, **New Application Role**,
+  **New Sequence** and **New Synonym** dialogs, each with General, Permissions
+  and Extended Properties pages where the object supports them. They check the
+  caller's permissions first (Application Roles gate on `ALTER ANY APPLICATION
+  ROLE`), and validate names and passwords.
+- **Application Role and Sequence properties**: alter an existing role or
+  sequence (data type, increment, minimum and maximum, cache), gated the same
+  way; Application Roles are listed beside Database Roles.
+- **Double-click in Object Explorer Details** navigates the tree into that
+  object, loading its folder first when needed; a row that stands for no child
+  (a Property/Value record, a history line) shows its cell's value instead.
+- **Double-click in the data grid**: `DataGrid.OnRowDoubleClick`; a result
+  cell opens Show Value. A held press, a press on a different row or an
+  editable grid is not a double-click. Clicking a row number selects the whole
+  row, and dragging down the numbers selects several.
+- **Query Store drill-down**: Enter or double-click on a Query Wait Statistics
+  category lists its queries; an "All categories" row covers every category
+  (only Avg and Total can rank it); Esc or Backspace goes back.
+- **`ToolRow.Run`**: one place that runs a toolbar cell's action, refuses a
+  disabled cell and reports why as "Label: reason".
+
+### Fixed
+
+- **Withheld toolbar actions** in Activity Monitor, Log Viewer, Extended Events
+  viewer and Replication Monitor now say why instead of doing nothing.
+- **Create-dialog page actions** (such as the Securables search) run once at a
+  time, under a timeout, and a panic releases the latch; a result for a dialog
+  since closed is dropped.
+
+### Changed
+
+- `gosmo` v0.1.2 (application roles, sequences, `CREATE ROLE`, audit
+  specifications, `CREATE SYNONYM` capability), `azcore` v1.24.0.
+- Comments across the codebase tightened; the help dialog lists the new keys
+  and double-click behaviors.
+
 ## [0.1.1] - 2026-10-27
 
 A feature and hardening release: Format Document, shrink and restore dialogs,
