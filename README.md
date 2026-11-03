@@ -174,7 +174,13 @@ Synonyms, Stored Procedures and Functions under one node per schema, as SSMS
 does. It applies
 to every connected server, keeps expanded nodes open, and is off at each
 start. Names keep their `schema.` prefix; dragging a schema node into a query
-inserts `[schema]`. Press **F1** for the full keyboard reference.
+inserts `[schema]`.
+
+**Double-click** a row in the Object Explorer Details pane to navigate into that
+object. Right-click a folder to create a Schema, Database Role, Application
+Role, Sequence or Synonym; each dialog checks your permissions first. In a
+result grid, double-click a cell for Show Value and click a row number to
+select the row. Press **F1** for the full keyboard reference.
 
 ## Supported SQL Server versions
 

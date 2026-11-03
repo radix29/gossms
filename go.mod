@@ -10,7 +10,7 @@ require (
 	github.com/golang-sql/sqlexp v0.1.0
 	github.com/microsoft/go-mssqldb v1.11.2
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
-	github.com/radix29/gosmo v0.1.1
+	github.com/radix29/gosmo v0.1.2
 )
 
 require (
@@ -41,4 +41,4 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 )
 
-replace github.com/radix29/gosmo => ../gosmo
+//replace github.com/radix29/gosmo => ../gosmo
