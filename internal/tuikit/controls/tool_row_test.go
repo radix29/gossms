@@ -119,3 +119,62 @@ func TestToolRowOverflowItemsCarryTheCellsGate(t *testing.T) {
 		t.Errorf("run got %d, want the cell's index 1", ran)
 	}
 }
+
+// TestToolRowRunGatesAndExplains: Run acts only on an allowed cell, reports a
+// withheld one as "Label: reason" (the label without its "..."), stays silent without a reason, reads the
+// cell's own fields when given nil, and ignores an index outside the row.
+func TestToolRowRunGatesAndExplains(t *testing.T) {
+	ran := -1
+	tr := &ToolRow{Cells: []ToolCell{
+		{Label: "Refresh", Action: func() { ran = 0 }},
+		{Label: "Recycle...", Disabled: true, Reason: "Requires sysadmin", Action: func() { ran = 1 }},
+		{Label: "Pause", Disabled: true, Action: func() { ran = 2 }},
+		{Label: "Inert"},
+	}}
+	var said []string
+	status := func(s string) { said = append(said, s) }
+
+	tr.Run(0, nil, nil, status)
+	if ran != 0 || len(said) != 0 {
+		t.Fatalf("allowed cell: ran %d, said %q", ran, said)
+	}
+	ran = -1
+	tr.Run(1, nil, nil, status)
+	if ran != -1 || !slices.Equal(said, []string{"Recycle: Requires sysadmin"}) {
+		t.Fatalf("withheld cell: ran %d, said %q", ran, said)
+	}
+	said = nil
+	tr.Run(2, nil, nil, status)
+	if ran != -1 || len(said) != 0 {
+		t.Fatalf("withheld cell without a reason: ran %d, said %q", ran, said)
+	}
+	for _, i := range []int{-1, 3, 4} {
+		tr.Run(i, nil, nil, status)
+	}
+	if ran != -1 || len(said) != 0 {
+		t.Fatalf("out of range / no action: ran %d, said %q", ran, said)
+	}
+
+	// The host's predicates override the fields, both ways.
+	tr.Run(0, func(int) bool { return true }, func(int) string { return "busy" }, status)
+	tr.Run(1, func(int) bool { return false }, nil, status)
+	if ran != 1 || !slices.Equal(said, []string{"Refresh: busy"}) {
+		t.Fatalf("host predicates: ran %d, said %q", ran, said)
+	}
+}
+
+// TestToolRowRunLabelDropsTheMenuAndDialogMarks: "Label: reason" reads the
+// label without the marks that say a dialog or menu follows.
+func TestToolRowRunLabelDropsTheMenuAndDialogMarks(t *testing.T) {
+	for in, want := range map[string]string{
+		"Recycle...":        "Recycle",
+		"Export…":           "Export",
+		"Log: SQL Server ▾": "Log: SQL Server",
+		"Refresh":           "Refresh",
+		"Install in master": "Install in master",
+	} {
+		if got := runLabel(in); got != want {
+			t.Errorf("runLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

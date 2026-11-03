@@ -184,16 +184,9 @@ func (v *XEventViewer) toolReason(i int) string {
 	return ""
 }
 
-// runTool invokes cell i's action, or says why it did not.
+// runTool invokes cell i's action, or says why it did not (ToolRow.Run).
 func (v *XEventViewer) runTool(i int) {
-	if i < 0 || i >= len(v.tools.Cells) {
-		return
-	}
-	if r := v.toolReason(i); r != "" {
-		v.app.setStatus(v.tools.Cells[i].Label + ": " + r)
-		return
-	}
-	v.tools.Cells[i].Action()
+	v.tools.Run(i, v.toolDisabled, v.toolReason, v.app.setStatus)
 }
 
 // runToolByID runs the cell named id, for a key binding. A mode without the
@@ -214,7 +207,7 @@ func (v *XEventViewer) showOverflowMenu() {
 		r = core.Rect{X: v.rect.X, Y: v.rect.Y}
 	}
 	v.app.contextMenu.Show(r.X, r.Y+1,
-		v.tools.OverflowItems(v.toolDisabled, v.toolReason, func(i int) { v.runTool(i) }))
+		v.tools.OverflowItems(v.toolDisabled, v.toolReason, v.runTool))
 }
 
 // popMenu shows items under cell id, or at the panel's top-left when the cell

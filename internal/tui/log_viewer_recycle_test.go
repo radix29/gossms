@@ -96,9 +96,7 @@ func TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle(t *testing.T) {
 	if !lv.toolDisabled(logToolRecycle) {
 		t.Error("the Recycle cell draws live for a CONTROL SERVER login outside sysadmin")
 	}
-	if lv.runTool(logToolRecycle) {
-		t.Fatal("Recycle ran for a login that cannot cycle a log")
-	}
+	lv.runTool(logToolRecycle)
 	if a.confirmDialog.Visible() {
 		t.Error("a withheld Recycle still asked for confirmation")
 	}
@@ -146,7 +144,8 @@ func TestLogViewerRecycleStaysLiveForALoginThatMay(t *testing.T) {
 		t.Error("a read in flight left the toolbar live")
 	}
 	lv.setStatus("")
-	if lv.runTool(logToolRecycle) {
+	lv.runTool(logToolRecycle)
+	if a.confirmDialog.Visible() {
 		t.Error("Recycle ran while a read was in flight")
 	}
 	if strings.Contains(lv.grid.Status(), "sysadmin") {
@@ -165,9 +164,7 @@ func TestLogViewerRecycleCyclesTheFamilyOnScreen(t *testing.T) {
 	a, lv, inst := newRecycleTestViewer(t)
 	lv.logType = gosmo.ErrorLogAgent
 
-	if !lv.runTool(logToolRecycle) {
-		t.Fatal("the Recycle cell refused to run on an idle toolbar")
-	}
+	lv.runTool(logToolRecycle)
 	if !a.confirmDialog.Visible() {
 		t.Fatal("Recycle did not ask for confirmation")
 	}
@@ -248,9 +245,7 @@ func TestLogViewerRecycleIsInertWhileBusy(t *testing.T) {
 	a, lv, inst := newRecycleTestViewer(t)
 	lv.busy = true
 
-	if lv.runTool(logToolRecycle) {
-		t.Error("the Recycle cell ran while the toolbar was dimmed")
-	}
+	lv.runTool(logToolRecycle)
 	if a.confirmDialog.Visible() {
 		t.Error("Recycle asked for confirmation while busy")
 	}
@@ -283,7 +278,8 @@ func TestLogViewerRecyclePanicClearsTheLatch(t *testing.T) {
 	}
 	fired := 0
 	lv.tools.Cells[logToolRefresh].Action = func() { fired++ }
-	if !lv.runTool(logToolRefresh) || fired != 1 {
+	lv.runTool(logToolRefresh)
+	if fired != 1 {
 		t.Error("the next toolbar click was refused — the latch never really cleared")
 	}
 }

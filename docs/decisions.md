@@ -185,7 +185,7 @@ on 13 and 17, 17 cases: with the policy right, both worked exactly
 when `HAS_PERMS_BY_NAME(schema, 'SCHEMA', 'ALTER')` was 1 (which folds in schema
 CONTROL/ownership, ALTER ANY SCHEMA, db_ddladmin, database ALTER/CONTROL); a
 schema DENY beat database ALTER; CONTROL on the policy permits neither. So the
-schema half is `rightAlterOnSchema` alone (`conjoinedOpRights`), via
+schema half is `gate.AlterOnSchema` alone (`conjoinedOpRights`), via
 `gate.ItemOnAll`/`gate.AllowsAllOn`, whose note names the first failing group.
 
 ### The behaviour table, probed live
@@ -206,8 +206,8 @@ difference is a behaviour change.
 Refusals are Msg 15151, except the endpoint's **Msg 6004**. `HAS_PERMS_BY_NAME`
 reads 0 for the denied ALTER in every row, including actions the server allows
 — so the arm is asked **per action, not per object** (the paired rights
-`rightAlterAnyDBRole`/`rightAlterAnyDBRoleMembers`,
-`rightAlterAnyServerRole`/`rightAlterAnyServerRoleMembers`).
+`gate.AlterAnyDBRole`/`gate.AlterAnyDBRoleMembers`,
+`gate.AlterAnyServerRole`/`gate.AlterAnyServerRoleMembers`).
 
 - **Membership checks the member at database scope, not server scope.** A
   class-4-denied user can't be added to an undenied role; a class-101-denied
@@ -317,7 +317,7 @@ declares no arm — `ALTER AUTHORIZATION` is refused on undenied roles too.
   the box would ask the stale probe about a name it never saw and open the
   Members page editable under that DENY.
 - **A schema *node* is excluded from the schema-scoped gate** — `objectOpRights`
-  names `rightAlterOnSchema` beside the three database-wide rights, but ALTER
+  names `gate.AlterOnSchema` beside the three database-wide rights, but ALTER
   on a schema doesn't permit dropping or renaming the schema itself.
 
 Three facts the object-scope gate rests on: **db_owner is not exempt** from an

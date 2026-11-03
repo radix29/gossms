@@ -50,12 +50,10 @@ func (p *ReplicationMonitorPanel) toolDisabled(i int) bool { return i == rmToolR
 
 func (p *ReplicationMonitorPanel) toolReason(int) string { return "" }
 
-// runTool invokes cell i, or does nothing while it is withheld.
+// runTool invokes cell i, or does nothing while it is withheld: toolReason is
+// always empty, the one withheld cell being a Refresh already running.
 func (p *ReplicationMonitorPanel) runTool(i int) {
-	if p.toolDisabled(i) {
-		return
-	}
-	p.tools.Cells[i].Action()
+	p.tools.Run(i, p.toolDisabled, p.toolReason, nil)
 }
 
 func (p *ReplicationMonitorPanel) layoutTools() {

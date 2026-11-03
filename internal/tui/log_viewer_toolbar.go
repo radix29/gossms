@@ -95,9 +95,9 @@ func (lv *LogViewer) toolDisabled(i int) bool {
 }
 
 // toolReason is what to tell the user about cell i while withheld, or "" when
-// the grey speaks for itself. Same order as runTool's refusals: during a read
-// every cell is grey for that reason, and naming CONTROL SERVER would name a
-// right that is not why it did nothing.
+// the grey speaks for itself. The busy check comes first deliberately: during a
+// read every cell is grey for that reason, and naming the Recycle right would
+// name a right that is not why it did nothing.
 func (lv *LogViewer) toolReason(i int) string {
 	if !lv.toolsEnabled() {
 		return ""
@@ -115,23 +115,13 @@ func (lv *LogViewer) showOverflowMenu() {
 	if r.IsZero() {
 		r = core.Rect{X: lv.rect.X, Y: lv.rect.Y}
 	}
-	lv.app.contextMenu.Show(r.X, r.Y+1,
-		lv.tools.OverflowItems(lv.toolDisabled, lv.toolReason,
-			func(i int) { lv.runTool(i) }))
+	lv.app.contextMenu.Show(r.X, r.Y+1, lv.tools.OverflowItems(lv.toolDisabled, lv.toolReason, lv.runTool))
 }
 
-// runTool invokes toolbar cell i's action, or says why it did not. Reports
-// whether the action ran. The busy check comes first deliberately (toolReason).
-func (lv *LogViewer) runTool(i int) bool {
-	if !lv.toolsEnabled() {
-		return false
-	}
-	if i == logToolRecycle && lv.recycleDenied() {
-		lv.setStatus(gate.RequiresText(lv.recycleRights()...))
-		return false
-	}
-	lv.tools.Cells[i].Action()
-	return true
+// runTool invokes toolbar cell i's action, or says why it did not, through the
+// gate the draw dims on and the overflow menu asks (ToolRow.Run).
+func (lv *LogViewer) runTool(i int) {
+	lv.tools.Run(i, lv.toolDisabled, lv.toolReason, lv.setStatus)
 }
 
 // refreshToolLabels updates the selectors' labels from the current selection,

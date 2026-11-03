@@ -193,7 +193,12 @@ behind the mouse and async rules.
 ## Panels, toolbars and grid hosts
 
 - **A panel's text toolbar is a `controls.ToolRow`** — it collapses the cells
-  that don't fit into "More ▾"; drawing and gating stay with the panel. A cell
+  that don't fit into "More ▾"; drawing and the gate's predicates stay with the
+  panel, and every path that acts on a cell (click, key, More menu) goes
+  through `ToolRow.Run` with the pair it gives `OverflowItems`, so a refusal
+  reads "Label: reason" in every panel (Query Store's two rows excepted: their
+  reasons are whole sentences naming the report, and a selector label such as
+  "Metric: CPU ▾" before one reads worse than none). A cell
   without a rect is neither painted nor clickable, so a `NoOverflow` row
   deletes what doesn't fit (Query Store's filters once removed `Refresh` below
   ~150 columns, tests green). Check against the real pane width (Object

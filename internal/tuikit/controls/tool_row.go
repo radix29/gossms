@@ -1,6 +1,10 @@
 package controls
 
-import "github.com/radix29/gossms/internal/tuikit/core"
+import (
+	"strings"
+
+	"github.com/radix29/gossms/internal/tuikit/core"
+)
 
 // ToolRowGap is the blank column between two ToolRow cells; a cell's label is
 // drawn with one space of padding either side.
@@ -38,8 +42,9 @@ type ToolCell struct {
 }
 
 // ToolRow is the geometry of a panel's one-row text toolbar: layout,
-// hit-testing and the "More ▾" overflow. It does not draw — what a cell does,
-// when it is dimmed and how it looks stay with the host, because the hosts
+// hit-testing, the "More ▾" overflow and Run, the gate every path that acts on a
+// cell goes through. It does not draw — what a cell does, when it is dimmed and
+// how it looks stay with the host, because the hosts
 // disagree on all of it (one dims per cell and draws the active rate
 // selected, one dims the whole row while a read is in flight, one asks a
 // predicate per cell). Toolbar is the other kind: App's icon strip.
@@ -191,4 +196,43 @@ func (tr *ToolRow) OverflowItems(disabled func(int) bool, reason func(int) strin
 		})
 	}
 	return items
+}
+
+// Run invokes cell i's action, or reports why it did not: the one gate a host
+// gives clicks, key bindings and the More menu, so none of them can act on a
+// cell another shows dimmed. disabled and reason are the pair the host passes
+// OverflowItems, nil reading the cell's Disabled or Reason field as there. A
+// withheld cell with a reason sends status "Label: reason" (runLabel); one without says
+// nothing, its grey speaking for itself (a Refresh already running). An index
+// outside the row, or a cell with no Action, does nothing.
+func (tr *ToolRow) Run(i int, disabled func(int) bool, reason func(int) string, status func(string)) {
+	if i < 0 || i >= len(tr.Cells) {
+		return
+	}
+	if disabled == nil {
+		disabled = func(i int) bool { return tr.Cells[i].Disabled }
+	}
+	if reason == nil {
+		reason = func(i int) string { return tr.Cells[i].Reason }
+	}
+	if disabled(i) {
+		if r := reason(i); r != "" && status != nil {
+			status(runLabel(tr.Cells[i].Label) + ": " + r)
+		}
+		return
+	}
+	if a := tr.Cells[i].Action; a != nil {
+		a()
+	}
+}
+
+// runLabel is a cell's label as Run's refusal names it: without the trailing
+// "..." or "▾" that promise a dialog or a menu, which read as noise before the
+// colon ("Recycle...: Requires ...").
+func runLabel(label string) string {
+	label = strings.TrimSpace(strings.TrimSuffix(label, "▾"))
+	for _, dots := range []string{"...", "…"} {
+		label = strings.TrimSuffix(label, dots)
+	}
+	return label
 }

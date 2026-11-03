@@ -30,6 +30,12 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   one column is asked next**, via gosmo's `DeniedOnAnyColumn` (column rows are
   a separate map): every gated action touches the whole object, so one denied
   column withholds it.
+- **Gate on Object Explorer's connection, never on a panel's own dial.** Only
+  a `db.RoleExplorer` connection is capability-probed (`newServerConn`); one a
+  panel opens from `CloneOpts()` under any other role never is, and an
+  unprobed connection fails open. Activity Monitor's Install in master asked
+  its tab's dial and was live for every login. Ask the `sc` the panel was
+  opened on (same login), as Kill's gate beside it always did.
 - **A right set is what the server checks, not the family's usual shape.**
   Don't add `gate.AlterDatabase` "for symmetry": database-scoped credentials
   work under `GRANT CONTROL ON DATABASE` and are refused under `GRANT ALTER`,

@@ -757,7 +757,10 @@ func (am *ActivityMonitor) buildTools() {
 		// Installing into master needs sysadmin; a db_owner gets "Cannot alter the
 		// procedure 'sp_block'...". CONTROL SERVER rather than a role test, since
 		// HAS_PERMS_BY_NAME answers 1 for sysadmin while IS_SRVROLEMEMBER doesn't.
-		denied := !gate.Allows(pt.conn, "", gate.ControlServer)
+		// Asked of the panel's connection, which the app probed, as the Kill
+		// item is: the tab's own is a clone nothing probes, and an unprobed
+		// connection fails open, so asking it left Install live for every login.
+		denied := !gate.Allows(am.conn, "", gate.ControlServer)
 		// Install while master lacks the procedure; Update while master's copy
 		// is not this build's. Update is hidden, not dimmed, without
 		// CONTROL SERVER: a login that can't read the definition sees it as
@@ -768,10 +771,17 @@ func (am *ActivityMonitor) buildTools() {
 			label, offer = "Update in master", true
 		}
 		if offer {
+			// The right is named only when it is why the cell is grey: while a
+			// read is out the grey speaks for itself, and naming CONTROL SERVER
+			// to a sysadmin would name a right that is not the reason.
+			reason := ""
+			if denied && !pt.busy && pt.conn != nil {
+				reason = gate.RequiresText(gate.ControlServer)
+			}
 			am.tools.Cells = append(am.tools.Cells, controls.ToolCell{
 				Label:    label,
 				Disabled: pt.busy || pt.conn == nil || denied,
-				Reason:   gate.RequiresText(gate.ControlServer),
+				Reason:   reason,
 				Action:   pt.confirmInstallInMaster,
 			})
 		}
@@ -791,14 +801,9 @@ func (am *ActivityMonitor) prefixVisible() bool {
 }
 
 // runTool invokes cell i's action or explains why not — the single gate for
-// clicks and the overflow menu.
+// clicks and the overflow menu (ToolRow.Run, reading the cells' own fields).
 func (am *ActivityMonitor) runTool(i int) {
-	switch t := am.tools.Cells[i]; {
-	case t.Disabled && t.Reason != "":
-		am.app.setStatus(t.Reason)
-	case t.Action != nil && !t.Disabled:
-		t.Action()
-	}
+	am.tools.Run(i, nil, nil, am.app.setStatus)
 }
 
 // showOverflowMenu pops the hidden controls under "More ▾".

@@ -12,6 +12,7 @@ import (
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 )
@@ -307,11 +308,14 @@ func TestActivityMonitorProcTabUpdateInMasterNeedsControlServer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			am := hostedProcMonitor(t, amTabBlock)
 			pt := am.procTab()
+			// The gate asks the panel's probed connection; the tab's own is an
+			// unprobed clone that would fail open.
 			if tc.granted {
-				pt.conn = serverRoleConn(t, []string{"CONTROL SERVER"}, nil, nil, []string{"sysadmin"})
+				am.conn = serverRoleConn(t, []string{"CONTROL SERVER"}, nil, nil, []string{"sysadmin"})
 			} else {
-				pt.conn = serverRoleConn(t, nil, []string{"CONTROL SERVER"}, nil, []string{"sysadmin"})
+				am.conn = serverRoleConn(t, nil, []string{"CONTROL SERVER"}, nil, []string{"sysadmin"})
 			}
+			pt.conn, _ = newFakeConn(t)
 			pt.loc, pt.masterStale = activity.ProcMaster, true
 			am.buildTools()
 			if got := strings.Contains(amRender(am, 100, 30)[1], "Update in master"); got != tc.granted {
@@ -455,5 +459,40 @@ func TestKillProcessOfAnEndedSession(t *testing.T) {
 	}
 	if a.confirmDialog.Visible() || len(killStatements(inst)) != 0 {
 		t.Error("an ended session was offered for killing")
+	}
+}
+
+// A refused Install says why as "Label: reason", naming CONTROL SERVER only
+// when that is the reason: while a read is out the grey speaks for itself, and
+// the right would be named to a login whose rights are not what stopped it.
+func TestActivityMonitorProcTabInstallRefusalNamesTheRightOnlyWhenDenied(t *testing.T) {
+	am := hostedProcMonitor(t, amTabBlock)
+	pt := am.procTab()
+	am.conn = serverRoleConn(t, nil, []string{"CONTROL SERVER"}, nil, []string{"sysadmin"})
+	pt.conn, _ = newFakeConn(t) // the tab's own clone, never probed: must not be what the gate asks
+	pt.loc = activity.ProcTempDB
+	install := func() {
+		t.Helper()
+		am.buildTools()
+		i := slices.IndexFunc(am.tools.Cells, func(c controls.ToolCell) bool { return c.Label == "Install in master" })
+		if i < 0 {
+			t.Fatal("no Install in master cell")
+		}
+		am.app.setStatus("")
+		am.runTool(i)
+	}
+
+	install()
+	if got, want := am.app.statusText, "Install in master: "+gate.RequiresText(gate.ControlServer); got != want {
+		t.Errorf("denied: status = %q, want %q", got, want)
+	}
+	if am.app.confirmDialog.Visible() {
+		t.Error("a withheld Install still asked for confirmation")
+	}
+
+	pt.busy = true
+	install()
+	if got := am.app.statusText; got != "" {
+		t.Errorf("busy: status = %q, want nothing — a read in flight is not a missing right", got)
 	}
 }
