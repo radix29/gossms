@@ -239,6 +239,16 @@ var (
 	// for the CREATE, and the server's Msg 15151 for the owner.
 	CreateSchema = Right{Name: "CREATE SCHEMA", Role: "db_ddladmin", DB: true}
 
+	// What CREATE ROLE checks. Probed with WITHOUT LOGIN users on majors 13 and
+	// 17 (2026-11-03, identical): CREATE ROLE, ALTER ANY ROLE, db_securityadmin
+	// and ALTER or CONTROL on the database each read 1 for it and create; a user
+	// with none, db_ddladmin included, is refused Msg 15247. Naming another
+	// principal in AUTHORIZATION was refused Msg 15151 to CREATE ROLE, ALTER ANY
+	// ROLE and ALTER on the database, and allowed to db_securityadmin and
+	// CONTROL — so, as for CreateSchema, the gate answers for the CREATE and the
+	// server for the owner.
+	CreateRole = Right{Name: "CREATE ROLE", Role: "db_securityadmin", DB: true}
+
 	AlterAnySchema = Right{Name: "ALTER ANY SCHEMA", Role: "db_ddladmin", DB: true}
 	ViewDBState    = Right{Name: "VIEW DATABASE STATE", Role: "db_owner", DB: true}
 

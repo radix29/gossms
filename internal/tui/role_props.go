@@ -161,24 +161,28 @@ func pageRoleMembers(sc *db.ServerConn, dbName string, roleName *string) propPag
 				return nil, nil, err
 			}
 
+			// The picker offers only what ADD MEMBER accepts (roleMemberEligible);
+			// principalType still covers every principal, for the members grid.
+			collation := databaseCollation(d)
+			special := newNameSet(collation, nroleSpecial...)
 			existing := roleMemberSet(members)
 			principalType := make(map[string]gosmo.PrincipalType, len(users)+len(roles))
 			var candidates []string
 			for _, u := range users {
 				principalType[u.Name] = u.UserType
-				if !existing[u.Name] {
+				if !existing[u.Name] && roleMemberEligible(special, u.Name, false) {
 					candidates = append(candidates, u.Name)
 				}
 			}
 			for _, r := range roles {
 				principalType[r.Name] = gosmo.PrincipalDatabaseRole
-				if r.Name != *roleName && !existing[r.Name] {
+				if r.Name != *roleName && !existing[r.Name] && roleMemberEligible(special, r.Name, r.IsFixedRole) {
 					candidates = append(candidates, r.Name)
 				}
 			}
 
 			f, apply := buildMembershipForm(membershipConfig{
-				collation:     databaseCollation(d),
+				collation:     collation,
 				members:       members,
 				candidates:    candidates,
 				principalType: principalType,

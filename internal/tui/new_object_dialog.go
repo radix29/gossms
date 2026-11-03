@@ -180,6 +180,32 @@ func (d *newObjectDialog[P]) probe(label string, work func(ctx context.Context) 
 	})
 }
 
+// runPageActionOnce is PropDialog.runPageActionOnce for a create dialog's page
+// (New Database Role's Securables search and column fetch): fn runs in the
+// background under propFetchTimeout, onDone on the UI goroutine, and inFlight
+// latches out a second run until then — released by a panic too. A result for a
+// showing since closed is dropped, as probe drops one; the page it would fill
+// was rebuilt with the reopened dialog's own latch.
+func (d *newObjectDialog[P]) runPageActionOnce(inFlight *bool, fn func(ctx context.Context) error, onDone func(err error)) {
+	if *inFlight {
+		return
+	}
+	*inFlight = true
+	sessionCtx := d.ctx
+	d.app.safegoRepair("a new-object page action", func() { *inFlight = false }, func() {
+		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
+		defer cancel()
+		err := fn(ctx)
+		d.post(func() {
+			*inFlight = false
+			if d.ctx != sessionCtx {
+				return
+			}
+			onDone(err)
+		})
+	})
+}
+
 // init wires cfg into d and hooks up the PropertySheet callbacks. Call it from
 // the concrete dialog's constructor after the concrete value exists; cfg.build is
 // normally that value's buildPages.

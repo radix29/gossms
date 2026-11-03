@@ -804,6 +804,18 @@ func databaseTriggerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, new
 	}
 }
 
+// databaseRolesMenuItems is the Roles folder's menu. New Database Role asks
+// CREATE ROLE, which every right that permits the CREATE reads 1 for
+// (gate.CreateRole); the wider ones are listed so the note names the narrow
+// right first.
+func databaseRolesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return folderMenu(newQuery, refresh,
+		gate.Item(controls.MenuItem{Label: "New Database Role...",
+			Action: func() { a.showNewRoleDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateRole, gate.AlterAnyDBRole, gate.AlterDatabase, gate.ControlDB),
+	)
+}
+
 func databaseRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {
 		a.showRolePropertiesFor(sc, node.data.DBName, node.data.Name)

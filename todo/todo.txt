@@ -1,6 +1,3 @@
-- new Schema
-- new role
-
 Results:
 -	Images
 -	Geo/GIS data?

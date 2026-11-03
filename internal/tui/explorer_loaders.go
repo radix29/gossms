@@ -197,6 +197,7 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeQueryStoreReport:  queryStoreReportMenuItems,
 	NodeUsers:             usersMenuItems,
 	NodeUser:              userMenuItems,
+	NodeDatabaseRoles:     databaseRolesMenuItems,
 	NodeDatabaseRole:      databaseRoleMenuItems,
 	NodeSchemas:           schemasMenuItems,
 	NodeSchema:            schemaMenuItems,

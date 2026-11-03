@@ -146,7 +146,7 @@ func NewNewUserDialog(app *App) *NewUserDialog {
 func (d *NewUserDialog) buildPages(pf *nuserPrefetch) {
 	general := buildNewUserGeneralPage(d.sc, d.dbName, pf)
 	userName := func() string { return strings.TrimSpace(general.name.Value()) }
-	schemasForm, schemasApply := buildNewUserOwnedSchemasPage(pf, userName)
+	schemasForm, schemasApply := buildNewPrincipalOwnedSchemasPage(pf.schemas, "user", userName)
 	membershipForm, membershipApply := buildNewUserMembershipPage(d.sc, d.dbName, pf, userName)
 
 	d.forms = []*propsheet.Form{general.form, schemasForm, membershipForm}
@@ -369,12 +369,14 @@ func validateNewUser(in nuserInput, pf *nuserPrefetch) error {
 	return nil
 }
 
-// buildNewUserOwnedSchemasPage lists every schema whose owner can change,
-// unticked; a ticked one is transferred to the new user. sys and
-// INFORMATION_SCHEMA are left out (their ownership cannot change).
-func buildNewUserOwnedSchemasPage(pf *nuserPrefetch, userName func() string) (*propsheet.Form, propApply) {
+// buildNewPrincipalOwnedSchemasPage is the Owned Schemas page of New User and
+// New Role: every schema whose owner can change, unticked; a ticked one is
+// transferred to the new principal, named by name() when apply runs. sys and
+// INFORMATION_SCHEMA are left out (their ownership cannot change). noun is
+// "user" or "role", for the page's text.
+func buildNewPrincipalOwnedSchemasPage(all []*gosmo.Schema, noun string, name func() string) (*propsheet.Form, propApply) {
 	var schemas []*gosmo.Schema
-	for _, s := range pf.schemas {
+	for _, s := range all {
 		if s.Name == "sys" || s.Name == "INFORMATION_SCHEMA" {
 			continue
 		}
@@ -390,9 +392,9 @@ func buildNewUserOwnedSchemasPage(pf *nuserPrefetch, userName func() string) (*p
 	grid.SetRows(text, values)
 
 	f := propsheet.NewForm(
-		propsheet.Section("Schemas owned by this user"),
+		propsheet.Section("Schemas owned by this "+noun),
 		grid,
-		propsheet.Note("A ticked schema is transferred to the new user. Changing schema ownership can affect permission chaining and deployment scripts."),
+		propsheet.Note("A ticked schema is transferred to the new "+noun+". Changing schema ownership can affect permission chaining and deployment scripts."),
 	)
 	apply := func(ctx context.Context) error {
 		for i, v := range grid.Values() {
@@ -401,7 +403,7 @@ func buildNewUserOwnedSchemasPage(pf *nuserPrefetch, userName func() string) (*p
 			}
 			// The prefetched schema is enough: SetOwner addresses it by name, which keeps
 			// this page scriptable.
-			if err := schemas[i].SetOwner(ctx, userName()); err != nil {
+			if err := schemas[i].SetOwner(ctx, name()); err != nil {
 				return err
 			}
 		}

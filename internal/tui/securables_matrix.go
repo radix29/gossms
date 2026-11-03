@@ -98,8 +98,8 @@ func columnEditKey(sec securable, permission, column string) string {
 // a rename on the General page changes it while the dialog is open. Its
 // server-level counterpart is pagePrincipalServerPermissions.
 //
-// d is needed only for the column-permissions editor, which fetches a table's
-// columns on demand through d.runPageAction.
+// d runs the page's own round trips: the Add picker's search and the
+// column-permissions editor's column fetch.
 func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName string, principal *string) propPage {
 	return propPage{
 		title: "Securables",
@@ -142,18 +142,7 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 			// dropdown is slow to open and useless to pick from. One capped
 			// search gives the picker something to show before the user
 			// types.
-			find := func(ctx context.Context, term string) ([]securable, error) {
-				refs, err := database.FindSecurables(ctx,
-					gosmo.SecurableSearch{Name: term, Limit: securableSearchLimit + 1})
-				if err != nil {
-					return nil, err
-				}
-				out := make([]securable, len(refs))
-				for i, r := range refs {
-					out[i] = securable{Type: r.Class, Schema: r.Schema, Name: r.Name}
-				}
-				return out, nil
-			}
+			find := securableFinder(database)
 			candidates, err := find(ctx, "")
 			if err != nil {
 				return nil, nil, err
@@ -170,6 +159,31 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 			return f, apply, nil
 		},
 	}
+}
+
+// securableFinder is the Add picker's search against database: securables whose
+// name contains term, capped one past securableSearchLimit.
+func securableFinder(database *gosmo.Database) securableFindFn {
+	return func(ctx context.Context, term string) ([]securable, error) {
+		refs, err := database.FindSecurables(ctx,
+			gosmo.SecurableSearch{Name: term, Limit: securableSearchLimit + 1})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]securable, len(refs))
+		for i, r := range refs {
+			out[i] = securable{Type: r.Class, Schema: r.Schema, Name: r.Name}
+		}
+		return out, nil
+	}
+}
+
+// pageActionRunner runs a page's own round trip off the UI goroutine and hands
+// the result back on it, latched against a second one in flight — the search and
+// column fetch of a Securables page. PropDialog and newObjectDialog both are one,
+// so Role Properties and New Database Role share the page.
+type pageActionRunner interface {
+	runPageActionOnce(inFlight *bool, fn func(ctx context.Context) error, onDone func(err error))
 }
 
 // securableApplyFn applies one object/schema/database-scoped state change, and
@@ -203,9 +217,9 @@ const noSecurableCandidates = "(no matches)"
 // initial is every securable the principal already has an explicit grant or deny
 // on; candidates seeds the Add picker and find repopulates it from the server as
 // the user types. applyFn and colApplyFn route to the right gosmo call for the
-// selected securable's Type.
+// selected securable's Type. database is only read, for a table's columns.
 func buildSecurablesMatrix(
-	d *PropDialog, database *gosmo.Database,
+	d pageActionRunner, database *gosmo.Database,
 	initial []securable, entries []*gosmo.PrincipalSecurable, colEntries []*gosmo.ColumnPermissionEntry,
 	candidates []securable, find securableFindFn, securablesHeight, permsHeight int,
 	applyFn securableApplyFn, colApplyFn columnApplyFn,
