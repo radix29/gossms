@@ -68,6 +68,21 @@ type Writer interface {
 	CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error
 	DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error
 
+	// security grant/deny/revoke: one statement on sec in d, or with d nil
+	// on the server (SecurableServer).
+	ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
+		perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error
+	// security role add-member/remove-member: d's role, or with d nil the
+	// server role.
+	AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error
+
+	// job start (at step, "" for the job's start step) / job stop.
+	StartJob(ctx context.Context, job, step string) error
+	StopJob(ctx context.Context, job string) error
+
+	// maint backup: one BACKUP DATABASE or BACKUP LOG.
+	Backup(ctx context.Context, opts gosmo.BackupOptions) error
+
 	// data import: --truncate-first's TRUNCATE TABLE, then the bulk load.
 	TruncateTable(ctx context.Context, t *gosmo.Table) error
 	BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error)
@@ -135,6 +150,45 @@ func (w serverWriter) CreateDatabase(ctx context.Context, req gosmo.CreateDataba
 
 func (serverWriter) DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error {
 	return d.Drop(ctx, term)
+}
+
+func (w serverWriter) ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
+	perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error {
+	if d == nil {
+		return w.s.ApplyPermission(ctx, verb, sec, perm, principal, opts)
+	}
+	return d.ApplyPermission(ctx, verb, sec, perm, principal, opts)
+}
+
+// AlterRoleMember goes through the role's handle: the command has just read
+// the role by name.
+func (w serverWriter) AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error {
+	if d == nil {
+		r := w.s.ServerRoleRef(role)
+		if add {
+			return r.AddMember(ctx, member)
+		}
+		return r.RemoveMember(ctx, member)
+	}
+	r := d.RoleRef(role)
+	if add {
+		return r.AddMember(ctx, member)
+	}
+	return r.RemoveMember(ctx, member)
+}
+
+// StartJob and StopJob go through the job's handle: the command has just
+// read the job by name.
+func (w serverWriter) StartJob(ctx context.Context, job, step string) error {
+	return w.s.JobRef(job).Start(ctx, step)
+}
+
+func (w serverWriter) StopJob(ctx context.Context, job string) error {
+	return w.s.JobRef(job).Stop(ctx)
+}
+
+func (w serverWriter) Backup(ctx context.Context, opts gosmo.BackupOptions) error {
+	return w.s.Backup(ctx, opts)
 }
 
 func (serverWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error { return t.Truncate(ctx) }
@@ -223,11 +277,16 @@ func writeError(err error) *output.Error {
 	if errors.Is(err, gosmo.ErrInvalidRequest) {
 		return usageError(err.Error(), "")
 	}
+	_, own := errors.AsType[*output.Error](err)
 	e := readError(err)
-	if se, ok := gosmo.AsSQLError(err); ok && e.SQL != nil && se.Number == alterDatabaseFailed {
-		c := alterCause(se)
-		e.Message = c.Message
-		e.SQL = &output.SQLError{Number: c.Number, Severity: c.Class, State: c.State, Line: int(c.LineNo), Procedure: c.ProcName}
+	if own {
+		// The command explained the failure itself.
+		return e
+	}
+	if se, ok := gosmo.AsSQLError(err); ok && e.SQL != nil && isStatementFailed(se.Number) {
+		// The code too is the cause's: a BACKUP refused for want of a
+		// permission ends in the plain Msg 3013.
+		e = sqlError(alterCause(se))
 	}
 	if e.Code == output.CodePermissionDenied && e.SQL != nil {
 		e.Hint = "The login lacks a permission this change needs: the message names it. " +
@@ -236,16 +295,22 @@ func writeError(err error) *output.Error {
 	return e
 }
 
-// alterDatabaseFailed is SQL Server's "ALTER DATABASE statement failed.",
-// which ends a refused ALTER DATABASE after the message that says why.
-const alterDatabaseFailed = 5069
+// The contentless errors that end a refused statement after the message
+// that says why: "ALTER DATABASE statement failed." and "BACKUP (or
+// RESTORE) DATABASE is terminating abnormally.".
+const (
+	alterDatabaseFailed = 5069
+	backupTerminated    = 3013
+)
 
-// alterCause is the first error of se's batch that is not the contentless
-// Msg 5069 — the one that names the cause (CONTAINMENT = PARTIAL's Msg
-// 12824, live on 17) — or se when there is none.
+func isStatementFailed(n int32) bool { return n == alterDatabaseFailed || n == backupTerminated }
+
+// alterCause is the first error of se's batch that is not a contentless
+// Msg 5069 or 3013 — the one that names the cause (CONTAINMENT = PARTIAL's
+// Msg 12824, live on 17) — or se when there is none.
 func alterCause(se *gosmo.SQLError) *gosmo.SQLError {
 	for _, m := range se.All {
-		if m.IsError() && m.Number != alterDatabaseFailed {
+		if m.IsError() && !isStatementFailed(m.Number) {
 			return &m
 		}
 	}

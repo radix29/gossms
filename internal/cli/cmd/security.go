@@ -62,10 +62,10 @@ func loginTypeNames() []string {
 // SecurityCommands is the security group: its node and its commands. Its
 // summary names only what exists.
 func SecurityCommands(d Deps) []*spec.Command {
-	return []*spec.Command{
+	return append([]*spec.Command{
 		{
 			Path:    []string{"security"},
-			Summary: "List logins, users and roles, a role's members, and a principal's permissions",
+			Summary: "List logins, users and roles and a principal's permissions; grant, deny and revoke; change role members",
 			Class:   spec.ClassRead,
 		},
 		{
@@ -182,7 +182,7 @@ func SecurityCommands(d Deps) []*spec.Command {
 				"gossms security permissions etl_login --scope server -p prod-ro -o json",
 			},
 		},
-	}
+	}, securityWriteCommands(d)...)
 }
 
 // --- logins list ------------------------------------------------------------
@@ -464,7 +464,7 @@ func (d Deps) securityPermissions(ctx context.Context, inv *spec.Invocation) (*o
 			return res, err
 		}
 	}
-	p, err := resolvePrincipal(ctx, cat, res, dbase, asked)
+	p, err := resolvePrincipal(ctx, cat, res, dbase, asked, permissionsScope)
 	if err != nil {
 		return res, err
 	}
@@ -502,10 +502,23 @@ func (d Deps) securityPermissions(ctx context.Context, inv *spec.Invocation) (*o
 	return res, nil
 }
 
+// scopeWords is how a command's hints tell the caller to switch scope: the
+// clause after "is a login:" (or a server role), and after "is a user of
+// database …:".
+type scopeWords struct{ toServer, toDatabase string }
+
+var (
+	permissionsScope = scopeWords{"add --scope server for its server permissions", "drop --scope server"}
+	roleScope        = scopeWords{"add --scope server", "drop --scope server"}
+	// grant/deny/revoke: --on decides the scope.
+	grantScope = scopeWords{"use --on SERVER for a server permission", "name a database securable in --on"}
+)
+
 // resolvePrincipal finds name in dbase (a user, then a database role) or,
 // with dbase nil, on the server (a login, then a server role). Nothing found
-// is NOT_FOUND, hinting the other scope or the user a login maps to.
-func resolvePrincipal(ctx context.Context, cat Catalog, res *output.Result, dbase *gosmo.Database, name string) (principal, error) {
+// is NOT_FOUND, hinting the other scope (in words) or the user a login maps
+// to.
+func resolvePrincipal(ctx context.Context, cat Catalog, res *output.Result, dbase *gosmo.Database, name string, words scopeWords) (principal, error) {
 	if dbase == nil {
 		l, err := cat.LoginByName(ctx, name)
 		if err == nil {
@@ -525,9 +538,9 @@ func resolvePrincipal(ctx context.Context, cat Catalog, res *output.Result, dbas
 			"A login without VIEW ANY DEFINITION sees only itself and the fixed roles."
 		if dbase, err := currentDatabase(ctx, cat, res); err == nil {
 			if _, err := cat.UserByName(ctx, dbase, name); err == nil {
-				hint = fmt.Sprintf("%s is a user of database %s: drop --scope server.", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name))
+				hint = fmt.Sprintf("%s is a user of database %s: %s.", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name), words.toDatabase)
 			} else if _, err := cat.DatabaseRoleByName(ctx, dbase, name); err == nil {
-				hint = fmt.Sprintf("%s is a role of database %s: drop --scope server.", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name))
+				hint = fmt.Sprintf("%s is a role of database %s: %s.", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name), words.toDatabase)
 			}
 		}
 		return principal{}, output.NewError(output.CodeNotFound, fmt.Sprintf("no login or server role %s", gosmo.QuoteName(name)), hint)
@@ -547,28 +560,28 @@ func resolvePrincipal(ctx context.Context, cat Catalog, res *output.Result, dbas
 	if !errors.Is(err, gosmo.ErrNotFound) {
 		return principal{}, readError(err)
 	}
-	return principal{}, principalNotFound(ctx, cat, dbase, name)
+	return principal{}, principalNotFound(ctx, cat, dbase, name, words)
 }
 
 // principalNotFound is NOT_FOUND for name in dbase. A login of that name gets
-// a hint naming the user it maps to here, or --scope server.
-func principalNotFound(ctx context.Context, cat Catalog, dbase *gosmo.Database, name string) *output.Error {
+// a hint naming the user it maps to here, or the server scope.
+func principalNotFound(ctx context.Context, cat Catalog, dbase *gosmo.Database, name string, words scopeWords) *output.Error {
 	msg := fmt.Sprintf("no user or role %s in database %s", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name))
 	hint := "Check the name, or pass -d for another database: security users list and security roles list list them. " +
 		"A login without VIEW DEFINITION on the database sees only its own user and the fixed roles."
 	if _, err := cat.LoginByName(ctx, name); err == nil {
-		hint = fmt.Sprintf("%s is a login: add --scope server for its server permissions.", gosmo.QuoteName(name))
+		hint = fmt.Sprintf("%s is a login: %s.", gosmo.QuoteName(name), words.toServer)
 		if users, err := cat.Users(ctx, dbase); err == nil {
 			for _, u := range users {
 				if u.LoginName != "" && strings.EqualFold(u.LoginName, name) {
-					hint = fmt.Sprintf("Login %s is user %s in this database: ask for %s, or add --scope server for the login's server permissions.",
-						gosmo.QuoteName(name), gosmo.QuoteName(u.Name), u.Name)
+					hint = fmt.Sprintf("Login %s is user %s in this database: name %s, or %s.",
+						gosmo.QuoteName(name), gosmo.QuoteName(u.Name), u.Name, words.toServer)
 					break
 				}
 			}
 		}
 	} else if _, err := cat.ServerRoleByName(ctx, name); err == nil {
-		hint = fmt.Sprintf("%s is a server role: add --scope server.", gosmo.QuoteName(name))
+		hint = fmt.Sprintf("%s is a server role: %s.", gosmo.QuoteName(name), words.toServer)
 	}
 	return output.NewError(output.CodeNotFound, msg, hint)
 }

@@ -136,6 +136,8 @@ func newCommandTree(d cmd.Deps) *spec.Tree {
 	tree.Commands = append(tree.Commands, cmd.MonitorCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.XEventCommands(d)...)
 	tree.Commands = append(tree.Commands, cmd.SecurityCommands(d)...)
+	tree.Commands = append(tree.Commands, cmd.JobCommands(d)...)
+	tree.Commands = append(tree.Commands, cmd.MaintCommands(d)...)
 	guideCommand(tree).Options[1].Enum = agent.Topics(tree)
 	return tree
 }

@@ -205,6 +205,23 @@ type Catalog interface {
 	ServerPermissions(ctx context.Context) ([]*gosmo.ServerPermissionEntry, error)
 	EffectivePermissions(ctx context.Context, d *gosmo.Database, user string) ([]*gosmo.EffectivePermission, error)
 	EffectiveServerPermissions(ctx context.Context, login string) ([]*gosmo.EffectivePermission, error)
+	// security grant/deny/revoke --on CERTIFICATE::.
+	CertificateByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.Certificate, error)
+
+	// job: msdb's jobs, one job's steps and schedules, the run history
+	// across jobs or for one, and whether Agent is running. A *gosmo.Job is
+	// one Jobs or JobByName returned.
+	Jobs(ctx context.Context) ([]*gosmo.Job, error)
+	JobByName(ctx context.Context, name string) (*gosmo.Job, error)
+	JobSteps(ctx context.Context, j *gosmo.Job) ([]*gosmo.JobStep, error)
+	JobSchedules(ctx context.Context, j *gosmo.Job) ([]*gosmo.Schedule, error)
+	SearchJobHistory(ctx context.Context, f gosmo.JobHistoryFilter) ([]*gosmo.JobHistoryEntry, error)
+	AgentInfo(ctx context.Context) (*gosmo.AgentStatus, error)
+
+	// maint backup / backup-history: the sets a backup's media holds
+	// (RESTORE HEADERONLY), and a database's history in msdb.
+	BackupHeaders(ctx context.Context, targets ...gosmo.BackupTarget) ([]*gosmo.BackupHeader, error)
+	BackupHistory(ctx context.Context, database string) ([]*gosmo.BackupInfo, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -679,6 +696,40 @@ func (serverCatalog) EffectivePermissions(ctx context.Context, d *gosmo.Database
 
 func (c serverCatalog) EffectiveServerPermissions(ctx context.Context, login string) ([]*gosmo.EffectivePermission, error) {
 	return c.s.EffectiveServerPermissions(ctx, login)
+}
+
+func (serverCatalog) CertificateByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.Certificate, error) {
+	return d.CertificateByName(ctx, name)
+}
+
+func (c serverCatalog) Jobs(ctx context.Context) ([]*gosmo.Job, error) { return c.s.Jobs(ctx) }
+
+func (c serverCatalog) JobByName(ctx context.Context, name string) (*gosmo.Job, error) {
+	return c.s.JobByName(ctx, name)
+}
+
+func (serverCatalog) JobSteps(ctx context.Context, j *gosmo.Job) ([]*gosmo.JobStep, error) {
+	return j.Steps(ctx)
+}
+
+func (serverCatalog) JobSchedules(ctx context.Context, j *gosmo.Job) ([]*gosmo.Schedule, error) {
+	return j.Schedules(ctx)
+}
+
+func (c serverCatalog) SearchJobHistory(ctx context.Context, f gosmo.JobHistoryFilter) ([]*gosmo.JobHistoryEntry, error) {
+	return c.s.SearchJobHistory(ctx, f)
+}
+
+func (c serverCatalog) AgentInfo(ctx context.Context) (*gosmo.AgentStatus, error) {
+	return c.s.AgentInfo(ctx)
+}
+
+func (c serverCatalog) BackupHeaders(ctx context.Context, targets ...gosmo.BackupTarget) ([]*gosmo.BackupHeader, error) {
+	return c.s.BackupHeaders(ctx, targets...)
+}
+
+func (c serverCatalog) BackupHistory(ctx context.Context, database string) ([]*gosmo.BackupInfo, error) {
+	return c.s.BackupHistory(ctx, database)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

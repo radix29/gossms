@@ -156,6 +156,23 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `login`. Calling `noteTarget` (or the check) ahead of the refusal, or
   `logCall` filling an empty target through `connect.Describe`, would fix
   all four at once.
+- **An application role cannot be a `security grant/deny/revoke` or `role
+  add-member` principal** (phase 8, 8.g): `resolvePrincipal` looks up a
+  user, then a database role, so an application role is `NOT_FOUND`, exit
+  8, though SQL Server accepts it. A third lookup (gosmo
+  `ApplicationRoleByName`) in database scope would fix it; `security
+  permissions` shares the gap.
+- **The `job` commands need sysadmin in practice** (phase 8, found in
+  8.h): gosmo's job reads (`Jobs`, `JobByName`, `Steps`, `History`,
+  `SearchJobHistory`) SELECT from msdb's `sysjobs`, `sysjobservers`,
+  `sysjobactivity` and `sysjobhistory`, and msdb grants the Agent roles only
+  `sysjobs_view`, `sysschedules_localserver_view`, `syscategories` and the
+  `sp_help_job*` procedures — a SQLAgentReaderRole member is refused
+  `sysjobservers` (Msg 229, on 17), so `job list` and every job command
+  that reads the job first is exit 9. The TUI's Agent node shares it.
+  Reading through `sp_help_job`/`sp_help_jobhistory` (or the views) for a
+  non-sysadmin in gosmo would fix both; SQLAgentUserRole would then see
+  only its own jobs, as SSMS does.
 
 ## Fix order
 

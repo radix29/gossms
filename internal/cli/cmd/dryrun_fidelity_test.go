@@ -173,6 +173,34 @@ func (w *fidelityWriter) DropDatabase(ctx context.Context, d *gosmo.Database, te
 	return w.inner.DropDatabase(ctx, d, term)
 }
 
+func (w *fidelityWriter) ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
+	perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error {
+	w.shadow(ctx, "ApplyPermission", func(sctx context.Context) error {
+		return w.inner.ApplyPermission(sctx, d, verb, sec, perm, principal, opts)
+	})
+	return w.inner.ApplyPermission(ctx, d, verb, sec, perm, principal, opts)
+}
+
+func (w *fidelityWriter) AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error {
+	w.shadow(ctx, "AlterRoleMember", func(sctx context.Context) error { return w.inner.AlterRoleMember(sctx, d, role, member, add) })
+	return w.inner.AlterRoleMember(ctx, d, role, member, add)
+}
+
+func (w *fidelityWriter) StartJob(ctx context.Context, job, step string) error {
+	w.shadow(ctx, "StartJob", func(sctx context.Context) error { return w.inner.StartJob(sctx, job, step) })
+	return w.inner.StartJob(ctx, job, step)
+}
+
+func (w *fidelityWriter) StopJob(ctx context.Context, job string) error {
+	w.shadow(ctx, "StopJob", func(sctx context.Context) error { return w.inner.StopJob(sctx, job) })
+	return w.inner.StopJob(ctx, job)
+}
+
+func (w *fidelityWriter) Backup(ctx context.Context, opts gosmo.BackupOptions) error {
+	w.shadow(ctx, "Backup", func(sctx context.Context) error { return w.inner.Backup(sctx, opts) })
+	return w.inner.Backup(ctx, opts)
+}
+
 func (w *fidelityWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error {
 	w.shadow(ctx, "TruncateTable", func(sctx context.Context) error { return w.inner.TruncateTable(sctx, t) })
 	return w.inner.TruncateTable(ctx, t)
@@ -218,6 +246,19 @@ var fidelityCases = []fidelityCase{
 	{"monitor kill", "87 --confirm 87 --allow admin", killFakes},
 	{"xevent capture", "--template waits --duration 5 --session-database Sales --allow admin", captureFakes},
 	{"data import", "dbo.t --in-file {csv} --truncate-first --confirm dbo.t --allow ddl", importFakes},
+	{"security grant", "SELECT,INSERT --on dbo.Orders --to etl_user --with-grant-option --allow admin", permFakes},
+	{"security grant", "SELECT --on Customers --columns Email,Phone --to readers --allow admin", permFakes},
+	{"security grant", "VIEW SERVER STATE --on SERVER --to etl --allow admin", permFakes},
+	{"security deny", "CONTROL --on SCHEMA::Sales --to etl_user --cascade --allow admin", permFakes},
+	{"security revoke", "SELECT --on SCHEMA::Sales --from etl_user --grant-option-only --allow admin", permFakes},
+	{"security revoke", "EXECUTE --on TYPE::Phone --from readers --allow admin", permFakes},
+	{"security role add-member", "readers ghost --allow admin", permFakes},
+	{"security role remove-member", "sysadmin sa --scope server --allow admin", permFakes},
+	{"job start", "Backup --step backup --allow admin", jobFakes},
+	{"job start", "Backup --allow admin", jobFakes},
+	{"job stop", "busy --allow admin", jobFakes},
+	{"maint backup", "app --compression --checksum --allow admin", backupFakes},
+	{"maint backup", "app --to /b/s1.bak --to /b/s2.bak --type log --copy-only --init --confirm app --allow admin", backupFakes},
 }
 
 // fidelityExempt is the writing commands with no case, and why.
@@ -250,6 +291,8 @@ func scopedFakes(*testing.T) (Catalog, Writer) {
 	cat := newScopedCatalog()
 	return cat, &scopedWriter{cat: cat}
 }
+
+func jobFakes(*testing.T) (Catalog, Writer) { return newJobCatalog(), &jobWriter{} }
 
 func killFakes(*testing.T) (Catalog, Writer) {
 	return &killCatalog{target: userSession(87)}, &killWriter{}
@@ -323,6 +366,8 @@ var commandGroups = map[string]func(Deps) []*spec.Command{
 	"MonitorCommands":     MonitorCommands,
 	"XEventCommands":      XEventCommands,
 	"SecurityCommands":    SecurityCommands,
+	"JobCommands":         JobCommands,
+	"MaintCommands":       MaintCommands,
 }
 
 func fidelityTree(d Deps) *spec.Tree {
