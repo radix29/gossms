@@ -510,6 +510,7 @@ func TestJobStartServerRefusals(t *testing.T) {
 		code output.Code
 	}{
 		{agentRefusal("Request to run job Backup (from User sa) refused because the job is already running from a request by User sa."), output.CodeBlocked},
+		{agentRefusal("Request to run job p8m_job (from User sa) refused because the job already has a pending request from User sa."), output.CodeBlocked},
 		{agentRefusal("SQLServerAgent is not currently running so it cannot be notified of this action."), output.CodeUnsupported},
 		{mssql.Error{Number: msgJobIdentifier, Class: 16, Message: "The specified @job_name ('Backup') does not exist."}, output.CodeNotFound},
 		{mssql.Error{Number: 229, Class: 14, Message: "The EXECUTE permission was denied on the object 'sp_start_job'"}, output.CodePermissionDenied},

@@ -82,6 +82,25 @@ type Writer interface {
 
 	// maint backup: one BACKUP DATABASE or BACKUP LOG.
 	Backup(ctx context.Context, opts gosmo.BackupOptions) error
+	// maint restore: one RESTORE (its batch, with CloseExistingConnections),
+	// or with --verify-only one RESTORE VERIFYONLY.
+	Restore(ctx context.Context, opts gosmo.RestoreOptions) error
+	VerifyBackup(ctx context.Context, opts gosmo.VerifyOptions, targets ...gosmo.BackupTarget) error
+
+	// maint index-rebuild: one index (read by TableIndexes or ViewIndexes, so
+	// gosmo refuses what its kind takes no option for), or ALTER INDEX ALL
+	// on the table or view.
+	RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error
+	ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error
+	RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error
+	ReorganizeAllIndexes(ctx context.Context, o tableOrView) error
+	// maint update-stats: the object's statistics, one of them, or with
+	// --all sp_updatestats in d.
+	UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error
+	UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error
+	UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error
+	// maint checkdb: DBCC CHECKDB's rows (none under WithScript).
+	CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error)
 
 	// data import: --truncate-first's TRUNCATE TABLE, then the bulk load.
 	TruncateTable(ctx context.Context, t *gosmo.Table) error
@@ -189,6 +208,55 @@ func (w serverWriter) StopJob(ctx context.Context, job string) error {
 
 func (w serverWriter) Backup(ctx context.Context, opts gosmo.BackupOptions) error {
 	return w.s.Backup(ctx, opts)
+}
+
+func (w serverWriter) Restore(ctx context.Context, opts gosmo.RestoreOptions) error {
+	return w.s.Restore(ctx, opts)
+}
+
+func (w serverWriter) VerifyBackup(ctx context.Context, opts gosmo.VerifyOptions, targets ...gosmo.BackupTarget) error {
+	return w.s.VerifyBackup(ctx, opts, targets...)
+}
+
+func (serverWriter) RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error {
+	return idx.Rebuild(ctx, opts)
+}
+
+func (serverWriter) ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error {
+	return idx.Reorganize(ctx)
+}
+
+func (serverWriter) RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error {
+	if o.view != nil {
+		return o.view.RebuildAllIndexesWith(ctx, opts)
+	}
+	return o.table.RebuildAllIndexesWith(ctx, opts)
+}
+
+func (serverWriter) ReorganizeAllIndexes(ctx context.Context, o tableOrView) error {
+	if o.view != nil {
+		return o.view.ReorganizeAllIndexes(ctx)
+	}
+	return o.table.ReorganizeAllIndexes(ctx)
+}
+
+func (serverWriter) UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error {
+	if o.view != nil {
+		return o.view.UpdateStatisticsWith(ctx, opts)
+	}
+	return o.table.UpdateStatisticsWith(ctx, opts)
+}
+
+func (serverWriter) UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error {
+	return st.UpdateWith(ctx, opts)
+}
+
+func (serverWriter) UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error {
+	return d.UpdateStatistics(ctx, resample)
+}
+
+func (serverWriter) CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error) {
+	return d.CheckDB(ctx, opts)
 }
 
 func (serverWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error { return t.Truncate(ctx) }

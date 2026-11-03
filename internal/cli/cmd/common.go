@@ -222,6 +222,13 @@ type Catalog interface {
 	// (RESTORE HEADERONLY), and a database's history in msdb.
 	BackupHeaders(ctx context.Context, targets ...gosmo.BackupTarget) ([]*gosmo.BackupHeader, error)
 	BackupHistory(ctx context.Context, database string) ([]*gosmo.BackupInfo, error)
+	// maint restore: one set's files (RESTORE FILELISTONLY), and every
+	// database file on the instance, for the target-path collision check.
+	BackupFileList(ctx context.Context, fileNumber int, targets ...gosmo.BackupTarget) ([]*gosmo.BackupFile, error)
+	InstanceFiles(ctx context.Context) ([]*gosmo.InstanceFile, error)
+	// maint index-fragmentation: every index of d at least minPct
+	// fragmented with at least minPages leaf pages, most fragmented first.
+	DatabaseFragmentation(ctx context.Context, d *gosmo.Database, mode gosmo.FragmentationMode, minPct float64, minPages int64) ([]*gosmo.DatabaseIndexFragmentation, error)
 }
 
 // ModuleKind is which family's Definition ModuleDefinition reads.
@@ -730,6 +737,18 @@ func (c serverCatalog) BackupHeaders(ctx context.Context, targets ...gosmo.Backu
 
 func (c serverCatalog) BackupHistory(ctx context.Context, database string) ([]*gosmo.BackupInfo, error) {
 	return c.s.BackupHistory(ctx, database)
+}
+
+func (c serverCatalog) BackupFileList(ctx context.Context, fileNumber int, targets ...gosmo.BackupTarget) ([]*gosmo.BackupFile, error) {
+	return c.s.BackupFileList(ctx, fileNumber, targets...)
+}
+
+func (c serverCatalog) InstanceFiles(ctx context.Context) ([]*gosmo.InstanceFile, error) {
+	return c.s.InstanceFiles(ctx)
+}
+
+func (serverCatalog) DatabaseFragmentation(ctx context.Context, d *gosmo.Database, mode gosmo.FragmentationMode, minPct float64, minPages int64) ([]*gosmo.DatabaseIndexFragmentation, error) {
+	return d.FragmentationStats(ctx, mode, minPct, minPages)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

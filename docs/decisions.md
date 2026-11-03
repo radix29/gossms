@@ -2044,6 +2044,53 @@ The contract is `docs/cli.md` § Monitoring, § Extended Events and
   server-side predicate; a client-side filter language (`internal/xevent`'s)
   is not offered.
 
+## Command-line administration: what phase 8 settled — do not re-raise
+
+The contract is `docs/cli.md` § Security, § Agent jobs, § Maintenance,
+§ Writes, § Audit log and § Commands; these are the alternatives turned
+down.
+
+- **A command's class is the class `query run` gives the T-SQL it sends
+  (D1).** So `maint backup`, `restore` (`--verify-only` too), `checkdb`,
+  `security grant/deny/revoke` and role membership, `job start/stop` and
+  `db create/drop` are `admin`; `index-rebuild` and `update-stats` are
+  `ddl`, and the classifier matches: `UPDATE STATISTICS` is `ddl` wherever
+  it stands (inside a merged statement too), and so are `sp_updatestats` and
+  `sp_createstats` (`ddlProcs`). Phase 7's "classes
+  follow what the server changes" was turned down here: it would make
+  `checkdb` and VERIFYONLY `read`, the two routes would disagree (an agent
+  could lower its class by picking the other one), and a `read` profile
+  could start hours of I/O on production. `update-stats` as `write` (where
+  the `UPDATE` floor word first put it) was turned down too: it changes
+  optimizer state, not rows.
+- **`--confirm <name>` is for what overwrites or destroys (D3):** `db drop`
+  always; `maint restore` whenever the target database exists, with or
+  without `--replace` — restoring a database over itself overwrites it
+  without REPLACE — but not a differential or log restore onto a database
+  left RESTORING, which continues a chain and overwrites nothing; `maint
+  backup --init`, which overwrites the media. Not grant/deny/revoke, role
+  membership or `job start/stop`: each is reversible, and `--dry-run` is
+  their safeguard. `--close-connections` never stands in for `--confirm`.
+- **`maint restore` restores one backup set per call (D5).** No restore
+  chains or point-in-time (`PlanRestore`): `--norecovery` lets an agent
+  chain calls itself, each one checked. A media holding several sets without
+  `--file-number` is exit 2, not RESTORE's silent choice of set 1, the
+  oldest. `--move-to-default` names files `<db>_<logical><ext>`, gosmo's
+  rule shared with the TUI's Restore dialog, not a numbered `<db>[_<n>]`.
+  The system databases are refused (single-user-mode work), and so is a
+  planned path another database's file holds, before anything is sent.
+  No REPAIR option on `checkdb`, ever: it needs SINGLE_USER and can lose
+  data — a human decision. A corrupt database is exit 0 with a warning
+  naming the minimum repair level: the command did its job.
+- **The audit log is always on, and a write it cannot record is not made
+  (D10).** One JSON line per call above `read` and per refusal; reads are not
+  logged (noise — the log is for changes). An opt-in profile field was turned
+  down: the CLI never writes `config.json`, and an off-by-default audit
+  protects nobody. So was an opt-out flag or environment variable: an agent
+  could set either. T-SQL and data values are hashed, never stored; no
+  option carries a secret, since passwords never reach argv. No rotation yet
+  (`docs/open-threads.md`).
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

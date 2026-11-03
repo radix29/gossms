@@ -146,6 +146,11 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.
+- **`maint index-rebuild --online` → exit 11 is unit-tested only** (phase
+  8, 8.m): every instance here is Developer or Enterprise, so the refusal on
+  an edition without online index operations (gosmo
+  `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
+  instance would close it.
 - **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
   one line per write or refusal for ever. Deferred by decision; a size cap
   with one `.1` generation, taken under the same lock, is the likely form.
@@ -173,6 +178,15 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   Reading through `sp_help_job`/`sp_help_jobhistory` (or the views) for a
   non-sysadmin in gosmo would fix both; SQLAgentUserRole would then see
   only its own jobs, as SSMS does.
+- **`agent context` does not answer for every phase 8 right** (8.l):
+  IMPERSONATE (`security permissions --effective`) is per principal, the
+  rights to grant depend on the securable, and server role membership on the
+  role, so none is in `missing_permissions` — the server's refusal is exit 9
+  with a hint. CREATE DATABASE granted in master alone reads as a lack of
+  CREATE ANY DATABASE (`db create`, `maint restore`), a false positive.
+  `maint backup`'s and `checkdb`'s rows answer for the connection's
+  database, not the `<database>` argument. Probing IMPERSONATE ANY LOGIN and
+  CREATE DATABASE in master in gosmo would narrow the first and close the second.
 
 ## Fix order
 

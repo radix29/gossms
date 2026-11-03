@@ -108,6 +108,13 @@ var readProcs = map[string]bool{
 	"xp_readerrorlog": true, "xp_fixeddrives": true, "xp_msver": true,
 }
 
+// ddlProcs are the system procedures that do what a ddl statement does:
+// sp_updatestats is UPDATE STATISTICS over every table, sp_createstats CREATE
+// STATISTICS — so maint update-stats --all and query run agree (D1).
+var ddlProcs = map[string]bool{
+	"sp_updatestats": true, "sp_createstats": true,
+}
+
 // adminProcs are system procedures that change the server, its security or its
 // databases. Every xp_ procedure not in readProcs, every sp_trace_ and sp_OA
 // procedure, and every msdb sp_ procedure (Agent) is admin too.

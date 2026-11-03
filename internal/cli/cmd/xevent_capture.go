@@ -136,7 +136,8 @@ func xeventCaptureCommand(d Deps) *spec.Command {
 			"every exit path, a failed step or Ctrl+C included (exit 130 after the drop). A drop that fails is " +
 			"a warning naming the session; xevent sessions lists any " + captureSessionPrefix + " session left " +
 			"behind (a killed process cannot drop it), and DROP EVENT SESSION removes it. Templates: " +
-			strings.Join(tmpl, "; ") + ". Events of this command's own connections are left out. " +
+			strings.Join(tmpl, "; ") + ". Events of every gossms command-line connection (program goSSMS - CLI) are left out, this " +
+			"command's own included, so a capture never shows another gossms command's statements. " +
 			"--session-database, --login and --program keep only the events of that database, login or " +
 			"client program (exact names, filtered by the server); --min-duration-ms keeps only completed " +
 			"batches, RPCs, statements and modules that ran at least that long, leaving the template's other " +

@@ -43,10 +43,10 @@ func (c *contextFake) DatabaseAccess(context.Context) (map[int]bool, error) { re
 // SERVER STATE (its 2022 alternative unknown), VIEW ANY DEFINITION denied but
 // ALTER ANY DATABASE held, ALTER SETTINGS and ALTER ANY CONNECTION denied,
 // ALTER ANY EVENT SESSION denied with all four of 2022's narrow rights a
-// capture needs granted, no role but public; no VIEW
-// DEFINITION or ALTER in the database (ALTER ANY DATABASE SCOPED
-// CONFIGURATION unknown), VIEW DATABASE STATE denied with its 2022
-// alternative granted.
+// capture needs granted, CREATE ANY DATABASE denied, no role but public; no
+// VIEW DEFINITION, ALTER, ALTER ANY ROLE or BACKUP LOG in the database (ALTER
+// ANY DATABASE SCOPED CONFIGURATION unknown), BACKUP DATABASE granted, VIEW
+// DATABASE STATE denied with its 2022 alternative granted, not db_owner.
 func newContextFake() *contextFake {
 	return &contextFake{
 		fakeCatalog: newFakeCatalog(),
@@ -66,6 +66,7 @@ func newContextFake() *contextFake {
 				"ALTER ANY EVENT SESSION ENABLE":  gosmo.CapabilityGranted,
 				"ALTER ANY EVENT SESSION DISABLE": gosmo.CapabilityGranted,
 				"DROP ANY EVENT SESSION":          gosmo.CapabilityGranted,
+				"CREATE ANY DATABASE":             gosmo.CapabilityDenied,
 			},
 		},
 		dbc: &gosmo.DatabaseCapabilities{
@@ -77,6 +78,9 @@ func newContextFake() *contextFake {
 				"VIEW DATABASE PERFORMANCE STATE": gosmo.CapabilityGranted,
 				"ALTER":                           gosmo.CapabilityDenied,
 				"SHOWPLAN":                        gosmo.CapabilityDenied,
+				"BACKUP DATABASE":                 gosmo.CapabilityGranted,
+				"BACKUP LOG":                      gosmo.CapabilityDenied,
+				"ALTER ANY ROLE":                  gosmo.CapabilityDenied,
 			},
 		},
 		access: map[int]bool{5: true, 6: false, 1: true, 8: false},
@@ -152,6 +156,11 @@ func TestAgentContext(t *testing.T) {
 			"object dependencies, object indexes, object stats, script object",
 		"SHOWPLAN @ database [app] → plan estimated, plan actual",
 		"ALTER @ database [app] → db set",
+		"db_owner (role) or sysadmin @ database [app] → maint checkdb, maint update-stats",
+		"BACKUP LOG @ database [app] → maint backup",
+		"CREATE ANY DATABASE @ server → db create, maint restore",
+		"ALTER ANY ROLE @ database [app] → security role add-member, security role remove-member",
+		"sysadmin (role) @ server → job list, job show, job history, job start, job stop",
 	}
 	if strings.Join(missing, "\n") != strings.Join(want, "\n") {
 		t.Errorf("missing_permissions:\n%s\nwant:\n%s", strings.Join(missing, "\n"), strings.Join(want, "\n"))
@@ -216,6 +225,23 @@ func TestAgentContextRoleNeeds(t *testing.T) {
 	// VIEW SERVER STATE still answers for the error log.
 	if !slices.Contains(got, "securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG") {
 		t.Errorf("unprobed roles hid the denied VIEW SERVER STATE: %q", got)
+	}
+
+	// A database role: a member (a sysadmin reads as one too) is not
+	// missing it, and an unprobed role list is not a lack.
+	const owner = "db_owner (role) or sysadmin"
+	if got := permissions(newContextFake()); !slices.Contains(got, owner) {
+		t.Errorf("not db_owner, not reported: %q", got)
+	}
+	cat = newContextFake()
+	cat.dbc.Roles["db_owner"] = true
+	if got := permissions(cat); slices.Contains(got, owner) {
+		t.Errorf("db_owner member reported: %q", got)
+	}
+	cat = newContextFake()
+	cat.dbc.Roles = nil
+	if got := permissions(cat); slices.Contains(got, owner) {
+		t.Errorf("unprobed database roles read as a lack: %q", got)
 	}
 }
 

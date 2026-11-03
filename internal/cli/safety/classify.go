@@ -602,6 +602,8 @@ func execTarget(toks []token, i int) (c spec.Class, obj, reason string, flags Fl
 		return spec.ClassWrite, obj, "dynamic SQL is not classified", FlagDynamic
 	case readProcs[proc]:
 		return spec.ClassRead, obj, "", 0
+	case ddlProcs[proc]:
+		return spec.ClassDDL, obj, "procedure " + obj + " changes statistics", FlagExec
 	case adminProcs[proc] || strings.HasPrefix(proc, "xp_") || strings.HasPrefix(proc, "sp_trace_") ||
 		strings.HasPrefix(proc, "sp_oa") || dbName == "msdb" && strings.HasPrefix(proc, "sp_"):
 		return spec.ClassAdmin, obj, "procedure " + obj + " is administration", FlagExec

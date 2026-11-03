@@ -328,6 +328,28 @@ gossms xevent capture --template batches --duration 60 --allow admin -p dev
 They need `VIEW SERVER STATE` (Query Store: `VIEW DATABASE STATE`) and say
 so with exit 9 rather than answering an empty list.
 
+`security`, `job`, `maint` and `db create/drop` are the administration:
+logins, users, roles and permissions; SQL Server Agent jobs; backup,
+restore, consistency checks, index and statistics maintenance. Each change
+is `admin` (index rebuilds and statistics: `ddl`) with a `--dry-run`, and
+whatever overwrites or destroys — dropping a database, restoring over one,
+`backup --init` — also needs `--confirm` with its name:
+
+```bash
+gossms security permissions report_reader -p dev -d Sales          # explicit grants; --effective
+gossms security grant SELECT --on SCHEMA::Sales --to report_reader -p dev -d Sales --allow admin --dry-run
+gossms job history nightly_etl --failed -p dev                     # failed runs and their messages
+gossms job start nightly_etl --wait 600 --allow admin -p dev       # start, wait for the outcome
+gossms maint backup Sales --copy-only --checksum --allow admin -p dev
+gossms maint restore Sales_copy --from /var/opt/mssql/backup/Sales.bak --move-to-default --allow admin -p dev
+gossms maint index-fragmentation -p dev -d Sales                   # with a rebuild/reorganize suggestion
+gossms maint checkdb Sales --allow admin -p dev                    # corruption: a warning, never a repair
+```
+
+Every call above `read`, and every refusal, appends one line to the audit
+log, `audit.jsonl` beside `config.json` — T-SQL hashed, never a password. It
+is always on, and a change it cannot record is refused.
+
 For an AI agent, `gossms agent guide --brief -p dev` is the manual to put in
 its system prompt — rules, output contract, the command index, and what the
 profile's login can see; `gossms agent schema` is the same catalog as JSON

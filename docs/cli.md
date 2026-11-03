@@ -7,7 +7,7 @@ commit.
 
 **This document grows per phase.** It states only what is implemented; the
 command tree, output formats and safety model arrive with the phases that build
-them. Today (through phase 7) the commands are `version`, `help`, `agent
+them. Today (through phase 8) the commands are `version`, `help`, `agent
 guide/schema/context`, `profile list/show/test`, `db
 list/info/files/space/log-usage/table-sizes/set`, `db scoped-config
 list/get/set`, `server info/memory/volumes/log`, `server config
@@ -19,7 +19,7 @@ sessions/blocking/waits/top-queries/querystore/deadlocks/kill`, `xevent
 sessions/capture` and `security logins list/users list/roles
 list/role-members/permissions/grant/deny/revoke`, `security role
 add-member/remove-member`, `job list/show/history/start/stop` and `maint
-backup/backup-history`; the formats `text`, `json`, `jsonl`, `csv`, `tsv` and
+backup/backup-history/restore/checkdb/index-fragmentation/index-rebuild/update-stats`; the formats `text`, `json`, `jsonl`, `csv`, `tsv` and
 `markdown`. Every command but `version`, `help`, `agent guide/schema`,
 `profile list/show` and `query classify` connects to a server, and so does
 `agent guide` given a profile.
@@ -610,10 +610,15 @@ second Ctrl+C kills the process.
 | `job list [--enabled] [--category <name>] [--failed-since <time>] [-p <profile>] [connection options]` | Set `jobs`, by name: `name`, `enabled`, `category`, `owner`, `state` (`idle`, `executing`, `waiting_for_worker`, `between_retries`, `suspended`, `waiting_for_step`, `performing_completion_actions`, `unknown`; only `executing`/`idle` without sysadmin or with Agent stopped), `last_run`, `last_outcome` (`failed`, `succeeded`, `retry`, `cancelled`, `in_progress`; NULL for a job that never ran), `last_duration_s`, `next_run`. Every time is the server's local wall clock, as msdb records it. `--category` matches ignoring case. `--failed-since` keeps the jobs with a failed run (an outcome row with status failed) that started at or after the time — read from the run history (gosmo `SearchJobHistory`), so a failure a later success hid is found — and adds `failed_runs` and `last_failure`. A time with no zone is server local; with `Z` or an offset it is converted through the server's current UTC offset. The job reads take SELECT on msdb's job tables: in practice sysadmin (the msdb Agent roles reach them only through msdb's procedures), else exit 9 |
 | `job show <name> [-p <profile>] [connection options]` | Record: `name`, `jobId`, `enabled`, `description`, `category`, `owner`, `state`, `startStep`, `lastRun`, `lastOutcome`, `lastDurationS` (the three null for a job that never ran), `nextRun`, `created`, `modified`, `notifyEmail` (`never`, `on_success`, `on_failure`, `on_completion`), `notifyEmailOperator`, `deleteJob` (same values). Sets `steps`: `step_id`, `name`, `subsystem`, `database`, `on_success`, `on_fail` (`quit with success`, `quit with failure`, `go to next step`, `go to step n`), `retry_attempts`, `retry_interval_min`, `last_run`, `last_outcome`, `last_duration_s`, `proxy`, `output_file`, `command`; `schedules`: `schedule_id`, `name`, `enabled`, `frequency` (SSMS's wording), `start_date`, `end_date`. Missing: exit 8 |
 | `job history <name> [--top 20] [--since <time>] [--failed] [-p <profile>] [connection options]` | Record `job`. Set `history`, newest first: `run_date`, `step_id` (0 = the run's outcome row), `step_name`, `outcome`, `duration_s`, `message`. A step that started a second after its run sorts above that run's outcome row. `--top` caps rows (≥ 1), `--since` as `job list --failed-since`, `--failed` keeps failed rows (failed runs and failed steps) |
-| `job start <name> [--step <n\|name>] [--wait <sec>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, no `--confirm`. `sp_start_job` through gosmo. Read first: missing job or step (by number, by name, or the one name matching ignoring case) is exit 8, the hint listing the steps; already running is exit 7, nothing sent; Agent not running (`sys.dm_server_services`; an unknown status is left to the server) is exit 11, dry run too. Record: `job`, `step`, `stepId` (null without `--step`), `enabled` (a disabled job starts, with a warning), `state`, `wait`, `dryRun`, then `tsql` or `started`. `--wait` (1–86400) reads the job every 2 s until a run newer than the last one is recorded and the job is idle, then adds `finished`, `outcome`, `lastRun`, `lastDurationS`, `waitedS` and the set `history` (that run's rows); a failed run is exit 0 with `outcome` `failed` and a warning quoting the failed step's message. Still running at the bound: `finished` false, exit 6, the job left running. Ctrl+C stops the waiting (exit 130), never the job. Agent's Msg 22022 refusals: already running → 7, Agent stopped → 11; Msg 14262 → 8 |
+| `job start <name> [--step <n\|name>] [--wait <sec>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, no `--confirm`. `sp_start_job` through gosmo. Read first: missing job or step (by number, by name, or the one name matching ignoring case) is exit 8, the hint listing the steps; already running is exit 7, nothing sent; Agent not running (`sys.dm_server_services`; an unknown status is left to the server) is exit 11, dry run too. Record: `job`, `step`, `stepId` (null without `--step`), `enabled` (a disabled job starts, with a warning), `state`, `wait`, `dryRun`, then `tsql` or `started`. `--wait` (1–86400) reads the job every 2 s until a run newer than the last one is recorded and the job is idle, then adds `finished`, `outcome`, `lastRun`, `lastDurationS`, `waitedS` and the set `history` (that run's rows); a failed run is exit 0 with `outcome` `failed` and a warning quoting the failed step's message. Still running at the bound: `finished` false, exit 6, the job left running. Ctrl+C stops the waiting (exit 130), never the job. Agent's Msg 22022 refusals: already running or a start already pending (the job still reads idle) → 7, Agent stopped → 11; Msg 14262 → 8 |
 | `job stop <name> --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin`, no `--confirm`. `sp_stop_job` through gosmo. Missing: exit 8; Agent not running: exit 11. Record: `job`, `state` (as read before), `dryRun`, then `tsql`, or `stopped` and `stateAfter` (read right after; stopping is asynchronous). A job not running is exit 0, `stopped` false, a warning — nothing is sent when the read says idle, and the server's Msg 22022 "not currently running" is answered alike |
 | `maint backup <database> [--to <path\|url>…] [--type full\|diff\|log] [--compression\|--no-compression] [--copy-only] [--checksum] [--init --confirm <database>] [--credential <name>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin` (query run classes BACKUP so too), gated as `config set`; `--confirm` only with `--init`, which overwrites the sets the file holds (missing or not the name as given: `BLOCKED`, exit 7, before connecting; `--confirm` without `--init`: exit 2). `BACKUP DATABASE` (full; diff `WITH DIFFERENTIAL`) or `BACKUP LOG` through gosmo, always `WITH STATS = 10`: the percent and page messages go to stderr under `--verbose` only. `--to` repeats to stripe; a path is on the server, written by the service account; an `https` URL is `TO URL` (`--credential` for the storage-key form, refused with only files). Without `--to`: the instance's default backup directory (`InstanceDefaultBackupPath`) + `<database>_<type>_<UTC yyyymmdd_hhmmss>.bak` (`.trn` for log), joined with the directory's own separator, `\/:*?"<>\|` in the name made `_`. Neither compression flag: the server's `backup compression default`. Refused before sending: tempdb or a snapshot (exit 2), `--type log` on SIMPLE recovery (exit 2), `--compression` on an edition without it (Express, Web: `UNSUPPORTED`, exit 11), Azure SQL Database (exit 11). Record: `database`, `type`, `to` (the files, comma-separated), `compression` (`on`, `off`, `default`), `copyOnly`, `checksum`, `init`, `dryRun` (+ `tsql`); a real run adds the new set read back with `RESTORE HEADERONLY` — `setNumber` (its `WITH FILE`), `backupStart`, `backupFinish`, `sizeBytes`, `compressedBytes`, `compressed`, `hasChecksums` (a failed read-back is a warning and nulls: the backup succeeded). A refused BACKUP reports its cause, not the closing Msg 3013: 4214/3035 (no full backup to base a log or differential on), 4208, 3201 (the file cannot be opened there), 3231 (part of a striped media set), 4030 (sets not expired) → exit 5 with a hint; 1844 → 11; 262 → `PERMISSION_DENIED`, exit 9 (db_backupoperator, db_owner, sysadmin) |
 | `maint backup-history <database>\|--all [--last] [--type full\|diff\|log] [--since <time>] [--top 50] [-p <profile>] [connection options]` | Exactly one of `<database>` or `--all` (exit 2). Set `backups`, newest first: `database`, `type` (`full`, `diff`, `log`, or msdb's other kinds: `file`, `partial`, `differential_file`, `differential_partial`), `copy_only`, `start`, `finish`, `duration_s`, `size_mb`, `set_number` (`WITH FILE`), `devices` (every file of a striped set, comma-separated; null for a Managed Instance's automated backups), `first_lsn`, `last_lsn` (msdb's numeric(25,0), the log chain), `user`, `server`. `<database>`: gosmo `BackupHistory` (a dropped database still has its history; neither history nor a database: exit 8). `--all`: one msdb read per database (not tempdb, not snapshots). `--last` (gosmo `LastBackups`): one row per database and type (`full`, `diff`, `log`), `recovery_model` after `database`, the rest null when msdb holds none (or `--since` drops it); warnings name the databases with no full backup, and those in FULL or BULK_LOGGED recovery with none of the log. `--type`, `--since` (as `job list --failed-since`: server local, or zoned through the server's offset), `--top` (≥ 1; caps rows, `truncated` set; not with `--last`, exit 2) |
+| `maint restore [<database>] --from <path\|url>… [--file-number <n>] [--with-move <logical>=<path>…\|--move-to-default] [--replace] [--norecovery\|--standby <undo file>] [--close-connections] [--checksum] [--verify-only] [--confirm <database>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin` (query run classes RESTORE, VERIFYONLY included, so too). One backup set per call: no restore chain is planned — a full restore with `--norecovery`, then each differential or log restore, call by call. Before connecting: `--from` required; `<database>` required unless `--verify-only`; master, msdb, model, tempdb → `BLOCKED`, exit 7; `--confirm` given and not the name as given → 7; `--with-move` not `<logical>=<path>` or naming a file twice, `--with-move` with `--move-to-default`, `--norecovery` with `--standby`, a restore option with `--verify-only` → exit 2. The media is read first, in a dry run too (`RESTORE HEADERONLY`; a failed read reports its cause, not Msg 3013): set `backup` lists every set on it (`set_number selected database type copy_only start finish size_mb compressed checksums server version`). Several sets and no `--file-number` → exit 2 (RESTORE would read set 1, the oldest); no such set → 8. `--verify-only`: `RESTORE VERIFYONLY … WITH FILE = n [, CHECKSUM]` and nothing else — record `from setNumber backupType sourceDatabase checksum dryRun` (+ `valid` on a real run), a `<database>` other than the set's is a warning, `--checksum` on a set backed up without checksums → 2. Otherwise: a full set's file list (`RESTORE FILELISTONLY WITH FILE = n`) and set `files` (`logical_name type filegroup size_mb backup_path target_path`; `target_path` NULL for a differential or log set). Each file goes to its `--with-move` path (a logical name the set lacks → 8), else with `--move-to-default` into `InstanceDefaultDataPath`/`InstanceDefaultLogPath` — renamed `<database>_<logical><ext>` under a new name (gosmo's `RestoreRelocation`, shared with the TUI's Restore dialog) — else, over an existing database, that database's own file of the name (SQL Server overwrites its files where they are: probed on 17), else the path the backup recorded. `--with-move`/`--move-to-default` on a differential or log set → 2. Refused before sending: two files on one path → 2; a path another database's file holds (`sys.master_files`, compared without case) → 7, hinting `--move-to-default`; Azure SQL Database → 11. Over an existing database: `--confirm` with its name (exit 7 without, dry run included) — except a differential or log set onto a database left RESTORING, which overwrites nothing; a snapshot or the connection's own database → 2; a database in an availability group → 7. Record `database from setNumber backupType sourceDatabase backupFinish targetExists recovery (recovery\|norecovery\|standby) replace closeConnections checksum dryRun` (+ `tsql`), a real run adds `state` read back (`RESTORING` after `--norecovery`). Always `WITH STATS = 10`, the messages on stderr under `--verbose`. `--close-connections` is gosmo's in-batch SINGLE_USER (killed sessions on a Managed Instance). Server refusals by cause: 3154 (backup of another database: `--replace`), 3159 (log tail not backed up), 5133/3156 (a directory missing there), 3117 (no `--norecovery` before), 4305/4326, 3132/3231, 3241/3254, 3187/3183/3189, 3201 → exit 5 with a hint; 3101 (in use) and 1834/3176 → 7 hinting `--close-connections`/`--move-to-default`; 3169 (newer version) → 11; 262 → `PERMISSION_DENIED`, exit 9 (CREATE DATABASE, dbcreator, db_owner, sysadmin — the media reads need it too) |
+| `maint checkdb [<database>] [--physical-only] [--no-index] [--extended-logical-checks] [--data-purity] [--maxdop <n>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin` (query run classes DBCC CHECKDB so too). `<database>` defaults to the connection's. `DBCC CHECKDB (N'db'[, NOINDEX]) WITH NO_INFOMSGS, ALL_ERRORMSGS, TABLERESULTS[, …]` through gosmo, never retried. Before connecting: `--physical-only` with `--data-purity` or `--extended-logical-checks`, `--maxdop` outside 1–64 → exit 2. Missing → 8; not ONLINE → 2. Record `database physicalOnly noIndex extendedLogicalChecks dataPurity maxdop dryRun` (+ `tsql`); a real run adds `allocationErrors consistencyErrors` (from the 8989 summary row; without one, the rows counted) and `minimumRepair` (the heaviest `repair_level` named: `repair_rebuild` < `repair_allow_data_loss`; NULL when clean). Set `errors` (`error level state message repair_level object_id index_id partition_id alloc_unit_id file page slot`, the 8990/8989 summaries left out; ids NULL where zero); empty = clean. **Corruption is not a failure:** `STATUS: ok`, exit 0, and a warning with the counts and the least repair. No repair option, ever (D2: SINGLE_USER, and `REPAIR_ALLOW_DATA_LOSS` deletes what it cannot fix). Msg 7983 (neither sysadmin nor db_owner) → `PERMISSION_DENIED`, exit 9 |
+| `maint index-fragmentation [--min-percent 10] [--min-pages 1000] [--mode limited\|sampled\|detailed] [--schema <s>] [--top 50] [-p <profile>] [connection options]` | Class `read`, the connection's database (`-d`). One `sys.dm_db_index_physical_stats(db, NULL, …)` read, thresholds filtered on the server (gosmo `Database.FragmentationStats`): user tables' and indexed views' indexes, heaps and disabled indexes out, partitions folded. Set `indexes`, most fragmented first: `schema object object_type (table\|view) index index_id type partitions avg_fragmentation_pct page_count fragment_count avg_page_space_used_pct suggestion`; `avg_page_space_used_pct` NULL under `limited` (no leaf read); `suggestion` = `none` under 5 %, `reorganize` to 30 %, `rebuild` above — Microsoft's guideline, advice only. `--schema` case-insensitive, after the read; `--top` 0 keeps all (`truncated` when cut). Record `mode minPercent minPages`. Without VIEW DATABASE STATE → exit 9 with a hint |
+| `maint index-rebuild <schema.table> [--index <name>] [--reorganize] [--online] [--maxdop <n>] [--fill-factor <n>] --allow ddl [--dry-run] [-p <profile>] [connection options]` | Class `ddl` (ALTER INDEX). A table or indexed view in the connection's database (another kind → 2). `ALTER INDEX <index>\|ALL ON … REBUILD [WITH (FILLFACTOR, ONLINE = ON, MAXDOP)]` or `REORGANIZE`. Before connecting: `--reorganize` with `--online`/`--maxdop`/`--fill-factor`, `--maxdop` outside 1–64, `--fill-factor` outside 1–100 → 2. Before sending: `--online` on an edition without online index operations (gosmo `SupportsOnlineIndexOperations`: Enterprise/Developer, Azure SQL Database, Managed Instance) → exit 11, dry run too; no index (a heap) → 2; `--index` missing → 8 listing the indexes (exact name, else case-insensitive); `--reorganize` of a disabled index → 2. Record `schema name type index (NULL = all) operation (rebuild\|reorganize) online maxdop fillFactor dryRun` (+ `tsql`). Set `indexes`: `index index_id type disabled fragmentation_before_pct fragmentation_after_pct page_count` — a LIMITED read before (dry run too; disabled indexes NULL) and after a real run (`page_count` the newer read's); a failed read is a warning and NULLs. A rebuild of a disabled index enables it (warning). Msg 1088 on the write (the object was just read) → `PERMISSION_DENIED`, exit 9 (ALTER on the object); 1712 → 11; 1222, 1973, 2552 → 5 with a hint |
+| `maint update-stats <schema.table>\|--all [--statistic <name>] [--fullscan\|--sample-percent <n>\|--resample] --allow ddl [--dry-run] [-p <profile>] [connection options]` | Class `ddl` (UPDATE STATISTICS; the classifier puts `sp_updatestats`/`sp_createstats` in `ddl` too). Exactly one of `<object>` or `--all` (exit 2). `<object>` (table or indexed view): `UPDATE STATISTICS <object> [<statistic>] [WITH FULLSCAN\|SAMPLE n PERCENT\|RESAMPLE]`; none of the three = the server's sample (gosmo `UpdateStatisticsWith`/`UpdateWith`, whose zero value sends no WITH). `--statistic` any statistic (an index's has the index's name), missing → 8 listing them. Record `schema name type statistic sampling (default\|fullscan\|sample n percent\|resample) dryRun` (+ `tsql`); set `statistics` `statistic origin last_updated [previous_update] rows rows_sampled modifications` — as read before a dry run, read back after a real run with `previous_update` beside. `--all`: `EXEC sys.sp_updatestats [@resample = 'resample']` in the connection's database (stale statistics only); with `--fullscan`/`--sample-percent`/`--statistic` → 2; a read-only database or snapshot → 2; record `database sampling dryRun`. Two sampling options → 2. Msg 1088 → 9 (ALTER on the object); 15247 from `sp_updatestats` → 9 (db_owner or sysadmin) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
 No command ever prints a password or secret.
@@ -1286,7 +1291,9 @@ a session. Every `monitor` command is `read` except `kill`, which is `admin`.
   `errors` (`error_reported`, severity ≥ 11), defined in gossms. Count Query
   Locks is not offered (a histogram target).
 - **Filters are the server's**, ANDed into every event's predicate:
-  `client_app_name <> 'goSSMS - CLI'` always (this tool's own events),
+  `client_app_name <> 'goSSMS - CLI'` always (every gossms command-line
+  call's events, not only this one's: a capture cannot watch another
+  gossms command, and `--program 'goSSMS - CLI'` keeps nothing),
   `--session-database`, `--login`, `--program` (exact names), and
   `--min-duration-ms` on the completed batch, RPC, statement and module
   events only. The actions that fill the columns are added to every event.
@@ -1300,6 +1307,147 @@ a session. Every `monitor` command is `read` except `kill`, which is `admin`.
 - **`--dry-run`** reads and checks as a run does, then prints the CREATE,
   START, STOP and DROP as `tsql`; nothing is created.
 
+## Security
+
+`security` reads and changes who may do what, through gosmo; the reads are
+`read`, every change `admin` with no `--confirm` (each is reversible, and
+`--dry-run` is its safeguard).
+
+- **Scope.** A principal is a user, then a database role, of the
+  connection's database (`-d`); with `--scope server` (the reads, `role
+  add-member/remove-member`) a login, then a server role. `grant`, `deny` and
+  `revoke` have no `--scope`: it follows `--on` (`SERVER` → a login or server
+  role). A name not found is exit 8 with a hint naming the other scope when it
+  has the name, or the user a login maps to here — the likeliest slip is a
+  login name in database scope. An application role is not resolved
+  (`docs/open-threads.md`).
+- **Metadata visibility.** A login without VIEW DEFINITION (VIEW ANY
+  DEFINITION on the server) sees no other principal, so naming one is exit
+  8, not 9 — the server hides it rather than refusing.
+- **`permissions`** lists the principal's explicit entries (securables, then
+  columns) and `memberOf`, since what a role gives is not an entry of the
+  member's. `--effective` reads `fn_my_permissions` under `EXECUTE AS` at
+  database or server level only — a schema SELECT given through a role does
+  not show — and needs IMPERSONATE on the principal (or sysadmin/db_owner):
+  Msg 15517/15406 is exit 9. A role cannot be impersonated, so `--effective`
+  for one is exit 2 before anything is sent.
+- **`grant`/`deny`/`revoke`.** `<permission>` is checked against gosmo's list
+  for the securable's class before anything is sent (exit 2, the hint listing
+  the ones it takes); several, comma-separated, are one statement each, in
+  order, and a failure after the first warns which stayed. `--columns` are
+  read against the table's or view's columns first. The answer's
+  `permissions` set is read back; **a change it does not show is a warning**:
+  SQL Server answers a statement naming sa, dbo, the securable's owner or the
+  caller itself with an informational message only and records nothing.
+  Msg 4611 (dependent grants) is exit 5 hinting `--cascade` or
+  `--grant-option-only`.
+- **Role membership** reads the role and the member first; already a member
+  (or not one, for `remove-member`) is a warning, and the statement is still
+  sent. `isMember` is read back.
+- **Permissions.** Granting needs CONTROL on the securable, the permission
+  WITH GRANT OPTION, or db_securityadmin (CONTROL SERVER or securityadmin on
+  the server); membership needs ALTER ANY ROLE (a fixed role: db_owner). The
+  server's refusal is exit 9 with the hint. `agent context` lists ALTER ANY
+  ROLE when the login is known to lack it; the grant rights depend on the
+  securable and are left to the server.
+
+## Agent jobs
+
+`job` reads SQL Server Agent's jobs from msdb and starts or stops one; `list`,
+`show` and `history` are `read`, `start` and `stop` `admin` with no
+`--confirm`.
+
+- **sysadmin in practice.** gosmo reads msdb's job tables, which the
+  SQLAgentUserRole, ReaderRole and OperatorRole cannot open (Msg 229, exit
+  9); `agent context` lists sysadmin for the `job` commands when the login
+  is not one (`docs/open-threads.md`).
+- **Times are the server's local wall clock**, as msdb stores them, with no
+  zone. A `--since`/`--failed-since` with a zone (`Z`, `+01:00`) is turned
+  into the server's local time first (one clock read); one without is taken
+  as server local.
+- **Agent not running** is exit 11 for `start` and `stop` (a dry run too);
+  the reads still work. Agent answers every refusal with Msg 22022, told
+  apart by its text: already running, or a start already pending (the
+  job still reads idle, so the read cannot catch it) → exit 7, Agent
+  stopped → 11, not running (on `stop`) → the idle answer below.
+- **`start` is asynchronous.** Without `--wait` it returns once Agent has the
+  request. `--wait <sec>` (1–86400) reads the job every 2 s until a run newer
+  than the one read before is recorded and the job is idle, then reports the
+  outcome and that run's `history` rows. A failed run is exit 0 with a
+  warning quoting the failed step's message (the command did its job); the
+  bound passing is exit 6, `TIMEOUT`, the job still running; Ctrl+C is 130
+  and the job keeps running. Already running is exit 7, nothing sent; a
+  disabled job starts, with a warning.
+- **`stop`** of a job the read shows idle sends nothing: `stopped` false and a
+  warning, exit 0. Otherwise `sp_stop_job`, then `stateAfter`, which can
+  still read executing: stopping is asynchronous too.
+
+## Maintenance
+
+`maint` backs up and restores databases, checks their consistency and
+maintains indexes and statistics, through gosmo. `backup-history` and
+`index-fragmentation` are `read`; `backup`, `restore` and `checkdb` are
+`admin`; `index-rebuild` and `update-stats` are `ddl` — each the class
+`query run` gives the T-SQL it sends (§ Safety).
+
+- **Backup.** `--to` is a path on the server, written by the SQL Server
+  service account (Msg 3201 when it cannot), or an https URL; repeated, it
+  stripes. Without it the file goes to the instance's default backup
+  directory. A backup of tempdb or a snapshot, or a log backup of a SIMPLE
+  database, is exit 2 before anything is sent; a differential or log backup with no full
+  before it is the server's 3035/4214, exit 5, with a hint. The new set is
+  read back from the file (`setNumber`, sizes, `compressed`,
+  `hasChecksums`). `--init` overwrites the media and needs `--confirm`. Needs
+  BACKUP DATABASE / BACKUP LOG (db_backupoperator, db_owner, sysadmin).
+- **`backup-history`** reads msdb, so a dropped database keeps its history.
+  `--last` is one row per database and type with the recovery model, warning
+  of a database with no full backup, or in FULL/BULK_LOGGED recovery with no
+  log backup.
+- **Restore** is one backup set per call: the media is read first, a dry run
+  included (`backup`: every set it holds, `selected` marking the one used;
+  `files`: each file's planned path). Several sets need `--file-number`
+  (exit 2 without — RESTORE would read set 1, the oldest). Files go where the
+  backup recorded them, or, over an existing database without a move, to
+  *that* database's own paths; `--move-to-default` puts each into the
+  instance's default directories as `<database>_<logical name>`, the way to
+  restore a copy beside the original. A planned path another database's file
+  holds is exit 7 before sending. Over an existing database it needs
+  `--confirm` (§ Writes); a database in an availability group is exit 7, the
+  system databases are exit 7, the connection's own database exit 2. Chains
+  are the caller's: `--norecovery` (or `--standby`) and then the next
+  differential or log restore. `--verify-only` is RESTORE VERIFYONLY and
+  nothing else. Reading the media needs CREATE DATABASE, `--verify-only`
+  included; restoring over a database needs dbcreator, sysadmin or db_owner of
+  it. Only the shared-access-signature form of a URL works (a credential
+  named for the container): gosmo's media reads take no credential.
+- **`checkdb`** runs `DBCC CHECKDB … WITH NO_INFOMSGS, ALL_ERRORMSGS,
+  TABLERESULTS` on the database (default the connection's; not ONLINE: exit
+  2). The `errors` set holds the error rows, the per-table and database
+  summaries left out, with object ids (the message names the object);
+  `allocationErrors`, `consistencyErrors` and `minimumRepair` come from them.
+  **Corruption is exit 0 with a warning** naming the minimum repair level:
+  the command did its job. There is no repair option. Needs db_owner or
+  sysadmin (Msg 7983, exit 9).
+- **`index-fragmentation`** is one `sys.dm_db_index_physical_stats` read of
+  the connection's database, user tables and indexed views, heaps left out,
+  partitions folded, most fragmented first, each row with a `suggestion`,
+  Microsoft's guideline and advice only: `reorganize` from 5 to 30 %,
+  `rebuild` above, `none` below. Needs VIEW DATABASE STATE (Msg 297, exit 9).
+- **`index-rebuild`** rebuilds or (`--reorganize`) reorganizes one index or
+  all of a table's or indexed view's, reporting LIMITED fragmentation before
+  and after. `--online` where the edition has no online index operations
+  (not Enterprise, Developer, Azure SQL Database or Managed Instance) is exit
+  11, a dry run included. Rebuilding a disabled index enables it (a
+  warning); reorganizing one is exit 2.
+- **`update-stats`** updates one object's statistics, or one
+  (`--statistic`, an index's named as the index); none of `--fullscan`,
+  `--sample-percent`, `--resample` is the server's default sample. `--all` is
+  `sp_updatestats` for the database (`--resample` only), which needs db_owner
+  (Msg 15247, exit 9); one object's needs ALTER on it (Msg 1088, exit 9).
+- **Permissions.** `agent context` lists BACKUP DATABASE, BACKUP LOG, CREATE
+  ANY DATABASE, db_owner and VIEW DATABASE STATE when the login is known to
+  lack them, with the commands each breaks.
+
 ## Safety
 
 `internal/cli/safety` puts every statement into an operation class by its
@@ -1309,7 +1457,7 @@ leading keywords:
 |---|---|---|
 | `read` | `SELECT`, `USE`, `SET` session options, `DECLARE`, `PRINT`, `EXECUTE AS`, catalog procedures on the read allow-list (`sp_help`, `sp_helptext`, `sp_spaceused`, `sp_who2`, …), `DBCC SHOW_STATISTICS`/`SQLPERF`/`OPENTRAN`/`INPUTBUFFER`/`TRACESTATUS`/`USEROPTIONS` | nothing (the default) |
 | `write` | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, transaction control (`BEGIN TRAN`, `COMMIT`, …), a procedure not on the read allow-list, dynamic SQL, `OPENQUERY`/`OPENROWSET` | `--allow write` |
-| `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `UPDATE STATISTICS` | `--allow ddl` |
+| `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `UPDATE STATISTICS`, `sp_updatestats`, `sp_createstats` | `--allow ddl` |
 | `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `sp_configure`, `xp_` and msdb procedures not on the read list, `DBCC` not on the read list | `--allow admin` |
 
 `query classify --file <path>` shows each statement's class and why. The
@@ -1343,15 +1491,20 @@ The commands that change a server through gosmo — `server config
 set/reset`, `server traceflag on/off`, `db set`, `db scoped-config set`,
 `db create`, `db drop`, `data import`, `monitor kill`, `xevent capture`,
 `security grant/deny/revoke`, `security role add-member/remove-member`,
-`job start/stop` and `maint backup` — share one layer
+`job start/stop`, `maint backup`, `maint restore`, `maint checkdb`,
+`maint index-rebuild` and `maint update-stats` — share one layer
 (`internal/cli/cmd/write.go`). Each is class `admin`, except `data import`
-(`write`, `ddl` with `--truncate-first`). `data import` answers a load
+(`write`, `ddl` with `--truncate-first`) and `maint index-rebuild` and
+`update-stats` (`ddl`). `data import` answers a load
 count, `monitor kill` the session and whether it ended, `xevent capture` the
 events it caught, `db create` the database read back, `db drop` the
 database as it stood, `security grant/deny/revoke` the principal's entries on
 the securable, `security role` the membership read back, `job start/stop`
-the job's state (with `--wait`, the run's outcome) and `maint backup` the set
-read back from its file — not a
+the job's state (with `--wait`, the run's outcome), `maint backup` the set
+read back from its file, `maint restore` the database's state, `maint
+checkdb` what the check found, `maint index-rebuild` the indexes'
+fragmentation before and after and `maint update-stats` the statistics read
+back — not a
 before/after change set (§ Commands, § Data,
 § Monitoring, § Extended Events).
 
@@ -1387,7 +1540,8 @@ before/after change set (§ Commands, § Data,
   with a hint naming the permission — Msg 15247 included, which gosmo reads
   as "missing or denied" (`NOT_FOUND` for a read): a writing command has just
   read the name, so each maps it to `PERMISSION_DENIED` itself (`server config
-  set` once did not, and answered exit 8). A refused `ALTER DATABASE` or `BACKUP` reports the
+  set` once did not, and answered exit 8) — Msg 1088 too, for `maint
+  index-rebuild` and `update-stats`. A refused `ALTER DATABASE`, `BACKUP` or `RESTORE` (a media read too) reports the
   error that says why — its code too (a BACKUP refused Msg 262 is
   `PERMISSION_DENIED`) — not the contentless Msg 5069 or 3013 that ends it. A value
   gosmo refuses before sending is exit 2.
@@ -1407,14 +1561,23 @@ before/after change set (§ Commands, § Data,
     given. `--close-connections` does not stand in for it.
   - `--confirm <database>` (`maint backup`, with `--init`): the database's name
     exactly as given; `--init` overwrites every backup set the file holds.
+  - `--confirm <database>` (`maint restore`, when the database exists): the
+    name exactly as given — a restore overwrites it, with or without
+    `--replace`. Not needed for a differential or log restore onto a database
+    left RESTORING, nor with `--verify-only`; `--close-connections` does not
+    stand in for it.
 
   The global `--force` keeps its one meaning: replace an existing file the
   command writes — `--out-file`, `--plan-file`, `--script-file`, or the
   files `--deadlock-file` writes.
 - **Permissions.** `agent context` lists ALTER SETTINGS, sysadmin, ALTER,
-  ALTER ANY DATABASE SCOPED CONFIGURATION, ALTER ANY CONNECTION and ALTER ANY
-  EVENT SESSION (met by 2022's four narrow rights together) when the login is
-  known to lack them, with the commands each breaks.
+  ALTER ANY DATABASE SCOPED CONFIGURATION, ALTER ANY CONNECTION, ALTER ANY
+  EVENT SESSION (met by 2022's four narrow rights together), CREATE ANY
+  DATABASE, BACKUP DATABASE, BACKUP LOG, ALTER ANY ROLE and db_owner when the
+  login is known to lack them, with the commands each breaks (§ Security,
+  § Agent jobs, § Maintenance). IMPERSONATE and the grant rights depend on
+  the principal or securable and are not probed: the server's refusal is
+  exit 9 with a hint.
 
 ## Audit log
 
@@ -1450,7 +1613,7 @@ field turns it off (`internal/cli/audit`).
   log is opened for appending; if that fails the call is refused with
   `GENERAL_ERROR`, exit 1, naming the reason. Reads still run. Should the
   append itself then fail, the result carries a warning.
-- The log is never rotated or trimmed by gossms.
+- The log is never rotated or trimmed by gossms (`docs/open-threads.md`).
 
 ## The import rule
 

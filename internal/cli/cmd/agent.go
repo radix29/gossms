@@ -45,7 +45,8 @@ type permissionNeed struct {
 	database   bool     // database scope (the connection's database), else server
 	anyOf      []string // granted any: not missing
 	allOf      []string // granted every one: not missing (a split right's narrow parts)
-	roles      []string // fixed server roles, a member of any: not missing (server scope only)
+	roles      []string // fixed server roles, a member of any: not missing
+	dbRoles    []string // fixed roles of the connection's database, a member of any: not missing
 	commands   []string // the command paths it breaks, as typed
 	effect     string
 }
@@ -159,9 +160,9 @@ var permissionNeeds = []permissionNeed{
 		permission: "VIEW DATABASE STATE",
 		database:   true,
 		anyOf:      []string{"VIEW DATABASE STATE", "VIEW DATABASE PERFORMANCE STATE"},
-		commands:   []string{"object indexes", "monitor querystore"},
-		effect: "monitor querystore fails in this database (exit 9); object indexes --fragmentation fails " +
-			"(exit 9) unless the login has CONTROL on the object",
+		commands:   []string{"object indexes", "monitor querystore", "maint index-fragmentation"},
+		effect: "monitor querystore and maint index-fragmentation fail in this database (exit 9); object " +
+			"indexes --fragmentation fails (exit 9) unless the login has CONTROL on the object",
 	},
 	{
 		permission: "ALTER",
@@ -179,17 +180,83 @@ var permissionNeeds = []permissionNeed{
 		commands: []string{"db scoped-config set"},
 		effect:   "fails in this database (exit 9); db scoped-config list and get need only a user",
 	},
+	{
+		permission: "db_owner (role) or sysadmin",
+		database:   true,
+		// DBCC CHECKDB and sp_updatestats check the roles: CONTROL on the
+		// database alone is refused Msg 7983 (checked on 17, 2026-11-03).
+		// IS_ROLEMEMBER('db_owner') reads 1 for a sysadmin, who is dbo, so
+		// the database probe alone decides.
+		dbRoles:  []string{"db_owner"},
+		commands: []string{"maint checkdb", "maint update-stats"},
+		effect: "maint checkdb of this database fails (Msg 7983, exit 9); update-stats --all (sp_updatestats) " +
+			"fails (Msg 15247, exit 9); one table's statistics need only ALTER on it",
+	},
+	{
+		permission: "BACKUP DATABASE",
+		database:   true,
+		// db_backupoperator, db_owner and sysadmin hold both BACKUP rights.
+		anyOf:    []string{"BACKUP DATABASE"},
+		commands: []string{"maint backup"},
+		effect:   "a full or differential backup of this database fails (Msg 262, exit 9); --dry-run still prints it",
+	},
+	{
+		permission: "BACKUP LOG",
+		database:   true,
+		anyOf:      []string{"BACKUP LOG"},
+		commands:   []string{"maint backup"},
+		effect:     "--type log of this database fails (Msg 262, exit 9)",
+	},
+	{
+		permission: "CREATE ANY DATABASE",
+		// dbcreator and ALTER ANY DATABASE imply it (both read 1, 17). A
+		// restore reads the media first (HEADERONLY, FILELISTONLY,
+		// VERIFYONLY), and those need CREATE DATABASE even over a database
+		// the login owns. A CREATE DATABASE granted in master alone reads 0
+		// here: the one false positive, accepted.
+		anyOf:    []string{"CREATE ANY DATABASE"},
+		commands: []string{"db create", "maint restore"},
+		effect: "fail (exit 9); maint restore fails reading the media, --verify-only and --dry-run too; over " +
+			"an existing database it also needs dbcreator, sysadmin or db_owner of it",
+	},
+	{
+		permission: "ALTER ANY ROLE",
+		database:   true,
+		// db_securityadmin and db_owner hold it; ALTER ANY DATABASE implies it.
+		anyOf:    []string{"ALTER ANY ROLE"},
+		commands: []string{"security role add-member", "security role remove-member"},
+		effect: "fail in this database on a user-defined role (exit 9); a fixed role needs db_owner; " +
+			"with --scope server the server's own rules apply",
+	},
+	{
+		permission: "sysadmin (role)",
+		// gosmo reads msdb's job tables (sysjobs, sysjobservers,
+		// sysjobactivity, sysjobhistory) where the SQLAgent* roles get only
+		// the views and sp_help_job*: a SQLAgentReaderRole member is refused
+		// Msg 229 on sysjobservers (17). Open thread in docs/open-threads.md.
+		roles:    []string{"sysadmin"},
+		commands: []string{"job list", "job show", "job history", "job start", "job stop"},
+		effect: "fail (exit 9): the job reads use msdb tables the SQLAgentUserRole, ReaderRole and " +
+			"OperatorRole do not open",
+	},
 }
 
 // missing reports whether the need is known to be unmet under state and, for
-// a need with roles, the server probe srv.
-func (n permissionNeed) missing(state func(string) gosmo.CapabilityState, srv *gosmo.Capabilities) bool {
+// a need with roles, the probes srv and dbc.
+func (n permissionNeed) missing(state func(string) gosmo.CapabilityState, srv *gosmo.Capabilities,
+	dbc *gosmo.DatabaseCapabilities) bool {
 	answered := false
 	if len(n.allOf) > 0 && !slices.ContainsFunc(n.allOf, func(p string) bool { return state(p) != gosmo.CapabilityGranted }) {
 		return false
 	}
 	if len(n.roles) > 0 && srv.Probed() {
 		if slices.ContainsFunc(n.roles, srv.InServerRole) {
+			return false
+		}
+		answered = true
+	}
+	if len(n.dbRoles) > 0 && dbc.Probed() {
+		if slices.ContainsFunc(n.dbRoles, func(r string) bool { return dbc.Roles[r] }) {
 			return false
 		}
 		answered = true
@@ -313,7 +380,7 @@ func missingPermissions(srv *gosmo.Capabilities, dbc *gosmo.DatabaseCapabilities
 		if n.database {
 			state, scope = dbc.Permission, "database "+gosmo.QuoteName(database)
 		}
-		if n.missing(state, srv) {
+		if n.missing(state, srv, dbc) {
 			set.Rows = append(set.Rows, []*string{ptr(n.permission), ptr(scope),
 				ptr(strings.Join(n.commands, ", ")), ptr(n.effect)})
 		}

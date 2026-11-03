@@ -48,7 +48,8 @@ func jobWriteCommands(d Deps) []*spec.Command {
 			Path:    []string{"job", "start"},
 			Summary: "Start an Agent job now, at its first step or a given one; optionally wait for it to finish",
 			Description: "EXEC msdb.dbo.sp_start_job, through gosmo. The job is read first: missing is exit 8; already " +
-				"running is exit 7 and nothing is sent (Agent would refuse it). Agent not running is exit 11 — reads " +
+				"running is exit 7 and nothing is sent (Agent would refuse it); so is a start Agent refuses because one is " +
+				"already pending. Agent not running is exit 11 — reads " +
 				"still work. --step starts at a step given by its number or its name (job show lists them; missing: " +
 				"exit 8). A disabled job starts too (a warning says so). Starting is asynchronous: without --wait the " +
 				"command returns once Agent has the request (started), not when the job ends. --wait <sec> reads the " +
@@ -160,6 +161,10 @@ func agentError(err error, job string) (e error, notRunning bool) {
 			oe.Code, oe.Hint = output.CodeUnsupported, agentStoppedHint
 		case strings.Contains(msg, "already running"):
 			oe.Code, oe.Hint = output.CodeBlocked, fmt.Sprintf("It started after it was read: gossms job stop %q ends it.", job)
+		case strings.Contains(msg, "pending request"):
+			// A start Agent has accepted but not begun: the job still
+			// reads idle, so the read before sending cannot catch it.
+			oe.Code, oe.Hint = output.CodeBlocked, fmt.Sprintf("Agent already has a request to start it, not yet running: gossms job show %q reads its state.", job)
 		case strings.Contains(msg, "not currently running"):
 			return nil, true
 		}

@@ -201,6 +201,61 @@ func (w *fidelityWriter) Backup(ctx context.Context, opts gosmo.BackupOptions) e
 	return w.inner.Backup(ctx, opts)
 }
 
+func (w *fidelityWriter) Restore(ctx context.Context, opts gosmo.RestoreOptions) error {
+	w.shadow(ctx, "Restore", func(sctx context.Context) error { return w.inner.Restore(sctx, opts) })
+	return w.inner.Restore(ctx, opts)
+}
+
+func (w *fidelityWriter) VerifyBackup(ctx context.Context, opts gosmo.VerifyOptions, targets ...gosmo.BackupTarget) error {
+	w.shadow(ctx, "VerifyBackup", func(sctx context.Context) error { return w.inner.VerifyBackup(sctx, opts, targets...) })
+	return w.inner.VerifyBackup(ctx, opts, targets...)
+}
+
+func (w *fidelityWriter) RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error {
+	w.shadow(ctx, "RebuildIndex", func(sctx context.Context) error { return w.inner.RebuildIndex(sctx, idx, opts) })
+	return w.inner.RebuildIndex(ctx, idx, opts)
+}
+
+func (w *fidelityWriter) ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error {
+	w.shadow(ctx, "ReorganizeIndex", func(sctx context.Context) error { return w.inner.ReorganizeIndex(sctx, idx) })
+	return w.inner.ReorganizeIndex(ctx, idx)
+}
+
+func (w *fidelityWriter) RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error {
+	w.shadow(ctx, "RebuildAllIndexes", func(sctx context.Context) error { return w.inner.RebuildAllIndexes(sctx, o, opts) })
+	return w.inner.RebuildAllIndexes(ctx, o, opts)
+}
+
+func (w *fidelityWriter) ReorganizeAllIndexes(ctx context.Context, o tableOrView) error {
+	w.shadow(ctx, "ReorganizeAllIndexes", func(sctx context.Context) error { return w.inner.ReorganizeAllIndexes(sctx, o) })
+	return w.inner.ReorganizeAllIndexes(ctx, o)
+}
+
+func (w *fidelityWriter) UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error {
+	w.shadow(ctx, "UpdateStatistics", func(sctx context.Context) error { return w.inner.UpdateStatistics(sctx, o, opts) })
+	return w.inner.UpdateStatistics(ctx, o, opts)
+}
+
+func (w *fidelityWriter) UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error {
+	w.shadow(ctx, "UpdateStatistic", func(sctx context.Context) error { return w.inner.UpdateStatistic(sctx, st, opts) })
+	return w.inner.UpdateStatistic(ctx, st, opts)
+}
+
+func (w *fidelityWriter) UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error {
+	w.shadow(ctx, "UpdateDatabaseStatistics", func(sctx context.Context) error {
+		return w.inner.UpdateDatabaseStatistics(sctx, d, resample)
+	})
+	return w.inner.UpdateDatabaseStatistics(ctx, d, resample)
+}
+
+func (w *fidelityWriter) CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error) {
+	w.shadow(ctx, "CheckDB", func(sctx context.Context) error {
+		_, err := w.inner.CheckDB(sctx, d, opts)
+		return err
+	})
+	return w.inner.CheckDB(ctx, d, opts)
+}
+
 func (w *fidelityWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error {
 	w.shadow(ctx, "TruncateTable", func(sctx context.Context) error { return w.inner.TruncateTable(sctx, t) })
 	return w.inner.TruncateTable(ctx, t)
@@ -259,6 +314,16 @@ var fidelityCases = []fidelityCase{
 	{"job stop", "busy --allow admin", jobFakes},
 	{"maint backup", "app --compression --checksum --allow admin", backupFakes},
 	{"maint backup", "app --to /b/s1.bak --to /b/s2.bak --type log --copy-only --init --confirm app --allow admin", backupFakes},
+	{"maint restore", "app_copy --from /b/app.bak --move-to-default --checksum --norecovery --allow admin", restoreFakes},
+	{"maint restore", "hr --from /b/hr.bak --replace --close-connections --confirm hr --allow admin", restoreFakes},
+	{"maint restore", "--from /b/multi.bak --file-number 2 --verify-only --allow admin", restoreFakes},
+	{"maint index-rebuild", "dbo.Orders --online --maxdop 4 --fill-factor 90 --allow ddl", indexFakes},
+	{"maint index-rebuild", "dbo.Orders --index IX_Orders_Date --reorganize --allow ddl", indexFakes},
+	{"maint index-rebuild", "dbo.vTotals --index CIX_vTotals --maxdop 2 --allow ddl", indexFakes},
+	{"maint update-stats", "dbo.Orders --fullscan --allow ddl", indexFakes},
+	{"maint update-stats", "vTotals --statistic CIX_vTotals --sample-percent 20 --allow ddl", indexFakes},
+	{"maint update-stats", "--all --resample --allow ddl", indexFakes},
+	{"maint checkdb", "app --physical-only --no-index --maxdop 2 --allow admin", indexFakes},
 }
 
 // fidelityExempt is the writing commands with no case, and why.

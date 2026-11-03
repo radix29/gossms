@@ -149,3 +149,47 @@ gossms query run -p dev --file fix.sql --allow write --max-rows-affected 10
 The rollback run reports `rowsAffected` and leaves nothing changed; show it
 to the user. The last run commits only when at most 10 rows change, and
 rolls back otherwise (exit 7).
+
+### Back up before a risky change
+
+Only with the user's approval of the change.
+
+```bash
+gossms maint backup-history AdventureWorks --last -p dev
+gossms maint backup AdventureWorks --to /var/opt/mssql/backup/AW_before.bak --copy-only --checksum -p dev --allow admin
+gossms maint restore --from /var/opt/mssql/backup/AW_before.bak --verify-only --checksum -p dev --allow admin
+gossms query run -p dev -d AdventureWorks --file change.sql --allow ddl
+gossms maint restore AdventureWorks_before --from /var/opt/mssql/backup/AW_before.bak --move-to-default -p dev --allow admin --dry-run
+```
+
+`--copy-only` leaves the backup chain the server's jobs keep as it was;
+`--to` is a path on the server, written by the service account, and the
+record reads the new set back. `--verify-only` restores nothing: run it
+before the change, not after something has gone wrong. The last line plans a
+copy beside the original (`--move-to-default` renames its files), the way to
+compare or recover rows without touching the database; restoring over
+`AdventureWorks` itself needs `--confirm AdventureWorks` and the user's
+explicit go-ahead. Backup needs BACKUP DATABASE (db_backupoperator); a
+restore reads the media first and needs CREATE DATABASE even for that.
+
+### Grant a reader access
+
+Only with the user's approval of the change.
+
+```bash
+gossms security users list -p dev -d AdventureWorks
+gossms security permissions report_reader -p dev -d AdventureWorks
+gossms security grant SELECT --on SCHEMA::Sales --to report_reader -p dev -d AdventureWorks --allow admin --dry-run
+gossms security grant SELECT --on SCHEMA::Sales --to report_reader -p dev -d AdventureWorks --allow admin
+gossms security permissions report_reader -p dev -d AdventureWorks
+```
+
+A principal is a user of the connection's database (`-d`), or with `--on
+SERVER` a login: naming the login in database scope is exit 8, the hint
+naming its user. Grant to a role (`security role add-member`) when several
+users need the same rights. The dry run prints the statement and the
+principal's entries as they stand; the real run's `permissions` set is read
+back, and a change it does not show is a warning (SQL Server ignores a grant
+to dbo, the owner or the caller). `security permissions` lists explicit
+grants; `--effective` (needs IMPERSONATE) adds what roles give, at database
+level only. Undo with `security revoke … --from report_reader`.

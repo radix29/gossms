@@ -17,7 +17,9 @@ import (
 )
 
 // The maint group (phase 8): maint backup (admin, as query run classes
-// BACKUP, D1) and maint backup-history (read), D4.
+// BACKUP, D1) and maint backup-history (read), D4; maint restore is in
+// maint_restore.go, the index and statistics commands in maint_index.go,
+// maint checkdb in maint_checkdb.go.
 
 // The maint backup commands' own options; --to and --type are shared names
 // (security grant's --to, object list's --type).
@@ -59,10 +61,10 @@ var backupNow = time.Now
 // MaintCommands is the maint group: its node and its commands. Its summary
 // names only what exists.
 func MaintCommands(d Deps) []*spec.Command {
-	return []*spec.Command{
+	return append([]*spec.Command{
 		{
 			Path:    []string{"maint"},
-			Summary: "Back up a database and read the backup history",
+			Summary: "Backups, restores, backup history, integrity checks, index and statistics upkeep",
 			Class:   spec.ClassRead,
 		},
 		{
@@ -136,7 +138,9 @@ func MaintCommands(d Deps) []*spec.Command {
 				"gossms maint backup-history AdventureWorks --type log --since 2026-10-27 -p prod-ro -o json",
 			},
 		},
-	}
+		restoreCommand(d),
+		checkDBCommand(d),
+	}, maintIndexCommands(d)...)
 }
 
 // --- maint backup -------------------------------------------------------------
@@ -312,7 +316,7 @@ func backupSetFields(ctx context.Context, cat Catalog, opts gosmo.BackupOptions,
 	}
 	headers, err := cat.BackupHeaders(ctx, opts.Devices...)
 	if err != nil {
-		res.Warnings = append(res.Warnings, "The backup succeeded, but its set was not read back from the file: "+readError(err).Message)
+		res.Warnings = append(res.Warnings, "The backup succeeded, but its set was not read back from the file: "+mediaReadError(err).Message)
 		return nulls()
 	}
 	var h *gosmo.BackupHeader
