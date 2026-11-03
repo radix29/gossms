@@ -507,6 +507,13 @@ func (db *DetailBrowser) SelectAll()           { db.grid.SelectAll() }
 func (a *App) newDetailBrowser() *DetailBrowser {
 	db := NewDetailBrowser("Object Explorer Details")
 	db.OnRefresh = func() { db.RefreshCurrent(a) }
+	// A double-click navigates into the row's child node, as in SSMS; a row
+	// standing for none shows the clicked cell's value (detail_browser_drill.go).
+	db.grid.OnRowDoubleClick = func(row int) {
+		if !a.drillIntoRow(db, row) {
+			db.grid.ShowValue()
+		}
+	}
 	db.grid.OnShowValue = func(col int, column, value string) bool {
 		return db.showQueryStoreValue(a, col, column, value)
 	}

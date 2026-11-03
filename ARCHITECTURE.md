@@ -341,6 +341,7 @@ gossms/
 │       ├── detail_browser_xevents.go    # Extended Events: the Sessions folder (state, startup, events, targets, dropped), one session's events + targets, one target's settings + runtime counters
 │       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
+│       ├── detail_browser_drill.go      # double-click navigation: a row selects the tree child it stands for (by row object key, else label), waiting for the folder's first load; Show Value otherwise; the server and database records' leading folder rows (childFolderRows)
 │       ├── detail_browser_sort.go       # header-click column sort of list views: the pane reorders rows and row objects together, numbers by value, placeholders last
 │       │
 │       │  ── SQL Server Agent ──

@@ -118,3 +118,35 @@ func TestAnEditableGridNeverReportsADoubleClick(t *testing.T) {
 		t.Errorf("fired %v on an editable grid", *got)
 	}
 }
+
+// The query results grid binds a double-click to ShowValue, which opens the popup
+// mid-press: the release then lands on the popup, never reaching the grid's own
+// release handling. After the popup closes, the grid's next double-click must
+// still be two presses, and its first click a fresh one, not a drag continuation.
+func TestShowValueFromADoubleClickLeavesNoPressLatched(t *testing.T) {
+	g, got := newDoubleClickGrid()
+	g.OnRowDoubleClick = func(row int) {
+		*got = append(*got, row)
+		g.ShowValue()
+	}
+	pressRow(g, 0, tcell.ModNone)
+	releaseRow(g, 0)
+	pressRow(g, 0, tcell.ModNone)
+	if !g.viewOpen {
+		t.Fatal("the double-click did not open the value popup")
+	}
+	releaseRow(g, 0)
+	g.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	if g.viewOpen {
+		t.Fatal("Escape did not close the popup")
+	}
+	pressRow(g, 2, tcell.ModNone)
+	releaseRow(g, 2)
+	if r, _ := g.SelectedCell(); r != 2 {
+		t.Fatalf("the first click after closing selected row %d, want 2", r)
+	}
+	pressRow(g, 2, tcell.ModNone)
+	if len(*got) != 2 || (*got)[1] != 2 {
+		t.Errorf("fired %v, want [0 2]: a press latch outlived the popup", *got)
+	}
+}

@@ -10,9 +10,10 @@ import (
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
-// loadServerDetails shows the server's connect-time-cached info (version,
-// edition, paths, CPU count, physical memory; no round trip, since
-// gosmo.Server.Info() returns what Connect loaded) immediately, then backfills
+// loadServerDetails lists the server's folders (detail_browser_drill.go) above
+// its connect-time-cached info (version, edition, paths, CPU count, physical
+// memory; no round trip, since gosmo.Server.Info() returns what Connect loaded),
+// both immediately, then backfills
 // available memory and NUMA node count (one DMV query each), then per-volume
 // disk free space, appended once it lands.
 func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
@@ -20,9 +21,12 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 	// goroutine: never call postPartial/postFinal (and the wakeEventLoop they
 	// trigger) directly from ShowNodeDetails' goroutine (the UI goroutine); see
 	// wakeEventLoop's doc comment in app.go.
+	snap := node.snapshot()
 	app.safegoRepair("loading server details", db.panicRepair(node, seq), func() {
 		info := sc.Server.Info()
-		rows := [][]string{
+		// The server's folders lead, as SSMS lists them; reading them costs no
+		// round trip (loadServerChildren reads only Info).
+		rows := append(childFolderRows(fetchCtx, sc, snap), [][]string{
 			{"Server", sc.Opts.Server},
 			{"Version", info.ProductVersion},
 			{"Edition", info.Edition},
@@ -35,7 +39,7 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 			{"Version String", versionBanner(info)},
 			{"Available Memory (MB)", "Loading..."},
 			{"NUMA Nodes", "Loading..."},
-		}
+		}...)
 		// The two backfilled rows are found by label, not fixed index: adding a row
 		// above them would silently redirect the backfill into the wrong row.
 		availMemRow := mustPropertyRowIndex(rows, "Available Memory (MB)")

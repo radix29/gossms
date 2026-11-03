@@ -268,6 +268,9 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	results.OnShowValue = func(col int, column, value string) bool {
 		return app.openCellValuePanel(p.columnType(col), column, value)
 	}
+	// A double-click shows the clicked cell's value, as right-click > Show Value:
+	// the first press has already selected that cell.
+	results.OnRowDoubleClick = func(int) { results.ShowValue() }
 	results.OnHeaderClick = p.sortResultsByColumn
 	results.OnMenuItems = p.resultSortMenuItems
 	p.editor.OnRightClick = func(x, y int) { app.showEditorContextMenu(x, y) }

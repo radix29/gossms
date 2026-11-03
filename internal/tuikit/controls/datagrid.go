@@ -159,6 +159,12 @@ type DataGrid struct {
 	// anchor) from a continued drag (keep the anchor, move the cursor).
 	mouseDragging bool
 
+	// rowHeaderDragging latches a press on the row-number gutter from press to
+	// release: the gesture selects whole rows, as clicking SSMS's row header does,
+	// and a drag that wanders onto the cells keeps selecting rows rather than
+	// turning into a cell-block selection.
+	rowHeaderDragging bool
+
 	// sbDragging latches a scrollbar-thumb drag from press to release: while
 	// set, every Button1 event goes to the scrollbar regardless of x, never
 	// falling through to row/cell hit-testing.
@@ -375,7 +381,7 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.errorMode = false
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
-	g.headerPressed = false
+	g.headerPressed, g.rowHeaderDragging = false, false
 	// A press on the old set's row 3 and one on the new set's are not a double-click.
 	g.rowPressed, g.lastRowPressAt = false, time.Time{}
 	// The indicator names a column of the old set; a host that sorted re-sets it.
@@ -448,7 +454,7 @@ func (g *DataGrid) SetError(err error) {
 	g.errorMode = true
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
-	g.headerPressed = false
+	g.headerPressed, g.rowHeaderDragging = false, false
 	g.rowPressed, g.lastRowPressAt = false, time.Time{}
 	g.sortCol, g.sortDesc = -1, false
 	g.ClearMarkedRows()

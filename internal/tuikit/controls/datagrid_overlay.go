@@ -104,6 +104,17 @@ func (g *DataGrid) cellContextMenuItems() []MenuItem {
 // built-in popup or the host's display via OnShowValue.
 const showValueMenuItem = "Show Value"
 
+// ShowValue does what the context menu's "Show Value" does for the selected
+// cell, for a host binding it to another gesture (an OnRowDoubleClick, say). It
+// ends the mouse press first: called from inside a press, the release then goes
+// to the popup or the host's tab instead, and the press latches would survive
+// to make the grid's next click a drag continuation that pairs with nothing.
+func (g *DataGrid) ShowValue() {
+	g.mouseDragging = false
+	g.rowPressed = false
+	g.openViewer()
+}
+
 // openViewer shows the full-content popup for the selected cell's text in a
 // read-only Editor (navigable, selectable, copyable). A host claiming the value
 // via OnShowValue displays it instead and the popup doesn't open.

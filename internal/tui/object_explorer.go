@@ -80,6 +80,10 @@ type ObjectExplorer struct {
 	// pending until the reload of the folder it names lands.
 	follow *followHint
 
+	// drill is an Object Explorer Details double-click waiting for its folder's
+	// children to load (DrillInto), cleared when the user selects a node.
+	drill *drillHint
+
 	// retired is every node a Reload replaced whose rows may still be on screen.
 	// They stay in byID until the next rebuild takes them off (the stale rows are
 	// still clickable and Selected() has to answer for them) and are released there
@@ -416,6 +420,7 @@ func (oe *ObjectExplorer) SetChildren(n *explorerNode, children []*explorerNode)
 		defer func() { oe.follow = nil }() // this was the reload it waited for
 	}
 	oe.rebuild()
+	oe.landDrill(n)
 }
 
 // followHint is where a selection on a renamed or moved object goes when the
@@ -724,6 +729,7 @@ func (oe *ObjectExplorer) handleSelect(id controls.TreeNodeID) {
 		oe.app.onNodeReselected(oe.reselectFrom, n)
 	default:
 		oe.follow = nil // the user moved on; the selection is no longer the write's
+		oe.drill = nil
 		oe.app.onNodeSelected(n)
 	}
 }

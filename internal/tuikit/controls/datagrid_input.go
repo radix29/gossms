@@ -191,6 +191,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	// first refusal" contract holds.
 	if ev.Buttons() == tcell.ButtonNone {
 		g.mouseDragging = false
+		g.rowHeaderDragging = false
 		g.sbDragging = false
 		g.sbDraggingH = false
 		g.colResizing = false
@@ -233,6 +234,12 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		// scrollRow+dataH, the first row below the view, moving the selection out of
 		// sight.
 		if row := g.rowAtY(my); row >= 0 {
+			// Checked ahead of the double-click: a double-click on a row number selects the
+			// row, it doesn't open the cell under the cursor in Show Value.
+			if canBlockSelect && (g.rowHeaderDragging || (!g.mouseDragging && g.inGutter(mx))) {
+				g.rowHeaderPress(ev, row)
+				return true
+			}
 			// Deferred so the host is called once this press has moved the selection onto
 			// the row, whichever of the branches below handles it.
 			if g.rowDoubleClicked(ev, row) {
@@ -366,6 +373,54 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		g.scrollColBy(horizontalWheelCols)
 	}
 	return true
+}
+
+// inGutter reports whether screen x falls on the row-number gutter (never, with
+// SetRowNumbers off).
+func (g *DataGrid) inGutter(x int) bool {
+	gw := g.gutterWidth()
+	return gw > 0 && x >= g.rect.X && x < g.rect.X+gw
+}
+
+// rowHeaderPress handles a Button1 press or drag that began on the row-number
+// gutter, over data row row: it selects the whole row, as SSMS's row header does.
+// A drag extends the selection over every row it crosses, Shift (or Alt) extends
+// from the current anchor, and Ctrl toggles the row in the discontiguous
+// selection, once per press as on a cell. The selection is a block spanning all
+// columns, so Copy and a Shift+Arrow afterwards act on whole rows.
+func (g *DataGrid) rowHeaderPress(ev *tcell.EventMouse, row int) {
+	last := max(0, len(g.columns)-1)
+	prevRow := g.selRow
+	if !g.mouseDragging {
+		g.mouseDragging, g.rowHeaderDragging = true, true
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			g.markRow(row)
+			g.selRow, g.selCol = row, 0
+			g.selAnchorRow, g.selAnchorCol = row, 0
+			g.blockSelecting = false
+			if g.OnSelectRow != nil {
+				g.OnSelectRow(g.selRow)
+			}
+			return
+		}
+		g.ClearMarkedRows()
+		if ev.Modifiers()&extendSelectionMods != 0 {
+			if !g.blockSelecting {
+				g.selAnchorRow = g.selRow
+			}
+		} else {
+			g.selAnchorRow = row
+		}
+	} else if g.marking {
+		// The rest of a Ctrl+press: it picks one row, it never drags.
+		return
+	}
+	g.selAnchorCol = 0
+	g.selRow, g.selCol = row, last
+	g.blockSelecting = g.selRow != g.selAnchorRow || g.selCol != g.selAnchorCol
+	if g.selRow != prevRow && g.OnSelectRow != nil {
+		g.OnSelectRow(g.selRow)
+	}
 }
 
 // headerClick handles a Button1 press on the header row, firing OnHeaderClick

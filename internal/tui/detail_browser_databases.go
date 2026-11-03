@@ -98,8 +98,9 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(fetchCtx context.Context, ap
 	})
 }
 
-// loadDatabaseDetails is one database's Property/Value view plus the disk
-// usage strip under it. It has its own loader rather than an arm of
+// loadDatabaseDetails is one database's Property/Value view, its folders
+// listed above the properties (detail_browser_drill.go), plus the disk usage
+// strip under it. It has its own loader rather than an arm of
 // fetchNodeDetails because it is the only detail view with charts, and
 // gosmo's DiskUsage answers both halves in a single round trip — the file
 // sizes the properties show and the allocation breakdown the bars split
@@ -108,6 +109,7 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 	// data, not node: the fetch runs on a background goroutine while the UI
 	// goroutine may write node.data — see explorerNode.snapshot.
 	name := node.data.DBName
+	snap := node.snapshot()
 	app.safegoRepair("loading database details", db.panicRepair(node, seq), func() {
 		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
@@ -131,7 +133,8 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 			availDataStr, availLogStr = formatMB(usage.UnallocatedMB), formatMB(usage.LogUnusedMB)
 			cs = diskUsageCharts(usage)
 		}
-		db.postFinalResult(app, node, seq, &detailResult{cols: []string{"Property", "Value"}, rows: [][]string{
+		rows := childFolderRows(ctx, sc, snap)
+		db.postFinalResult(app, node, seq, &detailResult{cols: []string{"Property", "Value"}, rows: append(rows, [][]string{
 			{"Name", d.Name},
 			{"State", string(d.State)},
 			{"Recovery Model", string(d.RecoveryModel)},
@@ -144,7 +147,7 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 			{"Log (MB)", logStr},
 			{"Avail. Data (MB)", availDataStr},
 			{"Avail. Log (MB)", availLogStr},
-		}, charts: cs})
+		}...), charts: cs})
 	})
 }
 
