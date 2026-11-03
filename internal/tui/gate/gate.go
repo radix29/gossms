@@ -447,4 +447,13 @@ var (
 	// (2026-11-03). A folder, which has no schema, asks it through
 	// ItemInAnySchema.
 	CreateSequence = Right{Name: "CREATE SEQUENCE", DB: true, Schema: true}
+
+	// CreateSynonym is the database half of what CREATE SYNONYM checks; ALTER on
+	// the target schema (AlterOnSchema) is the other, and each alone is refused:
+	// Msg 262 without this, Msg 2760 without the schema half. ALTER and CONTROL
+	// on the database and db_ddladmin read 1 for both and create; ALTER ANY
+	// SCHEMA reads 0 here and is refused, and a DENY CREATE SYNONYM beats
+	// db_ddladmin. Probed with WITHOUT LOGIN users on majors 13 and 17
+	// (2026-11-03, identical). The folder asks both through ItemInAnySchema.
+	CreateSynonym = Right{Name: "CREATE SYNONYM", Role: "db_ddladmin", DB: true}
 )

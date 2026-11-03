@@ -117,6 +117,15 @@ type QueryStorePanel struct {
 	minExecIdx int
 	regressIdx int
 
+	// drill is the wait category Query Wait Statistics is drilled into, nil on the
+	// category list (and on every other report). Set by Enter or a double-click on a
+	// category row, cleared by Escape or Backspace and by any report change.
+	drill *qsDrill
+	// drillFrom is the category row the drill was entered from, so going back puts
+	// the cursor where it was rather than on the top category. Consumed by the
+	// category list's next load.
+	drillFrom int
+
 	// res is the report on screen and plans are the selected query's, both kept in
 	// typed form so the chart, the plan actions and Show Plan address the same rows
 	// the grids draw.
@@ -238,6 +247,7 @@ func NewQueryStorePanel(app *App, sc *db.ServerConn, dbName, title string) *Quer
 	// The report grid's Query column is a flattened rendering, so "Show Value" on it
 	// must not open the cell; see showValue.
 	p.grid.OnShowValue = p.showValue
+	p.grid.OnRowDoubleClick = func(int) { p.drillIn() }
 	p.buildTools()
 	return p
 }
@@ -277,6 +287,15 @@ func (p *QueryStorePanel) showValue(col int, column, value string) bool {
 
 // report is the view on screen.
 func (p *QueryStorePanel) report() queryStoreReport { return queryStoreReports[p.reportIdx] }
+
+// viewTitle names what the report grid shows: the report, and the wait category
+// when Query Wait Statistics is drilled into one.
+func (p *QueryStorePanel) viewTitle() string {
+	if p.drill != nil {
+		return p.report().Title + " › " + p.drill.label
+	}
+	return p.report().Title
+}
 
 // Title returns the panel's tab title (Panel interface).
 func (p *QueryStorePanel) Title() string { return "Query Store — " + p.dbName }

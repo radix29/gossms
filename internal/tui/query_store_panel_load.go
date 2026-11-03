@@ -20,6 +20,9 @@ import (
 // instead of a second being created.
 func (p *QueryStorePanel) ShowReport(title string) {
 	p.reportIdx = queryStoreReportIndex(title)
+	// Any report pick leaves a drill-down, Query Wait Statistics' own included: the
+	// Report menu is the mouse's way back to the category list.
+	p.drill, p.drillFrom = nil, 0
 	if !p.statChosen {
 		p.stat = p.report().defaultStat
 	}
@@ -129,10 +132,10 @@ func (p *QueryStorePanel) load(keepView bool) {
 	// qsReadTimeout.
 	ctx, seq := p.reportRead.BeginTimeout(p.conn.Server.Context(), qsReadTimeout)
 	p.busy = true
-	p.setStatus("Running " + p.report().Title + "...")
+	p.setStatus("Running " + p.viewTitle() + "...")
 	p.refreshToolLabels()
 
-	report, sc, dbName := p.report(), p.conn, p.dbName
+	report, sc, dbName, drill := p.report(), p.conn, p.dbName, p.drill
 	// The window the report's query really reads; for Regressed Queries half the
 	// toolbar's (queryStoreReport.effectiveOptions).
 	opts := report.effectiveOptions(p.options())
@@ -149,8 +152,12 @@ func (p *QueryStorePanel) load(keepView bool) {
 			// A database with Query Store off answers every report with no rows, which reads
 			// identically to a database nothing ran in.
 			res = qsOffResult(info)
+		case drill != nil:
+			res, err = waitingQueriesReport(ctx, d, *drill, opts)
 		default:
 			res, err = report.load(ctx, d, opts)
+			// Panel only: the Detail Browser grid has no drill-down for the row to open.
+			res = withAllCategoriesRow(res)
 		}
 		p.app.postAndWake(func() {
 			if !p.reportRead.Done(seq) {
@@ -209,6 +216,13 @@ func (p *QueryStorePanel) applyResult(res qsResult, keepView bool) {
 		redrawGrid(p.grid, res.columns, res.cells())
 	} else {
 		p.grid.SetData(res.columns, res.cells())
+		// Back from a drill-down: the category list again, on the category that was open.
+		if p.drill == nil && p.drillFrom > 0 {
+			p.grid.SetSelectedRow(p.drillFrom)
+		}
+	}
+	if p.drill == nil {
+		p.drillFrom = 0
 	}
 	p.setStatus(p.summary())
 	p.loadPlans(p.selectedQueryID())
@@ -225,15 +239,64 @@ func (p *QueryStorePanel) summary() string {
 	if p.res.note != "" {
 		return p.res.note
 	}
-	if len(p.res.rows) == 0 {
+	n := p.res.reportRowCount()
+	if n == 0 {
 		// The filters are named here above all: an empty report reads as "the server was
 		// idle" unless it says a floor was applied.
-		return fmt.Sprintf("%s — no rows in %s%s", p.report().Title, p.windowSummary(), p.filterSummary())
+		return fmt.Sprintf("%s — no rows in %s%s%s", p.viewTitle(), p.windowSummary(), p.filterSummary(), p.drillHint())
 	}
 	// The value label comes from the result, not p.stat and p.metric: the metric
 	// selector does not reach every report (qsResult.valueLabel).
-	return fmt.Sprintf("%s — %d rows, %s over %s%s",
-		p.report().Title, len(p.res.rows), p.res.valueLabel, p.windowSummary(), p.filterSummary())
+	return fmt.Sprintf("%s — %d rows, %s over %s%s%s",
+		p.viewTitle(), n, p.res.valueLabel, p.windowSummary(), p.filterSummary(), p.drillHint())
+}
+
+// drillHint says how to move between Query Wait Statistics' two levels, the only
+// place either is said outside F1: nothing on the category list looks openable.
+func (p *QueryStorePanel) drillHint() string {
+	switch {
+	case p.drill != nil:
+		return " · Esc: back to categories"
+	case p.res.drillable():
+		return " · Enter: the category's queries"
+	}
+	return ""
+}
+
+// drillIn opens the queries waiting in the category under the report grid's
+// cursor (Enter, or a double-click). It reports whether the row was one to open.
+func (p *QueryStorePanel) drillIn() bool {
+	row := p.grid.SelectedRow()
+	if p.drill != nil || row < 0 || row >= len(p.res.rows) || p.res.rows[row].drill == nil {
+		return false
+	}
+	// Gated like the toolbar: a read is out, and the status line already says so.
+	if p.busy {
+		return true
+	}
+	d := *p.res.rows[row].drill
+	if !qsStatValidForDrill(p.stat, d) {
+		p.setStatus(fmt.Sprintf("%s ranks by Avg or Total only — %s is measured per category; pick a Statistic first",
+			d.label, p.stat))
+		return true
+	}
+	p.drill, p.drillFrom = &d, row
+	p.Load()
+	return true
+}
+
+// drillOut returns from a drill-down to the category list, the cursor back on
+// the category it was entered from. It reports whether there was one to leave.
+func (p *QueryStorePanel) drillOut() bool {
+	if p.drill == nil {
+		return false
+	}
+	if p.busy {
+		return true
+	}
+	p.drill = nil
+	p.load(false)
+	return true
 }
 
 // windowSummary names the range the rows on screen cover. Not simply the Window

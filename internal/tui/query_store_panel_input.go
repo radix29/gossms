@@ -25,6 +25,21 @@ func (p *QueryStorePanel) HandleKey(ev *tcell.EventKey) bool {
 		p.runSel(qsToolRefresh)
 		return true
 	}
+	// Query Wait Statistics' two levels: Enter on a category row opens its queries,
+	// Escape or Backspace goes back. Only what the drill acts on is consumed, so
+	// Escape on the category list still reaches App.
+	if p.focus == qsFocusReport {
+		switch ev.Key() {
+		case tcell.KeyEnter:
+			if p.drillIn() {
+				return true
+			}
+		case tcell.KeyEscape, tcell.KeyBackspace, tcell.KeyBackspace2:
+			if p.drillOut() {
+				return true
+			}
+		}
+	}
 	// Tab walks the report grid -> the plan grid -> out of the panel. The last step
 	// must return false: App moves focus to Object Explorer only when the panel
 	// declines, so a panel that always consumes Tab can be left only with the mouse.

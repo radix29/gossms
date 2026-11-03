@@ -60,6 +60,33 @@ type qsResultRow struct {
 	// trailing `-- comment` into one that swallows every later line; the cell is a
 	// display rendering, never a statement to run. Empty where rows are not queries.
 	queryText string
+
+	// drill is what Enter or a double-click on this row opens in the panel: the
+	// wait category whose queries it ranks, on a Query Wait Statistics row. nil
+	// where a row opens nothing. The Detail Browser grid ignores it.
+	drill *qsDrill
+}
+
+// qsDrill is one wait category to drill into: the category gosmo filters on and
+// what the panel calls it. gosmo.QSWaitAllCategories is "" and reads as no
+// category at all, hence the separate label.
+type qsDrill struct {
+	category gosmo.QSWaitCategory
+	label    string
+}
+
+// all reports whether this is the every-category drill, which only Avg and Total
+// can rank (gosmo.QueryStore.WaitingQueries).
+func (d qsDrill) all() bool { return d.category == gosmo.QSWaitAllCategories }
+
+// qsAllWaitCategories is the drill the panel's last category row opens.
+var qsAllWaitCategories = qsDrill{category: gosmo.QSWaitAllCategories, label: "All categories"}
+
+// qsStatValidForDrill reports whether statistic s can rank drill d's queries:
+// Min, Max and Std dev are per-category measurements, so across categories they
+// are undefined and gosmo refuses them.
+func qsStatValidForDrill(s gosmo.QSStatistic, d qsDrill) bool {
+	return !d.all() || s == gosmo.QSStatAvg || s == gosmo.QSStatTotal
 }
 
 // qsResult is one report's output: the grid's columns, rows, and what the
@@ -87,6 +114,44 @@ type qsResult struct {
 	// statistics). Otherwise those grids counted their explanation as rows and claimed
 	// a metric and window for a query that never ran.
 	note string
+}
+
+// reportRowCount is how many rows are the report's own, not counting the
+// All categories row the panel appends (withAllCategoriesRow), which is a way in
+// rather than a measurement.
+func (r qsResult) reportRowCount() int {
+	n := 0
+	for _, row := range r.rows {
+		if row.drill == nil || !row.drill.all() {
+			n++
+		}
+	}
+	return n
+}
+
+// drillable reports whether any row opens a drill-down.
+func (r qsResult) drillable() bool {
+	return slices.ContainsFunc(r.rows, func(row qsResultRow) bool { return row.drill != nil })
+}
+
+// withAllCategoriesRow appends the row that drills into every wait category at
+// once, after a category list that has any. A row rather than a toolbar cell: it
+// is reached the same way as each category, and both tool rows are already wider
+// than the pane. Not plotted (value 0) and no figures: summing per-category
+// averages is not the across-category average, and an execution waiting in two
+// categories is counted in both.
+func withAllCategoriesRow(res qsResult) qsResult {
+	if !res.drillable() {
+		return res
+	}
+	cells := make([]string, len(res.columns))
+	for i := range cells {
+		cells[i] = "-"
+	}
+	cells[0] = qsAllWaitCategories.label
+	res.rows = append(res.rows, qsResultRow{cells: cells, label: qsAllWaitCategories.label,
+		drill: new(qsAllWaitCategories)})
+	return res
 }
 
 // cells renders the result as the Detail Browser's row table.
@@ -636,14 +701,47 @@ func queryWaitStatisticsReport(ctx context.Context, d *gosmo.Database, opts gosm
 		res.rows = append(res.rows, qsResultRow{
 			cells: []string{
 				string(w.Category),
-				fmt.Sprintf("%s ms", core.FormatThousands(int64(w.Value+0.5))),
+				formatWaitMs(w.Value),
 				core.FormatThousands(w.ExecCount),
 			},
 			label: string(w.Category),
 			value: w.Value,
+			drill: &qsDrill{category: w.Category, label: string(w.Category)},
 		})
 	}
 	return res, nil
+}
+
+// waitingQueriesReport is Query Wait Statistics' drill-down: the queries that
+// waited in one category (or in all of them), ranked by that wait time. The
+// shared per-query columns, so the plan pane, Track Query and Plot History work
+// on its rows as on Top Resource Consuming Queries'. Values are milliseconds of
+// wait whatever the Metric selector says, as on the category list.
+func waitingQueriesReport(ctx context.Context, d *gosmo.Database, drill qsDrill, opts gosmo.QueryStoreReportOptions) (qsResult, error) {
+	stats, err := d.QueryStore().WaitingQueries(ctx, drill.category, opts)
+	if err != nil {
+		return qsResult{}, err
+	}
+	label := string(qsStatistic(opts)) + " " + drill.label + " Wait Time"
+	if drill.all() {
+		label = string(qsStatistic(opts)) + " Wait Time"
+	}
+	res := qsResult{columns: queryStoreQueryColumns(label), chartLabel: label + " (ms)", valueLabel: label}
+	for _, s := range stats {
+		res.rows = append(res.rows, qsResultRow{
+			cells:     queryStoreQueryRow(s, formatWaitMs(s.Value)),
+			label:     qsQueryBarLabel(s),
+			value:     s.Value,
+			queryID:   s.QueryID,
+			queryText: s.QueryText,
+		})
+	}
+	return res, nil
+}
+
+// formatWaitMs renders a wait time, which gosmo gives in milliseconds.
+func formatWaitMs(v float64) string {
+	return fmt.Sprintf("%s ms", core.FormatThousands(int64(v+0.5)))
 }
 
 // -- formatting ----------------------------------------------------------------

@@ -86,7 +86,7 @@ func (p *QueryStorePanel) drawChart(s tcell.Screen) {
 	bars := p.barBuf
 	if len(bars) == 0 {
 		core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, theme.StylePanel().Foreground(pal.TextDim),
-			"Nothing to plot for "+p.report().Title)
+			"Nothing to plot for "+p.viewTitle())
 		return
 	}
 	// The value column is what the grid's own value column says, so a bar and its
@@ -103,9 +103,9 @@ func (p *QueryStorePanel) drawChart(s tcell.Screen) {
 // toolbar).
 func (p *QueryStorePanel) chartTitle() string {
 	if p.res.chartLabel == "" {
-		return p.report().Title
+		return p.viewTitle()
 	}
-	return p.report().Title + " — " + p.res.chartLabel
+	return p.viewTitle() + " — " + p.res.chartLabel
 }
 
 // drawSeriesChart plots the selected query's per-plan history in place of the

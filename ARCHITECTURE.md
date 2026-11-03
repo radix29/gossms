@@ -447,6 +447,7 @@ gossms/
 │       ├── new_application_role_dialog.go # New Application Role: name, default schema, password, owned schemas, securables, extended properties
 │       ├── sequence_props.go     # Sequence Properties: General (every ALTER SEQUENCE option, Restart with)/Permissions/Extended Properties
 │       ├── new_sequence_dialog.go # New Sequence: name, schema, type, values, cycle, cache, permissions, extended properties
+│       ├── new_synonym_dialog.go # New Synonym: name, schema, base object (server, database, schema, name), permissions, extended properties
 │       ├── user_props.go         # Database User Properties page definitions
 │       ├── new_user_dialog.go    # New User: every CREATE USER form (for login, with password, without login, Windows, certificate / asymmetric key, Entra on Azure and 2022+), plus Owned Schemas and Membership
 │       ├── server_role_props.go  # Server Role Properties: General/Members/Owned Roles/Securables

@@ -195,6 +195,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		g.sbDraggingH = false
 		g.colResizing = false
 		g.headerPressed = false
+		g.rowPressed = false
 	}
 	mx, my := ev.Position()
 	// A column-resize drag, like the horizontal scrollbar's, keeps control once
@@ -232,6 +233,11 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		// scrollRow+dataH, the first row below the view, moving the selection out of
 		// sight.
 		if row := g.rowAtY(my); row >= 0 {
+			// Deferred so the host is called once this press has moved the selection onto
+			// the row, whichever of the branches below handles it.
+			if g.rowDoubleClicked(ev, row) {
+				defer g.OnRowDoubleClick(row)
+			}
 			if canBlockSelect {
 				if col, ok := g.colAt(mx); ok {
 					// Ctrl+click picks one row out, once per press: tcell resends Button1 while held
@@ -575,6 +581,31 @@ func (g *DataGrid) ensureVisibleCol() {
 		}
 		g.scrollCol++
 	}
+}
+
+// rowDoubleClicked reports whether a Button1 event on data row row is the second
+// fresh press of a double-click there, and records it as the press the next one
+// pairs with. A resend while the button is held is not a press (rowPressed), and a
+// press with a modifier is a selection gesture, never half of a double-click.
+func (g *DataGrid) rowDoubleClicked(ev *tcell.EventMouse, row int) bool {
+	if g.rowPressed {
+		return false
+	}
+	g.rowPressed = true
+	if g.OnRowDoubleClick == nil || g.editable() || g.errorMode ||
+		ev.Modifiers()&(tcell.ModCtrl|extendSelectionMods) != 0 {
+		g.lastRowPressAt = time.Time{}
+		return false
+	}
+	at := time.Now()
+	if row == g.lastRowPress && !g.lastRowPressAt.IsZero() &&
+		at.Sub(g.lastRowPressAt) <= resizeDoubleClickInterval {
+		// A third press starts a new pair rather than firing again.
+		g.lastRowPressAt = time.Time{}
+		return true
+	}
+	g.lastRowPress, g.lastRowPressAt = row, at
+	return false
 }
 
 // activateCell fires OnActivateCell for grids with editable cells (toggle grids,

@@ -69,7 +69,7 @@ func (p *QueryStorePanel) buildTools() {
 
 // refreshToolLabels updates the five selectors from the current selection.
 func (p *QueryStorePanel) refreshToolLabels() {
-	p.sel.Cells[qsToolReport].Label = "Report: " + p.report().Title + " ▾"
+	p.sel.Cells[qsToolReport].Label = "Report: " + p.viewTitle() + " ▾"
 	p.sel.Cells[qsToolMetric].Label = "Metric: " + string(p.metric) + " ▾"
 	p.sel.Cells[qsToolStatistic].Label = "Statistic: " + string(p.stat) + " ▾"
 	p.sel.Cells[qsToolWindow].Label = "Window: " + qsWindows[p.windowIdx].label + " ▾"
@@ -319,9 +319,20 @@ func (p *QueryStorePanel) showMetricMenu() {
 }
 
 func (p *QueryStorePanel) showStatisticMenu() {
-	p.popMenu(qsToolStatistic, qsMenuItems(gosmo.QSStatistics(), p.stat,
+	items := qsMenuItems(gosmo.QSStatistics(), p.stat,
 		func(s gosmo.QSStatistic) string { return string(s) },
-		func(s gosmo.QSStatistic) { p.stat, p.statChosen = s, true; p.Load() }))
+		func(s gosmo.QSStatistic) { p.stat, p.statChosen = s, true; p.Load() })
+	// Across every wait category only Avg and Total are defined; the other three
+	// would come back as an error rather than rows.
+	if d := p.drill; d != nil {
+		for i, s := range gosmo.QSStatistics() {
+			if !qsStatValidForDrill(s, *d) {
+				items[i].Enabled = func() bool { return false }
+				items[i].Note = "per category only"
+			}
+		}
+	}
+	p.popMenu(qsToolStatistic, items)
 }
 
 func (p *QueryStorePanel) showWindowMenu() {

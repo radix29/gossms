@@ -303,6 +303,8 @@ var helpLines = []string{
 	"Query Store / Plan Compare",
 	"  Tab         Move focus between the panel's grids",
 	"  F5          Re-read the report",
+	"  Enter       Query Wait Statistics: the category's queries (or",
+	"              double-click it); Esc / Backspace back to categories",
 	"  Toolbar     Force/Unforce Plan, Show Plan, Script, Track Query,",
 	"              Compare Plans; a row too narrow shows them under More",
 	"  [ / ]       Plan Compare: plan A's previous / next statement",

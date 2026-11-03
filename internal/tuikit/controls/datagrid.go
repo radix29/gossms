@@ -242,6 +242,15 @@ type DataGrid struct {
 	// the header never reaches cell selection.
 	headerPressed bool
 
+	// rowPressed latches a press on a data row from press to release, so tcell's
+	// Button1 resends while held are not taken for the second press of a
+	// double-click. lastRowPress/lastRowPressAt are the previous fresh press, timed
+	// for OnRowDoubleClick; a zero lastRowPressAt means "no press to pair with",
+	// which is how a completed double-click and a new row set reset it.
+	rowPressed     bool
+	lastRowPress   int
+	lastRowPressAt time.Time
+
 	// browseOnly makes an editable grid behave as a read-only one for the
 	// moment: OnActivateCell is never called, and the grid gets the read-only
 	// grid's block selection and Copy / Show Value menu instead. See
@@ -254,6 +263,13 @@ type DataGrid struct {
 	// offers the built-in content viewer instead.
 	OnSelectRow    func(row int)
 	OnActivateCell func(row, col int)
+
+	// OnRowDoubleClick fires on a plain (unmodified) double-click on a data row of a
+	// read-only grid, after the first press has selected it: the mouse spelling of
+	// a host's Enter, which the host handles itself because Enter on a read-only
+	// grid is otherwise unbound. Never on an editable grid, where each click already
+	// activates a cell, nor on an error grid.
+	OnRowDoubleClick func(row int)
 
 	// OnCopyRequest receives clipboard-ready text from the menu's "Copy", "Copy
 	// All" and "Copy All with Headers". controls may not reach the OS
@@ -360,6 +376,8 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.headerPressed = false
+	// A press on the old set's row 3 and one on the new set's are not a double-click.
+	g.rowPressed, g.lastRowPressAt = false, time.Time{}
 	// The indicator names a column of the old set; a host that sorted re-sets it.
 	g.sortCol, g.sortDesc = -1, false
 	// Row indices from the old set name different objects in this one.
@@ -431,6 +449,7 @@ func (g *DataGrid) SetError(err error) {
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.headerPressed = false
+	g.rowPressed, g.lastRowPressAt = false, time.Time{}
 	g.sortCol, g.sortDesc = -1, false
 	g.ClearMarkedRows()
 	g.colWidthOverride, g.colResizing = nil, false

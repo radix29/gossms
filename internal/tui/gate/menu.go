@@ -121,12 +121,24 @@ func ItemOnAll(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object
 // one, so the item is offered while any schema permits r, and withheld only when
 // the probe answered for every schema and none does. A database never probed
 // records no schema and leaves it offered, as every gate fails open.
-func ItemInAnySchema(item controls.MenuItem, sc *db.ServerConn, dbName string, r Right) controls.MenuItem {
+//
+// dbRights is a database-scope any-of set the create needs as well, for a
+// statement checking both halves (CREATE SYNONYM: CreateSynonym on the database
+// and AlterOnSchema on the target). The note names the database half when that
+// is what fails, the schema half otherwise; it is read once here, as ItemOnAll's
+// is, since the menu is rebuilt on each open.
+func ItemInAnySchema(item controls.MenuItem, sc *db.ServerConn, dbName string, r Right, dbRights ...Right) controls.MenuItem {
 	prev := item.Enabled
 	item.Note = "needs " + r.Name + " on a schema"
+	if len(dbRights) > 0 && !Allows(sc, dbName, dbRights...) {
+		item.Note = "needs " + NoteName(dbRights[0])
+	}
 	item.NoteWhen = func() bool { return prev == nil || prev() }
 	item.Enabled = func() bool {
 		if prev != nil && !prev() {
+			return false
+		}
+		if !Allows(sc, dbName, dbRights...) {
 			return false
 		}
 		return sc == nil || AnySchemaPermits(sc.CachedDatabaseCapabilities(dbName), r)
