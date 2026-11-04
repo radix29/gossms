@@ -25,7 +25,7 @@ func TestSetPaletteReplacesWhatActiveReads(t *testing.T) {
 	if got := before.MenuBar; got != custom.MenuBar {
 		t.Errorf("a pointer taken before SetPalette reads MenuBar = %v, want %v", got, custom.MenuBar)
 	}
-	if got := StyleMenuBar(); got != tcell.StyleDefault.Background(custom.MenuBar).Foreground(custom.Text) {
+	if got := StyleMenuBar(); got != tcell.StyleDefault.Background(custom.MenuBar).Foreground(custom.MenuText) {
 		t.Errorf("StyleMenuBar did not follow the new palette: %v", got)
 	}
 
@@ -38,16 +38,12 @@ func TestSetPaletteReplacesWhatActiveReads(t *testing.T) {
 // Each palette must set every colour: a field left zero renders as the terminal's
 // default and silently mixes the user's terminal theme into the UI.
 func TestPalettesSetEveryColour(t *testing.T) {
-	v := reflect.ValueOf(Light)
-	for i := range v.NumField() {
-		if v.Field(i).Interface().(tcell.Color) == tcell.ColorDefault {
-			t.Errorf("Light.%s is unset", v.Type().Field(i).Name)
-		}
-	}
-	d := reflect.ValueOf(Default)
-	for i := range d.NumField() {
-		if d.Field(i).Interface().(tcell.Color) == tcell.ColorDefault {
-			t.Errorf("Default.%s is unset", d.Type().Field(i).Name)
+	for name, p := range map[string]Palette{"Default": Default, "Light": Light, "MC": MC, "MCRetro": MCRetro} {
+		v := reflect.ValueOf(p)
+		for i := range v.NumField() {
+			if v.Field(i).Interface().(tcell.Color) == tcell.ColorDefault {
+				t.Errorf("%s.%s is unset", name, v.Type().Field(i).Name)
+			}
 		}
 	}
 }

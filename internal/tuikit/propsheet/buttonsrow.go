@@ -79,7 +79,7 @@ func (r *ButtonsRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
 func (r *ButtonsRow) Draw(s tcell.Screen, focused bool) {
 	if r.drawReadOnly {
 		p := theme.Active()
-		st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		for i, b := range r.buttons {
 			if i >= len(r.pos) {
 				break // drawn before its first Layout

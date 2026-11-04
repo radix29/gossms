@@ -146,18 +146,29 @@ type ColorTheme int
 const (
 	ThemeDark ColorTheme = iota
 	ThemeLight
+	// ThemeMCRetro keeps the value the original "Midnight Commander" theme
+	// was saved under, so an existing config.json opens in the same palette.
+	ThemeMCRetro
+	ThemeMC
 )
 
 // ColorThemeName returns the Options dialog label for t.
 func ColorThemeName(t ColorTheme) string {
-	if t == ThemeLight {
+	switch t {
+	case ThemeLight:
 		return "Light"
+	case ThemeMC:
+		return "mc"
+	case ThemeMCRetro:
+		return "mc - retro"
 	}
 	return "Dark"
 }
 
 // AllColorThemes returns the color themes in Options-dialog order.
-func AllColorThemes() []ColorTheme { return []ColorTheme{ThemeDark, ThemeLight} }
+func AllColorThemes() []ColorTheme {
+	return []ColorTheme{ThemeDark, ThemeLight, ThemeMC, ThemeMCRetro}
+}
 
 // Connection is one saved server connection. Password is plaintext in memory;
 // Load and Save encrypt at the JSON boundary (see secret.go).

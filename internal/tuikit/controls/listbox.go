@@ -93,7 +93,7 @@ func (l *ListBox) Focus(v bool) { l.focused = v }
 // Draw renders the list.
 func (l *ListBox) Draw(s tcell.Screen) {
 	p := theme.Active()
-	base := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	base := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	core.FillRect(s, l.rect, ' ', base)
 
 	for row := range l.rect.H {
@@ -109,7 +109,7 @@ func (l *ListBox) Draw(s tcell.Screen) {
 			if l.focused {
 				st = theme.StyleSelected()
 			} else {
-				st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextHighlight)
+				st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextHighlight)
 			}
 			core.FillRect(s, core.Rect{X: l.rect.X, Y: y, W: l.rect.W, H: 1}, ' ', st)
 		}
@@ -117,7 +117,7 @@ func (l *ListBox) Draw(s tcell.Screen) {
 	}
 
 	if len(l.items) > l.rect.H && l.rect.H > 0 {
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
 		core.DrawScrollbar(s, l.rect.Right()-1, l.rect.Y, l.rect.H, len(l.items), l.rect.H, l.scroll, sbStyle, sbThumb)
 	}

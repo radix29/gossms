@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	dbconn "github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -400,9 +399,9 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 // Draw renders the title bar and the data grid.
 func (db *DetailBrowser) Draw(s tcell.Screen) {
 	p := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
+	titleStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
 	if db.active {
-		titleStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
+		titleStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
 	}
 	core.FillRect(s, core.Rect{X: db.rect.X, Y: db.rect.Y, W: db.rect.W, H: 1}, ' ', titleStyle)
 	titleW := db.rect.W - 2

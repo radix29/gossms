@@ -161,7 +161,7 @@ func (d *TypedConfirmDialog) Draw(s tcell.Screen) {
 	}
 	d.DrawBase(s)
 	p := theme.Active()
-	msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	inner := d.InnerRect()
 	lx, w := inner.X+1, inner.W-2
 
@@ -175,7 +175,7 @@ func (d *TypedConfirmDialog) Draw(s tcell.Screen) {
 	d.input.Draw(s)
 
 	if d.status != "" {
-		errStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Error)
+		errStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError)
 		core.DrawTextClipped(s, lx, d.ButtonRowY()-2, w, errStyle, d.status)
 	}
 

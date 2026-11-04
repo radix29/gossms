@@ -16,9 +16,9 @@ import (
 // Draw renders the title bar, editor, splitter, results tab bar, and grid.
 func (p *QueryPanel) Draw(s tcell.Screen) {
 	pal := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.Text)
+	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.MenuText)
 	if p.editorHasFocus() {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
+		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
 	}
 	core.FillRect(s, core.Rect{X: p.rect.X, Y: p.rect.Y, W: p.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, p.rect.X+1, p.rect.Y, p.rect.W-2, titleStyle, p.connInfoText())

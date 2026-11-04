@@ -558,7 +558,7 @@ func (e *Editor) DrawOverlay(s tcell.Screen) {
 		st := base
 		switch {
 		case item.Placeholder:
-			st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+			st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		case idx == e.completionSel:
 			st = theme.StyleSelected()
 		}
@@ -573,14 +573,14 @@ func (e *Editor) DrawOverlay(s tcell.Screen) {
 		if detailW > 0 && item.Detail != "" {
 			detailSt := st
 			if idx != e.completionSel {
-				detailSt = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+				detailSt = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 			}
 			core.DrawTextClipped(s, x+labelW+2, y, detailW, detailSt, item.Detail)
 		}
 	}
 
 	if len(e.completionItems) > rect.H {
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
 		core.DrawScrollbar(s, rect.Right()-1, rect.Y, rect.H, len(e.completionItems), rect.H, e.completionScroll, sbStyle, sbThumb)
 	}

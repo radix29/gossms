@@ -20,7 +20,7 @@ func StyleActiveBorder() tcell.Style {
 	return tcell.StyleDefault.Background(active.PanelBg).Foreground(active.BorderActive)
 }
 func StyleMenuBar() tcell.Style {
-	return tcell.StyleDefault.Background(active.MenuBar).Foreground(active.Text)
+	return tcell.StyleDefault.Background(active.MenuBar).Foreground(active.MenuText)
 }
 func StyleDisabled() tcell.Style {
 	return tcell.StyleDefault.Background(active.MenuBar).Foreground(active.TextDisabled)
@@ -31,11 +31,18 @@ func StyleStatusBar() tcell.Style {
 func StyleSelected() tcell.Style {
 	return tcell.StyleDefault.Background(active.TreeSelected).Foreground(active.SelectedText)
 }
+
+// StyleMenuSelected is the highlighted row of a list on a MenuBar ground (menu,
+// dropdown list, panel switcher). Not StyleSelected: Midnight Commander's
+// selection is the same cyan as its menus, so the row would vanish.
+func StyleMenuSelected() tcell.Style {
+	return tcell.StyleDefault.Background(active.MenuSelected).Foreground(color.White)
+}
 func StyleSearchMatch() tcell.Style {
 	return tcell.StyleDefault.Background(active.EditorMatch).Foreground(active.TextHighlight)
 }
 func StyleDialog() tcell.Style {
-	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.Text)
+	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.DialogText)
 }
 func StyleButton() tcell.Style {
 	return tcell.StyleDefault.Background(active.ButtonBg).Foreground(active.ButtonFg)
@@ -51,7 +58,7 @@ func StyleInput() tcell.Style {
 // radio group). It drops the background entirely, not just dims text, so live
 // controls are obvious at a glance.
 func StyleControlDisabled() tcell.Style {
-	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.TextDim)
+	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.DialogTextDim)
 }
 
 // StyleInputDisabled is StyleControlDisabled for text fields.
@@ -63,7 +70,7 @@ func StyleButtonDisabled() tcell.Style {
 	return tcell.StyleDefault.Background(active.ButtonBg).Foreground(active.TextDim)
 }
 func StyleGridHeader() tcell.Style {
-	return tcell.StyleDefault.Background(active.GridHeader).Foreground(active.Text).Bold(true)
+	return tcell.StyleDefault.Background(active.GridHeader).Foreground(active.GridHeaderText).Bold(true)
 }
 func StyleGridRow() tcell.Style {
 	return tcell.StyleDefault.Background(active.PanelBg).Foreground(active.Text)

@@ -145,11 +145,11 @@ func menuRowStyles(item MenuItem, selected bool) (label, shortcut tcell.Style) {
 		st := theme.StyleDisabled()
 		return st, st
 	case selected:
-		st := theme.StyleSelected()
+		st := theme.StyleMenuSelected()
 		return st, st
 	default:
-		return tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text),
-			tcell.StyleDefault.Background(p.MenuBar).Foreground(p.TextDim)
+		return tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText),
+			tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuTextDim)
 	}
 }
 

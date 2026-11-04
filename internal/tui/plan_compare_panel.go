@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -463,9 +462,9 @@ func (p *PlanComparePanel) layoutChildren() {
 // Draw renders the title bar and both grids.
 func (p *PlanComparePanel) Draw(s tcell.Screen) {
 	pal := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.Text)
+	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.MenuText)
 	if p.active {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
+		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
 	}
 	core.FillRect(s, core.Rect{X: p.rect.X, Y: p.rect.Y, W: p.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, p.rect.X+1, p.rect.Y, p.rect.W-2, titleStyle, p.title)

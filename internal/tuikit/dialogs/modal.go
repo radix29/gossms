@@ -188,7 +188,7 @@ func (d *ModalDialog) DrawContentScrollbar(s tcell.Screen, trackY, trackH, total
 		defer c.SetClip(saved)
 	}
 	p := theme.Active()
-	sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
 	core.DrawScrollbar(s, d.rect.Right()-1, trackY, trackH, total, trackH, offset, sbStyle, sbThumb)
 }
@@ -203,7 +203,7 @@ func (d *ModalDialog) ButtonRowY() int { return d.rect.Y + d.rect.H - 3 }
 // DrawSeparator draws a horizontal line one row above ButtonRowY.
 func (d *ModalDialog) DrawSeparator(s tcell.Screen) {
 	p := theme.Active()
-	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	core.DrawHLine(s, d.rect.X+1, d.ButtonRowY()-1, d.rect.W-2, sep)
 }
 

@@ -19,7 +19,7 @@ func (d *BackupDialog) Draw(s tcell.Screen) {
 	d.layoutForm()
 
 	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	inner := d.InnerRect()
 	lx := inner.X + 1
 
@@ -77,9 +77,9 @@ func (d *BackupDialog) layoutForm() {
 // the progress view wraps its own message.
 func (d *BackupDialog) drawStatus(s tcell.Screen) {
 	p := theme.Active()
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	if d.statusErr {
-		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Error)
+		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError)
 	}
 	inner := d.InnerRect()
 	w := inner.W - 2

@@ -356,8 +356,8 @@ func (d *HelpDialog) Draw(s tcell.Screen) {
 	}
 	d.DrawBase(s)
 	p := theme.Active()
-	contentStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	headStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive).Bold(true)
+	contentStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	headStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogAccent).Bold(true)
 
 	inner := d.InnerRect()
 	dataH := d.dataH()

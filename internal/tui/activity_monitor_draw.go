@@ -53,7 +53,7 @@ func (am *ActivityMonitor) drawTabBar(s tcell.Screen) {
 		}
 		style := barStyle
 		if tabs[i] == am.tab {
-			style = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
+			style = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
 		}
 		core.DrawText(s, seg[0].X, am.tabRect.Y, style, " "+amTabLabels[tabs[i]]+" ")
 	}

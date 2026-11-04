@@ -119,16 +119,16 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 	dataH := propsDataH(inner)
 
 	// Header
-	hdrStyle := tcell.StyleDefault.Background(p.GridHeader).Foreground(p.Text).Bold(true)
+	hdrStyle := tcell.StyleDefault.Background(p.GridHeader).Foreground(p.GridHeaderText).Bold(true)
 	core.FillRect(s, core.Rect{X: inner.X, Y: inner.Y + 1, W: inner.W, H: 1}, ' ', hdrStyle)
 	core.DrawTextClipped(s, inner.X+1, inner.Y+1, keyW, hdrStyle, "Property")
 	core.PutRune(s, inner.X+keyW+2, inner.Y+1, '|', hdrStyle)
 	core.DrawTextClipped(s, inner.X+keyW+4, inner.Y+1, inner.W-keyW-4, hdrStyle, "Value")
 
-	keyStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive).Bold(true)
-	valStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	secStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive).Bold(true)
-	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	keyStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogAccent).Bold(true)
+	valStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	secStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogAccent).Bold(true)
+	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 
 	for row := range dataH {
 		idx := d.scroll + row

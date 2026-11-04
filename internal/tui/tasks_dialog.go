@@ -51,7 +51,7 @@ func (d *TasksDialog) Draw(s tcell.Screen) {
 
 	tasks := d.app.tasks
 	if len(tasks) == 0 {
-		msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		core.DrawText(s, inner.X+1, inner.Y+1, msgStyle, "(no background tasks)")
 	}
 
@@ -61,7 +61,7 @@ func (d *TasksDialog) Draw(s tcell.Screen) {
 			break
 		}
 		y := inner.Y + 1 + row
-		st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+		st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 		if idx == d.sel {
 			st = theme.StyleSelected()
 		}

@@ -189,7 +189,7 @@ func (d *KeyDiagnosticsDialog) Draw(s tcell.Screen) {
 
 	if len(d.lines) == 0 || d.editor == nil {
 		p := theme.Active()
-		dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		core.DrawText(s, inner.X+1, inner.Y+1, dimStyle, "Press any key to see how it was decoded...")
 	} else {
 		d.editor.SetBounds(inner.X, inner.Y, inner.W, dataH)

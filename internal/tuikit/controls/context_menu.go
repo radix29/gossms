@@ -109,8 +109,8 @@ func (cm *ContextMenu) Draw(s tcell.Screen) {
 	cm.drawnX, cm.drawnY = x, y
 
 	p := theme.Active()
-	itemStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
-	borderStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Border)
+	itemStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
+	borderStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuLine)
 	r := core.Rect{X: x, Y: y, W: w, H: h}
 	core.FillRect(s, r, ' ', itemStyle)
 	core.DrawBox(s, r, borderStyle)

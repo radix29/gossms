@@ -8,11 +8,20 @@ behind the mouse and async rules.
 
 - **Read colours from `theme.Active()` (or a `theme.Style*()` call) at draw
   time, never once at construction** — Options switches the palette live
-  (Dark/Light), and a style captured earlier keeps the old theme. The editor
+  (Dark/Light/mc/mc - retro), and a style captured earlier keeps the old theme. The editor
   highlighters did exactly that until they built their styles per call. A
   palette switch must also go through `applyColorTheme`
   (`options_dialog.go`), which resets the screen's default style and `Sync`s:
   cells drawn with no background (chart gutters) otherwise keep the old ground.
+- **Pick the foreground that belongs to the ground** — on `DialogBg` use the
+  `Dialog*` foregrounds (`DialogText`, `DialogTextDim`, `DialogLine`,
+  `DialogAccent`, `DialogError`, …), on `MenuBar` the `Menu*` ones, on
+  `GridHeader` `GridHeaderText`; text on an accent ground (`BorderActive`,
+  `TreeSelected`) is `SelectedText`, not `color.White`; a list highlight on a
+  `MenuBar` ground is `StyleMenuSelected()`, not `StyleSelected()`. Dark and
+  Light set each pair equal, so a mismatch only shows in the mc themes,
+  where panels are blue, dialogs light grey and menus/selection cyan:
+  `p.Text` on `DialogBg` is grey on grey, `StyleSelected` in a menu vanishes.
 - **Fill a `charts.Canvas` with a styled ground before rendering onto it** —
   `NewCanvas` starts every cell colourless and `Blit` copies cells as they are,
   so whatever a render leaves unpainted (Activity Monitor's column gutters, the

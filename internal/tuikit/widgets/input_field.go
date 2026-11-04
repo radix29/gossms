@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -211,9 +210,9 @@ func (f *InputField) inputX() int {
 func (f *InputField) Draw(s tcell.Screen) {
 	p := theme.Active()
 	if f.label != "" {
-		labelFg := p.Text
+		labelFg := p.DialogText
 		if f.disabled {
-			labelFg = p.TextDim
+			labelFg = p.DialogTextDim
 		}
 		labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(labelFg)
 		core.DrawText(s, f.rect.X, f.rect.Y, labelStyle, f.label)
@@ -233,7 +232,7 @@ func (f *InputField) Draw(s tcell.Screen) {
 		inputStyle = theme.StyleInputDisabled()
 	}
 	selStyle := theme.StyleSelected()
-	cursorStyle := tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White)
+	cursorStyle := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText)
 	hasSel := f.HasSelection()
 	selStart, selEnd := 0, 0
 	if hasSel {

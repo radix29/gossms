@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/planview"
@@ -199,9 +198,9 @@ func (lp *LivePlanPanel) Draw(s tcell.Screen) {
 		}
 	}
 	pal := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.Text)
+	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.MenuText)
 	if lp.active {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
+		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
 	}
 	core.FillRect(s, core.Rect{X: lp.rect.X, Y: lp.rect.Y, W: lp.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, lp.rect.X+1, lp.rect.Y, lp.rect.W-2, titleStyle, lp.Title()+" · "+lp.state)

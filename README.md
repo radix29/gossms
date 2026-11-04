@@ -369,7 +369,9 @@ of those) are saved automatically in:
 - Linux/macOS: `~/.config/gossms/config.json`
 - Windows: `%APPDATA%\gossms\config.json`
 
-Tools > Options sets icon style, color theme (Dark, the default, or Light),
+Tools > Options sets icon style, color theme (Dark, the default, Light, mc
+— blue panels, grey dialogs and cyan menus after mc's default skin in a modern
+terminal's colours — or mc - retro, the same skin in the original VGA colours),
 grid and text column widths, indent size, Max fetch rows (rows kept per result
 set in grid, text and file mode, 0 = unlimited; reaching it cancels the rest
 of the script, later GO batches included, and the results status line says so) and

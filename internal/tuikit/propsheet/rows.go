@@ -42,9 +42,9 @@ func (r *SectionRow) Layout(x, y, w int) { r.x, r.y, r.w = x, y, w }
 func (r *SectionRow) Focusable() bool    { return false }
 func (r *SectionRow) Draw(s tcell.Screen, focused bool) {
 	p := theme.Active()
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text).Bold(true)
+	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText).Bold(true)
 	core.DrawText(s, r.x, r.y, st, r.title)
-	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	core.DrawHLine(s, r.x, r.y+1, r.w, sep)
 }
 
@@ -84,7 +84,7 @@ func (r *NoteRow) Layout(x, y, w int) {
 func (r *NoteRow) Focusable() bool { return false }
 func (r *NoteRow) Draw(s tcell.Screen, focused bool) {
 	p := theme.Active()
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 	lines := r.lines
 	if r.drawHeight >= 0 && r.drawHeight < len(lines) {
 		lines = lines[:r.drawHeight]
@@ -165,9 +165,9 @@ func (r *HintRow) Draw(s tcell.Screen, focused bool) {
 		return
 	}
 	p := theme.Active()
-	fg := p.Warning
+	fg := p.DialogWarning
 	if r.isError {
-		fg = p.Error
+		fg = p.DialogError
 	}
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(fg)
 	for i, line := range r.lines {
@@ -235,8 +235,8 @@ func (r *StaticRow) SetDrawHeight(h int) { r.drawHeight = h }
 // focus, so Ctrl+C can copy them.
 func drawFlat(s tcell.Screen, x, y, w int, label, value string, drawHeight int, focused bool) {
 	p := theme.Active()
-	lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
-	vst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+	vst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	lines := flatLines(value, w)
 	if drawHeight >= 1 && drawHeight < len(lines) {
 		lines = lines[:drawHeight]

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -96,7 +95,7 @@ func (v *PlanView) drawTabBar(s tcell.Screen) {
 	for i, seg := range v.tabSegments() {
 		st := bar
 		if Tab(i) == v.activeTab {
-			st = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
+			st = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
 		}
 		core.DrawText(s, seg[0].X, v.tabRect.Y, st, " "+tabLabels[i]+" ")
 		col = seg[0].X + seg[0].W + 1

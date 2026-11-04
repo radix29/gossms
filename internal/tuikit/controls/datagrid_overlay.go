@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -184,10 +183,10 @@ func (g *DataGrid) DrawOverlay(s tcell.Screen) {
 		// and the hint clipped to what is left, so they can't overlap.
 		btnW := core.DisplayWidth(viewCloseLabel)
 		g.viewCloseRect = core.Rect{X: x + w - 2 - btnW, Y: y + h - 2, W: btnW, H: 1}
-		hintSt := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		hintSt := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		core.DrawTextClipped(s, x+2, y+h-2, w-6-btnW, hintSt,
 			"Esc or Close to dismiss — Shift+arrows to select, Ctrl+C to copy")
-		btnSt := tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
+		btnSt := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
 		core.DrawTextClipped(s, g.viewCloseRect.X, g.viewCloseRect.Y, btnW, btnSt, viewCloseLabel)
 	}
 	g.ctxMenu.Draw(s)

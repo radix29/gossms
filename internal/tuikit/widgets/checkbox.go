@@ -49,12 +49,12 @@ func (c *CheckBox) Width() int { return core.DisplayWidth(c.label) + 4 }
 // Draw renders the check box.
 func (c *CheckBox) Draw(s tcell.Screen) {
 	p := theme.Active()
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	switch {
 	case c.disabled:
 		st = theme.StyleControlDisabled()
 	case c.focused:
-		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive)
+		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogAccent)
 	}
 	box := "[ ] "
 	if c.checked {

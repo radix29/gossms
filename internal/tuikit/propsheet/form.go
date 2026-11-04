@@ -341,7 +341,7 @@ func (f *Form) Draw(s tcell.Screen) {
 
 	if total := f.totalHeight(w); total > f.rect.H {
 		p := theme.Active()
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
 		offset := f.scrollLines(w)
 		if f.scroll >= f.maxScroll(w) {

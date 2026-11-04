@@ -67,7 +67,7 @@ func (d *QueryListDialog) Draw(s tcell.Screen) {
 	dataH := d.dataH()
 
 	if len(d.titles) == 0 {
-		msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		core.DrawText(s, inner.X+1, inner.Y+1, msgStyle, "(no open queries)")
 	}
 
@@ -77,7 +77,7 @@ func (d *QueryListDialog) Draw(s tcell.Screen) {
 			break
 		}
 		y := inner.Y + 1 + row
-		st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+		st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 		if idx == d.sel {
 			st = theme.StyleSelected()
 		}

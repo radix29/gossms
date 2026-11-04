@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -113,7 +112,7 @@ func (v *PlanView) summaryHeaderStyleAndText() (tcell.Style, string) {
 	title := "Operator Summary  ('o' to cycle, c/r/t to sort, Tab to focus)"
 	if v.bottomFocused {
 		pal := theme.Active()
-		hs = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
+		hs = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
 		title = "Operator Summary  (focused — Tab to return, ↑↓/Enter, Ctrl+Space to show full value)"
 	}
 	return hs, title

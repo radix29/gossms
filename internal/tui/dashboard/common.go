@@ -48,7 +48,7 @@ func drawHeader(s tcell.Screen, r core.Rect, h Header) {
 		return
 	}
 	pal := theme.Active()
-	style := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.Text)
+	style := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.MenuText)
 	core.FillRect(s, r, ' ', style)
 
 	left := h.Instance
