@@ -114,8 +114,8 @@ func (r *CheckRow) Draw(s tcell.Screen, focused bool) {
 		if r.box.Checked() {
 			mark = "✓"
 		}
-		mst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-		lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		mst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+		lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		if focused {
 			mst, lst = theme.StyleSelected(), theme.StyleSelected()
 			core.FillRect(s, core.Rect{X: r.x, Y: r.y, W: r.w, H: 1}, ' ', lst)

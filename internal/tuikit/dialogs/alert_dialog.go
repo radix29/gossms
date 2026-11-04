@@ -59,7 +59,7 @@ func (d *AlertDialog) Draw(s tcell.Screen) {
 	}
 	d.DrawBase(s)
 	p := theme.Active()
-	msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	inner := d.InnerRect()
 	contentW := inner.W - 2
 	for i, line := range d.msgLines {

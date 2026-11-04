@@ -203,9 +203,9 @@ func (d *DropDown) Draw(s tcell.Screen) {
 	d.screenW, d.screenH = s.Size()
 	p := theme.Active()
 	if d.label != "" {
-		labelFg := p.Text
+		labelFg := p.DialogText
 		if d.disabled {
-			labelFg = p.TextDim
+			labelFg = p.DialogTextDim
 		}
 		core.DrawText(s, d.rect.X, d.rect.Y, tcell.StyleDefault.Background(p.DialogBg).Foreground(labelFg), d.label)
 	}
@@ -239,8 +239,8 @@ func (d *DropDown) DrawOverlay(s tcell.Screen) {
 	d.screenW, d.screenH = s.Size()
 	p := theme.Active()
 	ix := d.inputX()
-	listStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
-	selStyle := theme.StyleSelected()
+	listStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
+	selStyle := theme.StyleMenuSelected()
 	y0, rows := d.listGeometry()
 	top := d.firstShown()
 	textW := d.rect.W

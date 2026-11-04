@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -111,7 +110,7 @@ func (d *ConnectDialog) Draw(s tcell.Screen) {
 	d.layoutFields()
 
 	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 
 	if d.twoPane {
 		d.drawHistoryPane(s, labelStyle)
@@ -159,7 +158,7 @@ func (d *ConnectDialog) drawHistoryPane(s tcell.Screen, labelStyle tcell.Style) 
 	p := theme.Active()
 	core.DrawTextClipped(s, d.InnerRect().X, d.historyHeaderY, connectHistoryPane,
 		labelStyle.Bold(true), fmt.Sprintf("Recent Connections (%d)", len(d.historyConns)))
-	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	for y := d.InnerRect().Y; y <= d.ButtonRowY()-2; y++ {
 		core.DrawText(s, d.paneRuleX, y, ruleStyle, "│")
 	}
@@ -170,24 +169,24 @@ func (d *ConnectDialog) drawHistoryPane(s tcell.Screen, labelStyle tcell.Style) 
 // like the query panel's result tabs.
 func (d *ConnectDialog) drawTabBar(s tcell.Screen) {
 	p := theme.Active()
-	barStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	barStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	core.FillRect(s, d.tabRect, ' ', barStyle)
 	for i, seg := range d.tabSegments() {
 		style := barStyle
 		if connectTab(i) == d.tab {
-			style = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
+			style = tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
 		}
 		core.DrawText(s, seg[0].X, d.tabRect.Y, style, " "+connectTabLabels[i]+" ")
 	}
-	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	core.DrawHLine(s, d.rightX, d.tabRect.Y+1, d.rightWidth(), ruleStyle)
 }
 
 // drawSection draws a titled horizontal rule across the tabbed pane.
 func (d *ConnectDialog) drawSection(s tcell.Screen, title string, y int) {
 	p := theme.Active()
-	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
-	titleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextHighlight)
+	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
+	titleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextHighlight)
 	core.DrawHLine(s, d.rightX, y, d.rightWidth(), ruleStyle)
 	core.DrawText(s, d.rightX+1, y, titleStyle, " "+title+" ")
 }

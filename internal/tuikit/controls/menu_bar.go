@@ -2,7 +2,6 @@ package controls
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -97,7 +96,6 @@ func (mb *MenuBar) Open() {
 // other content has been drawn, to render any open dropdown on top: it extends
 // below the bar into rows other panels draw into.
 func (mb *MenuBar) Draw(s tcell.Screen) {
-	p := theme.Active()
 	barStyle := theme.StyleMenuBar()
 	core.FillRect(s, mb.rect, ' ', barStyle)
 
@@ -106,7 +104,7 @@ func (mb *MenuBar) Draw(s tcell.Screen) {
 		label := " " + m.Label + " "
 		st := barStyle
 		if i == mb.openMenu || i == mb.hoverMenu {
-			st = tcell.StyleDefault.Background(p.MenuSelected).Foreground(color.White)
+			st = theme.StyleMenuSelected()
 		}
 		core.DrawText(s, col, mb.rect.Y, st, label)
 		col += core.DisplayWidth(label)
@@ -140,8 +138,8 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 	rows := r.H - 2
 	mb.scrollTop = clampMenuScroll(mb.scrollTop, mb.selectedItem, len(menu.Items), rows)
 
-	ddStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
-	borderStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Border)
+	ddStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
+	borderStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuLine)
 	core.DrawBox(s, r, borderStyle)
 	core.FillRect(s, r.Inner(1), ' ', ddStyle)
 

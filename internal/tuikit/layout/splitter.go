@@ -2,7 +2,6 @@ package layout
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -115,7 +114,7 @@ func (sp *Splitter) Draw(s tcell.Screen) {
 	}
 	style := tcell.StyleDefault.Background(barColor).Foreground(p.TextDim)
 	if sp.active {
-		style = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
+		style = tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
 	}
 	pos := sp.SplitPos()
 

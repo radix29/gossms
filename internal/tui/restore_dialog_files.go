@@ -228,8 +228,8 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 	d.layoutFiles()
 
 	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 	inner := d.InnerRect()
 	lx := inner.X + 1
 	w := inner.W - 2
@@ -242,7 +242,7 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 	row := d.filesListY()
 	core.DrawText(s, lx, row, labelStyle, "Files in the backup")
 	row++
-	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	core.DrawHLine(s, lx, row, w, sep)
 	row++
 

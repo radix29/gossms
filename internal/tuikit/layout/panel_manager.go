@@ -2,7 +2,6 @@ package layout
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -306,20 +305,20 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 			panel := pm.panels[i]
 			tabStyle := barStyle
 			if i == pm.active {
-				tabStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
+				tabStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
 			}
 			label := " " + tabLabelText(panel) + " "
 			core.DrawText(s, seg[0].X, pm.rect.Y, tabStyle, label)
 			if seg[1].W > 0 {
 				closeStyle := tabStyle
 				if i != pm.active {
-					closeStyle = tcell.StyleDefault.Background(p.MenuBar).Foreground(p.TextDim)
+					closeStyle = tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuTextDim)
 				}
 				core.DrawText(s, seg[1].X, pm.rect.Y, closeStyle, tabCloseGlyph)
 			}
 		}
 		// Combo arrow
-		arrowStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.TextDim)
+		arrowStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuTextDim)
 		core.DrawText(s, pm.rect.X+pm.rect.W-4, pm.rect.Y, arrowStyle, " [v]")
 	}
 
@@ -333,7 +332,7 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 		listX, listW, listH := pm.comboGeom()
 		// A resize can leave the scroll offset out of range.
 		pm.comboScroll = core.Clamp(pm.comboScroll, 0, pm.comboScrollMax(listH))
-		listStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
+		listStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
 		// The scrollbar takes the list's last column, so labels get one less.
 		barW := 0
 		if len(pm.panels) > listH {
@@ -344,7 +343,7 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 			y := pm.contentY() + row
 			st := listStyle
 			if i == pm.active {
-				st = theme.StyleSelected()
+				st = theme.StyleMenuSelected()
 			}
 			core.FillRect(s, core.Rect{X: listX, Y: y, W: listW, H: 1}, ' ', st)
 			core.DrawTextClipped(s, listX+1, y, listW-2-barW, st,
@@ -352,7 +351,7 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 		}
 		if barW > 0 {
 			core.DrawScrollbar(s, listX+listW-1, pm.contentY(), listH,
-				len(pm.panels), listH, pm.comboScroll, listStyle, theme.StyleSelected())
+				len(pm.panels), listH, pm.comboScroll, listStyle, theme.StyleMenuSelected())
 		}
 	}
 }

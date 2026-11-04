@@ -31,12 +31,21 @@ type Palette struct {
 	// Menu
 	MenuSelected tcell.Color
 	MenuHover    tcell.Color
+	// MenuText, MenuTextDim and MenuLine are text, hints and rules on a MenuBar
+	// ground — menus, toolbars, tab strips and panel title bars. Not Text: in
+	// the mc themes the bars are cyan while panels are blue, and one
+	// foreground cannot read on both.
+	MenuText    tcell.Color
+	MenuTextDim tcell.Color
+	MenuLine    tcell.Color
 
 	// Grid
 	GridHeader   tcell.Color
 	GridRowAlt   tcell.Color
 	GridSelected tcell.Color
 	GridBorder   tcell.Color
+	// GridHeaderText is column-heading text on GridHeader.
+	GridHeaderText tcell.Color
 
 	// Editor
 	EditorBg      tcell.Color
@@ -55,6 +64,17 @@ type Palette struct {
 	DialogBorder  tcell.Color
 	DialogTitle   tcell.Color
 	DialogOverlay tcell.Color
+	// The Dialog* foregrounds are their unprefixed namesakes (Text, TextDim,
+	// TextHighlight, Border, BorderActive, Error, Warning) on a DialogBg ground.
+	// The mc themes pair blue panels with light-grey dialogs, so every
+	// panel foreground needs a dialog twin; Dark and Light set them equal.
+	DialogText          tcell.Color
+	DialogTextDim       tcell.Color
+	DialogTextHighlight tcell.Color
+	DialogLine          tcell.Color
+	DialogAccent        tcell.Color
+	DialogError         tcell.Color
+	DialogWarning       tcell.Color
 
 	// Button
 	ButtonBg     tcell.Color
@@ -125,11 +145,15 @@ var Default = Palette{
 
 	MenuSelected: tcell.NewRGBColor(0, 122, 204),
 	MenuHover:    tcell.NewRGBColor(62, 62, 64),
+	MenuText:     tcell.NewRGBColor(220, 220, 220),
+	MenuTextDim:  tcell.NewRGBColor(150, 150, 150),
+	MenuLine:     tcell.NewRGBColor(63, 63, 70),
 
-	GridHeader:   tcell.NewRGBColor(45, 45, 48),
-	GridRowAlt:   tcell.NewRGBColor(40, 40, 42),
-	GridSelected: tcell.NewRGBColor(0, 86, 153),
-	GridBorder:   tcell.NewRGBColor(63, 63, 70),
+	GridHeader:     tcell.NewRGBColor(45, 45, 48),
+	GridRowAlt:     tcell.NewRGBColor(40, 40, 42),
+	GridSelected:   tcell.NewRGBColor(0, 86, 153),
+	GridBorder:     tcell.NewRGBColor(63, 63, 70),
+	GridHeaderText: tcell.NewRGBColor(220, 220, 220),
 
 	EditorBg:      tcell.NewRGBColor(30, 30, 30),
 	EditorCursor:  tcell.NewRGBColor(220, 220, 220),
@@ -140,10 +164,17 @@ var Default = Palette{
 	EditorLineNum: tcell.NewRGBColor(100, 100, 100),
 	EditorMatch:   tcell.NewRGBColor(88, 76, 22),
 
-	DialogBg:      tcell.NewRGBColor(45, 45, 48),
-	DialogBorder:  tcell.NewRGBColor(0, 122, 204),
-	DialogTitle:   tcell.NewRGBColor(255, 255, 255),
-	DialogOverlay: tcell.NewRGBColor(0, 0, 0),
+	DialogBg:            tcell.NewRGBColor(45, 45, 48),
+	DialogBorder:        tcell.NewRGBColor(0, 122, 204),
+	DialogTitle:         tcell.NewRGBColor(255, 255, 255),
+	DialogOverlay:       tcell.NewRGBColor(0, 0, 0),
+	DialogText:          tcell.NewRGBColor(220, 220, 220),
+	DialogTextDim:       tcell.NewRGBColor(150, 150, 150),
+	DialogTextHighlight: tcell.NewRGBColor(255, 255, 255),
+	DialogLine:          tcell.NewRGBColor(63, 63, 70),
+	DialogAccent:        tcell.NewRGBColor(0, 122, 204),
+	DialogError:         tcell.NewRGBColor(220, 50, 50),
+	DialogWarning:       tcell.NewRGBColor(220, 180, 50),
 
 	ButtonBg:     tcell.NewRGBColor(63, 63, 70),
 	ButtonFg:     tcell.NewRGBColor(220, 220, 220),
@@ -177,6 +208,159 @@ var Default = Palette{
 	ChartSectionBg: tcell.NewRGBColor(66, 66, 72),
 }
 
+// mcColors is the 16-colour set a Midnight Commander skin names, plus the two
+// off-panel shades mc itself lacks. RGB, not the ANSI palette indices: DimArea
+// blends colours and needs their RGB values, and a terminal palette would make
+// the theme vary by terminal.
+type mcColors struct {
+	Black, Blue, Green, Cyan, Red, Brown, LightGray, Gray         tcell.Color
+	BrightBlue, BrightGreen, BrightCyan, BrightRed, BrightMagenta tcell.Color
+	Yellow, White                                                 tcell.Color
+	PanelShade, RowShade                                          tcell.Color // TreeHover, GridRowAlt
+}
+
+// vgaColors are the VGA text-mode colours.
+var vgaColors = mcColors{
+	Black:         tcell.NewRGBColor(0, 0, 0),
+	Blue:          tcell.NewRGBColor(0, 0, 170),
+	Green:         tcell.NewRGBColor(0, 170, 0),
+	Cyan:          tcell.NewRGBColor(0, 170, 170),
+	Red:           tcell.NewRGBColor(170, 0, 0),
+	Brown:         tcell.NewRGBColor(170, 85, 0),
+	LightGray:     tcell.NewRGBColor(170, 170, 170),
+	Gray:          tcell.NewRGBColor(85, 85, 85),
+	BrightBlue:    tcell.NewRGBColor(85, 85, 255),
+	BrightGreen:   tcell.NewRGBColor(85, 255, 85),
+	BrightCyan:    tcell.NewRGBColor(85, 255, 255),
+	BrightRed:     tcell.NewRGBColor(255, 85, 85),
+	BrightMagenta: tcell.NewRGBColor(255, 85, 255),
+	Yellow:        tcell.NewRGBColor(255, 255, 85),
+	White:         tcell.NewRGBColor(255, 255, 255),
+	PanelShade:    tcell.NewRGBColor(0, 0, 120),
+	RowShade:      tcell.NewRGBColor(0, 0, 140),
+}
+
+// tangoColors are the Tango terminal palette (the xfce4-terminal and GNOME
+// Terminal default), which is how mc looks in most Linux terminals today.
+var tangoColors = mcColors{
+	Black:         tcell.NewRGBColor(46, 52, 54),
+	Blue:          tcell.NewRGBColor(52, 101, 164),
+	Green:         tcell.NewRGBColor(78, 154, 6),
+	Cyan:          tcell.NewRGBColor(6, 152, 154),
+	Red:           tcell.NewRGBColor(204, 0, 0),
+	Brown:         tcell.NewRGBColor(196, 160, 0),
+	LightGray:     tcell.NewRGBColor(211, 215, 207),
+	Gray:          tcell.NewRGBColor(85, 87, 83),
+	BrightBlue:    tcell.NewRGBColor(114, 159, 207),
+	BrightGreen:   tcell.NewRGBColor(138, 226, 52),
+	BrightCyan:    tcell.NewRGBColor(52, 226, 226),
+	BrightRed:     tcell.NewRGBColor(239, 41, 41),
+	BrightMagenta: tcell.NewRGBColor(173, 127, 168),
+	Yellow:        tcell.NewRGBColor(252, 233, 79),
+	White:         tcell.NewRGBColor(238, 238, 236),
+	PanelShade:    tcell.NewRGBColor(42, 84, 138),
+	RowShade:      tcell.NewRGBColor(46, 91, 150),
+}
+
+// MC follows mc's default skin rendered in the Tango terminal palette: the
+// softer blue, grey and teal mc shows in a modern Linux terminal.
+var MC = mcSkin(tangoColors)
+
+// MCRetro is mc's default skin in the original VGA colours.
+var MCRetro = mcSkin(vgaColors)
+
+// mcSkin follows mc's default skin (/usr/share/mc/skins/default.ini) in the
+// colour set c: light grey on blue panels and editor, black on light grey
+// dialogs, cyan menus, input fields and selection, yellow headers, and the
+// editor colours of mc's sql.syntax.
+func mcSkin(c mcColors) Palette {
+	return Palette{
+		Background:    c.Blue,
+		MenuBar:       c.Cyan,
+		StatusBar:     c.Cyan,
+		PanelBg:       c.Blue,
+		Border:        c.LightGray,
+		BorderActive:  c.BrightCyan,
+		Splitter:      c.Blue,
+		SplitterHover: c.BrightCyan,
+
+		Text:          c.LightGray,
+		TextDim:       c.Cyan,
+		TextHighlight: c.White,
+		TextDisabled:  c.Gray,
+		SelectedText:  c.Black,
+
+		TreeSelected: c.Cyan,
+		TreeHover:    c.PanelShade,
+
+		MenuSelected: c.Black,
+		MenuHover:    c.Black,
+		MenuText:     c.Black,
+		MenuTextDim:  c.Gray,
+		MenuLine:     c.White,
+
+		// GridRowAlt is a shade off the panel blue; mc has no zebra striping, but a
+		// wide result grid is unreadable without it.
+		GridHeader:     c.Blue,
+		GridRowAlt:     c.RowShade,
+		GridSelected:   c.Cyan,
+		GridBorder:     c.LightGray,
+		GridHeaderText: c.Yellow,
+
+		EditorBg:      c.Blue,
+		EditorCursor:  c.White,
+		EditorKeyword: c.Yellow,
+		EditorString:  c.Green,
+		EditorComment: c.Brown,
+		EditorNumber:  c.BrightCyan,
+		EditorLineNum: c.Cyan,
+		EditorMatch:   c.Green,
+
+		DialogBg:            c.LightGray,
+		DialogBorder:        c.Black,
+		DialogTitle:         c.Blue,
+		DialogOverlay:       c.Black,
+		DialogText:          c.Black,
+		DialogTextDim:       c.Gray,
+		DialogTextHighlight: c.Blue,
+		DialogLine:          c.Gray,
+		DialogAccent:        c.Blue,
+		DialogError:         c.Red,
+		DialogWarning:       c.Brown,
+
+		ButtonBg:     c.LightGray,
+		ButtonFg:     c.Black,
+		ButtonActive: c.Cyan,
+		ButtonHover:  c.BrightCyan,
+
+		InputBg:      c.Cyan,
+		InputFg:      c.Black,
+		InputBorder:  c.Black,
+		InputFocused: c.Blue,
+
+		TooltipBg:     c.LightGray,
+		TooltipFg:     c.Black,
+		TooltipBorder: c.Black,
+
+		Success: c.BrightGreen,
+		Error:   c.BrightRed,
+		Warning: c.Yellow,
+		Info:    c.BrightCyan,
+
+		ChartCyan:      c.BrightCyan,
+		ChartGreen:     c.BrightGreen,
+		ChartYellow:    c.Yellow,
+		ChartBlue:      c.BrightBlue,
+		ChartRed:       c.BrightRed,
+		ChartPurple:    c.BrightMagenta,
+		ChartNeutral:   c.LightGray,
+		ChartGrid:      c.Gray,
+		ChartAxis:      c.LightGray,
+		ChartPlotBg:    c.Black,
+		ChartSectionBg: c.Gray,
+	}
+}
+
 // Light is the built-in SSMS light (Blue/Light) theme. Accent backgrounds keep
 // the dark theme's blue, so the hardcoded white-on-accent styles read in both.
 var Light = Palette{
@@ -200,11 +384,15 @@ var Light = Palette{
 
 	MenuSelected: tcell.NewRGBColor(0, 122, 204),
 	MenuHover:    tcell.NewRGBColor(220, 230, 244),
+	MenuText:     tcell.NewRGBColor(30, 30, 30),
+	MenuTextDim:  tcell.NewRGBColor(110, 110, 110),
+	MenuLine:     tcell.NewRGBColor(204, 206, 219),
 
-	GridHeader:   tcell.NewRGBColor(225, 225, 230),
-	GridRowAlt:   tcell.NewRGBColor(236, 236, 240),
-	GridSelected: tcell.NewRGBColor(0, 120, 215),
-	GridBorder:   tcell.NewRGBColor(204, 206, 219),
+	GridHeader:     tcell.NewRGBColor(225, 225, 230),
+	GridRowAlt:     tcell.NewRGBColor(236, 236, 240),
+	GridSelected:   tcell.NewRGBColor(0, 120, 215),
+	GridBorder:     tcell.NewRGBColor(204, 206, 219),
+	GridHeaderText: tcell.NewRGBColor(30, 30, 30),
 
 	EditorBg:      tcell.NewRGBColor(255, 255, 255),
 	EditorCursor:  tcell.NewRGBColor(30, 30, 30),
@@ -217,10 +405,17 @@ var Light = Palette{
 
 	// DialogOverlay is mid-grey, not black: what a modal dims is mostly light
 	// ground, which a blend toward black turns muddy.
-	DialogBg:      tcell.NewRGBColor(240, 240, 240),
-	DialogBorder:  tcell.NewRGBColor(0, 122, 204),
-	DialogTitle:   tcell.NewRGBColor(0, 0, 0),
-	DialogOverlay: tcell.NewRGBColor(128, 128, 128),
+	DialogBg:            tcell.NewRGBColor(240, 240, 240),
+	DialogBorder:        tcell.NewRGBColor(0, 122, 204),
+	DialogTitle:         tcell.NewRGBColor(0, 0, 0),
+	DialogOverlay:       tcell.NewRGBColor(128, 128, 128),
+	DialogText:          tcell.NewRGBColor(30, 30, 30),
+	DialogTextDim:       tcell.NewRGBColor(110, 110, 110),
+	DialogTextHighlight: tcell.NewRGBColor(0, 0, 0),
+	DialogLine:          tcell.NewRGBColor(204, 206, 219),
+	DialogAccent:        tcell.NewRGBColor(0, 122, 204),
+	DialogError:         tcell.NewRGBColor(196, 30, 30),
+	DialogWarning:       tcell.NewRGBColor(170, 110, 0),
 
 	ButtonBg:     tcell.NewRGBColor(221, 221, 221),
 	ButtonFg:     tcell.NewRGBColor(30, 30, 30),

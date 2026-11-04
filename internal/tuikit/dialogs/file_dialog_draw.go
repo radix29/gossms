@@ -33,11 +33,11 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 	core.DrawTextRight(s, contentX+nameColW+1, headerY, fileSizeColW, headerStyle, "Size")
 	core.DrawTextRight(s, contentX+nameColW+1+fileSizeColW+1, headerY, fileModColW, headerStyle, "Modified")
 
-	sepStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	sepStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	core.DrawHLine(s, contentX, inner.Y+3, contentW, sepStyle)
 
 	lr := d.listRect()
-	baseStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	baseStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	// busy wins over listErr: it is set only during a FileSystem call, and what it
 	// replaces (the previous listing or error) is about to be superseded.
 	note := d.busy
@@ -46,7 +46,7 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 	}
 	if note != "" {
 		core.FillRect(s, lr, ' ', baseStyle)
-		noteStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		noteStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		// Wrapped across the list area, not clipped to one line: a listing error is a
 		// whole sentence in a ~70-column box, and a one-line clip cut the reason off
 		// mid-word ("before SQL Server 2017 the server lists", the pre-2017 xp_dirtree
@@ -65,7 +65,7 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 			d.drawEntry(s, y, lr.X, nameColW, idx)
 		}
 		if len(d.entries) > lr.H {
-			sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+			sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 			sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
 			core.DrawScrollbar(s, lr.Right()-1, lr.Y, lr.H, len(d.entries), lr.H, d.scroll, sbStyle, sbThumb)
 		}
@@ -84,14 +84,14 @@ func (d *FileDialog) drawEntry(s tcell.Screen, y, x, nameColW, idx int) {
 	p := theme.Active()
 	e := d.entries[idx]
 
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	marker := "  "
 	if idx == d.sel {
 		marker = "▸ "
 		if d.focus == ffList {
 			st = theme.StyleSelected()
 		} else {
-			st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextHighlight)
+			st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextHighlight)
 		}
 	}
 	// +1: also paint the scrollbar gutter so the selection highlight reaches the

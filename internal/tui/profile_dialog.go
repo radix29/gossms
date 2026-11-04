@@ -149,8 +149,8 @@ func (d *ProfileDialog) Draw(s tcell.Screen) {
 	}
 	d.DrawBase(s)
 	p := theme.Active()
-	text := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	dim := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+	text := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	dim := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 	inner := d.InnerRect()
 	x, w := inner.X+1, inner.W-2
 
@@ -163,7 +163,7 @@ func (d *ProfileDialog) Draw(s tcell.Screen) {
 	core.DrawTextClipped(s, x, inner.Y+7, w, dim, "An empty name makes it a plain recent connection.")
 	if d.status != "" {
 		core.DrawTextClipped(s, x, d.ButtonRowY()-2, w,
-			tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Error), d.status)
+			tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError), d.status)
 	}
 
 	d.DrawSeparator(s)

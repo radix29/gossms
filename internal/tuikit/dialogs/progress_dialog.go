@@ -187,7 +187,7 @@ func (d *ProgressDialog) Draw(s tcell.Screen) {
 	d.DrawBase(s)
 	p := theme.Active()
 	msgStyle := theme.StyleDialog()
-	dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+	dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 	inner := d.InnerRect()
 	x := inner.X + 1
 	contentW := inner.W - 2

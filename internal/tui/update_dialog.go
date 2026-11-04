@@ -128,8 +128,8 @@ func (d *UpdateDialog) Draw(s tcell.Screen) {
 	}
 	d.DrawBase(s)
 	p := theme.Active()
-	textStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	linkStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive).Underline(true)
+	textStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	linkStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogAccent).Underline(true)
 
 	inner := d.InnerRect()
 	// Rows between the top padding row and DrawSeparator's line (one above

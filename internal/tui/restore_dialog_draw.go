@@ -29,7 +29,7 @@ func (d *RestoreDialog) Draw(s tcell.Screen) {
 	d.layoutForm()
 
 	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	inner := d.InnerRect()
 	lx := inner.X + 1
 
@@ -57,7 +57,7 @@ func (d *RestoreDialog) Draw(s tcell.Screen) {
 	d.fStopAt.Draw(s)
 	hx := d.fStopAt.InputX() + d.fStopAt.Width() + 3 // past both brackets and a gap
 	core.DrawTextClipped(s, hx, d.fStopAt.RectY(), inner.X+inner.W-1-hx,
-		tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim), stopAtHint)
+		tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim), stopAtHint)
 
 	// Two lines: the form's last row (fStopAt) leaves that much room above the
 	// separator.
@@ -118,9 +118,9 @@ const restoreOptionsColX = 22
 // (maxLines) instead of being cut off at one line.
 func (d *RestoreDialog) drawStatus(s tcell.Screen, maxLines int) {
 	p := theme.Active()
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	if d.statusErr {
-		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Error)
+		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError)
 	}
 	inner := d.InnerRect()
 	w := inner.W - 2
@@ -135,8 +135,8 @@ func (d *RestoreDialog) drawStatus(s tcell.Screen, maxLines int) {
 // header fields plus the files it contains.
 func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 	inner := d.InnerRect()
 	lx := inner.X + 1
 	w := inner.W - 2
@@ -177,7 +177,7 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 
 	core.DrawText(s, lx, row, labelStyle, "Files Included")
 	row++
-	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	core.DrawHLine(s, lx, row, w, sep)
 	row++
 	maxFiles := d.ButtonRowY() - 2 - row

@@ -188,7 +188,7 @@ func optionsFocusName(d *OptionsDialog) string {
 	switch d.focusable[d.focusIdx] {
 	case d.rbIconStyle:
 		return "icons"
-	case d.rbTheme:
+	case d.ddTheme:
 		return "theme"
 	case d.fMaxCellLen:
 		return "cell"
@@ -210,9 +210,9 @@ func optionsFocusName(d *OptionsDialog) string {
 // switch the focus slice replaced: after each key, what has focus, whether
 // the dialog consumed the key, and whether Copy/Paste has a target. Pins the
 // quirks as well as the order — Backtab does not wrap off the first control,
-// the radio boxes swallow the keys they do not use while the fields pass them
-// on, Down moves the radio selection before it moves focus, and Up from
-// either button returns to the checkbox.
+// the radio box swallows the keys it does not use while the fields and the
+// closed theme dropdown pass them on, Down moves the radio selection before it
+// moves focus, and Up from either button returns to the checkbox.
 func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	a := newTestApp()
 	a.screen = &fakeSizedScreen{w: 100, h: 40}
@@ -248,7 +248,7 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 		"Backtab>fetchrows(true,true) Backtab>xecap(true,true) Up>indent(true,true) Backtab>text(true,true) Up>cell(true,true) " +
 		"Backtab>theme(true,false) Backtab>icons(true,false) Down>icons(true,false) Up>icons(true,false) " +
 		"Down>icons(true,false) Down>icons(true,false) Down>icons(true,false) Down>theme(true,false) " +
-		"Down>theme(true,false) F5>theme(true,false) Up>theme(true,false) F5>theme(true,false) " +
+		"Down>cell(true,true) F5>cell(false,true) Up>theme(true,false) F5>theme(false,false) " +
 		"Up>icons(true,false) F5>icons(true,false) Up>icons(true,false) Up>icons(true,false) " +
 		"Up>icons(true,false) F5>icons(true,false) Tab>theme(true,false) Tab>cell(true,true) " +
 		"F5>cell(false,true)"
@@ -302,16 +302,26 @@ func TestOptionsApplySwitchesColorTheme(t *testing.T) {
 	a.cfg.Theme = config.ThemeLight
 	d := NewOptionsDialog(a)
 	d.Show()
-	if got := d.rbTheme.Selected(); got != 1 {
+	if got := d.ddTheme.Selected(); got != 1 {
 		t.Fatalf("Show() selected theme %d, want 1 (Light)", got)
 	}
 	d.apply()
 	if a.cfg.Theme != config.ThemeLight || theme.Active().Background != theme.Light.Background {
 		t.Errorf("apply(Light): Theme = %v, Background = %v", a.cfg.Theme, theme.Active().Background)
 	}
-	d.rbTheme.SetSelected(0)
+	d.ddTheme.SetSelected(0)
 	d.apply()
 	if a.cfg.Theme != config.ThemeDark || theme.Active().Background != theme.Default.Background {
 		t.Errorf("apply(Dark): Theme = %v, Background = %v", a.cfg.Theme, theme.Active().Background)
+	}
+	d.ddTheme.SetSelected(2)
+	d.apply()
+	if a.cfg.Theme != config.ThemeMC || theme.Active().Background != theme.MC.Background {
+		t.Errorf("apply(mc): Theme = %v, Background = %v", a.cfg.Theme, theme.Active().Background)
+	}
+	d.ddTheme.SetSelected(3)
+	d.apply()
+	if a.cfg.Theme != config.ThemeMCRetro || theme.Active().Background != theme.MCRetro.Background {
+		t.Errorf("apply(mc - retro): Theme = %v, Background = %v", a.cfg.Theme, theme.Active().Background)
 	}
 }

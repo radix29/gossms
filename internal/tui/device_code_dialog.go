@@ -108,7 +108,7 @@ func (d *DeviceCodeDialog) Draw(s tcell.Screen) {
 	}
 	d.DrawBase(s)
 	p := theme.Active()
-	text := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	text := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
 	strong := text.Bold(true)
 	inner := d.InnerRect()
 	x, w := inner.X+2, inner.W-4
