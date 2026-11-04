@@ -317,6 +317,36 @@ func TestQueryRunTransactions(t *testing.T) {
 	}
 }
 
+// NEXT VALUE FOR is write, and a wrapped run that rolls back warns that the
+// sequence stayed advanced; a commit, or an unwrapped run, does not.
+func TestQueryRunWarnsSequenceRollback(t *testing.T) {
+	const script = "SELECT 1\nSELECT NEXT VALUE FOR dbo.seq"
+	d, dialled := queryDeps(t, &fakeSession{t: t})
+	if r := runQuery(t, d, "query", "run", "-p", "dev", "--sql", script, "-o", "json"); r.exit != 7 || *dialled != 0 {
+		t.Fatalf("under --allow read: exit %d, want 7 (BLOCKED)\n%s", r.exit, r.stdout)
+	}
+	for _, tc := range []struct {
+		argv []string
+		warn bool
+	}{
+		{[]string{"--transaction", "rollback"}, true},
+		{[]string{"--max-rows-affected", "0"}, true}, // 3 rows: over, rolled back
+		{[]string{"--transaction", "commit"}, false},
+		{nil, false},
+	} {
+		d, _ := queryDeps(t, &fakeSession{t: t, run: rowsThenUpdate(1)})
+		r := runQuery(t, d, append([]string{"query", "run", "-p", "dev", "--sql", script, "--allow", "write", "-o", "json"}, tc.argv...)...)
+		w, _ := envelope(t, r.stdout)["warnings"].([]any)
+		found := slices.ContainsFunc(w, func(v any) bool {
+			s := v.(string)
+			return strings.Contains(s, "NEXT VALUE FOR (line 2)") && strings.Contains(s, "rollback does not undo")
+		})
+		if found != tc.warn {
+			t.Errorf("%v: sequence warning %v, want %v; warnings %q", tc.argv, found, tc.warn, w)
+		}
+	}
+}
+
 func TestQueryRunTimeout(t *testing.T) {
 	sess := &fakeSession{t: t, run: func(ctx context.Context, _ string, _ query.RowSink) *query.Result {
 		<-ctx.Done()

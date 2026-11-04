@@ -483,7 +483,9 @@ script runs, and `totalRowCount` stays exact.
   `NOTE: Output truncated by --max-rows 200. Use --max-rows 0 or --out-file to
   get all rows.`
 - **`--max-col-width n`** cuts a cell to `n` characters (Unicode code points)
-  and marks the rest: `…[+12,345 chars]`. Text, markdown, json and jsonl only;
+  and marks the rest: `…[+12,345 chars]`. A cell is cut only when that saves
+  more characters than the marker adds, so a cut cell is always shorter than
+  the whole one and a cell up to about `n + 12` characters is kept whole. Text, markdown, json and jsonl only;
   csv, tsv and `--out-file` are lossless. A typed number or bit is never cut.
 - **`--max-output-bytes n`** caps stdout. Text, json, markdown, csv and tsv
   drop whole trailing rows — the last set's first — until the document fits,
@@ -877,6 +879,10 @@ commit on their own). The record's `transaction` says how it ended:
   before it, and what follows runs in autocommit. This is found afterwards
   and reported as `SQL_ERROR` "the script ended the wrapping transaction"
   (exit 5): check the data.
+- **A sequence is not rolled back.** `NEXT VALUE FOR` takes its value
+  outside the transaction, so the values a rolled-back run took are gone.
+  The run is not refused; a run that rolls back carries a warning naming the
+  lines (flag `sequence-advance`).
 - `--max-rows-affected <n>` commits only when `rowsAffected` stays at or
   under `n`; over it the transaction is rolled back and the answer is
   BLOCKED, exit 7. With `--transaction rollback` it rolls back either way.
@@ -1456,7 +1462,7 @@ leading keywords:
 | Class | Examples | Needs |
 |---|---|---|
 | `read` | `SELECT`, `USE`, `SET` session options, `DECLARE`, `PRINT`, `EXECUTE AS`, catalog procedures on the read allow-list (`sp_help`, `sp_helptext`, `sp_spaceused`, `sp_who2`, …), `DBCC SHOW_STATISTICS`/`SQLPERF`/`OPENTRAN`/`INPUTBUFFER`/`TRACESTATUS`/`USEROPTIONS` | nothing (the default) |
-| `write` | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, transaction control (`BEGIN TRAN`, `COMMIT`, …), a procedure not on the read allow-list, dynamic SQL, `OPENQUERY`/`OPENROWSET` | `--allow write` |
+| `write` | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, transaction control (`BEGIN TRAN`, `COMMIT`, …), `NEXT VALUE FOR` (even in a `SELECT`: it advances the sequence), a procedure not on the read allow-list, dynamic SQL, `OPENQUERY`/`OPENROWSET` | `--allow write` |
 | `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `UPDATE STATISTICS`, `sp_updatestats`, `sp_createstats` | `--allow ddl` |
 | `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `sp_configure`, `xp_` and msdb procedures not on the read list, `DBCC` not on the read list | `--allow admin` |
 

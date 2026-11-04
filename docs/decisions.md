@@ -1680,8 +1680,8 @@ it from the string 'NULL'.
 - **`charts.StackedHistoryChart.Draw` stays though unreached** — `doc.go`
   advertises `Draw` on all six chart types; the dashboard uses `DrawFrame` for
   the time row. `Plot`/`TimeRow` mirror `HistoryChart`'s pair.
-- **`theme.SetPalette` and `widgets.SpinnerByName` stay in production files**
-  though only tests reach them (`deadcode ./cmd/gossms`) — documented tuikit API.
+- **`widgets.SpinnerByName` stays in a production file** though only tests
+  reach it (`deadcode ./cmd/gossms`) — documented tuikit API.
   `config.UseTrackedQueries` likewise (another package's tests can't see a
   `config` `_test.go`).
 - **Five `staticcheck` U1000 findings in `clipboard_host_test.go` and

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/radix29/gossms/internal/export"
 )
@@ -301,12 +302,31 @@ func TestCells(t *testing.T) {
 		width int
 		want  string
 	}{
-		{"abc", 3, "abc"}, {"abcd", 3, "abc…[+1 chars]"}, {"日本語です", 2, "日本…[+3 chars]"},
+		{"abc", 3, "abc"}, {"abcd", 3, "abcd"}, {"日本語です", 2, "日本語です"},
+		{"日本語です" + strings.Repeat("字", 12), 2, "日本…[+15 chars]"},
 		{strings.Repeat("x", 1300), 100, strings.Repeat("x", 100) + "…[+1,200 chars]"}, {"abcd", 0, "abcd"},
+		{"[abcdefghij]", 11, "[abcdefghij]"}, // B2: was "[abcdefghij…[+1 chars]", 22 characters
 	} {
 		if got := clip(tt.in, tt.width); got != tt.want {
 			t.Errorf("clip(%q, %d) = %q, want %q", tt.in, tt.width, got, tt.want)
 		}
+	}
+	// The boundary: a cell is cut only when the cut saves more than the
+	// marker adds. "…[+N chars]" is 11 characters for N < 10 and 12 for
+	// 10 ≤ N < 1,000, so 1…12 cut characters keep the cell whole and 13 is the
+	// first cut. A cut cell is always shorter than the whole one.
+	for m := 1; m <= 1100; m++ {
+		in := strings.Repeat("x", 5+m)
+		got := clip(in, 5)
+		if want := m > 12; (got != in) != want {
+			t.Errorf("clip(%d chars, 5) cut=%v, want cut=%v: %q", 5+m, got != in, want, got)
+		}
+		if got != in && (utf8.RuneCountInString(got) >= len(in) || got != strings.Repeat("x", 5)+clipMarker(m)) {
+			t.Errorf("clip(%d chars, 5) = %q", 5+m, got)
+		}
+	}
+	if clipMarker(1) != "…[+1 char]" || clipMarker(2) != "…[+2 chars]" || clipMarker(1234) != "…[+1,234 chars]" {
+		t.Errorf("clipMarker: %q %q %q", clipMarker(1), clipMarker(2), clipMarker(1234))
 	}
 	for typ, want := range map[string]cellKind{"int": kindNumber, "BIGINT": kindNumber, "float": kindNumber, "real": kindNumber,
 		"tinyint": kindNumber, "bit": kindBool, "decimal(18,2)": kindString, "money": kindString, "nvarchar(max)": kindString, "": kindString} {
@@ -327,7 +347,7 @@ func TestCells(t *testing.T) {
 	if v, ok := jsonCell(str(doc), kindJSON, 10).(json.RawMessage); !ok || string(v) != doc {
 		t.Errorf("jsonCell(document) = %#v", jsonCell(str(doc), kindJSON, 10))
 	}
-	if v := jsonCell(str("{not json"), kindJSON, 3); v != "{no…[+6 chars]" {
+	if v := jsonCell(str("{not json"+strings.Repeat("x", 20)), kindJSON, 3); v != "{no…[+26 chars]" {
 		t.Errorf("jsonCell(invalid) = %#v", v)
 	}
 }
@@ -389,12 +409,12 @@ func TestRecordsAreTheExportWriters(t *testing.T) {
 
 func TestTextOptions(t *testing.T) {
 	r := &Result{Status: StatusOK, Command: "x", Sets: []Set{{
-		Columns: []Column{{Name: "a"}, {Name: "b"}}, Rows: [][]*string{{nil, str("xyz")}}, TotalRowCount: 1,
+		Columns: []Column{{Name: "a"}, {Name: "b"}}, Rows: [][]*string{{nil, str("xyz" + strings.Repeat("z", 20))}}, TotalRowCount: 1,
 	}}, Messages: []Message{{"info", "hello"}}}
 	o := Options{Format: FormatText, NullText: "<null>", NoHeaders: true, NoMessages: true, MaxColWidth: 2, Quiet: true}
 	var out bytes.Buffer
 	Render(&out, r, o)
-	want := "=== RESULT 1 (1 row, truncated: no) ===\n<null> | xy…[+1 chars]\n"
+	want := "=== RESULT 1 (1 row, truncated: no) ===\n<null> | xy…[+21 chars]\n"
 	if out.String() != want {
 		t.Errorf("got\n%q\nwant\n%q", out.String(), want)
 	}

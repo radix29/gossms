@@ -83,7 +83,7 @@ func QueryCommands(d Deps) []*spec.Command {
 			Summary: "Report each statement's operation class (read, write, ddl, admin) and the script's",
 			Description: "Classifies without connecting: one row per statement with its batch, line, class, leading " +
 				"keywords, the object it acts on, why it is above its leader's class, and flags " +
-				"(transaction-control, not-in-transaction, nocount, dynamic-sql, exec, mode-option, output-clause). " +
+				"(transaction-control, not-in-transaction, nocount, dynamic-sql, exec, mode-option, output-clause, sequence-advance). " +
 				"Anything unrecognised counts as write. With --allow it also applies the check a run would " +
 				"(SET PARSEONLY, NOEXEC and SHOWPLAN_* are refused too) and answers BLOCKED, exit 7, when the script " +
 				"would be refused.",
@@ -639,6 +639,9 @@ func (d Deps) runScript(ctx context.Context, inv *spec.Invocation, in scriptInpu
 		return res, nil, err
 	}
 	defer c.close()
+	if run.wrapped() && sc.Flags.Has(safety.FlagSequence) {
+		defer func() { warnSequenceRollback(res, sc) }()
+	}
 
 	rctx, cancel := withTimeout(ctx, run.timeout)
 	defer cancel()
@@ -702,6 +705,27 @@ func (d Deps) runScript(ctx context.Context, inv *spec.Invocation, in scriptInpu
 		d.endTransaction(ctx, c.sess, qr, run, res)
 	}
 	return res, qr, nil
+}
+
+// warnSequenceRollback warns, after a wrapped run that rolled back, that the
+// script's NEXT VALUE FOR left its sequences advanced: a sequence takes its
+// values outside the transaction, so the rollback does not return them. Like
+// a procedure's COMMIT (endTransaction), it is reported, not refused
+// (docs/cli.md § Transactions).
+func warnSequenceRollback(res *output.Result, sc *safety.Script) {
+	var lines []string
+	for _, st := range sc.Statements {
+		if st.Flags.Has(safety.FlagSequence) {
+			lines = append(lines, strconv.Itoa(st.Line))
+		}
+	}
+	for _, f := range res.Fields {
+		if f.Key == "transaction" && f.Value == outcomeRolledBack {
+			res.Warnings = append(res.Warnings, "NEXT VALUE FOR (line "+strings.Join(lines, ", ")+
+				") advanced its sequence, and the rollback does not undo that: the values it took are gone.")
+			return
+		}
+	}
 }
 
 // batchCount is the batches script sends, each repetition of a GO n counted.

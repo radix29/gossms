@@ -110,6 +110,12 @@ func isJSONNumber(s string) bool {
 // "abc…[+1,234 chars]". width 0 keeps everything. A count of characters, not
 // display columns: the marker states how much is missing, which a column
 // count would not.
+//
+// A cell is cut only when the cut saves more characters than the marker
+// adds: cutting one character of a 12-character cell at width 11 printed
+// 22, defeating the option's purpose of bounding line width. So a cut cell
+// is always shorter than the whole one, and a cell is never longer than
+// width plus its marker.
 func clip(s string, width int) string {
 	if width <= 0 || len(s) <= width {
 		return s
@@ -118,10 +124,24 @@ func clip(s string, width int) string {
 	if n <= width {
 		return s
 	}
+	marker := clipMarker(n - width)
+	if n-width <= utf8.RuneCountInString(marker) {
+		return s
+	}
 	cut := 0
 	for range width {
 		_, size := utf8.DecodeRuneInString(s[cut:])
 		cut += size
 	}
-	return s[:cut] + "…[+" + thousands(n-width) + " chars]"
+	return s[:cut] + marker
+}
+
+// clipMarker is clip's mark for m characters cut: "…[+1 char]",
+// "…[+1,234 chars]".
+func clipMarker(m int) string {
+	unit := " chars]"
+	if m == 1 {
+		unit = " char]"
+	}
+	return "…[+" + thousands(m) + unit
 }

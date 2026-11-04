@@ -7354,7 +7354,7 @@
     {
       "path": "query classify",
       "summary": "Report each statement's operation class (read, write, ddl, admin) and the script's",
-      "description": "Classifies without connecting: one row per statement with its batch, line, class, leading keywords, the object it acts on, why it is above its leader's class, and flags (transaction-control, not-in-transaction, nocount, dynamic-sql, exec, mode-option, output-clause). Anything unrecognised counts as write. With --allow it also applies the check a run would (SET PARSEONLY, NOEXEC and SHOWPLAN_* are refused too) and answers BLOCKED, exit 7, when the script would be refused.",
+      "description": "Classifies without connecting: one row per statement with its batch, line, class, leading keywords, the object it acts on, why it is above its leader's class, and flags (transaction-control, not-in-transaction, nocount, dynamic-sql, exec, mode-option, output-clause, sequence-advance). Anything unrecognised counts as write. With --allow it also applies the check a run would (SET PARSEONLY, NOEXEC and SHOWPLAN_* are refused too) and answers BLOCKED, exit 7, when the script would be refused.",
       "operationClass": "read",
       "arguments": [],
       "options": [

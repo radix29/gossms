@@ -394,13 +394,34 @@ Cheapest and most certain first, then the items that need a live server,
 then the questions. Each step builds, tests (`-race`) and is driven before
 the next starts.
 
-1. **D1 + D2**: doc corrections, plus the Database Role rename reload from
+1. ~~**D1 + D2**: doc corrections, plus the Database Role rename reload from
    D2 with its test row. Mechanical, and it stops the leftovers being lost
-   a second time.
-2. **B2**: `clip`'s boundary and the singular. One function, a table test
-   and a `docs/cli.md` sentence.
-3. **B3**: the `NEXT VALUE FOR` floor. A table entry, test rows and a
-   `docs/cli.md` row.
+   a second time.~~ **Done 2026-11-04.** D1 narrowed in `docs/decisions.md`;
+   D2's other leftovers are `docs/open-threads.md` § Security and sequences:
+   what is left. Server Role Properties shared the rename miss (same
+   `roleGeneralPage` apply) and got the same fix; both role dialogs and
+   Application Role now have rows in the reload test. Driven on 17: the
+   pre-fix binary kept the old label, the fixed one relabels both folders.
+2. ~~**B2**: `clip`'s boundary and the singular. One function, a table test
+   and a `docs/cli.md` sentence.~~ **Done 2026-11-04.** `clip` cuts only when
+   the cut saves more characters than its marker adds (so 1–12 cut
+   characters keep the cell whole), and `clipMarker` says "1 char". The
+   boundary loop in `TestCells` is mutation-checked; `docs/cli.md` § Output
+   limits says so. Driven: `--max-col-width 11` on `[abcdefghij]` prints it
+   whole in text and jsonl; a 28-character name cuts to
+   `[abcdefghij…[+17 chars]`.
+3. ~~**B3**: the `NEXT VALUE FOR` floor. A table entry, test rows and a
+   `docs/cli.md` row.~~ **Done 2026-11-04.** `floor` raises the three-word
+   phrase (word tokens only, so `[next] value for` and a column `next` stay
+   read) to write and sets a new flag, `sequence-advance`. D3's after-run
+   check cannot see a sequence advance (the transaction survives it), so
+   `query run`/`plan actual` instead warn after any wrapped run that rolled
+   back, naming the lines. `docs/cli.md` § Safety's write row and
+   § Transactions say so; the agent-schema golden lists the flag. Classifier
+   rows and `TestQueryRunWarnsSequenceRollback` are mutation-checked. Driven
+   on 17: `--allow read` is BLOCKED; two `--transaction rollback` runs of
+   `SELECT NEXT VALUE FOR` on a throwaway sequence returned 1 then 2, each
+   with the warning.
 4. **G3**: the audit line's target. One change in `logCall` and four tests.
 5. **G1**: application roles as principals. One lookup and a `Catalog`
    method; drive it on 17.

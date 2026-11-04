@@ -86,6 +86,21 @@ Settled design: `docs/decisions.md` § Format Document.
   `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
   (`detail_browser_group_schema.go`) per family.
 
+## Security and sequences: what is left
+
+- **Application roles have no Script menu.** gosmo has no
+  `ScriptApplicationRole`; Script Database Security emits the one-role form
+  privately.
+- **The owner pickers never offer an application role**, though one can own
+  a schema. `principalNames(users, roles)` feeds Owned Schemas' transfer
+  picker, New Schema, Schema Properties, the key owner pickers and
+  Full-Text.
+- **A login with no right on an application role sees the folder empty**
+  (catalog visibility).
+- **Sequences: values are int64**, so a `decimal(38,0)` sequence's range
+  past bigint can't be written. There is no Last Used Value row (gosmo's
+  `Sequence.noLastUsed` is unexported).
+
 ## Command line: what is left
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
