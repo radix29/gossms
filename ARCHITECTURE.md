@@ -22,6 +22,22 @@ go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/tuikit/... |
 must print exactly `github.com/gdamore/tcell/v3`,
 `github.com/gdamore/tcell/v3/color`, `github.com/clipperhouse/displaywidth`.
 
+**Invariant: `internal/cli` must not reach `internal/tui`, tcell, or any
+`internal/tuikit` package except the stdlib-only `tuikit/sqltext`.** The
+command line runs without a screen, and `tuikit/core` is not the leaf it looks
+like — it imports tcell — so the CLI measures display width with
+`displaywidth.String` directly (the function `core.DisplayWidth` wraps).
+`TestNoTUIImports` (`internal/cli/imports_test.go`) runs
+
+```bash
+cd internal/cli && go list -deps ./... ../scripting | grep -E 'internal/tui|tcell'
+```
+
+and fails on any match but `internal/tuikit/sqltext`, naming the import chain.
+`internal/scripting` is a root of its own there: it is the Script As table the
+TUI and the command line's script commands share, held headless on its own
+account.
+
 ## Which document owns what
 
 A rule stated twice drifts. State it once, in its owner; elsewhere summarize in
@@ -33,6 +49,7 @@ a sentence and link.
 | `docs/ui-rules.md` | The enforceable form of every `internal/tui`/`tuikit` idiom: widgets, grids, dialogs, clipboard, toolbars, mouse, async |
 | `docs/db-rules.md` | Permission gating, emitted T-SQL, Object Explorer filters, query execution |
 | `docs/testing.md` | What counts as verification: tmux and live-server harnesses, `fakedb_test.go` rules |
+| `docs/cli.md` | The command-line contract: syntax, output formats, exit codes, safety classes |
 | `ARCHITECTURE.md` | Package map, layering, data flow, threading, and the long-form *why* behind each idiom |
 | `internal/tuikit/README.md` | Everything inside `internal/tuikit` |
 | `docs/open-threads.md` | Work knowingly left undone: bugs, deferred scope, release blockers |
@@ -90,6 +107,48 @@ queue behind a query. A lost session closes the panel's connection (Query >
 Reconnect opens a new one); closing, reconnecting or quitting with
 `@@TRANCOUNT > 0` asks to commit first (`confirmOpenTransactions`).
 
+## How a CLI call runs
+
+`gossms <command> …` (`internal/cli`, contract `docs/cli.md`) is one process,
+one command, one exit code. `cli.Main` (`cli.go`) owns the order; a handler
+(`internal/cli/cmd`) only builds an `output.Result`.
+
+1. **Parse.** `args.Parse` over the tree (`tree.go`, data in
+   `internal/cli/spec`) gives an `Invocation`: typed option values, which
+   were given, and the process's stdin/env/file reader. A usage error is
+   rendered in the `-o` format scanned before parsing.
+2. **Output first.** `renderOptions` (`render.go`) reads the global output
+   options, and `output.NewSink` is made **before the handler runs**, so an
+   `--out-file` that cannot be written fails before anything connects. The
+   Sink is the handler's `query.TypedRowSink`: it keeps the first `--max-rows`
+   cells per set (copied — the executor reuses its slices), counts the rest,
+   and streams `jsonl` lines or file rows as they arrive.
+3. **Classify and check, offline.** `query run` reads the script
+   (`readSQL`), classifies it (`safety.Classify`) and checks it
+   (`safety.Check`) against `--allow` and the profile's ceiling, read from
+   the profile alone — a refusal (exit 7) needs no password and no server.
+   `--param` wraps the checked script in `sp_executesql` (`cmd/param.go`);
+   the class is the script's, not the wrapper's.
+4. **Connect.** `connect.Resolve` (profile + overrides + password source) and
+   `connect.Open` dial as `db.RoleCLI` (`program_name` `goSSMS - CLI`);
+   `Deps.OpenSession` opens one `query.Session` — the query window's type —
+   for the whole script. Both are closed on return; `Session.Close` discards
+   the connection, so a still-open transaction is rolled back by the server.
+5. **Run.** Setup batches (`SET STATISTICS`, `SET XACT_ABORT ON; BEGIN
+   TRANSACTION`) via `Execute`, then `ExecuteToSink(script, inv.Sink,
+   WithoutSinkNotices, WithStopOnError)` under `--timeout`'s context.
+   `collect` turns the executor's messages into envelope errors (structured
+   `SQLError`), messages and `rowsAffected`; `endTransaction` commits or rolls
+   back by outcome and `@@TRANCOUNT`.
+6. **Finish.** Main stamps command and duration, turns a cancelled context
+   into `CANCELLED` (130) whatever the handler returned, replays sets a
+   handler built itself through the same Sink (`Sink.Add`), commits or
+   discards the `--out-file` (`Sink.Finish`), renders, and exits with the
+   first error's code (`output.ExitCodes`).
+
+Ctrl+C cancels the one context every step derives from
+(`signal.NotifyContext`); the first only, so a second kills the process.
+
 ## Threading model
 
 **All UI and widget state belongs to the UI goroutine** (the one in
@@ -143,13 +202,13 @@ or `App`. See § Why the permission gate is its own package.
 ```
 gossms/
 ├── cmd/
-│   ├── gossms/               # main entry point
+│   ├── gossms/               # main entry point; selectMode: no argument → the TUI (only with stdin and stdout on a terminal), --version/-version/-v → the version block, any other argument → internal/cli (docs/cli.md § Modes)
 │   ├── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file, or -live replays a recorded Live Query Statistics run (not part of the release build)
 │   ├── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
 │   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
 ├── packaging/linux/         # gossms.desktop launcher; the release job ships it with docs/ico/linux's hicolor icons in the Linux archives, the Homebrew formula and the .deb
 ├── internal/
-│   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json; address.go is the one address fold (DialPort, ResolveServer, InstanceKey, ConnectionAddress, Connection.IdentityKey) that peers, saved credentials, tracked queries and the per-identity IntelliSense and OE-filter caches key by
+│   ├── config/              # saved connections (JSON, in $XDG_CONFIG_HOME/gossms/); profile.go: a profile is a saved connection named in the TUI (Profile, MaxAllow; SetProfile, ProfileByName) and LoadReadOnly, the command line's load that writes nothing; tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json; address.go is the one address fold (DialPort, ResolveServer, InstanceKey, ConnectionAddress, Connection.IdentityKey) that peers, saved credentials, tracked queries and the per-identity IntelliSense and OE-filter caches key by
 │   ├── db/                  # gosmo connection wrapper: config.Connection → gosmo.ConnectionOptions (toGosmoOptions), per-role application name, masked preview
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
@@ -159,13 +218,60 @@ gossms/
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
 │   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
-│   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
+│   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names; cells.go: each type's cell text as SSMS's grid shows it; cellparse.go: the inverse for a bulk load — NewCellParser turns a cell's text into the value go-mssqldb sends for a destination column (range, scale and length checks, char text encoded to the database's code page)
+│   │                        #   for the command line, structured halves of the messages (Message.SQL, Message.RowsAffected), TypedRowSink, WithStopOnError, WithoutSinkNotices
+│   ├── export/              # delimited result text (RecordWriter: CSV, TSV) with the settled NULL convention — the one writer behind Results To File and the command line's csv/tsv; RecordReader, its exact inverse, for import. Stdlib only
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan); live.go merges per-thread query-profile rows into Live Query Statistics counters and progress. No TUI/DB deps
+│   ├── scripting/           # Script As without a screen: per object family (Family), the verbs it offers in SSMS order and each one's generator over gosmo's Scripter/ServerScripter (USE prefix except on a database, DefaultScriptOptions), the system-object and Azure refusals (Offered, AzureRefuses), Collect (a gosmo write under WithScript). Shared by Object Explorer's Script as and the command line's script commands, so both script an object alike. gosmo + stdlib only (TestNoTUIImports)
 │   ├── xevent/              # Extended Events viewer's event store: bounded ring, column registry, ring_buffer dedupe, the client-side filter expression, grouping and aggregation. No TUI/DB deps
 │   ├── format/              # Edit > Format Document's engine: Language (what a query panel's text is written in; picks its highlighter, and by extension only, never content), the per-language Style registry, the SQL Standard style (sql*.go: a layout pass over sqltext's tokens with a block/paren frame stack, not a parser; statements it has no rules for keep their line breaks), the JSON formatter (json.Indent, never Marshal), the XML raw-text re-indenter (tags, CDATA, comments emitted verbatim; never encoding/xml's Encoder) and the token-equivalence guard every result passes. Pure text, stdlib + tuikit/sqltext only
 │   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export; WithLock: the lock file around config.json's and tracked_queries.json's read-merge-write
 │   │                        #   keeps an existing file's narrower mode (perm is a ceiling) and writes through a symlink, dangling or not
-│   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X
+│   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X; Fields is the one ordered list `gossms --version`, `gossms version` and Help > About print
+│   ├── cli/                 # the command line (`gossms <command> …`; contract: docs/cli.md): Main parses, dispatches, renders and maps the outcome to an exit code; tree.go is the command tree, help.go the generated help and the `agent guide` (its `-p` environment section runs `agent context`'s handler)/`agent schema`/`help -o json` dispatch. Never imports tui, tcell or a tuikit package but sqltext — see § Why split this way
+│   │   ├── spec/                # the command tree as data: Command, Arg, Option, Class, Handler, Invocation. Parser, help, agent guide and agent schema read it — one source
+│   │   ├── agent/               # self-description for AI agents: schema.go builds `agent schema`'s catalog (also `help -o json`) from spec + output.ExitCodes + output.Formats; guide.go builds `agent guide` — rules and prose hand-written in guide/*.md (go:embed), command index, exit codes and group topics generated — and plain.go strips its markdown for `-o text`; Environment renders `agent context`'s answer as the guide's last section; Main prints both outside the envelope
+│   │   ├── args/                # the parser over spec: options, response files, did-you-mean; no I/O (ReadFile/Getenv injected)
+│   │   ├── connect/             # a command line → a connection: the connection options, profile + overrides + password sources (Resolve; drops a saved password an override would redirect), the dial as db.RoleCLI and its failure → exit code (Open, Classify)
+│   │   ├── audit/               # the audit log: one JSON line per call above read or refused (Logged), args rebuilt from the parse with spec.Option.Audit's hash/omit marks applied (Args), Check before a change, Append under fileutil.WithLock; audit.jsonl beside config.json, 0600
+│   │   ├── safety/              # the T-SQL statement classifier (Classify: read|write|ddl|admin per statement, fails closed) over tuikit/sqltext, its flags, and Check: the refusals of a run (class vs --allow and the ceiling — Policy.Refuse, which a writing command's gate shares —, mode options, what a transaction or --max-rows-affected cannot hold)
+│   │   ├── cmd/                 # the command handlers, one file per group; Deps injects the config load, the dial, the query session, the catalog reads and the writes
+│   │   │   ├── common.go            # what the discovery commands share: the connection options, Catalog (the gosmo reads a handler makes, so tests fake them) and ServerCatalog, connectDatabase, resolveObject (one-part names across schemas, NOT_FOUND's did-you-mean), readError (a read's failure → exit code and hint)
+│   │   │   ├── objectname.go        # parseObjectName: an <object> argument → schema and name over the T-SQL lexer (brackets keep their dots); a three-part name only for the connection's database
+│   │   │   ├── profile.go           # profile list/show/test
+│   │   │   ├── db.go                # db list (sizes from sys.master_files, system databases opt-in) / db info (catalog fields, SET options, space used — each part degrading to a warning)
+│   │   │   ├── db_storage.go        # the storage commands' shared layer: --unit (column suffix and cell text; figures filtered in exact KB), <name>-xor---all, the --all walker (state, then HAS_DBACCESS → readable or why not), the fixed-threshold file and log-reuse warnings
+│   │   │   ├── db_settings.go       # db scoped-config list/get (read) / set (admin): gosmo DatabaseScopedConfigs inside a readable database (db table-sizes' rules), the name check (exit 8), the value checked by the option's sql_variant type (1/0 sent as ON/OFF), SetDatabaseScopedConfig through the write layer, before/after from a second read; db set (admin): D8's key table → SetDatabaseOption / SetRecoveryModel / SetCompatibilityLevel / SetReadOnly / QueryStore SetOptions, one statement per key in order, --rollback-immediate behind --confirm, before/after from sys.databases read twice
+│   │   │   ├── db_create.go         # db create / db drop (admin, D9): gosmo CreateDatabase (name taken → exit 2; --compat checked against the server; the dry run's record from model and the server collation) and Database.Drop through the write layer; drop behind --confirm (before connecting), refused before sending for a system or distribution database, the connection's own (exit 2), an availability-group member (AvailabilityGroups → Databases, HADR only) and a database with snapshots (SnapshotsOf); the record (size, last full backup from LastBackups) read first; Msg 3702/3709/3752 → BLOCKED with the way past
+│   │   │   ├── db_table_sizes.go    # db table-sizes: gosmo TableSizes (sp_spaceused's per-object arithmetic, one round trip), --schema/--sort-by/--top applied in Go, a memory-optimized table's sizes NULL
+│   │   │   ├── server_info.go       # server info (ServerInfo + StartTime + ProcessorInfo; the DMV fields null with one warning without VIEW SERVER STATE; serverFields, the facts agent context shares) / server memory (MemoryStats, counters, top clerks, min/max; exit 9 without VIEW SERVER STATE)
+│   │   │   ├── server_config.go     # server config list/get/set/reset: one Configurations read, the alias table and name resolution (alias, then exact name, ignoring case; exit 8 with substring matches), --name/--advanced/--non-default (configured vs gosmo's Default), the missing-default warning, get's CPU/memory context record; set/reset (admin): value parsing with unit suffixes, the range check, D10's risk blocks, one ApplyConfiguration batch through the write layer, a second read for the change set
+│   │   │   ├── server_traceflag.go  # server traceflag list (read) / on / off (admin): gosmo TraceFlags before and after, SetTraceFlag per flag (always global) through the write layer; the not-taken warning (a startup-only flag is skipped with no error) and the restart note
+│   │   │   ├── server_log.go        # server log: gosmo ReadLog (one file, filtered on the server; --lines a tail taken in Go), --since zoneless, a missing archive checked against EnumErrorLogs
+│   │   │   ├── server.go            # server volumes: gosmo FileVolumes grouped per volume (mount point and label, else figures) with a file count, implausible figures left out, exit 9 without VIEW SERVER STATE
+│   │   │   ├── object.go            # object list/search/describe/definition: per-kind listing with the filter pushed to gosmo where it takes one, the describe dispatch on the object's type, the module text as a verbatim field
+│   │   │   ├── object_dependencies.go # object dependencies: breadth-first walk over gosmo Dependencies/Dependents, a visited set per direction, self-edges dropped
+│   │   │   ├── object_indexes.go    # object indexes (structure, usage, --fragmentation) / object stats (statistics with their properties, NULL where unread)
+│   │   │   ├── security.go          # security logins/users/roles list, role-members, permissions (all read): gosmo Logins/Users/Roles in the server's order; --scope database|server (not --server, the connection option); permissions resolves the principal first (user then role, or login then server role; a miss hints the other scope or the user a login maps to), memberOf from the role lists, explicit = PermissionsForPrincipal + ColumnPermissionsForPrincipal or ServerPermissions filtered, --effective = fn_my_permissions under EXECUTE AS (a role → exit 2 before it; Msg 15517/15406 → exit 9)
+│   │   │   ├── security_permissions.go # security grant/deny/revoke and role add-member/remove-member (all admin, no --confirm): --on parsed before connecting (SERVER, DATABASE[::name], SCHEMA::, OBJECT:: or bare name, TYPE::, CERTIFICATE::), the object's class from its sys.objects type, the permission checked against the class's gosmo allowlist (exit 2), the principal resolved as permissions does (hints in the command's own scope words), one Writer.ApplyPermission per permission; the principal's entries on the securable read back, a change they do not show a warning (SQL Server ignores a grant to sa, dbo, the owner or oneself); Msg 15151/15247/4613 → exit 9, 4611 hints --cascade
+│   │   │   ├── job.go               # job list/show/history (read): gosmo Jobs/JobByName/Steps/Schedules/SearchJobHistory; msdb's zoneless times kept as the server's wall clock, a zoned --since/--failed-since converted through CurrentTime's zone; --failed-since from the run history, not LastRunOutcome
+│   │   │   ├── job_start.go         # job start/stop (admin, no --confirm): the job read first (missing 8, already running 7, Agent stopped 11), --step by id or name, --wait polls JobByName every 2 s for a newer recorded run (TIMEOUT at the bound, Ctrl+C leaves the job running); a stop of an idle job is ok, stopped false
+│   │   │   ├── maint_backup.go      # maint group; maint backup (admin, --confirm with --init only): gosmo Server.Backup through the write layer, STATS = 10 to log.Printf (stderr under --verbose), the default file in DefaultBackupPath (JoinServerPath, named by backupNow), refused before sending for tempdb/snapshots/log on SIMPLE/--compression without the edition/Azure SQL Database, the new set read back with BackupHeaders; backupError hints the server refusals (writeError reports the cause before Msg 3013); maint backup-history (read): BackupHistory per database, or LastBackups for --last (one row per database × type, warnings for no full / no log backup)
+│   │   │   ├── maint_restore.go     # maint restore (admin): the media read first (BackupHeaders; a failed read reports its cause, mediaReadError), one set (--file-number, required on media holding several), --verify-only = Writer.VerifyBackup only; else BackupFileList, the files placed by --with-move / --move-to-default (gosmo RestoreRelocation + FromHeader) / the existing target's own paths / the recorded ones, a path another database holds (InstanceFiles) BLOCKED; --confirm over an existing database (not a log/diff onto RESTORING), system databases, AG members refused; Writer.Restore, state read back; restoreError hints the server refusals
+│   │   │   ├── maint_checkdb.go     # maint checkdb (admin, no repair option): Writer.CheckDB through the write layer (dry run = the DBCC statement); the TABLERESULTS rows less the 8990/8989 summaries as set errors, allocationErrors/consistencyErrors parsed from 8989, minimumRepair the heaviest repair_level; corruption is STATUS ok with a warning; 7983 → PERMISSION_DENIED (gosmo's refusal table)
+│   │   │   ├── maint_index.go       # maint index-fragmentation (read: Catalog.DatabaseFragmentation, suggestion by Microsoft's 5/30 % guideline), index-rebuild and update-stats (ddl): connectTableOrView (gate, then the object resolved as a table or view in -d), one index or ALTER INDEX ALL, --online refused before sending where ServerInfo.SupportsOnlineIndexOperations is false, LIMITED fragmentation before/after; UPDATE STATISTICS with gosmo StatisticsUpdateOptions (zero = the server's sample) or --all = sp_updatestats; deniedOnResolved reads 1088/15247 on an object just read as PERMISSION_DENIED
+│   │   │   ├── agent.go             # agent context: server, login, ceiling, databases (HAS_DBACCESS), the permissions the login lacks mapped to the commands they break (permissionNeeds), profiles; agent guide -p runs the same handler
+│   │   │   ├── write.go             # the shared write layer: --allow/--dry-run (writeOptions, the writing commands' own), gate (the command's Class vs --allow and the ceiling, BLOCKED before any dial), Writer (the gosmo writes, so tests fake them) and ServerWriter, applyWrite (--dry-run under gosmo.WithScript → dryRun + verbatim tsql fields), writeError
+│   │   │   ├── query.go             # query classify/run/parse: the T-SQL input options (readScriptInput: script, --param wrap, classification), the offline check, the mode-option refusal (refuseModeWords), the run (runScript, shared with plan actual), transactions, SQL errors → envelope
+│   │   │   ├── plan.go              # plan estimated: query parse's shape under SHOWPLAN_XML (no --allow, mode options refused, no --param); plan actual: query run's runScript under STATISTICS XML with a counting sink (result_sets), STATISTICS XML in the script refused; the plan parsed by internal/showplan into summary sets (statements, operators ranked by Plan.Rank, missing_indexes, warnings), a preorder tree set or the verbatim XML; --plan-file as the TUI's Save Execution Plan As writes it
+│   │   │   ├── script.go            # script object / script db: a sys.objects type → internal/scripting family, --as checked against the family's verbs, the text as a verbatim field (Catalog.Script), --script-file as the TUI's Script As ▸ File... writes it; gosmo's ErrDefinitionHidden → exit 9, an encrypted module → 11
+│   │   │   ├── data.go              # data top / sample / count: the table or view resolved as object describe does, one SELECT composed (* or --columns matched to the catalog's columns, --where/--order-by spliced each ending at a line break) and checked as one read SELECT (safety.Classify, no ';', one batch; BLOCKED before connecting), run on a query session to the sink (top; sample = top ORDER BY NEWID()) or into a record (count); --approximate = Catalog.RowCount
+│   │   │   ├── data_profile.go      # data profile: the aggregates each column's type admits (profileAggFor, an alias type by its base type; bit via tinyint, LEN for strings, DATALENGTH for binary, none for xml/text/CLR/encrypted), one aggregate SELECT per 100 columns pivoted into set columns, --top-values one GROUP BY per column into set top_values
+│   │   │   ├── data_export.go       # data export: --out-file required; an object's SELECT * (data.go's selectRows, no TOP) or a T-SQL script run as query run's runScript held at read, every row to the sink's --out-file
+│   │   │   ├── data_import.go       # data import: the gate (write; ddl and --confirm with --truncate-first), the file's columns mapped onto the table's (computed/rowversion/generated skipped), query.NewCellParser per column (code pages via CollationCodePage), dry run, Writer.BulkInsert with KEEPNULLS, refusals mapped (1088 / 5304 → exit 9)
+│   │   │   ├── data_import_file.go  # data import's readers: .csv/.tsv over export.RecordReader (header row, BOM dropped, one set) and gossms's .jsonl (_resultSet keys, typed cells back to grid text)
+│   │   │   └── param.go             # query run --param: name/type checked against closed forms, the script wrapped in sp_executesql
+│   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), the Sink (rows kept, streamed or sent to --out-file) and one renderer per --output format (text, json, jsonl, csv, tsv, markdown); the --max-output-bytes cap
 │   │
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
 │   │   ├── theme/                # colour palette + derived tcell.Style helpers
@@ -228,7 +334,7 @@ gossms/
 │       ├── explorer_object_menu.go # the Rename/Delete menu pair a node offers, and the schema/object name a gate question is scoped by
 │       ├── explorer_object_rights.go # what permits Rename/Move/Delete per NodeType: the securable, principal, database- and server-scoped right tables
 │       ├── explorer_object_actions.go # the flows themselves: confirmation (incl. the cascade checkbox), script-instead-of-run, the prompt, and the parent-folder refresh
-│       ├── scripting.go          # Object Explorer's "Script <Noun> as ▸" cascade: which verbs each NodeType offers, how each is generated, and the three destinations
+│       ├── scripting.go          # Object Explorer's "Script <Noun> as ▸" cascade over internal/scripting: NodeType → family + noun, the verb labels, the read-right gate, and the three destinations
 │       ├── database_security_script.go # database node's "Script Database Security": gosmo's ScriptDatabaseSecurity (owner, roles, users, schemas, memberships, permissions), read in the background and opened unexecuted
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
@@ -371,6 +477,7 @@ gossms/
 │       ├── connect_dialog.go     # Connect dialog — state, focus ring, History pane, options/prefill, connect lifecycle
 │       ├── connect_dialog_draw.go  # Connect dialog — two-pane/one-pane layout, tab bar, History pane and section rules
 │       ├── connect_dialog_input.go # Connect dialog — keys, buttons and the mouse ordering (overlays, tabs, then panes)
+│       ├── profile_dialog.go     # Connection Profile dialog (Connect dialog's Profile... button): the name the command line addresses a saved connection by, and its operation ceiling
 │       ├── device_code_dialog.go # Microsoft Entra Device Code sign-in: the code + URL, open for exactly as long as the sign-in
 │       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over controls.Editor's search engine
 │       ├── filter_dialog.go      # Object Explorer > Filter Settings — one operator/value row per filterable property
@@ -794,13 +901,14 @@ status`/`log`). At release: tag and push gosmo, bump `require`, comment out
 
 ## Dependencies
 
-All six direct requires in `go.mod`:
+Direct requires in `go.mod`:
 
 | Package | Purpose |
 |---------|---------|
 | [github.com/gdamore/tcell/v3](https://github.com/gdamore/tcell) | Terminal rendering, keyboard & mouse events |
 | [github.com/radix29/gosmo](https://github.com/radix29/gosmo) | SQL Server management objects |
-| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver, which gosmo connects through; `internal/query` imports it only for `NullUniqueIdentifier`. `GO` splitting is `sqltext.SplitBatches` |
+| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver, which gosmo connects through; `internal/query` imports it only for `NullUniqueIdentifier` and `UniqueIdentifier` (a GUID's wire bytes in `cellparse.go`). `GO` splitting is `sqltext.SplitBatches` |
 | [github.com/golang-sql/sqlexp](https://github.com/golang-sql/sqlexp) | Interleaved result-set/message stream, so PRINT and errors arrive in order — `internal/query` |
 | [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width behind `core.DisplayWidth` — one of `tuikit`'s two external modules |
+| [golang.org/x/text](https://pkg.go.dev/golang.org/x/text) | Code-page encoders for `internal/query/cellparse.go`: a bulk load's varchar text travels in the database's code page (already in the module graph through go-mssqldb) |
 | [github.com/pkg/browser](https://github.com/pkg/browser) | Opens the Entra sign-in page. `installEntraSignIn` sends its `Stdout`/`Stderr` to `io.Discard` — output would land on tcell's terminal |

@@ -537,7 +537,7 @@ func TestHasDatabaseCapabilities(t *testing.T) {
 // T57: only Object Explorer's connection reads the server-scope capability
 // set; the other roles never consult it.
 func TestOnlyExplorerConnectionsProbeServerCapabilities(t *testing.T) {
-	for _, role := range []Role{RoleExplorer, RoleQuery, RoleActivityMonitor, RoleXEventProfiler} {
+	for _, role := range []Role{RoleExplorer, RoleQuery, RoleActivityMonitor, RoleXEventProfiler, RoleCLI} {
 		script := &capTestScript{}
 		capTestCurrent = script
 		pool, err := sql.Open("captestdb", "")

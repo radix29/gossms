@@ -1,0 +1,421 @@
+package cmd
+
+import (
+	"context"
+	"slices"
+	"strings"
+
+	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/cli/connect"
+	"github.com/radix29/gossms/internal/cli/output"
+	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/config"
+)
+
+// AgentContextCommand is `agent context`: the live facts an agent grounds
+// itself in. `agent guide` takes the same connection options and, given one,
+// adds this command's answer as its last section.
+func AgentContextCommand(d Deps) *spec.Command {
+	return &spec.Command{
+		Path:    []string{"agent", "context"},
+		Summary: "Show what a profile reaches: server, login, database, ceiling, databases, missing permissions, profiles",
+		Description: "Connects as every command will and reports what an agent should know before it acts: the " +
+			"server's version and edition, the login and its roles, the connection's database, the default " +
+			"--allow and the profile's ceiling (max_allow) that caps it, every database the login can see and " +
+			"whether it can open it, and the profiles saved on this machine. missing_permissions lists each " +
+			"permission the login lacks that a gossms command needs, with the commands it breaks and how: a read " +
+			"that fails (exit 9), or columns that read NULL. A permission the server does not answer for is not " +
+			"listed.",
+		Options: ConnectOptions(),
+		Class:   spec.ClassRead,
+		Run:     d.agentContext,
+		Examples: []string{
+			"gossms agent context -p dev",
+			"gossms agent context -p dev -o json",
+		},
+	}
+}
+
+// permissionNeed is one permission a command needs, for missing_permissions.
+// It is missing when the server answers for at least one of anyOf and roles
+// and grants none of them: a probe that answered nothing (Unknown) is not a
+// lack.
+type permissionNeed struct {
+	permission string
+	database   bool     // database scope (the connection's database), else server
+	anyOf      []string // granted any: not missing
+	allOf      []string // granted every one: not missing (a split right's narrow parts)
+	roles      []string // fixed server roles, a member of any: not missing
+	dbRoles    []string // fixed roles of the connection's database, a member of any: not missing
+	commands   []string // the command paths it breaks, as typed
+	effect     string
+}
+
+// permissionNeeds is what the implemented commands need beyond connecting.
+// Every command named here must exist (TestAgentContextNamesOnlyCommands).
+//
+// The table rights the data commands need (SELECT; INSERT and ALTER for data
+// import) are stated in their help, not listed here: the database-scope probe
+// reads 0 for a login granted them per schema or per table, so a 0 is not a
+// known lack, and the server's refusal is exit 9 with a hint anyway.
+var permissionNeeds = []permissionNeed{
+	{
+		permission: "VIEW SERVER STATE",
+		// 2022 split the performance DMVs out under the narrower name.
+		// sys.dm_db_log_space_usage and dm_db_log_info are server-scoped
+		// despite their names: VIEW DATABASE STATE alone is refused (Msg 300),
+		// checked on 13 and 17.
+		anyOf: []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"},
+		commands: []string{"object indexes", "db files", "db space", "db log-usage", "server volumes",
+			"server memory", "server info", "server config get", "server config set"},
+		effect: "db log-usage, server volumes, server memory fail (exit 9); NULL, warned: index usage " +
+			"(object indexes), volume_free_pct (db files), log columns (db space), uptime, CPU, memory (server " +
+			"info, config get); config set blocks memory and maxdop values (exit 7)",
+	},
+	{
+		// A row of its own: one list of every command would pass a cell's
+		// 256-character cap (--max-col-width) and reach an agent cut.
+		permission: "VIEW SERVER STATE",
+		anyOf:      []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"},
+		commands: []string{"monitor sessions", "monitor blocking", "monitor waits", "monitor top-queries",
+			"monitor deadlocks", "monitor kill", "plan cached", "xevent sessions", "xevent capture"},
+		effect: "fail (exit 9) before reading anything, so an empty list never means \"not allowed\"; " +
+			"monitor kill and xevent capture send nothing",
+	},
+	{
+		permission: "ALTER SETTINGS",
+		// serveradmin and sysadmin hold it.
+		anyOf:    []string{"ALTER SETTINGS"},
+		commands: []string{"server config set", "server config reset"},
+		effect:   "fail (exit 9); --dry-run still prints the batch",
+	},
+	{
+		permission: "sysadmin (role)",
+		// DBCC TRACEON/TRACEOFF check the role, not a permission (Msg 2571).
+		roles:    []string{"sysadmin"},
+		commands: []string{"server traceflag on", "server traceflag off"},
+		effect:   "fail (exit 9); server traceflag list needs no permission",
+	},
+	{
+		permission: "securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG",
+		// sp_readerrorlog's own check (17's definition; 2016–2019 have no VIEW
+		// ANY ERROR LOG). xp_readerrorlog itself is sysadmin only.
+		anyOf:    []string{"VIEW SERVER STATE", "VIEW ANY ERROR LOG"},
+		roles:    []string{"securityadmin", "sysadmin"},
+		commands: []string{"server log"},
+		effect: "fails (exit 9); without sysadmin it reads through sp_readerrorlog, which reads the whole " +
+			"file before --since filters it",
+	},
+	{
+		permission: "ALTER ANY CONNECTION",
+		// sysadmin and processadmin hold it.
+		anyOf:    []string{"ALTER ANY CONNECTION"},
+		commands: []string{"monitor kill"},
+		effect:   "the KILL fails (exit 9); --dry-run still prints it",
+	},
+	{
+		permission: "ALTER ANY EVENT SESSION",
+		// 2022's narrow rights do as well when every verb's is granted, as
+		// xevent capture's own check (eventSessionDenied) accepts them.
+		anyOf:    []string{"ALTER ANY EVENT SESSION"},
+		allOf:    eventSessionRights,
+		commands: []string{"xevent capture"},
+		effect:   "fails (exit 9) before any session is created",
+	},
+	{
+		permission: "VIEW ANY DATABASE",
+		anyOf:      []string{"VIEW ANY DATABASE"},
+		commands:   []string{"db list", "db info"},
+		effect:     "only master, tempdb and the databases the login owns are listed",
+	},
+	{
+		permission: "VIEW ANY DEFINITION",
+		// sys.master_files shows its rows to any of the three.
+		anyOf:    []string{"VIEW ANY DEFINITION", "CREATE ANY DATABASE", "ALTER ANY DATABASE"},
+		commands: []string{"db list", "db info", "db files"},
+		effect: "database sizes read NULL (sys.master_files hides the files); db files lists a database it " +
+			"cannot read inside (not ONLINE, or no user) with no files, only a warning",
+	},
+	{
+		permission: "VIEW DEFINITION",
+		database:   true,
+		anyOf:      []string{"VIEW DEFINITION"},
+		commands: []string{"object list", "object search", "object describe", "object definition",
+			"object dependencies", "object indexes", "object stats", "script object"},
+		// Verified on 14 and 17 with a db_datareader login: the dependency
+		// rows are filtered by metadata visibility, not refused.
+		effect: "only objects the login holds a permission on are visible; definitions read null; " +
+			"dependencies read empty (the edges are hidden, not refused); script object fails (exit 9) on " +
+			"a module, or a table with a default, check, computed column or filtered index",
+	},
+	{
+		permission: "SHOWPLAN",
+		database:   true,
+		// CONTROL on the database and ALTER TRACE on the server imply it.
+		anyOf:    []string{"SHOWPLAN"},
+		commands: []string{"plan estimated", "plan actual"},
+		effect:   "fail in this database (Msg 262, exit 9); plan actual's script does not run either",
+	},
+	{
+		permission: "VIEW DATABASE STATE",
+		database:   true,
+		anyOf:      []string{"VIEW DATABASE STATE", "VIEW DATABASE PERFORMANCE STATE"},
+		commands:   []string{"object indexes", "monitor querystore", "maint index-fragmentation"},
+		effect: "monitor querystore and maint index-fragmentation fail in this database (exit 9); object " +
+			"indexes --fragmentation fails (exit 9) unless the login has CONTROL on the object",
+	},
+	{
+		permission: "ALTER",
+		database:   true,
+		// ALTER ANY DATABASE on the server covers it.
+		anyOf:    []string{"ALTER"},
+		commands: []string{"db set"},
+		effect:   "fails on this database (exit 9); --dry-run still prints the statements",
+	},
+	{
+		permission: "ALTER ANY DATABASE SCOPED CONFIGURATION",
+		database:   true,
+		// ALTER and CONTROL on the database cover it.
+		anyOf:    []string{"ALTER ANY DATABASE SCOPED CONFIGURATION"},
+		commands: []string{"db scoped-config set"},
+		effect:   "fails in this database (exit 9); db scoped-config list and get need only a user",
+	},
+	{
+		permission: "db_owner (role) or sysadmin",
+		database:   true,
+		// DBCC CHECKDB and sp_updatestats check the roles: CONTROL on the
+		// database alone is refused Msg 7983 (checked on 17, 2026-11-03).
+		// IS_ROLEMEMBER('db_owner') reads 1 for a sysadmin, who is dbo, so
+		// the database probe alone decides.
+		dbRoles:  []string{"db_owner"},
+		commands: []string{"maint checkdb", "maint update-stats"},
+		effect: "maint checkdb of this database fails (Msg 7983, exit 9); update-stats --all (sp_updatestats) " +
+			"fails (Msg 15247, exit 9); one table's statistics need only ALTER on it",
+	},
+	{
+		permission: "BACKUP DATABASE",
+		database:   true,
+		// db_backupoperator, db_owner and sysadmin hold both BACKUP rights.
+		anyOf:    []string{"BACKUP DATABASE"},
+		commands: []string{"maint backup"},
+		effect:   "a full or differential backup of this database fails (Msg 262, exit 9); --dry-run still prints it",
+	},
+	{
+		permission: "BACKUP LOG",
+		database:   true,
+		anyOf:      []string{"BACKUP LOG"},
+		commands:   []string{"maint backup"},
+		effect:     "--type log of this database fails (Msg 262, exit 9)",
+	},
+	{
+		permission: "CREATE ANY DATABASE",
+		// dbcreator and ALTER ANY DATABASE imply it (both read 1, 17). A
+		// restore reads the media first (HEADERONLY, FILELISTONLY,
+		// VERIFYONLY), and those need CREATE DATABASE even over a database
+		// the login owns. A CREATE DATABASE granted in master alone reads 0
+		// here: the one false positive, accepted.
+		anyOf:    []string{"CREATE ANY DATABASE"},
+		commands: []string{"db create", "maint restore"},
+		effect: "fail (exit 9); maint restore fails reading the media, --verify-only and --dry-run too; over " +
+			"an existing database it also needs dbcreator, sysadmin or db_owner of it",
+	},
+	{
+		permission: "ALTER ANY ROLE",
+		database:   true,
+		// db_securityadmin and db_owner hold it; ALTER ANY DATABASE implies it.
+		anyOf:    []string{"ALTER ANY ROLE"},
+		commands: []string{"security role add-member", "security role remove-member"},
+		effect: "fail in this database on a user-defined role (exit 9); a fixed role needs db_owner; " +
+			"with --scope server the server's own rules apply",
+	},
+	{
+		permission: "sysadmin (role)",
+		// gosmo reads msdb's job tables (sysjobs, sysjobservers,
+		// sysjobactivity, sysjobhistory) where the SQLAgent* roles get only
+		// the views and sp_help_job*: a SQLAgentReaderRole member is refused
+		// Msg 229 on sysjobservers (17). Open thread in docs/open-threads.md.
+		roles:    []string{"sysadmin"},
+		commands: []string{"job list", "job show", "job history", "job start", "job stop"},
+		effect: "fail (exit 9): the job reads use msdb tables the SQLAgentUserRole, ReaderRole and " +
+			"OperatorRole do not open",
+	},
+}
+
+// missing reports whether the need is known to be unmet under state and, for
+// a need with roles, the probes srv and dbc.
+func (n permissionNeed) missing(state func(string) gosmo.CapabilityState, srv *gosmo.Capabilities,
+	dbc *gosmo.DatabaseCapabilities) bool {
+	answered := false
+	if len(n.allOf) > 0 && !slices.ContainsFunc(n.allOf, func(p string) bool { return state(p) != gosmo.CapabilityGranted }) {
+		return false
+	}
+	if len(n.roles) > 0 && srv.Probed() {
+		if slices.ContainsFunc(n.roles, srv.InServerRole) {
+			return false
+		}
+		answered = true
+	}
+	if len(n.dbRoles) > 0 && dbc.Probed() {
+		if slices.ContainsFunc(n.dbRoles, func(r string) bool { return dbc.Roles[r] }) {
+			return false
+		}
+		answered = true
+	}
+	for _, p := range n.anyOf {
+		switch state(p) {
+		case gosmo.CapabilityGranted:
+			return false
+		case gosmo.CapabilityDenied:
+			answered = true
+		}
+	}
+	return answered
+}
+
+func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
+	res := &output.Result{}
+	cfg, profile, ceiling, err := d.profileCeiling(inv)
+	if err != nil {
+		return nil, err
+	}
+	_, sc, err := d.dial(ctx, inv, cfg, profile, res)
+	if err != nil {
+		return res, err
+	}
+	defer sc.Close()
+	cat := d.Catalog(sc)
+	dbase, err := currentDatabase(ctx, cat, res)
+	if err != nil {
+		return res, err
+	}
+
+	info := cat.ServerInfo()
+	if info == nil {
+		info = new(gosmo.ServerInfo)
+		res.Warnings = append(res.Warnings, "The server's version and login were not read at connect.")
+	}
+	maxAllow, source := string(ceiling), "profile"
+	switch {
+	case profile == "":
+		maxAllow, source = string(config.AllowAdmin), "none (ad-hoc connection: only --allow applies)"
+	default:
+		if p, err := cfg.ProfileByName(profile); err == nil && p.MaxAllow == "" {
+			source = "default (the profile sets no max_allow)"
+		}
+	}
+
+	srvCaps, err := cat.ServerCapabilities(ctx)
+	if err != nil {
+		res.Warnings = append(res.Warnings, "Server permissions were not probed: "+err.Error())
+	}
+	dbCaps, err := cat.DatabaseCapabilities(ctx, dbase)
+	if err != nil {
+		res.Warnings = append(res.Warnings, "Permissions in the database were not probed: "+err.Error())
+	}
+	var roles []string
+	for _, r := range gosmo.ProbedDatabaseRoles {
+		if dbCaps != nil && dbCaps.Roles[r] {
+			roles = append(roles, r)
+		}
+	}
+	sysadmin := output.Field{Key: "isSysadmin", Null: !srvCaps.Probed()}
+	if srvCaps.Probed() {
+		sysadmin.Value = boolText(srvCaps.IsSysadmin())
+	}
+	res.Fields = slices.Concat([]output.Field{{Key: "profile", Value: profile, Null: profile == ""}}, serverFields(info), []output.Field{
+		{Key: "login", Value: info.Login},
+		sysadmin,
+		{Key: "database", Value: dbase.Name},
+		{Key: "databaseRoles", Value: strings.Join(roles, ", ")},
+		{Key: "defaultAllow", Value: string(spec.ClassRead)},
+		{Key: "maxAllow", Value: maxAllow},
+		{Key: "maxAllowSource", Value: source},
+	})
+
+	res.Sets = append(res.Sets, d.contextDatabases(ctx, cat, res), missingPermissions(srvCaps, dbCaps, dbase.Name))
+	profiles, err := d.contextProfiles(cfg, profile)
+	if err != nil {
+		res.Warnings = append(res.Warnings, "Profiles were not read: "+err.Error())
+	}
+	res.Sets = append(res.Sets, profiles)
+	return res, nil
+}
+
+// contextDatabases is every database the login can see, and whether it can
+// open it now: false for one not ONLINE, NULL when the server did not say.
+func (d Deps) contextDatabases(ctx context.Context, cat Catalog, res *output.Result) output.Set {
+	set := output.Set{Name: "databases", Columns: []output.Column{
+		{Name: "name", Type: "sysname"}, {Name: "state", Type: "nvarchar(60)"},
+		{Name: "accessible", Type: "bit", Nullable: true}, {Name: "is_system", Type: "bit"},
+	}}
+	dbs, err := cat.Databases(ctx)
+	if err != nil {
+		res.Warnings = append(res.Warnings, "Databases were not read: "+err.Error())
+		return set
+	}
+	access, err := cat.DatabaseAccess(ctx)
+	if err != nil {
+		res.Warnings = append(res.Warnings, "Database access was not read: "+err.Error())
+	}
+	for _, db := range dbs {
+		var accessible *string
+		if ok, known := access[db.ID]; known {
+			accessible = bitCell(ok)
+		}
+		set.Rows = append(set.Rows, []*string{ptr(db.Name), ptr(string(db.State)), accessible,
+			bitCell(db.IsSystem() || db.IsDistributor)})
+	}
+	set.TotalRowCount = len(set.Rows)
+	return set
+}
+
+// missingPermissions is permissionNeeds the login is known to lack; a nil
+// probe answers nothing, so lists nothing.
+func missingPermissions(srv *gosmo.Capabilities, dbc *gosmo.DatabaseCapabilities, database string) output.Set {
+	set := output.Set{Name: "missing_permissions", Columns: []output.Column{
+		{Name: "permission"}, {Name: "scope"}, {Name: "commands"}, {Name: "effect"},
+	}}
+	for _, n := range permissionNeeds {
+		state, scope := srv.Permission, "server"
+		if n.database {
+			state, scope = dbc.Permission, "database "+gosmo.QuoteName(database)
+		}
+		if n.missing(state, srv, dbc) {
+			set.Rows = append(set.Rows, []*string{ptr(n.permission), ptr(scope),
+				ptr(strings.Join(n.commands, ", ")), ptr(n.effect)})
+		}
+	}
+	set.TotalRowCount = len(set.Rows)
+	return set
+}
+
+// contextProfiles is the saved profiles, by name. An ad-hoc call has read no
+// configuration yet; it reads it here, and a failure is only a warning.
+func (d Deps) contextProfiles(cfg *config.Config, profile string) (output.Set, error) {
+	set := output.Set{Name: "profiles", Columns: []output.Column{
+		{Name: "name"}, {Name: "server"}, {Name: "database"}, {Name: "max_allow"},
+	}}
+	if profile == "" {
+		loaded, err := d.load()
+		if err != nil {
+			return set, err
+		}
+		cfg = loaded
+	}
+	for _, c := range cfg.Profiles() {
+		set.Rows = append(set.Rows, []*string{ptr(c.Profile), ptr(connect.Address(c)), ptr(c.Database),
+			ptr(string(c.Ceiling()))})
+	}
+	set.TotalRowCount = len(set.Rows)
+	return set, nil
+}
+
+// PermissionNeedCommands is every command path missing_permissions names,
+// for the test that keeps them real.
+func PermissionNeedCommands() []string {
+	var out []string
+	for _, n := range permissionNeeds {
+		out = append(out, n.commands...)
+	}
+	return out
+}

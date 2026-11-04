@@ -6,10 +6,12 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/golang-sql/sqlexp"
+	gosmo "github.com/radix29/gosmo"
 )
 
 // Session.ExecuteToSink's wiring — empty Result.Sets, RowsWritten totals, per-set "(N
@@ -29,6 +31,7 @@ const (
 	msgAffected
 	msgLastInsertID // sqlexp's sixth type; go-mssqldb never sends one
 	msgBreak        // breaks the connection, as a killed session or a failover does
+	msgDone         // a statement's DONE with count and no set: MsgRowsAffected, then MsgNextResultSet
 )
 
 type fakeMsg struct {
@@ -38,6 +41,13 @@ type fakeMsg struct {
 	count int64
 	cols  []string
 	rows  [][]driver.Value
+
+	// For a msgSet: counted sends count as the set's DONE count, between its
+	// MsgNext and MsgNextResultSet as go-mssqldb does; types and nullable answer
+	// the column-type probes (nil: unreported).
+	counted  bool
+	types    []string
+	nullable []bool
 }
 
 // fakeMsgConn replays one scripted batch per QueryContext call carrying a
@@ -130,7 +140,7 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 	rows := &fakeMsgRows{}
 	for _, m := range script {
 		switch m.kind {
-		case msgSet:
+		case msgSet, msgDone:
 			rows.sets = append(rows.sets, m)
 		}
 	}
@@ -150,6 +160,9 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 			// MsgNext announces a set; the closing MsgNextResultSet makes the
 			// client call rows.NextResultSet.
 			err = enqueue(sqlexp.MsgNext{})
+			if err == nil && m.counted {
+				err = enqueue(sqlexp.MsgRowsAffected{Count: m.count})
+			}
 			if err == nil {
 				err = enqueue(sqlexp.MsgNextResultSet{})
 			}
@@ -161,6 +174,11 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 			err = enqueue(sqlexp.MsgRowsAffected{Count: m.count})
 		case msgLastInsertID:
 			err = enqueue(sqlexp.MsgLastInsertID{Value: m.count})
+		case msgDone:
+			err = enqueue(sqlexp.MsgRowsAffected{Count: m.count})
+			if err == nil {
+				err = enqueue(sqlexp.MsgNextResultSet{})
+			}
 		case msgBreak:
 			c.invalid = true
 		}
@@ -188,6 +206,20 @@ type fakeMsgRows struct {
 
 func (r *fakeMsgRows) Columns() []string { return r.sets[r.set].cols }
 func (r *fakeMsgRows) Close() error      { return nil }
+
+func (r *fakeMsgRows) ColumnTypeDatabaseTypeName(i int) string {
+	if t := r.sets[r.set].types; t != nil {
+		return t[i]
+	}
+	return ""
+}
+
+func (r *fakeMsgRows) ColumnTypeNullable(i int) (nullable, ok bool) {
+	if n := r.sets[r.set].nullable; n != nil {
+		return n[i], true
+	}
+	return false, false
+}
 
 func (r *fakeMsgRows) Next(dest []driver.Value) error {
 	s := r.sets[r.set]
@@ -452,5 +484,48 @@ func TestExecuteRetainsWhatExecuteToSinkStreams(t *testing.T) {
 	}
 	if res.Database != "testdb" {
 		t.Errorf("Result.Database = %q, want %q", res.Database, "testdb")
+	}
+}
+
+// ExecuteToSinkWithPlan: under either capture mode the showplan sets go to
+// PlanXML and never reach the sink, while the statements' own sets stream
+// through it, with the capture's SET switched on and off around the run.
+func TestExecuteToSinkWithPlanKeepsPlansOutOfTheSink(t *testing.T) {
+	plan := func(xml string) fakeMsg { return set([]string{gosmo.ShowplanColumn}, []driver.Value{xml}) }
+	for _, tc := range []struct {
+		mode gosmo.PlanMode
+		set  string
+	}{
+		{gosmo.PlanActual, "SET STATISTICS XML"},
+		{gosmo.PlanEstimated, "SET SHOWPLAN_XML"},
+	} {
+		t.Run(tc.mode.String(), func(t *testing.T) {
+			s, fc, _ := openFakeSession(t, []fakeMsg{
+				set([]string{"n"}, []driver.Value{int64(1)}, []driver.Value{int64(2)}),
+				plan("<plan1/>"),
+				set([]string{"s"}, []driver.Value{"alpha"}),
+				plan("<plan2/>"),
+			})
+			defer s.Close()
+
+			sink := &recordingSink{}
+			res := s.ExecuteToSinkWithPlan(context.Background(), "SELECT 1", tc.mode, sink)
+
+			if res.HasErrors() {
+				t.Fatalf("run failed: %v", messageTexts(res))
+			}
+			if want := []string{"<plan1/>", "<plan2/>"}; !slices.Equal(res.PlanXML, want) {
+				t.Errorf("PlanXML = %v, want %v", res.PlanXML, want)
+			}
+			if len(sink.begins) != 2 || sink.begins[0][0] != "n" || sink.begins[1][0] != "s" {
+				t.Errorf("sink sets = %v, want only [n] and [s]", sink.begins)
+			}
+			if res.RowsWritten != 3 || len(res.Sets) != 0 {
+				t.Errorf("RowsWritten = %d, Sets = %d; want 3, 0", res.RowsWritten, len(res.Sets))
+			}
+			if execs := fc.conn.execs; !slices.Contains(execs, tc.set+" ON") || !slices.Contains(execs, tc.set+" OFF") {
+				t.Errorf("execs = %v, want %s ON and OFF", execs, tc.set)
+			}
+		})
 	}
 }

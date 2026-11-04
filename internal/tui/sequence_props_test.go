@@ -14,9 +14,9 @@ func loadSequenceGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet
 	t.Helper()
 	sc, inst := newFakeConn(t,
 		dbByNameResp(principalDatabase, 5),
-		fakeResponse{match: "FROM   sys.sequences s", arg: "OrderNo", cols: 16, rows: [][]driver.Value{{
+		fakeResponse{match: "FROM   sys.sequences s", arg: "OrderNo", cols: 17, rows: [][]driver.Value{{
 			"OrderNo", principalSchema, int64(901), "int", "sys", int64(10), int64(0),
-			"1", "1", "1", "1000", false, true, int64(20), "42", "42",
+			"1", "1", "1", "1000", false, true, int64(20), "42", "42", false,
 		}}},
 	)
 	form, apply := loadPage(t, pageSequenceGeneral(sc, principalDatabase, principalSchema, "OrderNo"), inst)

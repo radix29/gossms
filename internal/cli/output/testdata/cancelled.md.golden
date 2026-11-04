@@ -1,0 +1,6 @@
+STATUS: CANCELLED
+COMMAND: version
+DURATION_MS: 0
+
+ERROR_CODE: CANCELLED
+MESSAGE: cancelled by interrupt

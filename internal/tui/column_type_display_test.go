@@ -32,10 +32,10 @@ func typedColumnResp() fakeResponse {
 			int64(0), false,
 			"", "", "",
 			"", "", false, int64(0), "",
-			"", "", "", "",
+			"", "", "", "", false,
 		}
 	}
-	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 41, rows: [][]driver.Value{
+	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 42, rows: [][]driver.Value{
 		row("PlacedAt", 1, "datetime2", 6, 19, 0, "sys", false),
 		row("ContactPhone", 2, "Phone", 50, 0, 0, "sales", true),
 	}}

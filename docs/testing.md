@@ -27,6 +27,17 @@ caught by driving the built binary. For TUI or database changes, run it:
 Tests assert an outcome, not "nothing panicked". Mutate the covered code and
 confirm the new test fails.
 
+**A live dry-run fidelity check needs its own event session.** `xevent
+capture` leaves out every `goSSMS - CLI` connection, so it cannot watch
+another gossms command. Create a session filtered on `client_app_name =
+N'goSSMS - CLI'` with `sql_batch_completed` and `rpc_completed` only (gosmo
+sends most writes through `sp_executesql`, so the statement is the RPC's
+text, with its `@pN` bound after it). Adding the statement events floods the
+ring buffer: `sp_updatestats` alone pushed its own batch out. Read
+`target_data` into an `xml` variable before shredding it, or the read
+outlives `--timeout`. Leave out the reads around the write: connect-time
+reads, the pre-2019 `BackupDirectory` registry read, `RESTORE HEADERONLY`.
+
 **After a lexer or parser change, fuzz it:** `go test ./internal/tuikit/sqltext
 -run XXX -fuzz FuzzLexer -fuzztime 60s -fuzzminimizetime 0`, likewise `FuzzScope`
 in `./internal/tui/sqlparse` (their seeds run in plain `go test`; without

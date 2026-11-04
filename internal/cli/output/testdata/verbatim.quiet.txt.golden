@@ -1,0 +1,17 @@
+SCHEMA: Sales
+RETURNS:
+
+=== DEFINITION (4 lines) ===
+CREATE VIEW Sales.v
+AS
+=== WARNINGS ===
+SELECT '```' AS x
+
+=== RESULT 1: columns (1 row, truncated: no) ===
+name
+----
+id
+
+=== RESULT 2: indexes (0 rows, truncated: no) ===
+name
+----

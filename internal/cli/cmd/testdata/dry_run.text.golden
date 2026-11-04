@@ -1,0 +1,11 @@
+STATUS: OK
+COMMAND: test write
+SERVER: srv
+DURATION_MS: 0
+
+FLAG: 3604
+DRY_RUN: true
+
+=== TSQL (2 lines) ===
+DBCC TRACEON(3604, -1) WITH NO_INFOMSGS
+GO

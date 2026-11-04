@@ -174,7 +174,7 @@ func TestSummary_SortAndJumpToTree(t *testing.T) {
 		t.Fatalf("len(summarySt.rows) = %d, want 12", len(v.summarySt.rows))
 	}
 	for i := 1; i < len(v.summarySt.rows); i++ {
-		if nodeRows(v.summarySt.rows[i-1]) < nodeRows(v.summarySt.rows[i]) {
+		if v.summarySt.rows[i-1].Rows() < v.summarySt.rows[i].Rows() {
 			t.Fatalf("summary rows not sorted descending by rows at index %d", i)
 		}
 	}

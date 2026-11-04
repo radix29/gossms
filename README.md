@@ -104,6 +104,10 @@ chmod +x ./gossms
 `gossms --version` prints the version, commit, build date and licence and exits,
 without starting the interface — quote it when reporting a bug.
 
+Any other argument runs the command-line mode instead of the interface (start
+with `gossms help`; see [Command line](#command-line)); bare `gossms` needs a
+terminal on both stdin and stdout.
+
 You need a modern terminal with UTF-8 and 256-colour support, plus network access
 to a SQL Server instance.
 
@@ -115,8 +119,9 @@ about 96 columns History is hidden and the form fills the dialog.
 
 The form has two tabs, **Connection Properties** and **Connection String**
 (Ctrl+PgUp/PgDn). **Reset** restores defaults; **Delete** removes the selected
-history entry and its saved password. Tab reaches the buttons after the last
-field; Left/Right move along them.
+history entry and its saved password; **Profile...** names it for the
+[command line](#command-line). Tab reaches the buttons after the last field;
+Left/Right move along them.
 
 Choose SQL Server, Windows Integrated, or a Microsoft Entra ID method. Fields the
 method does not use are greyed out.
@@ -202,9 +207,164 @@ runs and returns its actual plan, but shows no live view.
 Where a permission is missing, the action is disabled, the page opens read-only,
 or values show as `N/A`.
 
+## Command line
+
+`gossms <group> <command> [arguments] [options]` runs one command and exits,
+without the interface: for scripts and AI agents. Results go to stdout as text
+or, with `-o json`, a JSON envelope; errors too, with a one-line summary on
+stderr and an exit code that names the failure (`docs/cli.md` has the whole
+contract). `gossms help` lists the commands; `gossms help <group> <command>`
+shows one with examples.
+
+The command line connects through **profiles**: saved connections you name in
+the interface. In the Connect dialog select a connection under History,
+choose **Profile...**, and give it a name (`dev`, `prod-ro`) and the
+**Allowed Operations** — the highest class of statement the command line may
+run through it (Read, Write, DDL or Admin, the default). A named connection
+shows its name in History, is never dropped from the 30-entry list, and keeps
+its name when you reconnect.
+
+```bash
+gossms profile list                  # named profiles; --all adds recent connections
+gossms profile show dev              # its settings, ceiling, whether its password opens
+gossms profile test dev              # connect: version, edition, login, latency
+gossms profile test dev -d master -o json
+```
+
+The command line only reads the configuration: it never writes `config.json`
+or creates the key file, so it is safe to run beside the interface. A
+profile's saved password (Remember Password) is used as the interface uses
+it. Passwords are never taken on the command line itself — for a profile
+without one, pass `--password-env <VAR>` (the name of a variable holding it)
+or `--password-stdin`. Overriding the server, port, login, authentication or
+Entra tenant/client, or weakening encryption, does not send the saved
+password. Entra MFA and Device Code prompt, so the command line refuses them;
+use Entra Default, Azure CLI, Service Principal or Managed Identity.
+
+`query` runs T-SQL. Every script is classified first — `read`, `write`,
+`ddl` or `admin` — and refused before anything connects when it is above
+`--allow` (default `read`) or the profile's Allowed Operations:
+
+```bash
+gossms query run -p dev -Q "SELECT TOP 5 name FROM sys.tables"
+cat fix.sql | gossms query run -p dev --file - --allow write --transaction rollback  # measure, keep nothing
+gossms query run -p dev --file fix.sql --allow write --max-rows-affected 10          # commit only if ≤ 10 rows
+gossms query run -p dev --file by-id.sql --param id=42:int                           # through sp_executesql
+gossms query run -p dev --file big.sql --out-file rows.csv                           # every row, no limits
+gossms query classify --file fix.sql                                                 # the class, no server
+gossms query parse -p dev --file fix.sql                                             # syntax only
+```
+
+`db` and `object` read the catalog — what a database holds, how an object is
+built, what depends on it — without writing T-SQL:
+
+```bash
+gossms db list -p dev                              # databases: state, recovery, sizes
+gossms object list -p dev -d Sales --type table    # one database's tables
+gossms object search -p dev Customer --in column   # columns named like it
+gossms object describe -p dev Sales.Customer       # columns, keys, indexes, triggers
+gossms object definition -p dev dbo.uspGetOrders   # a module's T-SQL
+gossms object dependencies -p dev Sales.Customer --depth 2
+```
+
+Sizes come as `sp_spaceused` and the log DMVs report them, with warnings for
+what is worth a look (a file under 10 % free, a log that cannot be reused, a
+volume running out):
+
+```bash
+gossms db files -p dev --all --max-free-pct 10     # files nearly full, every database
+gossms db space -p dev Sales --unit gb             # sp_spaceused's summary + log usage
+gossms db log-usage -p dev --all                   # log used %, reuse wait, VLFs
+gossms db table-sizes -p dev Sales --top 10        # largest tables
+gossms server volumes -p dev                       # free space per disk
+```
+
+`server` reads the instance — facts, memory, the error log, trace flags and
+the `sp_configure` settings beside their engine defaults — and changes
+settings, trace flags and database options through the same `--allow`: each
+change needs `--allow admin`, `--dry-run` prints the exact T-SQL without
+running it, and a real run reports before and after as the server reads them
+back:
+
+```bash
+gossms server info -p dev                                          # version, uptime, CPUs, memory
+gossms server config list -p dev --non-default                     # what differs from the defaults
+gossms server config set -p dev maxdop 4 cost-threshold 50 --allow admin --dry-run
+gossms server config set -p dev max-memory 12GB --allow admin      # blocked above physical memory
+gossms server log -p dev --search Login --search failed --since 2026-10-27
+gossms db set -p dev Sales --option RECOVERY=FULL --allow admin
+```
+
+`plan` returns a query's execution plan as a digest — costliest operators,
+missing indexes, warnings, estimated against actual rows — or as the
+`.sqlplan` the plan viewer opens; `script` answers Object Explorer's Script
+As text; `data` reads, profiles, exports and loads table rows:
+
+```bash
+gossms plan estimated -p dev --file slow.sql                       # compiles, runs nothing
+gossms plan actual -p dev --file slow.sql --transaction rollback   # runs it, keeps nothing
+gossms script object -p dev Sales.Customer --as create             # the TUI's Script As text
+gossms data top -p dev Sales.Customer --rows 20 --columns CustomerID,AccountNumber
+gossms data profile -p dev Sales.Customer                          # nulls, distinct, min/max per column
+gossms data export -p dev Sales.Customer --out-file customers.jsonl
+gossms data import -p dev Staging.Customer --in-file customers.jsonl --allow write  # bulk copy, all or nothing
+```
+
+`monitor` shows what the server is doing — sessions, blocking chains, waits,
+the costliest cached statements and their plans, Query Store's history and
+`system_health`'s deadlocks — and ends a session; `xevent capture` records
+events for a fixed time in a short-lived event session it always drops:
+
+```bash
+gossms monitor blocking -p dev                                     # head blockers and their chains
+gossms monitor waits --interval 10 -p dev                          # what it waits on now
+gossms monitor top-queries --by cpu --top 10 -p dev                # then plan cached <plan_handle>
+gossms monitor querystore -p dev -d Sales --regressed              # slower in the last 24 hours
+gossms monitor deadlocks --deadlock-file ./deadlocks -p dev        # .xdl graphs SSMS opens
+gossms monitor kill 87 --confirm 87 --allow admin -p dev           # the spid, twice
+gossms xevent capture --template batches --duration 60 --allow admin -p dev
+```
+
+They need `VIEW SERVER STATE` (Query Store: `VIEW DATABASE STATE`) and say
+so with exit 9 rather than answering an empty list.
+
+`security`, `job`, `maint` and `db create/drop` are the administration:
+logins, users, roles and permissions; SQL Server Agent jobs; backup,
+restore, consistency checks, index and statistics maintenance. Each change
+is `admin` (index rebuilds and statistics: `ddl`) with a `--dry-run`, and
+whatever overwrites or destroys — dropping a database, restoring over one,
+`backup --init` — also needs `--confirm` with its name:
+
+```bash
+gossms security permissions report_reader -p dev -d Sales          # explicit grants; --effective
+gossms security grant SELECT --on SCHEMA::Sales --to report_reader -p dev -d Sales --allow admin --dry-run
+gossms job history nightly_etl --failed -p dev                     # failed runs and their messages
+gossms job start nightly_etl --wait 600 --allow admin -p dev       # start, wait for the outcome
+gossms maint backup Sales --copy-only --checksum --allow admin -p dev
+gossms maint restore Sales_copy --from /var/opt/mssql/backup/Sales.bak --move-to-default --allow admin -p dev
+gossms maint index-fragmentation -p dev -d Sales                   # with a rebuild/reorganize suggestion
+gossms maint checkdb Sales --allow admin -p dev                    # corruption: a warning, never a repair
+```
+
+Every call above `read`, and every refusal, appends one line to the audit
+log, `audit.jsonl` beside `config.json` — T-SQL hashed, never a password. It
+is always on, and a change it cannot record is refused.
+
+For an AI agent, `gossms agent guide --brief -p dev` is the manual to put in
+its system prompt — rules, output contract, the command index, and what the
+profile's login can see; `gossms agent schema` is the same catalog as JSON
+to build tool definitions from.
+
+Output is `text` (default), `json`, `jsonl`, `csv`, `tsv` or `markdown`
+(`-o`); stdout is capped (`--max-rows`, `--max-col-width`,
+`--max-output-bytes`) and says when it was cut. The classifier is a
+guardrail, not the security boundary: give an agent's profile a login with
+only the rights it needs.
+
 ## Configuration
 
-Settings and the 30 most recent connections are saved automatically in:
+Settings and the 30 most recent connections (named profiles are kept on top
+of those) are saved automatically in:
 
 - Linux/macOS: `~/.config/gossms/config.json`
 - Windows: `%APPDATA%\gossms\config.json`

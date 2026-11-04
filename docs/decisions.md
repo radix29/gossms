@@ -1791,6 +1791,306 @@ succeeds, because it resolves the name within the job.
   gossms keeps the refusal because an identical name is almost always a
   mistake.
 
+## Command-line argument parser: hand-written — settled, do not re-raise
+
+`internal/cli/args` is a small parser over `internal/cli/spec`, not Cobra or
+another library. The command definitions it reads are the same data help and
+`agent schema` print, so the grammar, the help and the schema cannot drift
+apart, and no dependency tree arrives whose flag model would still need mapping
+onto the schema. The grammar is `docs/cli.md` § Syntax.
+
+## Command-line safety and output: what phase 2 settled — do not re-raise
+
+The contract is `docs/cli.md`; these are the alternatives turned down.
+
+- **Classifier = leader rule + keyword floor (D1).** A statement's class
+  comes from its leading keywords, then is raised to the highest class of any
+  word token in it found in a floor table (`INSERT/UPDATE/DELETE/MERGE` →
+  write, `CREATE/ALTER/DROP/TRUNCATE/DISABLE/ENABLE` → ddl, `KILL`, `BACKUP`,
+  `GRANT`, … → admin), outside literals, comments and quoted identifiers.
+  The statement splitter (`StatementCutter`) cuts only at known leaders, so
+  `SELECT 1` and a `DISABLE TRIGGER` on the next line are one statement: by
+  leader alone the classifier would fail *open*. Over-classification (a
+  column named `kill`) is accepted, and the output names the word. Not
+  done: extending `statementLeaders` — it would change Ctrl+Enter selection
+  and Format Document too. `LOGIN` is not a bare floor word (a common column
+  name); `CREATE/ALTER/DROP` before an administration object is admin
+  wherever it stands.
+- **The rollback hole is reported, not refused (D3).** `--transaction
+  rollback` cannot stop a called procedure's `COMMIT` from ending the
+  wrapping transaction. After the run, `@@TRANCOUNT 0` with a clean run or
+  Msg 266 is `SQL_ERROR` "the script ended the wrapping transaction".
+  Refusing every `EXEC` under `--transaction rollback` would make it useless
+  for testing procedures; the guarantee is stated as covering the script's
+  own statements.
+- **csv/tsv carry no envelope (D6).** stdout gets rows only, so it pipes into
+  any CSV reader; the summary — errors, truncation notes — goes to stderr in
+  full, and the exit code carries the status. csv/tsv write every result set
+  in Results To File's layout (§ SQL NULL in results), not the first only, so
+  the CLI's file and the TUI's compare byte for byte. TSV is CSV's quoting
+  with a tab separator, not PostgreSQL TEXT's `\t` escapes — spreadsheets do
+  not read those.
+- **`--out-file` (D7).** Its format comes from the extension (`.csv .tsv
+  .jsonl .json .md .txt`, anything else exit 2), independent of `-o`, which
+  governs the stdout summary. The file has no row or column limits — exports
+  are lossless. It is written through a temporary file and discarded on error
+  or cancel, as Results To File is, so the destination is never half
+  written; an existing file is refused without `--force`, since the command
+  line never prompts.
+
+## Command-line discovery and the agent guide: what phase 3 settled — do not re-raise
+
+The contract is `docs/cli.md` § Discovery, § Commands and § Agent guide;
+these are the alternatives turned down.
+
+- **A one-part name is resolved across schemas, never as `dbo` (D2).**
+  Exactly one match is that object; several is exit 2 listing every
+  `schema.name`; none is NOT_FOUND with similar names. Assuming `dbo` would
+  be silently wrong in any `Sales.Customer`-style database — an agent would
+  describe the wrong object, or get NOT_FOUND for one that exists. Names
+  compare by the catalog collation server-side, never case-folded in Go.
+- **`object definition` is a record with one verbatim field (D4).** The
+  module text prints after the record as `=== DEFINITION (n lines) ===` and
+  exactly n lines, never single-lined or cut by `--max-col-width`; JSON a
+  string. A one-row result set was turned down: the column-width cap would
+  cut the text and the text format flattens line breaks. The line count is
+  there because a definition can hold a line that looks like a marker. An
+  encrypted or CLR module is `definition: null` with a warning, exit 0 — the
+  object exists, its text is just not available.
+- **The guide's format is `--output`, not a `--format` of its own (D6).**
+  Markdown by default, `-o text` the same content without markup. `-o json`
+  is a JSON document **outside the envelope** (`sections[]{id, title,
+  body}`), like `agent schema`: the envelope's `data` holds only strings, and
+  a result set of sections would be clipped by `--max-col-width`. Keeping a
+  `--format` and rejecting `-o` would be two spellings of one idea.
+
+## Command-line storage reporting: what phase 4 settled — do not re-raise
+
+The contract is `docs/cli.md` § Storage and § Commands; these are the
+alternatives turned down.
+
+- **`db space` and `db table-sizes` reproduce `sp_spaceused`, not the TUI's
+  figures (D1).** gosmo's `Database.SpaceReport` and `Database.TableSizes`
+  follow the procedure's arithmetic as read from its source on 13, 14 and 17
+  (in-row `data_pages`, LOB and overflow into data, the rest of `used_pages`
+  into index, internal tables added to reserved/index; 2017+ over
+  `sys.system_internals_partitions` with the memory-optimized checkpoint
+  files). Reusing `SpaceUsed`/`DiskUsage`/`TableSpaceUsedAll` was cheaper,
+  but an agent cross-checking with `sp_spaceused` would see other numbers and
+  no reason. `TableSpaceUsedAll` stays for the TUI's Tables pane; the two
+  differ by design.
+- **Log figures come from `sys.dm_db_log_space_usage` and
+  `sys.dm_db_log_info`, one read inside each database (D2)** — not
+  `DBCC SQLPERF(LOGSPACE)` (one call for all databases, but no reuse wait or
+  VLFs, and a used % that is not the DMV's) nor `DBCC LOGINFO` (undocumented,
+  sysadmin). VLFs need 2016 SP2 (13.0.5026); before it they are NULL with a
+  warning. Both DMVs need **VIEW SERVER STATE**, not VIEW DATABASE STATE
+  (checked live: Msg 300 on 13 and 17 with the database permission), so
+  `db log-usage` fails exit 9 without it.
+- **Warning thresholds are fixed, with no options (D4):** file free < 10 %
+  (data and log), size ≥ 90 % of a capped `max_size`, percentage autogrowth,
+  volume free < 10 %, `log_reuse_wait_desc` ≠ `NOTHING` (transient waits
+  included — a fact, not a judgement). One warning per (row, reason), for the
+  rows the filters keep. A `--warn-free-pct` was an option nobody asked for;
+  `--max-free-pct` is the filter that answers "which files are nearly full".
+
+## Command-line writes and server configuration: what phase 5 settled — do not re-raise
+
+The contract is `docs/cli.md` § Server configuration, § Writes and
+§ Commands; these are the alternatives turned down.
+
+- **`--allow` and `--dry-run` belong to the writing commands, not the global
+  options (D1).** `writeOptions()` adds them to `server config set/reset`,
+  `server traceflag on/off`, `db set` and `db scoped-config set` (and
+  `query run` has its own), and the gate runs before connecting with
+  `query run`'s refusal wording — `BLOCKED`, exit 7, `detectedClass`/
+  `allowedClass`. Global flags would make every read command accept one that
+  does nothing, and `agent schema` would advertise it there. A dry run is
+  gated too: it reads the server, so it still needs `--allow admin`.
+- **A dry run is `STATUS: OK` with `dryRun: "true"`, not a new status (D2).**
+  The T-SQL is one verbatim `tsql` field — gosmo's exact batch, captured by
+  `WithScript` — and the planned change a `planned_change` set. A
+  `DRY_RUN` status would touch every renderer and the schema's status enum,
+  and `query run --dry-run` (status ok) would disagree with it. Every writing
+  run carries `dryRun` (`"false"` on a real one) so a caller reads one shape;
+  data fields are strings, so it is `"true"`, not `true`.
+- **The risky-value override is `--accept-risk` on `server config
+  set/reset`, not `--force` (D3).** `--force` is already global, "replace an
+  existing `--out-file`"; one flag lifting two unrelated checks is how an
+  agent overwrites a file it only meant to accept a memory value for. A
+  blocked value is `BLOCKED` (exit 7), not a new `RISKY_VALUE` code.
+- **Defaults are the engine's, from a per-major table in gosmo (D4)** —
+  `ConfigurationOption.Default`/`HasDefault`, built from Microsoft's
+  `sp_configure` reference and checked against the 13, 14 and 17 instances —
+  not Setup's recommendation (MAXDOP and max server memory since 2019,
+  `mssql-conf` on Linux) and not a table in gossms (gosmo-first; the TUI can
+  share it). An option the table lacks (a CU's, the version parts, Azure) has
+  `default` NULL with one warning, is left out of `--non-default`, and
+  `reset` refuses it (exit 11). `--non-default` compares the configured value,
+  so `min server memory` 0 running 16 is not reported.
+- **`db set` maps each key to its gosmo call through a fixed table (D8)** —
+  `SetDatabaseOption`'s 21 keys, `RECOVERY`, `COMPATIBILITY_LEVEL`,
+  `READ_ONLY` and `QUERY_STORE` (its options read and re-sent with the new
+  state, a no-op for the rest on 13, 14 and 17) — not `KEY=VALUE` passed
+  through as raw `ALTER DATABASE … SET` text, which bypasses gosmo's
+  allowlists and `WithScript`. Keys apply in order, one statement each, no
+  transaction (ALTER DATABASE cannot run in one); the first failure stops the
+  run (exit 5) with what landed reported. Exclusive-access keys wait, bounded
+  by `--timeout`; `--rollback-immediate` kills sessions, so it needs
+  `--confirm <db>`. `USER_ACCESS`, `OFFLINE` and `ONLINE` are left to the
+  administration commands.
+
+## Command-line plans, scripting and data: what phase 6 settled — do not re-raise
+
+The contract is `docs/cli.md` § Execution plans, § Scripting, § Data and
+§ Commands; these are the alternatives turned down.
+
+- **`plan actual` is `query run` with the plan captured, and counts rows
+  instead of returning them (D2).** It takes `query run`'s whole gate
+  (`--allow`, `--transaction`, `--max-rows-affected`, `--param`,
+  `--continue-on-error`, `--timeout`, `--dry-run`) through the same run core,
+  not a copy. Set `result_sets` gives each set's columns and row count:
+  returning rows under `--max-rows` too would double every answer for a
+  caller that asked for the plan, and `query run` is there for the rows.
+  `plan estimated` has no `--param`: SHOWPLAN_XML plans an `sp_executesql`
+  call as the `EXEC` alone (found live on 17).
+- **One Script As, in the headless `internal/scripting` (D5).** The family →
+  gosmo binding, each family's verbs, the `USE` prefix rule, the default
+  script options and the system-object and Azure refusals live there; the TUI
+  keeps its menus and maps `NodeType` → family, the CLI maps the resolved
+  object's type → family. Parity with the TUI holds by construction. Calling
+  gosmo directly from the CLI with a parity test was turned down: two tables
+  to keep in step, and the test would sit in `tui` importing `cli`. `script
+  object` takes no script options — its output is exactly Script As — and
+  writes a file through `--script-file`, not the global `--out-file`
+  (which is for rows). `create-or-alter` and `--include-indexes/-triggers/-fk`
+  have nothing behind them in gosmo's `ScriptOptions` and are not offered.
+- **`script db` is Script Database As, not the Generate Scripts wizard (D7).**
+  Every object in dependency order needs dependency-ordered scripting in
+  gosmo first (SCHEMABINDING, cycles), a feature the size of a phase;
+  deferred in `docs/open-threads.md`.
+- **`--where`/`--order-by` are spliced fragments, then the whole statement is
+  classified (D9).** Each ends at a line break (so a trailing `--` comment
+  cannot swallow the rest), and the composed text must classify as one read
+  SELECT in one batch — a `;`, a second statement, `GO` or dynamic SQL is
+  `BLOCKED`, exit 7, before connecting. `--columns` is parsed as identifiers
+  and matched to the catalog, never spliced as written. Parsing the
+  fragments into an expression grammar was turned down: the classifier is
+  already the guardrail, and the login's permissions the boundary.
+- **`data import` is bulk copy with KEEPNULLS and CHECK_CONSTRAINTS on (D11).**
+  KEEPNULLS always, or a NULL becomes the column's default and the export →
+  import round trip fails; constraints checked by default (bcp's default is
+  off, but an agent should not admit rows an INSERT would reject — and it
+  leaves them untrusted), off only with `--no-check-constraints`. `.csv`,
+  `.tsv` and `.jsonl` only: `.json` is a whole document read into memory, and
+  `.jsonl` is its streaming form. The format comes from the extension, as
+  for `--out-file` — no `--format` (`--in-format` only names stdin's).
+  Computed, `rowversion` and `GENERATED ALWAYS` columns in the file are
+  skipped so an export loads back. The load is one batch, all or nothing;
+  `--truncate-first` cannot share it (TRUNCATE and a bulk load share no
+  transaction), so it is `ddl`, needs `--confirm`, and the hint says a
+  failed load leaves the table empty.
+- **`agent context` does not list the table rights the `data` commands
+  need.** The database-scope probe (`HAS_PERMS_BY_NAME` on the database)
+  reads 0 for a login granted SELECT or INSERT per schema or per table, so a
+  0 is not a known lack, and probing every table would cost a query per
+  object. The commands' help states the rights, and the server's refusal is
+  `PERMISSION_DENIED`, exit 9. SHOWPLAN (`plan estimated/actual`) and VIEW
+  DEFINITION (`script object`) are database-wide and are listed.
+
+## Command-line monitoring and Extended Events: what phase 7 settled — do not re-raise
+
+The contract is `docs/cli.md` § Monitoring, § Extended Events and
+§ Commands; these are the alternatives turned down.
+
+- **`monitor sessions` and `monitor blocking` read gosmo's `ActiveSessions`,
+  never the TUI's helper procedures (D1).** The Sessions and Block tabs run
+  `sp_WhoIsActive` and `sp_block`, which the TUI installs into tempdb or
+  master, and which stay in gossms (sp_WhoIsActive is GPL-3.0). A `read`
+  command must not install a procedure, and calling one only when it is
+  already there was
+  turned down too: the columns would then depend on the server, and the agent
+  guide could not describe them. `ActiveSession` gained what the procedures
+  showed (open transactions, reads/writes, command, wait resource, the
+  connection's most recent batch for an idle head blocker). The chains are a
+  pure function of that one read, built and unit-tested in gossms, not a
+  gosmo `BlockingChains`.
+- **`monitor waits` has no `--reset-baseline` (D3).** It would be
+  `DBCC SQLPERF('sys.dm_os_wait_stats', CLEAR)`, a server-wide `admin` write
+  that wipes the baseline of every other monitoring tool on the server.
+  `--interval <sec>` takes two reads and reports the difference, which
+  answers "what is it waiting on now" with no side effect. The benign-wait
+  list and the categories stay gossms's (`internal/activity`, exported for
+  the CLI), shared with the TUI's Waits chart.
+- **`monitor top-queries` ranks, `plan cached <plan_handle>` fetches one
+  plan (D4)** — not the first design's `plan cached [--top] [--order-by]`, which was
+  top-queries with every plan attached: N plan digests in one answer are
+  mostly noise, and an agent picks one statement and then asks for its plan.
+  The plan is read through `dm_exec_text_query_plan` (`dm_exec_query_plan`
+  fails past 128 nesting levels) and digested as `plan estimated` does.
+- **`xevent capture` is `admin` (D8).** It creates a server object, which
+  the safety model puts in `admin` (`docs/cli.md` § Safety), so a profile capped at `read` cannot capture. A new
+  rule "temporary diagnostics are `read`" was turned down: it weakens
+  "classes follow what the server changes" for one command, and a session
+  left behind by `kill -9` is a lasting change.
+- **`xevent capture` makes its own session per run, ring_buffer only,
+  dropped on every exit path (D9)** — not the TUI Profiler's persistent
+  `gossms_QuickSession*`, and not an event_file (files to clean up on the
+  server, not readable on every platform). The buffer's
+  `max_events_limit` is `--max-events`, so it keeps the newest; truncation is
+  reported, not hidden. Templates are gosmo's SSMS list by name plus
+  `errors` (severity ≥ 11), a gossms opinion that stays out of gosmo's list;
+  Count Query Locks is left out (a histogram target). Filters go into the
+  server-side predicate; a client-side filter language (`internal/xevent`'s)
+  is not offered.
+
+## Command-line administration: what phase 8 settled — do not re-raise
+
+The contract is `docs/cli.md` § Security, § Agent jobs, § Maintenance,
+§ Writes, § Audit log and § Commands; these are the alternatives turned
+down.
+
+- **A command's class is the class `query run` gives the T-SQL it sends
+  (D1).** So `maint backup`, `restore` (`--verify-only` too), `checkdb`,
+  `security grant/deny/revoke` and role membership, `job start/stop` and
+  `db create/drop` are `admin`; `index-rebuild` and `update-stats` are
+  `ddl`, and the classifier matches: `UPDATE STATISTICS` is `ddl` wherever
+  it stands (inside a merged statement too), and so are `sp_updatestats` and
+  `sp_createstats` (`ddlProcs`). Phase 7's "classes
+  follow what the server changes" was turned down here: it would make
+  `checkdb` and VERIFYONLY `read`, the two routes would disagree (an agent
+  could lower its class by picking the other one), and a `read` profile
+  could start hours of I/O on production. `update-stats` as `write` (where
+  the `UPDATE` floor word first put it) was turned down too: it changes
+  optimizer state, not rows.
+- **`--confirm <name>` is for what overwrites or destroys (D3):** `db drop`
+  always; `maint restore` whenever the target database exists, with or
+  without `--replace` — restoring a database over itself overwrites it
+  without REPLACE — but not a differential or log restore onto a database
+  left RESTORING, which continues a chain and overwrites nothing; `maint
+  backup --init`, which overwrites the media. Not grant/deny/revoke, role
+  membership or `job start/stop`: each is reversible, and `--dry-run` is
+  their safeguard. `--close-connections` never stands in for `--confirm`.
+- **`maint restore` restores one backup set per call (D5).** No restore
+  chains or point-in-time (`PlanRestore`): `--norecovery` lets an agent
+  chain calls itself, each one checked. A media holding several sets without
+  `--file-number` is exit 2, not RESTORE's silent choice of set 1, the
+  oldest. `--move-to-default` names files `<db>_<logical><ext>`, gosmo's
+  rule shared with the TUI's Restore dialog, not a numbered `<db>[_<n>]`.
+  The system databases are refused (single-user-mode work), and so is a
+  planned path another database's file holds, before anything is sent.
+  No REPAIR option on `checkdb`, ever: it needs SINGLE_USER and can lose
+  data — a human decision. A corrupt database is exit 0 with a warning
+  naming the minimum repair level: the command did its job.
+- **The audit log is always on, and a write it cannot record is not made
+  (D10).** One JSON line per call above `read` and per refusal; reads are not
+  logged (noise — the log is for changes). An opt-in profile field was turned
+  down: the CLI never writes `config.json`, and an off-by-default audit
+  protects nobody. So was an opt-out flag or environment variable: an agent
+  could set either. T-SQL and data values are hashed, never stored; no
+  option carries a secret, since passwords never reach argv. No rotation yet
+  (`docs/open-threads.md`).
+
 ## No top-level plan document — do not re-raise
 
 Neither repo has, or should get, a top-level plan file. State and package map:

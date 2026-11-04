@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "1.0",
+  "status": "ok",
+  "command": "query run",
+  "server": "localhost\\SQL2022",
+  "database": "AdventureWorks",
+  "durationMs": 38,
+  "rowsAffected": null,
+  "outFile": null,
+  "resultSets": [
+    {
+      "name": null,
+      "columns": [
+        {
+          "name": "name",
+          "type": "sysname",
+          "nullable": false
+        },
+        {
+          "name": "note",
+          "type": "nvarchar",
+          "nullable": true
+        }
+      ],
+      "rows": [
+        [
+          "Customer",
+          "日本語"
+        ],
+        [
+          "Café",
+          null
+        ],
+        [
+          "multi\r\nline\there",
+          "<a & b>"
+        ],
+        [
+          "short",
+          null
+        ]
+      ],
+      "rowCount": 4,
+      "totalRowCount": 18432,
+      "truncated": true,
+      "truncatedBy": "max-rows",
+      "rowsAffected": null
+    },
+    {
+      "name": null,
+      "columns": [
+        {
+          "name": "n",
+          "type": null,
+          "nullable": false
+        }
+      ],
+      "rows": [
+        [
+          "1"
+        ]
+      ],
+      "rowCount": 1,
+      "totalRowCount": 1,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": 1
+    },
+    {
+      "name": null,
+      "columns": [
+        {
+          "name": "empty",
+          "type": "int",
+          "nullable": true
+        }
+      ],
+      "rows": [],
+      "rowCount": 0,
+      "totalRowCount": 0,
+      "truncated": false,
+      "truncatedBy": null,
+      "rowsAffected": null
+    }
+  ],
+  "messages": [
+    {
+      "type": "info",
+      "text": "(1 row affected)"
+    }
+  ],
+  "warnings": [
+    "a warning\nspanning lines"
+  ],
+  "errors": []
+}

@@ -1,0 +1,26 @@
+STATUS: OK
+COMMAND: plan estimated
+SERVER: devsrv,1500
+DATABASE: app
+DURATION_MS: 0
+RESULT_SETS: 1
+
+PLAN_TYPE: estimated
+DETECTED_CLASS: read
+STATEMENT_COUNT: 1
+
+=== RESULT 1: tree (12 rows, truncated: no) ===
+stmt | node | depth | parent | physical             | logical              | object                                   | cost_pct | est_rows | actual_rows | elapsed_ms | parallel | mode | warnings | misestimate
+-----+------+-------+--------+----------------------+----------------------+------------------------------------------+----------+----------+-------------+------------+----------+------+----------+------------
+1    | 0    | 0     | NULL   | Top                  | Top                  | NULL                                     | 0.0      | 9        | 9           | 0          | 0        | Row  | NULL     | 0
+1    | 1    | 1     | 0      | Nested Loops         | Left Outer Join      | NULL                                     | 0.6      | 9        | 9           | 0          | 0        | Row  | NULL     | 0
+1    | 2    | 2     | 1      | Nested Loops         | Inner Join           | NULL                                     | 0.1      | 5        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 3    | 3     | 2      | Compute Scalar       | Compute Scalar       | NULL                                     | 0.0      | 5        | NULL        | NULL       | 0        | Row  | NULL     | NULL
+1    | 4    | 4     | 3      | Nested Loops         | Inner Join           | NULL                                     | 0.1      | 5        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 5    | 5     | 4      | Compute Scalar       | Compute Scalar       | NULL                                     | 0.0      | 5        | NULL        | NULL       | 0        | Row  | NULL     | NULL
+1    | 6    | 6     | 5      | Nested Loops         | Inner Join           | NULL                                     | 0.1      | 5        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 7    | 7     | 6      | Clustered Index Scan | Clustered Index Scan | dbo.Appointments [PK_Appointments]       | 17.5     | 5        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 8    | 7     | 6      | Clustered Index Seek | Clustered Index Seek | dbo.Doctors [PK_Doctors]                 | 20.8     | 1        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 9    | 5     | 4      | Clustered Index Seek | Clustered Index Seek | dbo.Patients [PK_Patients]               | 20.8     | 1        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 10   | 3     | 2      | Clustered Index Seek | Clustered Index Seek | dbo.Specializations [PK_Specializations] | 20.8     | 1        | 5           | 0          | 0        | Row  | NULL     | 0
+1    | 11   | 2     | 1      | Clustered Index Scan | Clustered Index Scan | dbo.MedicalRecords [PK_MedicalRecords]   | 19.2     | 5        | 25          | 0          | 0        | Row  | NULL     | 0

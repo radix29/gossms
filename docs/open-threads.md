@@ -86,6 +86,108 @@ Settled design: `docs/decisions.md` § Format Document.
   `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
   (`detail_browser_group_schema.go`) per family.
 
+## Command line: what is left
+
+The phase plan and its as-built record are `todo/comm-params.md` § 15.
+
+- **Windows never driven** (phases 0 and 1): cmd, PowerShell, Git Bash on
+  win10cli — there is no interactive shell there from this machine. Only
+  `GOOS=windows go vet`/`go build` have run.
+- **`--application-intent readonly` routing unverified.** Through the AAG
+  listener (`ubuaag`) both intents landed on the primary: `AAG1` has no
+  read-only routing list, so the run proves the parameter is accepted, not
+  that a read-only connection reaches a secondary.
+- **Entra methods through the command line not run live** — no Azure instance
+  is available; resolution and refusals are unit-tested only.
+- **A History row can clip the login off** (pre-existing). The label budgets
+  (`matchServerWidth` 14, `matchDatabaseWidth` 8) fill the 30-column pane
+  without the ListBox's two-column marker, so a long server *and* database
+  (`win10cli.fritz.box`, `HealthClinic`) cut `,sa` — the thing that tells two
+  entries for one server apart.
+- **`object dependencies`' permission hint may be wrong** (found 2026-10-29
+  in phase 3.i). Its PERMISSION_DENIED hint and `docs/cli.md` § Commands say
+  SELECT on `sys.sql_expression_dependencies` is db_owner's only by default.
+  On majors 14 and 17 a db_datareader login (no VIEW DEFINITION) reads it
+  fine and gets an empty set: metadata visibility hides the edges, no error.
+  The exit 9 that 3.f recorded on 17 came from some other setup (an explicit
+  DENY?). Re-check which login gets exit 9, then fix the hint and the row.
+  **Same cause, in scripting** (found 2026-10-30 in phase 6.l, on 17, 14, 13
+  and ubusql1): a table's DROP / DROP AND CREATE (TUI Script As and `script
+  object`) names the modules schema-bound to it in a comment (gosmo
+  `schemaBoundDependents`); a db_datareader login gets no rows and the
+  comment silently goes missing — the script itself is the same, but the
+  warning that its DROP will fail with Msg 3729 is not there. Decide in gosmo:
+  refuse (as a hidden default or filter is refused) when the login lacks VIEW
+  DEFINITION, or say in the comment that dependents could not be read.
+- **No Generate Scripts wizard** (phase 6, D7): `script db` is the
+  database's own CREATE, not its objects. Scripting every object in
+  dependency order (`--objects`, `--include-permissions`) needs
+  dependency-ordered scripting in gosmo first — SCHEMABINDING, cycles — a
+  feature the size of a phase. Neither the TUI nor the command line has it.
+- **`object describe`'s `filter` is empty, not NULL, for a hidden filter**
+  (found 2026-10-29 in phase 6.e). Without VIEW DEFINITION
+  `sys.indexes.filter_definition` is NULL while `has_filter` is 1; gosmo now
+  reports it (`Index.IsFilterHidden`) and refuses to script such an index,
+  but `describe`'s `indexes` set, and `object indexes`, still show the
+  filter as empty — indistinguishable from an unfiltered index — with no
+  warning, unlike a hidden default or check.
+- **gosmo's `BulkInsert` passes values to go-mssqldb unchecked** (found
+  2026-10-30 in phase 6.i, live on 17 and 13). The driver wraps an int too
+  big for its column (300 into a tinyint loads 44), and sends a Go string
+  for a varchar column as its UTF-8 bytes, which the server reads in the
+  *database's* default code page (INSERT BULK declares the columns without
+  COLLATE) and converts to the column's, `?` for what it lacks. gossms's
+  import goes through `query.NewCellParser`, which checks and encodes, so
+  only other `BulkInsert` callers are exposed. Whether gosmo should convert,
+  refuse or just document this is undecided. The limit that stays: in a
+  database whose default collation is not UTF-8, a varchar column with
+  another code page cannot be bulk-loaded with characters outside the
+  database's code page (the parser refuses them by name).
+- **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
+  (phase 4) — every instance here has one volume, and none is older than
+  2016 SP3.
+- **`maint index-rebuild --online` → exit 11 is unit-tested only** (phase
+  8, 8.m): every instance here is Developer or Enterprise, so the refusal on
+  an edition without online index operations (gosmo
+  `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
+  instance would close it.
+- **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
+  one line per write or refusal for ever. Deferred by decision; a size cap
+  with one `.1` generation, taken under the same lock, is the likely form.
+- **A `--confirm` refusal's audit line has no target** (phase 8, found in
+  8.e): `db drop`, `db set --rollback-immediate`, `monitor kill` and `data
+  import --truncate-first` check `--confirm` before `gate`, so `noteTarget`
+  never runs and the `BLOCKED` line carries empty `server`, `database` and
+  `login`. Calling `noteTarget` (or the check) ahead of the refusal, or
+  `logCall` filling an empty target through `connect.Describe`, would fix
+  all four at once.
+- **An application role cannot be a `security grant/deny/revoke` or `role
+  add-member` principal** (phase 8, 8.g): `resolvePrincipal` looks up a
+  user, then a database role, so an application role is `NOT_FOUND`, exit
+  8, though SQL Server accepts it. A third lookup (gosmo
+  `ApplicationRoleByName`) in database scope would fix it; `security
+  permissions` shares the gap.
+- **The `job` commands need sysadmin in practice** (phase 8, found in
+  8.h): gosmo's job reads (`Jobs`, `JobByName`, `Steps`, `History`,
+  `SearchJobHistory`) SELECT from msdb's `sysjobs`, `sysjobservers`,
+  `sysjobactivity` and `sysjobhistory`, and msdb grants the Agent roles only
+  `sysjobs_view`, `sysschedules_localserver_view`, `syscategories` and the
+  `sp_help_job*` procedures — a SQLAgentReaderRole member is refused
+  `sysjobservers` (Msg 229, on 17), so `job list` and every job command
+  that reads the job first is exit 9. The TUI's Agent node shares it.
+  Reading through `sp_help_job`/`sp_help_jobhistory` (or the views) for a
+  non-sysadmin in gosmo would fix both; SQLAgentUserRole would then see
+  only its own jobs, as SSMS does.
+- **`agent context` does not answer for every phase 8 right** (8.l):
+  IMPERSONATE (`security permissions --effective`) is per principal, the
+  rights to grant depend on the securable, and server role membership on the
+  role, so none is in `missing_permissions` — the server's refusal is exit 9
+  with a hint. CREATE DATABASE granted in master alone reads as a lack of
+  CREATE ANY DATABASE (`db create`, `maint restore`), a false positive.
+  `maint backup`'s and `checkdb`'s rows answer for the connection's
+  database, not the `<database>` argument. Probing IMPERSONATE ANY LOGIN and
+  CREATE DATABASE in master in gosmo would narrow the first and close the second.
+
 ## Fix order
 
 Outstanding work by priority. Each item points to where
