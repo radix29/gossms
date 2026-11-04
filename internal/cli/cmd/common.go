@@ -200,6 +200,7 @@ type Catalog interface {
 	DatabaseRoles(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseRole, error)
 	DatabaseRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.DatabaseRole, error)
 	DatabaseRoleMembers(ctx context.Context, d *gosmo.Database, role string) ([]*gosmo.RoleMember, error)
+	ApplicationRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.ApplicationRole, error)
 	PermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.PrincipalSecurable, error)
 	ColumnPermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.ColumnPermissionEntry, error)
 	ServerPermissions(ctx context.Context) ([]*gosmo.ServerPermissionEntry, error)
@@ -683,6 +684,10 @@ func (serverCatalog) DatabaseRoleByName(ctx context.Context, d *gosmo.Database, 
 
 func (serverCatalog) DatabaseRoleMembers(ctx context.Context, d *gosmo.Database, role string) ([]*gosmo.RoleMember, error) {
 	return d.RoleMembers(ctx, role)
+}
+
+func (serverCatalog) ApplicationRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.ApplicationRole, error) {
+	return d.ApplicationRoleByName(ctx, name)
 }
 
 func (serverCatalog) PermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.PrincipalSecurable, error) {

@@ -534,6 +534,7 @@ func describeTable(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *g
 	res.Sets = []output.Set{colSet, keysSet(idx, fks), indexesSet(idx), checkSet, triggersSet(trs)}
 	hiddenDefinitions(res, hiddenCols+hiddenChecks)
 	hiddenTypes(res, countHidden(cols, func(c *gosmo.Column) bool { return c.IsTypeHidden }))
+	hiddenFilters(res, "index(es)", hiddenIndexFilters(idx))
 	return nil
 }
 
@@ -559,6 +560,7 @@ func describeView(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *go
 	res.Sets = []output.Set{colSet, indexesSet(idx), triggersSet(trs)}
 	hiddenDefinitions(res, hidden)
 	hiddenTypes(res, countHidden(cols, func(c *gosmo.Column) bool { return c.IsTypeHidden }))
+	hiddenFilters(res, "index(es)", hiddenIndexFilters(idx))
 	return nil
 }
 
@@ -583,6 +585,30 @@ func hiddenTypes(res *output.Result, n int) {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("The login cannot see %d user-defined data type(s): "+
 			"each reads as its base system type (empty for a CLR type). It needs REFERENCES or VIEW DEFINITION on the type.", n))
 	}
+}
+
+// hiddenFilters warns, naming them, of the filtered indexes (or statistics,
+// as kind says) whose predicate the login cannot read: without VIEW
+// DEFINITION filter_definition is NULL while has_filter is 1 (gosmo
+// Index.IsFilterHidden). The filter cell is NULL either way, so without
+// the warning the index reads as unfiltered.
+func hiddenFilters(res *output.Result, kind string, names []string) {
+	if len(names) > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("The login cannot read the filter of %d filtered %s (%s): "+
+			"filter reads NULL, as an unfiltered one's does. It needs VIEW DEFINITION on the object.",
+			len(names), kind, strings.Join(names, ", ")))
+	}
+}
+
+// hiddenIndexFilters is the names of the indexes whose filter is hidden.
+func hiddenIndexFilters(idx []*gosmo.Index) []string {
+	var names []string
+	for _, i := range idx {
+		if i.IsFilterHidden {
+			names = append(names, i.Name)
+		}
+	}
+	return names
 }
 
 // countHidden counts the items hidden reports.

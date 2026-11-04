@@ -157,8 +157,8 @@ func SecurityCommands(d Deps) []*spec.Command {
 		{
 			Path:    []string{"security", "permissions"},
 			Summary: "Show a principal's explicit grants and denies, or what it can effectively do",
-			Description: "A database user or role of the connection's database, or with --scope server a login or " +
-				"server role. By default the explicit GRANT and DENY entries recorded for the principal itself: on " +
+			Description: "A database user, role or application role of the connection's database, or with --scope server a " +
+				"login or server role. By default the explicit GRANT and DENY entries recorded for the principal itself: on " +
 				"the database, its schemas, objects, columns, types and certificates (database scope), or on the " +
 				"server (server scope). What it holds through a role is not among them — memberOf names its roles, " +
 				"whose own entries a call per role shows. --effective asks the server which permissions the principal " +
@@ -168,7 +168,7 @@ func SecurityCommands(d Deps) []*spec.Command {
 				"one is a usage error. Impersonating needs IMPERSONATE on the user (or db_owner) or on the login (or " +
 				"CONTROL SERVER): without it, exit 9. A principal the login cannot see — without VIEW DEFINITION " +
 				"(VIEW ANY DEFINITION on the server) it sees only itself and the fixed roles — is NOT_FOUND.",
-			Args: []spec.Arg{{Name: "principal", Help: "User or database role; with --scope server, login or server role", Required: true}},
+			Args: []spec.Arg{{Name: "principal", Help: "User, database role or application role; with --scope server, login or server role", Required: true}},
 			Options: append(ConnectOptions(),
 				scopeOption("database: a user or role of the connection database; server: a login or server role"),
 				spec.Option{Name: optEffective, Type: spec.TypeBool,
@@ -440,7 +440,8 @@ func roleNotFound(ctx context.Context, cat Catalog, res *output.Result, role, sc
 // --- permissions ------------------------------------------------------------
 
 // principal is the one security permissions resolved: its catalog spelling,
-// its type_desc, and whether it is a role (which cannot be impersonated).
+// its type_desc, and whether it is a role — database, server or application
+// — which cannot be impersonated.
 type principal struct {
 	name string
 	typ  gosmo.PrincipalType
@@ -514,10 +515,10 @@ var (
 	grantScope = scopeWords{"use --on SERVER for a server permission", "name a database securable in --on"}
 )
 
-// resolvePrincipal finds name in dbase (a user, then a database role) or,
-// with dbase nil, on the server (a login, then a server role). Nothing found
-// is NOT_FOUND, hinting the other scope (in words) or the user a login maps
-// to.
+// resolvePrincipal finds name in dbase (a user, a database role, then an
+// application role) or, with dbase nil, on the server (a login, then a
+// server role). Nothing found is NOT_FOUND, hinting the other scope (in
+// words) or the user a login maps to.
 func resolvePrincipal(ctx context.Context, cat Catalog, res *output.Result, dbase *gosmo.Database, name string, words scopeWords) (principal, error) {
 	if dbase == nil {
 		l, err := cat.LoginByName(ctx, name)
@@ -541,6 +542,8 @@ func resolvePrincipal(ctx context.Context, cat Catalog, res *output.Result, dbas
 				hint = fmt.Sprintf("%s is a user of database %s: %s.", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name), words.toDatabase)
 			} else if _, err := cat.DatabaseRoleByName(ctx, dbase, name); err == nil {
 				hint = fmt.Sprintf("%s is a role of database %s: %s.", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name), words.toDatabase)
+			} else if _, err := cat.ApplicationRoleByName(ctx, dbase, name); err == nil {
+				hint = fmt.Sprintf("%s is an application role of database %s: %s.", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name), words.toDatabase)
 			}
 		}
 		return principal{}, output.NewError(output.CodeNotFound, fmt.Sprintf("no login or server role %s", gosmo.QuoteName(name)), hint)
@@ -556,6 +559,13 @@ func resolvePrincipal(ctx context.Context, cat Catalog, res *output.Result, dbas
 	r, err := cat.DatabaseRoleByName(ctx, dbase, name)
 	if err == nil {
 		return principal{name: r.Name, typ: gosmo.PrincipalDatabaseRole, role: true}, nil
+	}
+	if !errors.Is(err, gosmo.ErrNotFound) {
+		return principal{}, readError(err)
+	}
+	a, err := cat.ApplicationRoleByName(ctx, dbase, name)
+	if err == nil {
+		return principal{name: a.Name, typ: gosmo.PrincipalApplicationRole, role: true}, nil
 	}
 	if !errors.Is(err, gosmo.ErrNotFound) {
 		return principal{}, readError(err)
@@ -664,8 +674,12 @@ func effectivePermissionsSet(ctx context.Context, cat Catalog, dbase *gosmo.Data
 		{Name: "entity", Type: "nvarchar(128)"}, {Name: "permission", Type: "nvarchar(128)"},
 	}}
 	if p.role {
-		return set, usageError(fmt.Sprintf("--effective: %s is a role, and SQL Server cannot impersonate a role", gosmo.QuoteName(p.name)),
-			"Drop --effective for the role's explicit entries, or ask --effective for a user or login that is a member.")
+		hint := "Drop --effective for the role's explicit entries, or ask --effective for a user or login that is a member."
+		if p.typ == gosmo.PrincipalApplicationRole {
+			// No members: a session takes it on through sp_setapprole.
+			hint = "Drop --effective for the application role's explicit entries: it has no members to ask for instead."
+		}
+		return set, usageError(fmt.Sprintf("--effective: %s is a role, and SQL Server cannot impersonate a role", gosmo.QuoteName(p.name)), hint)
 	}
 	var (
 		perms []*gosmo.EffectivePermission

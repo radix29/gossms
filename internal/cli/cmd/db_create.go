@@ -265,7 +265,7 @@ func availabilityGroupOf(ctx context.Context, cat Catalog, name string) (string,
 
 func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	if err := dropConfirmed(inv); err != nil {
-		return nil, err
+		return nil, d.confirmRefusal(inv, err)
 	}
 	closeConns := inv.Values[optCloseConnections].(bool)
 	res := &output.Result{}

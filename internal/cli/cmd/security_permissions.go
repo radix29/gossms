@@ -68,7 +68,7 @@ func securityWriteCommands(d Deps) []*spec.Command {
 			{Name: optColumns, Type: spec.TypeList, Help: "Only these columns of a table, view or table-valued function"},
 		})
 	}
-	const principalHelp = "the user or database role; with --on SERVER, the login or server role"
+	const principalHelp = "the user, database role or application role; with --on SERVER, the login or server role"
 	const shared = "--on names the securable: SERVER (a server permission, run in master), DATABASE (the connection's " +
 		"database; DATABASE::<name> must be it), SCHEMA::<schema>, OBJECT::<schema.name> or a bare <schema.name> — a " +
 		"table, view, procedure, function, sequence or synonym, a one-part name looked up across schemas —, " +

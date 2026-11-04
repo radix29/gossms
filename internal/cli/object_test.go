@@ -21,9 +21,10 @@ type objectFake struct {
 	*fakeCatalog
 	objects []*gosmo.ObjectInfo
 	filters []gosmo.ObjectFilter
-	// hidden reads every computed, default and check definition as gosmo
-	// does for a login without VIEW DEFINITION: "", and CustomerName's type
-	// as one the login cannot see (Column.IsTypeHidden).
+	// hidden reads every computed, default and check definition, and
+	// IX_Customer_Name's filter, as gosmo does for a login without VIEW
+	// DEFINITION: "" (Index.IsFilterHidden), and CustomerName's type as one
+	// the login cannot see (Column.IsTypeHidden).
 	hidden bool
 }
 
@@ -248,6 +249,11 @@ var fakeIndexes = []*gosmo.Index{
 }
 
 func (c *objectFake) TableIndexes(context.Context, *gosmo.Table) ([]*gosmo.Index, error) {
+	if c.hidden {
+		ix := *fakeIndexes[1]
+		ix.FilterDefinition, ix.IsFilterHidden = "", true
+		return []*gosmo.Index{fakeIndexes[0], &ix, fakeIndexes[2]}, nil
+	}
 	return fakeIndexes, nil
 }
 
@@ -496,9 +502,15 @@ func TestObjectDescribeHiddenDefinitions(t *testing.T) {
 	if got := setRows(t, env, 3); !slices.Equal(got, []string{"CK_pct|pct|NULL|false|false"}) {
 		t.Errorf("checks %q", got)
 	}
+	// The hidden filter reads NULL, as an unfiltered index's does, so only
+	// the warning naming it tells the two apart.
+	if got := setRows(t, env, 2); !strings.HasPrefix(got[1], "IX_Customer_Name|NONCLUSTERED|false|false|CustomerName DESC|pct|NULL|") {
+		t.Errorf("indexes\n%s", strings.Join(got, "\n"))
+	}
 	// CustomerName's hidden type reads as its storage type, warned of too.
-	if w := env["warnings"].([]any); len(w) != 2 || !strings.HasPrefix(w[0].(string), "3 computed, default or check definitions read NULL") ||
-		!strings.HasPrefix(w[1].(string), "The login cannot see 1 user-defined data type(s)") {
+	if w := env["warnings"].([]any); len(w) != 3 || !strings.HasPrefix(w[0].(string), "3 computed, default or check definitions read NULL") ||
+		!strings.HasPrefix(w[1].(string), "The login cannot see 1 user-defined data type(s)") ||
+		!strings.HasPrefix(w[2].(string), "The login cannot read the filter of 1 filtered index(es) (IX_Customer_Name)") {
 		t.Errorf("warnings %v", w)
 	}
 	if _, env := runObject(t, newObjectFake(), "describe", "Sales.Customer"); len(env["warnings"].([]any)) != 0 {

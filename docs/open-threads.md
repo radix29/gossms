@@ -139,13 +139,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   dependency order (`--objects`, `--include-permissions`) needs
   dependency-ordered scripting in gosmo first — SCHEMABINDING, cycles — a
   feature the size of a phase. Neither the TUI nor the command line has it.
-- **`object describe`'s `filter` is empty, not NULL, for a hidden filter**
-  (found 2026-10-29 in phase 6.e). Without VIEW DEFINITION
-  `sys.indexes.filter_definition` is NULL while `has_filter` is 1; gosmo now
-  reports it (`Index.IsFilterHidden`) and refuses to script such an index,
-  but `describe`'s `indexes` set, and `object indexes`, still show the
-  filter as empty — indistinguishable from an unfiltered index — with no
-  warning, unlike a hidden default or check.
 - **gosmo's `BulkInsert` passes values to go-mssqldb unchecked** (found
   2026-10-30 in phase 6.i, live on 17 and 13). The driver wraps an int too
   big for its column (300 into a tinyint loads 44), and sends a Go string
@@ -169,19 +162,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
   one line per write or refusal for ever. Deferred by decision; a size cap
   with one `.1` generation, taken under the same lock, is the likely form.
-- **A `--confirm` refusal's audit line has no target** (phase 8, found in
-  8.e): `db drop`, `db set --rollback-immediate`, `monitor kill` and `data
-  import --truncate-first` check `--confirm` before `gate`, so `noteTarget`
-  never runs and the `BLOCKED` line carries empty `server`, `database` and
-  `login`. Calling `noteTarget` (or the check) ahead of the refusal, or
-  `logCall` filling an empty target through `connect.Describe`, would fix
-  all four at once.
-- **An application role cannot be a `security grant/deny/revoke` or `role
-  add-member` principal** (phase 8, 8.g): `resolvePrincipal` looks up a
-  user, then a database role, so an application role is `NOT_FOUND`, exit
-  8, though SQL Server accepts it. A third lookup (gosmo
-  `ApplicationRoleByName`) in database scope would fix it; `security
-  permissions` shares the gap.
 - **The `job` commands need sysadmin in practice** (phase 8, found in
   8.h): gosmo's job reads (`Jobs`, `JobByName`, `Steps`, `History`,
   `SearchJobHistory`) SELECT from msdb's `sysjobs`, `sysjobservers`,

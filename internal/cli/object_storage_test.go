@@ -85,11 +85,12 @@ func (c *storageFake) Dependents(_ context.Context, _ *gosmo.Database, schema, n
 
 var usageAt = time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
 
-// TableIndexes is fakeIndexes with index ids, and a hypothetical index with
-// no usage row.
-func (c *storageFake) TableIndexes(context.Context, *gosmo.Table) ([]*gosmo.Index, error) {
+// TableIndexes is objectFake's with index ids, and a hypothetical index
+// with no usage row.
+func (c *storageFake) TableIndexes(ctx context.Context, t *gosmo.Table) ([]*gosmo.Index, error) {
+	idxs, _ := c.objectFake.TableIndexes(ctx, t)
 	var out []*gosmo.Index
-	for i, idx := range fakeIndexes {
+	for i, idx := range idxs {
 		cp := *idx
 		cp.IndexID = i + 1
 		out = append(out, &cp)
@@ -149,9 +150,18 @@ func (c *storageFake) TableStatistics(context.Context, *gosmo.Table) ([]*gosmo.S
 	return []*gosmo.Statistic{
 		{Name: "PK_Customer", StatID: 1, LastUpdated: usageAt, TotalRows: 200, RowsSampled: 50, Steps: 120, ModificationCounter: 3},
 		{Name: "_WA_Sys_00000002", StatID: 2, IsAutoCreated: true},
-		{Name: "st_multi", StatID: 3, IsUserCreated: true, HasFilter: true, FilterDef: "([pct]>(0))", LastUpdated: usageAt,
+		{Name: "st_multi", StatID: 3, IsUserCreated: true, HasFilter: true, FilterDef: c.statFilter(), LastUpdated: usageAt,
 			NoRecompute: true, ModificationCounter: 0},
 	}, nil
+}
+
+// statFilter is st_multi's filter: "" when hidden, as gosmo reads a NULL
+// filter_definition for a login without VIEW DEFINITION.
+func (c *storageFake) statFilter() string {
+	if c.hidden {
+		return ""
+	}
+	return "([pct]>(0))"
 }
 
 func (c *storageFake) ViewStatistics(context.Context, *gosmo.View) ([]*gosmo.Statistic, error) {
@@ -287,6 +297,16 @@ func TestObjectIndexes(t *testing.T) {
 		t.Errorf("view, detailed\n%s", strings.Join(got, "\n"))
 	}
 
+	// A filter the login cannot read reads NULL, as no filter does: the
+	// warning names the index.
+	cat = newStorageFake()
+	cat.hidden = true
+	_, env = runStorage(t, cat, "indexes", "Sales.Customer")
+	if got := setRows(t, env, 0); !strings.HasPrefix(got[1], "IX_Customer_Name|2|NONCLUSTERED|false|false|CustomerName DESC|pct|NULL|") ||
+		!strings.Contains(fmt.Sprint(env["warnings"]), "filter of 1 filtered index(es) (IX_Customer_Name)") {
+		t.Errorf("hidden filter %q, warnings %v", got[1], env["warnings"])
+	}
+
 	if exit, env := runStorage(t, newStorageFake(), "indexes", "Sales.usp_Get"); exit != 2 ||
 		!strings.Contains(firstError(t, env)["message"].(string), "is a procedure, which has no indexes") {
 		t.Errorf("procedure: exit %d, %v", exit, env["errors"])
@@ -309,6 +329,14 @@ func TestObjectStats(t *testing.T) {
 	}
 	if w := fmt.Sprint(env["warnings"]); !strings.Contains(w, "1 of 3 statistics show no properties") {
 		t.Errorf("warnings %s", w)
+	}
+	// A filter the login cannot read is NULL, not empty, and named.
+	cat := newStorageFake()
+	cat.hidden = true
+	_, env = runStorage(t, cat, "stats", "Sales.Customer")
+	if got := setRows(t, env, 0); !strings.HasPrefix(got[2], "st_multi|3|CustomerName, pct|user|NULL|") ||
+		!strings.Contains(fmt.Sprint(env["warnings"]), "filter of 1 filtered statistic(s) (st_multi)") {
+		t.Errorf("hidden filter %q, warnings %v", got[2], env["warnings"])
 	}
 	_, env = runStorage(t, newStorageFake(), "stats", "vCustomer")
 	if w := env["warnings"].([]any); len(w) != 0 {

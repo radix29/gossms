@@ -1,4 +1,4 @@
-- new server and databse roles dialog
+- new server and database roles dialog
 
 Results:
 -	Images

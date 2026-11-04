@@ -280,3 +280,38 @@ func FuzzAuditNeverHoldsSQL(f *testing.F) {
 		}
 	})
 }
+
+// TestAuditConfirmRefusalNamesTarget: the commands that check --confirm
+// before the gate — so before the gate notes the target — still log the
+// refusal with the profile's server, database and login, and data import
+// --truncate-first with the ddl it would have needed.
+func TestAuditConfirmRefusalNamesTarget(t *testing.T) {
+	tree := newCommandTree(noDial(t))
+	for _, tc := range []struct {
+		argv  []string
+		class string
+	}{
+		{[]string{"db", "drop", "Scratch"}, "admin"},
+		{[]string{"db", "drop", "Scratch", "--confirm", "Other"}, "admin"},
+		{[]string{"db", "set", "Scratch", "--option", "READ_COMMITTED_SNAPSHOT=ON", "--rollback-immediate"}, "admin"},
+		{[]string{"monitor", "kill", "87", "--confirm", "88"}, "admin"},
+		{[]string{"data", "import", "Sales.Customer", "--in-file", "customers.csv", "--truncate-first"}, "ddl"},
+	} {
+		name := strings.Join(tc.argv, " ")
+		path := filepath.Join(t.TempDir(), "audit.jsonl")
+		r := auditCall(t, tree, path, "", nil, nil, append(tc.argv, "-p", "dev", "--allow", "admin", "-o", "json")...)
+		if r.exit != 7 {
+			t.Errorf("%s: exit %d, want 7 (BLOCKED)\n%s%s", name, r.exit, r.stdout, r.stderr)
+			continue
+		}
+		recs, raw := auditLines(t, path)
+		if len(recs) != 1 {
+			t.Errorf("%s: %d audit lines, want 1:\n%s", name, len(recs), raw)
+			continue
+		}
+		if got := recs[0]; got.Outcome != "blocked" || got.Profile != "dev" || got.Server != "devsrv,1500" ||
+			got.Database != "app" || got.Login != "agent" || got.Class != tc.class {
+			t.Errorf("%s: record %+v", name, got)
+		}
+	}
+}

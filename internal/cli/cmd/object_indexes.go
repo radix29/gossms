@@ -207,6 +207,7 @@ func (d Deps) objectIndexes(ctx context.Context, inv *spec.Invocation) (*output.
 			bitCell(i.IsHypothetical)}, i.IndexID))
 	}
 	set.TotalRowCount = len(set.Rows)
+	hiddenFilters(res, "index(es)", hiddenIndexFilters(idx))
 	res.Fields = objectFields(o)
 	if mode != "" {
 		res.Fields = append(res.Fields, output.Field{Key: "fragmentationMode", Value: string(mode)})
@@ -254,6 +255,7 @@ func (d Deps) objectStats(ctx context.Context, inv *spec.Invocation) (*output.Re
 		{Name: "no_recompute", Type: "bit"}, {Name: "incremental", Type: "bit"},
 	}}
 	unread := 0
+	var hiddenStats []string // filtered statistics whose filter the login cannot read
 	for _, st := range stats {
 		cols, err := cat.StatisticColumns(ctx, st)
 		if err != nil {
@@ -272,8 +274,13 @@ func (d Deps) objectStats(ctx context.Context, inv *spec.Invocation) (*output.Re
 			props = []*string{ptr(gridTime(st.LastUpdated)), int64Cell(st.TotalRows), int64Cell(st.RowsSampled), pct,
 				ptr(strconv.Itoa(st.Steps)), int64Cell(st.ModificationCounter)}
 		}
+		// gosmo reads a hidden filter_definition as "" (has_filter still 1);
+		// no filter is empty, so that is the hidden one.
 		var filter *string
-		if st.HasFilter {
+		switch {
+		case st.HasFilter && st.FilterDef == "":
+			hiddenStats = append(hiddenStats, st.Name)
+		case st.HasFilter:
 			filter = ptr(st.FilterDef)
 		}
 		r := []*string{ptr(st.Name), ptr(strconv.Itoa(st.StatID)), ptr(strings.Join(cols, ", ")), ptr(statOrigin(st)), filter}
@@ -281,6 +288,7 @@ func (d Deps) objectStats(ctx context.Context, inv *spec.Invocation) (*output.Re
 		set.Rows = append(set.Rows, append(r, bitCell(st.NoRecompute), bitCell(st.IsIncremental)))
 	}
 	set.TotalRowCount = len(set.Rows)
+	hiddenFilters(res, "statistic(s)", hiddenStats)
 	if unread > 0 {
 		// The catalog cannot tell the two apart: a login the DMF refuses
 		// gets no row for any statistic.

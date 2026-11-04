@@ -422,11 +422,38 @@ the next starts.
    on 17: `--allow read` is BLOCKED; two `--transaction rollback` runs of
    `SELECT NEXT VALUE FOR` on a throwaway sequence returned 1 then 2, each
    with the warning.
-4. **G3**: the audit line's target. One change in `logCall` and four tests.
-5. **G1**: application roles as principals. One lookup and a `Catalog`
-   method; drive it on 17.
-6. **G2**: hidden index filters in `object describe`/`object indexes`;
-   drive it on 17 as a login without VIEW DEFINITION.
+4. ~~**G3**: the audit line's target. One change in `logCall` and four
+   tests.~~ **Done 2026-11-04.** Fixed in `cmd`, not `logCall` (which has no
+   config to read a profile from): `Deps.confirmRefusal` notes the target
+   when a pre-gate `--confirm` check returns BLOCKED, at all four sites, and
+   `data import --truncate-first`'s refusal logs class `ddl` as the gate
+   would. `TestAuditConfirmRefusalNamesTarget` covers the four commands and
+   is mutation-checked (no target; class `write`). The open-thread item is
+   closed. Driven: each refusal in the built binary writes its `server`,
+   `database` and `login`.
+5. ~~**G1**: application roles as principals. One lookup and a `Catalog`
+   method; drive it on 17.~~ **Done 2026-11-04.** `resolvePrincipal` tries
+   `Catalog.ApplicationRoleByName` after the database role, as a role (so
+   `--effective` is exit 2, its hint naming no member to ask for instead),
+   and the server-scope NOT_FOUND hint names an application role of the
+   database too. Help, `docs/cli.md` and the agent-schema golden say so; the
+   open-thread item is closed. Tests cover `permissions` (explicit,
+   `--effective`, the hint), `grant` and `role add-member`, and are
+   mutation-checked (both lookups). Driven on 17 against a throwaway
+   database: grant, deny, revoke, add-member and remove-member on an
+   application role, `permissions` listing its entries and `memberOf`.
+6. ~~**G2**: hidden index filters in `object describe`/`object indexes`;
+   drive it on 17 as a login without VIEW DEFINITION.~~ **Done 2026-11-04.**
+   The cell was already NULL (`nonEmpty`), so the fix is the warning:
+   `hiddenFilters` names each index whose `IsFilterHidden` is set, in
+   `describe` (table and view) and `object indexes`. `object stats` had the
+   same defect, worse — a hidden filter printed as `""` — and now reads NULL
+   with the same warning (gosmo's `ISNULL` leaves `HasFilter` with an empty
+   `FilterDef`, which no real filter has). `docs/cli.md`'s three rows say so;
+   the open-thread item is closed. The fake's `hidden` mode covers all three
+   commands, mutation-checked. Driven on 17 as a login with SELECT only:
+   `IX_t_v` and `st_v` read NULL, each named in a warning; as sa the
+   predicates print and no warning is given.
 7. **B1**: palette roles, the contrast test, the status-style capture. Do
    the test first so it fails on today's palettes, then fix until it passes;
    drive all four themes in tmux.

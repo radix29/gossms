@@ -697,7 +697,7 @@ func (d Deps) dbSet(ctx context.Context, inv *spec.Invocation) (*output.Result, 
 	}
 	term, err := dbSetTermination(inv, changes)
 	if err != nil {
-		return nil, err
+		return nil, d.confirmRefusal(inv, err)
 	}
 	res := &output.Result{}
 	sc, cat, w, err := d.connectWriter(ctx, inv, res)
