@@ -2,7 +2,6 @@ package dialogs
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -259,7 +258,7 @@ func (d *ModalDialog) DrawButtonsAtGated(s tcell.Screen, x int, labels []string,
 	p := theme.Active()
 	disabledStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.TextDisabled)
 	btnStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.ButtonFg)
-	activeStyle := tcell.StyleDefault.Background(p.ButtonActive).Foreground(color.White)
+	activeStyle := theme.StyleButtonActive()
 	col, y := x, d.ButtonRowY()
 	for i, label := range labels {
 		st := btnStyle

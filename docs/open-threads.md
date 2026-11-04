@@ -101,6 +101,20 @@ Settled design: `docs/decisions.md` § Format Document.
   past bigint can't be written. There is no Last Used Value row (gosmo's
   `Sequence.noLastUsed` is unexported).
 
+## Theme contrast: what is left
+
+`TestEveryStyleMeetsTheContrastFloor` (`internal/tuikit/theme/contrast_test.go`)
+checks the `theme.Style*` functions only. Two colour pairs drawn elsewhere read
+below its floors (found 2026-11-04, not fixed):
+
+- **The dashboard header's instance name** (`dashboard/common.go`) is
+  `ChartCyan` on `MenuBar`: bright cyan on cyan in mc (2.2:1) and mc - retro
+  (2.3:1), and 3.5:1 in Light. It needs a foreground role for an emphasised
+  word on a `MenuBar` ground, which the palette lacks.
+- **The results status line's truncation alert** (`QueryPanel.resultsStatusStyle`)
+  is bold white on `Error`: 3.1:1 in mc - retro (VGA bright red), 4.2:1 in
+  mc. White on red is mc's own error colour.
+
 ## Command line: what is left
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.

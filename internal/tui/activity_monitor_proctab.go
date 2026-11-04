@@ -89,7 +89,7 @@ func (pt *amProcTab) newGrid() *controls.DataGrid {
 	g := controls.NewDataGrid()
 	g.SetCellCursor(true)
 	g.SetRowNumbers(true)
-	g.SetStatusStyle(resultsStatusStyle)
+	g.SetStatusStyle(theme.StyleGridStatus)
 	g.OnCopyRequest = pt.am.app.copyWithStatus
 	g.SetMaxCellWidth(pt.am.app.cfg.MaxCellLength + 2)
 	g.OnShowValue = func(col int, column, value string) bool {

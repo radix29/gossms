@@ -106,14 +106,13 @@ func (p *QueryPanel) notConnectedMessage() string {
 // three tabs get the same line from drawResultsStatus.
 func (p *QueryPanel) updateResultsStatus() {
 	p.results.SetStatus(p.resultsStatusText())
-	p.results.SetStatusStyle(p.resultsStatusStyle())
 }
 
 // resultsStatusStyle is the status line's style: the usual one, or a bold alert
 // while the line carries truncatedNotice, which must not read as a routine count.
 func (p *QueryPanel) resultsStatusStyle() tcell.Style {
 	if p.truncatedNotice() == "" {
-		return resultsStatusStyle
+		return theme.StyleGridStatus()
 	}
 	pal := theme.Active()
 	return tcell.StyleDefault.Background(pal.Error).Foreground(color.White).Bold(true)

@@ -348,6 +348,9 @@ remembers the specific test. **Fix:** add a `sw.call` for each against the
 sweep's scratch schema, and list them in the hand-driven set. Run the sweep
 on 13 and record the call and failure totals here.
 
+**Done 2026-11-04:** on 13, 434 calls, 0 failed, 13 refused — see step 9
+below.
+
 ---
 
 ## Docs
@@ -454,12 +457,64 @@ the next starts.
    commands, mutation-checked. Driven on 17 as a login with SELECT only:
    `IX_t_v` and `st_v` read NULL, each named in a warning; as sa the
    predicates print and no warning is given.
-7. **B1**: palette roles, the contrast test, the status-style capture. Do
+7. ~~**B1**: palette roles, the contrast test, the status-style capture. Do
    the test first so it fails on today's palettes, then fix until it passes;
-   drive all four themes in tmux.
-8. **B4** (gosmo first): the single-prefix entry error, then gossms's test
-   text. It needs a live check that a 916 still reads well in `db info`.
-9. **V1** (gosmo): the six reads into the sweep, run on 13.
+   drive all four themes in tmux.~~ **Done 2026-11-04.** New roles
+   `StatusBarText`, `ButtonActiveText`, `MenuSelectedText`,
+   `EditorMatchText`, `GridStatusBg`/`GridStatusText` and `ChartHeading`;
+   `StyleGridSelected` takes `SelectedText`. The mc palettes put black on
+   their cyan accents and green match, as mc's skin does (`statusbar`,
+   `dfocus`, `selected`, `bookmarkfound`). The toolbar hover, Activity
+   Monitor's tab and the modal button row now call `StyleMenuSelected`/
+   `StyleButtonActive`. `TestEveryStyleMeetsTheContrastFloor` failed 21
+   pairs before the fix: 4.5:1 for every text style, frames, the dot grid
+   and disabled styles exempt by name. The plan's MC numbers were off: Tango
+   has no true black, so mc's own black on its cyan is 3.59:1, and MC's floor
+   is that pair (white on cyan, 3.52:1, still fails). Beyond B1 it caught
+   Light's teal chart headings (3.0:1, now `ChartHeading`), mc - retro's
+   white on the green search match, and Light's grid selection at 4.499:1
+   (nudged to `0,118,210`). `DataGrid.SetStatusStyle` takes a func called at
+   draw time; `resultsStatusStyle` is gone, and
+   `TestDataGridStatusStyleFollowsThePalette` pins it. All mutation-checked.
+   Driven in tmux on 17: status bar, focused grid cell, the Connect and
+   Options dialogs' active buttons, menu highlight and the results status
+   line in mc - retro, then live through Options to Light, mc and Dark, with
+   the status line following each switch. Not driven: the toolbar hover and
+   Activity Monitor's tab, which need a click, and whose colours did not
+   change. Two pairs outside the `Style*` functions are recorded in
+   `docs/open-threads.md` § Theme contrast: what is left.
+8. ~~**B4** (gosmo first): the single-prefix entry error, then gossms's test
+   text. It needs a live check that a 916 still reads well in `db info`.~~
+   **Done 2026-11-04.** gosmo's exported `*EntryError{Database, Err}` (text
+   `cannot enter database x: …`, no prefix) now comes from every helper that
+   enters a database, not only `recheckEntry`: `use` (inside
+   `InTransaction`), `withSessionIn` and a transaction's switch home.
+   `BulkInsert` passed `withSessionIn`'s error through unwrapped, so it now
+   prefixes an entry failure (`prefixEntry`). `TestEntryErrorCarriesOnePrefix`
+   drives seven exported calls (`SpaceUsed`, `Users`, `ExecProc`,
+   `NextValue`, `CreateSchema`, `EstimatedPlan`, `BulkInsert`), pooled and in
+   a transaction, against a fake that refuses entry. It asserts one leading
+   `gosmo:`, an `EntryError` and Msg 916 underneath, and is mutation-checked
+   (the old prefix in `recheckEntry` or `use`, and the unprefixed
+   `BulkInsert`). The source scan was not extended because it cannot see
+   this shape. gossms had no test matching the old text, only a comment.
+   gosmo's open thread is closed, and `ARCHITECTURE.md` § Errors has an
+   `EntryError` entry. Live on 17: the three can't-enter tests
+   (911/924/942/916) pass. `db info HealthClinic`, run as a throwaway login
+   with no user there, warns `gosmo: space used: cannot enter database
+   HealthClinic: mssql: … (916)`.
+9. ~~**V1** (gosmo): the six reads into the sweep, run on 13.~~
+   **Done 2026-11-04.** `sweepDiscoveryReads` in gosmo's
+   `live_versionsweep_test.go` drives all six against the scratch schema and
+   asserts its row, not only no error: `Search("SWEEP_PAR")` finds
+   `dbo.sweep_parent`, `SearchDefinitions` finds `dbo.sweep_view`,
+   `SearchColumns` finds `dbo.sweep_child.parent_id`, `ObjectByName` reads
+   `dbo.sweep_child` as `U`, `ObjectsNamed("sweep_pred")` resolves to
+   `app.sweep_pred` alone, and `CollationCodePage("Latin1_General_CI_AS")` is
+   1252. All six are in `sweepMustCall`. Live on 13 (`WIN10CLI\SQL2016`,
+   13.0.6500.1): **434 calls, 0 failed, 13 refused** (the expected 2017+ and
+   Azure-only gates). Mutation-checked: a wrong expected view name and code
+   page each fail the sweep.
 10. **G4** (gosmo): test hygiene on 13 and 14. It can share a live session
     with step 9.
 11. **S1**: deep-cloned settings snapshot plus the in-place regression test.

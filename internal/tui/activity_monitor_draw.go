@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tui/dashboard"
 	"github.com/radix29/gossms/internal/tuikit/charts"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -97,7 +96,7 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 		if t.Disabled {
 			style = style.Foreground(pal.TextDim)
 		} else if t.Selected {
-			style = tcell.StyleDefault.Background(pal.MenuSelected).Foreground(color.White).Bold(true)
+			style = theme.StyleMenuSelected().Bold(true)
 		}
 		core.FillRect(s, t.Rect, ' ', style)
 		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)

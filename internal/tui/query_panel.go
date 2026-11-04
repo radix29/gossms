@@ -17,11 +17,6 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// resultsStatusStyle is the results grid's status bar look: light yellow on
-// black, as SSMS's execution status bar. Shared with the toolbar's hover tooltip
-// via theme.StyleGridStatus.
-var resultsStatusStyle = theme.StyleGridStatus()
-
 // ResultsMode selects how QueryPanel renders a successful result set —
 // matching SSMS's Query > Results To Grid/Text/File.
 type ResultsMode int
@@ -242,7 +237,6 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	results := controls.NewDataGrid()
 	results.SetCellCursor(true)
 	results.SetRowNumbers(true)
-	results.SetStatusStyle(resultsStatusStyle)
 	results.OnCopyRequest = app.copyWithStatus
 	p := new(QueryPanel{
 		app:      app,
@@ -251,6 +245,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 		results:  results,
 		splitter: layout.NewHorizontalSplitter("─── Results ─── (drag or Ctrl+Up/Down to resize)"),
 	})
+	results.SetStatusStyle(p.resultsStatusStyle)
 	// Before anything sets text: SetText expands tabs at the editor's current width,
 	// and savedText is seeded from Text() afterwards; see controls.SetIndentWidth.
 	p.editor.SetIndentWidth(app.cfg.IndentWidth)

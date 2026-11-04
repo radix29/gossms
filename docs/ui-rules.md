@@ -17,7 +17,12 @@ behind the mouse and async rules.
   `Dialog*` foregrounds (`DialogText`, `DialogTextDim`, `DialogLine`,
   `DialogAccent`, `DialogError`, …), on `MenuBar` the `Menu*` ones, on
   `GridHeader` `GridHeaderText`; text on an accent ground (`BorderActive`,
-  `TreeSelected`) is `SelectedText`, not `color.White`; a list highlight on a
+  `TreeSelected`, `GridSelected`) is `SelectedText`, not `color.White`, and a
+  ground with its own text role uses it (`StatusBarText`, `ButtonActiveText`,
+  `MenuSelectedText`, `EditorMatchText`, `GridStatusText`) — white on the mc
+  themes' cyan status bar, grid selection and focused button read 2.9:1. A new
+  `theme.Style*` function goes in `styleFuncs` (`contrast_test.go`) so
+  `TestEveryStyleMeetsTheContrastFloor` checks it in every palette; a list highlight on a
   `MenuBar` ground is `StyleMenuSelected()`, not `StyleSelected()`. Dark and
   Light set each pair equal, so a mismatch only shows in the mc themes,
   where panels are blue, dialogs light grey and menus/selection cyan:

@@ -17,6 +17,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 func newTestResult(sets int, withError bool) *query.Result {
@@ -996,14 +997,14 @@ func TestResultsStatusShoutsTruncatedSet(t *testing.T) {
 	if got := qp.resultsStatusText(); !strings.HasPrefix(got, shout) || !strings.Contains(got, "2 rows") {
 		t.Errorf("truncated set's status = %q, want it to lead with %q", got, shout)
 	}
-	if qp.resultsStatusStyle() == resultsStatusStyle {
+	if qp.resultsStatusStyle() == theme.StyleGridStatus() {
 		t.Error("truncated set's status kept the routine style")
 	}
 	qp.setActiveTab(1)
 	if got := qp.resultsStatusText(); strings.Contains(got, "MORE ROWS") {
 		t.Errorf("complete set's status = %q, want no notice", got)
 	}
-	if qp.resultsStatusStyle() != resultsStatusStyle {
+	if qp.resultsStatusStyle() != theme.StyleGridStatus() {
 		t.Error("complete set's status took the alert style")
 	}
 	qp.setActiveTab(qp.messagesTabIndex())

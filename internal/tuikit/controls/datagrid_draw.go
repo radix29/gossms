@@ -71,8 +71,8 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 	// Status bar
 	p := theme.Active()
 	statusStyle := tcell.StyleDefault.Background(p.GridHeader).Foreground(p.TextDim)
-	if g.hasStatusStyle {
-		statusStyle = g.statusStyle
+	if g.statusStyle != nil {
+		statusStyle = g.statusStyle()
 	}
 	core.FillRect(s, core.Rect{X: g.rect.X, Y: g.rect.Y + g.rect.H - 1, W: g.rect.W, H: 1}, ' ', statusStyle)
 	core.DrawTextRight(s, g.rect.X+1, g.rect.Y+g.rect.H-1, g.rect.W-2, statusStyle, g.status)
@@ -86,7 +86,7 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 	}
 	if x, y, w, total, visible, offset, ok := g.hScrollbar(); ok {
 		hStyle := sbStyle
-		if g.hasStatusStyle {
+		if g.statusStyle != nil {
 			// The status row is the grid's own colour only when not overridden (the
 			// query-results grid paints it yellow); keep the track on whatever the row is so
 			// the bar doesn't sit in a stripe of its own.

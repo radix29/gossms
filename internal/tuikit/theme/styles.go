@@ -1,9 +1,6 @@
 package theme
 
-import (
-	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
-)
+import "github.com/gdamore/tcell/v3"
 
 // Functions, not vars, so they always reflect the live palette.
 
@@ -26,7 +23,7 @@ func StyleDisabled() tcell.Style {
 	return tcell.StyleDefault.Background(active.MenuBar).Foreground(active.TextDisabled)
 }
 func StyleStatusBar() tcell.Style {
-	return tcell.StyleDefault.Background(active.StatusBar).Foreground(color.White)
+	return tcell.StyleDefault.Background(active.StatusBar).Foreground(active.StatusBarText)
 }
 func StyleSelected() tcell.Style {
 	return tcell.StyleDefault.Background(active.TreeSelected).Foreground(active.SelectedText)
@@ -36,10 +33,10 @@ func StyleSelected() tcell.Style {
 // dropdown list, panel switcher). Not StyleSelected: Midnight Commander's
 // selection is the same cyan as its menus, so the row would vanish.
 func StyleMenuSelected() tcell.Style {
-	return tcell.StyleDefault.Background(active.MenuSelected).Foreground(color.White)
+	return tcell.StyleDefault.Background(active.MenuSelected).Foreground(active.MenuSelectedText)
 }
 func StyleSearchMatch() tcell.Style {
-	return tcell.StyleDefault.Background(active.EditorMatch).Foreground(active.TextHighlight)
+	return tcell.StyleDefault.Background(active.EditorMatch).Foreground(active.EditorMatchText)
 }
 func StyleDialog() tcell.Style {
 	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.DialogText)
@@ -48,7 +45,7 @@ func StyleButton() tcell.Style {
 	return tcell.StyleDefault.Background(active.ButtonBg).Foreground(active.ButtonFg)
 }
 func StyleButtonActive() tcell.Style {
-	return tcell.StyleDefault.Background(active.ButtonActive).Foreground(color.White)
+	return tcell.StyleDefault.Background(active.ButtonActive).Foreground(active.ButtonActiveText)
 }
 func StyleInput() tcell.Style {
 	return tcell.StyleDefault.Background(active.InputBg).Foreground(active.InputFg)
@@ -79,10 +76,13 @@ func StyleGridRowAlt() tcell.Style {
 	return tcell.StyleDefault.Background(active.GridRowAlt).Foreground(active.Text)
 }
 func StyleGridSelected() tcell.Style {
-	return tcell.StyleDefault.Background(active.GridSelected).Foreground(color.White)
+	return tcell.StyleDefault.Background(active.GridSelected).Foreground(active.SelectedText)
 }
+
+// StyleGridStatus is a results grid's status line, SSMS's yellow execution
+// status bar; the toolbar's tooltip wears it too.
 func StyleGridStatus() tcell.Style {
-	return tcell.StyleDefault.Background(color.LightYellow).Foreground(color.Black)
+	return tcell.StyleDefault.Background(active.GridStatusBg).Foreground(active.GridStatusText)
 }
 
 // StyleChartPlot is a chart's plot-area background; stacked columns' partial
@@ -113,10 +113,10 @@ func StyleTooltipBorder() tcell.Style {
 
 // StyleChartSection is a dashboard section's title strip.
 func StyleChartSection() tcell.Style {
-	return tcell.StyleDefault.Background(active.ChartSectionBg).Foreground(active.ChartCyan)
+	return tcell.StyleDefault.Background(active.ChartSectionBg).Foreground(active.ChartHeading)
 }
 
 // StyleChartTitle is a chart panel's heading, e.g. "SQL SERVER WAITS".
 func StyleChartTitle() tcell.Style {
-	return tcell.StyleDefault.Background(active.PanelBg).Foreground(active.ChartCyan)
+	return tcell.StyleDefault.Background(active.PanelBg).Foreground(active.ChartHeading)
 }

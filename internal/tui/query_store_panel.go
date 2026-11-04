@@ -10,6 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 // query_store_panel.go is SSMS's Query Store views as one panel per database: a
@@ -257,7 +258,7 @@ func NewQueryStorePanel(app *App, sc *db.ServerConn, dbName, title string) *Quer
 func newQSGrid(app *App) *controls.DataGrid {
 	g := controls.NewDataGrid()
 	g.SetCellCursor(true)
-	g.SetStatusStyle(resultsStatusStyle)
+	g.SetStatusStyle(theme.StyleGridStatus)
 	g.OnCopyRequest = app.copyWithStatus
 	g.OnShowValue = app.showSQLCellValue
 	g.SetMaxCellWidth(app.cfg.MaxCellLength + 2)
