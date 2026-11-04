@@ -1,3 +1,5 @@
+- new server and databse roles dialog
+
 Results:
 -	Images
 -	Geo/GIS data?
