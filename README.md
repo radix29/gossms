@@ -175,8 +175,10 @@ failed peer connection never retries with another server's credentials.
 
 **Group by Schema** (View menu, **Alt+G**, or the button at the right end of
 the Object Explorer title: `[⋮]` flat, `[Σ]` grouped) lists Tables, Views,
-Synonyms, Stored Procedures and Functions under one node per schema, as SSMS
-does. It applies
+Synonyms, Stored Procedures, Functions and Sequences under one node per schema,
+as SSMS does, and so do the System, File, External and Graph Tables folders,
+the System Views, Procedures and Functions folders, and the User-Defined Data
+Types, Table Types, Types and XML Schema Collections folders. It applies
 to every connected server, keeps expanded nodes open, and is off at each
 start. Names keep their `schema.` prefix; dragging a schema node into a query
 inserts `[schema]`.

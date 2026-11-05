@@ -328,7 +328,7 @@ gossms/
 │       ├── explorer_external.go  # loaders: External Resources — External Data Sources, File Formats, Libraries (Libraries omitted before 2017)
 │       ├── explorer_service_broker.go # loaders: a database's Service Broker folder — Message Types, Contracts, Queues, Services, Routes, Remote Service Bindings, Broker Priorities (listed whether or not the broker is enabled)
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
-│       ├── explorer_group_schema.go # Group by Schema: a main object folder's loaded children regrouped under one NodeSchemaGroup per schema, locally (no query), losslessly on toggle (explorerNode.flat)
+│       ├── explorer_group_schema.go # Group by Schema: a groupedFolderTypes folder's loaded children regrouped under one NodeSchemaGroup per schema, locally (no query), losslessly on toggle (explorerNode.flat)
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
 │       ├── explorer_index_actions.go # an index node's Rebuild / Reorganize / Disable: state-dependent menu, gate on the parent, confirmation saying what a clustered index takes offline
 │       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: the per-NodeType drop/rename table and the gosmo adapters behind it

@@ -43,11 +43,12 @@ func schemaGroupFolder(group *explorerNode) *explorerNode {
 }
 
 // loadSchemaGroupDetails shows a NodeSchemaGroup as its folder would, narrowed
-// to the group's schema. Tables keep their progressive loader; the other
-// families go through fetchNodeDetails and drop the other schemas' rows.
+// to the group's schema. Tables and its sub-folders keep their progressive
+// loader; the other families go through fetchNodeDetails and drop the other
+// schemas' rows.
 func (db *DetailBrowser) loadSchemaGroupDetails(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	folder, schema := schemaGroupFolder(node), node.data.Schema
-	if folder.data.Type == NodeTables {
+	if isTablesFolder(folder.data.Type) {
 		db.loadTablesFolderDetails(fetchCtx, app, sc, node, folder.data, schema, seq)
 		return
 	}
@@ -66,7 +67,8 @@ func (db *DetailBrowser) loadSchemaGroupDetails(fetchCtx context.Context, app *A
 // rendering ("dbo.t", but a Functions row may be decorated). Rows without a
 // parallel object list cannot be narrowed and are dropped rather than shown
 // under every schema; every groupedFolderTypes loader returns one
-// (viewsFolderDetail, storedProceduresFolderDetail, fetchChildObjectsDetail).
+// (viewsFolderDetail, storedProceduresFolderDetail,
+// programmabilityFolderDetail, fetchChildObjectsDetail).
 func rowsInSchema(rows [][]string, objs []nodeData, schema string) ([][]string, []nodeData) {
 	if len(objs) != len(rows) {
 		return nil, nil
@@ -100,10 +102,10 @@ func (db *DetailBrowser) loadGroupedFolderDetails(fetchCtx context.Context, app 
 }
 
 // groupedFolderObjects lists folder's objects as its ungrouped Details would.
-// Tables through folderTables, not loadTablesFolderDetails: the counts need
-// none of its row-count and space aggregates.
+// The table folders through folderTables, not loadTablesFolderDetails: the
+// counts need none of its row-count and space aggregates.
 func groupedFolderObjects(ctx context.Context, sc *dbconn.ServerConn, folder *explorerNode) ([]nodeData, error) {
-	if folder.data.Type == NodeTables {
+	if isTablesFolder(folder.data.Type) {
 		_, tables, err := folderTables(ctx, sc, folder.data)
 		if err != nil {
 			return nil, err

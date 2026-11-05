@@ -70,7 +70,7 @@ func TestSchemaCountRows(t *testing.T) {
 func TestGroupToggleInvalidatesDetails(t *testing.T) {
 	a := newKeyTestApp(t)
 	folder := groupTree(t, a, NodeTables, obj(NodeTable, "dbo", "A"))
-	other := subFolder(NodeSequences)
+	other := subFolder(NodeRules)
 	a.detailBrowser = NewDetailBrowser("Details")
 	dbr := a.detailBrowser
 

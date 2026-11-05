@@ -68,15 +68,6 @@ Settled design: `docs/decisions.md` § Format Document.
   the built-ins resolve case-insensitively; `sysname` and the CLR types are
   left alone because a CS server collation was not available to check them.
 
-## Group by Schema: what is left
-
-- **Only the five main families group** (deferred scope). Tables (the folder's own user tables), Views, Synonyms, Stored
-  Procedures and Functions; the System/File/External/Graph Tables
-  sub-folders, System Views/Procedures/Functions, Sequences, Types and every
-  other schema-scoped family stay flat. Extending it is one entry in
-  `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
-  (`detail_browser_group_schema.go`) per family.
-
 ## Security: what is left
 
 - **A login with no right on an application role sees the folder empty**
@@ -108,6 +99,17 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   not UTF-8, `Ж` cannot reach a Cyrillic varchar column of a Latin1
   database; gosmo's `BulkInsert` (which since 2026-11-04 checks and encodes
   every value) refuses it by name rather than storing `?`.
+  **Blocked on go-mssqldb** (checked 2026-11-05 against v1.11.2, the latest;
+  review plan F17, left as is by the author's call). Live on 17, a driver
+  patched to append `COLLATE Cyrillic_General_CI_AS` to the column's INSERT
+  BULK declaration stored `0xC6` as `Ж` (stock: `?`), so a per-column COLLATE
+  plus encoding each value in its column's code page would fix it. But the
+  driver writes that column list itself (`makeDecl` in its `bulkcopy.go`,
+  never a COLLATE) and `mssql.CopyIn` takes only names; nor can a column be
+  sent as nvarchar instead, since each column's wire type comes from the
+  table's own `SELECT *` metadata. Reopen when the driver lets a caller
+  declare a column's collation (an upstream PR; a forked `replace` would not
+  reach gosmo's dependents).
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.
