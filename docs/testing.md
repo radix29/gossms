@@ -27,6 +27,16 @@ caught by driving the built binary. For TUI or database changes, run it:
 Tests assert an outcome, not "nothing panicked". Mutate the covered code and
 confirm the new test fails.
 
+**gosmo's live suite: run what the change touches, not the whole suite.**
+The full `livedb` run takes about 16 minutes per instance (313 tests, serial,
+several waiting on server timers). After a change, name the affected tests
+with `-run '^(TestLiveA|TestLiveB)$'` — the ones that call the changed code,
+plus any a plan names (`TestLiveVersionSweep` for a version gate). The
+fake-backed `go test ./...` still runs whole; it takes seconds. For a broad
+check, `go test -tags livedb -short` skips the dozen tests over 15 s
+(`skipSlowInShort`). A full run without `-short` is for a tag. On several
+instances, run them at the same time: they are separate servers.
+
 **A live dry-run fidelity check needs its own event session.** `xevent
 capture` leaves out every `goSSMS - CLI` connection, so it cannot watch
 another gossms command. Create a session filtered on `client_app_name =

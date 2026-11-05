@@ -649,29 +649,48 @@ func (d *ConnectDialog) refreshConnStrPreview() {
 	d.fConnStrPreview.SetText(s)
 }
 
-// Column budgets for the server and database parts of a History row label,
-// sized for the connectHistoryPane-column pane.
+// History row label budget. A row is the ListBox's selection marker ("▸ ")
+// then the label, and once the list overflows the pane its scrollbar paints
+// the last column; both are reserved, or the end of the label — the login,
+// the part that tells two entries for one server apart — is what gets cut.
 const (
-	matchServerWidth   = 14
-	matchDatabaseWidth = 8
+	historyMarkerWidth    = 2 // controls.ListBox.Draw's "▸ " / "  "
+	historyScrollbarWidth = 1
+	historyLabelWidth     = connectHistoryPane - historyMarkerWidth - historyScrollbarWidth
 )
 
-// matchProfileWidth is the budget for a profile name in a History row.
-const matchProfileWidth = 10
+// Floors a long server or database name is clipped no shorter than (ellipsis
+// included), and the budget for a profile name.
+const (
+	matchServerFloor   = 6
+	matchDatabaseFloor = 6
+	matchProfileWidth  = 10
+)
 
-// matchLabel is a saved connection's History name: GeneratedName with
-// server and database clipped (ellipsis) to matchServerWidth and
-// matchDatabaseWidth so a long FQDN does not push the user off the row. A
-// named connection leads with its profile name in brackets — the name is what
-// the user chose — and the server gives up that much room, for the same
-// reason. Display only: the stored Name is the dedup key and stays whole.
+// matchLabel is a saved connection's History name: GeneratedName fitted to
+// historyLabelWidth. The port, login and auth tag are never clipped; a long
+// database gives up room first, down to matchDatabaseFloor, then the server,
+// down to matchServerFloor (ellipsis on whatever is cut). A named connection
+// leads with its profile name in brackets — the name is what the user chose —
+// and the server and database share what is left. Display only: the stored
+// Name is the dedup key and stays whole.
 func matchLabel(c config.Connection) string {
 	prefix := ""
 	if c.Profile != "" {
 		prefix = "[" + core.Truncate(c.Profile, matchProfileWidth) + "] "
 	}
-	c.Server = core.Truncate(c.Server, max(4, matchServerWidth-core.DisplayWidth(prefix)))
-	c.Database = core.Truncate(c.Database, matchDatabaseWidth)
+	// Everything but the server and database: the commas, port, login and tag.
+	rest := c
+	rest.Server, rest.Database = "", ""
+	avail := historyLabelWidth - core.DisplayWidth(prefix) - core.DisplayWidth(rest.GeneratedName())
+
+	sw, dw := core.DisplayWidth(c.Server), core.DisplayWidth(c.Database)
+	if sw+dw > avail {
+		dw = min(dw, max(matchDatabaseFloor, avail-sw))
+		sw = min(sw, max(matchServerFloor, avail-dw))
+		c.Server = core.Truncate(c.Server, sw)
+		c.Database = core.Truncate(c.Database, dw)
+	}
 	return prefix + c.GeneratedName()
 }
 

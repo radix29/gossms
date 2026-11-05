@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/vt"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -31,28 +34,78 @@ func twoPaneConnectDialog(t *testing.T, saved ...config.Connection) *ConnectDial
 
 // A long server or database name used to fill the row's width, so the user —
 // what tells two entries for one server apart — was clipped off. The budgets
-// are cut for the 30-column History pane, narrower than the old autocomplete
-// overlay's.
+// once filled the 30-column pane without the ListBox's two-column marker, so
+// win10cli.fritz.box / HealthClinic still cut ",sa". The login never clips;
+// the database gives up room first, then the server.
 func TestMatchLabelClipsServerAndDatabase(t *testing.T) {
 	cases := []struct {
 		c    config.Connection
 		want string
 	}{
 		{config.Connection{Server: "srv", Database: "db", User: "sa"}, "srv,1433,db,sa"},
+		{config.Connection{Server: "win10cli.fritz.box", Database: "HealthClinic", User: "sa"},
+			"win10cli.fr…,1433,Healt…,sa"},
 		{config.Connection{Server: "sql01.corp.example.com", Port: 1444, Database: "AdventureWorks2022", User: "sa"},
-			"sql01.corp.ex…,1444,Adventu…,sa"},
-		{config.Connection{Server: "12345678901234", Database: "12345678", User: "sa"},
-			"12345678901234,1433,12345678,sa"},
-		// A profile name leads, and the server gives up its width.
+			"sql01.corp.…,1444,Adven…,sa"},
+		// Exactly the budget: nothing is clipped.
+		{config.Connection{Server: "1234567890", Database: "12345678", User: "sa"},
+			"1234567890,1433,12345678,sa"},
+		// A short server leaves its room to the database.
+		{config.Connection{Server: "srv", Database: "AdventureWorks2022", User: "sa"},
+			"srv,1433,AdventureWorks…,sa"},
+		// A profile name leads, and the server and database share what is left.
 		{config.Connection{Profile: "dev", Server: "win10cli.fritz.box", Database: "HealthClinic", User: "sa"},
-			"[dev] win10cl…,1433,HealthC…,sa"},
+			"[dev] win10…,1433,Healt…,sa"},
 		{config.Connection{Profile: "a-very-long-profile", Server: "srv", User: "sa"},
 			"[a-very-lo…] srv,1433,,sa"},
 	}
 	for _, c := range cases {
-		if got := matchLabel(c.c); got != c.want {
+		got := matchLabel(c.c)
+		if got != c.want {
 			t.Errorf("matchLabel(%q, %q) = %q, want %q", c.c.Server, c.c.Database, got, c.want)
 		}
+		if w := core.DisplayWidth(got); w > historyLabelWidth {
+			t.Errorf("matchLabel(%q, %q) is %d columns, over the %d a History row shows",
+				c.c.Server, c.c.Database, w, historyLabelWidth)
+		}
+	}
+}
+
+// The plan's reproduction, drawn: the History row for a long server and
+// database shows the whole login, even with a scrollbar in the last column.
+func TestHistoryRowShowsTheLogin(t *testing.T) {
+	// Enough rows to overflow the pane, so the scrollbar is painted too; the
+	// one under test saved last, so the saved-connection cap keeps it.
+	var saved []config.Connection
+	for i := range 30 {
+		saved = append(saved, config.Connection{Server: "filler", Port: 2000 + i, User: "u"})
+	}
+	saved = append(saved, config.Connection{Server: "win10cli.fritz.box", Database: "HealthClinic", User: "sa"})
+	scr, err := tcell.NewTerminfoScreenFromTty(vt.NewMockTerm(vt.MockOptSize{X: 120, Y: 40}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scr.Init(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(scr.Fini)
+	d := twoPaneConnectDialog(t, saved...)
+	d.app.screen = scr
+	idx := slices.IndexFunc(d.historyConns, func(c config.Connection) bool { return c.Server == "win10cli.fritz.box" })
+	if idx < 0 {
+		t.Fatal("the saved connection is not in History")
+	}
+	d.history.SetSelected(idx)
+	d.Draw(scr)
+	x := d.InnerRect().X
+	row := ""
+	for y := range 40 {
+		if line := screenRow(scr, y, x, x+connectHistoryPane); strings.Contains(line, "win10cli") {
+			row = line
+		}
+	}
+	if !strings.Contains(row, ",sa") {
+		t.Errorf("History row = %q, want it to end with the login \",sa\"", row)
 	}
 }
 

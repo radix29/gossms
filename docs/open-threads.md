@@ -132,11 +132,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   that a read-only connection reaches a secondary.
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
-- **A History row can clip the login off** (pre-existing). The label budgets
-  (`matchServerWidth` 14, `matchDatabaseWidth` 8) fill the 30-column pane
-  without the ListBox's two-column marker, so a long server *and* database
-  (`win10cli.fritz.box`, `HealthClinic`) cut `,sa` — the thing that tells two
-  entries for one server apart.
 - **`object dependencies`' permission hint may be wrong** (found 2026-10-29
   in phase 3.i). Its PERMISSION_DENIED hint and `docs/cli.md` § Commands say
   SELECT on `sys.sql_expression_dependencies` is db_owner's only by default.
