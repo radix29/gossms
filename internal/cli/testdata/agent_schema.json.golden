@@ -596,7 +596,7 @@
     {
       "path": "agent context",
       "summary": "Show what a profile reaches: server, login, database, ceiling, databases, missing permissions, profiles",
-      "description": "Connects as every command will and reports what an agent should know before it acts: the server's version and edition, the login and its roles, the connection's database, the default --allow and the profile's ceiling (max_allow) that caps it, every database the login can see and whether it can open it, and the profiles saved on this machine. missing_permissions lists each permission the login lacks that a gossms command needs, with the commands it breaks and how: a read that fails (exit 9), or columns that read NULL. A permission the server does not answer for is not listed.",
+      "description": "Connects as every command will and reports what an agent should know before it acts: the server's version and edition, the login and its roles, the connection's database, the default --allow and the profile's ceiling (max_allow) that caps it, every database the login can see and whether it can open it, and the profiles saved on this machine. missing_permissions lists each permission the login lacks that a gossms command needs, with the commands it breaks and how: a read that fails (exit 9), or columns that read NULL. A permission the server does not answer for is not listed. The rows of the commands that act on a <database> argument (db set, db scoped-config set, maint backup, maint checkdb) answer for --target-database, else for the connection's database.",
       "operationClass": "read",
       "arguments": [],
       "options": [
@@ -766,11 +766,22 @@
           "negation": null,
           "env": null,
           "help": "Connect timeout in seconds, 1 to 30"
+        },
+        {
+          "name": "--target-database",
+          "short": null,
+          "type": "string",
+          "enum": [],
+          "default": null,
+          "negation": null,
+          "env": null,
+          "help": "The database a later db set, db scoped-config set, maint backup or maint checkdb will act on: their rows answer for it (default: the connection's)"
         }
       ],
       "examples": [
         "gossms agent context -p dev",
-        "gossms agent context -p dev -o json"
+        "gossms agent context -p dev -o json",
+        "gossms agent context -p dev --target-database Sales"
       ]
     },
     {
@@ -14978,7 +14989,7 @@
     {
       "path": "job list",
       "summary": "List the Agent jobs: enabled, category, owner, state, last run and outcome, next run",
-      "description": "One row per SQL Server Agent job (msdb.dbo.sysjobs), by name. state is Agent's own for a sysadmin; for any other login, or with Agent stopped, only executing and idle can be told apart. last_outcome is NULL for a job that never ran. Times are the server's local time, as msdb records them. --enabled keeps the enabled jobs, --category one category (case-insensitive). --failed-since keeps the jobs with a failed run that started at or after the time, read from the run history — so a failure a later success hid is found — and adds failed_runs and last_failure. Reading the jobs takes SELECT on msdb's job tables — in practice sysadmin: the msdb Agent roles (SQLAgentUserRole, SQLAgentReaderRole, SQLAgentOperatorRole) reach them only through msdb's procedures, so a member of one is exit 9.",
+      "description": "One row per SQL Server Agent job (msdb.dbo.sysjobs), by name. state is Agent's own for a sysadmin; for any other login, or with Agent stopped, only executing and idle can be told apart. last_outcome is NULL for a job that never ran. Times are the server's local time, as msdb records them. --enabled keeps the enabled jobs, --category one category (case-insensitive). --failed-since keeps the jobs with a failed run that started at or after the time, read from the run history — so a failure a later success hid is found — and adds failed_runs and last_failure. Reading the jobs takes sysadmin or a role in msdb: SQLAgentUserRole sees the jobs the login owns, SQLAgentReaderRole and SQLAgentOperatorRole every job; another job is exit 8 (not found), and a login in none of them is exit 9.",
       "operationClass": "read",
       "arguments": [],
       "options": [
@@ -15189,7 +15200,7 @@
     {
       "path": "job show",
       "summary": "Show one job: its properties and notifications, its steps and its schedules",
-      "description": "The job's record — enabled, description, category, owner, state, last run and outcome, next run, the step it starts at, its e-mail notification and automatic delete — then the set steps (each step's subsystem, database, what happens on success and on failure, retries, last run, command) and the set schedules (each attached schedule, its frequency as SSMS words it). Times are the server's local time. A job that does not exist is exit 8. Reading the jobs takes SELECT on msdb's job tables — in practice sysadmin: the msdb Agent roles (SQLAgentUserRole, SQLAgentReaderRole, SQLAgentOperatorRole) reach them only through msdb's procedures, so a member of one is exit 9.",
+      "description": "The job's record — enabled, description, category, owner, state, last run and outcome, next run, the step it starts at, its e-mail notification and automatic delete — then the set steps (each step's subsystem, database, what happens on success and on failure, retries, last run, command) and the set schedules (each attached schedule, its frequency as SSMS words it). Times are the server's local time. A job that does not exist is exit 8. Reading the jobs takes sysadmin or a role in msdb: SQLAgentUserRole sees the jobs the login owns, SQLAgentReaderRole and SQLAgentOperatorRole every job; another job is exit 8 (not found), and a login in none of them is exit 9.",
       "operationClass": "read",
       "arguments": [
         {
@@ -15377,7 +15388,7 @@
     {
       "path": "job history",
       "summary": "Read a job's run history, step rows and their messages included",
-      "description": "The job's msdb.dbo.sysjobhistory rows, newest first: each run's outcome row (step_id 0) and its step rows, with the message Agent recorded (a failed step's carries the server's error). A step that started a second after its run can sort above that run's outcome row: group by time, not by position. --top caps the rows (default 20), --since keeps rows that started at or after the time, --failed only rows whose outcome is failed (the failed runs and the steps that failed). Times are the server's local time. Agent purges old history (by default 1000 rows, 100 per job). A job that does not exist is exit 8. Reading the jobs takes SELECT on msdb's job tables — in practice sysadmin: the msdb Agent roles (SQLAgentUserRole, SQLAgentReaderRole, SQLAgentOperatorRole) reach them only through msdb's procedures, so a member of one is exit 9.",
+      "description": "The job's msdb.dbo.sysjobhistory rows, newest first: each run's outcome row (step_id 0) and its step rows, with the message Agent recorded (a failed step's carries the server's error). A step that started a second after its run can sort above that run's outcome row: group by time, not by position. --top caps the rows (default 20), --since keeps rows that started at or after the time, --failed only rows whose outcome is failed (the failed runs and the steps that failed). Times are the server's local time. Agent purges old history (by default 1000 rows, 100 per job). A job that does not exist is exit 8. Reading the jobs takes sysadmin or a role in msdb: SQLAgentUserRole sees the jobs the login owns, SQLAgentReaderRole and SQLAgentOperatorRole every job; another job is exit 8 (not found), and a login in none of them is exit 9.",
       "operationClass": "read",
       "arguments": [
         {
@@ -15595,7 +15606,7 @@
     {
       "path": "job start",
       "summary": "Start an Agent job now, at its first step or a given one; optionally wait for it to finish",
-      "description": "EXEC msdb.dbo.sp_start_job, through gosmo. The job is read first: missing is exit 8; already running is exit 7 and nothing is sent (Agent would refuse it); so is a start Agent refuses because one is already pending. Agent not running is exit 11 — reads still work. --step starts at a step given by its number or its name (job show lists them; missing: exit 8). A disabled job starts too (a warning says so). Starting is asynchronous: without --wait the command returns once Agent has the request (started), not when the job ends. --wait <sec> reads the job every 2 s until that run ends, then reports outcome, lastRun and lastDurationS and the run's history rows (set history, steps and messages); a failed run is still exit 0, outcome failed, with a warning quoting the failed step's message. Still running after --wait seconds is exit 6 with the job left running; Ctrl+C stops the waiting, never the job. Needs --allow admin. Reading the jobs takes SELECT on msdb's job tables — in practice sysadmin: the msdb Agent roles (SQLAgentUserRole, SQLAgentReaderRole, SQLAgentOperatorRole) reach them only through msdb's procedures, so a member of one is exit 9.",
+      "description": "EXEC msdb.dbo.sp_start_job, through gosmo. The job is read first: missing is exit 8; already running is exit 7 and nothing is sent (Agent would refuse it); so is a start Agent refuses because one is already pending. Agent not running is exit 11 — reads still work. --step starts at a step given by its number or its name (job show lists them; missing: exit 8). A disabled job starts too (a warning says so). Starting is asynchronous: without --wait the command returns once Agent has the request (started), not when the job ends. --wait <sec> reads the job every 2 s until that run ends, then reports outcome, lastRun and lastDurationS and the run's history rows (set history, steps and messages); a failed run is still exit 0, outcome failed, with a warning quoting the failed step's message. Still running after --wait seconds is exit 6 with the job left running; Ctrl+C stops the waiting, never the job. Needs --allow admin. Reading the jobs takes sysadmin or a role in msdb: SQLAgentUserRole sees the jobs the login owns, SQLAgentReaderRole and SQLAgentOperatorRole every job; another job is exit 8 (not found), and a login in none of them is exit 9.",
       "operationClass": "admin",
       "arguments": [
         {
@@ -15829,7 +15840,7 @@
     {
       "path": "job stop",
       "summary": "Ask SQL Server Agent to stop a running job",
-      "description": "EXEC msdb.dbo.sp_stop_job, through gosmo. The job is read first: missing is exit 8; Agent not running is exit 11. A job that is not running is exit 0 with stopped false and a warning — the state asked for holds — and nothing is sent when the read already says so. Stopping is asynchronous: the running step is cancelled and the run recorded as cancelled once it does; state is the job as read before, and the job read again the request (stateAfter). Needs --allow admin. Reading the jobs takes SELECT on msdb's job tables — in practice sysadmin: the msdb Agent roles (SQLAgentUserRole, SQLAgentReaderRole, SQLAgentOperatorRole) reach them only through msdb's procedures, so a member of one is exit 9.",
+      "description": "EXEC msdb.dbo.sp_stop_job, through gosmo. The job is read first: missing is exit 8; Agent not running is exit 11. A job that is not running is exit 0 with stopped false and a warning — the state asked for holds — and nothing is sent when the read already says so. Stopping is asynchronous: the running step is cancelled and the run recorded as cancelled once it does; state is the job as read before, and the job read again the request (stateAfter). Needs --allow admin. Reading the jobs takes sysadmin or a role in msdb: SQLAgentUserRole sees the jobs the login owns, SQLAgentReaderRole and SQLAgentOperatorRole every job; another job is exit 8 (not found), and a login in none of them is exit 9.",
       "operationClass": "admin",
       "arguments": [
         {

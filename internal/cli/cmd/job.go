@@ -37,13 +37,13 @@ const defaultJobHistoryTop = 20
 const failedRunsRead = 10000
 
 // jobReadNeeds is the job reads' permission, said in every job command's
-// help. gosmo reads msdb's job tables (sysjobs, sysjobservers,
-// sysjobactivity, sysjobhistory) directly, and msdb grants the Agent roles
-// only its views and sp_help_job* procedures — measured on 17: a
-// SQLAgentReaderRole member is refused SELECT on sysjobservers (Msg 229).
-const jobReadNeeds = "Reading the jobs takes SELECT on msdb's job tables — in practice sysadmin: the msdb Agent " +
-	"roles (SQLAgentUserRole, SQLAgentReaderRole, SQLAgentOperatorRole) reach them only through msdb's procedures, " +
-	"so a member of one is exit 9."
+// help. gosmo reads msdb's job tables for a sysadmin and, for anyone else,
+// sysjobs_view and the sp_help_job* procedures msdb grants its Agent roles,
+// which apply msdb's visibility; a login in none of the roles is refused
+// (Msg 229 on sp_help_jobactivity, 17).
+const jobReadNeeds = "Reading the jobs takes sysadmin or a role in msdb: SQLAgentUserRole sees the jobs the login " +
+	"owns, SQLAgentReaderRole and SQLAgentOperatorRole every job; another job is exit 8 (not found), and a login in " +
+	"none of them is exit 9."
 
 // agentTimeHelp is what --since and --failed-since take.
 const agentTimeHelp = "YYYY-MM-DD[THH:MM[:SS]] in the server's local time (msdb records no zone), or with Z or an offset"
@@ -239,13 +239,13 @@ func serverWall(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
 }
 
-// jobReadError is readError for a read of msdb's job tables: a refusal is
-// the msdb Agent roles a login needs.
+// jobReadError is readError for a read of msdb's jobs: a refusal is the
+// msdb Agent roles a login needs.
 func jobReadError(err error) *output.Error {
 	e := readError(err)
 	if e.Code == output.CodePermissionDenied && e.SQL != nil {
-		e.Hint = "The job commands read msdb's job tables, which only sysadmin can in practice: the msdb Agent " +
-			"roles do not reach them. Use a sysadmin login."
+		e.Hint = "Reading the jobs needs sysadmin or a role in msdb: SQLAgentUserRole (the jobs the login owns), " +
+			"SQLAgentReaderRole or SQLAgentOperatorRole (every job). Use a login that has one, or have it granted."
 	}
 	return e
 }

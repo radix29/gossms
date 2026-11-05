@@ -87,6 +87,24 @@ func TestNewSequenceScriptsWhatThePageSays(t *testing.T) {
 		t.Errorf("every option scripted\n%q\nwant\n%q", got, want)
 	}
 
+	// A decimal(38, 0) sequence starting past bigint, with the type's own
+	// widest bounds.
+	d = newSequenceTestDialog(t, newSequenceTestPrefetch())
+	f = d.forms[0]
+	editText(t, f, "Sequence name", "wide")
+	editSelect(t, f, "Data type", "decimal")
+	editText(t, f, "Precision", "38")
+	editText(t, f, "Start value", "9223372036854775808")
+	editCheck(t, f, "No minimum (the type's)", false)
+	editText(t, f, "Minimum value", "-99999999999999999999999999999999999999")
+	editCheck(t, f, "No maximum (the type's)", false)
+	editText(t, f, "Maximum value", "10000000000000000000000000000000000000")
+	want = "USE [appdb];\nGO\nCREATE SEQUENCE [dbo].[wide] AS decimal(38, 0) START WITH 9223372036854775808 INCREMENT BY 1 " +
+		"MINVALUE -99999999999999999999999999999999999999 MAXVALUE 10000000000000000000000000000000000000 NO CYCLE CACHE"
+	if got := scriptNewSequence(t, d); got != want {
+		t.Errorf("past bigint scripted\n%q\nwant\n%q", got, want)
+	}
+
 	// No cache, and a precision typed for decimal and then left behind by
 	// switching to int: the row is off, so nothing of it reaches the statement.
 	d = newSequenceTestDialog(t, newSequenceTestPrefetch())
@@ -157,6 +175,22 @@ func TestNewSequencePreflight(t *testing.T) {
 			editCheck(t, f, "No minimum (the type's)", false)
 			editText(t, f, "Minimum value", "5")
 		}, "start value must lie"},
+		{"past bigint for bigint", func(f *propsheet.Form) {
+			editText(t, f, "Start value", "9223372036854775808")
+		}, "start value must be a whole number from -9223372036854775808 to 9223372036854775807"},
+		{"past the precision picked", func(f *propsheet.Form) {
+			editSelect(t, f, "Data type", "decimal")
+			editText(t, f, "Precision", "5")
+			editText(t, f, "Start value", "100000")
+		}, "from -99999 to 99999"},
+		{"minimum not below maximum past bigint", func(f *propsheet.Form) {
+			editSelect(t, f, "Data type", "numeric")
+			editText(t, f, "Precision", "38")
+			editCheck(t, f, "No minimum (the type's)", false)
+			editText(t, f, "Minimum value", "10000000000000000001")
+			editCheck(t, f, "No maximum (the type's)", false)
+			editText(t, f, "Maximum value", "10000000000000000000")
+		}, "below the maximum"},
 		{"precision out of range", func(f *propsheet.Form) {
 			editSelect(t, f, "Data type", "numeric")
 			editText(t, f, "Precision", "39")

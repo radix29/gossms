@@ -86,7 +86,7 @@ Settled design: `docs/decisions.md` § Format Document.
   `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
   (`detail_browser_group_schema.go`) per family.
 
-## Security and sequences: what is left
+## Security: what is left
 
 - **Application roles have no Script menu.** gosmo has no
   `ScriptApplicationRole`; Script Database Security emits the one-role form
@@ -97,9 +97,6 @@ Settled design: `docs/decisions.md` § Format Document.
   Full-Text.
 - **A login with no right on an application role sees the folder empty**
   (catalog visibility).
-- **Sequences: values are int64**, so a `decimal(38,0)` sequence's range
-  past bigint can't be written. There is no Last Used Value row (gosmo's
-  `Sequence.noLastUsed` is unexported).
 
 ## Command line: what is left
 
@@ -138,26 +135,19 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
   one line per write or refusal for ever. Deferred by decision; a size cap
   with one `.1` generation, taken under the same lock, is the likely form.
-- **The `job` commands need sysadmin in practice** (phase 8, found in
-  8.h): gosmo's job reads (`Jobs`, `JobByName`, `Steps`, `History`,
-  `SearchJobHistory`) SELECT from msdb's `sysjobs`, `sysjobservers`,
-  `sysjobactivity` and `sysjobhistory`, and msdb grants the Agent roles only
-  `sysjobs_view`, `sysschedules_localserver_view`, `syscategories` and the
-  `sp_help_job*` procedures — a SQLAgentReaderRole member is refused
-  `sysjobservers` (Msg 229, on 17), so `job list` and every job command
-  that reads the job first is exit 9. The TUI's Agent node shares it.
-  Reading through `sp_help_job`/`sp_help_jobhistory` (or the views) for a
-  non-sysadmin in gosmo would fix both; SQLAgentUserRole would then see
-  only its own jobs, as SSMS does.
-- **`agent context` does not answer for every phase 8 right** (8.l):
-  IMPERSONATE (`security permissions --effective`) is per principal, the
-  rights to grant depend on the securable, and server role membership on the
-  role, so none is in `missing_permissions` — the server's refusal is exit 9
-  with a hint. CREATE DATABASE granted in master alone reads as a lack of
-  CREATE ANY DATABASE (`db create`, `maint restore`), a false positive.
-  `maint backup`'s and `checkdb`'s rows answer for the connection's
-  database, not the `<database>` argument. Probing IMPERSONATE ANY LOGIN and
-  CREATE DATABASE in master in gosmo would narrow the first and close the second.
+- **Agent alerts and operators still need sysadmin, or SQLAgentOperatorRole**
+  (2026-11-05, left out of the review plan's F1, which moved the job, step,
+  history and schedule reads onto msdb's procedures for the Agent roles).
+  gosmo's `Alerts`, `EventAlerts`, `Operators` and the job/operator
+  notification reads SELECT `sysalerts`, `sysoperators` and
+  `sysnotifications`, which msdb grants SQLAgentOperatorRole only; a Reader
+  or User member gets the Access denied placeholder on the Agent node's
+  Alerts and Operators folders and on Job Properties' Alerts and
+  Notifications pages (measured as Reader on 17). msdb grants
+  SQLAgentUserRole `sp_help_operator` and `sp_get_job_alerts`, so the same
+  `agentRead` route would cover operators and a job's alerts; the alert list
+  itself has no procedure below Operator. SSMS hides those folders from
+  such a login.
 
 - **Only the `object` group is off the `Catalog` seam** (2026-11-04, the
   pilot of review Q1 option A). Past connecting and resolving the name,

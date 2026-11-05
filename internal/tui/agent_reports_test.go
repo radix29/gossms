@@ -102,8 +102,24 @@ func TestJobsWithoutSchedulesReportsCancellation(t *testing.T) {
 // A run's step-0 outcome row has the same run_date/run_time as its first
 // step, so without instance_id the two came back in either order.
 func TestAgentJobHistoryQueryBreaksTiesByInstanceID(t *testing.T) {
-	q := agentJobHistoryQuery("Nightly")
-	if !strings.Contains(q, "ORDER  BY h.run_date DESC, h.run_time DESC, h.instance_id DESC;") {
-		t.Errorf("agentJobHistoryQuery does not order by instance_id last:\n%s", q)
+	for _, direct := range []bool{true, false} {
+		q := agentJobHistoryQuery("Nightly", direct)
+		if !strings.Contains(q, "ORDER  BY h.run_date DESC, h.run_time DESC, h.instance_id DESC;") {
+			t.Errorf("agentJobHistoryQuery(direct %v) does not order by instance_id last:\n%s", direct, q)
+		}
+	}
+}
+
+// Only a sysadmin reads msdb's history tables; anyone else's View History
+// goes through sp_help_jobhistory, which the SQLAgent* roles may run.
+func TestAgentJobHistoryQueryWithoutSysadmin(t *testing.T) {
+	direct, viaProc := agentJobHistoryQuery("O'Brien", true), agentJobHistoryQuery("O'Brien", false)
+	if !strings.Contains(direct, "FROM   msdb.dbo.sysjobhistory h") || strings.Contains(direct, "sp_help_jobhistory") {
+		t.Errorf("sysadmin's query is not the direct read:\n%s", direct)
+	}
+	if strings.Contains(viaProc, "msdb.dbo.sysjob") ||
+		!strings.Contains(viaProc, "EXECUTE msdb.dbo.sp_help_jobhistory @job_name = N'O''Brien', @mode = 'FULL';") ||
+		!strings.Contains(viaProc, "FROM   @h h\n") {
+		t.Errorf("the non-sysadmin query does not read through sp_help_jobhistory:\n%s", viaProc)
 	}
 }
