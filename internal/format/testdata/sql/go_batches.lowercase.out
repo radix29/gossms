@@ -1,0 +1,14 @@
+select 1
+go
+
+select 2
+GO 3
+
+select 3
+go -- trailing comment
+
+select go
+  , x
+from
+    t
+select 4; go

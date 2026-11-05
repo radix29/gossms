@@ -8,9 +8,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/sqltext"
 )
 
-// formatSQL lays src out in the Standard style (sql_layout.go): a layout pass
-// over sqltext's tokens with a small block and paren stack, not a parser.
-// Only whitespace between tokens changes, plus keyword case; comments,
+// format lays src out in style s (sql_layout.go): a layout pass over
+// sqltext's tokens with a small block and paren stack, not a parser. Only
+// whitespace between tokens changes, plus keyword case and, when
+// s.aliasEquals, the order of a select-list alias (sql_alias.go); comments,
 // literals, quoted identifiers and GO lines come through byte for byte (a
 // "--" comment loses trailing blanks, which are no part of it to the server).
 //
@@ -18,7 +19,7 @@ import (
 // parenthesis or invalid UTF-8 is a *SyntaxError: the layout would have to
 // guess where the code resumes. Leading blank lines and trailing whitespace
 // are dropped and one final newline kept iff src ended with one.
-func formatSQL(src string, o Options) (string, *sqlLexed, error) {
+func (s sqlStyle) format(src string, o Options) (string, *sqlLexed, error) {
 	if !utf8.ValidString(src) {
 		// The lexer works on runes, which would turn a stray byte into U+FFFD
 		// unnoticed by a guard comparing runes.
@@ -40,7 +41,7 @@ func formatSQL(src string, o Options) (string, *sqlLexed, error) {
 	if err := checkParens(src, lx.toks); err != nil {
 		return "", nil, err
 	}
-	l := newSQLLayout(lx, o)
+	l := newSQLLayout(lx, o, s)
 	out := l.run()
 	if strings.HasSuffix(src, "\n") && out != "" {
 		out += "\n"
@@ -218,9 +219,10 @@ func checkParens(src string, toks []sqlTok) error {
 // sqlSameTokens is the SQL guard's comparison: in and out lexed, every
 // token but whitespace compared — a GO line by its trimmed spelling, a
 // keyword case-insensitively so a re-cased keyword passes while a re-cased
-// identifier does not, a "--" comment without its trailing blanks. It
-// reports how many tokens agreed before the first difference. a is in
-// already lexed by lexSQL, or nil to lex it here.
+// identifier does not, a "--" comment without its trailing blanks — except
+// that an input select-list item "expr AS name" may come out "name = expr"
+// (sql_alias.go). It reports how many input tokens agreed before the first
+// difference. a is in already lexed by lexSQL, or nil to lex it here.
 func sqlSameTokens(in string, a *sqlLexed, out string) (int, bool, error) {
 	if a == nil {
 		var err error
@@ -233,16 +235,83 @@ func sqlSameTokens(in string, a *sqlLexed, out string) (int, bool, error) {
 		return 0, false, err
 	}
 	ca, cb := sigCursor{lx: a, p: -1}, sigCursor{lx: b, p: -1}
-	for n := 0; ; n++ {
+	n := 0
+	for ; ; n++ {
 		x, okA := ca.next()
 		y, okB := cb.next()
 		if !okA || !okB {
-			return n, okA == okB, nil
+			if okA == okB {
+				return n, true, nil
+			}
+			break
 		}
 		if !sameSig(a, x, b, y) {
-			return n, false, nil
+			break
 		}
 	}
+	// Only now find the alias swaps: a second statement-cutter pass over the
+	// input that took the guard from a third to over half of Format's time.
+	// Output that moved no alias never needs it.
+	g := sigCompare{a: a, b: b, sa: sigStream(a), sb: sigStream(b)}
+	if g.swaps = sqlAliasSwaps(newSigView(a, g.sa)); len(g.swaps) == 0 {
+		return n, false, nil
+	}
+	x, y, ok := g.run(0, len(g.sa), 0, -1)
+	return x, ok && y == len(g.sb), nil
+}
+
+// sigStream is lx's guard stream.
+func sigStream(lx *sqlLexed) []sigTok {
+	c := sigCursor{lx: lx, p: -1}
+	s := make([]sigTok, 0, len(lx.parts)+len(lx.toks)/8)
+	for {
+		x, ok := c.next()
+		if !ok {
+			return s
+		}
+		s = append(s, x)
+	}
+}
+
+// sigCompare walks two guard streams side by side.
+type sigCompare struct {
+	a, b   *sqlLexed
+	sa, sb []sigTok
+	swaps  map[int]int // sqlAliasSwaps of a; nil until a plain comparison fails
+}
+
+// run compares sa[x:xEnd] with sb from y, returning where each stopped and
+// whether all of sa[x:xEnd] matched. At an item sqlAliasSwaps found, sb may
+// hold "name = expr" for sa's "expr AS name" — the same number of tokens, so
+// the expression (which may hold swapped items of its own) is compared by a
+// nested run. item is the item a nested run is comparing, not to be swapped
+// again.
+func (g *sigCompare) run(x, xEnd, y, item int) (int, int, bool) {
+	for x < xEnd {
+		if as, ok := g.swaps[x]; ok && x != item && y+1 < len(g.sb) && g.isEquals(y+1) &&
+			sameSig(g.a, g.sa[as+1], g.b, g.sb[y]) {
+			nx, ny, ok := g.run(x, as, y+2, x)
+			if !ok {
+				return nx, ny, false
+			}
+			x, y = as+2, ny
+			continue
+		}
+		if y >= len(g.sb) || !sameSig(g.a, g.sa[x], g.b, g.sb[y]) {
+			return x, y, false
+		}
+		x, y = x+1, y+1
+	}
+	return x, y, true
+}
+
+func (g *sigCompare) isEquals(y int) bool {
+	s := g.sb[y]
+	if s.part < 0 {
+		return false
+	}
+	p := g.b.parts[s.part]
+	return p.Kind == sqltext.KindPunct && p.End-p.Start == 1 && g.b.buf[p.Start] == '='
 }
 
 // sigTok is one token of the guard's stream: a lexer token of lx, or a GO

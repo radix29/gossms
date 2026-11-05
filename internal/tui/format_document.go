@@ -29,8 +29,9 @@ var formatSyncBytes = 256 << 10
 // formatText is format.Format; a variable so a test can make it slow.
 var formatText = format.Format
 
-// formatActiveDocument is Edit > Format Document: it lays out the active query
-// panel's text in its language's default style, as one undo step. With a
+// formatActiveDocument is Alt+Shift+F (and Edit > Format Document for a
+// language with one style): it lays out the active query panel's text in its
+// language's default style (formatStyleID), as one undo step. With a
 // selection it formats the whole lines the selection touches, re-indented at
 // the first line's indent; otherwise the whole document. A parse failure or a
 // guard refusal leaves the text untouched and says why on the status bar.
@@ -45,12 +46,22 @@ var formatText = format.Format
 // it, closing the panel abandons it) and the text and selection are as they
 // were when it started; otherwise the typing done meanwhile wins.
 func (a *App) formatActiveDocument() {
+	if qp := a.activeQueryPanel(); qp != nil {
+		a.formatActiveDocumentAs(a.formatStyleID(qp.lang))
+	}
+}
+
+// formatActiveDocumentAs is formatActiveDocument in the style styleID names
+// (an empty or stale ID is the language's first style) — a pick from Edit >
+// Format Document's cascade, which formats once in that style and leaves the
+// configured default alone.
+func (a *App) formatActiveDocumentAs(styleID string) {
 	qp := a.activeQueryPanel()
 	if qp == nil {
 		return
 	}
 	e := qp.editor
-	st, ok := format.StyleByID(qp.lang, "")
+	st, ok := format.StyleByID(qp.lang, styleID)
 	switch {
 	case e.ReadOnly():
 		a.setStatus("Format Document: the editor is read-only")
@@ -108,6 +119,47 @@ func (a *App) formatActiveDocument() {
 			a.applyFormatted(j, out, err)
 		})
 	})
+}
+
+// formatStyleID is the style Format Document uses for l unless told another:
+// Tools > Options' SQL Format Style for SQL, the first registered style for the
+// rest. Empty or stale IDs resolve in format.StyleByID.
+func (a *App) formatStyleID(l format.Language) string {
+	if l == format.LangSQL {
+		return a.cfg.SQLFormatStyle
+	}
+	return ""
+}
+
+// formatDocumentMenuItem is Edit > Format Document. For a language with more
+// than one style it is a cascade listing them, the default (the one
+// Alt+Shift+F uses) marked "(default)" and carrying the shortcut; otherwise —
+// one style, no formatter, no query panel — a plain item running the default.
+// The Edit menu is rebuilt each time it opens, so the cascade follows the
+// active panel's language.
+func (a *App) formatDocumentMenuItem() controls.MenuItem {
+	const label, shortcut = "Format Document", "Alt+Shift+F"
+	item := controls.MenuItem{Label: label, Shortcut: shortcut,
+		Action: func() { a.formatActiveDocument() }, Enabled: a.canFormatActiveDocument}
+	qp := a.activeQueryPanel()
+	if qp == nil {
+		return item
+	}
+	all := format.Styles(qp.lang)
+	if len(all) < 2 {
+		return item
+	}
+	def, _ := format.StyleByID(qp.lang, a.formatStyleID(qp.lang))
+	for _, st := range all {
+		sub := controls.MenuItem{Label: st.Name, Action: func() { a.formatActiveDocumentAs(st.ID) }}
+		if st.ID == def.ID {
+			sub.Label += " (default)"
+			sub.Shortcut = shortcut
+		}
+		item.Sub = append(item.Sub, sub)
+	}
+	item.Shortcut, item.Action = "", nil
+	return item
 }
 
 // formatJob is what one Format Document run read from its panel, enough to

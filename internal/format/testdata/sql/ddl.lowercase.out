@@ -1,0 +1,67 @@
+create table dbo.Orders (
+    OrderID int identity(1, 1) not null
+  , CustomerID nchar(5) null
+  , OrderDate datetime2(0) not null constraint DF_Orders_Date default (sysdatetime())
+  , Amount decimal(10, 2) null
+  , constraint PK_Orders primary key clustered (OrderID)
+) with (data_compression = page)
+create or alter procedure dbo.GetOrders
+    @CustomerID nchar(5)
+  , @From date = null
+  , @Count int output
+with recompile
+as
+begin
+    set nocount on;
+    select @Count = count(*)
+    from
+        dbo.Orders
+    where
+        CustomerID = @CustomerID
+        and (@From is null or OrderDate >= @From);
+end
+go
+
+create function dbo.Total (@id int)
+returns decimal(10, 2)
+with schemabinding
+as
+begin
+    return (
+        select sum(Amount)
+        from
+            dbo.Orders
+        where
+            OrderID = @id
+    );
+end
+go
+
+create view dbo.v
+as
+select
+    OrderID
+  , A = cast(Amount as varchar(20))
+  , D = convert(nvarchar(10), OrderDate, 120)
+from
+    dbo.Orders
+go
+
+create function dbo.tvf (@n int)
+returns @t table (
+    a int
+  , b date
+)
+as
+begin
+    insert @t (a)
+    values (@n);
+    return;
+end
+go
+
+create trigger trg on dbo.Orders after insert, update
+as
+set nocount on;
+if update(Amount)
+    print 'x';

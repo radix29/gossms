@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
@@ -20,6 +21,7 @@ type OptionsDialog struct {
 
 	rbIconStyle    *widgets.RadioBox
 	ddTheme        *widgets.DropDown
+	ddSQLStyle     *widgets.DropDown // format.Styles(LangSQL), in registry order
 	fMaxCellLen    *widgets.InputField
 	fMaxTextLen    *widgets.InputField
 	fIndentWidth   *widgets.InputField
@@ -60,13 +62,20 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	}
 	d.ddTheme = widgets.NewDropDown("", themeLabels, 20)
 
+	sqlStyles := format.Styles(format.LangSQL)
+	sqlStyleLabels := make([]string, len(sqlStyles))
+	for i, st := range sqlStyles {
+		sqlStyleLabels[i] = st.Name
+	}
+	d.ddSQLStyle = widgets.NewDropDown("", sqlStyleLabels, 20)
+
 	d.fMaxCellLen = widgets.NewInputField("Max default cell length:", 5, false)
 	d.fMaxTextLen = widgets.NewInputField("Max characters per column (text):", 5, false)
 	d.fIndentWidth = widgets.NewInputField("Indent size (spaces):", 5, false)
 	d.fXECapacity = widgets.NewInputField("Extended Events viewer holds (events):", 9, false)
 	d.fMaxFetchRows = widgets.NewInputField("Max fetch rows (0 = unlimited):", 9, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
-	d.focusable = []focusable{d.rbIconStyle, d.ddTheme, d.fMaxCellLen, d.fMaxTextLen, d.fIndentWidth, d.fXECapacity, d.fMaxFetchRows, d.cbIntelliSense}
+	d.focusable = []focusable{d.rbIconStyle, d.ddTheme, d.ddSQLStyle, d.fMaxCellLen, d.fMaxTextLen, d.fIndentWidth, d.fXECapacity, d.fMaxFetchRows, d.cbIntelliSense}
 	return d
 }
 
@@ -84,6 +93,16 @@ func (d *OptionsDialog) Show() {
 		if t == d.app.cfg.Theme {
 			d.ddTheme.SetSelected(i)
 			break
+		}
+	}
+	// StyleByID resolves an empty or unknown ID to the default, so a stale value
+	// shows the style Format Document will actually use.
+	if cur, ok := format.StyleByID(format.LangSQL, d.app.cfg.SQLFormatStyle); ok {
+		for i, st := range format.Styles(format.LangSQL) {
+			if st.ID == cur.ID {
+				d.ddSQLStyle.SetSelected(i)
+				break
+			}
 		}
 	}
 	d.fMaxCellLen.SetValue(strconv.Itoa(d.app.cfg.MaxCellLength))
@@ -122,6 +141,9 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 	core.DrawText(s, inner.X+31, inner.Y+1, tcell.StyleDefault.Background(theme.Active().DialogBg).Foreground(theme.Active().DialogText), "Color Theme:")
 	d.ddTheme.SetBounds(inner.X+31, inner.Y+2)
 	d.ddTheme.Draw(s)
+	core.DrawText(s, inner.X+31, inner.Y+4, tcell.StyleDefault.Background(theme.Active().DialogBg).Foreground(theme.Active().DialogText), "SQL Format Style:")
+	d.ddSQLStyle.SetBounds(inner.X+31, inner.Y+5)
+	d.ddSQLStyle.Draw(s)
 
 	d.fMaxCellLen.SetBounds(inner.X+1, inner.Y+6)
 	d.fMaxCellLen.Draw(s)
@@ -147,7 +169,26 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 		activeIdx = d.btnFocus
 	}
 	d.DrawButtons(s, []string{"OK", "Cancel"}, activeIdx)
-	d.ddTheme.DrawOverlay(s)
+	for _, dd := range d.dropDowns() {
+		dd.DrawOverlay(s)
+	}
+}
+
+// dropDowns are the dialog's dropdowns, top to bottom: their open lists overlap
+// the controls below them, so Draw paints them last and HandleKey/HandleMouse
+// offer them every event first.
+func (d *OptionsDialog) dropDowns() []*widgets.DropDown {
+	return []*widgets.DropDown{d.ddTheme, d.ddSQLStyle}
+}
+
+// openDropDown is the dropdown whose list is open, or nil.
+func (d *OptionsDialog) openDropDown() *widgets.DropDown {
+	for _, dd := range d.dropDowns() {
+		if dd.IsOpen() {
+			return dd
+		}
+	}
+	return nil
 }
 
 // HandleKey processes keyboard events.
@@ -155,8 +196,8 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	if ev.Key() == tcell.KeyEscape && d.ddTheme.IsOpen() {
-		d.ddTheme.HandleKey(ev) // closes the list only
+	if dd := d.openDropDown(); dd != nil && ev.Key() == tcell.KeyEscape {
+		dd.HandleKey(ev) // closes the list only
 		return true
 	}
 	if ev.Key() == tcell.KeyEscape {
@@ -197,8 +238,8 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyEnter:
 		d.doButton()
 	default:
-		// The radio box swallows the keys it does not use; the fields, the theme
-		// dropdown and the checkbox pass them on.
+		// The radio box swallows the keys it does not use; the fields, the
+		// dropdowns and the checkbox pass them on.
 		_, isRadio := d.focusable[d.focusIdx].(*widgets.RadioBox)
 		return isRadio
 	}
@@ -211,7 +252,7 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	// A release outside the dialog is consumed by ConsumeOutsideClick below before
-	// the radio box's/theme dropdown's/cbIntelliSense's own HandleMouse calls see it, leaving their
+	// the radio box's/dropdowns'/cbIntelliSense's own HandleMouse calls see it, leaving their
 	// mouseDragging latch set and swallowing the next press. Reset it here first;
 	// each returns false on ButtonNone so this has no other effect. drag.Release
 	// does the same for the input fields and must likewise come before
@@ -223,6 +264,18 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 		}
 		d.drag.Release(ev)
+	}
+	// An open list gets first refusal (docs/ui-rules.md): it is clamped to the
+	// screen, not the dialog, and the SQL style list drops over the input fields,
+	// which fieldAt below would otherwise hand the click to. A click outside the
+	// list closes it and falls through to whatever it landed on.
+	if dd := d.openDropDown(); dd != nil && ev.Buttons() != tcell.ButtonNone && dd.HandleMouse(ev) {
+		for i, f := range d.focusable {
+			if f == focusable(dd) {
+				d.setFocus(i)
+			}
+		}
+		return true
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
@@ -268,7 +321,7 @@ func (d *OptionsDialog) fieldAt(x, y int) (int, *widgets.InputField) {
 }
 
 // optionsMouseTarget answers the controls that take a press themselves (radio
-// box, theme dropdown and checkbox). An input field is excluded: its press goes through d.drag,
+// box, dropdowns and checkbox). An input field is excluded: its press goes through d.drag,
 // and its own HandleMouse would honour a stale latch.
 func optionsMouseTarget(f focusable) (interface{ HandleMouse(*tcell.EventMouse) bool }, bool) {
 	if _, isField := f.(*widgets.InputField); isField {
@@ -294,7 +347,7 @@ func (d *OptionsDialog) doButton() {
 // sheets host a writable EditorRow changes with the pages.
 type editorIndentHost interface{ SetEditorIndentWidth(n int) }
 
-// apply commits all eight settings (icon style, color theme, max cell length, max text column
+// apply commits all nine settings (icon style, color theme, SQL format style, max cell length, max text column
 // length, indent size, the Extended Events viewer's event limit, max fetch rows,
 // IntelliSense enabled) to the config, persists it, and rebuilds the Object Explorer so the
 // icon change shows immediately. The theme needs only the palette swapped: every
@@ -312,6 +365,10 @@ func (d *OptionsDialog) apply() {
 	if themes := config.AllColorThemes(); d.ddTheme.Selected() >= 0 && d.ddTheme.Selected() < len(themes) {
 		d.app.cfg.Theme = themes[d.ddTheme.Selected()]
 		applyColorTheme(d.app.screen, d.app.cfg.Theme)
+	}
+	// Read by Format Document when it runs; nothing open holds a copy.
+	if sqlStyles := format.Styles(format.LangSQL); d.ddSQLStyle.Selected() >= 0 && d.ddSQLStyle.Selected() < len(sqlStyles) {
+		d.app.cfg.SQLFormatStyle = sqlStyles[d.ddSQLStyle.Selected()].ID
 	}
 	if n, err := strconv.Atoi(d.fMaxCellLen.Value()); err == nil && n > 0 {
 		d.app.cfg.MaxCellLength = n

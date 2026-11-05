@@ -1350,7 +1350,12 @@ it from the string 'NULL'.
 
 `internal/format`; Edit > Format Document is `internal/tui/format_document.go`.
 
-- **Formatting moves only whitespace between tokens** (plus SQL keyword case).
+- **Formatting moves only whitespace between tokens** (plus SQL keyword case),
+  with one exception: the SQL Lowercase style writes a select-list
+  `expr AS name` as `name = expr` (the author's choice, 2026-11-05;
+  `internal/format/sql_alias.go`). The guard accepts that move only for an
+  item it finds itself, from the lexer tokens and the statement cutter rather
+  than the layout's frames, so any other reordering is still refused.
   Comments, literals, quoted identifiers, `GO` lines, XML tags and JSON
   values come out byte-for-byte. A parse failure leaves the text untouched and
   says where; there is no partial output.
@@ -1376,6 +1381,11 @@ it from the string 'NULL'.
   whitespace-only content or `xml:space="preserve"` is left verbatim —
   re-indenting it changes its value. Fragments (several top-level elements,
   `FOR XML` without `ROOT`) are accepted.
+- **SQL styles are switches over one layout, not engines**: `sqlStyle` in
+  `sql_rules.go`. Standard (the default) upper-cases keywords; Lowercase
+  lower-cases the same words, moves aliases as above, and puts FROM,
+  WHERE, GROUP BY, HAVING and ORDER BY alone on their lines with the joins
+  one level under FROM (`clauseAlone`, `indentJoins`).
 - **SQL Standard is a layout pass over `sqltext.Next`'s tokens, not a
   parser** (§ T-SQL lexing). Statements it has no rules for (EXEC, ALTER
   TABLE, CREATE INDEX, GRANT, BACKUP, …) keep their line breaks rather than

@@ -1,12 +1,38 @@
 package format
 
-// Word tables for the SQL Standard style. A second style is meant to be a
-// different set of layout switches over these same tables, not a new engine.
+// Word tables for the SQL styles, and the styles themselves: each is a set of
+// switches (sqlStyle) over the same tables and layout, not a new engine.
 //
 // Upper-casing is the one change the style makes to a token rather than to
 // the whitespace around it, so it is confined to words that cannot be an
 // identifier where they stand: in a case-sensitive database `date` the column
 // and `DATE` are different names, while `int` the type and `INT` are not.
+
+// sqlStyle is one SQL style's rule table, registered in format.go's styles.
+// The zero value is Standard.
+type sqlStyle struct {
+	// lowerKeywords writes a keyword lower-case wherever Standard would
+	// upper-case it; every other word keeps its source case as before.
+	lowerKeywords bool
+
+	// aliasEquals writes a select-list "expr AS name" as "name = expr"
+	// (sql_alias.go): the one change a style makes to token order, which the
+	// guard re-derives and accepts on its own terms.
+	aliasEquals bool
+
+	// clauseAlone puts FROM, WHERE, GROUP BY, HAVING and ORDER BY on a line
+	// of their own, what follows each one level under it.
+	clauseAlone bool
+
+	// indentJoins puts a join one level under FROM, with its tables, rather
+	// than at FROM's indent; an AND/OR of its ON one level under the join.
+	indentJoins bool
+}
+
+var (
+	sqlStandard  = sqlStyle{}
+	sqlLowercase = sqlStyle{lowerKeywords: true, aliasEquals: true, clauseAlone: true, indentJoins: true}
+)
 
 // sqlReserved are T-SQL's reserved keywords: never a bare identifier, so
 // upper-casing one is always safe (a name spelled like one must be quoted,
@@ -138,6 +164,17 @@ var sqlKeywords = func() map[string]bool {
 	}
 	return m
 }()
+
+// sqlAliasExprWords are the reserved words a select-list item may hold
+// outside its parentheses and CASE and still have its "AS name" moved to the
+// front: what a scalar expression is spelled with. Any other reserved word
+// there (DISTINCT, NEXT VALUE FOR, a statement the item ran into) leaves the
+// item as written. GROUP counts only after WITHIN.
+var sqlAliasExprWords = wordSet(`
+COALESCE COLLATE CONVERT CURRENT_DATE CURRENT_TIME CURRENT_TIMESTAMP
+CURRENT_USER GROUP IDENTITY LEFT NULL NULLIF OVER RIGHT SESSION_USER
+SYSTEM_USER TRY_CONVERT USER WITHIN
+`)
 
 // sqlExtraLeaders begin a statement on top of sqltext's statement leaders,
 // which leave them out because running one by accident does no harm — but an

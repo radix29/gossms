@@ -10,11 +10,19 @@ import (
 // Keyword case
 // ---------------------------------------------------------------------------
 
-// text is code token i as written: its source spelling, upper-cased when it
-// is a keyword where it stands (see sql_rules.go).
+// text is code token i as written: its source spelling, upper-cased (lower-
+// cased in a lowerKeywords style) when it is a keyword where it stands (see
+// sql_rules.go).
 func (l *sqlLayout) text(i int) string {
 	t := &l.t[i]
-	if t.kind != sqltext.KindWord || t.text == t.up || strings.HasPrefix(t.text, "@") || l.qualified(i) {
+	if t.kind != sqltext.KindWord {
+		return t.text
+	}
+	want := t.up
+	if l.sty.lowerKeywords {
+		want = strings.ToLower(t.text) // no allocation when already lower
+	}
+	if t.text == want || strings.HasPrefix(t.text, "@") || l.qualified(i) {
 		return t.text
 	}
 	up := t.up
@@ -30,7 +38,7 @@ func (l *sqlLayout) text(i int) string {
 	default:
 		return t.text
 	}
-	return up
+	return want
 }
 
 // namePos reports whether word i stands where an object name does, so that

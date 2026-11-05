@@ -374,7 +374,11 @@ of those) are saved automatically in:
 Tools > Options sets icon style, color theme (Dark, the default, Light, mc
 — blue panels, grey dialogs and cyan menus after mc's default skin in a modern
 terminal's colours — or mc - retro, the same skin in the original VGA colours),
-grid and text column widths, indent size, Max fetch rows (rows kept per result
+the default SQL style for Edit > Format Document (Standard upper-cases
+keywords; Lowercase lower-cases them, puts FROM, WHERE, GROUP BY, HAVING
+and ORDER BY alone on their lines with the joins indented under FROM, and
+writes `expr AS name` as `name = expr` — the Edit menu's cascade formats once in either), grid and text
+column widths, indent size, Max fetch rows (rows kept per result
 set in grid, text and file mode, 0 = unlimited; reaching it cancels the rest
 of the script, later GO batches included, and the results status line says so) and
 IntelliSense. Unsaved query tabs are recovered to the `recovered` folder beside

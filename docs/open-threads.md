@@ -58,13 +58,6 @@ support); this section covers only the environment.
 
 Settled design: `docs/decisions.md` § Format Document.
 
-- **Additional SQL styles and a picker.** Only Standard is registered. The
-  registry is in place (`format.Styles`/`StyleByID`, unknown or empty ID →
-  first style), and the rule tables sit in `sql_rules.go` so a second style
-  is a table plus switches, not a second engine. Lands with it, not before:
-  Edit > Format Document becomes a cascade (`controls/menu_cascade.go`) with the
-  default style marked, and `config.SQLFormatStyle` plus a Tools > Options
-  dropdown.
 - **Keyword case on a case-sensitive *server* is untried.** Run live in a
   `Latin1_General_CS_AS` database only, where INT, VARCHAR, XML, SYSNAME and
   the built-ins resolve case-insensitively; `sysname` and the CLR types are

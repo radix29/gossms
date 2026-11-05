@@ -1,0 +1,96 @@
+-- Names spelled like built-in functions, followed by "(" where no call stands.
+create table log (
+    id int identity
+  , msg nvarchar(200)
+  , year as year(sysdatetime())
+)
+create index ix_log on log (msg) where msg is not null
+create table month (
+    id int primary key
+  , log_id int references log (id)
+)
+insert into log (msg)
+select left(name, 10)
+from
+    sys.objects
+update log
+set msg = format(getdate(), 'yyyy')
+where
+    id = 1;
+with rank (r, c) as (
+    select
+        rank() over (order by id)
+      , count(*) over ()
+    from
+        log
+)
+, day (d) as (
+    select day(getdate())
+)
+select
+    r
+  , c
+  , d
+from
+    rank
+    cross join day
+select
+    l.msg
+  , len(l.msg)
+from
+    month m
+    join log (nolock) l on l.id = m.log_id
+    cross apply openjson(l.msg) j
+-- Names spelled like an unreserved clause keyword or join hint, and their keyword twins.
+select x
+from
+    t
+order by
+    level
+  , offset desc;
+select x
+from
+    t
+order by
+    x
+offset 5 rows fetch next 10 rows only;
+update t
+set output = 1
+where
+    id = 2;
+delete from t
+where
+    output = 1;
+update t
+set a = 1
+output inserted.id
+where
+    id = 2;
+select log.msg
+from
+    (
+        values (1)
+    ) as log(msg);
+select *
+from
+    t
+    cross apply dbo.f(a.id) as log(msg);
+select *
+from
+    (
+        select 1 a
+    ) count(a);
+create table part (c int) on day (c);
+select *
+from
+    t hash
+    join u on hash.id = u.id;
+select *
+from
+    t
+    inner hash join u on t.id = u.id;
+select
+    cast(x as char(10))
+  , trim(' ' from left(s, 3))
+from
+    t;

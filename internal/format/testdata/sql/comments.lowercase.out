@@ -1,0 +1,27 @@
+-- leading comment
+
+/* block
+   header */ select
+    a /* after a */
+  , b -- after b
+  , c
+from
+    t /* before where */
+where
+    x = 1 -- end
+
+-- between statements
+
+-- second paragraph
+update t
+set a = 1 -- set a
+where
+    b = 2;
+select 1 -- trailing
+    ;
+select
+    -- own line inside the list
+    a
+  , b
+from
+    t

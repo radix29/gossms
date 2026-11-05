@@ -108,7 +108,10 @@ type Style struct {
 // styles is the registry, first entry per language the default. A language
 // absent here (LangText) has no Format Document.
 var styles = map[Language][]Style{
-	LangSQL:  {{ID: "standard", Name: "Standard", fn: formatSQL, ownIndent: true}},
+	LangSQL: {
+		{ID: "standard", Name: "Standard", fn: sqlStandard.format, ownIndent: true},
+		{ID: "lowercase", Name: "Lowercase", fn: sqlLowercase.format, ownIndent: true},
+	},
 	LangXML:  {{ID: "standard", Name: "Standard", fn: plain(formatXML)}},
 	LangJSON: {{ID: "standard", Name: "Standard", fn: plain(formatJSON)}},
 }

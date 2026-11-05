@@ -7,7 +7,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// The SQL Standard style's rules: where each code token goes
+// The SQL styles' rules: where each code token goes
 // ---------------------------------------------------------------------------
 
 // Where a list's lookahead stops: the clause keywords that end the list a
@@ -324,6 +324,9 @@ func (l *sqlLayout) word(i int) {
 				}
 				if o.st.pred && o.st.rules {
 					ind := l.clauseBase(o) + l.w
+					if l.sty.indentJoins && o.st.clause == "JOIN" {
+						ind += l.w
+					}
 					l.put(i, nlLine, ind)
 					f.ctx = ind
 					return
@@ -410,16 +413,19 @@ func (l *sqlLayout) clause(i int, o *sqlFrame) bool {
 		if s.kind == "SELECT" || s.kind == "UPDATE" || s.kind == "DELETE" {
 			line("FROM")
 			l.list(o, l.nextC[i], base, fromEnds, false)
+			l.alone(i, o, base)
 			return true
 		}
 	case "WHERE", "HAVING":
 		line(up)
 		s.pred = true
+		l.alone(i, o, base)
 		return true
 	case "GROUP", "ORDER":
 		if l.nextUp(i) == "BY" {
 			line(up + " BY")
 			l.list(o, l.nextC[l.nextC[i]], base, byEnds, false)
+			l.alone(l.nextC[i], o, base)
 			return true
 		}
 	case "UNION", "EXCEPT", "INTERSECT":
@@ -519,10 +525,26 @@ func (l *sqlLayout) clause(i int, o *sqlFrame) bool {
 		}
 	}
 	if (s.clause == "FROM" || s.clause == "JOIN") && l.joinAt(i) {
+		if l.sty.indentJoins {
+			base += l.w
+		}
 		line("JOIN")
 		return true
 	}
 	return false
+}
+
+// alone, under sty.clauseAlone, leaves the clause keyword ending at i (FROM,
+// WHERE, HAVING, GROUP BY's and ORDER BY's BY) alone on its line: the token
+// after it starts the next one, a level under base.
+// A clause with nothing after it in its statement (a fragment) is left be.
+func (l *sqlLayout) alone(i int, o *sqlFrame, base int) {
+	n := l.nextC[i]
+	if !l.sty.clauseAlone || n < 0 || l.start[n] || l.t[n].goSep || l.t[n].isPunct(";") || l.t[n].isPunct(")") {
+		return
+	}
+	o.st.deferAt, o.st.deferInd = n, base+l.w
+	o.ctx = base + l.w
 }
 
 // clauseWord reports whether word i, spelled like a clause keyword that is
