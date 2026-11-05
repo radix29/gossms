@@ -1,3 +1,6 @@
+- disabled jobs, logins and other objects that can be enabled/disabled -> change the object tree icon.. maybe another color?
+- jobs detail -> object explorer detail.. show more columns like enabled/disabled, last run, last run success/failure, etc
+
 Results:
 -	Images
 -	Geo/GIS data?

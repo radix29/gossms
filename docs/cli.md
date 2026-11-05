@@ -1630,7 +1630,12 @@ field turns it off (`internal/cli/audit`).
   log is opened for appending; if that fails the call is refused with
   `GENERAL_ERROR`, exit 1, naming the reason. Reads still run. Should the
   append itself then fail, the result carries a warning.
-- The log is never rotated or trimmed by gossms (`docs/open-threads.md`).
+- The log is rotated by size: the line that would take `audit.jsonl` past
+  10 MiB first renames it to `audit.jsonl.1` — replacing an older `.1`, the
+  one generation kept — and starts a new file, under the same lock, so no
+  line is lost or split across the two. A line longer than the cap still
+  lands in an empty log. A rename that fails fails the append (the line is
+  not written past the cap), which surfaces as the warning above.
 
 ## The import rule
 

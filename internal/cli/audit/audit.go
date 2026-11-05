@@ -10,7 +10,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,6 +28,14 @@ import (
 // FileName is the log's name in the configuration directory, beside
 // config.json and gossms.log.
 const FileName = "audit.jsonl"
+
+// MaxSize is the size past which Append rotates the log: the line that
+// would take it over MaxSize renames the log to Rotated (replacing an older
+// one) and starts a new file. A variable so tests can use a tiny cap.
+var MaxSize int64 = 10 << 20
+
+// Rotated is the suffix of the one older generation kept: audit.jsonl.1.
+const Rotated = ".1"
 
 // DefaultPath is the log's path: FileName in config.ConfigDir().
 func DefaultPath() string { return filepath.Join(config.ConfigDir(), FileName) }
@@ -64,7 +74,9 @@ func Check(path string) error {
 }
 
 // Append writes r as one line at the end of the log at path, under the
-// file's lock, so calls running at once never interleave their lines.
+// file's lock, so calls running at once never interleave their lines. When
+// the line would take the log past MaxSize, the log is first renamed to
+// path+Rotated and the line starts a new file (see rotate).
 func Append(path string, r Record) error {
 	line, err := json.Marshal(r)
 	if err != nil {
@@ -77,6 +89,9 @@ func Append(path string, r Record) error {
 		return err
 	}
 	return fileutil.WithLock(path, func() error {
+		if err := rotate(path, int64(len(line))); err != nil {
+			return err
+		}
 		f, err := open(path)
 		if err != nil {
 			return err
@@ -87,6 +102,28 @@ func Append(path string, r Record) error {
 		}
 		return f.Close()
 	})
+}
+
+// rotate renames the log at path to path+Rotated when appending n more
+// bytes would take it past MaxSize. An empty log is never rotated, so a
+// single line longer than MaxSize still lands. A failed rename is the
+// write's error: under D10 a line the log cannot take fails the call rather
+// than growing the log past its cap unnoticed. Called under the lock.
+func rotate(path string, n int64) error {
+	fi, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if fi.Size() == 0 || fi.Size()+n <= MaxSize {
+		return nil
+	}
+	if err := os.Rename(path, path+Rotated); err != nil {
+		return fmt.Errorf("rotating the audit log: %w", err)
+	}
+	return nil
 }
 
 // open opens the log for appending, owner-only as gossms.log is, creating

@@ -2096,8 +2096,10 @@ down.
   down: the CLI never writes `config.json`, and an off-by-default audit
   protects nobody. So was an opt-out flag or environment variable: an agent
   could set either. T-SQL and data values are hashed, never stored; no
-  option carries a secret, since passwords never reach argv. No rotation yet
-  (`docs/open-threads.md`).
+  option carries a secret, since passwords never reach argv. Rotated by
+  size (10 MiB) to one `.1` generation under the append lock; a failed
+  rename fails the append rather than letting the log outgrow its cap
+  unnoticed (`docs/cli.md` § Audit log).
 
 ## No top-level plan document — do not re-raise
 

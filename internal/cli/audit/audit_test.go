@@ -189,3 +189,153 @@ func TestAppendParallelProcesses(t *testing.T) {
 		t.Errorf("%d distinct records, want %d", len(seen), children*perChild)
 	}
 }
+
+// withMaxSize sets MaxSize for one test.
+func withMaxSize(t *testing.T, n int64) {
+	old := MaxSize
+	MaxSize = n
+	t.Cleanup(func() { MaxSize = old })
+}
+
+// readCommands is the Command of each line of the log at path, in order; a
+// missing file is no lines.
+func readCommands(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for line := range strings.Lines(string(data)) {
+		var r Record
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
+			t.Fatalf("%s: a line is not one record: %v", path, err)
+		}
+		out = append(out, r.Command)
+	}
+	return out
+}
+
+// lineSize is the size of r's line in the log.
+func lineSize(t *testing.T, r Record) int64 {
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return int64(len(b)) + 1
+}
+
+// TestAppendRotates: the line that would take the log past MaxSize renames
+// it to .1 — replacing an older .1 — and lands first in a new file; a log
+// at the cap exactly is not rotated, and a line bigger than the cap still
+// lands in an empty log.
+func TestAppendRotates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	rec := func(c string) Record { return Record{Command: c, Args: []string{}} }
+	size := lineSize(t, rec("c0"))
+	withMaxSize(t, 2*size)
+	if err := os.WriteFile(path+Rotated, []byte("{\"command\":\"stale\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{"c0", "c1", "c2", "c3"} {
+		if err := Append(path, rec(c)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, want := readCommands(t, path+Rotated), []string{"c0", "c1"}; !slices.Equal(got, want) {
+		t.Errorf("%s holds %q, want %q", Rotated, got, want)
+	}
+	if got, want := readCommands(t, path), []string{"c2", "c3"}; !slices.Equal(got, want) {
+		t.Errorf("log holds %q, want %q", got, want)
+	}
+	if fi, err := os.Stat(path); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Errorf("new log: %v, %v; want mode 0600", fi, err)
+	}
+
+	big := Record{Command: "big", Args: []string{strings.Repeat("x", int(4*size))}}
+	other := filepath.Join(t.TempDir(), FileName)
+	if err := Check(other); err != nil { // an empty log, as Check leaves it
+		t.Fatal(err)
+	}
+	if err := Append(other, big); err != nil {
+		t.Fatal(err)
+	}
+	if got := readCommands(t, other); !slices.Equal(got, []string{"big"}) {
+		t.Errorf("oversized first line: log holds %q", got)
+	}
+	if _, err := os.Stat(other + Rotated); !os.IsNotExist(err) {
+		t.Errorf("an empty log was rotated: %v", err)
+	}
+}
+
+// TestAppendRotationLosesNothing: writers appending at once across a
+// rotation lose no line and split none — every record is in the log or its
+// .1, once. The cap is sized so exactly one rotation happens: with one
+// older generation, a second would drop the first's lines by design.
+func TestAppendRotationLosesNothing(t *testing.T) {
+	const writers, perWriter = 8, 25
+	path := filepath.Join(t.TempDir(), FileName)
+	cmd := func(w, i int) string { return fmt.Sprintf("w%d-%02d", w, i) }
+	total := writers * perWriter * lineSize(t, Record{Command: cmd(0, 0), Args: []string{}})
+	withMaxSize(t, total*3/5)
+	errs := make(chan error, writers)
+	for w := range writers {
+		go func() {
+			for i := range perWriter {
+				if err := Append(path, Record{Command: cmd(w, i), Args: []string{}}); err != nil {
+					errs <- err
+					return
+				}
+			}
+			errs <- nil
+		}()
+	}
+	for range writers {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	old, cur := readCommands(t, path+Rotated), readCommands(t, path)
+	if len(old) == 0 || len(cur) == 0 {
+		t.Fatalf("no rotation: %d lines in %s, %d in the log", len(old), Rotated, len(cur))
+	}
+	seen := map[string]int{}
+	for _, c := range slices.Concat(old, cur) {
+		seen[c]++
+	}
+	for w := range writers {
+		for i := range perWriter {
+			if n := seen[cmd(w, i)]; n != 1 {
+				t.Errorf("record %s appears %d times", cmd(w, i), n)
+			}
+		}
+	}
+}
+
+// TestAppendRotationFailureFailsTheWrite: a rename that fails — here .1 is a
+// non-empty directory — fails the write (D10) and leaves the log as it was,
+// the line not appended past the cap.
+func TestAppendRotationFailureFailsTheWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	r := Record{Command: "c", Args: []string{}}
+	withMaxSize(t, lineSize(t, r))
+	if err := Append(path, r); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(path+Rotated, "keep"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := Append(path, r)
+	if err == nil || !strings.Contains(err.Error(), "rotating the audit log") {
+		t.Fatalf("Append with an unrenamable log: %v, want a rotation error", err)
+	}
+	if got := readCommands(t, path); len(got) != 1 {
+		t.Errorf("log holds %d lines after the failed write, want 1", len(got))
+	}
+	if _, err := os.Stat(path + ".lock"); !os.IsNotExist(err) {
+		t.Errorf("lock file left behind: %v", err)
+	}
+}

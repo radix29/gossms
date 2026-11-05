@@ -70,11 +70,6 @@ Settled design: `docs/decisions.md` § Format Document.
   the built-ins resolve case-insensitively; `sysname` and the CLR types are
   left alone because a CS server collation was not available to check them.
 
-## Security: what is left
-
-- **A login with no right on an application role sees the folder empty**
-  (catalog visibility).
-
 ## Command line: what is left
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
@@ -120,9 +115,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-- **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
-  one line per write or refusal for ever. Deferred by decision; a size cap
-  with one `.1` generation, taken under the same lock, is the likely form.
 - **Only the `object` group is off the `Catalog` seam** (2026-11-04, the
   pilot of review Q1 option A). Past connecting and resolving the name,
   `object list/search/describe/definition/dependencies/indexes/stats` call

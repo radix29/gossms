@@ -202,6 +202,58 @@ func TestApplicationRolesFolderListsTheRoles(t *testing.T) {
 	}
 }
 
+// An empty Application Roles folder says the list is limited when the login is
+// known to hold neither right that sees every role — a db_datareader read zero
+// rows beside one role on 17 — and stays empty when either is held or the
+// probe answered nothing (fail open).
+func TestEmptyApplicationRolesFolderSaysWhenItIsLimited(t *testing.T) {
+	both := []string{"VIEW DEFINITION", "ALTER ANY APPLICATION ROLE"}
+	for _, tc := range []struct {
+		name              string
+		dbGranted, denied []string
+		wantNote          bool
+	}{
+		{"both denied", nil, both, true},
+		{"VIEW DEFINITION held", []string{"VIEW DEFINITION"}, []string{"ALTER ANY APPLICATION ROLE"}, false},
+		{"ALTER ANY APPLICATION ROLE held", []string{"ALTER ANY APPLICATION ROLE"}, []string{"VIEW DEFINITION"}, false},
+		{"probe answered nothing", nil, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			responses := append([]fakeResponse{dbByNameResp("appdb", 5),
+				{match: "WHERE  type = 'A'", cols: 5}},
+				capabilityResponses(true, nil, nil, tc.dbGranted, tc.denied)...)
+			sc, _ := newFakeConn(t, responses...)
+			folder := &explorerNode{data: nodeData{Type: NodeApplicationRoles, DBName: "appdb", conn: sc}}
+			kids, err := loadApplicationRolesChildren(loaderCtx{ctx: context.Background(), sc: sc}, folder)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tc.wantNote {
+				if len(kids) != 0 {
+					t.Fatalf("children = %q, want none", labelsOfNodes(kids))
+				}
+				return
+			}
+			if len(kids) != 1 || kids[0].label != applicationRolesNotVisibleLabel || kids[0].data.Type != NodeError {
+				t.Fatalf("children = %q, want the one not-visible note", labelsOfNodes(kids))
+			}
+		})
+	}
+
+	// A non-empty list is shown as it is, without asking the probe.
+	sc, _ := newFakeConn(t, dbByNameResp("appdb", 5),
+		fakeResponse{match: "WHERE  type = 'A'", cols: 5, rows: [][]driver.Value{
+			{"billing", "dbo", int64(7), principalEpoch, principalEpoch}}})
+	folder := &explorerNode{data: nodeData{Type: NodeApplicationRoles, DBName: "appdb", conn: sc}}
+	kids, err := loadApplicationRolesChildren(loaderCtx{ctx: context.Background(), sc: sc}, folder)
+	if err != nil || !slices.Equal(labelsOfNodes(kids), []string{"billing"}) {
+		t.Fatalf("children = %q, %v", labelsOfNodes(kids), err)
+	}
+	if sc.HasDatabaseCapabilities("appdb") {
+		t.Error("a non-empty list probed the database's capabilities")
+	}
+}
+
 // TestNewApplicationRoleGateMatchesWhatTheServerAllowed is the probed column
 // (majors 13 and 17, gate.AlterAnyApplicationRole): ALTER ANY APPLICATION ROLE
 // (alone or through db_securityadmin), ALTER and CONTROL on the database each
