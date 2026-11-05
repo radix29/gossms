@@ -35,6 +35,14 @@ func ConnectOptions() []spec.Option {
 // Catalog is the gosmo reads the discovery commands make, so tests stand in
 // for a server. Methods taking a *gosmo.Database call that database's own
 // method; the database is one DatabaseByName or Databases returned.
+//
+// The object group (object list, search, describe, definition,
+// dependencies, indexes, stats) is the exception: past connecting and
+// resolving its object's name (connectDatabase, resolveObject), it calls
+// gosmo directly, and its tests serve gosmo canned rows (gosmotest) instead
+// of faking these methods. That is the pilot of moving every group off the
+// seam (docs/open-threads.md § Command line); what is left here is what the
+// other groups still read through it.
 type Catalog interface {
 	CurrentDatabase(ctx context.Context) (string, error)
 	Databases(ctx context.Context) ([]*gosmo.Database, error)
@@ -42,68 +50,39 @@ type Catalog interface {
 	DatabaseSizes(ctx context.Context) (map[int]gosmo.DatabaseSize, error)
 	DatabaseOptions(ctx context.Context, d *gosmo.Database) (*gosmo.DatabaseOptions, error)
 	SpaceUsed(ctx context.Context, d *gosmo.Database) (gosmo.SpaceInfo, error)
+	// Resolving an object name (resolveObject), and the did-you-mean hint
+	// when there is none.
 	ObjectByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.ObjectInfo, error)
 	ObjectsNamed(ctx context.Context, d *gosmo.Database, name string) ([]*gosmo.ObjectInfo, error)
 	Search(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error)
 
-	// object list: one listing per family.
-	Tables(ctx context.Context, d *gosmo.Database, q gosmo.TableQuery) ([]*gosmo.Table, error)
-	Views(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.View, error)
-	SystemViews(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.View, error)
-	StoredProcedures(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.StoredProcedure, error)
-	SystemStoredProcedures(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.StoredProcedure, error)
-	UserDefinedFunctions(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.UserDefinedFunction, error)
-	SystemFunctions(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.UserDefinedFunction, error)
-	Triggers(ctx context.Context, d *gosmo.Database) ([]*gosmo.Trigger, error)
-	Synonyms(ctx context.Context, d *gosmo.Database) ([]*gosmo.Synonym, error)
-	Sequences(ctx context.Context, d *gosmo.Database) ([]*gosmo.Sequence, error)
+	// security grant/deny/revoke on a type or schema, and data profile's
+	// alias types.
 	UserDefinedDataTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.UserDefinedDataType, error)
 	UserDefinedTableTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.UserDefinedTableType, error)
 	ClrTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.ClrType, error)
 	Schemas(ctx context.Context, d *gosmo.Database) ([]*gosmo.Schema, error)
 
-	// object search --in definition / column.
-	SearchDefinitions(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error)
-	SearchColumns(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.ColumnSearchResult, error)
-
-	// object describe: the family's by-name read, then its children. A
-	// *gosmo.Table or *gosmo.View is one TableByName or ViewByName returned.
+	// A table's or view's by-name read and children, for data, column
+	// grants and maint index. A *gosmo.Table or *gosmo.View is one
+	// TableByName or ViewByName returned.
 	TableByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Table, error)
 	ViewByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.View, error)
-	TriggerByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Trigger, error)
-	SynonymByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Synonym, error)
-	SequenceByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Sequence, error)
 	TableColumns(ctx context.Context, t *gosmo.Table) ([]*gosmo.Column, error)
 	TableIndexes(ctx context.Context, t *gosmo.Table) ([]*gosmo.Index, error)
-	ForeignKeys(ctx context.Context, t *gosmo.Table) ([]*gosmo.ForeignKey, error)
-	CheckConstraints(ctx context.Context, t *gosmo.Table) ([]*gosmo.CheckConstraint, error)
-	TableTriggers(ctx context.Context, t *gosmo.Table) ([]*gosmo.Trigger, error)
 	RowCount(ctx context.Context, t *gosmo.Table) (int64, error)
 	ViewColumns(ctx context.Context, v *gosmo.View) ([]*gosmo.Column, error)
 	ViewIndexes(ctx context.Context, v *gosmo.View) ([]*gosmo.Index, error)
-	ViewTriggers(ctx context.Context, v *gosmo.View) ([]*gosmo.Trigger, error)
-	Parameters(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Parameter, error)
-	ReturnType(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Parameter, error)
-
-	// object definition: the module's T-SQL text, "" when it has none to
-	// read (encrypted, CLR).
-	ModuleDefinition(ctx context.Context, d *gosmo.Database, kind ModuleKind, schema, name string) (string, error)
 
 	// script object / db: Script As's text for one object (internal/scripting).
 	Script(ctx context.Context, f scripting.Family, v scripting.Verb, t scripting.Target) (string, error)
 
-	// object dependencies: the edges out of and into schema.name.
-	Dependencies(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error)
-	Dependents(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error)
-
-	// object indexes / stats, on a table or an indexed view.
-	TableIndexUsage(ctx context.Context, t *gosmo.Table) ([]*gosmo.IndexUsage, error)
-	ViewIndexUsage(ctx context.Context, v *gosmo.View) ([]*gosmo.IndexUsage, error)
+	// maint index: the fragmentation and statistics a rebuild or update
+	// chooses from, on a table or an indexed view.
 	TableFragmentation(ctx context.Context, t *gosmo.Table, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error)
 	ViewFragmentation(ctx context.Context, v *gosmo.View, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error)
 	TableStatistics(ctx context.Context, t *gosmo.Table) ([]*gosmo.Statistic, error)
 	ViewStatistics(ctx context.Context, v *gosmo.View) ([]*gosmo.Statistic, error)
-	StatisticColumns(ctx context.Context, st *gosmo.Statistic) ([]string, error)
 
 	// agent context: what connect read, and what the login may do.
 	ServerInfo() *gosmo.ServerInfo
@@ -200,6 +179,7 @@ type Catalog interface {
 	DatabaseRoles(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseRole, error)
 	DatabaseRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.DatabaseRole, error)
 	DatabaseRoleMembers(ctx context.Context, d *gosmo.Database, role string) ([]*gosmo.RoleMember, error)
+	ApplicationRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.ApplicationRole, error)
 	PermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.PrincipalSecurable, error)
 	ColumnPermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.ColumnPermissionEntry, error)
 	ServerPermissions(ctx context.Context) ([]*gosmo.ServerPermissionEntry, error)
@@ -230,16 +210,6 @@ type Catalog interface {
 	// fragmented with at least minPages leaf pages, most fragmented first.
 	DatabaseFragmentation(ctx context.Context, d *gosmo.Database, mode gosmo.FragmentationMode, minPct float64, minPages int64) ([]*gosmo.DatabaseIndexFragmentation, error)
 }
-
-// ModuleKind is which family's Definition ModuleDefinition reads.
-type ModuleKind int
-
-const (
-	ModuleView ModuleKind = iota
-	ModuleProcedure
-	ModuleFunction
-	ModuleTrigger
-)
 
 // ServerCatalog is Deps.Catalog: the reads, made through sc's gosmo Server.
 func ServerCatalog(sc *db.ServerConn) Catalog { return serverCatalog{sc.Server} }
@@ -282,46 +252,6 @@ func (serverCatalog) Search(ctx context.Context, d *gosmo.Database, pattern stri
 	return d.Search(ctx, pattern)
 }
 
-func (serverCatalog) Tables(ctx context.Context, d *gosmo.Database, q gosmo.TableQuery) ([]*gosmo.Table, error) {
-	return d.Tables(ctx, q)
-}
-
-func (serverCatalog) Views(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.View, error) {
-	return d.Views(ctx, f)
-}
-
-func (serverCatalog) SystemViews(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.View, error) {
-	return d.SystemViews(ctx, f)
-}
-
-func (serverCatalog) StoredProcedures(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.StoredProcedure, error) {
-	return d.StoredProcedures(ctx, f)
-}
-
-func (serverCatalog) SystemStoredProcedures(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.StoredProcedure, error) {
-	return d.SystemStoredProcedures(ctx, f)
-}
-
-func (serverCatalog) UserDefinedFunctions(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.UserDefinedFunction, error) {
-	return d.UserDefinedFunctions(ctx, f)
-}
-
-func (serverCatalog) SystemFunctions(ctx context.Context, d *gosmo.Database, f gosmo.ObjectFilter) ([]*gosmo.UserDefinedFunction, error) {
-	return d.SystemFunctions(ctx, f)
-}
-
-func (serverCatalog) Triggers(ctx context.Context, d *gosmo.Database) ([]*gosmo.Trigger, error) {
-	return d.Triggers(ctx)
-}
-
-func (serverCatalog) Synonyms(ctx context.Context, d *gosmo.Database) ([]*gosmo.Synonym, error) {
-	return d.Synonyms(ctx)
-}
-
-func (serverCatalog) Sequences(ctx context.Context, d *gosmo.Database) ([]*gosmo.Sequence, error) {
-	return d.Sequences(ctx)
-}
-
 func (serverCatalog) UserDefinedDataTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.UserDefinedDataType, error) {
 	return d.UserDefinedDataTypes(ctx)
 }
@@ -338,14 +268,6 @@ func (serverCatalog) Schemas(ctx context.Context, d *gosmo.Database) ([]*gosmo.S
 	return d.Schemas(ctx)
 }
 
-func (serverCatalog) SearchDefinitions(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error) {
-	return d.SearchDefinitions(ctx, pattern)
-}
-
-func (serverCatalog) SearchColumns(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.ColumnSearchResult, error) {
-	return d.SearchColumns(ctx, pattern)
-}
-
 func (serverCatalog) TableByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Table, error) {
 	return d.TableByName(ctx, schema, name)
 }
@@ -354,36 +276,12 @@ func (serverCatalog) ViewByName(ctx context.Context, d *gosmo.Database, schema, 
 	return d.ViewByName(ctx, schema, name)
 }
 
-func (serverCatalog) TriggerByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Trigger, error) {
-	return d.TriggerByName(ctx, schema, name)
-}
-
-func (serverCatalog) SynonymByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Synonym, error) {
-	return d.SynonymByName(ctx, schema, name)
-}
-
-func (serverCatalog) SequenceByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Sequence, error) {
-	return d.SequenceByName(ctx, schema, name)
-}
-
 func (serverCatalog) TableColumns(ctx context.Context, t *gosmo.Table) ([]*gosmo.Column, error) {
 	return t.Columns(ctx)
 }
 
 func (serverCatalog) TableIndexes(ctx context.Context, t *gosmo.Table) ([]*gosmo.Index, error) {
 	return t.Indexes(ctx)
-}
-
-func (serverCatalog) ForeignKeys(ctx context.Context, t *gosmo.Table) ([]*gosmo.ForeignKey, error) {
-	return t.ForeignKeys(ctx)
-}
-
-func (serverCatalog) CheckConstraints(ctx context.Context, t *gosmo.Table) ([]*gosmo.CheckConstraint, error) {
-	return t.CheckConstraints(ctx)
-}
-
-func (serverCatalog) TableTriggers(ctx context.Context, t *gosmo.Table) ([]*gosmo.Trigger, error) {
-	return t.Triggers(ctx)
 }
 
 func (serverCatalog) RowCount(ctx context.Context, t *gosmo.Table) (int64, error) {
@@ -398,52 +296,8 @@ func (serverCatalog) ViewIndexes(ctx context.Context, v *gosmo.View) ([]*gosmo.I
 	return v.Indexes(ctx)
 }
 
-func (serverCatalog) ViewTriggers(ctx context.Context, v *gosmo.View) ([]*gosmo.Trigger, error) {
-	return v.Triggers(ctx)
-}
-
-func (serverCatalog) Parameters(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Parameter, error) {
-	return d.Parameters(ctx, schema, name)
-}
-
-func (serverCatalog) ReturnType(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Parameter, error) {
-	return d.ReturnType(ctx, schema, name)
-}
-
-// ModuleDefinition reads through the family's Ref: Definition reads by name,
-// so the handle needs nothing loaded.
-func (serverCatalog) ModuleDefinition(ctx context.Context, d *gosmo.Database, kind ModuleKind, schema, name string) (string, error) {
-	switch kind {
-	case ModuleView:
-		return d.ViewRef(schema, name).Definition(ctx)
-	case ModuleProcedure:
-		return d.StoredProcedureRef(schema, name).Definition(ctx)
-	case ModuleFunction:
-		return d.UserDefinedFunctionRef(schema, name).Definition(ctx)
-	case ModuleTrigger:
-		return d.TriggerRef(schema, name).Definition(ctx)
-	}
-	return "", fmt.Errorf("module kind %d has no definition read", kind)
-}
-
 func (c serverCatalog) Script(ctx context.Context, f scripting.Family, v scripting.Verb, t scripting.Target) (string, error) {
 	return scripting.Script(ctx, c.s, f, v, t)
-}
-
-func (serverCatalog) Dependencies(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error) {
-	return d.Dependencies(ctx, schema, name)
-}
-
-func (serverCatalog) Dependents(ctx context.Context, d *gosmo.Database, schema, name string) ([]*gosmo.Dependency, error) {
-	return d.Dependents(ctx, schema, name)
-}
-
-func (serverCatalog) TableIndexUsage(ctx context.Context, t *gosmo.Table) ([]*gosmo.IndexUsage, error) {
-	return t.IndexUsage(ctx)
-}
-
-func (serverCatalog) ViewIndexUsage(ctx context.Context, v *gosmo.View) ([]*gosmo.IndexUsage, error) {
-	return v.IndexUsage(ctx)
 }
 
 func (serverCatalog) TableFragmentation(ctx context.Context, t *gosmo.Table, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error) {
@@ -460,10 +314,6 @@ func (serverCatalog) TableStatistics(ctx context.Context, t *gosmo.Table) ([]*go
 
 func (serverCatalog) ViewStatistics(ctx context.Context, v *gosmo.View) ([]*gosmo.Statistic, error) {
 	return v.Statistics(ctx)
-}
-
-func (serverCatalog) StatisticColumns(ctx context.Context, st *gosmo.Statistic) ([]string, error) {
-	return st.Columns(ctx)
 }
 
 func (c serverCatalog) ServerInfo() *gosmo.ServerInfo { return c.s.Info() }
@@ -683,6 +533,10 @@ func (serverCatalog) DatabaseRoleByName(ctx context.Context, d *gosmo.Database, 
 
 func (serverCatalog) DatabaseRoleMembers(ctx context.Context, d *gosmo.Database, role string) ([]*gosmo.RoleMember, error) {
 	return d.RoleMembers(ctx, role)
+}
+
+func (serverCatalog) ApplicationRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.ApplicationRole, error) {
+	return d.ApplicationRoleByName(ctx, name)
 }
 
 func (serverCatalog) PermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.PrincipalSecurable, error) {

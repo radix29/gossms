@@ -186,17 +186,21 @@ func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key
 }
 
 // showRolePropertiesFor opens Database Role Properties for a known connection,
-// database, and role name.
+// database, and role name. It can rename the role, so Apply reloads the folder
+// listing it.
 func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) {
-	a.propDialog.show(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
-		func() []propPage { return rolePropPages(a.propDialog, sc, dbName, roleName) })
+	a.propDialog.showReloading(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
+		func() []propPage { return rolePropPages(a.propDialog, sc, dbName, roleName) },
+		folderOf(dbName, NodeDatabaseRoles))
 }
 
 // showServerRolePropertiesFor opens Server Role Properties for a known
 // connection and role name (server-level, no dbName, like showLoginProperties).
+// It can rename the role, so Apply reloads the folder listing it.
 func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
-	a.propDialog.show(sc, "", "Server Role Properties", "Role: "+roleName, "Server: "+sc.Opts.Server,
-		func() []propPage { return serverRolePropPages(sc, roleName) })
+	a.propDialog.showReloading(sc, "", "Server Role Properties", "Role: "+roleName, "Server: "+sc.Opts.Server,
+		func() []propPage { return serverRolePropPages(sc, roleName) },
+		folderOf("", NodeServerRoles))
 }
 
 // showCredentialPropertiesFor opens Credential Properties for a known

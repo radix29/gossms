@@ -91,8 +91,7 @@ func (v *XEventViewer) saveViewSettingAs() {
 }
 
 // storeViewSetting writes s under name to config, or removes name when s is
-// nil. The map is replaced, never written into — see
-// config.Config.XEventViewSettings.
+// nil.
 func (v *XEventViewer) storeViewSetting(name string, s *config.XEventViewSetting) {
 	cfg := v.app.cfg
 	if cfg == nil {

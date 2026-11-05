@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -176,7 +175,7 @@ func (tb *Toolbar) buttonAt(mx int) int {
 // Draw renders the button row.
 func (tb *Toolbar) Draw(s tcell.Screen) {
 	barStyle := theme.StyleMenuBar()
-	hoverStyle := tcell.StyleDefault.Background(theme.Active().MenuSelected).Foreground(color.White)
+	hoverStyle := theme.StyleMenuSelected()
 	disabledStyle := theme.StyleDisabled()
 	for i, b := range tb.buttons {
 		if tb.widths[i] == 0 { // hidden by SetBounds

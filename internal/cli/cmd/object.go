@@ -202,7 +202,7 @@ func isSystemSchema(s *gosmo.Schema) bool {
 
 func (d Deps) objectList(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, dbase, err := d.connectDatabase(ctx, inv, res)
+	sc, _, dbase, err := d.connectDatabase(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -219,7 +219,7 @@ func (d Deps) objectList(ctx context.Context, inv *spec.Invocation) (*output.Res
 		rows = append(rows, listedObject{schema, name, kind, sys})
 	}
 	for _, kind := range orderedKinds(kinds) {
-		if err := listKind(ctx, cat, dbase, kind, f, system, add); err != nil {
+		if err := listKind(ctx, dbase, kind, f, system, add); err != nil {
 			return res, readError(err)
 		}
 	}
@@ -255,17 +255,17 @@ func orderedKinds(kinds []string) []string {
 
 // listKind adds every object of kind in dbase that f keeps; system adds the
 // ones SQL Server ships.
-func listKind(ctx context.Context, cat Catalog, dbase *gosmo.Database, kind string, f listFilter, system bool,
+func listKind(ctx context.Context, dbase *gosmo.Database, kind string, f listFilter, system bool,
 	add func(schema, name, kind string, system bool)) error {
 	of := f.gosmo()
 	switch kind {
 	case kindTable:
-		ts, err := cat.Tables(ctx, dbase, gosmo.TableQuery{Filter: of})
+		ts, err := dbase.Tables(ctx, gosmo.TableQuery{Filter: of})
 		if err != nil {
 			return err
 		}
 		if system {
-			st, err := cat.Tables(ctx, dbase, gosmo.TableQuery{Kind: gosmo.TableKindSystem, Filter: of})
+			st, err := dbase.Tables(ctx, gosmo.TableQuery{Kind: gosmo.TableKindSystem, Filter: of})
 			if err != nil {
 				return err
 			}
@@ -275,16 +275,16 @@ func listKind(ctx context.Context, cat Catalog, dbase *gosmo.Database, kind stri
 			add(t.Schema, t.Name, kind, t.IsSystem)
 		}
 	case kindView:
-		return listModules(ctx, dbase, of, system, cat.Views, cat.SystemViews,
+		return listModules(ctx, of, system, dbase.Views, dbase.SystemViews,
 			func(v *gosmo.View, sys bool) { add(v.Schema, v.Name, kind, sys) })
 	case kindProcedure:
-		return listModules(ctx, dbase, of, system, cat.StoredProcedures, cat.SystemStoredProcedures,
+		return listModules(ctx, of, system, dbase.StoredProcedures, dbase.SystemStoredProcedures,
 			func(p *gosmo.StoredProcedure, sys bool) { add(p.Schema, p.Name, kind, sys) })
 	case kindFunction:
-		return listModules(ctx, dbase, of, system, cat.UserDefinedFunctions, cat.SystemFunctions,
+		return listModules(ctx, of, system, dbase.UserDefinedFunctions, dbase.SystemFunctions,
 			func(fn *gosmo.UserDefinedFunction, sys bool) { add(fn.Schema, fn.Name, kind, sys) })
 	case kindTrigger:
-		trs, err := cat.Triggers(ctx, dbase)
+		trs, err := dbase.Triggers(ctx)
 		if err != nil {
 			return err
 		}
@@ -294,7 +294,7 @@ func listKind(ctx context.Context, cat Catalog, dbase *gosmo.Database, kind stri
 			}
 		}
 	case kindSynonym:
-		ss, err := cat.Synonyms(ctx, dbase)
+		ss, err := dbase.Synonyms(ctx)
 		if err != nil {
 			return err
 		}
@@ -304,7 +304,7 @@ func listKind(ctx context.Context, cat Catalog, dbase *gosmo.Database, kind stri
 			}
 		}
 	case kindSequence:
-		ss, err := cat.Sequences(ctx, dbase)
+		ss, err := dbase.Sequences(ctx)
 		if err != nil {
 			return err
 		}
@@ -314,15 +314,15 @@ func listKind(ctx context.Context, cat Catalog, dbase *gosmo.Database, kind stri
 			}
 		}
 	case kindType:
-		aliases, err := cat.UserDefinedDataTypes(ctx, dbase)
+		aliases, err := dbase.UserDefinedDataTypes(ctx)
 		if err != nil {
 			return err
 		}
-		tables, err := cat.UserDefinedTableTypes(ctx, dbase)
+		tables, err := dbase.UserDefinedTableTypes(ctx)
 		if err != nil {
 			return err
 		}
-		clr, err := cat.ClrTypes(ctx, dbase)
+		clr, err := dbase.ClrTypes(ctx)
 		if err != nil {
 			return err
 		}
@@ -347,7 +347,7 @@ func listKind(ctx context.Context, cat Catalog, dbase *gosmo.Database, kind stri
 		}
 	case kindSchema:
 		// A schema is in no schema: --schema and --name both match its name.
-		ss, err := cat.Schemas(ctx, dbase)
+		ss, err := dbase.Schemas(ctx)
 		if err != nil {
 			return err
 		}
@@ -364,9 +364,9 @@ func listKind(ctx context.Context, cat Catalog, dbase *gosmo.Database, kind stri
 
 // listModules adds the user objects one listing returns and, with system, the
 // sys schema's from the other.
-func listModules[T any](ctx context.Context, dbase *gosmo.Database, f gosmo.ObjectFilter, system bool,
-	user, sys func(context.Context, *gosmo.Database, gosmo.ObjectFilter) ([]T, error), add func(T, bool)) error {
-	items, err := user(ctx, dbase, f)
+func listModules[T any](ctx context.Context, f gosmo.ObjectFilter, system bool,
+	user, sys func(context.Context, gosmo.ObjectFilter) ([]T, error), add func(T, bool)) error {
+	items, err := user(ctx, f)
 	if err != nil {
 		return err
 	}
@@ -376,7 +376,7 @@ func listModules[T any](ctx context.Context, dbase *gosmo.Database, f gosmo.Obje
 	if !system {
 		return nil
 	}
-	if items, err = sys(ctx, dbase, f); err != nil {
+	if items, err = sys(ctx, f); err != nil {
 		return err
 	}
 	for _, it := range items {
@@ -391,7 +391,7 @@ func (d Deps) objectSearch(ctx context.Context, inv *spec.Invocation) (*output.R
 		return nil, usageError("the search text is empty", "Give the text to find: gossms object search <text>.")
 	}
 	res := &output.Result{}
-	sc, cat, dbase, err := d.connectDatabase(ctx, inv, res)
+	sc, _, dbase, err := d.connectDatabase(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -401,7 +401,7 @@ func (d Deps) objectSearch(ctx context.Context, inv *spec.Invocation) (*output.R
 	set := output.Set{}
 	switch inv.Values[optIn].(string) {
 	case searchColumn:
-		found, err := cat.SearchColumns(ctx, dbase, text)
+		found, err := dbase.SearchColumns(ctx, text)
 		if err != nil {
 			return res, readError(err)
 		}
@@ -411,11 +411,11 @@ func (d Deps) objectSearch(ctx context.Context, inv *spec.Invocation) (*output.R
 		}
 		hiddenTypes(res, countHidden(found, func(c *gosmo.ColumnSearchResult) bool { return c.IsTypeHidden }))
 	default:
-		search := cat.Search
+		search := dbase.Search
 		if inv.Values[optIn].(string) == searchDefinition {
-			search = cat.SearchDefinitions
+			search = dbase.SearchDefinitions
 		}
-		found, err := search(ctx, dbase, text)
+		found, err := search(ctx, text)
 		if err != nil {
 			return res, readError(err)
 		}
@@ -459,7 +459,7 @@ func objectFields(o *gosmo.ObjectInfo) []output.Field {
 
 func (d Deps) objectDescribe(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	cat, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -476,7 +476,7 @@ func (d Deps) objectDescribe(ctx context.Context, inv *spec.Invocation) (*output
 		output.Field{Key: "modified", Value: gridTime(o.Modified)},
 		output.Field{Key: "parent", Value: parent},
 	)
-	var describe func(context.Context, Catalog, *gosmo.Database, *gosmo.ObjectInfo, *output.Result) error
+	var describe func(context.Context, *gosmo.Database, *gosmo.ObjectInfo, *output.Result) error
 	switch kindOfDesc(o.TypeDesc) {
 	case kindTable:
 		describe = describeTable
@@ -492,40 +492,40 @@ func (d Deps) objectDescribe(ctx context.Context, inv *spec.Invocation) (*output
 		describe = describeSequence
 	}
 	if describe != nil {
-		if err := describe(ctx, cat, dbase, o, res); err != nil {
+		if err := describe(ctx, dbase, o, res); err != nil {
 			return res, readError(err)
 		}
 	}
 	return res, nil
 }
 
-func describeTable(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
-	t, err := cat.TableByName(ctx, dbase, o.Schema, o.Name)
+func describeTable(ctx context.Context, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
+	t, err := dbase.TableByName(ctx, o.Schema, o.Name)
 	if err != nil {
 		return err
 	}
-	rows, err := cat.RowCount(ctx, t)
+	rows, err := t.RowCount(ctx)
 	if err != nil {
 		return err
 	}
 	res.Fields = append(res.Fields, output.Field{Key: "rowCount", Value: strconv.FormatInt(rows, 10)})
-	cols, err := cat.TableColumns(ctx, t)
+	cols, err := t.Columns(ctx)
 	if err != nil {
 		return err
 	}
-	idx, err := cat.TableIndexes(ctx, t)
+	idx, err := t.Indexes(ctx)
 	if err != nil {
 		return err
 	}
-	fks, err := cat.ForeignKeys(ctx, t)
+	fks, err := t.ForeignKeys(ctx)
 	if err != nil {
 		return err
 	}
-	checks, err := cat.CheckConstraints(ctx, t)
+	checks, err := t.CheckConstraints(ctx)
 	if err != nil {
 		return err
 	}
-	trs, err := cat.TableTriggers(ctx, t)
+	trs, err := t.Triggers(ctx)
 	if err != nil {
 		return err
 	}
@@ -534,24 +534,25 @@ func describeTable(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *g
 	res.Sets = []output.Set{colSet, keysSet(idx, fks), indexesSet(idx), checkSet, triggersSet(trs)}
 	hiddenDefinitions(res, hiddenCols+hiddenChecks)
 	hiddenTypes(res, countHidden(cols, func(c *gosmo.Column) bool { return c.IsTypeHidden }))
+	hiddenFilters(res, "index(es)", hiddenIndexFilters(idx))
 	return nil
 }
 
-func describeView(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
-	v, err := cat.ViewByName(ctx, dbase, o.Schema, o.Name)
+func describeView(ctx context.Context, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
+	v, err := dbase.ViewByName(ctx, o.Schema, o.Name)
 	if err != nil {
 		return err
 	}
 	res.Fields = append(res.Fields, output.Field{Key: "isSchemaBound", Value: boolText(v.IsSchemaBound)})
-	cols, err := cat.ViewColumns(ctx, v)
+	cols, err := v.Columns(ctx)
 	if err != nil {
 		return err
 	}
-	idx, err := cat.ViewIndexes(ctx, v)
+	idx, err := v.Indexes(ctx)
 	if err != nil {
 		return err
 	}
-	trs, err := cat.ViewTriggers(ctx, v)
+	trs, err := v.Triggers(ctx)
 	if err != nil {
 		return err
 	}
@@ -559,6 +560,7 @@ func describeView(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *go
 	res.Sets = []output.Set{colSet, indexesSet(idx), triggersSet(trs)}
 	hiddenDefinitions(res, hidden)
 	hiddenTypes(res, countHidden(cols, func(c *gosmo.Column) bool { return c.IsTypeHidden }))
+	hiddenFilters(res, "index(es)", hiddenIndexFilters(idx))
 	return nil
 }
 
@@ -585,6 +587,30 @@ func hiddenTypes(res *output.Result, n int) {
 	}
 }
 
+// hiddenFilters warns, naming them, of the filtered indexes (or statistics,
+// as kind says) whose predicate the login cannot read: without VIEW
+// DEFINITION filter_definition is NULL while has_filter is 1 (gosmo
+// Index.IsFilterHidden). The filter cell is NULL either way, so without
+// the warning the index reads as unfiltered.
+func hiddenFilters(res *output.Result, kind string, names []string) {
+	if len(names) > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("The login cannot read the filter of %d filtered %s (%s): "+
+			"filter reads NULL, as an unfiltered one's does. It needs VIEW DEFINITION on the object.",
+			len(names), kind, strings.Join(names, ", ")))
+	}
+}
+
+// hiddenIndexFilters is the names of the indexes whose filter is hidden.
+func hiddenIndexFilters(idx []*gosmo.Index) []string {
+	var names []string
+	for _, i := range idx {
+		if i.IsFilterHidden {
+			names = append(names, i.Name)
+		}
+	}
+	return names
+}
+
 // countHidden counts the items hidden reports.
 func countHidden[T any](items []T, hidden func(T) bool) int {
 	n := 0
@@ -599,12 +625,12 @@ func countHidden[T any](items []T, hidden func(T) bool) int {
 // tableValued is the function types that return a table, not a scalar.
 var tableValued = []string{"IF", "TF", "FT"}
 
-func describeModule(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
+func describeModule(ctx context.Context, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
 	hidden := 0 // types the login cannot see, the return type's included
 	if kindOfDesc(o.TypeDesc) == kindFunction {
 		returns := output.Field{Key: "returns", Value: "TABLE"}
 		if !slices.Contains(tableValued, o.Type) {
-			rt, err := cat.ReturnType(ctx, dbase, o.Schema, o.Name)
+			rt, err := dbase.ReturnType(ctx, o.Schema, o.Name)
 			if err != nil {
 				return err
 			}
@@ -619,7 +645,7 @@ func describeModule(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *
 		}
 		res.Fields = append(res.Fields, returns)
 	}
-	ps, err := cat.Parameters(ctx, dbase, o.Schema, o.Name)
+	ps, err := dbase.Parameters(ctx, o.Schema, o.Name)
 	if err != nil {
 		return err
 	}
@@ -647,8 +673,8 @@ func describeModule(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *
 	return nil
 }
 
-func describeTrigger(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
-	t, err := cat.TriggerByName(ctx, dbase, o.Schema, o.Name)
+func describeTrigger(ctx context.Context, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
+	t, err := dbase.TriggerByName(ctx, o.Schema, o.Name)
 	if err != nil {
 		return err
 	}
@@ -658,8 +684,8 @@ func describeTrigger(ctx context.Context, cat Catalog, dbase *gosmo.Database, o 
 	return nil
 }
 
-func describeSynonym(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
-	s, err := cat.SynonymByName(ctx, dbase, o.Schema, o.Name)
+func describeSynonym(ctx context.Context, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
+	s, err := dbase.SynonymByName(ctx, o.Schema, o.Name)
 	if err != nil {
 		return err
 	}
@@ -667,8 +693,8 @@ func describeSynonym(ctx context.Context, cat Catalog, dbase *gosmo.Database, o 
 	return nil
 }
 
-func describeSequence(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
-	s, err := cat.SequenceByName(ctx, dbase, o.Schema, o.Name)
+func describeSequence(ctx context.Context, dbase *gosmo.Database, o *gosmo.ObjectInfo, res *output.Result) error {
+	s, err := dbase.SequenceByName(ctx, o.Schema, o.Name)
 	if err != nil {
 		return err
 	}
@@ -832,11 +858,38 @@ func triggersSet(trs []*gosmo.Trigger) output.Set {
 	return set
 }
 
+// moduleKind is which family's Definition object definition reads.
+type moduleKind int
+
+const (
+	moduleView moduleKind = iota
+	moduleProcedure
+	moduleFunction
+	moduleTrigger
+)
+
 // moduleKinds maps the sys.objects types object definition reads to the
 // family whose Definition reads them; the CLR types have no T-SQL to read.
-var moduleKinds = map[string]ModuleKind{
-	"V": ModuleView, "P": ModuleProcedure, "FN": ModuleFunction, "IF": ModuleFunction, "TF": ModuleFunction,
-	"TR": ModuleTrigger,
+var moduleKinds = map[string]moduleKind{
+	"V": moduleView, "P": moduleProcedure, "FN": moduleFunction, "IF": moduleFunction, "TF": moduleFunction,
+	"TR": moduleTrigger,
+}
+
+// definition is schema.name's T-SQL text, "" when it has none to read
+// (encrypted). It reads through the family's Ref: Definition reads by name,
+// so the handle needs nothing loaded.
+func (k moduleKind) definition(ctx context.Context, d *gosmo.Database, schema, name string) (string, error) {
+	switch k {
+	case moduleView:
+		return d.ViewRef(schema, name).Definition(ctx)
+	case moduleProcedure:
+		return d.StoredProcedureRef(schema, name).Definition(ctx)
+	case moduleFunction:
+		return d.UserDefinedFunctionRef(schema, name).Definition(ctx)
+	case moduleTrigger:
+		return d.TriggerRef(schema, name).Definition(ctx)
+	}
+	return "", fmt.Errorf("module kind %d has no definition read", k)
 }
 
 // clrModules is the CLR procedure, function and trigger types.
@@ -844,7 +897,7 @@ var clrModules = []string{"PC", "FS", "FT", "TA"}
 
 func (d Deps) objectDefinition(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	cat, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -860,7 +913,7 @@ func (d Deps) objectDefinition(ctx context.Context, inv *spec.Invocation) (*outp
 		return res, usageError(fmt.Sprintf("%s is a %s, which has no T-SQL definition", name, kindOfDesc(o.TypeDesc)),
 			"Run `gossms object describe` for its structure; a definition is a view's, procedure's, function's or trigger's.")
 	default:
-		text, err := cat.ModuleDefinition(ctx, dbase, kind, o.Schema, o.Name)
+		text, err := kind.definition(ctx, dbase, o.Schema, o.Name)
 		if err != nil {
 			return res, readError(err)
 		}

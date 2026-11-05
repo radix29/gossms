@@ -73,28 +73,28 @@ type tableOrView struct {
 // lookupTableOrView is lookupObject for the commands that take a table or a
 // view: anything else is a usage error naming its kind. The caller closes the
 // connection through the returned func.
-func (d Deps) lookupTableOrView(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (Catalog, *gosmo.ObjectInfo, tableOrView, func(), error) {
-	cat, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+func (d Deps) lookupTableOrView(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (*gosmo.ObjectInfo, tableOrView, func(), error) {
+	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
-		return nil, nil, tableOrView{}, nil, err
+		return nil, tableOrView{}, nil, err
 	}
 	var tv tableOrView
 	switch kind := kindOfDesc(o.TypeDesc); kind {
 	case kindTable:
-		tv.table, err = cat.TableByName(ctx, dbase, o.Schema, o.Name)
+		tv.table, err = dbase.TableByName(ctx, o.Schema, o.Name)
 	case kindView:
-		tv.view, err = cat.ViewByName(ctx, dbase, o.Schema, o.Name)
+		tv.view, err = dbase.ViewByName(ctx, o.Schema, o.Name)
 	default:
 		done()
-		return nil, nil, tableOrView{}, nil, usageError(
+		return nil, tableOrView{}, nil, usageError(
 			fmt.Sprintf("%s is a %s, which has no %s", gosmo.QualifiedName(o.Schema, o.Name), kind, what),
 			"Give a table or a view; `gossms object describe` shows any object.")
 	}
 	if err != nil {
 		done()
-		return nil, nil, tableOrView{}, nil, readError(err)
+		return nil, tableOrView{}, nil, readError(err)
 	}
-	return cat, o, tv, done, nil
+	return o, tv, done, nil
 }
 
 // cellTime is a time cell, NULL for the zero time (never happened, or not
@@ -110,7 +110,7 @@ func int64Cell(n int64) *string { return ptr(strconv.FormatInt(n, 10)) }
 
 func (d Deps) objectIndexes(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	cat, o, tv, done, err := d.lookupTableOrView(ctx, inv, res, "indexes")
+	o, tv, done, err := d.lookupTableOrView(ctx, inv, res, "indexes")
 	if err != nil {
 		return res, err
 	}
@@ -123,15 +123,15 @@ func (d Deps) objectIndexes(ctx context.Context, inv *spec.Invocation) (*output.
 		frag  []*gosmo.IndexFragmentation
 	)
 	if tv.table != nil {
-		if idx, err = cat.TableIndexes(ctx, tv.table); err == nil {
-			if usage, err = cat.TableIndexUsage(ctx, tv.table); err == nil && mode != "" {
-				frag, err = cat.TableFragmentation(ctx, tv.table, mode)
+		if idx, err = tv.table.Indexes(ctx); err == nil {
+			if usage, err = tv.table.IndexUsage(ctx); err == nil && mode != "" {
+				frag, err = tv.table.FragmentationStats(ctx, mode)
 			}
 		}
 	} else {
-		if idx, err = cat.ViewIndexes(ctx, tv.view); err == nil {
-			if usage, err = cat.ViewIndexUsage(ctx, tv.view); err == nil && mode != "" {
-				frag, err = cat.ViewFragmentation(ctx, tv.view, mode)
+		if idx, err = tv.view.Indexes(ctx); err == nil {
+			if usage, err = tv.view.IndexUsage(ctx); err == nil && mode != "" {
+				frag, err = tv.view.FragmentationStats(ctx, mode)
 			}
 		}
 	}
@@ -207,6 +207,7 @@ func (d Deps) objectIndexes(ctx context.Context, inv *spec.Invocation) (*output.
 			bitCell(i.IsHypothetical)}, i.IndexID))
 	}
 	set.TotalRowCount = len(set.Rows)
+	hiddenFilters(res, "index(es)", hiddenIndexFilters(idx))
 	res.Fields = objectFields(o)
 	if mode != "" {
 		res.Fields = append(res.Fields, output.Field{Key: "fragmentationMode", Value: string(mode)})
@@ -229,7 +230,7 @@ func statOrigin(st *gosmo.Statistic) string {
 
 func (d Deps) objectStats(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	cat, o, tv, done, err := d.lookupTableOrView(ctx, inv, res, "statistics")
+	o, tv, done, err := d.lookupTableOrView(ctx, inv, res, "statistics")
 	if err != nil {
 		return res, err
 	}
@@ -237,9 +238,9 @@ func (d Deps) objectStats(ctx context.Context, inv *spec.Invocation) (*output.Re
 
 	var stats []*gosmo.Statistic
 	if tv.table != nil {
-		stats, err = cat.TableStatistics(ctx, tv.table)
+		stats, err = tv.table.Statistics(ctx)
 	} else {
-		stats, err = cat.ViewStatistics(ctx, tv.view)
+		stats, err = tv.view.Statistics(ctx)
 	}
 	if err != nil {
 		return res, readError(err)
@@ -254,8 +255,9 @@ func (d Deps) objectStats(ctx context.Context, inv *spec.Invocation) (*output.Re
 		{Name: "no_recompute", Type: "bit"}, {Name: "incremental", Type: "bit"},
 	}}
 	unread := 0
+	var hiddenStats []string // filtered statistics whose filter the login cannot read
 	for _, st := range stats {
-		cols, err := cat.StatisticColumns(ctx, st)
+		cols, err := st.Columns(ctx)
 		if err != nil {
 			return res, readError(err)
 		}
@@ -272,8 +274,13 @@ func (d Deps) objectStats(ctx context.Context, inv *spec.Invocation) (*output.Re
 			props = []*string{ptr(gridTime(st.LastUpdated)), int64Cell(st.TotalRows), int64Cell(st.RowsSampled), pct,
 				ptr(strconv.Itoa(st.Steps)), int64Cell(st.ModificationCounter)}
 		}
+		// gosmo reads a hidden filter_definition as "" (has_filter still 1);
+		// no filter is empty, so that is the hidden one.
 		var filter *string
-		if st.HasFilter {
+		switch {
+		case st.HasFilter && st.FilterDef == "":
+			hiddenStats = append(hiddenStats, st.Name)
+		case st.HasFilter:
 			filter = ptr(st.FilterDef)
 		}
 		r := []*string{ptr(st.Name), ptr(strconv.Itoa(st.StatID)), ptr(strings.Join(cols, ", ")), ptr(statOrigin(st)), filter}
@@ -281,6 +288,7 @@ func (d Deps) objectStats(ctx context.Context, inv *spec.Invocation) (*output.Re
 		set.Rows = append(set.Rows, append(r, bitCell(st.NoRecompute), bitCell(st.IsIncremental)))
 	}
 	set.TotalRowCount = len(set.Rows)
+	hiddenFilters(res, "statistic(s)", hiddenStats)
 	if unread > 0 {
 		// The catalog cannot tell the two apart: a login the DMF refuses
 		// gets no row for any statistic.

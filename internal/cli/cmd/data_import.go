@@ -181,6 +181,8 @@ func readTruncate(inv *spec.Invocation) (bool, error) {
 		if inv.Given[optConfirm] {
 			msg += fmt.Sprintf("; --confirm %q is not the table as given", confirm)
 		}
+		// Logged as the ddl gateClass would have checked.
+		inv.Audit.Class = spec.ClassDDL
 		return false, output.NewError(output.CodeBlocked, msg, "Add --confirm "+table+" to accept it.")
 	}
 	return true, nil
@@ -321,7 +323,7 @@ func (s *dataSource) cellParser(c *gosmo.Column, base string, codePage func(stri
 	if c.ColumnEncryptionKey != "" {
 		return nil, unsupported("an Always Encrypted column is loaded only by a client holding its key")
 	}
-	tc := query.TargetColumn{Type: base, Length: c.MaxLength, Precision: c.Precision, Scale: c.Scale}
+	tc := gosmo.BulkColumn{Type: base, Length: c.MaxLength, Precision: c.Precision, Scale: c.Scale}
 	switch base {
 	case "nchar", "nvarchar":
 		if tc.Length > 0 {
@@ -427,7 +429,7 @@ func (d Deps) dataImport(ctx context.Context, inv *spec.Invocation) (*output.Res
 	}
 	truncate, err := readTruncate(inv)
 	if err != nil {
-		return nil, err
+		return nil, d.confirmRefusal(inv, err)
 	}
 	timeout, err := readTimeout(inv)
 	if err != nil {

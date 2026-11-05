@@ -152,3 +152,14 @@ reason:
 The harness shows the page asked the right things and built the right request —
 never that the T-SQL is valid. Statement text is gosmo's tests; acceptance is a
 live run.
+
+**The command line's `object` group runs real gosmo over `gosmotest`.**
+gosmo's exported fake driver answers each query from the first rule whose
+text it contains, with a database read's transport stripped (`Query.Database`
+says where it ran). `internal/cli/object_server_test.go` is the server: its
+rows are positional, column for column in gosmo's SELECT order, each read's
+built by one encoder (`columnRow`, `indexRow`, `statisticRow`, …), so a gosmo
+change to a query's shape or scan fails the CLI test — a faked `cmd.Catalog`
+method passes it. A query no rule answers fails the test naming the query;
+add a rule, don't loosen the match. Every other group still fakes
+`cmd.Catalog`/`cmd.Writer` (`docs/open-threads.md` § Command line).

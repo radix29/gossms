@@ -8,6 +8,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -198,7 +199,7 @@ func NewLogViewer(app *App, sc *db.ServerConn, logType gosmo.ErrorLogType, logNu
 	// Message takes whatever Date and Source leave rather than its own longest
 	// entry.
 	grid.SetFillLastColumn(true)
-	grid.SetStatusStyle(resultsStatusStyle)
+	grid.SetStatusStyle(theme.StyleGridStatus)
 	grid.OnCopyRequest = app.copyWithStatus
 	grid.SetMaxCellWidth(app.cfg.MaxCellLength + 2)
 	lv := new(LogViewer{

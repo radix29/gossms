@@ -13,6 +13,9 @@ type Palette struct {
 	BorderActive  tcell.Color
 	Splitter      tcell.Color
 	SplitterHover tcell.Color
+	// StatusBarText is text on StatusBar. Its own role, not SelectedText: the
+	// status bar is an accent ground in Dark and Light but mc's plain cyan bar.
+	StatusBarText tcell.Color
 
 	// Text
 	Text          tcell.Color
@@ -31,6 +34,9 @@ type Palette struct {
 	// Menu
 	MenuSelected tcell.Color
 	MenuHover    tcell.Color
+	// MenuSelectedText is text on MenuSelected: the highlighted menu row, a
+	// hovered toolbar button, Activity Monitor's selected tab.
+	MenuSelectedText tcell.Color
 	// MenuText, MenuTextDim and MenuLine are text, hints and rules on a MenuBar
 	// ground — menus, toolbars, tab strips and panel title bars. Not Text: in
 	// the mc themes the bars are cyan while panels are blue, and one
@@ -46,6 +52,10 @@ type Palette struct {
 	GridBorder   tcell.Color
 	// GridHeaderText is column-heading text on GridHeader.
 	GridHeaderText tcell.Color
+	// GridStatusBg and GridStatusText are the results grids' status line and the
+	// toolbar's tooltip, SSMS's yellow execution status bar.
+	GridStatusBg   tcell.Color
+	GridStatusText tcell.Color
 
 	// Editor
 	EditorBg      tcell.Color
@@ -58,6 +68,8 @@ type Palette struct {
 	// EditorMatch backs every find/replace hit except the current one, which
 	// wears the selection colour; the two must stay distinguishable.
 	EditorMatch tcell.Color
+	// EditorMatchText is text on EditorMatch.
+	EditorMatchText tcell.Color
 
 	// Dialog
 	DialogBg      tcell.Color
@@ -81,6 +93,8 @@ type Palette struct {
 	ButtonFg     tcell.Color
 	ButtonActive tcell.Color
 	ButtonHover  tcell.Color
+	// ButtonActiveText is a focused button's label on ButtonActive.
+	ButtonActiveText tcell.Color
 
 	// Input
 	InputBg      tcell.Color
@@ -121,6 +135,10 @@ type Palette struct {
 	ChartAxis      tcell.Color
 	ChartPlotBg    tcell.Color
 	ChartSectionBg tcell.Color
+	// ChartHeading is a chart's title and its section strip's text, on PanelBg
+	// and ChartSectionBg. Not ChartCyan: a series colour bright enough to plot
+	// on Light's white well is too pale to read as text there.
+	ChartHeading tcell.Color
 }
 
 // Default is the built-in SSMS dark theme.
@@ -133,6 +151,7 @@ var Default = Palette{
 	BorderActive:  tcell.NewRGBColor(0, 122, 204),
 	Splitter:      tcell.NewRGBColor(63, 63, 70),
 	SplitterHover: tcell.NewRGBColor(0, 122, 204),
+	StatusBarText: tcell.NewRGBColor(255, 255, 255),
 
 	Text:          tcell.NewRGBColor(220, 220, 220),
 	TextDim:       tcell.NewRGBColor(150, 150, 150),
@@ -143,26 +162,30 @@ var Default = Palette{
 	TreeSelected: tcell.NewRGBColor(0, 122, 204),
 	TreeHover:    tcell.NewRGBColor(62, 62, 64),
 
-	MenuSelected: tcell.NewRGBColor(0, 122, 204),
-	MenuHover:    tcell.NewRGBColor(62, 62, 64),
-	MenuText:     tcell.NewRGBColor(220, 220, 220),
-	MenuTextDim:  tcell.NewRGBColor(150, 150, 150),
-	MenuLine:     tcell.NewRGBColor(63, 63, 70),
+	MenuSelected:     tcell.NewRGBColor(0, 122, 204),
+	MenuHover:        tcell.NewRGBColor(62, 62, 64),
+	MenuSelectedText: tcell.NewRGBColor(255, 255, 255),
+	MenuText:         tcell.NewRGBColor(220, 220, 220),
+	MenuTextDim:      tcell.NewRGBColor(150, 150, 150),
+	MenuLine:         tcell.NewRGBColor(63, 63, 70),
 
 	GridHeader:     tcell.NewRGBColor(45, 45, 48),
 	GridRowAlt:     tcell.NewRGBColor(40, 40, 42),
 	GridSelected:   tcell.NewRGBColor(0, 86, 153),
 	GridBorder:     tcell.NewRGBColor(63, 63, 70),
 	GridHeaderText: tcell.NewRGBColor(220, 220, 220),
+	GridStatusBg:   tcell.NewRGBColor(255, 255, 224),
+	GridStatusText: tcell.NewRGBColor(0, 0, 0),
 
-	EditorBg:      tcell.NewRGBColor(30, 30, 30),
-	EditorCursor:  tcell.NewRGBColor(220, 220, 220),
-	EditorKeyword: tcell.NewRGBColor(86, 156, 214),
-	EditorString:  tcell.NewRGBColor(206, 145, 120),
-	EditorComment: tcell.NewRGBColor(106, 153, 85),
-	EditorNumber:  tcell.NewRGBColor(181, 206, 168),
-	EditorLineNum: tcell.NewRGBColor(100, 100, 100),
-	EditorMatch:   tcell.NewRGBColor(88, 76, 22),
+	EditorBg:        tcell.NewRGBColor(30, 30, 30),
+	EditorCursor:    tcell.NewRGBColor(220, 220, 220),
+	EditorKeyword:   tcell.NewRGBColor(86, 156, 214),
+	EditorString:    tcell.NewRGBColor(206, 145, 120),
+	EditorComment:   tcell.NewRGBColor(106, 153, 85),
+	EditorNumber:    tcell.NewRGBColor(181, 206, 168),
+	EditorLineNum:   tcell.NewRGBColor(100, 100, 100),
+	EditorMatch:     tcell.NewRGBColor(88, 76, 22),
+	EditorMatchText: tcell.NewRGBColor(255, 255, 255),
 
 	DialogBg:            tcell.NewRGBColor(45, 45, 48),
 	DialogBorder:        tcell.NewRGBColor(0, 122, 204),
@@ -176,10 +199,11 @@ var Default = Palette{
 	DialogError:         tcell.NewRGBColor(220, 50, 50),
 	DialogWarning:       tcell.NewRGBColor(220, 180, 50),
 
-	ButtonBg:     tcell.NewRGBColor(63, 63, 70),
-	ButtonFg:     tcell.NewRGBColor(220, 220, 220),
-	ButtonActive: tcell.NewRGBColor(0, 122, 204),
-	ButtonHover:  tcell.NewRGBColor(80, 80, 85),
+	ButtonBg:         tcell.NewRGBColor(63, 63, 70),
+	ButtonFg:         tcell.NewRGBColor(220, 220, 220),
+	ButtonActive:     tcell.NewRGBColor(0, 122, 204),
+	ButtonHover:      tcell.NewRGBColor(80, 80, 85),
+	ButtonActiveText: tcell.NewRGBColor(255, 255, 255),
 
 	InputBg:      tcell.NewRGBColor(51, 51, 55),
 	InputFg:      tcell.NewRGBColor(220, 220, 220),
@@ -206,6 +230,7 @@ var Default = Palette{
 	ChartAxis:      tcell.NewRGBColor(150, 150, 150),
 	ChartPlotBg:    tcell.NewRGBColor(0, 0, 0),
 	ChartSectionBg: tcell.NewRGBColor(66, 66, 72),
+	ChartHeading:   tcell.NewRGBColor(78, 205, 196),
 }
 
 // mcColors is the 16-colour set a Midnight Commander skin names, plus the two
@@ -272,7 +297,9 @@ var MCRetro = mcSkin(vgaColors)
 // mcSkin follows mc's default skin (/usr/share/mc/skins/default.ini) in the
 // colour set c: light grey on blue panels and editor, black on light grey
 // dialogs, cyan menus, input fields and selection, yellow headers, and the
-// editor colours of mc's sql.syntax.
+// editor colours of mc's sql.syntax. Text on the cyan grounds that stand for an
+// accent (status bar, focused button, selection) is black, as mc's statusbar,
+// dfocus and selected are; white there falls below 3:1 in VGA colours.
 func mcSkin(c mcColors) Palette {
 	return Palette{
 		Background:    c.Blue,
@@ -283,6 +310,7 @@ func mcSkin(c mcColors) Palette {
 		BorderActive:  c.BrightCyan,
 		Splitter:      c.Blue,
 		SplitterHover: c.BrightCyan,
+		StatusBarText: c.Black,
 
 		Text:          c.LightGray,
 		TextDim:       c.Cyan,
@@ -293,11 +321,12 @@ func mcSkin(c mcColors) Palette {
 		TreeSelected: c.Cyan,
 		TreeHover:    c.PanelShade,
 
-		MenuSelected: c.Black,
-		MenuHover:    c.Black,
-		MenuText:     c.Black,
-		MenuTextDim:  c.Gray,
-		MenuLine:     c.White,
+		MenuSelected:     c.Black,
+		MenuHover:        c.Black,
+		MenuSelectedText: c.White,
+		MenuText:         c.Black,
+		MenuTextDim:      c.Gray,
+		MenuLine:         c.White,
 
 		// GridRowAlt is a shade off the panel blue; mc has no zebra striping, but a
 		// wide result grid is unreadable without it.
@@ -306,15 +335,18 @@ func mcSkin(c mcColors) Palette {
 		GridSelected:   c.Cyan,
 		GridBorder:     c.LightGray,
 		GridHeaderText: c.Yellow,
+		GridStatusBg:   c.Yellow,
+		GridStatusText: c.Black,
 
-		EditorBg:      c.Blue,
-		EditorCursor:  c.White,
-		EditorKeyword: c.Yellow,
-		EditorString:  c.Green,
-		EditorComment: c.Brown,
-		EditorNumber:  c.BrightCyan,
-		EditorLineNum: c.Cyan,
-		EditorMatch:   c.Green,
+		EditorBg:        c.Blue,
+		EditorCursor:    c.White,
+		EditorKeyword:   c.Yellow,
+		EditorString:    c.Green,
+		EditorComment:   c.Brown,
+		EditorNumber:    c.BrightCyan,
+		EditorLineNum:   c.Cyan,
+		EditorMatch:     c.Green,
+		EditorMatchText: c.Black,
 
 		DialogBg:            c.LightGray,
 		DialogBorder:        c.Black,
@@ -328,10 +360,11 @@ func mcSkin(c mcColors) Palette {
 		DialogError:         c.Red,
 		DialogWarning:       c.Brown,
 
-		ButtonBg:     c.LightGray,
-		ButtonFg:     c.Black,
-		ButtonActive: c.Cyan,
-		ButtonHover:  c.BrightCyan,
+		ButtonBg:         c.LightGray,
+		ButtonFg:         c.Black,
+		ButtonActive:     c.Cyan,
+		ButtonHover:      c.BrightCyan,
+		ButtonActiveText: c.Black,
 
 		InputBg:      c.Cyan,
 		InputFg:      c.Black,
@@ -358,11 +391,12 @@ func mcSkin(c mcColors) Palette {
 		ChartAxis:      c.LightGray,
 		ChartPlotBg:    c.Black,
 		ChartSectionBg: c.Gray,
+		ChartHeading:   c.BrightCyan,
 	}
 }
 
 // Light is the built-in SSMS light (Blue/Light) theme. Accent backgrounds keep
-// the dark theme's blue, so the hardcoded white-on-accent styles read in both.
+// the dark theme's blue, with white text on them as in Default.
 var Light = Palette{
 	Background:    tcell.NewRGBColor(255, 255, 255),
 	MenuBar:       tcell.NewRGBColor(238, 238, 242),
@@ -372,6 +406,7 @@ var Light = Palette{
 	BorderActive:  tcell.NewRGBColor(0, 122, 204),
 	Splitter:      tcell.NewRGBColor(204, 206, 219),
 	SplitterHover: tcell.NewRGBColor(0, 122, 204),
+	StatusBarText: tcell.NewRGBColor(255, 255, 255),
 
 	Text:          tcell.NewRGBColor(30, 30, 30),
 	TextDim:       tcell.NewRGBColor(110, 110, 110),
@@ -382,26 +417,30 @@ var Light = Palette{
 	TreeSelected: tcell.NewRGBColor(0, 122, 204),
 	TreeHover:    tcell.NewRGBColor(220, 230, 244),
 
-	MenuSelected: tcell.NewRGBColor(0, 122, 204),
-	MenuHover:    tcell.NewRGBColor(220, 230, 244),
-	MenuText:     tcell.NewRGBColor(30, 30, 30),
-	MenuTextDim:  tcell.NewRGBColor(110, 110, 110),
-	MenuLine:     tcell.NewRGBColor(204, 206, 219),
+	MenuSelected:     tcell.NewRGBColor(0, 122, 204),
+	MenuHover:        tcell.NewRGBColor(220, 230, 244),
+	MenuSelectedText: tcell.NewRGBColor(255, 255, 255),
+	MenuText:         tcell.NewRGBColor(30, 30, 30),
+	MenuTextDim:      tcell.NewRGBColor(110, 110, 110),
+	MenuLine:         tcell.NewRGBColor(204, 206, 219),
 
 	GridHeader:     tcell.NewRGBColor(225, 225, 230),
 	GridRowAlt:     tcell.NewRGBColor(236, 236, 240),
-	GridSelected:   tcell.NewRGBColor(0, 120, 215),
+	GridSelected:   tcell.NewRGBColor(0, 118, 210),
 	GridBorder:     tcell.NewRGBColor(204, 206, 219),
 	GridHeaderText: tcell.NewRGBColor(30, 30, 30),
+	GridStatusBg:   tcell.NewRGBColor(255, 255, 224),
+	GridStatusText: tcell.NewRGBColor(0, 0, 0),
 
-	EditorBg:      tcell.NewRGBColor(255, 255, 255),
-	EditorCursor:  tcell.NewRGBColor(30, 30, 30),
-	EditorKeyword: tcell.NewRGBColor(0, 0, 255),
-	EditorString:  tcell.NewRGBColor(163, 21, 21),
-	EditorComment: tcell.NewRGBColor(0, 128, 0),
-	EditorNumber:  tcell.NewRGBColor(9, 134, 88),
-	EditorLineNum: tcell.NewRGBColor(43, 145, 175),
-	EditorMatch:   tcell.NewRGBColor(255, 226, 130),
+	EditorBg:        tcell.NewRGBColor(255, 255, 255),
+	EditorCursor:    tcell.NewRGBColor(30, 30, 30),
+	EditorKeyword:   tcell.NewRGBColor(0, 0, 255),
+	EditorString:    tcell.NewRGBColor(163, 21, 21),
+	EditorComment:   tcell.NewRGBColor(0, 128, 0),
+	EditorNumber:    tcell.NewRGBColor(9, 134, 88),
+	EditorLineNum:   tcell.NewRGBColor(43, 145, 175),
+	EditorMatch:     tcell.NewRGBColor(255, 226, 130),
+	EditorMatchText: tcell.NewRGBColor(0, 0, 0),
 
 	// DialogOverlay is mid-grey, not black: what a modal dims is mostly light
 	// ground, which a blend toward black turns muddy.
@@ -417,10 +456,11 @@ var Light = Palette{
 	DialogError:         tcell.NewRGBColor(196, 30, 30),
 	DialogWarning:       tcell.NewRGBColor(170, 110, 0),
 
-	ButtonBg:     tcell.NewRGBColor(221, 221, 221),
-	ButtonFg:     tcell.NewRGBColor(30, 30, 30),
-	ButtonActive: tcell.NewRGBColor(0, 122, 204),
-	ButtonHover:  tcell.NewRGBColor(229, 241, 251),
+	ButtonBg:         tcell.NewRGBColor(221, 221, 221),
+	ButtonFg:         tcell.NewRGBColor(30, 30, 30),
+	ButtonActive:     tcell.NewRGBColor(0, 122, 204),
+	ButtonHover:      tcell.NewRGBColor(229, 241, 251),
+	ButtonActiveText: tcell.NewRGBColor(255, 255, 255),
 
 	InputBg:      tcell.NewRGBColor(255, 255, 255),
 	InputFg:      tcell.NewRGBColor(30, 30, 30),
@@ -447,6 +487,7 @@ var Light = Palette{
 	ChartAxis:      tcell.NewRGBColor(90, 90, 90),
 	ChartPlotBg:    tcell.NewRGBColor(255, 255, 255),
 	ChartSectionBg: tcell.NewRGBColor(218, 220, 228),
+	ChartHeading:   tcell.NewRGBColor(0, 100, 100),
 }
 
 // active is the current palette.

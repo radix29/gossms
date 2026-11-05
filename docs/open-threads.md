@@ -86,6 +86,39 @@ Settled design: `docs/decisions.md` § Format Document.
   `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
   (`detail_browser_group_schema.go`) per family.
 
+## Security and sequences: what is left
+
+- **Application roles have no Script menu.** gosmo has no
+  `ScriptApplicationRole`; Script Database Security emits the one-role form
+  privately.
+- **The owner pickers never offer an application role**, though one can own
+  a schema. `principalNames(users, roles)` feeds Owned Schemas' transfer
+  picker, New Schema, Schema Properties, the key owner pickers and
+  Full-Text.
+- **A login with no right on an application role sees the folder empty**
+  (catalog visibility).
+- **Sequences: values are int64**, so a `decimal(38,0)` sequence's range
+  past bigint can't be written. There is no Last Used Value row (gosmo's
+  `Sequence.noLastUsed` is unexported).
+
+## Theme contrast: what is left
+
+`TestEveryStyleMeetsTheContrastFloor` (`internal/tuikit/theme/contrast_test.go`)
+checks the `theme.Style*` functions only. Two colour pairs drawn elsewhere read
+below its floors (found 2026-11-04, not fixed):
+
+- **The dashboard header's instance name** (`dashboard/common.go`) is
+  `ChartCyan` on `MenuBar`: bright cyan on cyan in mc (2.2:1) and mc - retro
+  (2.3:1), and 3.5:1 in Light. It needs a foreground role for an emphasised
+  word on a `MenuBar` ground, which the palette lacks.
+- **The results status line's truncation alert** (`QueryPanel.resultsStatusStyle`)
+  is bold white on `Error`: 3.1:1 in mc - retro (VGA bright red), 4.2:1 in
+  mc. White on red is mc's own error colour.
+- **Two B1 restylings never driven** (2026-11-04): the toolbar button's hover
+  and Activity Monitor's selected tab now call `StyleMenuSelected`. Both need
+  a mouse click, which the tmux run did not make. Their colours did not
+  change in any palette, so this is the call site, not the contrast.
+
 ## Command line: what is left
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
@@ -124,25 +157,14 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   dependency order (`--objects`, `--include-permissions`) needs
   dependency-ordered scripting in gosmo first — SCHEMABINDING, cycles — a
   feature the size of a phase. Neither the TUI nor the command line has it.
-- **`object describe`'s `filter` is empty, not NULL, for a hidden filter**
-  (found 2026-10-29 in phase 6.e). Without VIEW DEFINITION
-  `sys.indexes.filter_definition` is NULL while `has_filter` is 1; gosmo now
-  reports it (`Index.IsFilterHidden`) and refuses to script such an index,
-  but `describe`'s `indexes` set, and `object indexes`, still show the
-  filter as empty — indistinguishable from an unfiltered index — with no
-  warning, unlike a hidden default or check.
-- **gosmo's `BulkInsert` passes values to go-mssqldb unchecked** (found
-  2026-10-30 in phase 6.i, live on 17 and 13). The driver wraps an int too
-  big for its column (300 into a tinyint loads 44), and sends a Go string
-  for a varchar column as its UTF-8 bytes, which the server reads in the
-  *database's* default code page (INSERT BULK declares the columns without
-  COLLATE) and converts to the column's, `?` for what it lacks. gossms's
-  import goes through `query.NewCellParser`, which checks and encodes, so
-  only other `BulkInsert` callers are exposed. Whether gosmo should convert,
-  refuse or just document this is undecided. The limit that stays: in a
-  database whose default collation is not UTF-8, a varchar column with
-  another code page cannot be bulk-loaded with characters outside the
-  database's code page (the parser refuses them by name).
+- **A bulk load cannot carry a character the database's code page lacks to
+  a varchar column whose code page has it** (found 2026-10-30 in phase 6.i,
+  live on 17 and 13). INSERT BULK declares the columns without COLLATE, so
+  the server reads char bytes in the *database's* default code page and
+  converts them to the column's. In a database whose default collation is
+  not UTF-8, `Ж` cannot reach a Cyrillic varchar column of a Latin1
+  database; gosmo's `BulkInsert` (which since 2026-11-04 checks and encodes
+  every value) refuses it by name rather than storing `?`.
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.
@@ -154,19 +176,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
   one line per write or refusal for ever. Deferred by decision; a size cap
   with one `.1` generation, taken under the same lock, is the likely form.
-- **A `--confirm` refusal's audit line has no target** (phase 8, found in
-  8.e): `db drop`, `db set --rollback-immediate`, `monitor kill` and `data
-  import --truncate-first` check `--confirm` before `gate`, so `noteTarget`
-  never runs and the `BLOCKED` line carries empty `server`, `database` and
-  `login`. Calling `noteTarget` (or the check) ahead of the refusal, or
-  `logCall` filling an empty target through `connect.Describe`, would fix
-  all four at once.
-- **An application role cannot be a `security grant/deny/revoke` or `role
-  add-member` principal** (phase 8, 8.g): `resolvePrincipal` looks up a
-  user, then a database role, so an application role is `NOT_FOUND`, exit
-  8, though SQL Server accepts it. A third lookup (gosmo
-  `ApplicationRoleByName`) in database scope would fix it; `security
-  permissions` shares the gap.
 - **The `job` commands need sysadmin in practice** (phase 8, found in
   8.h): gosmo's job reads (`Jobs`, `JobByName`, `Steps`, `History`,
   `SearchJobHistory`) SELECT from msdb's `sysjobs`, `sysjobservers`,
@@ -187,6 +196,23 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `maint backup`'s and `checkdb`'s rows answer for the connection's
   database, not the `<database>` argument. Probing IMPERSONATE ANY LOGIN and
   CREATE DATABASE in master in gosmo would narrow the first and close the second.
+
+- **Only the `object` group is off the `Catalog` seam** (2026-11-04, the
+  pilot of review Q1 option A). Past connecting and resolving the name,
+  `object list/search/describe/definition/dependencies/indexes/stats` call
+  gosmo directly, and their tests serve gosmo canned rows through gosmo's
+  `gosmotest`; `Catalog` lost the 27 methods only they read, and
+  `serverCatalog` about 150 lines of delegation. The cost, measured: the
+  object fakes (about 500 lines) became a 624-line row server, since each
+  read needs its full row (41 values for a column, 39 for an index); the
+  trimmed `objectFake` (`catalog_fake_test.go`) stays for the data, script
+  and import tests. Five mutations, three of them in gosmo's scanning, each
+  failed an object test; under the fakes the gosmo ones passed every test.
+  Still on the seam: everything else — the shared reads in `Catalog`
+  (resolution, tables' and views' children for data, grants and maint
+  index), and all of `Writer`. Whether to move the rest group by group is the
+  author's call. `internal/tui/fakedb_test.go` is a second, older scripted
+  driver of the same kind; it could move onto `gosmotest` too.
 
 ## Fix order
 

@@ -345,6 +345,7 @@ func TestSecurityGrantPerClass(t *testing.T) {
 		{"SELECT --on vOrders --columns Total", "VIEW", "dbo", "vOrders", "GRANT SELECT ([Total]) ON [dbo].[vOrders] TO [etl_user]"},
 		{"SELECT --on SCHEMA::Sales --to readers --with-grant-option", "SCHEMA", "", "Sales",
 			"GRANT SELECT ON SCHEMA::[Sales] TO [readers] WITH GRANT OPTION"},
+		{"EXECUTE --on SCHEMA::Sales --to billing_app", "SCHEMA", "", "Sales", "GRANT EXECUTE ON SCHEMA::[Sales] TO [billing_app]"},
 	} {
 		argv := "grant " + tc.argv + " --allow admin --dry-run"
 		if !strings.Contains(tc.argv, "--to") {
@@ -617,6 +618,15 @@ func TestSecurityRoleMember(t *testing.T) {
 	// Already a member: said, still sent.
 	if fieldValue(res, "memberType") != "DATABASE_ROLE" || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "already a member") {
 		t.Errorf("type %q, warnings %q", fieldValue(res, "memberType"), res.Warnings)
+	}
+	// An application role as the member.
+	res, _, err = runPerm(t, newPermCatalog(), &permWriter{}, "role add-member reporting billing_app --allow admin --dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(fieldValue(res, "tsql")); !strings.Contains(got, "ALTER ROLE [reporting] ADD MEMBER [billing_app]") ||
+		fieldValue(res, "memberType") != "APPLICATION_ROLE" {
+		t.Errorf("tsql %q, type %q", got, fieldValue(res, "memberType"))
 	}
 	res, _, err = runPerm(t, newPermCatalog(), &permWriter{}, "role remove-member monitoring sa --scope server --allow admin --dry-run")
 	if err != nil {

@@ -262,3 +262,31 @@ func TestConcurrentTrackedSavesDoNotLoseEachOther(t *testing.T) {
 		t.Errorf("%d pins on disk, want %d — a concurrent save dropped some", got, 2*rounds)
 	}
 }
+
+// S1: base is a deep copy, so a setting changed in place — a map entry, or a
+// slice inside one — still differs from it and is saved. A shallow snapshot
+// shares the map, compares equal to itself, and drops the change.
+func TestSaveKeepsASettingChangedInPlace(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	c := Load()
+	c.XEventHiddenColumns = map[string][]string{"s": {"name"}}
+	c.XEventViewSettings = map[string]XEventViewSetting{"v": {Hidden: []string{"a"}}}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	c.XEventHiddenColumns["s"][0] = "timestamp"
+	c.XEventHiddenColumns["t"] = []string{"action:x"}
+	c.XEventViewSettings["v"].Hidden[0] = "b"
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := Load()
+	if h := got.XEventHiddenColumns; !slices.Equal(h["s"], []string{"timestamp"}) || !slices.Equal(h["t"], []string{"action:x"}) {
+		t.Errorf("XEventHiddenColumns = %v, want s:[timestamp] t:[action:x]", h)
+	}
+	if v := got.XEventViewSettings["v"].Hidden; !slices.Equal(v, []string{"b"}) {
+		t.Errorf("XEventViewSettings[v].Hidden = %v, want [b]", v)
+	}
+}

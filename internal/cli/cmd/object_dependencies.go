@@ -68,7 +68,7 @@ func (d Deps) objectDependencies(ctx context.Context, inv *spec.Invocation) (*ou
 			"Give --depth 1 for the object's own edges, up to 5.")
 	}
 	res := &output.Result{}
-	cat, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -77,10 +77,10 @@ func (d Deps) objectDependencies(ctx context.Context, inv *spec.Invocation) (*ou
 	direction := inv.Values[optDirection].(string)
 	var edges []depEdge
 	if direction != dirUsedBy {
-		edges, err = walkDependencies(ctx, dbase, o, depth, dirUses, cat.Dependencies, edges)
+		edges, err = walkDependencies(ctx, o, depth, dirUses, dbase.Dependencies, edges)
 	}
 	if err == nil && direction != dirUses {
-		edges, err = walkDependencies(ctx, dbase, o, depth, dirUsedBy, cat.Dependents, edges)
+		edges, err = walkDependencies(ctx, o, depth, dirUsedBy, dbase.Dependents, edges)
 	}
 	if err != nil {
 		e := readError(err)
@@ -113,15 +113,15 @@ func (d Deps) objectDependencies(ctx context.Context, inv *spec.Invocation) (*ou
 // from root within depth levels (D7). Each object is expanded once: an edge
 // back to one already reached — a cycle, or two paths to it — is listed but
 // not followed again. Catalog names are compared exactly.
-func walkDependencies(ctx context.Context, dbase *gosmo.Database, root *gosmo.ObjectInfo, depth int, direction string,
-	read func(context.Context, *gosmo.Database, string, string) ([]*gosmo.Dependency, error), edges []depEdge) ([]depEdge, error) {
+func walkDependencies(ctx context.Context, root *gosmo.ObjectInfo, depth int, direction string,
+	read func(context.Context, string, string) ([]*gosmo.Dependency, error), edges []depEdge) ([]depEdge, error) {
 	type node struct{ schema, name string }
 	seen := map[node]bool{{root.Schema, root.Name}: true}
 	level := []node{{root.Schema, root.Name}}
 	for l := 1; l <= depth && len(level) > 0; l++ {
 		var next []node
 		for _, n := range level {
-			deps, err := read(ctx, dbase, n.schema, n.name)
+			deps, err := read(ctx, n.schema, n.name)
 			if err != nil {
 				return nil, err
 			}

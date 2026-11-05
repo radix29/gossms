@@ -1,3 +1,5 @@
+- new server and database roles dialog
+
 Results:
 -	Images
 -	Geo/GIS data?

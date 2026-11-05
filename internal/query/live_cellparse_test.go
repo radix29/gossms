@@ -80,7 +80,7 @@ func TestLiveCellParseRoundTrip(t *testing.T) {
 	for _, values := range liveCellRows {
 		if !utf8DB {
 			// A Latin1 database's bulk load cannot carry Japanese or
-			// Cyrillic to a varchar column (TargetColumn.DatabaseCodePage).
+			// Cyrillic to a varchar column (gosmo.BulkColumn.DatabaseCodePage).
 			values = strings.NewReplacer("N'日本語', N'Жизнь'", "'abc', 'def'", "N'ｱｲｳ', N'ёЁ'", "'ghi', 'jkl'").Replace(values)
 		}
 		liveExec(t, ctx, db, "INSERT dbo.Src VALUES ("+values+")")
@@ -298,7 +298,7 @@ func liveGrid(t *testing.T, ctx context.Context, db *sql.DB, table string) Resul
 
 // liveTargetColumns reads table's columns as NewCellParser takes them — what
 // data import will do from the catalog.
-func liveTargetColumns(t *testing.T, ctx context.Context, db *sql.DB, table string) []TargetColumn {
+func liveTargetColumns(t *testing.T, ctx context.Context, db *sql.DB, table string) []gosmo.BulkColumn {
 	t.Helper()
 	rows, err := db.QueryContext(ctx, "USE "+liveCellDB+`;
 SELECT TYPE_NAME(c.system_type_id),
@@ -312,9 +312,9 @@ FROM sys.columns c WHERE c.object_id = OBJECT_ID(@p1) ORDER BY c.column_id`, tab
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	var cols []TargetColumn
+	var cols []gosmo.BulkColumn
 	for rows.Next() {
-		var c TargetColumn
+		var c gosmo.BulkColumn
 		if err := rows.Scan(&c.Type, &c.Length, &c.Precision, &c.Scale, &c.CodePage, &c.DatabaseCodePage); err != nil {
 			t.Fatal(err)
 		}

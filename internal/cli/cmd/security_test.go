@@ -28,6 +28,7 @@ type secCatalog struct {
 	serverPerms []*gosmo.ServerPermissionEntry
 	users       []*gosmo.User
 	dbRoles     []*gosmo.DatabaseRole
+	appRoles    []*gosmo.ApplicationRole
 	members     map[string][]*gosmo.RoleMember // role name -> members, either scope
 	dbPerms     map[string][]*gosmo.PrincipalSecurable
 	colPerms    map[string][]*gosmo.ColumnPermissionEntry
@@ -109,6 +110,10 @@ func (c *secCatalog) DatabaseRoleByName(_ context.Context, _ *gosmo.Database, na
 	return byName(c.dbRoles, func(r *gosmo.DatabaseRole) string { return r.Name }, name, "role")
 }
 
+func (c *secCatalog) ApplicationRoleByName(_ context.Context, _ *gosmo.Database, name string) (*gosmo.ApplicationRole, error) {
+	return byName(c.appRoles, func(r *gosmo.ApplicationRole) string { return r.Name }, name, "application role")
+}
+
 func (c *secCatalog) DatabaseRoleMembers(_ context.Context, _ *gosmo.Database, role string) ([]*gosmo.RoleMember, error) {
 	return c.members["db:"+role], nil
 }
@@ -168,6 +173,7 @@ func newSecCatalog() *secCatalog {
 			{Name: "reporting", Owner: "dbo", Members: []string{"etl_user", "readers"}},
 			{Name: "readers", Owner: "dbo", Members: []string{"etl_user"}},
 		},
+		appRoles: []*gosmo.ApplicationRole{{Name: "billing_app", DefaultSchema: "dbo", CreateDate: t, ModifyDate: t}},
 		members: map[string][]*gosmo.RoleMember{
 			"db:reporting":    {{Name: "etl_user", Type: gosmo.PrincipalSQLUser}, {Name: "readers", Type: gosmo.PrincipalDatabaseRole}},
 			"server:sysadmin": {{Name: `CORP\dba`, Type: gosmo.PrincipalWindowsGroup}, {Name: "sa", Type: gosmo.PrincipalSQLLogin}},
@@ -178,7 +184,8 @@ func newSecCatalog() *secCatalog {
 				{SecurableType: gosmo.SecurableSchema, Name: "Sales", Permission: "SELECT", State: gosmo.PermissionGrantWithGrantOption},
 				{SecurableType: gosmo.SecurableTable, Schema: "dbo", Name: "Orders", Permission: "DELETE", State: gosmo.PermissionDeny},
 			},
-			"readers": {{SecurableType: gosmo.SecurableSchema, Name: "dbo", Permission: "SELECT", State: gosmo.PermissionGrant}},
+			"readers":     {{SecurableType: gosmo.SecurableSchema, Name: "dbo", Permission: "SELECT", State: gosmo.PermissionGrant}},
+			"billing_app": {{SecurableType: gosmo.SecurableSchema, Name: "Sales", Permission: "EXECUTE", State: gosmo.PermissionGrant}},
 		},
 		colPerms: map[string][]*gosmo.ColumnPermissionEntry{
 			"etl_user": {{Principal: "etl_user", Schema: "dbo", Object: "Customers", ObjectType: gosmo.SecurableTable,
@@ -412,6 +419,18 @@ func TestSecurityPermissionsExplicit(t *testing.T) {
 		t.Errorf("readers memberOf %q", f.Value)
 	}
 
+	// So does an application role: after users and database roles.
+	res, err = runSecurity(t, newSecCatalog(), "permissions", "billing_app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := fieldOf(t, res, "principalType"); f.Value != "APPLICATION_ROLE" {
+		t.Errorf("billing_app type %q", f.Value)
+	}
+	if got := rowsOf(res.Sets[0]); !slices.Equal(got, []string{"SCHEMA|∅|Sales|∅|EXECUTE|GRANT"}) {
+		t.Errorf("billing_app rows %q", got)
+	}
+
 	// Server scope: only the login's own entries.
 	res, err = runSecurity(t, newSecCatalog(), "permissions", "etl", "--scope", "server")
 	if err != nil {
@@ -456,7 +475,7 @@ func TestSecurityPermissionsEffective(t *testing.T) {
 	}
 
 	// A role cannot be impersonated: a usage error before any EXECUTE AS.
-	for _, argv := range [][]string{{"readers"}, {"sysadmin", "--scope", "server"}} {
+	for _, argv := range [][]string{{"readers"}, {"billing_app"}, {"sysadmin", "--scope", "server"}} {
 		cat := newSecCatalog()
 		_, err := runSecurity(t, cat, append(append([]string{"permissions"}, argv...), "--effective")...)
 		e := wantCode(t, err, output.CodeUsageError)
@@ -465,6 +484,10 @@ func TestSecurityPermissionsEffective(t *testing.T) {
 		}
 		if len(cat.effAsked) != 0 {
 			t.Errorf("%q: impersonated %q", argv, cat.effAsked)
+		}
+		// An application role has no member to suggest.
+		if member := strings.Contains(e.Hint, "that is a member"); member != (argv[0] != "billing_app") {
+			t.Errorf("%q: hint %q", argv, e.Hint)
 		}
 	}
 }
@@ -499,6 +522,7 @@ func TestSecurityPermissionsNotFound(t *testing.T) {
 		{[]string{"monitoring"}, "is a server role: add --scope server"},
 		{[]string{"etl_user", "--scope", "server"}, "is a user of database [app]: drop --scope server"},
 		{[]string{"readers", "--scope", "server"}, "is a role of database [app]: drop --scope server"},
+		{[]string{"billing_app", "--scope", "server"}, "is an application role of database [app]: drop --scope server"},
 		{[]string{"nosuch"}, "security users list and security roles list"},
 	} {
 		_, err := runSecurity(t, newSecCatalog(), append([]string{"permissions"}, tc.argv...)...)

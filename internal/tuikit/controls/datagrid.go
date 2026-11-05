@@ -119,10 +119,10 @@ type DataGrid struct {
 	status    string
 	active    bool
 
-	// statusStyle overrides the status bar's default GridHeader/TextDim look
-	// when hasStatusStyle is set — the query-results grid's yellow bar.
-	statusStyle    tcell.Style
-	hasStatusStyle bool
+	// statusStyle, when set, overrides the status bar's default
+	// GridHeader/TextDim look — the query-results grid's yellow bar. A func,
+	// called at draw time, so the bar follows a live theme switch.
+	statusStyle func() tcell.Style
 
 	// cellCursor is opt-in. Disabled (the default), Left/Right scroll wide
 	// grids horizontally and whole rows highlight; enabled, they move selCol
@@ -472,10 +472,11 @@ func (g *DataGrid) SetStatus(msg string) { g.status = msg }
 func (g *DataGrid) Status() string { return g.status }
 
 // SetStatusStyle overrides the status bar's background/foreground in place of
-// the theme's default GridHeader/TextDim look, for this grid only.
-func (g *DataGrid) SetStatusStyle(style tcell.Style) {
+// the theme's default GridHeader/TextDim look, for this grid only. Draw calls
+// style each time, so pass a function such as theme.StyleGridStatus, not a
+// style computed once: that would keep the palette of its moment.
+func (g *DataGrid) SetStatusStyle(style func() tcell.Style) {
 	g.statusStyle = style
-	g.hasStatusStyle = true
 }
 
 // SelectedRow returns the currently selected row index, or -1 if empty.

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/radix29/gosmo/tsql"
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/tuikit/sqltext"
 )
@@ -42,6 +43,9 @@ const (
 	// FlagOutput: a DML statement with an OUTPUT clause, whose row count arrives
 	// after its OUTPUT rows and so reads like a SELECT's (query.RowCount).
 	FlagOutput
+	// FlagSequence: NEXT VALUE FOR, which advances a sequence outside any
+	// transaction — a rollback does not undo it (docs/cli.md § Transactions).
+	FlagSequence
 )
 
 var flagNames = []struct {
@@ -55,6 +59,7 @@ var flagNames = []struct {
 	{FlagExec, "exec"},
 	{FlagModeOption, "mode-option"},
 	{FlagOutput, "output-clause"},
+	{FlagSequence, "sequence-advance"},
 }
 
 // Has reports whether every flag in g is set in f.
@@ -210,16 +215,15 @@ func lexBatch(text string, startLine int) ([]token, []int) {
 	return toks, cuts
 }
 
-// unquote strips a [bracketed] or "quoted" identifier's delimiters and undoubles
-// its closing one; an unterminated one keeps what is there.
+// unquote is a [bracketed] or "quoted" identifier token's name: gosmo's
+// scanner reads raw as one span and Unescape undoubles its closer. An
+// unterminated one (the script ends inside it) runs to the end, which
+// tsql.UnquoteName would instead return unchanged, delimiter and all.
 func unquote(raw string) string {
-	closer := "]"
-	if raw[0] == '"' {
-		closer = `"`
+	for sp := range tsql.Spans(raw) {
+		return sp.Unescape(raw)
 	}
-	s := raw[1:]
-	s = strings.TrimSuffix(s, closer)
-	return strings.ReplaceAll(s, closer+closer, closer)
+	return raw
 }
 
 // classifyBatch classifies one GO batch's statements.
@@ -649,7 +653,9 @@ func setStatement(st *Statement, toks []token) {
 
 // floor raises st to the class of any keyword in it (docs/cli.md § Safety), so a
 // statement the splitter merged into this one still counts, and classifies every
-// EXEC inside it (INSERT … EXEC). Read contexts are exempt: FOR UPDATE, a
+// EXEC inside it (INSERT … EXEC). NEXT VALUE FOR is write: a SELECT of it
+// advances the sequence, for good. The floor is the three-word phrase, so a
+// column named next stays read. Read contexts are exempt: FOR UPDATE, a
 // trigger's UPDATE(col), a MERGE join or union hint, FETCH … INTO. (A foreign
 // key's ON DELETE/UPDATE needs none: it only stands in DDL, which outranks.)
 func floor(st *Statement, toks []token) {
@@ -686,6 +692,10 @@ func floor(st *Statement, toks []token) {
 		case w == "SP_EXECUTESQL":
 			st.Flags |= FlagDynamic
 			st.raise(spec.ClassWrite, "dynamic SQL is not classified"+at)
+			continue
+		case w == "NEXT" && next.is("VALUE") && i+2 < len(toks) && toks[i+2].is("FOR"):
+			st.Flags |= FlagSequence
+			st.raise(spec.ClassWrite, "NEXT VALUE FOR advances a sequence, which no rollback undoes"+at)
 			continue
 		}
 		c, ok := floorWords[w]

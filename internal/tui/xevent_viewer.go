@@ -6,6 +6,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/xevent"
 )
 
@@ -120,7 +121,7 @@ const (
 func NewXEventViewer(app *App, host *db.ServerConn, session, target string, live bool) *XEventViewer {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
-	grid.SetStatusStyle(resultsStatusStyle)
+	grid.SetStatusStyle(theme.StyleGridStatus)
 	grid.OnCopyRequest = app.copyWithStatus
 	grid.SetMaxCellWidth(app.cfg.MaxCellLength + 2)
 	v := new(XEventViewer{

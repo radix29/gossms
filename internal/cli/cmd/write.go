@@ -393,6 +393,19 @@ func noteTarget(inv *spec.Invocation, cfg *config.Config, profile string) {
 	inv.Audit.Server, inv.Audit.Database, inv.Audit.Login = connect.Describe(inv, cfg, profile)
 }
 
+// confirmRefusal is err, a command's --confirm check made before gate,
+// after noting where the call would connect when err refuses it (BLOCKED):
+// the refusal's audit line then names its target as a gated one does. A
+// profile that cannot be read leaves the target empty; the refusal stands.
+func (d Deps) confirmRefusal(inv *spec.Invocation, err error) error {
+	if e, ok := errors.AsType[*output.Error](err); ok && e.Code == output.CodeBlocked {
+		if cfg, profile, _, perr := d.profileCeiling(inv); perr == nil {
+			noteTarget(inv, cfg, profile)
+		}
+	}
+	return err
+}
+
 // checkAudit is the audit log's check before a change (docs/cli.md § Audit
 // log): a log that cannot be written refuses the call, since the guardrail
 // is not optional. Nil when it can, or when there is no log (tests).

@@ -56,6 +56,10 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"SELECT \"insert\" FROM t", read},
 		{"SELECT @update, #delete.x FROM #delete", read},
 		{"SELECT login FROM app.users", read},
+		{"SELECT next, value FROM t FOR XML PATH", read},
+		{"SELECT [next] value FOR XML PATH", read},
+		{"SELECT 'NEXT VALUE FOR s' -- NEXT VALUE FOR s", read},
+		{"FETCH NEXT FROM c INTO @v", read},
 		{"", read},
 		{"-- only a comment", read},
 
@@ -92,6 +96,11 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"EXEC ('SELECT 1') AT linked", write},
 		{"SELECT * FROM OPENQUERY(linked, 'SELECT 1')", write},
 		{"SELECT * FROM OPENROWSET('SQLNCLI', 'x', 'SELECT 1')", write},
+		{"SELECT NEXT VALUE FOR dbo.seq", write},
+		{"select next   value\nfor [dbo].[seq]", write},
+		{"SELECT NEXT VALUE FOR s OVER (ORDER BY name) FROM sys.objects", write},
+		{"DECLARE @n bigint = NEXT VALUE FOR s", write},
+		{"SET @n = NEXT VALUE FOR s", write},
 		{"RECEIVE TOP (1) * FROM q", write},
 		{"BEGIN DIALOG @h FROM SERVICE s TO SERVICE 't'", write},
 		{"FOO BAR", write}, // unknown at batch start: an implicit EXEC of FOO
@@ -320,6 +329,8 @@ func TestClassifyFlags(t *testing.T) {
 		{"SET SHOWPLAN_ALL ON", FlagModeOption},
 		{"UPDATE t SET a = 1 OUTPUT inserted.a", FlagOutput},
 		{"DELETE t OUTPUT deleted.*", FlagOutput},
+		{"SELECT NEXT VALUE FOR dbo.seq", FlagSequence},
+		{"INSERT t (id) VALUES (NEXT VALUE FOR s)", FlagSequence},
 	} {
 		if got := Classify(tt.script).Flags; !got.Has(tt.want) {
 			t.Errorf("Classify(%q).Flags = %v, want %v among them", tt.script, got.Names(), tt.want.Names())
@@ -332,6 +343,7 @@ func TestClassifyFlags(t *testing.T) {
 		{"SET NOCOUNT OFF", 0},
 		{"SET NOEXEC OFF", 0},
 		{"SELECT 1", 0},
+		{"SELECT next, value FROM t FOR XML PATH", 0},
 		{"EXEC sp_who2", 0},
 		{"BEGIN TRY SELECT 1 END TRY BEGIN CATCH END CATCH", 0},
 		{"ALTER TABLE t ADD c int", 0},
@@ -365,5 +377,25 @@ func TestClassifyReasons(t *testing.T) {
 func TestRank(t *testing.T) {
 	if !(Rank(read) < Rank(write) && Rank(write) < Rank(ddl) && Rank(ddl) < Rank(admin)) || Rank("nope") != -1 {
 		t.Error("Rank does not order read < write < ddl < admin")
+	}
+}
+
+// TestUnquote pins a quoted identifier token's name, unterminated ones (a
+// script that ends inside one) included: those keep what follows the opener.
+func TestUnquote(t *testing.T) {
+	for _, c := range []struct{ raw, want string }{
+		{"[t]", "t"},
+		{"[a]]b]", "a]b"},
+		{"[a]]]", "a]"},
+		{`"a""b"`, `a"b`},
+		{`"a]b"`, "a]b"},
+		{"[a b", "a b"},
+		{"[a]]", "a]"},
+		{"[", ""},
+		{`"a""`, `a"`},
+	} {
+		if got := unquote(c.raw); got != c.want {
+			t.Errorf("unquote(%q) = %q, want %q", c.raw, got, c.want)
+		}
 	}
 }
