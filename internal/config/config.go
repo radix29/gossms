@@ -375,11 +375,10 @@ type Config struct {
 	// XEventHiddenColumns is, per event session, the columns the Extended Events
 	// viewer hides ("name", "timestamp", "field:<name>", "action:<name>"). Hidden
 	// rather than shown, so a field the session starts collecting later still gets
-	// a column. Replace the map, never write into it: base shares it, so an
-	// in-place write compares equal to itself and Save skips it.
+	// a column.
 	XEventHiddenColumns map[string][]string `json:"xevent_hidden_columns,omitempty"`
 	// XEventViewSettings are the viewer's saved display settings by name (SSMS's
-	// .viewsetting files). Replace the map, as XEventHiddenColumns.
+	// .viewsetting files).
 	XEventViewSettings map[string]XEventViewSetting `json:"xevent_view_settings,omitempty"`
 
 	// unreadable is the error Load hit reading an existing config.json. It
@@ -665,12 +664,76 @@ func (c *Config) openPasswords(key []byte, path string) {
 }
 
 // settingsSnapshot copies c without its connections or bookkeeping, for base. A
-// whole-struct copy, so a later-added setting is covered without being listed.
+// whole-struct copy, so a later-added setting is covered without being listed,
+// and a deep one: a map or slice shared with c would see an in-place write
+// too, compare equal to itself in mergeSettings, and the setting would silently
+// not be saved.
 func (c *Config) settingsSnapshot() *Config {
 	snap := *c
 	snap.Connections, snap.ops, snap.base, snap.unreadable = nil, nil, nil, nil
 	snap.legacySealed, snap.readOnly = false, false
+	sv := reflect.ValueOf(&snap).Elem()
+	for i := range sv.NumField() {
+		if f := sv.Field(i); f.CanSet() {
+			f.Set(deepCopy(f))
+		}
+	}
 	return &snap
+}
+
+// deepCopy returns a copy of v sharing no map, slice or pointer with it,
+// through exported struct fields (unexported ones are copied as they are).
+func deepCopy(v reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Map:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.MakeMapWithSize(v.Type(), v.Len())
+		for it := v.MapRange(); it.Next(); {
+			out.SetMapIndex(deepCopy(it.Key()), deepCopy(it.Value()))
+		}
+		return out
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := range v.Len() {
+			out.Index(i).Set(deepCopy(v.Index(i)))
+		}
+		return out
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.New(v.Type().Elem())
+		out.Elem().Set(deepCopy(v.Elem()))
+		return out
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.New(v.Type()).Elem()
+		out.Set(deepCopy(v.Elem()))
+		return out
+	case reflect.Struct, reflect.Array:
+		out := reflect.New(v.Type()).Elem()
+		out.Set(v)
+		if v.Kind() == reflect.Array {
+			for i := range v.Len() {
+				out.Index(i).Set(deepCopy(v.Index(i)))
+			}
+			return out
+		}
+		for i := range v.NumField() {
+			if v.Type().Field(i).IsExported() {
+				out.Field(i).Set(deepCopy(v.Field(i)))
+			}
+		}
+		return out
+	}
+	return v
 }
 
 // mergeSettings copies into dst every setting cur changed since base: every

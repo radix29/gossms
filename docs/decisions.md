@@ -1695,6 +1695,13 @@ it from the string 'NULL'.
   holder plus two saves within one poll, and costs only a lost edit, never
   corruption (writes stay atomic). Closing it needs flock/`LockFileEx`, a GOOS
   branch. Documented on `WithLock` (`internal/fileutil/lock.go`).
+- **`sqlparse.unquoteIdent` keeps its own unquoter** (reviewed 2026-11-05).
+  `safety.unquote` now goes through gosmo's `tsql.Spans`/`Span.Unescape`,
+  which reads an unterminated identifier to the end where `tsql.UnquoteName`
+  returns it unchanged. `sqlparse` is a leaf (only `tuikit` + stdlib,
+  `ARCHITECTURE.md` § Package map), it unquotes closed identifiers only (the
+  unclosed one at the cursor is no token), and the function is a dozen lines
+  over runes: widening the leaf rule for it does not pay.
 
 ### Distribution
 

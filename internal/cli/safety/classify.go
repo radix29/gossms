@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/radix29/gosmo/tsql"
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/tuikit/sqltext"
 )
@@ -214,16 +215,15 @@ func lexBatch(text string, startLine int) ([]token, []int) {
 	return toks, cuts
 }
 
-// unquote strips a [bracketed] or "quoted" identifier's delimiters and undoubles
-// its closing one; an unterminated one keeps what is there.
+// unquote is a [bracketed] or "quoted" identifier token's name: gosmo's
+// scanner reads raw as one span and Unescape undoubles its closer. An
+// unterminated one (the script ends inside it) runs to the end, which
+// tsql.UnquoteName would instead return unchanged, delimiter and all.
 func unquote(raw string) string {
-	closer := "]"
-	if raw[0] == '"' {
-		closer = `"`
+	for sp := range tsql.Spans(raw) {
+		return sp.Unescape(raw)
 	}
-	s := raw[1:]
-	s = strings.TrimSuffix(s, closer)
-	return strings.ReplaceAll(s, closer+closer, closer)
+	return raw
 }
 
 // classifyBatch classifies one GO batch's statements.

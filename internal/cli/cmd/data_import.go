@@ -323,7 +323,7 @@ func (s *dataSource) cellParser(c *gosmo.Column, base string, codePage func(stri
 	if c.ColumnEncryptionKey != "" {
 		return nil, unsupported("an Always Encrypted column is loaded only by a client holding its key")
 	}
-	tc := query.TargetColumn{Type: base, Length: c.MaxLength, Precision: c.Precision, Scale: c.Scale}
+	tc := gosmo.BulkColumn{Type: base, Length: c.MaxLength, Precision: c.Precision, Scale: c.Scale}
 	switch base {
 	case "nchar", "nvarchar":
 		if tc.Length > 0 {

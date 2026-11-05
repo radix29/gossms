@@ -366,8 +366,7 @@ func loadXEHiddenColumns(app *App, session string) map[string]bool {
 	return out
 }
 
-// saveXEHiddenColumns writes a session's hidden columns to config. The map is
-// replaced, never written into — see config.Config.XEventHiddenColumns.
+// saveXEHiddenColumns writes a session's hidden columns to config.
 func saveXEHiddenColumns(app *App, session string, hidden map[string]bool) {
 	if app.cfg == nil {
 		return

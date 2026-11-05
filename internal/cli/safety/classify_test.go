@@ -379,3 +379,23 @@ func TestRank(t *testing.T) {
 		t.Error("Rank does not order read < write < ddl < admin")
 	}
 }
+
+// TestUnquote pins a quoted identifier token's name, unterminated ones (a
+// script that ends inside one) included: those keep what follows the opener.
+func TestUnquote(t *testing.T) {
+	for _, c := range []struct{ raw, want string }{
+		{"[t]", "t"},
+		{"[a]]b]", "a]b"},
+		{"[a]]]", "a]"},
+		{`"a""b"`, `a"b`},
+		{`"a]b"`, "a]b"},
+		{"[a b", "a b"},
+		{"[a]]", "a]"},
+		{"[", ""},
+		{`"a""`, `a"`},
+	} {
+		if got := unquote(c.raw); got != c.want {
+			t.Errorf("unquote(%q) = %q, want %q", c.raw, got, c.want)
+		}
+	}
+}

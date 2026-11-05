@@ -43,9 +43,8 @@ type SaveJob struct {
 	path       string
 	unreadable error
 	readOnly   bool
-	// settings is the Config's settings when the job began, and base the baseline
-	// they are compared with; the maps they share with the Config are replaced
-	// there, never written into (see XEventHiddenColumns).
+	// settings is the Config's settings when the job began (a deep copy, see
+	// settingsSnapshot), and base the baseline they are compared with.
 	settings, base *Config
 	ops            []connOp
 
