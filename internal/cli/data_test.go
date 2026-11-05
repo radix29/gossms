@@ -7,16 +7,29 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/cmd"
+	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
 )
 
-// dataDeps is queryDeps with objectFake (Sales.Customer, Sales.vCustomer,
-// …) as the catalog: the data commands resolve through the catalog and run
-// their SELECT on sess. opened records the database each session opened in.
-func dataDeps(t *testing.T, cat cmd.Catalog, sess *fakeSession) (cmd.Deps, *int, *[]string) {
+// dataDeps is queryDeps dialling s (Sales.Customer, Sales.vCustomer, …)
+// with gosmo's own catalog: the data commands resolve and read the columns
+// through real gosmo, and run their SELECT on sess. opened records the
+// database each session opened in.
+func dataDeps(t *testing.T, s *objectServer, sess *fakeSession) (cmd.Deps, *int, *[]string) {
 	d, dialled := queryDeps(t, sess)
-	d.Catalog = func(*db.ServerConn) cmd.Catalog { return cat }
+	d.Connect = func(ctx context.Context, _ config.Connection, r db.Role) (*db.ServerConn, error) {
+		*dialled++
+		if r != db.RoleCLI {
+			t.Errorf("dialled as %v", r)
+		}
+		srv, err := s.Connect(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &db.ServerConn{Server: srv}, nil
+	}
+	d.Catalog = cmd.ServerCatalog
 	opened := new([]string)
 	d.OpenSession = func(_ context.Context, _ *db.ServerConn, database string) (cmd.Session, error) {
 		*opened = append(*opened, database)
@@ -57,7 +70,7 @@ func TestDataTopComposesTheSelect(t *testing.T) {
 			"SELECT TOP (100) *\nFROM [Sales].[Customer]\nWHERE (id > 1 -- big ones\n)\nORDER BY id DESC -- newest\n"},
 	} {
 		sess := &fakeSession{t: t, run: oneRow}
-		d, _, opened := dataDeps(t, newObjectFake(), sess)
+		d, _, opened := dataDeps(t, newObjectServer(t), sess)
 		r := runData(t, d, append([]string{"top"}, tc.argv...)...)
 		if r.exit != 0 {
 			t.Errorf("%v: exit %d\n%s", tc.argv, r.exit, r.stdout)
@@ -81,7 +94,7 @@ func TestDataTopComposesTheSelect(t *testing.T) {
 
 func TestDataTopRecord(t *testing.T) {
 	sess := &fakeSession{t: t, run: oneRow}
-	d, _, _ := dataDeps(t, newObjectFake(), sess)
+	d, _, _ := dataDeps(t, newObjectServer(t), sess)
 	env := envelope(t, runData(t, d, "top", "vCustomer").stdout)
 	if dataField(t, env, "object") != "[Sales].[vCustomer]" || dataField(t, env, "type") != "view" {
 		t.Errorf("record %v", env["data"])
@@ -106,7 +119,7 @@ func TestDataFragmentsBlocked(t *testing.T) {
 		{[]string{"count", "Sales.Customer", "--where", "1=1;"}, "';'"},
 	} {
 		sess := &fakeSession{t: t}
-		d, dialled, _ := dataDeps(t, newObjectFake(), sess)
+		d, dialled, _ := dataDeps(t, newObjectServer(t), sess)
 		r := runData(t, d, tc.argv...)
 		if r.exit != 7 || *dialled != 0 {
 			t.Errorf("%q: exit %d, dialled %d\n%s", tc.argv, r.exit, *dialled, r.stdout)
@@ -120,7 +133,7 @@ func TestDataFragmentsBlocked(t *testing.T) {
 	}
 	// A ';' inside a literal or a comment ends nothing.
 	sess := &fakeSession{t: t, run: oneRow}
-	d, _, _ := dataDeps(t, newObjectFake(), sess)
+	d, _, _ := dataDeps(t, newObjectServer(t), sess)
 	if r := runData(t, d, "top", "Sales.Customer", "--where", "CustomerName = 'a;b' /* ; */"); r.exit != 0 {
 		t.Errorf("literal ';': exit %d\n%s", r.exit, r.stdout)
 	}
@@ -143,7 +156,7 @@ func TestDataUsageErrors(t *testing.T) {
 		{[]string{"count", "Sales.Customer", "--approximate", "--where", "id > 1"}, "both given"},
 	} {
 		sess := &fakeSession{t: t}
-		d, dialled, _ := dataDeps(t, newObjectFake(), sess)
+		d, dialled, _ := dataDeps(t, newObjectServer(t), sess)
 		r := runData(t, d, tc.argv...)
 		if r.exit != 2 || *dialled != 0 || !strings.Contains(r.stdout, tc.want) {
 			t.Errorf("%q: exit %d, dialled %d, want %q\n%s", tc.argv, r.exit, *dialled, tc.want, r.stdout)
@@ -168,7 +181,7 @@ func TestDataObjectChecks(t *testing.T) {
 		{[]string{"top", "Sales.Customer", "--columns", "id,ID"}, 2, "named twice"},
 	} {
 		sess := &fakeSession{t: t}
-		d, _, _ := dataDeps(t, newObjectFake(), sess)
+		d, _, _ := dataDeps(t, newObjectServer(t), sess)
 		r := runData(t, d, tc.argv...)
 		if r.exit != tc.exit || !strings.Contains(r.stdout, tc.want) {
 			t.Errorf("%q: exit %d, want %d and %q\n%s", tc.argv, r.exit, tc.exit, tc.want, r.stdout)
@@ -194,7 +207,7 @@ func TestDataCount(t *testing.T) {
 	set := query.ResultSet{Columns: []string{"rows"}, Rows: [][]string{{"42"}}, ColumnTypes: []string{"bigint"}}
 	sess := &countSession{fakeSession: &fakeSession{t: t}, answer: &query.Result{Sets: []query.ResultSet{set}, Batches: 1,
 		Messages: []query.Message{{Text: "(1 row affected)", RowsAffected: &query.RowCount{N: 1, AfterSet: true}}}}}
-	d, _, _ := dataDeps(t, newObjectFake(), sess.fakeSession)
+	d, _, _ := dataDeps(t, newObjectServer(t), sess.fakeSession)
 	d.OpenSession = func(context.Context, *db.ServerConn, string) (cmd.Session, error) { return sess, nil }
 
 	r := runData(t, d, "count", "Sales.Customer", "--where", "id > 1")
@@ -233,7 +246,7 @@ func TestDataCount(t *testing.T) {
 
 func TestDataCountApproximate(t *testing.T) {
 	sess := &fakeSession{t: t}
-	d, _, opened := dataDeps(t, newObjectFake(), sess)
+	d, _, opened := dataDeps(t, newObjectServer(t), sess)
 	r := runData(t, d, "count", "Sales.Customer", "--approximate")
 	if r.exit != 0 {
 		t.Fatalf("exit %d\n%s", r.exit, r.stdout)
@@ -254,7 +267,7 @@ func TestDataTopTimeout(t *testing.T) {
 		<-ctx.Done()
 		return &query.Result{Batches: 1, Messages: []query.Message{{Text: "Query was cancelled by user.", IsError: true}}}
 	}}
-	d, _, _ := dataDeps(t, newObjectFake(), sess)
+	d, _, _ := dataDeps(t, newObjectServer(t), sess)
 	r := runData(t, d, "top", "Sales.Customer", "--timeout", "1")
 	if r.exit != 6 {
 		t.Fatalf("exit %d\n%s", r.exit, r.stdout)

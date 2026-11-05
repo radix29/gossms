@@ -215,18 +215,18 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	info := cat.ServerInfo()
+	info := sc.Server.Info()
 	if info != nil && info.EngineEdition == int(gosmo.EngineAzureSQLDatabase) {
 		return res, output.NewError(output.CodeUnsupported, "Azure SQL Database takes no RESTORE from a backup file",
 			"Restore through the Azure portal or CLI (point-in-time restore), or import a .bacpac.")
 	}
-	headers, err := cat.BackupHeaders(ctx, r.devices...)
+	headers, err := sc.Server.BackupHeaders(ctx, r.devices...)
 	if err != nil {
 		return res, restoreError(mediaReadError(err), r.target)
 	}
@@ -236,14 +236,14 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 		return res, err
 	}
 	if r.verifyOnly {
-		return verifyBackup(ctx, inv, res, w, r, h)
+		return verifyBackup(ctx, inv, res, sc.Server, r, h)
 	}
 	if (len(r.moves) > 0 || r.toDefault) && !h.SetType.PlacesFiles() {
 		return res, usageError(fmt.Sprintf("set %d is a %s backup, which places no files", cmp.Or(h.Position, 1), backupTypeName(h.SetType)),
 			"Its files are the database's, placed by the full backup restored before it: leave --with-move and --move-to-default out.")
 	}
 
-	target, err := cat.DatabaseByName(ctx, r.target)
+	target, err := sc.Server.DatabaseByName(ctx, r.target)
 	switch {
 	case errors.Is(err, gosmo.ErrNotFound):
 		target, err = nil, nil
@@ -252,7 +252,7 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 	res.Database = r.target
 	if target != nil {
-		if err := restoreOverChecks(ctx, inv, cat, target, h.SetType.PlacesFiles()); err != nil {
+		if err := restoreOverChecks(ctx, inv, sc.Server, cat, target, h.SetType.PlacesFiles()); err != nil {
 			return res, err
 		}
 		r.opts.Database = target.Name
@@ -260,7 +260,7 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 
 	var files []*gosmo.BackupFile
 	if h.SetType.PlacesFiles() {
-		if files, err = cat.BackupFileList(ctx, h.SetNumber(), r.devices...); err != nil {
+		if files, err = sc.Server.BackupFileList(ctx, h.SetNumber(), r.devices...); err != nil {
 			return res, restoreError(mediaReadError(err), r.target)
 		}
 	}
@@ -279,7 +279,7 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 	var held []*gosmo.InstanceFile
 	if len(files) > 0 {
-		if held, err = cat.InstanceFiles(ctx); err != nil {
+		if held, err = sc.Server.InstanceFiles(ctx); err != nil {
 			return res, readError(err)
 		}
 	}
@@ -290,7 +290,7 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 
 	res.Fields = restoreFields(r, h, target != nil)
-	restore := func(ctx context.Context) error { return w.Restore(ctx, r.opts) }
+	restore := func(ctx context.Context) error { return sc.Server.Restore(ctx, r.opts) }
 	if err := applyWrite(ctx, inv, res, restore); err != nil {
 		return res, restoreError(err, r.target)
 	}
@@ -298,7 +298,7 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 		return res, nil
 	}
 	state := output.Field{Key: "state", Null: true}
-	if after, err := cat.DatabaseByName(ctx, r.opts.Database); err != nil {
+	if after, err := sc.Server.DatabaseByName(ctx, r.opts.Database); err != nil {
 		res.Warnings = append(res.Warnings, "The restore succeeded, but the database was not read back: "+readError(err).Message)
 	} else {
 		state = output.Field{Key: "state", Value: string(after.State)}
@@ -358,7 +358,7 @@ func targetsText(devices []gosmo.BackupTarget) string {
 // an availability group. A differential or log set (places false) restored
 // onto a database left RESTORING continues its chain and overwrites
 // nothing, so it needs no --confirm.
-func restoreOverChecks(ctx context.Context, inv *spec.Invocation, cat Catalog, target *gosmo.Database, places bool) error {
+func restoreOverChecks(ctx context.Context, inv *spec.Invocation, srv *gosmo.Server, cat Catalog, target *gosmo.Database, places bool) error {
 	name := gosmo.QuoteName(target.Name)
 	continues := !places && target.State == gosmo.DatabaseRestoring
 	if confirm, _ := inv.Values[optConfirm].(string); confirm != inv.Args[0] && !continues {
@@ -368,7 +368,7 @@ func restoreOverChecks(ctx context.Context, inv *spec.Invocation, cat Catalog, t
 	if target.IsSnapshot() {
 		return usageError(name+" is a database snapshot", "Drop it first, or restore under another name.")
 	}
-	current, err := cat.CurrentDatabase(ctx)
+	current, err := srv.CurrentDatabase(ctx)
 	if err != nil {
 		return readError(err)
 	}
@@ -463,7 +463,7 @@ func pathCollisions(target string, files []*gosmo.BackupFile, planned map[string
 }
 
 // verifyBackup is maint restore --verify-only: RESTORE VERIFYONLY of set h.
-func verifyBackup(ctx context.Context, inv *spec.Invocation, res *output.Result, w Writer, r *restoreRequest, h *gosmo.BackupHeader) (*output.Result, error) {
+func verifyBackup(ctx context.Context, inv *spec.Invocation, res *output.Result, srv *gosmo.Server, r *restoreRequest, h *gosmo.BackupHeader) (*output.Result, error) {
 	checksum := inv.Values[optChecksum].(bool)
 	res.Fields = []output.Field{
 		{Key: "from", Value: targetsText(r.devices)},
@@ -480,7 +480,7 @@ func verifyBackup(ctx context.Context, inv *spec.Invocation, res *output.Result,
 			"Leave --checksum out: VERIFYONLY then checks the set is complete and readable.")
 	}
 	opts := gosmo.VerifyOptions{FileNumber: h.SetNumber(), Checksum: checksum}
-	verify := func(ctx context.Context) error { return w.VerifyBackup(ctx, opts, r.devices...) }
+	verify := func(ctx context.Context) error { return srv.VerifyBackup(ctx, opts, r.devices...) }
 	if err := applyWrite(ctx, inv, res, verify); err != nil {
 		return res, restoreError(err, r.target)
 	}

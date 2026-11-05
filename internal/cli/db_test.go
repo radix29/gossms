@@ -17,7 +17,7 @@ import (
 // fakeCatalog answers the catalog reads from its fields. A nil sizes map
 // with sizesErr set is a failed size read; spaceUsed counts the reads that
 // needed the database ONLINE. The object reads it does not answer panic on
-// the nil Catalog (objectFake answers them).
+// the nil Catalog.
 type fakeCatalog struct {
 	cmd.Catalog
 	current   string

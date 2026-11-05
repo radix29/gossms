@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -17,31 +16,15 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// backupCatalog is newDropCatalog's databases (app FULL, hr SIMPLE) on a
-// Developer edition with a backup directory, msdb's history per database,
-// and the headers each backup file holds — the media a backupWriter writes.
-type backupCatalog struct {
-	*dropCatalog
-	history    map[string][]*gosmo.BackupInfo
-	media      map[string][]*gosmo.BackupHeader
-	headersErr error
-	headerRead [][]string
-	historyFor []string
-	clock      time.Time
-}
-
-func newBackupCatalog() *backupCatalog {
-	c := &backupCatalog{dropCatalog: newDropCatalog(), media: map[string][]*gosmo.BackupHeader{},
-		clock: time.Date(2026, 11, 3, 12, 0, 0, 0, jobServerZone)}
-	c.info = &gosmo.ServerInfo{VersionMajor: 16, EngineEdition: int(gosmo.EngineEnterprise), Edition: "Developer Edition (64-bit)",
-		DefaultBackupPath: "/var/opt/mssql/backup"}
-	for _, d := range c.dbs {
-		d.RecoveryModel = gosmo.RecoveryModelFull
-		if d.Name == "hr" {
-			d.RecoveryModel = gosmo.RecoveryModelSimple
-		}
-	}
-	c.history = map[string][]*gosmo.BackupInfo{
+// newBackupServer is a maintServer connected to master on a Developer
+// edition with a backup directory, msdb's history per database (gone's is
+// a dropped database's), and no backup media yet — the media a
+// applyWrite adds.
+func newBackupServer(t *testing.T) *maintServer {
+	s := newMaintServer(t, "master")
+	s.Info.BackupPath = "/var/opt/mssql/backup"
+	s.clock = time.Date(2026, 11, 3, 12, 0, 0, 0, jobServerZone)
+	s.history = map[string][]*gosmo.BackupInfo{
 		"app": {
 			{DatabaseName: "app", SetType: gosmo.BackupSetLog, BackupStart: agentDate("2026-11-02 23:00:00"),
 				BackupFinish: agentDate("2026-11-02 23:00:02"), BackupSize: 3 << 20, Devices: []string{"/b/app.trn"},
@@ -54,80 +37,21 @@ func newBackupCatalog() *backupCatalog {
 			{DatabaseName: "hr", SetType: gosmo.BackupSetDatabase, IsCopyOnly: true, BackupStart: agentDate("2026-11-01 08:00:00"),
 				BackupFinish: agentDate("2026-11-01 08:00:10"), BackupSize: 10 << 20, Devices: []string{"/b/hr.bak"}},
 		},
+		"master": {
+			{DatabaseName: "master", SetType: gosmo.BackupSetDatabase, BackupStart: agentDate("2026-11-03 01:00:00"),
+				BackupFinish: agentDate("2026-11-03 01:00:05"), Devices: []string{"/b/master.bak"}},
+		},
+		"model": {
+			{DatabaseName: "model", SetType: gosmo.BackupSetDatabase, BackupStart: agentDate("2026-11-03 01:00:06"),
+				BackupFinish: agentDate("2026-11-03 01:00:07"), Devices: []string{"/b/model.bak"}},
+		},
 		// gone was dropped; msdb keeps its history.
 		"gone": {
 			{DatabaseName: "gone", SetType: gosmo.BackupSetDatabase, BackupStart: agentDate("2026-10-01 08:00:00"),
 				BackupFinish: agentDate("2026-10-01 08:00:01"), BackupSize: 1 << 20, Devices: []string{"/b/gone.bak"}},
 		},
 	}
-	c.backups = []*gosmo.DatabaseLastBackups{
-		{DatabaseName: "app", RecoveryModel: gosmo.RecoveryModelFull, Full: c.history["app"][1], Log: c.history["app"][0]},
-		{DatabaseName: "archive", RecoveryModel: gosmo.RecoveryModelFull},
-		{DatabaseName: "hr", RecoveryModel: gosmo.RecoveryModelSimple, Full: c.history["hr"][0]},
-		{DatabaseName: "master", RecoveryModel: gosmo.RecoveryModelSimple, Full: &gosmo.BackupInfo{DatabaseName: "master",
-			SetType: gosmo.BackupSetDatabase, BackupStart: agentDate("2026-11-03 01:00:00"), BackupFinish: agentDate("2026-11-03 01:00:05")}},
-		{DatabaseName: "model", RecoveryModel: gosmo.RecoveryModelFull, Full: &gosmo.BackupInfo{DatabaseName: "model",
-			SetType: gosmo.BackupSetDatabase, BackupStart: agentDate("2026-11-03 01:00:06"), BackupFinish: agentDate("2026-11-03 01:00:07")}},
-	}
-	return c
-}
-
-func (c *backupCatalog) CurrentTime(context.Context) (time.Time, error) { return c.clock, nil }
-
-func (c *backupCatalog) BackupHistory(_ context.Context, name string) ([]*gosmo.BackupInfo, error) {
-	c.historyFor = append(c.historyFor, name)
-	return c.history[name], nil
-}
-
-func (c *backupCatalog) BackupHeaders(_ context.Context, targets ...gosmo.BackupTarget) ([]*gosmo.BackupHeader, error) {
-	names := make([]string, len(targets))
-	for i, t := range targets {
-		names[i] = t.String()
-	}
-	c.headerRead = append(c.headerRead, names)
-	if c.headersErr != nil {
-		return nil, c.headersErr
-	}
-	return c.media[names[0]], nil
-}
-
-// backupWriter appends a set to the first device's media, as BACKUP does
-// (INIT replaces them), failing with err. Under WithScript it is the real
-// serverWriter, so a dry run captures gosmo's statement.
-type backupWriter struct {
-	Writer
-	cat     *backupCatalog
-	sent    []gosmo.BackupOptions
-	err     error
-	noMedia bool // succeed and write no set
-}
-
-func (w *backupWriter) Backup(ctx context.Context, opts gosmo.BackupOptions) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{&gosmo.Server{}}.Backup(ctx, opts)
-	}
-	w.sent = append(w.sent, opts)
-	if w.err != nil || w.noMedia {
-		return w.err
-	}
-	dev := opts.Devices[0].String()
-	if opts.Init {
-		w.cat.media[dev] = nil
-	}
-	set := gosmo.BackupSetDatabase
-	switch opts.Action {
-	case gosmo.BackupActionLog:
-		set = gosmo.BackupSetLog
-	case gosmo.BackupActionDifferential:
-		set = gosmo.BackupSetDifferential
-	}
-	comp := opts.Compression != nil && *opts.Compression
-	size := int64(8 << 20)
-	w.cat.media[dev] = append(w.cat.media[dev], &gosmo.BackupHeader{DatabaseName: opts.Database, SetType: set,
-		Position: len(w.cat.media[dev]) + 1, BackupStart: agentDate("2026-11-03 12:00:00"),
-		BackupFinish: agentDate("2026-11-03 12:00:04"), BackupSize: size, CompressedSize: map[bool]int64{true: size / 4, false: size}[comp],
-		Compressed: comp, HasChecksums: opts.Checksum})
-	return nil
+	return s
 }
 
 // fixBackupClock fixes the clock default backup files are named by.
@@ -139,24 +63,26 @@ func fixBackupClock(t *testing.T) {
 
 func backupFakes(t *testing.T) (Catalog, Writer) {
 	fixBackupClock(t)
-	cat := newBackupCatalog()
-	return cat, &backupWriter{cat: cat}
+	return ServerCatalog(&db.ServerConn{Server: newBackupServer(t).Server()}), nil
 }
 
-// runMaint runs maint <argv> over cat and w, an ad-hoc connection; dials
-// counts the connects.
-func runMaint(t *testing.T, cat *backupCatalog, w *backupWriter, argv string) (res *output.Result, dials int, err error) {
-	t.Helper()
-	w.cat = cat
-	d := Deps{
+// maintDeps is Deps over s, an ad-hoc connection counted in dials.
+func maintDeps(s *maintServer, dials *int) Deps {
+	return Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			dials++
-			return &db.ServerConn{}, nil
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
+			*dials++
+			return s.conn(ctx)
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-		Writer:  func(*db.ServerConn) Writer { return w },
+		Catalog: ServerCatalog,
 	}
+}
+
+// runMaint runs maint <argv> over s, an ad-hoc connection; dials counts
+// the connects.
+func runMaint(t *testing.T, s *maintServer, argv string) (res *output.Result, dials int, err error) {
+	t.Helper()
+	d := maintDeps(s, &dials)
 	fields := strings.Fields(argv)
 	argv0 := append([]string{"maint", fields[0], "--server", "srv", "--auth", "windows"}, fields[1:]...)
 	inv, perr := args.Parse(&spec.Tree{Commands: MaintCommands(d)}, argv0, args.Options{})
@@ -180,20 +106,15 @@ func fieldValues(res *output.Result, keys ...string) []string {
 // read back from it.
 func TestMaintBackup(t *testing.T) {
 	fixBackupClock(t)
-	cat, w := newBackupCatalog(), &backupWriter{}
-	res, _, err := runMaint(t, cat, w, "backup APP --compression --checksum --allow admin")
+	cat := newBackupServer(t)
+	res, _, err := runMaint(t, cat, "backup APP --compression --checksum --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w.sent) != 1 {
-		t.Fatalf("sent %d backups", len(w.sent))
-	}
-	o := w.sent[0]
-	if o.Database != "app" || o.Action != gosmo.BackupActionDatabase || o.Stats != backupStats || o.Progress == nil ||
-		o.Compression == nil || !*o.Compression || !o.Checksum || o.Init || o.CopyOnly {
-		t.Errorf("options %+v", o)
-	}
 	const file = "/var/opt/mssql/backup/app_full_20261103_110405.bak"
+	if want := []string{"BACKUP DATABASE [app] TO DISK = N'" + file + "' WITH COMPRESSION, CHECKSUM, STATS = 10"}; !slices.Equal(cat.writes, want) {
+		t.Errorf("sent %q, want %q", cat.writes, want)
+	}
 	got := fieldValues(res, "database", "type", "to", "compression", "copyOnly", "checksum", "init", "dryRun",
 		"setNumber", "backupStart", "backupFinish", "sizeBytes", "compressedBytes", "compressed", "hasChecksums")
 	want := []string{"app", "full", file, "on", "false", "true", "false", "false",
@@ -212,7 +133,7 @@ func TestMaintBackup(t *testing.T) {
 	// of app's: the newest of app's of the type is the one reported.
 	cat.media["/b/x.bak"] = []*gosmo.BackupHeader{{DatabaseName: "app", SetType: gosmo.BackupSetDatabase, Position: 1},
 		{DatabaseName: "hr", SetType: gosmo.BackupSetDatabase, Position: 2}}
-	res, _, err = runMaint(t, cat, &backupWriter{}, "backup app --to /b/x.bak --no-compression --copy-only --allow admin")
+	res, _, err = runMaint(t, cat, "backup app --to /b/x.bak --no-compression --copy-only --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +152,7 @@ func TestMaintBackupTypesAndStripes(t *testing.T) {
 		{"backup app --type diff --allow admin", "/var/opt/mssql/backup/app_diff_20261103_110405.bak"},
 		{"backup app --type log --allow admin", "/var/opt/mssql/backup/app_log_20261103_110405.trn"},
 	} {
-		res, _, err := runMaint(t, newBackupCatalog(), &backupWriter{}, c.argv)
+		res, _, err := runMaint(t, newBackupServer(t), c.argv)
 		if err != nil {
 			t.Fatalf("%s: %v", c.argv, err)
 		}
@@ -240,9 +161,9 @@ func TestMaintBackupTypesAndStripes(t *testing.T) {
 		}
 	}
 
-	cat, w := newBackupCatalog(), &backupWriter{}
+	cat := newBackupServer(t)
 	cat.media["/b/s1.bak"] = []*gosmo.BackupHeader{{DatabaseName: "app", SetType: gosmo.BackupSetDatabase, Position: 1}}
-	res, _, err := runMaint(t, cat, w, "backup app --to /b/s1.bak --to /b/s2.bak --init --confirm app --allow admin")
+	res, _, err := runMaint(t, cat, "backup app --to /b/s1.bak --to /b/s2.bak --init --confirm app --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,18 +177,18 @@ func TestMaintBackupTypesAndStripes(t *testing.T) {
 	// A Windows backup directory joins with its own separator; a database
 	// name a file system refuses is made safe; no directory leaves the name
 	// bare, for the server to place.
-	cat = newBackupCatalog()
-	cat.info.DefaultBackupPath = `D:\Backup`
+	cat = newBackupServer(t)
+	cat.Info.BackupPath = `D:\Backup`
 	cat.dbs = append(cat.dbs, &gosmo.Database{Name: `a/b:c`, ID: 30, State: gosmo.DatabaseOnline, RecoveryModel: gosmo.RecoveryModelFull})
-	res, _, err = runMaint(t, cat, &backupWriter{}, "backup a/b:c --allow admin --dry-run")
+	res, _, err = runMaint(t, cat, "backup a/b:c --allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := fieldValue(res, "to"); got != `D:\Backup\a_b_c_full_20261103_110405.bak` {
 		t.Errorf("Windows default file %q", got)
 	}
-	cat.info.DefaultBackupPath = ""
-	res, _, _ = runMaint(t, cat, &backupWriter{}, "backup app --allow admin --dry-run")
+	cat.Info.BackupPath = ""
+	res, _, _ = runMaint(t, cat, "backup app --allow admin --dry-run")
 	if got := fieldValue(res, "to"); got != "app_full_20261103_110405.bak" {
 		t.Errorf("no backup directory: %q", got)
 	}
@@ -275,14 +196,14 @@ func TestMaintBackupTypesAndStripes(t *testing.T) {
 
 func TestMaintBackupDryRun(t *testing.T) {
 	fixBackupClock(t)
-	cat, w := newBackupCatalog(), &backupWriter{}
-	res, _, err := runMaint(t, cat, w, "backup app --to https://acct.blob.core.windows.net/c/app.bak --credential cred "+
+	cat := newBackupServer(t)
+	res, _, err := runMaint(t, cat, "backup app --to https://acct.blob.core.windows.net/c/app.bak --credential cred "+
 		"--type full --copy-only --checksum --allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w.sent) != 0 || len(cat.headerRead) != 0 {
-		t.Errorf("a dry run sent %d backups and read %d headers", len(w.sent), len(cat.headerRead))
+	if len(cat.writes) != 0 || len(cat.headerRead) != 0 {
+		t.Errorf("a dry run sent %q and read %d headers", cat.writes, len(cat.headerRead))
 	}
 	want := "BACKUP DATABASE [app] TO URL = N'https://acct.blob.core.windows.net/c/app.bak' " +
 		"WITH CREDENTIAL = N'cred', COPY_ONLY, CHECKSUM, STATS = 10\nGO\n"
@@ -299,7 +220,7 @@ func TestMaintBackupRefusals(t *testing.T) {
 	fixBackupClock(t)
 	for _, c := range []struct {
 		argv  string
-		setup func(*backupCatalog)
+		setup func(*maintServer)
 		code  output.Code
 		dials int
 		msg   string
@@ -311,38 +232,38 @@ func TestMaintBackupRefusals(t *testing.T) {
 		{"backup app --to= --allow admin", nil, output.CodeUsageError, 0, "--to: empty path"},
 		{"backup app", nil, output.CodeBlocked, 0, ""},
 		{"backup nope --allow admin", nil, output.CodeNotFound, 1, "no database [nope]"},
-		{"backup tempdb --allow admin", func(c *backupCatalog) {
+		{"backup tempdb --allow admin", func(c *maintServer) {
 			c.dbs = append(c.dbs, &gosmo.Database{Name: "tempdb", ID: 2, State: gosmo.DatabaseOnline})
 		}, output.CodeUsageError, 1, "tempdb cannot be backed up"},
 		{"backup app_snap --allow admin", nil, output.CodeUsageError, 1, "is a database snapshot"},
 		{"backup hr --type log --allow admin", nil, output.CodeUsageError, 1, "SIMPLE recovery"},
 		{"backup hr --type log --allow admin --dry-run", nil, output.CodeUsageError, 1, "SIMPLE recovery"},
-		{"backup app --compression --allow admin", func(c *backupCatalog) {
-			c.info.EngineEdition, c.info.Edition = int(gosmo.EngineExpress), "Express Edition (64-bit)"
+		{"backup app --compression --allow admin", func(c *maintServer) {
+			c.Info.EngineEdition, c.Info.Edition = int(gosmo.EngineExpress), "Express Edition (64-bit)"
 		}, output.CodeUnsupported, 1, "Express Edition"},
-		{"backup app --allow admin", func(c *backupCatalog) {
-			c.info.EngineEdition = int(gosmo.EngineAzureSQLDatabase)
+		{"backup app --allow admin", func(c *maintServer) {
+			c.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase)
 		}, output.CodeUnsupported, 1, "Azure SQL Database"},
 	} {
-		cat, w := newBackupCatalog(), &backupWriter{}
+		cat := newBackupServer(t)
 		if c.setup != nil {
 			c.setup(cat)
 		}
-		res, dials, err := runMaint(t, cat, w, c.argv)
+		res, dials, err := runMaint(t, cat, c.argv)
 		e, ok := err.(*output.Error)
 		if !ok || e.Code != c.code || dials != c.dials || !strings.Contains(e.Message, c.msg) {
 			t.Errorf("%s: %v (dials %d), want %s with %q, dials %d", c.argv, err, dials, c.code, c.msg, c.dials)
 			continue
 		}
-		if len(w.sent) != 0 {
+		if len(cat.writes) != 0 {
 			t.Errorf("%s: sent a backup", c.argv)
 		}
 		_ = res
 	}
 	// --no-compression on Express is fine: NO_COMPRESSION is accepted everywhere.
-	cat := newBackupCatalog()
-	cat.info.EngineEdition = int(gosmo.EngineExpress)
-	if _, _, err := runMaint(t, cat, &backupWriter{}, "backup app --no-compression --allow admin"); err != nil {
+	cat := newBackupServer(t)
+	cat.Info.EngineEdition = int(gosmo.EngineExpress)
+	if _, _, err := runMaint(t, cat, "backup app --no-compression --allow admin"); err != nil {
 		t.Errorf("--no-compression on Express: %v", err)
 	}
 }
@@ -383,8 +304,9 @@ func TestMaintBackupServerRefusals(t *testing.T) {
 		cause := c.cause
 		end := terminated
 		end.All = []mssql.Error{cause, terminated}
-		w := &backupWriter{err: fmt.Errorf("gosmo: backup %q: %w", "app", end)}
-		res, _, err := runMaint(t, newBackupCatalog(), w, c.argv)
+		cat := newBackupServer(t)
+		cat.writeErr = end
+		res, _, err := runMaint(t, cat, c.argv)
 		e, ok := err.(*output.Error)
 		if !ok || e.Code != c.code || e.SQL == nil || e.SQL.Number != cause.Number || e.Message != cause.Message ||
 			!strings.Contains(e.Hint, c.hint) {
@@ -401,9 +323,9 @@ func TestMaintBackupServerRefusals(t *testing.T) {
 // fails or finds nothing is a warning and NULL set fields.
 func TestMaintBackupReadBackFails(t *testing.T) {
 	fixBackupClock(t)
-	cat := newBackupCatalog()
+	cat := newBackupServer(t)
 	cat.headersErr = mssql.Error{Number: 3201, Class: 16, Message: "Cannot open backup device."}
-	res, _, err := runMaint(t, cat, &backupWriter{}, "backup app --allow admin")
+	res, _, err := runMaint(t, cat, "backup app --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +339,9 @@ func TestMaintBackupReadBackFails(t *testing.T) {
 	}
 
 	// A backup that leaves no set of it on the media.
-	res, _, err = runMaint(t, newBackupCatalog(), &backupWriter{noMedia: true}, "backup app --to /b/x.bak --allow admin")
+	cat = newBackupServer(t)
+	cat.noMedia = true
+	res, _, err = runMaint(t, cat, "backup app --to /b/x.bak --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,8 +367,8 @@ func historyCells(res *output.Result) []string {
 }
 
 func TestMaintBackupHistory(t *testing.T) {
-	cat := newBackupCatalog()
-	res, dials, err := runMaint(t, cat, &backupWriter{}, "backup-history app")
+	cat := newBackupServer(t)
+	res, dials, err := runMaint(t, cat, "backup-history app")
 	if err != nil || dials != 1 {
 		t.Fatal(err, dials)
 	}
@@ -460,45 +384,47 @@ func TestMaintBackupHistory(t *testing.T) {
 	}
 
 	// --type and --since (zoned: 23:00+02:00 is 23:00 server local).
-	res, _, err = runMaint(t, newBackupCatalog(), &backupWriter{}, "backup-history app --type full")
+	res, _, err = runMaint(t, newBackupServer(t), "backup-history app --type full")
 	if err != nil || len(res.Sets[0].Rows) != 1 || *res.Sets[0].Rows[0][1] != "full" {
 		t.Errorf("--type full: %v %q", err, historyCells(res))
 	}
-	res, _, err = runMaint(t, newBackupCatalog(), &backupWriter{}, "backup-history app --since 2026-11-02T22:30:00+02:00")
+	res, _, err = runMaint(t, newBackupServer(t), "backup-history app --since 2026-11-02T22:30:00+02:00")
 	if err != nil || len(res.Sets[0].Rows) != 1 || *res.Sets[0].Rows[0][1] != "log" {
 		t.Errorf("--since: %v %q", err, historyCells(res))
 	}
 
 	// A dropped database's history is msdb's; a database with neither
 	// history nor a row is NOT_FOUND; one with no history is an empty set.
-	res, _, err = runMaint(t, newBackupCatalog(), &backupWriter{}, "backup-history gone")
+	res, _, err = runMaint(t, newBackupServer(t), "backup-history gone")
 	if err != nil || len(res.Sets[0].Rows) != 1 {
 		t.Errorf("dropped database: %v %q", err, historyCells(res))
 	}
-	if _, _, err = runMaint(t, newBackupCatalog(), &backupWriter{}, "backup-history nope"); err == nil ||
+	if _, _, err = runMaint(t, newBackupServer(t), "backup-history nope"); err == nil ||
 		err.(*output.Error).Code != output.CodeNotFound {
 		t.Errorf("missing database: %v", err)
 	}
-	res, _, err = runMaint(t, newBackupCatalog(), &backupWriter{}, "backup-history archive")
+	res, _, err = runMaint(t, newBackupServer(t), "backup-history archive")
 	if err != nil || len(res.Sets[0].Rows) != 0 {
 		t.Errorf("no history: %v %q", err, historyCells(res))
 	}
 }
 
 // TestMaintBackupHistoryAll: every database's sets, newest first, read per
-// database (not tempdb, not snapshots), capped by --top.
+// database in the server's name order (not tempdb, not snapshots), capped
+// by --top.
 func TestMaintBackupHistoryAll(t *testing.T) {
-	cat := newBackupCatalog()
-	res, _, err := runMaint(t, cat, &backupWriter{}, "backup-history --all --top 2")
+	cat := newBackupServer(t)
+	res, _, err := runMaint(t, cat, "backup-history --all --top 4")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(cat.historyFor, []string{"master", "app", "archive", "hr", "model"}) {
+	if !slices.Equal(cat.historyFor, []string{"app", "archive", "hr", "master", "model"}) {
 		t.Errorf("history read for %q", cat.historyFor)
 	}
 	set := res.Sets[0]
-	if len(set.Rows) != 2 || !set.Truncated || set.TotalRowCount != 3 ||
-		*set.Rows[0][0] != "app" || *set.Rows[0][1] != "log" || *set.Rows[1][1] != "full" {
+	if len(set.Rows) != 4 || !set.Truncated || set.TotalRowCount != 5 ||
+		*set.Rows[0][0] != "model" || *set.Rows[1][0] != "master" ||
+		*set.Rows[2][0] != "app" || *set.Rows[2][1] != "log" || *set.Rows[3][1] != "full" {
 		t.Errorf("rows %q, truncated %v of %d", historyCells(res), set.Truncated, set.TotalRowCount)
 	}
 }
@@ -507,7 +433,7 @@ func TestMaintBackupHistoryAll(t *testing.T) {
 // type for none; the warnings name the databases never backed up, and the
 // FULL-recovery ones with no log backup.
 func TestMaintBackupHistoryLast(t *testing.T) {
-	res, _, err := runMaint(t, newBackupCatalog(), &backupWriter{}, "backup-history --all --last")
+	res, _, err := runMaint(t, newBackupServer(t), "backup-history --all --last")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,14 +460,14 @@ func TestMaintBackupHistoryLast(t *testing.T) {
 	}
 
 	// One database, one type; --since drops an older backup to NULL.
-	res, _, err = runMaint(t, newBackupCatalog(), &backupWriter{}, "backup-history APP --last --type full --since 2026-11-03")
+	res, _, err = runMaint(t, newBackupServer(t), "backup-history APP --last --type full --since 2026-11-03")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := historyCells(res); !slices.Equal(got, []string{"app|FULL|full|-|-|-|-|-|-|-|-|-|-|-"}) || res.Database != "app" {
 		t.Errorf("one database: %q, header %q", got, res.Database)
 	}
-	if _, _, err = runMaint(t, newBackupCatalog(), &backupWriter{}, "backup-history app_snap --last"); err == nil ||
+	if _, _, err = runMaint(t, newBackupServer(t), "backup-history app_snap --last"); err == nil ||
 		err.(*output.Error).Code != output.CodeUsageError {
 		t.Errorf("snapshot --last: %v", err)
 	}
@@ -555,7 +481,7 @@ func TestMaintBackupHistoryUsage(t *testing.T) {
 		"backup-history app --top 0",
 		"backup-history app --since yesterday",
 	} {
-		_, dials, err := runMaint(t, newBackupCatalog(), &backupWriter{}, argv)
+		_, dials, err := runMaint(t, newBackupServer(t), argv)
 		if e, ok := err.(*output.Error); !ok || e.Code != output.CodeUsageError || dials != 0 {
 			t.Errorf("%s: %v (dials %d), want a usage error before connecting", argv, err, dials)
 		}

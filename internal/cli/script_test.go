@@ -5,53 +5,30 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
-
-	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/scripting"
 )
 
-// scriptFake is objectFake plus Script As: each call recorded, the script
-// text naming what was asked for, or err when set.
-type scriptFake struct {
-	*objectFake
-	calls []scriptCall
-	err   error
+func runScript(t *testing.T, s *scriptServer, argv ...string) runResult {
+	t.Helper()
+	return runTree(t, context.Background(), newCommandTree(objectDeps(t, s.objectServer)),
+		append(append([]string{"script"}, argv...), "-p", "dev", "-o", "json")...)
 }
 
-type scriptCall struct {
-	f scripting.Family
-	v scripting.Verb
-	t scripting.Target
-}
-
-func newScriptFake() *scriptFake {
-	c := &scriptFake{objectFake: newObjectFake()}
-	shipped := &gosmo.ObjectInfo{ObjectID: 99, Schema: "dbo", Name: "sp_shipped", Type: "P",
-		TypeDesc: "SQL_STORED_PROCEDURE", IsMSShipped: true}
-	c.objects = append(c.objects, shipped)
-	for _, o := range c.objects {
-		if o.Name == "PK_Customer" {
-			o.ParentSchema, o.ParentName = "Sales", "Customer"
+// scriptReads is the queries s answered that only scripting makes, past
+// connecting and resolving the name: a refusal must come before any.
+func scriptReads(s *scriptServer) []string {
+	var out []string
+	for _, q := range s.Queries() {
+		for _, mark := range []string{"sys.sql_modules", "temporal_type", "OBJECT_ID(@p1)", "sys.extended_properties",
+			"sys.parameters", "sys.sequences", "sys.synonyms", "sys.sql_expression_dependencies"} {
+			if strings.Contains(q.Text, mark) {
+				out = append(out, q.String())
+				break
+			}
 		}
 	}
-	return c
-}
-
-func (c *scriptFake) Script(_ context.Context, f scripting.Family, v scripting.Verb, t scripting.Target) (string, error) {
-	c.calls = append(c.calls, scriptCall{f, v, t})
-	if c.err != nil {
-		return "", c.err
-	}
-	return fmt.Sprintf("USE [%s];\nGO\n-- family %d verb %d %s.%s\nGO\n", t.DBName, f, v, t.Schema, t.Name), nil
-}
-
-func runScript(t *testing.T, cat *scriptFake, argv ...string) runResult {
-	t.Helper()
-	return runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)),
-		append(append([]string{"script"}, argv...), "-p", "dev", "-o", "json")...)
+	return out
 }
 
 // dataField is the envelope's data record field key.
@@ -64,52 +41,82 @@ func dataField(t *testing.T, env map[string]any, key string) any {
 	return data[key]
 }
 
+// TestScriptObjectFamilies scripts each family through real gosmo: the
+// script's own text shows the family, verb and function type the command
+// chose reached the scripter.
 func TestScriptObjectFamilies(t *testing.T) {
 	for _, tc := range []struct {
 		object, as string
-		family     scripting.Family
-		verb       scripting.Verb
-		kind       string
-		funcType   gosmo.FunctionType
+		name, kind string
+		want       []string
 	}{
-		{"Sales.Customer", "", scripting.Table, scripting.Create, "table", ""},
-		{"Sales.Customer", "insert", scripting.Table, scripting.Insert, "table", ""},
-		{"vCustomer", "alter", scripting.View, scripting.Alter, "view", ""},
-		{"Sales.usp_Get", "execute", scripting.StoredProcedure, scripting.Execute, "procedure", ""},
-		{"Sales.p_clr", "drop", scripting.StoredProcedure, scripting.Drop, "procedure", ""},
-		{"fScalar", "select", scripting.Function, scripting.Select, "function", gosmo.FunctionTypeScalar},
-		{"dbo.fInline", "drop-and-create", scripting.Function, scripting.DropAndCreate, "function", gosmo.FunctionTypeInlineTable},
-		{"trCustomer", "alter", scripting.Trigger, scripting.Alter, "trigger", ""},
-		{"dbo.sn", "", scripting.Synonym, scripting.Create, "synonym", ""},
-		{"seq", "drop", scripting.Sequence, scripting.Drop, "sequence", ""},
+		{"Sales.Customer", "", "[Sales].[Customer]", "table", []string{
+			"/* Table: [Sales].[Customer]  Database: app */",
+			"CREATE TABLE [Sales].[Customer] (\n    [id] int IDENTITY(1,1) NOT NULL,",
+			"CREATE NONCLUSTERED INDEX [IX_Customer_Name]",
+			"ADD CONSTRAINT [FK_Customer_Region]",
+			"ADD CONSTRAINT [CK_pct] CHECK ([pct]>=(0));",
+			"EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'Customers'",
+		}},
+		{"Sales.Customer", "insert", "[Sales].[Customer]", "table", []string{
+			"INSERT INTO [Sales].[Customer]\n           ([CustomerName])\nVALUES     (<CustomerName, nvarchar(50),>);",
+		}},
+		// A DROP names what would block it.
+		{"Sales.Customer", "drop", "[Sales].[Customer]", "table", []string{
+			"--   [Sales].[vCustomer] (VIEW)", "--   [Sales].[Order].[FK_Order_Customer] (FOREIGN KEY)",
+			"    DROP TABLE [Sales].[Customer];",
+		}},
+		{"vCustomer", "alter", "[Sales].[vCustomer]", "view", []string{
+			"ALTER VIEW Sales.vCustomer WITH SCHEMABINDING", "CREATE UNIQUE CLUSTERED INDEX [CIX_vCustomer]",
+		}},
+		{"Sales.usp_Get", "execute", "[Sales].[usp_Get]", "procedure", []string{
+			"EXEC @return_value = [Sales].[usp_Get]\n     @id = <id, int,>,\n     @total = @total OUTPUT;",
+		}},
+		{"Sales.usp_Get", "", "[Sales].[usp_Get]", "procedure", []string{
+			"SET QUOTED_IDENTIFIER ON;\nGO\nCREATE PROCEDURE Sales.usp_Get AS RETURN 1\nGO\n",
+		}},
+		{"Sales.p_clr", "drop", "[Sales].[p_clr]", "procedure", []string{"DROP PROCEDURE IF EXISTS [Sales].[p_clr];"}},
+		// A scalar function's SELECT calls it, which only its function
+		// type tells.
+		{"fScalar", "select", "[dbo].[fScalar]", "function", []string{
+			"SELECT [dbo].[fScalar](<id, int,>, <total, decimal(9,2),>) AS N'fScalar';",
+		}},
+		{"dbo.fInline", "drop-and-create", "[dbo].[fInline]", "function", []string{
+			"DROP FUNCTION IF EXISTS [dbo].[fInline];", "CREATE FUNCTION dbo.fInline() RETURNS TABLE",
+		}},
+		{"trCustomer", "alter", "[Sales].[trCustomer]", "trigger", []string{"ALTER TRIGGER Sales.trCustomer ON Sales.Customer"}},
+		// A trigger's CREATE restores its firing order and disabled state.
+		{"trCustomer", "", "[Sales].[trCustomer]", "trigger", []string{
+			"@order = N'First', @stmttype = N'INSERT';", "DISABLE TRIGGER [Sales].[trCustomer] ON [Sales].[Customer];",
+		}},
+		{"dbo.sn", "", "[dbo].[sn]", "synonym", []string{"CREATE SYNONYM [dbo].[sn] FOR [other].[dbo].[t];"}},
+		{"seq", "", "[dbo].[seq]", "sequence", []string{"CREATE SEQUENCE [dbo].[seq]\n    AS [decimal](12,0)", "CACHE 50;"}},
+		{"seq", "drop", "[dbo].[seq]", "sequence", []string{"DROP SEQUENCE IF EXISTS [dbo].[seq];"}},
 	} {
-		cat := newScriptFake()
+		s := newScriptServer(t)
 		argv := []string{"object", tc.object}
 		if tc.as != "" {
 			argv = append(argv, "--as", tc.as)
 		}
-		r := runScript(t, cat, argv...)
-		if r.exit != 0 || len(cat.calls) != 1 {
-			t.Errorf("%v: exit %d, calls %v\n%s", argv, r.exit, cat.calls, r.stdout)
+		r := runScript(t, s, argv...)
+		if r.exit != 0 {
+			t.Errorf("%v: exit %d\n%s%s", argv, r.exit, r.stdout, r.stderr)
 			continue
-		}
-		c := cat.calls[0]
-		// Each case names the first object of its name in the fake.
-		name := tc.object[strings.LastIndex(tc.object, ".")+1:]
-		info := cat.objects[slices.IndexFunc(cat.objects, func(o *gosmo.ObjectInfo) bool { return o.Name == name })]
-		want := scripting.Target{DBName: "app", Schema: info.Schema, Name: info.Name, FuncType: tc.funcType}
-		if c.f != tc.family || c.v != tc.verb || c.t != want {
-			t.Errorf("%v: Script(%v, %v, %+v), want (%v, %v, %+v)", argv, c.f, c.v, c.t, tc.family, tc.verb, want)
 		}
 		env := envelope(t, r.stdout)
 		verb := tc.as
 		if verb == "" {
 			verb = "create"
 		}
-		if dataField(t, env, "object") != gosmo.QualifiedName(info.Schema, info.Name) ||
-			dataField(t, env, "type") != tc.kind || dataField(t, env, "verb") != verb ||
-			!strings.HasPrefix(dataField(t, env, "script").(string), "USE [app];\nGO\n") {
+		script, _ := dataField(t, env, "script").(string)
+		if dataField(t, env, "object") != tc.name || dataField(t, env, "type") != tc.kind || dataField(t, env, "verb") != verb ||
+			!strings.HasPrefix(script, "USE [app];\nGO\n") {
 			t.Errorf("%v: record %v", argv, env["data"])
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(script, w) {
+				t.Errorf("%v: script lacks %q\n%s", argv, w, script)
+			}
 		}
 	}
 }
@@ -117,10 +124,12 @@ func TestScriptObjectFamilies(t *testing.T) {
 // TestScriptObjectText: the script is a Verbatim field, under its marker and
 // uncut by --max-col-width.
 func TestScriptObjectText(t *testing.T) {
-	cat := newScriptFake()
-	r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)),
-		"script", "object", "Sales.Customer", "-p", "dev", "--max-col-width", "5")
-	if r.exit != 0 || !strings.Contains(r.stdout, "=== SCRIPT (4 lines) ===\nUSE [app];\nGO\n-- family 2 verb 1 Sales.Customer\nGO\n") {
+	s := newScriptServer(t)
+	r := runTree(t, context.Background(), newCommandTree(objectDeps(t, s.objectServer)),
+		"script", "object", "dbo.sn", "-p", "dev", "--max-col-width", "5")
+	want := "=== SCRIPT (5 lines) ===\nUSE [app];\nGO\nIF OBJECT_ID(N'[dbo].[sn]', N'SN') IS NULL\n" +
+		"CREATE SYNONYM [dbo].[sn] FOR [other].[dbo].[t];\nGO\n"
+	if r.exit != 0 || !strings.Contains(r.stdout, want) {
 		t.Errorf("exit %d\n%s", r.exit, r.stdout)
 	}
 }
@@ -142,10 +151,10 @@ func TestScriptObjectRefusals(t *testing.T) {
 		{[]string{"dbo.sp_shipped"}, 2, "is a system object"},
 		{[]string{"Sales.Nope"}, 8, "no object"},
 	} {
-		cat := newScriptFake()
-		r := runScript(t, cat, append([]string{"object"}, tc.argv...)...)
-		if r.exit != tc.exit || len(cat.calls) != 0 || !strings.Contains(r.stdout+r.stderr, tc.want) {
-			t.Errorf("%v: exit %d, calls %v, want %d and %q\n%s%s", tc.argv, r.exit, cat.calls, tc.exit, tc.want, r.stdout, r.stderr)
+		s := newScriptServer(t)
+		r := runScript(t, s, append([]string{"object"}, tc.argv...)...)
+		if reads := scriptReads(s); r.exit != tc.exit || len(reads) != 0 || !strings.Contains(r.stdout+r.stderr, tc.want) {
+			t.Errorf("%v: exit %d, script reads %v, want %d and %q\n%s%s", tc.argv, r.exit, reads, tc.exit, tc.want, r.stdout, r.stderr)
 		}
 	}
 }
@@ -154,35 +163,35 @@ func TestScriptObjectRefusals(t *testing.T) {
 // (found live on 17): a definition hidden from the login is 9, an encrypted
 // module 11, each with its own hint.
 func TestScriptObjectErrors(t *testing.T) {
-	hidden := fmt.Errorf("gosmo: script stored procedure [Sales].[usp_Get]: %w; it needs VIEW DEFINITION on it", gosmo.ErrDefinitionHidden)
-	encrypted := fmt.Errorf("gosmo: script stored procedure [Sales].[p_secret]: definition is not readable (encrypted): %w", gosmo.ErrUnsupported)
 	for _, tc := range []struct {
-		object string
-		err    error
-		exit   int
-		code   string
-		hint   string
+		argv  []string
+		setup func(*scriptServer)
+		exit  int
+		code  string
+		hint  string
 	}{
-		{"Sales.usp_Get", hidden, 9, "PERMISSION_DENIED", "needs VIEW DEFINITION"},
-		{"Sales.p_secret", encrypted, 11, "UNSUPPORTED", "WITH ENCRYPTION"},
+		{[]string{"Sales.usp_Get"}, func(s *scriptServer) { s.hiddenDefinition = true }, 9, "PERMISSION_DENIED", "needs VIEW DEFINITION"},
+		{[]string{"Sales.p_secret"}, nil, 11, "UNSUPPORTED", "WITH ENCRYPTION"},
 		// A table's DROP refused the schema-bound dependents read: that
 		// read's permission, not VIEW DEFINITION, is the hint.
-		{"Sales.Customer", deniedDependents, 9, "PERMISSION_DENIED", "reads what is schema-bound to it, which takes SELECT on sys.sql_expression_dependencies"},
+		{[]string{"Sales.Customer", "--as", "drop"}, func(s *scriptServer) { s.boundErr = deniedDependents }, 9, "PERMISSION_DENIED",
+			"reads what is schema-bound to it, which takes SELECT on sys.sql_expression_dependencies"},
 	} {
-		cat := newScriptFake()
-		cat.err = tc.err
-		r := runScript(t, cat, "object", tc.object)
+		s := newScriptServer(t)
+		if tc.setup != nil {
+			tc.setup(s)
+		}
+		r := runScript(t, s, append([]string{"object"}, tc.argv...)...)
 		e := firstError(t, envelope(t, r.stdout))
 		if r.exit != tc.exit || e["code"] != tc.code || !strings.Contains(fmt.Sprint(e["hint"]), tc.hint) {
-			t.Errorf("%s: exit %d, error %v", tc.object, r.exit, e)
+			t.Errorf("%v: exit %d, error %v", tc.argv, r.exit, e)
 		}
 	}
 }
 
 func TestScriptFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "customer.sql")
-	cat := newScriptFake()
-	r := runScript(t, cat, "object", "Sales.Customer", "--script-file", path)
+	r := runScript(t, newScriptServer(t), "object", "Sales.Customer", "--script-file", path)
 	env := envelope(t, r.stdout)
 	got, err := os.ReadFile(path)
 	if r.exit != 0 || err != nil || string(got) != dataField(t, env, "script") || dataField(t, env, "scriptFile") != path {
@@ -190,23 +199,23 @@ func TestScriptFile(t *testing.T) {
 	}
 
 	// An existing file is refused before connecting, unless --force.
-	cat = newScriptFake()
-	r = runScript(t, cat, "object", "Sales.Customer", "--script-file", path)
-	if r.exit != 2 || len(cat.calls) != 0 || !strings.Contains(r.stdout+r.stderr, "the file exists") {
-		t.Errorf("existing: exit %d, calls %v\n%s", r.exit, cat.calls, r.stdout)
+	s := newScriptServer(t)
+	r = runScript(t, s, "object", "Sales.Customer", "--script-file", path)
+	if r.exit != 2 || len(s.Queries()) != 0 || !strings.Contains(r.stdout+r.stderr, "the file exists") {
+		t.Errorf("existing: exit %d, queries %v\n%s", r.exit, s.Queries(), r.stdout)
 	}
-	if r = runScript(t, cat, "object", "Sales.Customer", "--as", "drop", "--script-file", path, "--force"); r.exit != 0 {
+	if r = runScript(t, s, "object", "Sales.Customer", "--as", "drop", "--script-file", path, "--force"); r.exit != 0 {
 		t.Errorf("--force: exit %d\n%s", r.exit, r.stdout)
 	}
-	if got, _ := os.ReadFile(path); !strings.Contains(string(got), "verb 3 ") {
+	if got, _ := os.ReadFile(path); !strings.Contains(string(got), "DROP TABLE [Sales].[Customer];") {
 		t.Errorf("--force did not replace the file: %q", got)
 	}
 
 	// A failed script writes nothing.
 	fresh := filepath.Join(t.TempDir(), "none.sql")
-	cat = newScriptFake()
-	cat.err = fmt.Errorf("gosmo: script view: %w", gosmo.ErrDefinitionHidden)
-	if r = runScript(t, cat, "object", "vCustomer", "--script-file", fresh); r.exit != 9 {
+	s = newScriptServer(t)
+	s.hiddenDefinition = true
+	if r = runScript(t, s, "object", "Sales.usp_Get", "--script-file", fresh); r.exit != 9 {
 		t.Errorf("failed script: exit %d", r.exit)
 	}
 	if _, err := os.Stat(fresh); !os.IsNotExist(err) {
@@ -214,27 +223,29 @@ func TestScriptFile(t *testing.T) {
 	}
 
 	// --force alone names the files script object can write.
-	r = runScript(t, newScriptFake(), "object", "Sales.Customer", "--force")
+	r = runScript(t, newScriptServer(t), "object", "Sales.Customer", "--force")
 	if r.exit != 2 || !strings.Contains(r.stdout+r.stderr, "--force: only with --out-file or --script-file") {
 		t.Errorf("--force alone: exit %d\n%s%s", r.exit, r.stdout, r.stderr)
 	}
 }
 
+// TestScriptDB covers the command's own part — the name resolved to its
+// catalog spelling, --as passed through — with a DROP, which reads nothing
+// more. A CREATE's file, option and settings reads are gosmo's to test
+// (scripter_test.go): rows for them here would test nothing of gossms's.
 func TestScriptDB(t *testing.T) {
-	cat := newScriptFake()
-	r := runScript(t, cat, "db", "ARCHIVE", "--as", "drop-and-create")
+	r := runScript(t, newScriptServer(t), "db", "APP", "--as", "drop")
 	env := envelope(t, r.stdout)
-	want := scriptCall{scripting.Database, scripting.DropAndCreate, scripting.Target{DBName: "archive"}}
-	if r.exit != 0 || len(cat.calls) != 1 || cat.calls[0] != want ||
-		dataField(t, env, "database") != "archive" || dataField(t, env, "verb") != "drop-and-create" || env["database"] != "archive" {
-		t.Errorf("exit %d, calls %v, env %v", r.exit, cat.calls, env)
+	script, _ := dataField(t, env, "script").(string)
+	if r.exit != 0 || dataField(t, env, "database") != "app" || dataField(t, env, "verb") != "drop" || env["database"] != "app" ||
+		!strings.Contains(script, "USE [master];\nGO\nIF DB_ID(N'app') IS NOT NULL\n    DROP DATABASE [app];\nGO\n") {
+		t.Errorf("exit %d, env %v", r.exit, env)
 	}
 
-	cat = newScriptFake()
-	if r = runScript(t, cat, "db", "nosuch"); r.exit != 8 || len(cat.calls) != 0 {
-		t.Errorf("unknown database: exit %d, calls %v", r.exit, cat.calls)
+	if r = runScript(t, newScriptServer(t), "db", "nosuch"); r.exit != 8 {
+		t.Errorf("unknown database: exit %d\n%s", r.exit, r.stdout)
 	}
-	if r = runScript(t, cat, "db", "app", "--as", "alter"); r.exit != 2 || !strings.Contains(r.stdout+r.stderr, "One of: create, drop, drop-and-create") {
+	if r = runScript(t, newScriptServer(t), "db", "app", "--as", "alter"); r.exit != 2 || !strings.Contains(r.stdout+r.stderr, "One of: create, drop, drop-and-create") {
 		t.Errorf("--as alter: exit %d\n%s%s", r.exit, r.stdout, r.stderr)
 	}
 }

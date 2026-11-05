@@ -1541,7 +1541,10 @@ before/after change set (§ Commands, § Data,
   sends, statement for statement: `TestDryRunFidelity`
   (`internal/cli/cmd/dryrun_fidelity_test.go`) runs each writer both ways over
   its fakes and compares the dry run's `tsql` with the script of the real
-  run's writes (and a bulk load's row count with `rows`). A new writing
+  run's writes (and a bulk load's row count with `rows`). For a group that
+  writes through gosmo directly (`security`, `maint`, `data import`) the
+  real run's writes are what gosmo's statement observer reports gosmotest
+  accepted, rendered as `WithScript` renders them. A new writing
   command adds a case to `fidelityCases` — `TestDryRunFidelityCoversEveryWriter`
   fails on a command with `--dry-run` and none — and a new `Writer` method
   does not compile until `fidelityWriter` shadows it. `query run` and `plan

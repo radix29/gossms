@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"iter"
 	"maps"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
@@ -24,10 +24,15 @@ import (
 // The dry-run fidelity harness (phase 8, D11): every writing command's
 // --dry-run must print the T-SQL its real run then sends. Each case runs a
 // command twice over fresh fakes — once with --dry-run, once without — and
-// compares the dry run's tsql with what a fidelityWriter recorded the real
-// run would have sent. A new writing command adds a case to
-// fidelityCases; TestDryRunFidelityCoversEveryWriter fails until it does,
-// and a new Writer method does not compile until fidelityWriter shadows it.
+// compares the dry run's tsql with the script of what the real run sent.
+// A command that writes through gosmo directly (security, maint, data
+// import) sends its statements to gosmotest; gosmo's statement observer
+// reports each as the server accepted it, and they are rendered as the
+// script gosmo.WithScript would have made. A command still on Writer is
+// shadowed by a fidelityWriter instead. A new writing command adds a case
+// to fidelityCases; TestDryRunFidelityCoversEveryWriter fails until it
+// does, and a new Writer method does not compile until fidelityWriter
+// shadows it.
 
 // fidelityWriter wraps a command's own fake writer. In a real run it makes
 // each write twice: first through inner under one shared gosmo.WithScript
@@ -47,9 +52,30 @@ type fidelityWriter struct {
 	// sessions maps the session the fake's real create returned to the one
 	// the scripted create did: the fake's has no Server to script through.
 	sessions map[*gosmo.EventSession]*gosmo.EventSession
-	// loaded is the rows each real bulk load consumed. A bulk copy is TDS,
-	// not T-SQL: it is compared with the dry run's rows field instead.
+	// loaded is the rows each real bulk load sent. A bulk copy is TDS, not
+	// T-SQL: it is compared with the dry run's rows field instead.
 	loaded []int64
+}
+
+// bulkLoaded is the row count gosmo's observer entry for a bulk load ends
+// in: "INSERT BULK [dbo].[t] ([id], [name]) -- 3 rows".
+var bulkLoaded = regexp.MustCompile(`^INSERT BULK .* -- (\d+) rows$`)
+
+// observe is the statement observer of a run through gosmo directly: in a
+// real run each statement the server accepted joins the script — a bulk
+// load's count goes to loaded — and in a dry run any is a failure, a write
+// made outside WithScript.
+func (w *fidelityWriter) observe(e gosmo.ScriptEntry) {
+	w.t.Helper()
+	switch m := bulkLoaded.FindStringSubmatch(e.SQL); {
+	case w.dry:
+		w.t.Errorf("a dry run sent %q", e.SQL)
+	case m != nil:
+		n, _ := strconv.ParseInt(m[1], 10, 64)
+		w.loaded = append(w.loaded, n)
+	default:
+		w.script.Add(e)
+	}
 }
 
 var _ Writer = (*fidelityWriter)(nil)
@@ -173,19 +199,6 @@ func (w *fidelityWriter) DropDatabase(ctx context.Context, d *gosmo.Database, te
 	return w.inner.DropDatabase(ctx, d, term)
 }
 
-func (w *fidelityWriter) ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
-	perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error {
-	w.shadow(ctx, "ApplyPermission", func(sctx context.Context) error {
-		return w.inner.ApplyPermission(sctx, d, verb, sec, perm, principal, opts)
-	})
-	return w.inner.ApplyPermission(ctx, d, verb, sec, perm, principal, opts)
-}
-
-func (w *fidelityWriter) AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error {
-	w.shadow(ctx, "AlterRoleMember", func(sctx context.Context) error { return w.inner.AlterRoleMember(sctx, d, role, member, add) })
-	return w.inner.AlterRoleMember(ctx, d, role, member, add)
-}
-
 func (w *fidelityWriter) StartJob(ctx context.Context, job, step string) error {
 	w.shadow(ctx, "StartJob", func(sctx context.Context) error { return w.inner.StartJob(sctx, job, step) })
 	return w.inner.StartJob(ctx, job, step)
@@ -196,85 +209,10 @@ func (w *fidelityWriter) StopJob(ctx context.Context, job string) error {
 	return w.inner.StopJob(ctx, job)
 }
 
-func (w *fidelityWriter) Backup(ctx context.Context, opts gosmo.BackupOptions) error {
-	w.shadow(ctx, "Backup", func(sctx context.Context) error { return w.inner.Backup(sctx, opts) })
-	return w.inner.Backup(ctx, opts)
-}
-
-func (w *fidelityWriter) Restore(ctx context.Context, opts gosmo.RestoreOptions) error {
-	w.shadow(ctx, "Restore", func(sctx context.Context) error { return w.inner.Restore(sctx, opts) })
-	return w.inner.Restore(ctx, opts)
-}
-
-func (w *fidelityWriter) VerifyBackup(ctx context.Context, opts gosmo.VerifyOptions, targets ...gosmo.BackupTarget) error {
-	w.shadow(ctx, "VerifyBackup", func(sctx context.Context) error { return w.inner.VerifyBackup(sctx, opts, targets...) })
-	return w.inner.VerifyBackup(ctx, opts, targets...)
-}
-
-func (w *fidelityWriter) RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error {
-	w.shadow(ctx, "RebuildIndex", func(sctx context.Context) error { return w.inner.RebuildIndex(sctx, idx, opts) })
-	return w.inner.RebuildIndex(ctx, idx, opts)
-}
-
-func (w *fidelityWriter) ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error {
-	w.shadow(ctx, "ReorganizeIndex", func(sctx context.Context) error { return w.inner.ReorganizeIndex(sctx, idx) })
-	return w.inner.ReorganizeIndex(ctx, idx)
-}
-
-func (w *fidelityWriter) RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error {
-	w.shadow(ctx, "RebuildAllIndexes", func(sctx context.Context) error { return w.inner.RebuildAllIndexes(sctx, o, opts) })
-	return w.inner.RebuildAllIndexes(ctx, o, opts)
-}
-
-func (w *fidelityWriter) ReorganizeAllIndexes(ctx context.Context, o tableOrView) error {
-	w.shadow(ctx, "ReorganizeAllIndexes", func(sctx context.Context) error { return w.inner.ReorganizeAllIndexes(sctx, o) })
-	return w.inner.ReorganizeAllIndexes(ctx, o)
-}
-
-func (w *fidelityWriter) UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error {
-	w.shadow(ctx, "UpdateStatistics", func(sctx context.Context) error { return w.inner.UpdateStatistics(sctx, o, opts) })
-	return w.inner.UpdateStatistics(ctx, o, opts)
-}
-
-func (w *fidelityWriter) UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error {
-	w.shadow(ctx, "UpdateStatistic", func(sctx context.Context) error { return w.inner.UpdateStatistic(sctx, st, opts) })
-	return w.inner.UpdateStatistic(ctx, st, opts)
-}
-
-func (w *fidelityWriter) UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error {
-	w.shadow(ctx, "UpdateDatabaseStatistics", func(sctx context.Context) error {
-		return w.inner.UpdateDatabaseStatistics(sctx, d, resample)
-	})
-	return w.inner.UpdateDatabaseStatistics(ctx, d, resample)
-}
-
-func (w *fidelityWriter) CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error) {
-	w.shadow(ctx, "CheckDB", func(sctx context.Context) error {
-		_, err := w.inner.CheckDB(sctx, d, opts)
-		return err
-	})
-	return w.inner.CheckDB(ctx, d, opts)
-}
-
-func (w *fidelityWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error {
-	w.shadow(ctx, "TruncateTable", func(sctx context.Context) error { return w.inner.TruncateTable(sctx, t) })
-	return w.inner.TruncateTable(ctx, t)
-}
-
-// BulkInsert has no scripted twin: a dry run never sends one (it reads the
-// whole file and counts its rows), so a dry run reaching it is a failure.
-func (w *fidelityWriter) BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error) {
-	if w.dry || gosmo.Scripting(ctx) {
-		w.t.Errorf("BulkInsert: a dry run (or a scripted context) reached the bulk load")
-	}
-	n, err := w.inner.BulkInsert(ctx, d, bc, rows)
-	w.loaded = append(w.loaded, n)
-	return n, err
-}
-
 // fidelityCase is one writing command line: argv after the command's path
 // (the ad-hoc connection is added), and fakes, a fresh catalog and writer
-// for each of the two runs.
+// for each of the two runs — no writer for a command that writes through
+// gosmo, whose catalog is then a gosmotest server's.
 type fidelityCase struct {
 	command string
 	argv    string
@@ -368,51 +306,18 @@ func captureFakes(*testing.T) (Catalog, Writer) {
 	return cat, w
 }
 
-// importCatalog is dbCatalog with the one table data import loads, in a
-// database handle that scripts through a never-connected Server.
-type importCatalog struct {
-	dbCatalog
-}
-
-func (c *importCatalog) TableByName(_ context.Context, d *gosmo.Database, schema, name string) (*gosmo.Table, error) {
-	return (&gosmo.Server{}).DatabaseRef(d.Name).TableRef(schema, name), nil
-}
-
-func (c *importCatalog) TableColumns(context.Context, *gosmo.Table) ([]*gosmo.Column, error) {
-	return []*gosmo.Column{
-		{Name: "id", DataType: "int", TypeSchema: "sys"},
-		{Name: "name", DataType: "nvarchar", MaxLength: 40, IsNullable: true, TypeSchema: "sys"},
-	}, nil
-}
-
-func (c *importCatalog) CollationCodePage(context.Context, string) (int, error) { return 1252, nil }
-
-// importWriter scripts the TRUNCATE through the real serverWriter, ignores
-// the real one, and consumes every row of a load.
-type importWriter struct{ Writer }
-
-func (importWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.TruncateTable(ctx, t)
+// importFakes is real gosmo over a catalogServer whose database App has the
+// one table data import loads.
+func importFakes(t *testing.T) (Catalog, Writer) {
+	s := newCatalogServer(t, "App", &gosmo.ObjectInfo{ObjectID: 9, Schema: "dbo", Name: "t", Type: "U", TypeDesc: "USER_TABLE"})
+	s.columns[9] = []*gosmo.Column{
+		{Name: "id", OrdinalPosition: 1, DataType: "int", TypeSchema: "sys"},
+		{Name: "name", OrdinalPosition: 2, DataType: "nvarchar", MaxLength: 40, IsNullable: true, TypeSchema: "sys"},
 	}
-	return nil
-}
-
-func (importWriter) BulkInsert(_ context.Context, _ *gosmo.Database, _ gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error) {
-	var n int64
-	for _, err := range rows {
-		if err != nil {
-			return n, err
-		}
-		n++
-	}
-	return n, nil
-}
-
-func importFakes(*testing.T) (Catalog, Writer) {
-	cat := &importCatalog{dbCatalog{current: "App", objectCatalog: objectCatalog{objects: []*gosmo.ObjectInfo{
-		{ObjectID: 9, Schema: "dbo", Name: "t", Type: "U", TypeDesc: "USER_TABLE"}}}}}
-	return cat, importWriter{}
+	s.on(func(gosmotest.Query) [][]any {
+		return [][]any{{"id", "int", 4, 10, 0, 0, 1252}, {"name", "nvarchar", 40, 0, 0, 1252, 1252}}
+	}, "WHERE c.object_id = OBJECT_ID(@p1)")
+	return ServerCatalog(&db.ServerConn{Server: s.Server()}), nil
 }
 
 // commandGroups is every group constructor tree.go assembles the command
@@ -453,7 +358,13 @@ func runFidelity(t *testing.T, c fidelityCase, csv string, dry bool) (*output.Re
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
 		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
+			// A gosmotest-backed catalog's server, for the handlers that
+			// read gosmo directly; nil for a hand-written fake.
+			sc := &db.ServerConn{}
+			if real, ok := cat.(serverCatalog); ok {
+				sc.Server = real.s
+			}
+			return sc, nil
 		},
 		Catalog: func(*db.ServerConn) Catalog { return cat },
 		Writer:  func(*db.ServerConn) Writer { return w },
@@ -470,7 +381,8 @@ func runFidelity(t *testing.T, c fidelityCase, csv string, dry bool) (*output.Re
 	if got := inv.Command.Name(); got != c.command {
 		t.Fatalf("%q parsed as %s", argv, got)
 	}
-	res, err := inv.Command.Run(context.Background(), inv)
+	ctx := gosmo.WithStatementObserver(context.Background(), w.observe)
+	res, err := inv.Command.Run(ctx, inv)
 	return res, w, err
 }
 
@@ -512,6 +424,9 @@ func TestDryRunFidelity(t *testing.T) {
 			}
 			if hasField(realRes, "tsql") {
 				t.Error("the real run printed tsql")
+			}
+			if len(dw.loaded) > 0 {
+				t.Errorf("the dry run bulk loaded %d", dw.loaded)
 			}
 			if len(rw.loaded) > 0 {
 				var n int64

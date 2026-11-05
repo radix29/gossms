@@ -351,7 +351,7 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 			return nil, err
 		}
 		res := &output.Result{}
-		sc, cat, w, err := d.connectWriter(ctx, inv, res)
+		sc, cat, err := d.connectGated(ctx, inv, res)
 		if err != nil {
 			return res, err
 		}
@@ -373,7 +373,7 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 				return res, usageError(fmt.Sprintf("--columns: %s is a %s, which has no column permissions",
 					securableText(sec), strings.ToLower(string(sec.Class))), "Drop --columns.")
 			}
-			if sec.Columns, err = resolveColumns(ctx, cat, dbase, sec, req.columns); err != nil {
+			if sec.Columns, err = resolveColumns(ctx, dbase, sec, req.columns); err != nil {
 				return res, err
 			}
 		}
@@ -382,7 +382,7 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 				return res, err
 			}
 		}
-		p, err := resolvePrincipal(ctx, cat, res, dbase, req.principal, grantScope)
+		p, err := resolvePrincipal(ctx, sc.Server, cat, res, dbase, req.principal, grantScope)
 		if err != nil {
 			return res, err
 		}
@@ -395,7 +395,7 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 		done := 0
 		write := func(ctx context.Context) error {
 			for _, perm := range req.perms {
-				if err := w.ApplyPermission(ctx, dbase, verb, sec, permissionName(sec.Class, perm), p.name, req.opts); err != nil {
+				if err := applyPermission(ctx, sc.Server, dbase, verb, sec, permissionName(sec.Class, perm), p.name, req.opts); err != nil {
 					return permissionWriteError(err, verb, sec.Class)
 				}
 				done++
@@ -409,7 +409,7 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 		}
 		// The principal's entries on the securable: before the change in a
 		// dry run, after it otherwise (whatever landed of a failed one).
-		set, err := explicitPermissionsSet(ctx, cat, dbase, p)
+		set, err := explicitPermissionsSet(ctx, sc.Server, dbase, p)
 		if err != nil {
 			res.Warnings = append(res.Warnings, "The principal's permissions were not read back: "+readError(err).Message)
 			return res, werr
@@ -529,7 +529,7 @@ func securableText(sec gosmo.Securable) string {
 }
 
 // resolveSecurable reads what on names in dbase (nil for SERVER), in its
-// catalog spelling.
+// catalog spelling. cat resolves an object's name (resolveObject).
 func resolveSecurable(ctx context.Context, cat Catalog, dbase *gosmo.Database, on onSpec) (gosmo.Securable, error) {
 	switch on.kind {
 	case onServer:
@@ -552,7 +552,7 @@ func resolveSecurable(ctx context.Context, cat Catalog, dbase *gosmo.Database, o
 		if err != nil {
 			return gosmo.Securable{}, err
 		}
-		schemas, err := cat.Schemas(ctx, dbase)
+		schemas, err := dbase.Schemas(ctx)
 		if err != nil {
 			return gosmo.Securable{}, readError(err)
 		}
@@ -572,7 +572,7 @@ func resolveSecurable(ctx context.Context, cat Catalog, dbase *gosmo.Database, o
 		if err != nil {
 			return gosmo.Securable{}, err
 		}
-		c, err := cat.CertificateByName(ctx, dbase, n)
+		c, err := dbase.CertificateByName(ctx, n)
 		if errors.Is(err, gosmo.ErrNotFound) {
 			return gosmo.Securable{}, output.NewError(output.CodeNotFound,
 				fmt.Sprintf("no certificate %s in database %s", gosmo.QuoteName(n), gosmo.QuoteName(dbase.Name)),
@@ -583,7 +583,7 @@ func resolveSecurable(ctx context.Context, cat Catalog, dbase *gosmo.Database, o
 		}
 		return gosmo.Securable{Class: gosmo.SecurableCertificate, Name: c.Name}, nil
 	case onType:
-		return resolveType(ctx, cat, dbase, on)
+		return resolveType(ctx, dbase, on)
 	}
 	n, err := parseObjectName(on.name, dbase.Name)
 	if err != nil {
@@ -635,27 +635,27 @@ func matchName(names []string, name string) (string, bool) {
 
 // resolveType finds TYPE::'s user-defined data, table or CLR type: a
 // two-part name as given, a one-part one across schemas.
-func resolveType(ctx context.Context, cat Catalog, dbase *gosmo.Database, on onSpec) (gosmo.Securable, error) {
+func resolveType(ctx context.Context, dbase *gosmo.Database, on onSpec) (gosmo.Securable, error) {
 	n, err := parseObjectName(on.name, dbase.Name)
 	if err != nil {
 		return gosmo.Securable{}, err
 	}
 	var types []ObjectName
-	data, err := cat.UserDefinedDataTypes(ctx, dbase)
+	data, err := dbase.UserDefinedDataTypes(ctx)
 	if err != nil {
 		return gosmo.Securable{}, readError(err)
 	}
 	for _, t := range data {
 		types = append(types, ObjectName{t.Schema, t.Name})
 	}
-	tables, err := cat.UserDefinedTableTypes(ctx, dbase)
+	tables, err := dbase.UserDefinedTableTypes(ctx)
 	if err != nil {
 		return gosmo.Securable{}, readError(err)
 	}
 	for _, t := range tables {
 		types = append(types, ObjectName{t.Schema, t.Name})
 	}
-	clr, err := cat.ClrTypes(ctx, dbase)
+	clr, err := dbase.ClrTypes(ctx)
 	if err != nil {
 		return gosmo.Securable{}, readError(err)
 	}
@@ -696,23 +696,23 @@ func resolveType(ctx context.Context, cat Catalog, dbase *gosmo.Database, on onS
 // resolveColumns is asked as sec's column names, each a column of the table
 // or view read in its catalog spelling. A table-valued function's columns
 // are left to the server.
-func resolveColumns(ctx context.Context, cat Catalog, dbase *gosmo.Database, sec gosmo.Securable, asked []string) ([]string, error) {
+func resolveColumns(ctx context.Context, dbase *gosmo.Database, sec gosmo.Securable, asked []string) ([]string, error) {
 	var cols []*gosmo.Column
 	switch sec.Class {
 	case gosmo.SecurableTable:
-		t, err := cat.TableByName(ctx, dbase, sec.Schema, sec.Name)
+		t, err := dbase.TableByName(ctx, sec.Schema, sec.Name)
 		if err != nil {
 			return nil, readError(err)
 		}
-		if cols, err = cat.TableColumns(ctx, t); err != nil {
+		if cols, err = t.Columns(ctx); err != nil {
 			return nil, readError(err)
 		}
 	case gosmo.SecurableView:
-		v, err := cat.ViewByName(ctx, dbase, sec.Schema, sec.Name)
+		v, err := dbase.ViewByName(ctx, sec.Schema, sec.Name)
 		if err != nil {
 			return nil, readError(err)
 		}
-		if cols, err = cat.ViewColumns(ctx, v); err != nil {
+		if cols, err = v.Columns(ctx); err != nil {
 			return nil, readError(err)
 		}
 	default:
@@ -763,13 +763,23 @@ func permissionWriteError(err error, verb gosmo.PermissionVerb, class gosmo.Secu
 	return err
 }
 
+// applyPermission is one GRANT, DENY or REVOKE on sec in d, or with d nil
+// on the server (SecurableServer).
+func applyPermission(ctx context.Context, srv *gosmo.Server, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
+	perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error {
+	if d == nil {
+		return srv.ApplyPermission(ctx, verb, sec, perm, principal, opts)
+	}
+	return d.ApplyPermission(ctx, verb, sec, perm, principal, opts)
+}
+
 // --- role add-member / remove-member ------------------------------------------
 
 func (d Deps) securityRoleMember(ctx context.Context, inv *spec.Invocation, add bool) (*output.Result, error) {
 	scope := inv.Values[optScope].(string)
 	roleName, memberName := inv.Args[0], inv.Args[1]
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -779,30 +789,38 @@ func (d Deps) securityRoleMember(ctx context.Context, inv *spec.Invocation, add 
 		dbase   *gosmo.Database
 		role    string
 		members []string
+		// alter adds or removes a member through the role just read.
+		alter func(ctx context.Context, member string) error
 	)
 	if scope == scopeServer {
-		r, err := cat.ServerRoleByName(ctx, roleName)
+		r, err := sc.Server.ServerRoleByName(ctx, roleName)
 		if errors.Is(err, gosmo.ErrNotFound) {
-			return res, roleNotFound(ctx, cat, res, roleName, scope)
+			return res, roleNotFound(ctx, sc.Server, cat, res, roleName, scope)
 		}
 		if err != nil {
 			return res, readError(err)
 		}
-		role, members = r.Name, r.Members
+		role, members, alter = r.Name, r.Members, r.RemoveMember
+		if add {
+			alter = r.AddMember
+		}
 	} else {
 		if dbase, err = currentDatabase(ctx, cat, res); err != nil {
 			return res, err
 		}
-		r, err := cat.DatabaseRoleByName(ctx, dbase, roleName)
+		r, err := dbase.RoleByName(ctx, roleName)
 		if errors.Is(err, gosmo.ErrNotFound) {
-			return res, roleNotFound(ctx, cat, res, roleName, scope)
+			return res, roleNotFound(ctx, sc.Server, cat, res, roleName, scope)
 		}
 		if err != nil {
 			return res, readError(err)
 		}
-		role, members = r.Name, r.Members
+		role, members, alter = r.Name, r.Members, r.RemoveMember
+		if add {
+			alter = r.AddMember
+		}
 	}
-	p, err := resolvePrincipal(ctx, cat, res, dbase, memberName, roleScope)
+	p, err := resolvePrincipal(ctx, sc.Server, cat, res, dbase, memberName, roleScope)
 	if err != nil {
 		return res, err
 	}
@@ -822,7 +840,7 @@ func (d Deps) securityRoleMember(ctx context.Context, inv *spec.Invocation, add 
 			gosmo.QuoteName(p.name), gosmo.QuoteName(role)))
 	}
 	write := func(ctx context.Context) error {
-		err := w.AlterRoleMember(ctx, dbase, role, p.name, add)
+		err := alter(ctx, p.name)
 		if gosmo.IsMissingOrDenied(err) || gosmo.IsPermissionDenied(err) {
 			hint := "Changing a database role's members needs ALTER on the role, ALTER ANY ROLE, or db_securityadmin / db_owner. " +
 				"Use a login that has it, or have it granted."
@@ -846,9 +864,9 @@ func (d Deps) securityRoleMember(ctx context.Context, inv *spec.Invocation, add 
 	}
 	var now []*gosmo.RoleMember
 	if dbase == nil {
-		now, err = cat.ServerRoleMembers(ctx, role)
+		now, err = sc.Server.ServerRoleMembers(ctx, role)
 	} else {
-		now, err = cat.DatabaseRoleMembers(ctx, dbase, role)
+		now, err = dbase.RoleMembers(ctx, role)
 	}
 	if err != nil {
 		res.Warnings = append(res.Warnings, "The role's members were not read back: "+readError(err).Message)

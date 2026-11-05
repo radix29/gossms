@@ -176,13 +176,13 @@ func (d Deps) maintIndexFragmentation(ctx context.Context, inv *spec.Invocation)
 	}
 	mode := gosmo.FragmentationMode(strings.ToUpper(inv.Values[optMode].(string)))
 	res := &output.Result{}
-	sc, cat, dbase, err := d.connectDatabase(ctx, inv, res)
+	sc, _, dbase, err := d.connectDatabase(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	rows, err := cat.DatabaseFragmentation(ctx, dbase, mode, float64(minPct), int64(minPages))
+	rows, err := dbase.FragmentationStats(ctx, mode, float64(minPct), int64(minPages))
 	if err != nil {
 		e := readError(err)
 		if e.Code == output.CodePermissionDenied {
@@ -238,19 +238,20 @@ func fragmentationSet(rows []*gosmo.DatabaseIndexFragmentation, mode gosmo.Fragm
 // --- The writes' object lookup ------------------------------------------------
 
 // connectTableOrView is lookupTableOrView for a writing command: the gate,
-// the connection with its writes, then inv's object argument resolved in the
-// connection's database as a table or a view. The caller closes sc.
-func (d Deps) connectTableOrView(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (*db.ServerConn, Catalog, Writer, *gosmo.ObjectInfo, tableOrView, error) {
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+// the connection, then inv's object argument resolved in the connection's
+// database as a table or a view, which the command writes through. The
+// caller closes sc.
+func (d Deps) connectTableOrView(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (*db.ServerConn, *gosmo.ObjectInfo, tableOrView, error) {
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
-		return nil, nil, nil, nil, tableOrView{}, err
+		return nil, nil, tableOrView{}, err
 	}
 	o, tv, err := resolveTableOrView(ctx, cat, inv.Args[0], res, what)
 	if err != nil {
 		sc.Close()
-		return nil, nil, nil, nil, tableOrView{}, err
+		return nil, nil, tableOrView{}, err
 	}
-	return sc, cat, w, o, tv, nil
+	return sc, o, tv, nil
 }
 
 // resolveTableOrView is arg resolved in the connection's database as a table
@@ -268,20 +269,20 @@ func resolveTableOrView(ctx context.Context, cat Catalog, arg string, res *outpu
 	if err != nil {
 		return nil, tableOrView{}, err
 	}
-	tv, err := tableOrViewOf(ctx, cat, dbase, o, what)
+	tv, err := tableOrViewOf(ctx, dbase, o, what)
 	return o, tv, err
 }
 
 // tableOrViewOf reads o, found in dbase, as the table or view it is; another
 // kind is a usage error saying it has no what.
-func tableOrViewOf(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *gosmo.ObjectInfo, what string) (tableOrView, error) {
+func tableOrViewOf(ctx context.Context, dbase *gosmo.Database, o *gosmo.ObjectInfo, what string) (tableOrView, error) {
 	var tv tableOrView
 	var err error
 	switch kind := kindOfDesc(o.TypeDesc); kind {
 	case kindTable:
-		tv.table, err = cat.TableByName(ctx, dbase, o.Schema, o.Name)
+		tv.table, err = dbase.TableByName(ctx, o.Schema, o.Name)
 	case kindView:
-		tv.view, err = cat.ViewByName(ctx, dbase, o.Schema, o.Name)
+		tv.view, err = dbase.ViewByName(ctx, o.Schema, o.Name)
 	default:
 		return tv, usageError(fmt.Sprintf("%s is a %s, which has no %s", gosmo.QualifiedName(o.Schema, o.Name), kind, what),
 			"Give a table or a view; `gossms object describe` shows any object.")
@@ -292,23 +293,23 @@ func tableOrViewOf(ctx context.Context, cat Catalog, dbase *gosmo.Database, o *g
 	return tv, nil
 }
 
-// indexes is tv's indexes, read through cat.
-func (tv tableOrView) indexes(ctx context.Context, cat Catalog) ([]*gosmo.Index, error) {
+// indexes is tv's indexes.
+func (tv tableOrView) indexes(ctx context.Context) ([]*gosmo.Index, error) {
 	if tv.table != nil {
-		return cat.TableIndexes(ctx, tv.table)
+		return tv.table.Indexes(ctx)
 	}
-	return cat.ViewIndexes(ctx, tv.view)
+	return tv.view.Indexes(ctx)
 }
 
 // fragmentation is tv's indexes' fragmentation in a LIMITED scan, by index
 // id.
-func (tv tableOrView) fragmentation(ctx context.Context, cat Catalog) (map[int]*gosmo.IndexFragmentation, error) {
+func (tv tableOrView) fragmentation(ctx context.Context) (map[int]*gosmo.IndexFragmentation, error) {
 	var frag []*gosmo.IndexFragmentation
 	var err error
 	if tv.table != nil {
-		frag, err = cat.TableFragmentation(ctx, tv.table, gosmo.FragmentationLimited)
+		frag, err = tv.table.FragmentationStats(ctx, gosmo.FragmentationLimited)
 	} else {
-		frag, err = cat.ViewFragmentation(ctx, tv.view, gosmo.FragmentationLimited)
+		frag, err = tv.view.FragmentationStats(ctx, gosmo.FragmentationLimited)
 	}
 	if err != nil {
 		return nil, err
@@ -320,12 +321,36 @@ func (tv tableOrView) fragmentation(ctx context.Context, cat Catalog) (map[int]*
 	return out, nil
 }
 
-// statistics is tv's statistics, read through cat.
-func (tv tableOrView) statistics(ctx context.Context, cat Catalog) ([]*gosmo.Statistic, error) {
+// statistics is tv's statistics.
+func (tv tableOrView) statistics(ctx context.Context) ([]*gosmo.Statistic, error) {
 	if tv.table != nil {
-		return cat.TableStatistics(ctx, tv.table)
+		return tv.table.Statistics(ctx)
 	}
-	return cat.ViewStatistics(ctx, tv.view)
+	return tv.view.Statistics(ctx)
+}
+
+// rebuildAll is ALTER INDEX ALL … REBUILD on tv.
+func (tv tableOrView) rebuildAll(ctx context.Context, opts gosmo.IndexRebuildOptions) error {
+	if tv.view != nil {
+		return tv.view.RebuildAllIndexesWith(ctx, opts)
+	}
+	return tv.table.RebuildAllIndexesWith(ctx, opts)
+}
+
+// reorganizeAll is ALTER INDEX ALL … REORGANIZE on tv.
+func (tv tableOrView) reorganizeAll(ctx context.Context) error {
+	if tv.view != nil {
+		return tv.view.ReorganizeAllIndexes(ctx)
+	}
+	return tv.table.ReorganizeAllIndexes(ctx)
+}
+
+// updateStatistics is UPDATE STATISTICS on tv, every statistic.
+func (tv tableOrView) updateStatistics(ctx context.Context, opts gosmo.StatisticsUpdateOptions) error {
+	if tv.view != nil {
+		return tv.view.UpdateStatisticsWith(ctx, opts)
+	}
+	return tv.table.UpdateStatisticsWith(ctx, opts)
 }
 
 // --- maint index-rebuild ------------------------------------------------------
@@ -386,18 +411,18 @@ func (d Deps) maintIndexRebuild(ctx context.Context, inv *spec.Invocation) (*out
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, w, o, tv, err := d.connectTableOrView(ctx, inv, res, "indexes")
+	sc, o, tv, err := d.connectTableOrView(ctx, inv, res, "indexes")
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	if info := cat.ServerInfo(); r.opts.Online && !info.SupportsOnlineIndexOperations() {
+	if info := sc.Server.Info(); r.opts.Online && !info.SupportsOnlineIndexOperations() {
 		return res, output.NewError(output.CodeUnsupported,
 			fmt.Sprintf("this edition (%s) has no online index operations", info.Edition),
 			"Leave --online out (the object is locked while the index rebuilds), or --reorganize, which is always online.")
 	}
-	all, err := tv.indexes(ctx, cat)
+	all, err := tv.indexes(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -428,7 +453,7 @@ func (d Deps) maintIndexRebuild(ctx context.Context, inv *spec.Invocation) (*out
 		}
 	}
 
-	before, fragErr := tv.fragmentation(ctx, cat)
+	before, fragErr := tv.fragmentation(ctx)
 	if fragErr != nil {
 		res.Warnings = append(res.Warnings, "The fragmentation before was not read: "+readError(fragErr).Message)
 	}
@@ -436,20 +461,20 @@ func (d Deps) maintIndexRebuild(ctx context.Context, inv *spec.Invocation) (*out
 	write := func(ctx context.Context) error {
 		switch {
 		case r.index != "" && r.reorganize:
-			return deniedOnResolved(w.ReorganizeIndex(ctx, targets[0]))
+			return deniedOnResolved(targets[0].Reorganize(ctx))
 		case r.index != "":
-			return deniedOnResolved(w.RebuildIndex(ctx, targets[0], r.opts))
+			return deniedOnResolved(targets[0].Rebuild(ctx, r.opts))
 		case r.reorganize:
-			return deniedOnResolved(w.ReorganizeAllIndexes(ctx, tv))
+			return deniedOnResolved(tv.reorganizeAll(ctx))
 		}
-		return deniedOnResolved(w.RebuildAllIndexes(ctx, tv, r.opts))
+		return deniedOnResolved(tv.rebuildAll(ctx, r.opts))
 	}
 	if err := applyWrite(ctx, inv, res, write); err != nil {
 		return res, indexError(err, name)
 	}
 	var after map[int]*gosmo.IndexFragmentation
 	if !dryRun(inv) && fragErr == nil {
-		if after, err = tv.fragmentation(ctx, cat); err != nil {
+		if after, err = tv.fragmentation(ctx); err != nil {
 			res.Warnings = append(res.Warnings, "The fragmentation after was not read: "+readError(err).Message)
 		}
 	}
@@ -635,14 +660,14 @@ func (d Deps) maintUpdateStats(ctx context.Context, inv *spec.Invocation) (*outp
 		return d.updateDatabaseStats(ctx, inv, r)
 	}
 	res := &output.Result{}
-	sc, cat, w, o, tv, err := d.connectTableOrView(ctx, inv, res, "statistics")
+	sc, o, tv, err := d.connectTableOrView(ctx, inv, res, "statistics")
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
 	name := gosmo.QualifiedName(o.Schema, o.Name)
-	before, err := tv.statistics(ctx, cat)
+	before, err := tv.statistics(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -676,16 +701,16 @@ func (d Deps) maintUpdateStats(ctx context.Context, inv *spec.Invocation) (*outp
 	}
 	write := func(ctx context.Context) error {
 		if r.statistic != "" {
-			return deniedOnResolved(w.UpdateStatistic(ctx, targets[0], r.opts))
+			return deniedOnResolved(targets[0].UpdateWith(ctx, r.opts))
 		}
-		return deniedOnResolved(w.UpdateStatistics(ctx, tv, r.opts))
+		return deniedOnResolved(tv.updateStatistics(ctx, r.opts))
 	}
 	if err := applyWrite(ctx, inv, res, write); err != nil {
 		return res, statsError(err, name, false)
 	}
 	var after []*gosmo.Statistic
 	if !dryRun(inv) {
-		if after, err = tv.statistics(ctx, cat); err != nil {
+		if after, err = tv.statistics(ctx); err != nil {
 			res.Warnings = append(res.Warnings, "The statistics were not read back: "+readError(err).Message)
 			after = nil
 		}
@@ -736,7 +761,7 @@ func statsSet(targets, after []*gosmo.Statistic, readBack bool) output.Set {
 // connection's database.
 func (d Deps) updateDatabaseStats(ctx context.Context, inv *spec.Invocation, r statsRequest) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -754,7 +779,7 @@ func (d Deps) updateDatabaseStats(ctx context.Context, inv *spec.Invocation, r s
 		{Key: "sampling", Value: samplingText(r.opts)},
 	}
 	write := func(ctx context.Context) error {
-		return deniedOnResolved(w.UpdateDatabaseStatistics(ctx, dbase, r.opts.Resample))
+		return deniedOnResolved(dbase.UpdateStatistics(ctx, r.opts.Resample))
 	}
 	if err := applyWrite(ctx, inv, res, write); err != nil {
 		return res, statsError(err, gosmo.QuoteName(dbase.Name), true)

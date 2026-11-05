@@ -38,7 +38,7 @@ func TestDataExportObject(t *testing.T) {
 	} {
 		path := filepath.Join(t.TempDir(), "c.csv")
 		sess := &fakeSession{t: t, run: nullsAndEmpties}
-		d, _, opened := dataDeps(t, newObjectFake(), sess)
+		d, _, opened := dataDeps(t, newObjectServer(t), sess)
 		r := runData(t, d, append([]string{"export", "Sales.Customer", "--out-file", path}, tc.argv...)...)
 		if r.exit != 0 {
 			t.Fatalf("%v: exit %d\n%s", tc.argv, r.exit, r.stdout)
@@ -75,7 +75,7 @@ func TestDataExportFormats(t *testing.T) {
 	} {
 		path := filepath.Join(t.TempDir(), "x"+ext)
 		sess := &fakeSession{t: t, run: nullsAndEmpties}
-		d, _, _ := dataDeps(t, newObjectFake(), sess)
+		d, _, _ := dataDeps(t, newObjectServer(t), sess)
 		if r := runData(t, d, "export", "--sql", "SELECT id, name FROM t", "--out-file", path); r.exit != 0 {
 			t.Errorf("%s: exit %d\n%s", ext, r.exit, r.stdout)
 			continue
@@ -89,7 +89,7 @@ func TestDataExportFormats(t *testing.T) {
 func TestDataExportScript(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "q.csv")
 	sess := &fakeSession{t: t, run: nullsAndEmpties}
-	d, _, _ := dataDeps(t, newObjectFake(), sess)
+	d, _, _ := dataDeps(t, newObjectServer(t), sess)
 	r := runData(t, d, "export", "-Q", "SELECT id, name FROM t", "--out-file", path)
 	if r.exit != 0 {
 		t.Fatalf("exit %d\n%s", r.exit, r.stdout)
@@ -108,7 +108,7 @@ func TestDataExportScript(t *testing.T) {
 	// --param wraps the script in sp_executesql, as query run's.
 	path = filepath.Join(t.TempDir(), "p.csv")
 	sess = &fakeSession{t: t, run: nullsAndEmpties}
-	d, _, _ = dataDeps(t, newObjectFake(), sess)
+	d, _, _ = dataDeps(t, newObjectServer(t), sess)
 	if r := runData(t, d, "export", "-Q", "SELECT * FROM t WHERE id = @id", "--param", "id=4:int", "--out-file", path); r.exit != 0 ||
 		len(sess.executed) != 1 || !strings.Contains(sess.executed[0], "sp_executesql") {
 		t.Errorf("--param: exit %d, sent %q\n%s", r.exit, sess.executed, r.stdout)
@@ -127,7 +127,7 @@ func TestDataExportFailureKeepsTheFile(t *testing.T) {
 		return qr
 	}
 	sess := &fakeSession{t: t, run: failing}
-	d, _, _ := dataDeps(t, newObjectFake(), sess)
+	d, _, _ := dataDeps(t, newObjectServer(t), sess)
 	r := runData(t, d, "export", "Sales.Customer", "--out-file", path, "--force")
 	if r.exit == 0 || !strings.Contains(r.stdout, "was not written") {
 		t.Errorf("exit %d\n%s", r.exit, r.stdout)
@@ -159,14 +159,14 @@ func TestDataExportRefusals(t *testing.T) {
 		{[]string{"-Q", "SET NOEXEC ON\nSELECT 1", "--out-file", out("h.csv")}, 7, "NOEXEC"},
 	} {
 		sess := &fakeSession{t: t}
-		d, dialled, _ := dataDeps(t, newObjectFake(), sess)
+		d, dialled, _ := dataDeps(t, newObjectServer(t), sess)
 		r := runData(t, d, append([]string{"export"}, tc.argv...)...)
 		if r.exit != tc.exit || *dialled != 0 || !strings.Contains(r.stdout, tc.want) {
 			t.Errorf("%q: exit %d (want %d), dialled %d, want %q\n%s", tc.argv, r.exit, tc.exit, *dialled, tc.want, r.stdout)
 		}
 	}
 	// A write's hint points at query run, not at an --allow export lacks.
-	d, _, _ := dataDeps(t, newObjectFake(), &fakeSession{t: t})
+	d, _, _ := dataDeps(t, newObjectServer(t), &fakeSession{t: t})
 	r := runData(t, d, "export", "-Q", "UPDATE t SET a = 1", "--out-file", out("i.csv"))
 	if hint, _ := firstError(t, envelope(t, r.stdout))["hint"].(string); !strings.Contains(hint, "query run --allow write") {
 		t.Errorf("hint %q", hint)

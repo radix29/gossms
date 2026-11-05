@@ -163,7 +163,7 @@ The harness shows the page asked the right things and built the right request �
 never that the T-SQL is valid. Statement text is gosmo's tests; acceptance is a
 live run.
 
-**The command line's `object` group runs real gosmo over `gosmotest`.**
+**The command line's `object`, `script`, `data`, `security` and `maint` groups run real gosmo over `gosmotest`.**
 gosmo's exported fake driver answers each query from the first rule whose
 text it contains, with a database read's transport stripped (`Query.Database`
 says where it ran). `internal/cli/object_server_test.go` is the server: its
@@ -171,5 +171,23 @@ rows are positional, column for column in gosmo's SELECT order, each read's
 built by one encoder (`columnRow`, `indexRow`, `statisticRow`, …), so a gosmo
 change to a query's shape or scan fails the CLI test — a faked `cmd.Catalog`
 method passes it. A query no rule answers fails the test naming the query;
-add a rule, don't loosen the match. Every other group still fakes
+add a rule, don't loosen the match. Rules answer in registration order, so
+a group whose reads overlap another's registers its more specific rules
+first (`newObjectServerWith`; `script_server_test.go` is the example).
+The row encoders are `internal/cli/clitest`'s, shared with package `cmd`'s
+tests, whose `catalogServer` (`cmd/catalog_server_test.go`) answers the
+resolution and table/view reads for a handler tested there (the dry-run
+fidelity harness's `data import` case); `secServer`
+(`cmd/security_server_test.go`) and `maintServer`
+(`cmd/maint_server_test.go`) build on it the way `scriptServer` builds on
+`objectServer`. A list read answers in the query's ORDER BY, as the
+server would — a fake's insertion order hid what the user sees — and a
+filtering read applies its WHERE or HAVING. Their writes go to gosmotest
+too: the server's write rule (`applyWrite`) records each statement as
+sent, applies what it states to the server's fields — so the read after
+it sees the change — and fails it as the test asks; tests assert the
+statement text, not a fake's arguments. gosmotest answers a BACKUP or
+RESTORE that reads progress messages (`Query.Messages`) as a message
+stream, and a bulk load as one `INSERTBULK` Exec per row. Every other
+group still fakes
 `cmd.Catalog`/`cmd.Writer` (`docs/open-threads.md` § Command line).

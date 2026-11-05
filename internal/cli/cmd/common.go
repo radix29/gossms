@@ -16,7 +16,6 @@ import (
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/scripting"
 )
 
 // profileOption is --profile, the saved connection a command connects
@@ -37,10 +36,11 @@ func ConnectOptions() []spec.Option {
 // method; the database is one DatabaseByName or Databases returned.
 //
 // The object group (object list, search, describe, definition,
-// dependencies, indexes, stats) is the exception: past connecting and
-// resolving its object's name (connectDatabase, resolveObject), it calls
-// gosmo directly, and its tests serve gosmo canned rows (gosmotest) instead
-// of faking these methods. That is the pilot of moving every group off the
+// dependencies, indexes, stats) and the script, data, security and maint
+// groups are the exception: past connecting and resolving the object's or database's name
+// (connectDatabase, resolveObject, namedDatabase), they call gosmo directly,
+// and their tests serve gosmo canned rows (gosmotest) instead of faking these
+// methods. That is moving every group off the
 // seam (docs/open-threads.md § Command line); what is left here is what the
 // other groups still read through it.
 type Catalog interface {
@@ -55,34 +55,6 @@ type Catalog interface {
 	ObjectByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.ObjectInfo, error)
 	ObjectsNamed(ctx context.Context, d *gosmo.Database, name string) ([]*gosmo.ObjectInfo, error)
 	Search(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error)
-
-	// security grant/deny/revoke on a type or schema, and data profile's
-	// alias types.
-	UserDefinedDataTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.UserDefinedDataType, error)
-	UserDefinedTableTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.UserDefinedTableType, error)
-	ClrTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.ClrType, error)
-	Schemas(ctx context.Context, d *gosmo.Database) ([]*gosmo.Schema, error)
-
-	// A table's or view's by-name read and children, for data, column
-	// grants and maint index. A *gosmo.Table or *gosmo.View is one
-	// TableByName or ViewByName returned.
-	TableByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Table, error)
-	ViewByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.View, error)
-	TableColumns(ctx context.Context, t *gosmo.Table) ([]*gosmo.Column, error)
-	TableIndexes(ctx context.Context, t *gosmo.Table) ([]*gosmo.Index, error)
-	RowCount(ctx context.Context, t *gosmo.Table) (int64, error)
-	ViewColumns(ctx context.Context, v *gosmo.View) ([]*gosmo.Column, error)
-	ViewIndexes(ctx context.Context, v *gosmo.View) ([]*gosmo.Index, error)
-
-	// script object / db: Script As's text for one object (internal/scripting).
-	Script(ctx context.Context, f scripting.Family, v scripting.Verb, t scripting.Target) (string, error)
-
-	// maint index: the fragmentation and statistics a rebuild or update
-	// chooses from, on a table or an indexed view.
-	TableFragmentation(ctx context.Context, t *gosmo.Table, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error)
-	ViewFragmentation(ctx context.Context, v *gosmo.View, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error)
-	TableStatistics(ctx context.Context, t *gosmo.Table) ([]*gosmo.Statistic, error)
-	ViewStatistics(ctx context.Context, v *gosmo.View) ([]*gosmo.Statistic, error)
 
 	// agent context: what connect read, and what the login may do.
 	ServerInfo() *gosmo.ServerInfo
@@ -106,10 +78,6 @@ type Catalog interface {
 	AvailabilityGroupDatabases(ctx context.Context, ag *gosmo.AvailabilityGroup) ([]*gosmo.AvailabilityDatabase, error)
 	SnapshotsOf(ctx context.Context, database string) ([]*gosmo.DatabaseSnapshot, error)
 	LastBackups(ctx context.Context) ([]*gosmo.DatabaseLastBackups, error)
-
-	// data import: the code page a char column's collation, or the
-	// database's, stores text in.
-	CollationCodePage(ctx context.Context, collation string) (int, error)
 
 	// db scoped-config: sys.database_scoped_configurations, read inside the
 	// database.
@@ -165,29 +133,6 @@ type Catalog interface {
 	EventSessions(ctx context.Context, d *gosmo.Database) ([]*gosmo.EventSession, error)
 	EventSessionStatus(ctx context.Context, es *gosmo.EventSession) (*gosmo.EventSessionStatus, error)
 
-	// security: the server's logins and roles, a database's users and roles,
-	// a role's direct members, and one principal's explicit grants (database
-	// entries, column entries, server entries) or effective permissions
-	// (fn_my_permissions under EXECUTE AS).
-	Logins(ctx context.Context) ([]*gosmo.Login, error)
-	LoginByName(ctx context.Context, name string) (*gosmo.Login, error)
-	ServerRoles(ctx context.Context) ([]*gosmo.ServerRole, error)
-	ServerRoleByName(ctx context.Context, name string) (*gosmo.ServerRole, error)
-	ServerRoleMembers(ctx context.Context, role string) ([]*gosmo.RoleMember, error)
-	Users(ctx context.Context, d *gosmo.Database) ([]*gosmo.User, error)
-	UserByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.User, error)
-	DatabaseRoles(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseRole, error)
-	DatabaseRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.DatabaseRole, error)
-	DatabaseRoleMembers(ctx context.Context, d *gosmo.Database, role string) ([]*gosmo.RoleMember, error)
-	ApplicationRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.ApplicationRole, error)
-	PermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.PrincipalSecurable, error)
-	ColumnPermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.ColumnPermissionEntry, error)
-	ServerPermissions(ctx context.Context) ([]*gosmo.ServerPermissionEntry, error)
-	EffectivePermissions(ctx context.Context, d *gosmo.Database, user string) ([]*gosmo.EffectivePermission, error)
-	EffectiveServerPermissions(ctx context.Context, login string) ([]*gosmo.EffectivePermission, error)
-	// security grant/deny/revoke --on CERTIFICATE::.
-	CertificateByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.Certificate, error)
-
 	// job: msdb's jobs, one job's steps and schedules, the run history
 	// across jobs or for one, and whether Agent is running. A *gosmo.Job is
 	// one Jobs or JobByName returned.
@@ -197,18 +142,6 @@ type Catalog interface {
 	JobSchedules(ctx context.Context, j *gosmo.Job) ([]*gosmo.Schedule, error)
 	SearchJobHistory(ctx context.Context, f gosmo.JobHistoryFilter) ([]*gosmo.JobHistoryEntry, error)
 	AgentInfo(ctx context.Context) (*gosmo.AgentStatus, error)
-
-	// maint backup / backup-history: the sets a backup's media holds
-	// (RESTORE HEADERONLY), and a database's history in msdb.
-	BackupHeaders(ctx context.Context, targets ...gosmo.BackupTarget) ([]*gosmo.BackupHeader, error)
-	BackupHistory(ctx context.Context, database string) ([]*gosmo.BackupInfo, error)
-	// maint restore: one set's files (RESTORE FILELISTONLY), and every
-	// database file on the instance, for the target-path collision check.
-	BackupFileList(ctx context.Context, fileNumber int, targets ...gosmo.BackupTarget) ([]*gosmo.BackupFile, error)
-	InstanceFiles(ctx context.Context) ([]*gosmo.InstanceFile, error)
-	// maint index-fragmentation: every index of d at least minPct
-	// fragmented with at least minPages leaf pages, most fragmented first.
-	DatabaseFragmentation(ctx context.Context, d *gosmo.Database, mode gosmo.FragmentationMode, minPct float64, minPages int64) ([]*gosmo.DatabaseIndexFragmentation, error)
 }
 
 // ServerCatalog is Deps.Catalog: the reads, made through sc's gosmo Server.
@@ -250,70 +183,6 @@ func (serverCatalog) ObjectsNamed(ctx context.Context, d *gosmo.Database, name s
 
 func (serverCatalog) Search(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error) {
 	return d.Search(ctx, pattern)
-}
-
-func (serverCatalog) UserDefinedDataTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.UserDefinedDataType, error) {
-	return d.UserDefinedDataTypes(ctx)
-}
-
-func (serverCatalog) UserDefinedTableTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.UserDefinedTableType, error) {
-	return d.UserDefinedTableTypes(ctx)
-}
-
-func (serverCatalog) ClrTypes(ctx context.Context, d *gosmo.Database) ([]*gosmo.ClrType, error) {
-	return d.ClrTypes(ctx)
-}
-
-func (serverCatalog) Schemas(ctx context.Context, d *gosmo.Database) ([]*gosmo.Schema, error) {
-	return d.Schemas(ctx)
-}
-
-func (serverCatalog) TableByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.Table, error) {
-	return d.TableByName(ctx, schema, name)
-}
-
-func (serverCatalog) ViewByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.View, error) {
-	return d.ViewByName(ctx, schema, name)
-}
-
-func (serverCatalog) TableColumns(ctx context.Context, t *gosmo.Table) ([]*gosmo.Column, error) {
-	return t.Columns(ctx)
-}
-
-func (serverCatalog) TableIndexes(ctx context.Context, t *gosmo.Table) ([]*gosmo.Index, error) {
-	return t.Indexes(ctx)
-}
-
-func (serverCatalog) RowCount(ctx context.Context, t *gosmo.Table) (int64, error) {
-	return t.RowCount(ctx)
-}
-
-func (serverCatalog) ViewColumns(ctx context.Context, v *gosmo.View) ([]*gosmo.Column, error) {
-	return v.Columns(ctx)
-}
-
-func (serverCatalog) ViewIndexes(ctx context.Context, v *gosmo.View) ([]*gosmo.Index, error) {
-	return v.Indexes(ctx)
-}
-
-func (c serverCatalog) Script(ctx context.Context, f scripting.Family, v scripting.Verb, t scripting.Target) (string, error) {
-	return scripting.Script(ctx, c.s, f, v, t)
-}
-
-func (serverCatalog) TableFragmentation(ctx context.Context, t *gosmo.Table, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error) {
-	return t.FragmentationStats(ctx, mode)
-}
-
-func (serverCatalog) ViewFragmentation(ctx context.Context, v *gosmo.View, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error) {
-	return v.FragmentationStats(ctx, mode)
-}
-
-func (serverCatalog) TableStatistics(ctx context.Context, t *gosmo.Table) ([]*gosmo.Statistic, error) {
-	return t.Statistics(ctx)
-}
-
-func (serverCatalog) ViewStatistics(ctx context.Context, v *gosmo.View) ([]*gosmo.Statistic, error) {
-	return v.Statistics(ctx)
 }
 
 func (c serverCatalog) ServerInfo() *gosmo.ServerInfo { return c.s.Info() }
@@ -396,10 +265,6 @@ func (c serverCatalog) Configurations(ctx context.Context) ([]*gosmo.Configurati
 
 func (c serverCatalog) TraceFlags(ctx context.Context) ([]gosmo.TraceFlag, error) {
 	return c.s.TraceFlags(ctx)
-}
-
-func (c serverCatalog) CollationCodePage(ctx context.Context, collation string) (int, error) {
-	return c.s.CollationCodePage(ctx, collation)
 }
 
 func (serverCatalog) DatabaseScopedConfigs(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseScopedConfig, error) {
@@ -497,72 +362,6 @@ func (c serverCatalog) SessionByID(ctx context.Context, sessionID int) (*gosmo.A
 	return c.s.SessionByID(ctx, sessionID)
 }
 
-func (c serverCatalog) Logins(ctx context.Context) ([]*gosmo.Login, error) { return c.s.Logins(ctx) }
-
-func (c serverCatalog) LoginByName(ctx context.Context, name string) (*gosmo.Login, error) {
-	return c.s.LoginByName(ctx, name)
-}
-
-func (c serverCatalog) ServerRoles(ctx context.Context) ([]*gosmo.ServerRole, error) {
-	return c.s.ServerRoles(ctx)
-}
-
-func (c serverCatalog) ServerRoleByName(ctx context.Context, name string) (*gosmo.ServerRole, error) {
-	return c.s.ServerRoleByName(ctx, name)
-}
-
-func (c serverCatalog) ServerRoleMembers(ctx context.Context, role string) ([]*gosmo.RoleMember, error) {
-	return c.s.ServerRoleMembers(ctx, role)
-}
-
-func (serverCatalog) Users(ctx context.Context, d *gosmo.Database) ([]*gosmo.User, error) {
-	return d.Users(ctx)
-}
-
-func (serverCatalog) UserByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.User, error) {
-	return d.UserByName(ctx, name)
-}
-
-func (serverCatalog) DatabaseRoles(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseRole, error) {
-	return d.Roles(ctx)
-}
-
-func (serverCatalog) DatabaseRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.DatabaseRole, error) {
-	return d.RoleByName(ctx, name)
-}
-
-func (serverCatalog) DatabaseRoleMembers(ctx context.Context, d *gosmo.Database, role string) ([]*gosmo.RoleMember, error) {
-	return d.RoleMembers(ctx, role)
-}
-
-func (serverCatalog) ApplicationRoleByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.ApplicationRole, error) {
-	return d.ApplicationRoleByName(ctx, name)
-}
-
-func (serverCatalog) PermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.PrincipalSecurable, error) {
-	return d.PermissionsForPrincipal(ctx, principal)
-}
-
-func (serverCatalog) ColumnPermissionsForPrincipal(ctx context.Context, d *gosmo.Database, principal string) ([]*gosmo.ColumnPermissionEntry, error) {
-	return d.ColumnPermissionsForPrincipal(ctx, principal)
-}
-
-func (c serverCatalog) ServerPermissions(ctx context.Context) ([]*gosmo.ServerPermissionEntry, error) {
-	return c.s.ServerPermissions(ctx)
-}
-
-func (serverCatalog) EffectivePermissions(ctx context.Context, d *gosmo.Database, user string) ([]*gosmo.EffectivePermission, error) {
-	return d.EffectivePermissions(ctx, user)
-}
-
-func (c serverCatalog) EffectiveServerPermissions(ctx context.Context, login string) ([]*gosmo.EffectivePermission, error) {
-	return c.s.EffectiveServerPermissions(ctx, login)
-}
-
-func (serverCatalog) CertificateByName(ctx context.Context, d *gosmo.Database, name string) (*gosmo.Certificate, error) {
-	return d.CertificateByName(ctx, name)
-}
-
 func (c serverCatalog) Jobs(ctx context.Context) ([]*gosmo.Job, error) { return c.s.Jobs(ctx) }
 
 func (c serverCatalog) JobByName(ctx context.Context, name string) (*gosmo.Job, error) {
@@ -583,26 +382,6 @@ func (c serverCatalog) SearchJobHistory(ctx context.Context, f gosmo.JobHistoryF
 
 func (c serverCatalog) AgentInfo(ctx context.Context) (*gosmo.AgentStatus, error) {
 	return c.s.AgentInfo(ctx)
-}
-
-func (c serverCatalog) BackupHeaders(ctx context.Context, targets ...gosmo.BackupTarget) ([]*gosmo.BackupHeader, error) {
-	return c.s.BackupHeaders(ctx, targets...)
-}
-
-func (c serverCatalog) BackupHistory(ctx context.Context, database string) ([]*gosmo.BackupInfo, error) {
-	return c.s.BackupHistory(ctx, database)
-}
-
-func (c serverCatalog) BackupFileList(ctx context.Context, fileNumber int, targets ...gosmo.BackupTarget) ([]*gosmo.BackupFile, error) {
-	return c.s.BackupFileList(ctx, fileNumber, targets...)
-}
-
-func (c serverCatalog) InstanceFiles(ctx context.Context) ([]*gosmo.InstanceFile, error) {
-	return c.s.InstanceFiles(ctx)
-}
-
-func (serverCatalog) DatabaseFragmentation(ctx context.Context, d *gosmo.Database, mode gosmo.FragmentationMode, minPct float64, minPages int64) ([]*gosmo.DatabaseIndexFragmentation, error) {
-	return d.FragmentationStats(ctx, mode, minPct, minPages)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

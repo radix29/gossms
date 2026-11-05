@@ -12,15 +12,17 @@ import (
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gosmo/gosmotest"
+	"github.com/radix29/gossms/internal/cli/clitest"
 	"github.com/radix29/gossms/internal/cli/cmd"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 )
 
-// objectServer is the object group's test server: real gosmo over canned
-// rows (gosmotest), answering the reads object list, search, describe,
-// definition, dependencies, indexes and stats make, for database app on a
-// SQL Server 2022. Its database is the one objectFake describes:
+// objectServer is the object and data groups' test server: real gosmo over
+// canned rows (gosmotest), answering the reads object list, search,
+// describe, definition, dependencies, indexes and stats make, and the data
+// commands' (resolving, the columns, the row count, a collation's code
+// page), for database app on a SQL Server 2022. Its database:
 // Sales.Customer (a table with every child describe shows), a schema-bound
 // view, procedures (one encrypted, one CLR), a scalar and an inline function,
 // a trigger, a synonym, a sequence, three types, and a few shipped objects.
@@ -31,6 +33,7 @@ import (
 // a gosmo change to a query's shape or its scanning fails these tests.
 type objectServer struct {
 	*gosmotest.Fake
+	t       *testing.T
 	objects []*gosmo.ObjectInfo
 
 	// hidden reads every computed, default and check definition, and
@@ -47,21 +50,30 @@ type objectServer struct {
 	depErr error
 	// statsColumns is each statistic's columns, by name.
 	statsColumns map[string][]string
+	// tableColumns, when set, is Sales.Customer's columns in place of
+	// columns(false)'s.
+	tableColumns []*gosmo.Column
 
-	mu    sync.Mutex
-	reads []string // each dependency read, as "uses:schema.name" or "used-by:schema.name"
-	modes []string // each fragmentation read's mode
+	mu        sync.Mutex
+	reads     []string // each dependency read, as "uses:schema.name" or "used-by:schema.name"
+	modes     []string // each fragmentation read's mode
+	codePages []string // each collation whose code page was read (all 1252)
 }
 
 var objectsAt = time.Date(2026, 3, 14, 9, 12, 44, 0, time.UTC)
 
-func newObjectServer(t *testing.T) *objectServer {
+func newObjectServer(t *testing.T) *objectServer { return newObjectServerWith(t, nil) }
+
+// newObjectServerWith is newObjectServer with first's rules ahead of the
+// object group's: gosmotest answers from the first rule that matches, so a
+// caller's more specific rules must come first.
+func newObjectServerWith(t *testing.T, first func(*objectServer)) *objectServer {
 	obj := func(id int, schema, name, typ, desc string) *gosmo.ObjectInfo {
 		return &gosmo.ObjectInfo{ObjectID: id, Schema: schema, Name: name, Type: typ, TypeDesc: desc, Created: objectsAt, Modified: objectsAt}
 	}
 	trigger := obj(9, "Sales", "trCustomer", "TR", "SQL_TRIGGER")
 	trigger.ParentSchema, trigger.ParentName = "Sales", "Customer"
-	s := &objectServer{Fake: gosmotest.New(t), objects: []*gosmo.ObjectInfo{
+	s := &objectServer{Fake: gosmotest.New(t), t: t, objects: []*gosmo.ObjectInfo{
 		obj(1, "Sales", "Customer", "U", "USER_TABLE"),
 		obj(2, "dbo", "Customer", "U", "USER_TABLE"),
 		obj(3, "Sales", "vCustomer", "V", "VIEW"),
@@ -77,6 +89,9 @@ func newObjectServer(t *testing.T) *objectServer {
 	}, statsColumns: map[string][]string{
 		"PK_Customer": {"id"}, "_WA_Sys_00000002": {"CustomerName"}, "st_multi": {"CustomerName", "pct"},
 	}}
+	if first != nil {
+		first(s)
+	}
 	s.connectRules()
 	s.listRules()
 	s.describeRules()
@@ -140,14 +155,14 @@ func (s *objectServer) connectRules() {
 		if !strings.EqualFold(str(q.Arg(0)), "app") {
 			return nil
 		}
-		return [][]any{{"app", 5, "ONLINE", "FULL", 160, "Latin1_General_CI_AS", "Latin1_General_CI_AS", false, objectsAt, 0, false}}
+		return [][]any{clitest.DatabaseRow("app", 5, objectsAt)}
 	}, "FROM sys.databases", "WHERE name = @p1")
 	// ObjectByName and ObjectsNamed: the catalog compares names exactly.
 	s.on(func(q gosmotest.Query) [][]any {
 		var rows [][]any
 		for _, o := range s.objects {
 			if has(q, "@p2") && o.Schema == q.Arg(0) && o.Name == q.Arg(1) || !has(q, "@p2") && o.Name == q.Arg(0) {
-				rows = append(rows, objectInfoRow(o))
+				rows = append(rows, clitest.ObjectInfoRow(o))
 			}
 		}
 		return rows
@@ -161,15 +176,15 @@ func (s *objectServer) connectRules() {
 		}
 		return rows
 	}, "LOWER(o.name) LIKE '%' + LOWER(@p1) + '%'")
+	s.on(func(q gosmotest.Query) [][]any {
+		s.record(&s.codePages, str(q.Arg(0)))
+		return [][]any{{1252}}
+	}, "COLLATIONPROPERTY(@p1, 'CodePage')")
 }
 
 // likes is LIKE '%pattern%' for a pattern with no wildcards of its own.
 func likes(s, pattern string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(pattern))
-}
-
-func objectInfoRow(o *gosmo.ObjectInfo) []any {
-	return []any{o.ObjectID, o.Schema, o.Name, o.Type, o.TypeDesc, o.ParentSchema, o.ParentName, o.Created, o.Modified, o.IsMSShipped}
 }
 
 // -- object list and search ------------------------------------------------
@@ -220,12 +235,12 @@ func (s *objectServer) listRules() {
 			if !keeps(q, "dbo", "sysdiagrams") {
 				return nil
 			}
-			return [][]any{tableRow(&gosmo.Table{ObjectID: 13, Schema: "dbo", Name: "sysdiagrams", IsSystem: true})}
+			return [][]any{clitest.TableRow(&gosmo.Table{ObjectID: 13, Schema: "dbo", Name: "sysdiagrams", IsSystem: true}, objectsAt)}
 		}
 		var rows [][]any
 		for _, o := range s.objects {
 			if o.Type == "U" && keeps(q, o.Schema, o.Name) {
-				rows = append(rows, tableRow(&gosmo.Table{ObjectID: o.ObjectID, Schema: o.Schema, Name: o.Name}))
+				rows = append(rows, clitest.TableRow(&gosmo.Table{ObjectID: o.ObjectID, Schema: o.Schema, Name: o.Name}, objectsAt))
 			}
 		}
 		return rows
@@ -273,10 +288,6 @@ func (s *objectServer) listRules() {
 	}, "LOWER(c.name) LIKE")
 }
 
-func tableRow(t *gosmo.Table) []any {
-	return []any{t.ObjectID, t.Schema, t.Name, objectsAt, objectsAt, false, false, t.IsSystem, false, false, false, false}
-}
-
 // -- object describe and definition ----------------------------------------
 
 // The table's and view's object ids, which their children are read by.
@@ -291,27 +302,31 @@ func (s *objectServer) describeRules() {
 		if o == nil || o.Type != "U" {
 			return nil
 		}
-		return [][]any{tableRow(&gosmo.Table{ObjectID: o.ObjectID, Schema: o.Schema, Name: o.Name})}
+		return [][]any{clitest.TableRow(&gosmo.Table{ObjectID: o.ObjectID, Schema: o.Schema, Name: o.Name}, objectsAt)}
 	}, "FROM   sys.tables t", "AND  t.name")
 	s.on(func(q gosmotest.Query) [][]any {
 		o := s.object(str(q.Arg(0)), str(q.Arg(1)))
 		if o == nil || o.Type != "V" {
 			return nil
 		}
-		return [][]any{{o.ObjectID, o.Schema, o.Name, o.Created, o.Modified, true}}
+		return [][]any{clitest.ViewRow(&gosmo.View{ObjectID: o.ObjectID, Schema: o.Schema, Name: o.Name, IsSchemaBound: true}, objectsAt)}
 	}, "FROM   sys.views o", "AND  o.name")
 	s.on(func(gosmotest.Query) [][]any { return [][]any{{int64(1234)}} }, "SELECT SUM(p.rows)")
 	s.on(func(q gosmotest.Query) [][]any {
+		cols := s.columns(q.Arg(0) == int64(vCustomerID))
+		if q.Arg(0) == int64(customerID) && s.tableColumns != nil {
+			cols = s.tableColumns
+		}
 		var rows [][]any
-		for _, c := range s.columns(q.Arg(0) == int64(vCustomerID)) {
-			rows = append(rows, columnRow(c))
+		for _, c := range cols {
+			rows = append(rows, clitest.ColumnRow(c))
 		}
 		return rows
 	}, "FROM   sys.columns c", "WHERE  c.object_id = @p1")
 	s.on(func(q gosmotest.Query) [][]any {
 		var rows [][]any
 		for _, ix := range s.indexes(q.Arg(0) == int64(vCustomerID)) {
-			rows = append(rows, indexRow(ix))
+			rows = append(rows, clitest.IndexRow(ix))
 		}
 		return rows
 	}, "FROM   sys.indexes i", "WHERE  i.object_id = @p1 AND i.type > 0")
@@ -358,10 +373,10 @@ func (s *objectServer) describeRules() {
 			if q.Arg(1) != "fScalar" {
 				return nil
 			}
-			return [][]any{parameterRow("", 0, "decimal", 9, 2, false, false)}
+			return [][]any{clitest.ParameterRow("", 0, "decimal", 9, 2, false, false)}
 		}
-		return [][]any{parameterRow("@id", 1, "int", 0, 0, false, false), parameterRow("@total", 2, "decimal", 9, 2, true, true)}
-	}, "FROM   sys.parameters p")
+		return [][]any{clitest.ParameterRow("@id", 1, "int", 0, 0, false, false), clitest.ParameterRow("@total", 2, "decimal", 9, 2, true, true)}
+	}, "FROM   sys.parameters p\n")
 	s.on(func(q gosmotest.Query) [][]any {
 		schema, name := splitName(str(q.Arg(0)))
 		switch {
@@ -419,67 +434,6 @@ func (s *objectServer) indexes(view bool) []*gosmo.Index {
 		ixs[1].FilterDefinition, ixs[1].IsFilterHidden = "", true
 	}
 	return ixs
-}
-
-// nullable is v, or NULL for the zero value.
-func nullable[T comparable](v T) any {
-	var zero T
-	if v == zero {
-		return nil
-	}
-	return v
-}
-
-// columnRow is c as one row of gosmo's column select.
-func columnRow(c *gosmo.Column) []any {
-	dcName, dcDef := "", ""
-	if c.DefaultValue != nil {
-		dcName, dcDef = c.DefaultValue.Name, c.DefaultValue.Definition
-	}
-	return []any{c.Name, c.OrdinalPosition, string(c.DataType),
-		c.MaxLength, c.Precision, c.Scale,
-		c.IsNullable, c.IsIdentity, c.IsComputed,
-		c.ComputedText, dcName, dcDef,
-		c.IsRowGUID, c.Collation,
-		nullable(c.IdentitySeed), nullable(c.IdentityIncrement),
-		c.IsPrimaryKey,
-		nullable(c.TypeSchema), c.IsUserDefinedType,
-		c.IsPersisted, c.IdentityNotForReplication,
-		c.IsSparse, c.IsColumnSet,
-		c.MaskingFunction,
-		0, c.IsHidden, c.IsFileStream,
-		0, false,
-		"", "", "",
-		"", "", false,
-		0, "",
-		"", "", "", "",
-		c.IsTypeHidden}
-}
-
-// indexRow is ix as one row of gosmo's index list: a rowstore index on
-// PRIMARY, with a filter NULL when it is hidden.
-func indexRow(ix *gosmo.Index) []any {
-	var filter any = ix.FilterDefinition
-	if ix.IsFilterHidden {
-		filter = nil
-	}
-	return []any{ix.Name, ix.IndexID, string(ix.Type),
-		ix.IsUnique, ix.IsPrimaryKey, ix.IsUniqueConstraint,
-		ix.IsDisabled, ix.IsHypothetical, 0, filter,
-		false, false, true, true,
-		nil,
-		"PRIMARY", false, true, "",
-		false, false, false,
-		0, 0,
-		false, "", "",
-		false, "",
-		"", nil, nil, nil, nil,
-		"", "", "", "",
-		0}
-}
-
-func parameterRow(name string, ordinal int, typ string, precision, scale int, output, hasDefault bool) []any {
-	return []any{name, ordinal, typ, 0, precision, scale, output, hasDefault, "sys", false, "", "", false, 0, "", false}
 }
 
 // -- object dependencies, indexes and stats --------------------------------
@@ -596,16 +550,16 @@ func (s *objectServer) storageRules() {
 
 	s.on(func(q gosmotest.Query) [][]any {
 		if q.Arg(0) == int64(vCustomerID) {
-			return [][]any{statisticRow("PK_Customer", 1, false, false, false, "", usageAt, 10, 10, 3, 0, false)}
+			return [][]any{clitest.StatisticRow("PK_Customer", 1, false, false, false, "", usageAt, 10, 10, 3, 0, false)}
 		}
 		filter := "([pct]>(0))"
 		if s.hidden {
 			filter = "" // NULL, read as ''
 		}
 		return [][]any{
-			statisticRow("PK_Customer", 1, false, false, false, "", usageAt, 50, 200, 120, 3, false),
-			statisticRow("_WA_Sys_00000002", 2, true, false, false, "", nil, nil, nil, nil, nil, false),
-			statisticRow("st_multi", 3, false, true, true, filter, usageAt, 0, 0, 0, 0, true),
+			clitest.StatisticRow("PK_Customer", 1, false, false, false, "", usageAt, 50, 200, 120, 3, false),
+			clitest.StatisticRow("_WA_Sys_00000002", 2, true, false, false, "", nil, nil, nil, nil, nil, false),
+			clitest.StatisticRow("st_multi", 3, false, true, true, filter, usageAt, 0, 0, 0, 0, true),
 		}
 	}, "OUTER  APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) sp")
 	s.on(func(q gosmotest.Query) [][]any {
@@ -615,14 +569,6 @@ func (s *objectServer) storageRules() {
 		}
 		return rows
 	}, "JOIN   sys.stats_columns sc")
-}
-
-// statisticRow is one row of gosmo's statistics select. The select reads a
-// NULL filter as ”, so only hasFilter tells a hidden filter from none; the
-// properties are NULL (nil) for a statistic never computed.
-func statisticRow(name string, id int, auto, user, hasFilter bool, filter string,
-	lastUpdated, sampled, rows, steps, modified any, noRecompute bool) []any {
-	return []any{name, id, auto, user, hasFilter, filter, lastUpdated, sampled, rows, steps, nil, noRecompute, false, modified}
 }
 
 // deniedDependents is the server refusing the dependents read: Msg 229.

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"iter"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -40,7 +39,11 @@ func dryRun(inv *spec.Invocation) bool {
 // Writer is the gosmo writes the writing commands make, beside Catalog's
 // reads, so tests stand in for a server. Methods taking a *gosmo.Database
 // call that database's own method; the database is one DatabaseByName
-// returned.
+// returned. The security, maint and data groups are the exception: they
+// write through gosmo directly, and their tests answer the statements
+// (gosmotest) instead of faking these methods — moving every group off the
+// seam (docs/open-threads.md § Command line); what is left here is what
+// the other groups still write through it.
 type Writer interface {
 	// server config set/reset: one sp_configure batch and its RECONFIGURE.
 	ApplyConfiguration(ctx context.Context, changes []gosmo.ConfigChange, opts gosmo.ConfigApplyOptions) error
@@ -68,43 +71,9 @@ type Writer interface {
 	CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error
 	DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error
 
-	// security grant/deny/revoke: one statement on sec in d, or with d nil
-	// on the server (SecurableServer).
-	ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
-		perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error
-	// security role add-member/remove-member: d's role, or with d nil the
-	// server role.
-	AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error
-
 	// job start (at step, "" for the job's start step) / job stop.
 	StartJob(ctx context.Context, job, step string) error
 	StopJob(ctx context.Context, job string) error
-
-	// maint backup: one BACKUP DATABASE or BACKUP LOG.
-	Backup(ctx context.Context, opts gosmo.BackupOptions) error
-	// maint restore: one RESTORE (its batch, with CloseExistingConnections),
-	// or with --verify-only one RESTORE VERIFYONLY.
-	Restore(ctx context.Context, opts gosmo.RestoreOptions) error
-	VerifyBackup(ctx context.Context, opts gosmo.VerifyOptions, targets ...gosmo.BackupTarget) error
-
-	// maint index-rebuild: one index (read by TableIndexes or ViewIndexes, so
-	// gosmo refuses what its kind takes no option for), or ALTER INDEX ALL
-	// on the table or view.
-	RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error
-	ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error
-	RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error
-	ReorganizeAllIndexes(ctx context.Context, o tableOrView) error
-	// maint update-stats: the object's statistics, one of them, or with
-	// --all sp_updatestats in d.
-	UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error
-	UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error
-	UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error
-	// maint checkdb: DBCC CHECKDB's rows (none under WithScript).
-	CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error)
-
-	// data import: --truncate-first's TRUNCATE TABLE, then the bulk load.
-	TruncateTable(ctx context.Context, t *gosmo.Table) error
-	BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error)
 }
 
 // ServerWriter is Deps.Writer: the writes, made through sc's gosmo Server.
@@ -171,31 +140,6 @@ func (serverWriter) DropDatabase(ctx context.Context, d *gosmo.Database, term go
 	return d.Drop(ctx, term)
 }
 
-func (w serverWriter) ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
-	perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error {
-	if d == nil {
-		return w.s.ApplyPermission(ctx, verb, sec, perm, principal, opts)
-	}
-	return d.ApplyPermission(ctx, verb, sec, perm, principal, opts)
-}
-
-// AlterRoleMember goes through the role's handle: the command has just read
-// the role by name.
-func (w serverWriter) AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error {
-	if d == nil {
-		r := w.s.ServerRoleRef(role)
-		if add {
-			return r.AddMember(ctx, member)
-		}
-		return r.RemoveMember(ctx, member)
-	}
-	r := d.RoleRef(role)
-	if add {
-		return r.AddMember(ctx, member)
-	}
-	return r.RemoveMember(ctx, member)
-}
-
 // StartJob and StopJob go through the job's handle: the command has just
 // read the job by name.
 func (w serverWriter) StartJob(ctx context.Context, job, step string) error {
@@ -204,65 +148,6 @@ func (w serverWriter) StartJob(ctx context.Context, job, step string) error {
 
 func (w serverWriter) StopJob(ctx context.Context, job string) error {
 	return w.s.JobRef(job).Stop(ctx)
-}
-
-func (w serverWriter) Backup(ctx context.Context, opts gosmo.BackupOptions) error {
-	return w.s.Backup(ctx, opts)
-}
-
-func (w serverWriter) Restore(ctx context.Context, opts gosmo.RestoreOptions) error {
-	return w.s.Restore(ctx, opts)
-}
-
-func (w serverWriter) VerifyBackup(ctx context.Context, opts gosmo.VerifyOptions, targets ...gosmo.BackupTarget) error {
-	return w.s.VerifyBackup(ctx, opts, targets...)
-}
-
-func (serverWriter) RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error {
-	return idx.Rebuild(ctx, opts)
-}
-
-func (serverWriter) ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error {
-	return idx.Reorganize(ctx)
-}
-
-func (serverWriter) RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error {
-	if o.view != nil {
-		return o.view.RebuildAllIndexesWith(ctx, opts)
-	}
-	return o.table.RebuildAllIndexesWith(ctx, opts)
-}
-
-func (serverWriter) ReorganizeAllIndexes(ctx context.Context, o tableOrView) error {
-	if o.view != nil {
-		return o.view.ReorganizeAllIndexes(ctx)
-	}
-	return o.table.ReorganizeAllIndexes(ctx)
-}
-
-func (serverWriter) UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error {
-	if o.view != nil {
-		return o.view.UpdateStatisticsWith(ctx, opts)
-	}
-	return o.table.UpdateStatisticsWith(ctx, opts)
-}
-
-func (serverWriter) UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error {
-	return st.UpdateWith(ctx, opts)
-}
-
-func (serverWriter) UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error {
-	return d.UpdateStatistics(ctx, resample)
-}
-
-func (serverWriter) CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error) {
-	return d.CheckDB(ctx, opts)
-}
-
-func (serverWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error { return t.Truncate(ctx) }
-
-func (serverWriter) BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error) {
-	return d.BulkInsert(ctx, bc, rows)
 }
 
 // gate is a writing command's class check (D1), made before it connects: a
@@ -304,15 +189,26 @@ func (d Deps) gateClass(inv *spec.Invocation, res *output.Result, class spec.Cla
 // connectWriter is connectCatalog for a writing command: the gate first,
 // then the connection, its reads and its writes. The caller closes sc.
 func (d Deps) connectWriter(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, Writer, error) {
-	cfg, profile, err := d.gate(inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	return sc, cat, d.Writer(sc), nil
+}
+
+// connectGated is connectWriter for a command that writes through gosmo
+// directly (sc.Server, or a handle read through it): the gate, then the
+// connection and its reads. The caller closes sc.
+func (d Deps) connectGated(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, error) {
+	cfg, profile, err := d.gate(inv, res)
+	if err != nil {
+		return nil, nil, err
 	}
 	_, sc, err := d.dial(ctx, inv, cfg, profile, res)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return sc, d.Catalog(sc), d.Writer(sc), nil
+	return sc, d.Catalog(sc), nil
 }
 
 // applyWrite runs write, the command's gosmo writes (D2). Under --dry-run it

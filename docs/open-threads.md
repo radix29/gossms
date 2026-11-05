@@ -108,7 +108,7 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-- **Only the `object` group is off the `Catalog` seam** (2026-11-04, the
+- **Only the `object`, `script`, `data`, `security` and `maint` groups are off the `Catalog` seam** (2026-11-04, the
   pilot of review Q1 option A). Past connecting and resolving the name,
   `object list/search/describe/definition/dependencies/indexes/stats` call
   gosmo directly, and their tests serve gosmo canned rows through gosmo's
@@ -116,12 +116,81 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `serverCatalog` about 150 lines of delegation. The cost, measured: the
   object fakes (about 500 lines) became a 624-line row server, since each
   read needs its full row (41 values for a column, 39 for an index); the
-  trimmed `objectFake` (`catalog_fake_test.go`) stays for the data, script
-  and import tests. Five mutations, three of them in gosmo's scanning, each
+  trimmed `objectFake` stayed for the data and import tests until `data`
+  moved too. Five mutations, three of them in gosmo's scanning, each
   failed an object test; under the fakes the gosmo ones passed every test.
+  `script` followed (2026-11-05, plan step 16): `script object/db` call
+  `internal/scripting` on the resolved database's gosmo Server, and
+  `Catalog.Script` is gone. `scriptServer` (`script_server_test.go`, 127
+  lines) adds the Scripter's reads on top of `objectServer` — most rows it
+  needed (columns, indexes, keys, parameters) were already there — so the
+  tests now check the real script text. Five gosmo scanning mutations
+  (trigger order, the DROP's schema-bound and foreign-key notes, the table
+  options row, the module row) each failed a script test; the old `Script`
+  fake never reached gosmo. `script db` is tested with `--as drop` only: a
+  CREATE's file, option and settings reads are left to gosmo's tests.
+  `data` followed (2026-11-05, plan step 17): `data top/sample/count/
+  profile/export/import` read the columns, the row count, the alias types
+  and a collation's code page from gosmo; `Catalog.RowCount` and
+  `CollationCodePage` are gone, and so is `objectFake`. Its tests run on
+  `objectServer` (a `tableColumns` knob, a code-page rule); the row
+  encoders moved to `internal/cli/clitest` so package `cmd`'s tests can
+  build rows too (`catalogServer`, used by the dry-run harness's import
+  case). Two mutations — gosmo's column scan with max_length and precision
+  swapped, and `data count --approximate` on a `TableRef` — each failed a
+  data test. `data import`'s writes (`TruncateTable`, `BulkInsert`) are
+  still `Writer`'s.
+  `security` followed (2026-11-05, plan step 17, "grants"): the principal
+  reads and the grant read-back are shared with `security permissions`
+  and `role-members`, so the whole group moved — 23 `Catalog` methods
+  gone. `secServer` (`cmd/security_server_test.go`, 344 lines) replaces
+  `secCatalog` and `permCatalog`; `permWriter` stays a `Writer` fake but
+  changes `secServer`'s state, which the rules read back. Roles' member
+  lists and role-members now come from one source, and every list read
+  comes back in its ORDER BY — three tests had asserted a fake's
+  insertion order. Seven gosmo scanning mutations (login flags, the
+  schema row's normalization, role members, a user's login, server and
+  column permission/state, a type's schema/name) each failed a security
+  test.
+  `maint` followed (2026-11-05, plan step 17): backup, backup-history,
+  restore, index-fragmentation, index-rebuild, update-stats and checkdb
+  read the media (HEADERONLY, FILELISTONLY), msdb's history, the
+  instance's files, the indexes, fragmentation and statistics from gosmo
+  past resolution — 13 `Catalog` methods gone, the tables' and views'
+  by-name reads with them. `maintServer` (`cmd/maint_server_test.go`, 313
+  lines, over `catalogServer`) replaces `backupCatalog`, `restoreCatalog`
+  and `indexCatalog` (about 390 lines fewer in the three test files); the
+  three writers stay `Writer` fakes that change its state. Its HAVING and
+  ORDER BY are the server's: index-fragmentation drops what is under
+  `--min-percent`, and backup-history `--all` reads the databases in name
+  order — two expectations had relied on the fakes'. gosmotest's `Info`
+  gained `HADREnabled` for the availability-group refusal. Seven gosmo
+  scanning mutations (a header's start, history LSNs, LastBackups' log,
+  database fragmentation pages, statistics rows sampled, an instance
+  file's name, a file list's logical name) and one in gossms (a `TableRef`
+  for the rebuild's table) each failed a maint test.
+  Those three groups' writes followed (2026-11-05, plan step 17, the
+  `Writer` step's first part): `security` grant/deny/revoke and role
+  members, `maint` backup, restore (and --verify-only), index-rebuild,
+  update-stats and checkdb, and `data import`'s TRUNCATE and bulk load
+  call gosmo directly; 15 `Writer` methods are gone, and with them
+  `permWriter`, `backupWriter`, `restoreWriter`, `indexWriter`,
+  `loadWriter` and `importWriter`. The test servers take the statements
+  instead (`applyWrite`), so the tests now see gosmo's real statement
+  text; the dry-run harness compares a direct writer's dry run with what
+  gosmo's statement observer reports the real run sent. gosmotest gained
+  what this needed: BACKUP/RESTORE's progress-message stream and the bulk
+  load (`INSERTBULK` rows, the flush's count), and gosmo
+  `ScriptCollector.Add`. Seven gosmo mutations (server grant without `USE
+  master`, a role's DROP sent as ADD, WITH GRANT OPTION dropped, BACKUP's
+  CHECKSUM dropped, RESTORE's MOVE dropped, CHECKDB's ObjectId scan, the
+  bulk load's KEEPNULLS) and four in gossms each failed a test; under the
+  fakes the gosmo ones passed every test but the dry-run ones.
   Still on the seam: everything else — the shared reads in `Catalog`
-  (resolution, tables' and views' children for data, grants and maint
-  index), and all of `Writer`. Whether to move the rest group by group is the
+  (resolution, the databases, server info, availability groups), and the
+  rest of `Writer` (server config/traceflag, monitor kill, xevent capture,
+  db set/scoped-config/create/drop, job start/stop), whose groups still
+  read through `Catalog` fakes. Whether to move the rest group by group is the
   author's call. `internal/tui/fakedb_test.go` is a second, older scripted
   driver of the same kind; it could move onto `gosmotest` too.
 

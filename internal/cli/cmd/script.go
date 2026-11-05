@@ -175,7 +175,7 @@ func (d Deps) scriptObject(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 	verbName := inv.Values[optAs].(string)
 	res := &output.Result{}
-	cat, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -205,7 +205,7 @@ func (d Deps) scriptObject(ctx context.Context, inv *spec.Invocation) (*output.R
 	if f == scripting.Function {
 		t.FuncType = gosmo.FunctionType(o.Type)
 	}
-	text, err := cat.Script(ctx, f, v, t)
+	text, err := scripting.Script(ctx, dbase.Server(), f, v, t)
 	if err != nil {
 		return res, scriptError(err, name)
 	}
@@ -235,7 +235,7 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	if err != nil {
 		return res, err
 	}
-	text, err := cat.Script(ctx, scripting.Database, scriptVerbNamed(verbName), scripting.Target{DBName: dbase.Name})
+	text, err := scripting.Script(ctx, dbase.Server(), scripting.Database, scriptVerbNamed(verbName), scripting.Target{DBName: dbase.Name})
 	if err != nil {
 		return res, scriptError(err, gosmo.QuoteName(dbase.Name))
 	}
