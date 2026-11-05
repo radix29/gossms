@@ -453,11 +453,12 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 	return f, apply
 }
 
-// buildNewLoginSecurablesPage reuses Login Properties' Securables page idiom
-// (pageLoginSecurables, login_props.go): same single SERVER-scope securable
-// model and permission-state cycling grid, seeded with no explicit permissions
-// since the login doesn't exist.
-func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*propsheet.Form, propApply) {
+// buildNewServerPrincipalSecurablesPage reuses Login Properties' Securables
+// page idiom (pageLoginSecurables, login_props.go): same single SERVER-scope
+// securable model and permission-state cycling grid, seeded with no explicit
+// permissions since the principal doesn't exist yet. New Login and New Server
+// Role both use it; principalName returns the typed name of either.
+func buildNewServerPrincipalSecurablesPage(sc *db.ServerConn, principalName func() string) (*propsheet.Form, propApply) {
 	catalog := gosmo.ServerPermissionNames()
 	type secEdit struct {
 		permission string
@@ -501,7 +502,7 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 	)
 
 	apply := func(ctx context.Context) error {
-		name := loginName()
+		name := principalName()
 		for _, e := range edits {
 			// From no entry, so Grant With Grant goes out as GRANT … WITH
 			// GRANT OPTION: the state is not a verb, and gosmo refuses it as one.

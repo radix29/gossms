@@ -84,6 +84,9 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		detailStatics[i] = propsheet.Static(label, "")
 	}
 	transferRow := propsheet.Select("Transfer owner to", owners, 0)
+	// Principal names run long (##MS_PerformanceDefinitionReader##, DOMAIN\group):
+	// the control widens to the widest rather than cutting them alike.
+	transferRow.SetFitItems(true)
 	// The warning SSMS puts in a modal before an ownership change. A row rather than
 	// a modal because the change is staged until Apply/OK, so no blocking prompt
 	// would be answering "do it now?".

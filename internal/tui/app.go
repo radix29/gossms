@@ -137,6 +137,7 @@ type App struct {
 	newUserDialog               *NewUserDialog
 	newSchemaDialog             *NewSchemaDialog
 	newRoleDialog               *NewRoleDialog
+	newServerRoleDialog         *NewServerRoleDialog
 	newApplicationRoleDialog    *NewApplicationRoleDialog
 	newSequenceDialog           *NewSequenceDialog
 	newSynonymDialog            *NewSynonymDialog
@@ -563,6 +564,7 @@ func (a *App) buildUI() {
 	a.newUserDialog = registerDialog(a, NewNewUserDialog(a))
 	a.newSchemaDialog = registerDialog(a, NewNewSchemaDialog(a))
 	a.newRoleDialog = registerDialog(a, NewNewRoleDialog(a))
+	a.newServerRoleDialog = registerDialog(a, NewNewServerRoleDialog(a))
 	a.newApplicationRoleDialog = registerDialog(a, NewNewApplicationRoleDialog(a))
 	a.newSequenceDialog = registerDialog(a, NewNewSequenceDialog(a))
 	a.newSynonymDialog = registerDialog(a, NewNewSynonymDialog(a))

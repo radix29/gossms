@@ -175,7 +175,7 @@ func (d *NewLoginDialog) buildPages(pf *nloginPrefetch) {
 	loginName := func() string { return strings.TrimSpace(nameField.Value()) }
 	rolesForm, rolesApply := buildNewLoginServerRolesPage(sc, pf, loginName)
 	mappingForm, mappingApply := buildNewLoginUserMappingPage(sc, pf, loginName)
-	securablesForm, securablesApply := buildNewLoginSecurablesPage(sc, loginName)
+	securablesForm, securablesApply := buildNewServerPrincipalSecurablesPage(sc, loginName)
 	statusForm, statusApply := buildNewLoginStatusPage(sc, loginName)
 
 	d.forms = []*propsheet.Form{generalForm, rolesForm, mappingForm, securablesForm, statusForm}

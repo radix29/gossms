@@ -114,6 +114,13 @@ func loginMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 	})
 }
 
+func serverRolesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return folderMenu(newQuery, refresh,
+		gate.Item(controls.MenuItem{Label: "New Server Role...", Action: func() { a.showNewServerRoleDialog(sc) }},
+			sc, "", gate.CreateServerRole, gate.AlterAnyServerRole),
+	)
+}
+
 func serverRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {
 		a.showServerRolePropertiesFor(sc, node.data.Name)

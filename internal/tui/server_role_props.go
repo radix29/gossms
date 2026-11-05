@@ -143,15 +143,17 @@ func pageServerRoleMembers(sc *db.ServerConn, roleName *string) propPage {
 			existing := roleMemberSet(members)
 			principalType := make(map[string]gosmo.PrincipalType, len(logins)+len(roles))
 			var candidates []string
+			// The candidates go through New Server Role's filters: sa and the fixed
+			// roles are refused as members (Msg 15405).
 			for _, l := range logins {
 				principalType[l.Name] = l.LoginType
-				if !existing[l.Name] {
+				if !existing[l.Name] && serverRoleMemberEligible(l) {
 					candidates = append(candidates, l.Name)
 				}
 			}
 			for _, r := range roles {
 				principalType[r.Name] = gosmo.PrincipalServerRole
-				if r.Name != *roleName && !existing[r.Name] {
+				if r.Name != *roleName && !existing[r.Name] && serverRoleMemberRoleEligible(r) {
 					candidates = append(candidates, r.Name)
 				}
 			}
@@ -161,7 +163,8 @@ func pageServerRoleMembers(sc *db.ServerConn, roleName *string) propPage {
 				members:       members,
 				candidates:    candidates,
 				principalType: principalType,
-				note:          "Add a login or another server role from the dropdown, or select a row above and Remove it.",
+				note: "Add a login or another user-defined server role from the dropdown, or select a row above and Remove it. " +
+					"sa and the fixed roles cannot be members of a role.",
 				add: func(ctx context.Context, name string) error {
 					return sc.Server.ServerRoleRef(*roleName).AddMember(ctx, name)
 				},

@@ -552,6 +552,7 @@ gossms/
 │       ├── new_schema_dialog.go  # New Schema: name, AUTHORIZATION owner, permissions, extended properties
 │       ├── role_props.go         # Database Role Properties page definitions
 │       ├── new_role_dialog.go    # New Database Role: name, AUTHORIZATION owner, owned schemas, members, securables, extended properties
+│       ├── new_server_role_dialog.go # New Server Role: name, AUTHORIZATION owner, members, server securables
 │       ├── application_role_props.go # Application Role Properties: General (name, default schema, password)/Owned Schemas/Securables/Extended Properties
 │       ├── new_application_role_dialog.go # New Application Role: name, default schema, password, owned schemas, securables, extended properties
 │       ├── sequence_props.go     # Sequence Properties: General (every ALTER SEQUENCE option, Restart with)/Permissions/Extended Properties

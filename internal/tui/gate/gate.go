@@ -141,6 +141,14 @@ var (
 	// Properties > Server Roles declares the plain right.
 	AlterAnyServerRoleMembers = Right{Name: "ALTER ANY SERVER ROLE", Role: "securityadmin",
 		DeniedOnServer: "ALTER", ServerSecurable: gosmo.ServerSecurableServerRole}
+	// What CREATE SERVER ROLE checks. Probed with SQL logins on majors 13 and 17
+	// (2026-11-05, identical): CREATE SERVER ROLE and ALTER ANY SERVER ROLE each
+	// read 1 for it and create; securityadmin and ALTER ANY LOGIN read 0 and are
+	// refused Msg 15247 — hence Role sysadmin, not securityadmin. Naming another
+	// principal in AUTHORIZATION was refused Msg 15151 to both rights until
+	// IMPERSONATE on that login (CONTROL on that role) was granted, so the gate
+	// answers for the CREATE and the server for the owner, as for CreateRole.
+	CreateServerRole = Right{Name: "CREATE SERVER ROLE", Role: "sysadmin"}
 	// ALTER ANY CREDENTIAL is server-scope only, with no database-scoped twin: a
 	// database-scoped credential is permitted by CONTROL on the database alone; see
 	// DBScopedCredentialRights().

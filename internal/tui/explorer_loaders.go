@@ -272,6 +272,7 @@ var nodeMenus = map[NodeType]menuBuilder{
 
 	NodeLogins:                    loginsMenuItems,
 	NodeLogin:                     loginMenuItems,
+	NodeServerRoles:               serverRolesMenuItems,
 	NodeServerRole:                serverRoleMenuItems,
 	NodeCredentials:               credentialsMenuItems,
 	NodeCredential:                credentialMenuItems,

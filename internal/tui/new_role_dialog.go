@@ -142,6 +142,9 @@ func (d *NewRoleDialog) buildPages(pf *nrolePrefetch) {
 
 	nameField := propsheet.Text("Role name", "", 30)
 	ownerField := propsheet.Select("Owner", append([]string{nroleDefaultOwner}, pf.owners...), 0)
+	// Principal names run long (##MS_PerformanceDefinitionReader##, DOMAIN\group):
+	// the control widens to the widest rather than cutting them alike.
+	ownerField.SetFitItems(true)
 
 	d.forms[0] = propsheet.NewForm(
 		propsheet.Section("Database role"),

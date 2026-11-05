@@ -223,7 +223,7 @@ func TestServerPermissionsWriteNothingWhenUntouched(t *testing.T) {
 // it ("unknown verb") after the login had already been created.
 func TestNewLoginSecurablesGrantWithGrantIsAGrant(t *testing.T) {
 	sc, inst := newFakeConn(t)
-	form, apply := buildNewLoginSecurablesPage(sc, func() string { return "newlogin" })
+	form, apply := buildNewServerPrincipalSecurablesPage(sc, func() string { return "newlogin" })
 
 	gr := permGrid(t, form)
 	cyclePermTo(t, gr, permRowIndex(t, gr, "ALTER ANY LOGIN"), "Grant With Grant")

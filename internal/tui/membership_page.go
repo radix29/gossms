@@ -86,6 +86,9 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 		candidates = []string{noneItem}
 	}
 	addSelect := propsheet.Select("Add member", candidates, 0)
+	// Principal names run long (##MS_PerformanceDefinitionReader##, DOMAIN\group):
+	// the control widens to the widest rather than cutting them alike.
+	addSelect.SetFitItems(true)
 	hint := propsheet.Hint()
 
 	addBtn := widgets.NewButton("Add", func() {

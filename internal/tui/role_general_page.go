@@ -93,6 +93,7 @@ func roleGeneralPage(roleName *string,
 			} else {
 				nameRow = propsheet.Text("Role name", r.name, 24)
 				ownerRow = selectPreserving("Owner", r.ownerNames, r.owner, unknownOwnerItem)
+				ownerRow.SetFitItems(true) // principal names run long; see buildMembershipForm
 				rows = append(rows, nameRow, ownerRow)
 			}
 			rows = append(rows,

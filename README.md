@@ -183,7 +183,7 @@ inserts `[schema]`.
 
 **Double-click** a row in the Object Explorer Details pane to navigate into that
 object. Right-click a folder to create a Schema, Database Role, Application
-Role, Sequence or Synonym; each dialog checks your permissions first. In a
+Role, Server Role, Sequence or Synonym; each dialog checks your permissions first. In a
 result grid, double-click a cell for Show Value and click a row number to
 select the row. Press **F1** for the full keyboard reference.
 
