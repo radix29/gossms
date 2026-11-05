@@ -18,11 +18,13 @@ Managed Instance.
 (`~/go/gosmo/live_versionsweep_test.go`) calls every gosmo read and reports
 rejections. Run it on the *oldest* instance after any query change — a missing
 column fails the whole read and `go test ./...` says nothing. Expected
-refusals: every on-prem major refuses the six Azure-only DMV reads; 13 also
-refuses six 2017+ reads with `ErrUnsupportedVersion` (two Query Store wait
-reads, three external-library reads, graph tables). Compare failures, not call
-totals (those vary with each instance's logins/jobs). Zero failures proves
-nothing if a read was never reached — log the `call` labels to confirm.
+refusals: every on-prem major refuses the seven Azure-only reads (six DMVs
+plus database-scoped XEvent sessions); 13 also refuses six 2017+ reads with
+`ErrUnsupportedVersion` (two Query Store wait reads, three external-library
+reads, graph tables). Last run on 13: 2026-11-05, 439 calls, 0 failed.
+Compare failures, not call totals (those vary with each instance's
+logins/jobs). Zero failures proves nothing if a read was never reached — log
+the `call` labels to confirm.
 
 The per-column gate table is gosmo's (`~/go/gosmo/OPEN-THREADS.md` § Version
 support); this section covers only the environment.
@@ -121,20 +123,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
   one line per write or refusal for ever. Deferred by decision; a size cap
   with one `.1` generation, taken under the same lock, is the likely form.
-- **Agent alerts and operators still need sysadmin, or SQLAgentOperatorRole**
-  (2026-11-05, left out of the review plan's F1, which moved the job, step,
-  history and schedule reads onto msdb's procedures for the Agent roles).
-  gosmo's `Alerts`, `EventAlerts`, `Operators` and the job/operator
-  notification reads SELECT `sysalerts`, `sysoperators` and
-  `sysnotifications`, which msdb grants SQLAgentOperatorRole only; a Reader
-  or User member gets the Access denied placeholder on the Agent node's
-  Alerts and Operators folders and on Job Properties' Alerts and
-  Notifications pages (measured as Reader on 17). msdb grants
-  SQLAgentUserRole `sp_help_operator` and `sp_get_job_alerts`, so the same
-  `agentRead` route would cover operators and a job's alerts; the alert list
-  itself has no procedure below Operator. SSMS hides those folders from
-  such a login.
-
 - **Only the `object` group is off the `Catalog` seam** (2026-11-04, the
   pilot of review Q1 option A). Past connecting and resolving the name,
   `object list/search/describe/definition/dependencies/indexes/stats` call

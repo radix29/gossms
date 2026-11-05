@@ -138,6 +138,16 @@ func AgentWriteRights() []Right {
 	return []Right{SQLAgentUser, MsdbOwner, ControlServer}
 }
 
+// AgentAlertReadRights are what permits reading SQL Agent's alerts (the Alerts
+// folder, Alert Properties, an alert's or operator's notifications). Any one.
+// msdb grants sysalerts, sysnotifications and every procedure listing them to
+// SQLAgentOperatorRole only, so a Reader or User member is refused Msg 229
+// (gosmo.Server.Alerts); db_owner and CONTROL SERVER read the tables
+// directly. A sysadmin passes through CONTROL SERVER, as in AgentWriteRights.
+func AgentAlertReadRights() []Right {
+	return []Right{SQLAgentOperator, MsdbOwner, ControlServer}
+}
+
 // AgentPropertiesRights are what permits SQL Server Agent Properties' writes
 // (sp_set_sqlagent_properties). EXECUTE on it is granted to nobody, so msdb
 // db_owner runs it as owner, and sysadmin as sysadmin; CONTROL SERVER without

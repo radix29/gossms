@@ -107,6 +107,10 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 	}
 }
 
+// operatorAlertsWithheldNote stands in for the alert grid when msdb refuses the
+// login sysnotifications.
+const operatorAlertsWithheldNote = "<not shown — msdb shows alert notifications only to sysadmin and members of SQLAgentOperatorRole>"
+
 // pageOperatorNotifications lists alerts and jobs that notify this operator,
 // read-only; links are edited in the alert's or job's Properties.
 func pageOperatorNotifications(sc *db.ServerConn, operatorName *string) propPage {
@@ -117,22 +121,30 @@ func pageOperatorNotifications(sc *db.ServerConn, operatorName *string) propPage
 			if err != nil {
 				return nil, nil, err
 			}
-			alerts, err := o.NotifyingAlerts(ctx)
-			if err != nil {
-				return nil, nil, err
+			// NotifyingAlerts needs SQLAgentOperatorRole (gosmo); below it
+			// the alert half becomes a note and the job half still lists.
+			var alertRow propsheet.Row = propsheet.Note(operatorAlertsWithheldNote)
+			if agentAlertsReadable(ctx, sc) {
+				alerts, err := o.NotifyingAlerts(ctx)
+				switch {
+				case gosmo.IsPermissionDenied(err):
+					// The gate failed open; keep the note.
+				case err != nil:
+					return nil, nil, err
+				default:
+					alertRows := make([][]string, len(alerts))
+					for i, n := range alerts {
+						alertRows[i] = []string{n.AlertName, n.Method.String()}
+					}
+					alertGrid := controls.NewDataGrid()
+					alertGrid.SetData([]string{"Alert", "Method"}, alertRows)
+					alertRow = propsheet.NewGridRow(alertGrid, 8)
+				}
 			}
 			jobs, err := o.NotifyingJobs(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-
-			alertCols := []string{"Alert", "Method"}
-			alertRows := make([][]string, len(alerts))
-			for i, n := range alerts {
-				alertRows[i] = []string{n.AlertName, n.Method.String()}
-			}
-			alertGrid := controls.NewDataGrid()
-			alertGrid.SetData(alertCols, alertRows)
 
 			jobCols := []string{"Job", "Notify condition"}
 			jobRows := make([][]string, len(jobs))
@@ -144,7 +156,7 @@ func pageOperatorNotifications(sc *db.ServerConn, operatorName *string) propPage
 
 			f := propsheet.NewForm(
 				propsheet.Section("Alerts that notify this operator"),
-				propsheet.NewGridRow(alertGrid, 8),
+				alertRow,
 				propsheet.Section("Jobs that notify this operator"),
 				propsheet.NewGridRow(jobGrid, 8),
 				propsheet.Note("Edit a link from the alert's or job's own Properties dialog (Alert Properties > Response, Job Properties > Notifications)."),

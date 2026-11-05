@@ -82,7 +82,7 @@ func agentOperatorResponses() []fakeResponse {
 		operatorRow(3, "weekend-cover", "cover@example.com", "", false),
 	}
 	return []fakeResponse{
-		{match: "WHERE o.name = @p1", cols: 13, rows: [][]driver.Value{rows[1]}},
+		{match: "WHERE  o.name = @p1", cols: 13, rows: [][]driver.Value{rows[1]}},
 		{match: "FROM   msdb.dbo.sysoperators o", cols: 13, rows: rows},
 	}
 }

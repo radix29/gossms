@@ -86,6 +86,13 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   error with the change made. Gate such a write on `gate.Sysadmin`, and check
   the side effect as sa, not only the error. Likewise a registry write on
   Linux (`xp_instance_regwrite`) succeeds and stores nothing; read it back.
+- **SQL Agent alerts are SQLAgentOperatorRole's, not every Agent role's.**
+  msdb grants `sysalerts`, `sysnotifications` and every alert-listing
+  procedure to Operator only; jobs, operators (`sp_help_operator`), a job's
+  alerts (`sp_get_job_alerts`) and `sysjobs_view` reach SQLAgentUserRole.
+  Gate an alert read on `gate.AgentAlertReadRights` and leave the UI out
+  (`agentAlertsReadable`: no Alerts folder, a summary or note on the job and
+  operator pages), as SSMS does — never an Access denied placeholder.
 - **Move to Schema is not the Rename/Delete set.** `TRANSFER` needs CONTROL on
   the securable; ALTER on the database, db_ddladmin, ALTER ANY SCHEMA and
   ALTER on the source schema all permit drop and are refused the move (Msg
