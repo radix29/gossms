@@ -73,6 +73,13 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   Likewise the `sysmail_allitems`/`sysmail_event_log` views filter on
   `IS_SRVROLEMEMBER('sysadmin')`: CONTROL SERVER sees only its own rows
   there (gosmo reads the base tables for it instead — `docs/decisions.md`).
+- **Probing trap: an empty dependency list is not an answer.**
+  `sys.sql_expression_dependencies` and `sys.dm_sql_referencing_entities`
+  list no rows at all without VIEW DEFINITION on the *database* — object- or
+  schema-level grants show nothing (checked on 17, 2026-11-05). `public` has
+  no SELECT on the view (Msg 229); db_datareader does. Check
+  `gosmo.Database.HasPermission(ctx, "VIEW DEFINITION")` before believing an
+  empty result.
 - **Probing trap: CONTROL SERVER is not sysadmin to a procedure that asks.**
   `sp_set_sqlagent_properties` under CONTROL SERVER alone writes the registry,
   then its `sp_sqlagent_notify` checks the role and refuses Msg 14260 — an

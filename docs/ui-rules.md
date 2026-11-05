@@ -19,7 +19,7 @@ behind the mouse and async rules.
   `GridHeader` `GridHeaderText`; text on an accent ground (`BorderActive`,
   `TreeSelected`, `GridSelected`) is `SelectedText`, not `color.White`, and a
   ground with its own text role uses it (`StatusBarText`, `ButtonActiveText`,
-  `MenuSelectedText`, `EditorMatchText`, `GridStatusText`) — white on the mc
+  `MenuSelectedText`, `EditorMatchText`, `GridStatusText`, `AlertText`) — white on the mc
   themes' cyan status bar, grid selection and focused button read 2.9:1. A new
   `theme.Style*` function goes in `styleFuncs` (`contrast_test.go`) so
   `TestEveryStyleMeetsTheContrastFloor` checks it in every palette; a list highlight on a

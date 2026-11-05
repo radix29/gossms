@@ -165,6 +165,9 @@ func TestScriptObjectErrors(t *testing.T) {
 	}{
 		{"Sales.usp_Get", hidden, 9, "PERMISSION_DENIED", "needs VIEW DEFINITION"},
 		{"Sales.p_secret", encrypted, 11, "UNSUPPORTED", "WITH ENCRYPTION"},
+		// A table's DROP refused the schema-bound dependents read: that
+		// read's permission, not VIEW DEFINITION, is the hint.
+		{"Sales.Customer", deniedDependents, 9, "PERMISSION_DENIED", "reads what is schema-bound to it, which takes SELECT on sys.sql_expression_dependencies"},
 	} {
 		cat := newScriptFake()
 		cat.err = tc.err

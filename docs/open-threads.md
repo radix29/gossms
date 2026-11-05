@@ -101,24 +101,6 @@ Settled design: `docs/decisions.md` § Format Document.
   past bigint can't be written. There is no Last Used Value row (gosmo's
   `Sequence.noLastUsed` is unexported).
 
-## Theme contrast: what is left
-
-`TestEveryStyleMeetsTheContrastFloor` (`internal/tuikit/theme/contrast_test.go`)
-checks the `theme.Style*` functions only. Two colour pairs drawn elsewhere read
-below its floors (found 2026-11-04, not fixed):
-
-- **The dashboard header's instance name** (`dashboard/common.go`) is
-  `ChartCyan` on `MenuBar`: bright cyan on cyan in mc (2.2:1) and mc - retro
-  (2.3:1), and 3.5:1 in Light. It needs a foreground role for an emphasised
-  word on a `MenuBar` ground, which the palette lacks.
-- **The results status line's truncation alert** (`QueryPanel.resultsStatusStyle`)
-  is bold white on `Error`: 3.1:1 in mc - retro (VGA bright red), 4.2:1 in
-  mc. White on red is mc's own error colour.
-- **Two B1 restylings never driven** (2026-11-04): the toolbar button's hover
-  and Activity Monitor's selected tab now call `StyleMenuSelected`. Both need
-  a mouse click, which the tmux run did not make. Their colours did not
-  change in any palette, so this is the call site, not the contrast.
-
 ## Command line: what is left
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
@@ -132,21 +114,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   that a read-only connection reaches a secondary.
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
-- **`object dependencies`' permission hint may be wrong** (found 2026-10-29
-  in phase 3.i). Its PERMISSION_DENIED hint and `docs/cli.md` § Commands say
-  SELECT on `sys.sql_expression_dependencies` is db_owner's only by default.
-  On majors 14 and 17 a db_datareader login (no VIEW DEFINITION) reads it
-  fine and gets an empty set: metadata visibility hides the edges, no error.
-  The exit 9 that 3.f recorded on 17 came from some other setup (an explicit
-  DENY?). Re-check which login gets exit 9, then fix the hint and the row.
-  **Same cause, in scripting** (found 2026-10-30 in phase 6.l, on 17, 14, 13
-  and ubusql1): a table's DROP / DROP AND CREATE (TUI Script As and `script
-  object`) names the modules schema-bound to it in a comment (gosmo
-  `schemaBoundDependents`); a db_datareader login gets no rows and the
-  comment silently goes missing — the script itself is the same, but the
-  warning that its DROP will fail with Msg 3729 is not there. Decide in gosmo:
-  refuse (as a hidden default or filter is refused) when the login lacks VIEW
-  DEFINITION, or say in the comment that dependents could not be read.
 - **No Generate Scripts wizard** (phase 6, D7): `script db` is the
   database's own CREATE, not its objects. Scripting every object in
   dependency order (`--objects`, `--include-permissions`) needs

@@ -253,6 +253,10 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 func scriptError(err error, name string) *output.Error {
 	e := readError(err)
 	switch {
+	case e.Code == output.CodePermissionDenied && strings.Contains(err.Error(), "sql_expression_dependencies"):
+		// A table's DROP reads what is schema-bound to it there, and that
+		// read, not the definition, is what was refused.
+		e.Hint = "Scripting a DROP of " + name + " reads what is schema-bound to it, which takes " + dependenciesSelect
 	case e.Code == output.CodePermissionDenied:
 		e.Hint = "Scripting " + name + " reads its definition, which needs VIEW DEFINITION on it (or on its schema or " +
 			"the database); a SELECT or EXECUTE grant alone does not give it."

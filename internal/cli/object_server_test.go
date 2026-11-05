@@ -36,7 +36,8 @@ type objectServer struct {
 	// hidden reads every computed, default and check definition, and
 	// IX_Customer_Name's and st_multi's filters, as the server shows them to
 	// a login without VIEW DEFINITION: NULL. CustomerName's type reads as one
-	// the login cannot see (no sys.types row).
+	// the login cannot see (no sys.types row). The dependency reads answer no
+	// rows, and the database's VIEW DEFINITION probe false.
 	hidden bool
 	// heap makes the usage read answer index 0, a heap, first.
 	heap bool
@@ -520,6 +521,9 @@ func (s *objectServer) recorded(list *[]string) []string {
 func (s *objectServer) storageRules() {
 	dependencyRows := func(dependents bool) func(q gosmotest.Query) [][]any {
 		return func(q gosmotest.Query) [][]any {
+			if s.hidden {
+				return nil // all-or-nothing on VIEW DEFINITION on the database
+			}
 			schema, name := splitName(str(q.Arg(0)))
 			var rows [][]any
 			for _, e := range edges {
@@ -534,6 +538,7 @@ func (s *objectServer) storageRules() {
 			return rows
 		}
 	}
+	s.on(func(gosmotest.Query) [][]any { return [][]any{{!s.hidden}} }, "HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', @p1)")
 	s.OnFunc(func(q gosmotest.Query) bool { return has(q, "sys.dm_sql_referencing_entities(@p1") },
 		func(q gosmotest.Query) gosmotest.Result {
 			schema, name := splitName(str(q.Arg(0)))

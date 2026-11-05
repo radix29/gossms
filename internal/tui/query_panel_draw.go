@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -114,8 +113,7 @@ func (p *QueryPanel) resultsStatusStyle() tcell.Style {
 	if p.truncatedNotice() == "" {
 		return theme.StyleGridStatus()
 	}
-	pal := theme.Active()
-	return tcell.StyleDefault.Background(pal.Error).Foreground(color.White).Bold(true)
+	return theme.StyleAlert()
 }
 
 // truncatedNotice is the status line's shout that Max fetch rows cut a result
