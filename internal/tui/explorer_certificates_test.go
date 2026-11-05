@@ -316,10 +316,11 @@ func TestCertificateDetailOfADroppedCertificate(t *testing.T) {
 }
 
 // keyOwnerResponses are the principal reads an Owner row draws from: users,
-// and the roles a symmetric key's row also offers.
+// application roles, and the roles a symmetric key's row also offers.
 func keyOwnerResponses() []fakeResponse {
 	return []fakeResponse{
 		databaseUsersResponse(),
+		databaseApplicationRolesResponse(),
 		{match: "WHERE  r.type = 'R'", cols: 5, rows: [][]driver.Value{
 			{"app_admin", int64(11), false, "dbo", nil},
 		}},
@@ -339,6 +340,10 @@ func assertOwnerChange(t *testing.T, page propPage, inst *fakeInstance, wantOffe
 	}
 	if !slices.Contains(owner.Items(), wantOffered) {
 		t.Errorf("Owner offers %q, missing %q", owner.Items(), wantOffered)
+	}
+	// An application role may own every key family (probed on 13 and 17).
+	if !slices.Contains(owner.Items(), principalAppRoleOwner) {
+		t.Errorf("Owner offers %q, missing the application role %q", owner.Items(), principalAppRoleOwner)
 	}
 	if wantAbsent != "" && slices.Contains(owner.Items(), wantAbsent) {
 		t.Errorf("Owner offers %q, which cannot own this", wantAbsent)

@@ -68,9 +68,10 @@ var scriptFamilies = map[NodeType]scriptFamily{
 	NodeSequence:   {scripting.Sequence, "Sequence"},
 	NodeSynonym:    {scripting.Synonym, "Synonym"},
 
-	NodeSchema:       {scripting.Schema, "Schema"},
-	NodeUser:         {scripting.User, "User"},
-	NodeDatabaseRole: {scripting.DatabaseRole, "Database Role"},
+	NodeSchema:          {scripting.Schema, "Schema"},
+	NodeUser:            {scripting.User, "User"},
+	NodeDatabaseRole:    {scripting.DatabaseRole, "Database Role"},
+	NodeApplicationRole: {scripting.ApplicationRole, "Application Role"},
 
 	NodePartitionFunction:          {scripting.PartitionFunction, "Partition Function"},
 	NodePartitionScheme:            {scripting.PartitionScheme, "Partition Scheme"},

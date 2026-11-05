@@ -24,7 +24,7 @@ import (
 func roleGeneralResponses() []fakeResponse {
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseRoleResponses()...)
-	responses = append(responses, databaseUsersResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
 	responses = append(responses, databaseSchemaResponses()...)
 	return append(responses, principalPermissionResponses()...)
 }
@@ -76,14 +76,14 @@ func TestRoleGeneralCountsEveryClassOfSecurable(t *testing.T) {
 	}
 }
 
-// TestRoleGeneralOffersEveryPrincipalAsAnOwner. The owner list is users and
-// roles together; a page that offered only one kind silently narrows what the
-// user may transfer to.
+// TestRoleGeneralOffersEveryPrincipalAsAnOwner. The owner list is users,
+// roles and application roles together; a page that offered only one kind
+// silently narrows what the user may transfer to.
 func TestRoleGeneralOffersEveryPrincipalAsAnOwner(t *testing.T) {
 	_, _, form, _ := loadRoleGeneralPage(t, principalRole)
 	items := selectRow(t, form, "Owner").Items()
 
-	for _, want := range []string{principalUser, "dbo", "reporting", "audit_reader", "public"} {
+	for _, want := range []string{principalUser, "dbo", "reporting", "audit_reader", "public", principalAppRoleOwner} {
 		if !containsItem(items, want) {
 			t.Errorf("the Owner list %q does not offer %q", items, want)
 		}
@@ -316,7 +316,7 @@ func TestUserGeneralCertificateMappedUserHasNoLoginOrSchemaToChange(t *testing.T
 func schemaGeneralResponses() []fakeResponse {
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseSchemaResponses()...)
-	responses = append(responses, databaseUsersResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
 	responses = append(responses, databaseRoleResponses()...)
 	responses = append(responses, schemaObjectCountResponses()...)
 	return append(responses, principalPermissionResponses()...)
@@ -341,6 +341,19 @@ func TestSchemaGeneralTransfersToThePrincipalThatWasPicked(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	assertOneStatementIn(t, inst, principalDatabase, "ALTER AUTHORIZATION ON SCHEMA::[sales] TO [reporting]")
+}
+
+// TestSchemaGeneralTransfersToAnApplicationRole. An application role can own
+// a schema, so the Owner list offers it and the transfer names it.
+func TestSchemaGeneralTransfersToAnApplicationRole(t *testing.T) {
+	inst, apply, form := loadSchemaGeneralPage(t, principalSchema)
+
+	editSelect(t, form, "Owner", principalAppRoleOwner)
+
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	assertOneStatementIn(t, inst, principalDatabase, "ALTER AUTHORIZATION ON SCHEMA::[sales] TO [payroll_app]")
 }
 
 // TestSchemaGeneralSystemSchemaHasNoApply.

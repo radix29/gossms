@@ -757,9 +757,10 @@ Every result below was probed with `WITHOUT LOGIN` users on 13, 14,
   (effective, folding in database `CONTROL`). `ALTER AUTHORIZATION` drops
   explicit permissions (the note says so). `IMPERSONATE` on the new owner is
   left to the server (Msg 15151). Certificates and asymmetric keys can't be
-  role-owned (Msg 15345), so only the symmetric key's picker lists roles. The
-  current owner stays listed even if not a user/role (certificate-mapped user,
-  application role).
+  role-owned (Msg 15345), so only the symmetric key's picker lists roles;
+  every key picker lists application roles, which all three accept (probed on
+  13 and 17, 2026-11-05). The current owner stays listed even if no picker
+  offers it (a certificate-mapped user).
 - **Nothing else on a certificate or asymmetric key is a Properties row** —
   other ALTERs are private-key operations (filesystem or irreversible → own
   context-menu actions) or `ACTIVE FOR BEGIN_DIALOG` (left to a scripted ALTER).

@@ -302,7 +302,10 @@ func TestScriptingEachFamilyReachesTheRightObject(t *testing.T) {
 			"CREATE BROKER PRIORITY [ClaimPriority]"},
 	} {
 		t.Run(nodeTypeName(c.typ), func(t *testing.T) {
-			sc, _ := newFakeConn(t, append([]fakeResponse{brokerDBResp()}, c.resp...)...)
+			// No extended properties: the six families that can carry them
+			// read them after the object.
+			noExtProps := fakeResponse{match: "FROM   sys.extended_properties ep", cols: 6}
+			sc, _ := newFakeConn(t, append([]fakeResponse{brokerDBResp(), noExtProps}, c.resp...)...)
 			n := nodeData{Type: c.typ, DBName: brokerDB, Schema: c.schema, Name: c.name}
 			text, err := scriptables[c.typ].verbs[0].gen(context.Background(), sc, n)
 			if err != nil {

@@ -52,6 +52,18 @@ func databaseUsersResponse() fakeResponse {
 	)}
 }
 
+// principalAppRoleOwner is the application role databaseApplicationRolesResponse
+// lists: every owner picker offers it.
+const principalAppRoleOwner = "payroll_app"
+
+// databaseApplicationRolesResponse answers the application role list an owner
+// picker reads alongside the users and roles.
+func databaseApplicationRolesResponse() fakeResponse {
+	return fakeResponse{match: "WHERE  type = 'A'\nORDER  BY name", cols: 5, rows: [][]driver.Value{
+		{principalAppRoleOwner, "dbo", int64(12), principalEpoch, principalEpoch},
+	}}
+}
+
 // userByNameResponse answers the by-name user read, which carries the SID and
 // the mapped login the list read leaves out.
 func userByNameResponse(name, defaultSchema, login string) fakeResponse {

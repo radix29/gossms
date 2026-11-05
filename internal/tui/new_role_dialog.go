@@ -85,21 +85,18 @@ func fetchNewRolePrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 	return pf, nil
 }
 
-// newRolePrefetchFrom sorts the database's principals into the pickers.
-// Application roles only take a name: no picker offers them.
+// newRolePrefetchFrom sorts the database's principals into the pickers. An
+// application role may own the role but is offered as no member.
 func newRolePrefetchFrom(collation string, users []*gosmo.User, roles []*gosmo.DatabaseRole,
 	appRoles []*gosmo.ApplicationRole, schemas []*gosmo.Schema) *nrolePrefetch {
 	pf := &nrolePrefetch{existingNames: newNameSet(collation), collation: collation,
 		schemas: schemas, principalType: map[string]gosmo.PrincipalType{}}
 	special := newNameSet(collation, nroleSpecial...)
-	for _, n := range principalNames(users, roles) {
+	for _, n := range principalNames(users, roles, appRoles) {
 		pf.existingNames.Add(n)
 		if !special.Has(n) {
 			pf.owners = append(pf.owners, n)
 		}
-	}
-	for _, r := range appRoles {
-		pf.existingNames.Add(r.Name)
 	}
 	for _, u := range users {
 		if roleMemberEligible(special, u.Name, false) {

@@ -54,6 +54,10 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
+			appRoles, err := d.ApplicationRoles(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
 			counts, err := schema.ObjectCountsByType(ctx)
 			if err != nil {
 				return nil, nil, err
@@ -79,6 +83,12 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			}
 
 			ownerType := "Database role"
+			for _, r := range appRoles {
+				if r.Name == schema.Owner {
+					ownerType = "Application role"
+					break
+				}
+			}
 			for _, u := range users {
 				if u.Name == schema.Owner {
 					ownerType = string(u.UserType)
@@ -96,7 +106,7 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			if builtin {
 				rows = append(rows, propsheet.Static("Owner", schema.Owner))
 			} else {
-				ownerNames := principalNames(users, roles)
+				ownerNames := principalNames(users, roles, appRoles)
 				ownerRow = selectPreserving("Owner", ownerNames, schema.Owner, unknownOwnerItem)
 				rows = append(rows, ownerRow)
 			}

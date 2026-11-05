@@ -49,9 +49,14 @@ const shrinkNoFileGroup = "(not applicable)"
 // which the catalog doesn't have.
 const shrinkFilestreamNA = "n/a (FILESTREAM container)"
 
-// shrinkFilesPrefetch is the database's files, data files first.
+// shrinkFilesPrefetch is the database's files, data files first, and each log
+// file's real shrink floor in KB by file_id. logFloors is nil when the floor
+// could not be read — before 2016 SP2, or without VIEW SERVER STATE — and a
+// log file missing from it has no active VLF; either way the log's minimum
+// falls back to its used space, labelled a lower bound.
 type shrinkFilesPrefetch struct {
-	files []*gosmo.DatabaseFileInfo
+	files     []*gosmo.DatabaseFileInfo
+	logFloors map[int]int64
 }
 
 // ShrinkFilesDialog is the Shrink File dialog.
@@ -86,16 +91,23 @@ func (d *ShrinkFilesDialog) show(sc *db.ServerConn, dbName string) {
 }
 
 // fetchPrefetch reads the file list with each file's used space, which is what
-// the free-space figure and the shrink's floor come from.
+// the free-space figure and the shrink's floor come from, and the logs' real
+// floors. A failed floor read costs only the log's exact minimum, not the
+// dialog, so its error is dropped.
 func (d *ShrinkFilesDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*shrinkFilesPrefetch, error) {
-	files, err := sc.Server.DatabaseRef(d.dbName).Files(ctx)
+	dbase := sc.Server.DatabaseRef(d.dbName)
+	files, err := dbase.Files(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no files of %q are visible to this login", d.dbName)
 	}
-	return &shrinkFilesPrefetch{files: sortDatabaseFiles(files)}, nil
+	pf := &shrinkFilesPrefetch{files: sortDatabaseFiles(files)}
+	if slices.ContainsFunc(files, func(f *gosmo.DatabaseFileInfo) bool { return f.Type == gosmo.FileLog }) {
+		pf.logFloors, _ = dbase.LogShrinkFloors(ctx)
+	}
+	return pf, nil
 }
 
 // shrinkFilePicker narrows the file list as the three pickers do: the types
@@ -149,6 +161,17 @@ func (p shrinkFilePicker) filesIn(typeDesc gosmo.FileType, fileGroup string) []*
 // 19.19 MB used. 0 when the used space is unknown.
 func shrinkFileMinMB(f *gosmo.DatabaseFileInfo) int64 {
 	return (f.SpaceUsedKB + 1023) / 1024
+}
+
+// shrinkLogMinMB is a log file's minimum in whole MB, rounded up, and whether
+// it is the real floor: the end of its last active VLF when floors has it
+// (never below the used space), else the used space, a lower bound only.
+func shrinkLogMinMB(f *gosmo.DatabaseFileInfo, floors map[int]int64) (mb int64, exact bool) {
+	kb, ok := floors[f.FileID]
+	if !ok {
+		return shrinkFileMinMB(f), false
+	}
+	return (max(kb, f.SpaceUsedKB) + 1023) / 1024, true
 }
 
 // shrinkFileSizeMB is the file's current size in whole MB, rounded up, so that
@@ -210,13 +233,18 @@ func (d *ShrinkFilesDialog) buildPages(pf *shrinkFilesPrefetch) {
 			free.SetValue(shrinkFreeText(f.SizeKB-f.SpaceUsedKB, f.SizeKB))
 			// DBCC SHRINKFILE's own target 0 stops at the file's creation size,
 			// not its contents, so gosmo sends 0 as 1.
-			occupies := "the space the file's data occupies"
+			minMB, occupies := shrinkFileMinMB(f), "the space the file's data occupies"
 			if f.Type == gosmo.FileLog {
 				// A log shrinks only down to its last active VLF, which the
 				// used-space figure knows nothing about.
-				occupies = "the log's used space, a lower bound only: a log shrinks no further than its last active virtual log file"
+				var exact bool
+				if minMB, exact = shrinkLogMinMB(f, pf.logFloors); exact {
+					occupies = "the end of the log's last active virtual log file, as it stands now"
+				} else {
+					occupies = "the log's used space, a lower bound only: a log shrinks no further than its last active virtual log file"
+				}
 			}
-			minimum.SetText(fmt.Sprintf("Minimum is %d MB — %s. A smaller target shrinks as far as that; 0 is sent as 1, as SHRINKFILE's own 0 stops at the creation size.", shrinkFileMinMB(f), occupies))
+			minimum.SetText(fmt.Sprintf("Minimum is %d MB — %s. A smaller target shrinks as far as that; 0 is sent as 1, as SHRINKFILE's own 0 stops at the creation size.", minMB, occupies))
 		default:
 			free.SetValue("unknown")
 			minimum.SetText("The file's used space could not be read, so its minimum size is unknown.")

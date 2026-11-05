@@ -55,15 +55,21 @@ func findRole(ctx context.Context, sc *db.ServerConn, dbName, roleName string) (
 	return inDB(ctx, sc, dbName, roleName, (*gosmo.Database).RoleByName)
 }
 
-// principalNames returns every database principal (user or role) that could own a
-// role or schema, or be added as a role member: the candidate list every
-// owner/member picker on this dialog draws from.
-func principalNames(users []*gosmo.User, roles []*gosmo.DatabaseRole) []string {
-	names := make([]string, 0, len(users)+len(roles))
+// principalNames returns every database principal — user, role, then
+// application role — that could own a securable: the candidate list every
+// owner picker draws from. An application role can own each securable these
+// pickers offer (schema, database role, certificate, asymmetric and symmetric
+// key, full-text catalog, stoplist and search property list; probed on 13 and
+// 17, 2026-11-05). A nil slice leaves its kind out.
+func principalNames(users []*gosmo.User, roles []*gosmo.DatabaseRole, appRoles []*gosmo.ApplicationRole) []string {
+	names := make([]string, 0, len(users)+len(roles)+len(appRoles))
 	for _, u := range users {
 		names = append(names, u.Name)
 	}
 	for _, r := range roles {
+		names = append(names, r.Name)
+	}
+	for _, r := range appRoles {
 		names = append(names, r.Name)
 	}
 	return names
@@ -85,6 +91,10 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 				return roleGeneral{}, err
 			}
 			roles, err := d.Roles(ctx)
+			if err != nil {
+				return roleGeneral{}, err
+			}
+			appRoles, err := d.ApplicationRoles(ctx)
 			if err != nil {
 				return roleGeneral{}, err
 			}
@@ -126,7 +136,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 				id: role.ID, sid: role.SID, created: role.CreateDate, modified: role.ModifyDate,
 				members: len(role.Members),
 				builtin: builtin, roleType: roleType,
-				ownerNames: principalNames(users, roles),
+				ownerNames: principalNames(users, roles, appRoles),
 				summary: []propsheet.Row{
 					propsheet.Static("Owned schemas", strconv.Itoa(ownedSchemas)),
 					propsheet.Static("Owned roles", strconv.Itoa(ownedRoles)),
@@ -215,6 +225,10 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName string, roleName *string) prop
 			if err != nil {
 				return nil, nil, err
 			}
+			appRoles, err := d.ApplicationRoles(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
 
 			var items []*ownerTransferItem[*gosmo.DatabaseRole]
 			for _, r := range allRoles {
@@ -225,7 +239,7 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName string, roleName *string) prop
 				}
 			}
 
-			f, apply := newOwnerTransferPage(items, principalNames(users, allRoles), ownerTransferSpec[*gosmo.DatabaseRole]{
+			f, apply := newOwnerTransferPage(items, principalNames(users, allRoles, appRoles), ownerTransferSpec[*gosmo.DatabaseRole]{
 				Headers: []string{"Role", "Type", "Members"},
 				Cells: func(it *ownerTransferItem[*gosmo.DatabaseRole]) []string {
 					return []string{it.name, "Database role", strconv.Itoa(len(it.obj.Members))}

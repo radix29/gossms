@@ -57,9 +57,13 @@ func fetchNewSchemaPrefetch(ctx context.Context, sc *db.ServerConn, dbName strin
 	if err != nil {
 		return nil, err
 	}
+	appRoles, err := d.ApplicationRoles(ctx)
+	if err != nil {
+		return nil, err
+	}
 	pf.principals = databasePermPrincipals(users, roles)
 	unownable := newNameSet(databaseCollation(d), nschemaUnownable...)
-	for _, n := range principalNames(users, roles) {
+	for _, n := range principalNames(users, roles, appRoles) {
 		if !unownable.Has(n) {
 			pf.owners = append(pf.owners, n)
 		}

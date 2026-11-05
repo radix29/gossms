@@ -68,15 +68,6 @@ Settled design: `docs/decisions.md` § Format Document.
   the built-ins resolve case-insensitively; `sysname` and the CLR types are
   left alone because a CS server collation was not available to check them.
 
-## Shrink: what is left
-
-- **A log file's "Minimum is N MB" is its used space, not its real floor.**
-  A log shrinks no further than its last active VLF, so Shrink > Files labels
-  the figure a lower bound (`shrink_files_dialog.go`). The real floor
-  is readable from `sys.dm_db_log_info` (2016 SP2+; `DBCC LOGINFO` before):
-  the end offset of the highest active VLF. Showing that needs a gosmo read
-  and a version gate for 2016 RTM/SP1.
-
 ## Group by Schema: what is left
 
 - **Only the five main families group** (deferred scope). Tables (the folder's own user tables), Views, Synonyms, Stored
@@ -88,13 +79,6 @@ Settled design: `docs/decisions.md` § Format Document.
 
 ## Security: what is left
 
-- **Application roles have no Script menu.** gosmo has no
-  `ScriptApplicationRole`; Script Database Security emits the one-role form
-  privately.
-- **The owner pickers never offer an application role**, though one can own
-  a schema. `principalNames(users, roles)` feeds Owned Schemas' transfer
-  picker, New Schema, Schema Properties, the key owner pickers and
-  Full-Text.
 - **A login with no right on an application role sees the folder empty**
   (catalog visibility).
 

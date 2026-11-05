@@ -2,6 +2,9 @@ package tui
 
 import (
 	"context"
+	"database/sql/driver"
+	"errors"
+	"maps"
 	"strings"
 	"testing"
 
@@ -183,6 +186,77 @@ func TestShrinkFilesLogMinimumIsALowerBound(t *testing.T) {
 	editSelect(t, f, "File type", "Log")
 	if got := note(); !strings.Contains(got, "Minimum is 50 MB") || !strings.Contains(got, "last active virtual log file") {
 		t.Errorf("the log's note = %q, want its 50 MB used space called a lower bound", got)
+	}
+}
+
+// With the log's floor read, the note gives that — the end of its last
+// active VLF, above the used space — as the minimum, and no longer calls it
+// a lower bound.
+func TestShrinkFilesLogMinimumIsTheFloorWhenRead(t *testing.T) {
+	sc, _ := newFakeConn(t)
+	d := &ShrinkFilesDialog{dbName: "AppDB"}
+	d.sc = sc
+	d.pages = []string{"General"}
+	d.forms = make([]*propsheet.Form, 1)
+	d.applyFns = make([]propApply, 1)
+	d.buildPages(&shrinkFilesPrefetch{files: shrinkFilesTestFiles(sc), logFloors: map[int]int64{2: 70*1024 + 1}})
+	f := d.forms[0]
+	editSelect(t, f, "File type", "Log")
+	var note string
+	for _, r := range f.Rows() {
+		if n, ok := r.(*propsheet.NoteRow); ok && strings.HasPrefix(n.Text(), "Minimum is") {
+			note = n.Text()
+		}
+	}
+	if !strings.Contains(note, "Minimum is 71 MB — the end of the log's last active virtual log file") || strings.Contains(note, "lower bound") {
+		t.Errorf("the log's note = %q, want its 71 MB floor as the minimum", note)
+	}
+}
+
+// A floor below the used space never lowers the minimum, and a log file the
+// floors don't name (no active VLF, or no floors read) keeps the used space.
+func TestShrinkLogMinMB(t *testing.T) {
+	log := &gosmo.DatabaseFileInfo{FileID: 2, SpaceUsedKB: 5 * 1024}
+	for _, c := range []struct {
+		name   string
+		floors map[int]int64
+		mb     int64
+		exact  bool
+	}{
+		{"no floors read", nil, 5, false},
+		{"another file's floor", map[int]int64{3: 90 * 1024}, 5, false},
+		{"floor above used", map[int]int64{2: 96 * 1024}, 96, true},
+		{"floor below used", map[int]int64{2: 1024}, 5, true},
+	} {
+		if mb, exact := shrinkLogMinMB(log, c.floors); mb != c.mb || exact != c.exact {
+			t.Errorf("%s: = %d MB exact %v, want %d MB exact %v", c.name, mb, exact, c.mb, c.exact)
+		}
+	}
+}
+
+// The fetch reads the log floors in the database, and a refused floor read
+// costs only the floors, not the dialog.
+func TestShrinkFilesFetchReadsTheLogFloors(t *testing.T) {
+	files := fakeResponse{match: "FILEPROPERTY(df.name", cols: 11, rows: [][]driver.Value{
+		{int64(1), "App", `C:\d\App.mdf`, "ROWS", "PRIMARY", "ONLINE", int64(8192), int64(-1), int64(8192), false, int64(4096)},
+		{int64(2), "App_log", `C:\l\App_log.ldf`, "LOG", "", "ONLINE", int64(98304), int64(-1), int64(8192), false, int64(7080)},
+	}}
+	for _, c := range []struct {
+		name  string
+		floor fakeResponse
+		want  map[int]int64
+	}{
+		{"read", fakeResponse{match: "dm_db_log_info", db: "AppDB", cols: 2, rows: [][]driver.Value{{int64(2), int64(98304)}}}, map[int]int64{2: 98304}},
+		{"refused", fakeResponse{match: "dm_db_log_info", err: errors.New("VIEW SERVER STATE permission was denied")}, nil},
+	} {
+		sc, _ := newFakeConn(t, c.floor, files)
+		pf, err := (&ShrinkFilesDialog{dbName: "AppDB"}).fetchPrefetch(context.Background(), sc)
+		if err != nil {
+			t.Fatalf("%s: fetch: %v", c.name, err)
+		}
+		if len(pf.files) != 2 || !maps.Equal(pf.logFloors, c.want) {
+			t.Errorf("%s: %d files, floors %v; want 2 files, floors %v", c.name, len(pf.files), pf.logFloors, c.want)
+		}
 	}
 }
 

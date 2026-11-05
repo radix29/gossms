@@ -58,7 +58,7 @@ func loadOwnedSchemasPage(t *testing.T, principal string) (*fakeInstance, propAp
 	t.Helper()
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseSchemaResponses()...)
-	responses = append(responses, databaseUsersResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
 	responses = append(responses, databaseRoleResponses()...)
 	responses = append(responses, schemaObjectCountResponses()...)
 	sc, inst := newFakeConn(t, responses...)
@@ -87,6 +87,19 @@ func TestOwnedSchemasTransfersTheSchemaTheRowIsOn(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	assertOneStatementIn(t, inst, principalDatabase, "ALTER AUTHORIZATION ON SCHEMA::[sales] TO [reporting]")
+}
+
+// TestOwnedSchemasTransfersToAnApplicationRole: the transfer picker offers
+// application roles, which can own a schema.
+func TestOwnedSchemasTransfersToAnApplicationRole(t *testing.T) {
+	inst, apply, form, grid := loadOwnedSchemasPage(t, principalRole)
+
+	transferTo(t, form, grid, principalSchema, principalAppRoleOwner)
+
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	assertOneStatementIn(t, inst, principalDatabase, "ALTER AUTHORIZATION ON SCHEMA::[sales] TO [payroll_app]")
 }
 
 // TestOwnedSchemasTransfersBothOfTwo. The pending edits are held per row and
@@ -136,7 +149,7 @@ func loadOwnedRolesPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form
 	t.Helper()
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseRoleResponses()...)
-	responses = append(responses, databaseUsersResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
 	sc, inst := newFakeConn(t, responses...)
 	name := principalRole
 	form, apply := loadPage(t, pageRoleOwnedRoles(sc, principalDatabase, &name), inst)

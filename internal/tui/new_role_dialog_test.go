@@ -135,10 +135,11 @@ func TestNewRoleLaterPagesNameTheNewRole(t *testing.T) {
 
 // The pickers leave out what SQL Server refuses (Msg 15405, major 17): sys,
 // INFORMATION_SCHEMA and public as owner or member, and dbo and every fixed
-// role as a member. guest is accepted as both.
+// role as a member. guest is accepted as both. An application role may own
+// the role (probed on 13 and 17) but is no member.
 func TestNewRolePickersLeaveOutSpecialPrincipals(t *testing.T) {
 	pf := newRolePrefetchFrom("", nroleTestUsers(), nroleTestRoles(), nroleTestAppRoles(), nil)
-	if want := []string{"dbo", "guest", "app]user", "db_owner", "db_datareader", "readers"}; !slices.Equal(pf.owners, want) {
+	if want := []string{"dbo", "guest", "app]user", "db_owner", "db_datareader", "readers", "payroll_app"}; !slices.Equal(pf.owners, want) {
 		t.Errorf("owners = %q, want %q", pf.owners, want)
 	}
 	if want := []string{"guest", "app]user", "readers"}; !slices.Equal(pf.members, want) {

@@ -33,6 +33,7 @@ const (
 	Schema
 	User
 	DatabaseRole
+	ApplicationRole
 
 	PartitionFunction
 	PartitionScheme
@@ -282,6 +283,9 @@ var (
 	scriptDBRole scriptFn = func(s *gosmo.Scripter, ctx context.Context, t Target) (string, error) {
 		return s.ScriptDatabaseRole(ctx, t.Name)
 	}
+	scriptAppRole scriptFn = func(s *gosmo.Scripter, ctx context.Context, t Target) (string, error) {
+		return s.ScriptApplicationRole(ctx, t.Name)
+	}
 	scriptDB scriptFn = func(s *gosmo.Scripter, ctx context.Context, t Target) (string, error) {
 		return s.ScriptDatabase(ctx)
 	}
@@ -489,6 +493,9 @@ var families = map[Family][]verbGen{
 	Schema:       ddlVerbs(scriptSchema, false),
 	User:         ddlVerbs(scriptUser, false),
 	DatabaseRole: ddlVerbs(scriptDBRole, false),
+	// The password is unreadable, so CREATE carries a placeholder on a line
+	// marked to set it (gosmo's ScriptApplicationRole).
+	ApplicationRole: ddlVerbs(scriptAppRole, false),
 
 	PartitionFunction:   ddlVerbs(scriptPartFunc, false),
 	PartitionScheme:     ddlVerbs(scriptPartScheme, false),
