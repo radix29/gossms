@@ -10,7 +10,7 @@ import (
 
 // loadSequenceGeneralPage loads General for [sales].[OrderNo], an int sequence
 // at 42 stepping by 1 between 1 and 1000, not cycling, with a cache of 20.
-func loadSequenceGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadSequenceGeneralPage(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
 	return loadSequenceGeneralPageOf(t, "", []driver.Value{
 		"OrderNo", principalSchema, int64(901), "int", "sys", int64(10), int64(0),
@@ -20,17 +20,17 @@ func loadSequenceGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet
 
 // loadSequenceGeneralPageOf loads General for the sys.sequences row given, on
 // an instance at version ("" for the fake's default, a current one).
-func loadSequenceGeneralPageOf(t *testing.T, version string, row []driver.Value) (*fakeInstance, propApply, *propsheet.Form) {
+func loadSequenceGeneralPageOf(t *testing.T, version string, row []driver.Value) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
 	responses := []fakeResponse{
 		dbByNameResp(principalDatabase, 5),
 		{match: "FROM   sys.sequences s", arg: row[0].(string), cols: 17, rows: [][]driver.Value{row}},
 	}
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	if version != "" {
-		sc, inst = newFakeConnAtVersion(t, version, responses...)
+		sc, inst = newGConnAtVersion(t, version, responses...)
 	}
-	form, apply := loadPage(t, pageSequenceGeneral(sc, principalDatabase, principalSchema, row[0].(string)), inst)
+	form, apply := loadPageG(t, pageSequenceGeneral(sc, principalDatabase, principalSchema, row[0].(string)), inst)
 	return inst, apply, form
 }
 

@@ -45,9 +45,9 @@ func replPublicationResponses() []fakeResponse {
 }
 
 func TestPublicationArticlesDetailFollowsTheSelection(t *testing.T) {
-	sc, inst := newFakeConn(t, replPublicationResponses()...)
+	sc, inst := newGConn(t, replPublicationResponses()...)
 	pages := publicationPropPages(sc, "SalesDB", "pubA")
-	form, _ := loadPage(t, pages[1], inst)
+	form, _ := loadPageG(t, pages[1], inst)
 
 	var grids []*controls.DataGrid
 	for _, r := range form.Rows() {
@@ -91,8 +91,8 @@ func TestPublicationArticlesDetailFollowsTheSelection(t *testing.T) {
 }
 
 func TestPublicationFilterRowsListsOnlyFilteredArticles(t *testing.T) {
-	sc, inst := newFakeConn(t, replPublicationResponses()...)
-	form, _ := loadPage(t, publicationPropPages(sc, "SalesDB", "pubA")[2], inst)
+	sc, inst := newGConn(t, replPublicationResponses()...)
+	form, _ := loadPageG(t, publicationPropPages(sc, "SalesDB", "pubA")[2], inst)
 	g := plainGrid(t, form)
 	if g.Row(0) == nil || g.Row(0)[0] != "OrderLine" || g.Row(1) != nil {
 		t.Errorf("filter grid = %v, %v; want OrderLine alone", g.Row(0), g.Row(1))
@@ -100,8 +100,8 @@ func TestPublicationFilterRowsListsOnlyFilteredArticles(t *testing.T) {
 }
 
 func TestPublicationSubscriptionsPage(t *testing.T) {
-	sc, inst := newFakeConn(t, replPublicationResponses()...)
-	form, _ := loadPage(t, publicationPropPages(sc, "SalesDB", "pubA")[5], inst)
+	sc, inst := newGConn(t, replPublicationResponses()...)
+	form, _ := loadPageG(t, publicationPropPages(sc, "SalesDB", "pubA")[5], inst)
 	g := plainGrid(t, form)
 	r := g.Row(gridRowIndex(t, g, 0, "SUB2"))
 	if r[1] != "sub_b" || r[2] != "Pull" || r[3] != "subscribed" || r[4] != "none" {
@@ -110,9 +110,9 @@ func TestPublicationSubscriptionsPage(t *testing.T) {
 }
 
 func TestPublicationGeneralAndSubscriptionOptions(t *testing.T) {
-	sc, inst := newFakeConn(t, replPublicationResponses()...)
+	sc, inst := newGConn(t, replPublicationResponses()...)
 	pages := publicationPropPages(sc, "SalesDB", "pubA")
-	form, _ := loadPage(t, pages[0], inst)
+	form, _ := loadPageG(t, pages[0], inst)
 	if got := staticValue(t, form, "Database"); got != "SalesDB" {
 		t.Errorf("Database = %q", got)
 	}
@@ -122,7 +122,7 @@ func TestPublicationGeneralAndSubscriptionOptions(t *testing.T) {
 	if got := staticValue(t, form, "Subscriptions expire"); !strings.Contains(got, "336 hours") {
 		t.Errorf("retention = %q, want 336 hours", got)
 	}
-	opts, _ := loadPage(t, pages[4], inst)
+	opts, _ := loadPageG(t, pages[4], inst)
 	if got := staticValue(t, opts, "Allow push subscriptions"); got != "True" {
 		t.Errorf("Allow push = %q", got)
 	}
@@ -150,23 +150,23 @@ func replLocalSubsResponses() []fakeResponse {
 // ignoring the publisher, or comparing it exactly, shows the wrong one or
 // none.
 func TestSubscriptionPropertiesShowTheNamedSubscription(t *testing.T) {
-	sc, inst := newFakeConn(t, replLocalSubsResponses()...)
+	sc, inst := newGConn(t, replLocalSubsResponses()...)
 	pages := localSubscriptionPropPages(sc, "SubDB", "pub2", "salesdb", "pubA")
-	gen, _ := loadPage(t, pages[0], inst)
+	gen, _ := loadPageG(t, pages[0], inst)
 	if got := staticValue(t, gen, "Description"); got != "second" {
 		t.Errorf("Description = %q, want PUB2's subscription", got)
 	}
 	if got := staticValue(t, gen, "Publication type"); got != "Snapshot" {
 		t.Errorf("Publication type = %q", got)
 	}
-	agent, _ := loadPage(t, pages[1], inst)
+	agent, _ := loadPageG(t, pages[1], inst)
 	if got := staticValue(t, agent, "Agent job"); got != "job2" {
 		t.Errorf("Agent job = %q", got)
 	}
 	if got := staticValue(t, agent, "Agent runs at"); !strings.HasPrefix(got, "Subscriber") {
 		t.Errorf("Agent runs at = %q, want the subscriber for a pull subscription", got)
 	}
-	sync, _ := loadPage(t, pages[2], inst)
+	sync, _ := loadPageG(t, pages[2], inst)
 	if got := staticValue(t, sync, "Last synchronized"); got != "2026-10-07 09:30:00" {
 		t.Errorf("Last synchronized = %q", got)
 	}
@@ -180,7 +180,7 @@ func TestSubscriptionPropertiesShowTheNamedSubscription(t *testing.T) {
 }
 
 func TestPublicationDetailListsArticlesThenSubscriptions(t *testing.T) {
-	sc, _ := newFakeConn(t, replPublicationResponses()...)
+	sc, _ := newGConn(t, replPublicationResponses()...)
 	node := &explorerNode{data: nodeData{Type: NodePublication, DBName: "SalesDB", Name: "pubA"}}
 	_, rows, err := fetchNodeDetails(context.Background(), sc, node, new([]nodeData))
 	if err != nil {
@@ -197,7 +197,7 @@ func TestPublicationDetailListsArticlesThenSubscriptions(t *testing.T) {
 }
 
 func TestLocalSubscriptionDetailShowsTheNamedSubscription(t *testing.T) {
-	sc, _ := newFakeConn(t, replLocalSubsResponses()...)
+	sc, _ := newGConn(t, replLocalSubsResponses()...)
 	node := &explorerNode{data: nodeData{Type: NodeLocalSubscription, DBName: "SubDB", Name: "pubA",
 		ReplPublisher: "PUB2", ReplPublisherDB: "SalesDB"}}
 	_, rows, err := fetchNodeDetails(context.Background(), sc, node, new([]nodeData))
@@ -227,7 +227,7 @@ func TestLocalPublicationsDetailExplainsAnEmptyList(t *testing.T) {
 			"Hidden:not visible (offline, or no access)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, _ := newFakeConn(t, tc.responses...)
+			sc, _ := newGConn(t, tc.responses...)
 			node := &explorerNode{data: nodeData{Type: NodeLocalPublications}}
 			_, rows, err := fetchNodeDetails(context.Background(), sc, node, new([]nodeData))
 			if err != nil {
@@ -262,7 +262,7 @@ func TestSubscriptionMatchPrefersExactThenOneCaseVariant(t *testing.T) {
 			{"PUB1", "SalesDB", "pubB", int64(1), "only", nil, "job3", true, int64(0), int64(0), "DIST1"},
 		}},
 	}
-	sc, _ := newFakeConn(t, resp...)
+	sc, _ := newGConn(t, resp...)
 	ctx := context.Background()
 	for _, tc := range []struct{ pub, want string }{
 		{"pubA", "lower"}, {"PubA", "upper"}, {"PUBB", "only"},

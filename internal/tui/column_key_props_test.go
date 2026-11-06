@@ -52,8 +52,8 @@ func cekPageResponses(values ...string) []fakeResponse {
 // half of a rotation: the value the user pastes goes out under the master key
 // they picked, against the key the page was opened for.
 func TestColumnEncryptionKeyPageAddsAValueUnderTheChosenMasterKey(t *testing.T) {
-	sc, inst := newFakeConn(t, cekPageResponses("CMK1")...)
-	form, apply := loadPage(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
+	sc, inst := newGConn(t, cekPageResponses("CMK1")...)
+	form, apply := loadPageG(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
 
 	// A master key the key already has a value under is not offered: ADD
 	// VALUE for it is an error, so listing it is a dead option.
@@ -99,8 +99,8 @@ func TestColumnEncryptionKeyPageKeepsCaseTwinsApartUnderCS(t *testing.T) {
 			{"K1", int64(1), "MSSQL_CERTIFICATE_STORE", "CurrentUser/my/aa", false, nil},
 			{"k1", int64(2), "MSSQL_CERTIFICATE_STORE", "CurrentUser/my/bb", false, nil},
 		}
-		sc, inst := newFakeConn(t, responses...)
-		form, _ := loadPage(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
+		sc, inst := newGConn(t, responses...)
+		form, _ := loadPageG(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
 
 		items := selectRow(t, form, "Encrypt under master key").Items()
 		if slices.Contains(items, "K1") {
@@ -117,8 +117,8 @@ func TestColumnEncryptionKeyPageKeepsCaseTwinsApartUnderCS(t *testing.T) {
 // has a value under, and the drop names the one the user picked — the other
 // value's data is what stays readable.
 func TestColumnEncryptionKeyPageDropsTheChosenValue(t *testing.T) {
-	sc, inst := newFakeConn(t, cekPageResponses("CMK1", "CMK2")...)
-	form, apply := loadPage(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
+	sc, inst := newGConn(t, cekPageResponses("CMK1", "CMK2")...)
+	form, apply := loadPageG(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
 
 	if items := selectRow(t, form, "Drop value under master key").Items(); slices.Contains(items, "CMK3") {
 		t.Errorf("a master key this key has no value under is offered for dropping: %q", items)
@@ -146,8 +146,8 @@ func TestColumnEncryptionKeyPageDropsTheChosenValue(t *testing.T) {
 // page whose first item meant a real master key would rotate the key on an
 // OK the user pressed to close a page they only read.
 func TestColumnEncryptionKeyPageWritesNothingUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, cekPageResponses("CMK1")...)
-	_, apply := loadPage(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
+	sc, inst := newGConn(t, cekPageResponses("CMK1")...)
+	_, apply := loadPageG(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -176,8 +176,8 @@ func TestColumnEncryptionKeyPageRefusesAHalfRotation(t *testing.T) {
 		}, "leaves the key with none"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			sc, inst := newFakeConn(t, cekPageResponses("CMK1")...)
-			form, apply := loadPage(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
+			sc, inst := newGConn(t, cekPageResponses("CMK1")...)
+			form, apply := loadPageG(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
 			c.edit(t, form)
 
 			err := apply(context.Background())
@@ -197,8 +197,8 @@ func TestColumnEncryptionKeyPageRefusesAHalfRotation(t *testing.T) {
 // if the add then failed — every column encrypted with it unreadable — where
 // adding first leaves the rotation merely half done.
 func TestColumnEncryptionKeyPageAddsBeforeItDrops(t *testing.T) {
-	sc, inst := newFakeConn(t, cekPageResponses("CMK1")...)
-	form, apply := loadPage(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
+	sc, inst := newGConn(t, cekPageResponses("CMK1")...)
+	form, apply := loadPageG(t, columnEncryptionKeyPropPages(sc, "appdb", "CEK2")[0], inst)
 
 	editSelect(t, form, "Encrypt under master key", "CMK2")
 	editText(t, form, "New encrypted value (hex)", "0x0AFF")

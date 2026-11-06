@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -109,8 +110,8 @@ func TestAttachFilePaths(t *testing.T) {
 // The statement that reaches the server, for the ordinary case: a file list
 // read back, one path corrected by hand, and an owner.
 func TestAttachWritesTheCorrectedFileList(t *testing.T) {
-	sc, inst := newFakeConn(t,
-		attachReadBackResponse("AppDB_Restored"))
+	sc, inst := newGConn(t,
+		attachReadBackResponse("AppDB_Restored"), attachProbeDenied())
 	files := attachEditableFiles(&gosmo.DetachedDatabase{Name: "AppDB", Files: attachTestFiles()},
 		`D:\Moved\AppDB.mdf`)
 	d := attachTestDialog(t, sc, files)
@@ -160,8 +161,8 @@ func TestAttachWritesTheCorrectedFileList(t *testing.T) {
 // and the missing log file. Naming the log alongside ATTACH_REBUILD_LOG is
 // rejected by SQL Server.
 func TestAttachRebuildLogDropsTheLogFile(t *testing.T) {
-	sc, inst := newFakeConn(t,
-		attachReadBackResponse("AppDB"))
+	sc, inst := newGConn(t,
+		attachReadBackResponse("AppDB"), attachProbeDenied())
 	d := attachTestDialog(t, sc, attachTestFiles())
 	f := d.forms[0]
 
@@ -184,8 +185,8 @@ func TestAttachRebuildLogDropsTheLogFile(t *testing.T) {
 // A read that was refused (no DBCC rights) must still leave an attach that can
 // be made: only the ability to correct a path is lost.
 func TestAttachWithNoFileListUsesThePrimaryFileAlone(t *testing.T) {
-	sc, inst := newFakeConn(t,
-		attachReadBackResponse("AppDB"))
+	sc, inst := newGConn(t,
+		attachReadBackResponse("AppDB"), attachProbeDenied())
 	d := attachTestDialog(t, sc, nil)
 	f := d.forms[0]
 
@@ -199,7 +200,7 @@ func TestAttachWithNoFileListUsesThePrimaryFileAlone(t *testing.T) {
 }
 
 func TestAttachPreflight(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	tests := []struct {
 		name, mdf, as, want string
 	}{
@@ -228,6 +229,12 @@ func TestAttachPreflight(t *testing.T) {
 	}
 }
 
+// attachProbeDenied is xp_fileexist refused, for a test whose file check is
+// not the subject. List it after the per-path answers: first match wins.
+func attachProbeDenied() fakeResponse {
+	return fakeResponse{match: "xp_fileexist", err: errors.New("EXECUTE permission was denied on xp_fileexist")}
+}
+
 // attachExistsResponse scripts xp_fileexist for one path. Scoped with arg:
 // every probe runs the identical statement, so without it the first answer
 // serves every file and a missing one reads as present.
@@ -244,7 +251,7 @@ func attachExistsResponse(path string, exists bool) fakeResponse {
 // server with a sentence built around the full path, which the dialog's
 // one-line message clips mid-path. Refusing here names the files instead.
 func TestAttachRefusesFilesThatAreNotOnTheServer(t *testing.T) {
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		attachExistsResponse(`D:\Moved\AppDB.mdf`, true),
 		attachExistsResponse(`C:\Old\AppDB_2.ndf`, false),
 		attachExistsResponse(`C:\Old\AppDB_log.ldf`, false),
@@ -274,7 +281,7 @@ func TestAttachRefusesFilesThatAreNotOnTheServer(t *testing.T) {
 
 // The check must not stand between a complete request and the server.
 func TestAttachProceedsWhenEveryFileIsThere(t *testing.T) {
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		attachReadBackResponse("AppDB"),
 		attachExistsResponse(`D:\Moved\AppDB.mdf`, true),
 		attachExistsResponse(`C:\Old\AppDB_2.ndf`, true),
@@ -296,8 +303,8 @@ func TestAttachProceedsWhenEveryFileIsThere(t *testing.T) {
 // scripted here, so the probe fails the way a denied one does. An unmeasured
 // answer is not a refusal.
 func TestAttachIsSentWhenTheFileCheckCannotRun(t *testing.T) {
-	sc, inst := newFakeConn(t,
-		attachReadBackResponse("AppDB"))
+	sc, inst := newGConn(t,
+		attachReadBackResponse("AppDB"), attachProbeDenied())
 	files := attachEditableFiles(&gosmo.DetachedDatabase{Name: "AppDB", Files: attachTestFiles()},
 		`D:\Moved\AppDB.mdf`)
 	d := attachTestDialog(t, sc, files)
@@ -313,7 +320,7 @@ func TestAttachIsSentWhenTheFileCheckCannotRun(t *testing.T) {
 // Script Changes has to produce the statement whatever is on disk: scripting
 // the attach and copying the files afterwards is a legitimate order.
 func TestAttachScriptingDoesNotCheckTheFiles(t *testing.T) {
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		attachExistsResponse(`D:\Moved\AppDB.mdf`, false),
 		attachExistsResponse(`C:\Old\AppDB_2.ndf`, false),
 		attachExistsResponse(`C:\Old\AppDB_log.ldf`, false),

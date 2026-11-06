@@ -20,7 +20,7 @@ func newUserTestDialog(t *testing.T, pf *nuserPrefetch, responses ...fakeRespons
 		{"dbo", int64(1), "dbo"}, {"INFORMATION_SCHEMA", int64(3), "INFORMATION_SCHEMA"},
 		{"sales", int64(5), "dbo"}, {"sys", int64(4), "sys"},
 	}})
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	d := &NewUserDialog{dbName: "appdb"}
 	d.sc = sc
 	d.pages = []string{"General", "Owned Schemas", "Membership"}
@@ -242,9 +242,13 @@ func TestNewUserPrefetchHoldsEveryPrincipalName(t *testing.T) {
 		fakeResponse{match: "WHERE  type = 'A'", cols: 5, rows: [][]driver.Value{
 			{"payroll_app", nil, int64(20), principalEpoch, principalEpoch},
 		}},
-		loginListResponse())
+		loginListResponse(),
+		// Not under test: the prefetch's certificate, key and options reads.
+		fakeResponse{match: "FROM   sys.certificates", cols: 8},
+		fakeResponse{match: "FROM   sys.asymmetric_keys", cols: 10},
+		fakeResponse{match: "d.page_verify_option_desc", cols: 35})
 	responses = append(responses, databaseSchemaResponses()...)
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	pf, err := fetchNewUserPrefetch(context.Background(), sc, "appdb")
 	if err != nil {
 		t.Fatal(err)

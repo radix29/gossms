@@ -101,7 +101,7 @@ func TestServerFolderFiltersNarrowBothHalves(t *testing.T) {
 
 			// The tree: the loader's children, narrowed the way
 			// fetchChildren narrows them.
-			sc, _ := newFakeConn(t, c.resp)
+			sc, _ := newGConn(t, c.resp)
 			node := &explorerNode{data: nodeData{Type: c.folder, conn: sc}}
 			children, err := childLoaders[c.folder](loaderCtx{ctx: t.Context(), sc: sc}, node)
 			if err != nil {
@@ -116,7 +116,7 @@ func TestServerFolderFiltersNarrowBothHalves(t *testing.T) {
 			}
 
 			// The Details pane: its own read of the same objects.
-			sc, _ = newFakeConn(t, c.resp)
+			sc, _ = newGConn(t, c.resp)
 			node = &explorerNode{data: nodeData{Type: c.folder, conn: sc, Filter: f}}
 			var objs []nodeData
 			_, rows, err := c.detail(context.Background(), sc, node, &objs)
@@ -158,7 +158,7 @@ func TestServerFolderCreationDateFiltersAreBacked(t *testing.T) {
 				{prop: prop, op: opBefore, value: c.created.Format(filterDateLayout)},
 			}}
 
-			sc, _ := newFakeConn(t, c.resp)
+			sc, _ := newGConn(t, c.resp)
 			node := &explorerNode{data: nodeData{Type: c.folder, conn: sc}}
 			children, err := childLoaders[c.folder](loaderCtx{ctx: t.Context(), sc: sc}, node)
 			if err != nil {
@@ -175,7 +175,7 @@ func TestServerFolderCreationDateFiltersAreBacked(t *testing.T) {
 				f    *nodeFilter
 				want int
 			}{{on, c.total}, {before, 0}} {
-				sc, _ := newFakeConn(t, c.resp)
+				sc, _ := newGConn(t, c.resp)
 				node := &explorerNode{data: nodeData{Type: c.folder, conn: sc, Filter: tc.f}}
 				var objs []nodeData
 				_, rows, err := c.detail(context.Background(), sc, node, &objs)

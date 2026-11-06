@@ -428,7 +428,7 @@ func (d Deps) maintBackupHistory(ctx context.Context, inv *spec.Invocation) (*ou
 
 	var from time.Time
 	if inv.Given[optSince] {
-		if from, err = agentTime(ctx, cat, since); err != nil {
+		if from, err = agentTime(ctx, sc.Server, since); err != nil {
 			return res, err
 		}
 	}

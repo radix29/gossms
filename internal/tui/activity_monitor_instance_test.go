@@ -19,7 +19,7 @@ import (
 // the fake answers a real MI's connect-time row.
 func newAzureActivityMonitor(t *testing.T, w, h int) *ActivityMonitor {
 	t.Helper()
-	sc, _ := newFakeConnOnAzureMI(t)
+	sc, _ := newGConnOnAzureMI(t)
 	am := NewActivityMonitor(newTestApp(), sc)
 	am.SetBounds(0, 0, w, h)
 	return am

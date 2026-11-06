@@ -144,7 +144,7 @@ func TestPlotHistoryReadsTheSelectedQuery(t *testing.T) {
 	// The series response is scripted before the report's: the tracked-query
 	// read shares the report's FROM, so the report's response would answer it
 	// with twelve columns and the read would fail on the scan.
-	p, a, inst := newQSPanel(t, "Top Resource Consuming Queries",
+	p, a, _ := newQSPanel(t, "Top Resource Consuming Queries",
 		qsSeriesResponse(
 			qsIntervalRow(41, qsHour(9), 3, 10),
 			qsIntervalRow(41, qsHour(10), 4, 20),
@@ -159,7 +159,7 @@ func TestPlotHistoryReadsTheSelectedQuery(t *testing.T) {
 	p.Load()
 	drainUntil(t, a, func() bool { return !p.busy }, "the report to load")
 	if len(p.res.rows) != 2 {
-		t.Fatalf("got %d rows, want 2 (unanswered: %v)", len(p.res.rows), inst.unmatched)
+		t.Fatalf("got %d rows, want 2", len(p.res.rows))
 	}
 	if p.seriesMode {
 		t.Fatal("the panel opened on the history rather than the report chart")

@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 )
 
 // recoveryStatusResp answers Server.DatabaseRecoveryStatuses: name, last log
 // backup LSN, primary file's differential base LSN, whether that file's row
 // was visible.
-func recoveryStatusResp(rows ...[]driver.Value) fakeResponse {
-	return fakeResponse{match: "sys.database_recovery_status", cols: 4, rows: rows}
+func recoveryStatusResp(rows ...[]driver.Value) gRule {
+	return gRule{"sys.database_recovery_status", gRows(rows...)}
 }
 
 func recoveryStatusRow(name, logLSN, baseLSN string, known bool) []driver.Value {
@@ -62,21 +63,21 @@ func TestBackupTypeBlocks(t *testing.T) {
 
 // typeRulesDialog opens Back Up on AppDB (FULL, fully backed up) with
 // neighbours in each other state, the list and statuses landed.
-func typeRulesDialog(t *testing.T, statuses fakeResponse) *BackupDialog {
+func typeRulesDialog(t *testing.T, statuses gRule) *BackupDialog {
 	t.Helper()
 	_, d := backupDestDialog(t,
-		databasesListResp(
+		gRule{"compatibility_level, collation_name", gRows(
 			recoveryRow(1, "master", gosmo.RecoveryModelSimple),
 			recoveryRow(7, "AppDB", gosmo.RecoveryModelFull),
 			recoveryRow(8, "SimpleDB", gosmo.RecoveryModelSimple),
 			recoveryRow(9, "NewDB", gosmo.RecoveryModelFull),
-		),
+		)},
 		statuses,
 	)
 	return d
 }
 
-func allStatuses() fakeResponse {
+func allStatuses() gRule {
 	return recoveryStatusResp(
 		recoveryStatusRow("master", "", "566000000018400001", true),
 		recoveryStatusRow("AppDB", "62000000040000001", "62000000036000001", true),
@@ -158,7 +159,7 @@ func TestBackupTypeFollowsTheDatabase(t *testing.T) {
 // A refused status read costs only the chain rules: the list still lands and
 // the recovery-model rule still applies.
 func TestBackupTypeStatusReadRefusedFailsOpen(t *testing.T) {
-	d := typeRulesDialog(t, fakeResponse{match: "sys.database_recovery_status", err: errors.New("denied")})
+	d := typeRulesDialog(t, gRule{"sys.database_recovery_status", gosmotest.Fail(errors.New("denied"))})
 	if len(d.dbFacts) != 4 {
 		t.Fatalf("the database list did not land: %v", d.dbFacts)
 	}

@@ -315,7 +315,7 @@ func TestTogglingAPlanGuideConfirmsOnlyTheDisable(t *testing.T) {
 // assertPlanGuideOperation pins which way sp_control_plan_guide was called.
 // Its statement text is identical for ENABLE and DISABLE — the direction is
 // entirely in the parameters, so Statements() cannot tell the two apart.
-func assertPlanGuideOperation(t *testing.T, inst *fakeInstance, want string) {
+func assertPlanGuideOperation(t *testing.T, inst *gFake, want string) {
 	t.Helper()
 	args, ok := inst.ExecArgs("sp_control_plan_guide")
 	if !ok {

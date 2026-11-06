@@ -29,11 +29,11 @@ func roleGeneralResponses() []fakeResponse {
 	return append(responses, principalPermissionResponses()...)
 }
 
-func loadRoleGeneralPage(t *testing.T, roleName string) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadRoleGeneralPage(t *testing.T, roleName string) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
-	sc, inst := newFakeConn(t, roleGeneralResponses()...)
+	sc, inst := newGConn(t, roleGeneralResponses()...)
 	name := roleName
-	form, apply := loadPage(t, pageRoleGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageRoleGeneral(sc, principalDatabase, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -120,12 +120,12 @@ func TestRoleGeneralUntouchedPageWritesNothing(t *testing.T) {
 
 // -- Server Role > General ---------------------------------------------------
 
-func loadServerRoleGeneralPage(t *testing.T, roleName string) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadServerRoleGeneralPage(t *testing.T, roleName string) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
 	responses := append(serverRoleResponses(), loginListResponse(), serverRolePermissionsResponse())
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := roleName
-	form, apply := loadPage(t, pageServerRoleGeneral(sc, &name), inst)
+	form, apply := loadPageG(t, pageServerRoleGeneral(sc, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -185,11 +185,11 @@ func userGeneralResponses() []fakeResponse {
 	return append(responses, loginListResponse())
 }
 
-func loadUserGeneralPage(t *testing.T, userName string) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadUserGeneralPage(t *testing.T, userName string) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
-	sc, inst := newFakeConn(t, userGeneralResponses()...)
+	sc, inst := newGConn(t, userGeneralResponses()...)
 	name := userName
-	form, apply := loadPage(t, pageUserGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageUserGeneral(sc, principalDatabase, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -286,9 +286,9 @@ func TestUserGeneralCertificateMappedUserHasNoLoginOrSchemaToChange(t *testing.T
 				[]byte{0x01, 0x06}, "##signer_login##", false, "signer_cert"},
 		}},
 	}, userGeneralResponses()...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := certUser
-	form, apply := loadPage(t, pageUserGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageUserGeneral(sc, principalDatabase, &name), inst)
 
 	for _, label := range []string{"Login name", "Default schema"} {
 		if hasEditableRow(form, label) {
@@ -322,10 +322,10 @@ func schemaGeneralResponses() []fakeResponse {
 	return append(responses, principalPermissionResponses()...)
 }
 
-func loadSchemaGeneralPage(t *testing.T, schemaName string) (*fakeInstance, propApply, *propsheet.Form) {
+func loadSchemaGeneralPage(t *testing.T, schemaName string) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, schemaGeneralResponses()...)
-	form, apply := loadPage(t, pageSchemaGeneral(sc, principalDatabase, schemaName), inst)
+	sc, inst := newGConn(t, schemaGeneralResponses()...)
+	form, apply := loadPageG(t, pageSchemaGeneral(sc, principalDatabase, schemaName), inst)
 	return inst, apply, form
 }
 

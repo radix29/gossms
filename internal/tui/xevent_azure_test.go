@@ -18,16 +18,11 @@ import (
 // under each database; on every Azure edition an event_file is a blob URL
 // written with the credential named after its container.
 
-// newFakeConnOnAzureSQLDB is newFakeConnOnAzureMI for Azure SQL Database —
+// newGConnOnAzureSQLDB is newGConnOnAzure(t, 8) for Azure SQL Database —
 // EngineEdition 5, the only thing the scope decision reads.
-func newFakeConnOnAzureSQLDB(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+func newGConnOnAzureSQLDB(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *gFake) {
 	t.Helper()
-	info := serverInfoResponse()
-	info.rows[0][1] = "SQL Azure"
-	info.rows[0][2] = "12.0.2000.8"
-	info.rows[0][8] = int64(5)
-	info.rows[0][9] = "Microsoft SQL Azure (RTM) - 12.0.2000.8 ..."
-	return newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, responses...))
+	return newGConnOnAzure(t, 5, responses...)
 }
 
 // xeDatabaseSessionResponses is xeSessionResponses read from the database
@@ -41,7 +36,7 @@ func xeDatabaseSessionResponses() []fakeResponse {
 }
 
 func TestAzureSQLDatabaseFilesExtendedEventsUnderEachDatabase(t *testing.T) {
-	sc, _ := newFakeConnOnAzureSQLDB(t, capabilityResponses(true, nil, nil, nil, nil)...)
+	sc, _ := newGConnOnAzureSQLDB(t, append(capabilityResponses(true, nil, nil, nil, nil), gEmpty("sys.resource_governor_configuration", "sysmail_help_status_sp")...)...)
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 
 	mgmt, _ := loadManagementChildren(l, &explorerNode{})
@@ -62,7 +57,7 @@ func TestAzureSQLDatabaseFilesExtendedEventsUnderEachDatabase(t *testing.T) {
 	}
 
 	// A Managed Instance is server-scoped like SQL Server.
-	mi, _ := newFakeConnOnAzureMI(t, capabilityResponses(true, nil, nil, nil, nil)...)
+	mi, _ := newGConnOnAzure(t, 8, append(capabilityResponses(true, nil, nil, nil, nil), gEmpty("sys.resource_governor_configuration", "sysmail_help_status_sp")...)...)
 	l = loaderCtx{ctx: context.Background(), sc: mi}
 	if got := labelsOfNodes(must(loadManagementChildren(l, &explorerNode{}))); !slices.Contains(got, "Extended Events") {
 		t.Errorf("MI Management = %v, want Extended Events", got)
@@ -81,7 +76,7 @@ func must[T any](v T, err error) T {
 
 func TestDatabaseScopedSessionsAreReadAndWrittenInTheirDatabase(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConnOnAzureSQLDB(t, xeDatabaseSessionResponses()...)
+	sc, inst := newGConnOnAzureSQLDB(t, xeDatabaseSessionResponses()...)
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 	sessions, err := loadEventSessionsChildren(l, &explorerNode{data: nodeData{Type: NodeEventSessions, DBName: "appdb", conn: sc}})
 	if err != nil {
@@ -137,7 +132,7 @@ func TestDatabaseScopedSessionVerbsGateOnTheDatabaseRight(t *testing.T) {
 		} else {
 			granted = []string{"ALTER ANY EVENT SESSION"}
 		}
-		sc, _ := newFakeConnOnAzureSQLDB(t, capabilityResponses(true, granted, denied, dbGranted, dbDenied)...)
+		sc, _ := newGConnOnAzureSQLDB(t, capabilityResponses(true, granted, denied, dbGranted, dbDenied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 
@@ -170,7 +165,7 @@ func gate0(pages []propPage) string {
 
 func TestXEventProfilerIsNotOfferedOnAzureSQLDatabase(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConnOnAzureSQLDB(t, capabilityResponses(true, []string{"ALTER ANY EVENT SESSION"}, nil, nil, nil)...)
+	sc, inst := newGConnOnAzureSQLDB(t, capabilityResponses(true, []string{"ALTER ANY EVENT SESSION"}, nil, nil, nil)...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	if xeProfilerAllowed(sc) {
 		t.Error("XEvent Profiler allowed on Azure SQL Database, which has no server-scoped sessions")
@@ -271,7 +266,7 @@ func TestXEBlobContainersAreTheURLCredentials(t *testing.T) {
 		{int64(2), "backup_cred", `DOMAIN\svc`, now, now, nil, nil},
 		{int64(3), "HTTPS://acct.blob.core.windows.net/audit/", "SHARED ACCESS SIGNATURE", now, now, nil, nil},
 	}}
-	mi, _ := newFakeConnOnAzureMI(t, creds)
+	mi, _ := newGConnOnAzure(t, 8, creds)
 	got := xeBlobContainers(context.Background(), xeHost{sc: mi})
 	if want := []string{"HTTPS://acct.blob.core.windows.net/audit", "https://acct.blob.core.windows.net/xe"}; !slices.Equal(got, want) {
 		t.Errorf("MI containers = %q, want %q", got, want)
@@ -280,13 +275,13 @@ func TestXEBlobContainersAreTheURLCredentials(t *testing.T) {
 	dbCreds := fakeResponse{match: "FROM   sys.database_scoped_credentials", cols: 5, rows: [][]driver.Value{
 		{int64(1), "https://acct.blob.core.windows.net/dbxe", "SHARED ACCESS SIGNATURE", now, now},
 	}}
-	sqldb, _ := newFakeConnOnAzureSQLDB(t, dbCreds, creds)
+	sqldb, _ := newGConnOnAzureSQLDB(t, dbCreds, creds)
 	got = xeBlobContainers(context.Background(), xeHost{sc: sqldb, scope: xeScope{db: "appdb"}})
 	if !slices.Equal(got, []string{"https://acct.blob.core.windows.net/dbxe"}) {
 		t.Errorf("SQL Database containers = %q, want the database's credentials", got)
 	}
 
-	onPrem, _ := newFakeConn(t, creds)
+	onPrem, _ := newGConn(t, creds)
 	if got := xeBlobContainers(context.Background(), xeHost{sc: onPrem}); got != nil {
 		t.Errorf("on-prem containers = %q, want none — an event_file there is a path", got)
 	}
@@ -314,7 +309,7 @@ const miCurrentFile = `C:\SF\log\system_health_0_133.xel`
 // Data starts with the session's wildcard from the start rather than at the
 // current file, and goes on from the cursor that read returned.
 func TestManagedInstanceWatchesALocalEventFileByItsPattern(t *testing.T) {
-	sc, inst := newFakeConnOnAzureMI(t, slices.Concat(runningZZTrace(), []fakeResponse{
+	sc, inst := newGConnOnAzure(t, 8, slices.Concat(runningZZTrace(), []fakeResponse{
 		{match: "RingBufferTarget/@truncated", arg: "zz_trace", cols: 12, rows: [][]driver.Value{
 			{time.Now(), int64(0), int64(0), "package0", "event_file", int64(1), int64(0), miCurrentFile, nil, nil, nil, nil},
 		}},
@@ -332,15 +327,13 @@ func TestManagedInstanceWatchesALocalEventFileByItsPattern(t *testing.T) {
 	if fileArgs(inst, miCurrentFile) != nil {
 		t.Error("the current file was read by its path — Msg 40538 on a Managed Instance")
 	}
-	inst.mu.Lock()
-	var reads [][]driver.NamedValue
-	for i, q := range inst.reads {
-		if strings.Contains(q, "fn_xe_file_target_read_file") {
-			reads = append(reads, inst.readArgs[i])
+	var reads [][]any
+	for _, q := range inst.Queries() {
+		if !q.Exec && strings.Contains(q.Text, "fn_xe_file_target_read_file") {
+			reads = append(reads, q.Args)
 		}
 	}
-	inst.mu.Unlock()
-	if len(reads) != 2 || reads[0][1].Value != nil || reads[1][1].Value != miCurrentFile || reads[1][2].Value != int64(4096) {
+	if len(reads) != 2 || reads[0][1] != nil || reads[1][1] != miCurrentFile || reads[1][2] != int64(4096) {
 		t.Fatalf("reads %v — want the wildcard from the start, then from the first read's cursor", reads)
 	}
 }
@@ -362,7 +355,7 @@ func TestManagedInstanceReadsAListedFileSetByItsPattern(t *testing.T) {
 		{"merge", func(sc *db.ServerConn) *xeReader { return &xeReader{sc: sc, files: "zz_trace*.xel", capacity: 100} }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, inst := newFakeConnOnAzureMI(t, slices.Concat(xeSessionByName("zz_trace"), []fakeResponse{
+			sc, inst := newGConnOnAzure(t, 8, slices.Concat(xeSessionByName("zz_trace"), []fakeResponse{
 				{match: "ErrorLogFileName", cols: 1, rows: [][]driver.Value{{`C:\SF\log\ERRORLOG`}}},
 				{match: "sys.dm_os_enumerate_filesystem", cols: 5, rows: [][]driver.Value{dmf(f1), dmf(f2)}},
 				fileRead(f1, 1), fileRead(f2, 2), fileRead("zz_trace*.xel", 1, 2),
@@ -383,7 +376,7 @@ func TestManagedInstanceReadsAListedFileSetByItsPattern(t *testing.T) {
 
 // Merge's prompt starts on the one local file set a Managed Instance reads.
 func TestManagedInstanceMergeStartsOnSystemHealth(t *testing.T) {
-	sc, _ := newFakeConnOnAzureMI(t)
+	sc, _ := newGConnOnAzure(t, 8)
 	a := newTestApp()
 	a.promptMergeXEventFiles(sc)
 	if got := a.promptDialog.Value(); got != "system_health*.xel" {
@@ -394,8 +387,8 @@ func TestManagedInstanceMergeStartsOnSystemHealth(t *testing.T) {
 // Only a local path is held to the pattern, and only on Azure: a blob URL is
 // read as given, and an on-premises server reads any path.
 func TestOnlyAzureLocalEventFilesReadByPattern(t *testing.T) {
-	mi, _ := newFakeConnOnAzureMI(t)
-	onPrem, _ := newFakeConn(t)
+	mi, _ := newGConnOnAzure(t, 8)
+	onPrem, _ := newGConn(t)
 	const blob = "https://acct.blob.core.windows.net/xe/s_0_1.xel"
 	if !xeReadsOnlyByPattern(mi, miCurrentFile) || xeReadsOnlyByPattern(mi, blob) || xeReadsOnlyByPattern(onPrem, miCurrentFile) {
 		t.Errorf("MI local %v, MI blob %v, on-premises local %v — want true, false, false",

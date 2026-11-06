@@ -87,11 +87,11 @@ func dbByNameResp(name string, id int64) fakeResponse {
 const mapDatabaseCol = 1 // the grid's Database column
 const mapCheckCol = 0    // the grid's Map column
 
-func loadMappingPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadMappingPage(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
 	name := "appuser"
-	sc, inst := newFakeConn(t, mappingResponses()...)
-	form, apply := loadPage(t, pageLoginUserMapping(sc, &name), inst)
+	sc, inst := newGConn(t, mappingResponses()...)
+	form, apply := loadPageG(t, pageLoginUserMapping(sc, &name), inst)
 	// eachDatabase drops a database whose per-database read fails rather than
 	// failing the page (db_scan.go), and gosmo's mapping scan skips one the
 	// same way. A half-scripted fake therefore produces an empty grid and a

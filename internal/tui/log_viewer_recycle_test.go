@@ -29,10 +29,10 @@ func recycleTestResponses() []fakeResponse {
 // newRecycleTestViewer wires a LogViewer to a scripted fake instance through a
 // real App, so the confirm dialog, the background goroutine and the posted
 // callback all run for real.
-func newRecycleTestViewer(t *testing.T) (*App, *LogViewer, *fakeInstance) {
+func newRecycleTestViewer(t *testing.T) (*App, *LogViewer, *gFake) {
 	t.Helper()
 	a := newTestApp()
-	sc, inst := newFakeConn(t, recycleTestResponses()...)
+	sc, inst := newGLogConn(t, recycleTestResponses()...)
 	sc.Opts.Server = "FAKE\\SQL"
 	a.connections = append(a.connections, sc)
 
@@ -132,7 +132,7 @@ func TestLogViewerRecycleStaysLiveForALoginThatMay(t *testing.T) {
 
 	// Unknown fails open, the rule the whole gate layer rests on: a probe that
 	// never ran must not cost the cell.
-	unprobed, _ := newFakeConn(t)
+	unprobed, _ := newGLogConn(t)
 	lv.conn = unprobed
 	if lv.toolDisabled(logToolRecycle) {
 		t.Error("Recycle was withheld from an unprobed connection")

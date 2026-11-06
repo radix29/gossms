@@ -31,13 +31,13 @@ var symEncKeys = map[string][][]driver.Value{
 }
 
 // loadSymEncPage loads the Encryption page of key in appdb.
-func loadSymEncPage(t *testing.T, key string) (*propsheet.Form, propApply, *fakeInstance) {
+func loadSymEncPage(t *testing.T, key string) (*propsheet.Form, propApply, *gFake) {
 	t.Helper()
 	var all [][]driver.Value
 	for _, k := range []string{"aaa_key", "parent_key", "pw_key", "pwcert_key", "child_key"} {
 		all = append(all, symEncKeys[k]...)
 	}
-	sc, inst := newFakeConn(t, dbScopedCredDatabaseRow(),
+	sc, inst := newGConn(t, dbScopedCredDatabaseRow(),
 		fakeResponse{match: "FROM   sys.symmetric_keys", arg: key, cols: 13, rows: symEncKeys[key]},
 		fakeResponse{match: "FROM   sys.symmetric_keys", cols: 13, rows: all},
 		fakeResponse{match: "FROM   sys.certificates", cols: 15, rows: [][]driver.Value{
@@ -48,7 +48,7 @@ func loadSymEncPage(t *testing.T, key string) (*propsheet.Form, propApply, *fake
 		asymKeyListResponse(),
 	)
 	pages := symmetricKeyPropPages(sc, "appdb", key)
-	form, apply := loadPage(t, pages[1], inst)
+	form, apply := loadPageG(t, pages[1], inst)
 	if apply == nil {
 		t.Fatal("the Encryption page returned no apply")
 	}
@@ -351,7 +351,7 @@ func TestSymmetricKeyEncryptionPageIsGated(t *testing.T) {
 			[]string{"ALTER", "CONTROL", "ALTER ANY SYMMETRIC KEY"}),
 			map[string]bool{key: tc.control})
 		responses = withSecurablePermAnswers(responses, "ALTER", map[string]bool{key: tc.alter})
-		sc, _ := newFakeConn(t, responses...)
+		sc, _ := newGConn(t, responses...)
 		sc.ProbeCapabilities(sc.Server.Context())
 
 		p := symmetricKeyPropPages(sc, "appdb", "k1")[1]

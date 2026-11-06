@@ -228,19 +228,17 @@ func TestDetailPendingEndsWhenResultIsCached(t *testing.T) {
 
 // capsConn is a connected server whose capability answers a test can change
 // between two probes, as a GRANT to the connected login would.
-func capsConn(t *testing.T, a *App, granted, denied, dbGranted, dbDenied []string) (*db.ServerConn, *fakeInstance, *explorerNode) {
+func capsConn(t *testing.T, a *App, granted, denied, dbGranted, dbDenied []string) (*db.ServerConn, *gFake, *explorerNode) {
 	t.Helper()
-	sc, inst := newFakeConn(t, capabilityResponses(true, granted, denied, dbGranted, dbDenied)...)
+	sc, inst := newGConn(t, capabilityResponses(true, granted, denied, dbGranted, dbDenied)...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	a.connections = append(a.connections, sc)
 	root := a.explorer.AddRoot("capsrv", sc)
 	return sc, inst, root
 }
 
-func rescript(inst *fakeInstance, responses []fakeResponse) {
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	inst.responses = append([]fakeResponse{serverInfoResponse(), sysInfoResponse()}, responses...)
+func rescript(inst *gFake, responses []fakeResponse) {
+	inst.Rescript(responses)
 }
 
 // menuRefresh runs node's context-menu Refresh.

@@ -9,7 +9,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Plan Guide Properties, driven through fakedb_test.go. The one writable
+// Plan Guide Properties, driven through gosmotest_fixtures_test.go. The one writable
 // dialog among the Phase 3 tree families: General enables and disables the
 // guide with sp_control_plan_guide, and nothing else here writes.
 
@@ -29,7 +29,7 @@ func planGuideResponse(disabled bool, scope, scopeObject, batch, hints string) f
 
 func TestPlanGuideGeneralShowsItsScopeAndState(t *testing.T) {
 	sc, inst := newTypePropConn(t, planGuideResponse(true, "OBJECT", "[dbo].[GetClaims]", "", "OPTION (RECOMPILE)"))
-	form, apply := loadPage(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
+	form, apply := loadPageG(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
 
 	if got := staticValue(t, form, "Scope type"); got != "OBJECT" {
 		t.Errorf("Scope type is %q", got)
@@ -49,7 +49,7 @@ func TestPlanGuideGeneralShowsItsScopeAndState(t *testing.T) {
 // reads as a page that failed to load one rather than as a scope that has none.
 func TestPlanGuideGeneralSaysWhenThereIsNoScopeObject(t *testing.T) {
 	sc, inst := newTypePropConn(t, planGuideResponse(false, "TEMPLATE", "", "", ""))
-	form, _ := loadPage(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
+	form, _ := loadPageG(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
 
 	if got := staticValue(t, form, "Scope object"); got != "(not object-scoped)" {
 		t.Errorf("Scope object is %q on a TEMPLATE-scoped guide", got)
@@ -61,7 +61,7 @@ func TestPlanGuideGeneralSaysWhenThereIsNoScopeObject(t *testing.T) {
 // unread dialog would then land a statement in the server's log.
 func TestPlanGuideApplyWritesNothingUntouched(t *testing.T) {
 	sc, inst := newTypePropConn(t, planGuideResponse(true, "OBJECT", "[dbo].[GetClaims]", "", ""))
-	_, apply := loadPage(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
+	_, apply := loadPageG(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -76,7 +76,7 @@ func TestPlanGuideApplyWritesNothingUntouched(t *testing.T) {
 // changes and in which direction.
 func TestPlanGuideApplyEnablesTheGuide(t *testing.T) {
 	sc, inst := newTypePropConn(t, planGuideResponse(true, "OBJECT", "[dbo].[GetClaims]", "", ""))
-	form, apply := loadPage(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
+	form, apply := loadPageG(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
 
 	checkRow(t, form, "Enabled").Edit(true)
 	if err := apply(context.Background()); err != nil {
@@ -97,7 +97,7 @@ func TestPlanGuideApplyEnablesTheGuide(t *testing.T) {
 // would pass a one-direction test.
 func TestPlanGuideApplyDisablesTheGuide(t *testing.T) {
 	sc, inst := newTypePropConn(t, planGuideResponse(false, "SQL", "", "", ""))
-	form, apply := loadPage(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
+	form, apply := loadPageG(t, pagePlanGuideGeneral(sc, propTypeDB, propPlanGuide), inst)
 
 	checkRow(t, form, "Enabled").Edit(false)
 	if err := apply(context.Background()); err != nil {
@@ -120,7 +120,7 @@ func TestPlanGuideApplyDisablesTheGuide(t *testing.T) {
 // server would silently stop the guide matching anything.
 func TestPlanGuideQueryPageIsReadOnly(t *testing.T) {
 	sc, inst := newTypePropConn(t, planGuideResponse(false, "SQL", "", "SELECT 1", "OPTION (MAXDOP 1)"))
-	form, apply := loadPage(t, pagePlanGuideQuery(sc, propTypeDB, propPlanGuide), inst)
+	form, apply := loadPageG(t, pagePlanGuideQuery(sc, propTypeDB, propPlanGuide), inst)
 
 	if apply != nil {
 		t.Error("the Query page has an apply")
@@ -145,7 +145,7 @@ func TestPlanGuideQueryPageIsReadOnly(t *testing.T) {
 // page that failed to load the hints.
 func TestPlanGuideQueryPageSaysWhenThereAreNoHints(t *testing.T) {
 	sc, inst := newTypePropConn(t, planGuideResponse(false, "TEMPLATE", "", "", ""))
-	form, _ := loadPage(t, pagePlanGuideQuery(sc, propTypeDB, propPlanGuide), inst)
+	form, _ := loadPageG(t, pagePlanGuideQuery(sc, propTypeDB, propPlanGuide), inst)
 
 	for _, r := range form.Rows() {
 		if er, ok := r.(*propsheet.EditorRow); ok && er.Label() == "Hints" {

@@ -33,10 +33,10 @@ func mailLogResponses() []fakeResponse {
 
 // newMailLogTestViewer is a viewer on the Database Mail log, loaded through a
 // real App so the prompt, the confirmation and the purge all run for real.
-func newMailLogTestViewer(t *testing.T) (*App, *LogViewer, *fakeInstance) {
+func newMailLogTestViewer(t *testing.T) (*App, *LogViewer, *gFake) {
 	t.Helper()
 	a := newTestApp()
-	sc, inst := newFakeConn(t, mailLogResponses()...)
+	sc, inst := newGLogConn(t, mailLogResponses()...)
 	sc.Opts.Server = "FAKE\\SQL"
 	a.connections = append(a.connections, sc)
 	lv := newTestLogViewer()
@@ -65,7 +65,7 @@ func TestLogViewerSaysWhenTheMailLogIsOwnOnly(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, _ := newFakeConn(t, append(tc.vis, mailLogResponses()...)...)
+			sc, _ := newGLogConn(t, append(tc.vis, mailLogResponses()...)...)
 			a.connections = append(a.connections, sc)
 			lv := newTestLogViewer()
 			lv.app, lv.conn = a, sc
@@ -99,9 +99,9 @@ func TestLogViewerOffersDeleteInsteadOfRecycleOnTheMailLog(t *testing.T) {
 // cycle the SQL Server log from the same cell.
 func TestLogViewerMailLogDeleteIsGatedOnMsdbRights(t *testing.T) {
 	a := newTestApp()
-	owner, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, []string{"db_owner"}, nil)...)
+	owner, _ := newGLogConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, []string{"db_owner"}, nil)...)
 	owner.ProbeCapabilities(owner.Server.Context())
-	outsider, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, nil, []string{"db_owner"})...)
+	outsider, _ := newGLogConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, nil, []string{"db_owner"})...)
 	outsider.ProbeCapabilities(outsider.Server.Context())
 	// The msdb answers are cached the way selecting the Database Mail node
 	// primes them; unprobed, a membership right fails open.

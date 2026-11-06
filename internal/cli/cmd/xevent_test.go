@@ -1,89 +1,30 @@
 package cmd
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"testing"
-	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/output"
 )
 
-// xeFake is the event sessions xevent sessions reads: sessions, and each
-// running one's status by name (missing: stopped since the list was read).
-// engine is ServerInfo's EngineEdition; each read records what it was asked.
-type xeFake struct {
-	sessions  []*gosmo.EventSession
-	status    map[string]*gosmo.EventSessionStatus
-	statusErr error
-	engine    gosmo.EngineEdition
-
-	listReads   int
-	gotDB       *gosmo.Database
-	statusReads []string
-}
-
-func (c *monitorCatalog) ServerInfo() *gosmo.ServerInfo {
-	return &gosmo.ServerInfo{EngineEdition: int(c.xe.engine)}
-}
-
-func (c *monitorCatalog) EventSessions(_ context.Context, d *gosmo.Database) ([]*gosmo.EventSession, error) {
-	c.xe.listReads++
-	c.xe.gotDB = d
-	return c.xe.sessions, nil
-}
-
-func (c *monitorCatalog) EventSessionStatus(_ context.Context, es *gosmo.EventSession) (*gosmo.EventSessionStatus, error) {
-	c.xe.statusReads = append(c.xe.statusReads, es.Name)
-	if c.xe.statusErr != nil {
-		return nil, c.xe.statusErr
-	}
-	st, ok := c.xe.status[es.Name]
-	if !ok {
-		return nil, fmt.Errorf("event session %q is not running: %w", es.Name, gosmo.ErrNotFound)
-	}
-	return st, nil
-}
-
-func xeCatalog() *monitorCatalog {
-	started := time.Date(2026, 10, 14, 16, 33, 15, 110e6, time.UTC)
-	return &monitorCatalog{xe: &xeFake{
-		sessions: []*gosmo.EventSession{
-			{Name: "AlwaysOn_health", Targets: []gosmo.SessionTarget{{Package: "package0", Name: gosmo.XETargetEventFile,
-				Fields: []gosmo.SessionField{{Name: "filename", Value: "AlwaysOn_health.xel"}}}},
-				Events: []gosmo.SessionEvent{{Package: "sqlserver", Name: "alwayson_ddl_executed"}}},
-			{Name: "gossms_QuickSessionTSQL", IsRunning: true, Targets: []gosmo.SessionTarget{{Package: "package0", Name: gosmo.XETargetRingBuffer}}},
-			{Name: "system_health", IsRunning: true, StartupState: true, DroppedEvents: 9,
-				Targets: []gosmo.SessionTarget{
-					{Package: "package0", Name: gosmo.XETargetEventFile, Fields: []gosmo.SessionField{{Name: "filename", Value: "system_health.xel"}}},
-					{Package: "package0", Name: gosmo.XETargetRingBuffer},
-				},
-				Events: []gosmo.SessionEvent{{Package: "sqlserver", Name: "error_reported"}, {Package: "sqlserver", Name: "xml_deadlock_report"}}},
-		},
-		status: map[string]*gosmo.EventSessionStatus{
-			"system_health": {CreateTime: started, DroppedEvents: 3, Targets: []gosmo.EventTargetStatus{
-				{Package: "package0", Name: gosmo.XETargetEventFile, CurrentFile: `C:\Log\system_health_0_1.xel`},
-				{Package: "package0", Name: gosmo.XETargetRingBuffer, EventCount: 10},
-			}},
-		},
-	}}
-}
+// xevent sessions' tests run on xeServer (xevent_server_test.go): real gosmo
+// over canned catalog rows.
 
 func TestXEventSessions(t *testing.T) {
-	cat := xeCatalog()
-	res, err := runGroup(t, cat, "xevent", "sessions")
+	s := newXEServer(t)
+	xeSessionsFixture(s)
+	res, err := runXEvent(t, s, "sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cat.xe.listReads != 1 || cat.xe.gotDB != nil {
-		t.Errorf("%d list reads, database %v; want one server-scoped read", cat.xe.listReads, cat.xe.gotDB)
+	if want := []string{""}; !slices.Equal(s.listDB, want) {
+		t.Errorf("session lists read in %q; want one, server-scoped", s.listDB)
 	}
 	// Only the running sessions' status is read.
-	if want := []string{"gossms_QuickSessionTSQL", "system_health"}; !slices.Equal(cat.xe.statusReads, want) {
-		t.Errorf("status read for %v; want %v", cat.xe.statusReads, want)
+	if want := []string{"gossms_QuickSessionTSQL", "system_health"}; !slices.Equal(s.statusReadsOf, want) {
+		t.Errorf("status read for %v; want %v", s.statusReadsOf, want)
 	}
 	set := res.Sets[0]
 	if set.Name != "sessions" || set.TotalRowCount != 3 {
@@ -105,15 +46,19 @@ func TestXEventSessions(t *testing.T) {
 }
 
 func TestXEventSessionsAzureSQLDatabase(t *testing.T) {
-	cat := xeCatalog()
-	cat.xe.engine = gosmo.EngineAzureSQLDatabase
-	cat.noVSS = true // VIEW SERVER STATE does not exist there: not asked
-	res, err := runGroup(t, cat, "xevent", "sessions")
+	s := newXEServer(t)
+	xeSessionsFixture(s)
+	s.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase)
+	s.noVSS = true // VIEW SERVER STATE does not exist there: not asked
+	res, err := runXEvent(t, s, "sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cat.xe.gotDB == nil || cat.xe.gotDB.Name != "Sales" {
-		t.Errorf("read database %v; want the connection's, Sales", cat.xe.gotDB)
+	if want := []string{"Sales"}; !slices.Equal(s.listDB, want) {
+		t.Errorf("session lists read in %q; want the connection's database, Sales", s.listDB)
+	}
+	if n := s.reads("VIEW SERVER STATE"); n != 0 {
+		t.Errorf("VIEW SERVER STATE asked %d times", n)
 	}
 	if got := column(res.Sets[0], "scope"); !slices.Equal(got, []string{"database", "database", "database"}) {
 		t.Errorf("scope %q", got)
@@ -121,18 +66,20 @@ func TestXEventSessionsAzureSQLDatabase(t *testing.T) {
 }
 
 func TestXEventSessionsWithoutViewServerState(t *testing.T) {
-	cat := xeCatalog()
-	cat.noVSS = true
-	_, err := runGroup(t, cat, "xevent", "sessions")
-	if errCode(err) != output.CodePermissionDenied || cat.xe.listReads != 0 {
-		t.Errorf("%v (%s), %d list reads; want %s and no read", err, errCode(err), cat.xe.listReads, output.CodePermissionDenied)
+	s := newXEServer(t)
+	xeSessionsFixture(s)
+	s.noVSS = true
+	_, err := runXEvent(t, s, "sessions")
+	if errCode(err) != output.CodePermissionDenied || len(s.listDB) != 0 {
+		t.Errorf("%v (%s), %d list reads; want %s and no read", err, errCode(err), len(s.listDB), output.CodePermissionDenied)
 	}
 }
 
 func TestXEventSessionsStatusError(t *testing.T) {
-	cat := xeCatalog()
-	cat.xe.statusErr = errors.New("connection reset")
-	if _, err := runGroup(t, cat, "xevent", "sessions"); err == nil {
+	s := newXEServer(t)
+	xeSessionsFixture(s)
+	s.statusErr = errors.New("connection reset")
+	if _, err := runXEvent(t, s, "sessions"); err == nil {
 		t.Error("a failed status read was not reported")
 	}
 }

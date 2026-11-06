@@ -119,7 +119,7 @@ func TestCredentialScriptsAndDrops(t *testing.T) {
 
 // The drop must address the credential the node names, by name.
 func TestCredentialDropStatement(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	if err := objectOps[NodeCredential].drop(t.Context(), sc, nodeData{Type: NodeCredential, Name: "app_cred"}); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestCredentialDropStatement(t *testing.T) {
 // one nodeData per row, which is what gives the pane its Delete.
 func TestCredentialsFolderDetailListsEveryCredential(t *testing.T) {
 	now := time.Now()
-	sc, _ := newFakeConn(t, fakeResponse{
+	sc, _ := newGConn(t, fakeResponse{
 		match: "FROM   sys.credentials",
 		cols:  7,
 		rows: [][]driver.Value{

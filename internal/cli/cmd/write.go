@@ -36,120 +36,6 @@ func dryRun(inv *spec.Invocation) bool {
 	return v
 }
 
-// Writer is the gosmo writes the writing commands make, beside Catalog's
-// reads, so tests stand in for a server. Methods taking a *gosmo.Database
-// call that database's own method; the database is one DatabaseByName
-// returned. The security, maint and data groups are the exception: they
-// write through gosmo directly, and their tests answer the statements
-// (gosmotest) instead of faking these methods — moving every group off the
-// seam (docs/open-threads.md § Command line); what is left here is what
-// the other groups still write through it.
-type Writer interface {
-	// server config set/reset: one sp_configure batch and its RECONFIGURE.
-	ApplyConfiguration(ctx context.Context, changes []gosmo.ConfigChange, opts gosmo.ConfigApplyOptions) error
-	// server traceflag on/off, always global.
-	SetTraceFlag(ctx context.Context, flag int, on bool) error
-	// monitor kill.
-	KillSession(ctx context.Context, sessionID int) error
-	// xevent capture: its server-scoped session, created, started, stopped
-	// and dropped.
-	CreateEventSession(ctx context.Context, spec gosmo.EventSessionDefinition) (*gosmo.EventSession, error)
-	StartEventSession(ctx context.Context, es *gosmo.EventSession) error
-	StopEventSession(ctx context.Context, es *gosmo.EventSession) error
-	DropEventSession(ctx context.Context, es *gosmo.EventSession) error
-
-	// db scoped-config set.
-	SetDatabaseScopedConfig(ctx context.Context, d *gosmo.Database, name, value string, replica gosmo.ScopedConfigReplica) error
-	// db set --option, one call per key (D8).
-	SetDatabaseOption(ctx context.Context, d *gosmo.Database, opt gosmo.DatabaseOption, value string, term gosmo.Termination) error
-	SetRecoveryModel(ctx context.Context, d *gosmo.Database, model gosmo.RecoveryModel) error
-	SetCompatibilityLevel(ctx context.Context, d *gosmo.Database, level gosmo.CompatibilityLevel) error
-	SetReadOnly(ctx context.Context, d *gosmo.Database, readOnly bool, term gosmo.Termination) error
-	SetQueryStoreOptions(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreOptions) error
-
-	// db create / db drop.
-	CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error
-	DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error
-
-	// job start (at step, "" for the job's start step) / job stop.
-	StartJob(ctx context.Context, job, step string) error
-	StopJob(ctx context.Context, job string) error
-}
-
-// ServerWriter is Deps.Writer: the writes, made through sc's gosmo Server.
-func ServerWriter(sc *db.ServerConn) Writer { return serverWriter{sc.Server} }
-
-type serverWriter struct{ s *gosmo.Server }
-
-func (w serverWriter) ApplyConfiguration(ctx context.Context, changes []gosmo.ConfigChange, opts gosmo.ConfigApplyOptions) error {
-	return w.s.ApplyConfiguration(ctx, changes, opts)
-}
-
-func (w serverWriter) SetTraceFlag(ctx context.Context, flag int, on bool) error {
-	return w.s.SetTraceFlag(ctx, flag, on)
-}
-
-func (w serverWriter) KillSession(ctx context.Context, sessionID int) error {
-	return w.s.KillSession(ctx, sessionID)
-}
-
-func (w serverWriter) CreateEventSession(ctx context.Context, spec gosmo.EventSessionDefinition) (*gosmo.EventSession, error) {
-	return w.s.XEvents().CreateSession(ctx, spec)
-}
-
-func (serverWriter) StartEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	return es.Start(ctx)
-}
-func (serverWriter) StopEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	return es.Stop(ctx)
-}
-func (serverWriter) DropEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	return es.Drop(ctx)
-}
-
-func (serverWriter) SetDatabaseScopedConfig(ctx context.Context, d *gosmo.Database, name, value string, replica gosmo.ScopedConfigReplica) error {
-	return d.SetDatabaseScopedConfig(ctx, name, value, replica)
-}
-
-func (serverWriter) SetDatabaseOption(ctx context.Context, d *gosmo.Database, opt gosmo.DatabaseOption, value string, term gosmo.Termination) error {
-	return d.SetDatabaseOption(ctx, opt, value, term)
-}
-
-func (serverWriter) SetRecoveryModel(ctx context.Context, d *gosmo.Database, model gosmo.RecoveryModel) error {
-	return d.SetRecoveryModel(ctx, model)
-}
-
-func (serverWriter) SetCompatibilityLevel(ctx context.Context, d *gosmo.Database, level gosmo.CompatibilityLevel) error {
-	return d.SetCompatibilityLevel(ctx, level)
-}
-
-func (serverWriter) SetReadOnly(ctx context.Context, d *gosmo.Database, readOnly bool, term gosmo.Termination) error {
-	return d.SetReadOnly(ctx, readOnly, term)
-}
-
-func (serverWriter) SetQueryStoreOptions(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreOptions) error {
-	return d.QueryStore().SetOptions(ctx, opts)
-}
-
-func (w serverWriter) CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error {
-	_, err := w.s.CreateDatabase(ctx, req)
-	return err
-}
-
-func (serverWriter) DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error {
-	return d.Drop(ctx, term)
-}
-
-// StartJob and StopJob go through the job's handle: the command has just
-// read the job by name.
-func (w serverWriter) StartJob(ctx context.Context, job, step string) error {
-	return w.s.JobRef(job).Start(ctx, step)
-}
-
-func (w serverWriter) StopJob(ctx context.Context, job string) error {
-	return w.s.JobRef(job).Stop(ctx)
-}
-
 // gate is a writing command's class check (D1), made before it connects: a
 // refused change never reaches the server, and --dry-run is refused alike.
 // The command's Class is checked against --allow capped by the profile's
@@ -186,19 +72,9 @@ func (d Deps) gateClass(inv *spec.Invocation, res *output.Result, class spec.Cla
 	return nil, "", blockedError(b)
 }
 
-// connectWriter is connectCatalog for a writing command: the gate first,
-// then the connection, its reads and its writes. The caller closes sc.
-func (d Deps) connectWriter(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, Writer, error) {
-	sc, cat, err := d.connectGated(ctx, inv, res)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return sc, cat, d.Writer(sc), nil
-}
-
-// connectGated is connectWriter for a command that writes through gosmo
-// directly (sc.Server, or a handle read through it): the gate, then the
-// connection and its reads. The caller closes sc.
+// connectGated is connectCatalog for a writing command: the gate first,
+// then the connection and its reads. The command writes through gosmo
+// directly (sc.Server, or a handle read through it). The caller closes sc.
 func (d Deps) connectGated(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, error) {
 	cfg, profile, err := d.gate(inv, res)
 	if err != nil {

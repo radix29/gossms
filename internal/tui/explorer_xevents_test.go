@@ -100,7 +100,7 @@ func TestExtendedEventsHangsUnderManagement(t *testing.T) {
 }
 
 func TestEventSessionsFolderListsEverySessionWithItsState(t *testing.T) {
-	sc, _ := newFakeConn(t, xeSessionResponses()...)
+	sc, _ := newGConn(t, xeSessionResponses()...)
 	children, err := loadEventSessionsChildren(loaderCtx{ctx: context.Background(), sc: sc},
 		&explorerNode{data: nodeData{Type: NodeEventSessions, conn: sc}})
 	if err != nil {
@@ -133,7 +133,7 @@ func TestAStoppedSessionDrawsDifferentlyInEveryStyle(t *testing.T) {
 }
 
 func TestEventSessionChildrenAreItsTargets(t *testing.T) {
-	sc, _ := newFakeConn(t, append(xeSessionByName("zz_trace"), xeSessionResponses()...)...)
+	sc, _ := newGConn(t, append(xeSessionByName("zz_trace"), xeSessionResponses()...)...)
 	node := &explorerNode{data: nodeData{Type: NodeEventSession, Name: "zz_trace", conn: sc}}
 	children, err := loadEventSessionChildren(loaderCtx{ctx: context.Background(), sc: sc}, node)
 	if err != nil {
@@ -164,7 +164,7 @@ func eventSessionMenuItem(t *testing.T, a *App, node *explorerNode, label string
 
 func TestStartAndStopAreEachOfferedInTheirOwnState(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	for _, running := range []bool{true, false} {
 		node := &explorerNode{data: nodeData{Type: NodeEventSession, Name: "zz_trace", IsEnabled: running, conn: sc}}
 		start := eventSessionMenuItem(t, a, node, "Start Session")
@@ -200,7 +200,7 @@ func TestEventSessionVerbsGateOnEitherPermissionSet(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, _ := newFakeConn(t, capabilityResponses(true, c.granted, c.denied, nil, nil)...)
+			sc, _ := newGConn(t, capabilityResponses(true, c.granted, c.denied, nil, nil)...)
 			sc.ProbeCapabilities(sc.Server.Context())
 			stopped := &explorerNode{data: nodeData{Type: NodeEventSession, Name: "zz_trace", conn: sc}}
 			running := &explorerNode{data: nodeData{Type: NodeEventSession, Name: "zz_trace", IsEnabled: true, conn: sc}}
@@ -220,7 +220,7 @@ func TestEventSessionVerbsGateOnEitherPermissionSet(t *testing.T) {
 func TestStartRunsAtOnceAndStopAsksFirst(t *testing.T) {
 	for _, start := range []bool{true, false} {
 		a := newTestApp()
-		sc, inst := newFakeConn(t)
+		sc, inst := newGConn(t)
 		node := opTestNode(sc, NodeEventSession, "", "zz_trace", "")
 		node.data.DBName = "" // a server-scoped session's node carries none
 		node.data.IsEnabled = !start
@@ -261,7 +261,7 @@ func TestEventSessionScriptsAndDrops(t *testing.T) {
 	if op.drop == nil || op.rename != nil {
 		t.Fatal("an event session drops and has no rename (ALTER EVENT SESSION has no WITH NAME)")
 	}
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	if err := op.drop(t.Context(), sc, nodeData{Type: NodeEventSession, Name: "zz_trace"}); err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestDeletingABuiltInSessionAsksForItsName(t *testing.T) {
 	}
 
 	a := newTestApp()
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	a.confirmDeleteObjects(sc, []nodeData{{Type: NodeEventSession, Name: "system_health"}}, func() {})
 	if !a.confirmTypedDialog.Visible() || a.confirmDialog.Visible() {
 		t.Fatalf("typed %v, plain %v — want the typed confirmation", a.confirmTypedDialog.Visible(), a.confirmDialog.Visible())
@@ -307,7 +307,7 @@ func TestDeletingABuiltInSessionAsksForItsName(t *testing.T) {
 }
 
 func TestEventSessionsFolderDetail(t *testing.T) {
-	sc, _ := newFakeConn(t, xeSessionResponses()...)
+	sc, _ := newGConn(t, xeSessionResponses()...)
 	var objs []nodeData
 	cols, rows, err := eventSessionsFolderDetail(context.Background(), sc,
 		&explorerNode{data: nodeData{Type: NodeEventSessions}}, &objs)
@@ -349,7 +349,7 @@ func TestEventSessionsFolderDetail(t *testing.T) {
 }
 
 func TestEventSessionDetailListsEventsThenTargets(t *testing.T) {
-	sc, _ := newFakeConn(t, append(xeSessionByName("zz_trace"), xeSessionResponses()...)...)
+	sc, _ := newGConn(t, append(xeSessionByName("zz_trace"), xeSessionResponses()...)...)
 	cols, rows, err := eventSessionDetail(context.Background(), sc,
 		&explorerNode{data: nodeData{Type: NodeEventSession, Name: "zz_trace"}})
 	if err != nil {

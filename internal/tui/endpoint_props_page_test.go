@@ -8,7 +8,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Endpoint Properties, driven through fakedb_test.go.
+// Endpoint Properties, driven through gosmotest_fixtures_test.go.
 //
 // The endpoint under test is neither first nor last in sys.endpoints, and the
 // by-name read is scoped with arg: and placed before the list read — see
@@ -31,8 +31,8 @@ func mirroringDetailResponse() fakeResponse {
 // The page must show the endpoint it was opened on, not the first row in
 // sys.endpoints.
 func TestEndpointGeneralLoadsTheSelectedEndpoint(t *testing.T) {
-	sc, inst := newFakeConn(t, endpointPropResponses("AGEP", agepRow)...)
-	form, apply := loadPage(t, pageEndpointGeneral(sc, "AGEP"), inst)
+	sc, inst := newGConn(t, endpointPropResponses("AGEP", agepRow)...)
+	form, apply := loadPageG(t, pageEndpointGeneral(sc, "AGEP"), inst)
 
 	if got := staticValue(t, form, "Name"); got != "AGEP" {
 		t.Errorf("Name is %q, want the selected endpoint's %q", got, "AGEP")
@@ -55,8 +55,8 @@ func TestEndpointGeneralLoadsTheSelectedEndpoint(t *testing.T) {
 // A built-in endpoint's page must say why nothing can be done to it — the
 // Object Explorer's own refusal only appears once the user has already tried.
 func TestEndpointGeneralExplainsABuiltInEndpoint(t *testing.T) {
-	sc, inst := newFakeConn(t, endpointPropResponses("Dedicated Admin Connection", dacRow)...)
-	form, _ := loadPage(t, pageEndpointGeneral(sc, "Dedicated Admin Connection"), inst)
+	sc, inst := newGConn(t, endpointPropResponses("Dedicated Admin Connection", dacRow)...)
+	form, _ := loadPageG(t, pageEndpointGeneral(sc, "Dedicated Admin Connection"), inst)
 
 	var notes []string
 	for _, r := range form.Rows() {
@@ -81,8 +81,8 @@ func TestEndpointGeneralExplainsABuiltInEndpoint(t *testing.T) {
 // page that read the wrong endpoint would show a plausible mirroring page for
 // a Service Broker endpoint.
 func TestEndpointPayloadPageShowsTheMirroringDetail(t *testing.T) {
-	sc, inst := newFakeConn(t, endpointPropResponses("AGEP", agepRow, mirroringDetailResponse())...)
-	form, apply := loadPage(t, pageEndpointPayload(sc, "AGEP"), inst)
+	sc, inst := newGConn(t, endpointPropResponses("AGEP", agepRow, mirroringDetailResponse())...)
+	form, apply := loadPageG(t, pageEndpointPayload(sc, "AGEP"), inst)
 
 	if got := staticValue(t, form, "Role"); got != "ALL" {
 		t.Errorf("Role is %q", got)
@@ -100,12 +100,12 @@ func TestEndpointPayloadPageShowsTheMirroringDetail(t *testing.T) {
 
 func TestEndpointPayloadPageShowsTheServiceBrokerDetail(t *testing.T) {
 	brokerRow := []driver.Value{int64(65537), "BrokerEP", "sa", "TCP", "SERVICE_BROKER", "DISABLED", false, int64(4022)}
-	sc, inst := newFakeConn(t, endpointPropResponses("BrokerEP", brokerRow, fakeResponse{
+	sc, inst := newGConn(t, endpointPropResponses("BrokerEP", brokerRow, fakeResponse{
 		match: "sys.service_broker_endpoints",
 		cols:  5,
 		rows:  [][]driver.Value{{true, int64(32), "NEGOTIATE", "AES", "broker_cert"}},
 	})...)
-	form, _ := loadPage(t, pageEndpointPayload(sc, "BrokerEP"), inst)
+	form, _ := loadPageG(t, pageEndpointPayload(sc, "BrokerEP"), inst)
 
 	if got := staticValue(t, form, "Certificate"); got != "broker_cert" {
 		t.Errorf("Certificate is %q", got)
@@ -123,8 +123,8 @@ func TestEndpointPayloadPageShowsTheServiceBrokerDetail(t *testing.T) {
 // A TSQL endpoint has no type-specific catalog view at all, so the page must
 // say so rather than issue a read that finds nothing and render blank.
 func TestEndpointPayloadPageHandlesATSQLEndpoint(t *testing.T) {
-	sc, inst := newFakeConn(t, endpointPropResponses("Dedicated Admin Connection", dacRow)...)
-	form, _ := loadPage(t, pageEndpointPayload(sc, "Dedicated Admin Connection"), inst)
+	sc, inst := newGConn(t, endpointPropResponses("Dedicated Admin Connection", dacRow)...)
+	form, _ := loadPageG(t, pageEndpointPayload(sc, "Dedicated Admin Connection"), inst)
 
 	for _, r := range form.Rows() {
 		if sr, ok := r.(*propsheet.StaticRow); ok {
@@ -140,10 +140,10 @@ func TestEndpointPayloadPageHandlesATSQLEndpoint(t *testing.T) {
 // prop_page_requires_test.go's pagesThatOnlyRead only permits that for a page
 // with no apply at all.
 func TestEndpointPagesDoNotWrite(t *testing.T) {
-	sc, inst := newFakeConn(t, endpointPropResponses("AGEP", agepRow, mirroringDetailResponse())...)
+	sc, inst := newGConn(t, endpointPropResponses("AGEP", agepRow, mirroringDetailResponse())...)
 
 	for _, page := range endpointPropPages(sc, "AGEP") {
-		_, apply := loadPage(t, page, inst)
+		_, apply := loadPageG(t, page, inst)
 		if apply != nil {
 			t.Errorf("page %q has an apply", page.title)
 		}

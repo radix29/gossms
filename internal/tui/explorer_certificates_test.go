@@ -46,7 +46,7 @@ func certListResponse() fakeResponse {
 // An expired certificate still works for an endpoint or a signed module, and
 // nothing else in the row says it is expired — so the label does.
 func TestCertificatesLoaderMarksExpiredAndCarriesTheDatabase(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), certListResponse())
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), certListResponse())
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 
 	children, err := childLoaders[NodeCertificates](l,
@@ -169,7 +169,7 @@ func certGateConn(t *testing.T, granted []string, control bool) *explorerNode {
 	}
 	responses := withSecurableAnswers(capabilityResponses(true, nil, nil, granted, denied),
 		map[string]bool{gosmo.DatabaseSecurableKey(gosmo.DatabaseSecurableCertificate, "", "c1"): control})
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return &explorerNode{data: nodeData{Type: NodeCertificate, DBName: "appdb", Name: "c1", conn: sc}}
@@ -218,7 +218,7 @@ func TestCertificateDeleteGateMatchesWhatTheServerAllowed(t *testing.T) {
 // changed Owner is one ALTER AUTHORIZATION. A certificate cannot be owned by a
 // role (Msg 15345), so none is offered.
 func TestCertificateGeneralPageChangesOnlyTheOwner(t *testing.T) {
-	sc, inst := newFakeConn(t, append([]fakeResponse{dbScopedCredDatabaseRow(), {
+	sc, inst := newGConn(t, append([]fakeResponse{dbScopedCredDatabaseRow(), {
 		match: "FROM   sys.certificates", arg: "aaa_cert", cols: 15,
 		rows: [][]driver.Value{certRow("aaa_cert", "ENCRYPTED_BY_MASTER_KEY", certExpiredExpiry)},
 	}}, keyOwnerResponses()...)...)
@@ -244,7 +244,7 @@ func TestCertificateGeneralPageChangesOnlyTheOwner(t *testing.T) {
 }
 
 func TestCertificatesFolderDetail(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), certListResponse())
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), certListResponse())
 	node := &explorerNode{data: nodeData{Type: NodeCertificates, DBName: "appdb", conn: sc}}
 
 	var objs []nodeData
@@ -272,7 +272,7 @@ func TestCertificatesFolderDetail(t *testing.T) {
 }
 
 func TestCertificateDetail(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), fakeResponse{
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), fakeResponse{
 		match: "FROM   sys.certificates", arg: "aaa_cert", cols: 15,
 		rows: [][]driver.Value{certRow("aaa_cert", "ENCRYPTED_BY_PASSWORD", certValidExpiry)},
 	})
@@ -304,7 +304,7 @@ func TestCertificateDetail(t *testing.T) {
 // CertificateByName answers ErrNotFound for a missing certificate — one
 // dropped since the tree was read. The detail pane must say so, not panic.
 func TestCertificateDetailOfADroppedCertificate(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), fakeResponse{
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), fakeResponse{
 		match: "FROM   sys.certificates", arg: "gone", cols: 15,
 	})
 	node := &explorerNode{data: nodeData{Type: NodeCertificate, DBName: "appdb", Name: "gone", conn: sc}}
@@ -331,9 +331,9 @@ func keyOwnerResponses() []fakeResponse {
 // shows the current owner and offers wantOffered (a role only where one may
 // own the object), checks an untouched page writes nothing, then changes the
 // owner and checks the one statement that lands in appdb.
-func assertOwnerChange(t *testing.T, page propPage, inst *fakeInstance, wantOffered, wantAbsent, want string) *propsheet.Form {
+func assertOwnerChange(t *testing.T, page propPage, inst *gFake, wantOffered, wantAbsent, want string) *propsheet.Form {
 	t.Helper()
-	form, apply := loadPage(t, page, inst)
+	form, apply := loadPageG(t, page, inst)
 	owner := selectRow(t, form, "Owner")
 	if owner.Value() != "dbo" {
 		t.Errorf("Owner = %q, want dbo", owner.Value())

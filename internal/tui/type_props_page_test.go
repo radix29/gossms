@@ -10,7 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// The Types Properties pages, driven through fakedb_test.go.
+// The Types Properties pages, driven through gosmotest_fixtures_test.go.
 //
 // Every page here reads through a by-name finder, and the fake answers by
 // substring, so each response below is matched on the predicate that tells
@@ -23,15 +23,15 @@ const propTypeDB = "appdb"
 
 var propTypeDate = time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
 
-// newTypePropConn is newFakeConn with the sys.databases row every
+// newTypePropConn is newGConn with the sys.databases row every
 // database-scoped finder in this file resolves through DatabaseByName
 // before its own read. Shared by the other tree-family props tests.
-func newTypePropConn(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+func newTypePropConn(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *gFake) {
 	t.Helper()
 	dbRow := fakeResponse{match: "compatibility_level, collation_name", cols: 11, rows: [][]driver.Value{{
 		propTypeDB, int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS",
 		false, propTypeDate, int64(0), false}}}
-	return newFakeConn(t, append([]fakeResponse{dbRow}, responses...)...)
+	return newGConn(t, append([]fakeResponse{dbRow}, responses...)...)
 }
 
 // ============================================================
@@ -63,7 +63,7 @@ func aliasTypeResponse(rule, def driver.Value) fakeResponse {
 // would show it, not as a bare "varchar".
 func TestAliasTypeGeneralShowsTheBaseType(t *testing.T) {
 	sc, inst := newTypePropConn(t, aliasTypeResponse("PhoneRule", ""))
-	form, apply := loadPage(t, userDefinedDataTypePropPages(sc, propTypeDB, "dbo", "Phone")[0], inst)
+	form, apply := loadPageG(t, userDefinedDataTypePropPages(sc, propTypeDB, "dbo", "Phone")[0], inst)
 
 	if got := staticValue(t, form, "Name"); got != "Phone" {
 		t.Errorf("Name is %q", got)
@@ -86,7 +86,7 @@ func TestAliasTypeGeneralShowsTheBaseType(t *testing.T) {
 // reads as a field the page failed to load rather than as nothing bound.
 func TestAliasTypeGeneralNamesAnUnboundRule(t *testing.T) {
 	sc, inst := newTypePropConn(t, aliasTypeResponse("", ""))
-	form, _ := loadPage(t, userDefinedDataTypePropPages(sc, propTypeDB, "dbo", "Phone")[0], inst)
+	form, _ := loadPageG(t, userDefinedDataTypePropPages(sc, propTypeDB, "dbo", "Phone")[0], inst)
 
 	if got := staticValue(t, form, "Bound rule"); got != "(none)" {
 		t.Errorf("Bound rule is %q, want (none)", got)
@@ -120,7 +120,7 @@ func tableTypeResponses() []fakeResponse {
 // which reads as a table type with no columns.
 func TestTableTypeColumnsPageListsTheTypesShape(t *testing.T) {
 	sc, inst := newTypePropConn(t, tableTypeResponses()...)
-	form, apply := loadPage(t, pageTableTypeColumns(sc, propTypeDB, "dbo", "IdList"), inst)
+	form, apply := loadPageG(t, pageTableTypeColumns(sc, propTypeDB, "dbo", "IdList"), inst)
 
 	rows := gridRowsOf(t, form)
 	if len(rows) != 2 {
@@ -142,7 +142,7 @@ func TestTableTypeColumnsPageListsTheTypesShape(t *testing.T) {
 
 func TestTableTypeGeneralShowsMemoryOptimized(t *testing.T) {
 	sc, inst := newTypePropConn(t, tableTypeResponses()...)
-	form, _ := loadPage(t, pageTableTypeGeneral(sc, propTypeDB, "dbo", "IdList"), inst)
+	form, _ := loadPageG(t, pageTableTypeGeneral(sc, propTypeDB, "dbo", "IdList"), inst)
 
 	if got := staticValue(t, form, "Memory optimized"); got != "False" {
 		t.Errorf("Memory optimized is %q, want False", got)
@@ -162,7 +162,7 @@ func TestClrTypeGeneralNamesItsAssembly(t *testing.T) {
 		rows: [][]driver.Value{{"Geo", "dbo", int64(259), int64(-1), int64(0), int64(0), true,
 			"GeoUtils", "GeoUtils.Point"}},
 	})
-	form, apply := loadPage(t, clrTypePropPages(sc, propTypeDB, "dbo", "Geo")[0], inst)
+	form, apply := loadPageG(t, clrTypePropPages(sc, propTypeDB, "dbo", "Geo")[0], inst)
 
 	if got := staticValue(t, form, "Assembly"); got != "GeoUtils" {
 		t.Errorf("Assembly is %q", got)
@@ -195,7 +195,7 @@ func xmlSchemaCollectionResponses(definition driver.Value) []fakeResponse {
 func TestXMLSchemaCollectionSchemaPageShowsTheDocuments(t *testing.T) {
 	const doc = `<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"/>`
 	sc, inst := newTypePropConn(t, xmlSchemaCollectionResponses(doc)...)
-	form, apply := loadPage(t, pageXMLSchemaCollectionSchema(sc, propTypeDB, "dbo", "Claims"), inst)
+	form, apply := loadPageG(t, pageXMLSchemaCollectionSchema(sc, propTypeDB, "dbo", "Claims"), inst)
 
 	var ed *propsheet.EditorRow
 	for _, r := range form.Rows() {
@@ -222,7 +222,7 @@ func TestXMLSchemaCollectionSchemaPageShowsTheDocuments(t *testing.T) {
 // not a state the catalog can be in.
 func TestXMLSchemaCollectionSchemaPageReportsAnUnreadableSchema(t *testing.T) {
 	sc, inst := newTypePropConn(t, xmlSchemaCollectionResponses(nil)...)
-	form, _ := loadPage(t, pageXMLSchemaCollectionSchema(sc, propTypeDB, "dbo", "Claims"), inst)
+	form, _ := loadPageG(t, pageXMLSchemaCollectionSchema(sc, propTypeDB, "dbo", "Claims"), inst)
 
 	for _, r := range form.Rows() {
 		if _, ok := r.(*propsheet.EditorRow); ok {
@@ -233,7 +233,7 @@ func TestXMLSchemaCollectionSchemaPageReportsAnUnreadableSchema(t *testing.T) {
 
 func TestXMLSchemaCollectionGeneralShowsItsDates(t *testing.T) {
 	sc, inst := newTypePropConn(t, xmlSchemaCollectionResponses("<xsd:schema/>")...)
-	form, _ := loadPage(t, pageXMLSchemaCollectionGeneral(sc, propTypeDB, "dbo", "Claims"), inst)
+	form, _ := loadPageG(t, pageXMLSchemaCollectionGeneral(sc, propTypeDB, "dbo", "Claims"), inst)
 
 	if got := staticValue(t, form, "Created"); !strings.Contains(got, "2026-05-06") {
 		t.Errorf("Created is %q", got)
@@ -265,7 +265,7 @@ func TestTypePropertiesPagesDoNotWrite(t *testing.T) {
 	}
 	for name, pages := range sets {
 		for _, page := range pages {
-			if _, apply := loadPage(t, page, inst); apply != nil {
+			if _, apply := loadPageG(t, page, inst); apply != nil {
 				t.Errorf("%s/%s has an apply — none of these objects has an ALTER", name, page.title)
 			}
 		}

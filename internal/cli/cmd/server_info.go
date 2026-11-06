@@ -74,7 +74,7 @@ func (d Deps) serverInfo(ctx context.Context, inv *spec.Invocation) (*output.Res
 	}
 	start := output.Field{Key: "startTime", Null: true}
 	uptime := output.Field{Key: "uptimeSeconds", Null: true}
-	if t, up, err := cat.StartTime(ctx); err != nil {
+	if t, up, err := sc.Server.StartTime(ctx); err != nil {
 		unread(err, start.Key, uptime.Key)
 	} else {
 		start = output.Field{Key: start.Key, Value: gridTime(t)}
@@ -89,7 +89,7 @@ func (d Deps) serverInfo(ctx context.Context, inv *spec.Invocation) (*output.Res
 		physical = output.Field{Key: "physicalMemoryMb", Value: strconv.FormatInt(info.PhysicalMemoryMB, 10)}
 	}
 	numa := output.Field{Key: "numaNodes", Null: true}
-	if p, err := cat.ProcessorInfo(ctx); err != nil {
+	if p, err := sc.Server.ProcessorInfo(ctx); err != nil {
 		unread(err, numa.Key)
 	} else {
 		numa = output.Field{Key: "numaNodes", Value: strconv.Itoa(p.NUMANodeCount)}
@@ -189,25 +189,25 @@ func memoryReadError(err error) *output.Error {
 
 func (d Deps) serverMemory(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	stats, err := cat.MemoryStats(ctx)
+	stats, err := sc.Server.MemoryStats(ctx)
 	if err != nil {
 		return res, memoryReadError(err)
 	}
-	counters, err := cat.PerformanceCounters(ctx, []string{counterPLE, counterGrantsPending}, []string{""})
+	counters, err := sc.Server.PerformanceCounters(ctx, []string{counterPLE, counterGrantsPending}, []string{""})
 	if err != nil {
 		return res, memoryReadError(err)
 	}
-	clerks, err := cat.MemoryClerks(ctx)
+	clerks, err := sc.Server.MemoryClerks(ctx)
 	if err != nil {
 		return res, memoryReadError(err)
 	}
-	opts, err := cat.Configurations(ctx)
+	opts, err := sc.Server.Configurations(ctx)
 	if err != nil {
 		return res, readError(err)
 	}

@@ -23,7 +23,7 @@ func idxViewResp() fakeResponse {
 }
 
 func TestViewIndexesFolderReadsTheView(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		dbByNameResp(idxDatabase, 5),
 		idxViewResp(),
 		idxListResp("CIX_vOrders", 1, indexFixture{typeDesc: "CLUSTERED", unique: true, rowLocks: true, pageLocks: true, compression: "NONE"}),
@@ -47,7 +47,7 @@ func TestViewIndexesFolderReadsTheView(t *testing.T) {
 // Delete on a view's index resolves the name a table read cannot find as the
 // view, and drops the index ON the view.
 func TestDeleteOfAViewIndexDropsItOnTheView(t *testing.T) {
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		dbByNameResp(idxDatabase, 5),
 		fakeResponse{match: "FROM   sys.tables t", db: idxDatabase, arg: idxView, cols: 12},
 		idxViewResp(),

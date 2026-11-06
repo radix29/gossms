@@ -13,7 +13,7 @@ import (
 // database db1, its children set by SetChildren, as a load would.
 func groupTree(t *testing.T, a *App, ft NodeType, children ...*explorerNode) *explorerNode {
 	t.Helper()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	root := a.explorer.AddRoot("server-one", sc)
 	folder := &explorerNode{label: nodeTypeName(ft), expanded: true, data: nodeData{Type: ft, DBName: "db1", conn: sc}}
 	a.explorer.SetChildren(root, []*explorerNode{folder})

@@ -36,7 +36,7 @@ func warningPage(real, scripted *int) (func() []propPage, *propsheet.Form) {
 // Yes applies it. Script Changes writes nothing, so it does not ask.
 func TestPropDialogAsksBeforeApplyingAWarnedEdit(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := NewPropDialog(a)
 	a.propDialog = d
 	var real, scripted int

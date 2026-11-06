@@ -61,9 +61,9 @@ func fixBackupClock(t *testing.T) {
 	backupNow = func() time.Time { return time.Date(2026, 11, 3, 13, 4, 5, 0, jobServerZone) }
 }
 
-func backupFakes(t *testing.T) (Catalog, Writer) {
+func backupFakes(t *testing.T) Catalog {
 	fixBackupClock(t)
-	return ServerCatalog(&db.ServerConn{Server: newBackupServer(t).Server()}), nil
+	return ServerCatalog(&db.ServerConn{Server: newBackupServer(t).Server()})
 }
 
 // maintDeps is Deps over s, an ad-hoc connection counted in dials.

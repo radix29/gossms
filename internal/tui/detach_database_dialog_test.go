@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -44,7 +45,7 @@ func detachTestPrefetch() *detachPrefetch {
 }
 
 func TestDetachWithEveryOptionOff(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t, detachAccessResponse())
 	d := detachTestDialog(t, sc, detachTestPrefetch())
 
 	if err := d.preflight(); err != nil {
@@ -66,7 +67,7 @@ func TestDetachWithEveryOptionOff(t *testing.T) {
 }
 
 func TestDetachWithEveryOptionOn(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t, detachAccessResponse())
 	d := detachTestDialog(t, sc, detachTestPrefetch())
 	f := d.forms[0]
 
@@ -100,7 +101,7 @@ func TestDetachWithEveryOptionOn(t *testing.T) {
 // error that names neither the sessions nor the checkbox that deals with
 // them. Refusing here is what turns that into an instruction.
 func TestDetachRefusesWhileSessionsAreConnected(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t, detachAccessResponse())
 	pf := detachTestPrefetch()
 	pf.sessions = 3
 	d := detachTestDialog(t, sc, pf)
@@ -125,7 +126,7 @@ func TestDetachRefusesWhileSessionsAreConnected(t *testing.T) {
 // An unmeasured session count (no VIEW SERVER STATE) must not withhold the
 // detach from a db_owner who can perform it.
 func TestDetachIsOfferedWhenTheSessionCountIsUnknown(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t, detachAccessResponse())
 	pf := detachTestPrefetch()
 	pf.sessions = -1
 	d := detachTestDialog(t, sc, pf)
@@ -139,7 +140,7 @@ func TestDetachIsOfferedWhenTheSessionCountIsUnknown(t *testing.T) {
 // and gosmo orders the file list by type_desc — which sorts LOG ahead of
 // ROWS. A grid built straight from that hands out the log file's path.
 func TestDetachFileGridStartsAtThePrimaryDataFile(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t, detachAccessResponse())
 	pf := detachTestPrefetch()
 	// gosmo's own order, log first.
 	pf.files = []*gosmo.DatabaseFileInfo{pf.files[2], pf.files[0], pf.files[1]}
@@ -173,7 +174,7 @@ func TestDetachFileGridStartsAtThePrimaryDataFile(t *testing.T) {
 // detach is about to destroy. Nothing is scripted for sys.database_files
 // here, so the database-scoped read fails the way a real one does.
 func TestDetachOnAnOfflineDatabaseStillListsTheFiles(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		fakeResponse{match: "FROM sys.databases", arg: "AppDB", cols: 11, rows: [][]driver.Value{
 			{"AppDB", int64(7), "OFFLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0), false},
 		}},
@@ -182,6 +183,8 @@ func TestDetachOnAnOfflineDatabaseStillListsTheFiles(t *testing.T) {
 			{int64(2), "AppDB_log", `C:\Logs\AppDB_log.ldf`, "LOG", "ONLINE", int64(8192), int64(-1), int64(65536), false, nil},
 			{int64(3), "AppDB_2", `C:\Data\AppDB_2.ndf`, "ROWS", "ONLINE", int64(8192), int64(-1), int64(65536), false, nil},
 		}},
+		fakeResponse{match: "sys.database_files", err: errors.New("database AppDB is offline")},
+		fakeResponse{match: "sys.dm_exec_sessions", cols: 27},
 	)
 
 	d := &DetachDatabaseDialog{dbName: "AppDB"}
@@ -224,7 +227,7 @@ func TestDetachOnAnOfflineDatabaseStillListsTheFiles(t *testing.T) {
 // An ONLINE database must not pay for the fallback: the database-scoped read
 // answers, and the server catalog is not asked at all.
 func TestDetachOnAnOnlineDatabaseDoesNotReadTheServerCatalog(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		fakeResponse{match: "FROM sys.databases", arg: "AppDB", cols: 11, rows: [][]driver.Value{
 			{"AppDB", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0), false},
 		}},
@@ -236,6 +239,7 @@ func TestDetachOnAnOnlineDatabaseDoesNotReadTheServerCatalog(t *testing.T) {
 		fakeResponse{match: "sys.master_files", cols: 10, rows: [][]driver.Value{
 			{int64(9), "wrong", `C:\Nowhere\wrong.mdf`, "ROWS", "ONLINE", int64(8192), int64(-1), int64(65536), false},
 		}},
+		fakeResponse{match: "sys.dm_exec_sessions", cols: 27},
 	)
 
 	d := &DetachDatabaseDialog{dbName: "AppDB"}
@@ -254,7 +258,7 @@ func TestDetachOnAnOnlineDatabaseDoesNotReadTheServerCatalog(t *testing.T) {
 // With neither catalog readable the page has to say so rather than show an
 // empty grid: the paths are unrecoverable once the detach has run.
 func TestDetachSaysWhyTheFilesAreMissingWhenNeitherCatalogAnswers(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t, detachAccessResponse())
 	d := detachTestDialog(t, sc, &detachPrefetch{state: "OFFLINE", sessions: 0})
 
 	var notes []string
@@ -290,4 +294,10 @@ func TestSortDatabaseFilesDataBeforeLog(t *testing.T) {
 	if in[0].FileID != 2 {
 		t.Error("sortDatabaseFiles reordered its argument")
 	}
+}
+
+// detachAccessResponse answers the user-access read that precedes a detach
+// with a database nobody has restricted.
+func detachAccessResponse() fakeResponse {
+	return fakeResponse{match: "user_access_desc FROM sys.databases", cols: 1, rows: [][]driver.Value{{"MULTI_USER"}}}
 }

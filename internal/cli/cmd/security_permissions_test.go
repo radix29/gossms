@@ -18,8 +18,8 @@ import (
 
 // permFakes is the dry-run fidelity harness's: real gosmo over a
 // secServer, which applies the writes itself.
-func permFakes(t *testing.T) (Catalog, Writer) {
-	return ServerCatalog(&db.ServerConn{Server: newSecServer(t).Server()}), nil
+func permFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newSecServer(t).Server()})
 }
 
 // runPerm runs `security <argv>` over s, an ad-hoc connection; dials

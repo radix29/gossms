@@ -10,7 +10,7 @@ import (
 )
 
 // Server Audit Specification Properties > General, driven through
-// fakedb_test.go. Every case acts on "HIPAA_spec", the *second* specification
+// gosmotest_fixtures_test.go. Every case acts on "HIPAA_spec", the *second* specification
 // in the list, so a page that ignored the name it was opened with would still
 // pass on the first.
 
@@ -29,15 +29,15 @@ func actionGroupRows() fakeResponse {
 	}
 }
 
-func specPageConn(t *testing.T, name string) (*db.ServerConn, *fakeInstance) {
+func specPageConn(t *testing.T, name string) (*db.ServerConn, *gFake) {
 	t.Helper()
-	sc, inst := newFakeConn(t, specByName(name), specRows(), auditRows(), actionGroupRows())
+	sc, inst := newGConn(t, specByName(name), specRows(), auditRows(), actionGroupRows())
 	return sc, inst
 }
 
 func TestSpecificationGeneralLoadsTheNamedSpecification(t *testing.T) {
 	sc, inst := specPageConn(t, "HIPAA_spec")
-	form, _ := loadPage(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
+	form, _ := loadPageG(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
 
 	if got := selectRow(t, form, "Audit").Value(); got != "HIPAA" {
 		t.Errorf("Audit = %q, want HIPAA", got)
@@ -61,7 +61,7 @@ func TestSpecificationGeneralLoadsTheNamedSpecification(t *testing.T) {
 
 func TestSpecificationGeneralWritesNothingWhenUntouched(t *testing.T) {
 	sc, inst := specPageConn(t, "HIPAA_spec")
-	_, apply := loadPage(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
+	_, apply := loadPageG(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -75,9 +75,9 @@ func TestSpecificationGeneralWritesNothingWhenUntouched(t *testing.T) {
 // the list it was built from, so the group named in the statement is the whole
 // assertion.
 func TestSpecificationGeneralAddsAndDropsTheTickedGroups(t *testing.T) {
-	sc, inst := newFakeConn(t, specByName("HIPAA_spec"), specRows(), auditRows(),
+	sc, inst := newGConn(t, specByName("HIPAA_spec"), specRows(), auditRows(),
 		actionGroupRows(), specEnabled("HIPAA_spec", false))
-	form, apply := loadPage(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
+	form, apply := loadPageG(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
 
 	grid := toggleGrid(t, form)
 	toggleByName(t, grid, "BACKUP_RESTORE_GROUP", 0)  // on
@@ -107,9 +107,9 @@ func TestSpecificationGeneralAddsAndDropsTheTickedGroups(t *testing.T) {
 // An enabled specification refuses every change, so each write has to be
 // bracketed by the state toggle.
 func TestSpecificationGeneralApplyOnAnEnabledSpecTurnsItOffAndBackOn(t *testing.T) {
-	sc, inst := newFakeConn(t, specByName("AppSpec"), specRows(), auditRows(),
+	sc, inst := newGConn(t, specByName("AppSpec"), specRows(), auditRows(),
 		actionGroupRows(), specEnabled("AppSpec", true))
-	form, apply := loadPage(t, pageServerAuditSpecificationGeneral(sc, "AppSpec"), inst)
+	form, apply := loadPageG(t, pageServerAuditSpecificationGeneral(sc, "AppSpec"), inst)
 
 	toggleByName(t, toggleGrid(t, form), "DATABASE_CHANGE_GROUP", 0)
 	if err := apply(t.Context()); err != nil {
@@ -125,9 +125,9 @@ func TestSpecificationGeneralApplyOnAnEnabledSpecTurnsItOffAndBackOn(t *testing.
 }
 
 func TestSpecificationGeneralRebindsTheAudit(t *testing.T) {
-	sc, inst := newFakeConn(t, specByName("HIPAA_spec"), specRows(), auditRows(),
+	sc, inst := newGConn(t, specByName("HIPAA_spec"), specRows(), auditRows(),
 		actionGroupRows(), specEnabled("HIPAA_spec", false))
-	form, apply := loadPage(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
+	form, apply := loadPageG(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
 
 	editSelect(t, form, "Audit", "Rollover")
 	if err := apply(t.Context()); err != nil {
@@ -144,7 +144,7 @@ func TestSpecificationGeneralRebindsTheAudit(t *testing.T) {
 // added to the dropdown and selected instead.
 func TestSpecificationGeneralDoesNotSilentlyRebindAnOrphan(t *testing.T) {
 	sc, inst := specPageConn(t, "Orphan")
-	form, apply := loadPage(t, pageServerAuditSpecificationGeneral(sc, "Orphan"), inst)
+	form, apply := loadPageG(t, pageServerAuditSpecificationGeneral(sc, "Orphan"), inst)
 
 	if got := selectRow(t, form, "Audit").Value(); got != missingAuditItem {
 		t.Errorf("the orphan's Audit dropdown shows %q", got)
@@ -163,7 +163,7 @@ func TestSpecificationGeneralDoesNotSilentlyRebindAnOrphan(t *testing.T) {
 // holds, and keeps this specification's own HIPAA.
 func TestSpecificationGeneralOffersOnlyFreeAudits(t *testing.T) {
 	sc, inst := specPageConn(t, "HIPAA_spec")
-	form, _ := loadPage(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
+	form, _ := loadPageG(t, pageServerAuditSpecificationGeneral(sc, "HIPAA_spec"), inst)
 	if got := selectRow(t, form, "Audit").Items(); !slices.Equal(got, []string{"HIPAA", "Rollover"}) {
 		t.Errorf("Audit offers %q, want [HIPAA Rollover]", got)
 	}

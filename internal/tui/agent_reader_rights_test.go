@@ -31,9 +31,9 @@ func readerResponses(operatorRole bool, extra ...fakeResponse) []fakeResponse {
 	return append(extra, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, in, notIn)...)
 }
 
-func probedReaderConn(t *testing.T, operatorRole bool, extra ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+func probedReaderConn(t *testing.T, operatorRole bool, extra ...fakeResponse) (*db.ServerConn, *gFake) {
 	t.Helper()
-	sc, inst := newFakeConn(t, readerResponses(operatorRole, extra...)...)
+	sc, inst := newGConn(t, readerResponses(operatorRole, extra...)...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "msdb")
 	return sc, inst
@@ -63,7 +63,7 @@ func TestAgentAlertsFolderNeedsSQLAgentOperatorRole(t *testing.T) {
 	if got := agentRootLabels(t, operator); !slices.Contains(got, "Alerts") {
 		t.Errorf("SQLAgentOperatorRole member's Agent folders = %v; want Alerts", got)
 	}
-	unprobed, _ := newFakeConn(t)
+	unprobed, _ := newGConn(t)
 	if got := agentRootLabels(t, unprobed); !slices.Contains(got, "Alerts") {
 		t.Errorf("unprobed connection's Agent folders = %v; want Alerts", got)
 	}
@@ -108,7 +108,7 @@ func assertJobAlertsSummary(t *testing.T, form *propsheet.Form, apply propApply)
 func TestJobAlertsPageForAReaderListsThisJobsAlerts(t *testing.T) {
 	sc, inst := probedReaderConn(t, false, jobAlertsResponses()...)
 	name := agentJobName
-	form, apply := loadPage(t, pageJobAlerts(sc, &name), inst)
+	form, apply := loadPageG(t, pageJobAlerts(sc, &name), inst)
 	assertJobAlertsSummary(t, form, apply)
 }
 
@@ -117,9 +117,9 @@ func TestJobAlertsPageForAReaderListsThisJobsAlerts(t *testing.T) {
 func TestJobAlertsPageFallsBackOnARefusal(t *testing.T) {
 	refused := fakeResponse{match: "FROM   msdb.dbo.sysalerts a", err: mssql.Error{Number: 229, Class: 14,
 		Message: "The SELECT permission was denied on the object 'sysalerts'"}}
-	sc, inst := newFakeConn(t, append(jobAlertsResponses(), refused)...)
+	sc, inst := newGConn(t, append(jobAlertsResponses(), refused)...)
 	name := agentJobName
-	form, apply := loadPage(t, pageJobAlerts(sc, &name), inst)
+	form, apply := loadPageG(t, pageJobAlerts(sc, &name), inst)
 	assertJobAlertsSummary(t, form, apply)
 }
 
@@ -132,7 +132,7 @@ func TestOperatorNotificationsForAReader(t *testing.T) {
 		Message: "The SELECT permission was denied on the object 'sysnotifications'"}}
 	sc, inst := probedReaderConn(t, false, append(agentOperatorResponses(), jobs, notif)...)
 	name := agentOperatorName
-	form, _ := loadPage(t, pageOperatorNotifications(sc, &name), inst)
+	form, _ := loadPageG(t, pageOperatorNotifications(sc, &name), inst)
 
 	if !strings.Contains(formNotes(form), operatorAlertsWithheldNote) {
 		t.Errorf("notes = %v; want the withheld-alerts note", formNotes(form))

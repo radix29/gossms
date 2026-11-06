@@ -20,7 +20,7 @@ func newRoleTestDialog(t *testing.T, responses ...fakeResponse) *NewRoleDialog {
 		{"dbo", int64(1), "dbo"}, {"INFORMATION_SCHEMA", int64(3), "INFORMATION_SCHEMA"},
 		{"sales", int64(5), "dbo"}, {"sys", int64(4), "sys"},
 	}})
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	schemas, err := sc.Server.DatabaseRef("appdb").Schemas(context.Background())
 	if err != nil {
 		t.Fatalf("Schemas: %v", err)
@@ -197,7 +197,7 @@ func TestNewRoleGateMatchesWhatTheServerAllowed(t *testing.T) {
 				denied = append(denied, n)
 			}
 		}
-		sc, _ := newFakeConn(t, capabilityResponses(true, nil, nil, tc.granted, denied)...)
+		sc, _ := newGConn(t, capabilityResponses(true, nil, nil, tc.granted, denied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		folder := &explorerNode{data: nodeData{Type: NodeDatabaseRoles, DBName: "appdb", conn: sc}}

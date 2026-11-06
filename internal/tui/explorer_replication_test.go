@@ -115,7 +115,7 @@ func TestLocalPublicationsListsAndExplains(t *testing.T) {
 				[]fakeResponse{{match: replDistributorRead, err: errors.New("refused")}}),
 			[]string{"[SalesDB]: pubA"}},
 	} {
-		sc, _ := newFakeConn(t, tc.responses...)
+		sc, _ := newGConn(t, tc.responses...)
 		got, children := loadLabels(t, sc, loadLocalPublicationsChildren)
 		if !slices.Equal(got, tc.want) {
 			t.Errorf("%s: children = %q, want %q", tc.name, got, tc.want)
@@ -150,7 +150,7 @@ func TestReplicationFollowsServerObjectsExceptOnAzureSQLDatabase(t *testing.T) {
 		{"Managed Instance", 8, "12.0.2000.8", true},
 		{"Azure SQL Database", 5, "12.0.2000.8", false},
 	} {
-		got := folders(newFakeConnEdition(t, tc.edition, tc.version))
+		got := folders(newGConnEdition(t, tc.edition, tc.version))
 		i := slices.Index(got, "Replication")
 		switch {
 		case tc.shown && (i < 1 || got[i-1] != "Server Objects"):

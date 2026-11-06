@@ -17,7 +17,7 @@ import (
 // Owned Schemas writes into a real database.
 func newApplicationRoleTestDialog(t *testing.T) *NewApplicationRoleDialog {
 	t.Helper()
-	sc, _ := newFakeConn(t, dbByNameResp("appdb", 5),
+	sc, _ := newGConn(t, dbByNameResp("appdb", 5),
 		fakeResponse{match: "FROM   sys.schemas s", cols: 3, rows: [][]driver.Value{
 			{"dbo", int64(1), "dbo"}, {"INFORMATION_SCHEMA", int64(3), "INFORMATION_SCHEMA"},
 			{"sales", int64(5), "dbo"}, {"sys", int64(4), "sys"},
@@ -182,7 +182,7 @@ func TestRolesFolderHoldsDatabaseAndApplicationRoles(t *testing.T) {
 // The Application Roles folder lists sys.database_principals type 'A' rows,
 // each a leaf in its database.
 func TestApplicationRolesFolderListsTheRoles(t *testing.T) {
-	sc, _ := newFakeConn(t, dbByNameResp("appdb", 5),
+	sc, _ := newGConn(t, dbByNameResp("appdb", 5),
 		fakeResponse{match: "WHERE  type = 'A'", cols: 5, rows: [][]driver.Value{
 			{"billing", "dbo", int64(7), principalEpoch, principalEpoch},
 			{"payroll", nil, int64(8), principalEpoch, principalEpoch},
@@ -222,7 +222,7 @@ func TestEmptyApplicationRolesFolderSaysWhenItIsLimited(t *testing.T) {
 			responses := append([]fakeResponse{dbByNameResp("appdb", 5),
 				{match: "WHERE  type = 'A'", cols: 5}},
 				capabilityResponses(true, nil, nil, tc.dbGranted, tc.denied)...)
-			sc, _ := newFakeConn(t, responses...)
+			sc, _ := newGConn(t, responses...)
 			folder := &explorerNode{data: nodeData{Type: NodeApplicationRoles, DBName: "appdb", conn: sc}}
 			kids, err := loadApplicationRolesChildren(loaderCtx{ctx: context.Background(), sc: sc}, folder)
 			if err != nil {
@@ -241,7 +241,7 @@ func TestEmptyApplicationRolesFolderSaysWhenItIsLimited(t *testing.T) {
 	}
 
 	// A non-empty list is shown as it is, without asking the probe.
-	sc, _ := newFakeConn(t, dbByNameResp("appdb", 5),
+	sc, _ := newGConn(t, dbByNameResp("appdb", 5),
 		fakeResponse{match: "WHERE  type = 'A'", cols: 5, rows: [][]driver.Value{
 			{"billing", "dbo", int64(7), principalEpoch, principalEpoch}}})
 	folder := &explorerNode{data: nodeData{Type: NodeApplicationRoles, DBName: "appdb", conn: sc}}
@@ -277,7 +277,7 @@ func TestNewApplicationRoleGateMatchesWhatTheServerAllowed(t *testing.T) {
 				denied = append(denied, n)
 			}
 		}
-		sc, _ := newFakeConn(t, capabilityResponses(true, nil, nil, tc.granted, denied)...)
+		sc, _ := newGConn(t, capabilityResponses(true, nil, nil, tc.granted, denied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		folder := &explorerNode{data: nodeData{Type: NodeApplicationRoles, DBName: "appdb", conn: sc}}

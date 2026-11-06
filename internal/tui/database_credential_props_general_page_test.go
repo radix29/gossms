@@ -57,11 +57,11 @@ func dbScopedCredResponses() []fakeResponse {
 	}
 }
 
-func loadDBScopedCredGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadDBScopedCredGeneralPage(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, dbScopedCredResponses()...)
+	sc, inst := newGConn(t, dbScopedCredResponses()...)
 	name := dbScopedCredUnderTest
-	form, apply := loadPage(t, pageDatabaseScopedCredentialGeneral(sc, "appdb", &name), inst)
+	form, apply := loadPageG(t, pageDatabaseScopedCredentialGeneral(sc, "appdb", &name), inst)
 	return inst, apply, form
 }
 
@@ -207,7 +207,7 @@ func TestDBScopedCredGeneralRefusesABlankIdentity(t *testing.T) {
 // gate.AlterDatabase would open the page fully editable for a principal the
 // server then refuses.
 func TestDBScopedCredPagesRequireControlOnly(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	pages := databaseScopedCredentialPropPages(sc, "appdb", dbScopedCredUnderTest)
 	if len(pages) != 1 {
 		t.Fatalf("want one page, got %d", len(pages))

@@ -8,10 +8,10 @@ import "testing"
 // the server does not have.
 
 func TestRemoteServiceBindingPageShowsItsUserAndAnonymousFlag(t *testing.T) {
-	sc, inst := newFakeConn(t, brokerDBResp(),
+	sc, inst := newGConn(t, brokerDBResp(),
 		brokerRowByArg(remoteServiceBindingResp(), "ClaimBinding", 0))
 	pages := remoteServiceBindingPropPages(sc, brokerDB, "ClaimBinding")
-	form, apply := loadPage(t, pages[0], inst)
+	form, apply := loadPageG(t, pages[0], inst)
 
 	if apply != nil {
 		t.Error("Remote Service Binding Properties is read-only; its page returned an apply")

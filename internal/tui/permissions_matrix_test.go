@@ -149,7 +149,7 @@ func TestPermissionsMatrixApplyOrderIsStable(t *testing.T) {
 // UI goroutine, and under Script Changes), so the page is reloaded instead:
 // its statements reached the server, which gosmo's statement observer sees.
 func TestPermissionsMatrixPartlyAppliedReloads(t *testing.T) {
-	sc, _ := newFakeConn(t, fakeResponse{match: "TO [c]", err: errRefused})
+	sc, _ := newGConn(t, fakeResponse{match: "TO [c]", err: errRefused})
 	loads := 0
 	sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Server Properties")
 	d := &PropDialog{PropertySheet: sheet, app: &App{}, ctx: context.Background(), applyFn: map[int]propApply{}}

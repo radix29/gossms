@@ -33,13 +33,11 @@ func settleDetails(a *App) {
 }
 
 // readContexts is every context a read matching want ran under, in order.
-func readContexts(inst *fakeInstance, want string) []context.Context {
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
+func readContexts(inst *gFake, want string) []context.Context {
 	var out []context.Context
-	for i, q := range inst.reads {
-		if strings.Contains(q, want) {
-			out = append(out, inst.readCtxs[i])
+	for _, q := range inst.Queries() {
+		if !q.Exec && strings.Contains(q.Text, want) {
+			out = append(out, q.Ctx)
 		}
 	}
 	return out
@@ -59,7 +57,7 @@ func TestMovingOnCancelsTheSupersededDetailFetch(t *testing.T) {
 	defer release()
 
 	a := newTestApp()
-	sc, inst := newFakeConn(t, logins)
+	sc, inst := newGConn(t, logins)
 	a.detailBrowser = a.newDetailBrowser()
 	db := a.detailBrowser
 
@@ -118,7 +116,7 @@ func TestMovingOnCancelsAFoldersBackfill(t *testing.T) {
 	const spaceMatch = "AS avail_log_mb\nFROM sys.database_files"
 
 	a := newTestApp()
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		fakeResponse{match: "FROM sys.databases", cols: 11, rows: rows},
 		fakeResponse{match: spaceMatch, cols: 5, rows: [][]driver.Value{{1.0, 1.0, 0.0, 0.0, 0.0}}, block: gate})
 	a.detailBrowser = a.newDetailBrowser()
@@ -158,7 +156,7 @@ func TestInvalidateCancelsTheFetchItReplaces(t *testing.T) {
 	defer close(gate)
 
 	a := newTestApp()
-	sc, inst := newFakeConn(t, logins)
+	sc, inst := newGConn(t, logins)
 	a.detailBrowser = a.newDetailBrowser()
 	db := a.detailBrowser
 	node := &explorerNode{label: "Logins", data: nodeData{Type: NodeLogins, conn: sc}}
@@ -185,7 +183,7 @@ func TestPurgeConnCancelsTheFetchInFlight(t *testing.T) {
 	defer close(gate)
 
 	a := newTestApp()
-	sc, inst := newFakeConn(t, logins)
+	sc, inst := newGConn(t, logins)
 	a.detailBrowser = a.newDetailBrowser()
 	db := a.detailBrowser
 	node := &explorerNode{label: "Logins", data: nodeData{Type: NodeLogins, conn: sc}}
@@ -230,7 +228,7 @@ func TestForgetCancelsARetiredNodesFetch(t *testing.T) {
 	defer close(gate)
 
 	a := newTestApp()
-	sc, inst := newFakeConn(t, logins)
+	sc, inst := newGConn(t, logins)
 	a.detailBrowser = a.newDetailBrowser()
 	db := a.detailBrowser
 	node := &explorerNode{label: "Logins", data: nodeData{Type: NodeLogins, conn: sc}}

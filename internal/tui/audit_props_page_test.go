@@ -9,7 +9,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// Audit Properties > General, driven end to end through fakedb_test.go.
+// Audit Properties > General, driven end to end through gosmotest_fixtures_test.go.
 //
 // Every case acts on "HIPAA", which is the *second* audit in the list — a page
 // that ignored the name it was opened with would still pass on the first.
@@ -39,8 +39,8 @@ func TestAuditFailureLabelsAndValuesArePaired(t *testing.T) {
 }
 
 func TestAuditGeneralLoadsTheNamedAudit(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
-	form, _ := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows())
+	form, _ := loadPageG(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	if got := textRow(t, form, "Audit name").Value(); got != "HIPAA" {
 		t.Errorf("Audit name = %q", got)
@@ -69,8 +69,8 @@ func TestAuditGeneralLoadsTheNamedAudit(t *testing.T) {
 // changed to FILE here — but they are gated, so nothing invites input the
 // ALTER would drop on the floor.
 func TestAuditGeneralGatesFileRowsForALogAudit(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("AppLogAudit"), auditRows())
-	form, _ := loadPage(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
+	sc, inst := newGConn(t, auditByName("AppLogAudit"), auditRows())
+	form, _ := loadPageG(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
 
 	if got := selectRow(t, form, "Audit destination").Value(); got != "Application Log" {
 		t.Errorf("Audit destination = %q", got)
@@ -90,8 +90,8 @@ func TestAuditGeneralGatesFileRowsForALogAudit(t *testing.T) {
 // Choosing File ungates the file rows: the gate follows the dropdown, not the
 // destination the audit was loaded with.
 func TestAuditGeneralUngatesFileRowsWhenFileIsChosen(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("AppLogAudit"), auditRows())
-	form, _ := loadPage(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
+	sc, inst := newGConn(t, auditByName("AppLogAudit"), auditRows())
+	form, _ := loadPageG(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
 
 	editSelect(t, form, "Audit destination", "File")
 	if !textRow(t, form, "File path").Focusable() {
@@ -106,8 +106,8 @@ func TestAuditGeneralUngatesFileRowsWhenFileIsChosen(t *testing.T) {
 // SERVER AUDIT replaces the target, and a file option under TO
 // APPLICATION_LOG is a syntax error.
 func TestAuditGeneralSwitchesAFileAuditToTheApplicationLog(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editSelect(t, form, "Audit destination", "Application Log")
 	if err := apply(t.Context()); err != nil {
@@ -131,8 +131,8 @@ func TestAuditGeneralSwitchesAFileAuditToTheApplicationLog(t *testing.T) {
 // The server answers Msg 33072 "The audit log file path is invalid" — after
 // disabling the audit — so the page refuses it before the window opens.
 func TestAuditGeneralRefusesFileWithNoPath(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("AppLogAudit"), auditRows(), auditEnabled("AppLogAudit", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
+	sc, inst := newGConn(t, auditByName("AppLogAudit"), auditRows(), auditEnabled("AppLogAudit", false))
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
 
 	editSelect(t, form, "Audit destination", "File")
 	if err := apply(t.Context()); err == nil {
@@ -146,8 +146,8 @@ func TestAuditGeneralRefusesFileWithNoPath(t *testing.T) {
 // With a path it goes through, and the file block is built from the rows the
 // gate just released rather than from the audit's (empty) catalog row.
 func TestAuditGeneralSwitchesALogAuditToFile(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("AppLogAudit"), auditRows(), auditEnabled("AppLogAudit", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
+	sc, inst := newGConn(t, auditByName("AppLogAudit"), auditRows(), auditEnabled("AppLogAudit", false))
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("AppLogAudit")), inst)
 
 	editSelect(t, form, "Audit destination", "File")
 	editText(t, form, "File path", `C:\newaudit\`)
@@ -174,8 +174,8 @@ func TestAuditGeneralSwitchesALogAuditToFile(t *testing.T) {
 // round, since an ALTER SERVER AUDIT with no change still disables and
 // re-enables the audit.
 func TestAuditGeneralWritesNothingWhenUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
-	_, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows())
+	_, apply := loadPageG(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -188,8 +188,8 @@ func TestAuditGeneralWritesNothingWhenUntouched(t *testing.T) {
 // only statement, and it carries every setting, because ALTER SERVER AUDIT
 // replaces the whole block and a value left out is a value cleared.
 func TestAuditGeneralAppliesEverySettingTogether(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editText(t, form, "Queue delay", "5000")
 	if err := apply(t.Context()); err != nil {
@@ -218,8 +218,8 @@ func TestAuditGeneralAppliesEverySettingTogether(t *testing.T) {
 // Clearing the predicate is REMOVE WHERE, not an omitted clause: an ALTER that
 // simply leaves WHERE out keeps the old filter.
 func TestAuditGeneralClearingTheFilterRemovesIt(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editText(t, form, "Filter predicate", "")
 	if err := apply(t.Context()); err != nil {
@@ -244,8 +244,8 @@ func TestAuditGeneralClearingTheFilterRemovesIt(t *testing.T) {
 // in the statement, which is what the pairing test above cannot prove on its
 // own: this pins the value that actually reaches the server.
 func TestAuditGeneralWritesTheChosenFailureAction(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editSelect(t, form, "On audit log failure", "Fail operation")
 	if err := apply(t.Context()); err != nil {
@@ -259,8 +259,8 @@ func TestAuditGeneralWritesTheChosenFailureAction(t *testing.T) {
 // An enabled audit refuses every ALTER but the state toggle, so the page's
 // apply has to come out as off, alter, on — in that order.
 func TestAuditGeneralApplyOnAnEnabledAuditTurnsItOffAndBackOn(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("Rollover"), auditRows(), auditEnabled("Rollover", true))
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("Rollover")), inst)
+	sc, inst := newGConn(t, auditByName("Rollover"), auditRows(), auditEnabled("Rollover", true))
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("Rollover")), inst)
 
 	editText(t, form, "Queue delay", "3000")
 	if err := apply(t.Context()); err != nil {
@@ -284,8 +284,8 @@ func TestAuditGeneralApplyOnAnEnabledAuditTurnsItOffAndBackOn(t *testing.T) {
 // Renaming goes last, so the ALTER above it still addresses the name the
 // server has.
 func TestAuditGeneralRenamesLast(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows(), auditEnabled("HIPAA", false))
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	editText(t, form, "Audit name", "HIPAA2")
 	editText(t, form, "Queue delay", "4000")
@@ -317,7 +317,7 @@ const auditNameReadMark = "WHERE  a.name = @p1"
 func TestAuditApplyFailureMarksAnAuditLeftDisabled(t *testing.T) {
 	// HIPAA's catalog row is is_state_enabled = 0 — the audit the window
 	// switched off and could not switch back on.
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows())
 	base := errors.New("Audit 'HIPAA' failed to start")
 	before := len(inst.Reads(auditNameReadMark))
 
@@ -341,7 +341,7 @@ func TestAuditApplyFailureMarksAnAuditLeftDisabled(t *testing.T) {
 // user has to retype.
 func TestAuditApplyFailureLeavesAStillRunningAuditAlone(t *testing.T) {
 	// Rollover's catalog row is is_state_enabled = 1.
-	sc, _ := newFakeConn(t, auditByName("Rollover"), auditRows())
+	sc, _ := newGConn(t, auditByName("Rollover"), auditRows())
 	base := errors.New("permission denied")
 
 	err := auditApplyFailure(t.Context(), sc, "Rollover", true, base)
@@ -356,7 +356,7 @@ func TestAuditApplyFailureLeavesAStillRunningAuditAlone(t *testing.T) {
 // An audit that was already off cannot have been left off, so the re-read is
 // not worth a round trip.
 func TestAuditApplyFailureSkipsTheReadForADisabledAudit(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows())
 	base := errors.New("permission denied")
 	// Against the count after connecting: gosmo.NewServer reads the instance.
 	before := inst.QueryCount()
@@ -374,10 +374,10 @@ func TestAuditApplyFailureSkipsTheReadForADisabledAudit(t *testing.T) {
 // committed one — and the audit here is still reported running, so the error
 // reaches the sheet unmarked and the edits survive.
 func TestAuditGeneralApplyReportsAFailedReEnable(t *testing.T) {
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		auditByName("Rollover"), auditRows(), auditEnabled("Rollover", true),
 		fakeResponse{match: "STATE = ON", err: errors.New("Audit 'Rollover' failed to start")})
-	form, apply := loadPage(t, pageAuditGeneral(sc, new("Rollover")), inst)
+	form, apply := loadPageG(t, pageAuditGeneral(sc, new("Rollover")), inst)
 
 	editSelect(t, form, "Audit destination", "Security Log")
 	err := apply(t.Context())
@@ -433,8 +433,8 @@ func TestAuditQueueDelayRowRefusesSubSecondDelays(t *testing.T) {
 // The page and the New Audit dialog must share the row, so the rule cannot
 // drift between them: both go through auditQueueDelayRow.
 func TestAuditGeneralQueueDelayRowIsTheValidatedOne(t *testing.T) {
-	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
-	form, _ := loadPage(t, pageAuditGeneral(sc, new("HIPAA")), inst)
+	sc, inst := newGConn(t, auditByName("HIPAA"), auditRows())
+	form, _ := loadPageG(t, pageAuditGeneral(sc, new("HIPAA")), inst)
 
 	row := textRow(t, form, "Queue delay")
 	row.Edit("500")

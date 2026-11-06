@@ -22,7 +22,7 @@ import (
 // context's.
 func commandTree() *spec.Tree {
 	return newCommandTree(cmd.Deps{LoadConfig: config.LoadReadOnly, Connect: db.Connect, OpenSession: cmd.OpenQuerySession,
-		Catalog: cmd.ServerCatalog, Writer: cmd.ServerWriter})
+		Catalog: cmd.ServerCatalog})
 }
 
 // newCommandTree is commandTree over d, so tests can stand in for the config

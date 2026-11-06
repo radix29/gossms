@@ -80,7 +80,7 @@ func TestServerTriggerScriptsAndDrops(t *testing.T) {
 }
 
 func TestServerTriggerDropStatement(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	err := objectOps[NodeServerTrigger].drop(t.Context(), sc,
 		nodeData{Type: NodeServerTrigger, Name: "ddl_audit"})
 	if err != nil {
@@ -112,7 +112,7 @@ func serverTriggerRows() fakeResponse {
 // icon is the same either way, so a loader that drops the flag hides that the
 // policy is not being enforced.
 func TestServerTriggersFolderLabelsTheDisabledOne(t *testing.T) {
-	sc, _ := newFakeConn(t, serverTriggerRows())
+	sc, _ := newGConn(t, serverTriggerRows())
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 
 	children, err := loadServerTriggersChildren(l, &explorerNode{data: nodeData{Type: NodeServerTriggers, conn: sc}})
@@ -159,7 +159,7 @@ func TestServerTriggerMenuNamesTheOppositeState(t *testing.T) {
 // The Details pane reads gosmo independently of the tree, so it is its own
 // chance to list the wrong thing.
 func TestServerTriggersFolderDetailListsEveryTrigger(t *testing.T) {
-	sc, _ := newFakeConn(t, serverTriggerRows())
+	sc, _ := newGConn(t, serverTriggerRows())
 
 	var objs []nodeData
 	cols, rows, err := serverTriggersFolderDetail(context.Background(), sc,

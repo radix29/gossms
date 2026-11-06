@@ -54,9 +54,9 @@ func (s ftState) row() []driver.Value {
 }
 
 // ftOpConn answers findFullTextIndex for appdb's dbo.Notes with s.
-func ftOpConn(t *testing.T, s ftState) (*fakeInstance, *explorerNode) {
+func ftOpConn(t *testing.T, s ftState) (*gFake, *explorerNode) {
 	t.Helper()
-	sc, inst := newFakeConn(t, dbByNameResp("appdb", 5),
+	sc, inst := newGConn(t, dbByNameResp("appdb", 5),
 		fakeResponse{match: "FROM   sys.tables t", db: "appdb", cols: 12, rows: [][]driver.Value{
 			{int64(101), "dbo", "Notes", time.Time{}, time.Time{}, false, false, false, false, false, false, false},
 		}},
@@ -67,7 +67,7 @@ func ftOpConn(t *testing.T, s ftState) (*fakeInstance, *explorerNode) {
 
 // setFTState changes what the index read answers from now on. The script is
 // replaced, not edited: a read in flight holds a pointer into the old one.
-func setFTState(inst *fakeInstance, s ftState) {
+func setFTState(inst *gFake, s ftState) {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	responses := slices.Clone(inst.responses)
@@ -150,7 +150,7 @@ func TestFullTextIndexOpsRefuseWhatTheServerWouldIgnore(t *testing.T) {
 // the server answers with Msg 7658.
 func TestFullTextIndexOpOnATableWithoutOne(t *testing.T) {
 	a := ftTestApp()
-	sc, inst := newFakeConn(t, dbByNameResp("appdb", 5),
+	sc, inst := newGConn(t, dbByNameResp("appdb", 5),
 		fakeResponse{match: "FROM   sys.tables t", db: "appdb", cols: 12, rows: [][]driver.Value{
 			{int64(103), "dbo", "Plain", time.Time{}, time.Time{}, false, false, false, false, false, false, false},
 		}},

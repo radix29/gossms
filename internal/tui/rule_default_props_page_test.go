@@ -7,7 +7,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Rule and Default Properties, driven through fakedb_test.go.
+// Rule and Default Properties, driven through gosmotest_fixtures_test.go.
 //
 // The two families are the same sys.objects row under two type codes, and the
 // responses below are matched on exactly that: "o.type = 'R'" and
@@ -47,7 +47,7 @@ func moduleDefinitionResponse(qualified string, definition driver.Value) fakeRes
 func TestRuleGeneralShowsItsDefinition(t *testing.T) {
 	const body = "CREATE RULE dbo.PhoneRule AS @value LIKE '[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'"
 	sc, inst := newTypePropConn(t, ruleResponses(body)...)
-	form, apply := loadPage(t, rulePropPages(sc, propTypeDB, "dbo", "PhoneRule")[0], inst)
+	form, apply := loadPageG(t, rulePropPages(sc, propTypeDB, "dbo", "PhoneRule")[0], inst)
 
 	if got := staticValue(t, form, "Name"); got != "PhoneRule" {
 		t.Errorf("Name is %q", got)
@@ -63,7 +63,7 @@ func TestRuleGeneralShowsItsDefinition(t *testing.T) {
 func TestDefaultGeneralShowsItsDefinition(t *testing.T) {
 	const body = "CREATE DEFAULT dbo.TodayDefault AS GETDATE()"
 	sc, inst := newTypePropConn(t, defaultResponses(body)...)
-	form, apply := loadPage(t, defaultPropPages(sc, propTypeDB, "dbo", "TodayDefault")[0], inst)
+	form, apply := loadPageG(t, defaultPropPages(sc, propTypeDB, "dbo", "TodayDefault")[0], inst)
 
 	if got := staticValue(t, form, "Name"); got != "TodayDefault" {
 		t.Errorf("Name is %q", got)
@@ -81,7 +81,7 @@ func TestDefaultGeneralShowsItsDefinition(t *testing.T) {
 // body, which is not a state the catalog can hold.
 func TestRuleGeneralReportsAnUnreadableDefinition(t *testing.T) {
 	sc, inst := newTypePropConn(t, ruleResponses("")...)
-	form, _ := loadPage(t, rulePropPages(sc, propTypeDB, "dbo", "PhoneRule")[0], inst)
+	form, _ := loadPageG(t, rulePropPages(sc, propTypeDB, "dbo", "PhoneRule")[0], inst)
 
 	for _, r := range form.Rows() {
 		if _, ok := r.(*propsheet.EditorRow); ok {

@@ -47,7 +47,7 @@ func shrinkFilesTestDialog(t *testing.T, sc *db.ServerConn) *ShrinkFilesDialog {
 // It opens as SSMS does — Data, PRIMARY, the primary file, Release unused
 // space — and that scripts TRUNCATEONLY.
 func TestShrinkFilesDefaultsToReleasingThePrimaryFile(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -78,7 +78,7 @@ func TestShrinkFilesDefaultsToReleasingThePrimaryFile(t *testing.T) {
 // The pickers narrow in order, and the file scripted is the one on screen —
 // not the first of the list, which a page ignoring the selection would pass.
 func TestShrinkFilesPickersNarrowToTheChosenFile(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -111,7 +111,7 @@ func TestShrinkFilesPickersNarrowToTheChosenFile(t *testing.T) {
 // SHRINKFILE's own 0 stops at the creation size, so a never-shrunk file would
 // silently stay put — and refuses one above the file's current size.
 func TestShrinkFilesReorganizeSendsTheTarget(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -146,7 +146,7 @@ func TestShrinkFilesReorganizeSendsTheTarget(t *testing.T) {
 // 8.25 MB file sends 9 — a no-op — not 8, a real shrink; 9 is also the most
 // it accepts.
 func TestShrinkFilesDefaultTargetRoundsTheSizeUp(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -167,7 +167,7 @@ func TestShrinkFilesDefaultTargetRoundsTheSizeUp(t *testing.T) {
 // A log's minimum is only its used space, which a log shrink can't promise to
 // reach: the note says so for a log file and not for a data file.
 func TestShrinkFilesLogMinimumIsALowerBound(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -193,7 +193,7 @@ func TestShrinkFilesLogMinimumIsALowerBound(t *testing.T) {
 // active VLF, above the used space — as the minimum, and no longer calls it
 // a lower bound.
 func TestShrinkFilesLogMinimumIsTheFloorWhenRead(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := &ShrinkFilesDialog{dbName: "AppDB"}
 	d.sc = sc
 	d.pages = []string{"General"}
@@ -249,7 +249,7 @@ func TestShrinkFilesFetchReadsTheLogFloors(t *testing.T) {
 		{"read", fakeResponse{match: "dm_db_log_info", db: "AppDB", cols: 2, rows: [][]driver.Value{{int64(2), int64(98304)}}}, map[int]int64{2: 98304}},
 		{"refused", fakeResponse{match: "dm_db_log_info", err: errors.New("VIEW SERVER STATE permission was denied")}, nil},
 	} {
-		sc, _ := newFakeConn(t, c.floor, files)
+		sc, _ := newGConn(t, c.floor, files)
 		pf, err := (&ShrinkFilesDialog{dbName: "AppDB"}).fetchPrefetch(context.Background(), sc)
 		if err != nil {
 			t.Fatalf("%s: fetch: %v", c.name, err)
@@ -275,7 +275,7 @@ func TestShrinkFileMinimumIsUsedSpaceRoundedUp(t *testing.T) {
 // and shows no size figures — the catalog has none. Picking another type
 // gives the choices back.
 func TestShrinkFilesFilestreamOnlyEmpties(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := &ShrinkFilesDialog{dbName: "AppDB"}
 	d.sc = sc
 	d.pages = []string{"General"}

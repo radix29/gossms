@@ -1,13 +1,13 @@
 package tui
 
 import (
-	"database/sql/driver"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -331,11 +331,11 @@ func TestYesNo(t *testing.T) {
 
 // compressionDefaultResponse answers loadCompressionDefault's read of the
 // server's "backup compression default".
-func compressionDefaultResponse(inUse int64) fakeResponse {
-	return fakeResponse{match: "sys.configurations", cols: 9, rows: [][]driver.Value{{
+func compressionDefaultResponse(inUse int64) gRule {
+	return gRule{"sys.configurations", gosmotest.Rows([]any{
 		int64(1579), "backup compression default", inUse, inUse, int64(0), int64(1),
 		true, false, "Enable compression of backups by default",
-	}}}
+	})}
 }
 
 // The dialog opens on the server default, never on "Compress": Express and Web
@@ -357,7 +357,7 @@ func TestBackupCompressionDefaultsToTheServerSetting(t *testing.T) {
 
 // A refused or failed read leaves the entry bare rather than guessing.
 func TestBackupCompressionDefaultUnreadLeavesTheLabelBare(t *testing.T) {
-	_, d := backupDestDialog(t, fakeResponse{match: "sys.configurations", err: errors.New("denied")})
+	_, d := backupDestDialog(t, gRule{"sys.configurations", gosmotest.Fail(errors.New("denied"))})
 	if got := d.ddCompress.Value(); got != compressDefaultLabel {
 		t.Errorf("first entry = %q, want %q", got, compressDefaultLabel)
 	}
@@ -375,10 +375,10 @@ func TestBackupCompressionPinnedOnExpressAndWeb(t *testing.T) {
 		{"Web", "Web Edition (64-bit)", 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			info := serverInfoResponse()
-			info.rows[0][1] = tc.edition
-			info.rows[0][8] = tc.engine
-			sc, _ := newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse()})
+			sc := backupFake(t, func(i *gosmotest.Info) {
+				i.Edition = tc.edition
+				i.EngineEdition = int(tc.engine)
+			})
 
 			_, d := backupDialogOn(t, sc)
 			if d.ddCompress.Enabled() {

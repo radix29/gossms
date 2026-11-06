@@ -61,6 +61,9 @@ func agentJobResponses(job []driver.Value) []fakeResponse {
 			jobRow("Backup log", "Database Maintenance", "sa", true, 0, 0, ""),
 			job,
 		}},
+		// The Agent state read (gosmo's xp_sqlagent_enum_jobs): no job running.
+		// fakedb answered it empty unscripted; gosmotest fails on it.
+		{match: "xp_sqlagent_enum_jobs", cols: 2},
 	}
 }
 

@@ -51,14 +51,15 @@ func TestJobsWithoutSchedulesListsAFailedJobAsUnknown(t *testing.T) {
 			jobRow("orphan", "Replication", "appuser", false, 0, 0, ""),
 		}},
 	}, jobSchedulesResponses("job-broken", "job-scheduled")...)
-	sc, inst := newFakeConn(t, responses...)
+	responses = append(responses, fakeResponse{match: "xp_sqlagent_enum_jobs", cols: 2})
+	sc, _ := newGConn(t, responses...)
 
 	cols, rows, err := agentReportDetail(context.Background(), sc, "Jobs Without Schedules")
 	if err != nil {
 		t.Fatalf("agentReportDetail: %v", err)
 	}
 	if len(rows) != 2 {
-		t.Fatalf("got %d rows, want 2 (unanswered: %v)", len(rows), inst.unmatched)
+		t.Fatalf("got %d rows, want 2 ", len(rows))
 	}
 	schedIdx := -1
 	for i, c := range cols {
@@ -85,7 +86,7 @@ func TestJobsWithoutSchedulesListsAFailedJobAsUnknown(t *testing.T) {
 // With the context gone, report the cancellation rather than every job as
 // unverifiable.
 func TestJobsWithoutSchedulesReportsCancellation(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		fakeResponse{match: "FROM   msdb.dbo.sysjobs j", cols: jobCols, rows: [][]driver.Value{
 			jobRow("orphan", "Replication", "appuser", false, 0, 0, ""),
 		}},

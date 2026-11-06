@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -196,7 +197,9 @@ func TestSQLCompletionTempTableIgnoresDatabasePart(t *testing.T) {
 // to read its catalog.
 func TestCrossDatabaseLoadIsGatedOnAccess(t *testing.T) {
 	for _, accessible := range []bool{false, true} {
-		sc, inst := newFakeConn(t, capabilityResponses(accessible, nil, nil, nil, nil)...)
+		// The catalog read after the probe is refused: only that it was asked matters.
+		sc, inst := newGConn(t, append(capabilityResponses(accessible, nil, nil, nil, nil),
+			fakeResponse{match: "FROM   sys.objects o", err: errors.New("catalog unavailable")})...)
 		a := newTestApp()
 		before := inst.QueryCount()
 

@@ -54,16 +54,16 @@ func assertGridLists(t *testing.T, grid *controls.DataGrid, want ...string) {
 
 // -- Owned Schemas -----------------------------------------------------------
 
-func loadOwnedSchemasPage(t *testing.T, principal string) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+func loadOwnedSchemasPage(t *testing.T, principal string) (*gFake, propApply, *propsheet.Form, *controls.DataGrid) {
 	t.Helper()
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseSchemaResponses()...)
 	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
 	responses = append(responses, databaseRoleResponses()...)
 	responses = append(responses, schemaObjectCountResponses()...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := principal
-	form, apply := loadPage(t, pagePrincipalOwnedSchemas(sc, principalDatabase, &name, "role"), inst)
+	form, apply := loadPageG(t, pagePrincipalOwnedSchemas(sc, principalDatabase, &name, "role"), inst)
 	return inst, apply, form, plainGrid(t, form)
 }
 
@@ -145,14 +145,14 @@ func TestOwnedSchemasUntouchedPageWritesNothing(t *testing.T) {
 
 // -- Owned Roles, database ---------------------------------------------------
 
-func loadOwnedRolesPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+func loadOwnedRolesPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *controls.DataGrid) {
 	t.Helper()
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseRoleResponses()...)
 	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := principalRole
-	form, apply := loadPage(t, pageRoleOwnedRoles(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageRoleOwnedRoles(sc, principalDatabase, &name), inst)
 	return inst, apply, form, plainGrid(t, form)
 }
 
@@ -178,12 +178,12 @@ func TestOwnedRolesTransfersTheRoleTheRowIsOn(t *testing.T) {
 
 // -- Owned Roles, server -----------------------------------------------------
 
-func loadServerOwnedRolesPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+func loadServerOwnedRolesPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *controls.DataGrid) {
 	t.Helper()
 	responses := append(serverRoleResponses(), loginListResponse())
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := principalSrvRole
-	form, apply := loadPage(t, pageServerRoleOwnedRoles(sc, &name), inst)
+	form, apply := loadPageG(t, pageServerRoleOwnedRoles(sc, &name), inst)
 	return inst, apply, form, plainGrid(t, form)
 }
 

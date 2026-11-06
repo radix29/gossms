@@ -15,7 +15,7 @@ import (
 )
 
 // New Session and Session Properties (xevent_session_*.go), driven through
-// fakedb_test.go. The session under test is zz_trace, the third in
+// gosmotest_fixtures_test.go. The session under test is zz_trace, the third in
 // xeSessionResponses' list, with two events (rpc_completed collecting
 // sql_text, and sql_batch_completed) — every edit lands on the second event,
 // so a page ignoring the selection fails.
@@ -87,12 +87,13 @@ func xeEventColumnResponses() []fakeResponse {
 
 // xePropsConn is a connection answering the session name's by-name read, the
 // catalog and the columns.
-func xePropsConn(t *testing.T, name string) (*db.ServerConn, *fakeInstance) {
+func xePropsConn(t *testing.T, name string) (*db.ServerConn, *gFake) {
 	t.Helper()
 	responses := xeSessionByName(name)
 	responses = append(responses, xeCatalogResponses()...)
 	responses = append(responses, xeEventColumnResponses()...)
-	return newFakeConn(t, responses...)
+	responses = append(responses, gEmpty("sys.dm_xe_object_columns", "sys.dm_os_sys_memory", "cpu_count, hyperthread_ratio")...) // the memory read is the status bar's, racing the test
+	return newGConn(t, responses...)
 }
 
 func xeTestHost(sc *db.ServerConn) xeHost {
@@ -110,7 +111,7 @@ func formGrids(f *propsheet.Form) []*controls.DataGrid {
 	return out
 }
 
-func statementsContaining(inst *fakeInstance, s string) []string {
+func statementsContaining(inst *gFake, s string) []string {
 	var out []string
 	for _, st := range inst.Statements() {
 		if strings.Contains(st, s) {
@@ -185,7 +186,7 @@ func TestXEClauseQuotesByType(t *testing.T) {
 // re-adds that event only; the first is not named at all.
 func TestXEEventsPageAltersOnlyTheEditedEvent(t *testing.T) {
 	sc, inst := xePropsConn(t, "zz_trace")
-	f, apply := loadPage(t, pageXESessionEvents(xeTestHost(sc), "zz_trace"), inst)
+	f, apply := loadPageG(t, pageXESessionEvents(xeTestHost(sc), "zz_trace"), inst)
 	grids := formGrids(f)
 	lib, sel, acts, fields := grids[0], grids[1], grids[2], grids[3]
 
@@ -223,7 +224,7 @@ func TestXEEventsPageAltersOnlyTheEditedEvent(t *testing.T) {
 // refused before anything is sent.
 func TestXEEventsPageLibraryAddsAndKeepsOneEvent(t *testing.T) {
 	sc, inst := xePropsConn(t, "zz_trace")
-	f, apply := loadPage(t, pageXESessionEvents(xeTestHost(sc), "zz_trace"), inst)
+	f, apply := loadPageG(t, pageXESessionEvents(xeTestHost(sc), "zz_trace"), inst)
 	grids := formGrids(f)
 	lib, sel := grids[0], grids[1]
 
@@ -255,7 +256,7 @@ func TestXEEventsPageLibraryAddsAndKeepsOneEvent(t *testing.T) {
 // that is not a number is refused.
 func TestXEStoragePageAddsATargetAndRequiresAFilename(t *testing.T) {
 	sc, inst := xePropsConn(t, "zz_trace")
-	f, apply := loadPage(t, pageXESessionStorage(xeTestHost(sc), "zz_trace"), inst)
+	f, apply := loadPageG(t, pageXESessionStorage(xeTestHost(sc), "zz_trace"), inst)
 	tgt, params := formGrids(f)[0], formGrids(f)[1]
 
 	// zz_trace already has both kinds; take the ring_buffer off and put a
@@ -298,7 +299,7 @@ func TestXEStoragePageAddsATargetAndRequiresAFilename(t *testing.T) {
 // wraps the ALTER.
 func TestXEAdvancedPageOnARunningSessionAsksAndRestarts(t *testing.T) {
 	sc, inst := xePropsConn(t, "system_health")
-	f, apply := loadPage(t, pageXESessionAdvanced(sc, xeScope{}, "system_health"), inst)
+	f, apply := loadPageG(t, pageXESessionAdvanced(sc, xeScope{}, "system_health"), inst)
 	if f.ApplyConfirm() != "" {
 		t.Error("an untouched page asks")
 	}
@@ -320,7 +321,7 @@ func TestXEAdvancedPageOnARunningSessionAsksAndRestarts(t *testing.T) {
 // Startup state alone is one ALTER, with no stop window.
 func TestXEGeneralPageWritesStartupStateAlone(t *testing.T) {
 	sc, inst := xePropsConn(t, "system_health")
-	f, apply := loadPage(t, pageXESessionGeneral(sc, xeScope{}, "system_health"), inst)
+	f, apply := loadPageG(t, pageXESessionGeneral(sc, xeScope{}, "system_health"), inst)
 	for _, r := range f.Rows() {
 		if c, ok := r.(*propsheet.CheckRow); ok && c.Label() == "Start at server startup" {
 			c.Edit(true)
@@ -342,8 +343,11 @@ func TestXEGeneralPageWritesStartupStateAlone(t *testing.T) {
 func TestNewXESessionTemplateCreatesAndStarts(t *testing.T) {
 	// The create reads its session back; an empty answer is "not found",
 	// which gosmo takes as the create having worked.
-	sc, inst := newFakeConn(t, append(xeCatalogResponses(),
-		fakeResponse{match: "s.event_retention_mode_desc", arg: "gossms_new", cols: 12})...)
+	// The template's events read their columns in the background: an event
+	// with none scripted answers empty.
+	sc, inst := newGConn(t, append(xeCatalogResponses(),
+		fakeResponse{match: "s.event_retention_mode_desc", arg: "gossms_new", cols: 12},
+		fakeResponse{match: "FROM   sys.dm_xe_object_columns c", cols: 7})...)
 	cat, err := loadXECatalog(context.Background(), sc)
 	if err != nil {
 		t.Fatal(err)
@@ -444,7 +448,7 @@ func TestXETypeHintTellsAMapFromXML(t *testing.T) {
 // leaves every row where it was.
 func TestXEEventsPageListsCollectedGlobalFieldsFirst(t *testing.T) {
 	sc, inst := xePropsConn(t, "zz_trace")
-	f, _ := loadPage(t, pageXESessionEvents(xeTestHost(sc), "zz_trace"), inst)
+	f, _ := loadPageG(t, pageXESessionEvents(xeTestHost(sc), "zz_trace"), inst)
 	sel, acts := formGrids(f)[1], formGrids(f)[2]
 	selectGridRow(t, sel, 0, "sqlserver.rpc_completed")
 	if got := acts.Row(0); got[0] != "Yes" || got[1] != "sqlserver.sql_text" {
@@ -464,7 +468,7 @@ func TestXEEventsPageListsCollectedGlobalFieldsFirst(t *testing.T) {
 // page has nothing to apply.
 func TestXEEventsPageBrowsesReadOnly(t *testing.T) {
 	sc, inst := xePropsConn(t, "zz_trace")
-	f, _ := loadPage(t, pageXESessionEvents(xeTestHost(sc), "zz_trace"), inst)
+	f, _ := loadPageG(t, pageXESessionEvents(xeTestHost(sc), "zz_trace"), inst)
 	grids := formGrids(f)
 	lib, sel, acts, fields := grids[0], grids[1], grids[2], grids[3]
 	f.SetReadOnly(true) // what PropertySheet.SetPageForm does on a gated page

@@ -100,7 +100,7 @@ func TestAnOrdinaryFailureIsNotReportedAsAccessDenied(t *testing.T) {
 // USE that fails, so the user got nine copies of Msg 916 wrapped in gosmo's
 // call stack. One honest line replaces them.
 func TestAnInaccessibleDatabaseExpandsToOneLine(t *testing.T) {
-	sc, _ := newFakeConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
+	sc, _ := newGConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
 	sc.ProbeCapabilities(sc.Server.Context())
 
 	node := &explorerNode{label: "backup_test", data: nodeData{Type: NodeDatabase, DBName: "backup_test", conn: sc}}
@@ -122,7 +122,7 @@ func TestAnInaccessibleDatabaseExpandsToOneLine(t *testing.T) {
 // TestAnAccessibleDatabaseStillExpands is the other direction — the check must
 // not cost every login its folders. HAS_DBACCESS answering 1 keeps them.
 func TestAnAccessibleDatabaseStillExpands(t *testing.T) {
-	sc, _ := newFakeConn(t, capabilityResponses(true, nil, nil, nil, nil)...)
+	sc, _ := newGConn(t, capabilityResponses(true, nil, nil, nil, nil)...)
 	sc.ProbeCapabilities(sc.Server.Context())
 
 	node := &explorerNode{label: "appdb", data: nodeData{Type: NodeDatabase, DBName: "appdb", conn: sc}}
@@ -162,17 +162,26 @@ func TestAFolderRefusalLosesThePlumbingButKeepsTheReason(t *testing.T) {
 // withoutResponses is configResponses minus the reads a login without VIEW
 // SERVER STATE is refused, which is how the fake models that login: an
 // unmatched query is an error, the same as a denial. Pair it with
-// newFakeConnWithoutSysInfo — the connect-time sys.dm_os_sys_info read is
+// newGConnWithoutSysInfo — the connect-time sys.dm_os_sys_info read is
 // refused for the same login, and dropping only one of the two would model a
 // server that refuses one read of a view and serves another.
 //
 // The two are separate responses now; they were not always. sysInfoResponse
 // used to match the view name and so answered both, which is how this test
-// first passed with a CPU count of 16384 — see its comment in fakedb_test.go.
+// first passed with a CPU count of 16384.
+// refusedRead is a read the server denies for want of VIEW SERVER STATE. It is
+// an explicit refusal, not an absent script: gosmotest fails a test on a query
+// nothing answers, where fakedb answered that with an error.
+func refusedRead(match string) fakeResponse {
+	return fakeResponse{match: match, err: errors.New("VIEW SERVER STATE permission was denied")}
+}
+
 func withoutResponses(drop ...string) []fakeResponse {
 	var out []fakeResponse
 	for _, r := range configResponses() {
-		if !slices.Contains(drop, r.match) {
+		if slices.Contains(drop, r.match) {
+			out = append(out, refusedRead(r.match))
+		} else {
 			out = append(out, r)
 		}
 	}
@@ -196,8 +205,8 @@ func TestServerPropertiesPagesSurviveARefusedDMVRead(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.page, func(t *testing.T) {
-			sc, inst := newFakeConnWithoutSysInfo(t, withoutResponses(tt.drop)...)
-			form, _ := loadPage(t, configPage(t, sc, tt.page), inst)
+			sc, inst := newGConnWithoutSysInfo(t, withoutResponses(tt.drop)...)
+			form, _ := loadPageG(t, configPage(t, sc, tt.page), inst)
 
 			got, ok := findStatic(form, tt.label)
 			if !ok {
@@ -219,9 +228,9 @@ func TestServerPropertiesPagesSurviveARefusedDMVRead(t *testing.T) {
 			// the page read the response meant for it: a prepended response
 			// whose match is too broad answers this query instead, and the
 			// page then reports a number out of the wrong row without
-			// erroring. See sysInfoResponse in fakedb_test.go.
-			okSC, okInst := newFakeConn(t, configResponses()...)
-			okForm, _ := loadPage(t, configPage(t, okSC, tt.page), okInst)
+			// erroring.
+			okSC, okInst := newGConn(t, configResponses()...)
+			okForm, _ := loadPageG(t, configPage(t, okSC, tt.page), okInst)
 			if got, _ := findStatic(okForm, tt.label); got != tt.granted {
 				t.Errorf("%s = %q with the read allowed, want the scripted %q", tt.label, got, tt.granted)
 			}
@@ -232,8 +241,8 @@ func TestServerPropertiesPagesSurviveARefusedDMVRead(t *testing.T) {
 // TestServerGeneralRendersUnreadableMemoryAsNA covers the third page, which
 // takes its memory from the same refused read.
 func TestServerGeneralRendersUnreadableMemoryAsNA(t *testing.T) {
-	sc, inst := newFakeConnWithoutSysInfo(t, withoutResponses("sys.dm_os_sys_memory")...)
-	form, _ := loadPage(t, pageServerGeneral(sc), inst)
+	sc, inst := newGConnWithoutSysInfo(t, withoutResponses("sys.dm_os_sys_memory")...)
+	form, _ := loadPageG(t, pageServerGeneral(sc), inst)
 
 	if got, _ := findStatic(form, "Memory"); got != unreadableValue {
 		t.Errorf("Memory = %q, want %q", got, unreadableValue)
@@ -250,8 +259,8 @@ func TestServerGeneralRendersUnreadableMemoryAsNA(t *testing.T) {
 // with formatMB, so one said "16384 MB" and the other "16,384 MB" — two
 // spellings of one number, which read as two different readings.
 func TestServerGeneralRendersMemoryTheWayTheDetailPaneDoes(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponses()...)
-	form, _ := loadPage(t, pageServerGeneral(sc), inst)
+	sc, inst := newGConn(t, configResponses()...)
+	form, _ := loadPageG(t, pageServerGeneral(sc), inst)
 
 	// The same MB figure configResponses scripts for sys.dm_os_sys_memory,
 	// through the helper the Details pane renders it with.
@@ -272,8 +281,8 @@ func TestServerGeneralRendersMemoryTheWayTheDetailPaneDoes(t *testing.T) {
 // narrow one would be wrong the other way, on 2019 and earlier where it does
 // not exist.
 func TestADeniedReadNamesTheLeastPrivilegeThatFixesIt(t *testing.T) {
-	sc, inst := newFakeConnWithoutSysInfo(t, withoutResponses("sys.dm_os_sys_memory")...)
-	form, _ := loadPage(t, pageServerGeneral(sc), inst)
+	sc, inst := newGConnWithoutSysInfo(t, withoutResponses("sys.dm_os_sys_memory")...)
+	form, _ := loadPageG(t, pageServerGeneral(sc), inst)
 
 	for _, want := range []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"} {
 		if !hasNoteMentioning(form, want) {
@@ -289,9 +298,9 @@ func TestADeniedReadNamesTheLeastPrivilegeThatFixesIt(t *testing.T) {
 func TestNumberOfUsersIsUnreadableWithoutViewDefinition(t *testing.T) {
 	responses := append(databaseGeneralResponses("appuser"),
 		capabilityResponses(true, nil, nil, nil, []string{"VIEW DEFINITION"})...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	sc.ProbeCapabilities(sc.Server.Context())
-	form, _ := loadPage(t, pageDatabaseGeneral(sc, genDatabase), inst)
+	form, _ := loadPageG(t, pageDatabaseGeneral(sc, genDatabase), inst)
 
 	if got, _ := findStatic(form, "Number of users"); got != unreadableValue {
 		t.Errorf("Number of users = %q, want %q — the login can only see some of them", got, unreadableValue)
@@ -301,9 +310,9 @@ func TestNumberOfUsersIsUnreadableWithoutViewDefinition(t *testing.T) {
 	// indistinguishable from having deleted the row.
 	granted := append(databaseGeneralResponses("appuser"),
 		capabilityResponses(true, nil, nil, []string{"VIEW DEFINITION"}, nil)...)
-	okSC, okInst := newFakeConn(t, granted...)
+	okSC, okInst := newGConn(t, granted...)
 	okSC.ProbeCapabilities(okSC.Server.Context())
-	okForm, _ := loadPage(t, pageDatabaseGeneral(okSC, genDatabase), okInst)
+	okForm, _ := loadPageG(t, pageDatabaseGeneral(okSC, genDatabase), okInst)
 	if got, _ := findStatic(okForm, "Number of users"); got != "1" {
 		t.Errorf("Number of users = %q with VIEW DEFINITION, want the scripted count", got)
 	}
@@ -312,8 +321,8 @@ func TestNumberOfUsersIsUnreadableWithoutViewDefinition(t *testing.T) {
 	// the arm that separates the two gates: blanking on "not known to be
 	// granted" also blanks here, and a sysadmin whose probe timed out would
 	// read N/A for every value on every page.
-	unprobed, unprobedInst := newFakeConn(t, databaseGeneralResponses("appuser")...)
-	unprobedForm, _ := loadPage(t, pageDatabaseGeneral(unprobed, genDatabase), unprobedInst)
+	unprobed, unprobedInst := newGConn(t, databaseGeneralResponses("appuser")...)
+	unprobedForm, _ := loadPageG(t, pageDatabaseGeneral(unprobed, genDatabase), unprobedInst)
 	if got, _ := findStatic(unprobedForm, "Number of users"); got != "1" {
 		t.Errorf("Number of users = %q without a probe, want the count — an unknown right must fail open", got)
 	}
@@ -325,18 +334,18 @@ func TestNumberOfUsersIsUnreadableWithoutViewDefinition(t *testing.T) {
 func TestAFilteredPermissionsGridSaysSo(t *testing.T) {
 	denied := append(serverPermissionsResponses(),
 		capabilityResponses(true, nil, []string{"VIEW ANY DEFINITION"}, nil, nil)...)
-	sc, inst := newFakeConn(t, denied...)
+	sc, inst := newGConn(t, denied...)
 	sc.ProbeCapabilities(sc.Server.Context())
-	form, _ := loadPage(t, pageServerPermissions(sc), inst)
+	form, _ := loadPageG(t, pageServerPermissions(sc), inst)
 	if !hasNoteMentioning(form, "VIEW ANY DEFINITION") {
 		t.Error("a login that cannot see every permission is not told so")
 	}
 
 	granted := append(serverPermissionsResponses(),
 		capabilityResponses(true, []string{"VIEW ANY DEFINITION"}, nil, nil, nil)...)
-	okSC, okInst := newFakeConn(t, granted...)
+	okSC, okInst := newGConn(t, granted...)
 	okSC.ProbeCapabilities(okSC.Server.Context())
-	okForm, _ := loadPage(t, pageServerPermissions(okSC), okInst)
+	okForm, _ := loadPageG(t, pageServerPermissions(okSC), okInst)
 	if hasNoteMentioning(okForm, "VIEW ANY DEFINITION") {
 		t.Error("a login that can see everything is warned anyway")
 	}

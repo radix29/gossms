@@ -45,7 +45,7 @@ func isWriteLabel(label string) bool {
 // Note is set, and it sets it whenever the item has rights to ask about —
 // whether or not they are held, so an unprobed connection is enough here.
 func TestEveryWriteMenuItemIsGated(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	a := newTestApp()
 	for nt := NodeType(0); nt <= NodeError; nt++ {
 		node := &explorerNode{label: "x", data: nodeData{

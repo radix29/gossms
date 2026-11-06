@@ -81,13 +81,13 @@ func serverTraceFlagCommands(d Deps) []*spec.Command {
 
 func (d Deps) serverTraceFlagList(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	flags, err := cat.TraceFlags(ctx)
+	flags, err := sc.Server.TraceFlags(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -153,20 +153,20 @@ func (d Deps) setTraceFlags(ctx context.Context, inv *spec.Invocation, on bool) 
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, _, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	read, err := cat.TraceFlags(ctx)
+	read, err := sc.Server.TraceFlags(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
 	before := globalFlags(read)
 	apply := func(ctx context.Context) error {
 		for _, f := range flags {
-			if err := w.SetTraceFlag(ctx, f, on); err != nil {
+			if err := sc.Server.SetTraceFlag(ctx, f, on); err != nil {
 				return err
 			}
 		}
@@ -198,7 +198,7 @@ func (d Deps) setTraceFlags(ctx context.Context, inv *spec.Invocation, on bool) 
 			e.Hint = "SQL Server knows no trace flag with this number; the highest it accepts varies by version."
 		}
 	}
-	read, err = cat.TraceFlags(ctx)
+	read, err = sc.Server.TraceFlags(ctx)
 	if err != nil {
 		if werr != nil {
 			return res, werr

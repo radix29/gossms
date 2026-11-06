@@ -69,7 +69,7 @@ func loadServerFolder(t *testing.T, sc *db.ServerConn, folder NodeType) []*explo
 // A snapshot must appear once, under its own folder — never also in the user
 // list the Databases node builds.
 func TestDatabasesFolderExcludesSnapshots(t *testing.T) {
-	sc, _ := newFakeConn(t, databasesListResp(
+	sc, _ := newGConn(t, databasesListResp(
 		databaseRow(1, "master", 0),
 		databaseRow(7, "appdb", 0),
 		databaseRow(9, "appdb_snapshot", 7),
@@ -84,7 +84,7 @@ func TestDatabasesFolderExcludesSnapshots(t *testing.T) {
 // The folder is listed on a server with no snapshots too: it is where New
 // Snapshot lives, so an empty one is exactly the case that needs it.
 func TestDatabaseSnapshotsFolderIsListedWithNoSnapshots(t *testing.T) {
-	sc, _ := newFakeConn(t, databasesListResp(databaseRow(7, "appdb", 0)))
+	sc, _ := newGConn(t, databasesListResp(databaseRow(7, "appdb", 0)))
 	children := loadServerFolder(t, sc, NodeDatabases)
 	labels := labelsOfNodes(children)
 	if !slices.Contains(labels, "Database Snapshots") {
@@ -99,7 +99,7 @@ func TestDatabaseSnapshotsFolderIsListedWithNoSnapshots(t *testing.T) {
 // The folder lists snapshots with their source carried on the node: Restore
 // acts on the source, and the label is the snapshot's own name alone.
 func TestDatabaseSnapshotsFolderLoader(t *testing.T) {
-	sc, _ := newFakeConn(t, snapshotListResp(
+	sc, _ := newGConn(t, snapshotListResp(
 		snapshotRow(9, "appdb_snapshot", "appdb", 7),
 		snapshotRow(10, "orphan_snapshot", "", 0),
 	))
@@ -128,7 +128,7 @@ func TestDatabaseSnapshotsFolderLoader(t *testing.T) {
 // A snapshot is read-only: Query Store, Storage and Security lead to pages
 // that write, so a snapshot gets the object families and nothing else.
 func TestSnapshotOffersOnlyTheObjectFolders(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	loader := childLoaders[NodeDatabaseSnapshot]
 	children, err := loader(loaderCtx{ctx: context.Background(), sc: sc},
 		&explorerNode{data: nodeData{Type: NodeDatabaseSnapshot, DBName: "appdb_snapshot",
@@ -150,7 +150,7 @@ func TestSnapshotOffersOnlyTheObjectFolders(t *testing.T) {
 
 // The Detail Browser's own folder listing.
 func TestDatabaseSnapshotsFolderDetail(t *testing.T) {
-	sc, _ := newFakeConn(t, snapshotListResp(snapshotRow(9, "appdb_snapshot", "appdb", 7)))
+	sc, _ := newGConn(t, snapshotListResp(snapshotRow(9, "appdb_snapshot", "appdb", 7)))
 	var objs []nodeData
 	cols, rows, err := databaseSnapshotsFolderDetail(context.Background(), sc,
 		&explorerNode{data: nodeData{Type: NodeDatabaseSnapshots, conn: sc}}, &objs)
@@ -173,7 +173,7 @@ func TestDatabaseSnapshotsFolderDetail(t *testing.T) {
 // read-only — the Database Properties dialog would offer a recovery model and
 // a file list to a database that refuses both.
 func TestDatabaseSnapshotPropertiesAreReadOnly(t *testing.T) {
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		snapshotListResp(snapshotRow(9, "appdb_snapshot", "appdb", 7)),
 		// Server.DatabaseFiles reads sys.master_files, not
 		// sys.database_files: a snapshot's own files are recorded there and
@@ -187,7 +187,7 @@ func TestDatabaseSnapshotPropertiesAreReadOnly(t *testing.T) {
 		t.Fatalf("the dialog has %d pages, want General and Files", len(pages))
 	}
 	for _, p := range pages {
-		form, apply := loadPage(t, p, inst)
+		form, apply := loadPageG(t, p, inst)
 		if apply != nil {
 			t.Errorf("page %q has an apply — a snapshot cannot be written to", p.title)
 		}
@@ -196,7 +196,7 @@ func TestDatabaseSnapshotPropertiesAreReadOnly(t *testing.T) {
 		}
 	}
 
-	general, _ := loadPage(t, pages[0], inst)
+	general, _ := loadPageG(t, pages[0], inst)
 	if got := staticValue(t, general, "Source database"); got != "appdb" {
 		t.Errorf("Source database = %q, want appdb", got)
 	}
@@ -204,7 +204,7 @@ func TestDatabaseSnapshotPropertiesAreReadOnly(t *testing.T) {
 		t.Errorf("Name = %q", got)
 	}
 
-	files, _ := loadPage(t, pages[1], inst)
+	files, _ := loadPageG(t, pages[1], inst)
 	grid := firstGrid(t, files)
 	var fileRows [][]string
 	for i := 0; grid.Row(i) != nil; i++ {
@@ -244,7 +244,7 @@ func TestDatabaseSnapshotDetailShowsSizeOnDisk(t *testing.T) {
 		{"no VIEW SERVER STATE", nil, "N/A"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			sc, _ := newFakeConn(t, snapshotListResp(snapshotRow(9, "appdb_snapshot", "appdb", 7)), snapshotFilesResp(c.onDiskKB))
+			sc, _ := newGConn(t, snapshotListResp(snapshotRow(9, "appdb_snapshot", "appdb", 7)), snapshotFilesResp(c.onDiskKB))
 			_, rows, err := databaseSnapshotDetail(context.Background(), sc,
 				&explorerNode{data: nodeData{Type: NodeDatabaseSnapshot, Name: "appdb_snapshot", conn: sc}})
 			if err != nil {
@@ -265,9 +265,9 @@ func TestDatabaseSnapshotDetailShowsSizeOnDisk(t *testing.T) {
 // General page says so rather than showing an empty value that reads as
 // "not read yet".
 func TestDatabaseSnapshotPropertiesSayWhenTheSourceIsGone(t *testing.T) {
-	sc, inst := newFakeConn(t, snapshotListResp(snapshotRow(10, "orphan_snapshot", "", 0)))
+	sc, inst := newGConn(t, snapshotListResp(snapshotRow(10, "orphan_snapshot", "", 0)))
 	pages := databaseSnapshotPropPages(sc, "orphan_snapshot")
-	general, _ := loadPage(t, pages[0], inst)
+	general, _ := loadPageG(t, pages[0], inst)
 	if got := staticValue(t, general, "Source database"); got == "" || got == "appdb" {
 		t.Errorf("Source database = %q, want a sentence saying the source is gone", got)
 	}

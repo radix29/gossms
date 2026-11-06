@@ -14,14 +14,14 @@ import (
 // "leave it alone" loses the user's edit silently; one sending the empty value
 // is refused by the server with a message about syntax.
 
-func loadRoutePage(t *testing.T, name string, row int) (*fakeInstance, propApply, *propsheet.Form) {
+func loadRoutePage(t *testing.T, name string, row int) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, brokerDBResp(), brokerRowByArg(routeResp(), name, row))
+	sc, inst := newGConn(t, brokerDBResp(), brokerRowByArg(routeResp(), name, row))
 	pages := routePropPages(sc, brokerDB, name)
 	if len(pages) != 1 {
 		t.Fatalf("want one page, got %d", len(pages))
 	}
-	form, apply := loadPage(t, pages[0], inst)
+	form, apply := loadPageG(t, pages[0], inst)
 	return inst, apply, form
 }
 

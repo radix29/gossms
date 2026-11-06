@@ -61,8 +61,8 @@ var statsBefore = time.Date(2026, 10, 1, 3, 0, 0, 0, time.UTC)
 
 func objKey(schema, name string) string { return schema + "." + name }
 
-func indexFakes(t *testing.T) (Catalog, Writer) {
-	return ServerCatalog(&db.ServerConn{Server: newIndexServer(t).Server()}), nil
+func indexFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newIndexServer(t).Server()})
 }
 
 // runIndex runs maint <argv> over s, an ad-hoc connection; dials counts

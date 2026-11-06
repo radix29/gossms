@@ -70,8 +70,8 @@ func membershipResponses() []fakeResponse {
 // way round builds a statement that is still valid T-SQL.
 func TestDatabaseRoleMembersAddsTheNameSelected(t *testing.T) {
 	role := "salesrole"
-	sc, inst := newFakeConn(t, membershipResponses()...)
-	form, apply := loadPage(t, pageRoleMembers(sc, "appdb", &role), inst)
+	sc, inst := newGConn(t, membershipResponses()...)
+	form, apply := loadPageG(t, pageRoleMembers(sc, "appdb", &role), inst)
 
 	chooseSelect(t, form, "Add member", "carol")
 	clickButton(t, form, "Add")
@@ -88,8 +88,8 @@ func TestDatabaseRoleMembersAddsTheNameSelected(t *testing.T) {
 // removal.
 func TestDatabaseRoleMembersRemovesTheRowSelected(t *testing.T) {
 	role := "salesrole"
-	sc, inst := newFakeConn(t, membershipResponses()...)
-	form, apply := loadPage(t, pageRoleMembers(sc, "appdb", &role), inst)
+	sc, inst := newGConn(t, membershipResponses()...)
+	form, apply := loadPageG(t, pageRoleMembers(sc, "appdb", &role), inst)
 
 	selectGridRow(t, plainGrid(t, form), 0, "bob")
 	clickButton(t, form, "Remove")
@@ -106,8 +106,8 @@ func TestDatabaseRoleMembersRemovesTheRowSelected(t *testing.T) {
 // and takes the wrong one out on the second click.
 func TestDatabaseRoleMembersRemovesBothOfTwo(t *testing.T) {
 	role := "salesrole"
-	sc, inst := newFakeConn(t, membershipResponses()...)
-	form, apply := loadPage(t, pageRoleMembers(sc, "appdb", &role), inst)
+	sc, inst := newGConn(t, membershipResponses()...)
+	form, apply := loadPageG(t, pageRoleMembers(sc, "appdb", &role), inst)
 
 	g := plainGrid(t, form)
 	selectGridRow(t, g, 0, "alice")
@@ -138,8 +138,8 @@ func TestServerRoleMembersWriteTheServerScopedStatement(t *testing.T) {
 	role := "sysadmin"
 
 	t.Run("Add", func(t *testing.T) {
-		sc, inst := newFakeConn(t, membershipResponses()...)
-		form, apply := loadPage(t, pageServerRoleMembers(sc, &role), inst)
+		sc, inst := newGConn(t, membershipResponses()...)
+		form, apply := loadPageG(t, pageServerRoleMembers(sc, &role), inst)
 		chooseSelect(t, form, "Add member", "newlogin")
 		clickButton(t, form, "Add")
 		if err := apply(context.Background()); err != nil {
@@ -149,8 +149,8 @@ func TestServerRoleMembersWriteTheServerScopedStatement(t *testing.T) {
 	})
 
 	t.Run("Remove", func(t *testing.T) {
-		sc, inst := newFakeConn(t, membershipResponses()...)
-		form, apply := loadPage(t, pageServerRoleMembers(sc, &role), inst)
+		sc, inst := newGConn(t, membershipResponses()...)
+		form, apply := loadPageG(t, pageServerRoleMembers(sc, &role), inst)
 		selectGridRow(t, plainGrid(t, form), 0, "svcuser")
 		clickButton(t, form, "Remove")
 		if err := apply(context.Background()); err != nil {
@@ -166,8 +166,8 @@ func TestServerRoleMembersWriteTheServerScopedStatement(t *testing.T) {
 // rejects.
 func TestServerRoleMembersOffersNoCandidateWhoIsAlreadyOne(t *testing.T) {
 	role := "sysadmin"
-	sc, inst := newFakeConn(t, membershipResponses()...)
-	form, _ := loadPage(t, pageServerRoleMembers(sc, &role), inst)
+	sc, inst := newGConn(t, membershipResponses()...)
+	form, _ := loadPageG(t, pageServerRoleMembers(sc, &role), inst)
 
 	items := selectRow(t, form, "Add member").Items()
 	for _, already := range []string{"appuser", "svcuser"} {
@@ -190,13 +190,13 @@ func TestRoleMembershipPagesWriteNothingWhenUntouched(t *testing.T) {
 	srole := "sysadmin"
 	user := "alice"
 
-	sc, inst := newFakeConn(t, membershipResponses()...)
+	sc, inst := newGConn(t, membershipResponses()...)
 	for _, p := range []propPage{
 		pageRoleMembers(sc, "appdb", &role),
 		pageServerRoleMembers(sc, &srole),
 		pageUserMembership(sc, "appdb", &user),
 	} {
-		_, apply := loadPage(t, p, inst)
+		_, apply := loadPageG(t, p, inst)
 		if err := apply(context.Background()); err != nil {
 			t.Fatalf("%s apply: %v", p.title, err)
 		}
@@ -214,8 +214,8 @@ func TestRoleMembershipPagesWriteNothingWhenUntouched(t *testing.T) {
 // exactly how an index-parallel read-back goes wrong.
 func TestUserMembershipTogglesTheRoleTheRowIsLabelled(t *testing.T) {
 	user := "alice"
-	sc, inst := newFakeConn(t, membershipResponses()...)
-	form, apply := loadPage(t, pageUserMembership(sc, "appdb", &user), inst)
+	sc, inst := newGConn(t, membershipResponses()...)
+	form, apply := loadPageG(t, pageUserMembership(sc, "appdb", &user), inst)
 
 	tg := toggleGrid(t, form)
 	for _, row := range tg.Text() {
@@ -236,8 +236,8 @@ func TestUserMembershipTogglesTheRoleTheRowIsLabelled(t *testing.T) {
 // salesrole, so this is a real removal rather than a no-op.
 func TestUserMembershipUntickingRemovesMembership(t *testing.T) {
 	user := "alice"
-	sc, inst := newFakeConn(t, membershipResponses()...)
-	form, apply := loadPage(t, pageUserMembership(sc, "appdb", &user), inst)
+	sc, inst := newGConn(t, membershipResponses()...)
+	form, apply := loadPageG(t, pageUserMembership(sc, "appdb", &user), inst)
 
 	tg := toggleGrid(t, form)
 	// The load half: the row alice is a member of is the one that shows

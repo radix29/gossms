@@ -378,7 +378,7 @@ func TestXEventMergeReadsEveryFileAndSortsByTime(t *testing.T) {
 	dmf := func(path string) []driver.Value {
 		return []driver.Value{path, path[len(`C:\log\`):], int64(0), int64(1), time.Time{}}
 	}
-	sc, inst := newFakeConn(t, slices.Concat([]fakeResponse{
+	sc, inst := newGConn(t, slices.Concat([]fakeResponse{
 		{match: "ErrorLogFileName", cols: 1, rows: [][]driver.Value{{`C:\log\ERRORLOG`}}},
 		{match: "sys.dm_os_enumerate_filesystem", cols: 5, rows: [][]driver.Value{dmf(fb), dmf(fa)}},
 		fileRead(fa, 1, 4), fileRead(fb, 2, 3),

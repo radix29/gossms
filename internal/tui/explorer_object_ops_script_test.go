@@ -164,7 +164,7 @@ func TestScriptingATypedDeleteNeedsNoTypedName(t *testing.T) {
 // EMERGENCY one's log (X5, probed on 17). Any other state, RESTORING included,
 // deletes the files and says nothing more.
 func TestDeleteDatabaseSaysWhichFilesAnOfflineDropLeaves(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	for state, want := range map[gosmo.DatabaseState]string{
 		"OFFLINE":   "It is OFFLINE, so its data and log files stay on disk.",
 		"EMERGENCY": "It is in EMERGENCY mode, so its log file stays on disk.",

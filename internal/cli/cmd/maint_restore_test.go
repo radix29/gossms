@@ -59,8 +59,8 @@ func newRestoreServer(t *testing.T) *maintServer {
 	return c
 }
 
-func restoreFakes(t *testing.T) (Catalog, Writer) {
-	return ServerCatalog(&db.ServerConn{Server: newRestoreServer(t).Server()}), nil
+func restoreFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newRestoreServer(t).Server()})
 }
 
 // runRestore runs maint restore <argv> over s; dials counts the connects.

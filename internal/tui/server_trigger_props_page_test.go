@@ -9,7 +9,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Server Trigger Properties, driven through fakedb_test.go.
+// Server Trigger Properties, driven through gosmotest_fixtures_test.go.
 //
 // The trigger under test is the second of three and is the disabled one, so a
 // page that ignored its selection and read whichever row sorts first cannot
@@ -46,8 +46,8 @@ func serverTriggerPropResponses(definition driver.Value) []fakeResponse {
 // sys.server_triggers — and it must show its state, which is the one thing
 // that decides whether the trigger is doing anything at all.
 func TestServerTriggerGeneralLoadsTheSelectedTrigger(t *testing.T) {
-	sc, inst := newFakeConn(t, serverTriggerPropResponses("CREATE TRIGGER [ddl_audit] ...")...)
-	form, apply := loadPage(t, pageServerTriggerGeneral(sc, serverTriggerUnderTest), inst)
+	sc, inst := newGConn(t, serverTriggerPropResponses("CREATE TRIGGER [ddl_audit] ...")...)
+	form, apply := loadPageG(t, pageServerTriggerGeneral(sc, serverTriggerUnderTest), inst)
 
 	if got := staticValue(t, form, "Name"); got != serverTriggerUnderTest {
 		t.Errorf("Name is %q, want the selected trigger's %q", got, serverTriggerUnderTest)
@@ -72,8 +72,8 @@ func TestServerTriggerGeneralLoadsTheSelectedTrigger(t *testing.T) {
 // has to reach the editor, unedited.
 func TestServerTriggerDefinitionShowsTheBody(t *testing.T) {
 	const body = "CREATE TRIGGER [ddl_audit] ON ALL SERVER\nFOR CREATE_DATABASE\nAS PRINT 'audited';"
-	sc, inst := newFakeConn(t, serverTriggerPropResponses(body)...)
-	form, apply := loadPage(t, pageServerTriggerDefinition(sc, serverTriggerUnderTest), inst)
+	sc, inst := newGConn(t, serverTriggerPropResponses(body)...)
+	form, apply := loadPageG(t, pageServerTriggerDefinition(sc, serverTriggerUnderTest), inst)
 
 	var ed *propsheet.EditorRow
 	for _, r := range form.Rows() {
@@ -99,8 +99,8 @@ func TestServerTriggerDefinitionShowsTheBody(t *testing.T) {
 // reports NULL, so the page must say so rather than showing an empty editor,
 // which reads as a trigger with an empty body.
 func TestServerTriggerDefinitionReportsAnUnreadableBody(t *testing.T) {
-	sc, inst := newFakeConn(t, serverTriggerPropResponses(nil)...)
-	form, _ := loadPage(t, pageServerTriggerDefinition(sc, serverTriggerUnderTest), inst)
+	sc, inst := newGConn(t, serverTriggerPropResponses(nil)...)
+	form, _ := loadPageG(t, pageServerTriggerDefinition(sc, serverTriggerUnderTest), inst)
 
 	for _, r := range form.Rows() {
 		if _, ok := r.(*propsheet.EditorRow); ok {
@@ -113,10 +113,10 @@ func TestServerTriggerDefinitionReportsAnUnreadableBody(t *testing.T) {
 // prop_page_requires_test.go's pagesThatOnlyRead only permits that for a page
 // with no apply at all.
 func TestServerTriggerPagesDoNotWrite(t *testing.T) {
-	sc, inst := newFakeConn(t, serverTriggerPropResponses("CREATE TRIGGER [ddl_audit] ...")...)
+	sc, inst := newGConn(t, serverTriggerPropResponses("CREATE TRIGGER [ddl_audit] ...")...)
 
 	for _, page := range serverTriggerPropPages(sc, serverTriggerUnderTest) {
-		_, apply := loadPage(t, page, inst)
+		_, apply := loadPageG(t, page, inst)
 		if apply != nil {
 			t.Errorf("page %q has an apply", page.title)
 		}

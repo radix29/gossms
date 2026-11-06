@@ -108,7 +108,7 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-- **Only the `object`, `script`, `data`, `security` and `maint` groups are off the `Catalog` seam** (2026-11-04, the
+- **Only the `object`, `script`, `data`, `security`, `maint` and `monitor` groups are off the `Catalog` seam** (2026-11-04, the
   pilot of review Q1 option A). Past connecting and resolving the name,
   `object list/search/describe/definition/dependencies/indexes/stats` call
   gosmo directly, and their tests serve gosmo canned rows through gosmo's
@@ -186,13 +186,61 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   CHECKSUM dropped, RESTORE's MOVE dropped, CHECKDB's ObjectId scan, the
   bulk load's KEEPNULLS) and four in gossms each failed a test; under the
   fakes the gosmo ones passed every test but the dry-run ones.
-  Still on the seam: everything else — the shared reads in `Catalog`
-  (resolution, the databases, server info, availability groups), and the
-  rest of `Writer` (server config/traceflag, monitor kill, xevent capture,
-  db set/scoped-config/create/drop, job start/stop), whose groups still
-  read through `Catalog` fakes. Whether to move the rest group by group is the
-  author's call. `internal/tui/fakedb_test.go` is a second, older scripted
-  driver of the same kind; it could move onto `gosmotest` too.
+  `monitor` followed whole (2026-11-05, plan step 17, the first group of
+  the `Writer` step's second part), with `plan cached`, which shares its
+  VIEW SERVER STATE check: sessions, blocking, waits, top-queries,
+  querystore and deadlocks read gosmo directly, and kill sends its KILL
+  through it — 13 `Catalog` methods (sessions, waits, the plan cache, the
+  six Query Store reports and metrics, the event-file read) and
+  `Writer.KillSession` gone. `monitorServer` (`cmd/monitor_server_test.go`,
+  443 lines, over `catalogServer`) replaces `monitorCatalog`, `killCatalog`
+  and `killWriter`; the xevent tests, which had shared `monitorCatalog`,
+  got their own `xeCatalog`. The reads answer in their ORDER BY and apply
+  their TOP, HAVING and filters (`--include-system` now shows a system
+  session; `--plan-database` keeps a plan by its database id; a regression
+  floor drops a query with no baseline — the old regressed fixture had a
+  row the server would never return). The Query Store tests assert the
+  report's query (window, TOP, value expression, HAVING) where they had
+  asserted the options handed to a fake, and the 2016 refusals come from
+  gosmo's own version gates (`Info.ProductVersion` 13). Nine gosmo
+  scanning mutations (a session's counters and its user-process flag, wait
+  time, a cached statement's totals and handles, a regressed row's
+  baseline, a wait category's value, the event-file filter, an event
+  session's running flag) and four in gossms each failed a test.
+  `server` info, memory, config and traceflag followed (2026-11-06, plan
+  step 17): they read and write (`sp_configure`, DBCC TRACEON/OFF) through
+  gosmo directly; seven `Catalog` methods (processor, start time, memory
+  stats, clerks, performance counters, configurations, trace flags) and
+  `Writer.ApplyConfiguration`/`SetTraceFlag` gone. `instanceServer`
+  (`cmd/server_state_test.go`, over `catalogServer`) replaces
+  `serverInfoCatalog`, `configWriter`, `traceFlagCatalog` and
+  `traceFlagWriter`; its writes change its options and flags from the
+  T-SQL. Option defaults are now gosmo's own table's (the fake's capitalised
+  `Backup checksum default` had one the real, lower-case name has; its
+  reset case is `Backup-Compression`). `server log` and `server volumes`
+  stay on `Catalog`. Eight gosmo scanning/statement mutations and five in
+  gossms each failed a test (one boundary survivor got its test).
+  `xevent` sessions and capture followed (2026-11-06, plan step 17): the
+  session reads, status, ring_buffer, and the CREATE/START/STOP/DROP go
+  through `sc.Server.XEvents()` (`Database.XEvents()` on Azure SQL
+  Database); five `Catalog` methods (`HasViewServerState`,
+  `EventSessions`, `EventSessionStatus`, `EventSessionByName`,
+  `ReadRingBuffer`) and the four event-session `Writer` methods gone.
+  `xeServer` (`cmd/xevent_server_test.go`, over `catalogServer`) replaces
+  `xeCatalog`, `captureCatalog` and `captureWriter`; its writes create,
+  start, stop and drop sessions as the server would, and its `steps` are
+  what a capture's cleanup is judged by. `clitest.EventXML` now carries
+  actions, a field's `<text>` and `event_sequence`. Eleven mutations (five
+  gosmo, six gossms) each failed a test.
+  `db` create/drop/set/scoped-config and `job` list/show/history/start/stop
+  moved the same way (`dbServer`, `jobServer`); `Writer` is gone entirely.
+  Still on the seam: the shared reads in `Catalog` (resolution, the
+  databases, server info, availability groups, the log and volume reads),
+  which the groups not yet moved still read through. Whether to move those
+  is the author's call. `internal/tui/fakedb_test.go` is gone (fix plan step 18): the
+  `fakeResponse` fixture DSL and capability builders live in
+  `gosmotest_fixtures_test.go`, served by `gosmotest` through
+  `gosmotest_bridge_test.go`; the form helpers in `form_helpers_test.go`.
 
 ## Fix order
 

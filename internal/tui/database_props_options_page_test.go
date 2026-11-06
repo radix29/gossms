@@ -70,8 +70,8 @@ func TestEveryDatabaseOptionRowWritesTheOptionItIsLabelled(t *testing.T) {
 
 	for label, clause := range want {
 		t.Run(label, func(t *testing.T) {
-			sc, inst := newFakeConn(t, optionsPageResponses()...)
-			form, apply := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+			sc, inst := newGConn(t, optionsPageResponses()...)
+			form, apply := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 			value := choice[label]
 			if value == "" {
@@ -104,8 +104,8 @@ func TestEveryDatabaseOptionRowWritesTheOptionItIsLabelled(t *testing.T) {
 
 	// A row added to the page but not to the table above would otherwise be
 	// silently untested — which is the same blind spot in a different place.
-	sc, inst := newFakeConn(t, optionsPageResponses()...)
-	form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+	sc, inst := newGConn(t, optionsPageResponses()...)
+	form, _ := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 	var selects int
 	for _, r := range form.Rows() {
 		if _, ok := r.(interface{ Items() []string }); ok {
@@ -130,8 +130,8 @@ func TestEveryDatabaseOptionRowWritesTheOptionItIsLabelled(t *testing.T) {
 // nobody can now connect to. Moving this row into the tracked table would look
 // like tidying and would produce exactly that.
 func TestRestrictAccessDoesNotGoThroughSetDatabaseOption(t *testing.T) {
-	sc, inst := newFakeConn(t, optionsPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+	sc, inst := newGConn(t, optionsPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 	editSelect(t, form, "Restrict access", "SINGLE_USER")
 
@@ -160,8 +160,8 @@ func TestCompatibilityLevelDropdownIsCappedAtTheServerVersion(t *testing.T) {
 	}
 
 	t.Run("2017 offers nothing above 140", func(t *testing.T) {
-		sc, inst := newFakeConnAtVersion(t, "14.0.2120.1", resp(140)...)
-		form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+		sc, inst := newGConnAtVersion(t, "14.0.2120.1", resp(140)...)
+		form, _ := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 		items := selectRow(t, form, "Compatibility level").Items()
 		for _, bad := range []string{"150", "160", "170"} {
@@ -178,8 +178,8 @@ func TestCompatibilityLevelDropdownIsCappedAtTheServerVersion(t *testing.T) {
 	// newer instance still displays its real level, selected, even though the
 	// server cannot be asked to set it.
 	t.Run("a restored database above the cap still shows its level", func(t *testing.T) {
-		sc, inst := newFakeConnAtVersion(t, "14.0.2120.1", resp(160)...)
-		form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+		sc, inst := newGConnAtVersion(t, "14.0.2120.1", resp(160)...)
+		form, _ := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 		row := selectRow(t, form, "Compatibility level")
 		items := row.Items()
@@ -195,8 +195,8 @@ func TestCompatibilityLevelDropdownIsCappedAtTheServerVersion(t *testing.T) {
 	})
 
 	t.Run("2025 offers 170", func(t *testing.T) {
-		sc, inst := newFakeConnAtVersion(t, "17.0.1125.2", resp(170)...)
-		form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+		sc, inst := newGConnAtVersion(t, "17.0.1125.2", resp(170)...)
+		form, _ := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 		items := selectRow(t, form, "Compatibility level").Items()
 		if got := items[len(items)-1]; got != "170" {
@@ -209,8 +209,8 @@ func TestCompatibilityLevelDropdownIsCappedAtTheServerVersion(t *testing.T) {
 // tracked table. Compatibility level is a number, not one of the simple SET
 // values the generic path accepts, so it has to have its own write.
 func TestCompatibilityLevelWritesItsOwnStatement(t *testing.T) {
-	sc, inst := newFakeConn(t, optionsPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+	sc, inst := newGConn(t, optionsPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 	editSelect(t, form, "Compatibility level", "150")
 
@@ -230,8 +230,8 @@ func TestCompatibilityLevelWritesItsOwnStatement(t *testing.T) {
 // one statement. A page that wrote every row on OK would look identical in the
 // UI and would reset options the user never opened the page to touch.
 func TestDatabaseOptionsPageWritesOnlyWhatChanged(t *testing.T) {
-	sc, inst := newFakeConn(t, optionsPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+	sc, inst := newGConn(t, optionsPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply on an untouched page: %v", err)
@@ -255,8 +255,8 @@ func TestDatabaseOptionsPageWritesOnlyWhatChanged(t *testing.T) {
 // ROLLBACK IMMEDIATE, and asks first: the page's apply warning is raised by
 // that row and by no other.
 func TestReadCommittedSnapshotAsksBeforeClosingConnections(t *testing.T) {
-	sc, inst := newFakeConn(t, optionsPageResponses()...)
-	form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+	sc, inst := newGConn(t, optionsPageResponses()...)
+	form, _ := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 	editSelect(t, form, "Auto shrink", "ON")
 	if w := form.ApplyConfirm(); w != "" {
@@ -274,8 +274,8 @@ func TestReadCommittedSnapshotAsksBeforeClosingConnections(t *testing.T) {
 // IMMEDIATE, so gosmo kills the sessions — and the question must say killed,
 // not rolled back.
 func TestContainmentAsksBeforeKillingSessions(t *testing.T) {
-	sc, inst := newFakeConn(t, optionsPageResponses()...)
-	form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+	sc, inst := newGConn(t, optionsPageResponses()...)
+	form, _ := loadPageG(t, pageDatabaseOptions(sc, "appdb"), inst)
 
 	editSelect(t, form, "Containment type", "PARTIAL")
 	w := form.ApplyConfirm()

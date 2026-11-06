@@ -167,7 +167,7 @@ var pagesThatOnlyRead = []string{
 // allPropPageKeys is every page in every dialog, as "<dialog>/<page>".
 func allPropPageKeys(t *testing.T) (keys []string, pages map[string]propPage) {
 	t.Helper()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	pages = map[string]propPage{}
 	for dialog, set := range propPageSets(sc, &PropDialog{}) {
 		for _, p := range set {

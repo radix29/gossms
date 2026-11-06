@@ -82,13 +82,13 @@ func (d Deps) monitorTopQueries(ctx context.Context, inv *spec.Invocation) (*out
 	database, _ := inv.Values[optPlanDatabase].(string)
 
 	res := &output.Result{}
-	closeConn, cat, err := d.connectServerState(ctx, inv, res, "monitor top-queries")
+	sc, err := d.connectServerState(ctx, inv, res, "monitor top-queries")
 	if err != nil {
 		return res, err
 	}
-	defer closeConn()
+	defer sc.Close()
 
-	qs, err := cat.TopQueries(ctx, gosmo.TopQueriesOptions{By: topQueriesBy[by], Average: avg, Top: top, Database: database})
+	qs, err := sc.Server.TopQueries(ctx, gosmo.TopQueriesOptions{By: topQueriesBy[by], Average: avg, Top: top, Database: database})
 	if err != nil {
 		return res, readError(err)
 	}

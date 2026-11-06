@@ -8,7 +8,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/connect"
@@ -72,76 +71,9 @@ type Catalog interface {
 	TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error)
 	LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error)
 
-	// db drop: what refuses a drop before it is sent, and the backup the
-	// record names.
-	AvailabilityGroups(ctx context.Context) ([]*gosmo.AvailabilityGroup, error)
-	AvailabilityGroupDatabases(ctx context.Context, ag *gosmo.AvailabilityGroup) ([]*gosmo.AvailabilityDatabase, error)
-	SnapshotsOf(ctx context.Context, database string) ([]*gosmo.DatabaseSnapshot, error)
-	LastBackups(ctx context.Context) ([]*gosmo.DatabaseLastBackups, error)
-
-	// db scoped-config: sys.database_scoped_configurations, read inside the
-	// database.
-	DatabaseScopedConfigs(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseScopedConfig, error)
-	// db set QUERY_STORE: sys.database_query_store_options.
-	QueryStoreOptions(ctx context.Context, d *gosmo.Database) (*gosmo.QueryStoreInfo, error)
-
-	// server info / memory and server config: the sys.dm_os_* reads and
-	// sys.configurations.
-	ProcessorInfo(ctx context.Context) (*gosmo.ProcessorInfo, error)
-	StartTime(ctx context.Context) (start time.Time, uptime time.Duration, err error)
-	MemoryStats(ctx context.Context) (*gosmo.ServerMemoryStats, error)
-	MemoryClerks(ctx context.Context) ([]gosmo.MemoryClerk, error)
-	PerformanceCounters(ctx context.Context, counters, instances []string) ([]gosmo.PerformanceCounter, error)
-	Configurations(ctx context.Context) ([]*gosmo.ConfigurationOption, error)
-	TraceFlags(ctx context.Context) ([]gosmo.TraceFlag, error)
-
 	// server log: one log file, filtered at the server, and the files kept.
 	ReadLog(ctx context.Context, t gosmo.ErrorLogType, archive int, search gosmo.LogSearch) ([]*gosmo.ErrorLogEntry, error)
 	EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error)
-
-	// monitor sessions / blocking: whether the login sees every session, and
-	// the sessions.
-	HasViewServerState(ctx context.Context) (bool, error)
-	ActiveSessions(ctx context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error)
-	// monitor kill: one session, the caller's own included.
-	SessionByID(ctx context.Context, sessionID int) (*gosmo.ActiveSession, error)
-	// monitor waits: sys.dm_os_wait_stats, every wait type's totals.
-	WaitStats(ctx context.Context) ([]gosmo.WaitStat, error)
-	// monitor top-queries / plan cached: the plan cache's costliest
-	// statements, and one statement's cached plan.
-	TopQueries(ctx context.Context, opts gosmo.TopQueriesOptions) ([]*gosmo.CachedQueryStat, error)
-	CachedPlan(ctx context.Context, planHandle []byte, stmtStart, stmtEnd int) (string, error)
-	// monitor querystore: the server's clock (its zone is the one a
-	// zoneless --since means), the metrics d's instance has, and d's Query
-	// Store reports.
-	CurrentTime(ctx context.Context) (time.Time, error)
-	QueryStoreMetrics(d *gosmo.Database) []gosmo.QSMetric
-	QSTopResourceQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
-	QSRegressedQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
-	QSHighVariationQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
-	QSForcedPlanQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
-	QSWaitCategories(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSWaitStat, error)
-	QSWaitingQueries(ctx context.Context, d *gosmo.Database, category gosmo.QSWaitCategory, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
-	// monitor deadlocks: an event session with its targets, and its
-	// event_file (the server keeping only the named events) or ring_buffer.
-	EventSessionByName(ctx context.Context, name string) (*gosmo.EventSession, error)
-	ReadFileEvents(ctx context.Context, pattern string, cursor gosmo.EventFileCursor, max int, events []string) ([]gosmo.XEvent, gosmo.EventFileCursor, error)
-	ReadRingBuffer(ctx context.Context, es *gosmo.EventSession) (*gosmo.RingBufferData, error)
-	// xevent sessions: the event sessions with their events and targets —
-	// the server's, or with d (Azure SQL Database) the database's — and a
-	// running one's runtime state.
-	EventSessions(ctx context.Context, d *gosmo.Database) ([]*gosmo.EventSession, error)
-	EventSessionStatus(ctx context.Context, es *gosmo.EventSession) (*gosmo.EventSessionStatus, error)
-
-	// job: msdb's jobs, one job's steps and schedules, the run history
-	// across jobs or for one, and whether Agent is running. A *gosmo.Job is
-	// one Jobs or JobByName returned.
-	Jobs(ctx context.Context) ([]*gosmo.Job, error)
-	JobByName(ctx context.Context, name string) (*gosmo.Job, error)
-	JobSteps(ctx context.Context, j *gosmo.Job) ([]*gosmo.JobStep, error)
-	JobSchedules(ctx context.Context, j *gosmo.Job) ([]*gosmo.Schedule, error)
-	SearchJobHistory(ctx context.Context, f gosmo.JobHistoryFilter) ([]*gosmo.JobHistoryEntry, error)
-	AgentInfo(ctx context.Context) (*gosmo.AgentStatus, error)
 }
 
 // ServerCatalog is Deps.Catalog: the reads, made through sc's gosmo Server.
@@ -187,22 +119,6 @@ func (serverCatalog) Search(ctx context.Context, d *gosmo.Database, pattern stri
 
 func (c serverCatalog) ServerInfo() *gosmo.ServerInfo { return c.s.Info() }
 
-func (c serverCatalog) AvailabilityGroups(ctx context.Context) ([]*gosmo.AvailabilityGroup, error) {
-	return c.s.AvailabilityGroups(ctx)
-}
-
-func (serverCatalog) AvailabilityGroupDatabases(ctx context.Context, ag *gosmo.AvailabilityGroup) ([]*gosmo.AvailabilityDatabase, error) {
-	return ag.Databases(ctx)
-}
-
-func (c serverCatalog) SnapshotsOf(ctx context.Context, database string) ([]*gosmo.DatabaseSnapshot, error) {
-	return c.s.SnapshotsOf(ctx, database)
-}
-
-func (c serverCatalog) LastBackups(ctx context.Context) ([]*gosmo.DatabaseLastBackups, error) {
-	return c.s.LastBackups(ctx)
-}
-
 func (c serverCatalog) ServerCapabilities(ctx context.Context) (*gosmo.Capabilities, error) {
 	return c.s.Capabilities(ctx)
 }
@@ -239,149 +155,12 @@ func (serverCatalog) LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.Log
 	return d.LogSpace(ctx)
 }
 
-func (c serverCatalog) ProcessorInfo(ctx context.Context) (*gosmo.ProcessorInfo, error) {
-	return c.s.ProcessorInfo(ctx)
-}
-
-func (c serverCatalog) StartTime(ctx context.Context) (time.Time, time.Duration, error) {
-	return c.s.StartTime(ctx)
-}
-
-func (c serverCatalog) MemoryStats(ctx context.Context) (*gosmo.ServerMemoryStats, error) {
-	return c.s.MemoryStats(ctx)
-}
-
-func (c serverCatalog) MemoryClerks(ctx context.Context) ([]gosmo.MemoryClerk, error) {
-	return c.s.MemoryClerks(ctx)
-}
-
-func (c serverCatalog) PerformanceCounters(ctx context.Context, counters, instances []string) ([]gosmo.PerformanceCounter, error) {
-	return c.s.PerformanceCounters(ctx, counters, instances)
-}
-
-func (c serverCatalog) Configurations(ctx context.Context) ([]*gosmo.ConfigurationOption, error) {
-	return c.s.Configurations(ctx)
-}
-
-func (c serverCatalog) TraceFlags(ctx context.Context) ([]gosmo.TraceFlag, error) {
-	return c.s.TraceFlags(ctx)
-}
-
-func (serverCatalog) DatabaseScopedConfigs(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseScopedConfig, error) {
-	return d.DatabaseScopedConfigs(ctx)
-}
-
-func (serverCatalog) QueryStoreOptions(ctx context.Context, d *gosmo.Database) (*gosmo.QueryStoreInfo, error) {
-	return d.QueryStore().Options(ctx)
-}
-
 func (c serverCatalog) ReadLog(ctx context.Context, t gosmo.ErrorLogType, archive int, search gosmo.LogSearch) ([]*gosmo.ErrorLogEntry, error) {
 	return c.s.ReadLog(ctx, t, archive, search)
 }
 
 func (c serverCatalog) EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error) {
 	return c.s.EnumErrorLogs(ctx, t)
-}
-
-func (c serverCatalog) HasViewServerState(ctx context.Context) (bool, error) {
-	return c.s.HasViewServerState(ctx)
-}
-
-func (c serverCatalog) WaitStats(ctx context.Context) ([]gosmo.WaitStat, error) {
-	return c.s.WaitStats(ctx)
-}
-
-func (c serverCatalog) TopQueries(ctx context.Context, opts gosmo.TopQueriesOptions) ([]*gosmo.CachedQueryStat, error) {
-	return c.s.TopQueries(ctx, opts)
-}
-
-func (c serverCatalog) CachedPlan(ctx context.Context, planHandle []byte, stmtStart, stmtEnd int) (string, error) {
-	return c.s.CachedPlan(ctx, planHandle, stmtStart, stmtEnd)
-}
-
-func (c serverCatalog) CurrentTime(ctx context.Context) (time.Time, error) {
-	return c.s.CurrentTime(ctx)
-}
-
-func (serverCatalog) QueryStoreMetrics(d *gosmo.Database) []gosmo.QSMetric {
-	return d.QueryStore().Metrics()
-}
-
-func (serverCatalog) QSTopResourceQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
-	return d.QueryStore().TopResourceQueries(ctx, opts)
-}
-
-func (serverCatalog) QSRegressedQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
-	return d.QueryStore().RegressedQueries(ctx, opts)
-}
-
-func (serverCatalog) QSHighVariationQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
-	return d.QueryStore().HighVariationQueries(ctx, opts)
-}
-
-func (serverCatalog) QSForcedPlanQueries(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
-	return d.QueryStore().ForcedPlanQueries(ctx, opts)
-}
-
-func (serverCatalog) QSWaitCategories(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSWaitStat, error) {
-	return d.QueryStore().WaitCategories(ctx, opts)
-}
-
-func (serverCatalog) QSWaitingQueries(ctx context.Context, d *gosmo.Database, category gosmo.QSWaitCategory, opts gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error) {
-	return d.QueryStore().WaitingQueries(ctx, category, opts)
-}
-
-func (c serverCatalog) EventSessionByName(ctx context.Context, name string) (*gosmo.EventSession, error) {
-	return c.s.XEvents().SessionByName(ctx, name)
-}
-
-func (c serverCatalog) ReadFileEvents(ctx context.Context, pattern string, cursor gosmo.EventFileCursor, max int, events []string) ([]gosmo.XEvent, gosmo.EventFileCursor, error) {
-	return c.s.XEvents().ReadFileEvents(ctx, pattern, cursor, max, events)
-}
-
-func (serverCatalog) ReadRingBuffer(ctx context.Context, es *gosmo.EventSession) (*gosmo.RingBufferData, error) {
-	return es.ReadRingBuffer(ctx)
-}
-
-func (c serverCatalog) EventSessions(ctx context.Context, d *gosmo.Database) ([]*gosmo.EventSession, error) {
-	if d != nil {
-		return d.XEvents().Sessions(ctx)
-	}
-	return c.s.XEvents().Sessions(ctx)
-}
-
-func (serverCatalog) EventSessionStatus(ctx context.Context, es *gosmo.EventSession) (*gosmo.EventSessionStatus, error) {
-	return es.Status(ctx)
-}
-
-func (c serverCatalog) ActiveSessions(ctx context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error) {
-	return c.s.ActiveSessions(ctx, scope)
-}
-
-func (c serverCatalog) SessionByID(ctx context.Context, sessionID int) (*gosmo.ActiveSession, error) {
-	return c.s.SessionByID(ctx, sessionID)
-}
-
-func (c serverCatalog) Jobs(ctx context.Context) ([]*gosmo.Job, error) { return c.s.Jobs(ctx) }
-
-func (c serverCatalog) JobByName(ctx context.Context, name string) (*gosmo.Job, error) {
-	return c.s.JobByName(ctx, name)
-}
-
-func (serverCatalog) JobSteps(ctx context.Context, j *gosmo.Job) ([]*gosmo.JobStep, error) {
-	return j.Steps(ctx)
-}
-
-func (serverCatalog) JobSchedules(ctx context.Context, j *gosmo.Job) ([]*gosmo.Schedule, error) {
-	return j.Schedules(ctx)
-}
-
-func (c serverCatalog) SearchJobHistory(ctx context.Context, f gosmo.JobHistoryFilter) ([]*gosmo.JobHistoryEntry, error) {
-	return c.s.SearchJobHistory(ctx, f)
-}
-
-func (c serverCatalog) AgentInfo(ctx context.Context) (*gosmo.AgentStatus, error) {
-	return c.s.AgentInfo(ctx)
 }
 
 // dial resolves and opens the connection inv asks for through profile (empty

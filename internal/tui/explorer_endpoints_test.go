@@ -115,7 +115,7 @@ var (
 // both withhold themselves on it, and a built-in endpoint offered for deletion
 // fails on a statement SQL Server refuses.
 func TestEndpointsFolderMarksTheBuiltInOnes(t *testing.T) {
-	sc, _ := newFakeConn(t, endpointRows())
+	sc, _ := newGConn(t, endpointRows())
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 
 	children, err := loadEndpointsChildren(l, &explorerNode{data: nodeData{Type: NodeEndpoints, conn: sc}})
@@ -146,7 +146,7 @@ func TestEndpointsFolderMarksTheBuiltInOnes(t *testing.T) {
 // The Details pane reads gosmo independently of the tree, so its row objects
 // are their own chance to lose the flag that withholds Delete.
 func TestEndpointsFolderDetailCarriesIsSystem(t *testing.T) {
-	sc, _ := newFakeConn(t, endpointRows())
+	sc, _ := newGConn(t, endpointRows())
 
 	var objs []nodeData
 	cols, rows, err := endpointsFolderDetail(context.Background(), sc,
@@ -202,7 +202,7 @@ func TestASystemEndpointRefusesTheStateChangeWithAMessage(t *testing.T) {
 // gosmo refuses the drop too, and that second refusal is the one that matters:
 // the Details pane and the tree both route Delete through this closure.
 func TestDroppingASystemEndpointIsRefused(t *testing.T) {
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		endpointByName("Dedicated Admin Connection", dacRow), endpointRows())
 	err := objectOps[NodeEndpoint].drop(t.Context(), sc,
 		nodeData{Type: NodeEndpoint, Name: "Dedicated Admin Connection"})
@@ -215,7 +215,7 @@ func TestDroppingASystemEndpointIsRefused(t *testing.T) {
 }
 
 func TestEndpointDropStatement(t *testing.T) {
-	sc, inst := newFakeConn(t, endpointByName("AGEP", agepRow), endpointRows())
+	sc, inst := newGConn(t, endpointByName("AGEP", agepRow), endpointRows())
 	if err := objectOps[NodeEndpoint].drop(t.Context(), sc, nodeData{Type: NodeEndpoint, Name: "AGEP"}); err != nil {
 		t.Fatalf("drop: %v", err)
 	}

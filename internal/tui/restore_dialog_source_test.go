@@ -134,7 +134,7 @@ func fileListOnlyResponse(rows ...[]driver.Value) fakeResponse {
 // entry's own position.
 func TestBuildRestoreOptionsForAStripedHistoryEntry(t *testing.T) {
 	finish := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		headerOnlyResponse(
 			[]driver.Value{"full", int64(1), int64(1), "AppDB", "SRV", finish, int64(1024)},
 			[]driver.Value{"log", int64(2), int64(2), "AppDB", "SRV", finish, int64(1024)},
@@ -187,12 +187,12 @@ func TestRestoreKeepsTheServerItStartedOn(t *testing.T) {
 	finish := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
 	verifying := make(chan struct{})
 	stop := errors.New("stop before the RESTORE")
-	sc1, inst1 := newFakeConn(t,
+	sc1, inst1 := newGConn(t,
 		fakeResponse{match: "RESTORE VERIFYONLY", blockExec: verifying},
 		headerOnlyResponse([]driver.Value{"full", int64(1), int64(1), "AppDB", "SRV", finish, int64(1024)}),
 		fakeResponse{match: "RESTORE FILELISTONLY", err: stop},
 	)
-	sc2, inst2 := newFakeConn(t)
+	sc2, inst2 := newGConn(t)
 
 	app := newTestApp()
 	d := restoreFormWithOptions()
@@ -247,7 +247,7 @@ func TestRestoreVerifiesTheSetBeingRestored(t *testing.T) {
 			stop := errors.New("stop before the RESTORE")
 			names := []string{"BackupName", "BackupType", "Position", "DatabaseName", "ServerName",
 				"BackupFinishDate", "BackupSize", "HasBackupChecksums"}
-			sc, inst := newFakeConn(t,
+			sc, inst := newGConn(t,
 				fakeResponse{match: "RESTORE HEADERONLY", cols: len(names), colNames: names, rows: [][]driver.Value{
 					{"full", int64(1), int64(1), "AppDB", "SRV", finish, int64(1024), int64(1 - tc.checksums)},
 					{"full2", int64(1), int64(2), "AppDB", "SRV", finish, int64(1024), tc.checksums},
@@ -287,7 +287,7 @@ func TestRestoreVerifiesTheSetBeingRestored(t *testing.T) {
 // statement.
 func TestBuildRestoreOptionsForALogSet(t *testing.T) {
 	finish := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		headerOnlyResponse(
 			[]driver.Value{"full", int64(1), int64(1), "AppDB", "SRV", finish, int64(1024)},
 			[]driver.Value{"log", int64(2), int64(2), "AppDB", "SRV", finish, int64(1024)},

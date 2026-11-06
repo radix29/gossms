@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"github.com/radix29/gossms/internal/db"
 	"slices"
 	"strings"
 	"testing"
@@ -510,4 +511,23 @@ func TestTheLogViewerOverflowMenuKeepsTheGate(t *testing.T) {
 	if !found {
 		t.Fatalf("Recycle is not in the More menu; it holds %v", a.contextMenu.Items())
 	}
+}
+
+// logViewerQuiet answers, last, the reads a log viewer makes beside the ones a
+// test scripts — the Database Mail visibility and capability probes and the
+// file list — with no rows, as fakedb did silently; a gosmotest server fails
+// the test on an unanswered query instead. Scripted rules come first, so they
+// win.
+func logViewerQuiet() []fakeResponse {
+	return gEmpty(
+		"HAS_PERMS_BY_NAME(N'msdb.dbo.sysmail_log'",
+		"HAS_PERMS_BY_NAME(N'msdb.dbo.sysmail_mailitems'",
+		"sp_enumerrorlogs",
+	)
+}
+
+// newGLogConn is newGConn plus logViewerQuiet.
+func newGLogConn(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *gFake) {
+	t.Helper()
+	return newGConn(t, append(responses[:len(responses):len(responses)], logViewerQuiet()...)...)
 }

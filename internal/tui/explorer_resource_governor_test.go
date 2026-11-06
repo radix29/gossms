@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/db"
 )
 
@@ -70,13 +71,10 @@ func rgGroups() fakeResponse {
 	}}
 }
 
-// newFakeConnEdition is newFakeConn for an engine edition and version.
-func newFakeConnEdition(t *testing.T, edition int64, version string, responses ...fakeResponse) *db.ServerConn {
+// newGConnEdition is newGConn for an engine edition and version.
+func newGConnEdition(t *testing.T, edition int64, version string, responses ...fakeResponse) *db.ServerConn {
 	t.Helper()
-	info := serverInfoResponse()
-	info.rows[0][2] = version
-	info.rows[0][8] = edition
-	sc, _ := newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, responses...))
+	sc, _ := newGConnWith(t, func(i *gosmotest.Info) { i.ProductVersion, i.EngineEdition = version, int(edition) }, responses...)
 	return sc
 }
 
@@ -110,17 +108,17 @@ func TestManagementListsResourceGovernorExceptOnAzureSQLDatabase(t *testing.T) {
 		}
 		return slices.ContainsFunc(children, func(n *explorerNode) bool { return n.data.Type == NodeResourceGovernor })
 	}
-	if !has(newFakeConnEdition(t, 3, "16.0.4085.2", rgConfig(true), rgStatus(false))) {
+	if !has(newGConnEdition(t, 3, "16.0.4085.2", rgConfig(true), rgStatus(false), mailStatus("STARTED"))) {
 		t.Error("Developer: Management has no Resource Governor node")
 	}
-	if !has(newFakeConnEdition(t, 8, "12.0.2000.8")) {
+	if !has(newGConnEdition(t, 8, "12.0.2000.8", rgConfig(true), rgStatus(false), mailStatus("STARTED"))) {
 		t.Error("Managed Instance: Management has no Resource Governor node — D5 ships it shown")
 	}
-	if has(newFakeConnEdition(t, 5, "12.0.2000.8")) {
+	if has(newGConnEdition(t, 5, "12.0.2000.8")) {
 		t.Error("Azure SQL Database: Management lists Resource Governor, which the platform owns")
 	}
 	// Standard before 2025 keeps the node: its expansion says why it is empty.
-	if !has(newFakeConnEdition(t, 2, "16.0.4085.2")) {
+	if !has(newGConnEdition(t, 2, "16.0.4085.2", mailStatus("STARTED"))) {
 		t.Error("Standard 2022: Management has no Resource Governor node to explain the edition on")
 	}
 }
@@ -144,7 +142,7 @@ func TestResourceGovernorLabelCarriesItsState(t *testing.T) {
 		{"catalog not visible", []fakeResponse{{match: rgConfigRead, cols: 5}}, "Resource Governor (unknown)", true},
 		{"configuration read fails", []fakeResponse{{match: rgConfigRead, err: errors.New("Msg 229, permission denied")}}, "Resource Governor (unknown)", true},
 	} {
-		sc := newFakeConnEdition(t, 3, "16.0.4085.2", tc.responses...)
+		sc := newGConnEdition(t, 3, "16.0.4085.2", tc.responses...)
 		n := resourceGovernorNode(loaderCtx{ctx: ctx, sc: sc})
 		if n.label != tc.want || n.data.IsEnabled != tc.wantEnabled {
 			t.Errorf("%s: label %q enabled %v, want %q enabled %v", tc.name, n.label, n.data.IsEnabled, tc.want, tc.wantEnabled)
@@ -153,9 +151,7 @@ func TestResourceGovernorLabelCarriesItsState(t *testing.T) {
 
 	// An edition without Resource Governor is not asked at all: its label
 	// stays bare and nothing is read.
-	info := serverInfoResponse()
-	info.rows[0][8] = int64(4)
-	sc, inst := newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse()})
+	sc, inst := newGConnWith(t, func(i *gosmotest.Info) { i.EngineEdition = 4 })
 	before := inst.QueryCount()
 	if n := resourceGovernorNode(loaderCtx{ctx: ctx, sc: sc}); n.label != "Resource Governor" {
 		t.Errorf("Express: label %q", n.label)
@@ -167,7 +163,7 @@ func TestResourceGovernorLabelCarriesItsState(t *testing.T) {
 
 func TestResourceGovernorOnAnUnsupportedEditionSaysSo(t *testing.T) {
 	ctx := context.Background()
-	sc := newFakeConnEdition(t, 2, "16.0.4085.2")
+	sc := newGConnEdition(t, 2, "16.0.4085.2", mailStatus("STARTED"))
 	children, err := loadResourceGovernorChildren(loaderCtx{ctx: ctx, sc: sc}, &explorerNode{})
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +172,7 @@ func TestResourceGovernorOnAnUnsupportedEditionSaysSo(t *testing.T) {
 		t.Errorf("Standard 2022 expands to %v, want the single unsupported row", labelsOfNodes(children))
 	}
 
-	sc = newFakeConnEdition(t, 2, "17.0.1000.7")
+	sc = newGConnEdition(t, 2, "17.0.1000.7")
 	children, _ = loadResourceGovernorChildren(loaderCtx{ctx: ctx, sc: sc}, &explorerNode{})
 	if got := labelsOfNodes(children); !slices.Equal(got, []string{"Resource Pools", "External Resource Pools"}) {
 		t.Errorf("Standard 2025 expands to %v", got)
@@ -185,7 +181,7 @@ func TestResourceGovernorOnAnUnsupportedEditionSaysSo(t *testing.T) {
 
 func TestResourcePoolsFolderListsPoolsAndMarksTheSystemOnes(t *testing.T) {
 	ctx := context.Background()
-	sc := newFakeConnEdition(t, 3, "16.0.4085.2", rgPools()...)
+	sc := newGConnEdition(t, 3, "16.0.4085.2", rgPools()...)
 	children, err := loadResourcePoolsChildren(loaderCtx{ctx: ctx, sc: sc}, &explorerNode{})
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +205,7 @@ func TestResourcePoolsFolderListsPoolsAndMarksTheSystemOnes(t *testing.T) {
 
 func TestEmptyResourceGovernorCatalogIsNotVisibleNotEmpty(t *testing.T) {
 	ctx := context.Background()
-	sc := newFakeConnEdition(t, 3, "16.0.4085.2",
+	sc := newGConnEdition(t, 3, "16.0.4085.2",
 		fakeResponse{match: rgPoolList, cols: 9},
 		fakeResponse{match: rgGroupList, cols: 14},
 		fakeResponse{match: "FROM   sys.resource_governor_external_resource_pools\nORDER", cols: 6})
@@ -234,7 +230,7 @@ func TestEmptyResourceGovernorCatalogIsNotVisibleNotEmpty(t *testing.T) {
 
 func TestWorkloadGroupsFolderListsOnlyItsPool(t *testing.T) {
 	ctx := context.Background()
-	sc := newFakeConnEdition(t, 3, "16.0.4085.2", rgGroups())
+	sc := newGConnEdition(t, 3, "16.0.4085.2", rgGroups())
 	l := loaderCtx{ctx: ctx, sc: sc}
 	folder := &explorerNode{data: nodeData{Type: NodeWorkloadGroups, RGPool: "reports"}}
 	children, err := loadWorkloadGroupsChildren(l, folder)
@@ -280,6 +276,13 @@ func rgStats() []fakeResponse {
 	}
 }
 
+// rgNoStats answers both live-load reads with no rows: the login can read the
+// DMVs but the governor has nothing to report. A gosmotest server fails on a
+// read nobody answered, so a test that scripts only one half adds this.
+func rgNoStats() []fakeResponse {
+	return []fakeResponse{{match: rgPoolStatsRead}, {match: rgGrpStatsRead}}
+}
+
 // cell returns the named column of the row whose first cell is name.
 func cell(t *testing.T, cols []string, rows [][]string, name, col string) string {
 	t.Helper()
@@ -298,7 +301,7 @@ func cell(t *testing.T, cols []string, rows [][]string, name, col string) string
 
 func TestResourcePoolsDetailShowsLiveLoadPerPool(t *testing.T) {
 	ctx := context.Background()
-	sc := newFakeConnEdition(t, 3, "16.0.4085.2", append(append(rgPools(), rgStats()...), rgGroups())...)
+	sc := newGConnEdition(t, 3, "16.0.4085.2", append(append(rgPools(), rgStats()...), rgGroups())...)
 	cols, rows, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{data: nodeData{Type: NodeResourcePools}}, new([]nodeData))
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +324,7 @@ func TestResourcePoolsDetailShowsLiveLoadPerPool(t *testing.T) {
 func TestResourcePoolsDetailWithoutViewServerStateLeavesLiveColumnsBlank(t *testing.T) {
 	ctx := context.Background()
 	denied := errors.New("Msg 300, VIEW SERVER STATE permission was denied")
-	sc := newFakeConnEdition(t, 3, "16.0.4085.2", append(rgPools(),
+	sc := newGConnEdition(t, 3, "16.0.4085.2", append(rgPools(),
 		fakeResponse{match: rgPoolStatsRead, err: denied},
 		fakeResponse{match: rgGrpStatsRead, err: denied})...)
 	cols, rows, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{data: nodeData{Type: NodeResourcePools}}, new([]nodeData))
@@ -340,10 +343,10 @@ func TestResourcePoolsDetailWithoutViewServerStateLeavesLiveColumnsBlank(t *test
 
 func TestResourceGovernorDetailSeparatesStoredFromInForce(t *testing.T) {
 	ctx := context.Background()
-	sc := newFakeConnEdition(t, 3, "16.0.4085.2",
+	sc := newGConnEdition(t, 3, "16.0.4085.2",
 		fakeResponse{match: rgConfigRead, cols: 5, rows: [][]driver.Value{{true, int64(1205579333), "dbo", "fn_classify", int64(0)}}},
 		fakeResponse{match: rgStatusRead, cols: 5, rows: [][]driver.Value{{int64(0), nil, nil, true, int64(40)}}},
-		rgStats()[0])
+		rgStats()[0], fakeResponse{match: rgGrpStatsRead})
 	_, rows, err := resourceGovernorDetail(ctx, sc)
 	if err != nil {
 		t.Fatal(err)
@@ -379,19 +382,19 @@ func TestResourceGovernorDetailDegradesEachHalfAlone(t *testing.T) {
 	}
 	// VIEW SERVER STATE without VIEW ANY DEFINITION: the stored half is
 	// invisible (zero rows), what is in force still shows.
-	got := rowsOf(newFakeConnEdition(t, 3, "16.0.4085.2",
-		fakeResponse{match: rgConfigRead, cols: 5}, rgStatus(true)))
+	got := rowsOf(newGConnEdition(t, 3, "16.0.4085.2",
+		append(rgNoStats(), fakeResponse{match: rgConfigRead, cols: 5}, rgStatus(true))...))
 	if got["Configuration"] == "" || got["Reconfiguration pending"] != "Yes" {
 		t.Errorf("stored invisible: rows %v", got)
 	}
 	// The reverse: stored config, no DMV.
-	got = rowsOf(newFakeConnEdition(t, 3, "16.0.4085.2", rgConfig(true),
-		fakeResponse{match: rgStatusRead, err: errors.New("Msg 300")}))
+	got = rowsOf(newGConnEdition(t, 3, "16.0.4085.2", append(rgNoStats(), rgConfig(true),
+		fakeResponse{match: rgStatusRead, err: errors.New("Msg 300")})...))
 	if got["Enabled"] != "Yes" || got["In force"] == "" {
 		t.Errorf("status invisible: rows %v", got)
 	}
 	// Pending while disabled is qualified, not a bare Yes.
-	got = rowsOf(newFakeConnEdition(t, 3, "16.0.4085.2", rgConfig(false), rgStatus(true)))
+	got = rowsOf(newGConnEdition(t, 3, "16.0.4085.2", append(rgNoStats(), rgConfig(false), rgStatus(true))...))
 	if got["Reconfiguration pending"] != "Yes — applied when enabled" {
 		t.Errorf("disabled + pending = %q", got["Reconfiguration pending"])
 	}

@@ -16,7 +16,7 @@ import (
 // Properties page's apply starts with.
 func newSequenceTestDialog(t *testing.T, pf *nseqPrefetch) *NewSequenceDialog {
 	t.Helper()
-	sc, _ := newFakeConn(t, dbByNameResp("appdb", 5))
+	sc, _ := newGConn(t, dbByNameResp("appdb", 5))
 	d := &NewSequenceDialog{}
 	d.dbName = "appdb"
 	d.sc = sc
@@ -239,7 +239,7 @@ func sequenceCapabilityResponses(granted, denied []string) []fakeResponse {
 func TestNewSequenceGateIsPerSchema(t *testing.T) {
 	item := func(t *testing.T, granted, denied []string) (bool, string) {
 		t.Helper()
-		sc, _ := newFakeConn(t, sequenceCapabilityResponses(granted, denied)...)
+		sc, _ := newGConn(t, sequenceCapabilityResponses(granted, denied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		folder := &explorerNode{data: nodeData{Type: NodeSequences, DBName: "appdb", conn: sc}}
@@ -261,7 +261,7 @@ func TestNewSequenceGateIsPerSchema(t *testing.T) {
 		t.Error("withheld before any probe answered — the gate must fail open")
 	}
 
-	sc, _ := newFakeConn(t, sequenceCapabilityResponses([]string{"app"}, []string{"dbo", "sales"})...)
+	sc, _ := newGConn(t, sequenceCapabilityResponses([]string{"app"}, []string{"dbo", "sales"})...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	d := newSequenceTestDialog(t, newSequenceTestPrefetch())

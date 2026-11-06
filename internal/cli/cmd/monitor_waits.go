@@ -76,12 +76,12 @@ type waitSample struct {
 	stats  []gosmo.WaitStat
 }
 
-func readWaits(ctx context.Context, cat Catalog) (waitSample, error) {
-	start, up, err := cat.StartTime(ctx)
+func readWaits(ctx context.Context, s *gosmo.Server) (waitSample, error) {
+	start, up, err := s.StartTime(ctx)
 	if err != nil {
 		return waitSample{}, readError(err)
 	}
-	stats, err := cat.WaitStats(ctx)
+	stats, err := s.WaitStats(ctx)
 	if err != nil {
 		return waitSample{}, readError(err)
 	}
@@ -102,13 +102,13 @@ func (d Deps) monitorWaits(ctx context.Context, inv *spec.Invocation) (*output.R
 	all := inv.Values[optAllWaits].(bool)
 
 	res := &output.Result{}
-	closeConn, cat, err := d.connectServerState(ctx, inv, res, "monitor waits")
+	sc, err := d.connectServerState(ctx, inv, res, "monitor waits")
 	if err != nil {
 		return res, err
 	}
-	defer closeConn()
+	defer sc.Close()
 
-	first, err := readWaits(ctx, cat)
+	first, err := readWaits(ctx, sc.Server)
 	if err != nil {
 		return res, err
 	}
@@ -117,7 +117,7 @@ func (d Deps) monitorWaits(ctx context.Context, inv *spec.Invocation) (*output.R
 		if err := sleepCtx(ctx, time.Duration(interval)*time.Second); err != nil {
 			return res, err
 		}
-		second, err := readWaits(ctx, cat)
+		second, err := readWaits(ctx, sc.Server)
 		if err != nil {
 			return res, err
 		}

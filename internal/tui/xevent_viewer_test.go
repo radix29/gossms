@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/xevent"
@@ -236,7 +238,7 @@ func runningZZTrace() []fakeResponse {
 // cursor across the whole rollover set.
 func TestXEventReaderLiveEventFileStartsAtTheCurrentFile(t *testing.T) {
 	const current = `C:\xe\zz_trace_0_133.xel`
-	sc, inst := newFakeConn(t, slices.Concat(runningZZTrace(), []fakeResponse{
+	sc, inst := newGConn(t, slices.Concat(runningZZTrace(), []fakeResponse{
 		{match: "RingBufferTarget/@truncated", arg: "zz_trace", cols: 12, rows: [][]driver.Value{
 			{time.Now(), int64(0), int64(0), "package0", "event_file", int64(1), int64(0), current, nil, nil, nil, nil},
 		}},
@@ -260,8 +262,8 @@ func TestXEventReaderLiveEventFileStartsAtTheCurrentFile(t *testing.T) {
 		t.Fatalf("first read: %d events from %q, want 2 from event_file", len(b.events), b.source)
 	}
 	args, _ := inst.ReadArgs("fn_xe_file_target_read_file")
-	if args[0].Value != current || args[1].Value != nil {
-		t.Errorf("first read's pattern %v, cursor %v — want the current file from its start", args[0].Value, args[1].Value)
+	if args[0] != current || args[1] != nil {
+		t.Errorf("first read's pattern %v, cursor %v — want the current file from its start", args[0], args[1])
 	}
 
 	b, _, err = r.read(context.Background())
@@ -271,22 +273,15 @@ func TestXEventReaderLiveEventFileStartsAtTheCurrentFile(t *testing.T) {
 	if len(b.events) != 1 || b.events[0].Seq != 3 {
 		t.Fatalf("second read: %+v", b.events)
 	}
-	inst.mu.Lock()
-	var last []driver.NamedValue
-	for i, q := range inst.reads {
-		if strings.Contains(q, "fn_xe_file_target_read_file") {
-			last = inst.readArgs[i]
-		}
-	}
-	inst.mu.Unlock()
-	if last[0].Value != "zz_trace*.xel" || last[1].Value != current || last[2].Value != int64(4096) {
-		t.Errorf("second read's args %v %v %v — want the wildcard from the first read's last buffer", last[0].Value, last[1].Value, last[2].Value)
+	last := inst.LastReadArgs("fn_xe_file_target_read_file")
+	if last[0] != "zz_trace*.xel" || last[1] != current || last[2] != int64(4096) {
+		t.Errorf("second read's args %v %v %v — want the wildcard from the first read's last buffer", last[0], last[1], last[2])
 	}
 }
 
 // A stopped session has nothing arriving to watch.
 func TestXEventReaderLiveRefusesAStoppedSession(t *testing.T) {
-	sc, _ := newFakeConn(t, append(xeSessionByName("zz_trace"), xeSessionResponses()...)...)
+	sc, _ := newGConn(t, append(xeSessionByName("zz_trace"), xeSessionResponses()...)...)
 	r := &xeReader{sc: sc, session: "zz_trace", live: true}
 	if _, _, err := r.read(context.Background()); err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("err %v, want not running", err)
@@ -305,9 +300,13 @@ func TestXEventReaderRingBufferDedupesAndCountsTheGap(t *testing.T) {
 		b.WriteString("</RingBufferTarget>")
 		return b.String()
 	}
-	sc, inst := newFakeConn(t, slices.Concat(runningZZTrace(), []fakeResponse{
-		{match: "target_name = N'ring_buffer'", cols: 1, rows: [][]driver.Value{{ring(2, 1, 2)}}},
-	}, xeSessionResponses())...)
+	sc, inst := newGConn(t, slices.Concat(runningZZTrace(), xeSessionResponses())...)
+	// The ring buffer's contents change between the reads.
+	var ringXML atomic.Value
+	ringXML.Store(ring(2, 1, 2))
+	inst.On("target_name = N'ring_buffer'", func(gosmotest.Query) gosmotest.Result {
+		return gosmotest.Result{Sets: []gosmotest.Set{{Columns: []string{""}, Rows: [][]any{{ringXML.Load()}}}}}
+	})
 
 	r := &xeReader{sc: sc, session: "zz_trace", target: gosmo.XETargetRingBuffer}
 	b, _, err := r.read(context.Background())
@@ -319,13 +318,7 @@ func TestXEventReaderRingBufferDedupesAndCountsTheGap(t *testing.T) {
 	}
 
 	// Seq 3 came and went between the reads; 2 is still held.
-	inst.mu.Lock()
-	for i := range inst.responses {
-		if inst.responses[i].match == "target_name = N'ring_buffer'" {
-			inst.responses[i].rows = [][]driver.Value{{ring(5, 2, 4, 5)}}
-		}
-	}
-	inst.mu.Unlock()
+	ringXML.Store(ring(5, 2, 4, 5))
 	b, _, err = r.read(context.Background())
 	if err != nil {
 		t.Fatalf("second read: %v", err)
@@ -342,7 +335,7 @@ func TestXEventReaderRingBufferDedupesAndCountsTheGap(t *testing.T) {
 // View Target Data on a target that keeps aggregates says so rather than
 // showing an empty grid.
 func TestXEventReaderRefusesAnAggregatingTarget(t *testing.T) {
-	sc, _ := newFakeConn(t, append(runningZZTrace(), xeSessionResponses()...)...)
+	sc, _ := newGConn(t, append(runningZZTrace(), xeSessionResponses()...)...)
 	r := &xeReader{sc: sc, session: "zz_trace", target: "histogram"}
 	if _, _, err := r.read(context.Background()); err == nil || !strings.Contains(err.Error(), "aggregated") {
 		t.Errorf("err %v", err)

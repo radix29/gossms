@@ -198,8 +198,8 @@ func wantConfigWrites(t *testing.T, stmts []string, want ...string) {
 func TestEverySpConfigureRowWritesTheOptionItIsLabelled(t *testing.T) {
 	for _, o := range configOptionRows {
 		t.Run(o.page+"/"+o.label, func(t *testing.T) {
-			sc, inst := newFakeConn(t, configResponses()...)
-			form, apply := loadPage(t, configPage(t, sc, o.page), inst)
+			sc, inst := newGConn(t, configResponses()...)
+			form, apply := loadPageG(t, configPage(t, sc, o.page), inst)
 
 			if o.isBool {
 				editCheck(t, form, o.label, true)
@@ -229,8 +229,8 @@ func TestSpConfigurePagesWriteNothingWhenUntouched(t *testing.T) {
 	for _, page := range []string{"Memory", "Processors", "Advanced",
 		"Connections", "Database Settings", "Security"} {
 		t.Run(page, func(t *testing.T) {
-			sc, inst := newFakeConn(t, configResponses()...)
-			_, apply := loadPage(t, configPage(t, sc, page), inst)
+			sc, inst := newGConn(t, configResponses()...)
+			_, apply := loadPageG(t, configPage(t, sc, page), inst)
 			if err := apply(context.Background()); err != nil {
 				t.Fatalf("apply: %v", err)
 			}
@@ -267,8 +267,8 @@ func TestSpConfigureOffersNoControlForAnOptionTheServerDoesNotHave(t *testing.T)
 	}
 	resp[list].rows = kept
 
-	sc, inst := newFakeConn(t, resp...)
-	form, apply := loadPage(t, pageServerAdvanced(sc), inst)
+	sc, inst := newGConn(t, resp...)
+	form, apply := loadPageG(t, pageServerAdvanced(sc), inst)
 
 	for _, label := range []string{"xp_cmdshell", "Cursor threshold"} {
 		row := textRow(t, form, label)
@@ -302,8 +302,8 @@ const (
 func TestProcessorAffinityBitFollowsTheProcessorItIsLabelled(t *testing.T) {
 	for _, cpu := range []int{0, 3, 7} {
 		t.Run("Processor "+strconv.Itoa(cpu), func(t *testing.T) {
-			sc, inst := newFakeConn(t, configResponses()...)
-			form, apply := loadPage(t, pageServerProcessors(sc), inst)
+			sc, inst := newGConn(t, configResponses()...)
+			form, apply := loadPageG(t, pageServerProcessors(sc), inst)
 
 			// The scripted mask is 0, so the page opens with "automatically
 			// set ... for all processors" ticked, and that overrides the grid
@@ -325,8 +325,8 @@ func TestProcessorAffinityBitFollowsTheProcessorItIsLabelled(t *testing.T) {
 // affinity from the CPU column and vice versa — both statements look right in
 // isolation.
 func TestProcessorIOAffinityIsADifferentColumnAndADifferentOption(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponses()...)
-	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+	sc, inst := newGConn(t, configResponses()...)
+	form, apply := loadPageG(t, pageServerProcessors(sc), inst)
 
 	editCheck(t, form, "Automatically set I/O affinity mask for all processors", false)
 	toggleByName(t, toggleGrid(t, form), "Processor 2", ioAffinityCol)
@@ -342,8 +342,8 @@ func TestProcessorIOAffinityIsADifferentColumnAndADifferentOption(t *testing.T) 
 // whatever the grid says — and here that means sending nothing at all, since 0
 // is what the server already has.
 func TestAutomaticProcessorAffinityOverridesTheGrid(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponses()...)
-	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+	sc, inst := newGConn(t, configResponses()...)
+	form, apply := loadPageG(t, pageServerProcessors(sc), inst)
 
 	tg := toggleGrid(t, form)
 	toggleByName(t, tg, "Processor 1", affinityCol)
@@ -383,7 +383,9 @@ func configResponsesWith(name string, value, inUse int64, dynamic bool) []fakeRe
 func withoutResponse(rs []fakeResponse, drop string) []fakeResponse {
 	out := make([]fakeResponse, 0, len(rs))
 	for _, r := range rs {
-		if r.match != drop {
+		if r.match == drop {
+			out = append(out, refusedRead(drop))
+		} else {
 			out = append(out, r)
 		}
 	}
@@ -413,11 +415,11 @@ func hasCheckRow(f *propsheet.Form, label string) bool {
 // list is not, so the page shows them and takes both writes out of apply.
 func TestProcessorsPageLeavesAffinityAloneWhenTheCPUListIsUnreadable(t *testing.T) {
 	// Both sys.dm_os_sys_info reads refused, which is what the one right
-	// covers: newFakeConnWithoutSysInfo drops the connect-time one, and the
+	// covers: newGConnWithoutSysInfo drops the connect-time one, and the
 	// filter drops the Processors page's own.
-	sc, inst := newFakeConnWithoutSysInfo(t,
+	sc, inst := newGConnWithoutSysInfo(t,
 		withoutResponse(configResponsesWithAffinity(15), "cpu_count, hyperthread_ratio")...)
-	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+	form, apply := loadPageG(t, pageServerProcessors(sc), inst)
 
 	// A control that cannot mean anything must not be offered: with no CPU
 	// rows, unticking "automatically set ..." selects an empty set.
@@ -443,8 +445,8 @@ func TestProcessorsPageLeavesAffinityAloneWhenTheCPUListIsUnreadable(t *testing.
 // half: the guard above must not disarm the affinity editor on a login that
 // can read the DMV, which is every test server and every sysadmin.
 func TestProcessorsPageStillEditsAffinityWhenTheCPUListIsReadable(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponsesWithAffinity(15)...)
-	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+	sc, inst := newGConn(t, configResponsesWithAffinity(15)...)
+	form, apply := loadPageG(t, pageServerProcessors(sc), inst)
 
 	editCheck(t, form, "Automatically set processor affinity mask for all processors", true)
 	if err := apply(context.Background()); err != nil {
@@ -464,8 +466,8 @@ func TestFilestreamSelectWritesItsLevelNotItsLabel(t *testing.T) {
 			continue // the scripted starting value; selecting it is not an edit
 		}
 		t.Run(label, func(t *testing.T) {
-			sc, inst := newFakeConn(t, configResponses()...)
-			form, apply := loadPage(t, pageServerDatabaseSettings(sc), inst)
+			sc, inst := newGConn(t, configResponses()...)
+			form, apply := loadPageG(t, pageServerDatabaseSettings(sc), inst)
 
 			editSelect(t, form, "FILESTREAM access level", label)
 			if err := apply(context.Background()); err != nil {
@@ -498,8 +500,8 @@ func TestFilestreamOffersNoControlWhenTheServerHasNone(t *testing.T) {
 		}
 	}
 
-	sc, inst := newFakeConn(t, resp...)
-	form, apply := loadPage(t, pageServerDatabaseSettings(sc), inst)
+	sc, inst := newGConn(t, resp...)
+	form, apply := loadPageG(t, pageServerDatabaseSettings(sc), inst)
 
 	row := selectRow(t, form, "FILESTREAM access level")
 	if got := row.Items(); len(got) != 1 || got[0] != "N/A" {
@@ -518,8 +520,8 @@ func TestFilestreamOffersNoControlWhenTheServerHasNone(t *testing.T) {
 // Static row: a live-looking editor for it would report a change that never
 // happened.
 func TestServerSecurityAuthenticationModeIsReadOnly(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponses()...)
-	form, _ := loadPage(t, pageServerSecurity(sc), inst)
+	sc, inst := newGConn(t, configResponses()...)
+	form, _ := loadPageG(t, pageServerSecurity(sc), inst)
 
 	for _, r := range form.Rows() {
 		if tr, ok := r.(*propsheet.TextRow); ok && tr.Label() == sheetLabel("Authentication mode") {
@@ -550,8 +552,8 @@ func findStatic(f *propsheet.Form, label string) (string, bool) {
 // Asserted through the widget, since a page that offered the checkbox and let
 // the write fail writes a statement this fake would happily accept.
 func TestXpCmdshellIsNotEditableOnLinux(t *testing.T) {
-	sc, inst := newFakeConnOnLinux(t, configResponses()...)
-	form, apply := loadPage(t, pageServerAdvanced(sc), inst)
+	sc, inst := newGConnOnLinux(t, configResponses()...)
+	form, apply := loadPageG(t, pageServerAdvanced(sc), inst)
 
 	row := textRow(t, form, "xp_cmdshell")
 	if !strings.Contains(row.Value(), "Linux") {
@@ -572,8 +574,8 @@ func TestXpCmdshellIsNotEditableOnLinux(t *testing.T) {
 // TestXpCmdshellStaysEditableOnWindows guards the other direction: the check
 // above is satisfied by a page that withholds the option everywhere.
 func TestXpCmdshellStaysEditableOnWindows(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponses()...)
-	form, apply := loadPage(t, pageServerAdvanced(sc), inst)
+	sc, inst := newGConn(t, configResponses()...)
+	form, apply := loadPageG(t, pageServerAdvanced(sc), inst)
 
 	editCheck(t, form, "xp_cmdshell", true)
 	if err := apply(context.Background()); err != nil {
@@ -587,8 +589,8 @@ func TestXpCmdshellStaysEditableOnWindows(t *testing.T) {
 // batch is what turns "show advanced options" on around the changes, and a
 // second one would toggle it — and RECONFIGURE the instance — twice.
 func TestSpConfigurePageSendsEveryEditInOneBatch(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponses()...)
-	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+	sc, inst := newGConn(t, configResponses()...)
+	form, apply := loadPageG(t, pageServerProcessors(sc), inst)
 
 	editText(t, form, "Max degree of parallelism", "4")
 	editText(t, form, "Cost threshold for parallelism", "50")
@@ -609,16 +611,16 @@ func TestSpConfigurePageSendsEveryEditInOneBatch(t *testing.T) {
 // so bit 31 is also off the grid, which must keep it as read.
 func TestProcessorAffinityWithCPU31IsLeftAloneAndStaysInRange(t *testing.T) {
 	const cpu0and31 = -2147483647 // 0x80000001
-	sc, inst := newFakeConn(t, configResponsesWithAffinity(cpu0and31)...)
-	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+	sc, inst := newGConn(t, configResponsesWithAffinity(cpu0and31)...)
+	form, apply := loadPageG(t, pageServerProcessors(sc), inst)
 	editText(t, form, "Max degree of parallelism", "4")
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	wantConfigWrites(t, inst.Statements(), "max degree of parallelism=4")
 
-	sc, inst = newFakeConn(t, configResponsesWithAffinity(cpu0and31)...)
-	form, apply = loadPage(t, pageServerProcessors(sc), inst)
+	sc, inst = newGConn(t, configResponsesWithAffinity(cpu0and31)...)
+	form, apply = loadPageG(t, pageServerProcessors(sc), inst)
 	toggleByName(t, toggleGrid(t, form), "Processor 1", affinityCol)
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -649,8 +651,8 @@ func noteUnder(f *propsheet.Form, label string) string {
 // restart. The row shows what is configured, says what is running, and sends
 // 0 when unticked.
 func TestSpConfigureRowsEditTheConfiguredValueNotTheRunningOne(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponsesWith("scan for startup procs", 1, 0, false)...)
-	form, apply := loadPage(t, pageServerAdvanced(sc), inst)
+	sc, inst := newGConn(t, configResponsesWith("scan for startup procs", 1, 0, false)...)
+	form, apply := loadPageG(t, pageServerAdvanced(sc), inst)
 
 	if !checkRow(t, form, "Scan for startup procs").Checked() {
 		t.Error("the row shows the running value (off), not the configured one (on)")
@@ -673,8 +675,8 @@ func TestSpConfigureRowsEditTheConfiguredValueNotTheRunningOne(t *testing.T) {
 // counterpart, on a dynamic option (pending until RECONFIGURE), plus the
 // Advanced grid's two columns.
 func TestPendingIntOptionShowsBothValuesAndWritesNothingUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, configResponsesWith("cursor threshold", 100, -1, true)...)
-	form, apply := loadPage(t, pageServerAdvanced(sc), inst)
+	sc, inst := newGConn(t, configResponsesWith("cursor threshold", 100, -1, true)...)
+	form, apply := loadPageG(t, pageServerAdvanced(sc), inst)
 
 	if v := textRow(t, form, "Cursor threshold").Value(); v != "100" {
 		t.Errorf("Cursor threshold shows %q, want the configured 100", v)

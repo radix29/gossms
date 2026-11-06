@@ -236,7 +236,7 @@ behind the mouse and async rules.
   `grid.SelectedRow()`. `QueryStorePanel.showValue` uses `qsResultRow.queryText`;
   `DetailBrowser.showQueryStoreValue` (shared `[][]string` grid) re-reads by
   `Query ID` via `QueryStore().QueryText`. Test the bound id with
-  `fakeInstance.ReadArgs` — the fake answers every id alike.
+  `gFake.ReadArgs` — the fake answers every id alike.
 
 ## Mouse, overlays, and async UI
 

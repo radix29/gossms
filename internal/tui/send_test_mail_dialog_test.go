@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func TestWaitForTestMail(t *testing.T) {
 			"Mail item 42 was queued, but reading its status failed", true, func(n int) bool { return n == 1 }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, inst := newFakeConn(t, tc.responses...)
+			sc, inst := newGConn(t, tc.responses...)
 			res := waitForTestMail(context.Background(), sc, 42, 40*time.Millisecond, 5*time.Millisecond)
 			text, isErr := res.message()
 			if !strings.HasPrefix(text, tc.wantText) {
@@ -116,7 +117,7 @@ func TestWaitForTestMail(t *testing.T) {
 				t.Errorf("the item was read %d times", n)
 			}
 			// The item asked about is the one sent, not the newest.
-			if args, ok := inst.ReadArgs(mailItemByIDRead); !ok || len(args) != 1 || args[0].Value != int64(42) {
+			if args, ok := inst.ReadArgs(mailItemByIDRead); !ok || len(args) != 1 || fmt.Sprint(args[0]) != "42" {
 				t.Errorf("item read with %v, want mail item 42", args)
 			}
 		})
@@ -124,7 +125,7 @@ func TestWaitForTestMail(t *testing.T) {
 }
 
 func TestWaitForTestMailStopsWhenCancelled(t *testing.T) {
-	sc, _ := newFakeConn(t, mailItem("unsent"), noMailEvents())
+	sc, _ := newGConn(t, mailItem("unsent"), noMailEvents())
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(20*time.Millisecond, cancel)
 	start := time.Now()
@@ -153,7 +154,7 @@ func loadSendTestMail(t *testing.T, sc *db.ServerConn) (*SendTestMailDialog, *Ap
 }
 
 func TestSendTestMailOffersTheProfilesWithThePublicDefaultFirstChosen(t *testing.T) {
-	sc, _ := newFakeConn(t, append([]fakeResponse{mailStatus("STARTED")}, mailConfig()...)...)
+	sc, _ := newGConn(t, append([]fakeResponse{mailStatus("STARTED")}, mailConfig()...)...)
 	_, _, f := loadSendTestMail(t, sc)
 	pick := selectRow(t, f, "Profile")
 	if got := pick.Items(); len(got) != 2 || got[0] != "alerts" || got[1] != "ops" {
@@ -169,7 +170,7 @@ func TestSendTestMailOffersTheProfilesWithThePublicDefaultFirstChosen(t *testing
 // profile is typed, and blank sends through their default — no
 // @profile_name at all.
 func TestSendTestMailForARoleOnlyLoginTypesTheProfile(t *testing.T) {
-	sc, inst := newFakeConn(t, mailStatus("STARTED"),
+	sc, inst := newGConn(t, mailStatus("STARTED"),
 		mailRefused(mailProfileRead, "sysmail_profile"),
 		fakeResponse{match: mailSendCall, cols: 1, rows: [][]driver.Value{{int64(42)}}},
 		mailItem("sent"))
@@ -197,7 +198,7 @@ func TestSendTestMailForARoleOnlyLoginTypesTheProfile(t *testing.T) {
 }
 
 func TestSendTestMailSendsThroughTheChosenProfile(t *testing.T) {
-	sc, inst := newFakeConn(t, append([]fakeResponse{mailStatus("STOPPED"),
+	sc, inst := newGConn(t, append([]fakeResponse{mailStatus("STOPPED"),
 		{match: mailSendCall, cols: 1, rows: [][]driver.Value{{int64(42)}}},
 		mailItem("sent")}, mailConfig()...)...)
 	d, a, f := loadSendTestMail(t, sc)
@@ -224,14 +225,14 @@ func TestSendTestMailSendsThroughTheChosenProfile(t *testing.T) {
 }
 
 func TestSendTestMailRefusesBeforeSending(t *testing.T) {
-	sc, inst := newFakeConn(t, append([]fakeResponse{mailStatus("STARTED")}, mailConfig()...)...)
+	sc, inst := newGConn(t, append([]fakeResponse{mailStatus("STARTED")}, mailConfig()...)...)
 	d, _, _ := loadSendTestMail(t, sc)
 	d.send(false)
 	if d.Message() != "To is required" || d.Applying() {
 		t.Errorf("blank To: message %q, applying %v", d.Message(), d.Applying())
 	}
 
-	empty, inst2 := newFakeConn(t, mailStatus("STARTED"),
+	empty, inst2 := newGConn(t, mailStatus("STARTED"),
 		fakeResponse{match: mailProfileRead, cols: 6}, fakeResponse{match: mailProfAcctRead, cols: 4})
 	d2, _, f2 := loadSendTestMail(t, empty)
 	editText(t, f2, "To", "dba@example.com")
@@ -239,7 +240,7 @@ func TestSendTestMailRefusesBeforeSending(t *testing.T) {
 	if !strings.Contains(d2.Message(), "no Database Mail profile") {
 		t.Errorf("no profiles: message %q", d2.Message())
 	}
-	for _, i := range []*fakeInstance{inst, inst2} {
+	for _, i := range []*gFake{inst, inst2} {
 		if len(i.Reads(mailSendCall)) != 0 {
 			t.Error("sp_send_dbmail ran")
 		}
@@ -248,7 +249,7 @@ func TestSendTestMailRefusesBeforeSending(t *testing.T) {
 
 // A refused send keeps the dialog open, on OK too, with what was typed.
 func TestSendTestMailKeepsTheDialogWhenTheSendIsRefused(t *testing.T) {
-	sc, _ := newFakeConn(t, append([]fakeResponse{mailStatus("STARTED"),
+	sc, _ := newGConn(t, append([]fakeResponse{mailStatus("STARTED"),
 		mailRefused(mailSendCall, "sp_send_dbmail")}, mailConfig()...)...)
 	d, a, f := loadSendTestMail(t, sc)
 	editText(t, f, "To", "dba@example.com")
@@ -276,7 +277,7 @@ func TestSendTestMailExplainsTheRefusalsItKnows(t *testing.T) {
 		{14641, "Mail not queued. Database Mail is stopped. Use sysmail_start_sp to start Database Mail.", "stopped and queued nothing"},
 		{15281, "SQL Server blocked access to procedure 'dbo.sp_send_dbmail' of component 'Database Mail XPs' because this component is turned off as part of the security configuration for this server.", "Database Mail XPs is off"},
 	} {
-		sc, _ := newFakeConn(t, append([]fakeResponse{mailStatus("STARTED"),
+		sc, _ := newGConn(t, append([]fakeResponse{mailStatus("STARTED"),
 			{match: mailSendCall, err: mssql.Error{Number: tc.number, Class: 16, Message: tc.message}}}, mailConfig()...)...)
 		d, a, f := loadSendTestMail(t, sc)
 		editSelect(t, f, "Profile", "alerts")

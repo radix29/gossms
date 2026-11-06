@@ -14,7 +14,7 @@ import (
 // the connection; responses script the fake server.
 func newSchemaTestDialog(t *testing.T, pf *nschemaPrefetch, responses ...fakeResponse) *NewSchemaDialog {
 	t.Helper()
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	d := &NewSchemaDialog{}
 	d.dbName = "appdb"
 	d.sc = sc
@@ -173,7 +173,7 @@ func TestNewSchemaGateMatchesWhatTheServerAllowed(t *testing.T) {
 				denied = append(denied, n)
 			}
 		}
-		sc, _ := newFakeConn(t, capabilityResponses(true, nil, nil, tc.granted, denied)...)
+		sc, _ := newGConn(t, capabilityResponses(true, nil, nil, tc.granted, denied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		folder := &explorerNode{data: nodeData{Type: NodeSchemas, DBName: "appdb", conn: sc}}

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"github.com/radix29/gosmo/gosmotest"
 	"testing"
 	"time"
 
@@ -94,9 +95,8 @@ func TestNewCredentialPrefetchFollowsServerCollation(t *testing.T) {
 		collation string
 		taken     bool
 	}{{"SQL_Latin1_General_CP1_CI_AS", true}, {"Latin1_General_CS_AS", false}} {
-		info := serverInfoResponse()
-		info.rows[0][4] = tt.collation
-		sc, _ := newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse(), creds})
+		sc, _ := newGConnWith(t, func(i *gosmotest.Info) { i.Collation = tt.collation }, creds,
+			fakeResponse{match: "sys.cryptographic_providers"})
 		pf, err := fetchNewCredentialPrefetch(context.Background(), sc)
 		if err != nil {
 			t.Fatalf("%s: %v", tt.collation, err)
@@ -111,7 +111,7 @@ func TestNewCredentialPrefetchFollowsServerCollation(t *testing.T) {
 // server does not override: a CS database takes "sales" beside "Sales".
 func TestNewDBScopedCredPrefetchFollowsDatabaseCollation(t *testing.T) {
 	now := time.Now()
-	sc, _ := newFakeConn(t, csDatabaseRow("appdb"),
+	sc, _ := newGConn(t, csDatabaseRow("appdb"),
 		fakeResponse{match: "FROM   sys.database_scoped_credentials", cols: 5, rows: [][]driver.Value{
 			{int64(1), "Sales", "identity", now, now},
 		}})
@@ -132,7 +132,7 @@ func TestNewDBScopedCredPrefetchFollowsContainedCatalogCollation(t *testing.T) {
 	now := time.Now()
 	contained := csDatabaseRow("appdb")
 	contained.rows[0][6] = "Latin1_General_100_CI_AS_KS_WS_SC"
-	sc, _ := newFakeConn(t, contained,
+	sc, _ := newGConn(t, contained,
 		fakeResponse{match: "FROM   sys.database_scoped_credentials", cols: 5, rows: [][]driver.Value{
 			{int64(1), "Sales", "identity", now, now},
 		}})
@@ -165,7 +165,7 @@ func TestDatabaseCollationFallsBackToTheDataCollation(t *testing.T) {
 // An Agent object's check follows msdb's collation, read by name.
 func TestNewOperatorPrefetchFollowsMsdbCollation(t *testing.T) {
 	responses := append(agentOperatorResponses(), agentCategoryResponse(), csDatabaseRow("msdb"))
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	pf, err := fetchNewOperatorPrefetch(context.Background(), sc)
 	if err != nil {
 		t.Fatal(err)

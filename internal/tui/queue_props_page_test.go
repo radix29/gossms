@@ -16,14 +16,14 @@ import (
 // loadQueuePage opens Queue Properties on one row of the queue fixture. row
 // is that row's index in queueResp, since the by-name read has to be answered
 // with the one queue the page asked for — see brokerRowByArg.
-func loadQueuePage(t *testing.T, name string, row int) (*fakeInstance, propApply, *propsheet.Form) {
+func loadQueuePage(t *testing.T, name string, row int) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, brokerDBResp(), brokerRowByArg(queueResp(), name, row))
+	sc, inst := newGConn(t, brokerDBResp(), brokerRowByArg(queueResp(), name, row))
 	pages := brokerQueuePropPages(sc, brokerDB, "dbo", name)
 	if len(pages) != 1 {
 		t.Fatalf("want one page, got %d", len(pages))
 	}
-	form, apply := loadPage(t, pages[0], inst)
+	form, apply := loadPageG(t, pages[0], inst)
 	return inst, apply, form
 }
 
@@ -124,7 +124,7 @@ func TestQueuePageWritesNothingWhenNothingChanged(t *testing.T) {
 }
 
 // oneBrokerStatement is the single write a Service Broker page's apply made.
-func oneBrokerStatement(t *testing.T, inst *fakeInstance) string {
+func oneBrokerStatement(t *testing.T, inst *gFake) string {
 	t.Helper()
 	stmts := inst.StatementsIn(brokerDB)
 	if len(stmts) != 1 {

@@ -58,12 +58,12 @@ func securableGrids(t *testing.T, f *propsheet.Form) (secs *controls.DataGrid, p
 	return grids[0].Grid, grids[1], grids[2]
 }
 
-func loadSecurablesPage(t *testing.T) (*fakeInstance, *App, propApply, *propsheet.Form) {
+func loadSecurablesPage(t *testing.T) (*gFake, *App, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, securableResponses()...)
+	sc, inst := newGConn(t, securableResponses()...)
 	d, app := newFakeDialog(t)
 	principal := "appwriter"
-	form, apply := loadPage(t, pageDatabasePrincipalSecurables(d, sc, secDatabase, &principal), inst)
+	form, apply := loadPageG(t, pageDatabasePrincipalSecurables(d, sc, secDatabase, &principal), inst)
 	secs, _, _ := securableGrids(t, form)
 	if secs.Row(3) == nil {
 		t.Fatal("the securables grid has fewer than four rows — the fake is under-scripted, not the page wrong")
@@ -119,7 +119,7 @@ func TestSecurablesRevokeCarriesTheObjectItWasGrantedOn(t *testing.T) {
 // so a cycled cell must write against those rather than against whatever is
 // selected when apply runs.
 func TestSecurablesColumnGrantNamesTheColumnAndItsObject(t *testing.T) {
-	sc, inst := newFakeConn(t, append(securableResponses(),
+	sc, inst := newGConn(t, append(securableResponses(),
 		// ObjectColumns, not Table.Columns — the editor works on views too.
 		fakeResponse{match: "OBJECT_ID(@p1)", db: secDatabase, cols: 42, rows: [][]driver.Value{
 			{"OrderID", int64(1), "int", int64(4), int64(10), int64(0), false, false, false, "", "", "", false, "", int64(0), int64(0), false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", "", "", "", false, int64(0), "", "", "", "", "", false},
@@ -129,7 +129,7 @@ func TestSecurablesColumnGrantNamesTheColumnAndItsObject(t *testing.T) {
 	)...)
 	d, app := newFakeDialog(t)
 	principal := "appwriter"
-	form, apply := loadPage(t, pageDatabasePrincipalSecurables(d, sc, secDatabase, &principal), inst)
+	form, apply := loadPageG(t, pageDatabasePrincipalSecurables(d, sc, secDatabase, &principal), inst)
 
 	secs, _, cols := securableGrids(t, form)
 	selectGridRow(t, secs, 0, "[sales].[Orders]")

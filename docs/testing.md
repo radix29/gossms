@@ -82,7 +82,7 @@ not "durably blocked", so screen and live tests can't move.
 sleep.** A too-short sleep never fails such a test — it passes without having
 checked anything. In a bubble, `Wait` returns once every goroutine is blocked
 or gone, so a post or a goroutine that should not exist has shown itself
-(`safego_test.go`, `prop_dialog_pageruns_test.go`; the `fakedb` driver works
+(`safego_test.go`, `prop_dialog_pageruns_test.go`; the `gosmotest` server works
 in a bubble). If the goroutine always posts and the post must be *ignored*,
 `waitAndDrain` for it instead. A goroutine parked on a `sync.Mutex` is not
 durably blocked, so `Wait` hangs on it (`clipboard_test.go` keeps its sleeps).
@@ -122,9 +122,11 @@ go-mssqldb. Build the connector (for Entra, the driver's parser and validator,
 no dial) and assert on `msdsn.Parse(dsn).Parameters`. gossms's `toGosmoOptions`
 tests go through `ConnectionString` → `azuread.NewConnector`.
 
-**Drive a Properties page end to end with `internal/tui/fakedb_test.go`.**
-`gosmo.NewServer` takes a caller `*sql.DB`; the harness gives `newFakeConn` (a
-`*db.ServerConn` over a scripted driver recording every statement), `loadPage`,
+**Drive a Properties page end to end with `internal/tui/gosmotest_bridge_test.go`
+and `gosmotest_fixtures_test.go`.** `gosmo.NewServer` takes a caller `*sql.DB`; the harness
+gives `newGConn` (a `*db.ServerConn` over a `gosmotest` server recording every
+statement; the `fakeResponse` fixtures in `gosmotest_fixtures_test.go` script it),
+`loadPageG`,
 and `textRow` (address a form by label). Example:
 `database_props_files_page_test.go`. The `gosmo.WithScript` harness doesn't
 work here — `load` and `apply` start with a by-name read, and `WithScript`
@@ -147,7 +149,7 @@ reason:
   contains `FROM sys.databases`.
 - **Assert with `StatementsIn(db)`, not `Statements()`,** for database-scoped
   writes (the bare `USE` is stripped); pair with `assertNoStatementsIn`.
-- **Both return the statement with its `@pN` bound** (`fakeExec.bound`), as
+- **Both return the statement with its `@pN` bound** (`Query.Bound`), as
   gosmo's observer shows it: gosmo binds every Agent procedure's strings, so
   the raw text says only `@job_name = @p1`. `Reads` is raw — check a read's
   values with `ReadArgs`.
@@ -163,7 +165,7 @@ The harness shows the page asked the right things and built the right request �
 never that the T-SQL is valid. Statement text is gosmo's tests; acceptance is a
 live run.
 
-**The command line's `object`, `script`, `data`, `security` and `maint` groups run real gosmo over `gosmotest`.**
+**The command line's `object`, `script`, `data`, `security`, `maint` and `monitor` groups run real gosmo over `gosmotest`.**
 gosmo's exported fake driver answers each query from the first rule whose
 text it contains, with a database read's transport stripped (`Query.Database`
 says where it ran). `internal/cli/object_server_test.go` is the server: its
@@ -178,8 +180,9 @@ The row encoders are `internal/cli/clitest`'s, shared with package `cmd`'s
 tests, whose `catalogServer` (`cmd/catalog_server_test.go`) answers the
 resolution and table/view reads for a handler tested there (the dry-run
 fidelity harness's `data import` case); `secServer`
-(`cmd/security_server_test.go`) and `maintServer`
-(`cmd/maint_server_test.go`) build on it the way `scriptServer` builds on
+(`cmd/security_server_test.go`), `maintServer`
+(`cmd/maint_server_test.go`) and `monitorServer`
+(`cmd/monitor_server_test.go`) build on it the way `scriptServer` builds on
 `objectServer`. A list read answers in the query's ORDER BY, as the
 server would — a fake's insertion order hid what the user sees — and a
 filtering read applies its WHERE or HAVING. Their writes go to gosmotest
@@ -190,4 +193,4 @@ statement text, not a fake's arguments. gosmotest answers a BACKUP or
 RESTORE that reads progress messages (`Query.Messages`) as a message
 stream, and a bulk load as one `INSERTBULK` Exec per row. Every other
 group still fakes
-`cmd.Catalog`/`cmd.Writer` (`docs/open-threads.md` § Command line).
+`cmd.Catalog` (`docs/open-threads.md` § Command line).

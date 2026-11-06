@@ -105,7 +105,7 @@ func TestExternalTablesFolderFollowsThePresenceRead(t *testing.T) {
 // than no folder — the same call External Libraries gets.
 func TestGraphTablesFolderIsAbsentBefore2017(t *testing.T) {
 	load := func(version string) []string {
-		sc, _ := newFakeConnAtVersion(t, version, treeFamilyDatabaseRow(),
+		sc, _ := newGConnAtVersion(t, version, treeFamilyDatabaseRow(),
 			tablesPresenceResp(false, false, false, false), tablesListResp())
 		return labelsOfNodes(loadFamily(t, sc, NodeTables))
 	}
@@ -121,7 +121,7 @@ func TestGraphTablesFolderIsAbsentBefore2017(t *testing.T) {
 // not also be listed under Tables itself. The exclusion is gosmo's clause, so
 // what is asserted here is that the loader asked for TableKindUser at all.
 func TestTablesFolderAsksForPlainUserTablesOnly(t *testing.T) {
-	sc, inst := newFakeConn(t, treeFamilyDatabaseRow(),
+	sc, inst := newGConn(t, treeFamilyDatabaseRow(),
 		tablesPresenceResp(false, false, false, false), tablesListResp())
 	loadFamily(t, sc, NodeTables)
 
@@ -156,7 +156,7 @@ func TestTableSubFolderLoaders(t *testing.T) {
 		{NodeGraphTables, "t.is_node = 1", tableRow(4, "dbo", "Person", false, false, false, true), "dbo.Person (node)", false},
 	} {
 		t.Run(nodeTypeName(c.folder), func(t *testing.T) {
-			sc, inst := newFakeConn(t, treeFamilyDatabaseRow(), tablesListResp(c.row))
+			sc, inst := newGConn(t, treeFamilyDatabaseRow(), tablesListResp(c.row))
 			children := loadFamily(t, sc, c.folder)
 			if got := labelsOfNodes(children); !slices.Equal(got, []string{c.wantName}) {
 				t.Fatalf("children = %v, want %v", got, []string{c.wantName})
@@ -176,7 +176,7 @@ func TestTableSubFolderLoaders(t *testing.T) {
 // A graph table's label says which half of the graph it is: node and edge
 // tables share one folder, and nothing else in the row distinguishes them.
 func TestGraphTableLabelsSayNodeOrEdge(t *testing.T) {
-	sc, _ := newFakeConn(t, treeFamilyDatabaseRow(), tablesListResp(
+	sc, _ := newGConn(t, treeFamilyDatabaseRow(), tablesListResp(
 		tableRow(1, "dbo", "Person", false, false, false, true),
 		tableRow(2, "dbo", "Knows", false, false, false, false, true),
 	))

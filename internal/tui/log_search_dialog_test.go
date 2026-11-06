@@ -185,7 +185,7 @@ func TestLogViewerLoadPassesTheSearchToTheServer(t *testing.T) {
 		return []driver.Value{time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC), "Server", text}
 	}
 	a := newTestApp()
-	sc, _ := newFakeConn(t,
+	sc, _ := newGLogConn(t,
 		// Scoped to the search text, and listed first: without the scoping
 		// both reads get the same answer and the test passes either way.
 		fakeResponse{match: "xp_readerrorlog", arg: "login failed", cols: 3, rows: [][]driver.Value{

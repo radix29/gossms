@@ -11,9 +11,9 @@ import (
 // contract the broker does not enforce.
 
 func TestMessageTypePageShowsTheValidationItsCollectionDecidesTo(t *testing.T) {
-	sc, inst := newFakeConn(t, brokerDBResp(), brokerRowByArg(messageTypeResp(), "//claims/Submit", 1))
+	sc, inst := newGConn(t, brokerDBResp(), brokerRowByArg(messageTypeResp(), "//claims/Submit", 1))
 	pages := messageTypePropPages(sc, brokerDB, "//claims/Submit")
-	form, apply := loadPage(t, pages[0], inst)
+	form, apply := loadPageG(t, pages[0], inst)
 
 	if apply != nil {
 		t.Error("Message Type Properties is read-only; its page returned an apply")
@@ -31,9 +31,9 @@ func TestMessageTypePageShowsTheValidationItsCollectionDecidesTo(t *testing.T) {
 // sit below 65536 — and a page reading it the other way offers a user a
 // Delete the server refuses.
 func TestMessageTypePageMarksAShippedTypeSystem(t *testing.T) {
-	sc, inst := newFakeConn(t, brokerDBResp(), brokerRowByArg(messageTypeResp(), "DEFAULT", 0))
+	sc, inst := newGConn(t, brokerDBResp(), brokerRowByArg(messageTypeResp(), "DEFAULT", 0))
 	pages := messageTypePropPages(sc, brokerDB, "DEFAULT")
-	form, _ := loadPage(t, pages[0], inst)
+	form, _ := loadPageG(t, pages[0], inst)
 
 	if got := staticValue(t, form, "System object"); got != boolStr(true) {
 		t.Errorf("System object reads %q for DEFAULT, want %q", got, boolStr(true))

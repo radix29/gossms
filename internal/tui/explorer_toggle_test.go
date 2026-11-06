@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/radix29/gosmo/gosmotest"
 	"slices"
 	"strings"
 	"testing"
@@ -73,6 +74,7 @@ func TestTriggerTogglesIssueTheirOwnStatement(t *testing.T) {
 func TestSecurityPolicyToggleNamesThePolicyQualified(t *testing.T) {
 	a := newTestApp()
 	sc, inst := opTestConn(t)
+	inst.On("FROM   sys.security_policies sp", gosmotest.Rows()) // the policy is gone
 	node := opTestNode(sc, NodeSecurityPolicy, "rls", "pol_orders", "")
 	node.data.IsEnabled = true
 

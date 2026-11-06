@@ -427,7 +427,7 @@ func TestPropDialogReportsApplyNotes(t *testing.T) {
 // preflight builds on the UI goroutine sees what the editors hold.
 func TestNewObjectDialogCommitsBeforePreflight(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	row := propsheet.Text("Path", "", 40)
 	var built string
 	d := &newObjectDialog[testPrefetch]{}
@@ -469,7 +469,7 @@ func TestNewObjectDialogCommitsBeforePreflight(t *testing.T) {
 func TestNewObjectDialogReportsApplyNotes(t *testing.T) {
 	const note = "the file was created smaller than asked."
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := &newObjectDialog[testPrefetch]{}
 	d.init(a, newObjectConfig[testPrefetch]{
 		title: "New Thing",

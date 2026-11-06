@@ -10,6 +10,8 @@ package clitest
 
 import (
 	"encoding/json"
+	"encoding/xml"
+	"fmt"
 	"strings"
 	"time"
 
@@ -343,4 +345,245 @@ func CheckDBSet(rows []*gosmo.CheckDBError) gosmotest.Set {
 			0, 0, 0, 0, 0, 1})
 	}
 	return set
+}
+
+// ActiveSessionRow is s as one row of ActiveSessions' and SessionByID's
+// select. The database, status, last request start and wait type are NULL
+// when empty, as DB_NAME and the joined request's columns come back; the
+// texts are ISNULL'd to empty by the query.
+func ActiveSessionRow(s *gosmo.ActiveSession) []any {
+	return []any{s.SessionID, s.LoginName, s.HostName, s.ProgramName,
+		Nullable(s.DatabaseName), Nullable(s.Status),
+		s.CPUTime, s.MemoryUsage, s.TotalElapsedMS, Nullable(s.LastRequestStart),
+		s.CommandText, s.RecentText, s.Command,
+		s.OpenTransactionCount, s.Reads, s.Writes, s.LogicalReads,
+		s.BlockingSessionID, Nullable(s.WaitType), s.WaitTimeMS, s.WaitResource,
+		s.HostProcessID, s.FromCallerHost, s.IsUserProcess,
+		s.RequestCPUTime, s.RequestElapsedMS, s.RequestReads, s.RequestWrites, s.RequestLogicalReads}
+}
+
+// WaitStatRow is w as one row of WaitStats' sys.dm_os_wait_stats select.
+func WaitStatRow(w gosmo.WaitStat) []any {
+	return []any{w.WaitType, w.WaitingTasks, w.WaitTimeMs, w.SignalWaitTimeMs, w.MaxWaitTimeMs}
+}
+
+// CachedQueryStatRow is q as one row of TopQueries' select.
+func CachedQueryStatRow(q *gosmo.CachedQueryStat) []any {
+	return []any{q.Database, q.QueryHash, q.PlanHandle, q.StatementStart, q.StatementEnd, q.Text,
+		q.ExecutionCount, q.TotalCPUMicros, q.TotalDurationMicros, q.TotalLogicalReads, q.TotalLogicalWrites,
+		q.LastExecutionTime, q.CreationTime}
+}
+
+// QueryStoreInfoRow is a Query Store in state, 100 MB of 1000 used, as the
+// row of QueryStore.Options' sys.database_query_store_options select; the
+// custom capture policy columns are NULL, as with any capture mode but
+// CUSTOM.
+func QueryStoreInfoRow(state gosmo.QueryStoreState) []any {
+	return []any{string(state), string(state), 0, int64(100), int64(1000), 900, 60, 200,
+		"AUTO", "AUTO", 30, "ON", nil, nil, nil, nil}
+}
+
+// QSQueryStatRow is st as one row of the per-query Query Store reports'
+// select: no forced plan and a query not executed in the window are NULL.
+func QSQueryStatRow(st *gosmo.QSQueryStat) []any {
+	var last any
+	if !st.LastExecutionTime.IsZero() {
+		last = st.LastExecutionTime
+	}
+	return []any{st.QueryID, st.QueryText, st.ObjectName, st.ExecCount, st.PlanCount, Nullable(st.ForcedPlanID),
+		last, st.Value, st.BaselineValue, st.BaselineExecCount, st.Regression, st.Variation}
+}
+
+// QSWaitStatRow is w as one row of QueryStore.WaitCategories' select.
+func QSWaitStatRow(w *gosmo.QSWaitStat) []any {
+	return []any{string(w.Category), w.ExecCount, w.Value}
+}
+
+// EventSessionRows is es, session id, as the rows of the five reads
+// XEvents.SessionByName and Sessions make: the session, its events, their
+// actions (none), its targets, and their fields. Events are numbered from 1
+// and targets after them, one counter as the server keeps it.
+func EventSessionRows(es *gosmo.EventSession, id int) (session []any, events, actions, targets, fields [][]any) {
+	session = []any{id, es.Name, es.StartupState, es.IsRunning, Nullable(es.RetentionMode),
+		es.MaxDispatchLatency.Milliseconds(), es.MaxMemory, es.MaxEventSize, Nullable(es.MemoryPartitionMode),
+		es.TrackCausality, int64(es.MaxDuration.Seconds()), es.DroppedEvents}
+	obj := 0
+	for _, e := range es.Events {
+		obj++
+		events = append(events, []any{id, obj, e.Package, e.Name, Nullable(e.Predicate)})
+	}
+	for _, t := range es.Targets {
+		obj++
+		targets = append(targets, []any{id, obj, t.Package, t.Name})
+		for _, f := range t.Fields {
+			base := "int"
+			if f.IsString || !isNumber(f.Value) {
+				base = "nvarchar"
+			}
+			fields = append(fields, []any{id, obj, f.Name, f.Value, base})
+		}
+	}
+	return session, events, actions, targets, fields
+}
+
+func isNumber(s string) bool {
+	var n int64
+	_, err := fmt.Sscan(s, &n)
+	return err == nil && fmt.Sprint(n) == s
+}
+
+// EventXML is e as one <event> element, as fn_xe_file_target_read_file's
+// event_data and a ring_buffer's target_data carry it: an IsXML value as
+// markup, any other escaped as text; a field's Text as its <text> (the map
+// value of a wait type), and the event's actions after its data — with an
+// event_sequence action for a Seq no action carries.
+func EventXML(e gosmo.XEvent) string {
+	var b strings.Builder
+	esc := func(s string) string {
+		var w strings.Builder
+		xml.EscapeText(&w, []byte(s))
+		return w.String()
+	}
+	value := func(f gosmo.XEValue) string {
+		v := esc(f.Value)
+		if f.IsXML {
+			v = f.Value
+		}
+		out := "<value>" + v + "</value>"
+		if f.Text != "" {
+			out += "<text>" + esc(f.Text) + "</text>"
+		}
+		return out
+	}
+	fmt.Fprintf(&b, `<event name="%s" package="%s" timestamp="%s">`, esc(e.Name), esc(e.Package),
+		e.Timestamp.UTC().Format("2006-01-02T15:04:05.000Z"))
+	for _, f := range e.Fields {
+		fmt.Fprintf(&b, `<data name="%s">%s</data>`, esc(f.Name), value(f))
+	}
+	hasSeq := false
+	for _, a := range e.Actions {
+		hasSeq = hasSeq || a.Name == "event_sequence"
+		fmt.Fprintf(&b, `<action name="%s" package="package0">%s</action>`, esc(a.Name), value(a))
+	}
+	if e.Seq != 0 && !hasSeq {
+		fmt.Fprintf(&b, `<action name="event_sequence" package="package0"><value>%d</value></action>`, e.Seq)
+	}
+	b.WriteString("</event>")
+	return b.String()
+}
+
+// RingBufferXML is events as a ring_buffer's target_data.
+func RingBufferXML(events []gosmo.XEvent) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, `<RingBufferTarget truncated="0" processingTime="0" totalEventsProcessed="%d" eventCount="%d" droppedCount="0" memoryUsed="0">`,
+		len(events), len(events))
+	for _, e := range events {
+		b.WriteString(EventXML(e))
+	}
+	b.WriteString("</RingBufferTarget>")
+	return b.String()
+}
+
+// DatabaseOptionsRow is o as the row of Database.Options' select (2022 and
+// later: the ADR and ledger columns present), the database owned by o.Owner.
+func DatabaseOptionsRow(o *gosmo.DatabaseOptions) []any {
+	return []any{Nullable(o.Owner), o.PageVerify, string(o.UserAccess), o.Containment, o.DefaultCursor == "LOCAL",
+		o.SnapshotIsolation, o.AutoClose, o.AutoShrink, o.AutoCreateStats, o.AutoUpdateStats, o.AutoUpdateStatsAsync,
+		o.ANSINullDefault, o.ANSINulls, o.ANSIPadding, o.ANSIWarnings, o.ArithAbort, o.ConcatNullYieldsNull,
+		o.NumericRoundAbort, o.QuotedIdentifier, o.RecursiveTriggers, o.CursorCloseOnCommit, o.ReadCommittedSnapshot,
+		o.IsTrustworthy, o.IsBrokerEnabled, o.IsEncrypted, o.NonTransactedAccess, o.DirectoryName,
+		o.DBChaining, o.ForcedParameterization, o.DateCorrelation, o.HonorBrokerPriority,
+		Nullable(o.DelayedDurability), o.TargetRecoveryTimeSeconds, o.AcceleratedDatabaseRecovery, o.IsLedger}
+}
+
+// QueryStoreOptionsRow is i as the row of QueryStore.Options' select (2019
+// and later: every column present).
+func QueryStoreOptionsRow(i *gosmo.QueryStoreInfo) []any {
+	return []any{string(i.DesiredState), string(i.ActualState), i.ReadOnlyReason, i.CurrentStorageMB, i.MaxStorageMB,
+		i.FlushIntervalSec, i.IntervalMinutes, i.MaxPlansPerQuery, string(i.CaptureMode), string(i.SizeCleanupMode),
+		i.StaleThresholdDays, string(i.WaitStatsCaptureMode), int64(i.CapturePolicyExecCount),
+		i.CapturePolicyCompileCPUMs, i.CapturePolicyExecCPUMs, int64(i.CapturePolicyStaleHours)}
+}
+
+// ScopedConfigRow is c as one row of Database.DatabaseScopedConfigs' select.
+func ScopedConfigRow(c *gosmo.DatabaseScopedConfig) []any {
+	return []any{c.ID, c.Name, c.Value, c.ValueForSecondary, c.IsValueDefault, c.ValueType, c.ValueForSecondaryType}
+}
+
+// SnapshotRow is s as one row of the database snapshot select.
+func SnapshotRow(s *gosmo.DatabaseSnapshot, at time.Time) []any {
+	return []any{s.Name, s.DatabaseID, s.SourceDatabase, s.SourceDatabaseID, "ONLINE", at}
+}
+
+// agentDate is t's UTC fields as msdb's YYYYMMDD and HHMMSS integers, both 0
+// for the zero time (a job that never ran).
+func agentDate(t time.Time) (date, clock int) {
+	if t.IsZero() {
+		return 0, 0
+	}
+	t = t.UTC()
+	return t.Year()*10000 + int(t.Month())*100 + t.Day(), t.Hour()*10000 + t.Minute()*100 + t.Second()
+}
+
+// agentDuration is d as msdb's HHMMSS integer.
+func agentDuration(d time.Duration) int {
+	s := int(d / time.Second)
+	return s/3600*10000 + s%3600/60*100 + s%60
+}
+
+// JobRow is one row of the job read Jobs and JobByName make (a sysadmin's
+// route). The state column is the sysjobactivity-derived one — executing or
+// idle; a server answers Agent's live state to xp_sqlagent_enum_jobs, which
+// JobStateRow encodes.
+func JobRow(j *gosmo.Job) []any {
+	date, clock := agentDate(j.LastRunDate)
+	state := 4
+	if j.CurrentState == gosmo.JobStateExecuting {
+		state = 1
+	}
+	return []any{j.JobID, j.Name, j.Description, j.IsEnabled, j.Category, j.OwnerLoginName,
+		j.DateCreated, j.DateModified, j.StartStepID, int(j.DeleteLevel), int(j.NotifyLevelEmail),
+		j.NotifyEmailOperatorName, date, clock, int(j.LastRunOutcome), agentDuration(j.LastRunDuration),
+		Nullable(j.NextRunDate), state}
+}
+
+// JobStateRow is one row of Agent's live job states: the job's id in
+// lower case, and its state.
+func JobStateRow(j *gosmo.Job) []any {
+	return []any{strings.ToLower(j.JobID), int(j.CurrentState)}
+}
+
+// JobStepRow is one row of a job's steps read.
+func JobStepRow(s *gosmo.JobStep) []any {
+	date, clock := agentDate(s.LastRunDate)
+	return []any{s.StepID, s.Name, s.Subsystem, s.Command, s.Database,
+		s.OnSuccessAction, s.OnSuccessStepID, s.OnFailAction, s.OnFailStepID,
+		int(s.LastRunOutcome), date, clock, agentDuration(s.LastRunElapsed),
+		s.RetryAttempts, s.RetryInterval, s.OutputFileName, s.Flags,
+		s.ProxyName, s.AdditionalParameters, s.CmdExecSuccessCode,
+		s.Server, s.DatabaseUserName, s.OSRunPriority}
+}
+
+// ScheduleRow is one row of a schedule read; a zero ActiveEndDate is msdb's
+// "no end date" 99991231.
+func ScheduleRow(s *gosmo.Schedule) []any {
+	start, _ := agentDate(s.ActiveStartDate)
+	end := 99991231
+	if !s.ActiveEndDate.IsZero() {
+		end, _ = agentDate(s.ActiveEndDate)
+	}
+	return []any{s.ID, s.Name, s.Enabled, int(s.FreqType), s.FreqInterval, int(s.FreqSubdayType),
+		s.FreqSubdayInterval, s.FreqRelativeInterval, s.FreqRecurrenceFactor, start, end,
+		s.ActiveStartTime, s.ActiveEndTime, s.CreateDate, s.ModifyDate, s.OwnerLoginName}
+}
+
+// JobHistoryRow is one row of SearchJobHistory's read.
+func JobHistoryRow(h *gosmo.JobHistoryEntry) []any {
+	date, clock := agentDate(h.RunDate)
+	return []any{h.JobName, date, clock, agentDuration(h.Duration), int(h.Outcome), h.Message, h.StepID, h.StepName}
+}
+
+// AgentStatusRow is the row of the Agent service read.
+func AgentStatusRow(status string, startup time.Time) []any {
+	return []any{status, Nullable(startup)}
 }

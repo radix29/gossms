@@ -49,8 +49,8 @@ func queryStoreResponses() []fakeResponse {
 // option on every apply: a per-field test would see the other twelve carrying
 // their loaded values and could not tell a crossed pair from a correct one.
 func TestQueryStoreWritesEveryFieldIntoItsOwnClause(t *testing.T) {
-	sc, inst := newFakeConn(t, queryStoreResponses()...)
-	form, apply := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+	sc, inst := newGConn(t, queryStoreResponses()...)
+	form, apply := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 	// CUSTOM, so the capture-policy clause is emitted at all.
 	editSelect(t, form, "Requested state", "READ_ONLY")
@@ -104,8 +104,8 @@ func TestQueryStoreWritesEveryFieldIntoItsOwnClause(t *testing.T) {
 // list at all — so it is the one operation-mode value the clause assertions
 // above cannot reach.
 func TestQueryStoreOffTurnsItOffOutright(t *testing.T) {
-	sc, inst := newFakeConn(t, queryStoreResponses()...)
-	form, apply := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+	sc, inst := newGConn(t, queryStoreResponses()...)
+	form, apply := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 	editSelect(t, form, "Requested state", "OFF")
 	if err := apply(context.Background()); err != nil {
@@ -118,8 +118,8 @@ func TestQueryStoreOffTurnsItOffOutright(t *testing.T) {
 // whole configuration, so a row dirtied on load would resend thirteen options
 // — including an operation mode — for a database nobody edited.
 func TestQueryStoreWritesNothingWhenUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, queryStoreResponses()...)
-	_, apply := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+	sc, inst := newGConn(t, queryStoreResponses()...)
+	_, apply := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -142,8 +142,8 @@ func TestQueryStoreActionsRunOnlyWhenTicked(t *testing.T) {
 		{"Clear Query Store on Apply", "SET QUERY_STORE CLEAR", "sp_query_store_flush_db"},
 	} {
 		t.Run(tc.label, func(t *testing.T) {
-			sc, inst := newFakeConn(t, queryStoreResponses()...)
-			form, apply := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+			sc, inst := newGConn(t, queryStoreResponses()...)
+			form, apply := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 			editCheck(t, form, tc.label, true)
 			if err := apply(context.Background()); err != nil {
@@ -199,8 +199,8 @@ func TestQueryStorePageHidesControlsTheServerRejects(t *testing.T) {
 	}
 
 	t.Run("2016 offers neither CUSTOM nor wait stats", func(t *testing.T) {
-		sc, inst := newFakeConnAtVersion(t, "13.0.4001.0", queryStoreResponsesAt(13)...)
-		form, _ := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+		sc, inst := newGConnAtVersion(t, "13.0.4001.0", queryStoreResponsesAt(13)...)
+		form, _ := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 		if items := selectRow(t, form, "Query capture mode").Items(); slices.Contains(items, "CUSTOM") {
 			t.Errorf("2016 offers CUSTOM: %v", items)
@@ -214,8 +214,8 @@ func TestQueryStorePageHidesControlsTheServerRejects(t *testing.T) {
 	})
 
 	t.Run("2017 offers wait stats but not CUSTOM", func(t *testing.T) {
-		sc, inst := newFakeConnAtVersion(t, "14.0.2120.1", queryStoreResponsesAt(14)...)
-		form, _ := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+		sc, inst := newGConnAtVersion(t, "14.0.2120.1", queryStoreResponsesAt(14)...)
+		form, _ := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 		if items := selectRow(t, form, "Query capture mode").Items(); slices.Contains(items, "CUSTOM") {
 			t.Errorf("2017 offers CUSTOM, which it rejects: %v", items)
@@ -232,8 +232,8 @@ func TestQueryStorePageHidesControlsTheServerRejects(t *testing.T) {
 	})
 
 	t.Run("2019 offers everything", func(t *testing.T) {
-		sc, inst := newFakeConnAtVersion(t, "15.0.4123.1", queryStoreResponsesAt(15)...)
-		form, _ := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+		sc, inst := newGConnAtVersion(t, "15.0.4123.1", queryStoreResponsesAt(15)...)
+		form, _ := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 		if items := selectRow(t, form, "Query capture mode").Items(); !slices.Contains(items, "CUSTOM") {
 			t.Errorf("2019 does not offer CUSTOM: %v", items)
@@ -253,8 +253,8 @@ func TestQueryStorePageHidesControlsTheServerRejects(t *testing.T) {
 // reported — and gosmo's allowlist then rejected the blank before that, so
 // every Apply on 2016 failed whatever the user changed.
 func TestQueryStoreApplyOn2016WritesNoWaitStatsClause(t *testing.T) {
-	sc, inst := newFakeConnAtVersion(t, "13.0.4001.0", queryStoreResponsesAt(13)...)
-	form, apply := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+	sc, inst := newGConnAtVersion(t, "13.0.4001.0", queryStoreResponsesAt(13)...)
+	form, apply := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 	editText(t, form, "Max size", "512")
 
@@ -287,8 +287,8 @@ func TestQueryStoreApplyOn2016WritesNoWaitStatsClause(t *testing.T) {
 // count or CPU time of 0 Msg 12452. Each is now refused, or not offered,
 // before Apply.
 func TestQueryStoreOffersOnlyWhatTheServerAccepts(t *testing.T) {
-	sc, inst := newFakeConn(t, queryStoreResponses()...)
-	form, _ := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+	sc, inst := newGConn(t, queryStoreResponses()...)
+	form, _ := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 	if got, want := selectRow(t, form, "Statistics interval (min)").Items(), []string{"1", "5", "10", "15", "30", "60", "1440"}; !slices.Equal(got, want) {
 		t.Errorf("interval items = %v, want %v", got, want)
@@ -321,8 +321,8 @@ func TestQueryStoreOffersOnlyWhatTheServerAccepts(t *testing.T) {
 func TestQueryStoreKeepsAnOddIntervalVisible(t *testing.T) {
 	r := queryStoreResponses()
 	r[1].rows[0][6] = int64(7)
-	sc, inst := newFakeConn(t, r...)
-	form, apply := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+	sc, inst := newGConn(t, r...)
+	form, apply := loadPageG(t, pageDatabaseQueryStore(sc, "appdb"), inst)
 
 	if got := selectRow(t, form, "Statistics interval (min)").Value(); got != "7" {
 		t.Errorf("interval shows %q, want the server's 7", got)

@@ -26,10 +26,10 @@ func agListenerResponses() []fakeResponse {
 	}
 }
 
-func loadAGListenerPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadAGListenerPage(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, agListenerResponses()...)
-	form, apply := loadPage(t, pageAGListenerGeneral(sc, agFixtureName, agListenerFixtureDNS), inst)
+	sc, inst := newGConn(t, agListenerResponses()...)
+	form, apply := loadPageG(t, pageAGListenerGeneral(sc, agFixtureName, agListenerFixtureDNS), inst)
 	return inst, apply, form
 }
 

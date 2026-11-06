@@ -17,10 +17,10 @@ import (
 // connects one — a pool plus a query.Session opened on it — over the scripted
 // driver, with the session reporting tranCount open transactions. extra is
 // appended to the script, for a COMMIT that should fail.
-func hostedSessionPanel(t *testing.T, a *App, tranCount int64, extra ...fakeResponse) (*QueryPanel, *fakeInstance) {
+func hostedSessionPanel(t *testing.T, a *App, tranCount int64, extra ...fakeResponse) (*QueryPanel, *gFake) {
 	t.Helper()
 	state := fakeResponse{match: "@@TRANCOUNT", cols: 3, rows: [][]driver.Value{{int64(61), "master", tranCount}}}
-	sc, inst := newFakeConn(t, append([]fakeResponse{state}, extra...)...)
+	sc, inst := newGConn(t, append(slices.Clone(extra), state)...) // extras first: a COMMIT statement may mention @@TRANCOUNT
 	sc.Opts = config.Connection{Server: "fake", User: "sa"}
 	sess, st, err := query.Open(context.Background(), sc.Server.DB(), "")
 	if err != nil {
@@ -32,7 +32,7 @@ func hostedSessionPanel(t *testing.T, a *App, tranCount int64, extra ...fakeResp
 	return qp, inst
 }
 
-func sentStatement(inst *fakeInstance, text string) bool {
+func sentStatement(inst *gFake, text string) bool {
 	return slices.ContainsFunc(inst.Statements(), func(s string) bool { return strings.Contains(s, text) })
 }
 

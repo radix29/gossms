@@ -76,8 +76,8 @@ func TestServerPermissionsWriteTheVerbTheCellShows(t *testing.T) {
 		{"Grant With Grant", "GRANT"},
 	} {
 		t.Run(tc.show, func(t *testing.T) {
-			sc, inst := newFakeConn(t, serverPermissionsResponse())
-			form, apply := loadPage(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
+			sc, inst := newGConn(t, serverPermissionsResponse())
+			form, apply := loadPageG(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
 
 			gr := permGrid(t, form)
 			cyclePermTo(t, gr, permRowIndex(t, gr, "VIEW SERVER STATE"), tc.show)
@@ -108,8 +108,8 @@ func TestServerPermissionsWriteTheVerbTheCellShows(t *testing.T) {
 // permission, so the one permission the scripted principal actually holds has
 // to land on its own row and nowhere else.
 func TestServerPermissionsReadTheServerStateOntoTheRightRow(t *testing.T) {
-	sc, inst := newFakeConn(t, serverPermissionsResponse())
-	form, _ := loadPage(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
+	sc, inst := newGConn(t, serverPermissionsResponse())
+	form, _ := loadPageG(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
 
 	gr := permGrid(t, form)
 	for i := 0; ; i++ {
@@ -141,8 +141,8 @@ func TestServerPermissionsReadTheServerStateOntoTheRightRow(t *testing.T) {
 func TestServerPermissionsRevokeCarriesCascade(t *testing.T) {
 	resp := serverPermissionsResponse()
 	resp.rows[0][4] = "GRANT_WITH_GRANT_OPTION"
-	sc, inst := newFakeConn(t, resp)
-	form, apply := loadPage(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
+	sc, inst := newGConn(t, resp)
+	form, apply := loadPageG(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
 
 	gr := permGrid(t, form)
 	cyclePermTo(t, gr, permRowIndex(t, gr, "ALTER ANY LOGIN"), "(none)")
@@ -165,8 +165,8 @@ func TestServerPermissionsRevokeCarriesCascade(t *testing.T) {
 // because rowsFor rebuilds `visible` as it builds the rows. Toggling a cell
 // with a filter applied must still change the permission on that row.
 func TestServerPermissionsFilterDoesNotMisdirectAnEdit(t *testing.T) {
-	sc, inst := newFakeConn(t, serverPermissionsResponse())
-	form, apply := loadPage(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
+	sc, inst := newGConn(t, serverPermissionsResponse())
+	form, apply := loadPageG(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
 
 	typeInto(t, form, "Filter permissions", "VIEW")
 	gr := permGrid(t, form)
@@ -205,8 +205,8 @@ func TestServerPermissionsFilterDoesNotMisdirectAnEdit(t *testing.T) {
 // them. A page that wrote each row's current state on OK would rewrite the
 // entire server permission set of whichever principal an admin looked at.
 func TestServerPermissionsWriteNothingWhenUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, serverPermissionsResponse())
-	_, apply := loadPage(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
+	sc, inst := newGConn(t, serverPermissionsResponse())
+	_, apply := loadPageG(t, pagePrincipalServerPermissions(sc, "appuser"), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -222,7 +222,7 @@ func TestServerPermissionsWriteNothingWhenUntouched(t *testing.T) {
 // permissions grid, and that state is not a verb. Sent as one, gosmo refused
 // it ("unknown verb") after the login had already been created.
 func TestNewLoginSecurablesGrantWithGrantIsAGrant(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	form, apply := buildNewServerPrincipalSecurablesPage(sc, func() string { return "newlogin" })
 
 	gr := permGrid(t, form)

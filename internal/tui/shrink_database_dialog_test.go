@@ -40,7 +40,7 @@ func shrinkScript(t *testing.T, preflight func() error, apply propApply) string 
 }
 
 func TestShrinkDatabaseUntickedScriptsTheBareStatement(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	d := shrinkDatabaseTestDialog(t, sc)
 
 	got := shrinkScript(t, d.preflight, d.applyFns[0])
@@ -57,7 +57,7 @@ func TestShrinkDatabaseUntickedScriptsTheBareStatement(t *testing.T) {
 }
 
 func TestShrinkDatabaseReorganizeSendsThePercent(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkDatabaseTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -82,7 +82,7 @@ func TestShrinkDatabaseReorganizeSendsThePercent(t *testing.T) {
 }
 
 func TestShrinkDatabaseShowsSizesAsSSMSDoes(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkDatabaseTestDialog(t, sc)
 	for label, want := range map[string]string{
 		"Currently allocated space": "144.00 MB",
@@ -97,7 +97,7 @@ func TestShrinkDatabaseShowsSizesAsSSMSDoes(t *testing.T) {
 // The wait choice is mapped by name: a swapped pair of shrinkWaitValues would
 // otherwise kill blockers when the user asked the shrink to stop itself.
 func TestShrinkWaitChoicesMapByName(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	for choice, want := range map[string]string{
 		"Yes, then stop the shrink":   "WITH WAIT_AT_LOW_PRIORITY (ABORT_AFTER_WAIT = SELF)",
 		"Yes, then kill the blockers": "WITH WAIT_AT_LOW_PRIORITY (ABORT_AFTER_WAIT = BLOCKERS)",
@@ -116,7 +116,7 @@ func TestShrinkWaitChoicesMapByName(t *testing.T) {
 // Before SQL Server 2022 the clause is a syntax error, so the row is not
 // offered at all.
 func TestShrinkWaitIsNotOfferedBefore2022(t *testing.T) {
-	sc, _ := newFakeConnAtVersion(t, "15.0.4000.1")
+	sc, _ := newGConnAtVersion(t, "15.0.4000.1")
 	d := shrinkDatabaseTestDialog(t, sc)
 	for _, r := range d.forms[0].Rows() {
 		if sr, ok := r.(*propsheet.SelectRow); ok && sr.Label() == sheetLabel("Wait at low priority") {
@@ -133,7 +133,7 @@ func TestShrinkWaitIsNotOfferedBefore2022(t *testing.T) {
 // and every DBCC SHRINK* fails on a read-only one.
 func TestShrinkIsOfferedOnAnOnlineDatabaseOnly(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	_, _, restoring, master := recoverTree(t, a, sc)
 
 	item := findMenuItem(a.contextMenuItemsForNode(master), "Shrink")

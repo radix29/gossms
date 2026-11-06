@@ -34,14 +34,14 @@ func extPropResponses() []fakeResponse {
 
 // loadExtPropPage opens the page against a database role, whose level literals
 // are USER + the role name — the same shape a user's page has.
-func loadExtPropPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid, *string) {
+func loadExtPropPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *controls.DataGrid, *string) {
 	t.Helper()
-	sc, inst := newFakeConn(t, extPropResponses()...)
+	sc, inst := newGConn(t, extPropResponses()...)
 	name := principalRole
 	page := pageExtendedProperties(sc, principalDatabase, func() gosmo.ExtendedPropertyLevel {
 		return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: name}
 	})
-	form, apply := loadPage(t, page, inst)
+	form, apply := loadPageG(t, page, inst)
 	grid := plainGrid(t, form)
 	if grid.Row(1) == nil {
 		t.Fatal("the property grid has fewer than two rows — the fake is under-scripted, not the page wrong")

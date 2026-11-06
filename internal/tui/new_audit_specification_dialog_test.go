@@ -51,7 +51,7 @@ func checkTickedGroups(t *testing.T, stmt string) {
 }
 
 func TestNewServerAuditSpecificationSendsTheTickedGroups(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := &NewAuditSpecificationDialog{}
 	d.sc = sc
 	d.pages = []string{"General"}
@@ -70,7 +70,7 @@ func TestNewServerAuditSpecificationSendsTheTickedGroups(t *testing.T) {
 }
 
 func TestNewDatabaseAuditSpecificationSendsTheTickedGroups(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := &NewDatabaseAuditSpecificationDialog{dbName: "Sales"}
 	d.sc = sc
 	d.pages = []string{"General"}
@@ -93,7 +93,7 @@ func TestNewDatabaseAuditSpecificationSendsTheTickedGroups(t *testing.T) {
 // when every audit is held the dialog says so instead of claiming the server
 // has none.
 func TestNewServerAuditSpecificationOffersOnlyFreeAudits(t *testing.T) {
-	sc, _ := newFakeConn(t, specRows(), auditRows(), actionGroupRows())
+	sc, _ := newGConn(t, specRows(), auditRows(), actionGroupRows())
 	pf, err := fetchNewAuditSpecPrefetch(t.Context(), sc)
 	if err != nil {
 		t.Fatal(err)

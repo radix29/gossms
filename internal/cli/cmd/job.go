@@ -223,11 +223,11 @@ func secondsCell(d time.Duration) *string { return ptr(strconv.FormatInt(int64(d
 // agentTime is a --since or --failed-since as gosmo compares msdb's times: a
 // server-local wall clock stamped UTC. A zoneless value is one already; a
 // zoned one is read in the server's zone, which costs a clock read.
-func agentTime(ctx context.Context, cat Catalog, q qsTime) (time.Time, error) {
+func agentTime(ctx context.Context, srv *gosmo.Server, q qsTime) (time.Time, error) {
 	if !q.zoned {
 		return q.t, nil
 	}
-	now, err := cat.CurrentTime(ctx)
+	now, err := srv.CurrentTime(ctx)
 	if err != nil {
 		return time.Time{}, readError(err)
 	}
@@ -252,8 +252,8 @@ func jobReadError(err error) *output.Error {
 
 // findJob is the job name names, NOT_FOUND hinting job list when there is
 // none the login can see.
-func findJob(ctx context.Context, cat Catalog, name string) (*gosmo.Job, error) {
-	j, err := cat.JobByName(ctx, name)
+func findJob(ctx context.Context, srv *gosmo.Server, name string) (*gosmo.Job, error) {
+	j, err := srv.JobByName(ctx, name)
 	if errors.Is(err, gosmo.ErrNotFound) {
 		return nil, output.NewError(output.CodeNotFound, fmt.Sprintf("no Agent job %s", gosmo.QuoteName(name)),
 			"Check the name: gossms job list lists the jobs.")
@@ -294,13 +294,13 @@ func (d Deps) jobList(ctx context.Context, inv *spec.Invocation) (*output.Result
 		return nil, usageError("--category is empty", "Name a category, or leave --category out for every one.")
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	jobs, err := cat.Jobs(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return res, jobReadError(err)
 	}
@@ -312,11 +312,11 @@ func (d Deps) jobList(ctx context.Context, inv *spec.Invocation) (*output.Result
 	failedOnly := inv.Given[optFailedSince]
 	var failures map[string]*jobFailures
 	if failedOnly {
-		from, err := agentTime(ctx, cat, since)
+		from, err := agentTime(ctx, sc.Server, since)
 		if err != nil {
 			return res, err
 		}
-		runs, err := cat.SearchJobHistory(ctx, gosmo.JobHistoryFilter{Since: from,
+		runs, err := sc.Server.SearchJobHistory(ctx, gosmo.JobHistoryFilter{Since: from,
 			Outcomes: []gosmo.JobOutcome{gosmo.JobOutcomeFailed}, Max: failedRunsRead})
 		if err != nil {
 			return res, jobReadError(err)
@@ -378,21 +378,21 @@ func (d Deps) jobList(ctx context.Context, inv *spec.Invocation) (*output.Result
 
 func (d Deps) jobShow(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	j, err := findJob(ctx, cat, inv.Args[0])
+	j, err := findJob(ctx, sc.Server, inv.Args[0])
 	if err != nil {
 		return res, err
 	}
-	steps, err := cat.JobSteps(ctx, j)
+	steps, err := j.Steps(ctx)
 	if err != nil {
 		return res, jobReadError(err)
 	}
-	schedules, err := cat.JobSchedules(ctx, j)
+	schedules, err := j.Schedules(ctx)
 	if err != nil {
 		return res, jobReadError(err)
 	}
@@ -490,26 +490,26 @@ func (d Deps) jobHistory(ctx context.Context, inv *spec.Invocation) (*output.Res
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	j, err := findJob(ctx, cat, inv.Args[0])
+	j, err := findJob(ctx, sc.Server, inv.Args[0])
 	if err != nil {
 		return res, err
 	}
 	f := gosmo.JobHistoryFilter{JobName: j.Name, IncludeSteps: true, Max: top}
 	if inv.Given[optSince] {
-		if f.Since, err = agentTime(ctx, cat, since); err != nil {
+		if f.Since, err = agentTime(ctx, sc.Server, since); err != nil {
 			return res, err
 		}
 	}
 	if failed, _ := inv.Values[optFailed].(bool); failed {
 		f.Outcomes = []gosmo.JobOutcome{gosmo.JobOutcomeFailed}
 	}
-	rows, err := cat.SearchJobHistory(ctx, f)
+	rows, err := sc.Server.SearchJobHistory(ctx, f)
 	if err != nil {
 		return res, jobReadError(err)
 	}

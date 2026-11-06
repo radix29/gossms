@@ -11,7 +11,7 @@ import (
 
 const principalAppRole = "payroll"
 
-func loadApplicationRoleGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadApplicationRoleGeneralPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
 	responses := []fakeResponse{
 		dbByNameResp(principalDatabase, 5),
@@ -21,9 +21,9 @@ func loadApplicationRoleGeneralPage(t *testing.T) (*fakeInstance, propApply, *pr
 	}
 	responses = append(responses, databaseSchemaResponses()...)
 	responses = append(responses, principalPermissionResponses()...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := principalAppRole
-	form, apply := loadPage(t, pageApplicationRoleGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageApplicationRoleGeneral(sc, principalDatabase, &name), inst)
 	return inst, apply, form, &name
 }
 

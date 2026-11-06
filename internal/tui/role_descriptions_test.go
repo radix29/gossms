@@ -130,20 +130,22 @@ func TestServerRolesPagesShowTheRatedImpact(t *testing.T) {
 	}
 	t.Run("Login Properties", func(t *testing.T) {
 		name := "appuser"
-		sc, inst := newFakeConn(t, append(loginResponses(), customServerRoleResponses()...)...)
-		form, _ := loadPage(t, pageLoginServerRoles(sc, &name), inst)
+		sc, inst := newGConn(t, append(loginResponses(), customServerRoleResponses()...)...)
+		form, _ := loadPageG(t, pageLoginServerRoles(sc, &name), inst)
 		check(t, toggleGrid(t, form).Text())
 	})
 	t.Run("New Login", func(t *testing.T) {
 		// Through the real prefetch, so a dialog that never reads the grants fails here.
-		sc, inst := newFakeConn(t, append(customServerRoleResponses(),
+		sc, _ := newGConn(t, append(customServerRoleResponses(),
 			fakeResponse{match: "FROM sys.server_principals sp", cols: 10},
 			fakeResponse{match: "FROM sys.databases", cols: 11},
+			fakeResponse{match: "c.certificate_id", db: "master"},
+			fakeResponse{match: "k.asymmetric_key_id", db: "master"},
 			fakeResponse{match: "FROM sys.syslanguages", cols: 3, rows: [][]driver.Value{{int64(0), "us_english", "English"}}},
 		)...)
 		pf, err := fetchNewLoginPrefetch(context.Background(), sc)
 		if err != nil {
-			t.Fatalf("prefetch: %v\nunscripted: %q", err, inst.unmatched)
+			t.Fatalf("prefetch: %v", err)
 		}
 		form, _ := buildNewLoginServerRolesPage(sc, pf, func() string { return "newlogin" })
 		check(t, toggleGrid(t, form).Text())

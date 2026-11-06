@@ -5,32 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/output"
 )
-
-// newServerConfigCatalog is newServerInfoCatalog with a sys.configurations
-// read: out of name order, an option a CU added (no default), the version
-// parts, min server memory configured 0 and running 16 as the engine runs it.
-func newServerConfigCatalog() *serverInfoCatalog {
-	c := newServerInfoCatalog()
-	opt := func(name string, value, inUse, def int64, hasDef, dynamic, advanced bool) *gosmo.ConfigurationOption {
-		return &gosmo.ConfigurationOption{Name: name, Value: value, ValueInUse: inUse, Minimum: 0, Maximum: 32767,
-			Default: def, HasDefault: hasDef, IsDynamic: dynamic, IsAdvanced: advanced}
-	}
-	c.opts = []*gosmo.ConfigurationOption{
-		opt("max degree of parallelism", 8, 8, 0, true, true, true),
-		opt("backup compression default", 0, 0, 0, true, true, false),
-		opt("Backup checksum default", 1, 1, 0, true, true, false),
-		opt("cost threshold for parallelism", 5, 5, 5, true, true, true),
-		opt(maxServerMemory, 2147483647, 2147483647, 2147483647, true, true, true),
-		opt(minServerMemory, 0, 16, 0, true, true, true),
-		opt("fill factor (%)", 90, 0, 0, true, false, true),
-		opt("tiered memory enabled", 0, 0, 0, false, false, true),
-		opt("version high part of SQL Server", 1114112, 1114112, 0, false, true, true),
-	}
-	return c
-}
 
 // setRows is set's rows as strings, "NULL" for a NULL, as column has them.
 func setRows(set output.Set) [][]string {
@@ -50,7 +26,7 @@ func setRows(set output.Set) [][]string {
 }
 
 func TestServerConfigList(t *testing.T) {
-	res, err := runServer(t, newServerConfigCatalog(), "config", "list")
+	res, err := runServer(t, newConfigServer(t), "config", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,11 +72,11 @@ func TestServerConfigListFilters(t *testing.T) {
 		// Configured against the default: min server memory runs 16 but is
 		// configured 0, its default; fill factor waits for a restart but is
 		// configured 90. An option with no default is left out.
-		{"--non-default", []string{"Backup checksum default", "fill factor (%)", "max degree of parallelism"}},
+		{"--non-default", []string{"fill factor (%)", "max degree of parallelism"}},
 		{"--non-default --advanced", []string{"fill factor (%)", "max degree of parallelism"}},
 		{"--name nothing-like-it", nil},
 	} {
-		res, err := runServer(t, newServerConfigCatalog(), "config", "list "+tc.argv)
+		res, err := runServer(t, newConfigServer(t), "config", "list "+tc.argv)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.argv, err)
 		}
@@ -109,22 +85,20 @@ func TestServerConfigListFilters(t *testing.T) {
 		}
 	}
 	// --non-default still says which options it could not judge.
-	res, _ := runServer(t, newServerConfigCatalog(), "config", "list --non-default")
-	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "--non-default leaves it out") {
+	res, _ := runServer(t, newConfigServer(t), "config", "list --non-default")
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "--non-default leaves them out") {
 		t.Errorf("warnings %q", res.Warnings)
 	}
 	// A filter that keeps only defaulted options warns about nothing.
-	if res, _ := runServer(t, newServerConfigCatalog(), "config", "list --name parallelism"); len(res.Warnings) != 0 {
+	if res, _ := runServer(t, newConfigServer(t), "config", "list --name parallelism"); len(res.Warnings) != 0 {
 		t.Errorf("warnings %q", res.Warnings)
 	}
 }
 
 // A server gosmo has no defaults for at all is one sentence, not every name.
 func TestServerConfigListNoDefaults(t *testing.T) {
-	cat := newServerConfigCatalog()
-	for _, o := range cat.opts {
-		o.HasDefault, o.Default = false, 0
-	}
+	cat := newConfigServer(t)
+	cat.Info.ProductVersion = "9.0.1399.6" // a version gosmo's table does not cover
 	res, err := runServer(t, cat, "config", "list")
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +113,7 @@ func TestServerConfigListNoDefaults(t *testing.T) {
 
 func TestServerConfigGet(t *testing.T) {
 	// An alias in another case, and a repeat, in the order given.
-	res, err := runServer(t, newServerConfigCatalog(), "config", "get COST-THRESHOLD maxdop MAXDOP")
+	res, err := runServer(t, newConfigServer(t), "config", "get COST-THRESHOLD maxdop MAXDOP")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +141,7 @@ func TestServerConfigGetContext(t *testing.T) {
 		{"min-memory maxdop", []string{"logicalCpus", "numaNodes", "logicalCpusPerNumaNode", "physicalMemoryMb", "committedMemoryMb"}},
 		{"backup-checksum", nil},
 	} {
-		res, err := runServer(t, newServerConfigCatalog(), "config", "get "+tc.names)
+		res, err := runServer(t, newConfigServer(t), "config", "get "+tc.names)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.names, err)
 		}
@@ -175,14 +149,14 @@ func TestServerConfigGetContext(t *testing.T) {
 			t.Errorf("%s: context %q, want %q", tc.names, keys, tc.want)
 		}
 	}
-	res, _ := runServer(t, newServerConfigCatalog(), "config", "get max-memory")
+	res, _ := runServer(t, newConfigServer(t), "config", "get max-memory")
 	if _, got := fieldMap(res); got["physicalMemoryMb"] != "65536" || got["committedMemoryMb"] != "61210" {
 		t.Errorf("memory context %v", got)
 	}
 
 	// CPUs that do not divide evenly over the nodes.
-	cat := newServerConfigCatalog()
-	cat.info.LogicalCPUCount = 7
+	cat := newConfigServer(t)
+	cat.cpus = 7
 	res, _ = runServer(t, cat, "config", "get maxdop")
 	if _, got := fieldMap(res); got["logicalCpusPerNumaNode"] != "3.50" {
 		t.Errorf("per node %q, want 3.50", got["logicalCpusPerNumaNode"])
@@ -192,7 +166,7 @@ func TestServerConfigGetContext(t *testing.T) {
 // A full sys.configurations name resolves ignoring case. (runServer splits
 // argv on spaces, so this calls resolveConfig directly.)
 func TestServerConfigGetFullName(t *testing.T) {
-	o, err := resolveConfig(newServerConfigCatalog().opts, "FILL FACTOR (%)")
+	o, err := resolveConfig(newConfigServer(t).opts, "FILL FACTOR (%)")
 	if err != nil || o.Name != "fill factor (%)" {
 		t.Errorf("%v, %v", o, err)
 	}
@@ -201,9 +175,9 @@ func TestServerConfigGetFullName(t *testing.T) {
 // Without VIEW SERVER STATE the context is null with one warning naming the
 // permission, and the set stands: exit 0.
 func TestServerConfigGetNoViewServerState(t *testing.T) {
-	cat := newServerConfigCatalog()
-	cat.info.SysInfoUnavailable, cat.info.PhysicalMemoryMB, cat.info.LogicalCPUCount = true, 0, 0
-	cat.procErr, cat.statsErr = denied("processor info"), denied("memory stats")
+	cat := newConfigServer(t)
+	cat.noSysInfo = true
+	cat.procErr, cat.statsErr = denied(), denied()
 	res, err := runServer(t, cat, "config", "get maxdop max-memory")
 	if err != nil {
 		t.Fatalf("%v, want exit 0", err)
@@ -232,7 +206,7 @@ func TestServerConfigGetUnknown(t *testing.T) {
 		{"backup-", "Did you mean backup-checksum, backup-compression?"},
 		{"nothing", "gossms server config list --name"},
 	} {
-		_, err := runServer(t, newServerConfigCatalog(), "config", "get maxdop "+tc.name)
+		_, err := runServer(t, newConfigServer(t), "config", "get maxdop "+tc.name)
 		e, ok := err.(*output.Error)
 		if !ok || e.Code != output.CodeNotFound || !strings.Contains(e.Hint, tc.hint) {
 			t.Errorf("%s: %v, want NOT_FOUND hinting %q", tc.name, err, tc.hint)

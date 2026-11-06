@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 )
@@ -142,7 +143,7 @@ func TestQueuesFolderShowsMessageCountsAndSurvivesWithoutThem(t *testing.T) {
 	}
 
 	// Without the DMV the folder must still list, with the column blank.
-	sc, _ = newTypePropConn(t, queueResp())
+	sc, _ = newTypePropConn(t, queueResp(), dmvDenied("GROUP  BY it.parent_object_id"))
 	objs = nil
 	node = &explorerNode{data: nodeData{Type: NodeBrokerQueues, DBName: brokerDB, conn: sc}}
 	_, rows, err = fetchNodeDetails(context.Background(), sc, node, &objs)
@@ -164,7 +165,8 @@ func TestQueuesFolderShowsMessageCountsAndSurvivesWithoutThem(t *testing.T) {
 // monitored has no monitor row at all — the normal case. Neither may cost the
 // rows the catalog answered for.
 func TestQueueLeafSurvivesUnreadableDMVs(t *testing.T) {
-	sc, _ := newTypePropConn(t, brokerRowByArg(queueResp(), "ClaimQueue", 0))
+	sc, _ := newTypePropConn(t, brokerRowByArg(queueResp(), "ClaimQueue", 0),
+		dmvDenied("FROM   sys.internal_tables it"), dmvDenied("sys.dm_broker_queue_monitors"))
 	cols, rows, _ := detailOf(t, sc, NodeBrokerQueue, "dbo", "ClaimQueue")
 	if isFallback(cols, rows) {
 		t.Fatal("the queue leaf fell to the fallback")
@@ -217,4 +219,10 @@ func TestEveryServiceBrokerLeafOffersProperties(t *testing.T) {
 			t.Errorf("%v offers no Properties item — its props pages are unreachable", typ)
 		}
 	}
+}
+
+// dmvDenied is a VIEW DATABASE STATE refusal of the read containing match; a
+// gosmotest server fails on an unanswered query, so "unreadable" is scripted.
+func dmvDenied(match string) fakeResponse {
+	return fakeResponse{match: match, err: errors.New("VIEW DATABASE STATE permission denied")}
 }

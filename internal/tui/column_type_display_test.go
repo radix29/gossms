@@ -44,8 +44,8 @@ func typedColumnResp() fakeResponse {
 func TestColumnTypeReadsTheSameInTreeAndTableProperties(t *testing.T) {
 	want := []string{"datetime2(0)", "[sales].[Phone]"}
 
-	sc, inst := newFakeConn(t, dbByNameResp(idxDatabase, 5), idxTableResp(), typedColumnResp())
-	form, _ := loadPage(t, pageTableColumns(sc, idxDatabase, idxSchema, idxTable), inst)
+	sc, inst := newGConn(t, dbByNameResp(idxDatabase, 5), idxTableResp(), typedColumnResp())
+	form, _ := loadPageG(t, pageTableColumns(sc, idxDatabase, idxSchema, idxTable), inst)
 	grid := plainGrid(t, form)
 	for i, w := range want {
 		row := grid.Row(i)
@@ -57,7 +57,7 @@ func TestColumnTypeReadsTheSameInTreeAndTableProperties(t *testing.T) {
 		}
 	}
 
-	sc, _ = newFakeConn(t, dbByNameResp(idxDatabase, 5), idxTableResp(), typedColumnResp())
+	sc, _ = newGConn(t, dbByNameResp(idxDatabase, 5), idxTableResp(), typedColumnResp())
 	l := loaderCtx{ctx: t.Context(), sc: sc}
 	children, err := loadColumnsChildren(l, &explorerNode{data: nodeData{
 		Type: NodeColumns, DBName: idxDatabase, Schema: idxSchema, Name: idxTable, conn: sc}})
@@ -82,7 +82,7 @@ func TestViewColumnsLoadAndOfferNoTableColumnOps(t *testing.T) {
 	cols := typedColumnResp()
 	cols.match = "OBJECT_ID(@p1)"
 	cols.arg = "[" + idxSchema + "].[vOrders]"
-	sc, _ := newFakeConn(t, dbByNameResp(idxDatabase, 5), cols)
+	sc, _ := newGConn(t, dbByNameResp(idxDatabase, 5), cols)
 	l := loaderCtx{ctx: t.Context(), sc: sc}
 	children, err := loadViewColumnsChildren(l, &explorerNode{data: nodeData{
 		Type: NodeViewColumns, DBName: idxDatabase, Schema: idxSchema, Name: "vOrders", conn: sc}})

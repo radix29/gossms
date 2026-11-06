@@ -77,7 +77,7 @@ func TestSchemaGroupNode(t *testing.T) {
 		}
 	}
 
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	a := newTestApp()
 	folder := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, conn: sc, DBName: "db1"}}
 	group := &explorerNode{label: "dbo", parent: folder, data: nodeData{

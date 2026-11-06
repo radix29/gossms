@@ -25,33 +25,18 @@ import (
 // --dry-run must print the T-SQL its real run then sends. Each case runs a
 // command twice over fresh fakes — once with --dry-run, once without — and
 // compares the dry run's tsql with the script of what the real run sent.
-// A command that writes through gosmo directly (security, maint, data
-// import) sends its statements to gosmotest; gosmo's statement observer
+// Every writing command writes through gosmo directly: it sends its statements to gosmotest, and gosmo's statement observer
 // reports each as the server accepted it, and they are rendered as the
-// script gosmo.WithScript would have made. A command still on Writer is
-// shadowed by a fidelityWriter instead. A new writing command adds a case
+// script gosmo.WithScript would have made. A new writing command adds a case
 // to fidelityCases; TestDryRunFidelityCoversEveryWriter fails until it
-// does, and a new Writer method does not compile until fidelityWriter
-// shadows it.
+// does.
 
-// fidelityWriter wraps a command's own fake writer. In a real run it makes
-// each write twice: first through inner under one shared gosmo.WithScript
-// context — every fake hands a scripted call to the real serverWriter, so
-// script collects the batch gosmo would send — then through inner with the
-// command's context, so the fake's simulated server state changes as the
-// real write would change it and the reads after it see that. In a dry run
-// it passes every call straight to inner, whose context is already
-// applyWrite's. A call made under the other mode's context is a test
-// failure: a dry run that writes, or a real run that only scripts.
-type fidelityWriter struct {
+// fidelityObserver collects what a run sent. In a real run each statement the
+// server accepted joins script; in a dry run any statement is a failure.
+type fidelityObserver struct {
 	t      *testing.T
-	inner  Writer
 	dry    bool
-	sctx   context.Context
 	script *gosmo.ScriptCollector
-	// sessions maps the session the fake's real create returned to the one
-	// the scripted create did: the fake's has no Server to script through.
-	sessions map[*gosmo.EventSession]*gosmo.EventSession
 	// loaded is the rows each real bulk load sent. A bulk copy is TDS, not
 	// T-SQL: it is compared with the dry run's rows field instead.
 	loaded []int64
@@ -65,7 +50,7 @@ var bulkLoaded = regexp.MustCompile(`^INSERT BULK .* -- (\d+) rows$`)
 // real run each statement the server accepted joins the script — a bulk
 // load's count goes to loaded — and in a dry run any is a failure, a write
 // made outside WithScript.
-func (w *fidelityWriter) observe(e gosmo.ScriptEntry) {
+func (w *fidelityObserver) observe(e gosmo.ScriptEntry) {
 	w.t.Helper()
 	switch m := bulkLoaded.FindStringSubmatch(e.SQL); {
 	case w.dry:
@@ -78,145 +63,17 @@ func (w *fidelityWriter) observe(e gosmo.ScriptEntry) {
 	}
 }
 
-var _ Writer = (*fidelityWriter)(nil)
-
-func newFidelityWriter(t *testing.T, inner Writer, dry bool) *fidelityWriter {
-	sctx, script := gosmo.WithScript(context.Background())
-	return &fidelityWriter{t: t, inner: inner, dry: dry, sctx: sctx, script: script,
-		sessions: map[*gosmo.EventSession]*gosmo.EventSession{}}
-}
-
-// shadow is a write's scripted twin in a real run: record runs it under the
-// shared script. It fails the test for a call made under the wrong mode.
-func (w *fidelityWriter) shadow(ctx context.Context, name string, record func(context.Context) error) {
-	w.t.Helper()
-	switch scripted := gosmo.Scripting(ctx); {
-	case w.dry && !scripted:
-		w.t.Errorf("%s: a dry run made a real write", name)
-	case !w.dry && scripted:
-		w.t.Errorf("%s: a real run made the write under WithScript", name)
-	case !w.dry:
-		if err := record(w.sctx); err != nil {
-			w.t.Errorf("%s: scripting the real run's write: %v", name, err)
-		}
-	}
-}
-
-func (w *fidelityWriter) ApplyConfiguration(ctx context.Context, changes []gosmo.ConfigChange, opts gosmo.ConfigApplyOptions) error {
-	w.shadow(ctx, "ApplyConfiguration", func(sctx context.Context) error {
-		return w.inner.ApplyConfiguration(sctx, changes, opts)
-	})
-	return w.inner.ApplyConfiguration(ctx, changes, opts)
-}
-
-func (w *fidelityWriter) SetTraceFlag(ctx context.Context, flag int, on bool) error {
-	w.shadow(ctx, "SetTraceFlag", func(sctx context.Context) error { return w.inner.SetTraceFlag(sctx, flag, on) })
-	return w.inner.SetTraceFlag(ctx, flag, on)
-}
-
-func (w *fidelityWriter) KillSession(ctx context.Context, sessionID int) error {
-	w.shadow(ctx, "KillSession", func(sctx context.Context) error { return w.inner.KillSession(sctx, sessionID) })
-	return w.inner.KillSession(ctx, sessionID)
-}
-
-func (w *fidelityWriter) CreateEventSession(ctx context.Context, def gosmo.EventSessionDefinition) (*gosmo.EventSession, error) {
-	var scripted *gosmo.EventSession
-	w.shadow(ctx, "CreateEventSession", func(sctx context.Context) (err error) {
-		scripted, err = w.inner.CreateEventSession(sctx, def)
-		return err
-	})
-	es, err := w.inner.CreateEventSession(ctx, def)
-	if scripted != nil && es != nil {
-		w.sessions[es] = scripted
-	}
-	return es, err
-}
-
-// session is es's scripted twin, es itself in a dry run.
-func (w *fidelityWriter) session(es *gosmo.EventSession) *gosmo.EventSession {
-	if s, ok := w.sessions[es]; ok {
-		return s
-	}
-	return es
-}
-
-func (w *fidelityWriter) StartEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	w.shadow(ctx, "StartEventSession", func(sctx context.Context) error { return w.inner.StartEventSession(sctx, w.session(es)) })
-	return w.inner.StartEventSession(ctx, es)
-}
-
-func (w *fidelityWriter) StopEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	w.shadow(ctx, "StopEventSession", func(sctx context.Context) error { return w.inner.StopEventSession(sctx, w.session(es)) })
-	return w.inner.StopEventSession(ctx, es)
-}
-
-func (w *fidelityWriter) DropEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	w.shadow(ctx, "DropEventSession", func(sctx context.Context) error { return w.inner.DropEventSession(sctx, w.session(es)) })
-	return w.inner.DropEventSession(ctx, es)
-}
-
-func (w *fidelityWriter) SetDatabaseScopedConfig(ctx context.Context, d *gosmo.Database, name, value string, replica gosmo.ScopedConfigReplica) error {
-	w.shadow(ctx, "SetDatabaseScopedConfig", func(sctx context.Context) error {
-		return w.inner.SetDatabaseScopedConfig(sctx, d, name, value, replica)
-	})
-	return w.inner.SetDatabaseScopedConfig(ctx, d, name, value, replica)
-}
-
-func (w *fidelityWriter) SetDatabaseOption(ctx context.Context, d *gosmo.Database, opt gosmo.DatabaseOption, value string, term gosmo.Termination) error {
-	w.shadow(ctx, "SetDatabaseOption", func(sctx context.Context) error {
-		return w.inner.SetDatabaseOption(sctx, d, opt, value, term)
-	})
-	return w.inner.SetDatabaseOption(ctx, d, opt, value, term)
-}
-
-func (w *fidelityWriter) SetRecoveryModel(ctx context.Context, d *gosmo.Database, model gosmo.RecoveryModel) error {
-	w.shadow(ctx, "SetRecoveryModel", func(sctx context.Context) error { return w.inner.SetRecoveryModel(sctx, d, model) })
-	return w.inner.SetRecoveryModel(ctx, d, model)
-}
-
-func (w *fidelityWriter) SetCompatibilityLevel(ctx context.Context, d *gosmo.Database, level gosmo.CompatibilityLevel) error {
-	w.shadow(ctx, "SetCompatibilityLevel", func(sctx context.Context) error { return w.inner.SetCompatibilityLevel(sctx, d, level) })
-	return w.inner.SetCompatibilityLevel(ctx, d, level)
-}
-
-func (w *fidelityWriter) SetReadOnly(ctx context.Context, d *gosmo.Database, readOnly bool, term gosmo.Termination) error {
-	w.shadow(ctx, "SetReadOnly", func(sctx context.Context) error { return w.inner.SetReadOnly(sctx, d, readOnly, term) })
-	return w.inner.SetReadOnly(ctx, d, readOnly, term)
-}
-
-func (w *fidelityWriter) SetQueryStoreOptions(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreOptions) error {
-	w.shadow(ctx, "SetQueryStoreOptions", func(sctx context.Context) error { return w.inner.SetQueryStoreOptions(sctx, d, opts) })
-	return w.inner.SetQueryStoreOptions(ctx, d, opts)
-}
-
-func (w *fidelityWriter) CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error {
-	w.shadow(ctx, "CreateDatabase", func(sctx context.Context) error { return w.inner.CreateDatabase(sctx, req) })
-	return w.inner.CreateDatabase(ctx, req)
-}
-
-func (w *fidelityWriter) DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error {
-	w.shadow(ctx, "DropDatabase", func(sctx context.Context) error { return w.inner.DropDatabase(sctx, d, term) })
-	return w.inner.DropDatabase(ctx, d, term)
-}
-
-func (w *fidelityWriter) StartJob(ctx context.Context, job, step string) error {
-	w.shadow(ctx, "StartJob", func(sctx context.Context) error { return w.inner.StartJob(sctx, job, step) })
-	return w.inner.StartJob(ctx, job, step)
-}
-
-func (w *fidelityWriter) StopJob(ctx context.Context, job string) error {
-	w.shadow(ctx, "StopJob", func(sctx context.Context) error { return w.inner.StopJob(sctx, job) })
-	return w.inner.StopJob(ctx, job)
+func newFidelityObserver(t *testing.T, dry bool) *fidelityObserver {
+	return &fidelityObserver{t: t, dry: dry, script: new(gosmo.ScriptCollector)}
 }
 
 // fidelityCase is one writing command line: argv after the command's path
-// (the ad-hoc connection is added), and fakes, a fresh catalog and writer
-// for each of the two runs — no writer for a command that writes through
-// gosmo, whose catalog is then a gosmotest server's.
+// (the ad-hoc connection is added), and fakes, a fresh catalog (a
+// gosmotest server's) for each of the two runs.
 type fidelityCase struct {
 	command string
 	argv    string
-	fakes   func(t *testing.T) (Catalog, Writer)
+	fakes   func(t *testing.T) Catalog
 }
 
 // fidelityCases holds at least one case per writing command. Each changes
@@ -225,7 +82,7 @@ type fidelityCase struct {
 var fidelityCases = []fidelityCase{
 	{"server config set", "MAXDOP 4 cost-threshold 50 --allow admin", configFakes},
 	{"server config set", "maxdop 4 --override --allow admin", configFakes},
-	{"server config reset", "maxdop Backup-Checksum --allow admin", configFakes},
+	{"server config reset", "maxdop Backup-Compression --allow admin", configFakes},
 	{"server traceflag on", "7745 1222 --allow admin", traceFlagFakes},
 	{"server traceflag off", "1222 --allow admin", traceFlagFakes},
 	{"db set", "app --option RECOVERY=FULL --option PAGE_VERIFY=CHECKSUM --option QUERY_STORE=ON " +
@@ -270,45 +127,45 @@ var fidelityExempt = map[string]string{
 	"plan actual": "--dry-run classifies the script and prints no T-SQL: what runs is the script given",
 }
 
-func configFakes(*testing.T) (Catalog, Writer) {
-	cat := newConfigSetCatalog()
-	return cat, &configWriter{cat: cat}
+func configFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newConfigSetServer(t).Server()})
 }
 
-func traceFlagFakes(*testing.T) (Catalog, Writer) {
-	cat := &traceFlagCatalog{flags: []gosmo.TraceFlag{{Flag: 1222, Global: true}}}
-	return cat, &traceFlagWriter{cat: cat}
+func traceFlagFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: flagServer(t, gosmo.TraceFlag{Flag: 1222, Global: true}).Server()})
 }
 
-func dbSetFakes(*testing.T) (Catalog, Writer) {
-	cat := newDBSetCatalog()
-	return cat, &dbSetWriter{cat: cat}
+// dbSetFakes, dbCreateFakes and scopedFakes are real gosmo over a dbServer.
+func dbSetFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newDBSetServer(t).Server()})
 }
 
-func dbCreateFakes(*testing.T) (Catalog, Writer) {
-	cat := newDropCatalog()
-	return cat, &dropWriter{cat: cat}
+func dbCreateFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newDBServer(t).Server()})
 }
 
-func scopedFakes(*testing.T) (Catalog, Writer) {
-	cat := newScopedCatalog()
-	return cat, &scopedWriter{cat: cat}
+func scopedFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newScopedServer(t).Server()})
 }
 
-func jobFakes(*testing.T) (Catalog, Writer) { return newJobCatalog(), &jobWriter{} }
-
-func killFakes(*testing.T) (Catalog, Writer) {
-	return &killCatalog{target: userSession(87)}, &killWriter{}
+func jobFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newJobServer(t).Server()})
 }
 
-func captureFakes(*testing.T) (Catalog, Writer) {
-	cat, w := newCapture()
-	return cat, w
+// killFakes is real gosmo over a monitorServer with session 87.
+func killFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: killServer(t, userSession(87), nil).Server()})
+}
+
+// captureFakes is real gosmo over an xeServer whose login may create event
+// sessions.
+func captureFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newXEServer(t).Server()})
 }
 
 // importFakes is real gosmo over a catalogServer whose database App has the
 // one table data import loads.
-func importFakes(t *testing.T) (Catalog, Writer) {
+func importFakes(t *testing.T) Catalog {
 	s := newCatalogServer(t, "App", &gosmo.ObjectInfo{ObjectID: 9, Schema: "dbo", Name: "t", Type: "U", TypeDesc: "USER_TABLE"})
 	s.columns[9] = []*gosmo.Column{
 		{Name: "id", OrdinalPosition: 1, DataType: "int", TypeSchema: "sys"},
@@ -317,7 +174,7 @@ func importFakes(t *testing.T) (Catalog, Writer) {
 	s.on(func(gosmotest.Query) [][]any {
 		return [][]any{{"id", "int", 4, 10, 0, 0, 1252}, {"name", "nvarchar", 40, 0, 0, 1252, 1252}}
 	}, "WHERE c.object_id = OBJECT_ID(@p1)")
-	return ServerCatalog(&db.ServerConn{Server: s.Server()}), nil
+	return ServerCatalog(&db.ServerConn{Server: s.Server()})
 }
 
 // commandGroups is every group constructor tree.go assembles the command
@@ -350,11 +207,11 @@ func fidelityTree(d Deps) *spec.Tree {
 }
 
 // runFidelity runs c once, as a dry run when dry, over fresh fakes wrapped
-// in a fidelityWriter.
-func runFidelity(t *testing.T, c fidelityCase, csv string, dry bool) (*output.Result, *fidelityWriter, error) {
+// with a fidelityObserver.
+func runFidelity(t *testing.T, c fidelityCase, csv string, dry bool) (*output.Result, *fidelityObserver, error) {
 	t.Helper()
-	cat, inner := c.fakes(t)
-	w := newFidelityWriter(t, inner, dry)
+	cat := c.fakes(t)
+	w := newFidelityObserver(t, dry)
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
 		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
@@ -367,7 +224,6 @@ func runFidelity(t *testing.T, c fidelityCase, csv string, dry bool) (*output.Re
 			return sc, nil
 		},
 		Catalog: func(*db.ServerConn) Catalog { return cat },
-		Writer:  func(*db.ServerConn) Writer { return w },
 	}
 	argv := append(strings.Fields(c.command), "--server", "srv", "--auth", "windows")
 	argv = append(argv, strings.Fields(strings.ReplaceAll(c.argv, "{csv}", csv))...)

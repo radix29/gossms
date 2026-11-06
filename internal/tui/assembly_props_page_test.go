@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Assembly Properties, driven through fakedb_test.go.
+// Assembly Properties, driven through gosmotest_fixtures_test.go.
 //
 // The assembly under test is not the first row in sys.assemblies and is not
 // the shipped one, so a page that ignored its argument and read whichever row
@@ -51,7 +51,7 @@ func assemblyPropResponses() []fakeResponse {
 
 func TestAssemblyGeneralLoadsTheSelectedAssembly(t *testing.T) {
 	sc, inst := newTypePropConn(t, assemblyPropResponses()...)
-	form, apply := loadPage(t, pageAssemblyGeneral(sc, propTypeDB, propAssembly), inst)
+	form, apply := loadPageG(t, pageAssemblyGeneral(sc, propTypeDB, propAssembly), inst)
 
 	if got := staticValue(t, form, "Name"); got != propAssembly {
 		t.Errorf("Name is %q, want the selected assembly's %q", got, propAssembly)
@@ -74,7 +74,7 @@ func TestAssemblyGeneralLoadsTheSelectedAssembly(t *testing.T) {
 // size comes from DATALENGTH in the listing.
 func TestAssemblyFilesPageListsTheRegisteredFiles(t *testing.T) {
 	sc, inst := newTypePropConn(t, assemblyPropResponses()...)
-	form, apply := loadPage(t, pageAssemblyFiles(sc, propTypeDB, propAssembly), inst)
+	form, apply := loadPageG(t, pageAssemblyFiles(sc, propTypeDB, propAssembly), inst)
 
 	rows := gridRowsOf(t, form)
 	if len(rows) != 2 {
@@ -106,7 +106,7 @@ func TestAssemblyFilesPageListsTheRegisteredFiles(t *testing.T) {
 // a reader should have to remember.
 func TestAssemblyRoutinesPageNamesWhatIsBoundToIt(t *testing.T) {
 	sc, inst := newTypePropConn(t, assemblyPropResponses()...)
-	form, apply := loadPage(t, pageAssemblyRoutines(sc, propTypeDB, propAssembly), inst)
+	form, apply := loadPageG(t, pageAssemblyRoutines(sc, propTypeDB, propAssembly), inst)
 
 	rows := gridRowsOf(t, form)
 	if len(rows) != 2 {

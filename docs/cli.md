@@ -1540,14 +1540,13 @@ before/after change set (§ Commands, § Data,
   one, after the command's own fields. That `tsql` is what the real run then
   sends, statement for statement: `TestDryRunFidelity`
   (`internal/cli/cmd/dryrun_fidelity_test.go`) runs each writer both ways over
-  its fakes and compares the dry run's `tsql` with the script of the real
-  run's writes (and a bulk load's row count with `rows`). For a group that
-  writes through gosmo directly (`security`, `maint`, `data import`) the
-  real run's writes are what gosmo's statement observer reports gosmotest
-  accepted, rendered as `WithScript` renders them. A new writing
-  command adds a case to `fidelityCases` — `TestDryRunFidelityCoversEveryWriter`
-  fails on a command with `--dry-run` and none — and a new `Writer` method
-  does not compile until `fidelityWriter` shadows it. `query run` and `plan
+  gosmotest servers and compares the dry run's `tsql` with the script of the real
+  run's writes (and a bulk load's row count with `rows`). Every writing
+  command writes through gosmo directly: the real run's writes are what
+  gosmo's statement observer reports gosmotest accepted, rendered as
+  `WithScript` renders them. A new writing command adds a case to
+  `fidelityCases` — `TestDryRunFidelityCoversEveryWriter` fails on a
+  command with `--dry-run` and none. `query run` and `plan
   actual` are exempt: their `--dry-run` classifies and prints no T-SQL.
 - **Before and after.** A real run reads the state again after writing and
   reports a `change` set — `before`, `requested`, `after` — so the answer is

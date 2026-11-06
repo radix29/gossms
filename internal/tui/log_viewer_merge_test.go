@@ -44,7 +44,7 @@ func bothFiles() []logFileRef {
 // the same grid.
 func TestLogViewerMergesFilesNewestFirstAndDeterministically(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t,
+	sc, _ := newGLogConn(t,
 		mergeTestFiles(),
 		fakeResponse{match: "xp_readerrorlog 0, 1", cols: 3, rows: [][]driver.Value{
 			mergeTestEntry(10, 0, "current, tied"),
@@ -84,7 +84,7 @@ func TestLogViewerMergesFilesNewestFirstAndDeterministically(t *testing.T) {
 // has to say a file is missing, since the entry count alone cannot.
 func TestLogViewerMergedReadKeepsWhatItCouldRead(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t,
+	sc, _ := newGLogConn(t,
 		mergeTestFiles(),
 		fakeResponse{match: "xp_readerrorlog 1, 1", err: errors.New("the log file could not be opened")},
 		fakeResponse{match: "xp_readerrorlog 0, 1", cols: 3, rows: [][]driver.Value{
@@ -116,7 +116,7 @@ func TestLogViewerMergedReadKeepsWhatItCouldRead(t *testing.T) {
 // the merge must not turn into a silently empty grid.
 func TestLogViewerMergedReadFailsOnlyWhenEverythingFails(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t,
+	sc, _ := newGLogConn(t,
 		mergeTestFiles(),
 		fakeResponse{match: "xp_readerrorlog", err: errors.New("boom")},
 	)
@@ -318,7 +318,7 @@ func mixedFiles() []logFileRef {
 // within one.
 func TestLogViewerMergesAcrossFamilies(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t,
+	sc, _ := newGLogConn(t,
 		mergeTestFiles(),
 		fakeResponse{match: "xp_readerrorlog 0, 1", cols: 3, rows: [][]driver.Value{
 			mergeTestEntry(10, 0, "sql, tied"),

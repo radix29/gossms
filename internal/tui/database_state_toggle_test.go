@@ -67,7 +67,7 @@ func recoverTree(t *testing.T, a *App, sc *db.ServerConn) (dbs, sys, appdb, mast
 // and re-reads the Databases folder rather than writing a state into the node.
 func TestRestoreWithRecoveryRecoversAndReloadsTheFolder(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	dbs, _, appdb, _ := recoverTree(t, a, sc)
 
 	item := findMenuItem(a.contextMenuItemsForNode(appdb), "Restore With Recovery")
@@ -102,7 +102,7 @@ func TestRestoreWithRecoveryRecoversAndReloadsTheFolder(t *testing.T) {
 // not Databases above it: that would collapse System Databases.
 func TestStateToggleOnASystemDatabaseReloadsSystemDatabases(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	dbs, sys, _, master := recoverTree(t, a, sc)
 
 	a.toggleDatabaseOffline(sc, master)

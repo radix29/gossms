@@ -9,6 +9,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/db"
 )
 
@@ -46,10 +47,51 @@ func TestBackupAutoDestIsUniquePerSecond(t *testing.T) {
 // backupDestDialog is a showing Back Up dialog over a fake connection, with
 // its opening loads settled so their answers cannot land on the status line
 // mid-test.
-func backupDestDialog(t *testing.T, responses ...fakeResponse) (*App, *BackupDialog) {
+func backupDestDialog(t *testing.T, rules ...gRule) (*App, *BackupDialog) {
 	t.Helper()
-	sc, _ := newFakeConn(t, responses...)
-	return backupDialogOn(t, sc)
+	return backupDialogOn(t, backupFake(t, nil, rules...))
+}
+
+// gRule is one scripted answer on a gosmotest.Fake: a query containing match
+// is answered by resp. Earlier rules win.
+type gRule struct {
+	match string
+	resp  gosmotest.Responder
+}
+
+// gRows is rows as gosmotest takes them; the row helpers shared with the
+// fakedb files return []driver.Value.
+func gRows(rows ...[]driver.Value) gosmotest.Responder {
+	out := make([][]any, len(rows))
+	for i, r := range rows {
+		out[i] = make([]any, len(r))
+		for j, v := range r {
+			out[i][j] = v
+		}
+	}
+	return gosmotest.Rows(out...)
+}
+
+// backupFake is a gosmotest server for the Back Up dialog: the test's rules
+// first, then an empty answer for each of the opening loads it did not script
+// (a strict Fake fails the test on an unanswered query). info, if set,
+// adjusts the connect reads — an edition other than Developer.
+func backupFake(t *testing.T, info func(*gosmotest.Info), rules ...gRule) *db.ServerConn {
+	t.Helper()
+	f := gosmotest.New(t)
+	if info != nil {
+		info(&f.Info)
+	}
+	for _, r := range rules {
+		f.On(r.match, r.resp)
+	}
+	f.On("FROM sys.databases", gosmotest.Rows())
+	f.OnFunc(func(q gosmotest.Query) bool { // not the connect read, which names these too
+		return strings.Contains(q.Text, "InstanceDefaultBackupPath") && !strings.Contains(q.Text, "'ServerName'")
+	}, gosmotest.Rows([]any{nil, nil, nil}))
+	f.On("FROM   sys.configurations", gosmotest.Rows())
+	f.On("sys.database_recovery_status", gosmotest.Rows())
+	return &db.ServerConn{Server: f.Server()}
 }
 
 // backupDialogOn is backupDestDialog over a connection the caller built — for
@@ -68,9 +110,8 @@ func backupDialogOn(t *testing.T, sc *db.ServerConn) (*App, *BackupDialog) {
 	return a, d
 }
 
-func fileExistResponse(fileExists, isDir int64) fakeResponse {
-	return fakeResponse{match: "xp_fileexist", cols: 3,
-		rows: [][]driver.Value{{fileExists, isDir, int64(1)}}}
+func fileExistResponse(fileExists, isDir int64) gRule {
+	return gRule{"xp_fileexist", gosmotest.Rows([]any{fileExists, isDir, int64(1)})}
 }
 
 const typedDest = `C:\Backup\AppDB_keep.bak`
@@ -106,13 +147,13 @@ func TestBackupAsksBeforeOverwritingAnExistingFile(t *testing.T) {
 func TestBackupDestCheckOutcomes(t *testing.T) {
 	for _, c := range []struct {
 		name    string
-		resp    fakeResponse
+		resp    gRule
 		wantRun bool
 	}{
 		{"missing file runs", fileExistResponse(0, 0), true},
 		// xp_fileexist needs sysadmin, BACKUP does not: a refused probe must
 		// not block a db_backupoperator.
-		{"refused probe runs", fakeResponse{match: "xp_fileexist", err: errors.New("EXECUTE permission denied")}, true},
+		{"refused probe runs", gRule{"xp_fileexist", gosmotest.Fail(errors.New("EXECUTE permission denied"))}, true},
 		{"folder is refused", fileExistResponse(0, 1), false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -149,7 +190,7 @@ func TestBackupToURLSkipsTheFileCheck(t *testing.T) {
 func TestBackupHideAbandonsTheDestCheck(t *testing.T) {
 	block := make(chan struct{})
 	resp := fileExistResponse(0, 0)
-	resp.block = block
+	resp.resp = gosmotest.Hold(block, resp.resp)
 	a, d := backupDestDialog(t, resp)
 	ran := false
 	d.checkDestThen(gosmo.DiskTarget(typedDest), func() { ran = true })

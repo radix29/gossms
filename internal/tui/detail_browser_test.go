@@ -273,7 +273,7 @@ func TestDetailBrowserShowValueReadsTheStatementByQueryID(t *testing.T) {
 	const stored = "SELECT 1 -- pick one\nFROM dbo.t"
 
 	a := newTestApp()
-	sc, inst := newFakeConn(t, fakeResponse{
+	sc, inst := newGConn(t, fakeResponse{
 		match: "WHERE  q.query_id = @p1", cols: 2,
 		rows: [][]driver.Value{{stored, "dbo.q"}},
 	})
@@ -315,8 +315,8 @@ func TestDetailBrowserShowValueReadsTheStatementByQueryID(t *testing.T) {
 	if !ok || len(args) != 1 {
 		t.Fatalf("the text read bound %v, want one parameter", args)
 	}
-	if got, _ := args[0].Value.(int64); got != 12 {
-		t.Errorf("the text read asked about query %v, want 12 — the selected row", args[0].Value)
+	if got, _ := args[0].(int64); got != 12 {
+		t.Errorf("the text read asked about query %v, want 12 — the selected row", args[0])
 	}
 }
 

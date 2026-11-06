@@ -50,10 +50,10 @@ func databaseGeneralResponses(owner string) []fakeResponse {
 	}
 }
 
-func loadDatabaseGeneral(t *testing.T, owner string) (*fakeInstance, propApply, *propsheet.Form) {
+func loadDatabaseGeneral(t *testing.T, owner string) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, databaseGeneralResponses(owner)...)
-	form, apply := loadPage(t, pageDatabaseGeneral(sc, genDatabase), inst)
+	sc, inst := newGConn(t, databaseGeneralResponses(owner)...)
+	form, apply := loadPageG(t, pageDatabaseGeneral(sc, genDatabase), inst)
 	return inst, apply, form
 }
 

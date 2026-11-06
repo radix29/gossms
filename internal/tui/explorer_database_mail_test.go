@@ -74,6 +74,8 @@ func mailConfig() []fakeResponse {
 			{int64(42), int64(1), "dba@example.com", "", "", "Job failed", "", "TEXT", "NORMAL", "NORMAL", "",
 				at, "sa", int64(0), "failed", nil, at},
 		}},
+		// Last, so a test's own mailVisibilityAnswer ahead of it wins.
+		mailVisibilityAnswer(true, true),
 	}
 }
 
@@ -91,7 +93,7 @@ func TestDatabaseMailLabelCarriesItsState(t *testing.T) {
 		// and the state is unknown — not MailDisabled, its zero value.
 		{"status refused", []fakeResponse{mailRefused(mailStatusRead, "sysmail_help_status_sp")}, mailNodeState{label: "Database Mail"}},
 	} {
-		sc, _ := newFakeConn(t, tc.responses...)
+		sc, _ := newGConn(t, tc.responses...)
 		if got := databaseMailState(ctx, sc); got != tc.want {
 			t.Errorf("%s: state = %+v, want %+v", tc.name, got, tc.want)
 		}
@@ -113,15 +115,15 @@ func TestManagementListsDatabaseMailExceptOnAzureSQLDatabase(t *testing.T) {
 		}
 		return nil
 	}
-	if n := mailNode(newFakeConnEdition(t, 3, "16.0.4085.2", mailStatus("STOPPED"))); n == nil {
+	if n := mailNode(newGConnEdition(t, 3, "16.0.4085.2", mailStatus("STOPPED"), rgConfig(true), rgStatus(false))); n == nil {
 		t.Error("Developer: Management has no Database Mail node")
 	} else if n.label != "Database Mail (Stopped)" {
 		t.Errorf("Developer: label = %q, want the state the loader read", n.label)
 	}
-	if mailNode(newFakeConnEdition(t, 8, "12.0.2000.8")) == nil {
+	if mailNode(newGConnEdition(t, 8, "12.0.2000.8", mailStatus("STARTED"), rgConfig(true), rgStatus(false))) == nil {
 		t.Error("Managed Instance: Management has no Database Mail node — D5 ships it shown")
 	}
-	if mailNode(newFakeConnEdition(t, 5, "12.0.2000.8")) != nil {
+	if mailNode(newGConnEdition(t, 5, "12.0.2000.8")) != nil {
 		t.Error("Azure SQL Database: Management lists Database Mail, which has no msdb there")
 	}
 }
@@ -139,7 +141,7 @@ func detailValue(t *testing.T, rows [][]string, prop string) string {
 }
 
 func TestDatabaseMailDetailListsEachSection(t *testing.T) {
-	sc, _ := newFakeConn(t, append([]fakeResponse{mailStatus("STARTED")}, mailConfig()...)...)
+	sc, _ := newGConn(t, append([]fakeResponse{mailStatus("STARTED")}, mailConfig()...)...)
 	_, rows, err := databaseMailDetail(context.Background(), sc)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +166,7 @@ func TestDatabaseMailDetailListsEachSection(t *testing.T) {
 }
 
 func TestDatabaseMailDetailSaysDisabledAndHowToEnable(t *testing.T) {
-	sc, _ := newFakeConn(t, append([]fakeResponse{mailStatus("DISABLED")}, mailConfig()...)...)
+	sc, _ := newGConn(t, append([]fakeResponse{mailStatus("DISABLED")}, mailConfig()...)...)
 	_, rows, err := databaseMailDetail(context.Background(), sc)
 	if err != nil {
 		t.Fatal(err)
@@ -182,12 +184,13 @@ func TestDatabaseMailDetailSaysDisabledAndHowToEnable(t *testing.T) {
 // names its right; none fails the view.
 func TestDatabaseMailDetailDegradesPerSection(t *testing.T) {
 	queueRefused := mailRefused(mailQueueRead, "sysmail_help_queue_sp")
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		mailStatus("STARTED"),
 		queueRefused,
 		mailRefused(mailProfileRead, "sysmail_profile"),
 		mailRefused(mailAccountRead, "sysmail_account"),
 		mailConfig()[4], // items: the server filters them to the caller's own
+		mailVisibilityAnswer(true, true),
 	)
 	_, rows, err := databaseMailDetail(context.Background(), sc)
 	if err != nil {
@@ -209,7 +212,7 @@ func TestDatabaseMailDetailDegradesPerSection(t *testing.T) {
 // Anything that is not a refusal is a real failure and fails the view, as
 // every other Details arm does — "not visible" must not hide a broken msdb.
 func TestDatabaseMailDetailFailsOnAnErrorThatIsNotARefusal(t *testing.T) {
-	sc, _ := newFakeConn(t, mailStatus("STARTED"),
+	sc, _ := newGConn(t, mailStatus("STARTED"),
 		fakeResponse{match: mailQueueRead, err: errors.New("connection reset")})
 	if _, _, err := databaseMailDetail(context.Background(), sc); err == nil {
 		t.Error("a broken queue read was shown as a section rather than failing")
@@ -241,7 +244,7 @@ func TestDetailBrowserRetitlesOnlyTheShownNode(t *testing.T) {
 func TestDatabaseMailDetailNamesViewServerStateOnMsg300(t *testing.T) {
 	queueRefused := fakeResponse{match: mailQueueRead, err: mssql.Error{Number: 300, Class: 14,
 		Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}}
-	sc, _ := newFakeConn(t, append([]fakeResponse{mailStatus("STARTED"), queueRefused}, mailConfig()[1:]...)...)
+	sc, _ := newGConn(t, append([]fakeResponse{mailStatus("STARTED"), queueRefused}, mailConfig()[1:]...)...)
 	_, rows, err := databaseMailDetail(context.Background(), sc)
 	if err != nil {
 		t.Fatal(err)
@@ -255,12 +258,13 @@ func TestDatabaseMailDetailNamesViewServerStateOnMsg300(t *testing.T) {
 // calls only with 'Database Mail XPs' on — so the row still says it is (W14:
 // VIEW SERVER STATE alone showed no XPs row at all).
 func TestDatabaseMailDetailShowsXPsWhenStatusIsRefused(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		mailRefused(mailStatusRead, "sysmail_help_status_sp"),
 		mailRefused(mailQueueRead, "sysmail_help_queue_sp"),
 		mailRefused(mailProfileRead, "sysmail_profile"),
 		mailRefused(mailAccountRead, "sysmail_account"),
 		mailRefused(mailItemsRead, "sysmail_allitems"),
+		mailVisibilityAnswer(true, true),
 	)
 	_, rows, err := databaseMailDetail(context.Background(), sc)
 	if err != nil {
@@ -281,7 +285,7 @@ func TestDatabaseMailDetailShowsXPsWhenStatusIsRefused(t *testing.T) {
 // heading.
 func TestDatabaseMailDetailSaysWhoseFailedItems(t *testing.T) {
 	conn := func(vis ...fakeResponse) *db.ServerConn {
-		sc, _ := newFakeConn(t, append(append(vis, mailStatus("STARTED")), mailConfig()...)...)
+		sc, _ := newGConn(t, append(append(vis, mailStatus("STARTED")), mailConfig()...)...)
 		return sc
 	}
 	for _, tc := range []struct {
@@ -321,7 +325,7 @@ func mailMenuNode(sc *db.ServerConn, st gosmo.MailState, known bool) *explorerNo
 // Start and Stop withheld with 'Database Mail XPs' off, saying so.
 func TestDatabaseMailMenuFollowsTheState(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	for _, tc := range []struct {
 		name        string
 		state       gosmo.MailState
@@ -422,7 +426,7 @@ func TestDatabaseMailMenuGates(t *testing.T) {
 // confirmed first.
 func TestStartAndStopDatabaseMail(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConn(t, mailStatus("STARTED"))
+	sc, inst := newGConn(t, mailStatus("STARTED"))
 	root := a.explorer.AddRoot("srv", sc)
 	node := mailMenuNode(sc, gosmo.MailStopped, true)
 	node.label = "Database Mail (Stopped)"

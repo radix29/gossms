@@ -63,8 +63,8 @@ func TestFilegroupTogglesActOnTheRowTheyAreOn(t *testing.T) {
 		{"default onto STAGING", "STAGING", "ALTER DATABASE [appdb] MODIFY FILEGROUP [STAGING] DEFAULT", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-			form, apply := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+			sc, inst := newGConn(t, filegroupsPageResponses()...)
+			form, apply := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
 			toggleByName(t, toggleGrid(t, form), tc.group, tc.col)
 
@@ -87,8 +87,8 @@ func TestFilegroupTogglesActOnTheRowTheyAreOn(t *testing.T) {
 // pass every write test above and still show PRIMARY as read-only — and then
 // write that state back the moment anything else changed.
 func TestFilegroupTogglesLoadInTheStateTheServerReports(t *testing.T) {
-	sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-	form, _ := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filegroupsPageResponses()...)
+	form, _ := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
 	grid := toggleGrid(t, form)
 	want := map[string][2]bool{ // name -> {read-only, default}
@@ -113,8 +113,8 @@ func TestFilegroupTogglesLoadInTheStateTheServerReports(t *testing.T) {
 // pointed at stay in step only because rowsFor rebuilds the pairing. Getting
 // it wrong drops a different filegroup than the one on screen.
 func TestRemovingAFilegroupRemovesTheOneSelected(t *testing.T) {
-	sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filegroupsPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
 	grid := toggleGrid(t, form)
 	grid.Grid.SetSelectedRow(2) // STAGING, last of the three
@@ -142,8 +142,8 @@ func TestRemovingAFilegroupRemovesTheOneSelected(t *testing.T) {
 // Without that pairing, un-read-only-ing ARCHIVE after removing PRIMARY writes
 // the toggle onto whichever filegroup happens to sit at the grid's index.
 func TestATogglePastAPendingRemoveStillLandsOnItsOwnFilegroup(t *testing.T) {
-	sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filegroupsPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
 	grid := toggleGrid(t, form)
 	grid.Grid.SetSelectedRow(0) // ARCHIVE, the first row
@@ -171,8 +171,8 @@ func TestATogglePastAPendingRemoveStillLandsOnItsOwnFilegroup(t *testing.T) {
 // TestAddingAFilegroupWritesItByName covers the Add button, and that the new
 // row does not also pick up a toggle statement it was never given.
 func TestAddingAFilegroupWritesItByName(t *testing.T) {
-	sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filegroupsPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
 	textRow(t, form, "New filegroup name").Edit("REPORTING")
 	clickButton(t, form, "Add")
@@ -193,8 +193,8 @@ func TestAddingAFilegroupWritesItByName(t *testing.T) {
 // and ARCHIVE already read-only, so a page that wrote each row's current state
 // rather than its changes would look successful and reissue both.
 func TestFilegroupsPageWritesNothingWhenUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-	_, apply := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filegroupsPageResponses()...)
+	_, apply := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -211,8 +211,8 @@ func TestFilegroupsPageWritesNothingWhenUntouched(t *testing.T) {
 // only then does it matter that the second Remove resolves its row through
 // `visible` — the list the user is actually looking at.
 func TestRemovingTwoFilegroupsRemovesBothTheOnesSelected(t *testing.T) {
-	sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filegroupsPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
 	grid := toggleGrid(t, form)
 	grid.Grid.SetSelectedRow(0) // ARCHIVE
@@ -250,8 +250,8 @@ func TestRemovingTwoFilegroupsRemovesBothTheOnesSelected(t *testing.T) {
 // The form refuses it instead; ticks on a filegroup with files still pass.
 func TestReadOnlyOrDefaultOnANewFilegroupIsRefused(t *testing.T) {
 	for _, col := range []int{0, 1} {
-		sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-		form, _ := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+		sc, inst := newGConn(t, filegroupsPageResponses()...)
+		form, _ := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 
 		textRow(t, form, "New filegroup name").Edit("REPORTING")
 		clickButton(t, form, "Add")
@@ -274,8 +274,8 @@ func TestReadOnlyOrDefaultOnANewFilegroupIsRefused(t *testing.T) {
 // whatever else the page had to write (review plan R6). The form refuses it
 // first, and nothing is sent; Read-only elsewhere still passes.
 func TestReadOnlyOnPrimaryIsRefused(t *testing.T) {
-	sc, inst := newFakeConn(t, filegroupsPageResponses()...)
-	form, _ := loadPage(t, pageDatabaseFilegroups(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filegroupsPageResponses()...)
+	form, _ := loadPageG(t, pageDatabaseFilegroups(sc, "appdb"), inst)
 	grid := toggleGrid(t, form)
 
 	toggleByName(t, grid, "STAGING", 0)

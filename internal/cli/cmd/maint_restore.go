@@ -375,7 +375,7 @@ func restoreOverChecks(ctx context.Context, inv *spec.Invocation, srv *gosmo.Ser
 	if strings.EqualFold(current, target.Name) {
 		return usageError(name+" is the connection's own database", "Connect to another database to restore it: add -d master.")
 	}
-	ag, err := availabilityGroupOf(ctx, cat, target.Name)
+	ag, err := availabilityGroupOf(ctx, srv, cat.ServerInfo(), target.Name)
 	if err != nil {
 		return readError(err)
 	}

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"github.com/radix29/gosmo/gosmotest"
 	"strings"
 	"testing"
 	"time"
@@ -48,8 +49,8 @@ func TestLoginStatusConnectPermissionWritesTheStateItShows(t *testing.T) {
 			resp := loginResponses()
 			resp[1].rows[0][11] = tc.loaded
 			name := "appuser"
-			sc, inst := newFakeConn(t, resp...)
-			form, apply := loadPage(t, pageLoginStatus(sc, &name), inst)
+			sc, inst := newGConn(t, resp...)
+			form, apply := loadPageG(t, pageLoginStatus(sc, &name), inst)
 
 			editRadio(t, form, "Permission to connect to database engine", tc.option)
 
@@ -84,8 +85,8 @@ func TestLoginStatusConnectPermissionFromGrantWithGrantOption(t *testing.T) {
 			resp := loginResponses()
 			resp[1].rows[0][11] = "GRANT_WITH_GRANT_OPTION"
 			name := "appuser"
-			sc, inst := newFakeConn(t, resp...)
-			form, apply := loadPage(t, pageLoginStatus(sc, &name), inst)
+			sc, inst := newGConn(t, resp...)
+			form, apply := loadPageG(t, pageLoginStatus(sc, &name), inst)
 
 			editRadio(t, form, connectLabel, tc.option)
 
@@ -116,8 +117,8 @@ func TestLoginStatusEnableAndDisable(t *testing.T) {
 	} {
 		t.Run(tc.option, func(t *testing.T) {
 			name := "appuser"
-			sc, inst := newFakeConn(t, loginResponses()...)
-			form, apply := loadPage(t, pageLoginStatus(sc, &name), inst)
+			sc, inst := newGConn(t, loginResponses()...)
+			form, apply := loadPageG(t, pageLoginStatus(sc, &name), inst)
 
 			// The scripted login is enabled, so selecting Enabled is not a
 			// change — set the row the other way first, without dirtying it,
@@ -146,8 +147,8 @@ func TestLoginStatusEnableAndDisable(t *testing.T) {
 // for being opened would lock out every login an admin inspected.
 func TestLoginStatusWritesNothingWhenUntouched(t *testing.T) {
 	name := "appuser"
-	sc, inst := newFakeConn(t, loginResponses()...)
-	_, apply := loadPage(t, pageLoginStatus(sc, &name), inst)
+	sc, inst := newGConn(t, loginResponses()...)
+	_, apply := loadPageG(t, pageLoginStatus(sc, &name), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -173,8 +174,8 @@ func TestLoginStatusReadsTheConnectStateBackAsTheServerReportsIt(t *testing.T) {
 			resp := loginResponses()
 			resp[1].rows[0][11] = tc.state
 			name := "appuser"
-			sc, inst := newFakeConn(t, resp...)
-			form, _ := loadPage(t, pageLoginStatus(sc, &name), inst)
+			sc, inst := newGConn(t, resp...)
+			form, _ := loadPageG(t, pageLoginStatus(sc, &name), inst)
 
 			row := radioRow(t, form, "Permission to connect to database engine")
 			if got := row.Options()[row.Selected()]; got != tc.want {
@@ -224,8 +225,8 @@ func TestServerRolesGrantsTheRoleTheRowIsNamedFor(t *testing.T) {
 	for _, role := range []string{"sysadmin", "securityadmin", "bulkadmin", "public"} {
 		t.Run(role, func(t *testing.T) {
 			name := "appuser"
-			sc, inst := newFakeConn(t, append(loginResponses(), serverRolesResponse())...)
-			form, apply := loadPage(t, pageLoginServerRoles(sc, &name), inst)
+			sc, inst := newGConn(t, append(loginResponses(), serverRolesResponse(), noServerPermissions())...)
+			form, apply := loadPageG(t, pageLoginServerRoles(sc, &name), inst)
 
 			toggleByName(t, toggleGrid(t, form), role, 0)
 
@@ -252,8 +253,8 @@ func TestServerRolesGrantsTheRoleTheRowIsNamedFor(t *testing.T) {
 // is the only place that comparison is exercised.
 func TestServerRolesUntickingRemovesMembership(t *testing.T) {
 	name := "appuser"
-	sc, inst := newFakeConn(t, append(loginResponses(), serverRolesResponse())...)
-	form, apply := loadPage(t, pageLoginServerRoles(sc, &name), inst)
+	sc, inst := newGConn(t, append(loginResponses(), serverRolesResponse(), noServerPermissions())...)
+	form, apply := loadPageG(t, pageLoginServerRoles(sc, &name), inst)
 
 	grid := toggleGrid(t, form)
 	// The membership read has to have landed on the right row for the untick
@@ -285,8 +286,8 @@ func TestServerRolesUntickingRemovesMembership(t *testing.T) {
 // in — and then silently remove it from them on the next Apply.
 func TestServerRolesMembershipIsNotSubstringMatched(t *testing.T) {
 	name := "user"
-	sc, inst := newFakeConn(t, append(loginResponses(), serverRolesResponse())...)
-	form, _ := loadPage(t, pageLoginServerRoles(sc, &name), inst)
+	sc, inst := newGConn(t, append(loginResponses(), serverRolesResponse(), noServerPermissions())...)
+	form, _ := loadPageG(t, pageLoginServerRoles(sc, &name), inst)
 
 	grid := toggleGrid(t, form)
 	for i, row := range grid.Text() {
@@ -299,8 +300,8 @@ func TestServerRolesMembershipIsNotSubstringMatched(t *testing.T) {
 // TestServerRolesWritesNothingWhenUntouched: nine rows, no edit, no write.
 func TestServerRolesWritesNothingWhenUntouched(t *testing.T) {
 	name := "appuser"
-	sc, inst := newFakeConn(t, append(loginResponses(), serverRolesResponse())...)
-	_, apply := loadPage(t, pageLoginServerRoles(sc, &name), inst)
+	sc, inst := newGConn(t, append(loginResponses(), serverRolesResponse(), noServerPermissions())...)
+	_, apply := loadPageG(t, pageLoginServerRoles(sc, &name), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -354,13 +355,18 @@ func TestLoginStatusCountsSessionsUnderTheServerCollation(t *testing.T) {
 	} {
 		resp := loginResponses()
 		resp[2].rows = [][]driver.Value{session(51, "appuser"), session(52, "APPUSER"), session(53, "other")}
-		info := serverInfoResponse()
-		info.rows[0][4] = tc.collation
-		sc, inst := newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, resp...))
+		sc, inst := newGConnWith(t, func(i *gosmotest.Info) { i.Collation = tc.collation }, resp...)
 		name := "appuser"
-		form, _ := loadPage(t, pageLoginStatus(sc, &name), inst)
+		form, _ := loadPageG(t, pageLoginStatus(sc, &name), inst)
 		if got := staticValue(t, form, "Active sessions"); got != tc.want {
 			t.Errorf("%s: Active sessions = %s, want %s", tc.collation, got, tc.want)
 		}
 	}
+}
+
+// noServerPermissions answers the server-role page's sys.server_permissions
+// read (the role descriptions' permission list) with no entries; a gosmotest
+// server fails on an unanswered query.
+func noServerPermissions() fakeResponse {
+	return fakeResponse{match: "FROM   sys.server_permissions sp", cols: 5}
 }

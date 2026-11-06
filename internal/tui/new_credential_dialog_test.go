@@ -14,7 +14,7 @@ import (
 // applyFns, so the test does that itself.
 func newCredentialTestDialog(t *testing.T) *NewCredentialDialog {
 	t.Helper()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := &NewCredentialDialog{}
 	d.sc = sc
 	d.pages = []string{"General"}
@@ -92,7 +92,7 @@ func TestNewCredentialDialogsScriptTheSecretAsAPlaceholder(t *testing.T) {
 		check(t, d.forms[0], d.preflight, d.applyFns[0])
 	})
 	t.Run("database scoped credential", func(t *testing.T) {
-		sc, _ := newFakeConn(t)
+		sc, _ := newGConn(t)
 		d := &NewDatabaseScopedCredentialDialog{dbName: "appdb"}
 		d.sc = sc
 		d.pages = []string{"General"}

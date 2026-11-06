@@ -70,8 +70,8 @@ func scopedConfigResponses() []fakeResponse {
 func TestEveryScopedConfigRowWritesTheOptionItIsLabelled(t *testing.T) {
 	for _, o := range scopedConfigOptions {
 		t.Run(o.label, func(t *testing.T) {
-			sc, inst := newFakeConn(t, scopedConfigResponses()...)
-			form, apply := loadPage(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
+			sc, inst := newGConn(t, scopedConfigResponses()...)
+			form, apply := loadPageG(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
 
 			if o.isBool {
 				editSelect(t, form, o.label, "ON")
@@ -110,8 +110,8 @@ func TestScopedConfigBoolRowsWriteTheKeywordNotTheCatalogValue(t *testing.T) {
 		{"OFF", "SET PARAMETER_SNIFFING = OFF"},
 	} {
 		t.Run(tc.pick, func(t *testing.T) {
-			sc, inst := newFakeConn(t, scopedConfigResponses()...)
-			form, apply := loadPage(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
+			sc, inst := newGConn(t, scopedConfigResponses()...)
+			form, apply := loadPageG(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
 
 			// Everything is scripted OFF, so selecting OFF is only an edit
 			// once the row has been moved off it.
@@ -144,8 +144,8 @@ func TestScopedConfigLoadsEachOptionsOwnValue(t *testing.T) {
 			resp[1].rows[i][2] = "1"
 		}
 	}
-	sc, inst := newFakeConn(t, resp...)
-	form, _ := loadPage(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
+	sc, inst := newGConn(t, resp...)
+	form, _ := loadPageG(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
 
 	if got := textRow(t, form, "Max DOP").Value(); got != "8" {
 		t.Errorf("Max DOP shows %q, want %q", got, "8")
@@ -164,8 +164,8 @@ func TestScopedConfigLoadsEachOptionsOwnValue(t *testing.T) {
 // from the server during load, and a row that came back dirty would rewrite an
 // optimizer setting on a database whose Properties were only opened to look.
 func TestScopedConfigWritesNothingWhenUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, scopedConfigResponses()...)
-	_, apply := loadPage(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
+	sc, inst := newGConn(t, scopedConfigResponses()...)
+	_, apply := loadPageG(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -194,8 +194,8 @@ func TestScopedConfigOffersNoControlForAnOptionTheServerDoesNotHave(t *testing.T
 	}
 	resp[1].rows = kept
 
-	sc, inst := newFakeConn(t, resp...)
-	form, apply := loadPage(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
+	sc, inst := newGConn(t, resp...)
+	form, apply := loadPageG(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
 
 	for _, label := range []string{"Max DOP", "Parameter sniffing"} {
 		row := textRow(t, form, label)
@@ -232,8 +232,8 @@ func TestScopedConfigKeywordValuedOptionIsShownNotZeroed(t *testing.T) {
 			resp[1].rows[i][2] = "PRIMARY"
 		}
 	}
-	sc, inst := newFakeConn(t, resp...)
-	form, apply := loadPage(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
+	sc, inst := newGConn(t, resp...)
+	form, apply := loadPageG(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
 
 	row := textRow(t, form, "Max DOP")
 	if row.Value() != "PRIMARY" {

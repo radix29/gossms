@@ -133,7 +133,7 @@ func TestAQueuesAlterAndDropTakeDifferentRights(t *testing.T) {
 	// schema has to be answered, not merely unmentioned — an unprobed schema
 	// reads unknown and fails open, which is right at run time and would make
 	// this test pass for the wrong reason.
-	sc, _ := newFakeConn(t, capabilityResponsesWithObjects(true,
+	sc, _ := newGConn(t, capabilityResponsesWithObjects(true,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}, []string{"dbo"}, []string{"dbo.ClaimQueue"}, nil)...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
@@ -153,7 +153,7 @@ func TestAQueuesAlterAndDropTakeDifferentRights(t *testing.T) {
 // drop, and is the right a principal without CONTROL on the queue actually
 // holds.
 func TestAQueuesDropFollowsItsSchema(t *testing.T) {
-	sc, _ := newFakeConn(t, capabilityResponsesWithSchemas(true, nil, nil, nil,
+	sc, _ := newGConn(t, capabilityResponsesWithSchemas(true, nil, nil, nil,
 		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}, []string{"dbo"}, nil)...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
@@ -168,7 +168,7 @@ func TestAQueuesDropFollowsItsSchema(t *testing.T) {
 // ALTER on one queue can write would come up read-only — the failure
 // withRequiresOn exists for, and one that compiles and looks right.
 func TestTheQueuePageIsGatedOnTheQueueItself(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	pages := brokerQueuePropPages(sc, "appdb", "dbo", "ClaimQueue")
 	if len(pages) != 1 {
 		t.Fatalf("want one page, got %d", len(pages))
@@ -186,7 +186,7 @@ func TestTheQueuePageIsGatedOnTheQueueItself(t *testing.T) {
 // both, unlike a queue's two verbs — pinned so the two never drift apart
 // silently.
 func TestTheRoutePageAndTheRoutesDeleteShareOneRight(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	pages := routePropPages(sc, "appdb", "ClaimRoute")
 	names := func(rights []gate.Right) []string {
 		var out []string
