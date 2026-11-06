@@ -10,6 +10,7 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/showplan"
 )
@@ -28,23 +29,26 @@ func cachedQuery() *gosmo.CachedQueryStat {
 
 // Microseconds come out as milliseconds, each total beside its average; the
 // handles as T-SQL binary literals plan cached reads back; a statement whose
-// batch left the cache has NULL text and database.
+// batch left the cache has NULL text and database. --plan-database keeps the
+// plans compiled in it, by its id.
 func TestMonitorTopQueries(t *testing.T) {
 	gone := &gosmo.CachedQueryStat{PlanHandle: []byte{1}, StatementEnd: -1, LastExecutionTime: cachedAt, CreationTime: cachedAt}
-	cat := &monitorCatalog{queries: []*gosmo.CachedQueryStat{cachedQuery(), gone}}
-	res, err := runMonitor(t, cat, "top-queries", "--by", "reads", "--avg", "--top", "5", "--plan-database", "Sales")
+	srv := newMonitorServer(t)
+	srv.queries = []*gosmo.CachedQueryStat{gone, cachedQuery()}
+	res, err := runMonitor(t, srv, "top-queries", "--by", "reads", "--avg", "--top", "5")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (gosmo.TopQueriesOptions{By: gosmo.TopByLogicalReads, Average: true, Top: 5, Database: "Sales"}); *cat.gotTopOps != want {
-		t.Errorf("options = %+v, want %+v", *cat.gotTopOps, want)
+	if q := lastQuery(srv, topRead); q.Arg(0) != int64(5) || has(q, "@p2") ||
+		!has(q, "ORDER  BY CAST(qs.total_logical_reads AS float) / NULLIF(qs.execution_count, 0) DESC") {
+		t.Errorf("the ranking's query:\n%s", q)
 	}
 	if field(res, "rankedBy") != "reads" || field(res, "ranking") != "average" {
 		t.Errorf("fields = %+v", res.Fields)
 	}
-	want := []string{
-		"1 Sales 4 10.001 2.500 20.000 5.000 9 2.25 0 0.00 2026-10-30 09:00:00.000 2026-10-30 08:00:00.000 " +
-			"0xABCD000000000001 0x060005FF 112 -1 SELECT * FROM t WHERE id = @1",
+	sales := "1 Sales 4 10.001 2.500 20.000 5.000 9 2.25 0 0.00 2026-10-30 09:00:00.000 2026-10-30 08:00:00.000 " +
+		"0xABCD000000000001 0x060005FF 112 -1 SELECT * FROM t WHERE id = @1"
+	want := []string{sales,
 		"2 NULL 0 0.000 0.000 0.000 0.000 0 0.00 0 0.00 2026-10-30 08:00:00.000 2026-10-30 08:00:00.000 NULL 0x01 0 -1 NULL",
 	}
 	if res.Sets[0].Name != "queries" || !slices.Equal(cells(res.Sets[0]), want) {
@@ -53,16 +57,38 @@ func TestMonitorTopQueries(t *testing.T) {
 	if len(res.Sets[0].Columns) != len(res.Sets[0].Rows[0]) {
 		t.Errorf("%d columns, %d cells", len(res.Sets[0].Columns), len(res.Sets[0].Rows[0]))
 	}
-}
 
-func TestMonitorTopQueriesDefaults(t *testing.T) {
-	cat := &monitorCatalog{}
-	res, err := runMonitor(t, cat, "top-queries")
+	res, err = runMonitor(t, srv, "top-queries", "--by", "reads", "--avg", "--top", "5", "--plan-database", "sales")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (gosmo.TopQueriesOptions{By: gosmo.TopByCPU, Top: 20}); *cat.gotTopOps != want {
-		t.Errorf("options = %+v, want %+v", *cat.gotTopOps, want)
+	if q := lastQuery(srv, topRead); q.Arg(1) != int64(5) {
+		t.Errorf("--plan-database sales: the ranking's query:\n%s", q)
+	}
+	if got := cells(res.Sets[0]); !slices.Equal(got, []string{sales}) {
+		t.Errorf("--plan-database sales: queries = %q", got)
+	}
+}
+
+// lastQuery is the last query s was sent containing sub.
+func lastQuery(s *monitorServer, sub string) gosmotest.Query {
+	var last gosmotest.Query
+	for _, q := range s.Queries() {
+		if has(q, sub) {
+			last = q
+		}
+	}
+	return last
+}
+
+func TestMonitorTopQueriesDefaults(t *testing.T) {
+	srv := newMonitorServer(t)
+	res, err := runMonitor(t, srv, "top-queries")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := lastQuery(srv, topRead); q.Arg(0) != int64(20) || !has(q, "ORDER  BY qs.total_worker_time DESC") {
+		t.Errorf("the ranking's query:\n%s", q)
 	}
 	if field(res, "ranking") != "total" || len(res.Sets[0].Rows) != 0 {
 		t.Errorf("fields %+v, rows %q", res.Fields, cells(res.Sets[0]))
@@ -71,23 +97,23 @@ func TestMonitorTopQueriesDefaults(t *testing.T) {
 
 func TestMonitorTopQueriesUsage(t *testing.T) {
 	for _, argv := range [][]string{{"--by", "executions", "--avg"}, {"--top", "0"}, {"--top", "-3"}} {
-		cat := &monitorCatalog{}
-		_, err := runMonitor(t, cat, append([]string{"top-queries"}, argv...)...)
+		srv := newMonitorServer(t)
+		_, err := runMonitor(t, srv, append([]string{"top-queries"}, argv...)...)
 		if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeUsageError {
 			t.Errorf("%q: err = %v, want a usage error", argv, err)
 		}
-		if cat.gotTopOps != nil {
+		if srv.reads(topRead) != 0 {
 			t.Errorf("%q: read before refusing", argv)
 		}
 	}
 }
 
-// An unknown --plan-database is gosmo's ErrNotFound: exit 8.
+// An unknown --plan-database (DB_ID NULL) is exit 8, and nothing is ranked.
 func TestMonitorTopQueriesUnknownDatabase(t *testing.T) {
-	cat := &monitorCatalog{topErr: errors.Join(gosmo.ErrNotFound, errors.New(`database "Nope" not found`))}
-	_, err := runMonitor(t, cat, "top-queries", "--plan-database", "Nope")
-	if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeNotFound {
-		t.Errorf("err = %v, want NOT_FOUND", err)
+	srv := newMonitorServer(t)
+	_, err := runMonitor(t, srv, "top-queries", "--plan-database", "Nope")
+	if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeNotFound || srv.reads(topRead) != 0 {
+		t.Errorf("err = %v, %d rankings; want NOT_FOUND and none", err, srv.reads(topRead))
 	}
 }
 
@@ -104,19 +130,17 @@ func estimatedPlanDoc(t *testing.T) string {
 	return p.XML
 }
 
-// plan cached hands the handle and offsets to CachedPlan and renders the
+// plan cached reads the plan of the handle and offsets given and renders the
 // plan as plan estimated does; --plan-file gets the document.
 func TestPlanCached(t *testing.T) {
 	doc := estimatedPlanDoc(t)
 	file := filepath.Join(t.TempDir(), "q.sqlplan")
-	cat := &monitorCatalog{plan: doc}
-	res, err := runGroup(t, cat, "plan", "cached", "0x060005ff", "--statement-start", "112", "--statement-end", "418",
+	srv := newMonitorServer(t)
+	srv.plans["0x060005FF 112 418"] = doc
+	res, err := runGroup(t, srv, "plan", "cached", "0x060005ff", "--statement-start", "112", "--statement-end", "418",
 		"--plan-file", file)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if cat.gotPlan != "0x060005FF 112 418" {
-		t.Errorf("CachedPlan got %s", cat.gotPlan)
 	}
 	for k, want := range map[string]string{"planType": "cached", "planHandle": "0x060005FF", "statementStart": "112",
 		"statementEnd": "418", "planFile": file} {
@@ -136,12 +160,10 @@ func TestPlanCached(t *testing.T) {
 	}
 
 	// No 0x, and the default offsets: the whole batch.
-	cat = &monitorCatalog{plan: doc}
-	if _, err := runGroup(t, cat, "plan", "cached", "060005FF", "--plan-format", "xml"); err != nil {
+	srv = newMonitorServer(t)
+	srv.plans["0x060005FF 0 -1"] = doc
+	if _, err := runGroup(t, srv, "plan", "cached", "060005FF", "--plan-format", "xml"); err != nil {
 		t.Fatal(err)
-	}
-	if cat.gotPlan != "0x060005FF 0 -1" {
-		t.Errorf("CachedPlan got %s", cat.gotPlan)
 	}
 }
 
@@ -149,8 +171,7 @@ func TestPlanCached(t *testing.T) {
 // --plan-file is not written.
 func TestPlanCachedGone(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "q.sqlplan")
-	cat := &monitorCatalog{planErr: errors.Join(gosmo.ErrNotFound, errors.New("no plan in cache"))}
-	res, err := runGroup(t, cat, "plan", "cached", "0x0600", "--plan-file", file)
+	res, err := runGroup(t, newMonitorServer(t), "plan", "cached", "0x0600", "--plan-file", file)
 	oe, ok := errors.AsType[*output.Error](err)
 	if !ok || oe.Code != output.CodeNotFound || !strings.Contains(oe.Hint, "monitor top-queries") {
 		t.Errorf("err = %v, want NOT_FOUND hinting top-queries", err)
@@ -169,12 +190,12 @@ func TestPlanCachedUsage(t *testing.T) {
 		{"0x0600", "--statement-end", "-2"}, {"0x0600", "--statement-start", "50", "--statement-end", "10"},
 		{"0x0600", "--top", "-1"},
 	} {
-		cat := &monitorCatalog{}
-		_, err := runGroup(t, cat, "plan", append([]string{"cached"}, argv...)...)
+		srv := newMonitorServer(t)
+		_, err := runGroup(t, srv, "plan", append([]string{"cached"}, argv...)...)
 		if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeUsageError {
 			t.Errorf("%q: err = %v, want a usage error", argv, err)
 		}
-		if cat.gotPlan != "" {
+		if srv.reads(planRead) != 0 {
 			t.Errorf("%q: read before refusing", argv)
 		}
 	}
@@ -183,12 +204,13 @@ func TestPlanCachedUsage(t *testing.T) {
 // Without VIEW SERVER STATE plan cached is exit 9 before reading the plan:
 // the DMV would refuse with Msg 300 anyway, and the monitor reads answer so.
 func TestPlanCachedNeedsViewServerState(t *testing.T) {
-	cat := &monitorCatalog{noVSS: true}
-	_, err := runGroup(t, cat, "plan", "cached", "0x0600")
+	srv := newMonitorServer(t)
+	srv.noVSS = true
+	_, err := runGroup(t, srv, "plan", "cached", "0x0600")
 	if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodePermissionDenied {
 		t.Errorf("err = %v, want PERMISSION_DENIED", err)
 	}
-	if cat.gotPlan != "" {
+	if srv.reads(planRead) != 0 {
 		t.Error("read the plan without the permission")
 	}
 }

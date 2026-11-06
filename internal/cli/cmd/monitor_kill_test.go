@@ -17,58 +17,31 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// killCatalog serves SessionByID: the first read target (nil: not found),
-// every later one after (nil: not found), so a test sees the session before
-// and after the KILL. noVSS answers HasViewServerState false.
-type killCatalog struct {
-	Catalog
-	target, after *gosmo.ActiveSession
-	noVSS         bool
-	reads         int
-}
-
-func (c *killCatalog) HasViewServerState(context.Context) (bool, error) { return !c.noVSS, nil }
-
-func (c *killCatalog) SessionByID(_ context.Context, id int) (*gosmo.ActiveSession, error) {
-	c.reads++
-	s := c.target
-	if c.reads > 1 {
-		s = c.after
+// killServer is a monitorServer whose sessions are target (none when
+// nil), and which a KILL of it leaves after (ended when nil).
+func killServer(t *testing.T, target, after *gosmo.ActiveSession) *monitorServer {
+	s := newMonitorServer(t)
+	if target != nil {
+		s.sessions = []*gosmo.ActiveSession{target}
+		s.afterKill[target.SessionID] = after
 	}
-	if s == nil || s.SessionID != id {
-		return nil, fmt.Errorf("gosmo: session %d not found: %w", id, gosmo.ErrNotFound)
-	}
-	return s, nil
+	return s
 }
 
-// killWriter records the KILLs, failing them with err. Under WithScript it is
-// the real serverWriter, so a dry run captures gosmo's KILL.
-type killWriter struct {
-	Writer
-	killed []int
-	err    error
-}
+// byIDReads is how many sessions s read by id.
+func byIDReads(s *monitorServer) int { return s.reads(sessionsRead, "WHERE  s.session_id = @p1") }
 
-func (w *killWriter) KillSession(ctx context.Context, id int) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{&gosmo.Server{}}.KillSession(ctx, id)
-	}
-	w.killed = append(w.killed, id)
-	return w.err
-}
-
-// runKill runs monitor kill <argv> over cat and w, an ad-hoc connection;
-// dials counts the connects.
-func runKill(t *testing.T, cat *killCatalog, w *killWriter, argv string) (res *output.Result, dials int, err error) {
+// runKill runs monitor kill <argv> over s, an ad-hoc connection; dials
+// counts the connects.
+func runKill(t *testing.T, s *monitorServer, argv string) (res *output.Result, dials int, err error) {
 	t.Helper()
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
 			dials++
-			return &db.ServerConn{}, nil
+			return s.conn(ctx)
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-		Writer:  func(*db.ServerConn) Writer { return w },
+		Catalog: ServerCatalog,
 	}
 	tree := &spec.Tree{Commands: MonitorCommands(d)}
 	inv, perr := args.Parse(tree, append([]string{"monitor", "kill", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
@@ -88,13 +61,13 @@ func userSession(spid int) *gosmo.ActiveSession {
 }
 
 func TestMonitorKill(t *testing.T) {
-	cat, w := &killCatalog{target: userSession(87)}, &killWriter{}
-	res, dials, err := runKill(t, cat, w, "87 --confirm 87 --allow admin")
+	srv := killServer(t, userSession(87), nil)
+	res, dials, err := runKill(t, srv, "87 --confirm 87 --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dials != 1 || !slices.Equal(w.killed, []int{87}) || cat.reads != 2 {
-		t.Fatalf("%d dials, killed %v, %d reads", dials, w.killed, cat.reads)
+	if dials != 1 || !slices.Equal(srv.writes, []string{"KILL 87"}) || byIDReads(srv) != 2 {
+		t.Fatalf("%d dials, sent %q, %d reads", dials, srv.writes, byIDReads(srv))
 	}
 	if len(res.Sets) != 1 || res.Sets[0].Name != "session" || len(res.Sets[0].Rows) != 1 ||
 		*res.Sets[0].Rows[0][0] != "87" || *res.Sets[0].Rows[0][1] != "app_user" {
@@ -107,13 +80,13 @@ func TestMonitorKill(t *testing.T) {
 }
 
 func TestMonitorKillDryRun(t *testing.T) {
-	cat, w := &killCatalog{target: userSession(87)}, &killWriter{}
-	res, _, err := runKill(t, cat, w, "87 --confirm 87 --allow admin --dry-run")
+	srv := killServer(t, userSession(87), nil)
+	res, _, err := runKill(t, srv, "87 --confirm 87 --allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w.killed) != 0 || cat.reads != 1 {
-		t.Errorf("killed %v, %d reads", w.killed, cat.reads)
+	if len(srv.writes) != 0 || byIDReads(srv) != 1 {
+		t.Errorf("sent %q, %d reads", srv.writes, byIDReads(srv))
 	}
 	if fieldValue(res, "dryRun") != "true" || fieldValue(res, "killed") != "false" || hasField(res, "ended") ||
 		strings.TrimSpace(fieldValue(res, "tsql")) != "KILL 87\nGO" || len(res.Sets) != 1 {
@@ -138,7 +111,7 @@ func TestMonitorKillAfterRead(t *testing.T) {
 		{"still there", userSession(87), "false", "has not ended yet"},
 		{"spid reused", reused, "true", ""},
 	} {
-		res, _, err := runKill(t, &killCatalog{target: userSession(87), after: tc.after}, &killWriter{}, "87 --confirm 87 --allow admin")
+		res, _, err := runKill(t, killServer(t, userSession(87), tc.after), "87 --confirm 87 --allow admin")
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
@@ -167,10 +140,10 @@ func TestMonitorKillRefusedBeforeConnecting(t *testing.T) {
 		{"87 --confirm 87", output.CodeBlocked},
 		{"87 --confirm 87 --allow ddl --dry-run", output.CodeBlocked},
 	} {
-		cat, w := &killCatalog{target: userSession(87)}, &killWriter{}
-		_, dials, err := runKill(t, cat, w, tc.argv)
-		if errCode(err) != tc.want || dials != 0 || len(w.killed) != 0 {
-			t.Errorf("%q: %v (%s), %d dials, killed %v; want %s", tc.argv, err, errCode(err), dials, w.killed, tc.want)
+		srv := killServer(t, userSession(87), nil)
+		_, dials, err := runKill(t, srv, tc.argv)
+		if errCode(err) != tc.want || dials != 0 || len(srv.writes) != 0 {
+			t.Errorf("%q: %v (%s), %d dials, sent %q; want %s", tc.argv, err, errCode(err), dials, srv.writes, tc.want)
 		}
 	}
 }
@@ -187,21 +160,23 @@ func TestMonitorKillRefusedAfterRead(t *testing.T) {
 	system.IsUserProcess, system.LoginName = false, "sa"
 	for _, tc := range []struct {
 		name   string
-		cat    *killCatalog
+		target *gosmo.ActiveSession
+		noVSS  bool
 		want   output.Code
 		reads  int
 		killed bool
 	}{
-		{"ended", &killCatalog{}, output.CodeNotFound, 1, false},
-		{"own process", &killCatalog{target: own}, output.CodeUsageError, 1, false},
-		{"system", &killCatalog{target: system}, output.CodeBlocked, 1, false},
-		{"no VSS", &killCatalog{target: userSession(87), noVSS: true}, output.CodePermissionDenied, 0, false},
-		{"another process on this host", &killCatalog{target: sameHostOtherPID}, "", 2, true},
+		{"ended", nil, false, output.CodeNotFound, 1, false},
+		{"own process", own, false, output.CodeUsageError, 1, false},
+		{"system", system, false, output.CodeBlocked, 1, false},
+		{"no VSS", userSession(87), true, output.CodePermissionDenied, 0, false},
+		{"another process on this host", sameHostOtherPID, false, "", 2, true},
 	} {
-		w := &killWriter{}
-		_, _, err := runKill(t, tc.cat, w, "87 --confirm 87 --allow admin")
-		if errCode(err) != tc.want || tc.cat.reads != tc.reads || (len(w.killed) == 1) != tc.killed {
-			t.Errorf("%s: %v (%s), %d reads, killed %v; want %q", tc.name, err, errCode(err), tc.cat.reads, w.killed, tc.want)
+		srv := killServer(t, tc.target, nil)
+		srv.noVSS = tc.noVSS
+		_, _, err := runKill(t, srv, "87 --confirm 87 --allow admin")
+		if errCode(err) != tc.want || byIDReads(srv) != tc.reads || (len(srv.writes) == 1) != tc.killed {
+			t.Errorf("%s: %v (%s), %d reads, sent %q; want %q", tc.name, err, errCode(err), byIDReads(srv), srv.writes, tc.want)
 		}
 	}
 }
@@ -219,9 +194,9 @@ func TestMonitorKillServerRefusals(t *testing.T) {
 		{6104, 16, output.CodeUsageError, ""},
 		{6102, 14, output.CodePermissionDenied, "ALTER ANY CONNECTION"},
 	} {
-		w := &killWriter{err: fmt.Errorf("gosmo: kill session 87: %w",
-			mssql.Error{Number: tc.number, Class: tc.class, Message: fmt.Sprintf("Msg %d", tc.number)})}
-		res, _, err := runKill(t, &killCatalog{target: userSession(87)}, w, "87 --confirm 87 --allow admin")
+		srv := killServer(t, userSession(87), nil)
+		srv.writeErr = mssql.Error{Number: tc.number, Class: tc.class, Message: fmt.Sprintf("Msg %d", tc.number)}
+		res, _, err := runKill(t, srv, "87 --confirm 87 --allow admin")
 		e, _ := err.(*output.Error)
 		if errCode(err) != tc.want || e == nil || !strings.Contains(e.Hint, tc.hint) || hasField(res, "killed") {
 			t.Errorf("Msg %d: %v (%s), fields %+v; want %s", tc.number, err, errCode(err), res.Fields, tc.want)

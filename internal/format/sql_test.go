@@ -44,8 +44,12 @@ func FuzzFormatSQL(f *testing.F) {
 		if len(src) > 4000 {
 			return
 		}
-		for _, o := range []Options{{IndentWidth: 2}, {IndentWidth: 4, LineIndent: "  "}} {
-			got, err := Format(LangSQL, "", src, o)
+		for _, c := range []struct {
+			style string
+			o     Options
+		}{{"", Options{IndentWidth: 2}}, {"", Options{IndentWidth: 4, LineIndent: "  "}}, {"lowercase", Options{}}} {
+			o := c.o
+			got, err := Format(LangSQL, c.style, src, o)
 			if err != nil {
 				if _, ok := errors.AsType[*SyntaxError](err); !ok {
 					t.Fatalf("Format(%q, %+v): %v", src, o, err)
@@ -58,7 +62,7 @@ func FuzzFormatSQL(f *testing.F) {
 			if o.LineIndent != "" {
 				continue // a prefixed result is not itself unprefixed input
 			}
-			again, err := Format(LangSQL, "", got, o)
+			again, err := Format(LangSQL, c.style, got, o)
 			if err != nil || again != got {
 				t.Fatalf("not idempotent (%v):\n%q\n->\n%q\n->\n%q", err, src, got, again)
 			}
@@ -288,6 +292,98 @@ func TestGuardSQL(t *testing.T) {
 	}
 	if err := verify(LangSQL, src, "SELECT  Name\n FROM t -- c  \n go \n  SELECT\n'x'"); err != nil {
 		t.Errorf("verify refused a layout-only change: %v", err)
+	}
+}
+
+// The Lowercase style lower-cases exactly the keywords Standard upper-cases,
+// puts FROM, WHERE, GROUP BY, HAVING and ORDER BY alone on their lines with
+// the joins under FROM, and writes a select-list "expr AS name" as
+// "name = expr" — only where the item is plainly an expression and a name,
+// with nothing in between.
+func TestFormatSQLLowercase(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		{"SELECT Name, COUNT(*) FROM T WHERE Date > GETDATE()",
+			"select\n    Name\n  , count(*)\nfrom\n    T\nwhere\n    Date > getdate()"},
+		{"SELECT A AS X", "select X = A"},
+		{"select count(*) as n from t", "select n = count(*)\nfrom\n    t"},
+		{"select cast(a as int) as b, c + 1 as [y z], d type from t",
+			"select\n    b = cast(a as int)\n  , [y z] = c + 1\n  , d type\nfrom\n    t"},
+		{"select distinct top (5) with ties a as x from t", "select distinct top (5) with ties x = a\nfrom\n    t"},
+		{"select @v as x, a as type", "select\n    x = @v\n  , type = a"},
+		{"select a as x -- c\n, b as y from t", "select\n    x = a -- c\n  , y = b\nfrom\n    t"},
+		{"select (select 1 as y) as z", "select z = (\n    select y = 1\n)"},
+		{"select string_agg(a, ',') within group (order by a) as s from t",
+			"select s = string_agg(a, ',') within group (order by a)\nfrom\n    t"},
+		{"select case when a = 1 then 'x' end as k into #t from u",
+			"select\n    k = case\n        when a = 1 then 'x'\n    end\ninto #t\nfrom\n    u"},
+		{"if 1 = 1 select a as x else select b as y",
+			"if 1 = 1\n    select x = a\nelse\n    select y = b"},
+		{"select a as x\nprint 1", "select x = a\nprint 1"},
+		{"select(1) as a", "select a = (1)"},
+		{"select 0 as a b, 1 as c", "select\n    0 as a b\n  , c = 1"},
+		{"create view v as select 1 as x", "create view v\nas\nselect x = 1"},
+		// FROM and WHERE stand alone; joins sit with the tables, an ON's AND
+		// one level under its join, a WHERE's AND with the first predicate.
+		{"select a from t join u on u.id = t.id and u.x = 1 left join v on v.a = u.a where a = 1 and b = 2",
+			"select a\nfrom\n    t\n    join u on u.id = t.id\n        and u.x = 1\n    left join v on v.a = u.a\nwhere\n    a = 1\n    and b = 2"},
+		{"select * from (select 1 as a) as x", "select *\nfrom\n    (\n        select a = 1\n    ) as x"},
+		{"delete top (10) from t where a = 1", "delete top (10) from t\nwhere\n    a = 1"},
+		{"select a, count(*) as n from t group by a having count(*) > 1 and max(b) < 2 order by a desc, n",
+			"select\n    a\n  , n = count(*)\nfrom\n    t\ngroup by\n    a\nhaving\n    count(*) > 1\n    and max(b) < 2\norder by\n    a desc\n  , n"},
+		{"select row_number() over (partition by a order by b) as r from t",
+			"select r = row_number() over (partition by a order by b)\nfrom\n    t"},
+		// Left as written: a string alias (deprecated as 'n' = expr), a comment
+		// inside the item, NEXT VALUE FOR, a table alias, a GRANT's AS.
+		{"select a as 'n'", "select a as 'n'"},
+		{"select a /* c */ as x", "select a /* c */ as x"},
+		{"select next value for s as x", "select next value for s as x"},
+		{"select a from t as x", "select a\nfrom\n    t as x"},
+		{"grant select on t to u as dbo", "grant select on t to u as dbo"},
+	} {
+		got, err := Format(LangSQL, "lowercase", tc.src, Options{})
+		if err != nil {
+			t.Errorf("Format(%q): %v", tc.src, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("Format(%q) =\n%s\nwant\n%s", tc.src, got, tc.want)
+		}
+	}
+}
+
+// The guard accepts "name = expr" for an input "expr AS name" select-list
+// item and nothing else that moves a token.
+func TestGuardSQLAliasSwap(t *testing.T) {
+	for _, tc := range []struct{ in, out string }{
+		{"select a + b as c from t", "select c = a + b from t"},
+		{"select (select 1 as y) as z, w", "select z = (select y = 1), w"},
+		{"select a as x -- c\n, b as y", "select x = a -- c\n, y = b"},
+		{"select x as x", "select x = x"},
+		{"select a as x", "select a as x"}, // not moving is fine too
+	} {
+		if err := verify(LangSQL, tc.in, tc.out); err != nil {
+			t.Errorf("verify(%q, %q) = %v, want nil", tc.in, tc.out, err)
+		}
+	}
+	for name, tc := range map[string]struct{ in, out string }{
+		"drops a token":        {"select a + b as c", "select c = a + c"},
+		"moves part of it":     {"select a + b as c", "select a + c = b"},
+		"keeps the AS":         {"select a as c", "select c = a as c"},
+		"a table alias":        {"select a from t as x", "select x = a from t"},
+		"a CAST's AS":          {"select cast(a as int)", "select cast(int = a)"},
+		"a string alias":       {"select a as 'n'", "select 'n' = a"},
+		"a comment inside":     {"select a /* c */ as x", "select x = a /* c */"},
+		"a GRANT's AS":         {"grant select on t to u as dbo", "grant select dbo = on t to u"},
+		"an assignment":        {"select @v = a as x", "select x = @v = a"},
+		"a qualified alias":    {"select a as x.y", "select x.y = a"},
+		"an alias not last":    {"select a as x + 1", "select x = a + 1"},
+		"across items":         {"select a, b as c", "select c = a, b"},
+		"an item past FROM":    {"select a from t where b as c", "select a from t where c = b"},
+		"a DISTINCT in prefix": {"select distinct a as x", "select x = distinct a"},
+	} {
+		if err := verify(LangSQL, tc.in, tc.out); !errors.Is(err, ErrGuard) {
+			t.Errorf("%s: verify = %v, want ErrGuard", name, err)
+		}
 	}
 }
 

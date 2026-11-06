@@ -43,10 +43,10 @@ func qsPlansResponse(rows ...[]driver.Value) fakeResponse {
 
 // newQSPanel builds a panel over a scripted instance, already sized so both
 // grids have rows to move a cursor through.
-func newQSPanel(t *testing.T, title string, resp ...fakeResponse) (*QueryStorePanel, *App, *fakeInstance) {
+func newQSPanel(t *testing.T, title string, resp ...fakeResponse) (*QueryStorePanel, *App, *gFake) {
 	t.Helper()
 	a := newTestApp()
-	sc, inst := newFakeConn(t, resp...)
+	sc, inst := newGConn(t, resp...)
 	p := NewQueryStorePanel(a, sc, "appdb", title)
 	p.SetBounds(0, 0, 120, 40)
 	p.SetActive(true)
@@ -131,7 +131,7 @@ func TestQueryStorePanelOptionsFollowTheToolbar(t *testing.T) {
 // a panel that ignored the selection and always read the first row's plans
 // would pass with a cursor left at the top.
 func TestQueryStorePanelLoadsAReportThenTheSelectedQuerysPlans(t *testing.T) {
-	p, a, inst := newQSPanel(t, "Top Resource Consuming Queries",
+	p, a, _ := newQSPanel(t, "Top Resource Consuming Queries",
 		qsOptionsResponse("READ_WRITE", "READ_WRITE"),
 		qsPlansResponse(
 			qsPlanRow(41, 12, false, "<ShowPlanXML/>", 5, 100),
@@ -145,7 +145,7 @@ func TestQueryStorePanelLoadsAReportThenTheSelectedQuerysPlans(t *testing.T) {
 	p.Load()
 	drainUntil(t, a, func() bool { return !p.busy }, "the report to load")
 	if len(p.res.rows) != 2 {
-		t.Fatalf("got %d rows, want 2 (unanswered: %v)", len(p.res.rows), inst.unmatched)
+		t.Fatalf("got %d rows, want 2", len(p.res.rows))
 	}
 
 	// Down moves to the second query, which is what fires the plan read.
@@ -244,17 +244,13 @@ func TestForcePlanWritesTheSelectedPlan(t *testing.T) {
 
 // forceArgs returns the parameters of the first executed statement containing
 // needle.
-func (f *fakeInstance) forceArgs(t *testing.T, needle string) []driver.Value {
+func (f *gFake) forceArgs(t *testing.T, needle string) []any {
 	t.Helper()
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, e := range f.execs {
-		if strings.Contains(e.sql, needle) {
-			return e.args
-		}
+	args, ok := f.ExecArgs(needle)
+	if !ok {
+		t.Fatalf("no statement containing %q was executed", needle)
 	}
-	t.Fatalf("no statement containing %q was executed", needle)
-	return nil
+	return args
 }
 
 // TestPlanActionsAreWithheldAndSayWhy. Force and Unforce are opposite halves
@@ -386,7 +382,7 @@ func TestRegressedQueriesPlotsTheRegressionNotTheCost(t *testing.T) {
 		time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC),
 		float64(4000), float64(1000), int64(40), float64(3000), float64(0),
 	}
-	sc, _ := newFakeConn(t, qsDatabaseResponse(), qsReportResponse(stats))
+	sc, _ := newGConn(t, qsDatabaseResponse(), qsReportResponse(stats))
 	d, err := sc.Server.DatabaseByName(t.Context(), "appdb")
 	if err != nil {
 		t.Fatalf("DatabaseByName: %v", err)
@@ -484,7 +480,7 @@ func TestThePanelOpensOnTheWindowTheDetailBrowserRead(t *testing.T) {
 // ShowReport outright would break.
 func TestOpeningTheFolderKeepsAnOpenPanelOnItsReport(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		qsOptionsResponse("READ_WRITE", "READ_WRITE"),
 		qsPlansResponse(qsPlanRow(41, 11, false, "", 5, 100)),
 		qsReportResponse(qsStatRow(11, "dbo.p", "SELECT 1", 2500, 1234, 0, 1)))
@@ -741,7 +737,7 @@ func TestTheFlagsTableMatchesTheQueryEachReportRuns(t *testing.T) {
 		// The first parameter, not any parameter: every per-query report binds
 		// TOP as @p1, and a scan of the whole list would also match a tracked
 		// query whose id happened to be the row cap.
-		top, isInt := args[0].Value.(int64)
+		top, isInt := args[0].(int64)
 		hasTop := isInt && top == 25
 		if hasTop != report.honours(qsFilterTop) {
 			t.Errorf("%q: the toolbar's Top reached the query=%v, table says %v\nargs %v:\n%s",
@@ -947,7 +943,7 @@ func TestATrackedQueryThatIsGoneStillHasARow(t *testing.T) {
 func TestTrackedIDsReachOnlyTheTrackedView(t *testing.T) {
 	tq := useTempTracked(t)
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	if _, err := tq.Toggle(sc.Opts.Server, "appdb", 12); err != nil {
 		t.Fatalf("Toggle: %v", err)
 	}
@@ -1454,15 +1450,15 @@ func TestThePlanPaneReadsTheWindowTheRowsCover(t *testing.T) {
 	if !ok || len(report) < 5 {
 		t.Fatalf("the report bound %v, want top plus two windows", report)
 	}
-	recentFrom, _ := report[1].Value.(time.Time)
-	baselineFrom, _ := report[3].Value.(time.Time)
+	recentFrom, _ := report[1].(time.Time)
+	baselineFrom, _ := report[3].(time.Time)
 
 	// The plans query binds From, To, then the query id.
 	plans, ok := inst.ReadArgs("FROM   sys.query_store_plan AS p")
 	if !ok || len(plans) < 3 {
 		t.Fatalf("the plan read bound %v, want a window and a query id", plans)
 	}
-	planFrom, _ := plans[0].Value.(time.Time)
+	planFrom, _ := plans[0].(time.Time)
 
 	if planFrom.Sub(recentFrom).Abs() > 2*time.Second {
 		t.Errorf("the plan pane read from %v; the rows above it start at %v",
@@ -1609,7 +1605,7 @@ func TestTheTrackedViewIsNeverCappedBelowThePinnedSet(t *testing.T) {
 	if !ok {
 		t.Fatal("no arguments recorded for the tracked read")
 	}
-	top, _ := args[0].Value.(int64)
+	top, _ := args[0].(int64)
 	if top < pinned {
 		t.Errorf("the query capped at %d rows with %d queries pinned — one would be dropped", top, pinned)
 	}
@@ -1892,9 +1888,9 @@ func qsLeaf(sc *dbconn.ServerConn, dbName, title string) *explorerNode {
 func TestAPinStalesOnlyTheViewsThatShowTheTrackedSet(t *testing.T) {
 	a := newTestApp()
 	a.detailBrowser = a.newDetailBrowser()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	sc.Opts.Server = `HOST\SQL2022`
-	other, _ := newFakeConn(t)
+	other, _ := newGConn(t)
 	other.Opts.Server = "elsewhere"
 
 	tracked := qsLeaf(sc, "appdb", "Tracked Queries")
@@ -1929,7 +1925,7 @@ func TestAPinStalesOnlyTheViewsThatShowTheTrackedSet(t *testing.T) {
 func TestAPinRefetchesTheTrackedLeafOnScreen(t *testing.T) {
 	a := newTestApp()
 	a.detailBrowser = a.newDetailBrowser()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	sc.Opts.Server = "host"
 	a.connections = append(a.connections, sc)
 
@@ -2039,7 +2035,7 @@ func TestScriptIsOfferedToALoginThatCannotForce(t *testing.T) {
 		}
 		res[i] = r
 	}
-	sc, _ := newFakeConn(t, res...)
+	sc, _ := newGConn(t, res...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 

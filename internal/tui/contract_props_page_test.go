@@ -13,10 +13,10 @@ import (
 // from the wrong reading does not parse.
 
 func TestContractPageShowsEachSenderIncludingBoth(t *testing.T) {
-	sc, inst := newFakeConn(t, brokerDBResp(),
+	sc, inst := newGConn(t, brokerDBResp(),
 		brokerRowByArg(contractResp(), "//claims/Contract", 1), contractMessageResp())
 	pages := contractPropPages(sc, brokerDB, "//claims/Contract")
-	form, apply := loadPage(t, pages[0], inst)
+	form, apply := loadPageG(t, pages[0], inst)
 
 	if apply != nil {
 		t.Error("Contract Properties is read-only; its page returned an apply")
@@ -50,10 +50,10 @@ func TestContractPageShowsEachSenderIncludingBoth(t *testing.T) {
 // name is a URI — put in the label, every one of them would render as the same
 // truncated string. See CLAUDE.md § Coding conventions.
 func TestContractPageKeepsLongMessageTypeNamesInTheValue(t *testing.T) {
-	sc, inst := newFakeConn(t, brokerDBResp(),
+	sc, inst := newGConn(t, brokerDBResp(),
 		brokerRowByArg(contractResp(), "//claims/Contract", 1), contractMessageResp())
 	pages := contractPropPages(sc, brokerDB, "//claims/Contract")
-	form, _ := loadPage(t, pages[0], inst)
+	form, _ := loadPageG(t, pages[0], inst)
 
 	for _, r := range form.Rows() {
 		sr, ok := r.(*propsheet.StaticRow)

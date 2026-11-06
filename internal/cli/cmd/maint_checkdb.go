@@ -105,7 +105,7 @@ func (d Deps) maintCheckDB(ctx context.Context, inv *spec.Invocation) (*output.R
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -136,7 +136,7 @@ func (d Deps) maintCheckDB(ctx context.Context, inv *spec.Invocation) (*output.R
 	var rows []*gosmo.CheckDBError
 	check := func(ctx context.Context) error {
 		var err error
-		rows, err = w.CheckDB(ctx, dbase, opts)
+		rows, err = dbase.CheckDB(ctx, opts)
 		return err
 	}
 	if err := applyWrite(ctx, inv, res, check); err != nil {

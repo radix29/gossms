@@ -16,7 +16,7 @@ import (
 // Properties page's apply starts with.
 func newSequenceTestDialog(t *testing.T, pf *nseqPrefetch) *NewSequenceDialog {
 	t.Helper()
-	sc, _ := newFakeConn(t, dbByNameResp("appdb", 5))
+	sc, _ := newGConn(t, dbByNameResp("appdb", 5))
 	d := &NewSequenceDialog{}
 	d.dbName = "appdb"
 	d.sc = sc
@@ -85,6 +85,24 @@ func TestNewSequenceScriptsWhatThePageSays(t *testing.T) {
 	want = "USE [appdb];\nGO\nCREATE SEQUENCE [sales].[o]]rd] AS decimal(30, 0) START WITH 100 INCREMENT BY -5 MINVALUE -50 MAXVALUE 1000 CYCLE CACHE 20"
 	if got := scriptNewSequence(t, d); got != want {
 		t.Errorf("every option scripted\n%q\nwant\n%q", got, want)
+	}
+
+	// A decimal(38, 0) sequence starting past bigint, with the type's own
+	// widest bounds.
+	d = newSequenceTestDialog(t, newSequenceTestPrefetch())
+	f = d.forms[0]
+	editText(t, f, "Sequence name", "wide")
+	editSelect(t, f, "Data type", "decimal")
+	editText(t, f, "Precision", "38")
+	editText(t, f, "Start value", "9223372036854775808")
+	editCheck(t, f, "No minimum (the type's)", false)
+	editText(t, f, "Minimum value", "-99999999999999999999999999999999999999")
+	editCheck(t, f, "No maximum (the type's)", false)
+	editText(t, f, "Maximum value", "10000000000000000000000000000000000000")
+	want = "USE [appdb];\nGO\nCREATE SEQUENCE [dbo].[wide] AS decimal(38, 0) START WITH 9223372036854775808 INCREMENT BY 1 " +
+		"MINVALUE -99999999999999999999999999999999999999 MAXVALUE 10000000000000000000000000000000000000 NO CYCLE CACHE"
+	if got := scriptNewSequence(t, d); got != want {
+		t.Errorf("past bigint scripted\n%q\nwant\n%q", got, want)
 	}
 
 	// No cache, and a precision typed for decimal and then left behind by
@@ -157,6 +175,22 @@ func TestNewSequencePreflight(t *testing.T) {
 			editCheck(t, f, "No minimum (the type's)", false)
 			editText(t, f, "Minimum value", "5")
 		}, "start value must lie"},
+		{"past bigint for bigint", func(f *propsheet.Form) {
+			editText(t, f, "Start value", "9223372036854775808")
+		}, "start value must be a whole number from -9223372036854775808 to 9223372036854775807"},
+		{"past the precision picked", func(f *propsheet.Form) {
+			editSelect(t, f, "Data type", "decimal")
+			editText(t, f, "Precision", "5")
+			editText(t, f, "Start value", "100000")
+		}, "from -99999 to 99999"},
+		{"minimum not below maximum past bigint", func(f *propsheet.Form) {
+			editSelect(t, f, "Data type", "numeric")
+			editText(t, f, "Precision", "38")
+			editCheck(t, f, "No minimum (the type's)", false)
+			editText(t, f, "Minimum value", "10000000000000000001")
+			editCheck(t, f, "No maximum (the type's)", false)
+			editText(t, f, "Maximum value", "10000000000000000000")
+		}, "below the maximum"},
 		{"precision out of range", func(f *propsheet.Form) {
 			editSelect(t, f, "Data type", "numeric")
 			editText(t, f, "Precision", "39")
@@ -205,7 +239,7 @@ func sequenceCapabilityResponses(granted, denied []string) []fakeResponse {
 func TestNewSequenceGateIsPerSchema(t *testing.T) {
 	item := func(t *testing.T, granted, denied []string) (bool, string) {
 		t.Helper()
-		sc, _ := newFakeConn(t, sequenceCapabilityResponses(granted, denied)...)
+		sc, _ := newGConn(t, sequenceCapabilityResponses(granted, denied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		folder := &explorerNode{data: nodeData{Type: NodeSequences, DBName: "appdb", conn: sc}}
@@ -227,7 +261,7 @@ func TestNewSequenceGateIsPerSchema(t *testing.T) {
 		t.Error("withheld before any probe answered — the gate must fail open")
 	}
 
-	sc, _ := newFakeConn(t, sequenceCapabilityResponses([]string{"app"}, []string{"dbo", "sales"})...)
+	sc, _ := newGConn(t, sequenceCapabilityResponses([]string{"app"}, []string{"dbo", "sales"})...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	d := newSequenceTestDialog(t, newSequenceTestPrefetch())

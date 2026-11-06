@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"github.com/radix29/gosmo/gosmotest"
 	"slices"
 	"strings"
 	"testing"
@@ -55,15 +56,15 @@ func newDatabaseResponses() []fakeResponse {
 	}
 }
 
-func newDatabaseDialog(t *testing.T) (*NewDatabaseDialog, *fakeInstance) {
+func newDatabaseDialog(t *testing.T) (*NewDatabaseDialog, *gFake) {
 	t.Helper()
-	sc, inst := newFakeConn(t, newDatabaseResponses()...)
+	sc, inst := newGConn(t, newDatabaseResponses()...)
 	return newDatabaseDialogOn(t, sc, inst)
 }
 
 // newDatabaseDialogAtVersion is newDatabaseDialog against an instance of a
 // given product version, for the rows the dialog gates on it.
-func newDatabaseDialogAtVersion(t *testing.T, version string, modelCompat int64) (*NewDatabaseDialog, *fakeInstance) {
+func newDatabaseDialogAtVersion(t *testing.T, version string, modelCompat int64) (*NewDatabaseDialog, *gFake) {
 	t.Helper()
 	// model's own compatibility level cannot exceed the instance's, so it
 	// moves with the version — left at the fixture's 160 against a 2017
@@ -71,11 +72,11 @@ func newDatabaseDialogAtVersion(t *testing.T, version string, modelCompat int64)
 	// the cap would look broken.
 	resp := newDatabaseResponses()
 	resp[0].rows[0][4] = modelCompat
-	sc, inst := newFakeConnAtVersion(t, version, resp...)
+	sc, inst := newGConnAtVersion(t, version, resp...)
 	return newDatabaseDialogOn(t, sc, inst)
 }
 
-func newDatabaseDialogOn(t *testing.T, sc *db.ServerConn, inst *fakeInstance) (*NewDatabaseDialog, *fakeInstance) {
+func newDatabaseDialogOn(t *testing.T, sc *db.ServerConn, inst *gFake) (*NewDatabaseDialog, *gFake) {
 	t.Helper()
 	a := newTestApp()
 	d := NewNewDatabaseDialog(a)
@@ -402,9 +403,9 @@ func TestNewDatabaseFilegroupFirstFileDefaultsToTheDataDirectory(t *testing.T) {
 // cannot omit FILENAME either (Msg 1036), so it is refused before anything is
 // sent — on Filegroups at Validate, since by apply the database exists.
 func TestNewDatabaseWithNoDefaultDirectoryRefusesAnUnpathedFile(t *testing.T) {
-	info := serverInfoResponse()
-	info.rows[0][10], info.rows[0][11] = nil, nil
-	sc, inst := newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, newDatabaseResponses()...))
+	sc, inst := newGConnWith(t, func(i *gosmotest.Info) {
+		i.DataPath, i.LogPath = "", ""
+	}, newDatabaseResponses()...)
 	d, _ := newDatabaseDialogOn(t, sc, inst)
 
 	general, apply := d.page(t, "General")

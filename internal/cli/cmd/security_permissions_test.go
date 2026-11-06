@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	mssql "github.com/microsoft/go-mssqldb"
-	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
@@ -17,220 +16,23 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// permCatalog is secCatalog plus the securables the security writes resolve
-// in database "app": objects, schemas, types, a certificate and the
-// columns of dbo.Customers and the view dbo.vOrders.
-type permCatalog struct {
-	*secCatalog
-	objs    objectCatalog
-	schemas []string
-	types   []ObjectName // user-defined data types; tt is a table type
-	tt      []ObjectName
-	certs   []string
+// permFakes is the dry-run fidelity harness's: real gosmo over a
+// secServer, which applies the writes itself.
+func permFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newSecServer(t).Server()})
 }
 
-func newPermCatalog() *permCatalog {
-	return &permCatalog{
-		secCatalog: newSecCatalog(),
-		objs: objectCatalog{objects: []*gosmo.ObjectInfo{
-			{ObjectID: 1, Schema: "dbo", Name: "Customers", Type: "U", TypeDesc: "USER_TABLE"},
-			{ObjectID: 2, Schema: "dbo", Name: "Orders", Type: "U", TypeDesc: "USER_TABLE"},
-			{ObjectID: 3, Schema: "dbo", Name: "vOrders", Type: "V", TypeDesc: "VIEW"},
-			{ObjectID: 4, Schema: "Sales", Name: "usp_Load", Type: "P", TypeDesc: "SQL_STORED_PROCEDURE"},
-			{ObjectID: 5, Schema: "Sales", Name: "fn_Total", Type: "FN", TypeDesc: "SQL_SCALAR_FUNCTION"},
-			{ObjectID: 6, Schema: "Sales", Name: "tvf_Rows", Type: "IF", TypeDesc: "SQL_INLINE_TABLE_VALUED_FUNCTION"},
-			{ObjectID: 7, Schema: "Sales", Name: "mtvf_Rows", Type: "TF", TypeDesc: "SQL_TABLE_VALUED_FUNCTION"},
-			{ObjectID: 8, Schema: "dbo", Name: "seq_Id", Type: "SO", TypeDesc: "SEQUENCE_OBJECT"},
-			{ObjectID: 9, Schema: "dbo", Name: "syn_Cust", Type: "SN", TypeDesc: "SYNONYM"},
-			{ObjectID: 10, Schema: "dbo", Name: "PK_Orders", Type: "PK", TypeDesc: "PRIMARY_KEY_CONSTRAINT"},
-			{ObjectID: 11, Schema: "Sales", Name: "Orders", Type: "U", TypeDesc: "USER_TABLE"},
-			{ObjectID: 12, Schema: "dbo", Name: "Server", Type: "U", TypeDesc: "USER_TABLE"},
-		}},
-		schemas: []string{"dbo", "Sales", "sys"},
-		// Sales.phone differs from dbo.Phone by case only: an exact match wins.
-		types: []ObjectName{{"dbo", "Phone"}, {"Sales", "phone"}, {"Sales", "Money2"}, {"dbo", "Money2"}},
-		tt:    []ObjectName{{"Sales", "OrderList"}},
-		certs: []string{"SignCert"},
-	}
-}
-
-func (c *permCatalog) ObjectByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.ObjectInfo, error) {
-	return c.objs.ObjectByName(ctx, d, schema, name)
-}
-
-func (c *permCatalog) ObjectsNamed(ctx context.Context, d *gosmo.Database, name string) ([]*gosmo.ObjectInfo, error) {
-	return c.objs.ObjectsNamed(ctx, d, name)
-}
-
-func (c *permCatalog) Search(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error) {
-	return c.objs.Search(ctx, d, pattern)
-}
-
-func (c *permCatalog) Schemas(context.Context, *gosmo.Database) ([]*gosmo.Schema, error) {
-	var out []*gosmo.Schema
-	for _, s := range c.schemas {
-		out = append(out, &gosmo.Schema{Name: s})
-	}
-	return out, nil
-}
-
-func (c *permCatalog) UserDefinedDataTypes(context.Context, *gosmo.Database) ([]*gosmo.UserDefinedDataType, error) {
-	var out []*gosmo.UserDefinedDataType
-	for _, t := range c.types {
-		out = append(out, &gosmo.UserDefinedDataType{Schema: t.Schema, Name: t.Name})
-	}
-	return out, nil
-}
-
-func (c *permCatalog) UserDefinedTableTypes(context.Context, *gosmo.Database) ([]*gosmo.UserDefinedTableType, error) {
-	var out []*gosmo.UserDefinedTableType
-	for _, t := range c.tt {
-		out = append(out, &gosmo.UserDefinedTableType{Schema: t.Schema, Name: t.Name})
-	}
-	return out, nil
-}
-
-func (c *permCatalog) ClrTypes(context.Context, *gosmo.Database) ([]*gosmo.ClrType, error) {
-	return nil, nil
-}
-
-func (c *permCatalog) CertificateByName(_ context.Context, _ *gosmo.Database, name string) (*gosmo.Certificate, error) {
-	if slices.Contains(c.certs, name) {
-		return &gosmo.Certificate{Name: name}, nil
-	}
-	return nil, fmt.Errorf("gosmo: certificate %q: %w", name, gosmo.ErrNotFound)
-}
-
-func (c *permCatalog) TableByName(_ context.Context, _ *gosmo.Database, schema, name string) (*gosmo.Table, error) {
-	return (&gosmo.Server{}).DatabaseRef("app").TableRef(schema, name), nil
-}
-
-func (c *permCatalog) TableColumns(_ context.Context, t *gosmo.Table) ([]*gosmo.Column, error) {
-	if t.Name != "Customers" {
-		return []*gosmo.Column{{Name: "id"}}, nil
-	}
-	return []*gosmo.Column{{Name: "id"}, {Name: "Email"}, {Name: "Phone"}}, nil
-}
-
-func (c *permCatalog) ViewByName(_ context.Context, _ *gosmo.Database, schema, name string) (*gosmo.View, error) {
-	return (&gosmo.Server{}).DatabaseRef("app").ViewRef(schema, name), nil
-}
-
-func (c *permCatalog) ViewColumns(context.Context, *gosmo.View) ([]*gosmo.Column, error) {
-	return []*gosmo.Column{{Name: "OrderID"}, {Name: "Total"}}, nil
-}
-
-// permWriter applies grants and memberships to its catalog as the server
-// would, recording each call; under WithScript it is the real serverWriter
-// over a never-connected server. failAt fails that call (1-based) with err.
-type permWriter struct {
-	Writer
-	cat    *permCatalog
-	calls  []string
-	failAt int
-	err    error
-	ignore bool // record the call and change nothing, as for a grant to oneself
-}
-
-func (w *permWriter) fail() error {
-	if w.failAt > 0 && len(w.calls) == w.failAt {
-		return w.err
-	}
-	return nil
-}
-
-func (w *permWriter) ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
-	perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error {
-	if gosmo.Scripting(ctx) {
-		if d != nil {
-			d = scriptDB(d)
-		}
-		return serverWriter{&gosmo.Server{}}.ApplyPermission(ctx, d, verb, sec, perm, principal, opts)
-	}
-	name := fmt.Sprint(perm)
-	w.calls = append(w.calls, fmt.Sprintf("%s %s %s %s.%s %v %s", verb, name, sec.Class, sec.Schema, sec.Name, sec.Columns, principal))
-	if err := w.fail(); err != nil || w.ignore {
-		return err
-	}
-	state := gosmo.PermissionGrant
-	switch {
-	case verb == gosmo.VerbDeny:
-		state = gosmo.PermissionDeny
-	case opts.WithGrantOption:
-		state = gosmo.PermissionGrantWithGrantOption
-	}
-	c := w.cat.secCatalog
-	switch {
-	case d == nil:
-		c.serverPerms = slices.DeleteFunc(c.serverPerms, func(e *gosmo.ServerPermissionEntry) bool {
-			return e.Principal == principal && string(e.Permission) == name
-		})
-		if verb != gosmo.VerbRevoke {
-			c.serverPerms = append(c.serverPerms, &gosmo.ServerPermissionEntry{Principal: principal, Permission: gosmo.ServerPermission(name), State: state})
-		}
-	case sec.Columns != nil:
-		for _, col := range sec.Columns {
-			c.colPerms[principal] = slices.DeleteFunc(c.colPerms[principal], func(e *gosmo.ColumnPermissionEntry) bool {
-				return e.Object == sec.Name && e.Column == col && string(e.Permission) == name
-			})
-			if verb != gosmo.VerbRevoke {
-				c.colPerms[principal] = append(c.colPerms[principal], &gosmo.ColumnPermissionEntry{Principal: principal,
-					Schema: sec.Schema, Object: sec.Name, ObjectType: sec.Class, Column: col, Permission: gosmo.ObjectPermission(name), State: state})
-			}
-		}
-	default:
-		c.dbPerms[principal] = slices.DeleteFunc(c.dbPerms[principal], func(e *gosmo.PrincipalSecurable) bool {
-			return e.SecurableType == sec.Class && e.Schema == sec.Schema && e.Name == sec.Name && e.Permission == name
-		})
-		if verb != gosmo.VerbRevoke {
-			c.dbPerms[principal] = append(c.dbPerms[principal], &gosmo.PrincipalSecurable{SecurableType: sec.Class,
-				Schema: sec.Schema, Name: sec.Name, Permission: name, State: state})
-		}
-	}
-	return nil
-}
-
-func (w *permWriter) AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error {
-	if gosmo.Scripting(ctx) {
-		if d != nil {
-			d = scriptDB(d)
-		}
-		return serverWriter{&gosmo.Server{}}.AlterRoleMember(ctx, d, role, member, add)
-	}
-	w.calls = append(w.calls, fmt.Sprintf("member %s %s %v %v", role, member, add, d == nil))
-	if err := w.fail(); err != nil {
-		return err
-	}
-	key := "db:" + role
-	if d == nil {
-		key = "server:" + role
-	}
-	c := w.cat.secCatalog
-	c.members[key] = slices.DeleteFunc(c.members[key], func(m *gosmo.RoleMember) bool { return m.Name == member })
-	if add {
-		c.members[key] = append(c.members[key], &gosmo.RoleMember{Name: member})
-	}
-	return nil
-}
-
-func permFakes(*testing.T) (Catalog, Writer) {
-	cat := newPermCatalog()
-	return cat, &permWriter{cat: cat}
-}
-
-// runPerm runs `security <argv>` over cat and w, an ad-hoc connection;
-// dials counts the connects.
-func runPerm(t *testing.T, cat *permCatalog, w *permWriter, argv string) (res *output.Result, dials int, err error) {
+// runPerm runs `security <argv>` over s, an ad-hoc connection; dials
+// counts the connects.
+func runPerm(t *testing.T, s *secServer, argv string) (res *output.Result, dials int, err error) {
 	t.Helper()
-	w.cat = cat
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
 			dials++
-			return &db.ServerConn{}, nil
+			return s.conn(ctx)
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-		Writer:  func(*db.ServerConn) Writer { return w },
+		Catalog: ServerCatalog,
 	}
 	words, err := splitArgv(argv)
 	if err != nil {
@@ -351,8 +153,8 @@ func TestSecurityGrantPerClass(t *testing.T) {
 		if !strings.Contains(tc.argv, "--to") {
 			argv += " --to etl_user"
 		}
-		cat, w := newPermCatalog(), &permWriter{}
-		res, _, err := runPerm(t, cat, w, argv)
+		cat := newSecServer(t)
+		res, _, err := runPerm(t, cat, argv)
 		if err != nil {
 			t.Errorf("%s: %v", argv, err)
 			continue
@@ -364,8 +166,8 @@ func TestSecurityGrantPerClass(t *testing.T) {
 		if got := strings.TrimSpace(fieldValue(res, "tsql")); !strings.Contains(got, tc.tsql) {
 			t.Errorf("%s: tsql %q, want %q", argv, got, tc.tsql)
 		}
-		if len(w.calls) != 0 {
-			t.Errorf("%s: dry run wrote %q", argv, w.calls)
+		if len(cat.writes) != 0 {
+			t.Errorf("%s: dry run wrote %q", argv, cat.writes)
 		}
 	}
 }
@@ -409,8 +211,8 @@ func TestSecurityGrantRefusals(t *testing.T) {
 		// Modifiers the verb has no form for are not options of it at all;
 		// GRANT OPTION FOR is revoke's.
 	} {
-		cat, w := newPermCatalog(), &permWriter{}
-		_, dials, err := runPerm(t, cat, w, tc.argv+" --allow admin")
+		cat := newSecServer(t)
+		_, dials, err := runPerm(t, cat, tc.argv+" --allow admin")
 		e := wantCode(t, err, tc.code)
 		if !strings.Contains(e.Message, tc.msg) || !strings.Contains(e.Hint, tc.hint) {
 			t.Errorf("%s: %q / %q, want %q / %q", tc.argv, e.Message, e.Hint, tc.msg, tc.hint)
@@ -418,8 +220,8 @@ func TestSecurityGrantRefusals(t *testing.T) {
 		if (dials > 0) != tc.dialed {
 			t.Errorf("%s: dials %d", tc.argv, dials)
 		}
-		if len(w.calls) != 0 {
-			t.Errorf("%s: wrote %q", tc.argv, w.calls)
+		if len(cat.writes) != 0 {
+			t.Errorf("%s: wrote %q", tc.argv, cat.writes)
 		}
 	}
 }
@@ -428,15 +230,15 @@ func TestSecurityGrantRefusals(t *testing.T) {
 // order, and the set read back is the principal's entries on the securable
 // alone.
 func TestSecurityGrantRealRun(t *testing.T) {
-	cat, w := newPermCatalog(), &permWriter{}
-	res, _, err := runPerm(t, cat, w, "grant select,insert --on dbo.Orders --to etl_user --allow admin")
+	cat := newSecServer(t)
+	res, _, err := runPerm(t, cat, "grant select,insert --on dbo.Orders --to etl_user --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{
-		"GRANT SELECT TABLE dbo.Orders [] etl_user", "GRANT INSERT TABLE dbo.Orders [] etl_user",
-	}; !slices.Equal(w.calls, want) {
-		t.Errorf("calls %q, want %q", w.calls, want)
+		"GRANT SELECT ON [dbo].[Orders] TO [etl_user]", "GRANT INSERT ON [dbo].[Orders] TO [etl_user]",
+	}; !slices.Equal(cat.writes, want) {
+		t.Errorf("writes %q, want %q", cat.writes, want)
 	}
 	for key, want := range map[string]string{"verb": "GRANT", "permission": "SELECT, INSERT", "principal": "etl_user",
 		"principalType": "SQL_USER", "scope": "database", "dryRun": "false"} {
@@ -453,28 +255,29 @@ func TestSecurityGrantRealRun(t *testing.T) {
 		t.Error("real run printed tsql")
 	}
 	// etl_user's DENY DELETE on dbo.Orders was there before; its grants on
-	// the database and Sales are not on this securable.
+	// the database and Sales are not on this securable. The server orders
+	// them by permission.
 	if got, want := rowsOf(res.Sets[0]), []string{
-		"TABLE|dbo|Orders|∅|DELETE|DENY", "TABLE|dbo|Orders|∅|SELECT|GRANT", "TABLE|dbo|Orders|∅|INSERT|GRANT",
+		"TABLE|dbo|Orders|∅|DELETE|DENY", "TABLE|dbo|Orders|∅|INSERT|GRANT", "TABLE|dbo|Orders|∅|SELECT|GRANT",
 	}; !slices.Equal(got, want) {
 		t.Errorf("rows %q, want %q", got, want)
 	}
 
 	// Revoke one; the server-scope form.
-	res, _, err = runPerm(t, cat, w, "revoke SELECT --on dbo.Orders --from etl_user --allow admin")
+	res, _, err = runPerm(t, cat, "revoke SELECT --on dbo.Orders --from etl_user --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := column(res.Sets[0], "permission"); !slices.Equal(got, []string{"DELETE", "INSERT"}) {
 		t.Errorf("after revoke %q", got)
 	}
-	res, _, err = runPerm(t, cat, w, "deny 'alter any login' --on server --to monitoring --allow admin")
+	res, _, err = runPerm(t, cat, "deny 'alter any login' --on server --to monitoring --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// monitoring's own grant was there before.
 	if got := rowsOf(res.Sets[0]); !slices.Equal(got, []string{
-		"SERVER|∅|∅|∅|VIEW ANY DEFINITION|GRANT", "SERVER|∅|∅|∅|ALTER ANY LOGIN|DENY"}) {
+		"SERVER|∅|∅|∅|ALTER ANY LOGIN|DENY", "SERVER|∅|∅|∅|VIEW ANY DEFINITION|GRANT"}) {
 		t.Errorf("server rows %q", got)
 	}
 	if f := fieldValue(res, "scope"); f != "server" {
@@ -482,7 +285,7 @@ func TestSecurityGrantRealRun(t *testing.T) {
 	}
 
 	// Column entries are part of the securable's set.
-	res, _, err = runPerm(t, cat, w, "grant SELECT --on Customers --columns Phone --to etl_user --allow admin")
+	res, _, err = runPerm(t, cat, "grant SELECT --on Customers --columns Phone --to etl_user --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +310,7 @@ func TestSecurityPermissionModifiers(t *testing.T) {
 		{"grant SELECT --on SCHEMA::Sales --to etl_user --with-grant-option", "WITH GRANT OPTION",
 			"GRANT SELECT ON SCHEMA::[Sales] TO [etl_user] WITH GRANT OPTION"},
 	} {
-		res, _, err := runPerm(t, newPermCatalog(), &permWriter{}, tc.argv+" --allow admin --dry-run")
+		res, _, err := runPerm(t, newSecServer(t), tc.argv+" --allow admin --dry-run")
 		if err != nil {
 			t.Fatalf("%s: %v", tc.argv, err)
 		}
@@ -538,8 +341,9 @@ func TestSecurityPermissionModifiers(t *testing.T) {
 }
 
 func TestSecurityPermissionServerRefusals(t *testing.T) {
+	// The driver's error: gosmo wraps it.
 	sqlErr := func(n int32) error {
-		return fmt.Errorf("gosmo: grant: %w", mssql.Error{Number: n, Class: 16, Message: fmt.Sprintf("msg %d", n)})
+		return mssql.Error{Number: n, Class: 16, Message: fmt.Sprintf("msg %d", n)}
 	}
 	for _, tc := range []struct {
 		n    int32
@@ -551,8 +355,9 @@ func TestSecurityPermissionServerRefusals(t *testing.T) {
 		{4613, output.CodePermissionDenied, "WITH GRANT OPTION"},
 		{4611, output.CodeSQLError, "add --cascade"},
 	} {
-		cat, w := newPermCatalog(), &permWriter{failAt: 1, err: sqlErr(tc.n)}
-		res, _, err := runPerm(t, cat, w, "revoke SELECT --on SCHEMA::Sales --from etl_user --allow admin")
+		cat := newSecServer(t)
+		cat.failAt, cat.writeErr = 1, sqlErr(tc.n)
+		res, _, err := runPerm(t, cat, "revoke SELECT --on SCHEMA::Sales --from etl_user --allow admin")
 		e := wantCode(t, err, tc.code)
 		if !strings.Contains(e.Hint, tc.hint) || e.SQL == nil || e.SQL.Number != tc.n {
 			t.Errorf("%d: %+v hint %q", tc.n, e.SQL, e.Hint)
@@ -562,14 +367,16 @@ func TestSecurityPermissionServerRefusals(t *testing.T) {
 		}
 	}
 	// A server-scope refusal names the server's rights.
-	cat, w := newPermCatalog(), &permWriter{failAt: 1, err: sqlErr(15247)}
-	_, _, err := runPerm(t, cat, w, "grant 'VIEW SERVER STATE' --on SERVER --to etl --allow admin")
+	cat := newSecServer(t)
+	cat.failAt, cat.writeErr = 1, sqlErr(15247)
+	_, _, err := runPerm(t, cat, "grant 'VIEW SERVER STATE' --on SERVER --to etl --allow admin")
 	if e := wantCode(t, err, output.CodePermissionDenied); !strings.Contains(e.Hint, "securityadmin") {
 		t.Errorf("server hint %q", e.Hint)
 	}
 	// The second of two fails: the first stays, and a warning says so.
-	cat, w = newPermCatalog(), &permWriter{failAt: 2, err: sqlErr(4611)}
-	res, _, err := runPerm(t, cat, w, "grant SELECT,INSERT --on dbo.Orders --to etl_user --allow admin")
+	cat = newSecServer(t)
+	cat.failAt, cat.writeErr = 2, sqlErr(4611)
+	res, _, err := runPerm(t, cat, "grant SELECT,INSERT --on dbo.Orders --to etl_user --allow admin")
 	wantCode(t, err, output.CodeSQLError)
 	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "GRANT SELECT went through") {
 		t.Errorf("warnings %q", res.Warnings)
@@ -580,13 +387,13 @@ func TestSecurityPermissionServerRefusals(t *testing.T) {
 }
 
 func TestSecurityRoleMember(t *testing.T) {
-	cat, w := newPermCatalog(), &permWriter{}
-	res, _, err := runPerm(t, cat, w, "role add-member readers ghost --allow admin")
+	cat := newSecServer(t)
+	res, _, err := runPerm(t, cat, "role add-member readers ghost --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(w.calls, []string{"member readers ghost true false"}) {
-		t.Errorf("calls %q", w.calls)
+	if !slices.Equal(cat.writes, []string{"ALTER ROLE [readers] ADD MEMBER [ghost]"}) {
+		t.Errorf("writes %q", cat.writes)
 	}
 	for key, want := range map[string]string{"role": "readers", "scope": "database", "member": "ghost",
 		"memberType": "SQL_USER", "wasMember": "false", "isMember": "true", "dryRun": "false"} {
@@ -599,16 +406,16 @@ func TestSecurityRoleMember(t *testing.T) {
 	}
 
 	// Server scope, removing; a nested role as the member.
-	cat, w = newPermCatalog(), &permWriter{}
-	res, _, err = runPerm(t, cat, w, "role remove-member sysadmin sa --scope server --allow admin")
+	cat = newSecServer(t)
+	res, _, err = runPerm(t, cat, "role remove-member sysadmin sa --scope server --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(w.calls, []string{"member sysadmin sa false true"}) || fieldValue(res, "isMember") != "false" ||
+	if !slices.Equal(cat.writes, []string{"ALTER SERVER ROLE [sysadmin] DROP MEMBER [sa]"}) || fieldValue(res, "isMember") != "false" ||
 		fieldValue(res, "wasMember") != "true" {
-		t.Errorf("calls %q, record %+v", w.calls, res.Fields)
+		t.Errorf("writes %q, record %+v", cat.writes, res.Fields)
 	}
-	res, _, err = runPerm(t, newPermCatalog(), &permWriter{}, "role add-member reporting readers --allow admin --dry-run")
+	res, _, err = runPerm(t, newSecServer(t), "role add-member reporting readers --allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +427,7 @@ func TestSecurityRoleMember(t *testing.T) {
 		t.Errorf("type %q, warnings %q", fieldValue(res, "memberType"), res.Warnings)
 	}
 	// An application role as the member.
-	res, _, err = runPerm(t, newPermCatalog(), &permWriter{}, "role add-member reporting billing_app --allow admin --dry-run")
+	res, _, err = runPerm(t, newSecServer(t), "role add-member reporting billing_app --allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,7 +435,7 @@ func TestSecurityRoleMember(t *testing.T) {
 		fieldValue(res, "memberType") != "APPLICATION_ROLE" {
 		t.Errorf("tsql %q, type %q", got, fieldValue(res, "memberType"))
 	}
-	res, _, err = runPerm(t, newPermCatalog(), &permWriter{}, "role remove-member monitoring sa --scope server --allow admin --dry-run")
+	res, _, err = runPerm(t, newSecServer(t), "role remove-member monitoring sa --scope server --allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -651,25 +458,26 @@ func TestSecurityRoleMemberRefusals(t *testing.T) {
 		{"role add-member readers etl", output.CodeNotFound, "no user or role [etl]", "name etl_user, or add --scope server."},
 		{"role add-member monitoring etl_user --scope server", output.CodeNotFound, "no login or server role", "drop --scope server"},
 	} {
-		cat, w := newPermCatalog(), &permWriter{}
-		_, _, err := runPerm(t, cat, w, tc.argv+" --allow admin")
+		cat := newSecServer(t)
+		_, _, err := runPerm(t, cat, tc.argv+" --allow admin")
 		e := wantCode(t, err, tc.code)
 		if !strings.Contains(e.Message, tc.msg) || !strings.Contains(e.Hint, tc.hint) {
 			t.Errorf("%s: %q / %q, want %q / %q", tc.argv, e.Message, e.Hint, tc.msg, tc.hint)
 		}
-		if len(w.calls) != 0 {
-			t.Errorf("%s: wrote %q", tc.argv, w.calls)
+		if len(cat.writes) != 0 {
+			t.Errorf("%s: wrote %q", tc.argv, cat.writes)
 		}
 	}
 	// Without --allow admin: blocked before connecting.
-	_, dials, err := runPerm(t, newPermCatalog(), &permWriter{}, "role add-member readers ghost")
+	_, dials, err := runPerm(t, newSecServer(t), "role add-member readers ghost")
 	wantCode(t, err, output.CodeBlocked)
 	if dials != 0 {
 		t.Errorf("dials %d", dials)
 	}
 	// Refused by the server: exit 9 with the role's rights.
-	w := &permWriter{failAt: 1, err: fmt.Errorf("gosmo: add: %w", mssql.Error{Number: 15151, Class: 16, Message: "Cannot alter the role"})}
-	_, _, err = runPerm(t, newPermCatalog(), w, "role add-member readers ghost --allow admin")
+	s := newSecServer(t)
+	s.failAt, s.writeErr = 1, mssql.Error{Number: 15151, Class: 16, Message: "Cannot alter the role"}
+	_, _, err = runPerm(t, s, "role add-member readers ghost --allow admin")
 	if e := wantCode(t, err, output.CodePermissionDenied); !strings.Contains(e.Hint, "ALTER ANY ROLE") {
 		t.Errorf("hint %q", e.Hint)
 	}
@@ -693,7 +501,9 @@ func TestSecurityPermissionIgnored(t *testing.T) {
 		{"revoke SELECT --on Customers --columns Email --from etl_user", "SELECT"},
 		{"grant 'VIEW SERVER STATE' --on SERVER --to etl", ""},
 	} {
-		res, _, err := runPerm(t, newPermCatalog(), &permWriter{ignore: true}, tc.argv+" --allow admin")
+		s := newSecServer(t)
+		s.ignore = true
+		res, _, err := runPerm(t, s, tc.argv+" --allow admin")
 		if err != nil {
 			t.Fatalf("%s: %v", tc.argv, err)
 		}
@@ -709,7 +519,7 @@ func TestSecurityPermissionIgnored(t *testing.T) {
 		}
 	}
 	// Landed: no warning.
-	res, _, err := runPerm(t, newPermCatalog(), &permWriter{}, "revoke SELECT --on SCHEMA::Sales --from etl_user --grant-option-only --allow admin")
+	res, _, err := runPerm(t, newSecServer(t), "revoke SELECT --on SCHEMA::Sales --from etl_user --grant-option-only --allow admin")
 	if err != nil || len(res.Warnings) != 0 {
 		t.Errorf("landed: %v %q", err, res.Warnings)
 	}

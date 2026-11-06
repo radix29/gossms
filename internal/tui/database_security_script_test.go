@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func databaseSecurityReads(dbName string) []fakeResponse {
 // reviews and executes it.
 func TestScriptDatabaseSecurityOpensUnexecutedScript(t *testing.T) {
 	const dbName = "odd]db"
-	sc, inst := newFakeConn(t, databaseSecurityReads(dbName)...)
+	sc, inst := newGConn(t, databaseSecurityReads(dbName)...)
 	a := newTestApp()
 	node := &explorerNode{label: dbName, data: nodeData{Type: NodeDatabase, DBName: dbName, DBState: "ONLINE", conn: sc}}
 
@@ -70,7 +71,8 @@ func TestScriptDatabaseSecurityOpensUnexecutedScript(t *testing.T) {
 
 // A failed read reports itself on the status line and opens no window.
 func TestScriptDatabaseSecurityReportsAFailedRead(t *testing.T) {
-	sc, _ := newFakeConn(t, dbByNameResp("appdb", 7)) // nothing answers the owner read
+	sc, _ := newGConn(t, dbByNameResp("appdb", 7),
+		fakeResponse{match: "SUSER_SNAME(owner_sid)", err: errors.New("owner read refused")})
 	a := newTestApp()
 	a.scriptDatabaseSecurity(sc, "appdb")
 	drainUntil(t, a, func() bool { return strings.HasPrefix(a.statusText, "Script error:") }, "the error status")

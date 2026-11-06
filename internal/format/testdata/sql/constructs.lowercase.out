@@ -1,0 +1,105 @@
+/* file header
+   spanning lines */
+
+select
+    a
+  , -- first
+    b /* inline */
+  , c
+from
+    t -- trailing
+-- own line before where
+where
+    x = 1
+
+merge into dbo.tgt as t
+using dbo.src as s on s.id = t.id
+    and s.k = t.k
+when matched and s.v <> t.v then
+    update set
+        v = s.v
+      , w = s.w
+when not matched by target then
+    insert (id, v)
+    values (s.id, s.v)
+when not matched by source then
+    delete
+output
+    $action
+  , inserted.id;
+create table dbo.x (
+    id int not null identity(1, 1)
+  , name nvarchar(50) null
+  , constraint pk_x primary key clustered (id asc)
+) on [primary]
+declare @t table (a int)
+begin try
+    begin tran
+    exec dbo.p 1
+    commit
+end try
+begin catch
+    if @@trancount > 0
+        rollback;
+    throw;
+end catch
+while @i < 10
+begin
+    set @i += 1
+    if @i = 5
+        continue
+    if @i = 8
+        break
+end
+lbl:
+goto lbl
+select
+    'multi
+  line string'
+  , [weird ]] name]
+  , "q id"
+from
+    (
+        select x = 1
+    ) as d
+where
+    not exists (
+        select *
+        from
+            y
+        where
+            y.a = d.x
+    )
+select x
+from
+    t
+order by
+    x
+offset 10 rows fetch next 5 rows only
+select top (10) with ties a
+from
+    t
+order by
+    a
+select a
+from
+    t
+for xml path(''), type
+select
+    case
+        when a = 1 then (
+            select max(b)
+            from
+                u
+        )
+        else 0
+    end
+from
+    t
+select s = sum(case when a = 1 then 1 else 0 end)
+from
+    t
+set transaction isolation level read committed
+alter table dbo.x add y int null,
+    z int null
+create index ix on dbo.x (name) include (id) where name is not null

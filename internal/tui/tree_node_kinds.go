@@ -55,14 +55,39 @@ func hasChildren(t NodeType) bool {
 }
 
 // groupedFolderTypes are the folders Group by Schema regroups into one
-// NodeSchemaGroup per schema: the main object families only. The System *
-// folders, Sequences, Types and the rest stay flat (decided scope).
+// NodeSchemaGroup per schema: the main object families, the Tables
+// sub-folders, the System Views/Procedures/Functions folders, Sequences and
+// the four schema-scoped Types folders. Each one's loader and Details listing
+// carry every object's schema (rowsInSchema). System Data Types (no schema),
+// Rules, Defaults, Service Broker queues and the rest stay flat.
 var groupedFolderTypes = map[NodeType]bool{
-	NodeTables:           true,
-	NodeViews:            true,
-	NodeSynonyms:         true,
-	NodeStoredProcedures: true,
-	NodeFunctions:        true,
+	NodeTables:                true,
+	NodeSystemTables:          true,
+	NodeFileTables:            true,
+	NodeExternalTables:        true,
+	NodeGraphTables:           true,
+	NodeViews:                 true,
+	NodeSystemViews:           true,
+	NodeSynonyms:              true,
+	NodeStoredProcedures:      true,
+	NodeSystemProcedures:      true,
+	NodeFunctions:             true,
+	NodeSystemFunctions:       true,
+	NodeSequences:             true,
+	NodeUserDefinedDataTypes:  true,
+	NodeUserDefinedTableTypes: true,
+	NodeUserDefinedTypes:      true,
+	NodeXMLSchemaCollections:  true,
+}
+
+// isTablesFolder reports whether t is the Tables folder or one of its four
+// sub-folders: the folders whose Details is loadTablesFolderDetails.
+func isTablesFolder(t NodeType) bool {
+	switch t {
+	case NodeTables, NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables:
+		return true
+	}
+	return false
 }
 
 // nodeTypeName returns the node type's display name.

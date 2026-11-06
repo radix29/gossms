@@ -8,10 +8,10 @@ import "testing"
 // name it would claim the priority is narrower than it is.
 
 func TestBrokerPriorityPageRendersAnAbsentCriterionAsAny(t *testing.T) {
-	sc, inst := newFakeConn(t, brokerDBResp(),
+	sc, inst := newGConn(t, brokerDBResp(),
 		brokerRowByArg(brokerPriorityResp(), "ClaimPriority", 0))
 	pages := brokerPriorityPropPages(sc, brokerDB, "ClaimPriority")
-	form, apply := loadPage(t, pages[0], inst)
+	form, apply := loadPageG(t, pages[0], inst)
 
 	if apply != nil {
 		t.Error("Broker Priority Properties is read-only; its page returned an apply")

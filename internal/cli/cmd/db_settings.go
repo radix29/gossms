@@ -103,7 +103,7 @@ func scopedConfigs(ctx context.Context, cat Catalog, name string, res *output.Re
 	if err != nil {
 		return nil, nil, err
 	}
-	cfgs, err := cat.DatabaseScopedConfigs(ctx, t.DB)
+	cfgs, err := t.DB.DatabaseScopedConfigs(ctx)
 	if err != nil {
 		return nil, nil, readError(err)
 	}
@@ -317,7 +317,7 @@ func replicaName(secondary bool) string {
 func (d Deps) dbScopedConfigSet(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	secondary := inv.Values[optForSecondary].(bool)
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -342,7 +342,7 @@ func (d Deps) dbScopedConfigSet(ctx context.Context, inv *spec.Invocation) (*out
 	// The server's refusal (Msg 15247, live on 17 and 13) reads "missing or
 	// denied"; the configuration was just read, so it is denied.
 	apply := func(ctx context.Context) error {
-		err := w.SetDatabaseScopedConfig(ctx, db, c.Name, value, replica)
+		err := db.SetDatabaseScopedConfig(ctx, c.Name, value, replica)
 		if gosmo.IsMissingOrDenied(err) {
 			return output.NewError(output.CodePermissionDenied, err.Error(), "")
 		}
@@ -380,7 +380,7 @@ func (d Deps) dbScopedConfigSet(ctx context.Context, inv *spec.Invocation) (*out
 		}
 		return res, err
 	}
-	after, err := cat.DatabaseScopedConfigs(ctx, db)
+	after, err := db.DatabaseScopedConfigs(ctx)
 	if err != nil {
 		e := readError(err)
 		e.Message = "the change ran, but sys.database_scoped_configurations could not be read back: " + e.Message
@@ -652,7 +652,7 @@ func readDBSetState(ctx context.Context, cat Catalog, d *gosmo.Database, changes
 		return s, err
 	}
 	if slices.ContainsFunc(changes, func(c dbSetChange) bool { return c.key == "QUERY_STORE" }) {
-		s.qs, err = cat.QueryStoreOptions(ctx, d)
+		s.qs, err = d.QueryStore().Options(ctx)
 	}
 	return s, err
 }
@@ -660,21 +660,21 @@ func readDBSetState(ctx context.Context, cat Catalog, d *gosmo.Database, changes
 // applyDBSet makes one change through its gosmo call. QUERY_STORE re-sends
 // qs's options with the new state, so nothing else about Query Store
 // changes (verified live on 13, 14 and 17).
-func applyDBSet(ctx context.Context, w Writer, d *gosmo.Database, c dbSetChange, term gosmo.Termination, qs *gosmo.QueryStoreInfo) error {
+func applyDBSet(ctx context.Context, d *gosmo.Database, c dbSetChange, term gosmo.Termination, qs *gosmo.QueryStoreInfo) error {
 	key := dbSetKeys[c.key]
 	if !key.exclusive(c.key) {
 		term = gosmo.TerminationNone
 	}
 	switch key.kind {
 	case dbSetRecovery:
-		return w.SetRecoveryModel(ctx, d, gosmo.RecoveryModel(c.value))
+		return d.SetRecoveryModel(ctx, gosmo.RecoveryModel(c.value))
 	case dbSetCompat:
 		n, _ := strconv.Atoi(c.value)
-		return w.SetCompatibilityLevel(ctx, d, gosmo.CompatibilityLevel(n))
+		return d.SetCompatibilityLevel(ctx, gosmo.CompatibilityLevel(n))
 	case dbSetReadOnly:
-		return w.SetReadOnly(ctx, d, c.value == "ON", term)
+		return d.SetReadOnly(ctx, c.value == "ON", term)
 	case dbSetQueryStore:
-		return w.SetQueryStoreOptions(ctx, d, gosmo.QueryStoreOptions{
+		return d.QueryStore().SetOptions(ctx, gosmo.QueryStoreOptions{
 			DesiredState: gosmo.QueryStoreState(c.value), MaxStorageMB: qs.MaxStorageMB, CaptureMode: qs.CaptureMode,
 			SizeCleanupMode: qs.SizeCleanupMode, StaleThresholdDays: qs.StaleThresholdDays,
 			FlushIntervalSec: qs.FlushIntervalSec, IntervalMinutes: qs.IntervalMinutes,
@@ -683,7 +683,7 @@ func applyDBSet(ctx context.Context, w Writer, d *gosmo.Database, c dbSetChange,
 			CapturePolicyExecCPUMs: qs.CapturePolicyExecCPUMs, CapturePolicyStaleHours: qs.CapturePolicyStaleHours,
 		})
 	}
-	return w.SetDatabaseOption(ctx, d, gosmo.DatabaseOption(c.key), c.value, term)
+	return d.SetDatabaseOption(ctx, gosmo.DatabaseOption(c.key), c.value, term)
 }
 
 func (d Deps) dbSet(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
@@ -700,7 +700,7 @@ func (d Deps) dbSet(ctx context.Context, inv *spec.Invocation) (*output.Result, 
 		return nil, d.confirmRefusal(inv, err)
 	}
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -727,7 +727,7 @@ func (d Deps) dbSet(ctx context.Context, inv *spec.Invocation) (*output.Result, 
 	done := 0 // changes applied
 	apply := func(ctx context.Context) error {
 		for _, c := range changes {
-			err := applyDBSet(ctx, w, db, c, term, before.qs)
+			err := applyDBSet(ctx, db, c, term, before.qs)
 			// Msg 5011 reads "missing or denied"; the database was just
 			// read, so it is denied.
 			if gosmo.IsMissingOrDenied(err) {

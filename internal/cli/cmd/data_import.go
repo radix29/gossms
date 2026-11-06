@@ -271,7 +271,7 @@ func (s *dataSource) planImport(ctx context.Context, fileCols []string, cols []*
 		if collation == "" {
 			return 0, output.NewError(output.CodeGeneralError, "a char column's collation, or the database's, was not read", "")
 		}
-		cp, err := s.cat.CollationCodePage(ctx, collation)
+		cp, err := s.dbase.Server().CollationCodePage(ctx, collation)
 		if err != nil {
 			return 0, readError(err)
 		}
@@ -464,11 +464,11 @@ func (d Deps) dataImport(ctx context.Context, inv *spec.Invocation) (*output.Res
 	if s.kind != kindTable {
 		return res, usageError(s.name()+" is a view: data import loads a table", "Load the view's base table.")
 	}
-	table, err := s.cat.TableByName(ctx, s.dbase, s.obj.Schema, s.obj.Name)
+	table, err := s.dbase.TableByName(ctx, s.obj.Schema, s.obj.Name)
 	if err != nil {
 		return res, readError(err)
 	}
-	cols, err := s.cat.TableColumns(ctx, table)
+	cols, err := table.Columns(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -493,7 +493,6 @@ func (d Deps) dataImport(ctx context.Context, inv *spec.Invocation) (*output.Res
 
 	var count, empty int64
 	rows := plan.rows(file, &count, &empty)
-	w := d.Writer(sc)
 	oneColumnCSV := len(file.Columns()) == 1 && format != importJSONL
 	warnEmpty := func() {
 		if oneColumnCSV && empty > 0 {
@@ -507,7 +506,7 @@ func (d Deps) dataImport(ctx context.Context, inv *spec.Invocation) (*output.Res
 		var tsql string
 		if truncate {
 			sctx, script := gosmo.WithScript(ctx)
-			if err := w.TruncateTable(sctx, table); err != nil {
+			if err := table.Truncate(sctx); err != nil {
 				finish()
 				return res, writeError(err)
 			}
@@ -530,7 +529,7 @@ func (d Deps) dataImport(ctx context.Context, inv *spec.Invocation) (*output.Res
 
 	truncated := false
 	if truncate {
-		if err := w.TruncateTable(ctx, table); err != nil {
+		if err := table.Truncate(ctx); err != nil {
 			finish()
 			return res, truncateError(err, s.name())
 		}
@@ -545,7 +544,7 @@ func (d Deps) dataImport(ctx context.Context, inv *spec.Invocation) (*output.Res
 			FireTriggers:     inv.Values[optFireTriggers].(bool),
 			TableLock:        inv.Values[optTablock].(bool),
 		}}
-	n, err := w.BulkInsert(rctx, s.dbase, bc, rows)
+	n, err := s.dbase.BulkInsert(rctx, bc, rows)
 	if err != nil {
 		finish()
 		if ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded) {

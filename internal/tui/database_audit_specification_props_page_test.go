@@ -12,7 +12,7 @@ import (
 )
 
 // Database Audit Specification Properties > General, driven through
-// fakedb_test.go. Every case acts on "HIPAA_dbspec", the *second*
+// gosmotest_fixtures_test.go. Every case acts on "HIPAA_dbspec", the *second*
 // specification in the list, so a page that ignored the name it was opened
 // with would still pass on the first.
 
@@ -86,12 +86,12 @@ func dbSpecDatabaseRow() fakeResponse {
 		"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, dbSpecCreated, int64(0), false}}}
 }
 
-func dbSpecPageConn(t *testing.T, name string, extra ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+func dbSpecPageConn(t *testing.T, name string, extra ...fakeResponse) (*db.ServerConn, *gFake) {
 	t.Helper()
 	responses := append([]fakeResponse{
 		dbSpecDatabaseRow(), dbSpecByName(name), dbSpecRows(), dbSpecDetailRows(), auditRows(),
 	}, dbAuditActionRows()...)
-	return newFakeConn(t, append(responses, extra...)...)
+	return newGConn(t, append(responses, extra...)...)
 }
 
 func dbSpecPage(sc *db.ServerConn, name string) propPage {
@@ -117,7 +117,7 @@ func gridAt(t *testing.T, f *propsheet.Form, n int) *propsheet.ToggleGridRow {
 
 func TestDBSpecificationGeneralLoadsTheNamedSpecification(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "HIPAA_dbspec")
-	form, _ := loadPage(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
+	form, _ := loadPageG(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
 
 	if got := selectRow(t, form, "Audit").Value(); got != "HIPAA" {
 		t.Errorf("Audit = %q, want HIPAA", got)
@@ -166,7 +166,7 @@ func containsString(all []string, want string) bool {
 // than what it is bound to.
 func TestDBSpecificationGeneralOmitsAnAuditAnotherSpecificationHolds(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "HIPAA_dbspec")
-	form, _ := loadPage(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
+	form, _ := loadPageG(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
 
 	items := selectRow(t, form, "Audit").Items()
 	if containsString(items, "AppLogAudit") {
@@ -182,7 +182,7 @@ func TestDBSpecificationGeneralOmitsAnAuditAnotherSpecificationHolds(t *testing.
 
 func TestDBSpecificationGeneralWritesNothingWhenUntouched(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "HIPAA_dbspec")
-	_, apply := loadPage(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
+	_, apply := loadPageG(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestDBSpecificationGeneralWritesNothingWhenUntouched(t *testing.T) {
 // diverge after the first.
 func TestDBSpecificationGeneralAddsAndDropsTheTickedGroups(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "HIPAA_dbspec", dbSpecEnabled("HIPAA_dbspec", false))
-	form, apply := loadPage(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
+	form, apply := loadPageG(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
 
 	groups := gridAt(t, form, 0)
 	toggleByName(t, groups, "DATABASE_OBJECT_ACCESS_GROUP", 0) // on
@@ -226,7 +226,7 @@ func TestDBSpecificationGeneralAddsAndDropsTheTickedGroups(t *testing.T) {
 // unticked action leaves as a securable clause, not as a group.
 func TestDBSpecificationGeneralDropsAnUntickedAction(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "HIPAA_dbspec", dbSpecEnabled("HIPAA_dbspec", false))
-	form, apply := loadPage(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
+	form, apply := loadPageG(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
 
 	toggleByName(t, gridAt(t, form, 1), "SELECT ON OBJECT::[dbo].[Patient] BY public", 0)
 	if err := apply(t.Context()); err != nil {
@@ -248,7 +248,7 @@ func TestDBSpecificationGeneralDropsAnUntickedAction(t *testing.T) {
 // bracket-quoted, the action and the class are keywords and are not.
 func TestDBSpecificationGeneralAddsATypedAction(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "HIPAA_dbspec", dbSpecEnabled("HIPAA_dbspec", false))
-	form, apply := loadPage(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
+	form, apply := loadPageG(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
 
 	editSelect(t, form, "Action", "UPDATE")
 	editText(t, form, "Securable", "dbo.Visit")
@@ -269,7 +269,7 @@ func TestDBSpecificationGeneralAddsATypedAction(t *testing.T) {
 // clause with an empty name in it.
 func TestDBSpecificationGeneralRefusesAnActionWithNoSecurable(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "HIPAA_dbspec", dbSpecEnabled("HIPAA_dbspec", false))
-	form, apply := loadPage(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
+	form, apply := loadPageG(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
 
 	editSelect(t, form, "Action", "DELETE")
 	if err := apply(t.Context()); err == nil {
@@ -284,7 +284,7 @@ func TestDBSpecificationGeneralRefusesAnActionWithNoSecurable(t *testing.T) {
 // bracketed by the state toggle — once, not once per statement.
 func TestDBSpecificationGeneralApplyOnAnEnabledSpecTurnsItOffAndBackOn(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "AppDBSpec", dbSpecEnabled("AppDBSpec", true))
-	form, apply := loadPage(t, dbSpecPage(sc, "AppDBSpec"), inst)
+	form, apply := loadPageG(t, dbSpecPage(sc, "AppDBSpec"), inst)
 
 	toggleByName(t, gridAt(t, form, 0), "SCHEMA_OBJECT_ACCESS_GROUP", 0)
 	if err := apply(t.Context()); err != nil {
@@ -301,7 +301,7 @@ func TestDBSpecificationGeneralApplyOnAnEnabledSpecTurnsItOffAndBackOn(t *testin
 
 func TestDBSpecificationGeneralRebindsTheAudit(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "HIPAA_dbspec", dbSpecEnabled("HIPAA_dbspec", false))
-	form, apply := loadPage(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
+	form, apply := loadPageG(t, dbSpecPage(sc, "HIPAA_dbspec"), inst)
 
 	editSelect(t, form, "Audit", "Rollover")
 	if err := apply(t.Context()); err != nil {
@@ -317,7 +317,7 @@ func TestDBSpecificationGeneralRebindsTheAudit(t *testing.T) {
 // audit would let a stray Apply rebind it silently.
 func TestDBSpecificationGeneralDoesNotSilentlyRebindAnOrphan(t *testing.T) {
 	sc, inst := dbSpecPageConn(t, "OrphanDB")
-	form, apply := loadPage(t, dbSpecPage(sc, "OrphanDB"), inst)
+	form, apply := loadPageG(t, dbSpecPage(sc, "OrphanDB"), inst)
 
 	if got := selectRow(t, form, "Audit").Value(); got != missingAuditItem {
 		t.Errorf("the orphan's Audit dropdown shows %q", got)
@@ -333,7 +333,7 @@ func TestDBSpecificationGeneralDoesNotSilentlyRebindAnOrphan(t *testing.T) {
 // The tree's own half: the folder labels a disabled specification, which is
 // the only place its state shows.
 func TestDatabaseAuditSpecificationsFolderLabelsDisabledOnes(t *testing.T) {
-	sc, _ := newFakeConn(t, dbSpecDatabaseRow(), dbSpecRows(), dbSpecDetailRows())
+	sc, _ := newGConn(t, dbSpecDatabaseRow(), dbSpecRows(), dbSpecDetailRows())
 	l := loaderCtx{ctx: t.Context(), sc: sc}
 	children, err := loadDatabaseAuditSpecificationsChildren(l,
 		&explorerNode{data: nodeData{Type: NodeDatabaseAuditSpecifications, DBName: "appdb", conn: sc}})

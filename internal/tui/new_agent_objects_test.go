@@ -30,14 +30,14 @@ import (
 // reports success.
 //
 // Everything msdb is addressed three-part, so these writes are read back with
-// Statements(), never StatementsIn("msdb") — see agent_fakedb_test.go.
+// Statements(), never StatementsIn("msdb") — see agent_gosmotest_fixtures_test.go.
 
 // onlyStatementWith returns the single recorded statement containing want, and
 // fails unless exactly one does. These dialogs write several statements per OK
 // (sp_add_job is followed by sp_add_jobserver), so assertOneStatement is too
 // strict and a bare Contains over the whole set would pass on a page that
 // wrote the same procedure twice with different arguments.
-func onlyStatementWith(t *testing.T, inst *fakeInstance, want string) string {
+func onlyStatementWith(t *testing.T, inst *gFake, want string) string {
 	t.Helper()
 	var found []string
 	for _, s := range inst.Statements() {
@@ -90,11 +90,11 @@ func assertStatementLacks(t *testing.T, stmt string, unwanted ...string) {
 
 // -- New Operator ------------------------------------------------------------
 
-func newOperatorDialog(t *testing.T, responses ...fakeResponse) (*NewOperatorDialog, *fakeInstance) {
+func newOperatorDialog(t *testing.T, responses ...fakeResponse) (*NewOperatorDialog, *gFake) {
 	t.Helper()
 	a := newTestApp()
 	d := NewNewOperatorDialog(a)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	d.show(sc)
 	waitAndDrain(t, a)
 	if d.forms[0] == nil {
@@ -104,7 +104,10 @@ func newOperatorDialog(t *testing.T, responses ...fakeResponse) (*NewOperatorDia
 }
 
 func newOperatorResponses() []fakeResponse {
-	return append(agentOperatorResponses(), agentCategoryResponse())
+	// The dialog's database list is not under test; say so rather than leave a
+	// read unanswered.
+	return append(agentOperatorResponses(), agentCategoryResponse(),
+		fakeResponse{match: "compatibility_level, collation_name", cols: 11})
 }
 
 func TestNewOperatorCreatesTheOperatorWithTheCategoryPicked(t *testing.T) {
@@ -184,11 +187,11 @@ func newAlertResponses() []fakeResponse {
 	return append(rs, agentOperatorResponses()...)
 }
 
-func newAlertDialog(t *testing.T) (*NewAlertDialog, *fakeInstance) {
+func newAlertDialog(t *testing.T) (*NewAlertDialog, *gFake) {
 	t.Helper()
 	a := newTestApp()
 	d := NewNewAlertDialog(a)
-	sc, inst := newFakeConn(t, newAlertResponses()...)
+	sc, inst := newGConn(t, newAlertResponses()...)
 	d.show(sc)
 	waitAndDrain(t, a)
 	if d.forms[0] == nil || d.forms[1] == nil {
@@ -310,6 +313,8 @@ const (
 
 func newScheduleResponses() []fakeResponse {
 	rs := []fakeResponse{
+		// The job picker's database list is not under test.
+		{match: "compatibility_level, collation_name", cols: 11},
 		// CreateSchedule reads the new id back through @schedule_id OUTPUT,
 		// then the schedule by it.
 		{match: "sp_add_schedule", cols: 1, rows: [][]driver.Value{{int64(newScheduleID)}}},
@@ -325,11 +330,11 @@ func newScheduleResponses() []fakeResponse {
 	return append(rs, agentJobResponses(jobRow(agentJobName, "Database Maintenance", "sa", true, 0, 0, ""))...)
 }
 
-func newScheduleDialog(t *testing.T) (*NewScheduleDialog, *fakeInstance) {
+func newScheduleDialog(t *testing.T) (*NewScheduleDialog, *gFake) {
 	t.Helper()
 	a := newTestApp()
 	d := NewNewScheduleDialog(a)
-	sc, inst := newFakeConn(t, newScheduleResponses()...)
+	sc, inst := newGConn(t, newScheduleResponses()...)
 	d.show(sc)
 	waitAndDrain(t, a)
 	if d.forms[0] == nil || d.forms[1] == nil {
@@ -369,7 +374,7 @@ func TestNewScheduleWeeklyTicksTheDayItIsLabelled(t *testing.T) {
 	}
 	stmt := adds[0]
 	// The name is bound (gosmo binds every Agent procedure's strings).
-	if args, _ := inst.ReadArgs("sp_add_schedule"); len(args) == 0 || args[0].Value != newScheduleName {
+	if args, _ := inst.ReadArgs("sp_add_schedule"); len(args) == 0 || args[0] != newScheduleName {
 		t.Errorf("sp_add_schedule args = %v, want the name %q first", args, newScheduleName)
 	}
 	assertStatementHas(t, stmt,
@@ -449,11 +454,11 @@ func newJobResponses() []fakeResponse {
 	return append(rs, agentOperatorResponses()...)
 }
 
-func newJobDialog(t *testing.T) (*NewJobDialog, *fakeInstance) {
+func newJobDialog(t *testing.T) (*NewJobDialog, *gFake) {
 	t.Helper()
 	a := newTestApp()
 	d := NewNewJobDialog(a)
-	sc, inst := newFakeConn(t, newJobResponses()...)
+	sc, inst := newGConn(t, newJobResponses()...)
 	d.show(sc)
 	waitAndDrain(t, a)
 	for i, f := range d.forms {

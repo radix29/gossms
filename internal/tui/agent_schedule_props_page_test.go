@@ -14,12 +14,12 @@ import (
 // the form's round trip, which can't see a swapped table entry (Monday's box
 // setting Tuesday's bit); only the statement sent shows the ticked day's bit.
 
-func loadSchedulePage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadSchedulePage(t *testing.T) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
 	responses := append(agentScheduleResponses(), loginListResponse())
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := agentScheduleName
-	form, apply := loadPage(t, pageScheduleGeneral(sc, agentScheduleID, &name), inst)
+	form, apply := loadPageG(t, pageScheduleGeneral(sc, agentScheduleID, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -115,7 +115,7 @@ func twinScheduleResponses() []fakeResponse {
 	return append(scheduleByIDResponses(twins),
 		fakeResponse{match: "WHERE sch.name = @p1", cols: 16, rows: twins},
 		fakeResponse{match: "FROM   msdb.dbo.sysschedules sch", cols: 16, rows: twins},
-		fakeResponse{match: "sysjobschedules js ON js.schedule_id", cols: 3},
+		fakeResponse{match: "WHERE  js.schedule_id = @p1", cols: 3},
 	)
 }
 
@@ -148,7 +148,7 @@ func TestScheduleActionsOnATwinNameHitTheNodesOwnID(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, inst := newFakeConn(t, twinScheduleResponses()...)
+			sc, inst := newGConn(t, twinScheduleResponses()...)
 			c.act(a, sc, twinScheduleNode(sc))
 			waitAndDrain(t, a)
 			assertOneStatement(t, inst, c.want)
@@ -162,11 +162,11 @@ func TestScheduleActionsOnATwinNameHitTheNodesOwnID(t *testing.T) {
 // The detail pane and Schedule Properties read the node's own schedule; the
 // Properties apply writes it by id.
 func TestScheduleReadsOnATwinNameUseTheNodesOwnID(t *testing.T) {
-	sc, inst := newFakeConn(t, append(twinScheduleResponses(), loginListResponse())...)
+	sc, inst := newGConn(t, append(twinScheduleResponses(), loginListResponse())...)
 	if _, _, err := agentScheduleDetail(t.Context(), sc, twinScheduleNode(sc)); err != nil {
 		t.Fatalf("detail pane: %v", err)
 	}
-	if args, ok := inst.ReadArgs("WHERE sch.schedule_id = @p1"); !ok || len(args) != 1 || args[0].Value != int64(8) {
+	if args, ok := inst.ReadArgs("WHERE sch.schedule_id = @p1"); !ok || len(args) != 1 || args[0] != int64(8) {
 		t.Errorf("detail pane read schedule %v, want id 8", args)
 	}
 	if reads := inst.Reads("WHERE sch.name = @p1"); len(reads) != 0 {
@@ -174,7 +174,7 @@ func TestScheduleReadsOnATwinNameUseTheNodesOwnID(t *testing.T) {
 	}
 
 	name := "Daily"
-	form, apply := loadPage(t, pageScheduleGeneral(sc, 8, &name), inst)
+	form, apply := loadPageG(t, pageScheduleGeneral(sc, 8, &name), inst)
 	editCheck(t, form, "Enabled", false)
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)

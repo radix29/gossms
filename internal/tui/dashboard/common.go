@@ -55,7 +55,7 @@ func drawHeader(s tcell.Screen, r core.Rect, h Header) {
 	if h.Version != "" {
 		left += "  " + h.Version
 	}
-	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, style.Foreground(pal.ChartCyan), left)
+	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, theme.StyleMenuBarEmphasis(), left)
 
 	right := h.SampleTime
 	switch {

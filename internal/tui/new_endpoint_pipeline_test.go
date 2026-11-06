@@ -29,12 +29,12 @@ func freshEndpointInstanceResponses() []fakeResponse {
 
 // newEndpointDialogForTest builds the dialog over two scripted instances, with
 // peerServerFor answering from them instead of opening a real peer connection.
-func newEndpointDialogForTest(t *testing.T) (*NewEndpointDialog, *fakeInstance, *fakeInstance) {
+func newEndpointDialogForTest(t *testing.T) (*NewEndpointDialog, *gFake, *gFake) {
 	t.Helper()
 	a := newTestApp()
-	local, localInst := newFakeConn(t, freshEndpointInstanceResponses()...)
+	local, localInst := newGConn(t, freshEndpointInstanceResponses()...)
 	local.Opts = config.Connection{Server: "UBUSQL1"}
-	remote, remoteInst := newFakeConn(t, freshEndpointInstanceResponses()...)
+	remote, remoteInst := newGConn(t, freshEndpointInstanceResponses()...)
 
 	d := NewNewEndpointDialog(a)
 	d.sc = local
@@ -183,7 +183,7 @@ func TestEndpointScriptingWritesNothingToTheServer(t *testing.T) {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 
-	for name, inst := range map[string]*fakeInstance{"local": localInst, "remote": remoteInst} {
+	for name, inst := range map[string]*gFake{"local": localInst, "remote": remoteInst} {
 		if got := inst.Statements(); len(got) != 0 {
 			t.Errorf("Script Changes executed %d statements against the %s instance:\n%s",
 				len(got), name, strings.Join(got, "\n"))
@@ -342,9 +342,9 @@ func configuredEndpointInstanceResponses(certName string, thumb []byte) []fakeRe
 func TestEndpointConfigureScriptsTheExchangeOnceCertificatesExist(t *testing.T) {
 	a := newTestApp()
 	thumb := []byte{0x01, 0x02}
-	local, _ := newFakeConn(t, configuredEndpointInstanceResponses("ubusql1_Cert", thumb)...)
+	local, _ := newGConn(t, configuredEndpointInstanceResponses("ubusql1_Cert", thumb)...)
 	local.Opts = config.Connection{Server: "ubusql1"}
-	remote, _ := newFakeConn(t, configuredEndpointInstanceResponses("ubusql2_Cert", thumb)...)
+	remote, _ := newGConn(t, configuredEndpointInstanceResponses("ubusql2_Cert", thumb)...)
 
 	d := NewNewEndpointDialog(a)
 	d.sc = local
@@ -410,9 +410,9 @@ func TestEndpointScriptSkipsAUserThatAlreadyExists(t *testing.T) {
 		}
 		return out
 	}
-	local, _ := newFakeConn(t, withUser("ubusql1_Cert")...)
+	local, _ := newGConn(t, withUser("ubusql1_Cert")...)
 	local.Opts = config.Connection{Server: "ubusql1"}
-	remote, _ := newFakeConn(t, withUser("ubusql2_Cert")...)
+	remote, _ := newGConn(t, withUser("ubusql2_Cert")...)
 
 	d := NewNewEndpointDialog(a)
 	d.sc = local

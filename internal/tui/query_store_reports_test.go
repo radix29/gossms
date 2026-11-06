@@ -118,8 +118,8 @@ func TestEveryQueryStoreReportTitleDispatches(t *testing.T) {
 // rows and no error, which reads identically to a database nothing has run
 // in — and sends the user looking for a bug instead of a setting.
 func TestQueryStoreReportSaysWhenQueryStoreIsOff(t *testing.T) {
-	sc, inst := newFakeConn(t, qsDatabaseResponse(), qsOptionsResponse("OFF", "OFF"))
-	// newFakeConn's own connect-time reads are already counted, so measure
+	sc, inst := newGConn(t, qsDatabaseResponse(), qsOptionsResponse("OFF", "OFF"))
+	// newGConn's own connect-time reads are already counted, so measure
 	// the delta rather than the total.
 	before := inst.QueryCount()
 
@@ -152,7 +152,7 @@ func TestQueryStoreReportSaysWhenQueryStoreIsOff(t *testing.T) {
 // still desiring READ_WRITE. It still has data, so the report must run — and
 // the folder must say why collection stopped.
 func TestQueryStoreReportNamesTheStateMismatch(t *testing.T) {
-	sc, _ := newFakeConn(t, qsDatabaseResponse(), qsOptionsResponse("READ_ONLY", "READ_WRITE"))
+	sc, _ := newGConn(t, qsDatabaseResponse(), qsOptionsResponse("READ_ONLY", "READ_WRITE"))
 
 	_, rows, err := queryStoreFolderDetail(context.Background(), sc, "appdb")
 	if err != nil {
@@ -170,7 +170,7 @@ func TestQueryStoreReportNamesTheStateMismatch(t *testing.T) {
 // state rows, then one row per report. A folder that listed six would leave a
 // leaf in the tree the pane never explains.
 func TestQueryStoreFolderGridListsEveryReport(t *testing.T) {
-	sc, _ := newFakeConn(t, qsDatabaseResponse(), qsOptionsResponse("READ_WRITE", "READ_WRITE"))
+	sc, _ := newGConn(t, qsDatabaseResponse(), qsOptionsResponse("READ_WRITE", "READ_WRITE"))
 
 	_, rows, err := queryStoreFolderDetail(context.Background(), sc, "appdb")
 	if err != nil {
@@ -192,7 +192,7 @@ func TestQueryStoreFolderGridListsEveryReport(t *testing.T) {
 // mostly numbers is the shape where two swap unnoticed: the grid still
 // renders, and a query's execution count reads as its plan count.
 func TestTopResourceQueriesReportRendersItsRows(t *testing.T) {
-	sc, inst := newFakeConn(t,
+	sc, _ := newGConn(t,
 		qsDatabaseResponse(),
 		qsOptionsResponse("READ_WRITE", "READ_WRITE"),
 		fakeResponse{match: "sys.query_store_runtime_stats", cols: 12, rows: [][]driver.Value{
@@ -207,7 +207,7 @@ func TestTopResourceQueriesReportRendersItsRows(t *testing.T) {
 		t.Fatalf("queryStoreReportDetail: %v", err)
 	}
 	if len(rows) != 2 {
-		t.Fatalf("got %d rows, want 2 (unanswered: %v)", len(rows), inst.unmatched)
+		t.Fatalf("got %d rows, want 2", len(rows))
 	}
 	want := map[string]string{
 		"Query ID":       "11",
@@ -250,7 +250,7 @@ func TestTopResourceQueriesReportRendersItsRows(t *testing.T) {
 // title with no loader must say so rather than returning an empty grid that
 // looks like a report with no rows.
 func TestQueryStoreReportRejectsAnUnknownTitle(t *testing.T) {
-	sc, _ := newFakeConn(t, qsDatabaseResponse(), qsOptionsResponse("READ_WRITE", "READ_WRITE"))
+	sc, _ := newGConn(t, qsDatabaseResponse(), qsOptionsResponse("READ_WRITE", "READ_WRITE"))
 	if _, _, err := queryStoreReportDetail(context.Background(), sc, "appdb", "Not A Report"); err == nil {
 		t.Error("an unknown report title returned no error")
 	}

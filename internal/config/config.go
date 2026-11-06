@@ -362,6 +362,11 @@ type Config struct {
 	// auto-indent use. Zero, or anything outside 1..MaxIndentWidth, means
 	// DefaultIndentWidth.
 	IndentWidth int `json:"indent_width"`
+	// SQLFormatStyle is the format.Style ID Edit > Format Document lays SQL out
+	// in. Empty, or an ID no style has (a config from a later version), means
+	// the first registered style; format.StyleByID owns that fallback, so
+	// config does not import format.
+	SQLFormatStyle string `json:"sql_format_style,omitempty"`
 	// XEventStoreCapacity is how many events an Extended Events viewer holds
 	// before the oldest are dropped. Anything outside
 	// MinXEventStoreCapacity..MaxXEventStoreCapacity means

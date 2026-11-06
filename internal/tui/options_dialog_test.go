@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/vt"
 
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -190,6 +192,8 @@ func optionsFocusName(d *OptionsDialog) string {
 		return "icons"
 	case d.ddTheme:
 		return "theme"
+	case d.ddSQLStyle:
+		return "sqlstyle"
 	case d.fMaxCellLen:
 		return "cell"
 	case d.fMaxTextLen:
@@ -211,7 +215,7 @@ func optionsFocusName(d *OptionsDialog) string {
 // the dialog consumed the key, and whether Copy/Paste has a target. Pins the
 // quirks as well as the order — Backtab does not wrap off the first control,
 // the radio box swallows the keys it does not use while the fields and the
-// closed theme dropdown pass them on, Down moves the radio selection before it
+// closed dropdowns pass them on, Down moves the radio selection before it
 // moves focus, and Up from either button returns to the checkbox.
 func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	a := newTestApp()
@@ -224,16 +228,16 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	}{
 		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
 		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
-		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
+		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
 		{"Right", tcell.KeyRight}, {"Left", tcell.KeyLeft}, {"Left", tcell.KeyLeft},
 		{"Tab", tcell.KeyTab}, {"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab},
 		{"Backtab", tcell.KeyBacktab}, {"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab},
-		{"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab}, {"Backtab", tcell.KeyBacktab},
+		{"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab}, {"Backtab", tcell.KeyBacktab}, {"Backtab", tcell.KeyBacktab},
 		{"Down", tcell.KeyDown}, {"Up", tcell.KeyUp}, {"Down", tcell.KeyDown}, {"Down", tcell.KeyDown},
-		{"Down", tcell.KeyDown}, {"Down", tcell.KeyDown}, {"Down", tcell.KeyDown},
-		{"F5", tcell.KeyF5}, {"Up", tcell.KeyUp}, {"F5", tcell.KeyF5}, {"Up", tcell.KeyUp},
+		{"Down", tcell.KeyDown}, {"Down", tcell.KeyDown}, {"Down", tcell.KeyDown}, {"F5", tcell.KeyF5}, {"Down", tcell.KeyDown},
+		{"F5", tcell.KeyF5}, {"Up", tcell.KeyUp}, {"Up", tcell.KeyUp}, {"F5", tcell.KeyF5}, {"Up", tcell.KeyUp},
 		{"F5", tcell.KeyF5}, {"Up", tcell.KeyUp}, {"Up", tcell.KeyUp}, {"Up", tcell.KeyUp},
-		{"F5", tcell.KeyF5}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"F5", tcell.KeyF5},
+		{"F5", tcell.KeyF5}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"F5", tcell.KeyF5},
 	}
 	var b strings.Builder
 	b.WriteString(optionsFocusName(d))
@@ -241,16 +245,17 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 		ok := d.HandleKey(tcell.NewEventKey(k.k, "", tcell.ModNone))
 		fmt.Fprintf(&b, " %s>%s(%v,%v)", k.n, optionsFocusName(d), ok, d.FocusedClipboardTarget() != nil)
 	}
-	const want = "icons Tab>theme(true,false) Tab>cell(true,true) Tab>text(true,true) Tab>indent(true,true) " +
+	const want = "icons Tab>theme(true,false) Tab>sqlstyle(true,false) Tab>cell(true,true) Tab>text(true,true) Tab>indent(true,true) " +
 		"Tab>xecap(true,true) Tab>fetchrows(true,true) Tab>intellisense(true,false) Tab>button0(true,false) Tab>button1(true,false) " +
 		"Tab>button0(true,false) Right>button1(true,false) Left>button0(true,false) " +
 		"Left>intellisense(true,false) Tab>button0(true,false) Up>intellisense(true,false) " +
 		"Backtab>fetchrows(true,true) Backtab>xecap(true,true) Up>indent(true,true) Backtab>text(true,true) Up>cell(true,true) " +
-		"Backtab>theme(true,false) Backtab>icons(true,false) Down>icons(true,false) Up>icons(true,false) " +
+		"Backtab>sqlstyle(true,false) Backtab>theme(true,false) Backtab>icons(true,false) Down>icons(true,false) Up>icons(true,false) " +
 		"Down>icons(true,false) Down>icons(true,false) Down>icons(true,false) Down>theme(true,false) " +
-		"Down>cell(true,true) F5>cell(false,true) Up>theme(true,false) F5>theme(false,false) " +
+		"Down>sqlstyle(true,false) F5>sqlstyle(false,false) Down>cell(true,true) " +
+		"F5>cell(false,true) Up>sqlstyle(true,false) Up>theme(true,false) F5>theme(false,false) " +
 		"Up>icons(true,false) F5>icons(true,false) Up>icons(true,false) Up>icons(true,false) " +
-		"Up>icons(true,false) F5>icons(true,false) Tab>theme(true,false) Tab>cell(true,true) " +
+		"Up>icons(true,false) F5>icons(true,false) Tab>theme(true,false) Tab>sqlstyle(true,false) Tab>cell(true,true) " +
 		"F5>cell(false,true)"
 	if got := b.String(); got != want {
 		t.Errorf("keyboard walk:\n got %s\nwant %s", got, want)
@@ -323,5 +328,66 @@ func TestOptionsApplySwitchesColorTheme(t *testing.T) {
 	d.apply()
 	if a.cfg.Theme != config.ThemeMCRetro || theme.Active().Background != theme.MCRetro.Background {
 		t.Errorf("apply(mc - retro): Theme = %v, Background = %v", a.cfg.Theme, theme.Active().Background)
+	}
+}
+
+// Options pre-selects the configured SQL format style, falling back to the
+// default for an empty or stale ID (what Format Document would use), and OK
+// records the chosen style's ID.
+func TestOptionsApplySQLFormatStyle(t *testing.T) {
+	styles := format.Styles(format.LangSQL)
+	if len(styles) < 2 {
+		t.Fatalf("want at least two SQL styles, have %d", len(styles))
+	}
+	for _, tc := range []struct{ cfg, want string }{
+		{"", styles[0].ID}, {"no-such-style", styles[0].ID}, {styles[1].ID, styles[1].ID},
+	} {
+		a := newTestApp()
+		a.cfg.SQLFormatStyle = tc.cfg
+		d := NewOptionsDialog(a)
+		d.Show()
+		if got := styles[d.ddSQLStyle.Selected()].ID; got != tc.want {
+			t.Errorf("config %q: Show() selected %q, want %q", tc.cfg, got, tc.want)
+		}
+	}
+	a := newTestApp()
+	d := NewOptionsDialog(a)
+	d.Show()
+	d.ddSQLStyle.SetSelected(1)
+	d.apply()
+	if a.cfg.SQLFormatStyle != styles[1].ID {
+		t.Errorf("apply(): SQLFormatStyle = %q, want %q", a.cfg.SQLFormatStyle, styles[1].ID)
+	}
+}
+
+// The SQL style list drops over the input fields below it; a click on one of
+// its items picks the item rather than focusing the field underneath.
+func TestOptionsDialogOpenSQLStyleListTakesTheClick(t *testing.T) {
+	s, err := tcell.NewTerminfoScreenFromTty(vt.NewMockTerm(vt.MockOptSize{X: 100, Y: 40}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Fini)
+	a := newTestApp()
+	a.screen = s
+	d := NewOptionsDialog(a)
+	d.Show()
+	d.Draw(s) // positions the controls
+	x, y := d.ddSQLStyle.RectX()+1, d.InnerRect().Y+5
+	click := func(x, y int) {
+		d.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+		d.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+	}
+	click(x, y)
+	if !d.ddSQLStyle.IsOpen() {
+		t.Fatal("a click on the SQL style dropdown did not open it")
+	}
+	click(x+1, y+2) // the second item, over the Max default cell length row
+	if d.ddSQLStyle.IsOpen() || d.ddSQLStyle.Selected() != 1 || optionsFocusName(d) != "sqlstyle" {
+		t.Errorf("after clicking item 2: open %v, selected %d, focus %s; want closed, 1, sqlstyle",
+			d.ddSQLStyle.IsOpen(), d.ddSQLStyle.Selected(), optionsFocusName(d))
 	}
 }

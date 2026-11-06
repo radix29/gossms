@@ -33,11 +33,11 @@ func treeFamilyDatabaseRow() fakeResponse {
 		treeFamilyCreated, int64(0), false}}}
 }
 
-// newFamilyConn is newFakeConn with the database row every one of these
+// newFamilyConn is newGConn with the database row every one of these
 // loaders resolves through DatabaseByName before its own read.
 func newFamilyConn(t *testing.T, responses ...fakeResponse) *db.ServerConn {
 	t.Helper()
-	sc, _ := newFakeConn(t, append([]fakeResponse{treeFamilyDatabaseRow()}, responses...)...)
+	sc, _ := newGConn(t, append([]fakeResponse{treeFamilyDatabaseRow()}, responses...)...)
 	return sc
 }
 
@@ -189,7 +189,7 @@ func TestTypesFolderChildren(t *testing.T) {
 // folder must be absent rather than present-and-broken — an absent folder and
 // an empty one are different bugs.
 func TestExternalLibrariesFolderIsAbsentBefore2017(t *testing.T) {
-	old, _ := newFakeConnAtVersion(t, "13.0.6300.2")
+	old, _ := newGConnAtVersion(t, "13.0.6300.2")
 	labels := labelsOfNodes(loadFamily(t, old, NodeExternalResources))
 	if slices.Contains(labels, "External Libraries") {
 		t.Errorf("External Resources on major 13 = %v — the folder can only error", labels)
@@ -199,7 +199,7 @@ func TestExternalLibrariesFolderIsAbsentBefore2017(t *testing.T) {
 		t.Errorf("External Resources on major 13 = %v, want %v", labels, want)
 	}
 
-	newer, _ := newFakeConnAtVersion(t, "14.0.3465.1")
+	newer, _ := newGConnAtVersion(t, "14.0.3465.1")
 	labels = labelsOfNodes(loadFamily(t, newer, NodeExternalResources))
 	if !slices.Contains(labels, "External Libraries") {
 		t.Errorf("External Resources on major 14 = %v, with no External Libraries", labels)

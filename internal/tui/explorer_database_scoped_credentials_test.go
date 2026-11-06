@@ -71,7 +71,7 @@ func TestDatabaseScopedCredentialsFolderHasALoader(t *testing.T) {
 // leaf: without DBName the Properties page and the drop both run against the
 // connection's default database.
 func TestDatabaseScopedCredentialsLoaderCarriesTheDatabase(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), dbScopedCredListResponse())
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), dbScopedCredListResponse())
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 
 	children, err := childLoaders[NodeDatabaseScopedCredentials](l,
@@ -161,7 +161,7 @@ func TestDatabaseScopedCredentialScriptsAndDrops(t *testing.T) {
 func TestDatabaseScopedCredentialDropStatement(t *testing.T) {
 	// No sys.databases response: the drop goes through dbOf and must not need
 	// one — see TestDropsThroughDbOfReadNoCatalog.
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	err := objectOps[NodeDatabaseScopedCredential].drop(t.Context(), sc,
 		nodeData{Type: NodeDatabaseScopedCredential, DBName: "appdb", Name: "app_cred"})
 	if err != nil {
@@ -176,7 +176,7 @@ func TestDatabaseScopedCredentialDropStatement(t *testing.T) {
 // one nodeData per row, which is what gives the pane its Delete — each
 // carrying the database, or the pane's Delete runs somewhere else.
 func TestDatabaseScopedCredentialsFolderDetailListsEveryCredential(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), dbScopedCredListResponse())
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), dbScopedCredListResponse())
 
 	var objs []nodeData
 	cols, rows, err := databaseScopedCredentialsFolderDetail(context.Background(), sc,

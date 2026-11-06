@@ -12,12 +12,12 @@ import (
 // appdb and already responds to the job, so tests act on real state and a page
 // that dropped its load can't pass by matching blanks.
 
-func loadAlertPage(t *testing.T, extra []fakeResponse, build func(sc *db.ServerConn, name *string) propPage) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadAlertPage(t *testing.T, extra []fakeResponse, build func(sc *db.ServerConn, name *string) propPage) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
 	responses := append(agentAlertResponses(), extra...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := agentAlertName
-	form, apply := loadPage(t, build(sc, &name), inst)
+	form, apply := loadPageG(t, build(sc, &name), inst)
 	return inst, apply, form, &name
 }
 

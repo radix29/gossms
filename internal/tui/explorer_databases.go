@@ -467,11 +467,31 @@ func loadRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 	}, nil
 }
 
+// applicationRolesNotVisibleLabel is the row an empty Application Roles folder
+// shows when the login holds neither right that sees every role. Not "none":
+// sys.database_principals lists an application role only to a login with
+// VIEW DEFINITION or ALTER ANY APPLICATION ROLE on the database, or some
+// permission on that role (each verified live on 17, 2026-11-05, a
+// db_datareader user reading zero rows beside one role), and answers the rest
+// with zero rows and no error. The label names VIEW DEFINITION alone, the
+// read-only right, to fit the tree's width.
+const applicationRolesNotVisibleLabel = "None visible — VIEW DEFINITION is needed"
+
 func loadApplicationRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listDatabaseChildren(l, node, (*gosmo.Database).ApplicationRoles,
+	kids, err := listDatabaseChildren(l, node, (*gosmo.Database).ApplicationRoles,
 		func(r *gosmo.ApplicationRole) *explorerNode {
 			return l.node(r.Name, NodeApplicationRole, "", r.Name, node.data.DBName)
 		})
+	if err != nil || len(kids) > 0 {
+		return kids, err
+	}
+	// knownDenied fails open: an unprobed or failed probe leaves the folder
+	// empty as before, rather than claiming a limit nobody measured.
+	c := l.sc.DatabaseCapabilities(l.ctx, node.data.DBName)
+	if knownDenied(c, "VIEW DEFINITION") && knownDenied(c, "ALTER ANY APPLICATION ROLE") {
+		return []*explorerNode{l.node(applicationRolesNotVisibleLabel, NodeError, "", "", node.data.DBName)}, nil
+	}
+	return kids, nil
 }
 
 func loadDatabaseRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
@@ -540,6 +560,8 @@ func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 		gate.Item(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
 			sc, node.data.DBName, gate.ControlDB, gate.AlterAnyDatabase, gate.CreateAnyDatabase),
 		{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
+		// Reads the catalog and opens a script; nothing runs, so it is not gated.
+		{Label: "Generate Scripts...", Action: func() { a.showGenerateScriptsFor(sc, node.data.DBName) }},
 	}
 	// SSMS offers neither Take Offline nor Bring Online on a distribution
 	// database: offline, it stops every distribution and cleanup agent.

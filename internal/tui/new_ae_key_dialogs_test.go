@@ -42,7 +42,7 @@ func aeKeyResponses() []fakeResponse {
 func TestNewColumnMasterKeyDialogCreatesTheKey(t *testing.T) {
 	a := newTestApp()
 	d := NewNewColumnMasterKeyDialog(a)
-	sc, inst := newFakeConn(t, aeKeyResponses()...)
+	sc, inst := newGConn(t, aeKeyResponses()...)
 	node := &explorerNode{data: nodeData{Type: NodeColumnMasterKeys, DBName: "appdb"}}
 
 	d.show(sc, node)
@@ -92,7 +92,7 @@ func TestNewColumnMasterKeyDialogCreatesTheKey(t *testing.T) {
 func TestNewColumnMasterKeyDialogCarriesTheEnclaveSignature(t *testing.T) {
 	a := newTestApp()
 	d := NewNewColumnMasterKeyDialog(a)
-	sc, inst := newFakeConn(t, aeKeyResponses()...)
+	sc, inst := newGConn(t, aeKeyResponses()...)
 	d.show(sc, &explorerNode{data: nodeData{Type: NodeColumnMasterKeys, DBName: "appdb"}})
 	waitAndDrain(t, a)
 	form := d.forms[0]
@@ -120,7 +120,7 @@ func TestNewColumnMasterKeyDialogCarriesTheEnclaveSignature(t *testing.T) {
 func TestNewColumnMasterKeyDialogPreflight(t *testing.T) {
 	a := newTestApp()
 	d := NewNewColumnMasterKeyDialog(a)
-	sc, inst := newFakeConn(t, aeKeyResponses()...)
+	sc, inst := newGConn(t, aeKeyResponses()...)
 	d.show(sc, &explorerNode{data: nodeData{Type: NodeColumnMasterKeys, DBName: "appdb"}})
 	waitAndDrain(t, a)
 	form := d.forms[0]
@@ -168,7 +168,7 @@ func TestNewColumnMasterKeyDialogPreflight(t *testing.T) {
 func TestNewColumnEncryptionKeyDialogCreatesTheKey(t *testing.T) {
 	a := newTestApp()
 	d := NewNewColumnEncryptionKeyDialog(a)
-	sc, inst := newFakeConn(t, aeKeyResponses()...)
+	sc, inst := newGConn(t, aeKeyResponses()...)
 	d.show(sc, &explorerNode{data: nodeData{Type: NodeColumnEncryptionKeys, DBName: "appdb"}})
 	waitAndDrain(t, a)
 	form := d.forms[0]
@@ -212,7 +212,7 @@ func TestNewColumnEncryptionKeyDialogCreatesTheKey(t *testing.T) {
 func TestNewColumnEncryptionKeyDialogPreflight(t *testing.T) {
 	a := newTestApp()
 	d := NewNewColumnEncryptionKeyDialog(a)
-	sc, inst := newFakeConn(t, aeKeyResponses()...)
+	sc, inst := newGConn(t, aeKeyResponses()...)
 	d.show(sc, &explorerNode{data: nodeData{Type: NodeColumnEncryptionKeys, DBName: "appdb"}})
 	waitAndDrain(t, a)
 	form := d.forms[0]
@@ -247,7 +247,7 @@ func TestNewColumnEncryptionKeyDialogPreflight(t *testing.T) {
 func TestNewColumnEncryptionKeyDialogRefusesWithoutAMasterKey(t *testing.T) {
 	a := newTestApp()
 	d := NewNewColumnEncryptionKeyDialog(a)
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		fakeResponse{match: "FROM sys.databases", arg: "appdb", cols: 11, rows: [][]driver.Value{
 			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0), false},
 		}},
@@ -315,7 +315,7 @@ func TestNewColumnMasterKeyDialogHidesEnclavesBelow2019(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
 			d := NewNewColumnMasterKeyDialog(a)
-			sc, inst := newFakeConnAtVersion(t, c.version, aeKeyResponses()...)
+			sc, inst := newGConnAtVersion(t, c.version, aeKeyResponses()...)
 			d.show(sc, &explorerNode{data: nodeData{Type: NodeColumnMasterKeys, DBName: "appdb"}})
 			waitAndDrain(t, a)
 			form := d.forms[0]

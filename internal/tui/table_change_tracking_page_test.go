@@ -28,10 +28,10 @@ func tableChangeTrackingResponses(rows ...[]driver.Value) []fakeResponse {
 	}
 }
 
-func loadTableChangeTrackingPage(t *testing.T, rows ...[]driver.Value) (*fakeInstance, propApply, *propsheet.Form) {
+func loadTableChangeTrackingPage(t *testing.T, rows ...[]driver.Value) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, tableChangeTrackingResponses(rows...)...)
-	form, apply := loadPage(t, pageTableChangeTracking(sc, principalDatabase, principalSchema, "Orders"), inst)
+	sc, inst := newGConn(t, tableChangeTrackingResponses(rows...)...)
+	form, apply := loadPageG(t, pageTableChangeTracking(sc, principalDatabase, principalSchema, "Orders"), inst)
 	return inst, apply, form
 }
 

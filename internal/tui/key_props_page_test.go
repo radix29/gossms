@@ -31,16 +31,16 @@ func keyIndex() indexFixture {
 
 // loadKeyPage loads one Key Properties page over the PK_Orders constraint, and
 // hands back the boxed name a rename has to update.
-func loadKeyPage(t *testing.T, build func(sc *db.ServerConn, name *string) propPage) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadKeyPage(t *testing.T, build func(sc *db.ServerConn, name *string) propPage) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		dbByNameResp(idxDatabase, 5),
 		idxTableResp(),
 		idxListResp("PK_Orders", 1, keyIndex()),
 		idxColumnsResp([]driver.Value{int64(1), "OrderID", false, false}),
 	)
 	name := "PK_Orders"
-	form, apply := loadPage(t, build(sc, &name), inst)
+	form, apply := loadPageG(t, build(sc, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -66,7 +66,9 @@ func TestKeyRenameNamesTheConstraintAndItsNewName(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	assertOneStatementIn(t, inst, idxDatabase, "sp_rename")
-	assertArgs(t, inst, "sp_rename", "[sales].[Orders].[PK_Orders]", "PK_Orders_OrderID")
+	if got, _ := inst.ExecArgs("sp_rename"); len(got) != 2 || got[0] != "[sales].[Orders].[PK_Orders]" || got[1] != "PK_Orders_OrderID" {
+		t.Errorf("sp_rename ran with %v, want [[sales].[Orders].[PK_Orders]] [PK_Orders_OrderID]", got)
+	}
 
 	// The boxed name is what every sibling page — Options, Storage,
 	// Fragmentation, Extended Properties — looks the object up by on its next

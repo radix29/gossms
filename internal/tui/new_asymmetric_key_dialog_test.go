@@ -18,7 +18,7 @@ func newAsymmetricKeyTestDialog(t *testing.T, hasMasterKey bool) *NewAsymmetricK
 	if hasMasterKey {
 		dmk = 1
 	}
-	sc, _ := newFakeConn(t, fakeResponse{match: "##MS_DatabaseMasterKey##", cols: 1, rows: [][]driver.Value{{dmk}}})
+	sc, _ := newGConn(t, fakeResponse{match: "##MS_DatabaseMasterKey##", cols: 1, rows: [][]driver.Value{{dmk}}})
 	d := &NewAsymmetricKeyDialog{dbName: "keydb"}
 	d.sc = sc
 	d.pages = []string{"General"}

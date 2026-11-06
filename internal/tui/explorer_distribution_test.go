@@ -14,7 +14,7 @@ import (
 // Online. It is removed with sp_dropdistributiondb.
 
 func TestDistributionDatabaseIsListedUnderSystemDatabases(t *testing.T) {
-	sc, _ := newFakeConn(t, databasesListResp(
+	sc, _ := newGConn(t, databasesListResp(
 		databaseRow(1, "master", 0),
 		distributionRow(5, "distribution"),
 		databaseRow(7, "appdb", 0),
@@ -38,7 +38,7 @@ func TestDistributionDatabaseIsListedUnderSystemDatabases(t *testing.T) {
 
 // A distribution database alone still gets the System Databases folder.
 func TestDistributionDatabaseAloneListsSystemDatabases(t *testing.T) {
-	sc, _ := newFakeConn(t, databasesListResp(distributionRow(5, "distribution")))
+	sc, _ := newGConn(t, databasesListResp(distributionRow(5, "distribution")))
 	if labels := labelsOfNodes(loadServerFolder(t, sc, NodeDatabases)); !slices.Contains(labels, "System Databases") {
 		t.Errorf("Databases = %v, with no System Databases folder", labels)
 	}
@@ -89,7 +89,7 @@ func TestDistributionDatabaseDeleteAndRenameRefuse(t *testing.T) {
 
 // The System Databases detail pane lists what the folder does.
 func TestDistributionDatabaseIsInTheSystemDatabasesDetail(t *testing.T) {
-	sc, _ := newFakeConn(t, databasesListResp(
+	sc, _ := newGConn(t, databasesListResp(
 		databaseRow(1, "master", 0),
 		distributionRow(5, "distribution"),
 		databaseRow(7, "appdb", 0),

@@ -11,10 +11,10 @@ import (
 // would show another service's list.
 
 func TestServicePageShowsItsQueueAndItsContracts(t *testing.T) {
-	sc, inst := newFakeConn(t, brokerDBResp(),
+	sc, inst := newGConn(t, brokerDBResp(),
 		brokerRowByArg(brokerServiceResp(), "//claims/Service", 1), serviceContractResp())
 	pages := brokerServicePropPages(sc, brokerDB, "//claims/Service")
-	form, apply := loadPage(t, pages[0], inst)
+	form, apply := loadPageG(t, pages[0], inst)
 
 	if apply != nil {
 		t.Error("Service Properties is read-only; its page returned an apply")

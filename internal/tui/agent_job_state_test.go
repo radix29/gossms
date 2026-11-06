@@ -51,7 +51,7 @@ func TestStartAndStopJobRefuseTheStateTheyWouldNotChange(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, inst := newFakeConn(t, agentJobResponses(jobRowInState(c.state))...)
+			sc, inst := newGConn(t, agentJobResponses(jobRowInState(c.state))...)
 			node := agentJobTestNode(sc)
 
 			if c.start {

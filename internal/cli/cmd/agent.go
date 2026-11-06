@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -25,30 +27,43 @@ func AgentContextCommand(d Deps) *spec.Command {
 			"whether it can open it, and the profiles saved on this machine. missing_permissions lists each " +
 			"permission the login lacks that a gossms command needs, with the commands it breaks and how: a read " +
 			"that fails (exit 9), or columns that read NULL. A permission the server does not answer for is not " +
-			"listed.",
-		Options: ConnectOptions(),
-		Class:   spec.ClassRead,
-		Run:     d.agentContext,
+			"listed. The rows of the commands that act on a <database> argument (db set, db scoped-config set, " +
+			"maint backup, maint checkdb) answer for --target-database, else for the connection's database.",
+		Options: append(ConnectOptions(), spec.Option{Name: optTargetDatabase, Type: spec.TypeString,
+			Help: "The database a later db set, db scoped-config set, maint backup or maint checkdb will act on: " +
+				"their rows answer for it (default: the connection's)"}),
+		Class: spec.ClassRead,
+		Run:   d.agentContext,
 		Examples: []string{
 			"gossms agent context -p dev",
 			"gossms agent context -p dev -o json",
+			"gossms agent context -p dev --target-database Sales",
 		},
 	}
 }
 
+const optTargetDatabase = "target-database"
+
 // permissionNeed is one permission a command needs, for missing_permissions.
-// It is missing when the server answers for at least one of anyOf and roles
-// and grants none of them: a probe that answered nothing (Unknown) is not a
-// lack.
+// It is missing when the server answers for at least one of anyOf, master and
+// roles and grants none of them: a probe that answered nothing (Unknown) is
+// not a lack.
 type permissionNeed struct {
 	permission string
-	database   bool     // database scope (the connection's database), else server
-	anyOf      []string // granted any: not missing
-	allOf      []string // granted every one: not missing (a split right's narrow parts)
-	roles      []string // fixed server roles, a member of any: not missing
-	dbRoles    []string // fixed roles of the connection's database, a member of any: not missing
-	commands   []string // the command paths it breaks, as typed
-	effect     string
+	database   bool // database scope (the connection's database), else server
+	// target: a database need of a command acting on its <database>
+	// argument, which answers for --target-database when one is given.
+	target  bool
+	anyOf   []string // granted any: not missing
+	master  []string // granted any in master (gosmo ProbedMasterPermissions): not missing
+	allOf   []string // granted every one: not missing (a split right's narrow parts)
+	roles   []string // fixed server roles, a member of any: not missing
+	dbRoles []string // fixed roles of the database, a member of any: not missing
+	// msdbRoles: roles in msdb, a member of any: not missing. Probed only
+	// for a login not known to be sysadmin (see msdbCapabilities).
+	msdbRoles []string
+	commands  []string // the command paths it breaks, as typed
+	effect    string
 }
 
 // permissionNeeds is what the implemented commands need beyond connecting.
@@ -130,8 +145,10 @@ var permissionNeeds = []permissionNeed{
 	},
 	{
 		permission: "VIEW ANY DEFINITION",
-		// sys.master_files shows its rows to any of the three.
+		// sys.master_files shows its rows to any of the three, and to CREATE
+		// DATABASE granted in master alone (17, 2026-11-05).
 		anyOf:    []string{"VIEW ANY DEFINITION", "CREATE ANY DATABASE", "ALTER ANY DATABASE"},
+		master:   []string{"CREATE DATABASE"},
 		commands: []string{"db list", "db info", "db files"},
 		effect: "database sizes read NULL (sys.master_files hides the files); db files lists a database it " +
 			"cannot read inside (not ONLINE, or no user) with no files, only a warning",
@@ -167,6 +184,7 @@ var permissionNeeds = []permissionNeed{
 	{
 		permission: "ALTER",
 		database:   true,
+		target:     true,
 		// ALTER ANY DATABASE on the server covers it.
 		anyOf:    []string{"ALTER"},
 		commands: []string{"db set"},
@@ -175,6 +193,7 @@ var permissionNeeds = []permissionNeed{
 	{
 		permission: "ALTER ANY DATABASE SCOPED CONFIGURATION",
 		database:   true,
+		target:     true,
 		// ALTER and CONTROL on the database cover it.
 		anyOf:    []string{"ALTER ANY DATABASE SCOPED CONFIGURATION"},
 		commands: []string{"db scoped-config set"},
@@ -183,18 +202,28 @@ var permissionNeeds = []permissionNeed{
 	{
 		permission: "db_owner (role) or sysadmin",
 		database:   true,
+		target:     true,
 		// DBCC CHECKDB and sp_updatestats check the roles: CONTROL on the
 		// database alone is refused Msg 7983 (checked on 17, 2026-11-03).
 		// IS_ROLEMEMBER('db_owner') reads 1 for a sysadmin, who is dbo, so
-		// the database probe alone decides.
+		// the database probe alone decides. Two rows because checkdb acts on
+		// its <database> and update-stats on the connection's.
 		dbRoles:  []string{"db_owner"},
-		commands: []string{"maint checkdb", "maint update-stats"},
-		effect: "maint checkdb of this database fails (Msg 7983, exit 9); update-stats --all (sp_updatestats) " +
-			"fails (Msg 15247, exit 9); one table's statistics need only ALTER on it",
+		commands: []string{"maint checkdb"},
+		effect:   "maint checkdb of this database fails (Msg 7983, exit 9)",
+	},
+	{
+		permission: "db_owner (role) or sysadmin",
+		database:   true,
+		dbRoles:    []string{"db_owner"},
+		commands:   []string{"maint update-stats"},
+		effect: "update-stats --all (sp_updatestats) fails in this database (Msg 15247, exit 9); one table's " +
+			"statistics need only ALTER on it",
 	},
 	{
 		permission: "BACKUP DATABASE",
 		database:   true,
+		target:     true,
 		// db_backupoperator, db_owner and sysadmin hold both BACKUP rights.
 		anyOf:    []string{"BACKUP DATABASE"},
 		commands: []string{"maint backup"},
@@ -203,21 +232,36 @@ var permissionNeeds = []permissionNeed{
 	{
 		permission: "BACKUP LOG",
 		database:   true,
+		target:     true,
 		anyOf:      []string{"BACKUP LOG"},
 		commands:   []string{"maint backup"},
 		effect:     "--type log of this database fails (Msg 262, exit 9)",
 	},
 	{
-		permission: "CREATE ANY DATABASE",
-		// dbcreator and ALTER ANY DATABASE imply it (both read 1, 17). A
-		// restore reads the media first (HEADERONLY, FILELISTONLY,
-		// VERIFYONLY), and those need CREATE DATABASE even over a database
-		// the login owns. A CREATE DATABASE granted in master alone reads 0
-		// here: the one false positive, accepted.
+		permission: "CREATE DATABASE (in master) or CREATE ANY DATABASE",
+		// dbcreator and ALTER ANY DATABASE imply CREATE ANY DATABASE (both
+		// read 1, 17). A restore reads the media first (HEADERONLY,
+		// FILELISTONLY, VERIFYONLY), and those need CREATE DATABASE even
+		// over a database the login owns. CREATE DATABASE granted in master
+		// alone does for both — CREATE DATABASE and RESTORE HEADERONLY
+		// succeed (17, 2026-11-05) — and reads 0 as CREATE ANY DATABASE, so
+		// master is asked too.
 		anyOf:    []string{"CREATE ANY DATABASE"},
+		master:   []string{"CREATE DATABASE"},
 		commands: []string{"db create", "maint restore"},
 		effect: "fail (exit 9); maint restore fails reading the media, --verify-only and --dry-run too; over " +
 			"an existing database it also needs dbcreator, sysadmin or db_owner of it",
+	},
+	{
+		permission: "IMPERSONATE ANY LOGIN",
+		// CONTROL SERVER implies it. Not a known lack of the right to
+		// impersonate one principal — IMPERSONATE on that login or user, or
+		// db_owner for a user, does — so the effect says so. Impersonating
+		// oneself needs nothing (17, 2026-11-05).
+		anyOf:    []string{"IMPERSONATE ANY LOGIN"},
+		commands: []string{"security permissions"},
+		effect: "--effective on another principal fails (Msg 15517/15406, exit 9) unless the login holds " +
+			"IMPERSONATE on that login or user, or is db_owner (a user of its database)",
 	},
 	{
 		permission: "ALTER ANY ROLE",
@@ -229,23 +273,32 @@ var permissionNeeds = []permissionNeed{
 			"with --scope server the server's own rules apply",
 	},
 	{
-		permission: "sysadmin (role)",
-		// gosmo reads msdb's job tables (sysjobs, sysjobservers,
-		// sysjobactivity, sysjobhistory) where the SQLAgent* roles get only
-		// the views and sp_help_job*: a SQLAgentReaderRole member is refused
-		// Msg 229 on sysjobservers (17). Open thread in docs/open-threads.md.
-		roles:    []string{"sysadmin"},
-		commands: []string{"job list", "job show", "job history", "job start", "job stop"},
-		effect: "fail (exit 9): the job reads use msdb tables the SQLAgentUserRole, ReaderRole and " +
-			"OperatorRole do not open",
+		permission: "sysadmin (role) or an msdb Agent role",
+		// A non-sysadmin's job reads go through msdb's sp_help_job*
+		// procedures and sysjobs_view, granted to SQLAgentUserRole (Reader
+		// and Operator are members of it); a login in none is refused Msg
+		// 229 on sp_help_jobactivity (17, 2026-11-05).
+		roles:     []string{"sysadmin"},
+		msdbRoles: []string{"SQLAgentUserRole", "SQLAgentReaderRole", "SQLAgentOperatorRole"},
+		commands:  []string{"job list", "job show", "job history", "job start", "job stop"},
+		effect: "fail (exit 9): msdb shows its jobs to sysadmin and the members of SQLAgentUserRole " +
+			"(its own jobs), SQLAgentReaderRole and SQLAgentOperatorRole (every job) only",
 	},
 }
 
 // missing reports whether the need is known to be unmet under state and, for
-// a need with roles, the probes srv and dbc.
+// a need with roles or master rights, the probes srv, dbc and msdb.
 func (n permissionNeed) missing(state func(string) gosmo.CapabilityState, srv *gosmo.Capabilities,
-	dbc *gosmo.DatabaseCapabilities) bool {
+	dbc, msdb *gosmo.DatabaseCapabilities) bool {
 	answered := false
+	for _, p := range n.master {
+		switch srv.MasterPermission(p) {
+		case gosmo.CapabilityGranted:
+			return false
+		case gosmo.CapabilityDenied:
+			answered = true
+		}
+	}
 	if len(n.allOf) > 0 && !slices.ContainsFunc(n.allOf, func(p string) bool { return state(p) != gosmo.CapabilityGranted }) {
 		return false
 	}
@@ -257,6 +310,14 @@ func (n permissionNeed) missing(state func(string) gosmo.CapabilityState, srv *g
 	}
 	if len(n.dbRoles) > 0 && dbc.Probed() {
 		if slices.ContainsFunc(n.dbRoles, func(r string) bool { return dbc.Roles[r] }) {
+			return false
+		}
+		answered = true
+	}
+	if len(n.msdbRoles) > 0 {
+		// Not a sysadmin (or not known to be): only msdb can say more, so
+		// an unprobed msdb leaves the need unknown, not missing.
+		if !msdb.Probed() || slices.ContainsFunc(n.msdbRoles, func(r string) bool { return msdb.Roles[r] }) {
 			return false
 		}
 		answered = true
@@ -312,6 +373,10 @@ func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.R
 	if err != nil {
 		res.Warnings = append(res.Warnings, "Permissions in the database were not probed: "+err.Error())
 	}
+	target, targetCaps, err := contextTarget(ctx, cat, inv, dbase, dbCaps, res)
+	if err != nil {
+		return res, err
+	}
 	var roles []string
 	for _, r := range gosmo.ProbedDatabaseRoles {
 		if dbCaps != nil && dbCaps.Roles[r] {
@@ -327,18 +392,91 @@ func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.R
 		sysadmin,
 		{Key: "database", Value: dbase.Name},
 		{Key: "databaseRoles", Value: strings.Join(roles, ", ")},
+		{Key: "targetDatabase", Value: target.Name},
 		{Key: "defaultAllow", Value: string(spec.ClassRead)},
 		{Key: "maxAllow", Value: maxAllow},
 		{Key: "maxAllowSource", Value: source},
 	})
 
-	res.Sets = append(res.Sets, d.contextDatabases(ctx, cat, res), missingPermissions(srvCaps, dbCaps, dbase.Name))
+	msdbCaps := msdbCapabilities(ctx, cat, srvCaps, contextDB{dbase.Name, dbCaps},
+		contextDB{target.Name, targetCaps}, res)
+	res.Sets = append(res.Sets, d.contextDatabases(ctx, cat, res), missingPermissions(srvCaps,
+		contextDB{dbase.Name, dbCaps}, contextDB{target.Name, targetCaps}, msdbCaps))
 	profiles, err := d.contextProfiles(cfg, profile)
 	if err != nil {
 		res.Warnings = append(res.Warnings, "Profiles were not read: "+err.Error())
 	}
 	res.Sets = append(res.Sets, profiles)
 	return res, nil
+}
+
+// contextTarget is --target-database read from the catalog and probed, or the
+// connection's database and its probe when none is given. A target the login
+// cannot open answers nothing, so lists nothing: a warning says why.
+func contextTarget(ctx context.Context, cat Catalog, inv *spec.Invocation, conn *gosmo.Database,
+	connCaps *gosmo.DatabaseCapabilities, res *output.Result) (*gosmo.Database, *gosmo.DatabaseCapabilities, error) {
+	name, _ := inv.Values[optTargetDatabase].(string)
+	if name == "" {
+		return conn, connCaps, nil
+	}
+	target, err := cat.DatabaseByName(ctx, name)
+	if errors.Is(err, gosmo.ErrNotFound) {
+		return nil, nil, output.NewError(output.CodeNotFound,
+			fmt.Sprintf("--target-database: no database %s on the server", gosmo.QuoteName(name)),
+			"The databases set lists the ones the login can see.")
+	}
+	if err != nil {
+		return nil, nil, readError(err)
+	}
+	if target.ID == conn.ID {
+		return target, connCaps, nil
+	}
+	caps, err := cat.DatabaseCapabilities(ctx, target)
+	switch {
+	case err != nil:
+		res.Warnings = append(res.Warnings, "Permissions in the target database were not probed: "+err.Error())
+	case !caps.Accessible:
+		// Nothing was asked inside it, yet its role map reads as probed:
+		// kept, every role would read "not a member".
+		caps = nil
+		res.Warnings = append(res.Warnings, fmt.Sprintf("The login cannot open %s (not ONLINE, or no user "+
+			"there), so its rows are not listed: db set, db scoped-config set, maint backup and maint checkdb of "+
+			"it may still fail.", gosmo.QuoteName(target.Name)))
+	}
+	return target, caps, nil
+}
+
+// msdbCapabilities is the probe of msdb, for the needs an msdb role meets:
+// the connection's or the target's when either is msdb, else its own probe —
+// asked only of a login the server probe says is not sysadmin, since a
+// sysadmin needs no msdb role and an unprobed one answers nothing anyway. A
+// failed probe, or an msdb the login cannot open, answers nothing, with a
+// warning.
+func msdbCapabilities(ctx context.Context, cat Catalog, srv *gosmo.Capabilities, conn, target contextDB,
+	res *output.Result) *gosmo.DatabaseCapabilities {
+	if !srv.Probed() || srv.IsSysadmin() {
+		return nil
+	}
+	for _, d := range []contextDB{conn, target} {
+		if d.name == "msdb" {
+			return d.caps
+		}
+	}
+	msdb, err := cat.DatabaseByName(ctx, "msdb")
+	var caps *gosmo.DatabaseCapabilities
+	if err == nil {
+		caps, err = cat.DatabaseCapabilities(ctx, msdb)
+	}
+	switch {
+	case err != nil:
+		res.Warnings = append(res.Warnings, "The login's msdb roles were not probed: "+err.Error())
+		return nil
+	case !caps.Accessible:
+		res.Warnings = append(res.Warnings, "The login cannot open msdb, so its Agent roles are not "+
+			"known and the job commands are not listed: they may still fail.")
+		return nil
+	}
+	return caps
 }
 
 // contextDatabases is every database the login can see, and whether it can
@@ -369,18 +507,29 @@ func (d Deps) contextDatabases(ctx context.Context, cat Catalog, res *output.Res
 	return set
 }
 
-// missingPermissions is permissionNeeds the login is known to lack; a nil
-// probe answers nothing, so lists nothing.
-func missingPermissions(srv *gosmo.Capabilities, dbc *gosmo.DatabaseCapabilities, database string) output.Set {
+// contextDB is a database and its probe, for missingPermissions.
+type contextDB struct {
+	name string
+	caps *gosmo.DatabaseCapabilities
+}
+
+// missingPermissions is permissionNeeds the login is known to lack: a
+// database need in conn, or in target for a target need. A nil probe answers
+// nothing, so lists nothing.
+func missingPermissions(srv *gosmo.Capabilities, conn, target contextDB, msdb *gosmo.DatabaseCapabilities) output.Set {
 	set := output.Set{Name: "missing_permissions", Columns: []output.Column{
 		{Name: "permission"}, {Name: "scope"}, {Name: "commands"}, {Name: "effect"},
 	}}
 	for _, n := range permissionNeeds {
-		state, scope := srv.Permission, "server"
+		state, scope, dbc := srv.Permission, "server", conn.caps
 		if n.database {
-			state, scope = dbc.Permission, "database "+gosmo.QuoteName(database)
+			d := conn
+			if n.target {
+				d = target
+			}
+			state, scope, dbc = d.caps.Permission, "database "+gosmo.QuoteName(d.name), d.caps
 		}
-		if n.missing(state, srv, dbc) {
+		if n.missing(state, srv, dbc, msdb) {
 			set.Rows = append(set.Rows, []*string{ptr(n.permission), ptr(scope),
 				ptr(strings.Join(n.commands, ", ")), ptr(n.effect)})
 		}

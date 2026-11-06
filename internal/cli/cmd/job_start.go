@@ -94,8 +94,8 @@ func jobWriteCommands(d Deps) []*spec.Command {
 // checkAgentRunning refuses a start or stop with Agent known to be stopped.
 // An unreadable or Unknown status (no VIEW SERVER STATE, no service row)
 // leaves it to the server, whose refusal agentError maps alike.
-func checkAgentRunning(ctx context.Context, cat Catalog, res *output.Result) error {
-	st, err := cat.AgentInfo(ctx)
+func checkAgentRunning(ctx context.Context, srv *gosmo.Server, res *output.Result) error {
+	st, err := srv.AgentInfo(ctx)
 	switch {
 	case err != nil:
 		res.Warnings = append(res.Warnings, "SQL Server Agent's status could not be read: "+err.Error())
@@ -110,8 +110,8 @@ func checkAgentRunning(ctx context.Context, cat Catalog, res *output.Result) err
 // resolveStep is --step: a whole number is a step id, anything else a step
 // name — exact, else the one step whose name matches ignoring case.
 // NOT_FOUND lists the job's steps.
-func resolveStep(ctx context.Context, cat Catalog, j *gosmo.Job, step string) (*gosmo.JobStep, error) {
-	steps, err := cat.JobSteps(ctx, j)
+func resolveStep(ctx context.Context, srv *gosmo.Server, j *gosmo.Job, step string) (*gosmo.JobStep, error) {
+	steps, err := j.Steps(ctx)
 	if err != nil {
 		return nil, jobReadError(err)
 	}
@@ -191,24 +191,24 @@ func (d Deps) jobStart(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return nil, usageError("--step is empty", "Give a step number or name, or leave --step out to start at the job's first step.")
 	}
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, _, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	j, err := findJob(ctx, cat, inv.Args[0])
+	j, err := findJob(ctx, sc.Server, inv.Args[0])
 	if err != nil {
 		return res, err
 	}
-	if err := checkAgentRunning(ctx, cat, res); err != nil {
+	if err := checkAgentRunning(ctx, sc.Server, res); err != nil {
 		return res, err
 	}
 	stepField := output.Field{Key: "step", Null: true}
 	stepID := output.Field{Key: "stepId", Null: true}
 	stepName := ""
 	if step != "" {
-		s, err := resolveStep(ctx, cat, j, step)
+		s, err := resolveStep(ctx, sc.Server, j, step)
 		if err != nil {
 			return res, err
 		}
@@ -235,13 +235,13 @@ func (d Deps) jobStart(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	// or after it.
 	var begun time.Time
 	if wait > 0 && !dryRun(inv) {
-		now, err := cat.CurrentTime(ctx)
+		now, err := sc.Server.CurrentTime(ctx)
 		if err != nil {
 			return res, readError(err)
 		}
 		begun = serverWall(now.Add(-time.Second))
 	}
-	werr := applyWrite(ctx, inv, res, func(ctx context.Context) error { return w.StartJob(ctx, j.Name, stepName) })
+	werr := applyWrite(ctx, inv, res, func(ctx context.Context) error { return j.Start(ctx, stepName) })
 	if werr != nil {
 		e, _ := agentError(werr, j.Name)
 		return res, e
@@ -253,7 +253,7 @@ func (d Deps) jobStart(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	if wait == 0 {
 		return res, nil
 	}
-	return res, waitForJob(ctx, cat, res, j, begun, time.Duration(wait)*time.Second)
+	return res, waitForJob(ctx, sc.Server, res, j, begun, time.Duration(wait)*time.Second)
 }
 
 // waitForJob is job start --wait: it reads the job every jobPollInterval
@@ -261,14 +261,14 @@ func (d Deps) jobStart(ctx context.Context, inv *spec.Invocation) (*output.Resul
 // running, then fills res with the outcome and the run's history rows. The
 // bound passing is TIMEOUT, the job left running; a cancelled ctx (Ctrl+C)
 // returns with a warning and the job left running.
-func waitForJob(ctx context.Context, cat Catalog, res *output.Result, j *gosmo.Job, begun time.Time, bound time.Duration) error {
+func waitForJob(ctx context.Context, srv *gosmo.Server, res *output.Result, j *gosmo.Job, begun time.Time, bound time.Duration) error {
 	start := jobNow()
 	for {
 		if err := sleepCtx(ctx, jobPollInterval); err != nil {
 			res.Warnings = append(res.Warnings, "stopped waiting: the job keeps running")
 			return nil
 		}
-		now, err := cat.JobByName(ctx, j.Name)
+		now, err := srv.JobByName(ctx, j.Name)
 		if err != nil {
 			if ctx.Err() != nil {
 				res.Warnings = append(res.Warnings, "stopped waiting: the job keeps running")
@@ -279,7 +279,7 @@ func waitForJob(ctx context.Context, cat Catalog, res *output.Result, j *gosmo.J
 		}
 		running, _ := jobIsRunning(now.CurrentState)
 		if !running && !now.LastRunDate.IsZero() && !now.LastRunDate.Equal(j.LastRunDate) {
-			return jobFinished(ctx, cat, res, now, begun, jobNow().Sub(start))
+			return jobFinished(ctx, srv, res, now, begun, jobNow().Sub(start))
 		}
 		if waited := jobNow().Sub(start); waited >= bound {
 			res.Fields = append(res.Fields, output.Field{Key: "finished", Value: "false"},
@@ -294,7 +294,7 @@ func waitForJob(ctx context.Context, cat Catalog, res *output.Result, j *gosmo.J
 // jobFinished is the outcome --wait reports: the job's last run as msdb
 // recorded it, and that run's history rows. A failed run is a warning
 // quoting the failed step's message.
-func jobFinished(ctx context.Context, cat Catalog, res *output.Result, j *gosmo.Job, begun time.Time, waited time.Duration) error {
+func jobFinished(ctx context.Context, srv *gosmo.Server, res *output.Result, j *gosmo.Job, begun time.Time, waited time.Duration) error {
 	outcome := jobOutcomeName(j.LastRunOutcome)
 	res.Fields = append(res.Fields,
 		output.Field{Key: "finished", Value: "true"},
@@ -302,7 +302,7 @@ func jobFinished(ctx context.Context, cat Catalog, res *output.Result, j *gosmo.
 		output.Field{Key: "lastRun", Value: gridTime(j.LastRunDate)},
 		output.Field{Key: "lastDurationS", Value: *secondsCell(j.LastRunDuration)},
 		output.Field{Key: "waitedS", Value: strconv.FormatInt(int64(waited/time.Second), 10)})
-	rows, err := cat.SearchJobHistory(ctx, gosmo.JobHistoryFilter{JobName: j.Name, Since: begun, IncludeSteps: true})
+	rows, err := srv.SearchJobHistory(ctx, gosmo.JobHistoryFilter{JobName: j.Name, Since: begun, IncludeSteps: true})
 	if err != nil {
 		res.Warnings = append(res.Warnings, "the run's history could not be read: "+err.Error())
 		return nil
@@ -326,17 +326,17 @@ func jobFinished(ctx context.Context, cat Catalog, res *output.Result, j *gosmo.
 
 func (d Deps) jobStop(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, _, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	j, err := findJob(ctx, cat, inv.Args[0])
+	j, err := findJob(ctx, sc.Server, inv.Args[0])
 	if err != nil {
 		return res, err
 	}
-	if err := checkAgentRunning(ctx, cat, res); err != nil {
+	if err := checkAgentRunning(ctx, sc.Server, res); err != nil {
 		return res, err
 	}
 	res.Fields = []output.Field{{Key: "job", Value: j.Name}, {Key: "state", Value: jobStateName(j.CurrentState)}}
@@ -349,7 +349,7 @@ func (d Deps) jobStop(ctx context.Context, inv *spec.Invocation) (*output.Result
 		res.Fields = append(res.Fields, output.Field{Key: "dryRun", Value: boolText(dryRun(inv))})
 		return notRunning()
 	}
-	werr := applyWrite(ctx, inv, res, func(ctx context.Context) error { return w.StopJob(ctx, j.Name) })
+	werr := applyWrite(ctx, inv, res, func(ctx context.Context) error { return j.Stop(ctx) })
 	if werr != nil {
 		e, idle := agentError(werr, j.Name)
 		if idle {
@@ -361,7 +361,7 @@ func (d Deps) jobStop(ctx context.Context, inv *spec.Invocation) (*output.Result
 		return res, nil
 	}
 	res.Fields = append(res.Fields, output.Field{Key: "stopped", Value: "true"})
-	if after, err := cat.JobByName(ctx, j.Name); err == nil {
+	if after, err := sc.Server.JobByName(ctx, j.Name); err == nil {
 		res.Fields = append(res.Fields, output.Field{Key: "stateAfter", Value: jobStateName(after.CurrentState)})
 	} else {
 		res.Warnings = append(res.Warnings, "the stop was sent, but the job could not be read back: "+err.Error())

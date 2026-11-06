@@ -10,12 +10,12 @@ import (
 // Operator Properties > General. The operator is second of three with a
 // category, so a lost selection or load can't pass by writing blanks.
 
-func loadOperatorGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadOperatorGeneralPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
 	responses := append(agentOperatorResponses(), agentCategoryResponse())
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := agentOperatorName
-	form, apply := loadPage(t, pageOperatorGeneral(sc, &name), inst)
+	form, apply := loadPageG(t, pageOperatorGeneral(sc, &name), inst)
 	return inst, apply, form, &name
 }
 

@@ -117,7 +117,7 @@ func TestParseStopAt(t *testing.T) {
 // shift.
 func TestBuildRestoreOptionsStandbyToAPointInTime(t *testing.T) {
 	finish := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		headerOnlyResponse(
 			[]driver.Value{"full", int64(1), int64(1), "AppDB", "SRV", finish, int64(1024)},
 			[]driver.Value{"log", int64(2), int64(2), "AppDB", "SRV", finish, int64(1024)},
@@ -164,7 +164,7 @@ func TestBuildRestoreOptionsStandbyToAPointInTime(t *testing.T) {
 // restore the user asked for.
 func TestRestoreRefusesAPointInTimeOnAFullSet(t *testing.T) {
 	finish := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		headerOnlyResponse([]driver.Value{"full", int64(1), int64(1), "AppDB", "SRV", finish, int64(1024)}),
 		fileListOnlyResponse(
 			[]driver.Value{"AppDB", `D:\SQL\AppDB.mdf`, "D", "PRIMARY", int64(1), int64(0)},

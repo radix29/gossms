@@ -228,6 +228,10 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 			if err != nil {
 				return nil, nil, err
 			}
+			appRoles, err := d.ApplicationRoles(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
 
 			var items []*ownerTransferItem[ownedSchema]
 			for _, s := range allSchemas {
@@ -246,7 +250,7 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 				})
 			}
 
-			f, apply := newOwnerTransferPage(items, principalNames(users, roles), ownerTransferSpec[ownedSchema]{
+			f, apply := newOwnerTransferPage(items, principalNames(users, roles, appRoles), ownerTransferSpec[ownedSchema]{
 				Headers: []string{"Schema", "Owner"},
 				Cells: func(it *ownerTransferItem[ownedSchema]) []string {
 					return []string{it.name, it.newOwner}

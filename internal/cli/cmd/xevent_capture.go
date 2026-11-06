@@ -316,7 +316,7 @@ func (d Deps) xeventCapture(ctx context.Context, inv *spec.Invocation) (*output.
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -328,12 +328,8 @@ func (d Deps) xeventCapture(ctx context.Context, inv *spec.Invocation) (*output.
 	}
 	// The ring buffer is read from the DMVs, so a capture that could not
 	// read it is refused before anything is created.
-	ok, err := cat.HasViewServerState(ctx)
-	if err == nil && !ok {
-		err = viewServerStateDenied("xevent capture")
-	}
-	if err != nil {
-		return res, readError(err)
+	if err := requireServerState(ctx, sc.Server, "xevent capture"); err != nil {
+		return res, err
 	}
 	caps, err := cat.ServerCapabilities(ctx)
 	if err != nil {
@@ -344,6 +340,7 @@ func (d Deps) xeventCapture(ctx context.Context, inv *spec.Invocation) (*output.
 			"xevent capture: the login lacks ALTER ANY EVENT SESSION and "+right, eventSessionHint)
 	}
 
+	xe := sc.Server.XEvents()
 	name := captureSessionName()
 	def, err := c.definition(name)
 	if err != nil {
@@ -355,15 +352,15 @@ func (d Deps) xeventCapture(ctx context.Context, inv *spec.Invocation) (*output.
 
 	if dryRun(inv) {
 		return res, applyWrite(ctx, inv, res, func(ctx context.Context) error {
-			es, err := w.CreateEventSession(ctx, def)
+			es, err := xe.CreateSession(ctx, def)
 			if err != nil {
 				return err
 			}
-			return errors.Join(w.StartEventSession(ctx, es), w.StopEventSession(ctx, es), w.DropEventSession(ctx, es))
+			return errors.Join(es.Start(ctx), es.Stop(ctx), es.Drop(ctx))
 		})
 	}
 	res.Fields = append(res.Fields, output.Field{Key: "dryRun", Value: "false"})
-	data, err := runCapture(ctx, cat, w, def, c.duration+captureLatency, res)
+	data, err := runCapture(ctx, xe, def, c.duration+captureLatency, res)
 	if err != nil {
 		return res, err
 	}
@@ -391,25 +388,25 @@ func (d Deps) xeventCapture(ctx context.Context, inv *spec.Invocation) (*output.
 // own: a cancelled ctx (Ctrl+C) still removes the session. A drop that fails
 // is a warning on res naming the session; a step's own error is returned
 // after the cleanup.
-func runCapture(ctx context.Context, cat Catalog, w Writer, def gosmo.EventSessionDefinition,
+func runCapture(ctx context.Context, xe gosmo.XEvents, def gosmo.EventSessionDefinition,
 	wait time.Duration, res *output.Result) (*gosmo.RingBufferData, error) {
-	es, err := w.CreateEventSession(ctx, def)
+	es, err := xe.CreateSession(ctx, def)
 	if err != nil {
 		// The CREATE may have run before the error (the read-back after
 		// it, or a cancel that raced it), so look before giving up on it.
-		cleanupCapture(ctx, cat, w, nil, def.Name, false, res)
+		cleanupCapture(ctx, xe, nil, def.Name, false, res)
 		return nil, writeError(err)
 	}
 	started := false
-	defer func() { cleanupCapture(ctx, cat, w, es, def.Name, started, res) }()
-	if err := w.StartEventSession(ctx, es); err != nil {
+	defer func() { cleanupCapture(ctx, xe, es, def.Name, started, res) }()
+	if err := es.Start(ctx); err != nil {
 		return nil, writeError(err)
 	}
 	started = true
 	if err := sleepCtx(ctx, wait); err != nil {
 		return nil, err
 	}
-	data, err := cat.ReadRingBuffer(ctx, es)
+	data, err := es.ReadRingBuffer(ctx)
 	if err != nil {
 		return nil, readError(err)
 	}
@@ -420,11 +417,11 @@ func runCapture(ctx context.Context, cat Catalog, w Writer, def gosmo.EventSessi
 // session. es nil is a CREATE that failed: the session is dropped only if
 // the catalog shows it exists. The outcome is field sessionDropped, and a
 // warning when the drop failed.
-func cleanupCapture(parent context.Context, cat Catalog, w Writer, es *gosmo.EventSession, name string, started bool, res *output.Result) {
+func cleanupCapture(parent context.Context, xe gosmo.XEvents, es *gosmo.EventSession, name string, started bool, res *output.Result) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), captureCleanupTimeout)
 	defer cancel()
 	if es == nil {
-		found, err := cat.EventSessionByName(ctx, name)
+		found, err := xe.SessionByName(ctx, name)
 		if errors.Is(err, gosmo.ErrNotFound) {
 			return
 		}
@@ -438,9 +435,9 @@ func cleanupCapture(parent context.Context, cat Catalog, w Writer, es *gosmo.Eve
 	if started {
 		// A drop needs no stop; the stop first just ends the collection
 		// before the session goes.
-		_ = w.StopEventSession(ctx, es)
+		_ = es.Stop(ctx)
 	}
-	err := w.DropEventSession(ctx, es)
+	err := es.Drop(ctx)
 	res.Fields = append(res.Fields, output.Field{Key: "sessionDropped", Value: strconv.FormatBool(err == nil)})
 	if err != nil {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("event session %s was not dropped: %v. Drop it with "+

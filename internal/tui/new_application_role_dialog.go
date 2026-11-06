@@ -69,11 +69,8 @@ func fetchNewApplicationRolePrefetch(ctx context.Context, sc *db.ServerConn, dbN
 func newApplicationRolePrefetchFrom(collation string, users []*gosmo.User, roles []*gosmo.DatabaseRole,
 	appRoles []*gosmo.ApplicationRole, schemas []*gosmo.Schema) *narPrefetch {
 	pf := &narPrefetch{existingNames: newNameSet(collation), collation: collation, schemas: schemas}
-	for _, n := range principalNames(users, roles) {
+	for _, n := range principalNames(users, roles, appRoles) {
 		pf.existingNames.Add(n)
-	}
-	for _, r := range appRoles {
-		pf.existingNames.Add(r.Name)
 	}
 	return pf
 }

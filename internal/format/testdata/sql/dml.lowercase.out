@@ -1,0 +1,109 @@
+with c (id, n) as (
+    select
+        id
+      , name
+    from
+        a
+    union all
+    select
+        id
+      , name
+    from
+        b
+)
+select
+    c.id
+  , mx = (
+        select max(x)
+        from
+            d
+        where
+            d.id = c.id
+    )
+  , rn = row_number() over (partition by c.n order by c.id desc)
+  , f = iif(c.id > 1, 'y', 'n')
+  , k = case c.n
+        when 'a' then 1
+        when 'b' then case
+            when c.id = 1 then 2
+            else 3
+        end
+        else 0
+    end
+from
+    c
+    left join (
+        select
+            id
+          , cnt = count(*)
+        from
+            e
+        group by
+            id
+    ) as ee on ee.id = c.id
+    cross apply (
+        select top 1 *
+        from
+            f
+        where
+            f.id = c.id
+        order by
+            f.dt desc
+    ) as ff
+where
+    c.id is not distinct from ee.id
+option (recompile)
+insert into dbo.t (a, b)
+select
+    a
+  , b
+from
+    s
+where
+    s.x = 1
+insert into #t
+exec dbo.p @a = 1
+select
+    a
+  , b
+into #tmp
+from
+    t
+delete t
+from
+    dbo.t as t
+    inner join dbo.u as u on u.id = t.id
+where
+    u.flag = 1
+update t
+set t.a = u.a
+from
+    dbo.t as t
+    join dbo.u as u on u.id = t.id
+delete top (10) from dbo.log
+output deleted.id
+into @ids (id)
+where
+    dt < getdate()
+select
+    a
+  , b
+  , c
+from
+    t1
+  , t2
+where
+    t1.id = t2.id
+select pvt.*
+from
+    (
+        select
+            k
+          , v
+        from
+            src
+    ) as s pivot (sum(v) for k in ([a], [b])) as pvt
+select id
+from
+    t
+for json path, root('items')

@@ -57,7 +57,7 @@ func awaitDone(t *testing.T, ctx context.Context, what string) {
 func TestPropDialogRefreshDuringALoadStartsNothing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		a := newTestApp()
-		sc, _ := newFakeConn(t)
+		sc, _ := newGConn(t)
 		d := NewPropDialog(a)
 
 		seen := make(chan context.Context, 4)
@@ -89,7 +89,7 @@ func TestPropDialogRefreshDuringALoadStartsNothing(t *testing.T) {
 // current page whatever state it is in.
 func TestPropDialogSupersededPageLoadIsCancelled(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := NewPropDialog(a)
 
 	seen := make(chan context.Context, 4)
@@ -111,7 +111,7 @@ func TestPropDialogSupersededPageLoadIsCancelled(t *testing.T) {
 // the next showing would trip over.
 func TestPropDialogCloseCancelsThePageLoadInFlight(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := NewPropDialog(a)
 
 	seen := make(chan context.Context, 4)
@@ -131,7 +131,7 @@ func TestPropDialogCloseCancelsThePageLoadInFlight(t *testing.T) {
 // does not grow a dead run per page for the life of the dialog.
 func TestPropDialogCompletedPageLoadClearsItsRun(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := NewPropDialog(a)
 
 	seen := make(chan context.Context, 4)

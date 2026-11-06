@@ -43,11 +43,11 @@ func credentialResponses() []fakeResponse {
 	}
 }
 
-func loadCredentialGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadCredentialGeneralPage(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, credentialResponses()...)
+	sc, inst := newGConn(t, credentialResponses()...)
 	name := credentialUnderTest
-	form, apply := loadPage(t, pageCredentialGeneral(sc, &name), inst)
+	form, apply := loadPageG(t, pageCredentialGeneral(sc, &name), inst)
 	return inst, apply, form
 }
 
@@ -155,7 +155,7 @@ func TestCredentialGeneralRefusesAMismatchedConfirmation(t *testing.T) {
 // one has no provider section at all.
 func TestCredentialGeneralShowsTheProviderOnlyForAProviderCredential(t *testing.T) {
 	now := time.Now()
-	sc, inst := newFakeConn(t, fakeResponse{
+	sc, inst := newGConn(t, fakeResponse{
 		match: "FROM   sys.credentials",
 		cols:  7,
 		rows: [][]driver.Value{
@@ -163,7 +163,7 @@ func TestCredentialGeneralShowsTheProviderOnlyForAProviderCredential(t *testing.
 		},
 	})
 	name := "ekm_cred"
-	form, _ := loadPage(t, pageCredentialGeneral(sc, &name), inst)
+	form, _ := loadPageG(t, pageCredentialGeneral(sc, &name), inst)
 
 	var provider *propsheet.StaticRow
 	for _, r := range form.Rows() {

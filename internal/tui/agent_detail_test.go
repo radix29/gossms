@@ -19,7 +19,7 @@ func agentCountsResponse(jobs, schedules, alerts, eventAlerts, operators int64) 
 // on its own row. Every count is distinct, so a row wired to the wrong field —
 // Event alerts showing all alerts, say — shows the wrong number.
 func TestAgentServerDetailCountsFromOneRead(t *testing.T) {
-	sc, fake := newFakeConn(t,
+	sc, fake := newGConn(t,
 		fakeResponse{match: "sys.dm_server_services", cols: 2,
 			rows: [][]driver.Value{{"Running", nil}}},
 		agentCountsResponse(7, 5, 4, 3, 2),
@@ -51,7 +51,7 @@ func TestAgentServerDetailCountsFromOneRead(t *testing.T) {
 func TestAgentServerDetailFailedCountsDash(t *testing.T) {
 	failed := agentCountsResponse(0, 0, 0, 0, 0)
 	failed.err = errors.New("SELECT permission denied on sysjobs")
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		fakeResponse{match: "sys.dm_server_services", cols: 2,
 			rows: [][]driver.Value{{"Stopped", nil}}},
 		failed,

@@ -149,7 +149,7 @@ func specRows() fakeResponse {
 }
 
 func TestAuditsFolderLabelsDisabledAudits(t *testing.T) {
-	sc, _ := newFakeConn(t, auditRows())
+	sc, _ := newGConn(t, auditRows())
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 	children, err := loadAuditsChildren(l, &explorerNode{data: nodeData{Type: NodeAudits, conn: sc}})
 	if err != nil {
@@ -171,7 +171,7 @@ func TestAuditsFolderLabelsDisabledAudits(t *testing.T) {
 }
 
 func TestSpecificationsFolderLabelsDisabledSpecs(t *testing.T) {
-	sc, _ := newFakeConn(t, specRows())
+	sc, _ := newGConn(t, specRows())
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 	children, err := loadServerAuditSpecificationsChildren(l,
 		&explorerNode{data: nodeData{Type: NodeServerAuditSpecifications, conn: sc}})
@@ -193,7 +193,7 @@ func TestSpecificationsFolderLabelsDisabledSpecs(t *testing.T) {
 // -- the Details pane ----------------------------------------------------------
 
 func TestAuditsFolderDetailReadsTheFileBlock(t *testing.T) {
-	sc, _ := newFakeConn(t, auditRows())
+	sc, _ := newGConn(t, auditRows())
 	var objs []nodeData
 	cols, rows, err := auditsFolderDetail(context.Background(), sc,
 		&explorerNode{data: nodeData{Type: NodeAudits}}, &objs)
@@ -237,7 +237,7 @@ func TestAuditDetailReadsTheRightFileCount(t *testing.T) {
 		{"AppLogAudit", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, _ := newFakeConn(t, auditByName(tc.name), auditRows())
+			sc, _ := newGConn(t, auditByName(tc.name), auditRows())
 			_, rows, err := auditDetail(context.Background(), sc,
 				&explorerNode{data: nodeData{Type: NodeAudit, Name: tc.name}})
 			if err != nil {
@@ -259,7 +259,7 @@ func TestAuditDetailReadsTheRightFileCount(t *testing.T) {
 // An orphaned specification is a real state, not a failed read: SQL Server
 // allows the audit behind one to be dropped.
 func TestSpecificationDetailNamesAMissingAudit(t *testing.T) {
-	sc, _ := newFakeConn(t, specByName("Orphan"), specRows())
+	sc, _ := newGConn(t, specByName("Orphan"), specRows())
 	_, rows, err := serverAuditSpecificationDetail(context.Background(), sc,
 		&explorerNode{data: nodeData{Type: NodeServerAuditSpecification, Name: "Orphan"}})
 	if err != nil {
@@ -282,7 +282,7 @@ func TestSpecificationDetailNamesAMissingAudit(t *testing.T) {
 // must land on the object the menu named, not on whichever row is listed
 // first. Both fakes answer by arg for that reason.
 func TestAuditDropDisablesThenDrops(t *testing.T) {
-	sc, inst := newFakeConn(t, auditEnabled("HIPAA", true))
+	sc, inst := newGConn(t, auditEnabled("HIPAA", true))
 	if err := objectOps[NodeAudit].drop(t.Context(), sc,
 		nodeData{Type: NodeAudit, Name: "HIPAA"}); err != nil {
 		t.Fatalf("drop: %v", err)
@@ -297,7 +297,7 @@ func TestAuditDropDisablesThenDrops(t *testing.T) {
 }
 
 func TestSpecificationDropDisablesThenDrops(t *testing.T) {
-	sc, inst := newFakeConn(t, specEnabled("HIPAA_spec", true))
+	sc, inst := newGConn(t, specEnabled("HIPAA_spec", true))
 	if err := objectOps[NodeServerAuditSpecification].drop(t.Context(), sc,
 		nodeData{Type: NodeServerAuditSpecification, Name: "HIPAA_spec"}); err != nil {
 		t.Fatalf("drop: %v", err)
@@ -313,7 +313,7 @@ func TestSpecificationDropDisablesThenDrops(t *testing.T) {
 
 // A disabled object must not be switched on by its own delete.
 func TestDroppingADisabledAuditDoesNotToggleIt(t *testing.T) {
-	sc, inst := newFakeConn(t, auditEnabled("HIPAA", false))
+	sc, inst := newGConn(t, auditEnabled("HIPAA", false))
 	if err := objectOps[NodeAudit].drop(t.Context(), sc,
 		nodeData{Type: NodeAudit, Name: "HIPAA"}); err != nil {
 		t.Fatalf("drop: %v", err)

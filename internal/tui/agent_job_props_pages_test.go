@@ -14,13 +14,13 @@ import (
 // Steps: agent_job_props_steps_test.go (write plan) and
 // agent_job_steps_page_test.go (page end to end).
 
-func loadJobPage(t *testing.T, extra []fakeResponse, build func(sc *db.ServerConn, name *string) propPage) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadJobPage(t *testing.T, extra []fakeResponse, build func(sc *db.ServerConn, name *string) propPage) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
 	job := jobRow(agentJobName, "Database Maintenance", "appuser", true, 0, 0, "")
 	responses := append(agentJobResponses(job), extra...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := agentJobName
-	form, apply := loadPage(t, build(sc, &name), inst)
+	form, apply := loadPageG(t, build(sc, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -148,7 +148,7 @@ const (
 	schedNameCol   = 1
 )
 
-func loadJobSchedulesPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadJobSchedulesPage(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
 	inst, apply, form, _ := loadJobPage(t, agentScheduleResponses(),
 		func(sc *db.ServerConn, n *string) propPage { return pageJobSchedules(sc, n) })
@@ -205,7 +205,7 @@ const (
 	alertNameCol = 1
 )
 
-func loadJobAlertsPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadJobAlertsPage(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
 	inst, apply, form, _ := loadJobPage(t, agentAlertResponses(),
 		func(sc *db.ServerConn, n *string) propPage { return pageJobAlerts(sc, n) })

@@ -24,13 +24,13 @@ const blobDest = "https://acct.blob.core.windows.net/backups/AppDB_full.bak"
 // nothing these dialogs gate is a permission question.
 func azureConn(t *testing.T) *db.ServerConn {
 	t.Helper()
-	sc, _ := newFakeConnOnAzureMI(t)
+	sc, _ := newGConnOnAzureMI(t)
 	return sc
 }
 
 func onPremConn(t *testing.T) *db.ServerConn {
 	t.Helper()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	return sc
 }
 

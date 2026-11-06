@@ -36,10 +36,11 @@ func keyOwnerNote(noun string) propsheet.Row {
 }
 
 // keyOwnerRow is the Owner select for a key family's General page: the
-// database's users, and its roles as well when withRoles — only a symmetric
-// key may be owned by one. The current owner is kept even when it is not in
-// the list (a certificate-mapped user, an application role), so an untouched
-// row stays clean.
+// database's users and application roles, and its roles as well when
+// withRoles — only a symmetric key may be owned by one, while all three key
+// families take an application role. The current owner is kept even when it
+// is not in the list (a certificate-mapped user), so an untouched row stays
+// clean.
 func keyOwnerRow(ctx context.Context, sc *db.ServerConn, dbName, current string, withRoles bool) (*propsheet.SelectRow, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
@@ -55,7 +56,11 @@ func keyOwnerRow(ctx context.Context, sc *db.ServerConn, dbName, current string,
 			return nil, err
 		}
 	}
-	return selectPreserving("Owner", principalNames(users, roles), current, unknownOwnerItem), nil
+	appRoles, err := d.ApplicationRoles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return selectPreserving("Owner", principalNames(users, roles, appRoles), current, unknownOwnerItem), nil
 }
 
 // keyOwnerApply writes an edited Owner row through change, and does nothing

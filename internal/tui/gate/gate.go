@@ -363,7 +363,10 @@ var (
 	// individual procedures rather than the database-scope EXECUTE a permission
 	// probe can ask about. See AgentWriteRights.
 	SQLAgentUser = Right{Name: "SQLAgentUserRole", Membership: true, InDB: "msdb"}
-	MsdbOwner    = Right{Name: "db_owner", Membership: true, InDB: "msdb"}
+	// SQLAgentOperator is the one Agent role msdb grants its alert tables and
+	// procedures to. See AgentAlertReadRights.
+	SQLAgentOperator = Right{Name: "SQLAgentOperatorRole", Membership: true, InDB: "msdb"}
+	MsdbOwner        = Right{Name: "db_owner", Membership: true, InDB: "msdb"}
 	// DatabaseMailUser is msdb's DatabaseMailUserRole, whose grants are EXECUTE on
 	// sp_send_dbmail and two more procedures; a membership for SQLAgentUser's
 	// reason. See DatabaseMailSendRights.

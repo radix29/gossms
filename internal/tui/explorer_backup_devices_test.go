@@ -121,7 +121,7 @@ func TestBackupDeviceDropStatement(t *testing.T) {
 		{"delete the file", true, `EXEC sp_dropdevice @logicalname = N'NightlyDev', @delfile = N'DELFILE'`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, inst := newFakeConn(t)
+			sc, inst := newGConn(t)
 			err := objectOps[NodeBackupDevice].dropWithOption(t.Context(), sc,
 				nodeData{Type: NodeBackupDevice, Name: "NightlyDev"}, tc.deleteFile)
 			if err != nil {
@@ -138,7 +138,7 @@ func TestBackupDeviceDropStatement(t *testing.T) {
 // The Details pane reads gosmo independently of the tree, so it is its own
 // chance to list the wrong thing.
 func TestBackupDevicesFolderDetailListsEveryDevice(t *testing.T) {
-	sc, _ := newFakeConn(t, fakeResponse{
+	sc, _ := newGConn(t, fakeResponse{
 		match: "FROM   sys.backup_devices",
 		cols:  3,
 		rows: [][]driver.Value{

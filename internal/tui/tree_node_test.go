@@ -25,17 +25,29 @@ func TestAgentJobsIconIsStopwatchNotFolder(t *testing.T) {
 	}
 }
 
-// TestGroupedFolderTypes pins the families Group by Schema regroups: the main
-// object folders only, with the System * folders, Sequences and Types left
-// flat (decided scope). Every NodeType is checked, so a type added to the set
-// by accident fails here too.
+// TestGroupedFolderTypes pins the families Group by Schema regroups: the
+// schema-scoped folders whose listings carry a schema, with System Data Types
+// and the other families left flat. Every NodeType is checked, so a type added
+// to the set by accident fails here too.
 func TestGroupedFolderTypes(t *testing.T) {
 	want := map[NodeType]bool{
-		NodeTables:           true,
-		NodeViews:            true,
-		NodeSynonyms:         true,
-		NodeStoredProcedures: true,
-		NodeFunctions:        true,
+		NodeTables:                true,
+		NodeSystemTables:          true,
+		NodeFileTables:            true,
+		NodeExternalTables:        true,
+		NodeGraphTables:           true,
+		NodeViews:                 true,
+		NodeSystemViews:           true,
+		NodeSynonyms:              true,
+		NodeStoredProcedures:      true,
+		NodeSystemProcedures:      true,
+		NodeFunctions:             true,
+		NodeSystemFunctions:       true,
+		NodeSequences:             true,
+		NodeUserDefinedDataTypes:  true,
+		NodeUserDefinedTableTypes: true,
+		NodeUserDefinedTypes:      true,
+		NodeXMLSchemaCollections:  true,
 	}
 	for nt := range nodeTypeCount {
 		if got := groupedFolderTypes[nt]; got != want[nt] {
@@ -65,7 +77,7 @@ func TestSchemaGroupNode(t *testing.T) {
 		}
 	}
 
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	a := newTestApp()
 	folder := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, conn: sc, DBName: "db1"}}
 	group := &explorerNode{label: "dbo", parent: folder, data: nodeData{

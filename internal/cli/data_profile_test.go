@@ -13,21 +13,23 @@ import (
 	"github.com/radix29/gossms/internal/query"
 )
 
-// dataProfileFake is objectFake with Sales.Customer's columns replaced, and the
-// database's alias types counted as read.
-type dataProfileFake struct {
-	*objectFake
-	cols      []*gosmo.Column
-	typesRead int
+// newProfileServer is objectServer with Sales.Customer's columns replaced
+// by cols. Its alias type dbo.Phone is a varchar.
+func newProfileServer(t *testing.T, cols []*gosmo.Column) *objectServer {
+	s := newObjectServer(t)
+	s.tableColumns = cols
+	return s
 }
 
-func (c *dataProfileFake) TableColumns(context.Context, *gosmo.Table) ([]*gosmo.Column, error) {
-	return c.cols, nil
-}
-
-func (c *dataProfileFake) UserDefinedDataTypes(context.Context, *gosmo.Database) ([]*gosmo.UserDefinedDataType, error) {
-	c.typesRead++
-	return []*gosmo.UserDefinedDataType{{Schema: "dbo", Name: "Phone", BaseType: "varchar"}}, nil
+// typesRead is how many times s answered the database's alias types read.
+func typesRead(s *objectServer) int {
+	n := 0
+	for _, q := range s.Queries() {
+		if strings.Contains(q.Text, "WHERE  t.is_user_defined = 1 AND t.is_table_type = 0") {
+			n++
+		}
+	}
+	return n
 }
 
 // profileColumns is one column per aggregate shape, an alias type, and a
@@ -73,9 +75,9 @@ func oneRowSet(cols []string, cells []*string) *query.Result {
 
 func cell(v string) *string { return &v }
 
-func dataProfileDeps(t *testing.T, cat cmd.Catalog, answer func(string) *query.Result) (cmd.Deps, *dataProfileSession, *int) {
+func dataProfileDeps(t *testing.T, s *objectServer, answer func(string) *query.Result) (cmd.Deps, *dataProfileSession, *int) {
 	sess := &dataProfileSession{fakeSession: &fakeSession{t: t}, answer: answer}
-	d, dialled, _ := dataDeps(t, cat, sess.fakeSession)
+	d, dialled, _ := dataDeps(t, s, sess.fakeSession)
 	d.OpenSession = func(context.Context, *db.ServerConn, string) (cmd.Session, error) { return sess, nil }
 	return d, sess, dialled
 }
@@ -132,7 +134,7 @@ func profileAnswer(script string) *query.Result {
 }
 
 func TestDataProfile(t *testing.T) {
-	cat := &dataProfileFake{objectFake: newObjectFake(), cols: profileColumns()}
+	cat := newProfileServer(t, profileColumns())
 	d, sess, _ := dataProfileDeps(t, cat, profileAnswer)
 	r := runData(t, d, "profile", "Sales.Customer", "--where", "id > 0 -- positive", "--top-values", "2")
 	if r.exit != 0 {
@@ -148,8 +150,8 @@ func TestDataProfile(t *testing.T) {
 	if !slices.Equal(sess.executed, want) {
 		t.Errorf("sent:\n%s\nwant:\n%s", strings.Join(sess.executed, "\n----\n"), strings.Join(want, "\n----\n"))
 	}
-	if cat.typesRead != 1 {
-		t.Errorf("alias types read %d times", cat.typesRead)
+	if typesRead(cat) != 1 {
+		t.Errorf("alias types read %d times", typesRead(cat))
 	}
 	env := envelope(t, r.stdout)
 	if dataField(t, env, "tsql") != wantProfileStatement || dataField(t, env, "type") != "table" {
@@ -182,7 +184,7 @@ func TestDataProfile(t *testing.T) {
 }
 
 func TestDataProfileColumnsAndNoAliasRead(t *testing.T) {
-	cat := &dataProfileFake{objectFake: newObjectFake(), cols: profileColumns()}
+	cat := newProfileServer(t, profileColumns())
 	d, sess, _ := dataProfileDeps(t, cat, profileAnswer)
 	r := runData(t, d, "profile", "Sales.Customer", "--columns", "NAME,id")
 	if r.exit != 0 {
@@ -191,8 +193,8 @@ func TestDataProfileColumnsAndNoAliasRead(t *testing.T) {
 	// In the order given; no alias type among them, so none is read; no
 	// --top-values, so one statement.
 	if len(sess.executed) != 1 || !strings.Contains(sess.executed[0], "[nulls_0],\n    COUNT_BIG(DISTINCT [name])") ||
-		strings.Contains(sess.executed[0], "flag") || cat.typesRead != 0 {
-		t.Errorf("sent %q, types read %d", sess.executed, cat.typesRead)
+		strings.Contains(sess.executed[0], "flag") || typesRead(cat) != 0 {
+		t.Errorf("sent %q, types read %d", sess.executed, typesRead(cat))
 	}
 	if rows := envelope(t, r.stdout)["resultSets"].([]any); len(rows) != 1 {
 		t.Errorf("sets %v", rows)
@@ -211,7 +213,7 @@ func TestDataProfileChunks(t *testing.T) {
 	for i := range 230 {
 		cols = append(cols, &gosmo.Column{Name: fmt.Sprintf("c%d", i+1), DataType: "xml"})
 	}
-	cat := &dataProfileFake{objectFake: newObjectFake(), cols: cols}
+	cat := newProfileServer(t, cols)
 	n := 0
 	d, sess, _ := dataProfileDeps(t, cat, func(script string) *query.Result {
 		n++
@@ -252,7 +254,7 @@ func TestDataProfileChunks(t *testing.T) {
 // A failed aggregate: the server's error, no sets, nothing more sent.
 func TestDataProfileDenied(t *testing.T) {
 	se := &gosmo.SQLError{Number: 230, Class: 14, State: 1, Message: "The SELECT permission was denied on the column 'doc'"}
-	cat := &dataProfileFake{objectFake: newObjectFake(), cols: profileColumns()}
+	cat := newProfileServer(t, profileColumns())
 	d, sess, _ := dataProfileDeps(t, cat, func(string) *query.Result {
 		return &query.Result{Batches: 1, FailedBatches: 1, Messages: []query.Message{{Text: se.Header(), IsError: true, SQL: se}}}
 	})
@@ -279,7 +281,7 @@ func TestDataSampleComposesTheSelect(t *testing.T) {
 			"SELECT TOP (5) [CustomerName]\nFROM [Sales].[vCustomer]\nWHERE (id > 1 -- x\n)\nORDER BY NEWID()\n"},
 	} {
 		sess := &fakeSession{t: t, run: oneRow}
-		d, _, _ := dataDeps(t, newObjectFake(), sess)
+		d, _, _ := dataDeps(t, newObjectServer(t), sess)
 		r := runData(t, d, append([]string{"sample"}, tc.argv...)...)
 		if r.exit != 0 {
 			t.Errorf("%v: exit %d\n%s", tc.argv, r.exit, r.stdout)
@@ -306,7 +308,7 @@ func TestDataSampleAndProfileRefusals(t *testing.T) {
 		{[]string{"sample", "Sales.Customer", "--order-by", "id"}, 2, "--order-by"},
 	} {
 		sess := &fakeSession{t: t}
-		d, dialled, _ := dataDeps(t, newObjectFake(), sess)
+		d, dialled, _ := dataDeps(t, newObjectServer(t), sess)
 		r := runData(t, d, tc.argv...)
 		if r.exit != tc.exit || *dialled != 0 || !strings.Contains(r.stdout, tc.want) {
 			t.Errorf("%q: exit %d, dialled %d, want %d and %q\n%s", tc.argv, r.exit, *dialled, tc.exit, tc.want, r.stdout)

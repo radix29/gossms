@@ -16,9 +16,9 @@ import (
 // the statement — a cascade box that changes nothing, or a transfer that moves
 // the object the menu was not opened on, are both invisible from the UI.
 
-func opTestConn(t *testing.T) (*db.ServerConn, *fakeInstance) {
+func opTestConn(t *testing.T) (*db.ServerConn, *gFake) {
 	t.Helper()
-	return newFakeConn(t,
+	return newGConn(t,
 		fakeResponse{match: "FROM sys.databases", arg: "appdb", cols: 11, rows: [][]driver.Value{
 			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0), false},
 		}},
@@ -237,7 +237,9 @@ func TestRenameColumnRenamesInItsOwnTable(t *testing.T) {
 			t.Errorf("statement = %q, want it to contain %q", got, want)
 		}
 	}
-	assertArgs(t, inst, "sp_rename", "[sales].[Orders].[flagged]", "is_flagged")
+	if args, ok := inst.ExecArgs("sp_rename"); !ok || len(args) != 2 || args[0] != "[sales].[Orders].[flagged]" || args[1] != "is_flagged" {
+		t.Errorf("sp_rename args = %v (ran %v), want [[sales].[Orders].[flagged]] [is_flagged]", args, ok)
+	}
 }
 
 // Declining the warning must leave the column alone: the prompt has already
@@ -300,7 +302,7 @@ func TestDropsThroughDbOfReadNoCatalog(t *testing.T) {
 		t.Run(nodeTypeName(tc.nt), func(t *testing.T) {
 			// No scripted sys.databases row: a drop that looks one up gets no
 			// answer and fails, which is the second half of what this pins.
-			sc, inst := newFakeConn(t, tc.resp...)
+			sc, inst := newGConn(t, tc.resp...)
 			if err := objectOps[tc.nt].drop(t.Context(), sc, tc.n); err != nil {
 				t.Fatalf("drop: %v", err)
 			}
@@ -354,7 +356,7 @@ func TestSchemaScopedObjectOpsSendTheirOwnStatement(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(nodeTypeName(tc.nt)+"/"+tc.op, func(t *testing.T) {
-			sc, inst := newFakeConn(t)
+			sc, inst := newGConn(t)
 			op := objectOps[tc.nt]
 			n := nodeData{Type: tc.nt, DBName: "appdb", Schema: "sales", Name: "obj"}
 			var err error
@@ -392,7 +394,7 @@ func TestSchemaScopedObjectOpsSendTheirOwnStatement(t *testing.T) {
 func TestRenameConstraintAddressesTheConstraint(t *testing.T) {
 	for _, nt := range []NodeType{NodeForeignKey, NodeCheck} {
 		t.Run(nodeTypeName(nt), func(t *testing.T) {
-			sc, inst := newFakeConn(t)
+			sc, inst := newGConn(t)
 			n := nodeData{Type: nt, DBName: "appdb", Schema: "sales", Name: "FK_a", TableName: "Orders"}
 			if err := objectOps[nt].rename(t.Context(), sc, n, "FK_b"); err != nil {
 				t.Fatalf("rename: %v", err)

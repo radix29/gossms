@@ -61,6 +61,9 @@ func agentJobResponses(job []driver.Value) []fakeResponse {
 			jobRow("Backup log", "Database Maintenance", "sa", true, 0, 0, ""),
 			job,
 		}},
+		// The Agent state read (gosmo's xp_sqlagent_enum_jobs): no job running.
+		// fakedb answered it empty unscripted; gosmotest fails on it.
+		{match: "xp_sqlagent_enum_jobs", cols: 2},
 	}
 }
 
@@ -82,7 +85,7 @@ func agentOperatorResponses() []fakeResponse {
 		operatorRow(3, "weekend-cover", "cover@example.com", "", false),
 	}
 	return []fakeResponse{
-		{match: "WHERE o.name = @p1", cols: 13, rows: [][]driver.Value{rows[1]}},
+		{match: "WHERE  o.name = @p1", cols: 13, rows: [][]driver.Value{rows[1]}},
 		{match: "FROM   msdb.dbo.sysoperators o", cols: 13, rows: rows},
 	}
 }

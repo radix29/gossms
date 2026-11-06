@@ -18,11 +18,13 @@ Managed Instance.
 (`~/go/gosmo/live_versionsweep_test.go`) calls every gosmo read and reports
 rejections. Run it on the *oldest* instance after any query change — a missing
 column fails the whole read and `go test ./...` says nothing. Expected
-refusals: every on-prem major refuses the six Azure-only DMV reads; 13 also
-refuses six 2017+ reads with `ErrUnsupportedVersion` (two Query Store wait
-reads, three external-library reads, graph tables). Compare failures, not call
-totals (those vary with each instance's logins/jobs). Zero failures proves
-nothing if a read was never reached — log the `call` labels to confirm.
+refusals: every on-prem major refuses the seven Azure-only reads (six DMVs
+plus database-scoped XEvent sessions); 13 also refuses six 2017+ reads with
+`ErrUnsupportedVersion` (two Query Store wait reads, three external-library
+reads, graph tables). Last run on 13: 2026-11-05, 439 calls, 0 failed.
+Compare failures, not call totals (those vary with each instance's
+logins/jobs). Zero failures proves nothing if a read was never reached — log
+the `call` labels to confirm.
 
 The per-column gate table is gosmo's (`~/go/gosmo/OPEN-THREADS.md` § Version
 support); this section covers only the environment.
@@ -56,68 +58,10 @@ support); this section covers only the environment.
 
 Settled design: `docs/decisions.md` § Format Document.
 
-- **Additional SQL styles and a picker.** Only Standard is registered. The
-  registry is in place (`format.Styles`/`StyleByID`, unknown or empty ID →
-  first style), and the rule tables sit in `sql_rules.go` so a second style
-  is a table plus switches, not a second engine. Lands with it, not before:
-  Edit > Format Document becomes a cascade (`controls/menu_cascade.go`) with the
-  default style marked, and `config.SQLFormatStyle` plus a Tools > Options
-  dropdown.
 - **Keyword case on a case-sensitive *server* is untried.** Run live in a
   `Latin1_General_CS_AS` database only, where INT, VARCHAR, XML, SYSNAME and
   the built-ins resolve case-insensitively; `sysname` and the CLR types are
   left alone because a CS server collation was not available to check them.
-
-## Shrink: what is left
-
-- **A log file's "Minimum is N MB" is its used space, not its real floor.**
-  A log shrinks no further than its last active VLF, so Shrink > Files labels
-  the figure a lower bound (`shrink_files_dialog.go`). The real floor
-  is readable from `sys.dm_db_log_info` (2016 SP2+; `DBCC LOGINFO` before):
-  the end offset of the highest active VLF. Showing that needs a gosmo read
-  and a version gate for 2016 RTM/SP1.
-
-## Group by Schema: what is left
-
-- **Only the five main families group** (deferred scope). Tables (the folder's own user tables), Views, Synonyms, Stored
-  Procedures and Functions; the System/File/External/Graph Tables
-  sub-folders, System Views/Procedures/Functions, Sequences, Types and every
-  other schema-scoped family stay flat. Extending it is one entry in
-  `groupedFolderTypes` (`tree_node_kinds.go`) plus a Details check
-  (`detail_browser_group_schema.go`) per family.
-
-## Security and sequences: what is left
-
-- **Application roles have no Script menu.** gosmo has no
-  `ScriptApplicationRole`; Script Database Security emits the one-role form
-  privately.
-- **The owner pickers never offer an application role**, though one can own
-  a schema. `principalNames(users, roles)` feeds Owned Schemas' transfer
-  picker, New Schema, Schema Properties, the key owner pickers and
-  Full-Text.
-- **A login with no right on an application role sees the folder empty**
-  (catalog visibility).
-- **Sequences: values are int64**, so a `decimal(38,0)` sequence's range
-  past bigint can't be written. There is no Last Used Value row (gosmo's
-  `Sequence.noLastUsed` is unexported).
-
-## Theme contrast: what is left
-
-`TestEveryStyleMeetsTheContrastFloor` (`internal/tuikit/theme/contrast_test.go`)
-checks the `theme.Style*` functions only. Two colour pairs drawn elsewhere read
-below its floors (found 2026-11-04, not fixed):
-
-- **The dashboard header's instance name** (`dashboard/common.go`) is
-  `ChartCyan` on `MenuBar`: bright cyan on cyan in mc (2.2:1) and mc - retro
-  (2.3:1), and 3.5:1 in Light. It needs a foreground role for an emphasised
-  word on a `MenuBar` ground, which the palette lacks.
-- **The results status line's truncation alert** (`QueryPanel.resultsStatusStyle`)
-  is bold white on `Error`: 3.1:1 in mc - retro (VGA bright red), 4.2:1 in
-  mc. White on red is mc's own error colour.
-- **Two B1 restylings never driven** (2026-11-04): the toolbar button's hover
-  and Activity Monitor's selected tab now call `StyleMenuSelected`. Both need
-  a mouse click, which the tmux run did not make. Their colours did not
-  change in any palette, so this is the call site, not the contrast.
 
 ## Command line: what is left
 
@@ -132,31 +76,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   that a read-only connection reaches a secondary.
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
-- **A History row can clip the login off** (pre-existing). The label budgets
-  (`matchServerWidth` 14, `matchDatabaseWidth` 8) fill the 30-column pane
-  without the ListBox's two-column marker, so a long server *and* database
-  (`win10cli.fritz.box`, `HealthClinic`) cut `,sa` — the thing that tells two
-  entries for one server apart.
-- **`object dependencies`' permission hint may be wrong** (found 2026-10-29
-  in phase 3.i). Its PERMISSION_DENIED hint and `docs/cli.md` § Commands say
-  SELECT on `sys.sql_expression_dependencies` is db_owner's only by default.
-  On majors 14 and 17 a db_datareader login (no VIEW DEFINITION) reads it
-  fine and gets an empty set: metadata visibility hides the edges, no error.
-  The exit 9 that 3.f recorded on 17 came from some other setup (an explicit
-  DENY?). Re-check which login gets exit 9, then fix the hint and the row.
-  **Same cause, in scripting** (found 2026-10-30 in phase 6.l, on 17, 14, 13
-  and ubusql1): a table's DROP / DROP AND CREATE (TUI Script As and `script
-  object`) names the modules schema-bound to it in a comment (gosmo
-  `schemaBoundDependents`); a db_datareader login gets no rows and the
-  comment silently goes missing — the script itself is the same, but the
-  warning that its DROP will fail with Msg 3729 is not there. Decide in gosmo:
-  refuse (as a hidden default or filter is refused) when the login lacks VIEW
-  DEFINITION, or say in the comment that dependents could not be read.
-- **No Generate Scripts wizard** (phase 6, D7): `script db` is the
-  database's own CREATE, not its objects. Scripting every object in
-  dependency order (`--objects`, `--include-permissions`) needs
-  dependency-ordered scripting in gosmo first — SCHEMABINDING, cycles — a
-  feature the size of a phase. Neither the TUI nor the command line has it.
 - **A bulk load cannot carry a character the database's code page lacks to
   a varchar column whose code page has it** (found 2026-10-30 in phase 6.i,
   live on 17 and 13). INSERT BULK declares the columns without COLLATE, so
@@ -165,6 +84,17 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   not UTF-8, `Ж` cannot reach a Cyrillic varchar column of a Latin1
   database; gosmo's `BulkInsert` (which since 2026-11-04 checks and encodes
   every value) refuses it by name rather than storing `?`.
+  **Blocked on go-mssqldb** (checked 2026-11-05 against v1.11.2, the latest;
+  review plan F17, left as is by the author's call). Live on 17, a driver
+  patched to append `COLLATE Cyrillic_General_CI_AS` to the column's INSERT
+  BULK declaration stored `0xC6` as `Ж` (stock: `?`), so a per-column COLLATE
+  plus encoding each value in its column's code page would fix it. But the
+  driver writes that column list itself (`makeDecl` in its `bulkcopy.go`,
+  never a COLLATE) and `mssql.CopyIn` takes only names; nor can a column be
+  sent as nvarchar instead, since each column's wire type comes from the
+  table's own `SELECT *` metadata. Reopen when the driver lets a caller
+  declare a column's collation (an upstream PR; a forked `replace` would not
+  reach gosmo's dependents).
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.
@@ -173,31 +103,7 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-- **The audit log is never rotated** (phase 8, D10): `audit.jsonl` grows
-  one line per write or refusal for ever. Deferred by decision; a size cap
-  with one `.1` generation, taken under the same lock, is the likely form.
-- **The `job` commands need sysadmin in practice** (phase 8, found in
-  8.h): gosmo's job reads (`Jobs`, `JobByName`, `Steps`, `History`,
-  `SearchJobHistory`) SELECT from msdb's `sysjobs`, `sysjobservers`,
-  `sysjobactivity` and `sysjobhistory`, and msdb grants the Agent roles only
-  `sysjobs_view`, `sysschedules_localserver_view`, `syscategories` and the
-  `sp_help_job*` procedures — a SQLAgentReaderRole member is refused
-  `sysjobservers` (Msg 229, on 17), so `job list` and every job command
-  that reads the job first is exit 9. The TUI's Agent node shares it.
-  Reading through `sp_help_job`/`sp_help_jobhistory` (or the views) for a
-  non-sysadmin in gosmo would fix both; SQLAgentUserRole would then see
-  only its own jobs, as SSMS does.
-- **`agent context` does not answer for every phase 8 right** (8.l):
-  IMPERSONATE (`security permissions --effective`) is per principal, the
-  rights to grant depend on the securable, and server role membership on the
-  role, so none is in `missing_permissions` — the server's refusal is exit 9
-  with a hint. CREATE DATABASE granted in master alone reads as a lack of
-  CREATE ANY DATABASE (`db create`, `maint restore`), a false positive.
-  `maint backup`'s and `checkdb`'s rows answer for the connection's
-  database, not the `<database>` argument. Probing IMPERSONATE ANY LOGIN and
-  CREATE DATABASE in master in gosmo would narrow the first and close the second.
-
-- **Only the `object` group is off the `Catalog` seam** (2026-11-04, the
+- **Only the `object`, `script`, `data`, `security`, `maint` and `monitor` groups are off the `Catalog` seam** (2026-11-04, the
   pilot of review Q1 option A). Past connecting and resolving the name,
   `object list/search/describe/definition/dependencies/indexes/stats` call
   gosmo directly, and their tests serve gosmo canned rows through gosmo's
@@ -205,14 +111,131 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `serverCatalog` about 150 lines of delegation. The cost, measured: the
   object fakes (about 500 lines) became a 624-line row server, since each
   read needs its full row (41 values for a column, 39 for an index); the
-  trimmed `objectFake` (`catalog_fake_test.go`) stays for the data, script
-  and import tests. Five mutations, three of them in gosmo's scanning, each
+  trimmed `objectFake` stayed for the data and import tests until `data`
+  moved too. Five mutations, three of them in gosmo's scanning, each
   failed an object test; under the fakes the gosmo ones passed every test.
-  Still on the seam: everything else — the shared reads in `Catalog`
-  (resolution, tables' and views' children for data, grants and maint
-  index), and all of `Writer`. Whether to move the rest group by group is the
-  author's call. `internal/tui/fakedb_test.go` is a second, older scripted
-  driver of the same kind; it could move onto `gosmotest` too.
+  `script` followed (2026-11-05, plan step 16): `script object/db` call
+  `internal/scripting` on the resolved database's gosmo Server, and
+  `Catalog.Script` is gone. `scriptServer` (`script_server_test.go`, 127
+  lines) adds the Scripter's reads on top of `objectServer` — most rows it
+  needed (columns, indexes, keys, parameters) were already there — so the
+  tests now check the real script text. Five gosmo scanning mutations
+  (trigger order, the DROP's schema-bound and foreign-key notes, the table
+  options row, the module row) each failed a script test; the old `Script`
+  fake never reached gosmo. `script db` is tested with `--as drop` only: a
+  CREATE's file, option and settings reads are left to gosmo's tests.
+  `data` followed (2026-11-05, plan step 17): `data top/sample/count/
+  profile/export/import` read the columns, the row count, the alias types
+  and a collation's code page from gosmo; `Catalog.RowCount` and
+  `CollationCodePage` are gone, and so is `objectFake`. Its tests run on
+  `objectServer` (a `tableColumns` knob, a code-page rule); the row
+  encoders moved to `internal/cli/clitest` so package `cmd`'s tests can
+  build rows too (`catalogServer`, used by the dry-run harness's import
+  case). Two mutations — gosmo's column scan with max_length and precision
+  swapped, and `data count --approximate` on a `TableRef` — each failed a
+  data test. `data import`'s writes (`TruncateTable`, `BulkInsert`) are
+  still `Writer`'s.
+  `security` followed (2026-11-05, plan step 17, "grants"): the principal
+  reads and the grant read-back are shared with `security permissions`
+  and `role-members`, so the whole group moved — 23 `Catalog` methods
+  gone. `secServer` (`cmd/security_server_test.go`, 344 lines) replaces
+  `secCatalog` and `permCatalog`; `permWriter` stays a `Writer` fake but
+  changes `secServer`'s state, which the rules read back. Roles' member
+  lists and role-members now come from one source, and every list read
+  comes back in its ORDER BY — three tests had asserted a fake's
+  insertion order. Seven gosmo scanning mutations (login flags, the
+  schema row's normalization, role members, a user's login, server and
+  column permission/state, a type's schema/name) each failed a security
+  test.
+  `maint` followed (2026-11-05, plan step 17): backup, backup-history,
+  restore, index-fragmentation, index-rebuild, update-stats and checkdb
+  read the media (HEADERONLY, FILELISTONLY), msdb's history, the
+  instance's files, the indexes, fragmentation and statistics from gosmo
+  past resolution — 13 `Catalog` methods gone, the tables' and views'
+  by-name reads with them. `maintServer` (`cmd/maint_server_test.go`, 313
+  lines, over `catalogServer`) replaces `backupCatalog`, `restoreCatalog`
+  and `indexCatalog` (about 390 lines fewer in the three test files); the
+  three writers stay `Writer` fakes that change its state. Its HAVING and
+  ORDER BY are the server's: index-fragmentation drops what is under
+  `--min-percent`, and backup-history `--all` reads the databases in name
+  order — two expectations had relied on the fakes'. gosmotest's `Info`
+  gained `HADREnabled` for the availability-group refusal. Seven gosmo
+  scanning mutations (a header's start, history LSNs, LastBackups' log,
+  database fragmentation pages, statistics rows sampled, an instance
+  file's name, a file list's logical name) and one in gossms (a `TableRef`
+  for the rebuild's table) each failed a maint test.
+  Those three groups' writes followed (2026-11-05, plan step 17, the
+  `Writer` step's first part): `security` grant/deny/revoke and role
+  members, `maint` backup, restore (and --verify-only), index-rebuild,
+  update-stats and checkdb, and `data import`'s TRUNCATE and bulk load
+  call gosmo directly; 15 `Writer` methods are gone, and with them
+  `permWriter`, `backupWriter`, `restoreWriter`, `indexWriter`,
+  `loadWriter` and `importWriter`. The test servers take the statements
+  instead (`applyWrite`), so the tests now see gosmo's real statement
+  text; the dry-run harness compares a direct writer's dry run with what
+  gosmo's statement observer reports the real run sent. gosmotest gained
+  what this needed: BACKUP/RESTORE's progress-message stream and the bulk
+  load (`INSERTBULK` rows, the flush's count), and gosmo
+  `ScriptCollector.Add`. Seven gosmo mutations (server grant without `USE
+  master`, a role's DROP sent as ADD, WITH GRANT OPTION dropped, BACKUP's
+  CHECKSUM dropped, RESTORE's MOVE dropped, CHECKDB's ObjectId scan, the
+  bulk load's KEEPNULLS) and four in gossms each failed a test; under the
+  fakes the gosmo ones passed every test but the dry-run ones.
+  `monitor` followed whole (2026-11-05, plan step 17, the first group of
+  the `Writer` step's second part), with `plan cached`, which shares its
+  VIEW SERVER STATE check: sessions, blocking, waits, top-queries,
+  querystore and deadlocks read gosmo directly, and kill sends its KILL
+  through it — 13 `Catalog` methods (sessions, waits, the plan cache, the
+  six Query Store reports and metrics, the event-file read) and
+  `Writer.KillSession` gone. `monitorServer` (`cmd/monitor_server_test.go`,
+  443 lines, over `catalogServer`) replaces `monitorCatalog`, `killCatalog`
+  and `killWriter`; the xevent tests, which had shared `monitorCatalog`,
+  got their own `xeCatalog`. The reads answer in their ORDER BY and apply
+  their TOP, HAVING and filters (`--include-system` now shows a system
+  session; `--plan-database` keeps a plan by its database id; a regression
+  floor drops a query with no baseline — the old regressed fixture had a
+  row the server would never return). The Query Store tests assert the
+  report's query (window, TOP, value expression, HAVING) where they had
+  asserted the options handed to a fake, and the 2016 refusals come from
+  gosmo's own version gates (`Info.ProductVersion` 13). Nine gosmo
+  scanning mutations (a session's counters and its user-process flag, wait
+  time, a cached statement's totals and handles, a regressed row's
+  baseline, a wait category's value, the event-file filter, an event
+  session's running flag) and four in gossms each failed a test.
+  `server` info, memory, config and traceflag followed (2026-11-06, plan
+  step 17): they read and write (`sp_configure`, DBCC TRACEON/OFF) through
+  gosmo directly; seven `Catalog` methods (processor, start time, memory
+  stats, clerks, performance counters, configurations, trace flags) and
+  `Writer.ApplyConfiguration`/`SetTraceFlag` gone. `instanceServer`
+  (`cmd/server_state_test.go`, over `catalogServer`) replaces
+  `serverInfoCatalog`, `configWriter`, `traceFlagCatalog` and
+  `traceFlagWriter`; its writes change its options and flags from the
+  T-SQL. Option defaults are now gosmo's own table's (the fake's capitalised
+  `Backup checksum default` had one the real, lower-case name has; its
+  reset case is `Backup-Compression`). `server log` and `server volumes`
+  stay on `Catalog`. Eight gosmo scanning/statement mutations and five in
+  gossms each failed a test (one boundary survivor got its test).
+  `xevent` sessions and capture followed (2026-11-06, plan step 17): the
+  session reads, status, ring_buffer, and the CREATE/START/STOP/DROP go
+  through `sc.Server.XEvents()` (`Database.XEvents()` on Azure SQL
+  Database); five `Catalog` methods (`HasViewServerState`,
+  `EventSessions`, `EventSessionStatus`, `EventSessionByName`,
+  `ReadRingBuffer`) and the four event-session `Writer` methods gone.
+  `xeServer` (`cmd/xevent_server_test.go`, over `catalogServer`) replaces
+  `xeCatalog`, `captureCatalog` and `captureWriter`; its writes create,
+  start, stop and drop sessions as the server would, and its `steps` are
+  what a capture's cleanup is judged by. `clitest.EventXML` now carries
+  actions, a field's `<text>` and `event_sequence`. Eleven mutations (five
+  gosmo, six gossms) each failed a test.
+  `db` create/drop/set/scoped-config and `job` list/show/history/start/stop
+  moved the same way (`dbServer`, `jobServer`); `Writer` is gone entirely.
+  Still on the seam: the shared reads in `Catalog` (resolution, the
+  databases, server info, availability groups, the log and volume reads),
+  which the groups not yet moved still read through. Whether to move those
+  is the author's call. `internal/tui/fakedb_test.go` is gone (fix plan step 18): the
+  `fakeResponse` fixture DSL and capability builders live in
+  `gosmotest_fixtures_test.go`, served by `gosmotest` through
+  `gosmotest_bridge_test.go`; the form helpers in `form_helpers_test.go`.
 
 ## Fix order
 

@@ -59,8 +59,8 @@ func loginGeneralResponses(name, loginType string) []fakeResponse {
 // A page opened and closed must write nothing at all — and on this page that
 // includes not sending a password.
 func TestLoginGeneralWritesNothingWhenUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	_, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	_, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -83,8 +83,8 @@ func TestLoginGeneralWritesTheDefaultsChosen(t *testing.T) {
 		{"Default language", "Français", "DEFAULT_LANGUAGE"},
 	} {
 		t.Run(tc.label, func(t *testing.T) {
-			sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-			form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+			sc, inst := newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+			form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 			editSelect(t, form, tc.label, tc.value)
 			if err := apply(context.Background()); err != nil {
@@ -101,8 +101,8 @@ func TestLoginGeneralWritesTheDefaultsChosen(t *testing.T) {
 // A password is sent only when one was typed. This is the assertion the page
 // exists to keep true: every other write here is recoverable.
 func TestLoginGeneralSendsNoPasswordUnlessOneWasTyped(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	// Something else changed, so apply has work to do and cannot pass by
 	// doing nothing at all.
@@ -118,8 +118,8 @@ func TestLoginGeneralSendsNoPasswordUnlessOneWasTyped(t *testing.T) {
 }
 
 func TestLoginGeneralChangesThePasswordWhenTyped(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "n3wSecret!")
@@ -137,8 +137,8 @@ func TestLoginGeneralChangesThePasswordWhenTyped(t *testing.T) {
 // runs a dirty row's validator and a user who never touches Confirm would
 // otherwise skip it entirely.
 func TestLoginGeneralRefusesAMismatchedConfirmation(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, _ := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	form, _ := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "typo")
@@ -155,8 +155,8 @@ func TestLoginGeneralRefusesAMismatchedConfirmation(t *testing.T) {
 // LOGIN carries one credential, so a page that only added would leave the
 // login mapped to a credential it no longer displays.
 func TestLoginGeneralUnmapsTheOldCredentialBeforeMappingTheNew(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editSelect(t, form, "Map to credential", "cred_new")
 	if err := apply(context.Background()); err != nil {
@@ -179,9 +179,9 @@ func TestLoginGeneralUnmapsTheOldCredentialBeforeMappingTheNew(t *testing.T) {
 // name, so a rename in the middle leaves the ones after it aimed at a name
 // the server no longer has.
 func TestLoginGeneralRenamesLast(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	sc, inst := newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
 	name := new("appuser")
-	form, apply := loadPage(t, pageLoginGeneral(sc, name), inst)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, name), inst)
 
 	editSelect(t, form, "Default database", "reporting")
 	editText(t, form, "Login name", "appuser2")
@@ -212,8 +212,8 @@ func TestLoginGeneralRenamesLast(t *testing.T) {
 // set: SQL Server rejects both, and offering live controls would report a
 // change that never happened.
 func TestLoginGeneralOffersNoPasswordForAWindowsLogin(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("DOMAIN\\alice", "WINDOWS_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("DOMAIN\\alice")), inst)
+	sc, inst := newGConn(t, loginGeneralResponses("DOMAIN\\alice", "WINDOWS_LOGIN")...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("DOMAIN\\alice")), inst)
 
 	// Asserted by typing into them: a disabled row's Edit is a no-op, which
 	// is the behaviour a user meets, and the enabled flag is not readable
@@ -241,8 +241,8 @@ func TestLoginGeneralOffersNoPasswordForAWindowsLogin(t *testing.T) {
 // Msg 15080 for one), so the credential select is switched off rather than
 // offering a choice Apply would fail on.
 func TestLoginGeneralOffersNoCredentialForAWindowsLogin(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("DOMAIN\\alice", "WINDOWS_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("DOMAIN\\alice")), inst)
+	sc, inst := newGConn(t, loginGeneralResponses("DOMAIN\\alice", "WINDOWS_LOGIN")...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("DOMAIN\\alice")), inst)
 
 	row := selectRow(t, form, "Map to credential")
 	if row.Enabled() || row.Focusable() {
@@ -262,8 +262,8 @@ func TestLoginGeneralOffersNoCredentialForAWindowsLogin(t *testing.T) {
 	}
 
 	// And only for a Windows login.
-	sc, inst = newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, _ = loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst = newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	form, _ = loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 	if !selectRow(t, form, "Map to credential").Enabled() {
 		t.Error("the credential select is off for a SQL login too")
 	}
@@ -274,8 +274,8 @@ func TestLoginGeneralOffersNoCredentialForAWindowsLogin(t *testing.T) {
 // has to refuse.
 func TestLoginGeneralWillNotRenameABuiltInLogin(t *testing.T) {
 	const name = "##MS_PolicyEventProcessingLogin##"
-	sc, inst := newFakeConn(t, loginGeneralResponses(name, "SQL_LOGIN")...)
-	form, _ := loadPage(t, pageLoginGeneral(sc, new(name)), inst)
+	sc, inst := newGConn(t, loginGeneralResponses(name, "SQL_LOGIN")...)
+	form, _ := loadPageG(t, pageLoginGeneral(sc, new(name)), inst)
 
 	for _, r := range form.Rows() {
 		if tr, ok := r.(*propsheet.TextRow); ok && tr.Label() == sheetLabel("Login name") {
@@ -290,8 +290,8 @@ func TestLoginGeneralWillNotRenameABuiltInLogin(t *testing.T) {
 // T13: a password change scripts as gosmo's placeholder, not as what was
 // typed — Script Changes opens a query window that is saved and shared.
 func TestLoginGeneralScriptDoesNotCarryThePassword(t *testing.T) {
-	sc, inst := newFakeConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginGeneralResponses("appuser", "SQL_LOGIN")...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "n3wSecret!")
@@ -320,8 +320,8 @@ func loginPolicyResponses(policy, expiration, mustChange bool) []fakeResponse {
 // over the policy-off login was Msg 15122; the policy first works only by luck
 // of order, and fails the other way round on a must-change login.
 func TestLoginGeneralPolicyRidesInThePasswordStatement(t *testing.T) {
-	sc, inst := newFakeConn(t, loginPolicyResponses(false, false, false)...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginPolicyResponses(false, false, false)...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "n3wSecret!")
@@ -368,8 +368,8 @@ func TestLoginGeneralRefusesPolicyCombinationsTheServerRefuses(t *testing.T) {
 			map[string]bool{"User must change password at next login": false}, "needs a new password"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, inst := newFakeConn(t, loginPolicyResponses(tc.policy, tc.expiration, tc.mustChg)...)
-			form, _ := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+			sc, inst := newGConn(t, loginPolicyResponses(tc.policy, tc.expiration, tc.mustChg)...)
+			form, _ := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 			if tc.password != "" {
 				editText(t, form, "Password", tc.password)
 				editText(t, form, "Confirm password", tc.password)
@@ -389,8 +389,8 @@ func TestLoginGeneralRefusesPolicyCombinationsTheServerRefuses(t *testing.T) {
 // password, which clears the flag; gosmo sequences it on the server in one
 // statement.
 func TestLoginGeneralPolicyOffOnAMustChangeLoginWithAPassword(t *testing.T) {
-	sc, inst := newFakeConn(t, loginPolicyResponses(true, true, true)...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginPolicyResponses(true, true, true)...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "n3wSecret!")
@@ -412,8 +412,8 @@ func TestLoginGeneralPolicyOffOnAMustChangeLoginWithAPassword(t *testing.T) {
 // R5: Unlock with a new password is the one form ALTER LOGIN accepts, and it
 // rides in the password statement.
 func TestLoginGeneralUnlockRidesInThePasswordStatement(t *testing.T) {
-	sc, inst := newFakeConn(t, loginPolicyResponses(true, true, false)...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, loginPolicyResponses(true, true, false)...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	editText(t, form, "Password", "n3wSecret!")
 	editText(t, form, "Confirm password", "n3wSecret!")

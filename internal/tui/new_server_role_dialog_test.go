@@ -15,7 +15,7 @@ import (
 // sorts.
 func newServerRoleTestDialog(t *testing.T) *NewServerRoleDialog {
 	t.Helper()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := &NewServerRoleDialog{}
 	d.sc = sc
 	d.pages = []string{"General", "Members", "Securables"}
@@ -165,7 +165,7 @@ func TestNewServerRoleGateMatchesWhatTheServerAllowed(t *testing.T) {
 				denied = append(denied, n)
 			}
 		}
-		sc, _ := newFakeConn(t, capabilityResponses(true, tc.granted, denied, nil, nil)...)
+		sc, _ := newGConn(t, capabilityResponses(true, tc.granted, denied, nil, nil)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		folder := &explorerNode{data: nodeData{Type: NodeServerRoles, conn: sc}}
 		var found bool

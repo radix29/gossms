@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
+	"github.com/radix29/gosmo/gosmotest"
 	"strings"
 	"testing"
 
@@ -210,11 +211,11 @@ func TestNewAGOffersOnlyWhatTheVersionCanCreate(t *testing.T) {
 				}
 			}
 
-			info := serverInfoResponse()
-			if tt.major != 0 {
-				info.rows[0][2] = fmt.Sprintf("%d.0.6300.2", tt.major)
-			}
-			sc, _ := newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse()})
+			sc, _ := newGConnWith(t, func(i *gosmotest.Info) {
+				if tt.major != 0 {
+					i.ProductVersion = fmt.Sprintf("%d.0.6300.2", tt.major)
+				}
+			})
 			ctx, script := gosmo.WithScript(context.Background())
 			if _, err := sc.Server.CreateAvailabilityGroup(ctx, req); err != nil {
 				t.Fatalf("CreateAvailabilityGroup on major %d: %v", tt.major, err)
@@ -250,7 +251,7 @@ func TestNewAGRequestRequiresThePrimaryFirst(t *testing.T) {
 // peer is reachable: the script is what the user takes to the secondaries.
 func scriptNewAG(t *testing.T, edit func([]*newAGReplica) []*newAGReplica) string {
 	t.Helper()
-	local, _ := newFakeConn(t)
+	local, _ := newGConn(t)
 	d := agDialogWithPeer(t, local, nil)
 	if edit != nil {
 		d.replicas = edit(d.replicas)
@@ -372,15 +373,19 @@ func TestAddReplicaStillNeedsConnectDespiteAnEditableURL(t *testing.T) {
 // real group missing a replica. The peer is reached through the dialog's peerFor
 // seam, since a test cannot open a second connection.
 
-// agPeerResponses scripts one instance as a would-be replica: its own name and
-// HADR flag in the info row, and its database mirroring endpoint.
-func agPeerResponses(name string, hadr bool, epName string, port int64, state string) []fakeResponse {
-	info := serverInfoResponse()
-	info.rows[0][0] = name
-	if hadr {
-		info.rows[0][6] = int64(1)
-	}
-	out := []fakeResponse{info, sysInfoResponse()}
+// newGPeer is one instance as a would-be replica: ubusql2, with Always On
+// enabled or not, answering the scripted responses.
+func newGPeer(t *testing.T, hadr bool, responses ...fakeResponse) *db.ServerConn {
+	t.Helper()
+	sc, _ := newGConnWith(t, func(i *gosmotest.Info) {
+		i.Name, i.HADREnabled = "ubusql2", hadr
+	}, responses...)
+	return sc
+}
+
+// agPeerResponses scripts a would-be replica's database mirroring endpoint.
+func agPeerResponses(epName string, port int64, state string) []fakeResponse {
+	var out []fakeResponse
 	if epName != "" {
 		out = append(out, fakeResponse{match: "sys.database_mirroring_endpoints", cols: 8, rows: [][]driver.Value{
 			{epName, port, state, "ALL", true, "AES", "CERTIFICATE", "sa"},
@@ -417,8 +422,8 @@ func agDialogWithPeer(t *testing.T, local *db.ServerConn, peer *db.ServerConn) *
 }
 
 func TestPreflightPassesAReplicaThatCouldJoin(t *testing.T) {
-	local, _ := newFakeConn(t)
-	peer, _ := newFakeConnFrom(t, agPeerResponses("ubusql2", true, "AGEP", 5022, "STARTED"))
+	local, _ := newGConn(t)
+	peer := newGPeer(t, true, agPeerResponses("AGEP", 5022, "STARTED")...)
 	d := agDialogWithPeer(t, local, peer)
 
 	if err := d.preflightReplicas(context.Background(), agTestRequest(t, d)); err != nil {
@@ -429,19 +434,20 @@ func TestPreflightPassesAReplicaThatCouldJoin(t *testing.T) {
 func TestPreflightRefusesTheReplicaStatesThatBreakTheJoin(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
+		hadr      bool
 		responses []fakeResponse
 		want      string
 	}{
-		{"always on off there", agPeerResponses("ubusql2", false, "AGEP", 5022, "STARTED"), "Always On is not enabled"},
-		{"no endpoint", agPeerResponses("ubusql2", true, "", 0, ""), "no database mirroring endpoint"},
-		{"endpoint stopped", agPeerResponses("ubusql2", true, "AGEP", 5022, "STOPPED"), "not STARTED"},
+		{"always on off there", false, agPeerResponses("AGEP", 5022, "STARTED"), "Always On is not enabled"},
+		{"no endpoint", true, agPeerResponses("", 0, ""), "no database mirroring endpoint"},
+		{"endpoint stopped", true, agPeerResponses("AGEP", 5022, "STOPPED"), "not STARTED"},
 		// Added at 5022, moved since: the CREATE would name an address nothing
 		// answers on, and the group comes up looking right and never connects.
-		{"endpoint moved", agPeerResponses("ubusql2", true, "AGEP", 5023, "STARTED"), "is now tcp://ubusql2:5023"},
+		{"endpoint moved", true, agPeerResponses("AGEP", 5023, "STARTED"), "is now tcp://ubusql2:5023"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			local, _ := newFakeConn(t)
-			peer, _ := newFakeConnFrom(t, tt.responses)
+			local, _ := newGConn(t)
+			peer := newGPeer(t, tt.hadr, tt.responses...)
 			d := agDialogWithPeer(t, local, peer)
 
 			err := d.preflightReplicas(context.Background(), agTestRequest(t, d))
@@ -462,10 +468,10 @@ func TestPreflightRefusesTheReplicaStatesThatBreakTheJoin(t *testing.T) {
 // never ran answers unknown and is let through, which is what the passing test
 // above relies on; only a measured denial refuses.
 func TestPreflightRefusesAPeerThatMayNotJoin(t *testing.T) {
-	local, _ := newFakeConn(t)
-	responses := append(agPeerResponses("ubusql2", true, "AGEP", 5022, "STARTED"),
+	local, _ := newGConn(t)
+	responses := append(agPeerResponses("AGEP", 5022, "STARTED"),
 		capabilityResponses(true, nil, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil)...)
-	peer, _ := newFakeConnFrom(t, responses)
+	peer := newGPeer(t, true, responses...)
 	peer.ProbeCapabilities(peer.Server.Context())
 
 	d := agDialogWithPeer(t, local, peer)
@@ -480,8 +486,8 @@ func TestPreflightRefusesAPeerThatMayNotJoin(t *testing.T) {
 // dialog that ran the CREATE and then reported the JOIN problem would return
 // an error that reads almost the same.
 func TestNothingIsCreatedWhenThePreflightFails(t *testing.T) {
-	local, inst := newFakeConn(t)
-	peer, _ := newFakeConnFrom(t, agPeerResponses("ubusql2", false, "AGEP", 5022, "STARTED"))
+	local, inst := newGConn(t)
+	peer := newGPeer(t, false, agPeerResponses("AGEP", 5022, "STARTED")...)
 	d := agDialogWithPeer(t, local, peer)
 
 	if err := d.createGroup(context.Background(), agTestRequest(t, d)); err == nil {
@@ -498,7 +504,7 @@ func TestNothingIsCreatedWhenThePreflightFails(t *testing.T) {
 // other instances, and is asked for precisely when they are not all up yet — a
 // preflight there would refuse to write the thing that fixes them.
 func TestScriptChangesSkipsThePreflight(t *testing.T) {
-	local, _ := newFakeConn(t)
+	local, _ := newGConn(t)
 	d := agDialogWithPeer(t, local, nil) // any peer read would nil-panic
 	d.peerFor = func(context.Context, string) (*db.ServerConn, error) {
 		t.Error("Script Changes opened a peer connection")

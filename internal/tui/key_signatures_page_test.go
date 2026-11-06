@@ -31,9 +31,9 @@ func signableModulesResponse() fakeResponse {
 
 // loadCertSigPage loads the Signatures page of certificate aaa_cert, whose
 // private key is protected by protection, and which signs dbo.p1 and dbo.p2.
-func loadCertSigPage(t *testing.T, protection string) (*propsheet.Form, propApply, *fakeInstance) {
+func loadCertSigPage(t *testing.T, protection string) (*propsheet.Form, propApply, *gFake) {
 	t.Helper()
-	sc, inst := newFakeConn(t, dbScopedCredDatabaseRow(),
+	sc, inst := newGConn(t, dbScopedCredDatabaseRow(),
 		fakeResponse{match: "FROM   sys.certificates", arg: "aaa_cert", cols: 15,
 			rows: [][]driver.Value{certRow("aaa_cert", protection, certValidExpiry)}},
 		fakeResponse{match: "FROM   sys.crypt_properties", arg: "aaa_cert", cols: 7, rows: [][]driver.Value{
@@ -43,7 +43,7 @@ func loadCertSigPage(t *testing.T, protection string) (*propsheet.Form, propAppl
 		signableModulesResponse(),
 	)
 	pages := certificatePropPages(sc, "appdb", "aaa_cert")
-	form, apply := loadPage(t, pages[1], inst)
+	form, apply := loadPageG(t, pages[1], inst)
 	if apply == nil {
 		t.Fatal("the Signatures page returned no apply")
 	}
@@ -170,7 +170,7 @@ func TestCertificateSignaturesPageWithoutPrivateKey(t *testing.T) {
 // An asymmetric key's counter signature is listed as one, and removing it is
 // DROP COUNTER SIGNATURE.
 func TestAsymmetricKeySignaturesPageRemovesACounterSignature(t *testing.T) {
-	sc, inst := newFakeConn(t, dbScopedCredDatabaseRow(),
+	sc, inst := newGConn(t, dbScopedCredDatabaseRow(),
 		fakeResponse{match: "FROM   sys.asymmetric_keys", arg: "aaa_key", cols: 10,
 			rows: [][]driver.Value{asymKeyRow("aaa_key", "ENCRYPTED_BY_MASTER_KEY")}},
 		fakeResponse{match: "FROM   sys.crypt_properties", arg: "aaa_key", cols: 7, rows: [][]driver.Value{
@@ -179,7 +179,7 @@ func TestAsymmetricKeySignaturesPageRemovesACounterSignature(t *testing.T) {
 		}},
 		signableModulesResponse(),
 	)
-	form, apply := loadPage(t, asymmetricKeyPropPages(sc, "appdb", "aaa_key")[1], inst)
+	form, apply := loadPageG(t, asymmetricKeyPropPages(sc, "appdb", "aaa_key")[1], inst)
 	want := []string{"dbo.p1 Stored procedure Signature", "sales.f1 Scalar function Counter signature"}
 	if got := sigGridRows(t, form); !slices.Equal(got, want) {
 		t.Fatalf("grid = %q, want %q", got, want)
@@ -196,7 +196,7 @@ func TestAsymmetricKeySignaturesPageRemovesACounterSignature(t *testing.T) {
 }
 
 func TestModuleDetailListsSigners(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(),
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(),
 		fakeResponse{match: "FROM   sys.crypt_properties", arg: "p2", cols: 7, rows: [][]driver.Value{
 			sigRow("dbo", "p2", "SQL_STORED_PROCEDURE", "SIGNATURE BY CERTIFICATE", "aaa_cert"),
 			sigRow("dbo", "p2", "SQL_STORED_PROCEDURE", "COUNTER SIGNATURE BY ASYMMETRIC KEY", "aaa_key"),

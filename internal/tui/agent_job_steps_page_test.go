@@ -9,6 +9,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -47,17 +48,17 @@ func jobStepsResponse() fakeResponse {
 
 // loadJobStepsPage loads the Steps page over jobStepsResponse; first answers
 // ahead of every other, such as a statement's failure.
-func loadJobStepsPage(t *testing.T, first ...fakeResponse) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+func loadJobStepsPage(t *testing.T, first ...fakeResponse) (*gFake, propApply, *propsheet.Form, *controls.DataGrid) {
 	t.Helper()
 	job := jobRow(agentJobName, "Database Maintenance", "appuser", true, 0, 0, "")
 	responses := append(first, agentJobResponses(job)...)
 	responses = append(responses, jobStepsResponse(), agentDatabaseListResponse(),
 		// A reorder reads the start step (step 1) to carry it with its step.
 		fakeResponse{match: "SELECT start_step_id FROM msdb.dbo.sysjobs", cols: 1, rows: [][]driver.Value{{int64(1)}}})
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	dialog, _ := newFakeDialog(t)
 	name := agentJobName
-	form, apply := loadPage(t, pageJobSteps(dialog, sc, &name), inst)
+	form, apply := loadPageG(t, pageJobSteps(dialog, sc, &name), inst)
 	grid := plainGrid(t, form)
 	if grid.Row(3) == nil {
 		t.Fatal("the step grid has fewer than four rows — the fake is under-scripted, not the page wrong")
@@ -442,10 +443,10 @@ func TestJobStepNamesFollowTheMsdbCollation(t *testing.T) {
 	for _, tt := range pendingAddCollations {
 		job := jobRow(agentJobName, "Database Maintenance", "appuser", true, 0, 0, "")
 		responses := append(agentJobResponses(job), jobStepsResponse(), agentDatabaseListResponse())
-		sc, inst := fakeConnWithMsdb(t, tt.collation, responses...)
+		sc, inst := newGConnWithMsdb(t, tt.collation, responses...)
 		dialog, _ := newFakeDialog(t)
 		name := agentJobName
-		form, _ := loadPage(t, pageJobSteps(dialog, sc, &name), inst)
+		form, _ := loadPageG(t, pageJobSteps(dialog, sc, &name), inst)
 		selectGridRow(t, plainGrid(t, form), stepNameCol, "Check integrity")
 		editText(t, form, "Step name", "REBUILD INDEXES")
 		form.Commit()
@@ -453,9 +454,7 @@ func TestJobStepNamesFollowTheMsdbCollation(t *testing.T) {
 			t.Errorf("Job Properties, msdb %s: rename onto a case variant: validate = %v, want refused %v", tt.collation, err, tt.refused)
 		}
 
-		info := serverInfoResponse()
-		info.rows[0][4] = msdbOpposite(tt.collation)
-		sc, _ = newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse()})
+		sc, _ = newGConnWith(t, func(i *gosmotest.Info) { i.Collation = msdbOpposite(tt.collation) })
 		form, _, _ = buildNewJobStepsPage(sc, &njobPrefetch{msdbCollation: tt.collation}, func() string { return "j" }, 4)
 		editText(t, form, "Step name", "Purge")
 		clickButton(t, form, "New")

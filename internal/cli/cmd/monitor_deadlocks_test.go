@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -14,53 +13,6 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/output"
 )
-
-// dlFake is system_health as monitor deadlocks reads it: session (nil: none
-// exists), and the events its event_file or ring_buffer serves. Each read
-// records what it was asked.
-type dlFake struct {
-	session *gosmo.EventSession
-	events  []gosmo.XEvent
-	dbs     []*gosmo.Database
-
-	gotPattern string
-	gotEvents  []string
-	fileReads  int
-	ringReads  int
-	dbReads    int
-}
-
-func (c *monitorCatalog) EventSessionByName(_ context.Context, name string) (*gosmo.EventSession, error) {
-	if c.dl.session == nil || name != systemHealth {
-		return nil, fmt.Errorf("event session %q: %w", name, gosmo.ErrNotFound)
-	}
-	return c.dl.session, nil
-}
-
-func (c *monitorCatalog) ReadFileEvents(_ context.Context, pattern string, cursor gosmo.EventFileCursor, max int, events []string) ([]gosmo.XEvent, gosmo.EventFileCursor, error) {
-	c.dl.fileReads++
-	c.dl.gotPattern, c.dl.gotEvents = pattern, events
-	if !cursor.IsZero() || max != 0 {
-		return nil, cursor, errors.New("monitor deadlocks reads every file from the start")
-	}
-	var out []gosmo.XEvent
-	for _, e := range c.dl.events {
-		if slices.Contains(events, e.Name) {
-			out = append(out, e)
-		}
-	}
-	return out, cursor, nil
-}
-
-func (c *monitorCatalog) ReadRingBuffer(context.Context, *gosmo.EventSession) (*gosmo.RingBufferData, error) {
-	c.dl.ringReads++
-	return &gosmo.RingBufferData{Events: c.dl.events}, nil
-}
-
-func (c *monitorCatalog) Databases(context.Context) ([]*gosmo.Database, error) {
-	c.dl.dbReads++
-	return c.dl.dbs, nil
-}
 
 // systemHealthSession is a running system_health with the given targets.
 func systemHealthSession(targets ...string) *gosmo.EventSession {
@@ -104,10 +56,31 @@ func deadlockEvent(at time.Time, graph string) gosmo.XEvent {
 // is the 24 h to it, converted.
 var dlNow = time.Date(2026, 10, 30, 12, 0, 0, 0, time.FixedZone("CEST", 2*3600))
 
-func dlCatalog(events ...gosmo.XEvent) *monitorCatalog {
-	return &monitorCatalog{qs: &qsFake{now: dlNow},
-		dl: &dlFake{session: systemHealthSession(gosmo.XETargetRingBuffer, gosmo.XETargetEventFile), events: events,
-			dbs: []*gosmo.Database{{Name: "master", ID: 1}, {Name: "Sales", ID: 5}}}}
+// deadlockServer is a monitorServer whose system_health, with a ring_buffer and
+// an event_file, holds events.
+func deadlockServer(t *testing.T, events ...gosmo.XEvent) *monitorServer {
+	s := newMonitorServer(t)
+	s.dl.events = events
+	return s
+}
+
+// fileReads and ringReads are how many times s read system_health's
+// event_file and ring_buffer; fileArgs is the last file read's pattern and
+// event names.
+func fileReads(s *monitorServer) int { return s.reads(fileRead) }
+func ringReads(s *monitorServer) int { return s.reads(ringRead) }
+
+func fileArgs(s *monitorServer) (pattern string, events []string) {
+	for _, q := range s.Queries() {
+		if has(q, fileRead) {
+			pattern = argString(q, 0)
+			events = nil
+			for _, a := range q.Args[3:] {
+				events = append(events, a.(string))
+			}
+		}
+	}
+	return pattern, events
 }
 
 // The event_file is read whole, the server keeping only the deadlock
@@ -115,19 +88,19 @@ func dlCatalog(events ...gosmo.XEvent) *monitorCatalog {
 // a process with no currentdbname is named from the catalog.
 func TestMonitorDeadlocks(t *testing.T) {
 	at := time.Date(2026, 10, 30, 9, 15, 0, 250_000_000, time.UTC)
-	cat := dlCatalog(
+	srv := deadlockServer(t,
 		deadlockEvent(at.Add(-30*time.Hour), deadlockGraph(70, 71, "Sales")), // before the window
 		deadlockEvent(at.Add(-time.Hour), deadlockGraph(51, 52, "Sales")),
 		gosmo.XEvent{Name: "sp_server_diagnostics_component_result", Timestamp: at},
 		deadlockEvent(at, deadlockGraph(61, 62, "")),
 		deadlockEvent(dlNow, deadlockGraph(80, 81, "Sales")), // --until is exclusive
 	)
-	res, err := runMonitor(t, cat, "deadlocks")
+	res, err := runMonitor(t, srv, "deadlocks")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cat.dl.gotPattern != "system_health*.xel" || !slices.Equal(cat.dl.gotEvents, []string{xmlDeadlockReport}) || cat.dl.ringReads != 0 {
-		t.Errorf("read %q %q, ring reads %d", cat.dl.gotPattern, cat.dl.gotEvents, cat.dl.ringReads)
+	if pattern, events := fileArgs(srv); pattern != "system_health*.xel" || !slices.Equal(events, []string{xmlDeadlockReport}) || ringReads(srv) != 0 {
+		t.Errorf("read %q %q, ring reads %d", pattern, events, ringReads(srv))
 	}
 	if field(res, "source") != "event_file" || field(res, "from") != "2026-10-29 10:00:00.000" ||
 		field(res, "to") != "2026-10-30 10:00:00.000" || field(res, "deadlocksInWindow") != "2" {
@@ -154,19 +127,19 @@ func TestMonitorDeadlocks(t *testing.T) {
 			t.Errorf("%s: %d columns, %d cells", s.Name, len(s.Columns), len(s.Rows[0]))
 		}
 	}
-	if cat.dl.dbReads != 1 {
-		t.Errorf("%d catalog reads for the missing database name, want 1", cat.dl.dbReads)
+	if n := srv.reads(dbsRead); n != 1 {
+		t.Errorf("%d catalog reads for the missing database name, want 1", n)
 	}
 }
 
 // Every report naming its database reads no catalog.
 func TestMonitorDeadlocksNamedDatabases(t *testing.T) {
-	cat := dlCatalog(deadlockEvent(dlNow.Add(-time.Hour), deadlockGraph(51, 52, "Sales")))
-	if _, err := runMonitor(t, cat, "deadlocks"); err != nil {
+	srv := deadlockServer(t, deadlockEvent(dlNow.Add(-time.Hour), deadlockGraph(51, 52, "Sales")))
+	if _, err := runMonitor(t, srv, "deadlocks"); err != nil {
 		t.Fatal(err)
 	}
-	if cat.dl.dbReads != 0 {
-		t.Errorf("%d catalog reads, want none", cat.dl.dbReads)
+	if n := srv.reads(dbsRead); n != 0 {
+		t.Errorf("%d catalog reads, want none", n)
 	}
 }
 
@@ -190,7 +163,7 @@ func TestMonitorDeadlocksWindow(t *testing.T) {
 		{[]string{"--since", "2026-10-27", "--until", "2026-10-28", "--top", "2"},
 			"2026-10-27 00:00:00.000", "2026-10-28 00:00:00.000", []string{"56", "55"}},
 	} {
-		res, err := runMonitor(t, dlCatalog(events...), append([]string{"deadlocks"}, tc.argv...)...)
+		res, err := runMonitor(t, deadlockServer(t, events...), append([]string{"deadlocks"}, tc.argv...)...)
 		if err != nil {
 			t.Fatalf("%q: %v", tc.argv, err)
 		}
@@ -202,7 +175,7 @@ func TestMonitorDeadlocksWindow(t *testing.T) {
 			t.Errorf("%q: %s to %s, victims %q; want %s to %s, %q", tc.argv, field(res, "from"), field(res, "to"), victims, tc.from, tc.to, tc.victims)
 		}
 	}
-	res, _ := runMonitor(t, dlCatalog(events...), "deadlocks", "--since", "2026-10-27", "--top", "2")
+	res, _ := runMonitor(t, deadlockServer(t, events...), "deadlocks", "--since", "2026-10-27", "--top", "2")
 	if field(res, "deadlocksInWindow") != "6" || len(res.Sets[0].Rows) != 2 {
 		t.Errorf("--top 2: %s in window, %d rows", field(res, "deadlocksInWindow"), len(res.Sets[0].Rows))
 	}
@@ -212,8 +185,8 @@ func TestMonitorDeadlocksWindow(t *testing.T) {
 // deadlocks set's order, and no processes set.
 func TestMonitorDeadlocksXML(t *testing.T) {
 	older, newer := deadlockGraph(51, 52, "Sales"), deadlockGraph(61, 62, "Sales")
-	cat := dlCatalog(deadlockEvent(dlNow.Add(-2*time.Hour), older), deadlockEvent(dlNow.Add(-time.Hour), newer))
-	res, err := runMonitor(t, cat, "deadlocks", "--deadlock-format", "xml")
+	srv := deadlockServer(t, deadlockEvent(dlNow.Add(-2*time.Hour), older), deadlockEvent(dlNow.Add(-time.Hour), newer))
+	res, err := runMonitor(t, srv, "deadlocks", "--deadlock-format", "xml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,23 +205,23 @@ func TestMonitorDeadlocksXML(t *testing.T) {
 // With no event_file target the ring_buffer is read, and its other events
 // left out client-side.
 func TestMonitorDeadlocksRingBuffer(t *testing.T) {
-	cat := dlCatalog(deadlockEvent(dlNow.Add(-time.Hour), deadlockGraph(51, 52, "Sales")),
+	srv := deadlockServer(t, deadlockEvent(dlNow.Add(-time.Hour), deadlockGraph(51, 52, "Sales")),
 		gosmo.XEvent{Name: "error_reported", Timestamp: dlNow.Add(-time.Hour)})
-	cat.dl.session = systemHealthSession(gosmo.XETargetRingBuffer)
-	res, err := runMonitor(t, cat, "deadlocks")
+	srv.dl.session = systemHealthSession(gosmo.XETargetRingBuffer)
+	res, err := runMonitor(t, srv, "deadlocks")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cat.dl.fileReads != 0 || cat.dl.ringReads != 1 || field(res, "source") != "ring_buffer" || len(res.Sets[0].Rows) != 1 {
-		t.Errorf("file reads %d, ring reads %d, fields %+v, rows %q", cat.dl.fileReads, cat.dl.ringReads, res.Fields, cells(res.Sets[0]))
+	if fileReads(srv) != 0 || ringReads(srv) != 1 || field(res, "source") != "ring_buffer" || len(res.Sets[0].Rows) != 1 {
+		t.Errorf("file reads %d, ring reads %d, fields %+v, rows %q", fileReads(srv), ringReads(srv), res.Fields, cells(res.Sets[0]))
 	}
 }
 
 // A report that does not decode is a warning; the others still answer.
 func TestMonitorDeadlocksBadReport(t *testing.T) {
-	cat := dlCatalog(deadlockEvent(dlNow.Add(-time.Hour), "<deadlock><process-list>"),
+	srv := deadlockServer(t, deadlockEvent(dlNow.Add(-time.Hour), "<deadlock-list><victim/></deadlock-list>"),
 		deadlockEvent(dlNow.Add(-2*time.Hour), deadlockGraph(51, 52, "Sales")))
-	res, err := runMonitor(t, cat, "deadlocks")
+	res, err := runMonitor(t, srv, "deadlocks")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,26 +238,26 @@ func TestMonitorDeadlocksNoSystemHealth(t *testing.T) {
 	for name, es := range map[string]*gosmo.EventSession{
 		"missing": nil, "stopped": stopped, "no target": systemHealthSession("histogram"),
 	} {
-		cat := dlCatalog(deadlockEvent(dlNow.Add(-time.Hour), deadlockGraph(51, 52, "Sales")))
-		cat.dl.session = es
-		_, err := runMonitor(t, cat, "deadlocks")
+		srv := deadlockServer(t, deadlockEvent(dlNow.Add(-time.Hour), deadlockGraph(51, 52, "Sales")))
+		srv.dl.session = es
+		_, err := runMonitor(t, srv, "deadlocks")
 		if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeNotFound || oe.Hint == "" {
 			t.Errorf("%s: err = %v, want NOT_FOUND with a hint", name, err)
 		}
-		if cat.dl.fileReads+cat.dl.ringReads != 0 {
+		if fileReads(srv)+ringReads(srv) != 0 {
 			t.Errorf("%s: read the events", name)
 		}
 	}
 }
 
 func TestMonitorDeadlocksNeedsViewServerState(t *testing.T) {
-	cat := dlCatalog()
-	cat.noVSS = true
-	_, err := runMonitor(t, cat, "deadlocks")
+	srv := deadlockServer(t)
+	srv.noVSS = true
+	_, err := runMonitor(t, srv, "deadlocks")
 	if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodePermissionDenied {
 		t.Errorf("err = %v, want PERMISSION_DENIED", err)
 	}
-	if cat.dl.fileReads+cat.dl.ringReads != 0 {
+	if fileReads(srv)+ringReads(srv) != 0 {
 		t.Error("read the events without the permission")
 	}
 }
@@ -299,18 +272,18 @@ func TestMonitorDeadlocksUsage(t *testing.T) {
 		{"--since", "2026-10-28", "--until", "2026-10-28"}, {"--since", "2026-10-28T02:00+02:00", "--until", "2026-10-28T00:00Z"},
 		{"--deadlock-file", file}, {"--deadlock-file", ""},
 	} {
-		cat := dlCatalog()
-		_, err := runMonitor(t, cat, append([]string{"deadlocks"}, argv...)...)
+		srv := deadlockServer(t)
+		_, err := runMonitor(t, srv, append([]string{"deadlocks"}, argv...)...)
 		if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeUsageError {
 			t.Errorf("%q: err = %v, want a usage error", argv, err)
 		}
-		if cat.dl.fileReads != 0 {
+		if fileReads(srv) != 0 {
 			t.Errorf("%q: read before refusing", argv)
 		}
 	}
 	// A --since after the server's now, with no --until, is refused once
 	// the clock is read.
-	_, err := runMonitor(t, dlCatalog(), "deadlocks", "--since", "2026-11-01")
+	_, err := runMonitor(t, deadlockServer(t), "deadlocks", "--since", "2026-11-01")
 	if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeUsageError {
 		t.Errorf("--since in the future: err = %v, want a usage error", err)
 	}
@@ -322,9 +295,9 @@ func TestMonitorDeadlocksUsage(t *testing.T) {
 func TestMonitorDeadlocksFiles(t *testing.T) {
 	at := time.Date(2026, 10, 30, 9, 15, 0, 250_000_000, time.UTC)
 	a, b, c := deadlockGraph(51, 52, "Sales"), deadlockGraph(61, 62, "Sales"), deadlockGraph(71, 72, "Sales")
-	cat := dlCatalog(deadlockEvent(at.Add(-time.Hour), a), deadlockEvent(at, b), deadlockEvent(at, c))
+	srv := deadlockServer(t, deadlockEvent(at.Add(-time.Hour), a), deadlockEvent(at, b), deadlockEvent(at, c))
 	dir := filepath.Join(t.TempDir(), "dl")
-	res, err := runMonitor(t, cat, "deadlocks", "--deadlock-file", dir)
+	res, err := runMonitor(t, srv, "deadlocks", "--deadlock-file", dir)
 	if err != nil || len(res.Errors) > 0 {
 		t.Fatal(err, res.Errors)
 	}
@@ -344,16 +317,16 @@ func TestMonitorDeadlocksFiles(t *testing.T) {
 	}
 
 	newer := deadlockEvent(at.Add(time.Minute), a)
-	cat = dlCatalog(newer, deadlockEvent(at.Add(-time.Hour), b))
-	res, _ = runMonitor(t, cat, "deadlocks", "--deadlock-file", dir)
+	srv = deadlockServer(t, newer, deadlockEvent(at.Add(-time.Hour), b))
+	res, _ = runMonitor(t, srv, "deadlocks", "--deadlock-file", dir)
 	if len(res.Errors) != 1 || res.Errors[0].Code != output.CodeUsageError {
 		t.Fatalf("without --force: errors %+v", res.Errors)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "deadlock_20261030_091600_250.xdl")); err == nil {
 		t.Error("wrote a file before refusing")
 	}
-	cat = dlCatalog(newer, deadlockEvent(at.Add(-time.Hour), b))
-	res, _ = runMonitor(t, cat, "deadlocks", "--deadlock-file", dir, "--force")
+	srv = deadlockServer(t, newer, deadlockEvent(at.Add(-time.Hour), b))
+	res, _ = runMonitor(t, srv, "deadlocks", "--deadlock-file", dir, "--force")
 	if len(res.Errors) > 0 {
 		t.Fatal(res.Errors)
 	}

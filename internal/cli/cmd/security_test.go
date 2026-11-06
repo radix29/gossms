@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
@@ -17,196 +16,15 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// secCatalog answers the security reads from its fields: the server's
-// logins, roles and entries, and the one database "app"'s users, roles and
-// entries. Each read records what it was asked; effErr fails --effective.
-type secCatalog struct {
-	Catalog
-	engine      gosmo.EngineEdition
-	logins      []*gosmo.Login
-	serverRoles []*gosmo.ServerRole
-	serverPerms []*gosmo.ServerPermissionEntry
-	users       []*gosmo.User
-	dbRoles     []*gosmo.DatabaseRole
-	appRoles    []*gosmo.ApplicationRole
-	members     map[string][]*gosmo.RoleMember // role name -> members, either scope
-	dbPerms     map[string][]*gosmo.PrincipalSecurable
-	colPerms    map[string][]*gosmo.ColumnPermissionEntry
-	effective   map[string][]*gosmo.EffectivePermission
-	effErr      error
-
-	effAsked []string // "db:<name>" or "server:<name>"
-}
-
-var secDB = &gosmo.Database{Name: "app", ID: 5}
-
-func (c *secCatalog) ServerInfo() *gosmo.ServerInfo {
-	return &gosmo.ServerInfo{EngineEdition: int(c.engine)}
-}
-
-func (c *secCatalog) CurrentDatabase(context.Context) (string, error) { return "app", nil }
-
-func (c *secCatalog) DatabaseByName(_ context.Context, name string) (*gosmo.Database, error) {
-	if strings.EqualFold(name, "app") {
-		return secDB, nil
-	}
-	return nil, gosmo.ErrNotFound
-}
-
-func (c *secCatalog) Logins(context.Context) ([]*gosmo.Login, error) {
-	return sortedBy(c.logins, func(l *gosmo.Login) string { return l.Name }), nil
-}
-
-// sortedBy is list as gosmo's ORDER BY name returns it under a
-// case-insensitive collation; the handlers keep the server's order.
-func sortedBy[T any](list []T, nameOf func(T) string) []T {
-	out := slices.Clone(list)
-	slices.SortStableFunc(out, func(a, b T) int {
-		return strings.Compare(strings.ToLower(nameOf(a)), strings.ToLower(nameOf(b)))
-	})
-	return out
-}
-
-// byName finds name in list, case-sensitively as a binary collation would.
-func byName[T any](list []T, nameOf func(T) string, name, what string) (T, error) {
-	for _, x := range list {
-		if nameOf(x) == name {
-			return x, nil
-		}
-	}
-	var zero T
-	return zero, fmt.Errorf("gosmo: %s %q not found: %w", what, name, gosmo.ErrNotFound)
-}
-
-func (c *secCatalog) LoginByName(_ context.Context, name string) (*gosmo.Login, error) {
-	return byName(c.logins, func(l *gosmo.Login) string { return l.Name }, name, "login")
-}
-
-func (c *secCatalog) ServerRoles(context.Context) ([]*gosmo.ServerRole, error) {
-	return sortedBy(c.serverRoles, func(r *gosmo.ServerRole) string { return r.Name }), nil
-}
-
-func (c *secCatalog) ServerRoleByName(_ context.Context, name string) (*gosmo.ServerRole, error) {
-	return byName(c.serverRoles, func(r *gosmo.ServerRole) string { return r.Name }, name, "server role")
-}
-
-func (c *secCatalog) ServerRoleMembers(_ context.Context, role string) ([]*gosmo.RoleMember, error) {
-	return c.members["server:"+role], nil
-}
-
-func (c *secCatalog) Users(_ context.Context, d *gosmo.Database) ([]*gosmo.User, error) {
-	return sortedBy(c.users, func(u *gosmo.User) string { return u.Name }), nil
-}
-
-func (c *secCatalog) UserByName(_ context.Context, _ *gosmo.Database, name string) (*gosmo.User, error) {
-	return byName(c.users, func(u *gosmo.User) string { return u.Name }, name, "user")
-}
-
-func (c *secCatalog) DatabaseRoles(context.Context, *gosmo.Database) ([]*gosmo.DatabaseRole, error) {
-	return sortedBy(c.dbRoles, func(r *gosmo.DatabaseRole) string { return r.Name }), nil
-}
-
-func (c *secCatalog) DatabaseRoleByName(_ context.Context, _ *gosmo.Database, name string) (*gosmo.DatabaseRole, error) {
-	return byName(c.dbRoles, func(r *gosmo.DatabaseRole) string { return r.Name }, name, "role")
-}
-
-func (c *secCatalog) ApplicationRoleByName(_ context.Context, _ *gosmo.Database, name string) (*gosmo.ApplicationRole, error) {
-	return byName(c.appRoles, func(r *gosmo.ApplicationRole) string { return r.Name }, name, "application role")
-}
-
-func (c *secCatalog) DatabaseRoleMembers(_ context.Context, _ *gosmo.Database, role string) ([]*gosmo.RoleMember, error) {
-	return c.members["db:"+role], nil
-}
-
-func (c *secCatalog) PermissionsForPrincipal(_ context.Context, _ *gosmo.Database, p string) ([]*gosmo.PrincipalSecurable, error) {
-	return c.dbPerms[p], nil
-}
-
-func (c *secCatalog) ColumnPermissionsForPrincipal(_ context.Context, _ *gosmo.Database, p string) ([]*gosmo.ColumnPermissionEntry, error) {
-	return c.colPerms[p], nil
-}
-
-func (c *secCatalog) ServerPermissions(context.Context) ([]*gosmo.ServerPermissionEntry, error) {
-	return c.serverPerms, nil
-}
-
-func (c *secCatalog) EffectivePermissions(_ context.Context, _ *gosmo.Database, user string) ([]*gosmo.EffectivePermission, error) {
-	c.effAsked = append(c.effAsked, "db:"+user)
-	return c.effective["db:"+user], c.effErr
-}
-
-func (c *secCatalog) EffectiveServerPermissions(_ context.Context, login string) ([]*gosmo.EffectivePermission, error) {
-	c.effAsked = append(c.effAsked, "server:"+login)
-	return c.effective["server:"+login], c.effErr
-}
-
-func newSecCatalog() *secCatalog {
-	t := time.Date(2026, 3, 14, 9, 12, 44, 0, time.UTC)
-	return &secCatalog{
-		logins: []*gosmo.Login{
-			{Name: "sa", LoginType: gosmo.PrincipalSQLLogin, IsDisabled: true, DefaultDatabase: "master",
-				DefaultLanguage: "us_english", IsPolicyChecked: true, CreateDate: t, ModifyDate: t},
-			{Name: "etl", LoginType: gosmo.PrincipalSQLLogin, DefaultDatabase: "app", DefaultLanguage: "us_english",
-				IsPolicyChecked: true, IsExpirationChecked: true, CreateDate: t, ModifyDate: t},
-			{Name: `CORP\dba`, LoginType: gosmo.PrincipalWindowsGroup, DefaultDatabase: "master", CreateDate: t, ModifyDate: t},
-			{Name: "##MS_AgentSigningCertificate##", LoginType: gosmo.PrincipalCertificateMappedLogin, CreateDate: t, ModifyDate: t},
-		},
-		serverRoles: []*gosmo.ServerRole{
-			{Name: "sysadmin", IsFixedRole: true, Owner: "sa", Members: []string{"sa", `CORP\dba`}},
-			{Name: "monitoring", Owner: "sa", Members: []string{"etl"}},
-			{Name: "public", IsFixedRole: true, Owner: "sa"},
-		},
-		serverPerms: []*gosmo.ServerPermissionEntry{
-			{Principal: "etl", Permission: "VIEW SERVER STATE", State: gosmo.PermissionGrant},
-			{Principal: "monitoring", Permission: "VIEW ANY DEFINITION", State: gosmo.PermissionGrant},
-			{Principal: "etl", Permission: "ALTER ANY LOGIN", State: gosmo.PermissionDeny},
-		},
-		users: []*gosmo.User{
-			{Name: "etl_user", UserType: gosmo.PrincipalSQLUser, LoginName: "etl", DefaultSchema: "dbo", AuthType: "INSTANCE", CreateDate: t, ModifyDate: t},
-			{Name: "dbo", UserType: gosmo.PrincipalSQLUser, LoginName: "sa", LoginDisabled: true, DefaultSchema: "dbo", AuthType: "INSTANCE", CreateDate: t, ModifyDate: t},
-			{Name: "ghost", UserType: gosmo.PrincipalSQLUser, DefaultSchema: "dbo", AuthType: "INSTANCE", CreateDate: t, ModifyDate: t},
-			{Name: "nologin", UserType: gosmo.PrincipalSQLUser, DefaultSchema: "dbo", AuthType: "NONE", CreateDate: t, ModifyDate: t},
-			{Name: `CORP\ann`, UserType: gosmo.PrincipalWindowsUser, AuthType: "INSTANCE", CreateDate: t, ModifyDate: t},
-		},
-		dbRoles: []*gosmo.DatabaseRole{
-			{Name: "db_owner", IsFixedRole: true, Owner: "dbo", Members: []string{"dbo"}},
-			{Name: "reporting", Owner: "dbo", Members: []string{"etl_user", "readers"}},
-			{Name: "readers", Owner: "dbo", Members: []string{"etl_user"}},
-		},
-		appRoles: []*gosmo.ApplicationRole{{Name: "billing_app", DefaultSchema: "dbo", CreateDate: t, ModifyDate: t}},
-		members: map[string][]*gosmo.RoleMember{
-			"db:reporting":    {{Name: "etl_user", Type: gosmo.PrincipalSQLUser}, {Name: "readers", Type: gosmo.PrincipalDatabaseRole}},
-			"server:sysadmin": {{Name: `CORP\dba`, Type: gosmo.PrincipalWindowsGroup}, {Name: "sa", Type: gosmo.PrincipalSQLLogin}},
-		},
-		dbPerms: map[string][]*gosmo.PrincipalSecurable{
-			"etl_user": {
-				{SecurableType: gosmo.SecurableDatabase, Permission: "CONNECT", State: gosmo.PermissionGrant},
-				{SecurableType: gosmo.SecurableSchema, Name: "Sales", Permission: "SELECT", State: gosmo.PermissionGrantWithGrantOption},
-				{SecurableType: gosmo.SecurableTable, Schema: "dbo", Name: "Orders", Permission: "DELETE", State: gosmo.PermissionDeny},
-			},
-			"readers":     {{SecurableType: gosmo.SecurableSchema, Name: "dbo", Permission: "SELECT", State: gosmo.PermissionGrant}},
-			"billing_app": {{SecurableType: gosmo.SecurableSchema, Name: "Sales", Permission: "EXECUTE", State: gosmo.PermissionGrant}},
-		},
-		colPerms: map[string][]*gosmo.ColumnPermissionEntry{
-			"etl_user": {{Principal: "etl_user", Schema: "dbo", Object: "Customers", ObjectType: gosmo.SecurableTable,
-				Column: "Email", Permission: "SELECT", State: gosmo.PermissionDeny}},
-		},
-		effective: map[string][]*gosmo.EffectivePermission{
-			"db:etl_user": {{Entity: "database", Permission: "CONNECT"}, {Entity: "database", Permission: "SELECT"}},
-			"server:etl":  {{Entity: "server", Permission: "CONNECT SQL"}, {Entity: "server", Permission: "VIEW SERVER STATE"}},
-		},
-	}
-}
-
-// runSecurity runs `security <argv…>` against cat.
-func runSecurity(t *testing.T, cat Catalog, argv ...string) (*output.Result, error) {
+// runSecurity runs `security <argv…>` against s.
+func runSecurity(t *testing.T, s *secServer, argv ...string) (*output.Result, error) {
 	t.Helper()
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
+			return s.conn(ctx)
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
+		Catalog: ServerCatalog,
 	}
 	tree := &spec.Tree{Commands: SecurityCommands(d)}
 	inv, perr := args.Parse(tree, append([]string{"security"}, append(argv, "--server", "srv", "--auth", "windows")...), args.Options{})
@@ -264,7 +82,7 @@ func TestSecurityLoginsList(t *testing.T) {
 		{[]string{"--type", "windows-group"}, []string{`CORP\dba`}},
 		{[]string{"--type", "windows"}, nil},
 	} {
-		res, err := runSecurity(t, newSecCatalog(), append([]string{"logins", "list"}, tc.argv...)...)
+		res, err := runSecurity(t, newSecServer(t), append([]string{"logins", "list"}, tc.argv...)...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -272,7 +90,7 @@ func TestSecurityLoginsList(t *testing.T) {
 			t.Errorf("%q: names %q, want %q", tc.argv, got, tc.want)
 		}
 	}
-	res, _ := runSecurity(t, newSecCatalog(), "logins", "list", "--include-disabled")
+	res, _ := runSecurity(t, newSecServer(t), "logins", "list", "--include-disabled")
 	rows := rowsOf(res.Sets[0])
 	if want := "sa|SQL_LOGIN|1|0|master|us_english|1|0|2026-03-14 09:12:44.000|2026-03-14 09:12:44.000"; rows[3] != want {
 		t.Errorf("sa row %s, want %s", rows[3], want)
@@ -284,7 +102,7 @@ func TestSecurityLoginsList(t *testing.T) {
 }
 
 func TestSecurityUsersList(t *testing.T) {
-	res, err := runSecurity(t, newSecCatalog(), "users", "list")
+	res, err := runSecurity(t, newSecServer(t), "users", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,16 +126,16 @@ func TestSecurityUsersList(t *testing.T) {
 	}
 
 	// Azure SQL Database hides the logins: orphaned cannot be told.
-	cat := newSecCatalog()
-	cat.engine = gosmo.EngineAzureSQLDatabase
-	res, _ = runSecurity(t, cat, "users", "list")
+	srv := newSecServer(t)
+	srv.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase)
+	res, _ = runSecurity(t, srv, "users", "list")
 	if got := column(res.Sets[0], "orphaned"); slices.ContainsFunc(got, func(s string) bool { return s != "NULL" }) {
 		t.Errorf("Azure orphaned %q, want all NULL", got)
 	}
 }
 
 func TestSecurityRolesList(t *testing.T) {
-	res, err := runSecurity(t, newSecCatalog(), "roles", "list")
+	res, err := runSecurity(t, newSecServer(t), "roles", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,21 +146,21 @@ func TestSecurityRolesList(t *testing.T) {
 	}; !slices.Equal(got, want) {
 		t.Errorf("database roles %q, want %q", got, want)
 	}
-	res, err = runSecurity(t, newSecCatalog(), "roles", "list", "--scope", "server")
+	res, err = runSecurity(t, newSecServer(t), "roles", "list", "--scope", "server")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := rowsOf(res.Sets[0]), []string{
 		"monitoring|server|0|sa|1|etl",
 		"public|server|1|sa|0|∅",
-		`sysadmin|server|1|sa|2|sa, CORP\dba`,
+		`sysadmin|server|1|sa|2|CORP\dba, sa`, // members by name
 	}; !slices.Equal(got, want) {
 		t.Errorf("server roles %q, want %q", got, want)
 	}
 }
 
 func TestSecurityRoleMembers(t *testing.T) {
-	res, err := runSecurity(t, newSecCatalog(), "role-members", "reporting")
+	res, err := runSecurity(t, newSecServer(t), "role-members", "reporting")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +170,7 @@ func TestSecurityRoleMembers(t *testing.T) {
 	if f := fieldOf(t, res, "scope"); f.Value != "database" {
 		t.Errorf("scope %q", f.Value)
 	}
-	res, err = runSecurity(t, newSecCatalog(), "role-members", "sysadmin", "--scope", "server")
+	res, err = runSecurity(t, newSecServer(t), "role-members", "sysadmin", "--scope", "server")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +193,7 @@ func TestSecurityRoleMembersNotFound(t *testing.T) {
 		{[]string{"nosuch"}, "security roles list lists the roles"},
 		{[]string{"nosuch", "--scope", "server"}, "security roles list --scope server"},
 	} {
-		_, err := runSecurity(t, newSecCatalog(), append([]string{"role-members"}, tc.argv...)...)
+		_, err := runSecurity(t, newSecServer(t), append([]string{"role-members"}, tc.argv...)...)
 		e := wantCode(t, err, output.CodeNotFound)
 		if !strings.Contains(e.Hint, tc.hint) {
 			t.Errorf("%q: hint %q, want %q", tc.argv, e.Hint, tc.hint)
@@ -384,7 +202,7 @@ func TestSecurityRoleMembersNotFound(t *testing.T) {
 }
 
 func TestSecurityPermissionsExplicit(t *testing.T) {
-	res, err := runSecurity(t, newSecCatalog(), "permissions", "etl_user")
+	res, err := runSecurity(t, newSecServer(t), "permissions", "etl_user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,18 +212,19 @@ func TestSecurityPermissionsExplicit(t *testing.T) {
 			t.Errorf("%s %q, want %q", key, f.Value, want)
 		}
 	}
-	// class|schema|name|column|permission|state: securables, then columns.
+	// class|schema|name|column|permission|state: securables (the server's
+	// order: by class_desc, OBJECT_OR_COLUMN before SCHEMA), then columns.
 	if got, want := rowsOf(res.Sets[0]), []string{
 		"DATABASE|∅|∅|∅|CONNECT|GRANT",
-		"SCHEMA|∅|Sales|∅|SELECT|GRANT_WITH_GRANT_OPTION",
 		"TABLE|dbo|Orders|∅|DELETE|DENY",
+		"SCHEMA|∅|Sales|∅|SELECT|GRANT_WITH_GRANT_OPTION",
 		"TABLE|dbo|Customers|Email|SELECT|DENY",
 	}; !slices.Equal(got, want) {
 		t.Errorf("rows %q, want %q", got, want)
 	}
 
 	// A role answers too, explicitly.
-	res, err = runSecurity(t, newSecCatalog(), "permissions", "readers")
+	res, err = runSecurity(t, newSecServer(t), "permissions", "readers")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +239,7 @@ func TestSecurityPermissionsExplicit(t *testing.T) {
 	}
 
 	// So does an application role: after users and database roles.
-	res, err = runSecurity(t, newSecCatalog(), "permissions", "billing_app")
+	res, err = runSecurity(t, newSecServer(t), "permissions", "billing_app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,12 +251,12 @@ func TestSecurityPermissionsExplicit(t *testing.T) {
 	}
 
 	// Server scope: only the login's own entries.
-	res, err = runSecurity(t, newSecCatalog(), "permissions", "etl", "--scope", "server")
+	res, err = runSecurity(t, newSecServer(t), "permissions", "etl", "--scope", "server")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := rowsOf(res.Sets[0]), []string{
-		"SERVER|∅|∅|∅|VIEW SERVER STATE|GRANT", "SERVER|∅|∅|∅|ALTER ANY LOGIN|DENY",
+		"SERVER|∅|∅|∅|ALTER ANY LOGIN|DENY", "SERVER|∅|∅|∅|VIEW SERVER STATE|GRANT",
 	}; !slices.Equal(got, want) {
 		t.Errorf("server rows %q, want %q", got, want)
 	}
@@ -445,15 +264,15 @@ func TestSecurityPermissionsExplicit(t *testing.T) {
 		t.Errorf("etl memberOf %q", f.Value)
 	}
 	// A principal in no role: memberOf NULL.
-	res, _ = runSecurity(t, newSecCatalog(), "permissions", "ghost")
+	res, _ = runSecurity(t, newSecServer(t), "permissions", "ghost")
 	if f := fieldOf(t, res, "memberOf"); !f.Null {
 		t.Errorf("ghost memberOf %+v, want NULL", f)
 	}
 }
 
 func TestSecurityPermissionsEffective(t *testing.T) {
-	cat := newSecCatalog()
-	res, err := runSecurity(t, cat, "permissions", "etl_user", "--effective")
+	srv := newSecServer(t)
+	res, err := runSecurity(t, srv, "permissions", "etl_user", "--effective")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,27 +282,27 @@ func TestSecurityPermissionsEffective(t *testing.T) {
 	if f := fieldOf(t, res, "mode"); f.Value != "effective" {
 		t.Errorf("mode %q", f.Value)
 	}
-	res, err = runSecurity(t, cat, "permissions", "etl", "--scope", "server", "--effective")
+	res, err = runSecurity(t, srv, "permissions", "etl", "--scope", "server", "--effective")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := column(res.Sets[0], "permission"); !slices.Equal(got, []string{"CONNECT SQL", "VIEW SERVER STATE"}) {
 		t.Errorf("server rows %q", got)
 	}
-	if !slices.Equal(cat.effAsked, []string{"db:etl_user", "server:etl"}) {
-		t.Errorf("asked %q", cat.effAsked)
+	if !slices.Equal(srv.effAsked, []string{"db:etl_user", "server:etl"}) {
+		t.Errorf("asked %q", srv.effAsked)
 	}
 
 	// A role cannot be impersonated: a usage error before any EXECUTE AS.
 	for _, argv := range [][]string{{"readers"}, {"billing_app"}, {"sysadmin", "--scope", "server"}} {
-		cat := newSecCatalog()
-		_, err := runSecurity(t, cat, append(append([]string{"permissions"}, argv...), "--effective")...)
+		srv := newSecServer(t)
+		_, err := runSecurity(t, srv, append(append([]string{"permissions"}, argv...), "--effective")...)
 		e := wantCode(t, err, output.CodeUsageError)
 		if !strings.Contains(e.Message, "cannot impersonate a role") {
 			t.Errorf("%q: %q", argv, e.Message)
 		}
-		if len(cat.effAsked) != 0 {
-			t.Errorf("%q: impersonated %q", argv, cat.effAsked)
+		if len(srv.effAsked) != 0 {
+			t.Errorf("%q: impersonated %q", argv, srv.effAsked)
 		}
 		// An application role has no member to suggest.
 		if member := strings.Contains(e.Hint, "that is a member"); member != (argv[0] != "billing_app") {
@@ -501,10 +320,10 @@ func TestSecurityPermissionsEffectiveWithoutImpersonate(t *testing.T) {
 		{[]string{"etl_user"}, 15517, "IMPERSONATE on it, or db_owner"},
 		{[]string{"etl", "--scope", "server"}, 15406, "IMPERSONATE on it, or CONTROL SERVER"},
 	} {
-		cat := newSecCatalog()
-		cat.effErr = fmt.Errorf("gosmo: effective: %w", mssql.Error{Number: tc.number, Class: 16,
+		srv := newSecServer(t)
+		srv.effErr = fmt.Errorf("gosmo: effective: %w", mssql.Error{Number: tc.number, Class: 16,
 			Message: "Cannot execute as the principal because it does not exist, cannot be impersonated, or you do not have permission."})
-		_, err := runSecurity(t, cat, append(append([]string{"permissions"}, tc.argv...), "--effective")...)
+		_, err := runSecurity(t, srv, append(append([]string{"permissions"}, tc.argv...), "--effective")...)
 		e := wantCode(t, err, output.CodePermissionDenied)
 		if !strings.Contains(e.Hint, tc.hint) || e.SQL == nil || e.SQL.Number != tc.number {
 			t.Errorf("%q: %+v hint %q", tc.argv, e.SQL, e.Hint)
@@ -525,16 +344,16 @@ func TestSecurityPermissionsNotFound(t *testing.T) {
 		{[]string{"billing_app", "--scope", "server"}, "is an application role of database [app]: drop --scope server"},
 		{[]string{"nosuch"}, "security users list and security roles list"},
 	} {
-		_, err := runSecurity(t, newSecCatalog(), append([]string{"permissions"}, tc.argv...)...)
+		_, err := runSecurity(t, newSecServer(t), append([]string{"permissions"}, tc.argv...)...)
 		e := wantCode(t, err, output.CodeNotFound)
 		if !strings.Contains(e.Hint, tc.hint) {
 			t.Errorf("%q: hint %q, want %q", tc.argv, e.Hint, tc.hint)
 		}
 	}
 	// A login with no user here: --scope server.
-	cat := newSecCatalog()
-	cat.users = slices.DeleteFunc(cat.users, func(u *gosmo.User) bool { return u.LoginName == "etl" })
-	_, err := runSecurity(t, cat, "permissions", "etl")
+	srv := newSecServer(t)
+	srv.users = slices.DeleteFunc(srv.users, func(u *gosmo.User) bool { return u.LoginName == "etl" })
+	_, err := runSecurity(t, srv, "permissions", "etl")
 	if e := wantCode(t, err, output.CodeNotFound); !strings.Contains(e.Hint, "[etl] is a login: add --scope server") {
 		t.Errorf("hint %q", e.Hint)
 	}

@@ -12,11 +12,11 @@ import (
 // newSymmetricKeyTestDialog is newAsymmetricKeyTestDialog for New Symmetric
 // Key. The pickers' second entries are the ones the tests pick, so a dialog
 // that ignored the selection and took the first object would fail.
-func newSymmetricKeyTestDialog(t *testing.T) (*NewSymmetricKeyDialog, *fakeInstance) {
+func newSymmetricKeyTestDialog(t *testing.T) (*NewSymmetricKeyDialog, *gFake) {
 	t.Helper()
 	// CreateSymmetricKey reads the key back; no rows is gosmo's "created but
 	// not visible" case, answered with the handle — see newLoginGeneral.
-	sc, rec := newFakeConn(t, fakeResponse{match: "FROM   sys.symmetric_keys k", cols: 13})
+	sc, rec := newGConn(t, fakeResponse{match: "FROM   sys.symmetric_keys k", cols: 13})
 	d := &NewSymmetricKeyDialog{dbName: "keydb"}
 	d.sc = sc
 	d.pages = []string{"General"}

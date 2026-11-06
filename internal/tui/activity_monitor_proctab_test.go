@@ -234,7 +234,7 @@ func TestActivityMonitorProcTabReplacesAStaleTempDBCopy(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			am := hostedProcMonitor(t, amTabBlock)
-			conn, inst := newFakeConn(t,
+			conn, inst := newGConn(t,
 				fakeResponse{match: "object_id('master.dbo.sp_block', 'P')", cols: 2, rows: [][]driver.Value{{false, true}}},
 				fakeResponse{match: "from tempdb.sys.sql_modules", cols: 1, rows: [][]driver.Value{{tc.stored}}},
 			)
@@ -269,7 +269,7 @@ func TestActivityMonitorProcTabOffersUpdateForAStaleMasterCopy(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			am := hostedProcMonitor(t, amTabBlock)
-			conn, inst := newFakeConn(t,
+			conn, inst := newGConn(t,
 				fakeResponse{match: "object_id('master.dbo.sp_block', 'P')", cols: 2, rows: [][]driver.Value{{true, false}}},
 				fakeResponse{match: "from master.sys.sql_modules", cols: 1, rows: [][]driver.Value{{tc.stored}}},
 			)
@@ -315,7 +315,7 @@ func TestActivityMonitorProcTabUpdateInMasterNeedsControlServer(t *testing.T) {
 			} else {
 				am.conn = serverRoleConn(t, nil, []string{"CONTROL SERVER"}, nil, []string{"sysadmin"})
 			}
-			pt.conn, _ = newFakeConn(t)
+			pt.conn, _ = newGConn(t)
 			pt.loc, pt.masterStale = activity.ProcMaster, true
 			am.buildTools()
 			if got := strings.Contains(amRender(am, 100, 30)[1], "Update in master"); got != tc.granted {
@@ -327,7 +327,7 @@ func TestActivityMonitorProcTabUpdateInMasterNeedsControlServer(t *testing.T) {
 
 // killTarget is the Block tab of a hosted panel with row 1 (session 57)
 // selected, its own connection answering the session read with session.
-func killTarget(t *testing.T, session []driver.Value) (*ActivityMonitor, *amProcTab, *fakeInstance) {
+func killTarget(t *testing.T, session []driver.Value) (*ActivityMonitor, *amProcTab, *gFake) {
 	t.Helper()
 	am := hostedProcMonitor(t, amTabBlock)
 	am.app.alertDialog = dialogs.NewAlertDialog(nil)
@@ -336,7 +336,7 @@ func killTarget(t *testing.T, session []driver.Value) (*ActivityMonitor, *amProc
 	if session != nil {
 		rows = [][]driver.Value{session}
 	}
-	sc, inst := newFakeConn(t, fakeResponse{match: "WHERE  s.session_id = @p1", arg: "57", cols: 29, rows: rows})
+	sc, inst := newGConn(t, fakeResponse{match: "WHERE  s.session_id = @p1", arg: "57", cols: 29, rows: rows})
 	pt := am.procTab()
 	pt.conn = sc
 	pt.loc = activity.ProcTempDB
@@ -367,7 +367,7 @@ func killItem(t *testing.T, pt *amProcTab) controls.MenuItem {
 	return controls.MenuItem{}
 }
 
-func killStatements(inst *fakeInstance) []string {
+func killStatements(inst *gFake) []string {
 	return slices.DeleteFunc(inst.Statements(), func(s string) bool { return !strings.Contains(s, "KILL") })
 }
 
@@ -472,7 +472,7 @@ func TestActivityMonitorProcTabInstallRefusalNamesTheRightOnlyWhenDenied(t *test
 	am := hostedProcMonitor(t, amTabBlock)
 	pt := am.procTab()
 	am.conn = serverRoleConn(t, nil, []string{"CONTROL SERVER"}, nil, []string{"sysadmin"})
-	pt.conn, _ = newFakeConn(t) // the tab's own clone, never probed: must not be what the gate asks
+	pt.conn, _ = newGConn(t) // the tab's own clone, never probed: must not be what the gate asks
 	pt.loc = activity.ProcTempDB
 	install := func() {
 		t.Helper()

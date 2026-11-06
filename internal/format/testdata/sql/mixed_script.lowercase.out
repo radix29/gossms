@@ -1,0 +1,98 @@
+-- header comment
+use master
+go
+
+select
+    a
+  , bee = b
+  , count(*)
+from
+    dbo.t t
+    inner join dbo.u u on u.id = t.id
+        and u.x = 1
+    left outer join v on v.a = t.a
+where
+    t.x between 1 and 5
+    and (t.y = 2 or t.z = 3)
+    or t.q is null
+group by
+    a
+  , b
+having
+    count(*) > 1
+order by
+    a desc;
+select 1
+update dbo.t
+set
+    a = 1
+  , b = N'x'
+where
+    id = @id
+insert into dbo.t (a, b)
+values
+    (1, 2)
+  , (3, 4);
+delete from t
+where
+    x in (
+        select y
+        from
+            z
+        where
+            q = 1
+    )
+declare
+    @a int = 1
+  , @b varchar(10)
+if @a = 1
+begin
+    print 'a';
+    select @b = 'x'
+end
+else if @a = 2
+    print 'b'
+else
+begin
+    set nocount on;
+end
+with c as (
+    select x = 1
+)
+, d as (
+    select y = 2
+)
+select *
+from
+    c
+    cross apply d
+create procedure dbo.p
+    @a int
+  , @b int = 0 output
+as
+begin
+    set nocount on;
+    select
+        n = case
+            when @a = 1 then 'one'
+            when @a = 2 then 'two'
+            else 'many'
+        end
+      , x
+    from
+        t;
+end
+GO 2
+
+exec sp_who
+    @loginame = 'sa',
+    @x = 1
+select
+    1e+5
+  , -1
+  , a - 1
+  , t.*
+  , $5.00
+  , x * -2
+from
+    t

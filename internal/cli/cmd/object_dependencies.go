@@ -23,6 +23,14 @@ const (
 	dirBoth   = "both"
 )
 
+// dependenciesSelect is what reading sys.sql_expression_dependencies takes,
+// the hint for its Msg 229 (object dependencies, and a table's DROP script,
+// which reads its schema-bound dependents there). public lacks it: checked on
+// 17, 2026-11-05, where a user granted only SELECT on a table — or VIEW
+// DEFINITION on the database — was refused.
+const dependenciesSelect = "SELECT on sys.sql_expression_dependencies, which public lacks: db_datareader and " +
+	"db_owner have it, or GRANT SELECT ON sys.sql_expression_dependencies. A DENY on it refuses even those."
+
 // maxDepth bounds --depth (D7): each level is a read per object reached.
 const maxDepth = 5
 
@@ -85,10 +93,24 @@ func (d Deps) objectDependencies(ctx context.Context, inv *spec.Invocation) (*ou
 	if err != nil {
 		e := readError(err)
 		if e.Code == output.CodePermissionDenied {
-			e.Hint = "Reading dependencies takes SELECT on sys.sql_expression_dependencies, which only db_owner " +
-				"has unless it is granted, besides VIEW DEFINITION."
+			e.Hint = "Reading dependencies takes " + dependenciesSelect
 		}
 		return res, e
+	}
+	// Both reads are all-or-nothing on VIEW DEFINITION on the database
+	// (gosmo Database.HasPermission): without it they answer no rows rather
+	// than refuse, so an empty list is checked before it is believed. A row
+	// at all means the permission is held.
+	if len(edges) == 0 {
+		switch held, err := dbase.HasPermission(ctx, "VIEW DEFINITION"); {
+		case err != nil:
+			res.Warnings = append(res.Warnings, "No dependencies are listed, and whether the login may see them "+
+				"could not be checked: "+err.Error())
+		case !held:
+			res.Warnings = append(res.Warnings, "No dependencies are listed, but the login lacks VIEW DEFINITION "+
+				"on the database, without which SQL Server lists none: there may be some. GRANT VIEW DEFINITION "+
+				"(or db_owner) shows them.")
+		}
 	}
 
 	res.Fields = append(objectFields(o),

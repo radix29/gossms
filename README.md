@@ -175,8 +175,10 @@ failed peer connection never retries with another server's credentials.
 
 **Group by Schema** (View menu, **Alt+G**, or the button at the right end of
 the Object Explorer title: `[⋮]` flat, `[Σ]` grouped) lists Tables, Views,
-Synonyms, Stored Procedures and Functions under one node per schema, as SSMS
-does. It applies
+Synonyms, Stored Procedures, Functions and Sequences under one node per schema,
+as SSMS does, and so do the System, File, External and Graph Tables folders,
+the System Views, Procedures and Functions folders, and the User-Defined Data
+Types, Table Types, Types and XML Schema Collections folders. It applies
 to every connected server, keeps expanded nodes open, and is off at each
 start. Names keep their `schema.` prefix; dragging a schema node into a query
 inserts `[schema]`.
@@ -304,6 +306,7 @@ As text; `data` reads, profiles, exports and loads table rows:
 gossms plan estimated -p dev --file slow.sql                       # compiles, runs nothing
 gossms plan actual -p dev --file slow.sql --transaction rollback   # runs it, keeps nothing
 gossms script object -p dev Sales.Customer --as create             # the TUI's Script As text
+gossms script db -p dev Sales --objects --include-permissions       # the TUI's Generate Scripts...
 gossms data top -p dev Sales.Customer --rows 20 --columns CustomerID,AccountNumber
 gossms data profile -p dev Sales.Customer                          # nulls, distinct, min/max per column
 gossms data export -p dev Sales.Customer --out-file customers.jsonl
@@ -372,7 +375,11 @@ of those) are saved automatically in:
 Tools > Options sets icon style, color theme (Dark, the default, Light, mc
 — blue panels, grey dialogs and cyan menus after mc's default skin in a modern
 terminal's colours — or mc - retro, the same skin in the original VGA colours),
-grid and text column widths, indent size, Max fetch rows (rows kept per result
+the default SQL style for Edit > Format Document (Standard upper-cases
+keywords; Lowercase lower-cases them, puts FROM, WHERE, GROUP BY, HAVING
+and ORDER BY alone on their lines with the joins indented under FROM, and
+writes `expr AS name` as `name = expr` — the Edit menu's cascade formats once in either), grid and text
+column widths, indent size, Max fetch rows (rows kept per result
 set in grid, text and file mode, 0 = unlimited; reaching it cancels the rest
 of the script, later GO batches included, and the results status line says so) and
 IntelliSense. Unsaved query tabs are recovered to the `recovered` folder beside

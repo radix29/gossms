@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/big"
 	"slices"
-	"strconv"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -42,20 +42,70 @@ func sequencePropPages(sc *db.ServerConn, dbName, schema, name string) []propPag
 	}
 }
 
-// sequenceValue validates one value row: a whole number in bigint's range,
-// gosmo.SequenceChanges' — a decimal(38, 0) sequence's wider range is shown but
-// cannot be written back. blank allows an empty row (Restart with).
-func sequenceValue(r *propsheet.TextRow, blank bool) {
+// sequenceRange is the range a sequence of type dt holds: the integer types',
+// and ±(10^p − 1) for decimal and numeric at precision p (0 is the bare
+// name's 18). ok is false for a user-defined alias type, whose base type the
+// catalog read does not carry; the server then judges the range.
+func sequenceRange(dt gosmo.DataType, precision int) (lo, hi *big.Int, ok bool) {
+	switch dt {
+	case gosmo.DataTypeTinyInt:
+		return big.NewInt(0), big.NewInt(math.MaxUint8), true
+	case gosmo.DataTypeSmallInt:
+		return big.NewInt(math.MinInt16), big.NewInt(math.MaxInt16), true
+	case gosmo.DataTypeInt:
+		return big.NewInt(math.MinInt32), big.NewInt(math.MaxInt32), true
+	case gosmo.DataTypeBigInt:
+		return big.NewInt(math.MinInt64), big.NewInt(math.MaxInt64), true
+	case gosmo.DataTypeDecimal, gosmo.DataTypeNumeric:
+		if precision < 1 || precision > 38 {
+			precision = 18
+		}
+		hi = new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(precision)), nil)
+		hi.Sub(hi, big.NewInt(1))
+		return new(big.Int).Neg(hi), hi, true
+	}
+	return nil, nil, false
+}
+
+// sequenceNumber parses a value row's text as gosmo takes it: a whole number
+// of any size, as decimal digits. The digits go to gosmo as the row holds them
+// (trimmed); gosmo re-renders them into the statement.
+func sequenceNumber(r *propsheet.TextRow) (*big.Int, bool) {
+	return new(big.Int).SetString(strings.TrimSpace(r.Value()), 10)
+}
+
+// sequenceValue validates one value row: a whole number within the range
+// typeRange reports, the sequence's data type's. Values are carried as text end
+// to end, so a decimal(38, 0) sequence's whole range can be written. blank
+// allows an empty row (Restart with).
+func sequenceValue(r *propsheet.TextRow, blank bool, typeRange func() (lo, hi *big.Int, ok bool)) {
 	r.SetValidate(func(v string) error {
 		v = strings.TrimSpace(v)
 		if v == "" && blank {
 			return nil
 		}
-		if _, err := strconv.ParseInt(v, 10, 64); err != nil {
-			return fmt.Errorf("%s must be a whole number from %d to %d", strings.ToLower(r.Label()), int64(math.MinInt64), int64(math.MaxInt64))
+		n, isNum := new(big.Int).SetString(v, 10)
+		lo, hi, known := typeRange()
+		switch {
+		case known && (!isNum || n.Cmp(lo) < 0 || n.Cmp(hi) > 0):
+			return fmt.Errorf("%s must be a whole number from %s to %s", strings.ToLower(r.Label()), lo, hi)
+		case !isNum:
+			return fmt.Errorf("%s must be a whole number", strings.ToLower(r.Label()))
 		}
 		return nil
 	})
+}
+
+// sequenceLastUsed is the Last used value row's text: last_used_value, which
+// tells "nothing handed out yet" apart from Current value's start value.
+func sequenceLastUsed(s *gosmo.Sequence) string {
+	switch {
+	case !s.TracksLastUsedValue():
+		return "(not tracked before SQL Server 2017)"
+	case s.LastUsedValue == "":
+		return "(none since created or restarted)"
+	}
+	return s.LastUsedValue
 }
 
 // sequenceCacheItem is the Cache picker's entry for what the catalog holds.
@@ -78,14 +128,22 @@ func pageSequenceGeneral(sc *db.ServerConn, dbName, schema, name string) propPag
 				return nil, nil, err
 			}
 
+			// An alias type (DataTypeSchema not sys) has no range here; a hidden
+			// one already reads as its base type.
+			typeRange := func() (lo, hi *big.Int, ok bool) {
+				if s.DataTypeSchema != "" && s.DataTypeSchema != "sys" {
+					return nil, nil, false
+				}
+				return sequenceRange(s.DataType, s.Precision)
+			}
 			restart := propsheet.Text("Restart with", "", 42)
-			sequenceValue(restart, true)
+			sequenceValue(restart, true, typeRange)
 			increment := propsheet.Text("Increment by", s.Increment, 42)
-			sequenceValue(increment, false)
+			sequenceValue(increment, false, typeRange)
 			minRow := propsheet.Text("Minimum value", s.MinValue, 42)
-			sequenceValue(minRow, false)
+			sequenceValue(minRow, false, typeRange)
 			maxRow := propsheet.Text("Maximum value", s.MaxValue, 42)
-			sequenceValue(maxRow, false)
+			sequenceValue(maxRow, false, typeRange)
 			cycle := propsheet.Check("Cycle", s.IsCycling)
 			cache := propsheet.Select("Cache", nseqCacheItems, slices.Index(nseqCacheItems, sequenceCacheItem(s)))
 			size := int64(s.CacheSize)
@@ -105,6 +163,7 @@ func pageSequenceGeneral(sc *db.ServerConn, dbName, schema, name string) propPag
 				propsheet.Section("Values"),
 				propsheet.Static("Start value", s.StartValue),
 				propsheet.Static("Current value", s.CurrentValue),
+				propsheet.Static("Last used value", sequenceLastUsed(s)),
 				restart,
 				propsheet.Note("Restart with sets the next value handed out, and the start value with it. Leave it blank to keep the sequence where it is."),
 				increment,
@@ -134,30 +193,19 @@ func pageSequenceGeneral(sc *db.ServerConn, dbName, schema, name string) propPag
 func sequenceChangesFrom(restart, increment, minRow, maxRow *propsheet.TextRow, cycle *propsheet.CheckRow,
 	cache *propsheet.SelectRow, cacheSize *propsheet.TextRow) (gosmo.SequenceChanges, error) {
 	var ch gosmo.SequenceChanges
-	num := func(r *propsheet.TextRow) (*int64, error) {
-		v := strings.TrimSpace(r.Value())
-		if !r.Dirty() || v == "" {
-			return nil, nil
+	// A row left as loaded is "", which SequenceChanges leaves as stored. The
+	// rows' validators have run (Form.Validate), and gosmo refuses anything
+	// but a whole number again.
+	num := func(r *propsheet.TextRow) string {
+		if !r.Dirty() {
+			return ""
 		}
-		n, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", strings.ToLower(r.Label()), err)
-		}
-		return &n, nil
+		return strings.TrimSpace(r.Value())
 	}
-	var err error
-	if ch.RestartWith, err = num(restart); err != nil {
-		return ch, err
-	}
-	if ch.Increment, err = num(increment); err != nil {
-		return ch, err
-	}
-	if ch.MinValue, err = num(minRow); err != nil {
-		return ch, err
-	}
-	if ch.MaxValue, err = num(maxRow); err != nil {
-		return ch, err
-	}
+	ch.RestartWith = num(restart)
+	ch.Increment = num(increment)
+	ch.MinValue = num(minRow)
+	ch.MaxValue = num(maxRow)
 	if cycle.Dirty() {
 		ch.Cycle = new(cycle.Checked())
 	}

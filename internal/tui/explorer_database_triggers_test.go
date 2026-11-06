@@ -89,7 +89,7 @@ func TestDatabaseTriggerScriptsAndDrops(t *testing.T) {
 // statement is schema-qualified, is the plausible reuse here and it addresses
 // a different object entirely.
 func TestDatabaseTriggerDropStatement(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	err := objectOps[NodeDatabaseTrigger].drop(t.Context(), sc,
 		nodeData{Type: NodeDatabaseTrigger, Name: "ddl_audit", DBName: "appdb"})
 	if err != nil {
@@ -133,9 +133,9 @@ func dbTriggerDatabaseRow() fakeResponse {
 		"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", "SQL_Latin1_General_CP1_CI_AS", false, when, int64(0), false}}}
 }
 
-func dbTriggerConn(t *testing.T, extra ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+func dbTriggerConn(t *testing.T, extra ...fakeResponse) (*db.ServerConn, *gFake) {
 	t.Helper()
-	return newFakeConn(t, append([]fakeResponse{dbTriggerDatabaseRow(), dbTriggerRows()}, extra...)...)
+	return newGConn(t, append([]fakeResponse{dbTriggerDatabaseRow(), dbTriggerRows()}, extra...)...)
 }
 
 // The tree's label is where a disabled trigger's state is visible at all — the

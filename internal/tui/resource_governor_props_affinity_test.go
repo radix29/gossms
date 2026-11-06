@@ -35,10 +35,10 @@ func rgPoolAffinityRows(rows ...[]driver.Value) fakeResponse {
 	return fakeResponse{match: rgPoolAffinity, cols: 3, rows: rows}
 }
 
-func rgPoolPage(t *testing.T, focus string, first ...fakeResponse) (*propsheet.Form, propApply, *fakeInstance, func() error) {
+func rgPoolPage(t *testing.T, focus string, first ...fakeResponse) (*propsheet.Form, propApply, *gFake, func() error) {
 	t.Helper()
-	sc, inst := newFakeConn(t, append(first, rgReads(rgConfig(true))...)...)
-	f, apply := loadPage(t, pageRGPools(sc, &rgModel{}, focus), inst)
+	sc, inst := newGConn(t, append(first, rgReads(rgConfig(true))...)...)
+	f, apply := loadPageG(t, pageRGPools(sc, &rgModel{}, focus), inst)
 	return f, apply, inst, func() error { return runRGApply(context.Background(), sc, apply) }
 }
 
@@ -179,8 +179,8 @@ func TestRGPoolAffinityWithoutSchedulers(t *testing.T) {
 
 // External pools take CPU ids.
 func TestRGExternalPoolCPUAffinity(t *testing.T) {
-	sc, inst := newFakeConn(t, rgReads(rgConfig(true))...)
-	ext, apply := loadPage(t, pageRGExternalPools(sc, &rgModel{}, "default"), inst)
+	sc, inst := newGConn(t, rgReads(rgConfig(true))...)
+	ext, apply := loadPageG(t, pageRGExternalPools(sc, &rgModel{}, "default"), inst)
 	if got := toggleGrid(t, ext).Text()[0][0]; got != "0" {
 		t.Errorf("first CPU listed as %q", got)
 	}

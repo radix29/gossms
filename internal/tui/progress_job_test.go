@@ -14,7 +14,7 @@ func escapeKey() *tcell.EventKey { return tcell.NewEventKey(tcell.KeyEscape, "",
 
 // waitForStatement polls until a write containing want has reached the fake
 // server — the moment a blockExec write is genuinely in flight.
-func waitForStatement(t *testing.T, inst *fakeInstance, want string) {
+func waitForStatement(t *testing.T, inst statementLog, want string) {
 	t.Helper()
 	for range 400 {
 		if strings.Contains(strings.Join(inst.Statements(), "\n"), want) {
@@ -33,7 +33,7 @@ func TestCancelStopsADeleteBatchAtTheObjectInFlight(t *testing.T) {
 	a := newTestApp()
 	hold := make(chan struct{})
 	defer close(hold)
-	sc, inst := newFakeConn(t, fakeResponse{match: "DROP TABLE [sales].[Beta]", blockExec: hold})
+	sc, inst := newGConn(t, fakeResponse{match: "DROP TABLE [sales].[Beta]", blockExec: hold})
 	beta := opTestNode(sc, NodeTable, "sales", "Beta", "").data
 	gamma := opTestNode(sc, NodeTable, "sales", "Gamma", "").data
 	op := objectOpFor(NodeTable)
@@ -70,7 +70,7 @@ func TestCancelStopsADeleteBatchAtTheObjectInFlight(t *testing.T) {
 func TestDeleteBatchReportsTheObjectInFlight(t *testing.T) {
 	a := newTestApp()
 	hold := make(chan struct{})
-	sc, _ := newFakeConn(t, fakeResponse{match: "DROP TABLE [sales].[Gamma]", blockExec: hold})
+	sc, _ := newGConn(t, fakeResponse{match: "DROP TABLE [sales].[Gamma]", blockExec: hold})
 	beta := opTestNode(sc, NodeTable, "sales", "Beta", "").data
 	gamma := opTestNode(sc, NodeTable, "sales", "Gamma", "").data
 	op := objectOpFor(NodeTable)
@@ -97,7 +97,7 @@ func TestDeleteBatchReportsTheObjectInFlight(t *testing.T) {
 // dialog stays up, and the job's own outcome is what done reports.
 func TestUninterruptibleJobIgnoresCancel(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	release := make(chan struct{})
 	started := make(chan context.Context, 1)
 	var gotErr error
@@ -137,7 +137,7 @@ func TestUninterruptibleJobIgnoresCancel(t *testing.T) {
 // retry something already done.
 func TestCancelAfterTheWorkSucceededReportsSuccess(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	release := make(chan struct{})
 	started := make(chan struct{})
 	var gotErr error
@@ -165,7 +165,7 @@ func TestCancelAfterTheWorkSucceededReportsSuccess(t *testing.T) {
 // the process — runs the caller's repair, and the next job runs.
 func TestProgressJobLatchClearsWhenTheWorkPanics(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	repaired := false
 	a.runWithProgress(progressJob{title: "T", message: "m", what: "test", sc: sc, repair: func() { repaired = true }},
 		func(context.Context, progressReport) error { panic("boom") },

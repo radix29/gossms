@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Backup Device Properties, driven through fakedb_test.go.
+// Backup Device Properties, driven through gosmotest_fixtures_test.go.
 //
 // The device under test is the second of three, so a page that ignored its
 // selection and read whichever row sorts first cannot pass. The by-name read
@@ -82,8 +83,8 @@ func firstGrid(t *testing.T, f *propsheet.Form) *controls.DataGrid {
 // The page must show the device it was opened on, not the first row in
 // sys.backup_devices.
 func TestBackupDeviceGeneralLoadsTheSelectedDevice(t *testing.T) {
-	sc, inst := newFakeConn(t, backupDeviceResponses()...)
-	form, apply := loadPage(t, pageBackupDeviceGeneral(sc, backupDeviceUnderTest), inst)
+	sc, inst := newGConn(t, backupDeviceResponses()...)
+	form, apply := loadPageG(t, pageBackupDeviceGeneral(sc, backupDeviceUnderTest), inst)
 
 	if got := staticValue(t, form, "Device name"); got != backupDeviceUnderTest {
 		t.Errorf("Device name is %q, want the selected device's %q", got, backupDeviceUnderTest)
@@ -106,13 +107,13 @@ func TestBackupDeviceGeneralLoadsTheSelectedDevice(t *testing.T) {
 // device whose path this login cannot resolve then reports an empty medium.
 func TestBackupDeviceMediaContentsReadsTheLogicalDevice(t *testing.T) {
 	finish := time.Date(2026, 9, 1, 2, 30, 0, 0, time.UTC)
-	sc, inst := newFakeConn(t, append(backupDeviceResponses(),
+	sc, inst := newGConn(t, append(backupDeviceResponses(),
 		headerOnlyResponse(
 			[]driver.Value{"Nightly full", int64(1), int64(1), "HealthClinic", "win10cli", finish, int64(4354048)},
 			[]driver.Value{"Nightly log", int64(2), int64(2), "HealthClinic", "win10cli", finish, int64(65536)},
 		))...)
 
-	form, _ := loadPage(t, pageBackupDeviceMediaContents(sc, backupDeviceUnderTest), inst)
+	form, _ := loadPageG(t, pageBackupDeviceMediaContents(sc, backupDeviceUnderTest), inst)
 
 	reads := inst.Reads("RESTORE HEADERONLY")
 	if len(reads) != 1 {
@@ -147,8 +148,9 @@ func TestBackupDeviceMediaContentsReadsTheLogicalDevice(t *testing.T) {
 // world: a missing file, an offline tape or an unreachable share must not
 // fail the whole page, because none of that makes the device unreadable.
 func TestBackupDeviceMediaContentsSurvivesAnUnreadableMedium(t *testing.T) {
-	// No RESTORE HEADERONLY response is scripted, so the read fails.
-	sc, inst := newFakeConn(t, backupDeviceResponses()...)
+	// The medium refuses the read (a missing file, an offline tape).
+	sc, inst := newGConn(t, append(backupDeviceResponses(),
+		fakeResponse{match: "RESTORE HEADERONLY", err: errors.New("the media family is not readable")})...)
 
 	page := pageBackupDeviceMediaContents(sc, backupDeviceUnderTest)
 	form, _, err := page.load(t.Context())
@@ -172,11 +174,11 @@ func TestBackupDeviceMediaContentsSurvivesAnUnreadableMedium(t *testing.T) {
 // prop_page_requires_test.go's pagesThatOnlyRead only permits that for a page
 // with no apply at all.
 func TestBackupDevicePagesDoNotWrite(t *testing.T) {
-	sc, inst := newFakeConn(t, append(backupDeviceResponses(),
+	sc, inst := newGConn(t, append(backupDeviceResponses(),
 		headerOnlyResponse([]driver.Value{"Nightly full", int64(1), int64(1), "HealthClinic", "win10cli", time.Now(), int64(1024)}))...)
 
 	for _, page := range backupDevicePropPages(sc, backupDeviceUnderTest) {
-		_, apply := loadPage(t, page, inst)
+		_, apply := loadPageG(t, page, inst)
 		if apply != nil {
 			t.Errorf("page %q has an apply", page.title)
 		}

@@ -9,7 +9,7 @@ import "testing"
 // server-level rights was refused at the Connect dialog with "load server
 // info: the user does not have permission to perform this action".
 func TestConnectSurvivesADeniedSysInfoRead(t *testing.T) {
-	sc, _ := newFakeConnWithoutSysInfo(t)
+	sc, _ := newGConnWithoutSysInfo(t)
 
 	info := sc.Server.Info()
 	if !info.SysInfoUnavailable {
@@ -25,7 +25,7 @@ func TestConnectSurvivesADeniedSysInfoRead(t *testing.T) {
 // machine with no CPUs and no memory as fact — the failure mode this whole
 // change exists to avoid.
 func TestUnreadableSysInfoRendersAsNA(t *testing.T) {
-	denied, _ := newFakeConnWithoutSysInfo(t)
+	denied, _ := newGConnWithoutSysInfo(t)
 	info := denied.Server.Info()
 
 	if got := sysInfoInt(info, int64(info.LogicalCPUCount)); got != "N/A" {
@@ -37,7 +37,7 @@ func TestUnreadableSysInfoRendersAsNA(t *testing.T) {
 
 	// And the readable case must still show the numbers, or the placeholder
 	// has simply replaced the feature.
-	ok, _ := newFakeConn(t)
+	ok, _ := newGConn(t)
 	okInfo := ok.Server.Info()
 	if got := sysInfoInt(okInfo, int64(okInfo.LogicalCPUCount)); got != "8" {
 		t.Errorf("CPU count = %q, want %q", got, "8")

@@ -13,8 +13,9 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata/*/*.out from the current formatters")
 
-// TestGolden formats every testdata/<lang>/*.in with the language's default
-// style at the default indent and compares with the matching .out. Run with
+// TestGolden formats every testdata/<lang>/*.in in each of the language's
+// styles at the default indent and compares with the matching .out — <name>.out
+// for the default style, <name>.<style ID>.out for any other. Run with
 // -update to regenerate the .out files, then read the diff.
 func TestGolden(t *testing.T) {
 	for _, l := range []Language{LangSQL, LangXML, LangJSON} {
@@ -23,36 +24,43 @@ func TestGolden(t *testing.T) {
 		if len(ins) == 0 {
 			t.Fatalf("no golden inputs in %s", dir)
 		}
-		for _, in := range ins {
-			t.Run(filepath.Base(in), func(t *testing.T) {
-				src, err := os.ReadFile(in)
-				if err != nil {
-					t.Fatal(err)
-				}
-				got, err := Format(l, "", string(src), Options{})
-				if err != nil {
-					t.Fatalf("Format: %v", err)
-				}
+		for k, st := range Styles(l) {
+			for _, in := range ins {
 				outPath := strings.TrimSuffix(in, ".in") + ".out"
-				if *update {
-					if err := os.WriteFile(outPath, []byte(got), 0o644); err != nil {
-						t.Fatal(err)
-					}
-					return
+				if k > 0 {
+					outPath = strings.TrimSuffix(in, ".in") + "." + st.ID + ".out"
 				}
-				want, err := os.ReadFile(outPath)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if got != string(want) {
-					t.Errorf("got:\n%s\nwant:\n%s", got, want)
-				}
-				again, err := Format(l, "", got, Options{})
-				if err != nil || again != got {
-					t.Errorf("not idempotent (err %v):\n%s", err, again)
-				}
-			})
+				t.Run(filepath.Base(outPath), func(t *testing.T) { golden(t, l, st.ID, in, outPath) })
+			}
 		}
+	}
+}
+
+func golden(t *testing.T, l Language, styleID, in, outPath string) {
+	src, err := os.ReadFile(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Format(l, styleID, string(src), Options{})
+	if err != nil {
+		t.Fatalf("Format: %v", err)
+	}
+	if *update {
+		if err := os.WriteFile(outPath, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != string(want) {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	again, err := Format(l, styleID, got, Options{})
+	if err != nil || again != got {
+		t.Errorf("not idempotent (err %v):\n%s", err, again)
 	}
 }
 
@@ -161,9 +169,19 @@ func TestStyleRegistry(t *testing.T) {
 	if _, err := Format(LangText, "", "x", Options{}); !errors.Is(err, ErrNoFormatter) {
 		t.Errorf("Format(Text) err %v, want ErrNoFormatter", err)
 	}
-	for _, l := range []Language{LangSQL, LangXML, LangJSON} {
+	for _, l := range []Language{LangXML, LangJSON} {
 		if s := Styles(l); len(s) != 1 || s[0].ID != "standard" {
 			t.Errorf("Styles(%s) = %+v", l, s)
+		}
+	}
+	// SQL: Standard stays the default, so an empty or stale config value
+	// formats as it always has.
+	if s := Styles(LangSQL); len(s) != 2 || s[0].ID != "standard" || s[1].ID != "lowercase" || s[1].Name != "Lowercase" {
+		t.Errorf("Styles(SQL) = %+v", s)
+	}
+	for id, want := range map[string]string{"": "standard", "no-such-style": "standard", "lowercase": "lowercase"} {
+		if st, ok := StyleByID(LangSQL, id); !ok || st.ID != want {
+			t.Errorf("StyleByID(SQL, %q) = %+v, %v; want %s", id, st, ok, want)
 		}
 	}
 }

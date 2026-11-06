@@ -283,7 +283,7 @@ func (s *dataSource) aliasTypes(ctx context.Context, cols []*gosmo.Column) (map[
 	if !slices.ContainsFunc(cols, func(c *gosmo.Column) bool { return c.IsUserDefinedType && !c.IsTypeHidden }) {
 		return nil, nil
 	}
-	types, err := s.cat.UserDefinedDataTypes(ctx, s.dbase)
+	types, err := s.dbase.UserDefinedDataTypes(ctx)
 	if err != nil {
 		return nil, readError(err)
 	}

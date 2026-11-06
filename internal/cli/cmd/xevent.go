@@ -67,25 +67,22 @@ func (d Deps) xeventSessions(ctx context.Context, inv *spec.Invocation) (*output
 	// Azure SQL Database's sessions are the database's, and VIEW SERVER
 	// STATE does not exist there: its views need VIEW DATABASE STATE, which a
 	// refused read reports.
-	var scopeDB *gosmo.Database
+	xe := sc.Server.XEvents()
 	scope := "server"
 	if info := cat.ServerInfo(); info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase {
-		if scopeDB, err = currentDatabase(ctx, cat, res); err != nil {
+		dbase, err := currentDatabase(ctx, cat, res)
+		if err != nil {
 			return res, err
 		}
-		scope = "database"
+		xe, scope = dbase.XEvents(), "database"
 	} else {
 		// Without it the session catalog is refused or reads empty, which
 		// would say the server has no sessions.
-		ok, err := cat.HasViewServerState(ctx)
-		if err == nil && !ok {
-			err = viewServerStateDenied("xevent sessions")
-		}
-		if err != nil {
-			return res, readError(err)
+		if err := requireServerState(ctx, sc.Server, "xevent sessions"); err != nil {
+			return res, err
 		}
 	}
-	list, err := cat.EventSessions(ctx, scopeDB)
+	list, err := xe.Sessions(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -93,7 +90,7 @@ func (d Deps) xeventSessions(ctx context.Context, inv *spec.Invocation) (*output
 	for _, es := range list {
 		row := xeSession{EventSession: es}
 		if es.IsRunning {
-			st, err := cat.EventSessionStatus(ctx, es)
+			st, err := es.Status(ctx)
 			switch {
 			case errors.Is(err, gosmo.ErrNotFound):
 				// Stopped between the two reads.

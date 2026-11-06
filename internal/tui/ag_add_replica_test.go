@@ -101,7 +101,7 @@ func TestAGDefaultFailoverMode(t *testing.T) {
 // the AG fixture, whose primary is the fake connection itself.
 func scriptAddReplica(t *testing.T, r newAGReplica) string {
 	t.Helper()
-	sc, _ := newFakeConn(t, agResponses()...)
+	sc, _ := newGConn(t, agResponses()...)
 	d := &AGAddReplicaDialog{agName: agFixtureName, resolved: r}
 	d.sc = sc
 	scriptCtx, script := gosmo.WithScript(context.Background())

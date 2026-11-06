@@ -757,9 +757,10 @@ Every result below was probed with `WITHOUT LOGIN` users on 13, 14,
   (effective, folding in database `CONTROL`). `ALTER AUTHORIZATION` drops
   explicit permissions (the note says so). `IMPERSONATE` on the new owner is
   left to the server (Msg 15151). Certificates and asymmetric keys can't be
-  role-owned (Msg 15345), so only the symmetric key's picker lists roles. The
-  current owner stays listed even if not a user/role (certificate-mapped user,
-  application role).
+  role-owned (Msg 15345), so only the symmetric key's picker lists roles;
+  every key picker lists application roles, which all three accept (probed on
+  13 and 17, 2026-11-05). The current owner stays listed even if no picker
+  offers it (a certificate-mapped user).
 - **Nothing else on a certificate or asymmetric key is a Properties row** —
   other ALTERs are private-key operations (filesystem or irreversible → own
   context-menu actions) or `ACTIVE FOR BEGIN_DIALOG` (left to a scripted ALTER).
@@ -1349,7 +1350,12 @@ it from the string 'NULL'.
 
 `internal/format`; Edit > Format Document is `internal/tui/format_document.go`.
 
-- **Formatting moves only whitespace between tokens** (plus SQL keyword case).
+- **Formatting moves only whitespace between tokens** (plus SQL keyword case),
+  with one exception: the SQL Lowercase style writes a select-list
+  `expr AS name` as `name = expr` (the author's choice, 2026-11-05;
+  `internal/format/sql_alias.go`). The guard accepts that move only for an
+  item it finds itself, from the lexer tokens and the statement cutter rather
+  than the layout's frames, so any other reordering is still refused.
   Comments, literals, quoted identifiers, `GO` lines, XML tags and JSON
   values come out byte-for-byte. A parse failure leaves the text untouched and
   says where; there is no partial output.
@@ -1375,6 +1381,11 @@ it from the string 'NULL'.
   whitespace-only content or `xml:space="preserve"` is left verbatim —
   re-indenting it changes its value. Fragments (several top-level elements,
   `FOR XML` without `ROOT`) are accepted.
+- **SQL styles are switches over one layout, not engines**: `sqlStyle` in
+  `sql_rules.go`. Standard (the default) upper-cases keywords; Lowercase
+  lower-cases the same words, moves aliases as above, and puts FROM,
+  WHERE, GROUP BY, HAVING and ORDER BY alone on their lines with the joins
+  one level under FROM (`clauseAlone`, `indentJoins`).
 - **SQL Standard is a layout pass over `sqltext.Next`'s tokens, not a
   parser** (§ T-SQL lexing). Statements it has no rules for (EXEC, ALTER
   TABLE, CREATE INDEX, GRANT, BACKUP, …) keep their line breaks rather than
@@ -1972,10 +1983,11 @@ The contract is `docs/cli.md` § Execution plans, § Scripting, § Data and
   writes a file through `--script-file`, not the global `--out-file`
   (which is for rows). `create-or-alter` and `--include-indexes/-triggers/-fk`
   have nothing behind them in gosmo's `ScriptOptions` and are not offered.
-- **`script db` is Script Database As, not the Generate Scripts wizard (D7).**
-  Every object in dependency order needs dependency-ordered scripting in
-  gosmo first (SCHEMABINDING, cycles), a feature the size of a phase;
-  deferred in `docs/open-threads.md`.
+- **`script db` is Script Database As; `--objects` adds the whole database,
+  not the Generate Scripts wizard's choices (D7).** Dependency-ordered
+  scripting lives in gosmo (`ScriptDatabaseObjectList`); `--objects
+  [--include-permissions]` is its CREATE-only front end. No per-object
+  selection, data scripting or DROP form on the command line.
 - **`--where`/`--order-by` are spliced fragments, then the whole statement is
   classified (D9).** Each ends at a line break (so a trailing `--` comment
   cannot swallow the rest), and the composed text must classify as one read
@@ -2095,8 +2107,10 @@ down.
   down: the CLI never writes `config.json`, and an off-by-default audit
   protects nobody. So was an opt-out flag or environment variable: an agent
   could set either. T-SQL and data values are hashed, never stored; no
-  option carries a secret, since passwords never reach argv. No rotation yet
-  (`docs/open-threads.md`).
+  option carries a secret, since passwords never reach argv. Rotated by
+  size (10 MiB) to one `.1` generation under the append lock; a failed
+  rename fails the append rather than letting the log outgrow its cap
+  unnoticed (`docs/cli.md` § Audit log).
 
 ## No top-level plan document — do not re-raise
 

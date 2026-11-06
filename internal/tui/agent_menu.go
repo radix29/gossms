@@ -246,12 +246,15 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 }
 
 // showAgentJobHistory opens a query window on msdb with
-// agentJobHistoryQuery(jobName) and runs it (like showBackupHistoryFor).
+// agentJobHistoryQuery(jobName) and runs it (like showBackupHistoryFor): the
+// direct read for a login the probe says is sysadmin, the procedure for any
+// other, which a sysadmin could run too.
 func (a *App) showAgentJobHistory(sc *db.ServerConn, jobName string) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.openQueryWithTextAndExecute(sc, "msdb", agentJobHistoryQuery(jobName))
+	caps := sc.Capabilities()
+	a.openQueryWithTextAndExecute(sc, "msdb", agentJobHistoryQuery(jobName, caps.Probed() && caps.IsSysadmin()))
 }
 
 // ---- Enable / Disable ----

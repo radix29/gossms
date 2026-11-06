@@ -35,7 +35,7 @@ func blockingPage(release <-chan struct{}, form *propsheet.Form, err error, mark
 // map beside it.
 func TestPropDialogReshowIgnoresThePreviousShowingsLoad(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := NewPropDialog(a)
 	var applied string
 
@@ -77,7 +77,7 @@ func TestPropDialogReshowIgnoresThePreviousShowingsLoad(t *testing.T) {
 // showing's first page until the page's own load arrives.
 func TestPropDialogReshowIgnoresThePreviousShowingsError(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := NewPropDialog(a)
 	var applied string
 
@@ -103,7 +103,7 @@ func TestPropDialogReshowIgnoresThePreviousShowingsError(t *testing.T) {
 // run this under -race.
 func TestPropDialogPageActionKeepsItsShowingsContext(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := NewPropDialog(a)
 	var applied string
 	release := make(chan struct{})

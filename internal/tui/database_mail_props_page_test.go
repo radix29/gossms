@@ -40,6 +40,9 @@ func mailPageReads(created ...string) []fakeResponse {
 	for _, p := range created {
 		r = append(r, fakeResponse{match: mailProfAcctRead, arg: p, cols: 4})
 	}
+	// gosmo resolves msdb by name before each msdb read; fakedb let it pass
+	// unanswered, gosmotest fails the test on it.
+	r = append(r, dbByNameResp("msdb", 4))
 	r = append(r, mailConfig()...)
 	return append(r,
 		fakeResponse{match: mailGrantRead, cols: 5, rows: [][]driver.Value{
@@ -65,13 +68,13 @@ func mailPageReads(created ...string) []fakeResponse {
 
 // mailPages loads the five pages of one showing — one model, as the dialog
 // builds them — in page order.
-func mailPages(t *testing.T, sc *db.ServerConn, inst *fakeInstance) ([]*propsheet.Form, []propApply) {
+func mailPages(t *testing.T, sc *db.ServerConn, inst *gFake) ([]*propsheet.Form, []propApply) {
 	t.Helper()
 	pages := databaseMailPropPages(nil, sc)
 	forms := make([]*propsheet.Form, len(pages))
 	applies := make([]propApply, len(pages))
 	for i, p := range pages {
-		forms[i], applies[i] = loadPage(t, p, inst)
+		forms[i], applies[i] = loadPageG(t, p, inst)
 	}
 	return forms, applies
 }
@@ -121,7 +124,7 @@ var mailCallPattern = regexp.MustCompile(`sysmail_[a-z_]+_sp\b|sp_configure N'Da
 // account, a profile using it and its grant, all new, in one Apply — the
 // account and the profile created before anything names them.
 func TestMailFromScratchIsOneApply(t *testing.T) {
-	sc, inst := newFakeConn(t, mailPageReads("gossms_ops")...)
+	sc, inst := newGConn(t, mailPageReads("gossms_ops")...)
 	forms, applies := mailPages(t, sc, inst)
 	accounts, profiles, security, params := forms[mailPageAccounts], forms[mailPageProfiles], forms[mailPageSecurity], forms[mailPageParameters]
 
@@ -174,7 +177,7 @@ func TestMailFromScratchIsOneApply(t *testing.T) {
 // TestMailScriptChangesHidesThePassword: Script Changes is the same plan
 // under WithScript, and the typed password never reaches the script.
 func TestMailScriptChangesHidesThePassword(t *testing.T) {
-	sc, inst := newFakeConn(t, mailPageReads()...)
+	sc, inst := newGConn(t, mailPageReads()...)
 	forms, applies := mailPages(t, sc, inst)
 	accounts := forms[mailPageAccounts]
 	selectGridRow(t, plainGrid(t, accounts), 0, "relay1")
@@ -203,7 +206,7 @@ func TestMailScriptChangesHidesThePassword(t *testing.T) {
 func TestMailAccountKeepsOrReplacesItsCredential(t *testing.T) {
 	ctx := context.Background()
 	t.Run("keep", func(t *testing.T) {
-		sc, inst := newFakeConn(t, mailPageReads()...)
+		sc, inst := newGConn(t, mailPageReads()...)
 		forms, applies := mailPages(t, sc, inst)
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
@@ -220,7 +223,7 @@ func TestMailAccountKeepsOrReplacesItsCredential(t *testing.T) {
 		}
 	})
 	t.Run("user without password", func(t *testing.T) {
-		sc, inst := newFakeConn(t, mailPageReads()...)
+		sc, inst := newGConn(t, mailPageReads()...)
 		forms, applies := mailPages(t, sc, inst)
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
@@ -234,7 +237,7 @@ func TestMailAccountKeepsOrReplacesItsCredential(t *testing.T) {
 		}
 	})
 	t.Run("to anonymous", func(t *testing.T) {
-		sc, inst := newFakeConn(t, mailPageReads()...)
+		sc, inst := newGConn(t, mailPageReads()...)
 		forms, applies := mailPages(t, sc, inst)
 		a := forms[mailPageAccounts]
 		selectGridRow(t, plainGrid(t, a), 0, "relay1")
@@ -255,7 +258,7 @@ func TestMailAccountKeepsOrReplacesItsCredential(t *testing.T) {
 func TestMailCredentialFieldsNeedAlterAnyCredential(t *testing.T) {
 	responses := append(capabilityResponses(true, nil, []string{"ALTER ANY CREDENTIAL", "CONTROL SERVER"}, nil, nil),
 		mailPageReads()...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	forms, applies := mailPages(t, sc, inst)
 	a := forms[mailPageAccounts]
@@ -269,7 +272,7 @@ func TestMailCredentialFieldsNeedAlterAnyCredential(t *testing.T) {
 		t.Fatalf("err = %v, want the right named", err)
 	}
 	// Another account's settings still apply.
-	sc2, inst2 := newFakeConn(t, responses...)
+	sc2, inst2 := newGConn(t, responses...)
 	sc2.ProbeCapabilities(sc2.Server.Context())
 	forms, applies = mailPages(t, sc2, inst2)
 	a = forms[mailPageAccounts]
@@ -291,7 +294,7 @@ func TestMailBasicAccountUntouchableWithoutAlterAnyCredential(t *testing.T) {
 	responses := append(capabilityResponses(true, nil, []string{"ALTER ANY CREDENTIAL", "CONTROL SERVER"}, nil, nil),
 		mailPageReads()...)
 	t.Run("other setting", func(t *testing.T) {
-		sc, inst := newFakeConn(t, responses...)
+		sc, inst := newGConn(t, responses...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		forms, applies := mailPages(t, sc, inst)
 		a := forms[mailPageAccounts]
@@ -304,7 +307,7 @@ func TestMailBasicAccountUntouchableWithoutAlterAnyCredential(t *testing.T) {
 		assertNoMailWrites(t, inst)
 	})
 	t.Run("remove", func(t *testing.T) {
-		sc, inst := newFakeConn(t, responses...)
+		sc, inst := newGConn(t, responses...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		forms, applies := mailPages(t, sc, inst)
 		a := forms[mailPageAccounts]
@@ -319,7 +322,7 @@ func TestMailBasicAccountUntouchableWithoutAlterAnyCredential(t *testing.T) {
 }
 
 // assertNoMailWrites fails when anything but a read reached the server.
-func assertNoMailWrites(t *testing.T, inst *fakeInstance) {
+func assertNoMailWrites(t *testing.T, inst *gFake) {
 	t.Helper()
 	for _, s := range inst.Statements() {
 		if strings.Contains(s, "sysmail_update_") || strings.Contains(s, "sysmail_delete_") || strings.Contains(s, "sysmail_add_") {
@@ -332,7 +335,7 @@ func assertNoMailWrites(t *testing.T, inst *fakeInstance) {
 // renamed profile's accounts under the name the server has, so the rename
 // comes after.
 func TestMailRenamesRunAfterWhatNamesTheOldName(t *testing.T) {
-	sc, inst := newFakeConn(t, mailPageReads()...)
+	sc, inst := newGConn(t, mailPageReads()...)
 	forms, applies := mailPages(t, sc, inst)
 	p := forms[mailPageProfiles]
 	selectGridRow(t, mailGrid(t, p, 0), 0, "ops")
@@ -359,7 +362,7 @@ func TestMailRenamesRunAfterWhatNamesTheOldName(t *testing.T) {
 // Accounts page is marked on the Profiles page at once and left out of the
 // profile's account list, which the drop would empty anyway.
 func TestMailRemovedAccountLeavesTheProfilesPage(t *testing.T) {
-	sc, inst := newFakeConn(t, mailPageReads()...)
+	sc, inst := newGConn(t, mailPageReads()...)
 	forms, applies := mailPages(t, sc, inst)
 	a, p := forms[mailPageAccounts], forms[mailPageProfiles]
 	selectGridRow(t, plainGrid(t, a), 0, "relay2")
@@ -381,7 +384,7 @@ func TestMailRemovedAccountLeavesTheProfilesPage(t *testing.T) {
 // principal's, and a grant goes to that principal — not the first listed —
 // and neither guest, public's SID, nor a ##…## server user is offered.
 func TestMailPrivateGrantsFollowThePrincipal(t *testing.T) {
-	sc, inst := newFakeConn(t, mailPageReads()...)
+	sc, inst := newGConn(t, mailPageReads()...)
 	forms, applies := mailPages(t, sc, inst)
 	s := forms[mailPageSecurity]
 	principal := selectRow(t, s, "Principal (msdb user)")
@@ -409,7 +412,7 @@ func TestMailPrivateGrantsFollowThePrincipal(t *testing.T) {
 // run inside a transaction — and System Parameters writes the logging level
 // as its number.
 func TestMailGeneralTurnsOnXPs(t *testing.T) {
-	sc, inst := newFakeConn(t, mailPageReads()...)
+	sc, inst := newGConn(t, mailPageReads()...)
 	forms, applies := mailPages(t, sc, inst)
 	editSelect(t, forms[mailPageParameters], "Logging level", "Verbose")
 	var xps *propsheet.CheckRow
@@ -446,7 +449,7 @@ func TestMailGeneralTurnsOnXPs(t *testing.T) {
 // XPs', which follows the COMMIT, never runs.
 func TestMailFailureMidPlanRollsBack(t *testing.T) {
 	refused := errors.New("Msg 14607")
-	sc, inst := newFakeConn(t, append([]fakeResponse{{match: "sysmail_configure_sp", err: refused}}, mailPageReads()...)...)
+	sc, inst := newGConn(t, append([]fakeResponse{{match: "sysmail_configure_sp", err: refused}}, mailPageReads()...)...)
 	forms, applies := mailPages(t, sc, inst)
 	editText(t, forms[mailPageAccounts], "New account name", "gossms_relay")
 	clickButton(t, forms[mailPageAccounts], "Add")
@@ -556,7 +559,7 @@ func TestMailRefusesANameFreedOnlyByThisApply(t *testing.T) {
 		}, "two profiles are named "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, inst := newFakeConn(t, mailPageReads()...)
+			sc, inst := newGConn(t, mailPageReads()...)
 			forms, _ := mailPages(t, sc, inst)
 			tc.edit(t, forms[mailPageProfiles])
 			err := validateMail(forms)
@@ -570,7 +573,7 @@ func TestMailRefusesANameFreedOnlyByThisApply(t *testing.T) {
 // TestMailAccountsRefuseANameFreedOnlyByThisApply: the Accounts page runs the
 // same check — an account is created before the one it replaces is dropped.
 func TestMailAccountsRefuseANameFreedOnlyByThisApply(t *testing.T) {
-	sc, inst := newFakeConn(t, mailPageReads()...)
+	sc, inst := newGConn(t, mailPageReads()...)
 	forms, _ := mailPages(t, sc, inst)
 	a := forms[mailPageAccounts]
 	selectGridRow(t, plainGrid(t, a), 0, "relay2")

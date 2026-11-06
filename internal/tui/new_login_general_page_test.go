@@ -20,12 +20,12 @@ type formAndApply struct {
 // with a prefetch naming two of everything so nothing a test picks is the
 // first item in its list — a page that ignored the selection would otherwise
 // pass.
-func newLoginGeneral(t *testing.T) (*fakeInstance, *formAndApply) {
+func newLoginGeneral(t *testing.T) (*gFake, *formAndApply) {
 	t.Helper()
 	// CreateLogin reads the new login back. No rows is the answer gosmo
 	// takes as "created but not visible" and returns its handle for, which
 	// is all these tests need: they assert on the statements.
-	sc, inst := newFakeConn(t, fakeResponse{match: "FROM sys.server_principals sp", cols: 10})
+	sc, inst := newGConn(t, fakeResponse{match: "FROM sys.server_principals sp", cols: 10})
 	pf := &nloginPrefetch{
 		existingNames: newNameSet(""),
 		dbNames:       []string{"master", "sales", "warehouse"},
@@ -39,7 +39,7 @@ func newLoginGeneral(t *testing.T) (*fakeInstance, *formAndApply) {
 
 // runApply runs the page's apply and fails on an error, returning the
 // statements that reached the server.
-func (fa *formAndApply) runApply(t *testing.T, inst *fakeInstance) []string {
+func (fa *formAndApply) runApply(t *testing.T, inst *gFake) []string {
 	t.Helper()
 	if err := fa.apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -50,7 +50,7 @@ func (fa *formAndApply) runApply(t *testing.T, inst *fakeInstance) []string {
 // applyError runs the page's apply expecting a refusal, and asserts nothing
 // was written — a refusal that arrives after the CREATE LOGIN is not a
 // refusal.
-func (fa *formAndApply) applyError(t *testing.T, inst *fakeInstance) string {
+func (fa *formAndApply) applyError(t *testing.T, inst *gFake) string {
 	t.Helper()
 	err := fa.apply(context.Background())
 	if err == nil {
@@ -176,7 +176,7 @@ func TestNewLoginMappedPickerFollowsTheSource(t *testing.T) {
 func TestNewLoginMappedWithNothingPickedIsRefused(t *testing.T) {
 	// A prefetch that read no certificates leaves the picker on its sentinel,
 	// which is also what a login without permission on master sees.
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	form, apply, _ := buildNewLoginGeneralPage(sc, &nloginPrefetch{
 		existingNames: newNameSet(""), dbNames: []string{"master"},
 	})

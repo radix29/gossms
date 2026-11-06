@@ -44,7 +44,7 @@ func TestDeletingAResourceGovernorObjectAppliesItAndKeepsTheGovernorState(t *tes
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, inst := newFakeConn(t, rgConfig(tc.enabled))
+			sc, inst := newGConn(t, rgConfig(tc.enabled))
 			a.deleteObject(rgLeaf(sc, tc.typ, tc.obj, false))
 			answerConfirm(t, a, false)
 			waitAndDrain(t, a)
@@ -58,7 +58,7 @@ func TestDeletingAResourceGovernorObjectAppliesItAndKeepsTheGovernorState(t *tes
 // The Script answer shows the apply too: it is part of what the Yes runs.
 func TestScriptingAResourcePoolDeleteShowsTheApplyAndRunsNothing(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConn(t, rgConfig(false))
+	sc, inst := newGConn(t, rgConfig(false))
 	before := a.panels.Count()
 	a.deleteObject(rgLeaf(sc, NodeResourcePool, "reports", false))
 	answerScript(t, a, false)
@@ -76,7 +76,7 @@ func TestScriptingAResourcePoolDeleteShowsTheApplyAndRunsNothing(t *testing.T) {
 // drop stored. The status says both, and the folder is still reloaded.
 func TestARefusedApplyStillReportsTheDrop(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t, rgConfig(true),
+	sc, _ := newGConn(t, rgConfig(true),
 		fakeResponse{match: "ALTER RESOURCE GOVERNOR RECONFIGURE", err: errors.New("Msg 10904, there are active sessions in workload groups being dropped")})
 	a.deleteObject(rgLeaf(sc, NodeWorkloadGroup, "adhoc", false))
 	answerConfirm(t, a, false)
@@ -88,7 +88,7 @@ func TestARefusedApplyStillReportsTheDrop(t *testing.T) {
 
 func TestResourceGovernorBuiltInsOfferNoDelete(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	has := func(n *explorerNode) bool {
 		return slices.ContainsFunc(a.objectOpsMenuItems(n), func(it controls.MenuItem) bool { return it.Label == "Delete..." })
 	}
@@ -119,7 +119,7 @@ func rgNodeOn(sc *db.ServerConn, enabled, pending bool) *explorerNode {
 }
 
 func TestResourceGovernorNodeMenuFollowsTheState(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	for _, tc := range []struct {
 		name             string
 		enabled, pending bool
@@ -200,7 +200,7 @@ func TestScriptResourceGovernorNeedsViewAnyDefinition(t *testing.T) {
 }
 
 func TestResourceGovernorItemsOnAnUnsupportedEdition(t *testing.T) {
-	sc := newFakeConnEdition(t, 4, "16.0.4085.2")
+	sc := newGConnEdition(t, 4, "16.0.4085.2")
 	for _, label := range []string{"Disable", "Reconfigure", "Reset Statistics", "Properties..."} {
 		if it := itemNamed(t, rgNodeOn(sc, true, true), label); itemEnabled(it) || it.Note != "N/A" {
 			t.Errorf("Express: %s offered %v, note %q", label, itemEnabled(it), it.Note)
@@ -209,7 +209,7 @@ func TestResourceGovernorItemsOnAnUnsupportedEdition(t *testing.T) {
 }
 
 func TestNewWorkloadGroupIsWithheldOnTheInternalPool(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	if !itemEnabled(itemNamed(t, rgLeaf(sc, NodeResourcePool, "default", true), "New Workload Group...")) {
 		t.Error("withheld on default, which takes user groups")
 	}
@@ -233,7 +233,7 @@ func TestResourceGovernorCommandsRunTheirStatement(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, inst := newFakeConn(t)
+			sc, inst := newGConn(t)
 			tc.run(a, sc, rgNodeOn(sc, true, true))
 			if tc.confirm {
 				answerConfirm(t, a, false)
@@ -250,7 +250,7 @@ func TestResourceGovernorCommandsRunTheirStatement(t *testing.T) {
 // so the pane's Delete lines up with the rows and refuses a built-in.
 func TestResourceGovernorFolderDetailsCarryTheirObjects(t *testing.T) {
 	ctx := context.Background()
-	sc, _ := newFakeConn(t, append(rgPools(), rgGroups())...)
+	sc, _ := newGConn(t, append(append(rgPools(), rgGroups()), rgNoStats()...)...)
 	var objs []nodeData
 	_, rows, err := resourcePoolsFolderDetail(ctx, sc, &explorerNode{data: nodeData{Type: NodeResourcePools}}, &objs)
 	if err != nil {

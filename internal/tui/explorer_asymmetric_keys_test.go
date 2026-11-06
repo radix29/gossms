@@ -34,7 +34,7 @@ func asymKeyListResponse() fakeResponse {
 }
 
 func TestAsymmetricKeysLoaderCarriesTheDatabase(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), asymKeyListResponse())
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), asymKeyListResponse())
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 
 	children, err := childLoaders[NodeAsymmetricKeys](l,
@@ -129,7 +129,7 @@ func asymKeyGateConn(t *testing.T, granted []string, control bool) *explorerNode
 	}
 	responses := withSecurableAnswers(capabilityResponses(true, nil, nil, granted, denied),
 		map[string]bool{gosmo.DatabaseSecurableKey(gosmo.DatabaseSecurableAsymmetricKey, "", "k1"): control})
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return &explorerNode{data: nodeData{Type: NodeAsymmetricKey, DBName: "appdb", Name: "k1", conn: sc}}
@@ -174,7 +174,7 @@ func TestAsymmetricKeyDeleteGateMatchesWhatTheServerAllowed(t *testing.T) {
 // General's one write is the owner, as a certificate's — and like one, an
 // asymmetric key cannot be owned by a role.
 func TestAsymmetricKeyGeneralPageChangesOnlyTheOwner(t *testing.T) {
-	sc, inst := newFakeConn(t, append([]fakeResponse{dbScopedCredDatabaseRow(), {
+	sc, inst := newGConn(t, append([]fakeResponse{dbScopedCredDatabaseRow(), {
 		match: "FROM   sys.asymmetric_keys", arg: "aaa_key", cols: 10,
 		rows: [][]driver.Value{asymKeyRow("aaa_key", "ENCRYPTED_BY_PASSWORD")},
 	}}, keyOwnerResponses()...)...)
@@ -200,7 +200,7 @@ func TestAsymmetricKeyGeneralPageChangesOnlyTheOwner(t *testing.T) {
 }
 
 func TestAsymmetricKeysFolderDetail(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), asymKeyListResponse())
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), asymKeyListResponse())
 	node := &explorerNode{data: nodeData{Type: NodeAsymmetricKeys, DBName: "appdb", conn: sc}}
 
 	var objs []nodeData
@@ -227,7 +227,7 @@ func TestAsymmetricKeysFolderDetail(t *testing.T) {
 // AsymmetricKeyByName answers ErrNotFound for a key dropped since the tree was
 // read; the detail pane must say so, not panic.
 func TestAsymmetricKeyDetailOfADroppedKey(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), fakeResponse{
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), fakeResponse{
 		match: "FROM   sys.asymmetric_keys", arg: "gone", cols: 10,
 	})
 	node := &explorerNode{data: nodeData{Type: NodeAsymmetricKey, DBName: "appdb", Name: "gone", conn: sc}}

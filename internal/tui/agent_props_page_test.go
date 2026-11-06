@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -21,10 +22,10 @@ func agentMailAnswer(use any, profile any) fakeResponse {
 	return fakeResponse{match: agentMailRead, cols: 2, rows: [][]driver.Value{{use, profile}}}
 }
 
-func loadAgentAlertSystemPage(t *testing.T, mail fakeResponse, more ...fakeResponse) (*fakeInstance, propApply, *propsheet.Form) {
+func loadAgentAlertSystemPage(t *testing.T, mail fakeResponse, more ...fakeResponse) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, append([]fakeResponse{mail, mailConfig()[1], mailConfig()[2]}, more...)...)
-	form, apply := loadPage(t, pageAgentAlertSystem(sc), inst)
+	sc, inst := newGConn(t, append([]fakeResponse{mail, mailConfig()[1], mailConfig()[2]}, more...)...)
+	form, apply := loadPageG(t, pageAgentAlertSystem(sc), inst)
 	return inst, apply, form
 }
 
@@ -120,8 +121,8 @@ func TestAgentAlertSystemShowsADeletedProfile(t *testing.T) {
 // A login refused msdb's profile list (Msg 229) still sees the configured
 // profile — and no claim that it is gone, which the page cannot know.
 func TestAgentAlertSystemWithProfilesRefused(t *testing.T) {
-	sc, inst := newFakeConn(t, agentMailAnswer(int64(1), "ops"), mailRefused(mailProfileRead, "sysmail_profile"))
-	form, _ := loadPage(t, pageAgentAlertSystem(sc), inst)
+	sc, inst := newGConn(t, agentMailAnswer(int64(1), "ops"), mailRefused(mailProfileRead, "sysmail_profile"))
+	form, _ := loadPageG(t, pageAgentAlertSystem(sc), inst)
 	if got := selectRow(t, form, "Mail profile").Value(); got != "ops" {
 		t.Errorf("profile shows %q, want the configured ops", got)
 	}
@@ -133,8 +134,8 @@ func TestAgentAlertSystemWithProfilesRefused(t *testing.T) {
 // On Linux the settings live in mssql.conf: the page says where, offers
 // nothing to apply, and reads nothing from the registry.
 func TestAgentAlertSystemOnLinuxPointsAtMssqlConf(t *testing.T) {
-	sc, inst := newFakeConnOnLinux(t)
-	form, apply := loadPage(t, pageAgentAlertSystem(sc), inst)
+	sc, inst := newGConnWith(t, func(i *gosmotest.Info) { i.Version = "Microsoft SQL Server 2025 ... on Linux" })
+	form, apply := loadPageG(t, pageAgentAlertSystem(sc), inst)
 	if apply != nil {
 		t.Error("the Linux page has an apply")
 	}

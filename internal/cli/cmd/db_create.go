@@ -138,7 +138,7 @@ func (d Deps) dbCreate(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -160,7 +160,7 @@ func (d Deps) dbCreate(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	}
 
 	create := func(ctx context.Context) error {
-		err := w.CreateDatabase(ctx, req)
+		_, err := sc.Server.CreateDatabase(ctx, req)
 		if gosmo.IsPermissionDenied(err) {
 			return output.NewError(output.CodePermissionDenied, err.Error(),
 				"CREATE DATABASE needs CREATE DATABASE in master, CREATE ANY DATABASE or ALTER ANY DATABASE "+
@@ -243,16 +243,16 @@ const (
 
 // availabilityGroupOf is the availability group name belongs to, "" when
 // none. Read only on an instance with HADR enabled.
-func availabilityGroupOf(ctx context.Context, cat Catalog, name string) (string, error) {
-	if info := cat.ServerInfo(); info == nil || !info.IsHADREnabled {
+func availabilityGroupOf(ctx context.Context, srv *gosmo.Server, info *gosmo.ServerInfo, name string) (string, error) {
+	if info == nil || !info.IsHADREnabled {
 		return "", nil
 	}
-	ags, err := cat.AvailabilityGroups(ctx)
+	ags, err := srv.AvailabilityGroups(ctx)
 	if err != nil {
 		return "", err
 	}
 	for _, ag := range ags {
-		dbs, err := cat.AvailabilityGroupDatabases(ctx, ag)
+		dbs, err := ag.Databases(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -269,7 +269,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 	}
 	closeConns := inv.Values[optCloseConnections].(bool)
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -295,7 +295,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 		return res, usageError(name+" is the connection's own database",
 			"Connect to another database to drop it: add -d master.")
 	}
-	ag, err := availabilityGroupOf(ctx, cat, db.Name)
+	ag, err := availabilityGroupOf(ctx, sc.Server, cat.ServerInfo(), db.Name)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -305,7 +305,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 				gosmo.QuoteName(ag), name))
 	}
 	if !db.IsSnapshot() {
-		snaps, err := cat.SnapshotsOf(ctx, db.Name)
+		snaps, err := sc.Server.SnapshotsOf(ctx, db.Name)
 		if err != nil {
 			return res, readError(err)
 		}
@@ -314,14 +314,14 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 		}
 	}
 
-	res.Fields = dropFields(ctx, cat, db, res)
+	res.Fields = dropFields(ctx, sc.Server, cat, db, res)
 	res.Fields = append(res.Fields, output.Field{Key: "closeConnections", Value: boolText(closeConns)})
 	term := gosmo.TerminationNone
 	if closeConns {
 		term = gosmo.TerminationRollbackImmediate
 	}
 	drop := func(ctx context.Context) error {
-		err := w.DropDatabase(ctx, db, term)
+		err := db.Drop(ctx, term)
 		if gosmo.IsMissingOrDenied(err) || gosmo.IsPermissionDenied(err) {
 			return output.NewError(output.CodePermissionDenied, err.Error(),
 				"DROP DATABASE needs CONTROL on the database (db_owner has it) or ALTER ANY DATABASE. "+
@@ -353,7 +353,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 // dropFields is the record db drop prints of db before dropping it, with a
 // warning in res for a database msdb holds no full backup of, and for one
 // whose files the drop leaves behind.
-func dropFields(ctx context.Context, cat Catalog, db *gosmo.Database, res *output.Result) []output.Field {
+func dropFields(ctx context.Context, srv *gosmo.Server, cat Catalog, db *gosmo.Database, res *output.Result) []output.Field {
 	name := gosmo.QuoteName(db.Name)
 	f := []output.Field{
 		{Key: "name", Value: db.Name},
@@ -374,7 +374,7 @@ func dropFields(ctx context.Context, cat Catalog, db *gosmo.Database, res *outpu
 		// A snapshot cannot be backed up, and LastBackups leaves it out.
 		f = append(f, last)
 	} else {
-		backups, err := cat.LastBackups(ctx)
+		backups, err := srv.LastBackups(ctx)
 		i := slices.IndexFunc(backups, func(b *gosmo.DatabaseLastBackups) bool { return b.DatabaseName == db.Name })
 		switch {
 		case err != nil:

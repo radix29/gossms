@@ -17,7 +17,7 @@ import (
 // edition is the only thing left that can withhold anything.
 func probedAzureConn(t *testing.T, dbName string) *db.ServerConn {
 	t.Helper()
-	sc, _ := newFakeConnOnAzureMI(t, capabilityResponses(true,
+	sc, _ := newGConnOnAzureMI(t, capabilityResponses(true,
 		[]string{"ALTER ANY DATABASE", "CREATE ANY DATABASE", "CONTROL SERVER"}, nil,
 		[]string{"BACKUP DATABASE", "ALTER", "CONTROL"}, nil)...)
 	sc.ProbeCapabilities(sc.Server.Context())
@@ -191,14 +191,14 @@ func TestEntraPrincipalsOffered(t *testing.T) {
 func TestNewLoginOffersEntraOnlyWhereTheServerTakesIt(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
-		conn    func(*testing.T, ...fakeResponse) (*db.ServerConn, *fakeInstance)
+		conn    func(*testing.T, ...fakeResponse) (*db.ServerConn, *gFake)
 		offered bool
 	}{
-		{"2016", func(t *testing.T, r ...fakeResponse) (*db.ServerConn, *fakeInstance) {
-			return newFakeConnAtVersion(t, "13.0.6300.2", r...)
+		{"2016", func(t *testing.T, r ...fakeResponse) (*db.ServerConn, *gFake) {
+			return newGConnAtVersion(t, "13.0.6300.2", r...)
 		}, false},
-		{"2022", newFakeConn, true},
-		{"Managed Instance", newFakeConnOnAzureMI, true},
+		{"2022", newGConn, true},
+		{"Managed Instance", newGConnOnAzureMI, true},
 	} {
 		sc, _ := tt.conn(t)
 		form, _, _ := buildNewLoginGeneralPage(sc, &nloginPrefetch{existingNames: newNameSet(""), dbNames: []string{"master"}})

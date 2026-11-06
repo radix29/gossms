@@ -20,7 +20,7 @@ func newCertificateTestDialog(t *testing.T, hasMasterKey bool) *NewCertificateDi
 	if hasMasterKey {
 		dmk = 1
 	}
-	sc, _ := newFakeConn(t, fakeResponse{match: "##MS_DatabaseMasterKey##", cols: 1, rows: [][]driver.Value{{dmk}}})
+	sc, _ := newGConn(t, fakeResponse{match: "##MS_DatabaseMasterKey##", cols: 1, rows: [][]driver.Value{{dmk}}})
 	d := &NewCertificateDialog{dbName: "certdb"}
 	d.sc = sc
 	d.pages = []string{"General"}

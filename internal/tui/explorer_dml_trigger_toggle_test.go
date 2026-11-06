@@ -13,7 +13,7 @@ import (
 // that says so, IsEnabled picks the menu's Enable/Disable wording, and
 // TableName is what that item's gate asks about.
 func TestTriggersFolderLabelsTheDisabledOne(t *testing.T) {
-	sc, _ := newFakeConn(t, dbTriggerDatabaseRow(), fakeResponse{
+	sc, _ := newGConn(t, dbTriggerDatabaseRow(), fakeResponse{
 		match: "tr.parent_id = OBJECT_ID(@p1)",
 		cols:  5,
 		rows: [][]driver.Value{
@@ -57,7 +57,7 @@ func TestTriggerToggleIssuesItsStatement(t *testing.T) {
 	} {
 		t.Run(c.wantStatus, func(t *testing.T) {
 			a := newTestApp()
-			sc, inst := newFakeConn(t, fakeResponse{match: "JOIN   sys.objects p", cols: 1, rows: [][]driver.Value{{"Orders"}}})
+			sc, inst := newGConn(t, fakeResponse{match: "JOIN   sys.objects p", cols: 1, rows: [][]driver.Value{{"Orders"}}})
 			node := opTestNode(sc, NodeTrigger, "Sales", "trg_guard", "Orders")
 			node.data.IsEnabled = c.wasEnabled
 

@@ -35,6 +35,19 @@ func StyleSelected() tcell.Style {
 func StyleMenuSelected() tcell.Style {
 	return tcell.StyleDefault.Background(active.MenuSelected).Foreground(active.MenuSelectedText)
 }
+
+// StyleMenuBarEmphasis is an emphasised word on a MenuBar ground, such as the
+// dashboard header's instance name. Bold, because in the mc themes the only
+// readable colour on the cyan bar is MenuText's own black.
+func StyleMenuBarEmphasis() tcell.Style {
+	return tcell.StyleDefault.Background(active.MenuBar).Foreground(active.MenuTextHighlight).Bold(true)
+}
+
+// StyleAlert is a status line that must not read as routine: the results
+// status line when Max fetch rows cut a result short.
+func StyleAlert() tcell.Style {
+	return tcell.StyleDefault.Background(active.AlertBg).Foreground(active.AlertText).Bold(true)
+}
 func StyleSearchMatch() tcell.Style {
 	return tcell.StyleDefault.Background(active.EditorMatch).Foreground(active.EditorMatchText)
 }

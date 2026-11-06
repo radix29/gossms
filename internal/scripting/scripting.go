@@ -33,6 +33,7 @@ const (
 	Schema
 	User
 	DatabaseRole
+	ApplicationRole
 
 	PartitionFunction
 	PartitionScheme
@@ -282,6 +283,9 @@ var (
 	scriptDBRole scriptFn = func(s *gosmo.Scripter, ctx context.Context, t Target) (string, error) {
 		return s.ScriptDatabaseRole(ctx, t.Name)
 	}
+	scriptAppRole scriptFn = func(s *gosmo.Scripter, ctx context.Context, t Target) (string, error) {
+		return s.ScriptApplicationRole(ctx, t.Name)
+	}
 	scriptDB scriptFn = func(s *gosmo.Scripter, ctx context.Context, t Target) (string, error) {
 		return s.ScriptDatabase(ctx)
 	}
@@ -489,6 +493,9 @@ var families = map[Family][]verbGen{
 	Schema:       ddlVerbs(scriptSchema, false),
 	User:         ddlVerbs(scriptUser, false),
 	DatabaseRole: ddlVerbs(scriptDBRole, false),
+	// The password is unreadable, so CREATE carries a placeholder on a line
+	// marked to set it (gosmo's ScriptApplicationRole).
+	ApplicationRole: ddlVerbs(scriptAppRole, false),
 
 	PartitionFunction:   ddlVerbs(scriptPartFunc, false),
 	PartitionScheme:     ddlVerbs(scriptPartScheme, false),
@@ -731,3 +738,35 @@ func serverDDL(v gosmo.ScriptVerb, f serverScriptFn) Generator {
 		return f(gosmo.NewServerScripter(srv, opts), ctx, t)
 	}
 }
+
+// DatabaseObjects scripts every user object of dbName as one script that
+// replays into an empty database (gosmo's ScriptDatabaseObjectList): the
+// database context, a header naming what is not scripted and each dependency
+// cycle that was broken, then the objects in creation order. objects counts
+// the objects listed, notes those that could only be a comment (an encrypted
+// module).
+func DatabaseObjects(ctx context.Context, srv *gosmo.Server, dbName string, includePermissions bool) (text string, objects int, notes []string, err error) {
+	d, err := srv.DatabaseByName(ctx, dbName)
+	if err != nil {
+		return "", 0, nil, err
+	}
+	opts := gosmo.DefaultScriptOptions()
+	opts.Verb = gosmo.ScriptCreate
+	s := gosmo.NewScripter(d, opts)
+	r, err := s.ScriptDatabaseObjectList(ctx, gosmo.ObjectScriptOptions{IncludePermissions: includePermissions})
+	if err != nil {
+		return "", 0, nil, err
+	}
+	for _, o := range r.Objects {
+		if o.Note != "" {
+			notes = append(notes, gosmo.QualifiedName(o.Schema, o.Name)+": "+o.Note)
+		}
+	}
+	return s.DatabaseContext() + DatabaseObjectsHeader + r.String(), len(r.Objects), notes, nil
+}
+
+// DatabaseObjectsHeader states what a database-objects script leaves out, so
+// a reader of the file does not take it for a complete copy.
+const DatabaseObjectsHeader = "-- Not scripted: data, server-level objects, system objects, rules and defaults,\n" +
+	"-- CLR assemblies, full-text and Service Broker objects, external objects,\n" +
+	"-- credentials, certificates and keys, and dependencies across databases.\n"

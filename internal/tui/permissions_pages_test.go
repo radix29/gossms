@@ -103,11 +103,11 @@ func permScopes() []permScope {
 // loadPermScope loads one scope's page and checks it actually listed its
 // principals — an under-scripted fake yields an empty grid, on which every
 // assertion below passes for the wrong reason.
-func loadPermScope(t *testing.T, s permScope) (*fakeInstance, propApply, *propsheet.Form) {
+func loadPermScope(t *testing.T, s permScope) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
 	responses := append([]fakeResponse{dbByNameResp(permDatabase, 5), s.extra}, permPrincipalResponses()...)
-	sc, inst := newFakeConn(t, responses...)
-	form, apply := loadPage(t, s.page(sc), inst)
+	sc, inst := newGConn(t, responses...)
+	form, apply := loadPageG(t, s.page(sc), inst)
 	principals, _ := matrixGrids(t, form)
 	if principals.Row(3) == nil {
 		t.Fatal("the principal grid has fewer than four rows — the fake is under-scripted, not the page wrong")
@@ -241,16 +241,16 @@ func serverRoleListResponse() fakeResponse {
 
 // The server page has no database to be pinned to and its own two principal
 // lists, so it is scripted separately rather than bent into permScope.
-func loadServerPermissionsPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadServerPermissionsPage(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		fakeResponse{match: "sp.class_desc = 'SERVER'", cols: 5, rows: [][]driver.Value{
 			{"appuser", "SQL_LOGIN", "sa", "ALTER ANY LOGIN", "GRANT"},
 		}},
 		loginListResponse(),
 		serverRoleListResponse(),
 	)
-	form, apply := loadPage(t, pageServerPermissions(sc), inst)
+	form, apply := loadPageG(t, pageServerPermissions(sc), inst)
 	principals, _ := matrixGrids(t, form)
 	if principals.Row(3) == nil {
 		t.Fatal("the principal grid has fewer than four rows — the fake is under-scripted, not the page wrong")

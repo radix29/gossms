@@ -193,13 +193,13 @@ func configWriteOptions() []spec.Option {
 
 func (d Deps) serverConfigList(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	opts, err := cat.Configurations(ctx)
+	opts, err := sc.Server.Configurations(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -328,13 +328,13 @@ func resolveConfig(opts []*gosmo.ConfigurationOption, name string) (*gosmo.Confi
 
 func (d Deps) serverConfigGet(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	opts, err := cat.Configurations(ctx)
+	opts, err := sc.Server.Configurations(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -352,7 +352,7 @@ func (d Deps) serverConfigGet(ctx context.Context, inv *spec.Invocation) (*outpu
 	names := func(want []string) bool {
 		return slices.ContainsFunc(rows, func(o *gosmo.ConfigurationOption) bool { return slices.Contains(want, o.Name) })
 	}
-	fields, warnings := configContext(ctx, cat, names(cpuContextOptions), names(memoryContextOptions))
+	fields, warnings := configContext(ctx, sc.Server, names(cpuContextOptions), names(memoryContextOptions))
 	res.Fields = fields
 	res.Warnings = append(res.Warnings, warnings...)
 	res.Sets = []output.Set{configSet(rows)}
@@ -363,8 +363,8 @@ func (d Deps) serverConfigGet(ctx context.Context, inv *spec.Invocation) (*outpu
 // memory figures when memory. A figure the login may not read is null, and
 // all of them join one warning naming the permission; any other failed read
 // is its own warning, as in server info.
-func configContext(ctx context.Context, cat Catalog, cpu, memory bool) (fields []output.Field, warnings []string) {
-	info := cat.ServerInfo()
+func configContext(ctx context.Context, srv *gosmo.Server, cpu, memory bool) (fields []output.Field, warnings []string) {
+	info := srv.Info()
 	var denied []string
 	unread := func(err error, keys ...string) {
 		if gosmo.IsPermissionDenied(err) {
@@ -384,7 +384,7 @@ func configContext(ctx context.Context, cat Catalog, cpu, memory bool) (fields [
 			nCPU = info.LogicalCPUCount
 			cpus = output.Field{Key: cpus.Key, Value: strconv.Itoa(nCPU)}
 		}
-		if p, err := cat.ProcessorInfo(ctx); err != nil {
+		if p, err := srv.ProcessorInfo(ctx); err != nil {
 			unread(err, numa.Key)
 		} else {
 			nNUMA = p.NUMANodeCount
@@ -407,7 +407,7 @@ func configContext(ctx context.Context, cat Catalog, cpu, memory bool) (fields [
 		} else {
 			physical = output.Field{Key: physical.Key, Value: strconv.FormatInt(info.PhysicalMemoryMB, 10)}
 		}
-		if s, err := cat.MemoryStats(ctx); err != nil {
+		if s, err := srv.MemoryStats(ctx); err != nil {
 			unread(err, committed.Key)
 		} else {
 			committed = output.Field{Key: committed.Key, Value: strconv.FormatInt(s.TotalServerMemoryMB, 10)}
@@ -563,13 +563,13 @@ func (d Deps) serverConfigReset(ctx context.Context, inv *spec.Invocation) (*out
 // the one batch, and a second read for what the server now has.
 func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	opts, err := cat.Configurations(ctx)
+	opts, err := sc.Server.Configurations(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -581,7 +581,7 @@ func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool)
 		return res, output.NewError(output.CodeBlocked, strings.Join(risks, " "),
 			"Choose another value, or re-run with --accept-risk if it is intended (it lifts only gossms's own checks).")
 	}
-	res.Warnings = append(res.Warnings, committedWarning(ctx, cat, changes)...)
+	res.Warnings = append(res.Warnings, committedWarning(ctx, sc.Server, changes)...)
 
 	batch := make([]gosmo.ConfigChange, len(changes))
 	for i, c := range changes {
@@ -590,7 +590,7 @@ func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool)
 	// sp_configure's refusal without ALTER SETTINGS (Msg 15247, live on 17)
 	// reads "missing or denied"; the options were just read, so it is denied.
 	apply := func(ctx context.Context) error {
-		err := w.ApplyConfiguration(ctx, batch, gosmo.ConfigApplyOptions{Override: inv.Values[optOverride].(bool)})
+		err := sc.Server.ApplyConfiguration(ctx, batch, gosmo.ConfigApplyOptions{Override: inv.Values[optOverride].(bool)})
 		if gosmo.IsMissingOrDenied(err) {
 			return output.NewError(output.CodePermissionDenied, err.Error(),
 				"sp_configure and RECONFIGURE need ALTER SETTINGS (serveradmin has it). Use a login that has it, or have it granted.")
@@ -612,7 +612,7 @@ func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool)
 	// sp_configure does not stop it), so the second read runs either way and
 	// the change set shows what landed.
 	werr := applyWrite(ctx, inv, res, apply)
-	after, err := cat.Configurations(ctx)
+	after, err := sc.Server.Configurations(ctx)
 	if err != nil {
 		if werr != nil {
 			return res, werr
@@ -703,12 +703,12 @@ func riskyValues(info *gosmo.ServerInfo, opts []*gosmo.ConfigurationOption, chan
 
 // committedWarning is the warning for a new max server memory below the
 // memory SQL Server has committed (§10.4): a fact, not a block.
-func committedWarning(ctx context.Context, cat Catalog, changes []configChange) []string {
+func committedWarning(ctx context.Context, srv *gosmo.Server, changes []configChange) []string {
 	i := slices.IndexFunc(changes, func(c configChange) bool { return c.opt.Name == maxServerMemory })
 	if i < 0 {
 		return nil
 	}
-	s, err := cat.MemoryStats(ctx)
+	s, err := srv.MemoryStats(ctx)
 	switch {
 	case err != nil && gosmo.IsPermissionDenied(err):
 		return []string{fmt.Sprintf("committed memory not read, so the new max server memory was not compared with it: it needs %s.", serverStateHint)}

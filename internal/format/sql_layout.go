@@ -7,7 +7,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// The SQL Standard style's layout pass
+// The SQL styles' layout pass
 // ---------------------------------------------------------------------------
 //
 // One walk over the tokens decides, for each, whether it starts a new line
@@ -81,7 +81,8 @@ type stmtState struct {
 
 type sqlLayout struct {
 	lx      *sqlLexed
-	t       []sqlTok
+	sty     sqlStyle
+	t       []sqlTok // lx.toks, or a reordered copy when sty.aliasEquals moved an alias
 	w       int
 	prefix  string // Options.LineIndent, before every line the layout starts
 	start   []bool // the token begins a statement
@@ -106,14 +107,17 @@ type sqlLayout struct {
 	vfOnly        bool // the current line holds only its indent and \v/\f tokens, which the GO rule reads as blanks
 }
 
-func newSQLLayout(lx *sqlLexed, o Options) *sqlLayout {
+func newSQLLayout(lx *sqlLexed, o Options, sty sqlStyle) *sqlLayout {
 	w := o.IndentWidth
 	if w <= 0 {
 		w = DefaultIndentWidth
 	}
-	l := &sqlLayout{lx: lx, t: lx.toks, w: w, prefix: o.LineIndent, last: -1, elseIf: -1, semi: -1}
+	l := &sqlLayout{lx: lx, sty: sty, t: lx.toks, w: w, prefix: o.LineIndent, last: -1, elseIf: -1, semi: -1}
 	l.links()
 	l.statements()
+	if sty.aliasEquals {
+		l.equalsAliases()
+	}
 	return l
 }
 

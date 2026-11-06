@@ -35,7 +35,7 @@ func qsWaitDrillResponses() []fakeResponse {
 	}
 }
 
-func newQSWaitPanel(t *testing.T) (*QueryStorePanel, *App, *fakeInstance) {
+func newQSWaitPanel(t *testing.T) (*QueryStorePanel, *App, *gFake) {
 	t.Helper()
 	p, a, inst := newQSPanel(t, "Query Wait Statistics", qsWaitDrillResponses()...)
 	p.Load()
@@ -48,7 +48,7 @@ func qsKey(p *QueryStorePanel, k tcell.Key) bool {
 }
 
 func TestEnterOnAWaitCategoryListsItsQueriesAndEscapeGoesBack(t *testing.T) {
-	p, a, inst := newQSWaitPanel(t)
+	p, a, _ := newQSWaitPanel(t)
 	qsKey(p, tcell.KeyDown) // Lock
 	if !qsKey(p, tcell.KeyEnter) {
 		t.Fatal("Enter on a category row was not taken")
@@ -59,7 +59,7 @@ func TestEnterOnAWaitCategoryListsItsQueriesAndEscapeGoesBack(t *testing.T) {
 		t.Fatalf("drill = %v, want Lock", p.drill)
 	}
 	if len(p.res.rows) != 1 || p.res.rows[0].queryID != 7 {
-		t.Fatalf("rows = %+v, want query 7 (unanswered: %v)", p.res.rows, inst.unmatched)
+		t.Fatalf("rows = %+v, want query 7", p.res.rows)
 	}
 	// The rows are queries, so the plan pane, Track and Plot have one to act on.
 	if p.selectedQueryID() != 7 {
@@ -117,7 +117,7 @@ func TestTheAllCategoriesRowIsAWayInNotAMeasurement(t *testing.T) {
 }
 
 func TestTheDetailBrowsersWaitGridHasNoAllCategoriesRow(t *testing.T) {
-	sc, _ := newFakeConn(t, append([]fakeResponse{qsDatabaseResponse()}, qsWaitDrillResponses()...)...)
+	sc, _ := newGConn(t, append([]fakeResponse{qsDatabaseResponse()}, qsWaitDrillResponses()...)...)
 	_, rows, err := queryStoreReportDetail(t.Context(), sc, "appdb", "Query Wait Statistics")
 	if err != nil {
 		t.Fatal(err)

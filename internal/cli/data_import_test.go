@@ -1,32 +1,95 @@
 package cli
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
-	"iter"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/cli/cmd"
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/db"
 )
 
-// importFake is objectFake whose tables have importFakeColumns, with every
-// collation in code page 1252.
-type importFake struct {
-	*objectFake
-	cols      []*gosmo.Column
-	codePages []string
+// importServer is objectServer whose Sales.Customer has importFakeColumns,
+// taking data import's writes: the TRUNCATE and the bulk load, each
+// recorded. Every collation is in code page 1252.
+type importServer struct {
+	*objectServer
+	truncates []string // each TRUNCATE sent, as sent
+	loads     []mssql.BulkOptions
+	loadOf    []string // each load's table and columns, "[Sales].[Customer] id,Name"
+	rows      [][]any  // every row the loads sent
+	newLoad   bool     // the load's columns were read: its first row opens a load
+	loadErr   error    // fails every row
+	truncErr  error    // fails the TRUNCATE
 }
 
-func newImportFake() *importFake {
-	return &importFake{objectFake: newObjectFake(), cols: importFakeColumns()}
+func newImportFake(t *testing.T) *importServer {
+	s := &importServer{}
+	s.objectServer = newObjectServerWith(t, func(o *objectServer) {
+		s.objectServer = o
+		s.rules()
+	})
+	s.tableColumns = importFakeColumns()
+	return s
+}
+
+// bulkConfig is the INSERTBULK statement go-mssqldb's CopyIn makes.
+type bulkConfig struct {
+	TableName   string
+	ColumnsName []string
+	Options     mssql.BulkOptions
+}
+
+func (s *importServer) rules() {
+	// BulkInsert's read of the target's columns, in the session's database.
+	s.on(func(q gosmotest.Query) [][]any {
+		s.newLoad = true
+		var rows [][]any
+		for _, c := range s.tableColumns {
+			length := c.MaxLength
+			if c.DataType == "nvarchar" || c.DataType == "nchar" {
+				length /= 2
+			}
+			cp := 0
+			if c.Collation != "" || strings.HasSuffix(string(c.DataType), "char") {
+				cp = 1252
+			}
+			rows = append(rows, []any{c.Name, string(c.DataType), length, c.Precision, c.Scale, cp, 1252})
+		}
+		return rows
+	}, "FROM sys.columns c", "WHERE c.object_id = OBJECT_ID(@p1)")
+	s.OnFunc(func(q gosmotest.Query) bool { return q.Exec }, func(q gosmotest.Query) gosmotest.Result {
+		switch {
+		case strings.HasPrefix(q.Text, "TRUNCATE TABLE "):
+			s.truncates = append(s.truncates, q.Text)
+			return gosmotest.Result{Err: s.truncErr}
+		case strings.HasPrefix(q.Text, "INSERTBULK "):
+			if s.newLoad {
+				var bc bulkConfig
+				if err := json.Unmarshal([]byte(strings.TrimPrefix(q.Text, "INSERTBULK ")), &bc); err != nil {
+					s.t.Errorf("bulk config %q: %v", q.Text, err)
+				}
+				s.loads = append(s.loads, bc.Options)
+				s.loadOf = append(s.loadOf, bc.TableName+" "+strings.Join(bc.ColumnsName, ","))
+				s.newLoad = false
+			}
+			if s.loadErr != nil {
+				return gosmotest.Result{Err: s.loadErr}
+			}
+			s.rows = append(s.rows, q.Args)
+			return gosmotest.Result{}
+		}
+		s.t.Errorf("importServer: a write it does not know: %s", q)
+		return gosmotest.Result{}
+	})
 }
 
 func importFakeColumns() []*gosmo.Column {
@@ -41,49 +104,10 @@ func importFakeColumns() []*gosmo.Column {
 	}
 }
 
-func (c *importFake) TableColumns(context.Context, *gosmo.Table) ([]*gosmo.Column, error) {
-	return c.cols, nil
-}
-
-func (c *importFake) CollationCodePage(_ context.Context, collation string) (int, error) {
-	c.codePages = append(c.codePages, collation)
-	return 1252, nil
-}
-
-// loadWriter records data import's writes: the TRUNCATE (and whether it was
-// scripted), and the bulk load with every row it consumed.
-type loadWriter struct {
-	cmd.Writer
-	truncated []bool // one per TruncateTable call: scripted?
-	loads     []gosmo.BulkCopy
-	rows      [][]any
-	err       error // returned by BulkInsert after consuming the rows
-	truncErr  error
-}
-
-func (w *loadWriter) TruncateTable(ctx context.Context, _ *gosmo.Table) error {
-	w.truncated = append(w.truncated, gosmo.Scripting(ctx))
-	return w.truncErr
-}
-
-func (w *loadWriter) BulkInsert(_ context.Context, _ *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error) {
-	w.loads = append(w.loads, bc)
-	for r, err := range rows {
-		if err != nil {
-			return 0, fmt.Errorf("gosmo: bulk insert into x: reading row %d: %w", len(w.rows), err)
-		}
-		w.rows = append(w.rows, r)
-	}
-	if w.err != nil {
-		return 0, w.err
-	}
-	return int64(len(w.rows)), nil
-}
-
-// importDeps is dataDeps over cat with w as the writer, the dev profile's
-// ceiling raised to ddl so --truncate-first can pass the gate.
-func importDeps(t *testing.T, cat cmd.Catalog, w *loadWriter) (cmd.Deps, *int) {
-	d, dialled, _ := dataDeps(t, cat, &fakeSession{t: t})
+// importDeps is dataDeps over s, the dev profile's ceiling raised to ddl so
+// --truncate-first can pass the gate.
+func importDeps(t *testing.T, s *importServer) (cmd.Deps, *int) {
+	d, dialled, _ := dataDeps(t, s.objectServer, &fakeSession{t: t})
 	cfg := profileConfig(t)
 	dev, err := cfg.ProfileByName("dev")
 	if err != nil {
@@ -93,7 +117,6 @@ func importDeps(t *testing.T, cat cmd.Catalog, w *loadWriter) (cmd.Deps, *int) {
 		t.Fatal(err)
 	}
 	d.LoadConfig = func() (*config.Config, error) { return cfg, nil }
-	d.Writer = func(*db.ServerConn) cmd.Writer { return w }
 	return d, dialled
 }
 
@@ -111,29 +134,28 @@ func TestDataImportCSV(t *testing.T) {
 	// NULL the string; a byte order mark before the header; a file column
 	// named in another case; computed and rowversion columns skipped.
 	path := writeFile(t, "c.csv", "\uFEFFid,name,Code,pct,rv\r\n1,\"\",NULL,2,0x01\r\n2,,abc,4,0x02\r\n")
-	cat, w := newImportFake(), &loadWriter{}
-	d, _ := importDeps(t, cat, w)
+	cat := newImportFake(t)
+	d, _ := importDeps(t, cat)
 	r := runData(t, d, "import", "Sales.Customer", "--in-file", path, "--allow", "write")
 	if r.exit != 0 {
 		t.Fatalf("exit %d\n%s", r.exit, r.stdout)
 	}
-	if len(w.loads) != 1 || len(w.truncated) != 0 {
-		t.Fatalf("loads %v, truncates %v", w.loads, w.truncated)
+	if len(cat.loads) != 1 || len(cat.truncates) != 0 {
+		t.Fatalf("loads %v, truncates %v", cat.loads, cat.truncates)
 	}
-	bc := w.loads[0]
-	if bc.Schema != "Sales" || bc.Table != "Customer" || !reflect.DeepEqual(bc.Columns, []string{"id", "Name", "Code"}) {
-		t.Errorf("load %+v", bc)
+	if got := cat.loadOf[0]; got != "[Sales].[Customer] id,Name,Code" {
+		t.Errorf("load %q", got)
 	}
-	if o := bc.Options; !o.KeepNulls || !o.CheckConstraints || o.FireTriggers || o.TableLock {
+	if o := cat.loads[0]; !o.KeepNulls || !o.CheckConstraints || o.FireTriggers || o.Tablock {
 		t.Errorf("options %+v", o)
 	}
 	want := [][]any{{int64(1), "", []byte("NULL")}, {int64(2), nil, []byte("abc")}}
-	if !reflect.DeepEqual(w.rows, want) {
-		t.Errorf("rows %#v, want %#v", w.rows, want)
+	if !reflect.DeepEqual(cat.rows, want) {
+		t.Errorf("rows %#v, want %#v", cat.rows, want)
 	}
 	// Code's collation and the database's, once each (both are 1252 here).
-	if !reflect.DeepEqual(cat.codePages, []string{"Latin1_General_CI_AS"}) {
-		t.Errorf("code pages read for %q", cat.codePages)
+	if !reflect.DeepEqual(cat.recorded(&cat.codePages), []string{"Latin1_General_CI_AS"}) {
+		t.Errorf("code pages read for %q", cat.recorded(&cat.codePages))
 	}
 	env := envelope(t, r.stdout)
 	for k, v := range map[string]any{"object": "[Sales].[Customer]", "type": "table", "inFile": path, "format": "csv",
@@ -165,18 +187,18 @@ func TestDataImportJSONLAndOptions(t *testing.T) {
 {"id":3,"Name":"NULL"}
 {"_summary":{"status":"ok"}}
 `)
-	w := &loadWriter{}
-	d, _ := importDeps(t, newImportFake(), w)
+	cat := newImportFake(t)
+	d, _ := importDeps(t, cat)
 	r := runData(t, d, "import", "Sales.Customer", "--in-file", path, "--allow", "write",
 		"--no-check-constraints", "--fire-triggers", "--tablock")
 	if r.exit != 0 {
 		t.Fatalf("exit %d\n%s", r.exit, r.stdout)
 	}
 	want := [][]any{{int64(1), nil}, {int64(2), ""}, {int64(3), "NULL"}}
-	if !reflect.DeepEqual(w.rows, want) {
-		t.Errorf("rows %#v", w.rows)
+	if !reflect.DeepEqual(cat.rows, want) {
+		t.Errorf("rows %#v", cat.rows)
 	}
-	if o := w.loads[0].Options; !o.KeepNulls || o.CheckConstraints || !o.FireTriggers || !o.TableLock {
+	if o := cat.loads[0]; !o.KeepNulls || o.CheckConstraints || !o.FireTriggers || !o.Tablock {
 		t.Errorf("options %+v", o)
 	}
 	if strings.Contains(r.stdout, "warnings\": [\"") {
@@ -186,22 +208,22 @@ func TestDataImportJSONLAndOptions(t *testing.T) {
 
 func TestDataImportDryRunLoadsNothing(t *testing.T) {
 	path := writeFile(t, "c.tsv", "id\tName\n1\ta\n2\tb\n3\t\n")
-	w := &loadWriter{}
-	d, _ := importDeps(t, newImportFake(), w)
+	cat := newImportFake(t)
+	d, _ := importDeps(t, cat)
 	r := runData(t, d, "import", "Sales.Customer", "--in-file", path, "--allow", "ddl", "--dry-run",
 		"--truncate-first", "--confirm", "Sales.Customer")
 	if r.exit != 0 {
 		t.Fatalf("exit %d\n%s", r.exit, r.stdout)
 	}
-	if len(w.loads) != 0 || !reflect.DeepEqual(w.truncated, []bool{true}) {
-		t.Errorf("a dry run wrote: loads %v, truncates (scripted?) %v", w.loads, w.truncated)
+	if len(cat.loads) != 0 || len(cat.truncates) != 0 {
+		t.Errorf("a dry run wrote: loads %v, truncates %q", cat.loads, cat.truncates)
 	}
 	env := envelope(t, r.stdout)
 	if dataField(t, env, "rows") != "3" || dataField(t, env, "dryRun") != "true" || dataField(t, env, "truncateFirst") != "true" {
 		t.Errorf("record %v", env["data"])
 	}
-	if _, ok := env["data"].(map[string]any)["tsql"]; !ok {
-		t.Errorf("no tsql on a truncating dry run: %v", env["data"])
+	if got := dataField(t, env, "tsql"); got != "USE [app];\nGO\nTRUNCATE TABLE [Sales].[Customer]\nGO\n" {
+		t.Errorf("tsql on a truncating dry run: %q", got)
 	}
 
 	// A bad cell fails the dry run as it would the load.
@@ -214,23 +236,30 @@ func TestDataImportDryRunLoadsNothing(t *testing.T) {
 
 func TestDataImportTruncateThenLoad(t *testing.T) {
 	path := writeFile(t, "c.csv", "id\n1\n")
-	w := &loadWriter{err: mssql.Error{Number: 2627, Class: 14, Message: "Violation of PRIMARY KEY constraint"}}
-	d, _ := importDeps(t, newImportFake(), w)
+	cat := newImportFake(t)
+	cat.loadErr = mssql.Error{Number: 2627, Class: 14, Message: "Violation of PRIMARY KEY constraint"}
+	d, _ := importDeps(t, cat)
 	r := runData(t, d, "import", "Sales.Customer", "--in-file", path, "--allow", "ddl", "--truncate-first", "--confirm", "Sales.Customer")
-	if r.exit != 5 || !reflect.DeepEqual(w.truncated, []bool{false}) || len(w.loads) != 1 {
-		t.Fatalf("exit %d, truncates %v, loads %d\n%s", r.exit, w.truncated, len(w.loads), r.stdout)
+	if r.exit != 5 || !reflect.DeepEqual(cat.truncates, []string{"TRUNCATE TABLE [Sales].[Customer]"}) || len(cat.loads) != 1 {
+		t.Fatalf("exit %d, truncates %q, loads %d\n%s", r.exit, cat.truncates, len(cat.loads), r.stdout)
+	}
+	if q := cat.Queries(); !slices.ContainsFunc(q, func(q gosmotest.Query) bool {
+		return q.Exec && q.Database == "app" && strings.HasPrefix(q.Text, "TRUNCATE")
+	}) {
+		t.Errorf("the TRUNCATE did not run in app")
 	}
 	if !strings.Contains(firstError(t, envelope(t, r.stdout))["hint"].(string), "it stays empty") {
 		t.Errorf("hint does not say the table is empty:\n%s", r.stdout)
 	}
 
 	// A refused TRUNCATE (Msg 1088: no ALTER) is exit 9, and nothing loads.
-	w = &loadWriter{truncErr: fmt.Errorf("gosmo: truncate: %w", mssql.Error{Number: 1088, Class: 16,
-		Message: "Cannot find the object \"Customer\" because it does not exist or you do not have permissions."})}
-	d, _ = importDeps(t, newImportFake(), w)
+	cat = newImportFake(t)
+	cat.truncErr = mssql.Error{Number: 1088, Class: 16,
+		Message: "Cannot find the object \"Customer\" because it does not exist or you do not have permissions."}
+	d, _ = importDeps(t, cat)
 	r = runData(t, d, "import", "Sales.Customer", "--in-file", path, "--allow", "ddl", "--truncate-first", "--confirm", "Sales.Customer")
-	if r.exit != 9 || len(w.loads) != 0 {
-		t.Errorf("exit %d, loads %d\n%s", r.exit, len(w.loads), r.stdout)
+	if r.exit != 9 || len(cat.loads) != 0 {
+		t.Errorf("exit %d, loads %d\n%s", r.exit, len(cat.loads), r.stdout)
 	}
 }
 
@@ -245,8 +274,9 @@ func TestDataImportPermissionDenied(t *testing.T) {
 		{Number: 1088, Class: 16, Message: `Cannot find the object "Sales.Customer" because it does not exist or you do not have permissions.`},
 		{Number: 5304, Class: 16, Message: "Bulk copy failed. User does not have ALTER TABLE permission on table 'Sales.Customer'."},
 	} {
-		w := &loadWriter{err: fmt.Errorf("gosmo: bulk insert: flush: %w", se)}
-		d, _ := importDeps(t, newImportFake(), w)
+		cat := newImportFake(t)
+		cat.loadErr = se
+		d, _ := importDeps(t, cat)
 		r := runData(t, d, "import", "Sales.Customer", "--in-file", path, "--allow", "write")
 		if r.exit != 9 || !strings.Contains(r.stdout, "the file has identity column [id]") {
 			t.Errorf("Msg %d: exit %d\n%s", se.Number, r.exit, r.stdout)
@@ -300,8 +330,8 @@ func TestDataImportRefusals(t *testing.T) {
 		{"bare quote", []string{"Sales.Customer", "--in-file", writeFile(t, "s.csv", "id,Name\n1,a\"b\n"), "--allow", "write"}, 2, true,
 			"line 2"},
 	} {
-		w := &loadWriter{}
-		d, dialled := importDeps(t, newImportFake(), w)
+		cat := newImportFake(t)
+		d, dialled := importDeps(t, cat)
 		r := runData(t, d, append([]string{"import"}, tc.argv...)...)
 		if r.exit != tc.exit || !strings.Contains(r.stdout, tc.want) {
 			t.Errorf("%s: exit %d, want %d with %q\n%s", tc.name, r.exit, tc.exit, tc.want, r.stdout)
@@ -312,8 +342,8 @@ func TestDataImportRefusals(t *testing.T) {
 		// A file fault after some rows is the load's to abandon (BulkInsert
 		// sends nothing then: TestLiveBulkLoadIsAllOrNothing); before the
 		// load, nothing is even offered.
-		if !tc.dialed && len(w.loads) != 0 {
-			t.Errorf("%s: loaded %v", tc.name, w.loads)
+		if !tc.dialed && len(cat.loads) != 0 {
+			t.Errorf("%s: loaded %v", tc.name, cat.loads)
 		}
 	}
 }
@@ -322,11 +352,11 @@ func TestDataImportOneColumnCSVWarns(t *testing.T) {
 	// RecordWriter writes a one-column NULL as "", so the file cannot say
 	// which "" was a NULL: they load as empty strings, and a warning says so.
 	path := writeFile(t, "n.csv", "Name\n\"\"\na\n")
-	w := &loadWriter{}
-	d, _ := importDeps(t, newImportFake(), w)
+	cat := newImportFake(t)
+	d, _ := importDeps(t, cat)
 	r := runData(t, d, "import", "Sales.Customer", "--in-file", path, "--allow", "write")
-	if r.exit != 0 || !reflect.DeepEqual(w.rows, [][]any{{""}, {"a"}}) {
-		t.Fatalf("exit %d, rows %v\n%s", r.exit, w.rows, r.stdout)
+	if r.exit != 0 || !reflect.DeepEqual(cat.rows, [][]any{{""}, {"a"}}) {
+		t.Fatalf("exit %d, rows %v\n%s", r.exit, cat.rows, r.stdout)
 	}
 	if !strings.Contains(r.stdout, "Export to .jsonl to keep NULLs") {
 		t.Errorf("no one-column warning:\n%s", r.stdout)

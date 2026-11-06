@@ -98,9 +98,9 @@ func idxColumnsResp(rows ...[]driver.Value) fakeResponse {
 
 // loadIndexOptions loads the Options page for index IX_Orders_CustomerID over
 // the given index state.
-func loadIndexOptions(t *testing.T, opts indexFixture) (*fakeInstance, propApply, *propsheet.Form) {
+func loadIndexOptions(t *testing.T, opts indexFixture) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		dbByNameResp(idxDatabase, 5),
 		idxTableResp(),
 		idxListResp("IX_Orders_CustomerID", 3, opts),
@@ -109,7 +109,7 @@ func loadIndexOptions(t *testing.T, opts indexFixture) (*fakeInstance, propApply
 			[]driver.Value{int64(3), "OrderDate", true, false},
 		),
 	)
-	form, apply := loadPage(t, pageIndexOptions(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
+	form, apply := loadPageG(t, pageIndexOptions(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
 	return inst, apply, form
 }
 
@@ -279,13 +279,13 @@ func TestIndexOptionsColumnstoreOffersNothing(t *testing.T) {
 func TestIndexOptionsMemoryOptimizedOffersNothing(t *testing.T) {
 	tableResp := idxTableResp()
 	tableResp.rows[0][6] = true // IsMemoryOptimized
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		dbByNameResp(idxDatabase, 5),
 		tableResp,
 		idxListResp("IX_Orders_CustomerID", 3, plainIndex()),
 		idxColumnsResp([]driver.Value{int64(3), "CustomerID", false, false}),
 	)
-	form, apply := loadPage(t, pageIndexOptions(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
+	form, apply := loadPageG(t, pageIndexOptions(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
 
 	if apply != nil {
 		t.Error("a memory-optimized table's index Options page has an apply")
@@ -327,9 +327,9 @@ func idxColumnResp(names ...string) fakeResponse {
 
 // loadIncludedColumns loads the Included Columns page for an index keyed on
 // CustomerID with OrderTotal already included, over a five-column table.
-func loadIncludedColumns(t *testing.T) (*fakeInstance, propApply, *propsheet.Form) {
+func loadIncludedColumns(t *testing.T) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t,
+	sc, inst := newGConn(t,
 		dbByNameResp(idxDatabase, 5),
 		idxTableResp(),
 		idxListResp("IX_Orders_CustomerID", 3, plainIndex()),
@@ -339,7 +339,7 @@ func loadIncludedColumns(t *testing.T) (*fakeInstance, propApply, *propsheet.For
 		),
 		idxColumnResp("OrderID", "CustomerID", "OrderDate", "OrderTotal", "ShipCity"),
 	)
-	form, apply := loadPage(t, pageIndexIncludedColumns(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
+	form, apply := loadPageG(t, pageIndexIncludedColumns(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
 	// The grid is built from the eligible columns, and an under-scripted fake
 	// yields an empty one — on which every assertion below passes for the
 	// wrong reason.
@@ -439,13 +439,13 @@ func TestIncludedColumnsOffersNothingForAnIndexThatCannotHaveThem(t *testing.T) 
 		{"columnstore", indexFixture{typeDesc: "NONCLUSTERED COLUMNSTORE", compression: "COLUMNSTORE"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			sc, inst := newFakeConn(t,
+			sc, inst := newGConn(t,
 				dbByNameResp(idxDatabase, 5),
 				idxTableResp(),
 				idxListResp("IX_Orders_CustomerID", 3, c.opts),
 				idxColumnsResp([]driver.Value{int64(3), "CustomerID", false, false}),
 			)
-			form, apply := loadPage(t, pageIndexIncludedColumns(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
+			form, apply := loadPageG(t, pageIndexIncludedColumns(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
 			if apply != nil {
 				t.Error("the page has an apply for an index whose INCLUDE list cannot change")
 			}

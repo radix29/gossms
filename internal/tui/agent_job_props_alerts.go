@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -20,12 +21,21 @@ type jobAlertLink struct {
 
 // pageJobAlerts is the Alerts page: every SQL Server event alert (WMI excluded,
 // as in the Alerts folder), toggled linked or not to this job. Alert authoring
-// is Alert Properties' job (agent_alert_props.go).
+// is Alert Properties' job (agent_alert_props.go). A login that cannot read the
+// alert list gets jobAlertsSummaryForm instead.
 func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Alerts",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+			if !agentAlertsReadable(ctx, sc) {
+				return jobAlertsSummaryForm(ctx, sc, *jobName)
+			}
 			alerts, err := sc.Server.EventAlerts(ctx)
+			// The gate fails open, so an unprobed login can still be refused
+			// here; the refusal means the same thing.
+			if gosmo.IsPermissionDenied(err) {
+				return jobAlertsSummaryForm(ctx, sc, *jobName)
+			}
 			if err != nil {
 				return nil, nil, err
 			}
@@ -137,6 +147,37 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 			return f, apply, nil
 		},
 	}
+}
+
+// jobAlertsSummaryForm is the Alerts page for a login below
+// SQLAgentOperatorRole: msdb refuses it the alert list (gosmo.Server.Alerts)
+// but not sp_get_job_alerts, so it sees, read-only, the alerts that run this
+// job (gosmo.Job.Alerts) — no toggle, since linking one needs the list.
+func jobAlertsSummaryForm(ctx context.Context, sc *db.ServerConn, jobName string) (*propsheet.Form, propApply, error) {
+	// JobRef: Job.Alerts resolves the job's id itself.
+	alerts, err := sc.Server.JobRef(jobName).Alerts(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	cols := []string{"Name", "Enabled", "Kind"}
+	rows := make([][]string, len(alerts))
+	for i, al := range alerts {
+		// sp_get_job_alerts tells a WMI alert from an event alert only by
+		// a performance condition, which neither has (gosmo.JobAlert).
+		kind := "SQL Server event or WMI"
+		if al.IsPerformanceAlert {
+			kind = "Performance condition"
+		}
+		rows[i] = []string{al.Name, boolStr(al.Enabled), kind}
+	}
+	grid := controls.NewDataGrid()
+	grid.SetData(cols, rows)
+	f := propsheet.NewForm(
+		propsheet.Section("Alerts that respond to this job"),
+		propsheet.NewGridRow(grid, 10),
+		propsheet.Note("Read-only: msdb shows the full alert list, and lets an alert be linked to a job, only to sysadmin and members of SQLAgentOperatorRole. These are the alerts that already run this job."),
+	)
+	return f, nil, nil
 }
 
 var notifyConditionItems = []string{"When the job succeeds", "When the job fails", "When the job completes"}

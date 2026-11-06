@@ -24,16 +24,16 @@ import (
 func roleGeneralResponses() []fakeResponse {
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseRoleResponses()...)
-	responses = append(responses, databaseUsersResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
 	responses = append(responses, databaseSchemaResponses()...)
 	return append(responses, principalPermissionResponses()...)
 }
 
-func loadRoleGeneralPage(t *testing.T, roleName string) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadRoleGeneralPage(t *testing.T, roleName string) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
-	sc, inst := newFakeConn(t, roleGeneralResponses()...)
+	sc, inst := newGConn(t, roleGeneralResponses()...)
 	name := roleName
-	form, apply := loadPage(t, pageRoleGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageRoleGeneral(sc, principalDatabase, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -76,14 +76,14 @@ func TestRoleGeneralCountsEveryClassOfSecurable(t *testing.T) {
 	}
 }
 
-// TestRoleGeneralOffersEveryPrincipalAsAnOwner. The owner list is users and
-// roles together; a page that offered only one kind silently narrows what the
-// user may transfer to.
+// TestRoleGeneralOffersEveryPrincipalAsAnOwner. The owner list is users,
+// roles and application roles together; a page that offered only one kind
+// silently narrows what the user may transfer to.
 func TestRoleGeneralOffersEveryPrincipalAsAnOwner(t *testing.T) {
 	_, _, form, _ := loadRoleGeneralPage(t, principalRole)
 	items := selectRow(t, form, "Owner").Items()
 
-	for _, want := range []string{principalUser, "dbo", "reporting", "audit_reader", "public"} {
+	for _, want := range []string{principalUser, "dbo", "reporting", "audit_reader", "public", principalAppRoleOwner} {
 		if !containsItem(items, want) {
 			t.Errorf("the Owner list %q does not offer %q", items, want)
 		}
@@ -120,12 +120,12 @@ func TestRoleGeneralUntouchedPageWritesNothing(t *testing.T) {
 
 // -- Server Role > General ---------------------------------------------------
 
-func loadServerRoleGeneralPage(t *testing.T, roleName string) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadServerRoleGeneralPage(t *testing.T, roleName string) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
 	responses := append(serverRoleResponses(), loginListResponse(), serverRolePermissionsResponse())
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := roleName
-	form, apply := loadPage(t, pageServerRoleGeneral(sc, &name), inst)
+	form, apply := loadPageG(t, pageServerRoleGeneral(sc, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -185,11 +185,11 @@ func userGeneralResponses() []fakeResponse {
 	return append(responses, loginListResponse())
 }
 
-func loadUserGeneralPage(t *testing.T, userName string) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadUserGeneralPage(t *testing.T, userName string) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
-	sc, inst := newFakeConn(t, userGeneralResponses()...)
+	sc, inst := newGConn(t, userGeneralResponses()...)
 	name := userName
-	form, apply := loadPage(t, pageUserGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageUserGeneral(sc, principalDatabase, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -286,9 +286,9 @@ func TestUserGeneralCertificateMappedUserHasNoLoginOrSchemaToChange(t *testing.T
 				[]byte{0x01, 0x06}, "##signer_login##", false, "signer_cert"},
 		}},
 	}, userGeneralResponses()...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := certUser
-	form, apply := loadPage(t, pageUserGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageUserGeneral(sc, principalDatabase, &name), inst)
 
 	for _, label := range []string{"Login name", "Default schema"} {
 		if hasEditableRow(form, label) {
@@ -316,16 +316,16 @@ func TestUserGeneralCertificateMappedUserHasNoLoginOrSchemaToChange(t *testing.T
 func schemaGeneralResponses() []fakeResponse {
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseSchemaResponses()...)
-	responses = append(responses, databaseUsersResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
 	responses = append(responses, databaseRoleResponses()...)
 	responses = append(responses, schemaObjectCountResponses()...)
 	return append(responses, principalPermissionResponses()...)
 }
 
-func loadSchemaGeneralPage(t *testing.T, schemaName string) (*fakeInstance, propApply, *propsheet.Form) {
+func loadSchemaGeneralPage(t *testing.T, schemaName string) (*gFake, propApply, *propsheet.Form) {
 	t.Helper()
-	sc, inst := newFakeConn(t, schemaGeneralResponses()...)
-	form, apply := loadPage(t, pageSchemaGeneral(sc, principalDatabase, schemaName), inst)
+	sc, inst := newGConn(t, schemaGeneralResponses()...)
+	form, apply := loadPageG(t, pageSchemaGeneral(sc, principalDatabase, schemaName), inst)
 	return inst, apply, form
 }
 
@@ -341,6 +341,19 @@ func TestSchemaGeneralTransfersToThePrincipalThatWasPicked(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	assertOneStatementIn(t, inst, principalDatabase, "ALTER AUTHORIZATION ON SCHEMA::[sales] TO [reporting]")
+}
+
+// TestSchemaGeneralTransfersToAnApplicationRole. An application role can own
+// a schema, so the Owner list offers it and the transfer names it.
+func TestSchemaGeneralTransfersToAnApplicationRole(t *testing.T) {
+	inst, apply, form := loadSchemaGeneralPage(t, principalSchema)
+
+	editSelect(t, form, "Owner", principalAppRoleOwner)
+
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	assertOneStatementIn(t, inst, principalDatabase, "ALTER AUTHORIZATION ON SCHEMA::[sales] TO [payroll_app]")
 }
 
 // TestSchemaGeneralSystemSchemaHasNoApply.

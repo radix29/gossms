@@ -20,10 +20,22 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata/*.golden from the current output")
 
+// flagWriter is the one write the harness command makes.
+type flagWriter interface {
+	SetTraceFlag(ctx context.Context, flag int, on bool) error
+}
+
+// scriptWriter is gosmo's own SetTraceFlag on a Server never connected:
+// under WithScript it captures the batch, anything else would panic.
+type scriptWriter struct{}
+
+func (scriptWriter) SetTraceFlag(ctx context.Context, flag int, on bool) error {
+	return (&gosmo.Server{}).SetTraceFlag(ctx, flag, on)
+}
+
 // fakeWriter records the writes a command makes, and whether each ran under
 // gosmo.WithScript.
 type fakeWriter struct {
-	Writer
 	calls    []string
 	scripted []bool
 	err      error
@@ -36,10 +48,10 @@ func (w *fakeWriter) SetTraceFlag(ctx context.Context, flag int, on bool) error 
 }
 
 // writeHarness is a writing command over fakes: dials counts the connects,
-// and the command turns trace flag 3604 on, as server traceflag on will.
+// and the command turns trace flag 3604 on, as a write does.
 type writeHarness struct {
 	dials  int
-	writer Writer
+	writer flagWriter
 	cfg    *config.Config
 }
 
@@ -51,7 +63,6 @@ func (h *writeHarness) deps() Deps {
 			return &db.ServerConn{}, nil
 		},
 		Catalog: func(*db.ServerConn) Catalog { return nil },
-		Writer:  func(*db.ServerConn) Writer { return h.writer },
 	}
 }
 
@@ -62,13 +73,13 @@ func (h *writeHarness) command(d Deps) *spec.Command {
 		Class:   spec.ClassAdmin,
 		Run: func(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 			res := &output.Result{}
-			sc, _, w, err := d.connectWriter(ctx, inv, res)
+			sc, _, err := d.connectGated(ctx, inv, res)
 			if err != nil {
 				return res, err
 			}
 			defer sc.Close()
 			res.Fields = append(res.Fields, output.Field{Key: "flag", Value: "3604"})
-			return res, applyWrite(ctx, inv, res, func(ctx context.Context) error { return w.SetTraceFlag(ctx, 3604, true) })
+			return res, applyWrite(ctx, inv, res, func(ctx context.Context) error { return h.writer.SetTraceFlag(ctx, 3604, true) })
 		},
 	}
 }
@@ -179,10 +190,10 @@ func TestWriteDryRunScripts(t *testing.T) {
 }
 
 // A dry run's tsql is gosmo's own batch, captured through the real
-// serverWriter (a Server never connected: WithScript intercepts the exec).
+// scriptWriter (WithScript intercepts the exec).
 func dryRunResult(t *testing.T) *output.Result {
 	t.Helper()
-	h := &writeHarness{writer: serverWriter{&gosmo.Server{}}}
+	h := &writeHarness{writer: scriptWriter{}}
 	res, err := h.run(t, adHoc+"--allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)

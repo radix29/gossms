@@ -66,7 +66,7 @@ func dmkReadResponses(has, byServer bool) []fakeResponse {
 
 func TestSymmetricKeysLoaderCarriesTheDatabaseAndCreateDate(t *testing.T) {
 	for _, has := range []bool{false, true} {
-		sc, _ := newFakeConn(t, append(append([]fakeResponse{dbScopedCredDatabaseRow()},
+		sc, _ := newGConn(t, append(append([]fakeResponse{dbScopedCredDatabaseRow()},
 			dmkReadResponses(has, true)...), symKeyListResponse())...)
 		l := loaderCtx{ctx: context.Background(), sc: sc}
 
@@ -160,7 +160,7 @@ func TestSymmetricKeyDropsThroughTheRef(t *testing.T) {
 	case !strings.Contains(op.warning, "cannot be decrypted again") || !strings.Contains(op.warning, "KEY_SOURCE"):
 		t.Errorf("warning %q does not say the data is lost, or name the KEY_SOURCE exception", op.warning)
 	}
-	sc, rec := newFakeConn(t)
+	sc, rec := newGConn(t)
 	if err := op.drop(context.Background(), sc, nodeData{Type: NodeSymmetricKey, DBName: "appdb", Name: "k]1"}); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
@@ -180,7 +180,7 @@ func symKeyGateConn(t *testing.T, granted []string, control bool) *explorerNode 
 	}
 	responses := withSecurableAnswers(capabilityResponses(true, nil, nil, granted, denied),
 		map[string]bool{gosmo.DatabaseSecurableKey(gosmo.DatabaseSecurableSymmetricKey, "", "k1"): control})
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	return &explorerNode{data: nodeData{Type: NodeSymmetricKey, DBName: "appdb", Name: "k1", conn: sc}}
@@ -237,7 +237,7 @@ func TestSymmetricKeyScriptVerbs(t *testing.T) {
 // General's one write is the owner; unlike a certificate, a symmetric key may
 // be owned by a role, so the roles are offered too.
 func TestSymmetricKeyGeneralPageChangesOnlyTheOwner(t *testing.T) {
-	sc, inst := newFakeConn(t, append([]fakeResponse{dbScopedCredDatabaseRow(), {
+	sc, inst := newGConn(t, append([]fakeResponse{dbScopedCredDatabaseRow(), {
 		match: "FROM   sys.symmetric_keys", arg: "aaa_key", cols: 13,
 		rows: symKeyListResponse().rows[:2],
 	}}, keyOwnerResponses()...)...)
@@ -272,7 +272,7 @@ func TestSymmetricKeyGeneralPageChangesOnlyTheOwner(t *testing.T) {
 // batch Delete would treat it as a key.
 func TestSymmetricKeysFolderDetail(t *testing.T) {
 	for _, has := range []bool{true, false} {
-		sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), symKeyListResponse(), masterKeyResponse(has))
+		sc, _ := newGConn(t, dbScopedCredDatabaseRow(), symKeyListResponse(), masterKeyResponse(has))
 		node := &explorerNode{data: nodeData{Type: NodeSymmetricKeys, DBName: "appdb", conn: sc}}
 
 		var objs []nodeData
@@ -310,7 +310,7 @@ func TestSymmetricKeysFolderDetail(t *testing.T) {
 // SymmetricKeyByName answers ErrNotFound for a key dropped since the tree was
 // read; the detail pane shows that error rather than an empty view.
 func TestSymmetricKeyDetailOfADroppedKey(t *testing.T) {
-	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), fakeResponse{
+	sc, _ := newGConn(t, dbScopedCredDatabaseRow(), fakeResponse{
 		match: "FROM   sys.symmetric_keys", arg: "gone", cols: 13,
 	})
 	node := &explorerNode{data: nodeData{Type: NodeSymmetricKey, DBName: "appdb", Name: "gone", conn: sc}}

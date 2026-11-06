@@ -64,8 +64,8 @@ func falses(n int) []driver.Value {
 // returned nil, and Apply reported success. Nothing short of running the
 // apply closure and looking at what reached the server could see it.
 func TestFilesPageWritesTheAutogrowthItWasGiven(t *testing.T) {
-	sc, inst := newFakeConn(t, filesPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filesPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	// The grid opens on the first file, and the "Selected file" fields below
 	// it are that file's live edit — so setting the growth spinner to 0 is
@@ -104,8 +104,8 @@ func TestFilesPageWritesTheAutogrowthItWasGiven(t *testing.T) {
 // gone, an untouched page resends every file its own current SIZE — which
 // MODIFY FILE reads as a grow-to target and rejects outright.
 func TestFilesPageWritesNothingWhenNothingChanged(t *testing.T) {
-	sc, inst := newFakeConn(t, filesPageResponses()...)
-	_, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filesPageResponses()...)
+	_, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -134,8 +134,8 @@ func nonWholeMBFilesResponses() []fakeResponse {
 // silently switched off. TestFilesPageWritesNothingWhenNothingChanged runs the
 // same hook but on a whole-MB fixture, where the round trip is exact.
 func TestFilesPageOKOnAFileOffAWholeMBWritesNothing(t *testing.T) {
-	sc, inst := newFakeConn(t, nonWholeMBFilesResponses()...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, nonWholeMBFilesResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	if form.Commit(); form.Dirty() {
 		t.Error("the commit hook alone made an untouched page dirty")
@@ -157,8 +157,8 @@ func TestFilesPageOKOnAFileOffAWholeMBWritesNothing(t *testing.T) {
 // switching autogrowth to 10 percent sends that and nothing else — the size
 // and cap spinners, which read 8 and 15, stay out of the statement.
 func TestFilesPageWritesOnlyTheGrowthItWasGiven(t *testing.T) {
-	sc, inst := newFakeConn(t, nonWholeMBFilesResponses()...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, nonWholeMBFilesResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	editRadio(t, form, "Growth by", "Percent")
 	editText(t, form, "Growth amount", "10")
@@ -183,8 +183,8 @@ func TestFilesPageWritesOnlyTheGrowthItWasGiven(t *testing.T) {
 // server currently knows it by. Addressing it by the new name targets a file
 // that does not exist yet.
 func TestFilesPageRenamesByTheOldName(t *testing.T) {
-	sc, inst := newFakeConn(t, filesPageResponses()...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filesPageResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	editText(t, form, "Logical name", "appdb_data")
 
@@ -234,8 +234,8 @@ func filestreamFilesResponses() []fakeResponse {
 // Driven through the keys a user presses, because OnSelectRow is where the
 // commit happens and SetSelectedRow deliberately doesn't fire it.
 func TestFilesPageDoesNotRetypeAFilestreamFile(t *testing.T) {
-	sc, inst := newFakeConn(t, filestreamFilesResponses()...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filestreamFilesResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	const nameCol, typeCol, fgCol = 0, 1, 2
 	g := plainGrid(t, form)
@@ -274,8 +274,8 @@ func TestFilesPageDoesNotRetypeAFilestreamFile(t *testing.T) {
 // picker: showing FILESTREAM so an existing file reads correctly must not make
 // it a choice for Add, whose spec builder handles ROWS and LOG only.
 func TestFilesPageWontAddAFileTypeItCannotBuild(t *testing.T) {
-	sc, inst := newFakeConn(t, filestreamFilesResponses()...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filestreamFilesResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	g := plainGrid(t, form)
 	selectGridRow(t, g, 0, "appdb_fs") // widens the picker to FILESTREAM
@@ -306,8 +306,8 @@ func TestFilesPageWontAddAFileTypeItCannotBuild(t *testing.T) {
 // 2026-09-05. There is no file type to pick for it, so the filegroup is the
 // whole of the decision, which is what the assertions below pin.
 func TestFilesPageAddsAFilestreamFileWithoutSizeOrGrowth(t *testing.T) {
-	sc, inst := newFakeConn(t, filestreamFilesResponses()...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filestreamFilesResponses()...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	editText(t, form, "Logical name", "appdb_fs2")
 	editSelect(t, form, "Filegroup", "fsgroup")
@@ -365,8 +365,8 @@ func TestFilesPageAddsAFilestreamFileWithoutSizeOrGrowth(t *testing.T) {
 // commit, so the file moved off shows the name Apply will send rather than the
 // one loaded.
 func TestFilesPageGridShowsTheEditOnceMovedOff(t *testing.T) {
-	sc, inst := newFakeConn(t, filesPageResponses()...)
-	form, _ := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, filesPageResponses()...)
+	form, _ := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 	g := plainGrid(t, form)
 
 	editText(t, form, "Logical name", "appdb_data")
@@ -403,8 +403,8 @@ func applyWithNotes(t *testing.T, apply propApply) string {
 // SIZE, and the shrink that follows names the file by its new name. Apply asks
 // first, naming the file.
 func TestFilesPageShrinksALoweredSize(t *testing.T) {
-	sc, inst := newFakeConn(t, append(filesPageResponses(), shrinkResponse(2048))...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, append(filesPageResponses(), shrinkResponse(2048))...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	selectGridRow(t, plainGrid(t, form), 0, "appdb_log")
 	editText(t, form, "Initial size", "16")
@@ -440,8 +440,8 @@ func TestFilesPageShrinksALoweredSize(t *testing.T) {
 // SHRINKFILE stops at the file's contents without an error (review plan N2).
 // 0 MB is sent as 1 MB (gosmo), and the 2816 KB the file reached is reported.
 func TestFilesPageReportsWhereAShrinkStopped(t *testing.T) {
-	sc, inst := newFakeConn(t, append(filesPageResponses(), shrinkResponse(352))...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, append(filesPageResponses(), shrinkResponse(352))...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	selectGridRow(t, plainGrid(t, form), 0, "appdb_log")
 	editText(t, form, "Initial size", "0")
@@ -477,8 +477,8 @@ func TestShrinkStoppedNote(t *testing.T) {
 // A larger size still grows through MODIFY FILE, with no shrink and no
 // question.
 func TestFilesPageGrowsARaisedSize(t *testing.T) {
-	sc, inst := newFakeConn(t, append(filesPageResponses(), shrinkResponse(2048))...)
-	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+	sc, inst := newGConn(t, append(filesPageResponses(), shrinkResponse(2048))...)
+	form, apply := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
 
 	selectGridRow(t, plainGrid(t, form), 0, "appdb_log")
 	editText(t, form, "Initial size", "64")

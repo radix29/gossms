@@ -201,21 +201,21 @@ func (s *dataSource) resolve(ctx context.Context, arg string, res *output.Result
 // columns is the object's columns, in ordinal order.
 func (s *dataSource) columns(ctx context.Context) ([]*gosmo.Column, error) {
 	if s.kind == kindTable {
-		t, err := s.cat.TableByName(ctx, s.dbase, s.obj.Schema, s.obj.Name)
+		t, err := s.dbase.TableByName(ctx, s.obj.Schema, s.obj.Name)
 		if err != nil {
 			return nil, readError(err)
 		}
-		cols, err := s.cat.TableColumns(ctx, t)
+		cols, err := t.Columns(ctx)
 		if err != nil {
 			return nil, readError(err)
 		}
 		return cols, nil
 	}
-	v, err := s.cat.ViewByName(ctx, s.dbase, s.obj.Schema, s.obj.Name)
+	v, err := s.dbase.ViewByName(ctx, s.obj.Schema, s.obj.Name)
 	if err != nil {
 		return nil, readError(err)
 	}
-	cols, err := s.cat.ViewColumns(ctx, v)
+	cols, err := v.Columns(ctx)
 	if err != nil {
 		return nil, readError(err)
 	}
@@ -625,11 +625,11 @@ func (d Deps) dataCount(ctx context.Context, inv *spec.Invocation) (*output.Resu
 			return res, usageError(s.name()+" is a view: it has no partition statistics to count from",
 				"Drop --approximate: an exact count runs the view's query.")
 		}
-		t, err := s.cat.TableByName(ctx, s.dbase, s.obj.Schema, s.obj.Name)
+		t, err := s.dbase.TableByName(ctx, s.obj.Schema, s.obj.Name)
 		if err != nil {
 			return res, readError(err)
 		}
-		n, err := s.cat.RowCount(ctx, t)
+		n, err := t.RowCount(ctx)
 		if err != nil {
 			return res, readError(err)
 		}

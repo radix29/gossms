@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// External Resources Properties, driven through fakedb_test.go.
+// External Resources Properties, driven through gosmotest_fixtures_test.go.
 //
 // The version-gated fields are what these tests are mostly about. gosmo reads
 // connection_options, pushdown, first_row and parser_version as empty or zero
@@ -29,7 +29,7 @@ func externalDataSourceResponse(connOptions string, pushdown bool) fakeResponse 
 
 func TestExternalDataSourceGeneralShowsItsConnection(t *testing.T) {
 	sc, inst := newTypePropConn(t, externalDataSourceResponse("", false))
-	form, apply := loadPage(t, externalDataSourcePropPages(sc, propTypeDB, "HadoopCluster")[0], inst)
+	form, apply := loadPageG(t, externalDataSourcePropPages(sc, propTypeDB, "HadoopCluster")[0], inst)
 
 	if got := staticValue(t, form, "Location"); got != "hdfs://nn:8020" {
 		t.Errorf("Location is %q", got)
@@ -49,7 +49,7 @@ func TestExternalDataSourceGeneralShowsItsConnection(t *testing.T) {
 // be absent from the page too — not present and empty.
 func TestExternalDataSourceHidesThe2019FieldsWhereTheyDoNotExist(t *testing.T) {
 	sc, inst := newTypePropConn(t, externalDataSourceResponse("", false))
-	form, _ := loadPage(t, externalDataSourcePropPages(sc, propTypeDB, "HadoopCluster")[0], inst)
+	form, _ := loadPageG(t, externalDataSourcePropPages(sc, propTypeDB, "HadoopCluster")[0], inst)
 
 	if hasStatic(form, "Pushdown enabled") {
 		t.Error("the page shows Pushdown enabled on an instance whose catalog has no pushdown column")
@@ -58,7 +58,7 @@ func TestExternalDataSourceHidesThe2019FieldsWhereTheyDoNotExist(t *testing.T) {
 
 func TestExternalDataSourceShowsThe2019FieldsWhenSet(t *testing.T) {
 	sc, inst := newTypePropConn(t, externalDataSourceResponse("driver='ODBC Driver 17'", true))
-	form, _ := loadPage(t, externalDataSourcePropPages(sc, propTypeDB, "HadoopCluster")[0], inst)
+	form, _ := loadPageG(t, externalDataSourcePropPages(sc, propTypeDB, "HadoopCluster")[0], inst)
 
 	if got := staticValue(t, form, "Connection options"); got != "driver='ODBC Driver 17'" {
 		t.Errorf("Connection options is %q", got)
@@ -82,7 +82,7 @@ func externalFileFormatResponse(firstRow int64, parserVersion string) fakeRespon
 
 func TestExternalFileFormatGeneralShowsItsTextOptions(t *testing.T) {
 	sc, inst := newTypePropConn(t, externalFileFormatResponse(0, ""))
-	form, apply := loadPage(t, externalFileFormatPropPages(sc, propTypeDB, "CsvFormat")[0], inst)
+	form, apply := loadPageG(t, externalFileFormatPropPages(sc, propTypeDB, "CsvFormat")[0], inst)
 
 	if got := staticValue(t, form, "Format type"); got != "DELIMITEDTEXT" {
 		t.Errorf("Format type is %q", got)
@@ -103,7 +103,7 @@ func TestExternalFileFormatGeneralShowsItsTextOptions(t *testing.T) {
 
 func TestExternalFileFormatShowsParsingWhereItExists(t *testing.T) {
 	sc, inst := newTypePropConn(t, externalFileFormatResponse(2, "2.0"))
-	form, _ := loadPage(t, externalFileFormatPropPages(sc, propTypeDB, "CsvFormat")[0], inst)
+	form, _ := loadPageG(t, externalFileFormatPropPages(sc, propTypeDB, "CsvFormat")[0], inst)
 
 	if got := staticValue(t, form, "First row"); got != "2" {
 		t.Errorf("First row is %q", got)
@@ -120,7 +120,7 @@ func TestExternalLibraryGeneralShowsItsRuntime(t *testing.T) {
 		match: "FROM   sys.external_libraries l", cols: 5,
 		rows: [][]driver.Value{{int64(1), "ggplot2", "dbo", "R", "PUBLIC"}},
 	})
-	form, apply := loadPage(t, externalLibraryPropPages(sc, propTypeDB, "ggplot2")[0], inst)
+	form, apply := loadPageG(t, externalLibraryPropPages(sc, propTypeDB, "ggplot2")[0], inst)
 
 	if got := staticValue(t, form, "Language"); got != "R" {
 		t.Errorf("Language is %q", got)

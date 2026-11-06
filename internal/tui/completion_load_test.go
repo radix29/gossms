@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
+	"github.com/radix29/gosmo/gosmotest"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func (s *stubLoad) load(fetch func(ctx context.Context) (int, error)) completion
 func TestCompletionLoadClosedConnectionEvicts(t *testing.T) {
 	boom := errors.New("boom")
 	for _, closeIt := range []bool{false, true} {
-		sc, _ := newFakeConn(t)
+		sc, _ := newGConn(t)
 		a := newTestApp()
 		var s stubLoad
 		startCompletionLoad(a, sc, s.load(func(context.Context) (int, error) {
@@ -59,7 +60,7 @@ func TestCompletionLoadClosedConnectionEvicts(t *testing.T) {
 
 // A panicking fetch evicts the entry rather than leaving it latched.
 func TestCompletionLoadPanicEvicts(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	a := newTestApp()
 	var s stubLoad
 	startCompletionLoad(a, sc, s.load(func(context.Context) (int, error) { panic("fetch blew up") }))
@@ -71,7 +72,7 @@ func TestCompletionLoadPanicEvicts(t *testing.T) {
 
 // A result for an entry no longer in its cache reaches nothing.
 func TestCompletionLoadDropsAnUnownedResult(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	a := newTestApp()
 	var s stubLoad
 	release := make(chan struct{})
@@ -112,7 +113,9 @@ func TestCompletionDirectoryFailuresAreReported(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			sc, _ := newFakeConn(t) // nothing scripted: every read fails
+			sc, _ := newGConn(t, // every read fails
+				fakeResponse{match: "FROM sys.databases", err: errors.New("denied")},
+				fakeResponse{match: "FROM sys.servers", err: errors.New("denied")})
 			a := newTestApp()
 			loading := c.start(a, sc)
 			drainUntil(t, a, func() bool { return !loading() }, "the load")
@@ -129,13 +132,11 @@ func TestCompletionDirectoryFailuresAreReported(t *testing.T) {
 // all. The panel's own database is matched under the same rule.
 func TestCompletionDirectoryFollowsServerCollation(t *testing.T) {
 	now := time.Now()
-	info := serverInfoResponse()
-	info.rows[0][4] = "Latin1_General_CS_AS"
 	dbs := fakeResponse{match: "FROM sys.databases", cols: 11, rows: [][]driver.Value{
 		{"Sales", int64(5), "ONLINE", "FULL", int64(160), "Latin1_General_CS_AS", "Latin1_General_CS_AS", false, now, int64(0), false},
 		{"sales", int64(6), "OFFLINE", "FULL", int64(160), "Latin1_General_CS_AS", "Latin1_General_CS_AS", false, now, int64(0), false},
 	}}
-	sc, _ := newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse(), dbs})
+	sc, _ := newGConnWith(t, func(i *gosmotest.Info) { i.Collation = "Latin1_General_CS_AS" }, dbs)
 	a := newTestApp()
 	d := a.ensureCompletionDirectory(sc)
 	drainUntil(t, a, func() bool { return !d.loading }, "the directory load")

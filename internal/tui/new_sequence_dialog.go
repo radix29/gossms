@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -140,17 +141,30 @@ func (d *NewSequenceDialog) buildPages(pf *nseqPrefetch) {
 			schema = i
 		}
 	}
-	f := nseqFields{
+	var f nseqFields
+	// The value rows' range is the type picked, read when a row validates. A
+	// precision the Precision row refuses falls back to the bare name's 18; that
+	// row reports its own error.
+	typeRange := func() (lo, hi *big.Int, ok bool) {
+		p := 0
+		if f.precision.Enabled() {
+			if n, err := f.precision.IntValue(); err == nil {
+				p = int(n)
+			}
+		}
+		return sequenceRange(gosmo.DataType(f.dataType.Value()), p)
+	}
+	f = nseqFields{
 		name:      propsheet.Text("Sequence name", "", 30),
 		schema:    propsheet.Select("Sequence schema", pf.schemas, schema),
 		dataType:  propsheet.Select("Data type", typeItems, 3), // bigint, the server's default
 		precision: propsheet.Int("Precision", 18, 1, 38, ""),
-		start:     sequenceValueRow("Start value", 1),
-		increment: sequenceValueRow("Increment by", 1),
+		start:     sequenceValueRow("Start value", "1", typeRange),
+		increment: sequenceValueRow("Increment by", "1", typeRange),
 		noMin:     propsheet.Check("No minimum (the type's)", true),
-		min:       sequenceValueRow("Minimum value", 1),
+		min:       sequenceValueRow("Minimum value", "1", typeRange),
 		noMax:     propsheet.Check("No maximum (the type's)", true),
-		max:       sequenceValueRow("Maximum value", math.MaxInt64),
+		max:       sequenceValueRow("Maximum value", strconv.FormatInt(math.MaxInt64, 10), typeRange),
 		cycle:     propsheet.Check("Cycle", false),
 		cache:     propsheet.Select("Cache", nseqCacheItems, 0),
 		cacheSize: propsheet.Int("Cache size", 50, 1, math.MaxInt32, ""),
@@ -222,11 +236,11 @@ func (d *NewSequenceDialog) buildPages(pf *nseqPrefetch) {
 	}, nil)
 }
 
-// sequenceValueRow is one bigint value row: wide enough for all twenty
-// characters of math.MinInt64 (propsheet.Int's twelve showed only a tail).
-func sequenceValueRow(label string, v int64) *propsheet.TextRow {
-	r := propsheet.Text(label, strconv.FormatInt(v, 10), 22)
-	sequenceValue(r, false)
+// sequenceValueRow is one value row: wide enough for the 39 characters of a
+// signed decimal(38, 0) value (propsheet.Int's twelve showed only a tail).
+func sequenceValueRow(label, v string, typeRange func() (lo, hi *big.Int, ok bool)) *propsheet.TextRow {
+	r := propsheet.Text(label, v, 40)
+	sequenceValue(r, false, typeRange)
 	return r
 }
 
@@ -255,63 +269,75 @@ func newSequenceRequest(f nseqFields, dbName string, pf *nseqPrefetch) (gosmo.Cr
 	case pf.existing.Has(sequenceKey(req.Schema, req.Name)):
 		return req, fmt.Errorf("a sequence named %s already exists in %s", gosmo.QualifiedName(req.Schema, req.Name), dbName)
 	}
-	num := func(r *propsheet.TextRow) (int64, error) {
+	valid := func(r *propsheet.TextRow) error {
 		if err := r.Validate(); err != nil {
 			// A value row's message names its field already (sequenceValue);
 			// propsheet.Int's does not.
 			if label := strings.ToLower(r.Label()); !strings.HasPrefix(err.Error(), label) {
-				return 0, fmt.Errorf("%s %v", label, err)
+				return fmt.Errorf("%s %v", label, err)
 			}
+			return err
+		}
+		return nil
+	}
+	intNum := func(r *propsheet.TextRow) (int, error) {
+		if err := valid(r); err != nil {
 			return 0, err
 		}
-		return r.IntValue()
+		n, err := r.IntValue()
+		return int(n), err
+	}
+	// num validates a value row (a whole number in the type's range) and returns
+	// its digits, the form gosmo takes, with the parsed value for the
+	// comparisons below.
+	num := func(r *propsheet.TextRow) (string, *big.Int, error) {
+		if err := valid(r); err != nil {
+			return "", nil, err
+		}
+		n, _ := sequenceNumber(r)
+		return strings.TrimSpace(r.Value()), n, nil
 	}
 	var err error
 	if f.precision.Enabled() {
-		p, err := num(f.precision)
-		if err != nil {
+		if req.Precision, err = intNum(f.precision); err != nil {
 			return req, err
 		}
-		req.Precision = int(p)
 	}
-	if req.StartValue, err = num(f.start); err != nil {
+	var start, inc, lo, hi *big.Int
+	if req.StartValue, start, err = num(f.start); err != nil {
 		return req, err
 	}
-	if req.Increment, err = num(f.increment); err != nil {
+	if req.Increment, inc, err = num(f.increment); err != nil {
 		return req, err
 	}
-	if req.Increment == 0 {
+	if inc.Sign() == 0 {
 		return req, fmt.Errorf("increment by cannot be 0")
 	}
 	if !f.noMin.Checked() {
-		v, err := num(f.min)
-		if err != nil {
+		if req.MinValue, lo, err = num(f.min); err != nil {
 			return req, err
 		}
-		req.MinValue = &v
 	}
 	if !f.noMax.Checked() {
-		v, err := num(f.max)
-		if err != nil {
+		if req.MaxValue, hi, err = num(f.max); err != nil {
 			return req, err
 		}
-		req.MaxValue = &v
 	}
-	if req.MinValue != nil && req.MaxValue != nil && *req.MinValue >= *req.MaxValue {
+	if lo != nil && hi != nil && lo.Cmp(hi) >= 0 {
 		return req, fmt.Errorf("the minimum value must be below the maximum")
 	}
-	if req.MinValue != nil && req.StartValue < *req.MinValue || req.MaxValue != nil && req.StartValue > *req.MaxValue {
+	if lo != nil && start.Cmp(lo) < 0 || hi != nil && start.Cmp(hi) > 0 {
 		return req, fmt.Errorf("the start value must lie between the minimum and maximum values")
 	}
 	switch f.cache.Value() {
 	case nseqCacheNone:
 		req.Cache = new(0)
 	case nseqCacheSize:
-		n, err := num(f.cacheSize)
+		n, err := intNum(f.cacheSize)
 		if err != nil {
 			return req, err
 		}
-		req.Cache = new(int(n))
+		req.Cache = new(n)
 	}
 	return req, nil
 }

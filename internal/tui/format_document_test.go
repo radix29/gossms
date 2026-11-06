@@ -9,6 +9,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/gossms/internal/format"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // newFormatTestPanel opens a query panel holding text in language l.
@@ -181,6 +182,94 @@ func TestFormatDocumentSQL(t *testing.T) {
 	qp.editor.Undo()
 	if got := qp.editor.Text(); got != src {
 		t.Fatalf("after one undo text = %q, want %q", got, src)
+	}
+}
+
+// Format Document lays SQL out in Tools > Options' SQL Format Style; a stale
+// ID formats in the default rather than failing.
+func TestFormatDocumentSQLUsesConfiguredStyle(t *testing.T) {
+	const src = "SELECT a FROM t"
+	a, qp := newFormatTestPanel(t, format.LangSQL, src)
+	a.cfg.SQLFormatStyle = "lowercase"
+	a.formatActiveDocument()
+	if got := qp.editor.Text(); got != "select a\nfrom\n    t" ||
+		a.statusText != "Formatted as SQL (Lowercase)" {
+		t.Errorf("lowercase: text = %q, status = %q", got, a.statusText)
+	}
+	a, qp = newFormatTestPanel(t, format.LangSQL, src)
+	a.cfg.SQLFormatStyle = "no-such-style"
+	a.formatActiveDocument()
+	if a.statusText != "Formatted as SQL (Standard)" {
+		t.Errorf("stale ID: text = %q, status = %q; want the Standard style", qp.editor.Text(), a.statusText)
+	}
+}
+
+// findMenu returns the top-level menu with the given label.
+func findMenu(t *testing.T, menus []controls.Menu, label string) controls.Menu {
+	t.Helper()
+	for _, m := range menus {
+		if m.Label == label {
+			return m
+		}
+	}
+	t.Fatalf("no %q menu", label)
+	return controls.Menu{}
+}
+
+// Edit > Format Document is a cascade of SQL's styles with the configured
+// one marked "(default)" and carrying Alt+Shift+F; a pick formats once in its
+// style without changing the default the key uses. JSON, with one style,
+// keeps the plain item.
+func TestFormatDocumentMenuCascade(t *testing.T) {
+	const src = "SELECT a FROM t"
+	a, qp := newFormatTestPanel(t, format.LangSQL, src)
+	a.cfg.SQLFormatStyle = "lowercase"
+	edit := findMenu(t, a.buildMenus(), "Edit")
+	item := findMenuItem(edit.Items, "Format Document")
+	if item == nil || item.Action != nil || item.Shortcut != "" {
+		t.Fatalf("SQL item = %+v, want a cascade", item)
+	}
+	var labels, shortcuts []string
+	for _, sub := range item.Sub {
+		labels = append(labels, sub.Label)
+		shortcuts = append(shortcuts, sub.Shortcut)
+	}
+	if got := strings.Join(labels, "|"); got != "Standard|Lowercase (default)" {
+		t.Errorf("labels = %q", got)
+	}
+	if got := strings.Join(shortcuts, "|"); got != "|Alt+Shift+F" {
+		t.Errorf("shortcuts = %q", got)
+	}
+
+	item.Sub[0].Action() // Standard, not the default
+	if got := qp.editor.Text(); !strings.HasPrefix(got, "SELECT") ||
+		a.statusText != "Formatted as SQL (Standard)" {
+		t.Errorf("Standard pick: text = %q, status = %q", got, a.statusText)
+	}
+	if a.cfg.SQLFormatStyle != "lowercase" {
+		t.Errorf("a pick changed the configured style to %q", a.cfg.SQLFormatStyle)
+	}
+	a.formatActiveDocument() // the key still uses the default
+	if a.statusText != "Formatted as SQL (Lowercase)" {
+		t.Errorf("default after a pick: status = %q", a.statusText)
+	}
+
+	qp.editor.SetReadOnly(true)
+	edit = findMenu(t, a.buildMenus(), "Edit")
+	if item = findMenuItem(edit.Items, "Format Document"); item.Enabled() {
+		t.Error("cascade enabled on a read-only editor")
+	}
+
+	a, _ = newFormatTestPanel(t, format.LangJSON, "{}")
+	edit = findMenu(t, a.buildMenus(), "Edit")
+	if item = findMenuItem(edit.Items, "Format Document"); item == nil || len(item.Sub) != 0 ||
+		item.Action == nil || item.Shortcut != "Alt+Shift+F" {
+		t.Errorf("JSON item = %+v, want the plain item", item)
+	}
+	a = newKeyTestApp(t)
+	edit = findMenu(t, a.buildMenus(), "Edit")
+	if item = findMenuItem(edit.Items, "Format Document"); item == nil || len(item.Sub) != 0 || item.Enabled() {
+		t.Errorf("no panel: item = %+v, want the plain item, disabled", item)
 	}
 }
 

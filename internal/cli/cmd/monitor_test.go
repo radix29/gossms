@@ -17,92 +17,25 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// monitorCatalog serves sessions to ActiveSessions, recording the scope;
-// noVSS answers HasViewServerState false, vssErr fails it.
-type monitorCatalog struct {
-	Catalog
-	sessions []*gosmo.ActiveSession
-	noVSS    bool
-	vssErr   error
-
-	reads    int
-	gotScope gosmo.SessionScope
-
-	// monitor waits: each WaitStats call serves the next of waits and each
-	// StartTime the next of uptimes, from start.
-	waits     [][]gosmo.WaitStat
-	uptimes   []time.Duration
-	start     time.Time
-	waitReads int
-	upReads   int
-
-	// monitor top-queries / plan cached: TopQueries serves queries (or
-	// fails with topErr), CachedPlan plan (or planErr); each records what
-	// it was asked.
-	queries   []*gosmo.CachedQueryStat
-	topErr    error
-	gotTopOps *gosmo.TopQueriesOptions
-	plan      string
-	planErr   error
-	gotPlan   string // "0x<handle> start end"
-
-	// monitor querystore: see qsFake.
-	qs *qsFake
-
-	// monitor deadlocks: see dlFake.
-	dl *dlFake
-
-	// xevent sessions: see xeFake.
-	xe *xeFake
-}
-
-func (c *monitorCatalog) TopQueries(_ context.Context, opts gosmo.TopQueriesOptions) ([]*gosmo.CachedQueryStat, error) {
-	c.gotTopOps = &opts
-	return c.queries, c.topErr
-}
-
-func (c *monitorCatalog) CachedPlan(_ context.Context, h []byte, start, end int) (string, error) {
-	c.gotPlan = fmt.Sprintf("0x%X %d %d", h, start, end)
-	return c.plan, c.planErr
-}
-
-func (c *monitorCatalog) WaitStats(context.Context) ([]gosmo.WaitStat, error) {
-	c.waitReads++
-	return c.waits[c.waitReads-1], nil
-}
-
-func (c *monitorCatalog) StartTime(context.Context) (time.Time, time.Duration, error) {
-	c.upReads++
-	return c.start, c.uptimes[c.upReads-1], nil
-}
-
-func (c *monitorCatalog) HasViewServerState(context.Context) (bool, error) { return !c.noVSS, c.vssErr }
-
-func (c *monitorCatalog) ActiveSessions(_ context.Context, scope gosmo.SessionScope) ([]*gosmo.ActiveSession, error) {
-	c.reads++
-	c.gotScope = scope
-	return c.sessions, nil
-}
-
-func runMonitor(t *testing.T, cat *monitorCatalog, argv ...string) (*output.Result, error) {
+func runMonitor(t *testing.T, s *monitorServer, argv ...string) (*output.Result, error) {
 	t.Helper()
-	return runGroup(t, cat, "monitor", argv...)
+	return runGroup(t, s, "monitor", argv...)
 }
 
-// runGroup runs group's command argv[0] with argv[1:] against cat,
-// connecting with a fixed server and Windows auth.
-func runGroup(t *testing.T, cat *monitorCatalog, group string, argv ...string) (*output.Result, error) {
+// runGroup runs group's command argv[0] with argv[1:] over s, connecting
+// with a fixed server and Windows auth.
+func runGroup(t *testing.T, s *monitorServer, group string, argv ...string) (*output.Result, error) {
 	t.Helper()
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
+			return s.conn(ctx)
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
+		Catalog: ServerCatalog,
 	}
 	// --force is the CLI's global option (tree.go), which --plan-file and
 	// --deadlock-file follow.
-	tree := &spec.Tree{Commands: slices.Concat(MonitorCommands(d), PlanCommands(d), XEventCommands(d)),
+	tree := &spec.Tree{Commands: slices.Concat(MonitorCommands(d), PlanCommands(d)),
 		Globals: []spec.Option{{Name: optForce, Type: spec.TypeBool}}}
 	inv, perr := args.Parse(tree, append(append([]string{group}, argv[0], "--server", "srv", "--auth", "windows"), argv[1:]...), args.Options{})
 	if perr != nil {
@@ -111,9 +44,16 @@ func runGroup(t *testing.T, cat *monitorCatalog, group string, argv ...string) (
 	return inv.Command.Run(context.Background(), inv)
 }
 
-// sess is a session spid blocked by blocker (0 for none).
+// withSessions is a monitorServer whose sessions are sessions.
+func withSessions(t *testing.T, sessions ...*gosmo.ActiveSession) *monitorServer {
+	s := newMonitorServer(t)
+	s.sessions = sessions
+	return s
+}
+
+// sess is a user session spid blocked by blocker (0 for none).
 func sess(spid, blocker int) *gosmo.ActiveSession {
-	return &gosmo.ActiveSession{SessionID: spid, BlockingSessionID: blocker, LoginName: fmt.Sprint("login", spid)}
+	return &gosmo.ActiveSession{SessionID: spid, BlockingSessionID: blocker, LoginName: fmt.Sprint("login", spid), IsUserProcess: true}
 }
 
 // chainShape is rows as "head/depth/spid[*]" strings, * on a cycle member.
@@ -171,14 +111,15 @@ func TestMonitorBlockingIdleHeadAndParallelWorker(t *testing.T) {
 	par := sess(53, 51)
 	par.Command, par.CommandText, par.RecentText = "SELECT", "SELECT COUNT(*) FROM t OPTION (MAXDOP 4)", "older batch"
 	par.WaitType, par.WaitTimeMS, par.WaitResource = "LCK_M_S", 900, "keylock hobtid=72057594043236352 dbid=5 mode=X"
-	cat := &monitorCatalog{sessions: []*gosmo.ActiveSession{par, sess(60, 0), waiter, head}}
+	srv := withSessions(t, par, sess(60, 0), waiter, head)
 
-	res, err := runMonitor(t, cat, "blocking")
+	res, err := runMonitor(t, srv, "blocking")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cat.gotScope != gosmo.AllSessions {
-		t.Errorf("scope = %v, want AllSessions", cat.gotScope)
+	if srv.reads(sessionsRead) != 1 || srv.reads(sessionsRead, "AND s.is_user_process = 1") != 0 {
+		t.Errorf("read %d times, %d of them user sessions only; want one read of every session",
+			srv.reads(sessionsRead), srv.reads(sessionsRead, "AND s.is_user_process = 1"))
 	}
 	set := res.Sets[0]
 	col := func(row int, name string) string {
@@ -211,7 +152,7 @@ func TestMonitorBlockingIdleHeadAndParallelWorker(t *testing.T) {
 }
 
 func TestMonitorBlockingNoneIsEmpty(t *testing.T) {
-	res, err := runMonitor(t, &monitorCatalog{sessions: []*gosmo.ActiveSession{sess(51, 0)}}, "blocking")
+	res, err := runMonitor(t, withSessions(t, sess(51, 0)), "blocking")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,13 +163,17 @@ func TestMonitorBlockingNoneIsEmpty(t *testing.T) {
 
 func TestMonitorSessionsFilters(t *testing.T) {
 	mk := func(spid int, cmd, dbName, login, program string) *gosmo.ActiveSession {
-		return &gosmo.ActiveSession{SessionID: spid, Command: cmd, DatabaseName: dbName, LoginName: login, ProgramName: program}
+		return &gosmo.ActiveSession{SessionID: spid, Command: cmd, DatabaseName: dbName, LoginName: login, ProgramName: program,
+			IsUserProcess: true}
 	}
+	// A system session: only --include-system lists it.
+	system := &gosmo.ActiveSession{SessionID: 5, Command: "LAZY WRITER", Status: "background"}
 	all := []*gosmo.ActiveSession{
+		mk(54, "SELECT", "sales", "dba", "ssms"),
 		mk(51, "SELECT", "Sales", "app", "web"),
+		system,
 		mk(52, "", "Sales", "app", "web"),
 		mk(53, "UPDATE", "master", "App", "WEB"),
-		mk(54, "SELECT", "sales", "dba", "ssms"),
 	}
 	for _, tc := range []struct {
 		argv []string
@@ -240,8 +185,7 @@ func TestMonitorSessionsFilters(t *testing.T) {
 		{[]string{"--login", "app", "--program", "Web"}, []string{"51", "52", "53"}},
 		{[]string{"--active", "--session-database", "sales", "--login", "APP"}, []string{"51"}},
 	} {
-		cat := &monitorCatalog{sessions: all}
-		res, err := runMonitor(t, cat, append([]string{"sessions"}, tc.argv...)...)
+		res, err := runMonitor(t, withSessions(t, all...), append([]string{"sessions"}, tc.argv...)...)
 		if err != nil {
 			t.Fatalf("%q: %v", tc.argv, err)
 		}
@@ -252,16 +196,13 @@ func TestMonitorSessionsFilters(t *testing.T) {
 		if !slices.Equal(got, tc.want) {
 			t.Errorf("%q: spids = %q, want %q", tc.argv, got, tc.want)
 		}
-		if cat.gotScope != gosmo.UserSessionsOnly {
-			t.Errorf("%q: scope = %v, want UserSessionsOnly", tc.argv, cat.gotScope)
-		}
 	}
-	cat := &monitorCatalog{sessions: all}
-	if _, err := runMonitor(t, cat, "sessions", "--include-system"); err != nil {
+	res, err := runMonitor(t, withSessions(t, all...), "sessions", "--include-system")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if cat.gotScope != gosmo.AllSessions {
-		t.Errorf("--include-system: scope = %v, want AllSessions", cat.gotScope)
+	if got := column(res.Sets[0], "spid"); !slices.Equal(got, []string{"5", "51", "52", "53", "54"}) {
+		t.Errorf("--include-system: spids = %q, want the system session too", got)
 	}
 }
 
@@ -270,12 +211,12 @@ func TestMonitorSessionsFilters(t *testing.T) {
 // plus the request's so far (the session's own leave a running request
 // out), and elapsed_ms the request's.
 func TestMonitorSessionsRow(t *testing.T) {
-	idle := &gosmo.ActiveSession{SessionID: 51, LoginName: "app", Status: "sleeping", OpenTransactionCount: 2,
+	idle := &gosmo.ActiveSession{SessionID: 51, LoginName: "app", Status: "sleeping", OpenTransactionCount: 2, IsUserProcess: true,
 		RecentText: "BEGIN TRAN", CPUTime: 7, Reads: 1, Writes: 2, LogicalReads: 3, TotalElapsedMS: 40}
-	running := &gosmo.ActiveSession{SessionID: 52, LoginName: "app", Status: "running", Command: "SELECT",
+	running := &gosmo.ActiveSession{SessionID: 52, LoginName: "app", Status: "running", Command: "SELECT", IsUserProcess: true,
 		CommandText: "SELECT 1", CPUTime: 7, Reads: 1, Writes: 2, LogicalReads: 3, TotalElapsedMS: 40,
 		RequestCPUTime: 600, RequestElapsedMS: 125000, RequestReads: 10, RequestWrites: 20, RequestLogicalReads: 30}
-	res, err := runMonitor(t, &monitorCatalog{sessions: []*gosmo.ActiveSession{idle, running}}, "sessions")
+	res, err := runMonitor(t, withSessions(t, idle, running), "sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,18 +249,20 @@ func TestMonitorSessionsRow(t *testing.T) {
 // read would come back empty, not refused.
 func TestMonitorNeedsViewServerState(t *testing.T) {
 	for _, c := range []string{"sessions", "blocking", "waits", "top-queries"} {
-		cat := &monitorCatalog{noVSS: true, sessions: []*gosmo.ActiveSession{sess(51, 0)}}
-		_, err := runMonitor(t, cat, c)
+		srv := withSessions(t, sess(51, 0))
+		srv.noVSS = true
+		_, err := runMonitor(t, srv, c)
 		if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodePermissionDenied {
 			t.Errorf("%s: err = %v, want PERMISSION_DENIED", c, err)
 		}
-		if cat.reads+cat.waitReads+cat.upReads != 0 || cat.gotTopOps != nil {
-			t.Errorf("%s: read without the permission", c)
+		if n := srv.reads(sessionsRead) + srv.waitReads + srv.upReads + srv.reads(topRead); n != 0 {
+			t.Errorf("%s: %d reads without the permission", c, n)
 		}
 	}
-	cat := &monitorCatalog{vssErr: errors.New("connection reset")}
-	if _, err := runMonitor(t, cat, "blocking"); err == nil || cat.reads != 0 {
-		t.Errorf("a failed permission check: err = %v, reads = %d", err, cat.reads)
+	srv := newMonitorServer(t)
+	srv.vssErr = errors.New("connection reset")
+	if _, err := runMonitor(t, srv, "blocking"); err == nil || srv.reads(sessionsRead) != 0 {
+		t.Errorf("a failed permission check: err = %v, reads = %d", err, srv.reads(sessionsRead))
 	}
 }
 
@@ -358,15 +301,15 @@ var waitStart = time.Date(2026, 10, 30, 8, 0, 0, 0, time.UTC)
 // The totals since start: benign and empty wait types left out, most wait
 // time first, shares of everything counted, categories summed.
 func TestMonitorWaitsCumulative(t *testing.T) {
-	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour}, waits: [][]gosmo.WaitStat{{
+	srv := waitServer(t, waitStart, []time.Duration{time.Hour}, [][]gosmo.WaitStat{{
 		ws("LAZYWRITER_SLEEP", 10, 900000, 0),
 		ws("XE_TIMER_EVENT", 10, 800000, 0),
 		ws("LCK_M_X", 4, 600, 0),
 		ws("PAGEIOLATCH_SH", 100, 300, 10),
 		ws("SOS_SCHEDULER_YIELD", 50, 100, 100),
 		ws("LCK_M_S", 0, 0, 0),
-	}}}
-	res, err := runMonitor(t, cat, "waits")
+	}})
+	res, err := runMonitor(t, srv, "waits")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,8 +343,8 @@ func TestMonitorWaitsCumulative(t *testing.T) {
 	if got := cells(res.Sets[1]); !slices.Equal(got, wantCats) {
 		t.Errorf("categories =\n%q\nwant\n%q", got, wantCats)
 	}
-	if cat.waitReads != 1 {
-		t.Errorf("read wait stats %d times, want 1", cat.waitReads)
+	if srv.waitReads != 1 {
+		t.Errorf("read wait stats %d times, want 1", srv.waitReads)
 	}
 }
 
@@ -409,8 +352,8 @@ func TestMonitorWaitsCumulative(t *testing.T) {
 // or the categories.
 func TestMonitorWaitsAllAndTop(t *testing.T) {
 	stats := []gosmo.WaitStat{ws("LAZYWRITER_SLEEP", 1, 700, 0), ws("LCK_M_X", 1, 200, 0), ws("WRITELOG", 1, 100, 0)}
-	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour}, waits: [][]gosmo.WaitStat{stats}}
-	res, err := runMonitor(t, cat, "waits", "--all", "--top", "1")
+	srv := waitServer(t, waitStart, []time.Duration{time.Hour}, [][]gosmo.WaitStat{stats})
+	res, err := runMonitor(t, srv, "waits", "--all", "--top", "1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,13 +374,13 @@ func TestMonitorWaitsInterval(t *testing.T) {
 	defer func(f func(context.Context, time.Duration) error) { sleepCtx = f }(sleepCtx)
 	sleepCtx = func(_ context.Context, d time.Duration) error { slept = d; return nil }
 
-	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour, time.Hour + 5020*time.Millisecond},
-		waits: [][]gosmo.WaitStat{
+	srv := waitServer(t, waitStart, []time.Duration{time.Hour, time.Hour + 5020*time.Millisecond},
+		[][]gosmo.WaitStat{
 			{ws("LCK_M_X", 4, 1000, 0), ws("WRITELOG", 10, 500, 5), ws("CXPACKET", 9, 900, 0)},
 			{ws("LCK_M_X", 6, 1300, 0), ws("WRITELOG", 10, 500, 5), ws("CXPACKET", 1, 10, 0), ws("PAGEIOLATCH_EX", 2, 100, 0),
 				ws("LATCH_EX", 1, 0, 1)},
-		}}
-	res, err := runMonitor(t, cat, "waits", "--interval", "5")
+		})
+	res, err := runMonitor(t, srv, "waits", "--interval", "5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,8 +408,8 @@ func TestMonitorWaitsInterval(t *testing.T) {
 
 // Nothing counted: an empty waits set, every category 0 with a NULL share.
 func TestMonitorWaitsNone(t *testing.T) {
-	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour}, waits: [][]gosmo.WaitStat{{ws("LAZYWRITER_SLEEP", 1, 7, 0)}}}
-	res, err := runMonitor(t, cat, "waits")
+	srv := waitServer(t, waitStart, []time.Duration{time.Hour}, [][]gosmo.WaitStat{{ws("LAZYWRITER_SLEEP", 1, 7, 0)}})
+	res, err := runMonitor(t, srv, "waits")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,24 +425,32 @@ func TestMonitorWaitsNone(t *testing.T) {
 func TestMonitorWaitsIntervalCancelled(t *testing.T) {
 	defer func(f func(context.Context, time.Duration) error) { sleepCtx = f }(sleepCtx)
 	sleepCtx = func(context.Context, time.Duration) error { return context.Canceled }
-	cat := &monitorCatalog{start: waitStart, uptimes: []time.Duration{time.Hour}, waits: [][]gosmo.WaitStat{{}}}
-	if _, err := runMonitor(t, cat, "waits", "--interval", "3"); !errors.Is(err, context.Canceled) {
+	srv := waitServer(t, waitStart, []time.Duration{time.Hour}, [][]gosmo.WaitStat{{}})
+	if _, err := runMonitor(t, srv, "waits", "--interval", "3"); !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
 	}
-	if cat.waitReads != 1 {
-		t.Errorf("read wait stats %d times, want 1", cat.waitReads)
+	if srv.waitReads != 1 {
+		t.Errorf("read wait stats %d times, want 1", srv.waitReads)
 	}
 }
 
 func TestMonitorWaitsUsage(t *testing.T) {
 	for _, argv := range [][]string{{"--top", "-1"}, {"--interval", "-1"}, {"--interval", "301"}} {
-		cat := &monitorCatalog{}
-		_, err := runMonitor(t, cat, append([]string{"waits"}, argv...)...)
+		srv := newMonitorServer(t)
+		_, err := runMonitor(t, srv, append([]string{"waits"}, argv...)...)
 		if oe, ok := errors.AsType[*output.Error](err); !ok || oe.Code != output.CodeUsageError {
 			t.Errorf("%q: err = %v, want a usage error", argv, err)
 		}
-		if cat.waitReads != 0 {
+		if srv.waitReads != 0 {
 			t.Errorf("%q: read before refusing", argv)
 		}
 	}
+}
+
+// waitServer is a monitorServer started at start whose StartTime and
+// WaitStats reads answer uptimes and waits in turn.
+func waitServer(t *testing.T, start time.Time, uptimes []time.Duration, waits [][]gosmo.WaitStat) *monitorServer {
+	s := newMonitorServer(t)
+	s.start, s.uptimes, s.waits = start, uptimes, waits
+	return s
 }

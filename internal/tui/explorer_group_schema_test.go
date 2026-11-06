@@ -13,7 +13,7 @@ import (
 // database db1, its children set by SetChildren, as a load would.
 func groupTree(t *testing.T, a *App, ft NodeType, children ...*explorerNode) *explorerNode {
 	t.Helper()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	root := a.explorer.AddRoot("server-one", sc)
 	folder := &explorerNode{label: nodeTypeName(ft), expanded: true, data: nodeData{Type: ft, DBName: "db1", conn: sc}}
 	a.explorer.SetChildren(root, []*explorerNode{folder})
@@ -203,7 +203,7 @@ func TestGroupingSurvivesReload(t *testing.T) {
 // TestGroupingLeavesOtherFamiliesFlat: with the flag ON, a folder outside
 // groupedFolderTypes keeps its loaded children as they are.
 func TestGroupingLeavesOtherFamiliesFlat(t *testing.T) {
-	for _, ft := range []NodeType{NodeSystemViews, NodeSystemTables, NodeSequences, NodeUserDefinedDataTypes} {
+	for _, ft := range []NodeType{NodeSystemDataTypes, NodeRules, NodeDefaults, NodeBrokerQueues, NodeTypes} {
 		a := newTestApp()
 		a.groupBySchema = true
 		children := []*explorerNode{obj(NodeView, "sys", "b"), obj(NodeView, "dbo", "a")}
@@ -565,5 +565,34 @@ func TestGroupBySchemaTitleButton(t *testing.T) {
 	press("second click", false)
 	if want := []string{"sales.t1"}; !slices.Equal(shape(folder), want) {
 		t.Errorf("tree after second click = %q, want %q", shape(folder), want)
+	}
+}
+
+// TestGroupingNestedFolder: a grouped folder inside a grouped folder (System
+// Tables under Tables) regroups on its own. The outer folder keeps it as a
+// sub-folder, first; the toggle reaches it through the outer folder's
+// children, and OFF restores both flat lists.
+func TestGroupingNestedFolder(t *testing.T) {
+	a := newTestApp()
+	sys := subFolder(NodeSystemTables)
+	sys.expanded = true
+	folder := groupTree(t, a, NodeTables, sys, obj(NodeTable, "dbo", "A"))
+	a.explorer.SetChildren(sys, []*explorerNode{
+		obj(NodeTable, "sys", "trace_xe_action_map"), obj(NodeTable, "INFORMATION_SCHEMA", "x"),
+	})
+
+	a.groupBySchema = true
+	a.explorer.regroupAll()
+	if got, want := shape(folder), []string{"System Tables", "dbo[dbo.A]"}; !slices.Equal(got, want) {
+		t.Errorf("Tables ON = %q, want %q", got, want)
+	}
+	if got, want := shape(sys), []string{"INFORMATION_SCHEMA[INFORMATION_SCHEMA.x]", "sys[sys.trace_xe_action_map]"}; !slices.Equal(got, want) {
+		t.Errorf("System Tables ON = %q, want %q", got, want)
+	}
+
+	a.groupBySchema = false
+	a.explorer.regroupAll()
+	if got, want := shape(sys), []string{"sys.trace_xe_action_map", "INFORMATION_SCHEMA.x"}; !slices.Equal(got, want) {
+		t.Errorf("System Tables OFF = %q, want %q", got, want)
 	}
 }

@@ -105,10 +105,10 @@ func agResponses() []fakeResponse {
 
 // loadAGPage opens a page over the fixture and requires the replica grid to
 // fill, so half-scripted reads can't pass as "nothing written".
-func loadAGPage(t *testing.T, page func(sc *db.ServerConn) propPage) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+func loadAGPage(t *testing.T, page func(sc *db.ServerConn) propPage) (*gFake, propApply, *propsheet.Form, *controls.DataGrid) {
 	t.Helper()
-	sc, inst := newFakeConn(t, agResponses()...)
-	form, apply := loadPage(t, page(sc), inst)
+	sc, inst := newGConn(t, agResponses()...)
+	form, apply := loadPageG(t, page(sc), inst)
 	grid := agReplicaGrid(t, form)
 	if grid.Row(2) == nil {
 		t.Fatal("the replica grid has fewer than three rows — the fake is under-scripted, not the page wrong")

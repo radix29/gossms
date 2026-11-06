@@ -37,16 +37,16 @@ const qsDefaultWindow = 24 * time.Hour
 type qsReport struct {
 	Name        string
 	DefaultStat gosmo.QSStatistic
-	read        func(Catalog, context.Context, *gosmo.Database, gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
+	read        func(gosmo.QueryStore, context.Context, gosmo.QueryStoreReportOptions) ([]*gosmo.QSQueryStat, error)
 }
 
 // qsReports is --report's values, the default first. waits has no read: it
 // is two reads (qsWaitsReport).
 var qsReports = []qsReport{
-	{"top", gosmo.QSStatTotal, Catalog.QSTopResourceQueries},
-	{"regressed", gosmo.QSStatAvg, Catalog.QSRegressedQueries},
-	{"variation", gosmo.QSStatAvg, Catalog.QSHighVariationQueries},
-	{"forced", gosmo.QSStatAvg, Catalog.QSForcedPlanQueries},
+	{"top", gosmo.QSStatTotal, gosmo.QueryStore.TopResourceQueries},
+	{"regressed", gosmo.QSStatAvg, gosmo.QueryStore.RegressedQueries},
+	{"variation", gosmo.QSStatAvg, gosmo.QueryStore.HighVariationQueries},
+	{"forced", gosmo.QSStatAvg, gosmo.QueryStore.ForcedPlanQueries},
 	{"waits", gosmo.QSStatTotal, nil},
 }
 
@@ -300,17 +300,18 @@ func (d Deps) monitorQueryStore(ctx context.Context, inv *spec.Invocation) (*out
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, dbase, err := d.connectDatabase(ctx, inv, res)
+	sc, _, dbase, err := d.connectDatabase(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	if r.Report.Name != "waits" && !slices.Contains(cat.QueryStoreMetrics(dbase), r.Metric.Metric) {
+	qs := dbase.QueryStore()
+	if r.Report.Name != "waits" && !slices.Contains(qs.Metrics(), r.Metric.Metric) {
 		return res, output.NewError(output.CodeUnsupported, fmt.Sprintf("--metric %s: the server's Query Store does not record it", r.Metric.Name),
 			"log-memory and tempdb are recorded from SQL Server 2017 on; choose another metric.")
 	}
-	info, err := cat.QueryStoreOptions(ctx, dbase)
+	info, err := qs.Options(ctx)
 	if errors.Is(err, gosmo.ErrNotFound) {
 		return res, output.NewError(output.CodeNotFound,
 			fmt.Sprintf("%s has no Query Store: it cannot be enabled in master or tempdb", gosmo.QuoteName(dbase.Name)),
@@ -325,7 +326,7 @@ func (d Deps) monitorQueryStore(ctx context.Context, inv *spec.Invocation) (*out
 			fmt.Sprintf("Turn it on with `gossms db set %s --option QUERY_STORE=ON --allow admin`; it then records from that moment on.",
 				dbase.Name))
 	}
-	now, err := cat.CurrentTime(ctx)
+	now, err := sc.Server.CurrentTime(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -358,22 +359,22 @@ func (d Deps) monitorQueryStore(ctx context.Context, inv *spec.Invocation) (*out
 		output.Field{Key: "unit", Value: unit})
 
 	if r.Report.Name == "waits" {
-		cats, err := cat.QSWaitCategories(ctx, dbase, r.Opts)
+		cats, err := qs.WaitCategories(ctx, r.Opts)
 		if err != nil {
 			return res, qsReadError(err)
 		}
-		qs, err := cat.QSWaitingQueries(ctx, dbase, r.WaitCategory, r.Opts)
+		stats, err := qs.WaitingQueries(ctx, r.WaitCategory, r.Opts)
 		if err != nil {
 			return res, qsReadError(err)
 		}
-		res.Sets = []output.Set{qsCategoriesSet(cats), qsQueriesSet(qs, r.Report.Name, scale, loc)}
+		res.Sets = []output.Set{qsCategoriesSet(cats), qsQueriesSet(stats, r.Report.Name, scale, loc)}
 		return res, nil
 	}
-	qs, err := r.Report.read(cat, ctx, dbase, r.Opts)
+	stats, err := r.Report.read(qs, ctx, r.Opts)
 	if err != nil {
 		return res, qsReadError(err)
 	}
-	res.Sets = []output.Set{qsQueriesSet(qs, r.Report.Name, scale, loc)}
+	res.Sets = []output.Set{qsQueriesSet(stats, r.Report.Name, scale, loc)}
 	return res, nil
 }
 

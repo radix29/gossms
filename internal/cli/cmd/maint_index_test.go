@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -13,318 +12,64 @@ import (
 	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
-	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 )
 
-// indexCatalog is newDropCatalog's databases, connected to app on a
-// Developer edition, with the table dbo.Orders (three indexes, one
-// disabled), the heap dbo.Log and the indexed view dbo.vTotals. Their
-// indexes and statistics are handles on a never-connected server, so a
-// write scripts through the real gosmo.
-type indexCatalog struct {
-	*dropCatalog
-	objs     objectCatalog
-	ref      *gosmo.Database
-	indexes  map[string][]*gosmo.Index
-	frag     map[string]map[int]float64 // object → index id → percent
-	stats    map[string][]*gosmo.Statistic
-	dbFrag   []*gosmo.DatabaseIndexFragmentation
-	dbFragAt []string // each DatabaseFragmentation call: mode/minPct/minPages
-	fragErr  error
+// newIndexServer is a maintServer connected to app on a Developer edition,
+// with the table dbo.Orders (three indexes, one disabled), the heap dbo.Log
+// and the indexed view dbo.vTotals, and the procedure dbo.usp_Load.
+func newIndexServer(t *testing.T) *maintServer {
+	s := newMaintServer(t, "app",
+		&gosmo.ObjectInfo{ObjectID: 1, Schema: "dbo", Name: "Orders", Type: "U", TypeDesc: "USER_TABLE"},
+		&gosmo.ObjectInfo{ObjectID: 2, Schema: "dbo", Name: "Log", Type: "U", TypeDesc: "USER_TABLE"},
+		&gosmo.ObjectInfo{ObjectID: 3, Schema: "dbo", Name: "vTotals", Type: "V", TypeDesc: "VIEW"},
+		&gosmo.ObjectInfo{ObjectID: 4, Schema: "dbo", Name: "usp_Load", Type: "P", TypeDesc: "SQL_STORED_PROCEDURE"})
+	s.indexes = map[string][]*gosmo.Index{
+		"dbo.Orders": {
+			{Name: "PK_Orders", IndexID: 1, Type: gosmo.IndexTypeClustered, IsUnique: true, IsPrimaryKey: true},
+			{Name: "IX_Orders_Date", IndexID: 2, Type: gosmo.IndexTypeNonClustered},
+			{Name: "IX_Orders_Old", IndexID: 3, Type: gosmo.IndexTypeNonClustered, IsDisabled: true},
+		},
+		"dbo.vTotals": {{Name: "CIX_vTotals", IndexID: 1, Type: gosmo.IndexTypeClustered, IsUnique: true}},
+	}
+	s.frag = map[string]map[int]float64{
+		"dbo.Orders":  {1: 42.5, 2: 12.25},
+		"dbo.vTotals": {1: 7},
+	}
+	st := func(name string, auto bool) *gosmo.Statistic {
+		return &gosmo.Statistic{Name: name, IsAutoCreated: auto, LastUpdated: statsBefore, TotalRows: 1000, RowsSampled: 300,
+			ModificationCounter: 250}
+	}
+	s.stats = map[string][]*gosmo.Statistic{
+		"dbo.Orders":  {st("_WA_Sys_00000002_Orders", true), st("IX_Orders_Date", false), st("PK_Orders", false)},
+		"dbo.vTotals": {st("CIX_vTotals", false)},
+	}
+	s.dbFrag = []*gosmo.DatabaseIndexFragmentation{
+		{IndexFragmentation: gosmo.IndexFragmentation{IndexName: "PK_Orders", IndexID: 1, AvgFragmentationPct: 42.5,
+			PageCount: 5000, FragmentCount: 900, AvgPageSpaceUsedPct: 71.25}, Schema: "dbo", ObjectName: "Orders", ObjectID: 1,
+			IndexType: gosmo.IndexTypeClustered, PartitionCount: 4},
+		{IndexFragmentation: gosmo.IndexFragmentation{IndexName: "IX_Orders_Date", IndexID: 2, AvgFragmentationPct: 12.25,
+			PageCount: 1500, FragmentCount: 80}, Schema: "dbo", ObjectName: "Orders", ObjectID: 1, IndexType: gosmo.IndexTypeNonClustered},
+		{IndexFragmentation: gosmo.IndexFragmentation{IndexName: "CIX_Totals", IndexID: 1, AvgFragmentationPct: 4.5,
+			PageCount: 1200, FragmentCount: 10}, Schema: "Sales", ObjectName: "vTotals", ObjectID: 3, IsView: true,
+			IndexType: gosmo.IndexTypeClustered},
+	}
+	return s
 }
 
 var statsBefore = time.Date(2026, 10, 1, 3, 0, 0, 0, time.UTC)
 
-func newIndexCatalog() *indexCatalog {
-	c := &indexCatalog{dropCatalog: newDropCatalog(), ref: (&gosmo.Server{}).DatabaseRef("app"),
-		objs: objectCatalog{objects: []*gosmo.ObjectInfo{
-			{ObjectID: 1, Schema: "dbo", Name: "Orders", Type: "U", TypeDesc: "USER_TABLE"},
-			{ObjectID: 2, Schema: "dbo", Name: "Log", Type: "U", TypeDesc: "USER_TABLE"},
-			{ObjectID: 3, Schema: "dbo", Name: "vTotals", Type: "V", TypeDesc: "VIEW"},
-			{ObjectID: 4, Schema: "dbo", Name: "usp_Load", Type: "P", TypeDesc: "SQL_STORED_PROCEDURE"},
-		}},
-	}
-	c.current = "app"
-	c.info = &gosmo.ServerInfo{VersionMajor: 16, EngineEdition: int(gosmo.EngineEnterprise), Edition: "Developer Edition (64-bit)"}
-	orders := c.ref.TableRef("dbo", "Orders")
-	view := c.ref.ViewRef("dbo", "vTotals")
-	idx := func(i *gosmo.Index, id int, typ gosmo.IndexType, disabled bool) *gosmo.Index {
-		i.IndexID, i.Type, i.IsDisabled = id, typ, disabled
-		return i
-	}
-	c.indexes = map[string][]*gosmo.Index{
-		"dbo.Orders": {
-			idx(orders.IndexRef("PK_Orders"), 1, gosmo.IndexTypeClustered, false),
-			idx(orders.IndexRef("IX_Orders_Date"), 2, gosmo.IndexTypeNonClustered, false),
-			idx(orders.IndexRef("IX_Orders_Old"), 3, gosmo.IndexTypeNonClustered, true),
-		},
-		"dbo.vTotals": {idx(view.IndexRef("CIX_vTotals"), 1, gosmo.IndexTypeClustered, false)},
-	}
-	c.frag = map[string]map[int]float64{
-		"dbo.Orders":  {1: 42.5, 2: 12.25},
-		"dbo.vTotals": {1: 7},
-	}
-	st := func(s *gosmo.Statistic, auto bool) *gosmo.Statistic {
-		s.IsAutoCreated, s.LastUpdated, s.TotalRows, s.RowsSampled, s.ModificationCounter = auto, statsBefore, 1000, 300, 250
-		return s
-	}
-	c.stats = map[string][]*gosmo.Statistic{
-		"dbo.Orders": {st(orders.StatisticRef("_WA_Sys_00000002_Orders"), true), st(orders.StatisticRef("IX_Orders_Date"), false),
-			st(orders.StatisticRef("PK_Orders"), false)},
-		"dbo.vTotals": {st(view.StatisticRef("CIX_vTotals"), false)},
-	}
-	c.dbFrag = []*gosmo.DatabaseIndexFragmentation{
-		{IndexFragmentation: gosmo.IndexFragmentation{IndexName: "PK_Orders", IndexID: 1, AvgFragmentationPct: 42.5,
-			PageCount: 5000, FragmentCount: 900, AvgPageSpaceUsedPct: 71.25}, Schema: "dbo", ObjectName: "Orders",
-			IndexType: gosmo.IndexTypeClustered, PartitionCount: 4},
-		{IndexFragmentation: gosmo.IndexFragmentation{IndexName: "IX_Orders_Date", IndexID: 2, AvgFragmentationPct: 12.25,
-			PageCount: 1500, FragmentCount: 80}, Schema: "dbo", ObjectName: "Orders", IndexType: gosmo.IndexTypeNonClustered},
-		{IndexFragmentation: gosmo.IndexFragmentation{IndexName: "CIX_Totals", IndexID: 1, AvgFragmentationPct: 4.5,
-			PageCount: 1200, FragmentCount: 10}, Schema: "Sales", ObjectName: "vTotals", IsView: true, IndexType: gosmo.IndexTypeClustered},
-	}
-	return c
-}
-
 func objKey(schema, name string) string { return schema + "." + name }
 
-func (c *indexCatalog) ObjectByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.ObjectInfo, error) {
-	return c.objs.ObjectByName(ctx, d, schema, name)
+func indexFakes(t *testing.T) Catalog {
+	return ServerCatalog(&db.ServerConn{Server: newIndexServer(t).Server()})
 }
 
-func (c *indexCatalog) ObjectsNamed(ctx context.Context, d *gosmo.Database, name string) ([]*gosmo.ObjectInfo, error) {
-	return c.objs.ObjectsNamed(ctx, d, name)
-}
-
-func (c *indexCatalog) Search(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error) {
-	return c.objs.Search(ctx, d, pattern)
-}
-
-func (c *indexCatalog) TableByName(_ context.Context, _ *gosmo.Database, schema, name string) (*gosmo.Table, error) {
-	return c.ref.TableRef(schema, name), nil
-}
-
-func (c *indexCatalog) ViewByName(_ context.Context, _ *gosmo.Database, schema, name string) (*gosmo.View, error) {
-	return c.ref.ViewRef(schema, name), nil
-}
-
-func (c *indexCatalog) TableIndexes(_ context.Context, t *gosmo.Table) ([]*gosmo.Index, error) {
-	return c.indexes[objKey(t.Schema, t.Name)], nil
-}
-
-func (c *indexCatalog) ViewIndexes(_ context.Context, v *gosmo.View) ([]*gosmo.Index, error) {
-	return c.indexes[objKey(v.Schema, v.Name)], nil
-}
-
-func (c *indexCatalog) fragOf(key string) ([]*gosmo.IndexFragmentation, error) {
-	if c.fragErr != nil {
-		return nil, c.fragErr
-	}
-	var out []*gosmo.IndexFragmentation
-	for id, pct := range c.frag[key] {
-		out = append(out, &gosmo.IndexFragmentation{IndexID: id, AvgFragmentationPct: pct, PageCount: int64(1000 * id)})
-	}
-	return out, nil
-}
-
-func (c *indexCatalog) TableFragmentation(_ context.Context, t *gosmo.Table, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error) {
-	if mode != gosmo.FragmentationLimited {
-		return nil, fmt.Errorf("mode %s, want LIMITED", mode)
-	}
-	return c.fragOf(objKey(t.Schema, t.Name))
-}
-
-func (c *indexCatalog) ViewFragmentation(_ context.Context, v *gosmo.View, mode gosmo.FragmentationMode) ([]*gosmo.IndexFragmentation, error) {
-	if mode != gosmo.FragmentationLimited {
-		return nil, fmt.Errorf("mode %s, want LIMITED", mode)
-	}
-	return c.fragOf(objKey(v.Schema, v.Name))
-}
-
-func (c *indexCatalog) DatabaseFragmentation(_ context.Context, d *gosmo.Database, mode gosmo.FragmentationMode, minPct float64, minPages int64) ([]*gosmo.DatabaseIndexFragmentation, error) {
-	c.dbFragAt = append(c.dbFragAt, fmt.Sprintf("%s/%s/%g/%d", d.Name, mode, minPct, minPages))
-	if c.fragErr != nil {
-		return nil, c.fragErr
-	}
-	return c.dbFrag, nil
-}
-
-// statsCopy hands out copies, so the update's change to the catalog does
-// not reach the statistics read before it.
-func (c *indexCatalog) statsCopy(key string) ([]*gosmo.Statistic, error) {
-	var out []*gosmo.Statistic
-	for _, s := range c.stats[key] {
-		cp := *s
-		out = append(out, &cp)
-	}
-	return out, nil
-}
-
-func (c *indexCatalog) TableStatistics(_ context.Context, t *gosmo.Table) ([]*gosmo.Statistic, error) {
-	return c.statsCopy(objKey(t.Schema, t.Name))
-}
-
-func (c *indexCatalog) ViewStatistics(_ context.Context, v *gosmo.View) ([]*gosmo.Statistic, error) {
-	return c.statsCopy(objKey(v.Schema, v.Name))
-}
-
-// indexWriter applies the maintenance writes to its catalog as the server
-// would — a rebuild clears its indexes' fragmentation, an update stamps its
-// statistics — recording each call; under WithScript it is the real
-// serverWriter. err fails every call; rows is CHECKDB's answer.
-type indexWriter struct {
-	Writer
-	cat   *indexCatalog
-	calls []string
-	err   error
-	rows  []*gosmo.CheckDBError
-}
-
-var statsAfter = time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
-
-func (w *indexWriter) record(call string) error {
-	w.calls = append(w.calls, call)
-	return w.err
-}
-
-func (w *indexWriter) defrag(key string, ids ...int) {
-	for id := range w.cat.frag[key] {
-		if len(ids) == 0 || slices.Contains(ids, id) {
-			w.cat.frag[key][id] = 0.5
-		}
-	}
-}
-
-func idxKey(i *gosmo.Index) string {
-	if i.View() != nil {
-		return objKey(i.View().Schema, i.View().Name)
-	}
-	return objKey(i.Table().Schema, i.Table().Name)
-}
-
-func tvKey(o tableOrView) string {
-	if o.view != nil {
-		return objKey(o.view.Schema, o.view.Name)
-	}
-	return objKey(o.table.Schema, o.table.Name)
-}
-
-func (w *indexWriter) RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.RebuildIndex(ctx, idx, opts)
-	}
-	if err := w.record(fmt.Sprintf("rebuild %s %+v", idx.Name, opts)); err != nil {
-		return err
-	}
-	w.defrag(idxKey(idx), idx.IndexID)
-	return nil
-}
-
-func (w *indexWriter) ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.ReorganizeIndex(ctx, idx)
-	}
-	if err := w.record("reorganize " + idx.Name); err != nil {
-		return err
-	}
-	w.defrag(idxKey(idx), idx.IndexID)
-	return nil
-}
-
-func (w *indexWriter) RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.RebuildAllIndexes(ctx, o, opts)
-	}
-	if err := w.record(fmt.Sprintf("rebuild all %s %+v", tvKey(o), opts)); err != nil {
-		return err
-	}
-	w.defrag(tvKey(o))
-	return nil
-}
-
-func (w *indexWriter) ReorganizeAllIndexes(ctx context.Context, o tableOrView) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.ReorganizeAllIndexes(ctx, o)
-	}
-	if err := w.record("reorganize all " + tvKey(o)); err != nil {
-		return err
-	}
-	w.defrag(tvKey(o))
-	return nil
-}
-
-func (w *indexWriter) stamp(key, name string) {
-	for _, s := range w.cat.stats[key] {
-		if name == "" || s.Name == name {
-			s.LastUpdated, s.RowsSampled, s.ModificationCounter = statsAfter, s.TotalRows, 0
-		}
-	}
-}
-
-func (w *indexWriter) UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.UpdateStatistics(ctx, o, opts)
-	}
-	if err := w.record(fmt.Sprintf("update stats %s %+v", tvKey(o), opts)); err != nil {
-		return err
-	}
-	w.stamp(tvKey(o), "")
-	return nil
-}
-
-func (w *indexWriter) UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.UpdateStatistic(ctx, st, opts)
-	}
-	if err := w.record(fmt.Sprintf("update stat %s %+v", st.Name, opts)); err != nil {
-		return err
-	}
-	key := ""
-	if st.View() != nil {
-		key = objKey(st.View().Schema, st.View().Name)
-	} else {
-		key = objKey(st.Table().Schema, st.Table().Name)
-	}
-	w.stamp(key, st.Name)
-	return nil
-}
-
-func (w *indexWriter) UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.UpdateDatabaseStatistics(ctx, (&gosmo.Server{}).DatabaseRef(d.Name), resample)
-	}
-	return w.record(fmt.Sprintf("sp_updatestats %s %v", d.Name, resample))
-}
-
-func (w *indexWriter) CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error) {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.CheckDB(ctx, (&gosmo.Server{}).DatabaseRef(d.Name), opts)
-	}
-	if err := w.record(fmt.Sprintf("checkdb %s %+v", d.Name, opts)); err != nil {
-		return nil, err
-	}
-	return w.rows, nil
-}
-
-func indexFakes(*testing.T) (Catalog, Writer) {
-	cat := newIndexCatalog()
-	return cat, &indexWriter{cat: cat}
-}
-
-// runIndex runs maint <argv> over cat and w, an ad-hoc connection; dials
-// counts the connects.
-func runIndex(t *testing.T, cat *indexCatalog, w *indexWriter, argv string) (res *output.Result, dials int, err error) {
+// runIndex runs maint <argv> over s, an ad-hoc connection; dials counts
+// the connects.
+func runIndex(t *testing.T, s *maintServer, argv string) (res *output.Result, dials int, err error) {
 	t.Helper()
-	w.cat = cat
-	d := Deps{
-		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			dials++
-			return &db.ServerConn{}, nil
-		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-		Writer:  func(*db.ServerConn) Writer { return w },
-	}
+	d := maintDeps(s, &dials)
 	fields := strings.Fields(argv)
 	argv0 := append([]string{"maint", fields[0], "--server", "srv", "--auth", "windows"}, fields[1:]...)
 	inv, perr := args.Parse(&spec.Tree{Commands: MaintCommands(d)}, argv0, args.Options{})
@@ -339,19 +84,19 @@ func runIndex(t *testing.T, cat *indexCatalog, w *indexWriter, argv string) (res
 func setCells(res *output.Result) []string { return historyCells(res) }
 
 func TestMaintIndexFragmentation(t *testing.T) {
-	cat := newIndexCatalog()
-	res, _, err := runIndex(t, cat, &indexWriter{}, "index-fragmentation")
+	cat := newIndexServer(t)
+	res, _, err := runIndex(t, cat, "index-fragmentation")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(cat.dbFragAt, []string{"app/LIMITED/10/1000"}) {
 		t.Errorf("read %q", cat.dbFragAt)
 	}
-	// LIMITED reads no leaf: page fullness is NULL.
+	// LIMITED reads no leaf: page fullness is NULL. The server keeps the
+	// indexes at least 10% fragmented.
 	want := []string{
 		"dbo|Orders|table|PK_Orders|1|CLUSTERED|4|42.50|5000|900|-|rebuild",
 		"dbo|Orders|table|IX_Orders_Date|2|NONCLUSTERED|1|12.25|1500|80|-|reorganize",
-		"Sales|vTotals|view|CIX_Totals|1|CLUSTERED|1|4.50|1200|10|-|none",
 	}
 	if got := setCells(res); !slices.Equal(got, want) {
 		t.Errorf("rows\n%q\nwant\n%q", got, want)
@@ -362,9 +107,13 @@ func TestMaintIndexFragmentation(t *testing.T) {
 	if res.Database != "app" || res.Sets[0].Truncated {
 		t.Errorf("database %q, truncated %v", res.Database, res.Sets[0].Truncated)
 	}
+	res, _, err = runIndex(t, newIndexServer(t), "index-fragmentation --min-percent 0")
+	if got := setCells(res); err != nil || len(got) != 3 || got[2] != "Sales|vTotals|view|CIX_Totals|1|CLUSTERED|1|4.50|1200|10|-|none" {
+		t.Errorf("--min-percent 0: %v %q", err, got)
+	}
 
-	cat = newIndexCatalog()
-	res, _, err = runIndex(t, cat, &indexWriter{}, "index-fragmentation --mode sampled --min-percent 0 --min-pages 0 --schema DBO --top 1")
+	cat = newIndexServer(t)
+	res, _, err = runIndex(t, cat, "index-fragmentation --mode sampled --min-percent 0 --min-pages 0 --schema DBO --top 1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,28 +127,28 @@ func TestMaintIndexFragmentation(t *testing.T) {
 
 	for _, argv := range []string{"index-fragmentation --min-percent 101", "index-fragmentation --min-pages -1",
 		"index-fragmentation --top -1"} {
-		_, dials, err := runIndex(t, newIndexCatalog(), &indexWriter{}, argv)
+		_, dials, err := runIndex(t, newIndexServer(t), argv)
 		if errCode(err) != output.CodeUsageError || dials != 0 {
 			t.Errorf("%s: %v, %d dials; want a usage error before connecting", argv, err, dials)
 		}
 	}
 
-	cat = newIndexCatalog()
+	cat = newIndexServer(t)
 	cat.fragErr = mssql.Error{Number: 297, Class: 16, Message: "The user does not have permission to perform this action."}
-	_, _, err = runIndex(t, cat, &indexWriter{}, "index-fragmentation")
+	_, _, err = runIndex(t, cat, "index-fragmentation")
 	if e := wantCode(t, err, output.CodePermissionDenied); e != nil && !strings.Contains(e.Hint, "VIEW DATABASE STATE") {
 		t.Errorf("hint %q", e.Hint)
 	}
 }
 
 func TestMaintIndexRebuild(t *testing.T) {
-	cat, w := newIndexCatalog(), &indexWriter{}
-	res, _, err := runIndex(t, cat, w, "index-rebuild Orders --online --maxdop 4 --fill-factor 90 --allow ddl")
+	cat := newIndexServer(t)
+	res, _, err := runIndex(t, cat, "index-rebuild Orders --online --maxdop 4 --fill-factor 90 --allow ddl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(w.calls, []string{"rebuild all dbo.Orders {FillFactor:90 PadIndex:<nil> DataCompression: Online:true MaxDOP:4}"}) {
-		t.Errorf("calls %q", w.calls)
+	if !slices.Equal(cat.writes, []string{"ALTER INDEX ALL ON [dbo].[Orders] REBUILD WITH (FILLFACTOR = 90, ONLINE = ON, MAXDOP = 4)"}) {
+		t.Errorf("sent %q", cat.writes)
 	}
 	if got := fieldValues(res, "schema", "name", "type", "index", "operation", "online", "maxdop", "fillFactor", "dryRun"); !slices.Equal(got,
 		[]string{"dbo", "Orders", "table", "", "rebuild", "true", "4", "90", "false"}) {
@@ -418,29 +167,39 @@ func TestMaintIndexRebuild(t *testing.T) {
 	}
 
 	// One index, named in another case; reorganize; a view's index.
-	cat, w = newIndexCatalog(), &indexWriter{}
-	res, _, err = runIndex(t, cat, w, "index-rebuild dbo.Orders --index ix_orders_date --reorganize --allow ddl")
+	cat = newIndexServer(t)
+	res, _, err = runIndex(t, cat, "index-rebuild dbo.Orders --index ix_orders_date --reorganize --allow ddl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(w.calls, []string{"reorganize IX_Orders_Date"}) || fieldValue(res, "index") != "IX_Orders_Date" ||
+	if !slices.Equal(cat.writes, []string{"ALTER INDEX [IX_Orders_Date] ON [dbo].[Orders] REORGANIZE"}) || fieldValue(res, "index") != "IX_Orders_Date" ||
 		fieldValue(res, "online") != "true" || len(res.Warnings) != 0 {
-		t.Errorf("reorganize one: calls %q, record %q, warnings %q", w.calls, fieldValues(res, "index", "online"), res.Warnings)
+		t.Errorf("reorganize one: sent %q, record %q, warnings %q", cat.writes, fieldValues(res, "index", "online"), res.Warnings)
 	}
 	if got := setCells(res); !slices.Equal(got, []string{"IX_Orders_Date|2|NONCLUSTERED|0|12.25|0.50|2000"}) {
 		t.Errorf("reorganize rows %q", got)
 	}
-	cat, w = newIndexCatalog(), &indexWriter{}
-	res, _, err = runIndex(t, cat, w, "index-rebuild vTotals --allow ddl --dry-run")
+	cat = newIndexServer(t)
+	res, _, err = runIndex(t, cat, "index-rebuild vTotals --allow ddl --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w.calls) != 0 || fieldValue(res, "type") != "view" ||
+	if len(cat.writes) != 0 || fieldValue(res, "type") != "view" ||
 		fieldValue(res, "tsql") != "USE [app];\nGO\nALTER INDEX ALL ON [dbo].[vTotals] REBUILD\nGO\n" {
-		t.Errorf("view dry run: calls %q, tsql %q", w.calls, fieldValue(res, "tsql"))
+		t.Errorf("view dry run: sent %q, tsql %q", cat.writes, fieldValue(res, "tsql"))
 	}
 	if got := setCells(res); !slices.Equal(got, []string{"CIX_vTotals|1|CLUSTERED|0|7.00|-|1000"}) {
 		t.Errorf("dry run rows %q: before only", got)
+	}
+	// Every index of a view reorganized, for real: the view's statement,
+	// its fragmentation read back cleared.
+	cat = newIndexServer(t)
+	res, _, err = runIndex(t, cat, "index-rebuild vTotals --reorganize --allow ddl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cat.writes, []string{"ALTER INDEX ALL ON [dbo].[vTotals] REORGANIZE"}) || cat.frag["dbo.vTotals"][1] != 0.5 {
+		t.Errorf("view reorganize: sent %q, fragmentation %v", cat.writes, cat.frag["dbo.vTotals"])
 	}
 }
 
@@ -464,35 +223,35 @@ func TestMaintIndexRebuildRefusals(t *testing.T) {
 		{"index-rebuild dbo.Orders --index IX_Nope --allow ddl", output.CodeNotFound, true, "IX_Nope"},
 		{"index-rebuild dbo.Orders --index IX_Orders_Old --reorganize --allow ddl", output.CodeUsageError, true, "disabled"},
 	} {
-		w := &indexWriter{}
-		res, dials, err := runIndex(t, newIndexCatalog(), w, c.argv)
+		cat := newIndexServer(t)
+		res, dials, err := runIndex(t, cat, c.argv)
 		e, _ := err.(*output.Error)
 		if e == nil || e.Code != c.code || (dials > 0) != c.dialed || !strings.Contains(e.Message+e.Hint, c.msg) {
 			t.Errorf("%s: %v (%d dials), want %s with %q, dialed %v", c.argv, err, dials, c.code, c.msg, c.dialed)
 		}
-		if len(w.calls) != 0 || res != nil && hasField(res, "tsql") {
-			t.Errorf("%s: wrote %q", c.argv, w.calls)
+		if len(cat.writes) != 0 || res != nil && hasField(res, "tsql") {
+			t.Errorf("%s: sent %q", c.argv, cat.writes)
 		}
 	}
 	// The missing index's hint lists the object's indexes.
-	_, _, err := runIndex(t, newIndexCatalog(), &indexWriter{}, "index-rebuild dbo.Orders --index IX_Nope --allow ddl")
+	_, _, err := runIndex(t, newIndexServer(t), "index-rebuild dbo.Orders --index IX_Nope --allow ddl")
 	if e, _ := err.(*output.Error); e == nil || e.Hint != "Its indexes: PK_Orders, IX_Orders_Date, IX_Orders_Old." {
 		t.Errorf("hint: %v", err)
 	}
 
 	// --online on Standard: exit 11 before anything is sent, dry run too.
 	for _, argv := range []string{"index-rebuild dbo.Orders --online --allow ddl", "index-rebuild dbo.Orders --online --allow ddl --dry-run"} {
-		cat, w := newIndexCatalog(), &indexWriter{}
-		cat.info.EngineEdition, cat.info.Edition = int(gosmo.EngineStandard), "Standard Edition (64-bit)"
-		res, _, err := runIndex(t, cat, w, argv)
-		if errCode(err) != output.CodeUnsupported || len(w.calls) != 0 || hasField(res, "tsql") {
-			t.Errorf("%s on Standard: %v, calls %q", argv, err, w.calls)
+		cat := newIndexServer(t)
+		cat.Info.EngineEdition, cat.Info.Edition = int(gosmo.EngineStandard), "Standard Edition (64-bit)"
+		res, _, err := runIndex(t, cat, argv)
+		if errCode(err) != output.CodeUnsupported || len(cat.writes) != 0 || hasField(res, "tsql") {
+			t.Errorf("%s on Standard: %v, sent %q", argv, err, cat.writes)
 		}
 	}
 	// --reorganize is always online: fine on Standard.
-	cat := newIndexCatalog()
-	cat.info.EngineEdition = int(gosmo.EngineStandard)
-	if _, _, err := runIndex(t, cat, &indexWriter{}, "index-rebuild dbo.Orders --reorganize --allow ddl"); err != nil {
+	cat := newIndexServer(t)
+	cat.Info.EngineEdition = int(gosmo.EngineStandard)
+	if _, _, err := runIndex(t, cat, "index-rebuild dbo.Orders --reorganize --allow ddl"); err != nil {
 		t.Errorf("reorganize on Standard: %v", err)
 	}
 }
@@ -511,8 +270,9 @@ func TestMaintIndexRebuildServerErrors(t *testing.T) {
 		{mssql.Error{Number: 2552, Class: 16, Message: "The index \"IX\" (partition 1) on table \"Orders\" cannot be reorganized because page level locking is disabled."},
 			output.CodeSQLError, "ALLOW_PAGE_LOCKS"},
 	} {
-		w := &indexWriter{err: fmt.Errorf("gosmo: rebuild all indexes on [dbo].[Orders]: %w", c.err)}
-		_, _, err := runIndex(t, newIndexCatalog(), w, "index-rebuild dbo.Orders --allow ddl")
+		cat := newIndexServer(t)
+		cat.writeErr = c.err
+		_, _, err := runIndex(t, cat, "index-rebuild dbo.Orders --allow ddl")
 		e, _ := err.(*output.Error)
 		if e == nil || e.Code != c.code || !strings.Contains(e.Hint, c.hint) {
 			t.Errorf("Msg %d: %+v, want %s with hint %q", c.err.Number, err, c.code, c.hint)
@@ -520,11 +280,11 @@ func TestMaintIndexRebuildServerErrors(t *testing.T) {
 	}
 
 	// A fragmentation read that fails is a warning: the rebuild still runs.
-	cat, w := newIndexCatalog(), &indexWriter{}
+	cat := newIndexServer(t)
 	cat.fragErr = mssql.Error{Number: 297, Class: 16, Message: "The user does not have permission to perform this action."}
-	res, _, err := runIndex(t, cat, w, "index-rebuild dbo.Orders --index PK_Orders --allow ddl")
-	if err != nil || len(w.calls) != 1 {
-		t.Fatal(err, w.calls)
+	res, _, err := runIndex(t, cat, "index-rebuild dbo.Orders --index PK_Orders --allow ddl")
+	if err != nil || len(cat.writes) != 1 {
+		t.Fatal(err, cat.writes)
 	}
 	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "fragmentation before was not read") {
 		t.Errorf("warnings %q", res.Warnings)
@@ -535,13 +295,13 @@ func TestMaintIndexRebuildServerErrors(t *testing.T) {
 }
 
 func TestMaintUpdateStats(t *testing.T) {
-	cat, w := newIndexCatalog(), &indexWriter{}
-	res, _, err := runIndex(t, cat, w, "update-stats dbo.Orders --allow ddl")
+	cat := newIndexServer(t)
+	res, _, err := runIndex(t, cat, "update-stats dbo.Orders --allow ddl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(w.calls, []string{"update stats dbo.Orders {FullScan:false SamplePercent:0 Resample:false}"}) {
-		t.Errorf("calls %q", w.calls)
+	if !slices.Equal(cat.writes, []string{"UPDATE STATISTICS [dbo].[Orders]"}) {
+		t.Errorf("sent %q", cat.writes)
 	}
 	if got := fieldValues(res, "schema", "name", "type", "statistic", "sampling", "dryRun"); !slices.Equal(got,
 		[]string{"dbo", "Orders", "table", "", "default", "false"}) {
@@ -557,30 +317,33 @@ func TestMaintUpdateStats(t *testing.T) {
 	}
 
 	// One statistic of a view, sampled, as a dry run: the set is as it stands.
-	cat, w = newIndexCatalog(), &indexWriter{}
-	res, _, err = runIndex(t, cat, w, "update-stats vTotals --statistic cix_vtotals --sample-percent 20 --allow ddl --dry-run")
+	cat = newIndexServer(t)
+	res, _, err = runIndex(t, cat, "update-stats vTotals --statistic cix_vtotals --sample-percent 20 --allow ddl --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w.calls) != 0 || fieldValue(res, "statistic") != "CIX_vTotals" || fieldValue(res, "sampling") != "sample 20 percent" ||
+	if len(cat.writes) != 0 || fieldValue(res, "statistic") != "CIX_vTotals" || fieldValue(res, "sampling") != "sample 20 percent" ||
 		fieldValue(res, "tsql") != "USE [app];\nGO\nUPDATE STATISTICS [dbo].[vTotals] [CIX_vTotals] WITH SAMPLE 20 PERCENT\nGO\n" {
-		t.Errorf("dry run: calls %q, record %q", w.calls, fieldValues(res, "statistic", "sampling", "tsql"))
+		t.Errorf("dry run: sent %q, record %q", cat.writes, fieldValues(res, "statistic", "sampling", "tsql"))
 	}
 	if got := setCells(res); !slices.Equal(got, []string{"CIX_vTotals|index|2026-10-01 03:00:00.000|1000|300|250"}) {
 		t.Errorf("dry run rows %q", got)
 	}
 
 	// --all: sp_updatestats in the connection's database.
-	cat, w = newIndexCatalog(), &indexWriter{}
-	res, _, err = runIndex(t, cat, w, "update-stats --all --resample --allow ddl")
+	cat = newIndexServer(t)
+	res, _, err = runIndex(t, cat, "update-stats --all --resample --allow ddl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(w.calls, []string{"sp_updatestats app true"}) || len(res.Sets) != 0 ||
+	if !slices.Equal(cat.writes, []string{"EXEC sys.sp_updatestats @resample = 'resample'"}) || len(res.Sets) != 0 ||
 		!slices.Equal(fieldValues(res, "database", "sampling", "dryRun"), []string{"app", "resample", "false"}) {
-		t.Errorf("--all: calls %q, record %q", w.calls, fieldValues(res, "database", "sampling", "dryRun"))
+		t.Errorf("--all: sent %q, record %q", cat.writes, fieldValues(res, "database", "sampling", "dryRun"))
 	}
-	res, _, err = runIndex(t, newIndexCatalog(), &indexWriter{}, "update-stats --all --allow ddl --dry-run")
+	if q := cat.Queries(); q[len(q)-1].Database != "app" {
+		t.Errorf("sp_updatestats ran in %q", q[len(q)-1].Database)
+	}
+	res, _, err = runIndex(t, newIndexServer(t), "update-stats --all --allow ddl --dry-run")
 	if err != nil || fieldValue(res, "tsql") != "USE [app];\nGO\nEXEC sys.sp_updatestats\nGO\n" {
 		t.Errorf("--all dry run: %v, tsql %q", err, fieldValue(res, "tsql"))
 	}
@@ -605,35 +368,35 @@ func TestMaintUpdateStatsRefusals(t *testing.T) {
 		{"update-stats dbo.Orders --statistic nope --allow ddl", output.CodeNotFound, true, "_WA_Sys_00000002_Orders, IX_Orders_Date, PK_Orders"},
 		{"update-stats usp_Load --allow ddl", output.CodeUsageError, true, "procedure"},
 	} {
-		w := &indexWriter{}
-		res, dials, err := runIndex(t, newIndexCatalog(), w, c.argv)
+		cat := newIndexServer(t)
+		res, dials, err := runIndex(t, cat, c.argv)
 		e, _ := err.(*output.Error)
 		if e == nil || e.Code != c.code || (dials > 0) != c.dialed || !strings.Contains(e.Message+e.Hint, c.msg) {
 			t.Errorf("%s: %v (%d dials), want %s with %q, dialed %v", c.argv, err, dials, c.code, c.msg, c.dialed)
 		}
-		if len(w.calls) != 0 || res != nil && hasField(res, "tsql") {
-			t.Errorf("%s: wrote %q", c.argv, w.calls)
+		if len(cat.writes) != 0 || res != nil && hasField(res, "tsql") {
+			t.Errorf("%s: sent %q", c.argv, cat.writes)
 		}
 	}
 
 	// A read-only database takes no sp_updatestats.
-	cat := newIndexCatalog()
+	cat := newIndexServer(t)
 	cat.dbs[1].IsReadOnly = true
-	if _, _, err := runIndex(t, cat, &indexWriter{}, "update-stats --all --allow ddl"); errCode(err) != output.CodeUsageError {
+	if _, _, err := runIndex(t, cat, "update-stats --all --allow ddl"); errCode(err) != output.CodeUsageError {
 		t.Errorf("read-only: %v", err)
 	}
 
 	// sp_updatestats refuses a login that is not db_owner with its own
 	// message: exit 9, naming db_owner.
-	w := &indexWriter{err: fmt.Errorf("gosmo: update statistics: %w",
-		mssql.Error{Number: 15247, Class: 16, Message: "User does not have permission to perform this action."})}
-	_, _, err := runIndex(t, newIndexCatalog(), w, "update-stats --all --allow ddl")
+	cat = newIndexServer(t)
+	cat.writeErr = mssql.Error{Number: 15247, Class: 16, Message: "User does not have permission to perform this action."}
+	_, _, err := runIndex(t, cat, "update-stats --all --allow ddl")
 	if e := wantCode(t, err, output.CodePermissionDenied); e != nil && !strings.Contains(e.Hint, "db_owner") {
 		t.Errorf("hint %q", e.Hint)
 	}
-	w = &indexWriter{err: fmt.Errorf("gosmo: update all statistics: %w",
-		mssql.Error{Number: 1088, Class: 16, Message: "Cannot find the object \"dbo.Orders\" because it does not exist or you do not have permissions."})}
-	_, _, err = runIndex(t, newIndexCatalog(), w, "update-stats dbo.Orders --allow ddl")
+	cat = newIndexServer(t)
+	cat.writeErr = mssql.Error{Number: 1088, Class: 16, Message: "Cannot find the object \"dbo.Orders\" because it does not exist or you do not have permissions."}
+	_, _, err = runIndex(t, cat, "update-stats dbo.Orders --allow ddl")
 	if e := wantCode(t, err, output.CodePermissionDenied); e != nil && !strings.Contains(e.Hint, "ALTER on [dbo].[Orders]") {
 		t.Errorf("hint %q", e.Hint)
 	}
@@ -653,13 +416,13 @@ var checkDBCorrupt = []*gosmo.CheckDBError{
 
 func TestMaintCheckDB(t *testing.T) {
 	// The connection's database, clean.
-	w := &indexWriter{}
-	res, _, err := runIndex(t, newIndexCatalog(), w, "checkdb --allow admin")
+	cat := newIndexServer(t)
+	res, _, err := runIndex(t, cat, "checkdb --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(w.calls, []string{"checkdb app {PhysicalOnly:false NoIndex:false ExtendedLogicalChecks:false DataPurity:false MaxDOP:0}"}) {
-		t.Errorf("calls %q", w.calls)
+	if !slices.Equal(cat.writes, []string{"DBCC CHECKDB (N'app') WITH NO_INFOMSGS, ALL_ERRORMSGS, TABLERESULTS"}) {
+		t.Errorf("sent %q", cat.writes)
 	}
 	got := fieldValues(res, "database", "physicalOnly", "maxdop", "dryRun", "allocationErrors", "consistencyErrors", "minimumRepair")
 	if !slices.Equal(got, []string{"app", "false", "", "false", "0", "0", ""}) || len(res.Warnings) != 0 ||
@@ -669,8 +432,9 @@ func TestMaintCheckDB(t *testing.T) {
 
 	// Corruption: the status stays ok; the counts come from 8989, the
 	// summaries are not rows, the least repair is the heaviest one named.
-	w = &indexWriter{rows: checkDBCorrupt}
-	res, _, err = runIndex(t, newIndexCatalog(), w, "checkdb hr --allow admin")
+	cat = newIndexServer(t)
+	cat.checkRows = checkDBCorrupt
+	res, _, err = runIndex(t, cat, "checkdb hr --allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,14 +451,14 @@ func TestMaintCheckDB(t *testing.T) {
 	}
 
 	// Dry run: the statement, nothing run, no counts.
-	w = &indexWriter{}
-	res, _, err = runIndex(t, newIndexCatalog(), w, "checkdb app --physical-only --no-index --maxdop 2 --allow admin --dry-run")
+	cat = newIndexServer(t)
+	res, _, err = runIndex(t, cat, "checkdb app --physical-only --no-index --maxdop 2 --allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w.calls) != 0 || hasField(res, "consistencyErrors") || len(res.Sets) != 0 || fieldValue(res, "tsql") !=
+	if len(cat.writes) != 0 || hasField(res, "consistencyErrors") || len(res.Sets) != 0 || fieldValue(res, "tsql") !=
 		"USE [app];\nGO\nDBCC CHECKDB (N'app', NOINDEX) WITH NO_INFOMSGS, ALL_ERRORMSGS, TABLERESULTS, PHYSICAL_ONLY, MAXDOP = 2\nGO\n" {
-		t.Errorf("dry run: calls %q, tsql %q", w.calls, fieldValue(res, "tsql"))
+		t.Errorf("dry run: sent %q, tsql %q", cat.writes, fieldValue(res, "tsql"))
 	}
 }
 
@@ -712,19 +476,19 @@ func TestMaintCheckDBRefusals(t *testing.T) {
 		{"checkdb nope --allow admin", output.CodeNotFound, true, "no database"},
 		{"checkdb archive --allow admin", output.CodeUsageError, true, "OFFLINE"},
 	} {
-		w := &indexWriter{}
-		res, dials, err := runIndex(t, newIndexCatalog(), w, c.argv)
+		cat := newIndexServer(t)
+		res, dials, err := runIndex(t, cat, c.argv)
 		e, _ := err.(*output.Error)
 		if e == nil || e.Code != c.code || (dials > 0) != c.dialed || !strings.Contains(e.Message+e.Hint, c.msg) {
 			t.Errorf("%s: %v (%d dials), want %s with %q, dialed %v", c.argv, err, dials, c.code, c.msg, c.dialed)
 		}
-		if len(w.calls) != 0 || res != nil && hasField(res, "tsql") {
-			t.Errorf("%s: ran %q", c.argv, w.calls)
+		if len(cat.writes) != 0 || res != nil && hasField(res, "tsql") {
+			t.Errorf("%s: ran %q", c.argv, cat.writes)
 		}
 	}
-	w := &indexWriter{err: fmt.Errorf("gosmo: check database %q: %w", "app",
-		mssql.Error{Number: 7983, Class: 14, Message: "User 'low' does not have permission to run DBCC checkdb for database 'app'."})}
-	_, _, err := runIndex(t, newIndexCatalog(), w, "checkdb app --allow admin")
+	cat := newIndexServer(t)
+	cat.writeErr = mssql.Error{Number: 7983, Class: 14, Message: "User 'low' does not have permission to run DBCC checkdb for database 'app'."}
+	_, _, err := runIndex(t, cat, "checkdb app --allow admin")
 	if e := wantCode(t, err, output.CodePermissionDenied); e != nil && !strings.Contains(e.Hint, "sysadmin, or db_owner") {
 		t.Errorf("hint %q", e.Hint)
 	}

@@ -197,8 +197,28 @@ func dashIfZero(t time.Time) string {
 // run in a new query window (like backupHistoryQuery). A run's step-0
 // outcome row shares its first step's run_date/run_time, so instance_id
 // breaks the tie (as gosmo's Job.History does) and the outcome row stays first.
-func agentJobHistoryQuery(jobName string) string {
-	return fmt.Sprintf(`SELECT h.run_date                 AS [Run Date],
+//
+// direct reads msdb's tables, which only a sysadmin may; otherwise the rows
+// come from sp_help_jobhistory, which msdb grants its Agent roles and which
+// applies their job visibility, captured into a table variable under the
+// same column names so the select is the same (see gosmo's agentRead).
+func agentJobHistoryQuery(jobName string, direct bool) string {
+	from := `FROM   msdb.dbo.sysjobhistory h
+JOIN   msdb.dbo.sysjobs j ON j.job_id = h.job_id
+WHERE  j.name = %[1]s`
+	prelude := ""
+	if !direct {
+		prelude = `-- Through msdb's procedure, which the SQLAgent* roles may run: the tables are sysadmin's.
+DECLARE @h TABLE (instance_id int, job_id uniqueidentifier, job_name sysname, step_id int,
+                  step_name sysname, sql_message_id int, sql_severity int, message nvarchar(max),
+                  run_status int, run_date int, run_time int, run_duration int,
+                  operator_emailed nvarchar(max), operator_netsent nvarchar(max),
+                  operator_paged nvarchar(max), retries_attempted int, server nvarchar(max));
+INSERT INTO @h EXECUTE msdb.dbo.sp_help_jobhistory @job_name = %[1]s, @mode = 'FULL';
+`
+		from = "FROM   @h h"
+	}
+	return fmt.Sprintf(prelude+`SELECT h.run_date                 AS [Run Date],
        h.run_time                 AS [Run Time],
        CASE h.run_status
            WHEN 0 THEN 'Failed'
@@ -211,9 +231,7 @@ func agentJobHistoryQuery(jobName string) string {
        h.step_id                  AS [Step],
        h.step_name                AS [Step Name],
        h.message                  AS [Message]
-FROM   msdb.dbo.sysjobhistory h
-JOIN   msdb.dbo.sysjobs j ON j.job_id = h.job_id
-WHERE  j.name = %s
+`+from+`
 ORDER  BY h.run_date DESC, h.run_time DESC, h.instance_id DESC;
 `, gosmo.QuoteLiteral(jobName))
 }

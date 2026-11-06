@@ -33,7 +33,7 @@ func TestAgentMenuWritesReadNothingFirst(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, inst := newFakeConn(t)
+			sc, inst := newGConn(t)
 			node := agentJobTestNode(sc)
 			node.label, node.data.Name = c.label, c.label
 			before := inst.QueryCount()
@@ -76,7 +76,7 @@ func TestAgentMenuReportsAJobDeletedUnderneath(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, _ := newFakeConn(t,
+			sc, _ := newGConn(t,
 				fakeResponse{match: "sp_update_job", err: gone},
 				fakeResponse{match: "sp_delete_job", err: gone})
 			c.act(a, sc, agentJobTestNode(sc))

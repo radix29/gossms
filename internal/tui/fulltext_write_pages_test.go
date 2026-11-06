@@ -40,8 +40,8 @@ func ftCatalogResps(isDefault bool) []fakeResponse {
 }
 
 func TestFullTextCatalogGeneralSetsTheDefault(t *testing.T) {
-	sc, inst := newFakeConn(t, ftCatalogResps(false)...)
-	form, apply := loadPage(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[0], inst)
+	sc, inst := newGConn(t, ftCatalogResps(false)...)
+	form, apply := loadPageG(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[0], inst)
 	checkRow(t, form, "Set as default catalog").Edit(true)
 	if err := apply(context.Background()); err != nil {
 		t.Fatal(err)
@@ -54,8 +54,8 @@ func TestFullTextCatalogGeneralSetsTheDefault(t *testing.T) {
 // The default catalog has nothing to unset — no statement does — so its page
 // shows the fact and writes nothing.
 func TestFullTextCatalogGeneralOfTheDefaultWritesNothing(t *testing.T) {
-	sc, inst := newFakeConn(t, ftCatalogResps(true)...)
-	form, apply := loadPage(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[0], inst)
+	sc, inst := newGConn(t, ftCatalogResps(true)...)
+	form, apply := loadPageG(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[0], inst)
 	if apply != nil {
 		t.Error("the default catalog's General page has an apply")
 	}
@@ -66,8 +66,8 @@ func TestFullTextCatalogGeneralOfTheDefaultWritesNothing(t *testing.T) {
 
 func TestFullTextCatalogMaintenance(t *testing.T) {
 	t.Run("optimize", func(t *testing.T) {
-		sc, inst := newFakeConn(t, ftCatalogResps(false)...)
-		form, apply := loadPage(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[1], inst)
+		sc, inst := newGConn(t, ftCatalogResps(false)...)
+		form, apply := loadPageG(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[1], inst)
 		editRadio(t, form, "Catalog action", "Optimize (reorganize)")
 		if form.ApplyConfirm() != "" {
 			t.Error("Optimize asks for confirmation")
@@ -82,8 +82,8 @@ func TestFullTextCatalogMaintenance(t *testing.T) {
 	// Choosing an accent selects Rebuild — the only statement that applies
 	// one — and the rebuild is confirmed.
 	t.Run("accent rebuilds", func(t *testing.T) {
-		sc, inst := newFakeConn(t, ftCatalogResps(false)...)
-		form, apply := loadPage(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[1], inst)
+		sc, inst := newGConn(t, ftCatalogResps(false)...)
+		form, apply := loadPageG(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[1], inst)
 		editSelect(t, form, "Accent sensitivity", "Insensitive")
 		if got := radioRow(t, form, "Catalog action").Selected(); got != catalogActionRebuild {
 			t.Fatalf("action = %d after choosing an accent, want Rebuild", got)
@@ -101,8 +101,8 @@ func TestFullTextCatalogMaintenance(t *testing.T) {
 	})
 	// And leaving Rebuild drops the accent, so none sits on the page unsent.
 	t.Run("leaving rebuild drops the accent", func(t *testing.T) {
-		sc, inst := newFakeConn(t, ftCatalogResps(false)...)
-		form, _ := loadPage(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[1], inst)
+		sc, inst := newGConn(t, ftCatalogResps(false)...)
+		form, _ := loadPageG(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[1], inst)
 		editSelect(t, form, "Accent sensitivity", "Sensitive")
 		radioRow(t, form, "Catalog action").Edit(catalogActionNone) // back to the loaded value
 		if got := selectRow(t, form, "Accent sensitivity").Selected(); got != 0 {
@@ -131,10 +131,10 @@ var (
 	swDie     = []driver.Value{"die", "German", int64(1031)}
 )
 
-func loadStopwords(t *testing.T) (*propsheet.Form, propApply, *fakeInstance) {
+func loadStopwords(t *testing.T) (*propsheet.Form, propApply, *gFake) {
 	t.Helper()
-	sc, inst := newFakeConn(t, stoplistResps(swHereby, swWhereas, swDer, swDie)...)
-	form, apply := loadPage(t, fullTextStoplistPropPages(sc, "AppDB", "legal_words")[1], inst)
+	sc, inst := newGConn(t, stoplistResps(swHereby, swWhereas, swDer, swDie)...)
+	form, apply := loadPageG(t, fullTextStoplistPropPages(sc, "AppDB", "legal_words")[1], inst)
 	return form, apply, inst
 }
 
@@ -234,8 +234,8 @@ func propListResps() []fakeResponse {
 }
 
 func TestSearchPropertiesRemoveAndRegister(t *testing.T) {
-	sc, inst := newFakeConn(t, propListResps()...)
-	form, apply := loadPage(t, searchPropertyListPropPages(sc, "AppDB", "doc_props")[1], inst)
+	sc, inst := newGConn(t, propListResps()...)
+	form, apply := loadPageG(t, searchPropertyListPropPages(sc, "AppDB", "doc_props")[1], inst)
 	selectGridRow(t, firstGrid(t, form), 0, "Title")
 	clickButton(t, form, "Remove")
 	textRow(t, form, "Property name").SetValue("Subject")
@@ -275,8 +275,8 @@ func TestSearchPropertyInputRefusesWhatTheServerWould(t *testing.T) {
 // The index General page: a new stoplist and property list, and tracking
 // off with changes pending — confirmed for both reasons.
 func TestFullTextIndexGeneralWrites(t *testing.T) {
-	sc, inst := newFakeConn(t, ftIndexResponses(fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10})...)
-	form, apply := loadPage(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
+	sc, inst := newGConn(t, ftIndexResponses(fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10})...)
+	form, apply := loadPageG(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
 	editSelect(t, form, "Change tracking", "OFF")
 	editSelect(t, form, "Stoplist", "<system>")
 	editSelect(t, form, "Search property list", "doc_props")
@@ -301,8 +301,8 @@ func TestFullTextIndexGeneralWrites(t *testing.T) {
 
 // Untouched, the General page sends nothing — the loaded stoplist included.
 func TestFullTextIndexGeneralUntouchedWritesNothing(t *testing.T) {
-	sc, inst := newFakeConn(t, ftIndexResponses(fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10})...)
-	_, apply := loadPage(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
+	sc, inst := newGConn(t, ftIndexResponses(fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10})...)
+	_, apply := loadPageG(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
 	if err := apply(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -310,8 +310,8 @@ func TestFullTextIndexGeneralUntouchedWritesNothing(t *testing.T) {
 }
 
 func TestFullTextIndexColumnsDropThenAdd(t *testing.T) {
-	sc, inst := newFakeConn(t, ftIndexResponses(fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10})...)
-	form, apply := loadPage(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[1], inst)
+	sc, inst := newGConn(t, ftIndexResponses(fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10})...)
+	form, apply := loadPageG(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[1], inst)
 	selectGridRow(t, firstGrid(t, form), 0, "Content")
 	clickButton(t, form, "Remove")
 	editSelectUntracked(t, form, "Column", "Title")
@@ -366,7 +366,7 @@ func TestFullTextReferencesRefusal(t *testing.T) {
 			gosmo.DatabaseSecurableKey(gosmo.DatabaseSecurableFullTextStoplist, "", "refd"):  true,
 			gosmo.DatabaseSecurableKey(gosmo.DatabaseSecurableFullTextStoplist, "", "plain"): false,
 		})
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	if err := fullTextReferencesRefusal(sc, "appdb", gate.ReferencesOnFullTextStoplist, "stoplist", "plain"); err == nil ||
@@ -384,7 +384,7 @@ func TestFullTextReferencesRefusal(t *testing.T) {
 // connection's reads.
 func buildNew[P any](t *testing.T, d *newObjectDialog[P], pages int, build func()) {
 	t.Helper()
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d.sc = sc
 	d.forms = make([]*propsheet.Form, pages)
 	d.applyFns = make([]propApply, pages)
@@ -498,7 +498,7 @@ func newCopyTestStoplistDialog(t *testing.T, sc *db.ServerConn) (*NewFullTextSto
 // copy names that database; going back to the dialog's own reads nothing.
 func TestNewFullTextStoplistCopiesFromAnotherDatabase(t *testing.T) {
 	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	sc, inst := newFakeConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
+	sc, inst := newGConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
 		fakeResponse{match: ftStoplistsRead, db: "OtherDB", cols: 5, rows: [][]driver.Value{
 			{int64(3), "a_list", "dbo", created, created},
 			{int64(4), "other_words", "dbo", created, created},
@@ -538,7 +538,7 @@ func TestNewFullTextStoplistCopiesFromAnotherDatabase(t *testing.T) {
 
 // A database the login cannot open says so, and reads nothing past the probe.
 func TestNewFullTextStoplistCopyFromAnInaccessibleDatabase(t *testing.T) {
-	sc, inst := newFakeConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
+	sc, inst := newGConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
 	d, a := newCopyTestStoplistDialog(t, sc)
 	editSelect(t, d.forms[0], "Copy from database", "Locked")
 	drainUntil(t, a, func() bool { return d.preflight() != nil && !strings.Contains(d.preflight().Error(), "still reading") },
@@ -553,7 +553,7 @@ func TestNewFullTextStoplistCopyFromAnInaccessibleDatabase(t *testing.T) {
 
 func TestNewSearchPropertyListCopiesFromAnotherDatabase(t *testing.T) {
 	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	sc, _ := newFakeConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
+	sc, _ := newGConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
 		fakeResponse{match: ftPropListsRead, db: "OtherDB", cols: 5, rows: [][]driver.Value{
 			{int64(2), "their_props", "dbo", created, created},
 		}})...)
@@ -682,7 +682,7 @@ func TestFullTextNewItemsAreGatedOnCreateFullTextCatalog(t *testing.T) {
 		} else {
 			denied = []string{"CREATE FULLTEXT CATALOG"}
 		}
-		sc, _ := newFakeConn(t, capabilityResponses(true, nil, nil, granted, denied)...)
+		sc, _ := newGConn(t, capabilityResponses(true, nil, nil, granted, denied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		node := &explorerNode{data: nodeData{DBName: "appdb", conn: sc}}

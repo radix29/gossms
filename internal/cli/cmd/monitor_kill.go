@@ -87,7 +87,7 @@ func (d Deps) monitorKill(ctx context.Context, inv *spec.Invocation) (*output.Re
 		return nil, d.confirmRefusal(inv, err)
 	}
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, _, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -95,14 +95,10 @@ func (d Deps) monitorKill(ctx context.Context, inv *spec.Invocation) (*output.Re
 
 	// Without VIEW SERVER STATE the read sees only the login's own session,
 	// so every other spid would look ended.
-	ok, err := cat.HasViewServerState(ctx)
-	if err == nil && !ok {
-		err = viewServerStateDenied("monitor kill")
+	if err := requireServerState(ctx, sc.Server, "monitor kill"); err != nil {
+		return res, err
 	}
-	if err != nil {
-		return res, readError(err)
-	}
-	s, err := cat.SessionByID(ctx, spid)
+	s, err := sc.Server.SessionByID(ctx, spid)
 	if errors.Is(err, gosmo.ErrNotFound) {
 		return res, output.NewError(output.CodeNotFound, fmt.Sprintf("session %d does not exist", spid),
 			"It has ended, or the id is wrong: monitor sessions lists the sessions.")
@@ -121,7 +117,7 @@ func (d Deps) monitorKill(ctx context.Context, inv *spec.Invocation) (*output.Re
 			fmt.Sprintf("session %d is a system session: only user sessions can be killed", spid), "")
 	}
 
-	werr := applyWrite(ctx, inv, res, func(ctx context.Context) error { return w.KillSession(ctx, spid) })
+	werr := applyWrite(ctx, inv, res, func(ctx context.Context) error { return sc.Server.KillSession(ctx, spid) })
 	if werr != nil {
 		return res, killError(werr, spid)
 	}
@@ -130,7 +126,7 @@ func (d Deps) monitorKill(ctx context.Context, inv *spec.Invocation) (*output.Re
 	if !killed {
 		return res, nil
 	}
-	after, err := cat.SessionByID(ctx, spid)
+	after, err := sc.Server.SessionByID(ctx, spid)
 	// A different login or client process on the spid is a new session that
 	// took the ended one's id.
 	ended := errors.Is(err, gosmo.ErrNotFound) ||

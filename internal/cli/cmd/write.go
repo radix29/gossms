@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"iter"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -35,234 +34,6 @@ func writeOptions() []spec.Option {
 func dryRun(inv *spec.Invocation) bool {
 	v, _ := inv.Values[optDryRun].(bool)
 	return v
-}
-
-// Writer is the gosmo writes the writing commands make, beside Catalog's
-// reads, so tests stand in for a server. Methods taking a *gosmo.Database
-// call that database's own method; the database is one DatabaseByName
-// returned.
-type Writer interface {
-	// server config set/reset: one sp_configure batch and its RECONFIGURE.
-	ApplyConfiguration(ctx context.Context, changes []gosmo.ConfigChange, opts gosmo.ConfigApplyOptions) error
-	// server traceflag on/off, always global.
-	SetTraceFlag(ctx context.Context, flag int, on bool) error
-	// monitor kill.
-	KillSession(ctx context.Context, sessionID int) error
-	// xevent capture: its server-scoped session, created, started, stopped
-	// and dropped.
-	CreateEventSession(ctx context.Context, spec gosmo.EventSessionDefinition) (*gosmo.EventSession, error)
-	StartEventSession(ctx context.Context, es *gosmo.EventSession) error
-	StopEventSession(ctx context.Context, es *gosmo.EventSession) error
-	DropEventSession(ctx context.Context, es *gosmo.EventSession) error
-
-	// db scoped-config set.
-	SetDatabaseScopedConfig(ctx context.Context, d *gosmo.Database, name, value string, replica gosmo.ScopedConfigReplica) error
-	// db set --option, one call per key (D8).
-	SetDatabaseOption(ctx context.Context, d *gosmo.Database, opt gosmo.DatabaseOption, value string, term gosmo.Termination) error
-	SetRecoveryModel(ctx context.Context, d *gosmo.Database, model gosmo.RecoveryModel) error
-	SetCompatibilityLevel(ctx context.Context, d *gosmo.Database, level gosmo.CompatibilityLevel) error
-	SetReadOnly(ctx context.Context, d *gosmo.Database, readOnly bool, term gosmo.Termination) error
-	SetQueryStoreOptions(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreOptions) error
-
-	// db create / db drop.
-	CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error
-	DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error
-
-	// security grant/deny/revoke: one statement on sec in d, or with d nil
-	// on the server (SecurableServer).
-	ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
-		perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error
-	// security role add-member/remove-member: d's role, or with d nil the
-	// server role.
-	AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error
-
-	// job start (at step, "" for the job's start step) / job stop.
-	StartJob(ctx context.Context, job, step string) error
-	StopJob(ctx context.Context, job string) error
-
-	// maint backup: one BACKUP DATABASE or BACKUP LOG.
-	Backup(ctx context.Context, opts gosmo.BackupOptions) error
-	// maint restore: one RESTORE (its batch, with CloseExistingConnections),
-	// or with --verify-only one RESTORE VERIFYONLY.
-	Restore(ctx context.Context, opts gosmo.RestoreOptions) error
-	VerifyBackup(ctx context.Context, opts gosmo.VerifyOptions, targets ...gosmo.BackupTarget) error
-
-	// maint index-rebuild: one index (read by TableIndexes or ViewIndexes, so
-	// gosmo refuses what its kind takes no option for), or ALTER INDEX ALL
-	// on the table or view.
-	RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error
-	ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error
-	RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error
-	ReorganizeAllIndexes(ctx context.Context, o tableOrView) error
-	// maint update-stats: the object's statistics, one of them, or with
-	// --all sp_updatestats in d.
-	UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error
-	UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error
-	UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error
-	// maint checkdb: DBCC CHECKDB's rows (none under WithScript).
-	CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error)
-
-	// data import: --truncate-first's TRUNCATE TABLE, then the bulk load.
-	TruncateTable(ctx context.Context, t *gosmo.Table) error
-	BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error)
-}
-
-// ServerWriter is Deps.Writer: the writes, made through sc's gosmo Server.
-func ServerWriter(sc *db.ServerConn) Writer { return serverWriter{sc.Server} }
-
-type serverWriter struct{ s *gosmo.Server }
-
-func (w serverWriter) ApplyConfiguration(ctx context.Context, changes []gosmo.ConfigChange, opts gosmo.ConfigApplyOptions) error {
-	return w.s.ApplyConfiguration(ctx, changes, opts)
-}
-
-func (w serverWriter) SetTraceFlag(ctx context.Context, flag int, on bool) error {
-	return w.s.SetTraceFlag(ctx, flag, on)
-}
-
-func (w serverWriter) KillSession(ctx context.Context, sessionID int) error {
-	return w.s.KillSession(ctx, sessionID)
-}
-
-func (w serverWriter) CreateEventSession(ctx context.Context, spec gosmo.EventSessionDefinition) (*gosmo.EventSession, error) {
-	return w.s.XEvents().CreateSession(ctx, spec)
-}
-
-func (serverWriter) StartEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	return es.Start(ctx)
-}
-func (serverWriter) StopEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	return es.Stop(ctx)
-}
-func (serverWriter) DropEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	return es.Drop(ctx)
-}
-
-func (serverWriter) SetDatabaseScopedConfig(ctx context.Context, d *gosmo.Database, name, value string, replica gosmo.ScopedConfigReplica) error {
-	return d.SetDatabaseScopedConfig(ctx, name, value, replica)
-}
-
-func (serverWriter) SetDatabaseOption(ctx context.Context, d *gosmo.Database, opt gosmo.DatabaseOption, value string, term gosmo.Termination) error {
-	return d.SetDatabaseOption(ctx, opt, value, term)
-}
-
-func (serverWriter) SetRecoveryModel(ctx context.Context, d *gosmo.Database, model gosmo.RecoveryModel) error {
-	return d.SetRecoveryModel(ctx, model)
-}
-
-func (serverWriter) SetCompatibilityLevel(ctx context.Context, d *gosmo.Database, level gosmo.CompatibilityLevel) error {
-	return d.SetCompatibilityLevel(ctx, level)
-}
-
-func (serverWriter) SetReadOnly(ctx context.Context, d *gosmo.Database, readOnly bool, term gosmo.Termination) error {
-	return d.SetReadOnly(ctx, readOnly, term)
-}
-
-func (serverWriter) SetQueryStoreOptions(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreOptions) error {
-	return d.QueryStore().SetOptions(ctx, opts)
-}
-
-func (w serverWriter) CreateDatabase(ctx context.Context, req gosmo.CreateDatabaseRequest) error {
-	_, err := w.s.CreateDatabase(ctx, req)
-	return err
-}
-
-func (serverWriter) DropDatabase(ctx context.Context, d *gosmo.Database, term gosmo.Termination) error {
-	return d.Drop(ctx, term)
-}
-
-func (w serverWriter) ApplyPermission(ctx context.Context, d *gosmo.Database, verb gosmo.PermissionVerb, sec gosmo.Securable,
-	perm gosmo.PermissionName, principal string, opts gosmo.PermissionOptions) error {
-	if d == nil {
-		return w.s.ApplyPermission(ctx, verb, sec, perm, principal, opts)
-	}
-	return d.ApplyPermission(ctx, verb, sec, perm, principal, opts)
-}
-
-// AlterRoleMember goes through the role's handle: the command has just read
-// the role by name.
-func (w serverWriter) AlterRoleMember(ctx context.Context, d *gosmo.Database, role, member string, add bool) error {
-	if d == nil {
-		r := w.s.ServerRoleRef(role)
-		if add {
-			return r.AddMember(ctx, member)
-		}
-		return r.RemoveMember(ctx, member)
-	}
-	r := d.RoleRef(role)
-	if add {
-		return r.AddMember(ctx, member)
-	}
-	return r.RemoveMember(ctx, member)
-}
-
-// StartJob and StopJob go through the job's handle: the command has just
-// read the job by name.
-func (w serverWriter) StartJob(ctx context.Context, job, step string) error {
-	return w.s.JobRef(job).Start(ctx, step)
-}
-
-func (w serverWriter) StopJob(ctx context.Context, job string) error {
-	return w.s.JobRef(job).Stop(ctx)
-}
-
-func (w serverWriter) Backup(ctx context.Context, opts gosmo.BackupOptions) error {
-	return w.s.Backup(ctx, opts)
-}
-
-func (w serverWriter) Restore(ctx context.Context, opts gosmo.RestoreOptions) error {
-	return w.s.Restore(ctx, opts)
-}
-
-func (w serverWriter) VerifyBackup(ctx context.Context, opts gosmo.VerifyOptions, targets ...gosmo.BackupTarget) error {
-	return w.s.VerifyBackup(ctx, opts, targets...)
-}
-
-func (serverWriter) RebuildIndex(ctx context.Context, idx *gosmo.Index, opts gosmo.IndexRebuildOptions) error {
-	return idx.Rebuild(ctx, opts)
-}
-
-func (serverWriter) ReorganizeIndex(ctx context.Context, idx *gosmo.Index) error {
-	return idx.Reorganize(ctx)
-}
-
-func (serverWriter) RebuildAllIndexes(ctx context.Context, o tableOrView, opts gosmo.IndexRebuildOptions) error {
-	if o.view != nil {
-		return o.view.RebuildAllIndexesWith(ctx, opts)
-	}
-	return o.table.RebuildAllIndexesWith(ctx, opts)
-}
-
-func (serverWriter) ReorganizeAllIndexes(ctx context.Context, o tableOrView) error {
-	if o.view != nil {
-		return o.view.ReorganizeAllIndexes(ctx)
-	}
-	return o.table.ReorganizeAllIndexes(ctx)
-}
-
-func (serverWriter) UpdateStatistics(ctx context.Context, o tableOrView, opts gosmo.StatisticsUpdateOptions) error {
-	if o.view != nil {
-		return o.view.UpdateStatisticsWith(ctx, opts)
-	}
-	return o.table.UpdateStatisticsWith(ctx, opts)
-}
-
-func (serverWriter) UpdateStatistic(ctx context.Context, st *gosmo.Statistic, opts gosmo.StatisticsUpdateOptions) error {
-	return st.UpdateWith(ctx, opts)
-}
-
-func (serverWriter) UpdateDatabaseStatistics(ctx context.Context, d *gosmo.Database, resample bool) error {
-	return d.UpdateStatistics(ctx, resample)
-}
-
-func (serverWriter) CheckDB(ctx context.Context, d *gosmo.Database, opts gosmo.CheckDBOptions) ([]*gosmo.CheckDBError, error) {
-	return d.CheckDB(ctx, opts)
-}
-
-func (serverWriter) TruncateTable(ctx context.Context, t *gosmo.Table) error { return t.Truncate(ctx) }
-
-func (serverWriter) BulkInsert(ctx context.Context, d *gosmo.Database, bc gosmo.BulkCopy, rows iter.Seq2[[]any, error]) (int64, error) {
-	return d.BulkInsert(ctx, bc, rows)
 }
 
 // gate is a writing command's class check (D1), made before it connects: a
@@ -301,18 +72,19 @@ func (d Deps) gateClass(inv *spec.Invocation, res *output.Result, class spec.Cla
 	return nil, "", blockedError(b)
 }
 
-// connectWriter is connectCatalog for a writing command: the gate first,
-// then the connection, its reads and its writes. The caller closes sc.
-func (d Deps) connectWriter(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, Writer, error) {
+// connectGated is connectCatalog for a writing command: the gate first,
+// then the connection and its reads. The command writes through gosmo
+// directly (sc.Server, or a handle read through it). The caller closes sc.
+func (d Deps) connectGated(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, error) {
 	cfg, profile, err := d.gate(inv, res)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	_, sc, err := d.dial(ctx, inv, cfg, profile, res)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return sc, d.Catalog(sc), d.Writer(sc), nil
+	return sc, d.Catalog(sc), nil
 }
 
 // applyWrite runs write, the command's gosmo writes (D2). Under --dry-run it

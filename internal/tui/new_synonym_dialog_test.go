@@ -15,7 +15,7 @@ import (
 // Properties page's apply starts with.
 func newSynonymTestDialog(t *testing.T, pf *nsynPrefetch) *NewSynonymDialog {
 	t.Helper()
-	sc, _ := newFakeConn(t, dbByNameResp("appdb", 5))
+	sc, _ := newGConn(t, dbByNameResp("appdb", 5))
 	d := &NewSynonymDialog{}
 	d.dbName = "appdb"
 	d.sc = sc
@@ -171,7 +171,7 @@ func TestNewSynonymPreflight(t *testing.T) {
 func TestNewSynonymGateNeedsBothHalves(t *testing.T) {
 	probed := func(t *testing.T, dbGranted, dbDenied, schemaGranted, schemaDenied []string) *NewSynonymDialog {
 		t.Helper()
-		sc, _ := newFakeConn(t, capabilityResponsesWithSchemas(true, nil, nil, dbGranted, dbDenied, schemaGranted, schemaDenied)...)
+		sc, _ := newGConn(t, capabilityResponsesWithSchemas(true, nil, nil, dbGranted, dbDenied, schemaGranted, schemaDenied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		d := newSynonymTestDialog(t, newSynonymTestPrefetch())

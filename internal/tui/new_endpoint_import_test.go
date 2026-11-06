@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func endpointCertRow(name string, thumb []byte, keyType string) []driver.Value {
 // instance scripted as already having a master key and its own certificate.
 // extra is scripted ahead of those, so a test can answer the lookups
 // importPeerCertificate makes on this peer.
-func endpointPeerFor(t *testing.T, d *NewEndpointDialog, name string, extra ...fakeResponse) (*endpointPeer, *fakeInstance) {
+func endpointPeerFor(t *testing.T, d *NewEndpointDialog, name string, extra ...fakeResponse) (*endpointPeer, *gFake) {
 	t.Helper()
 	own := d.certificateName(name)
 	resp := append(extra,
@@ -42,7 +43,7 @@ func endpointPeerFor(t *testing.T, d *NewEndpointDialog, name string, extra ...f
 		}},
 		fakeResponse{match: "CERTENCODED", cols: 1, rows: [][]driver.Value{{[]byte(name + "-public-key")}}},
 	)
-	sc, inst := newFakeConn(t, resp...)
+	sc, inst := newGConn(t, resp...)
 	p := &endpointPeer{
 		inst:   &newEndpointInstance{name: name},
 		server: sc.Server,
@@ -204,7 +205,8 @@ func TestImportReportsALookupFailureRatherThanCreating(t *testing.T) {
 	d := newImportDialog(t)
 	// No sys.server_principals response: the fake refuses the query, which is
 	// what a login the caller may not read looks like from here.
-	local, localInst := endpointPeerFor(t, d, "UBUSQL1")
+	local, localInst := endpointPeerFor(t, d, "UBUSQL1",
+		fakeResponse{match: "sys.server_principals", err: errors.New("permission denied")})
 	remote, _ := endpointPeerFor(t, d, "UBUSQL2")
 
 	err := d.importPeerCertificate(local.ctx, local, remote)

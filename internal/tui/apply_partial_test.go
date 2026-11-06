@@ -27,7 +27,7 @@ var errRefused = errors.New("refused")
 // the one naming [refused].
 func partialApplyConn(t *testing.T) *db.ServerConn {
 	t.Helper()
-	sc, _ := newFakeConn(t, fakeResponse{match: "DROP LOGIN [refused]", err: errRefused})
+	sc, _ := newGConn(t, fakeResponse{match: "DROP LOGIN [refused]", err: errRefused})
 	return sc
 }
 

@@ -22,7 +22,7 @@ func TestIndexesFolderCarriesMaintenanceState(t *testing.T) {
 	list := disabled
 	list.rows = append(list.rows, plain.rows[0], hypothetical.rows[0])
 
-	sc, _ := newFakeConn(t, dbByNameResp(idxDatabase, 5), idxTableResp(), list, idxColumnsResp(
+	sc, _ := newGConn(t, dbByNameResp(idxDatabase, 5), idxTableResp(), list, idxColumnsResp(
 		[]driver.Value{int64(1), "OrderID", false, false},
 		[]driver.Value{int64(3), "CustomerID", false, false},
 		[]driver.Value{int64(5), "OrderDate", false, false},
@@ -122,7 +122,7 @@ func TestIndexMaintenanceIssuesItsStatement(t *testing.T) {
 		for _, confirm := range []bool{true, false} {
 			t.Run(c.wantStatus, func(t *testing.T) {
 				a := newTestApp()
-				sc, inst := newFakeConn(t,
+				sc, inst := newGConn(t,
 					dbByNameResp(idxDatabase, 5),
 					idxTableResp(),
 					idxListResp("IX_Orders_CustomerID", 3, plainIndex()),

@@ -23,7 +23,7 @@ func selectReplica(t *testing.T, grid *controls.DataGrid, name string) {
 
 // -- General -----------------------------------------------------------------
 
-func loadAGGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+func loadAGGeneralPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *controls.DataGrid) {
 	return loadAGPage(t, func(sc *db.ServerConn) propPage { return pageAGGeneral(sc, agFixtureName) })
 }
 
@@ -160,7 +160,7 @@ func TestAGGeneralUntouchedPageWritesNothing(t *testing.T) {
 
 // -- Backup Preferences ------------------------------------------------------
 
-func loadAGBackupPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+func loadAGBackupPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *controls.DataGrid) {
 	return loadAGPage(t, func(sc *db.ServerConn) propPage { return pageAGBackupPreferences(sc, agFixtureName) })
 }
 
@@ -251,7 +251,7 @@ func TestAGBackupPreferencesUntouchedPageWritesNothing(t *testing.T) {
 
 // -- Read-Only Routing -------------------------------------------------------
 
-func loadAGRoutingPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
+func loadAGRoutingPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *controls.DataGrid) {
 	return loadAGPage(t, func(sc *db.ServerConn) propPage { return pageAGReadOnlyRouting(sc, agFixtureName) })
 }
 

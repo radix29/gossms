@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 
 const principalAppRole = "payroll"
 
-func loadApplicationRoleGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *string) {
+func loadApplicationRoleGeneralPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *string) {
 	t.Helper()
 	responses := []fakeResponse{
 		dbByNameResp(principalDatabase, 5),
@@ -20,9 +21,9 @@ func loadApplicationRoleGeneralPage(t *testing.T) (*fakeInstance, propApply, *pr
 	}
 	responses = append(responses, databaseSchemaResponses()...)
 	responses = append(responses, principalPermissionResponses()...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := principalAppRole
-	form, apply := loadPage(t, pageApplicationRoleGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageApplicationRoleGeneral(sc, principalDatabase, &name), inst)
 	return inst, apply, form, &name
 }
 
@@ -78,5 +79,40 @@ func TestApplicationRoleGeneralUntouchedAndMismatch(t *testing.T) {
 	editText(t, form, "Confirm password", "two")
 	if err := form.Validate(); err == nil || !strings.Contains(err.Error(), "do not match") {
 		t.Errorf("Validate with a mismatched confirmation: %v", err)
+	}
+}
+
+// An application role node offers Script Application Role as with CREATE,
+// DROP and DROP And CREATE — no ALTER, which would only rename or reset the
+// password — alongside Delete and Properties.
+func TestApplicationRoleScriptMenu(t *testing.T) {
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	leaf := &explorerNode{data: nodeData{Type: NodeApplicationRole, DBName: "appdb", Name: "payroll", conn: sc}}
+	got := labelsOf(a.contextMenuItemsForNode(leaf))
+	for _, want := range []string{"Script Application Role as", "Delete...", "Properties..."} {
+		if !slices.Contains(got, want) {
+			t.Errorf("leaf menu %q has no %q", got, want)
+		}
+	}
+	items := (&App{}).scriptMenuItems(opNode(NodeApplicationRole, "", "payroll", "appdb"))
+	if len(items) == 0 {
+		t.Fatal("an application role offers no Script item")
+	}
+	if got, want := labelsOf(items[0].Sub), []string{"CREATE To", "DROP To", "DROP And CREATE To"}; !slices.Equal(got, want) {
+		t.Errorf("script verbs = %v, want %v", got, want)
+	}
+}
+
+// principalNames lists users, then roles, then application roles: an
+// application role may own every securable an owner picker offers.
+func TestPrincipalNamesOffersApplicationRoles(t *testing.T) {
+	got := principalNames(nroleTestUsers()[:1], nroleTestRoles()[:1], nroleTestAppRoles())
+	want := []string{nroleTestUsers()[0].Name, nroleTestRoles()[0].Name, "payroll_app"}
+	if !slices.Equal(got, want) {
+		t.Errorf("principalNames = %q, want %q", got, want)
+	}
+	if got := principalNames(nroleTestUsers()[:1], nil, nil); len(got) != 1 {
+		t.Errorf("nil roles and application roles = %q, want the user alone", got)
 	}
 }

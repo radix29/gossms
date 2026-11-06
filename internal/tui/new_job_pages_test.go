@@ -1,6 +1,10 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/radix29/gosmo/gosmotest"
+)
 
 // TestNewJobOwnerDefaultsToTheConnectedLogin pins B14: the Owner row starts on
 // the login the connection authenticated as, not on whatever sorts first —
@@ -21,10 +25,9 @@ func TestNewJobOwnerDefaultsToTheConnectedLogin(t *testing.T) {
 		{"case-sensitive, other case", "Latin1_General_CS_AS", `WIN10CLI\Radu`, 0},
 		{"not listed", "SQL_Latin1_General_CP1_CI_AS", "nobody", 0},
 	} {
-		info := serverInfoResponse()
-		info.rows[0][4] = tc.collation
-		info.rows[0][13] = tc.login
-		sc, _ := newFakeConnFrom(t, []fakeResponse{info, sysInfoResponse()})
+		sc, _ := newGConnWith(t, func(i *gosmotest.Info) {
+			i.Collation, i.Login = tc.collation, tc.login
+		})
 
 		f, _, _, _ := buildNewJobGeneralPage(sc, &njobPrefetch{loginNames: names})
 		if got := selectRow(t, f, "Owner").Selected(); got != tc.want {

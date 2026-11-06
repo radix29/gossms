@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"context"
+
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 )
 
 // agent_explorer.go loads the SQL Server Agent subtree: Jobs (User/System),
@@ -21,16 +25,32 @@ var agentReportTitles = []string{
 	"Recently Modified Jobs",
 }
 
-// loadAgentRootChildren returns the Agent root's folders.
+// loadAgentRootChildren returns the Agent root's folders. Alerts is left out
+// for a login that cannot read them (see agentAlertsReadable), as SSMS does,
+// rather than shown and answering Access denied on expand.
 func loadAgentRootChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return []*explorerNode{
+	out := []*explorerNode{
 		l.node("Jobs", NodeAgentJobsFolder, "", "", ""),
 		l.node("Schedules", NodeAgentSchedules, "", "", ""),
-		l.node("Alerts", NodeAgentAlerts, "", "", ""),
+	}
+	if agentAlertsReadable(l.ctx, l.sc) {
+		out = append(out, l.node("Alerts", NodeAgentAlerts, "", "", ""))
+	}
+	return append(out,
 		l.node("Operators", NodeAgentOperators, "", "", ""),
 		l.node("Error Logs", NodeAgentErrorLogs, "", "", ""),
 		l.node("SQL-only administration", NodeAgentAdmin, "", "", ""),
-	}, nil
+	), nil
+}
+
+// agentAlertsReadable reports whether the login may read SQL Agent's alerts
+// (gate.AgentAlertReadRights) — false for a SQLAgentReaderRole or
+// SQLAgentUserRole member, whom msdb refuses sysalerts. It probes msdb, so it
+// runs off the UI goroutine (a loader or a page load), and fails open like
+// every gate: an unprobed or failed probe reads as readable.
+func agentAlertsReadable(ctx context.Context, sc *db.ServerConn) bool {
+	dbCaps := func(name string) *gosmo.DatabaseCapabilities { return sc.DatabaseCapabilities(ctx, name) }
+	return gate.RightsAllow(sc.Capabilities(), dbCaps, "msdb", "", "", gate.AgentAlertReadRights()...)
 }
 
 // loadAgentJobsFolderChildren returns User Jobs, System Jobs, and the Job

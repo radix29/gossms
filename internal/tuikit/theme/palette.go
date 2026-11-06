@@ -44,6 +44,11 @@ type Palette struct {
 	MenuText    tcell.Color
 	MenuTextDim tcell.Color
 	MenuLine    tcell.Color
+	// MenuTextHighlight is an emphasised word on a MenuBar ground (the
+	// dashboard header's instance name). Not a chart colour: mc's cyan bar
+	// leaves only its black readable in the Tango colours, so StyleMenuBarEmphasis
+	// adds bold to set the word apart there.
+	MenuTextHighlight tcell.Color
 
 	// Grid
 	GridHeader   tcell.Color
@@ -113,6 +118,12 @@ type Palette struct {
 	Error   tcell.Color
 	Warning tcell.Color
 	Info    tcell.Color
+	// AlertBg and AlertText are a shout on a ground of its own: the results
+	// status line's truncation alert. Not Error, which is a foreground on panel
+	// grounds: VGA's bright red is too light under white, so the mc themes use
+	// mc's own error pair, white on dark red.
+	AlertBg   tcell.Color
+	AlertText tcell.Color
 
 	// Chart — the tuikit/charts series palette. These are roles, not metrics:
 	// the app maps each metric to a role once, so a series keeps its colour
@@ -162,12 +173,13 @@ var Default = Palette{
 	TreeSelected: tcell.NewRGBColor(0, 122, 204),
 	TreeHover:    tcell.NewRGBColor(62, 62, 64),
 
-	MenuSelected:     tcell.NewRGBColor(0, 122, 204),
-	MenuHover:        tcell.NewRGBColor(62, 62, 64),
-	MenuSelectedText: tcell.NewRGBColor(255, 255, 255),
-	MenuText:         tcell.NewRGBColor(220, 220, 220),
-	MenuTextDim:      tcell.NewRGBColor(150, 150, 150),
-	MenuLine:         tcell.NewRGBColor(63, 63, 70),
+	MenuSelected:      tcell.NewRGBColor(0, 122, 204),
+	MenuHover:         tcell.NewRGBColor(62, 62, 64),
+	MenuSelectedText:  tcell.NewRGBColor(255, 255, 255),
+	MenuText:          tcell.NewRGBColor(220, 220, 220),
+	MenuTextDim:       tcell.NewRGBColor(150, 150, 150),
+	MenuLine:          tcell.NewRGBColor(63, 63, 70),
+	MenuTextHighlight: tcell.NewRGBColor(78, 205, 196),
 
 	GridHeader:     tcell.NewRGBColor(45, 45, 48),
 	GridRowAlt:     tcell.NewRGBColor(40, 40, 42),
@@ -214,10 +226,12 @@ var Default = Palette{
 	TooltipFg:     tcell.NewRGBColor(230, 230, 230),
 	TooltipBorder: tcell.NewRGBColor(95, 95, 105),
 
-	Success: tcell.NewRGBColor(75, 175, 75),
-	Error:   tcell.NewRGBColor(220, 50, 50),
-	Warning: tcell.NewRGBColor(220, 180, 50),
-	Info:    tcell.NewRGBColor(100, 160, 220),
+	Success:   tcell.NewRGBColor(75, 175, 75),
+	Error:     tcell.NewRGBColor(220, 50, 50),
+	Warning:   tcell.NewRGBColor(220, 180, 50),
+	Info:      tcell.NewRGBColor(100, 160, 220),
+	AlertBg:   tcell.NewRGBColor(220, 50, 50),
+	AlertText: tcell.NewRGBColor(255, 255, 255),
 
 	ChartCyan:      tcell.NewRGBColor(78, 205, 196),
 	ChartGreen:     tcell.NewRGBColor(60, 200, 80),
@@ -321,12 +335,13 @@ func mcSkin(c mcColors) Palette {
 		TreeSelected: c.Cyan,
 		TreeHover:    c.PanelShade,
 
-		MenuSelected:     c.Black,
-		MenuHover:        c.Black,
-		MenuSelectedText: c.White,
-		MenuText:         c.Black,
-		MenuTextDim:      c.Gray,
-		MenuLine:         c.White,
+		MenuSelected:      c.Black,
+		MenuHover:         c.Black,
+		MenuSelectedText:  c.White,
+		MenuText:          c.Black,
+		MenuTextDim:       c.Gray,
+		MenuLine:          c.White,
+		MenuTextHighlight: c.Black,
 
 		// GridRowAlt is a shade off the panel blue; mc has no zebra striping, but a
 		// wide result grid is unreadable without it.
@@ -375,10 +390,12 @@ func mcSkin(c mcColors) Palette {
 		TooltipFg:     c.Black,
 		TooltipBorder: c.Black,
 
-		Success: c.BrightGreen,
-		Error:   c.BrightRed,
-		Warning: c.Yellow,
-		Info:    c.BrightCyan,
+		Success:   c.BrightGreen,
+		Error:     c.BrightRed,
+		Warning:   c.Yellow,
+		Info:      c.BrightCyan,
+		AlertBg:   c.Red,
+		AlertText: c.White,
 
 		ChartCyan:      c.BrightCyan,
 		ChartGreen:     c.BrightGreen,
@@ -417,12 +434,13 @@ var Light = Palette{
 	TreeSelected: tcell.NewRGBColor(0, 122, 204),
 	TreeHover:    tcell.NewRGBColor(220, 230, 244),
 
-	MenuSelected:     tcell.NewRGBColor(0, 122, 204),
-	MenuHover:        tcell.NewRGBColor(220, 230, 244),
-	MenuSelectedText: tcell.NewRGBColor(255, 255, 255),
-	MenuText:         tcell.NewRGBColor(30, 30, 30),
-	MenuTextDim:      tcell.NewRGBColor(110, 110, 110),
-	MenuLine:         tcell.NewRGBColor(204, 206, 219),
+	MenuSelected:      tcell.NewRGBColor(0, 122, 204),
+	MenuHover:         tcell.NewRGBColor(220, 230, 244),
+	MenuSelectedText:  tcell.NewRGBColor(255, 255, 255),
+	MenuText:          tcell.NewRGBColor(30, 30, 30),
+	MenuTextDim:       tcell.NewRGBColor(110, 110, 110),
+	MenuLine:          tcell.NewRGBColor(204, 206, 219),
+	MenuTextHighlight: tcell.NewRGBColor(0, 100, 100),
 
 	GridHeader:     tcell.NewRGBColor(225, 225, 230),
 	GridRowAlt:     tcell.NewRGBColor(236, 236, 240),
@@ -471,10 +489,12 @@ var Light = Palette{
 	TooltipFg:     tcell.NewRGBColor(30, 30, 30),
 	TooltipBorder: tcell.NewRGBColor(118, 118, 118),
 
-	Success: tcell.NewRGBColor(16, 124, 16),
-	Error:   tcell.NewRGBColor(196, 30, 30),
-	Warning: tcell.NewRGBColor(170, 110, 0),
-	Info:    tcell.NewRGBColor(0, 90, 170),
+	Success:   tcell.NewRGBColor(16, 124, 16),
+	Error:     tcell.NewRGBColor(196, 30, 30),
+	Warning:   tcell.NewRGBColor(170, 110, 0),
+	Info:      tcell.NewRGBColor(0, 90, 170),
+	AlertBg:   tcell.NewRGBColor(196, 30, 30),
+	AlertText: tcell.NewRGBColor(255, 255, 255),
 
 	ChartCyan:      tcell.NewRGBColor(0, 140, 140),
 	ChartGreen:     tcell.NewRGBColor(30, 150, 50),

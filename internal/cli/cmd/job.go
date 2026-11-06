@@ -37,13 +37,13 @@ const defaultJobHistoryTop = 20
 const failedRunsRead = 10000
 
 // jobReadNeeds is the job reads' permission, said in every job command's
-// help. gosmo reads msdb's job tables (sysjobs, sysjobservers,
-// sysjobactivity, sysjobhistory) directly, and msdb grants the Agent roles
-// only its views and sp_help_job* procedures — measured on 17: a
-// SQLAgentReaderRole member is refused SELECT on sysjobservers (Msg 229).
-const jobReadNeeds = "Reading the jobs takes SELECT on msdb's job tables — in practice sysadmin: the msdb Agent " +
-	"roles (SQLAgentUserRole, SQLAgentReaderRole, SQLAgentOperatorRole) reach them only through msdb's procedures, " +
-	"so a member of one is exit 9."
+// help. gosmo reads msdb's job tables for a sysadmin and, for anyone else,
+// sysjobs_view and the sp_help_job* procedures msdb grants its Agent roles,
+// which apply msdb's visibility; a login in none of the roles is refused
+// (Msg 229 on sp_help_jobactivity, 17).
+const jobReadNeeds = "Reading the jobs takes sysadmin or a role in msdb: SQLAgentUserRole sees the jobs the login " +
+	"owns, SQLAgentReaderRole and SQLAgentOperatorRole every job; another job is exit 8 (not found), and a login in " +
+	"none of them is exit 9."
 
 // agentTimeHelp is what --since and --failed-since take.
 const agentTimeHelp = "YYYY-MM-DD[THH:MM[:SS]] in the server's local time (msdb records no zone), or with Z or an offset"
@@ -223,11 +223,11 @@ func secondsCell(d time.Duration) *string { return ptr(strconv.FormatInt(int64(d
 // agentTime is a --since or --failed-since as gosmo compares msdb's times: a
 // server-local wall clock stamped UTC. A zoneless value is one already; a
 // zoned one is read in the server's zone, which costs a clock read.
-func agentTime(ctx context.Context, cat Catalog, q qsTime) (time.Time, error) {
+func agentTime(ctx context.Context, srv *gosmo.Server, q qsTime) (time.Time, error) {
 	if !q.zoned {
 		return q.t, nil
 	}
-	now, err := cat.CurrentTime(ctx)
+	now, err := srv.CurrentTime(ctx)
 	if err != nil {
 		return time.Time{}, readError(err)
 	}
@@ -239,21 +239,21 @@ func serverWall(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
 }
 
-// jobReadError is readError for a read of msdb's job tables: a refusal is
-// the msdb Agent roles a login needs.
+// jobReadError is readError for a read of msdb's jobs: a refusal is the
+// msdb Agent roles a login needs.
 func jobReadError(err error) *output.Error {
 	e := readError(err)
 	if e.Code == output.CodePermissionDenied && e.SQL != nil {
-		e.Hint = "The job commands read msdb's job tables, which only sysadmin can in practice: the msdb Agent " +
-			"roles do not reach them. Use a sysadmin login."
+		e.Hint = "Reading the jobs needs sysadmin or a role in msdb: SQLAgentUserRole (the jobs the login owns), " +
+			"SQLAgentReaderRole or SQLAgentOperatorRole (every job). Use a login that has one, or have it granted."
 	}
 	return e
 }
 
 // findJob is the job name names, NOT_FOUND hinting job list when there is
 // none the login can see.
-func findJob(ctx context.Context, cat Catalog, name string) (*gosmo.Job, error) {
-	j, err := cat.JobByName(ctx, name)
+func findJob(ctx context.Context, srv *gosmo.Server, name string) (*gosmo.Job, error) {
+	j, err := srv.JobByName(ctx, name)
 	if errors.Is(err, gosmo.ErrNotFound) {
 		return nil, output.NewError(output.CodeNotFound, fmt.Sprintf("no Agent job %s", gosmo.QuoteName(name)),
 			"Check the name: gossms job list lists the jobs.")
@@ -294,13 +294,13 @@ func (d Deps) jobList(ctx context.Context, inv *spec.Invocation) (*output.Result
 		return nil, usageError("--category is empty", "Name a category, or leave --category out for every one.")
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	jobs, err := cat.Jobs(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return res, jobReadError(err)
 	}
@@ -312,11 +312,11 @@ func (d Deps) jobList(ctx context.Context, inv *spec.Invocation) (*output.Result
 	failedOnly := inv.Given[optFailedSince]
 	var failures map[string]*jobFailures
 	if failedOnly {
-		from, err := agentTime(ctx, cat, since)
+		from, err := agentTime(ctx, sc.Server, since)
 		if err != nil {
 			return res, err
 		}
-		runs, err := cat.SearchJobHistory(ctx, gosmo.JobHistoryFilter{Since: from,
+		runs, err := sc.Server.SearchJobHistory(ctx, gosmo.JobHistoryFilter{Since: from,
 			Outcomes: []gosmo.JobOutcome{gosmo.JobOutcomeFailed}, Max: failedRunsRead})
 		if err != nil {
 			return res, jobReadError(err)
@@ -378,21 +378,21 @@ func (d Deps) jobList(ctx context.Context, inv *spec.Invocation) (*output.Result
 
 func (d Deps) jobShow(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	j, err := findJob(ctx, cat, inv.Args[0])
+	j, err := findJob(ctx, sc.Server, inv.Args[0])
 	if err != nil {
 		return res, err
 	}
-	steps, err := cat.JobSteps(ctx, j)
+	steps, err := j.Steps(ctx)
 	if err != nil {
 		return res, jobReadError(err)
 	}
-	schedules, err := cat.JobSchedules(ctx, j)
+	schedules, err := j.Schedules(ctx)
 	if err != nil {
 		return res, jobReadError(err)
 	}
@@ -490,26 +490,26 @@ func (d Deps) jobHistory(ctx context.Context, inv *spec.Invocation) (*output.Res
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	j, err := findJob(ctx, cat, inv.Args[0])
+	j, err := findJob(ctx, sc.Server, inv.Args[0])
 	if err != nil {
 		return res, err
 	}
 	f := gosmo.JobHistoryFilter{JobName: j.Name, IncludeSteps: true, Max: top}
 	if inv.Given[optSince] {
-		if f.Since, err = agentTime(ctx, cat, since); err != nil {
+		if f.Since, err = agentTime(ctx, sc.Server, since); err != nil {
 			return res, err
 		}
 	}
 	if failed, _ := inv.Values[optFailed].(bool); failed {
 		f.Outcomes = []gosmo.JobOutcome{gosmo.JobOutcomeFailed}
 	}
-	rows, err := cat.SearchJobHistory(ctx, f)
+	rows, err := sc.Server.SearchJobHistory(ctx, f)
 	if err != nil {
 		return res, jobReadError(err)
 	}

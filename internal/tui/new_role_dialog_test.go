@@ -20,7 +20,7 @@ func newRoleTestDialog(t *testing.T, responses ...fakeResponse) *NewRoleDialog {
 		{"dbo", int64(1), "dbo"}, {"INFORMATION_SCHEMA", int64(3), "INFORMATION_SCHEMA"},
 		{"sales", int64(5), "dbo"}, {"sys", int64(4), "sys"},
 	}})
-	sc, _ := newFakeConn(t, responses...)
+	sc, _ := newGConn(t, responses...)
 	schemas, err := sc.Server.DatabaseRef("appdb").Schemas(context.Background())
 	if err != nil {
 		t.Fatalf("Schemas: %v", err)
@@ -135,10 +135,11 @@ func TestNewRoleLaterPagesNameTheNewRole(t *testing.T) {
 
 // The pickers leave out what SQL Server refuses (Msg 15405, major 17): sys,
 // INFORMATION_SCHEMA and public as owner or member, and dbo and every fixed
-// role as a member. guest is accepted as both.
+// role as a member. guest is accepted as both. An application role may own
+// the role (probed on 13 and 17) but is no member.
 func TestNewRolePickersLeaveOutSpecialPrincipals(t *testing.T) {
 	pf := newRolePrefetchFrom("", nroleTestUsers(), nroleTestRoles(), nroleTestAppRoles(), nil)
-	if want := []string{"dbo", "guest", "app]user", "db_owner", "db_datareader", "readers"}; !slices.Equal(pf.owners, want) {
+	if want := []string{"dbo", "guest", "app]user", "db_owner", "db_datareader", "readers", "payroll_app"}; !slices.Equal(pf.owners, want) {
 		t.Errorf("owners = %q, want %q", pf.owners, want)
 	}
 	if want := []string{"guest", "app]user", "readers"}; !slices.Equal(pf.members, want) {
@@ -196,7 +197,7 @@ func TestNewRoleGateMatchesWhatTheServerAllowed(t *testing.T) {
 				denied = append(denied, n)
 			}
 		}
-		sc, _ := newFakeConn(t, capabilityResponses(true, nil, nil, tc.granted, denied)...)
+		sc, _ := newGConn(t, capabilityResponses(true, nil, nil, tc.granted, denied)...)
 		sc.ProbeCapabilities(sc.Server.Context())
 		sc.DatabaseCapabilities(context.Background(), "appdb")
 		folder := &explorerNode{data: nodeData{Type: NodeDatabaseRoles, DBName: "appdb", conn: sc}}

@@ -162,14 +162,14 @@ func (d Deps) monitorDeadlocks(ctx context.Context, inv *spec.Invocation) (*outp
 	}
 
 	res := &output.Result{}
-	closeConn, cat, err := d.connectServerState(ctx, inv, res, "monitor deadlocks")
+	sc, err := d.connectServerState(ctx, inv, res, "monitor deadlocks")
 	if err != nil {
 		return res, err
 	}
-	defer closeConn()
+	defer sc.Close()
 
 	if r.Until.IsZero() {
-		now, err := cat.CurrentTime(ctx)
+		now, err := sc.Server.CurrentTime(ctx)
 		if err != nil {
 			return res, readError(err)
 		}
@@ -182,7 +182,7 @@ func (d Deps) monitorDeadlocks(ctx context.Context, inv *spec.Invocation) (*outp
 		return res, emptyDeadlockWindow(r.Since, r.Until)
 	}
 
-	events, source, err := readDeadlockEvents(ctx, cat)
+	events, source, err := readDeadlockEvents(ctx, sc.Server)
 	if err != nil {
 		return res, err
 	}
@@ -197,7 +197,7 @@ func (d Deps) monitorDeadlocks(ctx context.Context, inv *spec.Invocation) (*outp
 		{Key: "from", Value: gridTime(r.Since)}, {Key: "to", Value: gridTime(r.Until)},
 		{Key: "deadlocksInWindow", Value: strconv.Itoa(inWindow)},
 	}
-	names := deadlockDatabaseNames(ctx, cat, found)
+	names := deadlockDatabaseNames(ctx, sc.Server, found)
 	res.Sets = []output.Set{deadlocksSet(found, names)}
 	if r.Format == deadlockXML {
 		for i, dl := range found {
@@ -219,8 +219,8 @@ func (d Deps) monitorDeadlocks(ctx context.Context, inv *spec.Invocation) (*outp
 // readDeadlockEvents reads system_health's xml_deadlock_report events from
 // its event_file target, the server filtering out every other event, or from
 // its ring_buffer when it has no file. source names the target read.
-func readDeadlockEvents(ctx context.Context, cat Catalog) (events []gosmo.XEvent, source string, err error) {
-	es, err := cat.EventSessionByName(ctx, systemHealth)
+func readDeadlockEvents(ctx context.Context, s *gosmo.Server) (events []gosmo.XEvent, source string, err error) {
+	es, err := s.XEvents().SessionByName(ctx, systemHealth)
 	if errors.Is(err, gosmo.ErrNotFound) {
 		return nil, "", output.NewError(output.CodeNotFound, "the system_health event session does not exist",
 			"It is created with the server; it may have been dropped. It can be recreated from the server's "+
@@ -238,14 +238,14 @@ func readDeadlockEvents(ctx context.Context, cat Catalog) (events []gosmo.XEvent
 		if err != nil {
 			return nil, "", readError(err)
 		}
-		events, _, err = cat.ReadFileEvents(ctx, pattern, gosmo.EventFileCursor{}, 0, []string{xmlDeadlockReport})
+		events, _, err = s.XEvents().ReadFileEvents(ctx, pattern, gosmo.EventFileCursor{}, 0, []string{xmlDeadlockReport})
 		if err != nil {
 			return nil, "", readError(err)
 		}
 		return events, gosmo.XETargetEventFile, nil
 	}
 	if _, ok := es.Target(gosmo.XETargetRingBuffer); ok {
-		data, err := cat.ReadRingBuffer(ctx, es)
+		data, err := es.ReadRingBuffer(ctx)
 		if err != nil {
 			return nil, "", readError(err)
 		}
@@ -293,7 +293,7 @@ func decodeDeadlocks(events []gosmo.XEvent, since, until time.Time, warnings *[]
 // name — 2017 RTM writes none (gosmo.DeadlockProcess.Database) — to the
 // catalog's names. It reads the catalog only when one is missing, and a
 // failed read leaves the names out rather than failing the command.
-func deadlockDatabaseNames(ctx context.Context, cat Catalog, found []deadlock) map[int]string {
+func deadlockDatabaseNames(ctx context.Context, s *gosmo.Server, found []deadlock) map[int]string {
 	missing := false
 	for _, dl := range found {
 		for _, p := range dl.Report.Processes {
@@ -303,7 +303,7 @@ func deadlockDatabaseNames(ctx context.Context, cat Catalog, found []deadlock) m
 	if !missing {
 		return nil
 	}
-	dbs, err := cat.Databases(ctx)
+	dbs, err := s.Databases(ctx)
 	if err != nil {
 		return nil
 	}

@@ -56,7 +56,7 @@ func TestPropertiesApplyReloadsTheFolderListingTheObject(t *testing.T) {
 			[]nodeData{{Type: NodeBrokerQueues, DBName: dbName}}, []nodeData{{Type: NodeBrokerQueues, DBName: "otherdb"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, _ := newFakeConn(t)
+			sc, _ := newGConn(t)
 			a := newTestApp()
 			a.propDialog = NewPropDialog(a)
 			a.connections = append(a.connections, sc)

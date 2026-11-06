@@ -230,13 +230,13 @@ func (d Deps) maintBackup(ctx context.Context, inv *spec.Invocation) (*output.Re
 	}
 	typ := inv.Values[optType].(string)
 	res := &output.Result{}
-	sc, cat, w, err := d.connectWriter(ctx, inv, res)
+	sc, cat, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	info := cat.ServerInfo()
+	info := sc.Server.Info()
 	if info != nil && info.EngineEdition == int(gosmo.EngineAzureSQLDatabase) {
 		return res, output.NewError(output.CodeUnsupported, "Azure SQL Database takes no BACKUP: its backups are automatic",
 			"Restore one through the Azure portal or CLI (point-in-time restore), or copy the database with CREATE DATABASE … AS COPY OF.")
@@ -270,14 +270,14 @@ func (d Deps) maintBackup(ctx context.Context, inv *spec.Invocation) (*output.Re
 	}
 
 	res.Fields = backupFields(db.Name, typ, opts)
-	backup := func(ctx context.Context) error { return w.Backup(ctx, opts) }
+	backup := func(ctx context.Context) error { return sc.Server.Backup(ctx, opts) }
 	if err := applyWrite(ctx, inv, res, backup); err != nil {
 		return res, backupError(err, db.Name)
 	}
 	if dryRun(inv) {
 		return res, nil
 	}
-	res.Fields = append(res.Fields, backupSetFields(ctx, cat, opts, typ, res)...)
+	res.Fields = append(res.Fields, backupSetFields(ctx, sc.Server, opts, typ, res)...)
 	return res, nil
 }
 
@@ -305,7 +305,7 @@ func backupFields(db, typ string, opts gosmo.BackupOptions) []output.Field {
 // backupSetFields is the set the backup just wrote, read back from its
 // media: the newest of the database's sets of the type there. A read that
 // fails, or finds none, is a warning — the backup itself succeeded.
-func backupSetFields(ctx context.Context, cat Catalog, opts gosmo.BackupOptions, typ string, res *output.Result) []output.Field {
+func backupSetFields(ctx context.Context, srv *gosmo.Server, opts gosmo.BackupOptions, typ string, res *output.Result) []output.Field {
 	keys := []string{"setNumber", "backupStart", "backupFinish", "sizeBytes", "compressedBytes", "compressed", "hasChecksums"}
 	nulls := func() []output.Field {
 		f := make([]output.Field, len(keys))
@@ -314,7 +314,7 @@ func backupSetFields(ctx context.Context, cat Catalog, opts gosmo.BackupOptions,
 		}
 		return f
 	}
-	headers, err := cat.BackupHeaders(ctx, opts.Devices...)
+	headers, err := srv.BackupHeaders(ctx, opts.Devices...)
 	if err != nil {
 		res.Warnings = append(res.Warnings, "The backup succeeded, but its set was not read back from the file: "+mediaReadError(err).Message)
 		return nulls()
@@ -428,7 +428,7 @@ func (d Deps) maintBackupHistory(ctx context.Context, inv *spec.Invocation) (*ou
 
 	var from time.Time
 	if inv.Given[optSince] {
-		if from, err = agentTime(ctx, cat, since); err != nil {
+		if from, err = agentTime(ctx, sc.Server, since); err != nil {
 			return res, err
 		}
 	}
@@ -438,9 +438,9 @@ func (d Deps) maintBackupHistory(ctx context.Context, inv *spec.Invocation) (*ou
 
 	var rows []backupRow
 	if last {
-		rows, err = lastBackupRows(ctx, cat, name, typ, keep, res)
+		rows, err = lastBackupRows(ctx, sc.Server, cat, name, typ, keep, res)
 	} else {
-		rows, err = backupHistoryRows(ctx, cat, name, keep, res)
+		rows, err = backupHistoryRows(ctx, sc.Server, cat, name, keep, res)
 	}
 	if err != nil {
 		return res, err
@@ -455,10 +455,10 @@ func (d Deps) maintBackupHistory(ctx context.Context, inv *spec.Invocation) (*ou
 
 // backupHistoryRows is every set of name's history (every database's, name
 // "") that keep keeps, newest first.
-func backupHistoryRows(ctx context.Context, cat Catalog, name string, keep func(*gosmo.BackupInfo) bool, res *output.Result) ([]backupRow, error) {
+func backupHistoryRows(ctx context.Context, srv *gosmo.Server, cat Catalog, name string, keep func(*gosmo.BackupInfo) bool, res *output.Result) ([]backupRow, error) {
 	names := []string{name}
 	if name == "" {
-		dbs, err := cat.Databases(ctx)
+		dbs, err := srv.Databases(ctx)
 		if err != nil {
 			return nil, readError(err)
 		}
@@ -471,7 +471,7 @@ func backupHistoryRows(ctx context.Context, cat Catalog, name string, keep func(
 	}
 	var rows []backupRow
 	for _, n := range names {
-		hist, err := cat.BackupHistory(ctx, n)
+		hist, err := srv.BackupHistory(ctx, n)
 		if err != nil {
 			return nil, readError(err)
 		}
@@ -495,8 +495,8 @@ func backupHistoryRows(ctx context.Context, cat Catalog, name string, keep func(
 // when given), from LastBackups: one row per database and type, b nil when
 // msdb has none or keep drops it. The warnings name the databases never
 // backed up, and those whose log no backup truncates.
-func lastBackupRows(ctx context.Context, cat Catalog, name, typ string, keep func(*gosmo.BackupInfo) bool, res *output.Result) ([]backupRow, error) {
-	all, err := cat.LastBackups(ctx)
+func lastBackupRows(ctx context.Context, srv *gosmo.Server, cat Catalog, name, typ string, keep func(*gosmo.BackupInfo) bool, res *output.Result) ([]backupRow, error) {
+	all, err := srv.LastBackups(ctx)
 	if err != nil {
 		return nil, readError(err)
 	}

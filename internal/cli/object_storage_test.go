@@ -69,6 +69,19 @@ func TestObjectDependencies(t *testing.T) {
 		!strings.Contains(fmt.Sprint(firstError(t, env)["hint"]), "sys.sql_expression_dependencies") {
 		t.Errorf("denied: exit %d, %v", exit, env["errors"])
 	}
+	// Without VIEW DEFINITION on the database the reads answer nothing:
+	// exit 0, no rows, and a warning that there may be some.
+	cat = newObjectServer(t)
+	cat.hidden = true
+	exit, env = runObject(t, cat, "dependencies", "Sales.Customer")
+	if exit != 0 || len(setRows(t, env, 0)) != 0 || !strings.Contains(fmt.Sprint(env["warnings"]), "lacks VIEW DEFINITION") {
+		t.Errorf("hidden: exit %d, warnings %v", exit, env["warnings"])
+	}
+	// With it, an object nothing depends on is no warning.
+	exit, env = runObject(t, newObjectServer(t), "dependencies", "Sales.usp_Get", "--direction", "used-by")
+	if w, _ := env["warnings"].([]any); exit != 0 || len(setRows(t, env, 0)) != 0 || len(w) != 0 {
+		t.Errorf("visible, none: exit %d, rows %v, warnings %v", exit, setRows(t, env, 0), w)
+	}
 	if exit, _ := runObject(t, newObjectServer(t), "dependencies", "Sales.Nope"); exit != 8 {
 		t.Errorf("missing object: exit %d, want 8", exit)
 	}

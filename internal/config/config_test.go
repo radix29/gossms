@@ -479,13 +479,14 @@ func TestSaveCarriesUnnamedFields(t *testing.T) {
 		MaxTextColumnLength:  512,
 		IntelliSenseDisabled: true,
 		IndentWidth:          2,
+		SQLFormatStyle:       "lowercase",
 	}
 	if err := cfg.Save(); err != nil {
 		t.Fatalf("Save() = %v", err)
 	}
 	got := Load()
 	if got.IconStyle != IconStylePortable || got.Theme != ThemeLight || got.MaxCellLength != 123 || got.MaxTextColumnLength != 512 ||
-		!got.IntelliSenseDisabled || got.IndentWidth != 2 {
+		!got.IntelliSenseDisabled || got.IndentWidth != 2 || got.SQLFormatStyle != "lowercase" {
 		t.Errorf("round-tripped config = %+v, want every field preserved", got)
 	}
 }

@@ -37,7 +37,7 @@ func TestAgentWritesRunBehindTheProgressDialog(t *testing.T) {
 			hold := make(chan struct{})
 			defer close(hold)
 			responses := append([]fakeResponse{{match: c.write, blockExec: hold}}, c.responses...)
-			sc, inst := newFakeConn(t, responses...)
+			sc, inst := newGConn(t, responses...)
 			node := agentJobTestNode(sc)
 			node.label, node.data.Name = c.label, c.label
 			node.data.AgentScheduleID = agentScheduleID
@@ -67,7 +67,7 @@ func TestAgentWritesRunBehindTheProgressDialog(t *testing.T) {
 // cancelled attempt.
 func TestAgentToggleReportsItsSuccess(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConn(t, agentJobResponses(jobRowInState(4))...)
+	sc, inst := newGConn(t, agentJobResponses(jobRowInState(4))...)
 	node := agentJobTestNode(sc)
 	node.data.IsEnabled = true
 	a.setStatus(`Disabling "Nightly reindex" cancelled`)

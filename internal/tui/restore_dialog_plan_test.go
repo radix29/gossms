@@ -65,7 +65,7 @@ func planForm(t *testing.T) *RestoreDialog {
 // tail log last, WITH RECOVERY. REPLACE and the connection-closing batch go
 // with the first RESTORE only, and the log the differential covers is left out.
 func TestRestorePlanScript(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		planHistoryRows(),
 		headerOn(`E:\b\full.bak`, 1),
 		headerOn(`E:\b\diff.bak`, 5),
@@ -122,7 +122,7 @@ func TestRestorePlanScript(t *testing.T) {
 // A point in time goes on the logs only — a full or differential read with
 // STOPAT fails or ignores it — and stops the plan at the log holding it.
 func TestRestorePlanScriptStopAt(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		planHistoryRows(),
 		headerOn(`E:\b\full.bak`, 1),
 		headerOn(`E:\b\log1.trn`, 2),
@@ -147,7 +147,7 @@ func TestRestorePlanScriptStopAt(t *testing.T) {
 // A tail-log backup leaves its database RESTORING, so it is refused for a
 // restore into another database — before anything runs.
 func TestRestorePlanRefusesATailLogForAnotherTarget(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := planForm(t)
 	d.sc = sc
 	d.cbTail.SetChecked(true)
@@ -165,7 +165,7 @@ func TestRestorePlanRefusesATailLogForAnotherTarget(t *testing.T) {
 
 // The status line describes the plan, and Analyze/Files read its full.
 func TestRestorePlanPreview(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := planForm(t)
 	d.sc = sc
 	if got, want := d.restingStatus(), "Restore plan: full 2026-10-27 01:00, differential 2026-10-27 03:00, 1 log."; got != want {
@@ -193,7 +193,7 @@ func TestRestorePlanPreview(t *testing.T) {
 // not leave the database RESTORING.
 func TestRestorePlanReadsHistoryBeforeTheTailLog(t *testing.T) {
 	broken := errors.New("history unreadable")
-	sc, inst := newFakeConn(t, fakeResponse{match: "msdb.dbo.backupset", err: broken})
+	sc, inst := newGConn(t, fakeResponse{match: "msdb.dbo.backupset", err: broken})
 	app := newTestApp()
 	d := planForm(t)
 	d.app, d.sc = app, sc
@@ -221,7 +221,7 @@ func TestRestorePlanReadsHistoryBeforeTheTailLog(t *testing.T) {
 // A point past the newest log in history is the tail log's: the plan runs to
 // the end of the chain and the tail is restored to the point.
 func TestRestorePlanScriptStopAtInTheTail(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		planHistoryRows(),
 		headerOn(`E:\b\full.bak`, 1),
 		headerOn(`E:\b\diff.bak`, 5),

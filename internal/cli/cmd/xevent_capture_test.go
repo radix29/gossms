@@ -4,157 +4,46 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
-	"github.com/radix29/gossms/internal/cli/spec"
-	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/db"
 )
 
-// captureCatalog serves xevent capture's reads: the ring buffer (or readErr),
-// the session by name (exists: the CREATE ran although it reported an
-// error), the permission checks and the engine edition.
-type captureCatalog struct {
-	Catalog
-	data    *gosmo.RingBufferData
-	readErr error
-	exists  bool
-	noVSS   bool
-	caps    *gosmo.Capabilities
-	engine  gosmo.EngineEdition
-
-	log *[]string
-}
-
-func (c *captureCatalog) ServerInfo() *gosmo.ServerInfo {
-	return &gosmo.ServerInfo{EngineEdition: int(c.engine)}
-}
-
-func (c *captureCatalog) HasViewServerState(context.Context) (bool, error) { return !c.noVSS, nil }
-
-func (c *captureCatalog) ServerCapabilities(context.Context) (*gosmo.Capabilities, error) {
-	return c.caps, nil
-}
-
-func (c *captureCatalog) ReadRingBuffer(ctx context.Context, es *gosmo.EventSession) (*gosmo.RingBufferData, error) {
-	*c.log = append(*c.log, "read "+es.Name)
-	if c.readErr != nil {
-		return nil, c.readErr
-	}
-	return c.data, nil
-}
-
-func (c *captureCatalog) EventSessionByName(_ context.Context, name string) (*gosmo.EventSession, error) {
-	*c.log = append(*c.log, "lookup "+name)
-	if !c.exists {
-		return nil, fmt.Errorf("event session %q: %w", name, gosmo.ErrNotFound)
-	}
-	return &gosmo.EventSession{Name: name}, nil
-}
-
-// captureWriter records each step in log, failing the one errs names; a
-// cleanup step records "(cancelled)" when its context is done. Under
-// WithScript it is the real serverWriter, so a dry run captures gosmo's T-SQL.
-type captureWriter struct {
-	Writer
-	errs map[string]error
-	spec gosmo.EventSessionDefinition
-	log  *[]string
-}
-
-func (w *captureWriter) step(ctx context.Context, verb string, es *gosmo.EventSession) error {
-	entry := verb + " " + es.Name
-	if ctx.Err() != nil {
-		entry += " (cancelled)"
-	}
-	*w.log = append(*w.log, entry)
-	return w.errs[verb]
-}
-
-func (w *captureWriter) CreateEventSession(ctx context.Context, spec gosmo.EventSessionDefinition) (*gosmo.EventSession, error) {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{&gosmo.Server{}}.CreateEventSession(ctx, spec)
-	}
-	w.spec = spec
-	es := &gosmo.EventSession{Name: spec.Name}
-	if err := w.step(ctx, "create", es); err != nil {
-		return nil, err
-	}
-	return es, nil
-}
-
-func (w *captureWriter) StartEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.StartEventSession(ctx, es)
-	}
-	return w.step(ctx, "start", es)
-}
-
-func (w *captureWriter) StopEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.StopEventSession(ctx, es)
-	}
-	return w.step(ctx, "stop", es)
-}
-
-func (w *captureWriter) DropEventSession(ctx context.Context, es *gosmo.EventSession) error {
-	if gosmo.Scripting(ctx) {
-		return serverWriter{}.DropEventSession(ctx, es)
-	}
-	return w.step(ctx, "drop", es)
-}
+// xevent capture's tests run on xeServer (xevent_server_test.go): real
+// gosmo over canned catalog rows, with a CREATE, START, STOP and DROP
+// changing its sessions as the server would. Its steps are the order of the
+// writes and the reads a capture is judged by.
 
 const testCaptureSession = "gossms_cli_20261030120000_beef"
 
-// newCapture is a capture fake whose ring buffer holds events, with a login
+// newCapture is an xeServer whose ring buffer holds events, with a login
 // that holds ALTER ANY EVENT SESSION.
-func newCapture(events ...gosmo.XEvent) (*captureCatalog, *captureWriter) {
-	log := new([]string)
-	cat := &captureCatalog{log: log,
-		data: &gosmo.RingBufferData{Events: events, TotalEventsProcessed: int64(len(events)), EventCount: int64(len(events))},
-		caps: &gosmo.Capabilities{ServerPermissions: map[string]gosmo.CapabilityState{
-			"ALTER ANY EVENT SESSION": gosmo.CapabilityGranted}}}
-	return cat, &captureWriter{log: log, errs: map[string]error{}}
+func newCapture(t *testing.T, events ...gosmo.XEvent) *xeServer {
+	s := newXEServer(t)
+	s.events = events
+	return s
 }
 
-// runCaptureCmd runs xevent capture <argv> over cat and w with ctx; sleep
-// replaces the wait (nil: return at once, recording the time asked).
-func runCaptureCmd(t *testing.T, ctx context.Context, cat *captureCatalog, w *captureWriter, sleep func(context.Context, time.Duration) error, argv string) (res *output.Result, dials int, waited time.Duration, err error) {
+// runCaptureCmd runs xevent capture <argv> over s with ctx; sleep replaces
+// the wait (nil: return at once, recording the time asked).
+func runCaptureCmd(t *testing.T, ctx context.Context, s *xeServer, sleep func(context.Context, time.Duration) error, argv string) (res *output.Result, dials int, waited time.Duration, err error) {
 	t.Helper()
 	old, oldName := sleepCtx, captureSessionName
 	t.Cleanup(func() { sleepCtx, captureSessionName = old, oldName })
 	captureSessionName = func() string { return testCaptureSession }
 	sleepCtx = func(ctx context.Context, d time.Duration) error {
 		waited = d
-		*cat.log = append(*cat.log, "wait")
+		s.steps = append(s.steps, "wait")
 		if sleep != nil {
 			return sleep(ctx, d)
 		}
 		return nil
 	}
-	d := Deps{
-		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			dials++
-			return &db.ServerConn{}, nil
-		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-		Writer:  func(*db.ServerConn) Writer { return w },
-	}
-	tree := &spec.Tree{Commands: XEventCommands(d), Globals: []spec.Option{
-		{Name: "output", Short: "o", Type: spec.TypeEnum, Enum: output.Formats, Default: "text"}}}
-	inv, perr := args.Parse(tree, append([]string{"xevent", "capture", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
-	if perr != nil {
-		t.Fatalf("%q: %v", argv, perr)
-	}
-	res, err = inv.Command.Run(ctx, inv)
+	res, dials, err = runXEventCtx(t, ctx, s, append([]string{"capture"}, strings.Fields(argv)...)...)
 	return res, dials, waited, err
 }
 
@@ -177,15 +66,16 @@ func TestXEventCapture(t *testing.T) {
 		[]gosmo.XEValue{{Name: "session_id", Value: "61"}}, 1)
 	wait := xeAt(1, "wait_info", []gosmo.XEValue{{Name: "duration", Value: "12"},
 		{Name: "wait_type", Value: "179", Text: "PAGEIOLATCH_SH"}}, nil, 9)
-	cat, w := newCapture(batch, errEvt, wait)
-	res, dials, waited, err := runCaptureCmd(t, context.Background(), cat, w, nil,
+	xs := newCapture(t, batch, errEvt, wait)
+	res, dials, waited, err := runCaptureCmd(t, context.Background(), xs, nil,
 		"--template waits --duration 10 --allow admin --session-database Sales --login app --min-duration-ms 250 --max-events 50")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := testCaptureSession
-	if want := []string{"create " + s, "start " + s, "wait", "read " + s, "stop " + s, "drop " + s}; dials != 1 || !slices.Equal(*cat.log, want) {
-		t.Fatalf("%d dials, steps %q; want %q", dials, *cat.log, want)
+	// The lookup is gosmo's read-back after the CREATE.
+	if want := []string{"create " + s, "lookup " + s, "start " + s, "wait", "read " + s, "stop " + s, "drop " + s}; dials != 1 || !slices.Equal(xs.steps, want) {
+		t.Fatalf("%d dials, steps %q; want %q", dials, xs.steps, want)
 	}
 	if waited != 11*time.Second {
 		t.Errorf("waited %v; want the duration plus the one-second latency", waited)
@@ -204,32 +94,43 @@ func TestXEventCapture(t *testing.T) {
 	// never at startup; every event keeps its template predicate, leaves out
 	// the CLI's own connections and carries the filters; only completed work
 	// gets --min-duration-ms, in microseconds.
-	sp := w.spec
-	if sp.Name != s || sp.MaxDispatchLatency != time.Second || sp.StartupState || len(sp.Targets) != 1 ||
-		sp.Targets[0].Name != gosmo.XETargetRingBuffer {
-		t.Fatalf("spec %+v", sp)
+	if len(xs.creates) != 1 {
+		t.Fatalf("%d CREATEs", len(xs.creates))
 	}
-	if v, _ := sp.Targets[0].Field("max_events_limit"); v != "50" {
-		t.Errorf("max_events_limit %q", v)
+	stmt := xs.creates[0]
+	for _, want := range []string{"CREATE EVENT SESSION [" + s + "] ON SERVER", "MAX_DISPATCH_LATENCY=1 SECONDS",
+		"STARTUP_STATE=OFF", "ADD TARGET package0.ring_buffer", "max_events_limit"} {
+		if !strings.Contains(stmt, want) {
+			t.Errorf("CREATE lacks %q:\n%s", want, stmt)
+		}
 	}
-	for _, e := range sp.Events {
+	if strings.Count(stmt, "ADD TARGET") != 1 || !strings.Contains(stmt, "(50)") {
+		t.Errorf("want one ring_buffer keeping 50 events:\n%s", stmt)
+	}
+	events := strings.Split(stmt, "ADD EVENT ")[1:]
+	if len(events) == 0 {
+		t.Fatalf("no events:\n%s", stmt)
+	}
+	for _, e := range events {
+		name, _, _ := strings.Cut(strings.TrimPrefix(e, "sqlserver."), "(")
+		name = strings.TrimPrefix(strings.TrimPrefix(name, "sqlos."), "sqlserver.")
 		for _, want := range []string{"[sqlserver].[client_app_name]<>N'goSSMS - CLI'",
 			"[sqlserver].[database_name]=N'Sales'", "[sqlserver].[server_principal_name]=N'app'",
 			"[sqlserver].[is_system]"} {
-			if !strings.Contains(e.Predicate, want) {
-				t.Errorf("%s: predicate %s lacks %s", e.Name, e.Predicate, want)
+			if !strings.Contains(e, want) {
+				t.Errorf("%s: lacks %s", name, want)
 			}
 		}
-		if hasSession := strings.Contains(e.Predicate, "[sqlserver].[session_id]>(0)"); hasSession != (e.Name == "wait_info") {
-			t.Errorf("%s: session filter %v (%s)", e.Name, hasSession, e.Predicate)
+		if hasSession := strings.Contains(e, "[sqlserver].[session_id]>(0)"); hasSession != (name == "wait_info") {
+			t.Errorf("%s: session filter %v", name, hasSession)
 		}
-		hasDuration := strings.Contains(e.Predicate, "[duration]>=(250000)")
-		if completed := slices.Contains(captureDurationEvents, e.Name); hasDuration != completed {
-			t.Errorf("%s: duration filter %v; want %v (%s)", e.Name, hasDuration, completed, e.Predicate)
+		hasDuration := strings.Contains(e, "[duration]>=(250000)")
+		if completed := slices.Contains(captureDurationEvents, name); hasDuration != completed {
+			t.Errorf("%s: duration filter %v; want %v", name, hasDuration, completed)
 		}
 		for _, a := range captureActions {
-			if !slices.Contains(e.Actions, a) {
-				t.Errorf("%s: no action %s", e.Name, a)
+			if !strings.Contains(e, a) {
+				t.Errorf("%s: no action %s", name, a)
 			}
 		}
 	}
@@ -269,9 +170,9 @@ func TestXEventCaptureTemplates(t *testing.T) {
 
 // -o jsonl adds data: every field and action of the event as an object.
 func TestXEventCaptureJSONLData(t *testing.T) {
-	cat, w := newCapture(xeAt(1, "error_reported", []gosmo.XEValue{{Name: "severity", Value: "16"}},
+	xs := newCapture(t, xeAt(1, "error_reported", []gosmo.XEValue{{Name: "severity", Value: "16"}},
 		[]gosmo.XEValue{{Name: "session_id", Value: "61"}}, 1))
-	res, _, _, err := runCaptureCmd(t, context.Background(), cat, w, nil, "--template errors --allow admin -o jsonl")
+	res, _, _, err := runCaptureCmd(t, context.Background(), xs, nil, "--template errors --allow admin -o jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,9 +192,9 @@ func TestXEventCaptureJSONLData(t *testing.T) {
 
 // The buffer kept fewer events than it saw: fields and a warning say so.
 func TestXEventCaptureTruncated(t *testing.T) {
-	cat, w := newCapture(xeAt(1, "login", nil, nil, 1))
-	cat.data.TotalEventsProcessed, cat.data.Truncated = 1500, true
-	res, _, _, err := runCaptureCmd(t, context.Background(), cat, w, nil, "--allow admin")
+	xs := newCapture(t, xeAt(1, "login", nil, nil, 1))
+	xs.seen, xs.cut = 1500, true
+	res, _, _, err := runCaptureCmd(t, context.Background(), xs, nil, "--allow admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,41 +209,43 @@ func TestXEventCaptureTruncated(t *testing.T) {
 // session, and the step's own error is what the command returns.
 func TestXEventCaptureCleansUpOnFailure(t *testing.T) {
 	s := testCaptureSession
-	refused := gosmo.ErrNotFound // any error; its mapping is not under test
+	full := []string{"create " + s, "lookup " + s, "start " + s, "wait", "read " + s, "stop " + s, "drop " + s}
 	for _, tc := range []struct {
 		name   string
-		setup  func(*captureCatalog, *captureWriter)
+		setup  func(*xeServer)
 		steps  []string
 		code   output.Code
 		warned bool
 	}{
+		// The CREATE ran nowhere: the cleanup's look finds nothing.
 		{"create refused, nothing made",
-			func(c *captureCatalog, w *captureWriter) { w.errs["create"] = errors.New("Msg 25602") },
+			func(x *xeServer) { x.writeErrs["create"] = errors.New("Msg 25602") },
 			[]string{"create " + s, "lookup " + s}, output.CodeGeneralError, false},
+		// The CREATE ran although it reported an error.
 		{"create reported an error but the session exists",
-			func(c *captureCatalog, w *captureWriter) {
-				w.errs["create"], c.exists = errors.New("read-back failed"), true
+			func(x *xeServer) {
+				x.writeErrs["create"], x.createLeaves = errors.New("read-back failed"), true
 			},
 			[]string{"create " + s, "lookup " + s, "drop " + s}, output.CodeGeneralError, false},
 		{"start refused",
-			func(c *captureCatalog, w *captureWriter) { w.errs["start"] = errors.New("Msg 25704") },
-			[]string{"create " + s, "start " + s, "drop " + s}, output.CodeGeneralError, false},
+			func(x *xeServer) { x.writeErrs["start"] = errors.New("Msg 25704") },
+			[]string{"create " + s, "lookup " + s, "start " + s, "drop " + s}, output.CodeGeneralError, false},
 		{"read failed",
-			func(c *captureCatalog, w *captureWriter) { c.readErr = fmt.Errorf("gone: %w", refused) },
-			[]string{"create " + s, "start " + s, "wait", "read " + s, "stop " + s, "drop " + s}, output.CodeNotFound, false},
+			func(x *xeServer) { x.noBuffer = true },
+			full, output.CodeNotFound, false},
 		{"stop failed, drop still made",
-			func(c *captureCatalog, w *captureWriter) { w.errs["stop"] = errors.New("Msg 25705") },
-			[]string{"create " + s, "start " + s, "wait", "read " + s, "stop " + s, "drop " + s}, output.CodeOK, false},
+			func(x *xeServer) { x.writeErrs["stop"] = errors.New("Msg 25705") },
+			full, output.CodeOK, false},
 		{"drop failed",
-			func(c *captureCatalog, w *captureWriter) { w.errs["drop"] = errors.New("Msg 15151") },
-			[]string{"create " + s, "start " + s, "wait", "read " + s, "stop " + s, "drop " + s}, output.CodeOK, true},
+			func(x *xeServer) { x.writeErrs["drop"] = errors.New("Msg 15151") },
+			full, output.CodeOK, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cat, w := newCapture()
-			tc.setup(cat, w)
-			res, _, _, err := runCaptureCmd(t, context.Background(), cat, w, nil, "--allow admin")
-			if !slices.Equal(*cat.log, tc.steps) {
-				t.Errorf("steps %q; want %q", *cat.log, tc.steps)
+			xs := newCapture(t)
+			tc.setup(xs)
+			res, _, _, err := runCaptureCmd(t, context.Background(), xs, nil, "--allow admin")
+			if !slices.Equal(xs.steps, tc.steps) {
+				t.Errorf("steps %q; want %q", xs.steps, tc.steps)
 			}
 			if code := errCode(err); err != nil && code != tc.code || err == nil && tc.code != output.CodeOK {
 				t.Errorf("%v (%s); want %s", err, code, tc.code)
@@ -354,55 +257,66 @@ func TestXEventCaptureCleansUpOnFailure(t *testing.T) {
 			if tc.warned && fieldValue(res, "sessionDropped") != "false" {
 				t.Errorf("sessionDropped %q", fieldValue(res, "sessionDropped"))
 			}
+			// Whatever happened, no session of the capture is left.
+			if slices.ContainsFunc(xs.sessions, func(es *gosmo.EventSession) bool { return es.Name == s }) != tc.warned {
+				t.Errorf("sessions left %v; want it left only when the drop failed", xs.sessions)
+			}
 		})
 	}
 }
 
 // Ctrl+C during the wait: the stop and drop still run, under a context that
-// is not cancelled, and the command returns the cancellation (exit 130).
+// is not cancelled (a cancelled one would not reach the server at all), and
+// the command returns the cancellation (exit 130).
 func TestXEventCaptureCancelled(t *testing.T) {
-	cat, w := newCapture()
+	xs := newCapture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, _, _, err := runCaptureCmd(t, ctx, cat, w, func(ctx context.Context, d time.Duration) error {
+	_, _, _, err := runCaptureCmd(t, ctx, xs, func(ctx context.Context, d time.Duration) error {
 		cancel()
 		return ctx.Err()
 	}, "--allow admin --duration 600")
 	s := testCaptureSession
-	if want := []string{"create " + s, "start " + s, "wait", "stop " + s, "drop " + s}; !slices.Equal(*cat.log, want) {
-		t.Errorf("steps %q; want %q", *cat.log, want)
+	if want := []string{"create " + s, "lookup " + s, "start " + s, "wait", "stop " + s, "drop " + s}; !slices.Equal(xs.steps, want) {
+		t.Errorf("steps %q; want %q", xs.steps, want)
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err %v; want the cancellation", err)
 	}
+	if len(xs.sessions) != 0 {
+		t.Errorf("sessions left %v", xs.sessions)
+	}
 }
 
-// A cancel that lands during the CREATE: the session may exist, so it is
-// looked up and dropped under a live context.
+// A cancel that lands during the CREATE: the session exists, so it is looked
+// up and dropped under a live context.
 func TestXEventCaptureCancelledDuringCreate(t *testing.T) {
-	cat, w := newCapture()
-	cat.exists = true
+	xs := newCapture(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	w.errs["create"] = context.Canceled
-	_, _, _, err := runCaptureCmd(t, ctx, cat, w, nil, "--allow admin")
+	defer cancel()
+	xs.hooks["create"] = cancel
+	xs.writeErrs["create"], xs.createLeaves = context.Canceled, true
+	_, _, _, err := runCaptureCmd(t, ctx, xs, nil, "--allow admin")
 	s := testCaptureSession
-	if want := []string{"create " + s + " (cancelled)", "lookup " + s, "drop " + s}; !slices.Equal(*cat.log, want) {
-		t.Errorf("steps %q; want %q", *cat.log, want)
+	if want := []string{"create " + s, "lookup " + s, "drop " + s}; !slices.Equal(xs.steps, want) {
+		t.Errorf("steps %q; want %q", xs.steps, want)
 	}
 	if err == nil {
 		t.Error("no error")
 	}
+	if len(xs.sessions) != 0 {
+		t.Errorf("sessions left %v", xs.sessions)
+	}
 }
 
 func TestXEventCaptureDryRun(t *testing.T) {
-	cat, w := newCapture()
-	res, _, _, err := runCaptureCmd(t, context.Background(), cat, w, nil, "--template deadlocks --allow admin --dry-run")
+	xs := newCapture(t)
+	res, _, _, err := runCaptureCmd(t, context.Background(), xs, nil, "--template deadlocks --allow admin --dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(*cat.log) != 0 {
-		t.Errorf("steps %q; want none", *cat.log)
+	if len(xs.steps) != 0 {
+		t.Errorf("steps %q; want none", xs.steps)
 	}
 	tsql := fieldValue(res, "tsql")
 	for _, want := range []string{"CREATE EVENT SESSION [" + testCaptureSession + "] ON SERVER",
@@ -420,16 +334,16 @@ func TestXEventCaptureDryRun(t *testing.T) {
 // Refused before anything is created: options and the class before
 // connecting, the server's edition and the login's rights after.
 func TestXEventCaptureRefused(t *testing.T) {
-	denied := func(granted ...string) *gosmo.Capabilities {
+	denied := func(granted ...string) map[string]gosmo.CapabilityState {
 		m := map[string]gosmo.CapabilityState{"ALTER ANY EVENT SESSION": gosmo.CapabilityDenied}
 		for _, g := range granted {
 			m[g] = gosmo.CapabilityGranted
 		}
-		return &gosmo.Capabilities{ServerPermissions: m}
+		return m
 	}
 	for _, tc := range []struct {
 		argv  string
-		setup func(*captureCatalog)
+		setup func(*xeServer)
 		want  output.Code
 		dials int
 	}{
@@ -442,35 +356,35 @@ func TestXEventCaptureRefused(t *testing.T) {
 		{"--session-database " + strings.Repeat("x", 129) + " --allow admin", nil, output.CodeUsageError, 0},
 		{"", nil, output.CodeBlocked, 0},
 		{"--allow ddl --dry-run", nil, output.CodeBlocked, 0},
-		{"--allow admin", func(c *captureCatalog) { c.engine = gosmo.EngineAzureSQLDatabase }, output.CodeUnsupported, 1},
-		{"--allow admin", func(c *captureCatalog) { c.noVSS = true }, output.CodePermissionDenied, 1},
-		{"--allow admin --dry-run", func(c *captureCatalog) { c.noVSS = true }, output.CodePermissionDenied, 1},
-		{"--allow admin", func(c *captureCatalog) { c.caps = denied() }, output.CodePermissionDenied, 1},
+		{"--allow admin", func(x *xeServer) { x.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase) }, output.CodeUnsupported, 1},
+		{"--allow admin", func(x *xeServer) { x.noVSS = true }, output.CodePermissionDenied, 1},
+		{"--allow admin --dry-run", func(x *xeServer) { x.noVSS = true }, output.CodePermissionDenied, 1},
+		{"--allow admin", func(x *xeServer) { x.caps = denied() }, output.CodePermissionDenied, 1},
 		// 2022: three of the four granular rights is not enough.
-		{"--allow admin", func(c *captureCatalog) {
-			c.caps = denied("CREATE ANY EVENT SESSION", "ALTER ANY EVENT SESSION ENABLE", "DROP ANY EVENT SESSION")
+		{"--allow admin", func(x *xeServer) {
+			x.caps = denied("CREATE ANY EVENT SESSION", "ALTER ANY EVENT SESSION ENABLE", "DROP ANY EVENT SESSION")
 		}, output.CodePermissionDenied, 1},
 	} {
-		cat, w := newCapture()
+		xs := newCapture(t)
 		if tc.setup != nil {
-			tc.setup(cat)
+			tc.setup(xs)
 		}
-		_, dials, _, err := runCaptureCmd(t, context.Background(), cat, w, nil, tc.argv)
-		if errCode(err) != tc.want || dials != tc.dials || len(*cat.log) != 0 {
-			t.Errorf("%q: %v (%s), %d dials, steps %q; want %s, %d dials, no step", tc.argv, err, errCode(err), dials, *cat.log, tc.want, tc.dials)
+		_, dials, _, err := runCaptureCmd(t, context.Background(), xs, nil, tc.argv)
+		if errCode(err) != tc.want || dials != tc.dials || len(xs.steps) != 0 {
+			t.Errorf("%q: %v (%s), %d dials, steps %q; want %s, %d dials, no step", tc.argv, err, errCode(err), dials, xs.steps, tc.want, tc.dials)
 		}
 	}
 	// A name's length is in characters: 128 two-byte ones is a sysname.
 	{
-		cat, w := newCapture()
-		if _, _, _, err := runCaptureCmd(t, context.Background(), cat, w, nil, "--login "+strings.Repeat("é", 128)+" --allow admin"); err != nil {
+		xs := newCapture(t)
+		if _, _, _, err := runCaptureCmd(t, context.Background(), xs, nil, "--login "+strings.Repeat("é", 128)+" --allow admin"); err != nil {
 			t.Errorf("a 128-character login refused: %v", err)
 		}
 	}
 	// 2022 granular rights in place of the wide one.
-	cat, w := newCapture()
-	cat.caps = denied(eventSessionRights...)
-	if _, _, _, err := runCaptureCmd(t, context.Background(), cat, w, nil, "--allow admin"); err != nil {
+	xs := newCapture(t)
+	xs.caps = denied(eventSessionRights...)
+	if _, _, _, err := runCaptureCmd(t, context.Background(), xs, nil, "--allow admin"); err != nil {
 		t.Errorf("granular rights refused: %v", err)
 	}
 }

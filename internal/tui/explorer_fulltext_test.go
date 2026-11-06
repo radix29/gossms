@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -60,9 +61,9 @@ func TestStorageListsFullTextFoldersOrSaysNotInstalled(t *testing.T) {
 			[]string{"Partition Functions", "Partition Schemes", fullTextNotInstalledLabel}},
 		// Fail open: a failed read keeps the folders, whose own reads
 		// then say what is wrong.
-		{"read failed", nil, all},
+		{"read failed", []fakeResponse{{match: ftInstalledRead, err: errors.New("permission denied")}}, all},
 	} {
-		sc, _ := newFakeConn(t, tc.responses...)
+		sc, _ := newGConn(t, tc.responses...)
 		node := &explorerNode{data: nodeData{Type: NodeStorage, DBName: "AppDB", conn: sc}}
 		children, err := loadStorageChildren(loaderCtx{ctx: context.Background(), sc: sc}, node)
 		if err != nil {
@@ -102,7 +103,7 @@ func ftIndexRow(objectID int64, schema, table, cat string, stoplistID any, stopl
 }
 
 func TestFullTextCatalogsLoaderListsByName(t *testing.T) {
-	sc, _ := newFakeConn(t, dbByNameResp("AppDB", 5),
+	sc, _ := newGConn(t, dbByNameResp("AppDB", 5),
 		fakeResponse{match: ftCatalogsRead, db: "AppDB", cols: 13, rows: [][]driver.Value{
 			ftCatalogRow(5, "docs_cat", false, 1, 4), ftCatalogRow(6, "main_cat", true, 2, 9),
 		}})
@@ -122,7 +123,7 @@ func TestFullTextCatalogsLoaderListsByName(t *testing.T) {
 // The catalog's Tables/Views page: the column grid follows the selected
 // index — the second here, so a page showing the first's columns fails.
 func TestFullTextCatalogTablesFollowTheSelection(t *testing.T) {
-	sc, inst := newFakeConn(t, dbByNameResp("AppDB", 5),
+	sc, inst := newGConn(t, dbByNameResp("AppDB", 5),
 		fakeResponse{match: ftCatalogsRead, db: "AppDB", cols: 13, rows: [][]driver.Value{
 			ftCatalogRow(6, "main_cat", true, 2, 9),
 		}},
@@ -134,7 +135,7 @@ func TestFullTextCatalogTablesFollowTheSelection(t *testing.T) {
 			{int64(101), "Body", "", int64(1033), "English", false},
 			{int64(102), "Content", "Ext", int64(1031), "German", true},
 		}})
-	form, _ := loadPage(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[2], inst)
+	form, _ := loadPageG(t, fullTextCatalogPropPages(sc, "AppDB", "main_cat")[2], inst)
 	var grids []*controls.DataGrid
 	for _, r := range form.Rows() {
 		if gr, ok := r.(*propsheet.GridRow); ok {
@@ -240,8 +241,8 @@ func ftPropListsResp(names ...string) fakeResponse {
 func TestFullTextIndexGeneralSurvivesARefusedPopulationRead(t *testing.T) {
 	refused := fakeResponse{match: ftPopulationsRead, err: mssql.Error{Number: 300, Class: 14,
 		Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}}
-	sc, inst := newFakeConn(t, ftIndexResponses(refused)...)
-	form, _ := loadPage(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
+	sc, inst := newGConn(t, ftIndexResponses(refused)...)
+	form, _ := loadPageG(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
 	if got := selectRow(t, form, "Stoplist").Value(); got != "legal_words" {
 		t.Errorf("Stoplist = %q, want legal_words", got)
 	}
@@ -258,8 +259,8 @@ func TestFullTextIndexGeneralListsRunningPopulations(t *testing.T) {
 		{"FULL", "Processing", "NONE", "INCREMENTAL", time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC),
 			int64(4), int64(1), int64(2), int64(3), false},
 	}}
-	sc, inst := newFakeConn(t, ftIndexResponses(pops)...)
-	form, _ := loadPage(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
+	sc, inst := newGConn(t, ftIndexResponses(pops)...)
+	form, _ := loadPageG(t, fullTextIndexPropPages(sc, "AppDB", "sales", "Docs")[0], inst)
 	got := staticValue(t, form, "Population 1")
 	for _, want := range []string{"FULL", "Processing", "1 of 4 ranges", "INCREMENTAL queued"} {
 		if !strings.Contains(got, want) {
@@ -272,14 +273,14 @@ func TestFullTextIndexGeneralListsRunningPopulations(t *testing.T) {
 	}
 }
 
-func mustLoad(t *testing.T, p propPage, inst *fakeInstance) *propsheet.Form {
+func mustLoad(t *testing.T, p propPage, inst *gFake) *propsheet.Form {
 	t.Helper()
-	f, _ := loadPage(t, p, inst)
+	f, _ := loadPageG(t, p, inst)
 	return f
 }
 
 func TestFullTextStoplistText(t *testing.T) {
-	sc, inst := newFakeConn(t, dbByNameResp("AppDB", 5),
+	sc, inst := newGConn(t, dbByNameResp("AppDB", 5),
 		fakeResponse{match: "FROM   sys.tables t", db: "AppDB", cols: 12, rows: [][]driver.Value{
 			{int64(101), "dbo", "Notes", time.Time{}, time.Time{}, false, false, false, false, false, false, false},
 		}},
@@ -289,7 +290,7 @@ func TestFullTextStoplistText(t *testing.T) {
 		fakeResponse{match: ftColumnsRead, db: "AppDB", cols: 6},
 		fakeResponse{match: ftPopulationsRead, db: "AppDB", cols: 10},
 		ftStoplistsResp(), ftPropListsResp())
-	form, _ := loadPage(t, fullTextIndexPropPages(sc, "AppDB", "dbo", "Notes")[0], inst)
+	form, _ := loadPageG(t, fullTextIndexPropPages(sc, "AppDB", "dbo", "Notes")[0], inst)
 	if got := selectRow(t, form, "Stoplist").Value(); got != "<off>" {
 		t.Errorf("STOPLIST OFF reads %q, want <off>", got)
 	}
@@ -300,7 +301,7 @@ func TestFullTextStoplistText(t *testing.T) {
 
 func TestFullTextStoplistDetailListsItsWords(t *testing.T) {
 	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	sc, _ := newFakeConn(t, dbByNameResp("AppDB", 5),
+	sc, _ := newGConn(t, dbByNameResp("AppDB", 5),
 		fakeResponse{match: ftStoplistsRead, db: "AppDB", cols: 5, rows: [][]driver.Value{
 			{int64(5), "a_list", "dbo", created, created},
 			{int64(7), "legal_words", "dbo", created, created},
@@ -321,7 +322,7 @@ func TestFullTextStoplistDetailListsItsWords(t *testing.T) {
 // The catalogs folder's Details applies the folder's filter, as its tree
 // does, and maps each row to its catalog.
 func TestFullTextCatalogsFolderDetailFilters(t *testing.T) {
-	sc, _ := newFakeConn(t, dbByNameResp("AppDB", 5),
+	sc, _ := newGConn(t, dbByNameResp("AppDB", 5),
 		fakeResponse{match: ftCatalogsRead, db: "AppDB", cols: 13, rows: [][]driver.Value{
 			ftCatalogRow(5, "docs_cat", false, 1, 4), ftCatalogRow(6, "main_cat", true, 2, 9),
 		}})
@@ -369,13 +370,13 @@ func TestFullTextMenusOpenProperties(t *testing.T) {
 // page says so instead of offering "Press F5 to retry".
 func TestFullTextIndexPagesOnATableWithoutOne(t *testing.T) {
 	for k := range fullTextIndexPropPages(nil, "", "", "") {
-		sc, inst := newFakeConn(t, dbByNameResp("AppDB", 5),
+		sc, inst := newGConn(t, dbByNameResp("AppDB", 5),
 			fakeResponse{match: "FROM   sys.tables t", db: "AppDB", cols: 12, rows: [][]driver.Value{
 				{int64(103), "dbo", "Plain", time.Time{}, time.Time{}, false, false, false, false, false, false, false},
 			}},
 			fakeResponse{match: ftIndexesRead, db: "AppDB", cols: 21})
 		page := fullTextIndexPropPages(sc, "AppDB", "dbo", "Plain")[k]
-		form, _ := loadPage(t, page, inst)
+		form, _ := loadPageG(t, page, inst)
 		if got := staticValuesJoined(form); got != "" {
 			t.Errorf("%s: shows values %q for a table with no index", page.title, got)
 		}
@@ -404,10 +405,21 @@ var fullTextLeaves = []struct {
 // Each family's script verbs call its own Scripter method: the wiring takes
 // the method as a value, so a sibling's compiles and scripts the wrong family.
 // Asserted by the catalog view the script reads, the object itself unscripted.
+// ftLeafViewsEmpty answers every leaf family's view with no rows, so a script
+// that reads a sibling's view is caught by the read log, not by an
+// unanswered-query failure.
+func ftLeafViewsEmpty() []fakeResponse {
+	var out []fakeResponse
+	for _, l := range fullTextLeaves {
+		out = append(out, fakeResponse{match: l.view})
+	}
+	return out
+}
+
 func TestFullTextScriptsReadTheirOwnFamily(t *testing.T) {
 	for _, l := range fullTextLeaves {
 		for _, v := range scriptables[l.nt].verbs {
-			sc, inst := newFakeConn(t, dbByNameResp("appdb", 5))
+			sc, inst := newGConn(t, append([]fakeResponse{dbByNameResp("appdb", 5)}, ftLeafViewsEmpty()...)...)
 			v.gen(t.Context(), sc, nodeData{Type: l.nt, DBName: "appdb", Name: "f1"})
 			if len(inst.Reads(l.view)) == 0 {
 				t.Errorf("%s %s read nothing from %s", l.noun, v.label, l.view)
@@ -457,7 +469,7 @@ func TestFullTextLeavesScriptAndDelete(t *testing.T) {
 func TestFullTextDropsSendOneStatement(t *testing.T) {
 	for _, l := range fullTextLeaves {
 		t.Run(l.noun, func(t *testing.T) {
-			sc, inst := newFakeConn(t)
+			sc, inst := newGConn(t)
 			if err := objectOps[l.nt].drop(t.Context(), sc, nodeData{Type: l.nt, DBName: "appdb", Name: "f1"}); err != nil {
 				t.Fatalf("drop: %v", err)
 			}
@@ -499,7 +511,7 @@ func TestFullTextDeleteGateMatchesWhatTheServerAllowed(t *testing.T) {
 			}
 			responses := withSecurableAnswers(capabilityResponses(true, nil, nil, tc.granted, denied),
 				map[string]bool{gosmo.DatabaseSecurableKey(l.kind, "", "f1"): tc.control})
-			sc, _ := newFakeConn(t, responses...)
+			sc, _ := newGConn(t, responses...)
 			sc.ProbeCapabilities(sc.Server.Context())
 			sc.DatabaseCapabilities(context.Background(), "appdb")
 			node := &explorerNode{data: nodeData{Type: l.nt, DBName: "appdb", Name: "f1", conn: sc}}

@@ -1,0 +1,8 @@
+exec dbo.p
+    @a = 1,
+    @b = 2
+alter table dbo.t add c int null,
+    constraint ck check (c > 0)
+grant select, insert on dbo.t to [public]
+backup database x to disk = N'c:\x.bak' with init, compression
+create index ix on dbo.t (a, b) include (c) where c is not null with (online = on)

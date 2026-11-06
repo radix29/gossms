@@ -76,7 +76,7 @@ func rmMonitorResponses() []fakeResponse {
 }
 
 func TestReplicationSnapshotHangsSubscriptionsAndAgentsOnTheirPublication(t *testing.T) {
-	sc, _ := newFakeConn(t, slices.Concat(rmInfo(), []fakeResponse{rmCanMonitor()}, rmMonitorResponses())...)
+	sc, _ := newGConn(t, slices.Concat(rmInfo(), []fakeResponse{rmCanMonitor()}, rmMonitorResponses())...)
 	snap, err := readReplicationSnapshot(context.Background(), sc.Server)
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestReplicationSnapshotSaysWhyItIsEmpty(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, inst := newFakeConn(t, tc.responses...)
+			sc, inst := newGConn(t, tc.responses...)
 			snap, err := readReplicationSnapshot(context.Background(), sc.Server)
 			if err != nil {
 				t.Fatal(err)
@@ -200,7 +200,9 @@ func TestReplicationMonitorKeepsThePublicationAcrossARefresh(t *testing.T) {
 // first, onto every action naming it.
 func TestReplicationSessionActionsCarryTheirErrorDetail(t *testing.T) {
 	actCols := []string{"runstatus", "time", "comments", "error_id"}
-	sc, inst := newFakeConn(t, slices.Concat(rmMonitorResponses()[3:], []fakeResponse{
+	base := rmMonitorResponses()[3:] // snapshot, log reader, distribution, merge
+	// sp_MSenum_distribution_sd is listed before sp_MSenum_distribution: first match wins.
+	sc, inst := newGConn(t, slices.Concat(base[:2], []fakeResponse{
 		{match: "sp_MSenum_distribution_sd", cols: len(actCols), colNames: actCols, rows: [][]driver.Value{
 			{int64(6), "20261007 20:47:12.140", "Invalid object name 'dbo.OrderLine'.", int64(9)},
 			{int64(5), "20261007 20:46:12.050", "Retrying", int64(9)},
@@ -210,10 +212,7 @@ func TestReplicationSessionActionsCarryTheirErrorDetail(t *testing.T) {
 			{int64(1), "MSSQL_ENG", "14151", "agent failed.", "20261007 20:47:12.193", int64(1), false, nil, int64(0)},
 			{int64(2), "MSSQL_ENG", "208", "Invalid object name 'dbo.OrderLine'.", "20261007 20:47:12.210", int64(2), true, []byte{0x3b, 0x01}, int64(1)},
 		}},
-	})...)
-	// sp_MSenum_distribution_sd must answer before sp_MSenum_distribution:
-	// move the agent lists behind it.
-	inst.responses = append(append(inst.responses[:2:2], inst.responses[6:]...), inst.responses[2:6]...)
+	}, base[2:])...)
 
 	agents, err := sc.Server.DistributionDatabaseRef("distribution").Agents(context.Background())
 	if err != nil {
@@ -244,7 +243,7 @@ func TestReplicationSessionActionsCarryTheirErrorDetail(t *testing.T) {
 // user opened to read vanished at the next tick.
 func TestReplicationMonitorTickWaitsForAnOpenPopup(t *testing.T) {
 	a := newTestApp()
-	sc, _ := newFakeConn(t, replInfo(nil)...)
+	sc, _ := newGConn(t, replInfo(nil)...)
 	p := NewReplicationMonitorPanel(a, sc)
 	p.SetBounds(0, 0, 160, 48)
 	p.actions = []rmActionRow{{a: gosmo.ReplAgentAction{Message: "Invalid object name"}, errText: "208: Invalid object name"}}
@@ -338,7 +337,7 @@ func TestReplicationSnapshotKeepsTheDatabasesThatRead(t *testing.T) {
 	}
 	broken := fakeResponse{match: "[dist2].dbo.sp_replmonitorhelppublication", err: errors.New("dist2 is suspect")}
 
-	sc, _ := newFakeConn(t, slices.Concat(info, []fakeResponse{broken, rmCanMonitor()}, rmMonitorResponses())...)
+	sc, _ := newGConn(t, slices.Concat(info, []fakeResponse{broken, rmCanMonitor()}, rmMonitorResponses())...)
 	snap, err := readReplicationSnapshot(context.Background(), sc.Server)
 	if err != nil {
 		t.Fatalf("one failing distribution database failed the whole read: %v", err)
@@ -356,7 +355,7 @@ func TestReplicationSnapshotKeepsTheDatabasesThatRead(t *testing.T) {
 
 	// Nothing read at all: the failure is the read's.
 	allBroken := fakeResponse{match: "sp_replmonitorhelppublication", err: errors.New("down")}
-	sc, _ = newFakeConn(t, slices.Concat(info, []fakeResponse{allBroken, rmCanMonitor()})...)
+	sc, _ = newGConn(t, slices.Concat(info, []fakeResponse{allBroken, rmCanMonitor()})...)
 	if _, err := readReplicationSnapshot(context.Background(), sc.Server); err == nil ||
 		!strings.Contains(err.Error(), "distribution") || !strings.Contains(err.Error(), "dist2") {
 		t.Errorf("err = %v, want both databases' failures", err)

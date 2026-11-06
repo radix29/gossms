@@ -125,8 +125,8 @@ func fullTextColumnRows(i *gosmo.FullTextIndex) [][]string {
 const fullTextDefaultOwner = "(current user)"
 
 // fullTextOwnerItems is a New dialog's Owner list: the default, then the
-// database's users and roles — AUTHORIZATION takes either for all three
-// families.
+// database's users, roles and application roles — AUTHORIZATION takes any of
+// them for all three families.
 func fullTextOwnerItems(ctx context.Context, d *gosmo.Database) ([]string, error) {
 	users, err := d.Users(ctx)
 	if err != nil {
@@ -136,7 +136,11 @@ func fullTextOwnerItems(ctx context.Context, d *gosmo.Database) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	return append([]string{fullTextDefaultOwner}, principalNames(users, roles)...), nil
+	appRoles, err := d.ApplicationRoles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append([]string{fullTextDefaultOwner}, principalNames(users, roles, appRoles)...), nil
 }
 
 // fullTextOwnerValue is an Owner row as a request's Owner: "" for the default.

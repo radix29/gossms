@@ -193,13 +193,13 @@ func (d Deps) planCached(ctx context.Context, inv *spec.Invocation) (*output.Res
 	}
 
 	res := &output.Result{}
-	closeConn, cat, err := d.connectServerState(ctx, inv, res, "plan cached")
+	sc, err := d.connectServerState(ctx, inv, res, "plan cached")
 	if err != nil {
 		return res, err
 	}
-	defer closeConn()
+	defer sc.Close()
 
-	doc, err := cat.CachedPlan(ctx, handle, start, end)
+	doc, err := sc.Server.CachedPlan(ctx, handle, start, end)
 	if err != nil {
 		e := readError(err)
 		if e.Code == output.CodeNotFound {

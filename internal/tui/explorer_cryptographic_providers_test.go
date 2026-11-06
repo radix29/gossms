@@ -67,7 +67,7 @@ func TestCryptographicProvidersFolderHasALoader(t *testing.T) {
 
 // A disabled provider decrypts nothing, and nothing else in the row says so.
 func TestCryptographicProvidersLoaderLabelsADisabledProvider(t *testing.T) {
-	sc, _ := newFakeConn(t, cryptoProviderRows())
+	sc, _ := newGConn(t, cryptoProviderRows())
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 
 	children, err := childLoaders[NodeCryptographicProviders](l,
@@ -92,7 +92,7 @@ func TestCryptographicProvidersLoaderLabelsADisabledProvider(t *testing.T) {
 // A server with no EKM provider registered is the ordinary case: the folder
 // comes up empty, not with an error.
 func TestCryptographicProvidersFolderIsEmptyWithoutAProvider(t *testing.T) {
-	sc, _ := newFakeConn(t, fakeResponse{match: "FROM   sys.cryptographic_providers", cols: 6})
+	sc, _ := newGConn(t, fakeResponse{match: "FROM   sys.cryptographic_providers", cols: 6})
 	l := loaderCtx{ctx: context.Background(), sc: sc}
 
 	children, err := childLoaders[NodeCryptographicProviders](l,
@@ -161,7 +161,7 @@ func TestCryptographicProviderOffersNoWrites(t *testing.T) {
 // chance to list the wrong thing — including claiming a state the row does not
 // have.
 func TestCryptographicProvidersFolderDetailListsEveryProvider(t *testing.T) {
-	sc, _ := newFakeConn(t, cryptoProviderRows())
+	sc, _ := newGConn(t, cryptoProviderRows())
 
 	var objs []nodeData
 	cols, rows, err := cryptographicProvidersFolderDetail(context.Background(), sc,
@@ -192,7 +192,7 @@ func TestCryptographicProvidersFolderDetailListsEveryProvider(t *testing.T) {
 // for a provider — so it has to pick out the row it was opened on rather than
 // the first.
 func TestCryptographicProviderDetailShowsTheSelectedProvider(t *testing.T) {
-	sc, _ := newFakeConn(t, cryptoProviderRows())
+	sc, _ := newGConn(t, cryptoProviderRows())
 
 	_, rows, err := cryptographicProviderDetail(context.Background(), sc,
 		&explorerNode{data: nodeData{Type: NodeCryptographicProvider, Name: "BetaEKM"}})

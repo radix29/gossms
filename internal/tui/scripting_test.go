@@ -140,7 +140,7 @@ func TestScriptToFileAndClipboardOpensInTheObjectsDatabase(t *testing.T) {
 	const want = "USE [" + brokerDB + "];\nGO\n"
 	n := nodeData{Type: NodeMessageType, DBName: brokerDB, Name: "//claims/Submit"}
 	newApp := func(t *testing.T) (*App, controls.MenuItem) {
-		sc, _ := newFakeConn(t, brokerDBResp(), brokerRowByArg(messageTypeResp(), n.Name, 1))
+		sc, _ := newGConn(t, brokerDBResp(), brokerRowByArg(messageTypeResp(), n.Name, 1))
 		a := newClipboardTestApp()
 		dests := a.scriptDestinations(sc, n, scriptables[NodeMessageType].verbs[1]) // DROP To
 		return a, controls.MenuItem{Sub: dests}
@@ -195,7 +195,7 @@ func TestScriptToFileAndClipboardOpensInTheObjectsDatabase(t *testing.T) {
 // A server-scoped object belongs to no database, so its script takes no USE:
 // one would pin it to whatever database the menu happened to be opened from.
 func TestScriptOfAServerScopedObjectTakesNoUse(t *testing.T) {
-	sc, _ := newFakeConn(t, serverRoleResponses()...)
+	sc, _ := newGConn(t, serverRoleResponses()...)
 	n := nodeData{Type: NodeServerRole, Name: principalSrvRole}
 	for _, v := range scriptables[NodeServerRole].verbs {
 		text, err := v.gen(t.Context(), sc, n)

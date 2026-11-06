@@ -51,14 +51,15 @@ func TestJobsWithoutSchedulesListsAFailedJobAsUnknown(t *testing.T) {
 			jobRow("orphan", "Replication", "appuser", false, 0, 0, ""),
 		}},
 	}, jobSchedulesResponses("job-broken", "job-scheduled")...)
-	sc, inst := newFakeConn(t, responses...)
+	responses = append(responses, fakeResponse{match: "xp_sqlagent_enum_jobs", cols: 2})
+	sc, _ := newGConn(t, responses...)
 
 	cols, rows, err := agentReportDetail(context.Background(), sc, "Jobs Without Schedules")
 	if err != nil {
 		t.Fatalf("agentReportDetail: %v", err)
 	}
 	if len(rows) != 2 {
-		t.Fatalf("got %d rows, want 2 (unanswered: %v)", len(rows), inst.unmatched)
+		t.Fatalf("got %d rows, want 2 ", len(rows))
 	}
 	schedIdx := -1
 	for i, c := range cols {
@@ -85,7 +86,7 @@ func TestJobsWithoutSchedulesListsAFailedJobAsUnknown(t *testing.T) {
 // With the context gone, report the cancellation rather than every job as
 // unverifiable.
 func TestJobsWithoutSchedulesReportsCancellation(t *testing.T) {
-	sc, _ := newFakeConn(t,
+	sc, _ := newGConn(t,
 		fakeResponse{match: "FROM   msdb.dbo.sysjobs j", cols: jobCols, rows: [][]driver.Value{
 			jobRow("orphan", "Replication", "appuser", false, 0, 0, ""),
 		}},
@@ -102,8 +103,24 @@ func TestJobsWithoutSchedulesReportsCancellation(t *testing.T) {
 // A run's step-0 outcome row has the same run_date/run_time as its first
 // step, so without instance_id the two came back in either order.
 func TestAgentJobHistoryQueryBreaksTiesByInstanceID(t *testing.T) {
-	q := agentJobHistoryQuery("Nightly")
-	if !strings.Contains(q, "ORDER  BY h.run_date DESC, h.run_time DESC, h.instance_id DESC;") {
-		t.Errorf("agentJobHistoryQuery does not order by instance_id last:\n%s", q)
+	for _, direct := range []bool{true, false} {
+		q := agentJobHistoryQuery("Nightly", direct)
+		if !strings.Contains(q, "ORDER  BY h.run_date DESC, h.run_time DESC, h.instance_id DESC;") {
+			t.Errorf("agentJobHistoryQuery(direct %v) does not order by instance_id last:\n%s", direct, q)
+		}
+	}
+}
+
+// Only a sysadmin reads msdb's history tables; anyone else's View History
+// goes through sp_help_jobhistory, which the SQLAgent* roles may run.
+func TestAgentJobHistoryQueryWithoutSysadmin(t *testing.T) {
+	direct, viaProc := agentJobHistoryQuery("O'Brien", true), agentJobHistoryQuery("O'Brien", false)
+	if !strings.Contains(direct, "FROM   msdb.dbo.sysjobhistory h") || strings.Contains(direct, "sp_help_jobhistory") {
+		t.Errorf("sysadmin's query is not the direct read:\n%s", direct)
+	}
+	if strings.Contains(viaProc, "msdb.dbo.sysjob") ||
+		!strings.Contains(viaProc, "EXECUTE msdb.dbo.sp_help_jobhistory @job_name = N'O''Brien', @mode = 'FULL';") ||
+		!strings.Contains(viaProc, "FROM   @h h\n") {
+		t.Errorf("the non-sysadmin query does not read through sp_help_jobhistory:\n%s", viaProc)
 	}
 }

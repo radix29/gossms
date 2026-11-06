@@ -75,7 +75,7 @@ func TestXEventProfilerFolderListsBothTemplates(t *testing.T) {
 // nothing.
 func TestLaunchSessionCreatesStartsAndOpensTheViewer(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConn(t, fakeResponse{match: "s.event_retention_mode_desc", cols: 12})
+	sc, inst := newGConn(t, fakeResponse{match: "s.event_retention_mode_desc", cols: 12})
 	a.launchXEventProfilerNamed(sc, "TSQL")
 	waitAndDrain(t, a)
 	stmts := inst.Statements()
@@ -97,7 +97,7 @@ func TestLaunchSessionCreatesStartsAndOpensTheViewer(t *testing.T) {
 	}
 	running[0].rows[0] = slices.Clone(running[0].rows[0])
 	running[0].rows[0][1], running[0].rows[0][3] = "gossms_QuickSessionStandard", true
-	sc, inst = newFakeConn(t, running...)
+	sc, inst = newGConn(t, running...)
 	a.launchXEventProfilerNamed(sc, "Standard")
 	waitAndDrain(t, a)
 	if stmts := inst.Statements(); len(stmts) != 0 {
@@ -123,7 +123,7 @@ func openXEventViewerFor(t *testing.T, a *App, session string) *XEventViewer {
 // without asking.
 func TestClosingTheProfilersViewerAsksToStopDefaultingToNo(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	v := NewXEventViewer(a, sc, "gossms_QuickSessionStandard", "", true)
 	v.profiler, v.conn = true, ownConn(t)
 	a.panels.AddPanel(v)
@@ -163,7 +163,7 @@ func TestClosingTheProfilersViewerAsksToStopDefaultingToNo(t *testing.T) {
 // ownConn stands for a viewer's own connection, which closing the viewer
 // closes — never the host's.
 func ownConn(t *testing.T) *db.ServerConn {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	return sc
 }
 
@@ -177,15 +177,8 @@ func fileRead(path string, seqs ...int) fakeResponse {
 }
 
 // fileArgs returns the arguments of the event_file read of path, nil if none.
-func fileArgs(inst *fakeInstance, path string) []driver.NamedValue {
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	for i, q := range inst.reads {
-		if strings.Contains(q, "fn_xe_file_target_read_file") && inst.readArgs[i][0].Value == path {
-			return inst.readArgs[i]
-		}
-	}
-	return nil
+func fileArgs(inst *gFake, path string) []any {
+	return inst.ReadArgsOf("fn_xe_file_target_read_file", path)
 }
 
 // View Target Data on a file set reads the newest file first and goes back
@@ -196,7 +189,7 @@ func TestXEventReaderReadsTheNewestFilesFirst(t *testing.T) {
 	dmf := func(path string) []driver.Value {
 		return []driver.Value{path, path[len(`C:\log\`):], int64(0), int64(1), time.Time{}}
 	}
-	sc, inst := newFakeConn(t, slices.Concat(xeSessionByName("zz_trace"), []fakeResponse{
+	sc, inst := newGConn(t, slices.Concat(xeSessionByName("zz_trace"), []fakeResponse{
 		{match: "ErrorLogFileName", cols: 1, rows: [][]driver.Value{{`C:\log\ERRORLOG`}}},
 		{match: "sys.dm_os_enumerate_filesystem", cols: 5, rows: [][]driver.Value{dmf(f3), dmf(f1), dmf(f2)}},
 		fileRead(f3, 5, 6), fileRead(f2, 3, 4), fileRead(f1, 1, 2),
@@ -226,7 +219,7 @@ func TestXEventReaderReadsTheNewestFilesFirst(t *testing.T) {
 
 // A listing with one file (or none) reads with the pattern, as before.
 func TestXEventReaderFallsBackToThePatternWithoutAFileList(t *testing.T) {
-	sc, inst := newFakeConn(t, slices.Concat(xeSessionByName("zz_trace"), []fakeResponse{
+	sc, inst := newGConn(t, slices.Concat(xeSessionByName("zz_trace"), []fakeResponse{
 		{match: "ErrorLogFileName", cols: 1, rows: [][]driver.Value{{`C:\log\ERRORLOG`}}},
 		{match: "sys.dm_os_enumerate_filesystem", cols: 5},
 		fileRead("zz_trace*.xel", 1, 2),
@@ -248,7 +241,7 @@ func TestXEventReaderFallsBackToThePatternWithoutAFileList(t *testing.T) {
 // oldest file left, and says so, rather than stopping.
 func TestXEventReaderLiveRepositionsAfterRollover(t *testing.T) {
 	const gone = `C:\xe\zz_trace_0_1.xel`
-	sc, inst := newFakeConn(t, slices.Concat(runningZZTrace(), []fakeResponse{
+	sc, inst := newGConn(t, slices.Concat(runningZZTrace(), []fakeResponse{
 		{match: "fn_xe_file_target_read_file", arg: gone, err: mssql.Error{Number: 25722, Class: 16,
 			Message: `The offset 4096 is invalid for log file "` + gone + `".`}},
 		fileRead("zz_trace*.xel", 7),
@@ -263,16 +256,9 @@ func TestXEventReaderLiveRepositionsAfterRollover(t *testing.T) {
 	if err != nil || len(b.events) != 1 || b.events[0].Seq != 7 {
 		t.Fatalf("after repositioning: %+v, %v", b.events, err)
 	}
-	inst.mu.Lock()
-	var last []driver.NamedValue
-	for i, q := range inst.reads {
-		if strings.Contains(q, "fn_xe_file_target_read_file") {
-			last = inst.readArgs[i]
-		}
-	}
-	inst.mu.Unlock()
-	if last[0].Value != "zz_trace*.xel" || last[1].Value != nil {
-		t.Errorf("repositioned read %v %v — want the wildcard from the start", last[0].Value, last[1].Value)
+	last := inst.LastReadArgs("fn_xe_file_target_read_file")
+	if last[0] != "zz_trace*.xel" || last[1] != nil {
+		t.Errorf("repositioned read %v %v — want the wildcard from the start", last[0], last[1])
 	}
 
 	v := newTestXEventViewer(t, 10)
@@ -289,7 +275,7 @@ func TestXEventReaderLiveRepositionsAfterRollover(t *testing.T) {
 // and Yes adds it; a login that could not add one is not asked.
 func TestWatchingASessionWithNoTargetOffersToAddOne(t *testing.T) {
 	a := newTestApp()
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	v := NewXEventViewer(a, sc, "zz_bare", "", true)
 	a.panels.AddPanel(v)
 	v.feed.running = true
@@ -303,7 +289,7 @@ func TestWatchingASessionWithNoTargetOffersToAddOne(t *testing.T) {
 	}
 
 	a = newTestApp()
-	sc, inst = newFakeConn(t, capabilityResponses(true, nil, []string{"ALTER ANY EVENT SESSION", "ALTER ANY EVENT SESSION ADD TARGET"}, nil, nil)...)
+	sc, inst = newGConn(t, capabilityResponses(true, nil, []string{"ALTER ANY EVENT SESSION", "ALTER ANY EVENT SESSION ADD TARGET"}, nil, nil)...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	v = NewXEventViewer(a, sc, "zz_bare", "", true)
 	a.panels.AddPanel(v)
@@ -347,7 +333,7 @@ func TestLaunchSessionNeedsCreateAndStart(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, inst := newFakeConn(t, capabilityResponses(true, c.granted, c.denied, nil, nil)...)
+			sc, inst := newGConn(t, capabilityResponses(true, c.granted, c.denied, nil, nil)...)
 			sc.ProbeCapabilities(sc.Server.Context())
 			node := &explorerNode{data: nodeData{Type: NodeXEventProfilerSession, Name: "Standard", conn: sc}}
 			items := xeventProfilerMenuItems(a, sc, node, controls.MenuItem{}, controls.MenuItem{})

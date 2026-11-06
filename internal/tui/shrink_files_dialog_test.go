@@ -2,6 +2,9 @@ package tui
 
 import (
 	"context"
+	"database/sql/driver"
+	"errors"
+	"maps"
 	"strings"
 	"testing"
 
@@ -44,7 +47,7 @@ func shrinkFilesTestDialog(t *testing.T, sc *db.ServerConn) *ShrinkFilesDialog {
 // It opens as SSMS does — Data, PRIMARY, the primary file, Release unused
 // space — and that scripts TRUNCATEONLY.
 func TestShrinkFilesDefaultsToReleasingThePrimaryFile(t *testing.T) {
-	sc, inst := newFakeConn(t)
+	sc, inst := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -75,7 +78,7 @@ func TestShrinkFilesDefaultsToReleasingThePrimaryFile(t *testing.T) {
 // The pickers narrow in order, and the file scripted is the one on screen —
 // not the first of the list, which a page ignoring the selection would pass.
 func TestShrinkFilesPickersNarrowToTheChosenFile(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -108,7 +111,7 @@ func TestShrinkFilesPickersNarrowToTheChosenFile(t *testing.T) {
 // SHRINKFILE's own 0 stops at the creation size, so a never-shrunk file would
 // silently stay put — and refuses one above the file's current size.
 func TestShrinkFilesReorganizeSendsTheTarget(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -143,7 +146,7 @@ func TestShrinkFilesReorganizeSendsTheTarget(t *testing.T) {
 // 8.25 MB file sends 9 — a no-op — not 8, a real shrink; 9 is also the most
 // it accepts.
 func TestShrinkFilesDefaultTargetRoundsTheSizeUp(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -164,7 +167,7 @@ func TestShrinkFilesDefaultTargetRoundsTheSizeUp(t *testing.T) {
 // A log's minimum is only its used space, which a log shrink can't promise to
 // reach: the note says so for a log file and not for a data file.
 func TestShrinkFilesLogMinimumIsALowerBound(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := shrinkFilesTestDialog(t, sc)
 	f := d.forms[0]
 
@@ -186,6 +189,77 @@ func TestShrinkFilesLogMinimumIsALowerBound(t *testing.T) {
 	}
 }
 
+// With the log's floor read, the note gives that — the end of its last
+// active VLF, above the used space — as the minimum, and no longer calls it
+// a lower bound.
+func TestShrinkFilesLogMinimumIsTheFloorWhenRead(t *testing.T) {
+	sc, _ := newGConn(t)
+	d := &ShrinkFilesDialog{dbName: "AppDB"}
+	d.sc = sc
+	d.pages = []string{"General"}
+	d.forms = make([]*propsheet.Form, 1)
+	d.applyFns = make([]propApply, 1)
+	d.buildPages(&shrinkFilesPrefetch{files: shrinkFilesTestFiles(sc), logFloors: map[int]int64{2: 70*1024 + 1}})
+	f := d.forms[0]
+	editSelect(t, f, "File type", "Log")
+	var note string
+	for _, r := range f.Rows() {
+		if n, ok := r.(*propsheet.NoteRow); ok && strings.HasPrefix(n.Text(), "Minimum is") {
+			note = n.Text()
+		}
+	}
+	if !strings.Contains(note, "Minimum is 71 MB — the end of the log's last active virtual log file") || strings.Contains(note, "lower bound") {
+		t.Errorf("the log's note = %q, want its 71 MB floor as the minimum", note)
+	}
+}
+
+// A floor below the used space never lowers the minimum, and a log file the
+// floors don't name (no active VLF, or no floors read) keeps the used space.
+func TestShrinkLogMinMB(t *testing.T) {
+	log := &gosmo.DatabaseFileInfo{FileID: 2, SpaceUsedKB: 5 * 1024}
+	for _, c := range []struct {
+		name   string
+		floors map[int]int64
+		mb     int64
+		exact  bool
+	}{
+		{"no floors read", nil, 5, false},
+		{"another file's floor", map[int]int64{3: 90 * 1024}, 5, false},
+		{"floor above used", map[int]int64{2: 96 * 1024}, 96, true},
+		{"floor below used", map[int]int64{2: 1024}, 5, true},
+	} {
+		if mb, exact := shrinkLogMinMB(log, c.floors); mb != c.mb || exact != c.exact {
+			t.Errorf("%s: = %d MB exact %v, want %d MB exact %v", c.name, mb, exact, c.mb, c.exact)
+		}
+	}
+}
+
+// The fetch reads the log floors in the database, and a refused floor read
+// costs only the floors, not the dialog.
+func TestShrinkFilesFetchReadsTheLogFloors(t *testing.T) {
+	files := fakeResponse{match: "FILEPROPERTY(df.name", cols: 11, rows: [][]driver.Value{
+		{int64(1), "App", `C:\d\App.mdf`, "ROWS", "PRIMARY", "ONLINE", int64(8192), int64(-1), int64(8192), false, int64(4096)},
+		{int64(2), "App_log", `C:\l\App_log.ldf`, "LOG", "", "ONLINE", int64(98304), int64(-1), int64(8192), false, int64(7080)},
+	}}
+	for _, c := range []struct {
+		name  string
+		floor fakeResponse
+		want  map[int]int64
+	}{
+		{"read", fakeResponse{match: "dm_db_log_info", db: "AppDB", cols: 2, rows: [][]driver.Value{{int64(2), int64(98304)}}}, map[int]int64{2: 98304}},
+		{"refused", fakeResponse{match: "dm_db_log_info", err: errors.New("VIEW SERVER STATE permission was denied")}, nil},
+	} {
+		sc, _ := newGConn(t, c.floor, files)
+		pf, err := (&ShrinkFilesDialog{dbName: "AppDB"}).fetchPrefetch(context.Background(), sc)
+		if err != nil {
+			t.Fatalf("%s: fetch: %v", c.name, err)
+		}
+		if len(pf.files) != 2 || !maps.Equal(pf.logFloors, c.want) {
+			t.Errorf("%s: %d files, floors %v; want 2 files, floors %v", c.name, len(pf.files), pf.logFloors, c.want)
+		}
+	}
+}
+
 func TestShrinkFileMinimumIsUsedSpaceRoundedUp(t *testing.T) {
 	// SSMS: 19.19 MB used reads "Minimum is 20 MB".
 	if got := shrinkFileMinMB(&gosmo.DatabaseFileInfo{SpaceUsedKB: 19648}); got != 20 {
@@ -201,7 +275,7 @@ func TestShrinkFileMinimumIsUsedSpaceRoundedUp(t *testing.T) {
 // and shows no size figures — the catalog has none. Picking another type
 // gives the choices back.
 func TestShrinkFilesFilestreamOnlyEmpties(t *testing.T) {
-	sc, _ := newFakeConn(t)
+	sc, _ := newGConn(t)
 	d := &ShrinkFilesDialog{dbName: "AppDB"}
 	d.sc = sc
 	d.pages = []string{"General"}

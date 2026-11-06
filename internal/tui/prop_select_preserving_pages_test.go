@@ -37,7 +37,7 @@ func assertShowsVanishedValue(t *testing.T, form *propsheet.Form, label, want st
 	}
 }
 
-func assertUntouchedApplyWritesNothing(t *testing.T, inst *fakeInstance, apply propApply) {
+func assertUntouchedApplyWritesNothing(t *testing.T, inst *gFake, apply propApply) {
 	t.Helper()
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -53,8 +53,8 @@ func assertUntouchedApplyWritesNothing(t *testing.T, inst *fakeInstance, apply p
 func TestLoginGeneralShowsACredentialMissingFromTheList(t *testing.T) {
 	responses := loginGeneralResponses("appuser", "SQL_LOGIN")
 	responses[1].rows[0][10] = "cred_gone" // LOGINPROPERTY's credential_name
-	sc, inst := newFakeConn(t, responses...)
-	form, apply := loadPage(t, pageLoginGeneral(sc, new("appuser")), inst)
+	sc, inst := newGConn(t, responses...)
+	form, apply := loadPageG(t, pageLoginGeneral(sc, new("appuser")), inst)
 
 	assertShowsVanishedValue(t, form, "Map to credential", "cred_gone")
 	assertUntouchedApplyWritesNothing(t, inst, apply)
@@ -74,9 +74,9 @@ func TestUserGeneralShowsALoginMissingFromTheList(t *testing.T) {
 	responses = append(responses, principalPermissionResponses()...)
 	responses = append(responses, loginListResponse())
 
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := principalUser
-	form, apply := loadPage(t, pageUserGeneral(sc, principalDatabase, &name), inst)
+	form, apply := loadPageG(t, pageUserGeneral(sc, principalDatabase, &name), inst)
 
 	assertShowsVanishedValue(t, form, "Login name", "vanished_login")
 	if err := apply(t.Context()); err != nil {
@@ -96,13 +96,13 @@ func TestOperatorGeneralShowsACategoryMissingFromTheList(t *testing.T) {
 		operatorRow(3, "weekend-cover", "cover@example.com", "", false),
 	}
 	responses := []fakeResponse{
-		{match: "WHERE o.name = @p1", cols: 13, rows: [][]driver.Value{rows[1]}},
+		{match: "WHERE  o.name = @p1", cols: 13, rows: [][]driver.Value{rows[1]}},
 		{match: "FROM   msdb.dbo.sysoperators o", cols: 13, rows: rows},
 		agentCategoryResponse(),
 	}
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := agentOperatorName
-	form, apply := loadPage(t, pageOperatorGeneral(sc, &name), inst)
+	form, apply := loadPageG(t, pageOperatorGeneral(sc, &name), inst)
 
 	assertShowsVanishedValue(t, form, "Category", "Ghost category")
 	assertUntouchedApplyWritesNothing(t, inst, apply)
@@ -134,9 +134,9 @@ func vanishedAlertResponses() []fakeResponse {
 // the alert fires server-wide when it fires nowhere.
 func TestAlertGeneralShowsADatabaseAndCategoryMissingFromTheLists(t *testing.T) {
 	responses := append(vanishedAlertResponses(), alertGeneralResponses()...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := agentAlertName
-	form, apply := loadPage(t, pageAlertGeneral(sc, &name), inst)
+	form, apply := loadPageG(t, pageAlertGeneral(sc, &name), inst)
 
 	assertShowsVanishedValue(t, form, "Database", "ghostdb")
 	assertShowsVanishedValue(t, form, "Category", "Ghost category")
@@ -146,9 +146,9 @@ func TestAlertGeneralShowsADatabaseAndCategoryMissingFromTheLists(t *testing.T) 
 // An alert whose response job is not in the job list.
 func TestAlertResponseShowsAJobMissingFromTheList(t *testing.T) {
 	responses := append(vanishedAlertResponses(), alertResponseResponses()...)
-	sc, inst := newFakeConn(t, responses...)
+	sc, inst := newGConn(t, responses...)
 	name := agentAlertName
-	form, apply := loadPage(t, pageAlertResponse(sc, &name), inst)
+	form, apply := loadPageG(t, pageAlertResponse(sc, &name), inst)
 
 	assertShowsVanishedValue(t, form, "Response job", "Ghost job")
 	assertUntouchedApplyWritesNothing(t, inst, apply)
@@ -161,9 +161,9 @@ func TestAlertResponseShowsAJobMissingFromTheList(t *testing.T) {
 func TestPreservedDropdownsStillWriteTheValuePicked(t *testing.T) {
 	t.Run("alert scope back to all databases", func(t *testing.T) {
 		responses := append(vanishedAlertResponses(), alertGeneralResponses()...)
-		sc, inst := newFakeConn(t, responses...)
+		sc, inst := newGConn(t, responses...)
 		name := agentAlertName
-		form, apply := loadPage(t, pageAlertGeneral(sc, &name), inst)
+		form, apply := loadPageG(t, pageAlertGeneral(sc, &name), inst)
 
 		editSelect(t, form, "Database", allDatabasesItem)
 
@@ -175,9 +175,9 @@ func TestPreservedDropdownsStillWriteTheValuePicked(t *testing.T) {
 
 	t.Run("alert category cleared", func(t *testing.T) {
 		responses := append(vanishedAlertResponses(), alertGeneralResponses()...)
-		sc, inst := newFakeConn(t, responses...)
+		sc, inst := newGConn(t, responses...)
 		name := agentAlertName
-		form, apply := loadPage(t, pageAlertGeneral(sc, &name), inst)
+		form, apply := loadPageG(t, pageAlertGeneral(sc, &name), inst)
 
 		editSelect(t, form, "Category", noneItem)
 
@@ -191,9 +191,9 @@ func TestPreservedDropdownsStillWriteTheValuePicked(t *testing.T) {
 
 	t.Run("alert response job picked", func(t *testing.T) {
 		responses := append(vanishedAlertResponses(), alertResponseResponses()...)
-		sc, inst := newFakeConn(t, responses...)
+		sc, inst := newGConn(t, responses...)
 		name := agentAlertName
-		form, apply := loadPage(t, pageAlertResponse(sc, &name), inst)
+		form, apply := loadPageG(t, pageAlertResponse(sc, &name), inst)
 
 		editSelect(t, form, "Response job", agentJobName)
 
@@ -205,9 +205,9 @@ func TestPreservedDropdownsStillWriteTheValuePicked(t *testing.T) {
 
 	t.Run("operator category cleared", func(t *testing.T) {
 		responses := append(agentOperatorResponses(), agentCategoryResponse())
-		sc, inst := newFakeConn(t, responses...)
+		sc, inst := newGConn(t, responses...)
 		name := agentOperatorName
-		form, apply := loadPage(t, pageOperatorGeneral(sc, &name), inst)
+		form, apply := loadPageG(t, pageOperatorGeneral(sc, &name), inst)
 
 		editSelect(t, form, "Category", noneItem)
 

@@ -10,6 +10,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/db"
 )
 
 // MonitorCommands is the monitor group: its node and its commands. Its
@@ -52,21 +53,31 @@ func viewServerStateDenied(what string) *output.Error {
 }
 
 // connectServerState is connectCatalog for a read that needs VIEW SERVER
-// STATE: exit 9 before the read when the login lacks it.
-func (d Deps) connectServerState(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (func(), Catalog, error) {
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+// STATE: exit 9 before the read when the login lacks it. The caller reads
+// through sc.Server and closes sc.
+func (d Deps) connectServerState(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (*db.ServerConn, error) {
+	sc, _, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	ok, err := cat.HasViewServerState(ctx)
+	if err := requireServerState(ctx, sc.Server, what); err != nil {
+		sc.Close()
+		return nil, err
+	}
+	return sc, nil
+}
+
+// requireServerState is exit 9 when s's login lacks VIEW SERVER STATE, a
+// read error when asking fails.
+func requireServerState(ctx context.Context, s *gosmo.Server, what string) error {
+	ok, err := s.HasViewServerState(ctx)
 	if err == nil && !ok {
 		err = viewServerStateDenied(what)
 	}
 	if err != nil {
-		sc.Close()
-		return nil, nil, readError(err)
+		return readError(err)
 	}
-	return sc.Close, cat, nil
+	return nil
 }
 
 // sessionText is the text a session row shows: the running request's batch,
@@ -142,13 +153,13 @@ func (d Deps) monitorSessions(ctx context.Context, inv *spec.Invocation) (*outpu
 	}
 
 	res := &output.Result{}
-	closeConn, cat, err := d.connectServerState(ctx, inv, res, "monitor sessions")
+	sc, err := d.connectServerState(ctx, inv, res, "monitor sessions")
 	if err != nil {
 		return res, err
 	}
-	defer closeConn()
+	defer sc.Close()
 
-	all, err := cat.ActiveSessions(ctx, scope)
+	all, err := sc.Server.ActiveSessions(ctx, scope)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -227,13 +238,13 @@ func monitorBlockingCommand(d Deps) *spec.Command {
 
 func (d Deps) monitorBlocking(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	closeConn, cat, err := d.connectServerState(ctx, inv, res, "monitor blocking")
+	sc, err := d.connectServerState(ctx, inv, res, "monitor blocking")
 	if err != nil {
 		return res, err
 	}
-	defer closeConn()
+	defer sc.Close()
 
-	all, err := cat.ActiveSessions(ctx, gosmo.AllSessions)
+	all, err := sc.Server.ActiveSessions(ctx, gosmo.AllSessions)
 	if err != nil {
 		return res, readError(err)
 	}

@@ -37,8 +37,8 @@ func changeTrackingResponses() []fakeResponse {
 // one acted on is the third — a page that used the first row whatever was
 // clicked would pass on a one-table fixture.
 func TestChangeTrackingTogglesActOnTheTableTheRowIsNamedFor(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	toggleByName(t, toggleGrid(t, form), "sales.Regions", 0)
 
@@ -59,8 +59,8 @@ func TestChangeTrackingTogglesActOnTheTableTheRowIsNamedFor(t *testing.T) {
 // TestChangeTrackingDisablesTheTableTheRowIsNamedFor is the destructive
 // direction: DISABLE CHANGE_TRACKING throws away the table's change data.
 func TestChangeTrackingDisablesTheTableTheRowIsNamedFor(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	toggleByName(t, toggleGrid(t, form), "dbo.Orders", 0)
 
@@ -83,8 +83,8 @@ func TestChangeTrackingDisablesTheTableTheRowIsNamedFor(t *testing.T) {
 // the wrong order enables tracking on a table the user only asked to track
 // columns for — and both produce a statement that looks reasonable.
 func TestChangeTrackingColumnsUpdatedIsADifferentColumn(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	// Orders is already tracked with columns off; ticking only the second
 	// column must leave tracking on and turn column tracking on.
@@ -105,8 +105,8 @@ func TestChangeTrackingColumnsUpdatedIsADifferentColumn(t *testing.T) {
 // TestChangeTrackingLoadsEachTablesOwnState is the read half of the same
 // index-parallel pairing.
 func TestChangeTrackingLoadsEachTablesOwnState(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	form, _ := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	form, _ := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	tg := toggleGrid(t, form)
 	want := map[string][2]bool{
@@ -137,8 +137,8 @@ func TestChangeTrackingLoadsEachTablesOwnState(t *testing.T) {
 func TestChangeTrackingRetentionUnitIsWrittenAsItsKeyword(t *testing.T) {
 	for _, unit := range retentionUnits {
 		t.Run(unit, func(t *testing.T) {
-			sc, inst := newFakeConn(t, changeTrackingResponses()...)
-			form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+			sc, inst := newGConn(t, changeTrackingResponses()...)
+			form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 			// The page opens on DAYS, so that arm needs moving off it first.
 			if unit == "DAYS" {
@@ -169,8 +169,8 @@ func TestChangeTrackingRetentionUnitIsWrittenAsItsKeyword(t *testing.T) {
 // checks at once — so a single row that came back dirty would re-issue ALTER
 // DATABASE ... SET CHANGE_TRACKING on a database opened only to look at.
 func TestChangeTrackingWritesNothingWhenUntouched(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	_, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	_, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -185,8 +185,8 @@ func TestChangeTrackingWritesNothingWhenUntouched(t *testing.T) {
 // still tracked (Msg 22115) — so the page wrote the database first, failed,
 // and never reached the tables. Off is tables first, then the database.
 func TestChangeTrackingOffUnticksTheTablesFirst(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	tg := toggleGrid(t, form)
 	toggleByName(t, tg, "dbo.Customers", 0)
@@ -220,8 +220,8 @@ func TestChangeTrackingOnStillWritesTheDatabaseFirst(t *testing.T) {
 	r := changeTrackingResponses()
 	r[1].rows = [][]driver.Value{{int64(0), false, int64(0), ""}} // not tracked: the LEFT JOIN's ISNULLs
 	r[2].rows = [][]driver.Value{{"dbo", "Customers", int64(0), false}}
-	sc, inst := newFakeConn(t, r...)
-	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, r...)
+	form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	editSelect(t, form, "Change tracking", "ON")
 	toggleByName(t, toggleGrid(t, form), "dbo.Customers", 0)
@@ -239,8 +239,8 @@ func TestChangeTrackingOnStillWritesTheDatabaseFirst(t *testing.T) {
 // the database half anyway, but only after the table writes before it had
 // landed; the form says which table first and nothing is written.
 func TestChangeTrackingOffWithATableLeftTrackedIsRefused(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	form, _ := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	form, _ := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	toggleByName(t, toggleGrid(t, form), "dbo.Customers", 0)
 	editSelect(t, form, "Change tracking", "OFF")
@@ -261,8 +261,8 @@ func TestChangeTrackingOffWithATableLeftTrackedIsRefused(t *testing.T) {
 // disables and re-enables tracking — a reset every syncing client must
 // reinitialise from (review plan M4). Apply asks first, for that edit only.
 func TestChangeTrackingColumnsFlipOnATrackedTableAsksFirst(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	form, _ := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	form, _ := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 	grid := toggleGrid(t, form)
 
 	toggleByName(t, grid, "sales.Regions", 0) // enabling: no reset
@@ -279,8 +279,8 @@ func TestChangeTrackingColumnsFlipOnATrackedTableAsksFirst(t *testing.T) {
 // Ticking Track columns on a table left untracked writes nothing: the page
 // once sent DISABLE CHANGE_TRACKING for it, which fails on an untracked table.
 func TestChangeTrackingColumnsOnAnUntrackedTableWritesNothing(t *testing.T) {
-	sc, inst := newFakeConn(t, changeTrackingResponses()...)
-	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, changeTrackingResponses()...)
+	form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	toggleByName(t, toggleGrid(t, form), "sales.Regions", 1)
 	if err := apply(context.Background()); err != nil {
@@ -303,8 +303,8 @@ func untrackedChangeTrackingResponses() []fakeResponse {
 // the side tables grew without limit (review plan R3). The page now opens on
 // SQL Server's own defaults for SET CHANGE_TRACKING = ON.
 func TestChangeTrackingOnAnUntrackedDatabaseUsesTheServerDefaults(t *testing.T) {
-	sc, inst := newFakeConn(t, untrackedChangeTrackingResponses()...)
-	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, untrackedChangeTrackingResponses()...)
+	form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	if form.Dirty() {
 		t.Fatal("the seeded defaults load dirty: an untouched page would write")
@@ -325,8 +325,8 @@ func TestChangeTrackingOnAnUntrackedDatabaseUsesTheServerDefaults(t *testing.T) 
 // Retention edited while the database stays untracked has nothing to set:
 // the write it produced, SET CHANGE_TRACKING = OFF, is Msg 5089 there.
 func TestChangeTrackingSettingsOnADatabaseLeftOffWriteNothing(t *testing.T) {
-	sc, inst := newFakeConn(t, untrackedChangeTrackingResponses()...)
-	form, apply := loadPage(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
+	sc, inst := newGConn(t, untrackedChangeTrackingResponses()...)
+	form, apply := loadPageG(t, pageDatabaseChangeTracking(sc, "appdb"), inst)
 
 	editText(t, form, "Retention period", "5")
 	if err := apply(context.Background()); err != nil {
