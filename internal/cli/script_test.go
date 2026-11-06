@@ -249,3 +249,21 @@ func TestScriptDB(t *testing.T) {
 		t.Errorf("--as alter: exit %d\n%s%s", r.exit, r.stdout, r.stderr)
 	}
 }
+
+// TestScriptDBObjectsRefusals: the two flag combinations script db --objects
+// cannot honour are usage errors before any connection is made.
+func TestScriptDBObjectsRefusals(t *testing.T) {
+	for _, argv := range [][]string{
+		{"db", "app", "--include-permissions"},
+		{"db", "app", "--objects", "--as", "drop"},
+	} {
+		s := newScriptServer(t)
+		r := runScript(t, s, argv...)
+		if r.exit != 2 {
+			t.Errorf("%v: exit %d\n%s%s", argv, r.exit, r.stdout, r.stderr)
+		}
+		if reads := scriptReads(s); len(reads) > 0 {
+			t.Errorf("%v: scripting read before refusing: %v", argv, reads)
+		}
+	}
+}

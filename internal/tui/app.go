@@ -114,6 +114,7 @@ type App struct {
 	newOperatorDialog           *NewOperatorDialog
 	newCredentialDialog         *NewCredentialDialog
 	sendTestMailDialog          *SendTestMailDialog
+	generateScriptsDialog       *GenerateScriptsDialog
 	newBackupDeviceDialog       *NewBackupDeviceDialog
 	newAuditDialog              *NewAuditDialog
 	newXESessionDialog          *NewXESessionDialog
@@ -540,6 +541,7 @@ func (a *App) buildUI() {
 	a.newOperatorDialog = registerDialog(a, NewNewOperatorDialog(a))
 	a.newCredentialDialog = registerDialog(a, NewNewCredentialDialog(a))
 	a.sendTestMailDialog = registerDialog(a, NewSendTestMailDialog(a))
+	a.generateScriptsDialog = registerDialog(a, NewGenerateScriptsDialog(a))
 	a.newBackupDeviceDialog = registerDialog(a, NewNewBackupDeviceDialog(a))
 	a.newAuditDialog = registerDialog(a, NewNewAuditDialog(a))
 	a.newXESessionDialog = registerDialog(a, NewNewXESessionDialog(a))

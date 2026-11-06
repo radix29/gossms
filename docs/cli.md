@@ -586,7 +586,7 @@ second Ctrl+C kills the process.
 | `plan actual` (T-SQL input) `[-p <profile>] [connection options] [run options but --statistics] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>]` | Runs the script as `query run` does, under `SET STATISTICS XML ON`. Record: `planType` (`actual`), `detectedClass`, `statementCount`, `planXml`/`planFile` as for `plan estimated`, then a wrapped run's `maxRowsAffected`, `transaction`; `ROWS_AFFECTED` in the header. The format's sets, then `result_sets`: one row per set the script returned, its rows counted, not returned (§ Execution plans). Refused, blocked and `--dry-run` answers as `query run`'s |
 | `plan cached <plan_handle> [--statement-start <n>] [--statement-end <n>] [--plan-format summary\|tree\|xml] [--top <n>] [--plan-file <path>] [-p <profile>] [connection options]` | Record: `planType` (`cached`), `planHandle` (`0x`, upper-case hex), `statementStart`, `statementEnd`, `statementCount`, `planXml`/`planFile` as for `plan estimated`; the format's sets, the actual columns NULL (§ Execution plans) |
 | `script object <object> [-p <profile>] [connection options] [--as <verb>] [--script-file <path>]` | `<object>` as for `object describe`. Record: `object` (`[schema].[name]`), `type`, `verb`, `script` (verbatim), `scriptFile` when written (§ Scripting) |
-| `script db <name> [-p <profile>] [connection options] [--as create\|drop\|drop-and-create] [--script-file <path>]` | Record: `database`, `verb`, `script` (verbatim), `scriptFile` when written (§ Scripting) |
+| `script db <name> [-p <profile>] [connection options] [--as create\|drop\|drop-and-create] [--objects [--include-permissions]] [--script-file <path>]` | Record: `database`, `verb`, `objects` and `notes` with `--objects`, `script` (verbatim), `scriptFile` when written (§ Scripting) |
 | `data top <object> [-p <profile>] [connection options] [--rows <n>] [--columns <list>] [--where <expr>] [--order-by <list>] [--timeout <sec>]` | `<object>` a table or view, as for `object describe`. Record: `object` (`[schema].[name]`), `type`, `tsql` (verbatim: the SELECT sent); then its rows (§ Data) |
 | `data count <object> [-p <profile>] [connection options] [--where <expr>] [--approximate] [--timeout <sec>]` | Record: `object`, `type`, `rows` (NULL when the count failed), `method` (`exact`, `approximate`), `tsql` for an exact count (§ Data) |
 | `data sample <object> [-p <profile>] [connection options] [--rows <n>] [--columns <list>] [--where <expr>] [--timeout <sec>]` | As `data top`, the rows a random sample (§ Data) |
@@ -1009,6 +1009,22 @@ run; both are class `read`.
   `select`/`insert`/`update`/`delete` a table or view; `execute` a procedure;
   `select` a function. A verb the kind lacks is exit 2, the message listing
   the kind's verbs. `script db` takes `create`, `drop`, `drop-and-create`.
+- **`script db --objects`** scripts the database's objects instead of its own
+  CREATE (gosmo's `ScriptDatabaseObjectList`, via `scripting.DatabaseObjects`): a
+  script that replays into an empty database — schemas, types, sequences,
+  tables without their foreign keys, then functions, views, procedures and
+  synonyms ordered by `sys.sql_expression_dependencies`, then foreign keys and
+  triggers. `--include-permissions` adds the owner, roles, users, memberships
+  and every GRANT/DENY (principals first, permissions last); it needs
+  `--objects`, as `--as` other than `create` is incompatible with it (both exit
+  2, before connecting). The script opens with `USE [database]` and a header
+  naming what is not scripted (data, server-level and system objects, rules and
+  defaults, assemblies, full-text, Service Broker, external objects, cross-
+  database references) and each dependency cycle that was broken. An encrypted
+  module, or one the login has no VIEW DEFINITION on, is a comment in the
+  script and listed in the record's `notes`; `objects` counts the entries.
+  Reads every definition, so it takes VIEW DEFINITION as the single-object
+  scripts do.
 - **Output.** The object's script opens with `USE [database]`; a database's
   own script runs in master and has none. In text the script prints after the
   record under `=== SCRIPT (n lines) ===`, line breaks kept and uncut by

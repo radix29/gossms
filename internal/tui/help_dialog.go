@@ -183,6 +183,8 @@ var helpLines = []string{
 	"              procedures, functions, sequences and types (and their",
 	"              System folders) under one node per schema",
 	"  Right click Context menu (also Shift+F10, Menu key, Ctrl+Space)",
+	"              A database's menu has Generate Scripts...: every user object",
+	"              as one script in dependency order (query window or file)",
 	"  Ctrl+Left   Shrink explorer",
 	"  Ctrl+Right  Grow explorer",
 	"",

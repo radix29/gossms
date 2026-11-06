@@ -306,6 +306,7 @@ As text; `data` reads, profiles, exports and loads table rows:
 gossms plan estimated -p dev --file slow.sql                       # compiles, runs nothing
 gossms plan actual -p dev --file slow.sql --transaction rollback   # runs it, keeps nothing
 gossms script object -p dev Sales.Customer --as create             # the TUI's Script As text
+gossms script db -p dev Sales --objects --include-permissions       # the TUI's Generate Scripts...
 gossms data top -p dev Sales.Customer --rows 20 --columns CustomerID,AccountNumber
 gossms data profile -p dev Sales.Customer                          # nulls, distinct, min/max per column
 gossms data export -p dev Sales.Customer --out-file customers.jsonl

@@ -76,11 +76,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   that a read-only connection reaches a secondary.
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
-- **No Generate Scripts wizard** (phase 6, D7): `script db` is the
-  database's own CREATE, not its objects. Scripting every object in
-  dependency order (`--objects`, `--include-permissions`) needs
-  dependency-ordered scripting in gosmo first — SCHEMABINDING, cycles — a
-  feature the size of a phase. Neither the TUI nor the command line has it.
 - **A bulk load cannot carry a character the database's code page lacks to
   a varchar column whose code page has it** (found 2026-10-30 in phase 6.i,
   live on 17 and 13). INSERT BULK declares the columns without COLLATE, so

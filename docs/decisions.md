@@ -1983,10 +1983,11 @@ The contract is `docs/cli.md` § Execution plans, § Scripting, § Data and
   writes a file through `--script-file`, not the global `--out-file`
   (which is for rows). `create-or-alter` and `--include-indexes/-triggers/-fk`
   have nothing behind them in gosmo's `ScriptOptions` and are not offered.
-- **`script db` is Script Database As, not the Generate Scripts wizard (D7).**
-  Every object in dependency order needs dependency-ordered scripting in
-  gosmo first (SCHEMABINDING, cycles), a feature the size of a phase;
-  deferred in `docs/open-threads.md`.
+- **`script db` is Script Database As; `--objects` adds the whole database,
+  not the Generate Scripts wizard's choices (D7).** Dependency-ordered
+  scripting lives in gosmo (`ScriptDatabaseObjectList`); `--objects
+  [--include-permissions]` is its CREATE-only front end. No per-object
+  selection, data scripting or DROP form on the command line.
 - **`--where`/`--order-by` are spliced fragments, then the whole statement is
   classified (D9).** Each ends at a line break (so a trailing `--` comment
   cannot swallow the rest), and the composed text must classify as one read

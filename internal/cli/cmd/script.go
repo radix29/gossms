@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -17,6 +18,8 @@ import (
 const (
 	optAs         = "as"
 	optScriptFile = "script-file"
+	optObjects    = "objects"
+	optInclPerms  = "include-permissions"
 )
 
 // scriptVerbs is --as's values, in SSMS's order, and the verb each names.
@@ -95,8 +98,8 @@ func ScriptCommands(d Deps) []*spec.Command {
 			Summary: "Generate T-SQL scripts, as Object Explorer's Script As does",
 			Description: "The script is generated, never run: each command reads the catalog and answers the text " +
 				"SSMS's Script As would put in a query window, with its default options (headers, schema-qualified " +
-				"names, IF NOT EXISTS guards, ANSI_PADDING, extended properties). The Generate Scripts wizard (many " +
-				"objects in dependency order) is not offered.",
+				"names, IF NOT EXISTS guards, ANSI_PADDING, extended properties). script db --objects scripts a whole " +
+				"database's objects in dependency order; the wizard's per-object choices are not offered.",
 			Class: spec.ClassRead,
 		},
 		{
@@ -135,11 +138,20 @@ func ScriptCommands(d Deps) []*spec.Command {
 			Description: "The database's own Script Database As text — files, filegroups, options, owner — not " +
 				"the objects in it. The script runs in master and names the database itself, so it has no USE " +
 				"[database] of its own. A record — database, verb — and the script, as for script object; " +
-				"--script-file writes it as Script Database As ▸ File... does.",
+				"--script-file writes it as Script Database As ▸ File... does. --objects scripts instead every " +
+				"user object in an order a replay into an empty database accepts (schemas, types, tables without " +
+				"their foreign keys, functions, views, procedures and synonyms by dependency, then foreign keys " +
+				"and triggers); --include-permissions adds the owner, roles, users, memberships and permissions. " +
+				"The header lists each dependency cycle that was broken and what is not scripted; an encrypted " +
+				"module is a comment, listed in the record as notes.",
 			Args: []spec.Arg{{Name: "name", Help: "The database", Required: true}},
 			Options: append(ConnectOptions(),
 				spec.Option{Name: optAs, Type: spec.TypeEnum, Enum: scriptDBVerbs, Default: "create",
 					Help: "The verb: what the script does with the database"},
+				spec.Option{Name: optObjects, Type: spec.TypeBool,
+					Help: "Script the objects in the database, in dependency order, instead of the database itself (--as create only)"},
+				spec.Option{Name: optInclPerms, Type: spec.TypeBool,
+					Help: "With --objects: also the owner, roles, users, role memberships and every GRANT/DENY"},
 				scriptFile,
 			),
 			Class: spec.ClassRead,
@@ -147,6 +159,7 @@ func ScriptCommands(d Deps) []*spec.Command {
 			Examples: []string{
 				"gossms script db -p dev Sales",
 				"gossms script db -p dev Sales --as drop-and-create --script-file Sales.sql",
+				"gossms script db -p dev Sales --objects --include-permissions --script-file Sales-objects.sql",
 			},
 		},
 	}
@@ -225,6 +238,14 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return nil, err
 	}
 	verbName := inv.Values[optAs].(string)
+	objects, _ := inv.Values[optObjects].(bool)
+	perms, _ := inv.Values[optInclPerms].(bool)
+	switch {
+	case perms && !objects:
+		return nil, usageError("--include-permissions needs --objects", "Add --objects to script the database's objects with their permissions.")
+	case objects && inv.Given[optAs] && verbName != "create":
+		return nil, usageError("--objects scripts CREATE only; --as "+verbName+" is not offered with it", "")
+	}
 	res := &output.Result{}
 	sc, cat, err := d.connectCatalog(ctx, inv, res)
 	if err != nil {
@@ -234,6 +255,23 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	dbase, err := namedDatabase(ctx, cat, inv.Args[0], res)
 	if err != nil {
 		return res, err
+	}
+	if objects {
+		text, n, notes, err := scripting.DatabaseObjects(ctx, dbase.Server(), dbase.Name, perms)
+		if err != nil {
+			return res, scriptError(err, gosmo.QuoteName(dbase.Name))
+		}
+		res.Fields = []output.Field{
+			{Key: "database", Value: dbase.Name},
+			{Key: "verb", Value: "create"},
+			{Key: "objects", Value: strconv.Itoa(n)},
+		}
+		if len(notes) > 0 {
+			res.Fields = append(res.Fields, output.Field{Key: "notes", Value: strings.Join(notes, "; ")})
+		}
+		res.Fields = append(res.Fields, output.Field{Key: "script", Value: text, Verbatim: true})
+		writeScriptFile(res, file, text)
+		return res, nil
 	}
 	text, err := scripting.Script(ctx, dbase.Server(), scripting.Database, scriptVerbNamed(verbName), scripting.Target{DBName: dbase.Name})
 	if err != nil {

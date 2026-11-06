@@ -8990,7 +8990,7 @@
     {
       "path": "script db",
       "summary": "Script a database as CREATE, DROP or DROP And CREATE",
-      "description": "The database's own Script Database As text — files, filegroups, options, owner — not the objects in it. The script runs in master and names the database itself, so it has no USE [database] of its own. A record — database, verb — and the script, as for script object; --script-file writes it as Script Database As ▸ File... does.",
+      "description": "The database's own Script Database As text — files, filegroups, options, owner — not the objects in it. The script runs in master and names the database itself, so it has no USE [database] of its own. A record — database, verb — and the script, as for script object; --script-file writes it as Script Database As ▸ File... does. --objects scripts instead every user object in an order a replay into an empty database accepts (schemas, types, tables without their foreign keys, functions, views, procedures and synonyms by dependency, then foreign keys and triggers); --include-permissions adds the owner, roles, users, memberships and permissions. The header lists each dependency cycle that was broken and what is not scripted; an encrypted module is a comment, listed in the record as notes.",
       "operationClass": "read",
       "arguments": [
         {
@@ -9184,6 +9184,26 @@
           "help": "The verb: what the script does with the database"
         },
         {
+          "name": "--objects",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-objects",
+          "env": null,
+          "help": "Script the objects in the database, in dependency order, instead of the database itself (--as create only)"
+        },
+        {
+          "name": "--include-permissions",
+          "short": null,
+          "type": "bool",
+          "enum": [],
+          "default": false,
+          "negation": "--no-include-permissions",
+          "env": null,
+          "help": "With --objects: also the owner, roles, users, role memberships and every GRANT/DENY"
+        },
+        {
           "name": "--script-file",
           "short": null,
           "type": "string",
@@ -9196,7 +9216,8 @@
       ],
       "examples": [
         "gossms script db -p dev Sales",
-        "gossms script db -p dev Sales --as drop-and-create --script-file Sales.sql"
+        "gossms script db -p dev Sales --as drop-and-create --script-file Sales.sql",
+        "gossms script db -p dev Sales --objects --include-permissions --script-file Sales-objects.sql"
       ]
     },
     {

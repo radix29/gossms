@@ -87,6 +87,7 @@ SERVER STATE (exit 9 without).
 gossms script object -p dev Sales.Customer
 gossms script object -p dev Sales.uspGetOrders --as alter --script-file uspGetOrders.sql
 gossms script db -p dev AdventureWorks
+gossms script db -p dev AdventureWorks --objects --include-permissions --script-file AdventureWorks-objects.sql
 gossms data export -p dev Sales.Customer --where "ModifiedDate >= '2026-01-01'" --out-file customers.csv
 gossms data import -p dev Staging.Customer --in-file customers.csv --allow write --dry-run
 gossms data import -p dev Staging.Customer --in-file customers.csv --allow write

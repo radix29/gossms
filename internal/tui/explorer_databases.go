@@ -560,6 +560,8 @@ func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 		gate.Item(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
 			sc, node.data.DBName, gate.ControlDB, gate.AlterAnyDatabase, gate.CreateAnyDatabase),
 		{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
+		// Reads the catalog and opens a script; nothing runs, so it is not gated.
+		{Label: "Generate Scripts...", Action: func() { a.showGenerateScriptsFor(sc, node.data.DBName) }},
 	}
 	// SSMS offers neither Take Offline nor Bring Online on a distribution
 	// database: offline, it stops every distribution and cleanup agent.
