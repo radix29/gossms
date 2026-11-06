@@ -42,28 +42,30 @@ func (a *App) newQueryPanelForConn(sc *db.ServerConn, database string) {
 }
 
 func (a *App) openQueryWithText(sc *db.ServerConn, database, text string) {
-	a.queryPanelCnt++
-	qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
-	qp.editor.SetText(text)
-	a.panels.SetActive(a.panels.AddPanel(qp))
-	a.focusPanels()
-	if sc != nil {
-		a.connectForQueryPanel(qp, sc, database, nil)
-	}
+	a.openQueryWithTextThen(sc, database, text, nil)
 }
 
 // openQueryWithTextAndExecute is openQueryWithText plus an immediate run, for
 // actions like "View Backup History" that hand the user a live result set
 // rather than a query to review. A nil sc opens the panel disconnected.
 func (a *App) openQueryWithTextAndExecute(sc *db.ServerConn, database, text string) {
+	var qp *QueryPanel
+	qp = a.openQueryWithTextThen(sc, database, text, func() { qp.Execute() })
+}
+
+// openQueryWithTextThen is openQueryWithText running onConnected (if not nil)
+// once the panel's connection is up. A status message meant to outlast the
+// open goes there: set before, the connect's own "Connected to …" replaces it.
+func (a *App) openQueryWithTextThen(sc *db.ServerConn, database, text string, onConnected func()) *QueryPanel {
 	a.queryPanelCnt++
 	qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
 	qp.editor.SetText(text)
 	a.panels.SetActive(a.panels.AddPanel(qp))
 	a.focusPanels()
 	if sc != nil {
-		a.connectForQueryPanel(qp, sc, database, func() { qp.Execute() })
+		a.connectForQueryPanel(qp, sc, database, onConnected)
 	}
+	return qp
 }
 
 // openQueryFile runs File > Open: prompts for a path and loads its content into

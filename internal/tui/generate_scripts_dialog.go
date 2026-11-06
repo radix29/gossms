@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/radix29/gossms/internal/db"
@@ -17,9 +16,11 @@ import (
 // the script opens in a query window or is saved to a file. The script is
 // opened or written, never executed.
 //
-// The reads can take a while on a large database, so the dialog closes at
-// Script and the work reports through the status bar like every other Script
-// As (generateScript).
+// The script is at least one round trip per object, so a large database
+// takes minutes (~25 ms an object on a LAN). The dialog closes at Script and
+// the run is a Background Task with progress and Cancel, under no timeout:
+// it went through generateScript once, whose 30 s childFetchTimeout failed
+// any database past about 1,200 modules and threw the work away.
 
 // Output choices of the Output row, in row order.
 const (
@@ -89,8 +90,8 @@ func (d *GenerateScriptsDialog) onLoadPage(page, seq int) {
 	))
 }
 
-// script is the Script button: close, read in the background, then open or
-// save the result.
+// script is the Script button: close, script as a Background Task, then
+// open or save the result.
 func (d *GenerateScriptsDialog) script() {
 	if d.perms == nil || d.output == nil {
 		d.SetMessage("Still loading — try again in a moment.", true)
@@ -99,26 +100,47 @@ func (d *GenerateScriptsDialog) script() {
 	sc, dbName := d.sc, d.dbName
 	perms, toFile := d.perms.Checked(), d.output.Selected() == genScriptsToFile
 	d.Dismiss()
-
-	var count int
-	var notes []string
-	gen := func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
-		text, c, ns, err := scripting.DatabaseObjects(ctx, sc.Server, n.DBName, perms)
-		count, notes = c, ns
-		return text, err
-	}
-	n := nodeData{Type: NodeDatabase, DBName: dbName, Name: dbName}
 	a := d.app
-	a.generateScript(sc, n, scriptVerb{gen: gen}, func(text string) {
-		if toFile {
-			a.saveScriptAs(n, text)
-		} else {
-			a.openQueryWithText(sc, dbName, text)
+	if !a.requireConn(sc) {
+		return
+	}
+
+	// Parented on the connection, so a disconnect cancels it.
+	task, ctx := a.startTask(sc.Server.Context(), "Generate Scripts: "+dbName)
+	task.Message = "reading the catalog"
+	a.setStatus(task.Label + " started — Tools > Background Tasks to follow or cancel it")
+	// safegoRepair: only the posted markTaskDone finishes the task, and a
+	// panic past it would leave one the status bar counts as running forever.
+	a.safegoRepair("generating scripts", func() { a.markTaskDone(task, errTaskPanicked) }, func() {
+		// Whole-percent steps only: one postAndWake per object would queue
+		// thousands of redraws on a large database.
+		last := -1
+		progress := func(done, total int) {
+			pct := 100
+			if total > 0 {
+				pct = done * 100 / total
+			}
+			if pct != last {
+				last = pct
+				a.postProgress(task, pct, fmt.Sprintf("%d of %d objects", done, total))
+			}
 		}
-		msg := fmt.Sprintf("Scripted %d objects", count)
-		if len(notes) > 0 {
-			msg += fmt.Sprintf(" (%d not scripted: %s)", len(notes), notes[0])
-		}
-		a.setStatus(msg)
+		text, count, notes, err := scripting.DatabaseObjects(ctx, sc.Server, dbName, perms, progress)
+		a.postAndWake(func() {
+			a.markTaskDone(task, err)
+			if err != nil {
+				return
+			}
+			msg := fmt.Sprintf("Scripted %d objects", count)
+			if len(notes) > 0 {
+				msg += fmt.Sprintf(" (%d not scripted: %s)", len(notes), notes[0])
+			}
+			if toFile {
+				a.saveScriptAs(nodeData{Type: NodeDatabase, DBName: dbName, Name: dbName}, text)
+				a.setStatus(msg)
+			} else {
+				a.openQueryWithTextThen(sc, dbName, text, func() { a.setStatus(msg) })
+			}
+		})
 	})
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 	"testing"
+
+	"github.com/radix29/gosmo"
 )
 
 // Every family from Database to DatabaseMail has a row: a constant without one
@@ -85,5 +87,25 @@ func TestAzureRefusesOnlyTheBindingsCreate(t *testing.T) {
 				t.Errorf("AzureRefuses(%d, %d) = %v, want %v", f, v, got, want)
 			}
 		}
+	}
+}
+
+// The count leaves out the principals and permissions blocks and every noted
+// entry; the notes name each noted one.
+func TestCountScriptedLeavesOutPseudoAndNotedEntries(t *testing.T) {
+	objs := []gosmo.ScriptedObject{
+		{Kind: gosmo.ScriptedPrincipals, Name: "appdb"},
+		{Kind: gosmo.ScriptedSchema, Name: "app"},
+		{Kind: gosmo.ScriptedTable, Schema: "app", Name: "t"},
+		{Kind: gosmo.ScriptedProcedure, Schema: "app", Name: "p_enc", Note: "encrypted"},
+		{Kind: gosmo.ScriptedForeignKey, Schema: "app", Name: "fk", Table: "t"},
+		{Kind: gosmo.ScriptedPermissions, Name: "appdb"},
+	}
+	n, notes := countScripted(objs)
+	if n != 3 {
+		t.Errorf("objects = %d, want 3 (schema, table, foreign key)", n)
+	}
+	if !slices.Equal(notes, []string{"[app].[p_enc]: encrypted"}) {
+		t.Errorf("notes = %q", notes)
 	}
 }

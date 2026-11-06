@@ -338,7 +338,7 @@ gossms/
 │       ├── explorer_object_actions.go # the flows themselves: confirmation (incl. the cascade checkbox), script-instead-of-run, the prompt, and the parent-folder refresh
 │       ├── scripting.go          # Object Explorer's "Script <Noun> as ▸" cascade over internal/scripting: NodeType → family + noun, the verb labels, the read-right gate, and the three destinations
 │       ├── database_security_script.go # database node's "Script Database Security": gosmo's ScriptDatabaseSecurity (owner, roles, users, schemas, memberships, permissions), read in the background and opened unexecuted
-│       ├── generate_scripts_dialog.go   # database node's "Generate Scripts...": script-only sheet (permissions, query window or file) over scripting.DatabaseObjects — every user object in dependency order, opened or saved, never executed
+│       ├── generate_scripts_dialog.go   # database node's "Generate Scripts...": script-only sheet (permissions, query window or file) over scripting.DatabaseObjects — every user object in dependency order, run as a Background Task (progress, Cancel, no timeout), opened or saved, never executed
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone

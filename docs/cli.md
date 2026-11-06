@@ -1022,7 +1022,8 @@ run; both are class `read`.
   defaults, assemblies, full-text, Service Broker, external objects, cross-
   database references) and each dependency cycle that was broken. An encrypted
   module, or one the login has no VIEW DEFINITION on, is a comment in the
-  script and listed in the record's `notes`; `objects` counts the entries.
+  script and listed in the record's `notes`; `objects` counts the objects
+  scripted — not those, nor the principals and permissions blocks.
   Reads every definition, so it takes VIEW DEFINITION as the single-object
   scripts do.
 - **Output.** The object's script opens with `USE [database]`; a database's

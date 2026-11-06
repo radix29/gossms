@@ -21,8 +21,8 @@ func TestDatabaseMenuOffersGenerateScripts(t *testing.T) {
 	}
 }
 
-// Script closes the dialog and, on a failed read, reports on the status line
-// and opens no window.
+// Script closes the dialog and runs as a Background Task; on a failed read
+// the task fails, the status line says so and no window opens.
 func TestGenerateScriptsReportsAFailedRead(t *testing.T) {
 	sc, _ := newGConn(t, dbByNameResp("appdb", 7),
 		fakeResponse{match: "FROM   sys.schemas", err: errors.New("schema read refused")})
@@ -39,8 +39,53 @@ func TestGenerateScriptsReportsAFailedRead(t *testing.T) {
 	if d.Visible() {
 		t.Error("Script left the dialog open")
 	}
-	drainUntil(t, a, func() bool { return strings.HasPrefix(a.statusText, "Script error:") }, "the error status")
+	if len(a.tasks) != 1 || a.tasks[0].Label != "Generate Scripts: appdb" {
+		t.Fatalf("tasks = %v, want one Generate Scripts: appdb", a.tasks)
+	}
+	task := a.tasks[0]
+	drainUntil(t, a, func() bool { return task.Done }, "the task to finish")
+	if task.Err == nil || !strings.Contains(task.Err.Error(), "schema read refused") || task.Cancelled {
+		t.Errorf("task = done %v, err %v, cancelled %v; want failed on the schema read", task.Done, task.Err, task.Cancelled)
+	}
+	if !strings.HasPrefix(a.statusText, "Generate Scripts: appdb failed:") {
+		t.Errorf("status = %q, want the task's failure", a.statusText)
+	}
 	if a.panels.Count() != 0 {
 		t.Errorf("a failed script opened %d window(s)", a.panels.Count())
+	}
+}
+
+// The run's reads have no deadline (the 30 s one failed large databases),
+// Cancel reaches the read in flight, and a cancelled run is reported as
+// cancelled and opens no window.
+func TestGenerateScriptsCancelStopsTheRun(t *testing.T) {
+	gate := make(chan struct{})
+	const schemas = "FROM   sys.schemas"
+	sc, inst := newGConn(t, dbByNameResp("appdb", 7),
+		fakeResponse{match: schemas, err: errors.New("read ended"), block: gate})
+	a := newTestApp()
+	d := NewGenerateScriptsDialog(a)
+	d.show(sc, "appdb")
+	d.script()
+	task := a.tasks[0]
+	drainUntil(t, a, func() bool { return len(readContexts(inst, schemas)) == 1 }, "the schema read to reach the server")
+	ctx := readContexts(inst, schemas)[0]
+	if _, ok := ctx.Deadline(); ok {
+		t.Error("the scripting read has a deadline")
+	}
+	task.Cancel()
+	if ctx.Err() == nil {
+		t.Error("Cancel did not reach the read in flight")
+	}
+	close(gate)
+	drainUntil(t, a, func() bool { return task.Done }, "the task to finish")
+	if !task.Cancelled {
+		t.Errorf("task err %v, cancelled %v; want cancelled", task.Err, task.Cancelled)
+	}
+	if a.statusText != "Generate Scripts: appdb cancelled" {
+		t.Errorf("status = %q", a.statusText)
+	}
+	if a.panels.Count() != 0 {
+		t.Errorf("a cancelled script opened %d window(s)", a.panels.Count())
 	}
 }

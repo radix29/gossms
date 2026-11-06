@@ -257,7 +257,7 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return res, err
 	}
 	if objects {
-		text, n, notes, err := scripting.DatabaseObjects(ctx, dbase.Server(), dbase.Name, perms)
+		text, n, notes, err := scripting.DatabaseObjects(ctx, dbase.Server(), dbase.Name, perms, nil)
 		if err != nil {
 			return res, scriptError(err, gosmo.QuoteName(dbase.Name))
 		}

@@ -743,9 +743,13 @@ func serverDDL(v gosmo.ScriptVerb, f serverScriptFn) Generator {
 // replays into an empty database (gosmo's ScriptDatabaseObjectList): the
 // database context, a header naming what is not scripted and each dependency
 // cycle that was broken, then the objects in creation order. objects counts
-// the objects listed, notes those that could only be a comment (an encrypted
-// module).
-func DatabaseObjects(ctx context.Context, srv *gosmo.Server, dbName string, includePermissions bool) (text string, objects int, notes []string, err error) {
+// the objects scripted: not the principals and permissions blocks
+// includePermissions adds, nor those that could only be a comment (an
+// encrypted module), which notes lists. progress, if not nil, is
+// ObjectScriptOptions.Progress: called on the caller's goroutine, it counts
+// every entry, those included.
+func DatabaseObjects(ctx context.Context, srv *gosmo.Server, dbName string, includePermissions bool,
+	progress func(done, total int)) (text string, objects int, notes []string, err error) {
 	d, err := srv.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return "", 0, nil, err
@@ -753,16 +757,27 @@ func DatabaseObjects(ctx context.Context, srv *gosmo.Server, dbName string, incl
 	opts := gosmo.DefaultScriptOptions()
 	opts.Verb = gosmo.ScriptCreate
 	s := gosmo.NewScripter(d, opts)
-	r, err := s.ScriptDatabaseObjectList(ctx, gosmo.ObjectScriptOptions{IncludePermissions: includePermissions})
+	r, err := s.ScriptDatabaseObjectList(ctx, gosmo.ObjectScriptOptions{IncludePermissions: includePermissions, Progress: progress})
 	if err != nil {
 		return "", 0, nil, err
 	}
-	for _, o := range r.Objects {
-		if o.Note != "" {
+	objects, notes = countScripted(r.Objects)
+	return s.DatabaseContext() + DatabaseObjectsHeader + r.String(), objects, notes, nil
+}
+
+// countScripted is DatabaseObjects' objects and notes. Counting every entry
+// overstated "Scripted N objects": it took in the principals and permissions
+// blocks and the comment-only entries.
+func countScripted(objs []gosmo.ScriptedObject) (objects int, notes []string) {
+	for _, o := range objs {
+		switch {
+		case o.Note != "":
 			notes = append(notes, gosmo.QualifiedName(o.Schema, o.Name)+": "+o.Note)
+		case o.Kind != gosmo.ScriptedPrincipals && o.Kind != gosmo.ScriptedPermissions:
+			objects++
 		}
 	}
-	return s.DatabaseContext() + DatabaseObjectsHeader + r.String(), len(r.Objects), notes, nil
+	return objects, notes
 }
 
 // DatabaseObjectsHeader states what a database-objects script leaves out, so
