@@ -18,8 +18,8 @@ import (
 // tracked.go holds the Query Store panel's tracked-query sets: per server and
 // database, the query ids pinned to the Tracked Queries view.
 //
-// Kept out of config.json: it's neither profile nor setting, it would make every
-// save rewrite the password file, and losing it costs only a rebuildable list.
+// Kept out of config.json: it's neither profile nor setting, would make every
+// save rewrite the password file, and is cheap to rebuild.
 
 // trackedFileName is the file, beside config.json.
 const trackedFileName = "tracked_queries.json"
@@ -95,9 +95,9 @@ func LoadTrackedQueriesFrom(path string) *TrackedQueries {
 }
 
 // readTrackedFile reads path into a fresh set map. A missing file is an empty
-// set; one that doesn't parse is kept aside (fileutil.KeepCorrupt) and is
-// empty too. A file that exists and can't be read is an error, and so is one
-// that doesn't parse and can't be kept aside.
+// set; one that doesn't parse is kept aside (fileutil.KeepCorrupt) and is empty
+// too. An unreadable file is an error, as is an unparseable one that can't be
+// kept aside.
 func readTrackedFile(path string) (map[string]map[string][]int64, error) {
 	sets := map[string]map[string][]int64{}
 	data, err := os.ReadFile(path)
@@ -132,11 +132,10 @@ func readTrackedFile(path string) (map[string]map[string][]int64, error) {
 
 // serverKey folds a server address by InstanceKey: HOST\SQL2022, host\sql2022 and
 // host\sql2022,1500 share a set, as do "host" and "host,1433"; "host,55253" is
-// another instance. Callers pass ConnectionAddress(opts), not opts.Server, which
-// drops a Port-field port.
+// another instance. Callers pass ConnectionAddress(opts), not opts.Server.
 //
-// The database is deliberately not folded: on a case-sensitive collation Sales
-// and sales differ (TestServerIsFoldedAndDatabaseIsNot).
+// The database is not folded: on a case-sensitive collation Sales and sales
+// differ (TestServerIsFoldedAndDatabaseIsNot).
 func serverKey(server string) string { return InstanceKey(server) }
 
 // SameServer reports whether two addresses name the same instance, by the same
@@ -220,8 +219,8 @@ func (t *TrackedQueries) Toggle(server, database string, id int64) (tracked bool
 
 // Save writes the file, refusing to overwrite one that couldn't be read (see
 // unreadable). It re-reads the file, replays this process's unsaved Toggles onto
-// it, then adopts the result, so pins another instance saved meanwhile are kept.
-// A Toggle made during the write stays pending for the next Save.
+// it, then adopts the result, keeping pins another instance saved. A Toggle made
+// during the write stays pending.
 func (t *TrackedQueries) Save() error {
 	if t == nil {
 		return errors.New("tracked queries: no set loaded")

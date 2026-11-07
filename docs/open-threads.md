@@ -54,6 +54,14 @@ support); this section covers only the environment.
   AAG1; only add/remove database, suspend/resume, listener round trip and the
   failover refusal run there.
 
+## Connection config: what is left
+
+- **A non-canonical saved `encrypt_mode` must be refused** (decided; settled
+  in `docs/decisions.md` § Always On, peer credentials). Today the Connect
+  dialog shows `"Optional"`/`"true"` as Mandatory and a peer dial hands it to
+  go-mssqldb. Make `db.toGosmoAuth`'s sibling refuse it for Connect, the
+  preview and peers alike, with a test.
+
 ## Format Document: what is left
 
 Settled design: `docs/decisions.md` § Format Document.
@@ -77,24 +85,16 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
 - **A bulk load cannot carry a character the database's code page lacks to
-  a varchar column whose code page has it** (found 2026-10-30 in phase 6.i,
-  live on 17 and 13). INSERT BULK declares the columns without COLLATE, so
-  the server reads char bytes in the *database's* default code page and
-  converts them to the column's. In a database whose default collation is
-  not UTF-8, `Ж` cannot reach a Cyrillic varchar column of a Latin1
-  database; gosmo's `BulkInsert` (which since 2026-11-04 checks and encodes
-  every value) refuses it by name rather than storing `?`.
-  **Blocked on go-mssqldb** (checked 2026-11-05 against v1.11.2, the latest;
-  review plan F17, left as is by the author's call). Live on 17, a driver
-  patched to append `COLLATE Cyrillic_General_CI_AS` to the column's INSERT
-  BULK declaration stored `0xC6` as `Ж` (stock: `?`), so a per-column COLLATE
-  plus encoding each value in its column's code page would fix it. But the
-  driver writes that column list itself (`makeDecl` in its `bulkcopy.go`,
-  never a COLLATE) and `mssql.CopyIn` takes only names; nor can a column be
-  sent as nvarchar instead, since each column's wire type comes from the
-  table's own `SELECT *` metadata. Reopen when the driver lets a caller
-  declare a column's collation (an upstream PR; a forked `replace` would not
-  reach gosmo's dependents).
+  a varchar column whose code page has it.** INSERT BULK declares the columns
+  without COLLATE, so the server reads char bytes in the *database's* default
+  code page; in a non-UTF-8 database `Ж` cannot reach a Cyrillic varchar column
+  of a Latin1 database. gosmo's `BulkInsert` checks and encodes every value and
+  refuses it by name rather than storing `?`. **Blocked on go-mssqldb** (v1.11.2
+  is the latest): it writes the column list itself (`makeDecl` in
+  `bulkcopy.go`, never a COLLATE) and sends each column's wire type from the
+  table's own metadata. Reopen when the driver lets a caller declare a column's
+  collation (an upstream PR; a forked `replace` would not reach gosmo's
+  dependents).
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.
@@ -103,139 +103,14 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-- **Only the `object`, `script`, `data`, `security`, `maint` and `monitor` groups are off the `Catalog` seam** (2026-11-04, the
-  pilot of review Q1 option A). Past connecting and resolving the name,
-  `object list/search/describe/definition/dependencies/indexes/stats` call
-  gosmo directly, and their tests serve gosmo canned rows through gosmo's
-  `gosmotest`; `Catalog` lost the 27 methods only they read, and
-  `serverCatalog` about 150 lines of delegation. The cost, measured: the
-  object fakes (about 500 lines) became a 624-line row server, since each
-  read needs its full row (41 values for a column, 39 for an index); the
-  trimmed `objectFake` stayed for the data and import tests until `data`
-  moved too. Five mutations, three of them in gosmo's scanning, each
-  failed an object test; under the fakes the gosmo ones passed every test.
-  `script` followed (2026-11-05, plan step 16): `script object/db` call
-  `internal/scripting` on the resolved database's gosmo Server, and
-  `Catalog.Script` is gone. `scriptServer` (`script_server_test.go`, 127
-  lines) adds the Scripter's reads on top of `objectServer` — most rows it
-  needed (columns, indexes, keys, parameters) were already there — so the
-  tests now check the real script text. Five gosmo scanning mutations
-  (trigger order, the DROP's schema-bound and foreign-key notes, the table
-  options row, the module row) each failed a script test; the old `Script`
-  fake never reached gosmo. `script db` is tested with `--as drop` only: a
-  CREATE's file, option and settings reads are left to gosmo's tests.
-  `data` followed (2026-11-05, plan step 17): `data top/sample/count/
-  profile/export/import` read the columns, the row count, the alias types
-  and a collation's code page from gosmo; `Catalog.RowCount` and
-  `CollationCodePage` are gone, and so is `objectFake`. Its tests run on
-  `objectServer` (a `tableColumns` knob, a code-page rule); the row
-  encoders moved to `internal/cli/clitest` so package `cmd`'s tests can
-  build rows too (`catalogServer`, used by the dry-run harness's import
-  case). Two mutations — gosmo's column scan with max_length and precision
-  swapped, and `data count --approximate` on a `TableRef` — each failed a
-  data test. `data import`'s writes (`TruncateTable`, `BulkInsert`) are
-  still `Writer`'s.
-  `security` followed (2026-11-05, plan step 17, "grants"): the principal
-  reads and the grant read-back are shared with `security permissions`
-  and `role-members`, so the whole group moved — 23 `Catalog` methods
-  gone. `secServer` (`cmd/security_server_test.go`, 344 lines) replaces
-  `secCatalog` and `permCatalog`; `permWriter` stays a `Writer` fake but
-  changes `secServer`'s state, which the rules read back. Roles' member
-  lists and role-members now come from one source, and every list read
-  comes back in its ORDER BY — three tests had asserted a fake's
-  insertion order. Seven gosmo scanning mutations (login flags, the
-  schema row's normalization, role members, a user's login, server and
-  column permission/state, a type's schema/name) each failed a security
-  test.
-  `maint` followed (2026-11-05, plan step 17): backup, backup-history,
-  restore, index-fragmentation, index-rebuild, update-stats and checkdb
-  read the media (HEADERONLY, FILELISTONLY), msdb's history, the
-  instance's files, the indexes, fragmentation and statistics from gosmo
-  past resolution — 13 `Catalog` methods gone, the tables' and views'
-  by-name reads with them. `maintServer` (`cmd/maint_server_test.go`, 313
-  lines, over `catalogServer`) replaces `backupCatalog`, `restoreCatalog`
-  and `indexCatalog` (about 390 lines fewer in the three test files); the
-  three writers stay `Writer` fakes that change its state. Its HAVING and
-  ORDER BY are the server's: index-fragmentation drops what is under
-  `--min-percent`, and backup-history `--all` reads the databases in name
-  order — two expectations had relied on the fakes'. gosmotest's `Info`
-  gained `HADREnabled` for the availability-group refusal. Seven gosmo
-  scanning mutations (a header's start, history LSNs, LastBackups' log,
-  database fragmentation pages, statistics rows sampled, an instance
-  file's name, a file list's logical name) and one in gossms (a `TableRef`
-  for the rebuild's table) each failed a maint test.
-  Those three groups' writes followed (2026-11-05, plan step 17, the
-  `Writer` step's first part): `security` grant/deny/revoke and role
-  members, `maint` backup, restore (and --verify-only), index-rebuild,
-  update-stats and checkdb, and `data import`'s TRUNCATE and bulk load
-  call gosmo directly; 15 `Writer` methods are gone, and with them
-  `permWriter`, `backupWriter`, `restoreWriter`, `indexWriter`,
-  `loadWriter` and `importWriter`. The test servers take the statements
-  instead (`applyWrite`), so the tests now see gosmo's real statement
-  text; the dry-run harness compares a direct writer's dry run with what
-  gosmo's statement observer reports the real run sent. gosmotest gained
-  what this needed: BACKUP/RESTORE's progress-message stream and the bulk
-  load (`INSERTBULK` rows, the flush's count), and gosmo
-  `ScriptCollector.Add`. Seven gosmo mutations (server grant without `USE
-  master`, a role's DROP sent as ADD, WITH GRANT OPTION dropped, BACKUP's
-  CHECKSUM dropped, RESTORE's MOVE dropped, CHECKDB's ObjectId scan, the
-  bulk load's KEEPNULLS) and four in gossms each failed a test; under the
-  fakes the gosmo ones passed every test but the dry-run ones.
-  `monitor` followed whole (2026-11-05, plan step 17, the first group of
-  the `Writer` step's second part), with `plan cached`, which shares its
-  VIEW SERVER STATE check: sessions, blocking, waits, top-queries,
-  querystore and deadlocks read gosmo directly, and kill sends its KILL
-  through it — 13 `Catalog` methods (sessions, waits, the plan cache, the
-  six Query Store reports and metrics, the event-file read) and
-  `Writer.KillSession` gone. `monitorServer` (`cmd/monitor_server_test.go`,
-  443 lines, over `catalogServer`) replaces `monitorCatalog`, `killCatalog`
-  and `killWriter`; the xevent tests, which had shared `monitorCatalog`,
-  got their own `xeCatalog`. The reads answer in their ORDER BY and apply
-  their TOP, HAVING and filters (`--include-system` now shows a system
-  session; `--plan-database` keeps a plan by its database id; a regression
-  floor drops a query with no baseline — the old regressed fixture had a
-  row the server would never return). The Query Store tests assert the
-  report's query (window, TOP, value expression, HAVING) where they had
-  asserted the options handed to a fake, and the 2016 refusals come from
-  gosmo's own version gates (`Info.ProductVersion` 13). Nine gosmo
-  scanning mutations (a session's counters and its user-process flag, wait
-  time, a cached statement's totals and handles, a regressed row's
-  baseline, a wait category's value, the event-file filter, an event
-  session's running flag) and four in gossms each failed a test.
-  `server` info, memory, config and traceflag followed (2026-11-06, plan
-  step 17): they read and write (`sp_configure`, DBCC TRACEON/OFF) through
-  gosmo directly; seven `Catalog` methods (processor, start time, memory
-  stats, clerks, performance counters, configurations, trace flags) and
-  `Writer.ApplyConfiguration`/`SetTraceFlag` gone. `instanceServer`
-  (`cmd/server_state_test.go`, over `catalogServer`) replaces
-  `serverInfoCatalog`, `configWriter`, `traceFlagCatalog` and
-  `traceFlagWriter`; its writes change its options and flags from the
-  T-SQL. Option defaults are now gosmo's own table's (the fake's capitalised
-  `Backup checksum default` had one the real, lower-case name has; its
-  reset case is `Backup-Compression`). `server log` and `server volumes`
-  stay on `Catalog`. Eight gosmo scanning/statement mutations and five in
-  gossms each failed a test (one boundary survivor got its test).
-  `xevent` sessions and capture followed (2026-11-06, plan step 17): the
-  session reads, status, ring_buffer, and the CREATE/START/STOP/DROP go
-  through `sc.Server.XEvents()` (`Database.XEvents()` on Azure SQL
-  Database); five `Catalog` methods (`HasViewServerState`,
-  `EventSessions`, `EventSessionStatus`, `EventSessionByName`,
-  `ReadRingBuffer`) and the four event-session `Writer` methods gone.
-  `xeServer` (`cmd/xevent_server_test.go`, over `catalogServer`) replaces
-  `xeCatalog`, `captureCatalog` and `captureWriter`; its writes create,
-  start, stop and drop sessions as the server would, and its `steps` are
-  what a capture's cleanup is judged by. `clitest.EventXML` now carries
-  actions, a field's `<text>` and `event_sequence`. Eleven mutations (five
-  gosmo, six gossms) each failed a test.
-  `db` create/drop/set/scoped-config and `job` list/show/history/start/stop
-  moved the same way (`dbServer`, `jobServer`); `Writer` is gone entirely.
-  Still on the seam: the shared reads in `Catalog` (resolution, the
-  databases, server info, availability groups, the log and volume reads),
-  which the groups not yet moved still read through. Whether to move those
-  is the author's call. `internal/tui/fakedb_test.go` is gone (fix plan step 18): the
-  `fakeResponse` fixture DSL and capability builders live in
-  `gosmotest_fixtures_test.go`, served by `gosmotest` through
-  `gosmotest_bridge_test.go`; the form helpers in `form_helpers_test.go`.
+- **The `Catalog` seam still carries the shared reads** (`internal/cli/cmd/common.go`):
+  name resolution, the databases and their sizes/options, server info and
+  capabilities, the storage reads (files, volumes, space, log usage) and
+  `server log`. Every other group (`object`, `script`, `data`, `security`,
+  `maint`, `monitor`, `plan cached`, `server` info/memory/config/traceflag,
+  `xevent`, `db` create/drop/set/scoped-config, `job`) calls gosmo directly,
+  its tests serve canned rows through gosmo's `gosmotest`, and `Writer` is
+  gone. Moving the remaining reads off the seam is the author's call.
 
 ## Fix order
 

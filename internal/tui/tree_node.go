@@ -293,6 +293,9 @@ type nodeData struct {
 	// the same one-flag idiom). A NodeIndex sets it when the index is not
 	// disabled.
 	IsEnabled bool
+	// LoginDisabled is a NodeLogin's ALTER LOGIN … DISABLE state (gosmo
+	// Login.IsDisabled); see dimmed.
+	LoginDisabled bool
 
 	// IndexType and IsHypothetical are a NodeIndex's kind as read: a clustered
 	// index's Disable takes its data offline, and a hypothetical or hash index

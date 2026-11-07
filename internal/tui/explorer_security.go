@@ -27,6 +27,7 @@ func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 			n := l.node(login.Name, NodeLogin, "", login.Name, "")
 			n.data.CreateDate = login.CreateDate
 			n.data.IsSystem = login.IsSystem()
+			n.data.LoginDisabled = login.IsDisabled
 			return n
 		})
 }

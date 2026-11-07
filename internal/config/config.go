@@ -37,12 +37,10 @@ const (
 )
 
 // AuthFields says which Connect-dialog credential fields an auth method reads
-// (see db.toGosmoOptions). The dialog greys out the rest, as SSMS does, so no
-// field looks live but is never sent.
+// (see db.toGosmoOptions); the dialog greys out the rest.
 type AuthFields struct{ User, Password, Tenant, Client bool }
 
-// authMethodInfo is everything about an auth method except its gosmo mapping,
-// which db.toGosmoAuth keeps as a switch.
+// authMethodInfo is an auth method's table row; db.toGosmoAuth holds the gosmo mapping.
 type authMethodInfo struct {
 	method AuthMethod
 	// label is the Connect dialog's name for it, as SSMS spells it.
@@ -76,10 +74,9 @@ var authMethods = []authMethodInfo{
 	{AuthEntraAzCLI, "Microsoft Entra Azure CLI", "Entra Azure CLI", true, AuthFields{Tenant: true}},
 }
 
-// authInfo looks m up in authMethods. An unknown method (a hand-edited
-// config.json, or a newer gossms's) is labelled "Unknown" with SQL Server
-// Authentication's fields and tag, for display only: db.toGosmoAuth refuses
-// to dial it.
+// authInfo looks m up in authMethods. An unknown method (hand-edited or newer
+// config.json) is labelled "Unknown" with SQL Server Authentication's fields
+// and tag, for display only: db.toGosmoAuth refuses to dial it.
 func authInfo(m AuthMethod) authMethodInfo {
 	for _, info := range authMethods {
 		if info.method == m {
@@ -109,8 +106,7 @@ func AllAuthMethods() []AuthMethod {
 	return out
 }
 
-// IconStyle selects the Object Explorer icon glyph set. The zero value,
-// IconStyleEmoji, is the default for a config.json missing the field.
+// IconStyle selects the Object Explorer icon glyph set; the zero value is the default.
 type IconStyle int
 
 const (
@@ -139,15 +135,13 @@ func AllIconStyles() []IconStyle {
 	return []IconStyle{IconStyleEmoji, IconStyleSymbols, IconStylePortable, IconStyleNone}
 }
 
-// ColorTheme selects the UI palette. The zero value, ThemeDark, is the default
-// for a config.json missing the field.
+// ColorTheme selects the UI palette; the zero value is the default.
 type ColorTheme int
 
 const (
 	ThemeDark ColorTheme = iota
 	ThemeLight
-	// ThemeMCRetro keeps the value the original "Midnight Commander" theme
-	// was saved under, so an existing config.json opens in the same palette.
+	// ThemeMCRetro keeps the original "Midnight Commander" theme's saved value.
 	ThemeMCRetro
 	ThemeMC
 )
@@ -258,18 +252,15 @@ type connectionWire struct {
 	LegacyEncrypt *bool `json:"encrypt,omitempty"`
 }
 
-// MarshalJSON writes Encrypt as "encrypt_mode" and also the legacy boolean
-// "encrypt" (true unless Optional): an older gossms after a downgrade decodes
-// "encrypt" as a bool, and a string there would make Load treat the file as
-// corrupt.
+// MarshalJSON writes Encrypt as "encrypt_mode" plus the legacy boolean
+// "encrypt" (true unless Optional), which a downgraded gossms decodes as a bool.
 func (c Connection) MarshalJSON() ([]byte, error) {
 	legacy := c.Encrypt != EncryptOptional && c.Encrypt != ""
 	return json.Marshal(connectionWire{connectionFields: connectionFields(c), LegacyEncrypt: &legacy})
 }
 
-// UnmarshalJSON maps an entry without "encrypt_mode" from its boolean
-// "encrypt": true is Mandatory, false or absent is Optional. "encrypt_mode"
-// wins when present.
+// UnmarshalJSON reads "encrypt_mode"; without it, the boolean "encrypt" maps
+// true to Mandatory, false or absent to Optional.
 func (c *Connection) UnmarshalJSON(data []byte) error {
 	var w connectionWire
 	if err := json.Unmarshal(data, &w); err != nil {
@@ -295,14 +286,13 @@ func ConnectionName(server string, port int, database, user string) string {
 }
 
 // GeneratedName is the name AddOrUpdate gives c: ConnectionName with c's
-// signing-in identity in the user slot, plus the auth method's tag
-// ("srv,1433,db,app-id (Entra Service Principal)"). It is both the Connect
-// autocomplete label and the dedup key, so it must distinguish any two different
-// connections (two service principals on one server, Windows vs Entra Default).
+// sign-in identity in the user slot, plus the auth method's tag
+// ("srv,1433,db,app-id (Entra Service Principal)"). It is the Connect
+// autocomplete label and the dedup key, so it must distinguish any two
+// connections.
 //
 // The identity is User when the method reads one and it is set, else ClientID
-// when the method reads that; an older service principal entry carries its
-// application id in User. SQL Server Authentication has no tag.
+// (older service principal entries keep the application id in User).
 func (c Connection) GeneratedName() string {
 	identity, tag := c.signInIdentity()
 	name := ConnectionName(c.Server, c.Port, c.Database, identity)
@@ -326,8 +316,8 @@ func (c Connection) signInIdentity() (identity, tag string) {
 }
 
 // PasswordUnreadable reports whether Load could not decrypt a stored password
-// (the ciphertext is kept and written back). Password alone cannot tell "no
-// password saved" from "saved but unusable": Load blanks both.
+// (the ciphertext is kept). Password alone can't tell "none saved" from
+// "unusable": Load blanks both.
 func (c *Connection) PasswordUnreadable() bool {
 	return c.Password == "" && c.sealed != ""
 }
@@ -351,62 +341,54 @@ type Config struct {
 	IconStyle     IconStyle    `json:"icon_style"`
 	Theme         ColorTheme   `json:"theme"`
 	MaxCellLength int          `json:"max_cell_length"`
-	// MaxTextColumnLength is how many characters Results to Text shows of each
-	// column, SSMS's "Maximum number of characters displayed in each column".
-	// Zero or negative means DefaultMaxTextColumnLength.
+	// MaxTextColumnLength is how many characters Results to Text shows per
+	// column. Zero or negative means DefaultMaxTextColumnLength.
 	MaxTextColumnLength int `json:"max_text_column_length"`
 	// IntelliSenseDisabled turns off editor autocomplete. Inverted so the zero
 	// value keeps it on.
 	IntelliSenseDisabled bool `json:"intellisense_disabled"`
-	// IndentWidth is how many spaces the query editor's Tab, indent/dedent and
-	// auto-indent use. Zero, or anything outside 1..MaxIndentWidth, means
-	// DefaultIndentWidth.
+	// IndentWidth is the query editor's indent in spaces. Zero or outside
+	// 1..MaxIndentWidth means DefaultIndentWidth.
 	IndentWidth int `json:"indent_width"`
-	// SQLFormatStyle is the format.Style ID Edit > Format Document lays SQL out
-	// in. Empty, or an ID no style has (a config from a later version), means
-	// the first registered style; format.StyleByID owns that fallback, so
-	// config does not import format.
+	// SQLFormatStyle is the format.Style ID for Edit > Format Document. Empty or
+	// unknown means the first registered style (format.StyleByID owns the
+	// fallback; config does not import format).
 	SQLFormatStyle string `json:"sql_format_style,omitempty"`
 	// XEventStoreCapacity is how many events an Extended Events viewer holds
-	// before the oldest are dropped. Anything outside
-	// MinXEventStoreCapacity..MaxXEventStoreCapacity means
+	// before dropping the oldest. Outside Min..MaxXEventStoreCapacity means
 	// DefaultXEventStoreCapacity.
 	XEventStoreCapacity int `json:"xevent_store_capacity"`
-	// MaxFetchRows is how many rows a query window keeps of each result set, in
-	// every results mode (grid, text, file). Reaching it cancels the rest of the
-	// script, later GO batches included (query.WithMaxRows). Zero, the default,
-	// means unlimited; Load turns a negative value into zero.
+	// MaxFetchRows is how many rows a query window keeps per result set in every
+	// results mode. Reaching it cancels the rest of the script, later GO batches
+	// included (query.WithMaxRows). Zero means unlimited; Load turns negatives
+	// into zero.
 	MaxFetchRows int `json:"max_fetch_rows"`
-	// XEventHiddenColumns is, per event session, the columns the Extended Events
-	// viewer hides ("name", "timestamp", "field:<name>", "action:<name>"). Hidden
-	// rather than shown, so a field the session starts collecting later still gets
-	// a column.
+	// XEventHiddenColumns is, per event session, the viewer's hidden columns
+	// ("name", "timestamp", "field:<name>", "action:<name>"). Hidden rather than
+	// shown, so a field collected later still gets a column.
 	XEventHiddenColumns map[string][]string `json:"xevent_hidden_columns,omitempty"`
-	// XEventViewSettings are the viewer's saved display settings by name (SSMS's
-	// .viewsetting files).
+	// XEventViewSettings are the viewer's saved display settings by name.
 	XEventViewSettings map[string]XEventViewSetting `json:"xevent_view_settings,omitempty"`
 
-	// unreadable is the error Load hit reading an existing config.json. It
-	// write-protects this Config (see Save): writing back would destroy a
-	// likely-intact file.
+	// unreadable is Load's error reading an existing config.json; it
+	// write-protects this Config (see Save) to spare a likely-intact file.
 	unreadable error
 
 	// ops is this process's AddOrUpdate/RemoveConnection calls since the last
-	// successful Save, replayed onto the file as it is now. Writing the whole list
-	// would delete what another instance saved meanwhile.
+	// Save, replayed onto the file as it is now; writing the whole list would
+	// delete what another instance saved.
 	ops []connOp
 
-	// base is the settings as last loaded or saved by this process, nil for a
-	// Config not from Load. Save writes a setting only when it differs from base;
-	// otherwise it keeps the file's value, which another instance may have changed.
+	// base is the settings as last loaded or saved, nil for a Config not from
+	// Load. Save writes a setting only when it differs from base, else keeps the
+	// file's value (another instance may have changed it).
 	base *Config
 
-	// legacySealed is set when Load opened a password sealed under an earlier
-	// binding than aadPrefix (see NeedsReseal); the next save clears it.
+	// legacySealed: Load opened a password sealed under an earlier binding than
+	// aadPrefix (see NeedsReseal); the next save clears it.
 	legacySealed bool
 
-	// readOnly is set by LoadReadOnly: Save refuses, so the command line can
-	// never write config.json behind a running TUI.
+	// readOnly is set by LoadReadOnly: Save refuses.
 	readOnly bool
 }
 
@@ -419,18 +401,16 @@ type connOp struct {
 }
 
 // DefaultMaxCellLength is how many characters a result-grid cell shows before
-// truncating, absent an Options override; a column dragged wider shows more.
-// Load applies it to a zero MaxCellLength.
+// truncating; Load applies it to a zero MaxCellLength.
 const DefaultMaxCellLength = 24
 
-// DefaultMaxTextColumnLength is SSMS's default for the same cap in Results to
-// Text. Without it one huge cell would pad every row to its width.
+// DefaultMaxTextColumnLength caps Results to Text columns, so one huge cell
+// doesn't pad every row.
 const DefaultMaxTextColumnLength = 256
 
-// XEventViewSetting is one saved Extended Events viewer layout: the hidden
-// columns, the filter expression, the grouping columns in nesting order and
-// the aggregates. Columns are named as XEventHiddenColumns names them;
-// aggregates as FUNC:column ("SUM:field:duration").
+// XEventViewSetting is one saved Extended Events viewer layout: hidden columns,
+// filter, grouping columns in nesting order, and aggregates. Columns are named
+// as in XEventHiddenColumns; aggregates as FUNC:column ("SUM:field:duration").
 type XEventViewSetting struct {
 	Hidden     []string `json:"hidden,omitempty"`
 	Filter     string   `json:"filter,omitempty"`
@@ -438,10 +418,9 @@ type XEventViewSetting struct {
 	Aggregates []string `json:"aggregates,omitempty"`
 }
 
-// DefaultXEventStoreCapacity is the Extended Events viewer's event limit absent
-// an Options override; it must agree with xevent.DefaultCapacity, which config
-// must not import (TestXEventStoreCapacityComesFromOptions). The bounds stop a
-// typo from making a viewer that holds nothing or exhausts memory.
+// DefaultXEventStoreCapacity must agree with xevent.DefaultCapacity, which
+// config must not import (TestXEventStoreCapacityComesFromOptions). The bounds
+// stop a typo from holding nothing or exhausting memory.
 const (
 	DefaultXEventStoreCapacity = 100_000
 	MinXEventStoreCapacity     = 1_000
@@ -456,10 +435,9 @@ func ClampXEventStoreCapacity(n int) int {
 	return n
 }
 
-// DefaultIndentWidth is how many spaces the query editor indents by absent an
-// Options override, and MaxIndentWidth the ceiling Load and the Options field
-// clamp to. Both must agree with controls.DefaultIndentWidth / MaxIndentWidth,
-// which config must not import; TestIndentWidthDefaultsAgree holds them together.
+// DefaultIndentWidth and MaxIndentWidth (the clamp ceiling) must agree with
+// controls.DefaultIndentWidth / MaxIndentWidth, which config must not import;
+// TestIndentWidthDefaultsAgree holds them together.
 const (
 	DefaultIndentWidth = 4
 	MaxIndentWidth     = 16
@@ -474,8 +452,8 @@ func configPath() string {
 	return filepath.Join(dir, "gossms", "config.json")
 }
 
-// LogFilePath returns the log file path, beside the config file so the launch
-// directory doesn't matter. Creates the directory if missing.
+// LogFilePath returns the log file path, beside the config file. Creates the
+// directory if missing.
 func LogFilePath() (string, error) {
 	dir := filepath.Dir(configPath())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -485,8 +463,7 @@ func LogFilePath() (string, error) {
 }
 
 // RecoveredDir returns the directory App.EmergencySave writes unsaved query
-// text to after a panic on the UI goroutine, beside the config file. Creates it
-// if missing, owner-only: query text can hold anything the user typed.
+// text to after a UI-goroutine panic. Created owner-only if missing.
 func RecoveredDir() (string, error) {
 	dir := filepath.Join(filepath.Dir(configPath()), "recovered")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -495,18 +472,17 @@ func RecoveredDir() (string, error) {
 	return dir, nil
 }
 
-// MaxLogSize is how large gossms.log may grow before OpenLogFile starts a fresh
-// one.
+// MaxLogSize is the size past which OpenLogFile starts a fresh log.
 const MaxLogSize = 5 << 20
 
-// OpenLogFile opens the log at LogFilePath for appending, first moving a file
-// past MaxLogSize to gossms.log.1 (one generation). Rotation happens only at
-// startup, so a session never loses its own lines.
+// OpenLogFile opens the log for appending, first moving a file past MaxLogSize
+// to gossms.log.1 (one generation). Rotation happens only at startup, so a
+// session never loses its own lines.
 //
-// The file is 0600 like the config and key: the log records server names, logins
-// and error text. OpenFile's mode applies only at create, so a log (or its .1)
-// left 0644 by an older build is narrowed here. On Windows Chmod only toggles
-// read-only, which the owner bits preserve.
+// The file is 0600 (it records server names, logins and errors). OpenFile's
+// mode applies only at create, so a log (or its .1) left 0644 by an older
+// build is narrowed here. On Windows Chmod only toggles read-only, which the
+// owner bits preserve.
 func OpenLogFile() (*os.File, error) {
 	path, err := LogFilePath()
 	if err != nil {
@@ -537,17 +513,15 @@ func rotateLog(path string, limit int64) {
 }
 
 // Load reads the config, returning an empty one if there is no file. Passwords
-// are decrypted (see secret.go); if the key is unavailable or one password won't
+// are decrypted (see secret.go); if the key is unavailable or a password won't
 // decrypt, that Password is "" and everything else loads.
 //
-// A file that exists but can't be read (permissions, EIO, EMFILE) comes back
-// unreadable, and Save refuses to write it, so the next unrelated Save can't
-// overwrite a good file with an empty config.
+// A file that exists but can't be read comes back unreadable, and Save refuses
+// to write it, so a later Save can't overwrite a good file with an empty config.
 func Load() *Config {
 	path := configPath()
-	// A save killed mid-write leaves its temp file (a full config copy);
-	// WriteAtomic's sweep only runs on a later save, which a read-only session
-	// never makes.
+	// A save killed mid-write leaves a temp copy; WriteAtomic's sweep runs only
+	// on a later save, which a read-only session never makes.
 	fileutil.RemoveStaleTemps(path)
 	fileutil.RemoveStaleTemps(filepath.Join(filepath.Dir(path), keyFileName))
 	data, err := os.ReadFile(path)
@@ -563,8 +537,8 @@ func Load() *Config {
 	}
 	cfg, err := parseConfig(path, data)
 	if err != nil {
-		// Not marked unreadable: Save re-reads the file and refuses while it
-		// is still corrupt and uncopied, but saves once the user repairs it.
+		// Not marked unreadable: Save re-reads the file, refusing while it is
+		// corrupt and uncopied, saving once repaired.
 		log.Printf("config: %v; starting with no saved settings and not saving over it", err)
 	}
 	cfg.base = cfg.settingsSnapshot()
@@ -602,14 +576,12 @@ func defaultConfig() *Config {
 // fail.
 var keepCorrupt = fileutil.KeepCorrupt
 
-// parseConfig decodes config.json's bytes, with every setting clamped and
-// passwords still sealed.
+// parseConfig decodes config.json's bytes, settings clamped, passwords still
+// sealed.
 //
-// Unparseable bytes (a hand-edit or interrupted write) are kept aside by
-// fileutil.KeepCorrupt before the config starts empty: passwords are lost but
-// server/user/database stay readable by hand. The error is non-nil only when
-// that copy could not be made: the bytes then exist nowhere else, and the caller
-// must not write over path.
+// Unparseable bytes are kept aside by fileutil.KeepCorrupt before the config
+// starts empty. The error is non-nil only when that copy failed: the bytes then
+// exist nowhere else, and the caller must not write over path.
 func parseConfig(path string, data []byte) (*Config, error) {
 	cfg, err := decodeConfig(data)
 	var keepErr error
@@ -668,11 +640,10 @@ func (c *Config) openPasswords(key []byte, path string) {
 	}
 }
 
-// settingsSnapshot copies c without its connections or bookkeeping, for base. A
-// whole-struct copy, so a later-added setting is covered without being listed,
-// and a deep one: a map or slice shared with c would see an in-place write
-// too, compare equal to itself in mergeSettings, and the setting would silently
-// not be saved.
+// settingsSnapshot deep-copies c without its connections or bookkeeping, for
+// base. Whole-struct, so new settings are covered unlisted; deep, because a
+// map or slice shared with c would see in-place writes, compare equal in
+// mergeSettings, and the setting would silently not be saved.
 func (c *Config) settingsSnapshot() *Config {
 	snap := *c
 	snap.Connections, snap.ops, snap.base, snap.unreadable = nil, nil, nil, nil
@@ -741,9 +712,8 @@ func deepCopy(v reflect.Value) reflect.Value {
 	return v
 }
 
-// mergeSettings copies into dst every setting cur changed since base: every
-// exported field but Connections, by reflection for the same reason
-// settingsSnapshot copies whole.
+// mergeSettings copies into dst every setting cur changed since base (all
+// exported fields but Connections), by reflection like settingsSnapshot.
 func mergeSettings(cur, base, dst *Config) {
 	if base == nil {
 		base = new(Config)
@@ -760,16 +730,14 @@ func mergeSettings(cur, base, dst *Config) {
 	}
 }
 
-// MaxSavedConnections caps saved recent connections. Connect saves each
-// successful connection automatically. Named connections (Profile set) are not
-// counted and never trimmed: the user chose to keep them.
+// MaxSavedConnections caps saved recent connections. Named ones (Profile set)
+// are not counted or trimmed.
 const MaxSavedConnections = 30
 
 // AddOrUpdate saves a successful connection. Name is set to
-// conn.GeneratedName(), the dedup key: a match is replaced, otherwise added, and
-// a replaced entry's Profile and MaxAllow carry over (the Connect dialog's form
-// has neither). The entry moves to the end (most recent) and the oldest unnamed
-// entries are trimmed to MaxSavedConnections. conn is taken by value.
+// conn.GeneratedName(), the dedup key: a match is replaced, and its Profile and
+// MaxAllow carry over. The entry moves to the end (most recent) and the oldest
+// unnamed entries are trimmed to MaxSavedConnections.
 func (c *Config) AddOrUpdate(conn Connection) {
 	conn.Name = conn.GeneratedName()
 	// Remember Password off: the entry is saved without a password, and the
@@ -782,10 +750,8 @@ func (c *Config) AddOrUpdate(conn Connection) {
 }
 
 // addOrUpdate is AddOrUpdate on a list, for Save to replay onto the file's.
-//
-// The carry-over happens here, not in AddOrUpdate, so the op AddOrUpdate
-// records holds no profile: replayed onto the file it carries over whatever
-// name the file holds then, which another instance may have changed.
+// The carry-over happens here so a replayed op takes the profile the file holds
+// then, which another instance may have changed.
 func addOrUpdate(list []Connection, conn Connection) []Connection {
 	if conn.Profile == "" {
 		if i := slices.IndexFunc(list, func(e Connection) bool {
@@ -820,10 +786,9 @@ func trimUnnamed(list []Connection) []Connection {
 	})
 }
 
-// RemoveConnection deletes the saved connection named name (the GeneratedName
-// key AddOrUpdate stores) and its sealed password, and reports whether one was
-// found. An older build's entry may carry a different Name, so the generated
-// name is matched too.
+// RemoveConnection deletes the saved connection named name (and its sealed
+// password), reporting whether one was found. The generated name is matched too,
+// as older builds stored a different Name.
 func (c *Config) RemoveConnection(name string) bool {
 	var found bool
 	c.Connections, found = removeConnection(c.Connections, name)
@@ -834,8 +799,7 @@ func (c *Config) RemoveConnection(name string) bool {
 }
 
 // removeConnection is RemoveConnection on a list. Every match goes: older
-// configs can hold distinct custom names that generate the same name, and
-// stopping at the first left a duplicate in Recent Connections.
+// configs can hold distinct names generating the same name.
 func removeConnection(list []Connection, name string) ([]Connection, bool) {
 	n := len(list)
 	list = slices.DeleteFunc(list, func(existing Connection) bool {
@@ -845,8 +809,7 @@ func removeConnection(list []Connection, name string) ([]Connection, bool) {
 }
 
 // MatchByServer returns saved connections whose Server has the given
-// case-insensitive prefix, most recent first. The Connect dialog's History pane
-// passes an empty prefix, for the ordering.
+// case-insensitive prefix, most recent first (empty prefix: all).
 func (c *Config) MatchByServer(prefix string) []Connection {
 	prefix = strings.ToLower(prefix)
 	var out []Connection

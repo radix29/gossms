@@ -158,3 +158,21 @@ func objectIconPortable(t NodeType) rune {
 	}
 	return objectIconSymbols(t)
 }
+
+// dimmed reports whether the node is an enable-able object that is currently
+// off, which the tree draws in the muted foreground (TreeNode.Dim). It is an
+// allowlist because IsEnabled is false for every type that never sets it. A
+// stopped event session is not here: its hollow glyph already says so.
+func (d nodeData) dimmed() bool {
+	switch d.Type {
+	case NodeLogin:
+		return d.LoginDisabled
+	case NodeServerTrigger, NodeEndpoint, NodeBrokerQueue, NodePlanGuide,
+		NodeDatabaseTrigger, NodeDatabaseAuditSpecification, NodeSecurityPolicy,
+		NodeIndex, NodeTrigger, NodeCryptographicProvider, NodeAudit,
+		NodeServerAuditSpecification, NodeAgentJob, NodeAgentSchedule,
+		NodeAgentAlert, NodeAgentOperator:
+		return !d.IsEnabled
+	}
+	return false
+}

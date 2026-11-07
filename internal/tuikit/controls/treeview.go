@@ -21,6 +21,7 @@ type TreeNode struct {
 	ID       TreeNodeID
 	Label    string
 	Icon     rune
+	Dim      bool // draw the row in the muted (disabled) foreground; the selection highlight wins
 	Depth    int
 	Expanded bool
 	Loaded   bool
@@ -307,6 +308,8 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 		style := theme.StylePanel()
 		if idx == tv.sel {
 			style = theme.StyleSelected()
+		} else if node.Dim {
+			style = style.Foreground(theme.StyleDisabled().GetForeground())
 		}
 		core.FillRect(s, core.Rect{X: inner.X, Y: y, W: inner.W, H: 1}, ' ', style)
 

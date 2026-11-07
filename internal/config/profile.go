@@ -12,10 +12,10 @@ import (
 
 // Profiles
 //
-// A profile is a saved connection the user has named in the Connect dialog's
-// Profile dialog. The command line addresses it by that name (`gossms
-// profile test dev`) and reads its MaxAllow ceiling; the TUI shows the name in History.
-// Naming is the only way a profile is made: there is no separate list.
+// A profile is a saved connection named in the Connect dialog's Profile dialog.
+// The command line addresses it by that name (`gossms profile test dev`) and
+// reads its MaxAllow ceiling; the TUI shows the name in History. There is no
+// separate list.
 
 // AllowClass is an operation class, as the command line's safety model spells
 // it: each one permits everything below it.
@@ -50,9 +50,9 @@ func AllowClassLabel(a AllowClass) string {
 }
 
 // Ceiling is the highest class the command line may run through c: MaxAllow,
-// with "" meaning AllowAdmin (no ceiling beyond --allow). A value this build
-// does not know (a hand-edited config.json, or a newer gossms's) is AllowRead:
-// a ceiling that cannot be read must not lift.
+// "" meaning AllowAdmin (no ceiling beyond --allow). An unknown value
+// (hand-edited or newer config.json) is AllowRead: an unreadable ceiling must
+// not lift.
 func (c Connection) Ceiling() AllowClass {
 	switch c.MaxAllow {
 	case "":
@@ -68,9 +68,9 @@ func (c Connection) Ceiling() AllowClass {
 const MaxProfileNameLength = 64
 
 // ValidateProfileName reports why name cannot be a profile name: letters,
-// digits, '-', '_' and '.', starting with a letter or digit — a leading '-'
-// would read as an option on the command line — and at most
-// MaxProfileNameLength long. The empty name is valid: it clears the profile.
+// digits, '-', '_' and '.', starting with a letter or digit (a leading '-'
+// would read as an option), at most MaxProfileNameLength long. The empty name
+// is valid: it clears the profile.
 func ValidateProfileName(name string) error {
 	if name == "" {
 		return nil
@@ -107,10 +107,9 @@ func keyMatches(e Connection, key string) bool {
 	return e.Name == key || e.GeneratedName() == key
 }
 
-// applyTo replays the op on a list. An entry another instance removed since
-// is gone, so there is nothing to name. A name another instance gave a
-// different entry meanwhile moves to this one: names stay unique, and the
-// later save is the one the user just made.
+// applyTo replays the op on a list. An entry another instance removed is gone,
+// so there is nothing to name. A name another instance gave a different entry
+// moves to this one: names stay unique, and the later save wins.
 func (op *profileOp) applyTo(list []Connection) []Connection {
 	i := slices.IndexFunc(list, func(e Connection) bool { return keyMatches(e, op.key) })
 	if i < 0 {
@@ -131,10 +130,9 @@ func (op *profileOp) applyTo(list []Connection) []Connection {
 }
 
 // SetProfile names the saved connection whose dedup key is key (its
-// GeneratedName, as RemoveConnection takes) and sets its ceiling. An empty name
-// turns it back into a plain recent connection, clearing the ceiling too. The
-// name must pass ValidateProfileName and be unique, ignoring case, among the
-// other saved connections.
+// GeneratedName) and sets its ceiling. An empty name makes it a plain recent
+// connection again, clearing the ceiling. The name must pass ValidateProfileName
+// and be unique, ignoring case.
 func (c *Config) SetProfile(key, name string, maxAllow AllowClass) error {
 	if err := ValidateProfileName(name); err != nil {
 		return err
@@ -173,13 +171,12 @@ func (c *Config) Profiles() []Connection {
 	return out
 }
 
-// ProfileByName finds the saved connection the command line's name means: the
-// profile of that name, ignoring case, else the connection whose generated
-// name (`srv,1433,db,user`) it is, so a connection can be used before it is
-// named. A name matching nothing wraps ErrProfileNotFound.
+// ProfileByName finds the connection a command-line name means: the profile of
+// that name, ignoring case, else the connection with that generated name
+// (`srv,1433,db,user`). No match wraps ErrProfileNotFound.
 //
-// A hand-edited config.json can hold one profile name twice; the most recently
-// saved entry wins, as History lists it first.
+// If a hand-edited config.json holds a profile name twice, the most recently
+// saved entry wins.
 func (c *Config) ProfileByName(name string) (Connection, error) {
 	for _, e := range slices.Backward(c.Connections) {
 		if e.Profile != "" && strings.EqualFold(e.Profile, name) {
@@ -195,16 +192,15 @@ func (c *Config) ProfileByName(name string) (Connection, error) {
 }
 
 // LoadReadOnly reads the config for the command line, which may run beside a
-// TUI on the same files and must not disturb it (docs/cli.md § Profiles):
+// TUI and must not disturb it (docs/cli.md § Profiles):
 //
-//   - Nothing is written: no key file is created, no stale temp file swept, a
-//     corrupt config.json is not copied aside, and Save on the result refuses.
-//   - Passwords open with an existing key only. No key, or one that cannot be
-//     read, leaves every password sealed (Connection.PasswordUnreadable).
+//   - Nothing is written: no key file created, no stale temp swept, no corrupt
+//     config.json copied aside; Save on the result refuses.
+//   - Passwords open with an existing key only; otherwise they stay sealed
+//     (Connection.PasswordUnreadable).
 //
-// A config.json that is missing is an empty config; one that exists but
-// cannot be read or parsed is an error, since an empty answer would read as
-// "no profiles".
+// A missing config.json is an empty config; one that can't be read or parsed is
+// an error, since an empty answer would read as "no profiles".
 func LoadReadOnly() (*Config, error) {
 	path := configPath()
 	data, err := os.ReadFile(path)

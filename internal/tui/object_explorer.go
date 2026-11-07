@@ -612,6 +612,7 @@ func (oe *ObjectExplorer) flatten(flat []controls.TreeNode, n *explorerNode, dep
 		ID:       n.id,
 		Label:    label,
 		Icon:     nodeIcon(n.data, oe.app.cfg.IconStyle, n.expanded),
+		Dim:      n.data.dimmed(),
 		Depth:    depth,
 		Expanded: n.expanded,
 		Loaded:   n.data.Loaded,

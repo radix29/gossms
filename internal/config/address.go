@@ -13,10 +13,9 @@ import (
 // peer resolver.
 
 // DialPort is the gosmo.ConnectionOptions.Port a saved Port dials with: 1433 is
-// 0, unspecified. The driver defaults to 1433, and a port on "host\instance"
-// suppresses the SQL Browser lookup for the instance's dynamic port (a pinned
-// 1433 reaches the default instance, not a named one). A port written in Server
-// wins, in gosmo.
+// 0 (unspecified). The driver defaults to 1433, and a port on "host\instance"
+// suppresses the SQL Browser lookup (a pinned 1433 would reach the default
+// instance). A port written in Server wins, in gosmo.
 func DialPort(port int) int {
 	if port == 1433 {
 		return 0
@@ -24,13 +23,13 @@ func DialPort(port int) int {
 	return port
 }
 
-// ResolveServer folds the dialog's Server and Port into one address string, for
-// keys (ConnectionAddress) and the Connect dialog's display; dialling passes
-// them to gosmo separately (db.toGosmoOptions). Server may be any
-// gosmo.ParseServerAddress form; a port it carries wins, as in gosmo.
+// ResolveServer folds the dialog's Server and Port into one address string for
+// keys (ConnectionAddress) and display; dialling passes them to gosmo
+// separately (db.toGosmoOptions). Server may be any gosmo.ParseServerAddress
+// form; a port it carries wins.
 //
 // Port 0 or 1433 is omitted (DialPort). With "\instance", a non-default port is
-// appended with a comma; gosmo reads a colon there as part of the instance name.
+// appended with a comma (gosmo reads a colon there as part of the name).
 func ResolveServer(server string, dialogPort int) string {
 	host, _, embeddedPort := gosmo.ParseServerAddress(server)
 	if embeddedPort != 0 {
@@ -56,15 +55,15 @@ func ResolveServer(server string, dialogPort int) string {
 //
 // A named instance is identified by name, so its port is dropped
 // ("host\inst,1500" = "host\inst"). Without a name the port distinguishes
-// instances on one host; a shared key would try the other's login, counting
+// instances on one host; a shared key would try the other's login and count
 // toward a CHECK_POLICY lockout. 1433 equals no port.
 //
-// "host\MSSQLSERVER" is the default instance's own name, so it keys as a bare
-// host; two keys would split its credentials and count attempts toward a lockout.
+// "host\MSSQLSERVER" is the default instance's own name and keys as a bare
+// host; two keys would split its credentials and lockout counts.
 //
 // The catalog reports names without ports, so a default instance saved as
 // "host,1500" doesn't answer a peer read for "HOST"; register that destination
-// explicitly rather than guessing it from another connection.
+// explicitly.
 func InstanceKey(server string) string {
 	host, instance, port := gosmo.ParseServerAddress(strings.TrimSpace(server))
 	key := strings.ToLower(host)
@@ -88,16 +87,15 @@ func ConnectionAddress(c Connection) string {
 	return ResolveServer(c.Server, c.Port)
 }
 
-// IdentityKey identifies the instance and the identity c signs in as: its
-// InstanceKey, then the GeneratedName identity and auth tag, NUL-separated (a
-// login name or address may hold a comma; neither can hold a NUL).
+// IdentityKey identifies the instance and sign-in identity of c: its
+// InstanceKey, then the GeneratedName identity and auth tag, NUL-separated
+// (logins and addresses may hold a comma, never a NUL).
 //
 // Key anything that depends on who is looking by it: the IntelliSense caches
 // (the catalog is filtered by metadata visibility) and saved OE filters. User
 // alone is empty for Windows, Entra Default/MSI and service principals, so two
-// identities on one server would share a catalog, and disconnecting either
-// would purge the other's. The database is left out; a per-database cache
-// appends its own.
+// identities would share a catalog and disconnecting either would purge the
+// other's. The database is left out; a per-database cache appends its own.
 func (c Connection) IdentityKey() string {
 	identity, tag := c.signInIdentity()
 	return InstanceKey(ConnectionAddress(c)) + "\x00" + identity + "\x00" + tag

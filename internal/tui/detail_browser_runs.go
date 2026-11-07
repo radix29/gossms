@@ -291,6 +291,8 @@ func nodeDetail(f func(context.Context, *dbconn.ServerConn, *explorerNode) ([]st
 var detailLoaders = map[NodeType]detailLoader{
 	NodeAgentJobs:            serverDetail(agentServerDetail),
 	NodeAgentJob:             nodeDetail(agentJobDetail),
+	NodeAgentUserJobs:        agentJobsListDetail(false),
+	NodeAgentSystemJobs:      agentJobsListDetail(true),
 	NodeAgentSchedule:        nodeDetail(agentScheduleDetail),
 	NodeAgentAlert:           nodeDetail(agentAlertDetail),
 	NodeAgentOperator:        nodeDetail(agentOperatorDetail),

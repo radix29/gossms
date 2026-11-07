@@ -264,3 +264,49 @@ func agentJobCategoriesDetail(ctx context.Context, sc *db.ServerConn) ([]string,
 func agentAlertCategoriesDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	return agentCategoriesDetail(ctx, sc, gosmo.CategoryClassAlert)
 }
+
+// agentJobsListDetail builds the User Jobs / System Jobs folder detail: one row
+// per job with its enabled state, current status, last outcome and run times,
+// all from the single Server.Jobs round trip. Rows are objects (objs gets one
+// nodeData per row) so Delete and the context menu work as in the tree.
+func agentJobsListDetail(system bool) detailLoader {
+	return func(ctx context.Context, sc *db.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+		jobs, err := sc.Server.Jobs(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		l := loaderCtx{ctx: ctx, sc: sc}
+		byName := make(map[string]*gosmo.Job, len(jobs))
+		var nodes []*explorerNode
+		for _, j := range jobs {
+			if j.IsSystem() != system {
+				continue
+			}
+			byName[j.Name] = j
+			nodes = append(nodes, agentJobNode(l, j))
+		}
+		nodes = filterChildren(node.data.Filter, nodes)
+		rows := make([][]string, 0, len(nodes))
+		for _, n := range nodes {
+			j := byName[n.data.Name]
+			lastRun, nextRun := "—", "—"
+			if !j.LastRunDate.IsZero() {
+				lastRun = formatSQLDate(j.LastRunDate)
+			}
+			if !j.NextRunDate.IsZero() {
+				nextRun = formatSQLDate(j.NextRunDate)
+			}
+			enabled := "Enabled"
+			if !j.IsEnabled {
+				enabled = "Disabled"
+			}
+			rows = append(rows, []string{
+				j.Name, enabled, formatJobState(j.CurrentState), formatJobOutcome(j.LastRunOutcome),
+				lastRun, nextRun, j.OwnerLoginName, j.Category, formatSQLDate(j.DateCreated), formatSQLDate(j.DateModified),
+			})
+			*objs = append(*objs, n.data)
+		}
+		cols := []string{"Name", "Status", "State", "Last Outcome", "Last Run", "Next Run", "Owner", "Category", "Created", "Modified"}
+		return cols, rows, nil
+	}
+}

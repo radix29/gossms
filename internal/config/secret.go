@@ -18,32 +18,27 @@ import (
 
 // Password protection
 //
-// Saved connections' passwords are AES-256-GCM encrypted and base64-encoded
-// before ever touching disk (see encryptPassword/decryptPassword below).
-// Load/Save in config.go call these transparently, so the rest of the app
-// — the Connect dialog, autofill from a server-match, BuildConnectionString
-// — only ever sees plaintext Connection.Password in memory; only the JSON
-// file itself is encrypted.
+// Saved passwords are AES-256-GCM encrypted and base64-encoded on disk
+// (encryptPassword/decryptPassword). Load/Save in config.go call these
+// transparently, so the rest of the app only sees plaintext
+// Connection.Password in memory.
 //
-// The encryption key is a random 256-bit value generated on first run and
-// stored in its own file (keyFileName) next to config.json, 0600
-// (owner-only) where the OS honors that — so a leak of config.json alone
-// doesn't expose the passwords.
+// The key is a random 256-bit value generated on first run, stored in its own
+// file (keyFileName) next to config.json, 0600 where the OS honors that, so a
+// leak of config.json alone doesn't expose the passwords.
 //
-// This does not protect against an attacker with full read access to this
-// user's profile/home directory, since both files are readable there; an
-// OS-backed secret store (Windows Credential Manager, macOS Keychain,
-// Linux Secret Service) would close that gap.
+// This does not protect against full read access to the user's home directory,
+// where both files are readable; an OS secret store (Credential Manager,
+// Keychain, Secret Service) would close that gap.
 //
-// It does defend against *write* access being turned into exfiltration.
-// Every password is sealed with additional authenticated data naming the
-// connection it belongs to (see connectionAAD), so a ciphertext is only valid
-// for that server, port, user and auth method, with those transport settings
-// and that Entra tenant and client. Without it, the blobs are freely
-// transplantable: someone able to edit config.json could copy the production
-// password onto an entry pointing at a host they control and have gossms dial
-// out with it, never needing to decrypt anything. GCM verifies the AAD on
-// open, so a moved or retargeted entry fails to decrypt instead.
+// It does defend against *write* access becoming exfiltration. Every password
+// is sealed with additional authenticated data naming its connection (see
+// connectionAAD): the ciphertext is valid only for that server, port, user,
+// auth method, transport settings and Entra tenant/client. Otherwise someone
+// able to edit config.json could copy the production password onto an entry
+// pointing at their own host and have gossms dial out with it, never
+// decrypting anything. GCM verifies the AAD on open, so a moved or retargeted
+// entry fails to decrypt.
 
 // keyFileName is the file (in the same directory as config.json) holding
 // the random AES-256 key used to encrypt saved passwords.
@@ -53,11 +48,10 @@ const keyFileName = "gossms.key"
 // persisting a new random 256-bit key on first run.
 //
 // A key file that exists but isn't 32 bytes is an error, not a reason to
-// generate a fresh one: overwriting it would permanently destroy the only
-// thing that can decrypt the passwords already in config.json, turning a
-// recoverable truncated write into unrecoverable data loss. Failing here
-// instead leaves the file in place to be restored or removed by hand —
-// Load treats that as "no saved passwords" and still loads everything else.
+// generate a fresh one: overwriting it would destroy the only thing that can
+// decrypt the passwords in config.json. Failing leaves the file in place to be
+// restored or removed by hand; Load treats that as "no saved passwords" and
+// loads everything else.
 func loadOrCreateKey(dir string) ([]byte, error) {
 	path := filepath.Join(dir, keyFileName)
 	if key, err := readKey(path); !errors.Is(err, fs.ErrNotExist) {
@@ -71,18 +65,16 @@ func loadOrCreateKey(dir string) ([]byte, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	// Atomically, and flushed to disk, for the same reason config.json is
-	// (see fileutil.WriteAtomic) — but with more at stake here. Save creates the
-	// key before it writes the ciphertext that depends on it, so a crash
-	// that leaves config.json durable and gossms.key absent or short-written
-	// hits readKey's "expected 32" refusal on the next run, and every saved
-	// password is gone for good rather than merely unread.
+	// Atomic and flushed, as for config.json (see fileutil.WriteAtomic), with
+	// more at stake: Save creates the key before the ciphertext that depends on
+	// it, so a crash leaving config.json durable and gossms.key absent or short
+	// hits readKey's "expected 32" refusal next run, and every saved password
+	// is lost for good.
 	//
-	// And create-if-absent, not replace: two gossms instances starting on a
-	// fresh profile each get here. With a replacing write the later one's key
-	// wins on disk while the earlier one goes on sealing passwords with its
-	// own, and everything it saves is undecryptable from then on. The loser
-	// adopts the winner's key instead.
+	// Create-if-absent, not replace: two instances starting on a fresh profile
+	// both get here. A replacing write would leave the later key on disk while
+	// the earlier instance keeps sealing with its own, making everything it
+	// saves undecryptable. The loser adopts the winner's key.
 	created, err := fileutil.CreateAtomic(path, key, 0o600)
 	if err != nil {
 		return nil, err
@@ -108,39 +100,34 @@ func readKey(path string) ([]byte, error) {
 	return key, nil
 }
 
-// aadPrefix marks a stored password sealed with the current connection-binding
-// AAD, connectionAAD. Values behind aadPrefixV3 or aadPrefixV2, or with no
-// prefix at all, are earlier formats and are still readable (see
-// decryptPassword) — Save rewrites them under aadPrefix on the next write,
-// which the app makes at startup when Load opened one (Config.NeedsReseal).
+// aadPrefix marks a password sealed with the current binding, connectionAAD.
+// Values behind aadPrefixV3 or aadPrefixV2, or unprefixed, are earlier formats,
+// still readable (see decryptPassword); Save rewrites them under aadPrefix, and
+// the app saves at startup when Load opened one (Config.NeedsReseal).
 const (
 	aadPrefix   = "v4:"
 	aadPrefixV3 = "v3:"
 	aadPrefixV2 = "v2:"
 )
 
-// connectionAAD is the additional authenticated data binding a sealed
-// password to the connection it belongs to: the fields that decide where the
-// password is sent and how it is protected on the way. Server, Port, User and
-// AuthMethod pick the destination; Encrypt, TrustServerCertificate,
-// HostNameInCertificate and ExtraProperties decide whether the TLS around the
-// login and the session is there and is checked. Binding the second group is
-// what stops write access to config.json from turning Encrypt off, or
-// Trust-certificate on, for an entry and dialling it with the saved password
-// intact — a downgrade no decryption is needed for. ExtraProperties belongs
-// with them because it reaches the driver: a "protocol" or "failoverpartner"
-// there can redirect the dial. TenantID and ClientID are the destination for
-// the Entra methods that send the secret to Entra rather than to SQL Server
-// (Password, Service Principal): they decide which tenant and application it
-// is presented to. Other methods leave both empty, so binding them for every
-// method costs nothing.
+// connectionAAD is the additional authenticated data binding a sealed password
+// to its connection: the fields deciding where it is sent and how it is
+// protected.
+//   - Server, Port, User, AuthMethod pick the destination.
+//   - Encrypt, TrustServerCertificate, HostNameInCertificate and
+//     ExtraProperties decide whether TLS is present and checked. Binding them
+//     stops write access to config.json from turning Encrypt off (or
+//     Trust-certificate on) and dialling with the saved password intact, a
+//     downgrade needing no decryption. ExtraProperties reaches the driver: a
+//     "protocol" or "failoverpartner" there can redirect the dial.
+//   - TenantID and ClientID are the destination for Entra methods that send
+//     the secret to Entra (Password, Service Principal). Other methods leave
+//     them empty, so binding them for every method is free.
 //
-// Name and Database are deliberately excluded — relabelling a connection or
-// pointing it at a different database on the same server is an ordinary edit
-// and must not invalidate the stored password.
+// Name and Database are excluded: relabelling or retargeting the database is an
+// ordinary edit and must not invalidate the password.
 //
-// NUL-separated so a value ending where the next begins can't be confused
-// with a different split of the same bytes ("a" + "bc" vs "ab" + "c").
+// NUL-separated so ("a","bc") and ("ab","c") differ.
 func connectionAAD(c Connection) []byte {
 	return fmt.Appendf(nil, "gossms-connection-v4\x00%s\x00%d\x00%s\x00%d\x00%s\x00%t\x00%s\x00%s\x00%s\x00%s",
 		c.Server, c.Port, c.User, int(c.AuthMethod),
@@ -173,10 +160,9 @@ func connectionAADv2(c Connection) []byte {
 		c.Server, c.User, int(c.AuthMethod))
 }
 
-// encryptPassword AES-256-GCM-encrypts c's password under key, binding it to
-// c via connectionAAD, prepends the random nonce GCM needs for decryption,
-// and base64-encodes the result for JSON storage behind aadPrefix. An empty
-// password encrypts to "".
+// encryptPassword AES-256-GCM-encrypts c's password under key, bound to c via
+// connectionAAD, with the random nonce prepended, base64-encoded behind
+// aadPrefix. An empty password encrypts to "".
 func encryptPassword(key []byte, c Connection) (string, error) {
 	if c.Password == "" {
 		return "", nil
@@ -194,30 +180,25 @@ func encryptPassword(key []byte, c Connection) (string, error) {
 }
 
 // decryptPassword reverses encryptPassword for c's stored password. Anything
-// that doesn't decode and authenticate cleanly — hand-edited JSON, a replaced
-// key file, or a ciphertext moved here from a different connection — comes
-// back as ("", false) rather than erroring or returning garbage. A password
-// that was stored empty in the first place is ("", true): nothing failed.
+// that doesn't decode and authenticate (hand-edited JSON, a replaced key file,
+// a ciphertext moved from another connection) returns ("", false). A password
+// stored empty is ("", true): nothing failed.
 //
-// The bool is what stops a failed open from becoming permanent data loss.
-// Returning only "" made Save re-encrypt the empty string over the very
-// ciphertext that failed, destroying the one copy of a password that a
-// restored key file or an undone hand-edit could still have recovered. Load
-// keeps the original bytes for a false (see Connection.sealed) and Save
-// writes them back untouched.
+// The bool prevents data loss: with "" alone, Save re-encrypted the empty
+// string over the ciphertext that failed to open, destroying a copy a restored
+// key file or undone hand-edit could still recover. Load keeps the original
+// bytes for a false (Connection.sealed) and Save writes them back untouched.
 //
-// A value behind aadPrefixV3 predates tenant/client binding and is opened with
-// the v3 AAD, one behind aadPrefixV2 predates transport binding and is opened
-// with the v2 AAD, and one with no prefix at all predates connection binding
-// and is opened without AAD. So an existing config keeps working across each upgrade,
-// and the next Save, made at startup for this (Config.NeedsReseal), rewrites
-// it under the current binding. Such a value is
-// exactly what the newer binding defends against, so this fallback is the cost
-// of not silently discarding every saved password once — it narrows as
-// configs get rewritten. The reverse does not hold: a release that predates a
-// prefix reads a value behind it as an unprefixed one, fails to open it, and
-// keeps it sealed (see Connection.sealed) — the password is re-entered after a
-// downgrade, and is back once the newer release runs again.
+// aadPrefixV3 predates tenant/client binding and opens with the v3 AAD;
+// aadPrefixV2 predates transport binding and opens with the v2 AAD; no prefix
+// predates connection binding and opens without AAD. Existing configs thus
+// survive each upgrade and the startup save (Config.NeedsReseal) rewrites them
+// under the current binding. Those values are what the newer binding defends
+// against, so the fallback is the price of not discarding every saved password
+// once; it narrows as configs are rewritten. Downgrades don't work: an older
+// release reads a newer prefix as unprefixed, fails to open it and keeps it
+// sealed (Connection.sealed), so the password is re-entered until the newer
+// release runs again.
 func decryptPassword(key []byte, c Connection) (string, bool) {
 	encoded := c.Password
 	if encoded == "" {

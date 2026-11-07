@@ -83,16 +83,6 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
   unmeasured and not mechanical — the `Ref` leaves `id` 0, so `IsSystem()`/
   `IsSnapshot()` answer `false`. Reopen only with a measured real expand (MI's
   ~41 ms round trip would decide it).
-- **Five of seven Service Broker families are read-only — a deferral, not the
-  Rules/Defaults refusal** (six have an ALTER). Each props file argues its own
-  reason: message type and service ALTERs change a running application's wire
-  contract; a contract has no ALTER; a binding's ALTER needs a user already
-  owning the remote certificate (an import left to a query window, § Keys and
-  certificates); a broker priority's write can't be gated on any published
-  right but ALTER on the database, which would show read-only to everyone
-  able. Queue and Route are editable (their settings change in operation).
-  **No New-X dialogs for any of the seven**: each needs the others first, and
-  services/contracts are authored with their application.
 - **Login authentication kind isn't editable** in Login Properties (static
   row). New Login creates all five kinds, but `ALTER LOGIN` can't change it —
   drop-and-recreate loses the SID and orphans mapped users. Deliberate.
@@ -117,12 +107,17 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
     (`sp_control_plan_guide`, gated on ALTER DATABASE) — a disabled guide is
     invisible but for its label suffix. Nothing else is editable (no ALTER;
     query text matches character for character).
-- **A snapshot's subtree offers writes the server refuses.** It gets Tables,
-  Views, Programmability (not Query Store, Storage, Security — none apply);
-  Delete/Rename inside is offered and refused "read-only". The gate answers what
-  the *login* may do; a read-only-database gate would have to cover every
-  READ_ONLY database. SSMS does the same.
-- **Service Broker details easy to undo:**
+- **Five of seven Service Broker families are read-only — a deferral, not the
+  Rules/Defaults refusal** (six have an ALTER). Each props file argues its own
+  reason: message type and service ALTERs change a running application's wire
+  contract; a contract has no ALTER; a binding's ALTER needs a user already
+  owning the remote certificate (an import left to a query window, § Keys and
+  certificates); a broker priority's write can't be gated on any published
+  right but ALTER on the database, which would show read-only to everyone
+  able. Queue and Route are editable (their settings change in operation).
+  **No New-X dialogs for any of the seven**: each needs the others first, and
+  services/contracts are authored with their application.
+  Details easy to undo:
   - No rename in the family (no `sp_rename` class for any of the seven).
   - `azureRefusedScriptVerbs` withholds the remote service binding's CREATE and
     DROP And CREATE on Azure (compile-time Msg 41906), not its DROP. Withheld
@@ -140,6 +135,11 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
     queue with no activation; **`RouteChanges` can change but never clear** a
     setting (`= NULL` doesn't parse, empty is refused — drop and recreate), so
     Route Properties refuses an emptied row with a message.
+- **A snapshot's subtree offers writes the server refuses.** It gets Tables,
+  Views, Programmability (not Query Store, Storage, Security — none apply);
+  Delete/Rename inside is offered and refused "read-only". The gate answers what
+  the *login* may do; a read-only-database gate would have to cover every
+  READ_ONLY database. SSMS does the same.
 - **System Data Types has no Properties dialog** (SSMS has none; `int` says it
   all). Folder and Detail Browser listing exist; the menu omits the item.
 
@@ -351,20 +351,12 @@ on that would empty menus for everyone working through a database-wide grant.
   WaitingForStepToFinish, 7 PerformingCompletionActions, 0 = not run by Agent.
   No Cancelling or Running state.
 - **Lookup-free handles carry `Ref`; `*ByName` lookups keep their names**
-  (every family — `~/go/gosmo/CLAUDE.md`'s `Ref` bullet lists them and owns the rule
-  on when a handle is needed; "under a `WithScript` context" alone is
-  over-broad, since `WithScript` intercepts writes only). **Two alternatives
-  rejected:** giving the lookup the plain name splits it from every other
-  `*ByName`; a distinct handle type with `Load(ctx)` would make zero-valued
-  accessors impossible but isn't worth changing every call site — reopen only
-  with a bug the suffix failed to prevent. The handle form itself stays.
-- **`Database`'s catalog state is exported fields** (`Name`, `ID`, `State`,
-  `RecoveryModel`, `CompatibilityLevel`, `Collation`, `IsReadOnly`,
-  `CreateDate`, `SourceDatabaseID`), like every gosmo type. `IsSystem()`/
-  `IsSnapshot()` are derivations and `Server()` a back-pointer, so methods.
-  `Server.Name()` stays (it reads `s.info.Name`). The `Ref` trap
-  (`DatabaseRef("master").IsSystem()` is `false`) is documented on
-  `Server.DatabaseRef` and `Database`.
+  (rule: `CLAUDE.md`, `~/go/gosmo/CLAUDE.md`). **Two alternatives rejected:**
+  giving the lookup the plain name splits it from every other `*ByName`; a
+  distinct handle type with `Load(ctx)` isn't worth changing every call site —
+  reopen only with a bug the suffix failed to prevent.
+- **`Database`'s catalog state is exported fields**, like every gosmo type
+  (rule: `CLAUDE.md`). `Server.Name()` stays a method (it reads `s.info.Name`).
 - **`Server.InTransaction(ctx, fn)` binds one transaction into ctx**, the way `WithScript` threads a collector: every
   chokepoint, reads included, runs on it, never retried. Observers hear after
   COMMIT and nothing on a rollback; a nested call on the same Server joins;
@@ -512,11 +504,11 @@ Peer credentials, easy to undo:
   error without trying another login. The Connect dialog opens such an entry on
   its first method — picking one and connecting is the repair. config.json is
   never rewritten for it.
-- **A hand-edited non-canonical `encrypt_mode` is left as is — author's call.**
-  gossms only writes `optional`/`mandatory`/`strict`; the Connect dialog shows
-  anything else (`"Optional"`, `"true"`) as Mandatory, while a direct dial (a
-  peer credential) hands it to go-mssqldb, which lowercases it and accepts its
-  synonyms. No normalising in `Connection.UnmarshalJSON`.
+- **A hand-edited non-canonical `encrypt_mode` is refused**, like an unknown
+  auth method. gossms only writes `optional`/`mandatory`/`strict`; anything else
+  fails Connect and the preview instead of being shown as Mandatory or handed
+  to go-mssqldb's synonyms. config.json is never rewritten for it. Code change
+  pending: `docs/open-threads.md`.
 
 ## Always Encrypted: what the two create dialogs leave out
 
@@ -759,7 +751,7 @@ Every result below was probed with `WITHOUT LOGIN` users on 13, 14,
   left to the server (Msg 15151). Certificates and asymmetric keys can't be
   role-owned (Msg 15345), so only the symmetric key's picker lists roles;
   every key picker lists application roles, which all three accept (probed on
-  13 and 17, 2026-11-05). The current owner stays listed even if no picker
+  13 and 17). The current owner stays listed even if no picker
   offers it (a certificate-mapped user).
 - **Nothing else on a certificate or asymmetric key is a Properties row** —
   other ALTERs are private-key operations (filesystem or irreversible → own
@@ -1352,7 +1344,7 @@ it from the string 'NULL'.
 
 - **Formatting moves only whitespace between tokens** (plus SQL keyword case),
   with one exception: the SQL Lowercase style writes a select-list
-  `expr AS name` as `name = expr` (the author's choice, 2026-11-05;
+  `expr AS name` as `name = expr` (the author's choice;
   `internal/format/sql_alias.go`). The guard accepts that move only for an
   item it finds itself, from the lexer tokens and the statement cutter rather
   than the layout's frames, so any other reordering is still refused.
@@ -1706,7 +1698,7 @@ it from the string 'NULL'.
   holder plus two saves within one poll, and costs only a lost edit, never
   corruption (writes stay atomic). Closing it needs flock/`LockFileEx`, a GOOS
   branch. Documented on `WithLock` (`internal/fileutil/lock.go`).
-- **`sqlparse.unquoteIdent` keeps its own unquoter** (reviewed 2026-11-05).
+- **`sqlparse.unquoteIdent` keeps its own unquoter.**
   `safety.unquote` now goes through gosmo's `tsql.Spans`/`Span.Unescape`,
   which reads an unterminated identifier to the end where `tsql.UnquoteName`
   returns it unchanged. `sqlparse` is a leaf (only `tuikit` + stdlib,
@@ -2042,16 +2034,15 @@ The contract is `docs/cli.md` § Monitoring, § Extended Events and
   list and the categories stay gossms's (`internal/activity`, exported for
   the CLI), shared with the TUI's Waits chart.
 - **`monitor top-queries` ranks, `plan cached <plan_handle>` fetches one
-  plan (D4)** — not the first design's `plan cached [--top] [--order-by]`, which was
-  top-queries with every plan attached: N plan digests in one answer are
-  mostly noise, and an agent picks one statement and then asks for its plan.
+  plan (D4)** — a list of N plan digests in one
+  answer is mostly noise, and an agent picks one statement and then asks for
+  its plan.
   The plan is read through `dm_exec_text_query_plan` (`dm_exec_query_plan`
   fails past 128 nesting levels) and digested as `plan estimated` does.
 - **`xevent capture` is `admin` (D8).** It creates a server object, which
-  the safety model puts in `admin` (`docs/cli.md` § Safety), so a profile capped at `read` cannot capture. A new
-  rule "temporary diagnostics are `read`" was turned down: it weakens
-  "classes follow what the server changes" for one command, and a session
-  left behind by `kill -9` is a lasting change.
+  `query run` classes as `admin` (`docs/cli.md` § Safety), so a profile capped
+  at `read` cannot capture. A rule "temporary diagnostics are `read`" was
+  turned down: a session left behind by `kill -9` is a lasting change.
 - **`xevent capture` makes its own session per run, ring_buffer only,
   dropped on every exit path (D9)** — not the TUI Profiler's persistent
   `gossms_QuickSession*`, and not an event_file (files to clean up on the
@@ -2111,12 +2102,6 @@ down.
   size (10 MiB) to one `.1` generation under the append lock; a failed
   rename fails the append rather than letting the log outgrow its cap
   unnoticed (`docs/cli.md` § Audit log).
-
-## No top-level plan document — do not re-raise
-
-Neither repo has, or should get, a top-level plan file. State and package map:
-`ARCHITECTURE.md`; unfinished work: `docs/open-threads.md`; shipped per tag:
-`CHANGELOG.md`; settled questions: here.
 
 ## gosmo API shape — settled, do not re-raise
 
