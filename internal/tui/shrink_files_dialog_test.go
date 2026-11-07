@@ -175,7 +175,8 @@ func TestShrinkFilesLogMinimumIsALowerBound(t *testing.T) {
 		var b strings.Builder
 		for _, r := range f.Rows() {
 			if n, ok := r.(*propsheet.NoteRow); ok {
-				b.WriteString(n.Text() + "\n")
+				b.WriteString(n.Text())
+				b.WriteString("\n")
 			}
 		}
 		return b.String()

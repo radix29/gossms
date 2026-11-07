@@ -154,7 +154,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 	for i, x := range signed {
 		loaded[i] = &keySignatureEdit{schema: x.Schema, module: x.Module, typ: x.ModuleType, counter: x.Counter}
 	}
-	edits := newPendingEdits[*keySignatureEdit]("", loaded, nil, nil, nil)
+	edits := newPendingEdits("", loaded, nil, nil, nil)
 	visible := edits.visible
 	rowsFor := func() [][]string {
 		vis := visible()
