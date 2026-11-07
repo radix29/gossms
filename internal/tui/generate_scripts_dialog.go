@@ -76,8 +76,8 @@ func (d *GenerateScriptsDialog) onLoadPage(page, seq int) {
 		propsheet.Section("Objects"),
 		propsheet.Static("Database", d.dbName),
 		propsheet.Note("Every user object, in an order a replay into an empty database accepts: "+
-			"schemas and types, tables without their foreign keys, views, functions and procedures "+
-			"by dependency, then foreign keys and triggers."),
+			"schemas and types, tables without their foreign keys and edge constraints, views, "+
+			"functions and procedures by dependency, then foreign keys, edge constraints and triggers."),
 		propsheet.Section("Options"),
 		d.perms,
 		propsheet.Note("Adds the owner, users, roles, role memberships and every GRANT/DENY — "+
@@ -125,21 +125,18 @@ func (d *GenerateScriptsDialog) script() {
 				a.postProgress(task, pct, fmt.Sprintf("%d of %d objects", done, total))
 			}
 		}
-		text, count, notes, err := scripting.DatabaseObjects(ctx, sc.Server, dbName, perms, progress)
+		r, err := scripting.DatabaseObjects(ctx, sc.Server, dbName, perms, progress)
 		a.postAndWake(func() {
 			a.markTaskDone(task, err)
 			if err != nil {
 				return
 			}
-			msg := fmt.Sprintf("Scripted %d objects", count)
-			if len(notes) > 0 {
-				msg += fmt.Sprintf(" (%d not scripted: %s)", len(notes), notes[0])
-			}
+			msg := fmt.Sprintf("Scripted %d objects", r.Objects) + r.StatusSuffix()
 			if toFile {
-				a.saveScriptAs(nodeData{Type: NodeDatabase, DBName: dbName, Name: dbName}, text)
+				a.saveScriptAs(nodeData{Type: NodeDatabase, DBName: dbName, Name: dbName}, r.Text)
 				a.setStatus(msg)
 			} else {
-				a.openQueryWithTextThen(sc, dbName, text, func() { a.setStatus(msg) })
+				a.openQueryWithTextThen(sc, dbName, r.Text, func() { a.setStatus(msg) })
 			}
 		})
 	})

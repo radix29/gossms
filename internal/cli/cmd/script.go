@@ -140,10 +140,11 @@ func ScriptCommands(d Deps) []*spec.Command {
 				"[database] of its own. A record — database, verb — and the script, as for script object; " +
 				"--script-file writes it as Script Database As ▸ File... does. --objects scripts instead every " +
 				"user object in an order a replay into an empty database accepts (schemas, types, tables without " +
-				"their foreign keys, functions, views, procedures and synonyms by dependency, then foreign keys " +
-				"and triggers); --include-permissions adds the owner, roles, users, memberships and permissions. " +
-				"The header lists each dependency cycle that was broken and what is not scripted; an encrypted " +
-				"module is a comment, listed in the record as notes.",
+				"their foreign keys and edge constraints, functions, views, procedures and synonyms by dependency, " +
+				"then foreign keys, edge constraints and triggers); --include-permissions adds the owner, roles, users, memberships and permissions. " +
+				"The header lists what is not scripted and its warnings (each dependency cycle broken, a degraded " +
+				"dependency order), which are also the result's warnings; an encrypted module is a comment, " +
+				"listed in the record as notes, and so is everything that needs it.",
 			Args: []spec.Arg{{Name: "name", Help: "The database", Required: true}},
 			Options: append(ConnectOptions(),
 				spec.Option{Name: optAs, Type: spec.TypeEnum, Enum: scriptDBVerbs, Default: "create",
@@ -220,7 +221,7 @@ func (d Deps) scriptObject(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 	text, err := scripting.Script(ctx, dbase.Server(), f, v, t)
 	if err != nil {
-		return res, scriptError(err, name)
+		return res, scriptError(err, name, false)
 	}
 	res.Fields = []output.Field{
 		{Key: "object", Value: name},
@@ -257,25 +258,28 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return res, err
 	}
 	if objects {
-		text, n, notes, err := scripting.DatabaseObjects(ctx, dbase.Server(), dbase.Name, perms, nil)
+		r, err := scripting.DatabaseObjects(ctx, dbase.Server(), dbase.Name, perms, nil)
 		if err != nil {
-			return res, scriptError(err, gosmo.QuoteName(dbase.Name))
+			return res, scriptError(err, gosmo.QuoteName(dbase.Name), true)
 		}
 		res.Fields = []output.Field{
 			{Key: "database", Value: dbase.Name},
 			{Key: "verb", Value: "create"},
-			{Key: "objects", Value: strconv.Itoa(n)},
+			{Key: "objects", Value: strconv.Itoa(r.Objects)},
 		}
-		if len(notes) > 0 {
-			res.Fields = append(res.Fields, output.Field{Key: "notes", Value: strings.Join(notes, "; ")})
+		if len(r.Notes) > 0 {
+			res.Fields = append(res.Fields, output.Field{Key: "notes", Value: strings.Join(r.Notes, "; ")})
 		}
-		res.Fields = append(res.Fields, output.Field{Key: "script", Value: text, Verbatim: true})
-		writeScriptFile(res, file, text)
+		// Also the script's header comments; the envelope's warnings let a
+		// reader of the record see the order degraded without parsing it.
+		res.Warnings = append(res.Warnings, r.Warnings...)
+		res.Fields = append(res.Fields, output.Field{Key: "script", Value: r.Text, Verbatim: true})
+		writeScriptFile(res, file, r.Text)
 		return res, nil
 	}
 	text, err := scripting.Script(ctx, dbase.Server(), scripting.Database, scriptVerbNamed(verbName), scripting.Target{DBName: dbase.Name})
 	if err != nil {
-		return res, scriptError(err, gosmo.QuoteName(dbase.Name))
+		return res, scriptError(err, gosmo.QuoteName(dbase.Name), false)
 	}
 	res.Fields = []output.Field{
 		{Key: "database", Value: dbase.Name},
@@ -287,10 +291,16 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 }
 
 // scriptError is readError for a script of name, with the hint the common
-// refusals call for.
-func scriptError(err error, name string) *output.Error {
+// refusals call for. objects is a script of name's objects (script db
+// --objects), not of name itself: a refusal there is of one of many catalog
+// reads, which the message names, so readError's own hint stands.
+func scriptError(err error, name string, objects bool) *output.Error {
 	e := readError(err)
 	switch {
+	case objects:
+		// gosmo reads sys.sql_expression_dependencies there only with VIEW
+		// DEFINITION on the database, and falls back to sys.sql_dependencies
+		// when refused, so the DROP hint below named the wrong operation.
 	case e.Code == output.CodePermissionDenied && strings.Contains(err.Error(), "sql_expression_dependencies"):
 		// A table's DROP reads what is schema-bound to it there, and that
 		// read, not the definition, is what was refused.

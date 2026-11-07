@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 )
@@ -739,30 +740,65 @@ func serverDDL(v gosmo.ScriptVerb, f serverScriptFn) Generator {
 	}
 }
 
+// DatabaseObjectsResult is what DatabaseObjects returns.
+type DatabaseObjectsResult struct {
+	// Text is the script: the database context, a header naming what is not
+	// scripted, the warnings as comments, then the objects in creation order.
+	Text string
+	// Objects counts the objects scripted: not the principals and
+	// permissions blocks includePermissions adds, nor those that could only
+	// be a comment (an encrypted module, or one needing it), which Notes
+	// lists.
+	Objects int
+	Notes   []string
+	// Warnings is gosmo's DatabaseObjectScript.Warnings — a degraded
+	// dependency source, each dependency cycle broken, each module naming an
+	// object the script leaves out — also in Text's header.
+	Warnings []string
+}
+
 // DatabaseObjects scripts every user object of dbName as one script that
-// replays into an empty database (gosmo's ScriptDatabaseObjectList): the
-// database context, a header naming what is not scripted and each dependency
-// cycle that was broken, then the objects in creation order. objects counts
-// the objects scripted: not the principals and permissions blocks
-// includePermissions adds, nor those that could only be a comment (an
-// encrypted module), which notes lists. progress, if not nil, is
-// ObjectScriptOptions.Progress: called on the caller's goroutine, it counts
-// every entry, those included.
+// replays into an empty database (gosmo's ScriptDatabaseObjectList).
+// progress, if not nil, is ObjectScriptOptions.Progress: called on the
+// caller's goroutine, it counts every entry, the noted and pseudo ones
+// included.
 func DatabaseObjects(ctx context.Context, srv *gosmo.Server, dbName string, includePermissions bool,
-	progress func(done, total int)) (text string, objects int, notes []string, err error) {
+	progress func(done, total int)) (*DatabaseObjectsResult, error) {
 	d, err := srv.DatabaseByName(ctx, dbName)
 	if err != nil {
-		return "", 0, nil, err
+		return nil, err
 	}
 	opts := gosmo.DefaultScriptOptions()
 	opts.Verb = gosmo.ScriptCreate
 	s := gosmo.NewScripter(d, opts)
 	r, err := s.ScriptDatabaseObjectList(ctx, gosmo.ObjectScriptOptions{IncludePermissions: includePermissions, Progress: progress})
 	if err != nil {
-		return "", 0, nil, err
+		return nil, err
 	}
-	objects, notes = countScripted(r.Objects)
-	return s.DatabaseContext() + DatabaseObjectsHeader + r.String(), objects, notes, nil
+	res := &DatabaseObjectsResult{Text: s.DatabaseContext() + DatabaseObjectsHeader + r.String(), Warnings: r.Warnings}
+	res.Objects, res.Notes = countScripted(r.Objects)
+	return res, nil
+}
+
+// StatusSuffix is the status-message tail for r's notes and warnings
+// (" (2 not scripted: [dbo].[p]: encrypted; 1 warning: see the script
+// header)"), or "" when there are neither.
+func (r *DatabaseObjectsResult) StatusSuffix() string {
+	var parts []string
+	if len(r.Notes) > 0 {
+		parts = append(parts, fmt.Sprintf("%d not scripted: %s", len(r.Notes), r.Notes[0]))
+	}
+	if n := len(r.Warnings); n > 0 {
+		w := "warnings"
+		if n == 1 {
+			w = "warning"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s: see the script header", n, w))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, "; ") + ")"
 }
 
 // countScripted is DatabaseObjects' objects and notes. Counting every entry

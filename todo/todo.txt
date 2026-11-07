@@ -1,6 +1,8 @@
 - disabled jobs, logins and other objects that can be enabled/disabled -> change the object tree icon.. maybe another color?
 - jobs detail -> object explorer detail.. show more columns like enabled/disabled, last run, last run success/failure, etc
 
+- add winget installation? bettwer way for windows?
+
 Results:
 -	Images
 -	Geo/GIS data?
@@ -12,10 +14,8 @@ Results:
 -	Export data as xml / json
 
 
-new sql formatting designs
-    
 new tab: waits
-at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width
+- at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width
 
 
 keyboard shortcuts for mac (platform dependednt)?

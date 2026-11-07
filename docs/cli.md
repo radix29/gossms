@@ -1012,9 +1012,9 @@ run; both are class `read`.
 - **`script db --objects`** scripts the database's objects instead of its own
   CREATE (gosmo's `ScriptDatabaseObjectList`, via `scripting.DatabaseObjects`): a
   script that replays into an empty database — schemas, types, sequences,
-  tables without their foreign keys, then functions, views, procedures and
-  synonyms ordered by `sys.sql_expression_dependencies`, then foreign keys and
-  triggers. `--include-permissions` adds the owner, roles, users, memberships
+  tables without their foreign keys and edge constraints, then functions,
+  views, procedures and synonyms ordered by `sys.sql_expression_dependencies`,
+  then foreign keys, edge constraints and triggers. `--include-permissions` adds the owner, roles, users, memberships
   and every GRANT/DENY (principals first, permissions last); it needs
   `--objects`, as `--as` other than `create` is incompatible with it (both exit
   2, before connecting). The script opens with `USE [database]` and a header
@@ -1022,10 +1022,20 @@ run; both are class `read`.
   defaults, assemblies, full-text, Service Broker, external objects, cross-
   database references) and each dependency cycle that was broken. An encrypted
   module, or one the login has no VIEW DEFINITION on, is a comment in the
-  script and listed in the record's `notes`; `objects` counts the objects
-  scripted — not those, nor the principals and permissions blocks.
+  script and listed in the record's `notes`, and so is everything whose
+  creation needs it (a foreign key to it, a trigger or view on it); a GRANT on
+  it is a comment among the permissions, and a procedure calling it is
+  scripted with a header warning. `objects` counts the objects
+  scripted — not those, nor the principals and permissions blocks. The
+  header's warnings (each broken cycle, each late reference to an object left
+  out, and a degraded dependency order) are also the envelope's `warnings`.
   Reads every definition, so it takes VIEW DEFINITION as the single-object
-  scripts do.
+  scripts do. Without VIEW DEFINITION on the database the order is read from
+  `sys.sql_dependencies` instead, which misses a reference to an object created
+  after the module naming it; the first warning says so. A refused catalog read
+  keeps `readError`'s hint, which points at the message: the single-object
+  hints (a DROP's schema-bound read, a definition's VIEW DEFINITION) do not
+  apply.
 - **Output.** The object's script opens with `USE [database]`; a database's
   own script runs in master and has none. In text the script prints after the
   record under `=== SCRIPT (n lines) ===`, line breaks kept and uncut by

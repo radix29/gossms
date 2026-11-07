@@ -109,3 +109,23 @@ func TestCountScriptedLeavesOutPseudoAndNotedEntries(t *testing.T) {
 		t.Errorf("notes = %q", notes)
 	}
 }
+
+// TestDatabaseObjectsStatusSuffix: the status message names the first note
+// and counts the warnings, which are otherwise only in the script's header.
+func TestDatabaseObjectsStatusSuffix(t *testing.T) {
+	for _, tc := range []struct {
+		notes, warnings []string
+		want            string
+	}{
+		{nil, nil, ""},
+		{[]string{"[dbo].[p]: encrypted", "[dbo].[q]: x"}, nil, " (2 not scripted: [dbo].[p]: encrypted)"},
+		{nil, []string{"w"}, " (1 warning: see the script header)"},
+		{[]string{"[dbo].[p]: encrypted"}, []string{"w1", "w2"},
+			" (1 not scripted: [dbo].[p]: encrypted; 2 warnings: see the script header)"},
+	} {
+		r := &DatabaseObjectsResult{Notes: tc.notes, Warnings: tc.warnings}
+		if got := r.StatusSuffix(); got != tc.want {
+			t.Errorf("notes %q, warnings %q: %q, want %q", tc.notes, tc.warnings, got, tc.want)
+		}
+	}
+}
