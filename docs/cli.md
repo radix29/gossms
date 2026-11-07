@@ -1011,16 +1011,16 @@ run; both are class `read`.
   the kind's verbs. `script db` takes `create`, `drop`, `drop-and-create`.
 - **`script db --objects`** scripts the database's objects instead of its own
   CREATE (gosmo's `ScriptDatabaseObjectList`, via `scripting.DatabaseObjects`): a
-  script that replays into an empty database — schemas, types, sequences,
-  tables without their foreign keys and edge constraints, then functions,
-  views, procedures and synonyms ordered by `sys.sql_expression_dependencies`,
+  script that replays into an empty database — schemas, rules and defaults
+  (before the types and tables bound to them), types, sequences, tables
+  without their foreign keys and edge constraints, then functions, views, procedures and synonyms ordered by `sys.sql_expression_dependencies`,
   then foreign keys, edge constraints and triggers. `--include-permissions` adds the owner, roles, users, memberships
   and every GRANT/DENY (principals first, permissions last); it needs
   `--objects`, as `--as` other than `create` is incompatible with it (both exit
   2, before connecting). The script opens with `USE [database]` and a header
-  naming what is not scripted (data, server-level and system objects, rules and
-  defaults, assemblies, full-text, Service Broker, external objects, cross-
-  database references) and each dependency cycle that was broken. An encrypted
+  naming what is not scripted (data, server-level and system objects,
+  assemblies, full-text, Service Broker, external objects, cross-database
+  references) and each dependency cycle that was broken. An encrypted
   module, or one the login has no VIEW DEFINITION on, is a comment in the
   script and listed in the record's `notes`, and so is everything whose
   creation needs it (a foreign key to it, a trigger or view on it); a GRANT on

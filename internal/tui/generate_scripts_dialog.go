@@ -76,7 +76,7 @@ func (d *GenerateScriptsDialog) onLoadPage(page, seq int) {
 		propsheet.Section("Objects"),
 		propsheet.Static("Database", d.dbName),
 		propsheet.Note("Every user object, in an order a replay into an empty database accepts: "+
-			"schemas and types, tables without their foreign keys and edge constraints, views, "+
+			"schemas, rules, defaults and types, tables without their foreign keys and edge constraints, views, "+
 			"functions and procedures by dependency, then foreign keys, edge constraints and triggers."),
 		propsheet.Section("Options"),
 		d.perms,
@@ -84,7 +84,7 @@ func (d *GenerateScriptsDialog) onLoadPage(page, seq int) {
 			"principals first, permissions last."),
 		propsheet.Section("Destination"),
 		d.output,
-		propsheet.Note("Not scripted: data, server-level objects, system objects, rules and defaults, "+
+		propsheet.Note("Not scripted: data, server-level objects, system objects, "+
 			"CLR assemblies, full-text and Service Broker objects, external objects, credentials, "+
 			"certificates and keys, and dependencies across databases."),
 	))

@@ -818,6 +818,6 @@ func countScripted(objs []gosmo.ScriptedObject) (objects int, notes []string) {
 
 // DatabaseObjectsHeader states what a database-objects script leaves out, so
 // a reader of the file does not take it for a complete copy.
-const DatabaseObjectsHeader = "-- Not scripted: data, server-level objects, system objects, rules and defaults,\n" +
-	"-- CLR assemblies, full-text and Service Broker objects, external objects,\n" +
-	"-- credentials, certificates and keys, and dependencies across databases.\n"
+const DatabaseObjectsHeader = "-- Not scripted: data, server-level objects, system objects, CLR assemblies,\n" +
+	"-- full-text and Service Broker objects, external objects, credentials,\n" +
+	"-- certificates and keys, and dependencies across databases.\n"
