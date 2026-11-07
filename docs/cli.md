@@ -1024,7 +1024,8 @@ run; both are class `read`.
   module, or one the login has no VIEW DEFINITION on, is a comment in the
   script and listed in the record's `notes`, and so is everything whose
   creation needs it (a foreign key to it, a trigger or view on it); a GRANT on
-  it is a comment among the permissions, and a procedure calling it is
+  it, or on anything else the script does not create (a queue, a certificate,
+  a message type), is a comment among the permissions, and a procedure calling it is
   scripted with a header warning. `objects` counts the objects
   scripted — not those, nor the principals and permissions blocks. The
   header's warnings (each broken cycle, each late reference to an object left
