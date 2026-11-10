@@ -1337,6 +1337,14 @@ it from the string 'NULL'.
   is skipped by readers and is the separator between sets), so NULL and an
   empty string are the same for that one shape.
 - **Results to Text:** "NULL", as SSMS shows it.
+- **Export Results (grid menus, File menu):** CSV/TSV as Results To File;
+  JSON `null` (int/float numbers, bit true/false, decimal and money strings —
+  the command line's json rules, `export.KindOf`); XML an empty element with
+  `xsi:nil="true"`, FOR XML ELEMENTS XSINIL's shape, column names encoded as
+  FOR XML encodes them (`Unit_x0020_Price`) and made unique like JSON keys.
+  An xml column is escaped text, not nested markup, so the document is always
+  well formed. It writes the active set only, in the order the grid shows it
+  (`internal/tui/query_panel_export.go`).
 
 ## Format Document: how each language is formatted — settled, do not re-raise
 

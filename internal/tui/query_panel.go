@@ -267,7 +267,8 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	// the first press has already selected that cell.
 	results.OnRowDoubleClick = func(int) { results.ShowValue() }
 	results.OnHeaderClick = p.sortResultsByColumn
-	results.OnMenuItems = p.resultSortMenuItems
+	results.OnMenuItems = p.resultMenuItems
+	results.OnGridMenuItems = p.gridExportMenuItems
 	p.editor.OnRightClick = func(x, y int) { app.showEditorContextMenu(x, y) }
 	p.editor.SetCompletionProvider(p.newCompletionProvider())
 	return p

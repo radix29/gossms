@@ -3,6 +3,11 @@
 // File and the command line's csv/tsv output. One writer, so the two produce the
 // same bytes for the same rows.
 //
+// JSONWriter and XMLWriter write one result set as a JSON array or an XML
+// document, for the results grid's Export; WriteTable writes a set in any of
+// the four formats. KindOf, IsJSONNumber and ColumnKeys are the JSON value and
+// key rules, shared with the command line's json and jsonl.
+//
 // RecordReader reads the format back, for import: the writer's exact inverse,
 // which encoding/csv is not (it cannot tell an empty field from "").
 //

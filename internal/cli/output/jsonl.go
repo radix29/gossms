@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"strconv"
+
+	"github.com/radix29/gossms/internal/export"
 )
 
 // The keys of jsonl's two non-row lines. A column whose key would equal one is
@@ -58,20 +59,11 @@ type jsonlColumn struct {
 // nameless one, and name_<n> (n its 1-based position, repeated until unique)
 // for a duplicate or a name that would read as a _resultSet or _summary line.
 func rowKeys(cols []Column) []string {
-	used := map[string]bool{jsonlSetKey: true, jsonlSummaryKey: true}
-	keys := make([]string, len(cols))
+	names := make([]string, len(cols))
 	for i, c := range cols {
-		k := c.Name
-		if k == "" {
-			k = "column" + strconv.Itoa(i+1)
-		}
-		for used[k] {
-			k += "_" + strconv.Itoa(i+1)
-		}
-		used[k] = true
-		keys[i] = k
+		names[i] = c.Name
 	}
-	return keys
+	return export.ColumnKeys(names, jsonlSetKey, jsonlSummaryKey)
 }
 
 // beginSet writes a set's _resultSet line. It reports whether the line was

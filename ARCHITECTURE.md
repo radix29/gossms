@@ -220,7 +220,7 @@ gossms/
 │   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names; cells.go: each type's cell text as SSMS's grid shows it; cellparse.go: the inverse for a bulk load — NewCellParser reads a cell's date/time and binary text (refusing fractional digits the column would round) and hands every value to gosmo's BulkColumn.Converter, which owns the range, scale, length and code-page checks
 │   │                        #   for the command line, structured halves of the messages (Message.SQL, Message.RowsAffected), TypedRowSink, WithStopOnError, WithoutSinkNotices
-│   ├── export/              # delimited result text (RecordWriter: CSV, TSV) with the settled NULL convention — the one writer behind Results To File and the command line's csv/tsv; RecordReader, its exact inverse, for import. Stdlib only
+│   ├── export/              # delimited result text (RecordWriter: CSV, TSV) with the settled NULL convention — the one writer behind Results To File and the command line's csv/tsv; RecordReader, its exact inverse, for import; JSONWriter/XMLWriter/WriteTable for the results grid's Export Results, and the JSON value/key rules (KindOf, ColumnKeys) the command line's json/jsonl share. Stdlib only
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan); live.go merges per-thread query-profile rows into Live Query Statistics counters and progress. No TUI/DB deps
 │   ├── scripting/           # Script As without a screen: per object family (Family), the verbs it offers in SSMS order and each one's generator over gosmo's Scripter/ServerScripter (USE prefix except on a database, DefaultScriptOptions), the system-object and Azure refusals (Offered, AzureRefuses), Collect (a gosmo write under WithScript). Shared by Object Explorer's Script as and the command line's script commands, so both script an object alike. gosmo + stdlib only (TestNoTUIImports)
 │   ├── xevent/              # Extended Events viewer's event store: bounded ring, column registry, ring_buffer dedupe, the client-side filter expression, grouping and aggregation. No TUI/DB deps
@@ -363,7 +363,7 @@ gossms/
 │       ├── query_panel_tabs.go   # result-set tabs + Messages tab
 │       ├── query_panel_plan.go   # Estimated/Actual Execution Plan tabs, backed by planview.PlanView
 │       ├── query_panel_live.go   # Live Query Statistics: the toggle's run, DMV poller, live tab → actual plan
-│       ├── query_panel_export.go # Results To File (Text/Grid/File modes)
+│       ├── query_panel_export.go # Results To File (Text/Grid/File modes); Export Results (CSV/TSV/JSON/XML of the active set, grid menus and File menu)
 │       ├── query_panel_sort.go   # header-click column sort of a result set's grid, by declared type, display order only
 │       ├── column_meta.go        # the Output Column Metadata block folded into a result's Messages
 │       ├── cell_value.go         # classifies a grid cell as plain/XML/JSON/picture and routes all but plain to their own panel

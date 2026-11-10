@@ -319,14 +319,11 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 		}
 	case tcell.Button2:
-		// Right-click on the row-number gutter's blank header cell offers whole-grid copy
+		// Right-click on the row-number gutter's blank header cell offers whole-grid
 		// actions instead of a per-cell menu.
 		if gw := g.gutterWidth(); gw > 0 && my == g.rect.Y && mx >= g.rect.X && mx < g.rect.X+gw {
-			if g.OnCopyRequest != nil {
-				g.ctxMenu.Show(mx, my, []MenuItem{
-					{Label: "Copy All", Action: func() { g.requestCopy(g.allRowsText(false)) }},
-					{Label: "Copy All with Headers", Action: func() { g.requestCopy(g.allRowsText(true)) }},
-				})
+			if items := g.gridContextMenuItems(); len(items) > 0 {
+				g.ctxMenu.Show(mx, my, items)
 			}
 			return true
 		}

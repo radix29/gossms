@@ -38,6 +38,7 @@ func (a *App) buildMenus() []controls.Menu {
 				Enabled: a.canSaveActivePanel},
 			{Label: "Save Execution Plan As...", Action: func() { a.saveExecutionPlanAs() },
 				Enabled: func() bool { return a.activePlan() != nil }},
+			exportResultsMenu(a.activeQueryPanel),
 			{Divider: true},
 			{Label: "Merge Extended Event Files...", Action: func() { a.promptMergeXEventFilesActive() },
 				Enabled: func() bool { return a.activeServerConn() != nil }, Note: "not connected"},

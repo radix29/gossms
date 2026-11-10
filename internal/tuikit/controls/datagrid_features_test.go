@@ -426,6 +426,38 @@ func TestDataGridGutterHeaderRightClickOffersCopyAll(t *testing.T) {
 	}
 }
 
+// TestDataGridGutterHeaderMenuAppendsHostItems: OnGridMenuItems' entries
+// follow Copy All below a divider, open the menu on their own when copying
+// is not wired, and are withheld from a browse-only grid.
+func TestDataGridGutterHeaderMenuAppendsHostItems(t *testing.T) {
+	g := newBlockSelectGrid()
+	g.SetRowNumbers(true)
+	gw := g.gutterWidth()
+	rightClick := func() {
+		g.ctxMenu.Hide()
+		g.HandleMouse(tcell.NewEventMouse(g.rect.X+gw/2, g.rect.Y, tcell.Button2, tcell.ModNone))
+	}
+	g.OnGridMenuItems = func() []MenuItem { return []MenuItem{{Label: "Export Results"}} }
+
+	rightClick()
+	if items := g.ctxMenu.items; !g.ctxMenu.Visible() || len(items) != 1 || items[0].Label != "Export Results" {
+		t.Fatalf("without OnCopyRequest: visible %v, items %+v, want [Export Results]", g.ctxMenu.Visible(), items)
+	}
+
+	g.OnCopyRequest = func(string) {}
+	rightClick()
+	items := g.ctxMenu.items
+	if len(items) != 4 || items[1].Label != "Copy All with Headers" || !items[2].Divider || items[3].Label != "Export Results" {
+		t.Fatalf("items = %+v, want [Copy All, Copy All with Headers, ─, Export Results]", items)
+	}
+
+	g.SetBrowseOnly(true)
+	rightClick()
+	if items := g.ctxMenu.items; len(items) != 2 {
+		t.Errorf("browse-only items = %+v, want the two Copy All entries only", items)
+	}
+}
+
 // TestSetMaxCellWidthOverridesClamp confirms a grid that opts into a
 // configurable max column width (the query-results grid, via the Options
 // dialog's max-cell-length setting) actually gets clamped to it instead of

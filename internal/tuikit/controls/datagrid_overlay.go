@@ -99,6 +99,27 @@ func (g *DataGrid) cellContextMenuItems() []MenuItem {
 	return items
 }
 
+// gridContextMenuItems builds the row-number header cell's menu: Copy All and
+// Copy All with Headers when OnCopyRequest is wired, then the host's
+// OnGridMenuItems entries unless the grid is browse-only.
+func (g *DataGrid) gridContextMenuItems() []MenuItem {
+	var items []MenuItem
+	if g.OnCopyRequest != nil {
+		items = append(items,
+			MenuItem{Label: "Copy All", Action: func() { g.requestCopy(g.allRowsText(false)) }},
+			MenuItem{Label: "Copy All with Headers", Action: func() { g.requestCopy(g.allRowsText(true)) }})
+	}
+	if g.OnGridMenuItems != nil && !g.browseOnly {
+		if host := g.OnGridMenuItems(); len(host) > 0 {
+			if len(items) > 0 {
+				items = append(items, MenuItem{Divider: true})
+			}
+			items = append(items, host...)
+		}
+	}
+	return items
+}
+
 // showValueMenuItem labels the entry that opens a cell's full content, in the
 // built-in popup or the host's display via OnShowValue.
 const showValueMenuItem = "Show Value"

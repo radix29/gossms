@@ -297,6 +297,13 @@ type DataGrid struct {
 	// no actions leaves it nil and the menu is the built-in pair.
 	OnMenuItems func() []MenuItem
 
+	// OnGridMenuItems contributes the host's whole-grid entries (an Export
+	// cascade, say) to the menu a right-click on the row-number gutter's
+	// header cell opens, below a divider after Copy All / Copy All with
+	// Headers. Asked each time the menu opens, like OnMenuItems; ignored while
+	// the grid is browse-only.
+	OnGridMenuItems func() []MenuItem
+
 	// OnHeaderClick fires once per Button1 press on a column's header cell (not
 	// its separator, which resizes the column), handed the column index. nil
 	// leaves the header inert.

@@ -2,20 +2,19 @@ package output
 
 import (
 	"encoding/json"
-	"strings"
 	"unicode/utf8"
+
+	"github.com/radix29/gossms/internal/export"
 )
 
-// cellKind is how JSON writes a column's cells: the grid's text mapped by the
-// column's declared type, never formatted a second way (docs/cli.md § Value
-// formatting).
-type cellKind int
+// cellKind is how JSON writes a column's cells (export.Kind).
+type cellKind = export.Kind
 
 const (
-	kindString cellKind = iota
-	kindNumber          // int, bigint, smallint, tinyint, real, float
-	kindBool            // bit
-	kindJSON            // TypeJSON
+	kindString = export.KindString
+	kindNumber = export.KindNumber
+	kindBool   = export.KindBool
+	kindJSON   = export.KindJSON
 )
 
 // TypeJSON is the Type of a column whose cells are JSON documents (an
@@ -24,21 +23,8 @@ const (
 // invalid JSON. Text, markdown, csv and tsv show the document's text.
 const TypeJSON = "json"
 
-// kindOf is the kind of a column of SQL type t ("int", "decimal(18,2)").
-// decimal, numeric and money stay strings: most JSON parsers would read them
-// as a float and lose digits.
-func kindOf(t string) cellKind {
-	base, _, _ := strings.Cut(strings.ToLower(t), "(")
-	switch base {
-	case "int", "bigint", "smallint", "tinyint", "real", "float":
-		return kindNumber
-	case "bit":
-		return kindBool
-	case TypeJSON:
-		return kindJSON
-	}
-	return kindString
-}
+// kindOf is export.KindOf, which reads TypeJSON as kindJSON.
+func kindOf(t string) cellKind { return export.KindOf(t) }
 
 func kinds(cols []Column) []cellKind {
 	out := make([]cellKind, len(cols))
@@ -67,44 +53,7 @@ func jsonCell(c *string, k cellKind, width int) any {
 	return clip(*c, width)
 }
 
-// isJSONNumber reports whether s is a number in JSON's grammar:
-// -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?. The grid's float text
-// ("0.5", "1E+300", "-1.5E-05") always is; the check keeps a stray value
-// from making the document invalid.
-func isJSONNumber(s string) bool {
-	i := 0
-	if i < len(s) && s[i] == '-' {
-		i++
-	}
-	digits := func() int {
-		n := 0
-		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
-			i++
-			n++
-		}
-		return n
-	}
-	start := i
-	if n := digits(); n == 0 || (n > 1 && s[start] == '0') {
-		return false
-	}
-	if i < len(s) && s[i] == '.' {
-		i++
-		if digits() == 0 {
-			return false
-		}
-	}
-	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
-		i++
-		if i < len(s) && (s[i] == '+' || s[i] == '-') {
-			i++
-		}
-		if digits() == 0 {
-			return false
-		}
-	}
-	return i == len(s)
-}
+func isJSONNumber(s string) bool { return export.IsJSONNumber(s) }
 
 // clip cuts s to width characters (runes) and marks what it cut:
 // "abc…[+1,234 chars]". width 0 keeps everything. A count of characters, not
