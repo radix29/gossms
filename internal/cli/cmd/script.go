@@ -141,7 +141,8 @@ func ScriptCommands(d Deps) []*spec.Command {
 				"--script-file writes it as Script Database As ▸ File... does. --objects scripts instead every " +
 				"user object in an order a replay into an empty database accepts (schemas, types, tables without " +
 				"their foreign keys and edge constraints, functions, views, procedures and synonyms by dependency, " +
-				"then foreign keys, edge constraints and triggers); --include-permissions adds the owner, roles, users, memberships and permissions. " +
+				"then foreign keys, edge constraints and DML triggers, database triggers last); --include-permissions adds the owner, roles, users, " +
+				"memberships and permissions, the permissions before the database triggers so those do not fire on the script's GRANTs. " +
 				"The header lists what is not scripted and its warnings (each dependency cycle broken, a degraded " +
 				"dependency order), which are also the result's warnings; an encrypted module is a comment, " +
 				"listed in the record as notes, and so is everything that needs it.",

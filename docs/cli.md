@@ -1014,8 +1014,11 @@ run; both are class `read`.
   script that replays into an empty database — schemas, rules and defaults
   (before the types and tables bound to them), types, sequences, tables
   without their foreign keys and edge constraints, then functions, views, procedures and synonyms ordered by `sys.sql_expression_dependencies`,
-  then foreign keys, edge constraints and triggers. `--include-permissions` adds the owner, roles, users, memberships
-  and every GRANT/DENY (principals first, permissions last); it needs
+  then foreign keys, edge constraints and DML triggers, and database triggers
+  last. `--include-permissions` adds the owner, roles, users, memberships
+  and every GRANT/DENY (principals first, permissions after every object but
+  the database triggers: GRANT is a database DDL event, so a trigger created
+  earlier would fire on the script's own GRANTs); it needs
   `--objects`, as `--as` other than `create` is incompatible with it (both exit
   2, before connecting). The script opens with `USE [database]` and a header
   naming what is not scripted (data, server-level and system objects,

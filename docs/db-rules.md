@@ -173,6 +173,11 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   OBJECT_OR_COLUMN::x BY y)` rejects and a `WHEN 'OBJECT'` arm never matches.
   gosmo translates out (`database_audit_specification.go`) and accepts it as
   `OBJECT` in. Found live on major 17 with unit tests green.
+- **SQL Server ends a `--` comment at CR as well as LF; every lexer and every
+  comment writer must too.** A lone `\r` hid an INSERT from the CLI safety
+  classifier (`sqltext.lineComment`, gosmo `tsql.Spans`) and let an object
+  name inject T-SQL into a Generate Scripts warning comment (2026-11-10, 17).
+  Write any name or message into a comment through `tsql.CommentSafe`.
 
 - **A statement the server ignores answers with a warning, and gosmo's exec
   drops warnings** — a nil error is not "it happened". `ALTER FULLTEXT INDEX

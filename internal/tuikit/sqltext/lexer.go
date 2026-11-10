@@ -10,7 +10,7 @@ type Mode uint8
 
 const (
 	ModeNormal       Mode = iota
-	ModeLineComment       // after "--", up to the end of the line
+	ModeLineComment       // after "--", up to its CR or LF
 	ModeBlockComment      // inside "/* ... */", State.Depth levels deep
 	ModeString            // inside a '...' literal
 	ModeBracket           // inside a [bracketed] identifier
@@ -61,8 +61,11 @@ const (
 	// KindQuotedIdent is a [bracketed] or "quoted" identifier; a doubled
 	// closing delimiter stays inside it. buf[Start] tells which.
 	KindQuotedIdent
-	// KindComment is a "--" comment up to (not including) its '\n', or a
-	// "/* ... */" block comment, nested ones included.
+	// KindComment is a "--" comment up to (not including) its CR or LF, or a
+	// "/* ... */" block comment, nested ones included. SQL Server ends a "--"
+	// comment at a lone '\r' too: a lexer that read on to '\n' saw the
+	// statement after it as comment text, and the CLI's --allow gate passed
+	// "SELECT 1 -- c<CR>DROP TABLE t" as a read.
 	KindComment
 	// KindPunct is any other rune that is not white space, one per token.
 	KindPunct
@@ -212,9 +215,11 @@ func wordEnd(buf []rune, j, limit int) int {
 	return j
 }
 
-// lineComment ends the "--" comment that began at start, scanning from j.
+// lineComment ends the "--" comment that began at start, scanning from j. It
+// stops before the first '\r' or '\n' (see KindComment); Next's ModeNormal loop
+// then skips the '\r' as white space or returns the '\n' as KindNewline.
 func lineComment(buf []rune, start, j, limit int) (Token, State) {
-	for j < limit && buf[j] != '\n' {
+	for j < limit && buf[j] != '\n' && buf[j] != '\r' {
 		j++
 	}
 	if j < limit {
