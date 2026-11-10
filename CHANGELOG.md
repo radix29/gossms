@@ -4,6 +4,66 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.2.0] - 2026-11-10
+
+The command-line release: `gossms <command>` runs goSSMS without its
+interface, for scripts and AI agents, alongside new Generate Scripts and New
+Server Role dialogs, a SQL format style option, themed colors and a permission
+pass over SQL Agent. Built on gosmo v0.2.0.
+
+### Added
+
+- **Command line** (`gossms help`, `docs/cli.md`): profiles, safety-classified
+  queries with an Allowed Operations ceiling, `--dry-run` on every writing
+  command, an audit log, and the formats text, json, jsonl, csv, tsv and
+  markdown. Command groups: `agent` (guide, schema, context), `profile`, `db`
+  (list, info, files, space, log-usage, table-sizes, set, scoped-config),
+  `server` (info, memory, volumes, log, config, traceflag), `object` (list,
+  search, describe, definition, dependencies, indexes, stats), `query`
+  (classify, run with `--param`, parse), `plan` (estimated, actual, cached),
+  `script` (object, db), `data` (top, sample, count, profile, export, import),
+  `monitor` (sessions, blocking, waits, top-queries, querystore, deadlocks,
+  kill), `xevent`, `security`, `job` and `maint`.
+- **Audit log**: every command that reads or changes a server, or is refused,
+  appends one JSON line to `audit.jsonl` beside `config.json`. T-SQL is hashed
+  and passwords never recorded; the file rotates by size without losing writes.
+- **Generate Scripts...** on a database: every user object in dependency order,
+  optionally with permissions, to a query window or a file; runs as a
+  Background Task with progress and Cancel. `gossms script db --objects
+  --include-permissions` does the same.
+- **Script As without a screen**: the new `internal/scripting` package serves
+  both Object Explorer and the command line.
+- **New Server Role** dialog.
+- **SQL format style** in Tools > Options picks the default style for
+  Edit > Format Document.
+- **Disabled objects dimmed** in the Object Explorer tree.
+- **Group by Schema** covers more object families.
+- Warnings for hidden index filters (no `VIEW DEFINITION`) and for
+  `NEXT VALUE FOR` advancing a sequence inside a rolled-back transaction.
+
+### Fixed
+
+- SQL Agent alerts, operators and job notifications show only to logins that
+  may read them; job history uses the right access path per role.
+- Application Roles appear as valid principals (key owners, securables) and
+  their visibility follows the caller's permissions.
+- `--confirm` refusals are audited with their target.
+- Sequence dialogs accept ranges beyond bigint for decimal sequences.
+- Role properties reload after a rename.
+- Object dependency and DROP script errors name the missing permission and
+  schema-bound dependents.
+- Text, menu, status and selection colors meet WCAG contrast in every theme.
+- Object Explorer History rows clip server and database names correctly.
+
+### Changed
+
+- `gosmo` v0.2.0, `golang.org/x/term` v0.48.0 and the other `x/` modules
+  bumped.
+- Dialogs, scrollbars, grids and menus take their colors from the theme
+  palette (new Dialog*, status-bar and menu-highlight entries).
+- Test suite grown with gosmotest-backed fakes and fixtures for security,
+  scripting, objects and the command line.
+
 ## [0.1.2] - 2026-11-03
 
 A creation-dialog and navigation release: five new object dialogs, Group by
