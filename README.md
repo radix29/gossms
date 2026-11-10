@@ -187,7 +187,11 @@ inserts `[schema]`.
 object. Right-click a folder to create a Schema, Database Role, Application
 Role, Server Role, Sequence or Synonym; each dialog checks your permissions first. In a
 result grid, double-click a cell for Show Value and click a row number to
-select the row. Press **F1** for the full keyboard reference.
+select the row. Show Value on a `varbinary`/`image` cell that holds a picture
+(PNG, JPEG, GIF, BMP, TIFF or WebP) opens it in its own tab as terminal art,
+with fit, zoom, pan and Save; pictures render in Unicode block sextants, with
+an ASCII mode for fonts that lack them. Press **F1** for the full keyboard
+reference.
 
 ## Supported SQL Server versions
 

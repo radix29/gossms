@@ -366,7 +366,10 @@ gossms/
 │       ├── query_panel_export.go # Results To File (Text/Grid/File modes)
 │       ├── query_panel_sort.go   # header-click column sort of a result set's grid, by declared type, display order only
 │       ├── column_meta.go        # the Output Column Metadata block folded into a result's Messages
-│       ├── cell_value.go         # classifies a grid cell as plain/XML/JSON and routes the last two to their own panel
+│       ├── cell_value.go         # classifies a grid cell as plain/XML/JSON/picture and routes all but plain to their own panel
+│       ├── picture_panel.go      # PicturePanel: a binary cell's picture (sniffed by magic bytes) decoded once off the UI goroutine, rendered by gotuipic; fit/zoom/pan state
+│       ├── picture_panel_draw.go # PicturePanel rendering: title bar, toolbar + picture facts, the art centred or scrolled with scrollbars
+│       ├── picture_panel_input.go # PicturePanel toolbar, keys, mouse (drag-pan, scrollbars, wheel) and File > Save of the original bytes
 │       ├── plan_panel.go         # pops an Execution Plan tab out into its own closable panel
 │       ├── live_plan_panel.go    # Activity Monitor's Show Live Execution Plan: another session's live plan, read-only
 │       ├── completion_provider.go   # SQL completion.Provider: cursor-context resolution (FROM-scope, qualifiers) against the cached inventory

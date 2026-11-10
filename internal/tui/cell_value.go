@@ -15,6 +15,7 @@ const (
 	cellPlain cellValueKind = iota
 	cellXML
 	cellJSON
+	cellPicture
 )
 
 // classifyCellValue decides how a "Show Value" cell should be displayed.
@@ -73,6 +74,18 @@ func jsonArrayLike(t string) bool {
 // whenever the batch text closed the processing instruction early — last byte ';',
 // which classifyCellValue reads as plain text and drops into the 60-column popup.
 func classifyCellKind(sqlType, value string) cellValueKind {
+	// A picture is told by its magic bytes, read off the 0x… text's first few
+	// digits — size-independent like every other test here. Only a binary
+	// column (or one with no declared type) is sniffed: an nvarchar holding the
+	// text "0x89504E47…" is text, and stays in the popup.
+	if binarySQLType(sqlType) {
+		if _, ok := sniffPictureHex(value); ok {
+			return cellPicture
+		}
+		if sqlType != "" {
+			return cellPlain
+		}
+	}
 	if k := classifySQLType(sqlType); k != cellPlain {
 		// Nothing to open. A NULL never gets here: the grid keeps it from
 		// OnShowValue (controls.NullSource).
@@ -82,6 +95,18 @@ func classifyCellKind(sqlType, value string) cellValueKind {
 		return k
 	}
 	return classifyCellValue(value)
+}
+
+// binarySQLType reports whether a declared column type holds raw bytes, which
+// the grid shows as 0x… hex (query.appendValue) and which may be a picture. An
+// undeclared type counts too, so a set without types still sniffs its hex.
+func binarySQLType(sqlType string) bool {
+	base, _, _ := strings.Cut(sqlType, "(")
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case "binary", "varbinary", "image", "":
+		return true
+	}
+	return false
 }
 
 // classifySQLType maps a declared column type ("xml", "nvarchar(50)", "json")
@@ -118,6 +143,8 @@ func (a *App) openCellValuePanel(sqlType, column, value string) bool {
 		return a.openValuePanel(column, format.LangXML, value)
 	case cellJSON:
 		return a.openValuePanel(column, format.LangJSON, value)
+	case cellPicture:
+		return a.openPicturePanel(column, value)
 	}
 	return false
 }

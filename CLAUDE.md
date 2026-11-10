@@ -11,7 +11,9 @@ Studio in Go 1.27: one build for Linux/macOS/Windows, no CGO, no build tags.
 `internal/version/version.go`.
 
 - Module `github.com/radix29/gossms`. Depends on `github.com/radix29/gosmo`
-  (the author's own SMO-style library, sibling checkout `~/go/gosmo`) and
+  (the author's own SMO-style library, sibling checkout `~/go/gosmo`),
+  `github.com/radix29/gotuipic` (the author's image-to-terminal-art library,
+  sibling `~/go/gotuipic`, behind the result-grid picture viewer) and
   `github.com/gdamore/tcell/v3` (`go.mod` holds the version).
 - `go.mod`'s `replace github.com/radix29/gosmo => ../gosmo` is deliberately
   **active** during development, so `HEAD` may depend on untagged gosmo code.

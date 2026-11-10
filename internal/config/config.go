@@ -363,6 +363,10 @@ type Config struct {
 	// included (query.WithMaxRows). Zero means unlimited; Load turns negatives
 	// into zero.
 	MaxFetchRows int `json:"max_fetch_rows"`
+	// PictureASCII renders pictures in result cells as ASCII art instead of
+	// block sextants (U+1FB00), for a terminal font that lacks those glyphs.
+	// The picture panel's Mode switch sets it.
+	PictureASCII bool `json:"picture_ascii,omitempty"`
 	// XEventHiddenColumns is, per event session, the viewer's hidden columns
 	// ("name", "timestamp", "field:<name>", "action:<name>"). Hidden rather than
 	// shown, so a field collected later still gets a column.

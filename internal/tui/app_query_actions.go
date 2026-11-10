@@ -140,6 +140,11 @@ func (a *App) saveQuery(saveAs bool) {
 		a.savePlanPanel(pp, saveAs)
 		return
 	}
+	// Nor does a picture panel — its Save is the cell's original bytes.
+	if pp, ok := a.panels.ActivePanel().(*PicturePanel); ok {
+		a.savePicturePanel(pp, saveAs)
+		return
+	}
 	qp := a.activeQueryPanel()
 	if qp == nil {
 		a.setStatus("No active query to save")

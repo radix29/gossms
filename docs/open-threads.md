@@ -54,6 +54,15 @@ support); this section covers only the environment.
   AAG1; only add/remove database, suspend/resume, listener round trip and the
   failover refusal run there.
 
+## Picture viewer: what is left
+
+- **Release blocker: gotuipic is untagged.** `go.mod` has
+  `replace github.com/radix29/gotuipic => ../gotuipic` and requires the zero
+  pseudo-version, so a clean checkout (and `release.yml`) cannot build. Before
+  a tag: tag and push gotuipic, require that tag, drop the `replace`.
+- **File > Open of an image file** does not open it in a picture panel; only a
+  result cell does. `openQueryFile` would sniff with `sniffPicture`.
+
 ## Connection config: what is left
 
 - **A non-canonical saved `encrypt_mode` must be refused** (decided; settled

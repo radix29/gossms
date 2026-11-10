@@ -552,13 +552,17 @@ func (a *App) showExternalLibraryPropertiesFor(sc *db.ServerConn, dbName, name s
 }
 
 // canSaveActivePanel gates File > Save / Save As...: a query panel saves its
-// script, a plan panel its .sqlplan; nothing else has anything to write.
+// script, a plan panel its .sqlplan, a picture panel its picture; nothing else
+// has anything to write.
 func (a *App) canSaveActivePanel() bool {
 	if a.activeQueryPanel() != nil {
 		return true
 	}
-	_, ok := a.panels.ActivePanel().(*PlanPanel)
-	return ok
+	switch a.panels.ActivePanel().(type) {
+	case *PlanPanel, *PicturePanel:
+		return true
+	}
+	return false
 }
 
 // showPublicationPropertiesFor opens the read-only Publication Properties

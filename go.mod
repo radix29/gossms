@@ -1,8 +1,6 @@
 module github.com/radix29/gossms
 
-go 1.27
-
-toolchain go1.27.3
+go 1.27.3
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
@@ -12,6 +10,8 @@ require (
 	github.com/microsoft/go-mssqldb v1.11.2
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/radix29/gosmo v0.2.0
+	github.com/radix29/gotuipic v0.0.2
+	golang.org/x/image v0.48.0
 	golang.org/x/term v0.48.0
 )
 
@@ -41,4 +41,6 @@ require (
 	golang.org/x/text v0.44.0 // indirect
 )
 
-//replace github.com/radix29/gosmo => ../gosmo
+replace github.com/radix29/gosmo => ../gosmo
+
+replace github.com/radix29/gotuipic => ../gotuipic
