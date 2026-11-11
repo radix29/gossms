@@ -12,7 +12,8 @@ import (
 // safego runs fn on a new goroutine, turning a panic into a status-bar message and
 // a log entry instead of a process-wide crash.
 //
-// Every background operation in this package goes through it. The UI goroutine
+// Every background operation in this package goes through it (or fanOut, which
+// recovers the same way; fanOut's doc names the one bare goroutine). The UI goroutine
 // cannot recover a panic on a background one, so it would take the process down:
 // Run's `defer screen.Fini()` never runs, the terminal is left in raw mode on the
 // alternate screen, and the user's unsaved query text and the trace are gone.
@@ -81,9 +82,11 @@ func (a *App) recoverPanic(what string) {
 // fanOut runs work(i) for every i in [0, n) across a bounded pool of
 // maxRowFetchConcurrency goroutines and returns once every call has finished. It
 // is the one worker pool in this package (the Detail Browser's per-row backfill
-// and the Log File Viewer's per-file reads both use it) and the only place that
-// spawns a goroutine outside safego/safegoRepair, so it provides both halves of
-// what they give by hand: the traceback label and the recover.
+// and the Log File Viewer's per-file reads both use it) and one of two places
+// that spawn a goroutine outside safego/safegoRepair, so it provides both halves
+// of what they give by hand: the traceback label and the recover. The other is
+// App.FlushSaves' waiter on savesInFlight, which runs after the event loop is
+// gone and does nothing that can panic.
 //
 // Each call is recovered on its own: a panic in one item reports and moves on
 // rather than taking down its worker and every item that worker still owes.

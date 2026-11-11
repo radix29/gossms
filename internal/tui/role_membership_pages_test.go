@@ -22,30 +22,35 @@ import (
 // arguments in which order. That is what these drive.
 
 func membershipResponses() []fakeResponse {
+	// The database's roles and its users (the addable candidates), read as
+	// one Principals read by Database Role > Members and as the role list by
+	// User > Membership.
+	roles := fakeResponse{match: "r.type = 'R'", db: "appdb", cols: 5, rows: [][]driver.Value{
+		{"public", int64(0), false, "dbo", jsonNames("alice")},
+		{"db_owner", int64(1), true, "dbo", nil},
+		{"salesrole", int64(2), false, "dbo", jsonNames("alice", "bob")},
+		// A non-member role that is not the first row of the grid: a page
+		// that ticked the *first* role whatever row was clicked would
+		// still look right if every test used the first one.
+		{"db_datawriter", int64(3), true, "dbo", nil},
+	}}
+	users := fakeResponse{match: usersListRead, db: "appdb", cols: 11, rows: userListRows(
+		[]driver.Value{"alice", int64(5), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
+		[]driver.Value{"bob", int64(6), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
+		[]driver.Value{"carol", int64(7), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
+	)}
 	return []fakeResponse{
 		dbByNameResp("appdb", 5),
 
-		// The database's roles, its role members, and its users (the addable
-		// candidates). Roles first: the role list's own query embeds a
-		// sys.database_role_members subquery, so behind the members answer it
-		// is served two columns for a five-column scan.
-		{match: "r.type = 'R'", db: "appdb", cols: 5, rows: [][]driver.Value{
-			{"public", int64(0), false, "dbo", jsonNames("alice")},
-			{"db_owner", int64(1), true, "dbo", nil},
-			{"salesrole", int64(2), false, "dbo", jsonNames("alice", "bob")},
-			// A non-member role that is not the first row of the grid: a page
-			// that ticked the *first* role whatever row was clicked would
-			// still look right if every test used the first one.
-			{"db_datawriter", int64(3), true, "dbo", nil},
-		}},
+		// Both principal reads go ahead of the role members answer: each
+		// embeds a sys.database_role_members subquery, so behind it they
+		// would be served two columns for a wider scan.
+		principalsResponse(roles, users),
+		roles,
 		{match: "FROM   sys.database_role_members rm", db: "appdb", cols: 2, rows: [][]driver.Value{
 			{"alice", "SQL_USER"}, {"bob", "SQL_USER"},
 		}},
-		{match: usersListRead, db: "appdb", cols: 11, rows: userListRows(
-			[]driver.Value{"alice", int64(5), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
-			[]driver.Value{"bob", int64(6), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
-			[]driver.Value{"carol", int64(7), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE"},
-		)},
+		users,
 
 		// The server's roles, its role members, and its logins — same
 		// ordering rule as the database half above.

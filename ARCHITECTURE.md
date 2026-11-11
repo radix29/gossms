@@ -343,7 +343,7 @@ gossms/
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── latest.go              # the shared latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result — see § Latest-only loads
-│       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one
+│       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one (bar FlushSaves' exit-time waiter)
 │       ├── prop_page_gate.go    # withRequires/withRequiresOn: attaches a gate.Right set to a propPage, the one tie between the gate package and the Properties dialogs
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
@@ -556,6 +556,7 @@ gossms/
 │       ├── schema_props.go       # Schema Properties page definitions
 │       ├── new_schema_dialog.go  # New Schema: name, AUTHORIZATION owner, permissions, extended properties
 │       ├── role_props.go         # Database Role Properties page definitions
+│       ├── database_principals.go # loadDatabasePrincipals: one read of users/roles/application roles; the grantee and owner pickers' rule
 │       ├── new_role_dialog.go    # New Database Role: name, AUTHORIZATION owner, owned schemas, members, securables, extended properties
 │       ├── new_server_role_dialog.go # New Server Role: name, AUTHORIZATION owner, members, server securables
 │       ├── application_role_props.go # Application Role Properties: General (name, default schema, password)/Owned Schemas/Securables/Extended Properties
@@ -821,6 +822,10 @@ The one exception is the bounded pool **`App.fanOut(n, what, work, onPanic)`**
 recovers each item separately, so a panic costs that item, not its worker's
 queue; `onPanic` runs *before* `fanOut` returns, which is how backfill queues
 `markFailed` ahead of the caller caching its rows.
+
+`App.FlushSaves` (`app_saves.go`) runs one bare goroutine — a `WaitGroup.Wait`
+it abandons at its deadline. It starts after the event loop is gone and
+cannot panic, so there is no status bar to report to and nothing to recover.
 
 ### When the goroutine latched UI state first: safegoRepair
 

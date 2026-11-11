@@ -128,19 +128,11 @@ const fullTextDefaultOwner = "(current user)"
 // database's users, roles and application roles — AUTHORIZATION takes any of
 // them for all three families.
 func fullTextOwnerItems(ctx context.Context, d *gosmo.Database) ([]string, error) {
-	users, err := d.Users(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	roles, err := d.Roles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	appRoles, err := d.ApplicationRoles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return append([]string{fullTextDefaultOwner}, principalNames(users, roles, appRoles)...), nil
+	return append([]string{fullTextDefaultOwner}, principals.owners(nil)...), nil
 }
 
 // fullTextOwnerValue is an Owner row as a request's Owner: "" for the default.

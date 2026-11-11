@@ -3,44 +3,52 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Four Properties pages hand buildPermissionsMatrix a different principal
+// Five Properties pages hand buildPermissionsMatrix a different principal
 // list, permission catalog and apply func, and are otherwise the same editor:
 // Server Properties > Permissions, Database Properties > Permissions, and the
-// Permissions page of Schema and Table Properties. The matrix itself is
+// Permissions page of Schema, Table and Sequence Properties. The matrix itself is
 // covered by server_permissions_page_test.go, which drives the single-principal
 // form; what is untested is each page's own wiring, and that is where the
-// damage is. All four write GRANT/DENY/REVOKE, and the scope is carried by the
+// damage is. All five write GRANT/DENY/REVOKE, and the scope is carried by the
 // apply func alone — a page wired to the wrong one grants on the whole database
 // what the user granted on one table, and the grid shows the change it asked
 // for either way.
 
 const permDatabase = "appdb"
 
-// permPrincipalResponses are the users and roles every database-scoped page
-// here lists. Two of each, so the principal acted on is never the first row and
+// permPrincipalResponses are the users, roles and application role every
+// database-scoped page here lists. Two of each, so the principal acted on is never the first row and
 // never the only one of its kind: a page that ignored the principal grid
 // entirely would pass against a one-principal fake.
 func permPrincipalResponses() []fakeResponse {
-	return []fakeResponse{
-		{match: usersListRead, db: permDatabase, cols: 11, rows: userListRows(
-			[]driver.Value{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
-			[]driver.Value{"appwriter", int64(6), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
-		)},
-		{match: "WHERE  r.type = 'R'", db: permDatabase, cols: 5, rows: [][]driver.Value{
-			{"db_datareader", int64(7), true, "dbo", nil},
-			{"reporting", int64(8), false, "dbo", nil},
-		}},
-	}
+	users := fakeResponse{match: usersListRead, db: permDatabase, cols: 11, rows: userListRows(
+		[]driver.Value{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
+		[]driver.Value{"appwriter", int64(6), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
+	)}
+	roles := fakeResponse{match: "WHERE  r.type = 'R'", db: permDatabase, cols: 5, rows: [][]driver.Value{
+		{"db_datareader", int64(7), true, "dbo", nil},
+		{"reporting", int64(8), false, "dbo", nil},
+	}}
+	appRoles := fakeResponse{match: "WHERE  type = 'A'", db: permDatabase, cols: 5, rows: [][]driver.Value{
+		{permAppRole, "dbo", int64(9), time.Time{}, time.Time{}},
+	}}
+	return []fakeResponse{principalsResponse(users, roles, appRoles)}
 }
+
+// permAppRole is the application role every database-scoped page must list
+// beside the users and roles (review A1: none of them did).
+const permAppRole = "billing_app"
 
 // permEntryResponse answers whichever sys.database_permissions read the page
 // under test runs — all three share a SELECT list and differ only in their
@@ -65,7 +73,7 @@ func matrixGrids(t *testing.T, f *propsheet.Form) (*controls.DataGrid, *propshee
 	return grids[0].Grid, grids[1]
 }
 
-// permScope is one of the four pages, named by what its writes are scoped to.
+// permScope is one of the five pages, named by what its writes are scoped to.
 type permScope struct {
 	name string
 	// page builds the page under test.
@@ -77,6 +85,10 @@ type permScope struct {
 	// its statements must carry — empty for a scope that has none.
 	permission string
 	on         string
+	// catalog is the permission list the page must offer: the class's own,
+	// which is all that tells a table's page from a sequence's apart (both
+	// write ON [schema].[name]).
+	catalog []string
 }
 
 func permScopes() []permScope {
@@ -85,18 +97,32 @@ func permScopes() []permScope {
 		page:       func(sc *db.ServerConn) propPage { return pageDatabasePermissions(sc, permDatabase) },
 		extra:      permEntryResponse("dp.class_desc = 'DATABASE'"),
 		permission: "ALTER ANY SCHEMA",
+		catalog:    gosmo.DatabasePermissionNames(),
 	}, {
 		name:       "schema",
 		page:       func(sc *db.ServerConn) propPage { return pageSchemaPermissions(sc, permDatabase, "sales") },
 		extra:      permEntryResponse("dp.class_desc = 'SCHEMA'"),
 		permission: "EXECUTE",
 		on:         "ON SCHEMA::[sales]",
+		catalog:    gosmo.SecurableSchema.PermissionNames(),
 	}, {
-		name:       "table",
-		page:       func(sc *db.ServerConn) propPage { return pageTablePermissions(sc, permDatabase, "sales", "Orders") },
+		name: "table",
+		page: func(sc *db.ServerConn) propPage {
+			return pageObjectPermissions(sc, permDatabase, gosmo.SecurableTable, "sales", "Orders")
+		},
 		extra:      permEntryResponse("dp.major_id = OBJECT_ID(@p1)"),
 		permission: "UPDATE",
 		on:         "ON [sales].[Orders]",
+		catalog:    gosmo.SecurableTable.PermissionNames(),
+	}, {
+		name: "sequence",
+		page: func(sc *db.ServerConn) propPage {
+			return pageObjectPermissions(sc, permDatabase, gosmo.SecurableSequence, "sales", "OrderNo")
+		},
+		extra:      permEntryResponse("dp.major_id = OBJECT_ID(@p1)"),
+		permission: "UPDATE",
+		on:         "ON [sales].[OrderNo]",
+		catalog:    gosmo.SecurableSequence.PermissionNames(),
 	}}
 }
 
@@ -141,6 +167,26 @@ func TestPermissionsMatrixWritesAtItsOwnScope(t *testing.T) {
 	}
 }
 
+// TestPermissionsMatrixOffersItsOwnCatalog. Table and sequence share one page
+// builder (pageObjectPermissions) and the same ON clause, so the permission
+// list is the only thing that differs between them: a builder that ignored its
+// class would offer SELECT on a sequence and write a GRANT the server refuses.
+func TestPermissionsMatrixOffersItsOwnCatalog(t *testing.T) {
+	for _, s := range permScopes() {
+		t.Run(s.name, func(t *testing.T) {
+			_, _, form := loadPermScope(t, s)
+			_, perms := matrixGrids(t, form)
+			var got []string
+			for i := 0; perms.Grid.Row(i) != nil; i++ {
+				got = append(got, perms.Grid.Row(i)[0])
+			}
+			if !slices.Equal(got, s.catalog) {
+				t.Errorf("offers %v\nwant %v", got, s.catalog)
+			}
+		})
+	}
+}
+
 // TestPermissionsMatrixActsOnTheSelectedPrincipal. The page holds one edit
 // slice per principal and applies all of them, so a page that wrote the grid's
 // selection back onto the wrong principal grants a permission to somebody the
@@ -181,7 +227,7 @@ func TestPermissionsMatrixActsOnTheSelectedPrincipal(t *testing.T) {
 // one's — and Apply then leaves it there, because the page believes it is the
 // server's own state.
 func TestPermissionsMatrixReadsStateOntoTheRightPrincipal(t *testing.T) {
-	s := permScopes()[0] // database scope; the fill is shared by all four
+	s := permScopes()[0] // database scope; the fill is shared by all five
 	s.extra = permEntryResponse("dp.class_desc = 'DATABASE'",
 		[]driver.Value{"appreader", "SQL_USER", "dbo", s.permission, "DENY"},
 	)
@@ -197,6 +243,56 @@ func TestPermissionsMatrixReadsStateOntoTheRightPrincipal(t *testing.T) {
 	if got := perms.Grid.Row(permRowIndex(t, perms, s.permission))[1]; got != "(none)" {
 		t.Errorf("appwriter's %s shows as %q: another principal's entry was read onto this row", s.permission, got)
 	}
+}
+
+// TestPermissionsMatrixGrantsToAnApplicationRole. An application role is a
+// grantee like any other (GRANT … TO [approle]); every database-scope page
+// once offered only users and roles, so it could be granted nothing.
+func TestPermissionsMatrixGrantsToAnApplicationRole(t *testing.T) {
+	for _, s := range permScopes() {
+		t.Run(s.name, func(t *testing.T) {
+			inst, apply, form := loadPermScope(t, s)
+
+			principals, perms := matrixGrids(t, form)
+			selectGridRow(t, principals, 0, permAppRole)
+			if got := principals.Row(principals.SelectedRow())[1]; got != "APPLICATION_ROLE" {
+				t.Errorf("%s typed %q, want APPLICATION_ROLE", permAppRole, got)
+			}
+			cyclePermTo(t, perms, permRowIndex(t, perms, s.permission), "Grant")
+
+			if err := apply(context.Background()); err != nil {
+				t.Fatalf("apply: %v", err)
+			}
+			want := "GRANT " + s.permission + " TO [" + permAppRole + "]"
+			if s.on != "" {
+				want = "GRANT " + s.permission + " " + s.on + " TO [" + permAppRole + "]"
+			}
+			assertOneStatementIn(t, inst, permDatabase, want)
+		})
+	}
+}
+
+// TestPermissionsMatrixShowsAGranteeTheListLacks. A grant held by a principal
+// the page's list leaves out (application roles, before A1) was read and then
+// dropped: the page claimed it did not exist, and it could not be revoked.
+func TestPermissionsMatrixShowsAGranteeTheListLacks(t *testing.T) {
+	s := permScopes()[0]
+	s.extra = permEntryResponse("dp.class_desc = 'DATABASE'",
+		[]driver.Value{"ghost", "SQL_USER", "dbo", s.permission, "GRANT"},
+	)
+	inst, apply, form := loadPermScope(t, s)
+
+	principals, perms := matrixGrids(t, form)
+	selectGridRow(t, principals, 0, "ghost")
+	row := permRowIndex(t, perms, s.permission)
+	if got := perms.Grid.Row(row)[1]; got != "Grant" {
+		t.Fatalf("ghost's %s shows as %q, want Grant", s.permission, got)
+	}
+	cyclePermTo(t, perms, row, "(none)")
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	assertOneStatementIn(t, inst, permDatabase, "REVOKE "+s.permission+" FROM [ghost]")
 }
 
 // TestPermissionsMatrixWritesNothingWhenUntouched. Browsing principals builds

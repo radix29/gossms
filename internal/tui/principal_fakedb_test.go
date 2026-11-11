@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql/driver"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -170,4 +171,47 @@ func serverRolePermissionsResponse() fakeResponse {
 	return fakeResponse{match: "sp.class_desc = 'SERVER'", cols: 5, rows: [][]driver.Value{
 		{principalSrvRole, "SERVER_ROLE", "sa", "VIEW ANY DATABASE", "GRANT"},
 	}}
+}
+
+// principalsListRead matches Database.Principals, the one read of users,
+// roles and application roles together; it shares no substring with the
+// three family reads' matches.
+const principalsListRead = "'R','A')\nORDER  BY dp.name"
+
+// principalsResponse answers Database.Principals from family-read fakes —
+// usersListRead, the role list ("r.type = 'R'" or "sys.database_principals
+// r") and the "type = 'A'"
+// application-role list, in any order and any subset — so a fixture's
+// principals are scripted once and the two shapes cannot disagree. Its db is
+// the first family fake's. Put it ahead of a "sys.database_role_members rm"
+// answer: Principals embeds that subquery (as Roles does).
+func principalsResponse(families ...fakeResponse) fakeResponse {
+	out := fakeResponse{match: principalsListRead, cols: 14}
+	for i, f := range families {
+		if i == 0 {
+			out.db = f.db
+		}
+		for _, r := range f.rows {
+			switch {
+			case f.match == usersListRead: // 11 user columns
+				out.rows = append(out.rows, append(slices.Clone(r), nil, nil, nil))
+			case strings.Contains(f.match, "type = 'A'"): // name, schema, id, created, modified
+				out.rows = append(out.rows, []driver.Value{r[0], r[2], "APPLICATION_ROLE", r[1], r[3], r[4],
+					nil, nil, nil, nil, nil, nil, nil, nil})
+			case strings.Contains(f.match, "r.type = 'R'"), strings.Contains(f.match, "sys.database_principals r"): // name, id, fixed, owner, members
+				out.rows = append(out.rows, []driver.Value{r[0], r[1], "DATABASE_ROLE", nil, principalEpoch, principalEpoch,
+					nil, nil, nil, nil, nil, r[2], r[3], r[4]})
+			default:
+				panic("principalsResponse: not a principal family read: " + f.match)
+			}
+		}
+	}
+	return out
+}
+
+// databasePrincipalsResponse answers Database.Principals with this file's
+// users, roles and application roles.
+func databasePrincipalsResponse() fakeResponse {
+	roles := databaseRoleResponses()
+	return principalsResponse(databaseUsersResponse(), roles[len(roles)-1], databaseApplicationRolesResponse())
 }

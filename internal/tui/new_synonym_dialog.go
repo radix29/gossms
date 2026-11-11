@@ -46,16 +46,12 @@ func fetchNewSynonymPrefetch(ctx context.Context, sc *db.ServerConn, dbName stri
 	if err != nil {
 		return nil, err
 	}
-	users, err := d.Users(ctx)
-	if err != nil {
-		return nil, err
-	}
-	roles, err := d.Roles(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
 	pf := &nsynPrefetch{existing: newNameSet(databaseCollation(d)), collation: databaseCollation(d),
-		principals: databasePermPrincipals(users, roles)}
+		principals: principals.grantees()}
 	// sys and INFORMATION_SCHEMA refuse CREATE SYNONYM as they refuse CREATE
 	// SEQUENCE (Msg 2760, sa included), so the sequence picker's rule holds.
 	pf.schemas = sequenceSchemas(databaseCollation(d), schemas)

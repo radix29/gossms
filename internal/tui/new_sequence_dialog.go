@@ -69,16 +69,12 @@ func fetchNewSequencePrefetch(ctx context.Context, sc *db.ServerConn, dbName str
 	if err != nil {
 		return nil, err
 	}
-	users, err := d.Users(ctx)
-	if err != nil {
-		return nil, err
-	}
-	roles, err := d.Roles(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
 	pf := &nseqPrefetch{existing: newNameSet(databaseCollation(d)), collation: databaseCollation(d),
-		principals: databasePermPrincipals(users, roles)}
+		principals: principals.grantees()}
 	pf.schemas = sequenceSchemas(databaseCollation(d), schemas)
 	for _, s := range seqs {
 		pf.existing.Add(sequenceKey(s.Schema, s.Name))

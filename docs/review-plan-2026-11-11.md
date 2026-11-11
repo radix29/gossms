@@ -29,7 +29,7 @@ Each item: **ID — title** · repo · kind · effort (S < 1 h, M ≤ ½ day, L 
 
 ## A. Bugs
 
-### A1 — Permissions pages never list application roles · gossms · bug · M
+### A1 — Permissions pages never list application roles · gossms · bug · M · **DONE 2026-11-11**
 
 `databasePermPrincipals(users, roles)` (`server_permissions_matrix.go`) builds
 the grantee list for every database-scope Permissions page and New dialog —
@@ -94,7 +94,7 @@ with whatever `go.mod` pins. Bump `go 1.27.3` → `go 1.27.4` in both `go.mod`s
 
 ## B. Inconsistencies
 
-### B1 — A raw `go func` contradicts the "every goroutine via safego" rule · gossms · S
+### B1 — A raw `go func` contradicts the "every goroutine via safego" rule · gossms · S · **DONE 2026-11-11**
 
 `safego`'s doc says every background operation goes through it, and
 `fanOut`'s says it is "the only place that spawns a goroutine outside
@@ -106,7 +106,7 @@ Also: the same function can overrun its deadline — `a.cfg.Save()` after the
 first `select` is not bounded by `deadline`. Bound it or document that it is
 accepted at exit.
 
-### B2 — Grantee and owner pickers read principals three different ways · gossms · S
+### B2 — Grantee and owner pickers read principals three different ways · gossms · S · **DONE 2026-11-11**
 
 Thirteen prefetches read `Users` + `Roles` (+ sometimes `ApplicationRoles`)
 and assemble `permPrincipal`s or owner names by hand; which kinds each
@@ -125,7 +125,7 @@ blocker**).
 
 ## C. Simplifications / refactors
 
-### C1 — One `pageObjectPermissions` for schema-scoped securables · gossms · S
+### C1 — One `pageObjectPermissions` for schema-scoped securables · gossms · S · **DONE 2026-11-11**
 
 `pageTablePermissions` (`table_props.go`) and `pageSequencePermissions`
 (`sequence_props.go`) are the same 27 lines differing only in
@@ -282,11 +282,11 @@ the larger refactors. Each step is independently committable.
 2. ~~**A2** — quadratic `errorCount`. Contained, testable offline.~~ **Done 2026-11-11**: `runScript` scans only the batch's own messages (`Messages[len-before:]`, append-only during a run) and `errorCount` is gone. Not the planned `errors int` counter: `Messages` is exported and callers outside the package append, replace and filter it, so a counter behind `HasErrors` would go stale; `HasErrors` stays a scan (once per run). `TestGoRepeatCountsFailedExecutions` (GO 5000, one failure) and `BenchmarkGoRepeat`: 2000→8000 executions went 7→99 ms before, 5→24 ms after.
 3. ~~**A3 + E2** — clear the static findings, then document the gate.~~ **Done 2026-11-11**: `writeCount`, `reads`, `JobStateRow` were born unused (fb52b6b), `objKey` a leftover of 2d6ea22's fake conversion — all deleted, no lost assertion. The never-read `res` was one: the view-reorganize case in `TestMaintIndexRebuild` now asserts its rows (7.00 → 0.50). `staticcheck`/`deadcode -test` clean. Gate documented in `docs/testing.md` (§ Static checks), `CLAUDE.md` and gosmo's `CLAUDE.md` § Build & verify. gosmo gates on `staticcheck` only: `deadcode` there lists library surface plus unexported helpers only it reaches (`schedulerGroupSizes`), so it is not a clean-able gate.
 4. ~~**D1** (gosmo) — `Database.Principals`; live sweep on 13.~~ **Done 2026-11-11**: `d.Principals(ctx, kinds ...PrincipalKind) (*DatabasePrincipals, error)` (`database_principals.go`) — one `sys.database_principals` read built on `userSelect` (now taking extra columns), dispatched by `type_desc` into `Users`/`Roles`/`ApplicationRoles`; no kinds = all, an unknown kind is `ErrInvalidRequest`. Each family is filled as its own read fills it; roles as `RoleByName` does (SID and dates too, which `Roles` leaves out). Offline tests compare field-by-field with `UserByName`/`RoleByName`/`ApplicationRoleByName` (mutation-checked); `TestLivePrincipalsMatchesTheFamilyReads` green on 13 and 17; `TestLiveVersionSweep` green on 13 (441 calls, 0 failed). The reflective sweep now calls a variadic read with no arguments only when its type is in `sweepEmptyVariadics` (an open-ended rule also reached `Server.BackupHeaders`, which refuses no targets); `Database.Principals` is in `sweepMustCall`. Feature map and `diagram/05-database-handle.mmd` updated.
-5. **C2** — `loadDatabasePrincipals` on top of D1.
-6. **A1** — application roles in the permission matrices (now a change to
-   one helper plus `buildPermissionsMatrix`); live check on 13 and 17.
-7. **C1** — `pageObjectPermissions`.
-8. **B1, B2** — comment/consistency fixes (B2 is closed by 5–6).
+5. ~~**C2** — `loadDatabasePrincipals` on top of D1.~~ **Done 2026-11-11**: `internal/tui/database_principals.go` — `loadDatabasePrincipals(ctx, d)` wraps `Database.Principals` (one round trip) with `.grantees()` (users and roles, unchanged: A1 adds application roles there), `.names()` and `.owners(exclude)`. All 13 sites converted: New Schema/Sequence/Synonym/Role/Application Role/User prefetches, Database/Schema/Table/Sequence Permissions, Schema General, Role General/Members/Owned Roles, Owned Schemas, `keyOwnerRow` (drops `Roles` when `!withRoles`), `fullTextOwnerItems`. Single-family reads (`database_props` users, `user_props`/`login_props`/`new_login` roles, the msdb mail users) stay as they are. Fake-driver fixtures answer the new read through `principalsResponse(families...)`, derived from each test's existing user/role/app-role fakes; `TestLoadDatabasePrincipalsIsOneRead` asserts no family read runs beside it. Gate clean (vet, staticcheck, deadcode, `go test ./...`). Live: a throwaway-database scratch test ran every converted loader on 17 and 13 — `names()`/`grantees()` equal to the three family reads, every page loads; the TUI itself was not driven.
+6. ~~**A1** — application roles in the permission matrices (now a change to
+   one helper plus `buildPermissionsMatrix`); live check on 13 and 17.~~ **Done 2026-11-11**: `databasePermPrincipals(users, roles, appRoles)` lists application roles last, typed `APPLICATION_ROLE`; `databasePrincipals.grantees()` passes them, so all seven pages/dialogs (Database/Schema/Table/Sequence Permissions, New Schema/Sequence/Synonym) offer them. `buildPermissionsMatrix` now runs `withEntryPrincipals`, appending any principal an entry names but the list lacks (server page included), so an existing grant can no longer read as "(none)". Tests: the page suite gained a sequence scope and an application role — `TestPermissionsMatrixGrantsToAnApplicationRole` (all four database scopes write `TO [billing_app]`), `TestPermissionsMatrixShowsAGranteeTheListLacks` (an unlisted grantee's GRANT shows and revokes); `grantees()` asserted in `TestLoadDatabasePrincipalsIsOneRead`; both fixes mutation-checked. Gate clean. Live (scratch test, throwaway database, 17 and 13): Table Properties ▸ Permissions listed both app roles, showed `billing_app`'s existing SELECT as Grant, revoked it and granted UPDATE to the other from the page — confirmed in `sys.database_permissions`. TUI not driven.
+7. ~~**C1** — `pageObjectPermissions`.~~ **Done 2026-11-11**: `pageObjectPermissions(sc, dbName, class, schema, name)` (`server_permissions_matrix.go`, beside `objectPermEntries`) replaces `pageTablePermissions` and `pageSequencePermissions`; Table and Sequence Properties call it with `gosmo.SecurableTable`/`SecurableSequence`. The page suite already wrote at each scope, but nothing pinned the class: hard-coding `SecurableTable` in the helper (catalog or securable) passed every test, since both classes write `ON [schema].[name]`. New `TestPermissionsMatrixOffersItsOwnCatalog` (each scope's grid lists exactly its gosmo catalog) catches the catalog mutation. Gate clean, `go test ./...` green. Not live-tested: a pure extraction of two identical bodies.
+8. ~~**B1, B2** — comment/consistency fixes (B2 is closed by 5–6 — done).~~ **Done 2026-11-11**: B1 fixed in words, not code. `fanOut`'s doc now says it is one of two places spawning outside safego and names `FlushSaves`' `savesInFlight` waiter as the other (cannot panic, runs after the event loop is gone); `safego`'s "every background operation" points there; `ARCHITECTURE.md` § Starting the goroutine and the `safego.go` Package map row say the same. The deadline overrun is documented as accepted in `FlushSaves`' doc: `wait` bounds the waits, not the synchronous save of a change asked for after the in-flight one, which can overrun by up to `fileutil.lockWait` (2 s) plus the write — it is the user's only copy of that change. No `fileutil.WaitTimeout` helper (one caller). B2 closed by steps 5–6.
 9. **C3** — parallel prefetch; measure on ubusql1.
 10. **C4** — split run state out of `query.Result` (after A2).
 11. **D2, D4, D5** — gosmo small cleanups; offline write tests prove them.

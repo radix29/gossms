@@ -24,7 +24,7 @@ import (
 func roleGeneralResponses() []fakeResponse {
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseRoleResponses()...)
-	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse(), databasePrincipalsResponse())
 	responses = append(responses, databaseSchemaResponses()...)
 	return append(responses, principalPermissionResponses()...)
 }
@@ -316,7 +316,7 @@ func TestUserGeneralCertificateMappedUserHasNoLoginOrSchemaToChange(t *testing.T
 func schemaGeneralResponses() []fakeResponse {
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseSchemaResponses()...)
-	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse(), databasePrincipalsResponse())
 	responses = append(responses, databaseRoleResponses()...)
 	responses = append(responses, schemaObjectCountResponses()...)
 	return append(responses, principalPermissionResponses()...)

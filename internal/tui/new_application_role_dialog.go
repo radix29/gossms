@@ -39,15 +39,7 @@ func fetchNewApplicationRolePrefetch(ctx context.Context, sc *db.ServerConn, dbN
 	if err != nil {
 		return nil, err
 	}
-	users, err := d.Users(ctx)
-	if err != nil {
-		return nil, err
-	}
-	roles, err := d.Roles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	appRoles, err := d.ApplicationRoles(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +51,7 @@ func fetchNewApplicationRolePrefetch(ctx context.Context, sc *db.ServerConn, dbN
 	if err != nil {
 		return nil, err
 	}
-	pf := newApplicationRolePrefetchFrom(databaseCollation(d), users, roles, appRoles, schemas)
+	pf := newApplicationRolePrefetchFrom(databaseCollation(d), principals.Users, principals.Roles, principals.ApplicationRoles, schemas)
 	pf.database, pf.securables = d, securables
 	return pf, nil
 }
