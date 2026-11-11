@@ -41,7 +41,6 @@ func runKill(t *testing.T, s *monitorServer, argv string) (res *output.Result, d
 			dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	tree := &spec.Tree{Commands: MonitorCommands(d)}
 	inv, perr := args.Parse(tree, append([]string{"monitor", "kill", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})

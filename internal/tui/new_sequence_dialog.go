@@ -39,11 +39,13 @@ const (
 
 var nseqCacheItems = []string{nseqCacheDefault, nseqCacheNone, nseqCacheSize}
 
-// nseqPrefetch is everything the dialog reads before it opens.
-type nseqPrefetch struct {
-	// existing holds every sequence as sequenceKey spells it, under the
-	// database's collation. Only sequences: a table of the same name collides
-	// too, and the server names that one (Msg 2714).
+// schemaObjectPrefetch is everything the New Sequence and New Synonym dialogs
+// read before they open: the two differ only in which family fills existing.
+type schemaObjectPrefetch struct {
+	// existing holds every object of the dialog's own family as sequenceKey
+	// spells it, under the database's collation. Only that family: an object
+	// of any other kind with the same name collides too, and the server names
+	// that one (Msg 2714).
 	existing *nameSet
 	schemas  []string
 	// principals are what the Permissions page may grant to: every user and role.
@@ -56,7 +58,11 @@ type nseqPrefetch struct {
 // occur in an identifier, so two pairs never share a key.
 func sequenceKey(schema, name string) string { return schema + "\x00" + name }
 
-func fetchNewSequencePrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*nseqPrefetch, error) {
+// fetchSchemaObjectPrefetch reads a schemaObjectPrefetch; keys lists the
+// dialog's family as sequenceKey entries (d.Sequences for New Sequence,
+// d.Synonyms for New Synonym).
+func fetchSchemaObjectPrefetch(ctx context.Context, sc *db.ServerConn, dbName string,
+	keys func(context.Context, *gosmo.Database) ([]string, error)) (*schemaObjectPrefetch, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
@@ -65,7 +71,7 @@ func fetchNewSequencePrefetch(ctx context.Context, sc *db.ServerConn, dbName str
 	if err != nil {
 		return nil, err
 	}
-	seqs, err := d.Sequences(ctx)
+	existing, err := keys(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -73,12 +79,12 @@ func fetchNewSequencePrefetch(ctx context.Context, sc *db.ServerConn, dbName str
 	if err != nil {
 		return nil, err
 	}
-	pf := &nseqPrefetch{existing: newNameSet(databaseCollation(d)), collation: databaseCollation(d),
+	collation := databaseCollation(d)
+	pf := &schemaObjectPrefetch{existing: newNameSet(collation, existing...), collation: collation,
 		principals: principals.grantees()}
-	pf.schemas = sequenceSchemas(databaseCollation(d), schemas)
-	for _, s := range seqs {
-		pf.existing.Add(sequenceKey(s.Schema, s.Name))
-	}
+	// sys and INFORMATION_SCHEMA refuse CREATE SYNONYM as they refuse CREATE
+	// SEQUENCE (Msg 2760, sa included), so one picker rule serves both.
+	pf.schemas = sequenceSchemas(collation, schemas)
 	return pf, nil
 }
 
@@ -98,18 +104,25 @@ func sequenceSchemas(collation string, schemas []*gosmo.Schema) []string {
 
 // NewSequenceDialog is the New Sequence dialog.
 type NewSequenceDialog struct {
-	dbFolderDialog[nseqPrefetch]
+	dbFolderDialog[schemaObjectPrefetch]
 }
 
 // NewNewSequenceDialog creates the dialog and wires its callbacks.
 func NewNewSequenceDialog(app *App) *NewSequenceDialog {
 	d := &NewSequenceDialog{}
-	d.initInFolder(app, newObjectConfig[nseqPrefetch]{
+	d.initInFolder(app, newObjectConfig[schemaObjectPrefetch]{
 		title: "New Sequence",
 		noun:  "Sequence",
 		pages: []string{"General", "Permissions", "Extended Properties"},
-		fetch: func(ctx context.Context, sc *db.ServerConn) (*nseqPrefetch, error) {
-			return fetchNewSequencePrefetch(ctx, sc, d.dbName)
+		fetch: func(ctx context.Context, sc *db.ServerConn) (*schemaObjectPrefetch, error) {
+			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, func(ctx context.Context, dbh *gosmo.Database) ([]string, error) {
+				seqs, err := dbh.Sequences(ctx)
+				keys := make([]string, len(seqs))
+				for i, s := range seqs {
+					keys[i] = sequenceKey(s.Schema, s.Name)
+				}
+				return keys, err
+			})
 		},
 		build: d.buildPages,
 	})
@@ -123,7 +136,7 @@ type nseqFields struct {
 	noMin, noMax, cycle                                    *propsheet.CheckRow
 }
 
-func (d *NewSequenceDialog) buildPages(pf *nseqPrefetch) {
+func (d *NewSequenceDialog) buildPages(pf *schemaObjectPrefetch) {
 	sc := d.sc
 	dbName := d.dbName
 
@@ -250,7 +263,7 @@ func sequencePropertyLevel(schema, name string) gosmo.ExtendedPropertyLevel {
 
 // newSequenceRequest reads the General page into a request, refusing, naming
 // the field, what the CREATE would be refused for.
-func newSequenceRequest(f nseqFields, dbName string, pf *nseqPrefetch) (gosmo.CreateSequenceRequest, error) {
+func newSequenceRequest(f nseqFields, dbName string, pf *schemaObjectPrefetch) (gosmo.CreateSequenceRequest, error) {
 	req := gosmo.CreateSequenceRequest{
 		Schema:   f.schema.Value(),
 		Name:     strings.TrimSpace(f.name.Value()),

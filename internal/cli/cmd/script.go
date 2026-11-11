@@ -190,7 +190,7 @@ func (d Deps) scriptObject(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 	verbName := inv.Values[optAs].(string)
 	res := &output.Result{}
-	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+	dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -249,12 +249,12 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return nil, usageError("--objects scripts CREATE only; --as "+verbName+" is not offered with it", "")
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
-	dbase, err := namedDatabase(ctx, cat, inv.Args[0], res)
+	dbase, err := namedDatabase(ctx, sc.Server, inv.Args[0], res)
 	if err != nil {
 		return res, err
 	}

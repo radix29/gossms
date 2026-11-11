@@ -68,6 +68,7 @@ go run ./cmd/gossms                # run
 go test ./...                      # test
 gofmt -w .  &&  go vet ./...       # format, vet
 staticcheck ./...  &&  deadcode -test ./...   # must stay clean (docs/testing.md)
+go test -race -count=1 ./internal/<pkg>/...  # a change crossing goroutines (docs/testing.md)
 ```
 
 Version/Commit/Date (`internal/version`) resolve in order: `-ldflags -X` (set

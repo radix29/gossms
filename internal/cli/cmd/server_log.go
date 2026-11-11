@@ -139,15 +139,15 @@ func (d Deps) serverLog(ctx context.Context, inv *spec.Invocation) (*output.Resu
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	entries, err := cat.ReadLog(ctx, r.Type, r.Archive, r.Search)
+	entries, err := sc.Server.ReadLog(ctx, r.Type, r.Archive, r.Search)
 	if err != nil {
-		return res, logError(ctx, cat, r, err)
+		return res, logError(ctx, sc.Server, r, err)
 	}
 	if r.Lines > 0 && len(entries) > r.Lines {
 		entries = entries[len(entries)-r.Lines:]
@@ -159,14 +159,14 @@ func (d Deps) serverLog(ctx context.Context, inv *spec.Invocation) (*output.Resu
 // logError is a failed log read's error. A refusal names the permissions
 // sp_readerrorlog admits; a failed read of an archive that the server does
 // not list is NOT_FOUND (xp_readerrorlog says only "cannot find the file").
-func logError(ctx context.Context, cat Catalog, r logRequest, err error) error {
+func logError(ctx context.Context, srv *gosmo.Server, r logRequest, err error) error {
 	if gosmo.IsPermissionDenied(err) {
 		return output.NewError(output.CodePermissionDenied, err.Error(),
 			"Reading the error log needs sysadmin, securityadmin, VIEW SERVER STATE or (SQL Server 2022 on) "+
 				"VIEW ANY ERROR LOG. Use a login that has one, or have it granted.")
 	}
 	if r.Archive > 0 {
-		if files, ferr := cat.EnumErrorLogs(ctx, r.Type); ferr == nil &&
+		if files, ferr := srv.EnumErrorLogs(ctx, r.Type); ferr == nil &&
 			!slices.ContainsFunc(files, func(f *gosmo.ErrorLogFile) bool { return f.Number == r.Archive }) {
 			hint := "The server keeps no archived " + r.Type.String() + " log."
 			if n := len(files); n > 1 {

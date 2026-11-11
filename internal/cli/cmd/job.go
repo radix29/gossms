@@ -294,7 +294,7 @@ func (d Deps) jobList(ctx context.Context, inv *spec.Invocation) (*output.Result
 		return nil, usageError("--category is empty", "Name a category, or leave --category out for every one.")
 	}
 	res := &output.Result{}
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -378,7 +378,7 @@ func (d Deps) jobList(ctx context.Context, inv *spec.Invocation) (*output.Result
 
 func (d Deps) jobShow(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -490,7 +490,7 @@ func (d Deps) jobHistory(ctx context.Context, inv *spec.Invocation) (*output.Res
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}

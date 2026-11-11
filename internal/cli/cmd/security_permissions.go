@@ -351,7 +351,7 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 			return nil, err
 		}
 		res := &output.Result{}
-		sc, cat, err := d.connectGated(ctx, inv, res)
+		sc, err := d.connectGated(ctx, inv, res)
 		if err != nil {
 			return res, err
 		}
@@ -360,11 +360,11 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 		// The database a database-scope permission is in; nil for SERVER.
 		var dbase *gosmo.Database
 		if req.on.kind != onServer {
-			if dbase, err = currentDatabase(ctx, cat, res); err != nil {
+			if dbase, err = currentDatabase(ctx, sc.Server, res); err != nil {
 				return res, err
 			}
 		}
-		sec, err := resolveSecurable(ctx, cat, dbase, req.on)
+		sec, err := resolveSecurable(ctx, dbase, req.on)
 		if err != nil {
 			return res, err
 		}
@@ -382,7 +382,7 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 				return res, err
 			}
 		}
-		p, err := resolvePrincipal(ctx, sc.Server, cat, res, dbase, req.principal, grantScope)
+		p, err := resolvePrincipal(ctx, sc.Server, res, dbase, req.principal, grantScope)
 		if err != nil {
 			return res, err
 		}
@@ -529,8 +529,8 @@ func securableText(sec gosmo.Securable) string {
 }
 
 // resolveSecurable reads what on names in dbase (nil for SERVER), in its
-// catalog spelling. cat resolves an object's name (resolveObject).
-func resolveSecurable(ctx context.Context, cat Catalog, dbase *gosmo.Database, on onSpec) (gosmo.Securable, error) {
+// catalog spelling; an object's name resolves as resolveObject does.
+func resolveSecurable(ctx context.Context, dbase *gosmo.Database, on onSpec) (gosmo.Securable, error) {
 	switch on.kind {
 	case onServer:
 		return gosmo.Securable{Class: gosmo.SecurableServer}, nil
@@ -589,7 +589,7 @@ func resolveSecurable(ctx context.Context, cat Catalog, dbase *gosmo.Database, o
 	if err != nil {
 		return gosmo.Securable{}, err
 	}
-	o, err := resolveObject(ctx, cat, dbase, n)
+	o, err := resolveObject(ctx, dbase, n)
 	if err != nil {
 		return gosmo.Securable{}, err
 	}
@@ -779,7 +779,7 @@ func (d Deps) securityRoleMember(ctx context.Context, inv *spec.Invocation, add 
 	scope := inv.Values[optScope].(string)
 	roleName, memberName := inv.Args[0], inv.Args[1]
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -795,7 +795,7 @@ func (d Deps) securityRoleMember(ctx context.Context, inv *spec.Invocation, add 
 	if scope == scopeServer {
 		r, err := sc.Server.ServerRoleByName(ctx, roleName)
 		if errors.Is(err, gosmo.ErrNotFound) {
-			return res, roleNotFound(ctx, sc.Server, cat, res, roleName, scope)
+			return res, roleNotFound(ctx, sc.Server, res, roleName, scope)
 		}
 		if err != nil {
 			return res, readError(err)
@@ -805,12 +805,12 @@ func (d Deps) securityRoleMember(ctx context.Context, inv *spec.Invocation, add 
 			alter = r.AddMember
 		}
 	} else {
-		if dbase, err = currentDatabase(ctx, cat, res); err != nil {
+		if dbase, err = currentDatabase(ctx, sc.Server, res); err != nil {
 			return res, err
 		}
 		r, err := dbase.RoleByName(ctx, roleName)
 		if errors.Is(err, gosmo.ErrNotFound) {
-			return res, roleNotFound(ctx, sc.Server, cat, res, roleName, scope)
+			return res, roleNotFound(ctx, sc.Server, res, roleName, scope)
 		}
 		if err != nil {
 			return res, readError(err)
@@ -820,7 +820,7 @@ func (d Deps) securityRoleMember(ctx context.Context, inv *spec.Invocation, add 
 			alter = r.AddMember
 		}
 	}
-	p, err := resolvePrincipal(ctx, sc.Server, cat, res, dbase, memberName, roleScope)
+	p, err := resolvePrincipal(ctx, sc.Server, res, dbase, memberName, roleScope)
 	if err != nil {
 		return res, err
 	}

@@ -73,7 +73,7 @@ func newFidelityObserver(t *testing.T, dry bool) *fidelityObserver {
 type fidelityCase struct {
 	command string
 	argv    string
-	fakes   func(t *testing.T) Catalog
+	fakes   func(t *testing.T) *gosmo.Server
 }
 
 // fidelityCases holds at least one case per writing command. Each changes
@@ -127,45 +127,45 @@ var fidelityExempt = map[string]string{
 	"plan actual": "--dry-run classifies the script and prints no T-SQL: what runs is the script given",
 }
 
-func configFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newConfigSetServer(t).Server()})
+func configFakes(t *testing.T) *gosmo.Server {
+	return newConfigSetServer(t).Server()
 }
 
-func traceFlagFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: flagServer(t, gosmo.TraceFlag{Flag: 1222, Global: true}).Server()})
+func traceFlagFakes(t *testing.T) *gosmo.Server {
+	return flagServer(t, gosmo.TraceFlag{Flag: 1222, Global: true}).Server()
 }
 
 // dbSetFakes, dbCreateFakes and scopedFakes are real gosmo over a dbServer.
-func dbSetFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newDBSetServer(t).Server()})
+func dbSetFakes(t *testing.T) *gosmo.Server {
+	return newDBSetServer(t).Server()
 }
 
-func dbCreateFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newDBServer(t).Server()})
+func dbCreateFakes(t *testing.T) *gosmo.Server {
+	return newDBServer(t).Server()
 }
 
-func scopedFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newScopedServer(t).Server()})
+func scopedFakes(t *testing.T) *gosmo.Server {
+	return newScopedServer(t).Server()
 }
 
-func jobFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newJobServer(t).Server()})
+func jobFakes(t *testing.T) *gosmo.Server {
+	return newJobServer(t).Server()
 }
 
 // killFakes is real gosmo over a monitorServer with session 87.
-func killFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: killServer(t, userSession(87), nil).Server()})
+func killFakes(t *testing.T) *gosmo.Server {
+	return killServer(t, userSession(87), nil).Server()
 }
 
 // captureFakes is real gosmo over an xeServer whose login may create event
 // sessions.
-func captureFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newXEServer(t).Server()})
+func captureFakes(t *testing.T) *gosmo.Server {
+	return newXEServer(t).Server()
 }
 
 // importFakes is real gosmo over a catalogServer whose database App has the
 // one table data import loads.
-func importFakes(t *testing.T) Catalog {
+func importFakes(t *testing.T) *gosmo.Server {
 	s := newCatalogServer(t, "App", &gosmo.ObjectInfo{ObjectID: 9, Schema: "dbo", Name: "t", Type: "U", TypeDesc: "USER_TABLE"})
 	s.columns[9] = []*gosmo.Column{
 		{Name: "id", OrdinalPosition: 1, DataType: "int", TypeSchema: "sys"},
@@ -174,7 +174,7 @@ func importFakes(t *testing.T) Catalog {
 	s.on(func(gosmotest.Query) [][]any {
 		return [][]any{{"id", "int", 4, 10, 0, 0, 1252}, {"name", "nvarchar", 40, 0, 0, 1252, 1252}}
 	}, "WHERE c.object_id = OBJECT_ID(@p1)")
-	return ServerCatalog(&db.ServerConn{Server: s.Server()})
+	return s.Server()
 }
 
 // commandGroups is every group constructor tree.go assembles the command
@@ -210,20 +210,13 @@ func fidelityTree(d Deps) *spec.Tree {
 // with a fidelityObserver.
 func runFidelity(t *testing.T, c fidelityCase, csv string, dry bool) (*output.Result, *fidelityObserver, error) {
 	t.Helper()
-	cat := c.fakes(t)
+	srv := c.fakes(t)
 	w := newFidelityObserver(t, dry)
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
 		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			// A gosmotest-backed catalog's server, for the handlers that
-			// read gosmo directly; nil for a hand-written fake.
-			sc := &db.ServerConn{}
-			if real, ok := cat.(serverCatalog); ok {
-				sc.Server = real.s
-			}
-			return sc, nil
+			return &db.ServerConn{Server: srv}, nil
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
 	}
 	argv := append(strings.Fields(c.command), "--server", "srv", "--auth", "windows")
 	argv = append(argv, strings.Fields(strings.ReplaceAll(c.argv, "{csv}", csv))...)

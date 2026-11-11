@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -428,4 +429,16 @@ func disabledLabel(name string, enabled bool) string {
 		return name
 	}
 	return name + " (Disabled)"
+}
+
+// enabledNode is the node of an object the folder lists by name, state and
+// creation date — server and database triggers, audits, server and database
+// audit specifications: the disabledLabel label, and the two fields the
+// folder filter's Created and the Enable/Disable menu read. dbName is "" at
+// server scope.
+func (l loaderCtx) enabledNode(t NodeType, dbName, name string, enabled bool, created time.Time) *explorerNode {
+	n := l.node(disabledLabel(name, enabled), t, "", name, dbName)
+	n.data.CreateDate = created
+	n.data.IsEnabled = enabled
+	return n
 }

@@ -81,7 +81,7 @@ func serverTraceFlagCommands(d Deps) []*spec.Command {
 
 func (d Deps) serverTraceFlagList(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -153,7 +153,7 @@ func (d Deps) setTraceFlags(ctx context.Context, inv *spec.Invocation, on bool) 
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, _, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}

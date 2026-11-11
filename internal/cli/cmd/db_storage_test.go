@@ -10,7 +10,9 @@ import (
 
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/cli/args"
+	"github.com/radix29/gossms/internal/cli/clitest"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/config"
@@ -113,31 +115,21 @@ func TestNameOrAll(t *testing.T) {
 	}
 }
 
-// storageCatalog answers the database reads the storage plumbing makes.
-type storageCatalog struct {
-	Catalog
+// storageServer is gosmo over canned rows for the storage commands: the
+// databases, by name and all, and HAS_DBACCESS for each. Its fields are read
+// as each query arrives, so a test may change them between commands; what
+// else a command reads (files, space, log, table sizes) the test adds with
+// answer before its first command runs.
+type storageServer struct {
+	*gosmotest.Fake
 	dbs       []*gosmo.Database
 	access    map[int]bool
 	accessErr error
 }
 
-func (c *storageCatalog) Databases(context.Context) ([]*gosmo.Database, error) { return c.dbs, nil }
-
-func (c *storageCatalog) DatabaseByName(_ context.Context, name string) (*gosmo.Database, error) {
-	for _, d := range c.dbs {
-		if strings.EqualFold(d.Name, name) {
-			return d, nil
-		}
-	}
-	return nil, fmt.Errorf("gosmo: database %q not found: %w", name, gosmo.ErrNotFound)
-}
-
-func (c *storageCatalog) DatabaseAccess(context.Context) (map[int]bool, error) {
-	return c.access, c.accessErr
-}
-
-func newStorageCatalog() *storageCatalog {
-	return &storageCatalog{
+func newStorageServer(t *testing.T) *storageServer {
+	s := &storageServer{
+		Fake: gosmotest.New(t),
 		dbs: []*gosmo.Database{
 			{Name: "master", ID: 1, State: gosmo.DatabaseOnline},
 			{Name: "app", ID: 5, State: gosmo.DatabaseOnline},
@@ -149,6 +141,95 @@ func newStorageCatalog() *storageCatalog {
 		// has no user for the login.
 		access: map[int]bool{1: true, 5: true, 6: false, 7: true, 8: false},
 	}
+	answer(s.Fake, func(gosmotest.Query) ([][]any, error) {
+		return byName(s.dbs), nil
+	}, "FROM sys.databases", "ORDER BY name")
+	answer(s.Fake, func(q gosmotest.Query) ([][]any, error) {
+		if d := s.db(argString(q, 0)); d != nil {
+			return [][]any{clitest.DatabaseOf(d)}, nil
+		}
+		return nil, nil
+	}, "FROM sys.databases", "WHERE name = @p1")
+	answer(s.Fake, func(gosmotest.Query) ([][]any, error) {
+		var rows [][]any
+		for _, d := range s.dbs {
+			if ok, known := s.access[d.ID]; known {
+				rows = append(rows, clitest.DatabaseAccessRow(d.ID, ok))
+			}
+		}
+		return rows, s.accessErr
+	}, "HAS_DBACCESS(name)")
+	return s
+}
+
+// byName is dbs as Databases' rows, in its ORDER BY name under a
+// case-insensitive collation.
+func byName(dbs []*gosmo.Database) [][]any {
+	sorted := slices.SortedFunc(slices.Values(dbs), func(a, b *gosmo.Database) int {
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	var rows [][]any
+	for _, d := range sorted {
+		rows = append(rows, clitest.DatabaseOf(d))
+	}
+	return rows
+}
+
+// db is s's database name, compared as the server's collation does; nil
+// when there is none.
+func (s *storageServer) db(name string) *gosmo.Database {
+	for _, d := range s.dbs {
+		if strings.EqualFold(d.Name, name) {
+			return d
+		}
+	}
+	return nil
+}
+
+// readIn is the database each of the queries containing sub ran in, in
+// order: which databases a command read that way.
+func (s *storageServer) readIn(sub string) []string {
+	var out []string
+	for _, q := range s.Queries() {
+		if strings.Contains(q.Text, sub) {
+			out = append(out, q.Database)
+		}
+	}
+	return out
+}
+
+// answer answers the queries containing every one of subs with fn's rows,
+// or its error as the query's.
+func answer(f *gosmotest.Fake, fn func(gosmotest.Query) ([][]any, error), subs ...string) {
+	f.OnFunc(func(q gosmotest.Query) bool { return has(q, subs...) },
+		func(q gosmotest.Query) gosmotest.Result {
+			rows, err := fn(q)
+			return gosmotest.Result{Sets: []gosmotest.Set{{Rows: rows}}, Err: err}
+		})
+}
+
+// offline is the server's refusal of a USE into a database that is not
+// ONLINE.
+func offline(name string) error {
+	return mssql.Error{Number: 942, Class: 14, Message: fmt.Sprintf("Database '%s' cannot be opened because it is offline.", name)}
+}
+
+// runStorage runs db <command> over f with argv after it, an ad-hoc
+// connection.
+func runStorage(t *testing.T, f *gosmotest.Fake, command, argv string) (*output.Result, error) {
+	t.Helper()
+	d := Deps{
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
+			srv, err := f.Connect(ctx)
+			return &db.ServerConn{Server: srv}, err
+		},
+	}
+	tree := &spec.Tree{Commands: DBCommands(d)}
+	inv, err := args.Parse(tree, append([]string{"db", command, "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
+	if err != nil {
+		return nil, err
+	}
+	return inv.Command.Run(context.Background(), inv)
 }
 
 // unreadable is name=reason for every unreadable database of ts.
@@ -163,9 +244,10 @@ func unreadable(ts []storageDB) []string {
 }
 
 func TestStorageDatabases(t *testing.T) {
-	cat := newStorageCatalog()
+	s := newStorageServer(t)
+	srv := s.Server()
 	res := &output.Result{}
-	ts, err := storageDatabases(context.Background(), cat, true, res)
+	ts, err := storageDatabases(context.Background(), srv, true, res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,15 +255,16 @@ func TestStorageDatabases(t *testing.T) {
 	for _, x := range ts {
 		names = append(names, x.DB.Name)
 	}
-	if got := strings.Join(names, ","); got != "master,app,archive,app_snap,hr" {
+	// In the read's ORDER BY name.
+	if got := strings.Join(names, ","); got != "app,app_snap,archive,hr,master" {
 		t.Errorf("databases %s", got)
 	}
 	want := []string{"archive=the database is OFFLINE", "hr=the login has no access to it"}
 	if got := unreadable(ts); !slices.Equal(got, want) {
 		t.Errorf("unreadable %q, want %q", got, want)
 	}
-	if !ts[4].Denied || ts[2].Denied {
-		t.Errorf("Denied: hr %v, archive %v", ts[4].Denied, ts[2].Denied)
+	if !ts[3].Denied || ts[2].Denied {
+		t.Errorf("Denied: hr %v, archive %v", ts[3].Denied, ts[2].Denied)
 	}
 	if len(res.Warnings) != 0 {
 		t.Errorf("warnings %q", res.Warnings)
@@ -191,7 +274,7 @@ func TestStorageDatabases(t *testing.T) {
 	}
 
 	// db log-usage leaves the snapshot out: it has no log.
-	ts, _ = storageDatabases(context.Background(), cat, false, &output.Result{})
+	ts, _ = storageDatabases(context.Background(), srv, false, &output.Result{})
 	for _, x := range ts {
 		if x.DB.IsSnapshot() {
 			t.Errorf("snapshot %s listed", x.DB.Name)
@@ -200,9 +283,9 @@ func TestStorageDatabases(t *testing.T) {
 
 	// An unread access map costs a warning; ONLINE databases are then left
 	// to their own reads, a state still decides.
-	cat.access, cat.accessErr = nil, errors.New("gosmo: database access: boom")
+	s.access, s.accessErr = nil, errors.New("boom")
 	res = &output.Result{}
-	ts, _ = storageDatabases(context.Background(), cat, true, res)
+	ts, _ = storageDatabases(context.Background(), srv, true, res)
 	if got := unreadable(ts); !slices.Equal(got, want[:1]) {
 		t.Errorf("unread access: unreadable %q", got)
 	}
@@ -212,7 +295,7 @@ func TestStorageDatabases(t *testing.T) {
 }
 
 func TestStorageDatabase(t *testing.T) {
-	cat := newStorageCatalog()
+	srv := newStorageServer(t).Server()
 	for _, tc := range []struct {
 		name     string
 		wantCode output.Code // of the read (NOT_FOUND) or of unreadableError
@@ -224,7 +307,7 @@ func TestStorageDatabase(t *testing.T) {
 		{"gone", output.CodeNotFound, ""},
 	} {
 		res := &output.Result{}
-		x, err := storageDatabase(context.Background(), cat, tc.name, res)
+		x, err := storageDatabase(context.Background(), srv, tc.name, res)
 		if err != nil {
 			e, _ := errors.AsType[*output.Error](err)
 			if tc.wantDB != "" || e == nil || e.Code != tc.wantCode {
@@ -313,41 +396,24 @@ func TestLogReuseWarning(t *testing.T) {
 	}
 }
 
-// filesCatalog answers db files' reads over newStorageCatalog's databases:
-// Database.Files for the readable ones, sys.master_files for every one, and
-// the volumes.
-type filesCatalog struct {
-	*storageCatalog
+// filesServer is storageServer answering db files' reads: Database.Files
+// for the ONLINE databases (the server refuses the USE into another),
+// sys.master_files for every one, and the volumes.
+type filesServer struct {
+	*storageServer
 	files      map[string][]*gosmo.DatabaseFileInfo // Database.Files by name
 	master     map[string][]*gosmo.DatabaseFileInfo // Server.DatabaseFiles by name
 	vols       []gosmo.FileVolume
 	volsHidden bool
-	filesRead  []string
 }
 
-func (c *filesCatalog) Files(_ context.Context, d *gosmo.Database) ([]*gosmo.DatabaseFileInfo, error) {
-	c.filesRead = append(c.filesRead, d.Name)
-	if d.State != gosmo.DatabaseOnline {
-		return nil, fmt.Errorf("database %q is %s", d.Name, d.State)
-	}
-	return c.files[d.Name], nil
-}
+// filesRead is the databases Database.Files was read in.
+func (s *filesServer) filesRead() []string { return s.readIn("FROM   sys.database_files df") }
 
-func (c *filesCatalog) DatabaseFiles(_ context.Context, name string) ([]*gosmo.DatabaseFileInfo, error) {
-	return c.master[name], nil
-}
-
-func (c *filesCatalog) FileVolumes(context.Context) ([]gosmo.FileVolume, bool, error) {
-	if c.volsHidden {
-		return nil, false, nil
-	}
-	return c.vols, true, nil
-}
-
-func newFilesCatalog() *filesCatalog {
+func newFilesServer(t *testing.T) *filesServer {
 	const gb = 1024 * 1024
-	return &filesCatalog{
-		storageCatalog: newStorageCatalog(),
+	s := &filesServer{
+		storageServer: newStorageServer(t),
 		files: map[string][]*gosmo.DatabaseFileInfo{
 			"master": {
 				{FileID: 1, Name: "master", PhysicalName: "/data/master.mdf", Type: gosmo.FileRows, FileGroup: "PRIMARY",
@@ -393,23 +459,40 @@ func newFilesCatalog() *filesCatalog {
 			{DatabaseID: 6, FileID: 1, VolumeName: "Data", TotalBytes: 1000, AvailableBytes: 500},
 		},
 	}
+	answer(s.Fake, func(q gosmotest.Query) ([][]any, error) {
+		if d := s.db(q.Database); d == nil || d.State != gosmo.DatabaseOnline {
+			return nil, offline(q.Database)
+		}
+		var rows [][]any
+		for _, f := range s.files[q.Database] {
+			rows = append(rows, clitest.DatabaseFileRow(f))
+		}
+		return rows, nil
+	}, "FROM   sys.database_files df")
+	answer(s.Fake, func(q gosmotest.Query) ([][]any, error) {
+		var rows [][]any
+		for _, f := range s.master[argString(q, 0)] {
+			rows = append(rows, clitest.MasterFileRow(f))
+		}
+		return rows, nil
+	}, "FROM   sys.master_files mf", "DB_ID(@p1)")
+	answer(s.Fake, func(gosmotest.Query) ([][]any, error) {
+		if s.volsHidden {
+			return [][]any{clitest.FileVolumesHiddenRow()}, nil
+		}
+		var rows [][]any
+		for _, v := range s.vols {
+			rows = append(rows, clitest.FileVolumeRow(v))
+		}
+		return rows, nil
+	}, "sys.dm_os_volume_stats")
+	return s
 }
 
-// runDBFiles runs db files over cat with argv after "db files".
-func runDBFiles(t *testing.T, cat Catalog, argv string) (*output.Result, error) {
+// runDBFiles runs db files over s with argv after "db files".
+func runDBFiles(t *testing.T, s *filesServer, argv string) (*output.Result, error) {
 	t.Helper()
-	d := Deps{
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
-		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-	}
-	tree := &spec.Tree{Commands: DBCommands(d)}
-	inv, err := args.Parse(tree, append([]string{"db", "files", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
-	if err != nil {
-		t.Fatalf("%q: %v", argv, err)
-	}
-	return inv.Command.Run(context.Background(), inv)
+	return runStorage(t, s.Fake, "files", argv)
 }
 
 // column is set's column name as a list of cells, "NULL" for a NULL.
@@ -429,7 +512,7 @@ func column(set output.Set, name string) []string {
 }
 
 func TestDBFilesOneDatabase(t *testing.T) {
-	res, err := runDBFiles(t, newFilesCatalog(), "app")
+	res, err := runDBFiles(t, newFilesServer(t), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +551,7 @@ func TestDBFilesOneDatabase(t *testing.T) {
 // --unit renames the size columns and reformats every size, growth
 // included.
 func TestDBFilesUnit(t *testing.T) {
-	res, err := runDBFiles(t, newFilesCatalog(), "app --unit kb --type log")
+	res, err := runDBFiles(t, newFilesServer(t), "app --unit kb --type log")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,12 +569,12 @@ func TestDBFilesUnit(t *testing.T) {
 // An OFFLINE database, named, is listed from sys.master_files — exit 0, the
 // database-side columns NULL, no free-space warning, one warning why.
 func TestDBFilesOfflineFallback(t *testing.T) {
-	cat := newFilesCatalog()
-	res, err := runDBFiles(t, cat, "archive")
+	s := newFilesServer(t)
+	res, err := runDBFiles(t, s, "archive")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slices.Contains(cat.filesRead, "archive") {
+	if slices.Contains(s.filesRead(), "archive") {
 		t.Error("Database.Files was tried on an OFFLINE database")
 	}
 	set := res.Sets[0]
@@ -520,7 +603,7 @@ func TestDBFilesOfflineFallback(t *testing.T) {
 // listed from master_files or named under warnings, a snapshot's on-disk
 // size.
 func TestDBFilesAll(t *testing.T) {
-	res, err := runDBFiles(t, newFilesCatalog(), "--all")
+	res, err := runDBFiles(t, newFilesServer(t), "--all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +611,7 @@ func TestDBFilesAll(t *testing.T) {
 	if set.Columns[0].Name != "database" {
 		t.Errorf("first column %q", set.Columns[0].Name)
 	}
-	if got, want := column(set, "database"), []string{"master", "master", "app", "app", "app", "app", "archive", "archive", "app_snap"}; !slices.Equal(got, want) {
+	if got, want := column(set, "database"), []string{"app", "app", "app", "app", "app_snap", "archive", "archive", "master", "master"}; !slices.Equal(got, want) {
 		t.Errorf("databases %q, want %q", got, want)
 	}
 	for _, w := range []string{
@@ -545,7 +628,7 @@ func TestDBFilesAll(t *testing.T) {
 // --max-free-pct and the other filters drop a row's warnings with the row:
 // warnings speak only for the rows shown.
 func TestDBFilesFiltersKeepWarningsInStep(t *testing.T) {
-	res, err := runDBFiles(t, newFilesCatalog(), "--all --max-free-pct 10 --sort-by free-pct")
+	res, err := runDBFiles(t, newFilesServer(t), "--all --max-free-pct 10 --sort-by free-pct")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +645,7 @@ func TestDBFilesFiltersKeepWarningsInStep(t *testing.T) {
 		}
 	}
 
-	res, err = runDBFiles(t, newFilesCatalog(), "app --filegroup archive")
+	res, err = runDBFiles(t, newFilesServer(t), "app --filegroup archive")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -577,9 +660,9 @@ func TestDBFilesFiltersKeepWarningsInStep(t *testing.T) {
 // Without VIEW SERVER STATE: volume_free_pct NULL and one warning naming the
 // permission, exit 0.
 func TestDBFilesNoViewServerState(t *testing.T) {
-	cat := newFilesCatalog()
-	cat.volsHidden = true
-	res, err := runDBFiles(t, cat, "app")
+	s := newFilesServer(t)
+	s.volsHidden = true
+	res, err := runDBFiles(t, s, "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +684,7 @@ func TestDBFilesNoViewServerState(t *testing.T) {
 // filegroup and space used of its inside read; the source's log is not
 // listed.
 func TestDBFilesSnapshot(t *testing.T) {
-	res, err := runDBFiles(t, newFilesCatalog(), "app_snap")
+	res, err := runDBFiles(t, newFilesServer(t), "app_snap")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,9 +707,9 @@ func TestDBFilesSnapshot(t *testing.T) {
 // A data or log file whose space used reads 0 — FILEPROPERTY NULL, the
 // login cannot see it — has used, free and free_pct NULL, not 100 % free.
 func TestDBFilesUsedUnknown(t *testing.T) {
-	cat := newFilesCatalog()
-	cat.files["app"][1].SpaceUsedKB = 0
-	res, err := runDBFiles(t, cat, "app --type data")
+	s := newFilesServer(t)
+	s.files["app"][1].SpaceUsedKB = 0
+	res, err := runDBFiles(t, s, "app --type data")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,7 +725,7 @@ func TestDBFilesUsedUnknown(t *testing.T) {
 
 // Growth stays in MB under --unit gb, where two decimals would round it to 0.
 func TestDBFilesGrowthInGB(t *testing.T) {
-	res, err := runDBFiles(t, newFilesCatalog(), "app --unit gb --type data")
+	res, err := runDBFiles(t, newFilesServer(t), "app --unit gb --type data")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -658,7 +741,7 @@ func TestDBFilesSort(t *testing.T) {
 		"used":     {"app", "app_arch", "app_log", "app_fs"},
 		"free-pct": {"app", "app_log", "app_arch", "app_fs"},
 	} {
-		res, err := runDBFiles(t, newFilesCatalog(), "app --sort-by "+by)
+		res, err := runDBFiles(t, newFilesServer(t), "app --sort-by "+by)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -674,75 +757,65 @@ func TestDBFilesUsage(t *testing.T) {
 		"":                       "give a database <name> or --all",
 		"nope":                   "no database [nope] on the server",
 	} {
-		_, err := runDBFiles(t, newFilesCatalog(), argv)
+		_, err := runDBFiles(t, newFilesServer(t), argv)
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", argv, err, want)
 		}
 	}
 }
 
-// spaceCatalog answers db space's reads over newStorageCatalog's databases.
-type spaceCatalog struct {
-	*storageCatalog
-	space    map[string]gosmo.SpaceReport
-	logs     map[string]gosmo.LogSpace
-	logErr   error // every LogSpace call's error, when set
-	logsRead []string
+// spaceServer is storageServer answering db space's and db log-usage's
+// reads: the sp_spaceused figures and the log usage, inside each database.
+type spaceServer struct {
+	*storageServer
+	space  map[string]gosmo.SpaceReport
+	logs   map[string]gosmo.LogSpace
+	logErr error // every LogSpace read's error, when set
 }
 
-func (c *spaceCatalog) SpaceReport(_ context.Context, d *gosmo.Database) (gosmo.SpaceReport, error) {
-	sp, ok := c.space[d.Name]
-	if !ok {
-		return gosmo.SpaceReport{}, fmt.Errorf("gosmo: space report for %q: boom", d.Name)
-	}
-	return sp, nil
-}
+// logsRead is the databases LogSpace was read in.
+func (s *spaceServer) logsRead() []string { return s.readIn("sys.dm_db_log_space_usage") }
 
-func (c *spaceCatalog) LogSpace(_ context.Context, d *gosmo.Database) (gosmo.LogSpace, error) {
-	c.logsRead = append(c.logsRead, d.Name)
-	if c.logErr != nil {
-		return gosmo.LogSpace{}, c.logErr
-	}
-	return c.logs[d.Name], nil
-}
-
-func newSpaceCatalog() *spaceCatalog {
-	return &spaceCatalog{
-		storageCatalog: newStorageCatalog(),
+func newSpaceServer(t *testing.T) *spaceServer {
+	s := &spaceServer{
+		storageServer: newStorageServer(t),
 		space: map[string]gosmo.SpaceReport{
-			"master": {DatabaseSizeKB: 6144, DataFilesKB: 4096, LogFilesKB: 2048, DataUsedKB: 3000,
-				UnallocatedKB: 1000, ReservedKB: 3096, DataKB: 2000, IndexKB: 900, UnusedKB: 196},
-			"app": {DatabaseSizeKB: 16384, DataFilesKB: 8192, LogFilesKB: 8192, DataUsedKB: 5632,
-				UnallocatedKB: 2624, ReservedKB: 5568, DataKB: 3176, IndexKB: 1528, UnusedKB: 864},
-			"app_snap": {DatabaseSizeKB: 16384, DataFilesKB: 8192, LogFilesKB: 8192, DataUsedKB: 4096,
-				UnallocatedKB: 4152, ReservedKB: 4040, DataKB: 2136, IndexKB: 1456, UnusedKB: 448},
+			"master": {DataFilesKB: 4096, LogFilesKB: 2048, DataUsedKB: 3000,
+				DataKB: 2000, IndexKB: 896, UnusedKB: 200},
+			"app": {DataFilesKB: 8192, LogFilesKB: 8192, DataUsedKB: 5632,
+				DataKB: 3176, IndexKB: 1528, UnusedKB: 864},
+			"app_snap": {DataFilesKB: 8192, LogFilesKB: 8192, DataUsedKB: 4096,
+				DataKB: 2136, IndexKB: 1456, UnusedKB: 448},
 		},
 		logs: map[string]gosmo.LogSpace{
 			"master": {SizeKB: 2040, UsedKB: 900, UsedPercent: 44.1176, ReuseWait: "NOTHING"},
 			"app":    {SizeKB: 8184, UsedKB: 1023, UsedPercent: 12.5049, ReuseWait: "LOG_BACKUP"},
 		},
 	}
+	answer(s.Fake, func(q gosmotest.Query) ([][]any, error) {
+		sp, ok := s.space[q.Database]
+		if !ok {
+			return nil, errors.New("boom")
+		}
+		return [][]any{clitest.SpaceReportRow(sp)}, nil
+	}, "FROM   sys.sysfiles")
+	answer(s.Fake, func(q gosmotest.Query) ([][]any, error) {
+		if s.logErr != nil {
+			return nil, s.logErr
+		}
+		return [][]any{clitest.LogSpaceRow(s.logs[q.Database])}, nil
+	}, "sys.dm_db_log_space_usage")
+	return s
 }
 
-// runDBSpace runs db space over cat with argv after "db space".
-func runDBSpace(t *testing.T, cat Catalog, argv string) (*output.Result, error) {
+// runDBSpace runs db space over s with argv after "db space".
+func runDBSpace(t *testing.T, s *spaceServer, argv string) (*output.Result, error) {
 	t.Helper()
-	d := Deps{
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
-		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-	}
-	tree := &spec.Tree{Commands: DBCommands(d)}
-	inv, err := args.Parse(tree, append([]string{"db", "space", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
-	if err != nil {
-		t.Fatalf("%q: %v", argv, err)
-	}
-	return inv.Command.Run(context.Background(), inv)
+	return runStorage(t, s.Fake, "space", argv)
 }
 
 func TestDBSpaceOneDatabase(t *testing.T) {
-	res, err := runDBSpace(t, newSpaceCatalog(), "app")
+	res, err := runDBSpace(t, newSpaceServer(t), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -771,7 +844,7 @@ func TestDBSpaceOneDatabase(t *testing.T) {
 
 // --unit kb prints sp_spaceused's own KB figures.
 func TestDBSpaceUnitKB(t *testing.T) {
-	res, err := runDBSpace(t, newSpaceCatalog(), "app --unit kb")
+	res, err := runDBSpace(t, newSpaceServer(t), "app --unit kb")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -786,22 +859,22 @@ func TestDBSpaceUnitKB(t *testing.T) {
 // --all lists the readable databases, a snapshot without log figures, and
 // names the unreadable ones under warnings (D3).
 func TestDBSpaceAll(t *testing.T) {
-	cat := newSpaceCatalog()
-	res, err := runDBSpace(t, cat, "--all")
+	s := newSpaceServer(t)
+	res, err := runDBSpace(t, s, "--all")
 	if err != nil {
 		t.Fatal(err)
 	}
 	set := res.Sets[0]
-	if got := column(set, "database"); !slices.Equal(got, []string{"master", "app", "app_snap"}) {
+	if got := column(set, "database"); !slices.Equal(got, []string{"app", "app_snap", "master"}) {
 		t.Errorf("databases %q", got)
 	}
-	if got := column(set, "log_size_mb"); !slices.Equal(got, []string{"1.99", "7.99", "NULL"}) {
+	if got := column(set, "log_size_mb"); !slices.Equal(got, []string{"7.99", "NULL", "1.99"}) {
 		t.Errorf("log_size_mb %q", got)
 	}
-	if !slices.Equal(cat.logsRead, []string{"master", "app"}) {
-		t.Errorf("LogSpace read for %q: a snapshot has no log", cat.logsRead)
+	if !slices.Equal(s.logsRead(), []string{"app", "master"}) {
+		t.Errorf("LogSpace read for %q: a snapshot has no log", s.logsRead())
 	}
-	want := []string{"[archive]: space not read: the database is OFFLINE.", "snapshot", "[hr]: space not read: the login has no access to it."}
+	want := []string{"snapshot", "[archive]: space not read: the database is OFFLINE.", "[hr]: space not read: the login has no access to it."}
 	if len(res.Warnings) != len(want) {
 		t.Fatalf("warnings %q", res.Warnings)
 	}
@@ -815,9 +888,9 @@ func TestDBSpaceAll(t *testing.T) {
 // Without VIEW SERVER STATE the log columns are NULL with one warning, and
 // LogSpace is not asked again for the other databases.
 func TestDBSpaceNoViewServerState(t *testing.T) {
-	cat := newSpaceCatalog()
-	cat.logErr = mssql.Error{Number: 300, Class: 14, Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}
-	res, err := runDBSpace(t, cat, "--all")
+	s := newSpaceServer(t)
+	s.logErr = mssql.Error{Number: 300, Class: 14, Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}
+	res, err := runDBSpace(t, s, "--all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -827,8 +900,8 @@ func TestDBSpaceNoViewServerState(t *testing.T) {
 	if got := column(res.Sets[0], "reserved_mb"); got[0] == "NULL" {
 		t.Errorf("reserved_mb %q: the rest of the row stands", got)
 	}
-	if len(cat.logsRead) != 1 {
-		t.Errorf("LogSpace read for %q, want once", cat.logsRead)
+	if len(s.logsRead()) != 1 {
+		t.Errorf("LogSpace read for %q, want once", s.logsRead())
 	}
 	if n := strings.Count(strings.Join(res.Warnings, "\n"), "VIEW SERVER STATE"); n != 1 {
 		t.Errorf("%d VIEW SERVER STATE warnings in %q, want 1", n, res.Warnings)
@@ -844,17 +917,17 @@ func TestDBSpaceUnreadable(t *testing.T) {
 		"hr":      output.CodePermissionDenied,
 		"nope":    output.CodeNotFound,
 	} {
-		_, err := runDBSpace(t, newSpaceCatalog(), argv)
+		_, err := runDBSpace(t, newSpaceServer(t), argv)
 		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != want {
 			t.Errorf("%q: %v, want %s", argv, err, want)
 		}
 	}
-	cat := newSpaceCatalog()
-	delete(cat.space, "master")
-	if _, err := runDBSpace(t, cat, "master"); err == nil {
+	s := newSpaceServer(t)
+	delete(s.space, "master")
+	if _, err := runDBSpace(t, s, "master"); err == nil {
 		t.Error("master: a failed SpaceReport succeeded")
 	}
-	res, err := runDBSpace(t, cat, "--all")
+	res, err := runDBSpace(t, s, "--all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -867,11 +940,11 @@ func TestDBSpaceUnreadable(t *testing.T) {
 }
 
 func TestDBSpaceXTPHidden(t *testing.T) {
-	cat := newSpaceCatalog()
-	sp := cat.space["app"]
+	s := newSpaceServer(t)
+	sp := s.space["app"]
 	sp.XTPPrecreatedHidden = true
-	cat.space["app"] = sp
-	res, err := runDBSpace(t, cat, "app")
+	s.space["app"] = sp
+	res, err := runDBSpace(t, s, "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -880,35 +953,24 @@ func TestDBSpaceXTPHidden(t *testing.T) {
 	}
 }
 
-// runDBLogUsage runs db log-usage over cat with argv after "db log-usage".
-func runDBLogUsage(t *testing.T, cat Catalog, argv string) (*output.Result, error) {
+// runDBLogUsage runs db log-usage over s with argv after "db log-usage".
+func runDBLogUsage(t *testing.T, s *spaceServer, argv string) (*output.Result, error) {
 	t.Helper()
-	d := Deps{
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
-		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-	}
-	tree := &spec.Tree{Commands: DBCommands(d)}
-	inv, err := args.Parse(tree, append([]string{"db", "log-usage", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
-	if err != nil {
-		t.Fatalf("%q: %v", argv, err)
-	}
-	return inv.Command.Run(context.Background(), inv)
+	return runStorage(t, s.Fake, "log-usage", argv)
 }
 
-// newLogCatalog is newSpaceCatalog with VLF counts read.
-func newLogCatalog() *spaceCatalog {
-	cat := newSpaceCatalog()
-	for name, l := range cat.logs {
+// newLogServer is newSpaceServer with VLF counts read.
+func newLogServer(t *testing.T) *spaceServer {
+	s := newSpaceServer(t)
+	for name, l := range s.logs {
 		l.VLFs, l.ActiveVLFs, l.VLFsKnown = 4, 1, true
-		cat.logs[name] = l
+		s.logs[name] = l
 	}
-	return cat
+	return s
 }
 
 func TestDBLogUsageOneDatabase(t *testing.T) {
-	res, err := runDBLogUsage(t, newLogCatalog(), "app")
+	res, err := runDBLogUsage(t, newLogServer(t), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -937,20 +999,20 @@ func TestDBLogUsageOneDatabase(t *testing.T) {
 // --all skips snapshots silently (no log) and names the unreadable databases
 // under warnings (D3); only a reuse wait other than NOTHING warns.
 func TestDBLogUsageAll(t *testing.T) {
-	cat := newLogCatalog()
-	res, err := runDBLogUsage(t, cat, "--all --unit kb")
+	s := newLogServer(t)
+	res, err := runDBLogUsage(t, s, "--all --unit kb")
 	if err != nil {
 		t.Fatal(err)
 	}
 	set := res.Sets[0]
-	if got := column(set, "database"); !slices.Equal(got, []string{"master", "app"}) {
+	if got := column(set, "database"); !slices.Equal(got, []string{"app", "master"}) {
 		t.Errorf("databases %q", got)
 	}
-	if got := column(set, "log_used_kb"); !slices.Equal(got, []string{"900", "1023"}) {
+	if got := column(set, "log_used_kb"); !slices.Equal(got, []string{"1023", "900"}) {
 		t.Errorf("log_used_kb %q", got)
 	}
-	if !slices.Equal(cat.logsRead, []string{"master", "app"}) {
-		t.Errorf("LogSpace read for %q", cat.logsRead)
+	if !slices.Equal(s.logsRead(), []string{"app", "master"}) {
+		t.Errorf("LogSpace read for %q", s.logsRead())
 	}
 	want := []string{"[archive]: log usage not read: the database is OFFLINE.",
 		"[hr]: log usage not read: the login has no access to it.", "[app]: log reuse waits on LOG_BACKUP."}
@@ -961,7 +1023,9 @@ func TestDBLogUsageAll(t *testing.T) {
 
 // Before 2016 SP2 the VLF columns are NULL with one warning for the server.
 func TestDBLogUsageNoLogInfo(t *testing.T) {
-	res, err := runDBLogUsage(t, newSpaceCatalog(), "--all")
+	s := newLogServer(t)
+	s.Info.ProductVersion = "13.0.4001.0" // 2016 SP1
+	res, err := runDBLogUsage(t, s, "--all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -977,14 +1041,14 @@ func TestDBLogUsageNoLogInfo(t *testing.T) {
 // --all: the permission is the server's.
 func TestDBLogUsageNoViewServerState(t *testing.T) {
 	for _, argv := range []string{"app", "--all"} {
-		cat := newLogCatalog()
-		cat.logErr = mssql.Error{Number: 300, Class: 14, Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}
-		_, err := runDBLogUsage(t, cat, argv)
+		s := newLogServer(t)
+		s.logErr = mssql.Error{Number: 300, Class: 14, Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}
+		_, err := runDBLogUsage(t, s, argv)
 		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != output.CodePermissionDenied || !strings.Contains(e.Hint, "VIEW SERVER STATE") {
 			t.Errorf("%q: %v, want PERMISSION_DENIED naming VIEW SERVER STATE", argv, err)
 		}
-		if len(cat.logsRead) != 1 {
-			t.Errorf("%q: LogSpace read for %q, want once", argv, cat.logsRead)
+		if len(s.logsRead()) != 1 {
+			t.Errorf("%q: LogSpace read for %q, want once", argv, s.logsRead())
 		}
 	}
 }
@@ -999,21 +1063,21 @@ func TestDBLogUsageUnreadable(t *testing.T) {
 		"hr":       output.CodePermissionDenied,
 		"nope":     output.CodeNotFound,
 	} {
-		cat := newLogCatalog()
-		_, err := runDBLogUsage(t, cat, argv)
+		s := newLogServer(t)
+		_, err := runDBLogUsage(t, s, argv)
 		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != want {
 			t.Errorf("%q: %v, want %s", argv, err, want)
 		}
-		if len(cat.logsRead) != 0 {
-			t.Errorf("%q: LogSpace read for %q", argv, cat.logsRead)
+		if len(s.logsRead()) != 0 {
+			t.Errorf("%q: LogSpace read for %q", argv, s.logsRead())
 		}
 	}
-	cat := newLogCatalog()
-	cat.logErr = errors.New("gosmo: log space for \"x\": boom")
-	if _, err := runDBLogUsage(t, cat, "master"); err == nil {
+	s := newLogServer(t)
+	s.logErr = errors.New("boom")
+	if _, err := runDBLogUsage(t, s, "master"); err == nil {
 		t.Error("master: a failed LogSpace succeeded")
 	}
-	res, err := runDBLogUsage(t, cat, "--all")
+	res, err := runDBLogUsage(t, s, "--all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1024,7 +1088,7 @@ func TestDBLogUsageUnreadable(t *testing.T) {
 
 func TestDBLogUsageUsage(t *testing.T) {
 	for _, argv := range []string{"", "app --all"} {
-		_, err := runDBLogUsage(t, newLogCatalog(), argv)
+		_, err := runDBLogUsage(t, newLogServer(t), argv)
 		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != output.CodeUsageError || !strings.HasPrefix(e.Message, "db log-usage:") {
 			t.Errorf("%q: %v, want a usage error naming db log-usage", argv, err)
 		}

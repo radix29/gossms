@@ -12,7 +12,6 @@ import (
 	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
-	"github.com/radix29/gossms/internal/db"
 )
 
 // newIndexServer is a maintServer connected to app on a Developer edition,
@@ -59,8 +58,8 @@ func newIndexServer(t *testing.T) *maintServer {
 
 var statsBefore = time.Date(2026, 10, 1, 3, 0, 0, 0, time.UTC)
 
-func indexFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newIndexServer(t).Server()})
+func indexFakes(t *testing.T) *gosmo.Server {
+	return newIndexServer(t).Server()
 }
 
 // runIndex runs maint <argv> over s, an ad-hoc connection; dials counts

@@ -100,14 +100,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-- **The `Catalog` seam still carries the shared reads** (`internal/cli/cmd/common.go`):
-  name resolution, the databases and their sizes/options, server info and
-  capabilities, the storage reads (files, volumes, space, log usage) and
-  `server log`. Every other group (`object`, `script`, `data`, `security`,
-  `maint`, `monitor`, `plan cached`, `server` info/memory/config/traceflag,
-  `xevent`, `db` create/drop/set/scoped-config, `job`) calls gosmo directly,
-  its tests serve canned rows through gosmo's `gosmotest`, and `Writer` is
-  gone. Moving the remaining reads off the seam is the author's call.
 
 ## Fix order
 

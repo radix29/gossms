@@ -191,7 +191,7 @@ func (d Deps) jobStart(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return nil, usageError("--step is empty", "Give a step number or name, or leave --step out to start at the job's first step.")
 	}
 	res := &output.Result{}
-	sc, _, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -326,7 +326,7 @@ func jobFinished(ctx context.Context, srv *gosmo.Server, res *output.Result, j *
 
 func (d Deps) jobStop(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}

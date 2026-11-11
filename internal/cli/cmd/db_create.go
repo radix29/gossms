@@ -138,20 +138,21 @@ func (d Deps) dbCreate(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
 	// A level above the server's own (its major × 10); Azure and an
 	// unread version are left to the server, as db set does.
-	if info := cat.ServerInfo(); req.CompatLevel != 0 && info != nil && !info.IsAzure() &&
+	if info := srv.Info(); req.CompatLevel != 0 && info != nil && !info.IsAzure() &&
 		info.VersionMajor >= int(gosmo.SQLServer2016) && int(req.CompatLevel) > info.VersionMajor*10 {
 		return res, usageError(fmt.Sprintf("--compat %d is above this server's %d", req.CompatLevel, info.VersionMajor*10),
 			fmt.Sprintf("Give a level from %d to %d.", minCompatLevel, info.VersionMajor*10))
 	}
-	switch taken, err := cat.DatabaseByName(ctx, req.Name); {
+	switch taken, err := srv.DatabaseByName(ctx, req.Name); {
 	case err == nil:
 		return res, usageError(fmt.Sprintf("database %s already exists", gosmo.QuoteName(taken.Name)),
 			"Choose another name, or drop it first with db drop.")
@@ -160,7 +161,7 @@ func (d Deps) dbCreate(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	}
 
 	create := func(ctx context.Context) error {
-		_, err := sc.Server.CreateDatabase(ctx, req)
+		_, err := srv.CreateDatabase(ctx, req)
 		if gosmo.IsPermissionDenied(err) {
 			return output.NewError(output.CodePermissionDenied, err.Error(),
 				"CREATE DATABASE needs CREATE DATABASE in master, CREATE ANY DATABASE or ALTER ANY DATABASE "+
@@ -171,7 +172,7 @@ func (d Deps) dbCreate(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	if dryRun(inv) {
 		// What the database would be: model's recovery and level, the
 		// server's collation, unless given.
-		model, err := cat.DatabaseByName(ctx, "model")
+		model, err := srv.DatabaseByName(ctx, "model")
 		if err != nil {
 			return res, readError(err)
 		}
@@ -182,7 +183,7 @@ func (d Deps) dbCreate(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		if req.CompatLevel != 0 {
 			compat = req.CompatLevel
 		}
-		if info := cat.ServerInfo(); collation == "" && info != nil {
+		if info := srv.Info(); collation == "" && info != nil {
 			collation = info.Collation
 		}
 		res.Fields = dbCreateFields(req.Name, "", string(recovery), compat, collation)
@@ -190,7 +191,7 @@ func (d Deps) dbCreate(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	}
 
 	werr := applyWrite(ctx, inv, res, create)
-	made, err := cat.DatabaseByName(ctx, req.Name)
+	made, err := srv.DatabaseByName(ctx, req.Name)
 	if err != nil {
 		if werr != nil {
 			return res, werr
@@ -269,13 +270,14 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 	}
 	closeConns := inv.Values[optCloseConnections].(bool)
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
-	db, err := namedDatabase(ctx, cat, inv.Args[0], res)
+	db, err := namedDatabase(ctx, srv, inv.Args[0], res)
 	if err != nil {
 		return res, err
 	}
@@ -287,7 +289,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 		return res, output.NewError(output.CodeBlocked, name+" is a replication distribution database: db drop does not drop one",
 			"A distribution database is removed with sp_dropdistributiondb, once nothing publishes through it.")
 	}
-	current, err := cat.CurrentDatabase(ctx)
+	current, err := srv.CurrentDatabase(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -295,7 +297,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 		return res, usageError(name+" is the connection's own database",
 			"Connect to another database to drop it: add -d master.")
 	}
-	ag, err := availabilityGroupOf(ctx, sc.Server, cat.ServerInfo(), db.Name)
+	ag, err := availabilityGroupOf(ctx, srv, srv.Info(), db.Name)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -305,7 +307,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 				gosmo.QuoteName(ag), name))
 	}
 	if !db.IsSnapshot() {
-		snaps, err := sc.Server.SnapshotsOf(ctx, db.Name)
+		snaps, err := srv.SnapshotsOf(ctx, db.Name)
 		if err != nil {
 			return res, readError(err)
 		}
@@ -314,7 +316,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 		}
 	}
 
-	res.Fields = dropFields(ctx, sc.Server, cat, db, res)
+	res.Fields = dropFields(ctx, srv, db, res)
 	res.Fields = append(res.Fields, output.Field{Key: "closeConnections", Value: boolText(closeConns)})
 	term := gosmo.TerminationNone
 	if closeConns {
@@ -335,7 +337,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 	if dryRun(inv) {
 		return res, nil
 	}
-	_, err = cat.DatabaseByName(ctx, db.Name)
+	_, err = srv.DatabaseByName(ctx, db.Name)
 	gone := errors.Is(err, gosmo.ErrNotFound)
 	switch {
 	case err != nil && !gone:
@@ -353,7 +355,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 // dropFields is the record db drop prints of db before dropping it, with a
 // warning in res for a database msdb holds no full backup of, and for one
 // whose files the drop leaves behind.
-func dropFields(ctx context.Context, srv *gosmo.Server, cat Catalog, db *gosmo.Database, res *output.Result) []output.Field {
+func dropFields(ctx context.Context, srv *gosmo.Server, db *gosmo.Database, res *output.Result) []output.Field {
 	name := gosmo.QuoteName(db.Name)
 	f := []output.Field{
 		{Key: "name", Value: db.Name},
@@ -362,7 +364,7 @@ func dropFields(ctx context.Context, srv *gosmo.Server, cat Catalog, db *gosmo.D
 		{Key: "recoveryModel", Value: string(db.RecoveryModel)},
 	}
 	size := output.Field{Key: "sizeMb", Null: true}
-	if sizes, err := cat.DatabaseSizes(ctx); err != nil {
+	if sizes, err := srv.DatabaseSizes(ctx); err != nil {
 		res.Warnings = append(res.Warnings, "The size was not read: "+err.Error())
 	} else if s, ok := sizes[db.ID]; ok {
 		size = output.Field{Key: "sizeMb", Value: mb(s.DataKB + s.LogKB)}

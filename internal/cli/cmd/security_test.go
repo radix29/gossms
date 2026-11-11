@@ -24,7 +24,6 @@ func runSecurity(t *testing.T, s *secServer, argv ...string) (*output.Result, er
 		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	tree := &spec.Tree{Commands: SecurityCommands(d)}
 	inv, perr := args.Parse(tree, append([]string{"security"}, append(argv, "--server", "srv", "--auth", "windows")...), args.Options{})

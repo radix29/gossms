@@ -108,17 +108,18 @@ func gridTime(t time.Time) string { return t.Format("2006-01-02 15:04:05.000") }
 
 func (d Deps) dbList(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
-	dbs, err := cat.Databases(ctx)
+	dbs, err := srv.Databases(ctx)
 	if err != nil {
 		return res, readError(err)
 	}
-	sizes, err := cat.DatabaseSizes(ctx)
+	sizes, err := srv.DatabaseSizes(ctx)
 	if err != nil {
 		res.Warnings = append(res.Warnings, "Sizes were not read: "+err.Error())
 	}
@@ -172,14 +173,15 @@ func nonEmpty(s string) *string {
 
 func (d Deps) dbInfo(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
 	name := inv.Args[0]
-	db, err := cat.DatabaseByName(ctx, name)
+	db, err := srv.DatabaseByName(ctx, name)
 	if errors.Is(err, gosmo.ErrNotFound) {
 		return res, output.NewError(output.CodeNotFound, fmt.Sprintf("no database %s on the server", gosmo.QuoteName(name)),
 			"Run `gossms db list --include-system` for the databases the login can see.")
@@ -205,7 +207,7 @@ func (d Deps) dbInfo(ctx context.Context, inv *spec.Invocation) (*output.Result,
 	}
 	if db.IsSnapshot() {
 		f[len(f)-1].Value = strconv.Itoa(db.SourceDatabaseID)
-		if dbs, err := cat.Databases(ctx); err == nil {
+		if dbs, err := srv.Databases(ctx); err == nil {
 			for _, src := range dbs {
 				if src.ID == db.SourceDatabaseID {
 					f[len(f)-1].Value = src.Name
@@ -216,7 +218,7 @@ func (d Deps) dbInfo(ctx context.Context, inv *spec.Invocation) (*output.Result,
 
 	// Allocated sizes come from the server catalog and answer in any state.
 	sizeFields := []output.Field{{Key: "sizeMb"}, {Key: "dataMb"}, {Key: "logMb"}}
-	if sizes, err := cat.DatabaseSizes(ctx); err != nil {
+	if sizes, err := srv.DatabaseSizes(ctx); err != nil {
 		res.Warnings = append(res.Warnings, "Sizes were not read: "+err.Error())
 	} else if s, ok := sizes[db.ID]; ok {
 		sizeFields[0].Value, sizeFields[1].Value, sizeFields[2].Value = mb(s.DataKB+s.LogKB), mb(s.DataKB), mb(s.LogKB)
@@ -229,7 +231,7 @@ func (d Deps) dbInfo(ctx context.Context, inv *spec.Invocation) (*output.Result,
 	spaceFields := []output.Field{{Key: "dataUnallocatedMb"}, {Key: "logAvailableMb"}}
 	if db.State != gosmo.DatabaseOnline {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("Space used was not read: the database is %s.", db.State))
-	} else if si, err := cat.SpaceUsed(ctx, db); err != nil {
+	} else if si, err := db.SpaceUsed(ctx); err != nil {
 		res.Warnings = append(res.Warnings, "Space used was not read: "+err.Error())
 	} else {
 		spaceFields[0].Value, spaceFields[1].Value = mbf(si.UnallocatedMB), mbf(si.AvailLogMB)
@@ -241,7 +243,7 @@ func (d Deps) dbInfo(ctx context.Context, inv *spec.Invocation) (*output.Result,
 		"autoUpdateStatsAsync", "parameterization", "isTrustworthy", "dbChaining", "isBrokerEnabled",
 		"isEncrypted", "delayedDurability", "targetRecoveryTimeSeconds", "acceleratedDatabaseRecovery", "isLedger"}
 	values := map[string]string{}
-	if o, err := cat.DatabaseOptions(ctx, db); err != nil {
+	if o, err := db.Options(ctx); err != nil {
 		res.Warnings = append(res.Warnings, "Options were not read: "+err.Error())
 	} else {
 		parameterization := "SIMPLE"

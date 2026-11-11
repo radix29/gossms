@@ -95,8 +95,8 @@ func dbScopedConfigCommands(d Deps) []*spec.Command {
 
 // scopedConfigs is the database name names and its scoped configurations,
 // by name. The database must be readable: the db table-sizes rules (P5-9).
-func scopedConfigs(ctx context.Context, cat Catalog, name string, res *output.Result) (*gosmo.Database, []*gosmo.DatabaseScopedConfig, error) {
-	t, err := storageDatabase(ctx, cat, name, res)
+func scopedConfigs(ctx context.Context, srv *gosmo.Server, name string, res *output.Result) (*gosmo.Database, []*gosmo.DatabaseScopedConfig, error) {
+	t, err := storageDatabase(ctx, srv, name, res)
 	if err == nil && t.Unreadable != "" {
 		err = t.unreadableError()
 	}
@@ -118,29 +118,31 @@ func scopedConfigs(ctx context.Context, cat Catalog, name string, res *output.Re
 
 func (d Deps) dbScopedConfigList(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
-	_, cfgs, err := scopedConfigs(ctx, cat, inv.Args[0], res)
+	_, cfgs, err := scopedConfigs(ctx, srv, inv.Args[0], res)
 	if err != nil {
 		return res, err
 	}
-	res.Sets = []output.Set{scopedConfigSet(cfgs, scopedDefaultKnown(cat.ServerInfo()))}
+	res.Sets = []output.Set{scopedConfigSet(cfgs, scopedDefaultKnown(srv.Info()))}
 	return res, nil
 }
 
 func (d Deps) dbScopedConfigGet(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
-	db, cfgs, err := scopedConfigs(ctx, cat, inv.Args[0], res)
+	db, cfgs, err := scopedConfigs(ctx, srv, inv.Args[0], res)
 	if err != nil {
 		return res, err
 	}
@@ -154,7 +156,7 @@ func (d Deps) dbScopedConfigGet(ctx context.Context, inv *spec.Invocation) (*out
 			rows = append(rows, c)
 		}
 	}
-	res.Sets = []output.Set{scopedConfigSet(rows, scopedDefaultKnown(cat.ServerInfo()))}
+	res.Sets = []output.Set{scopedConfigSet(rows, scopedDefaultKnown(srv.Info()))}
 	return res, nil
 }
 
@@ -317,13 +319,14 @@ func replicaName(secondary bool) string {
 func (d Deps) dbScopedConfigSet(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	secondary := inv.Values[optForSecondary].(bool)
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
-	db, cfgs, err := scopedConfigs(ctx, cat, inv.Args[0], res)
+	db, cfgs, err := scopedConfigs(ctx, srv, inv.Args[0], res)
 	if err != nil {
 		return res, err
 	}
@@ -645,10 +648,10 @@ func checkCompatLevels(changes []dbSetChange, info *gosmo.ServerInfo) error {
 
 // readDBSetState is the database's state for changes: sys.databases, its
 // options, and Query Store's when QUERY_STORE is among them.
-func readDBSetState(ctx context.Context, cat Catalog, d *gosmo.Database, changes []dbSetChange) (dbSetState, error) {
+func readDBSetState(ctx context.Context, srv *gosmo.Server, d *gosmo.Database, changes []dbSetChange) (dbSetState, error) {
 	s := dbSetState{db: d}
 	var err error
-	if s.opts, err = cat.DatabaseOptions(ctx, d); err != nil {
+	if s.opts, err = d.Options(ctx); err != nil {
 		return s, err
 	}
 	if slices.ContainsFunc(changes, func(c dbSetChange) bool { return c.key == "QUERY_STORE" }) {
@@ -700,20 +703,21 @@ func (d Deps) dbSet(ctx context.Context, inv *spec.Invocation) (*output.Result, 
 		return nil, d.confirmRefusal(inv, err)
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
-	db, err := namedDatabase(ctx, cat, inv.Args[0], res)
+	db, err := namedDatabase(ctx, srv, inv.Args[0], res)
 	if err != nil {
 		return res, err
 	}
-	if err := checkCompatLevels(changes, cat.ServerInfo()); err != nil {
+	if err := checkCompatLevels(changes, srv.Info()); err != nil {
 		return res, err
 	}
-	before, err := readDBSetState(ctx, cat, db, changes)
+	before, err := readDBSetState(ctx, srv, db, changes)
 	if err != nil {
 		return res, readError(err)
 	}
@@ -771,10 +775,10 @@ func (d Deps) dbSet(ctx context.Context, inv *spec.Invocation) (*output.Result, 
 
 	// A failure stops the run after the changes before it took, so the
 	// state is read again either way.
-	after, err := cat.DatabaseByName(ctx, db.Name)
+	after, err := srv.DatabaseByName(ctx, db.Name)
 	var now dbSetState
 	if err == nil {
-		now, err = readDBSetState(ctx, cat, after, changes)
+		now, err = readDBSetState(ctx, srv, after, changes)
 	}
 	if err != nil {
 		if werr != nil {

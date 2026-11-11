@@ -18,6 +18,39 @@ import (
 // Latest-only: running the picker through several databases ends on the last
 // one's lists, and the reads it moved past are cancelled.
 
+// fullTextCopyPrefetch is what the New Full-Text Stoplist and New Search
+// Property List dialogs read before they open; names is the dialog's own
+// family in its database, which both refuses a taken name and seeds the copy
+// picker.
+type fullTextCopyPrefetch struct {
+	existingNames *nameSet
+	names         []string
+	owners        []string
+	databases     []string
+}
+
+// fetchFullTextCopyPrefetch reads a fullTextCopyPrefetch; list names the
+// dialog's family (d.FullTextStoplists or d.SearchPropertyLists).
+func fetchFullTextCopyPrefetch(ctx context.Context, sc *db.ServerConn, dbName string,
+	list func(context.Context, *gosmo.Database) ([]string, error)) (*fullTextCopyPrefetch, error) {
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
+	if err != nil {
+		return nil, err
+	}
+	names, err := list(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	pf := &fullTextCopyPrefetch{existingNames: newNameSet(databaseCollation(d), names...), names: names}
+	if pf.owners, err = fullTextOwnerItems(ctx, d); err != nil {
+		return nil, err
+	}
+	if pf.databases, err = onlineDatabaseNames(ctx, sc); err != nil {
+		return nil, err
+	}
+	return pf, nil
+}
+
 // fullTextCopySource is one dialog's copy-from rows and what they have read.
 type fullTextCopySource struct {
 	dbRow   *propsheet.SelectRow

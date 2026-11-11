@@ -289,7 +289,6 @@ func runXEventCtx(t *testing.T, ctx context.Context, s *xeServer, argv ...string
 			dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	tree := &spec.Tree{Commands: XEventCommands(d), Globals: []spec.Option{
 		{Name: "output", Short: "o", Type: spec.TypeEnum, Enum: output.Formats, Default: "text"}}}

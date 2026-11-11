@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	gosmo "github.com/radix29/gosmo"
 	"slices"
 	"strings"
 	"testing"
@@ -18,8 +19,8 @@ import (
 
 // permFakes is the dry-run fidelity harness's: real gosmo over a
 // secServer, which applies the writes itself.
-func permFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newSecServer(t).Server()})
+func permFakes(t *testing.T) *gosmo.Server {
+	return newSecServer(t).Server()
 }
 
 // runPerm runs `security <argv>` over s, an ad-hoc connection; dials
@@ -32,7 +33,6 @@ func runPerm(t *testing.T, s *secServer, argv string) (res *output.Result, dials
 			dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	words, err := splitArgv(argv)
 	if err != nil {

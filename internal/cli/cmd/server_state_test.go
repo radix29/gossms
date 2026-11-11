@@ -335,7 +335,6 @@ func serverDeps(s *instanceServer, dials *int) Deps {
 			*dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 }
 

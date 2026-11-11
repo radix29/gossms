@@ -215,7 +215,7 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -252,7 +252,7 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 	res.Database = r.target
 	if target != nil {
-		if err := restoreOverChecks(ctx, inv, sc.Server, cat, target, h.SetType.PlacesFiles()); err != nil {
+		if err := restoreOverChecks(ctx, inv, sc.Server, target, h.SetType.PlacesFiles()); err != nil {
 			return res, err
 		}
 		r.opts.Database = target.Name
@@ -358,7 +358,7 @@ func targetsText(devices []gosmo.BackupTarget) string {
 // an availability group. A differential or log set (places false) restored
 // onto a database left RESTORING continues its chain and overwrites
 // nothing, so it needs no --confirm.
-func restoreOverChecks(ctx context.Context, inv *spec.Invocation, srv *gosmo.Server, cat Catalog, target *gosmo.Database, places bool) error {
+func restoreOverChecks(ctx context.Context, inv *spec.Invocation, srv *gosmo.Server, target *gosmo.Database, places bool) error {
 	name := gosmo.QuoteName(target.Name)
 	continues := !places && target.State == gosmo.DatabaseRestoring
 	if confirm, _ := inv.Values[optConfirm].(string); confirm != inv.Args[0] && !continues {
@@ -375,7 +375,7 @@ func restoreOverChecks(ctx context.Context, inv *spec.Invocation, srv *gosmo.Ser
 	if strings.EqualFold(current, target.Name) {
 		return usageError(name+" is the connection's own database", "Connect to another database to restore it: add -d master.")
 	}
-	ag, err := availabilityGroupOf(ctx, srv, cat.ServerInfo(), target.Name)
+	ag, err := availabilityGroupOf(ctx, srv, srv.Info(), target.Name)
 	if err != nil {
 		return readError(err)
 	}

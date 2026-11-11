@@ -10,47 +10,100 @@ import (
 
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/cli/args"
+	"github.com/radix29/gossms/internal/cli/clitest"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 )
 
-// logCatalog serves entries for any read, recording the request; readErr
-// fails the read, files is what EnumErrorLogs lists (enumErr fails it).
-type logCatalog struct {
-	Catalog
+// logServer serves entries for any log read, recording the request as gosmo
+// sent it; readErr fails the read, files is what sp_enumerrorlogs lists
+// (enumErr fails it).
+type logServer struct {
 	entries []*gosmo.ErrorLogEntry
 	readErr error
 	files   []*gosmo.ErrorLogFile
 	enumErr error
 
+	// The last read: the log family and file in its EXEC, and its search
+	// read back from the parameters.
 	gotType    gosmo.ErrorLogType
 	gotArchive int
 	gotSearch  gosmo.LogSearch
 }
 
-func (c *logCatalog) ReadLog(_ context.Context, t gosmo.ErrorLogType, archive int, search gosmo.LogSearch) ([]*gosmo.ErrorLogEntry, error) {
-	c.gotType, c.gotArchive, c.gotSearch = t, archive, search
-	return c.entries, c.readErr
+// fake is a gosmotest server answering s's reads: xp_readerrorlog (and
+// sp_readerrorlog, gosmo's fallback when that is refused) and
+// sp_enumerrorlogs.
+func (s *logServer) fake(t *testing.T) *gosmotest.Fake {
+	f := gosmotest.New(t)
+	answer(f, func(q gosmotest.Query) ([][]any, error) {
+		_, typ := logCall(q)
+		var rows [][]any
+		for _, e := range s.entries {
+			rows = append(rows, clitest.ErrorLogEntryRow(e, typ == gosmo.ErrorLogAgent))
+		}
+		return rows, s.readErr
+	}, "readerrorlog ")
+	answer(f, func(gosmotest.Query) ([][]any, error) {
+		var rows [][]any
+		for _, lf := range s.files {
+			rows = append(rows, clitest.ErrorLogFileRow(lf))
+		}
+		return rows, s.enumErr
+	}, "EXEC sp_enumerrorlogs")
+	return f
 }
 
-func (c *logCatalog) EnumErrorLogs(context.Context, gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error) {
-	return c.files, c.enumErr
+// logCall is the log file and family an xp_readerrorlog or sp_readerrorlog
+// call names; archive -1 for another query.
+func logCall(q gosmotest.Query) (archive int, typ gosmo.ErrorLogType) {
+	var n int
+	for _, proc := range []string{"xp_readerrorlog", "sp_readerrorlog"} {
+		if _, err := fmt.Sscanf(q.Text, "EXEC "+proc+" %d, %d", &archive, &n); err == nil {
+			return archive, gosmo.ErrorLogType(n)
+		}
+	}
+	return -1, 0
 }
 
-// runLog runs server log <argv> over cat, an ad-hoc connection; dials counts
-// the connects.
-func runLog(t *testing.T, cat *logCatalog, argv ...string) (res *output.Result, dials int, err error) {
+// record sets the got fields from f's last xp_readerrorlog call.
+func (s *logServer) record(t *testing.T, f *gosmotest.Fake) {
 	t.Helper()
+	for _, q := range slices.Backward(f.Queries()) {
+		archive, typ := logCall(q)
+		if archive < 0 || !strings.HasPrefix(q.Text, "EXEC xp_") {
+			continue
+		}
+		s.gotType, s.gotArchive, s.gotSearch = typ, archive, gosmo.LogSearch{}
+		text := func(i int) string { v, _ := q.Arg(i).(string); return v }
+		s.gotSearch.Text1, s.gotSearch.Text2 = text(0), text(1)
+		if from := text(2); from != "" {
+			at, err := time.Parse("2006-01-02 15:04:05", from)
+			if err != nil {
+				t.Fatalf("from %q: %v", from, err)
+			}
+			s.gotSearch.From = at
+		}
+		return
+	}
+}
+
+// runLog runs server log <argv> over s, an ad-hoc connection; dials counts
+// the connects.
+func runLog(t *testing.T, s *logServer, argv ...string) (res *output.Result, dials int, err error) {
+	t.Helper()
+	f := s.fake(t)
 	d := Deps{
 		LoadConfig: func() (*config.Config, error) { return &config.Config{}, nil },
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
 			dials++
-			return &db.ServerConn{}, nil
+			srv, err := f.Connect(ctx)
+			return &db.ServerConn{Server: srv}, err
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
 	}
 	tree := &spec.Tree{Commands: ServerCommands(d)}
 	inv, perr := args.Parse(tree, append([]string{"server", "log", "--server", "srv", "--auth", "windows"}, argv...), args.Options{})
@@ -58,6 +111,7 @@ func runLog(t *testing.T, cat *logCatalog, argv ...string) (res *output.Result, 
 		t.Fatalf("%q: %v", argv, perr)
 	}
 	res, err = inv.Command.Run(context.Background(), inv)
+	s.record(t, f)
 	return res, dials, err
 }
 
@@ -75,7 +129,7 @@ func logEntries(n int) []*gosmo.ErrorLogEntry {
 }
 
 func TestServerLogRows(t *testing.T) {
-	cat := &logCatalog{entries: logEntries(3)}
+	cat := &logServer{entries: logEntries(3)}
 	res, _, err := runLog(t, cat)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +162,7 @@ func TestServerLogLinesIsATail(t *testing.T) {
 		{[]string{"--lines", "0"}, []string{"e0", "e149"}},
 		{[]string{"--lines", "500"}, []string{"e0", "e149"}},
 	} {
-		res, _, err := runLog(t, &logCatalog{entries: logEntries(150)}, tc.argv...)
+		res, _, err := runLog(t, &logServer{entries: logEntries(150)}, tc.argv...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +177,7 @@ func TestServerLogLinesIsATail(t *testing.T) {
 }
 
 func TestServerLogSearchAndSince(t *testing.T) {
-	cat := &logCatalog{}
+	cat := &logServer{}
 	if _, _, err := runLog(t, cat, "--search", "Login failed", "--search", "sa", "--since", "2026-10-27T08:30"); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +196,7 @@ func TestServerLogSearchAndSince(t *testing.T) {
 }
 
 func TestServerLogAgent(t *testing.T) {
-	cat := &logCatalog{entries: logEntries(2)}
+	cat := &logServer{entries: logEntries(2)}
 	res, _, err := runLog(t, cat, "--agent", "--archive", "3")
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +229,7 @@ func TestServerLogArgumentErrors(t *testing.T) {
 		{[]string{"--since", "yesterday"}, "not a date"},
 		{[]string{"--since", "2026-10-27 08:00"}, "not a date"},
 	} {
-		_, dials, err := runLog(t, &logCatalog{}, tc.argv...)
+		_, dials, err := runLog(t, &logServer{}, tc.argv...)
 		if errCode(err) != output.CodeUsageError || !strings.Contains(err.Error(), tc.want) || dials != 0 {
 			t.Errorf("%q: %v (dials %d), want a usage error with %q", tc.argv, err, dials, tc.want)
 		}
@@ -185,7 +239,7 @@ func TestServerLogArgumentErrors(t *testing.T) {
 func TestServerLogErrors(t *testing.T) {
 	denied := fmt.Errorf("gosmo: read SQL Server error log 0: %w",
 		mssql.Error{Number: 27219, Class: 16, Message: "Caller does not have permissions to execute the stored procedure."})
-	_, _, err := runLog(t, &logCatalog{readErr: denied})
+	_, _, err := runLog(t, &logServer{readErr: denied})
 	if errCode(err) != output.CodePermissionDenied || !strings.Contains(err.(*output.Error).Hint, "VIEW ANY ERROR LOG") {
 		t.Errorf("refused: %v", err)
 	}
@@ -193,17 +247,17 @@ func TestServerLogErrors(t *testing.T) {
 	noFile := fmt.Errorf("gosmo: read SQL Server error log 9: %w",
 		mssql.Error{Number: 22004, Class: 16, Message: "xp_readerrorlog() returned error 2, 'The system cannot find the file specified.'"})
 	files := []*gosmo.ErrorLogFile{{Number: 0}, {Number: 1}, {Number: 2}, {Number: 6}}
-	_, _, err = runLog(t, &logCatalog{readErr: noFile, files: files}, "--archive", "9")
+	_, _, err = runLog(t, &logServer{readErr: noFile, files: files}, "--archive", "9")
 	if e, ok := err.(*output.Error); errCode(err) != output.CodeNotFound || !ok || !strings.Contains(e.Hint, "1 to 6") {
 		t.Errorf("missing archive: %v", err)
 	}
-	_, _, err = runLog(t, &logCatalog{readErr: noFile, files: files[:1]}, "--archive", "1")
+	_, _, err = runLog(t, &logServer{readErr: noFile, files: files[:1]}, "--archive", "1")
 	if e, ok := err.(*output.Error); errCode(err) != output.CodeNotFound || !ok || !strings.Contains(e.Hint, "no archived") {
 		t.Errorf("no archives: %v", err)
 	}
 	// An archive the server lists, or a list that cannot be read, keeps the
 	// read's own error.
-	for name, cat := range map[string]*logCatalog{
+	for name, cat := range map[string]*logServer{
 		"listed":      {readErr: noFile, files: files},
 		"enum failed": {readErr: noFile, enumErr: fmt.Errorf("x")},
 	} {
@@ -213,7 +267,7 @@ func TestServerLogErrors(t *testing.T) {
 		}
 	}
 	// The current log is never looked up as an archive.
-	if _, _, err = runLog(t, &logCatalog{readErr: noFile, files: files}); errCode(err) != output.CodeSQLError {
+	if _, _, err = runLog(t, &logServer{readErr: noFile, files: files}); errCode(err) != output.CodeSQLError {
 		t.Errorf("archive 0: %v", err)
 	}
 }

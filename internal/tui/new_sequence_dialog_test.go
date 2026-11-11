@@ -14,7 +14,7 @@ import (
 // newSequenceTestDialog builds the New Sequence pages the way show() would,
 // minus the connection. The fake server answers the database read the Extended
 // Properties page's apply starts with.
-func newSequenceTestDialog(t *testing.T, pf *nseqPrefetch) *NewSequenceDialog {
+func newSequenceTestDialog(t *testing.T, pf *schemaObjectPrefetch) *NewSequenceDialog {
 	t.Helper()
 	sc, _ := newGConn(t, dbByNameResp("appdb", 5))
 	d := &NewSequenceDialog{}
@@ -27,8 +27,8 @@ func newSequenceTestDialog(t *testing.T, pf *nseqPrefetch) *NewSequenceDialog {
 	return d
 }
 
-func newSequenceTestPrefetch(existing ...string) *nseqPrefetch {
-	pf := &nseqPrefetch{existing: newNameSet(""), schemas: []string{"app", "dbo", "sales"},
+func newSequenceTestPrefetch(existing ...string) *schemaObjectPrefetch {
+	pf := &schemaObjectPrefetch{existing: newNameSet(""), schemas: []string{"app", "dbo", "sales"},
 		principals: []permPrincipal{{Name: "app]user", Type: gosmo.PrincipalType("SQL_USER")}}}
 	for _, e := range existing {
 		schema, name, _ := strings.Cut(e, ".")

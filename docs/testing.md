@@ -40,6 +40,17 @@ them clean (`go install honnef.co/go/tools/cmd/staticcheck@latest`,
   and the unexported helpers only it reaches (`schedulerGroupSizes`) — kept
   deliberately, not a cleanup list.
 
+**The race detector is part of "done" for anything that crosses goroutines.**
+Nearly every UI result reaches the event loop through `postAndWake` from a
+goroutine, so a change touching `safego`, `postAndWake`, `latest`, a channel,
+or state a callback shares with a loader runs `go test -race -count=1` on the
+packages it changed (gosmo: on `retry.go`, the pool, `gosmotest`). The whole
+`go test -race -count=1 ./...` runs before a tag (below) and in the release
+workflow's test step: about 6 minutes for gossms, 2 for gosmo (2026-11-11,
+both clean). `-race` needs cgo; `CGO_ENABLED=0` makes it refuse to run, so the
+workflow sets `CGO_ENABLED=1` for that step only — the shipped binaries stay
+no-CGO.
+
 **gosmo's live suite: run what the change touches, not the whole suite.**
 The full `livedb` run takes about 16 minutes per instance (313 tests, serial,
 several waiting on server timers). After a change, name the affected tests
@@ -109,8 +120,8 @@ copying files aside rather than editing in place.
 **Before a tag**, in both repos (gossms and `~/go/gosmo`), on top of the
 everyday build/test/vet:
 
-- `go test -race -count=1 ./...` — clean in both as of 2026-10-02; a few
-  minutes each.
+- `go test -race -count=1 ./...` — clean in both as of 2026-11-11 (the
+  race-detector paragraph above).
 - `govulncheck ./...` (`go install golang.org/x/vuln/cmd/govulncheck@latest`).
   "Your code is affected by 0 vulnerabilities" is the bar; a module-level hit
   your code doesn't call (GO-2026-5932, x/crypto's openpgp, no fix) is noise.
@@ -178,21 +189,23 @@ The harness shows the page asked the right things and built the right request �
 never that the T-SQL is valid. Statement text is gosmo's tests; acceptance is a
 live run.
 
-**The command line's `object`, `script`, `data`, `security`, `maint` and `monitor` groups run real gosmo over `gosmotest`.**
+**Every command-line group runs real gosmo over `gosmotest`.**
 gosmo's exported fake driver answers each query from the first rule whose
 text it contains, with a database read's transport stripped (`Query.Database`
 says where it ran). `internal/cli/object_server_test.go` is the server: its
 rows are positional, column for column in gosmo's SELECT order, each read's
 built by one encoder (`columnRow`, `indexRow`, `statisticRow`, …), so a gosmo
-change to a query's shape or scan fails the CLI test — a faked `cmd.Catalog`
-method passes it. A query no rule answers fails the test naming the query;
+change to a query's shape or scan fails the CLI test — a hand-written fake
+of the gosmo method would pass it. A query no rule answers fails the test naming the query;
 add a rule, don't loosen the match. Rules answer in registration order, so
 a group whose reads overlap another's registers its more specific rules
 first (`newObjectServerWith`; `script_server_test.go` is the example).
 The row encoders are `internal/cli/clitest`'s, shared with package `cmd`'s
 tests, whose `catalogServer` (`cmd/catalog_server_test.go`) answers the
 resolution and table/view reads for a handler tested there (the dry-run
-fidelity harness's `data import` case); `secServer`
+fidelity harness's `data import` case); `storageServer`
+(`cmd/db_storage_test.go`: the databases and HAS_DBACCESS, under the
+files, space, log-usage and table-sizes servers), `secServer`
 (`cmd/security_server_test.go`), `maintServer`
 (`cmd/maint_server_test.go`) and `monitorServer`
 (`cmd/monitor_server_test.go`) build on it the way `scriptServer` builds on
@@ -204,6 +217,8 @@ sent, applies what it states to the server's fields — so the read after
 it sees the change — and fails it as the test asks; tests assert the
 statement text, not a fake's arguments. gosmotest answers a BACKUP or
 RESTORE that reads progress messages (`Query.Messages`) as a message
-stream, and a bulk load as one `INSERTBULK` Exec per row. Every other
-group still fakes
-`cmd.Catalog` (`docs/open-threads.md` § Command line).
+stream, and a bulk load as one `INSERTBULK` Exec per row. Package `cli`'s
+`dbFake` (`db_test.go`) serves `db list`/`db info` and `agent context`,
+whose permission probes it answers through `clitest.ServerCapabilityRows`
+and `DatabaseCapabilityRows`: a probe gosmo returns always carries its role
+map, so "unprobed" is a failed probe, never a nil map.

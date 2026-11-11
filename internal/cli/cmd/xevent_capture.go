@@ -316,13 +316,13 @@ func (d Deps) xeventCapture(ctx context.Context, inv *spec.Invocation) (*output.
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	if info := cat.ServerInfo(); info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase {
+	if info := sc.Server.Info(); info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase {
 		return res, output.NewError(output.CodeUnsupported,
 			"xevent capture creates a server-scoped event session, which Azure SQL Database does not have", "")
 	}
@@ -331,7 +331,7 @@ func (d Deps) xeventCapture(ctx context.Context, inv *spec.Invocation) (*output.
 	if err := requireServerState(ctx, sc.Server, "xevent capture"); err != nil {
 		return res, err
 	}
-	caps, err := cat.ServerCapabilities(ctx)
+	caps, err := sc.Server.Capabilities(ctx)
 	if err != nil {
 		return res, readError(err)
 	}

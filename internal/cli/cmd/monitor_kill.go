@@ -87,7 +87,7 @@ func (d Deps) monitorKill(ctx context.Context, inv *spec.Invocation) (*output.Re
 		return nil, d.confirmRefusal(inv, err)
 	}
 	res := &output.Result{}
-	sc, _, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}

@@ -69,13 +69,13 @@ func volumesDenied(msg string) *output.Error {
 
 func (d Deps) serverVolumes(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	vols, visible, err := cat.FileVolumes(ctx)
+	vols, visible, err := sc.Server.FileVolumes(ctx)
 	switch {
 	case err != nil && gosmo.IsPermissionDenied(err):
 		return res, volumesDenied(err.Error())

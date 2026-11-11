@@ -105,17 +105,18 @@ func (d Deps) maintCheckDB(ctx context.Context, inv *spec.Invocation) (*output.R
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
 	var dbase *gosmo.Database
 	if len(inv.Args) > 0 {
-		dbase, err = namedDatabase(ctx, cat, inv.Args[0], res)
+		dbase, err = namedDatabase(ctx, srv, inv.Args[0], res)
 	} else {
-		dbase, err = currentDatabase(ctx, cat, res)
+		dbase, err = currentDatabase(ctx, srv, res)
 	}
 	if err != nil {
 		return res, err

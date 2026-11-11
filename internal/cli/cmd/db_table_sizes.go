@@ -66,20 +66,21 @@ func (d Deps) dbTableSizes(ctx context.Context, inv *spec.Invocation) (*output.R
 			"Give the number of tables to keep, or --top 0 for every table.")
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
+	srv := sc.Server
 
-	t, err := storageDatabase(ctx, cat, inv.Args[0], res)
+	t, err := storageDatabase(ctx, srv, inv.Args[0], res)
 	if err == nil && t.Unreadable != "" {
 		err = t.unreadableError()
 	}
 	if err != nil {
 		return res, err
 	}
-	tables, err := cat.TableSizes(ctx, t.DB)
+	tables, err := t.DB.TableSizes(ctx)
 	if err != nil {
 		return res, readError(err)
 	}

@@ -56,7 +56,11 @@ jobs:
           echo "Using release version: ${VERSION}"
 
       - name: Run tests
-        run: go test ./...
+        # -race needs cgo, which the job-level CGO_ENABLED=0 (kept for the
+        # release builds below) would refuse; this step alone turns it on.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -count=1 ./...
 
       - name: Generate Windows resources (icon, version info)
         shell: bash

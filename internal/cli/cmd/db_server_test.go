@@ -412,7 +412,6 @@ func (s *dbServer) runRaw(argv string) (res *output.Result, dials int, parse, er
 			dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	fields := strings.Fields(argv)
 	n := 1

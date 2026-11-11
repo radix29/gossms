@@ -15,48 +15,6 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// contextFake is fakeCatalog plus agent context's reads. A nil srv or dbc
-// with its error set is a failed probe.
-type contextFake struct {
-	*fakeCatalog
-	info   *gosmo.ServerInfo
-	srv    *gosmo.Capabilities
-	srvErr error
-	dbc    *gosmo.DatabaseCapabilities
-	dbcErr error
-	// dbcBy answers for the databases it names, ahead of dbc.
-	dbcBy  map[string]*gosmo.DatabaseCapabilities
-	probed []string // the databases DatabaseCapabilities was asked about
-	access map[int]bool
-	// msdbErr fails the msdb lookup agent context makes for the job row.
-	msdbErr error
-}
-
-// DatabaseByName adds msdb to fakeCatalog's databases, for the msdb role
-// probe; its capabilities are dbcBy["msdb"], else dbc.
-func (c *contextFake) DatabaseByName(ctx context.Context, name string) (*gosmo.Database, error) {
-	if name == "msdb" {
-		return &gosmo.Database{Name: "msdb", ID: 4, State: gosmo.DatabaseOnline}, c.msdbErr
-	}
-	return c.fakeCatalog.DatabaseByName(ctx, name)
-}
-
-func (c *contextFake) ServerInfo() *gosmo.ServerInfo { return c.info }
-
-func (c *contextFake) ServerCapabilities(context.Context) (*gosmo.Capabilities, error) {
-	return c.srv, c.srvErr
-}
-
-func (c *contextFake) DatabaseCapabilities(_ context.Context, d *gosmo.Database) (*gosmo.DatabaseCapabilities, error) {
-	c.probed = append(c.probed, d.Name)
-	if dbc, ok := c.dbcBy[d.Name]; ok {
-		return dbc, nil
-	}
-	return c.dbc, c.dbcErr
-}
-
-func (c *contextFake) DatabaseAccess(context.Context) (map[int]bool, error) { return c.access, nil }
-
 // newContextFake is a db_datareader login on a 2017 instance: no VIEW
 // SERVER STATE (its 2022 alternative unknown), VIEW ANY DEFINITION denied but
 // ALTER ANY DATABASE held, ALTER SETTINGS and ALTER ANY CONNECTION denied,
@@ -65,44 +23,43 @@ func (c *contextFake) DatabaseAccess(context.Context) (map[int]bool, error) { re
 // VIEW DEFINITION, ALTER, ALTER ANY ROLE or BACKUP LOG in the database (ALTER
 // ANY DATABASE SCOPED CONFIGURATION unknown), BACKUP DATABASE granted, VIEW
 // DATABASE STATE denied with its 2022 alternative granted, not db_owner.
-func newContextFake() *contextFake {
-	return &contextFake{
-		fakeCatalog: newFakeCatalog(),
-		info: &gosmo.ServerInfo{Name: `WIN10CLI\SQL2017`, ProductVersion: "14.0.2140.2", VersionMajor: 14,
-			Edition: "Developer Edition (64-bit)", Login: "reader"},
-		srv: &gosmo.Capabilities{
-			ServerRoles: map[string]bool{"sysadmin": false, "public": true},
-			ServerPermissions: map[string]gosmo.CapabilityState{
-				"VIEW SERVER STATE":               gosmo.CapabilityDenied,
-				"VIEW ANY DEFINITION":             gosmo.CapabilityDenied,
-				"ALTER ANY DATABASE":              gosmo.CapabilityGranted,
-				"VIEW ANY DATABASE":               gosmo.CapabilityGranted,
-				"ALTER SETTINGS":                  gosmo.CapabilityDenied,
-				"ALTER ANY CONNECTION":            gosmo.CapabilityDenied,
-				"ALTER ANY EVENT SESSION":         gosmo.CapabilityDenied,
-				"CREATE ANY EVENT SESSION":        gosmo.CapabilityGranted,
-				"ALTER ANY EVENT SESSION ENABLE":  gosmo.CapabilityGranted,
-				"ALTER ANY EVENT SESSION DISABLE": gosmo.CapabilityGranted,
-				"DROP ANY EVENT SESSION":          gosmo.CapabilityGranted,
-				"CREATE ANY DATABASE":             gosmo.CapabilityDenied,
-			},
+func newContextFake() *dbFake {
+	c := newDBFake()
+	c.info = &gosmo.ServerInfo{Name: `WIN10CLI\SQL2017`, ProductVersion: "14.0.2140.2", VersionMajor: 14,
+		Edition: "Developer Edition (64-bit)", Login: "reader"}
+	c.srv = &gosmo.Capabilities{
+		ServerRoles: map[string]bool{"sysadmin": false, "public": true},
+		ServerPermissions: map[string]gosmo.CapabilityState{
+			"VIEW SERVER STATE":               gosmo.CapabilityDenied,
+			"VIEW ANY DEFINITION":             gosmo.CapabilityDenied,
+			"ALTER ANY DATABASE":              gosmo.CapabilityGranted,
+			"VIEW ANY DATABASE":               gosmo.CapabilityGranted,
+			"ALTER SETTINGS":                  gosmo.CapabilityDenied,
+			"ALTER ANY CONNECTION":            gosmo.CapabilityDenied,
+			"ALTER ANY EVENT SESSION":         gosmo.CapabilityDenied,
+			"CREATE ANY EVENT SESSION":        gosmo.CapabilityGranted,
+			"ALTER ANY EVENT SESSION ENABLE":  gosmo.CapabilityGranted,
+			"ALTER ANY EVENT SESSION DISABLE": gosmo.CapabilityGranted,
+			"DROP ANY EVENT SESSION":          gosmo.CapabilityGranted,
+			"CREATE ANY DATABASE":             gosmo.CapabilityDenied,
 		},
-		dbc: &gosmo.DatabaseCapabilities{
-			Accessible: true,
-			Roles:      map[string]bool{"db_datareader": true, "db_owner": false},
-			Permissions: map[string]gosmo.CapabilityState{
-				"VIEW DEFINITION":                 gosmo.CapabilityDenied,
-				"VIEW DATABASE STATE":             gosmo.CapabilityDenied,
-				"VIEW DATABASE PERFORMANCE STATE": gosmo.CapabilityGranted,
-				"ALTER":                           gosmo.CapabilityDenied,
-				"SHOWPLAN":                        gosmo.CapabilityDenied,
-				"BACKUP DATABASE":                 gosmo.CapabilityGranted,
-				"BACKUP LOG":                      gosmo.CapabilityDenied,
-				"ALTER ANY ROLE":                  gosmo.CapabilityDenied,
-			},
-		},
-		access: map[int]bool{5: true, 6: false, 1: true, 8: false},
 	}
+	c.dbc = &gosmo.DatabaseCapabilities{
+		Accessible: true,
+		Roles:      map[string]bool{"db_datareader": true, "db_owner": false},
+		Permissions: map[string]gosmo.CapabilityState{
+			"VIEW DEFINITION":                 gosmo.CapabilityDenied,
+			"VIEW DATABASE STATE":             gosmo.CapabilityDenied,
+			"VIEW DATABASE PERFORMANCE STATE": gosmo.CapabilityGranted,
+			"ALTER":                           gosmo.CapabilityDenied,
+			"SHOWPLAN":                        gosmo.CapabilityDenied,
+			"BACKUP DATABASE":                 gosmo.CapabilityGranted,
+			"BACKUP LOG":                      gosmo.CapabilityDenied,
+			"ALTER ANY ROLE":                  gosmo.CapabilityDenied,
+		},
+	}
+	c.access = map[int]bool{5: true, 6: false, 1: true, 8: false}
+	return c
 }
 
 func contextSet(t *testing.T, env map[string]any, name string) [][]any {
@@ -122,7 +79,7 @@ func contextSet(t *testing.T, env map[string]any, name string) [][]any {
 }
 
 func TestAgentContext(t *testing.T) {
-	r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, newContextFake())),
+	r := runTree(t, context.Background(), newCommandTree(fakeDeps(t, newContextFake())),
 		"agent", "context", "-p", "dev", "-o", "json")
 	if r.exit != 0 {
 		t.Fatalf("exit %d\n%s%s", r.exit, r.stdout, r.stderr)
@@ -198,10 +155,9 @@ func TestAgentContext(t *testing.T) {
 // the strength of it, and the record still comes back, exit 0.
 func TestAgentContextFailedProbes(t *testing.T) {
 	cat := newContextFake()
-	cat.srv, cat.srvErr = nil, errors.New("gosmo: read server capabilities: boom")
-	cat.dbc, cat.dbcErr = nil, errors.New("gosmo: read capabilities for database \"app\": boom")
-	cat.info = nil
-	r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)), "agent", "context", "-p", "dev", "-o", "json")
+	cat.srv, cat.srvErr = nil, errors.New("boom")
+	cat.dbc, cat.dbcErr = nil, errors.New("boom")
+	r := runTree(t, context.Background(), newCommandTree(fakeDeps(t, cat)), "agent", "context", "-p", "dev", "-o", "json")
 	if r.exit != 0 {
 		t.Fatalf("exit %d\n%s%s", r.exit, r.stdout, r.stderr)
 	}
@@ -213,16 +169,16 @@ func TestAgentContextFailedProbes(t *testing.T) {
 	if rows := contextSet(t, env, "missing_permissions"); len(rows) != 0 {
 		t.Errorf("missing_permissions from failed probes: %v", rows)
 	}
-	if w := env["warnings"].([]any); len(w) != 3 {
-		t.Errorf("warnings %v, want three (info, server probe, database probe)", w)
+	if w := env["warnings"].([]any); len(w) != 2 {
+		t.Errorf("warnings %v, want two (server probe, database probe)", w)
 	}
 }
 
 // A need met by a role: a member is not missing it, and an unprobed role
-// list (ServerRoles nil) is not a lack.
+// list (a failed probe) is not a lack.
 func TestAgentContextRoleNeeds(t *testing.T) {
-	permissions := func(cat *contextFake) []string {
-		r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)), "agent", "context", "-p", "dev", "-o", "json")
+	permissions := func(cat *dbFake) []string {
+		r := runTree(t, context.Background(), newCommandTree(fakeDeps(t, cat)), "agent", "context", "-p", "dev", "-o", "json")
 		var out []string
 		for _, row := range contextSet(t, envelope(t, r.stdout), "missing_permissions") {
 			out = append(out, row[0].(string))
@@ -236,14 +192,9 @@ func TestAgentContextRoleNeeds(t *testing.T) {
 		t.Errorf("securityadmin member: %q", got)
 	}
 	cat = newContextFake()
-	cat.srv.ServerRoles = nil
-	got := permissions(cat)
-	if slices.Contains(got, "sysadmin (role)") {
+	cat.srv, cat.srvErr = nil, errors.New("boom")
+	if got := permissions(cat); slices.Contains(got, "sysadmin (role)") {
 		t.Errorf("unprobed roles read as a lack: %q", got)
-	}
-	// VIEW SERVER STATE still answers for the error log.
-	if !slices.Contains(got, "securityadmin, VIEW SERVER STATE or VIEW ANY ERROR LOG") {
-		t.Errorf("unprobed roles hid the denied VIEW SERVER STATE: %q", got)
 	}
 
 	// A database role: a member (a sysadmin reads as one too) is not
@@ -258,7 +209,7 @@ func TestAgentContextRoleNeeds(t *testing.T) {
 		t.Errorf("db_owner member reported: %q", got)
 	}
 	cat = newContextFake()
-	cat.dbc.Roles = nil
+	cat.dbc, cat.dbcErr = nil, errors.New("boom")
 	if got := permissions(cat); slices.Contains(got, owner) {
 		t.Errorf("unprobed database roles read as a lack: %q", got)
 	}
@@ -288,22 +239,22 @@ func TestAgentContextMsdbAgentRoles(t *testing.T) {
 
 	cat = newContextFake()
 	cat.srv.ServerRoles["sysadmin"] = true
-	if got, _ := contextMissing(t, cat); slices.Contains(got, row) || slices.Contains(cat.probed, "msdb") {
-		t.Errorf("sysadmin: listed %q, probed %q; want neither", got, cat.probed)
+	if got, _ := contextMissing(t, cat); slices.Contains(got, row) || slices.Contains(cat.probed(), "msdb") {
+		t.Errorf("sysadmin: listed %q, probed %q; want neither", got, cat.probed())
 	}
 	cat = newContextFake()
-	cat.srv.ServerRoles = nil
-	if contextMissing(t, cat); slices.Contains(cat.probed, "msdb") {
-		t.Errorf("unprobed server roles still probed msdb: %q", cat.probed)
+	cat.srv, cat.srvErr = nil, errors.New("boom")
+	if contextMissing(t, cat); slices.Contains(cat.probed(), "msdb") {
+		t.Errorf("unprobed server roles still probed msdb: %q", cat.probed())
 	}
 
-	for name, cat := range map[string]*contextFake{
-		"unopenable": func() *contextFake {
+	for name, cat := range map[string]*dbFake{
+		"unopenable": func() *dbFake {
 			c := newContextFake()
 			c.dbcBy = map[string]*gosmo.DatabaseCapabilities{"msdb": {Roles: map[string]bool{}}}
 			return c
 		}(),
-		"unread": func() *contextFake {
+		"unread": func() *dbFake {
 			c := newContextFake()
 			c.msdbErr = errors.New("gosmo: read database \"msdb\": boom")
 			return c
@@ -324,7 +275,7 @@ func TestAgentContextMsdbAgentRoles(t *testing.T) {
 func TestAgentContextEventSessionRights(t *testing.T) {
 	cat := newContextFake()
 	cat.srv.ServerPermissions["DROP ANY EVENT SESSION"] = gosmo.CapabilityUnknown
-	r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)), "agent", "context", "-p", "dev", "-o", "json")
+	r := runTree(t, context.Background(), newCommandTree(fakeDeps(t, cat)), "agent", "context", "-p", "dev", "-o", "json")
 	var got []string
 	for _, row := range contextSet(t, envelope(t, r.stdout), "missing_permissions") {
 		got = append(got, row[0].(string)+" → "+row[2].(string))
@@ -336,9 +287,9 @@ func TestAgentContextEventSessionRights(t *testing.T) {
 
 // contextMissing runs agent context with extra arguments and returns its
 // missing_permissions as "permission @ scope → commands", and the envelope.
-func contextMissing(t *testing.T, cat *contextFake, extra ...string) ([]string, map[string]any) {
+func contextMissing(t *testing.T, cat *dbFake, extra ...string) ([]string, map[string]any) {
 	t.Helper()
-	r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)),
+	r := runTree(t, context.Background(), newCommandTree(fakeDeps(t, cat)),
 		append([]string{"agent", "context", "-p", "dev", "-o", "json"}, extra...)...)
 	if r.exit != 0 {
 		t.Fatalf("exit %d\n%s%s", r.exit, r.stdout, r.stderr)
@@ -441,8 +392,8 @@ func TestAgentContextTargetDatabase(t *testing.T) {
 	// ...and the connection's database itself is probed once, not twice.
 	cat = newContextFake()
 	contextMissing(t, cat, "--target-database", "app")
-	if strings.Join(cat.probed, ",") != "app,msdb" {
-		t.Errorf("probed %q, want app once (and msdb, for the job row)", cat.probed)
+	if strings.Join(cat.probed(), ",") != "app,msdb" {
+		t.Errorf("probed %q, want app once (and msdb, for the job row)", cat.probed())
 	}
 }
 
@@ -460,7 +411,7 @@ func TestAgentContextTargetDatabaseUnreadable(t *testing.T) {
 	if w := fmt.Sprint(env["warnings"]); !strings.Contains(w, "cannot open [archive]") {
 		t.Errorf("warnings %s", w)
 	}
-	r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, newContextFake())),
+	r := runTree(t, context.Background(), newCommandTree(fakeDeps(t, newContextFake())),
 		"agent", "context", "-p", "dev", "--target-database", "nosuch", "-o", "json")
 	if r.exit != 8 {
 		t.Errorf("missing target: exit %d, want 8\n%s%s", r.exit, r.stdout, r.stderr)
@@ -478,7 +429,7 @@ func TestAgentContextNamesOnlyCommands(t *testing.T) {
 }
 
 func TestAgentGuideEnvironment(t *testing.T) {
-	tree := newCommandTree(catalogDeps(t, newContextFake()))
+	tree := newCommandTree(fakeDeps(t, newContextFake()))
 
 	r := runTree(t, context.Background(), tree, "agent", "guide", "--brief", "-p", "dev")
 	if r.exit != 0 {
@@ -521,11 +472,11 @@ func TestAgentGuideEnvironmentBriefCapsTables(t *testing.T) {
 	for i := range 20 {
 		cat.dbs = append(cat.dbs, &gosmo.Database{Name: fmt.Sprintf("extra%02d", i), ID: 100 + i, State: gosmo.DatabaseOnline})
 	}
-	r := runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)), "agent", "guide", "--brief", "-p", "dev")
+	r := runTree(t, context.Background(), newCommandTree(fakeDeps(t, cat)), "agent", "guide", "--brief", "-p", "dev")
 	if !strings.Contains(r.stdout, "10 more: `gossms agent context`") {
 		t.Errorf("brief environment does not cap 25 databases at 15:\n%s", r.stdout)
 	}
-	r = runTree(t, context.Background(), newCommandTree(catalogDeps(t, cat)), "agent", "guide", "--topic", "rules", "-p", "dev")
+	r = runTree(t, context.Background(), newCommandTree(fakeDeps(t, cat)), "agent", "guide", "--topic", "rules", "-p", "dev")
 	if strings.Contains(r.stdout, "more: `gossms agent context`") || !strings.Contains(r.stdout, "extra19") {
 		t.Errorf("full environment capped its tables:\n%s", r.stdout)
 	}

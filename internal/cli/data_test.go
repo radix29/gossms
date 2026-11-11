@@ -29,7 +29,6 @@ func dataDeps(t *testing.T, s *objectServer, sess *fakeSession) (cmd.Deps, *int,
 		}
 		return &db.ServerConn{Server: srv}, nil
 	}
-	d.Catalog = cmd.ServerCatalog
 	opened := new([]string)
 	d.OpenSession = func(_ context.Context, _ *db.ServerConn, database string) (cmd.Session, error) {
 		*opened = append(*opened, database)

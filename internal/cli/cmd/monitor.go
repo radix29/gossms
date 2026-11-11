@@ -52,11 +52,11 @@ func viewServerStateDenied(what string) *output.Error {
 			"session. Use a login that has it, or have it granted.")
 }
 
-// connectServerState is connectCatalog for a read that needs VIEW SERVER
+// connectServerState is connectServer for a read that needs VIEW SERVER
 // STATE: exit 9 before the read when the login lacks it. The caller reads
 // through sc.Server and closes sc.
 func (d Deps) connectServerState(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (*db.ServerConn, error) {
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return nil, err
 	}

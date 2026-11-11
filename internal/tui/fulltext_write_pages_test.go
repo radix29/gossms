@@ -439,8 +439,8 @@ func TestNewFullTextStoplistStartingPoints(t *testing.T) {
 		d := &NewFullTextStoplistDialog{}
 		d.dbName = "AppDB"
 		buildNew(t, &d.newObjectDialog, 1, func() {
-			d.buildPages(&nftStoplistPrefetch{existingNames: newNameSet(""),
-				stoplists: []string{"a_list", "legal_words"}, owners: []string{fullTextDefaultOwner}})
+			d.buildPages(&fullTextCopyPrefetch{existingNames: newNameSet(""),
+				names: []string{"a_list", "legal_words"}, owners: []string{fullTextDefaultOwner}})
 		})
 		editText(t, d.forms[0], "Stoplist name", "s2")
 		return d
@@ -467,7 +467,7 @@ func TestNewSearchPropertyListCopy(t *testing.T) {
 	d := &NewSearchPropertyListDialog{}
 	d.dbName = "AppDB"
 	buildNew(t, &d.newObjectDialog, 1, func() {
-		d.buildPages(&nftPropertyListPrefetch{existingNames: newNameSet(""), lists: []string{"doc_props"},
+		d.buildPages(&fullTextCopyPrefetch{existingNames: newNameSet(""), names: []string{"doc_props"},
 			owners: []string{fullTextDefaultOwner}})
 	})
 	editText(t, d.forms[0], "List name", "p2")
@@ -487,7 +487,7 @@ func newCopyTestStoplistDialog(t *testing.T, sc *db.ServerConn) (*NewFullTextSto
 	d.app, d.ctx, d.sc, d.dbName = a, context.Background(), sc, "AppDB"
 	d.forms = make([]*propsheet.Form, 1)
 	d.applyFns = make([]propApply, 1)
-	d.buildPages(&nftStoplistPrefetch{existingNames: newNameSet(""), stoplists: []string{"legal_words"},
+	d.buildPages(&fullTextCopyPrefetch{existingNames: newNameSet(""), names: []string{"legal_words"},
 		owners: []string{fullTextDefaultOwner}, databases: []string{"AppDB", "OtherDB", "Locked"}})
 	editText(t, d.forms[0], "Stoplist name", "s2")
 	editRadio(t, d.forms[0], "Start from", "An existing stoplist")
@@ -562,7 +562,7 @@ func TestNewSearchPropertyListCopiesFromAnotherDatabase(t *testing.T) {
 	d.app, d.ctx, d.sc, d.dbName = a, context.Background(), sc, "AppDB"
 	d.forms = make([]*propsheet.Form, 1)
 	d.applyFns = make([]propApply, 1)
-	d.buildPages(&nftPropertyListPrefetch{existingNames: newNameSet(""),
+	d.buildPages(&fullTextCopyPrefetch{existingNames: newNameSet(""),
 		owners: []string{fullTextDefaultOwner}, databases: []string{"AppDB", "OtherDB"}})
 	f := d.forms[0]
 	editText(t, f, "List name", "p2")
@@ -700,5 +700,47 @@ func TestFullTextNewItemsAreGatedOnCreateFullTextCatalog(t *testing.T) {
 				t.Errorf("%s enabled = %v with the right held = %v", label, got, held)
 			}
 		}
+	}
+}
+
+// fetchFullTextCopyPrefetch serves New Full-Text Stoplist and New Search
+// Property List, each reading its own family: the names seed the copy picker
+// and the taken-name check (case-folded under the database's CI collation),
+// and the other family's names appear in neither.
+func TestFullTextCopyPrefetchTakesEachDialogsFamily(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		want  string
+		fetch func(*db.ServerConn) (*fullTextCopyPrefetch, error)
+	}{
+		{"New Full-Text Stoplist", "legal_words", func(sc *db.ServerConn) (*fullTextCopyPrefetch, error) {
+			d := NewNewFullTextStoplistDialog(newTestApp())
+			d.dbName = "AppDB"
+			return d.fetch(context.Background(), sc)
+		}},
+		{"New Search Property List", "doc_props", func(sc *db.ServerConn) (*fullTextCopyPrefetch, error) {
+			d := NewNewSearchPropertyListDialog(newTestApp())
+			d.dbName = "AppDB"
+			return d.fetch(context.Background(), sc)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sc, _ := newGConn(t, dbByNameResp("AppDB", 5), databasePrincipalsResponse(),
+				ftStoplistsResp("legal_words"), ftPropListsResp("doc_props"),
+				databasesListResp(databaseRow(5, "AppDB", 0)))
+			pf, err := tc.fetch(sc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(pf.names, []string{tc.want}) {
+				t.Errorf("names = %v, want [%s]", pf.names, tc.want)
+			}
+			if !pf.existingNames.Has(strings.ToUpper(tc.want)) {
+				t.Errorf("%s not taken (folded)", tc.want)
+			}
+			if !slices.Equal(pf.databases, []string{"AppDB"}) {
+				t.Errorf("databases = %v, want [AppDB]", pf.databases)
+			}
+		})
 	}
 }

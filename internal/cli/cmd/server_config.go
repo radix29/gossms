@@ -193,7 +193,7 @@ func configWriteOptions() []spec.Option {
 
 func (d Deps) serverConfigList(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -328,7 +328,7 @@ func resolveConfig(opts []*gosmo.ConfigurationOption, name string) (*gosmo.Confi
 
 func (d Deps) serverConfigGet(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -563,7 +563,7 @@ func (d Deps) serverConfigReset(ctx context.Context, inv *spec.Invocation) (*out
 // the one batch, and a second read for what the server now has.
 func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -577,7 +577,7 @@ func (d Deps) applyConfig(ctx context.Context, inv *spec.Invocation, reset bool)
 	if err != nil {
 		return res, err
 	}
-	if risks := riskyValues(cat.ServerInfo(), opts, changes); len(risks) > 0 && !inv.Values[optAcceptRisk].(bool) {
+	if risks := riskyValues(sc.Server.Info(), opts, changes); len(risks) > 0 && !inv.Values[optAcceptRisk].(bool) {
 		return res, output.NewError(output.CodeBlocked, strings.Join(risks, " "),
 			"Choose another value, or re-run with --accept-risk if it is intended (it lifts only gossms's own checks).")
 	}
