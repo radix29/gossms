@@ -1,0 +1,15 @@
+🚀 goSSMS v0.2.0 is out!
+
+This is the command-line release. gossms <command> now runs goSSMS without its interface, built for scripts and AI agents, with safety classification, --dry-run, an audit log and JSON output.
+
+In this article you'll find:
+• The new command line and how it keeps AI agents on a leash
+• New in the interface: Generate Scripts, New Server Role, SQL format style
+• Install and upgrade steps for Homebrew, APT and direct download
+• Links to the GitHub repo, releases, wiki and Discord
+
+goSSMS is free, open source and runs on macOS, Linux and Windows. Give it a try, and star and watch the repo to follow new releases. Feedback and contributions are always welcome!
+
+https://github.com/radix29/gossms
+
+#goSSMS #SQLServer #OpenSource #DatabaseTools #TerminalUI #CLI #AIAgents #macOS #Linux #Windows
