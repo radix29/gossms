@@ -118,7 +118,8 @@ func (s *Session) ExecuteToSinkWithPlan(ctx context.Context, script string, mode
 
 func (s *Session) execute(ctx context.Context, script string, capture planCapture, sink RowSink, opts ...Option) *Result {
 	start := time.Now()
-	res := newResult(opts)
+	r := newRun(opts)
+	res := r.res
 	defer func() { res.Elapsed = time.Since(start) }()
 
 	if s.lost.Load() {
@@ -127,7 +128,7 @@ func (s *Session) execute(ctx context.Context, script string, capture planCaptur
 		return res
 	}
 
-	ran, cleanupErr := runScript(ctx, s.conn, script, capture, sink, res)
+	ran, cleanupErr := runScript(ctx, s.conn, script, capture, sink, r)
 	if cleanupErr != nil {
 		// Nothing resets this connection, so a SHOWPLAN_XML left on would make
 		// every later run a plan fetch. The session has to go.
@@ -147,7 +148,7 @@ func (s *Session) execute(ctx context.Context, script string, capture planCaptur
 		res.Database = st.Database
 	}
 
-	if ran && ctx.Err() == nil && res.shouldReportSuccess(capture) {
+	if ran && ctx.Err() == nil && r.shouldReportSuccess(capture) {
 		res.addNotice("Commands completed successfully.")
 	}
 	if !s.alive() {

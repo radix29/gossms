@@ -507,8 +507,10 @@ Peer credentials, easy to undo:
 - **A hand-edited non-canonical `encrypt_mode` is refused**, like an unknown
   auth method. gossms only writes `optional`/`mandatory`/`strict`; anything else
   fails Connect and the preview instead of being shown as Mandatory or handed
-  to go-mssqldb's synonyms. config.json is never rewritten for it. Code change
-  pending: `docs/open-threads.md`.
+  to go-mssqldb's synonyms. config.json is never rewritten for it.
+  `db.encryptString` refuses it (Connect, the preview and peers alike; `""`, an
+  entry built in memory, still dials as Optional); the Connect dialog shows it
+  as-is on an extra Encrypt row, and picking a listed mode is the repair.
 
 ## Always Encrypted: what the two create dialogs leave out
 
@@ -1429,6 +1431,21 @@ it from the string 'NULL'.
   fails every row, whereas the fan-out (8-wide, `ceil(N/8) × RTT`) degrades to
   `N/A` in one row. If ever slow, add the batch as a fast path with the fan-out
   as fallback — never as a replacement.
+- **Dialog prefetches read serially; parallelising them was measured and
+  declined** (2026-11-11, review C3). Mean of 7 runs, fresh
+  `db.Connect` per run, win10cli: New Sequence (3 reads after
+  `DatabaseByName`) and New Job (6 independent reads) took 19/38 ms serial vs
+  45/126 ms in parallel on SQL2017 (~0.05 s login), and 14/30 ms vs
+  400/633 ms on the 2025 instance (~0.6 s login). With six idle connections
+  pre-opened, parallel saved ~5 ms (19 → 14 ms) and ~1 ms (31 → 30 ms).
+  ubusql1 (2025 on Linux, the plan's target) agreed over two runs: cold
+  21-24/40-45 ms serial vs 590-640/830-1270 ms parallel; warm a wash (22 → 20
+  ms) or worse (44 → 57 ms; a noisier first run had 58 → 151). Each
+  extra concurrent read needs its own pooled connection, and a new
+  TCP+TLS+login costs far more than the round trips it overlaps — the
+  `eachDatabase` finding (`db_scan.go`) again. A WAN link raises both sides
+  (a login is several round trips), so it doesn't change the answer. Gating on
+  `sql.DB.Stats().Idle` was not pursued: racy, for a saving of milliseconds.
 - **On a narrow terminal the main toolbar hides buttons; it never overlaps
   the menu labels.** `Toolbar.SetBounds` takes `MenuBar.LabelsEnd()` as a
   hard left limit and hides by `ToolbarButton.DropRank`, highest first:

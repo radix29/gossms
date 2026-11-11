@@ -18,7 +18,7 @@ func TestScanNextKeepsEveryShowplanRow(t *testing.T) {
 	defer rows.Close()
 
 	var res Result
-	if scanNext(rows, &res, nil) {
+	if scanNext(rows, &run{res: &res}, nil) {
 		t.Fatalf("scanNext reported the set abandoned: %+v", res.Messages)
 	}
 	want := []string{"<plan1/>", "<plan2/>", "<plan3/>"}
@@ -43,7 +43,7 @@ func TestScanNextTreatsANonShowplanColumnAsAGrid(t *testing.T) {
 	defer rows.Close()
 
 	var res Result
-	if scanNext(rows, &res, nil) {
+	if scanNext(rows, &run{res: &res}, nil) {
 		t.Fatalf("scanNext reported the set abandoned: %+v", res.Messages)
 	}
 	if len(res.PlanXML) != 0 {

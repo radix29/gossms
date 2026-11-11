@@ -56,20 +56,8 @@ support); this section covers only the environment.
 
 ## Picture viewer: what is left
 
-- **Release blocker: gotuipic is untagged.** `go.mod` has
-  `replace github.com/radix29/gotuipic => ../gotuipic` and requires the zero
-  pseudo-version, so a clean checkout (and `release.yml`) cannot build. Before
-  a tag: tag and push gotuipic, require that tag, drop the `replace`.
 - **File > Open of an image file** does not open it in a picture panel; only a
   result cell does. `openQueryFile` would sniff with `sniffPicture`.
-
-## Connection config: what is left
-
-- **A non-canonical saved `encrypt_mode` must be refused** (decided; settled
-  in `docs/decisions.md` § Always On, peer credentials). Today the Connect
-  dialog shows `"Optional"`/`"true"` as Mandatory and a peer dial hands it to
-  go-mssqldb. Make `db.toGosmoAuth`'s sibling refuse it for Connect, the
-  preview and peers alike, with a test.
 
 ## Format Document: what is left
 

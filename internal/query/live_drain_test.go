@@ -213,7 +213,7 @@ func TestLiveExportThatFailsAtEndSetKeepsTheRestOfTheBatch(t *testing.T) {
 
 	var res Result
 	sink := &liveEndFailSink{}
-	runBatch(ctx, conn, liveBatch, 0, &res, sink)
+	runBatch(ctx, conn, liveBatch, 0, &run{res: &res}, sink)
 
 	t.Logf("sets begun=%d rows=%d RowsWritten=%d messages=%d",
 		sink.sets, sink.rows, res.RowsWritten, len(res.Messages))

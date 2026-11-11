@@ -42,5 +42,3 @@ require (
 )
 
 replace github.com/radix29/gosmo => ../gosmo
-
-replace github.com/radix29/gotuipic => ../gotuipic

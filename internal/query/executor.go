@@ -126,27 +126,6 @@ type Result struct {
 	// short; the grid path marks ResultSet.Truncated instead.
 	SinkSetsTruncated int
 
-	// sinkSets counts result sets streamed to a RowSink, empty ones included;
-	// neither len(Sets) nor RowsWritten says whether a set happened on that path.
-	// See shouldReportSuccess.
-	sinkSets int
-
-	// progress is the caller's live row counter (see WithProgress), carried on
-	// Result as the run-scoped state runBatch/scanNext share.
-	progress *Progress
-
-	// lineOffset is the 0-based editor line the script starts on (see
-	// WithLineOffset), run-scoped like progress.
-	lineOffset int
-
-	// maxRows caps the rows kept per result set (see WithMaxRows); 0 is no cap.
-	maxRows int
-
-	// cut is set by scanNext when it stopped a set at maxRows, for runBatch to
-	// cancel the batch instead of draining it; it then stays set, so runScript
-	// runs no further batch.
-	cut bool
-
 	// PlanXML holds one <ShowPlanXML> document per captured statement/batch, in
 	// execution order. Execute never fills it.
 	PlanXML []string
@@ -170,13 +149,9 @@ type Result struct {
 	// batches failed" from "all did" without mapping error lines to batches.
 	Batches, FailedBatches int
 
-	// stopOnError and noSinkNotices are WithStopOnError and WithoutSinkNotices.
-	stopOnError   bool
-	noSinkNotices bool
+	// MaxRows is the WithMaxRows cap the run used, 0 for none.
+	MaxRows int
 }
-
-// MaxRows is the WithMaxRows cap the run used, 0 for none.
-func (r *Result) MaxRows() int { return r.maxRows }
 
 // TotalRows sums the row counts of all result sets.
 func (r *Result) TotalRows() int {
@@ -242,8 +217,8 @@ func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{T
 // sinkSets for Session.ExecuteToSink): RowsWritten would make an empty set print
 // both "(0 row(s) written)" and the success notice. planCaptureEstimated
 // executes nothing, so never reports success.
-func (r *Result) shouldReportSuccess(capture planCapture) bool {
-	return len(r.Sets) == 0 && r.sinkSets == 0 && !r.HasErrors() && capture != planCaptureEstimated
+func (r *run) shouldReportSuccess(capture planCapture) bool {
+	return len(r.res.Sets) == 0 && r.sinkSets == 0 && !r.res.HasErrors() && capture != planCaptureEstimated
 }
 
 // planCapture selects whether and how execute captures an execution plan: a
@@ -283,19 +258,53 @@ func (p *Progress) AddRow() {
 }
 
 // Option adjusts one Execute call.
-type Option func(*Result)
+type Option func(*runOptions)
+
+// runOptions is what the Options set: read by the run, never part of Result.
+type runOptions struct {
+	// progress is the caller's live row counter (see WithProgress).
+	progress *Progress
+
+	// lineOffset is the 0-based editor line the script starts on (see
+	// WithLineOffset).
+	lineOffset int
+
+	// maxRows caps the rows kept per result set (see WithMaxRows); 0 is no cap.
+	maxRows int
+
+	// stopOnError and noSinkNotices are WithStopOnError and WithoutSinkNotices.
+	stopOnError   bool
+	noSinkNotices bool
+}
+
+// run is one Execute call in progress: the Result it fills, its options, and
+// the state runScript, runBatch and scanNext share that the caller never sees.
+type run struct {
+	res  *Result
+	opts runOptions
+
+	// sinkSets counts result sets streamed to a RowSink, empty ones included;
+	// neither len(Sets) nor RowsWritten says whether a set happened on that path.
+	// See shouldReportSuccess.
+	sinkSets int
+
+	// cut is set by scanNext when it stopped a set at maxRows, for runBatch to
+	// cancel the batch instead of draining it; it then stays set, so runScript
+	// runs no further batch.
+	cut bool
+}
 
 // WithProgress reports the scanned-row count into prog. Rows streamed to a
 // RowSink count too.
 func WithProgress(prog *Progress) Option {
-	return func(res *Result) { res.progress = prog }
+	return func(o *runOptions) { o.progress = prog }
 }
 
 // WithLineOffset says the script starts on 0-based editor line n, as an executed
 // selection does, so error lines count from the editor's first line, not the
 // script's.
 func WithLineOffset(n int) Option {
-	return func(res *Result) { res.lineOffset = n }
+	return func(o *runOptions) { o.lineOffset = n }
 }
 
 // WithMaxRows keeps at most n rows of each result set, retained in Result.Sets
@@ -306,7 +315,7 @@ func WithLineOffset(n int) Option {
 // attention (a result set cannot be skipped without reading it, so its
 // remaining statements cannot run), and every later GO batch by not sending it.
 func WithMaxRows(n int) Option {
-	return func(res *Result) { res.maxRows = max(n, 0) }
+	return func(o *runOptions) { o.maxRows = max(n, 0) }
 }
 
 // WithStopOnError ends the run after the first batch that reports an error:
@@ -314,7 +323,7 @@ func WithMaxRows(n int) Option {
 // Result.StoppedOnError says so. Within a batch SQL Server decides whether the
 // statements after an error run. Without it every batch runs, as in SSMS.
 func WithStopOnError() Option {
-	return func(res *Result) { res.stopOnError = true }
+	return func(o *runOptions) { o.stopOnError = true }
 }
 
 // WithoutSinkNotices leaves out the Messages lines the RowSink path adds in the
@@ -322,7 +331,7 @@ func WithStopOnError() Option {
 // caller that reports rows and truncation itself. The server's messages are
 // unaffected.
 func WithoutSinkNotices() Option {
-	return func(res *Result) { res.noSinkNotices = true }
+	return func(o *runOptions) { o.noSinkNotices = true }
 }
 
 // Execute runs script against db, SSMS-style, split on GO. A failing batch is
@@ -333,7 +342,8 @@ func WithoutSinkNotices() Option {
 // retained in Result.Sets unless WithMaxRows caps it; see cellArena.
 func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
 	start := time.Now()
-	res := newResult(opts)
+	r := newRun(opts)
+	res := r.res
 
 	conn, err := gosmo.AcquireConn(ctx, db, database)
 	if err != nil {
@@ -361,14 +371,14 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...O
 	// Plan capture and row sinks are Session-only (both need a connection that
 	// survives the run), so the capture-off failure a Session treats as fatal
 	// cannot arise here; the pool's reset on next checkout clears any SET option.
-	if ran, _ := runScript(ctx, conn, script, planCaptureNone, nil, res); ran {
+	if ran, _ := runScript(ctx, conn, script, planCaptureNone, nil, r); ran {
 		if ctx.Err() != nil {
 			res.Messages = append(res.Messages, cancelledMessage)
 		} else {
 			if name, err := currentDatabase(ctx, conn); err == nil {
 				res.Database, endDB = name, name
 			}
-			if res.shouldReportSuccess(planCaptureNone) {
+			if r.shouldReportSuccess(planCaptureNone) {
 				res.addNotice("Commands completed successfully.")
 			}
 		}
@@ -410,22 +420,24 @@ type TypedRowSink interface {
 // cancelledMessage ends the Messages of a cancelled run.
 var cancelledMessage = Message{Text: "Query was cancelled by user.", IsError: true}
 
-func newResult(opts []Option) *Result {
-	res := &Result{}
+func newRun(opts []Option) *run {
+	r := &run{res: &Result{}}
 	for _, opt := range opts {
-		opt(res)
+		opt(&r.opts)
 	}
-	return res
+	r.res.MaxRows = r.opts.maxRows
+	return r
 }
 
-// runScript runs script's GO batches on conn in order, recording output on res,
-// with the requested plan capture switched on around them. Returns false if the
-// capture couldn't be switched on (already recorded on res).
+// runScript runs script's GO batches on conn in order, recording output on
+// r.res, with the requested plan capture switched on around them. Returns false
+// if the capture couldn't be switched on (already recorded on r.res).
 //
 // cleanupErr is the failure of the capture's SET ... OFF, if any, deferred to run
 // on every exit; gosmo.StartPlanCapture's stop detaches it from ctx's
 // cancellation (a cancelled run most likely left it pending) and bounds it.
-func runScript(ctx context.Context, conn *sql.Conn, script string, capture planCapture, sink RowSink, res *Result) (ran bool, cleanupErr error) {
+func runScript(ctx context.Context, conn *sql.Conn, script string, capture planCapture, sink RowSink, r *run) (ran bool, cleanupErr error) {
+	res := r.res
 	if capture != planCaptureNone {
 		stop, err := gosmo.StartPlanCapture(ctx, conn, capture)
 		if err != nil {
@@ -437,18 +449,18 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 
 	for _, b := range sqltext.SplitBatches(script) {
 		for range b.Count {
-			if ctx.Err() != nil || res.cut || res.StoppedOnError {
+			if ctx.Err() != nil || r.cut || res.StoppedOnError {
 				return true, nil
 			}
 			// Only this batch's messages are scanned: rescanning all of Messages per
 			// execution made a GO 100000 printing a row count quadratic. Messages is
 			// append-only during the run, so the tail is exactly this batch's output.
 			msgsBefore := len(res.Messages)
-			runBatch(ctx, conn, b.Text, res.lineOffset+b.StartLine, res, sink)
+			runBatch(ctx, conn, b.Text, r.opts.lineOffset+b.StartLine, r, sink)
 			res.Batches++
 			if slices.ContainsFunc(res.Messages[msgsBefore:], isError) {
 				res.FailedBatches++
-				if res.stopOnError {
+				if r.opts.stopOnError {
 					res.StoppedOnError = true
 				}
 			}
@@ -468,11 +480,12 @@ func currentDatabase(ctx context.Context, conn *sql.Conn) (string, error) {
 	return name, err
 }
 
-// runBatch executes one GO batch and drains the sqlexp message stream into res.
+// runBatch executes one GO batch and drains the sqlexp message stream into r.res.
 // SQL errors are messages, not early returns: later statements may still
 // produce output. firstLine is the 0-based editor line the batch starts on, which
 // the batch's SQL errors count their lines from (batchErrorMessages).
-func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int, res *Result, sink RowSink) {
+func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int, r *run, sink RowSink) {
+	res := r.res
 	retmsg := &sqlexp.ReturnMessage{}
 	rows, err := conn.QueryContext(ctx, sqlText, retmsg)
 	if err != nil {
@@ -500,11 +513,11 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 		case sqlexp.MsgNext:
 			afterSet = true
 			plans := len(res.PlanXML)
-			abandoned := scanNext(rows, res, sink)
+			abandoned := scanNext(rows, r, sink)
 			afterPlan = len(res.PlanXML) > plans
 			if abandoned {
-				if res.cut {
-					cancelBatch(rows, res, sink)
+				if r.cut {
+					cancelBatch(rows, r, sink)
 					return
 				}
 				// scanNext abandoned the set with rows pending, and the message loop
@@ -533,18 +546,18 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, firstLine int
 }
 
 // cancelBatch ends a batch whose current set reached the WithMaxRows cap, and
-// with it the script (runScript stops on res.cut). Closing rows sends the server
+// with it the script (runScript stops on r.cut). Closing rows sends the server
 // an attention and reads up to its confirmation, so the connection stays usable.
 // The trailing rows.Err() is skipped: the cancellation is not a failure. A Close
 // error means the confirmation never came and the connection is likely gone.
-func cancelBatch(rows *sql.Rows, res *Result, sink RowSink) {
+func cancelBatch(rows *sql.Rows, r *run, sink RowSink) {
 	if err := rows.Close(); err != nil {
-		res.addError(err)
+		r.res.addError(err)
 	}
-	if sink != nil && res.noSinkNotices {
+	if sink != nil && r.opts.noSinkNotices {
 		return
 	}
-	res.addNotice("The rest of the script was cancelled at Max fetch rows; its remaining statements and batches did not run.")
+	r.res.addNotice("The rest of the script was cancelled at Max fetch rows; its remaining statements and batches did not run.")
 }
 
 // rowScanner holds one result set's per-column scan targets and formatting
@@ -770,15 +783,16 @@ func isShowplanResultSet(cols []string) bool {
 	return len(cols) == 1 && cols[0] == gosmo.ShowplanColumn
 }
 
-// scanNext consumes the result set MsgNext just announced, appending it to res as
-// showplan XML or a grid. Errors go to res, since the batch continues.
+// scanNext consumes the result set MsgNext just announced, appending it to r.res
+// as showplan XML or a grid. Errors go to r.res, since the batch continues.
 //
 // It returns whether the set was abandoned with rows pending, the only case the
 // caller may drain. Not "did it fail": streamResultSet's deferred EndSet and
 // scanPlanXML's trailing rows.Err() can fail on a fully read set, and draining
 // that swallows the message retmsg awaits. A set stopped at the WithMaxRows cap
-// is abandoned too, with res.cut set; the caller cancels the batch instead.
-func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
+// is abandoned too, with r.cut set; the caller cancels the batch instead.
+func scanNext(rows *sql.Rows, r *run, sink RowSink) (abandoned bool) {
+	res := r.res
 	cols, err := rows.Columns()
 	if err != nil {
 		res.addError(err)
@@ -794,26 +808,26 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 		return false
 	}
 	if sink != nil {
-		n, exhausted, err := streamResultSet(rows, sink, res.progress, res.maxRows)
+		n, exhausted, err := streamResultSet(rows, sink, r.opts.progress, r.opts.maxRows)
 		res.RowsWritten += n
-		res.sinkSets++
+		r.sinkSets++
 		if err != nil {
 			res.addError(err)
 			return !exhausted
 		}
-		if !res.noSinkNotices {
+		if !r.opts.noSinkNotices {
 			res.addNotice(fmt.Sprintf("(%d row(s) written)", n))
 		}
 		if !exhausted {
 			res.SinkSetsTruncated++
-			if !res.noSinkNotices {
-				res.addNotice(truncatedNotice(res.sinkSets, res.maxRows))
+			if !r.opts.noSinkNotices {
+				res.addNotice(truncatedNotice(r.sinkSets, r.opts.maxRows))
 			}
-			res.cut = true
+			r.cut = true
 		}
 		return !exhausted
 	}
-	rs, err := scanResultSet(rows, res.progress, res.maxRows)
+	rs, err := scanResultSet(rows, r.opts.progress, r.opts.maxRows)
 	if rs.Columns != nil {
 		// Kept on a scan error too (a conversion failure on row 900): the
 		// grid *and* the error, like a Next() that fails part-way.
@@ -824,8 +838,8 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 		return true
 	}
 	if rs.Truncated {
-		res.addNotice(truncatedNotice(len(res.Sets), res.maxRows))
-		res.cut = true
+		res.addNotice(truncatedNotice(len(res.Sets), r.opts.maxRows))
+		r.cut = true
 	}
 	return rs.Truncated
 }

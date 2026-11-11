@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -63,23 +64,59 @@ func TestConnectCertificateValidationReachesTheDriver(t *testing.T) {
 	}
 }
 
-// setEncryptMode's fallback used to be a tail call into itself with
+// setEncryptMode's "" fallback used to be a tail call into itself with
 // EncryptMandatory, which terminated only because AllEncryptModes happens to
 // contain that mode. The two live in different packages and nothing pinned the
-// dependency, so dropping or renaming a mode turned a hand-edited config.json
-// into a stack overflow the moment the Connect dialog opened.
+// dependency, so dropping or renaming a mode turned the dialog's first
+// setEncryptMode into a stack overflow.
 //
-// Both halves are pinned: that an unknown mode still lands on Mandatory, and
-// that it gets there without recursing. A test that only asserted the result
-// would go on passing while the recursive form was reintroduced.
+// Both halves are pinned: that "" still lands on Mandatory, and that it gets
+// there without recursing. A test that only asserted the result would go on
+// passing while the recursive form was reintroduced.
 func TestSetEncryptModeFallsBackWithoutRecursing(t *testing.T) {
-	for _, m := range []config.EncryptMode{"", "yes", "TRUE", "mandatory "} {
+	d := NewConnectDialog(newTestApp())
+	d.setEncryptMode(config.EncryptStrict)
+	d.setEncryptMode("")
+	if got := d.currentOptions().Encrypt; got != config.EncryptMandatory {
+		t.Errorf(`"" selected %q, want %q`, got, config.EncryptMandatory)
+	}
+}
+
+// A hand-edited encrypt_mode gossms never writes is shown as it is and
+// refused, not shown and dialled as Mandatory (docs/decisions.md § Always On,
+// peer credentials). Picking a listed mode is the repair, and drops nothing
+// else from the form.
+func TestConnectRefusesAnUnknownSavedEncryptMode(t *testing.T) {
+	for _, m := range []config.EncryptMode{"yes", "true", "Optional", "mandatory "} {
 		t.Run(string(m), func(t *testing.T) {
 			d := NewConnectDialog(newTestApp())
-			d.setEncryptMode(m)
-			got := config.AllEncryptModes()[d.ddEncrypt.Selected()]
-			if got != config.EncryptMandatory {
-				t.Errorf("an unknown mode %q selected %q, want %q", m, got, config.EncryptMandatory)
+			saved := config.Connection{Server: "sql.example.com", User: "u", Password: "p", Encrypt: m}
+			d.PreFill(&saved)
+			if got := d.ddEncrypt.Value(); got != string(m) {
+				t.Errorf("Encrypt shows %q, want the saved %q", got, m)
+			}
+			if got := d.currentOptions().Encrypt; got != m {
+				t.Errorf("currentOptions().Encrypt = %q, want the saved %q", got, m)
+			}
+			if got := d.fConnStrPreview.Text(); !strings.Contains(got, "unknown encryption mode") {
+				t.Errorf("preview = %q, want the refusal", got)
+			}
+			if _, err := db.BuildConnectionString(d.currentOptions()); err == nil {
+				t.Error("BuildConnectionString accepted the unknown mode")
+			}
+			for i, want := range config.AllEncryptModes() {
+				d.ddEncrypt.SetSelected(i)
+				d.refreshConnStrPreview()
+				if got := d.currentOptions().Encrypt; got != want {
+					t.Errorf("row %d = %q, want %q", i, got, want)
+				}
+				if got := d.fConnStrPreview.Text(); strings.Contains(got, "Cannot build") {
+					t.Errorf("%s: preview = %q, want a connection string", want, got)
+				}
+			}
+			d.setEncryptMode(config.EncryptStrict)
+			if n := len(d.ddEncrypt.Items()); n != len(config.AllEncryptModes()) {
+				t.Errorf("a known mode left %d rows, want %d", n, len(config.AllEncryptModes()))
 			}
 		})
 	}

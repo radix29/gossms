@@ -537,3 +537,24 @@ func TestUnknownAuthMethodIsRefused(t *testing.T) {
 		t.Errorf("Connect = %v, %v; want the unknown method refused before dialling", sc, err)
 	}
 }
+
+// A saved encrypt_mode gossms never writes is refused by Connect and the
+// preview alike rather than handed to go-mssqldb, which reads some of them as
+// its own synonyms; every listed mode and "" (an entry built in memory, dialled
+// as Optional) pass.
+func TestUnknownEncryptModeIsRefused(t *testing.T) {
+	for _, m := range append(config.AllEncryptModes(), "") {
+		if _, err := encryptString(m); err != nil {
+			t.Errorf("%q: %v", m, err)
+		}
+	}
+	for _, m := range []config.EncryptMode{"true", "false", "Optional", "disable", "mandatory "} {
+		opts := config.Connection{Server: "s", User: "u", Password: "p", Encrypt: m}
+		if s, err := BuildConnectionString(opts); err == nil || !strings.Contains(err.Error(), "unknown encryption mode") {
+			t.Errorf("%q: BuildConnectionString = %q, %v; want the mode refused", m, s, err)
+		}
+		if sc, err := Connect(context.Background(), opts, RoleExplorer); sc != nil || err == nil || !strings.Contains(err.Error(), "unknown encryption mode") {
+			t.Errorf("%q: Connect = %v, %v; want the mode refused before dialling", m, sc, err)
+		}
+	}
+}

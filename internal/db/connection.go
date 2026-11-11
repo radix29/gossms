@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -186,13 +187,17 @@ func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions,
 	if err != nil {
 		return gosmo.ConnectionOptions{}, err
 	}
+	encrypt, err := encryptString(opts.Encrypt)
+	if err != nil {
+		return gosmo.ConnectionOptions{}, err
+	}
 	co := gosmo.ConnectionOptions{
 		Server:                 opts.Server,
 		Port:                   config.DialPort(opts.Port),
 		Database:               opts.Database,
 		Auth:                   auth,
 		TrustServerCertificate: opts.TrustServerCertificate,
-		Encrypt:                encryptString(opts.Encrypt),
+		Encrypt:                encrypt,
 		HostNameInCertificate:  strings.TrimSpace(opts.HostNameInCertificate),
 		ApplicationName:        role.ApplicationName(),
 		ConnectTimeout:         connectTimeout,
@@ -367,11 +372,20 @@ func (sc *ServerConn) Label() string {
 
 // encryptString renders the mode as the driver's "encrypt" parameter. ""
 // (in-memory entry) dials as Optional, matching how config reads it from disk.
-func encryptString(m config.EncryptMode) string {
+//
+// Any other value gossms does not write (a hand-edited config.json: "true",
+// "Optional", "disable") is refused, as toGosmoAuth refuses an unknown method,
+// rather than handed to go-mssqldb, which reads its own synonyms for some and
+// would dial a mode the Connect dialog never offered. Connect, the dialog
+// preview and a peer dial all come through here.
+func encryptString(m config.EncryptMode) (string, error) {
 	if m == "" {
-		return string(config.EncryptOptional)
+		return string(config.EncryptOptional), nil
 	}
-	return string(m)
+	if !slices.Contains(config.AllEncryptModes(), m) {
+		return "", fmt.Errorf("unknown encryption mode %q in the saved connection; choose one in the Connect dialog", string(m))
+	}
+	return string(m), nil
 }
 
 // toGosmoAuth maps config.AuthMethod to gosmo.AuthMethod with an explicit

@@ -114,7 +114,7 @@ includes is per site (A1 is the visible symptom). Fold into C2's helper so
 the rule — grantees and owners are users, roles and application roles, minus
 the per-dialog exclusions — lives once.
 
-### B3 — Encrypt mode and gotuipic (already tracked) · gossms
+### B3 — Encrypt mode and gotuipic (already tracked) · gossms · **DONE 2026-11-11**
 
 Not new, listed so the order below accounts for them:
 `docs/open-threads.md` § Connection config (non-canonical `encrypt_mode`
@@ -144,7 +144,7 @@ Replaces the hand-rolled triple reads in the 13 prefetches (`new_schema`,
 `key_actions`, `owner_transfer_page`, the permission pages). With D1 it is
 one round trip.
 
-### C3 — Parallelise independent prefetch reads · gossms · optimisation · M
+### C3 — Parallelise independent prefetch reads · gossms · optimisation · M · **DECLINED 2026-11-11 (measured)**
 
 Prefetches run 4–6 independent catalog reads serially
 (`fetchNewSequencePrefetch`: database, schemas, sequences, users, roles).
@@ -154,7 +154,7 @@ semantics, first error cancels, labelled + recovered like `fanOut`) and use
 it where reads don't depend on each other. Measure on ubusql1 before/after;
 keep serial where a later read needs an earlier one's result.
 
-### C4 — Separate run state from `query.Result` · gossms · refactor · M
+### C4 — Separate run state from `query.Result` · gossms · refactor · M · **DONE 2026-11-11**
 
 `Result` carries public output and private per-run state (`progress`,
 `lineOffset`, `maxRows`, `cut`, `stopOnError`, `noSinkNotices`, `sinkSets`);
@@ -213,7 +213,7 @@ application roles (typed), instead of three. gossms (C2) then does one round
 trip per dialog instead of three. Keep `Users`/`Roles`/`ApplicationRoles`
 (not narrowing). Add to `TestLiveVersionSweep`; run on 13.
 
-### D2 — `Statistic.Columns` should bind the object name · gosmo · S
+### D2 — `Statistic.Columns` should bind the object name · gosmo · S · **DONE 2026-11-11**
 
 `statistics.go` splices `escapeSingle(FullName())` into `OBJECT_ID(N'…')`
 though the query is already parameterised (`@p1` is the stat name). Pass it
@@ -231,7 +231,7 @@ current comment chose `LOWER` to get. **Measure first** on a database with a
 few thousand modules; act only if it is seconds. Otherwise record as settled
 in `~/go/gosmo/OPEN-THREADS.md`.
 
-### D4 — Create-with-owner twins · gosmo · S
+### D4 — Create-with-owner twins · gosmo · S · **DONE 2026-11-11**
 
 `CreateSchema` (`database.go`), `CreateRole` (`database_role.go`) and the
 server-role create (`server_role.go`) are one shape: name check, `CREATE X
@@ -240,7 +240,7 @@ server-role create (`server_role.go`) are one shape: name check, `CREATE X
 exported methods and their error texts byte-identical. Offline write tests
 in `script_*_write_test.go` must stay green unchanged (that is the proof).
 
-### D5 — Small clone groups worth a look · gosmo · S
+### D5 — Small clone groups worth a look · gosmo · S · **DONE 2026-11-11**
 
 `dupl` also pairs `asymmetric_key.go`/`certificate.go` (private-key
 handling), `external_resource.go`/`user_defined_type.go`, the two
@@ -287,11 +287,11 @@ the larger refactors. Each step is independently committable.
    one helper plus `buildPermissionsMatrix`); live check on 13 and 17.~~ **Done 2026-11-11**: `databasePermPrincipals(users, roles, appRoles)` lists application roles last, typed `APPLICATION_ROLE`; `databasePrincipals.grantees()` passes them, so all seven pages/dialogs (Database/Schema/Table/Sequence Permissions, New Schema/Sequence/Synonym) offer them. `buildPermissionsMatrix` now runs `withEntryPrincipals`, appending any principal an entry names but the list lacks (server page included), so an existing grant can no longer read as "(none)". Tests: the page suite gained a sequence scope and an application role — `TestPermissionsMatrixGrantsToAnApplicationRole` (all four database scopes write `TO [billing_app]`), `TestPermissionsMatrixShowsAGranteeTheListLacks` (an unlisted grantee's GRANT shows and revokes); `grantees()` asserted in `TestLoadDatabasePrincipalsIsOneRead`; both fixes mutation-checked. Gate clean. Live (scratch test, throwaway database, 17 and 13): Table Properties ▸ Permissions listed both app roles, showed `billing_app`'s existing SELECT as Grant, revoked it and granted UPDATE to the other from the page — confirmed in `sys.database_permissions`. TUI not driven.
 7. ~~**C1** — `pageObjectPermissions`.~~ **Done 2026-11-11**: `pageObjectPermissions(sc, dbName, class, schema, name)` (`server_permissions_matrix.go`, beside `objectPermEntries`) replaces `pageTablePermissions` and `pageSequencePermissions`; Table and Sequence Properties call it with `gosmo.SecurableTable`/`SecurableSequence`. The page suite already wrote at each scope, but nothing pinned the class: hard-coding `SecurableTable` in the helper (catalog or securable) passed every test, since both classes write `ON [schema].[name]`. New `TestPermissionsMatrixOffersItsOwnCatalog` (each scope's grid lists exactly its gosmo catalog) catches the catalog mutation. Gate clean, `go test ./...` green. Not live-tested: a pure extraction of two identical bodies.
 8. ~~**B1, B2** — comment/consistency fixes (B2 is closed by 5–6 — done).~~ **Done 2026-11-11**: B1 fixed in words, not code. `fanOut`'s doc now says it is one of two places spawning outside safego and names `FlushSaves`' `savesInFlight` waiter as the other (cannot panic, runs after the event loop is gone); `safego`'s "every background operation" points there; `ARCHITECTURE.md` § Starting the goroutine and the `safego.go` Package map row say the same. The deadline overrun is documented as accepted in `FlushSaves`' doc: `wait` bounds the waits, not the synchronous save of a change asked for after the in-flight one, which can overrun by up to `fileutil.lockWait` (2 s) plus the write — it is the user's only copy of that change. No `fileutil.WaitTimeout` helper (one caller). B2 closed by steps 5–6.
-9. **C3** — parallel prefetch; measure on ubusql1.
-10. **C4** — split run state out of `query.Result` (after A2).
-11. **D2, D4, D5** — gosmo small cleanups; offline write tests prove them.
-12. **B3** — the two tracked threads: encrypt-mode refusal, then gotuipic tag
-    (the release blocker — must land before the next tag regardless).
+9. ~~**C3** — parallel prefetch; measure on ubusql1.~~ **Done 2026-11-11 — measured, declined, no code change.** A scratch `livedb` benchmark ran first on win10cli (ubusql1 was down), then on ubusql1 once it was up: fresh pool per run, parallel was 2–3× slower on SQL2017 (New Sequence 19→45 ms, New Job 38→126 ms) and 20–30× on the 2025 instance (~0.6 s login: 14→400, 30→633 ms) and ~25× on ubusql1 (21–24→590–640, 40–45→830–1270 ms); with six idle connections pre-opened it saved at most 5 ms and on ubusql1 was a wash or slower (44→57 ms). Each concurrent read needs its own connection and a new login dwarfs the round trips saved — `eachDatabase`'s finding again. Recorded in `docs/decisions.md` § By design ▸ Explorer, Details pane and dialogs; scratch test deleted. C6's "after C2/C3" now means after C2.
+10. ~~**C4** — split run state out of `query.Result` (after A2).~~ **Done 2026-11-11**: `Option` is `func(*runOptions)` (`progress`, `lineOffset`, `maxRows`, `stopOnError`, `noSinkNotices`); an unexported `run` holds `res *Result`, `opts`, `sinkSets` and `cut`, and is what `runScript`/`runBatch`/`cancelBatch`/`scanNext` take and `shouldReportSuccess` hangs off; `newRun` replaces `newResult`. One exported change beyond `Option`: `Result.MaxRows()` became the field `Result.MaxRows` (set by `newRun`, like `Batches`) — the method only read a stashed option, and `TestResultsStatusShoutsTruncatedExport` built its Result by applying `WithMaxRows` to it, which the new `Option` type cannot do; it now sets the field (one caller, `query_panel_draw.go`). In-package tests changed only at their call sites (`&run{res: &res}`; `shouldReportSuccess`'s table gained a `sinkSets` column); no assertion changed. Gate clean, `go test ./...` green; `internal/query`'s `livedb` suite (96 tests) green on win10cli.
+11. ~~**D2, D4, D5** — gosmo small cleanups; offline write tests prove them.~~ **Done 2026-11-11**: D2 — `Statistic.Columns` binds the table as `OBJECT_ID(@p2)` (the stat name stays `@p1`), no `escapeSingle` left there; its `identifier_quoting_test.go` case now uses the same `bound` check as the fragmentation reads and asserts `@p1`; swapping the two arguments fails it. D4 — private `createOwned[T]` (`helpers.go`, beside `createdObject`) is the body of `CreateSchema`/`CreateRole`/`CreateServerRole`; the three exported methods and their error texts are unchanged, `script_security_write_test.go` green unchanged; mutation-checked (unquoted owner: 3 write cases fail; `fmt.Errorf` for the empty-name refusal: `TestEveryArgumentRefusalWrapsErrInvalidRequest` fails). D5 — read all four pairs: only the two `replication.go` article reads must change together, so their identical scan closure is now `Publication.articleScanner(names)`. `asymmetric_key.go`/`certificate.go` share only the standard `Create*` idiom (statement builder, `execPasswords`, `createdObject` — not private-key handling); `external_resource.go`/`user_defined_type.go` and `resource_governor.go`'s two stats readers are scan shapes over unrelated catalogs — left as they are, no cross-reference. gosmo gate clean (`vet`, `vet -tags livedb`, staticcheck, `go test ./...`); gossms builds and tests green against it. Live: `TestLiveCreateReturnsTheCreatedObject`, `TestLiveCreateStatistic`, `TestLiveRestorePlanWithFileAndMove` (reads `StatisticRef(…).Columns`) green on 17 and 13; `TestLiveReplicationPublications` (both `Articles` paths) on 17.
+12. ~~**B3** — the two tracked threads: encrypt-mode refusal, then gotuipic tag
+    (the release blocker — must land before the next tag regardless).~~ **Done 2026-11-11**: `db.encryptString` now returns an error for any mode outside `AllEncryptModes` (`""` still dials as Optional), so Connect, the dialog preview and peer dials refuse it as `toGosmoAuth` refuses an unknown method. The Connect dialog no longer shows it as Mandatory: `setEncryptMode` appends it as its own Encrypt row (`ConnectDialog.encryptModes` backs the rows; `currentOptions` reads it), so the preview names the refusal and picking a listed mode is the repair. `TestConnectDialogPreFillKeepsTheSavedEncryptMode` pinned the old Mandatory fallback and now pins the kept value; new `TestUnknownEncryptModeIsRefused` (db) and `TestConnectRefusesAnUnknownSavedEncryptMode` (tui), both failing with the check disabled. Driven in the built binary under a scratch config with `"encrypt_mode":"true"`: History Enter refused before dialling, Encrypt shows `true`, the string tab shows the refusal, picking Mandatory restores the DSN, config.json untouched. gotuipic: `v0.0.2` was already tagged and pushed at gotuipic's HEAD and required by `go.mod`; the `replace` is dropped and `go.sum` carries its hashes, so a clean checkout builds it from the proxy. Both open threads removed from `docs/open-threads.md`; `docs/decisions.md` entry records the as-built. Gate clean (vet, staticcheck, deadcode, `go test ./...`).
 13. **E1** — race detector in the standing check.
 14. **E3 → C8** — `gosmotest` storage helpers, then retire the CLI `Catalog`
     seam group by group.

@@ -85,7 +85,7 @@ func TestScanNextDoesNotAbandonASetOnlyEndSetFailed(t *testing.T) {
 
 	var res Result
 	sink := &endFailSink{}
-	abandoned := scanNext(rows, &res, sink)
+	abandoned := scanNext(rows, &run{res: &res}, sink)
 
 	if abandoned {
 		t.Error("scanNext reported the set abandoned because EndSet failed — " +
@@ -132,7 +132,7 @@ func TestScanNextAbandonsAPlanSetThatFailsMidScan(t *testing.T) {
 	defer rows.Close()
 
 	var res Result
-	if !scanNext(rows, &res, nil) {
+	if !scanNext(rows, &run{res: &res}, nil) {
 		t.Fatal("scanNext read a plan set to the end despite a row it could not scan")
 	}
 	if len(res.Messages) == 0 {
@@ -157,7 +157,7 @@ func TestScanNextKeepsTheRowsBeforeAScanError(t *testing.T) {
 	defer rows.Close()
 
 	var res Result
-	if !scanNext(rows, &res, nil) {
+	if !scanNext(rows, &run{res: &res}, nil) {
 		t.Error("scanNext reported a set it stopped at row 3 of 4 as read to the end")
 	}
 	if len(res.Messages) == 0 {
