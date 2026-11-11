@@ -11,7 +11,7 @@ import (
 
 // openFakeSession opens a Session over a one-connection fake pool, returning
 // the connector so a test can see what the pool did.
-func openFakeSession(t *testing.T, batches ...[]fakeMsg) (*Session, *fakeMsgConnector, *sql.DB) {
+func openFakeSession(t testing.TB, batches ...[]fakeMsg) (*Session, *fakeMsgConnector, *sql.DB) {
 	t.Helper()
 	fc := &fakeMsgConnector{conn: &fakeMsgConn{batches: batches, dbName: "testdb", spid: 57}}
 	db := sql.OpenDB(fc)

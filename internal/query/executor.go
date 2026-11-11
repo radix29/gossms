@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -187,26 +188,10 @@ func (r *Result) TotalRows() int {
 }
 
 // HasErrors reports whether any message is an error.
-func (r *Result) HasErrors() bool {
-	for _, m := range r.Messages {
-		if m.IsError {
-			return true
-		}
-	}
-	return false
-}
+func (r *Result) HasErrors() bool { return slices.ContainsFunc(r.Messages, isError) }
 
-// errorCount counts the error messages so far; runScript compares it across a
-// batch for WithStopOnError.
-func (r *Result) errorCount() int {
-	n := 0
-	for _, m := range r.Messages {
-		if m.IsError {
-			n++
-		}
-	}
-	return n
-}
+// isError reports whether m is an error message.
+func isError(m Message) bool { return m.IsError }
 
 func (r *Result) addError(err error) {
 	r.Messages = append(r.Messages, ErrorMessages(err)...)
@@ -455,10 +440,13 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 			if ctx.Err() != nil || res.cut || res.StoppedOnError {
 				return true, nil
 			}
-			errsBefore := res.errorCount()
+			// Only this batch's messages are scanned: rescanning all of Messages per
+			// execution made a GO 100000 printing a row count quadratic. Messages is
+			// append-only during the run, so the tail is exactly this batch's output.
+			msgsBefore := len(res.Messages)
 			runBatch(ctx, conn, b.Text, res.lineOffset+b.StartLine, res, sink)
 			res.Batches++
-			if res.errorCount() > errsBefore {
+			if slices.ContainsFunc(res.Messages[msgsBefore:], isError) {
 				res.FailedBatches++
 				if res.stopOnError {
 					res.StoppedOnError = true

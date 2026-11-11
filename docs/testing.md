@@ -27,6 +27,19 @@ caught by driving the built binary. For TUI or database changes, run it:
 Tests assert an outcome, not "nothing panicked". Mutate the covered code and
 confirm the new test fails.
 
+**Static checks are part of "done", not of a tag.** Both run clean today; keep
+them clean (`go install honnef.co/go/tools/cmd/staticcheck@latest`,
+`golang.org/x/tools/cmd/deadcode@latest`):
+
+- gossms: `staticcheck ./...` and `deadcode -test ./...`. A test helper
+  either finding names is usually a lost assertion, not just litter — check
+  `git log -S` for whether a test once called it before deleting it (the
+  2026-11-11 pass found a view-reorganize case that read its result and never
+  checked it).
+- gosmo: `staticcheck ./...` only. `deadcode` lists exported library surface
+  and the unexported helpers only it reaches (`schedulerGroupSizes`) — kept
+  deliberately, not a cleanup list.
+
 **gosmo's live suite: run what the change touches, not the whole suite.**
 The full `livedb` run takes about 16 minutes per instance (313 tests, serial,
 several waiting on server timers). After a change, name the affected tests
@@ -101,7 +114,7 @@ everyday build/test/vet:
 - `govulncheck ./...` (`go install golang.org/x/vuln/cmd/govulncheck@latest`).
   "Your code is affected by 0 vulnerabilities" is the bar; a module-level hit
   your code doesn't call (GO-2026-5932, x/crypto's openpgp, no fix) is noise.
-- `go vet -tags livedb ./...` and `staticcheck ./...`.
+- `go vet -tags livedb ./...`.
 
 gosmo's write-retry rule is a test, not a sweep:
 `write_through_read_test.go` fails when SQL handed to `query`/`queryRow`/

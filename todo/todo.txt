@@ -1,4 +1,4 @@
-- add winget installation? bettwer way for windows?
+- add windows store installation? bettwer way for windows?
 
 Results:
 -	Geo/GIS data?

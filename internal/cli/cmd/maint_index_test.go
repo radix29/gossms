@@ -59,8 +59,6 @@ func newIndexServer(t *testing.T) *maintServer {
 
 var statsBefore = time.Date(2026, 10, 1, 3, 0, 0, 0, time.UTC)
 
-func objKey(schema, name string) string { return schema + "." + name }
-
 func indexFakes(t *testing.T) Catalog {
 	return ServerCatalog(&db.ServerConn{Server: newIndexServer(t).Server()})
 }
@@ -200,6 +198,9 @@ func TestMaintIndexRebuild(t *testing.T) {
 	}
 	if !slices.Equal(cat.writes, []string{"ALTER INDEX ALL ON [dbo].[vTotals] REORGANIZE"}) || cat.frag["dbo.vTotals"][1] != 0.5 {
 		t.Errorf("view reorganize: sent %q, fragmentation %v", cat.writes, cat.frag["dbo.vTotals"])
+	}
+	if got := setCells(res); !slices.Equal(got, []string{"CIX_vTotals|1|CLUSTERED|0|7.00|0.50|1000"}) {
+		t.Errorf("view reorganize rows %q: before and after", got)
 	}
 }
 

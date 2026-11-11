@@ -1,6 +1,6 @@
 module github.com/radix29/gossms
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0

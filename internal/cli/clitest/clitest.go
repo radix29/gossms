@@ -533,8 +533,8 @@ func agentDuration(d time.Duration) int {
 
 // JobRow is one row of the job read Jobs and JobByName make (a sysadmin's
 // route). The state column is the sysjobactivity-derived one — executing or
-// idle; a server answers Agent's live state to xp_sqlagent_enum_jobs, which
-// JobStateRow encodes.
+// idle; a server answers Agent's live state to xp_sqlagent_enum_jobs, a
+// separate read.
 func JobRow(j *gosmo.Job) []any {
 	date, clock := agentDate(j.LastRunDate)
 	state := 4
@@ -545,12 +545,6 @@ func JobRow(j *gosmo.Job) []any {
 		j.DateCreated, j.DateModified, j.StartStepID, int(j.DeleteLevel), int(j.NotifyLevelEmail),
 		j.NotifyEmailOperatorName, date, clock, int(j.LastRunOutcome), agentDuration(j.LastRunDuration),
 		Nullable(j.NextRunDate), state}
-}
-
-// JobStateRow is one row of Agent's live job states: the job's id in
-// lower case, and its state.
-func JobStateRow(j *gosmo.Job) []any {
-	return []any{strings.ToLower(j.JobID), int(j.CurrentState)}
 }
 
 // JobStepRow is one row of a job's steps read.
