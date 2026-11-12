@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/activity"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // amBenchWidth keeps the History canvas at its fixed width, as on a normal

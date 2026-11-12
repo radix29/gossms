@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // TestQueryListDialogLastRowAboveButtons pins B22: with more queries than fit,

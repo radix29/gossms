@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // newLatchTestApp builds an App with the menu/toolbar row widgets and one alert
@@ -18,20 +18,21 @@ func newLatchTestApp() *App {
 	a.toolbar = controls.NewToolbar()
 	a.contextMenu = &controls.ContextMenu{}
 	a.alertDialog = dialogs.NewAlertDialog(a.screen)
-	a.allDialogs = []Dialog{a.alertDialog}
+	a.modals = dialogs.Stack{}
+	a.modals.Register(a.alertDialog)
 	a.explorerSplit = newVerticalSplitter()
 	a.explorerSplit.SetBounds(0, 1, 100, 28)
 	return a
 }
 
-// testClickAt drives handleMouse as Run's loop does, with syncDialogStack
+// testClickAt drives handleMouse as Run's loop does, with modals.Sync
 // between events, so a dialog opened on the press is on the stack when the
 // release arrives.
 func (a *App) testClickAt(x, y int) {
 	a.handleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
-	a.syncDialogStack()
+	a.modals.Sync()
 	a.handleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
-	a.syncDialogStack()
+	a.modals.Sync()
 }
 
 // A dialog-opening toolbar button must not leave Toolbar latched, or the next
@@ -58,7 +59,7 @@ func TestToolbarClickWorksAfterDialogOpeningClick(t *testing.T) {
 		t.Fatalf("first click fired the action %d times, want 1", fired)
 	}
 	a.alertDialog.Hide()
-	a.syncDialogStack()
+	a.modals.Sync()
 
 	a.testClickAt(buttonX, 0)
 	if fired != 2 {
@@ -89,7 +90,7 @@ func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 		t.Fatal("the menu item's action did not open the dialog")
 	}
 	a.alertDialog.Hide()
-	a.syncDialogStack()
+	a.modals.Sync()
 
 	a.testClickAt(2, 0)
 	if !a.menuBar.OverlayActive() {
@@ -125,8 +126,10 @@ func TestReleaseReachesEveryOpenDialog(t *testing.T) {
 		d.InitModal(a.screen, "t", 20, 10)
 		d.Show()
 	}
-	a.allDialogs = []Dialog{bottom, top}
-	a.syncDialogStack()
+	a.modals = dialogs.Stack{}
+	a.modals.Register(bottom)
+	a.modals.Register(top)
+	a.modals.Sync()
 
 	a.handleMouse(tcell.NewEventMouse(1, 1, tcell.ButtonNone, tcell.ModNone))
 

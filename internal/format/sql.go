@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // format lays src out in style s (sql_layout.go): a layout pass over

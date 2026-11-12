@@ -7,8 +7,8 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // certificate_backup_dialog.go is Back Up Certificate (a certificate's context

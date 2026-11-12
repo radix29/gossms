@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // New Database driven through its real prefetch and all three applies.

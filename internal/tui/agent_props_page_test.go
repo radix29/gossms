@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gosmo/gosmotest"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // SQL Server Agent Properties > Alert System. Profiles come from mailConfig:

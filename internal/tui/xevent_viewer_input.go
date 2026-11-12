@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // xevent_viewer_input.go is the Extended Events viewer's keyboard and mouse

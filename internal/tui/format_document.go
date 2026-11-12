@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/radix29/gossms/internal/format"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
+	"github.com/radix29/gossms/internal/tui/sqledit"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // canFormatActiveDocument gates Edit > Format Document (and Alt+F): a query
@@ -79,7 +81,7 @@ func (a *App) formatActiveDocumentAs(styleID string) {
 	if j.sel {
 		// Refused here for SQL with a clearer message than verifyInDocument's,
 		// which still covers XML and anything this misses.
-		if j.lang == format.LangSQL && e.SQLLineState(j.top).Mode != sqltext.ModeNormal {
+		if j.lang == format.LangSQL && sqledit.LineState(e.Document(), j.top).Mode != sqltext.ModeNormal {
 			a.setStatus("Format failed: the selection starts inside a string, comment or quoted identifier")
 			return
 		}
@@ -170,7 +172,7 @@ type formatJob struct {
 	lang format.Language
 	src  string // the text formatted: the whole document or the selected lines
 	full string // the whole document
-	doc  *controls.Document
+	doc  *editor.Document
 	ver  uint64
 	sel  bool
 	top  int // the selection's first line

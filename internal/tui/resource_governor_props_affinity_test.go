@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The affinity half of the pool pages (N6): Automatic and the scheduler/CPU

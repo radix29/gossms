@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // amDragZone is the sub-region that claimed the held Button1 press. tcell

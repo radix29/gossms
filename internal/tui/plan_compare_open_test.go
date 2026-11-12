@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // addPlanPanel opens xml as a detached plan panel titled title, as Expand or

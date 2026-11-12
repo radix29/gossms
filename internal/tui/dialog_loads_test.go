@@ -8,8 +8,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // The async loads in these tests run against a bare ServerConn, so their

@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // TestOverlayBlocksHoverUnderneath: pointer motion arrives as ButtonNone, which
@@ -30,7 +30,7 @@ func TestOverlayBlocksHoverUnderneath(t *testing.T) {
 			a.toolbar.SetButtons([]controls.ToolbarButton{{Icon: "X", Tooltip: tip}})
 			a.toolbar.SetBounds(0, 0, dragTestScreenW)
 			tc.overlay(a)
-			a.syncDialogStack()
+			a.modals.Sync()
 
 			// The button is the toolbar's last cell; a hover from a previous motion
 			// must be cleared too, not only a new one refused.

@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // explorer_object_menu.go is the Rename/Delete menu pair itself, and the two

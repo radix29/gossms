@@ -1,8 +1,10 @@
 # Architecture
 
-goSSMS is an application-agnostic TUI library (`internal/tuikit`, see
-[`internal/tuikit/README.md`](internal/tuikit/README.md)) plus a thin
-application layer (`internal/tui`) that wires it to SQL Server via `gosmo`.
+goSSMS is an application layer (`internal/tui`) that wires an
+application-agnostic TUI library to SQL Server via `gosmo`. The library is
+`github.com/radix29/tuikit`, the author's own module (sibling checkout
+`~/go/tuikit`, its `README.md` and `ARCHITECTURE.md`), extracted from this repo
+on 2026-11-12.
 
 ## Why split this way
 
@@ -11,33 +13,26 @@ once, over generic `Rect`s, `TreeNode`s with an `any` `Tag`, and string rows —
 it knows nothing of databases. `tui` never re-implements widget mechanics; it
 supplies data and callbacks (`OnExpand`, `OnSelect`, button `Action`s).
 
-**Invariant: `internal/tuikit` must not import `internal/tui` or `gosmo`.** Its
-only external dependencies are tcell and displaywidth:
-
-```bash
-go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/tuikit/... |
-  grep '\.' | grep -v gossms | sort -u    # non-stdlib, non-repo imports
-```
-
-must print exactly `github.com/gdamore/tcell/v3`,
-`github.com/gdamore/tcell/v3/color`, `github.com/clipperhouse/displaywidth`.
-`TestTuikitImportsOnlyItsDeclaredDependencies`
-(`internal/tuikit/core/imports_test.go`) enforces it, and also fails a tuikit
-*test* file that imports gosmo or another gossms package — it lives inside
-tuikit so it moves with the library.
+**Invariant: tuikit imports nothing of goSSMS or `gosmo`.** As its own module
+it could not compile against them anyway; its only external dependencies are
+tcell and displaywidth, and `TestTuikitImportsOnlyItsDeclaredDependencies`
+(tuikit's `core/imports_test.go`) pins that list. A widget mechanic goSSMS
+needs is added to tuikit, not worked around here (`CLAUDE.md` § Changing gosmo
+or tuikit).
 
 **Invariant: `internal/cli` must not reach `internal/tui`, tcell, or any
-`internal/tuikit` package except the stdlib-only `tuikit/sqltext`.** The
+tuikit package.** The one T-SQL lexer it shares with the editor is
+`internal/sqltext`, outside tuikit. The
 command line runs without a screen, and `tuikit/core` is not the leaf it looks
 like — it imports tcell — so the CLI measures display width with
 `displaywidth.String` directly (the function `core.DisplayWidth` wraps).
 `TestNoTUIImports` (`internal/cli/imports_test.go`) runs
 
 ```bash
-cd internal/cli && go list -deps ./... ../scripting | grep -E 'internal/tui|tcell'
+cd internal/cli && go list -deps ./... ../scripting | grep -E 'internal/tui|radix29/tuikit|tcell'
 ```
 
-and fails on any match but `internal/tuikit/sqltext`, naming the import chain.
+and fails on any match, naming the import chain.
 `internal/scripting` is a root of its own there: it is the Script As table the
 TUI and the command line's script commands share, held headless on its own
 account.
@@ -50,12 +45,12 @@ a sentence and link.
 | Document | Authoritative for |
 |---|---|
 | `CLAUDE.md` | Working rules for every task, and where to read next. Short — loads every session |
-| `docs/ui-rules.md` | The enforceable form of every `internal/tui`/`tuikit` idiom: widgets, grids, dialogs, clipboard, toolbars, mouse, async |
+| `docs/ui-rules.md` | The enforceable form of every `internal/tui` idiom: how goSSMS applies tuikit's widgets, grids, dialogs, clipboard, toolbars, mouse, async |
 | `docs/db-rules.md` | Permission gating, emitted T-SQL, Object Explorer filters, query execution |
 | `docs/testing.md` | What counts as verification: tmux and live-server harnesses, `gosmotest_fixtures_test.go` rules |
 | `docs/cli.md` | The command-line contract: syntax, output formats, exit codes, safety classes |
 | `ARCHITECTURE.md` | Package map, layering, data flow, threading, and the long-form *why* behind each idiom |
-| `internal/tuikit/README.md` | Everything inside `internal/tuikit` |
+| tuikit's `README.md` / `ARCHITECTURE.md` (`~/go/tuikit`) | Everything inside the library: package map, design principles, the gesture protocol, library-level widget and dialog rules |
 | `docs/open-threads.md` | Work knowingly left undone: bugs, deferred scope, release blockers |
 | `docs/decisions.md` | Settled decisions and exclusions — the "do not re-raise" record |
 
@@ -90,7 +85,7 @@ a sentence and link.
    share `runScript`: optional `SET STATISTICS XML`/`SHOWPLAN_XML` (plan capture
    and row sinks are Session-only, so reached only from a `Session`),
    `GO`-splitting via `sqltext.SplitBatches`
-   (`internal/tuikit/sqltext/split.go`), `runBatch` per batch, all into one
+   (`internal/sqltext/split.go`), `runBatch` per batch, all into one
    `Result` (result sets, messages, plan XML; for a Session also `DB_NAME()`,
    `@@TRANCOUNT` — read even after a cancel — and whether the session was
    lost). `Session.Close` *discards* the connection: pooled, an open
@@ -192,9 +187,9 @@ stack, handle one event, re-sync, draw.
 
 ## Package map
 
-`internal/tui` is a flat package, so every file is listed. `internal/tuikit`,
-`planview`, `sqlparse`, `dashboard` and `gate` are summarized by directory —
-see their README/`doc.go`.
+`internal/tui` is a flat package, so every file is listed. `planview`,
+`sqlparse`, `dashboard` and `gate` are summarized by directory — see their
+`doc.go`. tuikit is a module of its own; its `README.md` maps it.
 
 `planview`, `sqlparse` and `dashboard` are leaves (only `tuikit` + stdlib,
 never `tui`); `dashboard` also lets `cmd/amdemo` draw the panel's dashboards
@@ -221,24 +216,24 @@ gossms/
 │   ├── activity/            # Activity Monitor collection over gosmo's DMV readings (Source): cntr_type decode, wait categories, 30-minute store, collector goroutines, Poller for a feed whose source is already aggregated, and the Block/Sessions helper procedures — no TUI imports, no DMV SQL of its own
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
-│   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
+│   ├── query/               # SSMS-style script executor: GO batches (split by internal/sqltext, the editor's own rule), result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names; cells.go: each type's cell text as SSMS's grid shows it; cellparse.go: the inverse for a bulk load — NewCellParser reads a cell's date/time and binary text (refusing fractional digits the column would round) and hands every value to gosmo's BulkColumn.Converter, which owns the range, scale, length and code-page checks
 │   │                        #   for the command line, structured halves of the messages (Message.SQL, Message.RowsAffected), TypedRowSink, WithStopOnError, WithoutSinkNotices
 │   ├── export/              # delimited result text (RecordWriter: CSV, TSV) with the settled NULL convention — the one writer behind Results To File and the command line's csv/tsv; RecordReader, its exact inverse, for import; JSONWriter/XMLWriter/WriteTable for the results grid's Export Results, and the JSON value/key rules (KindOf, ColumnKeys) the command line's json/jsonl share. Stdlib only
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan); live.go merges per-thread query-profile rows into Live Query Statistics counters and progress. No TUI/DB deps
 │   ├── scripting/           # Script As without a screen: per object family (Family), the verbs it offers in SSMS order and each one's generator over gosmo's Scripter/ServerScripter (USE prefix except on a database, DefaultScriptOptions), the system-object and Azure refusals (Offered, AzureRefuses), Collect (a gosmo write under WithScript). Shared by Object Explorer's Script as and the command line's script commands, so both script an object alike. gosmo + stdlib only (TestNoTUIImports)
 │   ├── xevent/              # Extended Events viewer's event store: bounded ring, column registry, ring_buffer dedupe, the client-side filter expression, grouping and aggregation. No TUI/DB deps
-│   ├── format/              # Edit > Format Document's engine: Language (what a query panel's text is written in; picks its highlighter, and by extension only, never content), the per-language Style registry, the SQL Standard style (sql*.go: a layout pass over sqltext's tokens with a block/paren frame stack, not a parser; statements it has no rules for keep their line breaks), the JSON formatter (json.Indent, never Marshal), the XML raw-text re-indenter (tags, CDATA, comments emitted verbatim; never encoding/xml's Encoder) and the token-equivalence guard every result passes. Pure text, stdlib + tuikit/sqltext only
+│   ├── format/              # Edit > Format Document's engine: Language (what a query panel's text is written in; picks its highlighter, and by extension only, never content), the per-language Style registry, the SQL Standard style (sql*.go: a layout pass over sqltext's tokens with a block/paren frame stack, not a parser; statements it has no rules for keep their line breaks), the JSON formatter (json.Indent, never Marshal), the XML raw-text re-indenter (tags, CDATA, comments emitted verbatim; never encoding/xml's Encoder) and the token-equivalence guard every result passes. Pure text, stdlib + internal/sqltext only
 │   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export; WithLock: the lock file around config.json's and tracked_queries.json's read-merge-write
 │   │                        #   keeps an existing file's narrower mode (perm is a ceiling) and writes through a symlink, dangling or not
 │   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X; Fields is the one ordered list `gossms --version`, `gossms version` and Help > About print
-│   ├── cli/                 # the command line (`gossms <command> …`; contract: docs/cli.md): Main parses, dispatches, renders and maps the outcome to an exit code; tree.go is the command tree, help.go the generated help and the `agent guide` (its `-p` environment section runs `agent context`'s handler)/`agent schema`/`help -o json` dispatch. Never imports tui, tcell or a tuikit package but sqltext — see § Why split this way
+│   ├── cli/                 # the command line (`gossms <command> …`; contract: docs/cli.md): Main parses, dispatches, renders and maps the outcome to an exit code; tree.go is the command tree, help.go the generated help and the `agent guide` (its `-p` environment section runs `agent context`'s handler)/`agent schema`/`help -o json` dispatch. Never imports tui, tcell or a tuikit package — see § Why split this way
 │   │   ├── spec/                # the command tree as data: Command, Arg, Option, Class, Handler, Invocation. Parser, help, agent guide and agent schema read it — one source
 │   │   ├── agent/               # self-description for AI agents: schema.go builds `agent schema`'s catalog (also `help -o json`) from spec + output.ExitCodes + output.Formats; guide.go builds `agent guide` — rules and prose hand-written in guide/*.md (go:embed), command index, exit codes and group topics generated — and plain.go strips its markdown for `-o text`; Environment renders `agent context`'s answer as the guide's last section; Main prints both outside the envelope
 │   │   ├── args/                # the parser over spec: options, response files, did-you-mean; no I/O (ReadFile/Getenv injected)
 │   │   ├── connect/             # a command line → a connection: the connection options, profile + overrides + password sources (Resolve; drops a saved password an override would redirect), the dial as db.RoleCLI and its failure → exit code (Open, Classify)
 │   │   ├── audit/               # the audit log: one JSON line per call above read or refused (Logged), args rebuilt from the parse with spec.Option.Audit's hash/omit marks applied (Args), Check before a change, Append under fileutil.WithLock; audit.jsonl beside config.json, 0600
-│   │   ├── safety/              # the T-SQL statement classifier (Classify: read|write|ddl|admin per statement, fails closed) over tuikit/sqltext, its flags, and Check: the refusals of a run (class vs --allow and the ceiling — Policy.Refuse, which a writing command's gate shares —, mode options, what a transaction or --max-rows-affected cannot hold)
+│   │   ├── safety/              # the T-SQL statement classifier (Classify: read|write|ddl|admin per statement, fails closed) over internal/sqltext, its flags, and Check: the refusals of a run (class vs --allow and the ceiling — Policy.Refuse, which a writing command's gate shares —, mode options, what a transaction or --max-rows-affected cannot hold)
 │   │   ├── clitest/             # test support only: gosmo's catalog reads as positional gosmotest rows (DatabaseRow, ObjectInfoRow, TableRow, ViewRow, ColumnRow, IndexRow, ParameterRow, StatisticRow, and the security reads' LoginRow, RoleRow, UserRow, PermissionRow, …, and maint's DatabaseOf, BackupHeaderSet, BackupInfoRows, DatabaseFragmentationRow, …), and the storage, size, access, error-log and capability reads' DatabaseFileRow, MasterFileRow, FileVolumeRow, SpaceReportRow, LogSpaceRow, TableSizeRow, DatabaseAccessRow, ErrorLogEntryRow, ServerCapabilityRows, …), shared by the cli and cmd test packages' gosmotest servers
 │   │   ├── cmd/                 # the command handlers, one file per group; Deps injects the config load, the dial and the query session; every handler reads and writes through the connection's gosmo Server
 │   │   │   ├── common.go            # what the discovery commands share: the connection options, connectServer and connectDatabase (the connection, and its database read from the catalog), resolveObject (one-part names across schemas, NOT_FOUND's did-you-mean), readError (a read's failure → exit code and hint)
@@ -283,23 +278,14 @@ gossms/
 │   │   │   └── param.go             # query run --param: name/type checked against closed forms, the script wrapped in sp_executesql
 │   │   └── output/              # the result envelope (Result), the error model and exit-code table (ExitCodes), the Sink (rows kept, streamed or sent to --out-file) and one renderer per --output format (text, json, jsonl, csv, tsv, markdown); the --max-output-bytes cap
 │   │
-│   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
-│   │   ├── theme/                # colour palette + derived tcell.Style helpers
-│   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers, ClipScreen, Buffer (an off-screen tcell.Screen: chart canvases, test screens), the ClipboardTarget/ClipboardHost contract, Gesture (a router's press-claims-the-gesture record)
-│   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox, Spinner (a busy indicator as a pure function of elapsed time)
-│   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
-│   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/Progress/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
-│   │   ├── charts/                 # terminal charts from generic series data (rendered into a core.Buffer): scales, block glyphs, axis/legend, history/stacked/bar/KPI types
-│   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, ToolRow (a panel's text toolbar: layout, hit-test, "More ▾"), TabStrip, TreeView, DataGrid, ListBox, Editor (Document, LineBuffer; +SQL/XML/JSON highlighters)
-│   │   ├── sqltext/                 # The one T-SQL lexer (Next) and the rules built on it, shared by the editor, internal/query and sqlparse: the "GO" separator line rule, SplitBatches, StatementAt (Ctrl+Enter's statement select) and its leader rule for a caller's own tokens (StatementCutter, Format Document's SQL layout), the statement-verb sets; standard library only
-│   │   ├── tuikittest/              # test kit for _test files: Screen (a core.Buffer you draw into and read back), key/mouse event builders
-│   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework (rows incl. EditorRow, the embedded multi-line controls.Editor)
+│   ├── sqltext/             # The one T-SQL lexer (Next) and the rules built on it, shared by the editor (tui/sqledit), internal/query and sqlparse: the "GO" separator line rule, SplitBatches, StatementAt (Ctrl+Enter's statement select) and its leader rule for a caller's own tokens (StatementCutter, Format Document's SQL layout), the statement-verb sets; standard library only
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
 │       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView/TempDBView/InstanceView with tuikit/charts; no App, no connection
 │       ├── gate/                 # the permission gate: gate.RightsAllow — the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
 │       ├── sqlparse/             # T-SQL token stream (over sqltext.Next) + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT, rowset functions' WITH lists) and ScanBindings' batch-wide temp-table/table-variable declarations, with CarryTempBindings handing temp tables on across GO. Functions over runes; no App, no connection — pure but for its two caches, PrefixCache (prefix_cache.go: the completion prefix scan) and BatchCache (batch_cache.go: the batch-wide binding scan and the temp tables carried into it), each making a per-keystroke scan incremental and owned by the QueryPanel that calls it
+│       ├── sqledit/              # what makes a tuikit editor.Editor a T-SQL editor, through its generic hooks: Highlighter and LineState (one line-state cache per Document, editor.LineStateAt), SelectStatementAtCursor (Ctrl+Enter, over sqltext.StatementAt), IndentRule (SetIndentRule), Configure (completion word rules: SetWordStart/SetCompletionTrigger)
 │       │
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
@@ -315,7 +301,7 @@ gossms/
 │       ├── app_show_panels.go    # opens the non-query panels: Object Explorer Details, query list, Activity Monitor, Log Viewer, Query Store — reusing one already open for the same target
 │       ├── app_show_properties.go # one entry point per Properties and per New dialog, taking the connection and the names its page needs
 │       ├── progress_job.go       # progressJob + App.runWithProgress: one long write run behind dialogs.ProgressDialog, from the answered confirmation until the server comes back; reveal delay, cancellation, and the reasons an uninterruptible job greys Cancel
-│       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog
+│       ├── dialog_stack.go       # Dialog (= dialogs.Dialog); App.modals, a tuikit dialogs.Stack, hosts every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help), context-gated via each MenuItem's Enabled predicate, + About dialog
 │       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row, same Enabled-predicate gating
 │       ├── tree_node.go          # NodeType enum, nodeData
@@ -496,7 +482,7 @@ gossms/
 │       ├── connect_dialog_input.go # Connect dialog — keys, buttons and the mouse ordering (overlays, tabs, then panes)
 │       ├── profile_dialog.go     # Connection Profile dialog (Connect dialog's Profile... button): the name the command line addresses a saved connection by, and its operation ceiling
 │       ├── device_code_dialog.go # Microsoft Entra Device Code sign-in: the code + URL, open for exactly as long as the sign-in
-│       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over controls.Editor's search engine
+│       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over editor.Editor's search engine
 │       ├── filter_dialog.go      # Object Explorer > Filter Settings — one operator/value row per filterable property
 │       ├── options_dialog.go     # Tools > Options — icon style, max cell length, IntelliSense on/off, saved to config.json
 │       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels
@@ -691,11 +677,11 @@ state.
 
 ### Adding a new dialog
 
-Give `App` a typed field, construct it in `App.buildUI`, append it to
-`a.allDialogs`. `syncDialogStack` (`dialog_stack.go`) pushes it on top when
+Give `App` a typed field, construct it in `App.buildUI` through
+`registerDialog`. `a.modals.Sync` (a `dialogs.Stack`) pushes it on top when
 its `Show()` flips it visible and routes it all input until it closes; draw
 order and key/mouse routing follow. For the widget, follow the `ModalDialog`
-skeleton in `internal/tuikit/README.md`.
+skeleton in tuikit's `README.md` § Adding a new dialog in an application.
 
 ### Adding a Properties page
 
@@ -725,79 +711,45 @@ when its action is impossible must be gated, never a silent no-op.
 
 ## The mouseDragging idiom
 
-tcell's all-motion tracking resends the held button on every motion event, so
-any widget acting on `Button1` (toolbar button, menu label, tree toggle) needs a
-per-widget latch — a `core.PressLatch` (`tuikit/core/press.go`; the widgets with
-a selection drag, `Editor`, `DataGrid` and `InputField`, still hold a
-hand-rolled `mouseDragging` bool) — set on the press and cleared on the
-matching `ButtonNone`, or the action refires on every motion while held. It
-guards only a resend over the widget that armed it.
+tcell's all-motion tracking resends the held button on every motion event.
+The library half of the answer — `core.PressLatch` per widget acting on
+`Button1`, `ModalDialog.TrackPress` on the button row, `core.Gesture[Z]` per
+router ("a press claims the gesture"), `dialogs.Stack` handing a release to
+every open dialog, `dialogs.FieldGesture`, and `Show()` clearing latches — is
+tuikit's `ARCHITECTURE.md` § Mouse gestures (`~/go/tuikit`). Read it first.
+This section is how goSSMS's routers follow it.
 
-`ModalDialog`'s button row is the exception that sees the whole gesture: every
-event passes `TrackPress` (via `ConsumeOutsideClick` and `ButtonClicked`), which
-calls `Fresh` on every `Button1`, so only a gesture's first press can click a
-button — a drag from the message, a list, a scrollbar, a checkbox or outside
-the box does not. A dialog that offers an open drop-down list events ahead of
-`ConsumeOutsideClick` (Backup, Restore, Filter, Options) calls `TrackPress`
-first, or the list's pick is unseen and its resends look fresh.
-
-A positional router (`App.handleMouse`) sees a drag that began elsewhere drift
-onto a latch-owning widget as a fresh-looking `Button1`. So routers keep a
-gesture-wide flag (`App.mouseButtonDown`, set/cleared from the raw event before
-positional branching) to tell fresh from continuation — and, since that doesn't
-say where the continuation goes, **a press claims the gesture**: the router
-records the claiming region and replays to it until release. That record is
-one type, `core.Gesture[Z]` (`tuikit/core/gesture.go`), held by every router:
-`App.gestureOwner` (`app_events.go`), `propsheet.PropertySheet` (`sheet_input.go`),
-and the `dragZone` of `QueryPanel`, `LogViewer`, `XEventViewer`,
-`QueryStorePanel`, `ReplicationMonitorPanel`, `PlanComparePanel`,
-`ActivityMonitor`, `DetailBrowser` and `AGDashboard`. Each host calls
-`Release` on `ButtonNone` (beside forwarding the release to its latch-bearing
-children), `Route(ev, routeDrag)` ahead of any bounds check, and `Arm` at every
-claiming branch, and keeps only its zone enum and `routeDrag`'s `switch`.
-`Route` swallows a mid-gesture wheel tick; `ActivityMonitor`, `DetailBrowser`
-and `AGDashboard` read `Owner()` instead, because their grids take the wheel
-mid-gesture. Regions that already acted swallow repeats. `Splitter` starts a
-resize only from a press on its bar, so a selection drag crossing it doesn't
-grab it.
+`App.handleMouse` keeps a gesture-wide flag (`App.mouseButtonDown`, set and
+cleared from the raw event before positional branching) to tell a fresh press
+from a continuation, and records the claiming region in `App.gestureOwner`
+(`app_events.go`). Every other router holds its own `core.Gesture[Z]` as
+`dragZone`: `propsheet.PropertySheet` (inside tuikit), and `QueryPanel`,
+`LogViewer`, `XEventViewer`, `QueryStorePanel`, `ReplicationMonitorPanel`,
+`PlanComparePanel`, `ActivityMonitor`, `DetailBrowser` and `AGDashboard`.
+`ActivityMonitor`, `DetailBrowser` and `AGDashboard` read `Owner()` instead of
+`Route`, because their grids take the wheel mid-gesture.
 
 `App` also snapshots the modal layer per gesture
 (`gestureOverlay`/`overlaySnapshot`) and drops held `Button1` across a change:
 otherwise clicking a context-menu item that opens a dialog and twitching before
 release fires whatever dialog button is under the pointer.
 
-The mirror image is a latch outliving its gesture: a dialog button closes the
-dialog on the *press*, so the release never reaches its reset (`HandleMouse`
-returns on `!visible`, the dialog is already popped) and the next showing
-refused its first click — looked frozen. `ModalDialog.Show()` clears both
-latches.
-
-Consequences: an overlay drawn last (tuikit README, "overlays drawn last") gets
-first refusal of every event while open; and a host with an early `return` in
-`HandleMouse` must forward `ButtonNone` to latch-bearing children first, or a
-drag ending outside leaves a child latched and swallowing its next press.
+The dialogs that route an open drop-down list ahead of `ConsumeOutsideClick`
+(Backup, Restore, Filter, Options) call `TrackPress` first.
 
 ### dialogs.FieldGesture
 
-A click in a `widgets.InputField` starts a selection drag, and the dialog must
-end it on release *wherever* the pointer lands, replay motion to the field
-without hit-testing, and drop the latch on `Show`. Each call's placement is
-non-local:
-
-- `Release` at the very top of `HandleMouse`, **before** `ConsumeOutsideClick`
-  and any mode early-return — both return without looking at the latch, and a
-  release outside the dialog or after it switched to a progress view is exactly
-  what strands it.
-- `Replay` after `ConsumeOutsideClick`, before any hit-testing — hit-testing
-  motion ends the selection when the pointer leaves the field, and lets a drag
-  over the button row fire a button.
-- `Clear` in `Show`, also dropping the field's own `mouseDragging`: Connect,
-  Options, Find/Replace and Log Search reuse their fields, so a dialog dismissed
-  mid-drag handed back a latched field whose next press armed no anchor.
-
-Seven dialogs hand-rolled this; `FieldGesture` holds it once.
-`TestFileDialogDragOutOfPathFieldKeepsExtending` and the five tests in
-`internal/tui/dialog_drag_test.go` fail on a mutation of any of the three.
+The protocol — `Release` above `ConsumeOutsideClick`, `Replay` before
+hit-testing, `Claim` on the press, `Clear` in `Show` — and why each call sits
+where it does is tuikit's `ARCHITECTURE.md` § dialogs.FieldGesture. goSSMS
+enforces it over its own dialogs and tuikit's from the source:
+`TestEveryDialogWithATextFieldOwnsAFieldGesture` and
+`TestFieldGestureCallsAreOrderedCorrectly` (`dialog_gesture_test.go`, which
+reads tuikit's `dialogs` through `go list`); the five tests in
+`internal/tui/dialog_drag_test.go` fail on a mutation of any of the three main
+calls. The release to the *focused* field, as opposed to the one that claimed
+the press, is `forwardReleaseToFocusedField` (`dialog_common.go`): it covers a
+focused `*editor.Editor`, which `FieldGesture` doesn't track.
 
 ## Async result delivery: postAndWake
 
@@ -923,14 +875,17 @@ loading, since the host was never told the first load was superseded.
 `pending` map; its `stop`/`supersede` shadow `Cancel`/`Abandon` so a caller
 can't stop a run and leave its pending entry behind.
 
-## Developing against a local gosmo checkout
+## Developing against local gosmo and tuikit checkouts
 
 The `dev-with-local-gosmo` skill and `CLAUDE.md` own this. In short: `go.mod`'s
-`replace github.com/radix29/gosmo => ../gosmo` is **active** in development and
-`require` is only a floor, so a clone without the sibling may not build, and
-odd behaviour may come from uncommitted or untagged gosmo code (`git -C ../gosmo
-status`/`log`). At release: tag and push gosmo, bump `require`, comment out
-`replace`, build and test clean, then tag gossms.
+`replace github.com/radix29/gosmo => ../gosmo` and
+`replace github.com/radix29/tuikit => ../tuikit` are **active** in development
+and `require` is only a floor (tuikit's is a `v0.0.0-…` placeholder until its
+first tag), so a clone without the siblings does not build, and odd behaviour
+may come from uncommitted or untagged library code (`git -C ../gosmo
+status`/`log`, likewise `../tuikit`). At release: tag and push each library,
+bump its `require`, comment out its `replace`, build and test clean, then tag
+gossms.
 
 ## Dependencies
 
@@ -940,7 +895,8 @@ Direct requires in `go.mod`:
 |---------|---------|
 | [github.com/gdamore/tcell/v3](https://github.com/gdamore/tcell) | Terminal rendering, keyboard & mouse events |
 | [github.com/radix29/gosmo](https://github.com/radix29/gosmo) | SQL Server management objects |
+| [github.com/radix29/tuikit](https://github.com/radix29/tuikit) | Widgets, dialogs, layout, charts — the TUI library under `internal/tui`; sibling checkout via `replace`, as gosmo |
 | [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver, which gosmo connects through; `internal/query` imports it only for `NullUniqueIdentifier` (a GUID's grid text). `GO` splitting is `sqltext.SplitBatches` |
 | [github.com/golang-sql/sqlexp](https://github.com/golang-sql/sqlexp) | Interleaved result-set/message stream, so PRINT and errors arrive in order — `internal/query` |
-| [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width behind `core.DisplayWidth` — one of `tuikit`'s two external modules |
+| [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width: `core.DisplayWidth` wraps it, and `internal/cli` calls it directly (no tcell there) |
 | [github.com/pkg/browser](https://github.com/pkg/browser) | Opens the Entra sign-in page. `installEntraSignIn` sends its `Stdout`/`Stderr` to `io.Discard` — output would land on tcell's terminal |

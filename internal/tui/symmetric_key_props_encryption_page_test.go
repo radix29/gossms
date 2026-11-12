@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The symmetric key Properties' Encryption page: the ENCRYPTION BY list, its

@@ -8,8 +8,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // Draw renders the title bar, editor, splitter, results tab bar, and grid.
@@ -47,7 +47,7 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 		p.results.DrawOverlay(s)
 	}
 	// Drawn last, after the results grid's own overlay; see the "overlays drawn last"
-	// rule in tuikit/README.md.
+	// rule in ~/go/tuikit/ARCHITECTURE.md § Overlays.
 	p.editor.DrawOverlay(s)
 }
 

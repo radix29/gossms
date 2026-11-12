@@ -9,7 +9,7 @@ import (
 
 	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // What a login below SQLAgentOperatorRole sees of SQL Agent's alerts: msdb

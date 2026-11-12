@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // Plan Guide Properties, driven through gosmotest_fixtures_test.go. The one writable

@@ -7,7 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ func findCatalogFunction(inv, sysInv *completionInventory, schema, name string) 
 // (-> its databases, see linkedChainCandidates). Nothing matching returns nil,
 // closing the popup rather than showing something wrong; wait reports that
 // the database answer is still loading.
-func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []relation, qualifier, prefix string) (items []controls.CompletionItem, wait bool) {
+func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []relation, qualifier, prefix string) (items []editor.CompletionItem, wait bool) {
 	if r, ok := resolveQualifierToRelation(inv, sysInv, rels, qualifier); ok {
 		return p.columnItemsFor(r.columns(), prefix), false
 	}
@@ -106,7 +106,7 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 			return p.objectItems(objs, prefix), false
 		}
 		if sysInv.loading && strings.EqualFold(qualifier, "sys") {
-			return []controls.CompletionItem{loadingCompletionItem}, false
+			return []editor.CompletionItem{loadingCompletionItem}, false
 		}
 	}
 	other, pending := p.databaseInventory(inv, qualifier)
@@ -129,15 +129,15 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 // sys-schema inventory's own objects are not mixed into the unqualified list:
 // there are hundreds, so they're offered only once a query qualifies with "sys."
 // (see memberCandidates).
-func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sqlparse.CTE, bindings []sqlparse.Binding, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sqlparse.CTE, bindings []sqlparse.Binding, prefix string) []editor.CompletionItem {
 	pl := strings.ToLower(prefix)
-	var items []controls.CompletionItem
+	var items []editor.CompletionItem
 	for _, cte := range ctes {
 		ok, partial := nameMatch(cte.Name, pl)
 		if !ok {
 			continue
 		}
-		items = append(items, controls.CompletionItem{
+		items = append(items, editor.CompletionItem{
 			Text: gosmo.QuoteNameIfNeeded(cte.Name), Label: cte.Name, Detail: "CTE",
 			Icon: p.tableIcon(gosmo.CatalogTable), Partial: partial,
 		})
@@ -159,7 +159,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 		}
 		// Never bracketed: "[@t]" names a column or object, not the variable,
 		// and "[#t]" is legal but not what the user typed.
-		items = append(items, controls.CompletionItem{
+		items = append(items, editor.CompletionItem{
 			Text: name, Label: name, Detail: detail, Icon: p.tableIcon(gosmo.CatalogTable),
 			Partial: partial,
 		})
@@ -169,7 +169,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 		if !ok {
 			continue
 		}
-		items = append(items, controls.CompletionItem{
+		items = append(items, editor.CompletionItem{
 			Text: gosmo.QuoteNameIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
 			Partial: partial,
 		})
@@ -180,7 +180,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 			if !ok {
 				continue
 			}
-			items = append(items, controls.CompletionItem{
+			items = append(items, editor.CompletionItem{
 				Text: gosmo.QuoteNameIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
 				Partial: partial,
 			})
@@ -200,9 +200,9 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 
 // objectItems offers every table/view in objs whose name contains
 // prefix — a schema's member list ("dbo.").
-func (p *QueryPanel) objectItems(objs []*gosmo.CatalogObject, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) objectItems(objs []*gosmo.CatalogObject, prefix string) []editor.CompletionItem {
 	pl := strings.ToLower(prefix)
-	var items []controls.CompletionItem
+	var items []editor.CompletionItem
 	for _, obj := range objs {
 		if ok, partial := nameMatch(obj.Name, pl); ok {
 			items = append(items, p.objectItem(obj, partial))
@@ -212,12 +212,12 @@ func (p *QueryPanel) objectItems(objs []*gosmo.CatalogObject, prefix string) []c
 	return items
 }
 
-func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject, partial bool) controls.CompletionItem {
+func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject, partial bool) editor.CompletionItem {
 	detail := "table"
 	if obj.Type == gosmo.CatalogView {
 		detail = "view"
 	}
-	return controls.CompletionItem{
+	return editor.CompletionItem{
 		Text: gosmo.QuoteNameIfNeeded(obj.Name), Label: obj.Schema + "." + obj.Name,
 		Detail: detail, Icon: p.tableIcon(obj.Type), Partial: partial,
 	}
@@ -225,15 +225,15 @@ func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject, partial bool) controls
 
 // columnItemsFor offers every column in cols whose name contains prefix —
 // the "alias." / "table." member-lookup result.
-func (p *QueryPanel) columnItemsFor(cols []gosmo.CatalogColumn, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) columnItemsFor(cols []gosmo.CatalogColumn, prefix string) []editor.CompletionItem {
 	pl := strings.ToLower(prefix)
-	var items []controls.CompletionItem
+	var items []editor.CompletionItem
 	for _, col := range cols {
 		ok, partial := nameMatch(col.Name, pl)
 		if !ok {
 			continue
 		}
-		items = append(items, controls.CompletionItem{
+		items = append(items, editor.CompletionItem{
 			Text: gosmo.QuoteNameIfNeeded(col.Name), Label: col.Name,
 			Detail: formatColumnType(col), Icon: p.columnIcon(), Partial: partial,
 		})
@@ -249,9 +249,9 @@ func (p *QueryPanel) columnItemsFor(cols []gosmo.CatalogColumn, prefix string) [
 // WHERE/ON/GROUP BY/ORDER BY/HAVING/SET context. Whether two columns share a
 // name is the panel's database collation's call: under a case-sensitive one
 // Id and ID are both offered.
-func (p *QueryPanel) scopedColumnCandidates(rels []relation, collation, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) scopedColumnCandidates(rels []relation, collation, prefix string) []editor.CompletionItem {
 	pl := strings.ToLower(prefix)
-	var items []controls.CompletionItem
+	var items []editor.CompletionItem
 	seenCol := newNameSet(collation)
 	seenRef := make(map[string]bool)
 	for _, rel := range rels {
@@ -265,7 +265,7 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, collation, prefix s
 			if rel.name != "" {
 				detail += " — " + rel.name
 			}
-			items = append(items, controls.CompletionItem{
+			items = append(items, editor.CompletionItem{
 				Text: gosmo.QuoteNameIfNeeded(col.Name), Label: col.Name,
 				Detail: detail, Icon: p.columnIcon(), Partial: partial,
 			})
@@ -280,7 +280,7 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, collation, prefix s
 		if rel.obj != nil {
 			objType = rel.obj.Type
 		}
-		items = append(items, controls.CompletionItem{
+		items = append(items, editor.CompletionItem{
 			Text: gosmo.QuoteNameIfNeeded(rel.name), Label: rel.name, Detail: "table reference", Icon: p.tableIcon(objType),
 			Partial: partial,
 		})
@@ -292,7 +292,7 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, collation, prefix s
 // nameMatch reports whether name contains the lower-cased fragment pl
 // anywhere — "ord" offers OrderLines and CustomerOrders alike — and whether
 // that match is partial, i.e. not at the start. The editor treats a list of
-// nothing but partial matches differently (see controls.CompletionItem.Partial).
+// nothing but partial matches differently (see editor.CompletionItem.Partial).
 //
 // It runs over every catalog name on every keystroke, so an ASCII name — nearly
 // all of them — is searched in place: lower-casing each one first cost 15 ms
@@ -336,8 +336,8 @@ func indexLowerASCII(name, pl string) (i int, ascii bool) {
 
 // sortCompletionItems lists prefix matches before partial ones, each group
 // alphabetically, so what the user typed the start of stays on top.
-func sortCompletionItems(items []controls.CompletionItem) {
-	slices.SortStableFunc(items, func(a, b controls.CompletionItem) int {
+func sortCompletionItems(items []editor.CompletionItem) {
+	slices.SortStableFunc(items, func(a, b editor.CompletionItem) int {
 		if a.Partial != b.Partial {
 			if a.Partial {
 				return 1

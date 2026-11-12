@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // newFindTestApp returns an App with one query panel holding text, plus the
@@ -257,7 +257,7 @@ func TestFindDialogEmptyTermIsRefused(t *testing.T) {
 }
 
 // searchFor is the SearchOptions a plain literal search compiles from.
-func searchFor(q string) controls.SearchOptions { return controls.SearchOptions{Query: q} }
+func searchFor(q string) editor.SearchOptions { return editor.SearchOptions{Query: q} }
 
 // Ctrl+F3 compiles a search without opening the dialog, so it has to leave
 // the dialog describing that search and no other. It used to sync only Find

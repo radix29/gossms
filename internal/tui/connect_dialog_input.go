@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 		consumed := w.HandleKey(ev)
 		d.refreshConnStrPreview()
 		return consumed
-	case *controls.Editor:
+	case *editor.Editor:
 		return w.HandleKey(ev)
 	}
 	return true
@@ -300,11 +300,11 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 
 // visibleEditors is the editors the active tab shows, in focus order. The
 // Custom Properties editor is on both tabs.
-func (d *ConnectDialog) visibleEditors() []*controls.Editor {
+func (d *ConnectDialog) visibleEditors() []*editor.Editor {
 	if d.tab == connectTabString {
-		return []*controls.Editor{d.fConnStrPreview, d.fExtraProps}
+		return []*editor.Editor{d.fConnStrPreview, d.fExtraProps}
 	}
-	return []*controls.Editor{d.fExtraProps}
+	return []*editor.Editor{d.fExtraProps}
 }
 
 // tabClicked switches tabs on a click in the tab bar, and reports whether it

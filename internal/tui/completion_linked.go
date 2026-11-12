@@ -8,7 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ func (a *App) loadLinkedInventory(sc *db.ServerConn, ls *linkedServer, k string,
 // An empty part ("LS..", "LS.Sales..") answers nothing: SQL Server refuses
 // a four-part name with an omitted database or schema outright (Msg 7313,
 // "an invalid schema or catalog was specified for the provider").
-func (p *QueryPanel) linkedChainCandidates(chain []string, prefix string) (items []controls.CompletionItem, wait bool) {
+func (p *QueryPanel) linkedChainCandidates(chain []string, prefix string) (items []editor.CompletionItem, wait bool) {
 	if len(chain) == 1 {
 		ls, pending := p.linkedDatabases(chain[0])
 		if ls == nil {
@@ -272,12 +272,12 @@ func (p *QueryPanel) linkedChainCandidates(chain []string, prefix string) (items
 }
 
 // linkedDatabaseItems offers ls's databases matching prefix — "LS.".
-func (p *QueryPanel) linkedDatabaseItems(ls *linkedServer, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) linkedDatabaseItems(ls *linkedServer, prefix string) []editor.CompletionItem {
 	pl := strings.ToLower(prefix)
-	var items []controls.CompletionItem
+	var items []editor.CompletionItem
 	for _, name := range ls.databases {
 		if ok, partial := nameMatch(name, pl); ok {
-			items = append(items, controls.CompletionItem{
+			items = append(items, editor.CompletionItem{
 				Text: gosmo.QuoteNameIfNeeded(name), Label: name, Detail: "database — " + ls.name,
 				Icon: nodeIcon(nodeData{Type: NodeDatabase}, p.app.cfg.IconStyle, false), Partial: partial,
 			})
@@ -291,12 +291,12 @@ func (p *QueryPanel) linkedDatabaseItems(ls *linkedServer, prefix string) []cont
 // the lower-cased pl, for the object list — what starts a four-part name.
 // The list loads on first call and is not waited for: it joins the popup
 // when it lands, as databaseItems' does.
-func (p *QueryPanel) linkedServerItems(pl string) []controls.CompletionItem {
+func (p *QueryPanel) linkedServerItems(pl string) []editor.CompletionItem {
 	d := p.app.ensureLinkedDirectory(p.conn)
-	var items []controls.CompletionItem
+	var items []editor.CompletionItem
 	for _, ls := range d.byName {
 		if ok, partial := nameMatch(ls.name, pl); ok {
-			items = append(items, controls.CompletionItem{
+			items = append(items, editor.CompletionItem{
 				Text: gosmo.QuoteNameIfNeeded(ls.name), Label: ls.name, Detail: "linked server",
 				Icon: nodeIcon(nodeData{Type: NodeLinkedServer}, p.app.cfg.IconStyle, false), Partial: partial,
 			})

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // roleWriter is the pair of writes a role's General page makes. Both

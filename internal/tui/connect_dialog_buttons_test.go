@@ -6,8 +6,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/tuikittest"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // drawnFieldText reads back the text a field actually painted into its box —

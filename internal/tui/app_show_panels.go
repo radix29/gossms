@@ -3,7 +3,7 @@ package tui
 import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/layout"
 )
 
 // app_show_panels.go opens the non-query panels — Object Explorer Details, the

@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // matrixParts pulls the two grids and the two filter boxes back out of a

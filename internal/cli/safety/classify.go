@@ -4,7 +4,7 @@
 // cannot see through. It is a guardrail, not the security boundary; that is
 // the login's permissions.
 //
-// It lexes with gossms's one lexer, tuikit/sqltext, and splits statements by
+// It lexes with gossms's one lexer, internal/sqltext, and splits statements by
 // its StatementCutter, so a keyword inside a comment, literal or quoted
 // identifier means nothing here either, and a statement boundary is where
 // Ctrl+Enter's is.
@@ -16,7 +16,7 @@ import (
 
 	"github.com/radix29/gosmo/tsql"
 	"github.com/radix29/gossms/internal/cli/spec"
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // Flag marks something about a statement that a safety check reads beyond its

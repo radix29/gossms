@@ -6,7 +6,7 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // agent_schedule_form.go is the schedule-frequency UI shared by New Schedule

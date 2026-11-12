@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // The Detail Browser's view of the Phase 3 tree families.

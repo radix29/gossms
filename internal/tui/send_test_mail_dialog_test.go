@@ -11,8 +11,8 @@ import (
 	mssql "github.com/microsoft/go-mssqldb"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // Send Test E-Mail: the page built for each kind of login, what reaches

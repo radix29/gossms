@@ -8,8 +8,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/tuikittest"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // A text-selection drag belongs to the field that claimed its press until

@@ -9,8 +9,8 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The prompt's pre-fill is the parent's sign-in pointed at the refused

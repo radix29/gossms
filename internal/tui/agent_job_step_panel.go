@@ -3,9 +3,11 @@ package tui
 import (
 	"strconv"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tui/sqledit"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/theme"
 )
 
 // agent_job_step_panel.go is the "Selected step" edit panel shared by Job
@@ -29,11 +31,11 @@ type jobStepPanel struct {
 
 	// sqlHighlight is kept so the Properties page can restore it after a
 	// non-T-SQL step.
-	sqlHighlight controls.Highlighter
+	sqlHighlight editor.Highlighter
 
 	nameField       *propsheet.TextRow
 	databaseSelect  *propsheet.SelectRow
-	commandEditor   *controls.Editor
+	commandEditor   *editor.Editor
 	commandField    *propsheet.EditorRow
 	onSuccessSelect *propsheet.SelectRow
 	onSuccessStep   *propsheet.TextRow
@@ -50,14 +52,14 @@ type jobStepPanel struct {
 func newJobStepPanel(sentinel string, dbNames []string, indentWidth int) *jobStepPanel {
 	// The command gets the query editor (highlighting, line numbers) so "line
 	// 12" errors can be found.
-	sqlHighlight := controls.SQLHighlighter(theme.Active())
-	editor := controls.NewEditor(sqlHighlight)
+	sqlHighlight := sqledit.Highlighter(theme.Active())
+	editor := editor.NewEditor(sqlHighlight)
 	// The step command is T-SQL, so it gets the query editor's smart indent and
 	// its indent width, both from the config the caller passes in — the width
 	// would otherwise come from controls' package default and the two settings
 	// would be read from two places for one editor. Options pushes a later
 	// change in through the sheet (SetEditorIndentWidth).
-	editor.SetSmartIndent(true)
+	editor.SetIndentRule(sqledit.IndentRule)
 	editor.SetIndentWidth(indentWidth)
 	p := &jobStepPanel{
 		sentinel:        sentinel,

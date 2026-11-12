@@ -305,7 +305,7 @@ Test: `TestClipScreenHidesCursorOutsideTheClip`. Unit-level only.
   pointer (~130 per-frame readers, a large struct) and its doc says read-only,
   change it with `SetPalette`. Every package-level setting —
   `SetPalette`, `SetDefaultIndentWidth`, `ApplyingSpinner`, the `Strings`
-  vars — documents "UI goroutine", listed in `internal/tuikit/README.md`
+  vars — documents "UI goroutine", listed in tuikit's `README.md`
   § Design principles. "Before the first Draw" is the advice, not a rule:
   Options changes the palette and indent width at runtime, between frames.)*
   **Global state.** `theme.Active()` returns a pointer to the live
@@ -407,7 +407,20 @@ for the grid), and they are pinned by tests.
 
 ## A — Architecture: what blocks extraction
 
-- **A1. Pull T-SQL out of tuikit.** It is the largest blocker.
+- **A1.** *(DONE 2026-11-12, step 15: `sqltext` is `internal/sqltext`;
+  `TestNoTUIImports` has no exception left. `controls` gained
+  `LineStateAt` (a per-Document line-state cache keyed by owner),
+  `Document.Lines`, `Editor.SelectRange`, `SetIndentRule` (replaces
+  `SetSmartIndent`), `SetWordStart`/`DefaultWordStart` and
+  `SetCompletionTrigger` (default: letter or '_'). The highlighter,
+  `LineState`, `SelectStatementAtCursor`, `IndentRule`, `CompletionTrigger`
+  and `Configure` are `internal/tui/sqledit`; their tests moved with them, and
+  `controls`' cache tests and benchmarks run on a toy lexer
+  (`testlang_test.go`). Driven: highlighting across an open comment, smart
+  indent, Execute at Cursor, the `[` and word completion triggers (same as a
+  HEAD build), Format Document refusing a selection inside a comment. Left in
+  tuikit: `ToggleLineComments` still hard-codes the `--` prefix.)*
+  **Pull T-SQL out of tuikit.** It is the largest blocker.
   - `sqltext` moves to gossms as `internal/sqltext`. It remains the one lexer
     (decisions § T-SQL lexing). ARCHITECTURE.md's CLI invariant becomes
     "no tuikit at all", and `TestNoTUIImports` drops its sqltext exception.
@@ -426,7 +439,16 @@ for the grid), and they are pinned by tests.
       from outside the package.
   - The SQL pieces go to gossms (for example `internal/tui/sqledit`, next to
     `sqlparse`). XML/JSON highlighters are language-neutral and stay in tuikit.
-- **A2. The dialog clip protocol is half in the app.** `ModalDialog.DrawBase`
+- **A2.** *(DONE 2026-11-12, step 14: `dialogs.Stack` (`dialogs/stack.go`)
+  registers dialogs and hosts the open ones: Sync, Top, Draw (one ClipScreen,
+  reset per dialog), Relayout, HandleKey/HandleMouse (release to every open
+  dialog), ClipboardTarget/ClipboardEdited. App holds one as `modals`; its
+  `allDialogs`/`dialogStack` and the sync/top/draw/relayout helpers are gone,
+  and it keeps only the gesture-overlay snapshot. `DrawBase` now resets a
+  ClipScreen's clip before narrowing it; README states the contract. Tests:
+  `dialogs/stack_test.go`, incl. `TestADialogDoesNotInheritAnotherDialogsClip`
+  (fails without the reset). Driven: nested Connection Error over Connect,
+  both clamped at 60x16.)* **The dialog clip protocol is half in the app.** `ModalDialog.DrawBase`
   narrows a `ClipScreen`, but only `internal/tui/dialog_stack.go` creates that
   ClipScreen and resets it per dialog. A library user who draws a clamped
   dialog without that wrapper gets unclipped content. Two dialogs drawn on one
@@ -443,7 +465,18 @@ for the grid), and they are pinned by tests.
   skip checkboxes and drop-downs.)* **Shared control interfaces in `core`:** `Focusable` (C1), `Overlay`
   (C3), `Enabler`, plus key/mouse handler interfaces. propsheet's capability
   interfaces and any focus ring are built on them, not on per-type switches.
-- **A4. Layering inside the new module.** `layout` imports `controls` only for
+- **A4.** *(DONE 2026-11-12, step 16: `tabstrip.go` is in `core`, so
+  `layout` is a leaf over core/theme. The editor split is done too:
+  `controls/editor` holds Editor, Document, LineBuffer, undo, search,
+  completion and the XML/JSON highlighters (with their tests and the editor
+  frame benchmark); it imports only core/theme, and `controls` reaches it only
+  through ValueViewer. App call sites now say `editor.Editor` etc.
+  `TestTuikitLayering` (`core/imports_test.go`) pins the whole intra-tuikit
+  graph, README § Dependency direction; probed with a planted
+  layout → controls import. Driven: SQL highlighting across a multi-line
+  comment, completion popup, Connect's tab strip (Ctrl+PgUp/PgDn), Results/
+  Messages tabs, Show Value from the grid's context menu, PanelManager tab
+  clicks.)* **Layering inside the new module.** `layout` imports `controls` only for
   `TabStripSegments`/`TabLabelWidth`. Moving `tabstrip.go` to `core` makes
   `layout` a leaf over core/theme. Optional, and done before the first tag:
   split `controls` (10k lines) into `controls` (grid, tree, list, menus,
@@ -459,13 +492,37 @@ for the grid), and they are pinned by tests.
   states it ("must print exactly tcell/v3, tcell/v3/color, displaywidth"), but
   no test runs it. Add one inside tuikit, so it moves with the module, and
   include "no tuikit package imports `internal/…`".
-- **A6. Docs that must travel.** `internal/tuikit/README.md` becomes the
+- **A6. Docs that must travel.** *(DONE 2026-11-12, step 17: the README is
+  the module README, in library terms (install, imports, Development). The
+  library half of `docs/ui-rules.md` and of ARCHITECTURE.md § The
+  mouseDragging idiom/§ dialogs.FieldGesture is tuikit's own
+  `ARCHITECTURE.md` (Threading, Mouse gestures, Overlays, Dialogs, Widgets and
+  grids, Editor), which owns it; gossms's copies now say how goSSMS applies
+  it and point there. tuikit also has a short `CLAUDE.md`. The overlay
+  citations in plan_panel/live_plan_panel/query_panel_draw/planview point at
+  tuikit's § Overlays.)* The tuikit README becomes the
   module README. Bring along the tuikit-only parts of `docs/ui-rules.md` and
   ARCHITECTURE.md (§ The mouseDragging idiom, overlays drawn last,
   postAndWake-free async state) so that C10's rewritten comments have
   something to cite.
 
 ## X — The move itself (after A1–A6)
+
+*(DONE 2026-11-12, step 17: module `github.com/radix29/tuikit`, fresh
+history, in the `~/go/tuikit` checkout the user had created (its placeholder
+README replaced; LICENSE and .gitignore kept). gossms `require`s it at the
+`v0.0.0-…` placeholder with `replace … => ../tuikit`; `internal/tuikit` is
+deleted (a tarball of it is in the session scratchpad). The
+`dev-with-local-gosmo` skill gained a tuikit section rather than a sibling
+skill. Source-reading tests (`gestureSourceDirs`, `gridDrawPackages`) resolve
+tuikit through `go list`; `TestNoTUIImports` names `radix29/tuikit` (the
+`/internal/tui` match no longer covers it); `TestNoDanglingDocReference`
+resolves `~/go/tuikit/…` against the sibling, and its suffix-match case still
+earns its place (`docs/cli.md`'s `guide/*.md`). Also fixed: FuzzFormatSQL's
+seed corpus glob still pointed at the pre-A1 `tuikit/sqltext` path and seeded
+nothing. About shows tuikit's module version (`version.Dependency`). Nothing
+committed, tagged or pushed: tuikit needs a first commit and tag before a
+gossms release can drop the `replace`.)*
 
 The user decides the module path, the repo, and whether to keep history
 (subtree split vs. fresh). Claude does not commit, tag or push.
@@ -478,8 +535,8 @@ The user decides the module path, the repo, and whether to keep history
    skill), rewrite imports, then delete `internal/tuikit`.
 3. Update CLAUDE.md (the `tuikit` rows and conventions), ARCHITECTURE.md
    (package map, invariants, "Which document owns what"), and
-   `docs/testing.md`. In `doc_links_test.go`, check the `tuikit/README.md`
-   suffix-match case still means something. `go build`, `go test -race ./...`,
+   `docs/testing.md`. In `doc_links_test.go`, check the README suffix-match
+   case still means something. `go build`, `go test -race ./...`,
    `staticcheck`, `deadcode -test`, then drive the binary per `docs/testing.md`.
 
 ---
@@ -506,9 +563,9 @@ The structural moves come last.
 | 11 | ~~**C1, C2, C3, C7 + A3** interfaces and API normalization~~ **DONE** | touches app call sites; one control family per step | L |
 | 12 | ~~**C6, C8, C11, C12** IDs, strings, splitter limits, globals~~ **DONE** | API-visible; app wires defaults | M |
 | 13 | ~~**S6** ValueViewer extraction~~ **DONE** | after C3 (it is an Overlay) | M |
-| 14 | **A2** dialog clip/stack | after C4/B2 settle dialog routing | M |
-| 15 | **A1** T-SQL out of tuikit | largest; after 9 for test cheapness | L |
-| 16 | **A4** tabstrip to core; optional editor split | import churn, so do it last before the move | M |
-| 17 | **A6, X** docs and the move | only when 1–16 are green and driven | M |
+| 14 | ~~**A2** dialog clip/stack~~ **DONE** | after C4/B2 settle dialog routing | M |
+| 15 | ~~**A1** T-SQL out of tuikit~~ **DONE** | largest; after 9 for test cheapness | L |
+| 16 | ~~**A4** tabstrip to core; optional editor split~~ **DONE** | import churn, so do it last before the move | M |
+| 17 | ~~**A6, X** docs and the move~~ **DONE** | only when 1–16 are green and driven | M |
 
 O1/O2 and S8 are optional, and none of the steps above depends on them.

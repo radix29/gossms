@@ -10,7 +10,7 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // hostedSessionPanel adds a query panel connected the way connectForQueryPanel

@@ -4,9 +4,8 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // ---------------------------------------------------------------------------
@@ -93,12 +92,12 @@ func (d *ConnectDialog) drawButtonRow(s tcell.Screen) {
 
 // tabSegments computes each tab's extent; drawing and hit-testing share it so
 // clicks land where they look.
-func (d *ConnectDialog) tabSegments() [][]controls.TabSegment {
+func (d *ConnectDialog) tabSegments() [][]core.TabSegment {
 	widths := make([][]int, len(connectTabLabels))
 	for i, label := range connectTabLabels {
-		widths[i] = []int{controls.TabLabelWidth(label)}
+		widths[i] = []int{core.TabLabelWidth(label)}
 	}
-	return controls.TabStripSegments(d.tabRect.X, widths, d.tabRect.Right()+1)
+	return core.TabStripSegments(d.tabRect.X, widths, d.tabRect.Right()+1)
 }
 
 // Draw renders the dialog.

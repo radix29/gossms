@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // findMenuBarItem locates a buildMenus() item by its owning menu's label

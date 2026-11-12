@@ -9,9 +9,9 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // databaseFileColumns heads the Files page grid, rebuilt from four call sites

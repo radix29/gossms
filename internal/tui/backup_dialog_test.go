@@ -11,7 +11,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // Every backup goes out WITH INIT, so a generated name reused across backups

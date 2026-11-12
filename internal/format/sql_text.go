@@ -3,7 +3,7 @@ package format
 import (
 	"strings"
 
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // ---------------------------------------------------------------------------

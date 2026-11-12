@@ -10,7 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/fileutil"
 	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // app_panel_actions.go opens what the File menu opens: a query panel, a query

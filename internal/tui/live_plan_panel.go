@@ -10,8 +10,8 @@ import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/planview"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // live_plan_panel.go is Activity Monitor's Show Live Execution Plan: the live
@@ -205,7 +205,7 @@ func (lp *LivePlanPanel) Draw(s tcell.Screen) {
 	core.FillRect(s, core.Rect{X: lp.rect.X, Y: lp.rect.Y, W: lp.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, lp.rect.X+1, lp.rect.Y, lp.rect.W-2, titleStyle, lp.Title()+" · "+lp.state)
 	lp.planView.Draw(s)
-	// Drawn last — see the "overlays drawn last" rule in tuikit/README.md.
+	// Drawn last — see the "overlays drawn last" rule in ~/go/tuikit/ARCHITECTURE.md § Overlays.
 	lp.planView.DrawOverlay(s)
 }
 

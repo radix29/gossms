@@ -8,9 +8,11 @@ import (
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/gossms/internal/tui/sqledit"
 	"github.com/radix29/gossms/internal/version"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/layout"
 )
 
 // buildMenus assembles the top-level menu bar (File, Edit, View, Query, Tools,
@@ -47,9 +49,9 @@ func (a *App) buildMenus() []controls.Menu {
 		}},
 		{Label: "Edit", Items: []controls.MenuItem{
 			{Label: "Undo", Shortcut: "Ctrl+Z", Action: func() { a.editorUndo() },
-				Enabled: func() bool { _, ok := a.activeClipboardTarget().(*controls.Editor); return ok }},
+				Enabled: func() bool { _, ok := a.activeClipboardTarget().(*editor.Editor); return ok }},
 			{Label: "Redo", Shortcut: "Ctrl+Y", Action: func() { a.editorRedo() },
-				Enabled: func() bool { _, ok := a.activeClipboardTarget().(*controls.Editor); return ok }},
+				Enabled: func() bool { _, ok := a.activeClipboardTarget().(*editor.Editor); return ok }},
 			{Divider: true},
 			{Label: "Cut", Shortcut: "Ctrl+X", Action: func() { a.cutSelection() },
 				Enabled: func() bool { t := a.activeClipboardTarget(); return t != nil && t.HasSelection() }},
@@ -70,19 +72,19 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Find Previous", Shortcut: "Shift+F3", Action: func() { a.findNextInEditor(-1) },
 				Enabled: a.hasEditorSearch},
 			{Divider: true},
-			{Label: "Duplicate Line", Shortcut: "Ctrl+D", Action: func() { a.editorAction(func(e *controls.Editor) { e.DuplicateLines() }) },
+			{Label: "Duplicate Line", Shortcut: "Ctrl+D", Action: func() { a.editorAction(func(e *editor.Editor) { e.DuplicateLines() }) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
-			{Label: "Delete Line", Shortcut: "Ctrl+L", Action: func() { a.editorAction(func(e *controls.Editor) { e.DeleteLines() }) },
+			{Label: "Delete Line", Shortcut: "Ctrl+L", Action: func() { a.editorAction(func(e *editor.Editor) { e.DeleteLines() }) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
-			{Label: "Move Line Up", Shortcut: "Ctrl+Shift+Up", Action: func() { a.editorAction(func(e *controls.Editor) { e.MoveLinesUp() }) },
+			{Label: "Move Line Up", Shortcut: "Ctrl+Shift+Up", Action: func() { a.editorAction(func(e *editor.Editor) { e.MoveLinesUp() }) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
-			{Label: "Move Line Down", Shortcut: "Ctrl+Shift+Down", Action: func() { a.editorAction(func(e *controls.Editor) { e.MoveLinesDown() }) },
+			{Label: "Move Line Down", Shortcut: "Ctrl+Shift+Down", Action: func() { a.editorAction(func(e *editor.Editor) { e.MoveLinesDown() }) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
-			{Label: "Comment/Uncomment Line", Shortcut: "Ctrl+/", Action: func() { a.editorAction(func(e *controls.Editor) { e.ToggleLineComments() }) },
+			{Label: "Comment/Uncomment Line", Shortcut: "Ctrl+/", Action: func() { a.editorAction(func(e *editor.Editor) { e.ToggleLineComments() }) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
-			{Label: "Uppercase Selection", Shortcut: "Ctrl+Shift+U", Action: func() { a.editorAction(func(e *controls.Editor) { e.UppercaseSelection() }) },
+			{Label: "Uppercase Selection", Shortcut: "Ctrl+Shift+U", Action: func() { a.editorAction(func(e *editor.Editor) { e.UppercaseSelection() }) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
-			{Label: "Lowercase Selection", Shortcut: "Ctrl+U", Action: func() { a.editorAction(func(e *controls.Editor) { e.LowercaseSelection() }) },
+			{Label: "Lowercase Selection", Shortcut: "Ctrl+U", Action: func() { a.editorAction(func(e *editor.Editor) { e.LowercaseSelection() }) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Divider: true},
 			a.formatDocumentMenuItem(),
@@ -108,7 +110,7 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Execute", Shortcut: "F5", Action: func() { a.executeActiveQuery() },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: "Execute at Cursor", Shortcut: "Ctrl+Enter", Action: func() {
-				a.editorAction(func(e *controls.Editor) { e.SelectStatementAtCursor() })
+				a.editorAction(func(e *editor.Editor) { sqledit.SelectStatementAtCursor(e) })
 			}, Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: "Cancel Executing Query", Action: func() { a.cancelExecutingQuery() },
 				Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.cancellable() }},
@@ -223,24 +225,24 @@ func groupBySchemaMenuLabel(on bool) string {
 // Comment/Uncomment, Uppercase/Lowercase, Execute at Cursor), unlike
 // Cut/Copy/Paste/Select All, which also work on dialog input fields via
 // activeClipboardTarget.
-func (a *App) editorAction(fn func(e *controls.Editor)) {
+func (a *App) editorAction(fn func(e *editor.Editor)) {
 	if qp := a.activeQueryPanel(); qp != nil {
 		fn(qp.editor)
 	}
 }
 
-// editorUndo and editorRedo act on whichever *controls.Editor Cut/Copy/Paste
+// editorUndo and editorRedo act on whichever *editor.Editor Cut/Copy/Paste
 // would act on (the query editor, or a dialog's connection-string Editor)
 // rather than going through editorAction, which is query-editor-only.
 // InputField keeps no undo history, so a focused one has no effect here.
 func (a *App) editorUndo() {
-	if e, ok := a.activeClipboardTarget().(*controls.Editor); ok {
+	if e, ok := a.activeClipboardTarget().(*editor.Editor); ok {
 		e.Undo()
 	}
 }
 
 func (a *App) editorRedo() {
-	if e, ok := a.activeClipboardTarget().(*controls.Editor); ok {
+	if e, ok := a.activeClipboardTarget().(*editor.Editor); ok {
 		e.Redo()
 	}
 }
@@ -279,7 +281,7 @@ func (a *App) showAbout() {
 		rows = append(rows, PropertyRow{Key: "DB Framework Built", Value: gosmoversion.Date})
 	}
 	rows = append(rows,
-		PropertyRow{Key: "TUI Library", Value: "internal/tuikit (embedded)"},
+		PropertyRow{Key: "TUI Library", Value: strings.TrimSpace("github.com/radix29/tuikit " + version.Dependency("github.com/radix29/tuikit"))},
 		PropertyRow{Key: "TUI Backend", Value: "github.com/gdamore/tcell/v3"},
 
 		// The Activity Monitor's Sessions tab installs and runs somebody else's

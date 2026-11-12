@@ -43,14 +43,14 @@ import (
 //     `v.summarySt.grid.Draw` is paired only by `v.summarySt.grid.DrawOverlay`.
 //     A grid copied into a local first is not matched at all.
 
-// gridDrawPackages are the packages scanned, relative to the repo root — every
-// package that holds a controls.DataGrid. Named rather than discovered so a new
+// gridDrawPackages are the packages scanned, by import path — every package
+// that holds a controls.DataGrid. Named rather than discovered so a new
 // package holding a grid is a deliberate addition here; the length guards below
 // are what catch a path that has gone stale.
 var gridDrawPackages = []string{
-	"internal/tui",
-	"internal/tui/planview",
-	"internal/tuikit/propsheet",
+	"github.com/radix29/gossms/internal/tui",
+	"github.com/radix29/gossms/internal/tui/planview",
+	"github.com/radix29/tuikit/propsheet",
 }
 
 // TestEveryGridDrawIsPairedWithDrawOverlay fails when a type calls Draw on a
@@ -138,15 +138,12 @@ func TestEveryGridDrawIsPairedWithDrawOverlay(t *testing.T) {
 	}
 }
 
-// repoRoot is the module root, two levels up from internal/tui.
-const repoRoot = "../.."
-
 // parseGridSources parses every non-test source file of gridDrawPackages.
 func parseGridSources(t *testing.T, fset *token.FileSet) []*ast.File {
 	t.Helper()
 	var files []*ast.File
 	for _, pkg := range gridDrawPackages {
-		dir := filepath.Join(repoRoot, pkg)
+		dir := packageDir(t, pkg)
 		names, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err != nil {
 			t.Fatalf("glob %s: %v", dir, err)

@@ -7,7 +7,7 @@ import (
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ func (a *App) ensureCrossDatabaseInventory(sc *db.ServerConn, database string) *
 // A chain whose first part names no database here, and every four-part chain,
 // is then tried as a linked server's (linkedChainCandidates). A database that
 // can't be read answers nothing. wait reports a load still in flight.
-func (p *QueryPanel) chainCandidates(inv, sysInv *completionInventory, chain []string, prefix string) (items []controls.CompletionItem, wait bool) {
+func (p *QueryPanel) chainCandidates(inv, sysInv *completionInventory, chain []string, prefix string) (items []editor.CompletionItem, wait bool) {
 	switch len(chain) {
 	case 2:
 		if chain[1] != "" {
@@ -217,7 +217,7 @@ func (p *QueryPanel) chainCandidates(inv, sysInv *completionInventory, chain []s
 // orLinked is chainCandidates' answer once chain's first part named no
 // readable database: the loading row while the database directory or that
 // database is still loading, else the linked-server reading.
-func (p *QueryPanel) orLinked(chain []string, prefix string, pending bool) ([]controls.CompletionItem, bool) {
+func (p *QueryPanel) orLinked(chain []string, prefix string, pending bool) ([]editor.CompletionItem, bool) {
 	if pending {
 		return nil, true
 	}
@@ -228,15 +228,15 @@ func (p *QueryPanel) orLinked(chain []string, prefix string, pending bool) ([]co
 // contains the lower-cased pl, for the object list: what starts a three-part
 // name. Listing them also lets the '.' after one re-sync an open popup, since a
 // '.' never opens one from closed.
-func (p *QueryPanel) databaseItems(pl string) []controls.CompletionItem {
+func (p *QueryPanel) databaseItems(pl string) []editor.CompletionItem {
 	dir := p.app.ensureCompletionDirectory(p.conn)
-	var items []controls.CompletionItem
+	var items []editor.CompletionItem
 	for e := range dir.byName.Values() {
 		if e.state != gosmo.DatabaseOnline {
 			continue
 		}
 		if ok, partial := nameMatch(e.name, pl); ok {
-			items = append(items, controls.CompletionItem{
+			items = append(items, editor.CompletionItem{
 				Text: gosmo.QuoteNameIfNeeded(e.name), Label: e.name, Detail: "database",
 				Icon: nodeIcon(nodeData{Type: NodeDatabase}, p.app.cfg.IconStyle, false), Partial: partial,
 			})
@@ -247,16 +247,16 @@ func (p *QueryPanel) databaseItems(pl string) []controls.CompletionItem {
 
 // databaseSchemaItems offers the schemas of another database — "Sales." —
 // plus the sys-schema inventory's, which every database carries.
-func (p *QueryPanel) databaseSchemaItems(other, sysInv *completionInventory, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) databaseSchemaItems(other, sysInv *completionInventory, prefix string) []editor.CompletionItem {
 	pl := strings.ToLower(prefix)
-	var items []controls.CompletionItem
+	var items []editor.CompletionItem
 	for _, in := range []*completionInventory{other, sysInv} {
 		if in == nil || in.catalog == nil {
 			continue
 		}
 		for _, schema := range in.catalog.Schemas {
 			if ok, partial := nameMatch(schema, pl); ok {
-				items = append(items, controls.CompletionItem{
+				items = append(items, editor.CompletionItem{
 					Text: gosmo.QuoteNameIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
 					Partial: partial,
 				})

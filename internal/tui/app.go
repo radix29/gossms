@@ -1,5 +1,5 @@
 // Package tui is the gossms application layer. It wires the
-// application-agnostic controls from internal/tuikit into the
+// application-agnostic controls from github.com/radix29/tuikit into the
 // SQL-Server-specific Object Explorer, query panels, and dialogs; everything
 // here knows about gosmo, config.Connection, and SQL Server object types.
 package tui
@@ -17,11 +17,12 @@ import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/layout"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/layout"
+	"github.com/radix29/tuikit/theme"
 )
 
 // App is the root application struct, owning the screen and every UI panel —
@@ -168,10 +169,9 @@ type App struct {
 	backupDialog                *BackupDialog
 	restoreDialog               *RestoreDialog
 
-	// allDialogs lists every dialog exactly once, for syncDialogStack to
-	// scan; dialogStack is the live z-order (see dialog_stack.go).
-	allDialogs  []Dialog
-	dialogStack []Dialog
+	// modals holds every dialog, registered once by registerDialog, and the
+	// live z-order of the open ones (see dialog_stack.go).
+	modals dialogs.Stack
 
 	// tasks is the background task registry (see tasks.go); taskSeq is its
 	// monotonic ID counter.
@@ -249,7 +249,7 @@ func NewApp() *App {
 	// Options reaches them without a restart — into the open query panels
 	// directly, and into the open property sheets through
 	// PropertySheet.SetEditorIndentWidth.
-	controls.SetDefaultIndentWidth(a.cfg.IndentWidth)
+	editor.SetDefaultIndentWidth(a.cfg.IndentWidth)
 	a.loadPeerCredentials()
 	return a
 }
@@ -268,12 +268,12 @@ func (a *App) Run() error {
 	a.layoutAll()
 	installEntraSignIn(a)
 	a.resealLegacyPasswords()
-	// Open Connect on startup — nothing works without a server. syncDialogStack
-	// must run before the first draw: draw() renders from dialogStack, which is
+	// Open Connect on startup — nothing works without a server. modals.Sync
+	// must run before the first draw: draw() renders the open dialogs, which are
 	// otherwise synced only inside the event loop, so the dialog wouldn't
 	// appear until the first keypress.
 	a.connectDialog.Show()
-	a.syncDialogStack()
+	a.modals.Sync()
 	a.draw()
 
 	// tcell v3 has no PollEvent/PostEvent; events come from the EventQ()
@@ -319,7 +319,7 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	// already false and its CompareAndSwap succeeds.
 	a.wake.sent.Store(false)
 	a.drainPending()
-	a.syncDialogStack()
+	a.modals.Sync()
 
 	switch e := ev.(type) {
 	case *tcell.EventResize:
@@ -372,10 +372,10 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	}
 
 	// Re-sync before drawing: the event just handled may have opened or
-	// closed a dialog, and draw() renders straight from dialogStack. The
+	// closed a dialog, and draw() renders straight from modals.Open(). The
 	// top-of-loop sync still runs so input routing sees drainPending's
 	// changes.
-	a.syncDialogStack()
+	a.modals.Sync()
 	return false, need
 }
 
@@ -395,7 +395,7 @@ type wakeQueue struct {
 	// callback still runs, since the next wake for any reason drains the whole
 	// queue. Without this, a burst of near-simultaneous completions (the
 	// per-row fetches in loadDatabasesFolderDetails and friends) each cost a
-	// full drainPending + syncDialogStack + draw().
+	// full drainPending + modals.Sync + draw().
 	sent atomic.Bool
 }
 
@@ -523,8 +523,8 @@ func (a *App) buildUI() {
 	a.contextMenu = new(controls.ContextMenu{})
 
 	// Every dialog is constructed through registerDialog, which is what puts it
-	// in allDialogs. Registration order is only a tie-break for dialogs that
-	// became visible in the same tick; see syncDialogStack.
+	// in modals. Registration order is only a tie-break for dialogs that
+	// became visible in the same tick; see dialogs.Stack.Sync.
 	a.connectDialog = registerDialog(a, NewConnectDialog(a))
 	a.findDialog = registerDialog(a, NewFindReplaceDialog(a))
 	a.helpDialog = registerDialog(a, NewHelpDialog(a))
@@ -641,13 +641,13 @@ func installEntraSignIn(a *App) {
 	browser.Stdout, browser.Stderr = io.Discard, io.Discard
 }
 
-// registerDialog appends d to a.allDialogs and hands it back, so a dialog is
-// constructed and registered in one expression. syncDialogStack considers only
-// what allDialogs names, so a dialog assigned to its App field and not appended
+// registerDialog registers d in a.modals and hands it back, so a dialog is
+// constructed and registered in one expression. modals.Sync considers only
+// registered dialogs, so a dialog assigned to its App field and not registered
 // is built and shown but never drawn or given input —
 // TestEveryAppDialogFieldIsRegisteredInAllDialogs checks for that.
 func registerDialog[T Dialog](a *App, d T) T {
-	a.allDialogs = append(a.allDialogs, d)
+	a.modals.Register(d)
 	return d
 }
 
@@ -753,7 +753,7 @@ func (a *App) layoutAll() {
 	// Dialogs first, and above the too-small guard: a dialog that outgrows the
 	// terminal draws its borders and button row off-screen while still taking
 	// every key, so the smallest sizes are where re-fitting matters most.
-	a.relayoutDialogs()
+	a.modals.Relayout()
 
 	w, h := a.screen.Size()
 	if w < 20 || h < 5 {
@@ -805,10 +805,9 @@ func (a *App) draw() {
 	a.contextMenu.DrawOverlay(s)
 	a.drawDragGhost(s, w)
 
-	// Modal dialogs — highest z-order. syncDialogStack keeps dialogStack
-	// current, so drawing it bottom-to-top paints a nested dialog over its
-	// parent.
-	a.drawDialogs(s)
+	// Modal dialogs — highest z-order, drawn bottom-to-top so a nested dialog
+	// paints over its parent.
+	a.modals.Draw(s)
 
 	s.Show()
 }

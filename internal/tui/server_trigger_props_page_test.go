@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // Server Trigger Properties, driven through gosmotest_fixtures_test.go.

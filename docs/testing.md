@@ -36,9 +36,15 @@ them clean (`go install honnef.co/go/tools/cmd/staticcheck@latest`,
   `git log -S` for whether a test once called it before deleting it (the
   2026-11-11 pass found a view-reorganize case that read its result and never
   checked it).
-- gosmo: `staticcheck ./...` only. `deadcode` lists exported library surface
-  and the unexported helpers only it reaches (`schedulerGroupSizes`) — kept
-  deliberately, not a cleanup list.
+- gosmo and tuikit: `staticcheck ./...` only. `deadcode` lists exported
+  library surface and the unexported helpers only it reaches
+  (`schedulerGroupSizes`) — kept deliberately, not a cleanup list.
+
+**tuikit's tests run in `~/go/tuikit`, not here.** It is its own module since
+2026-11-12, so gossms's `go test ./...` compiles the tuikit packages it
+imports but runs none of their tests. A change to tuikit is `go test ./...`
+(and `-race` where it applies) inside `~/go/tuikit`, then gossms's suite, then
+the built gossms binary.
 
 **The race detector is part of "done" for anything that crosses goroutines.**
 Nearly every UI result reaches the event loop through `postAndWake` from a
@@ -72,7 +78,7 @@ ring buffer: `sp_updatestats` alone pushed its own batch out. Read
 outlives `--timeout`. Leave out the reads around the write: connect-time
 reads, the pre-2019 `BackupDirectory` registry read, `RESTORE HEADERONLY`.
 
-**After a lexer or parser change, fuzz it:** `go test ./internal/tuikit/sqltext
+**After a lexer or parser change, fuzz it:** `go test ./internal/sqltext
 -run XXX -fuzz FuzzLexer -fuzztime 60s -fuzzminimizetime 0`, likewise `FuzzScope`
 in `./internal/tui/sqlparse` (their seeds run in plain `go test`; without
 `-fuzzminimizetime 0` the minimizer stalls them). A crasher is a bug to fix,

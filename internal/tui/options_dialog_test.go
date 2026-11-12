@@ -10,23 +10,23 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/format"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // internal/config can't import tuikit, so it carries its own copy of the
 // indent-width default and ceiling. This package imports both and is where
 // they are held together.
 func TestIndentWidthConstantsAgree(t *testing.T) {
-	if config.DefaultIndentWidth != controls.DefaultIndentWidth {
-		t.Errorf("config.DefaultIndentWidth = %d, controls.DefaultIndentWidth = %d — they must agree",
-			config.DefaultIndentWidth, controls.DefaultIndentWidth)
+	if config.DefaultIndentWidth != editor.DefaultIndentWidth {
+		t.Errorf("config.DefaultIndentWidth = %d, editor.DefaultIndentWidth = %d — they must agree",
+			config.DefaultIndentWidth, editor.DefaultIndentWidth)
 	}
-	if config.MaxIndentWidth != controls.MaxIndentWidth {
-		t.Errorf("config.MaxIndentWidth = %d, controls.MaxIndentWidth = %d — they must agree",
-			config.MaxIndentWidth, controls.MaxIndentWidth)
+	if config.MaxIndentWidth != editor.MaxIndentWidth {
+		t.Errorf("config.MaxIndentWidth = %d, editor.MaxIndentWidth = %d — they must agree",
+			config.MaxIndentWidth, editor.MaxIndentWidth)
 	}
 }
 
@@ -45,7 +45,7 @@ func TestQueryPanelEditorTakesConfiguredIndentWidth(t *testing.T) {
 // time — and into the default new editors are seeded from.
 func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	a := newTestApp()
 	a.cfg.IndentWidth = config.DefaultIndentWidth
@@ -66,7 +66,7 @@ func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
 	if got := qp.editor.IndentWidth(); got != 2 {
 		t.Errorf("open panel's editor IndentWidth() = %d, want 2 — apply must push it", got)
 	}
-	if got := controls.NewEditor(nil).IndentWidth(); got != 2 {
+	if got := editor.NewEditor(nil).IndentWidth(); got != 2 {
 		t.Errorf("new editor IndentWidth() = %d, want 2 — apply must move the default too", got)
 	}
 }
@@ -75,7 +75,7 @@ func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
 // storing a width no editor would accept.
 func TestOptionsApplyClampsIndentWidth(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	for _, in := range []string{"", "0", "-1", "99", "two"} {
 		a := newTestApp()
@@ -94,7 +94,7 @@ func TestOptionsApplyClampsIndentWidth(t *testing.T) {
 // reach it through the open dialogs, not through a.panels.
 func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	a := newTestApp()
 	a.cfg.IndentWidth = config.DefaultIndentWidth
@@ -126,7 +126,7 @@ func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 // default for anything that is not a positive number.
 func TestOptionsApplyMaxTextColumnLength(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	for _, tc := range []struct {
 		in   string
@@ -156,7 +156,7 @@ func TestOptionsApplyMaxTextColumnLength(t *testing.T) {
 // Max fetch rows takes a positive number; anything else is 0, unlimited.
 func TestOptionsApplyMaxFetchRows(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	for _, tc := range []struct {
 		in   string

@@ -1,6 +1,6 @@
 package safety
 
-import "github.com/radix29/gossms/internal/tuikit/sqltext"
+import "github.com/radix29/gossms/internal/sqltext"
 
 const wordKind = sqltext.KindWord
 

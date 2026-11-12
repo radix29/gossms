@@ -2,10 +2,11 @@ package planview
 
 import (
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/layout"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/layout"
+	"github.com/radix29/tuikit/theme"
 )
 
 // Tab selects which visualization PlanView is currently showing.
@@ -36,7 +37,7 @@ type PlanView struct {
 	activeTab Tab
 	active    bool
 
-	xml *controls.Editor // backs TabXML
+	xml *editor.Editor // backs TabXML
 
 	// liveOn and live are live mode's state (see live.go): set by SetLive,
 	// cleared by SetPlan/SetPlanXML. live may be empty while liveOn — the
@@ -116,7 +117,7 @@ type PlanView struct {
 // New creates an empty PlanView. Call SetPlanXML or SetPlan to load a plan.
 func New() *PlanView {
 	v := new(PlanView{activeTab: TabPlan, selectedID: -1})
-	v.xml = controls.NewEditor(controls.XMLHighlighter(theme.Active()))
+	v.xml = editor.NewEditor(editor.XMLHighlighter(theme.Active()))
 	v.xml.SetReadOnly(true)
 	v.treeSplit = layout.NewSplitter(layout.SplitterVertical, 0.55) // tree gets more room than the details pane
 	v.treeSplit.SetLimits(0.1, 0.8)

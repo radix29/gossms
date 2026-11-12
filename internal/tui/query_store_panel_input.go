@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // query_store_panel_input.go holds the Query Store panel's keyboard and mouse

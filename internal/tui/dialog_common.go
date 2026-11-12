@@ -2,9 +2,9 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // dialog_common.go holds the small behaviours shared by the hand-rolled dialogs —
@@ -217,7 +217,7 @@ func forwardReleaseToFocusedField(ev *tcell.EventMouse, focused any) bool {
 	switch f := focused.(type) {
 	case *widgets.InputField:
 		f.HandleMouse(ev)
-	case *controls.Editor:
+	case *editor.Editor:
 		f.HandleMouse(ev)
 	}
 	return true

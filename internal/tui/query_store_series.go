@@ -9,7 +9,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/charts"
+	"github.com/radix29/tuikit/charts"
 )
 
 // query_store_series.go is the Query Store panel's second chart mode: the

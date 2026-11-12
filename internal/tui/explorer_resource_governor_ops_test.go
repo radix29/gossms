@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // Resource Governor's tree commands (W6): Delete applied at once without

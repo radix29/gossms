@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // Object Explorer geometry for the drag-arming tests: a 100x30 screen whose
@@ -47,7 +47,8 @@ func newDragTestApp(t *testing.T, childCount int) *App {
 	a.toolbar = controls.NewToolbar()
 	a.contextMenu = &controls.ContextMenu{}
 	a.alertDialog = dialogs.NewAlertDialog(a.screen)
-	a.allDialogs = []Dialog{a.alertDialog}
+	a.modals = dialogs.Stack{}
+	a.modals.Register(a.alertDialog)
 	a.explorerSplit = newVerticalSplitter()
 	a.explorerSplit.SetBounds(0, 1, dragTestScreenW, dragTestScreenH-2)
 	a.explorerSplit.SetRatio(0.3)

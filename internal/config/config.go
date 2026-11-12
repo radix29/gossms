@@ -457,7 +457,7 @@ func ClampXEventStoreCapacity(n int) int {
 }
 
 // DefaultIndentWidth and MaxIndentWidth (the clamp ceiling) must agree with
-// controls.DefaultIndentWidth / MaxIndentWidth, which config must not import;
+// editor.DefaultIndentWidth / MaxIndentWidth, which config must not import;
 // TestIndentWidthDefaultsAgree holds them together.
 const (
 	DefaultIndentWidth = 4

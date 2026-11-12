@@ -6,8 +6,9 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // tokenDialog is a host shaped like propsheet.PropertySheet: it hands back
@@ -45,7 +46,9 @@ func newTokenDialogApp(t *testing.T) (*App, *tokenDialog) {
 	t.Helper()
 	a := newClipboardTestApp()
 	d := newTokenDialog()
-	a.dialogStack = []Dialog{d}
+	a.modals = dialogs.Stack{}
+	a.modals.Register(d)
+	a.modals.Sync()
 	return a, d
 }
 
@@ -56,7 +59,7 @@ func newTokenDialogApp(t *testing.T) (*App, *tokenDialog) {
 func TestPasteIsDroppedWhenFocusMovedWithinTheSameHost(t *testing.T) {
 	a, d := newTokenDialogApp(t)
 	target := a.activeClipboardTarget()
-	token := clipboardTargetToken(a.topDialog())
+	token := clipboardTargetToken(a.modals.Top())
 
 	d.focused = 1 // the read comes back after the user tabbed on
 	a.pasteInto(target, token, "hunter2")
@@ -73,7 +76,7 @@ func TestPasteIsDroppedWhenFocusMovedWithinTheSameHost(t *testing.T) {
 // simply refusing everything.
 func TestPasteAppliesWhenFocusHasNotMoved(t *testing.T) {
 	a, d := newTokenDialogApp(t)
-	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.topDialog()), "hunter2")
+	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), "hunter2")
 
 	if got := d.fields[0].Value(); got != "hunter2" {
 		t.Fatalf("field 0 = %q, want the pasted text", got)
@@ -99,7 +102,7 @@ func TestASelfTargetingClipboardHostCarriesAToken(t *testing.T) {
 	tokenerType := reflect.TypeFor[core.ClipboardTargetTokener]()
 
 	selfTargeting := 0
-	for _, d := range a.allDialogs {
+	for _, d := range a.modals.Registered() {
 		h, ok := d.(core.ClipboardHost)
 		if !ok {
 			continue

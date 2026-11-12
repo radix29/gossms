@@ -13,8 +13,8 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // procResult is one run shaped like sp_block's.

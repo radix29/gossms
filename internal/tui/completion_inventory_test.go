@@ -9,7 +9,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // evictInventory must only drop the entry the finishing load actually
@@ -144,15 +144,15 @@ func TestTwoIdentitiesOnOneServerKeepTheirOwnCaches(t *testing.T) {
 // still loading, and types a FROM-clause prefix so its popup opens on the
 // "Loading suggestions..." row. It returns a pointer to the items the
 // provider answered last, which the editor keeps no public view of.
-func openPlaceholderPopup(t *testing.T, qp *QueryPanel, database string) *[]controls.CompletionItem {
+func openPlaceholderPopup(t *testing.T, qp *QueryPanel, database string) *[]editor.CompletionItem {
 	t.Helper()
 	qp.app.panels.AddPanel(qp)
 	qp.database = database
 	qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, database)] = &completionInventory{
 		loading: true, serverKey: sysCompletionInventoryKey(qp.conn.Opts),
 	}
-	last := new([]controls.CompletionItem)
-	qp.editor.SetCompletionProvider(func(req controls.CompletionRequest) ([]controls.CompletionItem, int) {
+	last := new([]editor.CompletionItem)
+	qp.editor.SetCompletionProvider(func(req editor.CompletionRequest) ([]editor.CompletionItem, int) {
 		items, from := qp.sqlCompletionCandidates(req)
 		*last = items
 		return items, from

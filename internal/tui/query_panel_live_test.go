@@ -10,7 +10,7 @@ import (
 	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // fakeLiveSource scripts the poller's two reads: profiles[i] answers the i'th

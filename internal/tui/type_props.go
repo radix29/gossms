@@ -8,9 +8,10 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/theme"
 )
 
 // type_props.go is the read-only Properties for the four user-type families
@@ -248,7 +249,7 @@ func pageXMLSchemaCollectionSchema(sc *db.ServerConn, dbName, schema, name strin
 				), nil, nil
 			}
 
-			ed := controls.NewEditor(controls.XMLHighlighter(theme.Active()))
+			ed := editor.NewEditor(editor.XMLHighlighter(theme.Active()))
 			ed.SetText(def)
 			ed.SetReadOnly(true)
 

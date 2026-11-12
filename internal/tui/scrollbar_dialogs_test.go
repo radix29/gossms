@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // TestQueryListDialogScrollbarDragScrolls confirms dragging the query list's
@@ -86,10 +86,10 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 // ModalDialog.ScrollbarDrag.
 //
 // KeyDiagnosticsDialog was tested here too until it moved its log into a
-// read-only controls.Editor, which draws and drags its own scrollbar — the
+// read-only editor.Editor, which draws and drags its own scrollbar — the
 // same reason StatusHistoryDialog, built that way from the start, has never
-// had a case here. That half is pinned in
-// internal/tuikit/controls/scrollbar_drag_test.go.
+// had a case here. That half is pinned in tuikit's
+// controls/scrollbar_drag_test.go.
 func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
 	a.screen = tuikittest.NewScreen(80, 30)

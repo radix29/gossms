@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // ownedThing stands in for *gosmo.Schema / *gosmo.DatabaseRole so the page's

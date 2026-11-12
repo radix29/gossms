@@ -16,8 +16,8 @@ import (
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/theme"
 )
 
 func newTestResult(sets int, withError bool) *query.Result {
@@ -71,7 +71,7 @@ func TestMessagesErrorLinesColoredRed(t *testing.T) {
 
 	// A real Editor, since Document has no exported constructor — the
 	// highlighter only reads Line(idx) off it.
-	ed := controls.NewEditor(nil)
+	ed := editor.NewEditor(nil)
 	ed.SetText("(1 row affected)\nboom")
 	lines := ed.Document()
 	if runs := qp.messagesHighlighter(lines, 0); runs != nil {
@@ -1205,7 +1205,7 @@ func TestQueryPanelDirtyCachesPerVersion(t *testing.T) {
 // docEquals stands in for Text() == s, so it must agree with it on line
 // breaks, multi-byte runes, and a difference in length either way.
 func TestDocEqualsMatchesText(t *testing.T) {
-	e := controls.NewEditor(nil)
+	e := editor.NewEditor(nil)
 	for _, text := range []string{"", "a", "a\nb", "\n", "héllo\n€ 1\n", "x\n\ny"} {
 		e.SetText(text)
 		doc := e.Document()

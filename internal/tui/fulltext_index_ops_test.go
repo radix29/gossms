@@ -14,8 +14,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // The table's Full-Text index cascade (W18): what each action refuses on the

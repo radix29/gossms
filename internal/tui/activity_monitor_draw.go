@@ -5,9 +5,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // Draw renders the tab row, toolbar row, then the active tab.
@@ -25,13 +24,13 @@ func (am *ActivityMonitor) Draw(s tcell.Screen) {
 // tabSegments computes each tab's extent; drawing and hit-testing share it so
 // clicks land where they look. Indexed by position in visibleTabs, not by
 // amTab.
-func (am *ActivityMonitor) tabSegments() [][]controls.TabSegment {
+func (am *ActivityMonitor) tabSegments() [][]core.TabSegment {
 	tabs := am.visibleTabs()
 	widths := make([][]int, len(tabs))
 	for i, t := range tabs {
-		widths[i] = []int{controls.TabLabelWidth(amTabLabels[t])}
+		widths[i] = []int{core.TabLabelWidth(amTabLabels[t])}
 	}
-	return controls.TabStripSegments(am.tabRect.X+1, widths, am.tabRect.Right())
+	return core.TabStripSegments(am.tabRect.X+1, widths, am.tabRect.Right())
 }
 
 // drawTabBar renders the offered tabs, styled like QueryPanel's result tabs.

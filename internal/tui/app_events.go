@@ -4,7 +4,7 @@ import (
 	"unicode"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // normalizeCtrlRune folds a Ctrl-modified letter back to KeyCtrlA..KeyCtrlZ,
@@ -55,8 +55,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		return false
 	}
 
-	if top := a.topDialog(); top != nil {
-		top.HandleKey(ev)
+	if a.modals.HandleKey(ev) {
 		return false
 	}
 	if a.contextMenu.OverlayActive() {
@@ -270,8 +269,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 
-	if top := a.topDialog(); top != nil {
-		top.HandleMouse(ev)
+	if a.modals.HandleMouse(ev) {
 		return
 	}
 	if a.contextMenu.OverlayActive() {
@@ -391,18 +389,11 @@ const (
 // clears dragging; TreeView clears its latch before its bounds check and acts only
 // on Button1/Button2; PanelManager forwards any release to the active panel.
 func (a *App) routeRelease(ev *tcell.EventMouse) {
-	// Every open dialog gets the release, bottom to top, not only the front one. A
-	// dialog's button latch (dialogs.ModalDialog.mouseDragging) is cleared by the
-	// release its own HandleMouse sees, and a dialog that opened a nested one from
-	// a button press never sees it while the child is up, so its next press was
-	// refused as a continuation of the click that opened the child (the Connect
-	// dialog ignored the first click after a Delete confirmation). Acting on a
-	// release needs Button1, so the dialogs underneath only reset latches.
-	if len(a.dialogStack) > 0 {
-		for _, d := range a.dialogStack {
-			d.HandleMouse(ev)
-		}
-	} else if a.contextMenu.OverlayActive() {
+	// Every open dialog gets the release, bottom to top, not only the front one
+	// (dialogs.Stack.HandleMouse): a dialog that opened a nested one from a button
+	// press never saw its release while the child was up, so the Connect dialog
+	// ignored the first click after a Delete confirmation.
+	if !a.modals.HandleMouse(ev) && a.contextMenu.OverlayActive() {
 		a.contextMenu.HandleMouse(ev)
 	}
 
@@ -410,7 +401,7 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	// dragThreshold) and nothing modal opened mid-drag. drag.node is disarmed
 	// either way; armed, it swallows all later mouse events.
 	if a.drag.node != nil {
-		if a.drag.active && a.topDialog() == nil {
+		if a.drag.active && a.modals.Top() == nil {
 			mx, my := ev.Position()
 			a.dropExplorerNode(mx, my)
 		}
@@ -422,7 +413,7 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	// up the menu bar, toolbar and panels behind the overlay as the pointer
 	// crosses them; a release nowhere resets the latches and clears any hover.
 	base := ev
-	if len(a.dialogStack) > 0 || a.contextMenu.OverlayActive() {
+	if a.modals.Top() != nil || a.contextMenu.OverlayActive() {
 		base = tcell.NewEventMouse(-1, -1, tcell.ButtonNone, ev.Modifiers())
 	}
 	a.menuBar.HandleMouse(base)
@@ -458,7 +449,7 @@ type overlayStack struct {
 
 func (a *App) overlaySnapshot() overlayStack {
 	return overlayStack{
-		dialog:      a.topDialog(),
+		dialog:      a.modals.Top(),
 		contextMenu: a.contextMenu.OverlayActive(),
 		menuBar:     a.menuBar.OverlayActive(),
 	}

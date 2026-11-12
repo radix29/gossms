@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 func pageServerConnections(sc *db.ServerConn) propPage {

@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -12,10 +13,10 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // A click in a text field starts a gesture that belongs to that field until
@@ -40,7 +41,7 @@ import (
 // gestureFieldType is the widget whose press starts a drag a FieldGesture has
 // to own; gestureWalkStops are the three that own their own and end the walk.
 //
-// controls.Editor hit-tests inside its own HandleMouse (it has no separate
+// editor.Editor hit-tests inside its own HandleMouse (it has no separate
 // HitTest, which is why a host calls it unconditionally).
 // propsheet.PropertySheet routes every press through its own dragZone — the
 // sheet-level form of the same invariant — and propsheet.TextRow is the form
@@ -54,7 +55,7 @@ func gestureWalkStops() []reflect.Type {
 	return []reflect.Type{
 		reflect.TypeFor[*propsheet.PropertySheet](),
 		reflect.TypeFor[*propsheet.TextRow](),
-		reflect.TypeFor[*controls.Editor](),
+		reflect.TypeFor[*editor.Editor](),
 	}
 }
 
@@ -73,7 +74,7 @@ func TestEveryDialogWithATextFieldOwnsAFieldGesture(t *testing.T) {
 
 	field, gesture := gestureFieldType(), reflect.TypeFor[dialogs.FieldGesture]()
 	checked, withField := 0, 0
-	for _, d := range a.allDialogs {
+	for _, d := range a.modals.Registered() {
 		name := reflect.TypeOf(d).String()
 		checked++
 		if !reaches(reflect.ValueOf(d), field, map[uintptr]bool{}) {
@@ -92,7 +93,7 @@ func TestEveryDialogWithATextFieldOwnsAFieldGesture(t *testing.T) {
 	}
 
 	// Both guards keep the test from passing vacuously: the first if
-	// allDialogs stops being reachable, the second if the walk stops
+	// modals.Registered() stops being reachable, the second if the walk stops
 	// recognising an InputField (a rename, a move behind another struct).
 	if checked == 0 {
 		t.Fatal("no dialogs to check — this test has stopped checking anything")
@@ -110,7 +111,7 @@ func TestEveryDialogWithATextFieldOwnsAFieldGesture(t *testing.T) {
 }
 
 func hasDialogNamed(a *App, name string) bool {
-	for _, d := range a.allDialogs {
+	for _, d := range a.modals.Registered() {
 		if reflect.TypeOf(d).String() == name {
 			return true
 		}
@@ -184,7 +185,21 @@ func reaches(v reflect.Value, want reflect.Type, seen map[uintptr]bool) bool {
 // in. This test reads their source rather than importing them — tuikit knows
 // nothing about tui and must not start to — because duplicating the checker in
 // each package is how the two halves of a rule drift apart.
-func gestureSourceDirs() []string { return []string{".", "../tuikit/dialogs"} }
+func gestureSourceDirs(t *testing.T) []string {
+	return []string{".", packageDir(t, "github.com/radix29/tuikit/dialogs")}
+}
+
+// packageDir is the source directory of the package at import path, as the
+// go command resolves it: the ../tuikit checkout while go.mod's replace is
+// active, the module cache otherwise.
+func packageDir(t *testing.T, path string) string {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-f", "{{.Dir}}", path).Output()
+	if err != nil {
+		t.Fatalf("go list %s: %v", path, err)
+	}
+	return strings.TrimSpace(string(out))
+}
 
 // TestFieldGestureCallsAreOrderedCorrectly is the usage half. Owning a
 // FieldGesture proves nothing on its own: the three calls only work in one
@@ -216,7 +231,7 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 	owners := map[string]bool{}
 	found := map[string]*methods{}
 
-	for _, dir := range gestureSourceDirs() {
+	for _, dir := range gestureSourceDirs(t) {
 		names, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err != nil {
 			t.Fatalf("glob %s: %v", dir, err)
@@ -476,11 +491,11 @@ func TestGestureWalkFollowsAnInterfaceField(t *testing.T) {
 func TestGestureWalkStopsAtWidgetsThatOwnTheirOwnGesture(t *testing.T) {
 	type sheeted struct {
 		row *propsheet.TextRow
-		ed  *controls.Editor
+		ed  *editor.Editor
 	}
 	// A TextRow really does hold an InputField, which is what makes the stop
 	// load-bearing rather than decorative — remove it and this fails.
-	d := &sheeted{row: propsheet.Text("Name", "", 20), ed: controls.NewEditor(nil)}
+	d := &sheeted{row: propsheet.Text("Name", "", 20), ed: editor.NewEditor(nil)}
 	if reaches(reflect.ValueOf(d), gestureFieldType(), map[uintptr]bool{}) {
 		t.Error("the walk counted a field inside a propsheet row or an Editor, which " +
 			"route their own presses")

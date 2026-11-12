@@ -7,7 +7,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // databaseTriggerPropPages builds the page set for Database Trigger Properties:

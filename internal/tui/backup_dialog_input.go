@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // HandleKey routes keyboard events.

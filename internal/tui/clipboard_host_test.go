@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // textEntryTypes are the widgets a user can type into or select text in. A
@@ -22,7 +22,7 @@ import (
 func textEntryTypes() []reflect.Type {
 	return []reflect.Type{
 		reflect.TypeFor[*widgets.InputField](),
-		reflect.TypeFor[*controls.Editor](),
+		reflect.TypeFor[*editor.Editor](),
 		reflect.TypeFor[*propsheet.PropertySheet](),
 	}
 }
@@ -47,7 +47,7 @@ func TestEveryDialogWithTextEntryIsAClipboardHost(t *testing.T) {
 
 	hostType := reflect.TypeFor[core.ClipboardHost]()
 	checked, withText := 0, 0
-	for _, d := range a.allDialogs {
+	for _, d := range a.modals.Registered() {
 		dt := reflect.TypeOf(d)
 		checked++
 		if !holdsTextEntry(reflect.ValueOf(d), map[uintptr]bool{}) {
@@ -61,7 +61,7 @@ func TestEveryDialogWithTextEntryIsAClipboardHost(t *testing.T) {
 	}
 
 	// Both guards keep the test from passing vacuously: the first if
-	// allDialogs stops being reachable, the second if holdsTextEntry stops
+	// modals.Registered() stops being reachable, the second if holdsTextEntry stops
 	// recognising the widgets (a rename, a move behind another struct).
 	if checked == 0 {
 		t.Fatal("no dialogs to check — this test has stopped checking anything")

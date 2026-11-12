@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The four SQL Server Agent create dialogs — New Operator, New Alert, New

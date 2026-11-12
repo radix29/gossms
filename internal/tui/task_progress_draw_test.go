@@ -9,7 +9,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // progressScreenRows renders rows [from, to) of s as text, trailing blanks

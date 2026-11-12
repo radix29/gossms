@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/layout"
 )
 
 // plan_compare_open.go starts a comparison the ways SSMS's Compare Showplan

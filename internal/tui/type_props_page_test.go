@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The Types Properties pages, driven through gosmotest_fixtures_test.go.

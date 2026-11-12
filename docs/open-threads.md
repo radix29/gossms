@@ -115,10 +115,28 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 
 - **Nine palette/style pairs read below the WCAG floor** — found when review
   step S5 gave them named helpers; they were drawn inline before, so nothing
-  changed visibly. `knownLowContrast` in `internal/tuikit/theme/contrast_test.go`
+  changed visibly. `knownLowContrast` in tuikit's `theme/contrast_test.go`
   lists them (DialogAccent and DialogError in Default, DialogAccent/DialogDim/
   MenuDim in Light, MenuDim in MC, MenuDim/DialogDim/DialogError in MCRetro).
   Recolouring is a visible change: check each palette in the binary.
+
+## Dialogs: what is left
+
+- **A clamped dialog's left and right button groups overlap.** Connect on a
+  60-column terminal draws `[ Delete ]  [ Profile... ]set ]  [ Connect ]`:
+  the right-aligned group starts inside the left one. The clip keeps it in the
+  box but does not lay it out. Seen 2026-11-12 while driving review-plan A2.
+
+## tuikit: what is left
+
+- **No tag yet — a release blocker.** tuikit became its own module
+  (`github.com/radix29/tuikit`, `~/go/tuikit`) on 2026-11-12. `go.mod`
+  requires the `v0.0.0-…` placeholder and builds only through
+  `replace … => ../tuikit`; before a gossms tag, commit, tag and push tuikit,
+  then bump the `require` and drop the `replace` (as for gosmo).
+- **`Editor.ToggleLineComments` hard-codes T-SQL's `--` prefix** — the one
+  language rule left in the library (review-plan A1). A host-set prefix, as
+  `SetWordStart`/`SetIndentRule` are, would end it.
 
 ## Fix order
 

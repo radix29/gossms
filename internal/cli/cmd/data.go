@@ -16,7 +16,7 @@ import (
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // The data commands' options.

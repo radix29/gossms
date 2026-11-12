@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/controls"
 )
 
 // xevent_viewer_group.go is the Extended Events viewer's Grouping and

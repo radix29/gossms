@@ -8,9 +8,9 @@ import (
 	"github.com/gdamore/tcell/v3"
 	dbconn "github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/format"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // DetailBrowser shows details of the selected Object Explorer node — a Panel

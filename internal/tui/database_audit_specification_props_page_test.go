@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // Database Audit Specification Properties > General, driven through

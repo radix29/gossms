@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
-// TestDialogStackNestingAndPruning drives syncDialogStack the way Run's
+// TestDialogStackNestingAndPruning drives modals.Sync the way Run's
 // event loop does — once per tick — to verify the three things replacing
 // the hand-enumerated switch depends on: a newly shown dialog becomes the
 // new top (even while another is still open, i.e. nesting), a dialog that
@@ -18,70 +18,70 @@ func TestDialogStackNestingAndPruning(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()
 
-	if got := a.topDialog(); got != nil {
-		t.Fatalf("topDialog before anything shown = %v, want nil", got)
+	if got := a.modals.Top(); got != nil {
+		t.Fatalf("modals.Top() before anything shown = %v, want nil", got)
 	}
 
 	a.helpDialog.Show()
-	a.syncDialogStack()
-	if got := a.topDialog(); got != a.helpDialog {
-		t.Errorf("topDialog after showing help = %v, want helpDialog", got)
+	a.modals.Sync()
+	if got := a.modals.Top(); got != a.helpDialog {
+		t.Errorf("modals.Top() after showing help = %v, want helpDialog", got)
 	}
-	if len(a.dialogStack) != 1 {
-		t.Fatalf("stack len = %d, want 1", len(a.dialogStack))
+	if len(a.modals.Open()) != 1 {
+		t.Fatalf("stack len = %d, want 1", len(a.modals.Open()))
 	}
 
 	// Nesting: a second dialog opens while help is still visible — the
 	// path a dialog spawning a child takes, e.g. Backup > Browse.
 	a.optionsDialog.Show()
-	a.syncDialogStack()
-	if got := a.topDialog(); got != a.optionsDialog {
-		t.Errorf("topDialog after nested show = %v, want optionsDialog on top", got)
+	a.modals.Sync()
+	if got := a.modals.Top(); got != a.optionsDialog {
+		t.Errorf("modals.Top() after nested show = %v, want optionsDialog on top", got)
 	}
-	if len(a.dialogStack) != 2 || a.dialogStack[0] != Dialog(a.helpDialog) {
-		t.Errorf("stack = %v, want [help, options]", a.dialogStack)
+	if len(a.modals.Open()) != 2 || a.modals.Open()[0] != Dialog(a.helpDialog) {
+		t.Errorf("stack = %v, want [help, options]", a.modals.Open())
 	}
 
 	// Closing the top dialog drops it on the next sync, uncovering help.
 	a.optionsDialog.Hide()
-	a.syncDialogStack()
-	if got := a.topDialog(); got != a.helpDialog {
-		t.Errorf("topDialog after closing options = %v, want helpDialog uncovered", got)
+	a.modals.Sync()
+	if got := a.modals.Top(); got != a.helpDialog {
+		t.Errorf("modals.Top() after closing options = %v, want helpDialog uncovered", got)
 	}
-	if len(a.dialogStack) != 1 {
-		t.Errorf("stack len after closing options = %d, want 1", len(a.dialogStack))
+	if len(a.modals.Open()) != 1 {
+		t.Errorf("stack len after closing options = %d, want 1", len(a.modals.Open()))
 	}
 
 	// Re-showing a dialog already in the stack must not duplicate it.
 	a.helpDialog.Show()
-	a.syncDialogStack()
-	if len(a.dialogStack) != 1 {
-		t.Errorf("re-showing an already-open dialog duplicated it: stack = %v", a.dialogStack)
+	a.modals.Sync()
+	if len(a.modals.Open()) != 1 {
+		t.Errorf("re-showing an already-open dialog duplicated it: stack = %v", a.modals.Open())
 	}
 
 	a.helpDialog.Hide()
-	a.syncDialogStack()
-	if got := a.topDialog(); got != nil {
-		t.Errorf("topDialog after closing the last dialog = %v, want nil", got)
+	a.modals.Sync()
+	if got := a.modals.Top(); got != nil {
+		t.Errorf("modals.Top() after closing the last dialog = %v, want nil", got)
 	}
-	if len(a.dialogStack) != 0 {
-		t.Errorf("stack after closing everything = %v, want empty", a.dialogStack)
+	if len(a.modals.Open()) != 0 {
+		t.Errorf("stack after closing everything = %v, want empty", a.modals.Open())
 	}
 }
 
 // TestTasksDialogParticipatesInStack guards against the one mistake this
 // architecture can still make silently: adding a new dialog type without
-// appending it to allDialogs in buildUI. If tasksDialog were missing from
-// that list, syncDialogStack would never notice it becoming visible and it
+// registering it in buildUI. If tasksDialog were never registered,
+// modals.Sync would never notice it becoming visible and it
 // would draw over everything with no way to route input to it.
 func TestTasksDialogParticipatesInStack(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()
 
 	a.tasksDialog.Show()
-	a.syncDialogStack()
-	if got := a.topDialog(); got != a.tasksDialog {
-		t.Errorf("topDialog after showing tasksDialog = %v, want tasksDialog", got)
+	a.modals.Sync()
+	if got := a.modals.Top(); got != a.tasksDialog {
+		t.Errorf("modals.Top() after showing tasksDialog = %v, want tasksDialog", got)
 	}
 }
 
@@ -93,9 +93,9 @@ func TestStatusHistoryDialogParticipatesInStack(t *testing.T) {
 	a.buildUI()
 
 	a.statusHistoryDialog.Show()
-	a.syncDialogStack()
-	if got := a.topDialog(); got != a.statusHistoryDialog {
-		t.Errorf("topDialog after showing statusHistoryDialog = %v, want statusHistoryDialog", got)
+	a.modals.Sync()
+	if got := a.modals.Top(); got != a.statusHistoryDialog {
+		t.Errorf("modals.Top() after showing statusHistoryDialog = %v, want statusHistoryDialog", got)
 	}
 }
 
@@ -110,7 +110,7 @@ func TestLayoutAllRefitsOpenDialogsToTheNewScreenSize(t *testing.T) {
 	scr := a.screen.(*tuikittest.Screen)
 
 	a.alertDialog.ShowAlert("Alert", "Something happened.")
-	a.syncDialogStack()
+	a.modals.Sync()
 
 	scr.SetSize(44, 12)
 	a.layoutAll()
@@ -138,15 +138,15 @@ func TestDialogStackRoutesInputToTopOnly(t *testing.T) {
 	a.buildUI()
 
 	a.helpDialog.Show()
-	a.syncDialogStack()
+	a.modals.Sync()
 	a.optionsDialog.Show()
-	a.syncDialogStack()
+	a.modals.Sync()
 
-	top := a.topDialog()
+	top := a.modals.Top()
 	if top != a.optionsDialog {
 		t.Fatalf("top = %v, want optionsDialog", top)
 	}
-	// helpDialog, though still open underneath, is not what topDialog
+	// helpDialog, though still open underneath, is not what modals.Top()
 	// returns — routing HandleKey/HandleMouse to top alone leaves it inert.
 	if top == Dialog(a.helpDialog) {
 		t.Errorf("top resolved to the covered dialog, not the frontmost one")

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // TestStatusHistoryRecordPrependsNewest pins down newest-first ordering, so
@@ -109,7 +109,7 @@ func TestStatusHistoryRecordDefersSyncWhileHidden(t *testing.T) {
 func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
 	d := &StatusHistoryDialog{}
 	d.InitModal(nil, "Status History", 90, 26)
-	d.editor = controls.NewEditor(nil)
+	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.ModalDialog.Show()
 
@@ -136,7 +136,7 @@ func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
 func TestStatusHistoryRecordIsSafeFromBackgroundGoroutines(t *testing.T) {
 	d := &StatusHistoryDialog{}
 	d.InitModal(nil, "Status History", 90, 26)
-	d.editor = controls.NewEditor(nil)
+	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.ModalDialog.Show()
 

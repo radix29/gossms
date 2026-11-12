@@ -5,7 +5,7 @@ import "sort"
 // TextRevision identifies the revision of the text a scan is made against, so
 // PrefixCache can tell whether it may resume from the previous one.
 //
-// It mirrors controls.TextRevision field for field; the query panel converts at
+// It mirrors editor.TextRevision field for field; the query panel converts at
 // the one call site. A lexer over runes should not import a widget package to
 // name a cache key.
 type TextRevision struct {

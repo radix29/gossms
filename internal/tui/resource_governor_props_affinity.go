@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // resource_governor_props_affinity.go is the affinity half of a pool page in

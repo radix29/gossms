@@ -17,6 +17,9 @@
 		},
 		{
 			"path": "../gotuipic"
+		},
+		{
+			"path": "../tuikit"
 		}
 	],
 	"settings": {}

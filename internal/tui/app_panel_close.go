@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/layout"
 )
 
 // app_panel_close.go is closing a panel and quitting: what a close releases,

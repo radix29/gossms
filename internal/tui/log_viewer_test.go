@@ -10,8 +10,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // newTestLogViewer builds a LogViewer with no App and no connection — enough

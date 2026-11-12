@@ -6,7 +6,7 @@ import (
 
 	dbconn "github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // detail_browser_ops.go is the Object Explorer Details pane's write path: the

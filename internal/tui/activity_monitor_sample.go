@@ -10,7 +10,7 @@ import (
 
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/charts"
+	"github.com/radix29/tuikit/charts"
 )
 
 // Fixed scales for single-bar and percentage panels; a lone auto-scaled bar is

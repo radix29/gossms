@@ -9,8 +9,8 @@ import (
 	"github.com/radix29/gossms/internal/fileutil"
 	"github.com/radix29/gossms/internal/scripting"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // scripting.go is Object Explorer's "Script <Noun> as ▸" cascade: which node

@@ -4,13 +4,13 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // clipboardTarget is any widget that can take part in Copy/Cut/Paste: an alias
 // for core.ClipboardTarget, which lives there so tuikit's dialogs can hand one
-// back (see core.ClipboardHost). widgets.InputField, controls.Editor,
+// back (see core.ClipboardHost). widgets.InputField, editor.Editor,
 // controls.DataGrid and propsheet.PropertySheet satisfy it structurally.
 type clipboardTarget = core.ClipboardTarget
 
@@ -49,11 +49,8 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 	// Never fall past it to a panel underneath, or Ctrl+X with the Find dialog open
 	// would cut the query editor's selection behind it, reported as "Cut to
 	// clipboard". A dialog that isn't a ClipboardHost has no text, so nil.
-	if top := a.topDialog(); top != nil {
-		if h, ok := top.(core.ClipboardHost); ok {
-			return h.FocusedClipboardTarget()
-		}
-		return nil
+	if target, owned := a.modals.ClipboardTarget(); owned {
+		return target
 	}
 	if qp := a.activeQueryPanel(); qp != nil {
 		// Every view below shares the results half of the panel, so which one shows
@@ -151,9 +148,7 @@ func (a *App) cutSelection() {
 // core.ClipboardEditHandler). The dialog checks which target it was handed
 // rather than assuming the edit landed in the field it watches.
 func (a *App) notifyClipboardEdit(target clipboardTarget) {
-	if h, ok := a.topDialog().(core.ClipboardEditHandler); ok {
-		h.ClipboardEdited(target)
-	}
+	a.modals.ClipboardEdited(target)
 }
 
 // writeClipboard sends text to the clipboard off the UI thread: the native OS
@@ -233,7 +228,7 @@ func (a *App) pasteFromClipboard() {
 	if target == nil {
 		return
 	}
-	token := clipboardTargetToken(a.topDialog())
+	token := clipboardTargetToken(a.modals.Top())
 	a.safego("reading the clipboard", func() {
 		text, ok := osClipboardRead()
 		a.postAndWake(func() {
@@ -274,7 +269,7 @@ func (a *App) pasteInto(target clipboardTarget, token any, text string) {
 	if target == nil || a.activeClipboardTarget() != target {
 		return
 	}
-	if clipboardTargetToken(a.topDialog()) != token {
+	if clipboardTargetToken(a.modals.Top()) != token {
 		return
 	}
 	target.Paste(text)

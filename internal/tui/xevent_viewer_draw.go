@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // xevent_viewer_draw.go renders the Extended Events viewer: the toolbar row,

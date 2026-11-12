@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/format"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // File > Open takes the panel's language from the extension. A .json file

@@ -8,7 +8,7 @@ import (
 
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/charts"
+	"github.com/radix29/tuikit/charts"
 )
 
 // maxSessionRows is how many sessions the usage grid lists, sorted by space

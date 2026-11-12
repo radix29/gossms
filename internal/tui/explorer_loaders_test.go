@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // The registry's static loaders (folders whose children are fixed labels,

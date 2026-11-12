@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	dbconn "github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // detail_browser_sort.go is the Object Explorer Details pane's column sort: a

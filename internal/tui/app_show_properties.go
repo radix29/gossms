@@ -5,7 +5,7 @@ import (
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/layout"
 )
 
 // app_show_properties.go holds one entry point per Properties and New dialog,

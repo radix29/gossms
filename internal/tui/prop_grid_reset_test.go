@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // resetGrid is what a Properties page calls when an Add, a Remove or a Revert

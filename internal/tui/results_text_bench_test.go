@@ -7,7 +7,7 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // The W8 measurement (review plan 2026-09-24): a million rows of eight
@@ -38,7 +38,7 @@ func BenchmarkResultsTextFormat(b *testing.B) {
 
 func BenchmarkResultsTextInstall(b *testing.B) {
 	lines, _ := formatResultsAsText(context.Background(), resultsTextBenchSet(1_000_000), config.DefaultMaxTextColumnLength, 4)
-	e := controls.NewEditor(nil)
+	e := editor.NewEditor(nil)
 	b.ResetTimer()
 	for b.Loop() {
 		e.SetLineBuffer(lines)

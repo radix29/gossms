@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // TestMetaToggleIconStates checks the "Show Output Column Metadata" toggle's

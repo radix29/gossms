@@ -7,9 +7,9 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // A Select row whose list begins with a synthetic "(None)"/"<all databases>"
