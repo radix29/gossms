@@ -44,13 +44,13 @@ type PanelManager struct {
 	// rows that fit below the tab bar.
 	comboScroll int
 
-	// mouseDragging separates a fresh Button1 press on the combo arrow or tab row
-	// from a resent hold (all-motion tracking), which would otherwise toggle the
-	// combo or fire OnCloseTab twice.
-	mouseDragging bool
+	// press separates a fresh Button1 press on the combo arrow or tab row from a
+	// resent hold (all-motion tracking), which would otherwise toggle the combo or
+	// fire OnCloseTab twice.
+	press core.PressLatch
 
 	// comboSbDragging latches a drag of the drop-down's scrollbar. Not
-	// mouseDragging: sharing it would let the press that opened the combo satisfy
+	// press: sharing it would let the press that opened the combo satisfy
 	// HandleScrollbarDrag's "already dragging" test.
 	comboSbDragging bool
 
@@ -221,7 +221,7 @@ func (pm *PanelManager) comboScrollMax(h int) int { return max(0, len(pm.panels)
 // survive into the widget's next showing" rule ModalDialog.Show enforces;
 // PanelManager has no Show, so the transition carries it.
 //
-// mouseDragging is deliberately not cleared: it belongs to the press that claimed
+// press is deliberately not cleared: it belongs to the press that claimed
 // the gesture (tab row and combo arrow set it too), and clearing it on close
 // would release a held press to the panel underneath.
 func (pm *PanelManager) setComboOpen(v bool) {
@@ -393,8 +393,8 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 
 	// Releases can land outside our bounds (e.g. a splitter drag inside the active
 	// panel), so always forward them to end drags cleanly.
-	if ev.Buttons() == tcell.ButtonNone {
-		pm.mouseDragging, pm.comboSbDragging = false, false
+	if pm.press.Release(ev) {
+		pm.comboSbDragging = false
 		if p := pm.ActivePanel(); p != nil {
 			return p.HandleMouse(ev)
 		}
@@ -432,11 +432,10 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 	// Combo toggle arrow
 	if my == pm.rect.Y && mx >= pm.rect.X+pm.rect.W-4 {
 		if ev.Buttons() == tcell.Button1 {
-			if pm.mouseDragging {
+			if !pm.press.Fresh(ev) {
 				// Same physical press; don't re-toggle on resent motion.
 				return true
 			}
-			pm.mouseDragging = true
 			pm.setComboOpen(!pm.comboOpen)
 			return true
 		}
@@ -444,11 +443,10 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 
 	// Tab row click; segments come from tabSegments, as in Draw.
 	if my == pm.rect.Y && ev.Buttons() == tcell.Button1 {
-		if pm.mouseDragging {
+		if !pm.press.Fresh(ev) {
 			// Same physical press; don't re-fire OnCloseTab (it may prompt to save).
 			return true
 		}
-		pm.mouseDragging = true
 		for i, seg := range pm.tabSegments() {
 			closeSeg := seg[1]
 			if closeSeg.W > 0 && mx >= closeSeg.X && mx < closeSeg.X+closeSeg.W {
@@ -473,10 +471,9 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 		row := my - pm.contentY()
 		if mx >= listX && mx < listX+listW && row >= 0 && row < listH &&
 			ev.Buttons() == tcell.Button1 {
-			if pm.mouseDragging {
+			if !pm.press.Fresh(ev) {
 				return true
 			}
-			pm.mouseDragging = true
 			pm.setActiveIndex(row + pm.comboScroll)
 			pm.setComboOpen(false)
 			return true
@@ -492,7 +489,7 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 	// resends must not reach the panel underneath. The branches above return early
 	// only while their latch still matches: selecting from the drop-down closes it,
 	// leaving nothing to match, and the held press would hit the newly active panel.
-	if pm.mouseDragging && ev.Buttons() == tcell.Button1 {
+	if pm.press.Held() && ev.Buttons() == tcell.Button1 {
 		return true
 	}
 

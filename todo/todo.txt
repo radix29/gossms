@@ -47,6 +47,9 @@ go over the source files code comments and compact them. make them concise. thro
 check the go-mssqldb,tcell library and golang 1.27.3 for changes in the latest versions and check if these changes can improve the current implementation of gossms and gomo. create a plan file if there anre findings.
 Watch upstream (unreleased)
 
+
+review tuikit and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them. add a recommended implementation order list. this is preparation to move tuilit as it is own library
+
 --- prepare for release -------------------------------------------------
 
 check for go.mod updates

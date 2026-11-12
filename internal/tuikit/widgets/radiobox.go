@@ -21,10 +21,10 @@ type RadioBox struct {
 	// like options; nil means none.
 	offOptions []bool
 
-	// mouseDragging separates a fresh Button1 press from a resent hold (same field
-	// as Toolbar/TreeView/MenuBar): the selection is a single pick at press time,
-	// not reassigned to whatever option the pointer drifts over.
-	mouseDragging bool
+	// press separates a fresh Button1 press from a resent hold: the selection is
+	// a single pick at press time, not reassigned to whatever option the pointer
+	// drifts over.
+	press core.PressLatch
 }
 
 // NewRadioBox creates a RadioBox with the given options. Selection starts at
@@ -163,8 +163,7 @@ func (r *RadioBox) step(dir int) bool {
 
 // HandleMouse selects the option clicked.
 func (r *RadioBox) HandleMouse(ev *tcell.EventMouse) bool {
-	if ev.Buttons() == tcell.ButtonNone {
-		r.mouseDragging = false
+	if r.press.Release(ev) {
 		return false
 	}
 	if r.disabled || ev.Buttons() != tcell.Button1 {
@@ -178,8 +177,7 @@ func (r *RadioBox) HandleMouse(ev *tcell.EventMouse) bool {
 			if !r.OptionEnabled(i) {
 				return false
 			}
-			if !r.mouseDragging {
-				r.mouseDragging = true
+			if r.press.Fresh(ev) {
 				r.selected = i
 			}
 			return true

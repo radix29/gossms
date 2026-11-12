@@ -32,11 +32,12 @@ type Splitter struct {
 	label     string // optional label drawn on the splitter bar
 	active    bool   // see SetActive
 
-	// mouseDragging is true from the first Button1 of a gesture until its release,
-	// wherever the press landed (same field as Toolbar/TreeView/MenuBar). Without
-	// it, tcell's all-motion tracking resends Button1 on every motion, so an editor
-	// text-selection drag crossing the bar would grab it and resize the panes.
-	mouseDragging bool
+	// press is held from the first Button1 of a gesture until its release,
+	// wherever the press landed: HandleMouse calls Fresh on every event, not only
+	// on a hit. Without it, tcell's all-motion tracking resends Button1 on every
+	// motion, so an editor text-selection drag crossing the bar would grab it and
+	// resize the panes.
+	press core.PressLatch
 }
 
 // NewHorizontalSplitter creates a top/bottom splitter (editor over results).
@@ -159,19 +160,14 @@ func (sp *Splitter) HandleKey(ev *tcell.EventKey) bool {
 }
 
 // HandleMouse handles drag events on the bar and reports whether it consumed
-// them. A resize begins only on a press on the bar (see mouseDragging), so the
+// them. A resize begins only on a press on the bar (see press), so the
 // host must pass every Button1 event through here.
 func (sp *Splitter) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	pos := sp.SplitPos()
 
-	if ev.Buttons() == tcell.ButtonNone {
-		sp.mouseDragging = false
-	}
-	fresh := ev.Buttons() == tcell.Button1 && !sp.mouseDragging
-	if ev.Buttons() == tcell.Button1 {
-		sp.mouseDragging = true
-	}
+	sp.press.Release(ev)
+	fresh := sp.press.Fresh(ev)
 
 	onBar := false
 	if sp.dir == SplitterHorizontal {

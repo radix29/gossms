@@ -6,7 +6,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-// TestCheckBoxTogglesOnceWhileHeld pins the mouseDragging latch, which matters
+// TestCheckBoxTogglesOnceWhileHeld pins the press latch, which matters
 // more here than on a Button: a toggle fired once per resent Button1 motion
 // event doesn't just repeat an action, it lands on whichever state the number
 // of resends happened to be odd or even about. Asserting the resulting Checked()

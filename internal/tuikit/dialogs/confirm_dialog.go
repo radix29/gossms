@@ -256,7 +256,7 @@ func (d *ConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	// A release must reach the checkbox even when it lands outside the dialog
-	// (consumed below), or its mouseDragging latch survives and swallows the next
+	// (consumed below), or its press latch survives and swallows the next
 	// press. CheckBox returns false on ButtonNone, so this only resets the latch.
 	if ev.Buttons() == tcell.ButtonNone && d.option != nil {
 		d.option.HandleMouse(ev)

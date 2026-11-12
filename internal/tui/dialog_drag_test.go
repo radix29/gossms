@@ -396,3 +396,36 @@ func TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture(t *testing.T) 
 			"was accepted as a continued drag")
 	}
 }
+
+// An open drop-down list sees every event ahead of ConsumeOutsideClick, so a
+// pick in it was a press the dialog never saw. The pick closes the list, and
+// its resends then reach the button row looking like a first press: pick an
+// operator, drag onto Cancel, and the dialog closed. TrackPress at the top of
+// HandleMouse sees the pick. Backup, Restore and Options route an open list
+// the same way.
+func TestFilterDialogDragFromADropDownPickDoesNotPressAButton(t *testing.T) {
+	d := showTestFilterDialogOnScreen(t, 100, 40)
+	op := d.rows[0].op
+	opY := d.rows[0].value.RectY() // DropDown has no RectY; the row's widgets share one
+	ev := func(x, y int, b tcell.ButtonMask) { d.HandleMouse(tcell.NewEventMouse(x, y, b, tcell.ModNone)) }
+
+	ev(op.RectX()+1, opY, tcell.Button1) // open the list
+	ev(op.RectX()+1, opY, tcell.ButtonNone)
+	if !op.IsOpen() {
+		t.Fatal("the press on the operator did not open its list — test premise is wrong")
+	}
+	ev(op.RectX()+1, opY+2, tcell.Button1) // pick the second operator
+	if op.IsOpen() || op.Selected() != 1 {
+		t.Fatalf("the pick did not land (open=%v, selected=%d) — test premise is wrong", op.IsOpen(), op.Selected())
+	}
+	cancelX, by := d.Rect().Right()-4, d.ButtonRowY()
+	ev(cancelX, by, tcell.Button1) // still held, dragged onto Cancel
+	if !d.Visible() {
+		t.Fatal("a drag from a drop-down pick pressed Cancel when it reached the button row")
+	}
+	ev(cancelX, by, tcell.ButtonNone)
+	ev(cancelX, by, tcell.Button1)
+	if d.Visible() {
+		t.Error("a fresh click on Cancel did not close the dialog — the test's button position is wrong")
+	}
+}

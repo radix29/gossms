@@ -61,6 +61,10 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// The open list below sees events before ConsumeOutsideClick does, so the
+	// gesture is tracked here: a list pick's resends, dragged onto the button
+	// row, must not press a button.
+	d.TrackPress(ev)
 	// A release must reach every mouseDragging-latched widget even when it
 	// lands outside the dialog or arrives in progress mode — both of which
 	// return below, before any widget sees the event, so its next press

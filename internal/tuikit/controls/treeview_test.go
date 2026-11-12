@@ -3,8 +3,10 @@ package controls
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -188,7 +190,7 @@ func TestTreeViewClickOnExpanderTogglesRowWhileScrolled(t *testing.T) {
 // TestTreeViewHeldButtonOverExpanderDoesNotReToggle covers the
 // open-then-immediately-close flicker: tcell's all-motion mouse tracking
 // resends Buttons()==Button1 on every cursor motion while the button stays
-// down, so without the mouseDragging latch a click on the expander that
+// down, so without the press latch a click on the expander that
 // twitches before release re-toggles the node right back closed.
 func TestTreeViewHeldButtonOverExpanderDoesNotReToggle(t *testing.T) {
 	tv := newTestTreeViewExpandable()
@@ -238,6 +240,33 @@ func TestTreeViewRightClickUsesButton2(t *testing.T) {
 	}
 	if gotID != 1 {
 		t.Errorf("OnRightClick node ID = %d, want 1", gotID)
+	}
+}
+
+// TestTreeViewRightClickFiresSelectBeforeMenu pins that a right-click moving
+// the selection reports it through OnSelect, before OnRightClick: Object
+// Explorer's status line and Details pane follow OnSelect, and otherwise kept
+// naming the previous node under the menu. A right-click on the row already
+// selected (or a resent Button2 while held) must not re-fire it.
+func TestTreeViewRightClickFiresSelectBeforeMenu(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10)
+	tv.SetNodes([]TreeNode{{ID: 1, Label: "a"}, {ID: 2, Label: "b"}})
+	var events []string
+	tv.OnSelect = func(id TreeNodeID) { events = append(events, "select:"+string(rune('0'+id))) }
+	tv.OnRightClick = func(id TreeNodeID, x, y int) { events = append(events, "menu:"+string(rune('0'+id))) }
+
+	tv.HandleMouse(tcell.NewEventMouse(1, 2, tcell.Button2, tcell.ModNone))
+	tv.HandleMouse(tcell.NewEventMouse(1, 2, tcell.Button2, tcell.ModNone)) // held: resent
+	tv.HandleMouse(tcell.NewEventMouse(1, 2, tcell.ButtonNone, tcell.ModNone))
+	tv.HandleMouse(tcell.NewEventMouse(1, 2, tcell.Button2, tcell.ModNone)) // same row again
+
+	if got := tv.SelectedNode().ID; got != 2 {
+		t.Fatalf("selected = %d, want 2", got)
+	}
+	want := "select:2 menu:2 menu:2 menu:2"
+	if got := strings.Join(events, " "); got != want {
+		t.Errorf("events = %q, want %q", got, want)
 	}
 }
 
@@ -581,10 +610,14 @@ func TestTreeViewDoubleClickNeedsTheSameRowAndAFreshInterval(t *testing.T) {
 		fired := false
 		tv.OnActivate = func(TreeNodeID) bool { fired = true; return true }
 
-		clickRow(tv, 10, 1)
-		// Backdate the first press past the interval rather than sleeping.
-		tv.lastClickAt = tv.lastClickAt.Add(-2 * doubleClickInterval)
-		clickRow(tv, 10, 1)
+		// Stamp the second press past the interval rather than sleeping.
+		t0 := time.Now()
+		for _, at := range []time.Time{t0, t0.Add(2 * core.DoubleClickInterval)} {
+			press := tcell.NewEventMouse(10, 1, tcell.Button1, tcell.ModNone)
+			press.SetEventTime(at)
+			tv.HandleMouse(press)
+			tv.HandleMouse(tcell.NewEventMouse(10, 1, tcell.ButtonNone, tcell.ModNone))
+		}
 
 		if fired {
 			t.Error("two clicks a second apart activated")

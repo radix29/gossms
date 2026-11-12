@@ -13,7 +13,7 @@ func mouse(x, y int, btn tcell.ButtonMask) *tcell.EventMouse {
 	return tcell.NewEventMouse(x, y, btn, tcell.ModNone)
 }
 
-// TestButtonClickFiresOnceWhileHeld pins the mouseDragging latch. tcell resends
+// TestButtonClickFiresOnceWhileHeld pins the press latch. tcell resends
 // Buttons()==Button1 on every motion event for as long as the button is down,
 // so without the latch a click that so much as twitches before release fires
 // OnClick once per resent event. The count is the assertion — a test that only

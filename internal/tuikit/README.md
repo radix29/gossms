@@ -17,7 +17,9 @@ tuikit/
 │               rect), clipboard.go (ClipboardTarget/ClipboardHost — the
 │               Copy/Cut/Paste contract every widget package shares),
 │               gesture.go (Gesture: which zone of a host claimed the held
-│               Button1 press, routed to until release)
+│               Button1 press, routed to until release),
+│               click.go (ClickTracker: pairs fresh presses into a
+│               double-click; DoubleClickInterval, the one speed)
 ├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox, Spinner — one file each
 ├── layout/     Panel interface, PanelManager (tabs), Splitter — panel.go,
 │               panel_manager.go, splitter.go

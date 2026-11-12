@@ -23,7 +23,7 @@ func release(x, y int) *tcell.EventMouse {
 // TestSplitterDragOnlyStartsFromPressOnBar pins down that a resize begins
 // only on a press that lands on the bar. A selection drag in the pane above
 // that crosses the bar on its way down would otherwise grab it and resize
-// the panes mid-selection — see the mouseDragging field.
+// the panes mid-selection — see the press field.
 func TestSplitterDragOnlyStartsFromPressOnBar(t *testing.T) {
 	sp := NewHorizontalSplitter("bar")
 	sp.SetBounds(0, 0, 80, 24)

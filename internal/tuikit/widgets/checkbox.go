@@ -14,10 +14,10 @@ type CheckBox struct {
 	focused  bool
 	disabled bool
 
-	// mouseDragging separates a fresh Button1 press from a resent hold (same field
-	// as Toolbar/TreeView/MenuBar): all-motion tracking resends Button1 on every
-	// motion, so a twitchy click would toggle repeatedly.
-	mouseDragging bool
+	// press separates a fresh Button1 press from a resent hold: all-motion
+	// tracking resends Button1 on every motion, so a twitchy click would toggle
+	// repeatedly.
+	press core.PressLatch
 }
 
 // NewCheckBox creates a CheckBox.
@@ -78,8 +78,7 @@ func (c *CheckBox) HandleKey(ev *tcell.EventKey) bool {
 // HandleMouse toggles the checkbox on a fresh Button1 press over its box
 // or label.
 func (c *CheckBox) HandleMouse(ev *tcell.EventMouse) bool {
-	if ev.Buttons() == tcell.ButtonNone {
-		c.mouseDragging = false
+	if c.press.Release(ev) {
 		return false
 	}
 	if c.disabled || ev.Buttons() != tcell.Button1 {
@@ -89,10 +88,8 @@ func (c *CheckBox) HandleMouse(ev *tcell.EventMouse) bool {
 	if my != c.rect.Y || mx < c.rect.X || mx >= c.rect.X+c.Width() {
 		return false
 	}
-	if c.mouseDragging {
-		return true
+	if c.press.Fresh(ev) {
+		c.checked = !c.checked
 	}
-	c.mouseDragging = true
-	c.checked = !c.checked
 	return true
 }

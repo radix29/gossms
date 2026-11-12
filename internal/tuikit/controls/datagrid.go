@@ -3,7 +3,6 @@ package controls
 import (
 	"slices"
 	"strconv"
-	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -76,11 +75,6 @@ const defaultMaxCellWidth = 40
 // minResizeWidth is the narrowest a column can be dragged to: a padding column
 // each side of the text plus the separator.
 const minResizeWidth = 4
-
-// resizeDoubleClickInterval is how close two presses on one separator must fall
-// to count as the double-click that restores its default width. tcell reports
-// presses, not clicks, so the timing is done here.
-const resizeDoubleClickInterval = 500 * time.Millisecond
 
 // cellViewerW and cellViewerLines size the built-in "full cell content" popup,
 // which is centred on the screen rather than the grid's rect so it reads as a
@@ -178,11 +172,9 @@ type DataGrid struct {
 	resizeStartX int
 	resizeStartW int
 
-	// lastSepPressCol/lastSepPressAt time consecutive presses on one separator
-	// to recognise the default-width-restoring double-click. -1 = no press
-	// yet.
-	lastSepPressCol int
-	lastSepPressAt  time.Time
+	// sepClicks pairs presses on one column's separator into the
+	// default-width-restoring double-click.
+	sepClicks core.ClickTracker[int]
 
 	// sbDraggingH is sbDragging's counterpart for the horizontal scrollbar on
 	// the status row — a separate latch, since the bars sit on different
@@ -250,12 +242,10 @@ type DataGrid struct {
 
 	// rowPressed latches a press on a data row from press to release, so tcell's
 	// Button1 resends while held are not taken for the second press of a
-	// double-click. lastRowPress/lastRowPressAt are the previous fresh press, timed
-	// for OnRowDoubleClick; a zero lastRowPressAt means "no press to pair with",
-	// which is how a completed double-click and a new row set reset it.
-	rowPressed     bool
-	lastRowPress   int
-	lastRowPressAt time.Time
+	// double-click. rowClicks pairs fresh presses on one data row for
+	// OnRowDoubleClick; a new row set resets it.
+	rowPressed bool
+	rowClicks  core.ClickTracker[int]
 
 	// browseOnly makes an editable grid behave as a read-only one for the
 	// moment: OnActivateCell is never called, and the grid gets the read-only
@@ -312,7 +302,7 @@ type DataGrid struct {
 
 // NewDataGrid creates a DataGrid.
 func NewDataGrid() *DataGrid {
-	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil), lastSepPressCol: -1, sortCol: -1})
+	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil), sortCol: -1})
 }
 
 // SetBrowseOnly lets the grid be looked at but not edited: navigation,
@@ -390,7 +380,8 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.headerPressed, g.rowHeaderDragging = false, false
 	// A press on the old set's row 3 and one on the new set's are not a double-click.
-	g.rowPressed, g.lastRowPressAt = false, time.Time{}
+	g.rowPressed = false
+	g.rowClicks.Reset()
 	// The indicator names a column of the old set; a host that sorted re-sets it.
 	g.sortCol, g.sortDesc = -1, false
 	// Row indices from the old set name different objects in this one.
@@ -462,7 +453,8 @@ func (g *DataGrid) SetError(err error) {
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.headerPressed, g.rowHeaderDragging = false, false
-	g.rowPressed, g.lastRowPressAt = false, time.Time{}
+	g.rowPressed = false
+	g.rowClicks.Reset()
 	g.sortCol, g.sortDesc = -1, false
 	g.ClearMarkedRows()
 	g.colWidthOverride, g.colResizing = nil, false

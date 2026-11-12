@@ -478,27 +478,17 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	return false
 }
 
-// doubleClickInterval is how close two presses on the same text position must be
-// to count as a double-click: DataGrid's resizeDoubleClickInterval, so the app
-// has one double-click speed.
-const doubleClickInterval = 500 * time.Millisecond
-
 // pressIsDouble reports whether an unmodified press at (row, col) follows a
 // previous one at the same position closely enough to be a double-click, and
 // records this press for the next call. mod is taken here, not tested by the
-// caller, because only the false path records the press: a modified press must
-// reach the recording branch, or it leaves no "previous press" for the next.
+// caller: a modified press must still be recorded, or it leaves no "previous
+// press" for the next.
 func (e *Editor) pressIsDouble(row, col int, at time.Time, mod tcell.ModMask) bool {
-	double := mod == tcell.ModNone &&
-		row == e.lastClickRow && col == e.lastClickCol &&
-		!e.lastClickAt.IsZero() && at.Sub(e.lastClickAt) <= doubleClickInterval
-	if double {
-		// Don't let a third press pair with this one too.
-		e.lastClickAt = time.Time{}
-		return true
+	if mod != tcell.ModNone {
+		e.clicks.Record([2]int{row, col}, at)
+		return false
 	}
-	e.lastClickRow, e.lastClickCol, e.lastClickAt = row, col, at
-	return false
+	return e.clicks.Press([2]int{row, col}, at)
 }
 
 // hScrollbarDrag handles a Button1 press or drag on the horizontal scrollbar.

@@ -317,7 +317,7 @@ func TestCommonPrefixHelper(t *testing.T) {
 
 // TestFileDialogHeldButtonOnUnselectedRowDoesNotAutoActivate covers tcell's
 // all-motion mouse tracking resending Buttons()==Button1 on every motion
-// event while the button stays down. Without listMouseDragging, a single
+// event while the button stays down. Without listPress, a single
 // physical click on a not-yet-selected row sets d.sel to that row, and the
 // next resent event — same physical click, no release — sees idx == d.sel
 // and mistakes it for a second click on an already-selected row,

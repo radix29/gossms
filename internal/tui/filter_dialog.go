@@ -448,6 +448,10 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// The open list below sees events before ConsumeOutsideClick does, so the
+	// gesture is tracked here: a list pick's resends, dragged onto the button
+	// row, must not press a button.
+	d.TrackPress(ev)
 	// A release must reach every latch-bearing widget even when it lands outside
 	// the dialog, or the widget's next press is swallowed as a continuation of
 	// the stale drag.

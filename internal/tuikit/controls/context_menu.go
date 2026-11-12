@@ -31,12 +31,12 @@ type ContextMenu struct {
 	// showing — the same rule ModalDialog.Show follows for its drag latch.
 	cascade menuCascade
 
-	// mouseDragging distinguishes a fresh Button1 press from a continued hold,
+	// press distinguishes a fresh Button1 press from a continued hold,
 	// needed once a click can leave the menu open: clicking a cascade item keeps the
 	// popup up, and tcell's all-motion tracking resends Button1 on every motion
 	// while held, so without the latch a press that twitches over a leaf item would
 	// fire its Action repeatedly.
-	mouseDragging bool
+	press core.PressLatch
 }
 
 // Show displays the menu at (x,y) with the given items.
@@ -47,7 +47,7 @@ func (cm *ContextMenu) Show(x, y int, items []MenuItem) {
 	cm.hover = -1
 	cm.visible = true
 	cm.cascade.reset()
-	cm.mouseDragging = false
+	cm.press.Clear()
 }
 
 // SetHover puts the keyboard cursor on item i, for a caller that rebuilds and
@@ -170,9 +170,7 @@ func (cm *ContextMenu) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	mx, my := ev.Position()
-	if ev.Buttons() == tcell.ButtonNone {
-		cm.mouseDragging = false
-	}
+	cm.press.Release(ev)
 
 	level, row, inside := cm.cascade.hit(cm.drawnRect(), mx, my)
 	if !inside {
@@ -195,8 +193,7 @@ func (cm *ContextMenu) HandleMouse(ev *tcell.EventMouse) bool {
 	if item.Divider || !item.enabled() {
 		// A click anywhere inside the menu dismisses it, even on a row that
 		// can't act — otherwise a disabled item leaves the popup stuck open.
-		if ev.Buttons() == tcell.Button1 && !cm.mouseDragging {
-			cm.mouseDragging = true
+		if cm.press.Fresh(ev) {
 			cm.Hide()
 		}
 		return true
@@ -213,8 +210,7 @@ func (cm *ContextMenu) HandleMouse(ev *tcell.EventMouse) bool {
 		cm.cascade.popTo(level)
 	}
 
-	if ev.Buttons() == tcell.Button1 && !cm.mouseDragging {
-		cm.mouseDragging = true
+	if cm.press.Fresh(ev) {
 		if len(item.Sub) == 0 {
 			cm.Hide()
 			if item.Action != nil {

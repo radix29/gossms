@@ -1,8 +1,6 @@
 package controls
 
 import (
-	"time"
-
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -482,7 +480,7 @@ func (g *DataGrid) hScrollbarDrag(ev *tcell.EventMouse) bool {
 // resizeDrag handles a Button1 press or drag on a column separator in the header
 // row, resizing the column to its left as SSMS does. A press latches colResizing
 // so the edge follows the pointer off the one-column separator; a second press
-// on the same separator within resizeDoubleClickInterval restores the default
+// on the same separator within core.DoubleClickInterval restores the default
 // width. Returns false for anything that doesn't qualify.
 func (g *DataGrid) resizeDrag(ev *tcell.EventMouse) bool {
 	if ev.Buttons() != tcell.Button1 {
@@ -494,7 +492,7 @@ func (g *DataGrid) resizeDrag(ev *tcell.EventMouse) bool {
 		if !ok {
 			return false
 		}
-		if g.sepPressIsDouble(col, ev.When()) {
+		if g.sepClicks.Press(col, ev.When()) {
 			g.SetColumnWidth(col, 0)
 		}
 		// Latched even for the double-click, so resends while the button is down are
@@ -526,20 +524,6 @@ func (g *DataGrid) sepColAt(x, y int) (col int, ok bool) {
 		}
 	}
 	return 0, false
-}
-
-// sepPressIsDouble reports whether a press on column col's separator at time at
-// closely follows a previous one (a double-click), and records this press.
-func (g *DataGrid) sepPressIsDouble(col int, at time.Time) bool {
-	double := col == g.lastSepPressCol && !g.lastSepPressAt.IsZero() &&
-		at.Sub(g.lastSepPressAt) <= resizeDoubleClickInterval
-	if double {
-		// Don't let a third press pair with this one as well.
-		g.lastSepPressCol, g.lastSepPressAt = -1, time.Time{}
-		return true
-	}
-	g.lastSepPressCol, g.lastSepPressAt = col, at
-	return false
 }
 
 // rowAtY returns the data row drawn at screen row y, or -1 for the header,
@@ -646,18 +630,10 @@ func (g *DataGrid) rowDoubleClicked(ev *tcell.EventMouse, row int) bool {
 	g.rowPressed = true
 	if g.OnRowDoubleClick == nil || g.editable() || g.errorMode ||
 		ev.Modifiers()&(tcell.ModCtrl|extendSelectionMods) != 0 {
-		g.lastRowPressAt = time.Time{}
+		g.rowClicks.Reset()
 		return false
 	}
-	at := time.Now()
-	if row == g.lastRowPress && !g.lastRowPressAt.IsZero() &&
-		at.Sub(g.lastRowPressAt) <= resizeDoubleClickInterval {
-		// A third press starts a new pair rather than firing again.
-		g.lastRowPressAt = time.Time{}
-		return true
-	}
-	g.lastRowPress, g.lastRowPressAt = row, at
-	return false
+	return g.rowClicks.Press(row, ev.When())
 }
 
 // activateCell fires OnActivateCell for grids with editable cells (toggle grids,

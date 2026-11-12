@@ -14,10 +14,10 @@ type Button struct {
 	disabled bool
 	OnClick  func()
 
-	// mouseDragging separates a fresh Button1 press from a resent hold (same field
-	// as Toolbar/TreeView/MenuBar): all-motion tracking resends Button1 on every
-	// motion, so a twitchy click would fire OnClick repeatedly.
-	mouseDragging bool
+	// press separates a fresh Button1 press from a resent hold: all-motion
+	// tracking resends Button1 on every motion, so a twitchy click would fire
+	// OnClick repeatedly.
+	press core.PressLatch
 }
 
 // NewButton creates a Button.
@@ -70,8 +70,7 @@ func (b *Button) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse processes mouse events.
 func (b *Button) HandleMouse(ev *tcell.EventMouse) bool {
-	if ev.Buttons() == tcell.ButtonNone {
-		b.mouseDragging = false
+	if b.press.Release(ev) {
 		return false
 	}
 	if b.disabled || ev.Buttons() != tcell.Button1 {
@@ -79,8 +78,7 @@ func (b *Button) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	mx, my := ev.Position()
 	if my == b.rect.Y && mx >= b.rect.X && mx < b.rect.X+b.Width() {
-		if !b.mouseDragging {
-			b.mouseDragging = true
+		if b.press.Fresh(ev) {
 			if b.OnClick != nil {
 				b.OnClick()
 			}

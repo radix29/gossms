@@ -19,18 +19,22 @@ type ModalDialog struct {
 	visible    bool
 	screen     tcell.Screen // needed for Size() during recentre
 
-	// mouseDragging separates a fresh Button1 press on the button row from a resent
-	// hold (as Toolbar, TreeView, MenuBar): otherwise a twitching click fires the
-	// action on every resend. Reset in ConsumeOutsideClick rather than
-	// ButtonClicked, since every embedding dialog's HandleMouse calls the former
-	// first while some reach the latter only through a mode-gated branch a release
-	// never takes; and again in Show, for a gesture whose release never gets that
-	// far.
-	mouseDragging bool
+	// press is held from the first Button1 of a gesture until its release,
+	// wherever that press landed, and fresh says whether the event being routed
+	// is that first Button1 (see TrackPress). The button row fires only on a fresh
+	// press: a latch set only by a button hit would stop just the resends of the
+	// press that hit it, so a drag that began on the message, a list, a scrollbar
+	// or a checkbox would fire whatever button it reached. Released in TrackPress,
+	// which every embedding dialog reaches through ConsumeOutsideClick (some reach
+	// ButtonClicked only through a mode-gated branch a release never takes); and
+	// cleared in Show, for a gesture whose release never gets that far.
+	press   core.PressLatch
+	fresh   bool
+	tracked *tcell.EventMouse // the event press and fresh were last updated for
 
 	// sbDragging is true while a content scrollbar an embedding dialog draws is
-	// dragged (see ScrollbarDrag); separate from mouseDragging, reset alongside it
-	// in both places.
+	// dragged (see ScrollbarDrag); separate from press, reset alongside it in
+	// both places.
 	sbDragging bool
 }
 
@@ -75,7 +79,8 @@ func (d *ModalDialog) recentre() {
 // gesture is the host's hazard; see App.gestureOverlay.
 func (d *ModalDialog) Show() {
 	d.recentre()
-	d.mouseDragging = false
+	d.press.Clear()
+	d.fresh, d.tracked = false, nil
 	d.sbDragging = false
 	d.visible = true
 }
@@ -108,20 +113,35 @@ func (d *ModalDialog) ContainsMouse(mx, my int) bool {
 }
 
 // ConsumeOutsideClick returns true if the mouse event originated outside the
-// dialog (always visible when called). A ButtonNone event always clears
-// mouseDragging here whatever its position, as Toolbar does: every embedding
-// dialog's HandleMouse makes this call unconditionally, including for a mouse-up
-// outside the rect.
+// dialog (always visible when called). It calls TrackPress first, whatever the
+// position: every embedding dialog's HandleMouse makes this call
+// unconditionally, including for a mouse-up outside the rect.
 func (d *ModalDialog) ConsumeOutsideClick(ev *tcell.EventMouse) bool {
-	if ev.Buttons() == tcell.ButtonNone {
-		d.mouseDragging = false
-		d.sbDragging = false
-	}
+	d.TrackPress(ev)
 	if !d.visible {
 		return false
 	}
 	mx, my := ev.Position()
 	return !d.rect.Contains(mx, my)
+}
+
+// TrackPress records where ev stands in the current gesture: a release clears
+// the press and scrollbar latches, and a Button1 is fresh only if no press is
+// held. ConsumeOutsideClick and ButtonClicked call it, so a dialog needs it
+// only when it routes events ahead of ConsumeOutsideClick, such as an open
+// drop-down list that can reach past the box: call it first in HandleMouse, or
+// a press the list consumed is unseen, and its resends, dragged onto the
+// button row, look fresh. Repeat calls for one event are no-ops, which is what
+// lets every entry point call it.
+func (d *ModalDialog) TrackPress(ev *tcell.EventMouse) {
+	if ev == d.tracked {
+		return
+	}
+	d.tracked = ev
+	if d.press.Release(ev) {
+		d.sbDragging = false
+	}
+	d.fresh = d.press.Fresh(ev)
 }
 
 // ScrollbarDrag handles a click or drag on a vertical scrollbar an embedding
@@ -274,17 +294,19 @@ func (d *ModalDialog) DrawButtonsAtGated(s tcell.Screen, x int, labels []string,
 	}
 }
 
-// ButtonClicked returns the index of the button clicked, or -1. mouseDragging
-// guards against the held-motion Button1 resend so a twitching click fires once.
+// ButtonClicked returns the index of the button clicked, or -1. Only the first
+// Button1 of a gesture can click (see TrackPress): not a resend of a held
+// click, and not a drag that began elsewhere and reached the button row.
 func (d *ModalDialog) ButtonClicked(ev *tcell.EventMouse, labels []string) int {
 	return d.ButtonClickedAt(ev, d.ButtonRowStartX(labels), labels)
 }
 
 // ButtonClickedAt is ButtonClicked for a row drawn at column x by
-// DrawButtonsAtGated. A call that hits nothing latches nothing, so with two
-// groups call order doesn't matter.
+// DrawButtonsAtGated. A call that hits nothing leaves the press fresh, so with
+// two groups call order doesn't matter.
 func (d *ModalDialog) ButtonClickedAt(ev *tcell.EventMouse, x int, labels []string) int {
-	if ev.Buttons() != tcell.Button1 {
+	d.TrackPress(ev)
+	if !d.fresh {
 		return -1
 	}
 	mx, my := ev.Position()
@@ -296,10 +318,7 @@ func (d *ModalDialog) ButtonClickedAt(ev *tcell.EventMouse, x int, labels []stri
 		text := "[ " + label + " ]"
 		w := core.DisplayWidth(text)
 		if mx >= col && mx < col+w {
-			if d.mouseDragging {
-				return -1
-			}
-			d.mouseDragging = true
+			d.fresh = false // one press clicks one button
 			return i
 		}
 		col += w + 2

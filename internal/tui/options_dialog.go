@@ -251,6 +251,10 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// The open list below sees events before ConsumeOutsideClick does, so the
+	// gesture is tracked here: a list pick's resends, dragged onto the button
+	// row, must not press a button.
+	d.TrackPress(ev)
 	// A release outside the dialog is consumed by ConsumeOutsideClick below before
 	// the radio box's/dropdowns'/cbIntelliSense's own HandleMouse calls see it, leaving their
 	// mouseDragging latch set and swallowing the next press. Reset it here first;

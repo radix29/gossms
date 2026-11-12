@@ -61,11 +61,10 @@ type FileDialog struct {
 	scroll    int
 	typeahead string
 
-	// listMouseDragging separates a fresh Button1 press on the list from a resent
-	// hold (as TreeView, DataGrid): otherwise one click on an already-selected row
-	// could call activateSelected repeatedly. Distinct from the embedded
-	// ModalDialog's mouseDragging, the button row's latch.
-	listMouseDragging bool
+	// listPress separates a fresh Button1 press on the list from a resent hold
+	// (as TreeView): otherwise one click on an already-selected row could call
+	// activateSelected repeatedly.
+	listPress core.PressLatch
 
 	// drag is the text-selection gesture a click in pathField or nameField starts;
 	// see FieldGesture for the ordering its three calls need.

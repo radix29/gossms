@@ -197,7 +197,7 @@ func TestConfirmOptionDoesNotSurviveTheNextShowing(t *testing.T) {
 // A release that lands outside the dialog still has to reach the checkbox.
 // ConsumeOutsideClick answers true for every event outside the rect, so the
 // early return it drives skips the widget — and CheckBox clears its
-// mouseDragging latch only on an event it actually sees. Left set, the latch
+// press latch only on an event it actually sees. Left set, the latch
 // swallows the user's next press as a continuation of the finished gesture:
 // press the box, drift off the dialog, release, and the next click on it does
 // nothing at all.

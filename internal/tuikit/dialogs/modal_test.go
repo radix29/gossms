@@ -139,8 +139,8 @@ func TestModalDialogScrollbarDrag(t *testing.T) {
 		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
 	}
 
-	// ConsumeOutsideClick resets sbDragging on release, same as
-	// mouseDragging — every embedding dialog calls it unconditionally.
+	// ConsumeOutsideClick resets sbDragging on release, same as the press
+	// latch — every embedding dialog calls it unconditionally.
 	release := tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone)
 	d.ConsumeOutsideClick(release)
 	if d.sbDragging {

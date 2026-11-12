@@ -18,12 +18,11 @@ type MenuBar struct {
 	hoverMenu    int
 	selectedItem int // index within menus[openMenu].Items currently highlighted
 
-	// mouseDragging distinguishes a fresh Button1 press, which toggles the header,
-	// from a continued hold over it (DataGrid and Editor have the same field).
-	// Without it, all-motion tracking resends Button1 on every motion while the
-	// button is down, so a click that twitches re-toggles the header it just
-	// opened back closed.
-	mouseDragging bool
+	// press distinguishes a fresh Button1 press, which toggles the header, from a
+	// continued hold over it. Without it, all-motion tracking resends Button1 on
+	// every motion while the button is down, so a click that twitches re-toggles
+	// the header it just opened back closed.
+	press core.PressLatch
 
 	// cascade holds any open submenu levels of the open dropdown (see
 	// menuCascade), cleared whenever the dropdown closes or switches menus.
@@ -229,9 +228,7 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	wasOpen := mb.openMenu >= 0
 
-	if ev.Buttons() == tcell.ButtonNone {
-		mb.mouseDragging = false
-	}
+	mb.press.Release(ev)
 
 	// Cleared off the bar's row as well, or a label stays lit after the pointer
 	// leaves it downwards.
@@ -243,8 +240,7 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 			labelW := core.DisplayWidth(label)
 			if mx >= col && mx < col+labelW {
 				mb.hoverMenu = i
-				if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
-					mb.mouseDragging = true
+				if mb.press.Fresh(ev) {
 					if mb.openMenu == i {
 						mb.Close()
 					} else {
@@ -295,8 +291,7 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 			// A click anywhere inside the dropdown dismisses it, even on a row
 			// that can't act — a disabled item would otherwise leave it stuck
 			// open.
-			if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
-				mb.mouseDragging = true
+			if mb.press.Fresh(ev) {
 				mb.Close()
 			}
 			return true
@@ -312,8 +307,7 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 		if !mb.cascade.openAt(root, level, row) {
 			mb.cascade.popTo(level)
 		}
-		if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
-			mb.mouseDragging = true
+		if mb.press.Fresh(ev) {
 			if len(item.Sub) == 0 {
 				mb.Close()
 				if item.Action != nil {

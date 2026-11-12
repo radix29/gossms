@@ -2,7 +2,6 @@ package controls
 
 import (
 	"strings"
-	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -67,21 +66,18 @@ type TreeView struct {
 	// SetTitleButton); an empty label draws none.
 	titleButton titleButton
 
-	// lastClickIdx/lastClickAt time consecutive presses on one row to recognise a
-	// double-click (the mouse spelling of Enter's default action). A zero
-	// lastClickAt means "no press to pair with" and is how a completed
-	// double-click resets.
-	lastClickIdx int
-	lastClickAt  time.Time
+	// clicks pairs presses on one row into a double-click (the mouse spelling of
+	// Enter's default action).
+	clicks core.ClickTracker[int]
 
-	// mouseDragging distinguishes a fresh Button1 press from a continued hold over
-	// the same row (as in MenuBar, DataGrid and Editor). Without it, tcell's
-	// all-motion tracking resends Button1 on every motion while the button is down,
-	// re-firing the click handling on every resend.
-	mouseDragging bool
+	// press distinguishes a fresh Button1 press from a continued hold over the
+	// same row. Without it, tcell's all-motion tracking resends Button1 on every
+	// motion while the button is down, re-firing the click handling on every
+	// resend.
+	press core.PressLatch
 
 	// sbDragging is true while the scrollbar thumb is being dragged; see DataGrid's
-	// field of the same name for why it is separate from mouseDragging.
+	// field of the same name for why it is separate from press.
 	sbDragging  bool
 	sbDraggingX bool // same, for the horizontal scrollbar thumb
 
@@ -90,7 +86,7 @@ type TreeView struct {
 	OnCollapse func(nodeID TreeNodeID) // called when a node is collapsed
 	OnSelect   func(nodeID TreeNodeID) // called when selection changes
 	// OnActivate is the selected node's default action: Enter, or a second click on
-	// the node's text within doubleClickInterval. It reports whether it handled
+	// the node's text within core.DoubleClickInterval. It reports whether it handled
 	// the node; false or unset falls back to expand/collapse, which keeps Enter
 	// working on a folder.
 	OnActivate   func(nodeID TreeNodeID) bool
@@ -425,8 +421,7 @@ func (tv *TreeView) HandleKey(ev *tcell.EventKey) bool {
 // HandleMouse handles mouse events.
 func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
-	if ev.Buttons() == tcell.ButtonNone {
-		tv.mouseDragging = false
+	if tv.press.Release(ev) {
 		tv.sbDragging = false
 		tv.sbDraggingX = false
 	}
@@ -455,8 +450,7 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	// onto it is still that drag. A fresh press runs the action once; resends of
 	// the same hold, or a hold that began on a row and drifted here, don't.
 	if btn, ok := tv.titleButtonRect(); ok && btn.Contains(mx, my) && ev.Buttons() == tcell.Button1 {
-		if !tv.mouseDragging {
-			tv.mouseDragging = true
+		if tv.press.Fresh(ev) {
 			if tv.titleButton.action != nil {
 				tv.titleButton.action()
 			}
@@ -487,22 +481,17 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	switch ev.Buttons() {
 	case tcell.Button1:
-		if tv.mouseDragging {
+		if !tv.press.Fresh(ev) {
 			// Still the same physical press, or the same drag toward the query editor (see
 			// explorer_drag.go): don't re-select or re-toggle on every resent motion event.
 			return true
 		}
-		tv.mouseDragging = true
 		node := &tv.nodes[idx]
 		// A second press on the same row inside the interval is a double-click:
 		// activate rather than re-select. Recorded before the expander test so a
 		// double-click on the glyph only toggles (activating from it too would fire on
-		// the second half of an ordinary expand). doubleClickInterval is the Editor's,
-		// one speed for the whole app.
-		doubleClick := idx == tv.lastClickIdx && !tv.lastClickAt.IsZero() &&
-			time.Since(tv.lastClickAt) <= doubleClickInterval
-		tv.lastClickIdx = idx
-		tv.lastClickAt = time.Now()
+		// the second half of an ordinary expand).
+		doubleClick := tv.clicks.Press(idx, ev.When())
 		// Only the "[+]"/"[-]" expander glyph toggles expand/collapse; a click
 		// elsewhere on the row reselects it, which lets a node be click-dragged into
 		// the query editor without flipping its expand state (a drag starts on the
@@ -522,15 +511,21 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		// A double-click on the node's text (icon and label) is Enter: the default
 		// action, else expand/collapse. Blank row space past the label only selects.
 		if doubleClick && node.onText(vcol) {
-			// Cleared so a third click starts a fresh pair rather than activating again.
-			tv.lastClickAt = time.Time{}
 			if !tv.activateSelected() {
 				tv.toggleExpand()
 			}
 		}
 		return true
 	case tcell.Button2: // tcell v3: Button2 is Secondary (right-click); Button3 is Middle.
-		tv.sel = idx
+		// A right-click selects the row it lands on, and a host following the
+		// selection (a details pane, a status line) must hear about it before the
+		// menu opens, or it keeps describing the previous node while the highlight
+		// shows this one. Only on a change: a held right button resends Button2,
+		// and re-firing would reload whatever the host hangs off OnSelect.
+		if tv.sel != idx {
+			tv.sel = idx
+			tv.fireSelect()
+		}
 		if tv.OnRightClick != nil {
 			tv.OnRightClick(tv.nodes[idx].ID, mx, my)
 		}

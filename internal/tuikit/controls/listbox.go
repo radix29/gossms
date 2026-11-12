@@ -14,23 +14,26 @@ type ListBox struct {
 	scroll  int
 	focused bool
 
-	// mouseDragging distinguishes a fresh Button1 press from a continued hold over
-	// the same row (as TreeView and DataGrid). Without it, tcell's all-motion mouse
-	// tracking resends Button1 on every cursor motion while the button stays down,
-	// so a single click on an already-selected row would re-fire OnActivate on every
-	// resent event instead of once.
-	mouseDragging bool
+	// press distinguishes a fresh Button1 press from a continued hold over the
+	// same row (as TreeView). Without it, tcell's all-motion mouse tracking resends
+	// Button1 on every cursor motion while the button stays down, and each resend
+	// would re-select, and pair with its own press in clicks as a double-click.
+	press core.PressLatch
 
 	// sbDragging is true while the user is dragging the scrollbar thumb —
 	// see DataGrid's field of the same name and purpose for the rationale
-	// on why this is a separate flag from mouseDragging.
+	// on why this is a separate flag from press.
 	sbDragging bool
 
+	// clicks pairs fresh presses on one row into the double-click that fires
+	// OnActivate. A click on the already-selected row only selects it: the list
+	// often opens with row 0 selected, and a single click there must not run the
+	// default action (one click on the Connect dialog's first history entry used
+	// to connect).
+	clicks core.ClickTracker[int]
+
 	// OnSelect fires whenever the selected index changes (arrow keys,
-	// click). OnActivate fires once per physical click that lands on an
-	// already-selected row (double-activation semantics for successive
-	// physical clicks are the caller's choice — ListBox itself only
-	// guards against tcell's resent-while-held events, not real repeats).
+	// click). OnActivate fires on Enter, or a double-click on a row.
 	OnSelect   func(i int)
 	OnActivate func(i int)
 }
@@ -63,6 +66,8 @@ func (l *ListBox) SetBounds(x, y, w, h int) {
 // SetItems replaces the item list, clamping selection/scroll into range.
 func (l *ListBox) SetItems(items []string) {
 	l.items = items
+	// A press on the old list's row 3 and one on the new list's are not a double-click.
+	l.clicks.Reset()
 	l.sel = core.Clamp(l.sel, 0, max(0, len(items)-1))
 	l.ensureVisible()
 }
@@ -168,8 +173,7 @@ func (l *ListBox) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse processes mouse clicks and wheel scroll.
 func (l *ListBox) HandleMouse(ev *tcell.EventMouse) bool {
-	if ev.Buttons() == tcell.ButtonNone {
-		l.mouseDragging = false
+	if l.press.Release(ev) {
 		l.sbDragging = false
 	}
 	mx, my := ev.Position()
@@ -187,20 +191,20 @@ func (l *ListBox) HandleMouse(ev *tcell.EventMouse) bool {
 
 	switch ev.Buttons() {
 	case tcell.Button1:
-		if l.mouseDragging {
+		if !l.press.Fresh(ev) {
 			// Still the same physical press — do not re-select or
 			// re-activate on every resent motion event.
 			return true
 		}
-		l.mouseDragging = true
 		idx := l.scroll + (my - l.rect.Y)
 		if idx >= 0 && idx < len(l.items) {
-			same := idx == l.sel
-			l.sel = idx
-			if same && l.OnActivate != nil {
-				l.OnActivate(l.sel)
-			} else {
+			double := l.clicks.Press(idx, ev.When())
+			if idx != l.sel {
+				l.sel = idx
 				l.fireSelect()
+			}
+			if double && l.OnActivate != nil {
+				l.OnActivate(l.sel)
 			}
 		}
 	case tcell.WheelUp:

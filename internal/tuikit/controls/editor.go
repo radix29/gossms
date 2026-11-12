@@ -3,7 +3,6 @@ package controls
 import (
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -127,12 +126,9 @@ type Editor struct {
 	selAnchorCol  int
 	mouseDragging bool
 
-	// lastClickAt/Row/Col record the previous Button1 press for double-click word
-	// selection. tcell reports no click count, so the editor pairs presses itself,
-	// as DataGrid does for its separator double-click.
-	lastClickAt  time.Time
-	lastClickRow int
-	lastClickCol int
+	// clicks pairs fresh Button1 presses on one {row, col} text position into the
+	// double-click that selects a word.
+	clicks core.ClickTracker[[2]int]
 
 	// blockClip is the text most recently copied out of a block (column) selection.
 	// Paste compares its argument against it to tell a block copy that round-tripped

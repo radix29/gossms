@@ -2,8 +2,10 @@ package controls
 
 import (
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 func newTestListBox(items ...string) *ListBox {
@@ -48,7 +50,15 @@ func TestListBoxEnterActivates(t *testing.T) {
 	}
 }
 
-func TestListBoxClickSameRowActivates(t *testing.T) {
+// pressAt is one Button1 press and release on (x, y), stamped at.
+func pressAt(l *ListBox, x, y int, at time.Time) {
+	press := tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone)
+	press.SetEventTime(at)
+	l.HandleMouse(press)
+	l.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+}
+
+func TestListBoxDoubleClickActivates(t *testing.T) {
 	l := newTestListBox("a", "b", "c")
 	l.SetSelected(0)
 	var activated int = -1
@@ -56,17 +66,15 @@ func TestListBoxClickSameRowActivates(t *testing.T) {
 	l.OnActivate = func(i int) { activated = i }
 	l.OnSelect = func(i int) { selectedCalls++ }
 
+	t0 := time.Now()
 	// First click on a different row selects.
-	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone))
-	if l.Selected() != 1 || selectedCalls != 1 {
-		t.Fatalf("after click on row 1: selected=%d calls=%d, want 1,1", l.Selected(), selectedCalls)
+	pressAt(l, 0, 1, t0)
+	if l.Selected() != 1 || selectedCalls != 1 || activated != -1 {
+		t.Fatalf("after click on row 1: selected=%d calls=%d activated=%d, want 1,1,-1",
+			l.Selected(), selectedCalls, activated)
 	}
-	// Release, then a genuine second press on the already-selected row
-	// activates instead of re-selecting — the release in between is what
-	// distinguishes this from tcell's resent Button1 while a button stays
-	// held (see mouseDragging's doc comment), which must NOT re-activate.
-	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.ButtonNone, tcell.ModNone))
-	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone))
+	// The second quick press on the same row activates without re-selecting.
+	pressAt(l, 0, 1, t0.Add(core.DoubleClickInterval/2))
 	if activated != 1 {
 		t.Fatalf("activated = %d, want 1", activated)
 	}
@@ -75,22 +83,73 @@ func TestListBoxClickSameRowActivates(t *testing.T) {
 	}
 }
 
+// A single click on the row that is already selected only selects. The Connect
+// dialog's history list opens with row 0 selected, and one click on it used to
+// connect.
+func TestListBoxSingleClickOnSelectedRowDoesNotActivate(t *testing.T) {
+	l := newTestListBox("a", "b", "c")
+	activations := 0
+	l.OnActivate = func(int) { activations++ }
+
+	pressAt(l, 0, 0, time.Now())
+	if activations != 0 {
+		t.Fatalf("one click on the selected row activated %d times", activations)
+	}
+}
+
+// Two clicks on the same row far apart are two clicks, not a double-click.
+func TestListBoxSlowSecondClickDoesNotActivate(t *testing.T) {
+	l := newTestListBox("a", "b", "c")
+	activations := 0
+	l.OnActivate = func(int) { activations++ }
+
+	t0 := time.Now()
+	pressAt(l, 0, 1, t0)
+	pressAt(l, 0, 1, t0.Add(2*core.DoubleClickInterval))
+	if activations != 0 {
+		t.Fatalf("two slow clicks activated %d times", activations)
+	}
+}
+
+// New items under the pointer break a pair: a press on the old list's row and
+// one on the new list's are not a double-click.
+func TestListBoxSetItemsBreaksDoubleClick(t *testing.T) {
+	l := newTestListBox("a", "b", "c")
+	activations := 0
+	l.OnActivate = func(int) { activations++ }
+
+	t0 := time.Now()
+	pressAt(l, 0, 1, t0)
+	l.SetItems([]string{"x", "y", "z"})
+	pressAt(l, 0, 1, t0.Add(core.DoubleClickInterval/2))
+	if activations != 0 {
+		t.Fatalf("a click before and after SetItems activated %d times", activations)
+	}
+}
+
 // TestListBoxHeldButtonOnSameRowDoesNotReActivate covers tcell's all-motion
 // mouse tracking resending Buttons()==Button1 on every cursor motion while
-// the button stays down: without ListBox's mouseDragging latch, a single
-// physical click on an already-selected row that so much as twitches fires
-// OnActivate twice.
+// the button stays down: without ListBox's press latch, the resends
+// after a double-click's second press would pair again and fire OnActivate
+// once per motion.
 func TestListBoxHeldButtonOnSameRowDoesNotReActivate(t *testing.T) {
 	l := newTestListBox("a", "b", "c")
-	l.SetSelected(1)
 	var activateCount int
 	l.OnActivate = func(i int) { activateCount++ }
 
-	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone))
+	t0 := time.Now()
+	pressAt(l, 0, 1, t0)
+	press := tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone)
+	press.SetEventTime(t0.Add(core.DoubleClickInterval / 4))
+	l.HandleMouse(press)
 	if activateCount != 1 {
-		t.Fatalf("activateCount after first press = %d, want 1", activateCount)
+		t.Fatalf("activateCount after the double-click = %d, want 1", activateCount)
 	}
-	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone))
+	for range 3 {
+		resend := tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone)
+		resend.SetEventTime(t0.Add(core.DoubleClickInterval / 2))
+		l.HandleMouse(resend)
+	}
 	if activateCount != 1 {
 		t.Fatalf("activateCount after resent Button1 (no release) = %d, want 1 (still the same physical press)", activateCount)
 	}

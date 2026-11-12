@@ -722,9 +722,19 @@ when its action is impossible must be gated, never a silent no-op.
 
 tcell's all-motion tracking resends the held button on every motion event, so
 any widget acting on `Button1` (toolbar button, menu label, tree toggle) needs a
-per-widget latch — `mouseDragging` — set on the press and cleared on the
+per-widget latch — a `core.PressLatch` (`tuikit/core/press.go`; the widgets with
+a selection drag, `Editor`, `DataGrid` and `InputField`, still hold a
+hand-rolled `mouseDragging` bool) — set on the press and cleared on the
 matching `ButtonNone`, or the action refires on every motion while held. It
 guards only a resend over the widget that armed it.
+
+`ModalDialog`'s button row is the exception that sees the whole gesture: every
+event passes `TrackPress` (via `ConsumeOutsideClick` and `ButtonClicked`), which
+calls `Fresh` on every `Button1`, so only a gesture's first press can click a
+button — a drag from the message, a list, a scrollbar, a checkbox or outside
+the box does not. A dialog that offers an open drop-down list events ahead of
+`ConsumeOutsideClick` (Backup, Restore, Filter, Options) calls `TrackPress`
+first, or the list's pick is unseen and its resends look fresh.
 
 A positional router (`App.handleMouse`) sees a drag that began elsewhere drift
 onto a latch-owning widget as a fresh-looking `Button1`. So routers keep a

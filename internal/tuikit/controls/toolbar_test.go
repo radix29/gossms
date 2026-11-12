@@ -29,7 +29,7 @@ func TestToolbarClickFiresAction(t *testing.T) {
 
 // TestToolbarHeldButtonDoesNotRefire covers tcell's all-motion mouse
 // tracking resending Buttons()==Button1 on every motion event while the
-// button stays down: without the mouseDragging latch, a toggle button (e.g.
+// button stays down: without the press latch, a toggle button (e.g.
 // "Include Actual Execution Plan") flips back and forth whenever the mouse
 // twitches during a click. TreeView's expander and MenuBar's header toggle
 // carry the same latch.

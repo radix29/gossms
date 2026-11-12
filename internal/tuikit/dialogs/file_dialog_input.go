@@ -136,8 +136,7 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// A release must reach the focused field even when it lands outside the dialog
 	// (consumed below), or its next press is swallowed as a continuation of the
 	// stale drag. Each returns false on ButtonNone, so this only resets the latch.
-	if ev.Buttons() == tcell.ButtonNone {
-		d.listMouseDragging = false
+	if d.listPress.Release(ev) {
 		switch d.focus {
 		case ffPath:
 			d.pathField.HandleMouse(ev)
@@ -184,11 +183,10 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 		if lr.Contains(mx, my) {
-			if d.listMouseDragging {
+			if !d.listPress.Fresh(ev) {
 				// Same physical press: don't re-activate on resent motion.
 				return true
 			}
-			d.listMouseDragging = true
 			if idx := d.scroll + (my - lr.Y); idx >= 0 && idx < len(d.entries) {
 				same := idx == d.sel
 				d.sel = idx

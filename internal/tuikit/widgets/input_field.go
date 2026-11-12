@@ -140,9 +140,12 @@ func (f *InputField) selectionBounds() (start, end int) {
 	return f.cursor, f.selAnchor
 }
 
-// SelectedText returns the currently selected text, or "" if none.
+// SelectedText returns the currently selected text, or "" if none. A password
+// field always returns "": the mask covers the drawing only, and handing the
+// plaintext to Copy would put it on the OS clipboard (or, over SSH, through
+// OSC 52 into the terminal). Desktop password boxes refuse Copy the same way.
 func (f *InputField) SelectedText() string {
-	if !f.HasSelection() {
+	if !f.HasSelection() || f.password {
 		return ""
 	}
 	start, end := f.selectionBounds()
@@ -166,9 +169,11 @@ func (f *InputField) deleteSelection() {
 }
 
 // Cut returns the selected text and removes it — Ctrl+X's copy-then-delete.
-// Returns "" with nothing deleted if there is no selection.
+// Returns "" with nothing deleted if there is no selection, or in a password
+// field, which refuses Cut for the reason SelectedText refuses Copy (deleting
+// text the clipboard never received would just lose it).
 func (f *InputField) Cut() string {
-	if !f.HasSelection() {
+	if !f.HasSelection() || f.password {
 		return ""
 	}
 	text := f.SelectedText()
@@ -347,13 +352,13 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 	switch ev.Key() {
 	case tcell.KeyLeft:
 		if ctrlHeld {
-			f.cursor = core.WordBoundaryLeft(f.value, f.cursor)
+			f.cursor = f.wordLeft()
 		} else if f.cursor > 0 {
 			f.cursor = core.PrevGrapheme(f.displayRunes(), f.cursor)
 		}
 	case tcell.KeyRight:
 		if ctrlHeld {
-			f.cursor = core.WordBoundaryRight(f.value, f.cursor)
+			f.cursor = f.wordRight()
 		} else if f.cursor < len(f.value) {
 			f.cursor = core.NextGrapheme(f.displayRunes(), f.cursor)
 		}
@@ -415,10 +420,27 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 	return true
 }
 
+// wordLeft and wordRight are the Ctrl+Left/Right (and Ctrl+Backspace/Delete)
+// targets. A password field is one word: stopping at the hidden value's spaces
+// and punctuation would reveal where they are.
+func (f *InputField) wordLeft() int {
+	if f.password {
+		return 0
+	}
+	return core.WordBoundaryLeft(f.value, f.cursor)
+}
+
+func (f *InputField) wordRight() int {
+	if f.password {
+		return len(f.value)
+	}
+	return core.WordBoundaryRight(f.value, f.cursor)
+}
+
 // deleteWordLeft removes the word to the left of the cursor (Ctrl+
 // Backspace).
 func (f *InputField) deleteWordLeft() {
-	left := core.WordBoundaryLeft(f.value, f.cursor)
+	left := f.wordLeft()
 	f.value = append(f.value[:left], f.value[f.cursor:]...)
 	f.cursor = left
 }
@@ -426,7 +448,7 @@ func (f *InputField) deleteWordLeft() {
 // deleteWordRight removes the word to the right of the cursor (Ctrl+
 // Delete).
 func (f *InputField) deleteWordRight() {
-	right := core.WordBoundaryRight(f.value, f.cursor)
+	right := f.wordRight()
 	f.value = append(f.value[:f.cursor], f.value[right:]...)
 }
 

@@ -55,7 +55,7 @@ func (s *comboScreen) row(x, y, w int) string {
 
 // openCombo fills pm with n panels, sizes it, and clicks the tab bar's [v]
 // arrow. The release first is what makes the click a fresh press rather than
-// a continued hold (see mouseDragging).
+// a continued hold (see press).
 func openCombo(t *testing.T, n, w, h int) (*PanelManager, *comboScreen) {
 	t.Helper()
 	pm := NewPanelManager()
@@ -489,13 +489,13 @@ func TestComboEnterMidDragDoesNotStrandTheScrollbarLatch(t *testing.T) {
 }
 
 // Opening the list is a setComboOpen too, and it must not clear the gesture
-// latch on its way through: mouseDragging belongs to the press that claimed
+// latch on its way through: press belongs to the press that claimed
 // the gesture, not to the list. Clearing it here would release a still-held
 // press to the panel underneath — the thing HandleMouse's catch-all exists to
 // stop.
 func TestComboOpeningKeepsTheGestureLatch(t *testing.T) {
 	pm, _ := openCombo(t, 30, 80, 12)
-	if !pm.mouseDragging {
+	if !pm.press.Held() {
 		t.Fatal("the click that opened the combo did not latch the gesture")
 	}
 }

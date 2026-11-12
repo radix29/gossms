@@ -65,7 +65,7 @@ func TestPanelManagerClosablePanelStillClosesViaClick(t *testing.T) {
 	closed := -1
 	pm.OnCloseTab = func(i int) { closed = i }
 
-	// Each x is a separate fresh press (release first) — mouseDragging
+	// Each x is a separate fresh press (release first) — the press latch
 	// would otherwise treat this sweep as one held drag and swallow every
 	// position after the first, since it has no bearing on cursor motion
 	// speed/distance, only on whether a release was seen since the last
@@ -85,7 +85,7 @@ func TestPanelManagerClosablePanelStillClosesViaClick(t *testing.T) {
 
 // TestPanelManagerHeldButtonOnCloseDoesNotReFire covers tcell's all-motion
 // mouse tracking resending Buttons()==Button1 on every cursor motion while
-// the button stays down: without the mouseDragging latch a single physical
+// the button stays down: without the press latch a single physical
 // click on a tab's [x] that twitches fires OnCloseTab twice, stacking
 // duplicate "save this Dirty panel?" prompts for one click.
 func TestPanelManagerHeldButtonOnCloseDoesNotReFire(t *testing.T) {

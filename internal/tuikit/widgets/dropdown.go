@@ -23,10 +23,10 @@ type DropDown struct {
 	// The zero value is enabled.
 	disabled bool
 
-	// mouseDragging separates a fresh Button1 press from a resent hold (same field
-	// as Toolbar/TreeView/MenuBar): all-motion tracking resends Button1 on every
-	// motion, so a twitchy click would re-toggle or re-pick repeatedly.
-	mouseDragging bool
+	// press separates a fresh Button1 press from a resent hold: all-motion
+	// tracking resends Button1 on every motion, so a twitchy click would re-toggle
+	// or re-pick repeatedly.
+	press core.PressLatch
 
 	// top is the first item the open list shows once it is taller than the screen
 	// allows; screenW/screenH are the screen size the last Draw saw. HandleMouse has
@@ -305,8 +305,7 @@ func (d *DropDown) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse processes mouse events.
 func (d *DropDown) HandleMouse(ev *tcell.EventMouse) bool {
-	if ev.Buttons() == tcell.ButtonNone {
-		d.mouseDragging = false
+	if d.press.Release(ev) {
 		d.sbDragging = false
 		return false
 	}
@@ -333,24 +332,22 @@ func (d *DropDown) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() != tcell.Button1 {
 		return false
 	}
-	if d.open && d.scrolled() && (d.sbDragging || !d.mouseDragging) {
+	if d.open && d.scrolled() && (d.sbDragging || !d.press.Held()) {
 		top := d.firstShown()
 		if core.HandleScrollbarDrag(ev, ix+d.rect.W, y0, rows, len(d.items), &d.sbDragging, &top) {
-			d.mouseDragging = true
+			d.press.Fresh(ev) // claim it, so the header and list ignore its resends
 			d.top = top
 			return true
 		}
 	}
 	if my == d.rect.Y && mx >= ix && mx <= ix+d.rect.W+1 {
-		if !d.mouseDragging {
-			d.mouseDragging = true
+		if d.press.Fresh(ev) {
 			d.setOpen(!d.open)
 		}
 		return true
 	}
 	if inList {
-		if !d.mouseDragging {
-			d.mouseDragging = true
+		if d.press.Fresh(ev) {
 			d.selected = d.firstShown() + my - y0
 			d.setOpen(false)
 		}

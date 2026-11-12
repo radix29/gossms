@@ -250,8 +250,9 @@ behind the mouse and async rules.
    a hand-rolled zone field.
 2. `App` snapshots the modal layer (`gestureOverlay`/`overlaySnapshot`) and
    drops held events across a change.
-3. A widget acting on `Button1` has a `mouseDragging` latch, set on press,
-   cleared on `ButtonNone`.
+3. A widget acting on `Button1` has a press latch (`core.PressLatch`), set on
+   press, cleared on `ButtonNone`. A dialog routing anything ahead of
+   `ConsumeOutsideClick` calls `ModalDialog.TrackPress` first.
 4. A latch never survives into the next showing — `ModalDialog.Show()` clears
    both; `FieldGesture.Clear` also drops the field's own latch.
 5. A host returning early from `HandleMouse` still forwards `ButtonNone` to

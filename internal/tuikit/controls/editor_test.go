@@ -3,6 +3,7 @@ package controls
 import (
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
@@ -1303,9 +1304,13 @@ func TestEditorSlowSecondClickDoesNotSelectWord(t *testing.T) {
 	e.SetGutterVisible(false)
 	e.SetBounds(0, 0, 40, 5)
 
-	clickAt(e, 8, 0)
-	e.lastClickAt = e.lastClickAt.Add(-2 * doubleClickInterval)
-	clickAt(e, 8, 0)
+	t0 := time.Now()
+	for _, at := range []time.Time{t0, t0.Add(2 * core.DoubleClickInterval)} {
+		press := tcell.NewEventMouse(8, 0, tcell.Button1, tcell.ModNone)
+		press.SetEventTime(at)
+		e.HandleMouse(press)
+		e.HandleMouse(tcell.NewEventMouse(8, 0, tcell.ButtonNone, tcell.ModNone))
+	}
 
 	if e.HasSelection() {
 		t.Fatalf("slow second click selected %q, want nothing", e.SelectedText())

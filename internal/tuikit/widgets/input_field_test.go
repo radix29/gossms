@@ -335,3 +335,58 @@ func TestInputFieldInsertsAComposedKeyWhole(t *testing.T) {
 		t.Errorf("Value() = %q, want %q", got, want)
 	}
 }
+
+// TestPasswordFieldRefusesCopy: a password field's mask covers the drawing
+// only, so SelectedText and Cut must not hand the plaintext to the clipboard,
+// and Cut must not delete what the clipboard never received.
+func TestPasswordFieldRefusesCopy(t *testing.T) {
+	f := NewInputField("", 40, true)
+	f.Focus(true)
+	f.SetValue("hunter2 secret")
+	f.HandleKey(key(tcell.KeyCtrlA, tcell.ModNone))
+	if !f.HasSelection() {
+		t.Fatal("Ctrl+A: expected a selection (it still draws and is replaced by typing)")
+	}
+	if got := f.SelectedText(); got != "" {
+		t.Errorf("SelectedText() = %q, want \"\"", got)
+	}
+	if got := f.Cut(); got != "" {
+		t.Errorf("Cut() = %q, want \"\"", got)
+	}
+	if got := f.Value(); got != "hunter2 secret" {
+		t.Errorf("after Cut(): Value() = %q, want it unchanged", got)
+	}
+}
+
+// TestPasswordFieldWordJumpIsWholeField: word moves and word deletes treat a
+// password as one word, so they can't reveal where its spaces and punctuation
+// are.
+func TestPasswordFieldWordJumpIsWholeField(t *testing.T) {
+	newPw := func(cursor int) *InputField {
+		f := NewInputField("", 40, true)
+		f.Focus(true)
+		f.SetValue("hunter2 se.cret")
+		f.cursor = cursor
+		return f
+	}
+	f := newPw(0)
+	f.HandleKey(key(tcell.KeyRight, tcell.ModCtrl))
+	if f.cursor != 15 {
+		t.Errorf("Ctrl+Right from 0: cursor = %d, want 15", f.cursor)
+	}
+	f = newPw(10)
+	f.HandleKey(key(tcell.KeyLeft, tcell.ModCtrl))
+	if f.cursor != 0 {
+		t.Errorf("Ctrl+Left from 10: cursor = %d, want 0", f.cursor)
+	}
+	f = newPw(10)
+	f.HandleKey(key(tcell.KeyBackspace, tcell.ModCtrl))
+	if got := f.Value(); got != ".cret" || f.cursor != 0 {
+		t.Errorf("Ctrl+Backspace from 10: Value() = %q cursor %d, want \".cret\" 0", got, f.cursor)
+	}
+	f = newPw(10)
+	f.HandleKey(key(tcell.KeyDelete, tcell.ModCtrl))
+	if got := f.Value(); got != "hunter2 se" || f.cursor != 10 {
+		t.Errorf("Ctrl+Delete from 10: Value() = %q cursor %d, want \"hunter2 se\" 10", got, f.cursor)
+	}
+}

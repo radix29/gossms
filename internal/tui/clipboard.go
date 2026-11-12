@@ -118,7 +118,13 @@ func (a *App) copySelection() {
 	if !target.HasSelection() {
 		return
 	}
-	a.writeClipboard(target.SelectedText())
+	// A selection can still yield no text: a password field refuses to hand over
+	// its plaintext. Leave the clipboard as it was rather than overwrite it with "".
+	text := target.SelectedText()
+	if text == "" {
+		return
+	}
+	a.writeClipboard(text)
 	a.setStatus("Copied to clipboard")
 }
 
@@ -129,7 +135,13 @@ func (a *App) cutSelection() {
 	if target == nil || !target.HasSelection() {
 		return
 	}
-	a.writeClipboard(target.Cut())
+	// "" means nothing was cut (a password field refuses Cut): keep the clipboard,
+	// report nothing, and tell no dialog its field changed.
+	text := target.Cut()
+	if text == "" {
+		return
+	}
+	a.writeClipboard(text)
 	a.setStatus("Cut to clipboard")
 	a.notifyClipboardEdit(target)
 }
