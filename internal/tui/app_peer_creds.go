@@ -115,9 +115,9 @@ func shortHostKey(key string) string {
 //
 // An entry whose password could not be decrypted is not seeded. A replaced
 // config key blanks every saved password at once (config.Load), so this is a
-// whole-file state, not a rare entry. Nor is one whose method takes a password
-// and that saved none (Remember Password unticked, the default): it is certain
-// to fail at login, and unseeded it is refused instead, which offers the
+// whole-file state, not a rare entry. Nor is one whose method requires a
+// password and that saved none (config.Connection.NeedsPassword; Remember
+// Password unticked is the default): it is certain to fail at login, and unseeded it is refused instead, which offers the
 // Connect prompt (offerPeerConnect). A connection made this session is
 // registered with its password in memory by rememberConnection.
 //
@@ -128,21 +128,11 @@ func (a *App) loadPeerCredentials() {
 		return
 	}
 	for _, c := range a.cfg.Connections {
-		if c.PasswordUnreadable() || missingPassword(c) {
+		if c.PasswordUnreadable() || c.NeedsPassword() {
 			continue
 		}
 		a.rememberPeerCredentials(c)
 	}
-}
-
-// missingPassword reports whether c's method signs in with a password it does
-// not carry. Windows Authentication with no user is integrated sign-in, which
-// needs none.
-func missingPassword(c config.Connection) bool {
-	if c.Password != "" || !config.FieldsFor(c.AuthMethod).Password {
-		return false
-	}
-	return c.AuthMethod != config.AuthWindows || c.User != ""
 }
 
 // forgetPeerFailure tells every open connection that server is reachable

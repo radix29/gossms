@@ -400,10 +400,10 @@ The job-state read, load-bearing:
   error and keeps the `sysjobactivity` derivation (Agent stopped →
   `xp_sqlagent_enum_jobs` returns zero rows). The derivation uses the same
   encoding (`THEN 1 ELSE 4`).
-- **`jobIsRunning` answers "unknown" for `JobStateUnknown` and
-  `JobStateSuspended`; `jobStateRefusal` then refuses nothing.** Suspended is
-  ambiguous (sp_help_job calls it idle; it still holds a session). Let the
-  server answer.
+- **gosmo's `JobState.Running` answers "unknown" for `JobStateUnknown` and
+  `JobStateSuspended`; `jobStateRefusal` (TUI) and `job start`/`stop` (CLI)
+  then refuse nothing.** Suspended is ambiguous (sp_help_job calls it idle;
+  it still holds a session). Let the server answer.
 
 ## FILESTREAM: what the live run settled — do not re-raise
 

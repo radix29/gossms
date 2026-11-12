@@ -88,7 +88,7 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 				}
 			}
 
-			builtin := isSystemSchema(schema.Name)
+			builtin := isFixedSchema(schema.Name)
 
 			rows := []propsheet.Row{
 				propsheet.Section("Schema information"),

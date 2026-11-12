@@ -149,25 +149,6 @@ func agentOperatorsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQ
 
 // ---- Jobs: Start / Stop / View History ----
 
-// jobIsRunning reports whether sp_start_job would be refused and sp_stop_job
-// accepted, and whether the state knows.
-//
-// Only states with a certain live session answer. JobStateUnknown (a job Agent
-// doesn't run, or gosmo's fallback when xp_sqlagent_enum_jobs is unreachable)
-// and JobStateSuspended (sp_help_job groups it with idle, yet it holds a
-// session) return known=false, so the server decides.
-func jobIsRunning(state gosmo.JobState) (running, known bool) {
-	switch state {
-	case gosmo.JobStateExecuting, gosmo.JobStateWaitingForWorker,
-		gosmo.JobStateBetweenRetries, gosmo.JobStateWaitingForStepToFinish,
-		gosmo.JobStatePerformingCompletionActions:
-		return true, true
-	case gosmo.JobStateIdle:
-		return false, true
-	}
-	return false, false
-}
-
 // jobStateRefusal is the message for a Start/Stop on a job already in the
 // target state, or "".
 //
@@ -175,7 +156,7 @@ func jobIsRunning(state gosmo.JobState) (running, known bool) {
 // is as old as the folder load, and greying would hide a valid Stop. The node
 // is refreshed either way.
 func jobStateRefusal(name string, state gosmo.JobState, wantRunning bool) string {
-	running, known := jobIsRunning(state)
+	running, known := state.Running()
 	switch {
 	case !known:
 		return ""

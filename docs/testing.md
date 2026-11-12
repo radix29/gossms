@@ -89,6 +89,13 @@ reload, a showing's several loads), wait on the outcome with
 `drainUntil(t, a, cond, what)` instead — two `-race`-only flakes came from
 this.
 
+**Opening a Properties dialog starts its first page's load on a goroutine**,
+even in a test that never looks at the page. Script its reads (or fail them
+all with a catch-all rule) and wait for the load to finish
+(`len(a.propDialog.pageRuns) == 0`). Left running against a `gosmotest` server
+with no rules, its read failed the test only when it beat the test's end:
+`TestPropertiesApplyReloadsTheFolderListingTheObject` failed about 1 run in 20.
+
 **A test package that can save config sandboxes `os.UserConfigDir` in
 `TestMain`** (`internal/tui/main_test.go` sets `XDG_CONFIG_HOME`, `HOME`,
 `AppData` to a temp dir). Without it, any `saveConfig` writes the developer's

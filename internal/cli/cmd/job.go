@@ -173,21 +173,6 @@ func lastOutcomeCell(last time.Time, o gosmo.JobOutcome) *string {
 	return ptr(jobOutcomeName(o))
 }
 
-// jobIsRunning reports whether sp_start_job would refuse the job as already
-// running and sp_stop_job accept it, and whether its state says (the TUI's
-// rule, agent_menu.go): unknown and suspended leave it to the server.
-func jobIsRunning(state gosmo.JobState) (running, known bool) {
-	switch state {
-	case gosmo.JobStateExecuting, gosmo.JobStateWaitingForWorker,
-		gosmo.JobStateBetweenRetries, gosmo.JobStateWaitingForStepToFinish,
-		gosmo.JobStatePerformingCompletionActions:
-		return true, true
-	case gosmo.JobStateIdle:
-		return false, true
-	}
-	return false, false
-}
-
 // notifyLevelName is a notification's or automatic delete's condition.
 func notifyLevelName(n gosmo.NotifyLevel) string {
 	switch n {

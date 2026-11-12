@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/tsql"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/db"
@@ -427,7 +428,7 @@ func cleanupCapture(parent context.Context, xe gosmo.XEvents, es *gosmo.EventSes
 		}
 		if err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("could not check whether event session %s was "+
-				"created: %v. If xevent sessions lists it, drop it with DROP EVENT SESSION [%s] ON SERVER.", name, err, name))
+				"created: %v. If xevent sessions lists it, drop it with DROP EVENT SESSION %s ON SERVER.", name, err, tsql.QuoteName(name)))
 			return
 		}
 		es, started = found, found.IsRunning
@@ -441,7 +442,7 @@ func cleanupCapture(parent context.Context, xe gosmo.XEvents, es *gosmo.EventSes
 	res.Fields = append(res.Fields, output.Field{Key: "sessionDropped", Value: strconv.FormatBool(err == nil)})
 	if err != nil {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("event session %s was not dropped: %v. Drop it with "+
-			"DROP EVENT SESSION [%s] ON SERVER.", name, err, name))
+			"DROP EVENT SESSION %s ON SERVER.", name, err, tsql.QuoteName(name)))
 	}
 }
 

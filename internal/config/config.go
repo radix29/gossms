@@ -50,10 +50,16 @@ type authMethodInfo struct {
 	tag    string
 	entra  bool
 	fields AuthFields
+	// passwordRequired: the password is the credential itself, so signing in
+	// without one is certain to fail. Windows Authentication reads a password
+	// but does not require one: no user is integrated sign-in, and a bare user
+	// is a Kerberos keytab / credential-cache login (gosmo's connection_dsn.go).
+	passwordRequired bool
 }
 
 // authMethods is the single table of auth methods, in Connect-dialog order,
-// read by AllAuthMethods, AuthMethodName, IsEntraMethod and FieldsFor.
+// read by AllAuthMethods, AuthMethodName, IsEntraMethod, FieldsFor and
+// PasswordRequired.
 //
 // TenantID is live for every Entra method but Managed Identity, whose tenant is
 // the resource's own. ClientID is the app registration's client id for
@@ -61,17 +67,17 @@ type authMethodInfo struct {
 // service principal itself, or a user-assigned managed identity. User is MFA's
 // optional login hint.
 var authMethods = []authMethodInfo{
-	{AuthSQLServer, "SQL Server Authentication", "", false, AuthFields{User: true, Password: true}},
-	{AuthWindows, "Windows Authentication", "Windows", false, AuthFields{User: true, Password: true}},
-	{AuthEntraDefault, "Microsoft Entra Default", "Entra Default", true, AuthFields{Tenant: true}},
+	{AuthSQLServer, "SQL Server Authentication", "", false, AuthFields{User: true, Password: true}, true},
+	{AuthWindows, "Windows Authentication", "Windows", false, AuthFields{User: true, Password: true}, false},
+	{AuthEntraDefault, "Microsoft Entra Default", "Entra Default", true, AuthFields{Tenant: true}, false},
 	{AuthEntraPassword, "Microsoft Entra Password", "Entra Password", true,
-		AuthFields{User: true, Password: true, Tenant: true, Client: true}},
-	{AuthEntraMSI, "Microsoft Entra Managed Identity", "Entra Managed Identity", true, AuthFields{Client: true}},
+		AuthFields{User: true, Password: true, Tenant: true, Client: true}, true},
+	{AuthEntraMSI, "Microsoft Entra Managed Identity", "Entra Managed Identity", true, AuthFields{Client: true}, false},
 	{AuthEntraServicePrincipal, "Microsoft Entra Service Principal", "Entra Service Principal", true,
-		AuthFields{Password: true, Tenant: true, Client: true}},
-	{AuthEntraInteractive, "Microsoft Entra MFA", "Entra MFA", true, AuthFields{User: true, Tenant: true, Client: true}},
-	{AuthEntraDeviceCode, "Microsoft Entra Device Code", "Entra Device Code", true, AuthFields{Tenant: true, Client: true}},
-	{AuthEntraAzCLI, "Microsoft Entra Azure CLI", "Entra Azure CLI", true, AuthFields{Tenant: true}},
+		AuthFields{Password: true, Tenant: true, Client: true}, true},
+	{AuthEntraInteractive, "Microsoft Entra MFA", "Entra MFA", true, AuthFields{User: true, Tenant: true, Client: true}, false},
+	{AuthEntraDeviceCode, "Microsoft Entra Device Code", "Entra Device Code", true, AuthFields{Tenant: true, Client: true}, false},
+	{AuthEntraAzCLI, "Microsoft Entra Azure CLI", "Entra Azure CLI", true, AuthFields{Tenant: true}, false},
 }
 
 // authInfo looks m up in authMethods. An unknown method (hand-edited or newer
@@ -96,6 +102,17 @@ func IsEntraMethod(m AuthMethod) bool { return authInfo(m).entra }
 
 // FieldsFor reports which credential fields m reads.
 func FieldsFor(m AuthMethod) AuthFields { return authInfo(m).fields }
+
+// PasswordRequired reports whether m cannot sign in without a password: SQL
+// Server Authentication, Entra Password and Entra Service Principal. Windows
+// Authentication reads one but does not require it.
+func PasswordRequired(m AuthMethod) bool { return authInfo(m).passwordRequired }
+
+// NeedsPassword reports whether c's method requires a password c does not
+// carry, so dialling it is certain to fail at login.
+func (c Connection) NeedsPassword() bool {
+	return c.Password == "" && PasswordRequired(c.AuthMethod)
+}
 
 // AllAuthMethods returns all auth methods in display order.
 func AllAuthMethods() []AuthMethod {

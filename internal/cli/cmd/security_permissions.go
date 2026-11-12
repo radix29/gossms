@@ -276,18 +276,6 @@ func checkPermissions(class gosmo.SecurableClass, perms []string, columns bool) 
 	return nil
 }
 
-// permissionName is name as the gosmo type of class's scope; ApplyPermission
-// checks the name, not the type.
-func permissionName(class gosmo.SecurableClass, name string) gosmo.PermissionName {
-	switch class {
-	case gosmo.SecurableServer:
-		return gosmo.ServerPermission(name)
-	case gosmo.SecurableDatabase:
-		return gosmo.DatabasePermission(name)
-	}
-	return gosmo.ObjectPermission(name)
-}
-
 // permissionRequest is grant/deny/revoke's options, checked before
 // connecting.
 type permissionRequest struct {
@@ -395,7 +383,7 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 		done := 0
 		write := func(ctx context.Context) error {
 			for _, perm := range req.perms {
-				if err := applyPermission(ctx, sc.Server, dbase, verb, sec, permissionName(sec.Class, perm), p.name, req.opts); err != nil {
+				if err := applyPermission(ctx, sc.Server, dbase, verb, sec, sec.Class.Permission(perm), p.name, req.opts); err != nil {
 					return permissionWriteError(err, verb, sec.Class)
 				}
 				done++

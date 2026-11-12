@@ -370,16 +370,10 @@ func readPassword(inv *spec.Invocation, f config.AuthFields, c *config.Connectio
 	return nil
 }
 
-// missingPassword refuses, before dialling, a method that needs a secret and
-// has none: SQL Server Authentication, Entra Password and Service Principal.
-// Windows Authentication without one is integrated sign-in.
+// missingPassword refuses, before dialling, a method that needs a password and
+// has none (config.Connection.NeedsPassword).
 func missingPassword(c config.Connection, t *Target) error {
-	switch c.AuthMethod {
-	case config.AuthSQLServer, config.AuthEntraPassword, config.AuthEntraServicePrincipal:
-	default:
-		return nil
-	}
-	if c.Password != "" {
+	if !c.NeedsPassword() {
 		return nil
 	}
 	msg := AuthName(c.AuthMethod) + " authentication needs a password, and none was given"

@@ -109,7 +109,7 @@ func applyPermChange(ctx context.Context, apply permApplyFn, orig, current gosmo
 // database itself, a schema, a table or view) to gosmo.
 func securablePermApply(d *gosmo.Database, sec gosmo.Securable) permApplyFn {
 	return func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
-		return d.ApplyPermission(ctx, verb, sec, permissionName(sec.Class, permission), principal, opts)
+		return d.ApplyPermission(ctx, verb, sec, sec.Class.Permission(permission), principal, opts)
 	}
 }
 
@@ -119,16 +119,6 @@ func serverPermApply(srv *gosmo.Server) permApplyFn {
 		return srv.ApplyPermission(ctx, verb, gosmo.Securable{Class: gosmo.SecurableServer},
 			gosmo.ServerPermission(permission), principal, opts)
 	}
-}
-
-// permissionName types a grid's permission name for class. gosmo checks the name
-// against the class's own allowlist whatever its Go type; this only keeps a
-// database-scoped name a DatabasePermission.
-func permissionName(class gosmo.SecurableClass, permission string) gosmo.PermissionName {
-	if class == gosmo.SecurableDatabase {
-		return gosmo.DatabasePermission(permission)
-	}
-	return gosmo.ObjectPermission(permission)
 }
 
 // matchesFilter reports whether any of fields contains term, case-insensitively.

@@ -1,4 +1,6 @@
-- add windows store installation? bettwer way for windows?
+- move tuikit as it is own library as preparation for postgres app.
+
+- add windows store installation? 
 
 Results:
 -	Geo/GIS data?

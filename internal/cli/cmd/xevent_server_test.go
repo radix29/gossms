@@ -109,6 +109,7 @@ func (s *xeServer) applyWrite(q gosmotest.Query) gosmotest.Result {
 	default:
 		verb, name = strings.ToLower(m[4]), m[3]
 	}
+	name = strings.ReplaceAll(name, "]]", "]")
 	s.steps = append(s.steps, verb+" "+name)
 	if verb == "create" {
 		s.creates = append(s.creates, q.Text)

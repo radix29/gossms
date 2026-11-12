@@ -192,13 +192,6 @@ func (f listFilter) matches(schema, name string) bool {
 		(f.name == "" || strings.Contains(strings.ToLower(name), strings.ToLower(f.name)))
 }
 
-// isSystemSchema is a schema SQL Server creates in every database: guest,
-// INFORMATION_SCHEMA, sys and the fixed roles' (schema_id 16384–16393). dbo
-// holds user objects and is not one.
-func isSystemSchema(s *gosmo.Schema) bool {
-	return (s.ID >= 2 && s.ID <= 4) || (s.ID >= 16384 && s.ID < 16400)
-}
-
 func (d Deps) objectList(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
 	sc, dbase, err := d.connectDatabase(ctx, inv, res)
@@ -351,7 +344,7 @@ func listKind(ctx context.Context, dbase *gosmo.Database, kind string, f listFil
 			return err
 		}
 		for _, s := range ss {
-			sys := isSystemSchema(s)
+			sys := s.IsSystem()
 			if (sys && !system) || !f.matches(s.Name, s.Name) {
 				continue
 			}

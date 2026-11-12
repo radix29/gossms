@@ -32,9 +32,15 @@ func newCapture(t *testing.T, events ...gosmo.XEvent) *xeServer {
 // the wait (nil: return at once, recording the time asked).
 func runCaptureCmd(t *testing.T, ctx context.Context, s *xeServer, sleep func(context.Context, time.Duration) error, argv string) (res *output.Result, dials int, waited time.Duration, err error) {
 	t.Helper()
+	return runCaptureCmdNamed(t, ctx, s, testCaptureSession, sleep, argv)
+}
+
+// runCaptureCmdNamed is runCaptureCmd with the capture's session called name.
+func runCaptureCmdNamed(t *testing.T, ctx context.Context, s *xeServer, name string, sleep func(context.Context, time.Duration) error, argv string) (res *output.Result, dials int, waited time.Duration, err error) {
+	t.Helper()
 	old, oldName := sleepCtx, captureSessionName
 	t.Cleanup(func() { sleepCtx, captureSessionName = old, oldName })
-	captureSessionName = func() string { return testCaptureSession }
+	captureSessionName = func() string { return name }
 	sleepCtx = func(ctx context.Context, d time.Duration) error {
 		waited = d
 		s.steps = append(s.steps, "wait")
@@ -262,6 +268,22 @@ func TestXEventCaptureCleansUpOnFailure(t *testing.T) {
 				t.Errorf("sessions left %v; want it left only when the drop failed", xs.sessions)
 			}
 		})
+	}
+}
+
+// The hint a failed drop leaves is T-SQL that parses: the session name is
+// quoted, so a ] in it is doubled.
+func TestXEventCaptureDropHintQuotesTheName(t *testing.T) {
+	xs := newCapture(t)
+	xs.writeErrs["drop"] = errors.New("Msg 15151")
+	res, _, _, err := runCaptureCmdNamed(t, context.Background(), xs, "cap]x", nil, "--allow admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "DROP EVENT SESSION [cap]]x] ON SERVER."; !slices.ContainsFunc(res.Warnings, func(w string) bool {
+		return strings.Contains(w, want)
+	}) {
+		t.Errorf("warnings %q; want one with %q", res.Warnings, want)
 	}
 }
 

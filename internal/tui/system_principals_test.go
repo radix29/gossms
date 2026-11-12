@@ -28,20 +28,20 @@ func TestIsSystemUser(t *testing.T) {
 // and are not. DROP SCHEMA db_datareader and ALTER AUTHORIZATION ON
 // SCHEMA::db_owner both succeeded live, so gating them would take away
 // something the server allows.
-func TestIsSystemSchemaExcludesFixedRoleSchemas(t *testing.T) {
+func TestIsFixedSchemaExcludesFixedRoleSchemas(t *testing.T) {
 	for _, name := range []string{"dbo", "guest", "sys", "INFORMATION_SCHEMA"} {
-		if !isSystemSchema(name) {
+		if !isFixedSchema(name) {
 			t.Errorf("%s: DROP SCHEMA is refused, want system", name)
 		}
 	}
 	for _, name := range []string{"db_owner", "db_datareader", "db_denydatawriter", "Sales"} {
-		if isSystemSchema(name) {
+		if isFixedSchema(name) {
 			t.Errorf("%s: DROP SCHEMA succeeds on it, want not system", name)
 		}
 	}
 }
 
-// isSystemUser and isSystemSchema are separate predicates over the same four
+// isSystemUser and isFixedSchema are separate predicates over the same four
 // names, kept apart because they answer for different statements and could
 // legitimately diverge if SQL Server ever let one go. Nothing else pins that
 // they agree *today*, though, and they must: each of the four is undroppable
@@ -63,10 +63,10 @@ func TestSystemUserAndSchemaListsAgree(t *testing.T) {
 		"Sales", "HealthClinicApp", "Guest", "DBO", "information_schema",
 	}
 	for _, name := range names {
-		if isSystemUser(name) != isSystemSchema(name) {
-			t.Errorf("%s: isSystemUser=%v but isSystemSchema=%v; the four built-in "+
+		if isSystemUser(name) != isFixedSchema(name) {
+			t.Errorf("%s: isSystemUser=%v but isFixedSchema=%v; the four built-in "+
 				"names are undroppable as both, so the two lists must agree",
-				name, isSystemUser(name), isSystemSchema(name))
+				name, isSystemUser(name), isFixedSchema(name))
 		}
 	}
 }

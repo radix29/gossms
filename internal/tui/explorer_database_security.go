@@ -244,7 +244,7 @@ func loadSchemasChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 	return listDatabaseChildren(l, node, (*gosmo.Database).Schemas,
 		func(s *gosmo.Schema) *explorerNode {
 			n := l.node(s.Name, NodeSchema, s.Name, s.Name, node.data.DBName)
-			n.data.IsSystem = isSystemSchema(s.Name)
+			n.data.IsSystem = isFixedSchema(s.Name)
 			return n
 		})
 }
