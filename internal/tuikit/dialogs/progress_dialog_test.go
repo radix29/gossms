@@ -6,64 +6,14 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
-// cellScreen is a screen fake recording the rune and style of every cell
-// drawn, with just enough surface for a dialog's Draw: Size, the Get/Put pair
-// DimArea walks with, and SetContent.
-type cellScreen struct {
-	tcell.Screen
-	w, h  int
-	runes map[[2]int]rune
-	style map[[2]int]tcell.Style
-}
-
-func newCellScreen(w, h int) *cellScreen {
-	return &cellScreen{w: w, h: h, runes: map[[2]int]rune{}, style: map[[2]int]tcell.Style{}}
-}
-
-func (s *cellScreen) Size() (int, int) { return s.w, s.h }
-
-func (s *cellScreen) SetContent(x, y int, primary rune, _ []rune, st tcell.Style) {
-	s.runes[[2]int{x, y}] = primary
-	s.style[[2]int{x, y}] = st
-}
-
-func (s *cellScreen) Get(int, int) (string, tcell.Style, int) { return " ", tcell.StyleDefault, 1 }
-
-func (s *cellScreen) Put(x, y int, str string, st tcell.Style) (string, int) {
-	if str == "" {
-		return "", 0
-	}
-	r := []rune(str)
-	s.SetContent(x, y, r[0], nil, st)
-	return string(r[1:]), 1
-}
-
-func (s *cellScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-// row is line y as drawn, one rune per column — so a column is an index into
-// []rune(row), not into the string.
-func (s *cellScreen) row(y int) []rune {
-	out := make([]rune, s.w)
-	for x := range s.w {
-		r := s.runes[[2]int{x, y}]
-		if r == 0 {
-			r = ' '
-		}
-		out[x] = r
-	}
-	return out
-}
-
 // cancelColumn is the column the Cancel button starts at on the button row.
-func cancelColumn(t *testing.T, scr *cellScreen, d *ProgressDialog) int {
+func cancelColumn(t *testing.T, scr *tuikittest.Screen, d *ProgressDialog) int {
 	t.Helper()
-	row := string(scr.row(d.ButtonRowY()))
+	row := scr.Row(d.ButtonRowY())
 	before, _, ok := strings.Cut(row, "[ Cancel ]")
 	if !ok {
 		t.Fatalf("button row %q has no Cancel", row)
@@ -76,7 +26,7 @@ func cancelColumn(t *testing.T, scr *cellScreen, d *ProgressDialog) int {
 // closed on Cancel would say it was over. A second Cancel does nothing, and
 // the button greys to say so.
 func TestProgressDialogCancelAsksOnceAndStaysOpen(t *testing.T) {
-	scr := newCellScreen(120, 40)
+	scr := tuikittest.NewScreen(120, 40)
 	d := NewProgressDialog(scr)
 	calls := 0
 	d.ShowProgress("Delete Table", `Deleting table "dbo.Orders"...`, func() { calls++ })
@@ -84,11 +34,11 @@ func TestProgressDialogCancelAsksOnceAndStaysOpen(t *testing.T) {
 	d.Draw(scr)
 	x := cancelColumn(t, scr, d)
 	y := d.ButtonRowY()
-	if got := scr.style[[2]int{x, y}].GetForeground(); got == theme.Active().TextDisabled {
+	if got := scr.StyleAt(x, y).GetForeground(); got == theme.Active().TextDisabled {
 		t.Fatal("Cancel is drawn disabled on a cancellable operation")
 	}
 
-	d.HandleKey(key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
 	if calls != 1 {
 		t.Fatalf("onCancel ran %d times after Escape, want 1", calls)
 	}
@@ -99,24 +49,24 @@ func TestProgressDialogCancelAsksOnceAndStaysOpen(t *testing.T) {
 		t.Errorf("Cancelling() = %v, CanCancel() = %v after Cancel, want true, false", d.Cancelling(), d.CanCancel())
 	}
 
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 	d.HandleMouse(tcell.NewEventMouse(x+2, y, tcell.Button1, tcell.ModNone))
 	if calls != 1 {
 		t.Errorf("onCancel ran %d times, want 1 — a second Cancel asked again", calls)
 	}
 
-	scr = newCellScreen(120, 40)
+	scr = tuikittest.NewScreen(120, 40)
 	d.Draw(scr)
-	if got := scr.style[[2]int{x, y}].GetForeground(); got != theme.Active().TextDisabled {
+	if got := scr.StyleAt(x, y).GetForeground(); got != theme.Active().TextDisabled {
 		t.Errorf("Cancel foreground after cancelling = %v, want disabled", got)
 	}
-	if body := string(scr.row(d.InnerRect().Y + 3)); !strings.Contains(body, "Cancelling") {
+	if body := scr.Row(d.InnerRect().Y + 3); !strings.Contains(body, "Cancelling") {
 		t.Errorf("status line after Cancel = %q, want it to say the dialog is cancelling", body)
 	}
 
 	// A new showing starts live again.
 	d.ShowProgress("Delete Table", "Deleting...", func() { calls++ })
-	d.HandleKey(key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
 	if calls != 2 {
 		t.Errorf("onCancel ran %d times after a fresh showing's Escape, want 2", calls)
 	}
@@ -125,19 +75,19 @@ func TestProgressDialogCancelAsksOnceAndStaysOpen(t *testing.T) {
 // An uninterruptible operation's Cancel is drawn greyed, refuses the keyboard
 // and the mouse, and the reason is on screen.
 func TestProgressDialogUninterruptibleRefusesCancel(t *testing.T) {
-	scr := newCellScreen(120, 40)
+	scr := tuikittest.NewScreen(120, 40)
 	d := NewProgressDialog(scr)
 	reason := "A failover cannot be safely interrupted."
 	d.ShowUninterruptible("Fail Over", `Failing "ag1" over to node2...`, reason)
 	d.Draw(scr)
 	x := cancelColumn(t, scr, d)
 	y := d.ButtonRowY()
-	if got := scr.style[[2]int{x, y}].GetForeground(); got != theme.Active().TextDisabled {
+	if got := scr.StyleAt(x, y).GetForeground(); got != theme.Active().TextDisabled {
 		t.Errorf("Cancel foreground = %v, want disabled", got)
 	}
 
-	d.HandleKey(key(tcell.KeyEscape))
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 	d.HandleMouse(tcell.NewEventMouse(x+2, y, tcell.Button1, tcell.ModNone))
 	if d.Cancelling() || !d.Visible() {
 		t.Errorf("Cancelling() = %v, Visible() = %v, want false, true — Cancel acted on an uninterruptible operation", d.Cancelling(), d.Visible())
@@ -145,7 +95,7 @@ func TestProgressDialogUninterruptibleRefusesCancel(t *testing.T) {
 
 	var drawn strings.Builder
 	for row := d.Rect().Y; row < d.Rect().Bottom(); row++ {
-		drawn.WriteString(strings.TrimSpace(string(scr.row(row))))
+		drawn.WriteString(strings.TrimSpace(scr.Row(row)))
 		drawn.WriteString(" ")
 	}
 	if !strings.Contains(drawn.String(), "cannot be safely") {
@@ -158,13 +108,15 @@ func TestProgressDialogUninterruptibleRefusesCancel(t *testing.T) {
 // not yet been shown — but it still swallows the input, so the tree does not
 // get it either.
 func TestProgressDialogSwallowsInputBeforeItIsRevealed(t *testing.T) {
-	scr := newCellScreen(120, 40)
+	scr := tuikittest.NewScreen(120, 40)
+	scr.Fill('~', tcell.StyleDefault) // so a drawn space shows too
+	blank := scr.Snapshot()
 	d := NewProgressDialog(scr)
 	d.RevealDelay = time.Hour
 	calls := 0
 	d.ShowProgress("Delete Table", "Deleting...", func() { calls++ })
 
-	if !d.HandleKey(key(tcell.KeyEscape)) {
+	if !d.HandleKey(tuikittest.Key(tcell.KeyEscape)) {
 		t.Error("HandleKey returned false before the reveal — the key would reach whatever is underneath")
 	}
 	if !d.HandleMouse(tcell.NewEventMouse(1, 1, tcell.Button1, tcell.ModNone)) {
@@ -174,13 +126,13 @@ func TestProgressDialogSwallowsInputBeforeItIsRevealed(t *testing.T) {
 		t.Errorf("onCancel ran %d times before the dialog was on screen, want 0", calls)
 	}
 	d.Draw(scr)
-	if len(scr.runes) != 0 {
-		t.Errorf("Draw painted %d cells before the reveal, want none", len(scr.runes))
+	if scr.Snapshot() != blank {
+		t.Error("Draw painted before the reveal, want nothing")
 	}
 
 	d.RevealDelay = 0
 	d.Draw(scr)
-	if len(scr.runes) == 0 {
+	if scr.Snapshot() == blank {
 		t.Error("Draw painted nothing once revealed")
 	}
 }
@@ -189,7 +141,7 @@ func TestProgressDialogSwallowsInputBeforeItIsRevealed(t *testing.T) {
 // but does not shrink back for the next short one, or the box would jump
 // sideways under the user. A new showing starts from its own message.
 func TestProgressDialogNeverNarrowsWithinAShowing(t *testing.T) {
-	d := NewProgressDialog(&sizedScreen{w: 200, h: 50})
+	d := NewProgressDialog(tuikittest.NewScreen(200, 50))
 	d.ShowProgress("Delete Objects", "Deleting 1 of 3: a", func() {})
 	base := d.Rect().W
 	d.SetMessage("Deleting 2 of 3: " + strings.Repeat("x", 80))

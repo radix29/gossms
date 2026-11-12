@@ -29,10 +29,29 @@ var contrastExempt = map[string]bool{
 	"StyleActiveBorder":    true,
 	"StyleDisabled":        true,
 	"StyleControlDisabled": true,
-	"StyleInputDisabled":   true,
+	"StyleDialogLine":      true,
+	"StyleMenuLine":        true,
+	"StyleScrollThumb":     true,
 	"StyleButtonDisabled":  true,
 	"StyleChartGrid":       true,
 	"StyleTooltipBorder":   true,
+}
+
+// knownLowContrast is palette/style pairs measured below the floor when the
+// pair got a named helper (the colours were already drawn inline). Recolouring
+// a palette is a visible change of its own, tracked in docs/open-threads.md
+// § Theme: what is left. An entry that starts passing fails the test, so the
+// list only shrinks.
+var knownLowContrast = map[string]bool{
+	"Default/StyleDialogAccent": true,
+	"Default/StyleDialogError":  true,
+	"Light/StyleDialogAccent":   true,
+	"Light/StyleDialogDim":      true,
+	"Light/StyleMenuDim":        true,
+	"MC/StyleMenuDim":           true,
+	"MCRetro/StyleMenuDim":      true,
+	"MCRetro/StyleDialogDim":    true,
+	"MCRetro/StyleDialogError":  true,
 }
 
 // styleFuncs is every Style* function, by name. A new one belongs here: the
@@ -55,7 +74,14 @@ var styleFuncs = map[string]func() tcell.Style{
 	"StyleButtonActive":    StyleButtonActive,
 	"StyleInput":           StyleInput,
 	"StyleControlDisabled": StyleControlDisabled,
-	"StyleInputDisabled":   StyleInputDisabled,
+	"StyleDialogDim":       StyleDialogDim,
+	"StyleDialogLine":      StyleDialogLine,
+	"StyleDialogAccent":    StyleDialogAccent,
+	"StyleDialogError":     StyleDialogError,
+	"StyleMenuDim":         StyleMenuDim,
+	"StyleMenuLine":        StyleMenuLine,
+	"StyleActiveBlock":     StyleActiveBlock,
+	"StyleScrollThumb":     StyleScrollThumb,
 	"StyleButtonDisabled":  StyleButtonDisabled,
 	"StyleGridHeader":      StyleGridHeader,
 	"StyleGridRow":         StyleGridRow,
@@ -130,7 +156,14 @@ func TestEveryStyleMeetsTheContrastFloor(t *testing.T) {
 			if f, ok := paletteFloor[pname]; ok {
 				floor = f
 			}
-			if got := contrastRatio(fg, bg); got < floor {
+			got := contrastRatio(fg, bg)
+			if known := knownLowContrast[pname+"/"+sname]; known {
+				if got >= floor {
+					t.Errorf("%s/%s: contrast %.3f:1 now meets the floor; drop it from knownLowContrast", pname, sname, got)
+				}
+				continue
+			}
+			if got < floor {
 				t.Errorf("%s/%s: contrast %.3f:1, want at least %.3f:1", pname, sname, got, floor)
 			}
 		}

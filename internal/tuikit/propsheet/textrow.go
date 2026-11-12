@@ -194,8 +194,7 @@ func (r *TextRow) Draw(s tcell.Screen, focused bool) {
 	r.field.Focus(focused && r.enabled)
 	r.field.Draw(s)
 	if r.unit != "" {
-		p := theme.Active()
-		st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+		st := theme.StyleDialogDim()
 		ux := r.field.InputX() + r.field.Width() + 3
 		core.DrawText(s, ux, r.y, st, r.unit)
 	}

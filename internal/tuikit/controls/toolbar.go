@@ -48,7 +48,7 @@ type Toolbar struct {
 
 	// press distinguishes a fresh Button1 press (fire the button's Action)
 	// from a continued hold over the same button (as MenuBar and TreeView). Without
-	// it, the mouse tracking mode gossms enables (core.Init's EnableMouse())
+	// it, the mouse tracking mode core.Init enables (EnableMouse())
 	// resends Button1 on every motion event while the button stays down, so a click
 	// that twitches before release fires Action again, flickering a toggle button
 	// (e.g. Include Actual Execution Plan) instead of flipping it once.

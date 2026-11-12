@@ -31,7 +31,8 @@ type Dirty interface {
 }
 
 // Closable is an optional interface a Panel may implement to forbid the tab
-// bar's [x] button (e.g. Object Explorer Details). Absence means closable.
+// bar's [x] button (e.g. a panel the host keeps open for good). Absence means
+// closable.
 type Closable interface {
 	Closable() bool
 }

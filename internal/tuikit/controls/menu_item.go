@@ -139,7 +139,6 @@ func menuContentWidth(items []MenuItem, minW int) int {
 // beats the plain default — shared by MenuBar.drawDropdown and
 // ContextMenu.Draw so both grey out a disabled item identically.
 func menuRowStyles(item MenuItem, selected bool) (label, shortcut tcell.Style) {
-	p := theme.Active()
 	switch {
 	case !item.enabled():
 		st := theme.StyleDisabled()
@@ -148,8 +147,8 @@ func menuRowStyles(item MenuItem, selected bool) (label, shortcut tcell.Style) {
 		st := theme.StyleMenuSelected()
 		return st, st
 	default:
-		return tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText),
-			tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuTextDim)
+		return theme.StyleMenuBar(),
+			theme.StyleMenuDim()
 	}
 }
 

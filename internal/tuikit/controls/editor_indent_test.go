@@ -5,12 +5,13 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // pressEnter puts the cursor at row/col and sends a plain Enter.
 func pressEnter(e *Editor, row, col int) {
 	e.cursorRow, e.cursorCol = row, col
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 }
 
 func TestAutoIndentAtEndOfIndentedLine(t *testing.T) {
@@ -67,7 +68,7 @@ func TestAutoIndentAfterDeletingSelection(t *testing.T) {
 	e.selecting = true
 	e.selAnchorRow, e.selAnchorCol = 0, 7
 	e.cursorRow, e.cursorCol = 1, 7
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 
 	if got, want := e.Text(), "    one\n    "; got != want {
 		t.Fatalf("Text() = %q, want %q", got, want)
@@ -82,7 +83,7 @@ func TestAutoIndentIsOneUndoStep(t *testing.T) {
 		t.Fatal("Enter did nothing")
 	}
 
-	e.HandleKey(key(tcell.KeyCtrlZ, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyCtrlZ, tcell.ModNone))
 	if got := e.Text(); got != before {
 		t.Fatalf("after one Ctrl+Z: Text() = %q, want %q", got, before)
 	}
@@ -101,7 +102,7 @@ func TestPasteOfIndentedScriptDoesNotStaircase(t *testing.T) {
 func TestAutoIndentSkippedInBlockEditing(t *testing.T) {
 	e := newTestEditor("    aaaa\n    bbbb")
 	blockSelect(e, 0, 6, 1, 6)
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 
 	if got, want := e.Text(), "    aa\naa\n    bbbb"; got != want {
 		t.Fatalf("Text() = %q, want %q — the block path keeps its plain split", got, want)
@@ -117,7 +118,7 @@ func TestSetIndentWidthDrivesTabIndentAndDedent(t *testing.T) {
 	}
 
 	e.cursorRow, e.cursorCol = 0, 0
-	e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 	if got, want := e.Text(), "  SELECT 1"; got != want {
 		t.Fatalf("Tab: Text() = %q, want %q", got, want)
 	}
@@ -132,7 +133,7 @@ func TestSetIndentWidthDrivesTabIndentAndDedent(t *testing.T) {
 		t.Fatalf("DedentLines: Text() = %q, want %q", got, want)
 	}
 
-	e.HandleKey(key(tcell.KeyBacktab, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyBacktab, tcell.ModNone))
 	if got, want := e.Text(), "SELECT 1"; got != want {
 		t.Fatalf("Shift+Tab: Text() = %q, want %q", got, want)
 	}
@@ -184,13 +185,13 @@ func TestSetDefaultIndentWidthSeedsNewEditors(t *testing.T) {
 func TestAutoIndentAcceptsCompletionWithoutExtraIndent(t *testing.T) {
 	e := newTestEditor("")
 	e.SetCompletionProvider(testCompletionProvider("SELECT"))
-	e.HandleKey(key(tcell.KeyTab, tcell.ModNone)) // one indent level
+	e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) // one indent level
 	typeString(e, "SEL")
 	if !e.CompletionActive() {
 		t.Fatal("expected the completion popup open after typing \"SEL\"")
 	}
 
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if got, want := e.Text(), "    SELECT"; got != want {
 		t.Fatalf("Text() = %q, want %q", got, want)
 	}
@@ -266,7 +267,7 @@ func TestSmartIndentDoesNotDriftAcrossClauses(t *testing.T) {
 			e.doc.setLine(e.cursorRow, nil)
 			typeString(e, s)
 		}
-		e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+		e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	}
 	// The trailing "    " is the last Enter carrying the "    x = 1" indent
 	// down, which is auto-indent doing its job.

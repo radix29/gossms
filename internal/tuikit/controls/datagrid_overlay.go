@@ -8,11 +8,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// selectedCellsText returns the selection as tab-separated columns and
+// SelectedCellsText returns the selection as tab-separated columns and
 // newline-separated rows: what the menu's "Copy" hands to OnCopyRequest.
-func (g *DataGrid) selectedCellsText() string {
-	_, c0, _, c1 := g.selectionBounds()
-	rows := g.selectedRows()
+// Exported for a host wiring the grid's selection to its own Ctrl+C: the
+// keyboard equivalent of the menu's "Copy", which the grid can't do itself
+// (see OnCopyRequest).
+func (g *DataGrid) SelectedCellsText() string {
+	_, c0, _, c1 := g.SelectionBounds()
+	rows := g.SelectedRows()
 	// A Ctrl+click selection is whole rows: no column range, so every column.
 	if g.marking {
 		c0, c1 = 0, max(0, len(g.columns)-1)
@@ -35,11 +38,6 @@ func (g *DataGrid) selectedCellsText() string {
 	}
 	return b.String()
 }
-
-// SelectedCellsText exposes selectedCellsText to a host wiring the grid's
-// selection to its own Ctrl+C: the keyboard equivalent of the menu's "Copy",
-// which the grid can't do itself (see OnCopyRequest).
-func (g *DataGrid) SelectedCellsText() string { return g.selectedCellsText() }
 
 // allRowsText returns every row, tab- and newline-separated, optionally prefixed
 // with a header row of column names: what the row-number gutter's header-cell
@@ -80,12 +78,12 @@ func (g *DataGrid) cellContextMenuItems() []MenuItem {
 		items = append(items, MenuItem{Label: "Copy", Action: func() {
 			// The menu can outlive its rows (a refresh that empties the grid while it is
 			// open); copying then would blank the clipboard.
-			if g.selectedRowCount() > 0 {
-				g.requestCopy(g.selectedCellsText())
+			if g.SelectedRowCount() > 0 {
+				g.requestCopy(g.SelectedCellsText())
 			}
 		}})
 	}
-	if !g.blockSelecting && g.selectedRowCount() <= 1 {
+	if !g.blockSelecting && g.SelectedRowCount() <= 1 {
 		items = append(items, MenuItem{Label: showValueMenuItem, Action: g.openViewer})
 	}
 	if g.OnMenuItems != nil && !g.browseOnly {
@@ -164,7 +162,8 @@ func (g *DataGrid) openViewer() {
 	g.viewEditor.SetActive(true)
 	g.viewOpen = true
 	// A latch must not survive into the next showing of the same widget; see
-	// viewDismissing and the ModalDialog rule in docs/ui-rules.md.
+	// viewDismissing, and dialogs.ModalDialog.Show, which clears its own for the
+	// same reason.
 	g.viewDismissing = false
 }
 
@@ -193,8 +192,8 @@ func (g *DataGrid) DrawOverlay(s tcell.Screen) {
 		p := theme.Active()
 		core.DimArea(s, core.Rect{X: 0, Y: 0, W: sw, H: sh}, p.DialogOverlay, viewerDimNum, viewerDimDen)
 		core.FillRect(s, rect, ' ', theme.StyleDialog())
-		borderSt := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogBorder)
-		titleSt := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTitle).Bold(true)
+		borderSt := theme.On(p.DialogBg, p.DialogBorder)
+		titleSt := theme.On(p.DialogBg, p.DialogTitle).Bold(true)
 		core.DrawBoxTitle(s, rect, g.viewHeader, borderSt, titleSt)
 
 		g.viewEditor.SetBounds(x+2, y+1, w-4, cellViewerLines)
@@ -204,10 +203,10 @@ func (g *DataGrid) DrawOverlay(s tcell.Screen) {
 		// and the hint clipped to what is left, so they can't overlap.
 		btnW := core.DisplayWidth(viewCloseLabel)
 		g.viewCloseRect = core.Rect{X: x + w - 2 - btnW, Y: y + h - 2, W: btnW, H: 1}
-		hintSt := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+		hintSt := theme.StyleDialogDim()
 		core.DrawTextClipped(s, x+2, y+h-2, w-6-btnW, hintSt,
 			"Esc or Close to dismiss — Shift+arrows to select, Ctrl+C to copy")
-		btnSt := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
+		btnSt := theme.StyleActiveBlock().Bold(true)
 		core.DrawTextClipped(s, g.viewCloseRect.X, g.viewCloseRect.Y, btnW, btnSt, viewCloseLabel)
 	}
 	g.ctxMenu.Draw(s)
@@ -218,8 +217,8 @@ func (g *DataGrid) DrawOverlay(s tcell.Screen) {
 // ---------------------------------------------------------------------------
 
 // HasSelection and the SelectedText, Cut, Paste and SelectAll beside it make
-// *DataGrid a clipboard target (see internal/tui/clipboard.go's clipboardTarget
-// and propsheet.ClipboardRow), forwarding to the viewer's read-only Editor while
+// *DataGrid a core.ClipboardTarget (and a propsheet.ClipboardRow's grid),
+// forwarding to the viewer's read-only Editor while
 // open. HasSelection is false otherwise, so a host falling back to its own
 // row/cell copy (e.g. propsheet.GridRow.CopyText) keeps doing so whenever the
 // viewer isn't showing.
@@ -234,8 +233,10 @@ func (g *DataGrid) SelectedText() string {
 	return g.viewEditor.SelectedText()
 }
 
-// Cut degrades to Copy: the viewer is read-only, so there's nothing to remove.
-func (g *DataGrid) Cut() string { return g.SelectedText() }
+// Cut returns "" and removes nothing: the viewer is read-only. "" tells the
+// host nothing was cut, so it neither overwrites the clipboard nor reports a
+// cut (Copy is the way to take the text).
+func (g *DataGrid) Cut() string { return "" }
 
 // Paste is a no-op: the viewer is read-only.
 func (g *DataGrid) Paste(text string) {}
@@ -247,8 +248,8 @@ func (g *DataGrid) SelectAll() {
 }
 
 // OverlayActive reports whether the context menu or the full-content popup is
-// showing. A host laying the grid out beside another focusable widget (e.g.
-// QueryPanel's SQL editor) must give the grid exclusive first refusal of every
+// showing. A host laying the grid out beside another focusable widget (e.g. an
+// Editor above a results grid) must give the grid exclusive first refusal of every
 // key and mouse event while true: both overlays are positioned independently of
 // the grid's rect (see DrawOverlay), so position- or focus-based routing would
 // hand their input to whatever widget sits under those coordinates.

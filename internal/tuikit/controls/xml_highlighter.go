@@ -3,7 +3,6 @@ package controls
 import (
 	"unicode"
 
-	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -34,12 +33,11 @@ var (
 	xmlCDATAClose   = []rune("]]>")
 )
 
-// XMLHighlighter is the built-in XML syntax highlighter for Editor, used by
-// PlanView's raw-XML tab (see planview.New) and by the query editor when a .xml
-// file is opened via File > Open (see App.openQueryFile).
+// XMLHighlighter is the built-in XML syntax highlighter for Editor, for a host
+// showing XML text (e.g. a raw-XML view of a document, or an opened .xml file).
 //
 // Editor.Draw calls the returned Highlighter once per visible row, and Draw runs
-// on every event the app processes while the XML tab is visible, focused or not.
+// on every event the host processes while the editor is visible, focused or not.
 // Determining whether a line starts inside an unterminated <!-- --> comment or
 // <![CDATA[ ]]> section means replaying every prior line (xmlOpenBlock): O(N) per
 // line, O(H*N) per Draw for H rows, noticeably slow on large execution-plan XML.
@@ -53,10 +51,10 @@ func XMLHighlighter(p *theme.Palette) Highlighter {
 	return func(doc *Document, idx int) []ColorRun {
 		// Built per call, not once: p is the live palette, so a theme switch
 		// recolours an open editor.
-		tagStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorKeyword).Bold(true)
-		attrStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)
-		valStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorString)
-		cmtStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorComment)
+		tagStyle := theme.On(p.EditorBg, p.EditorKeyword).Bold(true)
+		attrStyle := theme.On(p.EditorBg, p.EditorNumber)
+		valStyle := theme.On(p.EditorBg, p.EditorString)
+		cmtStyle := theme.On(p.EditorBg, p.EditorComment)
 		line := doc.Line(idx)
 		runs := make([]ColorRun, 0, 8)
 		i := 0

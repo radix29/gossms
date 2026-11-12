@@ -5,6 +5,7 @@
 //   - geometry.go    — Rect
 //   - screen.go      — Init (tcell.Screen setup)
 //   - clip_screen.go — ClipScreen, a Screen that drops writes outside a rect
+//   - buffer.go      — Buffer, an off-screen Screen (chart canvases, test screens)
 //   - drawing.go     — DrawText/DrawBox/FillRect/DrawScrollbar/... primitives
 //   - strutil.go     — DisplayWidth/Truncate/WrapText/PadRight/EvRune
 //   - runecol.go     — rune-index <-> terminal-column conversion

@@ -4,35 +4,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
-
-// overlayScreen is a tcell.Screen fake with just enough surface to run
-// DrawOverlay: the "Show Value" popup's geometry is derived from Size(),
-// and the drawing helpers underneath it need Get/Put/SetContent/ShowCursor
-// to exist. Nothing painted is retained — the tests below assert on
-// PlanView and DataGrid state. Drawing matters here only because it's what
-// gives the popup's read-only editor its bounds; until a frame has been
-// drawn, no mouse event can be routed into it at all.
-type overlayScreen struct {
-	tcell.Screen
-	w, h int
-}
-
-func (s *overlayScreen) Size() (int, int) { return s.w, s.h }
-func (s *overlayScreen) Get(x, y int) (string, tcell.Style, int) {
-	return " ", tcell.StyleDefault, 1
-}
-func (s *overlayScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	return str, 1
-}
-
-func (s *overlayScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-func (s *overlayScreen) SetContent(x, y int, primary rune, combining []rune, style tcell.Style) {}
-func (s *overlayScreen) ShowCursor(x, y int)                                                    {}
 
 // planViewScreenW/H match newTreeTabView's SetBounds, so DrawOverlay
 // centres the popup for a view of exactly this size.
@@ -47,7 +20,7 @@ const planViewScreenW, planViewScreenH = 120, 40
 func openShowValueDrawn(t *testing.T, v *PlanView) (int, int) {
 	t.Helper()
 	openShowValue(t, v)
-	v.DrawOverlay(&overlayScreen{w: planViewScreenW, h: planViewScreenH})
+	v.DrawOverlay(tuikittest.NewScreen(planViewScreenW, planViewScreenH))
 	cx, cy := planViewScreenW/2, planViewScreenH/2
 	if v.bottomRect.Contains(cx, cy) {
 		t.Fatalf("popup centre (%d,%d) is inside bottomRect %+v — these tests need it outside", cx, cy, v.bottomRect)

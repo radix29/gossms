@@ -129,7 +129,6 @@ func (mb *MenuBar) menuHeaderOffset(idx int) int {
 }
 
 func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
-	p := theme.Active()
 	menu := mb.menus[idx]
 
 	r := mb.dropdownGeometry(s, idx)
@@ -137,8 +136,8 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 	rows := r.H - 2
 	mb.scrollTop = clampMenuScroll(mb.scrollTop, mb.selectedItem, len(menu.Items), rows)
 
-	ddStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
-	borderStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuLine)
+	ddStyle := theme.StyleMenuBar()
+	borderStyle := theme.StyleMenuLine()
 	core.DrawBox(s, r, borderStyle)
 	core.FillRect(s, r.Inner(1), ' ', ddStyle)
 

@@ -157,8 +157,8 @@ func (e *Editor) MoveLinesDown() {
 // DefaultIndentWidth is how many spaces IndentLines and the Tab key insert in an
 // Editor whose width has not been set. Tabs are never inserted, only converted
 // away by DedentLines/dedentAmount, since Editor's rendering has no tab-stop
-// expansion. internal/config declares a constant that must agree with this one;
-// TestIndentWidthDefaultsAgree in internal/tui holds them together.
+// expansion. A host that keeps its own default indent width (e.g. in its
+// configuration) must keep it equal to this one.
 const DefaultIndentWidth = 4
 
 // defaultIndentWidth is what NewEditor seeds e.indentWidth with, so editors built
@@ -185,8 +185,8 @@ const MaxIndentWidth = 16
 // expansion use in this editor. Values outside 1..MaxIndentWidth are ignored.
 //
 // Call it at construction, before any SetText: SetText expands tabs at the current
-// width, and a caller that snapshots Text() afterwards (see docs/ui-rules.md §
-// Editor) would read a later width change as a user edit. Changing the width at
+// width, and a caller that snapshots Text() afterwards to detect edits would
+// read a later width change as a user edit. Changing the width at
 // runtime deliberately does not re-expand existing text.
 func (e *Editor) SetIndentWidth(n int) {
 	if n < 1 || n > MaxIndentWidth {

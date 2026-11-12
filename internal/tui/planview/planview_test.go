@@ -118,8 +118,8 @@ func TestXMLTab_SelectionAndCopy(t *testing.T) {
 	if text == "" {
 		t.Error("SelectedText() is empty after SelectAll")
 	}
-	if v.Cut() != text {
-		t.Error("Cut() should return the same text as SelectedText() (read-only view)")
+	if got := v.Cut(); got != "" {
+		t.Errorf("Cut() = %q on a read-only view, want \"\" (nothing cut)", got)
 	}
 
 	// The XML tab's own text selection must not leak into the Plan tab's

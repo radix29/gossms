@@ -56,7 +56,7 @@ func (k KPI) Draw(s tcell.Screen, r core.Rect) {
 		valueW = core.DisplayWidth(value)
 	}
 	valueX := r.Right() - valueW
-	core.DrawText(s, valueX, r.Y, tcell.StyleDefault.Background(valueBg).Foreground(valueFg), value)
+	core.DrawText(s, valueX, r.Y, theme.On(valueBg, valueFg), value)
 
 	labelW := valueX - r.X
 	if labelW <= 0 || k.Label == "" {

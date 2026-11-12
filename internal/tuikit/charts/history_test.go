@@ -31,7 +31,7 @@ func plotBottom(canvasH int) int {
 }
 
 func TestHistoryChartAnchorsNewestBucketAtRightEdge(t *testing.T) {
-	c := NewCanvas(20, 6)
+	c := core.NewBuffer(20, 6)
 	h := bareHistory([]Series{{Label: "A", Color: colA, Values: []float64{4, 0, 0, 0, 4}}}, 4)
 	h.Draw(c, c.Rect())
 
@@ -50,7 +50,7 @@ func TestHistoryChartAnchorsNewestBucketAtRightEdge(t *testing.T) {
 }
 
 func TestHistoryChartLeavesLeftEndEmptyForPartialBuffer(t *testing.T) {
-	c := NewCanvas(20, 6)
+	c := core.NewBuffer(20, 6)
 	h := bareHistory([]Series{{Label: "A", Color: colA, Values: []float64{4, 4}}}, 4)
 	h.Draw(c, c.Rect())
 
@@ -72,7 +72,7 @@ func TestHistoryChartLeavesLeftEndEmptyForPartialBuffer(t *testing.T) {
 // A shorter series must stay visible in front of a taller one; drawing in
 // slice order would bury it.
 func TestHistoryChartDrawsShorterSeriesInFront(t *testing.T) {
-	c := NewCanvas(12, 5)
+	c := core.NewBuffer(12, 5)
 	h := bareHistory([]Series{
 		{Label: "tall", Color: colA, Values: []float64{4}},
 		{Label: "short", Color: colB, Values: []float64{1}},
@@ -91,7 +91,7 @@ func TestHistoryChartDrawsShorterSeriesInFront(t *testing.T) {
 }
 
 func TestHistoryChartPartialBlockForSmallValue(t *testing.T) {
-	c := NewCanvas(12, 5)
+	c := core.NewBuffer(12, 5)
 	h := bareHistory([]Series{{Label: "A", Color: colA, Values: []float64{0.1}}}, 4)
 	h.Draw(c, c.Rect())
 
@@ -106,7 +106,7 @@ func TestHistoryChartPartialBlockForSmallValue(t *testing.T) {
 }
 
 func TestHistoryChartDrawsAxisLabelsAndLegend(t *testing.T) {
-	c := NewCanvas(24, 8)
+	c := core.NewBuffer(24, 8)
 	HistoryChart{
 		Series:    []Series{{Label: "Batches", Short: "Btch", Color: colA, Values: []float64{5}}},
 		Scale:     Scale{Min: 0, Max: 10},
@@ -133,7 +133,7 @@ func TestHistoryChartEmptyRectDrawsNothing(t *testing.T) {
 		{X: 0, Y: 0, W: 10, H: 0},
 		{X: 0, Y: 0, W: -2, H: -2},
 	} {
-		c := NewCanvas(10, 4)
+		c := core.NewBuffer(10, 4)
 		bareHistory(series, 2).Draw(c, r)
 		for y, row := range c.Rows() {
 			if row != "          " {
@@ -152,7 +152,7 @@ func TestHistoryChartTinyRectStillPlots(t *testing.T) {
 		{X: 0, Y: 0, W: 3, H: 2},
 		{X: 6, Y: 2, W: 4, H: 2},
 	} {
-		c := NewCanvas(10, 4)
+		c := core.NewBuffer(10, 4)
 		bareHistory(series, 2).Draw(c, r)
 		drew := false
 		for _, row := range c.Rows() {
@@ -169,7 +169,7 @@ func TestHistoryChartTinyRectStillPlots(t *testing.T) {
 }
 
 func TestHistoryChartEmptySeries(t *testing.T) {
-	c := NewCanvas(16, 5)
+	c := core.NewBuffer(16, 5)
 	HistoryChart{Series: nil, YLevels: 2, LegendRows: -1}.Draw(c, c.Rect())
 
 	for y, row := range c.Rows() {
@@ -185,7 +185,7 @@ func TestHistoryChartEmptySeries(t *testing.T) {
 }
 
 func TestHistoryChartAllZeroSeries(t *testing.T) {
-	c := NewCanvas(16, 5)
+	c := core.NewBuffer(16, 5)
 	bareHistory([]Series{{Label: "A", Color: colA, Values: []float64{0, 0, 0}}}, 0).Draw(c, c.Rect())
 
 	for x := range 16 {
@@ -199,7 +199,7 @@ func TestHistoryChartAllZeroSeries(t *testing.T) {
 // sits under the newest column, and every divider to its left is labelled
 // with how far back it is.
 func TestHistoryChartDrawsATimeScale(t *testing.T) {
-	c := NewCanvas(60, 10)
+	c := core.NewBuffer(60, 10)
 	HistoryChart{
 		Series:     []Series{{Label: "A", Color: colA, Values: []float64{5}}},
 		Scale:      Scale{Min: 0, Max: 10},
@@ -226,7 +226,7 @@ func TestHistoryChartDrawsATimeScale(t *testing.T) {
 // so a chart whose caller has no sample spacing to report doesn't grow a
 // scale that would be wrong.
 func TestHistoryChartWithoutIntervalCentresTheTimeLabel(t *testing.T) {
-	c := NewCanvas(40, 8)
+	c := core.NewBuffer(40, 8)
 	HistoryChart{
 		Series:     []Series{{Label: "A", Color: colA, Values: []float64{5}}},
 		Scale:      Scale{Min: 0, Max: 10},
@@ -247,7 +247,7 @@ func TestHistoryChartWithoutIntervalCentresTheTimeLabel(t *testing.T) {
 // A label that would collide with its neighbour is dropped whole: half of
 // "-100s" reads as a different number.
 func TestTimeScaleDropsCollidingLabels(t *testing.T) {
-	c := NewCanvas(30, 8)
+	c := core.NewBuffer(30, 8)
 	HistoryChart{
 		Series:     []Series{{Label: "A", Color: colA, Values: []float64{5}}},
 		Scale:      Scale{Min: 0, Max: 10},
@@ -355,8 +355,8 @@ func TestDrawFrameAgreesWithDrawPlotAndTimeRow(t *testing.T) {
 	}
 	for _, r := range rects {
 		h := HistoryChart{Series: series, TimeLabel: "10:31:07", Interval: time.Minute}
-		plot, timeRow := h.DrawFrame(NewCanvas(40, 14), r)
-		if want := h.Draw(NewCanvas(40, 14), r); plot != want {
+		plot, timeRow := h.DrawFrame(core.NewBuffer(40, 14), r)
+		if want := h.Draw(core.NewBuffer(40, 14), r); plot != want {
 			t.Errorf("%+v: DrawFrame plot = %+v, Draw = %+v", r, plot, want)
 		}
 		if want := h.Plot(r); plot != want {
@@ -367,8 +367,8 @@ func TestDrawFrameAgreesWithDrawPlotAndTimeRow(t *testing.T) {
 		}
 
 		sh := StackedHistoryChart{Series: series, TimeLabel: "10:31:07", Interval: time.Minute}
-		plot, timeRow = sh.DrawFrame(NewCanvas(40, 14), r)
-		if want := sh.Draw(NewCanvas(40, 14), r); plot != want {
+		plot, timeRow = sh.DrawFrame(core.NewBuffer(40, 14), r)
+		if want := sh.Draw(core.NewBuffer(40, 14), r); plot != want {
 			t.Errorf("%+v: stacked DrawFrame plot = %+v, Draw = %+v", r, plot, want)
 		}
 		if want := sh.Plot(r); plot != want {
@@ -386,9 +386,9 @@ func TestDrawFrameDrawsWhatDrawDraws(t *testing.T) {
 	series := []Series{{Label: "A", Color: colA, Values: []float64{4, 0, 2, 4}}}
 	r := core.Rect{X: 0, Y: 0, W: 30, H: 10}
 
-	a := NewCanvas(30, 10)
+	a := core.NewBuffer(30, 10)
 	HistoryChart{Series: series, TimeLabel: "10:31:07", Interval: time.Minute}.Draw(a, r)
-	b := NewCanvas(30, 10)
+	b := core.NewBuffer(30, 10)
 	HistoryChart{Series: series, TimeLabel: "10:31:07", Interval: time.Minute}.DrawFrame(b, r)
 
 	for y := range 10 {

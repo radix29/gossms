@@ -296,7 +296,7 @@ func (e *Editor) SetActive(v bool) {
 }
 
 // Bounds returns the editor's screen rect, so a caller outside the package can
-// hit-test against it (Object Explorer's drag-and-drop target check does).
+// hit-test against it (e.g. a drag-and-drop drop-target check).
 func (e *Editor) Bounds() core.Rect { return e.rect }
 
 // CursorPos returns the caret's line and rune column, both zero-based. With

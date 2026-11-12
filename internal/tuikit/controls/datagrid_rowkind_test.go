@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // kindSource is a RowSource whose rows carry a kind: the Extended Events
@@ -46,9 +47,9 @@ func TestDataGridGroupRowDrawsAcrossTheRowWhateverTheScroll(t *testing.T) {
 	g.SetBounds(0, 0, 60, 8)
 	g.SetSource([]string{"name", "n", "c", "d", "e"}, groupedSource())
 	g.scrollCol = 2
-	s := newRuneScreen(60, 8)
+	s := tuikittest.NewScreen(60, 8)
 	g.Draw(s)
-	line := strings.Split(s.text(), "\n")[2]
+	line := strings.Split(s.Snapshot(), "\n")[2]
 	if !strings.Contains(line, "name: sql_batch_completed (2 events)") {
 		t.Errorf("group row drew %q, want the whole label", line)
 	}
@@ -66,22 +67,22 @@ func TestDataGridRowKindStyles(t *testing.T) {
 	g.SetCellCursor(true)
 	g.Focus(true)
 	g.SetSource([]string{"name", "n"}, groupedSource())
-	s := newStyleScreen(40, 8)
+	s := tuikittest.NewScreen(40, 8)
 	g.Draw(s)
-	if st := s.styles[[2]int{20, 2}]; st != theme.StyleGridSelected() {
+	if st := s.StyleAt(20, 2); st != theme.StyleGridSelected() {
 		t.Errorf("selected group row, far column: style %v, want the selection style", st)
 	}
 	g.SetSelectedRow(1)
-	s = newStyleScreen(40, 8)
+	s = tuikittest.NewScreen(40, 8)
 	g.Draw(s)
-	if st := s.styles[[2]int{20, 2}]; st != theme.StyleGridHeader() {
+	if st := s.StyleAt(20, 2); st != theme.StyleGridHeader() {
 		t.Errorf("unselected group row: style %v, want the header style", st)
 	}
-	fg := s.styles[[2]int{2, 4}].GetForeground()
+	fg := s.StyleAt(2, 4).GetForeground()
 	if fg != theme.Active().Warning {
 		t.Errorf("marked row foreground %v, want the warning colour %v", fg, theme.Active().Warning)
 	}
-	fg = s.styles[[2]int{2, 3}].GetForeground()
+	fg = s.StyleAt(2, 3).GetForeground()
 	if fg == theme.Active().Warning {
 		t.Error("an ordinary row is drawn as marked")
 	}
@@ -106,9 +107,9 @@ func groupLine(t *testing.T, scroll int) string {
 	g.SetBounds(0, 0, 60, 8)
 	g.SetSource([]string{"name", "n", "c", "d"}, aggSource())
 	g.scrollCol = scroll
-	s := newRuneScreen(60, 8)
+	s := tuikittest.NewScreen(60, 8)
 	g.Draw(s)
-	return strings.Split(s.text(), "\n")[2]
+	return strings.Split(s.Snapshot(), "\n")[2]
 }
 
 // The label spills across the empty cells and stops at the first non-empty
@@ -156,9 +157,9 @@ func TestDataGridDrawsLineBreaksInACellAsSpaces(t *testing.T) {
 	g := NewDataGrid()
 	g.SetBounds(0, 0, 60, 6)
 	g.SetData([]string{"v"}, [][]string{{"line1\r\nline2\tend"}})
-	s := newRuneScreen(60, 6)
+	s := tuikittest.NewScreen(60, 6)
 	g.Draw(s)
-	if !strings.Contains(s.text(), "line1 line2 end") {
-		t.Errorf("grid drew:\n%s\nwant the cell as %q", s.text(), "line1 line2 end")
+	if !strings.Contains(s.Snapshot(), "line1 line2 end") {
+		t.Errorf("grid drew:\n%s\nwant the cell as %q", s.Snapshot(), "line1 line2 end")
 	}
 }

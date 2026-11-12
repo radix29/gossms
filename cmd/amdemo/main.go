@@ -11,7 +11,6 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/charts"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -100,7 +99,7 @@ func (d *demo) draw(s tcell.Screen) {
 	if w > cw {
 		cw = w
 	}
-	c := charts.NewCanvas(cw, ch)
+	c := core.NewBuffer(cw, ch)
 	c.Fill(' ', theme.StylePanel()) // see ActivityMonitor.dashboardCanvas
 	if d.onSample {
 		dashboard.DrawSample(c, c.Rect(), d.sample)

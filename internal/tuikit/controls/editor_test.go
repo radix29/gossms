@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func newTestEditor(text string) *Editor {
@@ -17,27 +17,19 @@ func newTestEditor(text string) *Editor {
 	return e
 }
 
-func key(k tcell.Key, mod tcell.ModMask) *tcell.EventKey {
-	return tcell.NewEventKey(k, "", mod)
-}
-
-func runeKey(r rune, mod tcell.ModMask) *tcell.EventKey {
-	return tcell.NewEventKey(tcell.KeyRune, string(r), mod)
-}
-
 func TestEditorWordNavigation(t *testing.T) {
 	e := newTestEditor("foo.bar baz")
 
 	want := []int{3, 4, 7, 11}
 	for _, w := range want {
-		e.HandleKey(key(tcell.KeyRight, tcell.ModCtrl))
+		e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModCtrl))
 		if e.cursorCol != w {
 			t.Fatalf("Ctrl+Right: cursorCol = %d, want %d", e.cursorCol, w)
 		}
 	}
 	wantBack := []int{8, 4, 3, 0}
 	for _, w := range wantBack {
-		e.HandleKey(key(tcell.KeyLeft, tcell.ModCtrl))
+		e.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModCtrl))
 		if e.cursorCol != w {
 			t.Fatalf("Ctrl+Left: cursorCol = %d, want %d", e.cursorCol, w)
 		}
@@ -48,12 +40,12 @@ func TestEditorCtrlHomeEnd(t *testing.T) {
 	e := newTestEditor("one\ntwo\nthree")
 	e.cursorRow, e.cursorCol = 1, 2
 
-	e.HandleKey(key(tcell.KeyEnd, tcell.ModCtrl))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnd, tcell.ModCtrl))
 	if e.cursorRow != 2 || e.cursorCol != len("three") {
 		t.Fatalf("Ctrl+End: got (%d,%d), want (2,%d)", e.cursorRow, e.cursorCol, len("three"))
 	}
 
-	e.HandleKey(key(tcell.KeyHome, tcell.ModCtrl))
+	e.HandleKey(tuikittest.Key(tcell.KeyHome, tcell.ModCtrl))
 	if e.cursorRow != 0 || e.cursorCol != 0 {
 		t.Fatalf("Ctrl+Home: got (%d,%d), want (0,0)", e.cursorRow, e.cursorCol)
 	}
@@ -61,7 +53,7 @@ func TestEditorCtrlHomeEnd(t *testing.T) {
 
 func TestEditorSelectAll(t *testing.T) {
 	e := newTestEditor("abc\nde")
-	e.HandleKey(key(tcell.KeyCtrlA, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyCtrlA, tcell.ModNone))
 	if !e.HasSelection() {
 		t.Fatal("Ctrl+A: expected a selection")
 	}
@@ -168,7 +160,7 @@ func TestEditorMoveLines(t *testing.T) {
 
 func TestEditorTabSingleLineUnchanged(t *testing.T) {
 	e := newTestEditor("abc")
-	e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 	if got := e.Text(); got != "    abc" {
 		t.Fatalf("Tab with no selection = %q, want %q", got, "    abc")
 	}
@@ -180,7 +172,7 @@ func TestEditorIndentDedentMultiLineSelection(t *testing.T) {
 	e.selAnchorRow, e.selAnchorCol = 0, 0
 	e.cursorRow, e.cursorCol = 1, 3
 
-	e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 	if got := e.Text(); got != "    abc\n    def" {
 		t.Fatalf("Tab (indent) = %q", got)
 	}
@@ -191,7 +183,7 @@ func TestEditorIndentDedentMultiLineSelection(t *testing.T) {
 		t.Fatalf("Tab (indent): selAnchorCol=%d cursorCol=%d, want 4,7", e.selAnchorCol, e.cursorCol)
 	}
 
-	e.HandleKey(key(tcell.KeyTab, tcell.ModShift))
+	e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModShift))
 	if got := e.Text(); got != "abc\ndef" {
 		t.Fatalf("Shift+Tab (dedent) = %q", got)
 	}
@@ -238,7 +230,7 @@ func TestEditorCaseConversion(t *testing.T) {
 	e.selAnchorRow, e.selAnchorCol = 0, 0
 	e.cursorRow, e.cursorCol = 0, 5
 
-	e.HandleKey(key(tcell.KeyCtrlU, tcell.ModShift))
+	e.HandleKey(tuikittest.Key(tcell.KeyCtrlU, tcell.ModShift))
 	if got := e.Text(); got != "HELLO world" {
 		t.Fatalf("uppercase = %q", got)
 	}
@@ -246,7 +238,7 @@ func TestEditorCaseConversion(t *testing.T) {
 		t.Fatal("case conversion: expected selection to be preserved")
 	}
 
-	e.HandleKey(key(tcell.KeyCtrlU, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyCtrlU, tcell.ModNone))
 	if got := e.Text(); got != "hello world" {
 		t.Fatalf("lowercase = %q", got)
 	}
@@ -258,21 +250,21 @@ func TestEditorCaseConversion(t *testing.T) {
 func TestEditorSelectionDeletedByBackspace(t *testing.T) {
 	e := newTestEditor("abcdef")
 	for range 3 {
-		e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+		e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	}
 	if !e.HasSelection() || e.SelectedText() != "abc" {
 		t.Fatalf("setup: SelectedText() = %q, want %q", e.SelectedText(), "abc")
 	}
-	e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModNone))
 	if got := e.Text(); got != "def" {
 		t.Fatalf("Backspace over selection = %q, want %q", got, "def")
 	}
 
 	e2 := newTestEditor("abcdef")
 	for range 3 {
-		e2.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+		e2.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	}
-	e2.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+	e2.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 	if got := e2.Text(); got != "def" {
 		t.Fatalf("Delete over selection = %q, want %q", got, "def")
 	}
@@ -281,7 +273,7 @@ func TestEditorSelectionDeletedByBackspace(t *testing.T) {
 func TestEditorCutCopyPasteRoundTrip(t *testing.T) {
 	e := newTestEditor("hello world")
 	for range 5 {
-		e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+		e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	}
 	if got := e.SelectedText(); got != "hello" {
 		t.Fatalf("SelectedText() = %q, want %q", got, "hello")
@@ -327,7 +319,7 @@ func TestEditorBlockSelection(t *testing.T) {
 func TestEditorBlockSelectionDisabledInWrapMode(t *testing.T) {
 	e := newTestEditor("hello")
 	e.SetWrapMode(true)
-	e.HandleKey(key(tcell.KeyRight, tcell.ModAlt|tcell.ModShift))
+	e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModAlt|tcell.ModShift))
 	if e.HasSelection() || e.selBlock {
 		t.Fatal("Alt+Shift+Right should not enter block selection in wrap mode")
 	}
@@ -335,11 +327,11 @@ func TestEditorBlockSelectionDisabledInWrapMode(t *testing.T) {
 
 func TestEditorEscClearsSelection(t *testing.T) {
 	e := newTestEditor("abcdef")
-	e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+	e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	if !e.HasSelection() {
 		t.Fatal("setup: expected a selection")
 	}
-	e.HandleKey(key(tcell.KeyEsc, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEsc, tcell.ModNone))
 	if e.HasSelection() {
 		t.Fatal("Esc should clear the selection")
 	}
@@ -349,21 +341,21 @@ func TestEditorCommentToggleShortcut(t *testing.T) {
 	// The real legacy path: Ctrl+/ emits the 0x1F byte, which tcell v3
 	// decodes as KeyRune '_' with ModCtrl (Ctrl+_), not KeyUS.
 	e := newTestEditor("SELECT 1")
-	e.HandleKey(runeKey('_', tcell.ModCtrl))
+	e.HandleKey(tuikittest.Rune('_', tcell.ModCtrl))
 	if got := e.Text(); got != "-- SELECT 1" {
 		t.Fatalf("Ctrl+/ (legacy 0x1F -> Ctrl+_) = %q", got)
 	}
 
 	// Modern keyboard protocol reports Ctrl+/ as rune '/' with ModCtrl.
 	e2 := newTestEditor("SELECT 1")
-	e2.HandleKey(runeKey('/', tcell.ModCtrl))
+	e2.HandleKey(tuikittest.Rune('/', tcell.ModCtrl))
 	if got := e2.Text(); got != "-- SELECT 1" {
 		t.Fatalf("Ctrl+/ (advanced protocol) = %q", got)
 	}
 
 	// Defensive fallback: a terminal that ever surfaced KeyUS directly.
 	e3 := newTestEditor("SELECT 1")
-	e3.HandleKey(key(tcell.KeyUS, tcell.ModNone))
+	e3.HandleKey(tuikittest.Key(tcell.KeyUS, tcell.ModNone))
 	if got := e3.Text(); got != "-- SELECT 1" {
 		t.Fatalf("Ctrl+/ (KeyUS fallback) = %q", got)
 	}
@@ -435,8 +427,8 @@ func TestEditorCtrlSpaceFiresRightClickAtCursor(t *testing.T) {
 // connection.
 func TestEditorSetTextResetsSelectionAndUndo(t *testing.T) {
 	e := newTestEditor("a long original line")
-	e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
-	e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+	e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
+	e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	if !e.HasSelection() {
 		t.Fatal("setup: expected a selection")
 	}
@@ -462,13 +454,13 @@ func TestEditorSetTextResetsSelectionAndUndo(t *testing.T) {
 func TestEditorWordDelete(t *testing.T) {
 	e := newTestEditor("foo bar baz")
 	e.cursorCol = len("foo bar baz")
-	e.HandleKey(key(tcell.KeyBackspace, tcell.ModCtrl))
+	e.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModCtrl))
 	if got := e.Text(); got != "foo bar " {
 		t.Fatalf("Ctrl+Backspace = %q, want %q", got, "foo bar ")
 	}
 
 	e2 := newTestEditor("foo bar baz")
-	e2.HandleKey(key(tcell.KeyDelete, tcell.ModCtrl))
+	e2.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModCtrl))
 	if got := e2.Text(); got != " bar baz" {
 		t.Fatalf("Ctrl+Delete = %q, want %q", got, " bar baz")
 	}
@@ -482,7 +474,7 @@ func TestEditorWordDelete(t *testing.T) {
 func TestEditorUndoStackCapped(t *testing.T) {
 	e := newTestEditor("")
 	for range maxUndoSteps + 5 {
-		e.HandleKey(runeKey('x', tcell.ModNone))
+		e.HandleKey(tuikittest.Rune('x', tcell.ModNone))
 	}
 	if len(e.undoStack) != maxUndoSteps {
 		t.Fatalf("undoStack len = %d, want %d (capped)", len(e.undoStack), maxUndoSteps)
@@ -567,11 +559,11 @@ func TestEditorKeystrokeStepIsProportionalToTheEdit(t *testing.T) {
 	e.cursorRow = 10000
 
 	for _, k := range []tcell.EventKey{
-		*runeKey('y', tcell.ModNone),
-		*key(tcell.KeyEnter, tcell.ModNone),
-		*key(tcell.KeyBackspace, tcell.ModNone),
-		*key(tcell.KeyDelete, tcell.ModNone),
-		*key(tcell.KeyTab, tcell.ModNone),
+		*tuikittest.Rune('y', tcell.ModNone),
+		*tuikittest.Key(tcell.KeyEnter, tcell.ModNone),
+		*tuikittest.Key(tcell.KeyBackspace, tcell.ModNone),
+		*tuikittest.Key(tcell.KeyDelete, tcell.ModNone),
+		*tuikittest.Key(tcell.KeyTab, tcell.ModNone),
 	} {
 		before := len(e.undoStack)
 		e.HandleKey(&k)
@@ -605,54 +597,54 @@ func TestEditorUndoRestoresEveryEditPath(t *testing.T) {
 		name string
 		do   func(*Editor)
 	}{
-		{"type a rune", func(e *Editor) { e.HandleKey(runeKey('Z', tcell.ModNone)) }},
+		{"type a rune", func(e *Editor) { e.HandleKey(tuikittest.Rune('Z', tcell.ModNone)) }},
 		{"type over a selection", func(e *Editor) {
 			selectRows(e, 1, 3)
-			e.HandleKey(runeKey('Z', tcell.ModNone))
+			e.HandleKey(tuikittest.Rune('Z', tcell.ModNone))
 		}},
-		{"enter", func(e *Editor) { e.cursorCol = 3; e.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) }},
+		{"enter", func(e *Editor) { e.cursorCol = 3; e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) }},
 		{"enter over a selection", func(e *Editor) {
 			selectRows(e, 0, 2)
-			e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 		}},
 		{"backspace mid-line", func(e *Editor) {
 			e.cursorRow, e.cursorCol = 2, 5
-			e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModNone))
 		}},
 		{"backspace joining the line above", func(e *Editor) {
 			e.cursorRow, e.cursorCol = 2, 0
-			e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModNone))
 		}},
 		{"backspace over a selection", func(e *Editor) {
 			selectRows(e, 1, 4)
-			e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModNone))
 		}},
 		{"ctrl+backspace", func(e *Editor) {
 			e.cursorRow, e.cursorCol = 1, len(e.doc.Line(1))
-			e.HandleKey(key(tcell.KeyBackspace, tcell.ModCtrl))
+			e.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModCtrl))
 		}},
 		{"delete mid-line", func(e *Editor) {
 			e.cursorRow, e.cursorCol = 2, 4
-			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 		}},
 		{"delete joining the line below", func(e *Editor) {
 			e.cursorRow, e.cursorCol = 1, len(e.doc.Line(1))
-			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 		}},
 		{"ctrl+delete", func(e *Editor) {
 			e.cursorRow, e.cursorCol = 1, 4
-			e.HandleKey(key(tcell.KeyDelete, tcell.ModCtrl))
+			e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModCtrl))
 		}},
-		{"tab", func(e *Editor) { e.cursorCol = 3; e.HandleKey(key(tcell.KeyTab, tcell.ModNone)) }},
+		{"tab", func(e *Editor) { e.cursorCol = 3; e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) }},
 		{"tab over a one-row selection", func(e *Editor) {
 			selectRows(e, 2, 2)
-			e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 		}},
 		{"tab over a multi-row selection indents", func(e *Editor) {
 			selectRows(e, 1, 3)
-			e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 		}},
-		{"shift+tab dedents", func(e *Editor) { e.cursorRow = 1; e.HandleKey(key(tcell.KeyBacktab, tcell.ModNone)) }},
+		{"shift+tab dedents", func(e *Editor) { e.cursorRow = 1; e.HandleKey(tuikittest.Key(tcell.KeyBacktab, tcell.ModNone)) }},
 		{"paste multi-line", func(e *Editor) { e.cursorRow, e.cursorCol = 1, 2; e.Paste("a\nb\nc") }},
 		{"paste over a selection", func(e *Editor) { selectRows(e, 0, 3); e.Paste("x\ny") }},
 		{"cut", func(e *Editor) { selectRows(e, 1, 2); e.Cut() }},
@@ -666,13 +658,13 @@ func TestEditorUndoRestoresEveryEditPath(t *testing.T) {
 			e.selecting, e.selBlock = true, true
 			e.selAnchorRow, e.selAnchorCol = 1, 2
 			e.cursorRow, e.cursorCol = 3, 2
-			e.HandleKey(runeKey('#', tcell.ModNone))
+			e.HandleKey(tuikittest.Rune('#', tcell.ModNone))
 		}},
 		{"block delete", func(e *Editor) {
 			e.selecting, e.selBlock = true, true
 			e.selAnchorRow, e.selAnchorCol = 1, 1
 			e.cursorRow, e.cursorCol = 3, 4
-			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 		}},
 		{"replace current", func(e *Editor) {
 			e.SetSearch(SearchOptions{Query: "two", Replace: "II"})
@@ -745,7 +737,7 @@ func TestEditorShiftClickExtendsExistingSelection(t *testing.T) {
 	e.SetBounds(0, 0, 40, 5)
 	e.cursorRow, e.cursorCol = 0, 0
 	for range 3 {
-		e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+		e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	}
 	if got := e.SelectedText(); got != "hel" {
 		t.Fatalf("setup: SelectedText() = %q, want %q", got, "hel")
@@ -804,13 +796,13 @@ func TestEditorReadOnlyRejectsMutatingKeys(t *testing.T) {
 	e.cursorCol = 5
 
 	mutating := []*tcell.EventKey{
-		runeKey('!', tcell.ModNone),
-		key(tcell.KeyEnter, tcell.ModNone),
-		key(tcell.KeyBackspace, tcell.ModNone),
-		key(tcell.KeyDelete, tcell.ModNone),
-		key(tcell.KeyTab, tcell.ModNone),
-		key(tcell.KeyCtrlD, tcell.ModNone),
-		key(tcell.KeyCtrlZ, tcell.ModNone),
+		tuikittest.Rune('!', tcell.ModNone),
+		tuikittest.Key(tcell.KeyEnter, tcell.ModNone),
+		tuikittest.Key(tcell.KeyBackspace, tcell.ModNone),
+		tuikittest.Key(tcell.KeyDelete, tcell.ModNone),
+		tuikittest.Key(tcell.KeyTab, tcell.ModNone),
+		tuikittest.Key(tcell.KeyCtrlD, tcell.ModNone),
+		tuikittest.Key(tcell.KeyCtrlZ, tcell.ModNone),
 	}
 	for _, ev := range mutating {
 		if e.HandleKey(ev) {
@@ -823,14 +815,14 @@ func TestEditorReadOnlyRejectsMutatingKeys(t *testing.T) {
 
 	// Movement and selection still work.
 	e.cursorCol = 0
-	if !e.HandleKey(key(tcell.KeyRight, tcell.ModNone)) || e.cursorCol != 1 {
+	if !e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModNone)) || e.cursorCol != 1 {
 		t.Error("plain movement should still work while read-only")
 	}
-	if !e.HandleKey(key(tcell.KeyRight, tcell.ModShift)) || !e.HasSelection() {
+	if !e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift)) || !e.HasSelection() {
 		t.Error("Shift+movement (selection) should still work while read-only")
 	}
 	e.selecting = false
-	if !e.HandleKey(key(tcell.KeyCtrlA, tcell.ModNone)) || !e.HasSelection() {
+	if !e.HandleKey(tuikittest.Key(tcell.KeyCtrlA, tcell.ModNone)) || !e.HasSelection() {
 		t.Error("Ctrl+A (Select All) should still work while read-only")
 	}
 
@@ -838,7 +830,7 @@ func TestEditorReadOnlyRejectsMutatingKeys(t *testing.T) {
 	e.SetReadOnly(false)
 	e.selecting = false
 	e.cursorRow, e.cursorCol = 0, 5
-	e.HandleKey(runeKey('!', tcell.ModNone))
+	e.HandleKey(tuikittest.Rune('!', tcell.ModNone))
 	if got := e.Text(); got != "hello!" {
 		t.Fatalf("text after SetReadOnly(false) = %q, want %q", got, "hello!")
 	}
@@ -854,21 +846,21 @@ func TestEditorVerticalMovePreservesDesiredColumn(t *testing.T) {
 	e.cursorRow, e.cursorCol = 0, 10
 	e.desiredCol = 10
 
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
 	if e.cursorRow != 1 || e.cursorCol != len("short") {
 		t.Fatalf("Down onto a shorter line: got (%d,%d), want (1,%d)", e.cursorRow, e.cursorCol, len("short"))
 	}
 
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
 	if e.cursorRow != 2 || e.cursorCol != 10 {
 		t.Fatalf("Down onto a longer line: got (%d,%d), want (2,10) — the goal column should be restored", e.cursorRow, e.cursorCol)
 	}
 
-	e.HandleKey(key(tcell.KeyUp, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone))
 	if e.cursorRow != 1 || e.cursorCol != len("short") {
 		t.Fatalf("Up back onto the shorter line: got (%d,%d), want (1,%d)", e.cursorRow, e.cursorCol, len("short"))
 	}
-	e.HandleKey(key(tcell.KeyUp, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone))
 	if e.cursorRow != 0 || e.cursorCol != 10 {
 		t.Fatalf("Up back onto the original line: got (%d,%d), want (0,10)", e.cursorRow, e.cursorCol)
 	}
@@ -884,13 +876,13 @@ func TestEditorHorizontalMoveResetsDesiredColumn(t *testing.T) {
 	e.cursorRow, e.cursorCol = 0, 7
 	e.desiredCol = 7
 
-	e.HandleKey(key(tcell.KeyLeft, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModNone))
 	if e.desiredCol != 6 {
 		t.Fatalf("desiredCol after Left = %d, want 6", e.desiredCol)
 	}
 
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone)) // onto "short" (len 5): clamps
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone)) // onto "three four": should land at 6, not the original 7
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) // onto "short" (len 5): clamps
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) // onto "three four": should land at 6, not the original 7
 	if e.cursorRow != 2 || e.cursorCol != 6 {
 		t.Fatalf("cursor after two Downs = (%d,%d), want (2,6)", e.cursorRow, e.cursorCol)
 	}
@@ -906,7 +898,7 @@ func TestEditorShiftDownSelectsToEndOfLineThenToSameColumn(t *testing.T) {
 	e.cursorRow, e.cursorCol = 0, 3
 	e.desiredCol = 3
 
-	e.HandleKey(key(tcell.KeyDown, tcell.ModShift))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModShift))
 	if !e.HasSelection() {
 		t.Fatal("Shift+Down should start a selection")
 	}
@@ -1065,8 +1057,8 @@ func TestEditorCursorFromScreenSkipsScrollbarRow(t *testing.T) {
 
 // A selection dragged downward off the last text line reaches the bar's
 // row, and the track spans the whole content width — the gesture has to
-// stay with the text, not be taken over by the bar. See the gesture-
-// ownership rule in docs/ui-rules.md.
+// stay with the text, not be taken over by the bar: a gesture belongs to
+// whatever claimed its press, until the release.
 func TestEditorSelectionDragIsNotStolenByHScrollbar(t *testing.T) {
 	e := wideTestEditor()
 	_, barY, _, _, _, _ := e.hScrollbar()
@@ -1118,35 +1110,6 @@ func TestEditorSetTextClearsEveryMouseLatch(t *testing.T) {
 
 // -- wrap-mode highlighting -------------------------------------------------
 
-// recordingScreen captures what a Draw painted, so a test can assert on the
-// style of a given cell rather than only that Draw didn't panic.
-type recordingScreen struct {
-	tcell.Screen
-	w, h  int
-	cells map[[2]int]tcell.Style
-}
-
-func newRecordingScreen(w, h int) *recordingScreen {
-	return &recordingScreen{w: w, h: h, cells: map[[2]int]tcell.Style{}}
-}
-func (s *recordingScreen) Size() (int, int) { return s.w, s.h }
-func (s *recordingScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
-	s.cells[[2]int{x, y}] = style
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-func (s *recordingScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
-}
-
-func (s *recordingScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-func (s *recordingScreen) ShowCursor(x, y int) {}
-
 // markerHighlighter colours exactly the rune range [start,end) of every line
 // with a style nothing else in the editor uses, so a test can find it.
 func markerHighlighter(start, end int, st tcell.Style) Highlighter {
@@ -1171,15 +1134,17 @@ func TestEditorWrapModeAppliesHighlighter(t *testing.T) {
 	e.SetText("aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd")
 	e.SetBounds(0, 0, 22, 6)
 
-	s := newRecordingScreen(40, 10)
+	s := tuikittest.NewScreen(40, 10)
 	e.Draw(s)
 
 	found := false
-	for cell, st := range s.cells {
-		if st == marker {
-			found = true
-			if cell[1] == 0 {
-				t.Errorf("highlighted cell at %v is on the first visual row; columns 30-34 wrap onto a later one", cell)
+	for y := range 10 {
+		for x := range 40 {
+			if s.StyleAt(x, y) == marker {
+				found = true
+				if y == 0 {
+					t.Errorf("highlighted cell at (%d,%d) is on the first visual row; columns 30-34 wrap onto a later one", x, y)
+				}
 			}
 		}
 	}
@@ -1201,10 +1166,10 @@ func TestEditorWrapModeSelectionBeatsHighlighter(t *testing.T) {
 	e.SetBounds(0, 0, 22, 6)
 	e.SelectAll()
 
-	s := newRecordingScreen(40, 10)
+	s := tuikittest.NewScreen(40, 10)
 	e.Draw(s)
 
-	if st, ok := s.cells[[2]int{0, 0}]; ok && st == marker {
+	if s.StyleAt(0, 0) == marker {
 		t.Error("column 0 kept the highlighter style inside a selection; selection must win")
 	}
 }
@@ -1377,18 +1342,19 @@ func TestEditorGutterWidensPastLine9999(t *testing.T) {
 		e.SetWrapMode(wrap)
 		e.SetBounds(10, 0, 30, 3)
 		e.scrollRow = 9999
-		s := newGlyphScreen(40, 3)
+		s := tuikittest.NewScreen(40, 3)
+		s.Fill('~', tcell.StyleDefault) // so a drawn space shows too
 		e.Draw(s)
 
-		for p := range s.runes {
-			if p[0] < 10 {
-				t.Fatalf("wrap=%v: drew at column %d, left of the editor at 10", wrap, p[0])
+		for y := range 3 {
+			if got := s.Text(0, y, 10); got != "~~~~~~~~~~" {
+				t.Fatalf("wrap=%v: drew %q on row %d, left of the editor at 10", wrap, got, y)
 			}
 		}
 		if got, want := e.gutterWidth(), 7; got != want {
 			t.Errorf("wrap=%v: gutterWidth = %d, want %d (five digits and a column each side)", wrap, got, want)
 		}
-		if got := s.row(10, 0, 7); got != " 10000 " {
+		if got := s.Text(10, 0, 7); got != " 10000 " {
 			t.Errorf("wrap=%v: gutter row 0 = %q, want %q", wrap, got, " 10000 ")
 		}
 	}

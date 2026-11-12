@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // countingRowSource wraps a RowSource and counts calls to Row, so tests can
@@ -135,7 +136,7 @@ func TestComputeColWidthsSamplesOnlyFirstRows(t *testing.T) {
 
 // TestRefreshColumnWidthsRecomputesWithoutResettingSelection confirms
 // RefreshColumnWidths picks up cells mutated in place (the pattern a
-// progressive background loader uses — see internal/tui's DetailBrowser)
+// progressive background loader uses)
 // without resetting scroll position or selection the way calling SetData
 // again would. The recompute lands on the next Draw, not on the call
 // itself — see RefreshColumnWidths.
@@ -151,7 +152,7 @@ func TestRefreshColumnWidthsRecomputesWithoutResettingSelection(t *testing.T) {
 
 	rows[1][0] = strings.Repeat("w", 100)
 	g.RefreshColumnWidths()
-	g.Draw(&fakeMenuScreen{w: 40, h: 10})
+	g.Draw(tuikittest.NewScreen(40, 10))
 
 	if g.colWidths[0] != 40 {
 		t.Errorf("colWidths[0] after RefreshColumnWidths+Draw = %d, want 40 (clamped maximum)", g.colWidths[0])
@@ -169,7 +170,7 @@ func TestRefreshColumnWidthsCoalescesUntilDraw(t *testing.T) {
 	g := newTestDataGrid()
 	rows := [][]string{{"a"}, {"b"}, {"c"}}
 	g.SetData([]string{"Col"}, rows)
-	screen := &fakeMenuScreen{w: 40, h: 10}
+	screen := tuikittest.NewScreen(40, 10)
 
 	rows[1][0] = strings.Repeat("w", 100)
 	for range 10 {
@@ -495,7 +496,7 @@ func TestSetBoundsOnAnUnchangedRectDoesNotRescan(t *testing.T) {
 // on the per-frame SetBounds recompute: a new cell-width cap, and the row
 // gutter a fillLastColumn grid's last column has to make room for.
 func TestSettersThatChangeWidthsApplyWithoutARelayout(t *testing.T) {
-	screen := &fakeMenuScreen{w: 40, h: 10}
+	screen := tuikittest.NewScreen(40, 10)
 
 	g := newTestDataGrid()
 	g.SetData([]string{"Col"}, [][]string{{strings.Repeat("w", 100)}})

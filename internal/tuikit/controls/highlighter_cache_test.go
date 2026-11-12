@@ -7,6 +7,7 @@ import (
 
 	"github.com/radix29/gossms/internal/tuikit/sqltext"
 	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -120,7 +121,7 @@ func TestSQLHighlighterAndLineStateShareOneCache(t *testing.T) {
 	e := NewEditor(SQLHighlighter(&theme.Default))
 	e.SetBounds(0, 0, 60, 10)
 	e.SetText("SELECT 1 /* open\nstill inside\n*/ SELECT 2")
-	e.Draw(newGlyphScreen(60, 10))
+	e.Draw(tuikittest.NewScreen(60, 10))
 
 	c := &e.doc.sqlStarts
 	if !c.valid || c.doc != e.doc || c.version != e.doc.Version() {
@@ -134,7 +135,7 @@ func TestSQLHighlighterAndLineStateShareOneCache(t *testing.T) {
 	x := NewEditor(XMLHighlighter(&theme.Default))
 	x.SetBounds(0, 0, 60, 10)
 	x.SetText("<a><!-- open\nstill inside\n<b/>")
-	x.Draw(newGlyphScreen(60, 10))
+	x.Draw(tuikittest.NewScreen(60, 10))
 	if x.doc.sqlStarts.valid || x.doc.sqlStarts.states != nil {
 		t.Error("drawing an XML editor built the SQL prefix-state cache")
 	}
@@ -224,7 +225,7 @@ func TestBuildVisualLinesCacheSurvivesAReadOnlyViewer(t *testing.T) {
 	e.buildVisualLines(18)
 	version := e.doc.Version()
 
-	s := newGlyphScreen(20, 8)
+	s := tuikittest.NewScreen(20, 8)
 	for range 5 {
 		e.Draw(s)
 	}

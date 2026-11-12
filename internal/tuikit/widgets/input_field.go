@@ -101,7 +101,7 @@ func (f *InputField) SetValue(v string) {
 // ShowFromStart scrolls the view to the field's first column, leaving value and
 // caret. A caller pre-filling a field uses it: SetValue leaves the view on the
 // tail, right for a Destination path (the file name matters) but wrong for the
-// Connect dialog's Server Name, where users pick by the first few characters.
+// server-name field, where users pick by the first few characters.
 // The caret is off screen on a focused field until the first key
 // (adjustScroll); the focus border still shows where input goes.
 func (f *InputField) ShowFromStart() { f.scroll = 0 }
@@ -219,7 +219,7 @@ func (f *InputField) Draw(s tcell.Screen) {
 		if f.disabled {
 			labelFg = p.DialogTextDim
 		}
-		labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(labelFg)
+		labelStyle := theme.On(p.DialogBg, labelFg)
 		core.DrawText(s, f.rect.X, f.rect.Y, labelStyle, f.label)
 	}
 	ix := f.inputX()
@@ -227,17 +227,17 @@ func (f *InputField) Draw(s tcell.Screen) {
 	if f.focused && !f.disabled {
 		borderColor = p.InputFocused
 	}
-	borderStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(borderColor)
+	borderStyle := theme.On(p.DialogBg, borderColor)
 	core.PutRune(s, ix, f.rect.Y, '[', borderStyle)
 	core.PutRune(s, ix+f.rect.W+1, f.rect.Y, ']', borderStyle)
 
 	runes := f.displayRunes()
 	inputStyle := theme.StyleInput()
 	if f.disabled {
-		inputStyle = theme.StyleInputDisabled()
+		inputStyle = theme.StyleControlDisabled()
 	}
 	selStyle := theme.StyleSelected()
-	cursorStyle := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText)
+	cursorStyle := theme.StyleActiveBlock()
 	hasSel := f.HasSelection()
 	selStart, selEnd := 0, 0
 	if hasSel {

@@ -9,7 +9,7 @@ import (
 )
 
 func TestKPIRightAlignsValue(t *testing.T) {
-	c := NewCanvas(30, 1)
+	c := core.NewBuffer(30, 1)
 	KPI{Label: "User Connections", Value: "1519"}.Draw(c, c.Rect())
 
 	row := c.Row(0)
@@ -24,7 +24,7 @@ func TestKPIRightAlignsValue(t *testing.T) {
 func TestKPIValueCarriesItsOwnBackground(t *testing.T) {
 	bg := tcell.NewRGBColor(1, 2, 3)
 	fg := tcell.NewRGBColor(4, 5, 6)
-	c := NewCanvas(20, 1)
+	c := core.NewBuffer(20, 1)
 	KPI{Label: "PLE", Value: "5761", ValueBg: bg, ValueFg: fg}.Draw(c, c.Rect())
 
 	_, style, _ := c.Get(19, 0)
@@ -40,7 +40,7 @@ func TestKPIValueCarriesItsOwnBackground(t *testing.T) {
 // Too narrow to show both, the number survives and the label goes: the
 // section header already says what the number is.
 func TestKPIDropsLabelBeforeValue(t *testing.T) {
-	c := NewCanvas(7, 1)
+	c := core.NewBuffer(7, 1)
 	KPI{Label: "Blocked Processes", Value: "92"}.Draw(c, c.Rect())
 
 	row := c.Row(0)
@@ -60,7 +60,7 @@ func TestKPIWidth(t *testing.T) {
 }
 
 func TestKPITruncatesAnOversizedValue(t *testing.T) {
-	c := NewCanvas(4, 1)
+	c := core.NewBuffer(4, 1)
 	KPI{Label: "x", Value: "1234567890"}.Draw(c, c.Rect())
 
 	if got := c.Row(0); core.DisplayWidth(got) != 4 {
@@ -69,7 +69,7 @@ func TestKPITruncatesAnOversizedValue(t *testing.T) {
 }
 
 func TestKPIDegenerateRects(t *testing.T) {
-	c := NewCanvas(10, 1)
+	c := core.NewBuffer(10, 1)
 	KPI{Label: "a", Value: "1"}.Draw(c, core.Rect{X: 0, Y: 0, W: 0, H: 1})
 	KPI{Label: "a", Value: "1"}.Draw(c, core.Rect{X: 0, Y: 0, W: 10, H: 0})
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // TestCheckBoxTogglesOnceWhileHeld pins the press latch, which matters
@@ -15,7 +16,7 @@ func TestCheckBoxTogglesOnceWhileHeld(t *testing.T) {
 	c := NewCheckBox("Encrypt")
 	c.SetBounds(4, 2)
 
-	if !c.HandleMouse(mouse(5, 2, tcell.Button1)) {
+	if !c.HandleMouse(tuikittest.Mouse(5, 2, tcell.Button1)) {
 		t.Fatal("HandleMouse(press on the checkbox) = false, want true")
 	}
 	// An odd number of resends, so without the latch the press plus the
@@ -23,7 +24,7 @@ func TestCheckBoxTogglesOnceWhileHeld(t *testing.T) {
 	// false — the assertion below would then fail, which is the point. An
 	// even count here would pass with or without the latch.
 	for _, x := range []int{5, 6, 7} {
-		c.HandleMouse(mouse(x, 2, tcell.Button1))
+		c.HandleMouse(tuikittest.Mouse(x, 2, tcell.Button1))
 	}
 	if !c.Checked() {
 		t.Error("Checked() = false after one held click, want true — the latch let a resend toggle it back")
@@ -36,12 +37,12 @@ func TestCheckBoxReleaseRearmsTheLatch(t *testing.T) {
 	c := NewCheckBox("Encrypt")
 	c.SetBounds(4, 2)
 
-	c.HandleMouse(mouse(5, 2, tcell.Button1))
-	c.HandleMouse(mouse(5, 2, tcell.ButtonNone))
+	c.HandleMouse(tuikittest.Mouse(5, 2, tcell.Button1))
+	c.HandleMouse(tuikittest.Mouse(5, 2, tcell.ButtonNone))
 	if !c.Checked() {
 		t.Fatal("Checked() = false after the first click, want true")
 	}
-	c.HandleMouse(mouse(5, 2, tcell.Button1))
+	c.HandleMouse(tuikittest.Mouse(5, 2, tcell.Button1))
 	if c.Checked() {
 		t.Error("Checked() = true after a second click, want false")
 	}
@@ -52,8 +53,8 @@ func TestCheckBoxReleaseRearmsTheLatch(t *testing.T) {
 func TestCheckBoxReleaseIsNotConsumed(t *testing.T) {
 	c := NewCheckBox("Encrypt")
 	c.SetBounds(4, 2)
-	c.HandleMouse(mouse(5, 2, tcell.Button1))
-	if c.HandleMouse(mouse(5, 2, tcell.ButtonNone)) {
+	c.HandleMouse(tuikittest.Mouse(5, 2, tcell.Button1))
+	if c.HandleMouse(tuikittest.Mouse(5, 2, tcell.ButtonNone)) {
 		t.Error("HandleMouse(release) = true, want false so the release keeps propagating")
 	}
 }
@@ -79,7 +80,7 @@ func TestCheckBoxIgnoresClicksOutsideItsBounds(t *testing.T) {
 		t.Run(p.name, func(t *testing.T) {
 			c := NewCheckBox("Encrypt")
 			c.SetBounds(4, 2)
-			if c.HandleMouse(mouse(p.x, p.y, tcell.Button1)) {
+			if c.HandleMouse(tuikittest.Mouse(p.x, p.y, tcell.Button1)) {
 				t.Errorf("HandleMouse at (%d,%d) = true, want false", p.x, p.y)
 			}
 			if c.Checked() {
@@ -91,7 +92,7 @@ func TestCheckBoxIgnoresClicksOutsideItsBounds(t *testing.T) {
 	// The far end of the label is still inside.
 	c2 := NewCheckBox("Encrypt")
 	c2.SetBounds(4, 2)
-	if !c2.HandleMouse(mouse(4+w-1, 2, tcell.Button1)) || !c2.Checked() {
+	if !c2.HandleMouse(tuikittest.Mouse(4+w-1, 2, tcell.Button1)) || !c2.Checked() {
 		t.Error("a click on the label's last column did not toggle the checkbox")
 	}
 }
@@ -102,7 +103,7 @@ func TestCheckBoxTogglesOnEnterAndSpace(t *testing.T) {
 		name string
 		ev   *tcell.EventKey
 	}{
-		{"Enter", key(tcell.KeyEnter, tcell.ModNone)},
+		{"Enter", tuikittest.Key(tcell.KeyEnter, tcell.ModNone)},
 		{"Space", tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone)},
 	} {
 		t.Run(k.name, func(t *testing.T) {
@@ -124,7 +125,7 @@ func TestCheckBoxRefusesKeysItDoesNotHandle(t *testing.T) {
 	c := NewCheckBox("Encrypt")
 	c.Focus(true)
 	for _, k := range []tcell.Key{tcell.KeyTab, tcell.KeyEscape, tcell.KeyUp, tcell.KeyDown} {
-		if c.HandleKey(key(k, tcell.ModNone)) {
+		if c.HandleKey(tuikittest.Key(k, tcell.ModNone)) {
 			t.Errorf("HandleKey(%v) = true, want false", k)
 		}
 	}
@@ -190,10 +191,10 @@ func TestDisabledCheckBoxRefusesInput(t *testing.T) {
 	if c.Enabled() {
 		t.Fatal("SetEnabled(false) did not take")
 	}
-	if c.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) {
+	if c.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) {
 		t.Error("a disabled checkbox consumed Enter")
 	}
-	if c.HandleMouse(mouse(5, 2, tcell.Button1)) {
+	if c.HandleMouse(tuikittest.Mouse(5, 2, tcell.Button1)) {
 		t.Error("a disabled checkbox consumed a click")
 	}
 	if !c.Checked() {
@@ -208,7 +209,7 @@ func TestDisabledCheckBoxRefusesInput(t *testing.T) {
 	}
 
 	c.SetEnabled(true)
-	if !c.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) || !c.Checked() {
+	if !c.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) || !c.Checked() {
 		t.Error("re-enabling did not restore input")
 	}
 }

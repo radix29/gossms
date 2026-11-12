@@ -17,7 +17,7 @@ func memoryFixture() []Series {
 }
 
 func TestStackedBarFillsWidthWithoutGaps(t *testing.T) {
-	c := NewCanvas(20, 2)
+	c := core.NewBuffer(20, 2)
 	StackedBar{Series: memoryFixture(), LegendRows: -1}.Draw(c, c.Rect())
 
 	row := []rune(c.Row(0))
@@ -29,7 +29,7 @@ func TestStackedBarFillsWidthWithoutGaps(t *testing.T) {
 }
 
 func TestStackedBarSegmentsAppearInOrder(t *testing.T) {
-	c := NewCanvas(20, 1)
+	c := core.NewBuffer(20, 1)
 	StackedBar{Series: memoryFixture(), LegendRows: -1}.Draw(c, c.Rect())
 
 	// 50/30/20 of 100 across 20 columns: colA to column 9, colB to 15.
@@ -47,7 +47,7 @@ func TestStackedBarSegmentsAppearInOrder(t *testing.T) {
 }
 
 func TestStackedBarDrawsLegendAndTotal(t *testing.T) {
-	c := NewCanvas(30, 2)
+	c := core.NewBuffer(30, 2)
 	StackedBar{Series: memoryFixture(), ShowTotal: true}.Draw(c, c.Rect())
 
 	if !strings.Contains(c.Row(0), "100") {
@@ -59,7 +59,7 @@ func TestStackedBarDrawsLegendAndTotal(t *testing.T) {
 }
 
 func TestStackedBarHonoursExplicitScale(t *testing.T) {
-	c := NewCanvas(20, 1)
+	c := core.NewBuffer(20, 1)
 	// Total 100 against a fixed maximum of 200: the bar fills half.
 	StackedBar{Series: memoryFixture(), Scale: Scale{Min: 0, Max: 200}, LegendRows: -1}.Draw(c, c.Rect())
 
@@ -69,7 +69,7 @@ func TestStackedBarHonoursExplicitScale(t *testing.T) {
 }
 
 func TestStackedBarEmptyInput(t *testing.T) {
-	c := NewCanvas(12, 2)
+	c := core.NewBuffer(12, 2)
 	empty := StackedBar{}.Draw(c, c.Rect())
 	zeroes := StackedBar{Series: []Series{{Label: "z", Color: colA, Values: []float64{0}}}}.Draw(c, c.Rect())
 
@@ -87,12 +87,12 @@ func TestStackedBarEmptyInput(t *testing.T) {
 	}
 }
 
-// Draw's return value is the caller's hit-test target: internal/tui records
-// it as a ChartHit and resolves clicks against it. It has to be the bar
+// Draw's return value is the caller's hit-test target: a host records it and
+// resolves clicks against it. It has to be the bar
 // itself and nothing else, because the total and the legend are drawn inside
 // the same r but are not part of what a click reports on.
 func TestStackedBarDrawReturnsTheBarRectOnly(t *testing.T) {
-	c := NewCanvas(30, 4)
+	c := core.NewBuffer(30, 4)
 	got := StackedBar{Series: memoryFixture(), Rows: 2, LegendRows: 1, ShowTotal: true}.Draw(c, c.Rect())
 
 	if got.Y != 0 || got.H != 2 {
@@ -124,7 +124,7 @@ func TestStackedBarDrawReturnsTheBarRectOnly(t *testing.T) {
 // dashboard, and a rect rooted at 0,0 would resolve every click to the
 // wrong chart.
 func TestStackedBarDrawReturnsRectAtDrawOrigin(t *testing.T) {
-	c := NewCanvas(30, 6)
+	c := core.NewBuffer(30, 6)
 	at := core.Rect{X: 4, Y: 2, W: 20, H: 3}
 	got := StackedBar{Series: memoryFixture(), LegendRows: 1}.Draw(c, at)
 
@@ -143,7 +143,7 @@ func TestStackedBarDrawReturnsRectAtDrawOrigin(t *testing.T) {
 // paints over whichever panel is drawn beneath this one.
 func TestStackedBarLegendNeverDrawsBelowItsRect(t *testing.T) {
 	for _, h := range []int{1, 2, 3} {
-		c := NewCanvas(20, 6)
+		c := core.NewBuffer(20, 6)
 		// Row h onward is sentinel text belonging to the panel below.
 		for y := h; y < 6; y++ {
 			core.DrawText(c, 0, y, tcell.StyleDefault, "SENTINEL")
@@ -162,7 +162,7 @@ func TestStackedBarLegendNeverDrawsBelowItsRect(t *testing.T) {
 // A rect too narrow to hold both the total and any bar draws no bar, so it
 // must report none either.
 func TestStackedBarDrawReturnsZeroRectWhenNoRoom(t *testing.T) {
-	c := NewCanvas(12, 2)
+	c := core.NewBuffer(12, 2)
 	for _, at := range []core.Rect{
 		{X: 0, Y: 0, W: 0, H: 2},  // no width
 		{X: 0, Y: 0, W: 12, H: 0}, // no height
@@ -175,7 +175,7 @@ func TestStackedBarDrawReturnsZeroRectWhenNoRoom(t *testing.T) {
 }
 
 func TestStackedBarDegenerateRects(t *testing.T) {
-	c := NewCanvas(12, 2)
+	c := core.NewBuffer(12, 2)
 	StackedBar{Series: memoryFixture()}.Draw(c, core.Rect{X: 0, Y: 0, W: 0, H: 2})
 	StackedBar{Series: memoryFixture()}.Draw(c, core.Rect{X: 0, Y: 0, W: 12, H: 0})
 

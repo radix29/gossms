@@ -93,7 +93,7 @@ func TestSetNodesKeepsSelectedIDWhenRowsInsertedAbove(t *testing.T) {
 // visual selection to the requested node and invokes OnSelect — unlike
 // SetNodes, whose sel-clamping alone doesn't mean "select this node" and
 // fires nothing. This is what a caller that adds a node programmatically
-// (e.g. ObjectExplorer.AddRoot for a newly connected server) needs so the
+// (e.g. a root for a newly connected server) needs so the
 // rest of the app reacts the same way a manual click/arrow-key selection
 // would.
 func TestSelectIDSelectsAndFiresOnSelect(t *testing.T) {
@@ -869,5 +869,32 @@ func TestTreeViewTitleButtonTipShowsOnHover(t *testing.T) {
 	tv.HandleMouse(tcell.NewEventMouse(-1, -1, tcell.ButtonNone, tcell.ModNone))
 	if strings.Contains(row1(), "Group by Schema") {
 		t.Error("tip stayed after the pointer left the tree")
+	}
+}
+
+// A latched vertical thumb drag keeps control once the mouse leaves the tree,
+// so a fast drag past the bottom still reaches the end.
+func TestTreeViewScrollbarDragContinuesPastTheEdge(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10) // inner = {X:1, Y:1, W:38, H:8}; bar at column 39
+	nodes := make([]TreeNode, 30)
+	for i := range nodes {
+		nodes[i] = TreeNode{ID: i + 1, Label: "n"}
+	}
+	tv.SetNodes(nodes)
+	if !tv.HandleMouse(tcell.NewEventMouse(39, 1, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("press on the scrollbar not consumed")
+	}
+	if !tv.HandleMouse(tcell.NewEventMouse(39, 50, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("drag below the tree fell through to the host")
+	}
+	if want := 30 - 8; tv.scroll != want {
+		t.Errorf("scroll = %d after dragging past the bottom, want %d", tv.scroll, want)
+	}
+	if tv.HandleMouse(tcell.NewEventMouse(39, 50, tcell.ButtonNone, tcell.ModNone)) {
+		t.Error("release outside the tree consumed")
+	}
+	if tv.sbDragging {
+		t.Error("release outside the tree left the thumb drag latched")
 	}
 }

@@ -273,7 +273,7 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 	if tv.active {
 		borderStyle = theme.StyleActiveBorder()
 	}
-	titleStyle := tcell.StyleDefault.Background(p.PanelBg).Foreground(p.TextHighlight).Bold(true)
+	titleStyle := theme.On(p.PanelBg, p.TextHighlight).Bold(true)
 	core.FillRect(s, tv.rect, ' ', theme.StylePanel())
 	core.DrawBoxTitle(s, tv.rect, tv.title, borderStyle, titleStyle)
 	if btn, ok := tv.titleButtonRect(); ok {
@@ -324,14 +324,14 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 	}
 
 	if len(tv.nodes) > inner.H {
-		sbStyle := tcell.StyleDefault.Background(p.PanelBg).Foreground(p.Border)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+		sbStyle := theme.StyleBorder()
+		sbThumb := theme.StyleScrollThumb()
 		core.DrawScrollbar(s, tv.rect.Right()-1, inner.Y, inner.H,
 			len(tv.nodes), inner.H, tv.scroll, sbStyle, sbThumb)
 	}
 	if tv.contentW > inner.W {
-		sbStyle := tcell.StyleDefault.Background(p.PanelBg).Foreground(p.Border)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+		sbStyle := theme.StyleBorder()
+		sbThumb := theme.StyleScrollThumb()
 		core.DrawScrollbarH(s, inner.X, tv.rect.Bottom()-1, inner.W,
 			tv.contentW, inner.W, tv.scrollX, sbStyle, sbThumb)
 	}
@@ -427,6 +427,15 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if !tv.rect.Contains(mx, my) {
 		tv.titleButton.hover = false
+		// A latched thumb drag keeps control once the mouse leaves the tree
+		// (HandleScrollbarDrag's contract), so a fast drag still reaches the end.
+		inner := tv.rect.Inner(1)
+		if tv.sbDragging {
+			return core.HandleScrollbarDrag(ev, tv.rect.Right()-1, inner.Y, inner.H, len(tv.nodes), &tv.sbDragging, &tv.scroll)
+		}
+		if tv.sbDraggingX {
+			return core.HandleScrollbarDragH(ev, inner.X, tv.rect.Bottom()-1, inner.W, tv.contentW, &tv.sbDraggingX, &tv.scrollX)
+		}
 		return false
 	}
 	btn, onBtn := tv.titleButtonRect()
@@ -576,9 +585,9 @@ func (tv *TreeView) nodeIndexAt(mx, my int) (int, bool) {
 // NodeIDAt returns the ID of the node drawn at screen position (mx, my), and
 // whether there is one: how a host learns what a press landed on rather than
 // inferring it from the selection afterwards. A press on the scrollbar, the
-// border, or blank space below the last node reports no node. Object Explorer's
-// drag-and-drop arms from this (via ObjectExplorer.NodeAt); otherwise a
-// scrollbar drag arms as a node drag and the thumb stops following the mouse.
+// border, or blank space below the last node reports no node. A host's node
+// drag-and-drop arms from this; arming from the selection instead lets a
+// scrollbar drag arm as a node drag, and the thumb stops following the mouse.
 func (tv *TreeView) NodeIDAt(mx, my int) (int, bool) {
 	idx, ok := tv.nodeIndexAt(mx, my)
 	if !ok {

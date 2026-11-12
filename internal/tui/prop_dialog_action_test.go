@@ -9,6 +9,7 @@ import (
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // drainUntil runs the app's queued UI callbacks until cond holds, or fails.
@@ -349,7 +350,7 @@ func TestPropDialogCommitsPagesBeforeApplyAndScript(t *testing.T) {
 		{"Script Changes", func(d *PropDialog) { d.runScript() }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Test Properties")
+			sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Test Properties")
 			d := &PropDialog{PropertySheet: sheet, app: newTestApp(), ctx: context.Background(), applyFn: map[int]propApply{}}
 			d.SetPages([]string{"Files"})
 			row := propsheet.Text("Name", "", 40)
@@ -393,7 +394,7 @@ func TestPropDialogReportsApplyNotes(t *testing.T) {
 		{"OK", func(d *PropDialog) { d.runApply(true) }, "Properties saved. " + note, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Test Properties")
+			sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Test Properties")
 			d := &PropDialog{PropertySheet: sheet, app: newTestApp(), ctx: context.Background(), applyFn: map[int]propApply{}}
 			d.SetPages([]string{"Files"})
 			d.OnLoadPage = func(page, seq int) {

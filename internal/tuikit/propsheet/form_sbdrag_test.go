@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // newGridForm builds a form taller than its rect with a focused GridRow, so
@@ -16,7 +17,7 @@ func newGridForm() *Form {
 	f.SetBounds(0, 0, 60, 12)
 	f.Focus(true)
 	f.setFocus(1)
-	f.Draw(&fakeScreen{w: 100, h: 40})
+	f.Draw(tuikittest.NewScreen(100, 40))
 	return f
 }
 
@@ -43,7 +44,7 @@ func TestFormClickAfterScrollbarDragDoesNotScroll(t *testing.T) {
 
 	f.HandleMouse(tcell.NewEventMouse(f.rect.Right()-1, 1, tcell.Button1, tcell.ModNone))
 	f.HandleMouse(tcell.NewEventMouse(10, 4, tcell.ButtonNone, tcell.ModNone))
-	f.Draw(&fakeScreen{w: 100, h: 40})
+	f.Draw(tuikittest.NewScreen(100, 40))
 	before := f.scroll
 
 	// A fresh press well down the form, nowhere near the scrollbar column.
@@ -64,7 +65,7 @@ func TestFormScrollbarDragReachesBottom(t *testing.T) {
 	}
 	f := NewForm(rows...)
 	f.SetBounds(0, 0, 60, 8) // 24 lines, maxScroll's row starts at 17, not 16
-	f.Draw(&fakeScreen{w: 100, h: 40})
+	f.Draw(tuikittest.NewScreen(100, 40))
 	w := f.contentWidth()
 	want := f.maxScroll(w)
 

@@ -19,7 +19,10 @@ tuikit/
 │               gesture.go (Gesture: which zone of a host claimed the held
 │               Button1 press, routed to until release),
 │               click.go (ClickTracker: pairs fresh presses into a
-│               double-click; DoubleClickInterval, the one speed)
+│               double-click; DoubleClickInterval, the one speed),
+│               buffer.go (Buffer: an off-screen cell grid satisfying
+│               tcell.Screen's drawing half — charts render into it and blit,
+│               tests draw into it and read it back)
 ├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox, Spinner — one file each
 ├── layout/     Panel interface, PanelManager (tabs), Splitter — panel.go,
 │               panel_manager.go, splitter.go
@@ -53,8 +56,7 @@ tuikit/
 │               xml_highlighter.go (planview XML tab), json_highlighter.go (JSON
 │               cell panel; stateless per line)
 ├── charts/     Terminal charts from generic series data
-│             — canvas.go (off-screen buffer satisfying tcell.Screen's drawing
-│               half, rendered once then blitted/scrolled), scale.go (nice-number
+│             — rendered into a core.Buffer, then blitted/scrolled; scale.go (nice-number
 │               scales, ticks, formatting), glyph.go (eighth-block ramps),
 │               axis.go, legend.go, common.go (Series, stacked-run composition),
 │               history.go, stacked_history.go, barchart.go, stacked_bar.go,
@@ -63,6 +65,9 @@ tuikit/
 │             SplitBatches and StatementAt; stdlib only, so internal/query and
 │             sqlparse can use it
 │             — doc.go, lexer.go, go_separator.go, split.go, statement.go
+├── tuikittest/ Test kit, imported by _test files only — screen.go (Screen: a
+│               core.Buffer with Find/RowOf/Snapshot/SetSize), events.go
+│               (Key/Rune/Mouse/Press/Release builders)
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
               — doc.go, common.go, rows.go (Section/Note/Hint/Static),
                 textrow.go, choicerows.go (Check/Select/Radio), buttonsrow.go,

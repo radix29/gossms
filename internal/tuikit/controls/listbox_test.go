@@ -1,11 +1,13 @@
 package controls
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func newTestListBox(items ...string) *ListBox {
@@ -227,5 +229,55 @@ func TestListBoxKeyboardPullsTheSelectionBack(t *testing.T) {
 	}
 	if l.scroll != 1 {
 		t.Errorf("scroll = %d, want the selection scrolled back into view at 1", l.scroll)
+	}
+}
+
+// A latched thumb drag keeps control after the mouse leaves the list: a fast
+// drag past the bottom must still reach the end, not stop at the last motion
+// event that happened to land inside the rect.
+func TestListBoxScrollbarDragContinuesPastTheEdge(t *testing.T) {
+	l := newTestListBox(manyRows(20)...) // rect 20x5, bar at column 19
+	if !l.HandleMouse(tcell.NewEventMouse(19, 0, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("press on the scrollbar not consumed")
+	}
+	if !l.HandleMouse(tcell.NewEventMouse(19, 30, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("drag below the list fell through to the host")
+	}
+	if want := 20 - 5; l.scroll != want {
+		t.Errorf("scroll = %d after dragging past the bottom, want %d", l.scroll, want)
+	}
+	l.HandleMouse(tcell.NewEventMouse(19, 30, tcell.ButtonNone, tcell.ModNone))
+	if l.sbDragging {
+		t.Error("release outside the list left the thumb drag latched")
+	}
+}
+
+// A press on a row owns its motion until release, even off the list, so the
+// host never sees the middle of a gesture it did not see start. The release
+// itself and an unrelated press outside still pass through.
+func TestListBoxHeldPressConsumesMotionOffTheList(t *testing.T) {
+	l := newTestListBox("a", "b", "c")
+	l.HandleMouse(tcell.NewEventMouse(1, 1, tcell.Button1, tcell.ModNone))
+	if !l.HandleMouse(tcell.NewEventMouse(1, 30, tcell.Button1, tcell.ModNone)) {
+		t.Error("motion of a held press off the list fell through")
+	}
+	if l.HandleMouse(tcell.NewEventMouse(1, 30, tcell.ButtonNone, tcell.ModNone)) {
+		t.Error("release off the list consumed")
+	}
+	if l.HandleMouse(tcell.NewEventMouse(1, 30, tcell.Button1, tcell.ModNone)) {
+		t.Error("a fresh press off the list consumed")
+	}
+}
+
+// Text stops short of the scrollbar column: a wide glyph straddling it would
+// otherwise have its right half overdrawn by the bar.
+func TestListBoxTextStopsShortOfTheScrollbar(t *testing.T) {
+	items := manyRows(20)
+	items[0] = strings.Repeat("a", 16) + "中" // marker (2) + 16 puts 中 at columns 18–19
+	l := newTestListBox(items...)
+	s := tuikittest.NewScreen(20, 5)
+	l.Draw(s)
+	if got := s.RuneAt(18, 0); got == '中' {
+		t.Error("a wide glyph was drawn under the scrollbar column")
 	}
 }

@@ -3,56 +3,9 @@ package controls
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 
-	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
-
-// runeScreen captures the runes a Draw painted, so a test can assert a row's
-// text actually reached the screen rather than only that Draw returned.
-type runeScreen struct {
-	tcell.Screen
-	w, h  int
-	cells map[[2]int]rune
-}
-
-func newRuneScreen(w, h int) *runeScreen {
-	return &runeScreen{w: w, h: h, cells: map[[2]int]rune{}}
-}
-func (s *runeScreen) Size() (int, int) { return s.w, s.h }
-func (s *runeScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
-	s.cells[[2]int{x, y}] = primary
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-func (s *runeScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
-}
-
-func (s *runeScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-func (s *runeScreen) ShowCursor(x, y int) {}
-
-// text returns everything painted, one string per row.
-func (s *runeScreen) text() string {
-	var b strings.Builder
-	for y := range s.h {
-		for x := range s.w {
-			if r, ok := s.cells[[2]int{x, y}]; ok && r != 0 {
-				b.WriteRune(r)
-			} else {
-				b.WriteByte(' ')
-			}
-		}
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
 
 // unlaidGrid is a small grid that has never been given bounds — the state a
 // page's grid is in while it is still being built. rect.H is 0, so every
@@ -100,9 +53,9 @@ func TestSelectionOnAnUnlaidOutGridDoesNotScrollPastTheRows(t *testing.T) {
 			// The bug's visible form: give the grid real bounds, the size the
 			// first layout pass would, and draw it.
 			g.SetBounds(0, 0, 40, 10)
-			s := newRuneScreen(40, 10)
+			s := tuikittest.NewScreen(40, 10)
 			g.Draw(s)
-			out := s.text()
+			out := s.Snapshot()
 			for _, want := range []string{"Alter", "Connect", "Control"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("Draw painted no %q row; grid rendered blank:\n%s", want, out)

@@ -149,8 +149,7 @@ func (r *EditorRow) Focusable() bool { return true }
 func (r *EditorRow) Browsable() bool { return r.ed.ReadOnly() }
 
 func (r *EditorRow) Draw(s tcell.Screen, focused bool) {
-	p := theme.Active()
-	lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+	lst := theme.StyleDialogDim()
 	if focused {
 		lst = theme.StyleSelected()
 	}

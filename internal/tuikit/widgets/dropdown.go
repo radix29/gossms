@@ -207,21 +207,21 @@ func (d *DropDown) Draw(s tcell.Screen) {
 		if d.disabled {
 			labelFg = p.DialogTextDim
 		}
-		core.DrawText(s, d.rect.X, d.rect.Y, tcell.StyleDefault.Background(p.DialogBg).Foreground(labelFg), d.label)
+		core.DrawText(s, d.rect.X, d.rect.Y, theme.On(p.DialogBg, labelFg), d.label)
 	}
 	ix := d.inputX()
 	borderColor := p.InputBorder
 	if d.focused && !d.disabled {
 		borderColor = p.InputFocused
 	}
-	borderStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(borderColor)
+	borderStyle := theme.On(p.DialogBg, borderColor)
 	core.PutRune(s, ix, d.rect.Y, '[', borderStyle)
 	core.PutRune(s, ix+d.rect.W+1, d.rect.Y, ']', borderStyle)
 	core.PutRune(s, ix+d.rect.W, d.rect.Y, 'v', borderStyle)
 
 	inputStyle := theme.StyleInput()
 	if d.disabled {
-		inputStyle = theme.StyleInputDisabled()
+		inputStyle = theme.StyleControlDisabled()
 	}
 	core.FillRect(s, core.Rect{X: ix + 1, Y: d.rect.Y, W: d.rect.W - 1, H: 1}, ' ', inputStyle)
 	// One blank column before the arrow, and "…" on a cut: clipped flush against
@@ -237,9 +237,8 @@ func (d *DropDown) DrawOverlay(s tcell.Screen) {
 		return
 	}
 	d.screenW, d.screenH = s.Size()
-	p := theme.Active()
 	ix := d.inputX()
-	listStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
+	listStyle := theme.StyleMenuBar()
 	selStyle := theme.StyleMenuSelected()
 	y0, rows := d.listGeometry()
 	top := d.firstShown()

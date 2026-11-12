@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // The query editor toggles wrap at runtime (Alt+Z), usually far from line 1.
@@ -113,7 +114,7 @@ func TestWrapModeUpDownMoveByVisualRow(t *testing.T) {
 		{tcell.KeyUp, 0, 2}, // first row: stays put
 	}
 	for i, st := range steps {
-		e.HandleKey(key(st.k, tcell.ModNone))
+		e.HandleKey(tuikittest.Key(st.k, tcell.ModNone))
 		if e.cursorRow != st.row || e.cursorCol != st.col {
 			t.Fatalf("step %d (%v): cursor = (%d,%d), want (%d,%d)", i, st.k, e.cursorRow, e.cursorCol, st.row, st.col)
 		}
@@ -128,12 +129,12 @@ func TestWrapModeVerticalGoalColumnIsSticky(t *testing.T) {
 	e := newWrappedTestEditor("aaaa bbbb cccc dddd ee\nlonger_line_here", 10, 6)
 	e.cursorRow, e.cursorCol = 0, 8
 
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
 	if e.cursorRow != 0 || e.cursorCol != 22 {
 		t.Fatalf("on the short row: cursor = (%d,%d), want (0,22)", e.cursorRow, e.cursorCol)
 	}
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
 	if e.cursorRow != 1 || e.cursorCol != 8 {
 		t.Fatalf("past the short row: cursor = (%d,%d), want (1,8) — goal column lost", e.cursorRow, e.cursorCol)
 	}
@@ -141,8 +142,8 @@ func TestWrapModeVerticalGoalColumnIsSticky(t *testing.T) {
 	// Any other move resets the goal: Right on line 1, then Up aims for
 	// that new x.
 	e.cursorRow, e.cursorCol = 1, 0
-	e.HandleKey(key(tcell.KeyRight, tcell.ModNone))
-	e.HandleKey(key(tcell.KeyUp, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone))
 	if e.cursorRow != 0 || e.cursorCol != 21 {
 		t.Fatalf("Up after Right: cursor = (%d,%d), want (0,21) at x 1 of \"ee\"", e.cursorRow, e.cursorCol)
 	}
@@ -151,8 +152,8 @@ func TestWrapModeVerticalGoalColumnIsSticky(t *testing.T) {
 	// clamps to index 9, not 10.
 	e.SetText("aaaa bbbb cccc\nxxxxxxxxxx")
 	e.cursorRow, e.cursorCol = 1, 10
-	e.HandleKey(key(tcell.KeyUp, tcell.ModNone)) // onto "cccc", clamps to its end
-	e.HandleKey(key(tcell.KeyUp, tcell.ModNone)) // onto "aaaa bbbb ", non-final
+	e.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone)) // onto "cccc", clamps to its end
+	e.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone)) // onto "aaaa bbbb ", non-final
 	if e.cursorRow != 0 || e.cursorCol != 9 {
 		t.Fatalf("on a non-final row: cursor = (%d,%d), want (0,9)", e.cursorRow, e.cursorCol)
 	}
@@ -162,16 +163,16 @@ func TestWrapModeVerticalGoalColumnIsSticky(t *testing.T) {
 // visual row rather than a whole wrapped line.
 func TestWrapModePageAndShiftDownAreVisual(t *testing.T) {
 	e := newWrappedTestEditor("aaaa bbbb cccc dddd eeee ffff\nnext", 10, 2)
-	e.HandleKey(key(tcell.KeyPgDn, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyPgDn, tcell.ModNone))
 	if e.cursorRow != 0 || e.cursorCol != 20 {
 		t.Fatalf("PgDn: cursor = (%d,%d), want (0,20), two visual rows down", e.cursorRow, e.cursorCol)
 	}
-	e.HandleKey(key(tcell.KeyPgUp, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyPgUp, tcell.ModNone))
 	if e.cursorRow != 0 || e.cursorCol != 0 {
 		t.Fatalf("PgUp: cursor = (%d,%d), want (0,0)", e.cursorRow, e.cursorCol)
 	}
 
-	e.HandleKey(key(tcell.KeyDown, tcell.ModShift))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModShift))
 	if got := e.SelectedText(); got != "aaaa bbbb " {
 		t.Fatalf("Shift+Down selected %q, want the first visual row", got)
 	}

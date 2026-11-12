@@ -16,13 +16,12 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 	}
 	p.recomputeSize()
 	p.DrawBase(s)
-	pal := theme.Active()
 	inner := p.InnerRect()
 
-	headerSt := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.DialogText)
+	headerSt := theme.StyleDialog()
 	core.DrawText(s, inner.X, inner.Y, headerSt, p.headerLeft)
 	core.DrawTextRight(s, inner.X, inner.Y, inner.W, headerSt, p.headerRight)
-	sep := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.DialogLine)
+	sep := theme.StyleDialogLine()
 	core.DrawHLine(s, inner.X, inner.Y+1, inner.W, sep)
 
 	bodyY := inner.Y + 2
@@ -41,11 +40,11 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 	if p.message != "" {
 		st := headerSt
 		if p.messageIsErr {
-			st = tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.DialogError)
+			st = theme.StyleDialogError()
 		}
 		core.DrawTextClipped(s, inner.X, msgY, inner.W, st, p.message)
 	} else {
-		hintSt := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.DialogTextDim)
+		hintSt := theme.StyleDialogDim()
 		core.DrawTextClipped(s, inner.X, msgY, inner.W, hintSt, p.hints)
 	}
 
@@ -101,20 +100,19 @@ func (p *PropertySheet) drawContent(s tcell.Screen, x, y, w, h int) {
 		return
 	}
 	slot := &p.pages[p.current]
-	pal := theme.Active()
-	titleSt := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.DialogText).Bold(true)
+	titleSt := theme.StyleDialog().Bold(true)
 	core.DrawText(s, x, y, titleSt, slot.title)
-	sep := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.DialogLine)
+	sep := theme.StyleDialogLine()
 	core.DrawHLine(s, x, y+1, w, sep)
 
 	contentY, contentH := y+2, max(0, h-2)
-	dimSt := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.DialogTextDim)
+	dimSt := theme.StyleDialogDim()
 
 	switch slot.state {
 	case PageNotLoaded, PageLoading:
 		core.DrawText(s, x, contentY, dimSt, "Loading…")
 	case PageError:
-		errSt := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.DialogError)
+		errSt := theme.StyleDialogError()
 		msg := "Error"
 		if slot.err != nil {
 			msg = "Error: " + slot.err.Error()

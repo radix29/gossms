@@ -18,9 +18,8 @@ func DrawText(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	for g.Next() {
 		w := g.Width()
 		if w <= 0 {
-			// Zero-width grapheme (a lone combining mark): emit it as a combining rune on
-			// the previous cell when possible, otherwise skip; there is no cell to advance
-			// into.
+			// Zero-width grapheme (a lone combining mark): dropped. There is no cell to
+			// advance into, and a cluster that carries the mark draws it with its base.
 			continue
 		}
 		putGrapheme(s, col, y, g.Value(), style)
@@ -212,18 +211,6 @@ func FillRect(s tcell.Screen, r Rect, ch rune, style tcell.Style) {
 		return
 	}
 	s.FillArea(r.X, r.Y, r.W, r.H, ch, style)
-}
-
-// FillAreaByPut fills the w×h area at (x,y) with one s.Put per cell. It is the
-// FillArea of a tcell.Screen test fake that overrides only Put, so FillRect's
-// fill reaches the fake's Put rather than its (often nil) embedded Screen.
-func FillAreaByPut(s tcell.Screen, x, y, w, h int, ch rune, style tcell.Style) {
-	str := RuneString(ch)
-	for row := y; row < y+h; row++ {
-		for col := x; col < x+w; col++ {
-			s.Put(col, row, str, style)
-		}
-	}
 }
 
 // DimArea fades every cell within r in place by blending its colours toward

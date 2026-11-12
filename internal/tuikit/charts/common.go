@@ -199,7 +199,7 @@ func drawVRun(s tcell.Screen, x, bottomY int, cells []stackCell) {
 			continue
 		}
 		ch, fg, bg := c.vertical()
-		core.PutRune(s, x, bottomY-i, ch, tcell.StyleDefault.Foreground(fg).Background(bg))
+		core.PutRune(s, x, bottomY-i, ch, theme.On(bg, fg))
 	}
 }
 
@@ -211,7 +211,7 @@ func drawHRun(s tcell.Screen, startX, y int, cells []stackCell) {
 			continue
 		}
 		ch, fg, bg := c.horizontal()
-		core.PutRune(s, startX+i, y, ch, tcell.StyleDefault.Foreground(fg).Background(bg))
+		core.PutRune(s, startX+i, y, ch, theme.On(bg, fg))
 	}
 }
 

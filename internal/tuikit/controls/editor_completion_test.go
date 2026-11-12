@@ -6,12 +6,13 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // testCompletionProvider returns a CompletionProvider offering candidates
 // (exact Text/Label match) whose name is case-insensitively prefixed by the
 // identifier characters immediately before the cursor — a minimal stand-in for
-// internal/tui's SQL-aware provider over the same Editor/provider contract.
+// a host's language-aware provider over the same Editor/provider contract.
 func testCompletionProvider(candidates ...string) CompletionProvider {
 	return func(req CompletionRequest) ([]CompletionItem, int) {
 		lines, row, col := req.Lines, req.Row, req.Col
@@ -37,7 +38,7 @@ func testCompletionProvider(candidates ...string) CompletionProvider {
 
 func typeString(e *Editor, s string) {
 	for _, r := range s {
-		e.HandleKey(runeKey(r, tcell.ModNone))
+		e.HandleKey(tuikittest.Rune(r, tcell.ModNone))
 	}
 }
 
@@ -73,7 +74,7 @@ func TestEditorCompletionCommitReplacesPrefixAndUndoRestores(t *testing.T) {
 		t.Fatal("expected popup open before commit")
 	}
 
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if e.CompletionActive() {
 		t.Fatal("expected popup closed after commit")
 	}
@@ -86,7 +87,7 @@ func TestEditorCompletionCommitReplacesPrefixAndUndoRestores(t *testing.T) {
 
 	// A single Ctrl+Z must restore the typed prefix, not the undo entry from
 	// before typing began.
-	e.HandleKey(key(tcell.KeyCtrlZ, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyCtrlZ, tcell.ModNone))
 	if got := e.Text(); got != "Cu" {
 		t.Fatalf("Text() after undo = %q, want %q", got, "Cu")
 	}
@@ -97,7 +98,7 @@ func TestEditorCompletionTabAlsoCommits(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Products"))
 
 	typeString(e, "Pro")
-	e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 	if got := e.Text(); got != "Products" {
 		t.Fatalf("Text() after Tab commit = %q, want %q", got, "Products")
 	}
@@ -112,7 +113,7 @@ func TestEditorCompletionEscapeDismissesAndSuppresses(t *testing.T) {
 		t.Fatal("expected popup open")
 	}
 
-	e.HandleKey(key(tcell.KeyEscape, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEscape, tcell.ModNone))
 	if e.CompletionActive() {
 		t.Fatal("expected popup closed after Escape")
 	}
@@ -151,7 +152,7 @@ func TestEditorCompletionEnterNeverOpensOnBlankLine(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 	e.cursorCol = len("Cu")
 
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if e.CompletionActive() {
 		t.Fatal("expected Enter's blank new line to never open the popup")
 	}
@@ -208,15 +209,15 @@ func TestEditorCompletionDeleteBackspaceUndoNeverOpenFromClosed(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 	e.cursorCol = 2
 
-	e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 	if e.CompletionActive() {
 		t.Fatal("expected Delete to never open the popup from closed")
 	}
-	e.HandleKey(key(tcell.KeyBackspace2, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyBackspace2, tcell.ModNone))
 	if e.CompletionActive() {
 		t.Fatal("expected Backspace to never open the popup from closed")
 	}
-	e.HandleKey(key(tcell.KeyCtrlZ, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyCtrlZ, tcell.ModNone))
 	if e.CompletionActive() {
 		t.Fatal("expected undo to never open the popup from closed")
 	}
@@ -232,7 +233,7 @@ func TestEditorCompletionModifiedKeysNotHijackedWhileOpen(t *testing.T) {
 	}
 	// Ctrl+Up/Down belong to the host (panel resize) or the editor (word
 	// ops), never to popup selection.
-	e.HandleKey(key(tcell.KeyDown, tcell.ModCtrl))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModCtrl))
 	if e.completionSel != 0 {
 		t.Fatalf("completionSel after Ctrl+Down = %d, want 0 (modified keys must fall through)", e.completionSel)
 	}
@@ -269,7 +270,7 @@ func TestEditorCompletionCtrlSpaceOpensEvenAfterSpace(t *testing.T) {
 	if e.CompletionActive() {
 		t.Fatal("expected a bare space to not open the popup")
 	}
-	e.HandleKey(runeKey(' ', tcell.ModCtrl))
+	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
 	if !e.CompletionActive() {
 		t.Fatal("expected explicit Ctrl+Space to open the popup regardless of the blank-char gate")
 	}
@@ -284,7 +285,7 @@ func TestEditorCompletionNeverOpensFromPureNavigation(t *testing.T) {
 		tcell.KeyLeft, tcell.KeyLeft, tcell.KeyRight,
 		tcell.KeyHome, tcell.KeyEnd, tcell.KeyUp, tcell.KeyDown,
 	} {
-		e.HandleKey(key(k, tcell.ModNone))
+		e.HandleKey(tuikittest.Key(k, tcell.ModNone))
 		if e.CompletionActive() {
 			t.Fatalf("key %v: unexpectedly opened completion from a closed state", k)
 		}
@@ -307,7 +308,7 @@ func TestEditorCompletionCtrlSpaceSingleMatchAutoCommits(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 	e.cursorCol = 2
 
-	e.HandleKey(runeKey(' ', tcell.ModCtrl))
+	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
 	if e.CompletionActive() {
 		t.Fatal("expected popup NOT to open when Ctrl+Space finds exactly one match")
 	}
@@ -322,7 +323,7 @@ func TestEditorCompletionCtrlSpaceWithNoWordOpensOverSingleMatch(t *testing.T) {
 	e := newTestEditor("")
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
-	e.HandleKey(runeKey(' ', tcell.ModCtrl))
+	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
 	if !e.CompletionActive() {
 		t.Fatal("expected Ctrl+Space on an empty word to open the popup")
 	}
@@ -364,7 +365,7 @@ func TestEditorCompletionPartialOnlyHasNoSelectionAndEnterFallsThrough(t *testin
 	if !e.CompletionActive() || e.completionSel != -1 {
 		t.Fatalf("open = %v sel = %d, want open with nothing selected", e.CompletionActive(), e.completionSel)
 	}
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if e.CompletionActive() {
 		t.Fatal("expected Enter to close the popup")
 	}
@@ -378,11 +379,11 @@ func TestEditorCompletionPartialOnlyDownSelectsThenCommits(t *testing.T) {
 	e.SetCompletionProvider(substringCompletionProvider("CreatedBy", "Customers"))
 
 	typeString(e, "by")
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
 	if e.completionSel != 0 {
 		t.Fatalf("completionSel after Down = %d, want 0", e.completionSel)
 	}
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if got := e.Text(); got != "CreatedBy" {
 		t.Fatalf("Text() = %q, want CreatedBy", got)
 	}
@@ -412,7 +413,7 @@ func TestEditorCompletionExplicitPartialKeepsSelection(t *testing.T) {
 	e.SetCompletionProvider(substringCompletionProvider("CustomerOrders", "OldCustomers"))
 	e.cursorCol = len("usto")
 
-	e.HandleKey(runeKey(' ', tcell.ModCtrl))
+	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
 	if !e.CompletionActive() || e.completionSel != 0 {
 		t.Fatalf("open = %v sel = %d, want open at 0", e.CompletionActive(), e.completionSel)
 	}
@@ -420,7 +421,7 @@ func TestEditorCompletionExplicitPartialKeepsSelection(t *testing.T) {
 	if !e.CompletionActive() || e.completionSel != 0 {
 		t.Fatalf("after typing: open = %v sel = %d, want open at 0", e.CompletionActive(), e.completionSel)
 	}
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if got := e.Text(); got != "CustomerOrders" {
 		t.Fatalf("Text() = %q, want CustomerOrders", got)
 	}
@@ -430,7 +431,7 @@ func TestEditorCompletionCtrlSpaceMultipleMatchesOpensPopup(t *testing.T) {
 	e := newTestEditor("")
 	e.SetCompletionProvider(testCompletionProvider("Customers", "CustomerAddresses"))
 
-	e.HandleKey(runeKey(' ', tcell.ModCtrl))
+	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
 	if !e.CompletionActive() {
 		t.Fatal("expected popup open when Ctrl+Space finds more than one match")
 	}
@@ -444,7 +445,7 @@ func TestEditorCompletionCtrlSpaceFallsBackToContextMenuWithoutProvider(t *testi
 	called := false
 	e.OnRightClick = func(x, y int) { called = true }
 
-	e.HandleKey(runeKey(' ', tcell.ModCtrl))
+	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
 	if !called {
 		t.Fatal("expected OnRightClick to fire for Ctrl+Space when no completion provider is set")
 	}
@@ -460,8 +461,8 @@ func TestEditorCompletionPlaceholderNotSelectableOrCommittable(t *testing.T) {
 	if !e.CompletionActive() {
 		t.Fatal("expected popup open showing the placeholder row")
 	}
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if got := e.Text(); got != "x" {
 		t.Fatalf("Text() = %q, want %q — placeholder must never commit", got, "x")
 	}
@@ -532,17 +533,17 @@ func TestEditorCompletionRowNavigationClamps(t *testing.T) {
 	if e.completionSel != 0 {
 		t.Fatalf("initial completionSel = %d, want 0", e.completionSel)
 	}
-	e.HandleKey(key(tcell.KeyUp, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone))
 	if e.completionSel != 0 {
 		t.Fatalf("completionSel after Up at top = %d, want 0 (clamped)", e.completionSel)
 	}
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
-	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
 	if e.completionSel != 2 {
 		t.Fatalf("completionSel after 3x Down = %d, want 2 (clamped)", e.completionSel)
 	}
-	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if got := e.Text(); got != "Aac" {
 		t.Fatalf("Text() after commit = %q, want %q", got, "Aac")
 	}
@@ -637,7 +638,7 @@ func TestEditorCompletionRequestCarriesTextRevision(t *testing.T) {
 	// which is what makes arrowing around cost nothing.
 	before := got[len(got)-1].Version
 	got = got[:0]
-	e.HandleKey(key(tcell.KeyLeft, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModNone))
 	if len(got) == 0 {
 		t.Fatal("provider not called after cursor movement")
 	}

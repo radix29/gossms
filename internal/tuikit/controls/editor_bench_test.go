@@ -6,11 +6,12 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
-// discardScreen swallows every cell. The recording screens the tests use are
-// backed by a map, whose insert cost per cell swamps what these benchmarks
-// are trying to measure.
+// discardScreen swallows every cell, so a benchmark measures the editor's
+// draw alone. A tuikittest.Screen stores (and measures) each cell, a cost
+// these benchmarks are not about.
 type discardScreen struct {
 	tcell.Screen
 	w, h int
@@ -91,7 +92,7 @@ func BenchmarkEditorTypeInto20k(b *testing.B) {
 	e := NewEditor(nil)
 	e.SetText(benchScript(20000))
 	e.SetBounds(0, 0, 100, 40)
-	k := runeKey('x', tcell.ModNone)
+	k := tuikittest.Rune('x', tcell.ModNone)
 
 	// The caret moves on each iteration so no single line grows by one rune
 	// per iteration: a benchmark that types into the same line ends up
@@ -151,7 +152,7 @@ func BenchmarkEditorUndoRedo20k(b *testing.B) {
 	// Type near the bottom: the further down the span, the more of the width
 	// cache the bounded invalidation gets to keep.
 	e.cursorRow, e.cursorCol = 19000, 0
-	e.HandleKey(runeKey('x', tcell.ModNone))
+	e.HandleKey(tuikittest.Rune('x', tcell.ModNone))
 	e.doc.maxDisplayWidth()
 
 	b.ResetTimer()
@@ -182,7 +183,7 @@ func benchmarkEditorTypeDraw20k(b *testing.B, wrap bool) {
 	e.cursorRow, e.cursorCol = 19000, 0
 	e.ensureCursorVisible()
 	s := &discardScreen{w: 100, h: 40}
-	ins, del := runeKey('x', tcell.ModNone), key(tcell.KeyBackspace, tcell.ModNone)
+	ins, del := tuikittest.Rune('x', tcell.ModNone), tuikittest.Key(tcell.KeyBackspace, tcell.ModNone)
 
 	i := 0
 	b.ResetTimer()

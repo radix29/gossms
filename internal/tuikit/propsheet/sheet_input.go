@@ -145,10 +145,9 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	//
 	// A wheel tick mid-gesture is swallowed, not routed: it isn't part of the
 	// gesture, and routing would scroll whatever the pointer drifted over and call
-	// setZone, moving the focus zone out from under a scrollbar drag. Same rule as
-	// App.handleMouse's gestureOwner (internal/tui/app_events.go); App can't cover
-	// this one since it dispatches the top dialog before its gesture check and
-	// never arms a gesture for a dialog click.
+	// setZone, moving the focus zone out from under a scrollbar drag. A host
+	// applying the same rule to its own panes cannot cover this one: it hands a
+	// dialog every event and never sees which zone inside it owns the gesture.
 	if p.dragZone.Route(ev, p.routeDrag) {
 		return true
 	}
@@ -171,7 +170,7 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	// A focused row's open overlay (SelectRow's dropdown, GridRow's "Show Value"
 	// popup) draws last (see Form.DrawOverlays) and can extend below its band far
 	// enough to overlap the button row or page list, so it gets first refusal here,
-	// as DataGrid.OverlayActive()/QueryPanel do one level down.
+	// as DataGrid.OverlayActive() asks of its host one level down.
 	if f := p.PageForm(p.current); f != nil && f.OverlayActive() {
 		if f.HandleMouse(ev) {
 			p.dragZone.Arm(ev, zoneForm)

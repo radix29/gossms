@@ -198,9 +198,8 @@ func submenuRect(s tcell.Screen, parent core.Rect, rowY int, items []MenuItem) c
 // drawMenuBox paints one menu box: background, border, and every item row
 // with hover highlighted.
 func drawMenuBox(s tcell.Screen, r core.Rect, items []MenuItem, hover int) {
-	p := theme.Active()
-	itemStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
-	borderStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuLine)
+	itemStyle := theme.StyleMenuBar()
+	borderStyle := theme.StyleMenuLine()
 	core.FillRect(s, r, ' ', itemStyle)
 	core.DrawBox(s, r, borderStyle)
 	for i, item := range items {

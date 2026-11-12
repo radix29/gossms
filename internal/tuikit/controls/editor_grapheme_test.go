@@ -5,13 +5,14 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/vt"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // ---------------------------------------------------------------------------
-// Editor: grapheme clusters, measured as tcell measures them (review plan K1)
+// Editor: grapheme clusters, measured as tcell measures them
 // ---------------------------------------------------------------------------
 //
-// These draw on tcell's own mock screen rather than glyphScreen, because the
+// These draw on tcell's own mock screen rather than a tuikittest.Screen, because the
 // bug lived in the disagreement between the editor's widths and tcell's: a
 // cluster tcell draws two wide, which the editor had counted as one column,
 // had its second cell overwritten by the next character.
@@ -61,10 +62,10 @@ func TestEditorCursorStepsOverAClusterWhole(t *testing.T) {
 		if e.cursorCol != 1+n {
 			t.Errorf("%q: Right from before it = %d, want %d", g, e.cursorCol, 1+n)
 		}
-		s := newGlyphScreen(20, 3)
+		s := tuikittest.NewScreen(20, 3)
 		e.Draw(s)
-		if !s.curSet || s.curX != 3 {
-			t.Errorf("%q: caret after it at x=%d (shown %v), want 3", g, s.curX, s.curSet)
+		if cx, _, shown := s.Cursor(); !shown || cx != 3 {
+			t.Errorf("%q: caret after it at x=%d (shown %v), want 3", g, cx, shown)
 		}
 		e.HandleKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
 		if e.cursorCol != 1 {

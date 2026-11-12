@@ -112,8 +112,8 @@ func (r *RadioBox) Draw(s tcell.Screen) {
 	if r.label != "" {
 		drawLabel(s, r.rect.X, r.rect.Y, r.label, p)
 	}
-	base := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
-	activeStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogAccent)
+	base := theme.StyleDialog()
+	activeStyle := theme.StyleDialogAccent()
 	if r.disabled {
 		base, activeStyle = theme.StyleControlDisabled(), theme.StyleControlDisabled()
 	}

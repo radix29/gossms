@@ -164,6 +164,16 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		// early on a release outside the dialog and would strand the latch.
 		d.drag.Release(ev)
 	}
+	// A gesture the history list latched (a thumb drag, a held row press) keeps
+	// its events past the dialog's edge, so a fast thumb drag still reaches the
+	// end. Anything the list did not latch it refuses out here, and that falls
+	// to ConsumeOutsideClick as before.
+	if mx, my := ev.Position(); d.twoPane && !d.Rect().Contains(mx, my) {
+		d.TrackPress(ev)
+		if d.history.HandleMouse(ev) {
+			return true
+		}
+	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}

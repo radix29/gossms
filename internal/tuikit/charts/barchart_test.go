@@ -16,7 +16,7 @@ func barFixture() []Bar {
 }
 
 // rowBlocks counts the block glyphs on a canvas row — a bar's drawn length.
-func rowBlocks(c *Canvas, y int) int {
+func rowBlocks(c *core.Buffer, y int) int {
 	n := 0
 	for _, r := range c.Row(y) {
 		if isBlock(r) {
@@ -27,7 +27,7 @@ func rowBlocks(c *Canvas, y int) int {
 }
 
 func TestBarChartLengthsTrackValues(t *testing.T) {
-	c := NewCanvas(30, 3)
+	c := core.NewBuffer(30, 3)
 	BarChart{Bars: barFixture(), Scale: Scale{Min: 0, Max: 100}, LabelWidth: -1}.Draw(c, c.Rect())
 
 	full, half := rowBlocks(c, 0), rowBlocks(c, 1)
@@ -43,7 +43,7 @@ func TestBarChartLengthsTrackValues(t *testing.T) {
 }
 
 func TestBarChartPartialBlockForFractionalLength(t *testing.T) {
-	c := NewCanvas(10, 1)
+	c := core.NewBuffer(10, 1)
 	// 55% of 10 columns = 5.5, so five full cells and a half one.
 	BarChart{Bars: []Bar{{Value: 55, Color: colA}}, Scale: Scale{Min: 0, Max: 100}, LabelWidth: -1}.Draw(c, c.Rect())
 
@@ -57,7 +57,7 @@ func TestBarChartPartialBlockForFractionalLength(t *testing.T) {
 }
 
 func TestBarChartDrawsLabelsAndValues(t *testing.T) {
-	c := NewCanvas(40, 2)
+	c := core.NewBuffer(40, 2)
 	BarChart{Bars: barFixture()[:2], Scale: Scale{Min: 0, Max: 100}, ShowValues: true}.Draw(c, c.Rect())
 
 	rows := c.Rows()
@@ -72,7 +72,7 @@ func TestBarChartDrawsLabelsAndValues(t *testing.T) {
 // A long label must not crowd out the data: the auto gutter is capped at a
 // third of the chart, and the label shortens to fit it.
 func TestBarChartCapsAutoLabelGutter(t *testing.T) {
-	c := NewCanvas(30, 1)
+	c := core.NewBuffer(30, 1)
 	BarChart{
 		Bars:  []Bar{{Label: "An Extremely Long Metric Name", Short: "Short", Value: 100, Color: colA}},
 		Scale: Scale{Min: 0, Max: 100},
@@ -87,7 +87,7 @@ func TestBarChartCapsAutoLabelGutter(t *testing.T) {
 }
 
 func TestBarChartDropsBarsPastItsHeight(t *testing.T) {
-	c := NewCanvas(20, 2)
+	c := core.NewBuffer(20, 2)
 	BarChart{Bars: barFixture(), Scale: Scale{Min: 0, Max: 100}, LabelWidth: -1}.Draw(c, c.Rect())
 
 	if rowBlocks(c, 0) == 0 || rowBlocks(c, 1) == 0 {
@@ -96,7 +96,7 @@ func TestBarChartDropsBarsPastItsHeight(t *testing.T) {
 }
 
 func TestBarChartDegenerateInput(t *testing.T) {
-	c := NewCanvas(10, 2)
+	c := core.NewBuffer(10, 2)
 	BarChart{}.Draw(c, c.Rect())
 	BarChart{Bars: barFixture()}.Draw(c, core.Rect{X: 0, Y: 0, W: 0, H: 2})
 	BarChart{Bars: barFixture()}.Draw(c, core.Rect{X: 0, Y: 0, W: 10, H: 0})
@@ -111,7 +111,7 @@ func TestBarChartDegenerateInput(t *testing.T) {
 // A chart too narrow for both labels and bars keeps the labels: a nameless
 // bar of unknown scale says nothing at all.
 func TestBarChartKeepsLabelsWhenTooNarrowForBars(t *testing.T) {
-	c := NewCanvas(6, 1)
+	c := core.NewBuffer(6, 1)
 	BarChart{
 		Bars:       []Bar{{Label: "Batches", Short: "Btch", Value: 100, Color: colA}},
 		Scale:      Scale{Min: 0, Max: 100},
@@ -125,7 +125,7 @@ func TestBarChartKeepsLabelsWhenTooNarrowForBars(t *testing.T) {
 }
 
 func TestBarChartStackedPartsFillOneBar(t *testing.T) {
-	c := NewCanvas(20, 1)
+	c := core.NewBuffer(20, 1)
 	BarChart{
 		Bars: []Bar{{Label: "Locking", Parts: []BarPart{
 			{Value: 75, Color: colA},
@@ -154,7 +154,7 @@ func TestBarChartStackedPartsFillOneBar(t *testing.T) {
 // A stacked bar's reported value is the sum of its parts, which is also
 // what auto-scaling has to size against.
 func TestBarChartStackedTotalDrivesValueAndScale(t *testing.T) {
-	c := NewCanvas(24, 2)
+	c := core.NewBuffer(24, 2)
 	BarChart{
 		Bars: []Bar{
 			{Label: "a", Parts: []BarPart{{Value: 60, Color: colA}, {Value: 40, Color: colB}}},

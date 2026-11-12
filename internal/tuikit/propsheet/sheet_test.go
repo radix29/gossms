@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // newTestSheet builds a sheet with a nil screen (ModalDialog/PropertySheet
@@ -241,15 +242,15 @@ func TestSheetZoneTabCycling(t *testing.T) {
 	if p.zone != zonePages {
 		t.Fatalf("zone after Show() = %v, want zonePages", p.zone)
 	}
-	p.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 	if p.zone != zoneForm {
 		t.Fatalf("zone after Tab from pages = %v, want zoneForm", p.zone)
 	}
-	p.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 	if p.zone != zoneButtons {
 		t.Fatalf("zone after Tab from form (1-row form) = %v, want zoneButtons", p.zone)
 	}
-	p.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 	if p.zone != zonePages {
 		t.Fatalf("zone after Tab from buttons = %v, want zonePages (wrapped around)", p.zone)
 	}
@@ -270,9 +271,9 @@ func TestSheetScriptButtonFiresOnScript(t *testing.T) {
 		if label == "Script Changes" {
 			break
 		}
-		p.HandleKey(key(tcell.KeyRight, tcell.ModNone))
+		p.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModNone))
 	}
-	p.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 
 	if !scripted {
 		t.Fatal("OnScript was not called after activating the Script Changes button")
@@ -299,13 +300,13 @@ func TestScriptOnlySheetOffersScriptAndCancel(t *testing.T) {
 	}
 	p.setZone(zoneButtons)
 	p.btnFocus = 0
-	p.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if !scripted {
 		t.Fatal("Script did not call OnScript")
 	}
-	p.HandleKey(key(tcell.KeyRight, tcell.ModNone))
-	p.HandleKey(key(tcell.KeyRight, tcell.ModNone))
-	p.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if ran {
 		t.Fatal("a script-only sheet ran OnOK or OnApply")
 	}
@@ -324,21 +325,21 @@ func TestSheetEscapeClosesOpenDropdownInsteadOfCancelling(t *testing.T) {
 	p.Show()
 	sel := Select("Pick", []string{"a", "b"}, 0)
 	p.SetPageForm(0, 1, NewForm(sel))
-	p.HandleKey(key(tcell.KeyTab, tcell.ModNone)) // pages -> form, focuses sel
+	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) // pages -> form, focuses sel
 
 	// Form focus is logical only; the row's own focused flag is normally
 	// synced by Draw (SelectRow.Draw calls dd.Focus). No Draw happens in
 	// this test, so set it directly — without it dd.HandleKey ignores the
 	// Enter below (DropDown.HandleKey returns false when unfocused).
 	sel.dd.Focus(true)
-	sel.dd.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) // open the dropdown
+	sel.dd.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) // open the dropdown
 	if !sel.dd.IsOpen() {
 		t.Fatal("setup: expected dropdown to be open")
 	}
 
 	closed := false
 	p.OnClose = func() { closed = true }
-	p.HandleKey(key(tcell.KeyEscape, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyEscape, tcell.ModNone))
 
 	if sel.dd.IsOpen() {
 		t.Fatal("Escape should have closed the open dropdown")
@@ -354,7 +355,7 @@ func TestSheetEscapeCancelsAndFiresOnClose(t *testing.T) {
 	p.Show()
 	closed := false
 	p.OnClose = func() { closed = true }
-	p.HandleKey(key(tcell.KeyEscape, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyEscape, tcell.ModNone))
 	if p.Visible() {
 		t.Fatal("sheet still visible after Escape")
 	}
@@ -369,7 +370,7 @@ func TestSheetF5RefreshesCurrentPage(t *testing.T) {
 	p.OnLoadPage = func(page, seq int) { loads++ }
 	p.Show()
 	p.SetPageForm(0, 1, NewForm(Static("Name", "srv01")))
-	p.HandleKey(key(tcell.KeyF5, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyF5, tcell.ModNone))
 	if loads != 2 {
 		t.Fatalf("loads after F5 = %d, want 2", loads)
 	}
@@ -380,7 +381,7 @@ func TestSheetClipboardStaticRow(t *testing.T) {
 	p.OnLoadPage = func(page, seq int) {}
 	p.Show()
 	p.SetPageForm(0, 1, NewForm(Static("Name", "srv01")))
-	p.HandleKey(key(tcell.KeyTab, tcell.ModNone)) // pages -> form
+	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) // pages -> form
 
 	if !p.HasSelection() {
 		t.Fatal("HasSelection() = false for a focused Static row with a value")
@@ -395,7 +396,7 @@ func TestSheetClipboardTextRowWholeValueWithoutSelection(t *testing.T) {
 	p.OnLoadPage = func(page, seq int) {}
 	p.Show()
 	p.SetPageForm(0, 1, NewForm(Text("Name", "sa", 10)))
-	p.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 
 	if !p.HasSelection() {
 		t.Fatal("HasSelection() = false for a focused text row with no explicit selection but a value")
@@ -410,7 +411,7 @@ func TestSheetClipboardTextRowExplicitSelectionWins(t *testing.T) {
 	p.OnLoadPage = func(page, seq int) {}
 	p.Show()
 	p.SetPageForm(0, 1, NewForm(Text("Name", "hello world", 20)))
-	p.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 
 	row := p.PageForm(0).Focused().(*TextRow)
 	row.field.SelectAll()
@@ -424,7 +425,7 @@ func TestSheetClipboardPasteOnlyIntoEditableRow(t *testing.T) {
 	p.OnLoadPage = func(page, seq int) {}
 	p.Show()
 	p.SetPageForm(0, 1, NewForm(Static("Name", "srv01"), Text("Owner", "", 10)))
-	p.HandleKey(key(tcell.KeyTab, tcell.ModNone)) // focuses Static first
+	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) // focuses Static first
 
 	p.Paste("nope")
 	if p.PageForm(0).rows[0].(*StaticRow).Value() != "srv01" {

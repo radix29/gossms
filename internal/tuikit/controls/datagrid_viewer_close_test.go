@@ -4,32 +4,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
-
-// viewerScreen is a tcell.Screen fake with just enough surface to run
-// DrawOverlay. The popup is centred on the screen, so its Close button has
-// no position at all until a frame has been drawn — which is exactly what
-// these tests need to click on.
-type viewerScreen struct {
-	tcell.Screen
-	w, h int
-}
-
-func (s *viewerScreen) Size() (int, int) { return s.w, s.h }
-func (s *viewerScreen) Get(x, y int) (string, tcell.Style, int) {
-	return " ", tcell.StyleDefault, 1
-}
-func (s *viewerScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	return str, 1
-}
-
-func (s *viewerScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-func (s *viewerScreen) SetContent(x, y int, primary rune, combining []rune, style tcell.Style) {}
-func (s *viewerScreen) ShowCursor(x, y int)                                                    {}
 
 // openDrawnViewer opens the content viewer and draws one frame, so the
 // Close button has a laid-out rect.
@@ -39,7 +15,7 @@ func openDrawnViewer(t *testing.T) *DataGrid {
 	g.SetBounds(0, 0, 40, 10)
 	g.selRow, g.selCol = 1, 0
 	g.openViewer()
-	g.DrawOverlay(&viewerScreen{w: 100, h: 30})
+	g.DrawOverlay(tuikittest.NewScreen(100, 30))
 	if !g.viewOpen {
 		t.Fatal("setup: viewer did not open")
 	}
@@ -136,7 +112,7 @@ func TestDataGridViewerReopenClearsDismissLatch(t *testing.T) {
 	if g.viewDismissing {
 		t.Fatal("reopening the viewer kept the previous dismissal latched")
 	}
-	g.DrawOverlay(&viewerScreen{w: 100, h: 30})
+	g.DrawOverlay(tuikittest.NewScreen(100, 30))
 	g.HandleMouse(tcell.NewEventMouse(g.viewCloseRect.X+1, g.viewCloseRect.Y, tcell.Button1, tcell.ModNone))
 	if g.viewOpen {
 		t.Error("the reopened viewer refused the first click on [ Close ]")
@@ -155,5 +131,23 @@ func TestDataGridViewerClosesWhenDataReplaced(t *testing.T) {
 	}
 	if g.OverlayActive() {
 		t.Error("OverlayActive stayed true after the data was replaced")
+	}
+}
+
+// The viewer is read-only, so Cut removes nothing and returns "": a host
+// treats "" as "nothing cut" and keeps the clipboard. Cut once returned the
+// selection, and the app reported "Cut to clipboard" for text still on screen.
+func TestDataGridViewerCutReturnsNothing(t *testing.T) {
+	g := openDrawnViewer(t)
+	g.SelectAll()
+	if !g.HasSelection() || g.SelectedText() == "" {
+		t.Fatal("setup: Select All in the viewer selected nothing")
+	}
+	before := g.viewEditor.Text()
+	if got := g.Cut(); got != "" {
+		t.Errorf("Cut() = %q from the read-only viewer, want \"\"", got)
+	}
+	if g.viewEditor.Text() != before {
+		t.Error("Cut changed the read-only viewer's text")
 	}
 }

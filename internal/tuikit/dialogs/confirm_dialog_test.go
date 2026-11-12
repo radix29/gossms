@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func newTestConfirmDialog(t *testing.T) *ConfirmDialog {
@@ -18,7 +19,7 @@ func TestConfirmDialogEscapeAnswersNo(t *testing.T) {
 	var got *bool
 	d.ShowConfirm("Discard Changes", "Discard your changes?", func(c bool) { got = &c })
 
-	d.HandleKey(key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
 
 	if d.Visible() {
 		t.Fatal("dialog stayed open after Escape")
@@ -39,7 +40,7 @@ func TestConfirmCancelEscapeAnswersCancel(t *testing.T) {
 	d.ShowConfirmCancel("Close Query", "Query 1 has unsaved changes. Save before closing?",
 		func(a ConfirmAnswer) { got = &a })
 
-	d.HandleKey(key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
 
 	if d.Visible() {
 		t.Fatal("dialog stayed open after Escape")
@@ -59,9 +60,9 @@ func TestConfirmCancelEnterAnswersFocusedButton(t *testing.T) {
 		var got *ConfirmAnswer
 		d.ShowConfirmCancel("Close Query", "Save?", func(a ConfirmAnswer) { got = &a })
 		for range i {
-			d.HandleKey(key(tcell.KeyTab))
+			d.HandleKey(tuikittest.Key(tcell.KeyTab))
 		}
-		d.HandleKey(key(tcell.KeyEnter))
+		d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 		if got == nil {
 			t.Fatalf("%d tabs then Enter: callback never fired", i)
 		}
@@ -76,12 +77,12 @@ func TestConfirmCancelTabWrapsOverThreeButtons(t *testing.T) {
 	d := newTestConfirmDialog(t)
 	d.ShowConfirmCancel("Close Query", "Save?", func(ConfirmAnswer) {})
 	for range 3 {
-		d.HandleKey(key(tcell.KeyTab))
+		d.HandleKey(tuikittest.Key(tcell.KeyTab))
 	}
 	if d.btnFocus != 0 {
 		t.Errorf("btnFocus after three Tabs = %d, want 0 (wrapped)", d.btnFocus)
 	}
-	d.HandleKey(key(tcell.KeyLeft))
+	d.HandleKey(tuikittest.Key(tcell.KeyLeft))
 	if d.btnFocus != 2 {
 		t.Errorf("btnFocus after Left from the first button = %d, want 2 (wrapped to Cancel)", d.btnFocus)
 	}
@@ -95,8 +96,8 @@ func TestConfirmDialogHandlerFiresOncePerShowing(t *testing.T) {
 	calls := 0
 	d.ShowConfirm("Discard Changes", "Discard?", func(bool) { calls++ })
 
-	d.HandleKey(key(tcell.KeyEscape))
-	d.HandleKey(key(tcell.KeyEscape)) // dialog is hidden; must be a no-op
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape)) // dialog is hidden; must be a no-op
 
 	if calls != 1 {
 		t.Errorf("handler fired %d times, want 1", calls)
@@ -126,12 +127,12 @@ func TestConfirmOptionReportsTheCheckboxState(t *testing.T) {
 				c.initial, func(ok, ch bool) { confirmed, checked, fired = ok, ch, true })
 
 			if c.toggle {
-				d.HandleKey(key(tcell.KeyTab)) // No
-				d.HandleKey(key(tcell.KeyTab)) // the checkbox
-				d.HandleKey(rn(' '))
-				d.HandleKey(key(tcell.KeyTab)) // back to Yes
+				d.HandleKey(tuikittest.Key(tcell.KeyTab)) // No
+				d.HandleKey(tuikittest.Key(tcell.KeyTab)) // the checkbox
+				d.HandleKey(tuikittest.Rune(' '))
+				d.HandleKey(tuikittest.Key(tcell.KeyTab)) // back to Yes
 			}
-			d.HandleKey(key(tcell.KeyEnter))
+			d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 
 			if !fired {
 				t.Fatal("callback never fired")
@@ -155,9 +156,9 @@ func TestConfirmOptionEnterOnTheCheckboxDoesNotAnswer(t *testing.T) {
 	d.ShowConfirmOption("Delete Table", "Delete dbo.Orders?", "Cascade", false,
 		func(bool, bool) { fired = true })
 
-	d.HandleKey(key(tcell.KeyTab))
-	d.HandleKey(key(tcell.KeyTab)) // on the checkbox
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyTab))
+	d.HandleKey(tuikittest.Key(tcell.KeyTab)) // on the checkbox
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 
 	if fired {
 		t.Fatal("Enter on the checkbox answered the question")
@@ -178,7 +179,7 @@ func TestConfirmOptionEnterOnTheCheckboxDoesNotAnswer(t *testing.T) {
 func TestConfirmOptionDoesNotSurviveTheNextShowing(t *testing.T) {
 	d := newTestConfirmDialog(t)
 	d.ShowConfirmOption("Delete Table", "Delete dbo.Orders?", "Cascade", true, func(bool, bool) {})
-	d.HandleKey(key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
 
 	var got *bool
 	d.ShowConfirm("Discard Changes", "Discard your changes?", func(c bool) { got = &c })
@@ -186,9 +187,9 @@ func TestConfirmOptionDoesNotSurviveTheNextShowing(t *testing.T) {
 		t.Fatal("the previous showing's checkbox is still installed")
 	}
 	// Two Tabs on a two-button prompt with no checkbox come back to Yes.
-	d.HandleKey(key(tcell.KeyTab))
-	d.HandleKey(key(tcell.KeyTab))
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyTab))
+	d.HandleKey(tuikittest.Key(tcell.KeyTab))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 	if got == nil || !*got {
 		t.Errorf("answer = %v, want Yes — the focus cycle is one step longer than the buttons", got)
 	}
@@ -202,7 +203,7 @@ func TestConfirmOptionDoesNotSurviveTheNextShowing(t *testing.T) {
 // press the box, drift off the dialog, release, and the next click on it does
 // nothing at all.
 func TestConfirmOptionReleaseOutsideDoesNotStrandTheLatch(t *testing.T) {
-	d := NewConfirmDialog(&sizedScreen{w: 200, h: 50})
+	d := NewConfirmDialog(tuikittest.NewScreen(200, 50))
 	d.ShowConfirmOption("Delete Table", "Delete dbo.Orders?", "Cascade", false, func(bool, bool) {})
 	// Where Draw puts it; laying it out by hand keeps this about the routing.
 	inner := d.InnerRect()

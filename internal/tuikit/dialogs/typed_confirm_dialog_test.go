@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func newTestTypedConfirmDialog(t *testing.T) *TypedConfirmDialog {
@@ -18,9 +19,9 @@ func TestTypedConfirmDialogMismatchRefusesAndStaysOpen(t *testing.T) {
 		func(confirmed bool) { got = &confirmed })
 
 	for _, r := range "nope" {
-		d.HandleKey(rn(r))
+		d.HandleKey(tuikittest.Rune(r))
 	}
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 
 	if !d.Visible() {
 		t.Fatal("dialog closed on a mismatched confirm — should stay open")
@@ -40,9 +41,9 @@ func TestTypedConfirmDialogMatchConfirms(t *testing.T) {
 		func(confirmed bool) { got = &confirmed })
 
 	for _, r := range "Heal" {
-		d.HandleKey(rn(r))
+		d.HandleKey(tuikittest.Rune(r))
 	}
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 
 	if d.Visible() {
 		t.Fatal("dialog stayed open after a matching confirm")
@@ -57,7 +58,7 @@ func TestTypedConfirmDialogMatchIsCaseInsensitiveAndTrimsSpace(t *testing.T) {
 	d.ShowTypedConfirm("Confirm", "msg", "Heal", func(bool) {})
 
 	for _, r := range "  HEAL  " {
-		d.HandleKey(rn(r))
+		d.HandleKey(tuikittest.Rune(r))
 	}
 	if !d.matched() {
 		t.Errorf("expected %q to match required %q case-insensitively, trimmed", d.input.Value(), d.required)
@@ -69,7 +70,7 @@ func TestTypedConfirmDialogEscapeCancelsWithoutRequiringMatch(t *testing.T) {
 	var got *bool
 	d.ShowTypedConfirm("Confirm", "msg", "Heal", func(confirmed bool) { got = &confirmed })
 
-	d.HandleKey(key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
 
 	if d.Visible() {
 		t.Fatal("dialog stayed open after Escape")

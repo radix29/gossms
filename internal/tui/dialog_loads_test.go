@@ -9,6 +9,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // The async loads in these tests run against a bare ServerConn, so their
@@ -21,7 +22,7 @@ import (
 // the restore never began.
 func TestRestoreHistoryLoadDoesNotDropTheTargetCheck(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewRestoreDialog(a)
 	quietLog(t)
 	a.screen = nil
@@ -43,7 +44,7 @@ func TestRestoreHistoryLoadDoesNotDropTheTargetCheck(t *testing.T) {
 // result still on its way is dropped, and cancelled, so its query stops now.
 func TestRestoreHideAbandonsItsLoads(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewRestoreDialog(a)
 	quietLog(t)
 	a.screen = nil
@@ -64,7 +65,7 @@ func TestRestoreHideAbandonsItsLoads(t *testing.T) {
 
 func TestBackupHideAbandonsTheDatabaseList(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewBackupDialog(a)
 	quietLog(t)
 	a.screen = nil
@@ -84,7 +85,7 @@ func TestBackupHideAbandonsTheDatabaseList(t *testing.T) {
 // filling the grid with paths for a snapshot no longer described.
 func TestSnapshotNameChangeAbandonsTheDefaultsRead(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewNewSnapshotDialog(a)
 	quietLog(t)
 	a.screen = nil
@@ -128,7 +129,7 @@ func TestSnapshotNameChangeAbandonsTheDefaultsRead(t *testing.T) {
 // run to childFetchTimeout.
 func TestDependenciesCloseAbandonsTheFetch(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewPropertiesDialog(a)
 	_, seq := d.run.Begin(t.Context())
 	d.ShowProperties("Dependencies: dbo.t", nil)

@@ -4,7 +4,7 @@
 // Server/Database/Login Properties.
 //
 // propsheet is presentation only. It never runs a query, spawns a goroutine, or
-// imports internal/tui or gosmo; like every tuikit package it communicates
+// imports application code; like every tuikit package it communicates
 // outward only through callbacks (OnLoadPage, OnApply, OnOK, OnScript, OnClose,
 // ConfirmDiscard) and expects its caller to drive the async parts:
 //
@@ -28,7 +28,6 @@
 // an Apply, so the apply, usually on another goroutine, never touches a widget.
 //
 // Script Changes (OnScript) is not a distinct code path: the caller reuses the
-// same per-page apply logic as OnApply/OnOK, invoked under gosmo.WithScript so
-// every write is captured as SQL text instead of executed (see
-// internal/tui/prop_apply.go's runScript for the app-layer half).
+// same per-page apply logic as OnApply/OnOK, run in a mode where every write is
+// captured as SQL text instead of executed.
 package propsheet

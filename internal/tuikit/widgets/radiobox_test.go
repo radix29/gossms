@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // TestRadioBoxBoundaryArrowsNotConsumed pins down that Up at the first
@@ -14,18 +15,18 @@ func TestRadioBoxBoundaryArrowsNotConsumed(t *testing.T) {
 	r := NewRadioBox("", []string{"one", "two"})
 	r.Focus(true)
 
-	if r.HandleKey(key(tcell.KeyUp, tcell.ModNone)) {
+	if r.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone)) {
 		t.Fatal("HandleKey(Up) at first option = true, want false")
 	}
 
-	if !r.HandleKey(key(tcell.KeyDown, tcell.ModNone)) {
+	if !r.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
 		t.Fatal("HandleKey(Down) from first to second option = false, want true")
 	}
 	if r.Selected() != 1 {
 		t.Fatalf("Selected() = %d, want 1", r.Selected())
 	}
 
-	if r.HandleKey(key(tcell.KeyDown, tcell.ModNone)) {
+	if r.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
 		t.Fatal("HandleKey(Down) at last option = true, want false")
 	}
 }
@@ -43,11 +44,11 @@ func TestDisabledRadioBoxRefusesInput(t *testing.T) {
 	if r.Enabled() {
 		t.Fatal("SetEnabled(false) did not take")
 	}
-	if r.HandleKey(key(tcell.KeyDown, tcell.ModNone)) {
+	if r.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
 		t.Error("a disabled radio group consumed Down")
 	}
 	// Row 2 is the label, so the options start at row 3.
-	if r.HandleMouse(mouse(5, 5, tcell.Button1)) {
+	if r.HandleMouse(tuikittest.Mouse(5, 5, tcell.Button1)) {
 		t.Error("a disabled radio group consumed a click")
 	}
 	if got := r.Selected(); got != 1 {
@@ -60,7 +61,7 @@ func TestDisabledRadioBoxRefusesInput(t *testing.T) {
 	}
 
 	r.SetEnabled(true)
-	if !r.HandleKey(key(tcell.KeyDown, tcell.ModNone)) || r.Selected() != 1 {
+	if !r.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) || r.Selected() != 1 {
 		t.Error("re-enabling did not restore input")
 	}
 }
@@ -77,19 +78,19 @@ func TestRadioBoxGreyedOptionIsSkipped(t *testing.T) {
 	if r.OptionEnabled(1) || !r.OptionEnabled(0) || !r.OptionEnabled(2) {
 		t.Fatalf("OptionEnabled = %v %v %v, want true false true", r.OptionEnabled(0), r.OptionEnabled(1), r.OptionEnabled(2))
 	}
-	if !r.HandleKey(key(tcell.KeyDown, tcell.ModNone)) || r.Selected() != 2 {
+	if !r.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) || r.Selected() != 2 {
 		t.Errorf("Down from Full selected %d, want 2 — over the greyed option", r.Selected())
 	}
-	if !r.HandleKey(key(tcell.KeyUp, tcell.ModNone)) || r.Selected() != 0 {
+	if !r.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone)) || r.Selected() != 0 {
 		t.Errorf("Up from 2 selected %d, want 0", r.Selected())
 	}
 	// Options start at row 3; Differential is row 4.
-	if r.HandleMouse(mouse(5, 4, tcell.Button1)) || r.Selected() != 0 {
+	if r.HandleMouse(tuikittest.Mouse(5, 4, tcell.Button1)) || r.Selected() != 0 {
 		t.Errorf("a click on the greyed option was taken: selected %d", r.Selected())
 	}
 
 	r.SetOptionEnabled(2, false)
-	if r.HandleKey(key(tcell.KeyDown, tcell.ModNone)) {
+	if r.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
 		t.Error("Down with only greyed options below was consumed; it must fall through like the last option")
 	}
 	r.SetSelected(1)

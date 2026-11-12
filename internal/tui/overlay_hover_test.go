@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // TestOverlayBlocksHoverUnderneath: pointer motion arrives as ButtonNone, which
@@ -36,9 +37,11 @@ func TestOverlayBlocksHoverUnderneath(t *testing.T) {
 			a.toolbar.HandleMouse(tcell.NewEventMouse(dragTestScreenW-2, 0, tcell.ButtonNone, 0))
 			a.handleMouse(tcell.NewEventMouse(dragTestScreenW-2, 0, tcell.ButtonNone, 0))
 
-			s := &recordingScreen{w: dragTestScreenW, h: dragTestScreenH, runes: map[[2]int]rune{}}
+			s := tuikittest.NewScreen(dragTestScreenW, dragTestScreenH)
+			s.Fill('~', tcell.StyleDefault) // so a drawn space shows too
+			blank := s.Snapshot()
 			a.toolbar.DrawOverlay(s)
-			if got := len(s.runes) > 0; got != tc.want {
+			if got := s.Snapshot() != blank; got != tc.want {
 				t.Errorf("tooltip drawn = %v, want %v", got, tc.want)
 			}
 		})

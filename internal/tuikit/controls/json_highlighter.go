@@ -1,7 +1,6 @@
 package controls
 
 import (
-	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -9,8 +8,8 @@ import (
 // JSON syntax highlighter (can be used as a Highlighter for Editor)
 // ---------------------------------------------------------------------------
 
-// JSONHighlighter is the built-in JSON syntax highlighter for Editor, used when a
-// JSON result-set cell is opened in its own panel (see internal/tui/cell_value.go).
+// JSONHighlighter is the built-in JSON syntax highlighter for Editor, for a host
+// showing JSON text (e.g. a result-set cell opened in its own panel).
 //
 // Unlike SQLHighlighter and XMLHighlighter this needs no prefixStates cache, and
 // that is a property of JSON, not an omission: no JSON token can span a line. A
@@ -25,10 +24,10 @@ func JSONHighlighter(p *theme.Palette) Highlighter {
 	return func(doc *Document, idx int) []ColorRun {
 		// Built per call, not once: p is the live palette, so a theme switch
 		// recolours an open editor.
-		keyStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorKeyword).Bold(true)
-		strStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorString)
-		numStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)
-		litStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorComment)
+		keyStyle := theme.On(p.EditorBg, p.EditorKeyword).Bold(true)
+		strStyle := theme.On(p.EditorBg, p.EditorString)
+		numStyle := theme.On(p.EditorBg, p.EditorNumber)
+		litStyle := theme.On(p.EditorBg, p.EditorComment)
 		line := doc.Line(idx)
 		runs := make([]ColorRun, 0, 8)
 		for i := 0; i < len(line); {

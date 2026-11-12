@@ -8,6 +8,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -52,7 +53,7 @@ func dragOutOf(t *testing.T, host interface {
 
 func TestConnectDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewConnectDialog(a)
 	d.Show()
 	d.layoutFields()
@@ -86,7 +87,7 @@ func TestConnectDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 // dialog dismissed mid-drag would reopen routing every click to that field.
 func TestConnectDialogShowClearsTheDragLatch(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewConnectDialog(a)
 	d.Show()
 	d.layoutFields()
@@ -106,7 +107,7 @@ func TestConnectDialogShowClearsTheDragLatch(t *testing.T) {
 
 func TestBackupDialogDragOutOfDestKeepsExtending(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewBackupDialog(a)
 	// show builds the widgets, and also kicks off the async database-list
 	// fetch. Against a bare ServerConn that goroutine panics on the nil
@@ -140,7 +141,7 @@ func TestBackupDialogDragOutOfDestKeepsExtending(t *testing.T) {
 
 func TestRestoreDialogDragOutOfTargetKeepsExtending(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewRestoreDialog(a)
 	a.screen = nil // see the backup test above
 	d.show(&db.ServerConn{}, "testdb")
@@ -176,7 +177,7 @@ func TestRestoreDialogDragOutOfTargetKeepsExtending(t *testing.T) {
 func newOptionsForDrag(t *testing.T) *OptionsDialog {
 	t.Helper()
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewOptionsDialog(a)
 	d.Show()
 	inner := d.InnerRect()
@@ -257,7 +258,7 @@ func TestOptionsDialogShowClearsTheDragLatch(t *testing.T) {
 
 func TestOptionsDialogReleaseOutsideClearsTheFieldLatch(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewOptionsDialog(a)
 	d.Show()
 	inner := d.InnerRect()
@@ -279,7 +280,7 @@ func TestOptionsDialogReleaseOutsideClearsTheFieldLatch(t *testing.T) {
 // protocol, and a copy is only ever one edit away from hit-testing the motion.
 func TestLogSearchDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40} // before the dialog: InitModal captures it
+	a.screen = tuikittest.NewScreen(100, 40) // before the dialog: InitModal captures it
 	d := NewLogSearchDialog(a)
 	d.ShowLogSearch(gosmo.LogSearch{}, func(gosmo.LogSearch) {})
 	d.layout() // Draw's job; the test isn't drawing
@@ -332,7 +333,7 @@ func TestFilterDialogDragOutOfAValueFieldKeepsExtending(t *testing.T) {
 // the only one of the seven with no drag test of its own until now.
 func TestFindDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40} // before the dialog: InitModal captures it
+	a.screen = tuikittest.NewScreen(100, 40) // before the dialog: InitModal captures it
 	a.findDialog = NewFindReplaceDialog(a)
 	qp := NewQueryPanel(a, "Query 1")
 	qp.SetBounds(0, 0, 80, 24)
@@ -372,7 +373,7 @@ func TestFindDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 // wherever the old cursor sat.
 func TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewConnectDialog(a)
 	d.Show()
 	d.layoutFields()

@@ -121,7 +121,7 @@ func TestRuneWidthASCIIFastPathAgrees(t *testing.T) {
 	}
 }
 
-// graphemeProbes are the clusters K1 named, each wider or narrower than the sum
+// graphemeProbes are clusters each wider or narrower than the sum
 // of its runes' widths, with the width tcell gives the cluster.
 var graphemeProbes = []struct {
 	s     string
@@ -136,7 +136,7 @@ var graphemeProbes = []struct {
 	{"각", 2},   // conjoining Hangul jamo: runes sum to 4
 }
 
-// TestGraphemeWidthsMatchTheTerminal is K1: every helper measures by grapheme
+// TestGraphemeWidthsMatchTheTerminal: every helper measures by grapheme
 // cluster, as DisplayWidth and tcell do, so a cluster after "x" starts at column
 // 1 and the "y" after it at 1+width.
 func TestGraphemeWidthsMatchTheTerminal(t *testing.T) {

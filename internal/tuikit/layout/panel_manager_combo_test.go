@@ -3,60 +3,16 @@ package layout
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
-
-// comboScreen records what Draw actually paints, so the tests below can ask
-// which panel is on a given row instead of recomputing the geometry they are
-// supposed to be checking. Same minimal-fake approach as
-// controls.fakeMenuScreen.
-type comboScreen struct {
-	tcell.Screen
-	w, h  int
-	cells map[[2]int]rune
-}
-
-func newComboScreen(w, h int) *comboScreen {
-	return &comboScreen{w: w, h: h, cells: map[[2]int]rune{}}
-}
-
-func (s *comboScreen) Size() (int, int) { return s.w, s.h }
-
-func (s *comboScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
-	s.cells[[2]int{x, y}] = primary
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-func (s *comboScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
-}
-
-func (s *comboScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-// row returns the text painted on row y between columns [x, x+w).
-func (s *comboScreen) row(x, y, w int) string {
-	var b strings.Builder
-	for i := range w {
-		r, ok := s.cells[[2]int{x + i, y}]
-		if !ok {
-			r = ' '
-		}
-		b.WriteRune(r)
-	}
-	return strings.TrimSpace(b.String())
-}
 
 // openCombo fills pm with n panels, sizes it, and clicks the tab bar's [v]
 // arrow. The release first is what makes the click a fresh press rather than
 // a continued hold (see press).
-func openCombo(t *testing.T, n, w, h int) (*PanelManager, *comboScreen) {
+func openCombo(t *testing.T, n, w, h int) (*PanelManager, *tuikittest.Screen) {
 	t.Helper()
 	pm := NewPanelManager()
 	for i := range n {
@@ -70,7 +26,7 @@ func openCombo(t *testing.T, n, w, h int) (*PanelManager, *comboScreen) {
 	if !pm.comboOpen {
 		t.Fatal("combo did not open")
 	}
-	return pm, newComboScreen(w, h)
+	return pm, tuikittest.NewScreen(w, h)
 }
 
 // The drop-down used to draw one row per panel from the first content row
@@ -85,10 +41,10 @@ func TestComboListStopsAtTheBottomOfThePanelManager(t *testing.T) {
 		t.Fatalf("comboGeom height = %d, want %d (the rows below the tab bar)", listH, pm.contentH())
 	}
 	last := pm.rect.Y + pm.rect.H - 1
-	if got := s.row(listX, last, listW); got == "" {
+	if got := strings.TrimSpace(s.Text(listX, last, listW)); got == "" {
 		t.Errorf("nothing drawn on the last usable row %d; the list is short by a row", last)
 	}
-	if got := s.row(listX, last+1, listW); got != "" {
+	if got := strings.TrimSpace(s.Text(listX, last+1, listW)); got != "" {
 		t.Errorf("row %d is below the panel manager but has %q painted on it", last+1, got)
 	}
 }
@@ -114,7 +70,7 @@ func TestComboArrowingPastTheVisibleWindowScrollsIt(t *testing.T) {
 	want := pm.panels[29].Title()
 	found := false
 	for row := range listH {
-		if strings.Contains(s.row(listX, pm.contentY()+row, listW), want) {
+		if strings.Contains(strings.TrimSpace(s.Text(listX, pm.contentY()+row, listW)), want) {
 			found = true
 		}
 	}
@@ -136,7 +92,7 @@ func TestComboClickSelectsThePanelDrawnUnderIt(t *testing.T) {
 	listX, listW, listH := pm.comboGeom()
 	// The list stays where it was scrolled to; only the highlight moved.
 	y := pm.contentY() + listH - 1
-	drawn := s.row(listX, y, listW)
+	drawn := strings.TrimSpace(s.Text(listX, y, listW))
 
 	pm.HandleMouse(tcell.NewEventMouse(listX+1, y, tcell.ButtonNone, tcell.ModNone))
 	if !pm.HandleMouse(tcell.NewEventMouse(listX+1, y, tcell.Button1, tcell.ModNone)) {
@@ -181,11 +137,11 @@ func TestComboShortListDrawsEveryPanelAndNoScrollbar(t *testing.T) {
 		t.Fatalf("comboGeom height = %d, want 3", listH)
 	}
 	for i, panel := range pm.panels {
-		if got := s.row(listX, pm.contentY()+i, listW); !strings.Contains(got, panel.Title()) {
+		if got := strings.TrimSpace(s.Text(listX, pm.contentY()+i, listW)); !strings.Contains(got, panel.Title()) {
 			t.Errorf("row %d = %q, want it to contain %q", i, got, panel.Title())
 		}
 	}
-	if r := s.cells[[2]int{listX + listW - 1, pm.contentY()}]; r == '│' || r == '█' {
+	if r := s.RuneAt(listX+listW-1, pm.contentY()); r == '│' || r == '█' {
 		t.Errorf("a scrollbar was drawn for a list that fits (%q)", r)
 	}
 }

@@ -21,6 +21,10 @@ go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/tuikit/... |
 
 must print exactly `github.com/gdamore/tcell/v3`,
 `github.com/gdamore/tcell/v3/color`, `github.com/clipperhouse/displaywidth`.
+`TestTuikitImportsOnlyItsDeclaredDependencies`
+(`internal/tuikit/core/imports_test.go`) enforces it, and also fails a tuikit
+*test* file that imports gosmo or another gossms package — it lives inside
+tuikit so it moves with the library.
 
 **Invariant: `internal/cli` must not reach `internal/tui`, tcell, or any
 `internal/tuikit` package except the stdlib-only `tuikit/sqltext`.** The
@@ -281,13 +285,14 @@ gossms/
 │   │
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
 │   │   ├── theme/                # colour palette + derived tcell.Style helpers
-│   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers, ClipScreen, the ClipboardTarget/ClipboardHost contract, Gesture (a router's press-claims-the-gesture record)
+│   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers, ClipScreen, Buffer (an off-screen tcell.Screen: chart canvases, test screens), the ClipboardTarget/ClipboardHost contract, Gesture (a router's press-claims-the-gesture record)
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox, Spinner (a busy indicator as a pure function of elapsed time)
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/Progress/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
-│   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
+│   │   ├── charts/                 # terminal charts from generic series data (rendered into a core.Buffer): scales, block glyphs, axis/legend, history/stacked/bar/KPI types
 │   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, ToolRow (a panel's text toolbar: layout, hit-test, "More ▾"), TabStrip, TreeView, DataGrid, ListBox, Editor (Document, LineBuffer; +SQL/XML/JSON highlighters)
 │   │   ├── sqltext/                 # The one T-SQL lexer (Next) and the rules built on it, shared by the editor, internal/query and sqlparse: the "GO" separator line rule, SplitBatches, StatementAt (Ctrl+Enter's statement select) and its leader rule for a caller's own tokens (StatementCutter, Format Document's SQL layout), the statement-verb sets; standard library only
+│   │   ├── tuikittest/              # test kit for _test files: Screen (a core.Buffer you draw into and read back), key/mouse event builders
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework (rows incl. EditorRow, the embedded multi-line controls.Editor)
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // showTestFilterDialog opens the dialog on a Tables folder (the widest set
@@ -25,7 +26,7 @@ func showTestFilterDialogOnScreen(t *testing.T, w, h int) *FilterDialog {
 	t.Helper()
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")
-	a.screen = &fakeSizedScreen{w: w, h: h}
+	a.screen = tuikittest.NewScreen(w, h)
 	a.filterDialog = NewFilterDialog(a)
 	node := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, DBName: "HealthClinic", conn: sc}}
 	a.filterDialog.show(node, filterProps(NodeTables), "server-one")

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // fakeWindowsFS is a stand-in for a remote Windows host: backslash paths and
@@ -346,7 +348,7 @@ func TestFileDialogWrapsALongListingError(t *testing.T) {
 		"lists directories through xp_dirtree, which requires sysadmin"
 
 	fs := newFakeWindowsFS()
-	rec := newDrawScreen(120, 40)
+	rec := tuikittest.NewScreen(120, 40)
 	d := NewFileDialog(rec)
 	d.ShowOpenOn(fs, "Select Backup File", `C:\Backup\`, nil)
 	d.listErr = msg
@@ -358,7 +360,7 @@ func TestFileDialogWrapsALongListingError(t *testing.T) {
 	for row := 0; row < lr.H; row++ {
 		var line []rune
 		for x := lr.X; x < lr.Right(); x++ {
-			line = append(line, rec.at(x, lr.Y+row))
+			line = append(line, rec.RuneAt(x, lr.Y+row))
 		}
 		drawn = append(drawn, strings.TrimRight(string(line), " \x00"))
 	}
@@ -381,7 +383,7 @@ func TestFileDialogLeavesAnUnknownSizeAndDateBlank(t *testing.T) {
 		{Name: "keyfile.dll", SizeUnknown: true},
 		{Name: "empty.bak"},
 	}
-	rec := newDrawScreen(120, 40)
+	rec := tuikittest.NewScreen(120, 40)
 	d := NewFileDialog(rec)
 	d.ShowOpenOn(fs, "Select Backup File", `C:\Backup\`, nil)
 	d.Draw(rec)
@@ -394,7 +396,7 @@ func TestFileDialogLeavesAnUnknownSizeAndDateBlank(t *testing.T) {
 		for y := 0; y < lr.H; y++ {
 			var line []rune
 			for x := lr.X; x < lr.Right(); x++ {
-				line = append(line, rec.at(x, lr.Y+y))
+				line = append(line, rec.RuneAt(x, lr.Y+y))
 			}
 			if got := strings.TrimRight(string(line), " \x00"); strings.Contains(got, name) {
 				return got

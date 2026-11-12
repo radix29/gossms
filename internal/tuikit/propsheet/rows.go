@@ -41,10 +41,9 @@ func (r *SectionRow) Height(w int) int   { return 2 }
 func (r *SectionRow) Layout(x, y, w int) { r.x, r.y, r.w = x, y, w }
 func (r *SectionRow) Focusable() bool    { return false }
 func (r *SectionRow) Draw(s tcell.Screen, focused bool) {
-	p := theme.Active()
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText).Bold(true)
+	st := theme.StyleDialog().Bold(true)
 	core.DrawText(s, r.x, r.y, st, r.title)
-	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
+	sep := theme.StyleDialogLine()
 	core.DrawHLine(s, r.x, r.y+1, r.w, sep)
 }
 
@@ -83,8 +82,7 @@ func (r *NoteRow) Layout(x, y, w int) {
 }
 func (r *NoteRow) Focusable() bool { return false }
 func (r *NoteRow) Draw(s tcell.Screen, focused bool) {
-	p := theme.Active()
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+	st := theme.StyleDialogDim()
 	lines := r.lines
 	if r.drawHeight >= 0 && r.drawHeight < len(lines) {
 		lines = lines[:r.drawHeight]
@@ -107,7 +105,7 @@ func (r *NoteRow) SetDrawHeight(h int) { r.drawHeight = h }
 // action did nothing: an empty name, a duplicate, nothing selected. Blank and
 // invisible until set.
 //
-// A page is built by a plain function with no App or dialog in scope, so without
+// A page is built by a plain function with no application or dialog in scope, so without
 // this an Add that hit a duplicate could only `return`, leaving a button that
 // looks broken. The row also sits next to the control just used, unlike the
 // status bar behind the dialog.
@@ -169,7 +167,7 @@ func (r *HintRow) Draw(s tcell.Screen, focused bool) {
 	if r.isError {
 		fg = p.DialogError
 	}
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(fg)
+	st := theme.On(p.DialogBg, fg)
 	for i, line := range r.lines {
 		core.DrawTextClipped(s, r.x, r.y+i, r.w, st, line)
 	}
@@ -234,9 +232,8 @@ func (r *StaticRow) SetDrawHeight(h int) { r.drawHeight = h }
 // focused row is highlighted across every line it draws: flat rows still take
 // focus, so Ctrl+C can copy them.
 func drawFlat(s tcell.Screen, x, y, w int, label, value string, drawHeight int, focused bool) {
-	p := theme.Active()
-	lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
-	vst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	lst := theme.StyleDialogDim()
+	vst := theme.StyleDialog()
 	lines := flatLines(value, w)
 	if drawHeight >= 1 && drawHeight < len(lines) {
 		lines = lines[:drawHeight]

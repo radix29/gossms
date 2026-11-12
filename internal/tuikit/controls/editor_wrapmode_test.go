@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // newWrappedTestEditor returns an editor laid out narrow enough that text wraps,
@@ -209,13 +210,14 @@ func TestWrappedCaretAtEndOfFullWidthLineIsShown(t *testing.T) {
 			e.cursorRow, e.cursorCol = 0, len([]rune(tc.line))
 			e.ensureCursorVisible()
 
-			s := newGlyphScreen(w, h)
+			s := tuikittest.NewScreen(w, h)
 			e.Draw(s)
-			if !s.curSet {
-				t.Fatalf("caret not shown")
+			cx, cy, shown := s.Cursor()
+			if !shown {
+				t.Fatalf("caret not shown (a position off the screen hides it)")
 			}
-			if s.curX < 0 || s.curX >= w || s.curY != tc.wantRow {
-				t.Fatalf("caret at (%d,%d), want inside the %d-wide area on row %d", s.curX, s.curY, w, tc.wantRow)
+			if cx < 0 || cx >= w || cy != tc.wantRow {
+				t.Fatalf("caret at (%d,%d), want inside the %d-wide area on row %d", cx, cy, w, tc.wantRow)
 			}
 		})
 	}

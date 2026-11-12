@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // TestDataGridScrollbarDragScrolls confirms a Button1 press on the
@@ -151,7 +152,7 @@ func TestEditorCompletionPopupScrollbarDragScrolls(t *testing.T) {
 		candidates[i] = "c" + string(rune('a'+i))
 	}
 	e.SetCompletionProvider(testCompletionProvider(candidates...))
-	e.HandleKey(runeKey('c', tcell.ModNone))
+	e.HandleKey(tuikittest.Rune('c', tcell.ModNone))
 	if !e.completionOpen {
 		t.Fatal("completion popup should be open after typing a matching prefix")
 	}

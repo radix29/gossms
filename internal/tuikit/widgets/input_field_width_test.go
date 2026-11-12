@@ -2,10 +2,10 @@ package widgets
 
 import (
 	"testing"
-	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -19,35 +19,6 @@ import (
 // filter box put the caret one column left of where it rendered. Each test
 // below fails against that model.
 
-// fieldScreen captures the runes a Draw painted, and their styles.
-type fieldScreen struct {
-	tcell.Screen
-	w, h   int
-	runes  map[[2]int]rune
-	styles map[[2]int]tcell.Style
-}
-
-func newFieldScreen(w, h int) *fieldScreen {
-	return &fieldScreen{w: w, h: h, runes: map[[2]int]rune{}, styles: map[[2]int]tcell.Style{}}
-}
-func (s *fieldScreen) Size() (int, int) { return s.w, s.h }
-func (s *fieldScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
-	s.runes[[2]int{x, y}] = primary
-	s.styles[[2]int{x, y}] = style
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-func (s *fieldScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
-}
-
-func (s *fieldScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-func (s *fieldScreen) ShowCursor(x, y int) {}
-
 // TestInputFieldDrawsWideRunesInTwoColumns: with a rune-per-column model the
 // "ok" after two ideographs starts at the box's column 2, over the second
 // half of the second ideograph.
@@ -56,14 +27,14 @@ func TestInputFieldDrawsWideRunesInTwoColumns(t *testing.T) {
 	f.SetBounds(0, 0)
 	f.SetValue("世界ok")
 
-	s := newFieldScreen(20, 2)
+	s := tuikittest.NewScreen(20, 2)
 	f.Draw(s)
 
 	// The box's first text cell is inputX()+1 — column 1 here, past the '['.
-	if got := s.runes[[2]int{1, 0}]; got != '世' {
+	if got := s.RuneAt(1, 0); got != '世' {
 		t.Errorf("first text cell = %q, want 世", got)
 	}
-	if got := s.runes[[2]int{5, 0}]; got != 'o' {
+	if got := s.RuneAt(5, 0); got != 'o' {
 		t.Errorf("cell 5 = %q, want 'o' — two ideographs occupy the four cells before it", got)
 	}
 }
@@ -121,10 +92,10 @@ func TestInputFieldClipsAWideRuneAtTheRightEdge(t *testing.T) {
 	f.cursor = 0
 	f.scroll = 0
 
-	s := newFieldScreen(20, 2)
+	s := tuikittest.NewScreen(20, 2)
 	f.Draw(s)
 
-	if got := s.runes[[2]int{3, 0}]; got != ' ' {
+	if got := s.RuneAt(3, 0); got != ' ' {
 		t.Errorf("last box cell = %q, want a blank — a wide rune must not be drawn half in", got)
 	}
 }
@@ -139,14 +110,14 @@ func TestInputFieldPasswordMaskStaysOneColumnPerRune(t *testing.T) {
 	f.SetValue("世界ok")
 	f.Focus(true)
 
-	s := newFieldScreen(20, 2)
+	s := tuikittest.NewScreen(20, 2)
 	f.Draw(s)
 	for i := range 4 {
-		if got := s.runes[[2]int{1 + i, 0}]; got != '*' {
+		if got := s.RuneAt(1+i, 0); got != '*' {
 			t.Errorf("masked cell %d = %q, want '*'", i, got)
 		}
 	}
-	if got := s.runes[[2]int{5, 0}]; got != ' ' {
+	if got := s.RuneAt(5, 0); got != ' ' {
 		t.Errorf("cell past the masked value = %q, want a blank", got)
 	}
 

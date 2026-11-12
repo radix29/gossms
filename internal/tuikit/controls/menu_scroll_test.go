@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // tallMenu builds a single menu of n enabled items, the shape that outgrows a
@@ -20,12 +21,12 @@ func tallMenu(n int, ran *string) []Menu {
 
 // openTallMenuBar returns a MenuBar with one n-item dropdown open, already
 // drawn once against an h-row screen so the geometry cache is populated.
-func openTallMenuBar(n, h int, ran *string) (*MenuBar, *fakeMenuScreen) {
+func openTallMenuBar(n, h int, ran *string) (*MenuBar, *tuikittest.Screen) {
 	mb := NewMenuBar()
 	mb.SetBounds(0, 0, 80)
 	mb.SetMenus(tallMenu(n, ran))
 	mb.Open()
-	s := &fakeMenuScreen{w: 80, h: h}
+	s := tuikittest.NewScreen(80, h)
 	mb.DrawOverlay(s)
 	return mb, s
 }
@@ -51,7 +52,7 @@ func TestDropdownNarrowerScreenNeverGivesANegativeColumn(t *testing.T) {
 		{Label: "An item with a very long label indeed", Shortcut: "Ctrl+Shift+X"},
 	}}})
 	mb.Open()
-	mb.DrawOverlay(&fakeMenuScreen{w: 10, h: 24})
+	mb.DrawOverlay(tuikittest.NewScreen(10, 24))
 	r := mb.dropdownRect()
 	if r.X < 0 || r.W < 1 {
 		t.Fatalf("dropdown box = %+v on a 10-column screen; want X >= 0 and W >= 1 "+
@@ -201,7 +202,7 @@ func TestContextMenuBiggerThanTheScreenStaysOnIt(t *testing.T) {
 	}
 	cm := &ContextMenu{}
 	cm.Show(70, 18, items)
-	x, y, w, h := cm.geometry(&fakeMenuScreen{w: 20, h: 10})
+	x, y, w, h := cm.geometry(tuikittest.NewScreen(20, 10))
 	if x < 0 || y < 0 {
 		t.Fatalf("context menu drawn at (%d,%d) size %dx%d on a 20x10 screen; "+
 			"want both coordinates on screen", x, y, w, h)

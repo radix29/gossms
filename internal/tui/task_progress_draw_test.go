@@ -9,22 +9,16 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
-// progressScreenRows renders rows [from, to) of a recordingScreen as text,
-// trailing blanks trimmed, columns from x on.
-func progressScreenRows(s *recordingScreen, x, from, to int) []string {
+// progressScreenRows renders rows [from, to) of s as text, trailing blanks
+// trimmed, columns from x on.
+func progressScreenRows(s *tuikittest.Screen, x, from, to int) []string {
 	var out []string
+	w, _ := s.Size()
 	for y := from; y < to; y++ {
-		var b strings.Builder
-		for cx := x; cx < s.w; cx++ {
-			r, ok := s.runes[[2]int{cx, y}]
-			if !ok || r == 0 {
-				r = ' '
-			}
-			b.WriteRune(r)
-		}
-		out = append(out, strings.TrimRight(b.String(), " "))
+		out = append(out, strings.TrimRight(s.Text(x, y, w-x), " "))
 	}
 	return out
 }
@@ -39,7 +33,7 @@ func doneTask(err error) *Task {
 
 // progressBar is drawProgressBar's text at width w and pct.
 func progressBar(w, pct int) string {
-	s := &recordingScreen{w: w + 10, h: 1, runes: map[[2]int]rune{}}
+	s := tuikittest.NewScreen(w+10, 1)
 	drawProgressBar(s, 0, 0, w, pct, tcell.StyleDefault)
 	return progressScreenRows(s, 0, 0, 1)[0]
 }
@@ -49,7 +43,7 @@ func progressBar(w, pct int) string {
 // rows they always did — Backup's one "Progress:" label row lower.
 func TestBackupProgressView(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewBackupDialog(a)
 	quietLog(t) // see TestBackupDialogDragOutOfDestKeepsExtending
 	a.screen = nil
@@ -66,7 +60,7 @@ func TestBackupProgressView(t *testing.T) {
 		{errors.New("Operating system error 5(Access is denied.)"), 40, "Failed: Operating system error 5(Access is denied.)"},
 	} {
 		d.task = doneTask(tc.err)
-		s := &recordingScreen{w: 100, h: 40, runes: map[[2]int]rune{}}
+		s := tuikittest.NewScreen(100, 40)
 		d.drawProgress(s)
 		inner := d.InnerRect()
 		got := progressScreenRows(s, inner.X+1, inner.Y+1, inner.Y+13)
@@ -92,7 +86,7 @@ func TestBackupProgressView(t *testing.T) {
 
 func TestRestoreProgressView(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewRestoreDialog(a)
 	a.screen = nil
 	d.show(&db.ServerConn{}, "testdb")
@@ -108,7 +102,7 @@ func TestRestoreProgressView(t *testing.T) {
 		{errors.New("RESTORE DATABASE is terminating abnormally."), 40, "Failed: RESTORE DATABASE is terminating abnormally."},
 	} {
 		d.task = doneTask(tc.err)
-		s := &recordingScreen{w: 100, h: 40, runes: map[[2]int]rune{}}
+		s := tuikittest.NewScreen(100, 40)
 		d.drawProgress(s)
 		inner := d.InnerRect()
 		got := progressScreenRows(s, inner.X+1, inner.Y+1, inner.Y+10)

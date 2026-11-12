@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // gridForm builds a form of [before, grid, after] with grid holding rows,
@@ -25,7 +26,7 @@ func gridForm(rows [][]string) (*Form, *GridRow) {
 	return f, gr
 }
 
-func sendKey(f *Form, k tcell.Key) { f.HandleKey(key(k, tcell.ModNone)) }
+func sendKey(f *Form, k tcell.Key) { f.HandleKey(tuikittest.Key(k, tcell.ModNone)) }
 
 // A grid row must hand back the arrow keys it can't act on, or it traps
 // keyboard focus: Form falls back to its own Up/Down navigation only when
@@ -82,7 +83,7 @@ func TestGridRowReleasesFocusAtItsBoundaries(t *testing.T) {
 // the key back; one that scrolled must keep it.
 func TestGridRowLeftReleasesOnlyWhenTheGridCannotScroll(t *testing.T) {
 	_, gr := gridForm([][]string{{"a"}, {"b"}})
-	if gr.HandleKey(key(tcell.KeyLeft, tcell.ModNone)) {
+	if gr.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModNone)) {
 		t.Error("Left at column 0 was reported handled; PropertySheet can never leave the grid")
 	}
 
@@ -91,10 +92,10 @@ func TestGridRowLeftReleasesOnlyWhenTheGridCannotScroll(t *testing.T) {
 	wide.Grid.SetData([]string{"column one", "column two", "column three"},
 		[][]string{{"1", "2", "3"}})
 	wide.Layout(0, 0, 12)
-	if !wide.HandleKey(key(tcell.KeyRight, tcell.ModNone)) {
+	if !wide.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModNone)) {
 		t.Fatal("Right over a grid with columns off-screen was reported unhandled")
 	}
-	if !wide.HandleKey(key(tcell.KeyLeft, tcell.ModNone)) {
+	if !wide.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModNone)) {
 		t.Error("Left escaped a grid that still had somewhere to scroll back to")
 	}
 }

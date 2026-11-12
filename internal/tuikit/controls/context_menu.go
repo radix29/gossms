@@ -21,8 +21,8 @@ type ContextMenu struct {
 	// (see geometry); HandleMouse hit-tests against these rather than the raw x,y
 	// above, having no tcell.Screen to recompute the clamp. Draw runs once per
 	// event-loop iteration right after the event that called Show() and before the
-	// next input event (see App.Run), so by the time a click can land the cache
-	// reflects what was painted. Otherwise a menu shown near the right or bottom
+	// next input event (the host's draw-after-every-event loop), so by the time a
+	// click can land the cache reflects what was painted. Otherwise a menu shown near the right or bottom
 	// edge draws shifted while hit-testing stays anchored to the original request.
 	drawnX, drawnY int
 
@@ -108,9 +108,8 @@ func (cm *ContextMenu) Draw(s tcell.Screen) {
 	x, y, w, h := cm.geometry(s)
 	cm.drawnX, cm.drawnY = x, y
 
-	p := theme.Active()
-	itemStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
-	borderStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuLine)
+	itemStyle := theme.StyleMenuBar()
+	borderStyle := theme.StyleMenuLine()
 	r := core.Rect{X: x, Y: y, W: w, H: h}
 	core.FillRect(s, r, ' ', itemStyle)
 	core.DrawBox(s, r, borderStyle)

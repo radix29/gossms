@@ -11,7 +11,6 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/dashboard"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/charts"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -169,7 +168,7 @@ type ActivityMonitor struct {
 	// canvas is the last rendered dashboard and canvasKey its inputs. Draw runs
 	// every event and a full render costs milliseconds, while views change only per
 	// sample.
-	canvas    *charts.Canvas
+	canvas    *core.Buffer
 	canvasKey amCanvasKey
 
 	// viewGen counts view-model rebuilds and marks the canvas stale: store Len

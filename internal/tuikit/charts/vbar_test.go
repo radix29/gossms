@@ -8,7 +8,7 @@ import (
 )
 
 func TestVBarChartHeightsTrackValues(t *testing.T) {
-	c := NewCanvas(20, 9) // plot is 8 rows once the label row is reserved
+	c := core.NewBuffer(20, 9) // plot is 8 rows once the label row is reserved
 	VBarChart{
 		Bars: []Bar{
 			{Label: "Read", Value: 8, Color: colA},
@@ -34,7 +34,7 @@ func TestVBarChartHeightsTrackValues(t *testing.T) {
 }
 
 func TestVBarChartDrawsLabelsUnderBars(t *testing.T) {
-	c := NewCanvas(24, 6)
+	c := core.NewBuffer(24, 6)
 	VBarChart{
 		Bars: []Bar{
 			{Label: "Read", Value: 5, Color: colA},
@@ -52,7 +52,7 @@ func TestVBarChartDrawsLabelsUnderBars(t *testing.T) {
 }
 
 func TestVBarChartFallsBackToLegend(t *testing.T) {
-	c := NewCanvas(24, 7)
+	c := core.NewBuffer(24, 7)
 	VBarChart{
 		Bars: []Bar{
 			{Label: "Read", Value: 5, Color: colA},
@@ -69,7 +69,7 @@ func TestVBarChartFallsBackToLegend(t *testing.T) {
 }
 
 func TestVBarChartSmallValueStaysVisible(t *testing.T) {
-	c := NewCanvas(16, 7)
+	c := core.NewBuffer(16, 7)
 	VBarChart{
 		Bars:       []Bar{{Label: "tiny", Value: 0.05, Color: colA}},
 		Scale:      Scale{Min: 0, Max: 100},
@@ -94,7 +94,7 @@ func TestVBarChartMoreBarsThanColumns(t *testing.T) {
 	for i := range bars {
 		bars[i] = Bar{Label: "b", Value: float64(i + 1), Color: colA}
 	}
-	c := NewCanvas(12, 6)
+	c := core.NewBuffer(12, 6)
 	VBarChart{Bars: bars, YLevels: 2, ShowLabels: true}.Draw(c, c.Rect())
 	// Survival plus a drawn plot is the assertion: with one column per slot
 	// there is no room for all 40, and the chart must clip rather than
@@ -105,7 +105,7 @@ func TestVBarChartMoreBarsThanColumns(t *testing.T) {
 }
 
 func TestVBarChartDegenerateInput(t *testing.T) {
-	c := NewCanvas(10, 5)
+	c := core.NewBuffer(10, 5)
 	VBarChart{}.Draw(c, c.Rect())
 	VBarChart{Bars: []Bar{{Label: "a", Value: 1, Color: colA}}}.Draw(c, core.Rect{X: 0, Y: 0, W: 0, H: 5})
 	VBarChart{Bars: []Bar{{Label: "a", Value: 1, Color: colA}}}.Draw(c, core.Rect{X: 0, Y: 0, W: 10, H: 0})

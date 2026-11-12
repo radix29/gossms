@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -49,20 +50,23 @@ func TestTextRowNarrowingKeepsShowFromStart(t *testing.T) {
 	if got := r.field.Width(); got != 10 {
 		t.Fatalf("field width = %d, want 10", got)
 	}
-	s := newCellScreen(80, 1)
+	s := tuikittest.NewScreen(80, 1)
 	r.Draw(s, false)
-	if got, want := s.row(0), "[This is a "; !strings.Contains(got, want) {
+	if got, want := s.Row(0), "[This is a "; !strings.Contains(got, want) {
 		t.Errorf("row = %q, want it to show the value from its start, %q", got, want)
 	}
 }
 
-// rightmostCell returns the largest column anything was drawn in.
-func rightmostCell(s *cellScreen) int {
-	right := -1
-	for k := range s.runes {
-		right = max(right, k[0])
+// rightmostCell returns the largest column of row 0 anything was drawn in;
+// s must have been filled with '~' before the draw.
+func rightmostCell(s *tuikittest.Screen) int {
+	w, _ := s.Size()
+	for x := w - 1; x >= 0; x-- {
+		if s.RuneAt(x, 0) != '~' {
+			return x
+		}
 	}
-	return right
+	return -1
 }
 
 // A select row narrower than its control narrows the control rather than
@@ -92,7 +96,8 @@ func TestSelectRowControlFitsTheRow(t *testing.T) {
 				t.Fatalf("control width at row width %d = %d, want %d", c.w, got, c.wantW)
 			}
 			if c.wantW > 3 { // the floor overflows a row with no room
-				s := newCellScreen(200, 1)
+				s := tuikittest.NewScreen(200, 1)
+				s.Fill('~', tcell.StyleDefault)
 				r.Draw(s, false)
 				if got, want := rightmostCell(s), min(c.w, LabelWidth+3+selectControlWidth)-1; got != want {
 					t.Errorf("rightmost drawn column = %d, want %d", got, want)
@@ -144,10 +149,10 @@ func TestButtonsRowWrapsWhenNarrow(t *testing.T) {
 				}
 				r.SetDrawReadOnly(readOnly)
 				r.Layout(2, 1, c.w)
-				s := newCellScreen(80, 1+c.height)
+				s := tuikittest.NewScreen(80, 1+c.height)
 				r.Draw(s, false)
 				for i, want := range c.rows {
-					if got := strings.TrimRight(s.row(1+i), " "); got != "  "+want {
+					if got := strings.TrimRight(s.Row(1+i), " "); got != "  "+want {
 						t.Errorf("readOnly=%v line %d = %q, want %q", readOnly, i, got, "  "+want)
 					}
 				}
@@ -172,9 +177,9 @@ func TestFormLaysOutBelowWrappedButtons(t *testing.T) {
 	below := Static("Below", "x")
 	f := NewForm(b, below)
 	f.SetBounds(0, 0, 30, 10)
-	s := newCellScreen(30, 10)
+	s := tuikittest.NewScreen(30, 10)
 	f.Draw(s)
-	if got := s.row(2); !strings.HasPrefix(got, "Below") {
+	if got := s.Row(2); !strings.HasPrefix(got, "Below") {
 		t.Errorf("line 2 = %q, want the row below the two button lines", got)
 	}
 }
@@ -189,13 +194,13 @@ func TestStaticRowWrapsLongValue(t *testing.T) {
 	if got, want := r.Height(w), (len(val)+19)/20; got != want {
 		t.Fatalf("Height(%d) = %d, want %d", w, got, want)
 	}
-	s := &fakeScreen{w: 100, h: 20}
+	s := tuikittest.NewScreen(100, 20)
 	r.Layout(0, 0, w)
 	r.Draw(s, false)
 	var b strings.Builder
 	for y := range r.Height(w) {
 		for x := flatValueX(0); x < w; x++ {
-			if c, ok := s.cells[[2]int{x, y}]; ok && c != ' ' {
+			if c := s.RuneAt(x, y); c != ' ' && c != 0 {
 				b.WriteRune(c)
 			}
 		}

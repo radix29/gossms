@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // referenceVisualLines is buildVisualLines' pre-optimisation form: everything
@@ -149,22 +150,22 @@ func TestBuildVisualLinesTracksEditsIncrementally(t *testing.T) {
 		e.selecting = false
 		switch rng.IntN(10) {
 		case 0, 1:
-			e.HandleKey(runeKey(rune('a'+rng.IntN(26)), tcell.ModNone))
+			e.HandleKey(tuikittest.Rune(rune('a'+rng.IntN(26)), tcell.ModNone))
 		case 2:
-			e.HandleKey(runeKey(' ', tcell.ModNone))
+			e.HandleKey(tuikittest.Rune(' ', tcell.ModNone))
 		case 3:
-			e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 		case 4:
-			e.HandleKey(key(tcell.KeyBackspace2, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyBackspace2, tcell.ModNone))
 		case 5:
-			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 		case 6:
 			e.Paste(words[rng.IntN(len(words))])
 		case 7:
 			e.selecting = true
 			e.selAnchorRow = rng.IntN(e.doc.Len())
 			e.selAnchorCol = rng.IntN(len(e.doc.Line(e.selAnchorRow)) + 1)
-			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 		case 8:
 			if rng.IntN(2) == 0 {
 				e.undo()
@@ -175,7 +176,7 @@ func TestBuildVisualLinesTracksEditsIncrementally(t *testing.T) {
 			if rng.IntN(4) == 0 {
 				e.DuplicateLines()
 			} else {
-				e.HandleKey(runeKey('y', tcell.ModNone))
+				e.HandleKey(tuikittest.Rune('y', tcell.ModNone))
 			}
 		}
 		if rng.IntN(3) > 0 {
@@ -195,11 +196,17 @@ func TestBuildVisualLinesTracksEditsIncrementally(t *testing.T) {
 func TestBuildVisualLinesLineCountEdits(t *testing.T) {
 	const w = 10
 	edits := map[string]func(e *Editor){
-		"enter mid-line":  func(e *Editor) { e.cursorRow, e.cursorCol = 1, 4; e.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) },
-		"backspace joins": func(e *Editor) { e.cursorRow, e.cursorCol = 2, 0; e.HandleKey(key(tcell.KeyBackspace2, tcell.ModNone)) },
+		"enter mid-line": func(e *Editor) {
+			e.cursorRow, e.cursorCol = 1, 4
+			e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
+		},
+		"backspace joins": func(e *Editor) {
+			e.cursorRow, e.cursorCol = 2, 0
+			e.HandleKey(tuikittest.Key(tcell.KeyBackspace2, tcell.ModNone))
+		},
 		"delete joins": func(e *Editor) {
 			e.cursorRow, e.cursorCol = 0, len(e.doc.Line(0))
-			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 		},
 		"multi-line paste": func(e *Editor) {
 			e.cursorRow, e.cursorCol = 1, 2
@@ -211,11 +218,14 @@ func TestBuildVisualLinesLineCountEdits(t *testing.T) {
 		},
 		"undo a line insert": func(e *Editor) {
 			e.cursorRow, e.cursorCol = 1, 0
-			e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+			e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 			e.buildVisualLines(w)
 			e.undo()
 		},
-		"edit at the last line": func(e *Editor) { e.cursorRow, e.cursorCol = 3, 1; e.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) },
+		"edit at the last line": func(e *Editor) {
+			e.cursorRow, e.cursorCol = 3, 1
+			e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
+		},
 	}
 	for name, edit := range edits {
 		e := NewEditor(nil)

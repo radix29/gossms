@@ -28,7 +28,7 @@ type ListBox struct {
 	// clicks pairs fresh presses on one row into the double-click that fires
 	// OnActivate. A click on the already-selected row only selects it: the list
 	// often opens with row 0 selected, and a single click there must not run the
-	// default action (one click on the Connect dialog's first history entry used
+	// default action (one click on a connection-history list's first entry used
 	// to connect).
 	clicks core.ClickTracker[int]
 
@@ -98,8 +98,16 @@ func (l *ListBox) Focus(v bool) { l.focused = v }
 // Draw renders the list.
 func (l *ListBox) Draw(s tcell.Screen) {
 	p := theme.Active()
-	base := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	base := theme.StyleDialog()
 	core.FillRect(s, l.rect, ' ', base)
+
+	// The scrollbar takes the last column, so text stops short of it rather
+	// than running underneath (DropDown's list reserves it the same way).
+	hasBar := len(l.items) > l.rect.H && l.rect.H > 0
+	textW := l.rect.W
+	if hasBar {
+		textW--
+	}
 
 	for row := range l.rect.H {
 		idx := l.scroll + row
@@ -114,16 +122,16 @@ func (l *ListBox) Draw(s tcell.Screen) {
 			if l.focused {
 				st = theme.StyleSelected()
 			} else {
-				st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextHighlight)
+				st = theme.On(p.DialogBg, p.DialogTextHighlight)
 			}
 			core.FillRect(s, core.Rect{X: l.rect.X, Y: y, W: l.rect.W, H: 1}, ' ', st)
 		}
-		core.DrawTextClipped(s, l.rect.X, y, l.rect.W, st, marker+l.items[idx])
+		core.DrawTextClipped(s, l.rect.X, y, textW, st, marker+l.items[idx])
 	}
 
-	if len(l.items) > l.rect.H && l.rect.H > 0 {
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+	if hasBar {
+		sbStyle := theme.StyleDialogLine()
+		sbThumb := theme.StyleScrollThumb()
 		core.DrawScrollbar(s, l.rect.Right()-1, l.rect.Y, l.rect.H, len(l.items), l.rect.H, l.scroll, sbStyle, sbThumb)
 	}
 }
@@ -177,16 +185,20 @@ func (l *ListBox) HandleMouse(ev *tcell.EventMouse) bool {
 		l.sbDragging = false
 	}
 	mx, my := ev.Position()
-	if !l.rect.Contains(mx, my) {
-		return false
-	}
 
 	// Scrollbar drag/click takes priority over row hit-testing below — the
 	// bar is drawn at rect.Right()-1 (see Draw), which without this check
 	// first would otherwise be read as a click on whatever item sits in
-	// that screen column.
+	// that screen column. It runs ahead of the bounds check: a latched thumb
+	// drag keeps control once the mouse leaves the list, so a fast drag past
+	// the bottom still reaches the end.
 	if core.HandleScrollbarDrag(ev, l.rect.Right()-1, l.rect.Y, l.rect.H, len(l.items), &l.sbDragging, &l.scroll) {
 		return true
+	}
+	if !l.rect.Contains(mx, my) {
+		// A press that began on the list owns its motion until release; letting
+		// it fall through would hand the host a drag it never saw start.
+		return l.press.Held() && ev.Buttons() == tcell.Button1
 	}
 
 	switch ev.Buttons() {

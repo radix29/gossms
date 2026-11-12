@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // setSearch compiles opts onto e, failing the test on a compile error.
@@ -449,7 +450,7 @@ func TestSearchIncrementalScanMatchesFullScan(t *testing.T) {
 		}},
 		{"type through HandleKey, deep in the document", func(e *Editor) {
 			e.cursorRow, e.cursorCol = 5, 0
-			e.HandleKey(runeKey('z', tcell.ModNone))
+			e.HandleKey(tuikittest.Rune('z', tcell.ModNone))
 		}},
 		{"undo it", func(e *Editor) {
 			// pushUndoLocal's span is the edited row plus one either side, so

@@ -47,7 +47,7 @@ type ToolCell struct {
 // how it looks stay with the host, because the hosts
 // disagree on all of it (one dims per cell and draws the active rate
 // selected, one dims the whole row while a read is in flight, one asks a
-// predicate per cell). Toolbar is the other kind: App's icon strip.
+// predicate per cell). Toolbar is the other kind: an application's icon strip.
 type ToolRow struct {
 	Cells []ToolCell
 

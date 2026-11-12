@@ -76,7 +76,8 @@ func (d *ModalDialog) recentre() {
 // matching ButtonNone HandleMouse returns early on !visible and the host has
 // dropped the dialog from input routing. A stale latch makes ButtonClicked
 // refuse the first click on every reopening. A dialog opening during a held
-// gesture is the host's hazard; see App.gestureOverlay.
+// gesture is the host's hazard: it must not hand the dialog the rest of a press
+// that began before the dialog opened.
 func (d *ModalDialog) Show() {
 	d.recentre()
 	d.press.Clear()
@@ -171,8 +172,8 @@ func (d *ModalDialog) DrawBase(s tcell.Screen) {
 	core.FillRect(s, d.rect, ' ', theme.StyleDialog())
 
 	// Border + title
-	borderStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogBorder)
-	titleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTitle).Bold(true)
+	borderStyle := theme.On(p.DialogBg, p.DialogBorder)
+	titleStyle := theme.On(p.DialogBg, p.DialogTitle).Bold(true)
 	core.DrawBoxTitle(s, d.rect, d.title, borderStyle, titleStyle)
 
 	// Everything the embedding type draws from here is confined to the box (see
@@ -206,9 +207,8 @@ func (d *ModalDialog) DrawContentScrollbar(s tcell.Screen, trackY, trackH, total
 		c.SetClip(d.rect)
 		defer c.SetClip(saved)
 	}
-	p := theme.Active()
-	sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
-	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+	sbStyle := theme.StyleDialogLine()
+	sbThumb := theme.StyleScrollThumb()
 	core.DrawScrollbar(s, d.rect.Right()-1, trackY, trackH, total, trackH, offset, sbStyle, sbThumb)
 }
 
@@ -221,8 +221,7 @@ func (d *ModalDialog) ButtonRowY() int { return d.rect.Y + d.rect.H - 3 }
 
 // DrawSeparator draws a horizontal line one row above ButtonRowY.
 func (d *ModalDialog) DrawSeparator(s tcell.Screen) {
-	p := theme.Active()
-	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
+	sep := theme.StyleDialogLine()
 	core.DrawHLine(s, d.rect.X+1, d.ButtonRowY()-1, d.rect.W-2, sep)
 }
 
@@ -276,8 +275,8 @@ func (d *ModalDialog) DrawButtonsGated(s tcell.Screen, labels []string, activeId
 // left). It clears nothing; the caller draws the right-aligned group first.
 func (d *ModalDialog) DrawButtonsAtGated(s tcell.Screen, x int, labels []string, activeIdx int, disabled []bool) {
 	p := theme.Active()
-	disabledStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.TextDisabled)
-	btnStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.ButtonFg)
+	disabledStyle := theme.On(p.ButtonBg, p.TextDisabled)
+	btnStyle := theme.StyleButton()
 	activeStyle := theme.StyleButtonActive()
 	col, y := x, d.ButtonRowY()
 	for i, label := range labels {

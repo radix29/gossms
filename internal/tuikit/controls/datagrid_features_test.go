@@ -301,8 +301,8 @@ func TestDataGridShiftArrowExtendsBlockSelection(t *testing.T) {
 	if !g.blockSelecting {
 		t.Fatal("Shift+Arrow should start a block selection")
 	}
-	if r0, c0, r1, c1 := g.selectionBounds(); r0 != 0 || c0 != 0 || r1 != 1 || c1 != 1 {
-		t.Fatalf("selectionBounds() = (%d,%d,%d,%d), want (0,0,1,1)", r0, c0, r1, c1)
+	if r0, c0, r1, c1 := g.SelectionBounds(); r0 != 0 || c0 != 0 || r1 != 1 || c1 != 1 {
+		t.Fatalf("SelectionBounds() = (%d,%d,%d,%d), want (0,0,1,1)", r0, c0, r1, c1)
 	}
 
 	g.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
@@ -328,8 +328,8 @@ func TestDataGridMouseDragSelectsBlock(t *testing.T) {
 	if !g.blockSelecting {
 		t.Fatal("dragging to a different cell should start a block selection")
 	}
-	if r0, c0, r1, c1 := g.selectionBounds(); r0 != 0 || c0 != 0 || r1 != 1 || c1 != 1 {
-		t.Fatalf("selectionBounds() = (%d,%d,%d,%d), want (0,0,1,1)", r0, c0, r1, c1)
+	if r0, c0, r1, c1 := g.SelectionBounds(); r0 != 0 || c0 != 0 || r1 != 1 || c1 != 1 {
+		t.Fatalf("SelectionBounds() = (%d,%d,%d,%d), want (0,0,1,1)", r0, c0, r1, c1)
 	}
 
 	g.HandleMouse(tcell.NewEventMouse(x1, y1, tcell.ButtonNone, tcell.ModNone))

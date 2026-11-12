@@ -20,7 +20,7 @@ var (
 func plotBg() tcell.Color { return theme.Active().ChartPlotBg }
 
 // column reads canvas column x bottom-up, returning one rune per row.
-func column(c *Canvas, x, bottomY, height int) []rune {
+func column(c *core.Buffer, x, bottomY, height int) []rune {
 	out := make([]rune, 0, height)
 	for i := range height {
 		str, _, _ := c.Get(x, bottomY-i)

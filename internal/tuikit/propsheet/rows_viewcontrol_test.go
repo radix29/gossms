@@ -264,7 +264,7 @@ func TestSelectRowFitItems(t *testing.T) {
 	}
 }
 
-// TestDisabledChoiceRowsRefuseEdits is K10 at the row level: a disabled row
+// TestDisabledChoiceRowsRefuseEdits: a disabled row
 // leaves the focus cycle and refuses Edit, as TextRow.SetEnabled does.
 func TestDisabledChoiceRowsRefuseEdits(t *testing.T) {
 	sel := Select("Kind", []string{"a", "b"}, 0)

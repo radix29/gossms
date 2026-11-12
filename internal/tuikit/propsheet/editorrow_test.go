@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func newTestEditorRow(text string) *EditorRow {
@@ -21,23 +22,23 @@ func TestEditorRowReleasesTheKeysAFormNavigatesWith(t *testing.T) {
 	r := newTestEditorRow("one\ntwo")
 
 	for _, k := range []tcell.Key{tcell.KeyTab, tcell.KeyBacktab} {
-		if r.HandleKey(key(k, tcell.ModNone)) {
+		if r.HandleKey(tuikittest.Key(k, tcell.ModNone)) {
 			t.Errorf("row consumed %v; Form can never move focus off it", tcell.KeyNames[k])
 		}
 	}
 	if got := r.Value(); got != "one\ntwo" {
 		t.Errorf("Tab edited the text: %q", got)
 	}
-	if r.HandleKey(key(tcell.KeyUp, tcell.ModNone)) {
+	if r.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone)) {
 		t.Error("row consumed Up at the first line")
 	}
-	if !r.HandleKey(key(tcell.KeyDown, tcell.ModNone)) {
+	if !r.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
 		t.Error("row released Down with a line below the caret")
 	}
-	if r.HandleKey(key(tcell.KeyDown, tcell.ModNone)) {
+	if r.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
 		t.Error("row consumed Down at the last line")
 	}
-	if r.HandleKey(key(tcell.KeyEscape, tcell.ModNone)) {
+	if r.HandleKey(tuikittest.Key(tcell.KeyEscape, tcell.ModNone)) {
 		t.Error("row consumed Escape; the dialog can never close from here")
 	}
 }
@@ -47,7 +48,7 @@ func TestEditorRowKeepsTheKeysThatEdit(t *testing.T) {
 	r := newTestEditorRow("")
 	for _, ev := range []*tcell.EventKey{
 		tcell.NewEventKey(tcell.KeyRune, "S", tcell.ModNone),
-		key(tcell.KeyEnter, tcell.ModNone),
+		tuikittest.Key(tcell.KeyEnter, tcell.ModNone),
 		tcell.NewEventKey(tcell.KeyRune, "X", tcell.ModNone),
 	} {
 		if !r.HandleKey(ev) {
@@ -113,7 +114,7 @@ func TestEditorRowBaselineIsWhatTheEditorHolds(t *testing.T) {
 	if !r.Dirty() {
 		t.Fatal("row is clean after typing into it")
 	}
-	r.HandleKey(key(tcell.KeyBackspace2, tcell.ModNone))
+	r.HandleKey(tuikittest.Key(tcell.KeyBackspace2, tcell.ModNone))
 	if r.Dirty() {
 		t.Errorf("row is still dirty after undoing the edit: %q vs loaded %q", r.Value(), loaded)
 	}

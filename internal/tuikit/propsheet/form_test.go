@@ -2,65 +2,19 @@ package propsheet
 
 import (
 	"fmt"
-	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
-func key(k tcell.Key, mod tcell.ModMask) *tcell.EventKey {
-	return tcell.NewEventKey(k, "", mod)
-}
-
-// fakeScreen is a minimal tcell.Screen fake — Size() and SetContent() are
-// all Form.Draw and the rows it draws actually call. Written cells are
-// recorded so a test can assert what actually reached the screen.
-type fakeScreen struct {
-	tcell.Screen
-	w, h  int
-	cells map[[2]int]rune
-}
-
-func (s *fakeScreen) Size() (int, int) { return s.w, s.h }
-func (s *fakeScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
-	if s.cells == nil {
-		s.cells = map[[2]int]rune{}
-	}
-	s.cells[[2]int{x, y}] = primary
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-func (s *fakeScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
-}
-
-func (s *fakeScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-// line returns the text drawn on row y, trailing blanks trimmed.
-func (s *fakeScreen) line(y int) string {
-	out := []rune{}
-	for x := 0; x < s.w; x++ {
-		r, ok := s.cells[[2]int{x, y}]
-		if !ok || r == 0 {
-			r = ' '
-		}
-		out = append(out, r)
-	}
-	return strings.TrimRight(string(out), " ")
-}
-
-// count returns how many cells in column x hold r.
-func (s *fakeScreen) count(x int, r rune) int {
+// columnCount returns how many cells in column x of s hold r.
+func columnCount(s *tuikittest.Screen, x int, r rune) int {
 	n := 0
-	for pos, got := range s.cells {
-		if pos[0] == x && got == r {
+	_, h := s.Size()
+	for y := range h {
+		if s.RuneAt(x, y) == r {
 			n++
 		}
 	}
@@ -167,9 +121,9 @@ func TestFormScrollbarWorksWithFewButTallRows(t *testing.T) {
 	// A thumb has to be drawn too, not just an empty trough — same
 	// total/visible pair, same bug.
 	f.scroll = 0
-	screen := &fakeScreen{w: 80, h: 40}
+	screen := tuikittest.NewScreen(80, 40)
 	f.Draw(screen)
-	if screen.count(sbX, '█') == 0 {
+	if columnCount(screen, sbX, '█') == 0 {
 		t.Error("scrollbar column has no thumb cells, only an empty trough")
 	}
 }
@@ -232,7 +186,7 @@ func TestFormHandleKeyMovesFocusWhenFocusedRowDoesNotWantTheKey(t *testing.T) {
 		t.Fatalf("initial focus = %T, want *TextRow", f.Focused())
 	}
 
-	if !f.HandleKey(key(tcell.KeyDown, tcell.ModNone)) {
+	if !f.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
 		t.Fatal("HandleKey(Down) = false, want true (should move focus)")
 	}
 	second := f.Focused().(*TextRow)
@@ -240,7 +194,7 @@ func TestFormHandleKeyMovesFocusWhenFocusedRowDoesNotWantTheKey(t *testing.T) {
 		t.Fatalf("focus after Down = %q, want the B row", second.Value())
 	}
 
-	if !f.HandleKey(key(tcell.KeyUp, tcell.ModNone)) {
+	if !f.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone)) {
 		t.Fatal("HandleKey(Up) = false, want true (should move focus back)")
 	}
 	first := f.Focused().(*TextRow)
@@ -280,7 +234,7 @@ func TestFormDrawKeepsEveryRowInsideItsBounds(t *testing.T) {
 	f := NewForm(Section("Heading"), NewGridRow(grid, 20))
 	f.SetBounds(0, 0, 60, 10)
 
-	f.Draw(&fakeScreen{w: 80, h: 40})
+	f.Draw(tuikittest.NewScreen(80, 40))
 
 	for _, b := range f.bands {
 		if b.y+b.h > 10 {
@@ -383,12 +337,12 @@ func TestFormTabMovesFocusAndReportsWalkOff(t *testing.T) {
 	f := NewForm(Static("A", "1"), Static("B", "2"))
 	f.SetBounds(0, 0, 60, 10)
 	f.Focus(true)
-	if !f.HandleKey(key(tcell.KeyTab, tcell.ModNone)) {
+	if !f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) {
 		t.Fatal("Tab from first row = false, want true (moved to second row)")
 	}
 	// Tab off the last row: Form itself can't move further, so HandleKey
 	// must return false — the signal PropertySheet uses to shift zones.
-	if f.HandleKey(key(tcell.KeyTab, tcell.ModNone)) {
+	if f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) {
 		t.Fatal("Tab off the last row = true, want false")
 	}
 }
@@ -429,7 +383,7 @@ func TestFormClickReachesRowWhereAScrolledOutGridWas(t *testing.T) {
 	}
 	f := NewForm(rows...)
 	f.SetBounds(0, 0, 60, 10)
-	scr := &fakeScreen{w: 60, h: 30}
+	scr := tuikittest.NewScreen(60, 30)
 	f.Draw(scr)
 	press := func(x, y int) {
 		f.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
@@ -482,7 +436,7 @@ func TestFormWheelOverAnOpenDropdownScrollsTheList(t *testing.T) {
 	}
 	f := NewForm(rows...)
 	f.SetBounds(0, 0, 60, 12)
-	scr := &fakeScreen{w: 60, h: 12}
+	scr := tuikittest.NewScreen(60, 12)
 	f.Focus(true)
 	f.Draw(scr)
 	if !f.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) || !f.OverlayActive() {
@@ -492,7 +446,7 @@ func TestFormWheelOverAnOpenDropdownScrollsTheList(t *testing.T) {
 	f.DrawOverlays(scr)
 	listX := -1
 	for x := range 60 {
-		if scr.cells[[2]int{x, f.bands[0].y}] == '[' {
+		if scr.RuneAt(x, f.bands[0].y) == '[' {
 			listX = x + 2
 			break
 		}
@@ -547,7 +501,7 @@ func TestFormMeasuresEachRowOncePerWidthPerDraw(t *testing.T) {
 				f.Add(c)
 			}
 			f.SetBounds(0, 0, 30, tc.h)
-			f.Draw(&fakeScreen{w: 30, h: tc.h})
+			f.Draw(tuikittest.NewScreen(30, tc.h))
 			for i, c := range counters {
 				if c.calls != tc.wantCalls {
 					t.Errorf("row %d: Height called %d times in one Draw, want %d", i, c.calls, tc.wantCalls)

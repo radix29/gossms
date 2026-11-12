@@ -7,6 +7,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -36,7 +37,7 @@ func TestAReadOnlyFormCannotBeEdited(t *testing.T) {
 	for _, r := range "XY" {
 		f.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
 	}
-	f.HandleKey(key(tcell.KeyBackspace2, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyBackspace2, tcell.ModNone))
 	text.Paste("pasted")
 	text.SelectAll()
 	if got := text.Cut(); got != "" {
@@ -60,7 +61,7 @@ func TestAReadOnlyFormCannotBeEdited(t *testing.T) {
 		t.Fatalf("Tab went to %T, want the check row", f.Focused())
 	}
 	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
-	f.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if c, _ := f.CopyText(); c != "false" {
 		t.Errorf("check row CopyText = %q, want false", c)
 	}
@@ -84,7 +85,7 @@ func TestAReadOnlyFormCannotBeEdited(t *testing.T) {
 	f.SetReadOnly(false)
 	f.FocusFirst() // the static row
 	f.FocusNext()
-	f.Draw(&fakeScreen{w: 60, h: 10}) // focuses the input field
+	f.Draw(tuikittest.NewScreen(60, 10)) // focuses the input field
 	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, "Z", tcell.ModNone))
 	if text.Value() == "srv01" {
 		t.Error("clearing read-only did not give the rows their editing back")
@@ -170,9 +171,9 @@ func drawRow(row Row, readOnly bool) string {
 	f := NewForm(row)
 	f.SetBounds(0, 0, 60, 10)
 	f.SetReadOnly(readOnly)
-	s := &fakeScreen{w: 60, h: 10}
+	s := tuikittest.NewScreen(60, 10)
 	f.Draw(s)
-	return s.line(0)
+	return strings.TrimRight(s.Row(0), " ")
 }
 
 // TestAReadOnlyRowDrawsNoControl. Behaviour and appearance are separate halves
@@ -221,9 +222,9 @@ func TestAWritableRowStillDrawsItsControl(t *testing.T) {
 	f.SetReadOnly(true)
 	f.SetReadOnly(false)
 
-	s := &fakeScreen{w: 60, h: 10}
+	s := tuikittest.NewScreen(60, 10)
 	f.Draw(s)
-	if got := s.line(0); !strings.Contains(got, "[") {
+	if got := strings.TrimRight(s.Row(0), " "); !strings.Contains(got, "[") {
 		t.Errorf("draw after clearing read-only = %q, want the input box back", got)
 	}
 }
@@ -237,9 +238,9 @@ func TestARowAddedToAReadOnlyFormDrawsReadOnly(t *testing.T) {
 	f.SetReadOnly(true)
 	f.Add(Text("Name", "srv01", 20))
 
-	s := &fakeScreen{w: 60, h: 10}
+	s := tuikittest.NewScreen(60, 10)
 	f.Draw(s)
-	if got := s.line(0); strings.Contains(got, "[") {
+	if got := strings.TrimRight(s.Row(0), " "); strings.Contains(got, "[") {
 		t.Errorf("row added to a read-only form = %q, want no input box", got)
 	}
 }
@@ -327,13 +328,13 @@ func TestAReadOnlyToggleGridStillDrawsItsRows(t *testing.T) {
 	f.SetBounds(0, 0, 60, 20)
 	f.SetReadOnly(true)
 
-	s := &fakeScreen{w: 60, h: 20}
+	s := tuikittest.NewScreen(60, 20)
 	f.Draw(s)
 	// Line 0 is the header, line 1 the separator, so the rows start at 2.
-	if got := s.line(2); !strings.Contains(got, "Processor 0") {
+	if got := strings.TrimRight(s.Row(2), " "); !strings.Contains(got, "Processor 0") {
 		t.Errorf("first grid line = %q, want the grid's first row", got)
 	}
-	if got := s.line(3); !strings.Contains(got, "Processor 1") {
+	if got := strings.TrimRight(s.Row(3), " "); !strings.Contains(got, "Processor 1") {
 		t.Errorf("second grid line = %q, want the grid's second row", got)
 	}
 }
@@ -492,40 +493,40 @@ func TestAReadOnlyFormsGridsCanBeBrowsed(t *testing.T) {
 	f := NewForm(Section("Events"), plainRow, text, toggles)
 	f.SetBounds(0, 0, 60, 30)
 	f.SetReadOnly(true)
-	f.Draw(&fakeScreen{w: 60, h: 30})
+	f.Draw(tuikittest.NewScreen(60, 30))
 	f.Focus(true)
 
 	if f.Focused() != Row(plainRow) {
 		t.Fatalf("focused row = %T, want the first grid", f.Focused())
 	}
-	f.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
 	if got := plain.SelectedRow(); got != 1 || len(selected) != 1 || selected[0] != 1 {
 		t.Errorf("after Down: selected row %d, OnSelectRow calls %v; want 1, [1]", got, selected)
 	}
 	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
-	f.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 
 	// Tab stops on the text row (to copy it), lands on the next grid, then
 	// leaves the form — the keyboard-trap rule still holds.
-	if !f.HandleKey(key(tcell.KeyTab, tcell.ModNone)) || f.Focused() != Row(text) {
+	if !f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) || f.Focused() != Row(text) {
 		t.Fatalf("Tab went to %T, want the text row", f.Focused())
 	}
-	if !f.HandleKey(key(tcell.KeyTab, tcell.ModNone)) || f.Focused() != Row(toggles) {
+	if !f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) || f.Focused() != Row(toggles) {
 		t.Fatalf("Tab went to %T, want the toggle grid", f.Focused())
 	}
 	// Onto a toggle column: Space and Enter on the text column toggle nothing
 	// even on an editable grid.
-	f.HandleKey(key(tcell.KeyRight, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModNone))
 	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
-	f.HandleKey(key(tcell.KeyDown, tcell.ModNone))
-	f.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
-	if f.HandleKey(key(tcell.KeyTab, tcell.ModNone)) {
+	f.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
+	if f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) {
 		t.Error("Tab from the last grid was claimed, trapping focus on the form")
 	}
 
 	// A click on the first grid's third row selects it and focuses the grid;
 	// a click on the text row focuses it, to copy, and edits nothing.
-	f.Draw(&fakeScreen{w: 60, h: 30})
+	f.Draw(tuikittest.NewScreen(60, 30))
 	gy := f.bands[1].y
 	press := func(x, y int) {
 		f.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
@@ -553,7 +554,7 @@ func TestAReadOnlyFormsGridsCanBeBrowsed(t *testing.T) {
 	// Clearing the gate gives the grids their editing back.
 	f.SetReadOnly(false)
 	f.FocusFirst()
-	f.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if activations != 1 {
 		t.Errorf("OnActivateCell fired %d times after clearing read-only, want 1", activations)
 	}
@@ -594,7 +595,7 @@ func TestAReadOnlyRowWrapsALongValue(t *testing.T) {
 			f := NewForm(c.row)
 			f.SetBounds(0, 0, 60, 10)
 			f.SetReadOnly(true)
-			s := &fakeScreen{w: 60, h: 10}
+			s := tuikittest.NewScreen(60, 10)
 			f.Draw(s)
 			h := c.row.Height(60)
 			if h < 2 {
@@ -602,7 +603,7 @@ func TestAReadOnlyRowWrapsALongValue(t *testing.T) {
 			}
 			var b strings.Builder
 			for y := range h {
-				b.WriteString(strings.TrimSpace(s.line(y)[flatValueX(0):]))
+				b.WriteString(strings.TrimSpace(strings.TrimRight(s.Row(y), " ")[flatValueX(0):]))
 			}
 			if b.String() != c.want {
 				t.Errorf("drawn value = %q, want %q", b.String(), c.want)
@@ -612,5 +613,25 @@ func TestAReadOnlyRowWrapsALongValue(t *testing.T) {
 				t.Errorf("CopyText = %q, %v; want the whole value", got, ok)
 			}
 		})
+	}
+}
+
+// TestSheetCutOfAStaticRowCutsNothing: a row with nothing to remove (here a
+// Static, focusable only to be copied) answers Cut with "", not its copy
+// text, so the host leaves the clipboard alone and reports no cut. Cut once
+// degraded to Copy and the app said "Cut to clipboard" for a value still there.
+func TestSheetCutOfAStaticRowCutsNothing(t *testing.T) {
+	p := newTestSheet("General")
+	p.Show()
+	f := NewForm(Static("Data", "/var/opt/mssql/data"))
+	p.SetPageForm(0, p.pages[0].seq, f)
+	f.SetBounds(0, 0, 60, 10)
+	p.setZone(zoneForm)
+	f.Draw(tuikittest.NewScreen(80, 20))
+	if got := p.SelectedText(); got != "/var/opt/mssql/data" {
+		t.Fatalf("setup: SelectedText = %q, want the static row's value", got)
+	}
+	if got := p.Cut(); got != "" {
+		t.Errorf("Cut() = %q on a static row, want \"\"", got)
 	}
 }

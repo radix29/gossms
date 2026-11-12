@@ -69,6 +69,6 @@ func BenchmarkSelectedRowsAfterCtrlClick(b *testing.B) {
 	g := newBigBlockGrid(1_000_000)
 	g.markRow(500_000)
 	for b.Loop() {
-		g.selectedRows()
+		g.SelectedRows()
 	}
 }

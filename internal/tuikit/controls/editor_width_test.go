@@ -3,11 +3,11 @@ package controls
 import (
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -19,62 +19,6 @@ import (
 // column left of where the editor believed it was, and the caret landed in
 // the wrong place. Every test here fails against that model and passes
 // against the column-aware one; each names the specific symptom.
-
-// glyphScreen captures the runes a Draw painted, and where the caret was put,
-// so a test can assert on the actual picture rather than only on styles.
-type glyphScreen struct {
-	tcell.Screen
-	w, h   int
-	runes  map[[2]int]rune
-	comb   map[[2]int][]rune
-	curX   int
-	curY   int
-	curSet bool
-}
-
-func newGlyphScreen(w, h int) *glyphScreen {
-	return &glyphScreen{w: w, h: h, runes: map[[2]int]rune{}, comb: map[[2]int][]rune{}}
-}
-func (s *glyphScreen) Size() (int, int) { return s.w, s.h }
-func (s *glyphScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
-	s.runes[[2]int{x, y}] = primary
-	s.comb[[2]int{x, y}] = comb
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-// Every rune after the first is taken as a combining mark on the cell — the
-// callers pass one grapheme.
-func (s *glyphScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	var comb []rune
-	if n < len(str) {
-		comb = []rune(str[n:])
-	}
-	s.SetContent(x, y, r, comb, style)
-	return "", 1
-}
-
-func (s *glyphScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-func (s *glyphScreen) ShowCursor(x, y int) { s.curX, s.curY, s.curSet = x, y, true }
-
-// row reads back a screen row as a string, from x for w columns. A wide
-// rune's continuation cell is skipped rather than read: a real tcell screen
-// fills it as part of drawing the pair, and this fake only records the cell
-// the caller wrote to.
-func (s *glyphScreen) row(x, y, w int) string {
-	out := make([]rune, 0, w)
-	for i := 0; i < w; {
-		r, ok := s.runes[[2]int{x + i, y}]
-		if !ok || r == 0 {
-			r = ' '
-		}
-		out = append(out, r)
-		i += max(1, core.RuneWidth(r))
-	}
-	return string(out)
-}
 
 // widthEditor returns an editor with no gutter and no highlighter, sized w×h
 // at the origin, holding text.
@@ -91,13 +35,13 @@ func widthEditor(text string, w, h int) *Editor {
 // second half of the second ideograph. It belongs at column 4.
 func TestEditorDrawsWideRunesInTwoColumns(t *testing.T) {
 	e := widthEditor("世界OK", 20, 3)
-	s := newGlyphScreen(20, 3)
+	s := tuikittest.NewScreen(20, 3)
 	e.Draw(s)
 
-	if got := s.row(0, 0, 6); got != "世界OK" {
+	if got := s.Text(0, 0, 6); got != "世界OK" {
 		t.Errorf("row 0 = %q, want %q — a wide rune must claim two columns", got, "世界OK")
 	}
-	if got := s.runes[[2]int{4, 0}]; got != 'O' {
+	if got := s.RuneAt(4, 0); got != 'O' {
 		t.Errorf("column 4 holds %q, want 'O': two ideographs occupy columns 0-3", got)
 	}
 }
@@ -110,14 +54,15 @@ func TestEditorCaretFollowsDisplayColumns(t *testing.T) {
 	e.cursorCol = 3 // after 世, 界 and 'O' — columns 0-1, 2-3, 4
 	e.ensureCursorVisible()
 
-	s := newGlyphScreen(20, 3)
+	s := tuikittest.NewScreen(20, 3)
 	e.Draw(s)
 
-	if !s.curSet {
+	cx, _, shown := s.Cursor()
+	if !shown {
 		t.Fatal("Draw never showed a cursor")
 	}
-	if s.curX != 5 {
-		t.Errorf("caret x = %d after 2 wide runes + 1 narrow, want 5 (rune-counting gives 3)", s.curX)
+	if cx != 5 {
+		t.Errorf("caret x = %d after 2 wide runes + 1 narrow, want 5 (rune-counting gives 3)", cx)
 	}
 }
 
@@ -174,12 +119,12 @@ func TestEditorHorizontalScrollIsInColumns(t *testing.T) {
 	// by the left edge — its visible half must be blank, not a stray glyph
 	// drawn over the cell tcell reserves for the pair.
 	e.scrollCol = 1
-	s := newGlyphScreen(20, 4)
+	s := tuikittest.NewScreen(20, 4)
 	e.Draw(s)
-	if got := s.runes[[2]int{0, 0}]; got != ' ' {
+	if got := s.RuneAt(0, 0); got != ' ' {
 		t.Errorf("column 0 with a wide rune straddling the left edge = %q, want a blank", got)
 	}
-	if got := s.runes[[2]int{1, 0}]; got != '界' {
+	if got := s.RuneAt(1, 0); got != '界' {
 		t.Errorf("column 1 = %q, want the second ideograph to start there", got)
 	}
 }
@@ -189,10 +134,10 @@ func TestEditorHorizontalScrollIsInColumns(t *testing.T) {
 // that doesn't fit is blanked instead.
 func TestEditorClipsAWideRuneAtTheRightEdge(t *testing.T) {
 	e := widthEditor("ab世", 3, 2) // 世 needs columns 2-3; only 0-2 exist
-	s := newGlyphScreen(10, 2)
+	s := tuikittest.NewScreen(10, 2)
 	e.Draw(s)
 
-	if got := s.runes[[2]int{2, 0}]; got != ' ' {
+	if got := s.RuneAt(2, 0); got != ' ' {
 		t.Errorf("column 2 = %q, want a blank — a wide rune must not be drawn half in", got)
 	}
 }
@@ -207,15 +152,15 @@ func TestEditorSelectionCoversBothCellsOfAWideRune(t *testing.T) {
 	e.SetText("世界")
 	e.SetBounds(0, 0, 10, 2)
 
-	s := newRecordingScreen(10, 2)
+	s := tuikittest.NewScreen(10, 2)
 	e.Draw(s)
 
 	// tcell styles the continuation cell itself, so assert on the cell the
 	// editor explicitly wrote: the run covers rune 0, which starts at 0.
-	if s.cells[[2]int{0, 0}] != marker {
+	if s.StyleAt(0, 0) != marker {
 		t.Error("the highlighter's run over rune 0 did not reach the column it renders at")
 	}
-	if s.cells[[2]int{2, 0}] == marker {
+	if s.StyleAt(2, 0) == marker {
 		t.Error("the run over rune 0 leaked onto rune 1's column — runs are rune-indexed, not column-indexed")
 	}
 }
@@ -263,19 +208,19 @@ func TestEditorDrawsCombiningMarkOnItsBase(t *testing.T) {
 	e.cursorCol = 6 // after N, ', x, e, U+0301 and y
 	e.ensureCursorVisible()
 
-	s := newGlyphScreen(20, 3)
+	s := tuikittest.NewScreen(20, 3)
 	e.Draw(s)
 
-	if got := s.runes[[2]int{3, 0}]; got != 'e' {
+	if got := s.RuneAt(3, 0); got != 'e' {
 		t.Errorf("column 3 base = %q, want 'e'", got)
 	}
-	if got := s.comb[[2]int{3, 0}]; len(got) != 1 || got[0] != '\u0301' {
-		t.Errorf("column 3 combining = %q, want [U+0301]", got)
+	if got, _, _ := s.Get(3, 0); got != "e\u0301" {
+		t.Errorf("column 3 = %q, want e + U+0301 in one cell", got)
 	}
-	if got := s.row(0, 0, 6); got != "N'xey'" {
-		t.Errorf("row 0 = %q, want %q — the mark must occupy no column", got, "N'xey'")
+	if got := s.Text(0, 0, 6); got != "N'xe\u0301y'" {
+		t.Errorf("row 0 = %q, want %q — the mark must occupy no column", got, "N'xe\u0301y'")
 	}
-	if s.curX != 5 {
-		t.Errorf("caret x = %d after the 'y', want 5 (counting the mark gives 6)", s.curX)
+	if cx, _, _ := s.Cursor(); cx != 5 {
+		t.Errorf("caret x = %d after the 'y', want 5 (counting the mark gives 6)", cx)
 	}
 }

@@ -124,8 +124,8 @@ func TestCtrlClickUnpicksAndRepicksInsideAShiftSelectedRun(t *testing.T) {
 		clickGridRow(g, step.row, tcell.ModCtrl)
 		what := fmt.Sprintf("Ctrl+click on row %d", step.row)
 		wantRows(t, g, step.want, what)
-		if n := g.selectedRowCount(); n != len(step.want) {
-			t.Fatalf("%s: selectedRowCount() = %d, want %d", what, n, len(step.want))
+		if n := g.SelectedRowCount(); n != len(step.want) {
+			t.Fatalf("%s: SelectedRowCount() = %d, want %d", what, n, len(step.want))
 		}
 		for r := range g.rows.Len() {
 			if got, want := g.rowMarked(r), slices.Contains(step.want, r); got != want {

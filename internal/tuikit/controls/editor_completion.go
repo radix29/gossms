@@ -10,10 +10,11 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Generic completion ("IntelliSense") popup for Editor. Editor knows nothing
-// about SQL: it calls the provider after every buffer- or cursor-affecting key
-// and draws what comes back. Only the SQL query editor sets a provider (see
-// internal/tui/completion_provider.go), so this is a no-op for every other Editor.
+// Completion ("IntelliSense") popup for Editor. The provider decides what to
+// offer: Editor calls it after every buffer- or cursor-affecting key and draws
+// what comes back, and without one this is a no-op. The span the popup replaces
+// is still found the T-SQL way (sqltext.WordStart, the '#'/'@' sigils and
+// bracket-quoted names; see isNameSigil).
 // ---------------------------------------------------------------------------
 
 // CompletionItem is one candidate offered by a CompletionProvider.
@@ -542,7 +543,6 @@ func (e *Editor) DrawOverlay(s tcell.Screen) {
 		return
 	}
 	rect := e.completionRect()
-	p := theme.Active()
 	base := theme.StyleDialog()
 	core.FillRect(s, rect, ' ', base)
 
@@ -558,7 +558,7 @@ func (e *Editor) DrawOverlay(s tcell.Screen) {
 		st := base
 		switch {
 		case item.Placeholder:
-			st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+			st = theme.StyleDialogDim()
 		case idx == e.completionSel:
 			st = theme.StyleSelected()
 		}
@@ -573,15 +573,15 @@ func (e *Editor) DrawOverlay(s tcell.Screen) {
 		if detailW > 0 && item.Detail != "" {
 			detailSt := st
 			if idx != e.completionSel {
-				detailSt = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+				detailSt = theme.StyleDialogDim()
 			}
 			core.DrawTextClipped(s, x+labelW+2, y, detailW, detailSt, item.Detail)
 		}
 	}
 
 	if len(e.completionItems) > rect.H {
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+		sbStyle := theme.StyleDialogLine()
+		sbThumb := theme.StyleScrollThumb()
 		core.DrawScrollbar(s, rect.Right()-1, rect.Y, rect.H, len(e.completionItems), rect.H, e.completionScroll, sbStyle, sbThumb)
 	}
 }

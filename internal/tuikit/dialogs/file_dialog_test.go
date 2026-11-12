@@ -7,10 +7,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
-
-func key(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, "", tcell.ModNone) }
-func rn(r rune) *tcell.EventKey       { return tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone) }
 
 func newTestFileDialog(t *testing.T) (*FileDialog, string) {
 	t.Helper()
@@ -112,7 +110,7 @@ func TestFileDialogEnterOnFileChooses(t *testing.T) {
 	var chosen string
 	d.ShowOpen("Open Query File", filepath.Join(dir, "README.md"), func(path string) { chosen = path })
 
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 
 	want := filepath.Join(dir, "README.md")
 	if chosen != want {
@@ -129,7 +127,7 @@ func TestFileDialogEnterOnDirectoryDescends(t *testing.T) {
 	d.selectByName("src")
 	d.setFocus(ffList)
 
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 
 	want, _ := filepath.EvalSymlinks(filepath.Join(dir, "src"))
 	got, _ := filepath.EvalSymlinks(d.dir)
@@ -149,7 +147,7 @@ func TestFileDialogParentEntryNavigatesUp(t *testing.T) {
 	d.selectByName("..")
 	d.setFocus(ffList)
 
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 
 	want, _ := filepath.EvalSymlinks(dir)
 	got, _ := filepath.EvalSymlinks(d.dir)
@@ -169,7 +167,7 @@ func TestFileDialogSaveOverwriteAsksBeforeChoosing(t *testing.T) {
 	var chosen string
 	d.ShowSave("Save Query", filepath.Join(dir, "README.md"), func(path string) { chosen = path })
 
-	d.HandleKey(key(tcell.KeyEnter)) // ShowSave focuses the name field; Enter there confirms
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter)) // ShowSave focuses the name field; Enter there confirms
 
 	want := filepath.Join(dir, "README.md")
 	if confirmAskedFor != want {
@@ -199,7 +197,7 @@ func TestFileDialogSaveNewNameSkipsOverwritePrompt(t *testing.T) {
 	var chosen string
 	d.ShowSave("Save Query As", filepath.Join(dir, "brand-new.sql"), func(path string) { chosen = path })
 
-	d.HandleKey(key(tcell.KeyEnter))
+	d.HandleKey(tuikittest.Key(tcell.KeyEnter))
 
 	want := filepath.Join(dir, "brand-new.sql")
 	if chosen != want {
@@ -213,7 +211,7 @@ func TestFileDialogEscapeCancels(t *testing.T) {
 	d.ShowOpen("Open Query File", filepath.Join(dir, "README.md"), nil)
 	d.OnCancel = func() { canceled = true }
 
-	d.HandleKey(key(tcell.KeyEscape))
+	d.HandleKey(tuikittest.Key(tcell.KeyEscape))
 
 	if !canceled {
 		t.Fatal("Escape should fire OnCancel")
@@ -228,7 +226,7 @@ func TestFileDialogTypeaheadJumpsToMatch(t *testing.T) {
 	d.ShowOpen("Open Query File", filepath.Join(dir, "README.md"), nil)
 	d.setFocus(ffList)
 
-	d.HandleKey(rn('m')) // "main.go" is the only entry starting with 'm'
+	d.HandleKey(tuikittest.Rune('m')) // "main.go" is the only entry starting with 'm'
 
 	if got := d.entries[d.sel].Name; got != "main.go" {
 		t.Fatalf("selected entry after typeahead 'm' = %q, want %q", got, "main.go")
@@ -386,7 +384,7 @@ func TestFormatFileSizeHelper(t *testing.T) {
 func newPlacedFileDialog(t *testing.T) (*FileDialog, string) {
 	t.Helper()
 	_, dir := newTestFileDialog(t)
-	d := NewFileDialog(&sizedScreen{w: 120, h: 40})
+	d := NewFileDialog(tuikittest.NewScreen(120, 40))
 	d.ShowOpen("Open", dir, func(string) {})
 	// Mirrors the two SetBounds calls in file_dialog_draw.go, which only run
 	// under Draw — if those move, this must move with them.
@@ -397,8 +395,7 @@ func newPlacedFileDialog(t *testing.T) (*FileDialog, string) {
 }
 
 // A text-selection drag belongs to the field that claimed its press until
-// the release, wherever the pointer goes — invariant 1 in ARCHITECTURE.md
-// § The mouseDragging idiom. InputField honours this itself, but only if its
+// the release, wherever the pointer goes. InputField honours this itself, but only if its
 // host forwards the off-rect motion; hit-testing every Button1 before
 // forwarding, as this dialog used to, froze the selection at the box edge.
 func TestFileDialogDragOutOfPathFieldKeepsExtending(t *testing.T) {

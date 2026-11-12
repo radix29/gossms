@@ -6,80 +6,42 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-// recScreen records every cell written to it. Size is the only other Screen
-// method ClipScreen and the drawing helpers reach.
-type recScreen struct {
-	tcell.Screen
-	w, h  int
-	cells map[[2]int]rune
-}
-
-func newRecScreen(w, h int) *recScreen {
-	return &recScreen{w: w, h: h, cells: map[[2]int]rune{}}
-}
-
-func (s *recScreen) Size() (int, int) { return s.w, s.h }
-
-func (s *recScreen) SetContent(x, y int, primary rune, _ []rune, _ tcell.Style) {
-	s.cells[[2]int{x, y}] = primary
-}
-
-func (s *recScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	head, rest := splitGrapheme(str, 1)
-	if head == "" {
-		return "", 0
-	}
-	s.SetContent(x, y, []rune(head)[0], nil, style)
-	return rest, DisplayWidth(head)
-}
-
-// FillArea is tcell's: the area clipped to the screen, nothing more.
-func (s *recScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	for row := max(y, 0); row < min(y+h, s.h); row++ {
-		for col := max(x, 0); col < min(x+w, s.w); col++ {
-			s.SetContent(col, row, ch, nil, style)
-		}
-	}
-}
-
-func (s *recScreen) at(x, y int) rune { return s.cells[[2]int{x, y}] }
-
 func TestClipScreenDropsWritesOutsideTheClip(t *testing.T) {
-	rec := newRecScreen(20, 10)
+	rec := dotted(20, 10)
 	cs := NewClipScreen(rec)
 	cs.SetClip(Rect{X: 5, Y: 2, W: 4, H: 3})
 
 	DrawText(cs, 3, 3, tcell.StyleDefault, "abcdefgh")
 
-	if got := rec.at(4, 3); got != 0 {
+	if got := rec.RuneAt(4, 3); got != '.' {
 		t.Errorf("column 4 (left of the clip) = %q, want nothing drawn", got)
 	}
-	if got := rec.at(5, 3); got != 'c' {
+	if got := rec.RuneAt(5, 3); got != 'c' {
 		t.Errorf("column 5 = %q, want 'c'", got)
 	}
-	if got := rec.at(8, 3); got != 'f' {
+	if got := rec.RuneAt(8, 3); got != 'f' {
 		t.Errorf("column 8 (last clipped column) = %q, want 'f'", got)
 	}
-	if got := rec.at(9, 3); got != 0 {
+	if got := rec.RuneAt(9, 3); got != '.' {
 		t.Errorf("column 9 (right of the clip) = %q, want nothing drawn", got)
 	}
 	// A row outside the clip is dropped entirely.
 	DrawText(cs, 5, 6, tcell.StyleDefault, "xyz")
-	if got := rec.at(5, 6); got != 0 {
+	if got := rec.RuneAt(5, 6); got != '.' {
 		t.Errorf("row 6 (below the clip) = %q, want nothing drawn", got)
 	}
 }
 
 func TestClipScreenResetClipWidensToTheWholeScreen(t *testing.T) {
-	rec := newRecScreen(20, 10)
+	rec := dotted(20, 10)
 	cs := NewClipScreen(rec)
 	cs.SetClip(Rect{X: 5, Y: 2, W: 4, H: 3})
 	cs.ResetClip()
 
 	DrawText(cs, 0, 0, tcell.StyleDefault, "ab")
-	if rec.at(0, 0) != 'a' || rec.at(1, 0) != 'b' {
+	if rec.RuneAt(0, 0) != 'a' || rec.RuneAt(1, 0) != 'b' {
 		t.Errorf("cells at (0,0)/(1,0) = %q/%q, want 'a'/'b' after ResetClip",
-			rec.at(0, 0), rec.at(1, 0))
+			rec.RuneAt(0, 0), rec.RuneAt(1, 0))
 	}
 }
 
@@ -87,7 +49,7 @@ func TestClipScreenResetClipWidensToTheWholeScreen(t *testing.T) {
 // the clip still has to report the grapheme it skipped — reporting 0 for
 // every cell would leave the walk on the same column forever.
 func TestClipScreenPutReportsWidthOutsideTheClip(t *testing.T) {
-	rec := newRecScreen(20, 10)
+	rec := dotted(20, 10)
 	cs := NewClipScreen(rec)
 	cs.SetClip(Rect{X: 10, Y: 0, W: 4, H: 4})
 
@@ -95,22 +57,22 @@ func TestClipScreenPutReportsWidthOutsideTheClip(t *testing.T) {
 	if rest != "b" || w != 1 {
 		t.Errorf("Put outside the clip = (%q, %d), want (\"b\", 1)", rest, w)
 	}
-	if rec.at(0, 0) != 0 {
-		t.Errorf("cell at (0,0) = %q, want nothing drawn", rec.at(0, 0))
+	if rec.RuneAt(0, 0) != '.' {
+		t.Errorf("cell at (0,0) = %q, want nothing drawn", rec.RuneAt(0, 0))
 	}
 }
 
 func TestClipScreenFillCoversOnlyTheClip(t *testing.T) {
-	rec := newRecScreen(20, 10)
+	rec := dotted(20, 10)
 	cs := NewClipScreen(rec)
 	cs.SetClip(Rect{X: 2, Y: 1, W: 2, H: 2})
 
 	cs.Fill('#', tcell.StyleDefault)
 
-	if rec.at(2, 1) != '#' || rec.at(3, 2) != '#' {
+	if rec.RuneAt(2, 1) != '#' || rec.RuneAt(3, 2) != '#' {
 		t.Error("Fill should cover the clip rectangle")
 	}
-	if rec.at(1, 1) != 0 || rec.at(4, 1) != 0 || rec.at(2, 3) != 0 {
+	if rec.RuneAt(1, 1) != '.' || rec.RuneAt(4, 1) != '.' || rec.RuneAt(2, 3) != '.' {
 		t.Error("Fill should not write outside the clip rectangle")
 	}
 }
@@ -119,17 +81,34 @@ func TestClipScreenFillCoversOnlyTheClip(t *testing.T) {
 // the wrapped screen unclipped, so the first caller to fill through it would
 // paint across whatever sat beside the clip.
 func TestClipScreenFillAreaCoversOnlyTheClip(t *testing.T) {
-	rec := newRecScreen(20, 10)
+	rec := dotted(20, 10)
 	cs := NewClipScreen(rec)
 	cs.SetClip(Rect{X: 2, Y: 1, W: 3, H: 2})
 
 	cs.FillArea(0, 0, 10, 10, '#', tcell.StyleDefault)
 
-	if len(rec.cells) != 6 || rec.at(2, 1) != '#' || rec.at(4, 2) != '#' {
-		t.Errorf("FillArea wrote %d cells, want exactly the 3x2 clip", len(rec.cells))
+	if written(rec) != 6 || rec.RuneAt(2, 1) != '#' || rec.RuneAt(4, 2) != '#' {
+		t.Errorf("FillArea wrote %d cells, want exactly the 3x2 clip", written(rec))
 	}
 	cs.FillArea(10, 0, 5, 5, '!', tcell.StyleDefault)
-	if len(rec.cells) != 6 {
+	if written(rec) != 6 {
 		t.Error("FillArea wholly outside the clip should write nothing")
+	}
+}
+
+// A caret that scrolled out of a clamped dialog must not park the terminal
+// cursor outside the box: outside the clip the cursor is hidden.
+func TestClipScreenHidesCursorOutsideTheClip(t *testing.T) {
+	rec := dotted(20, 10)
+	cs := NewClipScreen(rec)
+	cs.SetClip(Rect{X: 5, Y: 2, W: 4, H: 3})
+
+	cs.ShowCursor(6, 3)
+	if x, y, ok := rec.Cursor(); !ok || x != 6 || y != 3 {
+		t.Errorf("cursor inside the clip = (%d,%d) shown %v, want (6,3)", x, y, ok)
+	}
+	cs.ShowCursor(12, 3)
+	if x, y, ok := rec.Cursor(); ok {
+		t.Errorf("cursor outside the clip = (%d,%d), want hidden", x, y)
 	}
 }

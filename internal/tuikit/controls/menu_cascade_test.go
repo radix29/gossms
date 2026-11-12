@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // scriptMenu is a two-level cascade in the shape Object Explorer's
@@ -127,7 +128,7 @@ func TestContextMenuMouseHoverOpensSubmenuAndClickRunsLeaf(t *testing.T) {
 	var ran string
 	cm := &ContextMenu{}
 	cm.Show(2, 2, scriptMenu(&ran))
-	s := &fakeMenuScreen{w: 80, h: 24}
+	s := tuikittest.NewScreen(80, 24)
 	cm.Draw(s)
 
 	// Root box is at (2,2); row 1 ("Script Table as") is at y=4. Hovering it
@@ -156,7 +157,7 @@ func TestContextMenuHeldButtonOverLeafRunsActionOnce(t *testing.T) {
 	var calls int
 	cm := &ContextMenu{}
 	cm.Show(2, 2, []MenuItem{{Label: "Refresh", Action: func() { calls++ }}})
-	cm.Draw(&fakeMenuScreen{w: 80, h: 24})
+	cm.Draw(tuikittest.NewScreen(80, 24))
 	// tcell resends Button1 on every motion while the button is held; the
 	// latch is what stops the second event re-firing the action.
 	cm.HandleMouse(tcell.NewEventMouse(5, 3, tcell.Button1, tcell.ModNone))
@@ -170,7 +171,7 @@ func TestContextMenuHoveringSiblingClosesTheOpenSubmenu(t *testing.T) {
 	var ran string
 	cm := &ContextMenu{}
 	cm.Show(2, 2, scriptMenu(&ran))
-	cm.Draw(&fakeMenuScreen{w: 80, h: 24})
+	cm.Draw(tuikittest.NewScreen(80, 24))
 	cm.HandleMouse(tcell.NewEventMouse(5, 4, tcell.ButtonNone, tcell.ModNone)) // "Script Table as"
 	if cm.cascade.depth() != 1 {
 		t.Fatalf("cascade depth = %d, want 1", cm.cascade.depth())
@@ -184,12 +185,13 @@ func TestContextMenuHoveringSiblingClosesTheOpenSubmenu(t *testing.T) {
 func TestSubmenuRectFlipsLeftAtTheScreenEdge(t *testing.T) {
 	items := []MenuItem{{Label: "New Query Window"}, {Label: "Clipboard"}}
 	parent := core.Rect{X: 50, Y: 4, W: 24, H: 5}
-	s := &fakeMenuScreen{w: 80, h: 24}
+	s := tuikittest.NewScreen(80, 24)
+	sw, sh := s.Size()
 
 	r := submenuRect(s, parent, 6, items)
 	w := menuContentWidth(items, 20)
 	if r.X != parent.X-w {
-		t.Fatalf("submenu X = %d, want %d — it must flip to the parent's left rather than run off a %d-column screen", r.X, parent.X-w, s.w)
+		t.Fatalf("submenu X = %d, want %d — it must flip to the parent's left rather than run off a %d-column screen", r.X, parent.X-w, sw)
 	}
 	if r.Y != 5 {
 		t.Fatalf("submenu Y = %d, want 5 (first item aligned with the parent row at y=6)", r.Y)
@@ -200,8 +202,8 @@ func TestSubmenuRectFlipsLeftAtTheScreenEdge(t *testing.T) {
 		t.Fatalf("submenu X = %d, want 26 (immediately right of the parent box)", r.X)
 	}
 	// Near the bottom it is pushed up to stay on screen.
-	if r := submenuRect(s, core.Rect{X: 2, Y: 18, W: 24, H: 5}, 22, items); r.Y != s.h-(len(items)+2) {
-		t.Fatalf("submenu Y = %d, want %d (pushed up to fit)", r.Y, s.h-(len(items)+2))
+	if r := submenuRect(s, core.Rect{X: 2, Y: 18, W: 24, H: 5}, 22, items); r.Y != sh-(len(items)+2) {
+		t.Fatalf("submenu Y = %d, want %d (pushed up to fit)", r.Y, sh-(len(items)+2))
 	}
 }
 
@@ -262,7 +264,7 @@ func TestMenuBarSubmenuMouseClickRunsLeaf(t *testing.T) {
 		}},
 	}}})
 	mb.Open()
-	s := &fakeMenuScreen{w: 80, h: 24}
+	s := tuikittest.NewScreen(80, 24)
 	mb.DrawOverlay(s)
 
 	// Dropdown rows start at y=2; "Results To" is the second one.
@@ -289,7 +291,7 @@ func TestMenuBarClickOnSubmenuParentKeepsMenuOpen(t *testing.T) {
 		{Label: "Results To", Sub: []MenuItem{{Label: "Grid", Action: func() { ran = "grid" }}}},
 	}}})
 	mb.Open()
-	mb.DrawOverlay(&fakeMenuScreen{w: 80, h: 24})
+	mb.DrawOverlay(tuikittest.NewScreen(80, 24))
 	mb.HandleMouse(tcell.NewEventMouse(4, 2, tcell.Button1, tcell.ModNone))
 	if !mb.IsOpen() || mb.cascade.depth() != 1 {
 		t.Fatalf("open=%v depth=%d after clicking a cascade row; want the dropdown open with its submenu shown", mb.IsOpen(), mb.cascade.depth())

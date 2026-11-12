@@ -109,13 +109,12 @@ func (r *CheckRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
 
 func (r *CheckRow) Draw(s tcell.Screen, focused bool) {
 	if r.flat() {
-		p := theme.Active()
 		mark := "✗"
 		if r.box.Checked() {
 			mark = "✓"
 		}
-		mst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
-		lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+		mst := theme.StyleDialog()
+		lst := theme.StyleDialogDim()
 		if focused {
 			mst, lst = theme.StyleSelected(), theme.StyleSelected()
 			core.FillRect(s, core.Rect{X: r.x, Y: r.y, W: r.w, H: 1}, ' ', lst)

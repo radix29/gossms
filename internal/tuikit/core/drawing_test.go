@@ -178,7 +178,8 @@ func TestRuneStringIsStringOfRune(t *testing.T) {
 	}
 }
 
-// putLog is a tcell.Screen fake recording each Put as "x,y:str".
+// putLog is a tcell.Screen fake recording each Put as "x,y:str": the call
+// sequence itself, which a Buffer (cells only) cannot show.
 type putLog struct {
 	tcell.Screen
 	puts []string
@@ -189,8 +190,13 @@ func (s *putLog) Put(x, y int, str string, _ tcell.Style) (string, int) {
 	return "", 1
 }
 
+// FillArea logs one Put per cell, so a fill shows in the log like a draw.
 func (s *putLog) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	FillAreaByPut(s, x, y, w, h, ch, style)
+	for row := y; row < y+h; row++ {
+		for col := x; col < x+w; col++ {
+			s.Put(col, row, string(ch), style)
+		}
+	}
 }
 
 // drawTextLineCases are cells chosen to land the cut on every kind of

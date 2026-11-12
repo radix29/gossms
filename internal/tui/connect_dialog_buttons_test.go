@@ -3,47 +3,21 @@ package tui
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
-
-// recordingScreen keeps what was painted, which fakeSizedScreen throws away.
-type recordingScreen struct {
-	tcell.Screen
-	w, h  int
-	runes map[[2]int]rune
-}
-
-func (s *recordingScreen) Size() (int, int) { return s.w, s.h }
-func (s *recordingScreen) SetContent(x, y int, primary rune, _ []rune, _ tcell.Style) {
-	s.runes[[2]int{x, y}] = primary
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-func (s *recordingScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
-}
-
-func (s *recordingScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-func (s *recordingScreen) ShowCursor(int, int) {}
 
 // drawnFieldText reads back the text a field actually painted into its box —
 // what the user sees, as opposed to what Value() reports.
 func drawnFieldText(f *widgets.InputField) string {
-	s := &recordingScreen{w: 200, h: 50, runes: map[[2]int]rune{}}
+	s := tuikittest.NewScreen(200, 50)
 	f.Draw(s)
 	var b strings.Builder
 	for x := f.InputX() + 1; x < f.InputX()+1+f.Width(); x++ {
-		if r, ok := s.runes[[2]int{x, f.RectY()}]; ok && r != 0 {
+		if r := s.RuneAt(x, f.RectY()); r != 0 {
 			b.WriteRune(r)
 		}
 	}

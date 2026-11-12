@@ -1,6 +1,10 @@
 package charts
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/radix29/gossms/internal/tuikit/core"
+)
 
 func bareStacked(series []Series, max float64) StackedHistoryChart {
 	return StackedHistoryChart{
@@ -16,7 +20,7 @@ func bareStacked(series []Series, max float64) StackedHistoryChart {
 // must be one continuous run of blocks, with the segment boundaries drawn
 // inside cells rather than as gaps between them.
 func TestStackedHistoryColumnsHaveNoInternalGaps(t *testing.T) {
-	c := NewCanvas(14, 9)
+	c := core.NewBuffer(14, 9)
 	bareStacked([]Series{
 		{Label: "a", Color: colA, Values: []float64{1.3}},
 		{Label: "b", Color: colB, Values: []float64{0.4}},
@@ -28,7 +32,7 @@ func TestStackedHistoryColumnsHaveNoInternalGaps(t *testing.T) {
 }
 
 func TestStackedHistoryStackHeightMatchesTotal(t *testing.T) {
-	c := NewCanvas(14, 9)
+	c := core.NewBuffer(14, 9)
 	// Total 4 over a scale of 8 on an 8-row plot: exactly four filled rows.
 	bareStacked([]Series{
 		{Label: "a", Color: colA, Values: []float64{2}},
@@ -49,7 +53,7 @@ func TestStackedHistoryStackHeightMatchesTotal(t *testing.T) {
 }
 
 func TestStackedHistorySegmentColoursStackInOrder(t *testing.T) {
-	c := NewCanvas(14, 9)
+	c := core.NewBuffer(14, 9)
 	bareStacked([]Series{
 		{Label: "a", Color: colA, Values: []float64{2}},
 		{Label: "b", Color: colB, Values: []float64{2}},
@@ -69,7 +73,7 @@ func TestStackedHistorySegmentColoursStackInOrder(t *testing.T) {
 // A series whose values are all zero contributes nothing and must not
 // displace the series above it in the stack.
 func TestStackedHistorySkipsZeroSeries(t *testing.T) {
-	c := NewCanvas(14, 9)
+	c := core.NewBuffer(14, 9)
 	bareStacked([]Series{
 		{Label: "zero", Color: colA, Values: []float64{0}},
 		{Label: "real", Color: colB, Values: []float64{2}},
@@ -83,7 +87,7 @@ func TestStackedHistorySkipsZeroSeries(t *testing.T) {
 }
 
 func TestStackedHistoryAutoScalesToLargestTotal(t *testing.T) {
-	c := NewCanvas(16, 8)
+	c := core.NewBuffer(16, 8)
 	StackedHistoryChart{
 		Series: []Series{
 			{Label: "a", Color: colA, Values: []float64{3000, 1000}},
@@ -100,7 +104,7 @@ func TestStackedHistoryAutoScalesToLargestTotal(t *testing.T) {
 }
 
 func TestStackedHistoryEmptyAndZeroInput(t *testing.T) {
-	c := NewCanvas(12, 6)
+	c := core.NewBuffer(12, 6)
 	bareStacked(nil, 0).Draw(c, c.Rect())
 	bareStacked([]Series{{Label: "a", Color: colA, Values: []float64{0, 0}}}, 0).Draw(c, c.Rect())
 

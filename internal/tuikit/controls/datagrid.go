@@ -276,8 +276,8 @@ type DataGrid struct {
 	// index, name and full text; true means the host displayed it and the
 	// built-in popup stays closed, false or nil opens the popup. A NULL cell
 	// (NullSource) never reaches it. The index
-	// disambiguates duplicate column names — QueryPanel uses it to find the
-	// declared type when routing an XML cell to a new query tab.
+	// disambiguates duplicate column names, e.g. for a host that looks up the
+	// column's declared type to open an XML cell in an editor of its own.
 	OnShowValue func(col int, column, value string) bool
 
 	// OnMenuItems contributes the host's own entries to the cell context menu,
@@ -488,7 +488,7 @@ func (g *DataGrid) SelectedRow() int {
 
 // ScrollRow returns the index of the topmost visible data row — view state a
 // host reads rather than drives, so it can tell whether an event it meant to
-// swallow reached the grid. See QueryPanel's mid-drag wheel handling.
+// swallow reached the grid (e.g. a wheel tick it routes elsewhere mid-drag).
 func (g *DataGrid) ScrollRow() int { return g.scrollRow }
 
 // ScrollCol returns the index of the leftmost visible column. A grid without a

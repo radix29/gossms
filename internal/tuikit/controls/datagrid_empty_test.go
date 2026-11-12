@@ -12,8 +12,8 @@ func newEmptyResultGrid() *DataGrid {
 	return g
 }
 
-// TestEmptyGridSelectsNothing pins review plan X6: Ctrl+C on an empty results
-// grid indexed row 0 and crashed gossms, because the selection reported the
+// TestEmptyGridSelectsNothing: Ctrl+C on an empty results grid indexed row 0
+// and crashed the application, because the selection reported the
 // cursor's row whether or not it existed.
 func TestEmptyGridSelectsNothing(t *testing.T) {
 	g := newEmptyResultGrid()

@@ -7,6 +7,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // Object Explorer geometry for the drag-arming tests: a 100x30 screen whose
@@ -21,11 +22,11 @@ const (
 	dragTestLabelX  = 10 // well clear of the expander glyph at either depth
 )
 
-// eventQScreen is fakeSizedScreen plus a real EventQ, so a background load
+// eventQScreen is a tuikittest.Screen plus a real EventQ, so a background load
 // kicked off by a click (postAndWake → wakeEventLoop) writes to a channel
 // instead of dereferencing the embedded nil tcell.Screen.
 type eventQScreen struct {
-	*fakeSizedScreen
+	*tuikittest.Screen
 	q chan tcell.Event
 }
 
@@ -40,8 +41,8 @@ func newDragTestApp(t *testing.T, childCount int) *App {
 	t.Helper()
 	a := newTestApp()
 	a.screen = &eventQScreen{
-		fakeSizedScreen: &fakeSizedScreen{w: dragTestScreenW, h: dragTestScreenH},
-		q:               make(chan tcell.Event, 16),
+		Screen: tuikittest.NewScreen(dragTestScreenW, dragTestScreenH),
+		q:      make(chan tcell.Event, 16),
 	}
 	a.menuBar = controls.NewMenuBar()
 	a.toolbar = controls.NewToolbar()

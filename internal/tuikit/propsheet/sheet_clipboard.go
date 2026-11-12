@@ -3,7 +3,7 @@ package propsheet
 import "github.com/radix29/gossms/internal/tuikit/core"
 
 // ---------------------------------------------------------------------------
-// core.ClipboardTarget / core.ClipboardHost — see internal/tui/clipboard.go
+// core.ClipboardTarget / core.ClipboardHost
 // ---------------------------------------------------------------------------
 
 func (p *PropertySheet) currentCopyText() (string, bool) {
@@ -50,14 +50,14 @@ func (p *PropertySheet) SelectedText() string {
 	return txt
 }
 
-// Cut removes and returns the focused field's real selection; other row kinds
-// have nothing to remove, so it degrades to Copy. cutSelection()
-// (internal/tui/clipboard.go) calls Cut() only when HasSelection() was true.
+// Cut removes and returns the focused field's real selection. Any other row
+// kind, or a form locked for an Apply, has nothing to remove: Cut returns ""
+// so the host leaves the clipboard alone and reports no cut.
 func (p *PropertySheet) Cut() string {
 	if cr, ok := p.focusedClipboardRow(); ok && cr.HasSelection() && !p.formLocked() {
 		return cr.Cut()
 	}
-	return p.SelectedText()
+	return ""
 }
 
 // Paste inserts text into the focused field if editable and the form is not

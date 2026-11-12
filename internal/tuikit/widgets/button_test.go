@@ -4,14 +4,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
-
-// mouse builds a mouse event at (x, y) with the given buttons held. tcell's
-// all-motion tracking reports a continued hold as another Button1 event at the
-// new position, which is exactly what the latch tests below replay.
-func mouse(x, y int, btn tcell.ButtonMask) *tcell.EventMouse {
-	return tcell.NewEventMouse(x, y, btn, tcell.ModNone)
-}
 
 // TestButtonClickFiresOnceWhileHeld pins the press latch. tcell resends
 // Buttons()==Button1 on every motion event for as long as the button is down,
@@ -23,12 +17,12 @@ func TestButtonClickFiresOnceWhileHeld(t *testing.T) {
 	b := NewButton("OK", func() { clicks++ })
 	b.SetBounds(10, 5)
 
-	if !b.HandleMouse(mouse(11, 5, tcell.Button1)) {
+	if !b.HandleMouse(tuikittest.Mouse(11, 5, tcell.Button1)) {
 		t.Fatal("HandleMouse(press on the button) = false, want true")
 	}
 	// Held, drifting across the button — every one of these is a resend.
 	for _, x := range []int{11, 12, 13, 12, 11} {
-		b.HandleMouse(mouse(x, 5, tcell.Button1))
+		b.HandleMouse(tuikittest.Mouse(x, 5, tcell.Button1))
 	}
 	if clicks != 1 {
 		t.Errorf("OnClick fired %d times during one held click, want 1", clicks)
@@ -42,23 +36,23 @@ func TestButtonReleaseRearmsTheLatch(t *testing.T) {
 	b := NewButton("OK", func() { clicks++ })
 	b.SetBounds(10, 5)
 
-	b.HandleMouse(mouse(11, 5, tcell.Button1))
-	b.HandleMouse(mouse(11, 5, tcell.ButtonNone))
-	b.HandleMouse(mouse(11, 5, tcell.Button1))
+	b.HandleMouse(tuikittest.Mouse(11, 5, tcell.Button1))
+	b.HandleMouse(tuikittest.Mouse(11, 5, tcell.ButtonNone))
+	b.HandleMouse(tuikittest.Mouse(11, 5, tcell.Button1))
 	if clicks != 2 {
 		t.Errorf("OnClick fired %d times across two press/release cycles, want 2", clicks)
 	}
 }
 
-// TestButtonReleaseIsNotConsumed pins that a release returns false. App's
-// routeRelease broadcasts every release to every latch-bearing widget so their
-// latches reset (see internal/tui/app_events.go); a widget that claimed the
+// TestButtonReleaseIsNotConsumed pins that a release returns false. A host
+// broadcasts every release to every latch-bearing widget so their latches
+// reset; a widget that claimed the
 // release would stop that broadcast at itself.
 func TestButtonReleaseIsNotConsumed(t *testing.T) {
 	b := NewButton("OK", func() {})
 	b.SetBounds(10, 5)
-	b.HandleMouse(mouse(11, 5, tcell.Button1))
-	if b.HandleMouse(mouse(11, 5, tcell.ButtonNone)) {
+	b.HandleMouse(tuikittest.Mouse(11, 5, tcell.Button1))
+	if b.HandleMouse(tuikittest.Mouse(11, 5, tcell.ButtonNone)) {
 		t.Error("HandleMouse(release) = true, want false so the release keeps propagating")
 	}
 }
@@ -86,7 +80,7 @@ func TestButtonIgnoresClicksOutsideItsBounds(t *testing.T) {
 			clicks := 0
 			b := NewButton("OK", func() { clicks++ })
 			b.SetBounds(10, 5)
-			if b.HandleMouse(mouse(c.x, c.y, tcell.Button1)) {
+			if b.HandleMouse(tuikittest.Mouse(c.x, c.y, tcell.Button1)) {
 				t.Errorf("HandleMouse at (%d,%d) = true, want false", c.x, c.y)
 			}
 			if clicks != 0 {
@@ -99,7 +93,7 @@ func TestButtonIgnoresClicksOutsideItsBounds(t *testing.T) {
 	clicks := 0
 	b2 := NewButton("OK", func() { clicks++ })
 	b2.SetBounds(10, 5)
-	if !b2.HandleMouse(mouse(10+w-1, 5, tcell.Button1)) || clicks != 1 {
+	if !b2.HandleMouse(tuikittest.Mouse(10+w-1, 5, tcell.Button1)) || clicks != 1 {
 		t.Errorf("click on the button's last column: handled=%v clicks=%d, want true/1",
 			clicks == 1, clicks)
 	}
@@ -112,7 +106,7 @@ func TestButtonRefusesKeysItDoesNotHandle(t *testing.T) {
 	b := NewButton("OK", func() { t.Fatal("OnClick fired for a key the button should refuse") })
 	b.Focus(true)
 	for _, k := range []tcell.Key{tcell.KeyTab, tcell.KeyEscape, tcell.KeyUp, tcell.KeyLeft} {
-		if b.HandleKey(key(k, tcell.ModNone)) {
+		if b.HandleKey(tuikittest.Key(k, tcell.ModNone)) {
 			t.Errorf("HandleKey(%v) = true, want false", k)
 		}
 	}
@@ -124,7 +118,7 @@ func TestButtonIgnoresKeysWhileUnfocused(t *testing.T) {
 	clicks := 0
 	b := NewButton("OK", func() { clicks++ })
 	b.Focus(false)
-	if b.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) {
+	if b.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) {
 		t.Error("HandleKey(Enter) while unfocused = true, want false")
 	}
 	if clicks != 0 {
@@ -137,7 +131,7 @@ func TestButtonEnterFiresOnClick(t *testing.T) {
 	clicks := 0
 	b := NewButton("OK", func() { clicks++ })
 	b.Focus(true)
-	if !b.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) {
+	if !b.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) {
 		t.Fatal("HandleKey(Enter) while focused = false, want true")
 	}
 	if clicks != 1 {
@@ -151,10 +145,10 @@ func TestButtonWithNilOnClickDoesNotPanic(t *testing.T) {
 	b := NewButton("OK", nil)
 	b.SetBounds(0, 0)
 	b.Focus(true)
-	if !b.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) {
+	if !b.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) {
 		t.Error("HandleKey(Enter) = false, want true even with a nil OnClick")
 	}
-	if !b.HandleMouse(mouse(1, 0, tcell.Button1)) {
+	if !b.HandleMouse(tuikittest.Mouse(1, 0, tcell.Button1)) {
 		t.Error("HandleMouse(press) = false, want true even with a nil OnClick")
 	}
 }
@@ -183,10 +177,10 @@ func TestDisabledButtonRefusesInput(t *testing.T) {
 	if b.Enabled() {
 		t.Fatal("SetEnabled(false) did not take")
 	}
-	if b.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) {
+	if b.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) {
 		t.Error("a disabled button consumed Enter")
 	}
-	if b.HandleMouse(mouse(5, 2, tcell.Button1)) {
+	if b.HandleMouse(tuikittest.Mouse(5, 2, tcell.Button1)) {
 		t.Error("a disabled button consumed a click")
 	}
 	if clicks != 0 {
@@ -194,7 +188,7 @@ func TestDisabledButtonRefusesInput(t *testing.T) {
 	}
 
 	b.SetEnabled(true)
-	if !b.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) || clicks != 1 {
+	if !b.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) || clicks != 1 {
 		t.Errorf("re-enabling did not restore input: clicks = %d", clicks)
 	}
 }

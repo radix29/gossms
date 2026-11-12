@@ -4,11 +4,12 @@
 //
 // Every dialog embeds ModalDialog which:
 //   - Fades the underlying UI in place (keeping it visible) before its own box
-//   - Intercepts all mouse clicks outside its border (focus trap)
+//   - Intercepts all mouse clicks outside its border (focus trap); a visible
+//     dialog's HandleMouse returns true for every event, whatever the button
 //   - Cannot lose focus until explicitly dismissed
 //
-// Application-specific dialogs (ConnectDialog, HelpDialog, etc.) live in the tui
-// package and embed ModalDialog from here.
+// Application-specific dialogs live in the host application and embed
+// ModalDialog from here.
 //
 //   - modal.go              — ModalDialog base type
 //   - common.go             — helpers shared across more than one dialog file

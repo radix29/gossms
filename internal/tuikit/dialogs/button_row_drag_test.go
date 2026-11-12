@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // A dialog's button row acts only on the first Button1 of a gesture. tcell's
@@ -24,7 +25,7 @@ func TestADragOntoTheButtonRowDoesNotPressAButton(t *testing.T) {
 		to      [2]int // a point on the button under test
 		pressed func() bool
 	}
-	scr := func() tcell.Screen { return &sizedScreen{w: 100, h: 30} }
+	scr := func() tcell.Screen { return tuikittest.NewScreen(100, 30) }
 	buttonAt := func(m *ModalDialog, labels []string) [2]int {
 		return [2]int{m.ButtonRowStartX(labels) + 2, m.ButtonRowY()}
 	}
@@ -140,7 +141,7 @@ func TestADragOntoTheButtonRowDoesNotPressAButton(t *testing.T) {
 // ConsumeOutsideClick and ButtonClicked calling it again change nothing.
 func TestTrackPressSeesAPressBeforeConsumeOutsideClick(t *testing.T) {
 	d := &ModalDialog{}
-	d.InitModal(&sizedScreen{w: 100, h: 30}, "Backup", 60, 12)
+	d.InitModal(tuikittest.NewScreen(100, 30), "Backup", 60, 12)
 	d.Show()
 	labels := []string{"OK", "Cancel"}
 	x, y := d.ButtonRowStartX(labels)+2, d.ButtonRowY()

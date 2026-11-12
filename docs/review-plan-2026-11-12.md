@@ -134,15 +134,19 @@ gates want anyway. Test: `TestTreeViewRightClickFiresSelectBeforeMenu`.
 Driven on win10cli: Databases selected, right-click HealthClinic → status and
 Details name HealthClinic with the menu open, and still after Escape.
 
-### B6. `LocalFileSystem.Exists` drops errors that its interface says to report
+### B6. `LocalFileSystem.Exists` drops errors that its interface says to report — **DONE 2026-11-12**
 
 `FileSystem.Exists` says `err` means "couldn't ask", and the save-overwrite
 guard treats that as "assume it exists" and prompts. `LocalFileSystem.Exists`
 returns `(false, false, nil)` for *every* `os.Stat` error, so on EACCES or EIO
 the overwrite prompt is skipped. **Fix:** return `err` unless it is
 `errors.Is(err, fs.ErrNotExist)`. Low severity.
+**Done as:** ENOTDIR (a file where a directory component should be) also
+counts as "not there". Tests: `TestLocalFileSystemExistsMissingIsNotAnError`,
+`TestLocalFileSystemExistsReportsPermissionError`. Driven: Save Query into a
+mode-000 directory → the overwrite prompt appears.
 
-### B7. A ListBox scrollbar drag stops at the list's edge
+### B7. A ListBox scrollbar drag stops at the list's edge — **DONE 2026-11-12**
 
 `ListBox.HandleMouse` returns on `!l.rect.Contains` *before*
 `core.HandleScrollbarDrag`. That breaks the latch contract (the drag keeps
@@ -151,19 +155,34 @@ short of the end. The same early return lets a held press's motion events fall
 through to the host. ListBox text also runs under its own scrollbar column,
 which DropDown reserves. **Fix:** handle latched gestures before the bounds
 check, as TreeView does, and narrow the text by one column when the bar shows.
+**Done as:** TreeView had the same early return, so it got the same fix (its
+held *row* press still falls through: Object Explorer's node drag needs it).
+The Connect dialog's `ConsumeOutsideClick` swallowed the drag past its box
+before the list saw it, so `ConnectDialog.HandleMouse` now offers events
+outside the box to the history list first (it refuses any it did not latch).
+Tests: `TestListBoxScrollbarDragContinuesPastTheEdge`,
+`TestListBoxHeldPressConsumesMotionOffTheList`,
+`TestListBoxTextStopsShortOfTheScrollbar`,
+`TestTreeViewScrollbarDragContinuesPastTheEdge`. Driven: Connect history with
+40 entries, thumb dragged below the dialog → list reaches the last entry.
 
-### B8. Splitter ratio can become NaN
+### B8. Splitter ratio can become NaN — **DONE 2026-11-12**
 
 A drag divides by `rect.H`/`rect.W`. A resize to 0 during a drag, or
 `SetRatio(NaN)` from a corrupt config, produces NaN, and `core.Clamp` returns
 NaN because both of its comparisons are false. **Fix:** skip the drag math on
 a zero dimension, and make `SetRatio` reject NaN/Inf. Low severity.
+**Done as:** `SetRatio` ignores NaN/±Inf (keeps the current ratio).
+Tests: `TestSplitterSetRatioIgnoresNaNAndInf`, `TestSplitterDragSurvivesZeroSize`.
+Unit-level only: a zero-size resize mid-drag cannot be produced in a terminal.
 
-### B9. `ClipScreen` does not clip `ShowCursor`
+### B9. `ClipScreen` does not clip `ShowCursor` — **DONE 2026-11-12**
 
 In a clamped dialog, an Editor or InputField whose caret falls outside the clip
 puts the terminal cursor outside the box. **Fix:** hide the cursor when it
 falls outside the clip. Low severity.
+**Done as:** `ClipScreen.ShowCursor` calls `HideCursor` outside the clip.
+Test: `TestClipScreenHidesCursorOutsideTheClip`. Unit-level only.
 
 ---
 
@@ -186,7 +205,11 @@ falls outside the clip. Low severity.
   `OverlayDrawer`/`OverlayActiver` on top. → One `core` interface
   (`DrawOverlay` + `OverlayActive`), implemented by every control that owns an
   overlay. propsheet reuses it (A3).
-- **C4. Modal mouse return values.** Alert and Confirm return `true` for every
+- **C4. Modal mouse return values.** *(DONE 2026-11-12: Prompt and
+  TypedConfirm now return `true` for every non-Button1 event; the contract is
+  in `dialogs/doc.go`. Test: `TestAVisibleModalConsumesEveryMouseEvent`, over
+  all seven tuikit dialogs. No visible change today: App ignores the return.)*
+  Alert and Confirm return `true` for every
   event while visible. `PromptDialog` returns `false` for non-Button1 events
   (wheel, right-click), which leaves its focus trap leaky. → A visible modal
   always returns `true`.
@@ -212,11 +235,25 @@ falls outside the clip. Low severity.
   fields/setters (`PanelManager.EmptyText`, `ProgressDialog.CancellingText`,
   `PropertySheet.SetHints` already exists). The generic ones become exported
   per-package defaults that a host can override.
-- **C9. Clipboard on read-only targets.** `DataGrid.Cut` returns the text
+- **C9. Clipboard on read-only targets.** *(DONE 2026-11-12: `DataGrid.Cut`,
+  `PropertySheet.Cut` (a non-field row, or a form locked for Apply) and the
+  app's `PlanView.Cut` return `""`; `core.ClipboardTarget`'s doc states the
+  rule. `DeviceCodeDialog.Cut` still copies its code, deliberately (its comment
+  says so). Tests: `TestDataGridViewerCutReturnsNothing`,
+  `TestSheetCutOfAStaticRowCutsNothing`, planview's XML-tab test. Driven:
+  results Show Value → Ctrl+A, Ctrl+X → no status, text kept; Ctrl+C copies.)*
+  `DataGrid.Cut` returns the text
   without removing it. The app then reports "Cut to clipboard" and fires
   `ClipboardEdited`. → `Cut()` on a read-only target returns `""`, and the app
   treats `""` as "nothing cut" (this is the same app change as B1).
-- **C10. Comment drift that the move would leave dangling.** About 25 tuikit
+- **C10. Comment drift that the move would leave dangling.** *(Comment-only
+  part DONE 2026-11-12: the app/`docs/`/ARCHITECTURE.md citations in tuikit
+  comments, tests included, are rewritten in library terms; `PollEvent` →
+  `EventQ`; `layout/doc.go` lists `Disposable`; `DrawText` says the mark is
+  dropped; the completion header no longer claims Editor knows no SQL. Old
+  review-plan labels (K1, K10, X6) dropped from test comments. Left for A1:
+  `sqltext` and `sql_statement_test.go`, which cite `internal/tui/sqlparse`
+  and move into gossms with it.)* About 25 tuikit
   comments cite `internal/tui/*.go`, `App.*`, `QueryPanel`, `ObjectExplorer`,
   `docs/ui-rules.md`, `ARCHITECTURE.md` or "review plan K1". The Canvas doc
   names `PollEvent` (tcell v3 has none). `layout/doc.go` omits `Disposable`.
@@ -256,7 +293,22 @@ Optional, and only with a benchmark showing a gain:
 - **S1. `core.ClickTracker`** *(DONE 2026-11-12: times come from `ev.When()`, which tests stamp with `SetEventTime`, instead of an injected `Now`)*, one double-click recognizer: interval, position
   key, and an injectable `Now func() time.Time` for tests. It replaces C5's
   four detectors and the two constants, and fixes B4.
-- **S2. One test screen instead of ~18.** tuikit tests declare about 18
+- **S2. One test screen instead of ~18.** *(DONE 2026-11-12: `charts.Canvas`
+  is `core.Buffer` (`core/buffer.go`), now with `PutStr`/`PutStrStyled`, a
+  recorded cursor (`ShowCursor`/`HideCursor`/`Cursor`), `RuneAt`/`StyleAt`
+  and `Text`. New `tuikittest` package: `Screen` (a Buffer plus
+  `Find`/`RowOf`/`Snapshot`/`SetSize`) and `Key`/`Rune`/`Mouse`/`Press`/
+  `Release`. Every cell-recording fake in tuikit and the app's
+  `fakeSizedScreen`/`recordingScreen`/`rowRecordingScreen`/`overlayScreen`
+  are gone, as are the per-package key/mouse helpers in tuikit; core's tests
+  use a Buffer (they cannot import tuikittest). `FillAreaByPut` is deleted.
+  Kept on purpose: `putLog`/`quietScreen` (core: call-sequence and
+  allocation spies), `discardScreen` (editor benchmarks: a sink),
+  `osc52Screen`/`eventQScreen` (app: clipboard and EventQ, not drawing),
+  tcell's vt mock in `editor_grapheme_test.go`. Two expectations changed
+  because the Buffer behaves like tcell: a wide glyph's continuation cell
+  carries its style, and a combining mark reads back with its base.)*
+  tuikit tests declare about 18
   bespoke fake/recording `tcell.Screen` types (internal/tui has more), and
   `core.FillAreaByPut` is a production export that exists only to serve them.
   → Move `charts.Canvas` to `core` (name it e.g. `core.Buffer`). Complete it:
@@ -264,11 +316,22 @@ Optional, and only with a benchmark showing a gain:
   Editor from panicking on Canvas's nil embedded Screen. Add a `tuikittest`
   package with a Buffer-backed screen, key/mouse event builders and row
   snapshots. Migrate one package at a time, then delete `FillAreaByPut`.
-- **S3. DataGrid's exported/unexported twins** (`SelectionBounds`/`selectionBounds`,
+- **S3. DataGrid's exported/unexported twins** *(DONE 2026-11-12: the
+  exported form of each is the only one; doc comments merged.)* (`SelectionBounds`/`selectionBounds`,
   `SelectedRows`, `SelectedRowCount`, `SelectedCellsText`). Keep one of each.
-- **S4.** `propsheet.ClipboardRow` re-declares `core.ClipboardTarget`'s five
+- **S4.** *(DONE 2026-11-12: `ClipboardRow` is `Copyable` +
+  `core.ClipboardTarget`.)* `propsheet.ClipboardRow` re-declares `core.ClipboardTarget`'s five
   methods. → Embed `core.ClipboardTarget` and `Copyable`.
-- **S5. Style helpers.** There are 99 inline
+- **S5. Style helpers.** *(DONE 2026-11-12: `theme.On(bg, fg)` plus
+  `StyleDialogDim/Line/Accent/Error`, `StyleMenuDim/Line`, `StyleActiveBlock`
+  (the caret, active tab, dragged splitter) and `StyleScrollThumb`. Every
+  inline pair in tuikit production code is now a named helper where an exact
+  one exists (Bold-carrying helpers only where the source was bold), else
+  `On`. `StyleInputDisabled` is gone. The new helpers are in `styleFuncs`;
+  nine pairs below the contrast floor, drawn the same before, are pinned in
+  `knownLowContrast` and logged in `docs/open-threads.md` § Theme. Rule in
+  `docs/ui-rules.md`. `internal/tui` not migrated. Driven: Connect dialog and
+  query editor colours match the palette.)* There are 99 inline
   `tcell.StyleDefault.Background(p.X).Foreground(p.Y)` constructions. 14 of
   them are exactly `theme.StyleDialog()`, and most of the rest repeat about 8
   pairs (DialogTextDim, DialogLine, DialogAccent, MenuText/Dim/Line, the
@@ -331,7 +394,13 @@ for the grid), and they are pinned by tests.
   split `controls` (10k lines) into `controls` (grid, tree, list, menus,
   toolbar) and `controls/editor` (Editor, Document, undo, search, completion,
   highlighters).
-- **A5. Enforce the dependency invariant with a test.** ARCHITECTURE.md
+- **A5. Enforce the dependency invariant with a test.** *(DONE 2026-11-12:
+  `TestTuikitImportsOnlyItsDeclaredDependencies` in
+  `internal/tuikit/core/imports_test.go` lists `../...`, so it runs from
+  whichever module tuikit lives in. Production imports: stdlib, tuikit,
+  tcell/v3, tcell/v3/color, displaywidth only. Test imports: anything but
+  gosmo or the host module. Probed with a planted import of each kind.)*
+  ARCHITECTURE.md
   states it ("must print exactly tcell/v3, tcell/v3/color, displaywidth"), but
   no test runs it. Add one inside tuikit, so it moves with the module, and
   include "no tuikit package imports `internal/…`".
@@ -374,11 +443,11 @@ The structural moves come last.
 | 3 | ~~**S7 → B2** PressLatch, dialog fresh-press~~ **DONE** | one primitive, many dialogs; drive each | M |
 | 4 | ~~**B5** tree right-click selection~~ **DONE** | check `handleSelect` first | S |
 | 5 | ~~**B3** grapheme-safe word boundaries~~ **DONE** | core only, table tests | S |
-| 6 | **B7, B8, B9, B6** small correctness fixes | independent, low risk | S |
-| 7 | **C4, C9, C10 (comment-only part)** | no API change | S |
-| 8 | **A5** dependency-invariant test | guards everything after it | S |
-| 9 | **S2** core.Buffer + tuikittest, migrate tests per package | later refactors get cheap tests | M–L |
-| 10 | **S3, S4, S5** mechanical cleanups | no behavior change; diff-review | M |
+| 6 | ~~**B7, B8, B9, B6** small correctness fixes~~ **DONE** | independent, low risk | S |
+| 7 | ~~**C4, C9, C10 (comment-only part)**~~ **DONE** | no API change | S |
+| 8 | ~~**A5** dependency-invariant test~~ **DONE** | guards everything after it | S |
+| 9 | ~~**S2** core.Buffer + tuikittest, migrate tests per package~~ **DONE** | later refactors get cheap tests | M–L |
+| 10 | ~~**S3, S4, S5** mechanical cleanups~~ **DONE** | no behavior change; diff-review | M |
 | 11 | **C1, C2, C3, C7 + A3** interfaces and API normalization | touches app call sites; one control family per step | L |
 | 12 | **C6, C8, C11, C12** IDs, strings, splitter limits, globals | API-visible; app wires defaults | M |
 | 13 | **S6** ValueViewer extraction | after C3 (it is an Overlay) | M |

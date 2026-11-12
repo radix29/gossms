@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // selectLinesByKeys selects whole lines the way a user does: cursor at column 0
@@ -19,7 +20,7 @@ func selectLinesByKeys(t *testing.T, e *Editor, from, to int) {
 		k = tcell.KeyUp
 	}
 	for e.cursorRow != to {
-		e.HandleKey(key(k, tcell.ModShift))
+		e.HandleKey(tuikittest.Key(k, tcell.ModShift))
 	}
 	if e.cursorCol != 0 || !e.HasSelection() {
 		t.Fatalf("setup: cursor (%d,%d) selection %v, want column 0 with a selection", e.cursorRow, e.cursorCol, e.HasSelection())
@@ -142,7 +143,7 @@ func TestLineActionsKeepRowTheSelectionReaches(t *testing.T) {
 	t.Run("past column 0", func(t *testing.T) {
 		e := newTestEditor("a\nb\nc\nd")
 		selectLinesByKeys(t, e, 0, 2)
-		e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+		e.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 		e.ToggleLineComments()
 		if got, want := e.Text(), "-- a\n-- b\n-- c\nd"; got != want {
 			t.Fatalf("text = %q, want %q", got, want)
@@ -151,8 +152,8 @@ func TestLineActionsKeepRowTheSelectionReaches(t *testing.T) {
 	t.Run("single row", func(t *testing.T) {
 		e := newTestEditor("abc\nd")
 		e.cursorCol = 2
-		e.HandleKey(key(tcell.KeyLeft, tcell.ModShift))
-		e.HandleKey(key(tcell.KeyLeft, tcell.ModShift))
+		e.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModShift))
+		e.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModShift))
 		e.IndentLines()
 		if got, want := e.Text(), "    abc\nd"; got != want {
 			t.Fatalf("text = %q, want %q", got, want)

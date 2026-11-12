@@ -8,7 +8,8 @@ import (
 // FieldGesture is the drag latch a dialog needs for the text-selection gesture a
 // click inside an InputField starts. Embed one in any dialog with a text field
 // and drive it from HandleMouse; it is the dialog-level half of the per-widget
-// mouseDragging latch (ARCHITECTURE.md § The mouseDragging idiom).
+// mouseDragging latch: a fresh press arms it, the held button's resends continue
+// it, and the release ends it.
 //
 // It is a type, not a per-dialog idiom, because the idiom is correct only in one
 // order: it depends on what ModalDialog.ConsumeOutsideClick and a dialog's mode
@@ -69,8 +70,8 @@ func (g *FieldGesture) Claim(f *widgets.InputField, ev *tcell.EventMouse) {
 // Options, Find/Replace, Log Search) hand the same field back next showing. With
 // its latch still set, the first press after reopening takes InputField's
 // continued-drag branch, placing the cursor without arming a new anchor.
-// Invariant 4 in docs/ui-rules.md wants both latches gone, and this is the only
-// call that can reach the field's. Backup, Restore and Filter rebuild their
+// A latch must not survive into the next showing (ModalDialog.Show clears the
+// dialog's own), and this is the only call that can reach the field's. Backup, Restore and Filter rebuild their
 // fields in show, discarding the stale one.
 func (g *FieldGesture) Clear() {
 	if g.field != nil {

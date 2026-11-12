@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -48,7 +49,7 @@ func dragToButtonRow(t *testing.T, d interface {
 // destructive confirmation the retyping exists to slow down.
 
 func TestPromptDialogDragOutOfTheFieldNeitherFreezesNorPressesAButton(t *testing.T) {
-	d := NewPromptDialog(&sizedScreen{w: 120, h: 40})
+	d := NewPromptDialog(tuikittest.NewScreen(120, 40))
 	accepted := 0
 	d.ShowPrompt("Rename", "New name:", "Name:", "abcdefgh", func(string) { accepted++ })
 	inner := d.InnerRect()
@@ -63,7 +64,7 @@ func TestPromptDialogDragOutOfTheFieldNeitherFreezesNorPressesAButton(t *testing
 }
 
 func TestTypedConfirmDialogDragOutOfTheFieldNeitherFreezesNorPressesAButton(t *testing.T) {
-	d := NewTypedConfirmDialog(&sizedScreen{w: 120, h: 40})
+	d := NewTypedConfirmDialog(tuikittest.NewScreen(120, 40))
 	answers := 0
 	d.ShowTypedConfirm("Confirm Drop", `Type "Orders" to confirm.`, "Orders",
 		func(bool) { answers++ })
@@ -83,7 +84,7 @@ func TestTypedConfirmDialogDragOutOfTheFieldNeitherFreezesNorPressesAButton(t *t
 // Each dialog rebuilds its input on every showing, so a gesture held from the
 // last one points at a widget that is no longer on screen.
 func TestPromptAndTypedConfirmClearTheGestureOnEveryShowing(t *testing.T) {
-	p := NewPromptDialog(&sizedScreen{w: 120, h: 40})
+	p := NewPromptDialog(tuikittest.NewScreen(120, 40))
 	p.ShowPrompt("Rename", "New name:", "Name:", "abcdefgh", nil)
 	inner := p.InnerRect()
 	p.input.SetBounds(inner.X+1, inner.Y+2)
@@ -96,7 +97,7 @@ func TestPromptAndTypedConfirmClearTheGestureOnEveryShowing(t *testing.T) {
 		t.Error("ShowPrompt left a gesture armed from the previous showing")
 	}
 
-	c := NewTypedConfirmDialog(&sizedScreen{w: 120, h: 40})
+	c := NewTypedConfirmDialog(tuikittest.NewScreen(120, 40))
 	c.ShowTypedConfirm("Confirm", "msg", "Orders", nil)
 	inner = c.InnerRect()
 	c.input.SetBounds(inner.X+1, inner.Y+3)

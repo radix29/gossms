@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func newTestInputField(value string) *InputField {
@@ -14,17 +15,9 @@ func newTestInputField(value string) *InputField {
 	return f
 }
 
-func key(k tcell.Key, mod tcell.ModMask) *tcell.EventKey {
-	return tcell.NewEventKey(k, "", mod)
-}
-
-func runeKey(r rune, mod tcell.ModMask) *tcell.EventKey {
-	return tcell.NewEventKey(tcell.KeyRune, string(r), mod)
-}
-
 func TestInputFieldSelectAll(t *testing.T) {
 	f := newTestInputField("hello")
-	f.HandleKey(key(tcell.KeyCtrlA, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyCtrlA, tcell.ModNone))
 	if !f.HasSelection() {
 		t.Fatal("Ctrl+A: expected a selection")
 	}
@@ -39,14 +32,14 @@ func TestInputFieldWordNavigation(t *testing.T) {
 
 	want := []int{3, 4, 7, 11}
 	for _, w := range want {
-		f.HandleKey(key(tcell.KeyRight, tcell.ModCtrl))
+		f.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModCtrl))
 		if f.cursor != w {
 			t.Fatalf("Ctrl+Right: cursor = %d, want %d", f.cursor, w)
 		}
 	}
 	wantBack := []int{8, 4, 3, 0}
 	for _, w := range wantBack {
-		f.HandleKey(key(tcell.KeyLeft, tcell.ModCtrl))
+		f.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModCtrl))
 		if f.cursor != w {
 			t.Fatalf("Ctrl+Left: cursor = %d, want %d", f.cursor, w)
 		}
@@ -56,14 +49,14 @@ func TestInputFieldWordNavigation(t *testing.T) {
 func TestInputFieldWordDelete(t *testing.T) {
 	f := newTestInputField("foo bar baz")
 	f.cursor = len(f.value)
-	f.HandleKey(key(tcell.KeyBackspace, tcell.ModCtrl))
+	f.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModCtrl))
 	if got := f.Value(); got != "foo bar " {
 		t.Fatalf("Ctrl+Backspace = %q, want %q", got, "foo bar ")
 	}
 
 	f2 := newTestInputField("foo bar baz")
 	f2.cursor = 0
-	f2.HandleKey(key(tcell.KeyDelete, tcell.ModCtrl))
+	f2.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModCtrl))
 	if got := f2.Value(); got != " bar baz" {
 		t.Fatalf("Ctrl+Delete = %q, want %q", got, " bar baz")
 	}
@@ -76,12 +69,12 @@ func TestInputFieldSelectionDeletedByBackspace(t *testing.T) {
 	f := newTestInputField("abcdef")
 	f.cursor = 0
 	for range 3 {
-		f.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+		f.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	}
 	if !f.HasSelection() || f.SelectedText() != "abc" {
 		t.Fatalf("setup: SelectedText() = %q, want %q", f.SelectedText(), "abc")
 	}
-	f.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModNone))
 	if got := f.Value(); got != "def" {
 		t.Fatalf("Backspace over selection = %q, want %q", got, "def")
 	}
@@ -89,9 +82,9 @@ func TestInputFieldSelectionDeletedByBackspace(t *testing.T) {
 	f2 := newTestInputField("abcdef")
 	f2.cursor = 0
 	for range 3 {
-		f2.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+		f2.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	}
-	f2.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+	f2.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 	if got := f2.Value(); got != "def" {
 		t.Fatalf("Delete over selection = %q, want %q", got, "def")
 	}
@@ -104,13 +97,13 @@ func TestInputFieldSelectionDeletedByBackspace(t *testing.T) {
 func TestInputFieldHandleKeyReportsUnhandledKeys(t *testing.T) {
 	f := newTestInputField("hello")
 	for _, k := range []tcell.Key{tcell.KeyUp, tcell.KeyDown, tcell.KeyTab, tcell.KeyBacktab, tcell.KeyEscape, tcell.KeyEnter} {
-		if f.HandleKey(key(k, tcell.ModNone)) {
+		if f.HandleKey(tuikittest.Key(k, tcell.ModNone)) {
 			t.Fatalf("HandleKey(%v) = true, want false (unhandled)", k)
 		}
 	}
 	// Sanity check: keys it does act on are still consumed.
 	for _, k := range []tcell.Key{tcell.KeyLeft, tcell.KeyRight, tcell.KeyHome, tcell.KeyEnd, tcell.KeyCtrlA, tcell.KeyBackspace} {
-		if !f.HandleKey(key(k, tcell.ModNone)) {
+		if !f.HandleKey(tuikittest.Key(k, tcell.ModNone)) {
 			t.Fatalf("HandleKey(%v) = false, want true (handled)", k)
 		}
 	}
@@ -120,7 +113,7 @@ func TestInputFieldCutPasteRoundTrip(t *testing.T) {
 	f := newTestInputField("hello world")
 	f.cursor = 0
 	for range 5 {
-		f.HandleKey(key(tcell.KeyRight, tcell.ModShift))
+		f.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModShift))
 	}
 	cut := f.Cut()
 	if cut != "hello" {
@@ -138,7 +131,7 @@ func TestInputFieldCutPasteRoundTrip(t *testing.T) {
 // A drag belongs to the field that claimed its press, until the release.
 // Hit-testing every motion instead froze the selection the moment the
 // pointer left the box, so dragging past the end of a term stopped
-// extending it — invariant 1 in ARCHITECTURE.md § The mouseDragging idiom.
+// extending it.
 func TestInputFieldDragContinuesOutsideTheBox(t *testing.T) {
 	f := NewInputField("Find: ", 20, false)
 	f.SetBounds(4, 6)
@@ -183,7 +176,7 @@ func TestDisabledInputFieldRefusesInput(t *testing.T) {
 	if f.Enabled() {
 		t.Fatal("SetEnabled(false) did not take")
 	}
-	if f.HandleKey(runeKey('x', tcell.ModNone)) {
+	if f.HandleKey(tuikittest.Rune('x', tcell.ModNone)) {
 		t.Error("a disabled field consumed a keypress")
 	}
 	if got := f.Value(); got != "dbo" {
@@ -200,7 +193,7 @@ func TestDisabledInputFieldRefusesInput(t *testing.T) {
 
 	// Re-enabling restores both halves.
 	f.SetEnabled(true)
-	if !f.HandleKey(runeKey('x', tcell.ModNone)) {
+	if !f.HandleKey(tuikittest.Rune('x', tcell.ModNone)) {
 		t.Error("a re-enabled field still refuses keys")
 	}
 	if got := f.Value(); got != "dbox" {
@@ -211,21 +204,22 @@ func TestDisabledInputFieldRefusesInput(t *testing.T) {
 // The disabled look has to actually differ from the live one — the point of
 // the flag is that it is visible.
 func TestDisabledInputFieldDrawsDifferently(t *testing.T) {
-	draw := func(enabled bool) map[[2]int]tcell.Style {
+	draw := func(enabled bool) *tuikittest.Screen {
 		f := NewInputField("Schema: ", 8, false)
 		f.SetBounds(0, 0)
 		f.SetValue("dbo")
 		f.SetEnabled(enabled)
-		s := newFieldScreen(40, 3)
+		s := tuikittest.NewScreen(40, 3)
 		f.Draw(s)
-		return s.styles
+		return s
 	}
 	on, off := draw(true), draw(false)
 	same := true
-	for pos, st := range on {
-		if off[pos] != st {
-			same = false
-			break
+	for y := range 3 {
+		for x := range 40 {
+			if on.StyleAt(x, y) != off.StyleAt(x, y) {
+				same = false
+			}
 		}
 	}
 	if same {
@@ -237,11 +231,11 @@ func TestDisabledInputFieldDrawsDifferently(t *testing.T) {
 // what the user sees, as opposed to what Value() reports.
 func drawnText(t *testing.T, f *InputField) string {
 	t.Helper()
-	s := newFieldScreen(120, 3)
+	s := tuikittest.NewScreen(120, 3)
 	f.Draw(s)
 	var b strings.Builder
 	for x := f.InputX() + 1; x < f.InputX()+1+f.Width(); x++ {
-		if r, ok := s.runes[[2]int{x, 0}]; ok && r != 0 {
+		if r := s.RuneAt(x, 0); r != 0 {
 			b.WriteRune(r)
 		}
 	}
@@ -328,9 +322,9 @@ func TestInputFieldShowFromStart(t *testing.T) {
 // it — inserts every rune it carries, not only the first (T66).
 func TestInputFieldInsertsAComposedKeyWhole(t *testing.T) {
 	f := newTestInputField("ab")
-	f.HandleKey(key(tcell.KeyLeft, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModNone))
 	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, "é", tcell.ModNone))
-	f.HandleKey(runeKey('x', tcell.ModNone))
+	f.HandleKey(tuikittest.Rune('x', tcell.ModNone))
 	if got, want := f.Value(), "aéxb"; got != want {
 		t.Errorf("Value() = %q, want %q", got, want)
 	}
@@ -343,7 +337,7 @@ func TestPasswordFieldRefusesCopy(t *testing.T) {
 	f := NewInputField("", 40, true)
 	f.Focus(true)
 	f.SetValue("hunter2 secret")
-	f.HandleKey(key(tcell.KeyCtrlA, tcell.ModNone))
+	f.HandleKey(tuikittest.Key(tcell.KeyCtrlA, tcell.ModNone))
 	if !f.HasSelection() {
 		t.Fatal("Ctrl+A: expected a selection (it still draws and is replaced by typing)")
 	}
@@ -370,22 +364,22 @@ func TestPasswordFieldWordJumpIsWholeField(t *testing.T) {
 		return f
 	}
 	f := newPw(0)
-	f.HandleKey(key(tcell.KeyRight, tcell.ModCtrl))
+	f.HandleKey(tuikittest.Key(tcell.KeyRight, tcell.ModCtrl))
 	if f.cursor != 15 {
 		t.Errorf("Ctrl+Right from 0: cursor = %d, want 15", f.cursor)
 	}
 	f = newPw(10)
-	f.HandleKey(key(tcell.KeyLeft, tcell.ModCtrl))
+	f.HandleKey(tuikittest.Key(tcell.KeyLeft, tcell.ModCtrl))
 	if f.cursor != 0 {
 		t.Errorf("Ctrl+Left from 10: cursor = %d, want 0", f.cursor)
 	}
 	f = newPw(10)
-	f.HandleKey(key(tcell.KeyBackspace, tcell.ModCtrl))
+	f.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModCtrl))
 	if got := f.Value(); got != ".cret" || f.cursor != 0 {
 		t.Errorf("Ctrl+Backspace from 10: Value() = %q cursor %d, want \".cret\" 0", got, f.cursor)
 	}
 	f = newPw(10)
-	f.HandleKey(key(tcell.KeyDelete, tcell.ModCtrl))
+	f.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModCtrl))
 	if got := f.Value(); got != "hunter2 se" || f.cursor != 10 {
 		t.Errorf("Ctrl+Delete from 10: Value() = %q cursor %d, want \"hunter2 se\" 10", got, f.cursor)
 	}

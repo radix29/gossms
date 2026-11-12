@@ -5,6 +5,10 @@ package core
 // propsheet.PropertySheet). It lives in core so a container can hand its focused
 // widget back across a package boundary (see ClipboardHost); identical
 // interfaces declared in two packages would not be interchangeable.
+//
+// Cut returns only text it actually removed. A read-only target, or one that
+// refuses to hand its text over (a password field), returns "" and changes
+// nothing; a host treats "" as "nothing was cut" and leaves the clipboard alone.
 type ClipboardTarget interface {
 	HasSelection() bool
 	SelectedText() string
@@ -33,9 +37,9 @@ type ClipboardHost interface {
 // call. The token is an opaque identity of the current field: compare with ==,
 // never interpret.
 //
-// App.pasteInto guards an asynchronous clipboard read by checking the target is
-// still the active one; against such a host that always passes, so a paste aimed
-// at one row but delivered after focus moved lands in another. The token lets the
+// An application that guards an asynchronous clipboard read by checking the
+// target is still the active one always passes that check against such a host,
+// so a paste aimed at one row but delivered after focus moved lands in another. The token lets the
 // guard see inside the host without exposing its rows. A host returning a
 // distinct target per field needs none of this.
 type ClipboardTargetTokener interface {

@@ -27,8 +27,13 @@ behind the mouse and async rules.
   Light set each pair equal, so a mismatch only shows in the mc themes,
   where panels are blue, dialogs light grey and menus/selection cyan:
   `p.Text` on `DialogBg` is grey on grey, `StyleSelected` in a menu vanishes.
-- **Fill a `charts.Canvas` with a styled ground before rendering onto it** —
-  `NewCanvas` starts every cell colourless and `Blit` copies cells as they are,
+- **Build a style with a `theme.Style*()` helper, or `theme.On(bg, fg)` for a
+  pair no helper names** — never `tcell.StyleDefault.Background(…).Foreground(…)`
+  inline in new code (tuikit has none; `internal/tui` still carries older
+  ones). A pair repeated across files earns a named helper (and a
+  `styleFuncs` entry).
+- **Fill a `core.Buffer` with a styled ground before rendering a chart onto it** —
+  `NewBuffer` starts every cell colourless and `Blit` copies cells as they are,
   so whatever a render leaves unpainted (Activity Monitor's column gutters, the
   corner under each Y axis) shows the screen's default ground as a strip, and
   `core.DimArea` skips it, leaving it bright behind a dialog.
@@ -141,9 +146,8 @@ behind the mouse and async rules.
   from 25,028 to 393 allocations a frame). Fill a rect with `core.FillRect`,
   which calls `Screen.FillArea`: since tcell 3.6 that converts the rune once
   and takes the screen lock once, ~7x faster than a `Put` per cell (one lock
-  each). A test screen fake that embeds a nil `tcell.Screen` needs a `Put`
-  that forwards to its `SetContent`, and a `FillArea` that calls
-  `core.FillAreaByPut` (or does nothing, for a fake that discards cells).
+  each). A test draws into a `tuikittest.Screen` (a `core.Buffer`, which
+  implements both), not a hand-written fake.
 - **Setting a value programmatically drops the selection** — an anchor past a
   shorter new value paints blanks as selected. `SetValue` clears `selecting`
   and re-anchors on the caret; a new `SetXxx` does the same.

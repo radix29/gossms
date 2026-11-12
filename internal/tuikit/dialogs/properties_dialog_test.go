@@ -7,10 +7,11 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func newTestPropertiesDialog(n int) *PropertiesDialog {
-	scr := &sizedScreen{w: 80, h: 30}
+	scr := tuikittest.NewScreen(80, 30)
 	d := NewPropertiesDialog(scr)
 	rows := make([]PropertyRow, n)
 	for i := range rows {
@@ -79,7 +80,7 @@ func TestPropertiesDialogScrollReachesLastRow(t *testing.T) {
 // widens the Property column to fit the longest key, and that a plain
 // ShowProperties afterwards returns the dialog to its default size.
 func TestPropertiesDialogSizedWidensKeyColumn(t *testing.T) {
-	scr := &sizedScreen{w: 120, h: 50}
+	scr := tuikittest.NewScreen(120, 50)
 	d := NewPropertiesDialog(scr)
 	medium := "A Key Of Twenty-Eight Chars." // 28 columns
 	d.ShowPropertiesSized("Big", []PropertyRow{
@@ -147,7 +148,7 @@ func TestPropertiesDialogWheelDoesNotScrollPastEnd(t *testing.T) {
 // ShowPropertiesFitted widens the dialog until the longest value is drawn whole,
 // and keeps the default width when everything already fits.
 func TestPropertiesDialogFittedShowsTheLongestValueWhole(t *testing.T) {
-	scr := &sizedScreen{w: 200, h: 50}
+	scr := tuikittest.NewScreen(200, 50)
 	d := NewPropertiesDialog(scr)
 	long := "dbo.a_rather_long_procedure_name (SQL_STORED_PROCEDURE, caller-dependent)"
 	d.ShowPropertiesFitted("Deps", []PropertyRow{{Key: "Depends On", Value: "dbo.t (USER_TABLE)"}, {Key: "Depends On", Value: long}})

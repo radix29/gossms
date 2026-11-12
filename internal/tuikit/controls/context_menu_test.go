@@ -2,37 +2,10 @@ package controls
 
 import (
 	"testing"
-	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
-
-// fakeMenuScreen is a minimal tcell.Screen fake for ContextMenu tests: Size()
-// drives geometry's edge clamp, and SetContent is a no-op sink so Draw's
-// fill/box/text calls don't panic on the embedded (nil) Screen — the same
-// approach as dialogs.sizedScreen, extended with SetContent since
-// ContextMenu.Draw actually paints (ModalDialog.recentre only ever calls
-// Size()).
-type fakeMenuScreen struct {
-	tcell.Screen
-	w, h int
-}
-
-func (s *fakeMenuScreen) Size() (int, int) { return s.w, s.h }
-func (s *fakeMenuScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-func (s *fakeMenuScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
-}
-
-func (s *fakeMenuScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
 
 func TestContextMenuClickNearRightEdgeHitsClampedItem(t *testing.T) {
 	var calls int
@@ -43,7 +16,7 @@ func TestContextMenuClickNearRightEdgeHitsClampedItem(t *testing.T) {
 		{Label: "Open", Action: func() { calls++ }},
 		{Label: "Close"},
 	})
-	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+	cm.Draw(tuikittest.NewScreen(40, 20))
 
 	// Item 0 ("Open") is actually drawn at column range [20,40), row 6 —
 	// clicking there must hit it.
@@ -66,7 +39,7 @@ func TestContextMenuClickPastClampedRightEdgeMisses(t *testing.T) {
 		{Label: "Open", Action: func() { calls++ }},
 		{Label: "Close"},
 	})
-	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+	cm.Draw(tuikittest.NewScreen(40, 20))
 
 	// The clamped menu spans columns [20,40) (see the right-edge test
 	// above); a click at column 45 is genuinely outside it and must not
@@ -89,7 +62,7 @@ func TestContextMenuClickNearBottomEdgeHitsClampedItem(t *testing.T) {
 		{Label: "Open"},
 		{Label: "Close", Action: func() { calls++ }},
 	})
-	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+	cm.Draw(tuikittest.NewScreen(40, 20))
 
 	// "Close" (item 1) is drawn at row drawnY+1+1 = 16+2 = 18.
 	handled := cm.HandleMouse(tcell.NewEventMouse(6, 18, tcell.Button1, tcell.ModNone))
@@ -108,7 +81,7 @@ func newTestContextMenuWithDisabled(calls *int) *ContextMenu {
 		{Label: "Middle", Action: func() { *calls++ }},
 		{Label: "Last", Enabled: func() bool { return false }},
 	})
-	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+	cm.Draw(tuikittest.NewScreen(40, 20))
 	return cm
 }
 
@@ -174,7 +147,7 @@ func TestContextMenuKeyDownSkipsDisabledItemToNextEnabled(t *testing.T) {
 func TestContextMenuHoverOutsideDoesNotClose(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}})
-	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+	cm.Draw(tuikittest.NewScreen(40, 20))
 
 	handled := cm.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
 	if handled {
@@ -188,7 +161,7 @@ func TestContextMenuHoverOutsideDoesNotClose(t *testing.T) {
 func TestContextMenuClickOutsideCloses(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}})
-	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+	cm.Draw(tuikittest.NewScreen(40, 20))
 
 	cm.HandleMouse(tcell.NewEventMouse(0, 0, tcell.Button1, tcell.ModNone))
 	if cm.Visible() {
@@ -223,7 +196,7 @@ func TestContextMenuHiddenIgnoresEvents(t *testing.T) {
 func TestContextMenuOutsideClickIsConsumed(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}, {Label: "Close"}})
-	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+	cm.Draw(tuikittest.NewScreen(40, 20))
 
 	// Row 0 is far above the menu, which was drawn at y=5.
 	if handled := cm.HandleMouse(tcell.NewEventMouse(1, 0, tcell.Button1, tcell.ModNone)); !handled {
@@ -240,7 +213,7 @@ func TestContextMenuOutsideClickIsConsumed(t *testing.T) {
 func TestContextMenuOutsideMotionFallsThrough(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}, {Label: "Close"}})
-	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+	cm.Draw(tuikittest.NewScreen(40, 20))
 
 	if handled := cm.HandleMouse(tcell.NewEventMouse(1, 0, tcell.ButtonNone, tcell.ModNone)); handled {
 		t.Error("HandleMouse(outside motion) = true, want false (must fall through)")

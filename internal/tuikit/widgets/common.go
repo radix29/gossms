@@ -9,6 +9,6 @@ import (
 // drawLabel draws a widget's inline label in the standard dialog text style
 // (currently only DropDown uses it).
 func drawLabel(s tcell.Screen, x, y int, label string, p *theme.Palette) {
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	st := theme.StyleDialog()
 	core.DrawText(s, x, y, st, label)
 }

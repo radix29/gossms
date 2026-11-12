@@ -6,6 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // newFindTestApp returns an App with one query panel holding text, plus the
@@ -322,7 +323,7 @@ func TestFindDialogShowClearsTheDragLatch(t *testing.T) {
 	// it, and a dialog built without one keeps a zero rect, so every press is
 	// "outside" and arms nothing.
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	a.findDialog = NewFindReplaceDialog(a)
 	qp := NewQueryPanel(a, "Query 1")
 	qp.SetBounds(0, 0, 80, 24)

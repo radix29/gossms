@@ -7,13 +7,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // newLatchTestApp builds an App with the menu/toolbar row widgets and one alert
 // dialog to open from a button.
 func newLatchTestApp() *App {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 30}
+	a.screen = tuikittest.NewScreen(100, 30)
 	a.menuBar = controls.NewMenuBar()
 	a.toolbar = controls.NewToolbar()
 	a.contextMenu = &controls.ContextMenu{}

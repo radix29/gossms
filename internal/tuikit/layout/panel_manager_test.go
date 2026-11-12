@@ -54,8 +54,8 @@ func TestPanelManagerNonClosablePanelNeverFiresOnCloseTab(t *testing.T) {
 }
 
 // TestPanelManagerClosablePanelStillClosesViaClick is the mirror check:
-// a panel that doesn't implement Closable (the common case, e.g. a
-// QueryPanel) must still close normally by clicking its [x].
+// a panel that doesn't implement Closable (the common case, e.g. a query
+// editor) must still close normally by clicking its [x].
 func TestPanelManagerClosablePanelStillClosesViaClick(t *testing.T) {
 	pm := NewPanelManager()
 	pm.AddPanel(&fakePanel{title: "Object Explorer Details", closable: false})

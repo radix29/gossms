@@ -1,9 +1,12 @@
 package dialogs
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -123,12 +126,17 @@ func (LocalFileSystem) Parent(dir string) string           { return filepath.Dir
 func (LocalFileSystem) IsAbs(path string) bool             { return filepath.IsAbs(path) }
 func (LocalFileSystem) Separator() string                  { return string(filepath.Separator) }
 
-// Exists never reports an error: os.Stat's only interesting failure here is
-// "not there", which is an answer rather than an inability to answer.
+// Exists answers "not there" for a missing path, or one with a file where a
+// directory component should be (ENOTDIR). Any other os.Stat failure (EACCES,
+// EIO) is an inability to answer and is returned, so the save-overwrite guard
+// prompts rather than silently skipping.
 func (LocalFileSystem) Exists(path string) (bool, bool, error) {
 	info, err := os.Stat(path)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
 	}
 	return true, info.IsDir(), nil
 }

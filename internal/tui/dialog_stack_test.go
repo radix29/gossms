@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // TestDialogStackNestingAndPruning drives syncDialogStack the way Run's
@@ -106,27 +107,27 @@ func TestStatusHistoryDialogParticipatesInStack(t *testing.T) {
 // and the app looked hung.
 func TestLayoutAllRefitsOpenDialogsToTheNewScreenSize(t *testing.T) {
 	a := newLatchTestApp()
-	scr := a.screen.(*fakeSizedScreen)
+	scr := a.screen.(*tuikittest.Screen)
 
 	a.alertDialog.ShowAlert("Alert", "Something happened.")
 	a.syncDialogStack()
 
-	scr.w, scr.h = 44, 12
+	scr.SetSize(44, 12)
 	a.layoutAll()
 
 	r := a.alertDialog.Rect()
-	if r.Right() > scr.w || r.Bottom() > scr.h {
-		t.Errorf("dialog rect %+v extends past the %dx%d screen after resize", r, scr.w, scr.h)
+	if sw, sh := scr.Size(); r.Right() > sw || r.Bottom() > sh {
+		t.Errorf("dialog rect %+v extends past the %dx%d screen after resize", r, sw, sh)
 	}
 
 	// Below layoutAll's too-small floor is exactly where an unrefitted
 	// dialog is most broken, so the refit must happen before that guard.
-	scr.w, scr.h = 16, 4
+	scr.SetSize(16, 4)
 	a.layoutAll()
 
 	r = a.alertDialog.Rect()
-	if r.Right() > scr.w || r.Bottom() > scr.h {
-		t.Errorf("dialog rect %+v extends past the %dx%d screen (below layoutAll's size floor)", r, scr.w, scr.h)
+	if sw, sh := scr.Size(); r.Right() > sw || r.Bottom() > sh {
+		t.Errorf("dialog rect %+v extends past the %dx%d screen (below layoutAll's size floor)", r, sw, sh)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // internal/config can't import tuikit, so it carries its own copy of the
@@ -99,7 +100,7 @@ func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 	a.cfg.IndentWidth = config.DefaultIndentWidth
 
 	panel := newJobStepPanel(unchangedDatabaseItem, []string{"master"}, a.cfg.IndentWidth)
-	sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Job Properties")
+	sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Job Properties")
 	pd := registerDialog(a, &PropDialog{PropertySheet: sheet, app: a, pages: []propPage{{title: "Steps"}}})
 	pd.SetPages([]string{"Steps"})
 	pd.OnLoadPage = func(page, seq int) {
@@ -219,7 +220,7 @@ func optionsFocusName(d *OptionsDialog) string {
 // moves focus, and Up from either button returns to the checkbox.
 func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewOptionsDialog(a)
 	d.Show()
 	keys := []struct {
@@ -266,7 +267,7 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 // input field, and the checkbox, which takes the press itself.
 func TestOptionsDialogPressFocusesTheControlUnderIt(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewOptionsDialog(a)
 	d.Show()
 	// Draw's positions, which only Draw applies.

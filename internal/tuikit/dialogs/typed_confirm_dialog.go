@@ -160,8 +160,7 @@ func (d *TypedConfirmDialog) Draw(s tcell.Screen) {
 		return
 	}
 	d.DrawBase(s)
-	p := theme.Active()
-	msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	msgStyle := theme.StyleDialog()
 	inner := d.InnerRect()
 	lx, w := inner.X+1, inner.W-2
 
@@ -175,7 +174,7 @@ func (d *TypedConfirmDialog) Draw(s tcell.Screen) {
 	d.input.Draw(s)
 
 	if d.status != "" {
-		errStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError)
+		errStyle := theme.StyleDialogError()
 		core.DrawTextClipped(s, lx, d.ButtonRowY()-2, w, errStyle, d.status)
 	}
 
@@ -247,8 +246,10 @@ func (d *TypedConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		return true
 	}
+	// A visible modal owns every event: a wheel or right-click it has no use for
+	// must not reach the screen beneath it.
 	if ev.Buttons() != tcell.Button1 {
-		return false
+		return true
 	}
 	mx, my := ev.Position()
 	if d.input.HitTest(mx, my) {

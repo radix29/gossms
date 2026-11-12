@@ -6,6 +6,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // newScrollableSheet builds a sheet whose current page is a form taller than
@@ -16,7 +17,7 @@ func newScrollableSheet(t *testing.T) *PropertySheet {
 	// no-ops without a screen, leaving p.rect zero-sized — and then
 	// ConsumeOutsideClick treats every event as an outside click and swallows
 	// it before any of the routing under test runs.
-	p := NewPropertySheet(&fakeScreen{w: 100, h: 40}, "Test Properties")
+	p := NewPropertySheet(tuikittest.NewScreen(100, 40), "Test Properties")
 	p.SetSize(90, 28)
 	p.SetPages([]string{"General", "Options"})
 	p.Show()
@@ -33,14 +34,12 @@ func newScrollableSheet(t *testing.T) *PropertySheet {
 		Section("S4"), Note("z"), Note("z2"))
 	p.SetPageForm(0, p.pages[0].seq, f)
 
-	// The form's bounds are set by hand rather than by p.Draw: the sheet's
-	// DrawBase dims the whole screen through Screen.Get, which the package's
-	// fakeScreen doesn't implement. Nothing under test needs the sheet drawn
-	// — only the form laid out inside p.rect so positional routing lands on
-	// it.
+	// The form's bounds are set by hand rather than by p.Draw: nothing under
+	// test needs the sheet drawn — only the form laid out inside p.rect so
+	// positional routing lands on it.
 	f.SetBounds(p.Rect().X+2, p.Rect().Y+2, p.Rect().W-6, 10)
 	f.Focus(true)
-	f.Draw(&fakeScreen{w: 100, h: 40})
+	f.Draw(tuikittest.NewScreen(100, 40))
 	return p
 }
 
@@ -50,9 +49,9 @@ func newScrollableSheet(t *testing.T) *PropertySheet {
 // and calls setZone — so wheeling while dragging the form's scrollbar moved
 // the focus zone out from under the drag.
 //
-// App.handleMouse's gestureOwner cannot cover this one: it dispatches the top
-// dialog before its own gesture check and never arms a gesture for a click
-// inside a dialog.
+// A host applying the same rule to its own panes cannot cover this one: it
+// hands a dialog every event and never sees which zone inside it owns the
+// gesture.
 func TestSheetSwallowsWheelDuringADrag(t *testing.T) {
 	p := newScrollableSheet(t)
 	f := p.PageForm(0)

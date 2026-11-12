@@ -163,7 +163,7 @@ func (t *amTooltip) place(ax, ay int, view core.Rect, keepOut int) core.Rect {
 //
 // c is the canvas just blitted, which the callout reads to clear axis labels;
 // see drawTimeCallout.
-func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *charts.Canvas) {
+func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *core.Buffer) {
 	if am.tooltip == nil || am.viewRect.W <= 0 || am.viewRect.H <= 0 {
 		return
 	}
@@ -179,7 +179,7 @@ func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *charts.Canvas) {
 
 // drawCallout names the pinned bucket's moment on its chart's time axis and
 // returns the screen row used, or -1, so the box can avoid it.
-func (am *ActivityMonitor) drawCallout(s tcell.Screen, c *charts.Canvas) int {
+func (am *ActivityMonitor) drawCallout(s tcell.Screen, c *core.Buffer) int {
 	t := am.tooltip
 	if c == nil || t.plot.W <= 0 {
 		return -1
@@ -198,7 +198,7 @@ func (am *ActivityMonitor) drawCallout(s tcell.Screen, c *charts.Canvas) int {
 // Any label it overlaps is cleared whole, or a tail survives as a bogus number
 // ("-0:20" + callout → "-0:211:34:44"). c is the canvas the row was rendered on.
 // Returns the row, or -1 when there's no room.
-func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *charts.Canvas, x int) int {
+func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *core.Buffer, x int) int {
 	t := am.tooltip
 	if t.timeRow.W <= 0 || t.timeRow.H <= 0 || t.time == "" {
 		return -1
@@ -223,7 +223,7 @@ func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *charts.Canvas, x i
 
 // labelRun widens [from, to) on row to cover every label it touches, stopping
 // at blank columns and staying within the row and viewport.
-func (am *ActivityMonitor) labelRun(c *charts.Canvas, row core.Rect, from, to int) (int, int) {
+func (am *ActivityMonitor) labelRun(c *core.Buffer, row core.Rect, from, to int) (int, int) {
 	rowX, _ := am.screenPos(row.X, row.Y)
 	lo := max(max(rowX, am.viewRect.X), 0)
 	hi := min(rowX+row.W, am.viewRect.Right())

@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func TestFitMessageFloorsAtMinWidthForAShortMessage(t *testing.T) {
 	d := &ModalDialog{}
-	d.InitModal(&sizedScreen{w: 200, h: 50}, "Alert", alertDialogMinW, alertDialogBaseH)
+	d.InitModal(tuikittest.NewScreen(200, 50), "Alert", alertDialogMinW, alertDialogBaseH)
 
 	w, h, lines := d.fitMessage("Hi", alertDialogMinW, alertDialogBaseH)
 
@@ -27,7 +28,7 @@ func TestFitMessageFloorsAtMinWidthForAShortMessage(t *testing.T) {
 
 func TestFitMessageGrowsToFitOnOneLineUnderTheCap(t *testing.T) {
 	d := &ModalDialog{}
-	d.InitModal(&sizedScreen{w: 200, h: 50}, "Confirm", confirmDialogMinW, confirmDialogBaseH)
+	d.InitModal(tuikittest.NewScreen(200, 50), "Confirm", confirmDialogMinW, confirmDialogBaseH)
 
 	msg := `Take "SomeVeryLongDatabaseName" offline? Existing connections to it will be rolled back.`
 	wantNatural := core.DisplayWidth(msg) + messageBoxOverhead
@@ -46,11 +47,12 @@ func TestFitMessageGrowsToFitOnOneLineUnderTheCap(t *testing.T) {
 }
 
 func TestFitMessageWrapsInsteadOfExceedingTwoThirdsOfScreenWidth(t *testing.T) {
-	scr := &sizedScreen{w: 120, h: 40}
+	scr := tuikittest.NewScreen(120, 40)
 	d := &ModalDialog{}
 	d.InitModal(scr, "Confirm", confirmDialogMinW, confirmDialogBaseH)
 
-	maxW := scr.w * maxMessageWidthNum / maxMessageWidthDen // 80
+	sw, _ := scr.Size()
+	maxW := sw * maxMessageWidthNum / maxMessageWidthDen // 80
 	words := make([]string, 40)
 	for i := range words {
 		words[i] = "word"
@@ -83,7 +85,7 @@ func TestFitMessageCapsHeightToTheScreenAndEllipsizesTheLastLine(t *testing.T) {
 	// h == baseH leaves no room for any wrapped line beyond the first, so
 	// truncation is guaranteed regardless of exactly how many lines the
 	// message would otherwise wrap to.
-	scr := &sizedScreen{w: 120, h: confirmDialogBaseH}
+	scr := tuikittest.NewScreen(120, confirmDialogBaseH)
 	d := &ModalDialog{}
 	d.InitModal(scr, "Confirm", confirmDialogMinW, confirmDialogBaseH)
 
@@ -95,8 +97,8 @@ func TestFitMessageCapsHeightToTheScreenAndEllipsizesTheLastLine(t *testing.T) {
 
 	w, h, lines := d.fitMessage(msg, confirmDialogMinW, confirmDialogBaseH)
 
-	if h > scr.h {
-		t.Errorf("h = %d, want <= %d (screen height)", h, scr.h)
+	if _, sh := scr.Size(); h > sh {
+		t.Errorf("h = %d, want <= %d (screen height)", h, sh)
 	}
 	if wantH := confirmDialogBaseH + len(lines) - 1; h != wantH {
 		t.Errorf("h = %d, want %d (matches returned line count)", h, wantH)
@@ -141,7 +143,7 @@ func TestMessageDialogsKeepLineBreaks(t *testing.T) {
 	msg := question + "\n\n" + consequence + "\r\n"
 	want := []string{question, "", consequence}
 
-	scr := &sizedScreen{w: 200, h: 50}
+	scr := tuikittest.NewScreen(200, 50)
 	cases := map[string]func() []string{
 		"Alert": func() []string {
 			d := NewAlertDialog(scr)
@@ -175,7 +177,7 @@ func TestMessageDialogsKeepLineBreaks(t *testing.T) {
 // is not wrapped, and is not sized to the sum of them.
 func TestFitMessageSizesToTheWidestParagraph(t *testing.T) {
 	d := &ModalDialog{}
-	d.InitModal(&sizedScreen{w: 200, h: 50}, "Confirm", confirmDialogMinW, confirmDialogBaseH)
+	d.InitModal(tuikittest.NewScreen(200, 50), "Confirm", confirmDialogMinW, confirmDialogBaseH)
 
 	long := strings.Repeat("x", 100) // wider than confirmDialogMinW, under 2/3 of 200
 	w, h, lines := d.fitMessage("short\n"+long, confirmDialogMinW, confirmDialogBaseH)
@@ -191,7 +193,7 @@ func TestFitMessageSizesToTheWidestParagraph(t *testing.T) {
 // The height cap applies across paragraphs: the surplus, gap included, folds
 // into the last line kept and is ellipsized there.
 func TestFitMessageCapsParagraphsToTheScreen(t *testing.T) {
-	scr := &sizedScreen{w: 120, h: confirmDialogBaseH + 1} // room for 2 lines
+	scr := tuikittest.NewScreen(120, confirmDialogBaseH+1) // room for 2 lines
 	d := &ModalDialog{}
 	d.InitModal(scr, "Confirm", confirmDialogMinW, confirmDialogBaseH)
 

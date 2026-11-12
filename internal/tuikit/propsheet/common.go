@@ -1,6 +1,9 @@
 package propsheet
 
-import "github.com/gdamore/tcell/v3"
+import (
+	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
+)
 
 // Row is the minimal contract every property-sheet row implements, whether a
 // section header, static value or editable field. Form drives layout and drawing
@@ -53,17 +56,13 @@ type Editable interface {
 
 // ClipboardRow is implemented by rows that support the full cut/paste/select-all
 // cycle, not just a copyable value: TextRow, EditorRow and GridRow (the last only
-// while its cell viewer is open). It is the row-level analogue of the
-// clipboardTarget contract of widgets.InputField and controls.Editor;
-// PropertySheet forwards to it from its own HasSelection/SelectedText/Cut/Paste/
-// SelectAll so the sheet satisfies that contract.
+// while its cell viewer is open). It is the row-level form of core.ClipboardTarget,
+// which widgets.InputField and controls.Editor implement; PropertySheet forwards
+// to it from its own HasSelection/SelectedText/Cut/Paste/SelectAll so the sheet
+// is a core.ClipboardTarget too.
 type ClipboardRow interface {
 	Copyable
-	HasSelection() bool
-	SelectedText() string
-	Cut() string
-	Paste(text string)
-	SelectAll()
+	core.ClipboardTarget
 }
 
 // Shrinkable is implemented by rows that can render in fewer lines than

@@ -5,25 +5,18 @@ import (
 	"slices"
 )
 
-// SelectionBounds returns the inclusive row/col rectangle of the current
-// selection — just the active cell when there's no multi-cell block selection.
-// Exported so a host embedding the grid can tell the two apart.
-func (g *DataGrid) SelectionBounds() (r0, c0, r1, c1 int) { return g.selectionBounds() }
-
 // SelectedRows returns the rows the selection covers, ascending: the rows
 // Ctrl+click marked while a discontiguous selection is in force, otherwise those
 // the anchor/cursor rectangle spans (the one cursor row when nothing is
 // extended). A host acting on whole objects reads this rather than
 // SelectionBounds: a Ctrl+click selection is not a rectangle.
-func (g *DataGrid) SelectedRows() []int { return g.selectedRows() }
-
-func (g *DataGrid) selectedRows() []int {
+func (g *DataGrid) SelectedRows() []int {
 	if g.marking {
 		// Merge the run with the sorted flips: a flip inside the run unmarks its
 		// row, one outside marks it. Flips are as many as Ctrl+clicks, so only
 		// they are sorted, never the run.
 		flips := slices.Sorted(maps.Keys(g.markFlips))
-		rows := make([]int, 0, g.selectedRowCount())
+		rows := make([]int, 0, g.SelectedRowCount())
 		i := 0
 		for ; i < len(flips) && flips[i] < g.markLo; i++ {
 			rows = append(rows, flips[i])
@@ -53,20 +46,16 @@ func (g *DataGrid) selectedRows() []int {
 // on (0,0) of a grid with no rows, so without the clip an empty result set
 // "selects" row 0 and Ctrl+C indexed past the end of it — a crash.
 func (g *DataGrid) selectedRun() (r0, r1 int, ok bool) {
-	r0, _, r1, _ = g.selectionBounds()
+	r0, _, r1, _ = g.SelectionBounds()
 	r1 = min(r1, g.rows.Len()-1)
 	return r0, r1, r0 >= 0 && r1 >= r0
 }
 
-// SelectedRowCount is len(SelectedRows()) without building the slice: 0 on a
-// grid with no rows, so a host's Ctrl+C can tell "nothing to copy" from a
-// selected empty cell.
-func (g *DataGrid) SelectedRowCount() int { return g.selectedRowCount() }
-
-// selectedRowCount is len(selectedRows()) without building the slice — what
+// SelectedRowCount is len(SelectedRows()) without building the slice — what
 // the context menu asks, on every open, of a selection that may hold a
-// million rows.
-func (g *DataGrid) selectedRowCount() int {
+// million rows. 0 on a grid with no rows, so a host's Ctrl+C can tell "nothing
+// to copy" from a selected empty cell.
+func (g *DataGrid) SelectedRowCount() int {
 	if g.marking {
 		n := max(0, g.markHi-g.markLo+1)
 		for r := range g.markFlips {
@@ -125,9 +114,11 @@ func (g *DataGrid) rowMarked(row int) bool {
 	return g.inMarkRun(row) != flipped
 }
 
-// selectionBounds returns the inclusive row/col rectangle of the current
-// selection: just (selRow, selCol) when no block selection is active.
-func (g *DataGrid) selectionBounds() (r0, c0, r1, c1 int) {
+// SelectionBounds returns the inclusive row/col rectangle of the current
+// selection: just the active cell (selRow, selCol) when no multi-cell block
+// selection is active. Exported so a host embedding the grid can tell the two
+// apart.
+func (g *DataGrid) SelectionBounds() (r0, c0, r1, c1 int) {
 	if !g.blockSelecting {
 		return g.selRow, g.selCol, g.selRow, g.selCol
 	}

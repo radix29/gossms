@@ -111,6 +111,15 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
 
+## Theme: what is left
+
+- **Nine palette/style pairs read below the WCAG floor** — found when review
+  step S5 gave them named helpers; they were drawn inline before, so nothing
+  changed visibly. `knownLowContrast` in `internal/tuikit/theme/contrast_test.go`
+  lists them (DialogAccent and DialogError in Default, DialogAccent/DialogDim/
+  MenuDim in Light, MenuDim in MC, MenuDim/DialogDim/DialogError in MCRetro).
+  Recolouring is a visible change: check each palette in the binary.
+
 ## Fix order
 
 Outstanding work by priority. Each item points to where

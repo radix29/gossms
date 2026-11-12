@@ -20,7 +20,7 @@ func (g *DataGrid) selectionScreenPos() (x, y int) {
 // selectionContains reports whether (row, col) is within the current selection,
 // so right-click preserves an existing block selection instead of collapsing it.
 func (g *DataGrid) selectionContains(row, col int) bool {
-	r0, c0, r1, c1 := g.selectionBounds()
+	r0, c0, r1, c1 := g.SelectionBounds()
 	return row >= r0 && row <= r1 && col >= c0 && col <= c1
 }
 

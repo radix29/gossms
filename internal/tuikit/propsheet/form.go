@@ -340,9 +340,8 @@ func (f *Form) Draw(s tcell.Screen) {
 	}
 
 	if total := f.totalHeight(w); total > f.rect.H {
-		p := theme.Active()
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+		sbStyle := theme.StyleDialogLine()
+		sbThumb := theme.StyleScrollThumb()
 		offset := f.scrollLines(w)
 		if f.scroll >= f.maxScroll(w) {
 			// Parked on the last row: put the thumb at the bottom of its track.

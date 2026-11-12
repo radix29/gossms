@@ -16,7 +16,6 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 	}
 	d.DrawBase(s)
 	inner := d.InnerRect()
-	p := theme.Active()
 	contentX := inner.X + 1
 	contentW := inner.W - 2
 	// -1: reserve the list's rightmost column for the scrollbar (see listRect), so a
@@ -33,11 +32,11 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 	core.DrawTextRight(s, contentX+nameColW+1, headerY, fileSizeColW, headerStyle, "Size")
 	core.DrawTextRight(s, contentX+nameColW+1+fileSizeColW+1, headerY, fileModColW, headerStyle, "Modified")
 
-	sepStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
+	sepStyle := theme.StyleDialogLine()
 	core.DrawHLine(s, contentX, inner.Y+3, contentW, sepStyle)
 
 	lr := d.listRect()
-	baseStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	baseStyle := theme.StyleDialog()
 	// busy wins over listErr: it is set only during a FileSystem call, and what it
 	// replaces (the previous listing or error) is about to be superseded.
 	note := d.busy
@@ -46,7 +45,7 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 	}
 	if note != "" {
 		core.FillRect(s, lr, ' ', baseStyle)
-		noteStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+		noteStyle := theme.StyleDialogDim()
 		// Wrapped across the list area, not clipped to one line: a listing error is a
 		// whole sentence in a ~70-column box, and a one-line clip cut the reason off
 		// mid-word ("before SQL Server 2017 the server lists", the pre-2017 xp_dirtree
@@ -65,8 +64,8 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 			d.drawEntry(s, y, lr.X, nameColW, idx)
 		}
 		if len(d.entries) > lr.H {
-			sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
-			sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+			sbStyle := theme.StyleDialogLine()
+			sbThumb := theme.StyleScrollThumb()
 			core.DrawScrollbar(s, lr.Right()-1, lr.Y, lr.H, len(d.entries), lr.H, d.scroll, sbStyle, sbThumb)
 		}
 	}
@@ -84,14 +83,14 @@ func (d *FileDialog) drawEntry(s tcell.Screen, y, x, nameColW, idx int) {
 	p := theme.Active()
 	e := d.entries[idx]
 
-	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	st := theme.StyleDialog()
 	marker := "  "
 	if idx == d.sel {
 		marker = "▸ "
 		if d.focus == ffList {
 			st = theme.StyleSelected()
 		} else {
-			st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextHighlight)
+			st = theme.On(p.DialogBg, p.DialogTextHighlight)
 		}
 	}
 	// +1: also paint the scrollbar gutter so the selection highlight reaches the

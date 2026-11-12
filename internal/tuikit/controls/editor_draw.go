@@ -18,8 +18,8 @@ const gutterW = 5 // " NNN "
 // Draw renders the editor.
 func (e *Editor) Draw(s tcell.Screen) {
 	p := theme.Active()
-	bgStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Text)
-	gutterStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorLineNum)
+	bgStyle := theme.On(p.EditorBg, p.Text)
+	gutterStyle := theme.On(p.EditorBg, p.EditorLineNum)
 	gw := e.gutterWidth()
 	contentX := e.rect.X + gw
 	contentW := e.rect.W - gw
@@ -273,8 +273,8 @@ func (e *Editor) drawScrollbar(s tcell.Screen, p *theme.Palette, total int) {
 	if total <= h || h <= 0 {
 		return
 	}
-	sbStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Border)
-	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+	sbStyle := theme.On(p.EditorBg, p.Border)
+	sbThumb := theme.StyleScrollThumb()
 	core.DrawScrollbar(s, e.rect.Right()-1, e.rect.Y, h, total, h, e.scrollRow, sbStyle, sbThumb)
 }
 
@@ -316,8 +316,8 @@ func (e *Editor) drawScrollbarH(s tcell.Screen, p *theme.Palette) {
 	if !ok {
 		return
 	}
-	sbStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Border)
-	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+	sbStyle := theme.On(p.EditorBg, p.Border)
+	sbThumb := theme.StyleScrollThumb()
 	core.DrawScrollbarH(s, x, y, w, total, w, offset, sbStyle, sbThumb)
 }
 
@@ -366,7 +366,7 @@ func (e *Editor) cursorLineScreenPos(col int) (x, y int) {
 // break. Clamping selEnd to the segment's end below does that.
 func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterStyle tcell.Style) {
 	p := theme.Active()
-	bgStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Text)
+	bgStyle := theme.On(p.EditorBg, p.Text)
 	selStyle := theme.StyleSelected()
 	matchStyle := theme.StyleSearchMatch()
 

@@ -3,53 +3,18 @@ package controls
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 
-	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
-
-// styleScreen records the style of every cell a Draw painted, so a test can
-// assert which columns came out highlighted rather than only that Draw
-// survived. A resolved style per column is the whole contract of
-// styleForRune, and it is what an advancing-cursor match lookup could get
-// wrong at a boundary without any test noticing.
-type styleScreen struct {
-	tcell.Screen
-	w, h   int
-	styles map[[2]int]tcell.Style
-}
-
-func newStyleScreen(w, h int) *styleScreen {
-	return &styleScreen{w: w, h: h, styles: map[[2]int]tcell.Style{}}
-}
-
-func (s *styleScreen) Size() (int, int) { return s.w, s.h }
-func (s *styleScreen) SetContent(x, y int, _ rune, _ []rune, style tcell.Style) {
-	s.styles[[2]int{x, y}] = style
-}
-
-// Put is how core draws a cell; it lands in SetContent like any other write.
-func (s *styleScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	r, n := utf8.DecodeRuneInString(str)
-	s.SetContent(x, y, r, nil, style)
-	return str[n:], 1
-}
-
-func (s *styleScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-func (s *styleScreen) ShowCursor(int, int) {}
 
 // marks reads row y back as one character per column: 'm' for the search
 // match style, 's' for the selection style, '.' for anything else.
-func (s *styleScreen) marks(y, w int) string {
+func marks(s *tuikittest.Screen, y, w int) string {
 	match, sel := theme.StyleSearchMatch(), theme.StyleSelected()
 	var sb strings.Builder
 	for x := range w {
-		switch s.styles[[2]int{x, y}] {
+		switch s.StyleAt(x, y) {
 		case match:
 			sb.WriteByte('m')
 		case sel:
@@ -78,10 +43,10 @@ func TestDrawPaintsEveryMatchOnALine(t *testing.T) {
 	e := styleEditor("ab..ab...ab", 11, 3)
 	setSearch(t, e, SearchOptions{Query: "ab"})
 
-	s := newStyleScreen(11, 3)
+	s := tuikittest.NewScreen(11, 3)
 	e.Draw(s)
 
-	if got, want := s.marks(0, 11), "mm..mm...mm"; got != want {
+	if got, want := marks(s, 0, 11), "mm..mm...mm"; got != want {
 		t.Errorf("styles = %q, want %q", got, want)
 	}
 }
@@ -95,10 +60,10 @@ func TestDrawPaintsCurrentMatchAsSelection(t *testing.T) {
 		t.Fatal("FindNext found nothing — test premise is wrong")
 	}
 
-	s := newStyleScreen(6, 3)
+	s := tuikittest.NewScreen(6, 3)
 	e.Draw(s)
 
-	if got, want := s.marks(0, 6), "ss..mm"; got != want {
+	if got, want := marks(s, 0, 6), "ss..mm"; got != want {
 		t.Errorf("styles = %q, want %q", got, want)
 	}
 }
@@ -111,10 +76,10 @@ func TestDrawPaintsMatchesUnderHorizontalScroll(t *testing.T) {
 	setSearch(t, e, SearchOptions{Query: "ab"})
 	e.scrollCol = 8 // window shows "ab..ab"
 
-	s := newStyleScreen(6, 3)
+	s := tuikittest.NewScreen(6, 3)
 	e.Draw(s)
 
-	if got, want := s.marks(0, 6), "mm..mm"; got != want {
+	if got, want := marks(s, 0, 6), "mm..mm"; got != want {
 		t.Errorf("styles = %q, want %q", got, want)
 	}
 }
@@ -129,11 +94,11 @@ func TestDrawPaintsMatchesInWrapMode(t *testing.T) {
 	e.SetWrapMode(true)
 	setSearch(t, e, SearchOptions{Query: "ab"})
 
-	s := newStyleScreen(5, 6)
+	s := tuikittest.NewScreen(5, 6)
 	e.Draw(s)
 
 	for row := range 4 {
-		if got, want := s.marks(row, 4), "mm.."; got != want {
+		if got, want := marks(s, row, 4), "mm.."; got != want {
 			t.Errorf("wrapped row %d styles = %q, want %q", row, got, want)
 		}
 	}
@@ -146,12 +111,12 @@ func TestDrawPaintsMatchesAroundWideRunes(t *testing.T) {
 	e := styleEditor("x漢字x", 6, 3)
 	setSearch(t, e, SearchOptions{Query: "漢字"})
 
-	s := newStyleScreen(6, 3)
+	s := tuikittest.NewScreen(6, 3)
 	e.Draw(s)
 
-	// Columns: x=0, 漢=1-2, 字=3-4, x=5. Only the cells actually written
-	// carry a style, so the continuation columns read as default here.
-	if got, want := s.marks(0, 6), ".m.m.."; got != want {
+	// Columns: x=0, 漢=1-2, 字=3-4, x=5. The screen styles a continuation
+	// column as its glyph, as tcell does, so all four read as matched.
+	if got, want := marks(s, 0, 6), ".mmmm."; got != want {
 		t.Errorf("styles = %q, want %q", got, want)
 	}
 }

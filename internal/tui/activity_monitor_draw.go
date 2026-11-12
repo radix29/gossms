@@ -5,7 +5,6 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/charts"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -143,7 +142,7 @@ func (am *ActivityMonitor) drawDashboard(s tcell.Screen) {
 //
 // Everything the render reads must be in the key, or the panel shows a stale
 // dashboard.
-func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
+func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *core.Buffer {
 	key := amCanvasKey{
 		tab:      am.tab,
 		w:        cw,
@@ -157,7 +156,7 @@ func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
 		return am.canvas
 	}
 
-	c := charts.NewCanvas(cw, ch)
+	c := core.NewBuffer(cw, ch)
 	// The panel ground first: the renders leave column gutters and the corner
 	// under each Y axis unpainted, and Blit copies those cells as they are. Left
 	// colourless they showed the screen's default ground (a strip of a different

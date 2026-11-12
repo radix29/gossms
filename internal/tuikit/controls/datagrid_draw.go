@@ -25,10 +25,10 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 	}
 	nulls, _ := g.rows.(NullSource)
 	g.drawRow(s, g.rect.Y, -1, g.headerCells(), nil, theme.StyleGridHeader(), gw)
-	sep := tcell.StyleDefault.Background(theme.Active().GridHeader).Foreground(theme.Active().GridBorder)
+	sep := theme.On(theme.Active().GridHeader, theme.Active().GridBorder)
 	core.DrawHLine(s, g.rect.X, g.rect.Y+1, g.rect.W, sep)
 
-	r0, c0, r1, c1 := g.selectionBounds()
+	r0, c0, r1, c1 := g.SelectionBounds()
 	dataH := g.dataRows()
 	for row := range dataH {
 		dataIdx := g.scrollRow + row
@@ -70,7 +70,7 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 
 	// Status bar
 	p := theme.Active()
-	statusStyle := tcell.StyleDefault.Background(p.GridHeader).Foreground(p.TextDim)
+	statusStyle := theme.On(p.GridHeader, p.TextDim)
 	if g.statusStyle != nil {
 		statusStyle = g.statusStyle()
 	}
@@ -78,8 +78,8 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 	core.DrawTextRight(s, g.rect.X+1, g.rect.Y+g.rect.H-1, g.rect.W-2, statusStyle, g.status)
 
 	// Scrollbars
-	sbStyle := tcell.StyleDefault.Background(p.GridHeader).Foreground(p.Border)
-	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+	sbStyle := theme.On(p.GridHeader, p.Border)
+	sbThumb := theme.StyleScrollThumb()
 	if g.showsVScrollbar() {
 		core.DrawScrollbar(s, g.rect.Right()-1, g.rect.Y+2, dataH,
 			g.rows.Len(), dataH, g.scrollRow, sbStyle, sbThumb)
@@ -188,7 +188,7 @@ func (g *DataGrid) drawGroupRow(s tcell.Screen, y int, cells []string, xOffset i
 		st = theme.StyleGridSelected()
 		if !g.active {
 			p := theme.Active()
-			st = tcell.StyleDefault.Background(p.GridRowAlt).Foreground(p.TextHighlight)
+			st = theme.On(p.GridRowAlt, p.TextHighlight)
 		}
 	}
 	r := core.Rect{X: g.rect.X + xOffset, Y: y, W: g.rect.W - xOffset, H: 1}
@@ -242,7 +242,7 @@ func (g *DataGrid) drawCellSelection(s tcell.Screen, y, row int, cells []string,
 	p := theme.Active()
 	st := theme.StyleGridSelected()
 	if !g.active {
-		st = tcell.StyleDefault.Background(p.GridRowAlt).Foreground(p.TextHighlight)
+		st = theme.On(p.GridRowAlt, p.TextHighlight)
 	}
 	col := g.rect.X + xOffset
 	for i := g.scrollCol; i < len(g.colWidths); i++ {

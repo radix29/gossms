@@ -3,6 +3,8 @@ package propsheet
 import (
 	"strings"
 	"testing"
+
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 func TestHintRowStartsBlank(t *testing.T) {
@@ -75,14 +77,14 @@ func TestHintRowWrapsToTwoLines(t *testing.T) {
 				t.Fatalf("Height(%d) = %d, want %d", w, got, len(c.wantLines))
 			}
 			r.Layout(0, 0, w)
-			s := newCellScreen(w, 3)
+			s := tuikittest.NewScreen(w, 3)
 			r.Draw(s, false)
 			for i, want := range c.wantLines {
-				if got := strings.TrimRight(s.row(i), " "); !strings.HasPrefix(got, want) {
+				if got := strings.TrimRight(s.Row(i), " "); !strings.HasPrefix(got, want) {
 					t.Errorf("line %d = %q, want it to start %q", i, got, want)
 				}
 			}
-			if got := strings.TrimSpace(s.row(len(c.wantLines))); got != "" {
+			if got := strings.TrimSpace(s.Row(len(c.wantLines))); got != "" {
 				t.Errorf("line %d = %q, want blank", len(c.wantLines), got)
 			}
 		})
@@ -94,9 +96,9 @@ func TestHintRowWrapsToTwoLines(t *testing.T) {
 		t.Fatalf("a hint needing many lines has Height %d, want the cap of 2", got)
 	}
 	r.Layout(0, 0, w)
-	s := newCellScreen(w, 3)
+	s := tuikittest.NewScreen(w, 3)
 	r.Draw(s, false)
-	if got := strings.TrimRight(s.row(1), " "); !strings.HasSuffix(got, "…") {
+	if got := strings.TrimRight(s.Row(1), " "); !strings.HasSuffix(got, "…") {
 		t.Errorf("second line = %q, want it to end in an ellipsis", got)
 	}
 }
@@ -140,7 +142,7 @@ func TestHintRowSetScrollsItIntoView(t *testing.T) {
 	f.FocusLast()
 	f.FocusPrev() // row 9, the last on screen at scroll 0
 	f.scroll = 0
-	scr := &fakeScreen{w: 60, h: 10}
+	scr := tuikittest.NewScreen(60, 10)
 
 	f.Draw(scr)
 	if f.onScreen(10) {

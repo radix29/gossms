@@ -9,7 +9,7 @@ import "github.com/gdamore/tcell/v3"
 // ClipScreen wraps a tcell.Screen and drops cell writes outside a clip
 // rectangle, confining widgets that draw at fixed offsets without each Draw
 // learning to clip. It covers SetContent, the Put family (which drawing.go
-// bottoms out in), and Fill/FillArea/Clear.
+// bottoms out in), Fill/FillArea/Clear, and ShowCursor.
 type ClipScreen struct {
 	tcell.Screen
 	clip Rect
@@ -70,6 +70,17 @@ func (c *ClipScreen) PutStrStyled(x, y int, str string, style tcell.Style) {
 // PutStr writes str in the default style, clipped.
 func (c *ClipScreen) PutStr(x, y int, str string) {
 	c.PutStrStyled(x, y, str, tcell.StyleDefault)
+}
+
+// ShowCursor shows the cursor only if (x,y) lies inside the clip, and hides
+// it otherwise: an Editor or InputField whose caret scrolled out of a clamped
+// dialog would else park the terminal cursor outside the box.
+func (c *ClipScreen) ShowCursor(x, y int) {
+	if !c.clip.Contains(x, y) {
+		c.Screen.HideCursor()
+		return
+	}
+	c.Screen.ShowCursor(x, y)
 }
 
 // FillArea fills the part of the area inside the clip; tcell's own clips only

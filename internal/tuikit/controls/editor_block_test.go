@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // blockSelect arms a block (column) selection over rows [topRow, botRow] at
@@ -19,8 +20,8 @@ func TestEditorBlockTypingInsertsOnEveryRow(t *testing.T) {
 	e := newTestEditor("aaaa\nbbbb\ncccc")
 	blockSelect(e, 0, 2, 2, 2) // zero-width column caret at column 2
 
-	e.HandleKey(runeKey('X', tcell.ModNone))
-	e.HandleKey(runeKey('Y', tcell.ModNone))
+	e.HandleKey(tuikittest.Rune('X', tcell.ModNone))
+	e.HandleKey(tuikittest.Rune('Y', tcell.ModNone))
 
 	if got, want := e.Text(), "aaXYaa\nbbXYbb\nccXYcc"; got != want {
 		t.Fatalf("Text() = %q, want %q", got, want)
@@ -37,7 +38,7 @@ func TestEditorBlockTypingReplacesSelectedColumns(t *testing.T) {
 	e := newTestEditor("abcdef\nghijkl\nmnopqr")
 	blockSelect(e, 0, 1, 2, 4)
 
-	e.HandleKey(runeKey('_', tcell.ModNone))
+	e.HandleKey(tuikittest.Rune('_', tcell.ModNone))
 
 	if got, want := e.Text(), "a_ef\ng_kl\nm_qr"; got != want {
 		t.Fatalf("Text() = %q, want %q", got, want)
@@ -50,7 +51,7 @@ func TestEditorBlockTypingPadsShortRows(t *testing.T) {
 	e := newTestEditor("aaaa\nb\ncccc")
 	blockSelect(e, 0, 3, 2, 3)
 
-	e.HandleKey(runeKey('X', tcell.ModNone))
+	e.HandleKey(tuikittest.Rune('X', tcell.ModNone))
 
 	if got, want := e.Text(), "aaaXa\nb  X\ncccXc"; got != want {
 		t.Fatalf("Text() = %q, want %q", got, want)
@@ -61,7 +62,7 @@ func TestEditorBlockBackspaceAndDelete(t *testing.T) {
 	e := newTestEditor("aaaa\nbb\ncccc")
 	blockSelect(e, 0, 3, 2, 3)
 
-	e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModNone))
 	// Row 1 has no rune at column 2, so it is left alone rather than padded.
 	if got, want := e.Text(), "aaa\nbb\nccc"; got != want {
 		t.Fatalf("after Backspace: Text() = %q, want %q", got, want)
@@ -70,7 +71,7 @@ func TestEditorBlockBackspaceAndDelete(t *testing.T) {
 		t.Fatalf("block column after Backspace = (%d,%d), want (2,2)", e.selAnchorCol, e.cursorCol)
 	}
 
-	e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
 	if got, want := e.Text(), "aa\nbb\ncc"; got != want {
 		t.Fatalf("after Delete: Text() = %q, want %q", got, want)
 	}
@@ -80,7 +81,7 @@ func TestEditorBlockBackspaceDeletesSelectedColumns(t *testing.T) {
 	e := newTestEditor("abcdef\nghijkl")
 	blockSelect(e, 0, 1, 1, 3)
 
-	e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyBackspace, tcell.ModNone))
 
 	if got, want := e.Text(), "adef\ngjkl"; got != want {
 		t.Fatalf("Text() = %q, want %q", got, want)
@@ -91,7 +92,7 @@ func TestEditorBlockTabIndentsEveryRow(t *testing.T) {
 	e := newTestEditor("aa\nbb")
 	blockSelect(e, 0, 1, 1, 1)
 
-	e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 
 	if got, want := e.Text(), "a    a\nb    b"; got != want {
 		t.Fatalf("Text() = %q, want %q", got, want)
@@ -177,9 +178,9 @@ func TestEditorBlockPasteReplacesBlockSelection(t *testing.T) {
 func TestEditorBlockEditIsOneUndoStep(t *testing.T) {
 	e := newTestEditor("aaaa\nbbbb")
 	blockSelect(e, 0, 2, 1, 2)
-	e.HandleKey(runeKey('X', tcell.ModNone))
+	e.HandleKey(tuikittest.Rune('X', tcell.ModNone))
 
-	e.HandleKey(key(tcell.KeyCtrlZ, tcell.ModNone))
+	e.HandleKey(tuikittest.Key(tcell.KeyCtrlZ, tcell.ModNone))
 	if got, want := e.Text(), "aaaa\nbbbb"; got != want {
 		t.Fatalf("after undo: Text() = %q, want %q", got, want)
 	}

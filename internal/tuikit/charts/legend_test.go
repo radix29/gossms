@@ -16,7 +16,7 @@ func legendFixture() []LegendItem {
 }
 
 func TestDrawLegendUsesFullLabelsWhenTheyFit(t *testing.T) {
-	c := NewCanvas(48, 1)
+	c := core.NewBuffer(48, 1)
 	DrawLegend(c, c.Rect(), legendFixture())
 
 	row := c.Row(0)
@@ -29,7 +29,7 @@ func TestDrawLegendUsesFullLabelsWhenTheyFit(t *testing.T) {
 
 // Short labels come before clipping: "Trans" says more than "Transac".
 func TestDrawLegendFallsBackToShortLabels(t *testing.T) {
-	c := NewCanvas(30, 1)
+	c := core.NewBuffer(30, 1)
 	DrawLegend(c, c.Rect(), legendFixture())
 
 	row := c.Row(0)
@@ -42,7 +42,7 @@ func TestDrawLegendFallsBackToShortLabels(t *testing.T) {
 }
 
 func TestDrawLegendWrapsAcrossAvailableRows(t *testing.T) {
-	c := NewCanvas(20, 3)
+	c := core.NewBuffer(20, 3)
 	DrawLegend(c, c.Rect(), legendFixture())
 
 	rows := c.Rows()
@@ -65,7 +65,7 @@ func TestDrawLegendWrapsAcrossAvailableRows(t *testing.T) {
 // Squares must survive even when there is no room for any label text — a
 // dropped square leaves a plotted colour with nothing naming it.
 func TestDrawLegendKeepsSquaresWhenClipping(t *testing.T) {
-	c := NewCanvas(8, 1)
+	c := core.NewBuffer(8, 1)
 	DrawLegend(c, c.Rect(), legendFixture())
 
 	row := c.Row(0)
@@ -75,7 +75,7 @@ func TestDrawLegendKeepsSquaresWhenClipping(t *testing.T) {
 }
 
 func TestDrawLegendSquareCarriesSeriesColour(t *testing.T) {
-	c := NewCanvas(40, 1)
+	c := core.NewBuffer(40, 1)
 	DrawLegend(c, c.Rect(), legendFixture())
 
 	str, style, _ := c.Get(0, 0)
@@ -88,7 +88,7 @@ func TestDrawLegendSquareCarriesSeriesColour(t *testing.T) {
 }
 
 func TestDrawLegendDegenerateInput(t *testing.T) {
-	c := NewCanvas(10, 2)
+	c := core.NewBuffer(10, 2)
 	DrawLegend(c, c.Rect(), nil)
 	DrawLegend(c, core.Rect{X: 0, Y: 0, W: 0, H: 2}, legendFixture())
 	DrawLegend(c, core.Rect{X: 0, Y: 0, W: 10, H: 0}, legendFixture())

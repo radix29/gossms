@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // The three entry points that replace a grid's contents outright — SetData
@@ -89,7 +91,7 @@ func TestSetErrorSurvivesAPendingWidthRefresh(t *testing.T) {
 	g.RefreshColumnWidths()
 	g.SetError(errors.New("a message far longer than the header"))
 
-	g.Draw(&fakeMenuScreen{w: 40, h: 10})
+	g.Draw(tuikittest.NewScreen(40, 10))
 
 	want := g.rect.W - 2
 	if len(g.colWidths) != 1 || g.colWidths[0] != want {

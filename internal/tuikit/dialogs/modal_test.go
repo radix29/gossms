@@ -6,20 +6,11 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
-// sizedScreen embeds the tcell.Screen interface (nil at runtime) and
-// overrides only Size() — ModalDialog.recentre only ever calls Size() on
-// its screen, so this is enough to drive it without a full Screen fake.
-type sizedScreen struct {
-	tcell.Screen
-	w, h int
-}
-
-func (s *sizedScreen) Size() (int, int) { return s.w, s.h }
-
 func TestModalDialogClampsToSmallScreen(t *testing.T) {
-	scr := &sizedScreen{w: 40, h: 10}
+	scr := tuikittest.NewScreen(40, 10)
 	d := &ModalDialog{}
 	d.InitModal(scr, "Confirm", 78, 9)
 
@@ -32,7 +23,7 @@ func TestModalDialogClampsToSmallScreen(t *testing.T) {
 }
 
 func TestModalDialogRestoresFullSizeOnLargerScreen(t *testing.T) {
-	scr := &sizedScreen{w: 40, h: 10}
+	scr := tuikittest.NewScreen(40, 10)
 	d := &ModalDialog{}
 	d.InitModal(scr, "Confirm", 78, 9)
 	if d.rect.W != 40 {
@@ -40,7 +31,7 @@ func TestModalDialogRestoresFullSizeOnLargerScreen(t *testing.T) {
 	}
 
 	// Terminal grows; Show (as ShowConfirm does on every call) recentres.
-	scr.w, scr.h = 200, 50
+	scr.SetSize(200, 50)
 	d.Show()
 
 	if d.rect.W != 78 {
@@ -56,34 +47,34 @@ func TestModalDialogRestoresFullSizeOnLargerScreen(t *testing.T) {
 // its old rect and drew its right border and whole button row past the new
 // screen edge, while still swallowing every key.
 func TestModalDialogRelayoutFollowsAShrinkingScreen(t *testing.T) {
-	scr := &sizedScreen{w: 120, h: 34}
+	scr := tuikittest.NewScreen(120, 34)
 	d := &ModalDialog{}
 	d.InitModal(scr, "Help", 78, 20)
 	d.Show()
 
-	scr.w, scr.h = 60, 12
+	scr.SetSize(60, 12)
 	d.Relayout()
 
 	if d.rect.W != 60 || d.rect.X != 0 {
 		t.Errorf("rect = %dx%d at (%d,%d), want width 60 at x=0 (clamped to the new screen)",
 			d.rect.W, d.rect.H, d.rect.X, d.rect.Y)
 	}
-	if d.rect.Right() > scr.w || d.rect.Bottom() > scr.h {
-		t.Errorf("rect %+v extends past the %dx%d screen", d.rect, scr.w, scr.h)
+	if sw, sh := scr.Size(); d.rect.Right() > sw || d.rect.Bottom() > sh {
+		t.Errorf("rect %+v extends past the %dx%d screen", d.rect, sw, sh)
 	}
 	// The button row is the part that went missing first.
-	if d.ButtonRowY() >= scr.h {
-		t.Errorf("ButtonRowY() = %d, off a %d-row screen", d.ButtonRowY(), scr.h)
+	if _, sh := scr.Size(); d.ButtonRowY() >= sh {
+		t.Errorf("ButtonRowY() = %d, off a %d-row screen", d.ButtonRowY(), sh)
 	}
 }
 
 func TestModalDialogRelayoutRestoresRequestedSizeOnAGrowingScreen(t *testing.T) {
-	scr := &sizedScreen{w: 40, h: 10}
+	scr := tuikittest.NewScreen(40, 10)
 	d := &ModalDialog{}
 	d.InitModal(scr, "Help", 78, 20)
 	d.Show()
 
-	scr.w, scr.h = 200, 50
+	scr.SetSize(200, 50)
 	d.Relayout()
 
 	if d.rect.W != 78 || d.rect.H != 20 {
@@ -97,26 +88,26 @@ func TestModalDialogRelayoutRestoresRequestedSizeOnAGrowingScreen(t *testing.T) 
 // AlertDialog sizes itself to its message and a fraction of the screen
 // width, so following a resize means re-wrapping, not only recentring.
 func TestAlertDialogRelayoutRewrapsMessage(t *testing.T) {
-	scr := &sizedScreen{w: 200, h: 50}
+	scr := tuikittest.NewScreen(200, 50)
 	d := NewAlertDialog(scr)
 	msg := strings.Repeat("word ", 30)
 	d.ShowAlert("Alert", msg)
 	wide := len(d.msgLines)
 
-	scr.w, scr.h = 60, 24
+	scr.SetSize(60, 24)
 	d.Relayout()
 
 	if len(d.msgLines) <= wide {
 		t.Errorf("msgLines = %d after shrinking to 60 cols, want more than the %d it wrapped to at 200",
 			len(d.msgLines), wide)
 	}
-	if d.rect.Right() > scr.w || d.rect.Bottom() > scr.h {
-		t.Errorf("rect %+v extends past the %dx%d screen", d.rect, scr.w, scr.h)
+	if sw, sh := scr.Size(); d.rect.Right() > sw || d.rect.Bottom() > sh {
+		t.Errorf("rect %+v extends past the %dx%d screen", d.rect, sw, sh)
 	}
 }
 
 func TestModalDialogScrollbarDrag(t *testing.T) {
-	scr := &sizedScreen{w: 80, h: 24}
+	scr := tuikittest.NewScreen(80, 24)
 	d := &ModalDialog{}
 	d.InitModal(scr, "Test", 40, 12)
 
@@ -155,7 +146,7 @@ func TestModalDialogScrollbarDrag(t *testing.T) {
 // reopened dialog looks frozen. Show has to start clean.
 func TestModalDialogLatchDoesNotSurviveIntoTheNextShowing(t *testing.T) {
 	d := &ModalDialog{}
-	d.InitModal(&sizedScreen{w: 100, h: 30}, "Confirm", 60, 10)
+	d.InitModal(tuikittest.NewScreen(100, 30), "Confirm", 60, 10)
 	d.Show()
 
 	labels := []string{"Yes", "No"}
@@ -176,48 +167,11 @@ func TestModalDialogLatchDoesNotSurviveIntoTheNextShowing(t *testing.T) {
 	}
 }
 
-// drawScreen is a screen fake with enough surface for DrawBase: Size, the
-// Get/Put pair DimArea walks with, and SetContent, recording every cell.
-type drawScreen struct {
-	tcell.Screen
-	w, h  int
-	cells map[[2]int]rune
-}
-
-func newDrawScreen(w, h int) *drawScreen {
-	return &drawScreen{w: w, h: h, cells: map[[2]int]rune{}}
-}
-
-func (s *drawScreen) Size() (int, int) { return s.w, s.h }
-
-func (s *drawScreen) SetContent(x, y int, primary rune, _ []rune, _ tcell.Style) {
-	s.cells[[2]int{x, y}] = primary
-}
-
-func (s *drawScreen) Get(int, int) (string, tcell.Style, int) {
-	return " ", tcell.StyleDefault, 1
-}
-
-func (s *drawScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
-	if str == "" {
-		return "", 0
-	}
-	r := []rune(str)
-	s.SetContent(x, y, r[0], nil, style)
-	return string(r[1:]), 1
-}
-
-func (s *drawScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-func (s *drawScreen) at(x, y int) rune { return s.cells[[2]int{x, y}] }
-
 // A dialog laid out for 78x20 and clamped onto a 30x8 terminal draws its
 // rows at the offsets it asked for, so they run past the right border and
 // past the button row. DrawBase confines them to the box.
 func TestDrawBaseClipsContentOnAClampedRect(t *testing.T) {
-	rec := newDrawScreen(30, 8)
+	rec := tuikittest.NewScreen(30, 8)
 	d := &ModalDialog{}
 	d.InitModal(rec, "Connect", 78, 20)
 	d.Show()
@@ -231,23 +185,23 @@ func TestDrawBaseClipsContentOnAClampedRect(t *testing.T) {
 	core.DrawText(cs, r.X+2, r.Y+2, tcell.StyleDefault, strings.Repeat("x", 70))
 	core.DrawText(cs, r.X+2, r.Y+15, tcell.StyleDefault, "overflow")
 
-	if got := rec.at(r.X+2, r.Y+2); got != 'x' {
+	if got := rec.RuneAt(r.X+2, r.Y+2); got != 'x' {
 		t.Errorf("first content column = %q, want 'x' — the clip must not eat what fits", got)
 	}
-	if got := rec.at(r.Right(), r.Y+2); got == 'x' {
+	if got := rec.RuneAt(r.Right(), r.Y+2); got == 'x' {
 		t.Error("content ran past the dialog's right edge")
 	}
-	if got := rec.at(r.X+2, r.Y+15); got == 'o' {
+	if got := rec.RuneAt(r.X+2, r.Y+15); got == 'o' {
 		t.Error("a row laid out below the dialog's clamped height still drew")
 	}
-	if got := rec.at(r.Right()-1, r.Y+2); got == 'x' {
+	if got := rec.RuneAt(r.Right()-1, r.Y+2); got == 'x' {
 		t.Error("content overwrote the right border column")
 	}
 	// The scrollbar sits on that border column, outside the content clip —
 	// DrawContentScrollbar is what still gets through.
-	before := rec.at(r.Right()-1, r.Y+1)
+	before := rec.RuneAt(r.Right()-1, r.Y+1)
 	d.DrawContentScrollbar(cs, r.Y+1, 3, 30, 0)
-	if rec.at(r.Right()-1, r.Y+1) == before {
+	if rec.RuneAt(r.Right()-1, r.Y+1) == before {
 		t.Error("scrollbar on the right border column was clipped away")
 	}
 }
@@ -256,7 +210,7 @@ func TestDrawBaseClipsContentOnAClampedRect(t *testing.T) {
 // overlay it opens (a dropdown, a completion list) may legitimately extend
 // past the box, and clipping that would be the regression.
 func TestDrawBaseDoesNotClipAtTheRequestedSize(t *testing.T) {
-	rec := newDrawScreen(100, 40)
+	rec := tuikittest.NewScreen(100, 40)
 	d := &ModalDialog{}
 	d.InitModal(rec, "Connect", 78, 20)
 	d.Show()
@@ -266,7 +220,7 @@ func TestDrawBaseDoesNotClipAtTheRequestedSize(t *testing.T) {
 
 	r := d.Rect()
 	core.DrawText(cs, r.Right()+1, r.Bottom()+1, tcell.StyleDefault, "z")
-	if rec.at(r.Right()+1, r.Bottom()+1) != 'z' {
+	if rec.RuneAt(r.Right()+1, r.Bottom()+1) != 'z' {
 		t.Error("an unclamped dialog must not clip anything")
 	}
 }
@@ -274,7 +228,7 @@ func TestDrawBaseDoesNotClipAtTheRequestedSize(t *testing.T) {
 // Right-aligned buttons over a content row that reached the button row
 // leave the row's left half showing through. Nothing else draws there.
 func TestDrawButtonsClearsTheRowOnAClampedRect(t *testing.T) {
-	rec := newDrawScreen(30, 8)
+	rec := tuikittest.NewScreen(30, 8)
 	d := &ModalDialog{}
 	d.InitModal(rec, "Connect", 78, 20)
 	d.Show()
@@ -285,10 +239,10 @@ func TestDrawButtonsClearsTheRowOnAClampedRect(t *testing.T) {
 	core.DrawText(cs, r.X+1, d.ButtonRowY(), tcell.StyleDefault, strings.Repeat("x", 10))
 	d.DrawButtons(cs, []string{"OK"}, 0)
 
-	if got := rec.at(r.X+1, d.ButtonRowY()); got == 'x' {
+	if got := rec.RuneAt(r.X+1, d.ButtonRowY()); got == 'x' {
 		t.Error("content left of the buttons survived on the button row")
 	}
-	if got := rec.at(d.ButtonRowStartX([]string{"OK"}), d.ButtonRowY()); got != '[' {
+	if got := rec.RuneAt(d.ButtonRowStartX([]string{"OK"}), d.ButtonRowY()); got != '[' {
 		t.Errorf("button row starts with %q, want '['", got)
 	}
 }

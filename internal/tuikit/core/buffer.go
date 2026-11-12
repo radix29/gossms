@@ -1,37 +1,40 @@
-package charts
+package core
 
 import (
 	"unicode/utf8"
 
 	"github.com/clipperhouse/displaywidth"
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// Canvas is an off-screen cell grid that satisfies tcell.Screen well enough for
-// drawing. A dashboard is rendered into a fixed-size Canvas and the visible
-// window blitted onto the real screen, so it scrolls on both axes without each
-// chart knowing the offset.
+// Buffer is an off-screen cell grid that satisfies tcell.Screen well enough for
+// drawing. It has two users: a dashboard is rendered into a fixed-size Buffer
+// and the visible window blitted onto the real screen, so it scrolls on both
+// axes without each chart knowing the offset; and tests draw into one and read
+// the cells back (tuikittest builds on it).
 //
-// Only the drawing half of tcell.Screen is implemented (Size, SetContent, Get,
-// Put, Fill, FillArea, Clear). The embedded interface is nil, so any other
-// method (Init, Show, PollEvent, ...) panics deliberately: it means a Canvas was
-// confused with a real screen.
-type Canvas struct {
+// The drawing half of tcell.Screen is implemented (Size, SetContent, Get, Put,
+// PutStr, PutStrStyled, Fill, FillArea, Clear, ShowCursor, HideCursor), with
+// the cursor recorded for Cursor to report. The embedded interface is nil, so
+// any other method (Init, Show, EventQ, ...) panics deliberately: it means a
+// Buffer was confused with a real screen.
+type Buffer struct {
 	tcell.Screen // nil; see the type comment
 
 	w, h  int
-	cells []canvasCell
+	cells []bufferCell
+
+	curX, curY int // last ShowCursor; -1,-1 when hidden
 }
 
-// canvasCell is one grid cell. width is its display width: 1 for an ordinary
+// bufferCell is one grid cell. width is its display width: 1 for an ordinary
 // cell, 2 for the first cell of a wide grapheme, 0 for the trailing cell it
 // covers (no content, skipped when blitting).
 //
 // Content is a primary rune plus the rest of its grapheme, not one string (an
 // allocation per cell, 62% of the dashboard draw path's allocations). rest is
 // non-empty only for a cell carrying combining marks.
-type canvasCell struct {
+type bufferCell struct {
 	primary rune // 0 in a trailing cell, which has no content of its own
 	rest    string
 	style   tcell.Style
@@ -40,7 +43,7 @@ type canvasCell struct {
 
 // text is the cell's content as one string, allocated on demand (Get and Row
 // want a string, the draw path does not).
-func (c canvasCell) text() string {
+func (c bufferCell) text() string {
 	switch {
 	case c.primary == 0:
 		return ""
@@ -50,33 +53,33 @@ func (c canvasCell) text() string {
 	return string(c.primary) + c.rest
 }
 
-// NewCanvas returns a w×h canvas of spaces in tcell.StyleDefault. Non-positive
-// dimensions clamp to zero, giving a canvas that discards every draw.
-func NewCanvas(w, h int) *Canvas {
+// NewBuffer returns a w×h buffer of spaces in tcell.StyleDefault. Non-positive
+// dimensions clamp to zero, giving a buffer that discards every draw.
+func NewBuffer(w, h int) *Buffer {
 	w, h = max(w, 0), max(h, 0)
-	c := &Canvas{w: w, h: h, cells: make([]canvasCell, w*h)}
+	c := &Buffer{w: w, h: h, cells: make([]bufferCell, w*h), curX: -1, curY: -1}
 	c.Fill(' ', tcell.StyleDefault)
 	return c
 }
 
-// Size returns the canvas dimensions (tcell.Screen).
-func (c *Canvas) Size() (int, int) { return c.w, c.h }
+// Size returns the buffer dimensions (tcell.Screen).
+func (c *Buffer) Size() (int, int) { return c.w, c.h }
 
-// Rect is the canvas's full extent.
-func (c *Canvas) Rect() core.Rect { return core.Rect{X: 0, Y: 0, W: c.w, H: c.h} }
+// Rect is the buffer's full extent.
+func (c *Buffer) Rect() Rect { return Rect{X: 0, Y: 0, W: c.w, H: c.h} }
 
 // Fill sets every cell to ch in style (tcell.Screen).
-func (c *Canvas) Fill(ch rune, style tcell.Style) {
-	cell := canvasCell{primary: ch, style: style, width: max(displaywidth.Rune(ch), 1)}
+func (c *Buffer) Fill(ch rune, style tcell.Style) {
+	cell := bufferCell{primary: ch, style: style, width: max(displaywidth.Rune(ch), 1)}
 	for i := range c.cells {
 		c.cells[i] = cell
 	}
 }
 
 // FillArea sets every cell of the w×h area at (x,y) to ch in style
-// (tcell.Screen). The part of the area off the canvas is ignored, as tcell
+// (tcell.Screen). The part of the area off the buffer is ignored, as tcell
 // ignores the part off the screen.
-func (c *Canvas) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
+func (c *Buffer) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
 	for row := max(y, 0); row < min(y+h, c.h); row++ {
 		for col := max(x, 0); col < min(x+w, c.w); col++ {
 			c.setRune(col, row, ch, style)
@@ -84,12 +87,12 @@ func (c *Canvas) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
 	}
 }
 
-// Clear fills the canvas with spaces in tcell.StyleDefault (tcell.Screen).
-func (c *Canvas) Clear() { c.Fill(' ', tcell.StyleDefault) }
+// Clear fills the buffer with spaces in tcell.StyleDefault (tcell.Screen).
+func (c *Buffer) Clear() { c.Fill(' ', tcell.StyleDefault) }
 
 // SetContent writes primary plus any combining runes at (x,y)
 // (tcell.Screen). Out-of-range coordinates are ignored.
-func (c *Canvas) SetContent(x, y int, primary rune, combining []rune, style tcell.Style) {
+func (c *Buffer) SetContent(x, y int, primary rune, combining []rune, style tcell.Style) {
 	if len(combining) == 0 {
 		// Same per-cell fast path as Put's single rune: no string, no segmentation.
 		c.setRune(x, y, primary, style)
@@ -100,9 +103,9 @@ func (c *Canvas) SetContent(x, y int, primary rune, combining []rune, style tcel
 
 // Put writes the first grapheme of str at (x,y) and returns the rest of the
 // string along with the width written (tcell.Screen).
-func (c *Canvas) Put(x, y int, str string, style tcell.Style) (string, int) {
+func (c *Buffer) Put(x, y int, str string, style tcell.Style) (string, int) {
 	if r, n := utf8.DecodeRuneInString(str); n == len(str) && n > 0 {
-		// One rune (core.PutRune's call, one per cell per chart): must not segment.
+		// One rune (PutRune's call, one per cell per chart): must not segment.
 		c.setRune(x, y, r, style)
 		return "", max(displaywidth.Rune(r), 1)
 	}
@@ -116,10 +119,52 @@ func (c *Canvas) Put(x, y int, str string, style tcell.Style) (string, int) {
 	return str[len(first):], w
 }
 
+// PutStr writes str from (x,y) in tcell.StyleDefault (tcell.Screen).
+func (c *Buffer) PutStr(x, y int, str string) { c.PutStrStyled(x, y, str, tcell.StyleDefault) }
+
+// PutStrStyled writes str from (x,y), one grapheme per Put, clipped at the
+// buffer's right edge (tcell.Screen).
+func (c *Buffer) PutStrStyled(x, y int, str string, style tcell.Style) {
+	for str != "" && x < c.w {
+		var w int
+		str, w = c.Put(x, y, str, style)
+		x += w
+	}
+}
+
+// ShowCursor records the cursor position (tcell.Screen); Cursor reports it.
+// A position off the buffer hides it, as on a real screen.
+func (c *Buffer) ShowCursor(x, y int) {
+	if !c.inBounds(x, y) {
+		x, y = -1, -1
+	}
+	c.curX, c.curY = x, y
+}
+
+// HideCursor hides the cursor (tcell.Screen).
+func (c *Buffer) HideCursor() { c.curX, c.curY = -1, -1 }
+
+// Cursor returns the last ShowCursor position, and whether it is visible.
+func (c *Buffer) Cursor() (x, y int, visible bool) {
+	return c.curX, c.curY, c.curX >= 0
+}
+
+// RuneAt returns the primary rune at (x,y): 0 for the trailing cell of a wide
+// grapheme and off the buffer.
+func (c *Buffer) RuneAt(x, y int) rune { return c.cellAt(x, y).primary }
+
+// StyleAt returns the style at (x,y), tcell.StyleDefault off the buffer.
+func (c *Buffer) StyleAt(x, y int) tcell.Style {
+	if !c.inBounds(x, y) {
+		return tcell.StyleDefault
+	}
+	return c.cells[y*c.w+x].style
+}
+
 // Get returns the content, style, and display width at (x,y)
 // (tcell.Screen). Out-of-range coordinates return the zero values, matching
 // tcell's own contract.
-func (c *Canvas) Get(x, y int) (string, tcell.Style, int) {
+func (c *Buffer) Get(x, y int) (string, tcell.Style, int) {
 	if !c.inBounds(x, y) {
 		return "", tcell.StyleDefault, 0
 	}
@@ -128,7 +173,7 @@ func (c *Canvas) Get(x, y int) (string, tcell.Style, int) {
 }
 
 // set writes one grapheme, measuring it with a full segmentation.
-func (c *Canvas) set(x, y int, str string, style tcell.Style) {
+func (c *Buffer) set(x, y int, str string, style tcell.Style) {
 	if !c.inBounds(x, y) {
 		return
 	}
@@ -136,7 +181,7 @@ func (c *Canvas) set(x, y int, str string, style tcell.Style) {
 	if n == 0 {
 		return
 	}
-	c.write(x, y, canvasCell{
+	c.write(x, y, bufferCell{
 		primary: primary,
 		rest:    str[n:],
 		style:   style,
@@ -146,7 +191,7 @@ func (c *Canvas) set(x, y int, str string, style tcell.Style) {
 
 // setRune writes a single-rune grapheme, measuring it with the cheap
 // per-rune width rather than a segmentation.
-func (c *Canvas) setRune(x, y int, r rune, style tcell.Style) {
+func (c *Buffer) setRune(x, y int, r rune, style tcell.Style) {
 	if !c.inBounds(x, y) {
 		return
 	}
@@ -155,41 +200,41 @@ func (c *Canvas) setRune(x, y int, r rune, style tcell.Style) {
 		// draws a blank for one and so does this.
 		r = ' '
 	}
-	c.write(x, y, canvasCell{primary: r, style: style, width: max(displaywidth.Rune(r), 1)})
+	c.write(x, y, bufferCell{primary: r, style: style, width: max(displaywidth.Rune(r), 1)})
 }
 
 // write stores one composed cell, reserving the trailing cell of a wide
 // grapheme so a later Get or Blit doesn't emit the same glyph twice.
-func (c *Canvas) write(x, y int, cell canvasCell) {
+func (c *Buffer) write(x, y int, cell bufferCell) {
 	if x+cell.width > c.w {
 		// A wide grapheme in the last column has no room for its second half; tcell
 		// substitutes a space and so does this.
-		cell = canvasCell{primary: ' ', style: cell.style, width: 1}
+		cell = bufferCell{primary: ' ', style: cell.style, width: 1}
 	}
 	i := y*c.w + x
 	c.cells[i] = cell
 	for k := 1; k < cell.width; k++ {
-		c.cells[i+k] = canvasCell{style: cell.style}
+		c.cells[i+k] = bufferCell{style: cell.style}
 	}
 }
 
 // cellAt is Get without composing a string; out-of-range reads come back as
 // the zero cell, which has width 0 and so draws nothing.
-func (c *Canvas) cellAt(x, y int) canvasCell {
+func (c *Buffer) cellAt(x, y int) bufferCell {
 	if !c.inBounds(x, y) {
-		return canvasCell{}
+		return bufferCell{}
 	}
 	return c.cells[y*c.w+x]
 }
 
-func (c *Canvas) inBounds(x, y int) bool {
+func (c *Buffer) inBounds(x, y int) bool {
 	return x >= 0 && y >= 0 && x < c.w && y < c.h
 }
 
-// Blit copies the src region onto s at dst, clipping a src past the canvas edge
+// Blit copies the src region onto s at dst, clipping a src past the buffer edge
 // and a dst smaller than src. A wide grapheme whose second half falls outside
 // dst becomes a space, so no stray half-glyph bleeds beside the viewport.
-func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
+func (c *Buffer) Blit(s tcell.Screen, src Rect, dst Rect) {
 	rows := min(src.H, dst.H)
 	cols := min(src.W, dst.W)
 	for dy := range rows {
@@ -197,16 +242,16 @@ func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
 			// Read the cell rather than Get it: Get composes a string per cell.
 			cell := c.cellAt(src.X+dx, src.Y+dy)
 			if cell.width == 0 {
-				// Trailing half of a wide grapheme, or off-canvas: nothing of its own to draw.
+				// Trailing half of a wide grapheme, or off-buffer: nothing of its own to draw.
 				dx++
 				continue
 			}
 			if dx+cell.width > cols {
-				core.PutRune(s, dst.X+dx, dst.Y+dy, ' ', cell.style)
+				PutRune(s, dst.X+dx, dst.Y+dy, ' ', cell.style)
 				break
 			}
 			if cell.rest == "" {
-				core.PutRune(s, dst.X+dx, dst.Y+dy, cell.primary, cell.style)
+				PutRune(s, dst.X+dx, dst.Y+dy, cell.primary, cell.style)
 			} else {
 				s.Put(dst.X+dx, dst.Y+dy, cell.text(), cell.style)
 			}
@@ -218,13 +263,17 @@ func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
 // Row returns row y as a plain string, one entry per cell of content (trailing
 // cells of wide graphemes contribute nothing). For tests and golden files; it
 // carries no style.
-func (c *Canvas) Row(y int) string {
+func (c *Buffer) Row(y int) string { return c.Text(0, y, c.w) }
+
+// Text returns the w columns of row y from x as Row does; the part off the
+// buffer contributes nothing.
+func (c *Buffer) Text(x, y, w int) string {
 	if y < 0 || y >= c.h {
 		return ""
 	}
-	out := make([]rune, 0, c.w)
-	for x := range c.w {
-		cell := c.cells[y*c.w+x]
+	out := make([]rune, 0, max(w, 0))
+	for col := max(x, 0); col < min(x+w, c.w); col++ {
+		cell := c.cells[y*c.w+col]
 		if cell.width == 0 {
 			continue
 		}
@@ -239,7 +288,7 @@ func (c *Canvas) Row(y int) string {
 }
 
 // Rows returns every row as Row does, top to bottom.
-func (c *Canvas) Rows() []string {
+func (c *Buffer) Rows() []string {
 	out := make([]string, c.h)
 	for y := range out {
 		out[y] = c.Row(y)

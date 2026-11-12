@@ -11,6 +11,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
 // Every backup goes out WITH INIT, so a generated name reused across backups
@@ -99,7 +100,7 @@ func backupFake(t *testing.T, info func(*gosmotest.Info), rules ...gRule) *db.Se
 func backupDialogOn(t *testing.T, sc *db.ServerConn) (*App, *BackupDialog) {
 	t.Helper()
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewBackupDialog(a)
 	quietLog(t)
 	a.screen = nil

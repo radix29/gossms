@@ -1,6 +1,10 @@
 package controls
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/radix29/gossms/internal/tuikit/tuikittest"
+)
 
 // TestReplaceTextIsOneUndoStep pins the property Format Document relies on and
 // SetText lacks: the previous text and cursor come back with a single undo, and
@@ -8,7 +12,7 @@ import "testing"
 func TestReplaceTextIsOneUndoStep(t *testing.T) {
 	e := newTestEditor("select 1")
 	e.cursorCol = len(e.doc.Line(0))
-	e.HandleKey(runeKey('0', 0)) // a step from before the replace
+	e.HandleKey(tuikittest.Rune('0', 0)) // a step from before the replace
 	before := e.Text()
 	e.cursorRow, e.cursorCol = 0, 3
 

@@ -4,7 +4,7 @@
 // application-level code.
 //
 //   - panel.go         — the Panel interface and its optional companions
-//     (Activatable, Dirty, Closable)
+//     (Activatable, Dirty, Closable, Disposable)
 //   - panel_manager.go — PanelManager
 //   - splitter.go      — SplitterDir, Splitter
 package layout

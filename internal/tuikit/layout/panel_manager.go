@@ -235,8 +235,8 @@ func (pm *PanelManager) setComboOpen(v bool) {
 // scrollComboToActive brings the active row into the drop-down's window by the
 // least movement and clamps the offset. Called on open, after each Up/Down, and
 // from every mutator that can move the active index or resize the list while
-// open (SetActive, Next, Prev, AddPanel, RemovePanel): global keys that
-// App.handleKey consumes reach those without the combo seeing them. A no-op
+// open (SetActive, Next, Prev, AddPanel, RemovePanel): global keys a host
+// consumes itself reach those without the combo seeing them. A no-op
 // while closed.
 func (pm *PanelManager) scrollComboToActive() {
 	if !pm.comboOpen {
@@ -294,7 +294,6 @@ func (pm *PanelManager) tabSegments() [][]controls.TabSegment {
 
 // Draw renders the tab bar and the active panel.
 func (pm *PanelManager) Draw(s tcell.Screen) {
-	p := theme.Active()
 	barStyle := theme.StyleMenuBar()
 	core.FillRect(s, core.Rect{X: pm.rect.X, Y: pm.rect.Y, W: pm.rect.W, H: 1}, ' ', barStyle)
 
@@ -305,20 +304,20 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 			panel := pm.panels[i]
 			tabStyle := barStyle
 			if i == pm.active {
-				tabStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
+				tabStyle = theme.StyleActiveBlock().Bold(true)
 			}
 			label := " " + tabLabelText(panel) + " "
 			core.DrawText(s, seg[0].X, pm.rect.Y, tabStyle, label)
 			if seg[1].W > 0 {
 				closeStyle := tabStyle
 				if i != pm.active {
-					closeStyle = tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuTextDim)
+					closeStyle = theme.StyleMenuDim()
 				}
 				core.DrawText(s, seg[1].X, pm.rect.Y, closeStyle, tabCloseGlyph)
 			}
 		}
 		// Combo arrow
-		arrowStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuTextDim)
+		arrowStyle := theme.StyleMenuDim()
 		core.DrawText(s, pm.rect.X+pm.rect.W-4, pm.rect.Y, arrowStyle, " [v]")
 	}
 
@@ -332,7 +331,7 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 		listX, listW, listH := pm.comboGeom()
 		// A resize can leave the scroll offset out of range.
 		pm.comboScroll = core.Clamp(pm.comboScroll, 0, pm.comboScrollMax(listH))
-		listStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
+		listStyle := theme.StyleMenuBar()
 		// The scrollbar takes the list's last column, so labels get one less.
 		barW := 0
 		if len(pm.panels) > listH {

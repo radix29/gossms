@@ -1,6 +1,8 @@
 package layout
 
 import (
+	"math"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -73,8 +75,13 @@ func (sp *Splitter) SetActive(v bool) { sp.active = v }
 // Ratio returns the current split ratio.
 func (sp *Splitter) Ratio() float64 { return sp.ratio }
 
-// SetRatio explicitly sets the split ratio.
+// SetRatio explicitly sets the split ratio. NaN and ±Inf (a corrupt saved
+// layout) are ignored: core.Clamp passes NaN through, since both its
+// comparisons are false, and a NaN ratio makes every pane position garbage.
 func (sp *Splitter) SetRatio(r float64) {
+	if math.IsNaN(r) || math.IsInf(r, 0) {
+		return
+	}
 	sp.ratio = core.Clamp(r, sp.minRatio, sp.maxRatio)
 }
 
@@ -113,9 +120,9 @@ func (sp *Splitter) Draw(s tcell.Screen) {
 	if sp.dragging {
 		barColor = p.SplitterHover
 	}
-	style := tcell.StyleDefault.Background(barColor).Foreground(p.TextDim)
+	style := theme.On(barColor, p.TextDim)
 	if sp.active {
-		style = tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
+		style = theme.StyleActiveBlock().Bold(true)
 	}
 	pos := sp.SplitPos()
 
@@ -191,10 +198,15 @@ func (sp *Splitter) HandleMouse(ev *tcell.EventMouse) bool {
 			sp.dragging = false
 			return true
 		}
+		// A resize to zero mid-drag would divide by zero (0/0 is NaN, which
+		// core.Clamp passes through), so the ratio holds until there is a
+		// dimension to measure against.
 		if sp.dir == SplitterHorizontal {
-			delta := float64(my-sp.dragBase) / float64(sp.rect.H)
-			sp.ratio = core.Clamp(sp.ratioBase+delta, sp.minRatio, sp.maxRatio)
-		} else {
+			if sp.rect.H > 0 {
+				delta := float64(my-sp.dragBase) / float64(sp.rect.H)
+				sp.ratio = core.Clamp(sp.ratioBase+delta, sp.minRatio, sp.maxRatio)
+			}
+		} else if sp.rect.W > 0 {
 			delta := float64(mx-sp.dragBase) / float64(sp.rect.W)
 			sp.ratio = core.Clamp(sp.ratioBase+delta, sp.minRatio, sp.maxRatio)
 		}
