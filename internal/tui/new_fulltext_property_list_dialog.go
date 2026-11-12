@@ -29,14 +29,7 @@ func NewNewSearchPropertyListDialog(app *App) *NewSearchPropertyListDialog {
 		noun:  "Search property list",
 		pages: []string{"General"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*fullTextCopyPrefetch, error) {
-			return fetchFullTextCopyPrefetch(ctx, sc, d.dbName, func(ctx context.Context, dbh *gosmo.Database) ([]string, error) {
-				lists, err := dbh.SearchPropertyLists(ctx)
-				names := make([]string, len(lists))
-				for i, l := range lists {
-					names[i] = l.Name
-				}
-				return names, err
-			})
+			return fetchFullTextCopyPrefetch(ctx, sc, d.dbName, searchPropertyListNames)
 		},
 		build: d.buildPages,
 	})
@@ -87,7 +80,7 @@ func (d *NewSearchPropertyListDialog) buildPages(pf *fullTextCopyPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		_, err := sc.Server.DatabaseRef(dbName).CreateSearchPropertyList(ctx, req)
+		_, err := sc.Server.DatabaseRef(dbName).FullText().CreateSearchPropertyList(ctx, req)
 		return err
 	}
 }
@@ -95,7 +88,7 @@ func (d *NewSearchPropertyListDialog) buildPages(pf *fullTextCopyPrefetch) {
 // searchPropertyListNames reads d's search property list names, for the
 // copy-from picker.
 func searchPropertyListNames(ctx context.Context, d *gosmo.Database) ([]string, error) {
-	lists, err := d.SearchPropertyLists(ctx)
+	lists, err := d.FullText().SearchPropertyLists(ctx)
 	if err != nil {
 		return nil, err
 	}

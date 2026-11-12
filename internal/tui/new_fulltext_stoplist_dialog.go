@@ -28,14 +28,7 @@ func NewNewFullTextStoplistDialog(app *App) *NewFullTextStoplistDialog {
 		noun:  "Full-text stoplist",
 		pages: []string{"General"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*fullTextCopyPrefetch, error) {
-			return fetchFullTextCopyPrefetch(ctx, sc, d.dbName, func(ctx context.Context, dbh *gosmo.Database) ([]string, error) {
-				lists, err := dbh.FullTextStoplists(ctx)
-				names := make([]string, len(lists))
-				for i, l := range lists {
-					names[i] = l.Name
-				}
-				return names, err
-			})
+			return fetchFullTextCopyPrefetch(ctx, sc, d.dbName, fullTextStoplistNames)
 		},
 		build: d.buildPages,
 	})
@@ -98,14 +91,14 @@ func (d *NewFullTextStoplistDialog) buildPages(pf *fullTextCopyPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		_, err := sc.Server.DatabaseRef(dbName).CreateFullTextStoplist(ctx, req)
+		_, err := sc.Server.DatabaseRef(dbName).FullText().CreateStoplist(ctx, req)
 		return err
 	}
 }
 
 // fullTextStoplistNames reads d's stoplist names, for the copy-from picker.
 func fullTextStoplistNames(ctx context.Context, d *gosmo.Database) ([]string, error) {
-	lists, err := d.FullTextStoplists(ctx)
+	lists, err := d.FullText().Stoplists(ctx)
 	if err != nil {
 		return nil, err
 	}

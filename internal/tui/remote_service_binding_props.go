@@ -23,7 +23,7 @@ import (
 // business (edition_gate.go).
 
 func findRemoteServiceBinding(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.RemoteServiceBinding, error) {
-	return inDB(ctx, sc, dbName, name, (*gosmo.Database).RemoteServiceBindingByName)
+	return inDB(ctx, sc, dbName, name, facetRead((*gosmo.Database).ServiceBroker, gosmo.ServiceBroker.RemoteServiceBindingByName))
 }
 
 func remoteServiceBindingPropPages(sc *db.ServerConn, dbName, name string) []propPage {

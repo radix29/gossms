@@ -252,15 +252,23 @@ func loadSchemasChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 // The context menus for this family's nodes, looked up through nodeMenus
 // (explorer_loaders.go).
 
+// dbCreateFolderMenu is the menu of a database folder whose one command
+// creates its object: label gated on rights, then on ALTER and CONTROL on the
+// database, which imply each of them. The narrow right comes first so the
+// gate's note names it.
+func dbCreateFolderMenu(sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem,
+	label string, show func(), rights ...gate.Right) []controls.MenuItem {
+	rights = append(rights[:len(rights):len(rights)], gate.AlterDatabase, gate.ControlDB)
+	return folderMenu(newQuery, refresh,
+		gate.Item(controls.MenuItem{Label: label, Action: show}, sc, node.data.DBName, rights...))
+}
+
 // usersMenuItems is the Users folder's menu. New User takes the right set a
 // user's own writes do (explorerObjectRights' NodeUser entry): CREATE USER
 // needs ALTER ANY USER, which ALTER and CONTROL on the database both imply.
 func usersMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh,
-		gate.Item(controls.MenuItem{Label: "New User...",
-			Action: func() { a.showNewUserDialog(sc, node) }},
-			sc, node.data.DBName, gate.AlterAnyUser, gate.AlterDatabase, gate.ControlDB),
-	)
+	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New User...",
+		func() { a.showNewUserDialog(sc, node) }, gate.AlterAnyUser)
 }
 
 func userMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -307,11 +315,8 @@ func databaseScopedCredentialMenuItems(a *App, sc *db.ServerConn, node *explorer
 }
 
 func asymmetricKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh,
-		gate.Item(controls.MenuItem{Label: "New Asymmetric Key...",
-			Action: func() { a.showNewAsymmetricKeyDialog(sc, node) }},
-			sc, node.data.DBName, gate.CreateAsymmetricKey, gate.AlterAnyAsymmetricKey, gate.AlterDatabase, gate.ControlDB),
-	)
+	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New Asymmetric Key...",
+		func() { a.showNewAsymmetricKeyDialog(sc, node) }, gate.CreateAsymmetricKey, gate.AlterAnyAsymmetricKey)
 }
 
 func asymmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -332,11 +337,8 @@ func asymmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQu
 }
 
 func symmetricKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh,
-		gate.Item(controls.MenuItem{Label: "New Symmetric Key...",
-			Action: func() { a.showNewSymmetricKeyDialog(sc, node) }},
-			sc, node.data.DBName, gate.CreateSymmetricKey, gate.AlterAnySymmetricKey, gate.AlterDatabase, gate.ControlDB),
-	)
+	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New Symmetric Key...",
+		func() { a.showNewSymmetricKeyDialog(sc, node) }, gate.CreateSymmetricKey, gate.AlterAnySymmetricKey)
 }
 
 func symmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -365,11 +367,8 @@ func masterKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 }
 
 func certificatesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh,
-		gate.Item(controls.MenuItem{Label: "New Certificate...",
-			Action: func() { a.showNewCertificateDialog(sc, node) }},
-			sc, node.data.DBName, gate.CreateCertificate, gate.AlterAnyCertificate, gate.AlterDatabase, gate.ControlDB),
-	)
+	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New Certificate...",
+		func() { a.showNewCertificateDialog(sc, node) }, gate.CreateCertificate, gate.AlterAnyCertificate)
 }
 
 func certificateMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -397,11 +396,8 @@ func certificateMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuer
 // (gate.CreateRole); the wider ones are listed so the note names the narrow
 // right first.
 func databaseRolesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh,
-		gate.Item(controls.MenuItem{Label: "New Database Role...",
-			Action: func() { a.showNewRoleDialog(sc, node) }},
-			sc, node.data.DBName, gate.CreateRole, gate.AlterAnyDBRole, gate.AlterDatabase, gate.ControlDB),
-	)
+	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New Database Role...",
+		func() { a.showNewRoleDialog(sc, node) }, gate.CreateRole, gate.AlterAnyDBRole)
 }
 
 func databaseRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -414,11 +410,8 @@ func databaseRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQue
 // CREATE APPLICATION ROLE permission: the CREATE checks ALTER ANY APPLICATION
 // ROLE, which ALTER and CONTROL on the database imply (gate.AlterAnyApplicationRole).
 func applicationRolesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh,
-		gate.Item(controls.MenuItem{Label: "New Application Role...",
-			Action: func() { a.showNewApplicationRoleDialog(sc, node) }},
-			sc, node.data.DBName, gate.AlterAnyApplicationRole, gate.AlterDatabase, gate.ControlDB),
-	)
+	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New Application Role...",
+		func() { a.showNewApplicationRoleDialog(sc, node) }, gate.AlterAnyApplicationRole)
 }
 
 func applicationRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -431,11 +424,8 @@ func applicationRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, new
 // which every right that permits the CREATE reads 1 for (gate.CreateSchema);
 // the wider ones are listed so the note names the narrow right first.
 func schemasMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return folderMenu(newQuery, refresh,
-		gate.Item(controls.MenuItem{Label: "New Schema...",
-			Action: func() { a.showNewSchemaDialog(sc, node) }},
-			sc, node.data.DBName, gate.CreateSchema, gate.AlterAnySchema, gate.AlterDatabase, gate.ControlDB),
-	)
+	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New Schema...",
+		func() { a.showNewSchemaDialog(sc, node) }, gate.CreateSchema, gate.AlterAnySchema)
 }
 
 func schemaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {

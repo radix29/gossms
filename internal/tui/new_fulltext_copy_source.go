@@ -30,7 +30,7 @@ type fullTextCopyPrefetch struct {
 }
 
 // fetchFullTextCopyPrefetch reads a fullTextCopyPrefetch; list names the
-// dialog's family (d.FullTextStoplists or d.SearchPropertyLists).
+// dialog's family (d.FullText().Stoplists or SearchPropertyLists).
 func fetchFullTextCopyPrefetch(ctx context.Context, sc *db.ServerConn, dbName string,
 	list func(context.Context, *gosmo.Database) ([]string, error)) (*fullTextCopyPrefetch, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)

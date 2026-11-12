@@ -19,7 +19,7 @@ import (
 // pagesThatOnlyRead.
 
 func findMessageType(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.MessageType, error) {
-	return inDB(ctx, sc, dbName, name, (*gosmo.Database).MessageTypeByName)
+	return inDB(ctx, sc, dbName, name, facetRead((*gosmo.Database).ServiceBroker, gosmo.ServiceBroker.MessageTypeByName))
 }
 
 func messageTypePropPages(sc *db.ServerConn, dbName, name string) []propPage {

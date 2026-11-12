@@ -25,7 +25,7 @@ func fetchNewFullTextCatalogPrefetch(ctx context.Context, sc *db.ServerConn, dbN
 	if err != nil {
 		return nil, err
 	}
-	cats, err := d.FullTextCatalogs(ctx)
+	cats, err := d.FullText().Catalogs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (d *NewFullTextCatalogDialog) buildPages(pf *nftCatalogPrefetch) {
 	d.applyFns[0] = func(ctx context.Context) error {
 		// DatabaseRef: the CREATE addresses the database by name, and a by-name read
 		// would not work under Script Changes.
-		_, err := sc.Server.DatabaseRef(dbName).CreateFullTextCatalog(ctx, req)
+		_, err := sc.Server.DatabaseRef(dbName).FullText().CreateCatalog(ctx, req)
 		return err
 	}
 }

@@ -424,7 +424,7 @@ func (pt *amProcTab) refresh() {
 	pt.am.app.safegoRepair("running "+qualified, pt.panicRepair, func() {
 		ctx, cancel := context.WithTimeout(conn.Server.Context(), procRunTimeout)
 		defer cancel()
-		res := query.Execute(ctx, conn.Server.DB(), "", script)
+		res := query.Execute(ctx, conn.Server.DB(), script)
 		pt.am.app.postAndWake(func() { pt.applyResult(res) })
 	})
 }

@@ -21,7 +21,7 @@ func fullTextCatalogsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, no
 	if err != nil {
 		return nil, nil, err
 	}
-	cats, err := d.FullTextCatalogs(ctx)
+	cats, err := d.FullText().Catalogs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -65,7 +65,7 @@ func fullTextStoplistsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, n
 	if err != nil {
 		return nil, nil, err
 	}
-	lists, err := d.FullTextStoplists(ctx)
+	lists, err := d.FullText().Stoplists(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -97,7 +97,7 @@ func searchPropertyListsFolderDetail(ctx context.Context, sc *dbconn.ServerConn,
 	if err != nil {
 		return nil, nil, err
 	}
-	lists, err := d.SearchPropertyLists(ctx)
+	lists, err := d.FullText().SearchPropertyLists(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

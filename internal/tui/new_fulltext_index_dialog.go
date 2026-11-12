@@ -119,7 +119,7 @@ func (d *NewFullTextIndexDialog) fetchPrefetch(ctx context.Context, sc *db.Serve
 		}
 	}
 	d0 := t.Database()
-	cats, err := d0.FullTextCatalogs(ctx)
+	cats, err := d0.FullText().Catalogs(ctx)
 	if err != nil {
 		return nil, err
 	}

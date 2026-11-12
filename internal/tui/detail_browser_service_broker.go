@@ -28,7 +28,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 
 	switch n.Type {
 	case NodeMessageTypes:
-		types, err := d.MessageTypes(ctx)
+		types, err := d.ServiceBroker().MessageTypes(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -45,7 +45,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return []string{"Name", "Validation", "Schema collection", "Owner"}, rows, nil
 
 	case NodeContracts:
-		contracts, err := d.Contracts(ctx)
+		contracts, err := d.ServiceBroker().Contracts(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -64,7 +64,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return brokerQueuesFolderDetail(ctx, d, n, objs)
 
 	case NodeBrokerServices:
-		services, err := d.BrokerServices(ctx)
+		services, err := d.ServiceBroker().Services(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -81,7 +81,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return []string{"Name", "Queue", "Contracts", "Owner"}, rows, nil
 
 	case NodeRoutes:
-		routes, err := d.Routes(ctx)
+		routes, err := d.ServiceBroker().Routes(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -100,7 +100,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return []string{"Name", "Remote service", "Address", "Expires"}, rows, nil
 
 	case NodeRemoteServiceBindings:
-		bindings, err := d.RemoteServiceBindings(ctx)
+		bindings, err := d.ServiceBroker().RemoteServiceBindings(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -116,7 +116,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return []string{"Name", "Remote service", "User", "Anonymous"}, rows, nil
 
 	default: // NodeBrokerPriorities
-		priorities, err := d.BrokerPriorities(ctx)
+		priorities, err := d.ServiceBroker().Priorities(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -142,14 +142,14 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 // blank, never "0": a queue whose internal table has no statistics row is
 // not an empty queue, it is a queue nothing is known about.
 func brokerQueuesFolderDetail(ctx context.Context, d *gosmo.Database, n nodeData, objs *[]nodeData) ([]string, [][]string, error) {
-	queues, err := d.BrokerQueues(ctx)
+	queues, err := d.ServiceBroker().Queues(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	queues = filterObjects(n.Filter, queues, func(q *gosmo.BrokerQueue) nodeData {
 		return nodeData{Name: q.Name, Schema: q.Schema, CreateDate: q.CreateDate}
 	})
-	counts, err := d.QueueMessageCounts(ctx)
+	counts, err := d.ServiceBroker().QueueMessageCounts(ctx)
 	if err != nil {
 		counts = nil
 	}

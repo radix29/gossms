@@ -53,6 +53,16 @@ support); this section covers only the environment.
 - **`TestLiveAvailabilityGroupOperations` skips Drop and RemoveReplica** on
   AAG1; only add/remove database, suspend/resume, listener round trip and the
   failover refusal run there.
+- **No instance has a case-sensitive *server* collation**, so nothing that
+  compares server-scoped names under it has run live. gosmo's login-database
+  retarget (`connection_retarget.go`: `retarget`, and Connect's `master`
+  check) compares under `ServerInfo.Collation` since review step B5
+  (2026-11-12), pinned only offline by
+  `TestWriteOnLoginDatabaseFollowsServerCollation` and
+  `TestRefusedDialOnCaseSensitiveServerMovesMASTER`. To check: connect with
+  `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
+  and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
+  Document's keyword case (below) waits on the same instance.
 
 ## Picture viewer: what is left
 

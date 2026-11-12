@@ -68,11 +68,11 @@ func fullTextStoplistChoice(item string) (gosmo.FullTextStoplistKind, string) {
 // sys.fulltext_stoplists and sys.registered_search_property_lists show only
 // those.
 func fullTextPickers(ctx context.Context, d *gosmo.Database) (stoplists, lists []string, err error) {
-	sl, err := d.FullTextStoplists(ctx)
+	sl, err := d.FullText().Stoplists(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	pl, err := d.SearchPropertyLists(ctx)
+	pl, err := d.FullText().SearchPropertyLists(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

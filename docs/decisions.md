@@ -2154,8 +2154,12 @@ down.
   would mean exporting `exec`, `query`, `Scripting`, `createdObject` and the
   retry/observer plumbing through an `internal/` package, and moving every
   family's tests away from the shared fakes. The facets (`d.QueryStore()`,
-  `s.Mail()`, `s.XEvents()`/`d.XEvents()`; rule in `~/go/gosmo/CLAUDE.md`
-  § Conventions) give the same discoverability without that.
+  `d.ServiceBroker()`, `d.FullText()`, `s.Mail()`, `s.XEvents()`/`d.XEvents()`;
+  rule in `~/go/gosmo/CLAUDE.md` § Conventions) give the same discoverability
+  without that. Resource Governor, Backup and `Server.FullTextInfo` stay
+  unprefixed on `Server` (review 2026-11-12 A2): RG's singleton already owns
+  the name, Backup is operations rather than a family, and a one-method
+  facet adds nothing.
 
 ## File modes: new files honour the umask — settled, do not re-raise
 

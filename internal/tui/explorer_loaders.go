@@ -34,6 +34,11 @@ func (l loaderCtx) node(label string, t NodeType, schema, name, dbName string) *
 	}
 }
 
+// schemaNode is node for a schema-scoped object, labelled schema.name.
+func (l loaderCtx) schemaNode(t NodeType, schema, name, dbName string) *explorerNode {
+	return l.node(schema+"."+name, t, schema, name, dbName)
+}
+
 // childLoader fetches the children of one explorer node. Implementations
 // live in the explorer_*.go files, grouped by domain (databases, schema
 // objects, security, management); this file only holds the registry that
@@ -403,6 +408,27 @@ func listDatabaseChildren[T any](l loaderCtx, node *explorerNode, fetch func(*go
 		return nil, err
 	}
 	return listChildren(func() ([]T, error) { return fetch(dbObj, l.ctx) }, toNode)
+}
+
+// facetList, facetRead and facetSchemaRead adapt a gosmo facet's method
+// expression — gosmo.ServiceBroker.Routes, gosmo.FullText.CatalogByName — to
+// the Database-first shapes listDatabaseChildren, inDB and inDBSchema take;
+// facet is the Database accessor, (*gosmo.Database).ServiceBroker.
+func facetList[F, T any](facet func(*gosmo.Database) F,
+	list func(F, context.Context) ([]T, error)) func(*gosmo.Database, context.Context) ([]T, error) {
+	return func(d *gosmo.Database, ctx context.Context) ([]T, error) { return list(facet(d), ctx) }
+}
+
+func facetRead[F, T any](facet func(*gosmo.Database) F,
+	read func(F, context.Context, string) (T, error)) func(*gosmo.Database, context.Context, string) (T, error) {
+	return func(d *gosmo.Database, ctx context.Context, name string) (T, error) { return read(facet(d), ctx, name) }
+}
+
+func facetSchemaRead[F, T any](facet func(*gosmo.Database) F,
+	read func(F, context.Context, string, string) (T, error)) func(*gosmo.Database, context.Context, string, string) (T, error) {
+	return func(d *gosmo.Database, ctx context.Context, schema, name string) (T, error) {
+		return read(facet(d), ctx, schema, name)
+	}
 }
 
 // errExplorerNode builds a placeholder error node. It carries no id; the id is

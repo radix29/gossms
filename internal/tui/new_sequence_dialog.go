@@ -58,6 +58,38 @@ type schemaObjectPrefetch struct {
 // occur in an identifier, so two pairs never share a key.
 func sequenceKey(schema, name string) string { return schema + "\x00" + name }
 
+// schemaObjectKeys adapts a Database list read into fetchSchemaObjectPrefetch's
+// keys: each object's sequenceKey, from the schema and name of returns.
+func schemaObjectKeys[T any](list func(*gosmo.Database, context.Context) ([]T, error),
+	names func(T) (schema, name string)) func(context.Context, *gosmo.Database) ([]string, error) {
+	return func(ctx context.Context, d *gosmo.Database) ([]string, error) {
+		objs, err := list(d, ctx)
+		if err != nil {
+			return nil, err
+		}
+		keys := make([]string, len(objs))
+		for i, o := range objs {
+			keys[i] = sequenceKey(names(o))
+		}
+		return keys, nil
+	}
+}
+
+// newObjectPermissionsPage is a New dialog's Permissions page for an object of
+// class: nothing granted yet, and the securable's schema and name read from
+// target when apply runs — they are only known once typed. Permissions go
+// through DatabaseRef for the same reason as the CREATE: the GRANTs need
+// nothing but the database's name. schema is "" for a schema itself.
+func newObjectPermissionsPage(sc *db.ServerConn, dbName string, principals []permPrincipal,
+	class gosmo.SecurableClass, target func() (schema, name string)) (*propsheet.Form, propApply) {
+	return buildPermissionsMatrix(principals, class.PermissionNames(), nil,
+		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
+			schema, name := target()
+			sec := gosmo.Securable{Class: class, Schema: schema, Name: name}
+			return securablePermApply(sc.Server.DatabaseRef(dbName), sec)(ctx, verb, opts, permission, principal)
+		})
+}
+
 // fetchSchemaObjectPrefetch reads a schemaObjectPrefetch; keys lists the
 // dialog's family as sequenceKey entries (d.Sequences for New Sequence,
 // d.Synonyms for New Synonym).
@@ -115,14 +147,8 @@ func NewNewSequenceDialog(app *App) *NewSequenceDialog {
 		noun:  "Sequence",
 		pages: []string{"General", "Permissions", "Extended Properties"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*schemaObjectPrefetch, error) {
-			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, func(ctx context.Context, dbh *gosmo.Database) ([]string, error) {
-				seqs, err := dbh.Sequences(ctx)
-				keys := make([]string, len(seqs))
-				for i, s := range seqs {
-					keys[i] = sequenceKey(s.Schema, s.Name)
-				}
-				return keys, err
-			})
+			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, schemaObjectKeys((*gosmo.Database).Sequences,
+				func(s *gosmo.Sequence) (string, string) { return s.Schema, s.Name }))
 		},
 		build: d.buildPages,
 	})
@@ -231,15 +257,9 @@ func (d *NewSequenceDialog) buildPages(pf *schemaObjectPrefetch) {
 		return err
 	}
 
-	// The securable is read when apply runs, from the request the preflight built:
-	// the name is only known once typed. Permissions go through DatabaseRef for the
-	// same reason as the CREATE.
-	var noEntries []permEntry
-	d.forms[1], d.applyFns[1] = buildPermissionsMatrix(pf.principals, gosmo.SecurableSequence.PermissionNames(), noEntries,
-		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
-			sec := gosmo.Securable{Class: gosmo.SecurableSequence, Schema: req.Schema, Name: req.Name}
-			return securablePermApply(sc.Server.DatabaseRef(dbName), sec)(ctx, verb, opts, permission, principal)
-		})
+	// The securable is read when apply runs, from the request the preflight built.
+	d.forms[1], d.applyFns[1] = newObjectPermissionsPage(sc, dbName, pf.principals, gosmo.SecurableSequence,
+		func() (string, string) { return req.Schema, req.Name })
 	d.forms[2], d.applyFns[2] = buildExtendedPropertiesForm(sc, dbName, pf.collation, func() gosmo.ExtendedPropertyLevel {
 		return sequencePropertyLevel(req.Schema, req.Name)
 	}, nil)

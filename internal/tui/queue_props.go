@@ -25,7 +25,7 @@ import (
 // the queue or ALTER on its schema. See gate.QueueAlterRights.
 
 func findBrokerQueue(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.BrokerQueue, error) {
-	return inDBSchema(ctx, sc, dbName, schema, name, (*gosmo.Database).BrokerQueueByName)
+	return inDBSchema(ctx, sc, dbName, schema, name, facetSchemaRead((*gosmo.Database).ServiceBroker, gosmo.ServiceBroker.QueueByName))
 }
 
 // findQueueMonitor returns the broker's activation state for one queue, or nil. A
@@ -37,7 +37,7 @@ func findQueueMonitor(ctx context.Context, sc *db.ServerConn, dbName string, obj
 	if err != nil {
 		return nil
 	}
-	monitors, err := d.QueueMonitors(ctx)
+	monitors, err := d.ServiceBroker().QueueMonitors(ctx)
 	if err != nil {
 		return nil
 	}

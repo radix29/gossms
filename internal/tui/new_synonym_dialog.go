@@ -33,14 +33,8 @@ func NewNewSynonymDialog(app *App) *NewSynonymDialog {
 		noun:  "Synonym",
 		pages: []string{"General", "Permissions", "Extended Properties"},
 		fetch: func(ctx context.Context, sc *db.ServerConn) (*schemaObjectPrefetch, error) {
-			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, func(ctx context.Context, dbh *gosmo.Database) ([]string, error) {
-				syns, err := dbh.Synonyms(ctx)
-				keys := make([]string, len(syns))
-				for i, s := range syns {
-					keys[i] = sequenceKey(s.Schema, s.Name)
-				}
-				return keys, err
-			})
+			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, schemaObjectKeys((*gosmo.Database).Synonyms,
+				func(s *gosmo.Synonym) (string, string) { return s.Schema, s.Name }))
 		},
 		build: d.buildPages,
 	})
@@ -109,15 +103,9 @@ func (d *NewSynonymDialog) buildPages(pf *schemaObjectPrefetch) {
 		return err
 	}
 
-	// The securable is read when apply runs, from the request the preflight built:
-	// the name is only known once typed. Permissions go through DatabaseRef for the
-	// same reason as the CREATE.
-	var noEntries []permEntry
-	d.forms[1], d.applyFns[1] = buildPermissionsMatrix(pf.principals, gosmo.SecurableSynonym.PermissionNames(), noEntries,
-		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
-			sec := gosmo.Securable{Class: gosmo.SecurableSynonym, Schema: req.Schema, Name: req.Name}
-			return securablePermApply(sc.Server.DatabaseRef(dbName), sec)(ctx, verb, opts, permission, principal)
-		})
+	// The securable is read when apply runs, from the request the preflight built.
+	d.forms[1], d.applyFns[1] = newObjectPermissionsPage(sc, dbName, pf.principals, gosmo.SecurableSynonym,
+		func() (string, string) { return req.Schema, req.Name })
 	d.forms[2], d.applyFns[2] = buildExtendedPropertiesForm(sc, dbName, pf.collation, func() gosmo.ExtendedPropertyLevel {
 		return synonymPropertyLevel(req.Schema, req.Name)
 	}, nil)

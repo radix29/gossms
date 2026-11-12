@@ -460,7 +460,7 @@ func loadFunctionNodes(l loaderCtx, node *explorerNode, system bool,
 	}
 	return listChildren(func() ([]*gosmo.UserDefinedFunction, error) { return fetch(dbObj) },
 		func(f *gosmo.UserDefinedFunction) *explorerNode {
-			n := l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
+			n := l.schemaNode(NodeFunction, f.Schema, f.Name, node.data.DBName)
 			n.data.CreateDate = f.CreateDate
 			n.data.IsSystem = system
 			n.data.FuncType = f.FuncType
@@ -503,14 +503,14 @@ func loadTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 func loadSequencesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listDatabaseChildren(l, node, (*gosmo.Database).Sequences,
 		func(seq *gosmo.Sequence) *explorerNode {
-			return l.node(seq.Schema+"."+seq.Name, NodeSequence, seq.Schema, seq.Name, node.data.DBName)
+			return l.schemaNode(NodeSequence, seq.Schema, seq.Name, node.data.DBName)
 		})
 }
 
 func loadSynonymsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listDatabaseChildren(l, node, (*gosmo.Database).Synonyms,
 		func(syn *gosmo.Synonym) *explorerNode {
-			return l.node(syn.Schema+"."+syn.Name, NodeSynonym, syn.Schema, syn.Name, node.data.DBName)
+			return l.schemaNode(NodeSynonym, syn.Schema, syn.Name, node.data.DBName)
 		})
 }
 

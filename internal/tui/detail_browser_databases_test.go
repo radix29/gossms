@@ -20,3 +20,21 @@ func TestFormatMB(t *testing.T) {
 		}
 	}
 }
+
+// The Audits folder's Maximum file size spelled its MB with a bare FormatInt
+// ("10240 MB") while every other size column used formatMB ("10,240 MB") —
+// review 2026-11-12 S2. 0 is the catalog's UNLIMITED.
+func TestAuditFileSizeTextUsesFormatMB(t *testing.T) {
+	for _, c := range []struct {
+		mb   int64
+		want string
+	}{
+		{0, "Unlimited"},
+		{10240, "10,240 MB"},
+		{2, "2 MB"},
+	} {
+		if got := auditFileSizeText(c.mb); got != c.want {
+			t.Errorf("auditFileSizeText(%d) = %q, want %q", c.mb, got, c.want)
+		}
+	}
+}

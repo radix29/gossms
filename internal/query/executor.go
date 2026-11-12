@@ -334,18 +334,20 @@ func WithoutSinkNotices() Option {
 	return func(o *runOptions) { o.noSinkNotices = true }
 }
 
-// Execute runs script against db, SSMS-style, split on GO. A failing batch is
-// reported in Messages and execution continues. A non-empty database is USEd
-// first; the connection is then discarded rather than pooled, as it is when the
-// script leaves its database or the run fails or is cancelled. Cancelling ctx
-// stops between and inside batches and returns the partial Result. Every row is
-// retained in Result.Sets unless WithMaxRows caps it; see cellArena.
-func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
+// Execute runs script against db, SSMS-style, split on GO, on a pooled
+// connection in the database the pool logs in to (gosmo's
+// Server.InitialDatabase for a pool gosmo opened). A failing batch is reported
+// in Messages and execution continues. The connection is discarded rather than
+// pooled when the script leaves its database or the run fails or is cancelled.
+// Cancelling ctx stops between and inside batches and returns the partial
+// Result. Every row is retained in Result.Sets unless WithMaxRows caps it; see
+// cellArena. A caller needing another database runs under a Session (Open).
+func Execute(ctx context.Context, db *sql.DB, script string, opts ...Option) *Result {
 	start := time.Now()
 	r := newRun(opts)
 	res := r.res
 
-	conn, err := gosmo.AcquireConn(ctx, db, database)
+	conn, err := gosmo.AcquireConn(ctx, db, "")
 	if err != nil {
 		res.addError(err)
 		res.Elapsed = time.Since(start)
@@ -355,11 +357,8 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...O
 	// not the session's database: pooled inside one, an idle session holds a
 	// shared database lock for up to ConnMaxIdleTime, failing someone else's
 	// RESTORE, SET OFFLINE or SET SINGLE_USER. So the connection goes back to
-	// the pool only when the run ends where an unswitched checkout started.
-	var startDB string
-	if database == "" {
-		startDB, _ = currentDatabase(ctx, conn)
-	}
+	// the pool only when the run ends where the checkout started.
+	startDB, _ := currentDatabase(ctx, conn)
 	endDB := ""
 	defer func() {
 		if startDB == "" || endDB != startDB {

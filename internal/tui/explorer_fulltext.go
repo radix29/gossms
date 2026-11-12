@@ -45,7 +45,7 @@ func fullTextStorageFolders(l loaderCtx, dbName string) (first, last []*explorer
 // as SSMS labels them; which one is the default is the Details pane's and
 // Properties' to say.
 func loadFullTextCatalogsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listDatabaseChildren(l, node, (*gosmo.Database).FullTextCatalogs,
+	return listDatabaseChildren(l, node, facetList((*gosmo.Database).FullText, gosmo.FullText.Catalogs),
 		func(c *gosmo.FullTextCatalog) *explorerNode {
 			return l.node(c.Name, NodeFullTextCatalog, "", c.Name, node.data.DBName)
 		})
@@ -54,7 +54,7 @@ func loadFullTextCatalogsChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 // loadFullTextStoplistsChildren lists a database's user-defined stoplists.
 // The system stoplist has no row and no node, as in SSMS.
 func loadFullTextStoplistsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listDatabaseChildren(l, node, (*gosmo.Database).FullTextStoplists,
+	return listDatabaseChildren(l, node, facetList((*gosmo.Database).FullText, gosmo.FullText.Stoplists),
 		func(s *gosmo.FullTextStoplist) *explorerNode {
 			return l.node(s.Name, NodeFullTextStoplist, "", s.Name, node.data.DBName)
 		})
@@ -62,7 +62,7 @@ func loadFullTextStoplistsChildren(l loaderCtx, node *explorerNode) ([]*explorer
 
 // loadSearchPropertyListsChildren lists a database's search property lists.
 func loadSearchPropertyListsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listDatabaseChildren(l, node, (*gosmo.Database).SearchPropertyLists,
+	return listDatabaseChildren(l, node, facetList((*gosmo.Database).FullText, gosmo.FullText.SearchPropertyLists),
 		func(p *gosmo.SearchPropertyList) *explorerNode {
 			return l.node(p.Name, NodeSearchPropertyList, "", p.Name, node.data.DBName)
 		})
