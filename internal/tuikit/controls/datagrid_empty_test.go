@@ -44,14 +44,14 @@ func TestCellMenuOutlivingItsRowsDoesNothing(t *testing.T) {
 	g.SetDataPreservingView([]string{"A", "B"}, nil)
 	for _, it := range items {
 		switch it.Label {
-		case "Copy", showValueMenuItem:
+		case "Copy", Strings.ShowValue:
 			it.Action()
 		}
 	}
 	if copied {
 		t.Error("Copy on an emptied grid reached OnCopyRequest")
 	}
-	if g.viewOpen {
+	if g.viewer.open {
 		t.Error("Show Value on an emptied grid opened the viewer")
 	}
 }

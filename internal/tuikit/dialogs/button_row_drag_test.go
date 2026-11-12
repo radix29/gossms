@@ -57,7 +57,7 @@ func TestADragOntoTheButtonRowDoesNotPressAButton(t *testing.T) {
 			// Where Draw puts it, as TestConfirmOptionReleaseOutsideDoesNotStrandTheLatch.
 			in := d.InnerRect()
 			d.option.SetBounds(in.X+1, in.Y+2+len(d.msgLines)+1)
-			return rig{d, [2]int{d.option.RectX() + 1, d.option.RectY()}, buttonAt(&d.ModalDialog, d.buttons),
+			return rig{d, [2]int{d.option.Bounds().X + 1, d.option.Bounds().Y}, buttonAt(&d.ModalDialog, d.buttons),
 				func() bool { return answered }}
 		},
 		"prompt, from the message": func(t *testing.T) rig {
@@ -83,7 +83,7 @@ func TestADragOntoTheButtonRowDoesNotPressAButton(t *testing.T) {
 			cancelled := false
 			d.ShowProgress("Delete Table", "Deleting...", func() { cancelled = true })
 			in := d.InnerRect()
-			return rig{d, [2]int{in.X + 1, in.Y}, buttonAt(&d.ModalDialog, progressButtons),
+			return rig{d, [2]int{in.X + 1, in.Y}, buttonAt(&d.ModalDialog, progressButtons()),
 				func() bool { return cancelled }}
 		},
 		"properties, from the scrollbar": func(t *testing.T) rig {

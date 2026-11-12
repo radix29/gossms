@@ -1366,7 +1366,7 @@ func TestEditorInsertsAComposedKeyWhole(t *testing.T) {
 	const family = "\U0001F468\u200d\U0001F469\u200d\U0001F467"
 	e := NewEditor(nil)
 	e.SetBounds(0, 0, 40, 5)
-	e.SetActive(true)
+	e.Focus(true)
 	e.SetText("ab")
 	e.cursorCol = 1
 	e.HandleKey(tcell.NewEventKey(tcell.KeyRune, family, tcell.ModNone))

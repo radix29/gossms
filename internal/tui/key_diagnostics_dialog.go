@@ -49,7 +49,7 @@ func NewKeyDiagnosticsDialog(app *App) *KeyDiagnosticsDialog {
 	d.InitModal(app.screen, "Key Diagnostics", 70, 24)
 	d.editor = controls.NewEditor(nil)
 	d.editor.SetReadOnly(true)
-	d.editor.SetActive(true)
+	d.editor.Focus(true)
 	// No gutter: line numbers say nothing about a key log, and every column
 	// they take comes off lines that are already 60-odd wide.
 	d.editor.SetGutterVisible(false)

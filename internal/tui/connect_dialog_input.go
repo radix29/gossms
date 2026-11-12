@@ -65,13 +65,13 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 		d.Hide()
 		return true
 	case tcell.KeyEnter:
-		if d.ddAuth.IsOpen() {
+		if d.ddAuth.OverlayActive() {
 			d.ddAuth.HandleKey(ev)
 			d.applyAuthFields()
 			d.refreshConnStrPreview()
 			return true
 		}
-		if d.ddEncrypt.IsOpen() {
+		if d.ddEncrypt.OverlayActive() {
 			d.ddEncrypt.HandleKey(ev)
 			d.refreshConnStrPreview()
 			return true
@@ -226,7 +226,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// first: its list may cover the other dropdown's own row.
 	if d.tab == connectTabProperties {
 		dropdowns := []*widgets.DropDown{d.ddAuth, d.ddEncrypt}
-		if d.ddEncrypt.IsOpen() {
+		if d.ddEncrypt.OverlayActive() {
 			dropdowns = []*widgets.DropDown{d.ddEncrypt, d.ddAuth}
 		}
 		for _, dd := range dropdowns {

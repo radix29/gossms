@@ -20,7 +20,7 @@ func gridForm(rows [][]string) (*Form, *GridRow) {
 	f.SetBounds(0, 0, 40, 40)
 	f.Focus(true)
 	f.FocusNext() // Before -> grid
-	if _, ok := f.Focused().(*GridRow); !ok {
+	if _, ok := f.FocusedRow().(*GridRow); !ok {
 		panic("setup: the grid isn't focused")
 	}
 	return f, gr
@@ -40,7 +40,7 @@ func TestGridRowReleasesFocusAtItsBoundaries(t *testing.T) {
 		for range 5 { // walk to the last row, then past it
 			sendKey(f, tcell.KeyDown)
 		}
-		if _, stuck := f.Focused().(*GridRow); stuck {
+		if _, stuck := f.FocusedRow().(*GridRow); stuck {
 			t.Error("Down at the last data row never left the grid")
 		}
 	})
@@ -50,7 +50,7 @@ func TestGridRowReleasesFocusAtItsBoundaries(t *testing.T) {
 		for range 5 {
 			sendKey(f, tcell.KeyUp)
 		}
-		if _, stuck := f.Focused().(*GridRow); stuck {
+		if _, stuck := f.FocusedRow().(*GridRow); stuck {
 			t.Error("Up at the first data row never left the grid")
 		}
 	})
@@ -58,7 +58,7 @@ func TestGridRowReleasesFocusAtItsBoundaries(t *testing.T) {
 	t.Run("an empty grid holds nothing", func(t *testing.T) {
 		f, _ := gridForm(nil)
 		sendKey(f, tcell.KeyDown)
-		if _, stuck := f.Focused().(*GridRow); stuck {
+		if _, stuck := f.FocusedRow().(*GridRow); stuck {
 			t.Error("Down in an empty grid was swallowed")
 		}
 	})
@@ -68,7 +68,7 @@ func TestGridRowReleasesFocusAtItsBoundaries(t *testing.T) {
 	t.Run("down inside the grid stays in the grid", func(t *testing.T) {
 		f, gr := gridForm(three)
 		sendKey(f, tcell.KeyDown)
-		if _, ok := f.Focused().(*GridRow); !ok {
+		if _, ok := f.FocusedRow().(*GridRow); !ok {
 			t.Fatal("Down moved focus off a grid that had rows left to walk")
 		}
 		if got := gr.Grid.SelectedRow(); got != 1 {
@@ -105,7 +105,7 @@ func TestGridRowLeftReleasesOnlyWhenTheGridCannotScroll(t *testing.T) {
 func TestGridRowForwardsNonArrowKeys(t *testing.T) {
 	f, gr := gridForm([][]string{{"a"}, {"b"}, {"c"}})
 	sendKey(f, tcell.KeyEnd)
-	if _, ok := f.Focused().(*GridRow); !ok {
+	if _, ok := f.FocusedRow().(*GridRow); !ok {
 		t.Fatal("End moved focus off the grid")
 	}
 	if got := gr.Grid.SelectedRow(); got != 2 {

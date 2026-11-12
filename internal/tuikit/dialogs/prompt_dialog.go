@@ -120,7 +120,7 @@ func (d *PromptDialog) accept() {
 
 func (d *PromptDialog) cancel() { d.Hide() }
 
-func (d *PromptDialog) buttons() []string { return []string{"OK", "Cancel"} }
+func (d *PromptDialog) buttons() []string { return []string{Strings.OK, Strings.Cancel} }
 
 // Draw renders the message, the input, and the button row.
 func (d *PromptDialog) Draw(s tcell.Screen) {

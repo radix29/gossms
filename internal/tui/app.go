@@ -501,12 +501,12 @@ func (a *App) animateUntil(what string, period time.Duration, done <-chan struct
 // buildUI creates all UI components from tuikit building blocks.
 func (a *App) buildUI() {
 	a.explorer = NewObjectExplorer(a)
-	a.explorer.SetActive(true)
+	a.explorer.Focus(true)
 
-	a.explorerSplit = layout.NewVerticalSplitter()
-	a.explorerSplit.SetRatio(0.3)
+	a.explorerSplit = newVerticalSplitter()
 
 	a.panels = layout.NewPanelManager()
+	a.panels.EmptyText = "(no panels open — Ctrl+N for a new query)"
 	a.detailBrowser = a.newDetailBrowser()
 	a.panels.AddPanel(a.detailBrowser)
 	a.panels.OnCloseTab = a.requestClosePanel
@@ -604,6 +604,7 @@ func (a *App) buildUI() {
 	a.alertDialog = registerDialog(a, dialogs.NewAlertDialog(a.screen))
 	a.progressDialog = registerDialog(a, dialogs.NewProgressDialog(a.screen))
 	a.progressDialog.RevealDelay = progressRevealDelay
+	a.progressDialog.CancellingText = "Cancelling — waiting for the server to stop"
 	// After the Connect dialog, which a device code opens over.
 	a.deviceCodeDialog = registerDialog(a, NewDeviceCodeDialog(a))
 	a.backupDialog = registerDialog(a, NewBackupDialog(a))
@@ -618,6 +619,23 @@ func (a *App) buildUI() {
 // dropped — a browser launched through xdg-open may print a line of its own,
 // which would land on the screen at the cursor and stay there until the next
 // full redraw.
+// newHorizontalSplitter is the app's top/bottom split (an editor or grid over
+// results/details): half each, neither pane below a tenth.
+func newHorizontalSplitter(label string) *layout.Splitter {
+	sp := layout.NewSplitter(layout.SplitterHorizontal, 0.5)
+	sp.SetLimits(0.1, 0.9)
+	sp.SetLabel(label)
+	return sp
+}
+
+// newVerticalSplitter is the app's explorer | panels split: the explorer
+// starts at 30% and can take at most 80%.
+func newVerticalSplitter() *layout.Splitter {
+	sp := layout.NewSplitter(layout.SplitterVertical, 0.3)
+	sp.SetLimits(0.1, 0.8)
+	return sp
+}
+
 func installEntraSignIn(a *App) {
 	db.SetDeviceCodePrompt(a.promptDeviceCode)
 	browser.Stdout, browser.Stderr = io.Discard, io.Discard
@@ -651,13 +669,13 @@ func (f appFocus) String() string {
 
 func (a *App) focusExplorer() {
 	a.focus = focusOnExplorer
-	a.explorer.SetActive(true)
+	a.explorer.Focus(true)
 	a.syncActivePanelFocus()
 }
 
 func (a *App) focusPanels() {
 	a.focus = focusOnPanels
-	a.explorer.SetActive(false)
+	a.explorer.Focus(false)
 	a.syncActivePanelFocus()
 }
 
@@ -726,7 +744,7 @@ func (a *App) prevPanel() {
 // jumpToPanel switches to panel i, counted from the left (Ctrl+0..9; 0 is
 // always Object Explorer Details). Out-of-range i is a silent no-op.
 func (a *App) jumpToPanel(i int) {
-	a.panels.SetActive(i)
+	a.panels.SetActiveIndex(i)
 	a.syncActivePanelFocus()
 }
 
@@ -784,7 +802,7 @@ func (a *App) draw() {
 	a.menuBar.DrawOverlay(s)
 	a.toolbar.DrawOverlay(s)
 	a.explorer.DrawOverlay(s)
-	a.contextMenu.Draw(s)
+	a.contextMenu.DrawOverlay(s)
 	a.drawDragGhost(s, w)
 
 	// Modal dialogs — highest z-order. syncDialogStack keeps dialogStack

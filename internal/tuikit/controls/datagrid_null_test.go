@@ -97,11 +97,11 @@ func TestShowValueOfANullSkipsTheHost(t *testing.T) {
 	if called {
 		t.Error("OnShowValue was offered a NULL")
 	}
-	if !g.viewOpen || g.viewEditor.Text() != "NULL" {
-		t.Errorf("popup open %v, text %q; want the NULL in the built-in popup", g.viewOpen, g.viewEditor.Text())
+	if !g.viewer.open || g.viewer.Text() != "NULL" {
+		t.Errorf("popup open %v, text %q; want the NULL in the built-in popup", g.viewer.open, g.viewer.Text())
 	}
 
-	g.closeViewer()
+	g.viewer.Close()
 	g.SetSelectedCell(1, 0)
 	g.openViewer()
 	if !called {

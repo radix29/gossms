@@ -249,7 +249,7 @@ func (d *FilterDialog) syncFocus() {
 // list is drawn last and gets first refusal of every event.
 func (d *FilterDialog) openDropDown() *widgets.DropDown {
 	for i := range d.rows {
-		if d.rows[i].op.IsOpen() {
+		if d.rows[i].op.OverlayActive() {
 			return d.rows[i].op
 		}
 	}

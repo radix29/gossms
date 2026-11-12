@@ -77,7 +77,7 @@ func TestCanSaveActivePanel(t *testing.T) {
 	if a.canSaveActivePanel() {
 		t.Error("canSaveActivePanel() = true with no panels")
 	}
-	a.panels.SetActive(a.panels.AddPanel(NewQueryPanel(a, "Query 1")))
+	a.panels.SetActiveIndex(a.panels.AddPanel(NewQueryPanel(a, "Query 1")))
 	if !a.canSaveActivePanel() {
 		t.Error("canSaveActivePanel() = false for a query panel")
 	}

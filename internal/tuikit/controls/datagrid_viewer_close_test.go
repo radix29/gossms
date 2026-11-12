@@ -16,11 +16,11 @@ func openDrawnViewer(t *testing.T) *DataGrid {
 	g.selRow, g.selCol = 1, 0
 	g.openViewer()
 	g.DrawOverlay(tuikittest.NewScreen(100, 30))
-	if !g.viewOpen {
+	if !g.viewer.open {
 		t.Fatal("setup: viewer did not open")
 	}
-	if g.viewCloseRect.W <= 0 {
-		t.Fatalf("setup: Close button was not laid out: %+v", g.viewCloseRect)
+	if g.viewer.closeRect.W <= 0 {
+		t.Fatalf("setup: Close button was not laid out: %+v", g.viewer.closeRect)
 	}
 	return g
 }
@@ -38,7 +38,7 @@ func TestDataGridViewerSurvivesClickOutside(t *testing.T) {
 	} {
 		g.HandleMouse(tcell.NewEventMouse(p.x, p.y, tcell.Button1, tcell.ModNone))
 		g.HandleMouse(tcell.NewEventMouse(p.x, p.y, tcell.ButtonNone, tcell.ModNone))
-		if !g.viewOpen {
+		if !g.viewer.open {
 			t.Fatalf("a click at (%d,%d) outside the popup closed it", p.x, p.y)
 		}
 	}
@@ -63,14 +63,14 @@ func TestDataGridViewerSwallowsClicksOutside(t *testing.T) {
 // the keyboard.
 func TestDataGridViewerCloseButtonDismisses(t *testing.T) {
 	g := openDrawnViewer(t)
-	r := g.viewCloseRect
+	r := g.viewer.closeRect
 
 	g.HandleMouse(tcell.NewEventMouse(r.X+1, r.Y, tcell.Button1, tcell.ModNone))
-	if g.viewOpen {
+	if g.viewer.open {
 		t.Fatal("clicking [ Close ] did not dismiss the viewer")
 	}
 	g.HandleMouse(tcell.NewEventMouse(r.X+1, r.Y, tcell.ButtonNone, tcell.ModNone))
-	if g.viewDismissing {
+	if g.viewer.dismiss.Held() {
 		t.Error("the dismiss latch survived the release")
 	}
 }
@@ -82,7 +82,7 @@ func TestDataGridViewerCloseButtonDismisses(t *testing.T) {
 func TestDataGridViewerCloseSwallowsRestOfGesture(t *testing.T) {
 	g := openDrawnViewer(t)
 	row, col := g.SelectedCell()
-	r := g.viewCloseRect
+	r := g.viewer.closeRect
 
 	g.HandleMouse(tcell.NewEventMouse(r.X+1, r.Y, tcell.Button1, tcell.ModNone))
 	// Still held, now dragged over the grid's own rows.
@@ -94,7 +94,7 @@ func TestDataGridViewerCloseSwallowsRestOfGesture(t *testing.T) {
 
 	// After the release the grid takes clicks normally again.
 	g.HandleMouse(tcell.NewEventMouse(6, 4, tcell.ButtonNone, tcell.ModNone))
-	if g.viewDismissing {
+	if g.viewer.dismiss.Held() {
 		t.Fatal("the dismiss latch survived the release")
 	}
 }
@@ -104,17 +104,17 @@ func TestDataGridViewerCloseSwallowsRestOfGesture(t *testing.T) {
 // to a popup that no longer exists.
 func TestDataGridViewerReopenClearsDismissLatch(t *testing.T) {
 	g := openDrawnViewer(t)
-	r := g.viewCloseRect
+	r := g.viewer.closeRect
 	g.HandleMouse(tcell.NewEventMouse(r.X+1, r.Y, tcell.Button1, tcell.ModNone))
 
 	// Reopened without the release ever arriving.
 	g.openViewer()
-	if g.viewDismissing {
+	if g.viewer.dismiss.Held() {
 		t.Fatal("reopening the viewer kept the previous dismissal latched")
 	}
 	g.DrawOverlay(tuikittest.NewScreen(100, 30))
-	g.HandleMouse(tcell.NewEventMouse(g.viewCloseRect.X+1, g.viewCloseRect.Y, tcell.Button1, tcell.ModNone))
-	if g.viewOpen {
+	g.HandleMouse(tcell.NewEventMouse(g.viewer.closeRect.X+1, g.viewer.closeRect.Y, tcell.Button1, tcell.ModNone))
+	if g.viewer.open {
 		t.Error("the reopened viewer refused the first click on [ Close ]")
 	}
 }
@@ -126,7 +126,7 @@ func TestDataGridViewerReopenClearsDismissLatch(t *testing.T) {
 func TestDataGridViewerClosesWhenDataReplaced(t *testing.T) {
 	g := openDrawnViewer(t)
 	g.SetData([]string{"A"}, [][]string{{"one"}})
-	if g.viewOpen {
+	if g.viewer.open {
 		t.Error("SetData left the content viewer open over the replaced data")
 	}
 	if g.OverlayActive() {
@@ -143,11 +143,11 @@ func TestDataGridViewerCutReturnsNothing(t *testing.T) {
 	if !g.HasSelection() || g.SelectedText() == "" {
 		t.Fatal("setup: Select All in the viewer selected nothing")
 	}
-	before := g.viewEditor.Text()
+	before := g.viewer.Text()
 	if got := g.Cut(); got != "" {
 		t.Errorf("Cut() = %q from the read-only viewer, want \"\"", got)
 	}
-	if g.viewEditor.Text() != before {
+	if g.viewer.Text() != before {
 		t.Error("Cut changed the read-only viewer's text")
 	}
 }

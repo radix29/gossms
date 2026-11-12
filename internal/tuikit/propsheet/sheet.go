@@ -46,20 +46,86 @@ const (
 	zoneButtons
 )
 
-var sheetButtonLabels = []string{"OK", "Cancel", "Apply", "Script Changes"}
+// sheetButton identifies a button on the sheet's button row. The sheet
+// dispatches and greys on the ID, never on the text, so Strings can change
+// without changing what a button does.
+type sheetButton int
 
-// readOnlyButtonLabels is the row a page that cannot be written shows. OK and
+const (
+	buttonOK sheetButton = iota
+	buttonCancel
+	buttonClose
+	buttonApply
+	buttonScriptChanges
+	buttonScript
+)
+
+// Strings is the text the sheet draws: its buttons, the default hint line, and
+// the page and run states. A host may replace any of it (to translate it, say)
+// on the UI goroutine before the first Draw. The sheet dispatches and greys
+// buttons by ID, never by text. Hints names the sheet's own bindings (F5 and
+// Ctrl+Z are handled here); SetHints overrides it per sheet.
+var Strings = struct {
+	OK, Cancel, Close, Apply, ScriptChanges, Script string
+
+	Hints      string
+	Loading    string // a page whose form has not arrived
+	Error      string // a failed page load; ": " and the error follow
+	Retry      string // under a failed load
+	Applying   string // the default StartApplying label (OK, Apply)
+	Cancelling string // the run label once Cancel is pressed
+	Reverted   string // the message after Ctrl+Z
+}{
+	OK:            "OK",
+	Cancel:        "Cancel",
+	Close:         "Close",
+	Apply:         "Apply",
+	ScriptChanges: "Script Changes",
+	Script:        "Script",
+
+	Hints:      "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+Z Revert   Ctrl+C Copy   Esc Cancel",
+	Loading:    "Loading…",
+	Error:      "Error",
+	Retry:      "Press F5 to retry.",
+	Applying:   "Applying...",
+	Cancelling: "Cancelling...",
+	Reverted:   "Reverted to the loaded values.",
+}
+
+func (b sheetButton) label() string {
+	switch b {
+	case buttonOK:
+		return Strings.OK
+	case buttonCancel:
+		return Strings.Cancel
+	case buttonClose:
+		return Strings.Close
+	case buttonApply:
+		return Strings.Apply
+	case buttonScriptChanges:
+		return Strings.ScriptChanges
+	case buttonScript:
+		return Strings.Script
+	}
+	return ""
+}
+
+// dismisses reports whether b is the row's Cancel/Close: the one button that
+// stays live while a run is in flight.
+func (b sheetButton) dismisses() bool { return b == buttonCancel || b == buttonClose }
+
+var sheetButtons = []sheetButton{buttonOK, buttonCancel, buttonApply, buttonScriptChanges}
+
+// readOnlyButtons is the row a page that cannot be written shows. OK and
 // Apply are removed rather than greyed: a read-only Form cannot become dirty,
 // and a greyed OK reads as "not yet", not "not ever". Script Changes stays:
 // generating the statements is what a user without rights to run them needs.
-var readOnlyButtonLabels = []string{"Close", "Script Changes"}
+var readOnlyButtons = []sheetButton{buttonClose, buttonScriptChanges}
 
-// scriptOnlyButtonLabels is the row of a sheet that only ever generates
+// scriptOnlyButtons is the row of a sheet that only ever generates
 // statements (SetScriptOnly): there is nothing for OK or Apply to run, and
 // "Changes" would misname a script of an action rather than of edits.
-var scriptOnlyButtonLabels = []string{"Script", "Cancel"}
-
-const defaultHints = "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+Z Revert   Ctrl+C Copy   Esc Cancel"
+var scriptOnlyButtons = []sheetButton{buttonScript, buttonCancel}
 
 const pageListWidth = 24
 
@@ -70,10 +136,9 @@ const PageTitleWidth = pageListWidth - 2
 // ApplyingSpinner is the busy indicator on the button row while an Apply/OK or
 // Script Changes is in flight (Connect's, so the waits look alike). The sheet
 // draws it from elapsed time only; the host owns the redraw clock (see
-// widgets.Spinner) and should tick at its Period.
+// widgets.Spinner) and should tick at its Period. Package-level: a host
+// changing it does so on the UI goroutine, before the first Draw.
 var ApplyingSpinner = widgets.SpinnerBraille
-
-const defaultApplyingLabel = "Applying..."
 
 // PropertySheet is a multi-page, editable properties dialog: a page list on the
 // left, the selected page's Form on the right, and an OK/Cancel/Apply row. See
@@ -104,7 +169,7 @@ type PropertySheet struct {
 	// arms it. Released on ButtonNone.
 	dragZone core.Gesture[focusZone]
 
-	// scriptOnly swaps the button row for scriptOnlyButtonLabels on every page;
+	// scriptOnly swaps the button row for scriptOnlyButtons on every page;
 	// see SetScriptOnly.
 	scriptOnly bool
 
@@ -147,7 +212,7 @@ type PropertySheet struct {
 // NewPropertySheet creates an empty PropertySheet. Call SetPages, SetHeader and
 // wire the On* callbacks before the first Show.
 func NewPropertySheet(s tcell.Screen, title string) *PropertySheet {
-	p := &PropertySheet{screen: s, current: -1, hints: defaultHints}
+	p := &PropertySheet{screen: s, current: -1, hints: Strings.Hints}
 	p.InitModal(s, title, 90, 28)
 	p.pageList = controls.NewListBox()
 	p.pageList.OnSelect = func(i int) { p.SelectPage(i) }
@@ -331,15 +396,25 @@ func (p *PropertySheet) SetScriptOnly(on bool) {
 	p.btnFocus = min(p.btnFocus, len(p.buttonLabels())-1)
 }
 
-// buttonLabels is the button row for the page on screen.
-func (p *PropertySheet) buttonLabels() []string {
+// buttons is the button row for the page on screen.
+func (p *PropertySheet) buttons() []sheetButton {
 	if p.scriptOnly {
-		return scriptOnlyButtonLabels
+		return scriptOnlyButtons
 	}
 	if p.current >= 0 && p.current < len(p.pages) && p.pages[p.current].readOnly != "" {
-		return readOnlyButtonLabels
+		return readOnlyButtons
 	}
-	return sheetButtonLabels
+	return sheetButtons
+}
+
+// buttonLabels is the text of buttons(), for drawing and hit-testing.
+func (p *PropertySheet) buttonLabels() []string {
+	btns := p.buttons()
+	labels := make([]string, len(btns))
+	for i, b := range btns {
+		labels[i] = b.label()
+	}
+	return labels
 }
 
 // SetPageError reports a failed load, under the same seq/visibility
@@ -499,7 +574,7 @@ func (p *PropertySheet) SetMessage(msg string, isErr bool) {
 // SetApplying(true) is StartApplying with the default label.
 func (p *PropertySheet) SetApplying(v bool) {
 	if v {
-		p.StartApplying(defaultApplyingLabel)
+		p.StartApplying(Strings.Applying)
 		return
 	}
 	p.applying = false
@@ -548,29 +623,29 @@ func (p *PropertySheet) setZone(z focusZone) {
 	p.zone = z
 }
 
-// activateButton dispatches on the button's label, not its index: the row has
-// two shapes (see readOnlyButtonLabels) and an index switch would run OK when
-// the user pressed Close.
+// activateButton dispatches on the button's ID, not its index or text: the
+// row has three shapes (see readOnlyButtons) and an index switch would run OK
+// when the user pressed Close; Strings is the host's to change.
 func (p *PropertySheet) activateButton(i int) {
-	labels := p.buttonLabels()
-	if i < 0 || i >= len(labels) {
+	btns := p.buttons()
+	if i < 0 || i >= len(btns) {
 		return
 	}
-	if p.applying && labels[i] != "Cancel" && labels[i] != "Close" {
+	if p.applying && !btns[i].dismisses() {
 		return
 	}
-	switch labels[i] {
-	case "OK":
+	switch btns[i] {
+	case buttonOK:
 		if p.OnOK != nil {
 			p.OnOK()
 		}
-	case "Cancel", "Close":
+	case buttonCancel, buttonClose:
 		p.cancel()
-	case "Apply":
+	case buttonApply:
 		if p.OnApply != nil {
 			p.OnApply()
 		}
-	case "Script Changes", "Script":
+	case buttonScriptChanges, buttonScript:
 		if p.OnScript != nil {
 			p.OnScript()
 		}
@@ -590,7 +665,7 @@ func (p *PropertySheet) cancel() {
 		return
 	}
 	p.cancelling = true
-	p.applyingLabel = "Cancelling..."
+	p.applyingLabel = Strings.Cancelling
 	p.OnCancelApply()
 }
 

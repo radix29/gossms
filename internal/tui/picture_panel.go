@@ -122,7 +122,7 @@ func (a *App) openPicturePanel(column, value string) bool {
 		title = column + pictureExt(format)
 	}
 	pp := NewPicturePanel(a, title, value)
-	a.panels.SetActive(a.panels.AddPanel(pp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(pp))
 	a.focusPanels()
 	a.setStatus("Opened " + title)
 	return true

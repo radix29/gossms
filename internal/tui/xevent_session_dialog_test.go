@@ -482,12 +482,12 @@ func TestXEEventsPageBrowsesReadOnly(t *testing.T) {
 	tabTo := func(g *controls.DataGrid, what string) {
 		t.Helper()
 		for range 20 {
-			if gr, ok := f.Focused().(*propsheet.GridRow); ok && gr.Grid == g {
+			if gr, ok := f.FocusedRow().(*propsheet.GridRow); ok && gr.Grid == g {
 				return
 			}
 			press(tcell.KeyTab)
 		}
-		t.Fatalf("Tab never reached the %s grid; focused %T", what, f.Focused())
+		t.Fatalf("Tab never reached the %s grid; focused %T", what, f.FocusedRow())
 	}
 
 	// On the library, Enter and Space would add an event.

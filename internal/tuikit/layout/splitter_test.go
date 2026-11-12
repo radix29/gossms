@@ -12,7 +12,7 @@ import (
 // that crosses the bar on its way down would otherwise grab it and resize
 // the panes mid-selection — see the press field.
 func TestSplitterDragOnlyStartsFromPressOnBar(t *testing.T) {
-	sp := NewHorizontalSplitter("bar")
+	sp := NewSplitter(SplitterHorizontal, 0.5)
 	sp.SetBounds(0, 0, 80, 24)
 	before := sp.Ratio()
 	bar := sp.SplitPos()
@@ -37,7 +37,7 @@ func TestSplitterDragOnlyStartsFromPressOnBar(t *testing.T) {
 // really does begin on the bar must still resize, and must keep receiving
 // events after the pointer leaves the bar's own row.
 func TestSplitterDragFromBarStillResizes(t *testing.T) {
-	sp := NewHorizontalSplitter("bar")
+	sp := NewSplitter(SplitterHorizontal, 0.5)
 	sp.SetBounds(0, 0, 80, 24)
 	before := sp.Ratio()
 	bar := sp.SplitPos()
@@ -68,7 +68,7 @@ func TestSplitterDragFromBarStillResizes(t *testing.T) {
 // A corrupt saved ratio must not reach the layout: core.Clamp passes NaN
 // through, and a NaN ratio puts the bar anywhere.
 func TestSplitterSetRatioIgnoresNaNAndInf(t *testing.T) {
-	sp := NewHorizontalSplitter("bar")
+	sp := NewSplitter(SplitterHorizontal, 0.5)
 	sp.SetBounds(0, 0, 80, 24)
 	before := sp.Ratio()
 	for _, r := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
@@ -81,7 +81,7 @@ func TestSplitterSetRatioIgnoresNaNAndInf(t *testing.T) {
 
 // A resize to zero mid-drag must not divide by zero into a NaN ratio.
 func TestSplitterDragSurvivesZeroSize(t *testing.T) {
-	for _, sp := range []*Splitter{NewHorizontalSplitter("bar"), NewVerticalSplitter()} {
+	for _, sp := range []*Splitter{NewSplitter(SplitterHorizontal, 0.5), NewSplitter(SplitterVertical, 0.3)} {
 		sp.SetBounds(0, 0, 80, 24)
 		before := sp.Ratio()
 		pos := sp.SplitPos()
@@ -98,5 +98,28 @@ func TestSplitterDragSurvivesZeroSize(t *testing.T) {
 			t.Errorf("dir %v: ratio = %v after a drag at zero size, want %v", sp.dir, got, before)
 		}
 		sp.HandleMouse(tuikittest.Release(x, y))
+	}
+}
+
+// TestSplitterLimits pins C11 of the 2026-11-12 review: the limits are the
+// host's, SetLimits re-clamps the ratio, and nonsense limits are ignored.
+func TestSplitterLimits(t *testing.T) {
+	sp := NewSplitter(SplitterVertical, 0.95)
+	if got := sp.Ratio(); got != defaultMaxRatio {
+		t.Fatalf("ratio = %v, want the default max %v", got, defaultMaxRatio)
+	}
+	sp.SetLimits(0.2, 0.6)
+	if got := sp.Ratio(); got != 0.6 {
+		t.Fatalf("ratio after SetLimits(0.2, 0.6) = %v, want 0.6", got)
+	}
+	sp.SetRatio(0.1)
+	if got := sp.Ratio(); got != 0.2 {
+		t.Fatalf("SetRatio(0.1) = %v, want the new min 0.2", got)
+	}
+	for _, lim := range [][2]float64{{0.7, 0.3}, {-0.1, 0.5}, {0.5, 1.1}, {math.NaN(), 0.5}} {
+		sp.SetLimits(lim[0], lim[1])
+		if sp.minRatio != 0.2 || sp.maxRatio != 0.6 {
+			t.Errorf("SetLimits(%v, %v) changed the limits to %v–%v", lim[0], lim[1], sp.minRatio, sp.maxRatio)
+		}
 	}
 }

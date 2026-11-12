@@ -26,7 +26,12 @@ func NewButton(label string, onClick func()) *Button {
 }
 
 func (b *Button) SetBounds(x, y int) { b.rect.X, b.rect.Y = x, y }
-func (b *Button) Focus(v bool)       { b.focused = v }
+
+// Bounds returns the drawn "[ label ]" rect: one row, Width() columns.
+func (b *Button) Bounds() core.Rect { return core.Rect{X: b.rect.X, Y: b.rect.Y, W: b.Width(), H: 1} }
+
+func (b *Button) Focus(v bool)  { b.focused = v }
+func (b *Button) Focused() bool { return b.focused }
 
 // SetEnabled toggles whether the button fires. A disabled button draws greyed
 // and refuses keys and clicks, keeping its place in the focus ring (see

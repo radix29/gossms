@@ -76,17 +76,6 @@ const defaultMaxCellWidth = 40
 // each side of the text plus the separator.
 const minResizeWidth = 4
 
-// cellViewerW and cellViewerLines size the built-in "full cell content" popup,
-// which is centred on the screen rather than the grid's rect so it reads as a
-// modal even on a small grid.
-const cellViewerW = 60
-const cellViewerLines = 8
-
-// viewerDimNum/viewerDimDen fade the screen behind the popup toward
-// DialogOverlay. Duplicates dialogs.ModalDialog's dialogDimNum/Den, since
-// controls must not depend on dialogs.
-const viewerDimNum, viewerDimDen = 3, 5
-
 // ---------------------------------------------------------------------------
 // DataGrid
 // ---------------------------------------------------------------------------
@@ -209,24 +198,9 @@ type DataGrid struct {
 	// grid doesn't define OnActivateCell, never on an editable one.
 	ctxMenu ContextMenu
 
-	// viewOpen and viewEditor back the "full cell content" popup opened by
-	// ctxMenu's "Show Value": a read-only, word-wrapped Editor over the cell's
-	// untruncated text, navigable and copyable. Only Escape or its "[ Close ]"
-	// button dismiss it — a stray click must not lose an in-progress
-	// selection.
-	viewOpen   bool
-	viewHeader string
-	viewEditor *Editor
-
-	// viewCloseRect is the "[ Close ]" button's screen position, laid out by
-	// DrawOverlay (the popup is screen-centred, so it isn't known before) and
-	// hit-tested by HandleMouse.
-	viewCloseRect core.Rect
-
-	// viewDismissing latches from the press on that button to the release: the
-	// press closes the popup, and tcell's Button1 resends while held would
-	// otherwise land on the grid underneath as fresh cell clicks.
-	viewDismissing bool
+	// viewer is the "full cell content" popup opened by ctxMenu's "Show Value"
+	// (or ShowValue) when the host's OnShowValue doesn't claim the value.
+	viewer ValueViewer
 
 	// sortCol and sortDesc are the header's sort indicator (SetSortIndicator),
 	// sortCol -1 for none. The grid never reorders rows itself: only the host knows
@@ -302,7 +276,7 @@ type DataGrid struct {
 
 // NewDataGrid creates a DataGrid.
 func NewDataGrid() *DataGrid {
-	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil), sortCol: -1})
+	return new(DataGrid{status: Strings.Ready, rows: SliceRowSource(nil), sortCol: -1})
 }
 
 // SetBrowseOnly lets the grid be looked at but not edited: navigation,
@@ -391,7 +365,7 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.colWidthOverride, g.colResizing = nil, false
 	// Only Escape or Close dismiss the viewer, so leaving it open strands it
 	// over stale text while it still claims every key and mouse event.
-	g.closeViewer()
+	g.viewer.Close()
 	g.computeColWidths()
 	g.status = strconv.Itoa(rows.Len()) + " rows"
 }
@@ -447,7 +421,7 @@ func (g *DataGrid) RefreshColumnWidths() {
 // computeColWidths (a resize, a queued RefreshColumnWidths) from clamping the
 // message back to defaultMaxCellWidth.
 func (g *DataGrid) SetError(err error) {
-	g.columns = []string{"Error"}
+	g.columns = []string{Strings.Error}
 	g.rows = SliceRowSource{{err.Error()}}
 	g.errorMode = true
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
@@ -459,9 +433,9 @@ func (g *DataGrid) SetError(err error) {
 	g.ClearMarkedRows()
 	g.colWidthOverride, g.colResizing = nil, false
 	// See SetSource: an open viewer would strand itself over stale text.
-	g.closeViewer()
+	g.viewer.Close()
 	g.computeColWidths()
-	g.status = "Error"
+	g.status = Strings.Error
 }
 
 // SetStatus sets the status bar text.
@@ -542,6 +516,8 @@ func (g *DataGrid) SetSelectedCell(row, col int) {
 
 // Focus sets the focused state, dimming the selection highlight when false.
 func (g *DataGrid) Focus(v bool) { g.active = v }
+
+func (g *DataGrid) Focused() bool { return g.active }
 
 // SetCellCursor enables or disables per-cell (rather than whole-row)
 // selection. See the cellCursor field doc for what changes.

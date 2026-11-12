@@ -68,8 +68,8 @@ func (cm *ContextMenu) Hide() {
 	cm.cascade.reset()
 }
 
-// Visible reports whether the menu is shown.
-func (cm *ContextMenu) Visible() bool { return cm.visible }
+// OverlayActive reports whether the menu is shown (core.Overlay).
+func (cm *ContextMenu) OverlayActive() bool { return cm.visible }
 
 // Items returns the entries currently shown, for a caller that has to act on
 // the menu without a screen to click on — the entry in force is bulleted by
@@ -100,8 +100,9 @@ func (cm *ContextMenu) geometry(s tcell.Screen) (x, y, w, h int) {
 	return x, y, w, h
 }
 
-// Draw renders the context menu.
-func (cm *ContextMenu) Draw(s tcell.Screen) {
+// DrawOverlay renders the menu, if shown. The whole menu is an overlay, so the
+// host calls it after everything it may cover has drawn.
+func (cm *ContextMenu) DrawOverlay(s tcell.Screen) {
 	if !cm.visible {
 		return
 	}

@@ -27,7 +27,7 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 		p.editor.DrawOverlay(s)
 		return
 	}
-	p.splitter.SetActive(p.resultsHasFocus())
+	p.splitter.Focus(p.resultsHasFocus())
 	p.splitter.Draw(s)
 	p.drawTabBar(s)
 	p.updateResultsStatus()

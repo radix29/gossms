@@ -319,7 +319,7 @@ func TestComparePanelPickerMenuChoosesAStatement(t *testing.T) {
 	}
 	p.HandleMouse(tcell.NewEventMouse(r.X+1, r.Y, tcell.Button1, tcell.ModNone))
 	p.HandleMouse(tcell.NewEventMouse(r.X+1, r.Y, tcell.ButtonNone, tcell.ModNone))
-	if !a.contextMenu.Visible() {
+	if !a.contextMenu.OverlayActive() {
 		t.Fatal("a click on picker B opened no menu")
 	}
 	items := a.contextMenu.Items()

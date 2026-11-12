@@ -181,7 +181,7 @@ func (d *QueryListDialog) activate() {
 	if d.sel < 0 || d.sel >= len(d.indices) {
 		return
 	}
-	d.app.panels.SetActive(d.indices[d.sel])
+	d.app.panels.SetActiveIndex(d.indices[d.sel])
 	d.app.focusPanels()
 	d.Hide()
 }

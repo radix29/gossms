@@ -287,11 +287,11 @@ func (d *FileDialog) setFocus(f int) {
 }
 
 func (d *FileDialog) buttonLabels() []string {
-	label := "Open"
+	label := Strings.Open
 	if d.mode == FileDialogSave {
-		label = "Save"
+		label = Strings.Save
 	}
-	return []string{label, "Cancel"}
+	return []string{label, Strings.Cancel}
 }
 
 // listRect returns the on-screen rectangle of the Name/Size/Modified list,

@@ -25,7 +25,7 @@ func TestMenuBarHoverOutsideDropdownDoesNotClose(t *testing.T) {
 	if !handled {
 		t.Fatalf("HandleMouse() = false, want true (swallowed) while a dropdown is open")
 	}
-	if !mb.IsOpen() {
+	if !mb.OverlayActive() {
 		t.Fatalf("dropdown closed on a hover outside it; want it to stay open")
 	}
 }
@@ -38,7 +38,7 @@ func TestMenuBarClickOutsideDropdownCloses(t *testing.T) {
 	if !handled {
 		t.Fatalf("HandleMouse() = false, want true (swallowed) while a dropdown was open")
 	}
-	if mb.IsOpen() {
+	if mb.OverlayActive() {
 		t.Fatalf("dropdown stayed open after a click outside it; want it closed")
 	}
 }
@@ -53,7 +53,7 @@ func TestMenuBarHoverOverBarRowOffLabelsDoesNotClose(t *testing.T) {
 	if !handled {
 		t.Fatalf("HandleMouse() = false, want true (swallowed) while a dropdown is open")
 	}
-	if !mb.IsOpen() {
+	if !mb.OverlayActive() {
 		t.Fatalf("dropdown closed on a hover over the bar row outside its labels; want it to stay open")
 	}
 }
@@ -66,7 +66,7 @@ func TestMenuBarClickOverBarRowOffLabelsCloses(t *testing.T) {
 	if !handled {
 		t.Fatalf("HandleMouse() = false, want true (swallowed) while a dropdown was open")
 	}
-	if mb.IsOpen() {
+	if mb.OverlayActive() {
 		t.Fatalf("dropdown stayed open after a click over the bar row outside its labels; want it closed")
 	}
 }
@@ -76,7 +76,7 @@ func TestMenuBarHeldButtonOverHeaderDoesNotReToggle(t *testing.T) {
 
 	// Press opens "File" (columns 1-6 per " File ").
 	mb.HandleMouse(tcell.NewEventMouse(2, 0, tcell.Button1, tcell.ModNone))
-	if !mb.IsOpen() {
+	if !mb.OverlayActive() {
 		t.Fatalf("press on header did not open the menu")
 	}
 
@@ -87,14 +87,14 @@ func TestMenuBarHeldButtonOverHeaderDoesNotReToggle(t *testing.T) {
 	if !handled {
 		t.Fatalf("HandleMouse() = false, want true while still over the header")
 	}
-	if !mb.IsOpen() {
+	if !mb.OverlayActive() {
 		t.Fatalf("menu closed on a held-button move over the same header; want it to stay open")
 	}
 
 	// Release, then a genuine new press on the same header, does toggle it.
 	mb.HandleMouse(tcell.NewEventMouse(3, 0, tcell.ButtonNone, tcell.ModNone))
 	mb.HandleMouse(tcell.NewEventMouse(3, 0, tcell.Button1, tcell.ModNone))
-	if mb.IsOpen() {
+	if mb.OverlayActive() {
 		t.Fatalf("a fresh press after release did not close the menu")
 	}
 }
@@ -228,7 +228,7 @@ func TestMenuBarEnterOnDisabledItemDoesNotFireButCloses(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("Action fired for a disabled item via KeyEnter, want it not to")
 	}
-	if mb.IsOpen() {
+	if mb.OverlayActive() {
 		t.Fatalf("menu stayed open after KeyEnter on a disabled item; want it closed, same as any other item")
 	}
 }
@@ -244,7 +244,7 @@ func TestMenuBarClickOnDisabledItemDoesNotFireButCloses(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("Action fired for a disabled item via mouse click, want it not to")
 	}
-	if mb.IsOpen() {
+	if mb.OverlayActive() {
 		t.Fatalf("menu stayed open after clicking a disabled item; want it closed, same as clicking a divider")
 	}
 }

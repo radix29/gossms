@@ -95,7 +95,7 @@ func (a *App) openMergedXEventFiles(sc *db.ServerConn, pattern string) {
 			v.refreshTarget()
 		}
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 

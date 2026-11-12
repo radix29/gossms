@@ -32,6 +32,10 @@ type InputField struct {
 	// disabled fields refuse input and draw greyed out. The zero value is
 	// enabled.
 	disabled bool
+
+	// OnChange fires after a key, Cut or Paste changes the value, with the new
+	// value. SetValue never fires it: a host setting the value already knows.
+	OnChange func(value string)
 }
 
 // NewInputField creates an InputField with an optional inline label.
@@ -48,11 +52,12 @@ func (f *InputField) Label() string { return f.label }
 // box starts immediately after the label.
 func (f *InputField) SetBounds(x, y int) { f.rect.X, f.rect.Y = x, y }
 
-// RectX and RectY return the field's label-start position, for a caller
-// positioning related UI relative to the field — an autocomplete list drawn
-// beneath it, say.
-func (f *InputField) RectX() int { return f.rect.X }
-func (f *InputField) RectY() int { return f.rect.Y }
+// Bounds returns the drawn field: one row, label through the closing bracket.
+// A caller positions related UI from it (an autocomplete list beneath the
+// field); InputX is where the editable box starts.
+func (f *InputField) Bounds() core.Rect {
+	return core.Rect{X: f.rect.X, Y: f.rect.Y, W: f.inputX() - f.rect.X + f.rect.W + 2, H: 1}
+}
 
 // InputX returns the x coordinate of the input box itself (after the
 // label), for positioning an overlay directly under the editable area
@@ -108,6 +113,8 @@ func (f *InputField) ShowFromStart() { f.scroll = 0 }
 
 // Focus sets the focused state.
 func (f *InputField) Focus(v bool) { f.focused = v }
+
+func (f *InputField) Focused() bool { return f.focused }
 
 // SetEnabled toggles whether the field accepts input. A disabled field draws
 // greyed and refuses keys and clicks (one that only stopped accepting input
@@ -178,6 +185,7 @@ func (f *InputField) Cut() string {
 	}
 	text := f.SelectedText()
 	f.deleteSelection()
+	f.changed()
 	return text
 }
 
@@ -201,6 +209,15 @@ func (f *InputField) Paste(text string) {
 	f.value = newVal
 	f.cursor += len(pasted)
 	f.adjustScroll()
+	f.changed()
+}
+
+// changed fires OnChange for an edit that did change the value (Cut and Paste
+// always do).
+func (f *InputField) changed() {
+	if f.OnChange != nil {
+		f.OnChange(string(f.value))
+	}
 }
 
 // inputX returns the x coordinate of the input box (after label).
@@ -328,6 +345,12 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 		return false
 	}
 	hadSelection := f.HasSelection()
+	// Compared after the key rather than flagged per edit, so a new binding
+	// can't silently skip OnChange. Only paid for by a field that has one.
+	var before string
+	if f.OnChange != nil {
+		before = string(f.value)
+	}
 
 	mods := ev.Modifiers()
 	ctrlHeld := mods&tcell.ModCtrl != 0
@@ -417,6 +440,9 @@ func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
 		f.selecting = false
 	}
 	f.adjustScroll()
+	if f.OnChange != nil && string(f.value) != before {
+		f.changed()
+	}
 	return true
 }
 

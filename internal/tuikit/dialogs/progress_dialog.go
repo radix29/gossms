@@ -25,7 +25,7 @@ const (
 )
 
 // progressButtons is the dialog's button row: Cancel, and nothing else.
-var progressButtons = []string{"Cancel"}
+func progressButtons() []string { return []string{Strings.Cancel} }
 
 // ProgressDialog stands in front of the application while one long operation runs
 // (the wait after a confirmation: a delete, a failover). It shows what is
@@ -61,11 +61,19 @@ type ProgressDialog struct {
 	// The dialog is open, swallowing keys and clicks, from ShowProgress on; it only
 	// draws after the delay, and Cancel can't be pressed on an invisible dialog.
 	RevealDelay time.Duration
+	// ElapsedText and CancellingText lead the status line under the message, the
+	// elapsed time following: "Elapsed 0:07" while running, then CancellingText
+	// once Cancel is pressed. A host names what it is waiting on ("the server").
+	ElapsedText, CancellingText string
 }
 
 // NewProgressDialog creates a ProgressDialog.
 func NewProgressDialog(s tcell.Screen) *ProgressDialog {
-	d := new(ProgressDialog{Spinner: widgets.SpinnerBraille})
+	d := new(ProgressDialog{
+		Spinner:        widgets.SpinnerBraille,
+		ElapsedText:    "Elapsed",
+		CancellingText: "Cancelling — waiting for the operation to stop",
+	})
 	d.InitModal(s, "Working", progressDialogMinW, progressDialogBaseH)
 	return d
 }
@@ -165,9 +173,9 @@ func (d *ProgressDialog) fit() {
 func (d *ProgressDialog) statusLine() string {
 	elapsed := formatElapsed(time.Since(d.started))
 	if d.cancelling {
-		return "Cancelling — waiting for the server to stop (" + elapsed + ")"
+		return d.CancellingText + " (" + elapsed + ")"
 	}
-	return "Elapsed " + elapsed
+	return d.ElapsedText + " " + elapsed
 }
 
 // formatElapsed is m:ss, or h:mm:ss past the hour.
@@ -201,7 +209,7 @@ func (d *ProgressDialog) Draw(s tcell.Screen) {
 		core.DrawTextClipped(s, x, y+1+i, contentW, dimStyle, line)
 	}
 	d.DrawSeparator(s)
-	d.DrawButtonsGated(s, progressButtons, 0, []bool{!d.CanCancel()})
+	d.DrawButtonsGated(s, progressButtons(), 0, []bool{!d.CanCancel()})
 }
 
 // cancel is the Cancel button, and Escape: ask the operation to stop, once.
@@ -239,7 +247,7 @@ func (d *ProgressDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.ConsumeOutsideClick(ev) || !d.Revealed() {
 		return true
 	}
-	if d.ButtonClicked(ev, progressButtons) == 0 {
+	if d.ButtonClicked(ev, progressButtons()) == 0 {
 		d.cancel()
 	}
 	return true

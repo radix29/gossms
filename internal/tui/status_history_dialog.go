@@ -43,7 +43,7 @@ func NewStatusHistoryDialog(app *App) *StatusHistoryDialog {
 	d.InitModal(app.screen, "Status History", 90, 26)
 	d.editor = controls.NewEditor(nil)
 	d.editor.SetReadOnly(true)
-	d.editor.SetActive(true)
+	d.editor.Focus(true)
 	return d
 }
 

@@ -18,10 +18,10 @@ import (
 // confirmation. Embedded structs owning the fields would rename every direct
 // `d.focusable[d.focusIdx]` access for no behavioural gain.
 
-// focusable is satisfied by any tuikit widget that supports keyboard focus.
-type focusable interface {
-	Focus(bool)
-}
+// focusable is a dialog's focus-ring entry: any tuikit control that takes
+// keyboard focus. Ask a ring entry for more through core's other control
+// interfaces (core.Enabler, core.KeyHandler), not a switch over widget types.
+type focusable = core.Focusable
 
 // setFocusIn focuses list[i], blurring every other entry, and reports the
 // index that ended up focused. An out-of-range i blurs everything and answers

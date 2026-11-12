@@ -135,7 +135,7 @@ func NewXEventViewer(app *App, host *db.ServerConn, session, target string, live
 		expanded:   map[string]bool{},
 		bookmarks:  map[uint64]bool{},
 		grid:       grid,
-		splitter:   layout.NewHorizontalSplitter("─── Event details ─── (drag or Ctrl+Up/Down to resize)"),
+		splitter:   newHorizontalSplitter("─── Event details ─── (drag or Ctrl+Up/Down to resize)"),
 	})
 	v.feed.autoScroll = live
 	grid.OnShowValue = v.showValue
@@ -166,7 +166,7 @@ func (v *XEventViewer) Title() string {
 func (v *XEventViewer) SetActive(on bool) {
 	v.active = on
 	v.grid.Focus(on)
-	v.splitter.SetActive(on)
+	v.splitter.Focus(on)
 }
 
 // Close stops the feed and closes the panel's connection. Called from

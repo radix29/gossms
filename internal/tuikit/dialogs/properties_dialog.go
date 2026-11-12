@@ -153,7 +153,7 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 	}
 
 	d.DrawSeparator(s)
-	d.DrawButtons(s, []string{"Close"}, 0)
+	d.DrawButtons(s, []string{Strings.Close}, 0)
 }
 
 // close hides the dialog and tells the host.
@@ -194,7 +194,7 @@ func (d *PropertiesDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	if d.ButtonClicked(ev, []string{"Close"}) == 0 {
+	if d.ButtonClicked(ev, []string{Strings.Close}) == 0 {
 		d.close()
 		return true
 	}

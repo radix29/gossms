@@ -203,12 +203,16 @@ func (r *TextRow) Draw(s tcell.Screen, focused bool) {
 // SetOnChange installs a callback fired whenever an edit changes the field's
 // text, for a row driving something else on the page (a filter box narrowing a
 // grid). It fires on the edit, not focus loss, so the effect keeps up with
-// typing.
-func (r *TextRow) SetOnChange(fn func(string)) { r.onChange = fn }
+// typing. A key, click, Cut or Paste reaches it through the field's own
+// InputField.OnChange; Edit and Revert, which set the field, through
+// notifyChanged.
+func (r *TextRow) SetOnChange(fn func(string)) {
+	r.onChange = fn
+	r.field.OnChange = fn
+}
 
-// notifyChanged fires onChange if the field's text changed. Every edit path goes
-// through it, comparing values rather than guessing which keys mutate, so a new
-// InputField binding can't silently skip the callback.
+// notifyChanged fires onChange if a programmatic set (Edit, Revert) changed the
+// field's text; the field reports user edits itself.
 func (r *TextRow) notifyChanged(before string) {
 	if r.onChange != nil && r.field.Value() != before {
 		r.onChange(r.field.Value())
@@ -219,19 +223,13 @@ func (r *TextRow) HandleKey(ev *tcell.EventKey) bool {
 	if !r.enabled || r.flat() {
 		return false
 	}
-	before := r.field.Value()
-	handled := r.field.HandleKey(ev)
-	r.notifyChanged(before)
-	return handled
+	return r.field.HandleKey(ev)
 }
 func (r *TextRow) HandleMouse(ev *tcell.EventMouse) bool {
 	if !r.enabled || r.flat() {
 		return false
 	}
-	before := r.field.Value()
-	handled := r.field.HandleMouse(ev)
-	r.notifyChanged(before)
-	return handled
+	return r.field.HandleMouse(ev)
 }
 
 // CopyText is the value as shown: a flat row copies its unit too ("0 %"), as
@@ -253,16 +251,11 @@ func (r *TextRow) Cut() string {
 	if !r.enabled || r.flat() {
 		return ""
 	}
-	before := r.field.Value()
-	cut := r.field.Cut()
-	r.notifyChanged(before)
-	return cut
+	return r.field.Cut()
 }
 func (r *TextRow) Paste(text string) {
 	if r.enabled && !r.flat() {
-		before := r.field.Value()
 		r.field.Paste(text)
-		r.notifyChanged(before)
 	}
 }
 func (r *TextRow) SelectAll() {

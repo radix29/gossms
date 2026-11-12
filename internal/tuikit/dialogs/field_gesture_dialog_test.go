@@ -21,7 +21,7 @@ func dragToButtonRow(t *testing.T, d interface {
 	Rect() core.Rect
 }, f *widgets.InputField) string {
 	t.Helper()
-	ix, y := f.InputX(), f.RectY()
+	ix, y := f.InputX(), f.Bounds().Y
 	if !d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("the press inside the field was refused — test premise is wrong")
 	}
@@ -88,7 +88,7 @@ func TestPromptAndTypedConfirmClearTheGestureOnEveryShowing(t *testing.T) {
 	p.ShowPrompt("Rename", "New name:", "Name:", "abcdefgh", nil)
 	inner := p.InnerRect()
 	p.input.SetBounds(inner.X+1, inner.Y+2)
-	p.HandleMouse(tcell.NewEventMouse(p.input.InputX()+1, p.input.RectY(), tcell.Button1, tcell.ModNone))
+	p.HandleMouse(tcell.NewEventMouse(p.input.InputX()+1, p.input.Bounds().Y, tcell.Button1, tcell.ModNone))
 	if p.drag.Field() == nil {
 		t.Fatal("the press did not arm a latch — test premise is wrong")
 	}
@@ -101,7 +101,7 @@ func TestPromptAndTypedConfirmClearTheGestureOnEveryShowing(t *testing.T) {
 	c.ShowTypedConfirm("Confirm", "msg", "Orders", nil)
 	inner = c.InnerRect()
 	c.input.SetBounds(inner.X+1, inner.Y+3)
-	c.HandleMouse(tcell.NewEventMouse(c.input.InputX()+1, c.input.RectY(), tcell.Button1, tcell.ModNone))
+	c.HandleMouse(tcell.NewEventMouse(c.input.InputX()+1, c.input.Bounds().Y, tcell.Button1, tcell.ModNone))
 	if c.drag.Field() == nil {
 		t.Fatal("the press did not arm a latch — test premise is wrong")
 	}

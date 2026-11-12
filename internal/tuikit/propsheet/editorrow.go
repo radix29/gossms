@@ -203,10 +203,10 @@ func (r *EditorRow) HandleMouse(ev *tcell.EventMouse) bool {
 	return handled
 }
 
-// DrawOverlay and OverlayActive implement OverlayDrawer/OverlayActiver for the
+// DrawOverlay and OverlayActive implement core.Overlay for the
 // editor's completion popup, which floats past the row's own lines.
 func (r *EditorRow) DrawOverlay(s tcell.Screen) { r.ed.DrawOverlay(s) }
-func (r *EditorRow) OverlayActive() bool        { return r.ed.CompletionActive() }
+func (r *EditorRow) OverlayActive() bool        { return r.ed.OverlayActive() }
 
 // CopyText and the HasSelection, SelectedText, Cut, Paste and SelectAll beside
 // it implement ClipboardRow by forwarding to the editor, so the sheet's

@@ -313,13 +313,8 @@ func (d *ConnectDialog) applyAuthFields() {
 // focusableEnabled reports whether w accepts input; a widget with no enabled
 // state always does.
 func focusableEnabled(w focusable) bool {
-	switch c := w.(type) {
-	case *widgets.InputField:
-		return c.Enabled()
-	case *widgets.CheckBox:
-		return c.Enabled()
-	}
-	return true
+	e, ok := w.(core.Enabler)
+	return !ok || e.Enabled()
 }
 
 // stepFocus moves focus dir (+1 or -1) along the ring, past any disabled

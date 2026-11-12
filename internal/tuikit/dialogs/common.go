@@ -4,6 +4,24 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
+// Strings is the button text this package's dialogs draw. A host may
+// replace any of it (to translate it, say) on the UI goroutine before the first
+// Draw. Every dialog answers by the button's position, never its text. A
+// ConfirmDialog or TypedConfirmDialog reads it when shown.
+var Strings = struct {
+	OK, Cancel, Yes, No, Close, Confirm, Script, Open, Save string
+}{
+	OK:      "OK",
+	Cancel:  "Cancel",
+	Yes:     "Yes",
+	No:      "No",
+	Close:   "Close",
+	Confirm: "Confirm",
+	Script:  "Script",
+	Open:    "Open",
+	Save:    "Save",
+}
+
 // messageBoxOverhead is how much narrower a message's wrapped content is than
 // the dialog: DrawBase's 1-cell border each side plus the 1-cell margin every
 // message-driven dialog leaves (text starts at inner.X+1, clipped to inner.W-2).

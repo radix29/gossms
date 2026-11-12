@@ -286,15 +286,6 @@ func (e *Editor) ReadOnly() bool { return e.readOnly }
 // SetBounds positions the editor.
 func (e *Editor) SetBounds(x, y, w, h int) { e.rect = core.Rect{X: x, Y: y, W: w, H: h} }
 
-// SetActive sets focus state. Losing focus closes the completion popup, which
-// would otherwise linger while keys route elsewhere.
-func (e *Editor) SetActive(v bool) {
-	if !v && e.completionOpen {
-		e.closeCompletion()
-	}
-	e.active = v
-}
-
 // Bounds returns the editor's screen rect, so a caller outside the package can
 // hit-test against it (e.g. a drag-and-drop drop-target check).
 func (e *Editor) Bounds() core.Rect { return e.rect }
@@ -310,9 +301,16 @@ func (e *Editor) CursorPos() (row, col int) { return e.cursorRow, e.cursorCol }
 // terminal columns; see CursorPos.
 func (e *Editor) ScrollPos() (row, col int) { return e.scrollRow, e.scrollCol }
 
-// Focus sets focus state, mirroring widgets' Focus(bool) so Editor can be
-// Tab-cycled alongside InputField, DropDown and CheckBox.
-func (e *Editor) Focus(v bool) { e.SetActive(v) }
+// Focus sets focus state. Losing focus closes the completion popup, which
+// would otherwise linger while keys route elsewhere.
+func (e *Editor) Focus(v bool) {
+	if !v && e.completionOpen {
+		e.closeCompletion()
+	}
+	e.active = v
+}
+
+func (e *Editor) Focused() bool { return e.active }
 
 // Text returns the editor content.
 func (e *Editor) Text() string {

@@ -16,7 +16,7 @@ func TestContextMenuClickNearRightEdgeHitsClampedItem(t *testing.T) {
 		{Label: "Open", Action: func() { calls++ }},
 		{Label: "Close"},
 	})
-	cm.Draw(tuikittest.NewScreen(40, 20))
+	cm.DrawOverlay(tuikittest.NewScreen(40, 20))
 
 	// Item 0 ("Open") is actually drawn at column range [20,40), row 6 —
 	// clicking there must hit it.
@@ -27,7 +27,7 @@ func TestContextMenuClickNearRightEdgeHitsClampedItem(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("Action called %d times, want 1 — click at the drawn (clamped) position must hit \"Open\"", calls)
 	}
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Fatalf("menu stayed open after an item click; want it closed")
 	}
 }
@@ -39,7 +39,7 @@ func TestContextMenuClickPastClampedRightEdgeMisses(t *testing.T) {
 		{Label: "Open", Action: func() { calls++ }},
 		{Label: "Close"},
 	})
-	cm.Draw(tuikittest.NewScreen(40, 20))
+	cm.DrawOverlay(tuikittest.NewScreen(40, 20))
 
 	// The clamped menu spans columns [20,40) (see the right-edge test
 	// above); a click at column 45 is genuinely outside it and must not
@@ -48,7 +48,7 @@ func TestContextMenuClickPastClampedRightEdgeMisses(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("Action called %d times, want 0 — (45,6) is outside the clamped, actually-drawn menu", calls)
 	}
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Fatalf("menu stayed open after an outside click; want it closed")
 	}
 }
@@ -62,7 +62,7 @@ func TestContextMenuClickNearBottomEdgeHitsClampedItem(t *testing.T) {
 		{Label: "Open"},
 		{Label: "Close", Action: func() { calls++ }},
 	})
-	cm.Draw(tuikittest.NewScreen(40, 20))
+	cm.DrawOverlay(tuikittest.NewScreen(40, 20))
 
 	// "Close" (item 1) is drawn at row drawnY+1+1 = 16+2 = 18.
 	handled := cm.HandleMouse(tcell.NewEventMouse(6, 18, tcell.Button1, tcell.ModNone))
@@ -81,7 +81,7 @@ func newTestContextMenuWithDisabled(calls *int) *ContextMenu {
 		{Label: "Middle", Action: func() { *calls++ }},
 		{Label: "Last", Enabled: func() bool { return false }},
 	})
-	cm.Draw(tuikittest.NewScreen(40, 20))
+	cm.DrawOverlay(tuikittest.NewScreen(40, 20))
 	return cm
 }
 
@@ -95,7 +95,7 @@ func TestContextMenuClickOnDisabledItemDoesNotFireButCloses(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("Action fired for a disabled item via mouse click, want it not to")
 	}
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Fatalf("menu stayed open after clicking a disabled item; want it closed, same as any other item")
 	}
 }
@@ -123,7 +123,7 @@ func TestContextMenuEnterOnDisabledItemDoesNotFire(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("Action fired for a disabled item via KeyEnter, want it not to")
 	}
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Fatalf("menu stayed open after KeyEnter on a disabled item; want it closed, same as any other item")
 	}
 }
@@ -147,13 +147,13 @@ func TestContextMenuKeyDownSkipsDisabledItemToNextEnabled(t *testing.T) {
 func TestContextMenuHoverOutsideDoesNotClose(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}})
-	cm.Draw(tuikittest.NewScreen(40, 20))
+	cm.DrawOverlay(tuikittest.NewScreen(40, 20))
 
 	handled := cm.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
 	if handled {
 		t.Fatalf("HandleMouse() = true, want false (event outside the menu, not swallowed)")
 	}
-	if !cm.Visible() {
+	if !cm.OverlayActive() {
 		t.Fatalf("menu closed on a hover outside it; want it to stay open")
 	}
 }
@@ -161,10 +161,10 @@ func TestContextMenuHoverOutsideDoesNotClose(t *testing.T) {
 func TestContextMenuClickOutsideCloses(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}})
-	cm.Draw(tuikittest.NewScreen(40, 20))
+	cm.DrawOverlay(tuikittest.NewScreen(40, 20))
 
 	cm.HandleMouse(tcell.NewEventMouse(0, 0, tcell.Button1, tcell.ModNone))
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Fatalf("menu stayed open after a click outside it; want it closed")
 	}
 }
@@ -174,7 +174,7 @@ func TestContextMenuEscapeCloses(t *testing.T) {
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}})
 
 	cm.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Fatalf("menu stayed open after Escape; want it closed")
 	}
 }
@@ -196,13 +196,13 @@ func TestContextMenuHiddenIgnoresEvents(t *testing.T) {
 func TestContextMenuOutsideClickIsConsumed(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}, {Label: "Close"}})
-	cm.Draw(tuikittest.NewScreen(40, 20))
+	cm.DrawOverlay(tuikittest.NewScreen(40, 20))
 
 	// Row 0 is far above the menu, which was drawn at y=5.
 	if handled := cm.HandleMouse(tcell.NewEventMouse(1, 0, tcell.Button1, tcell.ModNone)); !handled {
 		t.Error("HandleMouse(outside click) = false, want true (must not fall through)")
 	}
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Error("menu still visible after an outside click")
 	}
 }
@@ -213,12 +213,12 @@ func TestContextMenuOutsideClickIsConsumed(t *testing.T) {
 func TestContextMenuOutsideMotionFallsThrough(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(5, 5, []MenuItem{{Label: "Open"}, {Label: "Close"}})
-	cm.Draw(tuikittest.NewScreen(40, 20))
+	cm.DrawOverlay(tuikittest.NewScreen(40, 20))
 
 	if handled := cm.HandleMouse(tcell.NewEventMouse(1, 0, tcell.ButtonNone, tcell.ModNone)); handled {
 		t.Error("HandleMouse(outside motion) = true, want false (must fall through)")
 	}
-	if !cm.Visible() {
+	if !cm.OverlayActive() {
 		t.Error("motion outside the menu closed it, want it left open")
 	}
 }

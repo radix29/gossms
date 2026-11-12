@@ -23,21 +23,21 @@ type Row interface {
 	Focusable() bool
 }
 
-// KeyHandler is implemented by rows that consume key events while focused (all
-// editable rows). Form forwards keys to the focused row first; on false it falls
-// back to its own navigation keys.
-type KeyHandler interface {
-	HandleKey(ev *tcell.EventKey) bool
-}
-
-// MouseHandler is implemented by rows that consume mouse events themselves
-// (grids, buttons, dropdowns, checkboxes). Form finds the row under the cursor
-// by the band each row occupied on the last Draw (not by asking the row), then
-// forwards the event; the row must still ignore events outside its bounds and
-// return false, as every tuikit control's HandleMouse does.
-type MouseHandler interface {
-	HandleMouse(ev *tcell.EventMouse) bool
-}
+// A row takes input through core's control interfaces, as any tuikit control
+// does:
+//
+//   - core.KeyHandler: rows that consume key events while focused (all editable
+//     rows). Form forwards keys to the focused row first; on false it falls back
+//     to its own navigation keys.
+//   - core.MouseHandler: rows that consume mouse events themselves (grids,
+//     buttons, dropdowns, checkboxes). Form finds the row under the cursor by the
+//     band each row occupied on the last Draw (not by asking the row), then
+//     forwards the event; the row must still ignore events outside its bounds and
+//     return false, as every tuikit control's HandleMouse does.
+//   - core.Overlay: rows with a popup that must draw after every other row, so
+//     rows below don't paint over it (SelectRow's list, EditorRow's completion,
+//     GridRow's "Show Value" popup) — see Form.DrawOverlay and
+//     Form.OverlayActive.
 
 // Copyable is implemented by rows with a sensible "copy to clipboard" value:
 // every row kind except Section/Note.
@@ -75,19 +75,6 @@ type Shrinkable interface {
 	MinDrawHeight() int
 	// SetDrawHeight sets the height the next Layout/Draw pair must use.
 	SetDrawHeight(h int)
-}
-
-// OverlayDrawer is implemented by rows that render a popup which must draw after
-// every other row, so rows below don't paint over it (a dropdown's open list).
-type OverlayDrawer interface {
-	DrawOverlay(s tcell.Screen)
-}
-
-// OverlayActiver is implemented by rows whose popup can currently be open
-// (SelectRow's dropdown list, GridRow's full-cell-content popup) — see
-// Form.OverlayActive.
-type OverlayActiver interface {
-	OverlayActive() bool
 }
 
 // ReadOnlyDrawer is implemented by a row that can render itself as flat,

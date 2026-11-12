@@ -188,18 +188,32 @@ Test: `TestClipScreenHidesCursorOutsideTheClip`. Unit-level only.
 
 ## C — Inconsistencies
 
-- **C1. Focus API.** Widgets, ListBox, DataGrid and Editor use `Focus(bool)`.
+- **C1. Focus API.** *(DONE 2026-11-12, step 11: `Focus(bool)`/`Focused() bool`
+  on every focusable control; TreeView, Editor and Splitter lost `SetActive`;
+  `PanelManager.SetActiveIndex`; `propsheet.Form.Focused` is now the form's
+  bool and `FocusedRow` the row. App-side `SetActive(bool)` remains only on
+  Activatable panels and the app's own `planview.PlanView`.)* Widgets, ListBox, DataGrid and Editor use `Focus(bool)`.
   TreeView uses `SetActive(bool)`, and Editor has both. `PanelManager.SetActive(i int)`
   has the same name as `layout.Activatable.SetActive(bool)`, which means a
   PanelManager can never be an Activatable panel. Nothing has a `Focused()`
   getter. → One spelling everywhere, `Focus(bool)`/`Focused() bool`.
   `SetActive(bool)` stays only as Activatable. Rename
   `PanelManager.SetActive` → `SetActiveIndex` (it already has `ActiveIndex`).
-- **C2. Change notification.** Button, ListBox and TreeView have callbacks.
+- **C2. Change notification.** *(DONE 2026-11-12: an `OnChange` field on
+  InputField (key, Cut, Paste), CheckBox, RadioBox, DropDown, never fired by a
+  setter. propsheet's Text/Check/Select/Radio rows hear user edits through it
+  (`notifyChanged` stays for Edit/Revert); LogViewer's filter re-filters
+  through it, so a paste into the box now re-filters too. Connect and Profile
+  keep their per-widget key routing: each runs a different follow-up.)* Button, ListBox and TreeView have callbacks.
   InputField, CheckBox, RadioBox and DropDown have none, so every host compares
   values after each key. → Add `OnChange`, fired by user edits only, never by
   setters.
-- **C3. The overlay contract is spelled five ways:** `DataGrid.OverlayActive`,
+- **C3.** *(DONE 2026-11-12: `core.Overlay` = `DrawOverlay` + `OverlayActive`
+  on DataGrid, Editor, DropDown, MenuBar, ContextMenu (`Draw` →
+  `DrawOverlay`) and propsheet.Form (`DrawOverlays` → `DrawOverlay`); Toolbar
+  and TreeView's hover hints implement it with `OverlayActive` always false.
+  propsheet's `OverlayDrawer`/`OverlayActiver`/`KeyHandler`/`MouseHandler`
+  are gone in favour of core's.)* **The overlay contract is spelled five ways:** `DataGrid.OverlayActive`,
   `Editor.CompletionActive`, `DropDown.IsOpen`, `MenuBar.IsOpen`,
   `ContextMenu.Visible`. propsheet declares its own
   `OverlayDrawer`/`OverlayActiver` on top. → One `core` interface
@@ -217,16 +231,31 @@ Test: `TestClipScreenHidesCursorOutsideTheClip`. Unit-level only.
   DataGrid row) with two constants (`doubleClickInterval`,
   `resizeDoubleClickInterval`, both 500 ms), each reading the wall clock
   directly. ListBox has none (B4). → S1.
-- **C6. PropertySheet buttons dispatch on label text.** `activateButton` and
+- **C6.** *(DONE 2026-11-12, step 12: buttons are `sheetButton` IDs;
+  `activateButton` and the applying greying dispatch on the ID, the text comes
+  from `propsheet.Strings`. Test: `TestRenamedButtonsKeepTheirActions`.)*
+  **PropertySheet buttons dispatch on label text.** `activateButton` and
   `sheet_draw.go` switch on `"Cancel"`, `"Close"`, `"Script Changes"` and
   `"Script"`, so renaming a label changes behavior, and localization is
   impossible. → Give buttons IDs, and keep the labels for display only.
-- **C7. Accessor sets differ.** CheckBox has `RectX/RectY` but no `Label`.
+- **C7.** *(DONE 2026-11-12: `Bounds() core.Rect` on every control, the drawn
+  extent for one-row widgets (label through closing bracket; RadioBox all its
+  rows); `RectX`/`RectY` dropped, the app reads `Bounds()`. `InputField.InputX`
+  stays: it is where the editable box starts, not a position. CheckBox gained
+  `Label`. Test: `TestWidgetBoundsMatchWhatIsDrawn`.)* **Accessor sets differ.** CheckBox has `RectX/RectY` but no `Label`.
   InputField has `RectX/RectY/InputX`. DropDown has `RectX` only. Button has
   `Label` only. `Bounds()` exists only on DataGrid and Editor. → `Bounds() core.Rect`
   on every control. Keep `RectX/RectY` until the app no longer uses them, then
   drop them.
-- **C8. Application text inside the library.** PanelManager's empty bar shows
+- **C8.** *(DONE 2026-11-12, step 12: `PanelManager.EmptyText` (default
+  "(no panels open)") and `ProgressDialog.ElapsedText`/`CancellingText`
+  (default "…the operation to stop"); the app sets its Ctrl+N and "server"
+  wording. Generic text is an exported `Strings` struct in `controls` (DataGrid
+  status, Copy menu, viewer hint/Close), `dialogs` (every button label) and
+  `propsheet` (buttons, hints, Loading/Error/Retry, Applying/Cancelling,
+  Reverted). `defaultHints` stayed generic: F5 and Ctrl+Z are the sheet's own
+  bindings. Dialog titles and FileDialog column headers remain hard-coded.)*
+  **Application text inside the library.** PanelManager's empty bar shows
   `"(no panels open — Ctrl+N for a new query)"`. ProgressDialog shows
   `"Cancelling — waiting for the server to stop"`. propsheet's `defaultHints`
   names F5/Ctrl+Z bindings. The rest is generic but hard-coded English:
@@ -264,11 +293,22 @@ Test: `TestClipScreenHidesCursorOutsideTheClip`. Unit-level only.
   library terms, and keep the bug-history *why* by citing tuikit tests
   instead of app files (CLAUDE.md: those comments name shipped bugs, so don't
   strip them).
-- **C11. Splitter limits are hard-coded per app layout** (0.5 within 0.1–0.9
+- **C11.** *(DONE 2026-11-12, step 12: `layout.NewSplitter(dir, ratio)`
+  (limits 0.1–0.9), `SetLimits` (re-clamps; nonsense ignored), `SetLabel`. The
+  two old constructors moved to the app as `newHorizontalSplitter`/
+  `newVerticalSplitter` in `internal/tui/app.go`; planview calls `NewSplitter`
+  directly. Test: `TestSplitterLimits`.)* **Splitter limits are hard-coded per app layout** (0.5 within 0.1–0.9
   for "editor over results", 0.3 within 0.1–0.8 for "explorer | panels"), and
   there is no setter. → `NewSplitter(dir, ratio)` + `SetLimits(min, max)`.
   Keep the two constructors as thin wrappers in the app.
-- **C12. Global state.** `theme.Active()` returns a pointer to the live
+- **C12.** *(DONE 2026-11-12, step 12, docs only: `Active()` keeps its
+  pointer (~130 per-frame readers, a large struct) and its doc says read-only,
+  change it with `SetPalette`. Every package-level setting —
+  `SetPalette`, `SetDefaultIndentWidth`, `ApplyingSpinner`, the `Strings`
+  vars — documents "UI goroutine", listed in `internal/tuikit/README.md`
+  § Design principles. "Before the first Draw" is the advice, not a rule:
+  Options changes the palette and indent width at runtime, between frames.)*
+  **Global state.** `theme.Active()` returns a pointer to the live
   global, so any caller can modify it. Other globals: `controls.SetDefaultIndentWidth`,
   `propsheet.ApplyingSpinner` (an exported var). → `Active()` returns a
   value, or its docs say read-only. Document all of them as "UI goroutine,
@@ -338,7 +378,16 @@ Optional, and only with a benchmark showing a gain:
   BorderActive caret and thumb). → Add named helpers for the repeated pairs and
   `theme.On(bg, fg)` for the rest. Fold `StyleInputDisabled` into
   `StyleControlDisabled`.
-- **S6. DataGrid's "Show Value" popup re-implements a modal** (dim, box, close
+- **S6.** *(DONE 2026-11-12, step 13: `controls.ValueViewer`
+  (`value_viewer.go`), exported, zero value ready: `Show(title, text)`,
+  `Close`, `Title`, `Text`, `core.Overlay`/`KeyHandler`/`MouseHandler`/
+  `ClipboardTarget`; the dismiss latch is a `core.PressLatch`. DataGrid holds
+  one (`viewer`) and forwards draw, input and clipboard to it. Test:
+  `TestValueViewerStandalone`; the grid's viewer tests are unchanged in
+  substance. Driven: Show Value on a long cell, Shift+Down + Ctrl+C copies,
+  Ctrl+X reports nothing, Escape returns to the grid. The Close-button click
+  was not driven: unit tests only.)*
+  **DataGrid's "Show Value" popup re-implements a modal** (dim, box, close
   button, hint, latch) inside `datagrid_overlay.go`. → Extract it into a
   `ValueViewer` overlay type with its own file, and have DataGrid hold one.
 - **S7. One fresh-press latch.** *(DONE 2026-11-12: `core.PressLatch` with
@@ -385,7 +434,13 @@ for the grid), and they are pinned by tests.
   clip when the dialog is not clamped, and the README states the contract.
   Better: a `dialogs.Stack` (draw/relayout/route/clipboard for the frontmost
   dialog) that App's stack wraps. App keeps its gesture-overlay snapshot.
-- **A3. Shared control interfaces in `core`:** `Focusable` (C1), `Overlay`
+- **A3.** *(DONE 2026-11-12: `core/control.go` — `Focusable`, `Enabler`,
+  `Bounded`, `KeyHandler`, `MouseHandler`, `Overlay`; each package's
+  `control_test.go` pins which control implements which. The app's
+  `focusable` ring type is `core.Focusable`; Connect's enabled check and
+  Find/Replace's key dispatch assert on `core.Enabler`/`core.KeyHandler`.
+  `forwardReleaseToFocusedField` keeps its type switch on purpose: it must
+  skip checkboxes and drop-downs.)* **Shared control interfaces in `core`:** `Focusable` (C1), `Overlay`
   (C3), `Enabler`, plus key/mouse handler interfaces. propsheet's capability
   interfaces and any focus ring are built on them, not on per-type switches.
 - **A4. Layering inside the new module.** `layout` imports `controls` only for
@@ -448,9 +503,9 @@ The structural moves come last.
 | 8 | ~~**A5** dependency-invariant test~~ **DONE** | guards everything after it | S |
 | 9 | ~~**S2** core.Buffer + tuikittest, migrate tests per package~~ **DONE** | later refactors get cheap tests | M–L |
 | 10 | ~~**S3, S4, S5** mechanical cleanups~~ **DONE** | no behavior change; diff-review | M |
-| 11 | **C1, C2, C3, C7 + A3** interfaces and API normalization | touches app call sites; one control family per step | L |
-| 12 | **C6, C8, C11, C12** IDs, strings, splitter limits, globals | API-visible; app wires defaults | M |
-| 13 | **S6** ValueViewer extraction | after C3 (it is an Overlay) | M |
+| 11 | ~~**C1, C2, C3, C7 + A3** interfaces and API normalization~~ **DONE** | touches app call sites; one control family per step | L |
+| 12 | ~~**C6, C8, C11, C12** IDs, strings, splitter limits, globals~~ **DONE** | API-visible; app wires defaults | M |
+| 13 | ~~**S6** ValueViewer extraction~~ **DONE** | after C3 (it is an Overlay) | M |
 | 14 | **A2** dialog clip/stack | after C4/B2 settle dialog routing | M |
 | 15 | **A1** T-SQL out of tuikit | largest; after 9 for test cheapness | L |
 | 16 | **A4** tabstrip to core; optional editor split | import churn, so do it last before the move | M |

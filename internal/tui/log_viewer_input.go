@@ -66,14 +66,7 @@ func (lv *LogViewer) HandleKey(ev *tcell.EventKey) bool {
 			lv.applyFilter()
 			return true
 		}
-		before := lv.filter.Value()
-		if !lv.filter.HandleKey(ev) {
-			return false
-		}
-		if lv.filter.Value() != before {
-			lv.applyFilter()
-		}
-		return true
+		return lv.filter.HandleKey(ev) // an edit re-filters through OnChange
 	}
 	// A row change moves the details pane to the top of the new entry: the old
 	// scroll offset points into a message no longer on screen.

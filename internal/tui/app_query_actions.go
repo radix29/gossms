@@ -102,14 +102,14 @@ func (a *App) toggleOutputColumnMeta() {
 // openPlanPanel opens a new detached panel showing plan — the Execution Plan
 // tab's "[ Expand ]" action. Every call adds a new panel.
 func (a *App) openPlanPanel(title string, plan *showplan.Plan) {
-	a.panels.SetActive(a.panels.AddPanel(NewPlanPanel(a, title, plan)))
+	a.panels.SetActiveIndex(a.panels.AddPanel(NewPlanPanel(a, title, plan)))
 	a.focusPanels()
 }
 
 // openPlanComparePanel opens a plan comparison in its own panel, the way
 // openPlanPanel opens a single plan.
 func (a *App) openPlanComparePanel(title string, left, right *showplan.Plan) {
-	a.panels.SetActive(a.panels.AddPanel(NewPlanComparePanel(a, title, left, right)))
+	a.panels.SetActiveIndex(a.panels.AddPanel(NewPlanComparePanel(a, title, left, right)))
 	a.focusPanels()
 }
 

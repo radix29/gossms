@@ -32,7 +32,7 @@ type Splitter struct {
 	dragBase  int // screen coordinate where drag started
 	ratioBase float64
 	label     string // optional label drawn on the splitter bar
-	active    bool   // see SetActive
+	active    bool   // see Focus
 
 	// press is held from the first Button1 of a gesture until its release,
 	// wherever the press landed: HandleMouse calls Fresh on every event, not only
@@ -42,25 +42,34 @@ type Splitter struct {
 	press core.PressLatch
 }
 
-// NewHorizontalSplitter creates a top/bottom splitter (editor over results).
-func NewHorizontalSplitter(label string) *Splitter {
-	return new(Splitter{
-		dir:      SplitterHorizontal,
-		ratio:    0.5,
-		minRatio: 0.1,
-		maxRatio: 0.9,
-		label:    label,
-	})
+// Default ratio limits of a new Splitter: neither pane can be dragged below a
+// tenth of the rect. SetLimits changes them.
+const (
+	defaultMinRatio = 0.1
+	defaultMaxRatio = 0.9
+)
+
+// NewSplitter creates a splitter giving ratio of the rect to the first pane
+// (top or left), within the default limits until SetLimits.
+func NewSplitter(dir SplitterDir, ratio float64) *Splitter {
+	sp := new(Splitter{dir: dir, ratio: 0.5, minRatio: defaultMinRatio, maxRatio: defaultMaxRatio})
+	sp.SetRatio(ratio)
+	return sp
 }
 
-// NewVerticalSplitter creates a left/right splitter (explorer | panels).
-func NewVerticalSplitter() *Splitter {
-	return new(Splitter{
-		dir:      SplitterVertical,
-		ratio:    0.3,
-		minRatio: 0.1,
-		maxRatio: 0.8,
-	})
+// SetLabel sets the text drawn on a horizontal splitter's bar; "" draws none.
+// A vertical bar has no room for one and ignores it.
+func (sp *Splitter) SetLabel(label string) { sp.label = label }
+
+// SetLimits bounds the ratio a drag, a key or SetRatio can reach, and clamps
+// the current ratio into the new range. Limits outside 0–1, NaN, or min > max
+// are ignored.
+func (sp *Splitter) SetLimits(minRatio, maxRatio float64) {
+	if !(minRatio >= 0 && maxRatio <= 1 && minRatio <= maxRatio) {
+		return
+	}
+	sp.minRatio, sp.maxRatio = minRatio, maxRatio
+	sp.ratio = core.Clamp(sp.ratio, minRatio, maxRatio)
 }
 
 // SetBounds positions the splitter in the available rect.
@@ -68,9 +77,15 @@ func (sp *Splitter) SetBounds(x, y, w, h int) {
 	sp.rect = core.Rect{X: x, Y: y, W: w, H: h}
 }
 
-// SetActive marks the bar (and label) as belonging to the focused region,
+// Bounds returns the rect SetBounds last gave the splitter: both panes and the
+// bar between them.
+func (sp *Splitter) Bounds() core.Rect { return sp.rect }
+
+// Focus marks the bar (and label) as belonging to the focused region,
 // drawing it in the focused-border style.
-func (sp *Splitter) SetActive(v bool) { sp.active = v }
+func (sp *Splitter) Focus(v bool) { sp.active = v }
+
+func (sp *Splitter) Focused() bool { return sp.active }
 
 // Ratio returns the current split ratio.
 func (sp *Splitter) Ratio() float64 { return sp.ratio }

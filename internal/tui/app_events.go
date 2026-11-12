@@ -59,11 +59,11 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		top.HandleKey(ev)
 		return false
 	}
-	if a.contextMenu.Visible() {
+	if a.contextMenu.OverlayActive() {
 		a.contextMenu.HandleKey(ev)
 		return false
 	}
-	if a.menuBar.IsOpen() {
+	if a.menuBar.OverlayActive() {
 		a.menuBar.HandleKey(ev)
 		return false
 	}
@@ -73,7 +73,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		a.helpDialog.Show()
 		return false
 	case tcell.KeyF10:
-		// Plain F10 opens the menu bar (the IsOpen check above handles
+		// Plain F10 opens the menu bar (the OverlayActive check above handles
 		// closing). Shift+F10 is the context menu and falls through.
 		if ev.Modifiers()&tcell.ModShift == 0 {
 			a.menuBar.Open()
@@ -274,11 +274,11 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		top.HandleMouse(ev)
 		return
 	}
-	if a.contextMenu.Visible() {
+	if a.contextMenu.OverlayActive() {
 		a.contextMenu.HandleMouse(ev)
 		return
 	}
-	if a.menuBar.IsOpen() {
+	if a.menuBar.OverlayActive() {
 		// An open dropdown gets first refusal on every mouse event; MenuBar
 		// decides what closes it (only an outside click).
 		a.menuBar.HandleMouse(ev)
@@ -402,7 +402,7 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 		for _, d := range a.dialogStack {
 			d.HandleMouse(ev)
 		}
-	} else if a.contextMenu.Visible() {
+	} else if a.contextMenu.OverlayActive() {
 		a.contextMenu.HandleMouse(ev)
 	}
 
@@ -422,7 +422,7 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	// up the menu bar, toolbar and panels behind the overlay as the pointer
 	// crosses them; a release nowhere resets the latches and clears any hover.
 	base := ev
-	if len(a.dialogStack) > 0 || a.contextMenu.Visible() {
+	if len(a.dialogStack) > 0 || a.contextMenu.OverlayActive() {
 		base = tcell.NewEventMouse(-1, -1, tcell.ButtonNone, ev.Modifiers())
 	}
 	a.menuBar.HandleMouse(base)
@@ -459,7 +459,7 @@ type overlayStack struct {
 func (a *App) overlaySnapshot() overlayStack {
 	return overlayStack{
 		dialog:      a.topDialog(),
-		contextMenu: a.contextMenu.Visible(),
-		menuBar:     a.menuBar.IsOpen(),
+		contextMenu: a.contextMenu.OverlayActive(),
+		menuBar:     a.menuBar.OverlayActive(),
 	}
 }

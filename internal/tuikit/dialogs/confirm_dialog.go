@@ -57,11 +57,12 @@ type ConfirmDialog struct {
 }
 
 // The button sets a showing can use, each with the answers its buttons mean.
-var (
-	twoButtons    = []string{"Yes", "No"}
-	threeButtons  = []string{"Yes", "No", "Cancel"}
-	scriptButtons = []string{"Yes", "No", "Script"}
+// Functions, not vars: Strings may change after package init.
+func twoButtons() []string    { return []string{Strings.Yes, Strings.No} }
+func threeButtons() []string  { return []string{Strings.Yes, Strings.No, Strings.Cancel} }
+func scriptButtons() []string { return []string{Strings.Yes, Strings.No, Strings.Script} }
 
+var (
 	twoAnswers    = []ConfirmAnswer{ConfirmYes, ConfirmNo}
 	threeAnswers  = []ConfirmAnswer{ConfirmYes, ConfirmNo, ConfirmCancel}
 	scriptAnswers = []ConfirmAnswer{ConfirmYes, ConfirmNo, ConfirmScript}
@@ -83,7 +84,7 @@ func (d *ConfirmDialog) Message() string { return d.message }
 // ShowConfirmCancel. The dialog sizes as ShowAlert does (see fitMessage).
 func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func(bool)) {
 	d.option = nil
-	d.show(title, message, twoButtons, twoAnswers, ConfirmNo, func(a ConfirmAnswer) {
+	d.show(title, message, twoButtons(), twoAnswers, ConfirmNo, func(a ConfirmAnswer) {
 		onConfirm(a == ConfirmYes)
 	})
 }
@@ -107,7 +108,7 @@ func (d *ConfirmDialog) ShowConfirmOption(title, message, optionLabel string, in
 	box.SetChecked(initial)
 	d.option = box
 	d.setOptFocused(false)
-	d.show(title, message, twoButtons, twoAnswers, ConfirmNo, func(a ConfirmAnswer) {
+	d.show(title, message, twoButtons(), twoAnswers, ConfirmNo, func(a ConfirmAnswer) {
 		onConfirm(a == ConfirmYes, box.Checked())
 	})
 }
@@ -117,7 +118,7 @@ func (d *ConfirmDialog) ShowConfirmOption(title, message, optionLabel string, in
 // work), Escape must pick neither and the user needs a way to back out.
 func (d *ConfirmDialog) ShowConfirmCancel(title, message string, onAnswer func(ConfirmAnswer)) {
 	d.option = nil
-	d.show(title, message, threeButtons, threeAnswers, ConfirmCancel, onAnswer)
+	d.show(title, message, threeButtons(), threeAnswers, ConfirmCancel, onAnswer)
 }
 
 // ShowConfirmScript is ShowConfirm with a third button answering ConfirmScript,
@@ -137,7 +138,7 @@ func (d *ConfirmDialog) ShowConfirmScript(title, message, optionLabel string, in
 		checked = box.Checked
 	}
 	d.setOptFocused(false)
-	d.show(title, message, scriptButtons, scriptAnswers, ConfirmNo, func(a ConfirmAnswer) {
+	d.show(title, message, scriptButtons(), scriptAnswers, ConfirmNo, func(a ConfirmAnswer) {
 		onAnswer(a, checked())
 	})
 }

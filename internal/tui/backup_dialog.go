@@ -548,7 +548,7 @@ func (d *BackupDialog) loadCompressionDefault() {
 // is an overlay that gets first refusal of every event.
 func (d *BackupDialog) openDropDown() *widgets.DropDown {
 	for _, dd := range []*widgets.DropDown{d.ddDatabase, d.ddCompress} {
-		if dd.IsOpen() {
+		if dd.OverlayActive() {
 			return dd
 		}
 	}

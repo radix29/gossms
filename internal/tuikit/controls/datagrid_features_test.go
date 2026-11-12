@@ -141,13 +141,13 @@ func TestDataGridRowNumbersGutter(t *testing.T) {
 func TestDataGridEnterAndClickNoLongerOpenViewer(t *testing.T) {
 	g := newCellCursorGrid() // 2x2 grid, Grant/Deny columns, no OnActivateCell
 	g.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if g.viewOpen {
+	if g.viewer.open {
 		t.Fatal("Enter should no longer open the built-in content viewer")
 	}
 	x := g.colWidths[0] + 2 // inside column 1
 	y := g.rect.Y + 2 + 1   // data row index 1
 	g.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
-	if g.viewOpen {
+	if g.viewer.open {
 		t.Fatal("a left-click should no longer open the built-in content viewer")
 	}
 	if row, col := g.SelectedCell(); row != 1 || col != 1 {
@@ -181,24 +181,24 @@ func TestDataGridRightClickShowsContextMenu(t *testing.T) {
 	x := g.colWidths[0] + 2 // inside column 1 ("Deny")
 	y := g.rect.Y + 2 + 1   // data row index 1
 	g.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button2, tcell.ModNone))
-	if !g.ctxMenu.Visible() {
+	if !g.ctxMenu.OverlayActive() {
 		t.Fatal("right-click on a read-only cell should show a context menu")
 	}
 	if row, col := g.SelectedCell(); row != 1 || col != 1 {
 		t.Fatalf("right-click should select the cell = (%d,%d), want (1,1)", row, col)
 	}
-	if len(g.ctxMenu.items) != 1 || g.ctxMenu.items[0].Label != showValueMenuItem {
-		t.Fatalf("context menu items = %+v, want a single %q item", g.ctxMenu.items, showValueMenuItem)
+	if len(g.ctxMenu.items) != 1 || g.ctxMenu.items[0].Label != Strings.ShowValue {
+		t.Fatalf("context menu items = %+v, want a single %q item", g.ctxMenu.items, Strings.ShowValue)
 	}
 
 	g.ctxMenu.items[0].Action()
-	if !g.viewOpen {
+	if !g.viewer.open {
 		t.Fatal("activating \"Show Value\" should open the content viewer")
 	}
-	if g.viewHeader != "Deny" {
-		t.Errorf("viewHeader = %q, want %q", g.viewHeader, "Deny")
+	if g.viewer.title != "Deny" {
+		t.Errorf("viewer title = %q, want %q", g.viewer.title, "Deny")
 	}
-	if got := g.viewEditor.Text(); got != "[ ]" {
+	if got := g.viewer.Text(); got != "[ ]" {
 		t.Errorf("viewer text = %q, want the full cell value %q", got, "[ ]")
 	}
 
@@ -207,7 +207,7 @@ func TestDataGridRightClickShowsContextMenu(t *testing.T) {
 	g2 := newCellCursorGrid()
 	g2.OnActivateCell = func(row, col int) {}
 	g2.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button2, tcell.ModNone))
-	if g2.ctxMenu.Visible() {
+	if g2.ctxMenu.OverlayActive() {
 		t.Error("an editable grid should not show a \"Show Value\" context menu")
 	}
 }
@@ -224,17 +224,17 @@ func TestDataGridCtrlSpaceShowsContextMenu(t *testing.T) {
 	if !g.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModCtrl)) {
 		t.Fatal("Ctrl+Space should be consumed")
 	}
-	if !g.ctxMenu.Visible() {
+	if !g.ctxMenu.OverlayActive() {
 		t.Fatal("Ctrl+Space on a read-only cell should show a context menu")
 	}
-	if len(g.ctxMenu.items) != 1 || g.ctxMenu.items[0].Label != showValueMenuItem {
-		t.Fatalf("context menu items = %+v, want a single %q item", g.ctxMenu.items, showValueMenuItem)
+	if len(g.ctxMenu.items) != 1 || g.ctxMenu.items[0].Label != Strings.ShowValue {
+		t.Fatalf("context menu items = %+v, want a single %q item", g.ctxMenu.items, Strings.ShowValue)
 	}
 
 	g2 := newCellCursorGrid()
 	g2.OnActivateCell = func(row, col int) {}
 	g2.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModCtrl))
-	if g2.ctxMenu.Visible() {
+	if g2.ctxMenu.OverlayActive() {
 		t.Error("an editable grid should not show a \"Show Value\" context menu from Ctrl+Space")
 	}
 }
@@ -247,13 +247,13 @@ func TestDataGridViewerIsReadOnlyAndSupportsSelection(t *testing.T) {
 	g := newCellCursorGrid()
 	g.selRow, g.selCol = 1, 0 // "[x]"
 	g.openViewer()
-	if !g.viewOpen {
+	if !g.viewer.open {
 		t.Fatal("openViewer should open the viewer")
 	}
-	before := g.viewEditor.Text()
+	before := g.viewer.Text()
 
 	g.HandleKey(tcell.NewEventKey(tcell.KeyRune, "z", tcell.ModNone))
-	if got := g.viewEditor.Text(); got != before {
+	if got := g.viewer.Text(); got != before {
 		t.Errorf("typing into the viewer mutated its text: got %q, want unchanged %q", got, before)
 	}
 
@@ -269,7 +269,7 @@ func TestDataGridViewerIsReadOnlyAndSupportsSelection(t *testing.T) {
 	}
 
 	g.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
-	if g.viewOpen {
+	if g.viewer.open {
 		t.Error("Escape should close the content viewer")
 	}
 	if g.HasSelection() {
@@ -386,8 +386,8 @@ func TestDataGridRightClickBlockSelectionCopy(t *testing.T) {
 		t.Fatalf("SelectedCell() after outside right-click = (%d,%d), want (2,1)", row, col)
 	}
 	items = g.ctxMenu.items
-	if len(items) != 2 || items[0].Label != "Copy" || items[1].Label != showValueMenuItem {
-		t.Fatalf("context menu items = %+v, want [Copy, %s]", items, showValueMenuItem)
+	if len(items) != 2 || items[0].Label != "Copy" || items[1].Label != Strings.ShowValue {
+		t.Fatalf("context menu items = %+v, want [Copy, %s]", items, Strings.ShowValue)
 	}
 }
 
@@ -401,14 +401,14 @@ func TestDataGridGutterHeaderRightClickOffersCopyAll(t *testing.T) {
 	gw := g.gutterWidth()
 
 	g.HandleMouse(tcell.NewEventMouse(g.rect.X+gw/2, g.rect.Y, tcell.Button2, tcell.ModNone))
-	if g.ctxMenu.Visible() {
+	if g.ctxMenu.OverlayActive() {
 		t.Fatal("gutter header right-click should show no menu without OnCopyRequest wired")
 	}
 
 	var copied string
 	g.OnCopyRequest = func(text string) { copied = text }
 	g.HandleMouse(tcell.NewEventMouse(g.rect.X+gw/2, g.rect.Y, tcell.Button2, tcell.ModNone))
-	if !g.ctxMenu.Visible() {
+	if !g.ctxMenu.OverlayActive() {
 		t.Fatal("gutter header right-click should show a menu once OnCopyRequest is wired")
 	}
 	items := g.ctxMenu.items
@@ -440,8 +440,8 @@ func TestDataGridGutterHeaderMenuAppendsHostItems(t *testing.T) {
 	g.OnGridMenuItems = func() []MenuItem { return []MenuItem{{Label: "Export Results"}} }
 
 	rightClick()
-	if items := g.ctxMenu.items; !g.ctxMenu.Visible() || len(items) != 1 || items[0].Label != "Export Results" {
-		t.Fatalf("without OnCopyRequest: visible %v, items %+v, want [Export Results]", g.ctxMenu.Visible(), items)
+	if items := g.ctxMenu.items; !g.ctxMenu.OverlayActive() || len(items) != 1 || items[0].Label != "Export Results" {
+		t.Fatalf("without OnCopyRequest: visible %v, items %+v, want [Export Results]", g.ctxMenu.OverlayActive(), items)
 	}
 
 	g.OnCopyRequest = func(string) {}
@@ -490,16 +490,16 @@ func TestDataGridOnShowValueClaimsCell(t *testing.T) {
 	if gotIdx != 1 || gotCol != "Deny" || gotVal != "[ ]" {
 		t.Errorf("OnShowValue got (%d, %q, %q), want (%d, %q, %q)", gotIdx, gotCol, gotVal, 1, "Deny", "[ ]")
 	}
-	if g.viewOpen {
+	if g.viewer.open {
 		t.Error("a claimed cell must not also open the built-in content viewer")
 	}
 
 	claim = false
 	g.openViewer()
-	if !g.viewOpen {
+	if !g.viewer.open {
 		t.Fatal("a declined cell should fall through to the built-in viewer")
 	}
-	if got := g.viewEditor.Text(); got != "[ ]" {
+	if got := g.viewer.Text(); got != "[ ]" {
 		t.Errorf("viewer text = %q, want %q", got, "[ ]")
 	}
 }
@@ -525,8 +525,8 @@ func TestHostMenuItemsJoinTheCellMenu(t *testing.T) {
 	if len(g.ctxMenu.items) != 3 {
 		t.Fatalf("menu items = %+v, want Show Value, a divider and the host's entry", g.ctxMenu.items)
 	}
-	if g.ctxMenu.items[0].Label != showValueMenuItem {
-		t.Errorf("first item = %q, want the built-in %q still first", g.ctxMenu.items[0].Label, showValueMenuItem)
+	if g.ctxMenu.items[0].Label != Strings.ShowValue {
+		t.Errorf("first item = %q, want the built-in %q still first", g.ctxMenu.items[0].Label, Strings.ShowValue)
 	}
 	if !g.ctxMenu.items[1].Divider {
 		t.Error("the host's entries are not separated from the built-in ones")
@@ -539,7 +539,7 @@ func TestHostMenuItemsJoinTheCellMenu(t *testing.T) {
 	// selection, and the selection changes between openings.
 	g.ctxMenu.Hide()
 	g.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModCtrl))
-	if !g.ctxMenu.Visible() {
+	if !g.ctxMenu.OverlayActive() {
 		t.Fatal("Ctrl+Space did not open the menu")
 	}
 	if asked != 2 {
@@ -553,7 +553,7 @@ func TestAHostContributingNothingLeavesTheMenuAlone(t *testing.T) {
 	g := newCellCursorGrid()
 	g.OnMenuItems = func() []MenuItem { return nil }
 	g.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModCtrl))
-	if len(g.ctxMenu.items) != 1 || g.ctxMenu.items[0].Label != showValueMenuItem {
+	if len(g.ctxMenu.items) != 1 || g.ctxMenu.items[0].Label != Strings.ShowValue {
 		t.Fatalf("menu items = %+v, want the built-in entry alone", g.ctxMenu.items)
 	}
 }

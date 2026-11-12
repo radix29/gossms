@@ -99,10 +99,10 @@ func (e *Editor) SetCompletionProvider(p CompletionProvider) {
 	e.closeCompletion()
 }
 
-// CompletionActive reports whether the popup is open. A host laying the editor
-// out beside another focusable widget must give it first refusal of every key and
-// mouse event while true, as with DataGrid.OverlayActive.
-func (e *Editor) CompletionActive() bool { return e.completionOpen }
+// OverlayActive reports whether the completion popup is open (core.Overlay). A
+// host laying the editor out beside another focusable widget must give it first
+// refusal of every key and mouse event while true.
+func (e *Editor) OverlayActive() bool { return e.completionOpen }
 
 // RefreshCompletion re-queries the provider at the cursor if the popup is open,
 // for a caller whose backing data arrived asynchronously and wants an open

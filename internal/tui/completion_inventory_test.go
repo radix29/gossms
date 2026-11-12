@@ -160,8 +160,8 @@ func openPlaceholderPopup(t *testing.T, qp *QueryPanel, database string) *[]cont
 	for _, r := range "SELECT * FROM C" {
 		qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
 	}
-	if !qp.editor.CompletionActive() || len(*last) != 1 || !(*last)[0].Placeholder {
-		t.Fatalf("setup: popup open = %v, items = %+v; want the placeholder alone", qp.editor.CompletionActive(), *last)
+	if !qp.editor.OverlayActive() || len(*last) != 1 || !(*last)[0].Placeholder {
+		t.Fatalf("setup: popup open = %v, items = %+v; want the placeholder alone", qp.editor.OverlayActive(), *last)
 	}
 	return last
 }
@@ -184,7 +184,7 @@ func TestInventoryLoadRefreshesPopupAfterUSEMovedDatabase(t *testing.T) {
 	qp.app.completion.inventories[masterKey].applyCatalog(&gosmo.Catalog{}, "")
 	qp.app.refreshSysCompletionPopups(qp.app.completion.inventories[masterKey].serverKey)
 
-	if !qp.editor.CompletionActive() {
+	if !qp.editor.OverlayActive() {
 		t.Fatal("popup closed; want it filled from tempdb's inventory")
 	}
 	if got := labels(*last); !slices.Contains(got, "dbo.Customers") {
@@ -207,20 +207,20 @@ func TestRunEntryPointsCloseCompletion(t *testing.T) {
 			qp.executing = true // refuse the run: the fake connection has no session
 
 			run(qp)
-			if qp.editor.CompletionActive() {
+			if qp.editor.OverlayActive() {
 				t.Fatalf("%s left the completion popup open", name)
 			}
 			// The load landing after the run must not reopen it...
 			qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "master")].applyCatalog(&gosmo.Catalog{}, "")
 			qp.app.refreshSysCompletionPopups(sysCompletionInventoryKey(qp.conn.Opts))
-			if qp.editor.CompletionActive() {
+			if qp.editor.OverlayActive() {
 				t.Errorf("a refresh after %s reopened the popup", name)
 			}
 			// ...but it is closed, not Escape-dismissed: typing on in the
 			// same token reopens it (in tempdb, which has a Customers).
 			qp.database = "tempdb"
 			qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, "u", tcell.ModNone))
-			if !qp.editor.CompletionActive() {
+			if !qp.editor.OverlayActive() {
 				t.Errorf("typing after %s didn't reopen the popup — the token was suppressed", name)
 			}
 		})
@@ -242,7 +242,7 @@ func TestLoadPanickedClosesWaitingPopup(t *testing.T) {
 	if _, ok := qp.app.completion.inventories[key]; ok {
 		t.Error("the panicked load's entry is still cached")
 	}
-	if qp.editor.CompletionActive() {
+	if qp.editor.OverlayActive() {
 		t.Error("popup still open on the placeholder after its load panicked")
 	}
 }

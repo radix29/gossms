@@ -210,7 +210,7 @@ func NewLogViewer(app *App, sc *db.ServerConn, logType gosmo.ErrorLogType, logNu
 		files:    make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
 		grid:     grid,
 		filter:   widgets.NewInputField(logFilterLabel, logFilterWidth, false),
-		splitter: layout.NewHorizontalSplitter("─── Selected row details ─── (drag or Ctrl+Up/Down to resize)"),
+		splitter: newHorizontalSplitter("─── Selected row details ─── (drag or Ctrl+Up/Down to resize)"),
 	})
 	lv.splitter.SetRatio(0.7)
 	lv.buildTools()
@@ -225,7 +225,7 @@ func (lv *LogViewer) SetActive(v bool) {
 	lv.active = v
 	lv.grid.Focus(v && !lv.filterFocused)
 	lv.filter.Focus(v && lv.filterFocused)
-	lv.splitter.SetActive(v)
+	lv.splitter.Focus(v)
 }
 
 // Close cancels any in-flight read. Called from App.closePanelAt; the
@@ -278,4 +278,4 @@ func (lv *LogViewer) layoutTools() {
 
 // filterVisible reports whether the filter field found room on the toolbar. A
 // field laid out off-screen must not take focus or draw.
-func (lv *LogViewer) filterVisible() bool { return lv.filter.RectX() >= 0 }
+func (lv *LogViewer) filterVisible() bool { return lv.filter.Bounds().X >= 0 }

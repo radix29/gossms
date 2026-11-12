@@ -11,6 +11,8 @@
 //   - runecol.go     — rune-index <-> terminal-column conversion
 //   - wordutil.go    — word-boundary helpers for Ctrl+arrow navigation
 //   - clipboard.go   — the ClipboardTarget/ClipboardHost interfaces
+//   - control.go     — the control interfaces: Focusable, Enabler, Bounded,
+//     KeyHandler, MouseHandler, Overlay
 //   - gesture.go     — Gesture, a mouse router's claimed-zone record
 //   - mathutil.go    — Clamp
 package core

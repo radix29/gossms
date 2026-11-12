@@ -169,7 +169,8 @@ var defaultIndentWidth = DefaultIndentWidth
 
 // SetDefaultIndentWidth sets the width newly created Editors start with. Values
 // outside 1..MaxIndentWidth are ignored. Existing editors keep theirs; use
-// SetIndentWidth.
+// SetIndentWidth. Package-level state with no lock: call it on the UI
+// goroutine, before the editors it should apply to are created.
 func SetDefaultIndentWidth(n int) {
 	if n < 1 || n > MaxIndentWidth {
 		return

@@ -510,11 +510,17 @@ var Light = Palette{
 	ChartHeading:   tcell.NewRGBColor(0, 100, 100),
 }
 
-// active is the current palette.
+// active is the current palette. Package-level state with no lock: SetPalette
+// and Active belong to the UI goroutine.
 var active = Default
 
-// SetPalette replaces the active palette. Call before rendering.
+// SetPalette replaces the active palette. Call it on the UI goroutine, before
+// the first Draw or between frames (a theme switch); every Style* function and
+// every Active reader sees it from the next Draw on.
 func SetPalette(p Palette) { active = p }
 
-// Active returns the currently active palette.
+// Active returns the live palette, not a copy: read it, never write through it.
+// A write would restyle every control behind SetPalette's back; change the
+// palette with SetPalette. A pointer because ~130 call sites read it per frame
+// and a Palette is large. UI goroutine only.
 func Active() *Palette { return &active }

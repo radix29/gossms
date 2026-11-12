@@ -50,7 +50,7 @@ func TestEditorDrawsWideRunesInTwoColumns(t *testing.T) {
 // sum of their widths, not at n.
 func TestEditorCaretFollowsDisplayColumns(t *testing.T) {
 	e := widthEditor("世界OK", 20, 3)
-	e.SetActive(true)
+	e.Focus(true)
 	e.cursorCol = 3 // after 世, 界 and 'O' — columns 0-1, 2-3, 4
 	e.ensureCursorVisible()
 
@@ -204,7 +204,7 @@ func TestWrapSegmentsTerminatesOnARuneWiderThanTheWidth(t *testing.T) {
 // the 'y' at column 5.
 func TestEditorDrawsCombiningMarkOnItsBase(t *testing.T) {
 	e := widthEditor("N'xe\u0301y'", 20, 3)
-	e.SetActive(true)
+	e.Focus(true)
 	e.cursorCol = 6 // after N, ', x, e, U+0301 and y
 	e.ensureCursorVisible()
 

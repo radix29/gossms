@@ -6,7 +6,6 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
@@ -20,7 +19,7 @@ func newLatchTestApp() *App {
 	a.contextMenu = &controls.ContextMenu{}
 	a.alertDialog = dialogs.NewAlertDialog(a.screen)
 	a.allDialogs = []Dialog{a.alertDialog}
-	a.explorerSplit = layout.NewVerticalSplitter()
+	a.explorerSplit = newVerticalSplitter()
 	a.explorerSplit.SetBounds(0, 1, 100, 28)
 	return a
 }
@@ -82,7 +81,7 @@ func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 	a.toolbar.SetBounds(0, 0, 100)
 
 	a.testClickAt(2, 0) // open the File menu
-	if !a.menuBar.IsOpen() {
+	if !a.menuBar.OverlayActive() {
 		t.Fatal("File menu did not open on the first click")
 	}
 	a.testClickAt(2, 2) // activate "Thing", which opens the alert
@@ -93,7 +92,7 @@ func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 	a.syncDialogStack()
 
 	a.testClickAt(2, 0)
-	if !a.menuBar.IsOpen() {
+	if !a.menuBar.OverlayActive() {
 		t.Error("menu header click after a dialog-opening menu item did not open the menu " +
 			"(MenuBar.mouseDragging left latched by the swallowed release)")
 	}

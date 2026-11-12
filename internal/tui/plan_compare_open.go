@@ -62,7 +62,7 @@ func compareTitle(a, b string) string {
 func (a *App) openShowplanComparison(from openPlan, toName string, to *showplan.Plan) {
 	cp := NewPlanComparePanel(a, compareTitle(from.name, toName), from.plan, to)
 	cp.sideNames = [2]string{from.name, toName}
-	a.panels.SetActive(a.panels.AddPanel(cp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(cp))
 	a.focusPanels()
 }
 

@@ -56,7 +56,7 @@ func TestEditorCursorStepsOverAClusterWhole(t *testing.T) {
 	for _, g := range graphemeCases {
 		n := len([]rune(g))
 		e := widthEditor("x"+g+"y", 20, 3)
-		e.SetActive(true)
+		e.Focus(true)
 		e.cursorCol = 1
 		e.HandleKey(tcell.NewEventKey(tcell.KeyRight, "", tcell.ModNone))
 		if e.cursorCol != 1+n {

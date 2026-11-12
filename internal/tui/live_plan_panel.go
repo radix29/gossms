@@ -82,13 +82,13 @@ const liveBackgroundAfter = 3 * time.Second
 func (a *App) openLivePlanPanel(sc *db.ServerConn, spid int) {
 	for i := range a.panels.Count() {
 		if lp, ok := a.panels.PanelAt(i).(*LivePlanPanel); ok && lp.sc == sc && lp.sessionID == spid {
-			a.panels.SetActive(i)
+			a.panels.SetActiveIndex(i)
 			a.focusPanels()
 			return
 		}
 	}
 	lp := newLivePlanPanel(a, sc, spid)
-	a.panels.SetActive(a.panels.AddPanel(lp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(lp))
 	a.focusPanels()
 	lp.start()
 }

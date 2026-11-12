@@ -17,7 +17,7 @@ func drawnFieldText(f *widgets.InputField) string {
 	f.Draw(s)
 	var b strings.Builder
 	for x := f.InputX() + 1; x < f.InputX()+1+f.Width(); x++ {
-		if r := s.RuneAt(x, f.RectY()); r != 0 {
+		if r := s.RuneAt(x, f.Bounds().Y); r != 0 {
 			b.WriteRune(r)
 		}
 	}

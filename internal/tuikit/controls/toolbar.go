@@ -220,6 +220,13 @@ func (tb *Toolbar) DrawOverlay(s tcell.Screen) {
 	core.DrawText(s, x+1, y, st, tip)
 }
 
+// OverlayActive is always false: the tooltip only draws over what is beneath
+// and takes no input (core.Overlay).
+func (tb *Toolbar) OverlayActive() bool { return false }
+
+// Bounds returns the toolbar's row, as SetBounds last placed it.
+func (tb *Toolbar) Bounds() core.Rect { return tb.rect }
+
 // HandleMouse updates hover state and fires a button's Action on click.
 // Returns true if the event's position falls within the toolbar's own
 // bounds (whether or not a button was actually hit), so the caller can

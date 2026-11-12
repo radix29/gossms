@@ -29,7 +29,7 @@ func partsOf(t *testing.T, f *propsheet.Form) transferPageParts {
 	var p transferPageParts
 	f.SetBounds(0, 0, 80, 40)
 	for ok := f.FocusFirst(); ok; ok = f.FocusNext() {
-		switch r := f.Focused().(type) {
+		switch r := f.FocusedRow().(type) {
 		case *propsheet.GridRow:
 			p.grid = r
 		case *propsheet.StaticRow:

@@ -82,7 +82,7 @@ func (a *App) showAGDashboardFor(sc *db.ServerConn, agName string) {
 	if idx < 0 {
 		idx = a.panels.AddPanel(NewAGDashboard(a, sc, agName))
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 

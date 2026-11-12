@@ -335,7 +335,7 @@ func TestFindDialogShowClearsTheDragLatch(t *testing.T) {
 	d.layout()
 	// Arm the latch the way a user does — a press inside the field — rather
 	// than by assignment, so the test also pins that a press arms one at all.
-	ix, y := d.fFind.InputX(), d.fFind.RectY()
+	ix, y := d.fFind.InputX(), d.fFind.Bounds().Y
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
 	if d.drag.Field() == nil {
 		t.Fatal("the press did not arm a latch — test premise is wrong")

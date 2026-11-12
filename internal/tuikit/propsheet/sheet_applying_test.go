@@ -29,7 +29,7 @@ func TestSheetApplyingGreysButtonsAndShowsSpinner(t *testing.T) {
 	if !strings.Contains(row, "Scripting...") {
 		t.Fatalf("button row while applying = %q, want the spinner label", row)
 	}
-	for _, label := range sheetButtonLabels {
+	for _, label := range p.buttonLabels() {
 		x := strings.Index(row, "[ "+label+" ]")
 		if x < 0 {
 			t.Fatalf("button row %q has no %q", row, label)
@@ -69,7 +69,7 @@ func TestSheetApplyingLeavesCancelLiveWhenCancellable(t *testing.T) {
 		y := p.ButtonRowY()
 		row := scr.Row(y)
 		out := map[string]bool{}
-		for _, label := range sheetButtonLabels {
+		for _, label := range p.buttonLabels() {
 			x := strings.Index(row, "[ "+label+" ]")
 			if x < 0 {
 				t.Fatalf("button row %q has no %q", row, label)

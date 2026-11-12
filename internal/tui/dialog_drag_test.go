@@ -38,7 +38,7 @@ func dragOutOf(t *testing.T, host interface {
 	HandleMouse(*tcell.EventMouse) bool
 }, f *widgets.InputField, dragX, dragY int) string {
 	t.Helper()
-	ix, y := f.InputX(), f.RectY()
+	ix, y := f.InputX(), f.Bounds().Y
 	if !host.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("the press inside the field was refused — test premise is wrong")
 	}
@@ -63,7 +63,7 @@ func TestConnectDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	// the User Name field, either of which would otherwise take the focus out
 	// from under the drag.
 	server := indexOfFocusable(d.focusable, d.fServer)
-	ix, y := d.fServer.InputX(), d.fServer.RectY()
+	ix, y := d.fServer.InputX(), d.fServer.Bounds().Y
 	if got := dragOutOf(t, d, d.fServer, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
@@ -93,7 +93,7 @@ func TestConnectDialogShowClearsTheDragLatch(t *testing.T) {
 	d.layoutFields()
 	// Arm the latch the way a user does — a press inside the field — rather
 	// than by assignment, so the test also pins that a press arms one at all.
-	ix, y := d.fServer.InputX(), d.fServer.RectY()
+	ix, y := d.fServer.InputX(), d.fServer.Bounds().Y
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
 	if d.drag.Field() == nil {
 		t.Fatal("the press did not arm a latch — test premise is wrong")
@@ -125,7 +125,7 @@ func TestBackupDialogDragOutOfDestKeepsExtending(t *testing.T) {
 	d.fDest.SetBounds(inner.X+1, inner.Y+2)
 	d.fDest.SetValue("abcdefgh")
 
-	ix, y := d.fDest.InputX(), d.fDest.RectY()
+	ix, y := d.fDest.InputX(), d.fDest.Bounds().Y
 	if got := dragOutOf(t, d, d.fDest, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
@@ -150,7 +150,7 @@ func TestRestoreDialogDragOutOfTargetKeepsExtending(t *testing.T) {
 	d.fTarget.SetBounds(inner.X+1, inner.Y+2)
 	d.fTarget.SetValue("abcdefgh")
 
-	ix, y := d.fTarget.InputX(), d.fTarget.RectY()
+	ix, y := d.fTarget.InputX(), d.fTarget.Bounds().Y
 	if got := dragOutOf(t, d, d.fTarget, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
@@ -193,7 +193,7 @@ func newOptionsForDrag(t *testing.T) *OptionsDialog {
 // pointer leaves it.
 func TestOptionsDialogDragOutOfTheFieldKeepsExtending(t *testing.T) {
 	d := newOptionsForDrag(t)
-	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.RectY()
+	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.Bounds().Y
 	// Past the right edge of the five-wide box and two rows down, over the
 	// IntelliSense checkbox, which would otherwise take the gesture out from
 	// under the drag.
@@ -213,7 +213,7 @@ func TestOptionsDialogDragOverTheButtonRowDoesNotPressIt(t *testing.T) {
 	d := newOptionsForDrag(t)
 	before := d.app.cfg.MaxCellLength
 
-	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.RectY()
+	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.Bounds().Y
 	if !d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("the press inside the field was refused — test premise is wrong")
 	}
@@ -239,7 +239,7 @@ func TestOptionsDialogDragOverTheButtonRowDoesNotPressIt(t *testing.T) {
 // press anywhere on screen.
 func TestOptionsDialogShowClearsTheDragLatch(t *testing.T) {
 	d := newOptionsForDrag(t)
-	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.RectY()
+	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.Bounds().Y
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
 	if d.drag.Field() == nil {
 		t.Fatal("the press did not arm a latch — test premise is wrong")
@@ -264,7 +264,7 @@ func TestOptionsDialogReleaseOutsideClearsTheFieldLatch(t *testing.T) {
 	inner := d.InnerRect()
 	d.fMaxCellLen.SetBounds(inner.X+1, inner.Y+1)
 
-	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.RectY()
+	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.Bounds().Y
 	if !d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("the press inside the field was refused — test premise is wrong")
 	}
@@ -288,7 +288,7 @@ func TestLogSearchDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 
 	// Two rows down, over fFrom/fTo, which would take the focus out from
 	// under the drag if the motion were hit-tested.
-	ix, y := d.fText1.InputX(), d.fText1.RectY()
+	ix, y := d.fText1.InputX(), d.fText1.Bounds().Y
 	if got := dragOutOf(t, d, d.fText1, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
@@ -312,7 +312,7 @@ func TestFilterDialogDragOutOfAValueFieldKeepsExtending(t *testing.T) {
 
 	// Two rows down, over another row's operator dropdown — a widget that
 	// answers a press and would swallow the motion.
-	ix, y := f.InputX(), f.RectY()
+	ix, y := f.InputX(), f.Bounds().Y
 	if got := dragOutOf(t, d, f, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
@@ -345,7 +345,7 @@ func TestFindDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	d.layout()
 	d.fFind.SetValue("abcdefgh")
 
-	ix, y := d.fFind.InputX(), d.fFind.RectY()
+	ix, y := d.fFind.InputX(), d.fFind.Bounds().Y
 	if got := dragOutOf(t, d, d.fFind, ix+6, y+3); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
@@ -379,7 +379,7 @@ func TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture(t *testing.T) 
 	d.layoutFields()
 	d.fServer.SetValue("abcdefgh")
 
-	ix, y := d.fServer.InputX(), d.fServer.RectY()
+	ix, y := d.fServer.InputX(), d.fServer.Bounds().Y
 	// Pressed and never released: the dialog goes away with the button down.
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
 	if d.drag.Field() == nil {
@@ -407,17 +407,17 @@ func TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture(t *testing.T) 
 func TestFilterDialogDragFromADropDownPickDoesNotPressAButton(t *testing.T) {
 	d := showTestFilterDialogOnScreen(t, 100, 40)
 	op := d.rows[0].op
-	opY := d.rows[0].value.RectY() // DropDown has no RectY; the row's widgets share one
+	opY := d.rows[0].value.Bounds().Y // DropDown has no RectY; the row's widgets share one
 	ev := func(x, y int, b tcell.ButtonMask) { d.HandleMouse(tcell.NewEventMouse(x, y, b, tcell.ModNone)) }
 
-	ev(op.RectX()+1, opY, tcell.Button1) // open the list
-	ev(op.RectX()+1, opY, tcell.ButtonNone)
-	if !op.IsOpen() {
+	ev(op.Bounds().X+1, opY, tcell.Button1) // open the list
+	ev(op.Bounds().X+1, opY, tcell.ButtonNone)
+	if !op.OverlayActive() {
 		t.Fatal("the press on the operator did not open its list — test premise is wrong")
 	}
-	ev(op.RectX()+1, opY+2, tcell.Button1) // pick the second operator
-	if op.IsOpen() || op.Selected() != 1 {
-		t.Fatalf("the pick did not land (open=%v, selected=%d) — test premise is wrong", op.IsOpen(), op.Selected())
+	ev(op.Bounds().X+1, opY+2, tcell.Button1) // pick the second operator
+	if op.OverlayActive() || op.Selected() != 1 {
+		t.Fatalf("the pick did not land (open=%v, selected=%d) — test premise is wrong", op.OverlayActive(), op.Selected())
 	}
 	cancelX, by := d.Rect().Right()-4, d.ButtonRowY()
 	ev(cancelX, by, tcell.Button1) // still held, dragged onto Cancel

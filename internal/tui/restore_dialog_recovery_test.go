@@ -56,7 +56,7 @@ func TestRecoveryOptionsMapByLabel(t *testing.T) {
 	}
 	d.Draw(s)
 	r := d.Rect()
-	firstOption := d.fStopAt.RectY() - 5 // the label, three options, a blank, the standby row
+	firstOption := d.fStopAt.Bounds().Y - 5 // the label, three options, a blank, the standby row
 	for i := range recoveryStates {
 		// The option's own text, before the checkbox column beside it.
 		row := screenRow(s, firstOption+i, r.X, d.InnerRect().X+1+restoreOptionsColX)
@@ -263,12 +263,12 @@ func TestRestoreRecoveryRowsFitTheForm(t *testing.T) {
 	d.syncSourceState()
 	d.Draw(s)
 
-	if y, top := d.fStopAt.RectY(), d.ButtonRowY()-3; y >= top {
+	if y, top := d.fStopAt.Bounds().Y, d.ButtonRowY()-3; y >= top {
 		t.Errorf("point-in-time row %d reaches the status line at %d", y, top)
 	}
 	r := d.Rect()
 	border := r.X + r.W - 1
-	for _, y := range []int{d.fStandby.RectY(), d.fStopAt.RectY()} {
+	for _, y := range []int{d.fStandby.Bounds().Y, d.fStopAt.Bounds().Y} {
 		if got := lastNonSpace(t, s, y, border); got >= border-1 {
 			t.Errorf("row %d runs to column %d, against the border at %d", y, got, border)
 		}
@@ -276,14 +276,14 @@ func TestRestoreRecoveryRowsFitTheForm(t *testing.T) {
 			t.Errorf("border cell on row %d = %q", y, str)
 		}
 	}
-	if cell, _, _ := s.Get(lastNonSpace(t, s, d.fStandby.RectY(), border), d.fStandby.RectY()); cell != "]" {
+	if cell, _, _ := s.Get(lastNonSpace(t, s, d.fStandby.Bounds().Y, border), d.fStandby.Bounds().Y); cell != "]" {
 		t.Errorf("standby row ends %q, want ]", cell)
 	}
 	rowText := func(y int) string { return screenRow(s, y, r.X, r.X+r.W) }
-	if got := rowText(d.fStopAt.RectY()); !strings.Contains(got, stopAtHint) {
+	if got := rowText(d.fStopAt.Bounds().Y); !strings.Contains(got, stopAtHint) {
 		t.Errorf("point-in-time row lacks its hint: %q", got)
 	}
-	if got := rowText(d.fStopAt.RectY() - 5); !strings.Contains(got, "WITH RECOVERY") || !strings.Contains(got, "Replace existing") {
+	if got := rowText(d.fStopAt.Bounds().Y - 5); !strings.Contains(got, "WITH RECOVERY") || !strings.Contains(got, "Replace existing") {
 		t.Errorf("RECOVERY row does not hold the Replace checkbox beside it: %q", got)
 	}
 }

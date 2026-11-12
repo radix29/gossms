@@ -79,10 +79,10 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 
 // openDropDown returns whichever history dropdown is currently open, if any.
 func (d *RestoreDialog) openDropDown() *widgets.DropDown {
-	if d.ddHistDB.IsOpen() {
+	if d.ddHistDB.OverlayActive() {
 		return d.ddHistDB
 	}
-	if d.ddHistSet.IsOpen() {
+	if d.ddHistSet.OverlayActive() {
 		return d.ddHistSet
 	}
 	return nil

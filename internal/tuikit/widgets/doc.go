@@ -7,7 +7,13 @@
 //   - Keyboard input is handled with HandleKey(*tcell.EventKey) bool.
 //   - Mouse input is handled with HandleMouse(*tcell.EventMouse) bool.
 //   - Rendering is done with Draw(tcell.Screen).
-//   - Focus is toggled with Focus(bool).
+//   - Focus is toggled with Focus(bool) and read with Focused().
+//   - Bounds() returns the drawn rect (label included).
+//   - A user edit of the value fires the OnChange field (InputField, CheckBox,
+//     RadioBox, DropDown); setters never do.
+//
+// These are core's control interfaces (core.Focusable, core.Bounded, ...);
+// control_test.go pins which widget implements which.
 //
 // Widgets are purely presentational: they hold their own value state and know
 // nothing about the application. The caller reads Value(), Checked(),

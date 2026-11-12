@@ -184,7 +184,7 @@ func (d *ProfileDialog) HandleKey(ev *tcell.EventKey) bool {
 	if d.onButtons {
 		return buttonRowKey(ev, &d.btnFocus, len(profileButtons), nil, d.doButton, d.Hide, d.leaveButtons)
 	}
-	if d.ddAllow.IsOpen() {
+	if d.ddAllow.OverlayActive() {
 		if ev.Key() == tcell.KeyEscape {
 			// Close the list, not the dialog.
 			d.ddAllow.HandleKey(ev)

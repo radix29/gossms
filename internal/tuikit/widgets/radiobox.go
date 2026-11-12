@@ -25,6 +25,11 @@ type RadioBox struct {
 	// a single pick at press time, not reassigned to whatever option the pointer
 	// drifts over.
 	press core.PressLatch
+
+	// OnChange fires after a key or click moves the selection, with the new
+	// index. SetSelected never fires it, and neither does a click on the option
+	// already selected.
+	OnChange func(i int)
 }
 
 // NewRadioBox creates a RadioBox with the given options. Selection starts at
@@ -38,7 +43,15 @@ func NewRadioBox(label string, options []string) *RadioBox {
 func (r *RadioBox) Label() string { return r.label }
 
 func (r *RadioBox) SetBounds(x, y int) { r.rect.X, r.rect.Y = x, y }
-func (r *RadioBox) Focus(v bool)       { r.focused = v }
+
+// Bounds returns the drawn group: the label row (if any) and one row per
+// option, as wide as the widest option.
+func (r *RadioBox) Bounds() core.Rect {
+	return core.Rect{X: r.rect.X, Y: r.rect.Y, W: r.Width(), H: r.Height()}
+}
+
+func (r *RadioBox) Focus(v bool)  { r.focused = v }
+func (r *RadioBox) Focused() bool { return r.focused }
 
 // SetEnabled toggles whether the selection can be moved. A disabled group draws
 // greyed and refuses keys and clicks, keeping its focus-ring place (see
@@ -154,11 +167,22 @@ func (r *RadioBox) HandleKey(ev *tcell.EventKey) bool {
 func (r *RadioBox) step(dir int) bool {
 	for i := r.selected + dir; i >= 0 && i < len(r.options); i += dir {
 		if r.OptionEnabled(i) {
-			r.selected = i
+			r.pick(i)
 			return true
 		}
 	}
 	return false
+}
+
+// pick is the one user edit of the selection, so OnChange fires from one place.
+func (r *RadioBox) pick(i int) {
+	if i == r.selected {
+		return
+	}
+	r.selected = i
+	if r.OnChange != nil {
+		r.OnChange(i)
+	}
 }
 
 // HandleMouse selects the option clicked.
@@ -178,7 +202,7 @@ func (r *RadioBox) HandleMouse(ev *tcell.EventMouse) bool {
 				return false
 			}
 			if r.press.Fresh(ev) {
-				r.selected = i
+				r.pick(i)
 			}
 			return true
 		}

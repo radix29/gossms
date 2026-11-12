@@ -167,7 +167,7 @@ func TestPanelManagerRemovePanelKeepsSamePanelActiveWhenRemovingBeforeIt(t *test
 	pm.AddPanel(b)
 	pm.AddPanel(c)
 	pm.AddPanel(d)
-	pm.SetActive(2) // C
+	pm.SetActiveIndex(2) // C
 	c.active = true
 
 	pm.RemovePanel(0) // remove A, to the left of active
@@ -194,7 +194,7 @@ func TestPanelManagerRemovePanelActivatesNeighborWhenActiveIsRemoved(t *testing.
 	pm.AddPanel(a)
 	pm.AddPanel(b)
 	pm.AddPanel(c)
-	pm.SetActive(1) // B
+	pm.SetActiveIndex(1) // B
 	b.active = true
 
 	pm.RemovePanel(1) // remove B, the active panel
@@ -218,7 +218,7 @@ func TestPanelManagerRemovePanelAfterActiveDoesNotChangeActive(t *testing.T) {
 	pm.AddPanel(a)
 	pm.AddPanel(b)
 	pm.AddPanel(c)
-	pm.SetActive(1) // B
+	pm.SetActiveIndex(1) // B
 	b.active = true
 
 	pm.RemovePanel(2) // remove C, to the right of active

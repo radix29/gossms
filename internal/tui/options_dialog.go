@@ -184,7 +184,7 @@ func (d *OptionsDialog) dropDowns() []*widgets.DropDown {
 // openDropDown is the dropdown whose list is open, or nil.
 func (d *OptionsDialog) openDropDown() *widgets.DropDown {
 	for _, dd := range d.dropDowns() {
-		if dd.IsOpen() {
+		if dd.OverlayActive() {
 			return dd
 		}
 	}

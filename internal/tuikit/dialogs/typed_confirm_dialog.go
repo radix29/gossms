@@ -70,7 +70,7 @@ func NewTypedConfirmDialog(s tcell.Screen) *TypedConfirmDialog {
 // required-text line and input down.
 func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, onConfirm func(bool)) {
 	d.OnConfirm = onConfirm
-	d.show(title, message, required, []string{"Confirm", "Cancel"},
+	d.show(title, message, required, []string{Strings.Confirm, Strings.Cancel},
 		[]ConfirmAnswer{ConfirmYes, ConfirmNo}, func(a ConfirmAnswer) {
 			if d.OnConfirm != nil {
 				d.OnConfirm(a == ConfirmYes)
@@ -85,7 +85,7 @@ func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, o
 // protect. Escape still answers No.
 func (d *TypedConfirmDialog) ShowTypedConfirmScript(title, message, required string, onAnswer func(ConfirmAnswer)) {
 	d.OnConfirm = nil
-	d.show(title, message, required, []string{"Confirm", "Cancel", "Script"},
+	d.show(title, message, required, []string{Strings.Confirm, Strings.Cancel, Strings.Script},
 		[]ConfirmAnswer{ConfirmYes, ConfirmNo, ConfirmScript}, onAnswer)
 }
 

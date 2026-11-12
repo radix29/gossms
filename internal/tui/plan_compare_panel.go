@@ -107,7 +107,7 @@ func NewPlanComparePanel(app *App, title string, a, b *showplan.Plan) *PlanCompa
 		stmtB: firstStatement(b),
 		props: newQSGrid(app),
 		ops:   newQSGrid(app),
-		split: layout.NewHorizontalSplitter("─── Operators ─── (drag or Ctrl+Up/Down to resize)"),
+		split: newHorizontalSplitter("─── Operators ─── (drag or Ctrl+Up/Down to resize)"),
 	})
 	p.pickers = controls.ToolRow{NoOverflow: true, Cells: []controls.ToolCell{
 		{Action: func() { p.showStatementMenu(pcPickA) }},
@@ -307,7 +307,7 @@ func (p *PlanComparePanel) openOperator(side int, n *showplan.Node) {
 	}
 	pp := NewPlanPanel(p.app, title, plan)
 	pp.planView.SelectNode(*idx, n.ID)
-	p.app.panels.SetActive(p.app.panels.AddPanel(pp))
+	p.app.panels.SetActiveIndex(p.app.panels.AddPanel(pp))
 	p.app.focusPanels()
 }
 
@@ -423,7 +423,7 @@ func (p *PlanComparePanel) Title() string { return p.title }
 // SetActive marks this panel focused (Activatable interface).
 func (p *PlanComparePanel) SetActive(v bool) {
 	p.active = v
-	p.split.SetActive(v)
+	p.split.Focus(v)
 	p.applyFocus()
 }
 

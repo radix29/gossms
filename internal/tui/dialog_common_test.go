@@ -14,6 +14,7 @@ import (
 type fakeFocusable struct{ focused bool }
 
 func (f *fakeFocusable) Focus(on bool) { f.focused = on }
+func (f *fakeFocusable) Focused() bool { return f.focused }
 
 func focusList(n int) ([]focusable, []*fakeFocusable) {
 	real := make([]*fakeFocusable, n)

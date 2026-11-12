@@ -188,7 +188,7 @@ func TestRightClickInsideAMarkedSelectionKeepsIt(t *testing.T) {
 	g.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button2, tcell.ModNone))
 	wantRows(t, g, []int{1, 3}, "right-click on a marked row")
 	for _, it := range g.cellContextMenuItems() {
-		if it.Label == showValueMenuItem {
+		if it.Label == Strings.ShowValue {
 			t.Fatal("Show Value offered on a multi-row selection, which has no single value to show")
 		}
 	}

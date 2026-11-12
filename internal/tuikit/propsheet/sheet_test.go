@@ -2,6 +2,7 @@ package propsheet
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -106,7 +107,7 @@ func TestSheetRefreshDiscardsSilentlyWithoutConfirmDiscard(t *testing.T) {
 	f := NewForm(Text("Name", "orig", 10))
 	p.SetPageForm(0, 1, f)
 	f.Focus(true)
-	f.Focused().(*TextRow).field.SetValue("changed")
+	f.FocusedRow().(*TextRow).field.SetValue("changed")
 
 	if !f.Dirty() {
 		t.Fatal("test setup: form should be dirty")
@@ -124,7 +125,7 @@ func TestSheetRefreshPromptsConfirmDiscardWhenDirty(t *testing.T) {
 	f := NewForm(Text("Name", "orig", 10))
 	p.SetPageForm(0, 1, f)
 	f.Focus(true)
-	f.Focused().(*TextRow).field.SetValue("changed")
+	f.FocusedRow().(*TextRow).field.SetValue("changed")
 
 	var confirmedPage = -1
 	var proceedFn func()
@@ -267,7 +268,7 @@ func TestSheetScriptButtonFiresOnScript(t *testing.T) {
 
 	p.setZone(zoneButtons)
 	p.btnFocus = 0
-	for _, label := range sheetButtonLabels {
+	for _, label := range p.buttonLabels() {
 		if label == "Script Changes" {
 			break
 		}
@@ -315,6 +316,39 @@ func TestScriptOnlySheetOffersScriptAndCancel(t *testing.T) {
 	}
 }
 
+// TestRenamedButtonsKeepTheirActions pins C6 of the 2026-11-12 review: the
+// sheet dispatches on the button, not its text, so a host that translates
+// Strings changes what is drawn and nothing else.
+func TestRenamedButtonsKeepTheirActions(t *testing.T) {
+	saved := Strings
+	t.Cleanup(func() { Strings = saved })
+	Strings.OK, Strings.Cancel = "Bine", "Anulează"
+	Strings.Apply, Strings.ScriptChanges = "Aplică", "Script modificări"
+
+	p := newTestSheet("General")
+	p.OnLoadPage = func(page, seq int) {}
+	p.Show()
+	p.SetPageForm(0, 1, NewForm(Static("Name", "srv01")))
+	var got []string
+	p.OnOK = func() { got = append(got, "ok") }
+	p.OnApply = func() { got = append(got, "apply") }
+	p.OnScript = func() { got = append(got, "script") }
+
+	if l := strings.Join(p.buttonLabels(), ","); l != "Bine,Anulează,Aplică,Script modificări" {
+		t.Fatalf("labels = %q", l)
+	}
+	for _, i := range []int{3, 2, 0} {
+		p.activateButton(i)
+	}
+	if strings.Join(got, ",") != "script,apply,ok" {
+		t.Fatalf("actions = %q, want script,apply,ok", got)
+	}
+	p.activateButton(1)
+	if p.Visible() {
+		t.Error("the renamed Cancel left the sheet open")
+	}
+}
+
 // TestSheetEscapeClosesOpenDropdownInsteadOfCancelling pins down that, with
 // a SelectRow's dropdown open, Escape closes the dropdown
 // (DropDown.HandleKey consumes it) rather than the whole sheet vanishing
@@ -333,7 +367,7 @@ func TestSheetEscapeClosesOpenDropdownInsteadOfCancelling(t *testing.T) {
 	// Enter below (DropDown.HandleKey returns false when unfocused).
 	sel.dd.Focus(true)
 	sel.dd.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) // open the dropdown
-	if !sel.dd.IsOpen() {
+	if !sel.dd.OverlayActive() {
 		t.Fatal("setup: expected dropdown to be open")
 	}
 
@@ -341,7 +375,7 @@ func TestSheetEscapeClosesOpenDropdownInsteadOfCancelling(t *testing.T) {
 	p.OnClose = func() { closed = true }
 	p.HandleKey(tuikittest.Key(tcell.KeyEscape, tcell.ModNone))
 
-	if sel.dd.IsOpen() {
+	if sel.dd.OverlayActive() {
 		t.Fatal("Escape should have closed the open dropdown")
 	}
 	if !p.Visible() || closed {
@@ -413,7 +447,7 @@ func TestSheetClipboardTextRowExplicitSelectionWins(t *testing.T) {
 	p.SetPageForm(0, 1, NewForm(Text("Name", "hello world", 20)))
 	p.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone))
 
-	row := p.PageForm(0).Focused().(*TextRow)
+	row := p.PageForm(0).FocusedRow().(*TextRow)
 	row.field.SelectAll()
 	if got := p.SelectedText(); got != "hello world" {
 		t.Fatalf("SelectedText() with an explicit selection = %q, want %q", got, "hello world")

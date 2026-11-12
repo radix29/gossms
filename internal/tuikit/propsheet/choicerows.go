@@ -65,7 +65,12 @@ func (r *CheckRow) Edit(v bool) {
 // SetOnChange installs a callback fired when user interaction changes the
 // state (RadioRow.SetOnChange's counterpart, for a box that drives other
 // rows). Not fired by SetChecked, which is programmatic.
-func (r *CheckRow) SetOnChange(fn func(bool)) { r.onChange = fn }
+// A key or click reaches it through CheckBox.OnChange; Edit and Revert through
+// notifyChanged.
+func (r *CheckRow) SetOnChange(fn func(bool)) {
+	r.onChange = fn
+	r.box.OnChange = fn
+}
 
 func (r *CheckRow) notifyChanged(before bool) {
 	if r.onChange != nil && r.box.Checked() != before {
@@ -130,19 +135,13 @@ func (r *CheckRow) HandleKey(ev *tcell.EventKey) bool {
 	if r.flat() {
 		return false
 	}
-	before := r.box.Checked()
-	handled := r.box.HandleKey(ev)
-	r.notifyChanged(before)
-	return handled
+	return r.box.HandleKey(ev)
 }
 func (r *CheckRow) HandleMouse(ev *tcell.EventMouse) bool {
 	if r.flat() {
 		return false
 	}
-	before := r.box.Checked()
-	handled := r.box.HandleMouse(ev)
-	r.notifyChanged(before)
-	return handled
+	return r.box.HandleMouse(ev)
 }
 func (r *CheckRow) CopyText() string {
 	if r.box.Checked() {
@@ -336,30 +335,32 @@ func (r *SelectRow) Draw(s tcell.Screen, focused bool) {
 	r.dd.Draw(s)
 }
 func (r *SelectRow) DrawOverlay(s tcell.Screen) { r.dd.DrawOverlay(s) }
-func (r *SelectRow) OverlayActive() bool        { return r.dd.IsOpen() }
+func (r *SelectRow) OverlayActive() bool        { return r.dd.OverlayActive() }
 func (r *SelectRow) HandleKey(ev *tcell.EventKey) bool {
 	if r.flat() {
 		return false
 	}
-	before := r.dd.Value()
-	handled := r.dd.HandleKey(ev)
-	r.notifyChanged(before)
-	return handled
+	return r.dd.HandleKey(ev)
 }
 func (r *SelectRow) HandleMouse(ev *tcell.EventMouse) bool {
 	if r.flat() {
 		return false
 	}
-	before := r.dd.Value()
-	handled := r.dd.HandleMouse(ev)
-	r.notifyChanged(before)
-	return handled
+	return r.dd.HandleMouse(ev)
 }
 
 // SetOnChange installs a callback fired when user interaction changes the
 // selection (TextRow.SetOnChange's counterpart). Not fired by
 // SetSelected/SetItems, which are programmatic and would re-enter their caller.
-func (r *SelectRow) SetOnChange(fn func(string)) { r.onChange = fn }
+// A key or click reaches it through DropDown.OnChange; Edit and Revert through
+// notifyChanged.
+func (r *SelectRow) SetOnChange(fn func(string)) {
+	r.onChange = fn
+	r.dd.OnChange = nil
+	if fn != nil {
+		r.dd.OnChange = func(int) { fn(r.dd.Value()) }
+	}
+}
 
 func (r *SelectRow) notifyChanged(before string) {
 	if r.onChange != nil && r.dd.Value() != before {
@@ -462,7 +463,12 @@ func (r *RadioRow) OptionEnabled(i int) bool { return r.rb.OptionEnabled(i) }
 // SetOnChange installs a callback fired when user interaction changes the
 // selection, given the new index (SelectRow.SetOnChange's counterpart, for a
 // group that drives other rows). Not fired by SetSelected, which is programmatic.
-func (r *RadioRow) SetOnChange(fn func(int)) { r.onChange = fn }
+// A key or click reaches it through RadioBox.OnChange; Edit and Revert through
+// notifyChanged.
+func (r *RadioRow) SetOnChange(fn func(int)) {
+	r.onChange = fn
+	r.rb.OnChange = fn
+}
 
 func (r *RadioRow) notifyChanged(before int) {
 	if r.onChange != nil && r.rb.Selected() != before {
@@ -534,19 +540,13 @@ func (r *RadioRow) HandleKey(ev *tcell.EventKey) bool {
 	if r.flat() {
 		return false
 	}
-	before := r.rb.Selected()
-	handled := r.rb.HandleKey(ev)
-	r.notifyChanged(before)
-	return handled
+	return r.rb.HandleKey(ev)
 }
 func (r *RadioRow) HandleMouse(ev *tcell.EventMouse) bool {
 	if r.flat() {
 		return false
 	}
-	before := r.rb.Selected()
-	handled := r.rb.HandleMouse(ev)
-	r.notifyChanged(before)
-	return handled
+	return r.rb.HandleMouse(ev)
 }
 func (r *RadioRow) CopyText() string {
 	if i := r.rb.Selected(); i >= 0 && i < len(r.options) {

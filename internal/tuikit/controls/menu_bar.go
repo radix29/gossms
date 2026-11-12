@@ -65,8 +65,12 @@ func (mb *MenuBar) LabelsEnd() int { return mb.menuHeaderOffset(len(mb.menus)) }
 // SetMenus replaces all menus.
 func (mb *MenuBar) SetMenus(menus []Menu) { mb.menus = menus }
 
-// IsOpen reports whether a dropdown is currently open.
-func (mb *MenuBar) IsOpen() bool { return mb.openMenu >= 0 }
+// OverlayActive reports whether a dropdown is open (core.Overlay).
+func (mb *MenuBar) OverlayActive() bool { return mb.openMenu >= 0 }
+
+// Bounds returns the bar's row, as SetBounds last placed it. An open dropdown
+// is outside it (DrawOverlay).
+func (mb *MenuBar) Bounds() core.Rect { return mb.rect }
 
 // Close closes any open dropdown and every submenu under it.
 func (mb *MenuBar) Close() {

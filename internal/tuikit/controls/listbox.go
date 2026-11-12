@@ -95,6 +95,11 @@ func (l *ListBox) SetSelected(i int) {
 // Focus sets the focused state.
 func (l *ListBox) Focus(v bool) { l.focused = v }
 
+func (l *ListBox) Focused() bool { return l.focused }
+
+// Bounds returns the rect SetBounds last gave the list.
+func (l *ListBox) Bounds() core.Rect { return l.rect }
+
 // Draw renders the list.
 func (l *ListBox) Draw(s tcell.Screen) {
 	p := theme.Active()

@@ -35,7 +35,7 @@ func TestDropDownClosedArrowsNotConsumed(t *testing.T) {
 func TestDropDownOpenArrowsConsumed(t *testing.T) {
 	d := newTestDropDown([]string{"a", "b", "c"})
 	d.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) // open
-	if !d.IsOpen() {
+	if !d.OverlayActive() {
 		t.Fatal("setup: expected dropdown to be open")
 	}
 	if !d.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
@@ -47,7 +47,7 @@ func TestDropDownOpenArrowsConsumed(t *testing.T) {
 	if !d.HandleKey(tuikittest.Key(tcell.KeyEscape, tcell.ModNone)) {
 		t.Fatal("open HandleKey(Escape) = false, want true")
 	}
-	if d.IsOpen() {
+	if d.OverlayActive() {
 		t.Fatal("Escape should have closed the dropdown")
 	}
 }
@@ -105,7 +105,7 @@ func openOn(t *testing.T, s tcell.Screen, d *DropDown) {
 	t.Helper()
 	d.Draw(s)
 	d.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
-	if !d.IsOpen() {
+	if !d.OverlayActive() {
 		t.Fatal("setup: Enter did not open the list")
 	}
 	d.Draw(s)
@@ -158,8 +158,8 @@ func TestDropDownOpensAboveWhenThereIsMoreRoom(t *testing.T) {
 	}
 	d.HandleMouse(tuikittest.Mouse(3, 4, tcell.Button1))
 	d.HandleMouse(tuikittest.Mouse(3, 4, tcell.ButtonNone))
-	if d.IsOpen() || d.Selected() != 4 {
-		t.Fatalf("after click: open=%v selected=%d, want closed on 4", d.IsOpen(), d.Selected())
+	if d.OverlayActive() || d.Selected() != 4 {
+		t.Fatalf("after click: open=%v selected=%d, want closed on 4", d.OverlayActive(), d.Selected())
 	}
 }
 
@@ -257,13 +257,13 @@ func TestDropDownScrollbarDragScrollsAndPicksNothing(t *testing.T) {
 		t.Fatalf("after press at the track's end: top = %d, want %d", d.firstShown(), 200-9)
 	}
 	d.HandleMouse(tuikittest.Mouse(5, 3, tcell.Button1)) // drift onto an item, held
-	if !d.IsOpen() || d.Selected() != 0 {
-		t.Fatalf("drag off the bar: open=%v selected=%d, want still open on 0", d.IsOpen(), d.Selected())
+	if !d.OverlayActive() || d.Selected() != 0 {
+		t.Fatalf("drag off the bar: open=%v selected=%d, want still open on 0", d.OverlayActive(), d.Selected())
 	}
 	d.HandleMouse(tuikittest.Mouse(5, 3, tcell.ButtonNone))
 	d.HandleMouse(tuikittest.Mouse(5, 3, tcell.Button1))
-	if d.IsOpen() || d.Selected() != d.firstShown() {
-		t.Fatalf("fresh click: open=%v selected=%d, want closed on the first shown item", d.IsOpen(), d.Selected())
+	if d.OverlayActive() || d.Selected() != d.firstShown() {
+		t.Fatalf("fresh click: open=%v selected=%d, want closed on the first shown item", d.OverlayActive(), d.Selected())
 	}
 }
 
@@ -276,18 +276,18 @@ func TestDisabledDropDownRefusesInputAndDrawsGreyed(t *testing.T) {
 	d.SetBounds(0, 2)
 	openOn(t, s, d)
 	d.SetEnabled(false)
-	if d.IsOpen() {
+	if d.OverlayActive() {
 		t.Fatal("disabling left the list open")
 	}
 	if d.Enabled() {
 		t.Fatal("Enabled() = true after SetEnabled(false)")
 	}
 	for _, k := range []tcell.Key{tcell.KeyEnter, tcell.KeyF4, tcell.KeyDown} {
-		if d.HandleKey(tuikittest.Key(k, tcell.ModNone)) || d.IsOpen() || d.Selected() != 0 {
+		if d.HandleKey(tuikittest.Key(k, tcell.ModNone)) || d.OverlayActive() || d.Selected() != 0 {
 			t.Fatalf("disabled dropdown acted on key %v", k)
 		}
 	}
-	if d.HandleMouse(tuikittest.Mouse(2, 2, tcell.Button1)) || d.IsOpen() {
+	if d.HandleMouse(tuikittest.Mouse(2, 2, tcell.Button1)) || d.OverlayActive() {
 		t.Fatal("disabled dropdown opened on a click")
 	}
 	d.HandleMouse(tuikittest.Mouse(2, 2, tcell.ButtonNone))
@@ -301,7 +301,7 @@ func TestDisabledDropDownRefusesInputAndDrawsGreyed(t *testing.T) {
 	}
 
 	d.SetEnabled(true)
-	if !d.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) || !d.IsOpen() {
+	if !d.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone)) || !d.OverlayActive() {
 		t.Fatal("re-enabled dropdown does not open on Enter")
 	}
 }

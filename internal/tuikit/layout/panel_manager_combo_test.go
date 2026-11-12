@@ -86,7 +86,7 @@ func TestComboClickSelectsThePanelDrawnUnderIt(t *testing.T) {
 	for range 29 {
 		pm.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 	}
-	pm.setActiveIndex(0)
+	pm.switchTo(0)
 	pm.Draw(s)
 
 	listX, listW, listH := pm.comboGeom()
@@ -198,7 +198,7 @@ func TestComboFollowsAnActivePanelChangedFromOutside(t *testing.T) {
 		t.Fatalf("comboScroll = %d at open with panel 0 active, want 0", pm.comboScroll)
 	}
 
-	pm.SetActive(29)
+	pm.SetActiveIndex(29)
 	if pm.active < pm.comboScroll || pm.active >= pm.comboScroll+listH {
 		t.Errorf("after SetActive(29) the active row is outside the window [%d,%d)",
 			pm.comboScroll, pm.comboScroll+listH)
@@ -211,20 +211,20 @@ func TestComboFollowsAnActivePanelChangedFromOutside(t *testing.T) {
 	}
 
 	// Ctrl+N's shape: append, then activate what was appended.
-	pm.SetActive(pm.AddPanel(&fakePanel{title: "Query New", closable: true}))
+	pm.SetActiveIndex(pm.AddPanel(&fakePanel{title: "Query New", closable: true}))
 	if pm.active < pm.comboScroll || pm.active >= pm.comboScroll+listH {
 		t.Errorf("after adding and activating a panel the active row is outside the window [%d,%d)",
 			pm.comboScroll, pm.comboScroll+listH)
 	}
 
-	pm.SetActive(0)
+	pm.SetActiveIndex(0)
 	if pm.comboScroll != 0 {
 		t.Errorf("comboScroll = %d after activating the first panel, want 0", pm.comboScroll)
 	}
 
 	// Removing panels shrinks the list under a scrolled offset; nothing may
 	// be left pointing past the end of it.
-	pm.SetActive(len(pm.panels) - 1)
+	pm.SetActiveIndex(len(pm.panels) - 1)
 	for range 25 {
 		pm.RemovePanel(len(pm.panels) - 1)
 	}
@@ -241,7 +241,7 @@ func TestComboScrollUntouchedWhileClosed(t *testing.T) {
 	pm, _ := openCombo(t, 30, 80, 12)
 	pm.comboOpen = false
 	pm.comboScroll = 7
-	pm.SetActive(29)
+	pm.SetActiveIndex(29)
 	if pm.comboScroll != 7 {
 		t.Errorf("comboScroll = %d after SetActive with the list closed, want it left at 7", pm.comboScroll)
 	}

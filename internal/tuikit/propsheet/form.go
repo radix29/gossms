@@ -129,6 +129,9 @@ func (f *Form) Rows() []Row { return f.rows }
 // SetBounds positions the form's content area.
 func (f *Form) SetBounds(x, y, w, h int) { f.rect = core.Rect{X: x, Y: y, W: w, H: h} }
 
+// Bounds returns the content area SetBounds last gave the form.
+func (f *Form) Bounds() core.Rect { return f.rect }
+
 // Focus sets whether the form as a whole holds focus, which drives whether the
 // current row draws highlighted. The first focusable row is focused the first
 // time this is called with true.
@@ -138,6 +141,10 @@ func (f *Form) Focus(v bool) {
 		f.FocusFirst()
 	}
 }
+
+// Focused reports whether the form as a whole holds focus (Focus); FocusedRow
+// is which row has it within the form.
+func (f *Form) Focused() bool { return f.formFocused }
 
 // FocusFirst focuses the first focusable row, if any.
 func (f *Form) FocusFirst() bool { f.focus = -1; return f.FocusNext() }
@@ -174,8 +181,8 @@ func (f *Form) setFocus(i int) {
 	f.ensureVisible(i)
 }
 
-// Focused returns the currently focused row, or nil.
-func (f *Form) Focused() Row {
+// FocusedRow returns the currently focused row, or nil.
+func (f *Form) FocusedRow() Row {
 	if f.focus < 0 || f.focus >= len(f.rows) {
 		return nil
 	}
@@ -351,11 +358,11 @@ func (f *Form) Draw(s tcell.Screen) {
 	}
 }
 
-// DrawOverlays draws every row's popup overlay (open dropdowns), if any.
+// DrawOverlay draws every row's popup overlay (open dropdowns), if any.
 // Call after Draw, once every other element in the dialog has been drawn.
-func (f *Form) DrawOverlays(s tcell.Screen) {
+func (f *Form) DrawOverlay(s tcell.Screen) {
 	for _, row := range f.rows {
-		if od, ok := row.(OverlayDrawer); ok {
+		if od, ok := row.(core.Overlay); ok {
 			od.DrawOverlay(s)
 		}
 	}
@@ -366,19 +373,19 @@ func (f *Form) DrawOverlays(s tcell.Screen) {
 // out beside other position-routed elements must give it first refusal of every
 // click while true, the contract of DataGrid.OverlayActive.
 func (f *Form) OverlayActive() bool {
-	row := f.Focused()
+	row := f.FocusedRow()
 	if row == nil {
 		return false
 	}
-	oa, ok := row.(OverlayActiver)
+	oa, ok := row.(core.Overlay)
 	return ok && oa.OverlayActive()
 }
 
 // HandleKey forwards to the focused row first; if it doesn't consume the
 // event, Tab/Backtab/Up/Down move focus and PgUp/PgDn scroll.
 func (f *Form) HandleKey(ev *tcell.EventKey) bool {
-	if row := f.Focused(); row != nil {
-		if kh, ok := row.(KeyHandler); ok && kh.HandleKey(ev) {
+	if row := f.FocusedRow(); row != nil {
+		if kh, ok := row.(core.KeyHandler); ok && kh.HandleKey(ev) {
 			return true
 		}
 	}
@@ -390,7 +397,7 @@ func (f *Form) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyPgDn:
 		if f.OverlayActive() {
 			// Scrolling the row list from under an open dropdown leaves its list at a stale
-			// position (DrawOverlays draws every row's overlay every frame). Swallow the key.
+			// position (DrawOverlay draws every row's overlay every frame). Swallow the key.
 			return true
 		}
 		f.scroll = min(f.maxScroll(f.contentWidth()), f.scroll+max(1, f.rect.H/2))
@@ -417,13 +424,13 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 			// and lies over other rows, and handing the wheel to the row under the pointer
 			// scrolled a grid hidden beneath the list. Swallowed either way, as with
 			// PgUp/PgDn above.
-			if mh, ok := f.Focused().(MouseHandler); ok {
+			if mh, ok := f.FocusedRow().(core.MouseHandler); ok {
 				mh.HandleMouse(ev)
 			}
 			return true
 		}
 		if row, ok := f.rowAt(ev); ok {
-			if mh, isHandler := row.(MouseHandler); isHandler && mh.HandleMouse(ev) {
+			if mh, isHandler := row.(core.MouseHandler); isHandler && mh.HandleMouse(ev) {
 				return true
 			}
 		}
@@ -454,8 +461,8 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 	// DataGrid claims any press inside it: a grid scrolled off-screen would swallow
 	// clicks on whatever row now sits there. Releases and motion still go to it so
 	// its latch is let go.
-	if row := f.Focused(); row != nil && (ev.Buttons() == tcell.ButtonNone || f.OverlayActive() || f.onScreen(f.focus)) {
-		if mh, ok := row.(MouseHandler); ok && mh.HandleMouse(ev) {
+	if row := f.FocusedRow(); row != nil && (ev.Buttons() == tcell.ButtonNone || f.OverlayActive() || f.onScreen(f.focus)) {
+		if mh, ok := row.(core.MouseHandler); ok && mh.HandleMouse(ev) {
 			return true
 		}
 	}
@@ -483,7 +490,7 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 			// draws underneath.
 			return true
 		}
-		if mh, ok := row.(MouseHandler); ok && mh.HandleMouse(ev) {
+		if mh, ok := row.(core.MouseHandler); ok && mh.HandleMouse(ev) {
 			if f.focusableAt(b.row) {
 				f.setFocus(b.row)
 			}
@@ -631,7 +638,7 @@ func (f *Form) Commit() {
 
 // CopyText returns the focused row's copyable value, if any.
 func (f *Form) CopyText() (string, bool) {
-	row := f.Focused()
+	row := f.FocusedRow()
 	if row == nil {
 		return "", false
 	}

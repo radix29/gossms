@@ -33,16 +33,11 @@ const extendSelectionMods = tcell.ModShift | tcell.ModAlt
 
 // HandleKey handles keyboard navigation.
 func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
-	if g.ctxMenu.Visible() {
+	if g.ctxMenu.OverlayActive() {
 		g.ctxMenu.HandleKey(ev)
 		return true
 	}
-	if g.viewOpen {
-		if ev.Key() == tcell.KeyEscape {
-			g.closeViewer()
-			return true
-		}
-		g.viewEditor.HandleKey(ev)
+	if g.viewer.HandleKey(ev) {
 		return true
 	}
 	// Ctrl+Space is the keyboard equivalent of right-clicking the selected cell. An
@@ -159,28 +154,12 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse handles mouse events.
 func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
-	if g.ctxMenu.Visible() {
+	if g.ctxMenu.OverlayActive() {
 		g.ctxMenu.HandleMouse(ev)
 		return true
 	}
-	// The tail of the gesture that closed the popup — see viewDismissing.
-	if g.viewDismissing {
-		if ev.Buttons() == tcell.ButtonNone {
-			g.viewDismissing = false
-		}
-		return true
-	}
-	if g.viewOpen {
-		if px, py := ev.Position(); ev.Buttons() == tcell.Button1 && g.viewCloseRect.Contains(px, py) {
-			g.closeViewer()
-			g.viewDismissing = true
-			return true
-		}
-		if g.viewEditor.HandleMouse(ev) {
-			return true
-		}
-		// Everything else is swallowed and the popup stays open: Escape and Close are
-		// the only ways out, so a stray click mid-selection can't discard a long value.
+	// The popup, while showing, and the tail of the gesture that closed it.
+	if g.viewer.HandleMouse(ev) {
 		return true
 	}
 	// Reset the drag-vs-fresh-click tracker on every release, wherever it lands and

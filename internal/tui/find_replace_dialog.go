@@ -374,11 +374,8 @@ func (d *FindReplaceDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 
 	if fields := d.fields(); d.focusIdx < len(fields) {
-		switch w := fields[d.focusIdx].(type) {
-		case *widgets.InputField:
-			return w.HandleKey(ev)
-		case *widgets.CheckBox:
-			return w.HandleKey(ev)
+		if kh, ok := fields[d.focusIdx].(core.KeyHandler); ok {
+			return kh.HandleKey(ev)
 		}
 	}
 	return true

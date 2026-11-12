@@ -236,8 +236,8 @@ func NewQueryStorePanel(app *App, sc *db.ServerConn, dbName, title string) *Quer
 		regressIdx: qsDefaultFilterIdx,
 		grid:       newQSGrid(app),
 		plansGrid:  newQSGrid(app),
-		chartSplit: layout.NewHorizontalSplitter("─── Report ─── (drag or Ctrl+Up/Down to resize)"),
-		planSplit:  layout.NewHorizontalSplitter("─── Plans for the selected query ───"),
+		chartSplit: newHorizontalSplitter("─── Report ─── (drag or Ctrl+Up/Down to resize)"),
+		planSplit:  newHorizontalSplitter("─── Plans for the selected query ───"),
 	})
 	p.chartSplit.SetRatio(0.35)
 	p.planSplit.SetRatio(0.6)
@@ -305,8 +305,8 @@ func (p *QueryStorePanel) Title() string { return "Query Store — " + p.dbName 
 func (p *QueryStorePanel) SetActive(v bool) {
 	p.active = v
 	p.applyFocus()
-	p.chartSplit.SetActive(v)
-	p.planSplit.SetActive(v)
+	p.chartSplit.Focus(v)
+	p.planSplit.Focus(v)
 }
 
 // applyFocus keeps both grids' focus flags in step so only one draws a cursor.

@@ -33,14 +33,14 @@ func TestFormFocusNextSkipsNonFocusableAndDisabled(t *testing.T) {
 	f.SetBounds(0, 0, 60, 20)
 	f.Focus(true) // focuses the first focusable row
 
-	if _, ok := f.Focused().(*StaticRow); !ok {
-		t.Fatalf("first focus = %T, want *StaticRow (Section must be skipped)", f.Focused())
+	if _, ok := f.FocusedRow().(*StaticRow); !ok {
+		t.Fatalf("first focus = %T, want *StaticRow (Section must be skipped)", f.FocusedRow())
 	}
 	if !f.FocusNext() {
 		t.Fatal("FocusNext() from Static = false, want true (Check should be reachable, skipping disabled Text)")
 	}
-	if _, ok := f.Focused().(*CheckRow); !ok {
-		t.Fatalf("focus after skip = %T, want *CheckRow (disabled Text must be skipped)", f.Focused())
+	if _, ok := f.FocusedRow().(*CheckRow); !ok {
+		t.Fatalf("focus after skip = %T, want *CheckRow (disabled Text must be skipped)", f.FocusedRow())
 	}
 	if f.FocusNext() {
 		t.Fatal("FocusNext() from the last row = true, want false")
@@ -159,11 +159,11 @@ func TestFormFocusPrev(t *testing.T) {
 	f := NewForm(Static("A", "1"), Static("B", "2"), Static("C", "3"))
 	f.SetBounds(0, 0, 60, 20)
 	f.FocusLast()
-	if got := f.Focused().(*StaticRow); got.Value() != "3" {
+	if got := f.FocusedRow().(*StaticRow); got.Value() != "3" {
 		t.Fatalf("FocusLast() landed on %q, want the C row", got.Value())
 	}
 	f.FocusPrev()
-	if got := f.Focused().(*StaticRow); got.Value() != "2" {
+	if got := f.FocusedRow().(*StaticRow); got.Value() != "2" {
 		t.Fatalf("FocusPrev() landed on %q, want the B row", got.Value())
 	}
 	f.FocusPrev()
@@ -182,14 +182,14 @@ func TestFormHandleKeyMovesFocusWhenFocusedRowDoesNotWantTheKey(t *testing.T) {
 	f := NewForm(Text("A", "one", 10), Text("B", "two", 10))
 	f.SetBounds(0, 0, 60, 20)
 	f.Focus(true)
-	if _, ok := f.Focused().(*TextRow); !ok {
-		t.Fatalf("initial focus = %T, want *TextRow", f.Focused())
+	if _, ok := f.FocusedRow().(*TextRow); !ok {
+		t.Fatalf("initial focus = %T, want *TextRow", f.FocusedRow())
 	}
 
 	if !f.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone)) {
 		t.Fatal("HandleKey(Down) = false, want true (should move focus)")
 	}
-	second := f.Focused().(*TextRow)
+	second := f.FocusedRow().(*TextRow)
 	if second.Value() != "two" {
 		t.Fatalf("focus after Down = %q, want the B row", second.Value())
 	}
@@ -197,7 +197,7 @@ func TestFormHandleKeyMovesFocusWhenFocusedRowDoesNotWantTheKey(t *testing.T) {
 	if !f.HandleKey(tuikittest.Key(tcell.KeyUp, tcell.ModNone)) {
 		t.Fatal("HandleKey(Up) = false, want true (should move focus back)")
 	}
-	first := f.Focused().(*TextRow)
+	first := f.FocusedRow().(*TextRow)
 	if first.Value() != "one" {
 		t.Fatalf("focus after Up = %q, want the A row", first.Value())
 	}
@@ -391,8 +391,8 @@ func TestFormClickReachesRowWhereAScrolledOutGridWas(t *testing.T) {
 		f.Draw(scr)
 	}
 	press(3, f.bands[0].y+2)
-	if _, ok := f.Focused().(*GridRow); !ok {
-		t.Fatalf("focused %T after a click on the grid, want the grid", f.Focused())
+	if _, ok := f.FocusedRow().(*GridRow); !ok {
+		t.Fatalf("focused %T after a click on the grid, want the grid", f.FocusedRow())
 	}
 	f.HandleMouse(tcell.NewEventMouse(5, 5, tcell.WheelDown, tcell.ModNone))
 	f.Draw(scr)
@@ -410,7 +410,7 @@ func TestFormClickReachesRowWhereAScrolledOutGridWas(t *testing.T) {
 	}
 	press(2, y)
 	if !check.Checked() {
-		t.Errorf("the click went to the scrolled-out grid (focused %T), not the checkbox", f.Focused())
+		t.Errorf("the click went to the scrolled-out grid (focused %T), not the checkbox", f.FocusedRow())
 	}
 }
 
@@ -443,7 +443,7 @@ func TestFormWheelOverAnOpenDropdownScrollsTheList(t *testing.T) {
 		t.Fatal("setup: Enter did not open the Owner list")
 	}
 	f.Draw(scr)
-	f.DrawOverlays(scr)
+	f.DrawOverlay(scr)
 	listX := -1
 	for x := range 60 {
 		if scr.RuneAt(x, f.bands[0].y) == '[' {
@@ -463,7 +463,7 @@ func TestFormWheelOverAnOpenDropdownScrollsTheList(t *testing.T) {
 		t.Fatalf("grid scrollRow=%d form scroll=%d after the wheel, want both unmoved", g.ScrollRow(), f.scroll)
 	}
 	f.Draw(scr)
-	f.DrawOverlays(scr)
+	f.DrawOverlay(scr)
 	f.HandleMouse(tcell.NewEventMouse(listX, f.bands[0].y+1, tcell.Button1, tcell.ModNone))
 	if sel.Selected() != 3 {
 		t.Fatalf("click on the list's first row picked %d, want 3 (the wheel scrolled it by 3)", sel.Selected())

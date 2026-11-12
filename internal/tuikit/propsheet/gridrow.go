@@ -91,12 +91,12 @@ func (r *GridRow) HandleKey(ev *tcell.EventKey) bool {
 }
 func (r *GridRow) HandleMouse(ev *tcell.EventMouse) bool { return r.Grid.HandleMouse(ev) }
 
-// DrawOverlay implements propsheet.OverlayDrawer: the grid's full-cell-content
+// DrawOverlay implements core.Overlay: the grid's full-cell-content
 // popup (controls.DataGrid.DrawOverlay) must draw after every row and the sheet's
 // button row, so Form defers it here instead of GridRow.Draw drawing it inline.
 func (r *GridRow) DrawOverlay(s tcell.Screen) { r.Grid.DrawOverlay(s) }
 
-// OverlayActive implements propsheet.OverlayActiver, so Form/PropertySheet give
+// OverlayActive implements core.Overlay, so Form/PropertySheet give
 // the grid's "Show Value" popup first refusal ahead of position-based click
 // routing (controls.DataGrid.OverlayActive).
 func (r *GridRow) OverlayActive() bool { return r.Grid.OverlayActive() }

@@ -265,8 +265,8 @@ func TestConnectDialogRowsFitAboveTheButtonRow(t *testing.T) {
 	bottom := d.ButtonRowY() - 2
 	rows := map[string]int{
 		"tab bar":           d.tabRect.Y,
-		"Server Name":       d.fServer.RectY(),
-		"Host Name In Cert": d.fHostCert.RectY(),
+		"Server Name":       d.fServer.Bounds().Y,
+		"Host Name In Cert": d.fHostCert.Bounds().Y,
 		"Custom Properties": d.extraPropsLabelY,
 	}
 	for name, y := range rows {
@@ -275,9 +275,9 @@ func TestConnectDialogRowsFitAboveTheButtonRow(t *testing.T) {
 				name, y, d.InnerRect().Y, bottom)
 		}
 	}
-	if d.fHostCert.RectY() >= d.extraPropsLabelY {
+	if d.fHostCert.Bounds().Y >= d.extraPropsLabelY {
 		t.Errorf("the last field row (%d) collides with the Custom Properties section (%d)",
-			d.fHostCert.RectY(), d.extraPropsLabelY)
+			d.fHostCert.Bounds().Y, d.extraPropsLabelY)
 	}
 	if got := core.DisplayWidth(d.fHostCert.Label()); got != connectLabelWidth {
 		t.Errorf("the widest label is %d columns, want exactly %d", got, connectLabelWidth)

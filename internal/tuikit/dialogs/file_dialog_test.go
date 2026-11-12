@@ -402,7 +402,7 @@ func TestFileDialogDragOutOfPathFieldKeepsExtending(t *testing.T) {
 	d, _ := newPlacedFileDialog(t)
 	d.pathField.SetValue("abcdefgh")
 
-	ix, y := d.pathField.InputX(), d.pathField.RectY()
+	ix, y := d.pathField.InputX(), d.pathField.Bounds().Y
 	if !d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("the press inside the path field was refused — test premise is wrong")
 	}
@@ -445,7 +445,7 @@ func TestFileDialogDragOutOfPathFieldKeepsExtending(t *testing.T) {
 func TestFileDialogReleaseOutsideTheDialogClearsTheDragLatch(t *testing.T) {
 	d, _ := newPlacedFileDialog(t)
 
-	ix, y := d.pathField.InputX(), d.pathField.RectY()
+	ix, y := d.pathField.InputX(), d.pathField.Bounds().Y
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
 	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
 
@@ -461,7 +461,7 @@ func TestFileDialogReleaseOutsideTheDialogClearsTheDragLatch(t *testing.T) {
 // dialog dismissed mid-drag would reopen routing every click to that field.
 func TestFileDialogShowClearsTheDragLatch(t *testing.T) {
 	d, dir := newPlacedFileDialog(t)
-	ix, y := d.pathField.InputX(), d.pathField.RectY()
+	ix, y := d.pathField.InputX(), d.pathField.Bounds().Y
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
 	if d.drag.Field() == nil {
 		t.Fatal("the press did not arm a latch — test premise is wrong")

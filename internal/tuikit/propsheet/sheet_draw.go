@@ -60,8 +60,8 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 	var disabled []bool
 	if p.applying {
 		disabled = make([]bool, len(labels))
-		for i, label := range labels {
-			disabled[i] = !(p.canCancelApply() && (label == "Cancel" || label == "Close"))
+		for i, b := range p.buttons() {
+			disabled[i] = !(p.canCancelApply() && b.dismisses())
 		}
 	}
 	p.DrawButtonsGated(s, labels, activeIdx, disabled)
@@ -71,7 +71,7 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 
 	if p.zone == zoneForm {
 		if f := p.PageForm(p.current); f != nil {
-			f.DrawOverlays(s)
+			f.DrawOverlay(s)
 		}
 	}
 }
@@ -110,15 +110,15 @@ func (p *PropertySheet) drawContent(s tcell.Screen, x, y, w, h int) {
 
 	switch slot.state {
 	case PageNotLoaded, PageLoading:
-		core.DrawText(s, x, contentY, dimSt, "Loading…")
+		core.DrawText(s, x, contentY, dimSt, Strings.Loading)
 	case PageError:
 		errSt := theme.StyleDialogError()
-		msg := "Error"
+		msg := Strings.Error
 		if slot.err != nil {
-			msg = "Error: " + slot.err.Error()
+			msg = Strings.Error + ": " + slot.err.Error()
 		}
 		core.DrawTextClipped(s, x, contentY, w, errSt, msg)
-		core.DrawText(s, x, contentY+2, dimSt, "Press F5 to retry.")
+		core.DrawText(s, x, contentY+2, dimSt, Strings.Retry)
 	case PageReady:
 		if slot.form != nil {
 			slot.form.SetBounds(x, contentY, w, contentH)

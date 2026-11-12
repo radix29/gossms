@@ -11,7 +11,6 @@ import (
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -25,7 +24,7 @@ func newTestLogViewer() *LogViewer {
 		files:    make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
 		grid:     controls.NewDataGrid(),
 		filter:   widgets.NewInputField(logFilterLabel, logFilterWidth, false),
-		splitter: layout.NewHorizontalSplitter(""),
+		splitter: newHorizontalSplitter(""),
 	}
 	lv.buildTools()
 	return lv

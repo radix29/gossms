@@ -25,14 +25,14 @@ func TestAReadOnlyFormCannotBeEdited(t *testing.T) {
 	f.SetReadOnly(true)
 	f.Focus(true)
 
-	if f.Focused() != Row(static) {
-		t.Fatalf("focused row = %T, want the static row, focusable to be copied", f.Focused())
+	if f.FocusedRow() != Row(static) {
+		t.Fatalf("focused row = %T, want the static row, focusable to be copied", f.FocusedRow())
 	}
 	if c, ok := f.CopyText(); !ok || c != "/var/opt/mssql/data" {
 		t.Errorf("static CopyText = %q, %v; want its value", c, ok)
 	}
-	if !f.FocusNext() || f.Focused() != Row(text) {
-		t.Fatalf("Tab went to %T, want the text row, focusable to be copied", f.Focused())
+	if !f.FocusNext() || f.FocusedRow() != Row(text) {
+		t.Fatalf("Tab went to %T, want the text row, focusable to be copied", f.FocusedRow())
 	}
 	for _, r := range "XY" {
 		f.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
@@ -57,8 +57,8 @@ func TestAReadOnlyFormCannotBeEdited(t *testing.T) {
 	if c, ok := f.CopyText(); !ok || c != "srv01" {
 		t.Errorf("CopyText = %q, %v; want the value, to copy", c, ok)
 	}
-	if !f.FocusNext() || f.Focused() != Row(check) {
-		t.Fatalf("Tab went to %T, want the check row", f.Focused())
+	if !f.FocusNext() || f.FocusedRow() != Row(check) {
+		t.Fatalf("Tab went to %T, want the check row", f.FocusedRow())
 	}
 	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
 	f.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
@@ -496,8 +496,8 @@ func TestAReadOnlyFormsGridsCanBeBrowsed(t *testing.T) {
 	f.Draw(tuikittest.NewScreen(60, 30))
 	f.Focus(true)
 
-	if f.Focused() != Row(plainRow) {
-		t.Fatalf("focused row = %T, want the first grid", f.Focused())
+	if f.FocusedRow() != Row(plainRow) {
+		t.Fatalf("focused row = %T, want the first grid", f.FocusedRow())
 	}
 	f.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
 	if got := plain.SelectedRow(); got != 1 || len(selected) != 1 || selected[0] != 1 {
@@ -508,11 +508,11 @@ func TestAReadOnlyFormsGridsCanBeBrowsed(t *testing.T) {
 
 	// Tab stops on the text row (to copy it), lands on the next grid, then
 	// leaves the form — the keyboard-trap rule still holds.
-	if !f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) || f.Focused() != Row(text) {
-		t.Fatalf("Tab went to %T, want the text row", f.Focused())
+	if !f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) || f.FocusedRow() != Row(text) {
+		t.Fatalf("Tab went to %T, want the text row", f.FocusedRow())
 	}
-	if !f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) || f.Focused() != Row(toggles) {
-		t.Fatalf("Tab went to %T, want the toggle grid", f.Focused())
+	if !f.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) || f.FocusedRow() != Row(toggles) {
+		t.Fatalf("Tab went to %T, want the toggle grid", f.FocusedRow())
 	}
 	// Onto a toggle column: Space and Enter on the text column toggle nothing
 	// even on an editable grid.
@@ -533,12 +533,12 @@ func TestAReadOnlyFormsGridsCanBeBrowsed(t *testing.T) {
 		f.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
 	}
 	press(1, gy+2+2)
-	if f.Focused() != Row(plainRow) || plain.SelectedRow() != 2 {
-		t.Errorf("click on the grid: focused %T, selected row %d; want the grid, row 2", f.Focused(), plain.SelectedRow())
+	if f.FocusedRow() != Row(plainRow) || plain.SelectedRow() != 2 {
+		t.Errorf("click on the grid: focused %T, selected row %d; want the grid, row 2", f.FocusedRow(), plain.SelectedRow())
 	}
 	press(2, f.bands[2].y)
-	if f.Focused() != Row(text) || text.Value() != "srv01" {
-		t.Errorf("click on the text row: focused %T, value %q; want it focused, unchanged", f.Focused(), text.Value())
+	if f.FocusedRow() != Row(text) || text.Value() != "srv01" {
+		t.Errorf("click on the text row: focused %T, value %q; want it focused, unchanged", f.FocusedRow(), text.Value())
 	}
 
 	if activations != 0 {

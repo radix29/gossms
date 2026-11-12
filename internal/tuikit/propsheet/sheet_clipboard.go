@@ -25,7 +25,7 @@ func (p *PropertySheet) focusedClipboardRow() (ClipboardRow, bool) {
 	if f == nil {
 		return nil, false
 	}
-	cr, ok := f.Focused().(ClipboardRow)
+	cr, ok := f.FocusedRow().(ClipboardRow)
 	return cr, ok
 }
 

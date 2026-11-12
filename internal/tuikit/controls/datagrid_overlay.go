@@ -4,8 +4,6 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 // SelectedCellsText returns the selection as tab-separated columns and
@@ -75,7 +73,7 @@ func (g *DataGrid) requestCopy(text string) {
 func (g *DataGrid) cellContextMenuItems() []MenuItem {
 	var items []MenuItem
 	if g.OnCopyRequest != nil {
-		items = append(items, MenuItem{Label: "Copy", Action: func() {
+		items = append(items, MenuItem{Label: Strings.Copy, Action: func() {
 			// The menu can outlive its rows (a refresh that empties the grid while it is
 			// open); copying then would blank the clipboard.
 			if g.SelectedRowCount() > 0 {
@@ -84,7 +82,7 @@ func (g *DataGrid) cellContextMenuItems() []MenuItem {
 		}})
 	}
 	if !g.blockSelecting && g.SelectedRowCount() <= 1 {
-		items = append(items, MenuItem{Label: showValueMenuItem, Action: g.openViewer})
+		items = append(items, MenuItem{Label: Strings.ShowValue, Action: g.openViewer})
 	}
 	if g.OnMenuItems != nil && !g.browseOnly {
 		if host := g.OnMenuItems(); len(host) > 0 {
@@ -104,8 +102,8 @@ func (g *DataGrid) gridContextMenuItems() []MenuItem {
 	var items []MenuItem
 	if g.OnCopyRequest != nil {
 		items = append(items,
-			MenuItem{Label: "Copy All", Action: func() { g.requestCopy(g.allRowsText(false)) }},
-			MenuItem{Label: "Copy All with Headers", Action: func() { g.requestCopy(g.allRowsText(true)) }})
+			MenuItem{Label: Strings.CopyAll, Action: func() { g.requestCopy(g.allRowsText(false)) }},
+			MenuItem{Label: Strings.CopyAllWithHeaders, Action: func() { g.requestCopy(g.allRowsText(true)) }})
 	}
 	if g.OnGridMenuItems != nil && !g.browseOnly {
 		if host := g.OnGridMenuItems(); len(host) > 0 {
@@ -118,10 +116,6 @@ func (g *DataGrid) gridContextMenuItems() []MenuItem {
 	return items
 }
 
-// showValueMenuItem labels the entry that opens a cell's full content, in the
-// built-in popup or the host's display via OnShowValue.
-const showValueMenuItem = "Show Value"
-
 // ShowValue does what the context menu's "Show Value" does for the selected
 // cell, for a host binding it to another gesture (an OnRowDoubleClick, say). It
 // ends the mouse press first: called from inside a press, the release then goes
@@ -133,9 +127,9 @@ func (g *DataGrid) ShowValue() {
 	g.openViewer()
 }
 
-// openViewer shows the full-content popup for the selected cell's text in a
-// read-only Editor (navigable, selectable, copyable). A host claiming the value
-// via OnShowValue displays it instead and the popup doesn't open.
+// openViewer shows the selected cell's text in the grid's ValueViewer, titled
+// with its column name. A host claiming the value via OnShowValue displays it
+// instead and the popup doesn't open.
 func (g *DataGrid) openViewer() {
 	// Row, not rows.Row: nil past the end, as on an empty grid or after a refresh
 	// shrank the source under an open menu.
@@ -143,73 +137,23 @@ func (g *DataGrid) openViewer() {
 	if g.selCol < 0 || g.selCol >= len(cells) {
 		return
 	}
-	g.viewHeader = ""
+	header := ""
 	if g.selCol < len(g.columns) {
-		g.viewHeader = g.columns[g.selCol]
+		header = g.columns[g.selCol]
 	}
 	// A NULL has no value for a host to open; the popup shows its "NULL".
 	if g.OnShowValue != nil && !g.IsNull(g.selRow, g.selCol) &&
-		g.OnShowValue(g.selCol, g.viewHeader, cells[g.selCol]) {
+		g.OnShowValue(g.selCol, header, cells[g.selCol]) {
 		return
 	}
-	if g.viewEditor == nil {
-		g.viewEditor = NewEditor(nil)
-		g.viewEditor.SetGutterVisible(false)
-		g.viewEditor.SetWrapMode(true)
-		g.viewEditor.SetReadOnly(true)
-	}
-	g.viewEditor.SetText(cells[g.selCol])
-	g.viewEditor.SetActive(true)
-	g.viewOpen = true
-	// A latch must not survive into the next showing of the same widget; see
-	// viewDismissing, and dialogs.ModalDialog.Show, which clears its own for the
-	// same reason.
-	g.viewDismissing = false
+	g.viewer.Show(header, cells[g.selCol])
 }
 
-// closeViewer hides the popup. Only Escape and "[ Close ]" dismiss it from the
-// UI; SetSource and SetError also call it, since a viewer left open over a
-// replaced row set strands itself on stale text.
-func (g *DataGrid) closeViewer() {
-	g.viewOpen = false
-	g.viewCloseRect = core.Rect{}
-}
-
-// viewCloseLabel is the popup's dismiss button, at the right end of the hint row.
-const viewCloseLabel = "[ Close ]"
-
-// DrawOverlay renders the right-click context menu and the full-content popup,
+// DrawOverlay renders the "Show Value" popup and the right-click context menu,
 // if open. Call after every other widget in the frame has drawn; see Draw.
 func (g *DataGrid) DrawOverlay(s tcell.Screen) {
-	if g.viewOpen {
-		sw, sh := s.Size()
-		w := min(cellViewerW, max(20, sw-4))
-		h := cellViewerLines + 4 // border top/bottom + cellViewerLines text rows + 1 hint row
-		x := max(0, (sw-w)/2)
-		y := max(0, (sh-h)/2)
-		rect := core.Rect{X: x, Y: y, W: w, H: h}
-
-		p := theme.Active()
-		core.DimArea(s, core.Rect{X: 0, Y: 0, W: sw, H: sh}, p.DialogOverlay, viewerDimNum, viewerDimDen)
-		core.FillRect(s, rect, ' ', theme.StyleDialog())
-		borderSt := theme.On(p.DialogBg, p.DialogBorder)
-		titleSt := theme.On(p.DialogBg, p.DialogTitle).Bold(true)
-		core.DrawBoxTitle(s, rect, g.viewHeader, borderSt, titleSt)
-
-		g.viewEditor.SetBounds(x+2, y+1, w-4, cellViewerLines)
-		g.viewEditor.Draw(s)
-
-		// Hint text and the Close button share the last row: the button is right-aligned
-		// and the hint clipped to what is left, so they can't overlap.
-		btnW := core.DisplayWidth(viewCloseLabel)
-		g.viewCloseRect = core.Rect{X: x + w - 2 - btnW, Y: y + h - 2, W: btnW, H: 1}
-		hintSt := theme.StyleDialogDim()
-		core.DrawTextClipped(s, x+2, y+h-2, w-6-btnW, hintSt,
-			"Esc or Close to dismiss — Shift+arrows to select, Ctrl+C to copy")
-		btnSt := theme.StyleActiveBlock().Bold(true)
-		core.DrawTextClipped(s, g.viewCloseRect.X, g.viewCloseRect.Y, btnW, btnSt, viewCloseLabel)
-	}
-	g.ctxMenu.Draw(s)
+	g.viewer.DrawOverlay(s)
+	g.ctxMenu.DrawOverlay(s)
 }
 
 // ---------------------------------------------------------------------------
@@ -218,34 +162,23 @@ func (g *DataGrid) DrawOverlay(s tcell.Screen) {
 
 // HasSelection and the SelectedText, Cut, Paste and SelectAll beside it make
 // *DataGrid a core.ClipboardTarget (and a propsheet.ClipboardRow's grid),
-// forwarding to the viewer's read-only Editor while
-// open. HasSelection is false otherwise, so a host falling back to its own
-// row/cell copy (e.g. propsheet.GridRow.CopyText) keeps doing so whenever the
-// viewer isn't showing.
-func (g *DataGrid) HasSelection() bool {
-	return g.viewOpen && g.viewEditor.HasSelection()
-}
+// forwarding to the "Show Value" popup (ValueViewer) while it is open.
+// HasSelection is false otherwise, so a host falling back to its own row/cell
+// copy (e.g. propsheet.GridRow.CopyText) keeps doing so whenever the viewer
+// isn't showing.
+func (g *DataGrid) HasSelection() bool { return g.viewer.HasSelection() }
 
-func (g *DataGrid) SelectedText() string {
-	if !g.viewOpen {
-		return ""
-	}
-	return g.viewEditor.SelectedText()
-}
+func (g *DataGrid) SelectedText() string { return g.viewer.SelectedText() }
 
-// Cut returns "" and removes nothing: the viewer is read-only. "" tells the
-// host nothing was cut, so it neither overwrites the clipboard nor reports a
-// cut (Copy is the way to take the text).
+// Cut returns "" and removes nothing: the grid and its viewer are read-only.
+// "" tells the host nothing was cut, so it neither overwrites the clipboard nor
+// reports a cut (Copy is the way to take the text).
 func (g *DataGrid) Cut() string { return "" }
 
 // Paste is a no-op: the viewer is read-only.
 func (g *DataGrid) Paste(text string) {}
 
-func (g *DataGrid) SelectAll() {
-	if g.viewOpen {
-		g.viewEditor.SelectAll()
-	}
-}
+func (g *DataGrid) SelectAll() { g.viewer.SelectAll() }
 
 // OverlayActive reports whether the context menu or the full-content popup is
 // showing. A host laying the grid out beside another focusable widget (e.g. an
@@ -254,5 +187,5 @@ func (g *DataGrid) SelectAll() {
 // the grid's rect (see DrawOverlay), so position- or focus-based routing would
 // hand their input to whatever widget sits under those coordinates.
 func (g *DataGrid) OverlayActive() bool {
-	return g.viewOpen || g.ctxMenu.Visible()
+	return g.viewer.OverlayActive() || g.ctxMenu.OverlayActive()
 }

@@ -56,7 +56,7 @@ func (d *RestoreDialog) Draw(s tcell.Screen) {
 	}
 	d.fStopAt.Draw(s)
 	hx := d.fStopAt.InputX() + d.fStopAt.Width() + 3 // past both brackets and a gap
-	core.DrawTextClipped(s, hx, d.fStopAt.RectY(), inner.X+inner.W-1-hx,
+	core.DrawTextClipped(s, hx, d.fStopAt.Bounds().Y, inner.X+inner.W-1-hx,
 		tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim), stopAtHint)
 
 	// Two lines: the form's last row (fStopAt) leaves that much room above the

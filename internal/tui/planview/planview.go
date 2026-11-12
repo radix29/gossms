@@ -118,16 +118,15 @@ func New() *PlanView {
 	v := new(PlanView{activeTab: TabPlan, selectedID: -1})
 	v.xml = controls.NewEditor(controls.XMLHighlighter(theme.Active()))
 	v.xml.SetReadOnly(true)
-	v.treeSplit = layout.NewVerticalSplitter()
-	v.treeSplit.SetRatio(0.55) // tree gets more room than the details pane
+	v.treeSplit = layout.NewSplitter(layout.SplitterVertical, 0.55) // tree gets more room than the details pane
+	v.treeSplit.SetLimits(0.1, 0.8)
 	v.treeSt.collapsed = make(map[int]bool)
 	v.summarySt.grid = controls.NewDataGrid()
 	// A cell cursor, as every read-only grid: it enables per-cell selection,
 	// the right-click / Ctrl+Space menu and "Show Value" (the Status column's
 	// full warning text gets clipped). Copy goes through OnCopyRequest.
 	v.summarySt.grid.SetCellCursor(true)
-	v.graphSplit = layout.NewHorizontalSplitter("")
-	v.graphSplit.SetRatio(0.7)
+	v.graphSplit = layout.NewSplitter(layout.SplitterHorizontal, 0.7)
 	v.graphSt.detailOpen = true // Properties strip visible from the start
 	return v
 }
@@ -318,7 +317,7 @@ func (v *PlanView) SetActive(active bool) {
 }
 
 func (v *PlanView) syncFocus() {
-	v.xml.SetActive(v.active && v.activeTab == TabXML)
+	v.xml.Focus(v.active && v.activeTab == TabXML)
 }
 
 // setActiveTab switches tabs, if t differs from the current one.

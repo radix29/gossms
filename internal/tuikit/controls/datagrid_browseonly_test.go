@@ -40,7 +40,7 @@ func TestABrowseOnlyGridSelectsButNeverActivates(t *testing.T) {
 	if activations != 0 {
 		t.Error("Ctrl+Space activated a cell on a browse-only grid")
 	}
-	if !g.ctxMenu.Visible() {
+	if !g.ctxMenu.OverlayActive() {
 		t.Error("Ctrl+Space did not open the Copy / Show Value menu on a browse-only grid")
 	}
 
@@ -63,14 +63,14 @@ func TestABrowseOnlyGridOffersShowValueButNotTheHostsItems(t *testing.T) {
 	g.SetBrowseOnly(true)
 
 	g.HandleMouse(tcell.NewEventMouse(1, g.rect.Y+2, tcell.Button2, tcell.ModNone))
-	if !g.ctxMenu.Visible() {
+	if !g.ctxMenu.OverlayActive() {
 		t.Fatal("right-click opened no menu on a browse-only grid")
 	}
 	var labels []string
 	for _, it := range g.ctxMenu.items {
 		labels = append(labels, it.Label)
 	}
-	if !slices.Contains(labels, showValueMenuItem) {
+	if !slices.Contains(labels, Strings.ShowValue) {
 		t.Errorf("menu = %v, want Show Value", labels)
 	}
 	if slices.Contains(labels, "Remove") {

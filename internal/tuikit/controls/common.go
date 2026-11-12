@@ -1,5 +1,26 @@
 package controls
 
+// Strings is the text this package's controls draw on their own: DataGrid's
+// status and error column, its built-in context-menu entries and its value
+// viewer. A host may replace any of it (to translate it, say) on the UI
+// goroutine before the first Draw; nothing dispatches on it. A grid reads
+// Ready when created and the menu entries when the menu opens.
+var Strings = struct {
+	Ready, Error                      string
+	Copy, CopyAll, CopyAllWithHeaders string
+	ShowValue                         string
+	ViewerHint, ViewerClose           string
+}{
+	Ready:              "Ready",
+	Error:              "Error",
+	Copy:               "Copy",
+	CopyAll:            "Copy All",
+	CopyAllWithHeaders: "Copy All with Headers",
+	ShowValue:          "Show Value",
+	ViewerHint:         "Esc or Close to dismiss — Shift+arrows to select, Ctrl+C to copy",
+	ViewerClose:        "Close",
+}
+
 // ---------------------------------------------------------------------------
 // Helpers shared across more than one file in this package
 // ---------------------------------------------------------------------------

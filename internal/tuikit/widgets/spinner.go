@@ -134,7 +134,8 @@ var (
 )
 
 // Spinners is the catalogue in presentation order — one-cell first — for a
-// picker or a demo to walk. SpinnerByName looks one up.
+// picker or a demo to walk. SpinnerByName looks one up. Read-only: it is
+// shared by every caller.
 var Spinners = []Spinner{
 	SpinnerBraille, SpinnerHalfCircle, SpinnerPulse, SpinnerCodex,
 	SpinnerDots3, SpinnerBounce4, SpinnerCodex3,

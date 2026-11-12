@@ -187,7 +187,7 @@ func TestAutoIndentAcceptsCompletionWithoutExtraIndent(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("SELECT"))
 	e.HandleKey(tuikittest.Key(tcell.KeyTab, tcell.ModNone)) // one indent level
 	typeString(e, "SEL")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected the completion popup open after typing \"SEL\"")
 	}
 

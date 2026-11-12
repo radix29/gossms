@@ -24,7 +24,7 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	// Same for the SQL editor's completion popup: it floats over the editor's rect
 	// independently of resultsFocused, so it must get every key before
 	// F5/Ctrl+PgUp/splitter routing can misroute one meant for it.
-	if p.editor.CompletionActive() {
+	if p.editor.OverlayActive() {
 		return p.editor.HandleKey(ev)
 	}
 	if ev.Key() == tcell.KeyF5 {
@@ -128,7 +128,7 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		return p.planView.HandleMouse(ev)
 	}
 	// Same reasoning, for the SQL editor's own completion popup.
-	if p.editor.CompletionActive() {
+	if p.editor.OverlayActive() {
 		return p.editor.HandleMouse(ev)
 	}
 	mx, my := ev.Position()

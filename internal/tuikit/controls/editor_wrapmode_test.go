@@ -206,7 +206,7 @@ func TestWrappedCaretAtEndOfFullWidthLineIsShown(t *testing.T) {
 			e.SetGutterVisible(false)
 			e.SetBounds(0, 0, w, h)
 			e.SetWrapMode(true)
-			e.SetActive(true)
+			e.Focus(true)
 			e.cursorRow, e.cursorCol = 0, len([]rune(tc.line))
 			e.ensureCursorVisible()
 

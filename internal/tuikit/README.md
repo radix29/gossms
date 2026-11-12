@@ -16,6 +16,8 @@ tuikit/
 │               (ClipScreen: a tcell.Screen that drops writes outside a clip
 │               rect), clipboard.go (ClipboardTarget/ClipboardHost — the
 │               Copy/Cut/Paste contract every widget package shares),
+│               control.go (Focusable/Enabler/Bounded/KeyHandler/
+│               MouseHandler/Overlay — the control contract hosts assert on),
 │               gesture.go (Gesture: which zone of a host claimed the held
 │               Button1 press, routed to until release),
 │               click.go (ClickTracker: pairs fresh presses into a
@@ -43,7 +45,9 @@ tuikit/
 │               optional top-border action, SetTitleButton), listbox.go,
 │               tabstrip.go;
 │               DataGrid: datagrid.go (state/source/widths), _draw, _input,
-│               _overlay (right-click menu, "Show Value" popup);
+│               _overlay (right-click menu, "Show Value");
+│               value_viewer.go (ValueViewer: the modal read-only popup
+│               "Show Value" opens; a host can hold its own);
 │               Editor: document.go (the one text-mutation chokepoint; its
 │               version counter keys the syntax/wrap/width caches),
 │               line_buffer.go (builds a document off the UI goroutine for an
@@ -122,6 +126,19 @@ rects and hand them down. Two shapes differ, both one row high: the
 share one display width, or a narrower frame leaves the previous one's tail
 (`TestSpinnerFramesAreUniformWidth`). `cmd/spindemo` shows them all.
 
+**One control contract, as small interfaces in `core`** (`control.go`):
+`Focusable` (`Focus(bool)`/`Focused() bool`), `Enabler`
+(`SetEnabled`/`Enabled`), `Bounded` (`Bounds() core.Rect`), `KeyHandler`,
+`MouseHandler`, `Overlay` (below) — plus `ClipboardTarget`. A host (a focus
+ring, `propsheet.Form`, an application dialog) type-asserts on these instead
+of switching over widget types; each package's `control_test.go` pins which
+control implements which. `Focus(bool)` is the one focus spelling:
+`SetActive(bool)` means only `layout.Activatable`, and
+`PanelManager.SetActiveIndex(i)` switches tabs. An input widget reports user
+edits through an `OnChange` field (`InputField`, `CheckBox`, `RadioBox`,
+`DropDown`), never fired by its setters, so a host need not compare values
+after every key.
+
 **Optional capability interfaces.** `layout.Panel` requires only `SetBounds`,
 `Draw`, `HandleKey`, `HandleMouse`, `Title`. `layout.Activatable`
 (`SetActive(bool)`) is called by `PanelManager` on every switch if
@@ -174,14 +191,30 @@ detail rows that follow a selection stay readable; the form is never `Dirty()`.
 
 **Overlays are drawn last and get first refusal of input.** A widget whose open
 state floats outside its rect — `DropDown`'s list, `DataGrid`'s menu/"Show
-Value" popup, `Editor`'s completion popup (`CompletionActive()`/`DrawOverlay`)
-— exposes `DrawOverlay(s)`, which the host calls after everything sharing that
-space, and checks it first in its own `HandleKey`/`HandleMouse` (see
-`DataGrid.OverlayActive()` and `QueryPanel`), or input goes to whatever sits
-underneath.
+Value" popup (a `ValueViewer`), `Editor`'s completion popup, `MenuBar`'s
+dropdown, a `ContextMenu` — implements `core.Overlay`: `DrawOverlay(s)`, which the host
+calls after everything sharing that space, and `OverlayActive()`, which the
+host checks first in its own `HandleKey`/`HandleMouse` (see `QueryPanel`), or
+input goes to whatever sits underneath. A hover hint (`Toolbar`, `TreeView`'s
+title button) is an `Overlay` whose `OverlayActive` is always false: it draws
+last but takes no input.
 
 **Theming is global but swappable**: `theme.Active()`; `theme.SetPalette(p)`
-once at startup reskins everything.
+at startup or on a theme switch reskins everything. `Active()` returns the
+live palette: read it, never write through it.
+
+**Package-level settings belong to the UI goroutine.** None has a lock; set
+each before the first Draw (or, for a runtime change, between frames):
+
+- `theme.SetPalette` — the palette every `Style*` and `Active()` reads.
+- `controls.SetDefaultIndentWidth` — the width new Editors start with.
+- `propsheet.ApplyingSpinner` — the button-row busy indicator.
+- `controls.Strings`, `dialogs.Strings`, `propsheet.Strings` — the library's
+  own UI text (button labels, DataGrid's status and menu, the sheet's hints
+  and page states). Controls dispatch on IDs or positions, never on this text,
+  so a host may translate it. App-specific text is a field instead:
+  `layout.PanelManager.EmptyText`, `dialogs.ProgressDialog.CancellingText`,
+  `PropertySheet.SetHints`.
 
 ## How the application layer uses it
 
@@ -198,8 +231,11 @@ wires controls with callbacks that load via `gosmo`, embeds
 1. Pick the package: leaf input → `widgets`; layout primitive → `layout`;
    self-contained modal → `dialogs`; bigger stateful/scrolling → `controls`.
 2. Depend only on `core` and `theme` unless building on another tuikit package.
-3. Interactive controls expose `SetBounds`, `Draw(tcell.Screen)`, `HandleKey`,
-   `HandleMouse`, plus plain getters.
+3. Interactive controls expose `SetBounds`, `Bounds`, `Draw(tcell.Screen)`,
+   `HandleKey`, `HandleMouse`, `Focus`/`Focused` if they take focus, plus plain
+   getters — the `core` control interfaces; add the new type to its package's
+   `control_test.go`. A value the user edits gets an `OnChange` field fired by
+   user edits only.
 4. If it can be switched off: `SetEnabled(bool)`/`Enabled() bool` with
    `InputField`'s contract (shared by `Button`, `CheckBox`, `RadioBox`) —
    draws greyed (`theme.StyleControlDisabled`; `StyleButtonDisabled` for

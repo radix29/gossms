@@ -208,7 +208,7 @@ func TestConfirmOptionReleaseOutsideDoesNotStrandTheLatch(t *testing.T) {
 	// Where Draw puts it; laying it out by hand keeps this about the routing.
 	inner := d.InnerRect()
 	d.option.SetBounds(inner.X+1, inner.Y+2+len(d.msgLines)+1)
-	x, y := d.option.RectX()+1, d.option.RectY()
+	x, y := d.option.Bounds().X+1, d.option.Bounds().Y
 
 	d.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
 	if !d.option.Checked() {

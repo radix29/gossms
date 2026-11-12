@@ -156,6 +156,10 @@ func (tv *TreeView) DrawOverlay(s tcell.Screen) {
 	core.DrawText(s, x+1, y, st, b.tip)
 }
 
+// OverlayActive is always false: the hint only draws over the rows beneath and
+// takes no input (core.Overlay).
+func (tv *TreeView) OverlayActive() bool { return false }
+
 // titleButtonRect returns where the title button is drawn, and whether it
 // shows at all at the current bounds and title (see SetTitleButton). Draw and
 // HandleMouse both go through it, so what is drawn is exactly what is
@@ -185,8 +189,13 @@ func (tv *TreeView) SetBounds(x, y, w, h int) {
 	tv.rect = core.Rect{X: x, Y: y, W: w, H: h}
 }
 
-// SetActive marks the tree as focused.
-func (tv *TreeView) SetActive(v bool) { tv.active = v }
+// Bounds returns the rect SetBounds last gave the tree, border included.
+func (tv *TreeView) Bounds() core.Rect { return tv.rect }
+
+// Focus marks the tree as focused: the selected row draws highlighted.
+func (tv *TreeView) Focus(v bool) { tv.active = v }
+
+func (tv *TreeView) Focused() bool { return tv.active }
 
 // SetNodes replaces the entire visible node list, typically rebuilt in OnExpand
 // after loading children.

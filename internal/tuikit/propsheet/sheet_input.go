@@ -2,6 +2,7 @@ package propsheet
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // ---------------------------------------------------------------------------
@@ -16,7 +17,7 @@ func (p *PropertySheet) focusedRowHandles(ev *tcell.EventKey) bool {
 	if f == nil {
 		return false
 	}
-	kh, ok := f.Focused().(KeyHandler)
+	kh, ok := f.FocusedRow().(core.KeyHandler)
 	return ok && kh.HandleKey(ev)
 }
 
@@ -53,7 +54,7 @@ func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 			return true
 		}
 		if p.RevertPage(p.current) {
-			p.SetMessage("Reverted to the loaded values.", false)
+			p.SetMessage(Strings.Reverted, false)
 		} else {
 			p.SetMessage("Nothing to revert — no unsaved changes on this page.", false)
 		}
@@ -168,7 +169,7 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	// A focused row's open overlay (SelectRow's dropdown, GridRow's "Show Value"
-	// popup) draws last (see Form.DrawOverlays) and can extend below its band far
+	// popup) draws last (see Form.DrawOverlay) and can extend below its band far
 	// enough to overlap the button row or page list, so it gets first refusal here,
 	// as DataGrid.OverlayActive() asks of its host one level down.
 	if f := p.PageForm(p.current); f != nil && f.OverlayActive() {

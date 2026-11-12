@@ -47,7 +47,7 @@ func TestEditorCompletionTriggersOnTyping(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers", "Orders", "Products"))
 
 	typeString(e, "Cu")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected completion popup open after typing \"Cu\"")
 	}
 	if len(e.completionItems) != 1 || e.completionItems[0].Text != "Customers" {
@@ -60,7 +60,7 @@ func TestEditorCompletionNoMatchStaysClosed(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
 	typeString(e, "Zz")
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected no popup when nothing matches the typed prefix")
 	}
 }
@@ -70,12 +70,12 @@ func TestEditorCompletionCommitReplacesPrefixAndUndoRestores(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
 	typeString(e, "Cu")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open before commit")
 	}
 
 	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected popup closed after commit")
 	}
 	if got := e.Text(); got != "Customers" {
@@ -109,24 +109,24 @@ func TestEditorCompletionEscapeDismissesAndSuppresses(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
 	typeString(e, "Cu")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open")
 	}
 
 	e.HandleKey(tuikittest.Key(tcell.KeyEscape, tcell.ModNone))
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected popup closed after Escape")
 	}
 
 	// Still on the same token: must stay suppressed.
 	typeString(e, "s")
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected popup to stay suppressed while still on the same token")
 	}
 
 	// Moving to a new token clears the suppression.
 	typeString(e, " C")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup to reopen once the cursor left the suppressed token")
 	}
 }
@@ -136,13 +136,13 @@ func TestEditorCompletionSpaceNeverOpensFromClosedState(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
 	typeString(e, " ")
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected a bare space to never open the popup from closed")
 	}
 
 	// A non-blank character right after still opens it.
 	typeString(e, "C")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup to open once a non-blank character was typed")
 	}
 }
@@ -153,7 +153,7 @@ func TestEditorCompletionEnterNeverOpensOnBlankLine(t *testing.T) {
 	e.cursorCol = len("Cu")
 
 	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected Enter's blank new line to never open the popup")
 	}
 }
@@ -165,13 +165,13 @@ func TestEditorCompletionDotAloneDoesNotOpen(t *testing.T) {
 	typeString(e, "sys")
 	e.closeCompletion() // in case typing opened it; test the dot from closed
 	typeString(e, ".")
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected '.' alone to not open the popup — only a started word (letter or '[') may")
 	}
 
 	// The next word's first letter opens it.
 	typeString(e, "o")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open once a word started after the '.'")
 	}
 }
@@ -181,7 +181,7 @@ func TestEditorCompletionDigitDoesNotOpen(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
 	typeString(e, "5")
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected a digit (numeric literal) to not open the popup")
 	}
 }
@@ -191,7 +191,7 @@ func TestEditorCompletionOpenBracketOpens(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
 	typeString(e, "[")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected '[' (bracket-quoted identifier start) to open the popup")
 	}
 
@@ -199,7 +199,7 @@ func TestEditorCompletionOpenBracketOpens(t *testing.T) {
 	e.SetText("")
 	e.SetCompletionProvider(testCompletionProvider("2024data"))
 	typeString(e, "[20")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected a bracket-quoted fragment starting with a digit to keep the popup open")
 	}
 }
@@ -210,15 +210,15 @@ func TestEditorCompletionDeleteBackspaceUndoNeverOpenFromClosed(t *testing.T) {
 	e.cursorCol = 2
 
 	e.HandleKey(tuikittest.Key(tcell.KeyDelete, tcell.ModNone))
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected Delete to never open the popup from closed")
 	}
 	e.HandleKey(tuikittest.Key(tcell.KeyBackspace2, tcell.ModNone))
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected Backspace to never open the popup from closed")
 	}
 	e.HandleKey(tuikittest.Key(tcell.KeyCtrlZ, tcell.ModNone))
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected undo to never open the popup from closed")
 	}
 }
@@ -228,8 +228,8 @@ func TestEditorCompletionModifiedKeysNotHijackedWhileOpen(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Aaa", "Aab", "Aac"))
 
 	typeString(e, "Aa")
-	if !e.CompletionActive() || e.completionSel != 0 {
-		t.Fatalf("popup open = %v sel = %d, want open at 0", e.CompletionActive(), e.completionSel)
+	if !e.OverlayActive() || e.completionSel != 0 {
+		t.Fatalf("popup open = %v sel = %d, want open at 0", e.OverlayActive(), e.completionSel)
 	}
 	// Ctrl+Up/Down belong to the host (panel resize) or the editor (word
 	// ops), never to popup selection.
@@ -244,20 +244,20 @@ func TestEditorCompletionClosesOnSetTextAndFocusLoss(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
 	typeString(e, "Cu")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open")
 	}
 	e.SetText("SELECT 1")
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected SetText to close the popup")
 	}
 
 	typeString(e, " Cu")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open again")
 	}
-	e.SetActive(false)
-	if e.CompletionActive() {
+	e.Focus(false)
+	if e.OverlayActive() {
 		t.Fatal("expected losing focus to close the popup")
 	}
 }
@@ -267,11 +267,11 @@ func TestEditorCompletionCtrlSpaceOpensEvenAfterSpace(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers", "Orders"))
 
 	typeString(e, " ")
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected a bare space to not open the popup")
 	}
 	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected explicit Ctrl+Space to open the popup regardless of the blank-char gate")
 	}
 }
@@ -286,7 +286,7 @@ func TestEditorCompletionNeverOpensFromPureNavigation(t *testing.T) {
 		tcell.KeyHome, tcell.KeyEnd, tcell.KeyUp, tcell.KeyDown,
 	} {
 		e.HandleKey(tuikittest.Key(k, tcell.ModNone))
-		if e.CompletionActive() {
+		if e.OverlayActive() {
 			t.Fatalf("key %v: unexpectedly opened completion from a closed state", k)
 		}
 	}
@@ -298,7 +298,7 @@ func TestEditorCompletionReadOnlyNeverOpens(t *testing.T) {
 	e.SetReadOnly(true)
 
 	typeString(e, "C")
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected no completion popup in a read-only editor")
 	}
 }
@@ -309,7 +309,7 @@ func TestEditorCompletionCtrlSpaceSingleMatchAutoCommits(t *testing.T) {
 	e.cursorCol = 2
 
 	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected popup NOT to open when Ctrl+Space finds exactly one match")
 	}
 	if got := e.Text(); got != "Customers" {
@@ -324,7 +324,7 @@ func TestEditorCompletionCtrlSpaceWithNoWordOpensOverSingleMatch(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
 
 	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected Ctrl+Space on an empty word to open the popup")
 	}
 	if got := e.Text(); got != "" {
@@ -362,11 +362,11 @@ func TestEditorCompletionPartialOnlyHasNoSelectionAndEnterFallsThrough(t *testin
 	e.SetCompletionProvider(substringCompletionProvider("CreatedBy", "Customers"))
 
 	typeString(e, "by")
-	if !e.CompletionActive() || e.completionSel != -1 {
-		t.Fatalf("open = %v sel = %d, want open with nothing selected", e.CompletionActive(), e.completionSel)
+	if !e.OverlayActive() || e.completionSel != -1 {
+		t.Fatalf("open = %v sel = %d, want open with nothing selected", e.OverlayActive(), e.completionSel)
 	}
 	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("expected Enter to close the popup")
 	}
 	if got := e.Text(); got != "by\n" {
@@ -400,8 +400,8 @@ func TestEditorCompletionSelectionFollowsPrefixMatches(t *testing.T) {
 		t.Fatalf("sel after \"ord\" = %d, want 0", e.completionSel)
 	}
 	typeString(e, "e")
-	if !e.CompletionActive() || e.completionSel != -1 {
-		t.Fatalf("\"orde\": open = %v sel = %d, want open with nothing selected", e.CompletionActive(), e.completionSel)
+	if !e.OverlayActive() || e.completionSel != -1 {
+		t.Fatalf("\"orde\": open = %v sel = %d, want open with nothing selected", e.OverlayActive(), e.completionSel)
 	}
 }
 
@@ -414,12 +414,12 @@ func TestEditorCompletionExplicitPartialKeepsSelection(t *testing.T) {
 	e.cursorCol = len("usto")
 
 	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
-	if !e.CompletionActive() || e.completionSel != 0 {
-		t.Fatalf("open = %v sel = %d, want open at 0", e.CompletionActive(), e.completionSel)
+	if !e.OverlayActive() || e.completionSel != 0 {
+		t.Fatalf("open = %v sel = %d, want open at 0", e.OverlayActive(), e.completionSel)
 	}
 	typeString(e, "m")
-	if !e.CompletionActive() || e.completionSel != 0 {
-		t.Fatalf("after typing: open = %v sel = %d, want open at 0", e.CompletionActive(), e.completionSel)
+	if !e.OverlayActive() || e.completionSel != 0 {
+		t.Fatalf("after typing: open = %v sel = %d, want open at 0", e.OverlayActive(), e.completionSel)
 	}
 	e.HandleKey(tuikittest.Key(tcell.KeyEnter, tcell.ModNone))
 	if got := e.Text(); got != "CustomerOrders" {
@@ -432,7 +432,7 @@ func TestEditorCompletionCtrlSpaceMultipleMatchesOpensPopup(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers", "CustomerAddresses"))
 
 	e.HandleKey(tuikittest.Rune(' ', tcell.ModCtrl))
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open when Ctrl+Space finds more than one match")
 	}
 	if len(e.completionItems) != 2 {
@@ -458,7 +458,7 @@ func TestEditorCompletionPlaceholderNotSelectableOrCommittable(t *testing.T) {
 	})
 
 	typeString(e, "x")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open showing the placeholder row")
 	}
 	e.HandleKey(tuikittest.Key(tcell.KeyDown, tcell.ModNone))
@@ -475,7 +475,7 @@ func TestEditorCompletionRectFlipsAboveNearBottomEdge(t *testing.T) {
 
 	e.cursorRow, e.cursorCol = 4, 2
 	e.updateCompletion()
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open")
 	}
 	rect := e.completionRect()
@@ -507,7 +507,7 @@ func TestEditorCompletionRectReservesDetailColumn(t *testing.T) {
 		}, req.Col
 	})
 	typeString(e, "x")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("expected popup open")
 	}
 
@@ -558,13 +558,13 @@ func TestEditorPasteClosesCompletionAndKeepsTextVerbatim(t *testing.T) {
 	e.SetCompletionProvider(testCompletionProvider("Customers", "CustomerOrders"))
 
 	typeString(e, "Cu")
-	if !e.CompletionActive() {
+	if !e.OverlayActive() {
 		t.Fatal("setup: expected the popup open after typing \"Cu\"")
 	}
 
 	e.Paste("st\nFROM t")
 
-	if e.CompletionActive() {
+	if e.OverlayActive() {
 		t.Fatal("completion popup still open after Paste")
 	}
 	if got := e.Text(); got != "Cust\nFROM t" {
@@ -584,11 +584,11 @@ func TestEditorCompletionSigilOpens(t *testing.T) {
 		e := newTestEditor("")
 		e.SetCompletionProvider(testCompletionProvider("staging"))
 		typeString(e, sigil)
-		if !e.CompletionActive() {
+		if !e.OverlayActive() {
 			t.Errorf("expected %q to open the popup", sigil)
 		}
 		typeString(e, "sta")
-		if !e.CompletionActive() {
+		if !e.OverlayActive() {
 			t.Errorf("expected %q to keep the popup open", sigil+"sta")
 		}
 	}

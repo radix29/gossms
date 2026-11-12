@@ -57,17 +57,21 @@ type PanelManager struct {
 	// OnCloseTab, if set, replaces RemovePanel on a tab's [x] click so the
 	// application decides whether to close (e.g. prompt to save a Dirty panel).
 	OnCloseTab func(i int)
+
+	// EmptyText is what the tab bar shows with no panel open; a host can name
+	// the key that opens one.
+	EmptyText string
 }
 
 // NewPanelManager creates an empty PanelManager.
 func NewPanelManager() *PanelManager {
-	return new(PanelManager{active: -1})
+	return new(PanelManager{active: -1, EmptyText: "(no panels open)"})
 }
 
-// setActiveIndex changes the active panel index, notifying the old and new
+// switchTo changes the active panel index, notifying the old and new
 // active panels via the Activatable interface if they implement it, then
 // relaying out the newly active panel.
-func (pm *PanelManager) setActiveIndex(i int) {
+func (pm *PanelManager) switchTo(i int) {
 	if i == pm.active {
 		pm.relayout()
 		return
@@ -90,7 +94,7 @@ func (pm *PanelManager) setActiveIndex(i int) {
 func (pm *PanelManager) AddPanel(p Panel) int {
 	pm.panels = append(pm.panels, p)
 	if pm.active < 0 {
-		pm.setActiveIndex(0)
+		pm.switchTo(0)
 	}
 	pm.scrollComboToActive()
 	return len(pm.panels) - 1
@@ -121,10 +125,11 @@ func (pm *PanelManager) RemovePanel(i int) {
 	pm.relayout()
 }
 
-// SetActive switches the visible panel to index i.
-func (pm *PanelManager) SetActive(i int) {
+// SetActiveIndex switches the visible panel to index i. (Not SetActive: that
+// is Activatable's, which a PanelManager nested as a panel would need.)
+func (pm *PanelManager) SetActiveIndex(i int) {
 	if i >= 0 && i < len(pm.panels) {
-		pm.setActiveIndex(i)
+		pm.switchTo(i)
 		pm.scrollComboToActive()
 	}
 }
@@ -167,7 +172,7 @@ func (pm *PanelManager) FindIndex(predicate func(Panel) bool) int {
 // Next cycles to the next panel.
 func (pm *PanelManager) Next() {
 	if len(pm.panels) > 0 {
-		pm.setActiveIndex((pm.active + 1) % len(pm.panels))
+		pm.switchTo((pm.active + 1) % len(pm.panels))
 		pm.scrollComboToActive()
 	}
 }
@@ -175,7 +180,7 @@ func (pm *PanelManager) Next() {
 // Prev cycles to the previous panel.
 func (pm *PanelManager) Prev() {
 	if len(pm.panels) > 0 {
-		pm.setActiveIndex((pm.active - 1 + len(pm.panels)) % len(pm.panels))
+		pm.switchTo((pm.active - 1 + len(pm.panels)) % len(pm.panels))
 		pm.scrollComboToActive()
 	}
 }
@@ -185,6 +190,9 @@ func (pm *PanelManager) SetBounds(x, y, w, h int) {
 	pm.rect = core.Rect{X: x, Y: y, W: w, H: h}
 	pm.relayout()
 }
+
+// Bounds returns the rect SetBounds last gave the manager: tab bar and content.
+func (pm *PanelManager) Bounds() core.Rect { return pm.rect }
 
 func (pm *PanelManager) contentY() int { return pm.rect.Y + 1 }
 func (pm *PanelManager) contentH() int { return pm.rect.H - 1 }
@@ -235,7 +243,7 @@ func (pm *PanelManager) setComboOpen(v bool) {
 // scrollComboToActive brings the active row into the drop-down's window by the
 // least movement and clamps the offset. Called on open, after each Up/Down, and
 // from every mutator that can move the active index or resize the list while
-// open (SetActive, Next, Prev, AddPanel, RemovePanel): global keys a host
+// open (SetActiveIndex, Next, Prev, AddPanel, RemovePanel): global keys a host
 // consumes itself reach those without the combo seeing them. A no-op
 // while closed.
 func (pm *PanelManager) scrollComboToActive() {
@@ -267,7 +275,7 @@ func (pm *PanelManager) moveComboSelection(delta int) {
 	if i == pm.active {
 		return
 	}
-	pm.setActiveIndex(i)
+	pm.switchTo(i)
 	pm.scrollComboToActive()
 }
 
@@ -298,7 +306,7 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 	core.FillRect(s, core.Rect{X: pm.rect.X, Y: pm.rect.Y, W: pm.rect.W, H: 1}, ' ', barStyle)
 
 	if len(pm.panels) == 0 {
-		core.DrawText(s, pm.rect.X+1, pm.rect.Y, barStyle, "(no panels open — Ctrl+N for a new query)")
+		core.DrawText(s, pm.rect.X+1, pm.rect.Y, barStyle, pm.EmptyText)
 	} else {
 		for i, seg := range pm.tabSegments() {
 			panel := pm.panels[i]
@@ -457,7 +465,7 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 			labelSeg := seg[0]
 			if mx >= labelSeg.X && mx < labelSeg.X+labelSeg.W {
-				pm.setActiveIndex(i)
+				pm.switchTo(i)
 				pm.setComboOpen(false)
 				return true
 			}
@@ -473,7 +481,7 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 			if !pm.press.Fresh(ev) {
 				return true
 			}
-			pm.setActiveIndex(row + pm.comboScroll)
+			pm.switchTo(row + pm.comboScroll)
 			pm.setComboOpen(false)
 			return true
 		}

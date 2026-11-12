@@ -285,10 +285,10 @@ func TestOptionsDialogPressFocusesTheControlUnderIt(t *testing.T) {
 		name string
 		x, y int
 	}{
-		{"indent", d.fIndentWidth.InputX() + 1, d.fIndentWidth.RectY()},
-		{"text", d.fMaxTextLen.InputX() + 1, d.fMaxTextLen.RectY()},
+		{"indent", d.fIndentWidth.InputX() + 1, d.fIndentWidth.Bounds().Y},
+		{"text", d.fMaxTextLen.InputX() + 1, d.fMaxTextLen.Bounds().Y},
 		{"intellisense", inner.X + 2, inner.Y + 12},
-		{"cell", d.fMaxCellLen.InputX() + 1, d.fMaxCellLen.RectY()},
+		{"cell", d.fMaxCellLen.InputX() + 1, d.fMaxCellLen.Bounds().Y},
 	} {
 		press(tc.x, tc.y)
 		if got := optionsFocusName(d); got != tc.name {
@@ -377,18 +377,18 @@ func TestOptionsDialogOpenSQLStyleListTakesTheClick(t *testing.T) {
 	d := NewOptionsDialog(a)
 	d.Show()
 	d.Draw(s) // positions the controls
-	x, y := d.ddSQLStyle.RectX()+1, d.InnerRect().Y+5
+	x, y := d.ddSQLStyle.Bounds().X+1, d.InnerRect().Y+5
 	click := func(x, y int) {
 		d.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
 		d.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
 	}
 	click(x, y)
-	if !d.ddSQLStyle.IsOpen() {
+	if !d.ddSQLStyle.OverlayActive() {
 		t.Fatal("a click on the SQL style dropdown did not open it")
 	}
 	click(x+1, y+2) // the second item, over the Max default cell length row
-	if d.ddSQLStyle.IsOpen() || d.ddSQLStyle.Selected() != 1 || optionsFocusName(d) != "sqlstyle" {
+	if d.ddSQLStyle.OverlayActive() || d.ddSQLStyle.Selected() != 1 || optionsFocusName(d) != "sqlstyle" {
 		t.Errorf("after clicking item 2: open %v, selected %d, focus %s; want closed, 1, sqlstyle",
-			d.ddSQLStyle.IsOpen(), d.ddSQLStyle.Selected(), optionsFocusName(d))
+			d.ddSQLStyle.OverlayActive(), d.ddSQLStyle.Selected(), optionsFocusName(d))
 	}
 }

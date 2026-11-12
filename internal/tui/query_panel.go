@@ -243,7 +243,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 		title:    title,
 		editor:   controls.NewEditor(controls.SQLHighlighter(theme.Active())),
 		results:  results,
-		splitter: layout.NewHorizontalSplitter("─── Results ─── (drag or Ctrl+Up/Down to resize)"),
+		splitter: newHorizontalSplitter("─── Results ─── (drag or Ctrl+Up/Down to resize)"),
 	})
 	results.SetStatusStyle(p.resultsStatusStyle)
 	// Before anything sets text: SetText expands tabs at the editor's current width,
@@ -441,9 +441,9 @@ func (p *QueryPanel) resultsHasFocus() bool { return p.active && p.resultsFocuse
 // whenever p.active or p.resultsFocused changes, so at most one sub-region shows
 // as focused.
 func (p *QueryPanel) syncFocusVisuals() {
-	p.editor.SetActive(p.editorHasFocus())
+	p.editor.Focus(p.editorHasFocus())
 	p.results.Focus(p.resultsHasFocus())
-	p.messages.SetActive(p.resultsHasFocus())
+	p.messages.Focus(p.resultsHasFocus())
 	if p.planView != nil {
 		p.planView.SetActive(p.resultsHasFocus())
 	}

@@ -18,6 +18,10 @@ type CheckBox struct {
 	// tracking resends Button1 on every motion, so a twitchy click would toggle
 	// repeatedly.
 	press core.PressLatch
+
+	// OnChange fires after a key or click toggles the box, with the new state.
+	// SetChecked never fires it: a host setting the value already knows.
+	OnChange func(checked bool)
 }
 
 // NewCheckBox creates a CheckBox.
@@ -26,11 +30,17 @@ func NewCheckBox(label string) *CheckBox {
 }
 
 func (c *CheckBox) SetBounds(x, y int) { c.rect.X, c.rect.Y = x, y }
-func (c *CheckBox) RectX() int         { return c.rect.X }
-func (c *CheckBox) RectY() int         { return c.rect.Y }
-func (c *CheckBox) Checked() bool      { return c.checked }
-func (c *CheckBox) SetChecked(v bool)  { c.checked = v }
-func (c *CheckBox) Focus(v bool)       { c.focused = v }
+
+// Bounds returns the drawn box and label: one row, Width() columns.
+func (c *CheckBox) Bounds() core.Rect { return core.Rect{X: c.rect.X, Y: c.rect.Y, W: c.Width(), H: 1} }
+
+// Label returns the label the box was created with.
+func (c *CheckBox) Label() string { return c.label }
+
+func (c *CheckBox) Checked() bool     { return c.checked }
+func (c *CheckBox) SetChecked(v bool) { c.checked = v }
+func (c *CheckBox) Focus(v bool)      { c.focused = v }
+func (c *CheckBox) Focused() bool     { return c.focused }
 
 // SetEnabled toggles whether the box can be changed. A disabled box draws
 // greyed and refuses keys and clicks (one that only stopped accepting input
@@ -68,7 +78,7 @@ func (c *CheckBox) HandleKey(ev *tcell.EventKey) bool {
 		return false
 	}
 	if ev.Key() == tcell.KeyEnter || core.EvRune(ev) == ' ' {
-		c.checked = !c.checked
+		c.toggle()
 		return true
 	}
 	return false
@@ -88,7 +98,15 @@ func (c *CheckBox) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	if c.press.Fresh(ev) {
-		c.checked = !c.checked
+		c.toggle()
 	}
 	return true
+}
+
+// toggle is the one user edit, so OnChange fires from one place.
+func (c *CheckBox) toggle() {
+	c.checked = !c.checked
+	if c.OnChange != nil {
+		c.OnChange(c.checked)
+	}
 }

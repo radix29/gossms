@@ -40,6 +40,11 @@ type DropDown struct {
 	// (core.HandleScrollbarDrag), so a drag off the bar keeps scrolling rather than
 	// picking items.
 	sbDragging bool
+
+	// OnChange fires after a key or a list pick changes the selection, with the
+	// new index — while the list is still open, as arrow keys move through it.
+	// SetSelected and SetItems never fire it.
+	OnChange func(i int)
 }
 
 // NewDropDown creates a DropDown.
@@ -66,9 +71,14 @@ func (d *DropDown) Label() string { return d.label }
 
 func (d *DropDown) SetBounds(x, y int) { d.rect.X, d.rect.Y = x, y }
 
-// RectX and Width report the position and the value area's visible width
-// (excluding label and brackets), the pair InputField exposes.
-func (d *DropDown) RectX() int    { return d.rect.X }
+// Bounds returns the closed control's drawn rect: one row, label through the
+// closing bracket. The open list is outside it (DrawOverlay).
+func (d *DropDown) Bounds() core.Rect {
+	return core.Rect{X: d.rect.X, Y: d.rect.Y, W: d.inputX() - d.rect.X + d.rect.W + 2, H: 1}
+}
+
+// Width reports the value area's visible width (excluding label and
+// brackets), as InputField.Width does.
 func (d *DropDown) Width() int    { return d.rect.W }
 func (d *DropDown) Selected() int { return d.selected }
 func (d *DropDown) SetSelected(i int) {
@@ -81,19 +91,25 @@ func (d *DropDown) SetSelected(i int) {
 // to its items rather than at construction (propsheet.SelectRow.SetFitItems).
 func (d *DropDown) SetWidth(w int) { d.rect.W = w }
 
+// Focus sets the focused state. Losing focus closes an open list.
 func (d *DropDown) Focus(v bool) {
 	d.focused = v
 	if !v {
 		d.setOpen(false)
 	}
 }
+
+func (d *DropDown) Focused() bool { return d.focused }
+
 func (d *DropDown) Value() string {
 	if d.selected >= 0 && d.selected < len(d.items) {
 		return d.items[d.selected]
 	}
 	return ""
 }
-func (d *DropDown) IsOpen() bool { return d.open }
+
+// OverlayActive reports whether the item list is open (core.Overlay).
+func (d *DropDown) OverlayActive() bool { return d.open }
 
 // SetEnabled toggles whether the selection can be changed, with InputField's
 // contract: disabled draws greyed, refuses keys and clicks, keeps its focus-ring
@@ -161,13 +177,24 @@ func (d *DropDown) ensureVisible() {
 	d.top = max(top, 0)
 }
 
-// moveTo selects item i, clamped to the list, and scrolls it into view.
+// moveTo is a user move: it selects item i, clamped to the list, and scrolls it into view.
 func (d *DropDown) moveTo(i int) {
 	if len(d.items) == 0 {
 		return
 	}
-	d.selected = core.Clamp(i, 0, len(d.items)-1)
+	d.pick(core.Clamp(i, 0, len(d.items)-1))
 	d.ensureVisible()
+}
+
+// pick is the one user edit of the selection, so OnChange fires from one place.
+func (d *DropDown) pick(i int) {
+	if i == d.selected {
+		return
+	}
+	d.selected = i
+	if d.OnChange != nil {
+		d.OnChange(i)
+	}
 }
 
 // jumpToLetter selects the next item after the selection starting with the typed
@@ -347,7 +374,7 @@ func (d *DropDown) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if inList {
 		if d.press.Fresh(ev) {
-			d.selected = d.firstShown() + my - y0
+			d.pick(d.firstShown() + my - y0)
 			d.setOpen(false)
 		}
 		return true

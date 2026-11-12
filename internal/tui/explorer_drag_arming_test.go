@@ -6,7 +6,6 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/tuikit/tuikittest"
 )
 
@@ -49,7 +48,7 @@ func newDragTestApp(t *testing.T, childCount int) *App {
 	a.contextMenu = &controls.ContextMenu{}
 	a.alertDialog = dialogs.NewAlertDialog(a.screen)
 	a.allDialogs = []Dialog{a.alertDialog}
-	a.explorerSplit = layout.NewVerticalSplitter()
+	a.explorerSplit = newVerticalSplitter()
 	a.explorerSplit.SetBounds(0, 1, dragTestScreenW, dragTestScreenH-2)
 	a.explorerSplit.SetRatio(0.3)
 

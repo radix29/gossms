@@ -62,8 +62,8 @@ func TestContextMenuKeyboardOpensSubmenuAndRunsLeaf(t *testing.T) {
 	if ran != "drop" {
 		t.Fatalf("action run = %q, want %q", ran, "drop")
 	}
-	if cm.Visible() || cm.cascade.depth() != 0 {
-		t.Fatalf("menu visible=%v cascade depth=%d after activating a leaf; want closed and empty", cm.Visible(), cm.cascade.depth())
+	if cm.OverlayActive() || cm.cascade.depth() != 0 {
+		t.Fatalf("menu visible=%v cascade depth=%d after activating a leaf; want closed and empty", cm.OverlayActive(), cm.cascade.depth())
 	}
 }
 
@@ -84,11 +84,11 @@ func TestContextMenuLeftClosesOnlyTheDeepestLevel(t *testing.T) {
 		t.Fatalf("cascade depth = %d after Left, want 1 — Left closes one level, not the menu", cm.cascade.depth())
 	}
 	cm.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
-	if cm.cascade.depth() != 0 || !cm.Visible() {
-		t.Fatalf("depth=%d visible=%v after Escape inside a submenu; want the submenu closed and the menu still open", cm.cascade.depth(), cm.Visible())
+	if cm.cascade.depth() != 0 || !cm.OverlayActive() {
+		t.Fatalf("depth=%d visible=%v after Escape inside a submenu; want the submenu closed and the menu still open", cm.cascade.depth(), cm.OverlayActive())
 	}
 	cm.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Fatalf("menu stayed open after a second Escape; want it dismissed")
 	}
 }
@@ -100,8 +100,8 @@ func TestContextMenuSubmenuEnterOnItemWithSubOpensRatherThanCloses(t *testing.T)
 	cm.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 	cm.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 	cm.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if !cm.Visible() || cm.cascade.depth() != 1 {
-		t.Fatalf("visible=%v depth=%d after Enter on a submenu item; want the menu open with its submenu shown", cm.Visible(), cm.cascade.depth())
+	if !cm.OverlayActive() || cm.cascade.depth() != 1 {
+		t.Fatalf("visible=%v depth=%d after Enter on a submenu item; want the menu open with its submenu shown", cm.OverlayActive(), cm.cascade.depth())
 	}
 	if ran != "" {
 		t.Fatalf("action %q ran on Enter over a submenu item; want none", ran)
@@ -129,7 +129,7 @@ func TestContextMenuMouseHoverOpensSubmenuAndClickRunsLeaf(t *testing.T) {
 	cm := &ContextMenu{}
 	cm.Show(2, 2, scriptMenu(&ran))
 	s := tuikittest.NewScreen(80, 24)
-	cm.Draw(s)
+	cm.DrawOverlay(s)
 
 	// Root box is at (2,2); row 1 ("Script Table as") is at y=4. Hovering it
 	// opens the submenu without any click.
@@ -137,7 +137,7 @@ func TestContextMenuMouseHoverOpensSubmenuAndClickRunsLeaf(t *testing.T) {
 	if cm.cascade.depth() != 1 {
 		t.Fatalf("cascade depth = %d after hovering a submenu row, want 1", cm.cascade.depth())
 	}
-	cm.Draw(s)
+	cm.DrawOverlay(s)
 
 	sub := cm.cascade.levelRect(cm.drawnRect(), 1)
 	if sub.W == 0 {
@@ -148,7 +148,7 @@ func TestContextMenuMouseHoverOpensSubmenuAndClickRunsLeaf(t *testing.T) {
 	if ran != "drop" {
 		t.Fatalf("action run = %q, want %q", ran, "drop")
 	}
-	if cm.Visible() {
+	if cm.OverlayActive() {
 		t.Fatalf("menu stayed open after clicking a submenu leaf; want it closed")
 	}
 }
@@ -157,7 +157,7 @@ func TestContextMenuHeldButtonOverLeafRunsActionOnce(t *testing.T) {
 	var calls int
 	cm := &ContextMenu{}
 	cm.Show(2, 2, []MenuItem{{Label: "Refresh", Action: func() { calls++ }}})
-	cm.Draw(tuikittest.NewScreen(80, 24))
+	cm.DrawOverlay(tuikittest.NewScreen(80, 24))
 	// tcell resends Button1 on every motion while the button is held; the
 	// latch is what stops the second event re-firing the action.
 	cm.HandleMouse(tcell.NewEventMouse(5, 3, tcell.Button1, tcell.ModNone))
@@ -171,7 +171,7 @@ func TestContextMenuHoveringSiblingClosesTheOpenSubmenu(t *testing.T) {
 	var ran string
 	cm := &ContextMenu{}
 	cm.Show(2, 2, scriptMenu(&ran))
-	cm.Draw(tuikittest.NewScreen(80, 24))
+	cm.DrawOverlay(tuikittest.NewScreen(80, 24))
 	cm.HandleMouse(tcell.NewEventMouse(5, 4, tcell.ButtonNone, tcell.ModNone)) // "Script Table as"
 	if cm.cascade.depth() != 1 {
 		t.Fatalf("cascade depth = %d, want 1", cm.cascade.depth())
@@ -225,7 +225,7 @@ func TestMenuBarSubmenuOpensWithRightAndRunsLeaf(t *testing.T) {
 	if mb.cascade.depth() != 1 {
 		t.Fatalf("cascade depth = %d after Right on a submenu item, want 1", mb.cascade.depth())
 	}
-	if !mb.IsOpen() {
+	if !mb.OverlayActive() {
 		t.Fatalf("Right on a submenu item moved to the next menu header; want it to open the submenu")
 	}
 	mb.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone)) // "Text"
@@ -233,8 +233,8 @@ func TestMenuBarSubmenuOpensWithRightAndRunsLeaf(t *testing.T) {
 	if ran != "text" {
 		t.Fatalf("action run = %q, want %q", ran, "text")
 	}
-	if mb.IsOpen() || mb.cascade.depth() != 0 {
-		t.Fatalf("open=%v depth=%d after activating a submenu leaf; want everything closed", mb.IsOpen(), mb.cascade.depth())
+	if mb.OverlayActive() || mb.cascade.depth() != 0 {
+		t.Fatalf("open=%v depth=%d after activating a submenu leaf; want everything closed", mb.OverlayActive(), mb.cascade.depth())
 	}
 }
 
@@ -278,7 +278,7 @@ func TestMenuBarSubmenuMouseClickRunsLeaf(t *testing.T) {
 	if ran != "grid" {
 		t.Fatalf("action run = %q, want %q", ran, "grid")
 	}
-	if mb.IsOpen() {
+	if mb.OverlayActive() {
 		t.Fatalf("dropdown stayed open after clicking a submenu leaf; want it closed")
 	}
 }
@@ -293,8 +293,8 @@ func TestMenuBarClickOnSubmenuParentKeepsMenuOpen(t *testing.T) {
 	mb.Open()
 	mb.DrawOverlay(tuikittest.NewScreen(80, 24))
 	mb.HandleMouse(tcell.NewEventMouse(4, 2, tcell.Button1, tcell.ModNone))
-	if !mb.IsOpen() || mb.cascade.depth() != 1 {
-		t.Fatalf("open=%v depth=%d after clicking a cascade row; want the dropdown open with its submenu shown", mb.IsOpen(), mb.cascade.depth())
+	if !mb.OverlayActive() || mb.cascade.depth() != 1 {
+		t.Fatalf("open=%v depth=%d after clicking a cascade row; want the dropdown open with its submenu shown", mb.OverlayActive(), mb.cascade.depth())
 	}
 	if ran != "" {
 		t.Fatalf("action %q ran from clicking a cascade row; want none", ran)

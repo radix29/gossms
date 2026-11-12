@@ -130,7 +130,7 @@ func TestWheelScrollsAnOverTallDropdown(t *testing.T) {
 			"(without the wheel the hidden items are keyboard-only, "+
 			"which is no help to the mouse user they were hidden from)", mb.scrollTop)
 	}
-	if !mb.IsOpen() {
+	if !mb.OverlayActive() {
 		t.Fatal("the wheel closed the dropdown; want it consumed as a scroll")
 	}
 

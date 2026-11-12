@@ -132,12 +132,12 @@ func TestShowValueFromADoubleClickLeavesNoPressLatched(t *testing.T) {
 	pressRow(g, 0, tcell.ModNone)
 	releaseRow(g, 0)
 	pressRow(g, 0, tcell.ModNone)
-	if !g.viewOpen {
+	if !g.viewer.open {
 		t.Fatal("the double-click did not open the value popup")
 	}
 	releaseRow(g, 0)
 	g.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
-	if g.viewOpen {
+	if g.viewer.open {
 		t.Fatal("Escape did not close the popup")
 	}
 	pressRow(g, 2, tcell.ModNone)

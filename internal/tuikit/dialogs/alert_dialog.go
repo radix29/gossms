@@ -66,7 +66,7 @@ func (d *AlertDialog) Draw(s tcell.Screen) {
 		core.DrawTextClipped(s, x, inner.Y+2+i, contentW, msgStyle, line)
 	}
 	d.DrawSeparator(s)
-	d.DrawButtons(s, []string{"OK"}, 0)
+	d.DrawButtons(s, []string{Strings.OK}, 0)
 }
 
 // HandleKey handles keyboard events.
@@ -88,7 +88,7 @@ func (d *AlertDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	if d.ButtonClicked(ev, []string{"OK"}) == 0 {
+	if d.ButtonClicked(ev, []string{Strings.OK}) == 0 {
 		d.Hide()
 	}
 	return true
