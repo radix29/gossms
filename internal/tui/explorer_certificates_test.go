@@ -315,16 +315,16 @@ func TestCertificateDetailOfADroppedCertificate(t *testing.T) {
 	}
 }
 
-// keyOwnerResponses are the principal reads an Owner row draws from: users,
+// keyOwnerResponses is the principal read an Owner row draws from: users,
 // application roles, and the roles a symmetric key's row also offers.
 func keyOwnerResponses() []fakeResponse {
-	return []fakeResponse{
+	return []fakeResponse{principalsResponse(
 		databaseUsersResponse(),
 		databaseApplicationRolesResponse(),
-		{match: "WHERE  r.type = 'R'", cols: 5, rows: [][]driver.Value{
+		fakeResponse{match: "WHERE  r.type = 'R'", cols: 5, rows: [][]driver.Value{
 			{"app_admin", int64(11), false, "dbo", nil},
 		}},
-	}
+	)}
 }
 
 // assertOwnerChange loads a key family's General page, checks the Owner row

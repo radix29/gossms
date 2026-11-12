@@ -218,7 +218,7 @@ func ftTableColumnsResp(cols ...ftCol) fakeResponse {
 	return fakeResponse{match: "FROM   sys.columns c", db: "AppDB", cols: 42, rows: rows}
 }
 
-// ftStoplistsResp answers FullTextStoplists with names, ids from 1.
+// ftStoplistsResp answers FullText().Stoplists with names, ids from 1.
 func ftStoplistsResp(names ...string) fakeResponse {
 	rows := make([][]driver.Value, len(names))
 	for k, n := range names {

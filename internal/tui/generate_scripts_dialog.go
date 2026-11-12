@@ -77,11 +77,13 @@ func (d *GenerateScriptsDialog) onLoadPage(page, seq int) {
 		propsheet.Static("Database", d.dbName),
 		propsheet.Note("Every user object, in an order a replay into an empty database accepts: "+
 			"schemas, rules, defaults and types, tables without their foreign keys and edge constraints, views, "+
-			"functions and procedures by dependency, then foreign keys, edge constraints and triggers."),
+			"functions and procedures by dependency, then foreign keys, edge constraints and DML triggers; "+
+			"database triggers last."),
 		propsheet.Section("Options"),
 		d.perms,
 		propsheet.Note("Adds the owner, users, roles, role memberships and every GRANT/DENY — "+
-			"principals first, permissions last."),
+			"principals first, permissions after the objects but before the database triggers, "+
+			"so the triggers do not fire on the script's own GRANTs."),
 		propsheet.Section("Destination"),
 		d.output,
 		propsheet.Note("Not scripted: data, server-level objects, system objects, "+

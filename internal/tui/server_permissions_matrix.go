@@ -41,16 +41,20 @@ type permPrincipal struct {
 }
 
 // databasePermPrincipals is the principal list every database-scope
-// Permissions page offers: every user, then every database role. The database,
-// schema and object pages differ only in the permission catalog they pair it
-// with, so the list is built once.
-func databasePermPrincipals(users []*gosmo.User, roles []*gosmo.DatabaseRole) []permPrincipal {
-	principals := make([]permPrincipal, 0, len(users)+len(roles))
+// Permissions page offers: every user, then every database role, then every
+// application role — all three are valid grantees (GRANT … TO [approle]), and
+// SSMS lists all three. The database, schema and object pages differ only in
+// the permission catalog they pair it with, so the list is built once.
+func databasePermPrincipals(users []*gosmo.User, roles []*gosmo.DatabaseRole, appRoles []*gosmo.ApplicationRole) []permPrincipal {
+	principals := make([]permPrincipal, 0, len(users)+len(roles)+len(appRoles))
 	for _, u := range users {
 		principals = append(principals, permPrincipal{Name: u.Name, Type: u.UserType})
 	}
 	for _, r := range roles {
 		principals = append(principals, permPrincipal{Name: r.Name, Type: gosmo.PrincipalDatabaseRole})
+	}
+	for _, r := range appRoles {
+		principals = append(principals, permPrincipal{Name: r.Name, Type: gosmo.PrincipalApplicationRole})
 	}
 	return principals
 }
@@ -66,6 +70,34 @@ func objectPermEntries(perms []*gosmo.PermissionEntry) []permEntry {
 		}
 	}
 	return entries
+}
+
+// pageObjectPermissions is the Permissions page of a schema-scoped securable
+// (table, sequence — and any later object page: views, procedures, functions
+// and synonyms each have one in SSMS): one page for every class, which only
+// picks the permission catalog and the securable the edits apply to.
+func pageObjectPermissions(sc *db.ServerConn, dbName string, class gosmo.SecurableClass, schema, name string) propPage {
+	return propPage{
+		title: "Permissions",
+		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
+			if err != nil {
+				return nil, nil, err
+			}
+			perms, err := d.Permissions(ctx, schema, name)
+			if err != nil {
+				return nil, nil, err
+			}
+			principals, err := loadDatabasePrincipals(ctx, d)
+			if err != nil {
+				return nil, nil, err
+			}
+			f, apply := buildPermissionsMatrix(principals.grantees(), class.PermissionNames(),
+				objectPermEntries(perms),
+				securablePermApply(d, gosmo.Securable{Class: class, Schema: schema, Name: name}))
+			return f, apply, nil
+		},
+	}
 }
 
 // The Permissions page's two grids' heights, in rows: every scope's page uses
@@ -93,6 +125,7 @@ func buildPermissionsMatrix(
 	for _, e := range entries {
 		existing[entryKey{e.Principal, e.Permission}] = e
 	}
+	principals = withEntryPrincipals(principals, entries)
 
 	// editsByPrincipal is built lazily, one principal at a time, as the
 	// user browses the principal grid — a principal never selected has by
@@ -266,6 +299,27 @@ func buildPermissionsMatrix(
 		return nil
 	}
 	return f, apply
+}
+
+// withEntryPrincipals returns principals plus, in first-seen order, every
+// principal entries names that it lacks, typed from the entry. The grid shows
+// only listed principals, so a grant held by one the caller's list left out
+// (application roles once were) read as "(none)" — a positive claim that it
+// is not granted — and could not be revoked from the page. principals is not
+// modified.
+func withEntryPrincipals(principals []permPrincipal, entries []permEntry) []permPrincipal {
+	listed := make(map[string]bool, len(principals))
+	for _, p := range principals {
+		listed[p.Name] = true
+	}
+	out := slices.Clip(principals) // the first append copies, never writing into the caller's array
+	for _, e := range entries {
+		if !listed[e.Principal] {
+			listed[e.Principal] = true
+			out = append(out, permPrincipal{Name: e.Principal, Type: e.PrincipalType})
+		}
+	}
+	return out
 }
 
 // pagePrincipalServerPermissions builds a "Securables" page listing every

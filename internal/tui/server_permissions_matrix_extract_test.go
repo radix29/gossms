@@ -11,16 +11,18 @@ import (
 // character for character. These pin what the extracted helpers produce, since
 // the pages themselves can only be exercised against a live server.
 
-func TestDatabasePermPrincipalsListsUsersThenRoles(t *testing.T) {
+func TestDatabasePermPrincipalsListsUsersThenRolesThenAppRoles(t *testing.T) {
 	users := []*gosmo.User{{Name: "app", UserType: "SQL_USER"}, {Name: "dbo", UserType: "SQL_USER"}}
 	roles := []*gosmo.DatabaseRole{{Name: "db_owner"}, {Name: "reader"}}
+	appRoles := []*gosmo.ApplicationRole{{Name: "billing"}}
 
-	got := databasePermPrincipals(users, roles)
+	got := databasePermPrincipals(users, roles, appRoles)
 	want := []permPrincipal{
 		{Name: "app", Type: "SQL_USER"},
 		{Name: "dbo", Type: "SQL_USER"},
 		{Name: "db_owner", Type: "DATABASE_ROLE"},
 		{Name: "reader", Type: "DATABASE_ROLE"},
+		{Name: "billing", Type: "APPLICATION_ROLE"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d principals, want %d", len(got), len(want))
@@ -32,11 +34,11 @@ func TestDatabasePermPrincipalsListsUsersThenRoles(t *testing.T) {
 	}
 }
 
-// Users come first and roles second, and a role's type is filled in rather
-// than read off the role: the grid groups by Type, so a swapped order or a
-// blank type silently reshapes the page.
+// Users come first, roles second and application roles last, and a role's
+// type is filled in rather than read off the role: the grid groups by Type,
+// so a swapped order or a blank type silently reshapes the page.
 func TestDatabasePermPrincipalsWithNoRoles(t *testing.T) {
-	if got := databasePermPrincipals(nil, nil); len(got) != 0 {
+	if got := databasePermPrincipals(nil, nil, nil); len(got) != 0 {
 		t.Errorf("got %+v, want an empty list", got)
 	}
 }

@@ -2,18 +2,20 @@ package tui
 
 import (
 	"context"
+	"database/sql/driver"
 	"slices"
 	"strings"
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
 // newSynonymTestDialog builds the New Synonym pages the way show() would,
 // minus the connection. The fake server answers the database read the Extended
 // Properties page's apply starts with.
-func newSynonymTestDialog(t *testing.T, pf *nsynPrefetch) *NewSynonymDialog {
+func newSynonymTestDialog(t *testing.T, pf *schemaObjectPrefetch) *NewSynonymDialog {
 	t.Helper()
 	sc, _ := newGConn(t, dbByNameResp("appdb", 5))
 	d := &NewSynonymDialog{}
@@ -26,8 +28,8 @@ func newSynonymTestDialog(t *testing.T, pf *nsynPrefetch) *NewSynonymDialog {
 	return d
 }
 
-func newSynonymTestPrefetch(existing ...string) *nsynPrefetch {
-	pf := &nsynPrefetch{existing: newNameSet(""), schemas: []string{"app", "dbo", "sales"},
+func newSynonymTestPrefetch(existing ...string) *schemaObjectPrefetch {
+	pf := &schemaObjectPrefetch{existing: newNameSet(""), schemas: []string{"app", "dbo", "sales"},
 		principals: []permPrincipal{{Name: "app]user", Type: gosmo.PrincipalType("SQL_USER")}}}
 	for _, e := range existing {
 		schema, name, _ := strings.Cut(e, ".")
@@ -232,5 +234,55 @@ func TestSynonymsFolderMenu(t *testing.T) {
 	folder := &explorerNode{data: nodeData{Type: NodeSynonyms, DBName: "appdb", conn: sc}}
 	if got, want := labelsOf(a.nodeMenuItems(folder)), []string{"New Query", "", "New Synonym...", "", refreshMenuLabel}; !slices.Equal(got, want) {
 		t.Errorf("folder menu = %q, want %q", got, want)
+	}
+}
+
+// fetchSchemaObjectPrefetch serves New Sequence and New Synonym, each listing
+// its own family as schema-qualified keys: a taken name is refused in its own
+// schema (case-folded under the database's CI collation) and free in another.
+func TestSchemaObjectPrefetchTakesEachDialogsFamily(t *testing.T) {
+	sequenceRow := func(schema, name string) []driver.Value {
+		return []driver.Value{name, schema, int64(9), "bigint", "", int64(19), int64(0),
+			"1", "1", "1", "9223372036854775807", false, true, int64(0), "1", nil, false}
+	}
+	for _, tc := range []struct {
+		name  string
+		resp  fakeResponse
+		fetch func(*db.ServerConn) (*schemaObjectPrefetch, error)
+	}{
+		{"New Sequence", fakeResponse{match: "FROM   sys.sequences s", db: "AppDB", cols: 17,
+			rows: [][]driver.Value{sequenceRow("sales", "OrderNo")}},
+			func(sc *db.ServerConn) (*schemaObjectPrefetch, error) {
+				d := NewNewSequenceDialog(newTestApp())
+				d.dbName = "AppDB"
+				return d.fetch(context.Background(), sc)
+			}},
+		{"New Synonym", fakeResponse{match: "FROM   sys.synonyms", db: "AppDB", cols: 4,
+			rows: [][]driver.Value{{"OrderNo", "sales", int64(9), "[dbo].[Orders]"}}},
+			func(sc *db.ServerConn) (*schemaObjectPrefetch, error) {
+				d := NewNewSynonymDialog(newTestApp())
+				d.dbName = "AppDB"
+				return d.fetch(context.Background(), sc)
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sc, _ := newGConn(t, dbByNameResp("AppDB", 5), tc.resp, databasePrincipalsResponse(),
+				fakeResponse{match: "FROM   sys.schemas s", db: "AppDB", cols: 3, rows: [][]driver.Value{
+					{"dbo", int64(1), "dbo"}, {"sales", int64(5), "dbo"}, {"sys", int64(4), "sys"},
+				}})
+			pf, err := tc.fetch(sc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !pf.existing.Has(sequenceKey("SALES", "orderno")) {
+				t.Errorf("sales.OrderNo not taken (folded) in %+v", pf.existing)
+			}
+			if pf.existing.Has(sequenceKey("dbo", "OrderNo")) || pf.existing.Has("OrderNo") {
+				t.Error("the name is taken outside its schema")
+			}
+			if !slices.Equal(pf.schemas, []string{"dbo", "sales"}) {
+				t.Errorf("schemas = %v, want [dbo sales]", pf.schemas)
+			}
+		})
 	}
 }

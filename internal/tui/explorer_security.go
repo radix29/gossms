@@ -77,11 +77,7 @@ func loadAuditsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 		func(a *gosmo.ServerAudit) *explorerNode {
 			// A disabled audit records nothing, and nothing else in the row
 			// says so — the same label the Triggers folder uses.
-			label := disabledLabel(a.Name, a.IsEnabled)
-			n := l.node(label, NodeAudit, "", a.Name, "")
-			n.data.CreateDate = a.CreateDate
-			n.data.IsEnabled = a.IsEnabled
-			return n
+			return l.enabledNode(NodeAudit, "", a.Name, a.IsEnabled, a.CreateDate)
 		})
 }
 
@@ -91,11 +87,7 @@ func loadServerAuditSpecificationsChildren(l loaderCtx, node *explorerNode) ([]*
 			return l.sc.Server.ServerAuditSpecifications(l.ctx)
 		},
 		func(spec *gosmo.ServerAuditSpecification) *explorerNode {
-			label := disabledLabel(spec.Name, spec.IsEnabled)
-			n := l.node(label, NodeServerAuditSpecification, "", spec.Name, "")
-			n.data.CreateDate = spec.CreateDate
-			n.data.IsEnabled = spec.IsEnabled
-			return n
+			return l.enabledNode(NodeServerAuditSpecification, "", spec.Name, spec.IsEnabled, spec.CreateDate)
 		})
 }
 

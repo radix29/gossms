@@ -39,15 +39,15 @@ import (
 // the pane and the dialog cannot disagree about which object a node names.
 
 func findFullTextCatalog(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.FullTextCatalog, error) {
-	return inDB(ctx, sc, dbName, name, (*gosmo.Database).FullTextCatalogByName)
+	return inDB(ctx, sc, dbName, name, facetRead((*gosmo.Database).FullText, gosmo.FullText.CatalogByName))
 }
 
 func findFullTextStoplist(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.FullTextStoplist, error) {
-	return inDB(ctx, sc, dbName, name, (*gosmo.Database).FullTextStoplistByName)
+	return inDB(ctx, sc, dbName, name, facetRead((*gosmo.Database).FullText, gosmo.FullText.StoplistByName))
 }
 
 func findSearchPropertyList(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.SearchPropertyList, error) {
-	return inDB(ctx, sc, dbName, name, (*gosmo.Database).SearchPropertyListByName)
+	return inDB(ctx, sc, dbName, name, facetRead((*gosmo.Database).FullText, gosmo.FullText.SearchPropertyListByName))
 }
 
 // findFullTextIndex resolves a table's full-text index. FullTextIndex needs
@@ -128,19 +128,11 @@ const fullTextDefaultOwner = "(current user)"
 // database's users, roles and application roles — AUTHORIZATION takes any of
 // them for all three families.
 func fullTextOwnerItems(ctx context.Context, d *gosmo.Database) ([]string, error) {
-	users, err := d.Users(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	roles, err := d.Roles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	appRoles, err := d.ApplicationRoles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return append([]string{fullTextDefaultOwner}, principalNames(users, roles, appRoles)...), nil
+	return append([]string{fullTextDefaultOwner}, principals.owners(nil)...), nil
 }
 
 // fullTextOwnerValue is an Owner row as a request's Owner: "" for the default.
@@ -273,7 +265,7 @@ func pageFullTextCatalogGeneral(sc *db.ServerConn, dbName string, find func(cont
 				if !isDefault.Dirty() || !isDefault.Checked() {
 					return nil
 				}
-				return sc.Server.DatabaseRef(dbName).FullTextCatalogRef(name).SetDefault(ctx)
+				return sc.Server.DatabaseRef(dbName).FullText().CatalogRef(name).SetDefault(ctx)
 			}, nil
 		},
 	}
@@ -339,7 +331,7 @@ func pageFullTextCatalogMaintenance(sc *db.ServerConn, dbName string, find func(
 			})
 			name := c.Name
 			return f, func(ctx context.Context) error {
-				cat := sc.Server.DatabaseRef(dbName).FullTextCatalogRef(name)
+				cat := sc.Server.DatabaseRef(dbName).FullText().CatalogRef(name)
 				switch action.Selected() {
 				case catalogActionReorganize:
 					return cat.Reorganize(ctx)
@@ -405,6 +397,19 @@ func pageFullTextCatalogTables(find func(context.Context) (*gosmo.FullTextCatalo
 
 // -- Stoplist ------------------------------------------------------------------
 
+// fullTextListGeneralForm is the read-only General page a stoplist and a search
+// property list share; note points at the page that edits the list's contents.
+func fullTextListGeneralForm(section, name, owner string, created, modified time.Time, note string) *propsheet.Form {
+	return propsheet.NewForm(
+		propsheet.Section(section),
+		propsheet.Static("Name", name),
+		propsheet.Static("Owner", owner),
+		propsheet.Static("Created", formatSQLDate(created)),
+		propsheet.Static("Last modified", formatSQLDate(modified)),
+		propsheet.Note(note),
+	)
+}
+
 func fullTextStoplistPropPages(sc *db.ServerConn, dbName, name string) []propPage {
 	find := func(ctx context.Context) (*gosmo.FullTextStoplist, error) {
 		return findFullTextStoplist(ctx, sc, dbName, name)
@@ -417,14 +422,8 @@ func fullTextStoplistPropPages(sc *db.ServerConn, dbName, name string) []propPag
 				if err != nil {
 					return nil, nil, err
 				}
-				return propsheet.NewForm(
-					propsheet.Section("Stoplist"),
-					propsheet.Static("Name", l.Name),
-					propsheet.Static("Owner", l.Owner),
-					propsheet.Static("Created", formatSQLDate(l.CreateDate)),
-					propsheet.Static("Last modified", formatSQLDate(l.ModifyDate)),
-					propsheet.Note("Its words are edited on the Stopwords page."),
-				), nil, nil
+				return fullTextListGeneralForm("Stoplist", l.Name, l.Owner, l.CreateDate, l.ModifyDate,
+					"Its words are edited on the Stopwords page."), nil, nil
 			},
 		},
 		withRequiresOn(pageFullTextStopwords(sc, dbName, find), dbName, "", name, gate.AlterOnFullTextStoplist),
@@ -590,7 +589,7 @@ func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.C
 			}
 			name := l.Name
 			return f, func(ctx context.Context) error {
-				return applyStopwords(ctx, sc.Server.DatabaseRef(dbName).FullTextStoplistRef(name), edits.all())
+				return applyStopwords(ctx, sc.Server.DatabaseRef(dbName).FullText().StoplistRef(name), edits.all())
 			}, nil
 		},
 	}
@@ -660,14 +659,8 @@ func searchPropertyListPropPages(sc *db.ServerConn, dbName, name string) []propP
 				if err != nil {
 					return nil, nil, err
 				}
-				return propsheet.NewForm(
-					propsheet.Section("Search property list"),
-					propsheet.Static("Name", p.Name),
-					propsheet.Static("Owner", p.Owner),
-					propsheet.Static("Created", formatSQLDate(p.CreateDate)),
-					propsheet.Static("Last modified", formatSQLDate(p.ModifyDate)),
-					propsheet.Note("Its properties are registered on the Properties page."),
-				), nil, nil
+				return fullTextListGeneralForm("Search property list", p.Name, p.Owner, p.CreateDate, p.ModifyDate,
+					"Its properties are registered on the Properties page."), nil, nil
 			},
 		},
 		withRequiresOn(pageSearchProperties(sc, dbName, find), dbName, "", name, gate.AlterOnSearchPropertyList),
@@ -789,7 +782,7 @@ func pageSearchProperties(sc *db.ServerConn, dbName string, find func(context.Co
 			)
 			name := p.Name
 			return f, func(ctx context.Context) error {
-				l := sc.Server.DatabaseRef(dbName).SearchPropertyListRef(name)
+				l := sc.Server.DatabaseRef(dbName).FullText().SearchPropertyListRef(name)
 				rows := edits.all()
 				for _, e := range rows {
 					if e.removing && !e.isNew {

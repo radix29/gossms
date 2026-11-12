@@ -20,11 +20,7 @@ func pageDatabasePermissions(sc *db.ServerConn, dbName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			roles, err := d.Roles(ctx)
+			principals, err := loadDatabasePrincipals(ctx, d)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -37,7 +33,7 @@ func pageDatabasePermissions(sc *db.ServerConn, dbName string) propPage {
 				}
 			}
 
-			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.DatabasePermissionNames(), entries,
+			f, apply := buildPermissionsMatrix(principals.grantees(), gosmo.DatabasePermissionNames(), entries,
 				securablePermApply(d, gosmo.Securable{Class: gosmo.SecurableDatabase}))
 			// Same visibility filtering as the server-scope page, one scope
 			// down — see server_props_permissions.go.

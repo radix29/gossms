@@ -146,6 +146,43 @@ func TestAuthMethodTable(t *testing.T) {
 	}
 }
 
+// NeedsPassword is the one rule the TUI (Peer seeding) and the CLI (refusing
+// before dialling) share: only a method whose credential is the password needs
+// one. Windows Authentication with a bare user is a Kerberos keytab /
+// credential-cache login and is accepted. Spelled out rather than read from
+// the table, so a mistake in authMethods fails here.
+func TestNeedsPassword(t *testing.T) {
+	required := map[AuthMethod]bool{
+		AuthSQLServer:             true,
+		AuthWindows:               false,
+		AuthEntraDefault:          false,
+		AuthEntraPassword:         true,
+		AuthEntraMSI:              false,
+		AuthEntraServicePrincipal: true,
+		AuthEntraInteractive:      false,
+		AuthEntraDeviceCode:       false,
+		AuthEntraAzCLI:            false,
+	}
+	if len(required) != len(AllAuthMethods()) {
+		t.Fatalf("%d cases for %d auth methods", len(required), len(AllAuthMethods()))
+	}
+	for _, m := range AllAuthMethods() {
+		if got := PasswordRequired(m); got != required[m] {
+			t.Errorf("PasswordRequired(%s) = %v, want %v", AuthMethodName(m), got, required[m])
+		}
+		for _, user := range []string{"", "someone"} {
+			c := Connection{AuthMethod: m, User: user}
+			if got := c.NeedsPassword(); got != required[m] {
+				t.Errorf("%s, user %q, no password: NeedsPassword = %v, want %v", AuthMethodName(m), user, got, required[m])
+			}
+			c.Password = "pw"
+			if c.NeedsPassword() {
+				t.Errorf("%s, user %q, with a password: NeedsPassword = true", AuthMethodName(m), user)
+			}
+		}
+	}
+}
+
 func TestAddOrUpdateReplacesExistingAndMovesToEnd(t *testing.T) {
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{Server: "a", Port: 1433, Database: "db", User: "u"})

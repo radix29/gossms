@@ -134,7 +134,7 @@ func (p *QueryPanel) truncatedNotice() string {
 	} else if i := slices.IndexFunc(p.result.Sets, func(rs query.ResultSet) bool { return rs.Truncated }); i >= 0 {
 		cut = len(p.result.Sets[i].Rows)
 	} else if p.result.SinkSetsTruncated > 0 { // Results To File
-		cut = p.result.MaxRows()
+		cut = p.result.MaxRows
 	}
 	if cut < 0 {
 		return ""

@@ -62,7 +62,6 @@ func (h *writeHarness) deps() Deps {
 			h.dials++
 			return &db.ServerConn{}, nil
 		},
-		Catalog: func(*db.ServerConn) Catalog { return nil },
 	}
 }
 
@@ -73,7 +72,7 @@ func (h *writeHarness) command(d Deps) *spec.Command {
 		Class:   spec.ClassAdmin,
 		Run: func(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 			res := &output.Result{}
-			sc, _, err := d.connectGated(ctx, inv, res)
+			sc, err := d.connectGated(ctx, inv, res)
 			if err != nil {
 				return res, err
 			}

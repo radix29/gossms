@@ -244,20 +244,22 @@ func TestPeerCredentialsSkipAPasswordThisSessionCannotRead(t *testing.T) {
 // A saved SQL-authentication entry without a remembered password (the
 // default) would log in with an empty one and fail; it is left unregistered so
 // the read is refused and the Connect prompt is offered instead. Windows
-// Authentication with no user (integrated sign-in) needs none and is seeded.
+// Authentication needs none and is seeded: with no user it is integrated
+// sign-in, with a bare user a Kerberos keytab / credential-cache login.
 func TestPeerCredentialsSkipASavedEntryWithNoPassword(t *testing.T) {
 	a := newTestApp()
 	a.cfg.Connections = []config.Connection{
 		{Server: "ubusql2", AuthMethod: config.AuthSQLServer, User: "sa"},
 		{Server: "ubusql3", AuthMethod: config.AuthWindows},
 		{Server: "ubusql4", AuthMethod: config.AuthSQLServer, User: "sa", Password: "pw"},
+		{Server: "ubusql5", AuthMethod: config.AuthWindows, User: "svc@EXAMPLE.COM"},
 	}
 	a.loadPeerCredentials()
 
 	if _, ok := a.peerCredentialsFor("ubusql2"); ok {
 		t.Error("a saved SQL login with no password was registered; its peer reads fail at login instead of prompting")
 	}
-	for _, server := range []string{"ubusql3", "ubusql4"} {
+	for _, server := range []string{"ubusql3", "ubusql4", "ubusql5"} {
 		if _, ok := a.peerCredentialsFor(server); !ok {
 			t.Errorf("%s was not registered", server)
 		}

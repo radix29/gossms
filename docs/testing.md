@@ -27,6 +27,30 @@ caught by driving the built binary. For TUI or database changes, run it:
 Tests assert an outcome, not "nothing panicked". Mutate the covered code and
 confirm the new test fails.
 
+**Static checks are part of "done", not of a tag.** Both run clean today; keep
+them clean (`go install honnef.co/go/tools/cmd/staticcheck@latest`,
+`golang.org/x/tools/cmd/deadcode@latest`):
+
+- gossms: `staticcheck ./...` and `deadcode -test ./...`. A test helper
+  either finding names is usually a lost assertion, not just litter — check
+  `git log -S` for whether a test once called it before deleting it (the
+  2026-11-11 pass found a view-reorganize case that read its result and never
+  checked it).
+- gosmo: `staticcheck ./...` only. `deadcode` lists exported library surface
+  and the unexported helpers only it reaches (`schedulerGroupSizes`) — kept
+  deliberately, not a cleanup list.
+
+**The race detector is part of "done" for anything that crosses goroutines.**
+Nearly every UI result reaches the event loop through `postAndWake` from a
+goroutine, so a change touching `safego`, `postAndWake`, `latest`, a channel,
+or state a callback shares with a loader runs `go test -race -count=1` on the
+packages it changed (gosmo: on `retry.go`, the pool, `gosmotest`). The whole
+`go test -race -count=1 ./...` runs before a tag (below) and in the release
+workflow's test step: about 6 minutes for gossms, 2 for gosmo (2026-11-11,
+both clean). `-race` needs cgo; `CGO_ENABLED=0` makes it refuse to run, so the
+workflow sets `CGO_ENABLED=1` for that step only — the shipped binaries stay
+no-CGO.
+
 **gosmo's live suite: run what the change touches, not the whole suite.**
 The full `livedb` run takes about 16 minutes per instance (313 tests, serial,
 several waiting on server timers). After a change, name the affected tests
@@ -65,6 +89,13 @@ reload, a showing's several loads), wait on the outcome with
 `drainUntil(t, a, cond, what)` instead — two `-race`-only flakes came from
 this.
 
+**Opening a Properties dialog starts its first page's load on a goroutine**,
+even in a test that never looks at the page. Script its reads (or fail them
+all with a catch-all rule) and wait for the load to finish
+(`len(a.propDialog.pageRuns) == 0`). Left running against a `gosmotest` server
+with no rules, its read failed the test only when it beat the test's end:
+`TestPropertiesApplyReloadsTheFolderListingTheObject` failed about 1 run in 20.
+
 **A test package that can save config sandboxes `os.UserConfigDir` in
 `TestMain`** (`internal/tui/main_test.go` sets `XDG_CONFIG_HOME`, `HOME`,
 `AppData` to a temp dir). Without it, any `saveConfig` writes the developer's
@@ -96,12 +127,12 @@ copying files aside rather than editing in place.
 **Before a tag**, in both repos (gossms and `~/go/gosmo`), on top of the
 everyday build/test/vet:
 
-- `go test -race -count=1 ./...` — clean in both as of 2026-10-02; a few
-  minutes each.
+- `go test -race -count=1 ./...` — clean in both as of 2026-11-11 (the
+  race-detector paragraph above).
 - `govulncheck ./...` (`go install golang.org/x/vuln/cmd/govulncheck@latest`).
   "Your code is affected by 0 vulnerabilities" is the bar; a module-level hit
   your code doesn't call (GO-2026-5932, x/crypto's openpgp, no fix) is noise.
-- `go vet -tags livedb ./...` and `staticcheck ./...`.
+- `go vet -tags livedb ./...`.
 
 gosmo's write-retry rule is a test, not a sweep:
 `write_through_read_test.go` fails when SQL handed to `query`/`queryRow`/
@@ -165,21 +196,23 @@ The harness shows the page asked the right things and built the right request �
 never that the T-SQL is valid. Statement text is gosmo's tests; acceptance is a
 live run.
 
-**The command line's `object`, `script`, `data`, `security`, `maint` and `monitor` groups run real gosmo over `gosmotest`.**
+**Every command-line group runs real gosmo over `gosmotest`.**
 gosmo's exported fake driver answers each query from the first rule whose
 text it contains, with a database read's transport stripped (`Query.Database`
 says where it ran). `internal/cli/object_server_test.go` is the server: its
 rows are positional, column for column in gosmo's SELECT order, each read's
 built by one encoder (`columnRow`, `indexRow`, `statisticRow`, …), so a gosmo
-change to a query's shape or scan fails the CLI test — a faked `cmd.Catalog`
-method passes it. A query no rule answers fails the test naming the query;
+change to a query's shape or scan fails the CLI test — a hand-written fake
+of the gosmo method would pass it. A query no rule answers fails the test naming the query;
 add a rule, don't loosen the match. Rules answer in registration order, so
 a group whose reads overlap another's registers its more specific rules
 first (`newObjectServerWith`; `script_server_test.go` is the example).
 The row encoders are `internal/cli/clitest`'s, shared with package `cmd`'s
 tests, whose `catalogServer` (`cmd/catalog_server_test.go`) answers the
 resolution and table/view reads for a handler tested there (the dry-run
-fidelity harness's `data import` case); `secServer`
+fidelity harness's `data import` case); `storageServer`
+(`cmd/db_storage_test.go`: the databases and HAS_DBACCESS, under the
+files, space, log-usage and table-sizes servers), `secServer`
 (`cmd/security_server_test.go`), `maintServer`
 (`cmd/maint_server_test.go`) and `monitorServer`
 (`cmd/monitor_server_test.go`) build on it the way `scriptServer` builds on
@@ -191,6 +224,8 @@ sent, applies what it states to the server's fields — so the read after
 it sees the change — and fails it as the test asks; tests assert the
 statement text, not a fake's arguments. gosmotest answers a BACKUP or
 RESTORE that reads progress messages (`Query.Messages`) as a message
-stream, and a bulk load as one `INSERTBULK` Exec per row. Every other
-group still fakes
-`cmd.Catalog` (`docs/open-threads.md` § Command line).
+stream, and a bulk load as one `INSERTBULK` Exec per row. Package `cli`'s
+`dbFake` (`db_test.go`) serves `db list`/`db info` and `agent context`,
+whose permission probes it answers through `clitest.ServerCapabilityRows`
+and `DatabaseCapabilityRows`: a probe gosmo returns always carries its role
+map, so "unprobed" is a failed probe, never a nil map.

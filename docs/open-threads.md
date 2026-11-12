@@ -53,23 +53,21 @@ support); this section covers only the environment.
 - **`TestLiveAvailabilityGroupOperations` skips Drop and RemoveReplica** on
   AAG1; only add/remove database, suspend/resume, listener round trip and the
   failover refusal run there.
+- **No instance has a case-sensitive *server* collation**, so nothing that
+  compares server-scoped names under it has run live. gosmo's login-database
+  retarget (`connection_retarget.go`: `retarget`, and Connect's `master`
+  check) compares under `ServerInfo.Collation` since review step B5
+  (2026-11-12), pinned only offline by
+  `TestWriteOnLoginDatabaseFollowsServerCollation` and
+  `TestRefusedDialOnCaseSensitiveServerMovesMASTER`. To check: connect with
+  `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
+  and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
+  Document's keyword case (below) waits on the same instance.
 
 ## Picture viewer: what is left
 
-- **Release blocker: gotuipic is untagged.** `go.mod` has
-  `replace github.com/radix29/gotuipic => ../gotuipic` and requires the zero
-  pseudo-version, so a clean checkout (and `release.yml`) cannot build. Before
-  a tag: tag and push gotuipic, require that tag, drop the `replace`.
 - **File > Open of an image file** does not open it in a picture panel; only a
   result cell does. `openQueryFile` would sniff with `sniffPicture`.
-
-## Connection config: what is left
-
-- **A non-canonical saved `encrypt_mode` must be refused** (decided; settled
-  in `docs/decisions.md` § Always On, peer credentials). Today the Connect
-  dialog shows `"Optional"`/`"true"` as Mandatory and a peer dial hands it to
-  go-mssqldb. Make `db.toGosmoAuth`'s sibling refuse it for Connect, the
-  preview and peers alike, with a test.
 
 ## Format Document: what is left
 
@@ -112,14 +110,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-- **The `Catalog` seam still carries the shared reads** (`internal/cli/cmd/common.go`):
-  name resolution, the databases and their sizes/options, server info and
-  capabilities, the storage reads (files, volumes, space, log usage) and
-  `server log`. Every other group (`object`, `script`, `data`, `security`,
-  `maint`, `monitor`, `plan cached`, `server` info/memory/config/traceflag,
-  `xevent`, `db` create/drop/set/scoped-config, `job`) calls gosmo directly,
-  its tests serve canned rows through gosmo's `gosmotest`, and `Writer` is
-  gone. Moving the remaining reads off the seam is the author's call.
 
 ## Fix order
 

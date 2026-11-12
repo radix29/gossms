@@ -141,7 +141,8 @@ func ScriptCommands(d Deps) []*spec.Command {
 				"--script-file writes it as Script Database As ▸ File... does. --objects scripts instead every " +
 				"user object in an order a replay into an empty database accepts (schemas, types, tables without " +
 				"their foreign keys and edge constraints, functions, views, procedures and synonyms by dependency, " +
-				"then foreign keys, edge constraints and triggers); --include-permissions adds the owner, roles, users, memberships and permissions. " +
+				"then foreign keys, edge constraints and DML triggers, database triggers last); --include-permissions adds the owner, roles, users, " +
+				"memberships and permissions, the permissions before the database triggers so those do not fire on the script's GRANTs. " +
 				"The header lists what is not scripted and its warnings (each dependency cycle broken, a degraded " +
 				"dependency order), which are also the result's warnings; an encrypted module is a comment, " +
 				"listed in the record as notes, and so is everything that needs it.",
@@ -189,7 +190,7 @@ func (d Deps) scriptObject(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 	verbName := inv.Values[optAs].(string)
 	res := &output.Result{}
-	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+	dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -248,12 +249,12 @@ func (d Deps) scriptDB(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return nil, usageError("--objects scripts CREATE only; --as "+verbName+" is not offered with it", "")
 	}
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
-	dbase, err := namedDatabase(ctx, cat, inv.Args[0], res)
+	dbase, err := namedDatabase(ctx, sc.Server, inv.Args[0], res)
 	if err != nil {
 		return res, err
 	}

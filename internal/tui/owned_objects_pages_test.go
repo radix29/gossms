@@ -58,7 +58,7 @@ func loadOwnedSchemasPage(t *testing.T, principal string) (*gFake, propApply, *p
 	t.Helper()
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseSchemaResponses()...)
-	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse(), databasePrincipalsResponse())
 	responses = append(responses, databaseRoleResponses()...)
 	responses = append(responses, schemaObjectCountResponses()...)
 	sc, inst := newGConn(t, responses...)
@@ -149,7 +149,7 @@ func loadOwnedRolesPage(t *testing.T) (*gFake, propApply, *propsheet.Form, *cont
 	t.Helper()
 	responses := []fakeResponse{dbByNameResp(principalDatabase, 5)}
 	responses = append(responses, databaseRoleResponses()...)
-	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse())
+	responses = append(responses, databaseUsersResponse(), databaseApplicationRolesResponse(), databasePrincipalsResponse())
 	sc, inst := newGConn(t, responses...)
 	name := principalRole
 	form, apply := loadPageG(t, pageRoleOwnedRoles(sc, principalDatabase, &name), inst)

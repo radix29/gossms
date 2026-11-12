@@ -1018,8 +1018,7 @@ func TestResultsStatusShoutsTruncatedExport(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
 	qp.SetBounds(0, 0, 80, 24)
-	res := &query.Result{SinkSetsTruncated: 1}
-	query.WithMaxRows(7)(res)
+	res := &query.Result{SinkSetsTruncated: 1, MaxRows: 7}
 	qp.setResult(res, false)
 	if got := qp.resultsStatusText(); !strings.HasPrefix(got, "MORE ROWS NOT FETCHED - MAX FETCH ROWS IS 7") {
 		t.Errorf("export status = %q, want the truncation notice", got)

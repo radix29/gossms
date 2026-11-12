@@ -74,7 +74,7 @@ type tableOrView struct {
 // view: anything else is a usage error naming its kind. The caller closes the
 // connection through the returned func.
 func (d Deps) lookupTableOrView(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (*gosmo.ObjectInfo, tableOrView, func(), error) {
-	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+	dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
 		return nil, tableOrView{}, nil, err
 	}

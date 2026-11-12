@@ -28,7 +28,7 @@ var nschemaUnownable = []string{"sys", "INFORMATION_SCHEMA", "public"}
 // nschemaPrefetch is everything the dialog reads before it opens.
 type nschemaPrefetch struct {
 	existingNames *nameSet
-	// owners are the users and roles AUTHORIZATION may name.
+	// owners are the users, roles and application roles AUTHORIZATION may name.
 	owners []string
 	// principals are what the Permissions page may grant to: every user and role.
 	principals []permPrincipal
@@ -49,25 +49,12 @@ func fetchNewSchemaPrefetch(ctx context.Context, sc *db.ServerConn, dbName strin
 	for _, s := range schemas {
 		pf.existingNames.Add(s.Name)
 	}
-	users, err := d.Users(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	roles, err := d.Roles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	appRoles, err := d.ApplicationRoles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	pf.principals = databasePermPrincipals(users, roles)
-	unownable := newNameSet(databaseCollation(d), nschemaUnownable...)
-	for _, n := range principalNames(users, roles, appRoles) {
-		if !unownable.Has(n) {
-			pf.owners = append(pf.owners, n)
-		}
-	}
+	pf.principals = principals.grantees()
+	pf.owners = principals.owners(newNameSet(databaseCollation(d), nschemaUnownable...))
 	return pf, nil
 }
 
@@ -130,14 +117,9 @@ func (d *NewSchemaDialog) buildPages(pf *nschemaPrefetch) {
 	}
 
 	// The securable and the level are read when apply runs: the name is only
-	// known once typed. Permissions go through DatabaseRef for the same reason
-	// as the CREATE; the GRANTs need nothing but the database's name.
-	var noEntries []permEntry
-	d.forms[1], d.applyFns[1] = buildPermissionsMatrix(pf.principals, gosmo.SecurableSchema.PermissionNames(), noEntries,
-		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
-			sec := gosmo.Securable{Class: gosmo.SecurableSchema, Name: d.objectName()}
-			return securablePermApply(sc.Server.DatabaseRef(dbName), sec)(ctx, verb, opts, permission, principal)
-		})
+	// known once typed.
+	d.forms[1], d.applyFns[1] = newObjectPermissionsPage(sc, dbName, pf.principals, gosmo.SecurableSchema,
+		func() (string, string) { return "", d.objectName() })
 	d.forms[2], d.applyFns[2] = buildExtendedPropertiesForm(sc, dbName, pf.collation, func() gosmo.ExtendedPropertyLevel {
 		return gosmo.ExtendedPropertyLevel{Level0Type: "SCHEMA", Level0Name: d.objectName()}
 	}, nil)

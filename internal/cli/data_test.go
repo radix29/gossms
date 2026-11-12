@@ -29,7 +29,6 @@ func dataDeps(t *testing.T, s *objectServer, sess *fakeSession) (cmd.Deps, *int,
 		}
 		return &db.ServerConn{Server: srv}, nil
 	}
-	d.Catalog = cmd.ServerCatalog
 	opened := new([]string)
 	d.OpenSession = func(_ context.Context, _ *db.ServerConn, database string) (cmd.Session, error) {
 		*opened = append(*opened, database)
@@ -117,6 +116,10 @@ func TestDataFragmentsBlocked(t *testing.T) {
 		{[]string{"top", "Sales.Customer", "--where", "1=1) WAITFOR DELAY '0:0:5' --"}, "2 statements"},
 		{[]string{"count", "Sales.Customer", "--where", "1=1); EXEC('DROP TABLE t'); --"}, "';'"},
 		{[]string{"count", "Sales.Customer", "--where", "1=1;"}, "';'"},
+		// SQL Server ends a "--" comment at a lone CR, so what follows it is
+		// code, not comment text.
+		{[]string{"top", "Sales.Customer", "--where", "1=1 -- x\r) DELETE FROM t WHERE (1=1"}, "2 statements"},
+		{[]string{"count", "Sales.Customer", "--where", "1=1 -- x\r); DROP TABLE t; --"}, "';'"},
 	} {
 		sess := &fakeSession{t: t}
 		d, dialled, _ := dataDeps(t, newObjectServer(t), sess)

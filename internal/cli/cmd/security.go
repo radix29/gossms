@@ -189,7 +189,7 @@ func SecurityCommands(d Deps) []*spec.Command {
 
 func (d Deps) securityLogins(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -234,7 +234,7 @@ func (d Deps) securityLogins(ctx context.Context, inv *spec.Invocation) (*output
 
 func (d Deps) securityUsers(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, dbase, err := d.connectDatabase(ctx, inv, res)
+	sc, dbase, err := d.connectDatabase(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -310,7 +310,7 @@ func (d Deps) securityRoles(ctx context.Context, inv *spec.Invocation) (*output.
 	// Rows in the server's order: by name, in its collation.
 	var rows []roleRow
 	if scope == scopeServer {
-		sc, _, err := d.connectCatalog(ctx, inv, res)
+		sc, err := d.connectServer(ctx, inv, res)
 		if err != nil {
 			return res, err
 		}
@@ -323,7 +323,7 @@ func (d Deps) securityRoles(ctx context.Context, inv *spec.Invocation) (*output.
 			rows = append(rows, roleRow{r.Name, r.Owner, r.IsFixedRole, r.Members})
 		}
 	} else {
-		sc, _, dbase, err := d.connectDatabase(ctx, inv, res)
+		sc, dbase, err := d.connectDatabase(ctx, inv, res)
 		if err != nil {
 			return res, err
 		}
@@ -359,7 +359,7 @@ func (d Deps) securityRoleMembers(ctx context.Context, inv *spec.Invocation) (*o
 	res := &output.Result{}
 	scope := inv.Values[optScope].(string)
 	role := inv.Args[0]
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -373,7 +373,7 @@ func (d Deps) securityRoleMembers(ctx context.Context, inv *spec.Invocation) (*o
 	if scope == scopeServer {
 		r, err := sc.Server.ServerRoleByName(ctx, role)
 		if errors.Is(err, gosmo.ErrNotFound) {
-			return res, roleNotFound(ctx, sc.Server, cat, res, role, scope)
+			return res, roleNotFound(ctx, sc.Server, res, role, scope)
 		}
 		if err != nil {
 			return res, readError(err)
@@ -383,13 +383,13 @@ func (d Deps) securityRoleMembers(ctx context.Context, inv *spec.Invocation) (*o
 			return res, readError(err)
 		}
 	} else {
-		dbase, err := currentDatabase(ctx, cat, res)
+		dbase, err := currentDatabase(ctx, sc.Server, res)
 		if err != nil {
 			return res, err
 		}
 		r, err := dbase.RoleByName(ctx, role)
 		if errors.Is(err, gosmo.ErrNotFound) {
-			return res, roleNotFound(ctx, sc.Server, cat, res, role, scope)
+			return res, roleNotFound(ctx, sc.Server, res, role, scope)
 		}
 		if err != nil {
 			return res, readError(err)
@@ -416,13 +416,12 @@ func (d Deps) securityRoleMembers(ctx context.Context, inv *spec.Invocation) (*o
 
 // roleNotFound is NOT_FOUND for a role missing from scope, hinting --scope
 // when the other scope has a role of that name. A failed hint read leaves
-// the hint generic rather than replacing the answer. cat resolves the
-// connection's database.
-func roleNotFound(ctx context.Context, srv *gosmo.Server, cat Catalog, res *output.Result, role, scope string) *output.Error {
+// the hint generic rather than replacing the answer.
+func roleNotFound(ctx context.Context, srv *gosmo.Server, res *output.Result, role, scope string) *output.Error {
 	if scope == scopeServer {
 		hint := "Check the name: security roles list --scope server lists the server roles. " +
 			"A login without VIEW ANY DEFINITION sees only the fixed roles and its own."
-		if dbase, err := currentDatabase(ctx, cat, res); err == nil {
+		if dbase, err := currentDatabase(ctx, srv, res); err == nil {
 			if _, err := dbase.RoleByName(ctx, role); err == nil {
 				hint = fmt.Sprintf("%s is a role of database %s: drop --scope server.", gosmo.QuoteName(role), gosmo.QuoteName(dbase.Name))
 			}
@@ -454,7 +453,7 @@ func (d Deps) securityPermissions(ctx context.Context, inv *spec.Invocation) (*o
 	scope := inv.Values[optScope].(string)
 	effective, _ := inv.Values[optEffective].(bool)
 	asked := inv.Args[0]
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -462,11 +461,11 @@ func (d Deps) securityPermissions(ctx context.Context, inv *spec.Invocation) (*o
 
 	var dbase *gosmo.Database
 	if scope == scopeDatabase {
-		if dbase, err = currentDatabase(ctx, cat, res); err != nil {
+		if dbase, err = currentDatabase(ctx, sc.Server, res); err != nil {
 			return res, err
 		}
 	}
-	p, err := resolvePrincipal(ctx, sc.Server, cat, res, dbase, asked, permissionsScope)
+	p, err := resolvePrincipal(ctx, sc.Server, res, dbase, asked, permissionsScope)
 	if err != nil {
 		return res, err
 	}
@@ -519,9 +518,9 @@ var (
 // resolvePrincipal finds name in dbase (a user, a database role, then an
 // application role) or, with dbase nil, on the server (a login, then a
 // server role). Nothing found is NOT_FOUND, hinting the other scope (in
-// words) or the user a login maps to. cat resolves the connection's database
-// for a server-scope hint.
-func resolvePrincipal(ctx context.Context, srv *gosmo.Server, cat Catalog, res *output.Result, dbase *gosmo.Database, name string, words scopeWords) (principal, error) {
+// words) or the user a login maps to; a server-scope hint looks in the
+// connection's database.
+func resolvePrincipal(ctx context.Context, srv *gosmo.Server, res *output.Result, dbase *gosmo.Database, name string, words scopeWords) (principal, error) {
 	if dbase == nil {
 		l, err := srv.LoginByName(ctx, name)
 		if err == nil {
@@ -539,7 +538,7 @@ func resolvePrincipal(ctx context.Context, srv *gosmo.Server, cat Catalog, res *
 		}
 		hint := "Check the name: security logins list and security roles list --scope server list them. " +
 			"A login without VIEW ANY DEFINITION sees only itself and the fixed roles."
-		if dbase, err := currentDatabase(ctx, cat, res); err == nil {
+		if dbase, err := currentDatabase(ctx, srv, res); err == nil {
 			if _, err := dbase.UserByName(ctx, name); err == nil {
 				hint = fmt.Sprintf("%s is a user of database %s: %s.", gosmo.QuoteName(name), gosmo.QuoteName(dbase.Name), words.toDatabase)
 			} else if _, err := dbase.RoleByName(ctx, name); err == nil {

@@ -457,7 +457,7 @@ func (d Deps) dataImport(ctx context.Context, inv *spec.Invocation) (*output.Res
 		return res, err
 	}
 	defer sc.Close()
-	s := &dataSource{target: t, conn: sc, cat: d.Catalog(sc)}
+	s := &dataSource{target: t, conn: sc}
 	if err := s.resolve(ctx, inv.Args[0], res); err != nil {
 		return res, err
 	}

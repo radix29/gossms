@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -104,5 +105,52 @@ func TestErrorMessagesKeepsTheServersLine(t *testing.T) {
 	msgs := ErrorMessages(divideByZero("", 2).err)
 	if msgs[0].Text != "Msg 8134, Level 16, State 1, Line 2" || msgs[0].Line != 0 {
 		t.Errorf("ErrorMessages = %+v, want the server's Line 2 and no Line", msgs)
+	}
+}
+
+// goRepeatedBatches scripts n executions of a batch printing "(1 row
+// affected)", the middle one failing: "GO n" over an INSERT.
+func goRepeatedBatches(n int) [][]fakeMsg {
+	batches := make([][]fakeMsg, n)
+	for i := range batches {
+		batches[i] = []fakeMsg{{kind: msgAffected, count: 1}}
+	}
+	batches[n/2] = []fakeMsg{divideByZero("", 1)}
+	return batches
+}
+
+// A GO n run counts each execution's errors from that execution's messages
+// alone, so FailedBatches is exact and the run stays linear in n (it rescanned
+// every message so far per execution: GO 100000 was ~10¹⁰ comparisons).
+func TestGoRepeatCountsFailedExecutions(t *testing.T) {
+	const n = 5000
+	s, _, _ := openFakeSession(t, goRepeatedBatches(n)...)
+	defer s.Close()
+	res := s.Execute(context.Background(), "insert t default values\nGO 5000")
+	if res.Batches != n || res.FailedBatches != 1 {
+		t.Errorf("Batches %d, FailedBatches %d; want %d, 1", res.Batches, res.FailedBatches, n)
+	}
+	if !res.HasErrors() {
+		t.Error("HasErrors = false, want true")
+	}
+}
+
+// BenchmarkGoRepeat scales linearly with n; compare ns/op across the sizes.
+func BenchmarkGoRepeat(b *testing.B) {
+	for _, n := range []int{2000, 8000} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			script := "insert t default values\nGO " + strconv.Itoa(n)
+			for b.Loop() {
+				b.StopTimer()
+				s, _, _ := openFakeSession(b, goRepeatedBatches(n)...)
+				b.StartTimer()
+				if res := s.Execute(context.Background(), script); res.Batches != n {
+					b.Fatalf("Batches %d, want %d", res.Batches, n)
+				}
+				b.StopTimer()
+				s.Close()
+				b.StartTimer()
+			}
+		})
 	}
 }

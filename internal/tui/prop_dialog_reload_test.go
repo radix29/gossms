@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/db"
 )
 
@@ -56,7 +58,8 @@ func TestPropertiesApplyReloadsTheFolderListingTheObject(t *testing.T) {
 			[]nodeData{{Type: NodeBrokerQueues, DBName: dbName}}, []nodeData{{Type: NodeBrokerQueues, DBName: "otherdb"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, _ := newGConn(t)
+			sc, f := newGConn(t)
+			f.OnFunc(func(gosmotest.Query) bool { return true }, gosmotest.Fail(errors.New("not scripted: the page load")))
 			a := newTestApp()
 			a.propDialog = NewPropDialog(a)
 			a.connections = append(a.connections, sc)
@@ -78,6 +81,12 @@ func TestPropertiesApplyReloadsTheFolderListingTheObject(t *testing.T) {
 			a.explorer.SetChildren(root, parents)
 
 			tc.open(a, sc)
+			// Showing the dialog starts its first page's load on a goroutine.
+			// The test is about the Apply hook, not the load: every read the
+			// load makes fails, and the case waits for it to finish. Left
+			// running against no rules, its read failed the test as
+			// unanswered whenever it beat the case's end.
+			drainUntil(t, a, func() bool { return len(a.propDialog.pageRuns) == 0 }, "the first page's load")
 			if a.propDialog.onSaved == nil {
 				t.Fatal("the dialog sets no onSaved hook")
 			}

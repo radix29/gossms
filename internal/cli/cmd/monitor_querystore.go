@@ -300,7 +300,7 @@ func (d Deps) monitorQueryStore(ctx context.Context, inv *spec.Invocation) (*out
 		return nil, err
 	}
 	res := &output.Result{}
-	sc, _, dbase, err := d.connectDatabase(ctx, inv, res)
+	sc, dbase, err := d.connectDatabase(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}

@@ -141,7 +141,6 @@ func DataCommands(d Deps) []*spec.Command {
 type dataSource struct {
 	target *connect.Target
 	conn   *db.ServerConn
-	cat    Catalog
 	dbase  *gosmo.Database
 	obj    *gosmo.ObjectInfo
 	kind   string // kindTable or kindView
@@ -167,7 +166,7 @@ func (d Deps) openDataSource(ctx context.Context, inv *spec.Invocation, res *out
 	if err != nil {
 		return nil, err
 	}
-	s := &dataSource{target: t, conn: sc, cat: d.Catalog(sc)}
+	s := &dataSource{target: t, conn: sc}
 	if err := s.resolve(ctx, inv.Args[0], res); err != nil {
 		sc.Close()
 		return nil, err
@@ -177,14 +176,14 @@ func (d Deps) openDataSource(ctx context.Context, inv *spec.Invocation, res *out
 
 func (s *dataSource) resolve(ctx context.Context, arg string, res *output.Result) error {
 	var err error
-	if s.dbase, err = currentDatabase(ctx, s.cat, res); err != nil {
+	if s.dbase, err = currentDatabase(ctx, s.conn.Server, res); err != nil {
 		return err
 	}
 	n, err := parseObjectName(arg, s.dbase.Name)
 	if err != nil {
 		return err
 	}
-	if s.obj, err = resolveObject(ctx, s.cat, s.dbase, n); err != nil {
+	if s.obj, err = resolveObject(ctx, s.dbase, n); err != nil {
 		return err
 	}
 	switch s.kind = kindOfDesc(s.obj.TypeDesc); s.kind {

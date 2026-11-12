@@ -86,15 +86,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return roleGeneral{}, err
-			}
-			roles, err := d.Roles(ctx)
-			if err != nil {
-				return roleGeneral{}, err
-			}
-			appRoles, err := d.ApplicationRoles(ctx)
+			principals, err := loadDatabasePrincipals(ctx, d)
 			if err != nil {
 				return roleGeneral{}, err
 			}
@@ -114,7 +106,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 				}
 			}
 			ownedRoles := 0
-			for _, r := range roles {
+			for _, r := range principals.Roles {
 				if r.Owner == *roleName {
 					ownedRoles++
 				}
@@ -136,7 +128,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 				id: role.ID, sid: role.SID, created: role.CreateDate, modified: role.ModifyDate,
 				members: len(role.Members),
 				builtin: builtin, roleType: roleType,
-				ownerNames: principalNames(users, roles, appRoles),
+				ownerNames: principals.owners(nil),
 				summary: []propsheet.Row{
 					propsheet.Static("Owned schemas", strconv.Itoa(ownedSchemas)),
 					propsheet.Static("Owned roles", strconv.Itoa(ownedRoles)),
@@ -162,11 +154,7 @@ func pageRoleMembers(sc *db.ServerConn, dbName string, roleName *string) propPag
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			roles, err := d.Roles(ctx)
+			principals, err := loadDatabasePrincipals(ctx, d)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -176,15 +164,15 @@ func pageRoleMembers(sc *db.ServerConn, dbName string, roleName *string) propPag
 			collation := databaseCollation(d)
 			special := newNameSet(collation, nroleSpecial...)
 			existing := roleMemberSet(members)
-			principalType := make(map[string]gosmo.PrincipalType, len(users)+len(roles))
+			principalType := make(map[string]gosmo.PrincipalType, len(principals.Users)+len(principals.Roles))
 			var candidates []string
-			for _, u := range users {
+			for _, u := range principals.Users {
 				principalType[u.Name] = u.UserType
 				if !existing[u.Name] && roleMemberEligible(special, u.Name, false) {
 					candidates = append(candidates, u.Name)
 				}
 			}
-			for _, r := range roles {
+			for _, r := range principals.Roles {
 				principalType[r.Name] = gosmo.PrincipalDatabaseRole
 				if r.Name != *roleName && !existing[r.Name] && roleMemberEligible(special, r.Name, r.IsFixedRole) {
 					candidates = append(candidates, r.Name)
@@ -217,21 +205,13 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName string, roleName *string) prop
 			if err != nil {
 				return nil, nil, err
 			}
-			allRoles, err := d.Roles(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			appRoles, err := d.ApplicationRoles(ctx)
+			principals, err := loadDatabasePrincipals(ctx, d)
 			if err != nil {
 				return nil, nil, err
 			}
 
 			var items []*ownerTransferItem[*gosmo.DatabaseRole]
-			for _, r := range allRoles {
+			for _, r := range principals.Roles {
 				if r.Owner == *roleName {
 					items = append(items, &ownerTransferItem[*gosmo.DatabaseRole]{
 						obj: r, name: r.Name, origOwner: r.Owner, newOwner: r.Owner,
@@ -239,7 +219,7 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName string, roleName *string) prop
 				}
 			}
 
-			f, apply := newOwnerTransferPage(items, principalNames(users, allRoles, appRoles), ownerTransferSpec[*gosmo.DatabaseRole]{
+			f, apply := newOwnerTransferPage(items, principals.owners(nil), ownerTransferSpec[*gosmo.DatabaseRole]{
 				Headers: []string{"Role", "Type", "Members"},
 				Cells: func(it *ownerTransferItem[*gosmo.DatabaseRole]) []string {
 					return []string{it.name, "Database role", strconv.Itoa(len(it.obj.Members))}

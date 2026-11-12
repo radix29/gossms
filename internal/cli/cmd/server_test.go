@@ -9,35 +9,42 @@ import (
 
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/cli/args"
+	"github.com/radix29/gossms/internal/cli/clitest"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 )
 
-// volumesCatalog answers server volumes' one read.
-type volumesCatalog struct {
-	Catalog
+// volumesServer answers server volumes' one read.
+type volumesServer struct {
+	*gosmotest.Fake
 	vols   []gosmo.FileVolume
 	hidden bool
 	err    error
 }
 
-func (c *volumesCatalog) FileVolumes(context.Context) ([]gosmo.FileVolume, bool, error) {
-	if c.err != nil {
-		return nil, false, c.err
-	}
-	if c.hidden {
-		return nil, false, nil
-	}
-	return c.vols, true, nil
+func newVolumesFake(t *testing.T, vols []gosmo.FileVolume) *volumesServer {
+	s := &volumesServer{Fake: gosmotest.New(t), vols: vols}
+	answer(s.Fake, func(gosmotest.Query) ([][]any, error) {
+		if s.hidden {
+			return [][]any{clitest.FileVolumesHiddenRow()}, s.err
+		}
+		var rows [][]any
+		for _, v := range s.vols {
+			rows = append(rows, clitest.FileVolumeRow(v))
+		}
+		return rows, s.err
+	}, "sys.dm_os_volume_stats")
+	return s
 }
 
 const gib = 1024 * 1024 * 1024
 
-func newVolumesCatalog() *volumesCatalog {
-	return &volumesCatalog{vols: []gosmo.FileVolume{
+func newVolumesServer(t *testing.T) *volumesServer {
+	return newVolumesFake(t, []gosmo.FileVolume{
 		{DatabaseID: 1, FileID: 1, PhysicalName: "/var/opt/mssql/data/master.mdf", MountPoint: "/var/opt/mssql/data",
 			TotalBytes: 500 * gib, AvailableBytes: 92 * gib},
 		{DatabaseID: 1, FileID: 2, PhysicalName: "/var/opt/mssql/log/mastlog.ldf", MountPoint: "/var/opt/mssql/log",
@@ -57,17 +64,17 @@ func newVolumesCatalog() *volumesCatalog {
 		// Azure MI's nonsense figures: left out with a warning.
 		{DatabaseID: 7, FileID: 1, PhysicalName: `C:\x.mdf`, MountPoint: `C:\`, TotalBytes: 192 << 20, AvailableBytes: 65344 << 20},
 		{DatabaseID: 7, FileID: 2, PhysicalName: `C:\x.ldf`, MountPoint: `C:\`},
-	}}
+	})
 }
 
-// runServerVolumes runs server volumes over cat with argv after it.
-func runServerVolumes(t *testing.T, cat Catalog, argv string) (*output.Result, error) {
+// runServerVolumes runs server volumes over s with argv after it.
+func runServerVolumes(t *testing.T, s *volumesServer, argv string) (*output.Result, error) {
 	t.Helper()
 	d := Deps{
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
+			srv, err := s.Connect(ctx)
+			return &db.ServerConn{Server: srv}, err
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
 	}
 	tree := &spec.Tree{Commands: ServerCommands(d)}
 	inv, err := args.Parse(tree, append([]string{"server", "volumes", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
@@ -78,7 +85,7 @@ func runServerVolumes(t *testing.T, cat Catalog, argv string) (*output.Result, e
 }
 
 func TestServerVolumes(t *testing.T) {
-	res, err := runServerVolumes(t, newVolumesCatalog(), "--unit gb")
+	res, err := runServerVolumes(t, newVolumesServer(t), "--unit gb")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +121,7 @@ func TestServerVolumesUnit(t *testing.T) {
 		"":          {"total_mb", "512000.00"},
 		"--unit kb": {"total_kb", "524288000"},
 	} {
-		res, err := runServerVolumes(t, newVolumesCatalog(), argv)
+		res, err := runServerVolumes(t, newVolumesServer(t), argv)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,18 +134,18 @@ func TestServerVolumesUnit(t *testing.T) {
 // Without VIEW SERVER STATE — asked first, or refused by the DMV — the
 // command fails, exit 9, with a hint naming the permission (D7).
 func TestServerVolumesNoViewServerState(t *testing.T) {
-	hidden := newVolumesCatalog()
+	hidden := newVolumesServer(t)
 	hidden.hidden = true
-	refused := newVolumesCatalog()
+	refused := newVolumesServer(t)
 	refused.err = mssql.Error{Number: 300, Class: 14, Message: "VIEW SERVER STATE permission was denied on object 'server', database 'master'."}
-	for name, cat := range map[string]*volumesCatalog{"hidden": hidden, "refused": refused} {
-		_, err := runServerVolumes(t, cat, "")
+	for name, s := range map[string]*volumesServer{"hidden": hidden, "refused": refused} {
+		_, err := runServerVolumes(t, s, "")
 		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != output.CodePermissionDenied || !strings.Contains(e.Hint, "VIEW SERVER STATE") {
 			t.Errorf("%s: %v, want PERMISSION_DENIED naming VIEW SERVER STATE", name, err)
 		}
 	}
-	other := newVolumesCatalog()
-	other.err = errors.New("gosmo: file volumes: boom")
+	other := newVolumesServer(t)
+	other.err = errors.New("boom")
 	if _, err := runServerVolumes(t, other, ""); err == nil {
 		t.Error("a failed read succeeded")
 	}
@@ -146,7 +153,7 @@ func TestServerVolumesNoViewServerState(t *testing.T) {
 
 // No database file on a plausible volume: an empty set, no error.
 func TestServerVolumesEmpty(t *testing.T) {
-	res, err := runServerVolumes(t, &volumesCatalog{}, "")
+	res, err := runServerVolumes(t, newVolumesFake(t, nil), "")
 	if err != nil || len(res.Sets[0].Rows) != 0 || len(res.Warnings) != 0 {
 		t.Errorf("rows %v, warnings %q, err %v", res.Sets[0].Rows, res.Warnings, err)
 	}

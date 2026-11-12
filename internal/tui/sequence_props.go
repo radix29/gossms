@@ -35,7 +35,7 @@ func sequencePropPages(sc *db.ServerConn, dbName, schema, name string) []propPag
 	w := gate.ObjectWriteRights()
 	return []propPage{
 		withRequiresOn(pageSequenceGeneral(sc, dbName, schema, name), dbName, schema, name, w...),
-		withRequires(pageSequencePermissions(sc, dbName, schema, name), dbName, gate.ControlDB),
+		withRequires(pageObjectPermissions(sc, dbName, gosmo.SecurableSequence, schema, name), dbName, gate.ControlDB),
 		withRequiresOn(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return sequencePropertyLevel(schema, name)
 		}), dbName, schema, name, w...),
@@ -224,34 +224,6 @@ func sequenceChangesFrom(restart, increment, minRow, maxRow *propsheet.TextRow, 
 		}
 	}
 	return ch, nil
-}
-
-func pageSequencePermissions(sc *db.ServerConn, dbName, schema, name string) propPage {
-	return propPage{
-		title: "Permissions",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByName(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			perms, err := d.Permissions(ctx, schema, name)
-			if err != nil {
-				return nil, nil, err
-			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			roles, err := d.Roles(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.SecurableSequence.PermissionNames(),
-				objectPermEntries(perms),
-				securablePermApply(d, gosmo.Securable{Class: gosmo.SecurableSequence, Schema: schema, Name: name}))
-			return f, apply, nil
-		},
-	}
 }
 
 func sequenceMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {

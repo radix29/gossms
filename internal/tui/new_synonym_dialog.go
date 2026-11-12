@@ -20,65 +20,21 @@ import (
 // the typed name. A synonym has no ALTER, so there is no Properties dialog to
 // pair with this one.
 
-// nsynPrefetch is everything the dialog reads before it opens.
-type nsynPrefetch struct {
-	// existing holds every synonym as sequenceKey spells it, under the
-	// database's collation. Only synonyms: any other object of the same name
-	// collides too, and the server names that one (Msg 2714).
-	existing *nameSet
-	schemas  []string
-	// principals are what the Permissions page may grant to: every user and role.
-	principals []permPrincipal
-	// collation is the database's, for the Extended Properties page's names.
-	collation string
-}
-
-func fetchNewSynonymPrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*nsynPrefetch, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	schemas, err := d.Schemas(ctx)
-	if err != nil {
-		return nil, err
-	}
-	syns, err := d.Synonyms(ctx)
-	if err != nil {
-		return nil, err
-	}
-	users, err := d.Users(ctx)
-	if err != nil {
-		return nil, err
-	}
-	roles, err := d.Roles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	pf := &nsynPrefetch{existing: newNameSet(databaseCollation(d)), collation: databaseCollation(d),
-		principals: databasePermPrincipals(users, roles)}
-	// sys and INFORMATION_SCHEMA refuse CREATE SYNONYM as they refuse CREATE
-	// SEQUENCE (Msg 2760, sa included), so the sequence picker's rule holds.
-	pf.schemas = sequenceSchemas(databaseCollation(d), schemas)
-	for _, s := range syns {
-		pf.existing.Add(sequenceKey(s.Schema, s.Name))
-	}
-	return pf, nil
-}
-
 // NewSynonymDialog is the New Synonym dialog.
 type NewSynonymDialog struct {
-	dbFolderDialog[nsynPrefetch]
+	dbFolderDialog[schemaObjectPrefetch]
 }
 
 // NewNewSynonymDialog creates the dialog and wires its callbacks.
 func NewNewSynonymDialog(app *App) *NewSynonymDialog {
 	d := &NewSynonymDialog{}
-	d.initInFolder(app, newObjectConfig[nsynPrefetch]{
+	d.initInFolder(app, newObjectConfig[schemaObjectPrefetch]{
 		title: "New Synonym",
 		noun:  "Synonym",
 		pages: []string{"General", "Permissions", "Extended Properties"},
-		fetch: func(ctx context.Context, sc *db.ServerConn) (*nsynPrefetch, error) {
-			return fetchNewSynonymPrefetch(ctx, sc, d.dbName)
+		fetch: func(ctx context.Context, sc *db.ServerConn) (*schemaObjectPrefetch, error) {
+			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, schemaObjectKeys((*gosmo.Database).Synonyms,
+				func(s *gosmo.Synonym) (string, string) { return s.Schema, s.Name }))
 		},
 		build: d.buildPages,
 	})
@@ -91,7 +47,7 @@ type nsynFields struct {
 	schema                                     *propsheet.SelectRow
 }
 
-func (d *NewSynonymDialog) buildPages(pf *nsynPrefetch) {
+func (d *NewSynonymDialog) buildPages(pf *schemaObjectPrefetch) {
 	sc := d.sc
 	dbName := d.dbName
 
@@ -147,15 +103,9 @@ func (d *NewSynonymDialog) buildPages(pf *nsynPrefetch) {
 		return err
 	}
 
-	// The securable is read when apply runs, from the request the preflight built:
-	// the name is only known once typed. Permissions go through DatabaseRef for the
-	// same reason as the CREATE.
-	var noEntries []permEntry
-	d.forms[1], d.applyFns[1] = buildPermissionsMatrix(pf.principals, gosmo.SecurableSynonym.PermissionNames(), noEntries,
-		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
-			sec := gosmo.Securable{Class: gosmo.SecurableSynonym, Schema: req.Schema, Name: req.Name}
-			return securablePermApply(sc.Server.DatabaseRef(dbName), sec)(ctx, verb, opts, permission, principal)
-		})
+	// The securable is read when apply runs, from the request the preflight built.
+	d.forms[1], d.applyFns[1] = newObjectPermissionsPage(sc, dbName, pf.principals, gosmo.SecurableSynonym,
+		func() (string, string) { return req.Schema, req.Name })
 	d.forms[2], d.applyFns[2] = buildExtendedPropertiesForm(sc, dbName, pf.collation, func() gosmo.ExtendedPropertyLevel {
 		return synonymPropertyLevel(req.Schema, req.Name)
 	}, nil)
@@ -171,7 +121,7 @@ func synonymPropertyLevel(schema, name string) gosmo.ExtendedPropertyLevel {
 
 // newSynonymRequest reads the General page into a request, refusing, naming
 // the field, what the CREATE would be refused for.
-func newSynonymRequest(f nsynFields, dbName string, pf *nsynPrefetch) (gosmo.CreateSynonymRequest, error) {
+func newSynonymRequest(f nsynFields, dbName string, pf *schemaObjectPrefetch) (gosmo.CreateSynonymRequest, error) {
 	req := gosmo.CreateSynonymRequest{
 		Schema: f.schema.Value(),
 		Name:   strings.TrimSpace(f.name.Value()),

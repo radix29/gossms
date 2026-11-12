@@ -39,7 +39,7 @@ type nrolePrefetch struct {
 	// existingNames holds every database principal's name — users, database
 	// roles and application roles share one namespace (Msg 15023).
 	existingNames *nameSet
-	// owners are the users and roles AUTHORIZATION may name.
+	// owners are the users, roles and application roles AUTHORIZATION may name.
 	owners []string
 	// members are the principals ADD MEMBER accepts: users other than dbo, and
 	// user-defined roles — dbo and every fixed role are refused Msg 15405.
@@ -59,15 +59,7 @@ func fetchNewRolePrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 	if err != nil {
 		return nil, err
 	}
-	users, err := d.Users(ctx)
-	if err != nil {
-		return nil, err
-	}
-	roles, err := d.Roles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	appRoles, err := d.ApplicationRoles(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +72,7 @@ func fetchNewRolePrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 	if err != nil {
 		return nil, err
 	}
-	pf := newRolePrefetchFrom(databaseCollation(d), users, roles, appRoles, schemas)
+	pf := newRolePrefetchFrom(databaseCollation(d), principals.Users, principals.Roles, principals.ApplicationRoles, schemas)
 	pf.database, pf.securables = d, securables
 	return pf, nil
 }

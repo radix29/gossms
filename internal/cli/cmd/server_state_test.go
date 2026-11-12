@@ -171,17 +171,6 @@ func (s *instanceServer) opt(name string) *gosmo.ConfigurationOption {
 	return s.opts[i]
 }
 
-// reads is how many queries s was sent containing every one of subs.
-func (s *instanceServer) reads(subs ...string) int {
-	n := 0
-	for _, q := range s.Queries() {
-		if has(q, subs...) {
-			n++
-		}
-	}
-	return n
-}
-
 // sqlErr is the server's error number n.
 func sqlErr(n int32, class uint8, msg string) error {
 	return mssql.Error{Number: n, Class: class, Message: msg}
@@ -346,7 +335,6 @@ func serverDeps(s *instanceServer, dials *int) Deps {
 			*dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 }
 

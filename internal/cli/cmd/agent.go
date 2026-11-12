@@ -344,13 +344,13 @@ func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.R
 		return res, err
 	}
 	defer sc.Close()
-	cat := d.Catalog(sc)
-	dbase, err := currentDatabase(ctx, cat, res)
+	srv := sc.Server
+	dbase, err := currentDatabase(ctx, srv, res)
 	if err != nil {
 		return res, err
 	}
 
-	info := cat.ServerInfo()
+	info := srv.Info()
 	if info == nil {
 		info = new(gosmo.ServerInfo)
 		res.Warnings = append(res.Warnings, "The server's version and login were not read at connect.")
@@ -365,15 +365,15 @@ func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.R
 		}
 	}
 
-	srvCaps, err := cat.ServerCapabilities(ctx)
+	srvCaps, err := srv.Capabilities(ctx)
 	if err != nil {
 		res.Warnings = append(res.Warnings, "Server permissions were not probed: "+err.Error())
 	}
-	dbCaps, err := cat.DatabaseCapabilities(ctx, dbase)
+	dbCaps, err := dbase.Capabilities(ctx)
 	if err != nil {
 		res.Warnings = append(res.Warnings, "Permissions in the database were not probed: "+err.Error())
 	}
-	target, targetCaps, err := contextTarget(ctx, cat, inv, dbase, dbCaps, res)
+	target, targetCaps, err := contextTarget(ctx, srv, inv, dbase, dbCaps, res)
 	if err != nil {
 		return res, err
 	}
@@ -398,9 +398,9 @@ func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.R
 		{Key: "maxAllowSource", Value: source},
 	})
 
-	msdbCaps := msdbCapabilities(ctx, cat, srvCaps, contextDB{dbase.Name, dbCaps},
+	msdbCaps := msdbCapabilities(ctx, srv, srvCaps, contextDB{dbase.Name, dbCaps},
 		contextDB{target.Name, targetCaps}, res)
-	res.Sets = append(res.Sets, d.contextDatabases(ctx, cat, res), missingPermissions(srvCaps,
+	res.Sets = append(res.Sets, d.contextDatabases(ctx, srv, res), missingPermissions(srvCaps,
 		contextDB{dbase.Name, dbCaps}, contextDB{target.Name, targetCaps}, msdbCaps))
 	profiles, err := d.contextProfiles(cfg, profile)
 	if err != nil {
@@ -413,13 +413,13 @@ func (d Deps) agentContext(ctx context.Context, inv *spec.Invocation) (*output.R
 // contextTarget is --target-database read from the catalog and probed, or the
 // connection's database and its probe when none is given. A target the login
 // cannot open answers nothing, so lists nothing: a warning says why.
-func contextTarget(ctx context.Context, cat Catalog, inv *spec.Invocation, conn *gosmo.Database,
+func contextTarget(ctx context.Context, srv *gosmo.Server, inv *spec.Invocation, conn *gosmo.Database,
 	connCaps *gosmo.DatabaseCapabilities, res *output.Result) (*gosmo.Database, *gosmo.DatabaseCapabilities, error) {
 	name, _ := inv.Values[optTargetDatabase].(string)
 	if name == "" {
 		return conn, connCaps, nil
 	}
-	target, err := cat.DatabaseByName(ctx, name)
+	target, err := srv.DatabaseByName(ctx, name)
 	if errors.Is(err, gosmo.ErrNotFound) {
 		return nil, nil, output.NewError(output.CodeNotFound,
 			fmt.Sprintf("--target-database: no database %s on the server", gosmo.QuoteName(name)),
@@ -431,7 +431,7 @@ func contextTarget(ctx context.Context, cat Catalog, inv *spec.Invocation, conn 
 	if target.ID == conn.ID {
 		return target, connCaps, nil
 	}
-	caps, err := cat.DatabaseCapabilities(ctx, target)
+	caps, err := target.Capabilities(ctx)
 	switch {
 	case err != nil:
 		res.Warnings = append(res.Warnings, "Permissions in the target database were not probed: "+err.Error())
@@ -452,9 +452,9 @@ func contextTarget(ctx context.Context, cat Catalog, inv *spec.Invocation, conn 
 // sysadmin needs no msdb role and an unprobed one answers nothing anyway. A
 // failed probe, or an msdb the login cannot open, answers nothing, with a
 // warning.
-func msdbCapabilities(ctx context.Context, cat Catalog, srv *gosmo.Capabilities, conn, target contextDB,
+func msdbCapabilities(ctx context.Context, srv *gosmo.Server, srvCaps *gosmo.Capabilities, conn, target contextDB,
 	res *output.Result) *gosmo.DatabaseCapabilities {
-	if !srv.Probed() || srv.IsSysadmin() {
+	if !srvCaps.Probed() || srvCaps.IsSysadmin() {
 		return nil
 	}
 	for _, d := range []contextDB{conn, target} {
@@ -462,10 +462,10 @@ func msdbCapabilities(ctx context.Context, cat Catalog, srv *gosmo.Capabilities,
 			return d.caps
 		}
 	}
-	msdb, err := cat.DatabaseByName(ctx, "msdb")
+	msdb, err := srv.DatabaseByName(ctx, "msdb")
 	var caps *gosmo.DatabaseCapabilities
 	if err == nil {
-		caps, err = cat.DatabaseCapabilities(ctx, msdb)
+		caps, err = msdb.Capabilities(ctx)
 	}
 	switch {
 	case err != nil:
@@ -481,17 +481,17 @@ func msdbCapabilities(ctx context.Context, cat Catalog, srv *gosmo.Capabilities,
 
 // contextDatabases is every database the login can see, and whether it can
 // open it now: false for one not ONLINE, NULL when the server did not say.
-func (d Deps) contextDatabases(ctx context.Context, cat Catalog, res *output.Result) output.Set {
+func (d Deps) contextDatabases(ctx context.Context, srv *gosmo.Server, res *output.Result) output.Set {
 	set := output.Set{Name: "databases", Columns: []output.Column{
 		{Name: "name", Type: "sysname"}, {Name: "state", Type: "nvarchar(60)"},
 		{Name: "accessible", Type: "bit", Nullable: true}, {Name: "is_system", Type: "bit"},
 	}}
-	dbs, err := cat.Databases(ctx)
+	dbs, err := srv.Databases(ctx)
 	if err != nil {
 		res.Warnings = append(res.Warnings, "Databases were not read: "+err.Error())
 		return set
 	}
-	access, err := cat.DatabaseAccess(ctx)
+	access, err := srv.DatabaseAccess(ctx)
 	if err != nil {
 		res.Warnings = append(res.Warnings, "Database access was not read: "+err.Error())
 	}

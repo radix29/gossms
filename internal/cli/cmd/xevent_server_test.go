@@ -109,6 +109,7 @@ func (s *xeServer) applyWrite(q gosmotest.Query) gosmotest.Result {
 	default:
 		verb, name = strings.ToLower(m[4]), m[3]
 	}
+	name = strings.ReplaceAll(name, "]]", "]")
 	s.steps = append(s.steps, verb+" "+name)
 	if verb == "create" {
 		s.creates = append(s.creates, q.Text)
@@ -289,7 +290,6 @@ func runXEventCtx(t *testing.T, ctx context.Context, s *xeServer, argv ...string
 			dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	tree := &spec.Tree{Commands: XEventCommands(d), Globals: []spec.Option{
 		{Name: "output", Short: "o", Type: spec.TypeEnum, Enum: output.Formats, Default: "text"}}}

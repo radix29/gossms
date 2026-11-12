@@ -99,6 +99,10 @@ type ConnectDialog struct {
 	ddEncrypt  *widgets.DropDown
 	fHostCert  *widgets.InputField
 
+	// encryptModes are the modes behind ddEncrypt's rows: AllEncryptModes,
+	// plus a saved mode gossms does not know as a last row (setEncryptMode).
+	encryptModes []config.EncryptMode
+
 	// fExtraProps holds extra "key=value" driver parameters separated by ';',
 	// '&' or line breaks (db.ParseExtraProperties). A key a dialog field
 	// controls is refused and the preview says so.
@@ -186,12 +190,7 @@ func NewConnectDialog(app *App) *ConnectDialog {
 	d.fClientID = widgets.NewInputField(label("Client ID"), connectValueWidth, false)
 	d.fDatabase = widgets.NewInputField(label("Database Name"), connectValueWidth, false)
 
-	modes := config.AllEncryptModes()
-	encryptItems := make([]string, len(modes))
-	for i, m := range modes {
-		encryptItems[i] = config.EncryptModeName(m)
-	}
-	d.ddEncrypt = widgets.NewDropDown(label("Encrypt"), encryptItems, connectValueWidth)
+	d.ddEncrypt = widgets.NewDropDown(label("Encrypt"), nil, connectValueWidth)
 	d.setEncryptMode(config.EncryptMandatory)
 	d.cbTrust = widgets.NewCheckBox("Trust Server Certificate (skip validation)")
 	d.fHostCert = widgets.NewInputField(label("Host Name In Certificate"), connectValueWidth, false)
@@ -352,18 +351,34 @@ func (d *ConnectDialog) leaveButtons(dir int) {
 	d.stepFocus(dir)
 }
 
-// setEncryptMode selects m in ddEncrypt. An unknown value (only a hand-edited
-// config.json) selects Mandatory.
+// setEncryptMode selects m in ddEncrypt. "" (an entry built in memory, never
+// one read from config.json) selects Mandatory.
 //
-// The fallback resolves an index rather than recursing with Mandatory: recursion
-// relies on AllEncryptModes containing Mandatory, and dropping a mode would turn
-// into a stack overflow. The final 0 keeps that local.
+// A mode gossms does not write (a hand-edited config.json) is shown as it is,
+// on a row of its own after the known modes, and selected: db refuses it, so
+// the preview names it and Connect fails, and picking any other row is the
+// repair. Showing it as Mandatory instead would let Connect quietly dial a mode
+// the file does not say. config.json is never rewritten for it.
+//
+// The "" fallback resolves an index rather than recursing with Mandatory:
+// recursion relies on AllEncryptModes containing Mandatory, and dropping a mode
+// would turn into a stack overflow. The final 0 keeps that local.
 func (d *ConnectDialog) setEncryptMode(m config.EncryptMode) {
 	modes := config.AllEncryptModes()
 	i := slices.Index(modes, m)
-	if i < 0 {
+	switch {
+	case m == "":
 		i = max(slices.Index(modes, config.EncryptMandatory), 0)
+	case i < 0:
+		i = len(modes)
+		modes = append(modes, m)
 	}
+	items := make([]string, len(modes))
+	for j, mode := range modes {
+		items[j] = config.EncryptModeName(mode)
+	}
+	d.encryptModes = modes
+	d.ddEncrypt.SetItems(items)
 	d.ddEncrypt.SetSelected(i)
 }
 
@@ -744,7 +759,7 @@ func (d *ConnectDialog) currentOptions() config.Connection {
 		TenantID:               only(f.Tenant, d.fTenantID.Value()),
 		ClientID:               only(f.Client, d.fClientID.Value()),
 		TrustServerCertificate: d.cbTrust.Checked(),
-		Encrypt:                config.AllEncryptModes()[d.ddEncrypt.Selected()],
+		Encrypt:                d.encryptModes[d.ddEncrypt.Selected()],
 		HostNameInCertificate:  d.fHostCert.Value(),
 		ExtraProperties:        d.fExtraProps.Text(),
 	}

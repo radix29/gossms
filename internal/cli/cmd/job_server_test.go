@@ -286,7 +286,6 @@ func runJob(t *testing.T, s *jobServer, argv ...string) (res *output.Result, dia
 			dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	tree := &spec.Tree{Commands: JobCommands(d)}
 	full := append([]string{"job"}, argv[0])

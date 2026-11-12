@@ -235,13 +235,15 @@ gossms/
 │   │   ├── connect/             # a command line → a connection: the connection options, profile + overrides + password sources (Resolve; drops a saved password an override would redirect), the dial as db.RoleCLI and its failure → exit code (Open, Classify)
 │   │   ├── audit/               # the audit log: one JSON line per call above read or refused (Logged), args rebuilt from the parse with spec.Option.Audit's hash/omit marks applied (Args), Check before a change, Append under fileutil.WithLock; audit.jsonl beside config.json, 0600
 │   │   ├── safety/              # the T-SQL statement classifier (Classify: read|write|ddl|admin per statement, fails closed) over tuikit/sqltext, its flags, and Check: the refusals of a run (class vs --allow and the ceiling — Policy.Refuse, which a writing command's gate shares —, mode options, what a transaction or --max-rows-affected cannot hold)
-│   │   ├── clitest/             # test support only: gosmo's catalog reads as positional gosmotest rows (DatabaseRow, ObjectInfoRow, TableRow, ViewRow, ColumnRow, IndexRow, ParameterRow, StatisticRow, and the security reads' LoginRow, RoleRow, UserRow, PermissionRow, …, and maint's DatabaseOf, BackupHeaderSet, BackupInfoRows, DatabaseFragmentationRow, …), shared by the cli and cmd test packages' gosmotest servers
-│   │   ├── cmd/                 # the command handlers, one file per group; Deps injects the config load, the dial, the query session, the catalog reads and the writes
-│   │   │   ├── common.go            # what the discovery commands share: the connection options, Catalog (the gosmo reads a handler makes, so tests fake them; the object, script, data, security and maint groups read gosmo directly past name resolution, their tests over gosmotest) and ServerCatalog, connectDatabase, resolveObject (one-part names across schemas, NOT_FOUND's did-you-mean), readError (a read's failure → exit code and hint)
+│   │   ├── clitest/             # test support only: gosmo's catalog reads as positional gosmotest rows (DatabaseRow, ObjectInfoRow, TableRow, ViewRow, ColumnRow, IndexRow, ParameterRow, StatisticRow, and the security reads' LoginRow, RoleRow, UserRow, PermissionRow, …, and maint's DatabaseOf, BackupHeaderSet, BackupInfoRows, DatabaseFragmentationRow, …), and the storage, size, access, error-log and capability reads' DatabaseFileRow, MasterFileRow, FileVolumeRow, SpaceReportRow, LogSpaceRow, TableSizeRow, DatabaseAccessRow, ErrorLogEntryRow, ServerCapabilityRows, …), shared by the cli and cmd test packages' gosmotest servers
+│   │   ├── cmd/                 # the command handlers, one file per group; Deps injects the config load, the dial and the query session; every handler reads and writes through the connection's gosmo Server
+│   │   │   ├── common.go            # what the discovery commands share: the connection options, connectServer and connectDatabase (the connection, and its database read from the catalog), resolveObject (one-part names across schemas, NOT_FOUND's did-you-mean), readError (a read's failure → exit code and hint)
 │   │   │   ├── objectname.go        # parseObjectName: an <object> argument → schema and name over the T-SQL lexer (brackets keep their dots); a three-part name only for the connection's database
 │   │   │   ├── profile.go           # profile list/show/test
 │   │   │   ├── db.go                # db list (sizes from sys.master_files, system databases opt-in) / db info (catalog fields, SET options, space used — each part degrading to a warning)
 │   │   │   ├── db_storage.go        # the storage commands' shared layer: --unit (column suffix and cell text; figures filtered in exact KB), <name>-xor---all, the --all walker (state, then HAS_DBACCESS → readable or why not), the fixed-threshold file and log-reuse warnings
+│   │   │   ├── db_files.go          # db files: one row per file (--type/--filegroup/--max-free-pct/--sort-by), its volume from FileVolumes, growth and max-size text
+│   │   │   ├── db_space.go          # db space / db log-usage: SpaceReport and LogSpace per database (one or --all), log usage denied → exit 9
 │   │   │   ├── db_settings.go       # db scoped-config list/get (read) / set (admin): gosmo DatabaseScopedConfigs inside a readable database (db table-sizes' rules), the name check (exit 8), the value checked by the option's sql_variant type (1/0 sent as ON/OFF), SetDatabaseScopedConfig through the write layer, before/after from a second read; db set (admin): D8's key table → SetDatabaseOption / SetRecoveryModel / SetCompatibilityLevel / SetReadOnly / QueryStore SetOptions, one statement per key in order, --rollback-immediate behind --confirm, before/after from sys.databases read twice
 │   │   │   ├── db_create.go         # db create / db drop (admin, D9): gosmo CreateDatabase (name taken → exit 2; --compat checked against the server; the dry run's record from model and the server collation) and Database.Drop through the write layer; drop behind --confirm (before connecting), refused before sending for a system or distribution database, the connection's own (exit 2), an availability-group member (AvailabilityGroups → Databases, HADR only) and a database with snapshots (SnapshotsOf); the record (size, last full backup from LastBackups) read first; Msg 3702/3709/3752 → BLOCKED with the way past
 │   │   │   ├── db_table_sizes.go    # db table-sizes: gosmo TableSizes (sp_spaceused's per-object arithmetic, one round trip), --schema/--sort-by/--top applied in Go, a memory-optimized table's sizes NULL
@@ -250,11 +252,13 @@ gossms/
 │   │   │   ├── server_traceflag.go  # server traceflag list (read) / on / off (admin): gosmo TraceFlags before and after, SetTraceFlag per flag (always global) through the write layer; the not-taken warning (a startup-only flag is skipped with no error) and the restart note
 │   │   │   ├── server_log.go        # server log: gosmo ReadLog (one file, filtered on the server; --lines a tail taken in Go), --since zoneless, a missing archive checked against EnumErrorLogs
 │   │   │   ├── server.go            # server volumes: gosmo FileVolumes grouped per volume (mount point and label, else figures) with a file count, implausible figures left out, exit 9 without VIEW SERVER STATE
-│   │   │   ├── object.go            # object list/search/describe/definition: per-kind listing with the filter pushed to gosmo where it takes one, the describe dispatch on the object's type, the module text as a verbatim field
+│   │   │   ├── object.go            # object list/search/definition: per-kind listing with the filter pushed to gosmo where it takes one, lookupObject (every one-object command's start), the module text as a verbatim field
+│   │   │   ├── object_describe.go   # object describe: the dispatch on the object's type, its columns/keys/indexes/checks/triggers sets, hidden-definition and hidden-filter warnings
 │   │   │   ├── object_dependencies.go # object dependencies: breadth-first walk over gosmo Dependencies/Dependents, a visited set per direction, self-edges dropped
 │   │   │   ├── object_indexes.go    # object indexes (structure, usage, --fragmentation) / object stats (statistics with their properties, NULL where unread)
 │   │   │   ├── security.go          # security logins/users/roles list, role-members, permissions (all read): gosmo Logins/Users/Roles in the server's order; --scope database|server (not --server, the connection option); permissions resolves the principal first (user then role, or login then server role; a miss hints the other scope or the user a login maps to), memberOf from the role lists, explicit = PermissionsForPrincipal + ColumnPermissionsForPrincipal or ServerPermissions filtered, --effective = fn_my_permissions under EXECUTE AS (a role → exit 2 before it; Msg 15517/15406 → exit 9)
-│   │   │   ├── security_permissions.go # security grant/deny/revoke and role add-member/remove-member (all admin, no --confirm): --on parsed before connecting (SERVER, DATABASE[::name], SCHEMA::, OBJECT:: or bare name, TYPE::, CERTIFICATE::), the object's class from its sys.objects type, the permission checked against the class's gosmo allowlist (exit 2), the principal resolved as permissions does (hints in the command's own scope words), one gosmo ApplyPermission (the database's, or the Server's for SERVER) per permission; the principal's entries on the securable read back, a change they do not show a warning (SQL Server ignores a grant to sa, dbo, the owner or oneself); Msg 15151/15247/4613 → exit 9, 4611 hints --cascade
+│   │   │   ├── security_permissions.go # security grant/deny/revoke (all admin, no --confirm; the security write commands' list): --on parsed before connecting (SERVER, DATABASE[::name], SCHEMA::, OBJECT:: or bare name, TYPE::, CERTIFICATE::), the object's class from its sys.objects type, the permission checked against the class's gosmo allowlist (exit 2), the principal resolved as permissions does (hints in the command's own scope words), one gosmo ApplyPermission (the database's, or the Server's for SERVER) per permission; the principal's entries on the securable read back, a change they do not show a warning (SQL Server ignores a grant to sa, dbo, the owner or oneself); Msg 15151/15247/4613 → exit 9, 4611 hints --cascade
+│   │   │   ├── security_role_members.go # security role add-member/remove-member: role and member read first (missing → exit 8, hint naming the other scope), wasMember/isMember warnings, one gosmo AddMember/RemoveMember, read back
 │   │   │   ├── job.go               # job list/show/history (read): gosmo Jobs/JobByName/Steps/Schedules/SearchJobHistory; msdb's zoneless times kept as the server's wall clock, a zoned --since/--failed-since converted through CurrentTime's zone; --failed-since from the run history, not LastRunOutcome
 │   │   │   ├── job_start.go         # job start/stop (admin, no --confirm): the job read first (missing 8, already running 7, Agent stopped 11), --step by id or name, --wait polls JobByName every 2 s for a newer recorded run (TIMEOUT at the bound, Ctrl+C leaves the job running); a stop of an idle job is ok, stopped false
 │   │   │   ├── maint_backup.go      # maint group; maint backup (admin, --confirm with --init only): gosmo Server.Backup through the write layer, STATS = 10 to log.Printf (stderr under --verbose), the default file in DefaultBackupPath (JoinServerPath, named by backupNow), refused before sending for tempdb/snapshots/log on SIMPLE/--compression without the edition/Azure SQL Database, the new set read back with BackupHeaders; backupError hints the server refusals (writeError reports the cause before Msg 3013); maint backup-history (read): BackupHistory per database, or LastBackups for --last (one row per database × type, warnings for no full / no log backup)
@@ -315,6 +319,7 @@ gossms/
 │       ├── object_explorer.go    # owns the SQL Server tree model; drives controls.TreeView
 │       ├── explorer_loaders.go   # childLoader and nodeMenus registries (NodeType → fetch func, NodeType → menu builder) + shared loader helpers
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
+│       ├── explorer_database_security.go # loaders and menus: a database's Security folder — Users, Roles (Database/Application), Schemas, Audit Specifications, Scoped Credentials, keys and certificates, Security Policies, Always Encrypted Keys
 │       ├── explorer_objects.go   # loaders: Tables/Views/Procs/Functions/Triggers/Sequences/Synonyms + System Views/Procedures/Functions folders + table columns
 │       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles, Credentials, Audits, Server Audit Specifications
 │       ├── explorer_storage.go   # loaders: a database's Storage folder — Partition Functions, Partition Schemes
@@ -332,7 +337,8 @@ gossms/
 │       ├── explorer_group_schema.go # Group by Schema: a groupedFolderTypes folder's loaded children regrouped under one NodeSchemaGroup per schema, locally (no query), losslessly on toggle (explorerNode.flat)
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
 │       ├── explorer_index_actions.go # an index node's Rebuild / Reorganize / Disable: state-dependent menu, gate on the parent, confirmation saying what a clustered index takes offline
-│       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: the per-NodeType drop/rename table and the gosmo adapters behind it
+│       ├── explorer_object_op_adapters.go # the op constructors and gosmo handle adapters (dropIn/renameIn/transferIn, Resource Governor, constraints) the objectOps table is built from
+│       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: the per-NodeType drop/rename table
 │       ├── explorer_object_menu.go # the Rename/Delete menu pair a node offers, and the schema/object name a gate question is scoped by
 │       ├── explorer_object_rights.go # what permits Rename/Move/Delete per NodeType: the securable, principal, database- and server-scoped right tables
 │       ├── explorer_object_actions.go # the flows themselves: confirmation (incl. the cascade checkbox), script-instead-of-run, the prompt, and the parent-folder refresh
@@ -343,7 +349,7 @@ gossms/
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── latest.go              # the shared latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result — see § Latest-only loads
-│       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one
+│       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one (bar FlushSaves' exit-time waiter)
 │       ├── prop_page_gate.go    # withRequires/withRequiresOn: attaches a gate.Right set to a propPage, the one tie between the gate package and the Properties dialogs
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
@@ -556,6 +562,7 @@ gossms/
 │       ├── schema_props.go       # Schema Properties page definitions
 │       ├── new_schema_dialog.go  # New Schema: name, AUTHORIZATION owner, permissions, extended properties
 │       ├── role_props.go         # Database Role Properties page definitions
+│       ├── database_principals.go # loadDatabasePrincipals: one read of users/roles/application roles; the grantee and owner pickers' rule
 │       ├── new_role_dialog.go    # New Database Role: name, AUTHORIZATION owner, owned schemas, members, securables, extended properties
 │       ├── new_server_role_dialog.go # New Server Role: name, AUTHORIZATION owner, members, server securables
 │       ├── application_role_props.go # Application Role Properties: General (name, default schema, password)/Owned Schemas/Securables/Extended Properties
@@ -821,6 +828,10 @@ The one exception is the bounded pool **`App.fanOut(n, what, work, onPanic)`**
 recovers each item separately, so a panic costs that item, not its worker's
 queue; `onPanic` runs *before* `fanOut` returns, which is how backfill queues
 `markFailed` ahead of the caller caching its rows.
+
+`App.FlushSaves` (`app_saves.go`) runs one bare goroutine — a `WaitGroup.Wait`
+it abandons at its deadline. It starts after the event loop is gone and
+cannot panic, so there is no status bar to report to and nothing to recover.
 
 ### When the goroutine latched UI state first: safegoRepair
 

@@ -26,7 +26,7 @@ func tablePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
 		pageTableColumns(sc, dbName, schema, name),
 		pageTableStorage(sc, dbName, schema, name),
 		withRequiresOn(pageTableChangeTracking(sc, dbName, schema, name), dbName, schema, name, w...),
-		withRequires(pageTablePermissions(sc, dbName, schema, name), dbName, gate.ControlDB),
+		withRequires(pageObjectPermissions(sc, dbName, gosmo.SecurableTable, schema, name), dbName, gate.ControlDB),
 		withRequiresOn(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{
 				Level0Type: "SCHEMA", Level0Name: schema,
@@ -319,35 +319,6 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 					TrackColumnsUpdated: trackColsRow.Selected() == 1,
 				})
 			}
-			return f, apply, nil
-		},
-	}
-}
-
-func pageTablePermissions(sc *db.ServerConn, dbName, schema, name string) propPage {
-	return propPage{
-		title: "Permissions",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByName(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			perms, err := d.Permissions(ctx, schema, name)
-			if err != nil {
-				return nil, nil, err
-			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			roles, err := d.Roles(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.SecurableTable.PermissionNames(),
-				objectPermEntries(perms),
-				securablePermApply(d, gosmo.Securable{Class: gosmo.SecurableTable, Schema: schema, Name: name}))
 			return f, apply, nil
 		},
 	}

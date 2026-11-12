@@ -1,54 +1,39 @@
 package cmd
 
 import (
-	"context"
 	"errors"
-	"fmt"
+	"github.com/radix29/gossms/internal/cli/args"
 	"slices"
 	"strings"
 	"testing"
 
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/cli/args"
+	"github.com/radix29/gosmo/gosmotest"
+	"github.com/radix29/gossms/internal/cli/clitest"
 	"github.com/radix29/gossms/internal/cli/output"
-	"github.com/radix29/gossms/internal/cli/spec"
-	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/db"
 )
 
-// tablesCatalog answers db table-sizes' read over newStorageCatalog's
-// databases.
-type tablesCatalog struct {
-	*storageCatalog
-	tables     map[string][]*gosmo.TableSize
-	err        error // every TableSizes call's error, when set
-	tablesRead []string
+// tablesServer is storageServer answering db table-sizes' read inside
+// each database.
+type tablesServer struct {
+	*storageServer
+	tables map[string][]*gosmo.TableSize
+	err    error // every TableSizes read's error, when set
 }
 
-func (c *tablesCatalog) TableSizes(_ context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error) {
-	c.tablesRead = append(c.tablesRead, d.Name)
-	if c.err != nil {
-		return nil, c.err
-	}
-	// A fresh copy each call, in gosmo's schema-and-name order: the handler
-	// sorts and cuts the slice it gets.
-	var out []*gosmo.TableSize
-	for _, ts := range c.tables[d.Name] {
-		out = append(out, new(*ts))
-	}
-	return out, nil
-}
+// tablesRead is the databases TableSizes was read in.
+func (s *tablesServer) tablesRead() []string { return s.readIn("WITH alloc AS") }
 
-func newTablesCatalog() *tablesCatalog {
-	return &tablesCatalog{
-		storageCatalog: newStorageCatalog(),
+func newTablesServer(t *testing.T) *tablesServer {
+	s := &tablesServer{
+		storageServer: newStorageServer(t),
 		tables: map[string][]*gosmo.TableSize{
 			"app": {
 				{Schema: "dbo", Name: "Big", Rows: 100, ReservedKB: 10240, DataKB: 8000, IndexKB: 2000, UnusedKB: 240},
 				{Schema: "dbo", Name: "Empty", Rows: 0},
 				{Schema: "dbo", Name: "Hot", Rows: 5000, IsMemoryOptimized: true},
-				{Schema: "Sales", Name: "Detail", Rows: 9000, ReservedKB: 4096, DataKB: 1024, IndexKB: 2900, UnusedKB: 172},
+				{Schema: "Sales", Name: "Detail", Rows: 9000, ReservedKB: 4096, DataKB: 1024, IndexKB: 2896, UnusedKB: 176},
 				{Schema: "Sales", Name: "Header", Rows: 900, ReservedKB: 4096, DataKB: 3000, IndexKB: 1000, UnusedKB: 96},
 			},
 			"app_snap": {
@@ -56,24 +41,25 @@ func newTablesCatalog() *tablesCatalog {
 			},
 		},
 	}
+	// In gosmo's schema-and-name order: the handler sorts and cuts.
+	answer(s.Fake, func(q gosmotest.Query) ([][]any, error) {
+		if s.err != nil {
+			return nil, s.err
+		}
+		var rows [][]any
+		for _, ts := range s.tables[q.Database] {
+			rows = append(rows, clitest.TableSizeRow(ts))
+		}
+		return rows, nil
+	}, "WITH alloc AS")
+	return s
 }
 
-// runDBTableSizes runs db table-sizes over cat with argv after "db
+// runDBTableSizes runs db table-sizes over s with argv after "db
 // table-sizes".
-func runDBTableSizes(t *testing.T, cat Catalog, argv string) (*output.Result, error) {
+func runDBTableSizes(t *testing.T, s *tablesServer, argv string) (*output.Result, error) {
 	t.Helper()
-	d := Deps{
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
-		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
-	}
-	tree := &spec.Tree{Commands: DBCommands(d)}
-	inv, err := args.Parse(tree, append([]string{"db", "table-sizes", "--server", "srv", "--auth", "windows"}, strings.Fields(argv)...), args.Options{})
-	if err != nil {
-		return nil, err
-	}
-	return inv.Command.Run(context.Background(), inv)
+	return runStorage(t, s.Fake, "table-sizes", argv)
 }
 
 // tableNames is set's schema.table cells.
@@ -87,7 +73,7 @@ func tableNames(set output.Set) []string {
 }
 
 func TestDBTableSizesDefault(t *testing.T) {
-	res, err := runDBTableSizes(t, newTablesCatalog(), "app")
+	res, err := runDBTableSizes(t, newTablesServer(t), "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +119,7 @@ func TestDBTableSizesSortTopSchema(t *testing.T) {
 		"app --schema nope":                       {},
 		"app --sort-by rows --top 1 --schema dbo": {"dbo.Hot"},
 	} {
-		res, err := runDBTableSizes(t, newTablesCatalog(), argv)
+		res, err := runDBTableSizes(t, newTablesServer(t), argv)
 		if err != nil {
 			t.Fatalf("%q: %v", argv, err)
 		}
@@ -154,7 +140,7 @@ func TestDBTableSizesSortTopSchema(t *testing.T) {
 
 // --unit kb prints sp_spaceused's own KB figures.
 func TestDBTableSizesUnitKB(t *testing.T) {
-	res, err := runDBTableSizes(t, newTablesCatalog(), "app --unit kb --top 1")
+	res, err := runDBTableSizes(t, newTablesServer(t), "app --unit kb --top 1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +156,7 @@ func TestDBTableSizesUnitKB(t *testing.T) {
 }
 
 func TestDBTableSizesSnapshot(t *testing.T) {
-	res, err := runDBTableSizes(t, newTablesCatalog(), "app_snap")
+	res, err := runDBTableSizes(t, newTablesServer(t), "app_snap")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,30 +174,30 @@ func TestDBTableSizesRefusals(t *testing.T) {
 		"hr":      output.CodePermissionDenied,
 		"nope":    output.CodeNotFound,
 	} {
-		cat := newTablesCatalog()
-		_, err := runDBTableSizes(t, cat, argv)
+		s := newTablesServer(t)
+		_, err := runDBTableSizes(t, s, argv)
 		if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != want {
 			t.Errorf("%q: %v, want %s", argv, err, want)
 		}
-		if len(cat.tablesRead) != 0 {
-			t.Errorf("%q: TableSizes read for %q", argv, cat.tablesRead)
+		if len(s.tablesRead()) != 0 {
+			t.Errorf("%q: TableSizes read for %q", argv, s.tablesRead())
 		}
 	}
-	cat := newTablesCatalog()
-	cat.err = mssql.Error{Number: 229, Class: 14, Message: "The SELECT permission was denied on the object 'partitions', database 'mssqlsystemresource', schema 'sys'."}
-	_, err := runDBTableSizes(t, cat, "app")
+	s := newTablesServer(t)
+	s.err = mssql.Error{Number: 229, Class: 14, Message: "The SELECT permission was denied on the object 'partitions', database 'mssqlsystemresource', schema 'sys'."}
+	_, err := runDBTableSizes(t, s, "app")
 	if e, ok := errors.AsType[*output.Error](err); !ok || e.Code != output.CodePermissionDenied {
 		t.Errorf("refused TableSizes: %v, want %s", err, output.CodePermissionDenied)
 	}
-	cat.err = fmt.Errorf("gosmo: table sizes in %q: boom", "app")
-	if _, err := runDBTableSizes(t, cat, "app"); err == nil {
+	s.err = errors.New("boom")
+	if _, err := runDBTableSizes(t, s, "app"); err == nil {
 		t.Error("a failed TableSizes succeeded")
 	}
 }
 
 func TestDBTableSizesUsage(t *testing.T) {
 	for _, argv := range []string{"", "app --all", "app --sort-by name", "app --top -1"} {
-		_, err := runDBTableSizes(t, newTablesCatalog(), argv)
+		_, err := runDBTableSizes(t, newTablesServer(t), argv)
 		// The parser refuses the first three, the handler the last.
 		_, parse := errors.AsType[*args.Error](err)
 		e, ok := errors.AsType[*output.Error](err)

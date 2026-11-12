@@ -176,7 +176,7 @@ func (d Deps) maintIndexFragmentation(ctx context.Context, inv *spec.Invocation)
 	}
 	mode := gosmo.FragmentationMode(strings.ToUpper(inv.Values[optMode].(string)))
 	res := &output.Result{}
-	sc, _, dbase, err := d.connectDatabase(ctx, inv, res)
+	sc, dbase, err := d.connectDatabase(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -242,11 +242,11 @@ func fragmentationSet(rows []*gosmo.DatabaseIndexFragmentation, mode gosmo.Fragm
 // database as a table or a view, which the command writes through. The
 // caller closes sc.
 func (d Deps) connectTableOrView(ctx context.Context, inv *spec.Invocation, res *output.Result, what string) (*db.ServerConn, *gosmo.ObjectInfo, tableOrView, error) {
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return nil, nil, tableOrView{}, err
 	}
-	o, tv, err := resolveTableOrView(ctx, cat, inv.Args[0], res, what)
+	o, tv, err := resolveTableOrView(ctx, sc.Server, inv.Args[0], res, what)
 	if err != nil {
 		sc.Close()
 		return nil, nil, tableOrView{}, err
@@ -256,8 +256,8 @@ func (d Deps) connectTableOrView(ctx context.Context, inv *spec.Invocation, res 
 
 // resolveTableOrView is arg resolved in the connection's database as a table
 // or a view, read by name; another kind is a usage error naming it.
-func resolveTableOrView(ctx context.Context, cat Catalog, arg string, res *output.Result, what string) (*gosmo.ObjectInfo, tableOrView, error) {
-	dbase, err := currentDatabase(ctx, cat, res)
+func resolveTableOrView(ctx context.Context, srv *gosmo.Server, arg string, res *output.Result, what string) (*gosmo.ObjectInfo, tableOrView, error) {
+	dbase, err := currentDatabase(ctx, srv, res)
 	if err != nil {
 		return nil, tableOrView{}, err
 	}
@@ -265,7 +265,7 @@ func resolveTableOrView(ctx context.Context, cat Catalog, arg string, res *outpu
 	if err != nil {
 		return nil, tableOrView{}, err
 	}
-	o, err := resolveObject(ctx, cat, dbase, n)
+	o, err := resolveObject(ctx, dbase, n)
 	if err != nil {
 		return nil, tableOrView{}, err
 	}
@@ -761,12 +761,12 @@ func statsSet(targets, after []*gosmo.Statistic, readBack bool) output.Set {
 // connection's database.
 func (d Deps) updateDatabaseStats(ctx context.Context, inv *spec.Invocation, r statsRequest) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
-	dbase, err := currentDatabase(ctx, cat, res)
+	dbase, err := currentDatabase(ctx, sc.Server, res)
 	if err != nil {
 		return res, err
 	}

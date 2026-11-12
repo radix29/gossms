@@ -196,7 +196,7 @@ func auditFileSizeText(mb int64) string {
 	if mb <= 0 {
 		return "Unlimited"
 	}
-	return strconv.FormatInt(mb, 10) + " MB"
+	return formatMB(float64(mb))
 }
 
 // auditFileCountText reads the two mutually exclusive file-count settings.

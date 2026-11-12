@@ -16,58 +16,27 @@ import (
 // (new_fulltext_copy_source.go). Properties are registered afterwards on the
 // list's Properties page.
 
-// nftPropertyListPrefetch is what the dialog reads before it opens.
-type nftPropertyListPrefetch struct {
-	existingNames *nameSet
-	lists         []string
-	owners        []string
-	databases     []string
-}
-
-func fetchNewSearchPropertyListPrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*nftPropertyListPrefetch, error) {
-	d, err := sc.Server.DatabaseByName(ctx, dbName)
-	if err != nil {
-		return nil, err
-	}
-	lists, err := d.SearchPropertyLists(ctx)
-	if err != nil {
-		return nil, err
-	}
-	pf := &nftPropertyListPrefetch{existingNames: newNameSet(databaseCollation(d))}
-	for _, l := range lists {
-		pf.existingNames.Add(l.Name)
-		pf.lists = append(pf.lists, l.Name)
-	}
-	if pf.owners, err = fullTextOwnerItems(ctx, d); err != nil {
-		return nil, err
-	}
-	if pf.databases, err = onlineDatabaseNames(ctx, sc); err != nil {
-		return nil, err
-	}
-	return pf, nil
-}
-
 // NewSearchPropertyListDialog is the New Search Property List dialog.
 type NewSearchPropertyListDialog struct {
-	dbFolderDialog[nftPropertyListPrefetch]
+	dbFolderDialog[fullTextCopyPrefetch]
 }
 
 // NewNewSearchPropertyListDialog creates the dialog and wires its callbacks.
 func NewNewSearchPropertyListDialog(app *App) *NewSearchPropertyListDialog {
 	d := &NewSearchPropertyListDialog{}
-	d.initInFolder(app, newObjectConfig[nftPropertyListPrefetch]{
+	d.initInFolder(app, newObjectConfig[fullTextCopyPrefetch]{
 		title: "New Search Property List",
 		noun:  "Search property list",
 		pages: []string{"General"},
-		fetch: func(ctx context.Context, sc *db.ServerConn) (*nftPropertyListPrefetch, error) {
-			return fetchNewSearchPropertyListPrefetch(ctx, sc, d.dbName)
+		fetch: func(ctx context.Context, sc *db.ServerConn) (*fullTextCopyPrefetch, error) {
+			return fetchFullTextCopyPrefetch(ctx, sc, d.dbName, searchPropertyListNames)
 		},
 		build: d.buildPages,
 	})
 	return d
 }
 
-func (d *NewSearchPropertyListDialog) buildPages(pf *nftPropertyListPrefetch) {
+func (d *NewSearchPropertyListDialog) buildPages(pf *fullTextCopyPrefetch) {
 	sc := d.sc
 	dbName := d.dbName
 
@@ -75,7 +44,7 @@ func (d *NewSearchPropertyListDialog) buildPages(pf *nftPropertyListPrefetch) {
 	owner := propsheet.Select("Owner", pf.owners, 0)
 	owner.SetFitItems(true)
 	source := propsheet.Radio("Start from", []string{"An empty list", "An existing list"}, 0)
-	from := newFullTextCopySource(d.app, d.ctx, sc, dbName, pf.databases, pf.lists,
+	from := newFullTextCopySource(d.app, d.ctx, sc, dbName, pf.databases, pf.names,
 		"search property list", "Existing list", searchPropertyListNames)
 
 	rows := []propsheet.Row{
@@ -111,7 +80,7 @@ func (d *NewSearchPropertyListDialog) buildPages(pf *nftPropertyListPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		_, err := sc.Server.DatabaseRef(dbName).CreateSearchPropertyList(ctx, req)
+		_, err := sc.Server.DatabaseRef(dbName).FullText().CreateSearchPropertyList(ctx, req)
 		return err
 	}
 }
@@ -119,7 +88,7 @@ func (d *NewSearchPropertyListDialog) buildPages(pf *nftPropertyListPrefetch) {
 // searchPropertyListNames reads d's search property list names, for the
 // copy-from picker.
 func searchPropertyListNames(ctx context.Context, d *gosmo.Database) ([]string, error) {
-	lists, err := d.SearchPropertyLists(ctx)
+	lists, err := d.FullText().SearchPropertyLists(ctx)
 	if err != nil {
 		return nil, err
 	}

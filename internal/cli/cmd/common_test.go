@@ -9,6 +9,7 @@ import (
 
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
@@ -16,62 +17,27 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// objectCatalog answers the object lookups from objects; every other Catalog
-// method is unused here (the embedded nil interface panics if called).
-type objectCatalog struct {
-	Catalog
-	objects  []*gosmo.ObjectInfo
-	searched []string
-}
-
-func (c *objectCatalog) ObjectByName(_ context.Context, d *gosmo.Database, schema, name string) (*gosmo.ObjectInfo, error) {
-	for _, o := range c.objects {
-		if o.Schema == schema && o.Name == name {
-			return o, nil
-		}
-	}
-	return nil, fmt.Errorf("gosmo: object %s not found in %q: %w", gosmo.QualifiedName(schema, name), d.Name, gosmo.ErrNotFound)
-}
-
-func (c *objectCatalog) ObjectsNamed(_ context.Context, _ *gosmo.Database, name string) ([]*gosmo.ObjectInfo, error) {
-	var out []*gosmo.ObjectInfo
-	for _, o := range c.objects {
-		if o.Name == name {
-			out = append(out, o)
-		}
-	}
-	return out, nil
-}
-
-func (c *objectCatalog) Search(_ context.Context, _ *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error) {
-	c.searched = append(c.searched, pattern)
-	var out []*gosmo.SearchResult
-	for _, o := range c.objects {
-		if strings.Contains(strings.ToLower(o.Name), strings.ToLower(pattern)) {
-			out = append(out, &gosmo.SearchResult{Schema: o.Schema, Name: o.Name, TypeDesc: o.TypeDesc})
-		}
-	}
-	return out, nil
-}
-
 func TestResolveObject(t *testing.T) {
-	cat := &objectCatalog{objects: []*gosmo.ObjectInfo{
-		{ObjectID: 1, Schema: "Sales", Name: "Customer", Type: "U"},
-		{ObjectID: 2, Schema: "dbo", Name: "Customer", Type: "U"},
-		{ObjectID: 3, Schema: "Sales", Name: "Order", Type: "U"},
-		{ObjectID: 4, Schema: "Sales", Name: "CustomerArchive", Type: "U"},
-	}}
-	d := &gosmo.Database{Name: "app"}
 	ctx := context.Background()
+	srv := newCatalogServer(t, "app",
+		&gosmo.ObjectInfo{ObjectID: 1, Schema: "Sales", Name: "Customer", Type: "U", TypeDesc: "USER_TABLE"},
+		&gosmo.ObjectInfo{ObjectID: 2, Schema: "dbo", Name: "Customer", Type: "U", TypeDesc: "USER_TABLE"},
+		&gosmo.ObjectInfo{ObjectID: 3, Schema: "Sales", Name: "Order", Type: "U", TypeDesc: "USER_TABLE"},
+		&gosmo.ObjectInfo{ObjectID: 4, Schema: "Sales", Name: "CustomerArchive", Type: "U", TypeDesc: "USER_TABLE"},
+	).Server()
+	d, err := srv.DatabaseByName(ctx, "app")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if o, err := resolveObject(ctx, cat, d, ObjectName{Schema: "Sales", Name: "Customer"}); err != nil || o.ObjectID != 1 {
+	if o, err := resolveObject(ctx, d, ObjectName{Schema: "Sales", Name: "Customer"}); err != nil || o.ObjectID != 1 {
 		t.Errorf("two-part: %+v, %v", o, err)
 	}
-	if o, err := resolveObject(ctx, cat, d, ObjectName{Name: "Order"}); err != nil || o.ObjectID != 3 {
+	if o, err := resolveObject(ctx, d, ObjectName{Name: "Order"}); err != nil || o.ObjectID != 3 {
 		t.Errorf("one-part, one schema: %+v, %v", o, err)
 	}
 
-	_, err := resolveObject(ctx, cat, d, ObjectName{Name: "Customer"})
+	_, err = resolveObject(ctx, d, ObjectName{Name: "Customer"})
 	e, _ := err.(*output.Error)
 	if e == nil || e.Code != output.CodeUsageError || !strings.Contains(e.Message, "[Sales].[Customer], [dbo].[Customer]") {
 		t.Errorf("one-part, two schemas: %v, want a usage error listing both", err)
@@ -79,7 +45,7 @@ func TestResolveObject(t *testing.T) {
 
 	// A case-only miss — what a _CS_ database answers — suggests the catalog's
 	// spelling.
-	_, err = resolveObject(ctx, cat, d, ObjectName{Schema: "Sales", Name: "customer"})
+	_, err = resolveObject(ctx, d, ObjectName{Schema: "Sales", Name: "customer"})
 	e, _ = err.(*output.Error)
 	if e == nil || e.Code != output.CodeNotFound || !strings.Contains(e.Hint, "[Sales].[Customer]") {
 		t.Errorf("case-only miss: %v (hint %q), want NOT_FOUND suggesting [Sales].[Customer]", err, e.Hint)
@@ -88,7 +54,7 @@ func TestResolveObject(t *testing.T) {
 		t.Errorf("not-found message %q, want the name as typed and the database", e.Message)
 	}
 
-	_, err = resolveObject(ctx, cat, d, ObjectName{Name: "Nothing"})
+	_, err = resolveObject(ctx, d, ObjectName{Name: "Nothing"})
 	e, _ = err.(*output.Error)
 	if e == nil || e.Code != output.CodeNotFound || strings.Contains(e.Hint, "Did you mean") {
 		t.Errorf("no match: %v, want NOT_FOUND with no suggestion", err)
@@ -123,22 +89,6 @@ func TestReadError(t *testing.T) {
 	}
 }
 
-// dbCatalog is objectCatalog with the two reads connectDatabase makes.
-type dbCatalog struct {
-	objectCatalog
-	current string
-	missing bool
-}
-
-func (c *dbCatalog) CurrentDatabase(context.Context) (string, error) { return c.current, nil }
-
-func (c *dbCatalog) DatabaseByName(_ context.Context, name string) (*gosmo.Database, error) {
-	if c.missing {
-		return nil, fmt.Errorf("gosmo: database %q not found: %w", name, gosmo.ErrNotFound)
-	}
-	return &gosmo.Database{Name: "App", ID: 5}, nil
-}
-
 // connectDatabase reads the connection's database from the server and puts
 // its catalog spelling in the envelope.
 func TestConnectDatabase(t *testing.T) {
@@ -147,15 +97,18 @@ func TestConnectDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cat := &dbCatalog{current: "app"}
+	// The session's database as -d spelt it; the catalog's is App.
+	session := "app"
+	s := newCatalogServerWith(t, "App", func(c *catalogServer) {
+		c.on(func(gosmotest.Query) [][]any { return [][]any{{session}} }, "SELECT DB_NAME()")
+	})
 	d := Deps{
-		Connect: func(context.Context, config.Connection, db.Role) (*db.ServerConn, error) {
-			return &db.ServerConn{}, nil
+		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
+			return s.conn(ctx)
 		},
-		Catalog: func(*db.ServerConn) Catalog { return cat },
 	}
 	res := &output.Result{}
-	sc, _, dbase, err := d.connectDatabase(context.Background(), inv, res)
+	sc, dbase, err := d.connectDatabase(context.Background(), inv, res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,8 +117,8 @@ func TestConnectDatabase(t *testing.T) {
 		t.Errorf("database %q, envelope %q on %q", dbase.Name, res.Database, res.Server)
 	}
 
-	cat.missing = true
-	if _, _, _, err := d.connectDatabase(context.Background(), inv, &output.Result{}); readError(err).Code != output.CodeNotFound {
+	session = "gone"
+	if _, _, err := d.connectDatabase(context.Background(), inv, &output.Result{}); readError(err).Code != output.CodeNotFound {
 		t.Errorf("missing database: %v, want NOT_FOUND", err)
 	}
 }

@@ -31,7 +31,6 @@ func runGroup(t *testing.T, s *monitorServer, group string, argv ...string) (*ou
 		Connect: func(ctx context.Context, _ config.Connection, _ db.Role) (*db.ServerConn, error) {
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	// --force is the CLI's global option (tree.go), which --plan-file and
 	// --deadlock-file follow.

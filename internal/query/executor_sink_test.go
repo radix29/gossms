@@ -456,7 +456,7 @@ func TestExecuteIgnoresLastInsertID(t *testing.T) {
 	})
 	defer db.Close()
 
-	res := Execute(context.Background(), db, "", "INSERT INTO t VALUES (1)")
+	res := Execute(context.Background(), db, "INSERT INTO t VALUES (1)")
 
 	if res.HasErrors() {
 		t.Errorf("messages = %v, want no error — MsgLastInsertID must not reach the default arm",
@@ -474,7 +474,7 @@ func TestExecuteRetainsWhatExecuteToSinkStreams(t *testing.T) {
 	db := openFakeMsgDB([]fakeMsg{set([]string{"n"}, []driver.Value{int64(1)}, []driver.Value{int64(2)})})
 	defer db.Close()
 
-	res := Execute(context.Background(), db, "", "SELECT 1")
+	res := Execute(context.Background(), db, "SELECT 1")
 
 	if len(res.Sets) != 1 || len(res.Sets[0].Rows) != 2 {
 		t.Fatalf("Execute produced %d sets, want 1 of 2 rows", len(res.Sets))

@@ -76,7 +76,7 @@ func (d Deps) objectDependencies(ctx context.Context, inv *spec.Invocation) (*ou
 			"Give --depth 1 for the object's own edges, up to 5.")
 	}
 	res := &output.Result{}
-	_, dbase, o, done, err := d.lookupObject(ctx, inv, res)
+	dbase, o, done, err := d.lookupObject(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}

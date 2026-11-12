@@ -156,7 +156,7 @@ func (s *maintServer) applyWrite(q gosmotest.Query) gosmotest.Result {
 	return gosmotest.Result{}
 }
 
-// maintDatabases is the server's databases: newStorageCatalog's, model and
+// maintDatabases is the server's databases: newStorageServer's, model and
 // tempdb's absence included — app FULL, hr and master SIMPLE, archive
 // OFFLINE, app_snap a snapshot of app.
 func maintDatabases() []*gosmo.Database {

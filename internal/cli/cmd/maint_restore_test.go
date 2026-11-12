@@ -11,7 +11,6 @@ import (
 	"github.com/radix29/gossms/internal/cli/args"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
-	"github.com/radix29/gossms/internal/db"
 )
 
 const (
@@ -59,8 +58,8 @@ func newRestoreServer(t *testing.T) *maintServer {
 	return c
 }
 
-func restoreFakes(t *testing.T) Catalog {
-	return ServerCatalog(&db.ServerConn{Server: newRestoreServer(t).Server()})
+func restoreFakes(t *testing.T) *gosmo.Server {
+	return newRestoreServer(t).Server()
 }
 
 // runRestore runs maint restore <argv> over s; dials counts the connects.

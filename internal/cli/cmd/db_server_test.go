@@ -393,11 +393,6 @@ func (s *dbServer) applyAlter(name, key, value string) {
 	}
 }
 
-// writeCount is how many writes whose text contains sub s was sent.
-func (s *dbServer) writeCount(sub string) int {
-	return len(slices.DeleteFunc(slices.Clone(s.writes), func(w string) bool { return !strings.Contains(w, sub) }))
-}
-
 // run runs db <argv> (the subcommand first) against s as the first command
 // on an ad-hoc connection; dials counts the connects.
 func (s *dbServer) run(t *testing.T, argv string) (res *output.Result, dials int, err error) {
@@ -417,7 +412,6 @@ func (s *dbServer) runRaw(argv string) (res *output.Result, dials int, parse, er
 			dials++
 			return s.conn(ctx)
 		},
-		Catalog: ServerCatalog,
 	}
 	fields := strings.Fields(argv)
 	n := 1

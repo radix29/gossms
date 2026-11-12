@@ -51,6 +51,10 @@ func TestNextTokens(t *testing.T) {
 		{"a -- b /* c\nd", []string{"w:a", "c:-- b /* c", "nl:\n", "w:d"}, State{}},
 		{"/* a /* b */ c */ d", []string{"c:/* a /* b */ c */", "w:d"}, State{}},
 		{"a\u00a0b\r\n", []string{"w:a", "w:b", "nl:\n"}, State{}},
+		// SQL Server ends a "--" comment at a lone CR as well as at LF.
+		{"-- x\rSELECT", []string{"c:-- x", "w:SELECT"}, State{}},
+		{"-- x\r\n", []string{"c:-- x", "nl:\n"}, State{}},
+		{"a -- x\r\rb", []string{"w:a", "c:-- x", "w:b"}, State{}},
 		{"x <> 1;", []string{"w:x", "p:<", "p:>", "n:1", "p:;"}, State{}},
 		// Left open at the limit: the token runs to it, and the state says
 		// what it is still inside.

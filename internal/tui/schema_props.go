@@ -46,15 +46,7 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			roles, err := d.Roles(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			appRoles, err := d.ApplicationRoles(ctx)
+			principals, err := loadDatabasePrincipals(ctx, d)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -83,20 +75,20 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			}
 
 			ownerType := "Database role"
-			for _, r := range appRoles {
+			for _, r := range principals.ApplicationRoles {
 				if r.Name == schema.Owner {
 					ownerType = "Application role"
 					break
 				}
 			}
-			for _, u := range users {
+			for _, u := range principals.Users {
 				if u.Name == schema.Owner {
 					ownerType = string(u.UserType)
 					break
 				}
 			}
 
-			builtin := isSystemSchema(schema.Name)
+			builtin := isFixedSchema(schema.Name)
 
 			rows := []propsheet.Row{
 				propsheet.Section("Schema information"),
@@ -106,7 +98,7 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			if builtin {
 				rows = append(rows, propsheet.Static("Owner", schema.Owner))
 			} else {
-				ownerNames := principalNames(users, roles, appRoles)
+				ownerNames := principals.owners(nil)
 				ownerRow = selectPreserving("Owner", ownerNames, schema.Owner, unknownOwnerItem)
 				rows = append(rows, ownerRow)
 			}
@@ -176,16 +168,12 @@ func pageSchemaPermissions(sc *db.ServerConn, dbName, schemaName string) propPag
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			roles, err := d.Roles(ctx)
+			principals, err := loadDatabasePrincipals(ctx, d)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.SecurableSchema.PermissionNames(),
+			f, apply := buildPermissionsMatrix(principals.grantees(), gosmo.SecurableSchema.PermissionNames(),
 				objectPermEntries(perms),
 				securablePermApply(d, gosmo.Securable{Class: gosmo.SecurableSchema, Name: schemaName}))
 			return f, apply, nil

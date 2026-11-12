@@ -191,7 +191,7 @@ func (d Deps) jobStart(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		return nil, usageError("--step is empty", "Give a step number or name, or leave --step out to start at the job's first step.")
 	}
 	res := &output.Result{}
-	sc, _, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -222,7 +222,7 @@ func (d Deps) jobStart(ctx context.Context, inv *spec.Invocation) (*output.Resul
 		{Key: "state", Value: jobStateName(j.CurrentState)},
 		{Key: "wait", Value: strconv.Itoa(wait)},
 	}
-	if running, known := jobIsRunning(j.CurrentState); running && known {
+	if running, known := j.CurrentState.Running(); running && known {
 		return res, output.NewError(output.CodeBlocked,
 			fmt.Sprintf("job %s is already running (%s): Agent would refuse to start it", gosmo.QuoteName(j.Name), jobStateName(j.CurrentState)),
 			fmt.Sprintf("Wait for it to end, or stop it first: gossms job stop %q.", j.Name))
@@ -277,7 +277,7 @@ func waitForJob(ctx context.Context, srv *gosmo.Server, res *output.Result, j *g
 			res.Warnings = append(res.Warnings, "the job started, but it could not be read while waiting: "+err.Error())
 			return jobReadError(err)
 		}
-		running, _ := jobIsRunning(now.CurrentState)
+		running, _ := now.CurrentState.Running()
 		if !running && !now.LastRunDate.IsZero() && !now.LastRunDate.Equal(j.LastRunDate) {
 			return jobFinished(ctx, srv, res, now, begun, jobNow().Sub(start))
 		}
@@ -326,7 +326,7 @@ func jobFinished(ctx context.Context, srv *gosmo.Server, res *output.Result, j *
 
 func (d Deps) jobStop(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, err := d.connectGated(ctx, inv, res)
+	sc, err := d.connectGated(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -345,7 +345,7 @@ func (d Deps) jobStop(ctx context.Context, inv *spec.Invocation) (*output.Result
 		res.Warnings = append(res.Warnings, fmt.Sprintf("job %s is not running: there is nothing to stop", gosmo.QuoteName(j.Name)))
 		return res, nil
 	}
-	if running, known := jobIsRunning(j.CurrentState); known && !running {
+	if running, known := j.CurrentState.Running(); known && !running {
 		res.Fields = append(res.Fields, output.Field{Key: "dryRun", Value: boolText(dryRun(inv))})
 		return notRunning()
 	}

@@ -39,11 +39,13 @@ const (
 
 var nseqCacheItems = []string{nseqCacheDefault, nseqCacheNone, nseqCacheSize}
 
-// nseqPrefetch is everything the dialog reads before it opens.
-type nseqPrefetch struct {
-	// existing holds every sequence as sequenceKey spells it, under the
-	// database's collation. Only sequences: a table of the same name collides
-	// too, and the server names that one (Msg 2714).
+// schemaObjectPrefetch is everything the New Sequence and New Synonym dialogs
+// read before they open: the two differ only in which family fills existing.
+type schemaObjectPrefetch struct {
+	// existing holds every object of the dialog's own family as sequenceKey
+	// spells it, under the database's collation. Only that family: an object
+	// of any other kind with the same name collides too, and the server names
+	// that one (Msg 2714).
 	existing *nameSet
 	schemas  []string
 	// principals are what the Permissions page may grant to: every user and role.
@@ -56,7 +58,43 @@ type nseqPrefetch struct {
 // occur in an identifier, so two pairs never share a key.
 func sequenceKey(schema, name string) string { return schema + "\x00" + name }
 
-func fetchNewSequencePrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*nseqPrefetch, error) {
+// schemaObjectKeys adapts a Database list read into fetchSchemaObjectPrefetch's
+// keys: each object's sequenceKey, from the schema and name of returns.
+func schemaObjectKeys[T any](list func(*gosmo.Database, context.Context) ([]T, error),
+	names func(T) (schema, name string)) func(context.Context, *gosmo.Database) ([]string, error) {
+	return func(ctx context.Context, d *gosmo.Database) ([]string, error) {
+		objs, err := list(d, ctx)
+		if err != nil {
+			return nil, err
+		}
+		keys := make([]string, len(objs))
+		for i, o := range objs {
+			keys[i] = sequenceKey(names(o))
+		}
+		return keys, nil
+	}
+}
+
+// newObjectPermissionsPage is a New dialog's Permissions page for an object of
+// class: nothing granted yet, and the securable's schema and name read from
+// target when apply runs — they are only known once typed. Permissions go
+// through DatabaseRef for the same reason as the CREATE: the GRANTs need
+// nothing but the database's name. schema is "" for a schema itself.
+func newObjectPermissionsPage(sc *db.ServerConn, dbName string, principals []permPrincipal,
+	class gosmo.SecurableClass, target func() (schema, name string)) (*propsheet.Form, propApply) {
+	return buildPermissionsMatrix(principals, class.PermissionNames(), nil,
+		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
+			schema, name := target()
+			sec := gosmo.Securable{Class: class, Schema: schema, Name: name}
+			return securablePermApply(sc.Server.DatabaseRef(dbName), sec)(ctx, verb, opts, permission, principal)
+		})
+}
+
+// fetchSchemaObjectPrefetch reads a schemaObjectPrefetch; keys lists the
+// dialog's family as sequenceKey entries (d.Sequences for New Sequence,
+// d.Synonyms for New Synonym).
+func fetchSchemaObjectPrefetch(ctx context.Context, sc *db.ServerConn, dbName string,
+	keys func(context.Context, *gosmo.Database) ([]string, error)) (*schemaObjectPrefetch, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
@@ -65,24 +103,20 @@ func fetchNewSequencePrefetch(ctx context.Context, sc *db.ServerConn, dbName str
 	if err != nil {
 		return nil, err
 	}
-	seqs, err := d.Sequences(ctx)
+	existing, err := keys(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	users, err := d.Users(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	roles, err := d.Roles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	pf := &nseqPrefetch{existing: newNameSet(databaseCollation(d)), collation: databaseCollation(d),
-		principals: databasePermPrincipals(users, roles)}
-	pf.schemas = sequenceSchemas(databaseCollation(d), schemas)
-	for _, s := range seqs {
-		pf.existing.Add(sequenceKey(s.Schema, s.Name))
-	}
+	collation := databaseCollation(d)
+	pf := &schemaObjectPrefetch{existing: newNameSet(collation, existing...), collation: collation,
+		principals: principals.grantees()}
+	// sys and INFORMATION_SCHEMA refuse CREATE SYNONYM as they refuse CREATE
+	// SEQUENCE (Msg 2760, sa included), so one picker rule serves both.
+	pf.schemas = sequenceSchemas(collation, schemas)
 	return pf, nil
 }
 
@@ -102,18 +136,19 @@ func sequenceSchemas(collation string, schemas []*gosmo.Schema) []string {
 
 // NewSequenceDialog is the New Sequence dialog.
 type NewSequenceDialog struct {
-	dbFolderDialog[nseqPrefetch]
+	dbFolderDialog[schemaObjectPrefetch]
 }
 
 // NewNewSequenceDialog creates the dialog and wires its callbacks.
 func NewNewSequenceDialog(app *App) *NewSequenceDialog {
 	d := &NewSequenceDialog{}
-	d.initInFolder(app, newObjectConfig[nseqPrefetch]{
+	d.initInFolder(app, newObjectConfig[schemaObjectPrefetch]{
 		title: "New Sequence",
 		noun:  "Sequence",
 		pages: []string{"General", "Permissions", "Extended Properties"},
-		fetch: func(ctx context.Context, sc *db.ServerConn) (*nseqPrefetch, error) {
-			return fetchNewSequencePrefetch(ctx, sc, d.dbName)
+		fetch: func(ctx context.Context, sc *db.ServerConn) (*schemaObjectPrefetch, error) {
+			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, schemaObjectKeys((*gosmo.Database).Sequences,
+				func(s *gosmo.Sequence) (string, string) { return s.Schema, s.Name }))
 		},
 		build: d.buildPages,
 	})
@@ -127,7 +162,7 @@ type nseqFields struct {
 	noMin, noMax, cycle                                    *propsheet.CheckRow
 }
 
-func (d *NewSequenceDialog) buildPages(pf *nseqPrefetch) {
+func (d *NewSequenceDialog) buildPages(pf *schemaObjectPrefetch) {
 	sc := d.sc
 	dbName := d.dbName
 
@@ -222,15 +257,9 @@ func (d *NewSequenceDialog) buildPages(pf *nseqPrefetch) {
 		return err
 	}
 
-	// The securable is read when apply runs, from the request the preflight built:
-	// the name is only known once typed. Permissions go through DatabaseRef for the
-	// same reason as the CREATE.
-	var noEntries []permEntry
-	d.forms[1], d.applyFns[1] = buildPermissionsMatrix(pf.principals, gosmo.SecurableSequence.PermissionNames(), noEntries,
-		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, permission, principal string) error {
-			sec := gosmo.Securable{Class: gosmo.SecurableSequence, Schema: req.Schema, Name: req.Name}
-			return securablePermApply(sc.Server.DatabaseRef(dbName), sec)(ctx, verb, opts, permission, principal)
-		})
+	// The securable is read when apply runs, from the request the preflight built.
+	d.forms[1], d.applyFns[1] = newObjectPermissionsPage(sc, dbName, pf.principals, gosmo.SecurableSequence,
+		func() (string, string) { return req.Schema, req.Name })
 	d.forms[2], d.applyFns[2] = buildExtendedPropertiesForm(sc, dbName, pf.collation, func() gosmo.ExtendedPropertyLevel {
 		return sequencePropertyLevel(req.Schema, req.Name)
 	}, nil)
@@ -254,7 +283,7 @@ func sequencePropertyLevel(schema, name string) gosmo.ExtendedPropertyLevel {
 
 // newSequenceRequest reads the General page into a request, refusing, naming
 // the field, what the CREATE would be refused for.
-func newSequenceRequest(f nseqFields, dbName string, pf *nseqPrefetch) (gosmo.CreateSequenceRequest, error) {
+func newSequenceRequest(f nseqFields, dbName string, pf *schemaObjectPrefetch) (gosmo.CreateSequenceRequest, error) {
 	req := gosmo.CreateSequenceRequest{
 		Schema:   f.schema.Value(),
 		Name:     strings.TrimSpace(f.name.Value()),

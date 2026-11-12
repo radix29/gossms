@@ -40,8 +40,9 @@ func TestScanResultSetMaxRows(t *testing.T) {
 }
 
 func TestWithMaxRowsClampsNegative(t *testing.T) {
-	if res := newResult([]Option{WithMaxRows(-5)}); res.maxRows != 0 {
-		t.Errorf("WithMaxRows(-5) set %d, want 0 (no cap)", res.maxRows)
+	r := newRun([]Option{WithMaxRows(-5)})
+	if r.opts.maxRows != 0 || r.res.MaxRows != 0 {
+		t.Errorf("WithMaxRows(-5) set %d (Result.MaxRows %d), want 0 (no cap)", r.opts.maxRows, r.res.MaxRows)
 	}
 }
 

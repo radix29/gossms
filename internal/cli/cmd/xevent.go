@@ -58,7 +58,7 @@ type xeSession struct {
 
 func (d Deps) xeventSessions(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
@@ -69,8 +69,8 @@ func (d Deps) xeventSessions(ctx context.Context, inv *spec.Invocation) (*output
 	// refused read reports.
 	xe := sc.Server.XEvents()
 	scope := "server"
-	if info := cat.ServerInfo(); info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase {
-		dbase, err := currentDatabase(ctx, cat, res)
+	if info := sc.Server.Info(); info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase {
+		dbase, err := currentDatabase(ctx, sc.Server, res)
 		if err != nil {
 			return res, err
 		}

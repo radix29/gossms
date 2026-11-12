@@ -53,13 +53,13 @@ func isSystemUser(name string) bool {
 	}
 }
 
-// isSystemSchema reports whether a schema can be neither dropped nor
+// isFixedSchema reports whether a schema can be neither dropped nor
 // re-owned — the same fixed four isSystemUser covers, for the same reason.
 //
 // Note this is *not* every schema SQL Server created: the schema behind each
 // fixed database role (db_owner, db_datareader, ...) drops and re-owns
 // perfectly happily, verified live, so those are ordinary schemas here.
-func isSystemSchema(name string) bool {
+func isFixedSchema(name string) bool {
 	switch name {
 	case "dbo", "guest", "sys", "INFORMATION_SCHEMA":
 		return true

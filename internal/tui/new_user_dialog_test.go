@@ -236,17 +236,17 @@ func TestNewUserOffersEntraOnlyWhereTheServerTakesIt(t *testing.T) {
 // principal namespace with users and roles, and CREATE USER over one is
 // Msg 15023.
 func TestNewUserPrefetchHoldsEveryPrincipalName(t *testing.T) {
-	responses := []fakeResponse{csDatabaseRow("appdb"), databaseUsersResponse()}
-	responses = append(responses, databaseRoleResponses()...)
-	responses = append(responses,
-		fakeResponse{match: "WHERE  type = 'A'", cols: 5, rows: [][]driver.Value{
-			{"payroll_app", nil, int64(20), principalEpoch, principalEpoch},
-		}},
+	roles := databaseRoleResponses()
+	responses := []fakeResponse{csDatabaseRow("appdb"),
+		principalsResponse(databaseUsersResponse(), roles[len(roles)-1],
+			fakeResponse{match: "WHERE  type = 'A'", cols: 5, rows: [][]driver.Value{
+				{"payroll_app", nil, int64(20), principalEpoch, principalEpoch},
+			}}),
 		loginListResponse(),
 		// Not under test: the prefetch's certificate, key and options reads.
 		fakeResponse{match: "FROM   sys.certificates", cols: 8},
 		fakeResponse{match: "FROM   sys.asymmetric_keys", cols: 10},
-		fakeResponse{match: "d.page_verify_option_desc", cols: 35})
+		fakeResponse{match: "d.page_verify_option_desc", cols: 35}}
 	responses = append(responses, databaseSchemaResponses()...)
 	sc, _ := newGConn(t, responses...)
 	pf, err := fetchNewUserPrefetch(context.Background(), sc, "appdb")

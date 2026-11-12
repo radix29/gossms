@@ -13,6 +13,8 @@ import (
 // (folders, anything gosmo can't drop).
 //
 // Menu items: explorer_object_menu.go. Permissions: explorer_object_rights.go.
+// The op constructors and gosmo adapters the table uses:
+// explorer_object_op_adapters.go.
 // Confirm/run/refresh flows: explorer_object_actions.go. Agent objects are
 // renameable here but keep their own Delete (agent_menu.go).
 
@@ -393,14 +395,14 @@ var objectOps = map[NodeType]objectOp{
 		noun:    "Message Type",
 		warning: "The drop is refused while a contract names it — the server's error says so.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).MessageTypeRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).ServiceBroker().MessageTypeRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeContract: {
 		noun:    "Contract",
 		warning: "The drop is refused while a service or a conversation priority names it — the server's error says so.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).ContractRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).ServiceBroker().ContractRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeBrokerQueue: {
@@ -408,17 +410,17 @@ var objectOps = map[NodeType]objectOp{
 		// The one drop in this set that destroys data: messages still sitting
 		// in the queue go with it, and nothing on screen holds them.
 		warning: "Messages still in the queue are deleted with it, and the drop is refused while a service is bound to it.",
-		drop:    dropIn((*gosmo.Database).BrokerQueueRef),
+		drop:    dropIn(brokerQueueRef),
 		// The one schema-scoped family here, so the only one with a Move to
 		// Schema — and its right is neither of the queue's other two: see
 		// gate.ClassOneTransferRights.
-		transfer: transferIn((*gosmo.Database).BrokerQueueRef),
+		transfer: transferIn(brokerQueueRef),
 	},
 	NodeBrokerService: {
 		noun:    "Service",
 		warning: "Conversations addressed to it stop being delivered, and the drop is refused while a route or a conversation priority names it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).BrokerServiceRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).ServiceBroker().ServiceRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeRoute: {
@@ -427,21 +429,21 @@ var objectOps = map[NodeType]objectOp{
 		// so Delete is offered, as in SSMS.
 		warning: "Messages for the services it addresses stop being routed.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).RouteRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).ServiceBroker().RouteRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeRemoteServiceBinding: {
 		noun:    "Remote Service Binding",
 		warning: "Conversations with the remote service lose their security binding.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).RemoteServiceBindingRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).ServiceBroker().RemoteServiceBindingRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeBrokerPriority: {
 		noun:    "Broker Priority",
 		warning: "Conversations it applies to fall back to the default priority of 5.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).BrokerPriorityRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).ServiceBroker().PriorityRef(n.Name).Drop(ctx)
 		},
 	},
 
@@ -527,21 +529,21 @@ var objectOps = map[NodeType]objectOp{
 		noun:    "Full-Text Catalog",
 		warning: "The drop is refused while a full-text index is in the catalog.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).FullTextCatalogRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).FullText().CatalogRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeFullTextStoplist: {
 		noun:    "Full-Text Stoplist",
 		warning: "The drop is refused while a full-text index uses the stoplist.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).FullTextStoplistRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).FullText().StoplistRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeSearchPropertyList: {
 		noun:    "Search Property List",
 		warning: "The drop is refused while a full-text index uses the property list.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).SearchPropertyListRef(n.Name).Drop(ctx)
+			return dbOf(sc, n).FullText().SearchPropertyListRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeAudit: {
@@ -778,88 +780,6 @@ var objectOps = map[NodeType]objectOp{
 			return o.Rename(ctx, newName)
 		},
 	},
-}
-
-// rgDropApplied ends every Resource Governor delete's warning.
-const rgDropApplied = "Resource Governor is then reconfigured, so the drop takes effect at once; a disabled governor stays disabled."
-
-// rgDroppable is a gosmo Resource Governor handle — pool, group or external
-// pool.
-type rgDroppable interface{ Drop(context.Context) error }
-
-// rgObjectOp is the op the three Resource Governor families share: a
-// lookup-free handle's Drop, settled by applyResourceGovernor and the node's
-// label re-read.
-func rgObjectOp(noun, warning string, ref func(*gosmo.Server, string) rgDroppable) objectOp {
-	return objectOp{
-		noun:    noun,
-		warning: warning,
-		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return ref(sc.Server, n.Name).Drop(ctx)
-		},
-		settle:  applyResourceGovernor,
-		settled: (*App).refreshResourceGovernorLabel,
-	}
-}
-
-// schemaObjectHandle is a gosmo handle for a schema-scoped object that can be
-// dropped, renamed and moved to another schema.
-type schemaObjectHandle interface {
-	Drop(context.Context) error
-	Rename(context.Context, string) error
-	Transfer(context.Context, string) error
-}
-
-// schemaObjectOp is the whole op for a family whose handle has all three —
-// view, procedure, function, sequence, synonym.
-func schemaObjectOp[T schemaObjectHandle](noun string, ref func(*gosmo.Database, string, string) T) objectOp {
-	return objectOp{noun: noun, drop: dropIn(ref), rename: renameIn(ref), transfer: transferIn(ref)}
-}
-
-// dropIn adapts one of gosmo's schema-scoped Database.XxxRef(schema, name)
-// handles into a drop function: the handle is lookup-free, and its Drop
-// addresses the object by the two names alone.
-func dropIn[T interface{ Drop(context.Context) error }](ref func(*gosmo.Database, string, string) T) func(context.Context, *db.ServerConn, nodeData) error {
-	return func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-		return ref(dbOf(sc, n), n.Schema, n.Name).Drop(ctx)
-	}
-}
-
-// renameIn is dropIn for a rename.
-func renameIn[T interface {
-	Rename(context.Context, string) error
-}](ref func(*gosmo.Database, string, string) T) func(context.Context, *db.ServerConn, nodeData, string) error {
-	return func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-		return ref(dbOf(sc, n), n.Schema, n.Name).Rename(ctx, newName)
-	}
-}
-
-// transferIn is dropIn for a move to another schema (ALTER SCHEMA ... TRANSFER).
-// The handle's Transfer picks the securable class (TYPE::, XML SCHEMA
-// COLLECTION::).
-func transferIn[T interface {
-	Transfer(context.Context, string) error
-}](ref func(*gosmo.Database, string, string) T) func(context.Context, *db.ServerConn, nodeData, string) error {
-	return func(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
-		return ref(dbOf(sc, n), n.Schema, n.Name).Transfer(ctx, targetSchema)
-	}
-}
-
-// typeInUseWarning is the delete warning the three type families share; like
-// NodeColumn's, it leaves naming the blocker to the server.
-const typeInUseWarning = "The drop is refused while a column, parameter, variable or routine is typed on it — the server's error names what blocks it."
-
-// dropConstraint removes a primary key, unique constraint, foreign key, or
-// CHECK constraint — one ALTER TABLE ... DROP CONSTRAINT for all four.
-func dropConstraint(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-	return tableOf(sc, n).DropConstraint(ctx, n.Name)
-}
-
-// renameConstraint renames a foreign key or CHECK constraint. A primary key
-// or unique constraint renames through its backing index instead — see
-// NodeKey.
-func renameConstraint(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-	return tableOf(sc, n).RenameConstraint(ctx, n.Name, newName)
 }
 
 // objectOpFor returns the Delete/Rename behaviour for a node type, or nil

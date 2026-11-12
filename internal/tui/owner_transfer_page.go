@@ -220,15 +220,7 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.Users(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			roles, err := d.Roles(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			appRoles, err := d.ApplicationRoles(ctx)
+			principals, err := loadDatabasePrincipals(ctx, d)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -250,7 +242,7 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 				})
 			}
 
-			f, apply := newOwnerTransferPage(items, principalNames(users, roles, appRoles), ownerTransferSpec[ownedSchema]{
+			f, apply := newOwnerTransferPage(items, principals.owners(nil), ownerTransferSpec[ownedSchema]{
 				Headers: []string{"Schema", "Owner"},
 				Cells: func(it *ownerTransferItem[ownedSchema]) []string {
 					return []string{it.name, it.newOwner}

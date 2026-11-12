@@ -30,139 +30,6 @@ func ConnectOptions() []spec.Option {
 	return append([]spec.Option{profileOption()}, connect.Options()...)
 }
 
-// Catalog is the gosmo reads the discovery commands make, so tests stand in
-// for a server. Methods taking a *gosmo.Database call that database's own
-// method; the database is one DatabaseByName or Databases returned.
-//
-// The object group (object list, search, describe, definition,
-// dependencies, indexes, stats) and the script, data, security and maint
-// groups are the exception: past connecting and resolving the object's or database's name
-// (connectDatabase, resolveObject, namedDatabase), they call gosmo directly,
-// and their tests serve gosmo canned rows (gosmotest) instead of faking these
-// methods. That is moving every group off the
-// seam (docs/open-threads.md § Command line); what is left here is what the
-// other groups still read through it.
-type Catalog interface {
-	CurrentDatabase(ctx context.Context) (string, error)
-	Databases(ctx context.Context) ([]*gosmo.Database, error)
-	DatabaseByName(ctx context.Context, name string) (*gosmo.Database, error)
-	DatabaseSizes(ctx context.Context) (map[int]gosmo.DatabaseSize, error)
-	DatabaseOptions(ctx context.Context, d *gosmo.Database) (*gosmo.DatabaseOptions, error)
-	SpaceUsed(ctx context.Context, d *gosmo.Database) (gosmo.SpaceInfo, error)
-	// Resolving an object name (resolveObject), and the did-you-mean hint
-	// when there is none.
-	ObjectByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.ObjectInfo, error)
-	ObjectsNamed(ctx context.Context, d *gosmo.Database, name string) ([]*gosmo.ObjectInfo, error)
-	Search(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error)
-
-	// agent context: what connect read, and what the login may do.
-	ServerInfo() *gosmo.ServerInfo
-	ServerCapabilities(ctx context.Context) (*gosmo.Capabilities, error)
-	DatabaseCapabilities(ctx context.Context, d *gosmo.Database) (*gosmo.DatabaseCapabilities, error)
-	DatabaseAccess(ctx context.Context) (map[int]bool, error)
-
-	// The storage commands: files read inside the database and from the
-	// server catalog, the volume behind every file, and the sp_spaceused and
-	// log figures.
-	Files(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseFileInfo, error)
-	DatabaseFiles(ctx context.Context, name string) ([]*gosmo.DatabaseFileInfo, error)
-	FileVolumes(ctx context.Context) (vols []gosmo.FileVolume, visible bool, err error)
-	SpaceReport(ctx context.Context, d *gosmo.Database) (gosmo.SpaceReport, error)
-	TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error)
-	LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error)
-
-	// server log: one log file, filtered at the server, and the files kept.
-	ReadLog(ctx context.Context, t gosmo.ErrorLogType, archive int, search gosmo.LogSearch) ([]*gosmo.ErrorLogEntry, error)
-	EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error)
-}
-
-// ServerCatalog is Deps.Catalog: the reads, made through sc's gosmo Server.
-func ServerCatalog(sc *db.ServerConn) Catalog { return serverCatalog{sc.Server} }
-
-type serverCatalog struct{ s *gosmo.Server }
-
-func (c serverCatalog) CurrentDatabase(ctx context.Context) (string, error) {
-	return c.s.CurrentDatabase(ctx)
-}
-
-func (c serverCatalog) Databases(ctx context.Context) ([]*gosmo.Database, error) {
-	return c.s.Databases(ctx)
-}
-
-func (c serverCatalog) DatabaseByName(ctx context.Context, name string) (*gosmo.Database, error) {
-	return c.s.DatabaseByName(ctx, name)
-}
-
-func (c serverCatalog) DatabaseSizes(ctx context.Context) (map[int]gosmo.DatabaseSize, error) {
-	return c.s.DatabaseSizes(ctx)
-}
-
-func (serverCatalog) DatabaseOptions(ctx context.Context, d *gosmo.Database) (*gosmo.DatabaseOptions, error) {
-	return d.Options(ctx)
-}
-
-func (serverCatalog) SpaceUsed(ctx context.Context, d *gosmo.Database) (gosmo.SpaceInfo, error) {
-	return d.SpaceUsed(ctx)
-}
-
-func (serverCatalog) ObjectByName(ctx context.Context, d *gosmo.Database, schema, name string) (*gosmo.ObjectInfo, error) {
-	return d.ObjectByName(ctx, schema, name)
-}
-
-func (serverCatalog) ObjectsNamed(ctx context.Context, d *gosmo.Database, name string) ([]*gosmo.ObjectInfo, error) {
-	return d.ObjectsNamed(ctx, name)
-}
-
-func (serverCatalog) Search(ctx context.Context, d *gosmo.Database, pattern string) ([]*gosmo.SearchResult, error) {
-	return d.Search(ctx, pattern)
-}
-
-func (c serverCatalog) ServerInfo() *gosmo.ServerInfo { return c.s.Info() }
-
-func (c serverCatalog) ServerCapabilities(ctx context.Context) (*gosmo.Capabilities, error) {
-	return c.s.Capabilities(ctx)
-}
-
-func (serverCatalog) DatabaseCapabilities(ctx context.Context, d *gosmo.Database) (*gosmo.DatabaseCapabilities, error) {
-	return d.Capabilities(ctx)
-}
-
-func (c serverCatalog) DatabaseAccess(ctx context.Context) (map[int]bool, error) {
-	return c.s.DatabaseAccess(ctx)
-}
-
-func (serverCatalog) Files(ctx context.Context, d *gosmo.Database) ([]*gosmo.DatabaseFileInfo, error) {
-	return d.Files(ctx)
-}
-
-func (c serverCatalog) DatabaseFiles(ctx context.Context, name string) ([]*gosmo.DatabaseFileInfo, error) {
-	return c.s.DatabaseFiles(ctx, name)
-}
-
-func (c serverCatalog) FileVolumes(ctx context.Context) ([]gosmo.FileVolume, bool, error) {
-	return c.s.FileVolumes(ctx)
-}
-
-func (serverCatalog) SpaceReport(ctx context.Context, d *gosmo.Database) (gosmo.SpaceReport, error) {
-	return d.SpaceReport(ctx)
-}
-
-func (serverCatalog) TableSizes(ctx context.Context, d *gosmo.Database) ([]*gosmo.TableSize, error) {
-	return d.TableSizes(ctx)
-}
-
-func (serverCatalog) LogSpace(ctx context.Context, d *gosmo.Database) (gosmo.LogSpace, error) {
-	return d.LogSpace(ctx)
-}
-
-func (c serverCatalog) ReadLog(ctx context.Context, t gosmo.ErrorLogType, archive int, search gosmo.LogSearch) ([]*gosmo.ErrorLogEntry, error) {
-	return c.s.ReadLog(ctx, t, archive, search)
-}
-
-func (c serverCatalog) EnumErrorLogs(ctx context.Context, t gosmo.ErrorLogType) ([]*gosmo.ErrorLogFile, error) {
-	return c.s.EnumErrorLogs(ctx, t)
-}
-
 // dial resolves and opens the connection inv asks for through profile (empty
 // ad hoc) in cfg. res's header names the target from the start, so a failure
 // says where it failed.
@@ -183,44 +50,42 @@ func (d Deps) dial(ctx context.Context, inv *spec.Invocation, cfg *config.Config
 	return t, sc, nil
 }
 
-// connectCatalog connects as inv asks and returns the catalog reads over the
-// connection; the caller closes sc.
-func (d Deps) connectCatalog(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, error) {
+// connectServer connects as inv asks; the caller closes sc. Handlers read
+// through sc.Server and the databases it returns — tests serve gosmo canned
+// rows (gosmotest) rather than faking the reads.
+func (d Deps) connectServer(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, error) {
 	cfg, profile, _, err := d.profileCeiling(inv)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	_, sc, err := d.dial(ctx, inv, cfg, profile, res)
+	return sc, err
+}
+
+// connectDatabase is connectServer plus the connection's database — the
+// profile's, or -d's — read from the catalog, which the object commands look
+// in. The envelope's database is its catalog spelling.
+func (d Deps) connectDatabase(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, *gosmo.Database, error) {
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return nil, nil, err
 	}
-	return sc, d.Catalog(sc), nil
-}
-
-// connectDatabase is connectCatalog plus the connection's database — the
-// profile's, or -d's — read from the catalog, which the object commands look
-// in. The envelope's database is its catalog spelling.
-func (d Deps) connectDatabase(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, *gosmo.Database, error) {
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	dbase, err := currentDatabase(ctx, cat, res)
+	dbase, err := currentDatabase(ctx, sc.Server, res)
 	if err != nil {
 		sc.Close()
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return sc, cat, dbase, nil
+	return sc, dbase, nil
 }
 
 // currentDatabase is the connection's database read from the catalog; res's
 // database becomes its catalog spelling.
-func currentDatabase(ctx context.Context, cat Catalog, res *output.Result) (*gosmo.Database, error) {
-	name, err := cat.CurrentDatabase(ctx)
+func currentDatabase(ctx context.Context, srv *gosmo.Server, res *output.Result) (*gosmo.Database, error) {
+	name, err := srv.CurrentDatabase(ctx)
 	if err != nil {
 		return nil, readError(err)
 	}
-	dbase, err := cat.DatabaseByName(ctx, name)
+	dbase, err := srv.DatabaseByName(ctx, name)
 	if err != nil {
 		return nil, readError(err)
 	}
@@ -300,24 +165,24 @@ const maxSuggestions = 5
 // object, several are a usage error listing them. Nothing found is NOT_FOUND
 // with the objects whose names contain n's as the hint — which also catches a
 // case-only miss in a case-sensitive database.
-func resolveObject(ctx context.Context, cat Catalog, dbase *gosmo.Database, n ObjectName) (*gosmo.ObjectInfo, error) {
+func resolveObject(ctx context.Context, dbase *gosmo.Database, n ObjectName) (*gosmo.ObjectInfo, error) {
 	if n.Schema != "" {
-		o, err := cat.ObjectByName(ctx, dbase, n.Schema, n.Name)
+		o, err := dbase.ObjectByName(ctx, n.Schema, n.Name)
 		if errors.Is(err, gosmo.ErrNotFound) {
-			return nil, objectNotFound(ctx, cat, dbase, n)
+			return nil, objectNotFound(ctx, dbase, n)
 		}
 		if err != nil {
 			return nil, readError(err)
 		}
 		return o, nil
 	}
-	found, err := cat.ObjectsNamed(ctx, dbase, n.Name)
+	found, err := dbase.ObjectsNamed(ctx, n.Name)
 	if err != nil {
 		return nil, readError(err)
 	}
 	switch len(found) {
 	case 0:
-		return nil, objectNotFound(ctx, cat, dbase, n)
+		return nil, objectNotFound(ctx, dbase, n)
 	case 1:
 		return found[0], nil
 	}
@@ -332,10 +197,10 @@ func resolveObject(ctx context.Context, cat Catalog, dbase *gosmo.Database, n Ob
 // objectNotFound is NOT_FOUND for n in dbase, suggesting the objects whose
 // names contain n's. A failed suggestion read leaves the hint out rather than
 // replacing the answer.
-func objectNotFound(ctx context.Context, cat Catalog, dbase *gosmo.Database, n ObjectName) *output.Error {
+func objectNotFound(ctx context.Context, dbase *gosmo.Database, n ObjectName) *output.Error {
 	msg := fmt.Sprintf("no object %s in database %s", n, gosmo.QuoteName(dbase.Name))
 	hint := "Check the name, or pass -d to look in another database."
-	if similar, err := cat.Search(ctx, dbase, n.Name); err == nil && len(similar) > 0 {
+	if similar, err := dbase.Search(ctx, n.Name); err == nil && len(similar) > 0 {
 		names := make([]string, 0, maxSuggestions)
 		for _, r := range similar {
 			name := gosmo.QualifiedName(r.Schema, r.Name)

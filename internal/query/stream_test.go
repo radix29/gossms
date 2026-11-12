@@ -326,21 +326,23 @@ func TestStreamResultSetEndsASetWhoseBeginFailed(t *testing.T) {
 // successfully.".
 func TestShouldReportSuccessCountsSetsNotRows(t *testing.T) {
 	cases := []struct {
-		name    string
-		res     Result
-		capture planCapture
-		want    bool
+		name     string
+		res      Result
+		sinkSets int
+		capture  planCapture
+		want     bool
 	}{
-		{"no sets at all", Result{}, planCaptureNone, true},
-		{"a buffered set", Result{Sets: []ResultSet{{}}}, planCaptureNone, false},
-		{"an empty buffered set", Result{Sets: []ResultSet{{Columns: []string{"a"}}}}, planCaptureNone, false},
-		{"a streamed set with rows", Result{sinkSets: 1, RowsWritten: 5}, planCaptureNone, false},
-		{"a streamed set with no rows", Result{sinkSets: 1}, planCaptureNone, false},
-		{"an error", Result{Messages: []Message{{Text: "boom", IsError: true}}}, planCaptureNone, false},
-		{"estimated plan", Result{}, planCaptureEstimated, false},
+		{"no sets at all", Result{}, 0, planCaptureNone, true},
+		{"a buffered set", Result{Sets: []ResultSet{{}}}, 0, planCaptureNone, false},
+		{"an empty buffered set", Result{Sets: []ResultSet{{Columns: []string{"a"}}}}, 0, planCaptureNone, false},
+		{"a streamed set with rows", Result{RowsWritten: 5}, 1, planCaptureNone, false},
+		{"a streamed set with no rows", Result{}, 1, planCaptureNone, false},
+		{"an error", Result{Messages: []Message{{Text: "boom", IsError: true}}}, 0, planCaptureNone, false},
+		{"estimated plan", Result{}, 0, planCaptureEstimated, false},
 	}
 	for _, tc := range cases {
-		if got := tc.res.shouldReportSuccess(tc.capture); got != tc.want {
+		r := &run{res: &tc.res, sinkSets: tc.sinkSets}
+		if got := r.shouldReportSuccess(tc.capture); got != tc.want {
 			t.Errorf("%s: shouldReportSuccess = %v, want %v", tc.name, got, tc.want)
 		}
 	}

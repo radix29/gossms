@@ -108,7 +108,6 @@ func objectDeps(t *testing.T, s *objectServer) cmd.Deps {
 		}
 		return &db.ServerConn{Server: srv}, nil
 	})
-	d.Catalog = cmd.ServerCatalog
 	return d
 }
 
@@ -282,7 +281,7 @@ func (s *objectServer) listRules() {
 			return nil
 		}
 		return [][]any{{"Sales", "usp_Get", "SQL_STORED_PROCEDURE"}}
-	}, "LOWER(m.definition) LIKE")
+	}, "FROM   sys.sql_modules m")
 	s.on(func(gosmotest.Query) [][]any {
 		return [][]any{{"Sales", "Customer", "USER_TABLE", "CustomerName", "nvarchar", 100, 0, 0, "sys", false, false}}
 	}, "LOWER(c.name) LIKE")

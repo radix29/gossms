@@ -533,8 +533,8 @@ func agentDuration(d time.Duration) int {
 
 // JobRow is one row of the job read Jobs and JobByName make (a sysadmin's
 // route). The state column is the sysjobactivity-derived one — executing or
-// idle; a server answers Agent's live state to xp_sqlagent_enum_jobs, which
-// JobStateRow encodes.
+// idle; a server answers Agent's live state to xp_sqlagent_enum_jobs, a
+// separate read.
 func JobRow(j *gosmo.Job) []any {
 	date, clock := agentDate(j.LastRunDate)
 	state := 4
@@ -545,12 +545,6 @@ func JobRow(j *gosmo.Job) []any {
 		j.DateCreated, j.DateModified, j.StartStepID, int(j.DeleteLevel), int(j.NotifyLevelEmail),
 		j.NotifyEmailOperatorName, date, clock, int(j.LastRunOutcome), agentDuration(j.LastRunDuration),
 		Nullable(j.NextRunDate), state}
-}
-
-// JobStateRow is one row of Agent's live job states: the job's id in
-// lower case, and its state.
-func JobStateRow(j *gosmo.Job) []any {
-	return []any{strings.ToLower(j.JobID), int(j.CurrentState)}
 }
 
 // JobStepRow is one row of a job's steps read.
@@ -586,4 +580,167 @@ func JobHistoryRow(h *gosmo.JobHistoryEntry) []any {
 // AgentStatusRow is the row of the Agent service read.
 func AgentStatusRow(status string, startup time.Time) []any {
 	return []any{status, Nullable(startup)}
+}
+
+// --- Storage, sizes and access ------------------------------------------------
+
+// fileGrowthCells is a file's max_size and growth as sys.database_files and
+// sys.master_files hold them: pages (-1 unlimited), and pages or a percent.
+func fileGrowthCells(f *gosmo.DatabaseFileInfo) (maxSize, growth int64) {
+	maxSize = -1
+	if f.MaxSizeKB >= 0 {
+		maxSize = f.MaxSizeKB / 8
+	}
+	growth = f.GrowthKB / 8
+	if f.IsPercentGrowth {
+		growth = int64(f.GrowthPercent)
+	}
+	return maxSize, growth
+}
+
+// fileState is f's state_desc, ONLINE when the test left it unset.
+func fileState(f *gosmo.DatabaseFileInfo) string {
+	if f.State == "" {
+		return "ONLINE"
+	}
+	return string(f.State)
+}
+
+// DatabaseFileRow is f as one row of Database.Files' sys.database_files
+// select. Sizes are in KB as gosmo reports them; max_size and growth go back
+// to pages.
+func DatabaseFileRow(f *gosmo.DatabaseFileInfo) []any {
+	maxSize, growth := fileGrowthCells(f)
+	return []any{f.FileID, f.Name, f.PhysicalName, string(f.Type), f.FileGroup, fileState(f),
+		f.SizeKB, maxSize, growth, f.IsPercentGrowth, f.SpaceUsedKB}
+}
+
+// MasterFileRow is f as one row of Server.DatabaseFiles' sys.master_files
+// select: no filegroup or space used, and the size on disk NULL when
+// SizeOnDiskKB is 0.
+func MasterFileRow(f *gosmo.DatabaseFileInfo) []any {
+	maxSize, growth := fileGrowthCells(f)
+	return []any{f.FileID, f.Name, f.PhysicalName, string(f.Type), fileState(f),
+		f.SizeKB, maxSize, growth, f.IsPercentGrowth, Nullable(f.SizeOnDiskKB)}
+}
+
+// FileVolumeRow is v as one row of FileVolumes' select by a login with VIEW
+// SERVER STATE.
+func FileVolumeRow(v gosmo.FileVolume) []any {
+	return []any{true, v.DatabaseID, v.FileID, v.PhysicalName, Nullable(v.MountPoint), Nullable(v.VolumeName),
+		v.TotalBytes, v.AvailableBytes}
+}
+
+// FileVolumesHiddenRow is FileVolumes' one row for a login without VIEW
+// SERVER STATE.
+func FileVolumesHiddenRow() []any { return []any{false, nil, nil, nil, nil, nil, nil, nil} }
+
+// DatabaseSizeRow is one row of DatabaseSizes' select: database id's data
+// and log KB.
+func DatabaseSizeRow(id int, s gosmo.DatabaseSize) []any { return []any{id, s.DataKB, s.LogKB} }
+
+// DatabaseAccessRow is one row of DatabaseAccess' select: HAS_DBACCESS for
+// database id, nil for NULL.
+func DatabaseAccessRow(id int, access any) []any { return []any{id, access} }
+
+// SpaceUsedRow is si as the row of Database.SpaceUsed's select.
+func SpaceUsedRow(si gosmo.SpaceInfo) []any {
+	return []any{si.TotalMB, si.DataMB, si.LogMB, si.UnallocatedMB, si.AvailLogMB}
+}
+
+// SpaceReportRow is r as the row of Database.SpaceReport's select, in the
+// pages it counts: every KB figure must be a multiple of 8. DatabaseSizeKB,
+// UnallocatedKB and UnusedKB are not sent — gosmo derives them from the rest.
+// The checkpoint files are NULL for a database without a memory-optimized
+// filegroup (CheckpointFilesKB 0, XTPPrecreatedHidden false).
+func SpaceReportRow(r gosmo.SpaceReport) []any {
+	var ckpt any
+	if r.CheckpointFilesKB != 0 || r.XTPPrecreatedHidden {
+		ckpt = r.CheckpointFilesKB / 8
+	}
+	return []any{r.DataFilesKB / 8, r.LogFilesKB / 8, r.DataUsedKB / 8, r.LogUsedKB / 8, ckpt,
+		nil, !r.XTPPrecreatedHidden,
+		(r.DataKB + r.IndexKB + r.UnusedKB) / 8, (r.DataKB + r.IndexKB) / 8, r.DataKB / 8}
+}
+
+// LogSpaceRow is l as the row of Database.LogSpace's select. Whether gosmo
+// reads the VLF counts is the server's build (2016 SP2 on), not this row.
+func LogSpaceRow(l gosmo.LogSpace) []any {
+	var vlfs, active any
+	if l.VLFsKnown {
+		vlfs, active = int64(l.VLFs), int64(l.ActiveVLFs)
+	}
+	return []any{l.SizeKB, l.UsedKB, l.UsedPercent, l.ReuseWait, vlfs, active}
+}
+
+// TableSizeRow is ts as one row of Database.TableSizes' select, in pages:
+// its KB figures must be multiples of 8 (a memory-optimized table's are 0).
+func TableSizeRow(ts *gosmo.TableSize) []any {
+	return []any{ts.ObjectID, ts.Schema, ts.Name, ts.IsMemoryOptimized, ts.Rows,
+		(ts.DataKB + ts.IndexKB + ts.UnusedKB) / 8, (ts.DataKB + ts.IndexKB) / 8, ts.DataKB / 8}
+}
+
+// --- Server log -----------------------------------------------------------------
+
+// ErrorLogEntryRow is e as one row of ReadLog's xp_readerrorlog call: the
+// middle column is the Agent log's severity, else the SQL Server log's
+// ProcessInfo.
+func ErrorLogEntryRow(e *gosmo.ErrorLogEntry, agent bool) []any {
+	if agent {
+		return []any{e.Date, e.ErrorLevel, e.Text}
+	}
+	return []any{e.Date, e.Process, e.Text}
+}
+
+// ErrorLogFileRow is f as one row of sp_enumerrorlogs.
+func ErrorLogFileRow(f *gosmo.ErrorLogFile) []any { return []any{f.Number, f.Date, f.SizeBytes} }
+
+// --- Capabilities -------------------------------------------------------------
+
+// capabilityAnswer is st as HAS_PERMS_BY_NAME answers it: NULL (ok false)
+// for CapabilityUnknown, which gosmo records as no state.
+func capabilityAnswer(st gosmo.CapabilityState) (answer any, ok bool) {
+	switch st {
+	case gosmo.CapabilityGranted:
+		return 1, true
+	case gosmo.CapabilityDenied:
+		return 0, true
+	}
+	return nil, false
+}
+
+// capabilityRows is the (kind, name, answer) rows of roles (kind R) and of
+// each kind's permission map.
+func capabilityRows(roles map[string]bool, perms map[string]map[string]gosmo.CapabilityState) [][]any {
+	var rows [][]any
+	for name, in := range roles {
+		answer := 0
+		if in {
+			answer = 1
+		}
+		rows = append(rows, []any{"R", name, answer})
+	}
+	for kind, m := range perms {
+		for name, st := range m {
+			answer, _ := capabilityAnswer(st)
+			rows = append(rows, []any{kind, name, answer})
+		}
+	}
+	return rows
+}
+
+// ServerCapabilityRows is c's roles, server permissions and master
+// permissions as the rows of Server.Capabilities' probe. The per-securable
+// maps are not encoded.
+func ServerCapabilityRows(c *gosmo.Capabilities) [][]any {
+	return capabilityRows(c.ServerRoles, map[string]map[string]gosmo.CapabilityState{
+		"P": c.ServerPermissions, "M": c.MasterPermissions})
+}
+
+// DatabaseCapabilityRows is c's roles and database permissions as the rows
+// of Database.Capabilities' probe inside the database (its HAS_DBACCESS
+// question comes first, answered apart). The per-securable maps are not
+// encoded.
+func DatabaseCapabilityRows(c *gosmo.DatabaseCapabilities) [][]any {
+	return capabilityRows(c.Roles, map[string]map[string]gosmo.CapabilityState{"P": c.Permissions})
 }

@@ -233,6 +233,29 @@ func TestClassifyMergedStatementsAreFloored(t *testing.T) {
 	}
 }
 
+// SQL Server ends a "--" comment at a lone CR as well as at LF (verified live:
+// "SELECT 1 AS a -- c<CR>SELECT 2 AS b" returns two result sets), so the
+// statement after the CR is code. Read as comment text, it passed --allow read.
+func TestClassifyLineCommentEndsAtCR(t *testing.T) {
+	for _, tt := range []struct {
+		script  string
+		want    spec.Class
+		leaders []string
+	}{
+		{"SELECT 1 -- c\rDROP TABLE t", ddl, []string{"SELECT", "DROP TABLE"}},
+		{"DECLARE @t TABLE(a int) -- c\rINSERT INTO @t VALUES(1)", write, []string{"DECLARE", "INSERT"}},
+	} {
+		sc := Classify(tt.script)
+		var leaders []string
+		for _, st := range sc.Statements {
+			leaders = append(leaders, st.Leader)
+		}
+		if sc.Class != tt.want || !slices.Equal(leaders, tt.leaders) {
+			t.Errorf("Classify(%q) = %s %q, want %s %q", tt.script, sc.Class, leaders, tt.want, tt.leaders)
+		}
+	}
+}
+
 // Statement boundaries, lines, batches and repeat counts.
 func TestClassifyStatementsAndLines(t *testing.T) {
 	script := "SELECT 1\n\nUPDATE Sales.Customer SET a = 1\nGO\n-- note\nDELETE FROM [dbo].[t]; INSERT INTO t VALUES (1)\nGO 3\nEXEC sp_who2"

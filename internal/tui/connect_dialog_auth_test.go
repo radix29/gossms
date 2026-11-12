@@ -54,9 +54,11 @@ func TestConnectDialogPreFillKeepsTheSavedEncryptMode(t *testing.T) {
 			t.Errorf("PreFill(%q) → Encrypt %q, host %q", m, got.Encrypt, got.HostNameInCertificate)
 		}
 	}
+	// An unknown one is kept, for db to refuse — not silently made Mandatory
+	// (TestConnectRefusesAnUnknownSavedEncryptMode).
 	d.PreFill(&config.Connection{Server: "s", Encrypt: "bogus"})
-	if got := d.currentOptions().Encrypt; got != config.EncryptMandatory {
-		t.Errorf("PreFill of an unknown mode → %q, want Mandatory", got)
+	if got := d.currentOptions().Encrypt; got != "bogus" {
+		t.Errorf("PreFill of an unknown mode → %q, want it kept", got)
 	}
 }
 

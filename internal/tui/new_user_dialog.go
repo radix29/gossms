@@ -70,31 +70,19 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 		pf.everyContained = gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
 	}
 
-	users, err := d.Users(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	for _, u := range users {
-		pf.existingNames.Add(u.Name)
+	for _, n := range principals.names() {
+		pf.existingNames.Add(n)
 	}
-	roles, err := d.Roles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range roles {
-		pf.existingNames.Add(r.Name)
+	for _, r := range principals.Roles {
 		// public's membership is implicit and ALTER ROLE public ADD MEMBER is a syntax
 		// error: the exclusion every membership page makes.
 		if r.Name != "public" {
 			pf.roles = append(pf.roles, r.Name)
 		}
-	}
-	appRoles, err := d.ApplicationRoles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range appRoles {
-		pf.existingNames.Add(r.Name)
 	}
 	if pf.schemas, err = d.Schemas(ctx); err != nil {
 		return nil, err

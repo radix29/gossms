@@ -46,6 +46,12 @@ func alwaysOnRootMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQue
 	}
 }
 
+// agItem gates item on ALTER ANY AVAILABILITY GROUP, read against group ag
+// so a DENY ALTER on that group withholds it too (gate.AlterAnyAG).
+func agItem(item controls.MenuItem, sc *db.ServerConn, ag string) controls.MenuItem {
+	return gate.ItemOn(item, sc, "", "", ag, gate.AlterAnyAG)
+}
+
 // agGroupsFolderMenuItems builds the context menu for the Availability Groups
 // folder.
 func agGroupsFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -63,16 +69,16 @@ func agGroupMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, r
 		{Divider: true},
 		{Label: "Show Dashboard", Action: func() { a.showAGDashboardFor(sc, ag) }},
 		{Divider: true},
-		gate.ItemOn(controls.MenuItem{Label: "Add Database...",
-			Action: func() { a.showAGAddDatabaseDialog(sc, ag, node) }}, sc, "", "", ag, gate.AlterAnyAG),
-		gate.ItemOn(controls.MenuItem{Label: "Add Replica...",
-			Action: func() { a.showAGAddReplicaDialog(sc, ag, node) }}, sc, "", "", ag, gate.AlterAnyAG),
-		gate.ItemOn(controls.MenuItem{Label: "Add Listener...",
-			Action: func() { a.showAGAddListenerDialog(sc, ag, node) }}, sc, "", "", ag, gate.AlterAnyAG),
+		agItem(controls.MenuItem{Label: "Add Database...",
+			Action: func() { a.showAGAddDatabaseDialog(sc, ag, node) }}, sc, ag),
+		agItem(controls.MenuItem{Label: "Add Replica...",
+			Action: func() { a.showAGAddReplicaDialog(sc, ag, node) }}, sc, ag),
+		agItem(controls.MenuItem{Label: "Add Listener...",
+			Action: func() { a.showAGAddListenerDialog(sc, ag, node) }}, sc, ag),
 		{Divider: true},
 		refresh,
-		gate.ItemOn(controls.MenuItem{Label: "Delete Availability Group...",
-			Action: func() { a.deleteAvailabilityGroup(sc, node) }}, sc, "", "", ag, gate.AlterAnyAG),
+		agItem(controls.MenuItem{Label: "Delete Availability Group...",
+			Action: func() { a.deleteAvailabilityGroup(sc, node) }}, sc, ag),
 		{Divider: true},
 		{Label: "Properties...", Action: func() { a.showAGPropertiesFor(sc, ag) }},
 	}
@@ -82,8 +88,8 @@ func agGroupMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, r
 // Replicas folder.
 func agReplicasFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return folderMenu(newQuery, refresh,
-		gate.ItemOn(controls.MenuItem{Label: "Add Replica...",
-			Action: func() { a.showAGAddReplicaDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
+		agItem(controls.MenuItem{Label: "Add Replica...",
+			Action: func() { a.showAGAddReplicaDialog(sc, node.data.AGName, node) }}, sc, node.data.AGName),
 	)
 }
 
@@ -91,8 +97,8 @@ func agReplicasFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, ne
 // Databases folder.
 func agDatabasesFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return folderMenu(newQuery, refresh,
-		gate.ItemOn(controls.MenuItem{Label: "Add Database...",
-			Action: func() { a.showAGAddDatabaseDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
+		agItem(controls.MenuItem{Label: "Add Database...",
+			Action: func() { a.showAGAddDatabaseDialog(sc, node.data.AGName, node) }}, sc, node.data.AGName),
 	)
 }
 
@@ -134,10 +140,10 @@ func agDatabaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 	// The only item here writing ALTER AVAILABILITY GROUP, so the only one the
 	// group's class-108 DENY withholds; the others are ALTER DATABASE ... SET
 	// HADR, which it doesn't affect (measured for Resume and Join).
-	return append(items, gate.ItemOn(controls.MenuItem{
+	return append(items, agItem(controls.MenuItem{
 		Label:  "Remove Database from Group...",
 		Action: func() { a.removeAGDatabase(sc, node) },
-	}, sc, "", "", node.data.AGName, gate.AlterAnyAG))
+	}, sc, node.data.AGName))
 }
 
 // agReplicaMenuItems builds one replica's menu.
@@ -151,14 +157,14 @@ func agReplicaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate.ItemOn(controls.MenuItem{Label: "Fail Over to This Replica...", Enabled: secondary,
-			Action: func() { a.failoverToReplica(sc, node, false) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
-		gate.ItemOn(controls.MenuItem{Label: "Force Failover to This Replica...", Enabled: secondary,
-			Action: func() { a.failoverToReplica(sc, node, true) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
+		agItem(controls.MenuItem{Label: "Fail Over to This Replica...", Enabled: secondary,
+			Action: func() { a.failoverToReplica(sc, node, false) }}, sc, node.data.AGName),
+		agItem(controls.MenuItem{Label: "Force Failover to This Replica...", Enabled: secondary,
+			Action: func() { a.failoverToReplica(sc, node, true) }}, sc, node.data.AGName),
 		{Divider: true},
 		refresh,
-		gate.ItemOn(controls.MenuItem{Label: "Remove Replica from Group...", Enabled: secondary,
-			Action: func() { a.removeAGReplica(sc, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
+		agItem(controls.MenuItem{Label: "Remove Replica from Group...", Enabled: secondary,
+			Action: func() { a.removeAGReplica(sc, node) }}, sc, node.data.AGName),
 	}
 }
 
@@ -166,8 +172,8 @@ func agReplicaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 // Listeners folder.
 func agListenersFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return folderMenu(newQuery, refresh,
-		gate.ItemOn(controls.MenuItem{Label: "Add Listener...",
-			Action: func() { a.showAGAddListenerDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
+		agItem(controls.MenuItem{Label: "Add Listener...",
+			Action: func() { a.showAGAddListenerDialog(sc, node.data.AGName, node) }}, sc, node.data.AGName),
 	)
 }
 
@@ -175,8 +181,8 @@ func agListenersFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, n
 func agListenerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
 	return []controls.MenuItem{
 		refresh,
-		gate.ItemOn(controls.MenuItem{Label: "Remove Listener...",
-			Action: func() { a.removeAGListener(sc, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
+		agItem(controls.MenuItem{Label: "Remove Listener...",
+			Action: func() { a.removeAGListener(sc, node) }}, sc, node.data.AGName),
 		{Divider: true},
 		{Label: "Properties...", Action: func() {
 			a.showAGListenerPropertiesFor(sc, node.data.AGName, node.data.Name)
@@ -259,26 +265,51 @@ func (a *App) runAGOperation(sc *db.ServerConn, agName string, op agOperation) {
 
 // -- Databases -------------------------------------------------------------
 
-func (a *App) removeAGDatabase(sc *db.ServerConn, node *explorerNode) {
-	dbName, agName := node.data.Name, node.data.AGName
-	a.confirmDialog.ShowConfirm("Remove Database from Group",
-		fmt.Sprintf("Remove database %q from availability group %q?\n\n"+
-			"The primary's copy stays online and read-write. Every secondary is left holding a copy that is in no role — unreachable until it is dropped or restored WITH RECOVERY.",
-			dbName, agName),
-		func(confirmed bool) {
-			if !confirmed {
-				return
-			}
-			a.runAGOperation(sc, agName, agOperation{
-				title:   "Remove Database from Group",
-				what:    fmt.Sprintf("remove database %q from %q", dbName, agName),
-				done:    fmt.Sprintf("Database %q removed from availability group %q", dbName, agName),
-				refresh: node.listingParent(),
-				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-					return ag.RemoveDatabase(ctx, dbName)
-				},
-			})
+// agMemberRemoval is one of the group's Remove commands — a database, replica
+// or listener taken out of the group on its primary.
+type agMemberRemoval struct {
+	title string // the confirmation's and the operation's title
+	kind  string // "database", "replica", "listener"
+	// consequence is the confirmation's second paragraph: what is left behind.
+	consequence string
+	// typed asks for the member's name to be retyped.
+	typed bool
+	// remove is the gosmo method, as a method expression.
+	remove func(ag *gosmo.AvailabilityGroup, ctx context.Context, name string) error
+}
+
+// removeAGMember confirms r on node's member, then runs it on the primary.
+func (a *App) removeAGMember(sc *db.ServerConn, node *explorerNode, r agMemberRemoval) {
+	name, agName := node.data.Name, node.data.AGName
+	msg := fmt.Sprintf("Remove %s %q from availability group %q?\n\n%s", r.kind, name, agName, r.consequence)
+	run := func(confirmed bool) {
+		if !confirmed {
+			return
+		}
+		a.runAGOperation(sc, agName, agOperation{
+			title:   r.title,
+			what:    fmt.Sprintf("remove %s %q from %q", r.kind, name, agName),
+			done:    fmt.Sprintf("%s%s %q removed from availability group %q", strings.ToUpper(r.kind[:1]), r.kind[1:], name, agName),
+			refresh: node.listingParent(),
+			onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
+				return r.remove(ag, ctx, name)
+			},
 		})
+	}
+	if r.typed {
+		a.confirmTypedDialog.ShowTypedConfirm(r.title, msg, name, run)
+		return
+	}
+	a.confirmDialog.ShowConfirm(r.title, msg, run)
+}
+
+func (a *App) removeAGDatabase(sc *db.ServerConn, node *explorerNode) {
+	a.removeAGMember(sc, node, agMemberRemoval{
+		title:       "Remove Database from Group",
+		kind:        "database",
+		consequence: "The primary's copy stays online and read-write. Every secondary is left holding a copy that is in no role — unreachable until it is dropped or restored WITH RECOVERY.",
+		remove:      (*gosmo.AvailabilityGroup).RemoveDatabase,
+	})
 }
 
 // joinAGDatabase joins this instance's restored copy to the group — manual
@@ -390,26 +421,13 @@ func (a *App) resumeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 // -- Replicas --------------------------------------------------------------
 
 func (a *App) removeAGReplica(sc *db.ServerConn, node *explorerNode) {
-	replica, agName := node.data.Name, node.data.AGName
-	a.confirmTypedDialog.ShowTypedConfirm("Remove Replica from Group",
-		fmt.Sprintf("Remove replica %q from availability group %q?\n\n"+
-			"%s keeps its copies of the databases and a stale entry for the group, which only deleting the group there clears.",
-			replica, agName, replica),
-		replica,
-		func(confirmed bool) {
-			if !confirmed {
-				return
-			}
-			a.runAGOperation(sc, agName, agOperation{
-				title:   "Remove Replica from Group",
-				what:    fmt.Sprintf("remove replica %q from %q", replica, agName),
-				done:    fmt.Sprintf("Replica %q removed from availability group %q", replica, agName),
-				refresh: node.listingParent(),
-				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-					return ag.RemoveReplica(ctx, replica)
-				},
-			})
-		})
+	a.removeAGMember(sc, node, agMemberRemoval{
+		title:       "Remove Replica from Group",
+		kind:        "replica",
+		consequence: node.data.Name + " keeps its copies of the databases and a stale entry for the group, which only deleting the group there clears.",
+		typed:       true,
+		remove:      (*gosmo.AvailabilityGroup).RemoveReplica,
+	})
 }
 
 // failoverToReplica promotes the menu's replica via a connection to it;
@@ -534,25 +552,12 @@ func agFailover(ctx context.Context, sc *db.ServerConn, agName, replica string, 
 // -- Listeners -------------------------------------------------------------
 
 func (a *App) removeAGListener(sc *db.ServerConn, node *explorerNode) {
-	dnsName, agName := node.data.Name, node.data.AGName
-	a.confirmDialog.ShowConfirm("Remove Listener",
-		fmt.Sprintf("Remove listener %q from availability group %q?\n\n"+
-			"Clients configured to reach the group through this name will no longer resolve it. Existing connections are not dropped.",
-			dnsName, agName),
-		func(confirmed bool) {
-			if !confirmed {
-				return
-			}
-			a.runAGOperation(sc, agName, agOperation{
-				title:   "Remove Listener",
-				what:    fmt.Sprintf("remove listener %q from %q", dnsName, agName),
-				done:    fmt.Sprintf("Listener %q removed from availability group %q", dnsName, agName),
-				refresh: node.listingParent(),
-				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-					return ag.RemoveListener(ctx, dnsName)
-				},
-			})
-		})
+	a.removeAGMember(sc, node, agMemberRemoval{
+		title:       "Remove Listener",
+		kind:        "listener",
+		consequence: "Clients configured to reach the group through this name will no longer resolve it. Existing connections are not dropped.",
+		remove:      (*gosmo.AvailabilityGroup).RemoveListener,
+	})
 }
 
 // -- The group itself ------------------------------------------------------

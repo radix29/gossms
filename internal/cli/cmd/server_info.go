@@ -51,13 +51,13 @@ func serverInfoCommand(d Deps) *spec.Command {
 
 func (d Deps) serverInfo(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, cat, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}
 	defer sc.Close()
 
-	info := cat.ServerInfo()
+	info := sc.Server.Info()
 	if info == nil {
 		return res, output.NewError(output.CodeGeneralError, "the server's properties were not read at connect", "")
 	}
@@ -189,7 +189,7 @@ func memoryReadError(err error) *output.Error {
 
 func (d Deps) serverMemory(ctx context.Context, inv *spec.Invocation) (*output.Result, error) {
 	res := &output.Result{}
-	sc, _, err := d.connectCatalog(ctx, inv, res)
+	sc, err := d.connectServer(ctx, inv, res)
 	if err != nil {
 		return res, err
 	}

@@ -72,19 +72,16 @@ func (d Deps) gateClass(inv *spec.Invocation, res *output.Result, class spec.Cla
 	return nil, "", blockedError(b)
 }
 
-// connectGated is connectCatalog for a writing command: the gate first,
-// then the connection and its reads. The command writes through gosmo
-// directly (sc.Server, or a handle read through it). The caller closes sc.
-func (d Deps) connectGated(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, Catalog, error) {
+// connectGated is connectServer for a writing command: the gate first,
+// then the connection. The command reads and writes through gosmo directly
+// (sc.Server, or a handle read through it). The caller closes sc.
+func (d Deps) connectGated(ctx context.Context, inv *spec.Invocation, res *output.Result) (*db.ServerConn, error) {
 	cfg, profile, err := d.gate(inv, res)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	_, sc, err := d.dial(ctx, inv, cfg, profile, res)
-	if err != nil {
-		return nil, nil, err
-	}
-	return sc, d.Catalog(sc), nil
+	return sc, err
 }
 
 // applyWrite runs write, the command's gosmo writes (D2). Under --dry-run it

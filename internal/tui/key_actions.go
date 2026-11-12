@@ -46,21 +46,14 @@ func keyOwnerRow(ctx context.Context, sc *db.ServerConn, dbName, current string,
 	if err != nil {
 		return nil, err
 	}
-	users, err := d.Users(ctx)
+	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	var roles []*gosmo.DatabaseRole
-	if withRoles {
-		if roles, err = d.Roles(ctx); err != nil {
-			return nil, err
-		}
+	if !withRoles {
+		principals.Roles = nil
 	}
-	appRoles, err := d.ApplicationRoles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return selectPreserving("Owner", principalNames(users, roles, appRoles), current, unknownOwnerItem), nil
+	return selectPreserving("Owner", principals.owners(nil), current, unknownOwnerItem), nil
 }
 
 // keyOwnerApply writes an edited Owner row through change, and does nothing

@@ -121,6 +121,12 @@ func (a *App) saveTracked(done func(error)) {
 // It runs on main's goroutine with the event loop gone, which makes that
 // goroutine the only one touching a.cfg. Not after a panic on the UI
 // goroutine: a.cfg may be half-updated then.
+//
+// wait bounds the waits, not the synchronous save of a change asked for after
+// the in-flight one: that save can overrun the deadline by up to the file
+// lock's wait (fileutil.lockWait) plus the write. Accepted at exit — it is the
+// only copy of the user's latest change, and abandoning it would cut the write
+// off mid-fsync to save at most a couple of seconds.
 func (a *App) FlushSaves(wait time.Duration) {
 	if a == nil || a.cfg == nil {
 		return
@@ -147,6 +153,8 @@ func (a *App) FlushSaves(wait time.Duration) {
 			log.Printf("save config: %v", err)
 		}
 	}
+	// The one bare goroutine in this package outside fanOut (see its doc):
+	// Wait cannot panic, and an abandoned waiter dies with the process.
 	tracked := make(chan struct{})
 	go func() {
 		savesInFlight.Wait()
