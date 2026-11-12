@@ -715,8 +715,10 @@ tcell's all-motion tracking resends the held button on every motion event.
 The library half of the answer — `core.PressLatch` per widget acting on
 `Button1`, `ModalDialog.TrackPress` on the button row, `core.Gesture[Z]` per
 router ("a press claims the gesture"), `dialogs.Stack` handing a release to
-every open dialog, `dialogs.FieldGesture`, and `Show()` clearing latches — is
-tuikit's `ARCHITECTURE.md` § Mouse gestures (`~/go/tuikit`). Read it first.
+every open dialog, `dialogs.FieldGesture`, `Show()` clearing latches, and one
+`core.Gesture` inside each multi-zone widget (`DataGrid`, `Editor`,
+`TreeView`, `propsheet.Form`) — is tuikit's `ARCHITECTURE.md` § Mouse
+gestures (`~/go/tuikit`). Read it first.
 This section is how goSSMS's routers follow it.
 
 `App.handleMouse` keeps a gesture-wide flag (`App.mouseButtonDown`, set and

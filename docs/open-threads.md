@@ -137,6 +137,13 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
 - **`Editor.ToggleLineComments` hard-codes T-SQL's `--` prefix** — the one
   language rule left in the library (review-plan A1). A host-set prefix, as
   `SetWordStart`/`SetIndentRule` are, would end it.
+- **The Details pane's own cell menu stays open when a click lands in Object
+  Explorer.** `DataGrid` keeps its context menu inside the grid, and
+  `App.handleMouse` routes by position, so a right-click on a tree node opens
+  the tree's menu beside the grid's still-open "Show Value" box. Breaks
+  `core.MouseHandler`'s "any press outside an open menu dismisses it" one
+  level up: the app does not offer the press to an `OverlayActive()` pane
+  first. Seen 2026-11-12 driving tuikit-review step 4; predates it.
 
 ## Fix order
 

@@ -272,14 +272,14 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	if a.modals.HandleMouse(ev) {
 		return
 	}
-	if a.contextMenu.OverlayActive() {
-		a.contextMenu.HandleMouse(ev)
+	// An open menu gets first refusal on every mouse event and decides what
+	// closes it: any press outside. A right-click that closed it falls through
+	// (core.MouseHandler), so it opens the next menu where it landed instead of
+	// needing a second right-click.
+	if a.contextMenu.OverlayActive() && (a.contextMenu.HandleMouse(ev) || a.contextMenu.OverlayActive()) {
 		return
 	}
-	if a.menuBar.OverlayActive() {
-		// An open dropdown gets first refusal on every mouse event; MenuBar
-		// decides what closes it (only an outside click).
-		a.menuBar.HandleMouse(ev)
+	if a.menuBar.OverlayActive() && (a.menuBar.HandleMouse(ev) || a.menuBar.OverlayActive()) {
 		return
 	}
 
