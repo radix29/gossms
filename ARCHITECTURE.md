@@ -751,7 +751,8 @@ reads tuikit's `dialogs` through `go list`); the five tests in
 `internal/tui/dialog_drag_test.go` fail on a mutation of any of the three main
 calls. The release to the *focused* field, as opposed to the one that claimed
 the press, is `forwardReleaseToFocusedField` (`dialog_common.go`): it covers a
-focused `*editor.Editor`, which `FieldGesture` doesn't track.
+focused `*editor.Editor`, which no goSSMS dialog hands `FieldGesture` (it
+takes any `core.MouseHandler`, but every `Claim` here is a text field).
 
 ## Async result delivery: postAndWake
 

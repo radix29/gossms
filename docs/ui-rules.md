@@ -279,7 +279,7 @@ which owns them; the entries here say how goSSMS applies them.
   button row pressed the button, *accepting* a rename or a typed confirmation.
 - **The release to the *focused* field goes through
   `forwardReleaseToFocusedField` (`dialog_common.go`)**, not a type switch — it
-  covers the focused `*editor.Editor`, which `FieldGesture` doesn't track.
+  covers the focused `*editor.Editor`, which no dialog here `Claim`s.
   (Its `InputField` arm is belt-and-braces; `FieldGesture.Clear` +
   `InputField.CancelMouseDrag` closed the one gap,
   `TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture`.) The `!=

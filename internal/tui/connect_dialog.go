@@ -68,9 +68,6 @@ var (
 	connectRightButtons = []string{"Reset", "Connect", "Cancel"}
 )
 
-// buttonRowLeftX is where the left-hand group starts.
-func (d *ConnectDialog) buttonRowLeftX() int { return d.InnerRect().X + 1 }
-
 // ConnectDialog is the "Connect to Server" modal dialog, embedding
 // dialogs.ModalDialog and composing tuikit/widgets controls for its fields.
 //

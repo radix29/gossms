@@ -171,9 +171,16 @@ func TestQueryPanelCtrlUpDownReachesEditorByDefault(t *testing.T) {
 	if qp.resultsFocused {
 		t.Fatalf("resultsFocused = true by default, want false (editor)")
 	}
+	// A line above the caret, so Ctrl+Up moves it: on the first line the editor
+	// acts on nothing and rightly answers false.
+	qp.editor.SetText("select 1\nselect 2")
+	qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnd, "", tcell.ModCtrl))
 	before := qp.splitter.Ratio()
 	if !qp.HandleKey(tcell.NewEventKey(tcell.KeyUp, "", tcell.ModCtrl)) {
 		t.Fatalf("Ctrl+Up not consumed")
+	}
+	if row, _ := qp.editor.CursorPos(); row != 0 {
+		t.Errorf("caret on line %d after Ctrl+Up, want 0: the key did not reach the editor", row)
 	}
 	if qp.splitter.Ratio() != before {
 		t.Errorf("splitter ratio changed %v -> %v while the editor was focused; Ctrl+Up leaked to the resize shortcut", before, qp.splitter.Ratio())

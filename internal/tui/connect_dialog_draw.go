@@ -81,13 +81,10 @@ func (d *ConnectDialog) rightWidth() int {
 	return d.fPassword.InputX() + d.fPassword.Width() + 2 - d.rightX
 }
 
-// drawButtonRow paints both button groups. The right-aligned one goes first:
-// it is the call that clears the row on a clamped rect.
+// drawButtonRow paints both button groups, laid out together so a clamped
+// dialog drops the left group to the row below rather than overlapping them.
 func (d *ConnectDialog) drawButtonRow(s tcell.Screen) {
-	gated := d.buttonsDisabled()
-	n := len(connectLeftButtons)
-	d.DrawButtonsGated(s, connectRightButtons, d.btnFocus-n, gated[n:])
-	d.DrawButtonsAtGated(s, d.buttonRowLeftX(), connectLeftButtons, d.btnFocus, gated[:n])
+	d.DrawSplitButtons(s, connectLeftButtons, connectRightButtons, d.btnFocus, d.buttonsDisabled())
 }
 
 // tabSegments computes each tab's extent; drawing and hit-testing share it so
@@ -201,11 +198,14 @@ func (d *ConnectDialog) drawConnecting(s tcell.Screen, style tcell.Style) {
 	if !d.connecting {
 		return
 	}
-	// Between the two groups: Delete and Profile... hold the left end of the row.
-	x := d.buttonRowLeftX() + d.ButtonRowWidth(connectLeftButtons) + 2
-	y := d.ButtonRowY()
+	// Between the two groups: Delete and Profile... hold the left end of the
+	// row, unless a narrow terminal dropped them to the row below.
+	l := d.SplitButtonLayout(connectLeftButtons, connectRightButtons)
+	if l.GapW <= 0 {
+		return
+	}
+	x, y := l.GapX, l.RightY
 	connectSpinner.DrawSince(s, x, y, style, d.connectStarted)
 	lx := x + connectSpinner.Width() + 1
-	core.DrawText(s, lx, y, style,
-		core.Truncate(d.connectLabel, max(0, d.ButtonRowStartX(connectRightButtons)-2-lx)))
+	core.DrawText(s, lx, y, style, core.Truncate(d.connectLabel, max(0, l.GapX+l.GapW-lx)))
 }

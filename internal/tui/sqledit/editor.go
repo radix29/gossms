@@ -8,14 +8,20 @@ import (
 	"github.com/radix29/tuikit/controls/editor"
 )
 
+// LineComment is T-SQL's line-comment prefix, which Ctrl+/ inserts and strips
+// (editor.Editor.SetLineComment).
+const LineComment = "--"
+
 // Configure gives e T-SQL's word rules for completion: where a name starts
 // (sqltext.WordStart, so Price$ and t#1 are one name) and which keystrokes may
-// open the popup (CompletionTrigger). The highlighter and the indent rule are
+// open the popup (CompletionTrigger), and its line-comment prefix
+// (LineComment). The highlighter and the indent rule are
 // separate, as not every SQL editor wants both: pass Highlighter to
 // NewEditor/SetHighlighter and IndentRule to SetIndentRule.
 func Configure(e *editor.Editor) {
 	e.SetWordStart(sqltext.WordStart)
 	e.SetCompletionTrigger(CompletionTrigger)
+	e.SetLineComment(LineComment)
 }
 
 // CompletionTrigger reports whether the text left of col begins a name being

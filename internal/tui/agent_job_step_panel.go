@@ -58,8 +58,10 @@ func newJobStepPanel(sentinel string, dbNames []string, indentWidth int) *jobSte
 	// its indent width, both from the config the caller passes in — the width
 	// would otherwise come from controls' package default and the two settings
 	// would be read from two places for one editor. Options pushes a later
-	// change in through the sheet (SetEditorIndentWidth).
+	// change in through the sheet (SetEditorIndentWidth). Ctrl+/ comments
+	// with T-SQL's prefix, as in the query editor.
 	editor.SetIndentRule(sqledit.IndentRule)
+	editor.SetLineComment(sqledit.LineComment)
 	editor.SetIndentWidth(indentWidth)
 	p := &jobStepPanel{
 		sentinel:        sentinel,

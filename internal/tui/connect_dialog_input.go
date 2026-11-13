@@ -130,17 +130,10 @@ func (d *ConnectDialog) doButton() {
 	}
 }
 
-// buttonClicked is ModalDialog.ButtonClicked over both button groups,
-// answering an index into the whole row. A call that hits nothing latches
-// nothing, so trying the left group first costs the right one nothing.
+// buttonClicked is ModalDialog.SplitButtonClicked over both button groups,
+// answering an index into the whole row.
 func (d *ConnectDialog) buttonClicked(ev *tcell.EventMouse) int {
-	if i := d.ButtonClickedAt(ev, d.buttonRowLeftX(), connectLeftButtons); i >= 0 {
-		return i
-	}
-	if i := d.ButtonClickedAt(ev, d.ButtonRowStartX(connectRightButtons), connectRightButtons); i >= 0 {
-		return i + len(connectLeftButtons)
-	}
-	return -1
+	return d.SplitButtonClicked(ev, connectLeftButtons, connectRightButtons)
 }
 
 // HandleMouse routes mouse events; the embedded ModalDialog blocks clicks

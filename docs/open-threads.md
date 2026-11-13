@@ -120,13 +120,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   MenuDim in Light, MenuDim in MC, MenuDim/DialogDim/DialogError in MCRetro).
   Recolouring is a visible change: check each palette in the binary.
 
-## Dialogs: what is left
-
-- **A clamped dialog's left and right button groups overlap.** Connect on a
-  60-column terminal draws `[ Delete ]  [ Profile... ]set ]  [ Connect ]`:
-  the right-aligned group starts inside the left one. The clip keeps it in the
-  box but does not lay it out. Seen 2026-11-12 while driving review-plan A2.
-
 ## tuikit: what is left
 
 - **No tag yet — a release blocker.** tuikit became its own module
@@ -134,9 +127,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   requires the `v0.0.0-…` placeholder and builds only through
   `replace … => ../tuikit`; before a gossms tag, commit, tag and push tuikit,
   then bump the `require` and drop the `replace` (as for gosmo).
-- **`Editor.ToggleLineComments` hard-codes T-SQL's `--` prefix** — the one
-  language rule left in the library (review-plan A1). A host-set prefix, as
-  `SetWordStart`/`SetIndentRule` are, would end it.
 - **The Details pane's own cell menu stays open when a click lands in Object
   Explorer.** `DataGrid` keeps its context menu inside the grid, and
   `App.handleMouse` routes by position, so a right-click on a tree node opens
@@ -144,6 +134,13 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `core.MouseHandler`'s "any press outside an open menu dismisses it" one
   level up: the app does not offer the press to an `OverlayActive()` pane
   first. Seen 2026-11-12 driving tuikit-review step 4; predates it.
+- **`widgets.InputField.HandleKey` breaks the `HandleKey` rule** that
+  tuikit-review step 8 (IN1) applied to the grid, editor, tree and list: it
+  tests its own focus and claims every key it binds, Left at column 0 and
+  Right at the end included. Following the rule would hand a property-sheet
+  text field's Left-at-start to the sheet (page list) and an edge arrow in a
+  dialog to the dialog's own keys — a UX decision, not taken. tuikit's
+  `ARCHITECTURE.md` § Widgets and grids names the exception.
 
 ## Fix order
 

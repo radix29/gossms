@@ -168,3 +168,18 @@ func TestEditorCompletionSigilOpens(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigureCommentsWithDoubleDash pins that Configure hands the editor
+// T-SQL's line-comment prefix: tuikit's Editor has none of its own, so a SQL
+// editor that skipped it would leave Ctrl+/ dead.
+func TestConfigureCommentsWithDoubleDash(t *testing.T) {
+	e := editor.NewEditor(nil)
+	Configure(e)
+	e.SetText("SELECT 1")
+	if !e.HandleKey(tuikittest.Rune('/', tcell.ModCtrl)) {
+		t.Fatal("Ctrl+/ was not claimed")
+	}
+	if got := e.Text(); got != "-- SELECT 1" {
+		t.Fatalf("Ctrl+/ = %q, want %q", got, "-- SELECT 1")
+	}
+}
