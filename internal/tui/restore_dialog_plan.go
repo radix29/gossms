@@ -203,46 +203,72 @@ func tailBackupOptions(req restoreRequest) gosmo.BackupOptions {
 	}
 }
 
-// runRestorePlan is runRestore for a plan: plan from a fresh history read, back
-// up the tail if asked, then restore each set in order. The plan is made before
-// the tail-log backup on purpose: a plan that cannot run is refused while the
-// database is still online, not after the tail log has left it RESTORING.
+// runRestorePlan is runRestore for a plan: plan from a fresh history read, read
+// every set's header and file list, verify every set if asked, back up the tail
+// if asked, then restore each set in order. Everything that can refuse the plan
+// runs before the tail-log backup on purpose: a plan that cannot run (a backup
+// file deleted, a device since overwritten WITH INIT, a set that fails Verify)
+// is refused while the database is still online, not after the tail log has
+// left it RESTORING. stepOptions reads only the backup files and the server's
+// default paths, never what an earlier step restored, so it can run up front.
+// The tail log, whose file does not exist until it is backed up, is verified
+// after its backup.
 func runRestorePlan(ctx context.Context, app *App, srv *gosmo.Server, task *Task, req restoreRequest) error {
 	app.postProgress(task, -1, "Reading backup history...")
 	steps, err := planSteps(ctx, srv, req)
 	if err != nil {
 		return err
 	}
+	n := len(steps)
+	opts := make([]gosmo.RestoreOptions, n)
+	headers := make([]*gosmo.BackupHeader, n)
+	kinds := make([]string, n)
+	for i, step := range steps {
+		if !step.tail {
+			app.postProgress(task, -1, fmt.Sprintf("Reading set %d of %d...", i+1, n))
+		}
+		if opts[i], headers[i], err = stepOptions(ctx, srv, req, step, i, n); err != nil {
+			return err
+		}
+		kinds[i] = "tail log"
+		if headers[i] != nil {
+			kinds[i] = strings.ToLower(backupSetTypeName(headers[i].SetType))
+		}
+	}
+	verify := func(i int) error {
+		app.postProgress(task, -1, fmt.Sprintf("Verifying set %d of %d (%s)...", i+1, n, kinds[i]))
+		vopts := gosmo.VerifyOptions{FileNumber: steps[i].src.setNumber}
+		if headers[i] != nil {
+			vopts.Checksum = headers[i].HasChecksums
+		}
+		return srv.VerifyBackup(ctx, vopts, steps[i].src.targets()...)
+	}
+	if req.verify {
+		for i, step := range steps {
+			if !step.tail {
+				if err := verify(i); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	if req.plan.tailDevice != "" {
 		app.postProgress(task, -1, "Backing up the tail of the log...")
-		opts := tailBackupOptions(req)
-		opts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
-		if err := srv.Backup(ctx, opts); err != nil {
+		bopts := tailBackupOptions(req)
+		bopts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
+		if err := srv.Backup(ctx, bopts); err != nil {
 			return err
 		}
 	}
 	for i, step := range steps {
-		opts, h, err := stepOptions(ctx, srv, req, step, i, len(steps))
-		if err != nil {
-			return err
-		}
-		kind := "tail log"
-		if h != nil {
-			kind = strings.ToLower(backupSetTypeName(h.SetType))
-		}
-		if req.verify {
-			app.postProgress(task, -1, fmt.Sprintf("Verifying set %d of %d (%s)...", i+1, len(steps), kind))
-			vopts := gosmo.VerifyOptions{FileNumber: step.src.setNumber}
-			if h != nil {
-				vopts.Checksum = h.HasChecksums
-			}
-			if err := srv.VerifyBackup(ctx, vopts, step.src.targets()...); err != nil {
+		if req.verify && step.tail {
+			if err := verify(i); err != nil {
 				return err
 			}
 		}
-		app.postProgress(task, -1, fmt.Sprintf("Restoring set %d of %d (%s)...", i+1, len(steps), kind))
-		opts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
-		if err := srv.Restore(ctx, opts); err != nil {
+		app.postProgress(task, -1, fmt.Sprintf("Restoring set %d of %d (%s)...", i+1, n, kinds[i]))
+		opts[i].Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
+		if err := srv.Restore(ctx, opts[i]); err != nil {
 			return err
 		}
 	}
