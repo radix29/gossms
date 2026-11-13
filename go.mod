@@ -11,7 +11,7 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/radix29/gosmo v0.2.0
 	github.com/radix29/gotuipic v0.0.2
-	github.com/radix29/tuikit v0.0.0-00010101000000-000000000000
+	github.com/radix29/tuikit v0.0.1
 	golang.org/x/image v0.48.0
 	golang.org/x/term v0.48.0
 )
