@@ -24,6 +24,11 @@ func newBackupServer(t *testing.T) *maintServer {
 	s := newMaintServer(t, "master")
 	s.Info.BackupPath = "/var/opt/mssql/backup"
 	s.clock = time.Date(2026, 11, 3, 12, 0, 0, 0, jobServerZone)
+	// app's log chain and differential base are started; hr, in SIMPLE,
+	// has a base.
+	s.recovery["app"] = &gosmo.DatabaseRecoveryStatus{DatabaseName: "app", LastLogBackupLSN: "41000000045600001",
+		DifferentialBaseLSN: "41000000010000001", DifferentialBaseKnown: true}
+	s.recovery["hr"] = &gosmo.DatabaseRecoveryStatus{DatabaseName: "hr", DifferentialBaseLSN: "41000000010000001", DifferentialBaseKnown: true}
 	s.history = map[string][]*gosmo.BackupInfo{
 		"app": {
 			{DatabaseName: "app", SetType: gosmo.BackupSetLog, BackupStart: agentDate("2026-11-02 23:00:00"),
@@ -126,6 +131,9 @@ func TestMaintBackup(t *testing.T) {
 	}
 	if !slices.EqualFunc(cat.headerRead, [][]string{{file}}, slices.Equal) {
 		t.Errorf("headers read from %q", cat.headerRead)
+	}
+	if len(cat.recoveryFor) != 0 {
+		t.Errorf("a full backup read the log chain of %q: only a differential or log backup needs it", cat.recoveryFor)
 	}
 
 	// Appended to a file holding another database's set and an older one
@@ -237,6 +245,20 @@ func TestMaintBackupRefusals(t *testing.T) {
 		{"backup app_snap --allow admin", nil, output.CodeUsageError, 1, "is a database snapshot"},
 		{"backup hr --type log --allow admin", nil, output.CodeUsageError, 1, "SIMPLE recovery"},
 		{"backup hr --type log --allow admin --dry-run", nil, output.CodeUsageError, 1, "SIMPLE recovery"},
+		{"backup master --type diff --allow admin", nil, output.CodeUsageError, 1, "master takes full backups only"},
+		{"backup master --type log --allow admin", nil, output.CodeUsageError, 1, "master takes full backups only"},
+		{"backup app --type diff --allow admin", func(c *maintServer) {
+			c.recovery["app"] = &gosmo.DatabaseRecoveryStatus{DatabaseName: "app", DifferentialBaseKnown: true}
+		}, output.CodeUsageError, 1, "no full backup for a differential"},
+		{"backup app --type diff --allow admin --dry-run", func(c *maintServer) {
+			c.recovery["app"] = &gosmo.DatabaseRecoveryStatus{DatabaseName: "app", DifferentialBaseKnown: true}
+		}, output.CodeUsageError, 1, "no full backup for a differential"},
+		{"backup app --type log --allow admin", func(c *maintServer) {
+			c.recovery["app"] = &gosmo.DatabaseRecoveryStatus{DatabaseName: "app", DifferentialBaseKnown: true}
+		}, output.CodeUsageError, 1, "no log backup chain"},
+		// A full taken while SIMPLE sets a base but starts no chain.
+		{"backup app --type log --allow admin", func(c *maintServer) { c.recovery["app"].LastLogBackupLSN = "" },
+			output.CodeUsageError, 1, "no log backup chain"},
 		{"backup app --compression --allow admin", func(c *maintServer) {
 			c.Info.EngineEdition, c.Info.Edition = int(gosmo.EngineExpress), "Express Edition (64-bit)"
 		}, output.CodeUnsupported, 1, "Express Edition"},
@@ -264,6 +286,37 @@ func TestMaintBackupRefusals(t *testing.T) {
 	cat.Info.EngineEdition = int(gosmo.EngineExpress)
 	if _, _, err := runMaint(t, cat, "backup app --no-compression --allow admin"); err != nil {
 		t.Errorf("--no-compression on Express: %v", err)
+	}
+}
+
+// TestMaintBackupRefusalFailsOpen: what is not known refuses nothing — a
+// log chain read that fails, a database with no status row, a primary file
+// the login cannot see — and the server has the last word.
+func TestMaintBackupRefusalFailsOpen(t *testing.T) {
+	fixBackupClock(t)
+	for _, c := range []struct {
+		name  string
+		setup func(*maintServer)
+	}{
+		{"read refused", func(c *maintServer) { c.recoveryErr = mssql.Error{Number: 297, Class: 16, Message: "denied"} }},
+		{"no row", func(c *maintServer) { delete(c.recovery, "app") }},
+		{"base not visible", func(c *maintServer) {
+			c.recovery["app"] = &gosmo.DatabaseRecoveryStatus{DatabaseName: "app", LastLogBackupLSN: "41000000045600001"}
+		}},
+	} {
+		for _, typ := range []string{"diff", "log"} {
+			cat := newBackupServer(t)
+			c.setup(cat)
+			if c.name == "base not visible" && typ == "log" {
+				continue // the chain is started: nothing to fail open on
+			}
+			if _, _, err := runMaint(t, cat, "backup app --type "+typ+" --allow admin"); err != nil || len(cat.writes) != 1 {
+				t.Errorf("%s, --type %s: %v, sent %q; want the backup sent", c.name, typ, err, cat.writes)
+			}
+			if !slices.Equal(cat.recoveryFor, []string{"app"}) {
+				t.Errorf("%s, --type %s: log chain read for %q", c.name, typ, cat.recoveryFor)
+			}
+		}
 	}
 }
 

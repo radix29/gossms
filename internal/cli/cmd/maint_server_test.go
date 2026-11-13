@@ -45,6 +45,13 @@ type maintServer struct {
 
 	// media is the sets each backup file holds (RESTORE HEADERONLY), by
 	// its first device; headerRead is each read's devices.
+	// recovery is each database's log chain and differential base
+	// (sys.database_recovery_status), by name; a database missing from it
+	// has no row. recoveryErr fails the read.
+	recovery    map[string]*gosmo.DatabaseRecoveryStatus
+	recoveryErr error
+	recoveryFor []string // each RecoveryStatus read's database
+
 	media      map[string][]*gosmo.BackupHeader
 	headersErr error
 	headerRead [][]string
@@ -175,6 +182,7 @@ func newMaintServer(t *testing.T, current string, objects ...*gosmo.ObjectInfo) 
 	s := &maintServer{dbs: maintDatabases(), setIDs: map[*gosmo.BackupInfo]int64{},
 		history: map[string][]*gosmo.BackupInfo{}, media: map[string][]*gosmo.BackupHeader{},
 		fileLists: map[string]map[int][]*gosmo.BackupFile{},
+		recovery:  map[string]*gosmo.DatabaseRecoveryStatus{},
 		indexes:   map[string][]*gosmo.Index{}, frag: map[string]map[int]float64{}, stats: map[string][]*gosmo.Statistic{}}
 	newCatalogServerWith(t, current, func(c *catalogServer) { s.catalogServer = c; s.rules() }, objects...)
 	return s
@@ -320,6 +328,20 @@ func (s *maintServer) rules() {
 		}
 		return rows
 	}, "FROM   msdb.dbo.backupset bs", "ROW_NUMBER() OVER (PARTITION BY database_name, type")
+
+	// Database.RecoveryStatus: one database's row.
+	s.OnFunc(func(q gosmotest.Query) bool { return has(q, "sys.database_recovery_status", "WHERE  d.name = @p1") },
+		func(q gosmotest.Query) gosmotest.Result {
+			s.recoveryFor = append(s.recoveryFor, argString(q, 0))
+			if s.recoveryErr != nil {
+				return gosmotest.Result{Err: s.recoveryErr}
+			}
+			var rows [][]any
+			if st := s.recovery[argString(q, 0)]; st != nil {
+				rows = append(rows, []any{st.DatabaseName, st.LastLogBackupLSN, st.DifferentialBaseLSN, st.DifferentialBaseKnown})
+			}
+			return sets(gosmotest.Set{Rows: rows})
+		})
 
 	// RESTORE HEADERONLY and FILELISTONLY, from the first device's media.
 	s.OnFunc(func(q gosmotest.Query) bool { return has(q, "RESTORE HEADERONLY FROM") }, func(q gosmotest.Query) gosmotest.Result {

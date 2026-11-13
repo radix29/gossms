@@ -188,10 +188,12 @@ var (
 )
 
 // applyWrite is the server taking q: recorded, then a configuration batch's
-// sp_configure calls or a DBCC TRACEON/TRACEOFF change opts or flags.
+// sp_configure calls or a DBCC TRACEON/TRACEOFF change opts or flags. It reads
+// the bound form: gosmo binds each change's name and value.
 func (s *instanceServer) applyWrite(q gosmotest.Query) gosmotest.Result {
-	s.writes = append(s.writes, q.Text)
-	if m := dbccTrace.FindStringSubmatch(strings.TrimSpace(q.Text)); m != nil {
+	text := q.Bound()
+	s.writes = append(s.writes, text)
+	if m := dbccTrace.FindStringSubmatch(strings.TrimSpace(text)); m != nil {
 		flag, _ := strconv.Atoi(m[2])
 		if s.writeErr != nil && flag == s.failFlag {
 			return gosmotest.Result{Err: s.writeErr}
@@ -205,12 +207,12 @@ func (s *instanceServer) applyWrite(q gosmotest.Query) gosmotest.Result {
 		}
 		return gosmotest.Result{}
 	}
-	changes := spConfigure.FindAllStringSubmatch(q.Text, -1)
+	changes := spConfigure.FindAllStringSubmatch(text, -1)
 	if changes == nil {
 		s.t.Errorf("instanceServer: a write it does not know: %s", q)
 		return gosmotest.Result{}
 	}
-	s.overrides = append(s.overrides, strings.Contains(q.Text, "RECONFIGURE WITH OVERRIDE"))
+	s.overrides = append(s.overrides, strings.Contains(text, "RECONFIGURE WITH OVERRIDE"))
 	for i, m := range changes {
 		if s.writeErr != nil && !s.refused && i >= s.applied {
 			break

@@ -1323,6 +1323,11 @@ the editor's SQL pieces are `internal/tui/sqledit`).
   (which adds `$`, `#`, `@`, as T-SQL's identifier rule does) for the rest, so
   `Price$` is one word to them and two to Ctrl+arrow. Nothing requires the two
   rules to agree.
+- **`GO 0` skips its batch with no message**, as SSMS 22 does (checked
+  2026-11-13: `select 1` / `GO 0` / `select 2` shows only the second result
+  and "(1 row affected)"; ODBC `sqlcmd` does the same). The "Batch execution
+  completed n times." notice is for counts above 1 only
+  (`TestExecuteRunsGoBatchesByTheEditorsRule`).
 
 ## SQL NULL in results: what each consumer writes — settled, do not re-raise
 

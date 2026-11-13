@@ -139,7 +139,7 @@ func TestRestorePlanScriptStopAt(t *testing.T) {
 	if len(stmts) != 3 || !strings.Contains(stmts[0], "full.bak") || !strings.Contains(stmts[1], "log1.trn") {
 		t.Fatalf("script is not the full then log1:\n%s", script)
 	}
-	if strings.Contains(stmts[0], "STOPAT") || !strings.Contains(stmts[1], "STOPAT = '2026-10-27T01:30:00.000'") {
+	if strings.Contains(stmts[0], "STOPAT") || !strings.Contains(stmts[1], "STOPAT = '2026-10-27T01:30:00'") {
 		t.Errorf("STOPAT is not on the log alone:\n%s", script)
 	}
 }
@@ -239,7 +239,7 @@ func TestRestorePlanScriptStopAtInTheTail(t *testing.T) {
 	stmts := strings.Split(script, "\nGO\n")
 	tail := stmts[len(stmts)-2]
 	if !strings.Contains(tail, "RESTORE LOG") || !strings.Contains(tail, req.plan.tailDevice) ||
-		!strings.Contains(tail, "STOPAT = '2026-10-27T05:00:00.000'") {
+		!strings.Contains(tail, "STOPAT = '2026-10-27T05:00:00'") {
 		t.Errorf("the tail log is not restored to the point:\n%s", tail)
 	}
 }

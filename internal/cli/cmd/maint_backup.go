@@ -79,12 +79,13 @@ func MaintCommands(d Deps) []*spec.Command {
 				"--no-compression force it on or off; neither is the server's default (backup compression default). " +
 				"--init overwrites the backup sets the file holds instead of appending, so it needs --confirm with " +
 				"the database's name (exit 7 without, before connecting). Refused before anything is sent: tempdb or " +
-				"a snapshot (exit 2), a log backup of a database in SIMPLE recovery (exit 2), --compression on an " +
+				"a snapshot (exit 2), a differential or log backup of master (exit 2), a log backup of a database in " +
+				"SIMPLE recovery (exit 2), a differential with no full backup to base it on, or a log backup with no " +
+				"log chain started (exit 2; when the login can read them), --compression on an " +
 				"edition without it (Express, Web: exit 11), Azure SQL Database (exit 11). --dry-run prints the " +
 				"statement; otherwise the record adds the new backup set read back from the file (RESTORE HEADERONLY): " +
-				"its number on the media, start, finish, size and compressed size. A differential or log backup with " +
-				"no full backup before it, or a file the service account cannot write, is the server's error, exit 5, " +
-				"with a hint.",
+				"its number on the media, start, finish, size and compressed size. A refusal the pre-flight could not " +
+				"see, or a file the service account cannot write, is the server's error, exit 5, with a hint.",
 			Args: []spec.Arg{{Name: "database", Help: "Database to back up", Required: true}},
 			Options: slices.Concat(ConnectOptions(), writeOptions(), []spec.Option{
 				{Name: optTo, Type: spec.TypeRepeat,
@@ -246,16 +247,8 @@ func (d Deps) maintBackup(ctx context.Context, inv *spec.Invocation) (*output.Re
 		return res, err
 	}
 	opts.Database = db.Name
-	name := gosmo.QuoteName(db.Name)
-	switch {
-	case strings.EqualFold(db.Name, "tempdb"):
-		return res, usageError("tempdb cannot be backed up", "It is rebuilt at every start: there is nothing in it to keep.")
-	case db.IsSnapshot():
-		return res, usageError(name+" is a database snapshot, which cannot be backed up",
-			"Back up the database it is a snapshot of.")
-	case typ == "log" && db.RecoveryModel == gosmo.RecoveryModelSimple:
-		return res, usageError(name+" is in SIMPLE recovery, which keeps no log to back up",
-			fmt.Sprintf("Take a full backup (--type full), or switch it first: db set %s --option RECOVERY=FULL, then a full backup starts the log chain.", db.Name))
+	if err := backupRefused(ctx, db, opts.Action); err != nil {
+		return res, err
 	}
 	if opts.Compression != nil && *opts.Compression && !info.SupportsBackupCompression() {
 		return res, output.NewError(output.CodeUnsupported, fmt.Sprintf("this edition (%s) has no backup compression", info.Edition),
@@ -279,6 +272,43 @@ func (d Deps) maintBackup(ctx context.Context, inv *spec.Invocation) (*output.Re
 	}
 	res.Fields = append(res.Fields, backupSetFields(ctx, sc.Server, opts, typ, res)...)
 	return res, nil
+}
+
+// backupRefused is the usage error for a backup of db with action that
+// SQL Server would certainly refuse (gosmo's Database.BackupRefusal, the
+// rules the TUI's Back Up dialog greys its types by), nil when nothing known
+// refuses it. The log chain and differential base are read only for a
+// differential or log backup; a failed read leaves those rules out, and the
+// server has the last word (backupError explains its refusal).
+func backupRefused(ctx context.Context, db *gosmo.Database, action gosmo.BackupAction) error {
+	var status *gosmo.DatabaseRecoveryStatus
+	if action == gosmo.BackupActionDifferential || action == gosmo.BackupActionLog {
+		st, err := db.RecoveryStatus(ctx)
+		if err != nil {
+			log.Printf("maint backup: the log chain was not read, the server decides: %v", err)
+		}
+		status = st
+	}
+	name := gosmo.QuoteName(db.Name)
+	full := fmt.Sprintf("maint backup %s --type full", db.Name)
+	switch db.BackupRefusal(action, status) {
+	case gosmo.BackupRefusedTempdb:
+		return usageError("tempdb cannot be backed up", "It is rebuilt at every start: there is nothing in it to keep.")
+	case gosmo.BackupRefusedSnapshot:
+		return usageError(name+" is a database snapshot, which cannot be backed up", "Back up the database it is a snapshot of.")
+	case gosmo.BackupRefusedMasterFullOnly:
+		return usageError("master takes full backups only", "Take a full backup: maint backup master.")
+	case gosmo.BackupRefusedSimpleRecovery:
+		return usageError(name+" is in SIMPLE recovery, which keeps no log to back up",
+			fmt.Sprintf("Take a full backup (--type full), or switch it first: db set %s --option RECOVERY=FULL, then a full backup starts the log chain.", db.Name))
+	case gosmo.BackupRefusedNoDifferentialBase:
+		return usageError(name+" has no full backup for a differential to be based on",
+			"Take one first: "+full+" (a --copy-only full is no base).")
+	case gosmo.BackupRefusedNoLogChain:
+		return usageError(name+" has no log backup chain: no full backup since it went to FULL or BULK_LOGGED recovery",
+			"Take one first: "+full+" (a full taken while it was SIMPLE does not start the chain).")
+	}
+	return nil
 }
 
 // backupFields is maint backup's record of the backup it makes, or would.

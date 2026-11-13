@@ -415,38 +415,27 @@ const (
 	typeHintNoLog  = "Log backups need a full backup taken under FULL recovery."
 )
 
+// typeHints is the status-line reason for each refusal backupTypeBlocks can
+// meet. tempdb and snapshots never reach it: backupDatabases leaves them out.
+var typeHints = map[gosmo.BackupRefusal]string{
+	gosmo.BackupRefusedMasterFullOnly:     typeHintMaster,
+	gosmo.BackupRefusedSimpleRecovery:     typeHintSimple,
+	gosmo.BackupRefusedNoDifferentialBase: typeHintNoBase,
+	gosmo.BackupRefusedNoLogChain:         typeHintNoLog,
+}
+
 // backupTypeBlocks says why a Differential and a Transaction Log backup of db
-// would be refused, "" for one the server takes. Each is a certain refusal
-// after the user has filled in the form (checked live on 17, 2026-10-16):
-//
-//   - master: a differential is Msg 3024, a log backup Msg 4212.
-//   - SIMPLE recovery (master, usually msdb): a log backup is Msg 4208.
-//   - no differential base — no full backup yet, or only COPY_ONLY ones: a
-//     differential is Msg 3035.
-//   - no log chain — no full backup since the database last went to FULL or
-//     BULK_LOGGED (a full taken while SIMPLE does not count): Msg 4214.
-//
-// What is not known stays enabled — no facts, no status row, a primary file
-// the login cannot see — and the server has the last word (fail open).
+// would be refused, "" for one the server takes. The rules are gosmo's
+// (Database.BackupRefusal), shared with maint backup; each is a certain
+// refusal after the user has filled in the form. What is not known stays
+// enabled — no facts, no status row, a primary file the login cannot see —
+// and the server has the last word (fail open).
 func backupTypeBlocks(f backupDBFacts) (diff, log string) {
 	if f.db == nil {
 		return "", ""
 	}
-	if f.db.Name == "master" {
-		return typeHintMaster, typeHintMaster
-	}
-	if f.db.RecoveryModel == gosmo.RecoveryModelSimple {
-		log = typeHintSimple
-	}
-	if st := f.status; st != nil {
-		if st.DifferentialBaseKnown && !st.HasDifferentialBase {
-			diff = typeHintNoBase
-		}
-		if log == "" && !st.LogBackupChainStarted {
-			log = typeHintNoLog
-		}
-	}
-	return diff, log
+	return typeHints[f.db.BackupRefusal(gosmo.BackupActionDifferential, f.status)],
+		typeHints[f.db.BackupRefusal(gosmo.BackupActionLog, f.status)]
 }
 
 // applyTypeRules greys the Backup Type entries the selected database cannot

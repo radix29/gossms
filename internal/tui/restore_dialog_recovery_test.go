@@ -148,7 +148,7 @@ func TestBuildRestoreOptionsStandbyToAPointInTime(t *testing.T) {
 		"RESTORE LOG [AppDB]",
 		"FILE = 2",
 		`STANDBY = N'E:\b\ROLLBACK_UNDO_AppDB.BAK'`,
-		"STOPAT = '2026-09-24T09:45:30.500'",
+		"STOPAT = '2026-09-24T09:45:30.5'",
 	} {
 		if !strings.Contains(stmt, want) {
 			t.Errorf("restore statement lacks %q:\n%s", want, stmt)
