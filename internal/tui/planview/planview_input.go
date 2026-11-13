@@ -2,7 +2,7 @@ package planview
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // HandleKey switches tabs (1/2/3), pages the statement selector ([/]), or

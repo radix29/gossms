@@ -8,8 +8,8 @@ import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // propFetchTimeout bounds a single property page's load: long enough for a slow

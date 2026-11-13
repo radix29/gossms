@@ -8,7 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gosmo/gosmotest"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // backupForm builds just the widgets currentOptions reads, the way show()

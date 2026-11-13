@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // TestHelpDialogLosesNoTail pins B20: at every terminal width the help is
@@ -17,7 +18,7 @@ func TestHelpDialogLosesNoTail(t *testing.T) {
 	want := strings.Fields(strings.Join(helpLines, " "))
 	for _, sz := range [][2]int{{40, 20}, {62, 28}, {80, 24}, {100, 40}, {200, 50}} {
 		a := newTestApp()
-		a.screen = &fakeSizedScreen{w: sz[0], h: sz[1]}
+		a.screen = tuikittest.NewScreen(sz[0], sz[1])
 		d := NewHelpDialog(a)
 		d.Show()
 
@@ -46,7 +47,7 @@ func TestHelpDialogLosesNoTail(t *testing.T) {
 // line shows every line unwrapped, as written.
 func TestHelpDialogWideTerminalNeedsNoWrap(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 200, h: 50}
+	a.screen = tuikittest.NewScreen(200, 50)
 	d := NewHelpDialog(a)
 	if len(d.lines) != len(helpLines) {
 		t.Fatalf("at 200 columns: %d rows, want %d (no wrapping)", len(d.lines), len(helpLines))

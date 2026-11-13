@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // TestDecodeEncodeRoundTripsEveryEncodingWeDetect pins the property the whole
@@ -167,7 +167,7 @@ func TestDecodeUTF16SurrogatePairIsNotLossy(t *testing.T) {
 // makes a panel report unsaved changes the moment it opens.
 func TestOpenedFileIsNotBornDirty(t *testing.T) {
 	for _, text := range []string{"SELECT 1;\n", "\tSELECT 1;\n", "SELECT 1;\r\nGO\r\n"} {
-		qp := new(QueryPanel{editor: controls.NewEditor(nil)})
+		qp := new(QueryPanel{editor: editor.NewEditor(nil)})
 		qp.editor.SetText(text)
 		qp.markSaved()
 		if qp.Dirty() {

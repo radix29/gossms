@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // labelArg names every constructor whose label is drawn into propsheet's

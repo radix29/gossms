@@ -10,22 +10,23 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/format"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // internal/config can't import tuikit, so it carries its own copy of the
 // indent-width default and ceiling. This package imports both and is where
 // they are held together.
 func TestIndentWidthConstantsAgree(t *testing.T) {
-	if config.DefaultIndentWidth != controls.DefaultIndentWidth {
-		t.Errorf("config.DefaultIndentWidth = %d, controls.DefaultIndentWidth = %d — they must agree",
-			config.DefaultIndentWidth, controls.DefaultIndentWidth)
+	if config.DefaultIndentWidth != editor.DefaultIndentWidth {
+		t.Errorf("config.DefaultIndentWidth = %d, editor.DefaultIndentWidth = %d — they must agree",
+			config.DefaultIndentWidth, editor.DefaultIndentWidth)
 	}
-	if config.MaxIndentWidth != controls.MaxIndentWidth {
-		t.Errorf("config.MaxIndentWidth = %d, controls.MaxIndentWidth = %d — they must agree",
-			config.MaxIndentWidth, controls.MaxIndentWidth)
+	if config.MaxIndentWidth != editor.MaxIndentWidth {
+		t.Errorf("config.MaxIndentWidth = %d, editor.MaxIndentWidth = %d — they must agree",
+			config.MaxIndentWidth, editor.MaxIndentWidth)
 	}
 }
 
@@ -44,7 +45,7 @@ func TestQueryPanelEditorTakesConfiguredIndentWidth(t *testing.T) {
 // time — and into the default new editors are seeded from.
 func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	a := newTestApp()
 	a.cfg.IndentWidth = config.DefaultIndentWidth
@@ -65,7 +66,7 @@ func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
 	if got := qp.editor.IndentWidth(); got != 2 {
 		t.Errorf("open panel's editor IndentWidth() = %d, want 2 — apply must push it", got)
 	}
-	if got := controls.NewEditor(nil).IndentWidth(); got != 2 {
+	if got := editor.NewEditor(nil).IndentWidth(); got != 2 {
 		t.Errorf("new editor IndentWidth() = %d, want 2 — apply must move the default too", got)
 	}
 }
@@ -74,7 +75,7 @@ func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
 // storing a width no editor would accept.
 func TestOptionsApplyClampsIndentWidth(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	for _, in := range []string{"", "0", "-1", "99", "two"} {
 		a := newTestApp()
@@ -93,13 +94,13 @@ func TestOptionsApplyClampsIndentWidth(t *testing.T) {
 // reach it through the open dialogs, not through a.panels.
 func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	a := newTestApp()
 	a.cfg.IndentWidth = config.DefaultIndentWidth
 
 	panel := newJobStepPanel(unchangedDatabaseItem, []string{"master"}, a.cfg.IndentWidth)
-	sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Job Properties")
+	sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Job Properties")
 	pd := registerDialog(a, &PropDialog{PropertySheet: sheet, app: a, pages: []propPage{{title: "Steps"}}})
 	pd.SetPages([]string{"Steps"})
 	pd.OnLoadPage = func(page, seq int) {
@@ -125,7 +126,7 @@ func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 // default for anything that is not a positive number.
 func TestOptionsApplyMaxTextColumnLength(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	for _, tc := range []struct {
 		in   string
@@ -155,7 +156,7 @@ func TestOptionsApplyMaxTextColumnLength(t *testing.T) {
 // Max fetch rows takes a positive number; anything else is 0, unlimited.
 func TestOptionsApplyMaxFetchRows(t *testing.T) {
 	scratchConfigHome(t)
-	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+	t.Cleanup(func() { editor.SetDefaultIndentWidth(editor.DefaultIndentWidth) })
 
 	for _, tc := range []struct {
 		in   string
@@ -219,7 +220,7 @@ func optionsFocusName(d *OptionsDialog) string {
 // moves focus, and Up from either button returns to the checkbox.
 func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewOptionsDialog(a)
 	d.Show()
 	keys := []struct {
@@ -266,7 +267,7 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 // input field, and the checkbox, which takes the press itself.
 func TestOptionsDialogPressFocusesTheControlUnderIt(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewOptionsDialog(a)
 	d.Show()
 	// Draw's positions, which only Draw applies.
@@ -284,10 +285,10 @@ func TestOptionsDialogPressFocusesTheControlUnderIt(t *testing.T) {
 		name string
 		x, y int
 	}{
-		{"indent", d.fIndentWidth.InputX() + 1, d.fIndentWidth.RectY()},
-		{"text", d.fMaxTextLen.InputX() + 1, d.fMaxTextLen.RectY()},
+		{"indent", d.fIndentWidth.InputX() + 1, d.fIndentWidth.Bounds().Y},
+		{"text", d.fMaxTextLen.InputX() + 1, d.fMaxTextLen.Bounds().Y},
 		{"intellisense", inner.X + 2, inner.Y + 12},
-		{"cell", d.fMaxCellLen.InputX() + 1, d.fMaxCellLen.RectY()},
+		{"cell", d.fMaxCellLen.InputX() + 1, d.fMaxCellLen.Bounds().Y},
 	} {
 		press(tc.x, tc.y)
 		if got := optionsFocusName(d); got != tc.name {
@@ -376,18 +377,18 @@ func TestOptionsDialogOpenSQLStyleListTakesTheClick(t *testing.T) {
 	d := NewOptionsDialog(a)
 	d.Show()
 	d.Draw(s) // positions the controls
-	x, y := d.ddSQLStyle.RectX()+1, d.InnerRect().Y+5
+	x, y := d.ddSQLStyle.Bounds().X+1, d.InnerRect().Y+5
 	click := func(x, y int) {
 		d.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
 		d.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
 	}
 	click(x, y)
-	if !d.ddSQLStyle.IsOpen() {
+	if !d.ddSQLStyle.OverlayActive() {
 		t.Fatal("a click on the SQL style dropdown did not open it")
 	}
 	click(x+1, y+2) // the second item, over the Max default cell length row
-	if d.ddSQLStyle.IsOpen() || d.ddSQLStyle.Selected() != 1 || optionsFocusName(d) != "sqlstyle" {
+	if d.ddSQLStyle.OverlayActive() || d.ddSQLStyle.Selected() != 1 || optionsFocusName(d) != "sqlstyle" {
 		t.Errorf("after clicking item 2: open %v, selected %d, focus %s; want closed, 1, sqlstyle",
-			d.ddSQLStyle.IsOpen(), d.ddSQLStyle.Selected(), optionsFocusName(d))
+			d.ddSQLStyle.OverlayActive(), d.ddSQLStyle.Selected(), optionsFocusName(d))
 	}
 }

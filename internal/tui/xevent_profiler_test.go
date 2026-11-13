@@ -13,9 +13,9 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/layout"
 )
 
 // The XEvent Profiler (Phase D): the sessions it creates, Launch Session's

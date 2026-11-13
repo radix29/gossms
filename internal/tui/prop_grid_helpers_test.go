@@ -7,8 +7,9 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // A Select row whose list begins with a synthetic "(None)"/"<all databases>"
@@ -296,12 +297,11 @@ func TestChangedToReportsARealEdit(t *testing.T) {
 
 // focusSelect gives row's dropdown keyboard focus. SelectRow.Draw is what
 // hands focus down to the widget (dd.Focus), and DropDown.HandleKey ignores
-// every key while unfocused, so drawing once is unavoidable here. Reuses the
-// package's existing fakeSizedScreen rather than adding a second fake.
+// every key while unfocused, so drawing once is unavoidable here.
 func focusSelect(t *testing.T, row *propsheet.SelectRow) {
 	t.Helper()
 	row.Layout(0, 0, 40)
-	row.Draw(&fakeSizedScreen{w: 100, h: 40}, true)
+	row.Draw(tuikittest.NewScreen(100, 40), true)
 }
 
 func press(row *propsheet.SelectRow, k tcell.Key) {

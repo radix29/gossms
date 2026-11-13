@@ -9,7 +9,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // database_mail_props.go is Database Mail Properties: the whole configuration in

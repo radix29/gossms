@@ -1,6 +1,6 @@
 package sqlparse
 
-import "github.com/radix29/gossms/internal/tuikit/sqltext"
+import "github.com/radix29/gossms/internal/sqltext"
 
 // ---------------------------------------------------------------------------
 // Statement bounds: where the DML statement the cursor is in begins and ends

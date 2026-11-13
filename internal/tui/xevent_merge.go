@@ -7,9 +7,9 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/layout"
 )
 
 // xevent_merge.go is Merge Extended Event Files: every .xel file on the
@@ -95,7 +95,7 @@ func (a *App) openMergedXEventFiles(sc *db.ServerConn, pattern string) {
 			v.refreshTarget()
 		}
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 

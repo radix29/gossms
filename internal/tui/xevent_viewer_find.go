@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/controls"
 )
 
 // xevent_viewer_find.go is the Extended Events viewer's Find (Ctrl+F, F3,

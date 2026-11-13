@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/theme"
 )
 
 // maxStatusHistoryLines caps the retained history at the last 256 messages;
@@ -18,7 +18,7 @@ const maxStatusHistoryLines = 256
 
 // StatusHistoryDialog is a read-only modal listing every status-bar/log message
 // recorded this session, newest first, each prefixed with its timestamp.
-// Content lives in a read-only, line-numbered controls.Editor, so it's
+// Content lives in a read-only, line-numbered editor.Editor, so it's
 // selectable and copyable via the Editor's own selection, matching the
 // Results-To-Text convention (see query_panel.go's p.resultsText).
 // KeyDiagnosticsDialog is built the same way.
@@ -33,7 +33,7 @@ type StatusHistoryDialog struct {
 	dialogs.ModalDialog
 	mu     sync.Mutex // guards lines and dirty
 	lines  []string
-	editor *controls.Editor
+	editor *editor.Editor
 	dirty  bool // lines changed since the editor's text was last rebuilt
 }
 
@@ -41,14 +41,14 @@ type StatusHistoryDialog struct {
 func NewStatusHistoryDialog(app *App) *StatusHistoryDialog {
 	d := &StatusHistoryDialog{}
 	d.InitModal(app.screen, "Status History", 90, 26)
-	d.editor = controls.NewEditor(nil)
+	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
-	d.editor.SetActive(true)
+	d.editor.Focus(true)
 	return d
 }
 
 // Record prepends a timestamped line to the history. Newest-first because
-// controls.Editor.SetText always resets scroll/cursor to (0,0) and has no
+// editor.Editor.SetText always resets scroll/cursor to (0,0) and has no
 // "scroll to end" API, so the most recent message is visible on open without
 // extra plumbing.
 //

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // Table Properties > Change Tracking — the single-table counterpart of

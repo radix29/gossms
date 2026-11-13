@@ -1508,7 +1508,7 @@ leading keywords:
 | `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `sp_configure`, `xp_` and msdb procedures not on the read list, `DBCC` not on the read list | `--allow admin` |
 
 `query classify --file <path>` shows each statement's class and why. The
-classifier reads the script with gossms's one lexer (`tuikit/sqltext`), so a
+classifier reads the script with gossms's one lexer (`internal/sqltext`), so a
 keyword in a comment, literal or quoted identifier
 means nothing. It fails closed: an unrecognised statement, dynamic SQL and a
 procedure not on the read allow-list are `write` at least, and a class keyword
@@ -1672,6 +1672,6 @@ field turns it off (`internal/cli/audit`).
 
 ## The import rule
 
-`internal/cli` never imports `internal/tui`, a `tuikit` package other than
-the stdlib-only `tuikit/sqltext`, or tcell: the command line runs without a
-screen. See `ARCHITECTURE.md` § Why split this way.
+`internal/cli` never imports `internal/tui`, any `tuikit` package, or tcell:
+the command line runs without a screen. The lexer it shares with the editor is
+the stdlib-only `internal/sqltext`. See `ARCHITECTURE.md` § Why split this way.

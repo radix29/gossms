@@ -26,9 +26,9 @@ func selectAuth(t *testing.T, d *ConnectDialog, m config.AuthMethod) {
 		key(tcell.KeyDown)
 	}
 	key(tcell.KeyEnter)
-	if d.authMethod() != m || d.ddAuth.IsOpen() || !d.Visible() {
+	if d.authMethod() != m || d.ddAuth.OverlayActive() || !d.Visible() {
 		t.Fatalf("could not select %s from the keyboard (got %s, open %v)",
-			config.AuthMethodName(m), config.AuthMethodName(d.authMethod()), d.ddAuth.IsOpen())
+			config.AuthMethodName(m), config.AuthMethodName(d.authMethod()), d.ddAuth.OverlayActive())
 	}
 }
 

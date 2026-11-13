@@ -9,7 +9,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // linesAndCursor splits s (which must contain exactly one '|' cursor marker)
@@ -107,7 +107,7 @@ func testCustomersOrders() []gosmo.CatalogObject {
 	}
 }
 
-func labels(items []controls.CompletionItem) []string {
+func labels(items []editor.CompletionItem) []string {
 	out := make([]string, len(items))
 	for i, it := range items {
 		out[i] = it.Label
@@ -120,11 +120,11 @@ func labels(items []controls.CompletionItem) []string {
 // there is no document to identify, and a zero TextRevision is the "cannot
 // justify a resume" case — the provider answers from a full scan, which is
 // what every expectation here is written against.
-func completionReq(lines [][]rune, row, col int) controls.CompletionRequest {
-	return controls.CompletionRequest{Lines: lines, Row: row, Col: col}
+func completionReq(lines [][]rune, row, col int) editor.CompletionRequest {
+	return editor.CompletionRequest{Lines: lines, Row: row, Col: col}
 }
 
-func containsLabel(items []controls.CompletionItem, label string) bool {
+func containsLabel(items []editor.CompletionItem, label string) bool {
 	for _, it := range items {
 		if it.Label == label {
 			return true
@@ -924,7 +924,7 @@ func TestParseFromScopeHandlesMultipleJoinsAndCommas(t *testing.T) {
 
 // itemDetail returns the detail text of the item labelled label, or "" when
 // no item carries that label.
-func itemDetail(items []controls.CompletionItem, label string) string {
+func itemDetail(items []editor.CompletionItem, label string) string {
 	for _, it := range items {
 		if it.Label == label {
 			return it.Detail
@@ -1291,8 +1291,8 @@ func TestSQLCompletionPrefixCacheMatchesUncached(t *testing.T) {
 		// Typing a rune is one mutation on the row it lands in, which is what
 		// the editor reports; a newline dirties the row it opens.
 		version++
-		req := controls.CompletionRequest{Lines: lines, Row: row, Col: col}
-		req.Text = controls.TextRevision{Doc: doc, Version: version, DirtyFrom: row}
+		req := editor.CompletionRequest{Lines: lines, Row: row, Col: col}
+		req.Text = editor.TextRevision{Doc: doc, Version: version, DirtyFrom: row}
 
 		gotItems, gotFrom := warm.sqlCompletionCandidates(req)
 
@@ -1329,8 +1329,8 @@ func TestSQLCompletionPrefixCacheMatchesUncached(t *testing.T) {
 		col := len(lines[row]) - len(" FROM #t AS t")
 
 		version++
-		req := controls.CompletionRequest{Lines: lines, Row: row, Col: col}
-		req.Text = controls.TextRevision{Doc: doc, Version: version, DirtyFrom: 1}
+		req := editor.CompletionRequest{Lines: lines, Row: row, Col: col}
+		req.Text = editor.TextRevision{Doc: doc, Version: version, DirtyFrom: 1}
 
 		gotItems, gotFrom := warm.sqlCompletionCandidates(req)
 

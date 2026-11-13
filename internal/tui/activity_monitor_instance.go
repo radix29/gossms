@@ -7,8 +7,8 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/core"
 )
 
 // activity_monitor_instance.go is the Instance tab: an Azure SQL Managed

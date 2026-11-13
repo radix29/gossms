@@ -2,8 +2,8 @@ package dashboard
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/core"
 )
 
 // Fixed scales for the History panels. Most panels auto-scale since data varies

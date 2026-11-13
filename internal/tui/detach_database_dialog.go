@@ -8,8 +8,8 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // detach_database_dialog.go is "Detach Database..." on a database — SSMS's Tasks >

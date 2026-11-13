@@ -8,8 +8,8 @@ import (
 	"github.com/gdamore/tcell/v3/vt"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/core"
 )
 
 // stripCharts is a two-panel strip like the disk-usage one, without needing
@@ -330,11 +330,12 @@ func TestDetailGridDragEndingOverTheStripReleasesTheGrid(t *testing.T) {
 	}
 	db.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
 
-	// A fresh click two rows down selects that row: the grid's latch was let go.
-	first := db.grid.SelectedRow()
+	// A fresh click on data row 2 selects it: the grid's gesture was let go. (The
+	// drag onto the strip below the grid extended the selection toward it, so the
+	// row is checked absolutely, not relative to where the drag left it.)
 	clickAt(db, r.X+2, r.Y+4)
-	if got := db.grid.SelectedRow(); got != first+2 {
-		t.Fatalf("SelectedRow() = %d after a fresh click two rows below %d (grid still latched?)", got, first)
+	if got := db.grid.SelectedRow(); got != 2 {
+		t.Fatalf("SelectedRow() = %d after a fresh click on data row 2, want 2 (grid still latched?)", got)
 	}
 	// And a fresh click on the strip still pins.
 	clickAt(db, x, y)

@@ -5,7 +5,7 @@ import (
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/scripting"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // generate_scripts_dialog.go is a database's "Generate Scripts...": every user

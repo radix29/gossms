@@ -1,8 +1,10 @@
 # UI rules
 
-Rules for `internal/tui` and `internal/tuikit` that the code doesn't make
-obvious — each is a bug that shipped. `ARCHITECTURE.md` has the reasoning
-behind the mouse and async rules.
+Rules for `internal/tui` that the code doesn't make obvious — each is a bug
+that shipped. `ARCHITECTURE.md` has the reasoning behind the mouse and async
+rules. The library-level form of the widget, dialog, overlay and gesture rules
+(stated without goSSMS's types) is tuikit's `ARCHITECTURE.md` (`~/go/tuikit`),
+which owns them; the entries here say how goSSMS applies them.
 
 ## Editor, widgets and grids
 
@@ -27,8 +29,13 @@ behind the mouse and async rules.
   Light set each pair equal, so a mismatch only shows in the mc themes,
   where panels are blue, dialogs light grey and menus/selection cyan:
   `p.Text` on `DialogBg` is grey on grey, `StyleSelected` in a menu vanishes.
-- **Fill a `charts.Canvas` with a styled ground before rendering onto it** —
-  `NewCanvas` starts every cell colourless and `Blit` copies cells as they are,
+- **Build a style with a `theme.Style*()` helper, or `theme.On(bg, fg)` for a
+  pair no helper names** — never `tcell.StyleDefault.Background(…).Foreground(…)`
+  inline in new code (tuikit has none; `internal/tui` still carries older
+  ones). A pair repeated across files earns a named helper (and a
+  `styleFuncs` entry).
+- **Fill a `core.Buffer` with a styled ground before rendering a chart onto it** —
+  `NewBuffer` starts every cell colourless and `Blit` copies cells as they are,
   so whatever a render leaves unpainted (Activity Monitor's column gutters, the
   corner under each Y axis) shows the screen's default ground as a strip, and
   `core.DimArea` skips it, leaving it bright behind a dialog.
@@ -141,9 +148,8 @@ behind the mouse and async rules.
   from 25,028 to 393 allocations a frame). Fill a rect with `core.FillRect`,
   which calls `Screen.FillArea`: since tcell 3.6 that converts the rune once
   and takes the screen lock once, ~7x faster than a `Put` per cell (one lock
-  each). A test screen fake that embeds a nil `tcell.Screen` needs a `Put`
-  that forwards to its `SetContent`, and a `FillArea` that calls
-  `core.FillAreaByPut` (or does nothing, for a fake that discards cells).
+  each). A test draws into a `tuikittest.Screen` (a `core.Buffer`, which
+  implements both), not a hand-written fake.
 - **Setting a value programmatically drops the selection** — an anchor past a
   shorter new value paints blanks as selected. `SetValue` clears `selecting`
   and re-anchors on the caret; a new `SetXxx` does the same.
@@ -162,7 +168,7 @@ behind the mouse and async rules.
   reach Restore's OK from the keyboard.
 - **A dialog-level scrollbar uses `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a too-small terminal content
-  is clipped to `InnerRect` (`App.drawDialogs`' `core.ClipScreen`, narrowed by
+  is clipped to `InnerRect` (`dialogs.Stack.Draw`'s `core.ClipScreen`, narrowed by
   `DrawBase` when `clamped()`), and the border column is outside the clip. A
   child widget's own scrollbar needs nothing.
 - **A dialog's content rows stop above `ButtonRowY()` — derive the count from
@@ -174,7 +180,7 @@ behind the mouse and async rules.
   feature**, not debug scaffolding — never trim it. It separates app bugs from
   terminal limits.
 - **An open dialog owns the clipboard — `activeClipboardTarget` never falls past
-  `topDialog()`.** Ctrl+C/X/V are handled centrally in `App.handleKey`; the
+  `modals.Top()`.** Ctrl+C/X/V are handled centrally in `App.handleKey`; the
   target is the frontmost dialog's focused field via `core.ClipboardHost`. The
   old switch named 3 of 30 dialogs and fell through, so Ctrl+X in Find cut the
   editor behind it. Dialogs without text entry are deliberately not hosts. A
@@ -189,7 +195,7 @@ behind the mouse and async rules.
   maps both to `\n`, skipping the LF of a CRLF. Dropping `KeyCtrlJ` ran every
   line together from Alacritty and tmux `paste-buffer -r`.
 - **Every dialog is modal: a query window opened from one is unreachable
-  until it closes.** `topDialog()` takes all input, so a button that hands the
+  until it closes.** `modals.Top()` takes all input, so a button that hands the
   user T-SQL to edit and run (not Script Changes, which needs no edit) closes
   the dialog first, confirming when it is `Dirty()`. Resource Governor's New
   classifier... shipped leaving it open with "create it, then F5 here" —
@@ -250,8 +256,9 @@ behind the mouse and async rules.
    a hand-rolled zone field.
 2. `App` snapshots the modal layer (`gestureOverlay`/`overlaySnapshot`) and
    drops held events across a change.
-3. A widget acting on `Button1` has a `mouseDragging` latch, set on press,
-   cleared on `ButtonNone`.
+3. A widget acting on `Button1` has a press latch (`core.PressLatch`), set on
+   press, cleared on `ButtonNone`. A dialog routing anything ahead of
+   `ConsumeOutsideClick` calls `ModalDialog.TrackPress` first.
 4. A latch never survives into the next showing — `ModalDialog.Show()` clears
    both; `FieldGesture.Clear` also drops the field's own latch.
 5. A host returning early from `HandleMouse` still forwards `ButtonNone` to
@@ -272,7 +279,7 @@ behind the mouse and async rules.
   button row pressed the button, *accepting* a rename or a typed confirmation.
 - **The release to the *focused* field goes through
   `forwardReleaseToFocusedField` (`dialog_common.go`)**, not a type switch — it
-  covers the focused `*controls.Editor`, which `FieldGesture` doesn't track.
+  covers the focused `*editor.Editor`, which no dialog here `Claim`s.
   (Its `InputField` arm is belt-and-braces; `FieldGesture.Clear` +
   `InputField.CancelMouseDrag` closed the one gap,
   `TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture`.) The `!=

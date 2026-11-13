@@ -2,9 +2,9 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/theme"
 )
 
 // QueryListDialog lists every currently open query panel and lets the
@@ -181,7 +181,7 @@ func (d *QueryListDialog) activate() {
 	if d.sel < 0 || d.sel >= len(d.indices) {
 		return
 	}
-	d.app.panels.SetActive(d.indices[d.sel])
+	d.app.panels.SetActiveIndex(d.indices[d.sel])
 	d.app.focusPanels()
 	d.Hide()
 }

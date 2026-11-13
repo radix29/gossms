@@ -29,8 +29,8 @@ var (
 )
 
 // suffixMatch reports whether any tracked file's path ends in ref — the form a
-// comment uses when it names a document from its package root, such as
-// "tuikit/README.md" for internal/tuikit/README.md.
+// document uses when it names another from its package root, such as
+// "guide/rules.md" for internal/cli/agent/guide/rules.md.
 func suffixMatch(root, ref string) bool {
 	found := false
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -138,11 +138,23 @@ func TestNoDanglingDocReference(t *testing.T) {
 		if strings.Contains(ref, "gosmo/") || strings.HasPrefix(ref, "todo/") {
 			return
 		}
+		// tuikit's documents ("~/go/tuikit/ARCHITECTURE.md") resolve against
+		// the sibling checkout go.mod's replace points at, when it is there.
+		if rest, ok := strings.CutPrefix(ref, "go/tuikit/"); ok {
+			sibling := filepath.Join(root, "..", "tuikit")
+			if _, err := os.Stat(sibling); err != nil {
+				return
+			}
+			if _, err := os.Stat(filepath.Join(sibling, rest)); err != nil {
+				report(rel, ref, line)
+			}
+			return
+		}
 		if _, err := os.Stat(filepath.Join(root, ref)); err == nil {
 			return
 		}
 		// Also allow a path written relative to the citing file's directory,
-		// and one written from a package root ("tuikit/README.md").
+		// and one written from a package root ("guide/rules.md").
 		if _, err := os.Stat(filepath.Join(root, filepath.Dir(rel), ref)); err == nil {
 			return
 		}

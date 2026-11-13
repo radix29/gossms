@@ -8,8 +8,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/theme"
 )
 
 // buckets is 30 minutes at 2-second resolution, the Activity Monitor's

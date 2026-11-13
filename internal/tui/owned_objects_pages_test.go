@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The three owner-transfer pages at page level: Owned Schemas (shared by

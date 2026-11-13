@@ -6,7 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // explorerNode is the application's tree model. It owns the SQL Server data
@@ -114,7 +114,7 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 }
 
 func (oe *ObjectExplorer) SetBounds(x, y, w, h int)              { oe.view.SetBounds(x, y, w, h) }
-func (oe *ObjectExplorer) SetActive(v bool)                      { oe.view.SetActive(v) }
+func (oe *ObjectExplorer) Focus(v bool)                          { oe.view.Focus(v) }
 func (oe *ObjectExplorer) Draw(s tcell.Screen)                   { oe.view.Draw(s) }
 func (oe *ObjectExplorer) DrawOverlay(s tcell.Screen)            { oe.view.DrawOverlay(s) }
 func (oe *ObjectExplorer) HandleKey(ev *tcell.EventKey) bool     { return oe.view.HandleKey(ev) }

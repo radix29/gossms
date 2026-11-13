@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/theme"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // FilterDialog is Object Explorer's "Filter Settings" dialog: one row per
@@ -249,7 +249,7 @@ func (d *FilterDialog) syncFocus() {
 // list is drawn last and gets first refusal of every event.
 func (d *FilterDialog) openDropDown() *widgets.DropDown {
 	for i := range d.rows {
-		if d.rows[i].op.IsOpen() {
+		if d.rows[i].op.OverlayActive() {
 			return d.rows[i].op
 		}
 	}
@@ -448,6 +448,10 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// The open list below sees events before ConsumeOutsideClick does, so the
+	// gesture is tracked here: a list pick's resends, dragged onto the button
+	// row, must not press a button.
+	d.TrackPress(ev)
 	// A release must reach every latch-bearing widget even when it lands outside
 	// the dialog, or the widget's next press is swallowed as a continuation of
 	// the stale drag.

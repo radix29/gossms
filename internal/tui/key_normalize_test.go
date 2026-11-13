@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // Ctrl+Shift+<letter> never reaches the app as KeyCtrlX: tcell folds a

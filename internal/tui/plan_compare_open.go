@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/layout"
 )
 
 // plan_compare_open.go starts a comparison the ways SSMS's Compare Showplan
@@ -62,7 +62,7 @@ func compareTitle(a, b string) string {
 func (a *App) openShowplanComparison(from openPlan, toName string, to *showplan.Plan) {
 	cp := NewPlanComparePanel(a, compareTitle(from.name, toName), from.plan, to)
 	cp.sideNames = [2]string{from.name, toName}
-	a.panels.SetActive(a.panels.AddPanel(cp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(cp))
 	a.focusPanels()
 }
 

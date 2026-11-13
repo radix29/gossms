@@ -6,8 +6,8 @@ import (
 	"slices"
 
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/controls"
 )
 
 // xevent_viewer_settings.go is the Extended Events viewer's Settings menu:

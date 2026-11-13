@@ -2,18 +2,18 @@ package tui
 
 import (
 	"github.com/radix29/gossms/internal/tui/sqlparse"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 // ---------------------------------------------------------------------------
 // SQL-aware completion.Provider for the query editor, the only caller of
-// controls.Editor.SetCompletionProvider. Resolves the identifier at the cursor
+// editor.Editor.SetCompletionProvider. Resolves the identifier at the cursor
 // against the connected database's completionInventory (completion_inventory.go):
 // schemas, tables, views and columns, with schema/alias/table-dot member lookup
 // and FROM-clause alias resolution.
 //
 // A lexical approximation, not a full T-SQL parser (same spirit as
-// controls.Editor's SelectStatementAtCursor). Anything genuinely ambiguous offers
+// editor.Editor's SelectStatementAtCursor). Anything genuinely ambiguous offers
 // nothing rather than guessing; keyword completion is out of scope.
 //
 // Covered: FROM/JOIN/APPLY refs and aliases; CTEs (including recursive and
@@ -29,12 +29,12 @@ import (
 // the remote catalog via the linked server (completion_linked.go).
 // ---------------------------------------------------------------------------
 
-// newCompletionProvider builds the controls.CompletionProvider installed on
+// newCompletionProvider builds the editor.CompletionProvider installed on
 // this panel's editor (see NewQueryPanel). p's conn/database are read fresh on
 // every call, so reconnecting or switching database (a mid-script USE) takes
 // effect on the next keystroke without rebuilding it.
-func (p *QueryPanel) newCompletionProvider() controls.CompletionProvider {
-	return func(req controls.CompletionRequest) ([]controls.CompletionItem, int) {
+func (p *QueryPanel) newCompletionProvider() editor.CompletionProvider {
+	return func(req editor.CompletionRequest) ([]editor.CompletionItem, int) {
 		return p.sqlCompletionCandidates(req)
 	}
 }
@@ -43,13 +43,13 @@ func (p *QueryPanel) newCompletionProvider() controls.CompletionProvider {
 // its first load. completion_inventory.go's refreshSysCompletionPopups
 // re-queries this provider once the data lands, replacing it without another
 // keystroke.
-var loadingCompletionItem = controls.CompletionItem{Label: "Loading suggestions...", Placeholder: true}
+var loadingCompletionItem = editor.CompletionItem{Label: "Loading suggestions...", Placeholder: true}
 
 // sqlCompletionCandidates answers one provider call. req.Text identifies the
 // revision of req.Lines, which lets the prefix scan resume from
 // p.completionPrefix rather than restarting at offset 0 on every keystroke; a
 // zero Text (as the tests pass) never resumes.
-func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]controls.CompletionItem, int) {
+func (p *QueryPanel) sqlCompletionCandidates(req editor.CompletionRequest) ([]editor.CompletionItem, int) {
 	lines, row, col := req.Lines, req.Row, req.Col
 	if p.app.cfg.IntelliSenseDisabled {
 		return nil, col
@@ -92,7 +92,7 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 	}
 
 	// Everything above works in flattened-buffer offsets, but the
-	// controls.CompletionProvider contract wants a column on the cursor's row (the
+	// editor.CompletionProvider contract wants a column on the cursor's row (the
 	// editor replaces [replaceFrom, col) there and anchors the popup at it). The
 	// replaced span always starts on the cursor's own row (identifiers can't span
 	// lines; a '[' on an earlier row is malformed and bails), so subtracting the
@@ -105,7 +105,7 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 
 	inv := p.app.ensureCompletionInventory(p.conn, p.database)
 	if inv.loading {
-		return []controls.CompletionItem{loadingCompletionItem}, replaceFrom
+		return []editor.CompletionItem{loadingCompletionItem}, replaceFrom
 	}
 	if inv.err != nil || inv.catalog == nil {
 		return nil, replaceFrom
@@ -167,9 +167,9 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 	rc.linked = p.linkedObject
 	rc.pending = &pending
 	rels := resolveRefs(rc, refs)
-	loadingOr := func(items []controls.CompletionItem, wait bool) []controls.CompletionItem {
+	loadingOr := func(items []editor.CompletionItem, wait bool) []editor.CompletionItem {
 		if len(items) == 0 && wait {
-			return []controls.CompletionItem{loadingCompletionItem}
+			return []editor.CompletionItem{loadingCompletionItem}
 		}
 		return items
 	}
@@ -184,7 +184,7 @@ func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]
 	case clause == sqlparse.ClauseTable:
 		return p.tableCandidates(inv, sysInv, scope.CTEs, bindings, prefix), replaceFrom
 	case pending:
-		return []controls.CompletionItem{loadingCompletionItem}, replaceFrom
+		return []editor.CompletionItem{loadingCompletionItem}, replaceFrom
 	case len(rels) == 0:
 		// Column context but nothing resolvable FROM'd yet: no columns to
 		// pull, so fall back to the object list.

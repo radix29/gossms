@@ -5,7 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // searchState holds the Tree/Plan tabs' shared operator search: '/' starts a

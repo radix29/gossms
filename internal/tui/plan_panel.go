@@ -4,8 +4,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tui/planview"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // PlanPanel is a detached, top-level window showing one execution plan in its
@@ -79,7 +79,7 @@ func (pp *PlanPanel) Draw(s tcell.Screen) {
 	core.FillRect(s, core.Rect{X: pp.rect.X, Y: pp.rect.Y, W: pp.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, pp.rect.X+1, pp.rect.Y, pp.rect.W-2, titleStyle, pp.title)
 	pp.planView.Draw(s)
-	// Drawn last — see the "overlays drawn last" rule in tuikit/README.md.
+	// Drawn last — see the "overlays drawn last" rule in ~/go/tuikit/ARCHITECTURE.md § Overlays.
 	pp.planView.DrawOverlay(s)
 }
 

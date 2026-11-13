@@ -5,8 +5,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // dragThreshold is how far, in cells along either axis, the held pointer must

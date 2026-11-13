@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // serverTriggerPropPages builds the page set for Server Trigger Properties:

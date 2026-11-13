@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The New Availability Group and New Database Mirroring Endpoint dialogs keep

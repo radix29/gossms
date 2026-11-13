@@ -4,7 +4,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // loadServerChildren returns a connected server's top-level folders: Databases,

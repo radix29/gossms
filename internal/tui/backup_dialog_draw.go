@@ -2,8 +2,8 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // Draw renders whichever mode the dialog is in.
@@ -83,7 +83,7 @@ func (d *BackupDialog) drawStatus(s tcell.Screen) {
 	}
 	inner := d.InnerRect()
 	w := inner.W - 2
-	lines := wrapMessage("Status: "+d.status, w, d.ButtonRowY()-1-(d.cbCopyOnly.RectY()+1))
+	lines := wrapMessage("Status: "+d.status, w, d.ButtonRowY()-1-(d.cbCopyOnly.Bounds().Y+1))
 	y := d.ButtonRowY() - 1 - len(lines)
 	for i, ln := range lines {
 		core.DrawTextClipped(s, inner.X+1, y+i, w, st, ln)

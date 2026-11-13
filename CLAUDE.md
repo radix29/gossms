@@ -12,12 +12,16 @@ Studio in Go 1.27: one build for Linux/macOS/Windows, no CGO, no build tags.
 
 - Module `github.com/radix29/gossms`. Depends on `github.com/radix29/gosmo`
   (the author's own SMO-style library, sibling checkout `~/go/gosmo`),
+  `github.com/radix29/tuikit` (the author's TUI widget library, extracted from
+  this repo; sibling `~/go/tuikit`),
   `github.com/radix29/gotuipic` (the author's image-to-terminal-art library,
   sibling `~/go/gotuipic`, behind the result-grid picture viewer) and
   `github.com/gdamore/tcell/v3` (`go.mod` holds the version).
-- `go.mod`'s `replace github.com/radix29/gosmo => ../gosmo` is deliberately
-  **active** during development, so `HEAD` may depend on untagged gosmo code.
-  It is commented out only to tag a release, against an already-pushed gosmo tag.
+- `go.mod`'s `replace … => ../gosmo` and `replace … => ../tuikit` are
+  deliberately **active** during development, so `HEAD` may depend on
+  untagged code in either. They are commented out only to tag a release,
+  against already-pushed tags of both (tuikit has none yet: its `require` is
+  the `v0.0.0-…` placeholder until its first tag).
 - The version resolves from the git tag (`internal/version/version.go`) — never
   hand-edited.
 
@@ -37,15 +41,16 @@ Read the named section, only when the task touches it.
 | Permission gating, emitted T-SQL, OE filters, query execution | `docs/db-rules.md` |
 | The command line (`internal/cli`, `gossms <command>`) | `docs/cli.md` |
 | Writing/running tests, or calling anything done | `docs/testing.md` |
-| `internal/tuikit/**` | `internal/tuikit/README.md` § Design principles (new control/dialog: § Adding a new control) |
-| gosmo changes / the `replace` directive | the `dev-with-local-gosmo` skill; `~/go/gosmo/CLAUDE.md` |
+| tuikit (`~/go/tuikit`, any widget/dialog mechanics) | `~/go/tuikit/CLAUDE.md`, then its `README.md` § Design principles and `ARCHITECTURE.md` § Mouse gestures |
+| gosmo or tuikit changes / the `replace` directives | the `dev-with-local-gosmo` skill (covers tuikit too); `~/go/gosmo/CLAUDE.md` |
 | Known bugs, deferred scope, release blockers | `docs/open-threads.md` — check before reporting something as new |
 | Whether a question is already settled | `docs/decisions.md` — the "do not re-raise" record |
 
 ## The one rule that matters most: verify against real source, don't guess
 
-Never write `tcell`/`gosmo` calls from memory of similar APIs — check `go doc`,
-the module cache (`go env GOMODCACHE`) or `~/go/gosmo` first. Standing gotchas:
+Never write `tcell`/`gosmo`/`tuikit` calls from memory of similar APIs — check
+`go doc`, the module cache (`go env GOMODCACHE`), `~/go/gosmo` or `~/go/tuikit`
+first. Standing gotchas:
 
 - tcell v3 has no `Screen.PollEvent`/`PostEvent` — use the `EventQ()` channel.
   The modifier accessor is `Modifiers()`, not `Mod()`.
@@ -80,15 +85,17 @@ a pseudo-version from a checkout build) → `"(devel)"` (`go run`,
 driving the built binary. Read `docs/testing.md` before writing a test or
 calling a change done.
 
-## Changing gosmo
+## Changing gosmo or tuikit
 
-gosmo is the author's library, not a third-party dependency: add what gossms
-needs there rather than working around it. Build and test inside gosmo first.
+Both are the author's libraries, not third-party dependencies: add what gossms
+needs there rather than working around it. Build and test inside the library
+first (`go test ./...` here no longer covers tuikit).
 
-**Never remove or narrow a gosmo capability because gossms doesn't call it** —
-it has other users. Report unused gosmo surface as "unused, kept deliberately",
-never as a deletion candidate (`~/go/gosmo/CLAUDE.md` § This is a library, not
-gossms's back end). Dead code inside gossms is ordinary cleanup.
+**Never remove or narrow a gosmo or tuikit capability because gossms doesn't
+call it** — they have other users. Report unused library surface as "unused,
+kept deliberately", never as a deletion candidate (`~/go/gosmo/CLAUDE.md` §
+This is a library, not gossms's back end). Dead code inside gossms is ordinary
+cleanup.
 
 ## Coding conventions
 
@@ -108,9 +115,8 @@ gossms's back end). Dead code inside gossms is ordinary cleanup.
   hard-clip with no ellipsis, so an over-long label silently renders as a
   different one. `TestNoPropertySheetLabelIsTruncated` enforces it; shorten the
   label, don't widen `LabelWidth`. Check/Radio/Section/Note are exempt.
-- `tuikit` is a one-way dependency graph and knows nothing about `tui`.
-- `tuikit` sub-packages: one file per type/group, plus `common.go` and
-  `doc.go`. `internal/tui` files are one-per-purpose.
+- `internal/tui` files are one-per-purpose (tuikit's own conventions are in
+  `~/go/tuikit/CLAUDE.md`).
 - **Over ~900 non-test lines** is a prompt to split a file (not a defect) when
   a change lands there anyway, along its own section comments: extract by
   exact line range, diff byte-for-byte against the original, then delete the

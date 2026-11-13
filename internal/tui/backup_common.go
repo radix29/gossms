@@ -8,8 +8,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // backup_common.go holds the small helpers the Backup and Restore dialogs

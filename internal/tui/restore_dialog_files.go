@@ -7,9 +7,9 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // The Files view (restoreModeFiles) is where the restore's file handling is
@@ -218,7 +218,7 @@ func (d *RestoreDialog) layoutFiles() {
 // filesListY is the first row of the file list, below the button laid out by
 // layoutFiles plus a blank row.
 func (d *RestoreDialog) filesListY() int {
-	return d.fLogDir.RectY() + 3
+	return d.fLogDir.Bounds().Y + 3
 }
 
 // drawFiles renders the relocation options over the backup set's file list: each

@@ -6,8 +6,8 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // query_store_panel_toolbar.go is the panel's two tool rows: what each cell says,

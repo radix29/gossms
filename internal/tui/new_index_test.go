@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // New Index's own risk is not the statement — gosmo pins that, and refuses

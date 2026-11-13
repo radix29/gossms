@@ -5,36 +5,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/tuikittest"
 )
-
-// fakeSizedScreen is a minimal tcell.Screen fake. Size() is what
-// ModalDialog.recentre needs to compute a real, non-zero Rect(), mirroring
-// dialogs.sizedScreen's identical purpose in that package; SetContent is
-// stubbed so a caller that has to actually draw something — focusSelect, which
-// can only reach a row's widget through Draw — doesn't fall through to the
-// embedded nil Screen and panic.
-type fakeSizedScreen struct {
-	tcell.Screen
-	w, h int
-}
-
-func (s *fakeSizedScreen) Size() (int, int)                               { return s.w, s.h }
-func (s *fakeSizedScreen) SetContent(int, int, rune, []rune, tcell.Style) {}
-
-// Get answers a blank cell so DimArea (ModalDialog.DrawBase's shadow) can
-// read the screen back rather than falling through to the nil embedded
-// Screen.
-func (s *fakeSizedScreen) Get(int, int) (string, tcell.Style, int) {
-	return " ", tcell.StyleDefault, 1
-}
-
-func (s *fakeSizedScreen) Put(_, _ int, str string, _ tcell.Style) (string, int) {
-	return str, 1
-}
-
-// FillArea is stubbed for the same reason: core.FillRect (every dialog
-// background) fills through it.
-func (s *fakeSizedScreen) FillArea(int, int, int, int, rune, tcell.Style) {}
 
 // TestQueryListDialogScrollbarDragScrolls confirms dragging the query list's
 // scrollbar scrolls it instead of being read as a click that switches to
@@ -43,7 +15,7 @@ func (s *fakeSizedScreen) FillArea(int, int, int, int, rune, tcell.Style) {}
 // this way would be especially disruptive.
 func TestQueryListDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 80, h: 30}
+	a.screen = tuikittest.NewScreen(80, 30)
 
 	d := &QueryListDialog{app: a}
 	d.InitModal(a.screen, "Query List", 56, 16)
@@ -82,7 +54,7 @@ func TestQueryListDialogScrollbarDragScrolls(t *testing.T) {
 // scrollbar checked first.
 func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 80, h: 30}
+	a.screen = tuikittest.NewScreen(80, 30)
 	for i := range 20 {
 		a.tasks = append(a.tasks, &Task{Label: "Task " + strconv.Itoa(i)})
 	}
@@ -114,13 +86,13 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 // ModalDialog.ScrollbarDrag.
 //
 // KeyDiagnosticsDialog was tested here too until it moved its log into a
-// read-only controls.Editor, which draws and drags its own scrollbar — the
+// read-only editor.Editor, which draws and drags its own scrollbar — the
 // same reason StatusHistoryDialog, built that way from the start, has never
-// had a case here. That half is pinned in
-// internal/tuikit/controls/scrollbar_drag_test.go.
+// had a case here. That half is pinned in tuikit's
+// controls/scrollbar_drag_test.go.
 func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 80, h: 30}
+	a.screen = tuikittest.NewScreen(80, 30)
 	d := NewHelpDialog(a)
 	d.Show()
 

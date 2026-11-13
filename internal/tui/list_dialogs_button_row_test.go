@@ -3,64 +3,18 @@ package tui
 import (
 	"errors"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/tuikittest"
 )
-
-// rowRecordingScreen records which screen row each drawn cell landed on, so a
-// test can ask where a given piece of text was drawn.
-type rowRecordingScreen struct {
-	fakeSizedScreen
-	cells map[[2]int]string
-}
-
-func newRowRecordingScreen(w, h int) *rowRecordingScreen {
-	return &rowRecordingScreen{w: w, h: h, cells: map[[2]int]string{}}
-}
-
-func (s *rowRecordingScreen) SetContent(x, y int, r rune, comb []rune, _ tcell.Style) {
-	s.cells[[2]int{x, y}] = string(append([]rune{r}, comb...))
-}
-
-func (s *rowRecordingScreen) Put(x, y int, str string, _ tcell.Style) (string, int) {
-	if str == "" {
-		return "", 0
-	}
-	s.cells[[2]int{x, y}] = str
-	return str, 1
-}
-
-func (s *rowRecordingScreen) FillArea(x, y, w, h int, ch rune, style tcell.Style) {
-	core.FillAreaByPut(s, x, y, w, h, ch, style)
-}
-
-// rowOf answers the screen row whose text contains want, or -1.
-func (s *rowRecordingScreen) rowOf(want string) int {
-	for y := 0; y < s.h; y++ {
-		var b strings.Builder
-		for x := 0; x < s.w; x++ {
-			if c, ok := s.cells[[2]int{x, y}]; ok {
-				b.WriteString(c)
-			} else {
-				b.WriteByte(' ')
-			}
-		}
-		if strings.Contains(b.String(), want) {
-			return y
-		}
-	}
-	return -1
-}
 
 // TestQueryListDialogLastRowAboveButtons pins B22: with more queries than fit,
 // Down to the last one scrolls it onto a row above the button row, not onto
 // the button row itself, where DrawButtons overdrew it.
 func TestQueryListDialogLastRowAboveButtons(t *testing.T) {
 	a := newTestApp()
-	scr := newRowRecordingScreen(80, 30)
+	scr := tuikittest.NewScreen(80, 30)
 	a.screen = scr
 
 	d := &QueryListDialog{app: a}
@@ -75,7 +29,7 @@ func TestQueryListDialogLastRowAboveButtons(t *testing.T) {
 	}
 	d.Draw(scr)
 
-	y := scr.rowOf("Query 19")
+	y := scr.RowOf("Query 19")
 	if y < 0 || y >= d.ButtonRowY() {
 		t.Errorf("last query drawn on row %d, want above the button row %d", y, d.ButtonRowY())
 	}
@@ -84,7 +38,7 @@ func TestQueryListDialogLastRowAboveButtons(t *testing.T) {
 // TestTasksDialogLastRowAboveButtons is B22 for TasksDialog.
 func TestTasksDialogLastRowAboveButtons(t *testing.T) {
 	a := newTestApp()
-	scr := newRowRecordingScreen(80, 30)
+	scr := tuikittest.NewScreen(80, 30)
 	a.screen = scr
 	for i := range 20 {
 		a.tasks = append(a.tasks, &Task{Label: "Task " + strconv.Itoa(i)})
@@ -97,7 +51,7 @@ func TestTasksDialogLastRowAboveButtons(t *testing.T) {
 	}
 	d.Draw(scr)
 
-	y := scr.rowOf("Task 19")
+	y := scr.RowOf("Task 19")
 	if y < 0 || y >= d.ButtonRowY() {
 		t.Errorf("last task drawn on row %d, want above the button row %d", y, d.ButtonRowY())
 	}
@@ -110,7 +64,7 @@ func TestTasksDialogLastRowAboveButtons(t *testing.T) {
 // screen; this pins that the bound gives up no row it has room for.)
 func TestUpdateDialogRowsAboveSeparator(t *testing.T) {
 	a := newTestApp()
-	scr := newRowRecordingScreen(80, 30)
+	scr := tuikittest.NewScreen(80, 30)
 	a.screen = scr
 
 	d := NewUpdateDialog(a)
@@ -119,7 +73,7 @@ func TestUpdateDialogRowsAboveSeparator(t *testing.T) {
 	d.SetSize(d.Rect().W, len(d.lines)+6) // borders, padding row, separator, button row, row under it
 	d.Draw(scr)
 
-	y := scr.rowOf("LAST-LINE")
+	y := scr.RowOf("LAST-LINE")
 	if sep := d.ButtonRowY() - 1; y < 0 || y >= sep {
 		t.Errorf("last line drawn on row %d, want above the separator row %d", y, sep)
 	}
@@ -131,7 +85,7 @@ func TestUpdateDialogRowsAboveSeparator(t *testing.T) {
 func TestListDialogsButtonRowIsTabReachable(t *testing.T) {
 	key := func(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, "", tcell.ModNone) }
 	a := newTestApp()
-	a.screen = newRowRecordingScreen(80, 30)
+	a.screen = tuikittest.NewScreen(80, 30)
 	dialogs := map[string]interface {
 		Dialog
 		Show()

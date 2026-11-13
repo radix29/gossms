@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // newCredentialTestDialog builds the New Credential dialog's General page the

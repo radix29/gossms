@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // ObjectName is an object argument split into its parts, each unquoted:

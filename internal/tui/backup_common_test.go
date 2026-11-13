@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // A SQL Server restore failure, verbatim — the message wrapMessage exists for.

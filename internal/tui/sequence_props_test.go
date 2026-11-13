@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // loadSequenceGeneralPage loads General for [sales].[OrderNo], an int sequence

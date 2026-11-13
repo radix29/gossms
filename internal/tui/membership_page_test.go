@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 func testMembershipConfig(added, removed *[]string) membershipConfig {

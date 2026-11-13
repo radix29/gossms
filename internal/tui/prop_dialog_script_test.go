@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // commitRename is the whole of the Script Changes fix: under
@@ -54,7 +55,7 @@ func dirtyForm(t *testing.T, edited string) (*propsheet.Form, *propsheet.TextRow
 // receives each page's edited row.
 func newSheetDialog(t *testing.T, pages []propPage, applies map[int]propApply, rowFor func(int, *propsheet.TextRow)) *PropDialog {
 	t.Helper()
-	sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Test Properties")
+	sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Test Properties")
 	d := &PropDialog{PropertySheet: sheet, pages: pages, applyFn: applies}
 
 	titles := make([]string, len(pages))

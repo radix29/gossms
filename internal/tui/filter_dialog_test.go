@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // showTestFilterDialog opens the dialog on a Tables folder (the widest set
@@ -25,7 +26,7 @@ func showTestFilterDialogOnScreen(t *testing.T, w, h int) *FilterDialog {
 	t.Helper()
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")
-	a.screen = &fakeSizedScreen{w: w, h: h}
+	a.screen = tuikittest.NewScreen(w, h)
 	a.filterDialog = NewFilterDialog(a)
 	node := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, DBName: "HealthClinic", conn: sc}}
 	a.filterDialog.show(node, filterProps(NodeTables), "server-one")
@@ -49,12 +50,12 @@ func TestFilterDialogRowsFitInsideBorders(t *testing.T) {
 			r := &d.rows[i]
 			// The closing bracket is one past the input area (see
 			// InputField.Draw), and the value field is the rightmost widget.
-			if right := r.value.RectX() + r.value.Width() + 1; right > last {
+			if right := r.value.Bounds().X + r.value.Width() + 1; right > last {
 				t.Errorf("terminal %d: row %d's value field ends at column %d, past the dialog's last inside column %d",
 					w, i, right, last)
 			}
-			if r.op.RectX() < inner.X {
-				t.Errorf("terminal %d: row %d's operator starts at column %d, left of the dialog at %d", w, i, r.op.RectX(), inner.X)
+			if r.op.Bounds().X < inner.X {
+				t.Errorf("terminal %d: row %d's operator starts at column %d, left of the dialog at %d", w, i, r.op.Bounds().X, inner.X)
 			}
 		}
 	}

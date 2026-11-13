@@ -9,9 +9,9 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/fileutil"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/layout"
 )
 
 // log_viewer_files.go is how a file is chosen (family menu, file menu, the

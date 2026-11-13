@@ -114,7 +114,7 @@ func TestWithQueryPanelRunsOnTheActivePanel(t *testing.T) {
 	a.panels.AddPanel(other)
 	// Act on a panel that is not the first one added: a helper that reached
 	// for a.panels[0] would pass with only one.
-	a.panels.SetActive(a.panels.AddPanel(active))
+	a.panels.SetActiveIndex(a.panels.AddPanel(active))
 
 	var got *QueryPanel
 	a.withQueryPanel(func(qp *QueryPanel) { got = qp })

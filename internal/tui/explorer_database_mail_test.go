@@ -12,7 +12,7 @@ import (
 	mssql "github.com/microsoft/go-mssqldb"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // The Object Explorer and Details wiring for Management ▸ Database Mail.

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // Query Store's page is thirteen editors that all leave through one

@@ -2,8 +2,8 @@ package dashboard
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/core"
 )
 
 // DrawSample renders the Sample dashboard into r: History's four sections

@@ -8,8 +8,9 @@ import (
 	"testing"
 
 	"github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // matrixParts pulls the two grids and the two filter boxes back out of a
@@ -151,7 +152,7 @@ func TestPermissionsMatrixApplyOrderIsStable(t *testing.T) {
 func TestPermissionsMatrixPartlyAppliedReloads(t *testing.T) {
 	sc, _ := newGConn(t, fakeResponse{match: "TO [c]", err: errRefused})
 	loads := 0
-	sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Server Properties")
+	sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Server Properties")
 	d := &PropDialog{PropertySheet: sheet, app: &App{}, ctx: context.Background(), applyFn: map[int]propApply{}}
 	d.SetPages([]string{"Permissions"})
 	d.OnLoadPage = func(page, seq int) {

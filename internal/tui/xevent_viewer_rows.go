@@ -7,8 +7,8 @@ import (
 
 	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/controls"
 )
 
 // xevent_viewer_rows.go is what the store becomes on screen: the grid's

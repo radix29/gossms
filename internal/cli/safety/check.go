@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/radix29/gossms/internal/cli/spec"
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // Policy is what a run of a classified script is allowed to do.

@@ -8,7 +8,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/vt"
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // twoPaneConnectDialog opens the dialog on a terminal wide enough for the
@@ -16,7 +17,7 @@ import (
 func twoPaneConnectDialog(t *testing.T, saved ...config.Connection) *ConnectDialog {
 	t.Helper()
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 120, h: 40}
+	a.screen = tuikittest.NewScreen(120, 40)
 	// Through AddOrUpdate, as a real connect saves them: Config.Save replays
 	// only recorded operations onto the file, so a list assigned directly
 	// would vanish at the first save (a Delete, say).
@@ -167,7 +168,7 @@ func TestConnectHistorySelectionPreFillsTheRightPane(t *testing.T) {
 // for what the right pane can also be typed into (decision 3).
 func TestConnectDialogNarrowTerminalDropsTheHistoryPane(t *testing.T) {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 80, h: 30}
+	a.screen = tuikittest.NewScreen(80, 30)
 	a.cfg.Connections = []config.Connection{{Server: "ubusql1", User: "sa"}}
 	d := NewConnectDialog(a)
 	d.Show()
@@ -187,7 +188,7 @@ func TestConnectDialogNarrowTerminalDropsTheHistoryPane(t *testing.T) {
 	}
 
 	// Widening brings it back, on the resize the host reports.
-	a.screen.(*fakeSizedScreen).w = 120
+	a.screen.(*tuikittest.Screen).SetSize(120, 30)
 	d.Relayout()
 	d.layoutFields()
 	if !d.twoPane {
@@ -264,8 +265,8 @@ func TestConnectDialogRowsFitAboveTheButtonRow(t *testing.T) {
 	bottom := d.ButtonRowY() - 2
 	rows := map[string]int{
 		"tab bar":           d.tabRect.Y,
-		"Server Name":       d.fServer.RectY(),
-		"Host Name In Cert": d.fHostCert.RectY(),
+		"Server Name":       d.fServer.Bounds().Y,
+		"Host Name In Cert": d.fHostCert.Bounds().Y,
 		"Custom Properties": d.extraPropsLabelY,
 	}
 	for name, y := range rows {
@@ -274,9 +275,9 @@ func TestConnectDialogRowsFitAboveTheButtonRow(t *testing.T) {
 				name, y, d.InnerRect().Y, bottom)
 		}
 	}
-	if d.fHostCert.RectY() >= d.extraPropsLabelY {
+	if d.fHostCert.Bounds().Y >= d.extraPropsLabelY {
 		t.Errorf("the last field row (%d) collides with the Custom Properties section (%d)",
-			d.fHostCert.RectY(), d.extraPropsLabelY)
+			d.fHostCert.Bounds().Y, d.extraPropsLabelY)
 	}
 	if got := core.DisplayWidth(d.fHostCert.Label()); got != connectLabelWidth {
 		t.Errorf("the widest label is %d columns, want exactly %d", got, connectLabelWidth)

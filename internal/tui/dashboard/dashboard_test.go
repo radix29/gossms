@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/core"
 )
 
 func testSeries(label string, values ...float64) []charts.Series {
@@ -32,8 +32,8 @@ func fullHistory() HistoryView {
 	}
 }
 
-func renderHistory(v HistoryView) *charts.Canvas {
-	c := charts.NewCanvas(HistoryCanvasW, HistoryCanvasH)
+func renderHistory(v HistoryView) *core.Buffer {
+	c := core.NewBuffer(HistoryCanvasW, HistoryCanvasH)
 	DrawHistory(c, c.Rect(), v)
 	return c
 }
@@ -131,7 +131,7 @@ func TestDrawHistoryEmptySeriesKeepOtherPanels(t *testing.T) {
 }
 
 func TestDrawHistoryEmptyViewDrawsChrome(t *testing.T) {
-	c := charts.NewCanvas(HistoryCanvasW, HistoryCanvasH)
+	c := core.NewBuffer(HistoryCanvasW, HistoryCanvasH)
 	DrawHistory(c, c.Rect(), HistoryView{})
 
 	if !rowsContain(c.Rows(), "SQL SERVER WAITS") {
@@ -143,7 +143,7 @@ func TestDrawHistoryEmptyViewDrawsChrome(t *testing.T) {
 // into a canvas it shares with nothing, but the same rule keeps a future
 // caller from having its surroundings overwritten.
 func TestDrawHistoryStaysInsideItsRect(t *testing.T) {
-	c := charts.NewCanvas(HistoryCanvasW, HistoryCanvasH)
+	c := core.NewBuffer(HistoryCanvasW, HistoryCanvasH)
 	DrawHistory(c, core.Rect{X: 4, Y: 3, W: 100, H: 30}, fullHistory())
 
 	rows := c.Rows()
@@ -165,7 +165,7 @@ func TestDrawHistoryStaysInsideItsRect(t *testing.T) {
 }
 
 func TestDrawHistoryTinyRect(t *testing.T) {
-	c := charts.NewCanvas(40, 6)
+	c := core.NewBuffer(40, 6)
 	DrawHistory(c, c.Rect(), fullHistory())
 
 	if !rowsContain(c.Rows(), "SQL SERVER ACTIVITY") {
@@ -228,7 +228,7 @@ func TestLoadFactorWidthFollowsTheCoreCount(t *testing.T) {
 func TestDrawSampleWaitsSectionCarriesLoadFactor(t *testing.T) {
 	v := fullSample()
 	v.LoadFactor = BarPanel{Bars: loadFactorBars(4)}
-	c := charts.NewCanvas(SampleCanvasW, SampleCanvasH)
+	c := core.NewBuffer(SampleCanvasW, SampleCanvasH)
 	DrawSample(c, c.Rect(), v)
 	rows := c.Rows()
 
@@ -243,7 +243,7 @@ func TestDrawSampleWaitsSectionCarriesLoadFactor(t *testing.T) {
 // No cores collected — an instance that hasn't answered yet — leaves the
 // section exactly as it was before the panel existed.
 func TestDrawSampleWithoutCoresKeepsTheWaitsChart(t *testing.T) {
-	c := charts.NewCanvas(SampleCanvasW, SampleCanvasH)
+	c := core.NewBuffer(SampleCanvasW, SampleCanvasH)
 	DrawSample(c, c.Rect(), fullSample())
 
 	if rowsContain(c.Rows(), "Load Factor") {
@@ -252,7 +252,7 @@ func TestDrawSampleWithoutCoresKeepsTheWaitsChart(t *testing.T) {
 }
 
 func TestDrawSampleDrawsSectionsAndKPIs(t *testing.T) {
-	c := charts.NewCanvas(SampleCanvasW, SampleCanvasH)
+	c := core.NewBuffer(SampleCanvasW, SampleCanvasH)
 	DrawSample(c, c.Rect(), fullSample())
 	rows := c.Rows()
 
@@ -268,7 +268,7 @@ func TestDrawSampleDrawsSectionsAndKPIs(t *testing.T) {
 }
 
 func TestDrawSampleSectionGeometry(t *testing.T) {
-	c := charts.NewCanvas(SampleCanvasW, SampleCanvasH)
+	c := core.NewBuffer(SampleCanvasW, SampleCanvasH)
 	DrawSample(c, c.Rect(), fullSample())
 	rows := c.Rows()
 
@@ -292,7 +292,7 @@ func TestDrawSampleSectionGeometry(t *testing.T) {
 }
 
 func TestDrawSampleEmptyView(t *testing.T) {
-	c := charts.NewCanvas(SampleCanvasW, SampleCanvasH)
+	c := core.NewBuffer(SampleCanvasW, SampleCanvasH)
 	DrawSample(c, c.Rect(), SampleView{})
 
 	if !rowsContain(c.Rows(), "DATABASE IO") {
@@ -331,7 +331,7 @@ func TestSplitColumnsDividesAndCollapses(t *testing.T) {
 // sample under it. Every hit has to sit inside the canvas and carry series;
 // a hit whose rect is stale points the reader at the wrong numbers.
 func TestDrawHistoryReportsChartHits(t *testing.T) {
-	c := charts.NewCanvas(HistoryCanvasW, HistoryCanvasH)
+	c := core.NewBuffer(HistoryCanvasW, HistoryCanvasH)
 	hits := DrawHistory(c, c.Rect(), fullHistory())
 
 	if len(hits) != 11 {
@@ -350,7 +350,7 @@ func TestDrawHistoryReportsChartHits(t *testing.T) {
 // The rightmost column of a plot is the newest bucket, and a column left of
 // the data reports no bucket at all.
 func TestChartHitBucketMapsColumnsToSamples(t *testing.T) {
-	c := charts.NewCanvas(HistoryCanvasW, HistoryCanvasH)
+	c := core.NewBuffer(HistoryCanvasW, HistoryCanvasH)
 	hits := DrawHistory(c, c.Rect(), fullHistory())
 	h := hits[0]
 
@@ -388,7 +388,7 @@ func fullTempDB() TempDBView {
 }
 
 func TestDrawTempDBDrawsEverySection(t *testing.T) {
-	c := charts.NewCanvas(TempDBCanvasW, TempDBCanvasH)
+	c := core.NewBuffer(TempDBCanvasW, TempDBCanvasH)
 	DrawTempDB(c, c.Rect(), fullTempDB())
 	rows := c.Rows()
 
@@ -410,7 +410,7 @@ func TestDrawTempDBDrawsEverySection(t *testing.T) {
 // The session grid is the one place this dashboard reports rows rather than
 // levels: the headings and the row have to line up in the same columns.
 func TestDrawTempDBSessionGrid(t *testing.T) {
-	c := charts.NewCanvas(TempDBCanvasW, TempDBCanvasH)
+	c := core.NewBuffer(TempDBCanvasW, TempDBCanvasH)
 	DrawTempDB(c, c.Rect(), fullTempDB())
 	rows := c.Rows()
 
@@ -436,7 +436,7 @@ func TestDrawTempDBSessionGrid(t *testing.T) {
 func TestDrawTempDBEmptySessionGrid(t *testing.T) {
 	v := fullTempDB()
 	v.Sessions = nil
-	c := charts.NewCanvas(TempDBCanvasW, TempDBCanvasH)
+	c := core.NewBuffer(TempDBCanvasW, TempDBCanvasH)
 	DrawTempDB(c, c.Rect(), v)
 
 	if !rowsContain(c.Rows(), "No session is holding tempdb space.") {
@@ -445,7 +445,7 @@ func TestDrawTempDBEmptySessionGrid(t *testing.T) {
 }
 
 func TestDrawTempDBEmptyViewDrawsChrome(t *testing.T) {
-	c := charts.NewCanvas(TempDBCanvasW, TempDBCanvasH)
+	c := core.NewBuffer(TempDBCanvasW, TempDBCanvasH)
 	hits := DrawTempDB(c, c.Rect(), TempDBView{})
 
 	if !rowsContain(c.Rows(), "TEMPDB SESSION USAGE") {
@@ -481,7 +481,7 @@ func fullInstance() InstanceView {
 }
 
 func TestDrawInstanceDrawsEverySection(t *testing.T) {
-	c := charts.NewCanvas(InstanceCanvasW, InstanceCanvasH)
+	c := core.NewBuffer(InstanceCanvasW, InstanceCanvasH)
 	DrawInstance(c, c.Rect(), fullInstance())
 	rows := c.Rows()
 
@@ -508,7 +508,7 @@ func TestDrawInstanceDrawsEverySection(t *testing.T) {
 // The storage axis is the reserved quota, not the data's own high-water mark:
 // 192 MB used of 65,536 MB has to draw as a sliver, because that is what it is.
 func TestDrawInstanceStorageAxisIsTheQuota(t *testing.T) {
-	c := charts.NewCanvas(InstanceCanvasW, InstanceCanvasH)
+	c := core.NewBuffer(InstanceCanvasW, InstanceCanvasH)
 	DrawInstance(c, c.Rect(), fullInstance())
 	if !rowsContain(c.Rows(), "65.5K") {
 		t.Error("the storage chart's axis does not reach the reserved quota")
@@ -523,7 +523,7 @@ func TestDrawInstanceStorageAxisIsTheQuota(t *testing.T) {
 // A grid with nothing in it says so, rather than leaving an empty box the
 // reader cannot tell from one that failed to load.
 func TestDrawInstanceEmptyViewDrawsChrome(t *testing.T) {
-	c := charts.NewCanvas(InstanceCanvasW, InstanceCanvasH)
+	c := core.NewBuffer(InstanceCanvasW, InstanceCanvasH)
 	hits := DrawInstance(c, c.Rect(), InstanceView{})
 
 	if !rowsContain(c.Rows(), "INSTANCE LIMITS") {
@@ -541,7 +541,7 @@ func TestDrawInstanceEmptyViewDrawsChrome(t *testing.T) {
 // into a viewport, and a section bar that overran would stripe the panel
 // around it.
 func TestDrawInstanceStaysInsideItsRect(t *testing.T) {
-	c := charts.NewCanvas(InstanceCanvasW, InstanceCanvasH)
+	c := core.NewBuffer(InstanceCanvasW, InstanceCanvasH)
 	r := core.Rect{X: 2, Y: 1, W: InstanceCanvasW - 4, H: InstanceCanvasH - 3}
 	DrawInstance(c, r, fullInstance())
 	for y, row := range c.Rows() {
@@ -559,7 +559,7 @@ func TestDrawInstanceStaysInsideItsRect(t *testing.T) {
 
 // A rect too small for anything must draw nothing rather than panic.
 func TestDrawInstanceTinyRect(t *testing.T) {
-	c := charts.NewCanvas(20, 6)
+	c := core.NewBuffer(20, 6)
 	for _, r := range []core.Rect{{}, {W: 1, H: 1}, {W: 20, H: 1}, {W: 3, H: 6}} {
 		DrawInstance(c, r, fullInstance())
 	}

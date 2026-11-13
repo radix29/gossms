@@ -7,7 +7,7 @@ import (
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // secPolicyConn is a login answering the database probe of appdb: dbGranted

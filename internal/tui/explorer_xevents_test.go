@@ -9,8 +9,8 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The Object Explorer wiring for Management ▸ Extended Events — the

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The Column Encryption Key page is the only writable Always Encrypted page,

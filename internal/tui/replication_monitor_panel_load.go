@@ -10,8 +10,8 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // replication_monitor_panel_load.go is Replication Monitor's reads: the snapshot

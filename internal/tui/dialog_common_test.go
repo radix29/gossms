@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // fakeFocusable records what Focus was last told, so a test can assert which
@@ -13,6 +14,7 @@ import (
 type fakeFocusable struct{ focused bool }
 
 func (f *fakeFocusable) Focus(on bool) { f.focused = on }
+func (f *fakeFocusable) Focused() bool { return f.focused }
 
 func focusList(n int) ([]focusable, []*fakeFocusable) {
 	real := make([]*fakeFocusable, n)
@@ -269,7 +271,7 @@ func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
 	}
 
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	b := NewBackupDialog(a)
 	a.screen = nil
 	b.show(&db.ServerConn{}, "testdb")
@@ -298,7 +300,7 @@ func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
 	}
 
 	a = newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	r := NewRestoreDialog(a)
 	a.screen = nil
 	r.show(&db.ServerConn{}, "testdb")

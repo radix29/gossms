@@ -7,7 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 func loadTestPlan(t *testing.T) *showplan.Plan {
@@ -118,8 +118,8 @@ func TestXMLTab_SelectionAndCopy(t *testing.T) {
 	if text == "" {
 		t.Error("SelectedText() is empty after SelectAll")
 	}
-	if v.Cut() != text {
-		t.Error("Cut() should return the same text as SelectedText() (read-only view)")
+	if got := v.Cut(); got != "" {
+		t.Errorf("Cut() = %q on a read-only view, want \"\" (nothing cut)", got)
 	}
 
 	// The XML tab's own text selection must not leak into the Plan tab's
@@ -170,7 +170,7 @@ func TestExpandButton_ClickNoopWithoutCallback(t *testing.T) {
 	v.SetPlan(loadTestPlan(t))
 	// expandBtnRect is zero until Draw runs (untested here — tcell v3 has
 	// no SimulationScreen, so Draw itself isn't exercised by any test in
-	// this codebase; see controls/editor_test.go for the same state-only
+	// this codebase; see controls/editor/editor_test.go for the same state-only
 	// convention). Clicking where the button would be must still be a
 	// harmless tab-bar click, not a panic, with OnExpand nil.
 	if v.HandleMouse(newClick(1, 0)) == false {

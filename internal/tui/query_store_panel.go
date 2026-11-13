@@ -6,11 +6,11 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/layout"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/layout"
+	"github.com/radix29/tuikit/theme"
 )
 
 // query_store_panel.go is SSMS's Query Store views as one panel per database: a
@@ -236,8 +236,8 @@ func NewQueryStorePanel(app *App, sc *db.ServerConn, dbName, title string) *Quer
 		regressIdx: qsDefaultFilterIdx,
 		grid:       newQSGrid(app),
 		plansGrid:  newQSGrid(app),
-		chartSplit: layout.NewHorizontalSplitter("─── Report ─── (drag or Ctrl+Up/Down to resize)"),
-		planSplit:  layout.NewHorizontalSplitter("─── Plans for the selected query ───"),
+		chartSplit: newHorizontalSplitter("─── Report ─── (drag or Ctrl+Up/Down to resize)"),
+		planSplit:  newHorizontalSplitter("─── Plans for the selected query ───"),
 	})
 	p.chartSplit.SetRatio(0.35)
 	p.planSplit.SetRatio(0.6)
@@ -305,8 +305,8 @@ func (p *QueryStorePanel) Title() string { return "Query Store — " + p.dbName 
 func (p *QueryStorePanel) SetActive(v bool) {
 	p.active = v
 	p.applyFocus()
-	p.chartSplit.SetActive(v)
-	p.planSplit.SetActive(v)
+	p.chartSplit.Focus(v)
+	p.planSplit.Focus(v)
 }
 
 // applyFocus keeps both grids' focus flags in step so only one draws a cursor.

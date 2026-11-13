@@ -5,9 +5,9 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // summarySort selects the operator summary table's descending sort column:
@@ -99,7 +99,7 @@ func (v *PlanView) summaryOverlayActive() bool {
 
 // drawSummaryOverlay paints the grid's popups. Called from
 // PlanView.DrawOverlay, never drawSummary: they must land after every other
-// widget (see the "overlays drawn last" rule in tuikit/README.md).
+// widget (see the "overlays drawn last" rule in ~/go/tuikit/ARCHITECTURE.md § Overlays).
 func (v *PlanView) drawSummaryOverlay(s tcell.Screen) {
 	if v.summaryVisible() {
 		v.summarySt.grid.DrawOverlay(s)

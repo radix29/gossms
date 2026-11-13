@@ -6,7 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // groupTree is a connection's tree holding one loaded folder of type ft in

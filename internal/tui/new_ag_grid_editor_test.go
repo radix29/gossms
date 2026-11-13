@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The New AG dialog's Databases grid, wired and driven exactly as
@@ -61,7 +61,7 @@ func TestNewAGDatabaseGridMovesThroughTheForm(t *testing.T) {
 	f.SetBounds(0, 0, 100, 20)
 	f.Focus(true)
 
-	if got := f.Focused(); got != propsheet.Row(gridRow) {
+	if got := f.FocusedRow(); got != propsheet.Row(gridRow) {
 		t.Fatalf("form focused %T, want the grid row", got)
 	}
 	for want := 1; want <= 2; want++ {
@@ -69,7 +69,7 @@ func TestNewAGDatabaseGridMovesThroughTheForm(t *testing.T) {
 			t.Fatalf("form refused Down #%d", want)
 		}
 		if got := grid.SelectedRow(); got != want {
-			t.Fatalf("after Down #%d grid is on row %d, want %d (focused row now %T)", want, got, want, f.Focused())
+			t.Fatalf("after Down #%d grid is on row %d, want %d (focused row now %T)", want, got, want, f.FocusedRow())
 		}
 	}
 }

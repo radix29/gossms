@@ -10,6 +10,7 @@ import (
 	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // fakeLiveSource scripts the poller's two reads: profiles[i] answers the i'th
@@ -280,7 +281,7 @@ func TestLiveUpdateAfterTheRunEndsIsDropped(t *testing.T) {
 func TestLiveQueryStatisticsToggleKeepsActualPlanInStep(t *testing.T) {
 	a := &App{cfg: newTestApp().cfg}
 	a.buildUI()
-	a.screen = &fakeSizedScreen{w: 120, h: 40} // the toggles relayout
+	a.screen = tuikittest.NewScreen(120, 40) // the toggles relayout
 
 	a.toggleLiveQueryStatistics()
 	if !a.liveStatsEnabled || !a.actualPlanEnabled {

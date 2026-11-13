@@ -8,7 +8,7 @@ import (
 	"github.com/radix29/gosmo"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // new_column_master_key_dialog.go is the New Column Master Key dialog (a

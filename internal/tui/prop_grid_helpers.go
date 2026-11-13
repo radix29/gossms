@@ -10,9 +10,11 @@ import (
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tui/sqledit"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/propsheet"
+	"github.com/radix29/tuikit/theme"
 )
 
 // boolStr renders a bool as "True"/"False", the Static-row convention used
@@ -459,7 +461,7 @@ func (b *staticBlock) set(values ...string) {
 // row every Definition page shows. A writable editor would offer edits the page
 // can't save.
 func sqlBodyRow(label, body string, height int) propsheet.Row {
-	ed := controls.NewEditor(controls.SQLHighlighter(theme.Active()))
+	ed := editor.NewEditor(sqledit.Highlighter(theme.Active()))
 	ed.SetText(body)
 	ed.SetReadOnly(true)
 	return propsheet.NewEditorRow(label, ed, height)

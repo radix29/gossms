@@ -13,8 +13,8 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	dbconn "github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/theme"
 )
 
 // qsReportResponse answers the per-query reports. Matched on the query
@@ -1540,7 +1540,7 @@ func TestAWithheldSelectorStillOpensWhereItApplies(t *testing.T) {
 	p := NewQueryStorePanel(a, nil, "appdb", "Top Resource Consuming Queries")
 	for _, cell := range []int{qsToolMetric, qsToolTop, qsToolStatistic, qsToolWindow, qsToolReport} {
 		p.runSel(cell)
-		if !a.contextMenu.Visible() {
+		if !a.contextMenu.OverlayActive() {
 			t.Errorf("selector cell %d opened no menu on a report that honours it", cell)
 		}
 		a.contextMenu.Hide()
@@ -1678,7 +1678,7 @@ func TestThePanelOpensOnGosmosOwnRowCap(t *testing.T) {
 // The entry in force is bulleted, so matching is on a substring.
 func chooseMenuItem(t *testing.T, a *App, want string) {
 	t.Helper()
-	if !a.contextMenu.Visible() {
+	if !a.contextMenu.OverlayActive() {
 		t.Fatalf("no menu is open to choose %q from", want)
 	}
 	for _, it := range a.contextMenu.Items() {

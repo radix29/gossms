@@ -10,7 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/fileutil"
 	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // app_panel_actions.go opens what the File menu opens: a query panel, a query
@@ -22,7 +22,7 @@ import (
 func (a *App) newQueryPanel() {
 	a.queryPanelCnt++
 	qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
-	a.panels.SetActive(a.panels.AddPanel(qp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 	a.focusPanels()
 	if sc, database := a.selectedConnTarget(); sc != nil {
 		a.connectForQueryPanel(qp, sc, database, nil)
@@ -34,7 +34,7 @@ func (a *App) newQueryPanel() {
 func (a *App) newQueryPanelForConn(sc *db.ServerConn, database string) {
 	a.queryPanelCnt++
 	qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
-	a.panels.SetActive(a.panels.AddPanel(qp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 	a.focusPanels()
 	if sc != nil {
 		a.connectForQueryPanel(qp, sc, database, nil)
@@ -60,7 +60,7 @@ func (a *App) openQueryWithTextThen(sc *db.ServerConn, database, text string, on
 	a.queryPanelCnt++
 	qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
 	qp.editor.SetText(text)
-	a.panels.SetActive(a.panels.AddPanel(qp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 	a.focusPanels()
 	if sc != nil {
 		a.connectForQueryPanel(qp, sc, database, onConnected)
@@ -96,7 +96,7 @@ func (a *App) openQueryFile() {
 		if l, ok := format.LanguageForExt(filepath.Ext(path)); ok && l != format.LangSQL {
 			qp.setLanguage(l)
 		}
-		a.panels.SetActive(a.panels.AddPanel(qp))
+		a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 		a.focusPanels()
 		if lossy {
 			a.setStatus("Opened " + path + " — not valid UTF-8; undecodable bytes shown as � and saving will replace them")
@@ -123,7 +123,7 @@ func (a *App) openPlanFile(path string, data []byte) {
 	}
 	pp := NewPlanPanel(a, filepath.Base(path), plan)
 	pp.filePath = path
-	a.panels.SetActive(a.panels.AddPanel(pp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(pp))
 	a.focusPanels()
 	a.setStatus("Opened " + path)
 }

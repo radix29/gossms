@@ -6,11 +6,11 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/format"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/theme"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // OptionsDialog is the application's Options/Settings dialog, reachable
@@ -184,7 +184,7 @@ func (d *OptionsDialog) dropDowns() []*widgets.DropDown {
 // openDropDown is the dropdown whose list is open, or nil.
 func (d *OptionsDialog) openDropDown() *widgets.DropDown {
 	for _, dd := range d.dropDowns() {
-		if dd.IsOpen() {
+		if dd.OverlayActive() {
 			return dd
 		}
 	}
@@ -251,6 +251,10 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// The open list below sees events before ConsumeOutsideClick does, so the
+	// gesture is tracked here: a list pick's resends, dragged onto the button
+	// row, must not press a button.
+	d.TrackPress(ev)
 	// A release outside the dialog is consumed by ConsumeOutsideClick below before
 	// the radio box's/dropdowns'/cbIntelliSense's own HandleMouse calls see it, leaving their
 	// mouseDragging latch set and swallowing the next press. Reset it here first;
@@ -385,7 +389,7 @@ func (d *OptionsDialog) apply() {
 		n = v
 	}
 	d.app.cfg.IndentWidth = n
-	controls.SetDefaultIndentWidth(n)
+	editor.SetDefaultIndentWidth(n)
 	for i := range d.app.panels.Count() {
 		if qp, ok := d.app.panels.PanelAt(i).(*QueryPanel); ok {
 			qp.editor.SetIndentWidth(n)
@@ -395,7 +399,7 @@ func (d *OptionsDialog) apply() {
 	// editor that is not a QueryPanel, so walking the panels alone leaves it on the
 	// old width until the page is rebuilt. Every sheet-based dialog answers this, so
 	// a future writable EditorRow is covered without another arm here.
-	for _, dlg := range d.app.allDialogs {
+	for _, dlg := range d.app.modals.Registered() {
 		if h, ok := dlg.(editorIndentHost); ok {
 			h.SetEditorIndentWidth(n)
 		}

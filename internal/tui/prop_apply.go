@@ -13,7 +13,7 @@ import (
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // commitRename mirrors a just-completed rename into namePtr (the boxed name

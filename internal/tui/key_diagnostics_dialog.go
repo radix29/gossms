@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/theme"
 )
 
 // maxKeyDiagLines caps the diagnostics log so a long session doesn't grow
@@ -20,13 +20,13 @@ const maxKeyDiagLines = 200
 // decode (e.g. "Shift+Left"). It turns "a shortcut doesn't seem to work" into a
 // 10-second check of whether the terminal delivers the modifier bits goSSMS
 // expects. Mouse events are logged the same way, since a terminal can keep
-// Shift+click for itself. See internal/tuikit/controls/editor.go and
+// Shift+click for itself. See tuikit's controls/editor/editor.go and
 // widgets/input_field.go for the Shift+Arrow selection handling this most often
 // debugs.
 //
 // Newest entries are prepended, so the most recent key press is the first line.
 //
-// The log lives in a read-only controls.Editor rather than a hand-rolled line
+// The log lives in a read-only editor.Editor rather than a hand-rolled line
 // list, so it can be selected and copied: what the dialog shows is the text pasted
 // into a bug report, and a non-core.ClipboardTarget widget would make Ctrl+C do
 // nothing.
@@ -34,7 +34,7 @@ type KeyDiagnosticsDialog struct {
 	dialogs.ModalDialog
 	app    *App
 	lines  []string
-	editor *controls.Editor
+	editor *editor.Editor
 	dirty  bool // lines changed since the editor's text was last rebuilt
 
 	// lastMouse is the buttons/modifiers of the last mouse event recorded, so
@@ -47,9 +47,9 @@ type KeyDiagnosticsDialog struct {
 func NewKeyDiagnosticsDialog(app *App) *KeyDiagnosticsDialog {
 	d := &KeyDiagnosticsDialog{app: app}
 	d.InitModal(app.screen, "Key Diagnostics", 70, 24)
-	d.editor = controls.NewEditor(nil)
+	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
-	d.editor.SetActive(true)
+	d.editor.Focus(true)
 	// No gutter: line numbers say nothing about a key log, and every column
 	// they take comes off lines that are already 60-odd wide.
 	d.editor.SetGutterVisible(false)

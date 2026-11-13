@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // TestStatusHistoryRecordPrependsNewest pins down newest-first ordering, so
@@ -108,7 +109,7 @@ func TestStatusHistoryRecordDefersSyncWhileHidden(t *testing.T) {
 func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
 	d := &StatusHistoryDialog{}
 	d.InitModal(nil, "Status History", 90, 26)
-	d.editor = controls.NewEditor(nil)
+	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.ModalDialog.Show()
 
@@ -117,7 +118,7 @@ func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
 		t.Fatal("dirty must still be set after Record(): the editor is the UI goroutine's to write")
 	}
 
-	d.Draw(&fakeSizedScreen{w: 100, h: 40})
+	d.Draw(tuikittest.NewScreen(100, 40))
 
 	if d.dirty {
 		t.Fatal("dirty must be false after Draw() rebuilt the editor text")
@@ -135,11 +136,11 @@ func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
 func TestStatusHistoryRecordIsSafeFromBackgroundGoroutines(t *testing.T) {
 	d := &StatusHistoryDialog{}
 	d.InitModal(nil, "Status History", 90, 26)
-	d.editor = controls.NewEditor(nil)
+	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.ModalDialog.Show()
 
-	screen := &fakeSizedScreen{w: 100, h: 40}
+	screen := tuikittest.NewScreen(100, 40)
 	var wg sync.WaitGroup
 	for w := range 4 {
 		wg.Add(1)

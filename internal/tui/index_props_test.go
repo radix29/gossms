@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // A columnstore index reports data_compression_desc = "COLUMNSTORE", which

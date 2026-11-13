@@ -1,5 +1,5 @@
 // Package tui is the gossms application layer. It wires the
-// application-agnostic controls from internal/tuikit into the
+// application-agnostic controls from github.com/radix29/tuikit into the
 // SQL-Server-specific Object Explorer, query panels, and dialogs; everything
 // here knows about gosmo, config.Connection, and SQL Server object types.
 package tui
@@ -17,11 +17,12 @@ import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/layout"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/layout"
+	"github.com/radix29/tuikit/theme"
 )
 
 // App is the root application struct, owning the screen and every UI panel —
@@ -168,10 +169,9 @@ type App struct {
 	backupDialog                *BackupDialog
 	restoreDialog               *RestoreDialog
 
-	// allDialogs lists every dialog exactly once, for syncDialogStack to
-	// scan; dialogStack is the live z-order (see dialog_stack.go).
-	allDialogs  []Dialog
-	dialogStack []Dialog
+	// modals holds every dialog, registered once by registerDialog, and the
+	// live z-order of the open ones (see dialog_stack.go).
+	modals dialogs.Stack
 
 	// tasks is the background task registry (see tasks.go); taskSeq is its
 	// monotonic ID counter.
@@ -249,7 +249,7 @@ func NewApp() *App {
 	// Options reaches them without a restart — into the open query panels
 	// directly, and into the open property sheets through
 	// PropertySheet.SetEditorIndentWidth.
-	controls.SetDefaultIndentWidth(a.cfg.IndentWidth)
+	editor.SetDefaultIndentWidth(a.cfg.IndentWidth)
 	a.loadPeerCredentials()
 	return a
 }
@@ -268,12 +268,12 @@ func (a *App) Run() error {
 	a.layoutAll()
 	installEntraSignIn(a)
 	a.resealLegacyPasswords()
-	// Open Connect on startup — nothing works without a server. syncDialogStack
-	// must run before the first draw: draw() renders from dialogStack, which is
+	// Open Connect on startup — nothing works without a server. modals.Sync
+	// must run before the first draw: draw() renders the open dialogs, which are
 	// otherwise synced only inside the event loop, so the dialog wouldn't
 	// appear until the first keypress.
 	a.connectDialog.Show()
-	a.syncDialogStack()
+	a.modals.Sync()
 	a.draw()
 
 	// tcell v3 has no PollEvent/PostEvent; events come from the EventQ()
@@ -319,7 +319,7 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	// already false and its CompareAndSwap succeeds.
 	a.wake.sent.Store(false)
 	a.drainPending()
-	a.syncDialogStack()
+	a.modals.Sync()
 
 	switch e := ev.(type) {
 	case *tcell.EventResize:
@@ -372,10 +372,10 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	}
 
 	// Re-sync before drawing: the event just handled may have opened or
-	// closed a dialog, and draw() renders straight from dialogStack. The
+	// closed a dialog, and draw() renders straight from modals.Open(). The
 	// top-of-loop sync still runs so input routing sees drainPending's
 	// changes.
-	a.syncDialogStack()
+	a.modals.Sync()
 	return false, need
 }
 
@@ -395,7 +395,7 @@ type wakeQueue struct {
 	// callback still runs, since the next wake for any reason drains the whole
 	// queue. Without this, a burst of near-simultaneous completions (the
 	// per-row fetches in loadDatabasesFolderDetails and friends) each cost a
-	// full drainPending + syncDialogStack + draw().
+	// full drainPending + modals.Sync + draw().
 	sent atomic.Bool
 }
 
@@ -501,12 +501,12 @@ func (a *App) animateUntil(what string, period time.Duration, done <-chan struct
 // buildUI creates all UI components from tuikit building blocks.
 func (a *App) buildUI() {
 	a.explorer = NewObjectExplorer(a)
-	a.explorer.SetActive(true)
+	a.explorer.Focus(true)
 
-	a.explorerSplit = layout.NewVerticalSplitter()
-	a.explorerSplit.SetRatio(0.3)
+	a.explorerSplit = newVerticalSplitter()
 
 	a.panels = layout.NewPanelManager()
+	a.panels.EmptyText = "(no panels open — Ctrl+N for a new query)"
 	a.detailBrowser = a.newDetailBrowser()
 	a.panels.AddPanel(a.detailBrowser)
 	a.panels.OnCloseTab = a.requestClosePanel
@@ -523,8 +523,8 @@ func (a *App) buildUI() {
 	a.contextMenu = new(controls.ContextMenu{})
 
 	// Every dialog is constructed through registerDialog, which is what puts it
-	// in allDialogs. Registration order is only a tie-break for dialogs that
-	// became visible in the same tick; see syncDialogStack.
+	// in modals. Registration order is only a tie-break for dialogs that
+	// became visible in the same tick; see dialogs.Stack.Sync.
 	a.connectDialog = registerDialog(a, NewConnectDialog(a))
 	a.findDialog = registerDialog(a, NewFindReplaceDialog(a))
 	a.helpDialog = registerDialog(a, NewHelpDialog(a))
@@ -604,6 +604,7 @@ func (a *App) buildUI() {
 	a.alertDialog = registerDialog(a, dialogs.NewAlertDialog(a.screen))
 	a.progressDialog = registerDialog(a, dialogs.NewProgressDialog(a.screen))
 	a.progressDialog.RevealDelay = progressRevealDelay
+	a.progressDialog.CancellingText = "Cancelling — waiting for the server to stop"
 	// After the Connect dialog, which a device code opens over.
 	a.deviceCodeDialog = registerDialog(a, NewDeviceCodeDialog(a))
 	a.backupDialog = registerDialog(a, NewBackupDialog(a))
@@ -618,18 +619,35 @@ func (a *App) buildUI() {
 // dropped — a browser launched through xdg-open may print a line of its own,
 // which would land on the screen at the cursor and stay there until the next
 // full redraw.
+// newHorizontalSplitter is the app's top/bottom split (an editor or grid over
+// results/details): half each, neither pane below a tenth.
+func newHorizontalSplitter(label string) *layout.Splitter {
+	sp := layout.NewSplitter(layout.SplitterHorizontal, 0.5)
+	sp.SetLimits(0.1, 0.9)
+	sp.SetLabel(label)
+	return sp
+}
+
+// newVerticalSplitter is the app's explorer | panels split: the explorer
+// starts at 30% and can take at most 80%.
+func newVerticalSplitter() *layout.Splitter {
+	sp := layout.NewSplitter(layout.SplitterVertical, 0.3)
+	sp.SetLimits(0.1, 0.8)
+	return sp
+}
+
 func installEntraSignIn(a *App) {
 	db.SetDeviceCodePrompt(a.promptDeviceCode)
 	browser.Stdout, browser.Stderr = io.Discard, io.Discard
 }
 
-// registerDialog appends d to a.allDialogs and hands it back, so a dialog is
-// constructed and registered in one expression. syncDialogStack considers only
-// what allDialogs names, so a dialog assigned to its App field and not appended
+// registerDialog registers d in a.modals and hands it back, so a dialog is
+// constructed and registered in one expression. modals.Sync considers only
+// registered dialogs, so a dialog assigned to its App field and not registered
 // is built and shown but never drawn or given input —
 // TestEveryAppDialogFieldIsRegisteredInAllDialogs checks for that.
 func registerDialog[T Dialog](a *App, d T) T {
-	a.allDialogs = append(a.allDialogs, d)
+	a.modals.Register(d)
 	return d
 }
 
@@ -651,13 +669,13 @@ func (f appFocus) String() string {
 
 func (a *App) focusExplorer() {
 	a.focus = focusOnExplorer
-	a.explorer.SetActive(true)
+	a.explorer.Focus(true)
 	a.syncActivePanelFocus()
 }
 
 func (a *App) focusPanels() {
 	a.focus = focusOnPanels
-	a.explorer.SetActive(false)
+	a.explorer.Focus(false)
 	a.syncActivePanelFocus()
 }
 
@@ -726,7 +744,7 @@ func (a *App) prevPanel() {
 // jumpToPanel switches to panel i, counted from the left (Ctrl+0..9; 0 is
 // always Object Explorer Details). Out-of-range i is a silent no-op.
 func (a *App) jumpToPanel(i int) {
-	a.panels.SetActive(i)
+	a.panels.SetActiveIndex(i)
 	a.syncActivePanelFocus()
 }
 
@@ -735,7 +753,7 @@ func (a *App) layoutAll() {
 	// Dialogs first, and above the too-small guard: a dialog that outgrows the
 	// terminal draws its borders and button row off-screen while still taking
 	// every key, so the smallest sizes are where re-fitting matters most.
-	a.relayoutDialogs()
+	a.modals.Relayout()
 
 	w, h := a.screen.Size()
 	if w < 20 || h < 5 {
@@ -784,13 +802,12 @@ func (a *App) draw() {
 	a.menuBar.DrawOverlay(s)
 	a.toolbar.DrawOverlay(s)
 	a.explorer.DrawOverlay(s)
-	a.contextMenu.Draw(s)
+	a.contextMenu.DrawOverlay(s)
 	a.drawDragGhost(s, w)
 
-	// Modal dialogs — highest z-order. syncDialogStack keeps dialogStack
-	// current, so drawing it bottom-to-top paints a nested dialog over its
-	// parent.
-	a.drawDialogs(s)
+	// Modal dialogs — highest z-order, drawn bottom-to-top so a nested dialog
+	// paints over its parent.
+	a.modals.Draw(s)
 
 	s.Show()
 }

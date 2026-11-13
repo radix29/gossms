@@ -13,8 +13,8 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/controls"
 )
 
 // The Extended Events viewer: what a read's batch does to the grid (append,

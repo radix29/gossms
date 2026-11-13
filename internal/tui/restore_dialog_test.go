@@ -7,8 +7,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/vt"
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // hdr builds a backup header at a given device position.
@@ -416,7 +416,7 @@ func TestRestoreTargetFieldStaysInsideTheBorder(t *testing.T) {
 	cell := func(x, y int) string { str, _, _ := s.Get(x, y); return str }
 	r := d.Rect()
 	border := r.X + r.W - 1
-	ty, fy := d.fTarget.RectY(), d.fFile.RectY()
+	ty, fy := d.fTarget.Bounds().Y, d.fFile.Bounds().Y
 	if got, want := cell(border, ty), cell(border, fy); got != want {
 		t.Fatalf("border cell on the Target row = %q, want %q (as on the Backup File row)", got, want)
 	}

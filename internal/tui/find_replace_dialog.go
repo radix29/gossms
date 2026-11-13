@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/theme"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // FindReplaceDialog is the query editor's Find and Replace dialog. One dialog
@@ -33,7 +33,7 @@ type FindReplaceDialog struct {
 
 	// target is the editor this showing searches, captured at Show time. The dialog
 	// is modal, so the active panel can't change underneath it.
-	target *controls.Editor
+	target *editor.Editor
 
 	replaceMode bool
 
@@ -181,7 +181,7 @@ func (d *FindReplaceDialog) applyOptions() bool {
 		d.setStatus("Enter something to find", true)
 		return false
 	}
-	err := d.target.SetSearch(controls.SearchOptions{
+	err := d.target.SetSearch(editor.SearchOptions{
 		Query:       term,
 		Replace:     d.fReplace.Value(),
 		MatchCase:   d.cbCase.Checked(),
@@ -374,11 +374,8 @@ func (d *FindReplaceDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 
 	if fields := d.fields(); d.focusIdx < len(fields) {
-		switch w := fields[d.focusIdx].(type) {
-		case *widgets.InputField:
-			return w.HandleKey(ev)
-		case *widgets.CheckBox:
-			return w.HandleKey(ev)
+		if kh, ok := fields[d.focusIdx].(core.KeyHandler); ok {
+			return kh.HandleKey(ev)
 		}
 	}
 	return true
@@ -537,7 +534,7 @@ func (a *App) findWordAtCursor() {
 	// comes from the dialog: it doesn't affect matching, and clearing it would
 	// discard typed text. No error is possible; the term is literal and escaped
 	// before compiling.
-	opts := controls.SearchOptions{
+	opts := editor.SearchOptions{
 		Query:     word,
 		Replace:   a.findDialog.fReplace.Value(),
 		WholeWord: true,
@@ -551,7 +548,7 @@ func (a *App) findWordAtCursor() {
 // editor searches for. Every field of opts is written, including zero ones: a
 // partial sync leaves optionsChanged reporting a false difference, and the next
 // Find Next then recompiles and restarts from the cursor.
-func (d *FindReplaceDialog) adoptSearch(opts controls.SearchOptions) {
+func (d *FindReplaceDialog) adoptSearch(opts editor.SearchOptions) {
 	d.fFind.SetValue(opts.Query)
 	d.fReplace.SetValue(opts.Replace)
 	d.cbCase.SetChecked(opts.MatchCase)

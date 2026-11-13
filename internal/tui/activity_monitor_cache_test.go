@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/activity"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // amBenchWidth keeps the History canvas at its fixed width, as on a normal
@@ -100,7 +100,7 @@ func BenchmarkDashboardCanvas(b *testing.B) {
 func BenchmarkActivityMonitorDraw(b *testing.B) {
 	am := newTestActivityMonitor(amBenchWidth, 40)
 	amWithSamples(am, 900)
-	s := charts.NewCanvas(amBenchWidth, 40)
+	s := core.NewBuffer(amBenchWidth, 40)
 
 	for b.Loop() {
 		am.Draw(s)

@@ -3,7 +3,7 @@ package gate
 import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // menu.go wraps a menu item in the rule: its Enabled predicate ANDed with the

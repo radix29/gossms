@@ -7,10 +7,10 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// Every dialog App owns has to appear in buildUI's allDialogs list, and the
+// Every dialog App owns has to appear in buildUI's registered dialogs, and the
 // list is maintained by hand. A dialog left out of it is not broken loudly —
 // it is simply never drawn, never offered input, and never relayouted on a
-// resize, because syncDialogStack only ever considers what allDialogs names.
+// resize, because modals.Sync only ever considers what is registered.
 // Nothing else in the package would notice, which is exactly why this is worth
 // a test rather than a code comment.
 //
@@ -20,14 +20,14 @@ func TestEveryAppDialogFieldIsRegisteredInAllDialogs(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()
 
-	registered := make(map[uintptr]bool, len(a.allDialogs))
-	for i, d := range a.allDialogs {
+	registered := make(map[uintptr]bool, len(a.modals.Registered()))
+	for i, d := range a.modals.Registered() {
 		if d == nil {
-			t.Fatalf("allDialogs[%d] is nil", i)
+			t.Fatalf("modals.Registered()[%d] is nil", i)
 		}
 		p := reflect.ValueOf(d).Pointer()
 		if registered[p] {
-			t.Errorf("allDialogs lists the same dialog twice (index %d, %T)", i, d)
+			t.Errorf("a dialog is registered twice (index %d, %T)", i, d)
 		}
 		registered[p] = true
 	}
@@ -49,7 +49,7 @@ func TestEveryAppDialogFieldIsRegisteredInAllDialogs(t *testing.T) {
 			continue
 		}
 		if !registered[fv.Pointer()] {
-			t.Errorf("App.%s (%s) is missing from buildUI's allDialogs list — it "+
+			t.Errorf("App.%s (%s) is missing from buildUI's registered dialogs — it "+
 				"will never draw, take input, or relayout", f.Name, f.Type)
 		}
 	}
@@ -59,8 +59,8 @@ func TestEveryAppDialogFieldIsRegisteredInAllDialogs(t *testing.T) {
 	if found == 0 {
 		t.Fatal("found no dialog-typed fields on App — this test has stopped checking anything")
 	}
-	if found != len(a.allDialogs) {
-		t.Errorf("App has %d dialog fields but allDialogs lists %d entries — one "+
-			"of them names something that is not an App field", found, len(a.allDialogs))
+	if found != len(a.modals.Registered()) {
+		t.Errorf("App has %d dialog fields but %d are registered — one "+
+			"of them names something that is not an App field", found, len(a.modals.Registered()))
 	}
 }

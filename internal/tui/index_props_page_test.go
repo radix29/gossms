@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // Index Properties' two write pages are the ones whose apply reissues the

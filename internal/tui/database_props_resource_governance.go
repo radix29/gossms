@@ -9,8 +9,8 @@ import (
 	gosmo "github.com/radix29/gosmo"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // pageDatabaseResourceGovernance is the Azure-only Resource Governance page: what

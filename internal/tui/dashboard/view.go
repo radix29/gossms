@@ -3,8 +3,8 @@ package dashboard
 import (
 	"time"
 
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/core"
 )
 
 // Header is the identification strip both dashboards carry: the instance

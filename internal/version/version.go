@@ -97,3 +97,27 @@ func Fields() []Field {
 		{"gosmo", "gosmo", gosmoversion.Version},
 	}
 }
+
+// Dependency is the version of the module at path that this binary was built
+// with: the required version, "(devel)" when go.mod's replace points it at a
+// local checkout (development builds), "" when it is not a dependency.
+func Dependency(path string) string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, d := range info.Deps {
+		if d.Path != path {
+			continue
+		}
+		if d.Replace != nil {
+			// A directory replace records "(devel)"; a module replace its version.
+			if d.Replace.Version != "" {
+				return d.Replace.Version
+			}
+			return "(devel)"
+		}
+		return d.Version
+	}
+	return ""
+}

@@ -5,9 +5,8 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // Draw renders the tab bar, statement selector (when shown), and the
@@ -77,12 +76,12 @@ func (v *PlanView) drawWrappedMessage(s tcell.Screen, msg string) {
 
 // tabSegments computes each tab's on-screen extent; Draw and hit-test share it
 // so hits match what's drawn.
-func (v *PlanView) tabSegments() [][]controls.TabSegment {
+func (v *PlanView) tabSegments() [][]core.TabSegment {
 	widths := make([][]int, len(tabLabels))
 	for i, label := range tabLabels {
-		widths[i] = []int{controls.TabLabelWidth(label)}
+		widths[i] = []int{core.TabLabelWidth(label)}
 	}
-	return controls.TabStripSegments(v.tabRect.X+1, widths, v.tabRect.Right())
+	return core.TabStripSegments(v.tabRect.X+1, widths, v.tabRect.Right())
 }
 
 // drawTabBar renders the Plan/Tree/XML tabs and, when OnExpand is set, a

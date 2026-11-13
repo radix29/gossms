@@ -9,10 +9,11 @@ import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // Dialog geometry. The right pane is label+value rows; every label is padded
@@ -67,9 +68,6 @@ var (
 	connectRightButtons = []string{"Reset", "Connect", "Cancel"}
 )
 
-// buttonRowLeftX is where the left-hand group starts.
-func (d *ConnectDialog) buttonRowLeftX() int { return d.InnerRect().X + 1 }
-
 // ConnectDialog is the "Connect to Server" modal dialog, embedding
 // dialogs.ModalDialog and composing tuikit/widgets controls for its fields.
 //
@@ -106,12 +104,12 @@ type ConnectDialog struct {
 	// fExtraProps holds extra "key=value" driver parameters separated by ';',
 	// '&' or line breaks (db.ParseExtraProperties). A key a dialog field
 	// controls is refused and the preview says so.
-	fExtraProps *controls.Editor
+	fExtraProps *editor.Editor
 
 	// fConnStrPreview previews the connection string (password masked).
 	// Focusable so text can be copied, but rebuilt on every blur (setFocus), so
 	// manual edits do not survive.
-	fConnStrPreview *controls.Editor
+	fConnStrPreview *editor.Editor
 
 	// history is the saved-connection picker; historyConns the connections
 	// behind its rows, most recent first (config.Config.MatchByServer("")).
@@ -195,11 +193,11 @@ func NewConnectDialog(app *App) *ConnectDialog {
 	d.cbTrust = widgets.NewCheckBox("Trust Server Certificate (skip validation)")
 	d.fHostCert = widgets.NewInputField(label("Host Name In Certificate"), connectValueWidth, false)
 
-	d.fExtraProps = controls.NewEditor(nil)
+	d.fExtraProps = editor.NewEditor(nil)
 	d.fExtraProps.SetGutterVisible(false)
 	d.fExtraProps.SetWrapMode(true)
 
-	d.fConnStrPreview = controls.NewEditor(nil)
+	d.fConnStrPreview = editor.NewEditor(nil)
 	d.fConnStrPreview.SetGutterVisible(false)
 	d.fConnStrPreview.SetWrapMode(true)
 
@@ -313,13 +311,8 @@ func (d *ConnectDialog) applyAuthFields() {
 // focusableEnabled reports whether w accepts input; a widget with no enabled
 // state always does.
 func focusableEnabled(w focusable) bool {
-	switch c := w.(type) {
-	case *widgets.InputField:
-		return c.Enabled()
-	case *widgets.CheckBox:
-		return c.Enabled()
-	}
-	return true
+	e, ok := w.(core.Enabler)
+	return !ok || e.Enabled()
 }
 
 // stepFocus moves focus dir (+1 or -1) along the ring, past any disabled

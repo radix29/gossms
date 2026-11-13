@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // ---------------------------------------------------------------------------
@@ -65,13 +65,13 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 		d.Hide()
 		return true
 	case tcell.KeyEnter:
-		if d.ddAuth.IsOpen() {
+		if d.ddAuth.OverlayActive() {
 			d.ddAuth.HandleKey(ev)
 			d.applyAuthFields()
 			d.refreshConnStrPreview()
 			return true
 		}
-		if d.ddEncrypt.IsOpen() {
+		if d.ddEncrypt.OverlayActive() {
 			d.ddEncrypt.HandleKey(ev)
 			d.refreshConnStrPreview()
 			return true
@@ -94,7 +94,7 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 		consumed := w.HandleKey(ev)
 		d.refreshConnStrPreview()
 		return consumed
-	case *controls.Editor:
+	case *editor.Editor:
 		return w.HandleKey(ev)
 	}
 	return true
@@ -130,17 +130,10 @@ func (d *ConnectDialog) doButton() {
 	}
 }
 
-// buttonClicked is ModalDialog.ButtonClicked over both button groups,
-// answering an index into the whole row. A call that hits nothing latches
-// nothing, so trying the left group first costs the right one nothing.
+// buttonClicked is ModalDialog.SplitButtonClicked over both button groups,
+// answering an index into the whole row.
 func (d *ConnectDialog) buttonClicked(ev *tcell.EventMouse) int {
-	if i := d.ButtonClickedAt(ev, d.buttonRowLeftX(), connectLeftButtons); i >= 0 {
-		return i
-	}
-	if i := d.ButtonClickedAt(ev, d.ButtonRowStartX(connectRightButtons), connectRightButtons); i >= 0 {
-		return i + len(connectLeftButtons)
-	}
-	return -1
+	return d.SplitButtonClicked(ev, connectLeftButtons, connectRightButtons)
 }
 
 // HandleMouse routes mouse events; the embedded ModalDialog blocks clicks
@@ -163,6 +156,16 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		// wherever the release landed. Before ConsumeOutsideClick, which returns
 		// early on a release outside the dialog and would strand the latch.
 		d.drag.Release(ev)
+	}
+	// A gesture the history list latched (a thumb drag, a held row press) keeps
+	// its events past the dialog's edge, so a fast thumb drag still reaches the
+	// end. Anything the list did not latch it refuses out here, and that falls
+	// to ConsumeOutsideClick as before.
+	if mx, my := ev.Position(); d.twoPane && !d.Rect().Contains(mx, my) {
+		d.TrackPress(ev)
+		if d.history.HandleMouse(ev) {
+			return true
+		}
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
@@ -216,7 +219,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// first: its list may cover the other dropdown's own row.
 	if d.tab == connectTabProperties {
 		dropdowns := []*widgets.DropDown{d.ddAuth, d.ddEncrypt}
-		if d.ddEncrypt.IsOpen() {
+		if d.ddEncrypt.OverlayActive() {
 			dropdowns = []*widgets.DropDown{d.ddEncrypt, d.ddAuth}
 		}
 		for _, dd := range dropdowns {
@@ -290,11 +293,11 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 
 // visibleEditors is the editors the active tab shows, in focus order. The
 // Custom Properties editor is on both tabs.
-func (d *ConnectDialog) visibleEditors() []*controls.Editor {
+func (d *ConnectDialog) visibleEditors() []*editor.Editor {
 	if d.tab == connectTabString {
-		return []*controls.Editor{d.fConnStrPreview, d.fExtraProps}
+		return []*editor.Editor{d.fConnStrPreview, d.fExtraProps}
 	}
-	return []*controls.Editor{d.fExtraProps}
+	return []*editor.Editor{d.fExtraProps}
 }
 
 // tabClicked switches tabs on a click in the tab bar, and reports whether it

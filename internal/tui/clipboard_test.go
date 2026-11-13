@@ -9,7 +9,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // newClipboardTestApp is newTestApp plus the dialogs activeClipboardTarget
@@ -166,9 +166,10 @@ func newConnectDialogApp(t *testing.T) (*App, *QueryPanel) {
 	t.Helper()
 	a := newClipboardTestApp()
 	qp := focusedQueryPanel(t, a)
-	a.allDialogs = []Dialog{a.connectDialog}
+	a.modals = dialogs.Stack{}
+	a.modals.Register(a.connectDialog)
 	a.connectDialog.Show()
-	a.syncDialogStack()
+	a.modals.Sync()
 	return a, qp
 }
 
@@ -181,7 +182,7 @@ func newConnectDialogApp(t *testing.T) (*App, *QueryPanel) {
 func TestPasteIsDroppedWhenItsTargetIsNoLongerFocused(t *testing.T) {
 	a, qp := newConnectDialogApp(t)
 	target := a.activeClipboardTarget()
-	token := clipboardTargetToken(a.topDialog())
+	token := clipboardTargetToken(a.modals.Top())
 	if target != clipboardTarget(a.connectDialog.fServer) {
 		t.Fatalf("setup: target = %T, want the Connect dialog's server field", target)
 	}
@@ -189,7 +190,7 @@ func TestPasteIsDroppedWhenItsTargetIsNoLongerFocused(t *testing.T) {
 
 	// The read comes back after the user has closed the dialog.
 	a.connectDialog.Hide()
-	a.syncDialogStack()
+	a.modals.Sync()
 	a.pasteInto(target, token, "ubusql2")
 
 	if got := a.connectDialog.fServer.Value(); got != "" {
@@ -209,7 +210,7 @@ func TestPasteIsDroppedWhenItsTargetIsNoLongerFocused(t *testing.T) {
 // what this pins.
 func TestPasteLandsOnlyInTheFieldItWasAimedAt(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
-	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.topDialog()), "ubus")
+	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), "ubus")
 
 	d := a.connectDialog
 	if got := d.fServer.Value(); got != "ubus" {
@@ -218,7 +219,7 @@ func TestPasteLandsOnlyInTheFieldItWasAimedAt(t *testing.T) {
 
 	d.setFocus(slices.Index(d.focusable, focusable(d.fPassword)))
 	target := a.activeClipboardTarget()
-	token := clipboardTargetToken(a.topDialog())
+	token := clipboardTargetToken(a.modals.Top())
 	if target != clipboardTarget(d.fPassword) {
 		t.Fatalf("setup: target = %T, want the password field", target)
 	}

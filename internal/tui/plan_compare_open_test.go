@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // addPlanPanel opens xml as a detached plan panel titled title, as Expand or
@@ -15,7 +15,7 @@ import (
 func addPlanPanel(t *testing.T, a *App, title, xml string) *PlanPanel {
 	t.Helper()
 	pp := NewPlanPanel(a, title, mustParsePlan(t, xml))
-	a.panels.SetActive(a.panels.AddPanel(pp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(pp))
 	return pp
 }
 
@@ -58,7 +58,7 @@ func TestCompareWithListsTheOtherOpenPlans(t *testing.T) {
 // plan on screen at all both entry points are.
 func TestCompareWithIsWithheldWithNothingToCompare(t *testing.T) {
 	a := newTestApp()
-	a.panels.SetActive(a.panels.AddPanel(NewQueryPanel(a, "Query 1")))
+	a.panels.SetActiveIndex(a.panels.AddPanel(NewQueryPanel(a, "Query 1")))
 	if item := a.activeCompareWithItem(); item.Enabled() || item.Note != "no execution plan" {
 		t.Errorf("with no plan: enabled=%v note=%q", item.Enabled(), item.Note)
 	}
@@ -135,7 +135,7 @@ func TestCompareEnterOpensThePlanAtTheOperator(t *testing.T) {
 		left := mustParsePlan(t, twoStatementPlanXML("IX_date"))
 		right := mustParsePlan(t, twoStatementPlanXML("IX_customer"))
 		p := NewPlanComparePanel(a, "Compare", left, right)
-		a.panels.SetActive(a.panels.AddPanel(p))
+		a.panels.SetActiveIndex(a.panels.AddPanel(p))
 		p.SetBounds(0, 0, 160, 40)
 		p.setFocus(true)
 		row := -1

@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // HandleKey routes keyboard events.
@@ -79,10 +79,10 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 
 // openDropDown returns whichever history dropdown is currently open, if any.
 func (d *RestoreDialog) openDropDown() *widgets.DropDown {
-	if d.ddHistDB.IsOpen() {
+	if d.ddHistDB.OverlayActive() {
 		return d.ddHistDB
 	}
-	if d.ddHistSet.IsOpen() {
+	if d.ddHistSet.OverlayActive() {
 		return d.ddHistSet
 	}
 	return nil
@@ -93,6 +93,10 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// The open list below sees events before ConsumeOutsideClick does, so the
+	// gesture is tracked here: a list pick's resends, dragged onto the button
+	// row, must not press a button.
+	d.TrackPress(ev)
 	// A release must reach every mouseDragging-latched widget even when it lands
 	// outside the dialog or arrives in a mode of its own, both of which return below
 	// before any widget sees the event, so its next press would be swallowed as a

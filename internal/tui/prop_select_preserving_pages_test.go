@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The six dropdowns whose value is a *name the server supplied* against a list

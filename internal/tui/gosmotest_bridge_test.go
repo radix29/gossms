@@ -11,7 +11,7 @@ import (
 
 	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // A bridge from the fakeResponse scripts the page fixtures are written in to a

@@ -2,7 +2,7 @@ package planview
 
 import (
 	"github.com/radix29/gossms/internal/showplan"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/core"
 )
 
 // Tile geometry, in virtual canvas cells: a fixed-width "operator card".

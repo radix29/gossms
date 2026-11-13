@@ -3,7 +3,7 @@ package sqlparse
 import (
 	"unicode/utf8"
 
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // ---------------------------------------------------------------------------

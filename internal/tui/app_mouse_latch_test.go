@@ -4,34 +4,35 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // newLatchTestApp builds an App with the menu/toolbar row widgets and one alert
 // dialog to open from a button.
 func newLatchTestApp() *App {
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 30}
+	a.screen = tuikittest.NewScreen(100, 30)
 	a.menuBar = controls.NewMenuBar()
 	a.toolbar = controls.NewToolbar()
 	a.contextMenu = &controls.ContextMenu{}
 	a.alertDialog = dialogs.NewAlertDialog(a.screen)
-	a.allDialogs = []Dialog{a.alertDialog}
-	a.explorerSplit = layout.NewVerticalSplitter()
+	a.modals = dialogs.Stack{}
+	a.modals.Register(a.alertDialog)
+	a.explorerSplit = newVerticalSplitter()
 	a.explorerSplit.SetBounds(0, 1, 100, 28)
 	return a
 }
 
-// testClickAt drives handleMouse as Run's loop does, with syncDialogStack
+// testClickAt drives handleMouse as Run's loop does, with modals.Sync
 // between events, so a dialog opened on the press is on the stack when the
 // release arrives.
 func (a *App) testClickAt(x, y int) {
 	a.handleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
-	a.syncDialogStack()
+	a.modals.Sync()
 	a.handleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
-	a.syncDialogStack()
+	a.modals.Sync()
 }
 
 // A dialog-opening toolbar button must not leave Toolbar latched, or the next
@@ -58,7 +59,7 @@ func TestToolbarClickWorksAfterDialogOpeningClick(t *testing.T) {
 		t.Fatalf("first click fired the action %d times, want 1", fired)
 	}
 	a.alertDialog.Hide()
-	a.syncDialogStack()
+	a.modals.Sync()
 
 	a.testClickAt(buttonX, 0)
 	if fired != 2 {
@@ -81,7 +82,7 @@ func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 	a.toolbar.SetBounds(0, 0, 100)
 
 	a.testClickAt(2, 0) // open the File menu
-	if !a.menuBar.IsOpen() {
+	if !a.menuBar.OverlayActive() {
 		t.Fatal("File menu did not open on the first click")
 	}
 	a.testClickAt(2, 2) // activate "Thing", which opens the alert
@@ -89,10 +90,10 @@ func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 		t.Fatal("the menu item's action did not open the dialog")
 	}
 	a.alertDialog.Hide()
-	a.syncDialogStack()
+	a.modals.Sync()
 
 	a.testClickAt(2, 0)
-	if !a.menuBar.IsOpen() {
+	if !a.menuBar.OverlayActive() {
 		t.Error("menu header click after a dialog-opening menu item did not open the menu " +
 			"(MenuBar.mouseDragging left latched by the swallowed release)")
 	}
@@ -125,8 +126,10 @@ func TestReleaseReachesEveryOpenDialog(t *testing.T) {
 		d.InitModal(a.screen, "t", 20, 10)
 		d.Show()
 	}
-	a.allDialogs = []Dialog{bottom, top}
-	a.syncDialogStack()
+	a.modals = dialogs.Stack{}
+	a.modals.Register(bottom)
+	a.modals.Register(top)
+	a.modals.Sync()
 
 	a.handleMouse(tcell.NewEventMouse(1, 1, tcell.ButtonNone, tcell.ModNone))
 

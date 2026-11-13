@@ -3,7 +3,7 @@ package tui
 import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/layout"
 )
 
 // app_show_panels.go opens the non-query panels — Object Explorer Details, the
@@ -23,7 +23,7 @@ func (a *App) showObjectExplorerDetails() {
 		a.detailBrowser = a.newDetailBrowser()
 		idx = a.panels.AddPanel(a.detailBrowser)
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 
@@ -60,7 +60,7 @@ func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
 		// only true once the panel is in a.panels.
 		a.connectForActivityMonitor(am, sc)
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 
@@ -84,7 +84,7 @@ func (a *App) showLogViewerFor(sc *db.ServerConn, logType gosmo.ErrorLogType, lo
 	} else {
 		a.panels.PanelAt(idx).(*LogViewer).ShowLog(logType, logNum)
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 
@@ -117,7 +117,7 @@ func (a *App) showQueryStorePanelFor(sc *db.ServerConn, dbName, title string) {
 		// view the user was reading and re-run it as Regressed Queries.
 		a.panels.PanelAt(idx).(*QueryStorePanel).ShowReport(title)
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 
@@ -152,6 +152,6 @@ func (a *App) openXEventViewer(sc *db.ServerConn, scope xeScope, session, target
 	} else if profiler {
 		a.panels.PanelAt(idx).(*XEventViewer).profiler = true
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }

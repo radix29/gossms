@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // hostApply is apply as the dialog runs it: the form's commit hook first, as

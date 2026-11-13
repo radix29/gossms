@@ -12,8 +12,8 @@ import (
 	"github.com/radix29/gotuipic"
 	_ "github.com/radix29/gotuipic/formats" // bmp, tiff, webp beside the core's png, jpeg, gif
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // PicturePanel shows one binary cell that holds a picture, rendered as
@@ -122,7 +122,7 @@ func (a *App) openPicturePanel(column, value string) bool {
 		title = column + pictureExt(format)
 	}
 	pp := NewPicturePanel(a, title, value)
-	a.panels.SetActive(a.panels.AddPanel(pp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(pp))
 	a.focusPanels()
 	a.setStatus("Opened " + title)
 	return true

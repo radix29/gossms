@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/layout"
 )
 
 // replication_monitor_panel.go is SSMS's Replication Monitor as one panel per
@@ -172,7 +172,7 @@ func (a *App) showReplicationMonitorFor(sc *db.ServerConn, pubDB, pub string) {
 	} else if pub != "" {
 		a.panels.PanelAt(idx).(*ReplicationMonitorPanel).selectPublication(pubDB, pub)
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 
@@ -195,9 +195,9 @@ func NewReplicationMonitorPanel(app *App, sc *db.ServerConn) *ReplicationMonitor
 		sessionsGrid: newQSGrid(app),
 		actionsGrid:  newQSGrid(app),
 	})
-	p.splits[0] = layout.NewHorizontalSplitter("─── Subscriptions and agents of the selected publication ───")
-	p.splits[1] = layout.NewHorizontalSplitter("─── Sessions of the selected agent ───")
-	p.splits[2] = layout.NewHorizontalSplitter("─── Actions of the selected session ───")
+	p.splits[0] = newHorizontalSplitter("─── Subscriptions and agents of the selected publication ───")
+	p.splits[1] = newHorizontalSplitter("─── Sessions of the selected agent ───")
+	p.splits[2] = newHorizontalSplitter("─── Actions of the selected session ───")
 	p.splits[0].SetRatio(0.25)
 	p.splits[1].SetRatio(0.35)
 	p.splits[2].SetRatio(0.45)
@@ -225,7 +225,7 @@ func (p *ReplicationMonitorPanel) SetActive(v bool) {
 	p.active = v
 	p.applyFocus()
 	for _, s := range p.splits {
-		s.SetActive(v)
+		s.Focus(v)
 	}
 }
 

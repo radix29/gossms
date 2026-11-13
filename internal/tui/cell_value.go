@@ -177,7 +177,7 @@ func (a *App) openValuePanel(column string, lang format.Language, value string) 
 	// into Save As for a value they only wanted to look at.
 	qp.markSaved()
 	qp.setLanguage(lang)
-	a.panels.SetActive(a.panels.AddPanel(qp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 	a.focusPanels()
 	a.setStatus("Opened " + title)
 	return true

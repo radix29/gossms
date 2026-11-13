@@ -7,8 +7,8 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // log_viewer_toolbar.go is the viewer's toolbar: what each cell says, when it
@@ -38,6 +38,9 @@ func (lv *LogViewer) buildTools() {
 		{Label: "Export...", Action: lv.export},
 	}
 	lv.refreshToolLabels()
+	// The filter box on the same row re-filters on every edit, a paste or cut
+	// included (InputField.OnChange); SetValue does not fire it.
+	lv.filter.OnChange = func(string) { lv.applyFilter() }
 }
 
 // toolsEnabled reports whether the toolbar's actions are available *at all*:

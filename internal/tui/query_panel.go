@@ -10,11 +10,13 @@ import (
 	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tui/planview"
+	"github.com/radix29/gossms/internal/tui/sqledit"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/layout"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/layout"
+	"github.com/radix29/tuikit/theme"
 )
 
 // ResultsMode selects how QueryPanel renders a successful result set —
@@ -34,10 +36,10 @@ const (
 type QueryPanel struct {
 	rect        core.Rect
 	title       string
-	editor      *controls.Editor
+	editor      *editor.Editor
 	results     *controls.DataGrid
-	messages    *controls.Editor   // read-only; backs the Messages tab (see onMessagesTab)
-	resultsText *controls.Editor   // read-only; backs Results To Text (see renderActiveTab, textTabActive)
+	messages    *editor.Editor     // read-only; backs the Messages tab (see onMessagesTab)
+	resultsText *editor.Editor     // read-only; backs Results To Text (see renderActiveTab, textTabActive)
 	planView    *planview.PlanView // nil until the first Show Estimated/Actual Execution Plan; see planTabActive
 	splitter    *layout.Splitter
 	active      bool
@@ -114,7 +116,7 @@ type QueryPanel struct {
 	// textKey is the whole key.
 	textMemo struct {
 		key   textKey
-		lines *controls.LineBuffer
+		lines *editor.LineBuffer
 	}
 
 	// textRun formats a set too large to format on the UI goroutine, and textRunKey
@@ -241,20 +243,21 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	p := new(QueryPanel{
 		app:      app,
 		title:    title,
-		editor:   controls.NewEditor(controls.SQLHighlighter(theme.Active())),
+		editor:   editor.NewEditor(sqledit.Highlighter(theme.Active())),
 		results:  results,
-		splitter: layout.NewHorizontalSplitter("─── Results ─── (drag or Ctrl+Up/Down to resize)"),
+		splitter: newHorizontalSplitter("─── Results ─── (drag or Ctrl+Up/Down to resize)"),
 	})
 	results.SetStatusStyle(p.resultsStatusStyle)
 	// Before anything sets text: SetText expands tabs at the editor's current width,
 	// and savedText is seeded from Text() afterwards; see controls.SetIndentWidth.
 	p.editor.SetIndentWidth(app.cfg.IndentWidth)
-	p.editor.SetSmartIndent(true)
+	p.editor.SetIndentRule(sqledit.IndentRule)
+	sqledit.Configure(p.editor)
 	p.editor.SetWrapMode(app.wordWrap)
-	p.messages = controls.NewEditor(p.messagesHighlighter)
+	p.messages = editor.NewEditor(p.messagesHighlighter)
 	p.messages.SetReadOnly(true)
 	p.messages.OnDoubleClick = p.goToMessageLine
-	p.resultsText = controls.NewEditor(nil)
+	p.resultsText = editor.NewEditor(nil)
 	p.resultsText.SetReadOnly(true)
 	// An XML or JSON cell goes to its own query tab with matching highlighting
 	// instead of the grid's 60-column popup; anything else falls through to the
@@ -279,14 +282,14 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 // per-Editor comment state and must not be shared (controls.SetHighlighter).
 func (p *QueryPanel) setLanguage(l format.Language) {
 	p.lang = l
-	var h controls.Highlighter
+	var h editor.Highlighter
 	switch l {
 	case format.LangSQL:
-		h = controls.SQLHighlighter(theme.Active())
+		h = sqledit.Highlighter(theme.Active())
 	case format.LangXML:
-		h = controls.XMLHighlighter(theme.Active())
+		h = editor.XMLHighlighter(theme.Active())
 	case format.LangJSON:
-		h = controls.JSONHighlighter(theme.Active())
+		h = editor.JSONHighlighter(theme.Active())
 	}
 	p.editor.SetHighlighter(h)
 }
@@ -333,7 +336,7 @@ func (p *QueryPanel) markSaved() {
 
 // docEquals reports whether doc's text is s (doc's lines joined by '\n', as
 // Editor.Text builds it) without building that string.
-func docEquals(doc *controls.Document, s string) bool {
+func docEquals(doc *editor.Document, s string) bool {
 	pos := 0
 	for i := range doc.Len() {
 		if i > 0 {
@@ -441,9 +444,9 @@ func (p *QueryPanel) resultsHasFocus() bool { return p.active && p.resultsFocuse
 // whenever p.active or p.resultsFocused changes, so at most one sub-region shows
 // as focused.
 func (p *QueryPanel) syncFocusVisuals() {
-	p.editor.SetActive(p.editorHasFocus())
+	p.editor.Focus(p.editorHasFocus())
 	p.results.Focus(p.resultsHasFocus())
-	p.messages.SetActive(p.resultsHasFocus())
+	p.messages.Focus(p.resultsHasFocus())
 	if p.planView != nil {
 		p.planView.SetActive(p.resultsHasFocus())
 	}

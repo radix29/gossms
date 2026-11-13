@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // menuWriteVerbs are the first words of a context-menu item that changes

@@ -5,10 +5,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // Draw renders the tab row, toolbar row, then the active tab.
@@ -26,13 +24,13 @@ func (am *ActivityMonitor) Draw(s tcell.Screen) {
 // tabSegments computes each tab's extent; drawing and hit-testing share it so
 // clicks land where they look. Indexed by position in visibleTabs, not by
 // amTab.
-func (am *ActivityMonitor) tabSegments() [][]controls.TabSegment {
+func (am *ActivityMonitor) tabSegments() [][]core.TabSegment {
 	tabs := am.visibleTabs()
 	widths := make([][]int, len(tabs))
 	for i, t := range tabs {
-		widths[i] = []int{controls.TabLabelWidth(amTabLabels[t])}
+		widths[i] = []int{core.TabLabelWidth(amTabLabels[t])}
 	}
-	return controls.TabStripSegments(am.tabRect.X+1, widths, am.tabRect.Right())
+	return core.TabStripSegments(am.tabRect.X+1, widths, am.tabRect.Right())
 }
 
 // drawTabBar renders the offered tabs, styled like QueryPanel's result tabs.
@@ -143,7 +141,7 @@ func (am *ActivityMonitor) drawDashboard(s tcell.Screen) {
 //
 // Everything the render reads must be in the key, or the panel shows a stale
 // dashboard.
-func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
+func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *core.Buffer {
 	key := amCanvasKey{
 		tab:      am.tab,
 		w:        cw,
@@ -157,7 +155,7 @@ func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
 		return am.canvas
 	}
 
-	c := charts.NewCanvas(cw, ch)
+	c := core.NewBuffer(cw, ch)
 	// The panel ground first: the renders leave column gutters and the corner
 	// under each Y axis unpainted, and Blit copies those cells as they are. Left
 	// colourless they showed the screen's default ground (a strip of a different

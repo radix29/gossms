@@ -1,5 +1,3 @@
-- move tuikit as it is own library as preparation for postgres app.
-
 - add windows store installation? 
 
 Results:
@@ -34,9 +32,9 @@ ask questions and then write the implementation order list
 
 /effort
 
-review both projects and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. you can change gosmo and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them. add a recommended implementation order list.
+review gossms, gosmo and tuikit and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. you can change gosmo and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them. add a recommended implementation order list.
 
-review both projects and check for bugs. try to find 3 bugs. you can change gosmo and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them. add a recommended implementation order list.
+review gossms, gosmo and tuikit and check for bugs. try to find 3 bugs. you can change gosmo and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them. add a recommended implementation order list.
 
 show me the top 20 know bugs,issues etc if thre are any in both projects. show only issues that can be fixed. create a plan file in docs/ to fix them
 
@@ -46,6 +44,10 @@ go over the source files code comments and compact them. make them concise. thro
 
 check the go-mssqldb,tcell library and golang 1.27.3 for changes in the latest versions and check if these changes can improve the current implementation of gossms and gomo. create a plan file if there anre findings.
 Watch upstream (unreleased)
+
+
+review tuikit and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them. add a recommended implementation order list.
+you can vcreate breaking changes if it helps. update gossms accordingy.
 
 --- prepare for release -------------------------------------------------
 

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // query_panel_sort.go is the results grid's column sort, the Object Explorer

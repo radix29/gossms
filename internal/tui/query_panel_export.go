@@ -8,7 +8,7 @@ import (
 	"github.com/radix29/gossms/internal/export"
 	"github.com/radix29/gossms/internal/fileutil"
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // csvSink implements query.RowSink by writing each row to a CSV file as it

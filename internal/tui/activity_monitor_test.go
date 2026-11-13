@@ -13,8 +13,8 @@ import (
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // newTestActivityMonitor builds a bound panel over a never-opened connection; a
@@ -27,7 +27,7 @@ func newTestActivityMonitor(w, h int) *ActivityMonitor {
 }
 
 func amRender(am *ActivityMonitor, w, h int) []string {
-	c := charts.NewCanvas(w, h)
+	c := core.NewBuffer(w, h)
 	am.Draw(c)
 	return c.Rows()
 }

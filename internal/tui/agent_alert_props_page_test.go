@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // Alert Properties write pages. The scripted alert fires on severity 20 in

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/sqltext"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // FuzzFormatSQL checks the SQL formatter on arbitrary text: it never panics,
@@ -20,7 +20,7 @@ import (
 //	go test ./internal/format -run XXX -fuzz FuzzFormatSQL -fuzztime 60s -fuzzminimizetime 0
 func FuzzFormatSQL(f *testing.F) {
 	ins, _ := filepath.Glob(filepath.Join("testdata", "sql", "*.in"))
-	corpus, _ := filepath.Glob(filepath.Join("..", "tuikit", "sqltext", "testdata", "fuzz", "*", "*"))
+	corpus, _ := filepath.Glob(filepath.Join("..", "sqltext", "testdata", "fuzz", "*", "*"))
 	for _, in := range append(ins, corpus...) {
 		b, err := os.ReadFile(in)
 		if err != nil {

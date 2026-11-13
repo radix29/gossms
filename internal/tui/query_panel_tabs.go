@@ -8,21 +8,21 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/query"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
 )
 
 // messagesHighlighter colors an entire line in the Messages tab red when it
 // belongs to an error message (query.Message.IsError and the parallel
 // messageErrorLines slice built in renderActiveTab).
-func (p *QueryPanel) messagesHighlighter(doc *controls.Document, idx int) []controls.ColorRun {
+func (p *QueryPanel) messagesHighlighter(doc *editor.Document, idx int) []editor.ColorRun {
 	if idx >= len(p.messageErrorLines) || !p.messageErrorLines[idx] {
 		return nil
 	}
 	pal := theme.Active()
 	errStyle := tcell.StyleDefault.Background(pal.EditorBg).Foreground(pal.Error)
-	return []controls.ColorRun{{Start: 0, Len: len(doc.Line(idx)), Style: errStyle}}
+	return []editor.ColorRun{{Start: 0, Len: len(doc.Line(idx)), Style: errStyle}}
 }
 
 // onMessagesTab reports whether the active tab is Messages rather than a
@@ -88,12 +88,12 @@ func (p *QueryPanel) planTabActive() bool {
 // tabSegments computes each result-tab's on-screen extent for labels. Draw and
 // hit-test both build their column math from this call so hits line up with
 // what's on screen.
-func (p *QueryPanel) tabSegments(labels []string) [][]controls.TabSegment {
+func (p *QueryPanel) tabSegments(labels []string) [][]core.TabSegment {
 	widths := make([][]int, len(labels))
 	for i, label := range labels {
-		widths[i] = []int{controls.TabLabelWidth(label)}
+		widths[i] = []int{core.TabLabelWidth(label)}
 	}
-	return controls.TabStripSegments(p.tabRect.X+1, widths, p.tabRect.Right())
+	return core.TabStripSegments(p.tabRect.X+1, widths, p.tabRect.Right())
 }
 
 // drawTabBar renders the result-set/Messages tabs, styled like the
@@ -330,7 +330,7 @@ const textCancelEvery = 4096
 // It builds a LineBuffer rather than a string so a large set can be formatted,
 // split and measured entirely off the UI goroutine (showResultsText). A cancelled
 // ctx stops it with ctx's error.
-func formatResultsAsText(ctx context.Context, set query.ResultSet, maxW, tabW int) (*controls.LineBuffer, error) {
+func formatResultsAsText(ctx context.Context, set query.ResultSet, maxW, tabW int) (*editor.LineBuffer, error) {
 	widths := make([]int, len(set.Columns))
 	for i, c := range set.Columns {
 		widths[i] = core.DisplayWidthAtMost(c, maxW)
@@ -345,7 +345,7 @@ func formatResultsAsText(ctx context.Context, set query.ResultSet, maxW, tabW in
 			}
 		}
 	}
-	lines := controls.NewLineBuffer(tabW)
+	lines := editor.NewLineBuffer(tabW)
 	var sb strings.Builder
 	writeRow := func(cells []string) {
 		sb.Reset()

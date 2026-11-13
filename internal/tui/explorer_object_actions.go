@@ -7,8 +7,8 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // explorer_object_actions.go is the Delete, Rename and Move-to-schema flows:

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // exportSub returns the Export Results cascade's item for label.

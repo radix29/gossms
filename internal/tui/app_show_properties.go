@@ -5,7 +5,7 @@ import (
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/layout"
 )
 
 // app_show_properties.go holds one entry point per Properties and New dialog,
@@ -82,7 +82,7 @@ func (a *App) showAGDashboardFor(sc *db.ServerConn, agName string) {
 	if idx < 0 {
 		idx = a.panels.AddPanel(NewAGDashboard(a, sc, agName))
 	}
-	a.panels.SetActive(idx)
+	a.panels.SetActiveIndex(idx)
 	a.focusPanels()
 }
 

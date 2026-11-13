@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // capabilitySet is the question-asking half of gosmo's *Capabilities and

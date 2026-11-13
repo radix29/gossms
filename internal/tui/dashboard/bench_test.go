@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/charts"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/core"
 )
 
 // benchHistory is a History view at the store's full 30 minutes at the
@@ -46,7 +47,7 @@ func benchHistory() HistoryView {
 func BenchmarkDrawHistory(b *testing.B) {
 	v := benchHistory()
 	for b.Loop() {
-		c := charts.NewCanvas(HistoryCanvasW, HistoryCanvasH)
+		c := core.NewBuffer(HistoryCanvasW, HistoryCanvasH)
 		DrawHistory(c, c.Rect(), v)
 	}
 }

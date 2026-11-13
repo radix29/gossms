@@ -6,10 +6,10 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
-	"github.com/radix29/gossms/internal/tuikit/core"
-	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/theme"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // Profile dialog geometry. The labels are padded to profileLabelWidth so the
@@ -184,7 +184,7 @@ func (d *ProfileDialog) HandleKey(ev *tcell.EventKey) bool {
 	if d.onButtons {
 		return buttonRowKey(ev, &d.btnFocus, len(profileButtons), nil, d.doButton, d.Hide, d.leaveButtons)
 	}
-	if d.ddAllow.IsOpen() {
+	if d.ddAllow.OverlayActive() {
 		if ev.Key() == tcell.KeyEscape {
 			// Close the list, not the dialog.
 			d.ddAllow.HandleKey(ev)

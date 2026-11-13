@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // keyDiagDialogForTest builds a shown KeyDiagnosticsDialog on a screen big
@@ -12,7 +13,7 @@ import (
 func keyDiagDialogForTest(t *testing.T) (*App, *KeyDiagnosticsDialog) {
 	t.Helper()
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	d := NewKeyDiagnosticsDialog(a)
 	d.Show()
 	return a, d

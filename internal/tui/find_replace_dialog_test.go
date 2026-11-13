@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // newFindTestApp returns an App with one query panel holding text, plus the
@@ -256,7 +257,7 @@ func TestFindDialogEmptyTermIsRefused(t *testing.T) {
 }
 
 // searchFor is the SearchOptions a plain literal search compiles from.
-func searchFor(q string) controls.SearchOptions { return controls.SearchOptions{Query: q} }
+func searchFor(q string) editor.SearchOptions { return editor.SearchOptions{Query: q} }
 
 // Ctrl+F3 compiles a search without opening the dialog, so it has to leave
 // the dialog describing that search and no other. It used to sync only Find
@@ -322,7 +323,7 @@ func TestFindDialogShowClearsTheDragLatch(t *testing.T) {
 	// it, and a dialog built without one keeps a zero rect, so every press is
 	// "outside" and arms nothing.
 	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.screen = tuikittest.NewScreen(100, 40)
 	a.findDialog = NewFindReplaceDialog(a)
 	qp := NewQueryPanel(a, "Query 1")
 	qp.SetBounds(0, 0, 80, 24)
@@ -334,7 +335,7 @@ func TestFindDialogShowClearsTheDragLatch(t *testing.T) {
 	d.layout()
 	// Arm the latch the way a user does — a press inside the field — rather
 	// than by assignment, so the test also pins that a press arms one at all.
-	ix, y := d.fFind.InputX(), d.fFind.RectY()
+	ix, y := d.fFind.InputX(), d.fFind.Bounds().Y
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
 	if d.drag.Field() == nil {
 		t.Fatal("the press did not arm a latch — test premise is wrong")

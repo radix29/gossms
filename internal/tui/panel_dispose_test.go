@@ -12,7 +12,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/tuikit/layout"
 )
 
 // TestClosePanelAtCancelsQueryStoreReads: closing a Query Store panel must

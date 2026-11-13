@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/tuikit/controls"
 )
 
 // findMenuBarItem locates a buildMenus() item by its owning menu's label
@@ -106,13 +106,13 @@ func TestCloseEnabledRespectsClosable(t *testing.T) {
 		t.Fatalf("Close Enabled() = true with no active panel, want false")
 	}
 
-	a.panels.SetActive(a.panels.AddPanel(NewDetailBrowser("Object Explorer Details")))
+	a.panels.SetActiveIndex(a.panels.AddPanel(NewDetailBrowser("Object Explorer Details")))
 	if item.Enabled() {
 		t.Fatalf("Close Enabled() = true for a non-closable active panel (DetailBrowser), want false")
 	}
 
 	qp := NewQueryPanel(a, "Query 1")
-	a.panels.SetActive(a.panels.AddPanel(qp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 	if !item.Enabled() {
 		t.Fatalf("Close Enabled() = false for an ordinary closable active panel (QueryPanel), want true")
 	}
@@ -133,7 +133,7 @@ func TestSaveEnabledReflectsActiveQueryPanel(t *testing.T) {
 	}
 
 	qp := NewQueryPanel(a, "Query 1")
-	a.panels.SetActive(a.panels.AddPanel(qp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 	if !item.Enabled() {
 		t.Fatalf("Save Enabled() = false with an active query panel, want true")
 	}
@@ -149,7 +149,7 @@ func TestCancelExecutingQueryEnabledTracksExecuting(t *testing.T) {
 	item := findMenuBarItem(t, menus, "Query", "Cancel Executing Query")
 
 	qp := NewQueryPanel(a, "Query 1")
-	a.panels.SetActive(a.panels.AddPanel(qp))
+	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 	if item.Enabled() {
 		t.Fatalf("Cancel Executing Query Enabled() = true while idle, want false")
 	}
@@ -177,12 +177,12 @@ func TestNextPanelEnabledReflectsPanelCount(t *testing.T) {
 		t.Fatalf("Next Panel Enabled() = true with 0 panels, want false")
 	}
 
-	a.panels.SetActive(a.panels.AddPanel(NewQueryPanel(a, "Query 1")))
+	a.panels.SetActiveIndex(a.panels.AddPanel(NewQueryPanel(a, "Query 1")))
 	if item.Enabled() {
 		t.Fatalf("Next Panel Enabled() = true with 1 panel, want false")
 	}
 
-	a.panels.SetActive(a.panels.AddPanel(NewQueryPanel(a, "Query 2")))
+	a.panels.SetActiveIndex(a.panels.AddPanel(NewQueryPanel(a, "Query 2")))
 	if !item.Enabled() {
 		t.Fatalf("Next Panel Enabled() = false with 2 panels, want true")
 	}

@@ -17,7 +17,7 @@ import (
 //
 //	go test ./internal/cli/safety -run XXX -fuzz FuzzClassify -fuzztime 60s -fuzzminimizetime 0
 func FuzzClassify(f *testing.F) {
-	files, _ := filepath.Glob("../../tuikit/sqltext/testdata/fuzz/FuzzLexer/*")
+	files, _ := filepath.Glob("../../sqltext/testdata/fuzz/FuzzLexer/*")
 	for _, name := range files {
 		b, err := os.ReadFile(name)
 		if err != nil {

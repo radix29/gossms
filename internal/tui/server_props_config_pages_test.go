@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // The Memory, Processors, Advanced, Connections, Database Settings and

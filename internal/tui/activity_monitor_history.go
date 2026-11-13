@@ -6,8 +6,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/tui/dashboard"
-	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/tuikit/charts"
+	"github.com/radix29/tuikit/theme"
 )
 
 // Colour semantics, resolved once so metrics keep colours across refreshes and

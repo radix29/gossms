@@ -1,6 +1,9 @@
 package tui
 
-import "github.com/gdamore/tcell/v3"
+import (
+	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tui/sqledit"
+)
 
 // HandleKey routes keys to result tab switching (Ctrl+PgUp/PgDn), F5 execute, or
 // whichever of the editor/results grid last got a mouse click (resultsFocused).
@@ -24,7 +27,7 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	// Same for the SQL editor's completion popup: it floats over the editor's rect
 	// independently of resultsFocused, so it must get every key before
 	// F5/Ctrl+PgUp/splitter routing can misroute one meant for it.
-	if p.editor.CompletionActive() {
+	if p.editor.OverlayActive() {
 		return p.editor.HandleKey(ev)
 	}
 	if ev.Key() == tcell.KeyF5 {
@@ -39,7 +42,7 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 		return true
 	}
 	// Ctrl+Enter selects the T-SQL statement at the cursor
-	// (controls.Editor.SelectStatementAtCursor), the first step toward "execute
+	// (editor.Editor.SelectStatementAtCursor), the first step toward "execute
 	// current statement"; it only selects.
 	//
 	// Two encodings must be accepted. A terminal with a modern keyboard protocol
@@ -49,7 +52,7 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	// the key do nothing on an ordinary terminal, while Menu > Query > Execute at
 	// Cursor kept working.
 	if isCtrlEnter(ev) {
-		p.editor.SelectStatementAtCursor()
+		sqledit.SelectStatementAtCursor(p.editor)
 		return true
 	}
 	// Ctrl+PgUp/PgDn cycle the result tabs. Like Ctrl+Tab (app_events), the Ctrl
@@ -128,7 +131,7 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		return p.planView.HandleMouse(ev)
 	}
 	// Same reasoning, for the SQL editor's own completion popup.
-	if p.editor.CompletionActive() {
+	if p.editor.OverlayActive() {
 		return p.editor.HandleMouse(ev)
 	}
 	mx, my := ev.Position()

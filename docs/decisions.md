@@ -1301,7 +1301,8 @@ Unverified on Managed Instance and on non-Enterprise editions:
 
 ## T-SQL lexing: one lexer, two statement splitters — settled, do not re-raise
 
-`internal/tuikit/sqltext`.
+`internal/sqltext` (outside tuikit since 2026-11-12: tuikit knows no T-SQL;
+the editor's SQL pieces are `internal/tui/sqledit`).
 
 - **One lexer.** `sqltext.Next` is the only T-SQL lexer: the executor's
   `SplitBatches`, Ctrl+Enter's `StatementAt`, the SQL highlighter and
@@ -1626,7 +1627,7 @@ it from the string 'NULL'.
   each visual row (`runsInSpan`).
 - **The editor's redo stack is uncapped in bytes, and `applyStep`'s slice is
   unguarded, deliberately** (`maxUndoSteps`/`applyStep` in
-  `internal/tuikit/controls/editor_undo.go`; `TestEditorRedoStackBound`).
+  tuikit's `controls/editor/editor_undo.go`; `TestEditorRedoStackBound`).
   Redo is bounded by count (cleared on any edit); `maxUndoBytes` can't reach it
   because the inverse carries replaced lines (48.4 MB redo vs 46.5 MB undo,
   measured) — the undo cap bounds it to within one document, and a `redoBytes`
@@ -1635,7 +1636,7 @@ it from the string 'NULL'.
   `pushUndoSpan` promise means corruption, and a clamp would quietly restore the
   wrong text. Don't add one.
 - **The editor expands every tab to spaces** (`Editor.expandTabs`,
-  `internal/tuikit/controls/editor_actions.go`, on `SetText`, `Paste`, block
+  tuikit's `controls/editor/editor_actions.go`, on `SetText`, `Paste`, block
   insert, Replace) — including in string literals, and Save writes spaces.
   **Author's call.** No tab-preserving buffer
   or tab-stop rendering.

@@ -8,10 +8,11 @@ import (
 )
 
 // TestNoTUIImports pins the command line's import rule (ARCHITECTURE.md § Why
-// split this way): nothing under internal/cli may reach internal/tui, a
-// tuikit package other than the stdlib-only tuikit/sqltext, or tcell. The CLI
-// runs without a screen, and tuikit/core is not the leaf it looks like — it
-// imports tcell, which is why output calls displaywidth.String directly.
+// split this way): nothing under internal/cli may reach internal/tui, any
+// tuikit package, or tcell. The CLI runs without a screen; the one lexer it
+// shares with the editor is internal/sqltext, outside tuikit. tuikit/core is
+// not the leaf it looks like — it imports tcell, which is why output calls
+// displaywidth.String directly.
 //
 // internal/scripting is held to the same rule as a root of its own: it is
 // the Script As table the TUI and the script commands share, and moved out of
@@ -42,11 +43,12 @@ func TestNoTUIImports(t *testing.T) {
 	if len(roots) == 0 {
 		t.Fatalf("go list found no internal/cli package:\n%s", out)
 	}
+	// tuikit is its own module (github.com/radix29/tuikit), so "/internal/tui"
+	// no longer covers it; every tuikit package also reaches tcell, but naming
+	// it reports the first tuikit package in the chain rather than tcell.
 	forbidden := func(pkg string) bool {
-		if strings.Contains(pkg, "/internal/tuikit/") {
-			return !strings.HasSuffix(pkg, "/internal/tuikit/sqltext")
-		}
-		return strings.Contains(pkg, "/internal/tui") || strings.Contains(pkg, "gdamore/tcell")
+		return strings.Contains(pkg, "/internal/tui") || strings.HasPrefix(pkg, "github.com/radix29/tuikit") ||
+			strings.Contains(pkg, "gdamore/tcell")
 	}
 
 	// Breadth first from the cli packages, so each offender is reported with

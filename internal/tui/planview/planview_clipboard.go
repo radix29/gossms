@@ -36,7 +36,7 @@ func (v *PlanView) SelectedText() string {
 	}
 	return ""
 }
-func (v *PlanView) Cut() string       { return v.SelectedText() }
+func (v *PlanView) Cut() string       { return "" } // read-only: nothing cut (Copy takes the text)
 func (v *PlanView) Paste(text string) {}
 
 // SelectAll gates on OverlayActive, not the HasSelection its siblings use:
