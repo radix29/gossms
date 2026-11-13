@@ -15,7 +15,7 @@ n | type   | cost      | est_rows | actual_rows | elapsed_ms | cpu_ms | dop | gr
 --+--------+-----------+----------+-------------+------------+--------+-----+----------+----------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 1 | SELECT | 0.0188341 | 9        | 9           | 0          | 0      | 1   | 0        | 0        | SELECT TOP (1000) [PatientID] ,[PatientName] ,[AppointmentID] ,[ScheduledAt] ,[DoctorName] ,[SpecializationName] ,[Diagnosis] ,[Treatment] FROM [HealthClinic].[dbo].[vw_PatientHistory]
 
-=== RESULT 2: operators (10 rows, truncated: no) ===
+=== RESULT 2: operators (12 rows, truncated: no) ===
 stmt | node | physical             | logical              | object                                   | cost_pct | est_rows | actual_rows | elapsed_ms | parallel | mode | warnings | misestimate
 -----+------+----------------------+----------------------+------------------------------------------+----------+----------+-------------+------------+----------+------+----------+------------
 1    | 8    | Clustered Index Seek | Clustered Index Seek | dbo.Doctors [PK_Doctors]                 | 20.8     | 1        | 5           | 0          | 0        | Row  | NULL     | 0
@@ -28,6 +28,8 @@ stmt | node | physical             | logical              | object              
 1    | 2    | Nested Loops         | Inner Join           | NULL                                     | 0.1      | 5        | 5           | 0          | 0        | Row  | NULL     | 0
 1    | 6    | Nested Loops         | Inner Join           | NULL                                     | 0.1      | 5        | 5           | 0          | 0        | Row  | NULL     | 0
 1    | 0    | Top                  | Top                  | NULL                                     | 0.0      | 9        | 9           | 0          | 0        | Row  | NULL     | 0
+1    | 3    | Compute Scalar       | Compute Scalar       | NULL                                     | 0.0      | 5        | NULL        | NULL       | 0        | Row  | NULL     | NULL
+1    | 5    | Compute Scalar       | Compute Scalar       | NULL                                     | 0.0      | 5        | NULL        | NULL       | 0        | Row  | NULL     | NULL
 
 === RESULT 3: missing_indexes (0 rows, truncated: no) ===
 stmt | impact | database | table | equality | inequality | include | create_statement

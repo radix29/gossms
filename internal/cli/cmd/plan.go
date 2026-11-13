@@ -34,8 +34,9 @@ const (
 	planXML     = "xml"
 )
 
-// defaultPlanTop is plan's --top default: the operators set's length.
-const defaultPlanTop = 10
+// defaultPlanTop is plan's --top default: the operators set's length, 0 for
+// every operator — the whole plan, ranked; --top cuts it to the costliest.
+const defaultPlanTop = 0
 
 // planTextWidth is the characters of a statement's text the statements set
 // keeps.
@@ -65,7 +66,7 @@ func PlanCommands(d Deps) []*spec.Command {
 				"(Msg 208), as in SSMS. The login needs SHOWPLAN in the database (exit 9 without it) and rights on " +
 				"the objects. SET PARSEONLY, NOEXEC and SHOWPLAN_* in the script are refused (exit 7). " +
 				"--plan-format summary (default) answers sets statements (cost, rows, DOP, memory grant), operators " +
-				"(the --top costliest by own estimated cost across statements, cost_pct its share of its statement), " +
+				"(every one, or the --top costliest, by own estimated cost across statements, cost_pct its share of its statement), " +
 				"missing_indexes (with a CREATE INDEX to review) and warnings; tree is every operator in preorder " +
 				"with its depth; xml is the plan document itself. --plan-file writes that document, as the query " +
 				"editor's Save Execution Plan As does (UTF-8), for SSMS or the plan viewer to open; an existing file " +
@@ -75,7 +76,7 @@ func PlanCommands(d Deps) []*spec.Command {
 				spec.Option{Name: optPlanFormat, Type: spec.TypeEnum, Enum: []string{planSummary, planTree, planXML},
 					Default: planSummary, Help: "summary: statements, costliest operators, missing indexes, warnings; tree: every operator; xml: the plan document"},
 				spec.Option{Name: optTop, Type: spec.TypeInt, Default: strconv.Itoa(defaultPlanTop),
-					Help: "Operators the summary keeps, costliest first; 0 for every one"},
+					Help: "Operators the summary keeps, costliest first; 0 (default) for every one"},
 				spec.Option{Name: optPlanFile, Type: spec.TypeString,
 					Help: "Also write the plan document to this file (.sqlplan opens in SSMS); --force replaces one"},
 				timeoutOption(),
@@ -109,7 +110,7 @@ func PlanCommands(d Deps) []*spec.Command {
 				spec.Option{Name: optPlanFormat, Type: spec.TypeEnum, Enum: []string{planSummary, planTree, planXML},
 					Default: planSummary, Help: "summary: statements, costliest operators, missing indexes, warnings; tree: every operator; xml: the plan document"},
 				spec.Option{Name: optTop, Type: spec.TypeInt, Default: strconv.Itoa(defaultPlanTop),
-					Help: "Operators the summary keeps, costliest first; 0 for every one"},
+					Help: "Operators the summary keeps, costliest first; 0 (default) for every one"},
 				spec.Option{Name: optPlanFile, Type: spec.TypeString,
 					Help: "Also write the plan document to this file (.sqlplan opens in SSMS); --force replaces one"},
 			),
@@ -142,7 +143,7 @@ func PlanCommands(d Deps) []*spec.Command {
 				spec.Option{Name: optPlanFormat, Type: spec.TypeEnum, Enum: []string{planSummary, planTree, planXML},
 					Default: planSummary, Help: "summary: statements, costliest operators, missing indexes, warnings; tree: every operator; xml: the plan document"},
 				spec.Option{Name: optTop, Type: spec.TypeInt, Default: strconv.Itoa(defaultPlanTop),
-					Help: "Operators the summary keeps, costliest first; 0 for every one"},
+					Help: "Operators the summary keeps, costliest first; 0 (default) for every one"},
 				spec.Option{Name: optPlanFile, Type: spec.TypeString,
 					Help: "Also write the plan document to this file (.sqlplan opens in SSMS); --force replaces one"},
 			),

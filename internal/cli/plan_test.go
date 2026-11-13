@@ -157,6 +157,11 @@ func TestPlanEstimatedSummaryAcrossStatements(t *testing.T) {
 	if ops := setNamed(t, envelope(t, r.stdout), "operators")["rows"].([]any); len(ops) != 3 {
 		t.Errorf("--top 0: %d operators", len(ops))
 	}
+	// So does no --top: the default is the whole plan.
+	r = runQuery(t, d, "plan", "estimated", "-p", "dev", "--sql", "SELECT 1", "-o", "json")
+	if ops := setNamed(t, envelope(t, r.stdout), "operators")["rows"].([]any); len(ops) != 3 {
+		t.Errorf("default --top: %d operators", len(ops))
+	}
 }
 
 // A mode option anywhere, OFF included, is refused before connecting: an OFF

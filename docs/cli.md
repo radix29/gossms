@@ -913,8 +913,8 @@ whatever the script does; `detectedClass` says what running it would need.
   `statements` — `n`, `type`, `cost` (estimated subtree cost), `est_rows`,
   `actual_rows`, `elapsed_ms`, `cpu_ms`, `dop`, `grant_kb`, `warnings` (the
   statement's and its operators'), `text` (one line, cut to 200 characters);
-  `operators` — the `--top` (default 10, `0` for all) operators with the
-  highest own estimated cost across all statements (the plan viewer's
+  `operators` — every operator (`--top <n>` keeps the n costliest), highest
+  own estimated cost first across all statements (the plan viewer's
   ranking; a trivial statement's lone operator, 100% of its statement, does
   not outrank a costly scan elsewhere): `stmt`, `node`, `physical`,
   `logical`, `object`, `cost_pct` (share of its statement, as the plan viewer

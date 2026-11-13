@@ -7948,7 +7948,7 @@
     {
       "path": "plan estimated",
       "summary": "Show the estimated execution plan of T-SQL without running it (SET SHOWPLAN_XML ON)",
-      "description": "Compiles every batch under SET SHOWPLAN_XML ON on one session: the server returns each statement's plan and runs nothing, so no --allow is needed whatever the script does. Because nothing runs, a statement that uses a #temp table the script creates earlier fails to compile (Msg 208), as in SSMS. The login needs SHOWPLAN in the database (exit 9 without it) and rights on the objects. SET PARSEONLY, NOEXEC and SHOWPLAN_* in the script are refused (exit 7). --plan-format summary (default) answers sets statements (cost, rows, DOP, memory grant), operators (the --top costliest by own estimated cost across statements, cost_pct its share of its statement), missing_indexes (with a CREATE INDEX to review) and warnings; tree is every operator in preorder with its depth; xml is the plan document itself. --plan-file writes that document, as the query editor's Save Execution Plan As does (UTF-8), for SSMS or the plan viewer to open; an existing file needs --force. There is no --param: under SHOWPLAN_XML the server plans an sp_executesql call as the EXEC alone, not the statement inside (found live on 17); write the values into the script.",
+      "description": "Compiles every batch under SET SHOWPLAN_XML ON on one session: the server returns each statement's plan and runs nothing, so no --allow is needed whatever the script does. Because nothing runs, a statement that uses a #temp table the script creates earlier fails to compile (Msg 208), as in SSMS. The login needs SHOWPLAN in the database (exit 9 without it) and rights on the objects. SET PARSEONLY, NOEXEC and SHOWPLAN_* in the script are refused (exit 7). --plan-format summary (default) answers sets statements (cost, rows, DOP, memory grant), operators (every one, or the --top costliest, by own estimated cost across statements, cost_pct its share of its statement), missing_indexes (with a CREATE INDEX to review) and warnings; tree is every operator in preorder with its depth; xml is the plan document itself. --plan-file writes that document, as the query editor's Save Execution Plan As does (UTF-8), for SSMS or the plan viewer to open; an existing file needs --force. There is no --param: under SHOWPLAN_XML the server plans an sp_executesql call as the EXEC alone, not the statement inside (found live on 17); write the values into the script.",
       "operationClass": "read",
       "arguments": [],
       "options": [
@@ -8168,10 +8168,10 @@
           "short": null,
           "type": "int",
           "enum": [],
-          "default": 10,
+          "default": 0,
           "negation": null,
           "env": null,
-          "help": "Operators the summary keeps, costliest first; 0 for every one"
+          "help": "Operators the summary keeps, costliest first; 0 (default) for every one"
         },
         {
           "name": "--plan-file",
@@ -8503,10 +8503,10 @@
           "short": null,
           "type": "int",
           "enum": [],
-          "default": 10,
+          "default": 0,
           "negation": null,
           "env": null,
-          "help": "Operators the summary keeps, costliest first; 0 for every one"
+          "help": "Operators the summary keeps, costliest first; 0 (default) for every one"
         },
         {
           "name": "--plan-file",
@@ -8747,10 +8747,10 @@
           "short": null,
           "type": "int",
           "enum": [],
-          "default": 10,
+          "default": 0,
           "negation": null,
           "env": null,
-          "help": "Operators the summary keeps, costliest first; 0 for every one"
+          "help": "Operators the summary keeps, costliest first; 0 (default) for every one"
         },
         {
           "name": "--plan-file",
